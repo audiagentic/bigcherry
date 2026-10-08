@@ -1,13 +1,6 @@
 # 1200_rd19_single_gpu_meta_bypass: skip the Meta device wrapper with a single GPU (RD19)
 
-Patch id: `1200_rd19_single_gpu_meta_bypass`. Plan item: `RD19`. A matching
-Experiment Contract exists (`RD19-SINGLE-GPU-META-BYPASS`,
-`config/experiment-contracts.toml`) but is deliberately NOT bound in
-`patch.toml` yet -- binding it without a validation.toml wiring producers
-for its required capabilities makes `build_plan_for_patch()` fail closed
-with a real `ConfigurationError` (verified directly: "experiment
-contract(s) ... require validation evidence but no validation.toml adapter
-exists"). Author validation.toml first, then bind.
+Patch id: `1200_rd19_single_gpu_meta_bypass`. Plan item: `RD19`. The existing `RD19-SINGLE-GPU-META-BYPASS` Experiment Contract is now bound in `patch.toml`, with the static required-capability adapter in `validation.toml`. This closes the missing-definition lint failure; it does not backfill historical evidence.
 
 ## Scope
 
@@ -60,14 +53,11 @@ PYTHONPATH=tools python -m bigcherry.patch.validation_campaign \
   --workdir <fresh-workdir> --worktree-root <worktree-root>
 ```
 
-No validation.toml/bespoke correctness producer exists yet -- the generic
+No bespoke correctness or activation producer exists yet -- the generic
 S1-S7 campaign (apply/build) is what the CLI can currently execute; the
 real promotion evidence above came from a dedicated bench session outside
 this harness, not from `--run-*-contract`-style orchestration the way
-RD04/RD08/RD58 have. Authoring a validation.toml (backend_reference
-correctness check, decode/prefill performance) so a future run can
-reproduce this evidence through the standard harness is separate,
-not-yet-done work.
+RD04/RD08/RD58 have. A `validation.toml` adapter now declares the required capabilities, but its activation marker is intentionally missing from the current patch and cannot PASS until the mechanism is instrumented and measured.
 
 ## Known limitations
 
@@ -124,3 +114,8 @@ tracked-status note for this patch. No `evidence/validation.json` exists
 yet under this patch package -- that gap (a real evidence record produced
 outside `patch.toml`'s own state tracking) is real and should be closed by
 a future harness-driven re-run, not backfilled retroactively here.
+
+
+## Static validation-package repair (2026-10-08)
+
+The existing Experiment Contract is explicitly bound and `validation.toml` declares apply, build, correctness, activation, performance, and controls. This repairs the former `patch-lint` missing-binding/missing-adapter errors; it does **not** certify a validation campaign or introduce measurements. The declared activation marker does not yet exist in `patch.py`, so a new validation attempt must remain BLOCKED until real subject-hit/control-miss instrumentation and evidence are added. Historical manual hardware evidence above is preserved without changing the original promotion claim.

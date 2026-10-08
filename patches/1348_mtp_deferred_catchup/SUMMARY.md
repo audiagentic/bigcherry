@@ -14,6 +14,8 @@ Prompt-only MTP catch-up is deferred by one target chunk. After target chunk k f
 - Snapshot data is copied before the next target submit can overwrite llama.cpp's NextN output buffer.
 - Draft catch-ups consume the same tokens/hidden rows in the same order as native MTP.
 - Mixed/non-prompt and embedding batches flush pending work, then use native processing.
+- 1322 look-ahead is generation-only in the composed path; any final prompt catch-up is flushed before the first ahead draft.
+- `BIGCHERRY_MTP_DEFERRED_CATCHUP` and `BIGCHERRY_MTP_AHEAD` remain independent switches.
 - Slot release/prompt clear/cache load invalidate pending work.
 - Context shift and failed target decode drop the pending snapshot and poison affected sequences, disabling MTP drafting for the remainder of that request rather than using stale draft state.
 - No worker thread, scheduler ring, graph-shape cache, or generic backend lifetime change is introduced.

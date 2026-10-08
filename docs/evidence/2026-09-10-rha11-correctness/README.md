@@ -37,6 +37,10 @@ final replay gate can be evaluated without hidden native fallback misses.
 
 Raw response JSON and the manifest-bound seed are retained under `raw/`.
 
+The canonical native-miss seed is `raw/final-seed-all-misses.json`. The earlier
+`raw/miss-native-seed.json` alias was byte-identical and was removed during
+repository cleanup; Git history preserves the old filename.
+
 The first corrected cache was also exercised end-to-end with the maintained
 `run_bench.py --bench-type server-bench` runner. The diagnostics-on activation
 run returned 0 and recorded 21,566/21,566 executed and dispatched operations,

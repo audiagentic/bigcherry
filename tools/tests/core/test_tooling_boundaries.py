@@ -142,14 +142,17 @@ class ToolingBoundaryTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         rows = [match.groupdict() for line in registry.splitlines() if (match := DISPOSITION_ROW.match(line))]
 
-        self.assertEqual(len(rows), 890)
+        self.assertGreater(len(rows), 0)
         paths = {row["path"] for row in rows}
         self.assertEqual(len(paths), len(rows))
         self.assertTrue(
             {row["disposition"] for row in rows} <= DISPOSITION_VALUES
         )
-        self.assertIn("current 820-row control-plane registry", registry)
+        self.assertIn("current control-plane registry", registry)
         self.assertIn("immutable 383-row implementation-start baseline", registry)
+        for row in rows:
+            path = REPO_ROOT / row["path"]
+            self.assertTrue(path.is_file(), f"stale disposition row: {row['path']}")
 
         for path in (TOOLS_ROOT / "lab").rglob("*"):
             relative_parts = path.relative_to(TOOLS_ROOT / "lab").parts

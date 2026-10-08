@@ -543,24 +543,28 @@ _N_HAS_OUTPUT = r"""        bool has_output = false;
         // yield to the queue, so we can still handle metrics tasks while decoding
 """
 
+_A_AHEAD_GATE = """\
+            if (ret == 0 && spec && ctx_dft && bc_mtp_ahead_on() && ctx_dft_seq_rm_type == COMMON_CONTEXT_SEQ_RM_TYPE_PART) {
+"""
+_N_AHEAD_GATE = r"""            if (ret == 0 && !bc_prompt_only && spec && ctx_dft && bc_mtp_ahead_on() && ctx_dft_seq_rm_type == COMMON_CONTEXT_SEQ_RM_TYPE_PART) {
+                // BigCherry 1348: prompt catch-up and generation look-ahead are separate phases. Drain any final
+                // deferred prompt chunk before 1322 mutates the draft context. DONE_PROMPT normally drained it already.
+                bool bc_boundary_ok = common_speculative_flush_deferred(spec.get());
+                if (!bc_boundary_ok) {
+                    throw std::runtime_error("failed to flush deferred MTP prompt catch-up before ahead draft");
+                }
+"""
+
 _A_TARGET_SUBMIT = """\
-        int ret = 0;
-        queue_tasks.yield_to_queue([&]() {
-            ret = llama_process(ctx_tgt, LLAMA_PROCESS_TYPE_DECODE, batch.view.get());
             if (ret == 0 && has_output) {
                 llama_synchronize(ctx_tgt);
             }
-        });
 """
-_N_TARGET_SUBMIT = r"""        int ret = 0;
-        queue_tasks.yield_to_queue([&]() {
-            ret = llama_process(ctx_tgt, LLAMA_PROCESS_TYPE_DECODE, batch.view.get());
-            // BigCherry 1348: for eligible prompt-only MTP, process_deferred() must see the target submitted before
-            // it runs the previous draft catch-up. It synchronizes the current target when taking the NextN snapshot.
+_N_TARGET_SUBMIT = r"""            // BigCherry 1348: prompt-only deferred catch-up must observe target submission before the
+            // target sync; process_deferred() synchronizes when it snapshots the current NextN rows.
             if (ret == 0 && has_output && !bc_prompt_only) {
                 llama_synchronize(ctx_tgt);
             }
-        });
 """
 
 _A_TARGET_FAIL = """\
@@ -581,45 +585,9 @@ _N_TARGET_FAIL = r"""        if (ret != 0) {
 """
 
 _A_SPEC_PROCESS = """\
-        if (spec) {
-            bool ok = true;
-            queue_tasks.yield_to_queue([&]() {
                 ok = common_speculative_process(spec.get(), batch.view);
-            });
-
-            if (!ok) {
-                SRV_ERR("%s", "failed to process speculative batch\\n");
-
-                // TODO: handle error
-                throw std::runtime_error("failed to process speculative batch");
-            }
-        }
-
-        // handle `n_cmpl > 1` tasks - when the main prompt is processed, activate all child tasks too
 """
-_N_SPEC_PROCESS = r"""        if (spec) {
-            bool ok = true;
-            queue_tasks.yield_to_queue([&]() {
-                ok = common_speculative_process_deferred(spec.get(), batch.view, bc_prompt_only);
-            });
-
-            if (!ok) {
-                SRV_ERR("%s", "failed to process speculative batch\n");
-
-                // TODO: handle error
-                throw std::runtime_error("failed to process speculative batch");
-            }
-        }
-
-        // The standard has_output contract is preserved. Eligible deferred MTP has already synchronized while
-        // snapshotting NextN, so this is normally a no-op; it also protects non-MTP speculative combinations.
-        if (has_output && bc_prompt_only) {
-            queue_tasks.yield_to_queue([&]() {
-                llama_synchronize(ctx_tgt);
-            });
-        }
-
-        // handle n_cmpl > 1 tasks - when the main prompt is processed, activate all child tasks too
+_N_SPEC_PROCESS = r"""                ok = common_speculative_process_deferred(spec.get(), batch.view, bc_prompt_only);
 """
 
 _A_FINAL_FLUSH = """\
@@ -782,14 +750,24 @@ PATCHES = [
                 max_span_lines=7,
             ),
             Edit(
+                id="mtp-deferred-ahead-boundary",
+                anchor=re.escape(_A_AHEAD_GATE),
+                mode="replace",
+                text=_N_AHEAD_GATE,
+                guard=r"failed to flush deferred MTP prompt catch-up before ahead draft",
+                rationale="1322 generation look-ahead must never run until the final deferred prompt catch-up is drained.",
+                expect_matches=1,
+                max_span_lines=2,
+            ),
+            Edit(
                 id="mtp-deferred-target-submit",
                 anchor=re.escape(_A_TARGET_SUBMIT),
                 mode="replace",
                 text=_N_TARGET_SUBMIT,
-                guard=r"process_deferred\(\) must see the target submitted",
-                rationale="Only postpone has_output sync for eligible prompt batches; snapshotting restores the sync contract.",
+                guard=r"prompt-only deferred catch-up must observe target submission",
+                rationale="After 1317/1322 composition, only the sync seam changes: prompt batches defer it until the NextN snapshot.",
                 expect_matches=1,
-                max_span_lines=8,
+                max_span_lines=4,
             ),
             Edit(
                 id="mtp-deferred-target-fail",
@@ -807,9 +785,9 @@ PATCHES = [
                 mode="replace",
                 text=_N_SPEC_PROCESS,
                 guard=r"common_speculative_process_deferred\(spec.get\(\), batch.view, bc_prompt_only\)",
-                rationale="The existing post-target speculative hook is exactly where prior catch-up can overlap current target compute.",
+                rationale="Replace only the speculative process call so 1317 timing wrappers, when present, remain untouched.",
                 expect_matches=1,
-                max_span_lines=16,
+                max_span_lines=2,
             ),
             Edit(
                 id="mtp-deferred-final-flush",

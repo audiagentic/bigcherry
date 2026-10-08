@@ -2,7 +2,7 @@
 id: PRBE65
 order: 0
 plan: patching-rdna-boost-experiments
-state: pending
+state: completed
 created-at: '2026-09-09T10:58:03.403872+00:00'
 breadth: ''
 skill: advanced
@@ -11,106 +11,41 @@ work: S
 priority: null
 ---
 
-# VK-FA-001: Decouple Vulkan FA occupancy tuning from exact shared-memory capability equality
+# VK-FA-001: 32 KiB Vulkan scalar-FA occupancy heuristic — no generic scale patch
 
-## Description
+## Disposition (2026-10-07 UTC)
 
-TODO. No patch or upstream absorption implements this. At b11126, ggml/src/ggml-vulkan/ggml-vulkan.cpp's FA occupancy heuristic gates on exact equality `maxComputeSharedMemorySize == 65536`, so it silently no-ops on real AMD devices reporting other totals (e.g. 32768). The separate hard legality check (`total_size <= maxComputeSharedMemorySize`) elsewhere is untouched and correct; this item only concerns the occupancy heuristic's trigger condition.
+**Close RD82/PRBE65's proposed automatic 64→32 KiB proportional scaling.** This is not a demonstrated BigCherry optimisation. Current b11474 and upstream master still use the exact 65536-byte AMD gate, but the first relevant 32 KiB proprietary-driver R9700 comparison reports worse prefill when the limiter is forced. Preserve upstream behaviour. No BigCherry patch, architecture table, runtime flag, or hardware campaign is authorised by this item. A *new* narrowly owned experiment may reopen only after the first-party gates below pass.
 
-## Steps
+## Verified source and causal scope
 
-1. Read the full FA config function in ggml/src/ggml-vulkan/ggml-vulkan.cpp containing the `== 65536` block (grep `limit_occupancy_shmem` to confirm the enclosing function name and full signature before editing).
-2. Replace the exact-equality guard with a threshold/table keyed on the real reported `maxComputeSharedMemorySize`, e.g. treat any AMD device reporting >=32768 as eligible for a scaled occupancy target (scale the 26KiB/30KiB/14KiB constants proportionally to reported size relative to the 64KiB baseline the constants were tuned for), falling back to no occupancy limiting below a safety floor (e.g. <16KiB) rather than guessing.
-3. Add a unit/offline test (Python or C++ harness under tools/tests or a new ggml-vulkan-specific test) that calls the FA config function (or a thin wrapper) with mocked `maxComputeSharedMemorySize` values of 65536, 32768, 16384, and confirms limit_occupancy_shmem scales and never exceeds the reported total.
-4. Add a non-AMD vendor control (e.g. NVIDIA vendor id) confirming the branch is untouched.
-5. Hardware validation: FA PP/TG before/after on an AMD device that already reports 65536 (must be unchanged/neutral -- regression control) plus any AMD device in the fleet reporting a different real total (if none exists, document that this step is blocked pending such hardware and is not claimed).
+- `ggml/src/ggml-vulkan/ggml-vulkan.cpp`: `get_fa_tuning_params_scalar(device,hsk,hsv,n_rows,n_kv,k_type,v_type,f32acc)` sets `result.limit_occupancy_shmem` only when `vendor_id == VK_VENDOR_ID_AMD && maxComputeSharedMemorySize == 65536`. The non-GCN/RDNA arm additionally requires `n_rows >= 64 && hsk <= 128`; the GCN arm requires `n_rows <= 8 && hsk >= 256`. The occupancy limiter is **scalar FA only**: `get_fa_tuning_params_coopmat1/2` do not set it. RDNA single-token decode and normal MTP verification widths 2–8 do not reach the RDNA arm.
+- `get_fa_pipeline_state` transfers the scalar tuning value into `vk_fa_pipeline_state`; `get_fa_spec_constants` supplies specialization constant 11. `ggml/src/ggml-vulkan/vulkan-shaders/flash_attn_base.glsl` defines it; `flash_attn.comp` declares `shared vec4 occupancy_limiter[LIMIT_OCCUPANCY_SHMEM > 0 ? LIMIT_OCCUPANCY_SHMEM : 1]` and deliberately **writes, barriers, then reads** it to prevent optimisation away. A new limiter adds a synchronization path as well as LDS occupancy pressure; it is not a free scheduling hint.
+- Existing FA shared-memory support/legality checks remain authoritative. The old proposed `min(dummy_size, maxComputeSharedMemorySize)` is **not** a sufficient legality proof: the shader also allocates other shared arrays. Verify *total compiled workgroup shared bytes*, pipeline creation and dispatch, not only the dummy array size.
+- The old proposed `>=16384` condition contradicts its own 16 KiB “no limiter” fixture: it would activate a GCN 16 KiB case. No scaled implementation is approved. Do not change the existing exact-equality gate or assume a device's reported 32 KiB equals its physical LDS.
 
-1. Read the full FA config function in ggml/src/ggml-vulkan/ggml-vulkan.cpp containing the `== 65536` block (grep `limit_occupancy_shmem` to confirm the enclosing function name and full signature before editing).
-2. Replace the exact-equality guard with a threshold/table keyed on the real reported `maxComputeSharedMemorySize`, scaling the 26KiB/30KiB/14KiB constants proportionally to reported size relative to the 64KiB baseline; fall back to no occupancy limiting below a safety floor (<16KiB) rather than guessing. Define and record the EXACT expected `limit_occupancy_shmem` output for the documented test points before writing code, per GPT's fix: 64KiB -> unchanged current values (26/30/14 KiB as vec4-count, i.e. `/4/4`); 32KiB -> half those byte targets before the `/4/4` conversion (13/15/7 KiB); 16KiB -> floor triggers, no limiting applied (result.limit_occupancy_shmem left at its unset/default value); non-AMD vendor -> branch entirely untouched (result unset).
-3. Add a unit/offline test (Python or C++ harness under tools/tests or a new ggml-vulkan-specific test) that calls the FA config function (or a thin wrapper) with mocked `maxComputeSharedMemorySize` values of 65536, 32768, 16384, and asserts the EXACT expected vec4-count values from step 2 (not just 'scales and never exceeds').
-4. Add a non-AMD vendor control (e.g. NVIDIA vendor id) confirming the branch is untouched.
-5. Hardware validation: FA PP/TG before/after on an AMD device that already reports 65536 (must be unchanged/neutral -- regression control) plus any AMD device in the fleet reporting a different real total (if none exists, document that this step is blocked pending such hardware and is not claimed).
+Source: https://github.com/ggml-org/llama.cpp/blob/b11474/ggml/src/ggml-vulkan/ggml-vulkan.cpp and https://github.com/ggml-org/llama.cpp/blob/b11474/ggml/src/ggml-vulkan/vulkan-shaders/flash_attn.comp . The exact gate and shader behavior were checked against the pinned source; the gate also remains in upstream master as inspected 2026-10-07.
 
-## Detailed Solution & Technical Design
+## Evidence and cheapest discriminator
 
-Data flow: `ggml_vk_get_flash_attn_config` (or equivalent; confirm exact name via grep 'limit_occupancy_shmem' in ggml-vulkan.cpp) computes `result.limit_occupancy_shmem` used later to inflate the shader's declared shared-memory usage so the driver schedules fewer subgroups per SIMD. The bug is that this is currently gated on `== 65536` verbatim. The fix generalizes to `>= <floor>` with size-proportional scaling, computed once from `device->properties.limits.maxComputeSharedMemorySize`, and must never push the computed occupancy shmem size past the value that the separate legality check (`total_size <= maxComputeSharedMemorySize`) would reject -- clamp explicitly.
+- **External, not BigCherry:** llama.cpp discussion #21043, 2026-09-03, R9700 gfx1201 / Windows AMD proprietary driver reporting **32768**: pp512 stock **719**, forced 32 KiB-scaled limiter **704** (−2.1%), limiter off **744** (+3.5% vs stock); tg128 **30.33 / 30.39 / 30.44** respectively. This is a limited external comparison, not a statistical promotion result; it directly argues against assuming scaling helps this architecture/driver.
+- **External, not causal proof:** llama.cpp issue #26163 (2026-07-27; closed stale 2026-10-02) associates a Vega gfx90c driver 65536→32768 report change with diffusion throughput loss. The reporter did not build an altered FA gate; most of the workload uses other kernels. A comment proposes a *GCN+proprietary-specific* 32 KiB arm, not a general RDNA rule. Do not transfer the reported ~17% diffusion difference to BigCherry FA.
+- **Static/mock actually executed this audit:** seven pinned-source assertions verified the scalar-only predicate, two architecture/shape arms, specialization handoff, and shader dummy-array/barrier. Five arithmetic fixtures passed: RDNA 64 KiB prefill 1664 vec4; RDNA 32 KiB prefill 0 stock / 832 proposed; RDNA 32 KiB MTP width4 0/0; GCN 32 KiB 0/448; GCN 16 KiB 0/224 (exposes the old floor contradiction). This proves routing/arithmetic only, **not** shader compilation, occupancy, or performance.
+- No BigCherry device-trait dump, scalar-FA attribution, build, hardware test or benchmark was obtained in this audit.
 
-## Code Samples & Guidance
+References: https://github.com/ggml-org/llama.cpp/discussions/21043 ; https://github.com/ggml-org/llama.cpp/issues/26163 . The inspected AMD-LLAMA-CPP fork retains the same 65536 gate; no fork code establishes a general safe 32 KiB policy. AITER/vLLM attention tuning is architecture/operator-specific and does not establish a transferable Vulkan dummy-LDS formula.
 
-Anchor (verified present at b11126, ggml/src/ggml-vulkan/ggml-vulkan.cpp, inside the FA config function):
-```cpp
-    if (device->vendor_id == VK_VENDOR_ID_AMD && device->properties.limits.maxComputeSharedMemorySize == 65536) {
-        if (device->architecture != AMD_GCN && n_rows >= 64 && hsk <= 128) {
-            // 30kb target for hsk > 64, 26kb for <= 64 due to smaller workgroup size
-            // Values are guessed, tested on RDNA2
-            result.limit_occupancy_shmem = (hsk <= 64 ? 26 : 30) * 1024 / 4 / 4;
-        } else if (device->architecture == AMD_GCN && n_rows <= 8 && hsk >= 256) {
-            // Same thing for GCN, with an occupancy target of 2 subgroups per SIMD.
-            // Here low-batch FA with large head size is affected.
-            // n_rows < 4 switch because workgroup size switches from 128 to 256 there.
-            result.limit_occupancy_shmem = (n_rows < 4 ? 14 : 26) * 1024 / 4 / 4;
-        }
-    }
-```
-Replacement sketch:
-```cpp
-    const uint32_t amd_shmem_total = device->properties.limits.maxComputeSharedMemorySize;
-    if (device->vendor_id == VK_VENDOR_ID_AMD && amd_shmem_total >= 16384) {
-        const double shmem_scale = double(amd_shmem_total) / 65536.0;
-        if (device->architecture != AMD_GCN && n_rows >= 64 && hsk <= 128) {
-            result.limit_occupancy_shmem = uint32_t((hsk <= 64 ? 26 : 30) * 1024 * shmem_scale) / 4 / 4;
-        } else if (device->architecture == AMD_GCN && n_rows <= 8 && hsk >= 256) {
-            result.limit_occupancy_shmem = uint32_t((n_rows < 4 ? 14 : 26) * 1024 * shmem_scale) / 4 / 4;
-        }
-        result.limit_occupancy_shmem = std::min(result.limit_occupancy_shmem, amd_shmem_total / 4 / 4);
-    }
-```
-Patch package sketch: `patches/12xx_vk_fa_occupancy_shmem_scale/patch.toml` (id=vk_fa_occupancy_shmem_scale, order in the 12xx-free range -- check `ls patches/ | sort` for the next free order before assigning, kind="enhancement", state="untested", backend="vulkan", experiment-contracts=["VKFA01-OCCUPANCY-SHMEM-SCALE"]); `patch.py` with one `FilePatch(path="ggml/src/ggml-vulkan/ggml-vulkan.cpp", edits=(Edit(id="vkfa-occupancy-scale", anchor=re.escape(<verbatim block above>), mode="replace", text=<replacement>, guard=r"shmem_scale"),))`.
+## Conditional reopen / bounded experiment (new owner only)
 
-## Files
+1. **Gate 0 / stop:** record actual `ggml_vulkan` device line (gfx1100/gfx1201/gfx1030, RADV/AMDVLK/proprietary, driver version, reported LDS), and production scalar-FA pipeline signatures with `path=FA_SCALAR,n_rows,hsk,hsv,k_type,v_type`. If no AMD **32 KiB** device runs `n_rows >=64,hsk<=128` scalar FA, or those calls account for **<5% E2E wall time**, terminate without patch/hardware queue. Do not test an unavailable gfx1151/GCN lane as though it were fleet evidence.
+2. **Offline gate:** on one confirmed hot signature, use disposable *build-time* baseline/no-limiter/32 KiB-scaled variants of the existing scalar-FA tuning function. Confirm actual compiled SPIR-V specialization constant 11, shader workgroup shared-memory usage (including all arrays), pipeline creation, and one-to-one FA dispatch/work counts. Reject compile failure, shared-memory over-limit, changed topology/work, or output mismatch. No persistent config surface.
+3. **Hardware gate only if offline passes:** ≥4 interleaved process-level pairs on that **exact architecture+driver** with matched pp512/pp2048, tg128, long-context and MTP-depth 3/7 controls where supported; direct FA timing, barrier/sync, E2E throughput, greedy/logits/KLD, MTP acceptance, multi-request/multi-ubatch, memory safety and DeviceLost/timeout checks. Preserve original upstream branch for all other devices.
+4. **Promote only** with positive causal scalar-FA timing and CI95-low **≥3% E2E** gain on the targeted production prefill lane, **≤1% regression** on decode/MTP/other-driver controls, unchanged work and correctness. Otherwise record a terminal rejection and remove disposable variants. Any driver-specific result belongs to existing Vulkan FA tuning/upstream ownership, not a second BigCherry selector.
 
-ggml/src/ggml-vulkan/ggml-vulkan.cpp; patches/12xx_vk_fa_occupancy_shmem_scale/{patch.toml,patch.py,SUMMARY.md}; new offline mock test under tools/tests/.
+## Ownership and consolidation
 
-## Validation
+PRBE65 is the terminal RD82 research/disposition record. Upstream Vulkan scalar FA owns the heuristic and compiled shader. QFP07 owns Flash-Next attention placement; PRBE62 queue-family selection and PRBE68 submission batching are independent and must not be modified or used to explain a limiter A/B. No new scheduler, allocator, shader registry or device table. BCOP54 is the thin audit ledger.
 
-PYTHONPATH=tools python -m bigcherry patch-lint; patch-rebase-check --focal-overlay vk_fa_occupancy_shmem_scale --source bigcherry-tuning; offline mocked-device-trait unit test (step 3/4); hardware: FLASH_ATTN_EXT test-backend-ops parity plus llama-bench FA PP/TG on gfx1030/gfx1100/gfx1201 via python -m bigcherry.patch.validation_campaign (not run here).
+## Historical provenance
 
-## Effort & Risk
-
-S; low blast radius (Vulkan-only, AMD-only branch), risk is picking wrong scale constants without a second real device at a different reported shmem size to validate against -- flag that gap explicitly if only 64KiB-reporting hardware is available.
-
-## Standards
-
-Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
-
-## Acceptance Criteria
-
-Separate heuristic from legality, with no shader over-limit and repeatable occupancy benefit on affected devices; fallback on uncertain capability.
-
-## Notes
-
-Supersedes: RD82
-Migration: capability-rebaseline-v3-2026-09
-Successor key: patching-rdna-boost-experiments-rd82
-
-2026-09-24 relevance at b11126: TODO confirmed, no existing patch and current code still hard-gates on == 65536 (verified via git show b11126:ggml/src/ggml-vulkan/ggml-vulkan.cpp). GPT design request: gateway rejected all submissions this session (VAL-AGW-025 / EXT-GPTAUTO-003, agent_task_gateway_overview); plan authored directly from verified source excerpt -- no GPT request id.
-
-2026-09-24 GPT review req_d55aed71224e43a8 applied: NOT-READY -- added exact expected limit_occupancy_shmem values (vec4-count, /4/4 conversion) for 64/32/16KiB and non-AMD test points instead of leaving the numeric policy to the implementer.
-
-## Change Log
-
-- 2026-09-09T10:58:03.403872+00:00 (created-by): Created by capability-rebaseline-v3
-- 2026-09-09T11:15:11.754779+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
-
-## Ledger-events
-
-- chg_20260909_115759_created-and-populated-the-192_2958
-- 2026-09-09T11:58:01.420235+00:00 (updated-by): Updated: section:ledger-events
-- chg_20260910_001436_completed-the-planning-rebasel_5794
-- 2026-09-10T00:14:43.247665+00:00 (updated-by): Updated: section:ledger-events
-- 2026-09-10T03:17:38.400709+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
-- chg_20260910_031805_repaired-four-more-graph-and-v_2834
-- 2026-09-10T03:18:05.338956+00:00 (updated-by): Updated: section:ledger-events
-- 2026-09-24T02:32:14.639554+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:notes
-- 2026-09-24T04:48:16.562912+00:00 (updated-by): Updated: section:steps
-- 2026-09-24T04:48:22.409370+00:00 (updated-by): Updated: section:notes
+Original 2026-09-09 plan and 2026-09-24 implementation-readiness review proposed scaling 26/30/14 KiB occupancy padding by the reported 32/64 KiB limit, with mocked 16 KiB and non-AMD controls. Those implementation instructions are superseded by the source-level and negative external evidence above; they were **not** implemented or benchmarked in BigCherry. RD82 lineage retained; no patch package existed to retire.

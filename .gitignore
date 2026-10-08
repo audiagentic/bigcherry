@@ -7,8 +7,6 @@ out/
 CMakeCache.txt
 CMakeFiles/
 *_cache/
-AGENTS.md
-CLAUDE.md
 package-lock.json
 
 # -- Compiled objects / binaries --
@@ -32,6 +30,7 @@ package-lock.json
 *.tlog/
 .tmp/
 tmp/
+/_scratch*/
 
 # -- ROCm / HIP compilation artifacts --
 hipBC/
@@ -83,8 +82,6 @@ artifacts/
 .mcp.json
 .pi/
 .roo/
-AGENTS.md
-CLAUDE.md
 COPILOT.md
 GEMINI.md
 QWEN.md
@@ -102,12 +99,12 @@ Icon?
 # -- Logs --
 *.log
 
-# -- Cloned sub-repos (vendored dependencies) --
-# These are cloned repos that live under vendor/. Ignore their contents.
+# -- Cloned sub-repos / upstream snapshots --
+# The canonical upstream checkout lives under vendor/ and is materialized from
+# the configured pin. Do not commit copied upstream source into lab directories.
 vendor/
+tools/lab/**/vendor-*/
 prodtest_loop.sh
-vendor/llama.cpp-stock-b10257-linux
-vendor/llama.cpp-stock-b10327-linux
 
 # -- Shared project procedure (re-included from the .claude/* rule above) --
 # Skills are not user-specific harness config: they encode how to run this
@@ -129,3 +126,6 @@ vendor/llama.cpp-stock-b10327-linux
 # FUSE mount artifacts (/mnt/vault): open-but-replaced files; never tracked, must not mark the tree dirty
 .fuse_hidden*
 .rocprofv3/
+
+# Lab run output is transient; compact evidence belongs under docs/evidence/.
+/tools/lab/native-vs-patched/runs/

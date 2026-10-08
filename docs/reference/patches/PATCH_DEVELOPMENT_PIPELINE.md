@@ -51,9 +51,7 @@ patches, kernel/MTP patches). On each check (every ~10-15 min):
 Reviewer constraints:
 
 - It only sees **pushed** repo files. Commit and push before every request.
-- It cannot see `vendor/llama.cpp`. Commit pristine excerpts of the exact files/functions it
-  must anchor against under `tools/lab/<topic>/vendor-<pin>/`
-  (`git -C vendor/llama.cpp show <sha>:<path>`), and name them in the request.
+- If a reviewer cannot see `vendor/llama.cpp`, provide the exact pinned revision, path, function/anchor text, and any necessary excerpt in the request. Do not commit copied upstream source under `tools/lab/`; materialize or inspect the configured pinned checkout instead.
 - Ask for complete, applyable files (patch.toml, patch.py, tests, validation.toml) with each
   anchor's expected match count, plus the queue rows to run. Verify everything locally
   before trusting it.

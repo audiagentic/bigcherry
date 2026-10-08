@@ -68,6 +68,22 @@ def _patch_ids(paths: Sequence[str]) -> tuple[str, ...]:
     return tuple(sorted(found))
 
 
+def _implementation_patch_ids(paths: Sequence[str]) -> tuple[str, ...]:
+    """Patch implementations changed in this range.
+
+    Metadata-only changes are covered by catalog/governance and composition
+    checks; they do not invent a requirement for a per-package mechanics test.
+    """
+    found: set[str] = set()
+    for path in paths:
+        if not path.startswith("patches/") or not path.endswith("/patch.py"):
+            continue
+        parts = path.split("/", 2)
+        if len(parts) >= 3 and parts[1] and not parts[1].startswith("_"):
+            found.add(parts[1])
+    return tuple(sorted(found))
+
+
 def _env() -> dict[str, str]:
     env = os.environ.copy()
     tools = str(_REPO / "tools")
@@ -136,6 +152,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
 
     patch_ids = _patch_ids(changed)
+    implementation_patch_ids = set(_implementation_patch_ids(changed))
+    changed_test_ids = {
+        match.group(1)
+        for path in changed
+        if (match := _PATCH_TEST_RE.match(path))
+    }
     print(f"range: {base[:12]}..{head[:12]}")
     print(f"changed patch ids: {', '.join(patch_ids) if patch_ids else '(none)'}")
 
@@ -145,23 +167,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         "tools.tests.patch.test_patch_governance",
     ]
     missing_tests: list[str] = []
-    current_patch_ids: list[str] = []
     for patch_id in patch_ids:
         patch_toml = _REPO / "patches" / patch_id / "patch.toml"
         if not patch_toml.is_file():
-            # A deliberately removed patch has no focal overlay to probe; the
-            # catalog/governance tests below must validate the removal.
             continue
-        current_patch_ids.append(patch_id)
         test_path = _REPO / "tools" / "tests" / "patch" / f"test_{patch_id}.py"
-        if not test_path.is_file():
-            missing_tests.append(patch_id)
-        else:
+        if test_path.is_file():
+            # Run an existing mechanics test whenever its package or test
+            # changed. Only implementation edits REQUIRE one; metadata-only
+            # changes are validated by catalog/governance + composition.
             test_modules.append(f"tools.tests.patch.test_{patch_id}")
+        elif patch_id in implementation_patch_ids:
+            missing_tests.append(patch_id)
 
     if missing_tests:
         failed = True
-        message = "missing patch test module(s): " + ", ".join(missing_tests)
+        message = "changed patch.py missing mechanics test module(s): " + ", ".join(missing_tests)
         print(f"patch-offline-check: {message}", file=sys.stderr)
         checks.append({"name": "patch-test-presence", "returncode": 1, "detail": message})
 
@@ -172,39 +193,24 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     failed |= unit_rc != 0
 
-    if current_patch_ids:
-        for patch_id in current_patch_ids:
-            rc = _run(
-                f"rebase {patch_id}",
-                [
-                    sys.executable,
-                    "-m",
-                    "bigcherry",
-                    "patch-rebase-check",
-                    "--source",
-                    args.source,
-                    "--focal-overlay",
-                    patch_id,
-                ],
-                checks,
-            )
-            failed |= rc != 0
-    else:
-        # Harness/config-only changes still prove the production source
-        # composition against the currently pinned upstream checkout.
-        rc = _run(
-            "rebase production source",
-            [
-                sys.executable,
-                "-m",
-                "bigcherry",
-                "patch-rebase-check",
-                "--source",
-                args.source,
-            ],
-            checks,
-        )
-        failed |= rc != 0
+    # Validate the production source once, exactly as release composition is
+    # resolved. A changed package is not necessarily a valid focal overlay on
+    # production (it may be a rejected/superseded package or an alternative
+    # that conflicts with a production module). Named experiments are audited
+    # separately on the source they actually target.
+    rc = _run(
+        "rebase production source",
+        [
+            sys.executable,
+            "-m",
+            "bigcherry",
+            "patch-rebase-check",
+            "--source",
+            args.source,
+        ],
+        checks,
+    )
+    failed |= rc != 0
 
     result = "FAIL" if failed else "PASS"
     payload: dict[str, object] = {

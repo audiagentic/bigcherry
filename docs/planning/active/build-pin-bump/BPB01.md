@@ -51,6 +51,14 @@ patch-rebase-check --all reports every non-rejected patch clean or retired; patc
 
 ## Notes
 
+- 1322_mtp_ahead_overlap — applies at b11474 in experiment.deploy-v6-plus-ahead once required 1321 is present; no 1322 anchor changes needed.
+
+- 1321_mtp_ahead_primitives — re-based for b11474: forced-front/live-tail logic is unchanged; only the MTP n_min post-pass anchor moved with upstream nextn restructuring.
+
+- 1338_moe_cache_profile — applies after rebased 1337 at b11474; no cache-source anchors changed. Test now builds from the current pin and no longer carries retired 1336.
+
+- 1337_moe_expert_caching — re-based for b11474: dropped retired 1336 dependency, retained upstream #29943 selective copy callback, and prepares cache-owned host expert weights in the host-weight pass before delegating ordinary weights to ggml_backend_sched_copy_input.
+
 - 1328_aux_rocm_expert_backend — re-based for b11474: moved the pinned Meta/aux staging hook into upstream's extracted ggml_backend_sched_copy_input fallback; all other anchors still match b11474.
 
 - 1293_sched_single_input_sync — re-based for b11474: carry the once-per-split user-input sync state through upstream's extracted ggml_backend_sched_copy_input helper; production 1326 still composes after it.

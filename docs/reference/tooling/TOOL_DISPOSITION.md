@@ -6,16 +6,18 @@
 
 ## Description
 
-This is the current 820-row control-plane registry for in-scope tooling. The
-registry had 385 rows at TR00 close-out and now includes twelve subsequently
-registered GP10 lab tools, four HI168 investigation tools, and the
-planning-capability-rebaseline-v3 migration pack and scripts, and (2026-10-02) every
-remaining tracked `tools/lab/` file, classified TRANSITIONAL under its topic README. It is
-the maintained disposition authority consumed by `tools/bigcherry/check.py`;
-it is not a raw filesystem snapshot. A row can intentionally name an ignored,
-historical, transitional, or machine-local path when that path's ownership
-decision still needs to be carried forward. Do not infer that every listed
-path is present or executable in the current checkout.
+This is the current control-plane registry for in-scope tooling. The
+registry had 385 rows at TR00 close-out and now records maintained tooling,
+current transitional labs, and explicit ownership decisions for supported
+compatibility or machine-local paths. Retired lab implementations and moved
+run outputs are removed from this live table when they leave `tools/lab/`;
+their provenance remains in plan/evidence records and Git history.
+
+This is the maintained disposition authority consumed by
+`tools/bigcherry/check.py`. It is current-state inventory: every table row names
+one tracked file in this checkout. Historical, machine-local, moved, or deleted
+paths belong in plan/evidence records and Git history rather than as tombstones
+in this live table.
 
 The immutable 383-row implementation-start baseline is preserved in the
 tracked TR00 evidence bundle at
@@ -46,8 +48,7 @@ ownership.
 - Every in-scope row has exactly one path, one disposition, and one rationale.
 - The current registry is the sole live disposition table; do not create a
   second registry in a plan, archive, or new tooling module.
-- `TRANSITIONAL`, `ARCHIVE`, and other non-`KEEP` dispositions describe an
-  ownership decision, not an assertion that the path exists in every checkout.
+- Every disposition row must name a tracked file in the current checkout; remove or replace the row in the same change that removes or moves the file.
 - A move, retirement, graduation, or new lab file requires updating this
   registry, the owning plan/evidence references, and the focused hygiene or
   boundary checks in the same change.
@@ -57,22 +58,6 @@ ownership.
 
 | Path | Disposition | Intended owner / rationale |
 | --- | --- | --- |
-| `.audiagentic/runtime/patch-system/psi_v2_block.py` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `.opencode/node_modules/.bin/download-msgpackr-prebuilds.cmd` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `.opencode/node_modules/.bin/download-msgpackr-prebuilds.ps1` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `.opencode/node_modules/.bin/node-gyp-build-optional-packages-optional.cmd` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `.opencode/node_modules/.bin/node-gyp-build-optional-packages-optional.ps1` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `.opencode/node_modules/.bin/node-gyp-build-optional-packages-test.cmd` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `.opencode/node_modules/.bin/node-gyp-build-optional-packages-test.ps1` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `.opencode/node_modules/.bin/node-gyp-build-optional-packages.cmd` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `.opencode/node_modules/.bin/node-gyp-build-optional-packages.ps1` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `.opencode/node_modules/.bin/node-which.cmd` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `.opencode/node_modules/.bin/node-which.ps1` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `.opencode/node_modules/.bin/uuid.cmd` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `.opencode/node_modules/.bin/uuid.ps1` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `.opencode/node_modules/.bin/yaml.cmd` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `.opencode/node_modules/.bin/yaml.ps1` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `artifacts/2026-08-21-hi35-hi36-27b-r9700/raw/pipeline.sh` | **TRANSITIONAL** | Evidence/reference-local harness; retain until caller and ownership audit completes. |
 | `patches/_template/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
 | `patches/0100_cmake_options/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
 | `patches/0200_dispatch_hook/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
@@ -97,6 +82,9 @@ ownership.
 | `patches/1201_rd20_attn_gate_tp_split/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
 | `patches/1202_rd04_bf16_flash_attn_tile/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
 | `patches/1203_rd050607_rdna4_wmma_fa_q6k_mmq/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `patches/1204_rd08_q6k_mmvq_vdr2/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `patches/1205_rd12_paired_mmvq_dual_output/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `patches/1206_rd13_mul_mat_add_view_fusion/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
 | `patches/1207_rd17_moe_topk_down_fold/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
 | `patches/1208_rd21_gfx1151_mmvq_nwarps_table/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
 | `patches/1209_rd22_integrated_gpu_host_buffer_backout/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
@@ -117,764 +105,352 @@ ownership.
 | `patches/1235_rd09_q81_activation_cache_foundation/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
 | `patches/1236_hi105_deterministic_mul_mat_id_ids/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
 | `patches/1237_rd30_moe_mmq_compact_grid/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
-| `patches/1204_rd08_q6k_mmvq_vdr2/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
-| `patches/1205_rd12_paired_mmvq_dual_output/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
-| `patches/1206_rd13_mul_mat_add_view_fusion/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
-| `tmp/b1-breakdown.sh` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `tmp/b1-check.sh` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `tmp/b1-gate2-strict.py` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `tmp/b1-gates.py` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `tmp/b1-reject.sh` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `tmp/b1-spotcheck.py` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `tmp/b1-sweep.sh` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `tmp/brutus-probe.sh` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `tmp/dedupe-hi65.py` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `tmp/fix_test.py` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `tmp/h35-s1b-equivalence.py` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `tmp/h36-ab-stability.py` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `tmp/h36-addon.sh` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `tmp/h36-brutus-pipeline.sh` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `tmp/h36-key-derivation.py` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `tmp/h36-regret-analysis.py` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `tmp/h36-whatif-misslog.py` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `tmp/h65-runarm-test.bat` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `tmp/h65-runarm.bat` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `tmp/h65-telemetry.bat` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `tmp/h65-typeperf-test.ps1` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `tmp/h68-smoke-v2-analyze.py` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `tmp/h68-smoke-v2.ps1` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `tmp/h68-smoke-v3-analyze.py` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `tmp/h68-smoke-v3.ps1` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `tmp/h68-smoke.ps1` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `tmp/hi65-analyze.py` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `tmp/hi65-analyze2.py` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `tmp/hi65-controls.py` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `tmp/hi65-gates-run.py` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `tmp/hi65-matrix-local.ps1` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `tmp/hi65-matrix.sh` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `tmp/hi65-noisefloor.py` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `tmp/hi65-select-controls.py` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `tmp/hi65-verdicts.py` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `tmp/pi-lens-shadow-probe.py` | **DELETE** | Plan-specific or scratch probe; deletion requires caller/reference proof in TR05. |
-| `tmp/rd-bench-lane.py` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `tmp/rd04-pair-bench.ps1` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `tmp/rd04-pp-bench.ps1` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `tmp/re25_merge/A.py` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `tmp/re25_merge/base_fmt.py` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `tmp/re25_merge/base.py` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `tmp/re25_merge/merged.py` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `tmp/sliceA-configure.bat` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `tmp/t1.bat` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `tmp/tune-off-targeted.ps1` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `tmp/tune-off.ps1` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `tmp/tune-on.ps1` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `tmp/verify_slice_a.py` | **DELETE** | Plan-specific or scratch probe; deletion requires caller/reference proof in TR05. |
-| `tools/lab/hi24-slice-a/verify_slice_a.py` | **TRANSITIONAL** | RA13 plan-owned lab implementation retained behind the documented compatibility wrapper until that entry point is retired. |
-| `tools/lab/hi34-residency-gates/residency_gates.py` | **TRANSITIONAL** | RA12 plan-owned lab implementation retained behind the documented compatibility wrapper until that entry point is retired. |
-| `tools/lab/gp10-collective-harness/nway_star_allreduce.cpp` | **TRANSITIONAL** | GP10 plan-owned early-iteration collective harness; diagnostic-only until GP07/GP08 qualification and disposition. |
-| `tools/lab/gp10-collective-harness/p2p_direct_allreduce.cpp` | **TRANSITIONAL** | GP10 plan-owned P2P diagnostic harness; diagnostic-only until GP07/GP08 qualification and disposition. |
-| `tools/lab/bump-b11126-regression/run_arms.py` | **TRANSITIONAL** | Bump b11126 follow-up: balanced 4-arm llama-bench harness separating upstream vs BigCherry throughput change; one-shot, archive once attributed. |
-| `tools/lab/plan-qualification/summarize.py` | **TRANSITIONAL** | One-line-per-run summary of plan-qualification campaign results (checks, lane effects, contract verdicts). |
-| `tools/lab/plan-qualification/noise.py` | **TRANSITIONAL** | Per-round paired-lane view (outlier rounds, per-arm CV) for campaign noise triage. |
-| `tools/lab/plan-qualification/profile_run.sh` | **TRANSITIONAL** | PVPS10 kernel-coverage profile wrapper (queue `PROFILE` job type) over `bigcherry.patch.campaign.profile`. |
-| `tools/lab/plan-qualification/make-serial-2.sh` | **TRANSITIONAL** | Writes the second plan-qualification job batch from environment-provided host paths. |
-| `tools/lab/plan-qualification/queue.sh` | **TRANSITIONAL** | Sequential per-GPU-lane runner for plan-qualification campaign jobs (restartable; skips finished runs). |
-| `tools/lab/plan-qualification/run_campaign.sh` | **TRANSITIONAL** | RDNA/nasone plan implementation loop: one-GPU validation-campaign launcher with host paths from env and output under work/; graduate into a campaign CLI verb or archive when the loop ends. |
-| `tools/lab/plan-qualification/work-root.sh` | **TRANSITIONAL** | Resolves the campaign work root (env var, else environment.local.toml [env], else work/) for the plan-qualification scripts. |
-| `tools/lab/hw-launch/_hw_launch.sh` | **ARCHIVE** | PA36 one-shot Brutus SSH-backgrounding launcher for the RD13/RD26 hardware legs; campaigns complete, retained as a historical invocation record only. |
-| `tools/lab/hw-launch/_hw_launch_rd04.sh` | **ARCHIVE** | PA36 one-shot Brutus SSH-backgrounding launcher for the RD04 hardware leg; campaign complete, retained as a historical invocation record only. |
-| `tools/lab/hw-launch/_hw_make_rocm_wrap.sh` | **ARCHIVE** | PA36 one-shot ROCm clang-wrapper-prefix setup used by the RD hardware legs; campaigns complete, retained as a historical invocation record only. |
-| `tools/lab/hw-launch/_hw_rd04_gfx1100.sh` | **ARCHIVE** | PA36 RD04/1202 hardware-acceptance receipt script (gfx1100); campaign complete, retained as a historical invocation record only. |
-| `tools/lab/hw-launch/_hw_rd13_gfx1030.sh` | **ARCHIVE** | PA36 RD13/1206 hardware-acceptance receipt script (gfx1030); campaign complete, retained as a historical invocation record only. |
-| `tools/lab/hw-launch/_hw_rd26_gfx1100.sh` | **ARCHIVE** | PA36 RD26/1210 hardware-acceptance receipt script (gfx1100); campaign complete, retained as a historical invocation record only. |
-| `tools/lab/gp10-collective-harness/p2p-diagnostics/analyze_decode_trace.py` | **TRANSITIONAL** | GP10 plan-owned analysis helper for P2P diagnostics; not production tooling or evidence authority. |
-| `tools/lab/gp10-collective-harness/p2p-diagnostics/asyncprobe.cpp` | **TRANSITIONAL** | GP10 plan-owned P2P diagnostic probe; not production tooling or evidence authority. |
-| `tools/lab/gp10-collective-harness/p2p-diagnostics/dispatch_overhead.cpp` | **TRANSITIONAL** | GP10 plan-owned P2P diagnostic probe; not production tooling or evidence authority. |
-| `tools/lab/gp10-collective-harness/p2p-diagnostics/dmabench.cpp` | **TRANSITIONAL** | GP10 plan-owned P2P diagnostic probe; not production tooling or evidence authority. |
-| `tools/lab/gp10-collective-harness/p2p-diagnostics/p2p_bwval.cpp` | **TRANSITIONAL** | GP10 plan-owned correctness-validated P2P diagnostic probe; not production tooling or evidence authority. |
-| `tools/lab/gp10-collective-harness/p2p-diagnostics/p2p_coh.cpp` | **TRANSITIONAL** | GP10 plan-owned P2P coherence diagnostic probe; not production tooling or evidence authority. |
-| `tools/lab/gp10-collective-harness/p2p-diagnostics/p2p_d2d.cpp` | **TRANSITIONAL** | GP10 plan-owned P2P diagnostic probe; not production tooling or evidence authority. |
-| `tools/lab/gp10-collective-harness/p2p-diagnostics/p2p_diag.cpp` | **TRANSITIONAL** | GP10 plan-owned P2P diagnostic probe; not production tooling or evidence authority. |
-| `tools/lab/gp10-collective-harness/p2p-diagnostics/p2p_spin.cpp` | **TRANSITIONAL** | GP10 plan-owned P2P diagnostic probe; not production tooling or evidence authority. |
-| `tools/lab/gp10-collective-harness/p2p-diagnostics/p2p_write.cpp` | **TRANSITIONAL** | GP10 plan-owned P2P diagnostic probe; not production tooling or evidence authority. |
 | `tools/bigcherry/__init__.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
 | `tools/bigcherry/__main__.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/ab_benchmark.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/analyze_gaps.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/artifacts.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/autotune_catalog.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/autotune_schema.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/bandit_simulator.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/builds.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/campaign_build.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/campaign_execution.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/campaign_graph.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/campaign_lane.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/campaign_plan.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/campaign_planner.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/campaign_resolution.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/campaign_source.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/campaign_workers.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/campaign.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/candidate_binary_size.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
+| `tools/bigcherry/analysis/candidate_report.py` | **KEEP** | Maintained analysis implementation; invoke with `PYTHONPATH=tools python -m bigcherry.analysis.candidate_report`. |
 | `tools/bigcherry/check.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/compare_tunes.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/comparisons.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/compile_check.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/config.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/context.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/correctness_evidence.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/csource.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
 | `tools/bigcherry/device_state_validate.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
 | `tools/bigcherry/doctor.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
 | `tools/bigcherry/e2e_smoke_campaign.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
 | `tools/bigcherry/e2e_smoke_report.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/experiment_bundle.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/experiment_contract.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/focal_source_plans.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
 | `tools/bigcherry/generalise.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/generated_tree.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
 | `tools/bigcherry/graph_lifecycle_evidence.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
 | `tools/bigcherry/hi16_forced_native_parity.py` | **GRADUATE** | Generic native-versus-forced parity mechanics; extract behind a maintained correctness API without retaining HI16 naming. |
 | `tools/bigcherry/hi18_run_corpus.py` | **TRANSITIONAL** | HI18-specific corpus runner; separate reusable reduction correctness from plan-specific corpus data before graduation. |
 | `tools/bigcherry/hi80_generate_correctness_evidence.py` | **GRADUATE** | Generic correctness-evidence generation mechanics; extract behind the maintained evidence API before retiring historical entrypoint. |
 | `tools/bigcherry/identity_separation.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/impact.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
 | `tools/bigcherry/inventory.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/kernel_fraction.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
 | `tools/bigcherry/lifecycle.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
 | `tools/bigcherry/moe_hostile_routing_sweep.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
 | `tools/bigcherry/moe_routing_gen.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/multi_gpu_validate.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
 | `tools/bigcherry/parity_loaders.py` | **TRANSITIONAL** | Historical parity/cutover helper; retain until permanent invariant ownership and zero-caller proof. |
 | `tools/bigcherry/parity.py` | **TRANSITIONAL** | Historical parity/cutover helper; retain until permanent invariant ownership and zero-caller proof. |
-| `tools/bigcherry/patch_activation.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/patch_catalog.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/patch_lifecycle.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/patch_registry.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/patch_source_isolation.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/patch_validation_campaign.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/patch_validation_evidence.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/patch_validation.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
 | `tools/bigcherry/patcher.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/patchset.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/paths.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/pin_status.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
 | `tools/bigcherry/pin_transition.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/pipeline.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
 | `tools/bigcherry/pool_protocol.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/promotion_correctness_gate.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/promotion.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/provenance.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
 | `tools/bigcherry/rank_replay.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/ranking_policy.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/rd08_correctness_evidence.py` | **PACKAGE-LOCAL** | Moved to `patches/1204_rd08_q6k_mmvq_vdr2/validation/rd08_correctness.py`; global implementation deleted after retaining semantic tests. Wiring remains deferred until source/build pairing is guaranteed. |
 | `tools/bigcherry/re14_real_run.py` | **TRANSITIONAL** | Historical acceptance harness; preserve campaign/artifact invariants before retirement. |
 | `tools/bigcherry/re15_acceptance_run.py` | **TRANSITIONAL** | Historical acceptance harness; preserve campaign/artifact invariants before retirement. |
 | `tools/bigcherry/re15_tamper_evidence.py` | **TRANSITIONAL** | Historical tamper/evidence harness; retain until integrity checks have a permanent owner. |
 | `tools/bigcherry/recipes.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/reduce_correctness.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
 | `tools/bigcherry/release_validate.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/releases.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
 | `tools/bigcherry/replay_build_audit.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
 | `tools/bigcherry/replay_cache.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/replay_inspect.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/report.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/resource_report.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/resources.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
 | `tools/bigcherry/rocprof.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/runtime_smoke.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/signature_correctness_mapping.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/source_audit.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/source_identity.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/sources.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/symbol_map.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/telemetry.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/toolchain.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
 | `tools/bigcherry/transform_loader.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
 | `tools/bigcherry/transform_records.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/tune_journal.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/tune_promotion.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/upstream.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
 | `tools/bigcherry/validate_rd_patches.py` | **TRANSITIONAL** | Historical RD validator; generic validation remains authoritative. |
 | `tools/bigcherry/vk_autotune_types.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/workspace.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/analysis/candidate_report.py` | **KEEP** | Maintained analysis implementation; invoke with `PYTHONPATH=tools python -m bigcherry.analysis.candidate_report`. |
-| `tools/pi-lens-shadow-probe.py` | **DELETE** | Unreferenced scratch probe; zero current callers/references confirmed during TR05.
-| `tools/residency_gates.py` | **MOVE** | HI34 plan-specific gate moved to non-package `tools/lab/hi34-residency-gates/`; root wrapper retained for tests/legacy CLI. |
-| `tools/rocm-env.ps1` | **MOVE** | Environment bootstrap; canonical destination tools/env/ in TR05. |
-| `tools/rocm-env.sh` | **MOVE** | Environment bootstrap; canonical destination tools/env/ in TR05. |
-| `tools/tests/test_ab_benchmark.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_analyze_gaps.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_ancestry_check.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_artifacts_provenance.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_autotune_catalog_compile_input_stability.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_bandit_simulator.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_blake2b_cross_lang_vectors.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_blas_plan_contract.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_build_descriptor.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_build_flip.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_build_identity.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_campaign_build_flip.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_campaign_build.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_campaign_cutover_audit.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_campaign_execution.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_campaign_graph.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_campaign_lane.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_campaign_plan.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_campaign_planner.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_campaign_resolution.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_campaign_source.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_campaign_workers_build.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_candidate_binary_size.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_candidate_coverage.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_catalog_resource_blacklist.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_catalog_snapshot.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_check.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_cli_audit_stage.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_cli_patches_catalog_filter.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_cli_portability.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_compare_tunes.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_comparisons_promotion.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_config_v2.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_config.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_context.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_correctness_evidence.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_coverage_patch_anchor.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_db_migration.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_device_state_validate.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_dispatch_safety.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_e2e_smoke_campaign_identity.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_e2e_smoke_campaign_s3b.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_e2e_smoke_report_bench_validation.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_experiment_bundle.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_experiment_contract_cli.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_experiment_contract.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_external_sources.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_focal_source_plans.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_generalise.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_generated_layout.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_generated_tree.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_graph_lifecycle_evidence.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_hi09_catalog_completeness.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_hi101_workload_cache.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_hi16_correctness_reference.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_hi16_forced_native_parity.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_hi17_blas_runtime_seam.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_hi18_reduce_correctness_probe.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_hi18_run_corpus.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_hi24_canary_summary.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_hi24_double_native.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_hi24_hot_list_py.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_hi24_hot_list.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_hi25_readiness.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_hi26_offline_readiness.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_hi34_flush.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_hi37_workload_digest.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_hi37_workload_overlap.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_hi53_native_wrapper_parity.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_hi65_pre_sample.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_hi67_correctness_evidence_schema.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_hi67_correctness_metrics_patch.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_hi67_deterministic_seed_patch.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_hi68_canary_decision.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_hi68_probe_contract.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_hi69_correctness_timing.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_hi73_reachability.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_hi80_generate_correctness_evidence.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_hi85_nccl_heterogeneous_arch_guard.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_hi92_dispatch_counters.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_hi93_hardware_identity_cache.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_hi97_runtime_flat.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_hi99_tuner_config_macro.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_identity_separation.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_impact.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_inventory.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_kernel_fraction.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_moe_hostile_routing_sweep.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_moe_routing_gen.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_multi_gpu_validate.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_native_select_timing.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_overlay_sync_audit.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_parity_loaders.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_parity.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_patch_1233_rd73_graph_cache_key.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_patch_1234_rd58_pin_state_buffer.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_patch_1236_hi105_deterministic_mul_mat_id_ids.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_patch_activation.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_patch_catalog.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_patch_explain_graph.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_patch_governance.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_patch_lifecycle.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_patch_migrations.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_patch_registry.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_patch_resolution.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_patch_selection.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_patch_source_isolation.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_patch_validation_campaign_trace_probes.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_patch_validation_contract.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_patch_validation_evidence.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_patch_validation_plan_integration.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_patch_validation.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_patcher.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_pin_status.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_pipeline.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_pool_protocol.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_promotion_correctness_gate.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_rank_replay.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_ranking_policy.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_rd08_correctness_evidence.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_rd09_q81_cache_foundation.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_rd30_hostile_routing.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_rd54_mmvq_narrow_moe_coverage.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_re04_materialization_safety.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_re07_build_identity.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_re07_smoke_bundle_consumption.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_re08_provenance_import_boundary.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_re09_schema_v4.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_re10_lifecycle.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_re12_comparisons.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_re13_promotion_wiring.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_re25_3_sticky_taint.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_re25_artifact_descriptors.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_recipes.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_reduce_correctness.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_release_validate.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_releases.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_replay_cache_promotion_gate.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_replay_cache_wire.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_replay_inspect.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_replay_v5.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_report.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_residency_gates.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_resource_report.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_rocprof.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_runtime_smoke.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_signature_correctness_mapping.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_source_audit.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_source_identity.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_source_plan_patch_contract_links.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_split_reduce_telemetry.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_telemetry.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_transform_loader.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_transform_records.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_tune_journal.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_tune_promotion.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_tuner_artifact_json.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_upstream.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_variant_params.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_verify_slice_a.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_vk_autotune_types.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_vulkan_audit.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/tests/test_workspace.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
-| `tools/verify_slice_a.py` | **MOVE** | HI24 plan-specific verifier moved to non-package `tools/lab/hi24-slice-a/`; root wrapper retained for tests/legacy CLI. |
-
-## Planning capability rebaseline v3 temporary tooling
-
-| Path | Disposition | Owner and rationale |
-| --- | --- | --- |
-| `tools/lab/planning-capability-rebaseline-v3/scripts/generate_inventory.py` | **TRANSITIONAL** | Planning capability rebaseline v3: read-only frozen-plan inventory/reference generator; migration-local and not planning/evidence authority. |
-| `tools/lab/planning-capability-rebaseline-v3/scripts/seed_review_manifests.py` | **TRANSITIONAL** | Migration-local draft manifest seeder; outputs explicitly unapproved review data and never mutates canonical planning state. |
-| `tools/lab/planning-capability-rebaseline-v3/scripts/analyze_lifecycle_cues.py` | **TRANSITIONAL** | Migration-local lifecycle review hint generator; cues require human adjudication and never allocate IDs. |
-| `tools/lab/planning-capability-rebaseline-v3/scripts/apply_gpt_lifecycle_review.py` | **TRANSITIONAL** | Migration-local advisory GPT evidence importer; never approves dispositions, allocates IDs, or mutates plan files. |
-| `tools/lab/planning-capability-rebaseline-v3/scripts/reconcile_lifecycle_reviews.py` | **TRANSITIONAL** | Migration-local independent-review reconciliation report; never selects dispositions or allocates IDs. |
-| `tools/lab/planning-capability-rebaseline-v3/scripts/reconcile_semantic_reviews.py` | **TRANSITIONAL** | Migration-local field-by-field reconciliation of independent semantic reviews; never selects a winner or allocates IDs. |
-| `tools/lab/planning-capability-rebaseline-v3/scripts/validate_semantic_carryforward.py` | **TRANSITIONAL** | Migration-local carryforward validator for the v3 semantic review pack; never selects a winner or allocates IDs. |
-| `tools/lab/planning-capability-rebaseline-v3/scripts/freeze_review_snapshot.py` | **TRANSITIONAL** | Fail-closed snapshot writer for an approved manifest bundle before successor allocation. |
-| `tools/lab/planning-capability-rebaseline-v3/scripts/apply_semantic_review.py` | **TRANSITIONAL** | Advisory seven-field semantic review importer; requires exact active-ID coverage and never approves rows. |
-| `tools/lab/planning-capability-rebaseline-v3/scripts/approve_semantic_review.py` | **TRANSITIONAL** | Explicit semantic evidence gate; requires a scoped approval basis and exact 200-row active coverage before setting approval state. |
-| `tools/lab/planning-capability-rebaseline-v3/scripts/align_lifecycle_graph.py` | **TRANSITIONAL** | Aligns provisional successor/disposition/lineage manifests with terminal lifecycle classifications before approval. |
-| `tools/lab/planning-capability-rebaseline-v3/scripts/allocate_successor_ids.py` | **TRANSITIONAL** | Allocates deterministic, collision-checked capability namespace IDs after review validation and before ag-planning creation. |
-| `tools/lab/planning-capability-rebaseline-v3/scripts/approve_graph.py` | **TRANSITIONAL** | Fail-closed approval gate for lifecycle, disposition, successor-spec, and lineage consistency. |
-| `tools/lab/planning-capability-rebaseline-v3/scripts/render_successor_specs.py` | **TRANSITIONAL** | Renders reviewed successor specifications from approved semantic evidence without mutating canonical plans. |
-| `tools/lab/planning-capability-rebaseline-v3/scripts/retarget_terminal_references.py` | **TRANSITIONAL** | Reclassifies references/dependencies that targeted successors removed by terminal lifecycle alignment. |
-| `tools/lab/planning-capability-rebaseline-v3/scripts/validate_manifests.py` | **TRANSITIONAL** | Planning capability rebaseline v3: fail-closed source/disposition/lineage/reference validator; migration-local and not production tooling. |
-| `tools/lab/planning-capability-rebaseline-v3/scripts/render_operations.py` | **TRANSITIONAL** | Planning capability rebaseline v3: emits a non-mutating JSONL execution plan for ag-planning/ag-ledger; deliberately does not mutate canonical lifecycle state itself. |
-| `tools/lab/planning-capability-rebaseline-v3/scripts/refresh_pack_manifest.py` | **TRANSITIONAL** | Migration-local manifest maintenance helper; refreshes pack metadata only and is not planning/evidence authority. |
-| `tools/lab/planning-capability-rebaseline-v3/scripts/apply_reference_decisions.py` | **TRANSITIONAL** | Planning capability rebaseline v3: fail-closed, occurrence-based reference/dependency migration; dry-run by default and never performs global replacements. |
-| `tools/lab/planning-capability-rebaseline-v3/AGENT_PROMPT.md` | **TRANSITIONAL** | Migration-local execution prompt; retained with the v3 pack and not planning/evidence authority. |
-| `tools/lab/planning-capability-rebaseline-v3/EXECUTION.md` | **TRANSITIONAL** | Migration-local procedure; retained with the v3 pack and not production tooling. |
-| `tools/lab/planning-capability-rebaseline-v3/MANIFEST_MODEL.md` | **TRANSITIONAL** | Migration-local manifest contract; retained with the v3 pack and not planning/evidence authority. |
-| `tools/lab/planning-capability-rebaseline-v3/PACK_MANIFEST.json` | **TRANSITIONAL** | Migration pack metadata; retained with the v3 pack and not evidence authority. |
-| `tools/lab/planning-capability-rebaseline-v3/PLACEMENT.md` | **TRANSITIONAL** | Migration-local placement and disposition guidance. |
-| `tools/lab/planning-capability-rebaseline-v3/REVIEW_PROTOCOL.md` | **TRANSITIONAL** | Migration-local semantic review protocol; retained with the v3 pack. |
-| `tools/lab/planning-capability-rebaseline-v3/SOURCE_LOCK.json` | **TRANSITIONAL** | Immutable migration source lock; retained with the v3 pack. |
-| `tools/lab/planning-capability-rebaseline-v3/TOOL_DISPOSITION_SNIPPET.md` | **TRANSITIONAL** | Migration-local registry guidance; retained with the v3 pack. |
-| `tools/lab/planning-capability-rebaseline-v3/templates/DEPENDENCY_REMAP.tsv` | **TRANSITIONAL** | Migration review template; not a production dependency registry. |
-| `tools/lab/planning-capability-rebaseline-v3/templates/DISPOSITIONS.csv` | **TRANSITIONAL** | Migration review template; not canonical plan state. |
-| `tools/lab/planning-capability-rebaseline-v3/templates/LINEAGE.csv` | **TRANSITIONAL** | Migration lineage review template; not canonical plan state. |
-| `tools/lab/planning-capability-rebaseline-v3/templates/NAMESPACES.csv` | **TRANSITIONAL** | Migration namespace review template; not canonical plan state. |
-| `tools/lab/planning-capability-rebaseline-v3/templates/REFERENCE_DECISIONS.tsv` | **TRANSITIONAL** | Migration reference review template; not canonical repository references. |
-| `tools/lab/planning-capability-rebaseline-v3/templates/SUCCESSOR_SPEC.md` | **TRANSITIONAL** | Migration successor specification template; successor authority remains ag-planning. |
-| `tools/lab/planning-capability-rebaseline-v3/templates/SUCCESSORS.csv` | **TRANSITIONAL** | Migration successor review template; successor authority remains ag-planning. |
-| `tools/lab/planning-capability-rebaseline-v3/templates/SEMANTIC_REVIEW.csv` | **TRANSITIONAL** | Migration semantic-review template; advisory review input and not canonical plan state. |
-| `tools/lab/planning-capability-rebaseline-v3/review-evidence/GPT_LIFECYCLE_REVIEW_2026-09-09.csv` | **TRANSITIONAL** | Dated GPT lifecycle adjudication evidence for the v3 migration; not canonical plan state. |
-| `tools/lab/planning-capability-rebaseline-v3/review-evidence/GPT_REMAINING_LIFECYCLE_REVIEW_2026-09-09.csv` | **TRANSITIONAL** | Dated GPT lifecycle adjudication evidence for the remaining active rows; not canonical plan state. |
-| `tools/lab/planning-capability-rebaseline-v3/review-evidence/MANUAL_LIFECYCLE_RESOLUTIONS_2026-09-09.csv` | **TRANSITIONAL** | Explicit source-backed resolutions for GPT-ambiguous lifecycle rows; not canonical plan state. |
-| `tools/lab/planning-capability-rebaseline-v3/review-evidence/MANUAL_LIFECYCLE_RESOLUTIONS_REMAINING_2026-09-09.csv` | **TRANSITIONAL** | Source-backed resolutions for conflicts between GPT and independent lifecycle reviews; not canonical plan state. |
-| `tools/lab/planning-capability-rebaseline-v3/review-evidence/LUNA_LIFECYCLE_REVIEW_2026-09-09.csv` | **TRANSITIONAL** | Independent Luna lifecycle review evidence for cross-checking GPT classifications; not canonical plan state. |
-| `tools/lab/planning-capability-rebaseline-v3/review-evidence/LUNA_SEMANTIC_REVIEW_2026-09-09.csv` | **TRANSITIONAL** | Independent Luna semantic review evidence for the 200 active frozen items; advisory migration evidence, not canonical plan state. |
-| `tools/lab/planning-capability-rebaseline-v3/review-evidence/SEMANTIC_APPROVAL_2026-09-09.json` | **TRANSITIONAL** | Explicit scoped approval basis for using Luna semantic evidence as primary after GPT evidence failed closed; not canonical plan state. |
-
-## HI172 kernel-trace investigation tooling
-
-| Path | Disposition | Owner and rationale |
-| --- | --- | --- |
-| `tools/lab/hi172-kernel-trace/config-27b-dual-xtx.json` | **TRANSITIONAL** | THA16/HI172: retained diagnostic campaign configuration for the completed dispatch-overhead investigation. |
-| `tools/lab/hi172-kernel-trace/config-gpu0-longgen.json` | **TRANSITIONAL** | THA16/HI172: retained diagnostic campaign configuration for the completed dispatch-overhead investigation. |
-| `tools/lab/hi172-kernel-trace/config-gpu0-realprompt.json` | **TRANSITIONAL** | THA16/HI172: retained diagnostic campaign configuration for the completed dispatch-overhead investigation. |
-| `tools/lab/hi172-kernel-trace/config-gpu0.json` | **TRANSITIONAL** | THA16/HI172: retained diagnostic campaign configuration for the completed dispatch-overhead investigation. |
-| `tools/lab/hi172-kernel-trace/run.py` | **TRANSITIONAL** | THA16/HI172: reusable diagnostic runner retained as investigation provenance; not a production benchmark engine. |
-| `tools/lab/hi172-kernel-trace/run_perf.py` | **TRANSITIONAL** | THA16/HI172: reusable perf diagnostic runner retained as investigation provenance; not a production benchmark engine. |
-
-## RD87 hipBLASLt oracle tooling
-
-| Path | Disposition | Owner and rationale |
-| --- | --- | --- |
-| `tools/lab/rd87-hipblaslt-oracle/analyze_results.py` | **TRANSITIONAL** | PRBE26/RD87: retained negative-finding analysis for captured decode GEMM shapes; not a production dispatch path. |
-| `tools/lab/rd87-hipblaslt-oracle/rd87_comparison.csv` | **TRANSITIONAL** | PRBE26/RD87: retained immutable comparison output and investigation provenance. |
-| `tools/lab/rd87-hipblaslt-oracle/rd87_shapes.sample.json` | **TRANSITIONAL** | PRBE26/RD87: retained sample input for the completed oracle analysis; not a canonical tuning catalog. |
-
-## HI168 retained investigation tools
-
-| Path | Disposition | Owner and rationale |
-| --- | --- | --- |
-| `tools/lab/gp11-replay-bench/ab-balanced.sh` | **TRANSITIONAL** | HI168: preserve the executing historical server comparison; future runs belong in the maintained campaign path. |
-| `tools/lab/gp11-replay-bench/analyse.py` | **TRANSITIONAL** | HI168: retained historical-log analysis with fail-closed activation checks; not evidence authority. |
-| `tools/lab/gp11-replay-bench/dispatch-counters.sh` | **TRANSITIONAL** | HI168: historical diagnostic capture pending migration to maintained profiling. |
-| `tools/lab/gp11-replay-bench/tune-per-card.sh` | **TRANSITIONAL** | HI168: retained investigation provenance; use tune-campaign for new tuning. |
-| `tools/lab/va26-rd08-parity/run.py` | **TRANSITIONAL** | VA26: diagnostic driver proving the new qualification_execution orchestrator + qualification_rd08 adapter reproduce RD08's existing real-hardware verdict; answered, retained as a worked example pending a maintained CLI entry point (deliberately not added yet, per VA26's own design review). |
-| `tools/lab/rd87-hipblaslt-oracle/extract_shapes.py` | **TRANSITIONAL** | RD87: extracts deduped real GEMM/MMVQ dispatch shapes + native timing from a tune-campaign measurements.jsonl; answered/negative-finding, retained as investigation provenance. |
-| `tools/lab/rd87-hipblaslt-oracle/run_bench.sh` | **TRANSITIONAL** | RD87: drives `hipblaslt-bench` (heuristic vs all-solutions) over the extracted real shapes on Brutus; answered/negative-finding, retained as investigation provenance. |
-| `tools/lab/pa25/audit_receipt_20260919.json` | **TRANSITIONAL** | PA25: read-only focal-evidence/G4/G7 consistency audit receipt for the seven promoted/touched patches at the recorded BigCherry + llama.cpp revisions; diagnostic snapshot, not a maintained tool or evidence authority. |
-| `tools/lab/pa25/run_audit.py` | **TRANSITIONAL** | PA25: read-only audit driver resolving catalog/registry/campaign identities for the seven focal patches; never writes campaign records; not production tooling or evidence authority. |
-| `tools/lab/pa30/pa30-g1-ab-advisories.json` | **TRANSITIONAL** | PA30: G1 representative-performance A/B advisories (bigcherry-native vs bigcherry-serving-base); gate receipt, not a maintained tool. |
-| `tools/lab/pa30/pa30-g1-ab-run.json` | **TRANSITIONAL** | PA30: G1 representative-performance A/B run record; gate receipt, not a maintained tool. |
-| `tools/lab/pa30/pa30-g1-ab-server-config.json` | **TRANSITIONAL** | PA30: G1 ab-benchmark `--server-config` input for the representative-performance A/B; gate input, not a maintained tool. |
-| `tools/lab/pa30/pa30-g1-ab-summary.json` | **TRANSITIONAL** | PA30: G1 representative-performance A/B summary (6 rotated pairs, clean shutdowns, dual-gfx1100 attestations verified); gate receipt, not a maintained tool. |
-| `tools/lab/pa30/pa30-g4-tuning-smoke-receipt.json` | **TRANSITIONAL** | PA30: G4 tuning-smoke gate receipt; diagnostic, not a maintained tool. |
-| `tools/lab/pa30/pa30-g5-0830-reduce-telemetry-sample.jsonl` | **TRANSITIONAL** | PA30: G5 0830 reduce/telemetry measurement sample; gate receipt, not a maintained tool. |
-| `tools/lab/pa30/pa30-g5-1100-corpus-measurements.jsonl` | **TRANSITIONAL** | PA30: G5 1100 corpus measurements; gate receipt, not a maintained tool. |
-| `tools/lab/pa30/pa30-hardware-receipt.json` | **TRANSITIONAL** | PA30: overall hardware gate receipt for the semantic-equivalence gates before deleting framework/native names; diagnostic, not a maintained tool. |
-| `tools/lab/patch1000/run_pa35_step1.py` | **TRANSITIONAL** | PA35 step 1: one-off gfx1201 hardware-evidence driver for patch 1000 (control vs subject backend-ops Q2_K/Q6_K correctness + perf); per GPT `req_71c1aaa166f446a1`, deliberately not shared production code. |
-| `tools/lab/patch1000/patch1000_verification.py` | **TRANSITIONAL** | PA43: patch 1000 backend-ops/llama-bench verification helpers moved verbatim out of `bigcherry.patch.validation_campaign` (never dispatched by the production CLI); loaded by path from `run_pa35_step1.py` and `tools/tests/patch/test_patch1000_verification.py`. |
-| `tools/lab/rd04-correctness/run_real.py` | **TRANSITIONAL** | RD04/PA36: real-hardware driver for `run_rd04_contract_correctness()` across gfx1100/gfx1201/gfx1030 (no CLI flag yet); diagnostic, not a maintained tool. |
-| `tools/lab/rd12-correctness/run_real.py` | **TRANSITIONAL** | RD12/PA36: real-hardware driver for the 1205 RD12 patch-local producer through the generic dispatcher (replaces the deleted CLI driver); diagnostic, not a maintained tool. |
-| `tools/lab/rd13-backend-reference/run_real.py` | **TRANSITIONAL** | RD13/PA36: real-hardware driver for `run_rd13_backend_reference_check()` on gfx1100 (no CLI flag yet); diagnostic, not a maintained tool. |
-| `tools/lab/rd25-block08-review/block08.diff` | **TRANSITIONAL** | RD25: upstream rdna-boosts block 08 review artifact (commit `5efcd85f`); read-only review input, not a BigCherry patch or evidence authority. |
-| `tools/lab/rd26-bit-identity/run_real.py` | **TRANSITIONAL** | RD26/PA36: real-hardware driver for `run_rd26_decode_verify_bit_identity_check()` on gfx1100 (no CLI flag yet; a FAIL is real evidence of the documented 2-of-5 determinism-cluster gap); diagnostic, not a maintained tool. |
-| `tools/lab/rd30-correctness/run_real.py` | **TRANSITIONAL** | RD30/PA36: real-hardware driver for `run_rd30_correctness_check()` on gfx1100 (no CLI flag yet); diagnostic, not a maintained tool. |
-
-Inventory count: 403 script/tool files (vendor, build/cache, and artifacts excluded).
-
-## Baseline blockers: reviewed and dispositioned (2026-08-25)
-
-- RD19 evidence-state defect: resolved independently under **PA05** (completed) — owner deliberately demoted `1200_rd19_single_gpu_meta_bypass` from `validated` back to `untested` rather than fabricate HI83 hardware evidence. `bigcherry check --quick` now passes (`patch-catalog: ok`). Tracking review **RV82** closed as incorporated.
-- `overlay.vendor_sync` (default/full check): remains a live, unrelated finding — 7 `ggml-cuda/hip-autotune-*` files differ between `src/` and the compiled `vendor/llama.cpp` tree at review time, consistent with in-progress uncommitted edits elsewhere in this working tree. Not a TR00 defect; not repaired here.
-- Legacy flat subject-digest test failure (`test_legacy_flat_without_state_uses_implementation_identity`): root-caused and fixed. It was a Windows-only test-fixture bug — the fixture wrote its file via `path.write_text(...)`, which Windows silently translates `\n` to `\r\n` on disk, desyncing the raw-byte comparison (`_sha256_file`) from `patch_validation_subject_digest`'s text-mode (universal-newline) read. Fixed by writing the fixture with `path.write_bytes(...)` instead; no change to `patch_validation_subject_digest` itself. Full module (25 tests) now passes.
-- Windows symlink-privilege error (`test_rv80_symlink_escape_rejected`): confirmed pre-existing and environment-specific (also independently logged in RD30.md); left as-is, not a TR00 concern.
-
-## RHA12 pin-bump validation
-
-| Path | Disposition | Owner and rationale |
-| --- | --- | --- |
-| `tools/lab/bump-validation/run_bump_validation.py` | **KEEP** | RHA12: standing bump-validation matrix (PIN_BUMP.md step 5/6) -- builds fresh at the current pin and launches the real production runtime-profiles across every real GPU individually plus the real dual-XTX multi-GPU topology; run on every future bump, not a one-shot experiment. |
-| `tools/lab/bump-validation/smoke_worker.py` | **KEEP** | RHA12: the real per-cell delegate_argv worker run_bump_validation.py's runtime-matrix cells launch -- reuses ServerRunner to actually start each server, wait for /health, send one real completion, and shut down cleanly; part of the same standing bump-validation tool, not a one-shot experiment. |
-| `tools/lab/allreduce-wire/vendor-b11233/allreduce.cu` | **TRANSITIONAL** | `allreduce-wire` lab topic file (see `tools/lab/allreduce-wire/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/allreduce-wire/vendor-b11233/allreduce.cuh` | **TRANSITIONAL** | `allreduce-wire` lab topic file (see `tools/lab/allreduce-wire/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/allreduce-wire/vendor-b11233/ggml-cuda.cu.comm-950-1260.txt` | **TRANSITIONAL** | `allreduce-wire` lab topic file (see `tools/lab/allreduce-wire/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/ar-accuracy/gates.py` | **TRANSITIONAL** | `ar-accuracy` lab topic file (see `tools/lab/ar-accuracy/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/ar-accuracy/kld.sh` | **TRANSITIONAL** | `ar-accuracy` lab topic file (see `tools/lab/ar-accuracy/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/ar-accuracy/queue-ar-accuracy.sh` | **TRANSITIONAL** | `ar-accuracy` lab topic file (see `tools/lab/ar-accuracy/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/ar-accuracy/queue-kld-adaptive.sh` | **TRANSITIONAL** | `ar-accuracy` lab topic file (see `tools/lab/ar-accuracy/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/ar-accuracy/queue-kld-decode.sh` | **TRANSITIONAL** | `ar-accuracy` lab topic file (see `tools/lab/ar-accuracy/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/ar-accuracy/queue-p2p-accuracy.sh` | **TRANSITIONAL** | `ar-accuracy` lab topic file (see `tools/lab/ar-accuracy/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/deepseek/probe-v4-flash.sh` | **TRANSITIONAL** | `deepseek` lab topic file (see `tools/lab/deepseek/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/deepseek/queue-v4-flash.sh` | **TRANSITIONAL** | `deepseek` lab topic file (see `tools/lab/deepseek/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/bump-validation/run_bump_validation.py` | **KEEP** | RHA12: standing bump-validation matrix (PIN_BUMP.md step 5/6) -- builds fresh at the current pin and launches the real production runtime-profiles across every real GPU individually plus the real dual-XTX multi-GPU topology; run on every future bump, not a one-shot experiment. |
+| `tools/lab/bump-validation/smoke_worker.py` | **KEEP** | RHA12: the real per-cell delegate_argv worker run_bump_validation.py's runtime-matrix cells launch -- reuses ServerRunner to actually start each server, wait for /health, send one real completion, and shut down cleanly; part of the same standing bump-validation tool, not a one-shot experiment. |
+| `tools/lab/default-on/smoke-0910.sh` | **TRANSITIONAL** | `default-on` lab topic file (see `tools/lab/default-on/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/default-on/xmodel-ab.sh` | **TRANSITIONAL** | `default-on` lab topic file (see `tools/lab/default-on/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/dflash/dflash-depth.sh` | **TRANSITIONAL** | `dflash` lab topic file (see `tools/lab/dflash/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/dflash/probe-27b.sh` | **TRANSITIONAL** | `dflash` lab topic file (see `tools/lab/dflash/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/dflash/queue-27b-cpuroot.sh` | **TRANSITIONAL** | `dflash` lab topic file (see `tools/lab/dflash/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/dflash/queue-27b-detail.sh` | **TRANSITIONAL** | `dflash` lab topic file (see `tools/lab/dflash/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/dflash/queue-27b-dflash.sh` | **TRANSITIONAL** | `dflash` lab topic file (see `tools/lab/dflash/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/dflash/queue-27b-q4.sh` | **TRANSITIONAL** | `dflash` lab topic file (see `tools/lab/dflash/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/_anchor_diff.py` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/abba-depths.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/ahead-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/ar-boundary.py` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/ar-segment.py` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/ar-trace.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/attn-maxctx.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/balance-sweep.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/census-run.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/chain-serial.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/chunk-nomtp-diag.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/chunk-nomtp-diag2.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/chunk-nomtp.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/chunk-prof.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/chunk-sweep.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/combined-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/ctx-fit-2.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/deploy-sweep.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/determinism.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/draft-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/draft-quant.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/draft-timing-summary.py` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/draft27b-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/draft27b-single.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/expert-6900-sweep.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/expert-offload-sweep.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/expert-place.py` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/fa-sparse-backend-test.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/fit-probe.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/fit-sweep-2.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/fixed-ts-ctx-probe.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/flash-fidelity.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/flash-prefill-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/flash-prefill-env-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/flash-probs-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/gather-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/gather-numeric.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/gather-ref.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/gather-retest.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/gather-v2-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/gemma-iso.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/gpu-usage-sampler.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/graph-memlog.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/graphs-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/indexer-backend-test.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/kpool-ab-2.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/kpool-parity.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/layout-probe.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/long-ctx-fit.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/long-ctx-profile.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/mask-ref.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/mask-ref2.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/maxctx-f16k.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/maxctx-search-2.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/maxctx-search.py` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/maxctx-search.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/meta-timing-summary.py` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/mixed-batch-test.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/mmid-range-test.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/moe-copy-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/native-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/page-cache-fraction.py` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/prefill-kernel-table.py` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/prefill-provider-sweep.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/probes-compare.py` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/probs-compare.py` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/prod27b-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/profile-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/q81-trace-run.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-1301-widths.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-1302-deepfill.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-1303-deepfill.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-1326.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-1327.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-1330.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-1330e.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-27b-pairs.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-ahead-ctl.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-ahead-gate.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-ahead-pmin.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-ahead-screen.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-alloc-top.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-apitrace.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-arena-content.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-attn-maxctx-2.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-attn-maxctx.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-balance-sweep.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-bump-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-bump-census.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-bump-phases.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-bump-smoke.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-bump-v5.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-chunk-confirm.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-chunk-prof.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-chunk-sweep.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-chunk-ub1024.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-chunk.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-chunk2.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-chunk3.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-chunk7-diag.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-chunk7-diag2.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-chunk7.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-chunk8.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-chunk9.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-combined-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-ctx-fit-2.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-default-on.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-defaults.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-deploy-sweep.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-determinism.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-determinism2.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-determinism3.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-determinism4.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-determinism5.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-dflash-depth.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-draft-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-draft-host.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-draft-quant.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-env-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-expert-6900.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-expert-aux6900.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-expert-cpu.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-fa-default.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-fit-probe.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-fit-probe2.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-fit-sweep-2.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-flash-ar-trace.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-flash-ar.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-flash-cpuroot.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/queue-flash-probe.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-fmtp-calib.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-fmtp-calib2.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-fusion-quick.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-gate0.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-gather-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-gather-numeric-2gpu.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-gather-numeric-f16.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-gather-numeric.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-gather-ref.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-gather-v2-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-gather-v2-quick.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-graphs-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-indexer-tile.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-kpool-ab-2.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-kpool-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-kpool-parity-2.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-kpool-parity.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-long-ctx-decode.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-long-ctx-fit.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-long-ctx-perf.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-long-ctx-profile.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-maskref.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-maskref2.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-maxctx-f16k-vram.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-maxctx-f16k.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-maxctx-search-2.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-maxctx-search.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-meta-mem.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-meta-timing.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-moe-cache.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-moe-copy.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-moe-ep.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-moe-range.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-native-1333.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-native-flash.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-p27b-3.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-p27b.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-peak.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-pmin-screen.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-prbe115-quick.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-prefill-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-prefill-profile.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-prefill-providers.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-profile-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-promote.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-q81-trace.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-qfp21-dflash.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-qfp21.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-rccl-algo-sweep.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-rccl-screen.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-release-smoke.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-rerun-0910.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/queue-routing.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-sched-split.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-smoke-v5.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-sparse-fa.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-sparse-proof.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-submit-perf.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-submit-split.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-sync-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-synctrace.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-threeway.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-threshold-sweep.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-topk-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-trim-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-ts-skew-quick.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-ts23-ctx-probe.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-ub-sweep.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-ubchunk.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-v2-1295.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-v2-1304.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-v2-1305.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-v2-1306.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-v2-1307.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-v2-1308.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-v2-1309.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-v2-1310.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-v2-1311.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-v2-balance.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-v2-dg.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-v2-dg2.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-v2-fusion-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-v2-fusion-ab3.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-v2-profile.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-v2-q81b.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-v2-q81c.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-v3-1312.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-v3-1312c.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-v3-1313.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-v3-1314.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-v4-abba.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-v5-abba.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-v5b-abba.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-v6-ub.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-v7.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-vecq-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/quick-ab-depth.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/quick-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/rank-census.py` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/rccl-algo-sweep.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/routing-profile.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/iq-mmvq/vendor-b11233/mmvq.cu` | **TRANSITIONAL** | `iq-mmvq` lab topic file (see `tools/lab/iq-mmvq/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/iq-mmvq/vendor-b11233/mmvq.cuh` | **TRANSITIONAL** | `iq-mmvq` lab topic file (see `tools/lab/iq-mmvq/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/iq-mmvq/vendor-b11233/vecdotq.cuh` | **TRANSITIONAL** | `iq-mmvq` lab topic file (see `tools/lab/iq-mmvq/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/activation-check.sh` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/ar-size-trace.sh` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/decode-divergence.py` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/host3-crash-repro.sh` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/iso-server-bench.sh` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/mtp-greedy-parity.sh` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/pgc09-lane-check.sh` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/pp-regression-diag.sh` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/pp-ubatch-check.sh` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/preflight-fire.sh` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/queue-27b-3gpu.sh` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/queue-27b-adaptive-plain.sh` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/queue-27b-adaptive-sweep.sh` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/queue-27b-adaptive-switch-mtp.sh` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/queue-27b-adaptive-switch.sh` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/queue-27b-adaptive-switch64k.sh` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/queue-27b-adaptive-wire-latency.sh` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/queue-27b-ar-size-trace-mtp.sh` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/queue-27b-ar-size-trace.sh` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/queue-27b-ar-small.sh` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/queue-27b-ar-wire.sh` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/queue-27b-mtp-depth.sh` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/queue-27b-p2p.sh` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/queue-27b-rccl-channels.sh` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/queue-27b-rccl-tuning.sh` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/queue-27b-remaining.sh` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/queue-27b-round2.sh` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/queue-27b-round3.sh` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/queue-27b-ubatch.sh` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/queue-27b-wire-mode.sh` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/queue-3g-bf16-nway-2.sh` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/queue-3g-bf16-nway.sh` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/queue-gfx1100-batch.sh` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/queue-mtp-greedy-parity-2.sh` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/queue-mtp-greedy-parity.sh` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/queue-pgc09-builds-ab.sh` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/queue-pgc09-lane-check-4.sh` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/queue-pgc09-lane-check-5.sh` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/queue-pgc09-lane-check-6.sh` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/queue-pgc09-lane-check-7.sh` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/queue-pgc09-lane-check-8.sh` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/queue-pgc09-lane-check-9.sh` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/queue-pgc09-lane-check.sh` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/queue-pp-ubatch-check.sh` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/queue-rccl-bw-sweep.sh` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/rccl-bw-sweep.sh` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/run-ladder.sh` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/run-pgc09-sessions.sh` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/run-rd33n1-sessions.sh` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/run-rd74-sessions.sh` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/runs/combo-ab1/RESULT.md` | **TRANSITIONAL** | Recorded `native-vs-patched` lab run output (see `tools/lab/native-vs-patched/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/native-vs-patched/runs/combo-ab1/run.json` | **TRANSITIONAL** | Recorded `native-vs-patched` lab run output (see `tools/lab/native-vs-patched/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/native-vs-patched/runs/gp11-ab1/RESULT.md` | **TRANSITIONAL** | Recorded `native-vs-patched` lab run output (see `tools/lab/native-vs-patched/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/native-vs-patched/runs/gp11-ab1/advisories.json` | **TRANSITIONAL** | Recorded `native-vs-patched` lab run output (see `tools/lab/native-vs-patched/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/native-vs-patched/runs/gp11-ab1/run.json` | **TRANSITIONAL** | Recorded `native-vs-patched` lab run output (see `tools/lab/native-vs-patched/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/native-vs-patched/runs/gp11-n5-ab1/RESULT.md` | **TRANSITIONAL** | Recorded `native-vs-patched` lab run output (see `tools/lab/native-vs-patched/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/native-vs-patched/runs/gp11-n5-ab1/advisories.json` | **TRANSITIONAL** | Recorded `native-vs-patched` lab run output (see `tools/lab/native-vs-patched/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/native-vs-patched/runs/gp11-n5-ab1/run.json` | **TRANSITIONAL** | Recorded `native-vs-patched` lab run output (see `tools/lab/native-vs-patched/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/native-vs-patched/runs/nro05-ab2/RESULT.md` | **TRANSITIONAL** | Recorded `native-vs-patched` lab run output (see `tools/lab/native-vs-patched/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/native-vs-patched/runs/nro05-ab2/advisories.json` | **TRANSITIONAL** | Recorded `native-vs-patched` lab run output (see `tools/lab/native-vs-patched/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/native-vs-patched/runs/nro05-ab2/run.json` | **TRANSITIONAL** | Recorded `native-vs-patched` lab run output (see `tools/lab/native-vs-patched/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/native-vs-patched/runs/rd13-ab1/RESULT.md` | **TRANSITIONAL** | Recorded `native-vs-patched` lab run output (see `tools/lab/native-vs-patched/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/native-vs-patched/runs/rd13-ab1/advisories.json` | **TRANSITIONAL** | Recorded `native-vs-patched` lab run output (see `tools/lab/native-vs-patched/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/native-vs-patched/runs/rd13-ab1/run.json` | **TRANSITIONAL** | Recorded `native-vs-patched` lab run output (see `tools/lab/native-vs-patched/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/native-vs-patched/runs/rd33-ab1/RESULT.md` | **TRANSITIONAL** | Recorded `native-vs-patched` lab run output (see `tools/lab/native-vs-patched/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/native-vs-patched/runs/rd33-ab1/advisories.json` | **TRANSITIONAL** | Recorded `native-vs-patched` lab run output (see `tools/lab/native-vs-patched/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/native-vs-patched/runs/rd33-ab1/run.json` | **TRANSITIONAL** | Recorded `native-vs-patched` lab run output (see `tools/lab/native-vs-patched/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/native-vs-patched/runs/rd33-ab2/RESULT.md` | **TRANSITIONAL** | Recorded `native-vs-patched` lab run output (see `tools/lab/native-vs-patched/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/native-vs-patched/runs/rd33-ab2/advisories.json` | **TRANSITIONAL** | Recorded `native-vs-patched` lab run output (see `tools/lab/native-vs-patched/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/native-vs-patched/runs/rd33-ab2/run.json` | **TRANSITIONAL** | Recorded `native-vs-patched` lab run output (see `tools/lab/native-vs-patched/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/native-vs-patched/runs/rd33-activation/RESULT.md` | **TRANSITIONAL** | Recorded `native-vs-patched` lab run output (see `tools/lab/native-vs-patched/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/native-vs-patched/runs/rd33-activation/hits.txt` | **TRANSITIONAL** | Recorded `native-vs-patched` lab run output (see `tools/lab/native-vs-patched/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/native-vs-patched/runs/rd33-divergence/RESULT.md` | **TRANSITIONAL** | Recorded `native-vs-patched` lab run output (see `tools/lab/native-vs-patched/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/native-vs-patched/runs/rd33-divergence/control.json` | **TRANSITIONAL** | Recorded `native-vs-patched` lab run output (see `tools/lab/native-vs-patched/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/native-vs-patched/runs/rd33-divergence/rd33.json` | **TRANSITIONAL** | Recorded `native-vs-patched` lab run output (see `tools/lab/native-vs-patched/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/native-vs-patched/runs/rd33-plain-ab1/RESULT.md` | **TRANSITIONAL** | Recorded `native-vs-patched` lab run output (see `tools/lab/native-vs-patched/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/native-vs-patched/runs/rd33-plain-ab1/advisories.json` | **TRANSITIONAL** | Recorded `native-vs-patched` lab run output (see `tools/lab/native-vs-patched/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/native-vs-patched/runs/rd33-plain-ab1/run.json` | **TRANSITIONAL** | Recorded `native-vs-patched` lab run output (see `tools/lab/native-vs-patched/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/native-vs-patched/runs/rd33n1-ab1/RESULT.md` | **TRANSITIONAL** | Recorded `native-vs-patched` lab run output (see `tools/lab/native-vs-patched/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/native-vs-patched/runs/rd33n1-ab1/advisories.json` | **TRANSITIONAL** | Recorded `native-vs-patched` lab run output (see `tools/lab/native-vs-patched/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/native-vs-patched/runs/rd33n1-ab1/run.json` | **TRANSITIONAL** | Recorded `native-vs-patched` lab run output (see `tools/lab/native-vs-patched/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/native-vs-patched/runs/rd33n1-campaign/s1/activation.json` | **TRANSITIONAL** | Recorded `native-vs-patched` lab run output (see `tools/lab/native-vs-patched/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/native-vs-patched/runs/rd33n1-campaign/s1/correctness.json` | **TRANSITIONAL** | Recorded `native-vs-patched` lab run output (see `tools/lab/native-vs-patched/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/native-vs-patched/runs/rd33n1-campaign/s1/producer-execution.json` | **TRANSITIONAL** | Recorded `native-vs-patched` lab run output (see `tools/lab/native-vs-patched/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/native-vs-patched/runs/rd33n1-campaign/s1/reference-ladder.json` | **TRANSITIONAL** | Recorded `native-vs-patched` lab run output (see `tools/lab/native-vs-patched/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/native-vs-patched/runs/rd33n1-campaign/s2/activation.json` | **TRANSITIONAL** | Recorded `native-vs-patched` lab run output (see `tools/lab/native-vs-patched/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/native-vs-patched/runs/rd33n1-campaign/s2/correctness.json` | **TRANSITIONAL** | Recorded `native-vs-patched` lab run output (see `tools/lab/native-vs-patched/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/native-vs-patched/runs/rd33n1-campaign/s2/producer-execution.json` | **TRANSITIONAL** | Recorded `native-vs-patched` lab run output (see `tools/lab/native-vs-patched/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/native-vs-patched/runs/rd33n1-campaign/s2/reference-ladder.json` | **TRANSITIONAL** | Recorded `native-vs-patched` lab run output (see `tools/lab/native-vs-patched/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/native-vs-patched/runs/rd33n1-campaign/s3/activation.json` | **TRANSITIONAL** | Recorded `native-vs-patched` lab run output (see `tools/lab/native-vs-patched/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/native-vs-patched/runs/rd33n1-campaign/s3/correctness.json` | **TRANSITIONAL** | Recorded `native-vs-patched` lab run output (see `tools/lab/native-vs-patched/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/native-vs-patched/runs/rd33n1-campaign/s3/producer-execution.json` | **TRANSITIONAL** | Recorded `native-vs-patched` lab run output (see `tools/lab/native-vs-patched/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/native-vs-patched/runs/rd33n1-campaign/s3/reference-ladder.json` | **TRANSITIONAL** | Recorded `native-vs-patched` lab run output (see `tools/lab/native-vs-patched/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/native-vs-patched/runs/rd33n1-campaign/s4/activation.json` | **TRANSITIONAL** | Recorded `native-vs-patched` lab run output (see `tools/lab/native-vs-patched/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/native-vs-patched/runs/rd33n1-campaign/s4/correctness.json` | **TRANSITIONAL** | Recorded `native-vs-patched` lab run output (see `tools/lab/native-vs-patched/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/native-vs-patched/runs/rd33n1-campaign/s4/producer-execution.json` | **TRANSITIONAL** | Recorded `native-vs-patched` lab run output (see `tools/lab/native-vs-patched/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/native-vs-patched/runs/rd33n1-campaign/s4/reference-ladder.json` | **TRANSITIONAL** | Recorded `native-vs-patched` lab run output (see `tools/lab/native-vs-patched/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/native-vs-patched/runs/rd33n1-plain-ab1/RESULT.md` | **TRANSITIONAL** | Recorded `native-vs-patched` lab run output (see `tools/lab/native-vs-patched/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/native-vs-patched/runs/rd33n1-plain-ab1/advisories.json` | **TRANSITIONAL** | Recorded `native-vs-patched` lab run output (see `tools/lab/native-vs-patched/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/native-vs-patched/runs/rd33n1-plain-ab1/run.json` | **TRANSITIONAL** | Recorded `native-vs-patched` lab run output (see `tools/lab/native-vs-patched/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/native-vs-patched/runs/ssm1263-activation/RESULT.md` | **TRANSITIONAL** | Recorded `native-vs-patched` lab run output (see `tools/lab/native-vs-patched/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/native-vs-patched/server-ab-0860-providers.json` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/server-ab-1263.json` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/server-ab-27b.json` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/server-ab-3g-bf16-nway-2.json` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/server-ab-3g-bf16-nway.json` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/server-ab-3g-bf16-ts.json` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/server-ab-adaptive-mtp.json` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/server-ab-adaptive-plain.json` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/server-ab-adaptive-sweep.json` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/sched-split-summary.py` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/smoke-models.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/spec-timing-summary.py` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/submit-timing-summary.py` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/submit-timing-table.py` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/sync-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/sync-tracer.c` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/threshold-sweep.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/topk-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/trim-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/ub-1330.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/ub-chunk.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/ub-peak.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/ub-sweep.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/ubchunk-sweep.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/v7-sweep.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/vecq-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/wait-gpus-free.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/hi24-slice-a/verify_slice_a.py` | **TRANSITIONAL** | RA13 plan-owned lab implementation retained behind the documented compatibility wrapper until that entry point is retired. |
+| `tools/lab/hi34-residency-gates/residency_gates.py` | **TRANSITIONAL** | RA12 plan-owned lab implementation retained behind the documented compatibility wrapper until that entry point is retired. |
 | `tools/lab/native-vs-patched/server-ab-adaptive-switch-mtp.json` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/native-vs-patched/server-ab-adaptive-switch.json` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/native-vs-patched/server-ab-adaptive-switch64k.json` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/server-ab-adaptive.json` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/server-ab-allreduce-3gpu.json` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/server-ab-allreduce.json` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/server-ab-ar-small.json` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/server-ab-ar-wire-q8.json` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/server-ab-ar-wire.json` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/server-ab-awl-1.json` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/server-ab-combo.json` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/server-ab-gp11-n5.json` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/server-ab-gp11.json` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/server-ab-mtp-depth-a.json` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/server-ab-mtp-depth-b.json` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/server-ab-nro05.json` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/server-ab-nro10.json` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/server-ab-p2p-wire.json` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/server-ab-p2p.json` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/server-ab-pgc09-builds.json` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/server-ab-rccl-adaptive.json` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/server-ab-rccl-channels.json` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/server-ab-rccl-proto.json` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/server-ab-rd12.json` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/server-ab-rd13.json` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/server-ab-rd33-plain.json` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/server-ab-rd33.json` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/server-ab-rd33n1-plain.json` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/server-ab-rd33n1.json` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/server-ab-ubatch.json` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/server-ab-wire-d5.json` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/server-ab-wire-plain.json` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/patch1000/patch1000_verification.py` | **TRANSITIONAL** | PA43: patch 1000 backend-ops/llama-bench verification helpers moved verbatim out of `bigcherry.patch.validation_campaign` (never dispatched by the production CLI); loaded by path from `run_pa35_step1.py` and `tools/tests/patch/test_patch1000_verification.py`. |
+| `tools/lab/patch1000/run_pa35_step1.py` | **TRANSITIONAL** | PA35 step 1: one-off gfx1201 hardware-evidence driver for patch 1000 (control vs subject backend-ops Q2_K/Q6_K correctness + perf); per GPT `req_71c1aaa166f446a1`, deliberately not shared production code. |
+| `tools/lab/plan-qualification/activation-check.sh` | **TRANSITIONAL** | Plan-qualification activation probe used only by the legacy qualification queue; retire with that queue at jobs cutover. |
 | `tools/lab/plan-qualification/contention_check.sh` | **TRANSITIONAL** | `plan-qualification` lab topic file (see `tools/lab/plan-qualification/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/plan-qualification/cooldown.sh` | **TRANSITIONAL** | `plan-qualification` lab topic file (see `tools/lab/plan-qualification/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/plan-qualification/linux-test-suite.sh` | **TRANSITIONAL** | `plan-qualification` lab topic file (see `tools/lab/plan-qualification/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/plan-qualification/locked-run.sh` | **TRANSITIONAL** | `plan-qualification` lab topic file (see `tools/lab/plan-qualification/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/plan-qualification/make-serial-2.sh` | **TRANSITIONAL** | Writes the second plan-qualification job batch from environment-provided host paths. |
+| `tools/lab/plan-qualification/noise.py` | **TRANSITIONAL** | Per-round paired-lane view (outlier rounds, per-arm CV) for campaign noise triage. |
 | `tools/lab/plan-qualification/pcie-link-check.sh` | **TRANSITIONAL** | `plan-qualification` lab topic file (see `tools/lab/plan-qualification/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/plan-qualification/pcie-retrain-job.sh` | **TRANSITIONAL** | `plan-qualification` lab topic file (see `tools/lab/plan-qualification/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/plan-qualification/preflight-fire.sh` | **TRANSITIONAL** | Plan-qualification firing gate; owns host/GPU locking and delegates one traced activation probe. |
+| `tools/lab/plan-qualification/profile_run.sh` | **TRANSITIONAL** | PVPS10 kernel-coverage profile wrapper (queue `PROFILE` job type) over `bigcherry.patch.campaign.profile`. |
+| `tools/lab/plan-qualification/queue-linux-tests.sh` | **TRANSITIONAL** | `plan-qualification` lab topic file (see `tools/lab/plan-qualification/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/plan-qualification/queue.sh` | **TRANSITIONAL** | Sequential per-GPU-lane runner for plan-qualification campaign jobs (restartable; skips finished runs). |
 | `tools/lab/plan-qualification/retry-all.sh` | **TRANSITIONAL** | `plan-qualification` lab topic file (see `tools/lab/plan-qualification/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/plan-qualification/retry-failed.sh` | **TRANSITIONAL** | `plan-qualification` lab topic file (see `tools/lab/plan-qualification/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/plan-qualification/run_campaign.sh` | **TRANSITIONAL** | RDNA/nasone plan implementation loop: one-GPU validation-campaign launcher with host paths from env and output under work/; graduate into a campaign CLI verb or archive when the loop ends. |
+| `tools/lab/plan-qualification/summarize.py` | **TRANSITIONAL** | One-line-per-run summary of plan-qualification campaign results (checks, lane effects, contract verdicts). |
 | `tools/lab/plan-qualification/thermal-log.sh` | **TRANSITIONAL** | `plan-qualification` lab topic file (see `tools/lab/plan-qualification/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/plan-qualification/topk_backend_sampling_check.sh` | **TRANSITIONAL** | `plan-qualification` lab topic file (see `tools/lab/plan-qualification/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/plan-qualification/withdraw_discarded.py` | **TRANSITIONAL** | `plan-qualification` lab topic file (see `tools/lab/plan-qualification/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/pnro20/repro_compose.py` | **TRANSITIONAL** | `pnro20` lab topic file (see `tools/lab/pnro20/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/plan-qualification/work-root.sh` | **TRANSITIONAL** | Resolves the campaign work root (env var, else environment.local.toml [env], else work/) for the plan-qualification scripts. |
 | `tools/lab/prbe20-rd26-bisect/bisect_ubatch.py` | **TRANSITIONAL** | `prbe20-rd26-bisect` lab topic file (see `tools/lab/prbe20-rd26-bisect/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/profiling/profile-27b-q8.sh` | **TRANSITIONAL** | `profiling` lab topic file (see `tools/lab/profiling/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/profiling/queue-27b-profile.sh` | **TRANSITIONAL** | `profiling` lab topic file (see `tools/lab/profiling/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/quant-sweep/configs/r9700-g1.json` | **TRANSITIONAL** | `quant-sweep` lab topic file (see `tools/lab/quant-sweep/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/quant-sweep/configs/r9700-g2.json` | **TRANSITIONAL** | `quant-sweep` lab topic file (see `tools/lab/quant-sweep/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/quant-sweep/configs/r9700-g3.json` | **TRANSITIONAL** | `quant-sweep` lab topic file (see `tools/lab/quant-sweep/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/quant-sweep/configs/r9700-g4.json` | **TRANSITIONAL** | `quant-sweep` lab topic file (see `tools/lab/quant-sweep/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/quant-sweep/configs/xtx1-g1.json` | **TRANSITIONAL** | `quant-sweep` lab topic file (see `tools/lab/quant-sweep/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/quant-sweep/configs/xtx1-g2.json` | **TRANSITIONAL** | `quant-sweep` lab topic file (see `tools/lab/quant-sweep/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/quant-sweep/configs/xtx1-g3.json` | **TRANSITIONAL** | `quant-sweep` lab topic file (see `tools/lab/quant-sweep/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/quant-sweep/configs/xtx1-g4.json` | **TRANSITIONAL** | `quant-sweep` lab topic file (see `tools/lab/quant-sweep/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/quant-sweep/configs/xtx2-g1.json` | **TRANSITIONAL** | `quant-sweep` lab topic file (see `tools/lab/quant-sweep/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/quant-sweep/configs/xtx2-g2.json` | **TRANSITIONAL** | `quant-sweep` lab topic file (see `tools/lab/quant-sweep/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/quant-sweep/configs/xtx2-g3.json` | **TRANSITIONAL** | `quant-sweep` lab topic file (see `tools/lab/quant-sweep/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/quant-sweep/configs/xtx2-g4.json` | **TRANSITIONAL** | `quant-sweep` lab topic file (see `tools/lab/quant-sweep/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/quant-sweep/iq-mmvq-xtx1-iq3_xxs.json` | **TRANSITIONAL** | `quant-sweep` lab topic file (see `tools/lab/quant-sweep/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/quant-sweep/iq-mmvq-xtx1-iq4_xs.json` | **TRANSITIONAL** | `quant-sweep` lab topic file (see `tools/lab/quant-sweep/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/quant-sweep/kquant-f32-xtx1-q4_k_m.json` | **TRANSITIONAL** | `quant-sweep` lab topic file (see `tools/lab/quant-sweep/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/quant-sweep/kquant-f32-xtx1-q6_k.json` | **TRANSITIONAL** | `quant-sweep` lab topic file (see `tools/lab/quant-sweep/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/quant-sweep/kquant-f32-xtx2-q4_k_m.json` | **TRANSITIONAL** | `quant-sweep` lab topic file (see `tools/lab/quant-sweep/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/quant-sweep/kquant-f32-xtx2-q6_k.json` | **TRANSITIONAL** | `quant-sweep` lab topic file (see `tools/lab/quant-sweep/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/quant-sweep/make-configs.py` | **TRANSITIONAL** | `quant-sweep` lab topic file (see `tools/lab/quant-sweep/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/quant-sweep/queue-iq-mmvq.sh` | **TRANSITIONAL** | `quant-sweep` lab topic file (see `tools/lab/quant-sweep/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/quant-sweep/queue-kquant-f32.sh` | **TRANSITIONAL** | `quant-sweep` lab topic file (see `tools/lab/quant-sweep/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/quant-sweep/queue-quant-sweep.sh` | **TRANSITIONAL** | `quant-sweep` lab topic file (see `tools/lab/quant-sweep/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/rccl/ar-latency.hip` | **TRANSITIONAL** | `rccl` lab topic file (see `tools/lab/rccl/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/rccl/ar-latency.sh` | **TRANSITIONAL** | `rccl` lab topic file (see `tools/lab/rccl/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/rccl/bidir-check.hip` | **TRANSITIONAL** | `rccl` lab topic file (see `tools/lab/rccl/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/rccl/bidir-check.sh` | **TRANSITIONAL** | `rccl` lab topic file (see `tools/lab/rccl/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/rccl/both-ar.sh` | **TRANSITIONAL** | `rccl` lab topic file (see `tools/lab/rccl/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/rccl/build-rccl-nohostcall.sh` | **TRANSITIONAL** | `rccl` lab topic file (see `tools/lab/rccl/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/rccl/cpu-root-ar.hip` | **TRANSITIONAL** | `rccl` lab topic file (see `tools/lab/rccl/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/rccl/cpu-root-ar.sh` | **TRANSITIONAL** | `rccl` lab topic file (see `tools/lab/rccl/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/rccl/h2d-check.hip` | **TRANSITIONAL** | `rccl` lab topic file (see `tools/lab/rccl/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/rccl/large-host-ar.hip` | **TRANSITIONAL** | `rccl` lab topic file (see `tools/lab/rccl/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/rccl/large-host-ar.sh` | **TRANSITIONAL** | `rccl` lab topic file (see `tools/lab/rccl/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/rccl/p2p-check.hip` | **TRANSITIONAL** | `rccl` lab topic file (see `tools/lab/rccl/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/rccl/queue-ar-latency.sh` | **TRANSITIONAL** | `rccl` lab topic file (see `tools/lab/rccl/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/rccl/queue-rccl-env-sweep.sh` | **TRANSITIONAL** | `rccl` lab topic file (see `tools/lab/rccl/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/rccl/queue-rccl-nohostcall.sh` | **TRANSITIONAL** | `rccl` lab topic file (see `tools/lab/rccl/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/rccl/rccl-env-sweep.sh` | **TRANSITIONAL** | `rccl` lab topic file (see `tools/lab/rccl/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/results/harvest.sh` | **TRANSITIONAL** | `results` lab topic file (see `tools/lab/results/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/results/runs/ab-27b-1263.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/ab-27b-adaptive-sweep.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/ab-27b-adaptive.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/ab-27b-allreduce.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/ab-27b-ar-small.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/ab-27b-awl-1.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/ab-27b-mtp-depth-a.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/ab-27b-mtp-depth-b.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/ab-27b-p2p.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/ab-27b-rccl-channels.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/ab-27b-rccl-proto.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/ab-27b-rd12.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/ab-27b-ubatch.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/ab-27b-wire-plain.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/ab-3g-allreduce.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/ab-kquant-xtx1-q4.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/ab-kquant-xtx1-q6.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/ab-kquant-xtx2-q4.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/ab-kquant-xtx2-q6.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/kld-27b-adaptive.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/kld-27b-host-f16.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/kld-27b-host-pristine.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/kld-27b-host-q8.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/kld-27b-rccl.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/kld-27b-ref-repeat.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/kld-awl-bf16.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/kld-awl-f16.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/kld-awl-f32-fast.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/kld-awl-f32.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/kldd-adaptive-f32.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/kldd-host-bf16.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/kldd-host-f16.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/kldd-rccl.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/kldd-ref-repeat.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/qs-r9700-g1.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/qs-r9700-g2.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/qs-r9700-g3.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/qs-r9700-g4.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/qs-xtx1-g1.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/qs-xtx1-g2.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/qs-xtx1-g3.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/qs-xtx1-g4.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/qs-xtx2-g1.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/qs-xtx2-g2.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/qs-xtx2-g3.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/qs-xtx2-g4.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/r-1207-gfx1100-s1.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/r-1207-gfx1100-s2.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/r-1207-gfx1100-s3.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/r-1207-gfx1100-s4.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/r-1207-gfx1201-s1.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/r-1207-gfx1201-s2.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/r-1207-gfx1201-s3.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/r-1207-gfx1201-s4.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/r-1215-gfx1100-s1.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/r-1215-gfx1100-s2.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/r-1215-gfx1100-s3.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/r-1215-gfx1100-s4.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/r-1215-gfx1201-s1.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/r-1215-gfx1201-s2.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/r-1215-gfx1201-s3.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/r-1215-gfx1201-s4.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/r-1237-gfx1100-s1.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/r-1237-gfx1100-s2.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/r-1237-gfx1100-s3.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/r-1237-gfx1100-s4.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/t-1206-gfx1100-s1.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/t-1206-gfx1100-s2.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/t-1206-gfx1100-s3.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/t-1206-gfx1100-s4.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/t-1241n1-gfx1100-s1.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/t-1241n1-gfx1100-s2.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/t-1241n1-gfx1100-s3.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/t-1241n1-gfx1100-s4.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/t-1241n2-gfx1100-s1.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/t-1241n2-gfx1100-s2.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/t-1241n2-gfx1100-s3.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/t-1241n2-gfx1100-s4.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/t-1254-gfx1100-s1.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/t-1254-gfx1100-s2.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/t-1254-gfx1100-s3.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/t-1254-gfx1100-s4.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/t-1263-gfx1100-s1.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/t-1263-gfx1100-s2.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/t-1263-gfx1100-s3.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/t-1263-gfx1100-s4.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/t-1274-gfx1100-s2.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/t-1274b-gfx1100-s1.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/t-1274b-gfx1100-s2.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
-| `tools/lab/results/runs/t-1274b-gfx1100-s3.json` | **TRANSITIONAL** | Recorded lab run result consumed by `tools/lab/results/summarize.py` (see `tools/lab/results/README.md`); data, not evidence authority; archive with the topic. |
 | `tools/lab/results/summarize.py` | **TRANSITIONAL** | `results` lab topic file (see `tools/lab/results/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/run-campaign-durability/mock_pipeline.py` | **TRANSITIONAL** | `run-campaign-durability` lab topic file (see `tools/lab/run-campaign-durability/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/run-campaign-durability/mock_series_binding.py` | **TRANSITIONAL** | `run-campaign-durability` lab topic file (see `tools/lab/run-campaign-durability/README.md`); experiment-only, disposed per that README. |
@@ -887,100 +463,23 @@ Inventory count: 403 script/tool files (vendor, build/cache, and artifacts exclu
 | `tools/lab/run-campaign-durability/slurm_noble_v2_smoke.sh` | **TRANSITIONAL** | `run-campaign-durability` lab topic file (see `tools/lab/run-campaign-durability/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/run-campaign-durability/slurm_noble_v3_smoke.sh` | **TRANSITIONAL** | `run-campaign-durability` lab topic file (see `tools/lab/run-campaign-durability/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/run-campaign-durability/tree_activity_race_smoke.py` | **TRANSITIONAL** | `run-campaign-durability` lab topic file (see `tools/lab/run-campaign-durability/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/ssm-conv-split/vendor-b11233/ggml-backend-meta.cpp` | **TRANSITIONAL** | `ssm-conv-split` lab topic file (see `tools/lab/ssm-conv-split/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/dflash/queue-27b-detail.sh` | **TRANSITIONAL** | `dflash` lab topic file (see `tools/lab/dflash/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/dflash/queue-27b-q4.sh` | **TRANSITIONAL** | `dflash` lab topic file (see `tools/lab/dflash/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/plan-qualification/linux-test-suite.sh` | **TRANSITIONAL** | `plan-qualification` lab topic file (see `tools/lab/plan-qualification/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/plan-qualification/queue-linux-tests.sh` | **TRANSITIONAL** | `plan-qualification` lab topic file (see `tools/lab/plan-qualification/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/strata/bcop37-build.sh` | **TRANSITIONAL** | `strata` lab topic file (see `tools/lab/strata/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/strata/bcop37-rocm-shim.sh` | **TRANSITIONAL** | `strata` lab topic file (see `tools/lab/strata/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/strata/bcop37-routing.sh` | **TRANSITIONAL** | `strata` lab topic file (see `tools/lab/strata/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/strata/bcop37-smoke.sh` | **TRANSITIONAL** | `strata` lab topic file (see `tools/lab/strata/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/strata/bcop37-swift-bench.sh` | **TRANSITIONAL** | `strata` lab topic file (see `tools/lab/strata/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/strata/bcop37-swift.sh` | **TRANSITIONAL** | `strata` lab topic file (see `tools/lab/strata/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/strata/bcop37-system.sh` | **TRANSITIONAL** | `strata` lab topic file (see `tools/lab/strata/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/strata/iq_pack-ud.diff` | **TRANSITIONAL** | `strata` lab topic file (see `tools/lab/strata/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/strata/routing-balance.py` | **TRANSITIONAL** | `strata` lab topic file (see `tools/lab/strata/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/strata/routing-skew.py` | **TRANSITIONAL** | `strata` lab topic file (see `tools/lab/strata/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/vulkan/probe-27b-vk.sh` | **TRANSITIONAL** | `vulkan` lab topic file (see `tools/lab/vulkan/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/vulkan/queue-vk-first.sh` | **TRANSITIONAL** | `vulkan` lab topic file (see `tools/lab/vulkan/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/vulkan/queue-vk-ar.sh` | **TRANSITIONAL** | `vulkan` lab topic file (see `tools/lab/vulkan/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/native-vs-patched/queue-native-c061.sh` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/queue-flash-ar.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/ar-trace.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/queue-flash-ar-trace.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/rccl/ar-latency.hip` | **TRANSITIONAL** | `rccl` lab topic file (see `tools/lab/rccl/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/rccl/ar-latency.sh` | **TRANSITIONAL** | `rccl` lab topic file (see `tools/lab/rccl/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/rccl/queue-ar-latency.sh` | **TRANSITIONAL** | `rccl` lab topic file (see `tools/lab/rccl/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/rccl/cpu-root-ar.hip` | **TRANSITIONAL** | `rccl` lab topic file (see `tools/lab/rccl/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/rccl/cpu-root-ar.sh` | **TRANSITIONAL** | `rccl` lab topic file (see `tools/lab/rccl/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/rccl/both-ar.sh` | **TRANSITIONAL** | `rccl` lab topic file (see `tools/lab/rccl/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/rccl/large-host-ar.hip` | **TRANSITIONAL** | `rccl` lab topic file (see `tools/lab/rccl/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/rccl/large-host-ar.sh` | **TRANSITIONAL** | `rccl` lab topic file (see `tools/lab/rccl/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/rccl/bidir-check.hip` | **TRANSITIONAL** | `rccl` lab topic file (see `tools/lab/rccl/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/rccl/bidir-check.sh` | **TRANSITIONAL** | `rccl` lab topic file (see `tools/lab/rccl/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/queue-flash-cpuroot.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/chunk-sweep.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/queue-chunk-sweep.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/threshold-sweep.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/queue-threshold-sweep.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/long-ctx-profile.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/queue-long-ctx-profile.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/long-ctx-fit.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/queue-long-ctx-fit.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/rccl-algo-sweep.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/queue-rccl-algo-sweep.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/queue-long-ctx-decode.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/ctx-fit-2.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/queue-long-ctx-perf.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/queue-kpool-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/kpool-ab-2.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/queue-kpool-ab-2.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/kpool-parity.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/queue-kpool-parity.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/deploy-sweep.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/queue-deploy-sweep.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/determinism.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/queue-determinism.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/graphs-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/queue-graphs-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/queue-apitrace.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/sync-tracer.c` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/queue-synctrace.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/sync-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/queue-sync-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/topk-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/queue-topk-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/queue-kpool-parity-2.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/balance-sweep.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/queue-balance-sweep.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/fit-sweep-2.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/queue-fit-sweep-2.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/draft-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/queue-draft-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/ub-sweep.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/queue-ub-sweep.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/maxctx-f16k.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/queue-maxctx-f16k.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/maxctx-search.py` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/maxctx-search.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/queue-maxctx-search.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/gather-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/queue-gather-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/trim-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/queue-trim-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/queue-ctx-fit-2.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/maxctx-search-2.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/queue-maxctx-search-2.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/chain-serial.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/gather-numeric.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/queue-gather-numeric.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/draft-quant.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/queue-draft-quant.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/vecq-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/queue-vecq-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/quick-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/combined-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/queue-combined-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/queue-gather-numeric-f16.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/queue-gather-numeric-2gpu.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/gather-ref.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/queue-gather-ref.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/queue-gather-v2-quick.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/gather-v2-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/queue-gather-v2-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/queue-fusion-quick.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/dflash/queue-27b-cpuroot.sh` | **TRANSITIONAL** | `dflash` lab topic file (see `tools/lab/dflash/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/vulkan/queue-vk-first.sh` | **TRANSITIONAL** | `vulkan` lab topic file (see `tools/lab/vulkan/README.md`); experiment-only, disposed per that README. |
+| `tools/residency_gates.py` | **MOVE** | HI34 plan-specific gate moved to non-package `tools/lab/hi34-residency-gates/`; root wrapper retained for tests/legacy CLI. |
+| `tools/rocm-env.ps1` | **MOVE** | Environment bootstrap; canonical destination tools/env/ in TR05. |
+| `tools/rocm-env.sh` | **MOVE** | Environment bootstrap; canonical destination tools/env/ in TR05. |
+| `tools/verify_slice_a.py` | **MOVE** | HI24 plan-specific verifier moved to non-package `tools/lab/hi24-slice-a/`; root wrapper retained for tests/legacy CLI. |
 
 ## Exit status
 

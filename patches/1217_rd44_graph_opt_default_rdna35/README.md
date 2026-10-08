@@ -1,11 +1,6 @@
 # 1217_rd44_graph_opt_default_rdna35: default GGML_CUDA_GRAPH_OPT to enabled on RDNA3.5 (RD44)
 
-Patch id: `1217_rd44_graph_opt_default_rdna35`. Plan item: `RD44`. A
-matching Experiment Contract exists (`RD44-GRAPH-OPT-DEFAULT-RDNA35`,
-`config/experiment-contracts.toml`) but is deliberately NOT bound in
-`patch.toml` yet -- binding it without a validation.toml wiring producers
-for its required capabilities makes `build_plan_for_patch()` fail closed
-with a real `ConfigurationError`. Author validation.toml first, then bind.
+Patch id: `1217_rd44_graph_opt_default_rdna35`. Plan item: `RD44`. The existing `RD44-GRAPH-OPT-DEFAULT-RDNA35` Experiment Contract is now bound in `patch.toml`, with the static required-capability adapter in `validation.toml`. This closes the lint definition gap, not the hardware evidence gap.
 Last patch in the AMD-STREAM chain -- `requires = ["1215_rd394041_amd_stream_moe_overlap",
 "1216_rd43_concurrent_join_fusion_guard"]` (both prerequisites are already
 materialized patches in this repo).
@@ -50,12 +45,8 @@ PYTHONPATH=tools python -m bigcherry.patch.validation_campaign \
   --workdir <fresh-workdir> --worktree-root <worktree-root>
 ```
 
-No validation.toml/bespoke correctness producer exists yet -- only the
-generic S1-S7 campaign (apply/build) is currently invocable. Authoring a
-validation.toml (backend_reference correctness check on gfx1100/gfx1201/
-gfx1030, proving behavior-neutrality) is separate, not-yet-done work; the
-real gfx1151 performance claim cannot be qualified by this project until
-that hardware becomes available.
+No bespoke correctness or activation producer exists yet -- only the
+generic S1-S7 campaign (apply/build) is currently invocable. The static `validation.toml` adapter declares the required producers; the activation marker is not implemented yet. The gfx1151 claim cannot be qualified by this project until that hardware becomes available.
 
 ## Known limitations
 
@@ -67,3 +58,8 @@ project does not have.
 
 None yet. Runtime artifacts, once a real campaign runs, land under
 `artifacts/patch-validation/1217_rd44_graph_opt_default_rdna35/<campaign-identity>/`.
+
+
+## Static validation-package repair (2026-10-08)
+
+The existing Experiment Contract is explicitly bound and `validation.toml` declares apply, build, correctness, activation, performance, and controls. This repairs the former `patch-lint` missing-binding/missing-adapter errors; it does **not** certify a validation campaign or introduce measurements. The declared activation marker does not yet exist in `patch.py`, so a new validation attempt must remain BLOCKED until real subject-hit/control-miss instrumentation and evidence are added. This patch remains untested/deferred on the unavailable gfx1151 hardware.

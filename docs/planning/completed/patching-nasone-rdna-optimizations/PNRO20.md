@@ -35,7 +35,7 @@ t-1205-gfx1201-s4 failed: once 1253_nro04_gfx1100_bf16_chunked_gdn was promoted 
 
 ## Validation
 
-tools/lab/pnro20/repro_compose.py on local and Brutus trees.
+The one-shot composition reproducer passed on local and Brutus trees; it was retired after closure and remains available in Git history.
 
 ## Effort & Risk
 
@@ -53,7 +53,7 @@ tools/lab/pnro20/repro_compose.py on local and Brutus trees.
 
 Found 2026-09-27 during a queue audit; the 1205 session had been sitting failed since before the lane split. Not a runtime bug -- patch-mechanics conflict only.
 
-2026-09-28 RESOLVED (no code change needed): the failure was stale. t-1205-gfx1201-s4 failed at 2026-09-26 17:42:54; commit 5992f183 (2026-09-26 17:49:04, six minutes later) reworked 1223's anchor to insert after the pass/fail block so 1253's test hunks compose with it. Verified with tools/lab/pnro20/repro_compose.py, which applies 1222 -> 1223 -> 1253 -> 1258 in composition order to test-backend-ops.cpp: all OK on both local and Brutus trees. Requeued t-1205-gfx1201-s4 (failed run moved aside as *.failed-pre5992f183).
+2026-09-28 RESOLVED (no code change needed): the failure was stale. t-1205-gfx1201-s4 failed at 2026-09-26 17:42:54; commit 5992f183 (2026-09-26 17:49:04, six minutes later) reworked 1223's anchor to insert after the pass/fail block so 1253's test hunks compose with it. Verified with the now-retired one-shot composition reproducer, which applies 1222 -> 1223 -> 1253 -> 1258 in composition order to test-backend-ops.cpp: all OK on both local and Brutus trees. Requeued t-1205-gfx1201-s4 (failed run moved aside as *.failed-pre5992f183).
 
 ## Change Log
 

@@ -1,9 +1,9 @@
 # patch1000: PA35 step 1 narrow hardware-evidence driver
 
-Plan item: PA35 (patch 1000 is migration #8 in PA36's atomic sequence)
-Status: active
-Owner: PA35 / PA36 (patching-patch-system)
-Question state: open
+Plan items: PA35 / PA36 (both completed)
+Status: retained evidence-compatibility driver
+Owner: retained by PA36 close-out
+Question state: answered; compatibility surface retained
 
 ## Question
 
@@ -42,5 +42,7 @@ Mutates canonical BigCherry state: no (one-off driver, per GPT design review
 
 ## Disposition
 
-Retained (TRANSITIONAL) as the PA35 step 1 driver; diagnostic hardware
-evidence, not a maintained tool.
+Retained by PA36's explicit close-out exception while the shared `run_patch1000_*`
+evidence helpers and their structural tests remain live. This is diagnostic/evidence
+compatibility, not active plan work. Retire this directory only in the same slice that
+retires or graduates those helpers; do not treat PA35/PA36 completion alone as proof it is dead.

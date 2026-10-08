@@ -6,6 +6,7 @@ kind = "enhancement"
 origin = "external-fork"
 backend = "hip"
 plan-item = "RD50/RD51/RD52/RD53"
+experiment-contract = "RD50-GDN-CHUNKED-RECURRENCE"
 external-source = "amd-ecosystem-llama-cpp"
 plan-ids = []
 requires = []

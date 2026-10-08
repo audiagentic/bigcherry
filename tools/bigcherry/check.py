@@ -777,20 +777,30 @@ def tooling_hygiene(root: Path) -> tuple[HygieneDiagnostic, ...]:
                     )
 
     for relative, disposition in sorted(_disposition_rows(root).items()):
-        if disposition != "DELETE":
-            continue
         path = root / Path(relative)
-        if path.exists():
+        if not path.is_file():
             findings.append(
-                _diagnostic(
-                    root,
-                    "TR14.DISPOSITION_DELETE_PENDING",
+                HygieneDiagnostic(
+                    "TR14.DISPOSITION_STALE",
                     "error",
-                    path,
-                    "disposition map marks this path DELETE but it still exists",
-                    "complete caller/reference proof, then remove it in the owning migration slice",
+                    relative,
+                    "disposition map names a file that is not tracked in the current checkout",
+                    "remove the stale row or replace it with the tracked successor path",
                 )
             )
+            continue
+        if disposition != "DELETE":
+            continue
+        findings.append(
+            _diagnostic(
+                root,
+                "TR14.DISPOSITION_DELETE_PENDING",
+                "error",
+                path,
+                "disposition map marks this path DELETE but it still exists",
+                "complete caller/reference proof, then remove it in the owning migration slice",
+            )
+        )
 
     if product_root.is_dir():
         for path in sorted(product_root.rglob("*.py")):

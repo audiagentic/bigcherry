@@ -1,7 +1,7 @@
 schema = 1
 id = "1330_qsa_mask_inplace"
 order = 1330
-state = "untested"
+state = "superseded"
 kind = "enhancement"
 origin = "local"
 backend = "hip"

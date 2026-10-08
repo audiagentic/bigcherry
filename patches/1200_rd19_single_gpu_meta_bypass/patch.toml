@@ -7,6 +7,7 @@ kind = "enhancement"
 origin = "external-fork"
 backend = "hip"
 plan-item = "RD19"
+experiment-contract = "RD19-SINGLE-GPU-META-BYPASS"
 external-source = "stew675-rdna-boosts"
 plan-ids = []
 requires = []

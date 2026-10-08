@@ -13,7 +13,7 @@ docker stop radiance-vllm >/dev/null 2>&1
 jobs=$(mktemp)
 R=/mnt/data/bigcherry-work/runs
 cat > "$jobs" <<JOBS
-VIS=0,1,2,3 BUILD b-chunk3 bigcherry:stock:linux-multi deploy-v6-plus-chunk gfx1100,gfx1201,gfx1030
+VIS=0,1,2,3 BUILD b-chunk3 bigcherry:stock:linux-multi stock-none gfx1100,gfx1201,gfx1030
 VIS=0,1,2,3 SCRIPT a-chunk3-d24k tools/lab/flash-next/quick-ab-depth.sh 24576 @b-chunk3 @b-chunk3 $R/flashnext-chunk3-d24k BIGCHERRY_QSA_CHUNK=256
 VIS=0,1,2,3 SCRIPT chunk3-nomtp tools/lab/flash-next/chunk-nomtp.sh @b-chunk3 $R/flashnext-chunk3-nomtp
 VIS=0,1,2,3 SCRIPT ubc3 tools/lab/flash-next/ubchunk-sweep.sh @b-chunk3 $R/flashnext-ubchunk3 512:0 1024:256

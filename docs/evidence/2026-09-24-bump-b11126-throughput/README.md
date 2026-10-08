@@ -19,7 +19,7 @@ BigCherry arms differ only in their build-local generated-inputs path;
 `build_commit` in every row confirms the source revision.
 
 **Design.** 8 rounds, arm order rotated each round (every arm in every position
-twice). Harness: `tools/lab/bump-b11126-regression/run_arms.py`. Raw rows:
+twice). The one-shot harness was retired after this result was recorded; its source remains in Git history. Raw rows:
 `results.jsonl` (sha256 ca9a37fa7594a6bec4a0822a97be13f6ca81e8c9527cb0d86029e30cc142cbb1).
 Position drift: pp512 p0 0.994 .. p3 1.012 of arm mean (balanced out by
 rotation); tg128 within +/-0.1%.

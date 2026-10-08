@@ -77,8 +77,10 @@ narrated in plan-item notes.
   re-invocation proving the empty-verdicts root cause.
 - `validate_recovery_honest.txt` -- the real, fixed re-run's output.
 - `benchmark_recovered_honest.txt` -- the real, fixed cache's real speed.
-- `recovery-candidate.cache` -- the actual binary dispatch cache the
-  honest run produced (real artifact, not a description of one).
+- The honest run's `recovery-candidate.cache` payload was byte-identical to
+  the later authoritative `recovery-candidate-final.cache`; the duplicate
+  intermediate copy was removed during repository cleanup. Git history retains
+  the original filename if the chronology itself must be reconstructed.
 
 ## Second correction: GPT deep-dive found a real overclaim in the "honest" run
 
@@ -100,12 +102,12 @@ exhausted, tracking exactly which were attempted
 
 ## Final, fully-accurate re-run
 
-- `validate_recovery_final_accurate.txt` -- with the fix applied, all 5
-  real alternatives for the guilty signature (`cd3b5f5bd371...`) were
-  genuinely tried and genuinely rejected (`evaluations_used: 15`, matching
+- The final-accurate re-run tried and rejected all 5 real alternatives for
+  the guilty signature (`cd3b5f5bd371...`; `evaluations_used: 15`, matching
   8 isolation probes + 1 baseline + 5 real alternative trials + 1 final
-  validation). Correctly reverted to native; 19 of 20 signatures untouched;
-  `retune_recommendations` now accurately lists all 5 real attempts.
+  validation), reverted it to native, and left 19 of 20 signatures untouched.
+  Its transcript was byte-identical to the later authoritative re-run, so only
+  `validate_recovery_authoritative.txt` is retained in the live tree.
 - `recovery-candidate-final.cache` -- the resulting cache artifact.
 - `benchmark_recovered_final.txt` -- a fresh benchmark of this exact
   artifact: `draft_n=107, draft_n_accepted=100` (bit-identical to native)

@@ -137,25 +137,40 @@ _N_STEP = """                auto & dp = dparams.at(seq_id);
                 }
 """
 
-# the n_min post-pass also exists in the draft-simple drafters: anchor on the MTP-only chained-head restore before it
-_NMIN_CTX = ("            llama_set_nextn_layer_offset(ctx_dft, 0); // restore default for non-draft decodes\n"
-             "        }\n"
-             "\n"
-             "        for (llama_seq_id seq_id = 0; seq_id < (llama_seq_id) n_seq; ++seq_id) {\n"
-             "            auto & dp = dparams[seq_id];\n"
-             "            if (!dp.drafting) {\n"
-             "                continue;\n"
-             "            }\n"
-             "\n")
-_A_NMIN = _NMIN_CTX + ("            if (dp.result->size() < (size_t) params.n_min) {\n"
-                       "                dp.result->clear();\n"
-                       "            }\n")
-_N_NMIN = _NMIN_CTX + ("            if (dp.result->size() < (size_t) params.n_min) {\n"
-           "                dp.result->clear();\n"
-           "                if (dp.n_tail > 0) {  // bigcherry 1321: a tail only continues a front that is verified\n"
-           "                    dp.tail->clear();\n"
-           "                }\n"
-           "            }\n")
+# b11474 moved the chained-head restore out of the prior block while consolidating nextn handling.
+_A_NMIN = r'''        if (chain_heads) {
+            llama_set_nextn_layer_offset(ctx_dft, 0); // restore default for non-draft decodes
+        }
+
+        for (llama_seq_id seq_id = 0; seq_id < (llama_seq_id) n_seq; ++seq_id) {
+            auto & dp = dparams[seq_id];
+            if (!dp.drafting) {
+                continue;
+            }
+
+            if (dp.result->size() < (size_t) params.n_min) {
+                dp.result->clear();
+            }
+'''
+
+_N_NMIN = r'''        if (chain_heads) {
+            llama_set_nextn_layer_offset(ctx_dft, 0); // restore default for non-draft decodes
+        }
+
+        for (llama_seq_id seq_id = 0; seq_id < (llama_seq_id) n_seq; ++seq_id) {
+            auto & dp = dparams[seq_id];
+            if (!dp.drafting) {
+                continue;
+            }
+
+            if (dp.result->size() < (size_t) params.n_min) {
+                dp.result->clear();
+                if (dp.n_tail > 0) {  // bigcherry 1321: a tail only continues a front that is verified
+                    dp.tail->clear();
+                }
+            }
+'''
+
 
 PATCHES = [
     FilePatch(
@@ -180,8 +195,9 @@ PATCHES = [
                  guard=r"bigcherry 1321: forced promoted front first", rationale="MTP draft() per-step token selection.",
                  expect_matches=1, max_span_lines=28),
             Edit(id="mtp-ahead-nmin", anchor=re.escape(_A_NMIN), mode="replace", text=_N_NMIN,
-                 guard=r"bigcherry 1321: a tail only continues", rationale="MTP draft() n_min post-pass.",
-                 expect_matches=1, max_span_lines=13),
+                 guard=r"bigcherry 1321: a tail only continues",
+                 rationale="b11474 moved the chained-head restore outside the previous nextn block; anchor the MTP-only restore plus n_min post-pass.",
+                 expect_matches=1, max_span_lines=14),
         ),
     ),
 ]

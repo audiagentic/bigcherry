@@ -1,6 +1,6 @@
 # 1321_mtp_ahead_primitives
 
-**Status:** untested
+**Status:** validated
 **Plan item:** FMTP02
 
 ## What it does

@@ -25,7 +25,7 @@ Optional leading `MODEL=`, `HIP=` and `VIS=` tokens are supported.
 patch marker fires on the target model (traced short completion on GPUs 0,1, under
 the same host/GPU locks). A campaign row carrying `REQUIRES=<run-name>` is blocked
 unless that preflight exited 0, so a patch that does not fire never spends timed
-sessions. See `tools/lab/native-vs-patched/preflight-fire.sh`.
+sessions. The implementation is owned here by `preflight-fire.sh` and `activation-check.sh`.
 
 ## Scheduling policy
 

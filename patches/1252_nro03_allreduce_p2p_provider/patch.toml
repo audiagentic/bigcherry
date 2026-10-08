@@ -1,7 +1,7 @@
 schema = 1
 id = "1252_nro03_allreduce_p2p_provider"
 order = 1252
-state = "untested"
+state = "rejected"
 kind = "enhancement"
 origin = "external-fork"
 backend = "hip"

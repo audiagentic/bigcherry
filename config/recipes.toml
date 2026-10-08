@@ -255,8 +255,14 @@ patches = [
     "1311_hc_pre_q81",
     "1312_mul_q81",
     "1313_scale_act_fuse",
+    "1321_mtp_ahead_primitives",
+    "1322_mtp_ahead_overlap",
     "1326_sched_async_host_inputs",
     "1327_qsa_host_remap",
+    # PROMOTED 2026-10-08 (BPB01 lightweight tier): allocation diagnostics; inert unless enabled.
+    # deploy-v6-alloc-peak compiled clean; 1298 ALLOC_PEAK / 1106 ALLOC_TOP lines; greedy md5 identical; 0 errors.
+    "1329_alloc_top_trace",
+    "1331_alloc_peak_live",
     "1333_mixed_batch_on_demand",
     "1332_qsa_token_chunk",
     "1334_hip_sparse_flash_attn",
@@ -274,8 +280,15 @@ patches = [
     # PROMOTED 2026-10-08 (QFP18 lightweight tier): deploy-v4-diag compiled clean; activation counts
     # 92 DRAFT_TRACE / 23 SPEC_TIMING / 23 DRAFT_TIMING, 0 error lines, greedy md5 a34a34c1f48d == production.
     "1315_mtp_draft_trace",
+    # PROMOTED 2026-10-08 (QFP15/BPB01 lightweight tier): BIGCHERRY_NODE_HASH=0:4 on tensor split emitted
+    # 29367 NODE_HASH lines, 0 errors, no abort; greedy md5 2571b60b1505 identical to the arm without it.
+    "1316_node_hash_trace",
     "1317_spec_round_timing",
     "1318_mtp_draft_timing",
+    # PROMOTED 2026-10-08 (QFP31, lightweight tier): deferred MTP prompt catch-up, default on
+    # (BIGCHERRY_MTP_DEFERRED_CATCHUP=0 off). Prefill +5.4% / +6.3% / +9.7% at 8K / 24K / 98K, complete
+    # separation, greedy text identical, PATCH_HIT present.
+    "1348_mtp_deferred_catchup",
 ]
 required-state = "validated"
 
@@ -294,19 +307,11 @@ required-state = "validated"
 patches = ["0850_ordered_speculative_trace"]
 
 [experiment.rd19-only]
+# PA25/CLI qualification context: source=bigcherry-tuning; 1200 is production only on source=bigcherry.
 patches = ["1200_rd19_single_gpu_meta_bypass"]
-
-[experiment.rd20-only]
-patches = ["1201_rd20_attn_gate_tp_split"]
 
 [experiment.rd04-only]
 patches = ["1202_rd04_bf16_flash_attn_tile"]
-
-[experiment.rd05-07-only]
-patches = ["1203_rd050607_rdna4_wmma_fa_q6k_mmq"]
-
-[experiment.rd08-only]
-patches = ["1204_rd08_q6k_mmvq_vdr2"]
 
 [experiment.rd12-only]
 patches = ["1205_rd12_paired_mmvq_dual_output"]
@@ -314,24 +319,9 @@ patches = ["1205_rd12_paired_mmvq_dual_output"]
 [experiment.rd13-only]
 patches = ["1206_rd13_mul_mat_add_view_fusion"]
 
-[experiment.rd17-only]
-patches = ["1207_rd17_moe_topk_down_fold"]
-
 [experiment.rd21-only]
 patches = ["1208_rd21_gfx1151_mmvq_nwarps_table"]
 
-[experiment.rd22-only]
-patches = ["1209_rd22_integrated_gpu_host_buffer_backout"]
-
-[experiment.rd26a-only]
-patches = ["1210_rd26_bitidentical_decode_verify_standalone"]
-
-[experiment.rd39-42-only]
-patches = ["1215_rd394041_amd_stream_moe_overlap"]
-
-# 2026-09-26: 1216/1217 separated from 1215 (rejected). 1216 guards upstream's
-# own GGML_CUDA_GRAPH_OPT concurrent regions (stream_ctx.concurrent_events);
-# 1215 only added more of them.
 [experiment.rd43-only]
 patches = ["1216_rd43_concurrent_join_fusion_guard"]
 
@@ -344,32 +334,17 @@ patches = [
 [experiment.rd50-only]
 patches = ["1221_rd50_gdn_chunked_recurrence"]
 
-[experiment.rd73-only]
-patches = ["1233_rd73_stable_graph_cache_key"]
-
 [experiment.rd58-only]
 patches = ["1234_rd58_pin_state_buffer_multigpu_restore"]
 
 [experiment.rd09-only]
 patches = []
 
-[experiment.rd30-only]
-patches = ["1237_rd30_moe_mmq_compact_grid"]
-
-[experiment.gp11-fusion-ncols]
-patches = ["1245_gp11_mmvq_fusion_ncols_gate"]
-
-[experiment.rd33-only]
-patches = ["1241_rd33_mmvq_q8_0_f32_decode"]
-
 [experiment.nro05-only]
 patches = ["1254_nro05_gdn_mtp_prefix_tail"]
 
 [experiment.dense-decode-combo]
-patches = ["1241_rd33_mmvq_q8_0_f32_decode", "1206_rd13_mul_mat_add_view_fusion", "1245_gp11_mmvq_fusion_ncols_gate"]
-
-[experiment.allreduce-cli]
-patches = ["0860_allreduce_provider_cli"]
+patches = ["1206_rd13_mul_mat_add_view_fusion"]
 
 [experiment.nro10-only]
 patches = ["1261_nro10_spec_ctx_other_devices"]
@@ -378,19 +353,10 @@ patches = ["1261_nro10_spec_ctx_other_devices"]
 # 1272 alone: explicit GGML_CUDA_AR_WIRE=f32|bf16|f16|q8_0 on the internal AllReduce; unset = pristine.
 patches = ["1272_ar_host_compressed_wire"]
 
-[experiment.kquant-f32]
-# 1274 alone (1241, which it requires, is in validated-enhancements): Q6_K/Q4_K F32-activation ncols=1 decode.
-patches = ["1274_mmvq_kquant_f32_decode"]
-
-[experiment.ar-p2p]
-# 1252 P2P internal AllReduce (opt-in GGML_CUDA_AR_P2P=1, content-probed; falls back to host staging)
-# + 1272 wire codec + 1250 q8 wire over P2P. Needs the P2P-enabled Brutus kernel.
-patches = ["1272_ar_host_compressed_wire", "1252_nro03_allreduce_p2p_provider", "1250_nro01_allreduce_q8_wire"]
-
 [experiment.adaptive-wire-latency]
 # Promotion candidates combined: adaptive closure (0860 + 1225 + 0840) + 1272 wire formats + 1275
 # small-AllReduce latency switches, so f32/bf16/f16 x latency-fix arms run on one binary.
-patches = ["0860_allreduce_provider_cli", "1225_hi85_nccl_heterogeneous_arch_guard", "0840_hybrid_allreduce_dispatch", "1272_ar_host_compressed_wire", "1275_ar_small_latency"]
+patches = ["1272_ar_host_compressed_wire", "1275_ar_small_latency"]
 
 [experiment.adaptive-size-trace]
 # Diagnostic: 1277's env-gated per-call AllReduce size/provider trace (BIGCHERRY_AR_SIZE_TRACE=<n>) on top
@@ -430,10 +396,6 @@ patches = []
 # QFN01: + opt-in trimmed MTP draft head (1297, BIGCHERRY_DRAFT_VOCAB_N); one binary serves all A/B arms.
 patches = []
 
-[experiment.ar-cpu-root-kpool-topk-vecq]
-# RNX02: 1291 + 1292 + 1294 + quantized-KV vector kernel for MTP verify (1298); A/B vs ar-cpu-root-kpool-topk.
-patches = ["1298_fattn_vec_quant_verify"]
-
 [experiment.ar-cpu-root-kpool-topk-trim]
 # QFN01 deployment candidate: 1291 + 1292 + 1294 + 1297 (no 1295 until its parity is resolved).
 patches = []
@@ -461,10 +423,6 @@ patches = []
 [experiment.deploy-v2-plus-1295]
 # 1295 QSA gather decode screened on production profile v2 (deploy + 1302 + 1303, f16/f16 240K).
 patches = []
-
-[experiment.deploy-v2-plus-1304]
-# QFP06: production profile v2 + 1304 graph-cache LRU cap / per-instance memory log (both env-gated).
-patches = ["1304_cuda_graph_lru_cap"]
 
 [experiment.deploy-v2-plus-1305]
 # QFP09: production profile v2 + 1305 FFN/MoE split vector (BIGCHERRY_FFN_TS, env-gated; same binary both arms).
@@ -506,17 +464,14 @@ patches = []
 # QFP13: profile v3 + 1312 + 1313 + 1314 (one fused produce+consume kernel per cpu-root AllReduce; BIGCHERRY_AR_FUSED=1).
 patches = ["1314_ar_cpu_root_fused"]
 
-[experiment.deploy-v3-determinism]
-# QFP15: profile v3 + 1312 + 1313 + 1315 (BIGCHERRY_DRAFT_TRACE) + 1316 (BIGCHERRY_NODE_HASH) + 1317 (BIGCHERRY_SPEC_TIMING); all off unless set. Same-build repeat runs and FMTP01 Gate 0.
-patches = ["1316_node_hash_trace"]
 
 [experiment.deploy-v4]
 # QFN01 candidate production profile v4: v3 (v2 + 1235, 1307-1311) + 1312 (gate-multiply Q8_1 incl. GDN flatten) + 1313 (fused SCALE->SILU/SIGMOID[->SCALE]; BIGCHERRY_SCALE_ACT_FUSE=1).
 patches = []
 
 [experiment.deploy-v4-diag]
-# FMTP01/QFP15/QFP16 diagnostics on profile v4: + 1315 (DRAFT_TRACE), 1316 (NODE_HASH), 1317 + 1318 (SPEC_TIMING server rounds + MTP draft loop), 1319 + 1320 + 1325 (SUBMIT_TIMING incl. meta backend and scheduler splits); all off unless set.
-patches = ["1316_node_hash_trace", "1319_process_ubatch_timing", "1320_meta_compute_timing", "1325_sched_split_timing"]
+# FMTP01/QFP16 diagnostics not already in production: 1319 + 1320 + 1325 (SUBMIT_TIMING incl. meta backend and scheduler splits).
+patches = ["1319_process_ubatch_timing", "1320_meta_compute_timing", "1325_sched_split_timing"]
 
 [experiment.stock-none]
 # QFP15 bisection: source base patch-sets only (serving-core, upstream-fixes, validated-enhancements) - no experiment patches.
@@ -542,9 +497,6 @@ patches = []
 # MET05: v5 + 1327 + 1328 auxiliary ROCm expert backend; off unless BIGCHERRY_EXPERT_AUX_DEVICE is set.
 patches = ["1328_aux_rocm_expert_backend"]
 
-[experiment.deploy-v6-plus-ahead]
-# FMTP03: v6 + 1321 (MTP forced front / live tail) + 1322 (ahead draft during target verify + promotion; BIGCHERRY_MTP_AHEAD=1).
-patches = ["1321_mtp_ahead_primitives", "1322_mtp_ahead_overlap"]
 
 [experiment.retest-1295]
 # QFP21: promoted base (v6 stack) + 1295 QSA gathered-cell decode attention (on unless BIGCHERRY_QSA_GATHER=0).
@@ -554,22 +506,12 @@ patches = []
 # QFP21: promoted base + 1286 (DFlash/DSpark draft-local copies of tensor-split target tensors).
 patches = ["1286_draft_local_shared_tensors"]
 
-[experiment.candidate-v7]
-# QFP22/QFP21: promoted base (v6) + 1295 (QSA gather decode, BIGCHERRY_QSA_GATHER=1) + 1332 (QSA token chunks,
-# BIGCHERRY_QSA_CHUNK with -ub 1024) + 1331 (peak trace). The stacked long-context candidate.
-patches = ["1331_alloc_peak_live"]
 
-[experiment.deploy-v6-plus-chunk]
-# QFP17: v6 + 1331 (live-at-peak trace) + 1332 (QSA masks + attention per token chunk; BIGCHERRY_QSA_CHUNK=<tokens>).
-patches = ["1331_alloc_peak_live"]
 
 [experiment.fusion-bisect]
 # FKE01: production set (1339's overlap counters) + 1342 (BIGCHERRY_FUSION_SKIP_OPS, per-family fusion counters).
 patches = ["1342_fusion_bisect"]
 
-[experiment.meta-memory-content]
-# MSM03: production set + 1329 / 1331, to list what each device's compute arena holds (BIGCHERRY_ALLOC_TOP / _PEAK).
-patches = ["1329_alloc_top_trace", "1331_alloc_peak_live"]
 
 [experiment.mtp-prompt]
 # QFP31: production set + 1346 (MTP prompt cost: timing split under BIGCHERRY_MTP_PROMPT_TIMING=1, then the overlap).
@@ -581,30 +523,13 @@ patches = ["1346_mtp_prompt_overlap"]
 # process_ubatch phases, meta graph_compute, scheduler splits) + 1346 (BIGCHERRY_MTP_PROMPT_TIMING=1: MTP per prompt).
 patches = ["1319_process_ubatch_timing", "1320_meta_compute_timing", "1325_sched_split_timing", "1346_mtp_prompt_overlap"]
 
-[experiment.moe-cache-profile]
-# MET01: production set + 1337 + 1338 (Strata-style frequency profile pinned in the expert cache, large batches
-# through the cache; BIGCHERRY_MOE_CACHE_PROFILE / _PROFILE_OUT).
-patches = ["1337_moe_expert_caching", "1338_moe_cache_profile"]
 
-[experiment.moe-expert-cache]
-# MET01: production set + 1336 + 1337 (upstream #29887 GPU cache for host-resident MoE experts, --moe-cache-mib N).
-patches = ["1337_moe_expert_caching"]
 
 [experiment.native-plus-1333]
 # QFP22: 1333 alone, for the native llama.cpp comparison (build over source llama-native).
 patches = ["1333_mixed_batch_on_demand"]
 
-[experiment.deploy-v6-alloc-peak]
-# QFP17 chunked scratch: v6 + 1329 (largest tensors) + 1331 (live set at each compute buffer's allocation peak).
-patches = ["1329_alloc_top_trace", "1331_alloc_peak_live"]
 
-[experiment.deploy-v6-alloc-trace]
-# QFP17 chunked-scratch attribution: v6 (v5 + 1327) + 1329 (BIGCHERRY_ALLOC_TOP compute-buffer top tensors).
-patches = ["1329_alloc_top_trace"]
-
-[experiment.deploy-v6-plus-1330]
-# QFP17: v6 (v5 + 1327) + 1330 (in-place QSA causal-mask add, BIGCHERRY_QSA_MASK_INPLACE=1) + 1329 (BIGCHERRY_ALLOC_TOP).
-patches = ["1329_alloc_top_trace", "1330_qsa_mask_inplace"]
 
 [experiment.ar-cpu-root-topk]
 # 1292 parity baseline: 1291 + 1294 only (deterministic TOP_K makes 80K greedy comparable).
@@ -618,11 +543,6 @@ patches = []
 # QFN01/RNX01: + one scheduler input sync per split (1293); A/B against ar-cpu-root-kpool.
 patches = ["1293_sched_single_input_sync"]
 
-[experiment.adaptive-mtp]
-# 1255 controller + 1268 runtime wiring (+1210 which 1268 requires); adaptive depth is
-# off unless --spec-draft-n-min-adaptive 2 > 0, so one binary serves both A/B arms.
-patches = ["1210_rd26_bitidentical_decode_verify_standalone", "1255_nro06_adaptive_mtp_depth", "1268_prbe52_adaptive_mtp_wiring"]
-
 [experiment.allreduce-root3]
 # 1244 alone: n==3 internal AllReduce (XTX x2 + R9700). Multi-arch build gfx1100,gfx1201.
 patches = ["1244_gp11_internal_allreduce_nway_root"]
@@ -630,27 +550,16 @@ patches = ["1244_gp11_internal_allreduce_nway_root"]
 [experiment.allreduce-adaptive]
 # 0840 with its REQUIRES (0830 telemetry, 0860 --allreduce CLI, 1225 NCCL arch guard), no 1224
 # probe. 0840 is selected with --allreduce adaptive, so one binary serves every provider arm.
-patches = [
-    "0830_split_reduce_telemetry",
-    "0860_allreduce_provider_cli",
-    "1225_hi85_nccl_heterogeneous_arch_guard",
-    "0840_hybrid_allreduce_dispatch",
-]
+patches = ["0830_split_reduce_telemetry"]
 
 [experiment.ar-adaptive-nway]
 # 1276 composes adaptive N=3: root3 below the CLI switch, RCCL at/above it.
 # Experiments are exact compositions (REQUIRES are never auto-added), so the closure is listed.
-patches = ["0860_allreduce_provider_cli", "1225_hi85_nccl_heterogeneous_arch_guard", "0840_hybrid_allreduce_dispatch", "1244_gp11_internal_allreduce_nway_root", "1276_ar_adaptive_nway"]
+patches = ["1244_gp11_internal_allreduce_nway_root", "1276_ar_adaptive_nway"]
 
 [experiment.allreduce-adaptive-wire]
 # Adaptive dispatcher plus 1272's host-wire codec; exact dependency-complete composition.
-patches = [
-    "0830_split_reduce_telemetry",
-    "0860_allreduce_provider_cli",
-    "1225_hi85_nccl_heterogeneous_arch_guard",
-    "0840_hybrid_allreduce_dispatch",
-    "1272_ar_host_compressed_wire",
-]
+patches = ["0830_split_reduce_telemetry", "1272_ar_host_compressed_wire"]
 
 [experiment.hi18-reduce-probe]
 patches = ["1224_hi18_reduce_correctness_probe"]
@@ -661,10 +570,7 @@ patches = ["1224_hi18_reduce_correctness_probe"]
 # now-superseded patch 1001); 1224 (the SPLIT_REDUCE correctness probe) is included
 # so test-hip-reduce can exercise both sides of the dispatch threshold.
 # One-off validation build, not a permanent recipe.
-patches = [
-    "0840_hybrid_allreduce_dispatch",
-    "1224_hi18_reduce_correctness_probe",
-]
+patches = ["1224_hi18_reduce_correctness_probe"]
 
 [experiment.hi134-meta-stage-trace]
 # 0830 (validated, always in the default control build) satisfies 1242's
@@ -1014,7 +920,7 @@ lanes = [
 lanes = [
   { source = "llama-native", build = "stock", platform = "linux-multi", binary = "bin/llama-server" },
   { source = "bigcherry-tuning", build = "control", platform = "linux-multi", binary = "bin/llama-server" },
-  { source = "bigcherry-tuning", build = "control", platform = "linux-multi", experiment = "rd73-only", binary = "bin/llama-server" },
+  # RD73-only lane retired: RD73 was demoted and its experiment removed.
   # TUNE and REPLAY. control is an INSTRUMENTED build (GGML_HIP_AUTOTUNE=ON),
   # so comparing it against llama-native measures our instrumentation, not our
   # optimisations. replay is "applies stored winners without measuring -- what

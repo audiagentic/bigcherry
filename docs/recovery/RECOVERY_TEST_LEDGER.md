@@ -1,5 +1,7 @@
 # BigCherry Recovery Test Ledger
 
+> **Historical recovery snapshot.** This ledger records the post-reset recovery state at the time it was written. It is retained for provenance, not as current implementation or schema authority. Current database ownership is documented in `sql/README.md`; the live bootstrap schema is `sql/dispatch-db.sql`, and maintained operational guidance belongs under `docs/reference/`.
+
 Tracks every subsystem the `BigCherry_Definitive_Recovery_Handover_Condensed.md`
 doc named, mapped to its current status: restored / superseded / intentionally
 dropped / unresolved. Historical checkpoint (`413 passed, 4 subtests`, commit
@@ -51,7 +53,7 @@ sections as the fallback record.
 | `manifest_resolve.py` | doc says "unproven; do not create" | not created | — (correctly not attempted) |
 | `presets.py` | doc says superseded | not restored | — (correctly not attempted) |
 
-## Database schema (`sql/dispatch-db.sql`)
+## Database schema at recovery time (`sql/dispatch-db.sql`)
 
 Pre-reset surviving database evidence: `campaign.sqlite` and siblings on
 brutus (`artifacts/tuning-runs/hi-campaign-*`), dated 2026-08-10, hours

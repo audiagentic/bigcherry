@@ -11,148 +11,56 @@ work: S
 priority: null
 ---
 
-# VK-DRV-002: AMD graphics queue for compute on proprietary Vulkan
+# VK-DRV-002 / RD79: Qualify AMD Vulkan graphics queue without adding a second scheduler
 
-## Description
+## 2026-10-08 audit decision
 
-TODO, narrower than originally scoped. Evaluate AMD proprietary-Vulkan graphics-queue dispatch for MoE decode. Relevance at b11126: a related opt-in already exists -- `GGML_VK_ALLOW_GRAPHICS_QUEUE` env var (ggml-vulkan.cpp:4084-4087) lets the compute-queue-family search also accept VK_QUEUE_GRAPHICS_BIT-capable families, but it is a blanket allow-flag with no workload (MoE vs dense) or driver (proprietary vs RADV) conditioning and no per-graph queue selection -- so the low-level plumbing exists but the workload/driver-conditioned selector this item requires does not. Scope narrows to: build the conditioned selector on top of the existing flag rather than inventing queue-family discovery from scratch.
+**Disposition: no new Vulkan queue implementation or patch yet.** First qualify the *already implemented* upstream, process-scoped `GGML_VK_ALLOW_GRAPHICS_QUEUE` switch on actual BigCherry drivers/hardware. The previous dual-queue, per-MoE-graph patch design below is superseded and is deliberately removed from this authoritative plan. If process-scoped routing is sufficient, terminate this item with a deployment/qualification note rather than modifying ggml.
 
-TODO, corrected scope (larger than prior draft assumed). GPT identified a real defect: `GGML_VK_ALLOW_GRAPHICS_QUEUE` does NOT provide dual-queue plumbing -- it only relaxes which queue family is accepted as the SINGLE `compute_queue_family_index` during selection. Verified: `vk_device` has exactly one `compute_queue` (ggml-vulkan.cpp:4571, `ctx->compute_cmd_pool` initialized against it at :5238, all submission goes through it at :13138/13141/13912) -- there is no second queue object anywhere. Buffers are created with exclusive sharing mode by default in this codebase's Vulkan usage (verify the exact `vk::SharingMode` at buffer-creation call sites before finalizing any Edit), so cross-family graph routing is unsafe without real ownership/sharing changes. This item requires building genuinely new dual-queue infrastructure, not just conditioning an existing selector.
+This is an eligible dormant slice: last independent PRBE62 change was 2026-09-24 04:52 UTC; no PRBE62/RD79/graphics-queue BigCherry patch, plan, PR, queued hardware run or commit was found in the 12 hours preceding the audit. Recent MTP, QFP37/MMQ, MoE-cache, MET05/1328, patch-system and pin/release work is protected and is not modified here.
 
-## Steps
+## Current implementation and causal boundary (verified at pinned llama.cpp b11474 / b9acf138a1e28ce1fc23b5a4fc4b12444b50f7ea)
 
-1. Run the mandatory anchor-discovery greps before writing any Edit: `git -C work/upstream/llama.cpp.git grep -n -E 'compute_queue|VK_QUEUE_COMPUTE_BIT|VK_QUEUE_GRAPHICS_BIT|queue_family_index|VkDeviceQueueCreateInfo|vkGetDeviceQueue|vkQueueSubmit|vkCreateCommandPool' b11126 -- ggml/src/ggml-vulkan/ggml-vulkan.cpp`, `... -E 'driverID|VkPhysicalDeviceDriverProperties|VK_DRIVER_ID_AMD_PROPRIETARY|VK_DRIVER_ID_MESA_RADV|vendorID' ...`, `... -E 'GGML_OP_MUL_MAT_ID|mul_mat_id' ... tests/test-backend-ops.cpp`, and `... -E 'VkBufferCreateInfo|sharingMode|queueFamilyIndexCount|pQueueFamilyIndices' -- ggml/src/ggml-vulkan`. Also re-confirm the existing flag: `git -C work/upstream/llama.cpp.git grep -n GGML_VK_ALLOW_GRAPHICS_QUEUE b11126 -- ggml/src/ggml-vulkan/ggml-vulkan.cpp` (already confirmed present at ggml-vulkan.cpp:4084-4087).
-2. Do not finalize any Edit anchor until queue-family selection, device-queue creation, command-pool/submission, driver-properties query, and buffer-sharing blocks are pasted from step 1's real output.
-3. Implement `bigcherry_vk_use_moe_graphics_queue(device, graph)`: true only when BIGCHERRY_VK_MOE_GRAPHICS_QUEUE=1 (new, narrower flag layered on top of the existing GGML_VK_ALLOW_GRAPHICS_QUEUE plumbing -- do not just reuse the broad upstream flag for this workload-specific decision), device is AMD proprietary driver (VK_DRIVER_ID_AMD_PROPRIETARY or the exact equivalent b11126 exposes; RADV explicitly excluded), an alternate queue family supports both GRAPHICS and COMPUTE bits, and the graph is MoE-decode-shaped (contains GGML_OP_MUL_MAT_ID at a decode-sized token/batch dimension, e.g. <=8 -- exact field to be confirmed from step 1's MUL_MAT_ID grep). Dense decode/prefill and large-N MoE prefill graphs must stay on compute queue.
-4. Wire queue selection at graph-submission granularity (one lane per whole graph, not per-kernel, to avoid extra cross-queue sync). Default/env-unset path must be byte-for-byte the current compute-family selection.
-5. Handle buffer ownership: if the feature is enabled, backend buffers must be safely shared across the two selected queue families (concurrent sharing mode) unless the real b11126 allocator already provides equivalent handling -- confirmed by step 1's VkBufferCreateInfo/sharingMode grep. Never submit an exclusive-family buffer on both families.
-6. Add the activation marker (BIGCHERRY_PATCH_HIT patch=1263_prbe62 path=amd_moe_graphics_queue family=<index>) at the real graphics-queue submission point (not just init), gated by BIGCHERRY_PATCH_TRACE, once per process.
-7. Tests: MUL_MAT_ID backend-op case at decode width with env on (expect reference correctness + graphics marker); ordinary MUL_MAT decode case (no marker); MUL_MAT_ID prefill-sized case (compute path, no marker); RADV negative control if available (env on but compute fallback); temp-0 identity for a representative MoE model with env off vs on (identical token IDs); dense temp-0 control must also stay identical and never trigger the marker.
+- `ggml/src/ggml-vulkan/ggml-vulkan.cpp::ggml_vk_get_device` (approximately lines 4278-4296) reads `GGML_VK_ALLOW_GRAPHICS_QUEUE` **at device initialization**, passes the resulting `graphics_flag` to `ggml_vk_find_queue_family_index` for both compute and transfer families. It is not a per-graph or per-kernel selector. A flag set does not itself prove a graphics family was selected; verify the returned family and queue flags.
+- The same function (approximately 4477-4493, 4777-4790) creates device queues and one `device->compute_queue`; `ggml_vk_init` (approximately 5440-5462) binds the compute command pool to that queue. Graph execution obtains its context through `ggml_vk_get_compute_ctx`. No independently selectable MoE graphics compute lane is exposed.
+- **Confound:** `prefers_transfer_queue` (approximately 4873-4894) includes `!allow_graphics_queue`; toggling the flag can also change asynchronous transfer-queue policy and queue-family choice. A speed difference cannot be attributed to graphics-queue compute execution without recording transfer-path state and family selection.
+- `device->driver_id = driver_props.driverID` (approximately 4170-4180). `eAmdOpenSource` (AMDVLK), `eAmdProprietary` (proprietary driver), and `eMesaRadv` are **distinct** Vulkan driver IDs. The old proposed `eAmdProprietary`-only gate would exclude the AMDVLK Linux lane that supplied the motivating evidence. Do not silently equate them.
+- The prior sample package ID `1263_prbe62_amdvlk_moe_graphics_queue` was **invalid**: order 1263 already belongs to `patches/1263_prbe41_ssm_conv_channels_major`. No PRBE62 package exists. Never reuse that ID.
+- Existing queue/pool/transfer synchronization is shared by all graphs. A per-graph queue-family switch would require second device queue and pool, buffer ownership or concurrent sharing, semaphore/fence ordering across compute and transfer, command-buffer lifetime and multi-request safety. It is not a small environment-variable selector change.
 
-1. Run the mandatory anchor-discovery greps: confirm `device->compute_queue` is the only queue object (`git -C work/upstream/llama.cpp.git grep -n 'compute_queue\b\|transfer_queue' b11126 -- ggml/src/ggml-vulkan/ggml-vulkan.cpp`) and find the exact `vk::DeviceQueueCreateInfo`/buffer-creation `sharingMode` call sites (`git -C work/upstream/llama.cpp.git grep -n 'DeviceQueueCreateInfo\|SharingMode\|eExclusive\|eConcurrent' b11126 -- ggml/src/ggml-vulkan/ggml-vulkan.cpp`).
-2. Add an explicit SECOND graphics+compute queue family/`vk_queue` object (paralleling the existing `ggml_vk_create_queue` call for `compute_queue` at line 4571), included in `vk::DeviceQueueCreateInfo` at device creation.
-3. Add a corresponding second command pool/context for this new queue (paralleling `ctx->compute_cmd_pool.init(...)` at line 5238).
-4. Implement `bigcherry_vk_use_moe_graphics_queue(device, graph)`: true only when a new narrow flag `BIGCHERRY_VK_MOE_GRAPHICS_QUEUE=1` is set, `device->driver_id == vk::DriverId::eAmdProprietary` (RADV explicitly excluded), and the graph matches the MoE-decode predicate (contains GGML_OP_MUL_MAT_ID at decode-sized batch, e.g. <=8).
-5. Select the new graphics+compute context for command recording/submission only when step 4's predicate is true; default path is byte-for-byte unchanged (single compute_queue, exclusive-sharing buffers).
-6. In `ggml_vk_create_buffer` (or wherever the real exclusive-sharing buffer creation call site is, per step 1), use concurrent sharing mode with both family indices ONLY while the feature is enabled for that buffer's owning graph, or implement explicit queue-family ownership-transfer barriers if concurrent sharing is not desired -- default path must retain current exclusive buffers/single compute queue exactly.
-7. Add the activation marker (BIGCHERRY_PATCH_HIT patch=<id> path=amd_moe_graphics_queue family=<index>) at the real graphics-queue submission point, gated by BIGCHERRY_PATCH_TRACE.
-8. Tests: MUL_MAT_ID backend-op case at decode width with env on (expect reference correctness + graphics marker); ordinary MUL_MAT decode case (no marker, compute queue); MUL_MAT_ID prefill-sized case (compute path, no marker); RADV negative control (env on but compute fallback, driver_id check fails closed); temp-0 identity for a representative MoE model with env off vs on; dense temp-0 control must also stay identical and never trigger the marker.
+## Evidence and source decisions
 
-## Detailed Solution & Technical Design
+1. Upstream [llama.cpp #20599](https://github.com/ggml-org/llama.cpp/pull/20599), merged 2026-03-17 as `740a447f`, deliberately restored opt-in graphics-family selection after driver/desktop regressions; its diff also makes async-transfer preference conditional on the flag. **Adopt existing flag for A/B; do not fork queue-family discovery.**
+2. External [R9700 Vulkan experiment log](https://github.com/JohnTDI-cpu/RDNA4-Llama-Experiments-R9700-Vulkan-Optimization-Log) (llama.cpp `dc8d14c58`, Ubuntu, R9700 PCIe 5.0 x16, `rm_kq=1`, three benchmark repetitions): AMDVLK MoE tg128 **156.3 -> 163.7 tok/s (+4.7%)** with graphics queue; AMDVLK dense tg128 **32.73 -> 30.07 (-8.1%)**. RADV MoE **149.5 -> 149.2 (-0.2%)**. **External measurements only**; not BigCherry, not b11474, and not transferable to gfx1100, R9700 PCIe x4 or multi-GPU/no-P2P. The log's AMDVLK reports *AMD open-source driver*, not `eAmdProprietary`.
+3. [llama.cpp #25195](https://github.com/ggml-org/llama.cpp/issues/25195) reports a streamed MoE partial-offload transfer-queue write-after-write synchronization hazard. [#25196](https://github.com/ggml-org/llama.cpp/pull/25196) proposes an AMDVLK async-queue mitigation but is **closed/unmerged** as inspected 2026-10-08. Treat partial-offload/long-context async transfer as a **correctness gate**, not a free performance control. Do not force async transfer on AMDVLK merely to match A/B policy until sync validation passes.
+4. [AMDVLK](https://github.com/GPUOpen-Drivers/AMDVLK) is discontinued; its installed driver version/ICD must be recorded and reproducible. ROCm vLLM/SGLang HIP streams and collectives are not Vulkan queue-family substitutes. No transferable dynamic Vulkan per-graph queue implementation was established by this audit.
 
-Layer a workload+driver-conditioned selector on top of the ALREADY-UPSTREAM GGML_VK_ALLOW_GRAPHICS_QUEUE opt-in (ggml-vulkan.cpp:4084-4087) rather than inventing queue-family discovery from scratch. This item's own acceptance criteria explicitly forbid a global default -- the upstream flag alone does not satisfy that (it's all-or-nothing across all ops), so this remains TODO, but implementation is smaller than initially scoped since the graphics-queue-family search plumbing exists. Real anchors for queue creation, driver-ID query, and buffer sharing must be pasted from step 1 before Edit() anchors are finalized.
+## Bounded qualification (authoritative next action)
 
-## Code Samples & Guidance
+**Gate 0 — zero-code discriminator; terminate if unavailable.** On the current pinned BigCherry binary, enumerate `vulkaninfo` physical device, `driverID`, `driverVersion`, `deviceUUID`, queue-family `queueFlags/queueCount`, selected compute/transfer family, `single_queue`, `async_use_transfer_queue`, ICD path, PCIe width/speed, kernel/Mesa/AMDVLK versions, `rm_kq`, and actual model/quant. Check whether a separate compute-only and graphics+compute family exist and that the flag changes the *selected* family. If no qualifying AMDVLK/proprietary driver or no actual family switch exists, close as **no applicable lane**; do not create a patch. Never mix RADV and AMDVLK duplicate physical-device aliases in a tensor split.
 
-patches/1263_prbe62_amdvlk_moe_graphics_queue/patch.toml:
-```toml
-schema = 1
-id = "1263_prbe62_amdvlk_moe_graphics_queue"
-order = 1263
-state = "untested"
-kind = "enhancement"
-origin = "local"
-backend = "vulkan"
-plan-ids = ["PRBE62"]
-requires = []
-conflicts = []
-requires-options = []
-forbids-options = []
-subsystems = ["vulkan", "queue-dispatch", "moe"]
-hardware = ["amd"]
-validation-architectures = []
-backends = ["vulkan"]
-```
-patches/1263_prbe62_amdvlk_moe_graphics_queue/patch.py (skeleton -- TODO-VERIFY anchors require step-1 pasted text):
-```python
-from bigcherry.patcher import Edit, FilePatch
+**Gate 1 — process-scoped A/B, no source edits.** For the same driver/architecture and otherwise identical binary, run independent processes with `GGML_VK_ALLOW_GRAPHICS_QUEUE` unset versus set, explicit ICD/device selection. Include one VRAM-resident Qwen MoE decode (tg128/tg512) and one dense decode control, plus pp512/pp2048 and a representative long-context repeat; use identical `-b/-ub`, FA, cache, model, quant, `rm_kq`, clocks/power and no other tuning changes. On R9700 gfx1201 first, then gfx1100 dual-XTX device-by-device only if available; gfx1030 is not a primary lane. Record actual queue-family selection, async-transfer status, Vulkan timestamp/dispatch counts and E2E latency/TPS, VRAM, memory and transfer bytes. Use >=4 interleaved A/B pairs and CI95 intervals; warm both variants. Do **not** add a new benchmark definition when the existing BigCherry campaign harness can express these lanes.
 
-PATCHES = [
-    FilePatch(
-        path="ggml/src/ggml-vulkan/ggml-vulkan.cpp",
-        description="PRBE62 opt-in proprietary-AMD MoE graphics-queue routing",
-        edits=(
-            Edit(
-                id="prbe62-driver-workload-predicate",
-                anchor=r"<TODO-VERIFY: real device/queue helper anchor, near existing GGML_VK_ALLOW_GRAPHICS_QUEUE at ~line 4084>",
-                rationale="add AMD-proprietary + MoE-decode qualification predicate layered on the existing graphics-queue-allow plumbing",
-                mode="insert_before",
-                text=r"<TODO-VERIFY: bigcherry_vk_use_moe_graphics_queue() using verified b11126 device/graph types>",
-                guard=r"bigcherry_vk_use_moe_graphics_queue",
-            ),
-            Edit(
-                id="prbe62-dual-queue-init",
-                anchor=r"<TODO-VERIFY: real queue-family/device-queue creation block>",
-                rationale="retain existing compute queue selection; add optional graphics+compute lane only under the new narrower flag",
-                mode="replace",
-                text=r"<TODO-VERIFY: dual-queue init preserving default-off behavior>",
-                guard=r"BIGCHERRY_VK_MOE_GRAPHICS_QUEUE",
-            ),
-            Edit(
-                id="prbe62-queue-submit-select",
-                anchor=r"<TODO-VERIFY: real submission block>",
-                rationale="select graphics lane only for proprietary-AMD MoE decode graphs; emit activation evidence at submission",
-                mode="replace",
-                text=r"<TODO-VERIFY: graph-level queue selection + submit + marker>",
-                guard=r"BIGCHERRY_PATCH_HIT patch=1263_prbe62",
-            ),
-            Edit(
-                id="prbe62-buffer-family-sharing",
-                anchor=r"<TODO-VERIFY: buffer-create block, only if needed per step-1 sharingMode grep>",
-                rationale="permit safe compute/graphics family alternation only while the experimental flag is enabled",
-                mode="replace",
-                text=r"<TODO-VERIFY: concurrent queue-family buffer setup>",
-                guard=r"<unique prbe62 buffer-sharing guard>",
-            ),
-        ),
-    ),
-]
-```
+**Gate 1a — transfer confound / safety.** If the flag also toggles async transfer, report the measured result as a *combined queue policy*, not isolated compute-queue gain. Only attempt a same-async control if both families support it and Vulkan synchronization validation proves it safe; never force a known unsafe streamed-expert upload path. Capture `VK_LAYER_KHRONOS_validation` synchronization findings where supported. Partial CPU-MoE/offload, >100K context and multiple requests must be correctness-qualified before speed claims.
 
-## Files
+**Correctness:** reference logits (or established KLD tolerance), greedy token identity, exact node/dispatch and expert-work accounting, repeated same-process requests, multi-ubatch, long-context, buffer ownership/sync-validation and allocation stability. MTP lanes require separate verification/acceptance and cannot be borrowed from active FMTP/QFP owners. A faster result with skipped work is FAIL.
 
-ggml/src/ggml-vulkan/ggml-vulkan.cpp; possibly a separate buffer-allocation source if VkBufferCreateInfo lives elsewhere (confirm in step 1); tests/test-backend-ops.cpp; patches/1263_prbe62_amdvlk_moe_graphics_queue/{patch.toml,patch.py,SUMMARY.md,validation/producer.py}
+**Gate 2 — disposition:**
+- **No change:** absent family switch, unavailable driver, sync failure, MoE CI95-low <3% E2E, or insufficient evidence. Close PRBE62; retain upstream defaults.
+- **Process-scoped opt-in only:** MoE CI95-low >=3% E2E and correctness pass, but dense or prefill regresses >1% or mixed workloads differ. Record a **model/driver-specific launch policy** using the existing upstream flag. Do not enable globally, and do not create an in-backend selector.
+- **Potential code path (separate approval only):** only if a single long-lived mixed-model process cannot use process-scoped routing, the *measured mixed-workload* E2E opportunity is >=5%, and a trace proves the queue policy rather than transfer changes drives the gain. Before a patch, require a current-pin prototype of dual queues/pools and concurrent-sharing or explicit queue-family ownership barriers, timeline semaphore ordering, allocation lifetime and all correctness gates. Reuse `ggml_vk_get_device`, `ggml_vk_init`, `ggml_vk_get_compute_ctx` and existing submission paths; no second scheduler, generic placement table or extra runtime flag without a justified design review. Assign a **unique** patch ID only after approval.
 
-## Validation
+For promotion of any future implementation: CI95-low >=3% production E2E and <=1% unaffected-control regression, exact route/transfer accounting, no correctness or sync-validation errors. Revert to current upstream queue policy on any failure.
 
-Offline: `PYTHONPATH=tools python -m bigcherry patch-lint`, `patch-rebase-check --focal-overlay 1263_prbe62_amdvlk_moe_graphics_queue --source bigcherry-tuning`. Unit: the 5 backend-op/control cases in step 7. Hardware (Brutus, not run here): proprietary-AMD-driver R9700, MoE + dense Qwen decode/prefill, output parity, TG/PP and queue-utilization split by workload/driver, via `python -m bigcherry.patch.validation_campaign`.
+## Ownership and dependencies
 
-## Effort & Risk
+- PRBE62/RD79: only the Vulkan queue-policy **qualification and disposition**; no owned patch today.
+- Upstream `ggml-vulkan.cpp`: sole queue-family selection, command-pool, buffer-sharing and submit implementation owner.
+- PRBE61/RD78: separate `rm_kq` kernel geometry; hold `rm_kq` constant during PRBE62 comparisons, do not merge the selectors.
+- PRBE55: Vulkan MMVQ/DMMV routing; independent kernel policy, hold fixed.
+- MET05/1328 and MTP/QFP/F MTP: protected active work; no edits or overlapping experiments. If a later experiment needs those lanes, coordinate after their active window.
+- BCOP53: thin action ledger; technical design stays here.
 
-M / medium-high -- touches Vulkan device/queue init and buffer-sharing semantics; risk contained by opt-in flag, RADV/dense fallback to unchanged compute path, and per-graph (not per-kernel) queue selection.
+## Historical provenance
 
-## Standards
-
-Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
-
-## Acceptance Criteria
-
-Never enable globally; retain only a proven workload/driver-specific selector with repeatable benefit and no dense regression.
-
-## Notes
-
-Supersedes: RD79
-Migration: capability-rebaseline-v3-2026-09
-Successor key: patching-rdna-boost-experiments-rd79
-
-2026-09-24 relevance at b11126: GGML_VK_ALLOW_GRAPHICS_QUEUE opt-in flag already upstream (ggml-vulkan.cpp:4084-4087, confirmed via grep) but is a blanket allow with no workload/driver conditioning -- item's own acceptance criteria (never enable globally) means this stays TODO, narrowed to build the conditioned selector on existing plumbing. GPT design request req_63a12ebff6544a0a (batched with PRBE55).
-
-2026-09-24 GPT review req_2b65d50ebe9547fd applied: NOT-READY -- corrected premise (GGML_VK_ALLOW_GRAPHICS_QUEUE only relaxes single compute_queue_family_index selection, no second queue exists; verified vk_device has exactly one compute_queue); scoped real dual-queue infra (second queue/command pool, buffer sharing mode) as required work, not a config layer over existing plumbing.
-
-## Change Log
-
-- 2026-09-09T10:57:49.294113+00:00 (created-by): Created by capability-rebaseline-v3
-- 2026-09-09T11:14:59.947699+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
-
-## Ledger-events
-
-- chg_20260909_115759_created-and-populated-the-192_2958
-- 2026-09-09T11:58:01.407607+00:00 (updated-by): Updated: section:ledger-events
-- chg_20260910_001436_completed-the-planning-rebasel_5794
-- 2026-09-10T00:14:43.225741+00:00 (updated-by): Updated: section:ledger-events
-- 2026-09-10T03:16:25.617635+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
-- chg_20260910_031644_repaired-four-more-active-succ_8062
-- 2026-09-10T03:16:44.974520+00:00 (updated-by): Updated: section:ledger-events
-- 2026-09-24T02:30:37.583971+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:notes
-- 2026-09-24T04:44:08.581938+00:00 (updated-by): Updated: section:description, section:steps
-- 2026-09-24T04:44:19.277910+00:00 (updated-by): Updated: section:notes
+Created 2026-09-09 by capability-rebaseline-v3; re-reviewed 2026-09-24 against b11126. The original design proposed a new `BIGCHERRY_VK_MOE_GRAPHICS_QUEUE` flag, per-graph dual queues, a new buffer-sharing policy and a hypothetical 1263 patch. Those sketches are superseded by the 2026-10-08 code/evidence audit; preserved in Git history rather than maintained as contradictory active steps. No hardware/build/benchmark ran during this audit; static pinned-source assertions verified the queue/transfer coupling.

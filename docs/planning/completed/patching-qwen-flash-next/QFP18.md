@@ -23,7 +23,7 @@ Finding (2026-10-05): the current tooling already allows a cheap path. None of t
 
 Plan (about 1 dev-session + about 1 GPU-hour, all patches in one pass):
 1. GPU, about 45 min, one queue: native-vs-v6 ABBA at 8K and 64K on pin 0504396 (stock-none vs deploy-v5-plus-1327, same flags/ts/ctx, f16 KV). It supplies the native llama.cpp arm for every patch at once.
-2. Generator script tools/lab/flash-next/promote-readme.py: writes patches/<id>/README.md from a per-patch table (mechanism, env flag, activation evidence path, incremental ABBA run and delta, profile it joined, native vs v6 numbers from step 1, greedy identity hashes) and appends evidence/validation.json entries (append-only).
+2. Historical implementation used `tools/lab/flash-next/promote-readme.py` to write per-patch README/evidence records. QFP18 is complete and that one-off generator was retired during 2026-10-08 repo cleanup; the generated patch documentation/evidence is canonical and the implementation remains available in Git history.
 3. Per-patch evidence map (existing runs, nothing new):
    - incremental ABBA with separation: 1326 (v4 to v5, +9.4%/+7.8%), 1327 (post-bump half-recovery, kernel census 1053 to 1027), 1312/1313 screens + census, 1307-1311 v2/v3 fusion ABBAs (flashnext-v2-fusion-ab-3), 1308 rollback ABBA;
    - enabler/functional, neutral rationale: 1291, 1292, 1294 (determinism), 1297 (draft vocab), 1302 (OOM evict), 1303 (KV split; needed for 240K fit);

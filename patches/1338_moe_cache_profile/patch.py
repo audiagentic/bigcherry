@@ -2,7 +2,7 @@
 
 1337's cache is a pure LRU over (layer, expert) slots and only serves ubatches of up to 32 tokens: a large batch
 uses most experts of a layer and would evict what generation needs, so prefill still uploads every selected expert
-of every host layer per micro-batch (1336).
+of every host layer per micro-batch through b11474's native selective-copy callback.
 
 Routing is strongly skewed: with half of all (layer, expert) pairs resident, a frequency ranking covers 91-97% of
 the routed pairs of an unseen request, where whole layers (--n-cpu-moe) cover 50% (MET01, routing-skew.py). This
@@ -15,7 +15,7 @@ patch uses that:
   2. With a pinned set, large batches use the cache too (BIGCHERRY_MOE_CACHE_LARGE=0 turns that off): hits are
      computed from the resident experts and only the misses are uploaded, into the LRU tail, so a prefill sweep
      cannot evict the hot set. A batch is only given to the cache when its worst case fits the unpinned slots
-     of its layer group; otherwise it takes 1336's upload as before.
+     of its layer group; otherwise it takes b11474's native selective expert-copy path as before.
   3. BIGCHERRY_MOE_CACHE_PROFILE_OUT=<file> counts the routed experts the cache sees and writes a profile at exit
      (ranked by count, then the pairs never routed, interleaved across layers), in the same format.
 
