@@ -51,7 +51,8 @@ def _run_git(args: Sequence[str], *, check: bool = True) -> subprocess.Completed
     return subprocess.run(
         ["git", *args],
         check=check,
-        text=True,
+        encoding="utf-8",
+        errors="surrogateescape",
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
@@ -61,7 +62,8 @@ def _run_gh(args: Sequence[str], *, check: bool = True) -> subprocess.CompletedP
     return subprocess.run(
         ["gh", *args],
         check=check,
-        text=True,
+        encoding="utf-8",
+        errors="surrogateescape",
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
@@ -286,6 +288,7 @@ def _write_patch_file(patch: str) -> Path:
     handle = tempfile.NamedTemporaryFile(
         mode="w",
         encoding="utf-8",
+        errors="surrogateescape",
         newline="",
         suffix=".patch",
         delete=False,
@@ -347,6 +350,12 @@ def start_slice(
             )
         diff = runner(_at(root, ["diff", "--binary", "HEAD"]), check=False)
         patch = _checked(diff, "capture primary changes") if diff.returncode else diff.stdout
+        dirty = _checked(
+            runner(_at(root, ["status", "--porcelain"]), check=False),
+            "read primary checkout status",
+        )
+        if dirty and not patch:
+            raise RuntimeError("--carry found changes in the primary checkout but could not capture them as a patch")
         if patch:
             patch_path = _write_patch_file(patch)
             _checked(
