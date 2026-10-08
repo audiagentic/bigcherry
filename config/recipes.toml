@@ -289,6 +289,8 @@ patches = [
     # (BIGCHERRY_MTP_DEFERRED_CATCHUP=0 off). Prefill +5.4% / +6.3% / +9.7% at 8K / 24K / 98K, complete
     # separation, greedy text identical, PATCH_HIT present.
     "1348_mtp_deferred_catchup",
+    # PROMOTED 2026-10-08 (QFP18 lightweight tier): Flash-Next prefill +1.8/+1.2/+1.9% at 8K/24K/98K; complete separation; CPU-f32 probes no worse than production. Default off; flashnext profile enables it.
+    "1350_mmq_few_tile_streamk",
 ]
 required-state = "validated"
 
@@ -514,6 +516,10 @@ patches = ["1330_qsa_mask_inplace"]
 # FKE01: production set (1339's overlap counters) + 1342 (BIGCHERRY_FUSION_SKIP_OPS, per-family fusion counters).
 patches = ["1342_fusion_bisect"]
 
+
+[experiment.mmq-few-tile-streamk]
+# QFP37: 1350 is promoted into the production set; retain the selector as a stable composition check.
+patches = []
 
 [experiment.mtp-prompt]
 # QFP31: production set + 1346 (MTP prompt cost: timing split under BIGCHERRY_MTP_PROMPT_TIMING=1, then the overlap).
