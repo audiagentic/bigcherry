@@ -213,4 +213,4 @@ Hardware now isolates a large adaptive-off cost in the restored 1210+1255+1268 c
 
 1255 policy is revised to deterministic acceptance hysteresis: request reset depth 3 clamped to floor/cap; 32 drafted-token window; <=60% drop one level, >=72% climb one, otherwise hold. This is a hardware-directed hypothesis: it should retain the long-context floor-2 opportunity without the short-context floor-1/2 cold-start loss. Validate at 8K/24K/98K against both `adaptive-mtp` and the released build before disposition.
 
-Source/inference split is recorded in `releases/evidence/prbe52-adaptive-no1210-source-audit.md`.
+Source/inference split is recorded in `releases/evidence/prbe52-adaptive-no1210-source-audit.md`. Source audit also found that b11474 MTP prompt-checkpoint restore omits `pending_h`; 1268 now checkpoints that hidden boundary so warm-fill and timed requests restore coherent MTP state.
