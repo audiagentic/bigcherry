@@ -65,7 +65,7 @@ class Patch1330Mechanics(unittest.TestCase):
             self.assertIn("bigcherry 1330: only a >8-token in-place dense fallback can pass its strided mask", out)
             self.assertNotIn("static const bool bc_inplace", out)
             attn = out[out.index("ggml_tensor * llama_model_qwen4exp::graph::build_attn_qsa("):out.index("ggml_tensor * llama_model_qwen4exp::graph::build_layer_attn(")]
-            self.assertLess(attn.index("if (sel->type == GGML_TYPE_I32)"), attn.index("bigcherry 1330: 1332's dense fallback"))
+            self.assertLess(attn.index("if (sel->type == GGML_TYPE_I32)"), attn.index("bigcherry 1330: only a >8-token in-place dense fallback"))
 
             g = (root / _REL_GGML).read_text(encoding="utf-8")
             self.assertIn("bigcherry 1332: rows must be contiguous", g)
