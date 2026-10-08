@@ -5,6 +5,9 @@
 #      adaptive floor unset (greedy text identity, decode ms/step, acceptance) - also the cost of 1210 + 1255 alone;
 #   2. adaptive ON vs OFF on the one binary: ABBA with LLAMA_ARG_SPEC_DRAFT_N_MIN_ADAPTIVE=<floor>, both arms at
 #      --spec-draft-n-max <max> (greedy identity is the correctness gate; effective decode t/s is the result).
+# Static composition preflight (also keeps CI coverage pinned to source=bigcherry):
+#   PYTHONPATH=tools python -m bigcherry patch-rebase-check --source bigcherry --experiment adaptive-mtp
+#   PYTHONPATH=tools python -m bigcherry patch-rebase-check --source bigcherry --experiment rd26a-only
 # wait= waits for ALL_RUNS_DONE (the end of a whole chain): a chain log also carries one ALL_JOBS_DONE per sub-run.
 # Usage: queue-adaptive-mtp.sh <tag> <production build run> <depth>... [wait=<chain log with ALL_RUNS_DONE>]
 #        env: SPEC_MAX (4), FLOOR (1)
