@@ -11,12 +11,13 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from bigcherry.core import csource  # noqa: E402
+from bigcherry.core import csource, paths  # noqa: E402
 from bigcherry.patcher import apply_all  # noqa: E402
 from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
+from bigcherry.patch import rebase as patch_rebase  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
-_V = _REPO / "vendor/llama.cpp"
+_V = paths.llama_root()  # the primary checkout's vendor tree (a slice worktree has none)
 _F = "ggml/src/ggml-cuda/mmq.cuh"
 
 
@@ -47,7 +48,22 @@ def _patches(mod):
 
 
 _P = _load("patch_1350", "patches/1350_mmq_few_tile_streamk/patch.py")
-_PROD_IDS = _production_patch_ids()
+def _composer_order(ids: list[str]) -> list[str]:
+    """Production patch ids in the order the real composer applies them.
+
+    The recipe lists patch-sets and patches for people; the composer orders modules by their own `order` and
+    dependencies. Applying in listing order makes unrelated anchors miss (1317 needs its predecessors).
+    """
+    selected = patch_rebase.resolve_selection(source_name="bigcherry", all_patches=False)
+    resolved = [m.patch_id for m in selected.modules]
+    missing = sorted(set(ids) - set(resolved))
+    assert not missing, f"production recipe ids not resolved by the composer: {missing}"
+    wanted = set(ids)
+    return [pid for pid in resolved if pid in wanted]
+
+
+_RECIPE_IDS = _production_patch_ids()
+_PROD_IDS = _composer_order(_RECIPE_IDS)
 _PROD = [(pid, _load("patch_prod_" + pid, f"patches/{pid}/patch.py")) for pid in _PROD_IDS]
 _PROD_BEFORE_1350 = [(pid, mod) for pid, mod in _PROD if pid != "1350_mmq_few_tile_streamk"]
 
@@ -58,7 +74,7 @@ class Patch1350Mechanics(unittest.TestCase):
         with (_REPO / "config/recipes.toml").open("rb") as fh:
             cfg = tomllib.load(fh)
         validated = cfg["patch-set"]["validated-enhancements"]["patches"]
-        projected = [pid for pid in _PROD_IDS if pid in set(validated)]
+        projected = [pid for pid in _RECIPE_IDS if pid in set(validated)]
         self.assertEqual(projected, validated)
 
     def _tree(self, td):
@@ -82,18 +98,44 @@ class Patch1350Mechanics(unittest.TestCase):
                 dst.write_bytes(src.read_bytes())
         return root
 
+    def _compose(self, root, stop_before=None):
+        """Thread the production set through the composer's own probe path and write the result into root.
+
+        Same resolver, ordering, overlay handling and apply path as `patch-rebase-check --source bigcherry`; the
+        test does not rebuild any of that. With stop_before, composition stops just before that package.
+        """
+        selected = patch_rebase.resolve_selection(source_name="bigcherry", all_patches=False)
+        ids = [m.patch_id for m in selected.modules]
+        self.assertIn("1350_mmq_few_tile_streamk", ids)
+        texts = patch_rebase._overlay_texts()
+        overlay_paths = frozenset(texts)
+        for module in selected.modules:
+            if stop_before is not None and module.patch_id == stop_before:
+                break
+            probe = patch_rebase.probe_patch(
+                module,
+                _V,
+                texts,
+                context_lines=3,
+                previous_revision=None,
+                revision="mechanics-test",
+                overlay_paths=overlay_paths,
+            )
+            self.assertIn(
+                probe.status,
+                (patch_rebase.STATUS_CLEAN, patch_rebase.STATUS_CLEAN_NOOP),
+                (module.patch_id, probe.to_dict()),
+            )
+        for rel, text in texts.items():
+            target = root / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(text, encoding="utf-8")
+
     def _compose_production_before_1350(self, root):
-        # Exact source.bigcherry recipe order, applying every production patch
-        # except the focal patch itself. This includes every validated-enhancement
-        # predecessor, not a hand-selected list of mmq.cuh editors.
-        for pid, mod in _PROD_BEFORE_1350:
-            res = apply_all(_patches(mod), root)
-            self.assertTrue(all(r.ok for r in res), (pid, [e.detail for r in res for e in r.failed]))
+        self._compose(root, stop_before="1350_mmq_few_tile_streamk")
 
     def _compose_full_production(self, root):
-        for pid, mod in _PROD:
-            res = apply_all(_patches(mod), root)
-            self.assertTrue(all(r.ok for r in res), (pid, [e.detail for r in res for e in r.failed]))
+        self._compose(root)
 
     def _assert_1350_anchors_once(self, src):
         for file_patch in _P.PATCHES:
