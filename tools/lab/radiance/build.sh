@@ -18,14 +18,18 @@ cd "$src" || { echo "NO_SOURCE $src"; exit 1; }
 echo "radiance $(git rev-parse HEAD) $(git log -1 --format=%cd --date=short) ($(git log -1 --format=%s))"
 echo "toolchain: $(hipcc --version 2> /dev/null | head -1); cmake $(cmake --version | head -1 | awk '{print $3}'); ROCM_PATH=$ROCM_PATH"
 # Upstream builds with g++-14 (its Dockerfile). g++ 13 rejects the compound-literal arrays in abi/rad_builder.h
-# ("taking address of temporary array"), so without g++-14 the host compiler is ROCm's clang.
-if command -v g++-14 > /dev/null 2>&1; then
+# ("taking address of temporary array").
+# ROCm 7.2.4's clang as host compiler crashes in libavx (backend error in avx_attn.cpp), so without g++-14 the
+# fallback is the system g++ with -fpermissive (HOST_CXX / HOST_CXXFLAGS override both).
+if [ -n "${HOST_CXX:-}" ]; then
+    export CXX=$HOST_CXX CXXFLAGS="${HOST_CXXFLAGS:-}"
+elif command -v g++-14 > /dev/null 2>&1; then
     export CC=gcc-14 CXX=g++-14
 else
-    export CC="$ROCM_PATH/lib/llvm/bin/clang" CXX="$ROCM_PATH/lib/llvm/bin/clang++"
+    export CC=gcc CXX=g++ CXXFLAGS="${HOST_CXXFLAGS:--fpermissive}"
 fi
-echo "host compiler: $($CXX --version | head -1)"
-[ -f build/CMakeCache.txt ] && ! grep -q "CMAKE_CXX_COMPILER:[A-Z]*=$CXX\$" build/CMakeCache.txt && rm -rf build
+echo "host compiler: $($CXX --version | head -1) ${CXXFLAGS:-}"
+rm -rf build   # the host compiler or its flags may have changed since the last attempt
 t0=$(date +%s)
 cmake -S . -B build -G Ninja -DRAD_GPU_TARGETS="${RAD_GPU_TARGETS:-gfx1201}" > "$out/configure.log" 2>&1 || { echo "CONFIGURE_FAILED"; tail -15 "$out/configure.log"; exit 1; }
 grep -iE "gpu target|kernel librar|hip|plugin" "$out/configure.log" | head -12
