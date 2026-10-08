@@ -13,6 +13,52 @@ work: M
 
 # MTP asynchronous NextN staging: remove the per-chunk target synchronization barrier
 
+## Description
+
+
+
+## Steps
+
+
+
+### Step 0 (added 2026-10-08): blocked-time synchronisation trace before any code
+
+Salvaged from the retired QFP08 draft (branch automation-qfp-indexer-20261004, deleted 2026-10-08). Extend the sync tracer (`tools/lab/flash-next/` synctrace mode of `long-ctx-profile.sh`, `sync-tracer.c`) from call counts to blocked wall time per call site, tagged with context (target / draft), prompt chunk index and whether the wait is inside `llama_get_embeddings_nextn`, `common_speculative_process_deferred`, draft graph compute or `llama_synchronize`. Run it on the 1348 build at 24K and 98K with deferred catch-up on and off. Output: a table of ms blocked per chunk by call site that accounts for the gap between the measured +6-10% and the ~19% idle-gap bound (83 ms of 437 ms per chunk). Only waits shown there to be non-dependencies are removed in the later steps; a wait that is a true data dependency is recorded as such and left alone.
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+
+
+## Notes
+
+
+
+2026-10-08: the retired QFP08 draft's other proposals are already covered - draft-during-verify overlap by 1322 (decode +4-6%), double-buffered hidden-state snapshot for prompt chunks by 1348 (prefill +5-10%), event-scoped NextN handoff by this item. Its promotion thresholds (>=5% or stop) are NOT carried over: owner policy is that small wins count.
+
 ## Problem
 
 QFP31 / patch 1348 defers MTP draft catch-up by one target chunk. Brutus b11474 adoption ABBA improved prefill
@@ -131,3 +177,7 @@ acceptance threshold; the timing counters must show that host preparation moved 
 
 - QFP31 / 1348_mtp_deferred_catchup promoted and merged.
 - 1346 timing diagnostic retained without its unqualified prompt-window mechanism.
+
+## Change Log
+
+- 2026-10-07T22:53:39.805664+00:00 (updated-by): Updated: section:steps, section:notes
