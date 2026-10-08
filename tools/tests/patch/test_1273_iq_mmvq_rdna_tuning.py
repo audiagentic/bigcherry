@@ -14,7 +14,7 @@ from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
 _PATCH_FILE = _REPO / "patches/1273_iq_mmvq_rdna_tuning/patch.py"
-_VENDOR = _REPO / "tools/lab/iq-mmvq/vendor-b11233"
+_VENDOR = _REPO / "vendor/llama.cpp/ggml/src/ggml-cuda"
 
 
 

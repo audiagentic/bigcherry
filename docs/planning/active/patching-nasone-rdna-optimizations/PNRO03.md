@@ -77,6 +77,8 @@ REAL FINDING 2026-09-12: found the identical compile-breaking anchor bug fixed i
 
 2026-09-25: IMPLEMENTED (commits bd2fc067/45219a0d). patches/1252 is now a real port of 7c5bb5cb adapted to this item's invariants: per-direction streams/events on the SOURCE device, set_device(source) before every cudaMemcpyPeerAsync, no issuer, ggml_cuda_ar_p2p_probe (4 sizes x 2 directions x 2 passes, byte compare) gates GGML_CUDA_AR_P2P. Marker patch=1252_nro03. Rebase CLEAN at b11126. Next: build + hardware arms per TESTING.md (P2P on vs off, same binary, 2x gfx1100).
 
+2026-10-08: TERMINAL REJECTION at b11474. Patch 1252_nro03_allreduce_p2p_provider is rejected: P2P AllReduce faults on the lab topology (re-tested 2026-10-07). The ar-p2p experiment and spent queue-p2p-accuracy.sh were removed. Historical evidence above is retained.
+
 ## Change Log
 
 - 2026-09-09T10:52:12.743676+00:00 (created-by): Created by capability-rebaseline-v3

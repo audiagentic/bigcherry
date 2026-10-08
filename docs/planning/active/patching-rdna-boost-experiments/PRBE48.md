@@ -13,61 +13,58 @@ priority: null
 
 # UP-HRX-001: AMD-native HRX backend comparative lane
 
-## Description
+## Audit disposition — 2026-10-08
 
-TODO (scoping/research, not yet code). Scope an AMD-native ggml-hrx backend as a separate experimental lane vs upstream PR #27218, kept fully isolated from HIP patches. Relevance at b11126: confirmed ABSENT -- `git -C work/upstream/llama.cpp.git grep -ln hrx b11126` returns no backend source hits (only an unrelated tools/ui/package-lock.json string match). No ggml-hrx tree exists in-repo at this pin, so there is nothing to grep for absorption and no existing code to design edits against; GPT design step was skipped for this reason (no real anchors exist yet) per brief step 4's judgment allowance.
+**HOLD: do not create a BigCherry HRX backend, patch package, build harness, or hardware campaign yet.** This is an external backend maturity/eligibility gate, not an in-tree HIP/Vulkan optimisation. The earlier b11126 claim that no pinned HRX source was available is superseded by the exact external pins below. BigCherry's b11474 upstream pin (b9acf138a1e28ce1fc23b5a4fc4b12444b50f7ea) has no `ggml/src/ggml-hrx` directory; draft upstream PR #27218 remains open/unmerged (last updated 2026-09-03).
 
-NON-PATCH-IMPLEMENTATION ITEM (research/tracking only), confirmed by GPT review. No pinned HRX source revision, no in-tree files, no anchors, and no patches/ package can be implemented at b11126 -- ggml-hrx is absent from tree (confirmed via `git -C work/upstream/llama.cpp.git grep -ln hrx b11126`, only an unrelated package-lock.json hit). Concrete next action: pin the exact upstream PR #27218 source commit/snapshot first (network step, outside this offline mirror), THEN specify concrete CMake/backend files and anchored integration edits -- do not treat this as implementation-ready until that pin exists. Kept pending as a tracked research item, not reclassified to a different state.
+The October 7 AMD staging integration pins:
+- `ROCm/ggml-staging-automation` commit `08264258af71` (integration staging, explicitly temporary/not a stable distribution channel).
+- `AMD-Ecosystem/llama.cpp` submodule `02f2880c9f422dd1df9db11e3a0bb442bc5f11f5` (branch `hrx-graph-develop-v2`).
+- `ROCm/hrx-system` submodule `c0b135a778cc1e133001ee77a5a3f74536b3f483`.
+- The earlier RFC branch `users/stella/hrx-rfc-v1` / PR #27218 head `33a1f2b23975201febe33745125cd94f2c550309` is historical, **not** the latest integration baseline.
 
-## Steps
+## Implementation-level finding: target dispatch is the first gate
 
-1. Pull upstream PR #27218 (ggml-hrx) description/diff from GitHub (network-enabled step, not the offline mirror) and record: which ops/kernels it implements, which gfx targets it claims support for, and its CMake/build integration surface.
-2. Confirm absence at pin: re-run `git -C work/upstream/llama.cpp.git grep -rn hrx b11126 -- ggml/` before starting (must stay empty until/unless upstream merges it).
-3. Define the backend maturity matrix: Qwen3.6 dense Q8/Q4 and MoE Q8/Q4, on each of gfx1100/gfx1201/gfx1030, columns = {compiles, op-coverage %, PPL/temp-0 match, server-protocol pass, PP, TG, MTP TPS, VRAM, load-time}.
-4. Stand up ggml-hrx as an OUT-OF-TREE optional backend build (separate CMake option, e.g. -DGGML_HRX=ON) so it never touches the HIP patch surface; do not cherry-pick any HRX kernel into ggml-cuda/HIP.
-5. Run the maturity matrix against matched HIP and Vulkan controls on the same hardware/model/quant combos.
-6. Decide: keep experimental (most likely outcome given HRX is early-stage) unless correctness parity + repeatable PP/TG/MTP advantage over both HIP and Vulkan is shown.
-7. If HRX proves immature or abandoned upstream, deprecate this item with that evidence.
+In the pinned staging `ggml/src/ggml-hrx/dispatch_registration/dispatch-registry.cpp::find_dispatch_registry`, only **gfx1100** and **gfx1151** return registries; gfx1201 and gfx1030 return `nullptr`. `dispatch/dispatch-scheduler.cpp::schedule_graph` then fails with `no HRX dispatch registry for target`, and `DispatchScheduler::supports_node` returns false. Thus the staging build's advertised `gfx1201` *compile target* is **not proof of executable ggml HRX graph coverage** on BigCherry's R9700. gfx1030 auxiliary-device coverage is also absent. Do not allocate R9700/gfx1030 hardware lanes until a pinned revision adds and validates these dispatch paths.
 
-## Detailed Solution & Technical Design
+On gfx1100, the implementation is a real but narrow alternative: `ggml-hrx.cpp` implements buffer/backend/device hooks and a device-local fake pointer base for GGML offset representation; `runtime/graph-executor.cpp::execute` calls `GraphProgramCache::get_or_build`, binds external values, then executes a prepared command program; `runtime/graph-program-cache.cpp` matches tensor shape/stride/type, op params, aliases and external bindings; `runtime/prepared-command-program-cache.cpp` keys prepared replay by graph UID, target, command shape and bindings hash. `dispatch_registration/dispatch-registry.cpp` composes fused Qwen attention, matmul, routed-FFN, preamble, norm and router matchers. Kernel-corpus/Loom JIT and transient-arena/buffer generations introduce different compilation, allocation, replay and host-transfer lifetimes from HIP; they are not drop-in HIP kernels.
 
-HRX is scoped as a fully separate third backend lane, not a HIP enhancement -- this is a build/eval harness item, not a kernel patch. No BigCherry patch package is proposed here because there is no in-tree HRX source to anchor edits against; the deliverable is a build+bench harness plus a go/no-go writeup. Revisit this plan once ggml-hrx lands in a future llama.cpp pin (re-run the grep above after each pin bump per the standing 'freeze source identity, re-audit ancestry after each pin bump' doctrine already in PRBE52's sibling item).
+`ggml-hrx.cpp::device_supports_op` contains generic eager capability declarations, whereas the graph scheduler additionally requires a target registry and a successful matcher. **Never equate device enumeration, successful CMake compilation or `supports_op` alone with full-model execution.** Capture the first rejected op and whether any CPU/Vulkan fallback occurred; partial offload is not an HRX speed win.
 
-## Code Samples & Guidance
+## Reuse external qualification; no duplicate BigCherry infrastructure
 
-None -- no HRX source exists in this repo to anchor against. Do not write speculative Edit()/FilePatch anchors for code that isn't present.
+`ROCm/ggml-staging-automation` already owns a pinned build flow (`scripts/hrx/build/build_llama_cpp.py`), model-manifest and bounded batch runner, HRX/Vulkan PPL runner (`run_perplexity_benchmark.py`) and throughput runner (`run_lemonade_benchmark.py`). Its PPL harness distinguishes execution failure from numerical failure and tests prefill-like `-ub 512` and decode-like `-ub 1`. The October 7 model manifest marks `Qwen3.5-35B-A3B-MTP` perplexity as **expected failure** and includes `Qwen3.8-27B` only in the full tier. An XFAIL is not correctness evidence. Do not clone those runners into `tools/lab/hrx-eval/`, as the old plan proposed; use a disposable external checkout and the existing BigCherry comparison/evidence format only after Gate 0 passes.
 
-## Files
+Upstream HRX's command-buffer/graph replay plus Loom architecture JIT is a potentially transferable *mechanism* for low launch overhead, but the current runtime, dispatch registry, caches and buffer lifetimes are inseparable from HRX; **do not transplant its command scheduler, cache, allocation policy, JIT or dispatch tables into HIP/Vulkan**. The only portable hypothesis worth separately referring to an existing kernel owner is a specific measured dispatch/launch bottleneck and a minimal native mechanism, not a new framework.
 
-New: tools/lab/hrx-eval/ (bench harness, maturity-matrix runner, comparison report template). No patches/ package until HRX is in-tree and a concrete kernel-level change is identified.
+External evidence only: AMD's August 17 RFC claims ~30–50% prefill and 0–15% non-MTP decode relative to the faster HIP/Vulkan backend, without absolute matched BigCherry lanes. A September 19 independent gfx1151 Qwen3-30B-A3B Q4_K_M comparison reported pp512 HRX 1724, Vulkan 1466, HIP 1650 tok/s and tg128 HRX 85.3, Vulkan 89.5, HIP 72.9; the same reporter found multi-ubatch/PPL failures, then later corrected several and identified long-context attention memory-order/dispatch costs. These are external single-device data, not gfx1100/gfx1201 evidence and not transferable to tensor-split/MTP.
 
-## Validation
+## Bounded execution gate
 
-Backend-op correctness tests (once ggml-hrx builds), PPL/temp-0 identity, server protocol compatibility smoke test where applicable. Performance: PP/TG/MTP TPS, VRAM, load-time, op-coverage % vs matched HIP/Vulkan on Brutus (not run by this agent).
+**Gate 0 — zero hardware, repeat on a newer exact integration pin only:**
+1. Record HRX llama.cpp SHA, hrx-system SHA, ROCm artifact/run ID, compiler/driver and `GGML_HRX` build flags. Confirm the pinned `find_dispatch_registry` target list and kernel-corpus coverage for the *actual* GGUF/quant; reject unsupported architectures before a build.
+2. Read the staging model manifest's `expected_results`; any required model/operation marked XFAIL or skipped fails the correctness eligibility gate. Verify no in-progress BigCherry owner is already qualifying the same backend or GPU lane.
+3. Do not queue a campaign until one **production-relevant single-gfx1100** model/quant has no known correctness XFAIL, a complete operation path, and an available disposable staging build. If none, close/no-campaign until upstream changes.
 
-## Effort & Risk
+**Gate 1 — one disposable gfx1100 smoke only if Gate 0 passes:** use the pinned staging build/benchmark flow, same model GGUF hash, context, -b/-ub, KV type and driver for HRX vs HIP and Vulkan; force single XTX, record device list, actual offload, unsupported op/CPU fallback, PPL, greedy tokens/logits, compile/load time, peak VRAM, graph-program builds/hits, replay fallbacks and dispatch/transfer counts. Test 1- and >1-ubatch, two same-process requests, ~8K and >=32K context before throughput. Any crash, divergence beyond established matched-backend tolerance, XFAIL, partial-offload ambiguity, graph binding/lifetime failure or unsupported op => **terminal no-campaign** for this pin.
 
-L / medium risk -- depends entirely on external, possibly-unstable upstream backend; scope creep risk if kernels get cherry-picked into HIP against the item's own explicit prohibition.
+**Gate 2 — only if Gate 1 is correct:** interleaved matched pp512/2048, tg128 and production-sized server E2E with four independent sessions; compare to the **faster of HIP and Vulkan** on gfx1100. Promotion to an *optional external-backend evaluation lane* requires CI95-low >=3% E2E gain, <=1% regression in controls, no correctness/work/transfer accounting loss, and repeatable long-context stability. No production backend adoption from single-GPU evidence. The actual dual-XTX/R9700/gfx1030 no-P2P topology, MTP and Flash-Next require separate explicit multi-device coverage and correctness gates after HRX implements them; never extrapolate from W7900/Strix Halo.
 
-## Standards
+**Stop states:** `no-campaign` (missing registry/ops/XFAIL), `external-smoke-rejected` (correctness/lifetime/coverage failure), `external-evaluation-only` (qualified single-gfx1100 benefit), or `upstream-wait` (no actionable supported BigCherry workload). Never introduce a third BigCherry production backend or an HRX-specific runtime selector under PRBE48.
 
-Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
+## Ownership, dependencies and references
 
-## Acceptance Criteria
+PRBE48 owns only this eligibility decision and evidence disposition. AMD HRX maintainers own HRX graph executor, target registry, kernel corpus and command replay. Existing BigCherry HIP/Vulkan, QFP/MET, placement, MTP and benchmark owners retain their paths. Do not modify active MTP/MoE, graph, cache, patch-system or hardware queue work. Historical RD57 successor remains PRBE48; no new technical owner is created.
 
-Keep HRX experimental unless matched backend correctness/feature parity and repeatable PP/TG/MTP advantage are demonstrated; do not merge backend-specific kernels into HIP without a separate decision.
+- https://github.com/ggml-org/llama.cpp/pull/27218
+- https://github.com/ggml-org/llama.cpp/discussions/27219
+- https://github.com/ROCm/ggml-staging-automation/tree/08264258af71
+- https://github.com/AMD-Ecosystem/llama.cpp/tree/02f2880c9f422dd1df9db11e3a0bb442bc5f11f5/ggml/src/ggml-hrx
+- https://github.com/ROCm/hrx-system/tree/c0b135a778cc1e133001ee77a5a3f74536b3f483
 
-## Notes
+## Validation recorded by this audit
 
-Supersedes: RD57
-Migration: capability-rebaseline-v3-2026-09
-Successor key: patching-rdna-boost-experiments-rd57
-
-append
-
-2026-09-24 relevance at b11126: confirmed ggml-hrx backend absent from tree (`git -C work/upstream/llama.cpp.git grep -ln hrx b11126` only hits tools/ui/package-lock.json, no ggml source). GPT design request: skipped, no in-tree anchors exist for HRX yet.
-
-2026-09-24 GPT review req_2b65d50ebe9547fd applied: NOT-READY -- confirmed non-patch-implementation item, description made explicit, concrete next action (pin PR #27218 source first) stated, kept pending.
+Static source/manifest fixture only: 8/8 assertions passed on pinned staging target-registry coverage, fail-closed scheduler behavior and model-manifest XFAIL. No BigCherry code change, build, prototype, server run or hardware benchmark occurred. Historical b11126 plan prose was superseded; original history below is retained.
 
 ## Change Log
 
