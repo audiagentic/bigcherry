@@ -1,0 +1,17 @@
+name: Repository line endings
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  index-line-endings:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject indexed CRLF text files
+        run: python -m unittest tools.tests.core.test_line_endings -v
