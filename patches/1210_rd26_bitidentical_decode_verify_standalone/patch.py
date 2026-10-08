@@ -267,7 +267,7 @@ PATCHES = [
 ]
 
 GROUP = "rdna-boosts"
-STATE = "untested"
+STATE = "rejected"
 
 PROVENANCE = {
     "source-id": "stew675-rdna-boosts",

@@ -322,9 +322,6 @@ patches = ["1206_rd13_mul_mat_add_view_fusion"]
 [experiment.rd21-only]
 patches = ["1208_rd21_gfx1151_mmvq_nwarps_table"]
 
-[experiment.rd26a-only]
-patches = ["1210_rd26_bitidentical_decode_verify_standalone"]
-
 [experiment.rd43-only]
 patches = ["1216_rd43_concurrent_join_fusion_guard"]
 
@@ -355,11 +352,6 @@ patches = ["1261_nro10_spec_ctx_other_devices"]
 [experiment.ar-wire]
 # 1272 alone: explicit GGML_CUDA_AR_WIRE=f32|bf16|f16|q8_0 on the internal AllReduce; unset = pristine.
 patches = ["1272_ar_host_compressed_wire"]
-
-[experiment.ar-p2p]
-# 1252 P2P internal AllReduce (opt-in GGML_CUDA_AR_P2P=1, content-probed; falls back to host staging)
-# + 1272 wire codec + 1250 q8 wire over P2P. Needs the P2P-enabled Brutus kernel.
-patches = ["1272_ar_host_compressed_wire", "1252_nro03_allreduce_p2p_provider", "1250_nro01_allreduce_q8_wire"]
 
 [experiment.adaptive-wire-latency]
 # Promotion candidates combined: adaptive closure (0860 + 1225 + 0840) + 1272 wire formats + 1275
@@ -550,11 +542,6 @@ patches = []
 [experiment.ar-cpu-root-kpool-sync]
 # QFN01/RNX01: + one scheduler input sync per split (1293); A/B against ar-cpu-root-kpool.
 patches = ["1293_sched_single_input_sync"]
-
-[experiment.adaptive-mtp]
-# 1255 controller + 1268 runtime wiring (+1210 which 1268 requires); adaptive depth is
-# off unless --spec-draft-n-min-adaptive 2 > 0, so one binary serves both A/B arms.
-patches = ["1210_rd26_bitidentical_decode_verify_standalone", "1255_nro06_adaptive_mtp_depth", "1268_prbe52_adaptive_mtp_wiring"]
 
 [experiment.allreduce-root3]
 # 1244 alone: n==3 internal AllReduce (XTX x2 + R9700). Multi-arch build gfx1100,gfx1201.
