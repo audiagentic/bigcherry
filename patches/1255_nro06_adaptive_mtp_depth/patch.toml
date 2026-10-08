@@ -1,7 +1,7 @@
 schema = 1
 id = "1255_nro06_adaptive_mtp_depth"
 order = 1255
-state = "untested"
+state = "rejected"
 kind = "enhancement"
 origin = "local"
 backend = "agnostic"

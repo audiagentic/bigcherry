@@ -12,57 +12,52 @@ DRAFT_SOURCE_CONTEXT = {
 _CONTROLLER = r'''
 
 // BIGCHERRY_NRO06_ADAPTIVE_MTP_CONTROLLER_BEGIN
-// Pure/testable controller only.  Runtime MTP remains fixed-depth until the
-// controller's exhaustive state-machine tests and request-reset plumbing land.
+// Pure deterministic controller. Runtime wiring is supplied by 1268.
+// Policy input is acceptance counts only: no clocks, allocation addresses, or
+// process-global state can influence the chosen depth.
 struct bigcherry_nro06_adaptive_mtp {
     int n_cur = 0;
-    int n_climb = 0;
-    int n_drop = 0;
+    int n_window_draft = 0;
+    int n_window_accept = 0;
 
-    static int climb_threshold(int depth) {
-        switch (depth) {
-            case 1: return 2;
-            case 2: return 4;
-            case 3: return 10;
-            case 4: return 6;
-            case 5: return 3;
-            case 6: return 2;
-            default: return 2;
-        }
-    }
-
-    static int drop_pressure(int depth) {
-        return std::max(depth * 5, 20);
-    }
+    static constexpr int window_tokens = 32;
+    static constexpr int climb_pct = 72;
+    static constexpr int drop_pct = 60;
 
     void reset(int n_max, int n_min_adaptive) {
         const int cap = std::max(1, n_max);
-        const int floor = std::max(1, n_min_adaptive);
-        n_cur = std::min(floor, cap);
-        n_climb = 0;
-        n_drop = 0;
+        const int floor = std::min(std::max(1, n_min_adaptive), cap);
+        // Depth 1/2 is a bad cold start on Flash-Next. Start from the
+        // hardware-neutral depth 3, clamped by the caller's floor/cap.
+        n_cur = std::min(cap, std::max(floor, 3));
+        n_window_draft = 0;
+        n_window_accept = 0;
     }
 
     void update(int n_draft, int n_accepted, int n_max, int n_min_adaptive) {
         if (n_draft <= 0) return;
+
         const int cap = std::max(1, n_max);
         const int floor = std::min(std::max(1, n_min_adaptive), cap);
-        if (n_accepted == n_draft) {
-            n_drop = 0;
-            if (n_cur < cap && ++n_climb >= climb_threshold(n_cur)) {
-                ++n_cur;
-                n_climb = 0;
-            }
+        n_window_draft += n_draft;
+        n_window_accept += std::min(std::max(0, n_accepted), n_draft);
+
+        if (n_window_draft < window_tokens) {
             return;
         }
-        n_climb = 0;
-        if (n_cur > floor) {
-            n_drop += std::max(0, n_draft - n_accepted);
-            if (n_drop >= drop_pressure(n_cur)) {
-                --n_cur;
-                n_drop = 0;
-            }
+
+        // Integer comparisons keep the policy bit-for-bit deterministic.
+        // A dead band prevents depth oscillation on marginal workloads.
+        const int64_t accept100 = (int64_t) n_window_accept * 100;
+        const int64_t draft100  = (int64_t) n_window_draft;
+        if (accept100 <= (int64_t) drop_pct * draft100 && n_cur > floor) {
+            --n_cur;
+        } else if (accept100 >= (int64_t) climb_pct * draft100 && n_cur < cap) {
+            ++n_cur;
         }
+
+        n_window_draft = 0;
+        n_window_accept = 0;
     }
 };
 // BIGCHERRY_NRO06_ADAPTIVE_MTP_CONTROLLER_END
