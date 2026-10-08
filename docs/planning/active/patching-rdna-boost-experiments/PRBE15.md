@@ -8,7 +8,7 @@ breadth: ''
 skill: advanced
 created-by: capability-rebaseline-v3
 work: L
-priority: null
+priority: P3
 ---
 
 # Evaluate IMRoPE plus BF16 SET_ROWS fusion extension
@@ -94,6 +94,8 @@ Successor key: patching-rdna-boost-experiments-rd18
 2026-09-24 GPT review req_7f4dea253b7247f0 applied: verified via grep that ggml_cuda_op_rope_impl() in rope.cu only dispatches F32/F16 dst_type (no BF16 branch) -- widening the fusion gate alone would route BF16 SET_ROWS into a nonexistent/aborting path. Added required BF16 destination handling in ggml_cuda_op_rope_impl() and an IMRoPE row_indices/set_rows_stride plumbing check for rope_multi_cuda/rope_multi as prerequisites before widening the gate, plus a required activation marker (none was specified before).
 
 ## Change Log
+
+- 2026-10-08 (triage): Kept pending at P3. No new validated patch. 1004 is rejected as upstream-absorbed (its SUMMARY); b11474 needs an activating IMRoPE/BF16 SET_ROWS graph before widening ggml_cuda_should_fuse_rope_set_rows. No branch or measured benefit. Keep pending, not in_progress.
 
 - 2026-09-09T10:54:30.186606+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:11:39.895272+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes

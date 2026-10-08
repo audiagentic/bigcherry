@@ -8,7 +8,7 @@ breadth: ''
 skill: advanced
 created-by: capability-rebaseline-v3
 work: M
-priority: null
+priority: P3
 ---
 
 # UP-HIP-002: AMD DPP/native shuffle path
@@ -62,6 +62,8 @@ Supersedes RD56.
 2026-09-24 GPT review req_e17e0bf5a68c48d5 applied: corrected the target call sites from vecdotq.cuh's vec_dot_q6_K_q8_1* (which does not call warp_reduce_sum) to the real generic, type-templated reduction sites in mmvq.cu (confirmed at mmvq.cu:795,798,937,940); specified an if-constexpr type-gated specialization at those sites rather than a blanket redefinition.
 
 ## Change Log
+
+- 2026-10-08 (triage): Kept pending at P3. No RD56 DPP MMVQ specialized patch or measured gfx1100/gfx1201 ISA/perf evidence. Native warp_reduce_sum at mmvq.cu's type-shared sites must remain for unqualified quant types; profile then isolate. Keep pending.
 
 - 2026-09-09T10:56:45.120291+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:13:58.680914+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
