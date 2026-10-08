@@ -13,7 +13,7 @@ docker stop radiance-vllm >/dev/null 2>&1
 jobs=$(mktemp)
 R=/mnt/data/bigcherry-work/runs
 cat > "$jobs" <<JOBS
-VIS=0,1,2,3 BUILD b-ahead2 bigcherry:stock:linux-multi deploy-v6-plus-ahead gfx1100,gfx1201,gfx1030
+VIS=0,1,2,3 BUILD b-ahead2 bigcherry:stock:linux-multi stock-none gfx1100,gfx1201,gfx1030
 VIS=0,1,2,3 SCRIPT actl-d24k tools/lab/flash-next/ahead-ab.sh 24576 @b-ahead2 $R/flashnext-actl-d24k
 VIS=0,1,2,3 SCRIPT actl-d80k tools/lab/flash-next/ahead-ab.sh 81920 @b-ahead2 $R/flashnext-actl-d80k
 JOBS
