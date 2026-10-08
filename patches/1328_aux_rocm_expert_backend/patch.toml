@@ -1,7 +1,7 @@
 schema = 1
 id = "1328_aux_rocm_expert_backend"
 order = 1328
-state = "rejected"
+state = "untested"
 kind = "enhancement"
 origin = "local"
 backend = "hip"
