@@ -75,6 +75,8 @@ docs/reference/testing/PATCH_VALIDATION.md
 
 docs/reference/tooling/TOOLING.md
 
+docs/reference/build/BRANCHING.md
+
 tools/bigcherry/patch/
 
 tools/bigcherry/cli/patch.py
@@ -251,7 +253,13 @@ Never use revision-specific rebase failure as a reason to silently change durabl
 
 Never silently drop dependencies or conflicts from a resolved composition.
 
-Respect shared-worktree source-control rules; do not stash/reset/rebase another actor's work.
+Follow BRANCHING.md: the primary checkout stays on main and is updated only
+by fast-forward. Never switch its branch, force-switch any checkout, or commit
+directly to main or a branch another agent owns. One agent per slice worktree.
+Use bigcherry slice start/status/lab/finish; prune is read-only until --apply.
+Worktrees share a single vendor/build cache through the resolved primary root.
+Do not stash/reset/rebase another actor's work; never force-remove a dirty
+worktree. The Brutus primary checkout remains clean on main throughout lab runs.
 
 Handoff rules
 
