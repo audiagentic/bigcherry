@@ -1,4 +1,4 @@
-# MET01 MoE cache qualification — rejection
+# MET01 MoE cache qualification — prior single-point result
 
 Brutus, 2026-10-08, b11474, build `moe-cache-profile`, `queue-moe-cache.sh mig`, NCMOE=41, one R9700 target + MTP sidecar.
 
