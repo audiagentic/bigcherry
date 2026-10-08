@@ -204,3 +204,13 @@ Traceability:
 
 1210 (untested), 1255 (untested), and 1268 (evaluated) are pending hardware A/B at b11474; none is rejected. Adaptive depth and MTP look-ahead are intentionally mutually exclusive: when `--spec-draft-n-min-adaptive > 0`, the per-sequence controller owns the fresh-front cap for each round; when `BIGCHERRY_MTP_AHEAD=1`, 1321/1322 own forced-front replay plus the static-`n_max` ahead tail/promotion. Enabling both fails closed during MTP construction rather than silently letting promoted static-depth fronts bypass the adaptive policy.
 - 2026-10-08T07:12:15.427051+00:00 (updated-by): Updated: section:ledger-events
+
+## 2026-10-08 no-1210 source audit and controller revision
+
+Hardware now isolates a large adaptive-off cost in the restored 1210+1255+1268 composition at 98K. Source audit confirms 1268 never mechanically depended on 1210; 1210 changes MMVF/MMVQ/SGEMM/fattn decisions for verify-scale batches. Keep `adaptive-mtp` with 1210 as the comparison arm and add `adaptive-mtp-no1210` for production+1255+1268.
+
+1268 now requires 1255 + 1321. Adaptive depth and 1322 look-ahead are compatible: the server exposes the controller's current per-sequence budget to fresh drafts and ahead tails, live-tail continuation is exempt from the fresh-front limiter, and acceptance feedback uses `verify_h_rows - 1` so promoted fronts cannot consume stale draft accounting. Speculative-init failure is fatal rather than silently disabling drafting.
+
+1255 policy is revised to deterministic acceptance hysteresis: request reset depth 3 clamped to floor/cap; 32 drafted-token window; <=60% drop one level, >=72% climb one, otherwise hold. This is a hardware-directed hypothesis: it should retain the long-context floor-2 opportunity without the short-context floor-1/2 cold-start loss. Validate at 8K/24K/98K against both `adaptive-mtp` and the released build before disposition.
+
+Source/inference split is recorded in `releases/evidence/prbe52-adaptive-no1210-source-audit.md`.

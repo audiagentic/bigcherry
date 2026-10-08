@@ -1,26 +1,22 @@
 # 1268_prbe52_adaptive_mtp_wiring
 
-**Status:** evaluated
+**Status:** evaluated  
 **Plan item:** PRBE52
 
-## What it does
+## Current design
 
-Wires patch 1255's pure adaptive MTP controller into per-sequence MTP drafting behind the explicit `--spec-draft-n-min-adaptive`/`LLAMA_ARG_SPEC_DRAFT_N_MIN_ADAPTIVE` opt-in.
+1268 wires 1255 behind `--spec-draft-n-min-adaptive` / `LLAMA_ARG_SPEC_DRAFT_N_MIN_ADAPTIVE`; zero preserves fixed depth. The manifest requires 1255 + 1321, not 1210.
 
-## Safety
+The server resolves an effective per-sequence speculative budget. 1322 therefore uses the same current depth for its forced front and ahead tail. The adaptive limiter is skipped only during 1321 live-tail continuation. Acceptance feedback uses the actual target verify row count rather than mutable draft-call bookkeeping, covering fresh and promoted fronts.
 
-Default value 0 preserves fixed-depth MTP. State resets in `begin()`, draft accounting is per sequence, and controller updates consume the runtime `n_accepted` value rather than recomputing acceptance.
+## Determinism
 
-## Validation
+Controller reset is per request. The controller has no time source, allocation-layout input, or process-global mutable policy state. With depth-dependent target numerics, however, one changed accept decision changes the next depth and therefore the next verify shape; output divergence can feed back into a different depth history. That is backend/path sensitivity, not nondeterministic controller arithmetic.
 
-Greedy token identity is the correctness gate because accepted MTP draft tokens do not provide complete full-vocabulary rows. Performance uses batched MTP server requests; ordinary decode is the control lane.
+## Failure mode and trace
 
-## Reconciliation to b11402 (2026-10-06)
+Speculative initialization failure is fatal to server startup in this composition. `BIGCHERRY_PATCH_TRACE=1` reports activation, depth changes, and shutdown depth distribution.
 
-Upstream #27694 (probabilistic MTP) changed three of this patch's sites: `begin()` now resets the per-sequence sampler
-first, the draft start chooses between greedy and rejection-sampling drafts before any sampler reset, and the depth
-cap follows the optional candidate capture. The three edits (`prbe52-begin-reset`, `prbe52-draft-reset`,
-`prbe52-depth-limit`) are re-anchored on that shape and now insert only their own lines. Behaviour is unchanged:
-floor 0 keeps fixed-depth MTP. The earlier `known_broken` disposition (bound to pin 0504396 and the old digest) is
-cleared. Evidence from before the reconciliation does not carry over; the hardware gate is rerun on this pin
-(`tools/lab/flash-next/queue-adaptive-mtp.sh`).
+## 1210
+
+1210 is retained only in `adaptive-mtp` for direct comparison. `adaptive-mtp-no1210` tests the production kernel paths with 1255+1268.

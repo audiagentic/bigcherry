@@ -1,16 +1,18 @@
 # 1255_nro06_adaptive_mtp_depth
 
-**Status:** untested
+**Status:** untested  
 **Plan item:** NRO06
 
 ## What it does
 
-Adds the pure adaptive MTP depth controller state machine beside the existing MTP implementation. It is not yet connected to a new CLI/speculative mode.
+Adds a pure adaptive MTP depth controller beside the existing MTP implementation. It is inert unless runtime wiring 1268 is composed and enabled.
+
+Current policy: reset at depth 3 clamped to floor/cap; evaluate a 32-drafted-token window; <=60% acceptance drops one depth, >=72% climbs one depth, otherwise hold. State is per sequence and all transitions are integer functions of accepted/drafted counts.
 
 ## Why
 
-The controller can be exhaustively tested without changing runtime behavior before plumbing adaptive draft caps through requests and sequence state.
+The prior floor-start/climb/drop policy made floors 1/2 a cold-start penalty and could not distinguish the observed short-context loss from the long-context gain. The new hysteresis keeps the controller deterministic while allowing sustained low acceptance to move from 3 to 2.
 
 ## Upstream
 
-Local staged adaptation of nasone commit `10579a7365a3bc86c4f8e41aaab20e73e1571e5e`.
+Local staged adaptation of nasone commit `10579a7365a3bc86c4f8e41aaab20e73e1571e5e`; the 2026-10-08 hysteresis is BigCherry-local and pending hardware qualification.
