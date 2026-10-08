@@ -61,7 +61,7 @@ PATCHES = [
                  guard=r"bigcherry 1330: with the in-place mask the attention mask is a strided view", rationale="mask_all construction.",
                  expect_matches=1, max_span_lines=5),
             Edit(id="qsa-mask-passthrough", anchor=re.escape(_A2), mode="replace", text=_N2,
-                 guard=r"bigcherry 1330: the in-place selection mask is a strided view", rationale="build_attn_qsa mask.",
+                 guard=r"bigcherry 1330: 1332\'s dense fallback can pass the in-place mask", rationale="build_attn_qsa dense fallback mask.",
                  expect_matches=1, max_span_lines=2),
         ),
     ),
