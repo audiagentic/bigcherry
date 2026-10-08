@@ -92,3 +92,8 @@ Implemented in the new `1328_aux_rocm_expert_backend` package with the exact v5+
 - 2026-10-04: Implemented patch 1328 design/package, recipe, mechanics tests, and ROCm3 sweep queue; retained pending state until hardware validation.
 - 2026-10-05: Corrected the plan heading to the implemented patch id 1328; hardware qualification remains pending.
 - 2026-10-05T04:54:53.020468+00:00 (updated-by): Updated: section:notes
+
+## Ledger-events
+
+- chg_20261008_071201_several-experimental-patches-r_2753
+- 2026-10-08T07:12:28.907113+00:00 (updated-by): Updated: section:ledger-events
