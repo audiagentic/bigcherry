@@ -69,6 +69,81 @@ class SliceCommandTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             slice_cli.start_slice("Bad Branch", primary_root=self.primary)
 
+
+    def test_start_carry_moves_tracked_changes_and_cleans_primary(self):
+        (self.primary / "README.md").write_text("carried\n", encoding="utf-8")
+
+        worktree = slice_cli.start_slice(
+            "feat/pa47-test",
+            primary_root=self.primary,
+            carry=True,
+        )
+
+        self.assertEqual(
+            _run(self.primary, "status", "--porcelain").stdout.strip(),
+            "",
+        )
+        self.assertEqual((self.primary / "README.md").read_text(encoding="utf-8"), "main\n")
+        self.assertEqual((worktree / "README.md").read_text(encoding="utf-8"), "carried\n")
+        self.assertIn("README.md", _run(worktree, "status", "--porcelain").stdout)
+
+    def test_finish_resumes_when_record_is_gone_but_directory_remains(self):
+        worktree = self._start()
+        _run(worktree, "push", "-u", "origin", "feat/pa47-test")
+        _run(self.primary, "worktree", "remove", str(worktree))
+        worktree.mkdir(parents=True)
+
+        slice_cli.finish_slice(
+            "feat/pa47-test",
+            primary_root=self.primary,
+            gh_runner=_gh(state="CLOSED"),
+        )
+
+        self.assertFalse(worktree.exists())
+        self.assertFalse((self.primary / "worktrees" / "feat").exists())
+
+    def test_finish_handles_remote_branch_already_deleted(self):
+        worktree = self._start()
+        _run(worktree, "push", "-u", "origin", "feat/pa47-test")
+        _run(self.primary, "push", "origin", "--delete", "feat/pa47-test")
+
+        slice_cli.finish_slice(
+            "feat/pa47-test",
+            primary_root=self.primary,
+            gh_runner=_gh(state="CLOSED"),
+        )
+
+        self.assertFalse(worktree.exists())
+        self.assertNotEqual(
+            _run(
+                self.primary,
+                "show-ref",
+                "--verify",
+                "--quiet",
+                "refs/heads/feat/pa47-test",
+                check=False,
+            ).returncode,
+            0,
+        )
+
+    def test_finish_rerun_after_success_is_noop(self):
+        worktree = self._start()
+        _run(worktree, "push", "-u", "origin", "feat/pa47-test")
+
+        first = slice_cli.finish_slice(
+            "feat/pa47-test",
+            primary_root=self.primary,
+            gh_runner=_gh(state="CLOSED"),
+        )
+        second = slice_cli.finish_slice(
+            "feat/pa47-test",
+            primary_root=self.primary,
+            gh_runner=_gh(state="CLOSED"),
+        )
+
+        self.assertEqual(first, second)
+        self.assertFalse(worktree.exists())
+
     def test_finish_refuses_open_pr(self):
         worktree = self._start()
         with self.assertRaisesRegex(RuntimeError, "requires merged or closed"):
