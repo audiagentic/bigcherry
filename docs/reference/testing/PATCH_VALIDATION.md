@@ -582,3 +582,6 @@ For patch mechanics, use [PATCH_SYSTEM.md](../patches/PATCH_SYSTEM.md) and
 [PATCH_REFACTOR_RUNBOOK.md](../patches/PATCH_REFACTOR_RUNBOOK.md). For the
 contract schema, use
 [EXPERIMENT_CONTRACT.md](../experiments/EXPERIMENT_CONTRACT.md).
+### Automated promotion (PA45)
+
+After eligible lightweight/full qualification evidence is current, use `bigcherry patch-promote <id>... --evidence @file`. The command requires a real evidence file and, unless `--profile-only` is explicitly selected, at least two distinct `Model:`/`Model-ID:` lines. It records the evidence in both the patch README under `Promotion record` and `releases/evidence/<id>-promotion.md`, changes package state and recipe membership together, removes promoted patches from experiments, runs patch-local/catalog/governance/recipe tests, `patch-lint`, evidence verification, and a production `patch-rebase-check`, then commits/pushes a short-lived slice and opens the conventional-title PR. For validated optimization patches, patch-lint still requires evidence of the native llama.cpp + BigCherry baseline + BigCherry-with-patch 3-arm comparison. A failed check restores every edited file and does not push a promotion. `--default-on` additionally requires two distinct named models and a single recognized default-off EnvDoc/runtime gate. `--release` remains resumable around the promotion PR merge.

@@ -618,4 +618,6 @@ Rebase compatibility/disposition and patch lifecycle are independent. known_brok
 Dependencies/conflicts are enforced composition. Never silently remove, substitute, or auto-add dependencies in exact resolution.
 
 Generic full qualification must never be assumed. Re-read current validation_campaign.py; unsupported patches stop below ported-validated until real required producers exist.
+## Promotion command
 
+For qualified patches, prefer `bigcherry patch-promote <id>... --evidence @file` over hand-editing lifecycle state. It updates `patch.toml`, `patch.py` STATE, SUMMARY, README Promotion record, a deterministic `releases/evidence/<id>-promotion.md` record and `[patch-set.validated-enhancements]` atomically; removes duplicate experiment membership; runs current-evidence, lint, governance and production-composition checks; commits on a slice branch; opens the conventional `feat(patch):`/`fix(patch):` PR; and prints the `record_change_event` payload with plan-item-ids. Promotion evidence needs two distinct `Model:`/`Model-ID:` lines unless `--profile-only` is explicitly selected. Validated optimization evidence must include the native llama.cpp / BigCherry baseline / subject comparison required by patch-lint. Never bypass a failed promotion gate by editing `STATE` manually.
