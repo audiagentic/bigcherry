@@ -20,6 +20,7 @@ from ..core import paths as core_paths
 from ..patch import catalog as patch_catalog
 from ..source import sources
 from ..release import pin as _release_pin
+from ..release.patch_promote import cmd_patch_promote
 from .build import cmd_build_new
 from .diagnostics import cmd_check, cmd_doctor, cmd_status
 from .experiment import (
@@ -52,6 +53,7 @@ from .slice import (
     cmd_slice_start,
     cmd_slice_status,
 )
+from .slice_lab import cmd_slice_lab
 from .tuning import (
     cmd_execution_audit,
     cmd_tuning_rollup,
@@ -179,6 +181,19 @@ def build_parser() -> argparse.ArgumentParser:
     slice_status_cmd.add_argument("--remote", default="origin")
     slice_status_cmd.add_argument("--base", default="main")
     slice_status_cmd.set_defaults(func=cmd_slice_status)
+
+    slice_lab = slice_sub.add_parser(
+        "lab", help="run a detached slice worktree on a configured lab host"
+    )
+    slice_lab.add_argument("branch")
+    slice_lab.add_argument(
+        "--host",
+        default=None,
+        help="configured [host.*] name; defaults to environment.local.toml default-host",
+    )
+    slice_lab.add_argument("--dry-run", action="store_true")
+    slice_lab.add_argument("script", nargs="+")
+    slice_lab.set_defaults(func=cmd_slice_lab)
 
     slice_prune = slice_sub.add_parser(
         "prune",
@@ -408,6 +423,33 @@ def build_parser() -> argparse.ArgumentParser:
     )
     patch_lint_cmd.add_argument("--json", action="store_true")
     patch_lint_cmd.set_defaults(func=cmd_patch_lint)
+
+    patch_promote_cmd = sub.add_parser(
+        "patch-promote",
+        help="PA45: promote qualified patches and open the slice pull request",
+    )
+    patch_promote_cmd.add_argument("patch_ids", nargs="+")
+    patch_promote_cmd.add_argument(
+        "--evidence",
+        required=True,
+        help="qualification evidence file, specified as @path",
+    )
+    patch_promote_cmd.add_argument(
+        "--default-on",
+        action="store_true",
+        help="flip one declared default-off runtime flag; requires two named models",
+    )
+    patch_promote_cmd.add_argument(
+        "--profile-only",
+        action="store_true",
+        help="allow profile-scoped promotion evidence without a second model line",
+    )
+    patch_promote_cmd.add_argument(
+        "--release",
+        action="store_true",
+        help="finish the release-please release when its PR exists; otherwise report pending",
+    )
+    patch_promote_cmd.set_defaults(func=cmd_patch_promote)
 
     patch_gates_cmd = sub.add_parser(
         "patch-gates",

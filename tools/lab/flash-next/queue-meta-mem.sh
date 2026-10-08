@@ -10,7 +10,8 @@
 set -u
 TAG=${1:?tag}
 cd "$(cd "$(dirname "$0")/../../.." && pwd)"
-R=/mnt/data/bigcherry-work/runs
+R=$(bash tools/lab/plan-qualification/work-root.sh "$PWD")/runs
+mkdir -p "$R"
 export BC_HIP_PATH=/mnt/vault/tmp/bc-rocm
 export BC_MODEL=${BC_MODEL:-/mnt/data/llm-models/qwen3.8-flash-next/gguf/placed-128-128-256/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf}
 export DRAFT=/mnt/data/llm-models/qwen3.8-flash-next/gguf/unsloth/MTP/mtp-Qwen3.8-Flash-Next-Q5_K_M-qsa4.gguf

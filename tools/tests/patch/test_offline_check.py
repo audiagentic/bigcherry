@@ -133,5 +133,27 @@ class OfflineCheckAuditTests(unittest.TestCase):
         self.assertCountEqual([item["returncode"] for item in failures], [1, 2])
 
 
+class LineEndingOnlyPatchChangeTests(unittest.TestCase):
+    PATH = "patches/1202_rd04_bf16_flash_attn_tile/patch.py"
+
+    def test_line_ending_only_patch_py_is_not_an_implementation_change(self) -> None:
+        with mock.patch.object(offline_check, "_blob_text_lf", side_effect=[b"a\nb\n", b"a\nb\n"]):
+            self.assertEqual(offline_check._implementation_patch_ids([self.PATH], "base", "head"), ())
+
+    def test_real_patch_py_change_still_counts(self) -> None:
+        with mock.patch.object(offline_check, "_blob_text_lf", side_effect=[b"a\nb\n", b"a\nc\n"]):
+            self.assertEqual(
+                offline_check._implementation_patch_ids([self.PATH], "base", "head"),
+                ("1202_rd04_bf16_flash_attn_tile",),
+            )
+
+    def test_new_patch_py_counts(self) -> None:
+        with mock.patch.object(offline_check, "_blob_text_lf", side_effect=[None, b"a\n"]):
+            self.assertEqual(
+                offline_check._implementation_patch_ids([self.PATH], "base", "head"),
+                ("1202_rd04_bf16_flash_attn_tile",),
+            )
+
+
 if __name__ == "__main__":
     unittest.main()

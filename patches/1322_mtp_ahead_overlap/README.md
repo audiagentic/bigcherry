@@ -13,3 +13,10 @@ build deploy-v6-plus-ahead compiled clean, smoke 0 error lines; ABBA A = product
 ## Coverage limit
 
 Verified on Flash-Next IQ4_XS with the production Brutus layout only. No claim is made for other models or topologies.
+
+## Scope: profile switch only, never a build default
+
+Look-ahead pays off where the MTP draft has its own card (Flash-Next: decode +3.6% to +6.7%). On Qwen3.8-27B with the
+built-in MTP head on the same two cards as the target it is a large regression: decode 74 -> 52 t/s at 10K and
+73 -> 56 t/s at 32K, text identical (releases/evidence/bc-11474.1.0-cross-model.md). Keep `BIGCHERRY_MTP_AHEAD`
+in the profile of a model whose draft runs on a separate device; do not make it default-on in the build.

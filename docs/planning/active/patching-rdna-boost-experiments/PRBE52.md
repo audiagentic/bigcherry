@@ -191,6 +191,7 @@ Traceability:
 
 ## Ledger-events
 
+
 - chg_20261006_025048_adaptive-mtp-depth-wiring-appl_5444
 - 2026-10-06T02:50:52.507468+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-06T03:31:46.193215+00:00 (updated-by): Updated: section:notes
@@ -198,6 +199,8 @@ Traceability:
 - 2026-10-06T06:21:14.601507+00:00 (updated-by): Updated: section:notes
 
 
+- chg_20261008_071201_several-experimental-patches-r_2753
 ## 2026-10-08 b11474 restore note
 
 1210 (untested), 1255 (untested), and 1268 (evaluated) are pending hardware A/B at b11474; none is rejected. Adaptive depth and MTP look-ahead are intentionally mutually exclusive: when `--spec-draft-n-min-adaptive > 0`, the per-sequence controller owns the fresh-front cap for each round; when `BIGCHERRY_MTP_AHEAD=1`, 1321/1322 own forced-front replay plus the static-`n_max` ahead tail/promotion. Enabling both fails closed during MTP construction rather than silently letting promoted static-depth fronts bypass the adaptive policy.
+- 2026-10-08T07:12:15.427051+00:00 (updated-by): Updated: section:ledger-events
