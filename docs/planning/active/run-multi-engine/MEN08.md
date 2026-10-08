@@ -62,3 +62,8 @@ Packaging change only: no patch's mechanism or output changes, so no validation 
 ## Change Log
 
 - 2026-10-08T20:47:01.932040+00:00 (created-by): Created by agent
+
+## Ledger-events
+
+- chg_20261008_212949_added-a-like-for-like-single-c_9270
+- 2026-10-08T21:30:09.553704+00:00 (updated-by): Updated: section:ledger-events

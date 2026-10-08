@@ -382,6 +382,9 @@ accepted length, draft/verify time and output t/s.
 
 ## Ledger-events
 
+
 - chg_20261008_071201_several-experimental-patches-r_2753
 - 2026-10-08T07:12:22.172301+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-08T08:45:41.372284+00:00 (updated-by): Updated: section:notes
+- chg_20261008_152202_dflash-and-dspark-drafters-wor_7298
+- 2026-10-08T21:29:28.565000+00:00 (updated-by): Updated: section:ledger-events
