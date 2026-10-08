@@ -38,8 +38,9 @@ Source-verified at pin b11474 / production composition (line numbers below are a
   returning to the server.
 - The +17 ms is **not** the 1326 input-sync mechanism. 1319's `inputs_us` encloses only
   `llm_graph_result::set_inputs()` (`src/llama-context.cpp:1611-1618`). 1326 modifies
-  `ggml_backend_sched_copy_input()`, which runs later from `ggml_backend_sched_compute_splits()`
-  (`ggml/src/ggml-backend.cpp:1852-1908,1918-1952`) and therefore belongs to 1319 `compute_us`.
+  `ggml_backend_sched_copy_input()` (composed start 1830; its producer sync is 1847), which runs later from
+  `ggml_backend_sched_compute_splits()` (composed start 1896; copy calls 1925/1930) and therefore belongs to 1319
+  `compute_us`.
 - 1348's snapshot is not the target input staging allocation. `bc_deferred_chunk::h_nextn` is its own
   `std::vector<float>`; llama's NextN output lives in `buf_output`, allocated from the output device's host
   buffer type and exposed as `embd_nextn` (`src/llama-context.cpp:2336-2387`). There is no alias to scheduler
