@@ -164,10 +164,80 @@ def _remove_empty_parents(path: Path, *, stop: Path) -> None:
         current = current.parent
 
 
+def _leftover_matches_branch(
+    target: Path,
+    branch: str,
+    *,
+    root: Path,
+    runner: Runner = _run_git,
+) -> bool:
+    """Verify a dead-record worktree against its still-present local branch."""
+
+    ref = f"refs/heads/{branch}"
+    if not _ref_exists(ref, root=root, runner=runner):
+        return False
+    listed = _checked(
+        runner(_at(root, ["ls-tree", "-r", "-z", ref]), check=False),
+        f"read tree for {branch}",
+    )
+    expected: dict[str, tuple[str, str, str]] = {}
+    for row in listed.split("\0"):
+        if not row:
+            continue
+        meta, sep, rel = row.partition("\t")
+        fields = meta.split()
+        if not sep or len(fields) != 3:
+            raise RuntimeError(f"unexpected git ls-tree row for {branch}: {row!r}")
+        mode, obj_type, sha = fields
+        expected[rel] = (mode, obj_type, sha)
+
+    actual: set[str] = set()
+    for path in target.rglob("*"):
+        rel = path.relative_to(target).as_posix()
+        if rel == ".git" or rel.startswith(".git/"):
+            continue
+        if path.is_file() or path.is_symlink():
+            actual.add(rel)
+
+    expected_files = {
+        rel
+        for rel, (mode, obj_type, _sha) in expected.items()
+        if obj_type == "blob" and mode != "160000"
+    }
+    if actual != expected_files:
+        return False
+
+    for rel in sorted(expected_files):
+        mode, _obj_type, sha = expected[rel]
+        path = target / rel
+        if mode == "120000":
+            if not path.is_symlink():
+                return False
+            link_text = path.readlink().as_posix()
+            blob = _checked(
+                runner(_at(root, ["cat-file", "-p", sha]), check=False),
+                f"read symlink blob {rel}",
+            )
+            if link_text != blob:
+                return False
+            continue
+        hashed = _checked(
+            runner(
+                _at(root, ["hash-object", f"--path={rel}", str(path)]),
+                check=False,
+            ),
+            f"hash leftover file {rel}",
+        )
+        if hashed != sha:
+            return False
+    return True
+
+
 def _remove_leftover_worktree_dir(
     target: Path,
     *,
     root: Path,
+    branch: str | None = None,
     runner: Runner = _run_git,
 ) -> bool:
     """Remove a leftover empty/clean slice directory without discarding work."""
@@ -194,12 +264,15 @@ def _remove_leftover_worktree_dir(
         return True
 
     status = runner(_at(target, ["status", "--porcelain"]), check=False)
-    if status.returncode != 0:
+    if status.returncode == 0:
+        if status.stdout.strip():
+            raise RuntimeError(f"leftover worktree directory is dirty: {target}")
+    elif branch is None or not _leftover_matches_branch(
+        target, branch, root=root, runner=runner
+    ):
         raise RuntimeError(
-            f"leftover worktree directory is not empty and cannot be verified clean: {target}"
+            f"leftover worktree directory is dirty/untracked or cannot be verified clean: {target}"
         )
-    if status.stdout.strip():
-        raise RuntimeError(f"leftover worktree directory is dirty: {target}")
 
     try:
         shutil.rmtree(target)
@@ -207,7 +280,6 @@ def _remove_leftover_worktree_dir(
         return False
     _remove_empty_parents(target.parent, stop=worktrees_root)
     return True
-
 
 def _write_patch_file(patch: str) -> Path:
     handle = tempfile.NamedTemporaryFile(
@@ -313,7 +385,7 @@ def start_slice(
                 _at(root, ["update-ref", "-d", f"refs/heads/{branch}"]),
                 check=False,
             )
-        _remove_leftover_worktree_dir(target, root=root, runner=runner)
+        _remove_leftover_worktree_dir(target, root=root, branch=branch, runner=runner)
         if patch_path is not None:
             restore = runner(
                 _at(root, ["apply", "--whitespace=nowarn", str(patch_path)]),
