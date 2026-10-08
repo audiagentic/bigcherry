@@ -306,6 +306,10 @@ required-state = "validated"
 [experiment.hi166-ordered-trace-only]
 patches = ["0850_ordered_speculative_trace"]
 
+[experiment.rd19-only]
+# PA25/CLI qualification context: source=bigcherry-tuning; 1200 is production only on source=bigcherry.
+patches = ["1200_rd19_single_gpu_meta_bypass"]
+
 [experiment.rd04-only]
 patches = ["1202_rd04_bf16_flash_attn_tile"]
 
