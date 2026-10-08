@@ -14,7 +14,20 @@ for cfg in "$@"; do
   ot=$base_ot; [ "$layers" != none ] && ot="$base_ot,blk\.($layers)\.ffn_.*_exps\.weight=${DEST:-CPU}"
   nl=$([ "$layers" = none ] && echo 0 || echo "$layers" | tr '|' '\n' | wc -l)
   d="$root/r$n-L$nl-ub$ub"
-  out=$(EXTRA_OT="$ot" UB=$ub B=$ub DEPTH=${DEPTH:-65536} bash "$s" "$bin" "$d" timing 2>&1 | grep -E "^timing:|SERVER_FAILED")
-  vram=$(grep -h "VRAM Total Used" $d/*vram* 2>/dev/null | awk '{printf "%.1f ", $NF/1073741824}')
-  echo "run$n layers=$nl ub$ub: $(echo $out | tr '\n' ' ') | VRAM GiB: $vram"
+  runlog="$d/sweep-run.log"
+  mkdir -p "$d"
+  EXTRA_OT="$ot" UB=$ub B=$ub DEPTH=${DEPTH:-65536} bash "$s" "$bin" "$d" timing >"$runlog" 2>&1
+  runner_rc=$?
+  out=$(grep -E "^timing:|SERVER_FAILED|SERVER_EXIT" "$runlog" || true)
+  # The runner can fail with a client exception when llama-server was killed; keep the server's own exit/signal.
+  server_exit=$(grep -E '^timing: SERVER_EXIT ' "$runlog" | tail -n 1 || true)
+  server_status=unknown server_signal=unknown
+  if [[ "$server_exit" =~ [[:space:]]status=([0-9]+) ]]; then
+    server_status=${BASH_REMATCH[1]}
+  fi
+  if [[ "$server_exit" =~ [[:space:]]signal=([^[:space:]]+) ]]; then
+    server_signal=${BASH_REMATCH[1]}
+  fi
+  vram=$(grep -h "VRAM Total Used" "$d"/*vram* 2>/dev/null | awk '{printf "%.1f ", $NF/1073741824}')
+  echo "run$n layers=$nl ub$ub: $(echo "$out" | tr '\n' ' ') | server_status=$server_status server_signal=$server_signal runner_status=$runner_rc | VRAM GiB: $vram"
 done
