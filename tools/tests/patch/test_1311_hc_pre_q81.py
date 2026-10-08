@@ -14,10 +14,11 @@ from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
 _VENDOR = _REPO / "vendor/llama.cpp/ggml/src/ggml-cuda/dsv4-hc.cu"
-_spec = importlib.util.spec_from_file_location("patch_1311", _REPO / "patches/1311_hc_pre_q81/patch.py")
+_spec = importlib.util.spec_from_file_location("patch_1311", _REPO / "patches/1307_q81_activation_cache_mmvq/patch.py")
 assert _spec is not None and _spec.loader is not None
 _module = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_module)
+_PATCHES = [p for p in _module.PATCHES if p.description.startswith("1311:")]
 
 
 @unittest.skipUnless(_VENDOR.exists(), "pinned vendor checkout not present")
@@ -29,7 +30,7 @@ class Patch1311Mechanics(unittest.TestCase):
             path = root / "ggml/src/ggml-cuda/dsv4-hc.cu"
             path.parent.mkdir(parents=True)
             copy_pinned(_VENDOR, path)
-            results = apply_all(_module.PATCHES, root)
+            results = apply_all(_PATCHES, root)
             self.assertTrue(all(r.ok for r in results), [e.detail for r in results for e in r.failed])
             out = path.read_text(encoding="utf-8")
             self.assertIn("static __global__ void dsv4_hc_pre_q81_f32(", out)
@@ -38,7 +39,7 @@ class Patch1311Mechanics(unittest.TestCase):
             gate = out.index("bigcherry 1311: emit the Q8_1 activation")
             self.assertLess(gate, out.index("    auto kernel = gated ? dsv4_hc_pre_f32<true> : dsv4_hc_pre_f32<false>;"))
             self.assertLess(out.index("static __global__ void dsv4_hc_pre_q81_f32("), gate)
-            second = apply_all(_module.PATCHES, root)
+            second = apply_all(_PATCHES, root)
             self.assertTrue(all(r.ok for r in second), [e.detail for r in second for e in r.failed])
             self.assertEqual(out, path.read_text(encoding="utf-8"))
 
