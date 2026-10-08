@@ -18,3 +18,7 @@ Two-GPU `-sm tensor` decode can reduce PCIe bytes with Q8_0 while P2P avoids hos
 ## Upstream
 
 Nasone commit `e06dcf6300718227cb8cfda9e61fb12ccb693418`, migrated from a monolithic fork diff to the BigCherry 1252 transport + 1272 codec ownership split.
+
+## b11474 BPB01 review
+
+Current-pin composition and disposition options are recorded in `releases/evidence/bpb01-four-evaluated.md`. This review does not change patch state.

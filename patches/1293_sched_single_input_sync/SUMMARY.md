@@ -29,3 +29,7 @@ shortening the critical path. Not part of any deployment recipe; kept as a corre
 ## Hardware result (2026-10-04 review)
 
 Neutral on hardware (QFN01): sync-count reduction alone did not improve decode.
+
+## b11474 BPB01 review
+
+Current-pin composition and disposition options are recorded in `releases/evidence/bpb01-four-evaluated.md`. This review does not change patch state.

@@ -14,3 +14,7 @@ leaving the fixed `GGML_CUDA_AR_KERNEL_BLOCKS=8` arrival-ring layout unchanged.
 Validation required: apply, HIP build on gfx1100, activation marker,
 correctness, and paired performance A/B. Stream slot sync, timing traces, and
 1244/root3 composition are intentionally deferred.
+
+## b11474 BPB01 review
+
+Current-pin composition and disposition options are recorded in `releases/evidence/bpb01-four-evaluated.md`. This review does not change patch state.

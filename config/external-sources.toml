@@ -462,9 +462,9 @@ commit = "299f6eaf73b5eeb888bd94eaa66122d003136e6a"
 original = "ff6fde5046ffb86672e05da640d2bfb20d4bfdfc"
 title = "CUDA: cache quantized Q8_1 matmul inputs per graph"
 plan-item = "PRBE05"
-patch = "1235_rd09_q81_activation_cache_foundation"
+patch = "1307_q81_activation_cache_mmvq"
 status = "ported-untested"
-note = "Legacy predecessor: RD09. Actionable owner: PRBE05. Foundation for the Q8_1 family. Design converged 2026-08-24 (dev-gpt-agent, session ses_76b0fef0c94c434a, req_60a41664e0de43d6): NOT a verbatim port -- the fork's own key omits the exact view data offset (a real same-root/different-offset false-hit bug) and uses a relocatable arena (incompatible with HIP/CUDA graph-capture pointer stability). This patch (stage 1 foundation; caller and graph-entry wiring remain PRBE05) reimplements the mechanism with both weaknesses fixed: key includes the view data address; storage is bounded never-relocated stable slabs. See docs/planning/active/patching-rdna-boost-experiments/PRBE05.md."
+note = "Legacy predecessor: RD09. Actionable owner: PRBE05. Foundation for the Q8_1 family; PA44-E merged the foundation and all Q8_1 producers into surviving package 1307. Design converged 2026-08-24 (dev-gpt-agent, session ses_76b0fef0c94c434a, req_60a41664e0de43d6): NOT a verbatim port -- the fork's own key omits the exact view data offset (a real same-root/different-offset false-hit bug) and uses a relocatable arena (incompatible with HIP/CUDA graph-capture pointer stability). This patch (stage 1 foundation; caller and graph-entry wiring remain PRBE05) reimplements the mechanism with both weaknesses fixed: key includes the view data address; storage is bounded never-relocated stable slabs. See docs/planning/active/patching-rdna-boost-experiments/PRBE05.md."
 
 [[sources.tracked]]
 commit = "6be52a2416a63664abbf3d677abd62973c977f04"
