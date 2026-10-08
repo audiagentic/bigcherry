@@ -11,7 +11,8 @@
 # XTX with the routed experts of the last HOP_LAYERS layers on the R9700 (L28, L14). MTP=1 adds the MTP sidecar on
 # the 6900 XT to every arm of any mode.
 # ARMS=profile runs the 1338 lanes (frequency profile pinned in the cache; CACHE_MIB one size, PROFILE optional).
-# ARMS=cache runs the 1337 expert-cache lanes; ARMS=matrix runs one request/process for cache-size repeats so the\n# 1337 shutdown trace is request-scoped. Matrix arms disable fusion for the correctness comparison.
+# ARMS=cache runs the 1337 expert-cache lanes; ARMS=matrix runs one request/process for cache-size repeats so the
+# 1337 shutdown trace is request-scoped. Matrix arms disable fusion for the correctness comparison.
 # Usage: moe-copy-ab.sh <llama-server> <out-dir>      env: GPU (HIP index, default 2), NCMOE (41), CTX (16384),
 #                                                         LONG_TOKENS (4096), N_PREDICT (128)
 # Only HIP_VISIBLE_DEVICES selects the card: also setting ROCR_VISIBLE_DEVICES filters twice and leaves no device.
