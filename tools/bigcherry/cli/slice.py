@@ -375,28 +375,59 @@ def start_slice(
                 f"apply carried changes in {branch}",
             )
     except Exception as exc:
+        cleanup_error: str | None = None
         worktree = _worktree_for(branch, root=root, runner=runner)
         if worktree is not None:
-            runner(
+            removed = runner(
                 _at(root, ["worktree", "remove", str(worktree.path)]),
                 check=False,
             )
-        if _ref_exists(f"refs/heads/{branch}", root=root, runner=runner):
+            if removed.returncode != 0 and _worktree_for(
+                branch, root=root, runner=runner
+            ) is not None:
+                cleanup_error = (
+                    removed.stderr.strip()
+                    or removed.stdout.strip()
+                    or "worktree remove failed"
+                )
+        if cleanup_error is None:
+            try:
+                if not _remove_leftover_worktree_dir(
+                    target, root=root, branch=branch, runner=runner
+                ):
+                    cleanup_error = f"could not remove leftover worktree {target}"
+            except RuntimeError as cleanup_exc:
+                cleanup_error = str(cleanup_exc)
+        if cleanup_error is None and _ref_exists(
+            f"refs/heads/{branch}", root=root, runner=runner
+        ):
             runner(
                 _at(root, ["update-ref", "-d", f"refs/heads/{branch}"]),
                 check=False,
             )
-        _remove_leftover_worktree_dir(target, root=root, branch=branch, runner=runner)
+
+        restore_error: str | None = None
         if patch_path is not None:
             restore = runner(
                 _at(root, ["apply", "--whitespace=nowarn", str(patch_path)]),
                 check=False,
             )
             if restore.returncode != 0:
-                raise RuntimeError(
-                    f"{exc}; additionally failed to restore primary changes: "
-                    f"{restore.stderr.strip() or restore.stdout.strip()}"
-                ) from exc
+                restore_error = (
+                    restore.stderr.strip()
+                    or restore.stdout.strip()
+                    or "restore apply failed"
+                )
+        if cleanup_error or restore_error:
+            details = "; ".join(
+                detail
+                for detail in (
+                    f"slice cleanup failed: {cleanup_error}" if cleanup_error else None,
+                    f"primary restore failed: {restore_error}" if restore_error else None,
+                )
+                if detail
+            )
+            raise RuntimeError(f"{exc}; {details}") from exc
         raise
     finally:
         if patch_path is not None:
