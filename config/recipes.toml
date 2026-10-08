@@ -504,6 +504,10 @@ patches = []
 # QFP21: promoted base + 1286 (DFlash/DSpark draft-local copies of tensor-split target tensors).
 patches = ["1286_draft_local_shared_tensors"]
 
+[experiment.deploy-v6-plus-1330]
+# QFP17 recheck: production set already contains 1332; add 1330's opt-in dense-fallback in-place mask.
+patches = ["1330_qsa_mask_inplace"]
+
 
 
 [experiment.fusion-bisect]
