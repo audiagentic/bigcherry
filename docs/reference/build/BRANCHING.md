@@ -58,7 +58,8 @@ Changes that cannot alter the build (plans, docs, lab scripts, tests) skip steps
 - Two slices that edit the same patch are sequenced, not run in parallel; the second one branches after the first has
   merged.
 - `git stash` is not used (shared trees). A local tree is on exactly one branch; a second line of work uses a second
-  worktree (`git worktree add`).
+  worktree. Use `bigcherry slice start <branch>`; if a tool has already changed tracked files in the primary
+  checkout, use `bigcherry slice start --carry <branch>` to move that diff into the new worktree and leave primary clean.
 - The lab tree on Brutus is a shared resource: one slice is checked out at a time, the lab queue's lock orders the
   runs, and nobody pulls while a script is executing there.
 - Rebase a slice branch onto `main` before it merges if `main` has moved; do not merge `main` into the slice. History
@@ -69,8 +70,9 @@ Changes that cannot alter the build (plans, docs, lab scripts, tests) skip steps
 A merged branch is deleted, always, so that the list of branches is the list of work in flight.
 
 - The repository setting "Automatically delete head branches" is on: merging a pull request deletes its branch.
-- The agent that merges also removes its local branch and prunes: `git switch main && git pull --ff-only && git
-  branch -d <branch> && git fetch --prune`. `-d` (not `-D`) refuses a branch that is not merged.
+- The agent that merges runs `bigcherry slice finish <branch>`. Finish is resumable: it tolerates an already-removed
+  worktree record or remote branch, removes only empty/verified-clean leftovers under `worktrees/`, deletes an
+  eligible local/remote branch, prunes metadata, and is a no-op after successful completion. It never uses `--force`.
 - The lab tree is returned to `main` and its copy of the slice branch is deleted in the same step.
 - A branch that will not be merged is closed on purpose: close its pull request with the reason, then delete the
   branch. Work worth keeping is a plan item, not a parked branch.
