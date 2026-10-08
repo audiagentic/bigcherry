@@ -174,6 +174,14 @@ Ordering: fourth overall after QFP32, QFP31, QFP33. These are cheap audits and m
 
 2026-10-07 finding A (per-layer embedding table resident, --lazy-mode off): REJECTED on Brutus. ABBA lazyoff-ab on build b-metamem-rr98, A = default lazy mapping, B = LLAMA_ARG_LAZY_MODE=off: prefill 8K 904/1077 vs 434/629 t/s, 24K 1065/1072 vs one failed load/823; decode 82.5/84.6 vs 77.8/79.9 and 74.9/75.3 vs 70.2; greedy text identical where it ran. Host has 91 GB RAM for an 87 GB model file, so a resident 26.8 GB copy competes with the page cache (not confirmed from memory counters). The default stays. Parts B (MTP decode copies) and C (gathered QSA decode, 1295) are still open.
 
+
+
+## Status 2026-10-08
+
+- A, lazy-mode embedding table (`--lazy-mode off`): **rejected** on hardware earlier this cycle.
+- C, gathered QSA decode: **done** by 1295_qsa_gather_decode (validated, production, default on; decode +14% at 98K, +13% at 196K) with 1294's ordered top-k.
+- B, MTP decode fused copies: open. Related evidence since: look-ahead (1321/1322) +3.6-6.7% decode on Flash-Next but -24..-30% on Qwen3.8-27B built-in MTP; 1348 deferred catch-up adds ~25 ms per chunk to the target's host-side submission (QFP42). No code for B this round.
+
 ## What we already have
 
 ### A. Per-layer embedding table residency
@@ -232,3 +240,4 @@ Finding: **do not promote 1295 as-is**. First measure whether 1334 already remov
 
 - chg_20261007_133405_flash-next-decode-at-long-cont_5826
 - 2026-10-07T13:34:09.463673+00:00 (updated-by): Updated: section:ledger-events
+- 2026-10-08T09:46:22.046779+00:00 (updated-by): Updated: section:notes
