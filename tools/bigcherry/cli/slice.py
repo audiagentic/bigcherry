@@ -281,6 +281,7 @@ def _remove_leftover_worktree_dir(
     _remove_empty_parents(target.parent, stop=worktrees_root)
     return True
 
+
 def _write_patch_file(patch: str) -> Path:
     handle = tempfile.NamedTemporaryFile(
         mode="w",
@@ -532,7 +533,12 @@ def finish_slice(
                     f"{removed.stderr.strip() or removed.stdout.strip() or 'command failed'}"
                 )
 
-    _remove_leftover_worktree_dir(target, root=root, runner=runner)
+    if not _remove_leftover_worktree_dir(
+        target, root=root, branch=branch, runner=runner
+    ):
+        raise RuntimeError(
+            f"leftover worktree directory could not be removed; retry after releasing it: {target}"
+        )
 
     if _ref_exists(f"refs/heads/{branch}", root=root, runner=runner):
         _checked(
