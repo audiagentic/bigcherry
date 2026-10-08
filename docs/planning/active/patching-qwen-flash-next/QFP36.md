@@ -282,6 +282,13 @@ Execution order: seventh. Within QFP36, qualify the exact multi-warp helper befo
 
 2026-10-07 Gate 0 (prefill kernel profile, production build b-prod-1343 with 1343 + 1344, 38.7K-token fill at 977 t/s under rocprofv3, run gate0-d24576). Kernel time per target card 28.0 s over a 99 s span (28% busy). mm_ids_helper<10>: 3.23 s summed over devices = about 3.8% of all kernel time on the three target cards - the multi-warp helper is worth doing. Float matmul family (rocBLAS SGEMM, largest kernel Cijk_..._MT64x64x8 7.24 s): 12.4-16.0% of kernel time per card; the profile does not split the router GEMM from other F32 matmuls, a dispatch census by shape is still needed for split-K (and for QFP34). Family shares per XTX: collectives 30-31% (ncclDevKernel_Generic_4 27.6 s over devices; R9700 41.6%), MMQ 27%, float matmul 16%, flash attention 8.7%, norm/activation 4%, rows/concat/mask 3.3%, GDN 2.5%. Collectives and the 72% idle span are the largest prefill levers (QFP39, QFP41).
 
+
+
+## Status 2026-10-08
+
+- Part (b), multi-warp routing helper: **done** by 1345_moe_ids_multiwarp (validated, production, default on; 8 warps per expert for >= 128 tokens; prefill +1.6-2.1% on Flash-Next, +2.0% on Gemma, text identical).
+- Part (a), split-K router GEMM (`ffn_gate_inp`, `[n_embd, 512]` F32): open. Neither 1347 (2..8-row F32 weights) nor 1350 (Q8_0 few-tile Stream-K) covers a 512-row F32 router. No measurement yet of its share of prefill time: the kernel census of the released build (queued 2026-10-08, `queue-prefill-profile.sh b-metamem-rel3 census-rel1 24576`) decides whether it is worth a patch.
+
 ## What we already have
 
 ### Router at b11402
@@ -458,3 +465,4 @@ Combined QFP36 expectation on this topology if both gates pass: **+0.4% to +1.5%
 
 - chg_20261007_073613_flash-next-prefill-is-about-2_3220
 - 2026-10-07T07:36:17.133419+00:00 (updated-by): Updated: section:ledger-events
+- 2026-10-08T09:46:17.213927+00:00 (updated-by): Updated: section:notes
