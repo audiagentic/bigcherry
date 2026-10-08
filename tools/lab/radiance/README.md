@@ -12,6 +12,9 @@ standalone server with a llama-server-compatible API.
 - `build.sh`: configures and builds radiance at the checked-out (or given) commit for `gfx1201`, runs its card-free
   tests, and records commit, toolchain, binaries and plugins. Run as a queue `SCRIPT` job.
 
+- `fetch-gcc14.sh`: unpacks Ubuntu's g++-14 packages into a private directory for hosts that only have g++ 13
+  (radiance does not build with g++ 13 or with ROCm's clang as host compiler). Nothing is installed system-wide.
+
 ## Facts from the source (radiance 1.3.0, commit 89cee7ce)
 
 - Kernel library `libr4d` covers gfx1200 / gfx1201 only. `libref` is the reference implementation and `libavx` the
