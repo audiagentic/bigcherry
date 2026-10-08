@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -87,11 +88,13 @@ class SliceCommandTests(unittest.TestCase):
         self.assertEqual((worktree / "README.md").read_text(encoding="utf-8"), "carried\n")
         self.assertIn("README.md", _run(worktree, "status", "--porcelain").stdout)
 
-    def test_finish_resumes_when_record_is_gone_but_directory_remains(self):
+    def test_finish_resumes_when_record_is_gone_but_clean_directory_remains(self):
         worktree = self._start()
         _run(worktree, "push", "-u", "origin", "feat/pa47-test")
+        saved = self.primary.parent / "saved-clean-worktree"
+        shutil.copytree(worktree, saved)
         _run(self.primary, "worktree", "remove", str(worktree))
-        worktree.mkdir(parents=True)
+        shutil.copytree(saved, worktree)
 
         slice_cli.finish_slice(
             "feat/pa47-test",
@@ -101,6 +104,35 @@ class SliceCommandTests(unittest.TestCase):
 
         self.assertFalse(worktree.exists())
         self.assertFalse((self.primary / "worktrees" / "feat").exists())
+
+    def test_finish_leaves_dead_record_directory_with_untracked_files(self):
+        worktree = self._start()
+        _run(worktree, "push", "-u", "origin", "feat/pa47-test")
+        saved = self.primary.parent / "saved-dirty-worktree"
+        shutil.copytree(worktree, saved)
+        _run(self.primary, "worktree", "remove", str(worktree))
+        shutil.copytree(saved, worktree)
+        (worktree / "untracked.txt").write_text("keep me\n", encoding="utf-8")
+
+        with self.assertRaisesRegex(RuntimeError, "dirty/untracked"):
+            slice_cli.finish_slice(
+                "feat/pa47-test",
+                primary_root=self.primary,
+                gh_runner=_gh(state="CLOSED"),
+            )
+
+        self.assertTrue((worktree / "untracked.txt").exists())
+        self.assertEqual(
+            _run(
+                self.primary,
+                "show-ref",
+                "--verify",
+                "--quiet",
+                "refs/heads/feat/pa47-test",
+                check=False,
+            ).returncode,
+            0,
+        )
 
     def test_finish_handles_remote_branch_already_deleted(self):
         worktree = self._start()
