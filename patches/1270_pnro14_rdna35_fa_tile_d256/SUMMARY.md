@@ -1,6 +1,9 @@
 # 1270_pnro14_rdna35_fa_tile_d256
 
-**Status:** untested, not promoted. **Owner:** PNRO14. **Disposition:** BCOP74 (2026-10-09).
+**Status:** untested
+**Plan item:** PNRO14
+
+Not promoted. Disposition: BCOP74 (2026-10-09).
 
 This is the existing RDNA3.5 D=256/ncols32 tile configuration experiment: 256 threads, occupancy target 4, nbatch_fa 64, nbatch_K 64 versus native occupancy 3, nbatch_K 128. It changes only tile configuration after the normal attention-kernel selection. Source analysis shows standard aligned masked GQA prefill generally selects MMA before the 32-column tile; an actual TILE+ncols32 trace is required before benchmarking.
 
