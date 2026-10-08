@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import re
+import subprocess
 from pathlib import Path
 
 # tools/bigcherry/paths.py -> tools/bigcherry -> tools -> <repo root>
@@ -36,22 +37,71 @@ EXTERNAL_SOURCES = CONFIG / "external-sources.toml"
 EXPERIMENT_CONTRACTS = CONFIG / "experiment-contracts.toml"
 MODELS = CONFIG / "models.toml"
 
-_ENV_LLAMA_ROOT = "BIGCHERRY_LLAMA_ROOT"
+_ENV_PRIMARY_ROOT = "BC_PRIMARY_ROOT"
+
+
+class PrimaryRootError(RuntimeError):
+    """The shared primary checkout cannot be resolved safely."""
+
+
+def _git_common_dir(root: Path) -> Path:
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "--git-common-dir"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        detail = getattr(exc, "stderr", "") or str(exc)
+        raise PrimaryRootError(
+            f"cannot resolve git common directory from {root}: {detail.strip()}"
+        ) from exc
+    raw = result.stdout.strip()
+    if not raw:
+        raise PrimaryRootError(f"git returned an empty common directory for {root}")
+    common = Path(raw)
+    if not common.is_absolute():
+        common = root / common
+    return common.resolve()
+
+
+def primary_root(override: str | os.PathLike[str] | None = None) -> Path:
+    """Return the primary checkout shared by all linked worktrees.
+
+    BC_PRIMARY_ROOT is the sole environment override. Otherwise Git common-dir
+    is authoritative. Resolution is fail-closed; a non-repository or an
+    override naming a linked worktree is rejected.
+    """
+    configured = override if override is not None else os.environ.get(_ENV_PRIMARY_ROOT)
+    if configured:
+        root = Path(configured).expanduser().resolve()
+        common = _git_common_dir(root)
+        if common.parent != root:
+            raise PrimaryRootError(
+                f"BC_PRIMARY_ROOT must name the primary checkout, not a linked worktree: {root}"
+            )
+        return root
+
+    common = _git_common_dir(REPO_ROOT)
+    root = common.parent
+    if not (root / ".git").exists():
+        raise PrimaryRootError(
+            f"git common directory {common} does not identify a primary checkout"
+        )
+    return root.resolve()
 
 
 def llama_root(override: str | os.PathLike[str] | None = None) -> Path:
-    """The llama.cpp checkout bigcherry patches and builds.
+    """Return the llama.cpp checkout patched and built by BigCherry.
 
-    Resolution order: explicit argument, ``BIGCHERRY_LLAMA_ROOT``, then the
-    vendored default. The checkout is a real working tree — builds run from it
-    in place — so it is deliberately not a temp directory.
+    A command-scoped explicit argument wins. Otherwise the vendor checkout
+    always belongs to the primary checkout so a slice worktree never creates
+    or uses a second vendor clone.
     """
     if override is not None:
-        return Path(override).resolve()
-    from_env = os.environ.get(_ENV_LLAMA_ROOT)
-    if from_env:
-        return Path(from_env).resolve()
-    return REPO_ROOT / "vendor" / "llama.cpp"
+        return Path(override).expanduser().resolve()
+    return primary_root() / "vendor" / "llama.cpp"
 
 
 def cuda_dir(root: Path) -> Path:

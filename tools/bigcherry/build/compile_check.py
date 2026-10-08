@@ -27,8 +27,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
-LLAMA_CPP_SRC = REPO_ROOT / "vendor" / "llama.cpp"
+from ..core import paths
 
 CONFIGS = {
     "tune-mode": [
@@ -65,6 +64,7 @@ def check_one(
     amdgpu_targets: str, workdir: Path, target: str,
 ) -> None:
     build_dir = workdir / name
+    source = paths.llama_root()
     log_dir = workdir / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     clang = hip_path / "bin" / (
@@ -76,7 +76,7 @@ def check_one(
     print(f"[compile-check] configuring {name} ...", flush=True)
     _run(
         [
-            "cmake", "-S", str(LLAMA_CPP_SRC), "-B", str(build_dir), "-G", "Ninja",
+            "cmake", "-S", str(source), "-B", str(build_dir), "-G", "Ninja",
             "-DCMAKE_BUILD_TYPE=Release", "-DGGML_HIP=ON",
             f"-DAMDGPU_TARGETS={amdgpu_targets}",
             f"-DCMAKE_C_COMPILER={clang}", f"-DCMAKE_CXX_COMPILER={clangxx}",
