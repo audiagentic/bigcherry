@@ -55,6 +55,7 @@ EXPERIMENTS_AND_OPS = {
     "rd20-only": ("MUL_MAT",),
     "rd21-only": ("MUL_MAT",),
     "rd22-only": ("MUL_MAT",),
+    "rd26a-only": ("MUL_MAT",),
 }
 
 
