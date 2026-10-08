@@ -52,6 +52,7 @@ from .slice import (
     cmd_slice_start,
     cmd_slice_status,
 )
+from .slice_lab import cmd_slice_lab
 from .tuning import (
     cmd_execution_audit,
     cmd_tuning_rollup,
@@ -179,6 +180,19 @@ def build_parser() -> argparse.ArgumentParser:
     slice_status_cmd.add_argument("--remote", default="origin")
     slice_status_cmd.add_argument("--base", default="main")
     slice_status_cmd.set_defaults(func=cmd_slice_status)
+
+    slice_lab = slice_sub.add_parser(
+        "lab", help="run a detached slice worktree on a configured lab host"
+    )
+    slice_lab.add_argument("branch")
+    slice_lab.add_argument(
+        "--host",
+        default=None,
+        help="configured [host.*] name; defaults to environment.local.toml default-host",
+    )
+    slice_lab.add_argument("--dry-run", action="store_true")
+    slice_lab.add_argument("script", nargs="+")
+    slice_lab.set_defaults(func=cmd_slice_lab)
 
     slice_prune = slice_sub.add_parser(
         "prune",
