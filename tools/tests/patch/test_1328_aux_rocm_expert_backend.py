@@ -21,7 +21,6 @@ _RELS = (
     "src/models/qwen4exp.cpp",
 )
 _POST_META = (
-    "1339_meta_memory_report",
     "1340_meta_per_device_arena",
     "1341_meta_subset_mirrored",
 )
@@ -33,13 +32,8 @@ _DEPLOY = (
     "1297_draft_vocab_trim",
     "1302_cuda_graph_oom_evict",
     "1303_attn_kv_tensor_split",
-    "1235_rd09_q81_activation_cache_foundation",
     "1307_q81_activation_cache_mmvq",
     "1308_qwen4exp_rollback_copy_no_cont",
-    "1309_rms_norm_mul_q81",
-    "1310_act_q81",
-    "1311_hc_pre_q81",
-    "1312_mul_q81",
     "1313_scale_act_fuse",
     "1326_sched_async_host_inputs",
     "1327_qsa_host_remap",
