@@ -73,19 +73,62 @@ def _patch_ids(paths: Sequence[str]) -> tuple[str, ...]:
     return tuple(sorted(found))
 
 
-def _implementation_patch_ids(paths: Sequence[str]) -> tuple[str, ...]:
+def _blob_text_lf(ref: str, path: str) -> bytes | None:
+    """File content at ref with line endings normalised to LF; None if absent."""
+    proc = subprocess.run(
+        ["git", "-C", str(_REPO), "show", f"{ref}:{path}"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    if proc.returncode:
+        return None
+    return proc.stdout.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+
+
+def _only_line_endings_changed(base: str, head: str, path: str) -> bool:
+    before = _blob_text_lf(base, path)
+    after = _blob_text_lf(head, path)
+    return before is not None and before == after
+
+
+def _implementation_patch_ids(
+    paths: Sequence[str], base: str | None = None, head: str | None = None
+) -> tuple[str, ...]:
     """Patch implementations changed in this range.
 
     Metadata-only changes are covered by catalog/governance and composition
     checks; they do not invent a requirement for a per-package mechanics test.
+    A patch.py whose only difference is its line endings (repository
+    renormalisation) is not an implementation change.
     """
     found: set[str] = set()
     for path in paths:
         if not path.startswith("patches/") or not path.endswith("/patch.py"):
             continue
+        if base and head and _only_line_endings_changed(base, head, path):
+            continue
         parts = path.split("/", 2)
         if len(parts) >= 3 and parts[1] and not parts[1].startswith("_"):
             found.add(parts[1])
+    return tuple(sorted(found))
+
+
+def _composition_patch_ids(
+    paths: Sequence[str], base: str | None = None, head: str | None = None
+) -> tuple[str, ...]:
+    """Patches whose composition inputs changed: patch.py (not a line-ending-only change) or patch.toml.
+
+    A change to a patch's tests, README or SUMMARY cannot change how any experiment composes, so it must not
+    trigger the experiment audit: a test-only pull request touching patches used by many experiments spent the
+    whole 30-minute job re-checking compositions that could not have moved.
+    """
+    found = set(_implementation_patch_ids(paths, base, head))
+    for path in paths:
+        if path.startswith("patches/") and path.endswith("/patch.toml"):
+            parts = path.split("/", 2)
+            if len(parts) >= 3 and parts[1] and not parts[1].startswith("_"):
+                found.add(parts[1])
     return tuple(sorted(found))
 
 
@@ -471,7 +514,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
 
     patch_ids = _patch_ids(changed)
-    implementation_patch_ids = set(_implementation_patch_ids(changed))
+    implementation_patch_ids = set(_implementation_patch_ids(changed, base, head))
     print(f"range: {base[:12]}..{head[:12]}")
     print(f"changed patch ids: {', '.join(patch_ids) if patch_ids else '(none)'}")
 
@@ -527,7 +570,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             raw = _load_recipes()
             experiment_names = _experiment_names_for_audit(
                 raw,
-                patch_ids,
+                _composition_patch_ids(changed, base, head),
                 full_audit=full_audit,
             )
             print(
