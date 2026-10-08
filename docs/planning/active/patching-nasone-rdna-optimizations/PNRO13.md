@@ -15,6 +15,8 @@ priority: P1
 
 ## Description
 
+**Updated 2026-10-08: prior pread-first steps superseded by authoritative b11474 rebaseline at end.**
+
 TODO, NOT-READY (no files/functions/anchors specified, per GPT review). Evaluate direct pread-based lazy PLE table rows -- CORRECTED: verified at b11126 that lazy PLE is mmap-backed, not loader-callback-based: `TENSOR_READ_LAZY` drives `llama_model_loader::lazy_read::add()` (src/llama-model-loader.cpp:1088) and `lazy_read::buft()` (src/llama-model-loader.cpp:1080), and `load_all_data()` leaves the tensor (e.g. per_layer_tok_embd) mapped; at runtime, `ggml_get_rows` (CPU compute) directly dereferences the mmap'd pointer. There is NO existing loader callback seam where a pread implementation can simply be substituted -- this is a materially bigger design gap than the item previously implied.
 
 ## Steps
@@ -83,3 +85,15 @@ Successor key: patching-nasone-rdna-optimizations-nro14
 - 2026-09-10T02:46:30.060469+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T02:30:06.821967+00:00 (updated-by): Updated: section:notes
 - 2026-09-24T04:51:29.533411+00:00 (updated-by): Updated: section:description, section:steps, section:notes
+
+## 2026-10-08 authoritative b11474 rebaseline (supersedes older Steps)
+
+**Do not implement private pread yet.** Pinned b11474 already contains merged llama.cpp #29599 (2026-09-30). `src/models/qwen4exp.cpp::llm_graph_input_qwen4exp_ple::set_input` computes PLE indices and invokes `llama_prefetch_rows` before submitting I32 indices; `build_inp_ple` retains `ggml_get_rows`. `llama_model_base::load_tensors` registers lazy PLE for prefetch. `src/llama-impl.cpp::llama_prefetch_rows` builds host-buffer ranges; `src/llama-mmap.cpp::llama_prefetch` sorts, page-rounds, merges and advises pages using Linux MADV_WILLNEED or Windows PrefetchVirtualMemory. Advice is not a completion barrier. Direct-reader PR #28136 closed unmerged in favor of #29030; #29030 closed unmerged 2026-10-06 in favor of merged #29599. No BigCherry pread-vs-native-prefetch benchmark exists.
+
+**Attribution gate:** reuse QFP17 profiling without changing its active QSA implementation. On isolated 1x gfx1201 and 1x gfx1100, compare verified cold/warm diverse real text (8K/37K/140K) to repeated-token controls, fixed model/quant/ubatch/context/CPU-MoE/storage, with native `-lzm on` baseline and instrumentation-only no-prefetch control. Record PLE row indices/unique pages, prefetch and GET_ROWS CPU time, major/minor faults, mincore residency, block bytes/queue, RSS, and E2E critical path. Do not infer cold cache from restart. Close without patch if residual PLE <5% E2E, Amdahl ceiling <3%, or prefetch wins.
+
+**Conditional prototype:** only if the gate passes, use a per-context RAII positioned reader, existing GGUF tensor offset/stride/type metadata, bounded workers, checked offsets, sorted/dedup reads, EINTR/short-read/EOF handling, existing ggml to_float quant conversion, original-order/duplicate scatter into F32 `[ple_head_dim, ple_n_heads*n_tokens]` graph input. Preserve EOS/image/mixed-token hash semantics, mmap GET_ROWS fallback, graph reuse and input-buffer lifetime; never replay an ambiguous submitted graph. No new cache, scheduler, allocator, GGML type or default CLI mode. `POSIX_FADV_RANDOM` disables readahead, **not page caching**; buffered pread is not O_DIRECT.
+
+**Acceptance:** host fixture for quant rows/offsets/duplicates/error paths; multi-request/multi-ubatch 8K/80K/240K graph/logit/memory parity; >=4 sessions x >=10 ABBA pairs, CI95-low >=3% E2E prefill and <=1% control regression. Six deterministic page-range fixtures passed. Synthetic 32,768-row accounting yielded 33,349 4K pages (46.32x requested 90-byte row payload); theoretical, not physical NVMe bytes. No build, GPU or storage benchmark ran. PNRO13 owns PLE; QFP17/QSA and PNRO08/MoE cache are active read-only dependencies. BCOP70 is the disposition ledger.
+
+Sources: https://github.com/ggml-org/llama.cpp/pull/28136 ; https://github.com/ggml-org/llama.cpp/pull/29030 ; https://github.com/ggml-org/llama.cpp/pull/29599 ; https://github.com/ggml-org/llama.cpp/blob/b11474/src/llama-mmap.cpp ; https://man7.org/linux/man-pages/man2/posix_fadvise.2.html .

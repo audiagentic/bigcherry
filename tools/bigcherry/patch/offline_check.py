@@ -114,6 +114,24 @@ def _implementation_patch_ids(
     return tuple(sorted(found))
 
 
+def _composition_patch_ids(
+    paths: Sequence[str], base: str | None = None, head: str | None = None
+) -> tuple[str, ...]:
+    """Patches whose composition inputs changed: patch.py (not a line-ending-only change) or patch.toml.
+
+    A change to a patch's tests, README or SUMMARY cannot change how any experiment composes, so it must not
+    trigger the experiment audit: a test-only pull request touching patches used by many experiments spent the
+    whole 30-minute job re-checking compositions that could not have moved.
+    """
+    found = set(_implementation_patch_ids(paths, base, head))
+    for path in paths:
+        if path.startswith("patches/") and path.endswith("/patch.toml"):
+            parts = path.split("/", 2)
+            if len(parts) >= 3 and parts[1] and not parts[1].startswith("_"):
+                found.add(parts[1])
+    return tuple(sorted(found))
+
+
 def _env() -> dict[str, str]:
     env = os.environ.copy()
     tools = str(_REPO / "tools")
@@ -249,9 +267,31 @@ def _experiment_usage(raw: dict[str, object]) -> dict[str, set[str]]:
     return usage
 
 
+def _recipe_change_scope(
+    before: dict[str, object] | None,
+    after: dict[str, object],
+) -> tuple[bool, tuple[str, ...]]:
+    """(every experiment is affected, experiments whose own definition changed) for a recipes.toml change.
+
+    An experiment composes on its source's patch sets, so a change to anything outside the experiment tables
+    affects every experiment; a change inside them affects only the experiments that were added or edited.
+    """
+    if before is None:
+        return True, ()
+    for key in set(before) | set(after):
+        if key != "experiment" and before.get(key) != after.get(key):
+            return True, ()
+    old = before.get("experiment", {})
+    new = after.get("experiment", {})
+    if not isinstance(old, dict) or not isinstance(new, dict):
+        return True, ()
+    return False, tuple(sorted(name for name, cfg in new.items() if old.get(name) != cfg))
+
+
 def _experiment_names_for_audit(
     raw: dict[str, object],
     changed_patch_ids: Sequence[str],
+    changed_experiments: Sequence[str],
     *,
     full_audit: bool,
 ) -> tuple[str, ...]:
@@ -261,12 +301,12 @@ def _experiment_names_for_audit(
     if full_audit:
         return tuple(sorted(experiments))
     changed = set(changed_patch_ids)
-    names = []
+    names = set(changed_experiments).intersection(experiments)
     for name, cfg in experiments.items():
         if not isinstance(cfg, dict):
             continue
         if changed.intersection(cfg.get("patches", [])):
-            names.append(name)
+            names.add(name)
     return tuple(sorted(names))
 
 
@@ -546,18 +586,26 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     failed |= rc != 0
 
-    full_audit = args.audit_all_experiments or "config/recipes.toml" in changed
-    if args.audit_experiments or full_audit:
+    if args.audit_experiments or args.audit_all_experiments:
         try:
             raw = _load_recipes()
+            full_audit = args.audit_all_experiments
+            changed_experiments: tuple[str, ...] = ()
+            if not full_audit and "config/recipes.toml" in changed:
+                before = _blob_text_lf(base, "config/recipes.toml")
+                full_audit, changed_experiments = _recipe_change_scope(
+                    None if before is None else tomllib.loads(before.decode("utf-8")),
+                    raw,
+                )
             experiment_names = _experiment_names_for_audit(
                 raw,
-                patch_ids,
+                _composition_patch_ids(changed, base, head),
+                changed_experiments,
                 full_audit=full_audit,
             )
             print(
                 "experiment audit scope: "
-                + ("full" if full_audit else f"{len(experiment_names)} changed-patch experiment(s)"),
+                + ("full" if full_audit else f"{len(experiment_names)} changed experiment(s)"),
                 flush=True,
             )
             failed |= _run_experiment_audit(

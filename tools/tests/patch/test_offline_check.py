@@ -20,16 +20,40 @@ class OfflineCheckAuditTests(unittest.TestCase):
         }
         self.assertEqual(
             offline_check._experiment_names_for_audit(
-                raw, ["1201_beta"], full_audit=False
+                raw, ["1201_beta"], [], full_audit=False
             ),
             ("beta",),
         )
         self.assertEqual(
             offline_check._experiment_names_for_audit(
-                raw, ["unused"], full_audit=True
+                raw, ["1201_beta"], ["gamma", "removed"], full_audit=False
+            ),
+            ("beta", "gamma"),
+        )
+        self.assertEqual(
+            offline_check._experiment_names_for_audit(
+                raw, ["unused"], [], full_audit=True
             ),
             ("alpha", "beta", "gamma"),
         )
+
+    def test_recipe_change_scope(self):
+        before = {
+            "patch-set": {"prod": {"patches": ["1000_a"]}},
+            "experiment": {"alpha": {"patches": ["1200_alpha"]}, "beta": {"patches": ["1201_beta"]}},
+        }
+        added = {
+            "patch-set": {"prod": {"patches": ["1000_a"]}},
+            "experiment": {
+                "alpha": {"patches": ["1200_alpha"]},
+                "beta": {"patches": ["1201_beta", "1202_shared"]},
+                "gamma": {"patches": ["1202_shared"]},
+            },
+        }
+        self.assertEqual(offline_check._recipe_change_scope(before, added), (False, ("beta", "gamma")))
+        production = {"patch-set": {"prod": {"patches": ["1000_a", "1001_b"]}}, "experiment": before["experiment"]}
+        self.assertEqual(offline_check._recipe_change_scope(before, production), (True, ()))
+        self.assertEqual(offline_check._recipe_change_scope(None, added), (True, ()))
 
     def test_referenced_experiment_uses_declared_source(self):
         raw = {
@@ -153,6 +177,27 @@ class LineEndingOnlyPatchChangeTests(unittest.TestCase):
                 offline_check._implementation_patch_ids([self.PATH], "base", "head"),
                 ("1202_rd04_bf16_flash_attn_tile",),
             )
+
+
+class CompositionPatchIdTests(unittest.TestCase):
+    def test_test_only_and_doc_changes_do_not_trigger_the_experiment_audit(self) -> None:
+        paths = [
+            "tools/tests/patch/test_1307_q81_activation_cache_mmvq.py",
+            "patches/1307_q81_activation_cache_mmvq/README.md",
+            "patches/1307_q81_activation_cache_mmvq/SUMMARY.md",
+        ]
+        self.assertEqual(offline_check._composition_patch_ids(paths), ())
+
+    def test_patch_py_and_patch_toml_changes_do(self) -> None:
+        paths = [
+            "patches/1307_q81_activation_cache_mmvq/patch.py",
+            "patches/1340_meta_per_device_arena/patch.toml",
+            "patches/_template/patch.toml",
+        ]
+        self.assertEqual(
+            offline_check._composition_patch_ids(paths),
+            ("1307_q81_activation_cache_mmvq", "1340_meta_per_device_arena"),
+        )
 
 
 if __name__ == "__main__":
