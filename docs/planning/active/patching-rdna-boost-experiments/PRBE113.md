@@ -7,7 +7,7 @@ created-at: '2026-09-29T23:14:00.745535+00:00'
 breadth: ''
 skill: intermediate
 created-by: agent
-priority: P1
+priority: P0
 work: M
 ---
 
@@ -54,5 +54,7 @@ Committed capture summary; per-width kernel time table; 1245 and 1206 decisions 
 Do not run while the gfx1100 queue batch is executing (host-exclusive).
 
 ## Change Log
+
+- 2026-10-08 (triage): Kept pending at P0. Decode shortlist rank #1 and first profiling dependency of PRBE111 and PRBE115. 27B dual-XTX Q8_0 MTP width 1 versus verify widths 2..5: rocprofv3 kernel counts, Q8_1 quantizer, 1245 (rejected) fused-vs-unfused, CPU scheduler and RD13/1206 activation; host-exclusive queue. No performance code change in this slice.
 
 - 2026-09-29T23:14:00.745535+00:00 (created-by): Created by agent

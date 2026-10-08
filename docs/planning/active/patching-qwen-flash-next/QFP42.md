@@ -178,6 +178,18 @@ acceptance threshold; the timing counters must show that host preparation moved 
 - QFP31 / 1348_mtp_deferred_catchup promoted and merged.
 - 1346 timing diagnostic retained without its unqualified prompt-window mechanism.
 
+## Consolidated RDNA/MTP follow-ups (PRBE07, PRBE56, PRBE57)
+
+These are additional **qualification/design steps**, not modifications of the 1348 deferred-catch-up semantics or the QFP42 async-staging acceptance gate:
+
+1. **PRBE56 scheduler plan/sync:** use `ggml/src/ggml-backend.cpp::ggml_backend_sched_split_graph` and the per-split event synchronization path to profile split/build CPU time, waits blocked in target versus draft, bytes and copies/token for MTP verify widths 2..8. Cache only a stable (shape/topology, backend-ID mapping, split-boundary) **template** and rematerialize per-instance tensor pointers, `split->inputs`, and graph-owned views. Raw `ggml_backend_sched_split` reuse is unsafe because graph splitting mutates `node->src[]`. The existing `prev_backend_id != split_backend_id` check already avoids same-backend sync: never claim removing that existing guard is a new win. Only remove an actual cross-device wait proven non-dependent by the QFP42 blocked-wall-time trace.
+2. **PRBE57 NextN placement:** the referenced external fork commit `1fcc05da` changes Vulkan NextN tensor placement; `41a8ca78` is a separate backend-resident hidden-state handoff (Vulkan PRBE58, parked). Neither is automatically a HIP implementation. In QFP42's HIP/meta production layout, measure the owner device of `NEXTN_PROJ_PRE/POST` and `t_h_nextn`, the real D2H/P2P copies, and a candidate owner cost of copy-in+copy-out+sync+host-staging. Consider `BIGCHERRY_MTP_TOPOLOGY=off|auto|device:N` in a separate default-off placement ablation only if QFP42 trace shows a copy/ownership bottleneck. Validate byte-identical NextN rows, greedy identity, accepted counts, copies/token and no extra VRAM pressure; do not conflate home-backend placement with async staging.
+3. **PRBE07 BridgeSpec evaluation:** PRBE07 is now complete as **inspiration-only**, not an adoption. Main audited MIT-licensed BridgeSpec 0.1.0 at commit `2b846f2ff1eb95ac84e4b0488882b7e4066bff14`: Windows single-GPU/gfx1100, singleton host DLL, missing context-shift/multi-request lifecycle, no production interop semaphores and external-only speed evidence. Native BigCherry FMTP/QFP ownership is preferred. Do not implement a second sidecar; consider only a fresh measured width-2..8 kernel opportunity or vocab-head design through its owning patch plan, with first-party hardware and target-authoritative identity.
+
+Decision gate: retain only profiled HIP-specific work that reduces blocked time or copies while keeping QFP42's existing target/draft correctness contract. PRBE07/56/57 are closed as planning duplicates **into this open item**; no patch promotion is implied.
+
 ## Change Log
+
+- 2026-10-08 (triage): Folded PRBE07, PRBE56, PRBE57 into source-scoped MTP/NextN and BridgeSpec qualification notes.
 
 - 2026-10-07T22:53:39.805664+00:00 (updated-by): Updated: section:steps, section:notes
