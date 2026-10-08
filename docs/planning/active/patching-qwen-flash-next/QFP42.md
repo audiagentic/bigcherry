@@ -30,19 +30,19 @@ work: M
 | deferred ON | 17.6 | 21.2 | 56.5 | 12.4 | 11.9 / 32.2 |
 | deferred OFF | 17.4 | 4.3 | 48.3 | 4.3 | 11.8 / 32.1 |
 
-Source-verified at pin b11474 / production composition:
+Source-verified at pin b11474 / production composition (line numbers below are after the production patch set is composed):
 
-- The public `llama_get_embeddings_nextn()` is a real target barrier: `src/llama-context.cpp:4125-4128` calls
+- The public `llama_get_embeddings_nextn()` is a real target barrier: `src/llama-context.cpp:4289-4292` calls
   `ctx->synchronize()`; `llama_context::synchronize()` reaches `ggml_backend_sched_synchronize()`
-  (`src/llama-context.cpp:773-779`). 1348 calls that getter only after catch-up of the prior snapshot and before
+  (`src/llama-context.cpp:916-922`). 1348 calls that getter only after catch-up of the prior snapshot and before
   returning to the server.
 - The +17 ms is **not** the 1326 input-sync mechanism. 1319's `inputs_us` encloses only
-  `llm_graph_result::set_inputs()` (`src/llama-context.cpp:1460-1467`). 1326 modifies
+  `llm_graph_result::set_inputs()` (`src/llama-context.cpp:1611-1618`). 1326 modifies
   `ggml_backend_sched_copy_input()`, which runs later from `ggml_backend_sched_compute_splits()`
-  (`ggml/src/ggml-backend.cpp:1811-1825,1853-1884`) and therefore belongs to 1319 `compute_us`.
+  (`ggml/src/ggml-backend.cpp:1852-1908,1918-1952`) and therefore belongs to 1319 `compute_us`.
 - 1348's snapshot is not the target input staging allocation. `bc_deferred_chunk::h_nextn` is its own
   `std::vector<float>`; llama's NextN output lives in `buf_output`, allocated from the output device's host
-  buffer type and exposed as `embd_nextn` (`src/llama-context.cpp:2178-2229`). There is no alias to scheduler
+  buffer type and exposed as `embd_nextn` (`src/llama-context.cpp:2336-2387`). There is no alias to scheduler
   input staging.
 - The draft CPU backend cannot still be executing its catch-up graph after `llama_process(ctx_dft)` returns:
   CPU backend graph compute calls synchronous `ggml_graph_compute()`
