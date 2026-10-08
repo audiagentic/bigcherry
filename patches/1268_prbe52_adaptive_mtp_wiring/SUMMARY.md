@@ -1,6 +1,6 @@
 # 1268_prbe52_adaptive_mtp_wiring
 
-**Status:** evaluated
+**Status:** rejected
 **Plan item:** PRBE52
 
 ## What it does
@@ -24,3 +24,11 @@ cap follows the optional candidate capture. The three edits (`prbe52-begin-reset
 floor 0 keeps fixed-depth MTP. The earlier `known_broken` disposition (bound to pin 0504396 and the old digest) is
 cleared. Evidence from before the reconciliation does not carry over; the hardware gate is rerun on this pin
 (`tools/lab/flash-next/queue-adaptive-mtp.sh`).
+
+
+## Retirement (2026-10-08)
+
+Rejected under BPB01 at b11474. The package no longer applies at the current pin, depends on the separately broken
+1210 decode/verify patch, is not selected by production, and the owner chose not to carry this adaptive-depth mechanism
+forward. PA44's stale-branch review records 1268 as retired. Historical hardware/evaluation evidence above is preserved;
+this is a lifecycle retirement, not a claim that those earlier measurements were invalid.
