@@ -80,7 +80,7 @@ Turn individually promising R9X experiments into a coherent production set for R
 
 ## Inputs
 
-Candidate patch slots are plan-time `1300`–`1312`; re-resolve actual numbers from the branch. Include existing production/evaluated dependencies that candidates extend, especially 1237/1241/1253/1254/1265/1270/1273/1274/1278/1291/1292 and relevant PNRO items.
+Candidate patch slots `1300`–`1312` are historical only; `1310_act_q81` is already QFP18 production, so RNX10 owns no patch slot. Re-resolve actual numbers from the branch after RNX10's profile gate. Include existing production/evaluated dependencies that candidates extend, especially 1237/1241/1253/1254/1265/1270/1273/1274/1278/1291/1292 and relevant PNRO items.
 
 ## Required matrix
 

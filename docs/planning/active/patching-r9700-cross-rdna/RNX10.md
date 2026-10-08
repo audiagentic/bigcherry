@@ -8,65 +8,46 @@ breadth: ''
 skill: advanced
 created-by: codex
 work: L
-priority: P0
+priority: P2
 ---
 
 # R9X10 — Qwen4Exp shared-expert decode fusion
 
 ## Description
 
-Reduce the shared-expert branch to the smallest safe launch set, independently of adopting MXFP4/FP8. Use the actual BigCherry quant/type path first.
+**RNX10 is a profiling-gated scalar shared-expert gate-tail experiment**, not another GLU, MoE GEMM, router, cache, or stream-overlap implementation. No new patch or hardware job is authorized before Gate 1. Historical patch number `1310` is **occupied by production `1310_act_q81` (QFP18)** and must not be reused.
 
-## Steps
+## Implementation audit — pinned b11474 (2026-10-08)
 
-- Rocprof the shared-expert window at M=1 and MTP verify; count launches and bytes.
-- Map shared gate/sigmoid, gate-up, SiLU/mul, down, residual/combine graph nodes to mmvq/mmq dispatch.
-- Fold the scalar gate into an existing required read/quant or down epilogue without changing projection precision.
-- Fuse SiLU/mul with required activation conversion, then add a skinny GEMM only if it remains material after RNX04/MMVQ work.
-- Add trace marker and explicit disable path; ablate 1215 overlap ON/OFF.
+- `src/models/qwen4exp.cpp::graph::build_layer_ffn` (1142–1189) constructs routed `build_moe_ffn`, shared `build_ffn(..., LLM_FFN_SILU, LLM_FFN_PAR)`, then shared-gate `build_lora_mm(ffn_gate_inp_shexp,cur)` -> `ggml_sigmoid` -> `ggml_mul(ffn_shexp,gate)` -> `ggml_add(moe_out,ffn_shexp)`. Gate weight `{n_embd}` yields expected gate shape `[1,M]`; shared output `[H,M]`. Confirm live graph shape, type, strides and device before counting physical kernels.
+- `src/llama-graph.cpp::build_ffn` (1837–1905) already builds shared gate/up and `ggml_swiglu_split`. `ggml/src/ggml-cuda/ggml-cuda.cu::ggml_cuda_match_shared_expert` (1854–1904), `ggml_cuda_try_fuse` (3542–3559), and graph allocation-dependency registration (4653–4669) already support conditional routed+shared up/gate/GLU fusion. Do **not** duplicate it.
+- `ggml_cuda.cu` (3454–3479) plus `ggml/src/ggml-cuda/unary.cu::ggml_cuda_op_unary_mul` (665–719) already fuse SIGMOID+MUL **only for same-shape operands**. `ggml_are_same_shape(other,unary)` excludes scalar-broadcast `[1,M]` vs `[H,M]` for H>1. This is static route evidence, **not proof of three actual launches**. Existing `binbcast.cu::ggml_cuda_op_mul/add` (442–451) is fallback.
+- The separate `MUL_MAT+scale(+bias)` matcher (`ggml_cuda.cu` 4108–4184) requires `GGML_TYPE_NVFP4` for its scale predicate; do not presume it can fold the Q/IQ/Q8 shared gate into the down epilogue. `GGML_CUDA_DISABLE_FUSION` changes unrelated mechanisms and is diagnostic, not an isolated RNX10 A/B.
 
-## Detailed Solution & Technical Design
+## Cheapest discriminator and implementation gate
 
-Analyze the remaining shared-expert tail after upstream up+gate+SwiGLU fusion: ffn_gate_inp_shexp MUL_MAT -> SIGMOID -> MUL with ffn_shexp -> ADD into moe_out. Any fusion must preserve PARTIAL semantics under tensor split and leave the following AllReduce unchanged. Coordinate with existing 1215 shared-expert stream overlap and RNX04 HC work; do not duplicate either owner. First establish HIP graph capture behavior and whether removing roughly three launches per layer changes E2E performance before authoring a package.
+**Gate 0, static — passed:** eight b11474 source assertions; host shapes H=2048/M=1,4,16 fail the native unary+mul equal-shape predicate while H=1/M=1 is the positive control. Existing `1310_act_q81` is registered in `config/recipes.toml`. No runtime result follows from these checks.
 
-## Code Samples & Guidance
+**Gate 1, attributed profiling — required before patching:** using existing `rocprofv3 --kernel-trace`, graph-debug and QFP18/QFP43 timing producers (no new telemetry), record `{op,shape,dtype,device,stream,kernel,bytes,elapsed}` for gate GEMV, SIGMOID, broadcast MUL, ADD and existing shared up/GLU/down. Test Qwen4Exp production quant, M=1/2/4/8 and MTP verify, pp128/512, contexts 8K/48K/98K, single gfx1100/gfx1201, dual gfx1100 tensor split and mixed gfx1100+gfx1201 no-P2P. gfx1030 only if the model fits. Record `GGML_CUDA_GRAPH_OPT`, capture/replay/reallocation, `1215+1216` ON/OFF only in its qualified single-GPU graph-opt lane, host wall, per-rank GPU busy-time **union**, H2D/D2H and physical launch counts. Do not add overlapping queue times or call total dispatch volume a tail measurement. **Close without patch** if the removable pointwise tail is <5% of E2E decode/MTP wall or exact same-device adjacency/ownership cannot be established.
 
+**Gate 2, conditional implementation:** only after Gate 1, add an exact `GGML_OP_UNARY(SIGMOID) -> GGML_OP_MUL(broadcast) -> GGML_OP_ADD` match in existing `ggml_cuda_try_fuse` and a single F32 pointwise kernel in existing `unary.cu` or `binbcast.cu`; no new GGML op, scheduler, allocator, architecture dispatch table or quant format. Candidate computation: `dst[h,m] = moe[h,m] + shared[h,m] * sigmoid(gate[m])`. If ADD cannot safely fuse, restrict the first patch to SIGMOID+broadcast MUL. Require adjacent graph nodes, exact source identity and single consumers, `[1,M]` contiguous gate, identical `[H,M]` shared/moe/output layout, F32 dtype, supported measured M, same device/stream/rank, `ggml_can_fuse_subgraph`, `ggml_cuda_check_fusion_memory_ranges`, and allocation dependencies before graph reservation. Any unsupported layout, multi-device split, nonadjacency, graph-opt mode or alias falls back unchanged. Never introduce a cross-rank write, hidden AllReduce, host synchronization, or pointer to recycled ubatch. Use existing patch opt-in/trace/disable conventions; allocate a **fresh** patch number only after rechecking the active branch and 12-hour exclusions.
 
+**Gate 3, correctness and promotion:** F32 host reference and backend-op cases for ±80/±0 gate logits, NaN/Inf policy, H/M and stride boundaries, both ADD operand orders, reused intermediates and negative matcher cases. Compare logits/greedy/KLD, MTP acceptance, multi-request same-process, multi-ubatch, 8K/48K/98K, graph capture/replay/reallocation, tensor-split Meta/PARTIAL zero contributions, physical transfer accounting and restart. No missing work, buffer alias corruption or new sync. Run ≥10 interleaved paired A/B rounds per supported architecture/topology against b11474 native and the production patched base; ablate 1215+1216 only on its eligible lane. **Promote only with CI95-low ≥3% E2E decode/MTP gain, ≤1% control regression, full correctness and activation**; otherwise reject and remove the experiment.
 
-## Files
+## Existing evidence, ownership and external comparison
 
-- kernels/r9k_moe_mxfp4a8.hip
-- r9700_vllm/moe/shared.py
-- r9700_vllm/kernels/moe.py
-- tests/test_shared_expert_r9k.py
-- src/models/qwen4exp.cpp
-- ggml/src/ggml-cuda/mmvq.cu
-- ggml/src/ggml-cuda/mmq.cuh
-- ggml/src/ggml-cuda/ggml-cuda.cu
+**BigCherry measurements belong to other mechanisms:** 1215+1216 stream overlap on single gfx1100 with graph-opt ON: +2.38% mean (10 pairs, CI95 [1.45%,3.32%]); dual gfx1100 layer split ~−4.4%, tensor split neutral. 1207 routed top-k down-epilogue: −1.32% mean (6 pairs, CI95 approx [−2.38%,−0.26%]). Neither is RNX10 performance evidence. Historical ~4,176 dispatches/MTP step/GPU are not attributed to this tail.
 
-## Validation
+vLLM issue #43187 proposes a single GEMV+sigmoid+broadcast scale kernel; MI355x single-run-per-cell external means +4.65% balanced/+6.36% decode-heavy/+10.29% prefill-heavy, issue closed stale 2026-09-19. SGLang `qwen2_moe.py::_append_shared_expert_ids_and_weights` and `fused_moe_triton_kernels.py::fused_append_shared_experts_with_weights(fuse_gate=True)` combine gate GEMV/sigmoid into AITER shared-expert ID append. llama.cpp GGUF does not use that append contract: **mechanism reference only**, not a direct port or RDNA3/4 benchmark. Pinned b11474 and inspected upstream master retain the existing CUDA fusion restrictions.
 
-Compare gate logit, sigmoid result, gate-up output, post-SiLU/mul activation, down output and final model output against the unfused graph. Cover M=1/2/4/8, MTP depths, shared-gate extremes, multiple quants, single GPU and tensor split. Profile with 1215 OFF/ON to prove the gain is not just an overlap artifact.
+**Ownership:** RNX10 alone owns the scalar shared-expert tail; RNX09 owns cross-RDNA promotion. RNX04 owns HC/router, QFP35/native owns GLU, 1207/PRBE14 owns routed top-k scaling, 1215+1216/PRBE35 owns shared/routed stream overlap, and QFP18/1310 owns activation Q8_1. Do not edit protected QFP35/QFP43/MTP/patch tooling in this run. RNX10's last independent plan change was 2026-10-03 15:24 UTC; no new RNX10 patch/PR/queue was found. No build, GPU test or new hardware benchmark ran.
 
-Acceptance: measurable E2E decode/MTP benefit on at least one declared generation, exact fallback elsewhere, and no dependency on an unpromoted R9X05 format experiment.
+## Acceptance criteria
 
-## Effort & Risk
+Gate 1 <5% tail wall-share or unproven ownership -> terminal no-patch disposition. Gate 1 pass -> only the bounded guarded pointwise experiment above; any correctness or CI gate failure -> reject. No speculative skinny GEMM or MXFP4 work is in RNX10 scope.
 
 
-
-## Standards
-
-Original source alias is R9X10. Proposed slot 1310; use actual Q/IQ/Q8 path unless RNX05 independently promotes a format.
-
-## Acceptance Criteria
-
-- Promote only with measurable E2E decode/MTP benefit and exact fallback elsewhere.
-- No dependency on an unpromoted RNX05 format experiment.
-- Keep 1207 routed top-k weighting and 1215 stream overlap ownership distinct.
-
-## Notes
-
-Existing owners: 1207, 1215, 1237, 1265.
+## Archived legacy proposal (non-normative; superseded above)
 
 Verbatim legacy source retained during R9X→RNX migration:
 

@@ -40,7 +40,7 @@ Rules for every implementation:
 | R9X01 | P0 | Intake, mapping, baseline, capability matrix | none | PNRO; 1273–1292 |
 | R9X03 | P0 | GDN MTP decode + short-prefill fusion | 1302, 1312 | 1221/1253/1254/1255 |
 | R9X04 | P0 | MoE router + hyper-connection decode fusion | 1303, 1304 | 1207/1237/1256/1257/1279 |
-| R9X10 | P0 | Shared-expert decode fusion | 1310 | 1207/1215/1237/1265 |
+| R9X10 | P2 / profile gate | Scalar shared-expert gate tail only | none; 1310 occupied by QFP18 | 1207/1215/1237/1265 |
 | R9X02 | P1 | Attention + QSA/indexer | 1300, 1301 | 1201/1202/1203/1266/1270/1271/1280/1292 |
 | R9X06 | P1 | Expert residency/LRU + pinned-host backing | 1307 | 1279 + memory/lifetime work |
 | R9X07 | P1 | WHT/compressed collective experiment | 1308 | 1001/1244/1250/1252/1272/1275/1276/1277/1291 |
@@ -59,7 +59,7 @@ Host/reference adapters/tests include `r9700_vllm/attn/qsa.py`, `r9700_vllm/kern
 
 ## Patch allocation discipline
 
-`1300`–`1312` are reservations, not ownership locks. Before implementation, re-read branch head and the maximum numeric directory under `patches/`. If another agent has consumed a slot, preserve the R9X plan ID but allocate the next free patch number and update this README plus the corresponding plan. Every created package must follow current BigCherry package conventions (`patch.py`, `patch.toml`, `SUMMARY.md`, validation contract/evidence where required) and carry its R9X plan item ID.
+`1300`–`1312` are historical suggestions, not reservations or ownership locks. In particular `1310_act_q81` is an existing QFP18 production patch, not RNX10. Before implementation, re-read branch head and the maximum numeric directory under `patches/`. If another agent has consumed a slot, preserve the R9X plan ID but allocate the next free patch number and update this README plus the corresponding plan. Every created package must follow current BigCherry package conventions (`patch.py`, `patch.toml`, `SUMMARY.md`, validation contract/evidence where required) and carry its R9X plan item ID.
 
 ## Licensing/provenance
 
