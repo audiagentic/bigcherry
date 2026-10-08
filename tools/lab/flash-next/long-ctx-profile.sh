@@ -6,6 +6,9 @@
 #   2) rocprofv3 --kernel-trace --memory-copy-trace --stats on a 32K prompt + 128 decode, for the per-kernel
 #      split of prefill and decode at depth (attention vs MoE vs AllReduce vs copies).
 # Usage: long-ctx-profile.sh <llama-server> <out-dir> [full|decode|perf|timing|probes|apitrace|synctrace]
+# Other drafters: SPEC_TYPE_ARGS replaces the MTP default (e.g. "--spec-type draft-dspark"), SPEC_EXTRA adds flags
+# (e.g. "--spec-draft-p-min 0" for a DSpark draft without a confidence head), DRAFT names the draft GGUF. A DFlash /
+# DSpark draft with this tensor-split target needs patch 1286 in the build.
 set -u
 bin=$1 out=$2
 mkdir -p "$out"
@@ -14,7 +17,7 @@ AR_ARG=(--allreduce "${AR:-cpu-root}"); [ "${AR:-}" = none ] && AR_ARG=()  # AR=
 draft=${DRAFT:-/mnt/data/llm-models/qwen3.8-flash-next/gguf/unsloth/MTP/mtp-Qwen3.8-Flash-Next-Q8_0-qsa4.gguf}
 args=(-m "$model" -ngl 99 --fit off -c ${CTX:-196608} -ub ${UB:-512} -b ${B:-2048} --flash-attn ${FA:-on} --parallel 1 --threads 16 -lv 4
       -ot '^per_layer_token_embd\.weight$=CPU' -dev ROCm0,ROCm1,ROCm2 -devd ROCm3 -sm tensor -ts ${TS:-2,2,3}
-      -md "$draft" --no-spec-draft-backend-sampling --spec-type draft-mtp --spec-draft-n-max ${SPEC_N:-3}
+      -md "$draft" ${SPEC_TYPE_ARGS:---no-spec-draft-backend-sampling --spec-type draft-mtp} --spec-draft-n-max ${SPEC_N:-3} ${SPEC_EXTRA:-}
       -ctk ${CTK:-q8_0} -ctv ${CTV:-q8_0} -ctkd ${CTKD:-${CTK:-q8_0}} -ctvd ${CTVD:-${CTV:-q8_0}} "${AR_ARG[@]}")
 if [ "${NO_MTP:-}" = 1 ]; then  # deterministic greedy reference: no draft, so no acceptance-dependent batch shapes
   args=(-m "$model" -ngl 99 --fit off -c ${CTX:-196608} -ub ${UB:-512} -b ${B:-2048} --flash-attn ${FA:-on} --parallel 1 --threads 16 -lv 4
