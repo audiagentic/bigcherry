@@ -57,9 +57,13 @@ class Patch1330Mechanics(unittest.TestCase):
 
             out = (root / _REL).read_text(encoding="utf-8")
             self.assertIn("bigcherry 1332: build_attn_qsa builds the masks per token chunk", out)
+            self.assertIn("const bool bc_inplace = n_tokens > 8", out)
             self.assertIn("sel = bc_inplace ? ggml_add_inplace(ctx0, sel, kq_mask) : ggml_add(ctx0, sel, kq_mask);", out)
+            self.assertIn("const bool bc_mask_inplace = n_tokens > 8", out)
             self.assertIn("const int64_t bc_mask_rows = bc_mask_inplace ? GGML_PAD(n_kv + n_sel, 256) : n_kv + n_sel;", out)
-            self.assertIn("bigcherry 1330: 1332's dense fallback can pass the in-place mask", out)
+            self.assertIn("const bool bc_mask_inplace_batch = bc_mask_mode != 0 && q_cur->ne[2] > 8;", out)
+            self.assertIn("bigcherry 1330: only a >8-token in-place dense fallback can pass its strided mask", out)
+            self.assertNotIn("static const bool bc_inplace", out)
             attn = out[out.index("ggml_tensor * llama_model_qwen4exp::graph::build_attn_qsa("):out.index("ggml_tensor * llama_model_qwen4exp::graph::build_layer_attn(")]
             self.assertLess(attn.index("if (sel->type == GGML_TYPE_I32)"), attn.index("bigcherry 1330: 1332's dense fallback"))
 
