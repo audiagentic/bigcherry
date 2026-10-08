@@ -41,13 +41,12 @@ Reserved patch identities were not reused: 1349 is named by QFP36 router split-K
 For both runtime slices, build the production source plus only the experiment package, then use one binary and complete process separation:
 
 ```bash
-# A/B queue shape; set BIN/BUILD using the normal flash-next lab build wrapper.
-DEPTHS="8192 24576 98304" \
-  tools/lab/flash-next/queue-env-ab.sh <build-or-server> <run-name> \
-  "<A env>" "<B env>"
+# queue-env-ab.sh defines A = production environment and B = A + AB_ENV.
+AB_ENV="<subject env>" \
+  tools/lab/flash-next/queue-env-ab.sh <run-name> <build-run-id> 8192 24576 98304
 ```
 
-The slice READMEs give the repository's exact positional invocation after checking the current `queue-env-ab.sh` interface.
+Each slice README gives the exact `AB_ENV`; use `FIDELITY=1` when the mechanism changes floating-point grouping.
 
 Required evidence for both: `BIGCHERRY_PATCH_HIT` in the subject arm, same production model/topology/f16-KV/ub512, prefill t/s at all three depths, decode control, peak per-device VRAM, greedy output identity. QFP41 additionally requires repeated-run identity/determinism and a deep-prefill + long-decode stress run with no hang/crash; host-side ThreadSanitizer where practical.
 
