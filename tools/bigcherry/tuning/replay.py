@@ -42,6 +42,7 @@ from . import dispatch_abi
 from . import promotion_gate as correctness_gate
 from . import verification_state
 from ..identity_separation import IdentitySeparationError, validate_measurement_identity
+from ..core import paths
 
 MAGIC = 0x59484342
 # HI31: v4 -> v5 adds a per-entry transform_id (uint16, 0 = no transform,
@@ -1370,7 +1371,6 @@ def _load_seed_overrides(
 
 
 def main(argv: list[str] | None = None) -> None:
-    root = Path(__file__).resolve().parent.parent.parent.parent
     parser = argparse.ArgumentParser(
         prog="bigcherry replay-cache",
         description="Build a replay cache from tuning measurements.",
@@ -1392,7 +1392,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument(
         "--ggml-header",
         type=Path,
-        default=root / "vendor/llama.cpp/ggml/include/ggml.h",
+        default=paths.llama_root() / "ggml" / "include" / "ggml.h",
         help="upstream ggml.h, for the ggml_type enum",
     )
     parser.add_argument(

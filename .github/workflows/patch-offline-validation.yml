@@ -8,6 +8,8 @@ on:
       - 'tools/tests/patch/**'
       - 'tools/tests/cli/test_slice_prune.py'
       - 'tools/tests/cli/test_slice_commands.py'
+      - 'tools/tests/core/test_primary_root.py'
+      - 'tools/tests/core/test_context.py'
       - 'tools/tests/cli/test_slice_prune.py'
       - 'tools/tests/cli/test_slice_commands.py'
       - 'tools/bigcherry/patch/**'
@@ -62,7 +64,7 @@ concurrency:
 jobs:
   offline-patch:
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
@@ -74,6 +76,11 @@ jobs:
 
       - name: Compile validation harness
         run: python -m py_compile tools/bigcherry/patch/offline_check.py
+
+      - name: Run primary-root worktree tests
+        env:
+          PYTHONPATH: tools
+        run: python -m unittest tools.tests.core.test_primary_root tools.tests.core.test_context -v
 
       - name: Run patch lint
         shell: bash
@@ -155,180 +162,20 @@ jobs:
             base="HEAD^"
           fi
           base="$(git merge-base "$base" "$GITHUB_SHA")"
+
+          audit_args=(--audit-experiments)
+          if [[ "$GITHUB_EVENT_NAME" == "push" && "$GITHUB_REF" == "refs/heads/main" ]]; then
+            audit_args+=(--audit-all-experiments)
+          fi
+
           python -m bigcherry.patch.offline_check \
             --base "$base" \
             --head "$GITHUB_SHA" \
             --source bigcherry \
+            --experiment-workers 6 \
+            --check-timeout 600 \
+            "${audit_args[@]}" \
             --json artifacts/patch-offline-check.json
-
-      - name: Check every configured experiment composes
-        if: ${{ always() }}
-        shell: bash
-        env:
-          PYTHONPATH: tools
-        run: |
-          python - <<'PY'
-          import re
-          import subprocess
-          import sys
-          import tomllib
-          from pathlib import Path
-
-          root = Path(".")
-          raw = tomllib.loads((root / "config/recipes.toml").read_text(encoding="utf-8"))
-          experiments = raw.get("experiment", {})
-          known_sources = set(raw.get("source", {}))
-
-          usage = {name: set() for name in experiments}
-          for campaign in raw.get("campaign", {}).values():
-              for lane in campaign.get("lanes", []):
-                  name = lane.get("experiment")
-                  source = lane.get("source")
-                  if name in usage and source in known_sources:
-                      usage[name].add(source)
-
-          cmd_patterns = (
-              re.compile(r"--source\s+([A-Za-z0-9_-]+).*?--experiment\s+([A-Za-z0-9_-]+)"),
-              re.compile(r"--experiment\s+([A-Za-z0-9_-]+).*?--source\s+([A-Za-z0-9_-]+)"),
-          )
-          lane_pattern = re.compile(
-              r'source\s*=\s*"([^"]+)".*?experiment\s*=\s*"([^"]+)"'
-          )
-          queue_pattern = re.compile(
-              r"\b([A-Za-z0-9_-]+):[A-Za-z0-9_-]+:[A-Za-z0-9_-]+\s+([A-Za-z0-9_-]+)(?:\s|$)"
-          )
-
-          for base in ("tools", "docs/reference", ".github"):
-              for path in sorted((root / base).rglob("*")):
-                  if not path.is_file():
-                      continue
-                  try:
-                      lines = path.read_text(encoding="utf-8").splitlines()
-                  except (UnicodeDecodeError, OSError):
-                      continue
-                  for line in lines:
-                      match = cmd_patterns[0].search(line)
-                      if match:
-                          source, name = match.groups()
-                          if name in usage and source in known_sources:
-                              usage[name].add(source)
-                      match = cmd_patterns[1].search(line)
-                      if match:
-                          name, source = match.groups()
-                          if name in usage and source in known_sources:
-                              usage[name].add(source)
-                      for pattern in (lane_pattern, queue_pattern):
-                          match = pattern.search(line)
-                          if match:
-                              source, name = match.groups()
-                              if name in usage and source in known_sources:
-                                  usage[name].add(source)
-
-          def source_patch_ids(source):
-              ids = []
-              for patch_set in raw["source"][source].get("patch-sets", []):
-                  for patch_id in raw["patch-set"][patch_set].get("patches", []):
-                      if patch_id not in ids:
-                          ids.append(patch_id)
-              return set(ids)
-
-          source_ids = {name: source_patch_ids(name) for name in known_sources}
-          production_ids = source_ids["bigcherry"]
-          # Unreferenced experiments must be checked on a dependency-complete
-          # source; choosing tuning unconditionally masks a missing prerequisite
-          # as an unrelated experiment failure. Never auto-add patch dependencies.
-          def missing_requirements(name, source):
-              selected = set(experiments[name].get("patches", []))
-              available = source_ids[source] | selected
-              missing = set()
-              for patch_id in selected:
-                  path = root / "patches" / patch_id / "patch.toml"
-                  metadata = tomllib.loads(path.read_text(encoding="utf-8"))
-                  missing.update(set(metadata.get("requires", [])) - available)
-              return missing
-
-          fallback_sources = (
-              "bigcherry-tuning",
-              "bigcherry",
-              "bigcherry-qualification",
-              "bigcherry-qualification-tuning",
-              "bigcherry-serving-base",
-          )
-          checks_to_run = []
-          for name in sorted(experiments):
-              sources = sorted(usage[name])
-              if name == "native-plus-1333":
-                  sources = ["llama-native"]
-              if not sources:
-                  patches = set(experiments[name].get("patches", []))
-                  preferred = "bigcherry" if patches <= production_ids else "bigcherry-tuning"
-                  if not missing_requirements(name, preferred):
-                      chosen = preferred
-                  else:
-                      compatible = [
-                          source for source in fallback_sources
-                          if not missing_requirements(name, source)
-                          and not (patches & source_ids[source])
-                      ]
-                      # Fail closed on the preferred source if none satisfies
-                      # the exact declared dependency set.
-                      chosen = compatible[0] if compatible else preferred
-                  sources = [chosen]
-                  print(
-                      f"NOTE unreferenced experiment {name}: audit fallback={chosen}",
-                      flush=True,
-                  )
-              checks_to_run.extend((name, source) for source in sources)
-
-          from concurrent.futures import ThreadPoolExecutor, as_completed
-
-          def run_check(name, source):
-              result = subprocess.run(
-                  [
-                      sys.executable,
-                      "-m",
-                      "bigcherry",
-                      "patch-rebase-check",
-                      "--source",
-                      source,
-                      "--experiment",
-                      name,
-                  ],
-                  check=False,
-                  text=True,
-                  stdout=subprocess.PIPE,
-                  stderr=subprocess.STDOUT,
-              )
-              return name, source, result.returncode, result.stdout
-
-          checks = []
-          failures = []
-          workers = min(8, max(1, len(checks_to_run)))
-          print(f"Experiment audit workers: {workers}", flush=True)
-          with ThreadPoolExecutor(max_workers=workers) as pool:
-              pending = {
-                  pool.submit(run_check, name, source): (name, source)
-                  for name, source in checks_to_run
-              }
-              for future in as_completed(pending):
-                  name, source, rc, output = future.result()
-                  print(f"== experiment {name} ({source}) ==", flush=True)
-                  if output:
-                      print(output, end="" if output.endswith("\n") else "\n", flush=True)
-                  checks.append((name, source, rc))
-                  if rc:
-                      failures.append((name, source, rc))
-
-          print(
-              f"Experiment selections checked: {len(checks)}; failed: {len(failures)}",
-              flush=True,
-          )
-          if failures:
-              print("Failed experiment selections:", file=sys.stderr, flush=True)
-              for name, source, rc in failures:
-                  print(f"  - {name} source={source} rc={rc}", file=sys.stderr, flush=True)
-              raise SystemExit(1)
-          PY
 
       - name: Preserve validation summary
         if: always()

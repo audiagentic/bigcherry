@@ -106,7 +106,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--llama-root",
         default=None,
-        help="llama.cpp checkout (default: vendor/llama.cpp)",
+        help="llama.cpp checkout (default: primary checkout vendor/llama.cpp)",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
