@@ -131,17 +131,20 @@ build_line() {
     rc=$?
     plan=$(sed -n 's/.*: ok build_plan_id=\([0-9a-f]*\).*/\1/p' "$log" | tail -1)
     bin=""
-    # bigcherry build publishes under the checkout's work/builds (not the queue work root).
+    # bigcherry build publishes under its own work root (BIGCHERRY_WORK_ROOT from the process environment, else the
+    # primary checkout's work/), which is not the queue work root when environment.local.toml names one.
+    local builds
+    builds=$(PYTHONPATH="$root/tools" python3 -c 'from bigcherry.core.context import ProjectContext; print(ProjectContext.resolve().work_root / "builds")')
     local matches=() tree=()
     # The build compiles only the llama-server target; a row asking for another tool (e.g.
     # bin/llama-bench) builds that target in the same configured tree.
     if [ "$rc" -eq 0 ] && [ -n "$plan" ] && [ "$target" != bin/llama-server ]; then
-        mapfile -t tree < <(ls -d "$work"/builds/*/"$plan" 2>/dev/null)
+        mapfile -t tree < <(ls -d "$builds"/*/"$plan" 2>/dev/null)
         if [ "${#tree[@]}" -eq 1 ] && [ ! -f "${tree[0]}/$target" ]; then
             cmake --build "${tree[0]}" --target "$(basename "$target")" -j >> "$log" 2>&1 || rc=$?
         fi
     fi
-    [ -n "$plan" ] && mapfile -t matches < <(ls -d "$work"/builds/*/"$plan"/"$target" 2>/dev/null)
+    [ -n "$plan" ] && mapfile -t matches < <(ls -d "$builds"/*/"$plan"/"$target" 2>/dev/null)
     [ "${#matches[@]}" -eq 1 ] && bin=${matches[0]}
     if [ "$rc" -eq 0 ] && [ -f "$bin" ]; then echo "BUILD_BINARY=$bin" >> "$log"; else [ "$rc" -eq 0 ] && rc=1; fi
     echo "BUILD_EXIT=$rc" >> "$log"
