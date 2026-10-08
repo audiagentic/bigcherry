@@ -97,17 +97,24 @@ class Patch1346Mechanics(unittest.TestCase):
 
         self.assertIn('std::getenv("BIGCHERRY_MTP_PROMPT_TIMING")', src)
         self.assertIn(
-            "BIGCHERRY_MTP_PROMPT_TIMING deferred=%d target_block_ms=%.3f draft_catchup_ms=%.3f "
-            "host_gap_ms=%.3f host_gap_per_chunk_ms=%.3f chunks=%llu tokens=%llu",
+            "BIGCHERRY_MTP_PROMPT_TIMING deferred=%d nextn_block_ms=%.3f nextn_block_mean_ms=%.3f "
+            "draft_catchup_ms=%.3f draft_catchup_mean_ms=%.3f snapshot_copy_ms=%.3f "
+            "snapshot_copy_mean_ms=%.3f final_flush_ms=%.3f final_flush_mean_ms=%.3f "
+            "submit_interval_ms=%.3f submit_interval_mean_ms=%.3f chunks=%llu tokens=%llu submit_intervals=%llu",
             src,
         )
         self.assertIn("bc_mtp_prompt_timing[seq_id].deferred = bc_deferred_enabled;", src)
         self.assertIn("bc_pt_state->target_block_us += bc_pt_target_sync_us + bc_pt_target_fetch_us;", src)
         self.assertIn("bc_pt_state->draft_catchup_us += bc_pt_catchup_us;", src)
-        self.assertIn("bc_pt_state->draft_catchup_us += ggml_time_us() - bc_pt_catchup_t0;", src)
-        self.assertIn("bc_pt_state->target_block_us += bc_pt_block_us;", src)
-        self.assertIn("timing.host_gap_us += ggml_time_us() - timing.last_target_return_us;", src)
-        self.assertIn("host_gap_per_chunk_ms", src)
+        self.assertIn("bc_pt_deferred_catchup_t0", src)
+        self.assertIn("bc_pt_deferred_nextn_t0", src)
+        self.assertIn("bc_pt_state->snapshot_copy_us += ggml_time_us() - bc_pt_snapshot_copy_t0;", src)
+        self.assertIn("bc_pt_state->final_flush_us += bc_pt_deferred_catchup_us;", src)
+        self.assertIn("timing.submit_interval_us += now_us - timing.last_target_submit_us;", src)
+        self.assertIn("bc_mtp_prompt_timing_in_process_deferred = true;", src)
+        self.assertEqual(src.count("bc_pt_state->chunks++;"), 2)
+        self.assertIn("bc_pt_state->tokens += (uint64_t) n_tokens;", src)
+        self.assertIn("bc_pt_state->tokens += (uint64_t) batch_in.size();", src)
         self.assertIn("llama_synchronize(ctx_tgt);", src)
 
         self.assertIn("common_speculative_prefill_begin(spec.get(), slot.id);", server)

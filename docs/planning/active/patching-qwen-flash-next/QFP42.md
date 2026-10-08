@@ -21,11 +21,46 @@ work: M
 
 
 
-### Step 0 (added 2026-10-08): blocked-time synchronisation trace before any code
+### Step 0 (2026-10-08): source finding + blocked-time trace
 
-**Blocked:** do not run Step 0 until PR #8 re-anchors patch 1346 on top of 1348.
+24K target-context host timing (512-token chunks):
 
-Salvaged from the retired QFP08 draft (branch automation-qfp-indexer-20261004, deleted 2026-10-08). Extend the sync tracer (`tools/lab/flash-next/` synctrace mode of `long-ctx-profile.sh`, `sync-tracer.c`) from call counts to blocked wall time per call site, tagged with context (target / draft), prompt chunk index and whether the wait is inside `llama_get_embeddings_nextn`, `common_speculative_process_deferred`, draft graph compute or `llama_synchronize`. Run it on the 1348 build at 24K and 98K with deferred catch-up on and off. Output: a table of ms blocked per chunk by call site that accounts for the gap between the measured +6-10% and the ~19% idle-gap bound (83 ms of 437 ms per chunk). Only waits shown there to be non-dependencies are removed in the later steps; a wait that is a true data dependency is recorded as such and left alone.
+| arm | graph ms | set_inputs ms | graph_compute ms | CPU split compute ms | Meta input/compute ms |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| deferred ON | 17.6 | 21.2 | 56.5 | 12.4 | 11.9 / 32.2 |
+| deferred OFF | 17.4 | 4.3 | 48.3 | 4.3 | 11.8 / 32.1 |
+
+Source-verified at pin b11474 / production composition:
+
+- The public `llama_get_embeddings_nextn()` is a real target barrier: `src/llama-context.cpp:4125-4128` calls
+  `ctx->synchronize()`; `llama_context::synchronize()` reaches `ggml_backend_sched_synchronize()`
+  (`src/llama-context.cpp:773-779`). 1348 calls that getter only after catch-up of the prior snapshot and before
+  returning to the server.
+- The +17 ms is **not** the 1326 input-sync mechanism. 1319's `inputs_us` encloses only
+  `llm_graph_result::set_inputs()` (`src/llama-context.cpp:1460-1467`). 1326 modifies
+  `ggml_backend_sched_copy_input()`, which runs later from `ggml_backend_sched_compute_splits()`
+  (`ggml/src/ggml-backend.cpp:1811-1825,1853-1884`) and therefore belongs to 1319 `compute_us`.
+- 1348's snapshot is not the target input staging allocation. `bc_deferred_chunk::h_nextn` is its own
+  `std::vector<float>`; llama's NextN output lives in `buf_output`, allocated from the output device's host
+  buffer type and exposed as `embd_nextn` (`src/llama-context.cpp:2178-2229`). There is no alias to scheduler
+  input staging.
+- The draft CPU backend cannot still be executing its catch-up graph after `llama_process(ctx_dft)` returns:
+  CPU backend graph compute calls synchronous `ggml_graph_compute()`
+  (`ggml/src/ggml-cpu/ggml-cpu.cpp:170-190`). The final draft GPU split may still be asynchronous, but that is
+  not a busy CPU thread-pool dependency.
+- The next target submit cannot be waiting for the previous target stream: the synchronizing NextN getter above
+  completes the target context before 1348 returns from `process_deferred()`.
+
+Therefore none of the four proposed dependency waits explains the +17 ms inside 1319 `set_inputs`. The measured
++17 ms set_inputs and +8 ms CPU-split deltas are real host-time deltas, but source alone only supports an inference
+that deferred ordering perturbs host/cache/memory/runtime conditions; it does not identify a removable dependency.
+Do **not** book ~25 ms/chunk as recoverable QFP42 gain.
+
+First measurement after PR #8: use fixed 1346 counters to separate synchronizing NextN wait, snapshot memcpy, interior
+catch-up, terminal flush, and submit-to-submit interval on the same 24K/98K ABBA. If the +8 ms CPU split persists,
+add per-input `set_inputs` timing and CPU split cycle/wall timing before changing scheduling. Only a demonstrated
+non-dependency becomes an implementation step.
+
 
 ## Detailed Solution & Technical Design
 
@@ -68,11 +103,11 @@ QFP31 / patch 1348 defers MTP draft catch-up by one target chunk. Brutus b11474 
 well below the ~19% whole-gap upper bound measured before implementation.
 
 The remaining serialization is visible in 1348's ordering. After target chunk k+1 is submitted,
-`common_speculative_process_deferred()` first runs draft catch-up k, then calls
-`llama_get_embeddings_nextn(ctx_tgt)` for k+1. That getter synchronizes the current target before copying the NextN
-rows. Only after it returns can the server prepare target chunk k+2 (graph build, set_inputs, CPU split, Meta subgraph
-rebuild and launches). Therefore QFP31 hides draft compute but still prevents host preparation of the following target
-chunk from overlapping target GPU compute.
+`common_speculative_process_deferred()` first runs draft catch-up k, then calls the public
+`llama_get_embeddings_nextn(ctx_tgt)` for k+1. That API synchronizes the target context before returning the already
+enqueued host NextN rows. Only after it returns can the server prepare target chunk k+2. The 2026-10-08 source audit
+also shows that the observed +17 ms `set_inputs` and +8 ms CPU-split host deltas are not that target barrier and are
+not yet attributable to a removable dependency; they are excluded from QFP42's gain budget until measured.
 
 The 83 ms / 437 ms estimate was the whole MTP-induced gap, not 83 ms of draft compute. Prior timing measured actual
 draft decode at roughly 29-47 ms/chunk (6.6-9.9% of prompt wall), which matches QFP31's observed gain. The residual
@@ -192,6 +227,7 @@ Decision gate: retain only profiled HIP-specific work that reduces blocked time 
 
 ## Change Log
 
+- 2026-10-08 (step 0): Source audit ruled out 1326, shared staging, a still-running draft CPU graph, and the prior target stream as the cause of the +17 ms set_inputs delta; fixed 1346 timing is the next measurement gate.
 - 2026-10-08 (triage): Folded PRBE07, PRBE56, PRBE57 into source-scoped MTP/NextN and BridgeSpec qualification notes.
 
 - 2026-10-07T22:53:39.805664+00:00 (updated-by): Updated: section:steps, section:notes

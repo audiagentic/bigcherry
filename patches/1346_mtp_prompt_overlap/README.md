@@ -5,16 +5,16 @@ removed. The package now changes no model work or ordering and emits output only
 
 ## Flag
 
-- `BIGCHERRY_MTP_PROMPT_TIMING=1`: default off. Splits prompt MTP time into explicit target synchronization,
-  post-sync target fetch/copy, draft catch-up, and inter-submit host gap.
+- `BIGCHERRY_MTP_PROMPT_TIMING=1`: default off. Uses the same one-line schema for native and deferred prompt catch-up.
 
-Output:
+Output fields are `deferred`, total/mean `nextn_block_ms`, `draft_catchup_ms`, `snapshot_copy_ms`,
+`final_flush_ms`, target `submit_interval_ms`, plus `chunks`, `tokens`, and `submit_intervals`.
 
-`BIGCHERRY_MTP_PROMPT_TIMING target_nextn_ms=<...> target_sync_ms=<...> target_fetch_ms=<...> draft_process_ms=<...> draft_decode_ms=<...> host_gap_ms=<...> chunks=<...> tokens=<...>`
-
-At resolved prompt start the diagnostic resets single-sequence attribution. Around each target `llama_process()` it
-records the return-to-next-submit host gap. Inside native MTP `process()` it separates the blocking target join from
-post-sync NextN fetch/copy and draft decode. Mixed-sequence batches are not attributed.
+At resolved prompt start the diagnostic resets single-sequence attribution. Native `process()` counts every prompt
+chunk/token and times the target join plus catch-up. The 1348 deferred path independently counts every queued
+chunk/token, times the synchronizing public NextN getter, host snapshot copy, interior catch-up, terminal flush, and
+target submit-to-submit interval. Deferred edit guards are path-unique so native timing cannot make the patcher skip
+them. Mixed-sequence batches are not attributed.
 
 There is no `BIGCHERRY_MTP_PROMPT_WINDOW`, bounded replay, draft suppression, cache/cancel lifecycle state, or WINDOW
 activation marker in this package.

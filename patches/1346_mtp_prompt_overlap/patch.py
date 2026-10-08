@@ -167,12 +167,16 @@ _STATE_TEXT = r"""
         int64_t draft_decode_us = 0;
         int64_t target_block_us = 0;
         int64_t draft_catchup_us = 0;
-        int64_t host_gap_us = 0;
-        int64_t last_target_return_us = 0;
+        int64_t snapshot_copy_us = 0;
+        int64_t final_flush_us = 0;
+        int64_t submit_interval_us = 0;
+        int64_t last_target_submit_us = 0;
+        uint64_t submit_intervals = 0;
         uint64_t chunks = 0;
         uint64_t tokens = 0;
     };
     bool bc_mtp_prompt_timing_on = false;
+    bool bc_mtp_prompt_timing_in_process_deferred = false;
     std::vector<bc_mtp_prompt_timing_state> bc_mtp_prompt_timing;
 """
 
@@ -228,17 +232,17 @@ _MTP_PREFILL_TEXT = r"""    bc_mtp_prompt_timing_state * bc_prompt_timing_for_ba
 
     void target_process_begin(const common_batch & batch_in) override {
         auto * timing = bc_prompt_timing_for_batch(batch_in);
-        if (timing != nullptr && timing->last_target_return_us != 0) {
-            timing->host_gap_us += ggml_time_us() - timing->last_target_return_us;
-            timing->last_target_return_us = 0;
+        if (timing != nullptr) {
+            const int64_t now_us = ggml_time_us();
+            if (timing->last_target_submit_us != 0) {
+                timing->submit_interval_us += now_us - timing->last_target_submit_us;
+                timing->submit_intervals++;
+            }
+            timing->last_target_submit_us = now_us;
         }
     }
 
-    void target_process_end(const common_batch & batch_in) override {
-        auto * timing = bc_prompt_timing_for_batch(batch_in);
-        if (timing != nullptr) {
-            timing->last_target_return_us = ggml_time_us();
-        }
+    void target_process_end(const common_batch & /*batch_in*/) override {
     }
 
     void prefill_begin(llama_seq_id seq_id) override {
@@ -256,22 +260,24 @@ _MTP_BEGIN_TIMING_TEXT = r"""
         if (bc_mtp_prompt_timing_on && seq_id >= 0 && seq_id < (llama_seq_id) bc_mtp_prompt_timing.size()) {
             auto & timing = bc_mtp_prompt_timing[seq_id];
             if (timing.collecting) {
-                if (timing.last_target_return_us != 0) {
-                    timing.host_gap_us += ggml_time_us() - timing.last_target_return_us;
-                    timing.last_target_return_us = 0;
-                }
-                const double host_gap_per_chunk_ms = timing.chunks > 0
-                    ? timing.host_gap_us / 1000.0 / (double) timing.chunks
-                    : 0.0;
+                const double chunk_den = timing.chunks > 0 ? (double) timing.chunks : 1.0;
+                const double submit_den = timing.submit_intervals > 0 ? (double) timing.submit_intervals : 1.0;
                 std::fprintf(stderr,
-                        "BIGCHERRY_MTP_PROMPT_TIMING deferred=%d target_block_ms=%.3f draft_catchup_ms=%.3f host_gap_ms=%.3f host_gap_per_chunk_ms=%.3f chunks=%llu tokens=%llu\n",
+                        "BIGCHERRY_MTP_PROMPT_TIMING deferred=%d nextn_block_ms=%.3f nextn_block_mean_ms=%.3f draft_catchup_ms=%.3f draft_catchup_mean_ms=%.3f snapshot_copy_ms=%.3f snapshot_copy_mean_ms=%.3f final_flush_ms=%.3f final_flush_mean_ms=%.3f submit_interval_ms=%.3f submit_interval_mean_ms=%.3f chunks=%llu tokens=%llu submit_intervals=%llu\n",
                         timing.deferred ? 1 : 0,
                         timing.target_block_us / 1000.0,
+                        timing.target_block_us / 1000.0 / chunk_den,
                         timing.draft_catchup_us / 1000.0,
-                        timing.host_gap_us / 1000.0,
-                        host_gap_per_chunk_ms,
+                        timing.draft_catchup_us / 1000.0 / chunk_den,
+                        timing.snapshot_copy_us / 1000.0,
+                        timing.snapshot_copy_us / 1000.0 / chunk_den,
+                        timing.final_flush_us / 1000.0,
+                        timing.final_flush_us / 1000.0 / chunk_den,
+                        timing.submit_interval_us / 1000.0,
+                        timing.submit_interval_us / 1000.0 / submit_den,
                         (unsigned long long) timing.chunks,
-                        (unsigned long long) timing.tokens);
+                        (unsigned long long) timing.tokens,
+                        (unsigned long long) timing.submit_intervals);
                 timing.collecting = false;
             }
         }
@@ -427,14 +433,34 @@ _DEFERRED_FLUSH_NEW = r"""    bool flush_deferred() override {
         const int pending = bc_pending;
         bc_pending = -1;
         auto * bc_pt_state = bc_prompt_timing_for_tokens(bc_chunks[pending].tokens);
-        const int64_t bc_pt_catchup_t0 = bc_pt_state ? ggml_time_us() : 0;
+        const bool bc_pt_final_flush = bc_pt_state != nullptr && !bc_mtp_prompt_timing_in_process_deferred;
+        const int64_t bc_pt_deferred_catchup_t0 = bc_pt_state ? ggml_time_us() : 0;
         const bool ok = bc_process_snapshot(bc_chunks[pending]);
         if (bc_pt_state) {
-            bc_pt_state->draft_catchup_us += ggml_time_us() - bc_pt_catchup_t0;
+            const int64_t bc_pt_deferred_catchup_us = ggml_time_us() - bc_pt_deferred_catchup_t0;
+            bc_pt_state->draft_catchup_us += bc_pt_deferred_catchup_us;
+            if (bc_pt_final_flush) {
+                bc_pt_state->final_flush_us += bc_pt_deferred_catchup_us;
+            }
         }
         bc_chunks[pending].valid = false;
         return ok;
     }
+"""
+
+_DEFERRED_INTERIOR_OLD = r"""        // The server submits target chunk k+1 before entering here. Catch-up k therefore runs while k+1 is on GPU.
+        if (!flush_deferred()) {
+            return false;
+        }
+"""
+
+_DEFERRED_INTERIOR_NEW = r"""        // The server submits target chunk k+1 before entering here. Catch-up k therefore runs while k+1 is on GPU.
+        bc_mtp_prompt_timing_in_process_deferred = true;
+        const bool bc_pt_deferred_flush_ok = flush_deferred();
+        bc_mtp_prompt_timing_in_process_deferred = false;
+        if (!bc_pt_deferred_flush_ok) {
+            return false;
+        }
 """
 
 _DEFERRED_NEXTN_OLD = r"""        auto * ctx_tgt = this->params.ctx_tgt;
@@ -453,15 +479,15 @@ _DEFERRED_NEXTN_OLD = r"""        auto * ctx_tgt = this->params.ctx_tgt;
         bc_write ^= 1;
 """
 
-_DEFERRED_NEXTN_NEW = r"""        auto * bc_pt_state = bc_prompt_timing_for_batch(batch_in);
+_DEFERRED_NEXTN_NEW = r"""        // bigcherry 1346: deferred path timing must use guards unique from native process().
+        auto * bc_pt_state = bc_prompt_timing_for_batch(batch_in);
         auto * ctx_tgt = this->params.ctx_tgt;
-        const int64_t bc_pt_block_t0 = bc_pt_state ? ggml_time_us() : 0;
-        const float * h_tgt = llama_get_embeddings_nextn(ctx_tgt); // blocks for current target after prior catch-up ran
+        const int64_t bc_pt_deferred_nextn_t0 = bc_pt_state ? ggml_time_us() : 0;
+        const float * h_tgt = llama_get_embeddings_nextn(ctx_tgt); // public getter synchronizes current target
         if (bc_pt_state) {
-            const int64_t bc_pt_block_us = ggml_time_us() - bc_pt_block_t0;
-            bc_pt_state->target_block_us += bc_pt_block_us;
-            bc_pt_state->target_nextn_us += bc_pt_block_us;
-            bc_pt_state->target_fetch_us += bc_pt_block_us;
+            const int64_t bc_pt_deferred_nextn_us = ggml_time_us() - bc_pt_deferred_nextn_t0;
+            bc_pt_state->target_block_us += bc_pt_deferred_nextn_us;
+            bc_pt_state->target_nextn_us += bc_pt_deferred_nextn_us;
         }
         if (h_tgt == nullptr) {
             return false;
@@ -469,8 +495,12 @@ _DEFERRED_NEXTN_NEW = r"""        auto * bc_pt_state = bc_prompt_timing_for_batc
 
         auto & dst = bc_chunks[bc_write];
         dst.tokens = batch_in.tokens;
+        const int64_t bc_pt_snapshot_copy_t0 = bc_pt_state ? ggml_time_us() : 0;
         dst.h_nextn.resize((size_t) batch_in.size() * n_embd);
         std::memcpy(dst.h_nextn.data(), h_tgt, dst.h_nextn.size() * sizeof(float));
+        if (bc_pt_state) {
+            bc_pt_state->snapshot_copy_us += ggml_time_us() - bc_pt_snapshot_copy_t0;
+        }
         dst.valid = true;
 
         bc_pending = bc_write;
@@ -607,7 +637,7 @@ PATCHES = [
                 anchor=re.escape(_MTP_BEGIN_ANCHOR),
                 mode="insert_after",
                 text=_MTP_BEGIN_TIMING_TEXT,
-                guard=r"BIGCHERRY_MTP_PROMPT_TIMING target_nextn_ms=",
+                guard=r"BIGCHERRY_MTP_PROMPT_TIMING deferred=%d nextn_block_ms=",
                 rationale="Existing begin() is the prompt-end boundary; report once before generation.",
                 expect_matches=1,
                 max_span_lines=4,
@@ -633,11 +663,21 @@ PATCHES = [
                 max_span_lines=100,
             ),
             Edit(
+                id="mtp-prompt-timing-deferred-interior",
+                anchor=re.escape(_DEFERRED_INTERIOR_OLD),
+                mode="replace",
+                text=_DEFERRED_INTERIOR_NEW,
+                guard=r"bc_mtp_prompt_timing_in_process_deferred = true;",
+                rationale="Mark interior deferred flushes so the terminal prompt flush is timed separately.",
+                expect_matches=1,
+                max_span_lines=5,
+            ),
+            Edit(
                 id="mtp-prompt-timing-deferred-flush",
                 anchor=re.escape(_DEFERRED_FLUSH_OLD),
                 mode="replace",
                 text=_DEFERRED_FLUSH_NEW,
-                guard=r"bc_pt_state->draft_catchup_us \+=",
+                guard=r"bc_pt_deferred_catchup_t0",
                 rationale="After 1348, attribute deferred snapshot catch-up wall to the prompt owning that snapshot.",
                 expect_matches=1,
                 max_span_lines=12,
@@ -647,7 +687,7 @@ PATCHES = [
                 anchor=re.escape(_DEFERRED_NEXTN_OLD),
                 mode="replace",
                 text=_DEFERRED_NEXTN_NEW,
-                guard=r"bc_pt_state->target_block_us \+=",
+                guard=r"bc_pt_deferred_nextn_t0",
                 rationale="After 1348, measure the blocking NextN snapshot and count deferred prompt chunks.",
                 expect_matches=1,
                 max_span_lines=20,
