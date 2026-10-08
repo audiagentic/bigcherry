@@ -10,20 +10,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from bigcherry.patcher import apply_all  # noqa: E402
-from bigcherry.core import paths  # noqa: E402
-from bigcherry.patch import rebase as patch_rebase  # noqa: E402
-from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
 _PATCH_FILE = _REPO / "patches/1268_prbe52_adaptive_mtp_wiring/patch.py"
-_V = paths.llama_root()
-_FILES = (
-    "common/common.h",
-    "common/arg.cpp",
-    "common/speculative.cpp",
-    "common/speculative.h",
-    "tools/server/server-context.cpp",
-)
 _spec = importlib.util.spec_from_file_location("patch_1268", _PATCH_FILE)
 assert _spec is not None and _spec.loader is not None
 _module = importlib.util.module_from_spec(_spec)
@@ -329,78 +318,6 @@ class Patch1268Mechanics(unittest.TestCase):
             path.write_text(broken, encoding="utf-8")
             results = apply_all(_module.PATCHES, root)
             self.assertFalse(all(r.ok for r in results))
-
-
-@unittest.skipUnless(all((_V / rel).exists() for rel in _FILES), "pinned vendor checkout not present")
-class Patch1268ProductionComposition(unittest.TestCase):
-    def _root(self, td):
-        root = Path(td)
-        for rel in _FILES:
-            (root / rel).parent.mkdir(parents=True, exist_ok=True)
-            copy_pinned(_V / rel, root / rel)
-        return root
-
-    def _apply_production_and_1255(self, root):
-        # Exercise the exact selector/apply path used by:
-        #   patch-rebase-check --source bigcherry --experiment adaptive-mtp-no1210
-        selected = patch_rebase.resolve_selection(
-            source_name="bigcherry",
-            all_patches=False,
-            experiment="adaptive-mtp-no1210",
-        )
-        ids = [m.patch_id for m in selected.modules]
-        self.assertIn("1321_mtp_ahead_primitives", ids)
-        self.assertIn("1255_nro06_adaptive_mtp_depth", ids)
-        self.assertIn("1268_prbe52_adaptive_mtp_wiring", ids)
-        self.assertLess(ids.index("1321_mtp_ahead_primitives"), ids.index("1268_prbe52_adaptive_mtp_wiring"))
-        self.assertLess(ids.index("1255_nro06_adaptive_mtp_depth"), ids.index("1268_prbe52_adaptive_mtp_wiring"))
-
-        texts = patch_rebase._overlay_texts()
-        overlay_paths = frozenset(texts)
-        found = False
-        for module in selected.modules:
-            if module.patch_id == "1268_prbe52_adaptive_mtp_wiring":
-                found = True
-                break
-            probe = patch_rebase.probe_patch(
-                module,
-                _V,
-                texts,
-                context_lines=3,
-                previous_revision=None,
-                revision="mechanics-test",
-                overlay_paths=overlay_paths,
-            )
-            self.assertIn(
-                probe.status,
-                (patch_rebase.STATUS_CLEAN, patch_rebase.STATUS_CLEAN_NOOP),
-                (module.patch_id, probe.to_dict()),
-            )
-        self.assertTrue(found)
-        for rel in _FILES:
-            if rel in texts:
-                (root / rel).write_text(texts[rel], encoding="utf-8")
-
-    def test_full_production_then_1268_apply_and_idempotent(self):
-        with tempfile.TemporaryDirectory() as td:
-            root = self._root(td)
-            self._apply_production_and_1255(root)
-            before = (root / "common/speculative.cpp").read_text(encoding="utf-8")
-            self.assertIn("const size_t bc_front", before)
-            self.assertIn("if (bc_front <= result.size() && dp.n_tail <= 0)", before)
-
-            first = apply_all(_module.PATCHES, root)
-            self.assertTrue(all(x.ok for x in first), [e.detail for x in first for e in x.failed])
-            spec = (root / "common/speculative.cpp").read_text(encoding="utf-8")
-            self.assertIn("size_t bc_front_cap = bc_front;", spec)
-            self.assertIn("bc_front_cap = std::min<size_t>", spec)
-            self.assertIn("if (bc_front_cap <= result.size() && dp.n_tail <= 0)", spec)
-            self.assertNotIn("if (params.n_max <= (int) result.size())", spec.split("struct common_speculative_impl_draft_mtp", 1)[1])
-
-            snapshot = {rel: (root / rel).read_text(encoding="utf-8") for rel in _FILES}
-            second = apply_all(_module.PATCHES, root)
-            self.assertTrue(all(x.ok for x in second), [e.detail for x in second for e in x.failed])
-            self.assertEqual(snapshot, {rel: (root / rel).read_text(encoding="utf-8") for rel in _FILES})
 
 
 if __name__ == "__main__":

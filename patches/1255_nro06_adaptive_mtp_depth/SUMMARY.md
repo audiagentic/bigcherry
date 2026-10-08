@@ -1,6 +1,6 @@
 # 1255_nro06_adaptive_mtp_depth
 
-**Status:** untested  
+**Status:** rejected
 **Plan item:** NRO06
 
 ## What it does
@@ -16,3 +16,7 @@ The prior floor-start/climb/drop policy made floors 1/2 a cold-start penalty and
 ## Upstream
 
 Local staged adaptation of nasone commit `10579a7365a3bc86c4f8e41aaab20e73e1571e5e`; the 2026-10-08 hysteresis is BigCherry-local and pending hardware qualification.
+
+## Result at b11474: rejected (2026-10-09)
+
+The controller is only reachable through 1268; see `patches/1268_prbe52_adaptive_mtp_wiring/SUMMARY.md` for the measurements. Every adaptive configuration tested was slower than the fixed draft depth on Flash-Next and on the 27B.

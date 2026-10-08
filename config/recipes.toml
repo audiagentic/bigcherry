@@ -558,16 +558,6 @@ patches = []
 # QFN01/RNX01: + one scheduler input sync per split (1293); A/B against ar-cpu-root-kpool.
 patches = ["1293_sched_single_input_sync"]
 
-[experiment.adaptive-mtp]
-# Comparison arm retaining 1210's decode/verify bit-identity kernel normalization.
-# Adaptive depth remains off unless --spec-draft-n-min-adaptive > 0.
-patches = ["1210_rd26_bitidentical_decode_verify_standalone", "1255_nro06_adaptive_mtp_depth", "1268_prbe52_adaptive_mtp_wiring"]
-
-[experiment.adaptive-mtp-no1210]
-# PRBE52 production-set experiment: controller + runtime wiring only. 1321 is
-# already in the production source and is the actual look-ahead primitive dependency.
-patches = ["1255_nro06_adaptive_mtp_depth", "1268_prbe52_adaptive_mtp_wiring"]
-
 [experiment.allreduce-root3]
 # 1244 alone: n==3 internal AllReduce (XTX x2 + R9700). Multi-arch build gfx1100,gfx1201.
 patches = ["1244_gp11_internal_allreduce_nway_root"]
