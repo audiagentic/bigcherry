@@ -33,6 +33,60 @@ tokens:
 
 A separate drafter-file comparison is pending and is evidence, not a prerequisite for this source/design item.
 
+## Steps
+
+
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+- QFP43 records source truth separately from inference.
+- Exact current lab GGUF metadata proves whether DFlash2 selector/confidence features are active.
+- Prompt-cost path is instrumented sufficiently to account for target-to-host, host wait/refusion and draft catch-up
+  time.
+- Deferred DFlash catch-up reuses/generalises 1348 lifecycle rather than introducing a second state machine.
+- One speculative budget controller serves MTP, DFlash2 and DSpark.
+- Tensor-split shared-head behaviour is explained by owned/shared tensor placement and has a clean one-time mirror
+  design if required.
+- Flash-Next conversion work extends the pinned converter rather than duplicating architecture support.
+- Every later runtime patch is default off, has an explicit off switch and `BIGCHERRY_PATCH_HIT`.
+- Every `patch.py` generated C/C++ string containing escapes is a raw Python string.
+
+## Notes
+
+
+
+## Hardware findings 2026-10-08 (Brutus), which reorder this plan
+
+1. **Loading.** At b11474 a DFlash2 / DSpark draft aborts at context creation on a tensor-split target (`pre-allocated tensor (output.weight) in a buffer (Meta()) that cannot run the operation (NONE)`), on native llama.cpp too: upstream issue 27833, open. Our patch 1286_draft_local_shared_tensors fixes it (untested state, experiments `retest-1286` / `draft-local-shared`, composes on today's production set). A layer-split target with the draft on a different card than output.weight fails the same way and 1286 does not cover it.
+2. **Acceptance collapsed.** Production set + 1286, Qwen3.8-27B Q8_0 dual-XTX tensor split, 1665-token prompt, 5 x 128 tokens: no draft 37.9 t/s; MTP depth 5 79.4 t/s at 58.3%, depth 4 80.2 t/s at 67.3%; DFlash2 Q8_0 block 4 / 7 on the 6900 XT 23.8 t/s at 1.7% / 20.7 at 0.7%; Q4_K_M 24.6 at 1.7% / 20.7 at 1.1%; BF16 20.7 at 1.7% / 16.3 at 0.6%; magnitudedev Q8_0 23.9 at 1.7% / 20.6 at 0.7%; DSpark Q8_0 block 6 21.9 at 2.0% (ours) and 23.3 at 2.5% (magnitudedev). All lossless. At b11402 the same files gave 44-59% (74 t/s). Every file behaves the same, so it is not a file problem: the draft receives wrong inputs or its outputs are mapped wrongly. Isolation runs queued (native vs ours on a single-device target; one production switch off per arm). **Nothing else in this plan matters until this is explained.**
+3. **Files.** Our DFlash2 Q8_0 / Q4_K_M are byte-identical to the publisher's current GGUFs. BF16 and the 2026-10-06 magnitudedev re-publications are on the lab disk (hash-checked). Our DSpark file differs from the one public GGUF and is of unknown origin.
+4. **Flash-Next drafter.** PixelML/Qwen3.8-Flash-Next-NVFP4-DFlash converts with the pinned converter unchanged (`--target-model-dir` = Qwen/Qwen3.8-Flash-Next config + tokenizer): `/mnt/data/llm-models/qwen3.8-flash-next/gguf/dflash/Qwen3.8-Flash-Next-DSpark-PixelML-BF16.gguf`, 58 tensors, block 7, no confidence head. With 1286 it loads, then asserts `src/llama-context.cpp:2499: GGML_ASSERT(row_floats == model.hparams.n_embd)` in `extract_layer_inputs`: the Qwen4Exp layer-input tensor is the raw hyper-connection stream, 4 x 2560 = 10240 floats per token, and the extractor requires n_embd (2560). The checkpoint's card states the tap precisely: the five taps `[3, 15, 23, 35, 43]` are the **HC-contracted native-width (2560) residual from each tapped layer's own GatedResidual mix**, taken in vLLM at aux boundary ids tap+1 = `[4, 16, 24, 36, 44]`, i.e. `layers[i].attn_hyper_connection.mix / combine_and_mix(...)[1]`; concatenated `[T, 12800]` into `fc`. So the needed patch is a Qwen4Exp feature tap that hands the draft the contracted 2560-wide tensor at those boundaries instead of the raw stream (the hc-pre contraction already exists in the graph; 1311 / 1344 touch it). Lab launcher support is merged (`SPEC_TYPE=draft-dspark SPEC_PMIN=0 SPEC_N=7 DRAFT=<gguf>`).
+5. **Cross-model rule learnt today.** Look-ahead (1321/1322) costs 24-30% decode where the draft shares the target's cards (27B built-in MTP); any drafter mechanism needs a second-model run before it is more than a profile switch.
+
 ## Source baseline
 
 Pin: llama.cpp b11474.
@@ -309,20 +363,6 @@ accepted length, draft/verify time and output t/s.
 6. Inspect/download the exact Flash-Next checkpoints; build converter wrapper/tests only for schemas verified from
    their files.
 
-## Acceptance criteria
-
-- QFP43 records source truth separately from inference.
-- Exact current lab GGUF metadata proves whether DFlash2 selector/confidence features are active.
-- Prompt-cost path is instrumented sufficiently to account for target-to-host, host wait/refusion and draft catch-up
-  time.
-- Deferred DFlash catch-up reuses/generalises 1348 lifecycle rather than introducing a second state machine.
-- One speculative budget controller serves MTP, DFlash2 and DSpark.
-- Tensor-split shared-head behaviour is explained by owned/shared tensor placement and has a clean one-time mirror
-  design if required.
-- Flash-Next conversion work extends the pinned converter rather than duplicating architecture support.
-- Every later runtime patch is default off, has an explicit off switch and `BIGCHERRY_PATCH_HIT`.
-- Every `patch.py` generated C/C++ string containing escapes is a raw Python string.
-
 ## References
 
 - llama.cpp b11474.
@@ -339,3 +379,9 @@ accepted length, draft/verify time and output t/s.
 ## Change Log
 
 - 2026-10-08T15:51:00+11:00 (agent): Created from b11474 source audit and current drafter artifact review.
+
+## Ledger-events
+
+- chg_20261008_071201_several-experimental-patches-r_2753
+- 2026-10-08T07:12:22.172301+00:00 (updated-by): Updated: section:ledger-events
+- 2026-10-08T08:45:41.372284+00:00 (updated-by): Updated: section:notes

@@ -93,7 +93,7 @@ class PatchLintCliTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertEqual(stderr.getvalue(), "")
         expected = json.dumps(
-            {"passed": True, "problems": [], "grandfathered": ["P4"]},
+            {"passed": True, "problems": [], "grandfathered": ["P4"], "warnings": []},
             indent=2,
             sort_keys=True,
         ) + "\n"
@@ -128,6 +128,29 @@ class PatchLintCliTests(unittest.TestCase):
             stderr.getvalue(),
             "catalog problem\nSUMMARY problem\npackage problem\nperformance problem\n"
             "P4: structurally grandfathered (non-current, not failing)\n",
+        )
+
+    def test_human_anchor_warning_is_advisory(self) -> None:
+        report = gates.LintGateReport(
+            results=(),
+            problems=(),
+            grandfathered=(),
+            warnings=("P1:x.cu:e1: max_span_lines=8 exceeds 6 without an explicit 'long-anchor:' rationale",),
+        )
+        with (
+            mock.patch("bigcherry.cli.patch.patch_catalog.cross_check", return_value=[]),
+            mock.patch("bigcherry.cli.patch.patch_gates.evaluate_repository_lint_gates", return_value=report),
+        ):
+            stdout = StringIO()
+            stderr = StringIO()
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                exit_code = cmd_patch_lint(self._args(json_output=False))
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertEqual(
+            stderr.getvalue(),
+            "warning: P1:x.cu:e1: max_span_lines=8 exceeds 6 without an explicit 'long-anchor:' rationale\n",
         )
 
     def test_internal_lint_intent_is_not_exposed_by_patch_gates_cli(self) -> None:
