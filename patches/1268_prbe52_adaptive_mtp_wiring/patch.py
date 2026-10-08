@@ -74,7 +74,7 @@ _BEGIN_NEW = """
         }
 """
 
-_DRAFT_START_NEW = r"""            last_n_draft[seq_id] = 0;
+_DRAFT_START_NEW = """            last_n_draft[seq_id] = 0;
             if (params.n_min_adaptive > 0 && getenv("BIGCHERRY_PATCH_TRACE") != nullptr) {
                 static std::atomic_flag bigcherry_prbe52_logged = ATOMIC_FLAG_INIT;
                 if (!bigcherry_prbe52_logged.test_and_set(std::memory_order_relaxed)) {
@@ -99,8 +99,6 @@ _LIMIT_NEW = """                if (params.n_max <= (int) result.size()) {
                     n_drafting--;
                     continue;
                 }
-
-                if (chain_heads) {
 """
 
 _FINALIZE_NEW = """            last_n_draft[seq_id] = (int32_t) dp.result->size();
@@ -177,8 +175,7 @@ _LIMIT_ANCHOR = (
     r"                    n_drafting--;\n"
     r"                    continue;\n"
     r"                \}\n"
-    r"\n"
-    r"                if \(chain_heads\) \{"
+    r"(?=\n                if \(chain_heads\) \{)"
 )
 
 _FINALIZE_ANCHOR = (
