@@ -525,6 +525,10 @@ patches = ["1346_mtp_prompt_overlap"]
 # process_ubatch phases, meta graph_compute, scheduler splits) + 1346 (BIGCHERRY_MTP_PROMPT_TIMING=1: MTP per prompt).
 patches = ["1319_process_ubatch_timing", "1320_meta_compute_timing", "1325_sched_split_timing", "1346_mtp_prompt_overlap"]
 
+[experiment.meta-dispatch-workers]
+# QFP41: production + 1356; default off, enable with BIGCHERRY_META_DISPATCH_THREADS=1.
+patches = ["1356_meta_dispatch_workers"]
+
 
 
 [experiment.native-plus-1333]
