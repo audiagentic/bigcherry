@@ -204,6 +204,36 @@ _N_DISPATCH = r"""    for (size_t i = 0; i < backend_ctx->n_subgraphs; i++) {
         if (n_backends > 1 && i < backend_ctx->n_subgraphs - 1) {
 """
 
+# Shared-state fix (2026-10-09): with the workers on, 5 of 12 runs produced a different greedy text; with CUDA graphs
+# disabled (GGML_CUDA_DISABLE_GRAPHS=1) 6 of 6 were identical and the prefill gain stayed. HIP graph capture,
+# instantiate and update are therefore not safe while another thread captures or launches a graph on another device.
+# A capturing graph_compute takes the lock exclusively; a replaying one takes it shared, so replays still overlap.
+_A_CUDA_INCLUDE = r"""#include <mutex>
+"""
+_N_CUDA_INCLUDE = r"""#include <mutex>
+#include <shared_mutex>
+"""
+
+_A_CUDA_CAPTURE = r"^    if \(use_cuda_graph && cuda_graph_update_required\) \{$"
+_N_CUDA_CAPTURE = r"""    // BigCherry 1356 (QFP41): per-device dispatch workers call graph_compute from several threads. HIP graph
+    // capture / instantiate / update must not overlap any other device's graph capture or launch.
+    static std::shared_mutex bc_1356_graph_mutex;
+    static const bool bc_1356_threads = [] {
+        const char * s = getenv("BIGCHERRY_META_DISPATCH_THREADS");
+        return s != nullptr && atoi(s) != 0;
+    }();
+    std::unique_lock<std::shared_mutex> bc_1356_capture(bc_1356_graph_mutex, std::defer_lock);
+    std::shared_lock<std::shared_mutex> bc_1356_replay(bc_1356_graph_mutex, std::defer_lock);
+    if (bc_1356_threads && use_cuda_graph) {
+        if (cuda_graph_update_required) {
+            bc_1356_capture.lock();
+        } else {
+            bc_1356_replay.lock();
+        }
+    }
+
+"""
+
 PATCHES = [
     FilePatch(
         path="ggml/src/ggml-backend-meta.cpp",
@@ -269,6 +299,34 @@ PATCHES = [
                 rationale="Exact serial simple-backend submission loop; join remains before the existing AllReduce boundary.",
                 expect_matches=1,
                 max_span_lines=11,
+            ),
+        ),
+    ),
+    FilePatch(
+        path="ggml/src/ggml-cuda/ggml-cuda.cu",
+        description="1356: graph capture is exclusive against other devices' graph work when the workers are on",
+        language="none",
+        edits=(
+            Edit(
+                id="dispatch-worker-graph-mutex-include",
+                anchor=re.escape(_A_CUDA_INCLUDE),
+                mode="replace",
+                text=_N_CUDA_INCLUDE,
+                guard=r"#include <shared_mutex>",
+                rationale="Standard-library include beside the existing <mutex>.",
+                expect_matches=1,
+                max_span_lines=2,
+            ),
+            Edit(
+                id="dispatch-worker-graph-capture-lock",
+                anchor=_A_CUDA_CAPTURE,
+                mode="insert_before",
+                text=_N_CUDA_CAPTURE,
+                guard=r"static std::shared_mutex bc_1356_graph_mutex;",
+                rationale="The capture decision in ggml_backend_cuda_graph_compute, by its unique four-space statement; "
+                          "the lock objects live until that function returns, covering capture, instantiate, update and launch.",
+                expect_matches=1,
+                max_span_lines=1,
             ),
         ),
     ),
