@@ -1,6 +1,6 @@
 ---
 id: MEN04
-order: 4
+order: 5
 plan: run-multi-engine
 state: pending
 created-at: '2026-10-08T20:36:21.075596+00:00'
@@ -11,18 +11,19 @@ priority: P2
 work: M
 ---
 
-# Engine as a declared axis: source, pin and build lane per engine
+# Engine as a declared axis: upstream, pin, vendor tree and build lane per engine
 
 ## Description
 
-config/recipes.toml assumes one upstream (llama.cpp), one vendor tree and CMake/HIP build lanes that produce llama-server. A second engine needs its own identity so that a result always says which engine, which pin and which settings produced it.
+config/recipes.toml assumes one upstream (llama.cpp), one vendor tree (vendor/llama.cpp, reached through paths.llama_root()) and build lanes that produce llama-server. Radiance is also CMake + HIP, so the existing build machinery (build plans, toolchain resolution, compile check, content-addressed build directories) applies with a different upstream, target binary and CMake options; no container lane is needed for it.
 
 ## Steps
 
-1. Add an engine field to [source.*] with its own upstream, pin and vendor location; llama.cpp sources state engine explicitly (no implicit default).
-2. Container build lane: a lane whose build product is a pinned image digest plus a settings snapshot, not a compiled binary; build identity = digest + settings hash.
-3. pin-status and pin-bump report per engine; a bump of one engine never touches the other's trees.
-4. Evidence and release records carry the engine.
+1. [engine.<name>] tables: upstream URL, pin, vendor location, server binary, health and shutdown routes. llama.cpp is declared the same way; no implicit default engine.
+2. [source.*] names its engine; a lane string resolves engine through its source.
+3. paths: engine_root(engine) replaces llama_root(); every caller is migrated in the same change (about 85 call sites in tools/bigcherry, about 200 test files).
+4. Build: per-engine CMake options and target; build identity includes the engine; work/builds and work/upstream are partitioned by engine.
+5. pin-status and pin-bump take an engine and keep one transition marker per engine, so one engine can be mid-bump while the other is stable.
 
 ## Detailed Solution & Technical Design
 
@@ -34,11 +35,11 @@ config/recipes.toml assumes one upstream (llama.cpp), one vendor tree and CMake/
 
 ## Files
 
-config/recipes.toml, tools/bigcherry/build/builds.py, tools/bigcherry/release/pin_bump.py, tools/bigcherry/core/context.py
+config/recipes.toml, tools/bigcherry/core/paths.py, tools/bigcherry/core/context.py, tools/bigcherry/build/builds.py, tools/bigcherry/release/pin_status.py, tools/bigcherry/release/pin_bump.py, tools/bigcherry/campaign/lane.py
 
 ## Validation
 
-pin-status lists both engines; a container lane resolves to a digest; existing llama.cpp builds produce the same build plan ids as before the change.
+pin-status lists both engines; existing llama.cpp lanes produce the same build plan ids as before; a radiance lane builds on Brutus.
 
 ## Effort & Risk
 
@@ -50,7 +51,7 @@ pin-status lists both engines; a container lane resolves to a digest; existing l
 
 ## Acceptance Criteria
 
-A lane string selects engine, build and platform; results from the two engines cannot be confused in any record.
+A lane string selects engine, build and platform, and every result, build and release record names its engine.
 
 ## Notes
 
@@ -59,3 +60,4 @@ No legacy path: every existing source gets the explicit field in the same change
 ## Change Log
 
 - 2026-10-08T20:36:21.075596+00:00 (created-by): Created by agent
+- 2026-10-08T20:48:02.956123+00:00 (updated-by): Updated: section:title, order=5, section:description, section:steps, section:files, section:validation, section:acceptance_criteria

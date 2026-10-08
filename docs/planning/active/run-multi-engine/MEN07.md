@@ -1,6 +1,6 @@
 ---
 id: MEN07
-order: 7
+order: 8
 plan: run-multi-engine
 state: pending
 created-at: '2026-10-08T20:36:41.926254+00:00'
@@ -11,18 +11,17 @@ priority: P3
 work: L
 ---
 
-# Patch system over a second upstream (only when there is a change to carry)
+# First patch on the second engine, through the same lifecycle
 
 ## Description
 
-The patch engine (anchored edits, guards, idempotence, requires/conflicts, composition check, rebase report at a pin bump) edits text against a pinned tree and is not tied to C++. It already has a language switch (c, cmake, none). What ties it to llama.cpp is the single patches/ root, the single vendor tree and the recipes that select patches for it.
+With radiance as the second engine the patch engine needs no new language support: its sources are C++, HIP and CMake, which the existing anchor dialects cover. What is needed is the per-engine structure from MEN08 and one real change taken end to end.
 
 ## Steps
 
-1. Python dialect for anchor matching (strip comments and docstrings so anchors cannot attach to them), with tests equivalent to the C ones.
-2. engine field in patch.toml; patch selection, composition and patch-rebase-check run per engine against that engine's pinned tree.
-3. A container build lane applies the composed tree as an overlay layer on the pinned image and records the resulting digest.
-4. First real package: one change we actually want on the vLLM side, taken through lint, composition, build, ABBA and promotion.
+1. Pick one concrete change wanted on radiance (for example an activation marker, or a kernel library entry for a card it does not cover) after MEN01 and MEN02.
+2. Author it as patches/radiance/<id>/ with patch.toml, patch.py, tests and SUMMARY.
+3. Take it through patch-lint, the per-engine composition check, a Brutus build, an ABBA with activation evidence (MEN06) and the lightweight promotion tier.
 
 ## Detailed Solution & Technical Design
 
@@ -38,7 +37,7 @@ The patch engine (anchored edits, guards, idempotence, requires/conflicts, compo
 
 ## Validation
 
-patch-lint, patch-rebase-check and the mechanics tests pass for a Python package; the overlay image runs and its marker appears.
+patch-lint, patch-rebase-check for the radiance engine and the mechanics test pass; the built server shows the marker.
 
 ## Effort & Risk
 
@@ -50,12 +49,15 @@ patch-lint, patch-rebase-check and the mechanics tests pass for a Python package
 
 ## Acceptance Criteria
 
-One validated patch on the second engine, promoted through the same lightweight tier.
+One validated patch on radiance, promoted through the same tier as llama.cpp patches.
 
 ## Notes
 
 Deliberately last and conditional: MEN01 must show the relevant code is source, and there must be a specific change to carry. Do not build this ahead of need.
 
+Conditional on there being a specific change to carry. Depends on MEN08 and MEN04.
+
 ## Change Log
 
 - 2026-10-08T20:36:41.926254+00:00 (created-by): Created by agent
+- 2026-10-08T20:48:09.886352+00:00 (updated-by): Updated: section:title, order=8, section:description, section:steps, section:validation, section:acceptance_criteria, section:notes
