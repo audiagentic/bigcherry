@@ -2,7 +2,7 @@
 id: PNRO06
 order: 0
 plan: patching-nasone-rdna-optimizations
-state: pending
+state: completed
 created-at: '2026-09-09T10:52:38.138969+00:00'
 breadth: ''
 skill: advanced
@@ -15,20 +15,42 @@ priority: P0
 
 ## Description
 
-TODO, NOT-READY (upstream premise stale, per GPT review). Port and qualify nasone hybrid HIP TOP_K selection -- CORRECTED: the plan's upstream premise is stale. b11126's ggml/src/ggml-cuda/top-k.cu already has a real HIP `top_k_radix_cuda()` path for ncols>1024 (top-k.cu:180, called at top-k.cu:263) plus a bitonic fallback for smaller shapes, including `top_k_float_to_ordered()` (top-k.cu:53) -- this is NOT a from-scratch port target; the real remaining scope is identifying what, if anything, source 7f3e1e4d... adds beyond what b11126 already has natively.
+Disposition (2026-10-08): **closed without promotion**. Patch 1256 is a preserved, historically **untested** experiment, not a production improvement. The 2026-09-27 measured backend-sampling MTP series activated but failed the confidence gate; ordinary MoE routing did not execute generic TOP_K. More importantly, validated 1294 supplies deterministic QSA tie/ordered-output semantics and explicitly conflicts with 1256. Do not restart a third series, port another TOP_K kernel, or disable 1294 for speed.
 
 ## Steps
 
-1. Re-diff source 7f3e1e4d... against the CURRENT b11126 top-k.cu (which already has top_k_radix_cuda for ncols>1024 and a bitonic fallback, verified) -- port only genuinely missing TOP-1/n-ary selection paths, not the whole file.
-2. Wire any genuinely-missing path in ggml_cuda_op_top_k() (verify exact function name) AHEAD of the existing HIP radix/bitonic routes, under an explicit opt-in gate.
-3. Retain the current radix/bitonic implementation as the fallback in all other cases.
-4. Add an actual-dispatch activation marker (BIGCHERRY_PATCH_TRACE-gated) so the new path's selection is observable.
-5. Build CPU/reference fixtures for k/nrows/ncols, ties, negative values, infinities and duplicates; verify caller ordering semantics against BOTH the existing radix/bitonic path and any newly-ported path.
-6. Capture real MoE/QSA signatures and compare hybrid against the existing (not invented) bitonic/radix baseline at k=1 and routing k=2/4/8/10; keep PNRO07 disabled for causal attribution.
+1. Terminal decision: no additional 1256 experiment or production recipe change on current evidence. Preserve its patch metadata/evidence for reproducibility; **completed plan** is not a claim that the patch passed validation.
+2. Reopen only on a new measured production `GGML_OP_TOP_K` signature outside fused MoE routing, with a >=5% E2E wall-time contribution and a compatible deterministic-tie/ordered-output contract. Do not borrow QSA experiments from active QFP17 or 1294 owners.
+3. Any successor must be a **single** opt-in, scoped selector comparison against pinned native HIP radix/bitonic and 1294, not a new general TOP_K scheduler or another wave-width table.
 
 ## Detailed Solution & Technical Design
 
-The optimization changes algorithmic complexity and temporary storage, not just geometry. Exact index/tie semantics are load-bearing; any stable-order divergence requires an explicit policy. Keep HIP-only containment and native fallback.
+### Implementation and dispatch audit (2026-10-08)
+
+- Pinned `ggml-org/llama.cpp@b11474:ggml/src/ggml-cuda/top-k.cu` is byte-identical to inspected upstream master (blob `3ffbba839d6cf94c368bd291cf2d850f529de5f1`). `ggml_cuda_op_top_k()` lines 217-279 chooses native HIP `top_k_radix_cuda()` for `ncols > 1024`, otherwise bitonic argsort and D2D copy. The native radix path allocates per-row state plus `nrows * blocks_per_row * 256` histogram integers, performs radix passes and gathers; the alternative's claimed gain must include scratch, launches, barriers and copies, not only selection arithmetic.
+- `1256_nro07_topk_hybrid/patch.py` ports nasone `7f3e1e4d` + `10fdba9a`: k=1 selects `topk_small`; for k>1, HIP >=7.15 can select small-row kernels, while ncols>1024 selects `topk_parallel_radix`; otherwise bitonic remains. The recorded Brutus ROCm 7.2.4/7.14 toolchains cannot activate the >=7.15 small-row route. `BIGCHERRY_PATCH_TRACE` markers prove routing, **not** numerical parity or E2E gain.
+- `ggml/src/ggml-cuda/topk-moe.cu::ggml_cuda_should_use_topk_moe()` and `topk_moe_cuda()` fuse MoE gate scoring, top-k and output weights/IDs. The 2026-09-27 production MoE lane used that path and never executed the generic TOP_K being modified. Generic TOP_K is relevant to backend sampling and QSA only when the graph actually selects it.
+- `1294_topk_deterministic_ties` is validated and its `patch.toml` conflicts with 1256. It replaces atomic-arrival selection at equal-score cutoffs with lowest-column tie handling and adds ordered output (2026-10-07 independent implementation). QSA often has exact zero-score ties at long context. An unqualified 1256 replacement would sacrifice this correctness property; the historical 1256 experiment is not a safe 1294 replacement.
+- `1257_nro08_topk_wave32` requires 1256 and modifies the same kernels, not an independent MoE routing acceleration. PNRO07 is its subordinate disposition owner. `RNX02`/1294 own QSA tie determinism, and QFP17's active QSA-mask work is protected; do not modify their implementation, plans or queued lanes.
+
+### First-party hardware evidence (historical, not new measurements)
+
+| Experiment | gfx1100 point | gfx1100 CI95-low | gfx1201 point | gfx1201 CI95-low | Result |
+|---|---:|---:|---:|---:|---|
+| 1256 hybrid vs native, backend-sampling MTP | +1.18% | -0.67% | +1.45% | -1.79% | Not established |
+| 1257 wave32 incremental vs 1256 | +0.87% | -1.17% | +0.51% | -3.09% | Not established |
+
+Series-1 MoE did not activate generic TOP_K. Series-2 activated in 8 sessions, but the MTP lane was noisy at 10 rounds. These confidence intervals **do not** establish a positive gain, and neither experiment has production promotion evidence.
+
+### Other engines and upstream
+
+- Current upstream retains native HIP radix/bitonic (same source blob). No missing general TOP_K backend mechanism is established.
+- vLLM ROCm AITER `rocm_aiter_grouped_topk` and SGLang's consolidated fused MoE gate/top-k are **model/consumer-specific** routing mechanisms; their advantage cannot be credited to a general `GGML_OP_TOP_K` replacement. See https://github.com/vllm-project/vllm/blob/main/vllm/model_executor/layers/fused_moe/experts/rocm_aiter_moe.py and https://github.com/sgl-project/sglang/issues/26771.
+- A newer SGLang fused route+quant handoff (https://github.com/sgl-project/sglang/blob/main/python/sglang/srt/layers/moe/route_quant_handoff.py) illustrates avoiding extra launches **only when downstream consumers accept packed output**. BigCherry's `topk_moe` already owns fused routing; do not introduce another generic top-k cache/selector/packing contract from this evidence.
+
+### Reopen-only implementation gate
+
+Require a first-party `GGML_OP_TOP_K` callsite trace with exact `ncols,nrows,k,backend,arch,toolchain,graph ID,caller`, launches, scratch bytes, and E2E contribution >=5%. Before any GPU campaign run a host/reference fixture for ncols={31,32,33,63,64,65,1024,1025,32768}, k={1,2,4,8}, rows={1,2,4,8}, ties across cutoff, +/-0, infinities, NaNs and duplicate values; preserve deterministic index ordering or explicitly reject. Compare with 1294, native HIP and the 1256 fallback; verify multi-request same-process, multi-ubatch, graph capture/replay, tensor split/rank locality, logits/greedy and MTP acceptance. Keep gfx1030/native and non-HIP unchanged. No P2P assumption: TOP_K scratch/dispatch is per owning GPU. Promotion needs >=4 independent sessions, >=10 interleaved ABBA rounds, CI95-low >=3% E2E improvement and <=1% control regression; otherwise reject the successor. This gate is **not queued**.
 
 ## Code Samples & Guidance
 
@@ -40,7 +62,7 @@ patches/1256_nro07_topk_hybrid/{patch.toml,patch.py,SUMMARY.md,README.md,TESTING
 
 ## Validation
 
-Patch mechanics: `PYTHONPATH=tools python -m bigcherry patch-lint patches/1256_nro07_topk_hybrid`; `PYTHONPATH=tools python -m bigcherry patch-rebase-check --focal-overlay 1256_nro07_topk_hybrid --source bigcherry-tuning`; package pytest offline (non-HIP preprocessor preservation, idempotent apply). CPU/reference TOP_K fixtures: exact index/order for k=1..ncols, multi-row, ties, negatives, infinities, duplicates; unsupported-shape fallback to bitonic. Hardware (Brutus, gfx1100): `python -m bigcherry.patch.validation_campaign --overlay 1256_nro07_topk_hybrid --arch gfx1100` against real MoE/QSA signatures at k=1 and routing k=2/4/8/10, kernel/scratch/end-to-end call-weighted performance; keep PNRO07(nro08 wave32) disabled for causal attribution.
+Audit-only checks performed 2026-10-08: pinned/master upstream TOP_K source blob comparison (identical), patch metadata/dependency/conflict readback, first-party 2026-09-27 evidence review, and a 48-case host route-classification fixture plus a tie-arrival-order illustration. The fixture does not execute HIP kernels. No new build, hardware lane or numerical backend test ran. Terminal disposition: **no promotion**; retain historical `untested` patch state and do not misrepresent the negative-confidence campaign as a correctness failure.
 
 ## Effort & Risk
 
@@ -52,7 +74,7 @@ Exact routing correctness before performance; HIP-only containment; native fallb
 
 ## Acceptance Criteria
 
-Reference and routing correctness pass; non-HIP builds unchanged; unsupported shapes fall back; at least one real gfx1100 high-cost signature shows repeatable win without model regression; PNRO07 remains separate.
+Completed as a negative optimisation decision: native HIP radix/bitonic and validated 1294 remain authoritative; 1256 is not promoted; no duplicate generic TOP_K path is introduced. Reopen only under the bounded attribution/correctness/performance gate above.
 
 ## Notes
 

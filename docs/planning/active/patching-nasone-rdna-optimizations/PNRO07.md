@@ -2,7 +2,7 @@
 id: PNRO07
 order: 0
 plan: patching-nasone-rdna-optimizations
-state: pending
+state: completed
 created-at: '2026-09-09T10:52:42.526873+00:00'
 breadth: ''
 skill: advanced
@@ -15,22 +15,17 @@ priority: P0
 
 ## Description
 
-TODO, NOT-READY (rescoped, blocked on PNRO06 rebase). Apply and qualify the wave32-native TOP_K follow-up as a causal increment on PNRO06 -- CORRECTED: verified via patch.py that 1257 only adds an UNUSED TOP-1 wave32 reduction helper function; the documented two-half 64-bin scan and ITEMS_PER_THREAD changes are absent, and no selector anywhere calls the helper. This item's parent (PNRO06) also needs rebasing against b11126's existing HIP radix path before this item can proceed (see PNRO06's corrected scope).
+Disposition (2026-10-08): **closed without promotion** as a dependent increment to PNRO06/1256. The wave32 1257 port is real and independently activated in the historical 2026-09-27 campaign, but did not establish an E2E gain on gfx1100 or gfx1201. It inherits 1256's conflict with validated 1294 deterministic QSA ties. Do not resume a third hardware series.
 
 ## Steps
 
-1. Wait for PNRO06 to be rebased against b11126's real existing top_k_radix_cuda/bitonic implementation (see PNRO06's corrected plan) -- this item's target kernels do not yet have a stable rebased identity to apply wave32 changes to.
-2. Once rebased, apply source 7f1d25f7...'s wave32 changes to the CONCRETE PNRO06 kernels that actually exist post-rebase (not the unused standalone helper currently in 1257's patch.py).
-3. Gate on runtime warp size 32 (verify the real warp-size detection mechanism already used elsewhere in this project's HIP code).
-4. Implement the documented two-half 64-bin scan and ITEMS_PER_THREAD changes for real, wired into the actual selection kernel -- not as an unused helper.
-5. Preserve non-wave32 fallback.
-6. Add a distinct PNRO07 activation marker (separate from PNRO06's, since PNRO07 is an independent causal increment).
-7. Run PNRO06 correctness fixtures unchanged plus 31/32/33 and 63/64/65 boundaries, ties, NaNs and block/item coverage edges.
-8. Profile LDS traffic, occupancy, VGPRs, pass count and duration; compare PNRO06-only control with PNRO06+PNRO07 on identical real signatures.
+1. Retain 1257's untested patch and exact fork provenance as historical evidence; do not add to production or independently rebase the kernels.
+2. PNRO06 owns any future generic TOP_K selector/correctness decision; 1294/RNX02 own QSA deterministic ordering. Wave32 tuning cannot bypass that dependency.
+3. Reopen only if PNRO06's new production TOP_K callsite passes the >=5% E2E attribution gate, deterministic tie parity and architecture/toolchain eligibility. Compare native vs 1256 vs 1256+1257 in one controlled matrix; otherwise terminate without implementation.
 
 ## Detailed Solution & Technical Design
 
-Wave32 reductions must use explicit width/masks and keep shared-memory fallback. Two-half radix scans must validate threshold selection around the 32/64 boundary. Separate semantic and items/thread changes for attribution.
+2026-10-08 audit: `patches/1257_nro08_topk_wave32/patch.py` is an exact nasone `7f1d25f7` follow-up to 1256, with two-half 64-bin wave32 scans, shuffle/LDS changes and removal of the wave64 compile flag. It does **not** change the caller: `ggml_cuda_op_top_k()` remains the only generic selection owner. Pinned b11474 and current upstream have identical native TOP_K code. The 1257 package requires 1256, which conflicts with validated `1294_topk_deterministic_ties`; a wave32 microkernel cannot solve the QSA tie/order contract. The 2026-09-27 series-2 incremental measured effects were +0.87% (gfx1100, CI95-low -1.17%) and +0.51% (gfx1201, CI95-low -3.09%); neither qualifies. The production MoE series used fused `topk_moe` instead of these kernels. Preserve gfx1030 and non-HIP fallback. If a successor ever qualifies, require 31/32/33, 63/64/65 boundaries, ties, multi-ubatch, graph replay, bit/greedy parity, LDS/VGPR/barrier counts, >=4 sessions and CI95-low >=3% E2E with <=1% control regression. No independent wave32 scheduler or config surface.
 
 ## Code Samples & Guidance
 
@@ -42,7 +37,7 @@ patches/1257_nro08_topk_wave32/{patch.toml,patch.py,SUMMARY.md,README.md,TESTING
 
 ## Validation
 
-Patch mechanics: `PYTHONPATH=tools python -m bigcherry patch-lint patches/1257_nro08_topk_wave32`; `PYTHONPATH=tools python -m bigcherry patch-rebase-check --focal-overlay 1257_nro08_topk_wave32 --source bigcherry-tuning --requires 1256_nro07_topk_hybrid`; package pytest offline. PNRO06(nro07) correctness fixtures unchanged plus 31/32/33 and 63/64/65 boundaries, ties, NaNs, block/item coverage edges. Hardware (Brutus, gfx1100, wave32-capable): `python -m bigcherry.patch.validation_campaign --overlay 1257_nro08_topk_wave32 --requires 1256_nro07_topk_hybrid --arch gfx1100` profiling LDS traffic/occupancy/VGPRs/pass count/duration, PNRO06-only control vs PNRO06+PNRO07 on identical real signatures; <=1% non-target regression gate.
+Existing 2026-09-27 hardware evidence reviewed, source/metadata and dependency checks performed; no new HIP compile or hardware benchmark. The 48-case host route fixture covers 1256 dispatch, not 1257 numerical behavior. Retain the patch's historical `untested` state and close this optimisation plan without promotion.
 
 ## Effort & Risk
 
@@ -54,7 +49,7 @@ Dependency-aware composition; exact routing semantics; preserve fallback; no uns
 
 ## Acceptance Criteria
 
-Outputs match PNRO06/reference; wave32 activates only where supported; real gfx1100 signatures show measurable kernel/LDS/pass benefit; no >1% non-target regression; otherwise retain PNRO06 fallback.
+Terminal: no 1257 promotion, no duplicate selector, no new queued campaign. Any later wave32 successor is subordinate to a newly qualified PNRO06 signature and deterministic 1294-compatible ordering.
 
 ## Notes
 
