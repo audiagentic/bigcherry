@@ -163,6 +163,11 @@ def build_parser() -> argparse.ArgumentParser:
     slice_start.add_argument("branch")
     slice_start.add_argument("--remote", default="origin")
     slice_start.add_argument("--base", default="main")
+    slice_start.add_argument(
+        "--carry",
+        action="store_true",
+        help="move tracked uncommitted primary-checkout changes into the new worktree",
+    )
     slice_start.set_defaults(func=cmd_slice_start)
 
     slice_finish = slice_sub.add_parser(
