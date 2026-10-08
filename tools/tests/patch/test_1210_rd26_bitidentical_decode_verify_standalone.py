@@ -28,7 +28,8 @@ _spec.loader.exec_module(_module)
 _GGML_CUDA_CU_SOURCE = r'''
 static void ggml_cuda_op_mul_mat_vec_f(ggml_backend_cuda_context & ctx, const ggml_tensor * src0, const ggml_tensor * src1, ggml_tensor * dst) {
     const int cc = ggml_cuda_info().devices[ggml_cuda_get_device()].cc;
-    if (ggml_cuda_should_use_mmvf(src0->type, cc, src0->ne, src0->nb, ne11)) {
+    const int warp_size = ggml_cuda_info().devices[ggml_cuda_get_device()].warp_size;
+    if (ggml_cuda_should_use_mmvf(src0->type, cc, warp_size, src0->ne, src0->nb, ne11)) {
         launch_mul_mat_vec_f(ctx, src0, src1, dst);
         return;
     }
@@ -46,8 +47,9 @@ static bool ggml_cuda_should_fuse_mul_mat_vec_f(const ggml_tensor * tensor) {
         (src0->type == GGML_TYPE_F32 || src0->type == GGML_TYPE_F16 || src0->type == GGML_TYPE_BF16) &&
         src1->type == GGML_TYPE_F32 && dst->type == GGML_TYPE_F32;
 
-    const int cc      = ggml_cuda_info().devices[ggml_cuda_get_device()].cc;
-    use_mul_mat_vec_f = use_mul_mat_vec_f && ggml_cuda_should_use_mmvf(src0->type, cc, src0->ne, src0->nb, is_mul_mat_id ? src1->ne[2] : src1->ne[1]);
+    const int cc        = ggml_cuda_info().devices[ggml_cuda_get_device()].cc;
+    const int warp_size = ggml_cuda_info().devices[ggml_cuda_get_device()].warp_size;
+    use_mul_mat_vec_f = use_mul_mat_vec_f && ggml_cuda_should_use_mmvf(src0->type, cc, warp_size, src0->ne, src0->nb, is_mul_mat_id ? src1->ne[2] : src1->ne[1]);
 
     //we only support fusion for ncols_dst = 1
     if (tensor->op == GGML_OP_MUL_MAT && dst->ne[1] != 1) {
@@ -90,7 +92,7 @@ class Patch1210GgmlCudaCuMechanics(unittest.TestCase):
                 text,
             )
             self.assertIn(
-                "ggml_cuda_should_use_mmvf(src0->type, cc, src0->ne, src0->nb, ne11_fuse_mmvf)",
+                "ggml_cuda_should_use_mmvf(src0->type, cc, warp_size, src0->ne, src0->nb, ne11_fuse_mmvf)",
                 text,
             )
             before = text
@@ -106,7 +108,7 @@ class Patch1210GgmlCudaCuMechanics(unittest.TestCase):
             "static bool ggml_cuda_should_fuse_mul_mat_vec_f",
             "static bool renamed_should_fuse_mul_mat_vec_f",
         ).replace(
-            "use_mul_mat_vec_f = use_mul_mat_vec_f && ggml_cuda_should_use_mmvf(src0->type, cc, src0->ne, src0->nb, is_mul_mat_id ? src1->ne[2] : src1->ne[1]);",
+            "use_mul_mat_vec_f = use_mul_mat_vec_f && ggml_cuda_should_use_mmvf(src0->type, cc, warp_size, src0->ne, src0->nb, is_mul_mat_id ? src1->ne[2] : src1->ne[1]);",
             "use_mul_mat_vec_f = use_mul_mat_vec_f && something_else_entirely(src0, src1);",
         )
         td, root, path = self._tree(source_without_fusion_gate)

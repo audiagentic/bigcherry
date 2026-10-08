@@ -51,6 +51,8 @@ patch-rebase-check --all reports every non-rejected patch clean or retired; patc
 
 ## Notes
 
+- 1210 / 1255 / 1268 adaptive-MTP — restored/reconciled for b11474 and pending hardware A/B; not rejected. 1210 is `untested`, 1255 is `untested`, and 1268 remains `evaluated`; no promotion verdict is implied by composition repair.
+
 - 1322_mtp_ahead_overlap — applies at b11474 in experiment.deploy-v6-plus-ahead once required 1321 is present; no 1322 anchor changes needed.
 
 - 1321_mtp_ahead_primitives — re-based for b11474: forced-front/live-tail logic is unchanged; only the MTP n_min post-pass anchor moved with upstream nextn restructuring.

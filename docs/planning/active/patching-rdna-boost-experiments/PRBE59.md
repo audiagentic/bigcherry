@@ -2,7 +2,7 @@
 id: PRBE59
 order: 0
 plan: patching-rdna-boost-experiments
-state: pending
+state: completed
 created-at: '2026-09-09T10:57:36.613381+00:00'
 breadth: ''
 skill: advanced
@@ -11,55 +11,32 @@ work: M
 priority: null
 ---
 
-# FORK-HIP-001: Restore/benchmark rocWMMA FlashAttention on RDNA4
+# RD76 / FORK-HIP-001: retire obsolete rocWMMA FlashAttention restoration
 
-## Description
+## Decision (2026-10-08)
 
-TODO, corrected per GPT review (req_b43762f844fb40b3). Source commit 5aa2f049 is ONLY rocWMMA include-path/header-detection/build-fallback plumbing in ggml/CMakeLists.txt and ggml/src/ggml-hip/CMakeLists.txt -- it contains NO rocWMMA FlashAttention kernel or selector implementation. b11126 has no GGML_HIP_ROCWMMA_FATTN symbol, so 5aa2f049 is not directly portable as-is either (there is no kernel to bring over from that commit alone). The native-WMMA selection anchor this plan already cites (`if ((amd_wmma_available(cc) && gqa_opt_applies && Q->ne[0] <= 128) ...) { return BEST_FATTN_KERNEL_MMA_F16; }` in fattn.cu) is confirmed correct and should NOT be conflated with 1203/RD06's rejected GGML_CUDA_FA_WMMA_256 text (this plan already correctly avoids that conflation).
+**Close without patch or hardware queue.** llama.cpp PR #26046 (merged 2026-07-24) removed the legacy rocWMMA FlashAttention kernel (`fattn-wmma-f16.cu`, 705 lines), header, HIP build flag and dispatch. Pinned b11474 already uses the maintained native AMD MMA kernel; upstream PR #28102 (merged 2026-09-11) further tuned that same path for gfx1201. The proposed new rocWMMA build option, translation unit and runtime selector would revive intentionally deleted code. The fork's 5aa2f049 was build plumbing only, not a kernel.
 
-## Steps
+## Verified code and ownership
 
-1. First pin the fork/historical parent commit that actually CONTAINS the rocWMMA FA kernel source and dispatch logic -- 5aa2f049 alone is insufficient (build plumbing only, confirmed by GPT and consistent with this plan's own 'zero current rocWMMA usage' grep finding). 2. Treat 5aa2f049 strictly as reference material for the BUILD INTEGRATION (CMake find_package/include-path pattern), not as the kernel source. 3. Use the native b11126 selector anchor already correctly identified in this plan (fattn.cu, amd_wmma_available/gqa_opt_applies/Q->ne[0]<=128) as the real current-tree hook point -- do not anchor on 1203/RD06-only GGML_CUDA_FA_WMMA_256 text (already correctly excluded). 4. Proceed with the rest of this plan's existing design (GGML_HIP_ROCWMMA CMake option, GGML_HIP_FA_IMPL=auto|native|rocwmma runtime selector, RDNA4 candidate shape matrix) once the real kernel-source commit is located.
+- `ggml/src/ggml-cuda/fattn.cu::ggml_cuda_get_best_fattn_kernel` (~541, ~700) selects `BEST_FATTN_KERNEL_MMA_F16` on eligible AMD WMMA GQA shapes with DKQ <=256 (special heads 40/72 excluded). `ggml_cuda_flash_attn_ext` (~732-741) dispatches it; no legacy WMMA enum/include exists.
+- `ggml/src/ggml-cuda/fattn-mma-f16.cuh::ggml_cuda_fattn_mma_get_config` owns head/row/tile/SMEM tuning, including DKQ=256; `ggml/src/ggml-cuda/fattn-common.cuh::launch_fattn` owns Stream-K. Do not duplicate the selector, kernel registry, allocator, graph or launch policy.
+- `ggml/CMakeLists.txt` and `ggml/src/ggml-hip/CMakeLists.txt` contain no `GGML_HIP_ROCWMMA_FATTN`. `tests/test-backend-ops.cpp` has head-256 F16 and quantized-KV FA cases. Existing per-device ggml FA graph/lifetime and Q/K/V storage remain authoritative; non-P2P gfx1100/gfx1201/gfx1030 PCIe topology is not a reason to restore this kernel.
+- Separate rejected `patches/1203_rd050607_rdna4_wmma_fa_q6k_mmq` owns RD06 native WMMA config history. Its **BigCherry-measured** kernel delta was -0.0154% (CI95-low -0.0745%; gate >=0.5%); that is **not** rocWMMA performance evidence. RD07 Q6_K belongs to PRBE110. Vulkan scalar FA belongs to PRBE65; active MTP/patch-system paths are untouched.
 
-## Detailed Solution & Technical Design
+## External evidence / mechanism
 
-This is explicitly framed by the item as a COMPARISON, not a replacement: 'keep conditional and experimental unless stably superior' and 'gate by head size, q_rows, depth, KV type and graph state; retain current kernel fallback.' The current native WMMA path (amd_wmma_available + the WMMA config table this session already inspected in patches/1203_.../patch.py, e.g. GGML_CUDA_FATTN_MMA_CONFIG_CASE tuning for heads 256/320/512/576) is itself already tuned RDNA4-specific work; rocWMMA is a DIFFERENT lowering (library-based, via ROCm's warp-matrix-multiply-accumulate abstraction rather than raw inline WMMA intrinsics) that may or may not generate better code on a given ROCm/driver version -- this is inherently an empirical question requiring the build-integration and hardware run this planning pass cannot perform.
+Upstream PR #28102 reports **external** gfx1201 Qwen 27B IQ4_XS 150K-context pp512 164.42±5.79 -> 399.01±30.87 t/s, tg128 19.70±0.20 -> 19.67±0.39. These are not BigCherry results. Issue #24961 reports a legacy rocWMMA gfx1201 long-prefill HIP-graph UpdateStreams crash near 106K, avoided with graphs off; it does not prove the precise root cause. vLLM uses Triton attention for gfx11/gfx12, and AITER labels gfx1100/gfx1201 experimental; neither supplies a drop-in GGUF rocWMMA replacement or measured local improvement.
 
-## Code Samples & Guidance
+Sources: https://github.com/ggml-org/llama.cpp/pull/26046 ; https://github.com/ggml-org/llama.cpp/pull/28102 ; https://github.com/ggml-org/llama.cpp/issues/24961 ; https://github.com/ROCm/aiter ; https://docs.vllm.ai/en/v0.16.0/api/vllm/platforms/rocm/ .
 
-No real anchors for the rocWMMA integration itself (external fork not locally mirrored, and zero existing rocWMMA references in-tree to anchor against). Real b11126 anchor for the EXISTING selection point this new path must hook into (fattn.cu, confirmed this session, same function 1203's rd06-wmma-gating edits target):\n```cpp\nconst char * wmma_256_env = getenv("GGML_CUDA_FA_WMMA_256");\nconst bool wmma_256 = wmma_256_env == nullptr || std::atoi(wmma_256_env) != 0;\nconst int wmma_max_head = (wmma_256 && GGML_CUDA_CC_IS_RDNA4(cc)) ? 576 : 128;\nif ((amd_wmma_available(cc) && gqa_opt_applies && Q->ne[0] <= wmma_max_head) ...) {\n    return BEST_FATTN_KERNEL_MMA_F16;\n}\n```\n(Note: this exact shape only exists if patch 1203's rd06-wmma-gating edit is applied -- 1203 is REJECTED, so the actual unpatched b11126 base is simpler: `if ((amd_wmma_available(cc) && gqa_opt_applies && Q->ne[0] <= 128) ...)`, confirmed via 1203's own `_WMMA_OLD` anchor text read this session.) A new BEST_FATTN_KERNEL_MMA_F16_ROCWMMA enum value + dispatch case, gated by depth/KV-type/env, would sit alongside this existing selection logic.
+## Terminal / conditional reopening
 
-## Files
+No next RD76 implementation gate. A *new owner* may reopen only for a maintained genuinely different kernel after first-party profiling proves >=5% E2E wall time in eligible native FA shapes. First perform static architecture/shape/resource/graph-lifetime checks; only then run >=4 paired sessions per gfx11/gfx12 lane with pp512/2048, tg128, 32K/64K/160K, multi-request/multi-ubatch, F16/quant KV, greedy/logits/KLD, MTP acceptance, memory safety, graph on/off and actual-vs-expected FA work/transfer counts. Require CI95-low >=3% E2E gain and <=1% control regression. Keep native fallback; no new config/selector unless that gate passes. Otherwise reject and remove disposable variants.
 
-ggml/src/ggml-cuda/fattn.cu (kernel selection), new ggml/src/ggml-cuda/fattn-rocwmma*.cuh (new kernel, contingent on fetched source), CMakeLists.txt (conditional rocwmma link), tests/test-backend-ops.cpp (FA correctness cases for the new path), new package patches/<order>_rd76_rocwmma_fa_compare/ (experimental/conditional state, not a default-on change).
+## Audit validation and provenance
 
-## Validation
-
-Correctness: FA backend-op tests, PPL, long-run stability for both paths. Performance: PP/TG at 32K/64K/128K, VRAM/scratch delta, compile/runtime stability, graph-capture interaction (must not break GGML_CUDA_GRAPH_OPT). Acceptance per the item's own bar: keep ONLY as a conditional/experimental path if correctness+stability+clear deep-context PP benefit are all repeatable; otherwise retain the current native-WMMA-only path and document the negative result.
-
-## Effort & Risk
-
-Unscored by item; set to M-L -- build integration for a new external library dependency plus a genuinely uncertain performance outcome (this is real comparative research, per the item's own framing, not a guaranteed win).
-
-## Standards
-
-Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance; experimental/conditional gating only, current kernel fallback always retained.
-
-## Acceptance Criteria
-
-Keep only as a conditional experimental path if correctness, stability, and clear deep-context PP benefit are repeatable; otherwise retain current FA path.
-
-## Notes
-
-Supersedes: RD76
-Migration: capability-rebaseline-v3-2026-09
-Successor key: patching-rdna-boost-experiments-rd76
-
-2026-09-24 relevance at b11126: no existing patch for RD76 (grep = no hits); confirmed rocWMMA is not used anywhere in-tree today (zero grep hits for rocwmma/ROCWMMA across ggml-cuda), and the current native-WMMA FA selection point (fattn.cu, amd_wmma_available/GGML_CUDA_FA_WMMA_256) was directly re-verified this session (also cross-referenced against patch 1203's rejected rd06-wmma-gating edit, which targets the exact same selection function). External fork source (commit 5aa2f049) not locally available. GPT design request req_83fbfa0995034d2d (covering this + PRBE57/58/101) was in progress when this plan was authored; check for its response and merge if useful.
-
-2026-09-24 GPT req_83fbfa0995034d2d COMPLETED. Its design is more concrete than this plan's sketch: isolates rocWMMA in a NEW translation unit (fattn-rocwmma.cu/.cuh) behind a CMake option GGML_HIP_ROCWMMA (native path always still built), a runtime selector env GGML_HIP_FA_IMPL=auto|native|rocwmma defaulting effectively to native until hardware evidence exists, and a concrete RDNA4 candidate shape matrix (KV depth 32K/64K/128K, head 64/128 first then 256, GQA 1/2/4/8, Q rows 1-16+prefill, F16 K/V first) with an explicit caution: 'most useful search space... aligned F16 K/V, head 64/128, GQA 4/8' and 'do not assume long context automatically favors rocWMMA; bandwidth can dominate' -- a sharper prior than this plan had. Promotion bar: correctness green + no PPL regression + stable long runs + repeatable E2E gain on a NAMED shape predicate (not a blanket claim). Prefer this design when implementing; build-integration details (CMake find_package) still need real verification against this project's build system.
-
-2026-09-24 GPT review req_b43762f844fb40b3 applied: clarified that 5aa2f049 is build-plumbing only (no FA kernel/selector) and a separate fork/parent commit must be located for the actual rocWMMA kernel source before implementation; confirmed this plan's existing native-selector anchor (fattn.cu amd_wmma_available/Q->ne[0]<=128) is correct and its exclusion of 1203/RD06's GGML_CUDA_FA_WMMA_256 text was already right.
+11 static assertions against upstream b11474 passed (old flag/header/enum absent; native selector/config/dispatch and head-256/quant-KV tests present). No build, backend-op execution, prototype or hardware benchmark. Original plan created 2026-09-09, last independently changed 2026-09-24 (39b146c7). Historical proposals for new rocWMMA FA are superseded, not implemented. BCOP59 is the thin disposition ledger.
 
 ## Change Log
 

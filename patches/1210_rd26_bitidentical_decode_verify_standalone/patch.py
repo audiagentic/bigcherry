@@ -60,7 +60,7 @@ PATCHES = [
         edits=(
             Edit(
                 id="rd26a-mmvf-decode-verify",
-                anchor=r"    if \(ggml_cuda_should_use_mmvf\(src0->type, cc, src0->ne, src0->nb, ne11\)\) \{",
+                anchor=r"    if \(ggml_cuda_should_use_mmvf\(src0->type, cc, warp_size, src0->ne, src0->nb, ne11\)\) \{",
                 rationale="rdna-boosts b2655d381 (RD26a): use the decode (ne11 = 1) MMVF decision for all batches with ne11 <= 8",
                 mode="replace",
                 text=(
@@ -69,7 +69,7 @@ PATCHES = [
                     "    // fall through to MMF, which accumulates differently and produces different\n"
                     "    // logits. Use the decode (ne11 = 1) config for all small batches.\n"
                     "    const int64_t ne11_mmvf = ne11 <= MMVF_MAX_BATCH_SIZE ? 1 : ne11;\n"
-                    "    if (ggml_cuda_should_use_mmvf(src0->type, cc, src0->ne, src0->nb, ne11_mmvf)) {"
+                    "    if (ggml_cuda_should_use_mmvf(src0->type, cc, warp_size, src0->ne, src0->nb, ne11_mmvf)) {"
                 ),
                 guard=r"const\ int64_t\ ne11_mmvf\ =\ ne11\ <=\ MMVF_MAX_BATCH_SIZE\ \?\ 1\ :\ ne11;",
                 max_span_lines=1,
@@ -78,7 +78,7 @@ PATCHES = [
                 id="rd26a-mmvf-fusion-decode-verify",
                 anchor=(
                     r"    use_mul_mat_vec_f = use_mul_mat_vec_f && ggml_cuda_should_use_mmvf"
-                    r"\(src0->type, cc, src0->ne, src0->nb, is_mul_mat_id \? src1->ne\[2\] : src1->ne\[1\]\);"
+                    r"\(src0->type, cc, warp_size, src0->ne, src0->nb, is_mul_mat_id \? src1->ne\[2\] : src1->ne\[1\]\);"
                 ),
                 rationale=(
                     "PRBE20 2026-09-28: ggml_cuda_should_fuse_mul_mat_vec_f() (the op-fusion "
@@ -98,7 +98,7 @@ PATCHES = [
                     "    // verify (n_q <= 8) select the same fusion decision for MUL_MAT_ID too.\n"
                     "    const int64_t ne11_fuse = is_mul_mat_id ? src1->ne[2] : src1->ne[1];\n"
                     "    const int64_t ne11_fuse_mmvf = ne11_fuse <= MMVF_MAX_BATCH_SIZE ? 1 : ne11_fuse;\n"
-                    "    use_mul_mat_vec_f = use_mul_mat_vec_f && ggml_cuda_should_use_mmvf(src0->type, cc, src0->ne, src0->nb, ne11_fuse_mmvf);"
+                    "    use_mul_mat_vec_f = use_mul_mat_vec_f && ggml_cuda_should_use_mmvf(src0->type, cc, warp_size, src0->ne, src0->nb, ne11_fuse_mmvf);"
                 ),
                 guard=r"const\ int64_t\ ne11_fuse_mmvf\ =\ ne11_fuse\ <=\ MMVF_MAX_BATCH_SIZE\ \?\ 1\ :\ ne11_fuse;",
                 max_span_lines=1,
@@ -267,7 +267,7 @@ PATCHES = [
 ]
 
 GROUP = "rdna-boosts"
-STATE = "rejected"
+STATE = "untested"
 
 PROVENANCE = {
     "source-id": "stew675-rdna-boosts",

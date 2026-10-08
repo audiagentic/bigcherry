@@ -134,14 +134,13 @@ External mechanism provenance: `tsaipifong/whirl-llm` v0.1.3. Historical BigCher
 
 ### Blocking prerequisite
 
-Do not start WHIRL-policy implementation or hardware comparison from the current 1268 package. `dispositions/1268_prbe52_adaptive_mtp_wiring.json` currently marks it `known_broken / FAILED_NEEDS_RECONCILIATION`: upstream probabilistic-MTP changes broke its begin-reset, draft-reset and depth-limit anchors, and it is not in the current build recipe.
+As of the 2026-10-08 b11474 restore, 1210 / 1255 / 1268 are restored as the `adaptive-mtp` experiment and are pending a new hardware A/B at b11474; they are not rejected. The revision-scoped 1210/1268 `known_broken` dispositions from the pin bump are cleared after reconciliation.
 
 Execution order is mandatory:
-1. reconcile 1268 against the current source pin;
-2. restore apply/idempotence/composition tests with 1255 + explicit 1210;
-3. prove adaptive-off equals fixed-depth behavior;
-4. pass 1210 greedy identity and repeated same-process correctness;
-5. only then collect adaptive-policy calibration/performance data.
+1. build the b11474 `adaptive-mtp` composition and run adaptive depth on vs off at representative contexts;
+2. prove adaptive-off preserves the fixed-depth control text and measure the prerequisite cost;
+3. re-run 1210 greedy identity / repeated same-process correctness;
+4. only then use new evidence for any adaptive-policy promotion decision.
 
 Historical 1268 throughput records whose validation contract failed greedy correctness are motivation only and must not be used as promotion evidence.
 
@@ -194,3 +193,8 @@ Traceability:
 - 2026-10-06T03:31:46.193215+00:00 (updated-by): Updated: section:notes
 - 2026-10-06T05:25:37.876948+00:00 (updated-by): Updated: section:notes
 - 2026-10-06T06:21:14.601507+00:00 (updated-by): Updated: section:notes
+
+
+## 2026-10-08 b11474 restore note
+
+1210 (untested), 1255 (untested), and 1268 (evaluated) are pending hardware A/B at b11474; none is rejected. Adaptive depth and MTP look-ahead are intentionally mutually exclusive: when `--spec-draft-n-min-adaptive > 0`, the per-sequence controller owns the fresh-front cap for each round; when `BIGCHERRY_MTP_AHEAD=1`, 1321/1322 own forced-front replay plus the static-`n_max` ahead tail/promotion. Enabling both fails closed during MTP construction rather than silently letting promoted static-depth fronts bypass the adaptive policy.
