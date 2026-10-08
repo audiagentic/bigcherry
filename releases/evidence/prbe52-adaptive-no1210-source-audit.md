@@ -24,14 +24,15 @@ These measurements motivate the change but are not reproduced by this source-onl
 5. 1322 look-ahead/promotion is not edited by 1210. Its promotion requires full-front acceptance, so target-logit/acceptance changes can indirectly change promotion rate.
 6. 1268's previous BIGCHERRY_MTP_AHEAD rejection hid a bookkeeping bug: an ahead draft calls MTP draft() before target acceptance and would reset last_n_draft. This branch removes that mutable draft-call accounting and derives the actual verified front from verify_h_rows-1.
 7. MTP begin() resets controller state per request. 1255 has no clock, address, allocator, or other time/layout input. No source path was found for controller-internal nondeterminism.
-8. Server speculative-init exceptions previously logged and fell back to spec=null for ordinary speculation. 1268 now makes that startup failure fatal.
-9. 1322 obtains its ahead budget through server_slot::get_n_draft_max(). 1268 now caps that value by the controller's effective per-sequence depth; forced front/tail and fresh draft therefore share one round budget.
+8. A separate b11474 MTP checkpoint bug is source-verified: server prompt checkpoints save/restore target KV, draft KV, and `common_speculative_get_state/set_state`, but MTP did not implement those state hooks. `pending_h[seq]` could therefore remain from the prior warm request while KV was restored to an earlier prompt boundary; the mandatory replay token then seeded draft catch-up with stale hidden state. 1268 now serializes/restores `pending_h` through those hooks.
+9. Server speculative-init exceptions previously logged and fell back to spec=null for ordinary speculation. 1268 now makes that startup failure fatal.
+10. 1322 obtains its ahead budget through server_slot::get_n_draft_max(). 1268 now caps that value by the controller's effective per-sequence depth; forced front/tail and fresh draft therefore share one round budget.
 
 ## Inference pending hardware
 
 - The ~18% 98K loss is consistent with 1210 forcing decode-style kernel/launch choices on verify batches, where batched/tiled/WMMA paths can be faster. Source proves the path changes, not the magnitude.
 - Lower acceptance and changed text are consistent with changed floating-point accumulation/kernel order moving greedy logits near decision boundaries. Source does not imply acceptance must decrease.
-- Adaptive repeat divergence can arise as feedback amplification: one backend/path-dependent accept difference changes depth, then verify shape, then subsequent logits. The controller arithmetic itself is deterministic.
+- The source-verified stale-`pending_h` checkpoint bug is a direct mechanism for warm-run divergence and is fixed here. If repeat divergence remains, feedback amplification is the residual hypothesis: one backend/path-dependent accept difference changes depth, then verify shape, then subsequent logits. The controller arithmetic itself is deterministic.
 - 1210 remaining in the stack does not prove full production-set bit identity: its closure covers selected MMVF/MMVQ/SGEMM/fattn decisions, while other batch-shape-sensitive production paths can still exist.
 
 ## New controller hypothesis
