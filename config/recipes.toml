@@ -563,11 +563,6 @@ patches = []
 # QFN01/RNX01: + one scheduler input sync per split (1293); A/B against ar-cpu-root-kpool.
 patches = ["1293_sched_single_input_sync"]
 
-[experiment.adaptive-mtp]
-# 1255 controller + 1268 runtime wiring (+1210 which 1268 requires); adaptive depth is
-# off unless --spec-draft-n-min-adaptive > 0, so one binary serves both A/B arms.
-patches = ["1210_rd26_bitidentical_decode_verify_standalone", "1255_nro06_adaptive_mtp_depth", "1268_prbe52_adaptive_mtp_wiring"]
-
 [experiment.allreduce-root3]
 # 1244 alone: n==3 internal AllReduce (XTX x2 + R9700). Multi-arch build gfx1100,gfx1201.
 patches = ["1244_gp11_internal_allreduce_nway_root"]
