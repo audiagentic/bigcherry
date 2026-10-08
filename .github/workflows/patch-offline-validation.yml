@@ -6,6 +6,11 @@ on:
     paths:
       - 'patches/**'
       - 'tools/tests/patch/**'
+      - 'tools/tests/cli/test_slice_lab.py'
+      - 'tools/bigcherry/cli/slice_lab.py'
+      - 'tools/lab/plan-qualification/**'
+      - 'tools/lab/flash-next/queue-meta-mem.sh'
+      - 'tools/lab/flash-next/queue-env-ab.sh'
       - 'tools/tests/cli/test_slice_prune.py'
       - 'tools/tests/cli/test_slice_commands.py'
       - 'tools/tests/core/test_primary_root.py'
@@ -32,6 +37,11 @@ on:
     paths:
       - 'patches/**'
       - 'tools/tests/patch/**'
+      - 'tools/tests/cli/test_slice_lab.py'
+      - 'tools/bigcherry/cli/slice_lab.py'
+      - 'tools/lab/plan-qualification/**'
+      - 'tools/lab/flash-next/queue-meta-mem.sh'
+      - 'tools/lab/flash-next/queue-env-ab.sh'
       - 'tools/bigcherry/patch/**'
       - 'tools/bigcherry/pin_transition.py'
       - 'tools/bigcherry/campaign/resolution.py'
@@ -81,6 +91,11 @@ jobs:
         env:
           PYTHONPATH: tools
         run: python -m unittest tools.tests.core.test_primary_root tools.tests.core.test_context -v
+
+      - name: Test slice lab command construction
+        env:
+          PYTHONPATH: tools
+        run: python -m unittest tools.tests.cli.test_slice_lab -v
 
       - name: Run patch lint
         shell: bash
