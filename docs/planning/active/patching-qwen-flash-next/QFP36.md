@@ -282,7 +282,7 @@ Execution order: seventh. Within QFP36, qualify the exact multi-warp helper befo
 
 2026-10-07 Gate 0 (prefill kernel profile, production build b-prod-1343 with 1343 + 1344, 38.7K-token fill at 977 t/s under rocprofv3, run gate0-d24576). Kernel time per target card 28.0 s over a 99 s span (28% busy). mm_ids_helper<10>: 3.23 s summed over devices = about 3.8% of all kernel time on the three target cards - the multi-warp helper is worth doing. Float matmul family (rocBLAS SGEMM, largest kernel Cijk_..._MT64x64x8 7.24 s): 12.4-16.0% of kernel time per card; the profile does not split the router GEMM from other F32 matmuls, a dispatch census by shape is still needed for split-K (and for QFP34). Family shares per XTX: collectives 30-31% (ncclDevKernel_Generic_4 27.6 s over devices; R9700 41.6%), MMQ 27%, float matmul 16%, flash attention 8.7%, norm/activation 4%, rows/concat/mask 3.3%, GDN 2.5%. Collectives and the 72% idle span are the largest prefill levers (QFP39, QFP41).
 
-
+2026-10-09 larger-ubatch results on the released build (Flash-Next, 245,760 ctx, f16 KV). Plain ub768: prefill +5.7/+5.0/+6.2% at 8K/24K/98K, decode -2/-2/+3.6%, ub896 does not fit (87.5 MiB short). 1330 (in-place QSA mask) alone at ub512: neutral, text identical. 1330+ub1024: prefill +11/+13/+13%, decode -3% at 8K, level at 24K, -18% at 98K (acceptance drops to ~317/577); not caused by deferred catch-up or look-ahead. 1332 chunking (BIGCHERRY_QSA_CHUNK=256)+ub1024: prefill only +2.3..4.7%. Probe fidelity at 8K against the CPU f32 reference (24 probes; production = 23/24 top-1, TV mean 0.0764): 1330+ub1024 23/24, TV 0.0804; chunk256+ub1024 24/24, TV 0.1103 (max 0.506); plain ub768 22/24, TV 0.0949 (max 0.409). 1330+ub1024 is the closest to production of the three; plain ub768 is not obviously safer than it. Open: the 98K decode loss with ub1024 is unexplained; no larger-batch setting is adopted until it is.
 
 ## Status 2026-10-08
 
@@ -466,3 +466,4 @@ Combined QFP36 expectation on this topology if both gates pass: **+0.4% to +1.5%
 - chg_20261007_073613_flash-next-prefill-is-about-2_3220
 - 2026-10-07T07:36:17.133419+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-08T09:46:17.213927+00:00 (updated-by): Updated: section:notes
+- 2026-10-08T15:22:57.433370+00:00 (updated-by): Updated: section:notes

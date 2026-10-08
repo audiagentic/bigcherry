@@ -46,10 +46,11 @@ def stream(base, body):
 
 
 def main():
-    args = [a for a in sys.argv[1:] if not a.startswith("--")]
     opts = sys.argv[1:]
     decode = int(opts[opts.index("--decode") + 1]) if "--decode" in opts else 512
     reps = int(opts[opts.index("--reps") + 1]) if "--reps" in opts else 2
+    # an option's value is not a depth
+    args = [a for i, a in enumerate(opts) if not a.startswith("--") and (i == 0 or opts[i - 1] not in ("--decode", "--reps"))]
     base, model, out = args[0].rstrip("/"), args[1], args[2]
     depths = [int(a) for a in args[3:] if a.isdigit()]
     corpus = open(CORPUS, errors="replace").read()
