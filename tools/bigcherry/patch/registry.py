@@ -904,8 +904,18 @@ def _exec_implementation(
 
 
 def load_env_docs(descriptor: PatchDescriptor, *, root: Path | None = None) -> tuple:
-    """The patch's ENV_DOCS (runtime flags it reads), or an empty tuple."""
-    return tuple(getattr(_exec_implementation(descriptor, root=root), "ENV_DOCS", None) or ())
+    """The patch\'s documented runtime flags, or an empty tuple.
+
+    PA44-E merged packages may expose DOCUMENTED_ENV_DOCS while materializing
+    historical env-doc rows explicitly inside PATCHES. This preserves exact
+    emitted source without making tooling lose the runtime-flag inventory.
+    """
+    module = _exec_implementation(descriptor, root=root)
+    return tuple(
+        getattr(module, "DOCUMENTED_ENV_DOCS", None)
+        or getattr(module, "ENV_DOCS", None)
+        or ()
+    )
 
 
 def load_implementation(

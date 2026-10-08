@@ -20,7 +20,7 @@ _CUDA = "ggml/src/ggml-cuda/ggml-cuda.cu"
 
 
 def _load():
-    spec = importlib.util.spec_from_file_location("patch_1339", _REPO / "patches/1339_meta_memory_report/patch.py")
+    spec = importlib.util.spec_from_file_location("patch_1340_merged", _REPO / "patches/1340_meta_per_device_arena/patch.py")
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -37,6 +37,7 @@ def _pinned(path):
 
 
 _P = _load()
+_PATCHES = [p for p in _P.PATCHES if p.description.startswith("1339:")]
 _SRC = {path: _pinned(path) for path in (_META, _CUDA)}
 
 
@@ -52,7 +53,7 @@ class Patch1339Mechanics(unittest.TestCase):
     def test_apply_and_idempotent(self):
         with tempfile.TemporaryDirectory() as td:
             root = self._root(td)
-            res = apply_all(_P.PATCHES, root)
+            res = apply_all(_PATCHES, root)
             self.assertTrue(all(r.ok for r in res), [e.detail for r in res for e in r.failed])
             src = (root / _META).read_text(encoding="utf-8")
             # the definitions, not the forward declarations near the top of the file
@@ -70,14 +71,14 @@ class Patch1339Mechanics(unittest.TestCase):
             self.assertLess(check.index("bc_fusion_overlap_stats.checks++;"), check.index("bc_fusion_overlap_stats.refused++;"))
             self.assertEqual(cuda.count("bc_fusion_overlap_stats.refused++;"), 1)
             before = {p: (root / p).read_text(encoding="utf-8") for p in _SRC}
-            again = apply_all(_P.PATCHES, root)
+            again = apply_all(_PATCHES, root)
             self.assertTrue(all(r.ok for r in again))
             self.assertEqual(before, {p: (root / p).read_text(encoding="utf-8") for p in _SRC})
 
     def test_changed_allocation_loop_fails_closed(self):
         with tempfile.TemporaryDirectory() as td:
             root = self._root(td, {_META: _SRC[_META].replace("max_size = std::max(max_size, ggml_backend_buffer_get_size(bufs.back()));", "max_size = 0;")})
-            res = apply_all(_P.PATCHES, root)
+            res = apply_all(_PATCHES, root)
             self.assertFalse(all(r.ok for r in res))
 
 

@@ -14,10 +14,11 @@ from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
 _VENDOR = _REPO / "vendor/llama.cpp/ggml/src/ggml-cuda/norm.cu"
-_spec = importlib.util.spec_from_file_location("patch_1309", _REPO / "patches/1309_rms_norm_mul_q81/patch.py")
+_spec = importlib.util.spec_from_file_location("patch_1309", _REPO / "patches/1307_q81_activation_cache_mmvq/patch.py")
 assert _spec is not None and _spec.loader is not None
 _module = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_module)
+_PATCHES = [p for p in _module.PATCHES if p.description.startswith("1309:")]
 
 
 @unittest.skipUnless(_VENDOR.exists(), "pinned vendor checkout not present")
@@ -29,7 +30,7 @@ class Patch1309Mechanics(unittest.TestCase):
             path = root / "ggml/src/ggml-cuda/norm.cu"
             path.parent.mkdir(parents=True)
             copy_pinned(_VENDOR, path)
-            results = apply_all(_module.PATCHES, root)
+            results = apply_all(_PATCHES, root)
             self.assertTrue(all(r.ok for r in results), [e.detail for r in results for e in r.failed])
             out = path.read_text(encoding="utf-8")
             self.assertIn("static __global__ void rms_norm_mul_q81_f32(", out)
@@ -45,7 +46,7 @@ class Patch1309Mechanics(unittest.TestCase):
                             out.index("void ggml_cuda_op_rms_norm_fused(ggml_backend_cuda_context & ctx, ggml_tensor * dst, ggml_tensor * mul_tensor)"))
             gate = out.index("bigcherry 1309 (PRBE06): decode-shaped fused")
             self.assertLess(gate, out.index("    rms_norm_mul_f32_cuda(src0_d, mul_d, nullptr, dst_d,", gate))
-            second = apply_all(_module.PATCHES, root)
+            second = apply_all(_PATCHES, root)
             self.assertTrue(all(r.ok for r in second), [e.detail for r in second for e in r.failed])
             self.assertEqual(out, path.read_text(encoding="utf-8"))
 

@@ -241,7 +241,6 @@ patches = [
     # whole stack vs native llama.cpp +29% / +45% decode at 8K / 48K; 27B dual-XTX no-regression (flags at
     # defaults) identical acceptance and greedy text, decode/prefill within noise. Runtime flags off by default;
     # BIGCHERRY_FEATURES=flashnext enables the profile.
-    "1235_rd09_q81_activation_cache_foundation",
     "1291_ar_cpu_root",
     "1292_kpool_tail_truncate",
     "1294_topk_deterministic_ties",
@@ -250,10 +249,6 @@ patches = [
     "1303_attn_kv_tensor_split",
     "1307_q81_activation_cache_mmvq",
     "1308_qwen4exp_rollback_copy_no_cont",
-    "1309_rms_norm_mul_q81",
-    "1310_act_q81",
-    "1311_hc_pre_q81",
-    "1312_mul_q81",
     "1313_scale_act_fuse",
     "1321_mtp_ahead_primitives",
     "1322_mtp_ahead_overlap",
@@ -269,7 +264,6 @@ patches = [
     "1281_moe_mul_mat_id_range",
     "1283_qwen4exp_expert_parallel",
     "1341_meta_subset_mirrored",
-    "1339_meta_memory_report",
     "1340_meta_per_device_arena",
     "1344_dsv4_hc_grid_index",
     "1345_moe_ids_multiwarp",
