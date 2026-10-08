@@ -56,6 +56,9 @@ One A/B script and the reference lane run through the adapter on Brutus for both
 
 Only worth starting if MEN01 or MEN02 says vLLM stays in use.
 
+2026-10-09 retarget to radiance: the second engine is a native server binary with a llama-server-compatible API, so the second adapter is a process adapter with different flags and log patterns, not a container adapter. The container adapter is only needed if the vLLM image is kept as a reference lane; decide after MEN02 step 3 shows how much of the llama-server request path already works.
+
 ## Change Log
 
 - 2026-10-08T20:36:14.144983+00:00 (created-by): Created by agent
+- 2026-10-08T20:47:55.960817+00:00 (updated-by): Updated: section:notes

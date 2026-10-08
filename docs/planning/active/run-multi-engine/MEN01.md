@@ -11,18 +11,20 @@ priority: P1
 work: S
 ---
 
-# vLLM stack inventory: what is source, what is binary, where the speed comes from
+# Radiance inventory: build it on Brutus, what runs on which card, where the speed comes from
 
 ## Description
 
-Gate for the whole group. The reference container (image stilldeadcode/vllm-radiance:0.9.3, radiance layer, libr4d b9e42ab-rx9) is about 3x faster than BigCherry llama.cpp on prefill on one R9700 with a 4-bit Qwen3.8-27B (2026-10-09: ~3,000 vs 1,003-1,089 t/s to 35K, ~2,470 vs 764-773 at 111K). Before building any multi-engine tooling, establish which parts of that stack are editable source (vLLM Python, radiance, Triton attention) and which ship as binaries (libr4d kernels), and which of the 79 RADIANCE_* settings carry the gain.
+Gate for the group. Owner decision 2026-10-09: the second engine is standalone radiance (codeberg.org/StillDeadcode/radiance, Apache-2.0), not vLLM plus the radiance layer. Radiance is a C++/HIP inference server with a CMake build, an HTTP API that speaks OpenAI, Anthropic and llama-server's native protocol, and kernel libraries loaded as .so plugins through a C ABI: libr4d (gfx1200 / gfx1201 only), libref, libavx, libquant. The README says the engine starts on any AMD GPU family but another card needs a kernel library for it. Reference numbers to explain (one R9700, 4-bit Qwen3.8-27B, 2026-10-09): the vLLM + radiance container ~3,000 t/s prefill to 35K and ~2,470 at 111K; BigCherry llama.cpp on the same card 1,003-1,089 with MTP, 1,141-1,291 with no drafter, 764-857 at 111K.
 
 ## Steps
 
-1. From the stopped container: list installed packages with versions and whether each has source in the image (vllm, radiance, libr4d, torch, triton); record image digest.
-2. Record the launch command and environment verbatim as a settings snapshot.
-3. Kernel-level view: rocprofv3 kernel trace of one 24K prefill inside the container; group by family the same way prefill-kernel-table.py does for llama.cpp, so the two censuses can be read side by side.
-4. Write the finding: what a patch system over this stack could reach, and what it could not.
+1. Clone at a recorded commit; read LICENSE, NOTICE, spec.md and the abi/ and arch/ directories; record what each kernel library covers and for which architecture.
+2. Build on Brutus with the lab ROCm (/mnt/vault/tmp/bc-rocm) for gfx1201; record the exact commands and any change needed.
+3. State per card what can run today: R9700 (libr4d), RX 7900 XTX and RX 6900 XT (libref only, or nothing).
+4. Checkpoint formats it loads (MXFP4 from AMD Quark, FP8, bf16, int8) and which of our models exist in one of them; the container already has /models/Qwen3.8-27B-MXFP4-mtpfp8 and a DFlash2-FP8 drafter.
+5. rocprofv3 kernel census of one 24K prefill, grouped like prefill-kernel-table.py, beside the llama.cpp census.
+6. Write the finding: which kernel family carries the lead, and what is card-specific.
 
 ## Detailed Solution & Technical Design
 
@@ -38,7 +40,7 @@ Gate for the whole group. The reference container (image stilldeadcode/vllm-radi
 
 ## Validation
 
-A table of components with source/binary status and version; one kernel census at 24K; a one-paragraph conclusion that the owner can act on.
+A build that starts and answers /health on Brutus; a component table with architecture coverage; one kernel census at 24K beside ours.
 
 ## Effort & Risk
 
@@ -50,7 +52,7 @@ A table of components with source/binary status and version; one kernel census a
 
 ## Acceptance Criteria
 
-The inventory names every component of the reference stack with source or binary status, and states whether carrying our own changes on top of it is possible.
+Radiance builds from source on Brutus at a recorded commit, and the inventory states what runs on each of the four cards and which kernel family explains the prefill lead.
 
 ## Notes
 
@@ -59,3 +61,4 @@ Read-only on the container: start, measure, stop. No configuration change. Produ
 ## Change Log
 
 - 2026-10-08T20:36:00.311928+00:00 (created-by): Created by agent
+- 2026-10-08T20:47:42.172651+00:00 (updated-by): Updated: section:title, section:description, section:steps, section:validation, section:acceptance_criteria

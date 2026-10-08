@@ -11,18 +11,19 @@ priority: P1
 work: M
 ---
 
-# Feasibility: the models we serve on vLLM on this box (context, cards, quality)
+# Radiance basics working: serve Qwen3.8-27B on the R9700 and measure it our way
 
 ## Description
 
-Second gate. Every Flash-Next number we have is llama.cpp (245,760 context over two RX 7900 XTX + R9700, drafter on the RX 6900 XT). Nothing shows that vLLM can serve Flash-Next here, at what context, or on which cards. The 27B result is one R9700 only.
+First working lane on the second engine, kept to what can run today: the source build from MEN01 serving the MXFP4 Qwen3.8-27B checkpoint on the R9700, measured with the lab client and corpus. Then the limits: Flash-Next, longer context, the other cards.
 
 ## Steps
 
-1. Checkpoint availability for Qwen3.8-Flash-Next in a format the stack loads (MXFP4 / FP8); record source and size. A DSpark drafter was already converted with the pinned converter on 2026-10-08.
-2. Largest context that loads on the R9700 alone, and with --pipeline-parallel-size over the mixed cards; whether --tensor-parallel-size 2 runs on the two XTXs with this stack at all.
-3. Speed at 2K / 8K / 24K / 98K with tools/lab/reference-vllm/bench-openai.py, same corpus as the llama.cpp runs.
-4. Hand the outputs to MEN05 for the quality comparison.
+1. Launch the MEN01 build with /models/Qwen3.8-27B-MXFP4-mtpfp8 on the R9700; record the full command and settings.
+2. Measure 2K / 8K / 24K / 98K with tools/lab/reference-vllm/bench-openai.py, two repeats, with and without the DFlash2-FP8 drafter; compare against the container figures and the llama.cpp single-card figures.
+3. Check the llama-server-native API: does tools/lab/flash-next/long-ctx-profile.sh's request path (/completion, timings, cache_prompt) work unchanged against radiance? List what differs.
+4. Limits: largest context that loads; whether a Flash-Next checkpoint exists or can be produced in a supported format; what happens on an RX 7900 XTX.
+5. Hand prompts and outputs to MEN05 for the quality comparison.
 
 ## Detailed Solution & Technical Design
 
@@ -38,7 +39,7 @@ Second gate. Every Flash-Next number we have is llama.cpp (245,760 context over 
 
 ## Validation
 
-Per configuration: loads or the exact failure, context reached, VRAM per card, prefill and decode t/s, acceptance.
+Per configuration: loads or the exact failure, context reached, VRAM, prefill and decode t/s, acceptance.
 
 ## Effort & Risk
 
@@ -50,7 +51,7 @@ Per configuration: loads or the exact failure, context reached, VRAM per card, p
 
 ## Acceptance Criteria
 
-A yes/no per model and card set, with numbers, sufficient for the owner to decide whether vLLM becomes a production lane.
+A radiance lane built from source reproduces the container's prefill within run-to-run spread on the R9700, with the list of what does not yet work (models, cards, API differences).
 
 ## Notes
 
@@ -59,3 +60,4 @@ KV precision rule applies: fp8 is acceptable, nothing below 8 bits. Depends on M
 ## Change Log
 
 - 2026-10-08T20:36:07.241630+00:00 (created-by): Created by agent
+- 2026-10-08T20:47:49.090866+00:00 (updated-by): Updated: section:title, section:description, section:steps, section:validation, section:acceptance_criteria
