@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import subprocess
+import shutil
 import sys
 import tempfile
 import tomllib
@@ -128,6 +128,15 @@ class PatchPromoteTests(unittest.TestCase):
         self.assertEqual(recipes["experiment"]["combo"]["patches"], ["1000_base"])
 
 
+
+    def test_state_update_tolerates_patch_without_python_state(self):
+        info = pp._load_patch(self.root, "1348_demo")
+        (info.root / "patch.py").unlink()
+        changed = pp._set_state(info)
+        self.assertNotIn(info.root / "patch.py", changed)
+        self.assertIn('state = "validated"', (info.root / "patch.toml").read_text())
+        self.assertIn("**Status:** validated", (info.root / "SUMMARY.md").read_text())
+
     def test_promotion_requires_second_model_unless_profile_only(self):
         single = self.root / "single.md"
         single.write_text(
@@ -199,12 +208,15 @@ class PatchPromoteTests(unittest.TestCase):
             any("patch-rebase-check --source bigcherry" in x for x in flat)
         )
 
-    def test_failed_check_restores_every_mutated_file(self):
+    def test_failed_check_leaves_primary_untouched_and_discards_slice(self):
         originals = {
             path.relative_to(self.root): path.read_bytes()
             for path in self.root.rglob("*")
             if path.is_file()
         }
+        worktree = self.root.parent / f"{self.root.name}-slice"
+        shutil.copytree(self.root, worktree)
+        self.addCleanup(lambda: shutil.rmtree(worktree, ignore_errors=True))
 
         def fake_git(root, *args, check=True):
             if args[:2] == ("status", "--porcelain"):
@@ -215,18 +227,12 @@ class PatchPromoteTests(unittest.TestCase):
                 return "same"
             if args[:2] == ("rev-parse", "origin/main"):
                 return "same"
-            if args[:2] == ("ls-remote", "--heads"):
-                return ""
             return ""
 
-        def fake_run(root, *cmd, check=True):
-            if cmd[:3] == ("git", "show-ref", "--verify"):
-                return subprocess.CompletedProcess(cmd, 1, "", "")
-            return subprocess.CompletedProcess(cmd, 0, "", "")
-
         with mock.patch.object(pp, "_git", side_effect=fake_git), \
-                mock.patch.object(pp, "_run", side_effect=fake_run), \
                 mock.patch.object(pp, "_preflight"), \
+                mock.patch("bigcherry.cli.slice.start_slice", return_value=worktree), \
+                mock.patch.object(pp, "_discard_promotion_slice") as discard, \
                 mock.patch.object(
                     pp, "_run_checks", side_effect=pp.PatchPromoteError("boom")
                 ):
@@ -237,6 +243,7 @@ class PatchPromoteTests(unittest.TestCase):
                     "@" + str(self.evidence),
                 )
 
+        discard.assert_called_once()
         after = {
             path.relative_to(self.root): path.read_bytes()
             for path in self.root.rglob("*")
