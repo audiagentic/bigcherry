@@ -1,7 +1,7 @@
 schema = 1
 id = "1337_moe_expert_caching"
 order = 1337
-state = "rejected"
+state = "untested"
 kind = "upstream-backport"
 origin = "upstream-pr"
 backend = "hip"

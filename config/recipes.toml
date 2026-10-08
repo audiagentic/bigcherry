@@ -531,6 +531,14 @@ patches = ["1319_process_ubatch_timing", "1320_meta_compute_timing", "1325_sched
 # QFP22: 1333 alone, for the native llama.cpp comparison (build over source llama-native).
 patches = ["1333_mixed_batch_on_demand"]
 
+[experiment.moe-expert-cache]
+# MET01 recheck: 1337 only; --moe-cache-mib=0 is the runtime control.
+patches = ["1337_moe_expert_caching"]
+
+[experiment.moe-cache-profile]
+# MET01/MET07 recheck: 1337 + 1338; profile variables are opt-in.
+patches = ["1337_moe_expert_caching", "1338_moe_cache_profile"]
+
 
 
 [experiment.ar-cpu-root-topk]
