@@ -11,7 +11,10 @@ import shutil
 import subprocess
 from pathlib import Path
 
-_VENDOR = Path(__file__).resolve().parents[3] / "vendor" / "llama.cpp"
+from ..core import paths
+
+# The vendor checkout belongs to the primary checkout; a slice worktree has none of its own.
+_VENDOR = paths.llama_root()
 
 
 def copy_pinned(src, dst):
