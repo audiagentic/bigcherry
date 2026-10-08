@@ -26,6 +26,7 @@ def _load(name, path):
 
 
 _module = _load("patch_1307", _REPO / "patches/1307_q81_activation_cache_mmvq/patch.py")
+_PATCHES = [p for p in _module.PATCHES if p.path in {"ggml/src/ggml-cuda/mmvq.cu", "ggml/src/ggml-cuda/ggml-cuda.cu"}]
 _PREREQS = [
     _load("patch_0600", _REPO / "patches/0600_mmvq_geometry/patch.py").PATCH,
     *_load("patch_1241", _REPO / "patches/1241_rd33_mmvq_q8_0_f32_decode/patch.py").PATCHES,
@@ -49,7 +50,7 @@ class Patch1307Mechanics(unittest.TestCase):
     def test_apply_and_idempotent(self):
         td, root, cuda = self._tree()
         with td:
-            results = apply_all(_module.PATCHES, root)
+            results = apply_all(_PATCHES, root)
             self.assertTrue(all(r.ok for r in results), [e.detail for r in results for e in r.failed])
             mmvq = (cuda / "mmvq.cu").read_text(encoding="utf-8")
             cu = (cuda / "ggml-cuda.cu").read_text(encoding="utf-8")
@@ -67,10 +68,16 @@ class Patch1307Mechanics(unittest.TestCase):
             self.assertIn("ggml_hip_q81_cache_set_capture_active(ggml_hip_q81_cache_for_context(*cuda_ctx), true);", cu)
             self.assertIn("ggml_hip_q81_cache_set_capture_active(ggml_hip_q81_cache_for_context(*cuda_ctx), false);", cu)
 
-            second = apply_all(_module.PATCHES, root)
+            second = apply_all(_PATCHES, root)
             self.assertTrue(all(r.ok for r in second), [e.detail for r in second for e in r.failed])
             self.assertEqual(mmvq, (cuda / "mmvq.cu").read_text(encoding="utf-8"))
             self.assertEqual(cu, (cuda / "ggml-cuda.cu").read_text(encoding="utf-8"))
+
+
+# PA44-E packaging equivalence is part of the 1307 mechanics gate. Importing
+# the TestCase here makes unittest's changed-patch loader execute the materialized
+# pre/post merge tree checks instead of leaving the standalone regression undiscovered.
+from tools.tests.patch.test_pa44e_merged_family_identity import PA44EMergedFamilyIdentity  # noqa: E402,F401
 
 
 if __name__ == "__main__":

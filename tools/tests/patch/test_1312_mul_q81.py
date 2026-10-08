@@ -24,8 +24,9 @@ def _load(name: str, rel: str):
     return module
 
 
-_P1310 = _load("patch_1310", "patches/1310_act_q81/patch.py")
-_P1312 = _load("patch_1312", "patches/1312_mul_q81/patch.py")
+_MERGED = _load("patch_1307", "patches/1307_q81_activation_cache_mmvq/patch.py")
+_P1310 = [p for p in _MERGED.PATCHES if p.description.startswith("1310:")]
+_P1312 = [p for p in _MERGED.PATCHES if p.description.startswith("1312:")]
 
 
 @unittest.skipUnless(_VENDOR.exists(), "pinned vendor checkout not present")
@@ -40,8 +41,8 @@ class Patch1312Mechanics(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             path = self._tree(td)
             root = Path(td)
-            self.assertTrue(all(r.ok for r in apply_all(_P1310.PATCHES, root)))
-            results = apply_all(_P1312.PATCHES, root)
+            self.assertTrue(all(r.ok for r in apply_all(_P1310, root)))
+            results = apply_all(_P1312, root)
             self.assertTrue(all(r.ok for r in results), [e.detail for r in results for e in r.failed])
             out = path.read_text(encoding="utf-8")
             impl = out.index("static void ggml_cuda_op_unary_mul_impl(")
@@ -53,7 +54,7 @@ class Patch1312Mechanics(unittest.TestCase):
             self.assertEqual(out.count("bc_act_q81_try<op, true>(ctx, mul_node,"), 1)
             self.assertIn("const bool flatten01 = mul_node->ne[0] % MATRIX_ROW_PADDING != 0 && mul_node->ne[1] > 1;", out)
             self.assertIn("const int64_t j0 = srow * o0 + scol;", out)
-            second = apply_all(_P1312.PATCHES, root)
+            second = apply_all(_P1312, root)
             self.assertTrue(all(r.ok for r in second), [e.detail for r in second for e in r.failed])
             self.assertEqual(out, path.read_text(encoding="utf-8"))
 

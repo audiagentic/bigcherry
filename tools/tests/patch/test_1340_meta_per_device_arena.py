@@ -8,6 +8,7 @@ import subprocess
 import tomllib
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 from pathlib import Path
 
@@ -46,9 +47,10 @@ def _pinned(path):
 _P1283 = _load("patch_1283", _REPO / "patches/1283_qwen4exp_expert_parallel/patch.py")
 _P1303 = _load("patch_1303", _REPO / "patches/1303_attn_kv_tensor_split/patch.py")
 _P1326 = _load("patch_1326", _REPO / "patches/1326_sched_async_host_inputs/patch.py")
-_P1339 = _load("patch_1339", _REPO / "patches/1339_meta_memory_report/patch.py")
+_MERGED = _load("patch_1340", _REPO / "patches/1340_meta_per_device_arena/patch.py")
+_P1339 = SimpleNamespace(PATCHES=[p for p in _MERGED.PATCHES if p.description.startswith("1339:")])
+_P = SimpleNamespace(PATCHES=[p for p in _MERGED.PATCHES if p.description.startswith("1340:")])
 _P1341 = _load("patch_1341", _REPO / "patches/1341_meta_subset_mirrored/patch.py")
-_P = _load("patch_1340", _REPO / "patches/1340_meta_per_device_arena/patch.py")
 _SRC = {path: _pinned(path) for path in (
     _META, _BACKEND, _ALLOC, _ALLOC_H, _META_H, _MODEL, _FATTN, "ggml/src/ggml-cuda/ggml-cuda.cu"
 )}
@@ -256,10 +258,10 @@ class Patch1340Mechanics(unittest.TestCase):
         with (_REPO / "config/recipes.toml").open("rb") as handle:
             recipes = tomllib.load(handle)
         production = recipes["patch-set"]["validated-enhancements"]["patches"]
-        self.assertIn("1339_meta_memory_report", production)
+        self.assertNotIn("1339_meta_memory_report", production)
         self.assertIn("1340_meta_per_device_arena", production)
         self.assertNotIn("meta-memory", recipes["experiment"])
-        self.assertEqual([doc.name for doc in _P.ENV_DOCS], ["BIGCHERRY_META_PER_DEVICE_ARENA"])
+        self.assertEqual([doc.name for doc in _MERGED.DOCUMENTED_ENV_DOCS], ["BIGCHERRY_META_MEM", "BIGCHERRY_META_PER_DEVICE_ARENA"])
 
     def test_changed_compute_allocator_fails_closed(self):
         with tempfile.TemporaryDirectory() as td:
