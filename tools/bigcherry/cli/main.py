@@ -46,7 +46,12 @@ from .patch import (
 from .profiling import cmd_profile_campaign
 from .runtime import cmd_reference_ladder, cmd_runtime_matrix
 from .source import cmd_audit, cmd_pull
-from .slice import cmd_slice_prune
+from .slice import (
+    cmd_slice_finish,
+    cmd_slice_prune,
+    cmd_slice_start,
+    cmd_slice_status,
+)
 from .tuning import (
     cmd_execution_audit,
     cmd_tuning_rollup,
@@ -152,17 +157,40 @@ def build_parser() -> argparse.ArgumentParser:
         "slice", help="manage short-lived branches used by the trunk workflow"
     )
     slice_sub = slice_cmd.add_subparsers(dest="slice_command", required=True)
+    slice_start = slice_sub.add_parser(
+        "start", help="create a slice branch and linked worktree from origin/main"
+    )
+    slice_start.add_argument("branch")
+    slice_start.add_argument("--remote", default="origin")
+    slice_start.add_argument("--base", default="main")
+    slice_start.set_defaults(func=cmd_slice_start)
+
+    slice_finish = slice_sub.add_parser(
+        "finish", help="remove a completed slice worktree and branch"
+    )
+    slice_finish.add_argument("branch")
+    slice_finish.add_argument("--remote", default="origin")
+    slice_finish.add_argument("--base", default="main")
+    slice_finish.set_defaults(func=cmd_slice_finish)
+
+    slice_status_cmd = slice_sub.add_parser(
+        "status", help="show slice worktrees, pull requests and main divergence"
+    )
+    slice_status_cmd.add_argument("--remote", default="origin")
+    slice_status_cmd.add_argument("--base", default="main")
+    slice_status_cmd.set_defaults(func=cmd_slice_status)
+
     slice_prune = slice_sub.add_parser(
         "prune",
-        help="delete remote branches merged into main and report stale unmerged branches",
+        help="list merged branches and orphaned worktrees; remove them with --apply",
     )
     slice_prune.add_argument("--remote", default="origin")
     slice_prune.add_argument("--base", default="main")
     slice_prune.add_argument("--stale-days", type=int, default=14)
     slice_prune.add_argument(
-        "--dry-run",
+        "--apply",
         action="store_true",
-        help="list merged branches without deleting them",
+        help="delete eligible merged branches and clean orphaned worktrees",
     )
     slice_prune.set_defaults(func=cmd_slice_prune)
 

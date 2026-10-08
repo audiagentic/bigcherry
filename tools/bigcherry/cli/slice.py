@@ -1,12 +1,23 @@
-"""Short-lived slice branch maintenance commands (PA46)."""
+"""Short-lived slice branch and worktree management (PA46/PA47)."""
 
 from __future__ import annotations
 
+import json
+import re
 import subprocess
 import sys
 import time
 from dataclasses import dataclass
+from pathlib import Path
+
+from ..core import paths
 from typing import Callable, Sequence
+
+
+_BRANCH_RE = re.compile(
+    r"^(?:feat|fix|perf|chore|docs|test|refactor|ci|build)/"
+    r"[a-z0-9]+(?:-[a-z0-9]+)+$|^bump/b[0-9]+$"
+)
 
 
 @dataclass(frozen=True)
@@ -15,6 +26,20 @@ class RemoteBranch:
     sha: str
     committed_at: int
     author: str
+
+
+@dataclass(frozen=True)
+class Worktree:
+    path: Path
+    head: str
+    branch: str | None
+
+
+@dataclass(frozen=True)
+class PullRequest:
+    number: int
+    state: str
+    merged_at: str | None
 
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
@@ -30,13 +55,274 @@ def _run_git(args: Sequence[str], *, check: bool = True) -> subprocess.Completed
     )
 
 
-def _remote_branches(remote: str, *, runner: Runner = _run_git) -> list[RemoteBranch]:
+def _run_gh(args: Sequence[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["gh", *args],
+        check=check,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+
+def _at(root: Path | None, args: Sequence[str]) -> list[str]:
+    return list(args) if root is None else ["-C", str(root), *args]
+
+
+def _checked(result: subprocess.CompletedProcess[str], what: str) -> str:
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"{what}: {result.stderr.strip() or result.stdout.strip() or 'command failed'}"
+        )
+    return result.stdout.strip()
+
+
+def validate_branch_name(branch: str) -> None:
+    if not _BRANCH_RE.fullmatch(branch):
+        raise ValueError(
+            "branch must match BRANCHING.md: <type>/<item>-<topic> in lower-case "
+            "hyphen form (or bump/b<build>)"
+        )
+
+
+def _ref_exists(
+    ref: str, *, root: Path | None = None, runner: Runner = _run_git
+) -> bool:
     result = runner(
+        _at(root, ["show-ref", "--verify", "--quiet", ref]),
+        check=False,
+    )
+    if result.returncode not in (0, 1):
+        raise RuntimeError(
+            f"git show-ref failed for {ref}: {result.stderr.strip()}"
+        )
+    return result.returncode == 0
+
+
+def _remote_branch_exists(
+    branch: str,
+    *,
+    remote: str,
+    root: Path,
+    runner: Runner = _run_git,
+) -> bool:
+    result = runner(
+        _at(root, ["ls-remote", "--exit-code", "--heads", remote, branch]),
+        check=False,
+    )
+    if result.returncode not in (0, 2):
+        raise RuntimeError(
+            f"git ls-remote failed for {remote}/{branch}: {result.stderr.strip()}"
+        )
+    return result.returncode == 0
+
+
+def _worktrees(*, root: Path, runner: Runner = _run_git) -> list[Worktree]:
+    output = _checked(
+        runner(_at(root, ["worktree", "list", "--porcelain"]), check=False),
+        "git worktree list",
+    )
+    rows: list[Worktree] = []
+    path: Path | None = None
+    head = ""
+    branch: str | None = None
+    for raw in [*output.splitlines(), ""]:
+        if not raw:
+            if path is not None:
+                rows.append(Worktree(path.resolve(), head, branch))
+            path, head, branch = None, "", None
+            continue
+        key, _, value = raw.partition(" ")
+        if key == "worktree":
+            path = Path(value)
+        elif key == "HEAD":
+            head = value
+        elif key == "branch":
+            prefix = "refs/heads/"
+            branch = value[len(prefix):] if value.startswith(prefix) else value
+    return rows
+
+
+def _worktree_for(
+    branch: str, *, root: Path, runner: Runner = _run_git
+) -> Worktree | None:
+    for worktree in _worktrees(root=root, runner=runner):
+        if worktree.branch == branch:
+            return worktree
+    return None
+
+
+def start_slice(
+    branch: str,
+    *,
+    remote: str = "origin",
+    base: str = "main",
+    primary_root: Path | None = None,
+    runner: Runner = _run_git,
+) -> Path:
+    validate_branch_name(branch)
+    root = (primary_root or paths.primary_root()).resolve()
+    target = root / "worktrees" / branch
+    if target.exists():
+        raise RuntimeError(f"worktree path already exists: {target}")
+    if _ref_exists(f"refs/heads/{branch}", root=root, runner=runner):
+        raise RuntimeError(f"local branch already exists: {branch}")
+
+    _checked(
+        runner(_at(root, ["fetch", "--prune", remote]), check=False),
+        f"fetch {remote}",
+    )
+    if _remote_branch_exists(branch, remote=remote, root=root, runner=runner):
+        raise RuntimeError(f"remote branch already exists: {remote}/{branch}")
+    if not _ref_exists(f"refs/remotes/{remote}/{base}", root=root, runner=runner):
+        raise RuntimeError(f"base branch is unavailable after fetch: {remote}/{base}")
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    _checked(
+        runner(
+            _at(
+                root,
+                ["worktree", "add", "-b", branch, str(target), f"{remote}/{base}"],
+            ),
+            check=False,
+        ),
+        f"create worktree for {branch}",
+    )
+    print(target)
+    return target
+
+
+def _pr_for_branch(
+    branch: str, *, gh_runner: Runner = _run_gh
+) -> PullRequest:
+    result = gh_runner(
         [
-            "for-each-ref",
-            "--format=%(refname:strip=3)%09%(objectname)%09%(committerdate:unix)%09%(authorname)",
-            f"refs/remotes/{remote}",
-        ]
+            "pr",
+            "list",
+            "--head",
+            branch,
+            "--state",
+            "all",
+            "--limit",
+            "1",
+            "--json",
+            "number,state,mergedAt",
+        ],
+        check=False,
+    )
+    raw = _checked(result, f"gh pr list --head {branch}")
+    try:
+        rows = json.loads(raw or "[]")
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"gh returned invalid JSON for {branch}: {exc}") from exc
+    if not isinstance(rows, list) or not rows:
+        raise RuntimeError(f"no pull request found for branch {branch}")
+    row = rows[0]
+    return PullRequest(
+        number=int(row["number"]),
+        state=str(row["state"]).upper(),
+        merged_at=row.get("mergedAt"),
+    )
+
+
+def _require_primary_main_clean(
+    root: Path, *, base: str, runner: Runner = _run_git
+) -> None:
+    current = _checked(
+        runner(_at(root, ["branch", "--show-current"]), check=False),
+        "read primary checkout branch",
+    )
+    if current != base:
+        raise RuntimeError(
+            f"primary checkout must stay on {base}; current branch is {current!r}"
+        )
+    dirty = _checked(
+        runner(_at(root, ["status", "--porcelain"]), check=False),
+        "read primary checkout status",
+    )
+    if dirty:
+        raise RuntimeError("primary checkout is dirty; refusing slice finish")
+
+
+def finish_slice(
+    branch: str,
+    *,
+    remote: str = "origin",
+    base: str = "main",
+    primary_root: Path | None = None,
+    runner: Runner = _run_git,
+    gh_runner: Runner = _run_gh,
+) -> PullRequest:
+    validate_branch_name(branch)
+    root = (primary_root or paths.primary_root()).resolve()
+    _require_primary_main_clean(root, base=base, runner=runner)
+
+    pr = _pr_for_branch(branch, gh_runner=gh_runner)
+    if pr.state not in {"CLOSED", "MERGED"}:
+        raise RuntimeError(
+            f"PR #{pr.number} for {branch} is {pr.state}; finish requires merged or closed"
+        )
+
+    worktree = _worktree_for(branch, root=root, runner=runner)
+    if worktree is None:
+        raise RuntimeError(f"no worktree found for branch {branch}")
+    dirty = _checked(
+        runner(_at(worktree.path, ["status", "--porcelain"]), check=False),
+        f"read worktree status for {branch}",
+    )
+    if dirty:
+        raise RuntimeError(f"worktree is dirty: {worktree.path}")
+
+    _checked(
+        runner(_at(root, ["fetch", "--prune", remote]), check=False),
+        f"fetch {remote}",
+    )
+    if not _ref_exists(f"refs/remotes/{remote}/{base}", root=root, runner=runner):
+        raise RuntimeError(f"base branch is unavailable after fetch: {remote}/{base}")
+    _checked(
+        runner(_at(root, ["merge", "--ff-only", f"{remote}/{base}"]), check=False),
+        f"fast-forward {base}",
+    )
+
+    _checked(
+        runner(
+            _at(root, ["worktree", "remove", str(worktree.path)]),
+            check=False,
+        ),
+        f"remove worktree for {branch}",
+    )
+    if _ref_exists(f"refs/heads/{branch}", root=root, runner=runner):
+        _checked(
+            runner(
+                _at(root, ["update-ref", "-d", f"refs/heads/{branch}"]),
+                check=False,
+            ),
+            f"delete local branch {branch}",
+        )
+    if _remote_branch_exists(branch, remote=remote, root=root, runner=runner):
+        _checked(
+            runner(_at(root, ["push", remote, "--delete", branch]), check=False),
+            f"delete remote branch {remote}/{branch}",
+        )
+    print(f"finished {branch} via PR #{pr.number} ({pr.state.lower()})")
+    return pr
+
+
+def _remote_branches(
+    remote: str,
+    *,
+    root: Path | None = None,
+    runner: Runner = _run_git,
+) -> list[RemoteBranch]:
+    result = runner(
+        _at(
+            root,
+            [
+                "for-each-ref",
+                "--format=%(refname:strip=3)%09%(objectname)%09%(committerdate:unix)%09%(authorname)",
+                f"refs/remotes/{remote}",
+            ],
+        )
     )
     branches: list[RemoteBranch] = []
     for raw in result.stdout.splitlines():
@@ -52,9 +338,16 @@ def _remote_branches(remote: str, *, runner: Runner = _run_git) -> list[RemoteBr
     return branches
 
 
-def _is_merged(branch: RemoteBranch, remote: str, base: str, *, runner: Runner = _run_git) -> bool:
+def _is_merged(
+    branch: RemoteBranch,
+    remote: str,
+    base: str,
+    *,
+    root: Path | None = None,
+    runner: Runner = _run_git,
+) -> bool:
     result = runner(
-        ["merge-base", "--is-ancestor", branch.sha, f"{remote}/{base}"],
+        _at(root, ["merge-base", "--is-ancestor", branch.sha, f"{remote}/{base}"]),
         check=False,
     )
     if result.returncode not in (0, 1):
@@ -65,11 +358,7 @@ def _is_merged(branch: RemoteBranch, remote: str, base: str, *, runner: Runner =
 
 
 def _skip_branch(name: str, base: str) -> bool:
-    return (
-        name == base
-        or name == "HEAD"
-        or name.startswith("release-please--")
-    )
+    return name == base or name == "HEAD" or name.startswith("release-please--")
 
 
 def prune_remote_branches(
@@ -77,17 +366,18 @@ def prune_remote_branches(
     remote: str = "origin",
     base: str = "main",
     stale_days: int = 14,
-    dry_run: bool = False,
+    apply: bool = False,
     now: int | None = None,
+    root: Path | None = None,
     runner: Runner = _run_git,
 ) -> dict[str, list[str]]:
-    """Delete only branches fully merged into *base*; report old unmerged branches."""
+    """List merged/stale remote branches; delete merged branches only with apply."""
 
     if stale_days < 0:
         raise ValueError("stale_days must be non-negative")
 
-    runner(["fetch", "--prune", remote])
-    runner(["rev-parse", "--verify", f"{remote}/{base}"])
+    runner(_at(root, ["fetch", "--prune", remote]))
+    runner(_at(root, ["rev-parse", "--verify", f"{remote}/{base}"]))
 
     current = int(time.time()) if now is None else int(now)
     stale_cutoff = current - stale_days * 24 * 60 * 60
@@ -95,13 +385,13 @@ def prune_remote_branches(
     deleted: list[str] = []
     stale_unmerged: list[str] = []
 
-    for branch in _remote_branches(remote, runner=runner):
+    for branch in _remote_branches(remote, root=root, runner=runner):
         if _skip_branch(branch.name, base):
             continue
-        if _is_merged(branch, remote, base, runner=runner):
+        if _is_merged(branch, remote, base, root=root, runner=runner):
             merged.append(branch.name)
-            if not dry_run:
-                runner(["push", remote, "--delete", branch.name])
+            if apply:
+                runner(_at(root, ["push", remote, "--delete", branch.name]))
                 deleted.append(branch.name)
             continue
         if branch.committed_at <= stale_cutoff:
@@ -112,14 +402,9 @@ def prune_remote_branches(
             )
 
     for name in merged:
-        action = "would-delete" if dry_run else "deleted"
+        action = "deleted" if apply else "would-delete"
         print(f"merged {name} {action}")
 
-    print(
-        "slice-prune: "
-        f"merged={len(merged)} deleted={len(deleted)} "
-        f"stale-unmerged={len(stale_unmerged)}"
-    )
     return {
         "merged": merged,
         "deleted": deleted,
@@ -127,15 +412,230 @@ def prune_remote_branches(
     }
 
 
+def _branch_merged(
+    branch: str,
+    *,
+    remote: str,
+    base: str,
+    root: Path,
+    runner: Runner = _run_git,
+) -> bool:
+    result = runner(
+        _at(root, ["merge-base", "--is-ancestor", branch, f"{remote}/{base}"]),
+        check=False,
+    )
+    if result.returncode not in (0, 1):
+        raise RuntimeError(
+            f"git merge-base failed for {branch}: {result.stderr.strip()}"
+        )
+    return result.returncode == 0
+
+
+def prune_orphaned_worktrees(
+    *,
+    remote: str = "origin",
+    base: str = "main",
+    apply: bool = False,
+    primary_root: Path | None = None,
+    runner: Runner = _run_git,
+    gh_runner: Runner = _run_gh,
+) -> dict[str, list[str]]:
+    root = (primary_root or paths.primary_root()).resolve()
+    eligible: list[str] = []
+    removed: list[str] = []
+    dirty: list[str] = []
+
+    for worktree in _worktrees(root=root, runner=runner):
+        if worktree.path == root or worktree.branch in (None, base):
+            continue
+        branch = worktree.branch
+        local_exists = _ref_exists(f"refs/heads/{branch}", root=root, runner=runner)
+        if local_exists:
+            # Squash-merged branches are not ancestors of origin/main. The
+            # PR verdict is authoritative for clean-up, not Git ancestry.
+            # A never-pushed branch with no closed/merged PR is still active
+            # even when its HEAD equals main; never discard it.
+            try:
+                pr = _pr_for_branch(branch, gh_runner=gh_runner)
+            except RuntimeError:
+                continue
+            if pr.state not in {"CLOSED", "MERGED"}:
+                continue
+
+        eligible.append(branch)
+        status = _checked(
+            runner(_at(worktree.path, ["status", "--porcelain"]), check=False),
+            f"read worktree status for {branch}",
+        )
+        if status:
+            dirty.append(branch)
+            print(f"orphan-worktree {branch} dirty-skip {worktree.path}")
+            continue
+        action = "would-remove"
+        if apply:
+            _checked(
+                runner(
+                    _at(root, ["worktree", "remove", str(worktree.path)]),
+                    check=False,
+                ),
+                f"remove orphaned worktree {branch}",
+            )
+            if _ref_exists(f"refs/heads/{branch}", root=root, runner=runner):
+                _checked(
+                    runner(
+                        _at(root, ["update-ref", "-d", f"refs/heads/{branch}"]),
+                        check=False,
+                    ),
+                    f"delete orphaned local branch {branch}",
+                )
+            removed.append(branch)
+            action = "removed"
+        print(f"orphan-worktree {branch} {action} {worktree.path}")
+
+    return {"eligible": eligible, "removed": removed, "dirty": dirty}
+
+
+def slice_status(
+    *,
+    remote: str = "origin",
+    base: str = "main",
+    primary_root: Path | None = None,
+    runner: Runner = _run_git,
+    gh_runner: Runner = _run_gh,
+) -> list[dict[str, object]]:
+    root = (primary_root or paths.primary_root()).resolve()
+    gh = gh_runner(
+        [
+            "pr",
+            "list",
+            "--state",
+            "all",
+            "--limit",
+            "100",
+            "--json",
+            "number,state,mergedAt,headRefName",
+        ],
+        check=False,
+    )
+    raw = _checked(gh, "gh pr list")
+    try:
+        pr_rows = json.loads(raw or "[]")
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"gh returned invalid JSON: {exc}") from exc
+    prs = {
+        str(row.get("headRefName")): row
+        for row in pr_rows
+        if isinstance(row, dict) and row.get("headRefName")
+    }
+
+    rows: list[dict[str, object]] = []
+    for worktree in _worktrees(root=root, runner=runner):
+        branch = worktree.branch
+        dirty = bool(
+            _checked(
+                runner(_at(worktree.path, ["status", "--porcelain"]), check=False),
+                f"read worktree status for {worktree.path}",
+            )
+        )
+        ahead: int | str = "-"
+        behind: int | str = "-"
+        if branch:
+            result = runner(
+                _at(
+                    root,
+                    [
+                        "rev-list",
+                        "--left-right",
+                        "--count",
+                        f"{remote}/{base}...{branch}",
+                    ],
+                ),
+                check=False,
+            )
+            if result.returncode == 0:
+                fields = result.stdout.strip().split()
+                if len(fields) == 2:
+                    behind, ahead = int(fields[0]), int(fields[1])
+        pr = prs.get(branch or "")
+        state = "-"
+        number: int | str = "-"
+        if pr:
+            number = int(pr["number"])
+            state = "MERGED" if pr.get("mergedAt") else str(pr.get("state", "-")).upper()
+        rows.append(
+            {
+                "worktree": str(worktree.path),
+                "branch": branch or "(detached)",
+                "pr": number,
+                "state": state,
+                "ahead": ahead,
+                "behind": behind,
+                "dirty": dirty,
+            }
+        )
+
+    print("WORKTREE\tBRANCH\tPR\tSTATE\tAHEAD\tBEHIND\tDIRTY")
+    for row in rows:
+        print(
+            f"{row['worktree']}\t{row['branch']}\t{row['pr']}\t{row['state']}\t"
+            f"{row['ahead']}\t{row['behind']}\t{'yes' if row['dirty'] else 'no'}"
+        )
+    return rows
+
+
+def cmd_slice_start(args) -> int:
+    try:
+        start_slice(args.branch, remote=args.remote, base=args.base)
+    except (OSError, subprocess.CalledProcessError, RuntimeError, ValueError) as exc:
+        print(f"slice start: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
+def cmd_slice_finish(args) -> int:
+    try:
+        finish_slice(args.branch, remote=args.remote, base=args.base)
+    except (OSError, subprocess.CalledProcessError, RuntimeError, ValueError) as exc:
+        print(f"slice finish: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
+def cmd_slice_status(args) -> int:
+    try:
+        slice_status(remote=args.remote, base=args.base)
+    except (OSError, subprocess.CalledProcessError, RuntimeError, ValueError) as exc:
+        print(f"slice status: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
 def cmd_slice_prune(args) -> int:
     try:
-        prune_remote_branches(
+        root = paths.primary_root()
+        remote_result = prune_remote_branches(
             remote=args.remote,
             base=args.base,
             stale_days=args.stale_days,
-            dry_run=args.dry_run,
+            apply=args.apply,
+            root=root,
+        )
+        worktree_result = prune_orphaned_worktrees(
+            remote=args.remote,
+            base=args.base,
+            apply=args.apply,
+            primary_root=root,
         )
     except (OSError, subprocess.CalledProcessError, RuntimeError, ValueError) as exc:
         print(f"slice prune: {exc}", file=sys.stderr)
         return 1
+    print(
+        "slice-prune: "
+        f"merged={len(remote_result['merged'])} "
+        f"deleted={len(remote_result['deleted'])} "
+        f"stale-unmerged={len(remote_result['stale_unmerged'])} "
+        f"orphaned={len(worktree_result['eligible'])} "
+        f"removed={len(worktree_result['removed'])} "
+        f"dirty={len(worktree_result['dirty'])}"
+    )
     return 0

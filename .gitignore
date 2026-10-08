@@ -129,3 +129,6 @@ prodtest_loop.sh
 
 # Lab run output is transient; compact evidence belongs under docs/evidence/.
 /tools/lab/native-vs-patched/runs/
+
+# PA47 linked slice worktrees live under the primary checkout.
+/worktrees/

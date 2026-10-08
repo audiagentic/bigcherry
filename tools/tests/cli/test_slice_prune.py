@@ -36,9 +36,9 @@ class FakeGit:
             )
         return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
 
-
+ 
 class SlicePruneTests(unittest.TestCase):
-    def test_deletes_only_fully_merged_and_lists_old_unmerged(self):
+    def test_default_lists_merged_without_deleting(self):
         git = FakeGit()
         result = slice_cli.prune_remote_branches(
             now=2_000_000,
@@ -47,8 +47,19 @@ class SlicePruneTests(unittest.TestCase):
         )
 
         self.assertEqual(result["merged"], ["merged-one"])
-        self.assertEqual(result["deleted"], ["merged-one"])
+        self.assertEqual(result["deleted"], [])
         self.assertEqual(result["stale_unmerged"], ["old-open"])
+        self.assertFalse(any(call[:1] == ("push",) for call, _ in git.calls))
+
+    def test_apply_deletes_only_fully_merged(self):
+        git = FakeGit()
+        result = slice_cli.prune_remote_branches(
+            now=2_000_000,
+            stale_days=14,
+            apply=True,
+            runner=git,
+        )
+        self.assertEqual(result["deleted"], ["merged-one"])
         deletes = [
             call for call, _ in git.calls
             if call[:3] == ("push", "origin", "--delete")
@@ -59,21 +70,9 @@ class SlicePruneTests(unittest.TestCase):
             [call for call, _ in git.calls],
         )
 
-    def test_dry_run_never_deletes(self):
-        git = FakeGit()
-        result = slice_cli.prune_remote_branches(
-            now=2_000_000,
-            stale_days=14,
-            dry_run=True,
-            runner=git,
-        )
-        self.assertEqual(result["merged"], ["merged-one"])
-        self.assertEqual(result["deleted"], [])
-        self.assertFalse(any(call[:1] == ("push",) for call, _ in git.calls))
-
     def test_release_and_base_branches_are_never_considered_for_delete(self):
         git = FakeGit()
-        slice_cli.prune_remote_branches(now=2_000_000, runner=git)
+        slice_cli.prune_remote_branches(now=2_000_000, apply=True, runner=git)
         checked_shas = [
             call[2]
             for call, _ in git.calls
