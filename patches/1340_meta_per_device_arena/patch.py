@@ -162,6 +162,7 @@ _N_BACKEND_CONFIG = r"""        std::vector<cgraph_config>           cgraphs;
         struct arena_plan_t {
             int              n_nodes = -1;
             int              n_leafs = -1;
+            uint64_t         out_sig = 0; // which nodes are OUTPUT: a changed output set needs its own lifetimes
             ggml_gallocr_ptr galloc;
         };
         ggml_gallocr_ptr                    arena_galloc; // BigCherry 1340 (MSM02): sole physical owner
@@ -216,6 +217,11 @@ static void ggml_backend_meta_arena_map_graph(ggml_backend_t meta_backend, struc
         for (size_t j = 0; j < n_backends; j++) {
             ggml_tensor * ret = is_meta ? (*simple_tensors)[j] : t;
             GGML_ASSERT(ret != nullptr);
+            if (is_meta && !is_leaf) {
+                // The logical tensor carries the caller's OUTPUT request (logits, NextN rows, the layer inputs a
+                // DFlash / DSpark draft reads after compute). The per-device plan must keep the same tensors alive.
+                ret->flags |= (t->flags & GGML_TENSOR_FLAG_OUTPUT);
+            }
             if (is_meta && ret->data == nullptr && ret->view_src == nullptr && ggml_nelements(ret) == 0) {
                 // Zero-sized simple tensors stay external to the simple gallocr. This avoids backend alloc-size
                 // hooks (notably FlashAttention) seeing invalid zero-share shapes during reserve.
@@ -238,11 +244,26 @@ static void ggml_backend_meta_arena_map_graph(ggml_backend_t meta_backend, struc
     }
 }
 
+// FNV-1a over the indices of OUTPUT nodes. Two graphs of the same shape with different output sets (a draft turning
+// on layer-input extraction after the context was reserved) must not share lifetimes: the plan made without those
+// outputs lets later nodes reuse their memory, and the extraction then reads another tensor's data.
+static uint64_t ggml_backend_meta_arena_out_sig(const struct ggml_cgraph & cgraph) {
+    uint64_t h = 1469598103934665603ull;
+    for (int i = 0; i < cgraph.n_nodes; i++) {
+        if (cgraph.nodes[i] != nullptr && (cgraph.nodes[i]->flags & GGML_TENSOR_FLAG_OUTPUT)) {
+            h = (h ^ (uint64_t) i) * 1099511628211ull;
+        }
+    }
+    return h;
+}
+
 static size_t ggml_backend_meta_arena_find_plan(
         const ggml_backend_meta_context::backend_config & bc, const struct ggml_cgraph & cgraph) {
+    const uint64_t out_sig = ggml_backend_meta_arena_out_sig(cgraph);
     size_t i_plan = 0;
     while (i_plan < bc.arena_plans.size() &&
-            (bc.arena_plans[i_plan].n_nodes != cgraph.n_nodes || bc.arena_plans[i_plan].n_leafs != cgraph.n_leafs)) {
+            (bc.arena_plans[i_plan].n_nodes != cgraph.n_nodes || bc.arena_plans[i_plan].n_leafs != cgraph.n_leafs ||
+             bc.arena_plans[i_plan].out_sig != out_sig)) {
         i_plan++;
     }
     return i_plan;
@@ -272,6 +293,7 @@ bool ggml_backend_meta_reserve_graph(ggml_backend_t meta_backend, struct ggml_cg
             i_plan = bcj.arena_plans.size() - 1;
             bcj.arena_plans[i_plan].n_nodes = simple_graph.n_nodes;
             bcj.arena_plans[i_plan].n_leafs = simple_graph.n_leafs;
+            bcj.arena_plans[i_plan].out_sig = ggml_backend_meta_arena_out_sig(simple_graph);
             bcj.arena_plans[i_plan].galloc.reset(ggml_gallocr_new(ggml_backend_get_default_buffer_type(bcj.backend)));
         }
 
@@ -351,6 +373,7 @@ bool ggml_backend_meta_alloc_graph(ggml_backend_t meta_backend, struct ggml_cgra
                 i_plan = bcj.arena_plans.size() - 1;
                 bcj.arena_plans[i_plan].n_nodes = simple_graph.n_nodes;
                 bcj.arena_plans[i_plan].n_leafs = simple_graph.n_leafs;
+                bcj.arena_plans[i_plan].out_sig = ggml_backend_meta_arena_out_sig(simple_graph);
                 bcj.arena_plans[i_plan].galloc.reset(
                         ggml_gallocr_new(ggml_backend_get_default_buffer_type(bcj.backend)));
             }
