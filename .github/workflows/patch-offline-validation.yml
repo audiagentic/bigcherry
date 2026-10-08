@@ -6,8 +6,11 @@ on:
     paths:
       - 'patches/**'
       - 'tools/tests/patch/**'
+      - 'tools/tests/core/test_primary_root.py'
+      - 'tools/tests/core/test_context.py'
       - 'tools/tests/cli/test_slice_prune.py'
-      - 'tools/tests/cli/test_slice_prune.py'
+      - 'tools/tests/core/test_primary_root.py'
+      - 'tools/tests/core/test_context.py'
       - 'tools/bigcherry/patch/**'
       - 'tools/bigcherry/pin_transition.py'
       - 'tools/bigcherry/campaign/resolution.py'
@@ -72,6 +75,11 @@ jobs:
 
       - name: Compile validation harness
         run: python -m py_compile tools/bigcherry/patch/offline_check.py
+
+      - name: Run primary-root worktree tests
+        env:
+          PYTHONPATH: tools
+        run: python -m unittest tools.tests.core.test_primary_root tools.tests.core.test_context -v
 
       - name: Run patch lint
         shell: bash
