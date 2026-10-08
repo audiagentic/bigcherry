@@ -121,16 +121,18 @@ def cmd_slice_lab(args) -> int:
             print(shlex.join(command.ssh))
             print(command.script, end="")
             return 0
+        # Bytes, not text: a text-mode pipe on Windows rewrites LF as CRLF and the remote bash then rejects
+        # the first line (`set -Eeuo pipefail` followed by a carriage return).
         process = subprocess.Popen(
             command.ssh, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT, text=True, bufsize=1,
+            stderr=subprocess.STDOUT,
         )
         assert process.stdin is not None
-        process.stdin.write(command.script)
+        process.stdin.write(command.script.encode("utf-8"))
         process.stdin.close()
         assert process.stdout is not None
-        for line in process.stdout:
-            print(line, end="", flush=True)
+        for raw in process.stdout:
+            print(raw.decode("utf-8", "replace"), end="", flush=True)
         return process.wait()
     except (OSError, ValueError, environment.EnvironmentError_) as exc:
         print(f"slice lab: {exc}", file=sys.stderr)
