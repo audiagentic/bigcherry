@@ -225,6 +225,8 @@ Authoring rules:
 - Set an explicit `guard` for the output and an explicit
   `expect_matches=1` unless multiple matches are intentional and handled by
   `replace_all`/`occurrence`.
+- Anchor on the narrowest stable construct available: prefer a function signature, case label, declaration, or unique one-line statement over a copied function body.
+- Keep `max_span_lines <= 6` unless a genuinely atomic upstream construct cannot be named more narrowly. For a deliberate limit above 6, make `rationale` begin with `long-anchor:` and state why a signature/case/unique statement is insufficient. `patch-lint` reports an advisory warning otherwise.
 - Explain why the anchor is stable in `rationale`.
 - Anchors are matched against comment/string-noise-stripped source where the
   file dialect requires it; do not anchor on comments or string literals.

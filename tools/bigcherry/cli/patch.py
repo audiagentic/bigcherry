@@ -362,6 +362,7 @@ def cmd_patch_lint(args: Namespace) -> int:
                     "passed": not problems,
                     "problems": problems,
                     "grandfathered": list(lint_report.grandfathered),
+                    "warnings": list(lint_report.warnings),
                 },
                 indent=2,
                 sort_keys=True,
@@ -370,6 +371,8 @@ def cmd_patch_lint(args: Namespace) -> int:
     else:
         for problem in problems:
             print(problem, file=sys.stderr)
+        for warning in lint_report.warnings:
+            print(f"warning: {warning}", file=sys.stderr)
         for patch_id in lint_report.grandfathered:
             print(
                 f"{patch_id}: structurally grandfathered (non-current, not failing)",
