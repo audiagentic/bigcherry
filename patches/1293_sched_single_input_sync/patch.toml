@@ -1,7 +1,7 @@
 schema = 1
 id = "1293_sched_single_input_sync"
 order = 1293
-state = "evaluated"
+state = "superseded"
 kind = "enhancement"
 origin = "local"
 backend = "hip"

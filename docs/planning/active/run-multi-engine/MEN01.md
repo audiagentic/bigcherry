@@ -62,3 +62,8 @@ Read-only on the container: start, measure, stop. No configuration change. Produ
 
 - 2026-10-08T20:36:00.311928+00:00 (created-by): Created by agent
 - 2026-10-08T20:47:42.172651+00:00 (updated-by): Updated: section:title, section:description, section:steps, section:validation, section:acceptance_criteria
+
+## Ledger-events
+
+- chg_20261008_212949_added-a-like-for-like-single-c_9270
+- 2026-10-08T21:30:02.720551+00:00 (updated-by): Updated: section:ledger-events
