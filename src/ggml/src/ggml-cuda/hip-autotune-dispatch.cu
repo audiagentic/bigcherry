@@ -533,7 +533,7 @@ ggml_hip_native_selection ggml_hip_native_select(
         if (!selected) {
             family = GGML_HIP_FAMILY_BLAS;
         }
-    } else if (ggml_cuda_should_use_mmvf(src0->type, cc, src0->ne, src0->nb, ne11)) {
+    } else if (ggml_cuda_should_use_mmvf(src0->type, cc, warp_size, src0->ne, src0->nb, ne11)) {
         family = GGML_HIP_FAMILY_MMVF;
     } else if (ggml_cuda_should_use_mmf(src0->type, cc, warp_size, src0->ne,
                                         src0->nb, ne11, /*mul_mat_id =*/ false)) {

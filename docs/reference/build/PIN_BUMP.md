@@ -268,3 +268,14 @@ verdict engine):
   have nothing to guard and pass vacuously.
 - **`--complete`** — the bump-completion gate (step 7). Fails until every
   required tree is reachable, converged, and consistent.
+
+## Compile-only admission after composition (PA44-A)
+
+Every patch or packaging change that can affect composed source must pass the `Patch compile validation` pull-request check. The job composes `[source.bigcherry]` at the active pin, then:
+
+1. derives CUDA helper declarations and call sites from the composed source and runs Clang `-fsyntax-only` contract probes without a GPU SDK;
+2. rejects host use of device-only `ggml_cuda_get_physical_warp_size` and signature drift in `ggml_cuda_should_use_mmvf`, reporting composed file/line and nearest BigCherry patch owner;
+3. configures and compiles the CPU-only `llama-server` target so patched/common server translation units receive a real C++ compile.
+
+This check is not hardware qualification and does not replace the HIP/ROCm compile/build gates; it exists to catch source/type failures before hardware time is consumed.
+

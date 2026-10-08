@@ -230,44 +230,92 @@ jobs:
                           ids.append(patch_id)
               return set(ids)
 
-          production_ids = source_patch_ids("bigcherry")
-          failures = []
-          checks = []
+          source_ids = {name: source_patch_ids(name) for name in known_sources}
+          production_ids = source_ids["bigcherry"]
+          # Unreferenced experiments must be checked on a dependency-complete
+          # source; choosing tuning unconditionally masks a missing prerequisite
+          # as an unrelated experiment failure. Never auto-add patch dependencies.
+          def missing_requirements(name, source):
+              selected = set(experiments[name].get("patches", []))
+              available = source_ids[source] | selected
+              missing = set()
+              for patch_id in selected:
+                  path = root / "patches" / patch_id / "patch.toml"
+                  metadata = tomllib.loads(path.read_text(encoding="utf-8"))
+                  missing.update(set(metadata.get("requires", [])) - available)
+              return missing
+
+          fallback_sources = (
+              "bigcherry-tuning",
+              "bigcherry",
+              "bigcherry-qualification",
+              "bigcherry-qualification-tuning",
+              "bigcherry-serving-base",
+          )
+          checks_to_run = []
           for name in sorted(experiments):
               sources = sorted(usage[name])
               if name == "native-plus-1333":
                   sources = ["llama-native"]
               if not sources:
                   patches = set(experiments[name].get("patches", []))
-                  sources = [
-                      "bigcherry"
-                      if patches <= production_ids
-                      else "bigcherry-tuning"
-                  ]
+                  preferred = "bigcherry" if patches <= production_ids else "bigcherry-tuning"
+                  if not missing_requirements(name, preferred):
+                      chosen = preferred
+                  else:
+                      compatible = [
+                          source for source in fallback_sources
+                          if not missing_requirements(name, source)
+                          and not (patches & source_ids[source])
+                      ]
+                      # Fail closed on the preferred source if none satisfies
+                      # the exact declared dependency set.
+                      chosen = compatible[0] if compatible else preferred
+                  sources = [chosen]
                   print(
-                      f"NOTE unreferenced experiment {name}: audit fallback={sources[0]}",
+                      f"NOTE unreferenced experiment {name}: audit fallback={chosen}",
                       flush=True,
                   )
+              checks_to_run.extend((name, source) for source in sources)
 
-              for source in sources:
-                  label = f"{name} ({source})"
-                  print(f"== experiment {label} ==", flush=True)
-                  result = subprocess.run(
-                      [
-                          sys.executable,
-                          "-m",
-                          "bigcherry",
-                          "patch-rebase-check",
-                          "--source",
-                          source,
-                          "--experiment",
-                          name,
-                      ],
-                      check=False,
-                  )
-                  checks.append((name, source, result.returncode))
-                  if result.returncode:
-                      failures.append((name, source, result.returncode))
+          from concurrent.futures import ThreadPoolExecutor, as_completed
+
+          def run_check(name, source):
+              result = subprocess.run(
+                  [
+                      sys.executable,
+                      "-m",
+                      "bigcherry",
+                      "patch-rebase-check",
+                      "--source",
+                      source,
+                      "--experiment",
+                      name,
+                  ],
+                  check=False,
+                  text=True,
+                  stdout=subprocess.PIPE,
+                  stderr=subprocess.STDOUT,
+              )
+              return name, source, result.returncode, result.stdout
+
+          checks = []
+          failures = []
+          workers = min(8, max(1, len(checks_to_run)))
+          print(f"Experiment audit workers: {workers}", flush=True)
+          with ThreadPoolExecutor(max_workers=workers) as pool:
+              pending = {
+                  pool.submit(run_check, name, source): (name, source)
+                  for name, source in checks_to_run
+              }
+              for future in as_completed(pending):
+                  name, source, rc, output = future.result()
+                  print(f"== experiment {name} ({source}) ==", flush=True)
+                  if output:
+                      print(output, end="" if output.endswith("\n") else "\n", flush=True)
+                  checks.append((name, source, rc))
+                  if rc:
+                      failures.append((name, source, rc))
 
           print(
               f"Experiment selections checked: {len(checks)}; failed: {len(failures)}",
