@@ -1138,7 +1138,7 @@ _NEW_LLAMA_MOE_CACHE_CPP = (
     '        log("ubatch <= 8", stats_small);\n'
     '        log("ubatch  > 8", stats_large);\n'
     '        if (getenv("BIGCHERRY_PATCH_TRACE") != nullptr) {\n'
-    '            LLAMA_LOG_INFO("BIGCHERRY_PATCH_HIT patch=1337_moe_expert_caching small_hits=%zu small_misses=%zu small_uploaded_mib=%.3f large_hits=%zu large_misses=%zu large_uploaded_mib=%.3f\\n",\n'
+    '            LLAMA_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1337_moe_expert_caching small_hits=%zu small_misses=%zu small_uploaded_mib=%.3f large_hits=%zu large_misses=%zu large_uploaded_mib=%.3f\\n",\n'
     '                stats_small.hits, stats_small.misses, stats_small.bytes/1024.0/1024.0,\n'
     '                stats_large.hits, stats_large.misses, stats_large.bytes/1024.0/1024.0);\n'
     '        }\n'
