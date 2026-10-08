@@ -492,6 +492,11 @@ patches = ["1319_process_ubatch_timing", "1325_sched_split_timing"]
 # Post-bump: v5 + 1327 (host-computed QSA dead-slot remap terms; BIGCHERRY_QSA_HOST_REMAP=1).
 patches = []
 
+[experiment.deploy-v5-plus-1327-aux6900]
+# MET05: v5 + 1327 + 1328 auxiliary ROCm expert backend; off unless BIGCHERRY_EXPERT_AUX_DEVICE is set.
+patches = ["1328_aux_rocm_expert_backend"]
+
+
 [experiment.retest-1295]
 # QFP21: promoted base (v6 stack) + 1295 QSA gathered-cell decode attention (on unless BIGCHERRY_QSA_GATHER=0).
 patches = []
@@ -556,11 +561,6 @@ patches = []
 [experiment.ar-cpu-root-kpool-sync]
 # QFN01/RNX01: + one scheduler input sync per split (1293); A/B against ar-cpu-root-kpool.
 patches = ["1293_sched_single_input_sync"]
-
-[experiment.adaptive-mtp]
-# 1255 controller + 1268 runtime wiring (+1210 which 1268 requires); adaptive depth is
-# off unless --spec-draft-n-min-adaptive > 0, so one binary serves both A/B arms.
-patches = ["1210_rd26_bitidentical_decode_verify_standalone", "1255_nro06_adaptive_mtp_depth", "1268_prbe52_adaptive_mtp_wiring"]
 
 [experiment.allreduce-root3]
 # 1244 alone: n==3 internal AllReduce (XTX x2 + R9700). Multi-arch build gfx1100,gfx1201.
