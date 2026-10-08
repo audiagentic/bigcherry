@@ -5,7 +5,7 @@
 #   VIS=0,1,2,3 SCRIPT radiance-build tools/lab/radiance/build.sh @<any build run> <out-dir>
 # The first argument (a llama-server path from the queue) is ignored.
 # Usage: build.sh <ignored> <out-dir>
-# env: RADIANCE_SRC (/mnt/data/bigcherry-work/engines/radiance), RADIANCE_REF (checkout this commit if set),
+# env: CC / CXX are chosen here (g++-14 if installed, else ROCm clang); RADIANCE_SRC (/mnt/data/bigcherry-work/engines/radiance), RADIANCE_REF (checkout this commit if set),
 #      ROCM_PATH (/opt/rocm-7.2.4), RAD_GPU_TARGETS (gfx1201), TESTS (1 = run the card-free ctest set)
 set -u
 out=$2
@@ -17,6 +17,15 @@ cd "$src" || { echo "NO_SOURCE $src"; exit 1; }
 [ -n "${RADIANCE_REF:-}" ] && { git fetch -q origin && git checkout -q "$RADIANCE_REF" || { echo "CHECKOUT_FAILED $RADIANCE_REF"; exit 1; }; }
 echo "radiance $(git rev-parse HEAD) $(git log -1 --format=%cd --date=short) ($(git log -1 --format=%s))"
 echo "toolchain: $(hipcc --version 2> /dev/null | head -1); cmake $(cmake --version | head -1 | awk '{print $3}'); ROCM_PATH=$ROCM_PATH"
+# Upstream builds with g++-14 (its Dockerfile). g++ 13 rejects the compound-literal arrays in abi/rad_builder.h
+# ("taking address of temporary array"), so without g++-14 the host compiler is ROCm's clang.
+if command -v g++-14 > /dev/null 2>&1; then
+    export CC=gcc-14 CXX=g++-14
+else
+    export CC="$ROCM_PATH/lib/llvm/bin/clang" CXX="$ROCM_PATH/lib/llvm/bin/clang++"
+fi
+echo "host compiler: $($CXX --version | head -1)"
+[ -f build/CMakeCache.txt ] && ! grep -q "CMAKE_CXX_COMPILER:[A-Z]*=$CXX\$" build/CMakeCache.txt && rm -rf build
 t0=$(date +%s)
 cmake -S . -B build -G Ninja -DRAD_GPU_TARGETS="${RAD_GPU_TARGETS:-gfx1201}" > "$out/configure.log" 2>&1 || { echo "CONFIGURE_FAILED"; tail -15 "$out/configure.log"; exit 1; }
 grep -iE "gpu target|kernel librar|hip|plugin" "$out/configure.log" | head -12
