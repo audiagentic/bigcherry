@@ -246,6 +246,7 @@ External references:
 
 ## Ledger-events
 
+
 - chg_20261006_025038_groundwork-for-running-moe-mod_5459
 - 2026-10-06T02:50:41.953811+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-06T04:52:30.132399+00:00 (updated-by): Updated: section:notes
@@ -255,6 +256,7 @@ External references:
 - 2026-10-06T08:06:43.064996+00:00 (updated-by): Updated: section:notes
 - 2026-10-06T09:39:50.154308+00:00 (updated-by): Updated: section:notes
 
+- chg_20261008_015344_diagnostic-traces-available-in_3686
 ## Reviews
 
 - RV4222
@@ -263,3 +265,4 @@ External references:
 ## Closure
 
 Closed 2026-10-08 after b11474 hardware qualification rejected patches 1337 and 1338. The 4096 MiB cache reduced decode from ~24.0 to ~11.0 t/s, the profile arm to ~8.6 t/s, prefill gained at most ~7%, and greedy output changed. C0/C0b controls agreed. The cache/profile experiments are removed; future expert-residency work must start from a different mechanism rather than promote this cache bank.
+- 2026-10-08T01:53:57.635322+00:00 (updated-by): Updated: section:ledger-events
