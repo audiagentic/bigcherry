@@ -14,7 +14,7 @@ from bigcherry.patcher import apply_all  # noqa: E402
 from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
-_VENDOR = _REPO / "tools/lab/allreduce-wire/vendor-b11233"
+_VENDOR = _REPO / "vendor/llama.cpp/ggml/src/ggml-cuda"
 
 
 def _load(name: str, path: Path):
