@@ -11,7 +11,7 @@
 # XTX with the routed experts of the last HOP_LAYERS layers on the R9700 (L28, L14). MTP=1 adds the MTP sidecar on
 # the 6900 XT to every arm of any mode.
 # ARMS=profile runs the 1338 lanes (frequency profile pinned in the cache; CACHE_MIB one size, PROFILE optional).
-# ARMS=cache runs the 1337 expert-cache lanes instead: no cache, --moe-cache-mib for each of CACHE_MIB, no cache.
+# ARMS=cache runs the 1337 expert-cache lanes; ARMS=matrix runs one request/process for cache-size repeats so the\n# 1337 shutdown trace is request-scoped. Matrix arms disable fusion for the correctness comparison.
 # Usage: moe-copy-ab.sh <llama-server> <out-dir>      env: GPU (HIP index, default 2), NCMOE (41), CTX (16384),
 #                                                         LONG_TOKENS (4096), N_PREDICT (128)
 # Only HIP_VISIBLE_DEVICES selects the card: also setting ROCR_VISIBLE_DEVICES filters twice and leaves no device.
@@ -42,7 +42,7 @@ run() {  # <arm> [VAR=value...] [-- server args...]
   local envs=() extra=()
   while [ $# -gt 0 ] && [ "$1" != -- ]; do envs+=("$1"); shift; done
   [ $# -gt 0 ] && { shift; extra=("$@"); }
-  local port=$((47000 + RANDOM % 2000)) log="$out/$arm.server.log"
+  local port=$((47000 + RANDOM % 2000)) log="$out/$arm.server.log" request_set=${REQUEST_SET:-all}
   env -u ROCR_VISIBLE_DEVICES HIP_VISIBLE_DEVICES=$gpu BIGCHERRY_PATCH_TRACE=1 "${envs[@]}" "$bin" "${args[@]}" "${mtp[@]}" "${extra[@]}" --port "$port" > "$log" 2>&1 &
   local pid=$! ok=0
   for _ in $(seq 900); do
@@ -54,16 +54,21 @@ run() {  # <arm> [VAR=value...] [-- server args...]
   # a run that silently fell back to the CPU is not a measurement of the copy path
   if grep -q "no usable GPU found" "$log"; then echo "$arm: SERVER_FAILED (no GPU: $(grep -m1 "failed to initialize" "$log" | cut -c1-120))"; kill "$pid"; wait "$pid" 2>/dev/null; return; fi
   echo "$arm: vram $(rocm-smi --showmeminfo vram 2>/dev/null | grep "GPU\[[${gpu//,/}]\].*Total Used" | awk '{printf "%s%d", (NR>1?" / ":""), int($NF/1048576)} END {print " MiB (cards '"$gpu"')"}')"
-  python3 - "$port" "$out" "$arm" "${LONG_TOKENS:-4096}" "${N_PREDICT:-128}" <<'PY'
+  python3 - "$port" "$out" "$arm" "${LONG_TOKENS:-4096}" "${N_PREDICT:-128}" "$request_set" <<'PY'
 import hashlib, json, sys, urllib.request
-port, out, arm, long_tokens, n_predict = sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4]), int(sys.argv[5])
+port, out, arm, long_tokens, n_predict, request_set = sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4]), int(sys.argv[5]), sys.argv[6]
 corpus = open("/mnt/data/bigcherry-work/corpus/kld-docs.txt", errors="replace").read()
 def post(body):
     req = urllib.request.Request(f"http://127.0.0.1:{port}/completion", json.dumps(body).encode(), {"Content-Type": "application/json"})
     return json.loads(urllib.request.urlopen(req, timeout=3600).read())
 short = "Write a Python function that merges two sorted lists into one sorted list, then explain its complexity.\n"
 long = corpus[: 4 * long_tokens] + "\n\nIn summary, the text above"
-for name, prompt, n in (("short1", short, n_predict), ("short2", short, n_predict), ("long", long, 64), ("short3", short, n_predict)):
+cases = (("short1", short, n_predict), ("short2", short, n_predict), ("long", long, 64), ("short3", short, n_predict))
+if request_set == "short":
+    cases = (("short", short, n_predict),)
+elif request_set == "long":
+    cases = (("long", long, 64),)
+for name, prompt, n in cases:
     r = post({"prompt": prompt, "n_predict": n, "temperature": 0, "cache_prompt": False, "seed": 1})
     t = r["timings"]
     open(f"{out}/{arm}.{name}.txt", "w").write(r["content"])
@@ -76,7 +81,7 @@ PY
   kill -0 "$pid" 2>/dev/null && { echo "$arm: shutdown hung, SIGKILL"; kill -9 "$pid"; }
   wait "$pid" 2>/dev/null
   echo "$arm: $(grep -o "BIGCHERRY_PATCH_HIT patch=1336.*" "$log" | tail -1)"
-  grep -oE "BIGCHERRY_PATCH_HIT patch=1338.*|llama_moe_cache: (ubatch|profile|wrote|layer).*" "$log" | sort -u | head -8 | sed "s/^/$arm: /"
+  grep -oE "BIGCHERRY_PATCH_HIT patch=(1337_moe_expert_caching|1338_moe_cache_profile).*|llama_moe_cache: (ubatch|profile|wrote|layer).*" "$log" | sort -u | head -10 | sed "s/^/$arm: /"
   grep -iE "moe.?cache" "$log" | head -4 | cut -c1-200 | sed "s/^/$arm: /"
 }
 for shard in "${model%-00001-of-*}"-0000[12]-*.gguf; do cat "$shard" > /dev/null; done   # warm the page cache
@@ -115,6 +120,14 @@ elif [ "${ARMS:-copy}" = qualify ]; then # MET01 b11474: real host-expert cache 
   fi
   run P$mib BIGCHERRY_MOE_CACHE_PROFILE=$prof BIGCHERRY_MOE_CACHE_LARGE=1 -- --moe-cache-mib $mib
   run C0b -- --moe-cache-mib 0
+elif [ "${ARMS:-copy}" = matrix ]; then # MET01 recheck: one request/process => trace counters are per request
+  for rep in $(seq "${REPEATS:-3}"); do
+    for mib in ${CACHE_MIB:-0 2048 8192}; do
+      for request in short long; do
+        REQUEST_SET=$request run C${mib}-r${rep}-${request} GGML_CUDA_DISABLE_FUSION=1 -- --moe-cache-mib $mib
+      done
+    done
+  done
 elif [ "${ARMS:-copy}" = cache ]; then # 1337: expert cache sizes at the same --n-cpu-moe (C0 = no cache, twice)
   run C0
   for mib in ${CACHE_MIB:-4096 2048 8192}; do run C$mib -- --moe-cache-mib $mib; done
@@ -125,7 +138,14 @@ else
   run R BIGCHERRY_MOE_COPY_DENSE_PCT=0
   run S2
 fi
-echo "identity across arms (md5 -> files):"
-md5sum "$out"/*.short1.txt "$out"/*.short2.txt "$out"/*.short3.txt "$out"/*.long.txt | awk '{print $1}' | sort | uniq -c
-echo "per request:"; for r in short1 short2 short3 long; do echo "  $r: $(md5sum "$out"/*.$r.txt | awk '{print substr($1,1,12)}' | sort | uniq -c | tr '\n' ' ')"; done
+if [ "${ARMS:-copy}" = matrix ]; then
+  echo "identity across cache sizes/repeats (fusion disabled):"
+  for request in short long; do
+    echo "  $request: $(md5sum "$out"/*-$request.$request.txt | awk '{print substr($1,1,12)}' | sort | uniq -c | tr '\n' ' ')"
+  done
+else
+  echo "identity across arms (md5 -> files):"
+  md5sum "$out"/*.short1.txt "$out"/*.short2.txt "$out"/*.short3.txt "$out"/*.long.txt | awk '{print $1}' | sort | uniq -c
+  echo "per request:"; for r in short1 short2 short3 long; do echo "  $r: $(md5sum "$out"/*.$r.txt | awk '{print substr($1,1,12)}' | sort | uniq -c | tr '\n' ' ')"; done
+fi
 echo MOE_COPY_AB_DONE
