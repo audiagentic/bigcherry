@@ -1,24 +1,29 @@
 """Offline validation entrypoint for changed BigCherry patch packages.
 
 The caller must provide a pinned llama.cpp checkout at vendor/llama.cpp (normally
-via ``python -m bigcherry pull --source bigcherry``). This command performs no
+via \`\`python -m bigcherry pull --source bigcherry\`\`). This command performs no
 network access itself.
 """
 
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import json
 import os
 import re
 import subprocess
 import sys
+import time
+import tomllib
 from pathlib import Path
 from typing import Sequence
 
 _REPO = Path(__file__).resolve().parents[3]
 _PATCH_TEST_RE = re.compile(r"^tools/tests/patch/test_(\d{4}_[A-Za-z0-9_]+)\.py$")
 _DISPOSITION_RE = re.compile(r"^dispositions/(\d{4}_[^/]+)\.json$")
+_DEFAULT_CHECK_TIMEOUT_SECONDS = 600
+_DEFAULT_EXPERIMENT_WORKERS = 6
 
 
 def _run_git(*args: str) -> str:
@@ -92,19 +97,42 @@ def _env() -> dict[str, str]:
     return env
 
 
-def _run(name: str, command: Sequence[str], checks: list[dict[str, object]]) -> int:
+def _run(
+    name: str,
+    command: Sequence[str],
+    checks: list[dict[str, object]],
+    *,
+    timeout_seconds: int,
+) -> int:
     print(f"::group::{name}", flush=True)
     print("+ " + " ".join(command), flush=True)
-    proc = subprocess.run(command, cwd=_REPO, env=_env(), check=False)
+    started = time.monotonic()
+    try:
+        proc = subprocess.run(
+            command,
+            cwd=_REPO,
+            env=_env(),
+            check=False,
+            timeout=timeout_seconds,
+        )
+        rc = proc.returncode
+        detail = None
+    except subprocess.TimeoutExpired:
+        rc = 124
+        detail = f"timed out after {timeout_seconds}s"
+        print(f"{name}: {detail}", file=sys.stderr, flush=True)
+    elapsed = time.monotonic() - started
     print("::endgroup::", flush=True)
-    checks.append(
-        {
-            "name": name,
-            "command": list(command),
-            "returncode": proc.returncode,
-        }
-    )
-    return proc.returncode
+    record: dict[str, object] = {
+        "name": name,
+        "command": list(command),
+        "returncode": rc,
+        "elapsed_seconds": round(elapsed, 3),
+    }
+    if detail:
+        record["detail"] = detail
+    checks.append(record)
+    return rc
 
 
 def _write_json(path: Path | None, payload: dict[str, object]) -> None:
@@ -112,6 +140,271 @@ def _write_json(path: Path | None, payload: dict[str, object]) -> None:
         return
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _load_recipes() -> dict[str, object]:
+    return tomllib.loads((_REPO / "config" / "recipes.toml").read_text(encoding="utf-8"))
+
+
+def _source_patch_ids(raw: dict[str, object], source: str) -> set[str]:
+    source_table = raw.get("source", {})
+    patch_sets = raw.get("patch-set", {})
+    if not isinstance(source_table, dict) or not isinstance(patch_sets, dict):
+        return set()
+    source_cfg = source_table.get(source, {})
+    if not isinstance(source_cfg, dict):
+        return set()
+    ids: set[str] = set()
+    for patch_set in source_cfg.get("patch-sets", []):
+        cfg = patch_sets.get(patch_set, {})
+        if isinstance(cfg, dict):
+            ids.update(cfg.get("patches", []))
+    return ids
+
+
+def _experiment_usage(raw: dict[str, object]) -> dict[str, set[str]]:
+    experiments = raw.get("experiment", {})
+    sources = raw.get("source", {})
+    if not isinstance(experiments, dict) or not isinstance(sources, dict):
+        return {}
+    known_sources = set(sources)
+    usage = {name: set() for name in experiments}
+
+    campaigns = raw.get("campaign", {})
+    if isinstance(campaigns, dict):
+        for campaign in campaigns.values():
+            if not isinstance(campaign, dict):
+                continue
+            for lane in campaign.get("lanes", []):
+                if not isinstance(lane, dict):
+                    continue
+                name = lane.get("experiment")
+                source = lane.get("source")
+                if name in usage and source in known_sources:
+                    usage[name].add(source)
+
+    cmd_patterns = (
+        re.compile(r"--source\s+([A-Za-z0-9_-]+).*?--experiment\s+([A-Za-z0-9_-]+)"),
+        re.compile(r"--experiment\s+([A-Za-z0-9_-]+).*?--source\s+([A-Za-z0-9_-]+)"),
+    )
+    lane_pattern = re.compile(r'source\s*=\s*"([^"]+)".*?experiment\s*=\s*"([^"]+)"')
+    queue_pattern = re.compile(
+        r"\b([A-Za-z0-9_-]+):[A-Za-z0-9_-]+:[A-Za-z0-9_-]+\s+([A-Za-z0-9_-]+)(?:\s|$)"
+    )
+
+    for base in ("tools", "docs/reference", ".github"):
+        root = _REPO / base
+        if not root.exists():
+            continue
+        for path in sorted(root.rglob("*")):
+            if not path.is_file():
+                continue
+            try:
+                lines = path.read_text(encoding="utf-8").splitlines()
+            except (UnicodeDecodeError, OSError):
+                continue
+            for line in lines:
+                first = cmd_patterns[0].search(line)
+                if first:
+                    source, name = first.groups()
+                    if name in usage and source in known_sources:
+                        usage[name].add(source)
+                second = cmd_patterns[1].search(line)
+                if second:
+                    name, source = second.groups()
+                    if name in usage and source in known_sources:
+                        usage[name].add(source)
+                for pattern in (lane_pattern, queue_pattern):
+                    match = pattern.search(line)
+                    if match:
+                        source, name = match.groups()
+                        if name in usage and source in known_sources:
+                            usage[name].add(source)
+
+    return usage
+
+
+def _experiment_names_for_audit(
+    raw: dict[str, object],
+    changed_patch_ids: Sequence[str],
+    *,
+    full_audit: bool,
+) -> tuple[str, ...]:
+    experiments = raw.get("experiment", {})
+    if not isinstance(experiments, dict):
+        return ()
+    if full_audit:
+        return tuple(sorted(experiments))
+    changed = set(changed_patch_ids)
+    names = []
+    for name, cfg in experiments.items():
+        if not isinstance(cfg, dict):
+            continue
+        if changed.intersection(cfg.get("patches", [])):
+            names.append(name)
+    return tuple(sorted(names))
+
+
+def _experiment_sources(
+    raw: dict[str, object],
+    usage: dict[str, set[str]],
+    name: str,
+) -> tuple[str, ...]:
+    experiments = raw.get("experiment", {})
+    sources = raw.get("source", {})
+    if not isinstance(experiments, dict) or not isinstance(sources, dict):
+        return ()
+    known_sources = set(sources)
+
+    # This experiment intentionally overlays 1333 onto upstream llama.cpp;
+    # 1333 is already in BigCherry production, so a production source is wrong.
+    if name == "native-plus-1333" and "llama-native" in known_sources:
+        return ("llama-native",)
+
+    referenced = sorted(source for source in usage.get(name, set()) if source in known_sources)
+    if referenced:
+        return tuple(referenced)
+
+    cfg = experiments.get(name, {})
+    if not isinstance(cfg, dict):
+        return ()
+    patches = set(cfg.get("patches", []))
+    production_ids = _source_patch_ids(raw, "bigcherry")
+    preferred = "bigcherry" if patches <= production_ids else "bigcherry-tuning"
+
+    required: set[str] = set()
+    for patch_id in patches:
+        manifest = _REPO / "patches" / patch_id / "patch.toml"
+        if not manifest.is_file():
+            continue
+        metadata = tomllib.loads(manifest.read_text(encoding="utf-8"))
+        required.update(metadata.get("requires", []))
+    required -= patches
+
+    candidates = (
+        preferred,
+        "bigcherry-tuning",
+        "llama-native",
+        "bigcherry-qualification",
+        "bigcherry-qualification-tuning",
+        "bigcherry",
+        "bigcherry-serving-base",
+    )
+    for source in dict.fromkeys(candidates):
+        if source in known_sources and required <= _source_patch_ids(raw, source):
+            return (source,)
+    return (preferred,) if preferred in known_sources else ()
+
+
+def _run_experiment_audit(
+    raw: dict[str, object],
+    names: Sequence[str],
+    checks: list[dict[str, object]],
+    *,
+    workers: int,
+    timeout_seconds: int,
+) -> bool:
+    usage = _experiment_usage(raw)
+    jobs: list[tuple[str, str]] = []
+    setup_failed = False
+    for name in names:
+        sources = _experiment_sources(raw, usage, name)
+        if not sources:
+            setup_failed = True
+            checks.append(
+                {
+                    "name": f"experiment {name}",
+                    "returncode": 2,
+                    "detail": "no audit source could be selected",
+                }
+            )
+            continue
+        jobs.extend((name, source) for source in sources)
+
+    if not jobs:
+        print("experiment audit: no matching experiments", flush=True)
+        return setup_failed
+
+    def check_selection(selection: tuple[str, str]) -> dict[str, object]:
+        name, source = selection
+        started = time.monotonic()
+        command = [
+            sys.executable,
+            "-m",
+            "bigcherry",
+            "patch-rebase-check",
+            "--source",
+            source,
+            "--experiment",
+            name,
+        ]
+        try:
+            result = subprocess.run(
+                command,
+                cwd=_REPO,
+                env=_env(),
+                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                timeout=timeout_seconds,
+            )
+            rc = result.returncode
+            output = result.stdout
+            detail = None
+        except subprocess.TimeoutExpired as exc:
+            rc = 124
+            output = exc.stdout or ""
+            if isinstance(output, bytes):
+                output = output.decode("utf-8", errors="replace")
+            detail = f"timed out after {timeout_seconds}s"
+        except OSError as exc:
+            rc = 127
+            output = ""
+            detail = str(exc)
+        return {
+            "name": f"experiment {name} ({source})",
+            "experiment": name,
+            "source": source,
+            "command": command,
+            "returncode": rc,
+            "elapsed_seconds": round(time.monotonic() - started, 3),
+            "output": output,
+            **({"detail": detail} if detail else {}),
+        }
+
+    pool_size = min(max(1, workers), len(jobs))
+    print(f"experiment audit: {len(jobs)} selection(s), workers={pool_size}", flush=True)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=pool_size) as executor:
+        results = list(executor.map(check_selection, jobs))
+
+    failures = [result for result in results if int(result["returncode"]) != 0]
+    for result in results:
+        print(
+            f"{result['name']}: {'PASS' if result['returncode'] == 0 else 'FAIL'} "
+            f"({result['elapsed_seconds']:.1f}s)",
+            flush=True,
+        )
+        checks.append({key: value for key, value in result.items() if key != "output"})
+
+    print(
+        f"Experiment selections checked: {len(results)}; failed: {len(failures)}",
+        flush=True,
+    )
+    if failures:
+        print("Failed experiment selections:", file=sys.stderr, flush=True)
+        for result in failures:
+            print(
+                f"  - {result['experiment']} source={result['source']} "
+                f"rc={result['returncode']}"
+                + (f" ({result['detail']})" if result.get("detail") else ""),
+                file=sys.stderr,
+                flush=True,
+            )
+            output = str(result.get("output", ""))
+            if output:
+                print(output, file=sys.stderr, flush=True)
+    return setup_failed or bool(failures)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -126,6 +419,28 @@ def build_parser() -> argparse.ArgumentParser:
         help="canonical source used for patch-rebase-check (default: bigcherry)",
     )
     parser.add_argument("--json", type=Path, default=None, help="write a compact JSON result")
+    parser.add_argument(
+        "--audit-experiments",
+        action="store_true",
+        help="audit experiments that name a changed patch",
+    )
+    parser.add_argument(
+        "--audit-all-experiments",
+        action="store_true",
+        help="audit every configured experiment",
+    )
+    parser.add_argument(
+        "--experiment-workers",
+        type=int,
+        default=_DEFAULT_EXPERIMENT_WORKERS,
+        help=f"parallel experiment workers (default: {_DEFAULT_EXPERIMENT_WORKERS})",
+    )
+    parser.add_argument(
+        "--check-timeout",
+        type=int,
+        default=_DEFAULT_CHECK_TIMEOUT_SECONDS,
+        help=f"per subprocess timeout in seconds (default: {_DEFAULT_CHECK_TIMEOUT_SECONDS})",
+    )
     return parser
 
 
@@ -151,13 +466,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         return 2
 
+    if args.check_timeout <= 0 or args.experiment_workers <= 0:
+        print("patch-offline-check: worker count and timeout must be positive", file=sys.stderr)
+        return 2
+
     patch_ids = _patch_ids(changed)
     implementation_patch_ids = set(_implementation_patch_ids(changed))
-    changed_test_ids = {
-        match.group(1)
-        for path in changed
-        if (match := _PATCH_TEST_RE.match(path))
-    }
     print(f"range: {base[:12]}..{head[:12]}")
     print(f"changed patch ids: {', '.join(patch_ids) if patch_ids else '(none)'}")
 
@@ -165,6 +479,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     test_modules = [
         "tools.tests.patch.test_patch_catalog",
         "tools.tests.patch.test_patch_governance",
+        "tools.tests.patch.test_offline_check",
     ]
     missing_tests: list[str] = []
     for patch_id in patch_ids:
@@ -173,9 +488,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             continue
         test_path = _REPO / "tools" / "tests" / "patch" / f"test_{patch_id}.py"
         if test_path.is_file():
-            # Run an existing mechanics test whenever its package or test
-            # changed. Only implementation edits REQUIRE one; metadata-only
-            # changes are validated by catalog/governance + composition.
             test_modules.append(f"tools.tests.patch.test_{patch_id}")
         elif patch_id in implementation_patch_ids:
             missing_tests.append(patch_id)
@@ -190,14 +502,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         "patch unit/catalog/governance tests",
         [sys.executable, "-m", "unittest", *test_modules],
         checks,
+        timeout_seconds=args.check_timeout,
     )
     failed |= unit_rc != 0
 
-    # Validate the production source once, exactly as release composition is
-    # resolved. A changed package is not necessarily a valid focal overlay on
-    # production (it may be a rejected/superseded package or an alternative
-    # that conflicts with a production module). Named experiments are audited
-    # separately on the source they actually target.
     rc = _run(
         "rebase production source",
         [
@@ -209,8 +517,41 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.source,
         ],
         checks,
+        timeout_seconds=args.check_timeout,
     )
     failed |= rc != 0
+
+    full_audit = args.audit_all_experiments or "config/recipes.toml" in changed
+    if args.audit_experiments or full_audit:
+        try:
+            raw = _load_recipes()
+            experiment_names = _experiment_names_for_audit(
+                raw,
+                patch_ids,
+                full_audit=full_audit,
+            )
+            print(
+                "experiment audit scope: "
+                + ("full" if full_audit else f"{len(experiment_names)} changed-patch experiment(s)"),
+                flush=True,
+            )
+            failed |= _run_experiment_audit(
+                raw,
+                experiment_names,
+                checks,
+                workers=args.experiment_workers,
+                timeout_seconds=args.check_timeout,
+            )
+        except (OSError, tomllib.TOMLDecodeError, ValueError) as exc:
+            failed = True
+            print(f"experiment audit setup failed: {exc}", file=sys.stderr)
+            checks.append(
+                {
+                    "name": "experiment audit setup",
+                    "returncode": 2,
+                    "detail": str(exc),
+                }
+            )
 
     result = "FAIL" if failed else "PASS"
     payload: dict[str, object] = {
