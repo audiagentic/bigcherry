@@ -33,8 +33,8 @@ repository at once, and a change is only proven on the lab hardware.
 6. **Releases are cut from `main` by release-please.** Every merged `feat` / `fix` / `perf` updates one open release
    pull request; merging that pull request tags `bc-<llama build>.<minor>.<patch>` and publishes the notes. Several
    promotions merged before the release pull request is merged ship as one release.
-7. **No long-lived integration branch.** `patch-refactor` served that role until `bc-11474.0.0`; it is retired once
-   the slices in flight on it have merged.
+7. **No long-lived integration branch.** `patch-refactor` served that role until `bc-11474.0.0`; it was merged into
+   `main` and deleted on 2026-10-08. `main` is the only trunk.
 
 ## What a slice goes through
 
@@ -76,12 +76,15 @@ Changes that cannot alter the build (plans, docs, lab scripts, tests) skip steps
 
 ## Lab tree
 
-- Set `[host.brutus]` `hostname`, `repo` (the lab primary checkout) and
-  `cache-root` in the untracked `config/environment.local.toml`. The lab
+- Give the lab its own host entry in the untracked `config/environment.local.toml` and name it with `--host`:
+  `hostname` (the ssh alias), `repo` (the lab primary checkout) and `cache-root` (the lab work root). On this
+  project that is `[host.brutus-lab]` with `repo = /mnt/vault/development/projects/bigcherry/workspaces/main`
+  and `cache-root = /mnt/data/bigcherry-work`; `[host.build-server]` describes a different checkout on the
+  same machine and must not be used for lab runs. The lab
   creates detached worktrees under `cache-root/worktrees/` and stores queued
   logs under `cache-root/runs/`. Use `--dry-run` to inspect SSH commands.
 - The lab primary checkout **must stay on `main` and clean** before and after
-  every run. `bigcherry slice lab <branch> --host brutus -- <script> [args]`
+  every run. `bigcherry slice lab <branch> --host brutus-lab <script> [args]`
   fetches the branch without checking it out in the primary, runs from a
   detached worktree via the plan-qualification queue, then removes it on exit.
 - Queue wrapper scripts that submit their own jobs must not hold an outer GPU
@@ -103,7 +106,7 @@ Changes that cannot alter the build (plans, docs, lab scripts, tests) skip steps
   branches and orphaned/merged worktrees. Default is read-only. `--apply`
   deletes eligible merged branches and removes clean orphaned worktrees, never
   using `--force`; dirty worktrees are reported and left intact.
-- Merge order stays one PR per slice. `patch-refactor` was retired and deleted on 2026-10-08; stale lab-local branches are reviewed separately against current active work before deletion. The owner enables main protection and auto-delete-head-branches in GitHub.
+- Merge order stays one PR per slice. `patch-refactor` was retired and deleted on 2026-10-08; the three stale lab-local branches were preserved as `archive/brutus-*` tags and deleted the same day. The owner enables main protection and auto-delete-head-branches in GitHub.
 
 ## Protection on `main`
 
