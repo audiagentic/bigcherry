@@ -11,10 +11,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from bigcherry.patcher import apply_all  # noqa: E402
+from bigcherry.core import paths  # noqa: E402
+from bigcherry.patch import rebase as patch_rebase  # noqa: E402
 from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
-_V = _REPO / "vendor/llama.cpp"
+_V = paths.llama_root()  # the primary checkout's vendor tree (a slice worktree has none)
 _FILES = (
     "common/speculative.h",
     "common/speculative.cpp",
@@ -31,10 +33,6 @@ def _load(path: Path, name: str):
 
 
 _P = _load(_REPO / "patches/1346_mtp_prompt_overlap/patch.py", "patch_1346")
-_P1321 = _load(_REPO / "patches/1321_mtp_ahead_primitives/patch.py", "patch_1321")
-_P1322 = _load(_REPO / "patches/1322_mtp_ahead_overlap/patch.py", "patch_1322")
-_P1317 = _load(_REPO / "patches/1317_spec_round_timing/patch.py", "patch_1317")
-_P1348 = _load(_REPO / "patches/1348_mtp_deferred_catchup/patch.py", "patch_1348")
 
 
 class Patch1346StaticContracts(unittest.TestCase):
@@ -80,11 +78,39 @@ class Patch1346Mechanics(unittest.TestCase):
         return root
 
     def _apply_prereqs(self, root):
-        # Production ordering at b11474: 1321/1322 establish look-ahead, 1317 wraps target timing,
-        # then 1348 rewires prompt catch-up. 1346 intentionally applies after all of them.
-        for module in (_P1321, _P1322, _P1317, _P1348):
-            res = apply_all(module.PATCHES, root)
-            self.assertTrue(all(r.ok for r in res), (module.__name__, [e.detail for r in res for e in r.failed]))
+        """Compose the production set up to, not including, 1346 through the composer's own probe path.
+
+        1346 applies after look-ahead (1321/1322), round timing (1317) and deferred catch-up (1348); those in turn
+        need their own predecessors, so a hand-picked subset does not reproduce the text 1346 anchors on.
+        """
+        selected = patch_rebase.resolve_selection(source_name="bigcherry", all_patches=False)
+        ids = [m.patch_id for m in selected.modules]
+        self.assertIn("1346_mtp_prompt_overlap", ids)
+        for required in ("1321_mtp_ahead_primitives", "1322_mtp_ahead_overlap", "1317_spec_round_timing",
+                         "1348_mtp_deferred_catchup"):
+            self.assertLess(ids.index(required), ids.index("1346_mtp_prompt_overlap"), required)
+        texts = patch_rebase._overlay_texts()
+        overlay_paths = frozenset(texts)
+        for module in selected.modules:
+            if module.patch_id == "1346_mtp_prompt_overlap":
+                break
+            probe = patch_rebase.probe_patch(
+                module,
+                _V,
+                texts,
+                context_lines=3,
+                previous_revision=None,
+                revision="mechanics-test",
+                overlay_paths=overlay_paths,
+            )
+            self.assertIn(
+                probe.status,
+                (patch_rebase.STATUS_CLEAN, patch_rebase.STATUS_CLEAN_NOOP),
+                (module.patch_id, probe.to_dict()),
+            )
+        for rel in _FILES:
+            if rel in texts:
+                (root / rel).write_text(texts[rel], encoding="utf-8")
 
     def _check(self, root):
         h = (root / "common/speculative.h").read_text(encoding="utf-8")
