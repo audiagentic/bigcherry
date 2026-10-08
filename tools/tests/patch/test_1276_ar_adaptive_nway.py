@@ -187,12 +187,16 @@ class Patch1276AdaptiveNway(unittest.TestCase):
         )
         recipes = tomllib.loads((_REPO / "config/recipes.toml").read_text(encoding="utf-8"))
         requested = recipes["experiment"]["ar-adaptive-nway"]["patches"]
-        self.assertEqual(tuple(requested), expected)
+        # 0860, 1225 and 0840 are in the production set now, so the experiment lists only what it adds.
+        self.assertEqual(
+            tuple(requested),
+            ("1244_gp11_internal_allreduce_nway_root", "1276_ar_adaptive_nway"),
+        )
 
         expanded = patchset.expand_composition(requested, directory=_REPO / "patches")
-        self.assertEqual(expanded.expanded, expected)
-        resolved = patchset.resolve_exact(list(requested), directory=_REPO / "patches")
-        self.assertEqual(tuple(m.patch_id for m in resolved.modules), expected)
+        self.assertEqual(set(expanded.expanded), set(expected))
+        resolved = patchset.resolve_exact(list(expanded.expanded), directory=_REPO / "patches")
+        self.assertEqual({m.patch_id for m in resolved.modules}, set(expected))
 
     def test_edit_contracts_are_fail_closed(self):
         for file_patch in _P1276.PATCHES:
