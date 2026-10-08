@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -152,11 +154,155 @@ def _worktree_for(
     return None
 
 
+def _remove_empty_parents(path: Path, *, stop: Path) -> None:
+    current = path
+    while current != stop and stop in current.parents:
+        try:
+            current.rmdir()
+        except OSError:
+            return
+        current = current.parent
+
+
+def _leftover_matches_branch(
+    target: Path,
+    branch: str,
+    *,
+    root: Path,
+    runner: Runner = _run_git,
+) -> bool:
+    """Verify a dead-record worktree against its still-present local branch."""
+
+    ref = f"refs/heads/{branch}"
+    if not _ref_exists(ref, root=root, runner=runner):
+        return False
+    listed = _checked(
+        runner(_at(root, ["ls-tree", "-r", "-z", ref]), check=False),
+        f"read tree for {branch}",
+    )
+    expected: dict[str, tuple[str, str, str]] = {}
+    for row in listed.split("\0"):
+        if not row:
+            continue
+        meta, sep, rel = row.partition("\t")
+        fields = meta.split()
+        if not sep or len(fields) != 3:
+            raise RuntimeError(f"unexpected git ls-tree row for {branch}: {row!r}")
+        mode, obj_type, sha = fields
+        expected[rel] = (mode, obj_type, sha)
+
+    actual: set[str] = set()
+    for path in target.rglob("*"):
+        rel = path.relative_to(target).as_posix()
+        if rel == ".git" or rel.startswith(".git/"):
+            continue
+        if path.is_file() or path.is_symlink():
+            actual.add(rel)
+
+    expected_files = {
+        rel
+        for rel, (mode, obj_type, _sha) in expected.items()
+        if obj_type == "blob" and mode != "160000"
+    }
+    if actual != expected_files:
+        return False
+
+    for rel in sorted(expected_files):
+        mode, _obj_type, sha = expected[rel]
+        path = target / rel
+        if mode == "120000":
+            if not path.is_symlink():
+                return False
+            link_text = path.readlink().as_posix()
+            blob = _checked(
+                runner(_at(root, ["cat-file", "-p", sha]), check=False),
+                f"read symlink blob {rel}",
+            )
+            if link_text != blob:
+                return False
+            continue
+        hashed = _checked(
+            runner(
+                _at(root, ["hash-object", f"--path={rel}", str(path)]),
+                check=False,
+            ),
+            f"hash leftover file {rel}",
+        )
+        if hashed != sha:
+            return False
+    return True
+
+
+def _remove_leftover_worktree_dir(
+    target: Path,
+    *,
+    root: Path,
+    branch: str | None = None,
+    runner: Runner = _run_git,
+) -> bool:
+    """Remove a leftover empty/clean slice directory without discarding work."""
+
+    if not target.exists():
+        _remove_empty_parents(target.parent, stop=root / "worktrees")
+        return True
+
+    worktrees_root = (root / "worktrees").resolve()
+    resolved = target.resolve()
+    if worktrees_root not in resolved.parents:
+        raise RuntimeError(f"refusing to clean path outside worktrees/: {target}")
+    if not target.is_dir():
+        raise RuntimeError(f"leftover worktree path is not a directory: {target}")
+
+    try:
+        next(target.iterdir())
+    except StopIteration:
+        try:
+            target.rmdir()
+        except OSError:
+            return False
+        _remove_empty_parents(target.parent, stop=worktrees_root)
+        return True
+
+    status = runner(_at(target, ["status", "--porcelain"]), check=False)
+    if status.returncode == 0:
+        if status.stdout.strip():
+            raise RuntimeError(f"leftover worktree directory is dirty: {target}")
+    elif branch is None or not _leftover_matches_branch(
+        target, branch, root=root, runner=runner
+    ):
+        raise RuntimeError(
+            f"leftover worktree directory is dirty/untracked or cannot be verified clean: {target}"
+        )
+
+    try:
+        shutil.rmtree(target)
+    except OSError:
+        return False
+    _remove_empty_parents(target.parent, stop=worktrees_root)
+    return True
+
+
+def _write_patch_file(patch: str) -> Path:
+    handle = tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        newline="",
+        suffix=".patch",
+        delete=False,
+    )
+    try:
+        handle.write(patch)
+        return Path(handle.name)
+    finally:
+        handle.close()
+
+
 def start_slice(
     branch: str,
     *,
     remote: str = "origin",
     base: str = "main",
+    carry: bool = False,
     primary_root: Path | None = None,
     runner: Runner = _run_git,
 ) -> Path:
@@ -177,24 +323,126 @@ def start_slice(
     if not _ref_exists(f"refs/remotes/{remote}/{base}", root=root, runner=runner):
         raise RuntimeError(f"base branch is unavailable after fetch: {remote}/{base}")
 
-    target.parent.mkdir(parents=True, exist_ok=True)
-    _checked(
-        runner(
-            _at(
-                root,
-                ["worktree", "add", "-b", branch, str(target), f"{remote}/{base}"],
+    patch_path: Path | None = None
+    if carry:
+        current = _checked(
+            runner(_at(root, ["branch", "--show-current"]), check=False),
+            "read primary checkout branch",
+        )
+        if current != base:
+            raise RuntimeError(
+                f"--carry requires the primary checkout on {base}; current branch is {current!r}"
+            )
+        untracked = _checked(
+            runner(
+                _at(root, ["ls-files", "--others", "--exclude-standard"]),
+                check=False,
             ),
-            check=False,
-        ),
-        f"create worktree for {branch}",
-    )
+            "read untracked primary files",
+        )
+        if untracked:
+            raise RuntimeError(
+                "--carry refuses untracked files; add/commit/remove them first: "
+                + ", ".join(untracked.splitlines())
+            )
+        diff = runner(_at(root, ["diff", "--binary", "HEAD"]), check=False)
+        patch = _checked(diff, "capture primary changes") if diff.returncode else diff.stdout
+        if patch:
+            patch_path = _write_patch_file(patch)
+            _checked(
+                runner(_at(root, ["reset", "--hard", "HEAD"]), check=False),
+                "clean primary checkout for --carry",
+            )
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        _checked(
+            runner(
+                _at(
+                    root,
+                    ["worktree", "add", "-b", branch, str(target), f"{remote}/{base}"],
+                ),
+                check=False,
+            ),
+            f"create worktree for {branch}",
+        )
+        if patch_path is not None:
+            _checked(
+                runner(
+                    _at(target, ["apply", "--whitespace=nowarn", str(patch_path)]),
+                    check=False,
+                ),
+                f"apply carried changes in {branch}",
+            )
+    except Exception as exc:
+        cleanup_error: str | None = None
+        worktree = _worktree_for(branch, root=root, runner=runner)
+        if worktree is not None:
+            removed = runner(
+                _at(root, ["worktree", "remove", str(worktree.path)]),
+                check=False,
+            )
+            if removed.returncode != 0 and _worktree_for(
+                branch, root=root, runner=runner
+            ) is not None:
+                cleanup_error = (
+                    removed.stderr.strip()
+                    or removed.stdout.strip()
+                    or "worktree remove failed"
+                )
+        if cleanup_error is None:
+            try:
+                if not _remove_leftover_worktree_dir(
+                    target, root=root, branch=branch, runner=runner
+                ):
+                    cleanup_error = f"could not remove leftover worktree {target}"
+            except RuntimeError as cleanup_exc:
+                cleanup_error = str(cleanup_exc)
+        if cleanup_error is None and _ref_exists(
+            f"refs/heads/{branch}", root=root, runner=runner
+        ):
+            runner(
+                _at(root, ["update-ref", "-d", f"refs/heads/{branch}"]),
+                check=False,
+            )
+
+        restore_error: str | None = None
+        if patch_path is not None:
+            restore = runner(
+                _at(root, ["apply", "--whitespace=nowarn", str(patch_path)]),
+                check=False,
+            )
+            if restore.returncode != 0:
+                restore_error = (
+                    restore.stderr.strip()
+                    or restore.stdout.strip()
+                    or "restore apply failed"
+                )
+        if cleanup_error or restore_error:
+            details = "; ".join(
+                detail
+                for detail in (
+                    f"slice cleanup failed: {cleanup_error}" if cleanup_error else None,
+                    f"primary restore failed: {restore_error}" if restore_error else None,
+                )
+                if detail
+            )
+            raise RuntimeError(f"{exc}; {details}") from exc
+        raise
+    finally:
+        if patch_path is not None:
+            patch_path.unlink(missing_ok=True)
+
     print(target)
     return target
 
 
 def _pr_for_branch(
-    branch: str, *, gh_runner: Runner = _run_gh
-) -> PullRequest:
+    branch: str,
+    *,
+    gh_runner: Runner = _run_gh,
+    required: bool = True,
+) -> PullRequest | None:
     result = gh_runner(
         [
             "pr",
@@ -216,7 +464,9 @@ def _pr_for_branch(
     except json.JSONDecodeError as exc:
         raise RuntimeError(f"gh returned invalid JSON for {branch}: {exc}") from exc
     if not isinstance(rows, list) or not rows:
-        raise RuntimeError(f"no pull request found for branch {branch}")
+        if required:
+            raise RuntimeError(f"no pull request found for branch {branch}")
+        return None
     row = rows[0]
     return PullRequest(
         number=int(row["number"]),
@@ -252,26 +502,17 @@ def finish_slice(
     primary_root: Path | None = None,
     runner: Runner = _run_git,
     gh_runner: Runner = _run_gh,
-) -> PullRequest:
+) -> PullRequest | None:
     validate_branch_name(branch)
     root = (primary_root or paths.primary_root()).resolve()
+    target = root / "worktrees" / branch
     _require_primary_main_clean(root, base=base, runner=runner)
 
-    pr = _pr_for_branch(branch, gh_runner=gh_runner)
-    if pr.state not in {"CLOSED", "MERGED"}:
+    pr = _pr_for_branch(branch, gh_runner=gh_runner, required=False)
+    if pr is not None and pr.state not in {"CLOSED", "MERGED"}:
         raise RuntimeError(
             f"PR #{pr.number} for {branch} is {pr.state}; finish requires merged or closed"
         )
-
-    worktree = _worktree_for(branch, root=root, runner=runner)
-    if worktree is None:
-        raise RuntimeError(f"no worktree found for branch {branch}")
-    dirty = _checked(
-        runner(_at(worktree.path, ["status", "--porcelain"]), check=False),
-        f"read worktree status for {branch}",
-    )
-    if dirty:
-        raise RuntimeError(f"worktree is dirty: {worktree.path}")
 
     _checked(
         runner(_at(root, ["fetch", "--prune", remote]), check=False),
@@ -284,13 +525,52 @@ def finish_slice(
         f"fast-forward {base}",
     )
 
-    _checked(
-        runner(
+    local_exists = _ref_exists(f"refs/heads/{branch}", root=root, runner=runner)
+    merged = (
+        local_exists
+        and _branch_merged(
+            branch,
+            remote=remote,
+            base=base,
+            root=root,
+            runner=runner,
+        )
+    )
+    eligible = merged or (pr is not None and pr.state in {"CLOSED", "MERGED"})
+    if not eligible:
+        raise RuntimeError(
+            f"{branch} is neither merged into {remote}/{base} nor backed by a closed/merged PR"
+        )
+
+    worktree = _worktree_for(branch, root=root, runner=runner)
+    if worktree is not None:
+        dirty = _checked(
+            runner(_at(worktree.path, ["status", "--porcelain"]), check=False),
+            f"read worktree status for {branch}",
+        )
+        if dirty:
+            raise RuntimeError(f"worktree is dirty: {worktree.path}")
+
+        removed = runner(
             _at(root, ["worktree", "remove", str(worktree.path)]),
             check=False,
-        ),
-        f"remove worktree for {branch}",
-    )
+        )
+        if removed.returncode != 0:
+            # Windows can drop the worktree record before directory deletion
+            # fails because another process has its cwd inside the path.
+            if _worktree_for(branch, root=root, runner=runner) is not None:
+                raise RuntimeError(
+                    f"remove worktree for {branch}: "
+                    f"{removed.stderr.strip() or removed.stdout.strip() or 'command failed'}"
+                )
+
+    if not _remove_leftover_worktree_dir(
+        target, root=root, branch=branch, runner=runner
+    ):
+        raise RuntimeError(
+            f"leftover worktree directory could not be removed; retry after releasing it: {target}"
+        )
+
     if _ref_exists(f"refs/heads/{branch}", root=root, runner=runner):
         _checked(
             runner(
@@ -304,7 +584,19 @@ def finish_slice(
             runner(_at(root, ["push", remote, "--delete", branch]), check=False),
             f"delete remote branch {remote}/{branch}",
         )
-    print(f"finished {branch} via PR #{pr.number} ({pr.state.lower()})")
+
+    _checked(
+        runner(_at(root, ["worktree", "prune"]), check=False),
+        "prune worktree metadata",
+    )
+    _remove_empty_parents(target.parent, stop=root / "worktrees")
+
+    if worktree is None and not local_exists and not target.exists():
+        print(f"already finished {branch}")
+    elif pr is not None:
+        print(f"finished {branch} via PR #{pr.number} ({pr.state.lower()})")
+    else:
+        print(f"finished merged branch {branch}")
     return pr
 
 
@@ -585,7 +877,12 @@ def slice_status(
 
 def cmd_slice_start(args) -> int:
     try:
-        start_slice(args.branch, remote=args.remote, base=args.base)
+        start_slice(
+            args.branch,
+            remote=args.remote,
+            base=args.base,
+            carry=args.carry,
+        )
     except (OSError, subprocess.CalledProcessError, RuntimeError, ValueError) as exc:
         print(f"slice start: {exc}", file=sys.stderr)
         return 1

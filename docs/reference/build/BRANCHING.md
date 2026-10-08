@@ -98,6 +98,11 @@ Changes that cannot alter the build (plans, docs, lab scripts, tests) skip steps
 
 - `bigcherry slice status`: one table showing worktree path, branch, PR
   number/state, ahead/behind `origin/main` and dirty status.
+- `bigcherry slice start <branch> --carry`: moves the primary checkout's uncommitted tracked changes into the new
+  worktree (for tools that write plan or ledger files in the primary). It refuses untracked files and restores
+  the primary if the changes do not apply.
+- `slice finish` is resumable: if an earlier run stopped part-way (on Windows a shell sitting inside the worktree
+  blocks its removal), running it again completes the remaining steps and is a no-op once everything is gone.
 - `bigcherry slice finish <branch>`: requires a merged or closed PR via `gh`,
   a clean worktree and a clean primary checkout on `main`. It fast-forwards
   the primary `main` from `origin/main`, removes the clean worktree without
