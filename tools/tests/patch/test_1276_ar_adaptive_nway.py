@@ -12,10 +12,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from bigcherry.patcher import FilePatch, apply_all  # noqa: E402
 from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
+from bigcherry.core import paths  # noqa: E402
 from bigcherry.patch import patchset  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
-_VENDOR = _REPO / "tools/lab/allreduce-wire/vendor-b11233"
+_LLAMA = paths.llama_root()
+_VENDOR = _LLAMA / "ggml/src/ggml-cuda"  # pinned source (copy_pinned reads the HEAD commit)
 
 
 def _load(name: str, relative: str):
@@ -80,7 +82,7 @@ class Patch1276AdaptiveNway(unittest.TestCase):
         cuda = root / "ggml/src/ggml-cuda"
         cuda.mkdir(parents=True)
         copy_pinned(_VENDOR / "allreduce.cu", cuda / "allreduce.cu")
-        copy_pinned(_VENDOR / "ggml-cuda.cu.comm-950-1260.txt", cuda / "ggml-cuda.cu")
+        copy_pinned(_VENDOR / "ggml-cuda.cu", cuda / "ggml-cuda.cu")
         return td, root, cuda / "allreduce.cu", cuda / "ggml-cuda.cu"
 
     def _apply_dependencies(self, root: Path):
