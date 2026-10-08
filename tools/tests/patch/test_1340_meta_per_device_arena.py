@@ -8,6 +8,7 @@ import subprocess
 import tomllib
 import sys
 import tempfile
+import pathlib
 import unittest
 from pathlib import Path
 
@@ -260,6 +261,15 @@ class Patch1340Mechanics(unittest.TestCase):
         self.assertIn("1340_meta_per_device_arena", production)
         self.assertNotIn("meta-memory", recipes["experiment"])
         self.assertEqual([doc.name for doc in _P.ENV_DOCS], ["BIGCHERRY_META_PER_DEVICE_ARENA"])
+
+    def test_plan_identity_includes_the_output_set(self):
+        """A draft enabling layer-input extraction after reserve must not reuse a plan made without those outputs."""
+        src = pathlib.Path(__file__).resolve().parents[3] / "patches" / "1340_meta_per_device_arena" / "patch.py"
+        text = src.read_text(encoding="utf-8")
+        self.assertIn("ggml_backend_meta_arena_out_sig(const struct ggml_cgraph & cgraph)", text)
+        self.assertIn("bc.arena_plans[i_plan].out_sig != out_sig", text)
+        self.assertEqual(text.count("out_sig = ggml_backend_meta_arena_out_sig(simple_graph);"), 2)
+        self.assertIn("ret->flags |= (t->flags & GGML_TENSOR_FLAG_OUTPUT);", text)
 
     def test_changed_compute_allocator_fails_closed(self):
         with tempfile.TemporaryDirectory() as td:
