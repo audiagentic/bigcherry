@@ -51,3 +51,7 @@ Interpretation:
 - Occupancy/register limited: nwarps changes time materially while memory traffic is stable and emitted VGPR/scratch/workgroup data explains the occupancy shift.
 
 Only after the above separates IQ3_XXS unpack cost from table-gather cost should a byte-permute sign-expansion arm be added; it must be a new independent env gate so launch tuning and sign expansion remain factorially separable.
+
+## b11474 BPB01 review
+
+Current-pin composition and disposition options are recorded in `releases/evidence/bpb01-four-evaluated.md`. This review does not change patch state.

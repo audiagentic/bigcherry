@@ -6,6 +6,7 @@ import importlib.util
 import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -25,7 +26,8 @@ def _load(name: str, rel: str):
     return module
 
 
-_P1310 = _load("patch_1310", "patches/1310_act_q81/patch.py")
+_MERGED_Q81 = _load("patch_1307_merged", "patches/1307_q81_activation_cache_mmvq/patch.py")
+_P1310 = SimpleNamespace(PATCHES=[p for p in _MERGED_Q81.PATCHES if p.description.startswith("1310:")])
 _P1313 = _load("patch_1313", "patches/1313_scale_act_fuse/patch.py")
 
 

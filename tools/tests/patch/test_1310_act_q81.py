@@ -14,10 +14,11 @@ from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
 _VENDOR = _REPO / "vendor/llama.cpp/ggml/src/ggml-cuda/unary.cu"
-_spec = importlib.util.spec_from_file_location("patch_1310", _REPO / "patches/1310_act_q81/patch.py")
+_spec = importlib.util.spec_from_file_location("patch_1310", _REPO / "patches/1307_q81_activation_cache_mmvq/patch.py")
 assert _spec is not None and _spec.loader is not None
 _module = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_module)
+_PATCHES = [p for p in _module.PATCHES if p.description.startswith("1310:")]
 
 
 @unittest.skipUnless(_VENDOR.exists(), "pinned vendor checkout not present")
@@ -29,7 +30,7 @@ class Patch1310Mechanics(unittest.TestCase):
             path = root / "ggml/src/ggml-cuda/unary.cu"
             path.parent.mkdir(parents=True)
             copy_pinned(_VENDOR, path)
-            results = apply_all(_module.PATCHES, root)
+            results = apply_all(_PATCHES, root)
             self.assertTrue(all(r.ok for r in results), [e.detail for r in results for e in r.failed])
             out = path.read_text(encoding="utf-8")
             self.assertIn("static __global__ void bc_act_q81_kernel(", out)
@@ -42,7 +43,7 @@ class Patch1310Mechanics(unittest.TestCase):
             self.assertLess(helper, out.index("void ggml_cuda_op_unary(ggml_backend_cuda_context & ctx, ggml_tensor * dst)"))
             gated = out.index("bc_act_q81_try<op, true>")
             self.assertLess(gated, out.index("unary_gated_cuda<op>(src0_p, src1_p, (float *)dst_d", gated))
-            second = apply_all(_module.PATCHES, root)
+            second = apply_all(_PATCHES, root)
             self.assertTrue(all(r.ok for r in second), [e.detail for r in second for e in r.failed])
             self.assertEqual(out, path.read_text(encoding="utf-8"))
 
