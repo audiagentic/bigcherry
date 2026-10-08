@@ -88,6 +88,49 @@ class SliceCommandTests(unittest.TestCase):
         self.assertEqual((worktree / "README.md").read_text(encoding="utf-8"), "carried\n")
         self.assertIn("README.md", _run(worktree, "status", "--porcelain").stdout)
 
+
+    def test_start_carry_restores_primary_when_worktree_apply_fails(self):
+        (self.primary / "README.md").write_text("carried\n", encoding="utf-8")
+        target = self.primary / "worktrees" / "feat" / "pa47-test"
+
+        def runner(args, *, check=True):
+            if (
+                len(args) >= 5
+                and args[0] == "-C"
+                and Path(args[1]) == target
+                and args[2] == "apply"
+            ):
+                return subprocess.CompletedProcess(
+                    args, 1, stdout="", stderr="synthetic apply failure"
+                )
+            return slice_cli._run_git(args, check=check)
+
+        with self.assertRaisesRegex(RuntimeError, "synthetic apply failure"):
+            slice_cli.start_slice(
+                "feat/pa47-test",
+                primary_root=self.primary,
+                carry=True,
+                runner=runner,
+            )
+
+        self.assertEqual(
+            (self.primary / "README.md").read_text(encoding="utf-8"),
+            "carried\n",
+        )
+        self.assertIn("README.md", _run(self.primary, "status", "--porcelain").stdout)
+        self.assertFalse(target.exists())
+        self.assertNotEqual(
+            _run(
+                self.primary,
+                "show-ref",
+                "--verify",
+                "--quiet",
+                "refs/heads/feat/pa47-test",
+                check=False,
+            ).returncode,
+            0,
+        )
+
     def test_finish_resumes_when_record_is_gone_but_clean_directory_remains(self):
         worktree = self._start()
         _run(worktree, "push", "-u", "origin", "feat/pa47-test")
