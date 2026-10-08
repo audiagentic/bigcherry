@@ -136,7 +136,7 @@ class Patch1346Mechanics(unittest.TestCase):
         self.assertIn("bc_pt_deferred_nextn_t0", src)
         self.assertIn("bc_pt_state->snapshot_copy_us += ggml_time_us() - bc_pt_snapshot_copy_t0;", src)
         self.assertIn("bc_pt_state->final_flush_us += bc_pt_deferred_catchup_us;", src)
-        self.assertIn("timing.submit_interval_us += now_us - timing.last_target_submit_us;", src)
+        self.assertIn("timing->submit_interval_us += now_us - timing->last_target_submit_us;", src)
         self.assertIn("bc_mtp_prompt_timing_in_process_deferred = true;", src)
         self.assertEqual(src.count("bc_pt_state->chunks++;"), 2)
         self.assertIn("bc_pt_state->tokens += (uint64_t) n_tokens;", src)
