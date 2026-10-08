@@ -289,6 +289,8 @@ patches = [
     # (BIGCHERRY_MTP_DEFERRED_CATCHUP=0 off). Prefill +5.4% / +6.3% / +9.7% at 8K / 24K / 98K, complete
     # separation, greedy text identical, PATCH_HIT present.
     "1348_mtp_deferred_catchup",
+    # PROMOTED 2026-10-08 (QFP18 lightweight tier): Flash-Next prefill +1.8/+1.2/+1.9% at 8K/24K/98K; complete separation; CPU-f32 probes no worse than production. Default off; flashnext profile enables it.
+    "1350_mmq_few_tile_streamk",
 ]
 required-state = "validated"
 
@@ -515,6 +517,10 @@ patches = ["1330_qsa_mask_inplace"]
 patches = ["1342_fusion_bisect"]
 
 
+[experiment.mmq-few-tile-streamk]
+# QFP37: 1350 is promoted into the production set; retain the selector as a stable composition check.
+patches = []
+
 [experiment.mtp-prompt]
 # QFP31: production set + 1346 (MTP prompt cost: timing split under BIGCHERRY_MTP_PROMPT_TIMING=1, then the overlap).
 patches = ["1346_mtp_prompt_overlap"]
@@ -530,6 +536,14 @@ patches = ["1319_process_ubatch_timing", "1320_meta_compute_timing", "1325_sched
 [experiment.native-plus-1333]
 # QFP22: 1333 alone, for the native llama.cpp comparison (build over source llama-native).
 patches = ["1333_mixed_batch_on_demand"]
+
+[experiment.moe-expert-cache]
+# MET01 recheck: 1337 only; --moe-cache-mib=0 is the runtime control.
+patches = ["1337_moe_expert_caching"]
+
+[experiment.moe-cache-profile]
+# MET01/MET07 recheck: 1337 + 1338; profile variables are opt-in.
+patches = ["1337_moe_expert_caching", "1338_moe_cache_profile"]
 
 
 

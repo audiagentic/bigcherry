@@ -68,6 +68,7 @@ class Patch1338Mechanics(unittest.TestCase):
             self.assertIn('memcmp(magic, "STRP", 4) == 0', src)
             self.assertIn("layer / expert counts do not match the model", src)
             self.assertIn("const int64_t tail = groups[ig].n_slots >= 2*n_expert ? n_expert : 8*n_expert_used;", src)
+            self.assertIn("BIGCHERRY_PATCH_HIT patch=1337_moe_expert_caching", src)
             self.assertIn("BIGCHERRY_PATCH_HIT patch=1338_moe_cache_profile", src)
             before = src
             self._apply(root, _P)
