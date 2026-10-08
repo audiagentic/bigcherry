@@ -6,9 +6,12 @@ on:
     paths:
       - 'patches/**'
       - 'tools/tests/patch/**'
+      - 'tools/tests/cli/test_slice_prune.py'
+      - 'tools/tests/cli/test_slice_commands.py'
       - 'tools/tests/core/test_primary_root.py'
       - 'tools/tests/core/test_context.py'
       - 'tools/tests/cli/test_slice_prune.py'
+      - 'tools/tests/cli/test_slice_commands.py'
       - 'tools/bigcherry/patch/**'
       - 'tools/bigcherry/pin_transition.py'
       - 'tools/bigcherry/campaign/resolution.py'
@@ -143,7 +146,7 @@ jobs:
       - name: Run slice branch safety tests
         env:
           PYTHONPATH: tools
-        run: python -m unittest tools.tests.cli.test_slice_prune -v
+        run: python -m unittest tools.tests.cli.test_slice_prune tools.tests.cli.test_slice_commands -v
 
       - name: Run changed-patch offline checks
         shell: bash
