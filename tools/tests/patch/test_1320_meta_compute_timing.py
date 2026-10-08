@@ -33,7 +33,6 @@ def _only(module, path: str):
     return [patch for patch in module.PATCHES if patch.path == path]
 
 
-_P1339 = _load_patch("1339_meta_memory_report")
 _P1340 = _load_patch("1340_meta_per_device_arena")
 
 
@@ -68,7 +67,6 @@ class Patch1320Mechanics(unittest.TestCase):
             path.parent.mkdir(parents=True)
             copy_pinned(_VENDOR, path)
             for patches in (
-                _only(_P1339, "ggml/src/ggml-backend-meta.cpp"),
                 _only(_P1340, "ggml/src/ggml-backend-meta.cpp"),
                 _module.PATCHES,
             ):
