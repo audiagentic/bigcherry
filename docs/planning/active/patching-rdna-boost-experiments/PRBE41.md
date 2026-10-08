@@ -2,13 +2,13 @@
 id: PRBE41
 order: 0
 plan: patching-rdna-boost-experiments
-state: in_progress
+state: pending
 created-at: '2026-09-09T10:56:18.783942+00:00'
 breadth: ''
 skill: advanced
 created-by: capability-rebaseline-v3
 work: L
-priority: null
+priority: P3
 ---
 
 # AMD-SSM-001: Channels-major SSM_CONV input mode
@@ -63,7 +63,15 @@ Supersedes RD49. PRBE21 is a distinct SSM conv_input concat optimization; cross-
 
 2026-09-25 (4d7117f6): implemented as patch 1263_prbe41_ssm_conv_channels_major, a port of nasone/AMD 33611a98 generated with bigcherry.patch.port_diff (17 files: ggml.h/ggml.c op mode, CPU + CUDA/HIP ssm-conv kernels, other backends' supports_op rejection, qwen35/qwen35moe/qwen3next graph, delta-net-base build_conv_state hand-merged onto b11126, fork test-backend-ops cases). Metal rejection not ported; conv-state layout changes (saved states not interchangeable). Activation marker patch=1263_prbe41 path=ssm_conv_channels_major. Contract PRBE41-SSM-CONV-CHANNELS-MAJOR (owner policy, 4 sessions/arch): full-vocab backend reference on qwen4b, pp512 positive, gpt-oss tg128 control. Rebase check CLEAN on bigcherry and bigcherry-tuning. Hardware sessions queued after the current batch.
 
+## 2026-10-08 b11474 experiment scope
+
+**Rank 7, qualify existing 1263 rather than re-port.** `1263_prbe41_ssm_conv_channels_major` state=untested (patch.toml); b11474 composed targets `ggml/include/ggml.h::ggml_ssm_conv_ext`, `ggml/src/ggml-cuda/ssm-conv.cu`, `src/models/delta-net-base.cpp` and Meta axis0 split/reshape propagation. Input channels-major shape `[d_inner,n_t+d_conv-1,n_seq]`, output `[d_inner,n_t,n_seq]`. Current Meta/tensor-split test failed `GGML_ASSERT(src_ss[0].nr[0] == 1)` before activation (PRBE114 evidence), so qualify single-GPU GDN first and treat multi-GPU as blocked until split-state instrumentation fixes actual axis ratios. Env `BIGCHERRY_SSM_CHANNELS_MAJOR=0|1` proposed opt-in for qualification if existing 1263 has no reliable selector; no implicit legacy default args. Expected gain uncertain (memory coalescing), only on GDN/27B SSM_CONV, not Flash-Next attention path. `queue-env-ab.sh`: 27B GDN 8K/24K/98K and single-gpu/tensor-split arms, output+recurrent-state parity, PPL, capture/replay, marker, VRAM, separate source-split traces. Do not claim multi-GPU validated.
+
+Recheck every historical b11126 anchor on the composed b11474 source before coding; no GPU run or patch implementation is claimed by this plans-only triage.
+
 ## Change Log
+
+- 2026-10-08 (triage): Kept experiment pending (P3); source/shape, coverage against #29901/1202/1253, env gate, expected effect and separated hardware test defined above.
 
 - 2026-09-09T10:56:18.783942+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:13:34.146919+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
