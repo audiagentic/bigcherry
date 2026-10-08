@@ -173,12 +173,30 @@ _N_POST_LAUNCH = """\
 
 PATCHES = [
     FilePatch(
+        path="ggml/src/ggml-cuda/bc-dsv4-hc-grid.cuh",
+        description="1344: BigCherry-owned hyper-connection grid kernels and runtime gate",
+        language="none",
+        create=True,
+        edits=(
+            Edit(
+                id="hc-grid-owned-file",
+                anchor=r"\A",
+                mode="insert_after",
+                text=_N_KERNELS,
+                guard=r"static __global__ void dsv4_hc_post_grid_f32\(",
+                rationale="BigCherry-owned implementation file; upstream must not provide this path.",
+                expect_matches=1,
+                max_span_lines=1,
+            ),
+        ),
+    ),
+    FilePatch(
         path="ggml/src/ggml-cuda/dsv4-hc.cu",
-        description="1344: hyper-connection PRE / POST kernels on 2-D / 3-D launch grids (no 64-bit division)",
+        description="1344: one-line implementation include plus PRE / POST launch hooks",
         language="none",
         edits=(
             Edit(
-                id="hc-grid-include",
+                id="hc-grid-stdlib",
                 anchor=re.escape('#include "dsv4-hc.cuh"\n'),
                 mode="insert_after",
                 text="\n#include <cstdio>   // bigcherry 1344: fprintf\n#include <cstdlib>  // bigcherry 1344: getenv / atoi\n",
@@ -188,12 +206,12 @@ PATCHES = [
                 max_span_lines=2,
             ),
             Edit(
-                id="hc-grid-kernels",
+                id="hc-grid-hook",
                 anchor=re.escape(_A_COMB_OP),
                 mode="insert_before",
-                text=_N_KERNELS,
-                guard=r"static __global__ void dsv4_hc_post_grid_f32\(",
-                rationale="After the flat kernels and before the first op function, which is the first to launch one.",
+                text='#include "bc-dsv4-hc-grid.cuh"  // bigcherry 1344 implementation\n\n',
+                guard=r'#include "bc-dsv4-hc-grid\.cuh"',
+                rationale="Stable first op-function signature after the native kernels; the owned implementation needs their local context.",
                 expect_matches=1,
                 max_span_lines=2,
             ),

@@ -200,12 +200,30 @@ _N_SWITCH = r"""    // bigcherry 1345 (QFP36): large batches group their rows wi
 
 PATCHES = [
     FilePatch(
+        path="ggml/src/ggml-cuda/bc-moe-ids-multiwarp.cuh",
+        description="1345: BigCherry-owned multi-warp routing kernel and launcher",
+        language="none",
+        create=True,
+        edits=(
+            Edit(
+                id="ids-mw-owned-file",
+                anchor=r"\A",
+                mode="insert_after",
+                text=_N_KERNEL,
+                guard=r"static __global__ void bc_mm_ids_helper_mw\(",
+                rationale="BigCherry-owned implementation file; upstream must not provide this path.",
+                expect_matches=1,
+                max_span_lines=1,
+            ),
+        ),
+    ),
+    FilePatch(
         path="ggml/src/ggml-cuda/mmid.cu",
-        description="1345: MoE routing helper with 8 warps per expert for batches of 128 tokens and more",
+        description="1345: one-line implementation include plus multi-warp dispatch hook",
         language="none",
         edits=(
             Edit(
-                id="ids-mw-include",
+                id="ids-mw-stdlib",
                 anchor=re.escape('#include "mmid.cuh"\n'),
                 mode="insert_after",
                 text="\n#include <cstdio>   // bigcherry 1345: fprintf\n#include <cstdlib>  // bigcherry 1345: getenv / atoi\n",
@@ -215,12 +233,12 @@ PATCHES = [
                 max_span_lines=2,
             ),
             Edit(
-                id="ids-mw-kernel",
+                id="ids-mw-hook",
                 anchor=re.escape(_A_LAUNCH_TEMPLATE),
                 mode="insert_before",
-                text=_N_KERNEL,
-                guard=r"static __global__ void bc_mm_ids_helper_mw\(",
-                rationale="After the native helper kernel (and the store / pow2 helpers it shares) and before the native launcher.",
+                text='#include "bc-moe-ids-multiwarp.cuh"  // bigcherry 1345 implementation\n\n',
+                guard=r'#include "bc-moe-ids-multiwarp\.cuh"',
+                rationale="Stable native launcher template signature after the store/pow2/kernel helpers shared by the owned implementation.",
                 expect_matches=1,
                 max_span_lines=3,
             ),

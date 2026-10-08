@@ -84,17 +84,35 @@ _N_THIN = r"""    // bigcherry 1347 (QFP34): a thin F32 weight (2..8 rows) again
 
 PATCHES = [
     FilePatch(
+        path="ggml/src/ggml-cuda/bc-f32-thin-transposed-mmvf.cuh",
+        description="1347: BigCherry-owned thin-F32 transpose helper and runtime gate",
+        language="none",
+        create=True,
+        edits=(
+            Edit(
+                id="f32-thin-owned-file",
+                anchor=r"\A",
+                mode="insert_after",
+                text=_N_HELPERS,
+                guard=r"static __global__ void bc_f32_thin_transpose\(",
+                rationale="BigCherry-owned implementation file; upstream must not provide this path.",
+                expect_matches=1,
+                max_span_lines=1,
+            ),
+        ),
+    ),
+    FilePatch(
         path="ggml/src/ggml-cuda/ggml-cuda.cu",
-        description="1347: F32 matmuls with a 2..8-row weight and many columns through the vector kernel (roles swapped)",
+        description="1347: one-line implementation include plus thin-F32 dispatch hook",
         language="none",
         edits=(
             Edit(
-                id="f32-thin-helpers",
+                id="f32-thin-hook",
                 anchor=re.escape(_A_FN),
                 mode="insert_before",
-                text=_N_HELPERS,
-                guard=r"static __global__ void bc_f32_thin_transpose\(",
-                rationale="Directly before the matmul dispatch function, the only user.",
+                text='#include "bc-f32-thin-transposed-mmvf.cuh"  // bigcherry 1347 implementation\n\n',
+                guard=r'#include "bc-f32-thin-transposed-mmvf\.cuh"',
+                rationale="Stable ggml_cuda_mul_mat signature immediately before the dispatch using the owned helper.",
                 expect_matches=1,
                 max_span_lines=2,
             ),
