@@ -1,6 +1,6 @@
 # 1328_aux_rocm_expert_backend
 
-**Status:** untested
+**Status:** rejected
 **Plan item:** MET05
 
 ## What it does
@@ -20,3 +20,20 @@ Off by default. The path fails closed if the auxiliary device is absent, ambiguo
 ## Upstream
 
 Local BigCherry feature against llama.cpp pin `0504396140d1c882f5f6ee34466a42db7ae90114`.
+
+## Rejected (2026-10-08, pin b11474, Brutus)
+
+Six hardware rounds after the b11474 re-base. With routed-expert layers on the auxiliary 6900 XT (ROCm3) the patch
+never produced a generation result:
+
+1. compile error (`ggml_backend_dev_type` enum tag);
+2. abort at load (`marked expert merge requires exactly MIRRORED + PARTIAL sources, got MIRRORED + MIRRORED`);
+3. loads and prefills, generation request never returns;
+4. diagnostic run: the server process is gone 60 s after prefill, no error, assert or backtrace in the log;
+5. and 6. (d9370c50, a23c77dc): do not compile (`ggml/src/ggml-backend.cpp:1104:27: error: expected expression`).
+
+Prefill, 79722-token fill, 245760 context (t/s): no offload ub512 1087-1118; two layers offloaded ub512 1059,
+four 1002-1004, six 964; no offload ub1024 does not fit; two layers offloaded ub1024 1159-1178, four 1132-1137,
+six 1087. So offload costs about 5% prefill per two layers at equal ubatch; the only benefit was fitting ubatch 1024.
+
+Experiment `deploy-v5-plus-1327-aux6900` and `tools/lab/flash-next/queue-expert-aux6900.sh` removed.

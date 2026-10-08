@@ -69,5 +69,14 @@ patch-rebase-check --all reports every non-rejected patch clean or retired; patc
 
 ## Ledger-events
 
+
+
+
 - chg_20261007_155512_bigcherry-now-builds-on-llama_6400
 - 2026-10-07T15:55:15.944121+00:00 (updated-by): Updated: section:ledger-events
+- chg_20261008_015302_faster-prompt-processing-6-10_5913
+- 2026-10-08T01:53:16.014253+00:00 (updated-by): Updated: section:ledger-events
+- chg_20261008_015330_faster-prompt-processing-6-10_3634
+- 2026-10-08T01:53:44.227179+00:00 (updated-by): Updated: section:ledger-events
+- chg_20261008_015344_diagnostic-traces-available-in_3686
+- 2026-10-08T01:53:50.935436+00:00 (updated-by): Updated: section:ledger-events

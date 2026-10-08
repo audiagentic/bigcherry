@@ -493,11 +493,6 @@ patches = ["1319_process_ubatch_timing", "1325_sched_split_timing"]
 # Post-bump: v5 + 1327 (host-computed QSA dead-slot remap terms; BIGCHERRY_QSA_HOST_REMAP=1).
 patches = []
 
-[experiment.deploy-v5-plus-1327-aux6900]
-# MET05: v5 + 1327 + 1328 auxiliary ROCm expert backend; off unless BIGCHERRY_EXPERT_AUX_DEVICE is set.
-patches = ["1328_aux_rocm_expert_backend"]
-
-
 [experiment.retest-1295]
 # QFP21: promoted base (v6 stack) + 1295 QSA gathered-cell decode attention (on unless BIGCHERRY_QSA_GATHER=0).
 patches = []

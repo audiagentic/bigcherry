@@ -545,10 +545,14 @@ WINDOW v1 is deliberately conservative outside the fresh-prompt path:
 
 ## Ledger-events
 
+
+
 - chg_20261007_133409_the-low-vram-tensor-split-layo_8043
 - 2026-10-07T13:34:19.875157+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-07T13:34:30.973714+00:00 (updated-by): Updated: section:notes
 
+- chg_20261008_015302_faster-prompt-processing-6-10_5913
+- chg_20261008_015330_faster-prompt-processing-6-10_3634
 ## Completion (2026-10-08)
 
 1348_mtp_deferred_catchup qualified and promoted at b11474. Brutus adoption ABBA measured +5.4% / +6.3% / +9.7%
@@ -582,4 +586,5 @@ stream(s), return immediately so the host can prepare/submit k+1, then after k+1
 event and run draft catch-up k. This needs explicit output-lifetime/event ownership for Meta/split outputs and must
 preserve the same row order/identity. Final flush remains serial. Do not add a worker thread unless the event/staging
 path proves insufficient.
-
+- 2026-10-08T01:53:09.294613+00:00 (updated-by): Updated: section:ledger-events
+- 2026-10-08T01:53:37.530698+00:00 (updated-by): Updated: section:ledger-events
