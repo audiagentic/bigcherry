@@ -17,7 +17,7 @@ Same-session A/B at 8K / 24K / 98K:
 3. `adaptive-mtp-no1210`, adaptive off/on;
 4. for adaptive-on, `BIGCHERRY_MTP_AHEAD=1` and `0` as a compatibility/benefit split.
 
-Keep greedy, seed, prompt, decode length, device split and draft placement fixed. Report t/s, accepted/drafted, md5, depth-change markers and shutdown depth histogram.
+Keep greedy, seed, prompt, decode length, device split and draft placement fixed. Report t/s, accepted/drafted, md5, depth-change markers and shutdown depth histogram. Run the warm-fill + timed request sequence at least twice per adaptive floor and require identical first depth-change/accept streams after checkpoint restore.
 
 ## Expected activation
 
@@ -29,7 +29,7 @@ At shutdown require at least one:
 
 ## Correctness
 
-The controller is a pure function of accepted/drafted counts and resets in `begin()`. Repeated identical requests should therefore produce identical depth histories if the target accept stream is identical. If md5 or depth history diverges first at the same verify shape, investigate backend numerical determinism; if accept diverges first after a depth change, treat it as depth-dependent verify numerics.
+The controller is a pure function of accepted/drafted counts and resets in `begin()`. MTP `pending_h` is now included in prompt checkpoint state, so restored KV and the deferred hidden boundary are coherent across warm-fill/timed requests. Repeated identical requests should produce identical depth histories if the target accept stream is identical. Any remaining divergence at the same verify shape is backend numerical nondeterminism; divergence only after a depth change is depth-dependent verify numerics.
 
 A requested speculative configuration that fails initialization must fail server startup; serving with `spec == nullptr` is a test failure.
 
