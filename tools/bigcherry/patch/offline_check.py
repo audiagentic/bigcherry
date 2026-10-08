@@ -13,6 +13,7 @@ import os
 import re
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 from typing import Sequence
 
@@ -82,6 +83,14 @@ def _implementation_patch_ids(paths: Sequence[str]) -> tuple[str, ...]:
         if len(parts) >= 3 and parts[1] and not parts[1].startswith("_"):
             found.add(parts[1])
     return tuple(sorted(found))
+
+
+def _patch_state(path: Path) -> str:
+    data = tomllib.loads(path.read_text(encoding="utf-8"))
+    state = data.get("state")
+    if not isinstance(state, str):
+        raise ValueError(f"{path}: missing string state")
+    return state
 
 
 def _env() -> dict[str, str]:
@@ -165,17 +174,28 @@ def main(argv: Sequence[str] | None = None) -> int:
     test_modules = [
         "tools.tests.patch.test_patch_catalog",
         "tools.tests.patch.test_patch_governance",
+        "tools.tests.patch.test_offline_check",
     ]
     missing_tests: list[str] = []
+    current_patch_ids: list[str] = []
+    retired_patch_ids: list[str] = []
     for patch_id in patch_ids:
         patch_toml = _REPO / "patches" / patch_id / "patch.toml"
         if not patch_toml.is_file():
+            # A deliberately removed patch has no focal overlay to probe; catalog/governance validates the removal.
             continue
+        try:
+            state = _patch_state(patch_toml)
+        except (OSError, tomllib.TOMLDecodeError, ValueError) as exc:
+            failed = True
+            checks.append({"name": f"patch state {patch_id}", "returncode": 1, "detail": str(exc)})
+            continue
+        if state in ("rejected", "superseded"):
+            retired_patch_ids.append(patch_id)
+        else:
+            current_patch_ids.append(patch_id)
         test_path = _REPO / "tools" / "tests" / "patch" / f"test_{patch_id}.py"
         if test_path.is_file():
-            # Run an existing mechanics test whenever its package or test
-            # changed. Only implementation edits REQUIRE one; metadata-only
-            # changes are validated by catalog/governance + composition.
             test_modules.append(f"tools.tests.patch.test_{patch_id}")
         elif patch_id in implementation_patch_ids:
             missing_tests.append(patch_id)
@@ -193,24 +213,47 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     failed |= unit_rc != 0
 
-    # Validate the production source once, exactly as release composition is
-    # resolved. A changed package is not necessarily a valid focal overlay on
-    # production (it may be a rejected/superseded package or an alternative
-    # that conflicts with a production module). Named experiments are audited
-    # separately on the source they actually target.
-    rc = _run(
-        "rebase production source",
-        [
-            sys.executable,
-            "-m",
-            "bigcherry",
-            "patch-rebase-check",
-            "--source",
-            args.source,
-        ],
-        checks,
-    )
-    failed |= rc != 0
+    for patch_id in retired_patch_ids:
+        state = _patch_state(_REPO / "patches" / patch_id / "patch.toml")
+        checks.append({
+            "name": f"rebase {patch_id}",
+            "returncode": 0,
+            "detail": f"retired lifecycle state ({state}); excluded from focal rebase coverage",
+        })
+        print(f"rebase {patch_id}: RETIRED ({state})")
+
+    if current_patch_ids:
+        for patch_id in current_patch_ids:
+            rc = _run(
+                f"rebase {patch_id}",
+                [
+                    sys.executable,
+                    "-m",
+                    "bigcherry",
+                    "patch-rebase-check",
+                    "--source",
+                    args.source,
+                    "--focal-overlay",
+                    patch_id,
+                ],
+                checks,
+            )
+            failed |= rc != 0
+    else:
+        # Harness/config/retirement-only changes still prove production composition.
+        rc = _run(
+            "rebase production source",
+            [
+                sys.executable,
+                "-m",
+                "bigcherry",
+                "patch-rebase-check",
+                "--source",
+                args.source,
+            ],
+            checks,
+        )
+        failed |= rc != 0
 
     result = "FAIL" if failed else "PASS"
     payload: dict[str, object] = {
