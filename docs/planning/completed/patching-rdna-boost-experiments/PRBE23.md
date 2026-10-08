@@ -66,7 +66,7 @@ Successor key: patching-rdna-boost-experiments-rd30
 
 ## Change Log
 
-- 2026-10-08 (triage): Completed by consolidation into QFP43. QFP43 owns remaining MoE-aware MMQ geometry qualification; 1237_rd30_moe_mmq_compact_grid and 1265_rd30b_moe_mmq_compact_grid_rdna4_rdna2 both state=validated and in config/recipes.toml validated-enhancements. No separate expected-occupancy patch.
+- 2026-10-08 (triage): Completed by consolidation into QFP44. QFP44 owns remaining MoE-aware MMQ geometry qualification; 1237_rd30_moe_mmq_compact_grid and 1265_rd30b_moe_mmq_compact_grid_rdna4_rdna2 both state=validated and in config/recipes.toml validated-enhancements. No separate expected-occupancy patch.
 
 - 2026-09-09T10:55:00.176506+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:12:15.436526+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes

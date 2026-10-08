@@ -66,7 +66,7 @@ Successor key: patching-rdna-boost-experiments-rd31
 
 ## Change Log
 
-- 2026-10-08 (triage): Completed by consolidation into QFP43. QFP43 retains the GPU block-map validation method. 1237 validated already implements mmq_build_moe_block_map from expert_bounds; future regression test can compare env-gated block_start/block_expert D2H dump against CPU reference and measure map cost. This is follow-up coverage, not a second implementation.
+- 2026-10-08 (triage): Completed by consolidation into QFP44. QFP44 retains the GPU block-map validation method. 1237 validated already implements mmq_build_moe_block_map from expert_bounds; future regression test can compare env-gated block_start/block_expert D2H dump against CPU reference and measure map cost. This is follow-up coverage, not a second implementation.
 
 - 2026-09-09T10:55:04.645348+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:12:19.522893+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes

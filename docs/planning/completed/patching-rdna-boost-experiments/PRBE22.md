@@ -66,7 +66,7 @@ Successor key: patching-rdna-boost-experiments-rd28
 
 ## Change Log
 
-- 2026-10-08 (triage): Completed by consolidation into QFP43. QFP43 consolidates RDNA MMQ tile-width/LDS sweep; 1237/1265 (validated) compact expert/J grids and 1350 (PR #22, not yet in main) targets ordinary few-tile Stream-K. Residual: native table CASE replacement keyed by (type,J,fallback), unique keys; true physical I/J/LDS/occupancy sweep on gfx1100/gfx1201.
+- 2026-10-08 (triage): Completed by consolidation into QFP44. QFP44 consolidates RDNA MMQ tile-width/LDS sweep; 1237/1265 (validated) compact expert/J grids and 1350 (PR #22, not yet in main) targets ordinary few-tile Stream-K. Residual: native table CASE replacement keyed by (type,J,fallback), unique keys; true physical I/J/LDS/occupancy sweep on gfx1100/gfx1201.
 
 - 2026-09-09T10:54:56.585436+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:12:11.248783+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes

@@ -23,6 +23,8 @@ work: M
 
 ### Step 0 (added 2026-10-08): blocked-time synchronisation trace before any code
 
+**Blocked:** do not run Step 0 until PR #8 re-anchors patch 1346 on top of 1348.
+
 Salvaged from the retired QFP08 draft (branch automation-qfp-indexer-20261004, deleted 2026-10-08). Extend the sync tracer (`tools/lab/flash-next/` synctrace mode of `long-ctx-profile.sh`, `sync-tracer.c`) from call counts to blocked wall time per call site, tagged with context (target / draft), prompt chunk index and whether the wait is inside `llama_get_embeddings_nextn`, `common_speculative_process_deferred`, draft graph compute or `llama_synchronize`. Run it on the 1348 build at 24K and 98K with deferred catch-up on and off. Output: a table of ms blocked per chunk by call site that accounts for the gap between the measured +6-10% and the ~19% idle-gap bound (83 ms of 437 ms per chunk). Only waits shown there to be non-dependencies are removed in the later steps; a wait that is a true data dependency is recorded as such and left alone.
 
 ## Detailed Solution & Technical Design

@@ -1,5 +1,5 @@
 ---
-id: QFP43
+id: QFP44
 order: 43
 plan: patching-qwen-flash-next
 state: pending
@@ -33,7 +33,7 @@ Consolidates PRBE22 (RDNA MMQ tile width/LDS), PRBE23 (MoE-aware tile selection)
 
 ## Scope and handoff
 
-QFP37 owns Stream-K (1350) and I=32 (1351) implementation/qualification. QFP43 owns residual tile/LDS catalog sweeps and formal compact-map regression evidence; no duplicate patch packages. If 1237/1265 + 1350/1351 leave no material under-occupancy, close this item as a measured null.
+QFP37 owns Stream-K (1350) and I=32 (1351) implementation/qualification. QFP44 owns residual tile/LDS catalog sweeps and formal compact-map regression evidence; no duplicate patch packages. If 1237/1265 + 1350/1351 leave no material under-occupancy, close this item as a measured null.
 
 ## Change Log
 

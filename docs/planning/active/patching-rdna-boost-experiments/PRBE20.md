@@ -2,7 +2,7 @@
 id: PRBE20
 order: 0
 plan: patching-rdna-boost-experiments
-state: deprecated
+state: pending
 created-at: '2026-09-09T10:54:49.394058+00:00'
 breadth: ''
 skill: advanced
@@ -136,11 +136,10 @@ This means at least two distinct mechanisms are likely in play: an early (token-
 
 Not yet done: source-level investigation of what specifically differs about ubatch=5's code path vs 2-4, and what happens deep in the sequence (near ctx_size=256) that causes the late divergence among 2/3/4. This is real, substantial follow-up work -- flagging as the next concrete step rather than guessing another fix.
 
+
+2026-10-08 triage correction: KEEP OPEN (P2). The earlier 1210 rejection was a b11474 composition/rebase disposition, not a hardware verdict. PR #43 restored/rebased 1210 for the current adaptive-MTP experiment and it remains untested. Preserve the recorded ubatch-width logit divergence as evidence; do not close PRBE20 until the restored path has a measured disposition.
+
 ## Change Log
-
-- 2026-10-08 (triage): 1210_rd26_bitidentical_decode_verify_standalone is rejected on current main (patch.toml); PRBE20 measured cross-ubatch logits diverging at byte 480 (ubatch1/5) and late between 2/3/4. Existing strategy failed; new proposal needs a new identity, not unqualified 1210 rework.
-
-- 2026-10-08 (triage): pending; 1210_rd26_bitidentical_decode_verify_standalone state=untested (patch.toml); PRBE20 ubatch={1,2,3,4,5} byte-bisection recorded cross-batch divergence including byte offset 480. No validated fix/in-flight patch; reset stale in_progress.
 
 - 2026-09-09T10:54:49.394058+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:12:02.133012+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
