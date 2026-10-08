@@ -313,7 +313,7 @@ comparison its meaning -- and it is why a campaign lane may declare its own
 
 ```toml
 { source = "bigcherry-tuning", build = "control", platform = "linux-multi" },
-{ source = "bigcherry-tuning", build = "control", platform = "linux-multi", experiment = "rd73-only" },
+{ source = "bigcherry-tuning", build = "control", platform = "linux-multi", experiment = "rd19-only" },
 ```
 
 A request-level `--experiment` applies to EVERY lane, so it cannot express a

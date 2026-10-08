@@ -42,7 +42,7 @@ keyed by their *resolved config*: the many architectures sharing a config table
 share one candidate carrying all their architecture bits. All 26 targets
 produce 3062 candidates against 2732 for two.
 
-The architecture enumeration lives in `tools/bigcherry/autotune_schema.py` and
+The architecture enumeration lives in `tools/bigcherry/tuning/schema.py` and
 is **append-only** — each entry's index is its bit position in the persisted
 `architecture_mask`. The C++ enum is generated from it into
 `hip-autotune-arch.h`, so the two languages cannot drift.
@@ -67,17 +67,27 @@ releases shows exactly which solutions came or went.
 | `src/` | New files, mirroring the llama.cpp tree at their final paths |
 | `patches/` | Anchored edits to upstream-owned files |
 | `tools/bigcherry/` | The `bigcherry` Python CLI |
-| `tools/bigcherry/source_audit.py` | Strict-mode upstream invariant audit (HI01) |
-| `tools/bigcherry/autotune_catalog.py` | Candidate catalog generator — single source of truth (HI03) |
-| `tools/bigcherry/autotune_schema.py` | Candidate manifest JSON schema (HI03) |
-| `sql/dispatch-db.sql` | SQLite schema for record/tune modes |
+| `tools/lab/` | Temporary plan-owned investigation; no copied upstream source or raw run output |
+| `tools/bigcherry/source/audit.py` | Strict-mode upstream invariant audit (HI01) |
+| `tools/bigcherry/tuning/catalog.py` | Candidate catalog generator — single source of truth (HI03) |
+| `tools/bigcherry/tuning/schema.py` | Candidate manifest JSON schema (HI03) |
+| `sql/` | Current SQLite schema plus tested migration history for record/tune modes; runtime databases are not tracked |
 | `vendor/llama.cpp/` | The checkout we patch and build (not tracked) |
 | `artifacts/` | Audit JSON, manifests, exported caches (not tracked) |
+| `docs/reference/` | Maintained cross-cutting guidance and runbooks |
 | `docs/standards/` | Project standards — normative |
-| `docs/planning/` | Work-item plan (HI01–HI16) |
+| `docs/planning/` | Active/completed plan items, design decisions, and work history |
+| `docs/evidence/` | Compact tracked evidence retained for reproducible decisions |
+| `releases/` | Machine-readable per-pin compatibility/rebase state consumed by tooling |
+| `docs/releases/` | Human-facing release notes, audit/check-in guidance, and release ledger |
 
 `vendor/llama.cpp` is a real working tree, not a scratch copy: builds run from
-it in place.
+it in place. See `sql/README.md` for dispatch-database schema ownership.
+
+Repository scratch is never source or evidence. Put one-off/generated outputs
+under ignored `artifacts/`, `work/`, or a host temporary directory; root
+`_scratch*`/`scratch` paths and runtime SQLite databases are intentionally
+untracked.
 
 ## Build profiles
 

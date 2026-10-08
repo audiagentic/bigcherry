@@ -1,6 +1,6 @@
 # 1210_rd26_bitidentical_decode_verify_standalone: Decode vs speculative-verify bit-identity, base-standalone hunks (RD26a)
 
-**Status:** untested
+**Status:** rejected
 **Plan item:** RD26
 
 ## What it does
@@ -14,3 +14,8 @@ Bit-identical decode/verify logits are a soundness precondition for speculative 
 ## Upstream / provenance
 
 Ported from a five-commit stew675-rdna-boosts fork cluster (93510434f, b2655d381, d152888fc, plus RD26b commits 10b83d6b2/6cdf5aff9, https://github.com/stew675/llama.cpp). Not merged into ggml-org/llama.cpp master.
+
+## Rejected (2026-10-08, pin b11474)
+
+Not re-based to b11474 (its anchors no longer match) and its only consumers, the adaptive MTP depth patches
+1255 / 1268, are retired. Experiments `rd26a-only` and `adaptive-mtp` removed.

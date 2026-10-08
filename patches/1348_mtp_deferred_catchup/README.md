@@ -58,3 +58,17 @@ stream(s), return immediately so the host can prepare/submit k+1, then after k+1
 event and run draft catch-up k. This needs explicit output-lifetime/event ownership for Meta/split outputs and must
 preserve the same row order/identity. Final flush remains serial. Do not add a worker thread unless the event/staging
 path proves insufficient.
+
+## Composition with 1322 look-ahead
+
+1348 is prompt-only; 1322 is generation-only. In the composed production path, `bc_prompt_only` prevents the 1322 ahead block from running on prompt batches. At the prompt -> generation boundary the final deferred prompt catch-up is flushed before any 1322 ahead draft can mutate the draft context. A second boundary flush immediately before the ahead block is a fail-safe; normally the DONE_PROMPT flush has already drained it.
+
+The switches remain independent: `BIGCHERRY_MTP_DEFERRED_CATCHUP=0` keeps prompt catch-up synchronous while leaving `BIGCHERRY_MTP_AHEAD` available for generation, and `BIGCHERRY_MTP_AHEAD=0` disables generation look-ahead without changing prompt deferral. 1317 timing instrumentation remains wrapped around the composed speculative-process call.
+
+Combined 1322+1348 hardware A/B is still pending on the integrated production composition; the promotion numbers above are the existing 1348 qualification before this integration re-anchor.
+
+## Native llama.cpp baseline
+
+Not measured as a separate build: the off arm (`BIGCHERRY_MTP_DEFERRED_CATCHUP=0`) runs the unmodified upstream
+`common_speculative_process()` path on the same binary, so the A/B above is the comparison against native llama.cpp
+behaviour for this mechanism.

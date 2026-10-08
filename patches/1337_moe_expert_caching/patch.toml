@@ -1,12 +1,12 @@
 schema = 1
 id = "1337_moe_expert_caching"
 order = 1337
-state = "untested"
+state = "rejected"
 kind = "upstream-backport"
 origin = "upstream-pr"
 backend = "hip"
 plan-ids = ["MET01"]
-requires = ["0910_feature_sets", "1336_sched_copy_callback"]
+requires = ["0910_feature_sets"]
 conflicts = []
 requires-options = []
 forbids-options = []

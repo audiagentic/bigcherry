@@ -60,7 +60,7 @@ concurrency:
 jobs:
   offline-patch:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
@@ -72,6 +72,62 @@ jobs:
 
       - name: Compile validation harness
         run: python -m py_compile tools/bigcherry/patch/offline_check.py
+
+      - name: Run patch lint
+        shell: bash
+        env:
+          PYTHONPATH: tools
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          EVENT_BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          head_json="$RUNNER_TEMP/patch-lint-head.json"
+          set +e
+          python -m bigcherry patch-lint --json > "$head_json"
+          head_rc=$?
+          set -e
+          cat "$head_json"
+
+          base="${PR_BASE_SHA:-${EVENT_BEFORE:-}}"
+          if [[ -z "$base" || "$base" =~ ^0+$ ]]; then
+            exit "$head_rc"
+          fi
+
+          base_dir="$RUNNER_TEMP/patch-lint-base"
+          base_json="$RUNNER_TEMP/patch-lint-base.json"
+          git worktree add --detach "$base_dir" "$base" >/dev/null
+          set +e
+          (
+            cd "$base_dir"
+            PYTHONPATH=tools python -m bigcherry patch-lint --json
+          ) > "$base_json"
+          set -e
+
+          python - "$base_json" "$head_json" <<'PY'
+          import json
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as fh:
+              base = json.load(fh)
+          with open(sys.argv[2], encoding="utf-8") as fh:
+              head = json.load(fh)
+
+          base_problems = set(base.get("problems", ()))
+          head_problems = set(head.get("problems", ()))
+          new = sorted(head_problems - base_problems)
+          retained = sorted(head_problems & base_problems)
+
+          if retained:
+              print("patch-lint: pre-existing base problems retained:")
+              for item in retained:
+                  print(f"  - {item}")
+          if new:
+              print("patch-lint: new problems introduced by this change:")
+              for item in new:
+                  print(f"  - {item}")
+              raise SystemExit(1)
+          print("patch-lint: no new problems relative to base")
+          PY
 
       - name: Prepare pinned llama.cpp source
         env:
@@ -102,6 +158,127 @@ jobs:
             --head "$GITHUB_SHA" \
             --source bigcherry \
             --json artifacts/patch-offline-check.json
+
+      - name: Check every configured experiment composes
+        if: ${{ always() }}
+        shell: bash
+        env:
+          PYTHONPATH: tools
+        run: |
+          python - <<'PY'
+          import re
+          import subprocess
+          import sys
+          import tomllib
+          from pathlib import Path
+
+          root = Path(".")
+          raw = tomllib.loads((root / "config/recipes.toml").read_text(encoding="utf-8"))
+          experiments = raw.get("experiment", {})
+          known_sources = set(raw.get("source", {}))
+
+          usage = {name: set() for name in experiments}
+          for campaign in raw.get("campaign", {}).values():
+              for lane in campaign.get("lanes", []):
+                  name = lane.get("experiment")
+                  source = lane.get("source")
+                  if name in usage and source in known_sources:
+                      usage[name].add(source)
+
+          cmd_patterns = (
+              re.compile(r"--source\s+([A-Za-z0-9_-]+).*?--experiment\s+([A-Za-z0-9_-]+)"),
+              re.compile(r"--experiment\s+([A-Za-z0-9_-]+).*?--source\s+([A-Za-z0-9_-]+)"),
+          )
+          lane_pattern = re.compile(
+              r'source\s*=\s*"([^"]+)".*?experiment\s*=\s*"([^"]+)"'
+          )
+          queue_pattern = re.compile(
+              r"\b([A-Za-z0-9_-]+):[A-Za-z0-9_-]+:[A-Za-z0-9_-]+\s+([A-Za-z0-9_-]+)(?:\s|$)"
+          )
+
+          for base in ("tools", "docs/reference", ".github"):
+              for path in sorted((root / base).rglob("*")):
+                  if not path.is_file():
+                      continue
+                  try:
+                      lines = path.read_text(encoding="utf-8").splitlines()
+                  except (UnicodeDecodeError, OSError):
+                      continue
+                  for line in lines:
+                      match = cmd_patterns[0].search(line)
+                      if match:
+                          source, name = match.groups()
+                          if name in usage and source in known_sources:
+                              usage[name].add(source)
+                      match = cmd_patterns[1].search(line)
+                      if match:
+                          name, source = match.groups()
+                          if name in usage and source in known_sources:
+                              usage[name].add(source)
+                      for pattern in (lane_pattern, queue_pattern):
+                          match = pattern.search(line)
+                          if match:
+                              source, name = match.groups()
+                              if name in usage and source in known_sources:
+                                  usage[name].add(source)
+
+          def source_patch_ids(source):
+              ids = []
+              for patch_set in raw["source"][source].get("patch-sets", []):
+                  for patch_id in raw["patch-set"][patch_set].get("patches", []):
+                      if patch_id not in ids:
+                          ids.append(patch_id)
+              return set(ids)
+
+          production_ids = source_patch_ids("bigcherry")
+          failures = []
+          checks = []
+          for name in sorted(experiments):
+              sources = sorted(usage[name])
+              if name == "native-plus-1333":
+                  sources = ["llama-native"]
+              if not sources:
+                  patches = set(experiments[name].get("patches", []))
+                  sources = [
+                      "bigcherry"
+                      if patches <= production_ids
+                      else "bigcherry-tuning"
+                  ]
+                  print(
+                      f"NOTE unreferenced experiment {name}: audit fallback={sources[0]}",
+                      flush=True,
+                  )
+
+              for source in sources:
+                  label = f"{name} ({source})"
+                  print(f"== experiment {label} ==", flush=True)
+                  result = subprocess.run(
+                      [
+                          sys.executable,
+                          "-m",
+                          "bigcherry",
+                          "patch-rebase-check",
+                          "--source",
+                          source,
+                          "--experiment",
+                          name,
+                      ],
+                      check=False,
+                  )
+                  checks.append((name, source, result.returncode))
+                  if result.returncode:
+                      failures.append((name, source, result.returncode))
+
+          print(
+              f"Experiment selections checked: {len(checks)}; failed: {len(failures)}",
+              flush=True,
+          )
+          if failures:
+              print("Failed experiment selections:", file=sys.stderr, flush=True)
+              for name, source, rc in failures:
+                  print(f"  - {name} source={source} rc={rc}", file=sys.stderr, flush=True)
+              raise SystemExit(1)
+          PY
 
       - name: Preserve validation summary
         if: always()

@@ -13,7 +13,7 @@ docker stop radiance-vllm >/dev/null 2>&1
 jobs=$(mktemp)
 R=/mnt/data/bigcherry-work/runs
 cat > "$jobs" <<JOBS
-VIS=0,1,2,3 BUILD b-v7 bigcherry:stock:linux-multi candidate-v7 gfx1100,gfx1201,gfx1030
+VIS=0,1,2,3 BUILD b-v7 bigcherry:stock:linux-multi stock-none gfx1100,gfx1201,gfx1030
 VIS=0,1,2,3 SCRIPT v7-d24k tools/lab/flash-next/quick-ab-depth.sh 24576 @b-v7 @b-v7 $R/qfp22-v7-d24k BIGCHERRY_QSA_GATHER=1 BIGCHERRY_QSA_CHUNK=512 UB=1024 B=1024
 VIS=0,1,2,3 SCRIPT v7-d120k tools/lab/flash-next/quick-ab-depth.sh 76800 @b-v7 @b-v7 $R/qfp22-v7-d120k BIGCHERRY_QSA_GATHER=1 BIGCHERRY_QSA_CHUNK=512 UB=1024 B=1024
 VIS=0,1,2,3 SCRIPT v7-sweep tools/lab/flash-next/v7-sweep.sh @b-v7 $R/qfp22-v7-sweep
