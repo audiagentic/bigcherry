@@ -26,6 +26,7 @@ _ARG_NEW = """    add_opt(common_arg(
 _INCLUDES_NEW = """#include <algorithm>
 #include <atomic>
 #include <cassert>
+#include <cstdlib>
 """
 
 _MEMBERS_NEW = """    std::vector<std::vector<float>> pending_h;   // [n_seq][n_embd]
@@ -51,6 +52,12 @@ _CTOR_NEW = """        }
             // arriving (dp.result was cleared, so accept() never even runs).
             throw std::invalid_argument(\"adaptive MTP floor must be 0 (disabled) or >= --spec-draft-n-min\");
         }
+        if (this->params.n_min_adaptive > 0) {
+            const char * mtp_ahead = std::getenv(\"BIGCHERRY_MTP_AHEAD\");
+            if (mtp_ahead != nullptr && std::atoi(mtp_ahead) != 0) {
+                throw std::invalid_argument(\"adaptive MTP depth cannot be combined with BIGCHERRY_MTP_AHEAD=1\");
+            }
+        }
         this->n_max = this->params.n_max;
 
         pending_h.assign(n_seq, std::vector<float>(n_embd, 0.0f));
@@ -67,32 +74,36 @@ _BEGIN_NEW = """
         }
 """
 
-_DRAFT_START_NEW = """            last_n_draft[seq_id] = 0;
+_DRAFT_START_NEW = r"""            last_n_draft[seq_id] = 0;
+            if (params.n_min_adaptive > 0 && getenv("BIGCHERRY_PATCH_TRACE") != nullptr) {
+                static std::atomic_flag bigcherry_prbe52_logged = ATOMIC_FLAG_INIT;
+                if (!bigcherry_prbe52_logged.test_and_set(std::memory_order_relaxed)) {
+                    SPC_WRN("BIGCHERRY_PATCH_HIT patch=1268_prbe52_adaptive_mtp_wiring path=mtp_adaptive_depth contract=PRBE52-ADAPTIVE-MTP-WIRING depth=%d seq=%d\\n",
+                            adaptive_state[seq_id].n_cur, (int) seq_id);
+                }
+            }
 """
 
-_LIMIT_NEW = """                const int effective_n_max = params.n_min_adaptive > 0 ? adaptive_state[seq_id].n_cur : params.n_max;
-                if (params.n_min_adaptive > 0 && getenv(\"BIGCHERRY_PATCH_TRACE\") != nullptr) {
-                    static std::atomic_flag bigcherry_prbe52_logged = ATOMIC_FLAG_INIT;
-                    if (!bigcherry_prbe52_logged.test_and_set(std::memory_order_relaxed)) {
-                        SPC_WRN(\"BIGCHERRY_PATCH_HIT patch=1268_prbe52_adaptive_mtp_wiring path=mtp_adaptive_depth contract=PRBE52-ADAPTIVE-MTP-WIRING depth=%d seq=%d\\n\",
-                                effective_n_max, (int) seq_id);
-                    }
-                }
-                if (effective_n_max <= (int) result.size()) {
+_LIMIT_NEW = """                if (params.n_max <= (int) result.size()) {
                     drafting[seq_id] = false;
                     n_drafting--;
                     continue;
                 }
+
+                // PRBE52: keep the native/static n_max stop block byte-for-byte so 1321 can
+                // replace it with forced-front/live-tail logic. The adaptive cap remains
+                // immediately after that seam and caps the composed fresh front.
+                if (params.n_min_adaptive > 0 &&
+                        adaptive_state[seq_id].n_cur <= (int) result.size()) {
+                    drafting[seq_id] = false;
+                    n_drafting--;
+                    continue;
+                }
+
+                if (chain_heads) {
 """
 
-_FINALIZE_NEW = """            if (dp.result->size() < (size_t) params.n_min) {
-                dp.result->clear();
-            }
-            last_n_draft[seq_id] = (int32_t) dp.result->size();
-        }
-    }
-
-    void accept(llama_seq_id seq_id, uint16_t n_accepted, bool /*is_other*/) override {
+_FINALIZE_NEW = """            last_n_draft[seq_id] = (int32_t) dp.result->size();
 """
 
 _ACCEPT_NEW = """        const int32_t i_h = std::min<int32_t>(n_accepted, n_rows - 1);
@@ -166,24 +177,23 @@ _LIMIT_ANCHOR = (
     r"                    n_drafting--;\n"
     r"                    continue;\n"
     r"                \}\n"
-    # eagle3 has the same depth-cap block. MTP alone branches on chain_heads
-    # immediately afterwards.
-    r"(?=\n                if \(chain_heads\) \{)"
+    r"\n"
+    r"                if \(chain_heads\) \{"
 )
+
 _FINALIZE_ANCHOR = (
     r"            if \(dp.result->size\(\) < \(size_t\) params.n_min\) \{\n"
     r"                dp.result->clear\(\);\n"
     r"            \}\n"
-    r"        \}\n"
+    r"(?=        \}\n"
     r"    \}\n\n"
     r"    void accept\(llama_seq_id seq_id, uint16_t n_accepted, bool[^\n]*\) override \{\n"
-    # eagle3 has the same finalize block and accept signature. MTP's accept
-    # reads verify_h_rows; eagle3 reads verify_g_rows.
-    r"(?=        if \(seq_id < 0 \|\| seq_id >= \(llama_seq_id\) n_seq\) \{\n"
+    r"        if \(seq_id < 0 \|\| seq_id >= \(llama_seq_id\) n_seq\) \{\n"
     r"            return;\n"
     r"        \}\n\n"
     r"        const int32_t n_rows = verify_h_rows\[seq_id\];)"
 )
+
 _ACCEPT_ANCHOR = (
     r"        const int32_t i_h = std::min<int32_t>\(n_accepted, n_rows - 1\);\n"
     r"        const size_t row_bytes = \(size_t\) n_embd \* sizeof\(float\);\n"
@@ -220,9 +230,9 @@ PATCHES = [
             Edit(id="prbe52-draft-reset", anchor=_DRAFT_START_ANCHOR, mode="insert_after", text=_DRAFT_START_NEW,
                  guard=r"last_n_draft\[seq_id\] = 0", rationale="Identify the MTP drafting start by its pending-h embedding batch setup, not by a pair shared with other draft implementations.", expect_matches=1, max_span_lines=3),
             Edit(id="prbe52-depth-limit", anchor=_LIMIT_ANCHOR, mode="replace", text=_LIMIT_NEW,
-                 guard=r"effective_n_max", rationale="Use adaptive depth only in the MTP chain-head-cap block when explicitly enabled; fixed-depth code remains the default.", expect_matches=1, max_span_lines=6),
-            Edit(id="prbe52-draft-accounting", anchor=_FINALIZE_ANCHOR, mode="replace", text=_FINALIZE_NEW,
-                 guard=r"last_n_draft\[seq_id\] = \(int32_t\) dp\.result->size\(\)", rationale="Identify the MTP finalize/accept boundary via verify_h_rows without depending on the parameter comment.", expect_matches=1, max_span_lines=8),
+                 guard=r"adaptive_state\[seq_id\]\.n_cur <= \(int\) result\.size\(\)", rationale="Preserve the native n_max stop block for 1321, then apply the adaptive cap before chain-head continuation.", expect_matches=1, max_span_lines=6),
+            Edit(id="prbe52-draft-accounting", anchor=_FINALIZE_ANCHOR, mode="insert_after", text=_FINALIZE_NEW,
+                 guard=r"last_n_draft\[seq_id\] = \(int32_t\) dp\.result->size\(\)", rationale="Insert accounting after the native n_min block, preserving 1321's exact n_min preimage.", expect_matches=1, max_span_lines=8),
             Edit(id="prbe52-accept-update", anchor=_ACCEPT_ANCHOR, mode="replace", text=_ACCEPT_NEW,
                  guard=r"adaptive_state\[seq_id\]\.update", rationale="Feed the real accepted count back; anchor only on executable statements.", expect_matches=1, max_span_lines=6),
         ),
