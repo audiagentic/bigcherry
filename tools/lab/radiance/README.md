@@ -15,6 +15,15 @@ standalone server with a llama-server-compatible API.
 - `fetch-gcc14.sh`: unpacks Ubuntu's g++-14 packages into a private directory for hosts that only have g++ 13
   (radiance does not build with g++ 13 or with ROCm's clang as host compiler). Nothing is installed system-wide.
 
+- `run-radiance.sh`: serves a model from that build on the R9700 alone (`--tp 1`, fp8 KV) and measures it with
+  `tools/lab/reference-vllm/bench-openai.py` at the reference-lane depths, with the drafter on and off.
+
+## Build result on Brutus (2026-10-09)
+
+Builds in 104 s for gfx1201 with ROCm 7.2.4 and g++ 14.2 (unpacked by `fetch-gcc14.sh`). 38 of 39 card-free tests
+pass; `plugin_test` fails because it probes device 0, an RX 7900 XTX, and the log states the reason: libr4d has code
+objects for gfx1201 only, so its 201 device kernels are left out of selection on a gfx1100 card.
+
 ## Facts from the source (radiance 1.3.0, commit 89cee7ce)
 
 - Kernel library `libr4d` covers gfx1200 / gfx1201 only. `libref` is the reference implementation and `libavx` the
