@@ -1,6 +1,6 @@
 # Standalone Radiance gfx1100 bootstrap (RAD11)
 
-Experimental, **not a complete backend** and not a production switch. This is the first implementation slice toward running standalone [Radiance](https://codeberg.org/StillDeadcode/radiance) on two Radeon RX 7900 XTX cards. It uses the source-level plugin ABI of the [GitHub mirror at 6c11671 (Radiance 1.0.5)](https://github.com/AndrzejukPawel/radiance/tree/6c11671bdd31569978e26d14f190926cbd8d724b); newer Codeberg commits **must be checked before deployment**.
+Experimental, **not a complete backend** and not a production switch. The full kernel-by-kernel porting matrix and dual-XTX P2P findings are in [the companion audit](../../../docs/research/radiance-libr4d-gfx1100-audit.md), consolidated into this branch. This is the first implementation slice toward running standalone [Radiance](https://codeberg.org/StillDeadcode/radiance) on two Radeon RX 7900 XTX cards. It uses the source-level plugin ABI of the [GitHub mirror at 6c11671 (Radiance 1.0.5)](https://github.com/AndrzejukPawel/radiance/tree/6c11671bdd31569978e26d14f190926cbd8d724b); newer Codeberg commits **must be checked before deployment**.
 
 ## Goals and limitations
 
