@@ -1,4 +1,4 @@
-"""Offline mechanics and lifecycle tests for 1346_mtp_prompt_overlap."""
+"""Offline mechanics tests for the 1346 MTP prompt timing diagnostic."""
 
 from __future__ import annotations
 
@@ -12,10 +12,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from bigcherry.core import paths  # noqa: E402
 from bigcherry.patcher import apply_all  # noqa: E402
+from bigcherry.patch import rebase as patch_rebase  # noqa: E402
 from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
-_V = paths.llama_root()
+_V = paths.llama_root()  # the primary checkout's vendor tree (a slice worktree has none)
 _FILES = (
     "common/speculative.h",
     "common/speculative.cpp",
@@ -42,7 +43,10 @@ class Patch1346StaticContracts(unittest.TestCase):
     def test_metadata_and_explicit_edit_contracts(self):
         meta = tomllib.loads((_REPO / "engines/llamacpp/patches/1346_mtp_prompt_overlap/patch.toml").read_text(encoding="utf-8"))
         self.assertEqual(meta["id"], "1346_mtp_prompt_overlap")
-        self.assertEqual(meta["tags"], ["optimization", "mtp"])
+        self.assertEqual(meta["kind"], "diagnostic")
+        self.assertEqual(meta["tags"], ["mtp"])
+        self.assertIn("1317_spec_round_timing", meta["requires"])
+        self.assertIn("1348_mtp_deferred_catchup", meta["requires"])
 
         src = (_REPO / "engines/llamacpp/patches/1346_mtp_prompt_overlap/patch.py").read_text(encoding="utf-8")
         edits = [edit for patch in _P.PATCHES for edit in patch.edits]
@@ -55,77 +59,17 @@ class Patch1346StaticContracts(unittest.TestCase):
             self.assertIsNotNone(edit.guard)
             self.assertGreater(edit.max_span_lines, 0)
 
-    def test_window_qualification_is_conservative(self):
-        text = _P._MTP_PREFILL_TEXT
-        for clause in (
-            "n_prompt <= bc_mtp_prompt_window",
-            "n_cached != 0",
-            "!window_safe",
-            "is_mem_shared",
-            "chain_heads",
-            "n_mtp_layers != 1",
-        ):
-            self.assertIn(clause, text)
-        self.assertIn("inherited_truncated && n_cached > 0", text)
-        self.assertIn("window.suppress = true;", text)
-
-    def test_window_boundary_census_is_chunking_invariant(self):
-        def collect(prompt_len, window, chunk_sizes):
-            replay_first = prompt_len - window
-            predecessor = replay_first - 1
-            retained = []
-            fetched = []
-            pos = 0
-            i = 0
-            while pos < prompt_len:
-                size = chunk_sizes[i % len(chunk_sizes)]
-                beg = pos
-                end = min(prompt_len, pos + size) - 1
-                if end >= predecessor:
-                    fetched.append((beg, end))
-                    for p in range(max(beg, replay_first), end + 1):
-                        retained.append((p, p - 1))
-                pos = end + 1
-                i += 1
-            return predecessor, fetched, retained
-
-        prompt_len = 38673
-        window = 2048
-        expected = [(p, p - 1) for p in range(prompt_len - window, prompt_len)]
-        for chunks in ([1], [7], [512], [37, 511, 3, 256, 19]):
-            predecessor, fetched, retained = collect(prompt_len, window, chunks)
-            self.assertEqual(retained, expected)
-            self.assertTrue(fetched)
-            self.assertLessEqual(fetched[0][0], predecessor)
-            self.assertGreaterEqual(fetched[0][1], predecessor)
-            self.assertEqual(fetched[-1][1], prompt_len - 1)
-
-    def test_replay_and_lifecycle_guards_are_present(self):
-        replay = _P._MTP_BEGIN_TIMING_TEXT
-        process = _P._PROCESS_NATIVE_NEW
-        server = _P._PROMPT_LOAD_NEW + _P._PROMPT_CLEAR_NEW + _P._RELEASE_NEW + _P._SLOT_RESTORE_TEXT
-        self.assertIn("bc_window.count == n_replay", replay)
-        self.assertIn("bc_window.pos.front() == bc_window.replay_first", replay)
-        self.assertIn("bc_window.pos.back() == N - 1", replay)
-        self.assertIn("llama_synchronize(ctx_dft);", replay)
-        self.assertIn("BIGCHERRY_PATCH_HIT patch=1346_mtp_prompt_overlap mechanism=window", replay)
-        self.assertIn("const llama_pos predecessor = (llama_pos) window.replay_first - 1;", process)
-        self.assertIn("const int32_t row = (int32_t) (pos - window.replay_first);", process)
-        self.assertIn("Invariant WINDOW-CACHE-LOAD", server)
-        self.assertIn("Invariant WINDOW-CLEAR", server)
-        self.assertIn("Invariant WINDOW-CANCEL", server)
-        self.assertIn("Invariant WINDOW-SLOT-RESTORE", server)
-        self.assertIn("params_base.n_ctx_checkpoints == 0", _P._SERVER_TEXT)
-
-    def test_default_off_and_no_overlap_worker(self):
-        self.assertEqual(
-            [doc.name for doc in _P.ENV_DOCS],
-            ["BIGCHERRY_MTP_PROMPT_TIMING", "BIGCHERRY_MTP_PROMPT_WINDOW"],
-        )
-        self.assertEqual([doc.default for doc in _P.ENV_DOCS], ["0", "0"])
-        implementation = _P._STATE_TEXT + _P._MTP_PREFILL_TEXT + _P._PROCESS_NATIVE_NEW
-        self.assertNotIn("std::thread", implementation)
-        self.assertNotIn("BIGCHERRY_MTP_PROMPT_OVERLAP", implementation)
+    def test_only_qualified_timing_surface_remains(self):
+        src = (_REPO / "engines/llamacpp/patches/1346_mtp_prompt_overlap/patch.py").read_text(encoding="utf-8")
+        executable = src[src.index("from __future__ import annotations"):]
+        self.assertEqual([doc.name for doc in _P.ENV_DOCS], ["BIGCHERRY_MTP_PROMPT_TIMING"])
+        self.assertEqual([doc.default for doc in _P.ENV_DOCS], ["0"])
+        self.assertNotIn("BIGCHERRY_MTP_PROMPT_WINDOW", executable)
+        self.assertNotIn("bc_mtp_prompt_window", src)
+        self.assertNotIn("mechanism=window", src)
+        self.assertNotIn("WINDOW-", src)
+        self.assertNotIn("std::thread", src)
+        self.assertNotIn("BIGCHERRY_MTP_PROMPT_OVERLAP", src)
 
 
 @unittest.skipUnless(all((_V / f).exists() for f in _FILES), "pinned vendor checkout not present")
@@ -137,61 +81,89 @@ class Patch1346Mechanics(unittest.TestCase):
             copy_pinned(_V / f, root / f)
         return root
 
+    def _apply_prereqs(self, root):
+        """Compose the production set up to, not including, 1346 through the composer's own probe path.
+
+        1346 applies after look-ahead (1321/1322), round timing (1317) and deferred catch-up (1348); those in turn
+        need their own predecessors, so a hand-picked subset does not reproduce the text 1346 anchors on.
+        """
+        selected = patch_rebase.resolve_selection(source_name="bigcherry", all_patches=False)
+        ids = [m.patch_id for m in selected.modules]
+        self.assertIn("1346_mtp_prompt_overlap", ids)
+        for required in ("1321_mtp_ahead_primitives", "1322_mtp_ahead_overlap", "1317_spec_round_timing",
+                         "1348_mtp_deferred_catchup"):
+            self.assertLess(ids.index(required), ids.index("1346_mtp_prompt_overlap"), required)
+        texts = patch_rebase._overlay_texts()
+        overlay_paths = frozenset(texts)
+        for module in selected.modules:
+            if module.patch_id == "1346_mtp_prompt_overlap":
+                break
+            probe = patch_rebase.probe_patch(
+                module,
+                _V,
+                texts,
+                context_lines=3,
+                previous_revision=None,
+                revision="mechanics-test",
+                overlay_paths=overlay_paths,
+            )
+            self.assertIn(
+                probe.status,
+                (patch_rebase.STATUS_CLEAN, patch_rebase.STATUS_CLEAN_NOOP),
+                (module.patch_id, probe.to_dict()),
+            )
+        for rel in _FILES:
+            if rel in texts:
+                (root / rel).write_text(texts[rel], encoding="utf-8")
+
     def _check(self, root):
         h = (root / "common/speculative.h").read_text(encoding="utf-8")
         src = (root / "common/speculative.cpp").read_text(encoding="utf-8")
         server = (root / "tools/server/server-context.cpp").read_text(encoding="utf-8")
 
-        self.assertIn("int32_t n_prompt, int32_t n_cached, bool window_safe);", h)
-        self.assertIn("void common_speculative_prompt_reset(common_speculative * spec, llama_seq_id seq_id, bool clean);", h)
+        self.assertIn("void common_speculative_prefill_begin(common_speculative * spec, llama_seq_id seq_id);", h)
         self.assertIn("void common_speculative_target_process_begin(common_speculative * spec, const common_batch & batch);", h)
         self.assertIn("void common_speculative_target_process_end(common_speculative * spec, const common_batch & batch);", h)
-        self.assertIn("int32_t /*n_prompt*/, int32_t /*n_cached*/, bool /*window_safe*/) {}", src)
-        self.assertIn("virtual void prompt_reset(llama_seq_id /*seq_id*/, bool /*clean*/) {}", src)
-        self.assertIn("virtual void target_process_begin(const common_batch & /*batch*/) {}", src)
-        self.assertIn("llama_seq_id seq_id, int32_t n_prompt, int32_t n_cached, bool window_safe) override", src)
-        self.assertIn('std::getenv("BIGCHERRY_MTP_PROMPT_TIMING")', src)
-        self.assertIn("BIGCHERRY_MTP_PROMPT_TIMING target_nextn_ms=%.3f target_sync_ms=%.3f target_fetch_ms=%.3f draft_process_ms=%.3f draft_decode_ms=%.3f host_gap_ms=%.3f chunks=%llu tokens=%llu", src)
-        self.assertIn("llama_synchronize(ctx_tgt);", src)
-        self.assertIn("bc_pt_state->target_sync_us += bc_pt_target_sync_us;", src)
-        self.assertIn("bc_pt_state->target_fetch_us += bc_pt_target_fetch_us;", src)
-        self.assertIn("timing->host_gap_us += ggml_time_us() - timing->last_target_return_us;", src)
-        self.assertIn("bc_pt_draft_decode_us += ggml_time_us() - bc_pt_draft_t0;", src)
-        self.assertIn("bc_pt_state->process_us += ggml_time_us() - bc_pt_process_t0;", src)
-        self.assertNotIn("std::thread", src)
-        self.assertNotIn("BIGCHERRY_MTP_PROMPT_OVERLAP", src)
-        self.assertIn('std::getenv("BIGCHERRY_MTP_PROMPT_WINDOW")', src)
-        self.assertIn("std::vector<uint8_t> bc_window_fetch(n_seq, 0);", src)
-        self.assertIn("BIGCHERRY_MTP_PROMPT_WINDOW collector invariant failed", src)
-        self.assertIn("llama_memory_seq_rm(mem_dft, seq_id, -1, -1);", src)
-        self.assertIn("llama_synchronize(ctx_dft);", src)
-        self.assertIn("bool poisoned = false;", src)
-        self.assertIn("bool suppress = false;", src)
-        self.assertIn("Invariant WINDOW-CACHE", src)
-        self.assertIn("Invariant WINDOW-SUPPRESS", src)
-        self.assertIn("BIGCHERRY_PATCH_HIT patch=1346_mtp_prompt_overlap mechanism=window", src)
 
-        keep = "slot.prompt.tokens.keep_first(n_past);"
-        hook = "common_speculative_prefill_begin(\n                                spec.get(), slot.id, (int32_t) slot.task->n_tokens(), n_past,"
+        self.assertIn('std::getenv("BIGCHERRY_MTP_PROMPT_TIMING")', src)
+        self.assertIn(
+            "BIGCHERRY_MTP_PROMPT_TIMING deferred=%d nextn_block_ms=%.3f nextn_block_mean_ms=%.3f "
+            "draft_catchup_ms=%.3f draft_catchup_mean_ms=%.3f snapshot_copy_ms=%.3f "
+            "snapshot_copy_mean_ms=%.3f final_flush_ms=%.3f final_flush_mean_ms=%.3f "
+            "submit_interval_ms=%.3f submit_interval_mean_ms=%.3f chunks=%llu tokens=%llu submit_intervals=%llu",
+            src,
+        )
+        self.assertIn("bc_mtp_prompt_timing[seq_id].deferred = bc_deferred_enabled;", src)
+        self.assertIn("bc_pt_state->target_block_us += bc_pt_target_sync_us + bc_pt_target_fetch_us;", src)
+        self.assertIn("bc_pt_state->draft_catchup_us += bc_pt_catchup_us;", src)
+        self.assertIn("bc_pt_deferred_catchup_t0", src)
+        self.assertIn("bc_pt_deferred_nextn_t0", src)
+        self.assertIn("bc_pt_state->snapshot_copy_us += ggml_time_us() - bc_pt_snapshot_copy_t0;", src)
+        self.assertIn("bc_pt_state->final_flush_us += bc_pt_deferred_catchup_us;", src)
+        self.assertIn("timing->submit_interval_us += now_us - timing->last_target_submit_us;", src)
+        self.assertIn("bc_mtp_prompt_timing_in_process_deferred = true;", src)
+        self.assertEqual(src.count("bc_pt_state->chunks++;"), 2)
+        self.assertIn("bc_pt_state->tokens += (uint64_t) n_tokens;", src)
+        self.assertIn("bc_pt_state->tokens += (uint64_t) batch_in.size();", src)
+        self.assertIn("llama_synchronize(ctx_tgt);", src)
+
+        self.assertIn("common_speculative_prefill_begin(spec.get(), slot.id);", server)
         process_beg = "common_speculative_target_process_begin(spec.get(), batch.view);"
         process_call = "ret = llama_process(ctx_tgt, LLAMA_PROCESS_TYPE_DECODE, batch.view.get());"
         process_end = "common_speculative_target_process_end(spec.get(), batch.view);"
-        self.assertEqual(server.count(hook), 1)
-        self.assertLess(server.index(keep), server.index(hook))
         self.assertEqual(server.count(process_beg), 1)
         self.assertEqual(server.count(process_end), 1)
         self.assertLess(server.index(process_beg), server.index(process_call))
         self.assertLess(server.index(process_call), server.index(process_end))
-        self.assertIn("Invariant WINDOW-CACHE-LOAD", server)
-        self.assertIn("Invariant WINDOW-CLEAR", server)
-        self.assertIn("Invariant WINDOW-CANCEL", server)
-        self.assertIn("Invariant WINDOW-SLOT-RESTORE", server)
-        self.assertIn("Invariant WINDOW-SHIFT", server)
-        self.assertIn("params_base.n_ctx_checkpoints == 0", server)
 
-    def test_apply_and_idempotent(self):
+        # 1348 remains active and 1346 measures it instead of restoring the old synchronous path.
+        self.assertIn("common_speculative_process_deferred(spec.get(), batch.view, bc_prompt_only)", server)
+        self.assertIn("BIGCHERRY_PATCH_HIT patch=1348_mtp_deferred_catchup", src)
+
+    def test_composes_after_production_deferred_catchup_and_is_idempotent(self):
         with tempfile.TemporaryDirectory() as td:
             root = self._root(td)
+            self._apply_prereqs(root)
             res = apply_all(_P.PATCHES, root)
             self.assertTrue(all(r.ok for r in res), [e.detail for r in res for e in r.failed])
             self._check(root)

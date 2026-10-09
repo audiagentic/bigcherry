@@ -1,26 +1,40 @@
 # 1346_mtp_prompt_overlap
 
-QFP31 implementation package. The package name is retained although WINDOW, not worker overlap, qualified as the first mechanism.
+QFP31 timing diagnostic. The historical package id is retained; the unqualified prompt-window optimization has been
+removed. The package now changes no model work or ordering and emits output only when its timing flag is enabled.
 
-## Flags
+## Flag
 
-- `BIGCHERRY_MTP_PROMPT_WINDOW=<tokens>`: default `0`. A positive value enables bounded final-window replay only for qualified fresh single-head MTP prompts.
-- `BIGCHERRY_MTP_PROMPT_TIMING=1`: default off. Splits prompt MTP time into explicit target synchronization, post-sync target fetch/copy, draft catch-up, and inter-submit host gap.
+- `BIGCHERRY_MTP_PROMPT_TIMING=1`: default off. Uses the same one-line schema for native and deferred prompt catch-up.
 
-Timing output:
+Output fields are `deferred`, total/mean `nextn_block_ms`, `draft_catchup_ms`, `snapshot_copy_ms`,
+`final_flush_ms`, target `submit_interval_ms`, plus `chunks`, `tokens`, and `submit_intervals`.
 
-`BIGCHERRY_MTP_PROMPT_TIMING target_nextn_ms=<...> target_sync_ms=<...> target_fetch_ms=<...> draft_process_ms=<...> draft_decode_ms=<...> host_gap_ms=<...> chunks=<...> tokens=<...>`
+At resolved prompt start the diagnostic resets single-sequence attribution. Native `process()` counts every prompt
+chunk/token and times the target join plus catch-up. The 1348 deferred path independently counts every queued
+chunk/token, times the synchronizing public NextN getter, host snapshot copy, interior catch-up, terminal flush, and
+target submit-to-submit interval. Deferred edit guards are path-unique so native timing cannot make the patcher skip
+them. Mixed-sequence batches are not attributed.
 
-Successful WINDOW replay output:
+There is no `BIGCHERRY_MTP_PROMPT_WINDOW`, bounded replay, draft suppression, cache/cancel lifecycle state, or WINDOW
+activation marker in this package.
 
-`BIGCHERRY_PATCH_HIT patch=1346_mtp_prompt_overlap mechanism=window window=<N> replay=<N> skipped=<P-N> end_pos=<P-1> host_mib=<...>`
+## Promotion record
 
-## WINDOW contract
+Promotion record (QFP18 lightweight tier, pin b11474 / b9acf138, 2026-10-08). Diagnostic promoted as a neutral enabler
+so the production binary can be timed without a special build.
 
-For prompt length `P > N`, the draft context is rebuilt at prompt end from exactly positions `[P-N, P)`. Replay row `p` uses token `x[p]` and the same previous target hidden row `h[p-1]` used by the native MTP catch-up. If `P-N` begins a new target chunk, the preceding chunk is fetched once to capture `h[P-N-1]`; that predecessor is not draft-decoded.
+- Build and run: experiment build `b-metamem-mig-diag` compiled clean at b11474.
+- Activation with `BIGCHERRY_MTP_PROMPT_TIMING=1` (38,673-token prompt, 77 chunks):
+  `target_nextn_ms=25116.2 target_sync_ms=24979.7 target_fetch_ms=136.5 draft_process_ms=27319.0 draft_decode_ms=2201.9 host_gap_ms=27528.4`.
+- Neutrality: greedy text with timing on equals the flag-off arm, md5 `fe307bdfb7e1`.
+- The diagnostic identified the QFP31 critical path: the target join moves the wait immediately after each target
+  chunk, then draft catch-up and host preparation serialize before the next target submit.
 
-After replay, draft KV contains only the final prompt window at original absolute positions, `pending_h` is target hidden row `P-1`, and `draft()` starts generation at `P` from that carry. Replay is synchronized before the bounded host collector is freed.
+The removed `BIGCHERRY_MTP_PROMPT_WINDOW` mechanism was not qualified: production prompt cache/checkpoints prevented
+it from arming, and its ABBA showed no activation marker. It is not part of the promoted package.
 
-WINDOW does not arm for cached prefixes, MTMD/shared-prefix prompts, shared MTP memory, chained/multiple MTP heads, prompt checkpoints, or `P <= N`. Cache/load/restore paths lacking the host carry suppress MTP proposals rather than using inconsistent draft state.
+## Native llama.cpp comparison
 
-OVERLAP remains deferred pending WINDOW hardware measurements.
+Native llama.cpp has no counterpart. With `BIGCHERRY_MTP_PROMPT_TIMING` unset, this patch only adds dormant timing
+branches/hooks and does not alter target or draft computation.

@@ -10,6 +10,7 @@ This module has no dependency on the rest of the package so that ``core.paths`` 
 
 from __future__ import annotations
 
+import re
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -27,6 +28,44 @@ class EngineError(ValueError):
 
 
 @dataclass(frozen=True)
+class DraftStats:
+    """Where an engine reports how many tokens its drafter proposed and how many were accepted.
+
+    ``source`` is "log" (a regular expression over the server log with named groups ``drafted`` and ``accepted``; the
+    last match is the running total) or "metrics" (two counter names in the Prometheus text served at ``path``).
+    """
+
+    source: str
+    pattern: str = ""
+    path: str = ""
+    drafted: str = ""
+    accepted: str = ""
+
+
+@dataclass(frozen=True)
+class ServeSpec:
+    """How an engine's server is launched, health-checked and stopped."""
+
+    binary: str                      # relative to a build tree, e.g. bin/llama-server
+    model_flag: str
+    host_flag: str
+    port_flag: str
+    health: str                      # GET path that answers 200 when the server is ready
+    shutdown: str                    # "sigint", or "http:<POST path>"
+    env: tuple[tuple[str, str], ...] = ()               # fixed environment for the server process
+    env_from_binary: tuple[tuple[str, str], ...] = ()   # variables set to a path relative to the binary's directory
+    draft_stats: DraftStats | None = None
+
+    @property
+    def shutdown_method(self) -> str:
+        return "sigint" if self.shutdown == "sigint" else "http"
+
+    @property
+    def shutdown_path(self) -> str:
+        return self.shutdown.partition(":")[2] if self.shutdown.startswith("http:") else ""
+
+
+@dataclass(frozen=True)
 class EngineLayout:
     """One engine's declaration. Paths are repository-relative, in POSIX form."""
 
@@ -35,6 +74,7 @@ class EngineLayout:
     patches: str
     overlay: str
     vendor: str
+    serve: ServeSpec
 
     def patches_root(self, project_root: Path) -> Path:
         return project_root / self.patches
@@ -58,6 +98,74 @@ def _relative(value: object, field: str, name: str) -> str:
     if path.is_absolute() or ".." in path.parts or "\\" in value:
         raise EngineError(f"engine {name!r}: layout.{field} must be a repository-relative POSIX path, got {value!r}")
     return str(path)
+
+
+def _text(table: dict, key: str, where: str, name: str) -> str:
+    value = table.get(key)
+    if not isinstance(value, str) or not value:
+        raise EngineError(f"engine {name!r}: {where}.{key} must be a non-empty string")
+    return value
+
+
+def _pairs(table: dict, key: str, where: str, name: str) -> tuple[tuple[str, str], ...]:
+    value = table.get(key, {})
+    if not isinstance(value, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in value.items()):
+        raise EngineError(f"engine {name!r}: {where}.{key} must be a table of strings")
+    return tuple(sorted(value.items()))
+
+
+def _draft_stats(table: object, name: str) -> DraftStats | None:
+    if table is None:
+        return None
+    where = "serve.draft-stats"
+    if not isinstance(table, dict):
+        raise EngineError(f"engine {name!r}: [{where}] must be a table")
+    source = _text(table, "source", where, name)
+    if source == "log":
+        unknown = sorted(set(table) - {"source", "pattern"})
+        pattern = _text(table, "pattern", where, name)
+        try:
+            groups = re.compile(pattern).groupindex
+        except re.error as exc:
+            raise EngineError(f"engine {name!r}: {where}.pattern is not a valid regular expression: {exc}") from exc
+        if not {"drafted", "accepted"} <= set(groups):
+            raise EngineError(f"engine {name!r}: {where}.pattern needs named groups 'drafted' and 'accepted'")
+        stats = DraftStats(source=source, pattern=pattern)
+    elif source == "metrics":
+        unknown = sorted(set(table) - {"source", "path", "drafted", "accepted"})
+        stats = DraftStats(source=source, path=_text(table, "path", where, name),
+                           drafted=_text(table, "drafted", where, name), accepted=_text(table, "accepted", where, name))
+    else:
+        raise EngineError(f"engine {name!r}: {where}.source must be 'log' or 'metrics', got {source!r}")
+    if unknown:
+        raise EngineError(f"engine {name!r}: unknown {where} key(s): {', '.join(unknown)}")
+    return stats
+
+
+def _serve(table: object, name: str) -> ServeSpec:
+    if not isinstance(table, dict):
+        raise EngineError(f"engine {name!r}: missing [serve] table")
+    known = {"binary", "model-flag", "host-flag", "port-flag", "health", "shutdown", "env", "env-from-binary", "draft-stats"}
+    unknown = sorted(set(table) - known)
+    if unknown:
+        raise EngineError(f"engine {name!r}: unknown serve key(s): {', '.join(unknown)}")
+    shutdown = _text(table, "shutdown", "serve", name)
+    if shutdown != "sigint" and not (shutdown.startswith("http:/") and len(shutdown) > len("http:/")):
+        raise EngineError(f"engine {name!r}: serve.shutdown must be 'sigint' or 'http:/<path>', got {shutdown!r}")
+    health = _text(table, "health", "serve", name)
+    if not health.startswith("/"):
+        raise EngineError(f"engine {name!r}: serve.health must be a path starting with '/', got {health!r}")
+    return ServeSpec(
+        binary=_relative(table.get("binary"), "binary", name),
+        model_flag=_text(table, "model-flag", "serve", name),
+        host_flag=_text(table, "host-flag", "serve", name),
+        port_flag=_text(table, "port-flag", "serve", name),
+        health=health,
+        shutdown=shutdown,
+        env=_pairs(table, "env", "serve", name),
+        env_from_binary=_pairs(table, "env-from-binary", "serve", name),
+        draft_stats=_draft_stats(table.get("draft-stats"), name),
+    )
 
 
 def declaration_path(repo_root: Path, name: str) -> Path:
@@ -92,6 +200,7 @@ def load(repo_root: Path, name: str) -> EngineLayout:
         patches=_relative(layout.get("patches"), "patches", name),
         overlay=_relative(layout.get("overlay"), "overlay", name),
         vendor=_relative(layout.get("vendor"), "vendor", name),
+        serve=_serve(data.get("serve"), name),
     )
 
 
