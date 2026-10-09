@@ -73,5 +73,37 @@ Time per launch, microseconds, n = 5120:
 | 256 | 10.7 | 13.3 |
 | 512 | 21.1 | 23.1 |
 
+## libr3, first build that loads, 2026-10-09 (run `libr3-b1`, one RX 7900 XTX, commit cc08c2c9)
+
+`libr3/` compiles libr4d's own units for gfx1100 through `r3_compat.h` (software fp8 conversions so far). 28 units
+built in 16 s, 34 on `exclude.txt`. The engine loads it on the card: `libr3 0.0.1 kernels 119 kernel(s), 106
+schema(s), built for gfx1100` (libr4d itself offers 0 device kernels there, 201 on gfx12).
+
+`rad-kbench --kernels libr3,libref` over radiance's recorded fixture (1098 cases from a Qwen3.8-27B fp8 container):
+1597 checks passed, 70 failed, 27 skipped, 7 diverged, 16 capped; worst rel_l2 4.4e-04; 542 cases ran inside guarded
+allocations and none wrote outside. 56 of the 209 declared rows were reached by this fixture.
+
+Device kernels that pass every case they were given (23): `add_bf16`, `rmsnorm_bf16` (40 cases), `rope_bf16` (37),
+`rope_table_f32`, `silu_mul_bf16`, `gather_rows_bf16`, `kv_store_bf16`, `kv_store_fp8`, `quant_act_fp8` (44 cases,
+bit-exact: this is the software fp8 conversion), `gdn_gated_rmsnorm_h128_bf16`, `dflash_select_bf16`, `rowtopk_bf16`
+and the whole sampler chain (`sample_argmax`, `dry`, `mask`, `minp`, `penalties`, `pick`, `temp`, `topk`, `topp`,
+`typical`, `xtc`).
+
+The 70 failures are three kernels refusing, none computing a wrong number:
+
+| Kernel | Cases | What it says | Likely cause (not yet confirmed) |
+|---|---|---|---|
+| `gemm_bf16_nt_m16` | 30 | `unsupported` | calls into a unit on `exclude.txt`; the stub answers |
+| `cast_bf16_bf16` | 20 | `device error` | the launch itself is refused on gfx11 |
+| `gdn_conv_update_w4_h128_bf16` | 20 | `shape this kernel does not serve` | to be read |
+
+Skipped: `logits_gemm` and `embed_lookup` cases need about 7 GiB against a 2.65 GiB budget (half of the free VRAM
+while other jobs hold the card); rerun with `--max-bytes` when the card is free.
+
+96 of libr3's rows were not reached by this fixture; the routed-MoE fixture (`kernels_moe.rkb`) and a bf16 model
+fixture will reach more.
+
+## First kdev run
+
 `flat_add` is faster or equal at every shape (geometric mean 7.2 us against 7.8 us). Up to M = 32 the time is the
 launch itself, about 5.5 us. This run proves the loop; the two kernels are deliberately simple.
