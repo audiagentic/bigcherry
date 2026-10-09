@@ -19,7 +19,8 @@ def _declare(root: Path, name: str, body: str) -> None:
     path.write_text(body, encoding="utf-8")
 
 
-_GOOD = 'schema = 1\nname = "{name}"\nupstream = "https://example.invalid/{name}"\n\n[layout]\npatches = "{p}"\noverlay = "{o}"\nvendor = "{v}"\n'
+_GOOD = 'schema = 1\nname = "{name}"\nupstream = "https://example.invalid/{name}"\n\n[layout]\npatches = "{p}"\noverlay = "{o}"\nvendor = "{v}"\n\n'
+_GOOD += '[serve]\nbinary = "bin/server"\nmodel-flag = "--model"\nhost-flag = "--host"\nport-flag = "--port"\nhealth = "/health"\nshutdown = "sigint"\n'
 
 
 class EngineDeclarations(unittest.TestCase):
@@ -65,6 +66,35 @@ class EngineDeclarations(unittest.TestCase):
                 root = Path(td)
                 if body is not None:
                     _declare(root, name, body)
+                with self.assertRaises(engines.EngineError):
+                    engines.load(root, name)
+
+    def test_serve_specifications_of_the_declared_engines(self):
+        layouts = engines.load_all(_REPO)
+        llamacpp, radiance = layouts["llamacpp"].serve, layouts["radiance"].serve
+        self.assertEqual((llamacpp.binary, llamacpp.model_flag, llamacpp.health), ("bin/llama-server", "-m", "/health"))
+        self.assertEqual((llamacpp.shutdown_method, llamacpp.shutdown_path), ("http", "/shutdown"))
+        self.assertIn(("LLAMA_SERVER_ENABLE_SHUTDOWN", "1"), llamacpp.env)
+        self.assertEqual(llamacpp.draft_stats.source, "log")
+        self.assertEqual((radiance.binary, radiance.model_flag), ("bin/radiance", "--model"))
+        self.assertEqual((radiance.shutdown_method, radiance.shutdown_path), ("sigint", ""))
+        self.assertEqual(dict(radiance.env_from_binary), {"RADIANCE_HOME": "../radiance_home"})
+        self.assertEqual((radiance.draft_stats.source, radiance.draft_stats.path), ("metrics", "/metrics"))
+
+    def test_malformed_serve_tables_fail_closed(self):
+        good = _GOOD.format(name="{name}", p="a", o="b", v="c")
+        cases = {
+            "no-serve": good.split("[serve]")[0],
+            "bad-shutdown": good.replace('shutdown = "sigint"', 'shutdown = "kill"'),
+            "relative-health": good.replace('health = "/health"', 'health = "health"'),
+            "extra-serve-key": good + 'restart = "yes"' + chr(10),
+            "bad-draft-source": good + chr(10) + "[serve.draft-stats]" + chr(10) + 'source = "guess"' + chr(10),
+            "pattern-without-groups": good + chr(10) + "[serve.draft-stats]" + chr(10) + 'source = "log"' + chr(10) + "pattern = 'accepted (\\d+)'" + chr(10),
+        }
+        for name, body in cases.items():
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as td:
+                root = Path(td)
+                _declare(root, name, body.format(name=name))
                 with self.assertRaises(engines.EngineError):
                     engines.load(root, name)
 

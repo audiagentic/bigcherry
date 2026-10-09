@@ -29,7 +29,7 @@ from . import recovery as recovery_mod
 from . import replay as replay_mod
 from . import signature_digest_verification as sdv
 from . import tune_promotion
-from .server_runner import ServerError, ServerRunner
+from .server_runner import ServerError, ServerRunner, LLAMACPP_SERVE
 from .. import hi80_generate_correctness_evidence as hi80
 from ..campaign import planner as campaign_planner
 from ..build import generated_tree
@@ -220,6 +220,7 @@ def _stage_record(
     binary_path = lane_result.binary_ref.path
     record_db_path = workdir / "record"
     runner = ServerRunner(
+        serve=LLAMACPP_SERVE,
         binary=binary_path, model=model_path,
         extra_args=("-ngl", "99", "-c", str(runtime_profile.production_context), *runtime_profile.server_args),
         env_overrides={
@@ -309,6 +310,7 @@ def _stage_tune(
     binary_path = lane_result.binary_ref.path
     tune_db_path = workdir / "tune"
     runner = ServerRunner(
+        serve=LLAMACPP_SERVE,
         binary=binary_path, model=model_path,
         extra_args=("-ngl", "99", "-c", str(runtime_profile.tune_context), *runtime_profile.server_args),
         env_overrides={
@@ -874,6 +876,7 @@ def _stage_replay_validate(
     def _run_leg(*, dispatch_mode: str, log_name: str, extra_env: dict[str, str]) -> list[behavioral_gate_mod.BehavioralTrace]:
         env = {**_gpu_visibility_env(devices), "GGML_HIP_DISPATCH_MODE": dispatch_mode, **extra_env}
         runner = ServerRunner(
+            serve=LLAMACPP_SERVE,
             binary=binary_path, model=model_path, extra_args=common_args,
             env_overrides=env, env_unset=env_unset, log_path=workdir / log_name,
         )
@@ -894,6 +897,7 @@ def _stage_replay_validate(
         "GGML_HIP_DISPATCH_HIT_LOG": str(hit_log_path),
     }
     candidate_runner = ServerRunner(
+        serve=LLAMACPP_SERVE,
         binary=binary_path, model=model_path, extra_args=common_args,
         env_overrides={**_gpu_visibility_env(devices), "GGML_HIP_DISPATCH_MODE": "replay", **candidate_env},
         env_unset=env_unset, log_path=workdir / "behavioral-candidate.log",

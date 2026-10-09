@@ -9,13 +9,14 @@ import subprocess
 import sys
 import tempfile
 import threading
+import os
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from bigcherry.tuning.server_runner import ServerError, ServerRunner  # noqa: E402
+from bigcherry.tuning.server_runner import ServerError, ServerRunner, LLAMACPP_SERVE  # noqa: E402
 
 
 class _FakeServerHandler(http.server.BaseHTTPRequestHandler):
@@ -67,6 +68,7 @@ class ServerRunnerHttpTests(unittest.TestCase):
 
     def _runner(self) -> ServerRunner:
         return ServerRunner(
+            serve=LLAMACPP_SERVE,
             binary=Path("fake-binary"), model=Path("fake-model.gguf"),
             host="127.0.0.1", port=self.port,
         )
@@ -113,7 +115,7 @@ class ServerRunnerHttpTests(unittest.TestCase):
 
 class ServerRunnerFailureTests(unittest.TestCase):
     def test_shutdown_preserves_forced_exit_instead_of_implying_success(self):
-        runner = ServerRunner(binary=Path("x"), model=Path("m"), port=1)
+        runner = ServerRunner(serve=LLAMACPP_SERVE, binary=Path("x"), model=Path("m"), port=1)
         proc = MagicMock()
         proc.wait.side_effect = [subprocess.TimeoutExpired("server", 1), -9]
         runner._proc = proc
@@ -129,7 +131,7 @@ class ServerRunnerFailureTests(unittest.TestCase):
     def test_http_failure_and_nonzero_exit_are_not_clean(self):
         for returncode in (0, 1):
             with self.subTest(returncode=returncode):
-                runner = ServerRunner(binary=Path("x"), model=Path("m"), port=1)
+                runner = ServerRunner(serve=LLAMACPP_SERVE, binary=Path("x"), model=Path("m"), port=1)
                 runner._proc = MagicMock()
                 runner._proc.wait.return_value = returncode
                 with patch.object(runner, "post_json", side_effect=ServerError("404")):
@@ -139,7 +141,7 @@ class ServerRunnerFailureTests(unittest.TestCase):
                 self.assertEqual(result.error, "404")
 
     def test_successful_http_exit_is_recorded(self):
-        runner = ServerRunner(binary=Path("x"), model=Path("m"), port=1)
+        runner = ServerRunner(serve=LLAMACPP_SERVE, binary=Path("x"), model=Path("m"), port=1)
         runner._proc = MagicMock()
         runner._proc.wait.return_value = 0
         with patch.object(runner, "post_json", return_value={}):
@@ -149,7 +151,7 @@ class ServerRunnerFailureTests(unittest.TestCase):
 
     def test_stock_sigint_uses_upstream_signal_handler(self):
         with patch("bigcherry.tuning.server_runner.os.name", "posix"):
-            runner = ServerRunner(binary=Path("x"), model=Path("m"), port=1,
+            runner = ServerRunner(serve=LLAMACPP_SERVE, binary=Path("x"), model=Path("m"), port=1,
                                   shutdown_method="sigint")
         proc = MagicMock()
         proc.wait.return_value = 0
@@ -164,14 +166,14 @@ class ServerRunnerFailureTests(unittest.TestCase):
         binary, model = Path("x"), Path("m")
         with patch("bigcherry.tuning.server_runner.os.name", "nt"):
             with self.assertRaisesRegex(ValueError, "unwrapped POSIX"):
-                ServerRunner(binary=binary, model=model, shutdown_method="sigint")
+                ServerRunner(serve=LLAMACPP_SERVE, binary=binary, model=model, shutdown_method="sigint")
         with patch("bigcherry.tuning.server_runner.os.name", "posix"):
             with self.assertRaisesRegex(ValueError, "unwrapped POSIX"):
-                ServerRunner(binary=binary, model=model, shutdown_method="sigint",
+                ServerRunner(serve=LLAMACPP_SERVE, binary=binary, model=model, shutdown_method="sigint",
                              command_prefix=("profiler",))
 
     def test_wait_healthy_raises_when_process_exits_early(self):
-        runner = ServerRunner(binary=Path("x"), model=Path("m.gguf"), port=1)
+        runner = ServerRunner(serve=LLAMACPP_SERVE, binary=Path("x"), model=Path("m.gguf"), port=1)
         mock_proc = MagicMock()
         mock_proc.poll.return_value = 1
         mock_proc.returncode = 1
@@ -183,7 +185,7 @@ class ServerRunnerFailureTests(unittest.TestCase):
     def test_wait_healthy_raises_on_timeout_when_nothing_ever_answers(self):
         # Port 1 is a privileged, essentially-never-listening port -- health
         # checks will keep failing to connect until timeout.
-        runner = ServerRunner(binary=Path("x"), model=Path("m.gguf"), port=1)
+        runner = ServerRunner(serve=LLAMACPP_SERVE, binary=Path("x"), model=Path("m.gguf"), port=1)
         mock_proc = MagicMock()
         mock_proc.poll.return_value = None
         with patch("bigcherry.tuning.server_runner.subprocess.Popen", return_value=mock_proc):
@@ -199,7 +201,7 @@ class ServerRunnerFailureTests(unittest.TestCase):
         # itself raises. wait_healthy() is patched to fail immediately
         # (rather than relying on its real default 180s timeout) so this
         # test stays fast.
-        runner = ServerRunner(binary=Path("x"), model=Path("m.gguf"), port=1)
+        runner = ServerRunner(serve=LLAMACPP_SERVE, binary=Path("x"), model=Path("m.gguf"), port=1)
         mock_proc = MagicMock()
         mock_proc.poll.return_value = None
         with (
@@ -212,7 +214,7 @@ class ServerRunnerFailureTests(unittest.TestCase):
         mock_proc.wait.assert_called()
 
     def test_launch_twice_raises(self):
-        runner = ServerRunner(binary=Path("x"), model=Path("m.gguf"), port=2)
+        runner = ServerRunner(serve=LLAMACPP_SERVE, binary=Path("x"), model=Path("m.gguf"), port=2)
         mock_proc = MagicMock()
         with patch("bigcherry.tuning.server_runner.subprocess.Popen", return_value=mock_proc):
             runner.launch()
@@ -223,6 +225,7 @@ class ServerRunnerFailureTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             log_path = Path(directory) / "server.log"
             runner = ServerRunner(
+                serve=LLAMACPP_SERVE,
                 binary=Path("x"), model=Path("m.gguf"), port=1, log_path=log_path,
             )
             mock_proc = MagicMock()
@@ -236,6 +239,65 @@ class ServerRunnerFailureTests(unittest.TestCase):
                 log_path.write_text("line1\nline2\ncrash reason here\n", encoding="utf-8")
                 with self.assertRaisesRegex(ServerError, "crash reason here"):
                     runner.wait_healthy(timeout_s=2)
+
+
+class EngineServeSpecTests(unittest.TestCase):
+    """MEN03: the runner launches, stops and reads drafter counters the way the engine declares."""
+
+    def setUp(self):
+        from bigcherry.core import engines, paths
+
+        self.radiance = engines.load(paths.REPO_ROOT, engines.RADIANCE).serve
+
+    def test_launch_uses_the_declared_flags_and_environment(self):
+        if os.name == "nt":
+            self.skipTest("sigint shutdown is POSIX only")
+        binary = Path("build") / "bin" / "radiance"
+        runner = ServerRunner(serve=self.radiance, binary=binary, model=Path("m.rad"), port=4321, extra_args=("--tp", "1"))
+        with patch("bigcherry.tuning.server_runner.subprocess.Popen") as popen:
+            runner.launch()
+        args = popen.call_args.args[0]
+        env = popen.call_args.kwargs["env"]
+        self.assertEqual(args, [str(binary), "--model", "m.rad", "--port", "4321", "--host", "127.0.0.1", "--tp", "1"])
+        self.assertEqual(Path(env["RADIANCE_HOME"]), (binary.parent / ".." / "radiance_home").resolve())
+        if "LLAMA_SERVER_ENABLE_SHUTDOWN" not in os.environ:
+            self.assertNotIn("LLAMA_SERVER_ENABLE_SHUTDOWN", env)  # that switch is llama.cpp's
+
+    def test_llamacpp_launch_is_unchanged(self):
+        runner = ServerRunner(serve=LLAMACPP_SERVE, binary=Path("x"), model=Path("m.gguf"), port=1234)
+        with patch("bigcherry.tuning.server_runner.subprocess.Popen") as popen:
+            runner.launch()
+        self.assertEqual(popen.call_args.args[0], ["x", "-m", "m.gguf", "--port", "1234", "--host", "127.0.0.1"])
+        self.assertEqual(popen.call_args.kwargs["env"]["LLAMA_SERVER_ENABLE_SHUTDOWN"], "1")
+
+    def test_an_engine_without_a_shutdown_route_cannot_be_stopped_over_http(self):
+        with self.assertRaises(ValueError):
+            ServerRunner(serve=self.radiance, binary=Path("x"), model=Path("m"), port=1, shutdown_method="http")
+
+    def test_draft_stats_from_the_log_take_the_last_report(self):
+        with tempfile.TemporaryDirectory() as td:
+            log = Path(td) / "server.log"
+            log.write_text("draft acceptance = 0.50000 (   10 accepted /    20 generated), mean len = 2.0\n"
+                           "noise\n"
+                           "draft acceptance = 0.58689 (  358 accepted /   610 generated), mean len = 3.34\n", encoding="utf-8")
+            runner = ServerRunner(serve=LLAMACPP_SERVE, binary=Path("x"), model=Path("m"), port=1, log_path=log)
+            self.assertEqual(runner.draft_stats(), (610, 358))
+            log.write_text("nothing yet\n", encoding="utf-8")
+            self.assertIsNone(runner.draft_stats())
+
+    def test_draft_stats_from_metrics_sum_the_named_counters(self):
+        if os.name == "nt":
+            self.skipTest("sigint shutdown is POSIX only")
+        text = ("# HELP radiance:draft_tokens_total drafted\n"
+                'radiance:draft_tokens_total{model_name="qwen35",engine="0"} 8393\n'
+                'radiance:draft_accepted_total{model_name="qwen35",engine="0"} 2910\n'
+                'radiance:draft_acceptance_ratio{model_name="qwen35",engine="0"} 0.3467\n').encode()
+        reply = MagicMock()
+        reply.__enter__.return_value.read.return_value = text
+        runner = ServerRunner(serve=self.radiance, binary=Path("x"), model=Path("m"), port=1)
+        with patch("bigcherry.tuning.server_runner.urllib.request.urlopen", return_value=reply) as urlopen:
+            self.assertEqual(runner.draft_stats(), (8393, 2910))
+        self.assertTrue(urlopen.call_args.args[0].endswith("/metrics"))
 
 
 if __name__ == "__main__":
