@@ -18,6 +18,8 @@ cmake -S tools/lab/radiance-gfx1100/libr11 -B /tmp/rad11-build -G Ninja \
     -DRAD_GPU_TARGETS=gfx1100 \
     -DCMAKE_HIP_COMPILER=/opt/rocm/bin/hipcc
 cmake --build /tmp/rad11-build
+# One selected XTX is sufficient for the first plugin smoke, no P2P used:
+ctest --test-dir /tmp/rad11-build -R r11_bf16_smoke --output-on-failure
 cmake --install /tmp/rad11-build
 ```
 
@@ -32,7 +34,8 @@ Determine which `ROCR_VISIBLE_DEVICES` indices correspond to the **two XTX cards
 ```sh
 hipcc -O2 --offload-arch=gfx1100 \
   tools/lab/radiance-gfx1100/peer_probe.hip -o /tmp/r11-peer-probe
-ROCR_VISIBLE_DEVICES=<two-XTX-indices> /tmp/r11-peer-probe
+XTX_DEVICE_IDS='0,1' # REPLACE with the two verified XTX indices on this host
+ROCR_VISIBLE_DEVICES="$XTX_DEVICE_IDS" /tmp/r11-peer-probe
 ```
 
 The probe prints device architecture, VRAM and peer-capability results. It does **not** enable P2P, attempt bulk transfers, change IOMMU/ACS, or touch the other cards. Peer-capability alone does **not** establish RCCL P2P transport: follow with a separate safe RCCL A/B under the lab queue, `NCCL_PROTO=Simple`, bounded watchdog, small messages first, and compare with BigCherry's existing host-staged exact provider.
