@@ -1,6 +1,6 @@
 # 1355_hc_post_gate_fuse
 
-**Status:** untested
+**Status:** validated
 **Plan item:** QFP35
 
 ## Mechanism

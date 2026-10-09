@@ -291,6 +291,7 @@ patches = [
     "1342_fusion_bisect",
     "1346_mtp_prompt_overlap",
     "1358_meta_split_cache_local_evict",
+    "1355_hc_post_gate_fuse",
 ]
 required-state = "validated"
 
@@ -533,7 +534,7 @@ patches = []
 
 [experiment.hc-post-gate-fuse]
 # QFP35: production + 1355. A/default = fused HC gate consumer; BIGCHERRY_HC_POST_GATE_FUSE=0 is the composed 1313/1344 control.
-patches = ["1355_hc_post_gate_fuse"]
+patches = []
 
 [experiment.meta-dispatch-workers]
 # QFP41: production + 1356; default off, enable with BIGCHERRY_META_DISPATCH_THREADS=1.
