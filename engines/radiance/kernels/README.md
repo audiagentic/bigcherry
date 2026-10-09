@@ -146,6 +146,29 @@ times are a correctness baseline, not a speed claim; no gfx12 time on the same s
 Still left out (11 units): the int8, 4-bit and fp8 WMMA GEMMs and the routed MoE unit. 142 of libr3's rows are not
 reached by this fixture (recorded from a Qwen3.8-27B fp8 container, whose GEMMs are the fp8 ones still excluded).
 
+## libr3, fourth check: every unit builds, the fp8 GEMMs pass, 2026-10-09 (run `libr3-b4`, commit 8f0cf127)
+
+`r3_compat.h` now also emulates the gfx12 int8, 4-bit and fp8 WMMA instructions and maps the gfx12 barrier
+builtins to `s_barrier`. All 62 units build in 260 s, none left out; the engine sees 201 device kernels.
+
+`rad-kbench --kernels libr3,libref`: **2083 checks passed, 0 failed**, 27 skipped, 7 diverged, 32 capped; worst
+rel_l2 4.3e-03; 1028 cases ran inside guarded allocations and none wrote outside. 37 device kernels were reached and
+all pass. New since the third check, all through the fp8 WMMA emulation (fp8 operands widened to bf16):
+
+| Kernel | Cases | Worst rel_l2 | Geometric-mean time |
+|---|---|---|---|
+| `gemm_fp8a8_nt_m16` | 72 | 9.9e-05 | 808.3 us |
+| `gemm_fp8a8_gated_nt_m16` | 7 | 2.4e-07 | 1502.1 us |
+| `gemm_fp8a8_tiled` | 28 | 1.7e-04 | 9410.9 us |
+
+So the main GEMMs of the recorded fp8 model are correct on gfx1100. They are slow: the fp8 emulation converts every
+operand in software on each call, and these are the first kernels to replace with native gfx11 versions.
+
+Not tested: the fixture holds no case for the int8 and 4-bit GEMMs (`gemm_w8a8_*`, `gemm_w4a8_*`, `gemm_w2a8_nt`,
+`gemm_mxfp4a8_*`) or the MoE kernels (`moe_*`), so their emulation compiles but its byte and nibble layouts are
+still assumed. They need a fixture recorded from an MXFP4 or int-quantised container. 164 of libr3's rows are not
+reached by this fixture.
+
 ## References for the remaining port (found 2026-10-09; read before writing kernels)
 
 The 29 excluded units need the gfx12 WMMA builtins or the gfx12 transposed load. These exist to adapt from, so none
