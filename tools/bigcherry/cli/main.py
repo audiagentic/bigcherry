@@ -678,7 +678,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="release a completed pin bump in one resumable command: completion gate "
         "(pin-status --complete --all-remotes) -> release record + transition marker -> "
         "release notes with the Release-As footer -> fast-forward main -> merge "
-        "release-please's PR -> wait for the bc-<llama tag> tag -> sync the work branch.",
+        "release-please's PR -> wait for the bc-llamacpp-<version> tag -> sync the work branch.",
     )
     pin_release_cmd.add_argument("llama_tag", help="llama.cpp tag of the completed bump (e.g. b11474)")
     pin_release_cmd.add_argument(

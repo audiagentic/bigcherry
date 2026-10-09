@@ -6,22 +6,98 @@
   "tag-separator": "-",
   "pull-request-title-pattern": "release: ${component} ${version}",
   "packages": {
-    ".": {
+    "engines/llamacpp": {
       "release-type": "simple",
-      "component": "bc",
-      "version-file": "releases/bc-version.txt",
-      "changelog-path": "docs/releases/CHANGELOG.md",
+      "component": "bc-llamacpp",
+      "changelog-path": "CHANGELOG.md",
       "bump-minor-pre-major": false,
       "changelog-sections": [
-        { "type": "feat", "section": "New and changed" },
-        { "type": "fix", "section": "Fixes" },
-        { "type": "perf", "section": "Performance" },
-        { "type": "revert", "section": "Reverts" },
-        { "type": "docs", "section": "Documentation", "hidden": true },
-        { "type": "chore", "section": "Maintenance", "hidden": true },
-        { "type": "test", "section": "Tests", "hidden": true },
-        { "type": "refactor", "section": "Internal changes", "hidden": true }
+        {
+          "type": "feat",
+          "section": "New and changed"
+        },
+        {
+          "type": "fix",
+          "section": "Fixes"
+        },
+        {
+          "type": "perf",
+          "section": "Performance"
+        },
+        {
+          "type": "revert",
+          "section": "Reverts"
+        },
+        {
+          "type": "docs",
+          "section": "Documentation",
+          "hidden": true
+        },
+        {
+          "type": "chore",
+          "section": "Maintenance",
+          "hidden": true
+        },
+        {
+          "type": "test",
+          "section": "Tests",
+          "hidden": true
+        },
+        {
+          "type": "refactor",
+          "section": "Internal changes",
+          "hidden": true
+        }
+      ]
+    },
+    ".": {
+      "release-type": "simple",
+      "component": "bc-platform",
+      "exclude-paths": [
+        "engines"
+      ],
+      "changelog-path": "docs/releases/PLATFORM_CHANGELOG.md",
+      "bump-minor-pre-major": true,
+      "changelog-sections": [
+        {
+          "type": "feat",
+          "section": "New and changed"
+        },
+        {
+          "type": "fix",
+          "section": "Fixes"
+        },
+        {
+          "type": "perf",
+          "section": "Performance"
+        },
+        {
+          "type": "revert",
+          "section": "Reverts"
+        },
+        {
+          "type": "docs",
+          "section": "Documentation",
+          "hidden": true
+        },
+        {
+          "type": "chore",
+          "section": "Maintenance",
+          "hidden": true
+        },
+        {
+          "type": "test",
+          "section": "Tests",
+          "hidden": true
+        },
+        {
+          "type": "refactor",
+          "section": "Internal changes",
+          "hidden": true
+        }
       ]
     }
-  }
+  },
+  "separate-pull-requests": true,
+  "last-release-sha": "f80e240b4c1bd2d605f75779445d4f0290df1373"
 }
