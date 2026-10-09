@@ -34,7 +34,23 @@ timeout 180 ctest --test-dir "$build" -R '^r11_rmsnorm_smoke$' --output-on-failu
 timeout "${KBENCH_TIMEOUT:-1800}" "$bench" --kernels libr11,libref \
   --op rmsnorm --bench --report "$out/norm-kbench.md" 2>&1 | tee "$out/kbench.log"
 [[ -s "$out/norm-kbench.md" ]] || { echo "no new kbench report" >&2;exit 1; }
-for kernel in r11_rmsnorm_wave32 r11_rmsnorm_block256 r11_rmsnorm_dpp32; do
-  grep -Fq "$kernel" "$out/norm-kbench.md" || { echo "row missing: $kernel" >&2;exit 1; }
-done
-echo "COMPLETE: check each row's 'checked', 'skipped', errors and speed in $out/norm-kbench.md"
+# The existing BigCherry report parser rejects numerically failed cases.
+here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+python3 "$here/../radiance/kdev_report.py" "$out/norm-kbench.md" --json "$out/norm-kbench.json" \
+  > "$out/table.txt"
+# Presence in the registry is insufficient: every candidate MUST have checked, passing
+# and timed cases. Fail closed when a fixture contains no supported norm geometry.
+python3 - "$out/norm-kbench.json" <<'PY'
+import json, math, sys
+cases = json.load(open(sys.argv[1], encoding="utf-8"))["cases"]
+for name in ("r11_rmsnorm_wave32", "r11_rmsnorm_block256", "r11_rmsnorm_dpp32"):
+    mine = [x for x in cases if x["op"] == "rmsnorm" and x["kernel"] == name]
+    checked = [x for x in mine if x["verdict"] == "ok"]
+    failures = [x for x in mine if x["verdict"] not in ("ok", "")]
+    timed = [x for x in checked if x["us"] is not None and x["us"] > 0]
+    if failures or not checked or not timed:
+        sys.exit(f"FAIL {name}: reported={len(mine)} passed={len(checked)} timed={len(timed)} failed={len(failures)}")
+    geo = math.exp(sum(math.log(x["us"]) for x in timed) / len(timed))
+    print(f"{name}: PASS {len(checked)} checked, {len(timed)} timed, geometric mean {geo:.2f} us")
+PY
+echo "COMPLETE: $out/norm-kbench.md; parse $out/norm-kbench.json for per-geometry evidence."
