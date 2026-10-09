@@ -112,7 +112,7 @@ class Compose1272Tests(unittest.TestCase):
         repo = Path(__file__).resolve().parents[3]
 
         def load(name):
-            spec = importlib.util.spec_from_file_location(name, repo / "patches" / name / "patch.py")
+            spec = importlib.util.spec_from_file_location(name, repo / "engines" / "llamacpp" / "patches" / name / "patch.py")
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
             return module

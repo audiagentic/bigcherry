@@ -35,12 +35,12 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
-HEADER = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-q81-cache.h"
-IMPL = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-q81-cache.cpp"
+HEADER = ROOT / "engines" / "llamacpp" / "overlay" / "ggml" / "src" / "ggml-cuda" / "hip-q81-cache.h"
+IMPL = ROOT / "engines" / "llamacpp" / "overlay" / "ggml" / "src" / "ggml-cuda" / "hip-q81-cache.cpp"
 MMVQ = ROOT / "vendor" / "llama.cpp" / "ggml" / "src" / "ggml-cuda" / "mmvq.cu"
 COMMON_CUH = ROOT / "vendor" / "llama.cpp" / "ggml" / "src" / "ggml-cuda" / "common.cuh"
-PATCH_PATH = ROOT / "patches" / "1235_rd09_q81_activation_cache_foundation" / "patch.py"
-CMAKE_0100 = ROOT / "patches" / "0100_cmake_options" / "patch.py"
+PATCH_PATH = ROOT / "engines" / "llamacpp" / "patches" / "1235_rd09_q81_activation_cache_foundation" / "patch.py"
+CMAKE_0100 = ROOT / "engines" / "llamacpp" / "patches" / "0100_cmake_options" / "patch.py"
 
 sys.path.insert(0, str(ROOT / "tools"))
 

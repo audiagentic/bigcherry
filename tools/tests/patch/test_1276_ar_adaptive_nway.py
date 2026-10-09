@@ -193,9 +193,9 @@ class Patch1276AdaptiveNway(unittest.TestCase):
             ("1244_gp11_internal_allreduce_nway_root", "1276_ar_adaptive_nway"),
         )
 
-        expanded = patchset.expand_composition(requested, directory=_REPO / "patches")
+        expanded = patchset.expand_composition(requested, directory=_REPO / "engines" / "llamacpp" / "patches")
         self.assertEqual(set(expanded.expanded), set(expected))
-        resolved = patchset.resolve_exact(list(expanded.expanded), directory=_REPO / "patches")
+        resolved = patchset.resolve_exact(list(expanded.expanded), directory=_REPO / "engines" / "llamacpp" / "patches")
         self.assertEqual({m.patch_id for m in resolved.modules}, set(expected))
 
     def test_edit_contracts_are_fail_closed(self):

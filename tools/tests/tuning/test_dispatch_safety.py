@@ -8,22 +8,22 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[3]
-DISPATCH = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-dispatch.cu"
-RECORD = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-record.cpp"
-RECORD_HEADER = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-record.h"
-TUNER = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-tuner.cu"
-TUNER_HEADER = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-tuner.cuh"
-DISPATCH_PATCH = ROOT / "patches" / "0200_dispatch_hook" / "patch.py"
-MMQ_PATCH = ROOT / "patches" / "0300_mmq_forced_j" / "patch.py"
-SMI = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-smi.cpp"
-SMI_HEADER = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-smi.h"
-SIGNATURE = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-signature.cpp"
-TYPES_HEADER = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-types.h"
+DISPATCH = ROOT / "engines" / "llamacpp" / "overlay" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-dispatch.cu"
+RECORD = ROOT / "engines" / "llamacpp" / "overlay" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-record.cpp"
+RECORD_HEADER = ROOT / "engines" / "llamacpp" / "overlay" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-record.h"
+TUNER = ROOT / "engines" / "llamacpp" / "overlay" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-tuner.cu"
+TUNER_HEADER = ROOT / "engines" / "llamacpp" / "overlay" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-tuner.cuh"
+DISPATCH_PATCH = ROOT / "engines" / "llamacpp" / "patches" / "0200_dispatch_hook" / "patch.py"
+MMQ_PATCH = ROOT / "engines" / "llamacpp" / "patches" / "0300_mmq_forced_j" / "patch.py"
+SMI = ROOT / "engines" / "llamacpp" / "overlay" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-smi.cpp"
+SMI_HEADER = ROOT / "engines" / "llamacpp" / "overlay" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-smi.h"
+SIGNATURE = ROOT / "engines" / "llamacpp" / "overlay" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-signature.cpp"
+TYPES_HEADER = ROOT / "engines" / "llamacpp" / "overlay" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-types.h"
 
 
 class TestDispatchSafetyContracts(unittest.TestCase):
     def test_workspace_accounting_uses_requested_size_and_preserves_pool_size(self):
-        patch = (ROOT / "patches" / "0900_pool_workspace_metrics" / "patch.py").read_text(
+        patch = (ROOT / "engines" / "llamacpp" / "patches" / "0900_pool_workspace_metrics" / "patch.py").read_text(
             encoding="utf-8"
         )
 
@@ -279,7 +279,7 @@ class TestDispatchSafetyContracts(unittest.TestCase):
     def test_blas_effective_call_api_covers_native_branches_without_dispatch_changes(
         self,
     ):
-        patch = (ROOT / "patches" / "0200_dispatch_hook" / "patch.py").read_text(encoding="utf-8")
+        patch = (ROOT / "engines" / "llamacpp" / "patches" / "0200_dispatch_hook" / "patch.py").read_text(encoding="utf-8")
         record = RECORD.read_text(encoding="utf-8")
 
         for api in (
@@ -397,7 +397,7 @@ class TestDispatchSafetyContracts(unittest.TestCase):
         self.assertIn('result.retime_status == "unresolved"', tuner)
         self.assertIn("clock drift retime unresolved; run rejected", tuner)
         signature = (
-            ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-signature.cpp"
+            ROOT / "engines" / "llamacpp" / "overlay" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-signature.cpp"
         ).read_text(encoding="utf-8")
         self.assertNotIn("retime_status", signature)
         self.assertNotIn("clock_drift_rounds", signature)
@@ -805,7 +805,7 @@ class TestHi31DispatchTransformIntegration(unittest.TestCase):
     binding while the ordinary path stays exactly as it was."""
 
     def test_resolved_dispatch_and_binding_both_carry_a_transform_pointer(self):
-        header = (ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-types.h").read_text(encoding="utf-8")
+        header = (ROOT / "engines" / "llamacpp" / "overlay" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-types.h").read_text(encoding="utf-8")
         struct_start = header.index("struct ggml_hip_resolved_dispatch {")
         struct_end = header.index("\n};", struct_start)
         struct_body = header[struct_start:struct_end]

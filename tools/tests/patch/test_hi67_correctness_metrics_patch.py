@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[3]
 
 
 def _load(name: str, filename: str):
-    spec = importlib.util.spec_from_file_location(name, ROOT / "patches" / Path(filename).stem / "patch.py")
+    spec = importlib.util.spec_from_file_location(name, ROOT / "engines" / "llamacpp" / "patches" / Path(filename).stem / "patch.py")
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

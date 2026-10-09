@@ -190,7 +190,7 @@ class PA44EMergedFamilyIdentity(unittest.TestCase):
         recipes = _RECIPES.read_text(encoding="utf-8")
         for patch_id in (*_Q81_RETIRED, *_META_RETIRED):
             self.assertNotIn(f'"{patch_id}"', recipes)
-            self.assertFalse((_REPO / "patches" / patch_id / "patch.toml").exists())
+            self.assertFalse((_REPO / "engines" / "llamacpp" / "patches" / patch_id / "patch.toml").exists())
 
         self.assertIn('"1307_q81_activation_cache_mmvq"', recipes)
         self.assertIn('"1340_meta_per_device_arena"', recipes)

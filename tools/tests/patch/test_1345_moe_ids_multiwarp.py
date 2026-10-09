@@ -19,7 +19,7 @@ _BC = "ggml/src/ggml-cuda/bc-moe-ids-multiwarp.cuh"
 
 
 def _load(pid):
-    spec = importlib.util.spec_from_file_location("patch_" + pid[:4], _REPO / "patches" / pid / "patch.py")
+    spec = importlib.util.spec_from_file_location("patch_" + pid[:4], _REPO / "engines" / "llamacpp" / "patches" / pid / "patch.py")
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

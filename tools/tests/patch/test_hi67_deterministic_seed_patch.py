@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[3]
 
 spec = importlib.util.spec_from_file_location(
     "hi67_deterministic_seed_patch",
-    ROOT / "patches" / "1222_hi67_deterministic_test_backend_ops_seed" / "patch.py",
+    ROOT / "engines" / "llamacpp" / "patches" / "1222_hi67_deterministic_test_backend_ops_seed" / "patch.py",
 )
 assert spec and spec.loader
 _module = importlib.util.module_from_spec(spec)

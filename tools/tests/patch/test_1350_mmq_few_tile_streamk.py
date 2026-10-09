@@ -85,7 +85,7 @@ class Patch1350Mechanics(unittest.TestCase):
                 rels[patch.path] = rels.get(patch.path, False) or bool(patch.create)
         for rel, may_create in sorted(rels.items()):
             pinned = _V / rel
-            overlay = _REPO / "src" / rel
+            overlay = _REPO / "engines" / "llamacpp" / "overlay" / rel
             src = overlay if overlay.exists() else pinned
             if not src.exists():
                 self.assertTrue(may_create, f"non-create production source path absent from pin/overlay: {rel}")

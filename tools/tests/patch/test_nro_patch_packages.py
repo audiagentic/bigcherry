@@ -15,7 +15,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
-PATCHES = ROOT / "patches"
+PATCHES = ROOT / "engines" / "llamacpp" / "patches"
 PLANS = ROOT / "docs" / "planning" / "active" / "patching-nasone-rdna-optimizations"
 
 EXPECTED = {

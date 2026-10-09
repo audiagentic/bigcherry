@@ -227,8 +227,8 @@ class _ProbeHarness:
         _init_project(self.project)
         (self.project / "config").mkdir()
         (self.project / "config" / "recipes.toml").write_text(_RECIPES_TOML, encoding="utf-8")
-        (self.project / "patches").mkdir()
-        (self.project / "patches" / ".gitkeep").write_text("", encoding="utf-8")
+        (self.project / "engines" / "llamacpp" / "patches").mkdir()
+        (self.project / "engines" / "llamacpp" / "patches" / ".gitkeep").write_text("", encoding="utf-8")
         _git(self.project, "add", "config/recipes.toml", "engines/llamacpp/patches/.gitkeep")
         _git(self.project, "commit", "-m", "recipes")
         self.mirror = root / "mirror"

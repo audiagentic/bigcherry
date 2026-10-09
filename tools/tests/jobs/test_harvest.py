@@ -43,8 +43,8 @@ class HarvestTests(unittest.TestCase):
         git(self.repo, "init")
         git(self.repo, "config", "user.email", "jobs@example.invalid")
         git(self.repo, "config", "user.name", "BigCherry Jobs Test")
-        (self.repo / "patches" / "p").mkdir(parents=True)
-        (self.repo / "patches" / "p" / "patch.py").write_text("STATE='untested'\n")
+        (self.repo / "engines" / "llamacpp" / "patches" / "p").mkdir(parents=True)
+        (self.repo / "engines" / "llamacpp" / "patches" / "p" / "patch.py").write_text("STATE='untested'\n")
         git(self.repo, "add", "--", "engines/llamacpp/patches/p/patch.py")
         git(self.repo, "commit", "-m", "base")
         self.commit = git(self.repo, "rev-parse", "HEAD")
@@ -66,7 +66,7 @@ class HarvestTests(unittest.TestCase):
             worktree = self.root / f"worktree-{session}"
             git(self.repo, "worktree", "add", "--detach", str(worktree), self.commit)
             patch_evidence.write_record(
-                evidence_record(digest_char=char), root=worktree / "patches"
+                evidence_record(digest_char=char), root=worktree / "engines" / "llamacpp" / "patches"
             )
             self.worktrees.append(worktree)
             run_id = f"r-{session}"
@@ -124,14 +124,14 @@ class HarvestTests(unittest.TestCase):
         )
         self.assertTrue(result["verified"])
         self.assertNotEqual(result["commit"], before)
-        records = patch_evidence.load_records("p", root=self.repo / "patches")
+        records = patch_evidence.load_records("p", root=self.repo / "engines" / "llamacpp" / "patches")
         self.assertEqual(len(records), 2)
         self.assertEqual(
             {row["campaign_identity_digest"] for row in records},
             {"b" * 64, "c" * 64},
         )
         expected = patch_evidence.evidence_path(
-            "p", root=self.repo / "patches"
+            "p", root=self.repo / "engines" / "llamacpp" / "patches"
         ).relative_to(self.repo).as_posix()
         changed = git(self.repo, "show", "--pretty=format:", "--name-only", result["commit"])
         self.assertEqual(changed.strip(), expected)
@@ -159,11 +159,11 @@ class HarvestTests(unittest.TestCase):
             )
         self.assertEqual(git(self.repo, "diff", "--cached", "--name-only"), "unrelated.txt")
         self.assertFalse(
-            patch_evidence.evidence_path("p", root=self.repo / "patches").exists()
+            patch_evidence.evidence_path("p", root=self.repo / "engines" / "llamacpp" / "patches").exists()
         )
 
     def test_dirty_destination_is_refused_before_merge(self):
-        destination = patch_evidence.evidence_path("p", root=self.repo / "patches")
+        destination = patch_evidence.evidence_path("p", root=self.repo / "engines" / "llamacpp" / "patches")
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_text('{"operator":"uncommitted"}\n', encoding="utf-8")
         with self.assertRaises(GitOpsError):

@@ -20,7 +20,7 @@ _V = _REPO / "vendor/llama.cpp"
 
 
 def _load(pid: str):
-    spec = importlib.util.spec_from_file_location("patch_" + pid[:4], _REPO / "patches" / pid / "patch.py")
+    spec = importlib.util.spec_from_file_location("patch_" + pid[:4], _REPO / "engines" / "llamacpp" / "patches" / pid / "patch.py")
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -234,7 +234,7 @@ class PA44BOwnedFileIdentity(unittest.TestCase):
         for patch_id, module, *_ in CASES:
             with self.subTest(patch_id=patch_id):
                 metadata = tomllib.loads(
-                    (_REPO / "patches" / patch_id / "patch.toml").read_text(encoding="utf-8")
+                    (_REPO / "engines" / "llamacpp" / "patches" / patch_id / "patch.toml").read_text(encoding="utf-8")
                 )
                 self.assertEqual(metadata["state"], "validated")
                 self.assertEqual(module.STATE, "validated")

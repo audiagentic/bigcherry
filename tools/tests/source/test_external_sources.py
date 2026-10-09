@@ -97,7 +97,7 @@ class TestPatchProvenanceCrossCheck(unittest.TestCase):
             ("1200_rd19_single_gpu_meta_bypass", "RD19"),
             ("1201_rd20_attn_gate_tp_split", "RD20"),
         ):
-            pfile = ROOT / "patches" / stem / "patch.py"
+            pfile = ROOT / "engines" / "llamacpp" / "patches" / stem / "patch.py"
             self.assertTrue(pfile.is_file(), f"missing {pfile}")
             prov = src._patch_provenance(pfile)
             self.assertIsNotNone(prov, f"{stem}: no PROVENANCE dict")
@@ -189,7 +189,7 @@ class TestPatchProvenanceCrossCheck(unittest.TestCase):
         groups, so a native build cannot pick them up accidentally -- except
         for patches that have since been promoted or retired (superseded/
         rejected)."""
-        registry = patch_registry.load_registry(ROOT / "patches")
+        registry = patch_registry.load_registry(ROOT / "engines" / "llamacpp" / "patches")
         for descriptor in registry.descriptors:
             if not re.search(r"_rd\d+_", descriptor.patch_id):
                 continue
@@ -247,7 +247,7 @@ class TestPatchProvenanceCrossCheck(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             (tmp_path / "1200_rd19_single_gpu_meta_bypass.py").write_text(
-                (ROOT / "patches" / "1200_rd19_single_gpu_meta_bypass" / "patch.py")
+                (ROOT / "engines" / "llamacpp" / "patches" / "1200_rd19_single_gpu_meta_bypass" / "patch.py")
                 .read_text(encoding="utf-8")
                 .replace('"plan-item": "RD19"', '"plan-item": "RD99"'),
                 encoding="utf-8",

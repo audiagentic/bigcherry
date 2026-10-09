@@ -27,7 +27,7 @@ class UniversalDefaults(unittest.TestCase):
     def test_fusion_flags_are_off_switches(self):
         for flag, patch_ids in _DEFAULT_ON.items():
             for patch_id in patch_ids:
-                src = (_REPO / "patches" / patch_id / "patch.py").read_text(encoding="utf-8")
+                src = (_REPO / "engines" / "llamacpp" / "patches" / patch_id / "patch.py").read_text(encoding="utf-8")
                 self.assertIn(f'getenv("{flag}") == nullptr || atoi(getenv("{flag}")) != 0', src, (flag, patch_id))
                 self.assertNotIn(f'getenv("{flag}") != nullptr && atoi(', src, (flag, patch_id))
 
@@ -44,7 +44,7 @@ class UniversalDefaults(unittest.TestCase):
                                ("1311_hc_pre_q81", "BIGCHERRY_HC_Q81"),
                                ("1312_mul_q81", "BIGCHERRY_ACT_Q81"),
                                ("1313_scale_act_fuse", "BIGCHERRY_SCALE_ACT_FUSE")):
-            src = (_REPO / "patches" / patch_id / "patch.py").read_text(encoding="utf-8")
+            src = (_REPO / "engines" / "llamacpp" / "patches" / patch_id / "patch.py").read_text(encoding="utf-8")
             doc = re.search(rf"EnvDoc\('{flag}', '[^']+', '([^']+)'", src)
             self.assertIsNotNone(doc, (patch_id, flag))
             self.assertTrue(doc.group(1).startswith(("on", "1")), (patch_id, flag, doc.group(1)))

@@ -19,7 +19,7 @@ _FILES = ("src/llama-cparams.h", "src/llama-context.h", "src/llama-context.cpp",
 
 
 def _load(pid: str):
-    spec = importlib.util.spec_from_file_location("patch_" + pid, _REPO / "patches" / pid / "patch.py")
+    spec = importlib.util.spec_from_file_location("patch_" + pid, _REPO / "engines" / "llamacpp" / "patches" / pid / "patch.py")
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

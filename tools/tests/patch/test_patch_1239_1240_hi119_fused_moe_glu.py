@@ -33,7 +33,7 @@ _CHAIN_IDS = (
 
 def _load_patch_module(patch_id: str):
     spec = importlib.util.spec_from_file_location(
-        patch_id, ROOT / "patches" / patch_id / "patch.py"
+        patch_id, ROOT / "engines" / "llamacpp" / "patches" / patch_id / "patch.py"
     )
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)

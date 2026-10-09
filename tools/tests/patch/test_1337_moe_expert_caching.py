@@ -18,7 +18,7 @@ _NEW = ("src/llama-moe-cache.cpp", "src/llama-moe-cache.h")
 
 
 def _load(patch_id: str):
-    spec = importlib.util.spec_from_file_location("patch_" + patch_id[:4], _REPO / "patches" / patch_id / "patch.py")
+    spec = importlib.util.spec_from_file_location("patch_" + patch_id[:4], _REPO / "engines" / "llamacpp" / "patches" / patch_id / "patch.py")
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

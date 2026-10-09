@@ -24,7 +24,7 @@ _FILES = (
 
 def _load(pid: str):
     spec = importlib.util.spec_from_file_location(
-        "patch_" + pid, _REPO / "patches" / pid / "patch.py"
+        "patch_" + pid, _REPO / "engines" / "llamacpp" / "patches" / pid / "patch.py"
     )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)

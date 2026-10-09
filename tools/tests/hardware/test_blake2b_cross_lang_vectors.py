@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-CPP_PATH = REPO_ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-inspect.cpp"
+CPP_PATH = REPO_ROOT / "engines" / "llamacpp" / "overlay" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-inspect.cpp"
 
 # {"label", "data_hex", "person_hex", person_len, "expected_hex"},
 ROW_RE = re.compile(

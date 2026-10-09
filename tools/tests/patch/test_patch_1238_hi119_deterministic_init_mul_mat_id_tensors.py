@@ -32,7 +32,7 @@ ROOT = Path(__file__).resolve().parents[3]
 
 def _load_patch_module(patch_id: str):
     spec = importlib.util.spec_from_file_location(
-        patch_id, ROOT / "patches" / patch_id / "patch.py"
+        patch_id, ROOT / "engines" / "llamacpp" / "patches" / patch_id / "patch.py"
     )
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
@@ -63,9 +63,9 @@ def test_requires_declares_1222_dependency():
 
 
 def test_packaged_patch_passes_production_isolation_loader():
-    registry = patch_registry.load_registry(ROOT / "patches")
+    registry = patch_registry.load_registry(ROOT / "engines" / "llamacpp" / "patches")
     descriptor = registry.get("1238_hi119_deterministic_init_mul_mat_id_tensors")
-    patches = patch_registry.load_implementation(descriptor, root=ROOT / "patches")
+    patches = patch_registry.load_implementation(descriptor, root=ROOT / "engines" / "llamacpp" / "patches")
     assert [patch.edits[0].id for patch in patches] == [
         "hi119-deterministic-init-mul-mat-id-tensors"
     ]

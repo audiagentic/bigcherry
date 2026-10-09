@@ -266,7 +266,7 @@ class Patch1340Mechanics(unittest.TestCase):
 
     def test_plan_identity_includes_the_output_set(self):
         """A draft enabling layer-input extraction after reserve must not reuse a plan made without those outputs."""
-        src = pathlib.Path(__file__).resolve().parents[3] / "patches" / "1340_meta_per_device_arena" / "patch.py"
+        src = pathlib.Path(__file__).resolve().parents[3] / "engines" / "llamacpp" / "patches" / "1340_meta_per_device_arena" / "patch.py"
         text = src.read_text(encoding="utf-8")
         self.assertIn("ggml_backend_meta_arena_out_sig(const struct ggml_cgraph & cgraph)", text)
         self.assertIn("bc.arena_plans[i_plan].out_sig != out_sig", text)

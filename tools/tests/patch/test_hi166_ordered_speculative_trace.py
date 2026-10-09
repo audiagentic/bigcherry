@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from bigcherry.patcher import apply_all
 
 ROOT = Path(__file__).resolve().parents[3]
-PATCH_DIR = ROOT / "patches" / "0850_ordered_speculative_trace"
+PATCH_DIR = ROOT / "engines" / "llamacpp" / "patches" / "0850_ordered_speculative_trace"
 
 _spec = importlib.util.spec_from_file_location(
     "hi166_ordered_speculative_trace_patch", PATCH_DIR / "patch.py",

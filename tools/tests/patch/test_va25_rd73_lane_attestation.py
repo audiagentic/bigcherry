@@ -33,7 +33,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 ROOT = Path(__file__).resolve().parents[3]
-RD73_PRODUCER_PATH = ROOT / "patches" / "1233_rd73_stable_graph_cache_key" / "validation" / "producer.py"
+RD73_PRODUCER_PATH = ROOT / "engines" / "llamacpp" / "patches" / "1233_rd73_stable_graph_cache_key" / "validation" / "producer.py"
 
 _RD73_SERVER_LANE_FUNCTIONS = (
     "_run_mtp_server_lane",

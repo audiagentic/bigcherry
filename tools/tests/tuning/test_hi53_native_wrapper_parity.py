@@ -17,7 +17,7 @@ UPSTREAM_MMVQ = (
     ROOT / "vendor" / "llama.cpp" / "ggml" / "src" / "ggml-cuda" / "mmvq.cu"
 )
 UPSTREAM_MMVQ_HEADER = UPSTREAM_MMVQ.with_suffix(".cuh")
-DISPATCH = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-dispatch.cu"
+DISPATCH = ROOT / "engines" / "llamacpp" / "overlay" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-dispatch.cu"
 # HI53 is closed; keep the acceptance contract attached to its completed
 # evidence rather than a path that disappears when the item transitions.
 PLAN = ROOT / "docs" / "planning" / "completed" / "hip-autotune" / "HI53.md"
