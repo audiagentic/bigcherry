@@ -32,7 +32,7 @@ from ..core import paths
 from ..core.artifacts import ArtifactStore
 from ..core.context import ProjectContext
 from ..source.identity import atomic_write_json
-from ..tuning.server_runner import ServerRunner
+from ..tuning.server_runner import ServerRunner, LLAMACPP_SERVE
 
 # Environmental-drift gate: if the unprofiled control blocks' means spread
 # by more than this fraction of their own pooled mean, the run is not
@@ -109,6 +109,7 @@ def run_profile_campaign(
 
     def _launch(*, command_prefix: tuple[str, ...] = (), log_name: str) -> ServerRunner:
         return ServerRunner(
+            serve=LLAMACPP_SERVE,
             binary=binary_path, model=model_path, extra_args=base_args,
             env_overrides=base_env, log_path=workdir / log_name,
             command_prefix=command_prefix,
