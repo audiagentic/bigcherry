@@ -3,11 +3,11 @@
 **Status:** untested
 **Plan item:** RD13
 
-> Status note (PA36 migration #3 / PA40): blocked — current producer execution/backend-reference/activation evidence exists, but performance and controls promotion lanes are intentionally absent
+> Current 2026-10-09: patch remains `untested`/not promoted. The September 21 producer now implements real paired positive/control tg128 lanes, trace probes and full-vocab backend reference. The generic performance CLI is forbidden only to avoid duplicate evidence. Old BLOCKED records remain historical; b11474 requalification is outstanding. PRBE12/BCOP80 own the gate.
 
 ## What it does
 
-Extends the existing mul_mat+add fusion in ggml_cuda_try_fuse to accept one RESHAPE node between the matmul and the add (using ggml_can_fuse_subgraph, verifying the view's src[0] is the matmul), instead of only matching an add directly after the matmul.
+Extends the existing mul_mat+add fusion in ggml_cuda_try_fuse to accept one RESHAPE or qualified zero-offset contiguous VIEW node between the matmul and the add (using ggml_can_fuse_subgraph, verifying the view's src[0] is the matmul), instead of only matching an add directly after the matmul.
 
 ## Why
 
@@ -15,7 +15,7 @@ SSM models (e.g. qwen35moe) insert a reshape view between the output projection 
 
 ## Current acceptance disposition
 
-The patch is contract-bound in `patch.toml` and `validation.toml`. The current patch-local producer supplies the required full-vocabulary `backend_reference` correctness evidence; the generic scaffold supplies activation evidence. The producer manifest explicitly forbids the generic performance-benchmark CLI, and the producer returns no performance/controls metrics. Therefore RD13 is not eligible for promotion and PA40 records the full-campaign row as **BLOCKED** until an authorized scope decision or a reviewed producer implementation adds those lanes.
+The bound `validation.toml` has six required checks. `validation/producer.py::run` emits `promotion_lane_effects`, `promotion_trigger_evidence`, `contract_correctness_results`, `rd13-performance.json` and subject/control trace logs; `producer.toml` skips duplicate generic trace probes and forbids the generic benchmark CLI. Historical evidence (gfx1100 b11126 four sessions +0.66/+0.53/+0.47/+0.65%, controls flat, full-vocab identical) is not a current-pin qualification. gfx1201 historical sessions are noisy/inconclusive; gfx1030 lacks a performance series. Keep default-off/untested until the frozen contract's four independent sessions, >=10 paired rounds/session, CI95-low >0% and <=1% control regression are met per architecture. PRBE39 VIEW/overlap hardening already resides in 1206.
 
 ## Upstream / provenance
 
