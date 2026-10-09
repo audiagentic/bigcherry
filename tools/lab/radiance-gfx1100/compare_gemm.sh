@@ -18,6 +18,13 @@ mapfile -t plugins < <(find "$build" -type f -name libr11.so)
 }
 so=${plugins[0]}
 [[ -n "${RADIANCE_HOME:-}" ]] || { echo "RADIANCE_HOME must point at the installed engine + libr11 plugin home" >&2; exit 2; }
+# Load exactly the built plugin before anything from the installed Radiance home.
+candidate_home=$(dirname "$(dirname "$so")")
+first_home=${RADIANCE_HOME%%:*}
+[[ "$(realpath "$first_home")" == "$(realpath "$candidate_home")" ]] || {
+  echo "RADIANCE_HOME must START with the built plugin home: $candidate_home" >&2
+  exit 2
+}
 if [[ -e "$out" ]]; then
   echo "Output directory already exists; refusing stale report: $out" >&2
   exit 2
