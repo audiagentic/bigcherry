@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import math
+import subprocess
 import time
 import urllib.error
 import urllib.request
@@ -102,6 +103,16 @@ def served_model_id(base_url: str, *, timeout_s: int = 60) -> str:
         return str(json.loads(response.read().decode("utf-8"))["data"][0]["id"])
 
 
+def vram_in_use() -> list[str] | None:
+    """Per-card 'VRAM Total Used' lines from rocm-smi with the model loaded; None where the tool is not available."""
+    try:
+        done = subprocess.run(["rocm-smi", "--showmeminfo", "vram"], capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    lines = [" ".join(line.split()) for line in done.stdout.splitlines() if "Total Used" in line]
+    return lines or None
+
+
 def prompt_for(corpus: str, depth: int, nonce: str) -> str:
     return f"[{nonce}]\n" + corpus[: int(depth * CHARS_PER_TOKEN)] + ASK
 
@@ -151,13 +162,15 @@ def run(*, engine: str, binary: Path, model: str, out_dir: Path, depths: Sequenc
     record: dict = {
         "schema": SCHEMA, "engine": engine, "label": label, "binary": str(binary), "model": str(model),
         "extra_args": list(extra_args), "env": dict(env or {}), "depths": list(depths), "reps": reps,
-        "decode": decode, "rows": [], "draft": None, "server_error": None, "shutdown": None,
+        "decode": decode, "rows": [], "draft": None, "vram": None, "server_error": None, "shutdown": None,
+        "served_model": None,
     }
     runner.launch()
     try:
         runner.wait_healthy(timeout_s=health_timeout_s)
         base_url = f"http://{runner.host}:{runner.port}"
         record["served_model"] = served_model_id(base_url)
+        record["vram"] = vram_in_use()
         corpus = Path(corpus_path).read_text(encoding="utf-8", errors="replace")
         rows = measure(base_url, record["served_model"], corpus, depths, reps=reps, decode=decode, report=report)
         record["rows"] = [asdict(row) for row in rows]
