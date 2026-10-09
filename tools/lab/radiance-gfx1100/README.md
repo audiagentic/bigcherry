@@ -94,13 +94,13 @@ python3 -m unittest discover -s tools/lab/radiance-gfx1100/tests -p 'test_*.py'
 
 # After a gfx1100 build as above, on one verified XTX, with the matching installed Radiance:
 export ROCR_VISIBLE_DEVICES=0            # example ONLY: replace with verified XTX ID
-export RADIANCE_HOME=/opt/radiance:/tmp/rad11-build/radiance_home
+export RADIANCE_HOME=/tmp/rad11-build/radiance_home:/opt/radiance
 ctest --test-dir /tmp/rad11-build -R 'r11_(gemm|bf16)_smoke' --output-on-failure
 bash tools/lab/radiance-gfx1100/compare_gemm.sh \
     /tmp/rad11-build /opt/radiance/bin/rad-kbench /tmp/r11-gemm-new-run
 ```
 
-The comparison runner refuses to overwrite reports, requires successful GPU smoke and
+The comparison runner refuses to overwrite reports, requires the candidate build's plugin home to be first in `RADIANCE_HOME`, requires successful GPU smoke and
 `rad-kbench` completion, and verifies both row names appear. **Presence is not coverage**:
 inspect the Markdown report's per-kernel checked/skipped/failing geometry and timings.
 The existing recorded Radiance fixture may lack some M/N/K bands, so add dedicated
