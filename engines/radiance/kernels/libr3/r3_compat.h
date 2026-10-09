@@ -167,7 +167,12 @@ __device__ __forceinline__ r3_v8f r3_acc_11_to_12(r3_v8f p, unsigned lane) {
     return out;
 }
 
-__device__ __forceinline__ r3_v8f r3_wmma_f32_16x16x16_bf16_w32_gfx12(r3_v8bf a, r3_v8bf b, r3_v8f c) {
+// Templates on the operand types: libr4d passes the fragments as whichever 128-bit vector its unit built them in
+// (bf16, fp16, shorts, dwords) and the accumulator as its own 8 x f32 typedef.
+template <class A, class B, class C>
+__device__ __forceinline__ r3_v8f r3_wmma_f32_16x16x16_bf16_w32_gfx12(A a, B b, C acc) {
+    static_assert(sizeof(A) == 16 && sizeof(B) == 16 && sizeof(C) == 32, "gfx12 WMMA operands: 2 x 128 bits, 8 x f32");
+    const r3_v8f c = __builtin_bit_cast(r3_v8f, acc);
     const unsigned lane = r3_lane();
     const r3_v16bf a11 = __builtin_bit_cast(r3_v16bf, r3_frag_12_to_11(__builtin_bit_cast(r3_u4, a), lane));
     const r3_v16bf b11 = __builtin_bit_cast(r3_v16bf, r3_frag_12_to_11(__builtin_bit_cast(r3_u4, b), lane));
@@ -175,7 +180,10 @@ __device__ __forceinline__ r3_v8f r3_wmma_f32_16x16x16_bf16_w32_gfx12(r3_v8bf a,
     return c + r3_acc_11_to_12(__builtin_amdgcn_wmma_f32_16x16x16_bf16_w32(a11, b11, zero), lane);
 }
 
-__device__ __forceinline__ r3_v8f r3_wmma_f32_16x16x16_f16_w32_gfx12(r3_v8hf a, r3_v8hf b, r3_v8f c) {
+template <class A, class B, class C>
+__device__ __forceinline__ r3_v8f r3_wmma_f32_16x16x16_f16_w32_gfx12(A a, B b, C acc) {
+    static_assert(sizeof(A) == 16 && sizeof(B) == 16 && sizeof(C) == 32, "gfx12 WMMA operands: 2 x 128 bits, 8 x f32");
+    const r3_v8f c = __builtin_bit_cast(r3_v8f, acc);
     const unsigned lane = r3_lane();
     const r3_v16h a11 = __builtin_bit_cast(r3_v16h, r3_frag_12_to_11(__builtin_bit_cast(r3_u4, a), lane));
     const r3_v16h b11 = __builtin_bit_cast(r3_v16h, r3_frag_12_to_11(__builtin_bit_cast(r3_u4, b), lane));
@@ -194,10 +202,9 @@ __device__ __forceinline__ r3_v8f r3_wmma_f32_16x16x16_f16_w32_gfx12(r3_v8hf a, 
 // addresses of its group through ds_bpermute and reads its element from each: 16 cross-lane moves and 8 loads.
 typedef short r3_v8s __attribute__((ext_vector_type(8)));
 
-__device__ __forceinline__ r3_v8s r3_global_load_tr_b128_v8i16(const void* p) {
+__device__ __forceinline__ r3_v8s r3_global_load_tr_b128_v8i16(uint64_t address) {
     const unsigned lane = r3_lane();
     const unsigned group = lane & ~7u, j = lane & 7u;
-    const uint64_t address = reinterpret_cast<uint64_t>(p);
     const unsigned lo = static_cast<unsigned>(address), hi = static_cast<unsigned>(address >> 32);
     r3_v8s out;
 #pragma unroll
@@ -208,6 +215,7 @@ __device__ __forceinline__ r3_v8s r3_global_load_tr_b128_v8i16(const void* p) {
     return out;
 }
 
-#define __builtin_amdgcn_global_load_tr_b128_v8i16(p) r3_global_load_tr_b128_v8i16(reinterpret_cast<const void*>(p))
+// The callers pass a global (address_space(1)) pointer, which only a C-style cast turns into an integer.
+#define __builtin_amdgcn_global_load_tr_b128_v8i16(p) r3_global_load_tr_b128_v8i16((uint64_t)(p))
 
 #endif
