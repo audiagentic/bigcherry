@@ -3,7 +3,7 @@ ses_5bbee8ce5c9a4265, req_65394c5d0fdd4647) -- proves the real dispatch
 routes to the right status-obligation verifier using REAL production
 patch ids with REAL tracked-status entries in config/external-sources.toml,
 not synthetic fixtures. Both patches used here are packaged
-(patches/<id>/patch.toml) -- confirms "packaged descriptor follows same
+(engines/llamacpp/patches/<id>/patch.toml) -- confirms "packaged descriptor follows same
 path with no special scanner."
 """
 

@@ -27,11 +27,11 @@ def _load(name, path):
     return module
 
 
-_module = _load("patch_1307", _REPO / "patches/1307_q81_activation_cache_mmvq/patch.py")
+_module = _load("patch_1307", _REPO / "engines/llamacpp/patches/1307_q81_activation_cache_mmvq/patch.py")
 _PATCHES = [p for p in _module.PATCHES if p.path in {"ggml/src/ggml-cuda/mmvq.cu", "ggml/src/ggml-cuda/ggml-cuda.cu"}]
 _PREREQS = [
-    _load("patch_0600", _REPO / "patches/0600_mmvq_geometry/patch.py").PATCH,
-    *_load("patch_1241", _REPO / "patches/1241_rd33_mmvq_q8_0_f32_decode/patch.py").PATCHES,
+    _load("patch_0600", _REPO / "engines/llamacpp/patches/0600_mmvq_geometry/patch.py").PATCH,
+    *_load("patch_1241", _REPO / "engines/llamacpp/patches/1241_rd33_mmvq_q8_0_f32_decode/patch.py").PATCHES,
 ]
 
 

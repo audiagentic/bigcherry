@@ -9,6 +9,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from bigcherry.core import paths  # noqa: E402
 from bigcherry.patcher import apply_all  # noqa: E402
 from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
 
@@ -41,7 +42,7 @@ _DEPLOY = (
 
 
 def _load(pid: str):
-    spec = importlib.util.spec_from_file_location("patch_" + pid, _REPO / "patches" / pid / "patch.py")
+    spec = importlib.util.spec_from_file_location("patch_" + pid, _REPO / "engines" / "llamacpp" / "patches" / pid / "patch.py")
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -55,14 +56,14 @@ def _only(mod):
 _P1328 = _load("1328_aux_rocm_expert_backend")
 
 
-@unittest.skipUnless(all((_REPO / "vendor/llama.cpp" / rel).exists() for rel in _RELS), "pinned vendor checkout not present")
+@unittest.skipUnless(all((paths.llama_root() / rel).exists() for rel in _RELS), "pinned vendor checkout not present")
 class Patch1328Mechanics(unittest.TestCase):
     def _tree(self, td):
         root = Path(td)
         for rel in _RELS:
             dst = root / rel
             dst.parent.mkdir(parents=True, exist_ok=True)
-            copy_pinned(_REPO / "vendor/llama.cpp" / rel, dst)
+            copy_pinned(paths.llama_root() / rel, dst)
         return root
 
     def test_apply_and_idempotent(self):

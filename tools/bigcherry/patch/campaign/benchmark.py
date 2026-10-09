@@ -142,7 +142,7 @@ def resolve_benchmark_wiring(
     closed, never guess which check/executor was meant.
 
     ``root`` matches build_plan_for_patch()'s own parameter (default:
-    the real patches/ tree) -- exposed here purely so this can be
+    the real engines/llamacpp/patches/ tree) -- exposed here purely so this can be
     unit-tested against isolated fixtures without touching real patches."""
     from bigcherry.patch import validation as patch_validation
 

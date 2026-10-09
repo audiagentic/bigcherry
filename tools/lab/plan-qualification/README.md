@@ -32,7 +32,7 @@ sessions. The implementation is owned here by `preflight-fire.sh` and `activatio
 The legacy queue now matches the evidence policy conservatively:
 
 - shared content-addressed worktrees/build roots and a 100G ccache are reused
-  across patches/sessions for the same architecture+toolchain;
+  across engines/llamacpp/patches/sessions for the same architecture+toolchain;
 - PROFILE/kernel-trace diagnostics use a two-phase handoff: CMake/Ninja
   preparation is serialized only for a shared architecture+toolchain build
   root, writes a SHA-256-bound prepared manifest, then releases that exclusive
@@ -70,7 +70,7 @@ build/functional stages while retaining host-exclusive timed measurement only.
 `work-root.sh`: the environment variable, else `BIGCHERRY_WORK_ROOT` in the
 untracked `config/environment.local.toml` `[env]` table, else `work/`; on the
 build server point it at a large scratch volume). Campaign evidence is appended
-to `patches/<id>/evidence/validation.json`.
+to `engines/llamacpp/patches/<id>/evidence/validation.json`.
 
 PROFILE runs also write `prepared-profile.json`, binding the exact control and
 subject binaries used by the GPU phase. A binary/selector change invalidates the

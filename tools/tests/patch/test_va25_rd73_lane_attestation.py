@@ -9,7 +9,7 @@ and nothing joins it to the path that needs it").
 
 PA36 RD73 legacy compatibility retirement: the three lane functions
 moved from shared validation_campaign.py into RD73's producer
-(patches/1233_rd73_stable_graph_cache_key/validation/producer.py), so
+(engines/llamacpp/patches/1233_rd73_stable_graph_cache_key/validation/producer.py), so
 this golden-thread test now verifies the SAME structural property on
 the producer-side lane functions.
 
@@ -33,7 +33,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 ROOT = Path(__file__).resolve().parents[3]
-RD73_PRODUCER_PATH = ROOT / "patches" / "1233_rd73_stable_graph_cache_key" / "validation" / "producer.py"
+RD73_PRODUCER_PATH = ROOT / "engines" / "llamacpp" / "patches" / "1233_rd73_stable_graph_cache_key" / "validation" / "producer.py"
 
 _RD73_SERVER_LANE_FUNCTIONS = (
     "_run_mtp_server_lane",

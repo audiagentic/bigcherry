@@ -32,7 +32,7 @@ class ComputeAllRealRegistryTests(unittest.TestCase):
 
     def test_rd09_successor_prbe05_is_source_pinned_and_materialized_as_stage1_foundation(self):
         # RD09's stage 1 (foundation-only cache, no MMVQ caller yet -- see
-        # patches/1235_rd09_q81_activation_cache_foundation/patch.py) landed
+        # engines/llamacpp/patches/1235_rd09_q81_activation_cache_foundation/patch.py) landed
         # 2026-08-24. compute_all must report that honestly, not the old
         # pre-implementation "planned, no patch" state.
         #
@@ -49,7 +49,8 @@ class ComputeAllRealRegistryTests(unittest.TestCase):
         s = self.statuses["PRBE05"]
         self.assertTrue(s.source_pinned)
         self.assertTrue(s.materialized)
-        self.assertEqual(s.patch_ids, ("1235_rd09_q81_activation_cache_foundation",))
+        # PA44-E merged the foundation (1235) and the Q8_1 producers into 1307
+        self.assertEqual(s.patch_ids, ("1307_q81_activation_cache_mmvq",))
         # promoted 2026-10-05 with the Flash-Next stack (QFP18 lightweight tier; foundation of 1307-1313)
         self.assertEqual(s.build_state, "validated")
         self.assertFalse(s.contracted)

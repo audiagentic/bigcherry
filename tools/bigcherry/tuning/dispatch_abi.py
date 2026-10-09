@@ -3,7 +3,7 @@ schema version numbers on the Python side (HI119 review follow-up).
 
 Before this module existed, "the current schema is 1" was independently
 hand-maintained in six places: the real C++ #define
-(src/ggml/src/ggml-cuda/hip-autotune-types.h's GGML_HIP_SIGNATURE_SCHEMA_
+(engines/llamacpp/overlay/ggml/src/ggml-cuda/hip-autotune-types.h's GGML_HIP_SIGNATURE_SCHEMA_
 VERSION), tuning/replay.py's own SIGNATURE_SCHEMA_VERSION/HARDWARE_SCHEMA_
 VERSION module constants, two `header.get("signature_schema", 1)` fallback
 sites (catalog.py, inventory.py) that conflated "current schema" with

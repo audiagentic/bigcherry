@@ -50,7 +50,7 @@ required = true
 
 
 class _FakePatchDir:
-    """Builds a real temp patches/<id>/validation/ tree on disk."""
+    """Builds a real temp engines/llamacpp/patches/<id>/validation/ tree on disk."""
 
     def __init__(self, tmp: Path, *, producer_toml: str = _PRODUCER_TOML, producer_py: str = _PRODUCER_PY) -> None:
         self.patch_dir = tmp / "0000_fake_patch"
