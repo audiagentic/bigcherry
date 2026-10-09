@@ -118,6 +118,34 @@ builtins) and `gdn_conv_update_w4_h128_bf16` (20 cases, `shape this kernel does 
 
 Timings of the kernels shared with the first check are unchanged (geometric means 0.94 to 1.08 of the earlier run).
 
+## libr3, third check: GEMM and attention pass, 2026-10-09 (run `libr3-b3`, commit ab594c0f)
+
+`r3_compat.h` now emulates the gfx12 bf16 and f16 WMMA instructions and the gfx12 transposed load on gfx11 (layouts
+from BigCherry patch 1253, which probed them on these cards). 51 units build in 29 s, 11 left out; the engine sees
+176 device kernels.
+
+`rad-kbench --kernels libr3,libref`: **1869 checks passed, 0 failed**, 27 skipped, 7 diverged, 32 capped; worst
+rel_l2 4.3e-03; 814 cases ran inside guarded allocations and none wrote outside. 34 device kernels were reached and
+all pass. New since the second check:
+
+| Kernel | Cases | Worst rel_l2 | Geometric-mean time |
+|---|---|---|---|
+| `gemm_bf16_nt_m16` | 30 | 4.5e-04 | 16.5 us |
+| `gemm_bf16_nt_m64` | 26 | 1.1e-04 | 19.0 us |
+| `attn_decode_h128_gqa4_bf16kv` | 12 | 2.3e-03 | 33.2 us |
+| `attn_decode_h256_gqa6_fp8kv` | 16 | 2.3e-03 | 191.7 us |
+| `attn_prefill_h256_gqa6_fp8kv` | 8 | 1.9e-03 | 1295.9 us |
+| `gdn_chunk_scan_k128_v128_c64_bf16` | 10 | 4.3e-03 | 78.8 us |
+| `gdn_kkt_solve_k128_c64_bf16` | 10 | 8.1e-05 | 15.3 us |
+| `gdn_conv_update_w4_h128_bf16` | 10 | 4.5e-05 | 32.6 us |
+
+The two kernels that refused before (`gemm_bf16_nt_m16`, `gdn_conv_update_w4_h128_bf16`) pass now that the units
+they reach are built. The emulation costs 12 cross-lane moves per WMMA call and 16 per transposed load, so these
+times are a correctness baseline, not a speed claim; no gfx12 time on the same shapes has been taken for comparison.
+
+Still left out (11 units): the int8, 4-bit and fp8 WMMA GEMMs and the routed MoE unit. 142 of libr3's rows are not
+reached by this fixture (recorded from a Qwen3.8-27B fp8 container, whose GEMMs are the fp8 ones still excluded).
+
 ## References for the remaining port (found 2026-10-09; read before writing kernels)
 
 The 29 excluded units need the gfx12 WMMA builtins or the gfx12 transposed load. These exist to adapt from, so none
