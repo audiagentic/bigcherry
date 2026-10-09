@@ -168,3 +168,52 @@ LDS staging for prefill, direct i8 WMMA for W8A8/W4A8, FP8 E4M3 **packed storage
 with tile-local BF16/F16 conversion, then BF16 and FP8 E4M3 paged KV attention.
 RDNA3 does not have RDNA4's native FP8 WMMA or transposed global-load instruction.
 **No compiler/GPU performance evidence exists for these new GEMM candidates yet.**
+
+## Independent RDNA3 RMSNorm reductions (stacked research slice)
+
+Two **new**, independent `rmsnorm` candidates, not changes to the other agent's
+`libr3` upstream-compatibility shim:
+
+- `r11_rmsnorm_wave32`: one gfx1100 wave32 per token row. Each lane gathers `n/32`
+  elements, performs an FP32 square-sum and `__shfl_down` butterfly, and broadcasts
+  the scale to the wave. No LDS or inter-wave synchronization.
+- `r11_rmsnorm_block256`: eight gfx1100 wave32s per row, each produces one partial
+  into 8-element LDS; one inter-wave barrier and final FP32 sum. This may win at
+  hidden width 5120 and lose for head width 256. The choice is **unmeasured**.
+
+Both compute `y=x*rsqrt(mean(x^2)+eps)*(w+wadd)` with BF16 input/output,
+F32 or BF16 gain and **F32 `wadd`** (important for Qwen/Gemma zero-centered gains).
+The registration accepts `1<=M<=1024`, `32<=n<=8192`, `n%32==0`.
+The launch accepts independently strided/padded 2D rows; shape and dtype violations
+are errors rather than silently choosing a wrong interpretation.
+
+```sh
+python3 -m unittest discover -s tools/lab/radiance-gfx1100/tests -p 'test_*.py'
+# Select exactly one verified XTX; build against the running Radiance ABI first.
+ROCR_VISIBLE_DEVICES=<gfx1100-id> ctest --test-dir /tmp/rad11-build \
+  -R '^r11_rmsnorm_smoke$' --output-on-failure
+
+export ROCR_VISIBLE_DEVICES=<gfx1100-id>
+export RADIANCE_HOME=/tmp/rad11-build/radiance_home:/opt/radiance
+bash tools/lab/radiance-gfx1100/compare_rmsnorm.sh \
+  /tmp/rad11-build /opt/radiance/bin/rad-kbench /tmp/r11-rmsnorm-fresh
+```
+
+The checker runs **both rows** against `libref` with numerical and red-zone
+reporting. The hardware smoke uses asymmetric activations, padded row strides,
+F32 and BF16 gains, `wadd=1`, and a 32-channel QK-norm analog; it checks
+numerical tolerance rather than falsely requiring bit-identical reduction trees.
+A source-only coverage test is also supplied. A present row without a tested
+fixture is **not a validated kernel**.
+
+Guidance: AMD's [HIP reduction guide](https://rocm-handbook.amd.com/projects/amd-rocm-optimization-guide/en/latest/patterns/examples/reduction.html)
+distinguishes single-wave shuffle reductions from cross-wave LDS coordination;
+AMD's [wavefront builtin reference](https://rocm-handbook.amd.com/projects/amd-rocm-optimization-guide/en/latest/compiler-builtins/cross-arch/wavefront-builtins.html)
+documents gfx11 `__shfl_down` and optional DPP alternatives. Next compare
+native DPP against the shuffle version **after** this correctness gate; also try
+CU-mode `-mcumode` for the eight-wave kernel in an isolated compile variant.
+Do not infer a win from RDNA4 measurements.
+
+**Status:** no ROCm compilation or Brutus performance evidence for these RMSNorm
+candidates yet. This slice is stacked on PR #86, so it does not modify the shared
+branch while the other agent works there.
