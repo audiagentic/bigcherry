@@ -19,7 +19,7 @@ Expose the integrated CM1 path as a forceable Vulkan recipe candidate with compl
 
 ## Steps
 
-1. Define a complete CM1 recipe covering activation preparation/Q8_1, main CM1 pipeline, and optional split-K/reduction. 2. Add identity for operation, quant, accumulator, S/M/L/tile class, subgroup, device/architecture, driver/ICD, shader digest, upstream/vendor/build identity, dispatch signature, and recipe stages. 3. Implement Vulkan-native can_execute and route selection; keep it separate from generic dispatch and create pipelines outside timed regions. 4. Expose strict force through TRBC03 and emit requested route, actual bound route, rejection/fallback reason, signature, candidate/recipe ID, and shader digest. 5. Compare native versus strict CM1 for MUL_MAT and MUL_MAT_ID before enabling measurement. 6. Unsupported strict force fails explicitly; ordinary auto/replay misses and device/timestamp failures fall back visibly to native. Keep patch 1247 package-only and independently identified from 1246.
+1. Define a complete CM1 recipe covering activation preparation/Q8_1, main CM1 pipeline, and optional split-K/reduction. 2. Add identity for operation, quant, accumulator, S/M/L/tile class, subgroup, device/architecture, driver/ICD, shader digest, upstream/vendor/build identity, dispatch signature, and recipe stages. 3. Implement Vulkan-native can_execute and route selection; keep it separate from generic dispatch and create pipelines outside timed regions. 4. Expose strict force through TRBC03 and emit requested route, actual bound route, rejection/fallback reason, signature, candidate/recipe ID, and shader digest. 5. First prove actual bound native CM1 vs non-CM1 route; only compare a strict candidate after a narrowly isolated control exists. Global GGML_VK_DISABLE_COOPMAT is not an isolated CM1-off baseline. 6. Unsupported strict force fails explicitly; ordinary auto/replay misses and device/timestamp failures fall back visibly to native. Patches 1246/1247 are absent; do not create a duplicate native shader transplant. Any future 1247 must be a genuinely new, separately identified route/telemetry feature.
 
 ## Detailed Solution & Technical Design
 
@@ -50,6 +50,9 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 Stable complete-recipe identity exists. Supported strict force proves CM1 executed; unsupported force fails loudly. Auto/replay misses fall back visibly to native and telemetry reports actual bound route. Correctness passes before timing/promotion. Patch 1247 is package-only, independently identified, and has no accidental multi-contract binding.
 
 ## Notes
+
+2026-10-08T22:03Z BCOP77 reconciliation: upstream #27952 is already native at b11474 and auto-eligible; PRVP01/1246 transplant is obsolete. PRVP02 owns the open A-prefetch end_k safety gate before any forced route campaign. Strict force cannot claim a separate candidate merely because native CM1 already binds. RRVP02's Vulkan implementation pause remains in effect. No patch 1247 currently exists.
+
 
 Supersedes: RO21
 Migration: capability-rebaseline-v3-2026-09

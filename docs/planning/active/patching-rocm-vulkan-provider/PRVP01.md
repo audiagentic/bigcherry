@@ -2,8 +2,8 @@
 id: PRVP01
 order: 0
 plan: patching-rocm-vulkan-provider
-state: pending
-created-at: '2026-09-09T11:01:08.382627+00:00'
+state: completed
+created-at: '2026-09-09T11:01:08.382625+00:00'
 breadth: ''
 skill: advanced
 created-by: capability-rebaseline-v3
@@ -11,49 +11,36 @@ work: M
 priority: P1
 ---
 
-# Capture and pin PR #27952 Vulkan CM1 source
+# Retired: CM1 source transplant already native at b11474
 
 ## Description
 
-Capture immutable llama.cpp PR #27952 final-state source against the current vendor pin as an availability-only packaged patch.
+The former PR #27952 source-capture/1246 transplant is obsolete. Upstream merged #27952 on 2026-09-24 (merge 70c4e1582e37e4fd94104eb09301711a0f2675bc), which is an ancestor of BigCherry's pinned llama.cpp b11474 (b9acf138a1e28ce1fc23b5a4fc4b12444b50f7ea; compare ahead 314, behind 0). The pinned Vulkan implementation already contains the int8 CM1 shader, host dispatch, architecture enum, generator, and shared quant functions. PR #27952 changed FIVE files, not the four assumed in this plan: ggml-vulkan-types.h is also coupled.
+
+There is no patches/1246_ro19_vulkan_cm1_pr27952 package in the selected BigCherry tree. Do not create a backport of already-pinned native code, add a second shader implementation, or change source registry identity for a nonexistent package.
 
 ## Steps
 
-Record URL/head 965e57103fce2c4329cdfc2b8300f8f7ed57c9fe, semantic base cc83d7b..., target pin 2578138...; diff final state against pin and classify all four coupled host/shader/generator files; package 1246_ro19_vulkan_cm1_pr27952 with patch.toml/patch.py/SUMMARY; register external source; materialize pristine and prove no default route change.
-
-## Detailed Solution & Technical Design
-
-Capture coupled ggml-vulkan.cpp, mul_mmq_cm1.comp, funcs.glsl and shader generator as one deterministic semantic transplant. Keep state untested, no fabricated evidence, package-only identity, and availability disabled until PRVP02/TRVP qualification.
-
-## Code Samples & Guidance
-
-
+1. Terminal source-equivalence decision: native CM1 at the pin supersedes 1246 packaging.
+2. Preserve the historical reviewed PR head (965e5710...) only as provenance, not as the current merged identity; the final merged head was 5cdaca76....
+3. Delegate remaining A-prefetch correctness and pinned route checks to PRVP02; TRVP14 owns optional strict route/telemetry, TRVP15 owns later measured promotion. RRVP02 records the Vulkan implementation pause.
+4. Reopen only if a future pin loses the native change or an exact diff proves a new missing mechanism. Verify ancestry and source paths first.
 
 ## Files
 
-config/external-sources.toml; patches/1246_ro19_vulkan_cm1_pr27952/{patch.toml,patch.py,SUMMARY.md}; four vendor Vulkan paths; source/provenance tests.
+Native pinned files: ggml/src/ggml-vulkan/{ggml-vulkan.cpp,ggml-vulkan-types.h,vulkan-shaders/mul_mmq_cm1.comp,vulkan-shaders/mul_mmq_cm1_funcs.glsl,vulkan-shaders/vulkan-shaders-gen.cpp}. No BigCherry 1246 patch exists or is required.
 
 ## Validation
 
-Source/external-source checks, patch-lint, pristine materialization/rebase/apply, compile host and shader generator, exact four-file diff accounting and identity changes on source/pin change.
-
-## Effort & Risk
-
-
-
-## Standards
-
-Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
+Source-only: verified merged-commit ancestry, all five source files, and absence of 1246 in the patch catalog/tree. No compilation, Vulkan execution, or hardware measurements occurred in this audit.
 
 ## Acceptance Criteria
 
-Immutable provenance, clean packaged application/build, complete coupled diff, no default CM1 enablement or production behavior change, and moving upstream head blocks reuse.
+Completed/superseded: no duplicate transplant, no stale four-file capture claim, and a single native CM1 qualification owner (PRVP02). Any future source drift is handled through the existing pin/source provenance process.
 
 ## Notes
 
-Supersedes: RO19
-Migration: capability-rebaseline-v3-2026-09
-Successor key: patching-rocm-vulkan-provider-ro19
+2026-10-08T22:03Z audit: upstream #27952 merged 2026-09-24; native pinned implementation and 13-quant shader-generator branch inspected. PRVP02 remains pending for a separate shader A-prefetch safety question; PRVP01 is not its implementation owner.
 
 ## Change Log
 
