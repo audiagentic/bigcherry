@@ -39,3 +39,9 @@ r4d_ar_gather_2rank
 r4d_ar_ln_had_quant_i8
 r4d_ar_oneshot_2rank_exact
 r4d_ar_oneshot_2rank_wht6
+
+# behind the fp8 conversions (now supplied): more gfx12-only code
+# r4d_fused_quant_fp8.hip:542 inline assembly, "instruction not supported on this GPU"
+r4d_fused_quant_fp8
+# gfx12 WMMA (r4d_gdn_wmma.h) and the transposed load (r4d_common.h)
+r4d_hc_bf16
