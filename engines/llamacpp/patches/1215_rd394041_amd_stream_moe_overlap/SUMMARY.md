@@ -24,3 +24,7 @@ Owner-approved; GPT review req_4d131e8b7c1c452d concurred. Evidence retained in
 evidence/validation.json. Rework, if any, should build on upstream's own
 concurrency substrate. Dependent 1216 (join-fusion guard for this patch) is
 blocked with it.
+
+## Current disposition (2026-10-09; PRBE112/BCOP88)
+
+The historical positive measurements below do **not** supersede the later eight-session b11126 rejection (MoE and dense regressions on gfx1100/gfx1201). Current patch.py no longer edits per-stream cuBLAS handles or ggml_cuda_op_mul_mat: upstream #26574 absorbed that work. Its remaining generic RD41 QKV interleaving-to-scratch rewrite is active even when RD42's MoE name/shape predicate cannot fire, making it the smallest **unverified** dense-regression candidate. PRBE112 owns only a bounded MoE-only/native-QKV discriminator; do not re-enable or benchmark rejected 1215 as a promotion candidate. PRBE35/1216's standalone join guard is independent. See the authoritative PRBE112 plan and BCOP88; no new hardware result is claimed.
