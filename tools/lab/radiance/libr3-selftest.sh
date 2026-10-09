@@ -44,6 +44,8 @@ for row in "${rows[@]}"; do
     grep -E "FAIL" "$out/$row.log" | head -8 | cut -c1-230
     tail -2 "$out/$row.log" | cut -c1-200
     # a run that only skipped proves nothing
-    [ $rc -ne 0 ] || [ "$(grep -cE "^\s+ok" "$out/$row.log")" -eq 0 ] && bad=1
+    passed=$(grep -cE "^ +ok " "$out/$row.log")
+    if [ "$rc" -ne 0 ] || [ "$passed" -eq 0 ] || [ "$fail" -ne 0 ]; then bad=1; fi
 done
+echo "selftest verdict: $([ $bad -eq 0 ] && echo PASS || echo FAIL)"
 exit $bad
