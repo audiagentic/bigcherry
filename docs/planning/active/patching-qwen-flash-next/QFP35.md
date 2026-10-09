@@ -310,9 +310,11 @@ Keep this **separate** from QFP35's already-covered `1313_scale_act_fuse` and HC
 
 ## Ledger-events
 
+
 - chg_20261007_051800_flash-next-prefill-is-about-1_8190
 - 2026-10-07T05:18:06.429391+00:00 (updated-by): Updated: section:ledger-events
 
+- chg_20261009_222146_a-small-output-identical-decod_7278
 ## Code-level review (2026-10-07)
 
 ### 1. Verified facts and corrections
@@ -480,3 +482,4 @@ Validation:
 Expected gain on the production three-card Flash-Next topology if Gate 0 passes: **+0.1% to +0.5% prefill**. Treat any larger result as requiring a fusion-census explanation rather than assuming the external report transfers.
 - 2026-10-08T09:46:12.268171+00:00 (updated-by): Updated: section:notes
 - 2026-10-09T01:50:40.548677+00:00 (updated-by): Updated: section:notes
+- 2026-10-09T22:21:49.767471+00:00 (updated-by): Updated: section:ledger-events
