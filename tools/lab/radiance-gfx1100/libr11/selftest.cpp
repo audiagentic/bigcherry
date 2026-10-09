@@ -10,7 +10,7 @@
 
 namespace {
 #define HIP_CHECK(call) do { auto status = (call); if (status != hipSuccess) { \
-    std::fprintf(stderr, "%s failed: %s\\n", #call, hipGetErrorString(status)); return 1; \
+    std::fprintf(stderr, "%s failed: %s\n", #call, hipGetErrorString(status)); return 1; \
 } } while (0)
 
 using Launch = int (*)(const RadArgs*, RadStream);
@@ -34,7 +34,7 @@ int run_case(Launch launch, const uint16_t expected[4], const char* label,
     a.n_p = 3;
     int rc = launch(&a, reinterpret_cast<RadStream>(stream));
     if (rc != RAD_OK) {
-        std::fprintf(stderr, "%s launch error %d\\n", label, rc);
+        std::fprintf(stderr, "%s launch error %d\n", label, rc);
         return 1;
     }
     if (hipStreamSynchronize(stream) != hipSuccess) return 1;
@@ -43,26 +43,26 @@ int run_case(Launch launch, const uint16_t expected[4], const char* label,
     if (std::memcmp(got, expected, sizeof(got)) != 0) {
         std::fprintf(stderr, "%s mismatch", label);
         for (int i=0; i<4; ++i) std::fprintf(stderr, " %04x/%04x", got[i], expected[i]);
-        std::fprintf(stderr, "\\n");
+        std::fprintf(stderr, "\n");
         return 1;
     }
-    std::printf("PASS %s bf16 broadcast 2x2\\n", label);
+    std::printf("PASS %s bf16 broadcast 2x2\n", label);
     return 0;
 }
 }
 
 int main(int argc, char** argv) {
     if (argc != 2) {
-        std::fprintf(stderr, "usage: %s /path/to/libr11.so\\n", argv[0]);
+        std::fprintf(stderr, "usage: %s /path/to/libr11.so\n", argv[0]);
         return 2;
     }
     void* module = dlopen(argv[1], RTLD_NOW | RTLD_LOCAL);
-    if (!module) { std::fprintf(stderr, "dlopen: %s\\n", dlerror()); return 1; }
+    if (!module) { std::fprintf(stderr, "dlopen: %s\n", dlerror()); return 1; }
     auto version = reinterpret_cast<uint32_t (*)()>(dlsym(module, "rad_plugin_abi_version"));
     auto add = reinterpret_cast<Launch>(dlsym(module, "r11_add_bf16"));
     auto mul = reinterpret_cast<Launch>(dlsym(module, "r11_mul_bf16"));
     if (!version || version() != RAD_ABI_VERSION || !add || !mul) {
-        std::fprintf(stderr, "plugin ABI mismatch or missing kernels\\n");
+        std::fprintf(stderr, "plugin ABI mismatch or missing kernels\n");
         return 1;
     }
     // A=[[1,2],[3,4]], B=[[0.5,-1]]: one-row broadcast.
