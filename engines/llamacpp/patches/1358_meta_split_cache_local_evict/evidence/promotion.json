@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "tier": "profile-evidence",
+  "patch-id": "1358_meta_split_cache_local_evict",
+  "pinned": "b11474",
+  "subject-digest": "c4304292f629b2089f1766fbedeb5b42bedc51f917b9db7481b0330a869662c1",
+  "default-on": true,
+  "models": [
+    "Qwen3.8-Flash-Next UD-IQ4_XS",
+    "Qwen3.8-27B Q8_0"
+  ],
+  "checks": {
+    "ab": "one binary (b-metamem-sce1 = production + 1358), on against BIGCHERRY_META_SPLIT_CACHE_EVICT=0, two rounds: prefill +3.1% at 98K, +3.0% at 24K, +2.8% at 8K.",
+    "activation": "BIGCHERRY_PATCH_HIT marker at 24K in the on arm only (run sce1-r1, order A B B A: 1 0 0 1).",
+    "identity": "greedy text identical in every run at 8K / 24K / 98K on Flash-Next, and at 10K / 32K on Qwen3.8-27B.",
+    "mechanics": "offline tests for 1358 pass, patch-lint clean, composition with the production set clean (58/58).",
+    "no-regression": "Qwen3.8-27B, two RX 7900 XTX, production flags (prod27b-ab.sh, run nr27-1358): prefill +1.0% at 10K and +1.1% at 32K, decode and draft acceptance equal, text identical."
+  }
+}

@@ -290,6 +290,7 @@ patches = [
     "1325_sched_split_timing",
     "1342_fusion_bisect",
     "1346_mtp_prompt_overlap",
+    "1358_meta_split_cache_local_evict",
 ]
 required-state = "validated"
 
@@ -1095,4 +1096,4 @@ patches = ["1275_ar_small_latency"]
 
 [experiment.meta-split-cache-evict]
 # 1358: production + local eviction of stale Meta split-state cache entries; on by default, BIGCHERRY_META_SPLIT_CACHE_EVICT=0 restores the clear.
-patches = ["1358_meta_split_cache_local_evict"]
+patches = []
