@@ -144,7 +144,10 @@ class TestPatchProvenanceCrossCheck(unittest.TestCase):
     # build genuinely runs them. Shipping is a separate, deliberate axis
     # from VALIDATED_RDNA_PATCHES above, taken only after the evidence axis
     # was satisfied. Currently empty for the same reason as above.
-    SHIPPED_RDNA_PATCHES = frozenset({"1237_rd30_moe_mmq_compact_grid", "1241_rd33_mmvq_q8_0_f32_decode"})
+    # 1200 (RD19) is in [patch-set.validated-enhancements] for source=bigcherry since the b11474 release work.
+    SHIPPED_RDNA_PATCHES = frozenset({
+        "1200_rd19_single_gpu_meta_bypass", "1237_rd30_moe_mmq_compact_grid", "1241_rd33_mmvq_q8_0_f32_decode",
+    })
 
     # Patches retired from the first-sweep pool, either because upstream
     # shipped the same fix independently (STATE = "superseded" -- the patch
