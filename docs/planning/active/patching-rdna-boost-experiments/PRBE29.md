@@ -13,6 +13,11 @@ priority: P3
 
 # AMD-GEMM-002: Persistent F16 shadow of quantized dense weights
 
+## 2026-10-09 PRBE28 ownership reconciliation
+
+**PRBE29 alone owns quantized-weight F16 shadows.** PRBE28's original GGUF row padding is now float-only: never pad Q8_0/Q4_K/Q6_K packed source strides. AMD-Ecosystem/llama.cpp PR #57 implements an existing load-time shadow through `ggml_backend_cuda_buffer_set_tensor`, `tensor->extra`, and buffer-context ownership; inspect complete vs partial/async uploads, ownership, graph and split behaviour before choosing this hook over the plan's post-`load_all_data` alternative. The external gfx1151 performance evidence is not BigCherry qualification. PRBE30 owns any K-padding inside this shadow; no second shadow allocator belongs to PRBE28.
+
+
 ## Description
 
 TODO, first-principles investigation, foundational for PRBE30/PRBE31. Persistent F16 device-buffer 'shadow' of selected quantized dense (non-MoE-expert) weights, built once at model load (not per-GEMM), opt-in only. Real b11126 confirmed this batch: ggml-cuda.cu has cuBLAS integration (`ggml_cuda_mul_mat_cublas_impl` at line 1433, `cublasHandle_t`/`CUBLAS_CHECK` throughout) but NO hipBLASLt-specific path exists yet -- so this project's HIP build currently runs dense F16/F32 GEMM through hipBLAS's cuBLAS-compatibility shim, not a tuned hipBLASLt path; introducing the latter (needed for PRBE31's crossover measurement) is itself new integration work, not merely a dispatch flag.

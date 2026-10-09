@@ -9,3 +9,22 @@ upstream = "https://codeberg.org/StillDeadcode/radiance"
 patches = "engines/radiance/patches"
 overlay = "engines/radiance/overlay"
 vendor = "vendor/radiance"
+
+# How the server is run (run-multi-engine MEN03). The plugins (kernel libraries, architectures, quantisers) are found
+# through RADIANCE_HOME, which a source build places beside its bin/ directory.
+[serve]
+binary = "bin/radiance"
+model-flag = "--model"
+host-flag = "--host"
+port-flag = "--port"
+health = "/health"
+shutdown = "sigint"
+
+[serve.env-from-binary]
+RADIANCE_HOME = "../radiance_home"
+
+[serve.draft-stats]
+source = "metrics"
+path = "/metrics"
+drafted = "radiance:draft_tokens_total"
+accepted = "radiance:draft_accepted_total"

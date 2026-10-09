@@ -48,7 +48,7 @@ from .attestation import (
     parse_llama_server_attestation,
     require_execution_identity,
 )
-from ..tuning.server_runner import ServerRunner
+from ..tuning.server_runner import ServerRunner, LLAMACPP_SERVE
 
 # -sm tensor wraps the physical devices in Meta(): the timed process logs
 # "assigned to device Meta()" and its device inventory, but neither a locator
@@ -108,6 +108,7 @@ class AttestedServerSession:
         self._architecture_by_locator = architecture_by_locator
         self.attestation: ExecutionAttestation | None = None
         self._runner = ServerRunner(
+            serve=LLAMACPP_SERVE,
             binary=binary,
             model=model,
             host=host,

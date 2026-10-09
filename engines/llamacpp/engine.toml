@@ -9,3 +9,21 @@ upstream = "https://github.com/ggml-org/llama.cpp"
 patches = "engines/llamacpp/patches"
 overlay = "engines/llamacpp/overlay"
 vendor = "vendor/llama.cpp"
+
+# How the server is run (run-multi-engine MEN03). The /shutdown route is BigCherry's (patch 0800) and is only
+# registered when LLAMA_SERVER_ENABLE_SHUTDOWN is set; a stock upstream build is stopped with SIGINT instead, which
+# the caller selects per run.
+[serve]
+binary = "bin/llama-server"
+model-flag = "-m"
+host-flag = "--host"
+port-flag = "--port"
+health = "/health"
+shutdown = "http:/shutdown"
+
+[serve.env]
+LLAMA_SERVER_ENABLE_SHUTDOWN = "1"
+
+[serve.draft-stats]
+source = "log"
+pattern = 'draft acceptance = [0-9.]+ \(\s*(?P<accepted>\d+) accepted /\s*(?P<drafted>\d+) generated\)'

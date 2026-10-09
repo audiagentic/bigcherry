@@ -13,6 +13,11 @@ priority: P3
 
 # AMD-GEMM-004: Large-M F16 shadow to tuned hipBLASLt crossover
 
+## 2026-10-09 PRBE28 ownership reconciliation
+
+**First measure the existing rocBLAS/hipBLAS compatibility route before introducing a new direct hipBLASLt API.** AMD-Ecosystem/llama.cpp PR #57 uses the existing `ggml_cuda_mul_mat_cublas_impl` path with `ROCBLAS_USE_HIPBLASLT=1` and an F16 shadow; external gfx1151 M=128 regressions versus M=512 wins show why the *actual per-ubatch* `ne11` matters. The older direct-Lt integration requirement below is a superseded hypothesis, not a prerequisite. Compare native MMQ, existing BLAS-over-PRBE29-shadow and any later direct-Lt candidate only after load/VRAM/correctness gates; no BigCherry speedup is established. PRBE28's float GGUF padding is not a dependency.
+
+
 ## Description
 
 TODO, depends on PRBE29 (+ optionally PRBE30). Determine the real M-size crossover between native quantized MMQ and tuned hipBLASLt-over-F16-shadow. This is the ONE item in the GEMM-shadow chain that needs genuinely new integration work beyond PRBE29's allocator: confirmed this batch that NO hipBLASLt symbols exist anywhere in ggml-cuda.cu at b11126 (only cuBLAS/hipBLAS-compat via `ggml_cuda_mul_mat_cublas_impl`) -- 'tuned hipBLASLt' dispatch does not exist in this codebase yet and must be added, not merely enabled.
