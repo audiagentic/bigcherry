@@ -95,7 +95,8 @@
           "section": "Internal changes",
           "hidden": true
         }
-      ]
+      ],
+      "version-file": "docs/releases/platform-version.txt"
     }
   },
   "separate-pull-requests": true,
