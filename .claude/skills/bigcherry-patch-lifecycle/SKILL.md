@@ -597,7 +597,7 @@ bigcherry-patch-workflow — implement last so its routing targets already exist
 
 Cross-skill consistency rules
 
-Production patch = patches/<id>/ package; flat production patches are forbidden.
+Production patch = engines/llamacpp/patches/<id>/ package; flat production patches are forbidden.
 
 AUTHOR changes implementation; VERIFY proves mechanics; QUALIFICATION proves claims; LIFECYCLE changes status. No skill should absorb another's authority.
 

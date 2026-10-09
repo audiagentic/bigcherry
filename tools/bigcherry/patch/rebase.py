@@ -3,7 +3,7 @@
 
 The pin-consistency guard (``release/pin_status.py``, RE48) answers "is the
 vendor checkout at the revision the pin declares?" -- a pure revision-identity
-question. It says nothing about whether the anchored patches in ``patches/``
+question. It says nothing about whether the anchored patches in ``engines/llamacpp/patches/``
 still find their anchors in that revision's source. This module answers that
 second, orthogonal question: given the CURRENT vendor revision, which patches
 still apply cleanly, which are legitimately not-applicable-by-design, and
@@ -1086,7 +1086,7 @@ def run_rebase_check(
     revision = _git(root, "rev-parse", "HEAD")
     # Snapshot the overlay ONCE, up front: every probe round and the report's
     # own overlay_digest are computed from these exact same in-memory bytes,
-    # rather than each re-reading src/ at its own moment -- a concurrent
+    # rather than each re-reading the overlay at its own moment -- a concurrent
     # overlay edit on this shared, multi-agent working tree could otherwise
     # make different rounds see different input and then publish a digest
     # describing only whatever state disk happened to be in last.
@@ -1313,7 +1313,7 @@ def _require_fresh(
     )
     if report.get("overlay_digest") != live_overlay_digest:
         raise StaleRebaseReportError(
-            "report overlay_digest no longer matches src/ -- re-run patch-rebase-check"
+            "report overlay_digest no longer matches the overlay -- re-run patch-rebase-check"
         )
 
     # PA34: the report's canonical selector identity is the sole authority

@@ -162,7 +162,7 @@ owner and tracking item so another agent can resolve the failure.
 New patches must be packaged. This procedure is only for an existing flat
 compatibility fixture:
 
-1. Create `patches/<patch-id>/patch.toml`, `patch.py`, and `SUMMARY.md` with
+1. Create `engines/llamacpp/patches/<patch-id>/patch.toml`, `patch.py`, and `SUMMARY.md` with
    the same canonical patch ID and declared composition.
 2. Freeze one immutable upstream base and identical overlay/source conditions.
 3. Apply the flat representation to one isolated tree and the package

@@ -151,7 +151,7 @@ def signature_to_op_filter(
     signature: dict[str, object], *, vendor_root: Path,
 ) -> tuple[str, str]:
     """Map a real ggml_hip_dispatch_signature_v1 JSON (as emitted by
-    src/ggml/src/ggml-cuda/hip-autotune-signature.cpp's
+    engines/llamacpp/overlay/ggml/src/ggml-cuda/hip-autotune-signature.cpp's
     ggml_hip_signature_json(), and as recorded in a measurements.jsonl's
     canonical field) into (op_filter, target_tensor) for
     generate_correctness_evidence().
@@ -494,8 +494,8 @@ def signature_to_mul_mat_id_test_file_line(
     Python entirely; ggml itself derives the correct contiguous layout for
     whatever type is given, quantized or not.
 
-    Requires patches/1236_hi105_deterministic_mul_mat_id_ids/patch.py applied
-    (REQUIRES patches/1222) so two independent process invocations
+    Requires engines/llamacpp/patches/1236_hi105_deterministic_mul_mat_id_ids/patch.py applied
+    (REQUIRES engines/llamacpp/patches/1222) so two independent process invocations
     (forced-native, forced-candidate) see identical, full-expert-range
     routing for the same BIGCHERRY_TEST_DETERMINISTIC_SEED -- without it,
     test_generic_op's own MUL_MAT_ID initializer is both non-deterministic
@@ -637,7 +637,7 @@ def signature_to_mul_mat_id_test_file_line(
 
 # HI118's fusion-presence flags (bits 7-10 of the signature's own `flags`
 # field), and the GATE fusion-kind value -- both defined in
-# src/ggml/src/ggml-cuda/hip-autotune-types.h's ggml_hip_signature_flag /
+# engines/llamacpp/overlay/ggml/src/ggml-cuda/hip-autotune-types.h's ggml_hip_signature_flag /
 # ggml_hip_fusion_kind enums. Not re-derived from the C++ source at import
 # time the way load_ggml_type_names/load_ggml_op_names are, since these are
 # small, stable, hand-verified enum positions (unlike the type/op tables,
@@ -700,7 +700,7 @@ def signature_to_moe_glu_file_line(
     # Only a signature stamped with the CURRENT schema (produced by a
     # HI118-aware build) can be trusted to mean what this mapper assumes.
     # See tools/bigcherry/tuning/dispatch_abi.py for the canonical version
-    # and src/ggml/src/ggml-cuda/hip-autotune-types.h's own v1->v2 bump note.
+    # and engines/llamacpp/overlay/ggml/src/ggml-cuda/hip-autotune-types.h's own v1->v2 bump note.
     schema_version = int(signature.get("schema_version", 0))
     if schema_version != dispatch_abi.SIGNATURE_SCHEMA_VERSION:
         raise SignatureMappingError(
@@ -859,7 +859,7 @@ def signature_to_moe_glu_file_line(
     # Validated for the enum table's own sake (raises on an unknown id) --
     # the resolved name is otherwise unused: test_bigcherry_moe_glu_fusion's
     # constructor takes the raw ggml_type id directly, matching
-    # --moe-glu-file's own numeric-field convention (patches/
+    # --moe-glu-file's own numeric-field convention (engines/llamacpp/patches/
     # 1240_hi119_moe_glu_file_cli.py), not a string name.
     _type_name(src0_type_id)
 

@@ -22,7 +22,7 @@ AttestedServerSession composes ServerRunner rather than replacing it.
 
 REAL BLOCKER FOUND (not just "nobody called it yet"), 2026-09-08: RD73's
 lanes pass ``-sm tensor --fit off`` (required for that model/topology,
-patches/1233's own README documents the real hardware crash without
+engines/llamacpp/patches/1233's own README documents the real hardware crash without
 --fit off). That combination skips the device-fitting code path that
 emits llama-server's "using device ROCm0 (...)" line -- attestation.py's
 own module comment documents this exact caveat, and states server lanes

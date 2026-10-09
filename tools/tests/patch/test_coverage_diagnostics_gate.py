@@ -12,7 +12,7 @@ from bigcherry.patch.apply import FilePatch, apply_patch
 
 ROOT = Path(__file__).resolve().parents[3]
 spec = importlib.util.spec_from_file_location(
-    "coverage_diagnostics_patch", ROOT / "patches/0700_coverage_counters/patch.py"
+    "coverage_diagnostics_patch", ROOT / "engines/llamacpp/patches/0700_coverage_counters/patch.py"
 )
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)

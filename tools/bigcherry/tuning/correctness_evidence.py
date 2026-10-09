@@ -32,8 +32,8 @@ GPT's suggestion of `GGML_HIP_FORCE_CANDIDATE=native` does not work):
 So: N = GGML_HIP_DISPATCH_MODE=native (no force var, and none is needed).
     C = GGML_HIP_DISPATCH_MODE=replay + GGML_HIP_FORCE_CANDIDATE=<name>.
 
-Requires patches/1222_hi67_deterministic_test_backend_ops_seed/patch.py and
-patches/1223_hi67_machine_readable_correctness_metrics/patch.py to be applied to
+Requires engines/llamacpp/patches/1222_hi67_deterministic_test_backend_ops_seed/patch.py and
+engines/llamacpp/patches/1223_hi67_machine_readable_correctness_metrics/patch.py to be applied to
 the binary under test -- BIGCHERRY_TEST_DETERMINISTIC_SEED, BIGCHERRY_REF_
 DIGEST and BIGCHERRY_CORRECTNESS_METRIC do not exist without them.
 """
@@ -86,7 +86,7 @@ _METRIC_RE = re.compile(
     r"backend1=(?P<backend1>\S+) backend2=(?P<backend2>\S+) "
     r"err=(?P<err>\S+) max_abs=(?P<max_abs>\S+) threshold=(?P<threshold>\S+) "
     r"n=(?P<n>\d+)"
-    # HI83: added by patches/1223's backend1_digest/backend2_digest extension.
+    # HI83: added by engines/llamacpp/patches/1223's backend1_digest/backend2_digest extension.
     # Optional so this parser stays usable against older builds that predate
     # that extension (e.g. HI67 evidence captured before HI83 landed).
     r"(?: backend1_digest=(?P<backend1_digest>[0-9a-fA-F]+)"
@@ -172,7 +172,7 @@ def run_test_backend_ops(
         raise EvidenceError(
             "seed must be nonzero -- 0 leaves BIGCHERRY_TEST_DETERMINISTIC_SEED "
             "unset in the patched test-backend-ops, disabling deterministic mode "
-            "entirely (see patches/1222_hi67_deterministic_test_backend_ops_seed/patch.py)"
+            "entirely (see engines/llamacpp/patches/1222_hi67_deterministic_test_backend_ops_seed/patch.py)"
         )
     run_env = dict(env or {})
     run_env["BIGCHERRY_TEST_DETERMINISTIC_SEED"] = str(seed)
@@ -280,8 +280,8 @@ def collect_native_seed_evidence(
     if native_digest is None:
         raise EvidenceError(
             f"seed {seed}: missing BIGCHERRY_REF_DIGEST for tensor {digest_tensor!r} "
-            f"(native run) -- is the binary built with patches/1222_hi67_"
-            f"deterministic_test_backend_ops_seed/patch.py and patches/1223_hi67_"
+            f"(native run) -- is the binary built with engines/llamacpp/patches/1222_hi67_"
+            f"deterministic_test_backend_ops_seed/patch.py and engines/llamacpp/patches/1223_hi67_"
             f"machine_readable_correctness_metrics/patch.py applied?"
         )
     native_metric = find_metric_for_tensor(native_run.stderr, target_tensor)
@@ -365,8 +365,8 @@ def collect_candidate_seed_evidence(
     if candidate_digest is None:
         raise EvidenceError(
             f"seed {seed}: missing BIGCHERRY_REF_DIGEST for tensor {digest_tensor!r} "
-            f"(candidate run) -- is the binary built with patches/1222_hi67_"
-            f"deterministic_test_backend_ops_seed/patch.py and patches/1223_hi67_"
+            f"(candidate run) -- is the binary built with engines/llamacpp/patches/1222_hi67_"
+            f"deterministic_test_backend_ops_seed/patch.py and engines/llamacpp/patches/1223_hi67_"
             f"machine_readable_correctness_metrics/patch.py applied?"
         )
     if native.reference_digest != candidate_digest.digest:

@@ -89,7 +89,7 @@ class Rd04DedicatedPathDeletionTests(unittest.TestCase):
 
     def test_producer_manifest_pins_the_migration_policy(self) -> None:
         selection = vp.resolve_producer(
-            patch_dir=TOOLS_ROOT.parent / "patches" / PATCH_ID,
+            patch_dir=TOOLS_ROOT.parent / "engines" / "llamacpp" / "patches" / PATCH_ID,
             producer_id="rd04",
         )
         self.assertEqual(selection.spec.patch_id, PATCH_ID)
@@ -105,7 +105,7 @@ class Rd04DedicatedPathDeletionTests(unittest.TestCase):
         # ProducerContext.validation_binaries -- it must never build a
         # second pair.
         producer_src = (
-            TOOLS_ROOT.parent / "patches" / PATCH_ID / "validation" / "producer.py"
+            TOOLS_ROOT.parent / "engines" / "llamacpp" / "patches" / PATCH_ID / "validation" / "producer.py"
         ).read_text(encoding="utf-8")
         self.assertIn('ctx.validation_binaries.get("control"', producer_src)
         self.assertIn('ctx.validation_binaries.get("subject"', producer_src)

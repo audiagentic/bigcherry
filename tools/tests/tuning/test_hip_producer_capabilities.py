@@ -59,7 +59,7 @@ class LoadDeclaredProducerCapabilitiesTests(unittest.TestCase):
         # Confirms the declaration actually added to the real
         # hip-autotune-types.h this round matches the registry exactly.
         repo_root = Path(__file__).resolve().parents[3]
-        vendor_root = repo_root / "src"
+        vendor_root = repo_root / "engines" / "llamacpp" / "overlay"
         mask = hc.load_declared_producer_capabilities(vendor_root)
         self.assertEqual(mask, hc.known_hip_capability_mask())
 

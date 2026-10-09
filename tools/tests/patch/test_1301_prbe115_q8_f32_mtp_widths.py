@@ -26,11 +26,11 @@ def _load(name, path):
     return module
 
 
-_module = _load("patch_1301", _REPO / "patches/1301_prbe115_q8_f32_mtp_widths/patch.py")
+_module = _load("patch_1301", _REPO / "engines/llamacpp/patches/1301_prbe115_q8_f32_mtp_widths/patch.py")
 # 1301 requires 1241 (which requires 0600); apply both to the fixture first.
 _PREREQS = [
-    _load("patch_0600", _REPO / "patches/0600_mmvq_geometry/patch.py").PATCH,
-    *_load("patch_1241", _REPO / "patches/1241_rd33_mmvq_q8_0_f32_decode/patch.py").PATCHES,
+    _load("patch_0600", _REPO / "engines/llamacpp/patches/0600_mmvq_geometry/patch.py").PATCH,
+    *_load("patch_1241", _REPO / "engines/llamacpp/patches/1241_rd33_mmvq_q8_0_f32_decode/patch.py").PATCHES,
 ]
 
 

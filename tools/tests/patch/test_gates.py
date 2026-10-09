@@ -200,6 +200,9 @@ class GateContractTests(unittest.TestCase):
                 gates.patch_registry, "load_registry", return_value=registry
             ) as load_registry,
             mock.patch.object(
+                gates.patch_registry, "load_implementation", return_value=()
+            ),
+            mock.patch.object(
                 gates, "gate_applies", wraps=gates.gate_applies
             ) as gate_applies,
             mock.patch.object(
@@ -294,6 +297,10 @@ class GateContractTests(unittest.TestCase):
         with (
             mock.patch.object(
                 gates.patch_registry, "load_registry", return_value=registry
+            ),
+            # the lint adapter also reads each package's edits (long-anchor rule); these descriptors have none
+            mock.patch.object(
+                gates.patch_registry, "load_implementation", return_value=()
             ),
             mock.patch.object(
                 gates.patch_docs, "check_summary_for_patch", return_value=()

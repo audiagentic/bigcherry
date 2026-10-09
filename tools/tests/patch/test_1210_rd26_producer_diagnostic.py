@@ -22,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 _REPO = Path(__file__).resolve().parents[3]
 _PRODUCER_FILE = (
     _REPO
-    / "patches/1210_rd26_bitidentical_decode_verify_standalone/validation/producer.py"
+    / "engines/llamacpp/patches/1210_rd26_bitidentical_decode_verify_standalone/validation/producer.py"
 )
 _spec = importlib.util.spec_from_file_location("rd26_producer", _PRODUCER_FILE)
 assert _spec is not None and _spec.loader is not None
@@ -78,7 +78,7 @@ class DiffContextTests(unittest.TestCase):
     def test_diagnostic_artifact_name_is_declared_in_producer_manifest(self):
         manifest = (
             _REPO
-            / "patches/1210_rd26_bitidentical_decode_verify_standalone/validation/producer.toml"
+            / "engines/llamacpp/patches/1210_rd26_bitidentical_decode_verify_standalone/validation/producer.toml"
         ).read_text(encoding="utf-8")
         self.assertIn(_producer._DIAGNOSTIC_ARTIFACT_NAME, manifest)
 

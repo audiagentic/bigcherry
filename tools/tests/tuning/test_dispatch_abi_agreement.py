@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from bigcherry.tuning import dispatch_abi  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
-TYPES_H = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-types.h"
+TYPES_H = ROOT / "engines" / "llamacpp" / "overlay" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-types.h"
 DISPATCH_DB_SQL = ROOT / "sql" / "dispatch-db.sql"
 
 

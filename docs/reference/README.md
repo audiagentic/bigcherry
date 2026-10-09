@@ -48,8 +48,8 @@ at the top level.
 | [patches/PATCH_REFACTOR_RUNBOOK.md](patches/PATCH_REFACTOR_RUNBOOK.md) | Refactoring an existing patch | Restructuring a patch without breaking its evidence |
 
 Patch-specific documentation, fixtures, validators, and validation evidence
-live with the owning package under `patches/<patch-id>/`. The shared
-`patches/_validation/` directory contains only cross-patch baseline data; it is
+live with the owning package under `engines/llamacpp/patches/<patch-id>/`. The shared
+`engines/llamacpp/patches/_validation/` directory contains only cross-patch baseline data; it is
 not a reference-document store.
 
 Plan-item design, status, and decisions belong under the matching

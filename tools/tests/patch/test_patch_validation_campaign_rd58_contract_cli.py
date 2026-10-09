@@ -38,9 +38,9 @@ CAMPAIGN_SRC = (
     TOOLS_ROOT / "bigcherry" / "patch" / "validation_campaign.py"
 ).read_text(encoding="utf-8")
 PRODUCER_SRC = (
-    TOOLS_ROOT.parent / "patches" / PATCH_ID / "validation" / "producer.py"
+    TOOLS_ROOT.parent / "engines" / "llamacpp" / "patches" / PATCH_ID / "validation" / "producer.py"
 ).read_text(encoding="utf-8")
-PATCH_DIR = TOOLS_ROOT.parent / "patches" / PATCH_ID
+PATCH_DIR = TOOLS_ROOT.parent / "engines" / "llamacpp" / "patches" / PATCH_ID
 EXPECTED_ARTIFACT_NAMES = frozenset(
     {
         "rd58-correctness.json",

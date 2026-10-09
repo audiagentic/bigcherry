@@ -7,15 +7,16 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from bigcherry.core import paths as bc_paths  # noqa: E402
 from bigcherry.patcher import apply_all
 
 
 ROOT = Path(__file__).resolve().parents[3]
-PATCH_PATH = ROOT / "patches" / "1242_hi134_meta_stage_trace" / "patch.py"
-BASE_PATCH_PATH = ROOT / "patches" / "0830_split_reduce_telemetry" / "patch.py"
+PATCH_PATH = ROOT / "engines" / "llamacpp" / "patches" / "1242_hi134_meta_stage_trace" / "patch.py"
+BASE_PATCH_PATH = ROOT / "engines" / "llamacpp" / "patches" / "0830_split_reduce_telemetry" / "patch.py"
 PATCH = PATCH_PATH.read_text(encoding="utf-8")
-HEADER = (ROOT / "src/ggml/src/ggml-cuda/hip-autotune-reduce-telemetry.h").read_text(encoding="utf-8")
-TELEMETRY = (ROOT / "src/ggml/src/ggml-cuda/hip-autotune-reduce-telemetry.cpp").read_text(encoding="utf-8")
+HEADER = (ROOT / "engines/llamacpp/overlay/ggml/src/ggml-cuda/hip-autotune-reduce-telemetry.h").read_text(encoding="utf-8")
+TELEMETRY = (ROOT / "engines/llamacpp/overlay/ggml/src/ggml-cuda/hip-autotune-reduce-telemetry.cpp").read_text(encoding="utf-8")
 
 
 def _module():
@@ -35,7 +36,7 @@ def _base_module():
 
 
 def _copy_sources(tmp_path: Path) -> tuple[Path, Path]:
-    vendor = ROOT / "vendor" / "llama.cpp"
+    vendor = bc_paths.llama_root()
     paths = (
         "ggml/src/ggml-cuda/ggml-cuda.cu",
         "ggml/src/ggml-backend-meta.cpp",

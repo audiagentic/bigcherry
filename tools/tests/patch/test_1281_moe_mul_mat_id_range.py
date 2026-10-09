@@ -10,10 +10,11 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from bigcherry.core import paths  # noqa: E402
 from bigcherry.patcher import apply_all  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
-_V = _REPO / "vendor/llama.cpp"
+_V = paths.llama_root()
 _PIN = "HEAD"  # the vendor checkout is at the pinned revision
 _NEW = "tests/test-mul-mat-id-range.cpp"
 _CPU = "ggml/src/ggml-cpu/ggml-cpu.c"
@@ -22,7 +23,7 @@ _QH = "ggml/src/ggml-cuda/quantize.cuh"
 
 
 def _load():
-    spec = importlib.util.spec_from_file_location("patch_1281", _REPO / "patches/1281_moe_mul_mat_id_range/patch.py")
+    spec = importlib.util.spec_from_file_location("patch_1281", _REPO / "engines/llamacpp/patches/1281_moe_mul_mat_id_range/patch.py")
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

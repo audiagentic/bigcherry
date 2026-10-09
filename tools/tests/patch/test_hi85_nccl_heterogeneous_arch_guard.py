@@ -1,4 +1,4 @@
-"""HI85/GP02: patches/1225 fails closed when RCCL lacks a device capability
+"""HI85/GP02: engines/llamacpp/patches/1225 fails closed when RCCL lacks a device capability
 needed by its collective kernel dispatch. The guard uses the real HIP
 per-device host-native-atomic attribute, not a machine-local ordinal or raw
 architecture mismatch, and remains before every guarded communicator init."""
@@ -10,15 +10,16 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from bigcherry.core import paths  # noqa: E402
 from bigcherry.patcher import apply_all
 
 
 ROOT = Path(__file__).resolve().parents[3]
-PATCH = (ROOT / "patches" / "1225_hi85_nccl_heterogeneous_arch_guard" / "patch.py").read_text(encoding="utf-8")
+PATCH = (ROOT / "engines" / "llamacpp" / "patches" / "1225_hi85_nccl_heterogeneous_arch_guard" / "patch.py").read_text(encoding="utf-8")
 
 _spec = importlib.util.spec_from_file_location(
     "hi85_nccl_heterogeneous_arch_guard_patch",
-    ROOT / "patches" / "1225_hi85_nccl_heterogeneous_arch_guard" / "patch.py",
+    ROOT / "engines" / "llamacpp" / "patches" / "1225_hi85_nccl_heterogeneous_arch_guard" / "patch.py",
 )
 assert _spec and _spec.loader
 _module = importlib.util.module_from_spec(_spec)
@@ -26,7 +27,7 @@ _spec.loader.exec_module(_module)
 
 
 def _apply_to_copy(tmp_path: Path) -> Path:
-    vendor = ROOT / "vendor" / "llama.cpp"
+    vendor = paths.llama_root()
     target = tmp_path / "ggml" / "src" / "ggml-cuda" / "ggml-cuda.cu"
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(vendor / "ggml" / "src" / "ggml-cuda" / "ggml-cuda.cu", target)

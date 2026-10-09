@@ -9,16 +9,17 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from bigcherry.core import paths  # noqa: E402
 from bigcherry.patcher import apply_all  # noqa: E402
 from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
 _REL = "ggml/src/ggml-cuda/top-k.cu"
-_VENDOR = _REPO / "vendor/llama.cpp" / _REL
+_VENDOR = paths.llama_root() / _REL
 
 
 def _load():
-    spec = importlib.util.spec_from_file_location("patch_1294", _REPO / "patches/1294_topk_deterministic_ties/patch.py")
+    spec = importlib.util.spec_from_file_location("patch_1294", _REPO / "engines/llamacpp/patches/1294_topk_deterministic_ties/patch.py")
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

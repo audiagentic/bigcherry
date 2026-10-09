@@ -67,9 +67,9 @@ void common_params_add_all(common_params_context & ctx_arg) {
 class Patch0860Mechanics(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        registry = patch_registry.load_registry(_REPO / "patches")
+        registry = patch_registry.load_registry(_REPO / "engines" / "llamacpp" / "patches")
         descriptor = registry.get("0860_allreduce_provider_cli")
-        patches = patch_registry.load_implementation(descriptor, root=_REPO / "patches")
+        patches = patch_registry.load_implementation(descriptor, root=_REPO / "engines" / "llamacpp" / "patches")
         cls.cuda_patches = tuple(p for p in patches if p.path == "ggml/src/ggml-cuda/ggml-cuda.cu")
         cls.bench_patches = tuple(p for p in patches if p.path == "tools/llama-bench/llama-bench.cpp")
         cls.arg_patches = tuple(p for p in patches if p.path == "common/arg.cpp")
@@ -156,7 +156,7 @@ class Patch0860Mechanics(unittest.TestCase):
         self.assertIn("effective_switch_bytes", helper)
 
     def test_single_named_switch_default_constant(self):
-        source = (_REPO / "patches/0860_allreduce_provider_cli/patch.py").read_text(encoding="utf-8")
+        source = (_REPO / "engines/llamacpp/patches/0860_allreduce_provider_cli/patch.py").read_text(encoding="utf-8")
         self.assertIn("ADAPTIVE_SWITCH_BYTES_DEFAULT = 96 << 10", source)
         self.assertEqual(source.count("98304"), 0)
 

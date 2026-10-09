@@ -67,17 +67,17 @@ class CampaignResolutionTests(unittest.TestCase):
             for module in self.catalog
             if module.state == "validated" and module.patch_id in core_patch_ids
         )
-        # 14 serving/campaign/qualification modules (0820 superseded
-        # 2026-09-24) + 0 upstream-fixes modules = 14.
-        self.assertEqual(len(expected), 14)
+        # 15 serving/campaign/qualification modules (0820 superseded 2026-09-24; 0910_feature_sets joined
+        # serving-core with the built-in flag help) + 1 upstream-fixes module (1007) = 16.
+        self.assertEqual(len(expected), 16)
         self.assertEqual(lane.patch_set.module_ids, expected)
         self.assertEqual(
             len(core_patch_ids - frozenset(self.cfg.patch_sets["upstream-fixes"].patches)),
-            14,
+            15,
         )
         self.assertEqual(
             len(self.cfg.patch_sets["upstream-fixes"].patches),
-            0,
+            1,
         )
         # bigcherry-qualification-tuning must never report or build a
         # promoted enhancement. That separation is what makes it usable as
@@ -154,9 +154,9 @@ class CampaignResolutionTests(unittest.TestCase):
         lane = campaign_resolution.resolve_lane(
             "bigcherry-qualification-tuning", cfg, self.catalog, experiment="one-fix"
         )
-        # 14 core modules (serving-core + campaign-support +
-        # qualification-support + upstream-fixes) + 1 overlay patch = 15.
-        self.assertEqual(len(lane.patch_set.module_ids), 15)
+        # 16 core modules (serving-core + campaign-support +
+        # qualification-support + upstream-fixes) + 1 overlay patch = 17.
+        self.assertEqual(len(lane.patch_set.module_ids), 17)
         self.assertIn("1002_hip_unsafe_math_opt_in", lane.patch_set.module_ids)
         self.assertNotIn(
             "1003_quantized_cpy_thread_block_fix", lane.patch_set.module_ids
@@ -652,6 +652,8 @@ class PA28SemanticPatchSetTests(unittest.TestCase):
     # as "non-serving" here would be actively wrong, not just stale
     # terminology. Hardcoded since PA31 deleted the historical
     # replay_equivalence.py module that used to define EXPECTED_REMOVED_MODULES.
+    # Joined serving-core after the framework split: the feature-set / flag-help plumbing every build carries.
+    _ADDED_TO_SERVING_CORE = frozenset({"0910_feature_sets"})
     _CAMPAIGN_AND_QUALIFICATION_MODULES = frozenset(
         {
             "0110_campaign_tune_record_build",
@@ -693,10 +695,10 @@ class PA28SemanticPatchSetTests(unittest.TestCase):
         serving_core = set(self.cfg.patch_sets["serving-core"].patches)
         self.assertEqual(
             serving_core,
-            self._FORMER_FRAMEWORK_MEMBERSHIP - self._CAMPAIGN_AND_QUALIFICATION_MODULES,
+            (self._FORMER_FRAMEWORK_MEMBERSHIP - self._CAMPAIGN_AND_QUALIFICATION_MODULES) | self._ADDED_TO_SERVING_CORE,
         )
         self.assertIn("0700_coverage_counters", serving_core)
-        self.assertEqual(len(serving_core), 8)
+        self.assertEqual(len(serving_core), 9)
 
     def test_campaign_support_and_qualification_support_partition_the_campaign_and_qualification_modules(self):
         campaign_support = set(self.cfg.patch_sets["campaign-support"].patches)
@@ -730,7 +732,7 @@ class PA28SemanticPatchSetTests(unittest.TestCase):
         # rather than derived from any PA26 terminology.
         self.assertEqual(
             serving_core | campaign_support | qualification_support,
-            self._FORMER_FRAMEWORK_MEMBERSHIP,
+            self._FORMER_FRAMEWORK_MEMBERSHIP | self._ADDED_TO_SERVING_CORE,
         )
         # 15 historically; 0820 superseded 2026-09-24 (its edits live in the
         # overlay), so the current semantic sets reconstitute 14.
@@ -865,7 +867,7 @@ class PA28SemanticPatchSetTests(unittest.TestCase):
             | frozenset(self.cfg.patch_sets["upstream-fixes"].patches)
         )
         self.assertEqual(set(lane.patch_set.module_ids), set(expected))
-        self.assertEqual(len(expected), 14)
+        self.assertEqual(len(expected), 16)
 
     def test_0800_and_1100_are_not_orphaned(self):
         # PA28's own Validation section calls this out explicitly.
@@ -884,10 +886,29 @@ class PerLaneExperimentTests(unittest.TestCase):
     arms that deliberately do not. A request-level --experiment applies to
     every lane and so cannot express it."""
 
-    def setUp(self):
-        from bigcherry.core import config, paths
+    # The shipped profile lost its only patched arm when RD73 was demoted, so these tests add one to a copy of the
+    # real recipes: the same source/build/platform as the control arm, carrying an experiment that exists.
+    _CONTROL_ARM = '  { source = "bigcherry-tuning", build = "control", platform = "linux-multi", binary = "bin/llama-server" },\n'
+    _PATCHED_ARM = ('  { source = "bigcherry-tuning", build = "control", platform = "linux-multi", binary = "bin/llama-server", '
+                    'experiment = "rd19-only" },\n')
 
-        self.cfg = config.load(paths.RECIPES)
+    @classmethod
+    def _recipes_text_with_patched_arm(cls):
+        from bigcherry.core import paths
+
+        text = paths.RECIPES.read_text(encoding="utf-8")
+        head, marker, tail = text.partition("[campaign.patch-qualification]")
+        assert marker and tail.count(cls._CONTROL_ARM) >= 1, "patch-qualification control arm not found"
+        return head + marker + tail.replace(cls._CONTROL_ARM, cls._CONTROL_ARM + cls._PATCHED_ARM, 1)
+
+    def setUp(self):
+        from bigcherry.core import config
+
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        recipes = Path(self._tmp.name) / "recipes.toml"
+        recipes.write_text(self._recipes_text_with_patched_arm(), encoding="utf-8")
+        self.cfg = config.load(recipes)
 
     def test_profile_declares_patched_and_unpatched_arms(self):
         lanes = self.cfg.campaigns["patch-qualification"].lanes
@@ -940,9 +961,9 @@ class PerLaneExperimentTests(unittest.TestCase):
         # A profile naming an experiment that does not exist must fail at load
         # time, not silently plan an arm that is identical to its baseline --
         # which would make the comparison quietly meaningless.
-        text = paths.RECIPES.read_text(encoding="utf-8").replace(
-            'experiment = "rd73-only"',
-            'experiment = "no-such-experiment"',
+        text = self._recipes_text_with_patched_arm().replace(
+            'experiment = "rd19-only" },',
+            'experiment = "no-such-experiment" },',
             1,
         )
         with tempfile.TemporaryDirectory() as tmp:

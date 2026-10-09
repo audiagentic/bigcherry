@@ -10,7 +10,7 @@ status and the release ledger for what has been published.
 - `vendor/llama.cpp/` is the upstream checkout used for audits and builds.
 - `src/` contains complete files owned by BigCherry and overlaid at the
   corresponding upstream paths.
-- `patches/<patch-id>/` contains anchored edits to upstream-owned files. Each
+- `engines/llamacpp/patches/<patch-id>/` contains anchored edits to upstream-owned files. Each
   package owns its metadata, validation, fixtures, tools, and evidence.
 - `tools/bigcherry/` contains the maintained Python CLI and domain packages;
   `tools/tests/` contains permanent offline tests.
@@ -65,7 +65,7 @@ a second benchmark or dispatch system. See
 
 ## Where current truth lives
 
-- implementation behavior: `src/`, `patches/`, and `tools/bigcherry/`;
+- implementation behavior: `src/`, `engines/llamacpp/patches/`, and `tools/bigcherry/`;
 - current work, acceptance, and decisions: `docs/planning/active/`;
 - released change history: `docs/releases/` and the release ledger;
 - reproducible run evidence: `docs/evidence/`;

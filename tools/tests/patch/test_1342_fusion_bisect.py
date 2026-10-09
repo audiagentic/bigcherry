@@ -10,16 +10,17 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from bigcherry.core import paths  # noqa: E402
 from bigcherry.patcher import apply_all  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
-_V = _REPO / "vendor/llama.cpp"
+_V = paths.llama_root()
 _PIN = "HEAD"
 _CUDA = "ggml/src/ggml-cuda/ggml-cuda.cu"
 
 
 def _load():
-    spec = importlib.util.spec_from_file_location("patch_1342", _REPO / "patches/1342_fusion_bisect/patch.py")
+    spec = importlib.util.spec_from_file_location("patch_1342", _REPO / "engines/llamacpp/patches/1342_fusion_bisect/patch.py")
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

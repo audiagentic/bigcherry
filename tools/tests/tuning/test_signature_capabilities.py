@@ -266,7 +266,7 @@ class FusionKindEnumParityTests(unittest.TestCase):
     def test_fusion_kind_constants_match_real_source_enum(self):
         types_h = (
             Path(__file__).resolve().parents[3]
-            / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-types.h"
+            / "engines" / "llamacpp" / "overlay" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-types.h"
         )
         text = types_h.read_text(encoding="utf-8")
         match = re.search(r"enum ggml_hip_fusion_kind \{(.*?)\};", text, re.DOTALL)

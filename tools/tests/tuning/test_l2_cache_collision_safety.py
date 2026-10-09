@@ -13,7 +13,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[3] / "src/ggml/src/ggml-cuda"
+ROOT = Path(__file__).resolve().parents[3] / "engines/llamacpp/overlay/ggml/src/ggml-cuda"
 
 
 def _extract(pattern: str, text: str) -> str:

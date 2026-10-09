@@ -7,7 +7,7 @@
 # native, so the system looks healthy while doing nothing.
 #
 # The C++ side pins known-answer vectors in
-# src/ggml/src/ggml-cuda/hip-autotune-inspect.cpp (the --selftest table) and
+# engines/llamacpp/overlay/ggml/src/ggml-cuda/hip-autotune-inspect.cpp (the --selftest table) and
 # runs them against the real C++ implementation in the campaign build.
 # THIS test re-derives every row of that table from Python's hashlib and
 # fails if any embedded C++ expectation goes stale, so the table cannot
@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-CPP_PATH = REPO_ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-inspect.cpp"
+CPP_PATH = REPO_ROOT / "engines" / "llamacpp" / "overlay" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-inspect.cpp"
 
 # {"label", "data_hex", "person_hex", person_len, "expected_hex"},
 ROW_RE = re.compile(

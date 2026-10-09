@@ -16,7 +16,7 @@ from bigcherry.patch.validation import (
 
 
 ROOT = Path(__file__).resolve().parents[3]
-CHECKS = ROOT / "patches/0110_campaign_tune_record_build/validation/checks.py"
+CHECKS = ROOT / "engines/llamacpp/patches/0110_campaign_tune_record_build/validation/checks.py"
 
 
 def _load_checks():
@@ -34,7 +34,7 @@ class CMakeCampaignValidationAdapterTests(unittest.TestCase):
     def test_missing_cmake_is_blocked(self):
         checks = _load_checks()
         with tempfile.TemporaryDirectory() as directory:
-            ctx = SimpleNamespace(package_root=ROOT / "patches/0110_campaign_tune_record_build",
+            ctx = SimpleNamespace(package_root=ROOT / "engines/llamacpp/patches/0110_campaign_tune_record_build",
                                   run_dir=Path(directory), register_artifact=lambda *_: None)
             old = shutil.which
             try:
@@ -53,7 +53,7 @@ class CMakeCampaignValidationAdapterTests(unittest.TestCase):
                 ref = real_register(name, path)
                 bound.append(ref)
                 return ref
-            ctx = SimpleNamespace(package_root=ROOT / "patches/0110_campaign_tune_record_build",
+            ctx = SimpleNamespace(package_root=ROOT / "engines/llamacpp/patches/0110_campaign_tune_record_build",
                                   run_dir=Path(directory), register_artifact=register)
             result = checks.check(ctx)
             self.assertEqual(result.status, PASS, result)
@@ -65,7 +65,7 @@ class CMakeCampaignValidationAdapterTests(unittest.TestCase):
     def test_matrix_failure_is_fail(self):
         checks = _load_checks()
         with tempfile.TemporaryDirectory() as directory:
-            ctx = SimpleNamespace(package_root=ROOT / "patches/0110_campaign_tune_record_build",
+            ctx = SimpleNamespace(package_root=ROOT / "engines/llamacpp/patches/0110_campaign_tune_record_build",
                                   run_dir=Path(directory),
                                   register_artifact=make_default_register_artifact(Path(directory)))
             old_run = checks.subprocess.run
@@ -90,7 +90,7 @@ class CMakeCampaignValidationAdapterTests(unittest.TestCase):
     def test_invalid_artifact_registration_is_error(self):
         checks = _load_checks()
         with tempfile.TemporaryDirectory() as directory:
-            ctx = SimpleNamespace(package_root=ROOT / "patches/0110_campaign_tune_record_build",
+            ctx = SimpleNamespace(package_root=ROOT / "engines/llamacpp/patches/0110_campaign_tune_record_build",
                                   run_dir=Path(directory), register_artifact=lambda *_: None)
             result = checks.check(ctx)
             self.assertEqual(result.status, ERROR)
@@ -99,7 +99,7 @@ class CMakeCampaignValidationAdapterTests(unittest.TestCase):
     def test_cmake_version_failure_is_error(self):
         checks = _load_checks()
         with tempfile.TemporaryDirectory() as directory:
-            ctx = SimpleNamespace(package_root=ROOT / "patches/0110_campaign_tune_record_build",
+            ctx = SimpleNamespace(package_root=ROOT / "engines/llamacpp/patches/0110_campaign_tune_record_build",
                                   run_dir=Path(directory),
                                   register_artifact=make_default_register_artifact(Path(directory)))
             old_run = checks.subprocess.run
@@ -124,7 +124,7 @@ class CMakeCampaignValidationAdapterTests(unittest.TestCase):
                 if name == "campaign-selection.json":
                     return ArtifactRef(ref.name, ref.path, "0" * 64)
                 return ref
-            ctx = SimpleNamespace(package_root=ROOT / "patches/0110_campaign_tune_record_build",
+            ctx = SimpleNamespace(package_root=ROOT / "engines/llamacpp/patches/0110_campaign_tune_record_build",
                                   run_dir=Path(directory), register_artifact=register)
             result = checks.check(ctx)
             self.assertEqual(result.status, ERROR)

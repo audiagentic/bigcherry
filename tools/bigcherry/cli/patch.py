@@ -299,7 +299,7 @@ def cmd_patch_explain(args: Namespace) -> int:
         snapshot = patch_catalog.build_snapshot()
     except ValueError as exc:
         print(
-            f"patch explain: could not load patches/catalog.toml: {exc}",
+            f"patch explain: could not load engines/llamacpp/patches/catalog.toml: {exc}",
             file=sys.stderr,
         )
         return 2
@@ -324,7 +324,7 @@ def cmd_patch_graph(args: Namespace) -> int:
         snapshot = patch_catalog.build_snapshot()
     except ValueError as exc:
         print(
-            f"patch graph: could not load patches/catalog.toml: {exc}", file=sys.stderr
+            f"patch graph: could not load engines/llamacpp/patches/catalog.toml: {exc}", file=sys.stderr
         )
         return 2
     try:
@@ -840,19 +840,19 @@ def cmd_patches(args: Namespace) -> int:
 
     --kind/--backend/--origin filter against patch metadata: catalog.toml
     for legacy flat patches (RE30 phase 1's declarative metadata), and
-    patch.toml for packaged patches (patch-system PA02: patches/ may now
+    patch.toml for packaged patches (patch-system PA02: engines/llamacpp/patches/ may now
     hold <id>/ package directories -- the metadata, not a directory move,
     answers "which patches form the framework / are HIP vs Vulkan / came
     from an external fork").
 
-    RE39: reads patches/ and patches/catalog.toml exactly once via a single
+    RE39: reads engines/llamacpp/patches/ and engines/llamacpp/patches/catalog.toml exactly once via a single
     CatalogSnapshot, instead of the two independent scans (patchset.describe()
     + patch_catalog.load_catalog()) this command used to make.
     """
     try:
         snapshot = patch_catalog.build_snapshot()
     except ValueError as exc:
-        print(f"patches: could not load patches/catalog.toml: {exc}", file=sys.stderr)
+        print(f"patches: could not load engines/llamacpp/patches/catalog.toml: {exc}", file=sys.stderr)
         return 2
     if not snapshot.modules:
         print("no patches found", file=sys.stderr)

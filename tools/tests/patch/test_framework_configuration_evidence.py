@@ -21,25 +21,25 @@ class FrameworkConfigurationEvidenceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.root = Path(__file__).resolve().parents[3]
-        cls.descriptor = registry.load_registry(cls.root / "patches").get("0100_cmake_options")
-        cls.module = next(m for m in patchset.catalog(cls.root / "patches") if m.patch_id == "0100_cmake_options")
+        cls.descriptor = registry.load_registry(cls.root / "engines" / "llamacpp" / "patches").get("0100_cmake_options")
+        cls.module = next(m for m in patchset.catalog(cls.root / "engines" / "llamacpp" / "patches") if m.patch_id == "0100_cmake_options")
         from bigcherry.core import config
         from bigcherry.campaign import resolution
-        catalog = patchset.catalog(cls.root / "patches")
+        catalog = patchset.catalog(cls.root / "engines" / "llamacpp" / "patches")
         lane = resolution.resolve_lane(
             "bigcherry-qualification-tuning", config.load(cls.root / "config/recipes.toml"), catalog
         )
-        resolved = patchset.resolve_exact(tuple(lane.patch_set.module_ids), directory=cls.root / "patches")
-        descriptors = registry.load_registry(cls.root / "patches")
+        resolved = patchset.resolve_exact(tuple(lane.patch_set.module_ids), directory=cls.root / "engines" / "llamacpp" / "patches")
+        descriptors = registry.load_registry(cls.root / "engines" / "llamacpp" / "patches")
         cls.composition = tuple((member.patch_id, descriptors.get(member.patch_id).implementation_digest)
                                 for member in resolved.modules)
         from bigcherry.patch import source
         cls.source_identity = source._make_source_identity_v2(
-            resolved_revision="b" * 40, composition=cls.composition, overlay_root=cls.root / "src")
+            resolved_revision="b" * 40, composition=cls.composition, overlay_root=cls.root / "engines" / "llamacpp" / "overlay")
         cls.source_identity["materialization_plan_id"] = cls.source_identity["source_key"]
 
     def _record(self, directory):
-        patch = self.root / "patches/0100_cmake_options/patch.py"
+        patch = self.root / "engines/llamacpp/patches/0100_cmake_options/patch.py"
         generated = Path(directory) / "generated"
         generated.mkdir()
         header = generated / "fixture.inc"

@@ -9,7 +9,7 @@ Purpose
 
 Create or modify a production BigCherry patch as a package under:
 
-patches/<patch-id>/
+engines/llamacpp/patches/<patch-id>/
 
 Own:
 
@@ -71,11 +71,11 @@ docs/reference/patches/PATCH_AUTHORING.md
 
 docs/reference/testing/PATCH_VALIDATION.md when the patch is already validation-ready
 
-patches/_template/patch.toml
+engines/llamacpp/patches/_template/patch.toml
 
-patches/_template/patch.py
+engines/llamacpp/patches/_template/patch.py
 
-patches/_template/README.md
+engines/llamacpp/patches/_template/README.md
 
 relevant neighbouring packaged patches
 
@@ -117,7 +117,7 @@ Outputs
 
 Normally:
 
-patches/<patch-id>/
+engines/llamacpp/patches/<patch-id>/
   patch.toml
   patch.py
 
@@ -134,7 +134,7 @@ Focused tests belong under:
 
 tools/tests/patch/
 
-Do not create a new production patches/<id>.py flat module.
+Do not create a new production engines/llamacpp/patches/<id>.py flat module.
 
 Workflow
 1. Inspect the authoritative shape
@@ -302,7 +302,7 @@ Static patch gate:
 cd $BC
 PYTHONPATH=tools python -m bigcherry patch-lint
 
-Repository offline regression suite after substantive patches/ or tools/ changes:
+Repository offline regression suite after substantive engines/llamacpp/patches/ or tools/ changes:
 
 cd $BC
 PYTHONPATH=tools python -m unittest discover -s tools/tests

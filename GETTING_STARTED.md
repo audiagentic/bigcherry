@@ -96,9 +96,9 @@ PYTHONPATH=tools python -m bigcherry patch-validate <name>    # run its validati
 ```
 
 A patch is an anchored, regex-located edit to an upstream-owned file (see
-`patches/<name>/`) — it fails loudly, naming the missing anchor, rather than
+`engines/llamacpp/patches/<name>/`) — it fails loudly, naming the missing anchor, rather than
 silently mis-applying when upstream shifts underneath it. Whole new files go
-in `src/` instead and never conflict. New patch scaffold: `patches/_template/`.
+in `src/` instead and never conflict. New patch scaffold: `engines/llamacpp/patches/_template/`.
 
 ## Runtime dispatch modes (what a built binary actually does)
 

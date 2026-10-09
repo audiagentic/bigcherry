@@ -20,7 +20,7 @@ separately, not fabricated here) depends on:
 1. The compiled candidate catalog already spans the power-of-two nwarps
    space {1,2,4,8} PR #20831 selects from, for width==1 (ncols_dst==1,
    ordinary single-token decode) Q8_0 MMVQ.
-2. BigCherry's own forced-dispatch entry point (patches/0650) already fails
+2. BigCherry's own forced-dispatch entry point (engines/llamacpp/patches/0650) already fails
    closed (GGML_ABORT) rather than silently attributing a measurement to the
    wrong kernel, for `has_ids && ncols_dst > 1` -- the dedicated MoE
    multi-token kernel (`mul_mat_vec_q_moe_launch`) that b10502 routes to
@@ -45,6 +45,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from bigcherry.core import paths  # noqa: E402
 from bigcherry.tuning import catalog as cat
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -117,11 +118,11 @@ def test_forced_geometry_aborts_for_moe_multitoken_not_silently_misattributed():
     signatures could get silently (and wrongly) credited to an ordinary MMVQ
     nwarps candidate -- which would invalidate the width-1-only methodology
     RD54's real-hardware comparison against PR #20831 relies on."""
-    patch_src = (ROOT / "patches" / "0650_mmvq_native_variant" / "patch.py").read_text(encoding="utf-8")
+    patch_src = (ROOT / "engines" / "llamacpp" / "patches" / "0650_mmvq_native_variant" / "patch.py").read_text(encoding="utf-8")
     assert "has_ids && ncols_dst > 1" in patch_src
     assert "GGML_ABORT" in patch_src
 
-    vendor_src = (ROOT / "vendor" / "llama.cpp" / "ggml" / "src"
+    vendor_src = (paths.llama_root() / "ggml" / "src"
                   / "ggml-cuda" / "mmvq.cu").read_text(encoding="utf-8")
     assert "if (has_ids && ncols_dst > 1)" in vendor_src
     assert "GGML_ABORT" in vendor_src
@@ -135,7 +136,7 @@ def test_ncols_x_is_src0_ne0_not_a_derived_quantity():
     literally `src0->ne[0]` (== `ne00`), passed straight through -- so a
     canonical signature's `ne0[0]` is the correct, direct real-hardware value
     to feed `predicted_nwarps_q8_0()` against, with no unit conversion."""
-    vendor_src = (ROOT / "vendor" / "llama.cpp" / "ggml" / "src"
+    vendor_src = (paths.llama_root() / "ggml" / "src"
                   / "ggml-cuda" / "mmvq.cu").read_text(encoding="utf-8")
     assert "const int64_t ne00 = src0->ne[0];" in vendor_src
     assert "mul_mat_vec_q_switch_type(" in vendor_src

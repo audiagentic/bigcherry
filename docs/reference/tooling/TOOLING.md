@@ -188,10 +188,10 @@ Keep ownership distinct:
   path (`logs`, `lab`, `pin-bump`, `patch-validation`, `release-runs`,
   `release-validation`), a 12-hex revision directory (`artifact_dir()`), nor
   matched by a `docs/evidence/<run-id>/` counterpart (exact-name, textually
-  cited as `artifacts/<name>` anywhere under `docs/`/`patches/`, or the same
+  cited as `artifacts/<name>` anywhere under `docs/`/`engines/llamacpp/patches/`, or the same
   slug once a `docs/evidence/YYYY-MM-DD-<slug>/` write-up's date prefix is
   stripped);
-- `patches/<patch-id>/` owns patch contracts, fixtures, and patch evidence; and
+- `engines/llamacpp/patches/<patch-id>/` owns patch contracts, fixtures, and patch evidence; and
 - `docs/reference/` owns reusable guidance, not live hardware verdicts.
 
 `profile-campaign` is diagnostic. Even a complete, stable profile does not

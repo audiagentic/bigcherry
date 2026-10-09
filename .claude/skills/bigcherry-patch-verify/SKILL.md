@@ -288,7 +288,7 @@ Repository reference procedure:
 cd $BC
 PYTHONPATH=tools python -m unittest discover -s tools/tests
 
-Use when patches/ or patch tooling changed materially.
+Use when engines/llamacpp/patches/ or patch tooling changed materially.
 
 9. Classify failures
 

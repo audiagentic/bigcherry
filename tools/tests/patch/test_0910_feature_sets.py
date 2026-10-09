@@ -14,18 +14,19 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from bigcherry.core import paths  # noqa: E402
 from bigcherry.patcher import ENV_DOC_TABLE_END, EnvDoc, apply_all, env_docs  # noqa: E402
 from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
-_V = _REPO / "vendor/llama.cpp"
+_V = paths.llama_root()
 _FILES = ("ggml/src/ggml.c", "ggml/src/ggml-backend-reg.cpp", "tools/server/main.cpp", "CMakeLists.txt",
           "src/llama-model.cpp")
 _CC = shutil.which("clang") or shutil.which("gcc") or shutil.which("cc")
 
 
 def _load():
-    spec = importlib.util.spec_from_file_location("patch_0910", _REPO / "patches/0910_feature_sets/patch.py")
+    spec = importlib.util.spec_from_file_location("patch_0910", _REPO / "engines/llamacpp/patches/0910_feature_sets/patch.py")
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

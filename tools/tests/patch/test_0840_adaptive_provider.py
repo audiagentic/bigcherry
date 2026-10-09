@@ -39,11 +39,11 @@ static void comm_init(ggml_backend_cuda_comm * ret, const std::string & provider
 class Patch0840AdaptiveProvider(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        registry = patch_registry.load_registry(_REPO / "patches")
+        registry = patch_registry.load_registry(_REPO / "engines" / "llamacpp" / "patches")
         descriptor = registry.get("0840_hybrid_allreduce_dispatch")
-        patches = patch_registry.load_implementation(descriptor, root=_REPO / "patches")
+        patches = patch_registry.load_implementation(descriptor, root=_REPO / "engines" / "llamacpp" / "patches")
         telemetry_descriptor = registry.get("0830_split_reduce_telemetry")
-        telemetry_patches = patch_registry.load_implementation(telemetry_descriptor, root=_REPO / "patches")
+        telemetry_patches = patch_registry.load_implementation(telemetry_descriptor, root=_REPO / "engines" / "llamacpp" / "patches")
         cls.descriptor = descriptor
         cls.patches = patches
         cls.telemetry_cuda_patch = next(
@@ -92,7 +92,7 @@ class Patch0840AdaptiveProvider(unittest.TestCase):
             "1225_hi85_nccl_heterogeneous_arch_guard",
             "0840_hybrid_allreduce_dispatch",
         ]
-        resolved = patchset.resolve_exact(expected, directory=_REPO / "patches")
+        resolved = patchset.resolve_exact(expected, directory=_REPO / "engines" / "llamacpp" / "patches")
         self.assertEqual([m.patch_id for m in resolved.modules], expected)
 
     def test_owns_minimal_provider_name_and_switch_snapshot_seams(self):
@@ -176,8 +176,11 @@ class Patch0840AdaptiveProvider(unittest.TestCase):
             "0840_hybrid_allreduce_dispatch",
             "1272_ar_host_compressed_wire",
         ]
-        self.assertEqual(data["experiment"]["allreduce-adaptive-wire"]["patches"], expected)
-        resolved = patchset.resolve_exact(expected, directory=_REPO / "patches")
+        # 0860, 1225 and 0840 are in the production set, so the experiment lists only what it adds to it
+        listed = data["experiment"]["allreduce-adaptive-wire"]["patches"]
+        self.assertEqual(listed, ["0830_split_reduce_telemetry", "1272_ar_host_compressed_wire"])
+        self.assertTrue(set(listed) <= set(expected))
+        resolved = patchset.resolve_exact(expected, directory=_REPO / "engines" / "llamacpp" / "patches")
         self.assertEqual([m.patch_id for m in resolved.modules], expected)
 
     def test_missing_unavailable_anchor_fails_closed(self):

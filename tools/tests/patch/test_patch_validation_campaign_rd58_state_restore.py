@@ -30,7 +30,7 @@ from bigcherry.patch import validation_producer as vp  # noqa: E402
 from bigcherry.patch.validation import ArtifactRef  # noqa: E402
 
 SUBJECT_PATCH = "1234_rd58_pin_state_buffer_multigpu_restore"
-PATCH_DIR = TOOLS_ROOT.parent / "patches" / SUBJECT_PATCH
+PATCH_DIR = TOOLS_ROOT.parent / "engines" / "llamacpp" / "patches" / SUBJECT_PATCH
 
 
 def _load_producer() -> object:

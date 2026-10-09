@@ -10,6 +10,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from bigcherry.core import paths  # noqa: E402
 from bigcherry.analysis.gaps import analyze_gap_file
 from bigcherry.transform_loader import load_transforms
 from bigcherry.transform_records import load_artifact_records
@@ -17,9 +18,9 @@ from bigcherry.transform_records import load_artifact_records
 
 ROOT = Path(__file__).resolve().parents[3]
 SCHEMA = ROOT / "sql" / "dispatch-db.sql"
-MANIFEST_PATH = ROOT / "vendor/llama.cpp/ggml/src/ggml-cuda/hip-autotune-manifest.json"
-HASH_HEADER = ROOT / "vendor/llama.cpp/ggml/src/ggml-cuda/hip-autotune-build-hash.h"
-TUNER_SOURCE = ROOT / "vendor/llama.cpp/ggml/src/ggml-cuda/hip-autotune-tuner.cu"
+MANIFEST_PATH = paths.llama_root() / "ggml/src/ggml-cuda/hip-autotune-manifest.json"
+HASH_HEADER = paths.llama_root() / "ggml/src/ggml-cuda/hip-autotune-build-hash.h"
+TUNER_SOURCE = paths.llama_root() / "ggml/src/ggml-cuda/hip-autotune-tuner.cu"
 
 
 def _generated_identity() -> tuple[str, str, str]:

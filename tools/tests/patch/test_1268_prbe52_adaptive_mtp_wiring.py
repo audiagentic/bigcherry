@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from bigcherry.patcher import apply_all  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
-_PATCH_FILE = _REPO / "patches/1268_prbe52_adaptive_mtp_wiring/patch.py"
+_PATCH_FILE = _REPO / "engines/llamacpp/patches/1268_prbe52_adaptive_mtp_wiring/patch.py"
 _spec = importlib.util.spec_from_file_location("patch_1268", _PATCH_FILE)
 assert _spec is not None and _spec.loader is not None
 _module = importlib.util.module_from_spec(_spec)

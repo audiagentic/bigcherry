@@ -1,7 +1,7 @@
 """Offline validation entrypoint for changed BigCherry patch packages.
 
 The caller must provide a pinned llama.cpp checkout at vendor/llama.cpp (normally
-via \`\`python -m bigcherry pull --source bigcherry\`\`). This command performs no
+via ``python -m bigcherry pull --source bigcherry``). This command performs no
 network access itself.
 """
 
@@ -97,8 +97,28 @@ def _blob_text_lf(ref: str, path: str) -> bytes | None:
     return proc.stdout.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
 
 
+def _renamed_from(base: str, head: str, path: str) -> str | None:
+    """The path this file had at ``base`` if the range moved it, else None."""
+    proc = subprocess.run(
+        ["git", "-C", str(_REPO), "diff", "-M", "--name-status", "--diff-filter=R", base, head],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        check=False,
+    )
+    for line in proc.stdout.splitlines():
+        parts = line.split("\t")
+        if len(parts) == 3 and parts[2] == path:
+            return parts[1]
+    return None
+
+
 def _only_line_endings_changed(base: str, head: str, path: str) -> bool:
+    """True when the file's text is the same at both ends of the range, also across a move of the file."""
     before = _blob_text_lf(base, path)
+    if before is None:
+        source = _renamed_from(base, head, path)
+        before = _blob_text_lf(base, source) if source else None
     after = _blob_text_lf(head, path)
     return before is not None and before == after
 

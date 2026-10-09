@@ -13,6 +13,7 @@ does not duplicate.
 from __future__ import annotations
 
 import sys
+import os
 import tempfile
 import unittest
 from argparse import Namespace
@@ -50,11 +51,17 @@ class PullSourceRefResolutionTests(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory(prefix="bigcherry-pull-source-test-")
         self.addCleanup(self._tmp.cleanup)
+        # shared work state defaults to the primary checkout; this test has none, so it names its own
+        work = mock.patch.dict(os.environ, {"BIGCHERRY_WORK_ROOT": str(Path(self._tmp.name) / "work")})
+        work.start()
+        self.addCleanup(work.stop)
         self.recipes_path = Path(self._tmp.name) / "recipes.toml"
         self.recipes_path.write_text(_RECIPES_TOML, encoding="utf-8")
 
     def _args(self, **kwargs):
-        base = {"llama_root": None, "ref": None, "source": None,
+        # an explicit checkout: REPO_ROOT is patched to a plain temp directory, which has no primary checkout to
+        # derive the default vendor location from
+        base = {"llama_root": str(Path(self._tmp.name) / "vendor" / "llama.cpp"), "ref": None, "source": None,
                 "full": False}
         base.update(kwargs)
         return Namespace(**base)

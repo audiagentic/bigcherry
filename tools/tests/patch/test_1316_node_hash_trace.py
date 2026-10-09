@@ -9,14 +9,15 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from bigcherry.core import paths  # noqa: E402
 from bigcherry.patcher import apply_all  # noqa: E402
 from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
-_VENDOR_CTX = _REPO / "vendor/llama.cpp/src/llama-context.cpp"
-_VENDOR_BACKEND = _REPO / "vendor/llama.cpp/ggml/src/ggml-backend.cpp"
-_VENDOR_HEADER = _REPO / "vendor/llama.cpp/ggml/include/ggml-backend.h"
-_spec = importlib.util.spec_from_file_location("patch_1316", _REPO / "patches/1316_node_hash_trace/patch.py")
+_VENDOR_CTX = paths.llama_root() / "src/llama-context.cpp"
+_VENDOR_BACKEND = paths.llama_root() / "ggml/src/ggml-backend.cpp"
+_VENDOR_HEADER = paths.llama_root() / "ggml/include/ggml-backend.h"
+_spec = importlib.util.spec_from_file_location("patch_1316", _REPO / "engines/llamacpp/patches/1316_node_hash_trace/patch.py")
 assert _spec is not None and _spec.loader is not None
 _module = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_module)
@@ -24,14 +25,14 @@ _spec.loader.exec_module(_module)
 
 class Patch1316StaticContracts(unittest.TestCase):
     def test_meta_buffers_are_skipped_before_tensor_get(self):
-        src = (_REPO / "patches/1316_node_hash_trace/patch.py").read_text(encoding="utf-8")
+        src = (_REPO / "engines/llamacpp/patches/1316_node_hash_trace/patch.py").read_text(encoding="utf-8")
         self.assertIn("ggml_backend_dev_type(device) == GGML_BACKEND_DEVICE_TYPE_META", src)
         self.assertIn("skip=meta", src)
         self.assertLess(src.index("if (bc_node_hash_is_meta_tensor(t))"), src.index("ggml_backend_tensor_get(t, buf.data(), 0, n);"))
         self.assertIn("t->view_src != nullptr ? t->view_src->buffer : t->buffer", src)
 
     def test_meta_scheduler_split_is_atomic(self):
-        src = (_REPO / "patches/1316_node_hash_trace/patch.py").read_text(encoding="utf-8")
+        src = (_REPO / "engines/llamacpp/patches/1316_node_hash_trace/patch.py").read_text(encoding="utf-8")
         self.assertIn("GGML_BACKEND_DEVICE_TYPE_META", src)
         self.assertIn("ggml_backend_graph_compute_async(split_backend, &split->graph)", src)
         self.assertIn("Meta owns its own subgraph partition/reduction walk", src)
@@ -39,7 +40,7 @@ class Patch1316StaticContracts(unittest.TestCase):
         self.assertIn("cparams.cb_eval == bc_node_hash_cb", src)
 
     def test_value_format_is_from_count(self):
-        src = (_REPO / "patches/1316_node_hash_trace/patch.py").read_text(encoding="utf-8")
+        src = (_REPO / "engines/llamacpp/patches/1316_node_hash_trace/patch.py").read_text(encoding="utf-8")
         self.assertIn('std::sscanf(env, "%ld:%ld"', src)
         self.assertIn("must be from:count with from >= 0 and count > 0", src)
         self.assertEqual([doc.values for doc in _module.ENV_DOCS], ["<from>:<count>"])
@@ -48,7 +49,7 @@ class Patch1316StaticContracts(unittest.TestCase):
 @unittest.skipUnless(_VENDOR_CTX.exists() and _VENDOR_BACKEND.exists() and _VENDOR_HEADER.exists(), "pinned vendor checkout not present")
 class Patch1316Mechanics(unittest.TestCase):
     def test_composes_after_production_scheduler_input_patch(self):
-        prod = _REPO / "patches/1326_sched_async_host_inputs/patch.py"
+        prod = _REPO / "engines/llamacpp/patches/1326_sched_async_host_inputs/patch.py"
         spec = importlib.util.spec_from_file_location("patch_1326_for_1316", prod)
         assert spec is not None and spec.loader is not None
         mod = importlib.util.module_from_spec(spec)

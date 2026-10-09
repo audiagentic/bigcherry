@@ -11,7 +11,7 @@ keeps the whole patch lifecycle visible in one place.
 Every new production patch is a package directory:
 
 ```text
-patches/<patch-id>/
+engines/llamacpp/patches/<patch-id>/
     patch.toml       # machine-readable identity and composition metadata
     patch.py         # anchored implementation
     SUMMARY.md       # short release-facing description; lint checks its header
@@ -27,10 +27,10 @@ Add these files when the patch is validation-ready:
         validation.json
 ```
 
-`patches/_template/` and `patches/_shared/` are reserved support directories;
+`engines/llamacpp/patches/_template/` and `engines/llamacpp/patches/_shared/` are reserved support directories;
 they are not patches. The registry's flat-module reader exists for legacy
-compatibility fixtures only. Do not create a new `patches/*.py` production
-patch, and do not add a packaged patch to `patches/catalog.toml`.
+compatibility fixtures only. Do not create a new `engines/llamacpp/patches/*.py` production
+patch, and do not add a packaged patch to `engines/llamacpp/patches/catalog.toml`.
 
 ## Fast path for a new or changed patch
 
@@ -130,7 +130,7 @@ Keep each fact in the system that owns it:
 | Release change record | `ag-ledger` |
 
 For a packaged patch, do not maintain a second metadata authority in
-`patches/catalog.toml` or duplicate `STATE`, `GROUP`, or equivalent catalog
+`engines/llamacpp/patches/catalog.toml` or duplicate `STATE`, `GROUP`, or equivalent catalog
 fields in `patch.py`. `SUMMARY.md` is human-facing, but its `Status` and
 `Plan item` header must agree with `patch.toml`; the live G1 summary check and
 repository LINT enforce this.

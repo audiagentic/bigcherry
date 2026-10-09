@@ -10,11 +10,12 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from bigcherry.core import paths  # noqa: E402
 from bigcherry.patcher import apply_all  # noqa: E402
 from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
-_VENDOR = _REPO / "vendor/llama.cpp/ggml/src/ggml-cuda"
+_VENDOR = paths.llama_root() / "ggml/src/ggml-cuda"
 
 
 def _load(name: str, path: Path):
@@ -25,9 +26,9 @@ def _load(name: str, path: Path):
     return module
 
 
-_p1250 = _load("patch_1250", _REPO / "patches/1250_nro01_allreduce_q8_wire/patch.py")
-_p1252 = _load("patch_1252_for_1250", _REPO / "patches/1252_nro03_allreduce_p2p_provider/patch.py")
-_p1272 = _load("patch_1272_for_1250", _REPO / "patches/1272_ar_host_compressed_wire/patch.py")
+_p1250 = _load("patch_1250", _REPO / "engines/llamacpp/patches/1250_nro01_allreduce_q8_wire/patch.py")
+_p1252 = _load("patch_1252_for_1250", _REPO / "engines/llamacpp/patches/1252_nro03_allreduce_p2p_provider/patch.py")
+_p1272 = _load("patch_1272_for_1250", _REPO / "engines/llamacpp/patches/1272_ar_host_compressed_wire/patch.py")
 
 
 def _allreduce_only(module):
@@ -88,8 +89,8 @@ class Patch1250SharedWireMechanics(unittest.TestCase):
             self.assertEqual(before, path.read_text(encoding="utf-8"))
 
     def test_dependency_and_conflict_wiring(self):
-        p1250 = tomllib.loads((_REPO / "patches/1250_nro01_allreduce_q8_wire/patch.toml").read_text(encoding="utf-8"))
-        p1272 = tomllib.loads((_REPO / "patches/1272_ar_host_compressed_wire/patch.toml").read_text(encoding="utf-8"))
+        p1250 = tomllib.loads((_REPO / "engines/llamacpp/patches/1250_nro01_allreduce_q8_wire/patch.toml").read_text(encoding="utf-8"))
+        p1272 = tomllib.loads((_REPO / "engines/llamacpp/patches/1272_ar_host_compressed_wire/patch.toml").read_text(encoding="utf-8"))
         self.assertEqual(["1252_nro03_allreduce_p2p_provider", "1272_ar_host_compressed_wire"], p1250["requires"])
         self.assertNotIn("1250_nro01_allreduce_q8_wire", p1272["conflicts"])
 

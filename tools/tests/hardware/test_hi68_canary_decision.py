@@ -1,7 +1,7 @@
 """HI68: compile and run the host-side canary decision unit test.
 
 The transition logic under test lives in a GPU-free header
-(src/ggml/src/ggml-cuda/hip-autotune-canary.h -- see the path constant
+(engines/llamacpp/overlay/ggml/src/ggml-cuda/hip-autotune-canary.h -- see the path constant
 below) so it can be exercised by ANY C++17 host compiler without a device,
 driver, or ggml build. This test locates a compiler (ROCm clang++ first,
 then anything on PATH that calls itself clang++ or cl), builds
@@ -22,7 +22,7 @@ import unittest
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__)))))
 CANARY_HEADER = os.path.join(
-    REPO_ROOT, "src", "ggml", "src", "ggml-cuda", "hip-autotune-canary.h"
+    REPO_ROOT, "engines", "llamacpp", "overlay", "ggml", "src", "ggml-cuda", "hip-autotune-canary.h"
 )
 HOST_TEST_CPP = os.path.join(REPO_ROOT, "tools", "tests", "fixtures", "hardware", "canary_decision_host_test.cpp")
 OK_MARKER = "CANARY_DECISION_HOST_TEST_OK"

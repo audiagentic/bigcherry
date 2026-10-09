@@ -320,7 +320,7 @@ class ReplayCacheWireTests(unittest.TestCase):
 
     def test_cpp_reader_rejects_partial_headers_and_records_before_offsets(self):
         source = (Path(__file__).resolve().parents[3] /
-                  "src/ggml/src/ggml-cuda/hip-autotune-replay.cpp").read_text(encoding="utf-8")
+                  "engines/llamacpp/overlay/ggml/src/ggml-cuda/hip-autotune-replay.cpp").read_text(encoding="utf-8")
         self.assertIn("bytes.size() < HDR_SIZE", source)
         self.assertIn("bytes.size() != expected", source)
         self.assertIn("content checksum mismatch", source)
@@ -328,9 +328,9 @@ class ReplayCacheWireTests(unittest.TestCase):
 
     def test_cpp_reader_enforces_abi_and_version_namespace_before_loading(self):
         source = (Path(__file__).resolve().parents[3] /
-                  "src/ggml/src/ggml-cuda/hip-autotune-replay.cpp").read_text(encoding="utf-8")
+                  "engines/llamacpp/overlay/ggml/src/ggml-cuda/hip-autotune-replay.cpp").read_text(encoding="utf-8")
         header = (Path(__file__).resolve().parents[3] /
-                  "src/ggml/src/ggml-cuda/hip-autotune-replay.h").read_text(encoding="utf-8")
+                  "engines/llamacpp/overlay/ggml/src/ggml-cuda/hip-autotune-replay.h").read_text(encoding="utf-8")
         for check in (
                 "GGML_HIP_REPLAY_VERSION 5",
                 "GGML_HIP_REPLAY_MAGIC   0x59484342u",
@@ -419,9 +419,9 @@ class ReplayCacheWireTests(unittest.TestCase):
 
     def test_cpp_reader_has_the_same_v5_boundary_and_fail_closed_checks(self):
         source = (Path(__file__).resolve().parents[3] /
-                  "src/ggml/src/ggml-cuda/hip-autotune-replay.cpp").read_text(encoding="utf-8")
+                  "engines/llamacpp/overlay/ggml/src/ggml-cuda/hip-autotune-replay.cpp").read_text(encoding="utf-8")
         header = (Path(__file__).resolve().parents[3] /
-                  "src/ggml/src/ggml-cuda/hip-autotune-replay.h").read_text(encoding="utf-8")
+                  "engines/llamacpp/overlay/ggml/src/ggml-cuda/hip-autotune-replay.h").read_text(encoding="utf-8")
         self.assertIn("#define GGML_HIP_REPLAY_VERSION 5", header)
         self.assertIn("constexpr size_t HDR_SIZE         = HDR_CONTENT + GGML_HIP_DIGEST_BYTES", source)
         self.assertIn("constexpr size_t ENT_SIZE      = ENT_MATCH_KIND + 1", source)

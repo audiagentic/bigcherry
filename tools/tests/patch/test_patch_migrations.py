@@ -8,7 +8,7 @@ from bigcherry.patch import registry as patch_registry, validation as patch_vali
 
 class RD12PackageMigrationTests(unittest.TestCase):
     def test_simple_patch_migration_is_packaged(self) -> None:
-        root = Path(__file__).resolve().parents[3] / "patches"
+        root = Path(__file__).resolve().parents[3] / "engines" / "llamacpp" / "patches"
         registry = patch_registry.load_registry(root)
         descriptor = registry.get("1002_hip_unsafe_math_opt_in")
         self.assertEqual(descriptor.representation, patch_registry.REPRESENTATION_PACKAGED)
@@ -17,7 +17,7 @@ class RD12PackageMigrationTests(unittest.TestCase):
         self.assertTrue(patch_registry.load_implementation(descriptor, root=root))
         self.assertFalse((root / "1002_hip_unsafe_math_opt_in.py").exists())
     def test_rd12_is_packaged_and_validation_owns_trace_marker(self) -> None:
-        root = Path(__file__).resolve().parents[3] / "patches"
+        root = Path(__file__).resolve().parents[3] / "engines" / "llamacpp" / "patches"
         registry = patch_registry.load_registry(root)
         descriptor = registry.get("1205_rd12_paired_mmvq_dual_output")
         self.assertEqual(descriptor.representation, patch_registry.REPRESENTATION_PACKAGED)
@@ -37,7 +37,7 @@ class RD12PackageMigrationTests(unittest.TestCase):
         self.assertNotIn("1205_rd12_paired_mmvq_dual_output.py", {p.name for p in root.glob("*.py")})
 
     def test_rd08_is_packaged_with_contract_and_vdr_marker(self) -> None:
-        root = Path(__file__).resolve().parents[3] / "patches"
+        root = Path(__file__).resolve().parents[3] / "engines" / "llamacpp" / "patches"
         registry = patch_registry.load_registry(root)
         descriptor = registry.get("1204_rd08_q6k_mmvq_vdr2")
         self.assertEqual(descriptor.representation, patch_registry.REPRESENTATION_PACKAGED)
@@ -51,7 +51,7 @@ class RD12PackageMigrationTests(unittest.TestCase):
         self.assertNotIn("1204_rd08_q6k_mmvq_vdr2.py", {p.name for p in root.glob("*.py")})
 
     def test_rd13_is_packaged_with_validation_owned_marker(self) -> None:
-        root = Path(__file__).resolve().parents[3] / "patches"
+        root = Path(__file__).resolve().parents[3] / "engines" / "llamacpp" / "patches"
         registry = patch_registry.load_registry(root)
         descriptor = registry.get("1206_rd13_mul_mat_add_view_fusion")
         self.assertEqual(descriptor.representation, patch_registry.REPRESENTATION_PACKAGED)

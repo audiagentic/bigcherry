@@ -2,7 +2,7 @@
 correctness + paired-benchmark measurement moved from
 validation_campaign.py's deleted run_rd04_contract_correctness() and
 run_rd04_benchmark_evidence() into the patch-local producer at
-patches/1202_rd04_bf16_flash_attn_tile/validation/producer.py.
+engines/llamacpp/patches/1202_rd04_bf16_flash_attn_tile/validation/producer.py.
 
 These tests drive the REAL producer module (loaded through the real
 resolve_producer() loader, so producer.toml policy is exercised too)
@@ -35,7 +35,7 @@ from bigcherry.patch import validation_producer as vp  # noqa: E402
 from bigcherry.patch.validation import ArtifactRef  # noqa: E402
 
 SUBJECT_PATCH = "1202_rd04_bf16_flash_attn_tile"
-PATCH_DIR = TOOLS_ROOT.parent / "patches" / SUBJECT_PATCH
+PATCH_DIR = TOOLS_ROOT.parent / "engines" / "llamacpp" / "patches" / SUBJECT_PATCH
 CONTRACT_ARCHITECTURES = ("gfx1100", "gfx1201", "gfx1030")
 FAT_TARGETS = "gfx1100;gfx1201;gfx1030"
 PPL_EXTRA_ARGS = ("-fa", "on", "-ctk", "bf16", "-ctv", "bf16")

@@ -496,7 +496,7 @@ def check_identity_namespace_separation(ctx: AuditContext) -> None:
 # ----------------------------------------------------------------- build files
 
 def check_overlay_sync(ctx: AuditContext) -> None:
-    """Detect drift between the tracked overlay (src/) and the compiled tree.
+    """Detect drift between the tracked overlay (engines/llamacpp/overlay/) and the compiled tree.
 
     ``src/`` is this repo's tracked canonical source for files ``apply``
     mirrors onto the checkout (see ``_copy_overlay`` in __main__.py);
@@ -541,7 +541,7 @@ def check_overlay_sync(ctx: AuditContext) -> None:
             f"{len(drifted)} overlay file(s) differ from the compiled tree "
             "-- run `python -m bigcherry apply` to sync, or the checkout "
             "will silently build stale code: " + ", ".join(drifted),
-            expected="src/ and vendor/llama.cpp copies identical",
+            expected="overlay and vendor/llama.cpp copies identical",
             actual=drifted,
         )
     else:

@@ -21,6 +21,8 @@ class TestRD08ProducerStructure(unittest.TestCase):
 
         path = (
             Path(__file__).parent.parent.parent.parent
+            / "engines"
+            / "llamacpp"
             / "patches"
             / "1204_rd08_q6k_mmvq_vdr2"
             / "validation"
@@ -40,6 +42,8 @@ class TestRD08ProducerStructure(unittest.TestCase):
 
         path = (
             Path(__file__).parent.parent.parent.parent
+            / "engines"
+            / "llamacpp"
             / "patches"
             / "1204_rd08_q6k_mmvq_vdr2"
             / "validation"
@@ -62,6 +66,8 @@ class TestRD08ProducerStructure(unittest.TestCase):
 
         path = (
             Path(__file__).parent.parent.parent.parent
+            / "engines"
+            / "llamacpp"
             / "patches"
             / "1204_rd08_q6k_mmvq_vdr2"
             / "validation"
@@ -87,6 +93,8 @@ class TestRD08ProducerStructure(unittest.TestCase):
         """The producer.py must exist."""
         path = (
             Path(__file__).parent.parent.parent.parent
+            / "engines"
+            / "llamacpp"
             / "patches"
             / "1204_rd08_q6k_mmvq_vdr2"
             / "validation"
@@ -100,6 +108,8 @@ class TestRD08ProducerStructure(unittest.TestCase):
 
         path = (
             Path(__file__).parent.parent.parent.parent
+            / "engines"
+            / "llamacpp"
             / "patches"
             / "1204_rd08_q6k_mmvq_vdr2"
             / "validation"
@@ -125,6 +135,8 @@ class RD08ProducerStructureTests(unittest.TestCase):
         producer_path = (
             Path(__file__).resolve().parents[2]
             / ".."
+            / "engines"
+            / "llamacpp"
             / "patches"
             / "1204_rd08_q6k_mmvq_vdr2"
             / "validation"
@@ -153,6 +165,8 @@ class RD08ProducerStructureTests(unittest.TestCase):
         producer_path = (
             Path(__file__).resolve().parents[2]
             / ".."
+            / "engines"
+            / "llamacpp"
             / "patches"
             / "1204_rd08_q6k_mmvq_vdr2"
             / "validation"
@@ -311,6 +325,8 @@ class RD08ActivationEvidenceTests(unittest.TestCase):
         producer_path = (
             Path(__file__).resolve().parents[2]
             / ".."
+            / "engines"
+            / "llamacpp"
             / "patches"
             / "1204_rd08_q6k_mmvq_vdr2"
             / "validation"

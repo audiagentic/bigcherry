@@ -4,7 +4,7 @@ apply --rebase-report --known-good staleness contract.
 Real git fixtures throughout (same convention as
 test_patch_source_isolation.py / test_re04_materialization_safety.py):
 a synthetic upstream repo bumped from an "old" to a "new" revision, and a
-synthetic ``patches/`` root pointed to via ``paths.PATCHES``/
+synthetic ``engines/llamacpp/patches/`` root pointed to via ``paths.PATCHES``/
 ``paths.SRC_OVERLAY`` monkeypatching so the real repository's own patch set
 is never touched by these tests.
 """

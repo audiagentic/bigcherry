@@ -86,7 +86,7 @@ class CompatibilityFacadeTests(unittest.TestCase):
     def test_no_static_or_dynamic_consumer_uses_retired_root_paths(self) -> None:
         retired = set(RETIRED_ROOT_FACADES)
         violations: list[str] = []
-        for root in (REPO_ROOT / "tools", REPO_ROOT / "patches", REPO_ROOT / "config"):
+        for root in (REPO_ROOT / "tools", REPO_ROOT / "engines" / "llamacpp" / "patches", REPO_ROOT / "config"):
             for path in _python_files(root):
                 try:
                     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))

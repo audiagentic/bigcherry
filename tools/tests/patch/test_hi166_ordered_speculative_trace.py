@@ -1,4 +1,4 @@
-"""HI166: patches/0850 adds an ordered per-verify-step speculative-decode
+"""HI166: engines/llamacpp/patches/0850 adds an ordered per-verify-step speculative-decode
 acceptance trace (server_slot_stats.draft_trace), because llama-server's
 existing aggregate (draft_n, draft_n_accepted) scalars cannot distinguish
 two genuinely different per-step work schedules that sum to the same
@@ -12,10 +12,11 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from bigcherry.core import paths  # noqa: E402
 from bigcherry.patcher import apply_all
 
 ROOT = Path(__file__).resolve().parents[3]
-PATCH_DIR = ROOT / "patches" / "0850_ordered_speculative_trace"
+PATCH_DIR = ROOT / "engines" / "llamacpp" / "patches" / "0850_ordered_speculative_trace"
 
 _spec = importlib.util.spec_from_file_location(
     "hi166_ordered_speculative_trace_patch", PATCH_DIR / "patch.py",
@@ -26,7 +27,7 @@ _spec.loader.exec_module(_module)
 
 
 def _apply_to_copy(tmp_path: Path) -> dict[str, Path]:
-    vendor = ROOT / "vendor" / "llama.cpp" / "tools" / "server"
+    vendor = paths.llama_root() / "tools" / "server"
     targets = {}
     for name in ("server-common.h", "server-common.cpp", "server-context.cpp"):
         target = tmp_path / "tools" / "server" / name

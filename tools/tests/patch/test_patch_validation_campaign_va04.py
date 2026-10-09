@@ -2,7 +2,7 @@
 RD04-scoped paired benchmark evidence producer (the deleted
 run_rd04_benchmark_evidence()) and its --run-rd04-benchmark CLI wiring
 moved to the patch-local producer at
-patches/1202_rd04_bf16_flash_attn_tile/validation/producer.py -- its
+engines/llamacpp/patches/1202_rd04_bf16_flash_attn_tile/validation/producer.py -- its
 measurement semantics (forced -fa/-ctk/-ctv flags, control/subject
 alternation, real sha binding, fail-closed nonzero arms) are now
 covered by test_patch_validation_campaign_rd04_correctness.py, and its

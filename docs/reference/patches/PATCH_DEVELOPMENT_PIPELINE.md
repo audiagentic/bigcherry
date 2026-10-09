@@ -10,8 +10,8 @@ the rules that keep runs trustworthy. Agents follow it through the
 
 | # | Stage | Tool / doc | Exit condition |
 |---|---|---|---|
-| 1 | **Triage** candidates against the workload (model, quant, archs, split mode, decode vs prefill) | reviewer agent; `patches/*/SUMMARY.md` | Each candidate rated TEST-NOW / TEST-LATER / SKIP with the marker that proves it fires |
-| 2 | **Author** or repair the package | [PATCH_AUTHORING.md](PATCH_AUTHORING.md) | `patches/<id>/` with anchored edits, marker, `validation.toml`, focused test |
+| 1 | **Triage** candidates against the workload (model, quant, archs, split mode, decode vs prefill) | reviewer agent; `engines/llamacpp/patches/*/SUMMARY.md` | Each candidate rated TEST-NOW / TEST-LATER / SKIP with the marker that proves it fires |
+| 2 | **Author** or repair the package | [PATCH_AUTHORING.md](PATCH_AUTHORING.md) | `engines/llamacpp/patches/<id>/` with anchored edits, marker, `validation.toml`, focused test |
 | 3 | **Mechanics** (no hardware) | `bigcherry patch-lint`; `unittest discover -s tools/tests/patch` | Lint clean, focused tests pass |
 | 4 | **Build** | queue `BUILD` rows ([BUILD.md](../build/BUILD.md#queued-qualification-campaigns-and-the-firing-pre-flight)) | `BUILD_EXIT=0`, binary recorded |
 | 5 | **Fire first** | queue `PREFLIGHT` row on the target model/config | Marker hit >= 1; otherwise stop: the patch cannot fire here (retarget or drop) |

@@ -1,7 +1,7 @@
 """Declarative patch-stream metadata (RE30 phase 1).
 
 Packaged patches carry their descriptive metadata in ``patch.toml`` alongside
-their implementation. ``patches/catalog.toml`` remains a compatibility
+their implementation. ``engines/llamacpp/patches/catalog.toml`` remains a compatibility
 catalog for synthetic/legacy flat fixtures and is empty in the production
 package-only tree. The package metadata answers questions that ``STATE``
 alone cannot: patch kind/origin, backend, upstream provenance,
@@ -88,7 +88,7 @@ class CatalogEntry:
     # hip+vulkan). `subsystems`/`hardware` are free-form descriptive tags,
     # not validated against a closed vocabulary -- explicitly NOT a folder
     # axis (RE41's flat-layout decision is superseded by patch-system
-    # PA02: patches/ may now hold packaged directories, and this metadata
+    # PA02: engines/llamacpp/patches/ may now hold packaged directories, and this metadata
     # stays browsability-only either way).
     plan_ids: tuple[str, ...] = ()
     backends: tuple[str, ...] = ()
@@ -205,7 +205,7 @@ def patches_for_backend(backend: str, *, catalog_path: Path | None = None) -> tu
 
 
 def load_catalog(path: Path | None = None) -> dict[str, CatalogEntry]:
-    """Load and validate ``patches/catalog.toml``, keyed by patch ID."""
+    """Load and validate ``engines/llamacpp/patches/catalog.toml``, keyed by patch ID."""
     path = path or paths.PATCH_CATALOG
     raw = tomllib.loads(path.read_text(encoding="utf-8"))
     if raw.get("version") != 1:
@@ -326,7 +326,7 @@ def validation_evidence_statuses(
         packaged_descriptor = packaged.get(patch_id)
         if entry is None and packaged_descriptor is None:
             return patch_validation_evidence.EvidenceCheck(
-                status="missing-or-stale", problems=("no patches/catalog.toml entry",),
+                status="missing-or-stale", problems=("no engines/llamacpp/patches/catalog.toml entry",),
             )
 
         module = modules.get(patch_id)
@@ -566,7 +566,7 @@ class CatalogSnapshot:
     CONFLICTS, authoritative for selection) and ``patch_catalog.load_catalog()``
     (kind/origin/backend/plan_ids/..., descriptive metadata) -- bundled
     together and keyed consistently by patch_id, so one command/campaign
-    invocation reads the patches/ tree and patches/catalog.toml exactly
+    invocation reads the engines/llamacpp/patches/ tree and engines/llamacpp/patches/catalog.toml exactly
     once instead of each caller independently re-scanning and re-parsing.
 
     Not yet threaded through resolve_lane/materialize_source/build planning
@@ -791,7 +791,7 @@ def render_explanation(info: PatchExplanation) -> str:
         f"patch:          {info.patch_id}",
         f"content hash:   {info.content_hash}",
         f"state:          {info.state}",
-        f"kind:           {info.kind or 'unknown (not in patches/catalog.toml)'}",
+        f"kind:           {info.kind or 'unknown (not in engines/llamacpp/patches/catalog.toml)'}",
         f"origin:         {info.origin or 'unknown'}",
         f"backend:        {info.backend or 'unknown'}",
         f"source id:      {info.source_id or '-'}",

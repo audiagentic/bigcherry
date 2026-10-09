@@ -35,5 +35,5 @@ Before claiming that a patch helps, does not help, or remains unknown:
    provenance, and the exact evidence-backed lifecycle decision.
 
 Patch-specific README, `validation.toml`, fixtures, and evidence belong under
-`patches/<patch-id>/`. This page is navigation, not a second policy.
+`engines/llamacpp/patches/<patch-id>/`. This page is navigation, not a second policy.
 

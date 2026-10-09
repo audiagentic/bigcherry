@@ -1204,7 +1204,7 @@ def _absolute_path(value: str) -> Path:
 
 def _add_core_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
-        "--patch", required=True, help="patch module name under patches/"
+        "--patch", required=True, help="patch module name under engines/llamacpp/patches/"
     )
     parser.add_argument(
         "--framework-configuration",
@@ -1360,7 +1360,7 @@ def _add_benchmark_and_producer_arguments(parser: argparse.ArgumentParser) -> No
         metavar="PATCH/PRODUCER_ID",
         default=None,
         help="PA36-F step 5: select one patch-local validation producer "
-        "(patches/<patch>/validation/producer.toml's [producer.<PRODUCER_ID>]) "
+        "(engines/llamacpp/patches/<patch>/validation/producer.toml's [producer.<PRODUCER_ID>]) "
         "and execute it through the generic execute_validation_producer() "
         "dispatcher. Mutually exclusive with every --run-rdXX-*/--run-patchXXXX-* "
         "legacy execution mode -- this is the non-legacy replacement path "

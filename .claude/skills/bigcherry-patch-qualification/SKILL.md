@@ -185,7 +185,7 @@ Validation-ready package requirements
 
 For validation-ready RD patches, policy may require:
 
-patches/<id>/
+engines/llamacpp/patches/<id>/
   patch.py
   patch.toml
   README.md

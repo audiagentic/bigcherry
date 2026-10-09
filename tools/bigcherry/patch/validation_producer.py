@@ -4,20 +4,20 @@ End-state principle (GPT design, req_0fb717b910e145b2, 2026-09-13):
 ``validation_campaign.py`` knows how to EXECUTE a selected validation
 producer, but never knows WHICH patch/RD it is executing. Patch identity,
 producer entrypoint, policy, declared inputs, and allowed artifact names
-are all owned by ``patches/<id>/validation/``; reusable build/run/evidence
+are all owned by ``engines/llamacpp/patches/<id>/validation/``; reusable build/run/evidence
 machinery (``build_tree()``, ``capture_completed_build_evidence()``,
 ``run_paired_lane()``, ``patch_validation_evidence.make_record()``, etc.)
 stays shared and lives in ``validation_campaign.py``/``evidence.py``.
 
 This module is infrastructure only (PA36 step 0) -- no patch has migrated
-onto it yet. A patch migrates by adding ``patches/<id>/validation/
+onto it yet. A patch migrates by adding ``engines/llamacpp/patches/<id>/validation/
 producer.toml`` + ``producer.py`` and deleting its old ``run_rdXX_*``
 function/CLI branch/central artifact names from ``validation_campaign.py``
 in the SAME commit (see PA36's atomic-migration checklist; no compatibility
 layer, no old-flag aliases).
 
 Dependency direction is load-bearing: this module (and every
-``patches/<id>/validation/producer.py``) must NEVER import
+``engines/llamacpp/patches/<id>/validation/producer.py``) must NEVER import
 ``validation_campaign.py`` -- that would recreate the exact coupling this
 refactor exists to remove. ``validation_campaign.py`` imports THIS module,
 not the other way around.

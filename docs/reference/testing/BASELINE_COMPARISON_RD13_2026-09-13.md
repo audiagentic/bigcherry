@@ -158,7 +158,7 @@ Bisected further (isolating each of the 3 "forced" patches individually):
 innocent (5209.73, 5206.47 -- both match stock).
 
 GPT (`req_75d5e59ef62e4675`) diagnosed the exact bug by comparing
-`patches/0300_mmq_forced_j/patch.py`'s lifted J-selection scan against
+`engines/llamacpp/patches/0300_mmq_forced_j/patch.py`'s lifted J-selection scan against
 real upstream `ggml/src/ggml-cuda/mmq.cuh`/`mmq.cu` -- **independently
 verified against the actual vendor source in this repo before applying
 any fix.** Upstream's `mmq_args` struct has two distinct fields:
@@ -177,7 +177,7 @@ models these are set equal upstream (hence zero observed effect), but
 for MoE they diverge sharply, causing the scan to pick a substantially
 larger, wrong tile-width `J` than native upstream would.
 
-**Fix applied**: `patches/0300_mmq_forced_j/patch.py` changed to pass
+**Fix applied**: `engines/llamacpp/patches/0300_mmq_forced_j/patch.py` changed to pass
 `args.ncols_opt` instead of `args.ncols_max` into
 `ggml_cuda_mmq_native_j_best()` (both the declaration/call-site and the
 definition). `ggml_cuda_mmq_variant_is_eligible`'s own `ncols_max`

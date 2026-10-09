@@ -127,7 +127,7 @@ class PatchSetIdentityPersistedTests(unittest.TestCase):
             # GPT-auto-agent review follow-up (2026-08-17): resolve_patch_set()
             # now re-derives its cross-check directory from the supplied
             # catalog itself, rather than defaulting to paths.PATCHES (the
-            # real project's patches/) -- no monkeypatch needed any more.
+            # real project's engines/llamacpp/patches/) -- no monkeypatch needed any more.
             plan = source_plan_for(cfg, "test-source", catalog=catalog)
             lane = campaign_resolution.resolve_lane("test-source", cfg, catalog)
 
@@ -384,7 +384,7 @@ class FailedMaterializationDoesNotPoisonThePlanIdTests(unittest.TestCase):
         # git worktree FIRST, then applies overlay/patches -- a failure in
         # that second phase used to leave `destination` on disk (a real,
         # registered git worktree) with no metadata.json beside it. Every
-        # later attempt at the SAME plan_id (same patches/overlay/revision)
+        # later attempt at the SAME plan_id (same engines/llamacpp/patches/overlay/revision)
         # hit "source directory exists without matching metadata -- refusing
         # to materialise over it" forever, with no automatic recovery --
         # permanently poisoning that identity over a transient failure.

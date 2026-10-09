@@ -1,4 +1,4 @@
-"""Discovery and loading of the patch set in ``patches/``.
+"""Discovery and loading of the patch set in ``engines/llamacpp/patches/``.
 
 Patch modules live at the repository root rather than inside the tool because
 they are the part a reviewer actually reads: what we change in upstream, and
@@ -6,7 +6,7 @@ why. They are Python because an anchored edit is a small piece of logic, not
 data -- it has a guard, an expected match count, and sometimes a probe for
 which upstream shape it handles.
 
-Modules are loaded by explicit path so ``patches/`` needs no ``__init__.py``
+Modules are loaded by explicit path so ``engines/llamacpp/patches/`` needs no ``__init__.py``
 and no ``sys.path`` manipulation, and so numeric ordering prefixes
 (``0100_``, ``0200_``) are free to name the file without constraining the
 Python identifier.
@@ -134,9 +134,9 @@ def discover_modules(root: Path) -> list[Path]:
     (helpers, ``__pycache__``) at any depth -- not just the filename, so a
     future nested catalog directory (e.g. a ``_shared/`` helper folder) is
     excluded the same way a leading-underscore file is today. For today's
-    flat ``patches/`` layout this returns exactly what ``directory.glob(
+    flat ``engines/llamacpp/patches/`` layout this returns exactly what ``directory.glob(
     "*.py")`` did; it only starts differing once nested catalog directories
-    (e.g. a future ``patches/vulkan/``) exist.
+    (e.g. a future ``engines/llamacpp/patches/vulkan/``) exist.
     """
     if not root.is_dir():
         return []

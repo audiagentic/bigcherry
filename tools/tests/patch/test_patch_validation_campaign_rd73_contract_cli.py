@@ -11,7 +11,7 @@ import sys
 
 # Register the producer module in sys.modules before exec_module
 PRODUCER_DIR = Path(
-    "patches/1233_rd73_stable_graph_cache_key/validation"
+    "engines/llamacpp/patches/1233_rd73_stable_graph_cache_key/validation"
 )
 PRODUCER_MODULE = "patches_1233_rd73_stable_graph_cache_key_validation_producer"
 

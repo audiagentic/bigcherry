@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from bigcherry.patch import validation_producer as vp  # noqa: E402
 
-_PATCHES = Path(__file__).resolve().parents[3] / "patches"
+_PATCHES = Path(__file__).resolve().parents[3] / "engines" / "llamacpp" / "patches"
 
 
 def _load(patch_id: str):
