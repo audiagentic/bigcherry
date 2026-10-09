@@ -16,7 +16,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from bigcherry.tuning import behavioral_gate as bg  # noqa: E402
-from bigcherry.tuning.server_runner import ServerRunner  # noqa: E402
+from bigcherry.tuning.server_runner import ServerRunner, LLAMACPP_SERVE  # noqa: E402
 
 
 def _trace(ids, draft_n=0, draft_n_accepted=0, draft_trace=None):
@@ -242,7 +242,7 @@ class RunVectorRealHttpTests(unittest.TestCase):
         self.port = self.server.server_address[1]
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
-        self.runner = ServerRunner(binary=Path("unused"), model=Path("unused"), port=self.port)
+        self.runner = ServerRunner(serve=LLAMACPP_SERVE, binary=Path("unused"), model=Path("unused"), port=self.port)
         self.runner._proc = object()  # bypass launch(); only post_json is used
 
     def tearDown(self):
