@@ -10,7 +10,7 @@ if(NOT R11_GPU_TARGETS)
 endif()
 rad_add_plugin(libr11 kernels
   SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/rows.cpp
-  HIP_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/elementwise.hip ${CMAKE_CURRENT_SOURCE_DIR}/gemm_bf16.hip ${CMAKE_CURRENT_SOURCE_DIR}/packed_binary.hip
+  HIP_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/elementwise.hip ${CMAKE_CURRENT_SOURCE_DIR}/gemm_bf16.hip ${CMAKE_CURRENT_SOURCE_DIR}/packed_binary.hip ${CMAKE_CURRENT_SOURCE_DIR}/rmsnorm_gfx11.hip
   GPU_TARGETS ${R11_GPU_TARGETS})
 set_target_properties(libr11 PROPERTIES HIP_STANDARD 17 HIP_STANDARD_REQUIRED ON)
 # Radiance's libref contract forbids implicit contraction of FP32 accumulation.
@@ -29,3 +29,9 @@ add_executable(r11_gemm_selftest ${CMAKE_CURRENT_SOURCE_DIR}/gemm_selftest.cpp)
 target_link_libraries(r11_gemm_selftest PRIVATE radiance::abi ${CMAKE_DL_LIBS})
 rad_hipify(r11_gemm_selftest ${R11_GPU_TARGETS})
 add_test(NAME r11_gemm_smoke COMMAND r11_gemm_selftest $<TARGET_FILE:libr11>)
+
+set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/rmsnorm_selftest.cpp PROPERTIES LANGUAGE HIP)
+add_executable(r11_rmsnorm_selftest ${CMAKE_CURRENT_SOURCE_DIR}/rmsnorm_selftest.cpp)
+target_link_libraries(r11_rmsnorm_selftest PRIVATE radiance::abi ${CMAKE_DL_LIBS})
+rad_hipify(r11_rmsnorm_selftest ${R11_GPU_TARGETS})
+add_test(NAME r11_rmsnorm_smoke COMMAND r11_rmsnorm_selftest $<TARGET_FILE:libr11>)
