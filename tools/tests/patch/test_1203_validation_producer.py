@@ -33,7 +33,7 @@ from bigcherry.patch.campaign import build as campaign_build  # noqa: E402
 from bigcherry.patch import validation_producer as vp  # noqa: E402
 
 _PATCH_ID = "1203_rd050607_rdna4_wmma_fa_q6k_mmq"
-_PATCH_DIR = REPO_ROOT / "patches" / _PATCH_ID
+_PATCH_DIR = REPO_ROOT / "engines" / "llamacpp" / "patches" / _PATCH_ID
 _CONTRACTS_TOML = REPO_ROOT / "config" / "experiment-contracts.toml"
 
 _RD05 = "RD05-WMMA-FA-CORRECTNESS-BARRIERS"
@@ -1297,13 +1297,13 @@ class Patch1203ValidationProducerTests(unittest.TestCase):
         from bigcherry.patch import registry as patch_registry
         from bigcherry.patch import validation_policy as patch_validation_policy
 
-        registry = patch_registry.load_registry(REPO_ROOT / "patches")
+        registry = patch_registry.load_registry(REPO_ROOT / "engines" / "llamacpp" / "patches")
         descriptor = registry.get(_PATCH_ID)
         # Must not raise ConfigurationError -- this is the real call
         # _run_validation_producer() makes before ever touching hardware.
         plan = patch_validation_policy.require_execution_package(
             descriptor,
-            root=REPO_ROOT / "patches",
+            root=REPO_ROOT / "engines" / "llamacpp" / "patches",
         )
         self.assertEqual(
             set(plan.required_capabilities),

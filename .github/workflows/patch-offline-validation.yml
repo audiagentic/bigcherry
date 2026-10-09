@@ -4,7 +4,8 @@ on:
   push:
     branches: [main]
     paths:
-      - 'patches/**'
+      - 'engines/llamacpp/patches/**'
+      - 'engines/*/engine.toml'
       - 'tools/tests/patch/**'
       - 'tools/tests/cli/test_slice_lab.py'
       - 'tools/bigcherry/cli/slice_lab.py'
@@ -35,7 +36,8 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - 'patches/**'
+      - 'engines/llamacpp/patches/**'
+      - 'engines/*/engine.toml'
       - 'tools/tests/patch/**'
       - 'tools/tests/cli/test_slice_lab.py'
       - 'tools/bigcherry/cli/slice_lab.py'

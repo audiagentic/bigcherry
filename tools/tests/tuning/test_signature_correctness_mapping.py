@@ -15,10 +15,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from bigcherry.core import paths  # noqa: E402
 from bigcherry.tuning import signature_mapping as scm # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-REAL_VENDOR_ROOT = REPO_ROOT / "vendor" / "llama.cpp"
+REAL_VENDOR_ROOT = paths.llama_root()
 
 
 def _write_fixture_vendor(tmp_path: Path) -> Path:

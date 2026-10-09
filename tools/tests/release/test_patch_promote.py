@@ -76,7 +76,7 @@ class PatchPromoteTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory(prefix="patch-promote-")
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
-        patch = self.root / "patches" / "1348_demo"
+        patch = self.root / "engines" / "llamacpp" / "patches" / "1348_demo"
         patch.mkdir(parents=True)
         (self.root / "config").mkdir()
         (patch / "patch.toml").write_text(_PATCH_TOML, encoding="utf-8")
@@ -267,7 +267,7 @@ class PatchPromoteTests(unittest.TestCase):
         info = pp._load_patch(self.root, "1348_demo")
         payload = pp._ledger_payload(
             (info,),
-            ["patches/1348_demo/patch.toml", "config/recipes.toml"],
+            ["engines/llamacpp/patches/1348_demo/patch.toml", "config/recipes.toml"],
             "feat(patch): promote 1348_demo",
         )
         self.assertEqual(payload["change_class"], "feature")

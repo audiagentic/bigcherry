@@ -1,7 +1,7 @@
 """Offline validation entrypoint for changed BigCherry patch packages.
 
 The caller must provide a pinned llama.cpp checkout at vendor/llama.cpp (normally
-via \`\`python -m bigcherry pull --source bigcherry\`\`). This command performs no
+via ``python -m bigcherry pull --source bigcherry``). This command performs no
 network access itself.
 """
 
@@ -20,6 +20,18 @@ from pathlib import Path
 from typing import Sequence
 
 _REPO = Path(__file__).resolve().parents[3]
+from bigcherry.core import paths as bc_paths
+
+_PATCH_PREFIX = bc_paths.LLAMACPP.patch_path_prefix()
+
+
+def _package_of(path: str) -> str | None:
+    """The patch package a repository-relative path belongs to, or None (also for _template and other _dirs)."""
+    if not path.startswith(_PATCH_PREFIX):
+        return None
+    package, sep, _rest = path[len(_PATCH_PREFIX):].partition("/")
+    return package if sep and package and not package.startswith("_") else None
+
 _PATCH_TEST_RE = re.compile(r"^tools/tests/patch/test_(\d{4}_[A-Za-z0-9_]+)\.py$")
 _DISPOSITION_RE = re.compile(r"^dispositions/(\d{4}_[^/]+)\.json$")
 _DEFAULT_CHECK_TIMEOUT_SECONDS = 600
@@ -60,10 +72,9 @@ def _changed_files(base: str, head: str) -> tuple[str, ...]:
 def _patch_ids(paths: Sequence[str]) -> tuple[str, ...]:
     found: set[str] = set()
     for path in paths:
-        if path.startswith("patches/"):
-            parts = path.split("/", 2)
-            if len(parts) >= 3 and parts[1] and not parts[1].startswith("_"):
-                found.add(parts[1])
+        package = _package_of(path)
+        if package:
+            found.add(package)
         match = _PATCH_TEST_RE.match(path)
         if match:
             found.add(match.group(1))
@@ -86,8 +97,28 @@ def _blob_text_lf(ref: str, path: str) -> bytes | None:
     return proc.stdout.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
 
 
+def _renamed_from(base: str, head: str, path: str) -> str | None:
+    """The path this file had at ``base`` if the range moved it, else None."""
+    proc = subprocess.run(
+        ["git", "-C", str(_REPO), "diff", "-M", "--name-status", "--diff-filter=R", base, head],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        check=False,
+    )
+    for line in proc.stdout.splitlines():
+        parts = line.split("\t")
+        if len(parts) == 3 and parts[2] == path:
+            return parts[1]
+    return None
+
+
 def _only_line_endings_changed(base: str, head: str, path: str) -> bool:
+    """True when the file's text is the same at both ends of the range, also across a move of the file."""
     before = _blob_text_lf(base, path)
+    if before is None:
+        source = _renamed_from(base, head, path)
+        before = _blob_text_lf(base, source) if source else None
     after = _blob_text_lf(head, path)
     return before is not None and before == after
 
@@ -104,13 +135,12 @@ def _implementation_patch_ids(
     """
     found: set[str] = set()
     for path in paths:
-        if not path.startswith("patches/") or not path.endswith("/patch.py"):
+        package = _package_of(path)
+        if package is None or path != f"{_PATCH_PREFIX}{package}/patch.py":
             continue
         if base and head and _only_line_endings_changed(base, head, path):
             continue
-        parts = path.split("/", 2)
-        if len(parts) >= 3 and parts[1] and not parts[1].startswith("_"):
-            found.add(parts[1])
+        found.add(package)
     return tuple(sorted(found))
 
 
@@ -125,10 +155,9 @@ def _composition_patch_ids(
     """
     found = set(_implementation_patch_ids(paths, base, head))
     for path in paths:
-        if path.startswith("patches/") and path.endswith("/patch.toml"):
-            parts = path.split("/", 2)
-            if len(parts) >= 3 and parts[1] and not parts[1].startswith("_"):
-                found.add(parts[1])
+        package = _package_of(path)
+        if package and path == f"{_PATCH_PREFIX}{package}/patch.toml":
+            found.add(package)
     return tuple(sorted(found))
 
 
@@ -339,7 +368,7 @@ def _experiment_sources(
 
     required: set[str] = set()
     for patch_id in patches:
-        manifest = _REPO / "patches" / patch_id / "patch.toml"
+        manifest = bc_paths.PATCHES / patch_id / "patch.toml"
         if not manifest.is_file():
             continue
         metadata = tomllib.loads(manifest.read_text(encoding="utf-8"))
@@ -548,7 +577,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     ]
     missing_tests: list[str] = []
     for patch_id in patch_ids:
-        patch_toml = _REPO / "patches" / patch_id / "patch.toml"
+        patch_toml = bc_paths.PATCHES / patch_id / "patch.toml"
         if not patch_toml.is_file():
             continue
         test_path = _REPO / "tools" / "tests" / "patch" / f"test_{patch_id}.py"

@@ -9,19 +9,20 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from bigcherry.core import paths  # noqa: E402
 from bigcherry.patcher import apply_all  # noqa: E402
 from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
-_VENDOR = _REPO / "vendor/llama.cpp/ggml/src/ggml-backend-meta.cpp"
-_spec = importlib.util.spec_from_file_location("patch_1320", _REPO / "patches/1320_meta_compute_timing/patch.py")
+_VENDOR = paths.llama_root() / "ggml/src/ggml-backend-meta.cpp"
+_spec = importlib.util.spec_from_file_location("patch_1320", _REPO / "engines/llamacpp/patches/1320_meta_compute_timing/patch.py")
 assert _spec is not None and _spec.loader is not None
 _module = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_module)
 
 
 def _load_patch(patch_id: str):
-    path = _REPO / f"patches/{patch_id}/patch.py"
+    path = _REPO / f"engines/llamacpp/patches/{patch_id}/patch.py"
     spec = importlib.util.spec_from_file_location(f"patch_{patch_id}", path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)

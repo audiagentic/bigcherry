@@ -1,4 +1,4 @@
-"""QFP23 runtime profiles: parse and validate the release profile folder (src/profile/*.ini).
+"""QFP23 runtime profiles: parse and validate the release profile folder (engines/llamacpp/overlay/profile/*.ini).
 
 Model- and scope-specific runtime settings live in these files, not in patch code. They sit in the source overlay (part
 of the source identity); the build copies the folder next to the binaries (bin/profile/, part of the runtime bundle),

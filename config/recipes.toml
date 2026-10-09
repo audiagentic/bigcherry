@@ -84,8 +84,8 @@ required-state = "validated"
 # regression; the two fixes are structurally independent edits, so the
 # correct action is to reject the combined 1000 package (original evidence
 # and claim preserved verbatim in
-# patches/1000_rdna4_mmq_q2k_q6k_fix/SUMMARY.md and
-# patches/1000_rdna4_mmq_q2k_q6k_fix/evidence/validation.json, not erased)
+# engines/llamacpp/patches/1000_rdna4_mmq_q2k_q6k_fix/SUMMARY.md and
+# engines/llamacpp/patches/1000_rdna4_mmq_q2k_q6k_fix/evidence/validation.json, not erased)
 # and extract the independently-real Q6_K gain into a new patch
 # (1006_rdna4_mmq_q6k_codegen_fix, currently untested pending its own
 # fresh Q6-only hardware A/B before promotion -- the combined-package
@@ -120,7 +120,7 @@ required-state = "validated"
 # 0.0% control regression, bit-identical output (contract
 # RD73-STABLE-GRAPH-CACHE-KEY, hash 8827bd6d) -- that original promotion
 # evidence is PRESERVED, not erased; it remains in
-# patches/1233_rd73_stable_graph_cache_key/evidence/validation.json and the
+# engines/llamacpp/patches/1233_rd73_stable_graph_cache_key/evidence/validation.json and the
 # ledger. A later balanced, order-rotated, composition-verified 4-arm A/B on
 # the SAME contract workload (MTP speculative decode, tierL-qwen27b-q8,
 # gfx1100x2, -sm tensor) instead measured RD73 as a REGRESSION: tg128 -1.96%,
@@ -166,7 +166,7 @@ required-state = "validated"
 # flat; bit-identical test-backend-ops correctness every session. Sessions measured
 # while another GPU job ran concurrently are withdrawn (evidence/withdrawn.json).
 # NOT covered: dual-XTX production lane (gate is RDNA4/RDNA2; gfx1100 keeps 1237).
-# This original promotion evidence is PRESERVED (patches/1265.../evidence/), not
+# This original promotion evidence is PRESERVED (engines/llamacpp/patches/1265.../evidence/), not
 # erased. Later the same day the patch's runtime gate was narrowed from open
 # RDNA4/RDNA2 family ranges to exact cc==gfx1201||cc==gfx1030, changing 1265's
 # implementation digest -- a changed implementation invalidates prior evidence
@@ -237,7 +237,7 @@ patches = [
     "1274_mmvq_kquant_f32_decode",
     "1265_rd30b_moe_mmq_compact_grid_rdna4_rdna2",
     # PROMOTED 2026-10-05 (QFP18 lightweight tier): the Qwen3.8 Flash-Next production stack (profile v6), each
-    # measured as promoted base vs base + patch in its adoption ABBA (evidence: patches/<id>/README.md, SUMMARY.md);
+    # measured as promoted base vs base + patch in its adoption ABBA (evidence: engines/llamacpp/patches/<id>/README.md, SUMMARY.md);
     # whole stack vs native llama.cpp +29% / +45% decode at 8K / 48K; 27B dual-XTX no-regression (flags at
     # defaults) identical acceptance and greedy text, decode/prefill within noise. Runtime flags off by default;
     # BIGCHERRY_FEATURES=flashnext enables the profile.
@@ -558,10 +558,6 @@ patches = []
 [experiment.ar-cpu-root-kpool-topk]
 # RNX02: 1291 + 1292 + deterministic radix TOP_K ties (1294); determinism + A/B vs ar-cpu-root-kpool.
 patches = []
-
-[experiment.ar-cpu-root-kpool-sync]
-# QFN01/RNX01: + one scheduler input sync per split (1293); A/B against ar-cpu-root-kpool.
-patches = ["1293_sched_single_input_sync"]
 
 [experiment.allreduce-root3]
 # 1244 alone: n==3 internal AllReduce (XTX x2 + R9700). Multi-arch build gfx1100,gfx1201.

@@ -1,5 +1,5 @@
 """Shared real-perplexity (PPL) comparison primitive -- extracted 2026-09-11
-from patches/1207_rd17_moe_topk_down_fold/validation/rd17_correctness.py so
+from engines/llamacpp/patches/1207_rd17_moe_topk_down_fold/validation/rd17_correctness.py so
 a second patch (RD13) needing the same real-model-forward-pass correctness
 proof does not duplicate the parsing/comparison logic. Runs llama.cpp's own
 llama-perplexity tool for real and parses its "Final estimate: PPL = X +/-

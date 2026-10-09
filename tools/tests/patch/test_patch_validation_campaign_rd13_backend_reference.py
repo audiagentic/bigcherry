@@ -35,7 +35,7 @@ from bigcherry.patch import validation_producer as vp  # noqa: E402
 from bigcherry.patch.validation import ArtifactRef  # noqa: E402
 
 SUBJECT_PATCH = "1206_rd13_mul_mat_add_view_fusion"
-PATCH_DIR = TOOLS_ROOT.parent / "patches" / SUBJECT_PATCH
+PATCH_DIR = TOOLS_ROOT.parent / "engines" / "llamacpp" / "patches" / SUBJECT_PATCH
 CONTRACT_ARCHITECTURES = ("gfx1100", "gfx1201", "gfx1030")
 FAT_TARGETS = "gfx1100;gfx1201;gfx1030"
 

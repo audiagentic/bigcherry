@@ -37,7 +37,7 @@ proof and scientific qualification are separate gates.
 Use this shape:
 
 ```text
-patches/<patch-id>/
+engines/llamacpp/patches/<patch-id>/
     patch.toml
     patch.py
     SUMMARY.md
@@ -56,7 +56,7 @@ Large logs, build trees, binaries, models, and raw measurements belong under
 package. Do not use `docs/evidence/` for a single patch's validation authority;
 that directory is for cross-cutting evidence narratives.
 
-`patches/_template/` is a documentation template, not a registered patch.
+`engines/llamacpp/patches/_template/` is a documentation template, not a registered patch.
 Directories or files below a reserved component beginning with `_` are not
 discoverable. Do not add a second patch implementation, campaign engine, or
 evidence framework; extend the owning `bigcherry.patch` domain after reading
@@ -110,7 +110,7 @@ Rules that the registry enforces:
   non-empty; a patch with nothing genuinely specific to assert carries none.
 
 For a packaged patch, `patch.toml` is the metadata authority. Do not duplicate
-its state, order, or dependency fields in `patches/catalog.toml` or in
+its state, order, or dependency fields in `engines/llamacpp/patches/catalog.toml` or in
 `patch.py`.
 
 ## Tags

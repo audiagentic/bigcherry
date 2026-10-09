@@ -9,11 +9,12 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from bigcherry.core import paths  # noqa: E402
 from bigcherry.patcher import apply_all  # noqa: E402
 from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
-_COMMON = _REPO / "vendor/llama.cpp/ggml/src/ggml-cuda/common.cuh"
+_COMMON = paths.llama_root() / "ggml/src/ggml-cuda/common.cuh"
 
 
 def _load(name, path):
@@ -24,8 +25,8 @@ def _load(name, path):
     return module
 
 
-_module = _load("patch_1304", _REPO / "patches/1304_cuda_graph_lru_cap/patch.py")
-_p1302 = _load("patch_1302", _REPO / "patches/1302_cuda_graph_oom_evict/patch.py")
+_module = _load("patch_1304", _REPO / "engines/llamacpp/patches/1304_cuda_graph_lru_cap/patch.py")
+_p1302 = _load("patch_1302", _REPO / "engines/llamacpp/patches/1302_cuda_graph_oom_evict/patch.py")
 
 _GGML_CUDA = """\
 static void ggml_cuda_graph_update_executable(ggml_backend_cuda_context * cuda_ctx, const void * graph_key) {

@@ -10,8 +10,8 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from bigcherry.patcher import apply_all  # noqa: E402
 from bigcherry.core import paths  # noqa: E402
+from bigcherry.patcher import apply_all  # noqa: E402
 from bigcherry.patch import rebase as patch_rebase  # noqa: E402
 from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
 
@@ -32,19 +32,23 @@ def _load(path: Path, name: str):
     return module
 
 
-_P = _load(_REPO / "patches/1346_mtp_prompt_overlap/patch.py", "patch_1346")
+_P = _load(_REPO / "engines/llamacpp/patches/1346_mtp_prompt_overlap/patch.py", "patch_1346")
+
+
+def _only(module, path):
+    return [p for p in module.PATCHES if p.path == path]
 
 
 class Patch1346StaticContracts(unittest.TestCase):
     def test_metadata_and_explicit_edit_contracts(self):
-        meta = tomllib.loads((_REPO / "patches/1346_mtp_prompt_overlap/patch.toml").read_text(encoding="utf-8"))
+        meta = tomllib.loads((_REPO / "engines/llamacpp/patches/1346_mtp_prompt_overlap/patch.toml").read_text(encoding="utf-8"))
         self.assertEqual(meta["id"], "1346_mtp_prompt_overlap")
         self.assertEqual(meta["kind"], "diagnostic")
         self.assertEqual(meta["tags"], ["mtp"])
         self.assertIn("1317_spec_round_timing", meta["requires"])
         self.assertIn("1348_mtp_deferred_catchup", meta["requires"])
 
-        src = (_REPO / "patches/1346_mtp_prompt_overlap/patch.py").read_text(encoding="utf-8")
+        src = (_REPO / "engines/llamacpp/patches/1346_mtp_prompt_overlap/patch.py").read_text(encoding="utf-8")
         edits = [edit for patch in _P.PATCHES for edit in patch.edits]
         self.assertGreater(len(edits), 0)
         self.assertEqual(src.count("expect_matches=1,"), len(edits))
@@ -56,7 +60,7 @@ class Patch1346StaticContracts(unittest.TestCase):
             self.assertGreater(edit.max_span_lines, 0)
 
     def test_only_qualified_timing_surface_remains(self):
-        src = (_REPO / "patches/1346_mtp_prompt_overlap/patch.py").read_text(encoding="utf-8")
+        src = (_REPO / "engines/llamacpp/patches/1346_mtp_prompt_overlap/patch.py").read_text(encoding="utf-8")
         executable = src[src.index("from __future__ import annotations"):]
         self.assertEqual([doc.name for doc in _P.ENV_DOCS], ["BIGCHERRY_MTP_PROMPT_TIMING"])
         self.assertEqual([doc.default for doc in _P.ENV_DOCS], ["0"])

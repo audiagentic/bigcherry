@@ -1,4 +1,4 @@
-"""HI119: patches/1239 (test_bigcherry_moe_glu_fusion) and 1240
+"""HI119: engines/llamacpp/patches/1239 (test_bigcherry_moe_glu_fusion) and 1240
 (--moe-glu-file CLI hook) against the real pinned vendor source.
 
 Real-hardware validation (Brutus, 2026-08-25) already confirmed these
@@ -16,6 +16,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from bigcherry.core import paths  # noqa: E402
 from bigcherry.patcher import apply_all
 
 
@@ -33,7 +34,7 @@ _CHAIN_IDS = (
 
 def _load_patch_module(patch_id: str):
     spec = importlib.util.spec_from_file_location(
-        patch_id, ROOT / "patches" / patch_id / "patch.py"
+        patch_id, ROOT / "engines" / "llamacpp" / "patches" / patch_id / "patch.py"
     )
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
@@ -52,7 +53,7 @@ def _all_patches():
 
 
 def _apply_to_copy(tmp_path: Path, patches) -> Path:
-    vendor = ROOT / "vendor" / "llama.cpp"
+    vendor = paths.llama_root()
     target = tmp_path / _REL
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(vendor / _REL, target)

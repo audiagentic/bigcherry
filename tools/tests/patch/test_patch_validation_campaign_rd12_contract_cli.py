@@ -72,7 +72,7 @@ class RD12DedicatedPathDeletionTests(unittest.TestCase):
                 self.assertNotIn("run_rd12_contract", line)
 
     def test_generic_producer_path_is_the_only_rd12_entry(self) -> None:
-        toml = TOOLS_ROOT.parent / "patches" / PATCH_ID / "validation" / "producer.toml"
+        toml = TOOLS_ROOT.parent / "engines" / "llamacpp" / "patches" / PATCH_ID / "validation" / "producer.toml"
         self.assertTrue(toml.is_file())
         self.assertIn('standard_campaign = "run"', toml.read_text(encoding="utf-8"))
 
@@ -180,7 +180,7 @@ def _binding_context(run_dir: Path) -> campaign_producer.ProducerEvidenceBinding
     return campaign_producer.ProducerEvidenceBindingContext(
         run_dir=run_dir,
         patch_id=PATCH_ID,
-        patch_path=(TOOLS_ROOT.parent / "patches" / PATCH_ID / "validation.toml"),
+        patch_path=(TOOLS_ROOT.parent / "engines" / "llamacpp" / "patches" / PATCH_ID / "validation.toml"),
         base_revision="a" * 40,
         patched_source_tree="tree:subject",
         campaign_identity_digest="c" * 64,
@@ -1125,7 +1125,7 @@ def cfg_pinned() -> str:
 
 def _spec_artifact_names() -> frozenset[str]:
     selection = vp.resolve_producer(
-        patch_dir=TOOLS_ROOT.parent / "patches" / PATCH_ID,
+        patch_dir=TOOLS_ROOT.parent / "engines" / "llamacpp" / "patches" / PATCH_ID,
         producer_id="rd12",
     )
     return selection.spec.artifact_names

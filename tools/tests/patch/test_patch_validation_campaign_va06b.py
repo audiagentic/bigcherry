@@ -3,7 +3,7 @@ lane over a real llama-server HTTP harness.
 
 PA36 RD73 legacy compatibility retirement: the lane moved from shared
 validation_campaign.py (run_rd73_mtp_server_lane) into RD73's producer
-(patches/1233_rd73_stable_graph_cache_key/validation/producer.py,
+(engines/llamacpp/patches/1233_rd73_stable_graph_cache_key/validation/producer.py,
 _run_mtp_server_lane). This test now exercises the producer-side lane
 directly.
 
@@ -38,7 +38,7 @@ from bigcherry.experiment import attestation as att  # noqa: E402
 from bigcherry.experiment import server_execution as se  # noqa: E402
 
 PRODUCER_DIR = Path(
-    "patches/1233_rd73_stable_graph_cache_key/validation"
+    "engines/llamacpp/patches/1233_rd73_stable_graph_cache_key/validation"
 )
 PRODUCER_MODULE = "patches_1233_rd73_stable_graph_cache_key_validation_producer_va06b"
 

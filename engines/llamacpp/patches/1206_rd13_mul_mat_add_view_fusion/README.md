@@ -1,8 +1,10 @@
 # RD13: mul_mat + RESHAPE + add fusion
 
-## Current package status (2026-09-21)
+## Current package status (2026-10-09)
 
-The patch is contract-bound through `patch.toml` and `validation.toml`. The current patch-local producer supplies the required full-vocabulary `backend_reference` correctness evidence, while the generic scaffold supplies activation evidence. The producer manifest explicitly forbids the generic performance-benchmark CLI and the producer returns no performance/controls metrics; RD13 therefore remains **BLOCKED** for promotion until an authorized scope decision or a reviewed producer implementation adds those lanes. The historical sections below are retained as provenance and do not override this disposition.
+Patch 1206 remains `untested` and not promoted. The 2026-09-21 `validation/producer.py::run` implementation **already** owns positive/negative paired tg128 benchmark lanes, activation probes and full-vocabulary backend-reference correctness; `validation.toml` binds all six checks. The manifest forbids the *generic* benchmark CLI to prevent duplicate measurements, not the producer's own benchmark. The historical September 2026 evidence predates pinned b11474 and cannot satisfy current-pin promotion. The remaining gate is an isolated four-session, ten-pair/rounds-per-session, architecture-specific contract campaign with CI95-low >0% and <=1% control regression, plus VIEW/alias correctness. See PRBE12 and BCOP80.
+
+The historical sections below document previous migration states; any claim that the current producer lacks performance/controls is superseded by this status.
 
 ## Real backend_reference correctness evidence (2026-09-13, gfx1100)
 
@@ -46,18 +48,18 @@ resolvable architecture string (observed: `architecture="<unknown>"`,
 other real `AttestedServerSession` caller
 (`tools/bigcherry/campaign/benchmark.py`).
 
-At the time of this historical run, the contract had not yet been bound. That statement is superseded: the current package binds the contract and has a real backend-reference producer, but its performance/controls lanes remain intentionally unsatisfied as described in the current package-status section above.
+At the time of this historical run, the contract had not yet been bound. That statement is superseded: the current package binds the contract and has a real backend-reference producer, and now also has producer-owned performance/controls lanes; no qualifying b11474 promotion result has been recorded.
 
 ## Scope
 
 Extends the existing `mul_mat`+`add` fusion in `ggml_cuda_try_fuse` to accept one
-`RESHAPE` node between the matmul and the add (via `ggml_can_fuse_subgraph`,
+`RESHAPE` or qualified zero-offset contiguous `VIEW` node between the matmul and the add (via `ggml_can_fuse_subgraph`,
 verifying the view's `src[0]` is the matmul), instead of only matching an `add`
 node directly after the matmul.
 
 ## Why
 
-SSM/MoE models (e.g. Qwen3-MoE-family) insert a reshape view between the output
+GDN-hybrid models (confirmed for Qwen3.5-4B) insert a reshape view between the output
 projection and the residual add, so the existing fusion never fired for them and
 every layer ran a separate `add` kernel instead of the fused epilogue.
 
@@ -68,7 +70,7 @@ Ported from `stew675-rdna-boosts` fork commit `0153d580d`
 
 ## Validation package
 
-`validation.toml` currently wires six required checks: `apply`, `build`, `activation`, `correctness`, `performance`, and `controls`. The activation check uses the trace-marker regex `BIGCHERRY_PATCH_HIT patch=1206_rd13 path=mul_mat_add_view_fusion_(?:f|q)`, while the patch-local producer supplies full-vocabulary `backend_reference` correctness. Performance and controls remain unsatisfied because `producer.toml` explicitly forbids the generic performance-benchmark CLI; this is the documented reason the current full-campaign row remains BLOCKED.
+`validation.toml` currently wires six required checks: `apply`, `build`, `activation`, `correctness`, `performance`, and `controls`. The activation check uses the trace-marker regex `BIGCHERRY_PATCH_HIT patch=1206_rd13 path=mul_mat_add_view_fusion_(?:f|q)`, while the patch-local producer supplies full-vocabulary `backend_reference` correctness. The producer now runs its own positive/control paired tg128 benchmarks; `producer.toml` forbids only the duplicate generic performance CLI. Historical BLOCKED rows do not constitute a current-pin campaign verdict.
 
 ## Real hardware evidence (2026-09-11)
 
@@ -188,8 +190,7 @@ change.
 
 **Historical migration note (superseded; contract is now bound)**: The historical PPL-only producer did not satisfy the now-bound
 `backend_reference` check; the current patch-local producer does. The current producer supplies that full-vocabulary evidence, while
-performance and controls remain intentionally unsatisfied under the
-current producer manifest. The model-binding fix and contract binding are
+the historical performance and controls record was unsatisfied; the current producer implements these lanes, but no new qualifying b11474 run is established. The model-binding fix and contract binding are
 complete; promotion remains blocked until the missing lanes receive an
 authorized scope decision.
 
@@ -201,4 +202,4 @@ authorized scope decision.
   run (that is what the `activation` trace-marker check in `validation.toml`
   is for, run separately) -- the PPL check and the activation check are
   complementary, not substitutes for each other.
-- The RD13 Experiment Contract is now bound in `patch.toml` and its required correctness/activation evidence is implemented. Performance and controls remain intentionally unsatisfied because the current producer manifest forbids generic performance-benchmark execution; the patch remains BLOCKED and must not be promoted until those lanes are added by an authorized, reviewed scope change or the contract is explicitly re-dispositioned.
+- The RD13 Experiment Contract is now bound in `patch.toml` and its required correctness/activation evidence is implemented. The current producer implements performance/controls internally while forbidding the duplicate generic benchmark CLI. Promotion remains blocked until a new current-pin, four-session per-architecture campaign satisfies the frozen contract and correctness gates.

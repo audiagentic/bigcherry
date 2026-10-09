@@ -127,7 +127,7 @@ be tuned:
   different launch signature broke that assumption. It showed up as a ~2%
   *end-to-end* regression under the exact workload where graph replay
   matters, despite the candidate's own per-call output being numerically
-  correct. Demoted (`patches/1233_rd73_stable_graph_cache_key`,
+  correct. Demoted (`engines/llamacpp/patches/1233_rd73_stable_graph_cache_key`,
   `docs/planning/completed/hip-autotune/HI162.md`) specifically because
   per-candidate correctness evidence alone didn't catch it.
 - **Precision propagation.** `numerical_class` (`exact_baseline` /

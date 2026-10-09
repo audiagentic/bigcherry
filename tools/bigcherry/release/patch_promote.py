@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
+from ..core import paths
 from . import notes as release_notes
 from . import pin_release
 
@@ -64,7 +65,7 @@ def _git(root: Path, *args: str, check: bool = True) -> str:
 
 
 def _load_patch(root: Path, patch_id: str) -> PatchInfo:
-    patch_root = root / "patches" / patch_id
+    patch_root = paths.LLAMACPP.patches_root(root) / patch_id
     path = patch_root / "patch.toml"
     if not path.is_file():
         raise PatchPromoteError(f"unknown patch {patch_id!r}: {path} is missing")
