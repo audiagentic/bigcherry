@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "tier": "profile-evidence",
+  "patch-id": "1355_hc_post_gate_fuse",
+  "pinned": "b11474",
+  "subject-digest": "c3b6e1724f1aad15ab259c2867aa417deea5fe7d253f0b3be4c34c241f24da20",
+  "default-on": true,
+  "models": [
+    "Qwen3.8-Flash-Next UD-IQ4_XS (production profile: 2x RX 7900 XTX + R9700 tensor split, MTP drafter on the RX 6900 XT, ctx 245760, f16 KV, ub512)",
+    "Gemma 4 26B (tensor split, no draft; no-regression only, the path does not engage)",
+    "Qwen3.6-35B (tensor split, no draft; no-regression only, the path does not engage)"
+  ],
+  "checks": {
+    "ab": "one binary (b-metamem-hcf1 = production + 1355), fused (default) against BIGCHERRY_HC_POST_GATE_FUSE=0: decode +0.7% at 8K, +0.5% at 24K, +0.5% on a second request, pooled over the rounds below; single rounds overlap. Prefill unchanged.",
+    "activation": "BIGCHERRY_PATCH_HIT marker appears only in the fused arms on Flash-Next; 0 hits on Gemma 4 26B and Qwen3.6-35B (the patch only matches Qwen4Exp hyper-connection gates: SCALE -> SIGMOID -> SCALE consumed inside DSV4_HC_POST).",
+    "identity": "greedy text identical in every run at 8K / 24K / 98K on Flash-Next, and on Gemma 4 26B and Qwen3.6-35B.",
+    "mechanics": "offline tests and patch-lint pass; composition with the production set clean.",
+    "no-regression": "Gemma 4 26B and Qwen3.6-35B, tensor split, no draft, default against off: text identical, prompt and decode speed unchanged (the path does not engage); Qwen3.8-27B on two RX 7900 XTX (prod27b-ab.sh, run nr27-1355): no change, text identical."
+  }
+}

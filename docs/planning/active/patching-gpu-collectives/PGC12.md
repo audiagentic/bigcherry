@@ -55,6 +55,9 @@ Plain and MTP A/B vs RCCL: decode gain kept in both, pp256/pp1024/pp4096 within 
 
 2026-10-01 profile (prof-27b-q8-2, pp2048 ubatch): per-device compute 0.93 s vs AllReduce 2.4 s per 2048-token ubatch (profiled; ~4 ms/AR unprofiled), start skew between XTX ~0.1 ms, so service not imbalance. Links: XTX PCIe 4.0 x8, R9700 x4, no P2P: host-staged ceiling ~6-7 GB/s, measured 5-10 GB/s. Prefill lever is compute/communication overlap (chunked AR along tokens) or fewer prefill ARs, not RCCL tuning.
 
+## 2026-10-09 PGC13 prerequisite
+Before per-topology calibration, prove actual provider completion, phase, graph/ubatch identity, first-provider-switch latency and RCCL linkage. Current lab-only 1277 records `prefer_internal` (predicted route), not successful completion, and its static trace counter is non-atomic. Trace outside timed windows; never infer phase from `ne1`. PGC13 may consume receipts offline, but cannot add a second dispatcher, phase policy or `-ts` tuner. The phase hint, if justified, belongs here and in existing 0840.
+
 ## Change Log
 
 - 2026-10-01T05:46:32.484296+00:00 (created-by): Created by agent

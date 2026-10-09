@@ -44,6 +44,8 @@ class Patch1355Mechanics(unittest.TestCase):
         overlay_paths = frozenset(texts)
 
         for module in selected.modules:
+            if module.patch_id == "1355_hc_post_gate_fuse":
+                continue  # in the production selection once validated; each test applies it itself
             probe = patch_rebase.probe_patch(
                 module,
                 _V,

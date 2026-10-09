@@ -71,6 +71,9 @@ Yardstick: Q8_0 weight quantization itself is ~0.001-0.003 mean KLD vs full prec
 
 2026-10-02 PROMOTED: 0860 + 1225 + 0840 in validated-enhancements (commit after 8231e4d2). Evidence t-0840e-gfx1100-s1..s4 tg128 +3.87/+3.92/+3.97/+3.98%, pp512 +0.02..+0.04%, bit-identical; patch-verify-evidence 0840 = validated-evidence. Follow-ups: PGC12 phase-aware routing (prompt tail), PGC13 calibration pre-run, MTP no-regression check in production.
 
+## 2026-10-09 PGC13 calibration reconciliation
+Current `0860_allreduce_provider_cli/patch.py` sets `ADAPTIVE_SWITCH_BYTES_DEFAULT = 96 << 10`, and 0840 snapshots it per comm context. The historical 1 MiB/64 KiB notes above describe other runs, sometimes BF16 wire; do not pool them with exact-F32 evidence. Validated `t-0840e-gfx1100-s1..s4`: tg128 +3.87%..+3.98%, pp512 +0.02%..+0.04%, bit-identical. No measured auto-calibration gain. PGC13 owns a bounded offline comparison only; PGC12 owns phase/transition attribution. N=3 CPU-root (1291, 64 KiB) is a separate provider, not an 0840 threshold arm.
+
 ## Change Log
 
 - 2026-09-30T04:03:45.724752+00:00 (created-by): Created by agent
