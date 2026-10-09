@@ -17,7 +17,7 @@ import re
 from bigcherry.patcher import Edit, EnvDoc, FilePatch
 
 GROUP = "rdna-boosts"
-STATE = "untested"
+STATE = "validated"
 
 _A_START = ("    // If the previous cgraph had a defined UID it can be used to skip rebuilding the subgraphs per simple backend.\n"
             "    const bool needs_rebuild = (cgraph->uid == 0) || (cgraph->uid != backend_ctx->uid);\n")
@@ -40,15 +40,14 @@ _N_EXEC = ("    if (bc_mt_on) {  // bigcherry 1320: rebuild done, execution star
            "            auto & bcj = backend_ctx->backend_configs[j];\n"
            "            const ggml_status status = ggml_backend_graph_compute_async(bcj.backend, bcj.cgraphs[i].cgraph_main);\n")
 
-_A_AR = ("        if (n_backends > 1 && i < backend_ctx->n_subgraphs - 1) {\n"
-         "            bool backend_allreduce_success = false;\n")
+# 0830 (experiment sets) inserts a declaration after this line and extends the fallback block, so neither anchor
+# below includes those lines.
+_A_AR = "        if (n_backends > 1 && i < backend_ctx->n_subgraphs - 1) {\n"
 _N_AR = ("        const int64_t bc_mt_l1 = bc_mt_on ? ggml_time_us() : 0;  // bigcherry 1320\n"
          "        bc_mt_launch += bc_mt_l1 - bc_mt_l0;\n"
-         "        if (n_backends > 1 && i < backend_ctx->n_subgraphs - 1) {\n"
-         "            bool backend_allreduce_success = false;\n")
+         "        if (n_backends > 1 && i < backend_ctx->n_subgraphs - 1) {\n")
 
-_A_END = ("                const ggml_status status = allreduce_fallback(i);\n"
-          "                if (status != GGML_STATUS_SUCCESS) {\n"
+_A_END = ("                if (status != GGML_STATUS_SUCCESS) {\n"
           "                    return status;\n"
           "                }\n"
           "            }\n"
@@ -56,8 +55,7 @@ _A_END = ("                const ggml_status status = allreduce_fallback(i);\n"
           "    }\n"
           "    return GGML_STATUS_SUCCESS;\n"
           "}\n")
-_N_END = ("                const ggml_status status = allreduce_fallback(i);\n"
-          "                if (status != GGML_STATUS_SUCCESS) {\n"
+_N_END = ("                if (status != GGML_STATUS_SUCCESS) {\n"
           "                    return status;\n"
           "                }\n"
           "            }\n"
@@ -92,7 +90,7 @@ PATCHES = [
                  expect_matches=1, max_span_lines=5),
             Edit(id="meta-timing-ar", anchor=re.escape(_A_AR), mode="replace", text=_N_AR,
                  guard=r"bc_mt_launch \+= bc_mt_l1 - bc_mt_l0;", rationale="Between launches and the AllReduce.",
-                 expect_matches=1, max_span_lines=3),
+                 expect_matches=1, max_span_lines=2),
             Edit(id="meta-timing-end", anchor=re.escape(_A_END), mode="replace", text=_N_END,
                  guard=r"BIGCHERRY_META_TIMING n_nodes=", rationale="End of graph_compute.",
                  expect_matches=1, max_span_lines=10),

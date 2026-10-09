@@ -2,7 +2,7 @@
 id: QFP40
 order: 40
 plan: patching-qwen-flash-next
-state: pending
+state: completed
 created-at: '2026-10-07T00:39:56.573121+00:00'
 breadth: ''
 skill: intermediate
@@ -245,3 +245,4 @@ Finding: **do not promote 1295 as-is**. First measure whether 1334 already remov
 - 2026-10-07T13:34:09.463673+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-08T09:46:22.046779+00:00 (updated-by): Updated: section:notes
 - 2026-10-09T03:10:18.500964+00:00 (updated-by): Updated: section:notes
+- 2026-10-09T04:41:38.650098+00:00 (state-transition): State: pending → completed

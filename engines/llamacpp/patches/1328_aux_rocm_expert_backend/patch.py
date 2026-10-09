@@ -243,8 +243,8 @@ _COPY_FALLBACK_NEW = r'''    // BigCherry 1328: no P2P for the scoped auxiliary 
     }
 '''
 
+# One line only: 1325 (split timing) inserts its timestamp between this line and the graph_compute call.
 _SCHED_COMPUTE = """        if (!sched->callback_eval) {
-            enum ggml_status ec = ggml_backend_graph_compute_async(split_backend, &split->graph);
 """
 _SCHED_COMPUTE_NEW = r"""        for (int j = 0; j < split->graph.n_nodes; ++j) {
             if (ggml_backend_meta_is_mirrored_partial_add(split->graph.nodes[j])) {
@@ -260,7 +260,6 @@ _SCHED_COMPUTE_NEW = r"""        for (int j = 0; j < split->graph.n_nodes; ++j) 
         }
 
         if (!sched->callback_eval) {
-            enum ggml_status ec = ggml_backend_graph_compute_async(split_backend, &split->graph);
 """
 
 _SCHED_FREE = """    ggml_gallocr_free(sched->galloc);
@@ -555,7 +554,7 @@ PATCHES = [
             Edit(id="sched-aux-merge-trace", anchor=re.escape(_SCHED_COMPUTE), mode="replace", text=_SCHED_COMPUTE_NEW,
                  guard=r"hook=sched_execute_merge",
                  rationale="Runtime trace immediately before the scheduler executes the Meta split containing the marked aux/shared merge.",
-                 expect_matches=1, max_span_lines=3),
+                 expect_matches=1, max_span_lines=2),
             Edit(id="sched-free-aux-stage", anchor=re.escape(_SCHED_FREE), mode="replace", text=_SCHED_FREE_NEW,
                  guard=r"BigCherry 1328: pinned aux bounce buffer",
                  rationale="Free scheduler-owned pinned staging before allocator/context teardown.",
