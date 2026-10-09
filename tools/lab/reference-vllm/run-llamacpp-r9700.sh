@@ -7,6 +7,7 @@
 # dflash = the DFlash2 drafter with 7 tokens (what the vLLM container uses), none = no drafter.
 # KV is f16; q8_0 only if f16 does not fit (KV_FALLBACK=q8_0 is then tried once). Never q4.
 # Each arm writes <out-dir>/<arm>-<kv>.engine-bench.json and <arm>-<kv>.server.log.
+# The server is stopped with SIGINT: a production build has no /shutdown route (that is patch 0800, tuning source only).
 # Run as a queue SCRIPT job so the GPU lock covers it:
 #   VIS=0,1,2,3 SCRIPT ref-llamacpp tools/lab/reference-vllm/run-llamacpp-r9700.sh @<build run> <out-dir> [depth...]
 # Usage: run-llamacpp-r9700.sh <llama-server> <out-dir> [depth-tokens...]
@@ -30,7 +31,7 @@ run_arm() {  # <arm> <kv type>
         *) echo "$arm: unknown arm"; return 2 ;;
     esac
     local serve=(-ngl 99 -c "${CTX:-180000}" -ub 512 -b 2048 -fa on --parallel 1 --threads 8 -ctk "$kv" -ctv "$kv" "${spec[@]}")
-    PYTHONPATH=tools python3 -m bigcherry engine-bench --engine llamacpp --binary "$bin" --model "$MODEL" --out "$out" --label "$arm-$kv" --depth "${depths[@]}" --decode "${DECODE:-512}" --reps 2 --health-timeout 600 --env "HIP_VISIBLE_DEVICES=${GPU:-2}" -- "${serve[@]}" 2>&1 | sed "s/^/$arm kv=$kv /"
+    PYTHONPATH=tools python3 -m bigcherry engine-bench --engine llamacpp --binary "$bin" --model "$MODEL" --out "$out" --label "$arm-$kv" --depth "${depths[@]}" --decode "${DECODE:-512}" --reps 2 --health-timeout 600 --shutdown sigint --env "HIP_VISIBLE_DEVICES=${GPU:-2}" -- "${serve[@]}" 2>&1 | sed "s/^/$arm kv=$kv /"
     local rc=${PIPESTATUS[0]}
     sleep 5
     return "$rc"
