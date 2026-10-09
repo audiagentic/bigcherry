@@ -169,6 +169,23 @@ Not tested: the fixture holds no case for the int8 and 4-bit GEMMs (`gemm_w8a8_*
 still assumed. They need a fixture recorded from an MXFP4 or int-quantised container. 164 of libr3's rows are not
 reached by this fixture.
 
+## libr11 beside libr3, 2026-10-09 (run `libr11-c1`, `tools/lab/radiance/libr11-compare.sh`)
+
+The other session's hand-written gfx11 plugin (`tools/lab/radiance-gfx1100/libr11`) on the same XTX and the same
+fixture cases as libr3. 630 checks, 0 failed, for both libraries.
+
+| Op | libr3 (compatibility layer) | libr11 (native gfx11) | Reading |
+|---|---|---|---|
+| `add` bf16, 10 shapes | 8.4 us geometric mean | 6.4 us | libr11's packed add is faster up to M=256 (5.3 against 7.5 us at M=1); libr3 is faster at M=512 (13.9 against 15.3 us) |
+| `gemm_nt` bf16, M<=16, 30 shapes | 16.0 us (9.6 to 40.0) | 267.9 us (251.8 to 284.0) | libr3 is 7 to 27 times faster |
+
+libr11 has no `mul` row in this fixture and no GEMM above M=16. Its own `r11_gemm_smoke` ctest exits non-zero
+although every case it prints passes; not looked into.
+
+What to take: the packed add form for small M (as a kdev candidate against `binary_flat`). Not the GEMM: libr4d's
+kernel through the emulated WMMA is already far ahead of it, so the native GEMM work should start from libr4d's
+tiling with gfx11 fragments, not from libr11's.
+
 ## References for the remaining port (found 2026-10-09; read before writing kernels)
 
 The 29 excluded units need the gfx12 WMMA builtins or the gfx12 transposed load. These exist to adapt from, so none
