@@ -1084,3 +1084,7 @@ patches = ["1263_prbe41_ssm_conv_channels_major"]
 [experiment.ar-small-latency]
 # 1275 alone: small mapped-host AllReduce slot-sync and launch-geometry controls; defaults preserve pristine behavior.
 patches = ["1275_ar_small_latency"]
+
+[experiment.moe-router-splitk]
+# QFP36: production + 1357; default off, enable with BIGCHERRY_MOE_ROUTER_SPLITK=1.
+patches = ["1357_moe_router_splitk"]
