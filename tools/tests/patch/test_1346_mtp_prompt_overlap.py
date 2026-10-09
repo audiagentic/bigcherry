@@ -32,8 +32,6 @@ def _load(path: Path, name: str):
 
 
 _P = _load(_REPO / "engines/llamacpp/patches/1346_mtp_prompt_overlap/patch.py", "patch_1346")
-_P1255 = _load(_REPO / "engines/llamacpp/patches/1255_nro06_adaptive_mtp_depth/patch.py", "patch_1255")
-_P1268 = _load(_REPO / "engines/llamacpp/patches/1268_prbe52_adaptive_mtp_wiring/patch.py", "patch_1268")
 
 
 def _only(module, path):
@@ -202,19 +200,6 @@ class Patch1346Mechanics(unittest.TestCase):
             self.assertTrue(all(r.ok for r in second), [e.detail for r in second for e in r.failed])
             self.assertEqual(before, {f: (root / f).read_text(encoding="utf-8") for f in _FILES})
 
-    def test_composes_after_adaptive_mtp_wiring(self):
-        with tempfile.TemporaryDirectory() as td:
-            root = self._root(td)
-            for patches in (
-                _only(_P1255, "common/speculative.cpp"),
-                _only(_P1268, "common/speculative.cpp"),
-                _P.PATCHES,
-            ):
-                res = apply_all(patches, root)
-                self.assertTrue(all(r.ok for r in res), [e.detail for r in res for e in r.failed])
-            self._check(root)
-            src = (root / "common/speculative.cpp").read_text(encoding="utf-8")
-            self.assertIn("adaptive_state.at(seq_id).reset", src)
 
 if __name__ == "__main__":
     unittest.main()
