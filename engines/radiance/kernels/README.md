@@ -123,11 +123,14 @@ Timings of the kernels shared with the first check are unchanged (geometric mean
 The 29 excluded units need the gfx12 WMMA builtins or the gfx12 transposed load. These exist to adapt from, so none
 of it should be written from nothing:
 
-- **Radiance already patched for gfx1100.** `github.com/mkadrlik/vllm-radiance-p2p`: radiance 0.5.7 (the older,
-  vLLM-based line) serving on two RX 7900 XTX, with gfx1100 patches and HIP kernel sources under `build/` and a
-  `Dockerfile.gfx1100`. Serves Qwen3.8-27B AWQ-INT4 at TP2 with MTP (23.8-28.9 t/s single stream by its README) and
-  W8A8 models. Needs IOMMU off or ACS override for its P2P transport. No licence statement found in the repository;
-  to be settled before any of its code is taken, and its kernels are for 0.5.7's interfaces, not 1.3.0's plugin ABI.
+- **A gfx1100 deployment of the older radiance, of limited use here.** `github.com/mkadrlik/vllm-radiance-p2p`:
+  radiance 0.5.7 (the vLLM-based line) serving on two RX 7900 XTX; Qwen3.8-27B AWQ-INT4 at TP2 with MTP, 23.8-28.9
+  t/s single stream by its README. Read 2026-10-09: it is vLLM plus Python string patches (`build/patches/*.py`)
+  that route GEMMs to AITER's Triton kernels (`aiter.ops.triton.gemm_a8w8`) and attention to Triton. It holds no
+  gfx1100 version of libr4d's HIP kernels, so it is not a source for the excluded units. What is relevant: its
+  all-reduce extensions (`build/patches/radiance_ar_ext.hip`, `radiance_ar_quant_ext.hip`), a router GEMM
+  (`router_gemm.hip`), and `docs/fast-reduce-mtp-deadlock.md` on a collective deadlock under graph capture. It needs
+  IOMMU off or an ACS override for P2P. GitHub reports no licence for it, so nothing is copied from it.
 - **Both layouts in one file.** llama.cpp `ggml/src/ggml-cuda/mma.cuh`: the same `mma()` for RDNA3
   (`__builtin_amdgcn_wmma_f32_16x16x16_{f16,bf16}_w32`, 16 elements per lane) and RDNA4 (`..._w32_gfx12`, 8 per lane).
 - **A libr4d kernel already ported to gfx11 here.** BigCherry patch `1253_nro04_gfx1100_bf16_chunked_gdn`
