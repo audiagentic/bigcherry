@@ -7,6 +7,9 @@ extern "C" int r11_add_bf16(const RadArgs*, RadStream);
 extern "C" int r11_mul_bf16(const RadArgs*, RadStream);
 extern "C" int r11_add_bf16_packed(const RadArgs*, RadStream);
 extern "C" int r11_mul_bf16_packed(const RadArgs*, RadStream);
+extern "C" int r11_rmsnorm_wave32(const RadArgs*,RadStream);
+extern "C" int r11_rmsnorm_block256(const RadArgs*,RadStream);
+extern "C" int r11_rmsnorm_dpp32(const RadArgs*,RadStream);
 
 // Describe the full-size (non-broadcast) operand geometry for rad-kbench.
 // The broadcast variant is covered separately by r11_selftest.
@@ -54,6 +57,27 @@ static const RadConstraint kBf16Gemm[] = {
     RAD_CGE("K",16), RAD_CLE("K",8192), RAD_CDIV("K",16)
 };
 
+// Each norm candidate takes the same model band, so rad-kbench runs both.
+static const RadConstraint kRmsNorm[] = {
+    RAD_CIN("dtype","bf16"), RAD_CGE("M",1), RAD_CLE("M",1024),
+    RAD_CGE("n",32), RAD_CLE("n",8192), RAD_CDIV("n",32)
+};
+static int rmsnorm_shape(const RadParam* p,int count,int operand,RadOpdDesc* out) {
+    if(!out || operand<0 || operand>2) return RAD_E_SHAPE;
+    const long long m=rad_param_getdim(p,count,"M",0);
+    const long long n=rad_param_getdim(p,count,"n",0);
+    const char* dtype=rad_param_gets(p,count,"dtype",nullptr);
+    if(m<1 || m>1024 || n<32 || n>8192 || n%32 ||
+       !dtype || std::strcmp(dtype,"bf16"))return RAD_E_SHAPE;
+    *out={};
+    out->dtype=operand==1?RAD_F32:RAD_BF16; // Radiance's canonical gain is F32.
+    out->rank=operand==1?1:2;
+    out->shape[0]=operand==1?n:m;
+    if(operand!=1)out->shape[1]=n;
+    out->fill=RAD_FILL_NORMAL;
+    out->idx_const=-1;
+    return RAD_OK;
+}
 static const RadConstraint kBf16[] = { RAD_CIN("dtype", "bf16") };
 // The packed candidate is STRICTLY a narrower row than the scalar baseline.
 static const RadConstraint kPacked[] = {
@@ -116,6 +140,48 @@ static const RadKernelInfo kKernels[] = {
         .n_constraints = sizeof(kPacked)/sizeof(kPacked[0]),
         .launch = r11_mul_bf16_packed,
         .opd_shape = binary_shape,
+    },
+    {
+        .name = "r11_rmsnorm_wave32",
+        .op = "rmsnorm",
+        .family = "norm",
+        .computes = "gfx1100 BF16 RMSNorm with F32/BF16 gain, one wave32 per row",
+        .shape = "1<=M<=1024, 32<=n<=8192 divisible by 32, strided dense rows",
+        .dtypes = "bf16",
+        .domain = RAD_DOMAIN_DEVICE,
+        .priority = 10,
+        .constraints = kRmsNorm,
+        .n_constraints = sizeof(kRmsNorm)/sizeof(kRmsNorm[0]),
+        .launch = r11_rmsnorm_wave32,
+        .opd_shape = rmsnorm_shape,
+    },
+    {
+        .name = "r11_rmsnorm_block256",
+        .op = "rmsnorm",
+        .family = "norm",
+        .computes = "gfx1100 BF16 RMSNorm with F32/BF16 gain, eight-wave LDS reduction",
+        .shape = "1<=M<=1024, 32<=n<=8192 divisible by 32, strided dense rows",
+        .dtypes = "bf16",
+        .domain = RAD_DOMAIN_DEVICE,
+        .priority = 8,
+        .constraints = kRmsNorm,
+        .n_constraints = sizeof(kRmsNorm)/sizeof(kRmsNorm[0]),
+        .launch = r11_rmsnorm_block256,
+        .opd_shape = rmsnorm_shape,
+    },
+    {
+        .name = "r11_rmsnorm_dpp32",
+        .op = "rmsnorm",
+        .family = "norm",
+        .computes = "gfx1100 BF16 RMSNorm; native DPP row permutes and ds_swizzle",
+        .shape = "1<=M<=1024, 32<=n<=8192 divisible by 32, strided dense rows",
+        .dtypes = "bf16",
+        .domain = RAD_DOMAIN_DEVICE,
+        .priority = 11,
+        .constraints = kRmsNorm,
+        .n_constraints = sizeof(kRmsNorm)/sizeof(kRmsNorm[0]),
+        .launch = r11_rmsnorm_dpp32,
+        .opd_shape = rmsnorm_shape,
     },
     {
         .name = "r11_gemm_bf16_scalar",
