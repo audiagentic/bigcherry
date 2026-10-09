@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import Iterable
 
 from ..core import paths
+from ..patch import evidence as patch_evidence
+from ..patch import profile_evidence
 from . import notes as release_notes
 from . import pin_release
 
@@ -125,7 +127,7 @@ def _set_state(info: PatchInfo) -> list[Path]:
     text = toml_path.read_text(encoding="utf-8")
     text = _replace_once(
         text,
-        r'(?m)^state\s*=\s*"[^"]+"\s*$',
+        r'(?m)^state[ \t]*=[ \t]*"[^"]+"[ \t]*$',
         'state = "validated"',
         label=f"{info.patch_id}/patch.toml state",
     )
@@ -134,10 +136,12 @@ def _set_state(info: PatchInfo) -> list[Path]:
 
     if py_path.is_file():
         text = py_path.read_text(encoding="utf-8")
-        if re.search(r'(?m)^STATE\s*=\s*"[^"]+"\s*$', text):
+        # [ \t], not \s: \s would also take the line break and any blank lines after the field, which changes the
+        # file beyond the state and with it the digest the evidence is bound to
+        if re.search(r'(?m)^STATE[ \t]*=[ \t]*"[^"]+"[ \t]*$', text):
             text = _replace_once(
                 text,
-                r'(?m)^STATE\s*=\s*"[^"]+"\s*$',
+                r'(?m)^STATE[ \t]*=[ \t]*"[^"]+"[ \t]*$',
                 'STATE = "validated"',
                 label=f"{info.patch_id}/patch.py STATE",
             )
@@ -147,7 +151,7 @@ def _set_state(info: PatchInfo) -> list[Path]:
     text = summary_path.read_text(encoding="utf-8")
     text = _replace_once(
         text,
-        r"(?m)^\*\*Status:\*\*\s+\S+\s*$",
+        r"(?m)^\*\*Status:\*\*[ \t]+\S+[ \t]*$",
         "**Status:** validated",
         label=f"{info.patch_id}/SUMMARY.md status",
     )
@@ -356,8 +360,79 @@ def _run_checks(root: Path, infos: tuple[PatchInfo, ...]) -> None:
     )
 
 
+_CHECK_LABELS = {
+    "mechanics": "mechanics",
+    "activation": "activation",
+    "identity": "identity",
+    "a/b": "ab",
+    "no-regression": "no-regression",
+}
+
+
+def _evidence_checks(evidence: str) -> dict[str, str]:
+    """The 'Mechanics:', 'Activation:', 'Identity:', 'A/B:' and 'No-regression:' lines of an evidence file."""
+    checks: dict[str, str] = {}
+    for line in evidence.splitlines():
+        match = re.match(r"\s*(?:[-*]\s*)?([A-Za-z/-]+)\s*:\s*(\S.*?)\s*$", line)
+        if match and match.group(1).casefold() in _CHECK_LABELS:
+            checks.setdefault(_CHECK_LABELS[match.group(1).casefold()], match.group(2))
+    return checks
+
+
+def _model_names(evidence: str) -> tuple[str, ...]:
+    names: list[str] = []
+    for line in evidence.splitlines():
+        match = re.match(r"\s*(?:model|model-id)\s*:\s*(\S.*?)\s*$", line, re.I)
+        if match and match.group(1).casefold() not in {n.casefold() for n in names}:
+            names.append(match.group(1))
+    return tuple(names)
+
+
+def _is_default_on(info: PatchInfo) -> bool:
+    """True when the patch declares a runtime flag that is on unless switched off."""
+    py_path = info.root / "patch.py"
+    if not py_path.is_file():
+        return False
+    return re.search(r'EnvDoc\(\s*"[^"]+"[\s\S]{0,240}?"1 \(on\)"', py_path.read_text(encoding="utf-8")) is not None
+
+
+def _profile_evidence(root: Path, info: PatchInfo, evidence: str) -> profile_evidence.ProfileEvidence:
+    """The lightweight promotion record for a patch, bound to the current pin and to its implementation.
+
+    Built after any default flip, so the digest is the one of the implementation that is promoted.
+    """
+    pinned = str(tomllib.loads((root / "config" / "recipes.toml").read_text(encoding="utf-8"))["pinned"])
+    record = profile_evidence.ProfileEvidence(
+        patch_id=info.patch_id,
+        pinned=pinned,
+        subject_digest=patch_evidence.patch_validation_subject_digest(info.root / "patch.py"),
+        default_on=_is_default_on(info),
+        models=_model_names(evidence),
+        checks=_evidence_checks(evidence),
+    )
+    lacking = profile_evidence.problems(record)
+    if lacking:
+        raise PatchPromoteError(
+            f"{info.patch_id}: the evidence file does not meet the profile-evidence tier: " + "; ".join(lacking)
+            + ". It needs 'Model:', 'Mechanics:', 'Activation:', 'Identity:' and 'A/B:' lines, and for a "
+            "default-on patch a 'No-regression:' line and a second 'Model:' line."
+        )
+    return record
+
+
 def _preflight(root: Path, infos: tuple[PatchInfo, ...]) -> None:
+    """Promotion gates for each patch, against a rebase report made now for exactly that patch over production."""
     for info in infos:
+        report = root / "artifacts" / "patch-promote" / f"{info.patch_id}-rebase.json"
+        report.parent.mkdir(parents=True, exist_ok=True)
+        _check_command(
+            root,
+            [
+                sys.executable, "-m", "bigcherry", "patch-rebase-check",
+                "--source", "bigcherry", "--focal-overlay", info.patch_id, "--json", str(report),
+            ],
+            f"{info.patch_id} rebase check over production",
+        )
         _check_command(
             root,
             [
@@ -372,6 +447,8 @@ def _preflight(root: Path, infos: tuple[PatchInfo, ...]) -> None:
                 "bigcherry",
                 "--focal-overlay",
                 "--no-legacy-grandfather",
+                "--rebase-report",
+                str(report),
             ],
             f"{info.patch_id} promotion gates",
         )
@@ -503,7 +580,8 @@ def promote(
     if _git(root, "rev-parse", "HEAD") != _git(root, "rev-parse", "origin/main"):
         raise PatchPromoteError("local main must exactly match origin/main")
 
-    _preflight(root, infos)
+    for info in infos:  # fail on an incomplete evidence file before anything is created
+        _profile_evidence(root, info, evidence)
     branch = _branch_name(infos)
     from ..cli.slice import start_slice
 
@@ -515,10 +593,15 @@ def promote(
     work_infos = tuple(_load_patch(worktree, patch_id) for patch_id in patch_ids)
     try:
         changed: list[Path] = []
+        # The record is written and the gates run while the patch is still unpromoted: the gates evaluate it as a
+        # candidate over production, with the evidence that authorises the state change already in the package.
         for info in work_infos:
-            changed.extend(_set_state(info))
             if default_on:
                 changed.extend(_promote_default_on(info, evidence))
+            changed.append(profile_evidence.write(info.root, _profile_evidence(worktree, info, evidence)))
+        _preflight(worktree, work_infos)
+        for info in work_infos:
+            changed.extend(_set_state(info))
             changed.append(_write_promotion_record(info, evidence))
             changed.append(_write_release_evidence(worktree, info, evidence))
         changed.append(_update_recipes(worktree, patch_ids))
