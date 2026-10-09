@@ -61,6 +61,16 @@ A promotion on radiance and a pin bump on llama.cpp can be released on the same 
 
 No radiance release should be cut before this lands: with the current single component it would take the next number on the llama.cpp line. Depends on the directory layout in MEN08; the release configuration and the layout are best done as one change.
 
+2026-10-09 owner decision on tags (replaces the encoded-upstream-number scheme in the steps above): every engine release carries two tags on the same main commit.
+- Readable tag, the one people use: bc-<engine>-<engine build>-r<N>. The engine build is upstream's own identity (llama.cpp b11474; radiance 1.3.0; for a commit pin the last upstream tag plus the short commit, e.g. 1.3.0-g89cee7c). N restarts at 0 on each pin and counts our releases at that pin. Examples: bc-llamacpp-b11474-r3, bc-llamacpp-b11490-r0, bc-radiance-1.3.0-r0, bc-radiance-1.3.0-g89cee7c-r0.
+- Numeric tag, the one release-please needs: bc-<engine>-<pin counter>.<batch>.<fix>. For new engines the first number is our own pin counter (1 for the first pin, 2 for the next). llama.cpp keeps its existing line with the build number as the first number (bc-llamacpp-11474.3.0), since it is already a single monotonic integer.
+- A step in the release workflow adds the readable tag after release-please publishes, reading the engine build from engines/<engine>/engine.toml at that commit, and sets the GitHub release title to the readable tag. Both tags derive from the same commit and pin file, so they cannot disagree.
+- bc-platform-<semver> for the shared tooling; it has one tag.
+- No engine branches: all lines live on main and the tags distinguish them. The only branch exception is a short-lived release/<engine>-<build> cut from a tag to fix an older pin after main has moved on.
+- Mapping to r<N>: each numeric release at a pin gets the next N in release order, so r-numbers are dense and ordered.
+Still to verify with a dry run: that the platform package can exclude engines/ so an engine-only commit does not bump the platform line.
+
 ## Change Log
 
 - 2026-10-09T00:16:08.957474+00:00 (created-by): Created by agent
+- 2026-10-09T00:46:01.548384+00:00 (updated-by): Updated: section:notes
