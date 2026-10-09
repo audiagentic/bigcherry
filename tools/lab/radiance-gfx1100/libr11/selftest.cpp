@@ -61,7 +61,9 @@ int main(int argc, char** argv) {
     auto version = reinterpret_cast<uint32_t (*)()>(dlsym(module, "rad_plugin_abi_version"));
     auto add = reinterpret_cast<Launch>(dlsym(module, "r11_add_bf16"));
     auto mul = reinterpret_cast<Launch>(dlsym(module, "r11_mul_bf16"));
-    if (!version || version() != RAD_ABI_VERSION || !add || !mul) {
+    auto packed_add = reinterpret_cast<Launch>(dlsym(module, "r11_add_bf16_packed"));
+    auto packed_mul = reinterpret_cast<Launch>(dlsym(module, "r11_mul_bf16_packed"));
+    if (!version || version() != RAD_ABI_VERSION || !add || !mul || !packed_add || !packed_mul) {
         std::fprintf(stderr, "plugin ABI mismatch or missing kernels\n");
         return 1;
     }
@@ -73,6 +75,12 @@ int main(int argc, char** argv) {
     uint16_t *da=nullptr, *db=nullptr, *dy=nullptr;
     hipStream_t stream=nullptr;
     HIP_CHECK(hipSetDevice(0));
+    hipDeviceProp_t props{};
+    HIP_CHECK(hipGetDeviceProperties(&props, 0));
+    if (std::strncmp(props.gcnArchName, "gfx1100", 7) != 0) {
+        std::fprintf(stderr, "expected gfx1100, got %s\\n", props.gcnArchName);
+        return 2;
+    }
     HIP_CHECK(hipMalloc(reinterpret_cast<void**>(&da), sizeof(ah)));
     HIP_CHECK(hipMalloc(reinterpret_cast<void**>(&db), sizeof(bh)));
     HIP_CHECK(hipMalloc(reinterpret_cast<void**>(&dy), sizeof(ah)));
@@ -80,7 +88,9 @@ int main(int argc, char** argv) {
     HIP_CHECK(hipMemcpy(db, bh, sizeof(bh), hipMemcpyHostToDevice));
     HIP_CHECK(hipStreamCreate(&stream));
     int failed = run_case(add,sum,"add",da,db,dy,stream) |
-                 run_case(mul,prod,"mul",da,db,dy,stream);
+                 run_case(mul,prod,"mul",da,db,dy,stream) |
+                 run_case(packed_add,sum,"add_packed",da,db,dy,stream) |
+                 run_case(packed_mul,prod,"mul_packed",da,db,dy,stream);
     hipStreamDestroy(stream);
     hipFree(dy);
     hipFree(db);
