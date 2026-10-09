@@ -292,6 +292,51 @@ __device__ __forceinline__ r3_v8f r3_wmma_f32_16x16x16_fp8_fp8_w32_gfx12(A a, B 
 #define __builtin_amdgcn_wmma_f32_16x16x16_bf16_w32_gfx12 r3_wmma_f32_16x16x16_bf16_w32_gfx12
 #define __builtin_amdgcn_wmma_f32_16x16x16_f16_w32_gfx12 r3_wmma_f32_16x16x16_f16_w32_gfx12
 
+// ------------------------------------------------------------------ native gfx11 forms
+//
+// Used by the units that have block rules in native/ (r3_rewrite.py): there the kernel's own inner loop is
+// rewritten to build gfx11 fragments directly, so no fragment or accumulator crosses lanes inside the K loop. A
+// gfx11 lane holds its row's 16 values, so every lane reads 16 values where the gfx12 kernel reads 8, and the
+// accumulator stays in the gfx11 layout until the kernel's epilogue, where r3_acc_native_to_gfx12 moves it once.
+
+typedef unsigned r3_u4u __attribute__((ext_vector_type(4), aligned(1)));
+
+// One E4M3 code as the bf16 with the same value (exact: 3 mantissa bits, exponents inside bf16's range). Normal
+// codes shift into place; the eight subnormal magnitudes m * 2^-9 come from a packed table. 0x7f / 0xff (NaN) are
+// not special-cased: weights and activations never hold them.
+__device__ __forceinline__ unsigned r3_e4m3_to_bf16_bits(unsigned code) {
+    const unsigned mag = code & 0x7fu;
+    const unsigned normal = (mag << 4) + (120u << 7);
+    const unsigned long long sub = (mag & 4u) ? 0x3c603c403c203c00ull : 0x3bc03b803b000000ull;
+    const unsigned subnormal = static_cast<unsigned>(sub >> ((mag & 3u) * 16)) & 0xffffu;
+    return ((code & 0x80u) << 8) | (mag < 8u ? subnormal : normal);
+}
+
+// 16 E4M3 codes at p (one fragment row, K ascending) as a gfx11 bf16 fragment.
+__device__ __forceinline__ r3_v16bf r3_row16_e4m3_to_bf16(const unsigned char* p) {
+    const r3_u4u codes = *reinterpret_cast<const r3_u4u*>(p);
+    r3_u8 out;
+#pragma unroll
+    for (int d = 0; d < 4; ++d) {
+        const unsigned w = codes[d];
+        out[2 * d] = r3_e4m3_to_bf16_bits(w & 0xffu) | (r3_e4m3_to_bf16_bits((w >> 8) & 0xffu) << 16);
+        out[2 * d + 1] = r3_e4m3_to_bf16_bits((w >> 16) & 0xffu) | (r3_e4m3_to_bf16_bits(w >> 24) << 16);
+    }
+    return __builtin_bit_cast(r3_v16bf, out);
+}
+
+// D = A x B + C on gfx11 fragments, accumulator in the gfx11 layout.
+__device__ __forceinline__ r3_v8f r3_wmma_bf16_native(r3_v16bf a, r3_v16bf b, r3_v8f acc) {
+    return __builtin_amdgcn_wmma_f32_16x16x16_bf16_w32(a, b, acc);
+}
+
+// A gfx11-layout accumulator to the gfx12 layout the kernel's epilogue reads.
+template <class C>
+__device__ __forceinline__ r3_v8f r3_acc_native_to_gfx12(C acc) {
+    static_assert(sizeof(C) == 32, "accumulator: 8 x f32");
+    return r3_acc_11_to_12(__builtin_bit_cast(r3_v8f, acc), r3_lane());
+}
+
 // ------------------------------------------------------------------ the gfx12 transposed load
 //
 // global_load_tr_b128: every lane names 128 bits (8 x 16-bit) at its own address, and the instruction returns

@@ -9,7 +9,7 @@
 # The first argument (a llama-server path from the queue) is ignored. With ops given, only those are checked.
 # Usage: libr3-build.sh <ignored> <out-dir> [op...]
 # env: RADIANCE_SRC, WORK, GPU (HIP index, 0), TARGET (gfx1100), R3_ONLY (semicolon list: compile only these units,
-#      no bench), KBENCH (1; 0 = build only), AGAINST (earlier kbench.json), GCC14_BIN
+#      no bench), R3_NATIVE (ON; OFF = no native gfx11 forms, every kernel through the compatibility layer), KBENCH (1; 0 = build only), AGAINST (earlier kbench.json), GCC14_BIN
 set -u
 out=$2; shift 2
 mkdir -p "$out"
@@ -42,7 +42,7 @@ echo "== 1. build"
 build=$work/libr3-$target-build${R3_ONLY:+-only}
 t0=$(date +%s)
 if ! cmake -S "$repo/engines/radiance/kernels/libr3" -B "$build" -G Ninja -DCMAKE_PREFIX_PATH="$prefix" \
-        -DRADIANCE_SRC="$src" -DR3_TARGETS="$target" -DR3_ONLY="${R3_ONLY:-}" > "$out/configure.log" 2>&1; then
+        -DRADIANCE_SRC="$src" -DR3_TARGETS="$target" -DR3_ONLY="${R3_ONLY:-}" -DR3_NATIVE="${R3_NATIVE:-ON}" > "$out/configure.log" 2>&1; then
     echo "CONFIGURE_FAILED"; grep -vE "^\s*$" "$out/configure.log" | tail -12 | cut -c1-220; exit 1
 fi
 grep "libr3:" "$out/configure.log" | cut -c1-160

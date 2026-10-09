@@ -1,0 +1,41 @@
+# Native gfx11 inner loop for r4d_gemm_mxfp4a8_decode (both kernels: the DTM form and the one-fragment form).
+#
+# libr4d: each lane reads 8 E4M3 codes of its row from LDS (lower lanes k 0-7, upper lanes k 8-15) and calls the
+# gfx12 fp8 x fp8 WMMA. Through r3_compat.h that call costs two software fp8 -> bf16 conversions, 8 cross-lane moves
+# for the fragments, the gfx11 instruction on a zero accumulator, 4 cross-lane moves for the product and an f32 add.
+#
+# Native: each lane reads its row's 16 codes (a gfx11 fragment holds the whole row in every lane), widens them to
+# bf16 and runs the gfx11 instruction with the accumulator as its C operand. The accumulator stays in the gfx11
+# layout through the K loop; the boundary rescale multiplies a lane by its column's ratio, which is the same in
+# both layouts. It is moved to the gfx12 layout once, in front of the epilogue, which is unchanged.
+
+@@ find 2
+      const int kk = step * 16 + kb8;
+      mxd_v2i af[DTM], wf;
+#pragma unroll
+      for (int i = 0; i < DTM; ++i) {
+        const unsigned char* pa = &sA[(i * 16 + col) * STR + kk];
+        af[i][0] = *(const int*)pa; af[i][1] = *(const int*)(pa + 4);
+      }
+      const unsigned char* pw = &sW[(wave * 16 + col) * STR + kk];
+      wf[0] = *(const int*)pw; wf[1] = *(const int*)(pw + 4);
+#pragma unroll
+      for (int i = 0; i < DTM; ++i)
+        acc[i] = __builtin_amdgcn_wmma_f32_16x16x16_fp8_fp8_w32_gfx12(wf, af[i], acc[i]);
+@@ replace
+      const int kk = step * 16;  // libr3 native: the row's 16 codes, in every lane
+      const r3_v16bf wf = r3_row16_e4m3_to_bf16(&sW[(wave * 16 + col) * STR + kk]);
+#pragma unroll
+      for (int i = 0; i < DTM; ++i)
+        acc[i] = r3_wmma_bf16_native(wf, r3_row16_e4m3_to_bf16(&sA[(i * 16 + col) * STR + kk]), acc[i]);
+@@ end
+
+@@ find 2
+  const int kb_end = s_hi > s_lo ? (k_hi - 1) >> 7 : 0;
+  mxd_epilogue<DTM, DKS, ABLK>(acc, As, as_rs, Wref, P, cnt, C, M, N, n0, wave, col, kb8, ks,
+@@ replace
+  const int kb_end = s_hi > s_lo ? (k_hi - 1) >> 7 : 0;
+#pragma unroll
+  for (int i = 0; i < DTM; ++i) acc[i] = r3_acc_native_to_gfx12(acc[i]);  // libr3 native: once, not per WMMA
+  mxd_epilogue<DTM, DKS, ABLK>(acc, As, as_rs, Wref, P, cnt, C, M, N, n0, wave, col, kb8, ks,
+@@ end

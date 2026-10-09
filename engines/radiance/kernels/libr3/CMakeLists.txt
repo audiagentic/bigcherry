@@ -17,6 +17,7 @@ rad_plugin_defaults()
 
 set(R3_TARGETS "gfx1100" CACHE STRING "GPU targets libr3 is compiled for")
 set(RADIANCE_SRC "" CACHE PATH "radiance source tree (libr4d is read from it)")
+option(R3_NATIVE "apply the native gfx11 forms in native/ (OFF = every kernel through the compatibility layer)" ON)
 set(R3_ONLY "" CACHE STRING "build only these units (for a compile check of one unit); empty = all not excluded")
 if(NOT EXISTS "${RADIANCE_SRC}/libr4d/CMakeLists.txt")
   message(FATAL_ERROR "libr3: -DRADIANCE_SRC must name a radiance source tree (no ${RADIANCE_SRC}/libr4d)")
@@ -25,9 +26,15 @@ endif()
 # function, such as an inline-assembly mnemonic). Units and headers are built from the copy.
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 set(r4d ${CMAKE_CURRENT_BINARY_DIR}/r4d-src)
+set(native_arg)
+if(R3_NATIVE)
+  set(native_arg ${CMAKE_CURRENT_SOURCE_DIR}/native)
+  file(GLOB native_rules ${CMAKE_CURRENT_SOURCE_DIR}/native/*.rw)
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${native_rules})
+endif()
 execute_process(
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/r3_rewrite.py ${RADIANCE_SRC}/libr4d ${r4d}
-          ${CMAKE_CURRENT_SOURCE_DIR}/rewrites.txt
+          ${CMAKE_CURRENT_SOURCE_DIR}/rewrites.txt ${native_arg}
   RESULT_VARIABLE rewrite_rc OUTPUT_VARIABLE rewrite_out ERROR_VARIABLE rewrite_err)
 message(STATUS "libr3: ${rewrite_out}")
 if(NOT rewrite_rc EQUAL 0)

@@ -9,7 +9,19 @@ rewrites.txt holds one rule per line:   <text to find> ==> <replacement>
 Blank lines and lines starting with '#' are ignored. A rule that matches nowhere is an error: it means libr4d
 changed and the rule has to be looked at again.
 
-Usage: r3_rewrite.py <libr4d dir> <out dir> <rewrites.txt>
+A fourth argument names a directory of block rules, one file per libr4d source: <source name>.rw. They replace a
+kernel's own lines with a native gfx11 form (see native/). A block is
+
+    @@ find <count>
+    <lines to find, exactly>
+    @@ replace
+    <lines to put there>
+    @@ end
+
+and must occur exactly <count> times in that source, or the configure step fails: the kernel changed upstream and
+the native form has to be looked at again. Lines outside blocks are comments.
+
+Usage: r3_rewrite.py <libr4d dir> <out dir> <rewrites.txt> [<native dir>]
 """
 from __future__ import annotations
 
@@ -30,8 +42,36 @@ def rules(path: Path) -> list[tuple[str, str]]:
     return out
 
 
+def blocks(path: Path) -> list[tuple[int, str, str]]:
+    out, state, count, find, replace = [], "", 0, [], []
+    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        if line.startswith("@@ find "):
+            if state:
+                raise SystemExit(f"{path}:{number}: '@@ find' inside a block")
+            state, count, find, replace = "find", int(line.split()[2]), [], []
+        elif line.strip() == "@@ replace" and state == "find":
+            state = "replace"
+        elif line.strip() == "@@ end" and state == "replace":
+            out.append((count, "\n".join(find) + "\n", "\n".join(replace) + "\n"))
+            state = ""
+        elif line.startswith("@@"):
+            raise SystemExit(f"{path}:{number}: unexpected {line.strip()!r}")
+        elif state == "find":
+            find.append(line)
+        elif state == "replace":
+            replace.append(line)
+    if state:
+        raise SystemExit(f"{path}: unterminated block")
+    return out
+
+
 def main() -> int:
     source, out, rule_file = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3])
+    native = Path(sys.argv[4]) if len(sys.argv) > 4 else None
+    native_rules = {p.name[:-3]: blocks(p) for p in sorted(native.glob("*.rw"))} if native else {}
+    unknown = [name for name in native_rules if not (source / name).is_file()]
+    if unknown:
+        raise SystemExit("r3_rewrite: native rules for source(s) libr4d does not have: " + ", ".join(unknown))
     todo = rules(rule_file)
     hits = {find: 0 for find, _ in todo}
     out.mkdir(parents=True, exist_ok=True)
@@ -47,6 +87,13 @@ def main() -> int:
             if count:
                 hits[find] += count
                 text = text.replace(find, replace)
+        for count, find, replace in native_rules.get(path.name, []):
+            if text.count(find) != count:
+                raise SystemExit(f"r3_rewrite: native/{path.name}.rw: a block expected {count} time(s) occurs "
+                                 f"{text.count(find)} time(s): {find.splitlines()[0].strip()!r}")
+            text = text.replace(find, replace)
+        if path.name in native_rules:
+            print(f"r3_rewrite: native form of {path.name}: {len(native_rules[path.name])} block(s)")
         # leave an unchanged file alone so the build does not recompile it
         if not target.is_file() or target.read_text(encoding="utf-8") != text:
             target.write_text(text, encoding="utf-8", newline="\n")
