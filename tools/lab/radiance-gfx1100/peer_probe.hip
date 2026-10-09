@@ -23,7 +23,7 @@ int main() {
                     i, p.name, p.gcnArchName,
                     static_cast<size_t>(p.totalGlobalMem / (1024 * 1024)));
         if (std::strncmp(p.gcnArchName, "gfx1100", 7) != 0) {
-            std::fprintf(stderr, "GPU %d is %s, not gfx1100; refusing mixed-arch P2P conclusions\\n",
+            std::fprintf(stderr, "GPU %d is %s, not gfx1100; refusing mixed-arch P2P conclusions\n",
                          i, p.gcnArchName);
             return 2;
         }
