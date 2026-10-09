@@ -45,6 +45,24 @@ class NormLayout(unittest.TestCase):
         self.assertAlmostEqual(expected, 0.75285)
         self.assertNotEqual(round(gain + 1, 2), gain + 1)
 
+    def test_rdna3_dpp_lane31_contains_wave_sum(self):
+        # AMD's gfx11: quad_perm(1032,2301), row_ror4, row_ror8,
+        # ds_swizzle(0x1e0) selects lane15; readlane(31) broadcasts total.
+        original = [float((7 * lane + 3) % 19) for lane in range(32)]
+        vals = original[:]
+        for perm in ((1, 0, 3, 2), (2, 3, 0, 1)):
+            before = vals[:]
+            vals = [before[(i // 4) * 4 + perm[i % 4]]
+                    + before[i] for i in range(32)]
+        for delta in (4, 8):
+            before = vals[:]
+            vals = [before[i] + before[(i // 16)*16 + ((i%16-delta)%16)]
+                    for i in range(32)]
+        before = vals[:]
+        vals = [before[i] + before[15] for i in range(32)]
+        # The DPP32 kernel reads lane31 (NOT lane0) for the full sum.
+        self.assertAlmostEqual(vals[31], sum(original), places=5)
+
     def test_both_reductions_match_sum_square(self):
         for n in (32, 256, 5120):
             values = [((13 * i + 5) % 37 - 18) / 16 for i in range(n)]
