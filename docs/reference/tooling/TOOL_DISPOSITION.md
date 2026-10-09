@@ -320,6 +320,7 @@ ownership.
 | `tools/lab/flash-next/queue-maxctx-search-2.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/queue-maxctx-search.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/queue-meta-mem.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-patch-ablation.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/queue-router-with-evict.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/queue-promotion-followups.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/queue-promotion-followups-2.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
