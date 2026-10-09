@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "tier": "profile-evidence",
+  "patch-id": "1356_meta_dispatch_workers",
+  "pinned": "b11474",
+  "subject-digest": "d7e33177a8a5063278a469d31e172df2b1fe6eb4663d0785cebc28fc47aadb2e",
+  "default-on": false,
+  "models": [
+    "Qwen3.8-Flash-Next UD-IQ4_XS (production profile: 2x RX 7900 XTX + R9700 tensor split, MTP drafter on the RX 6900 XT, ctx 245760, f16 KV, ub512)"
+  ],
+  "checks": {
+    "ab": "one binary (b-metamem-mdw3 = production + 1356), BIGCHERRY_META_DISPATCH_THREADS=1 against default (off), two ABBAs per depth: prefill +3.5% at 8K, +1.7% at 24K (completely separated, 4 against 4), +1.6% at 98K; decode and draft acceptance unchanged.",
+    "activation": "BIGCHERRY_PATCH_HIT patch=1356 marker at 24K in the threaded arm only (run mdw3-r1-d24576, order A B B A: 0 1 1 0).",
+    "identity": "greedy text identical in every run at 8K, 24K and 98K (two ABBAs each), and in the 52-run stress below.",
+    "mechanics": "offline tests for 1356 pass, patch-lint clean, composition with the production set clean after the anchor was narrowed to the inner per-backend loop (composes after 1320)."
+  }
+}
