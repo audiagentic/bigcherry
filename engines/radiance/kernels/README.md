@@ -158,7 +158,9 @@ of it should be written from nothing:
   gfx1100 version of libr4d's HIP kernels, so it is not a source for the excluded units. What is relevant: its
   all-reduce extensions (`build/patches/radiance_ar_ext.hip`, `radiance_ar_quant_ext.hip`), a router GEMM
   (`router_gemm.hip`), and `docs/fast-reduce-mtp-deadlock.md` on a collective deadlock under graph capture. It needs
-  IOMMU off or an ACS override for P2P. GitHub reports no licence for it, so nothing is copied from it.
+  IOMMU off or an ACS override for P2P. GitHub reports no licence for it; the owner stated on 2026-10-09 that the
+  repository is their own earlier experiment and may be copied from. The pieces to take are the ones for the
+  two-card stage: the all-reduce extensions, the router GEMM and the deadlock note.
 - **Both layouts in one file.** llama.cpp `ggml/src/ggml-cuda/mma.cuh`: the same `mma()` for RDNA3
   (`__builtin_amdgcn_wmma_f32_16x16x16_{f16,bf16}_w32`, 16 elements per lane) and RDNA4 (`..._w32_gfx12`, 8 per lane).
 - **A libr4d kernel already ported to gfx11 here.** BigCherry patch `1253_nro04_gfx1100_bf16_chunked_gdn`
