@@ -178,6 +178,20 @@ class LineEndingOnlyPatchChangeTests(unittest.TestCase):
                 ("1202_rd04_bf16_flash_attn_tile",),
             )
 
+    def test_moved_unchanged_patch_py_is_not_an_implementation_change(self) -> None:
+        # absent at this path in base, found under its old path with the same text
+        with mock.patch.object(offline_check, "_renamed_from", return_value="patches/1202_rd04_bf16_flash_attn_tile/patch.py"), \
+                mock.patch.object(offline_check, "_blob_text_lf", side_effect=[None, b"a\nb\n", b"a\nb\n"]):
+            self.assertEqual(offline_check._implementation_patch_ids([self.PATH], "base", "head"), ())
+
+    def test_moved_and_edited_patch_py_still_counts(self) -> None:
+        with mock.patch.object(offline_check, "_renamed_from", return_value="patches/1202_rd04_bf16_flash_attn_tile/patch.py"), \
+                mock.patch.object(offline_check, "_blob_text_lf", side_effect=[None, b"a\nb\n", b"a\nc\n"]):
+            self.assertEqual(
+                offline_check._implementation_patch_ids([self.PATH], "base", "head"),
+                ("1202_rd04_bf16_flash_attn_tile",),
+            )
+
 
 class CompositionPatchIdTests(unittest.TestCase):
     def test_test_only_and_doc_changes_do_not_trigger_the_experiment_audit(self) -> None:
