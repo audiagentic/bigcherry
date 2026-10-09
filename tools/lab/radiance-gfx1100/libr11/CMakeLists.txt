@@ -10,7 +10,7 @@ if(NOT R11_GPU_TARGETS)
 endif()
 rad_add_plugin(libr11 kernels
   SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/rows.cpp
-  HIP_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/elementwise.hip ${CMAKE_CURRENT_SOURCE_DIR}/gemm_bf16.hip
+  HIP_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/elementwise.hip ${CMAKE_CURRENT_SOURCE_DIR}/gemm_bf16.hip ${CMAKE_CURRENT_SOURCE_DIR}/packed_binary.hip
   GPU_TARGETS ${R11_GPU_TARGETS})
 set_target_properties(libr11 PROPERTIES HIP_STANDARD 17 HIP_STANDARD_REQUIRED ON)
 # Radiance's libref contract forbids implicit contraction of FP32 accumulation.
