@@ -72,7 +72,8 @@ class Patch1334Mechanics(unittest.TestCase):
             rdna = fa[fa.index("// On RDNA it is preferable to minimize wasted compute"):]
             self.assertLess(rdna.index("shall_use_sparse(cc, dst, 8, 8)"), rdna.index("if (use_gqa_opt && gqa_ratio % 8 == 0)"))
             # ... and only for batches that actually reach the 8x8 kernel
-            self.assertIn("if (use_gqa_opt && gqa_ratio > 4 && Q->ne[1] > 32/8 &&", rdna)
+            self.assertIn("if (use_gqa_opt && gqa_ratio > 4 &&\n", rdna)
+            self.assertNotIn("Q->ne[1] > 32/8", rdna)  # the batch-width test is BIGCHERRY_FA_SPARSE_MIN_Q now
             # both dispatch sites compile for HIP
             self.assertIn("#if !defined(GGML_USE_MUSA)  // BigCherry 1334: compiled for HIP\n    if constexpr", fa)
             self.assertIn("#if !defined(GGML_USE_MUSA)  // BigCherry 1334: compiled for HIP\n        if constexpr", mma)
