@@ -27,7 +27,7 @@ patch still writes its own lane logic, this module only drives WHEN to
 call it and what to do with the result). It does not provide a CLI --
 consistent with RD73/RD08 having none either (invoked via
 ``python -m bigcherry.patch.validation_campaign`` per docs/reference/
-patches/PATCH_SYSTEM.md); a first live run should be a thin script under
+engines/llamacpp/patches/PATCH_SYSTEM.md); a first live run should be a thin script under
 tools/lab/qualification/, matching this project's own "scripts go in
 tools/lab/<topic>/" convention. It does not do remote/SSH dispatch,
 parallel scheduling, or retry -- it assumes it runs on the GPU host,

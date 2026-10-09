@@ -663,8 +663,8 @@ class SyncCampaignMirrorBestEffortTests(unittest.TestCase):
                 upstream_repo=Path(work)
                 / "upstream"
                 / "llama.cpp.git",  # never created
-                overlay_root=Path(project) / "src",
-                patches_root=Path(project) / "patches",
+                overlay_root=Path(project) / "engines" / "llamacpp" / "overlay",
+                patches_root=Path(project) / "engines" / "llamacpp" / "patches",
             )
             with mock.patch.object(
                 ProjectContext, "resolve", return_value=fake_context
@@ -691,8 +691,8 @@ class SyncCampaignMirrorBestEffortTests(unittest.TestCase):
                 artifacts_root=Path(project) / "artifacts",
                 work_root=Path(work),
                 upstream_repo=mirror,
-                overlay_root=Path(project) / "src",
-                patches_root=Path(project) / "patches",
+                overlay_root=Path(project) / "engines" / "llamacpp" / "overlay",
+                patches_root=Path(project) / "engines" / "llamacpp" / "patches",
             )
             with mock.patch.object(
                 ProjectContext, "resolve", return_value=fake_context
@@ -1146,8 +1146,8 @@ class AcquireMaintenanceLockTests(unittest.TestCase):
                 artifacts_root=Path(project) / "artifacts",
                 work_root=Path(work),
                 upstream_repo=Path(work) / "upstream",
-                overlay_root=Path(project) / "src",
-                patches_root=Path(project) / "patches",
+                overlay_root=Path(project) / "engines" / "llamacpp" / "overlay",
+                patches_root=Path(project) / "engines" / "llamacpp" / "patches",
             )
             with mock.patch.object(
                 ProjectContext, "resolve", return_value=fake_context

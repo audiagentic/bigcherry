@@ -10,7 +10,7 @@ evidence exists, or that it still matches the CURRENT patch implementation.
 
 This module is the tracked evidence contract itself: a JSON record per
 patch, stored with packaged patches under their ``evidence/`` directory and
-with the legacy baseline under ``patches/_validation/``. The authority must
+with the legacy baseline under ``engines/llamacpp/patches/_validation/``. The authority must
 be resolvable from the repository alone, not from ``artifacts/``, which is
 gitignored, or the external ledger, which offline pytest/CI/a fresh checkout
 cannot resolve.
@@ -737,7 +737,7 @@ def verify_framework_configuration_patch(
             raise ValidationEvidenceError("resolved base revision required for source identity")
         identity = patch_source._make_source_identity_v2(
             resolved_revision=resolved_base_revision, composition=composition,
-            overlay_root=patch_source.REPO_ROOT / "src"
+            overlay_root=patch_source.OVERLAY_ROOT
             if cfg.sources["bigcherry-qualification-tuning"].overlay else None,
         )
         identity["materialization_plan_id"] = identity["source_key"]

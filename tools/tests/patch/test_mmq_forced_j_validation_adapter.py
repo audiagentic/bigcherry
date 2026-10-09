@@ -10,8 +10,8 @@ from bigcherry.patch.validation import ArtifactRef, BLOCKED, ERROR, FAIL, PASS
 
 
 ROOT = Path(__file__).resolve().parents[3]
-CHECKS_PATH = ROOT / "patches/0300_mmq_forced_j/validation/checks.py"
-PACKAGE_ROOT = ROOT / "patches/0300_mmq_forced_j"
+CHECKS_PATH = ROOT / "engines/llamacpp/patches/0300_mmq_forced_j/validation/checks.py"
+PACKAGE_ROOT = ROOT / "engines/llamacpp/patches/0300_mmq_forced_j"
 SPEC = importlib.util.spec_from_file_location("mmq_forced_j_checks_test", CHECKS_PATH)
 CHECKS = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None

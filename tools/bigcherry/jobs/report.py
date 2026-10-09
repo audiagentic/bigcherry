@@ -11,6 +11,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+from bigcherry.core import paths
 from bigcherry.experiment.contract import bootstrap_session_effect
 from bigcherry.patch import evidence as patch_evidence
 
@@ -43,7 +44,7 @@ def _manifest_records(
     if not wanted:
         raise ReportError("verified evidence manifest contains no record digests")
     available: dict[str, dict[str, Any]] = {}
-    for row in patch_evidence.load_records(patch_id, root=project_root / "patches"):
+    for row in patch_evidence.load_records(patch_id, root=paths.LLAMACPP.patches_root(project_root)):
         record = dict(row)
         digest = record.get("record_digest")
         if not isinstance(digest, str):

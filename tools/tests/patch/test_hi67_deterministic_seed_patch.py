@@ -1,4 +1,4 @@
-"""HI67 slice 2a: patches/1222_hi67_deterministic_test_backend_ops_seed/patch.py applies
+"""HI67 slice 2a: engines/llamacpp/patches/1222_hi67_deterministic_test_backend_ops_seed/patch.py applies
 cleanly and idempotently to the real vendored test-backend-ops.cpp, and the
 patched source contains the contract the correctness-evidence generator
 (slice 2c, not yet written) will depend on."""
@@ -10,13 +10,14 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from bigcherry.core import paths  # noqa: E402
 from bigcherry.patcher import apply_all
 
 ROOT = Path(__file__).resolve().parents[3]
 
 spec = importlib.util.spec_from_file_location(
     "hi67_deterministic_seed_patch",
-    ROOT / "patches" / "1222_hi67_deterministic_test_backend_ops_seed" / "patch.py",
+    ROOT / "engines" / "llamacpp" / "patches" / "1222_hi67_deterministic_test_backend_ops_seed" / "patch.py",
 )
 assert spec and spec.loader
 _module = importlib.util.module_from_spec(spec)
@@ -24,7 +25,7 @@ spec.loader.exec_module(_module)
 
 
 def _apply_to_copy(tmp_path: Path) -> Path:
-    vendor = ROOT / "vendor" / "llama.cpp"
+    vendor = paths.llama_root()
     target = tmp_path / "tests" / "test-backend-ops.cpp"
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(vendor / "tests" / "test-backend-ops.cpp", target)

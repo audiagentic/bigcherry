@@ -44,7 +44,7 @@ class PatchTagsRegistryTests(unittest.TestCase):
         )
 
     def test_every_real_patch_tag_is_in_the_vocabulary(self) -> None:
-        registry = patch_registry.load_registry(REPO_ROOT / "patches")
+        registry = patch_registry.load_registry(REPO_ROOT / "engines" / "llamacpp" / "patches")
         violations = [
             f"{descriptor.patch_id}: {tag!r}"
             for descriptor in registry.descriptors

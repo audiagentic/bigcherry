@@ -1,0 +1,16 @@
+schema = 1
+id = "1293_sched_single_input_sync"
+order = 1293
+state = "superseded"
+kind = "enhancement"
+origin = "local"
+backend = "hip"
+backends = ["hip"]
+plan-ids = ["QFN01", "RNX01"]
+requires = []
+conflicts = []
+requires-options = []
+forbids-options = []
+tags = ["meta-backend", "split-tensor", "optimization"]
+hardware = []
+validation-architectures = ["gfx1100", "gfx1201"]

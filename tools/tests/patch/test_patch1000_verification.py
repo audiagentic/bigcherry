@@ -188,6 +188,7 @@ class Patch1000FatBuildTests(unittest.TestCase):
 
             fake_source = SimpleNamespace(
                 REPO_ROOT=root,
+                OVERLAY_ROOT=root / "engines" / "llamacpp" / "overlay",
                 resolve_source_composition=resolve_source_composition,
                 materialize_composition=materialize_composition,
             )

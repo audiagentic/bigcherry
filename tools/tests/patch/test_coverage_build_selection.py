@@ -18,7 +18,7 @@ from bigcherry.patch.apply import FilePatch, apply_patch
 
 ROOT = Path(__file__).resolve().parents[3]
 spec = importlib.util.spec_from_file_location(
-    "coverage_cmake_patch", ROOT / "patches/0110_campaign_tune_record_build/patch.py"
+    "coverage_cmake_patch", ROOT / "engines/llamacpp/patches/0110_campaign_tune_record_build/patch.py"
 )
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)

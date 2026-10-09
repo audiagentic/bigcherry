@@ -372,7 +372,7 @@ class ProducerModulesCannotImportCampaignTests(unittest.TestCase):
     """test_producer_modules_cannot_import_validation_campaign"""
 
     def test_producer_modules_cannot_import_validation_campaign(self) -> None:
-        patches_root = REPO_ROOT / "patches"
+        patches_root = REPO_ROOT / "engines" / "llamacpp" / "patches"
         offenders = []
         if patches_root.is_dir():
             for path in patches_root.glob("*/validation/*.py"):

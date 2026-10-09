@@ -1,5 +1,5 @@
 """Patch registry: one normalized, content-identified descriptor for every
-patch package in ``patches/`` (flat files are compatibility fixtures only).
+patch package in ``engines/llamacpp/patches/`` (flat files are compatibility fixtures only).
 
 patch-system PA02 / RS01 (docs/planning/active/patch-system/
 PATCH_REFACTOR_RUNBOOK.md, sections 3-14). Before this module there were two
@@ -10,8 +10,8 @@ downstream code ever decides whether a patch is flat or packaged.
 
 Discovery (runbook section 4), exactly:
 
-* simple:  root-level ``patches/*.py`` compatibility fixtures only
-* packaged: ``patches/**/patch.toml`` at any depth, no relative path
+* simple:  root-level ``engines/llamacpp/patches/*.py`` compatibility fixtures only
+* packaged: ``engines/llamacpp/patches/**/patch.toml`` at any depth, no relative path
   component may start ``_``
 * NEVER: arbitrary nested ``*.py`` (a package's ``patch.py`` and every
   ``validation/*.py`` are only reachable through their package)
@@ -27,7 +27,7 @@ Path fields on :class:`PatchDescriptor` are RELATIVE to the registry root
 (the directory passed to :func:`load_registry`; normally
 ``paths.PATCHES``). That is the canonical, checkout-independent form the
 runbook asks for: for the real tree, root-relative IS repo-relative under
-``patches/``, and tests can point the registry at a temp root without
+``engines/llamacpp/patches/``, and tests can point the registry at a temp root without
 changing descriptor contents. Convert to absolute at the I/O boundary only.
 """
 
@@ -120,7 +120,7 @@ _PATCH_TOML_KNOWN_KEYS = _PATCH_TOML_REQUIRED_KEYS | _PATCH_TOML_STRING_LIST_KEY
 
 
 class PatchRegistryError(ValueError):
-    """Raised when the patches/ tree violates the registry's fail-closed rules
+    """Raised when the engines/llamacpp/patches/ tree violates the registry's fail-closed rules
     (bad schema, duplicate identity, path escape, missing implementation)."""
 
 
@@ -258,7 +258,7 @@ class PatchDescriptor:
     representation (runbook section 9). ``representation`` is
     ``"simple"`` or ``"packaged"``; for simple patches ``package_root``,
     ``metadata_path``, ``validation_path``/``validation_digest`` and the
-    descriptive fields that legacy keeps in ``patches/catalog.toml`` are
+    descriptive fields that legacy keeps in ``engines/llamacpp/patches/catalog.toml`` are
     ``None``/empty. Path fields are RELATIVE to the registry root (see
     module docstring)."""
 
