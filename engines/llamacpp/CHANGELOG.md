@@ -1,5 +1,13 @@
 # Changelog
 
+## [11474.4.0](https://github.com/audiagentic/bigcherry/compare/bc-llamacpp-11474.3.0...bc-llamacpp-11474.4.0) (2026-10-09)
+
+
+### New and changed
+
+* **patch:** evict only the stale Meta split-state cache entry (1358); reject 1328 expert offload ([#93](https://github.com/audiagentic/bigcherry/issues/93)) ([aadc5a3](https://github.com/audiagentic/bigcherry/commit/aadc5a3338eb622dd56ed1033ea87930cc443f7a))
+* **patch:** promote 1358_meta_split_cache_local_evict ([#107](https://github.com/audiagentic/bigcherry/issues/107)) ([197ca50](https://github.com/audiagentic/bigcherry/commit/197ca504530f3f94f4b39e1169f5501278afb6e9))
+
 ## [11474.3.0](https://github.com/audiagentic/bigcherry/compare/bc-llamacpp-11474.2.0...bc-llamacpp-11474.3.0) (2026-10-09)
 
 
