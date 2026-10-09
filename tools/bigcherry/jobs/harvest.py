@@ -12,6 +12,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from bigcherry.core import paths
 from bigcherry.core.tree_activity import MaintenanceLock
 from bigcherry.patch import evidence as patch_evidence
 from bigcherry.tuning.journal import atomic_write
@@ -78,7 +79,7 @@ def _attempt_added_records(
     attempt = store.attempt(run_id, attempt_no)
     project_root = Path(str(attempt["project_root"])).resolve()
     patch_id = str(run["job"]["patch"])
-    source_root = project_root / "patches"
+    source_root = paths.LLAMACPP.patches_root(project_root)
     source_path = patch_evidence.evidence_path(patch_id, root=source_root)
     if not source_path.is_file():
         raise HarvestError(
@@ -204,7 +205,7 @@ def harvest_series(
             }
         )
 
-    canonical_root = project_root / "patches"
+    canonical_root = paths.LLAMACPP.patches_root(project_root)
     destination = patch_evidence.evidence_path(patch_id, root=canonical_root)
     try:
         destination_rel = destination.relative_to(project_root).as_posix()

@@ -20,7 +20,7 @@ class FrameworkConfigurationCampaignTests(unittest.TestCase):
     def test_single_composition_runs_all_real_adapters_and_persists_eligible_record(self):
         from bigcherry.patch import source, registry, evidence
         root = Path(__file__).resolve().parents[3]
-        descriptor = registry.load_registry(root / "patches").get("0100_cmake_options")
+        descriptor = registry.load_registry(root / "engines" / "llamacpp" / "patches").get("0100_cmake_options")
         composition = ((descriptor.patch_id, descriptor.implementation_digest),)
         identity = {
             "effective_build_id": "build", "compile_verification_id": "verify",
@@ -29,7 +29,7 @@ class FrameworkConfigurationCampaignTests(unittest.TestCase):
         }
         completed = SimpleNamespace(campaign_identity=lambda: identity, to_dict=lambda: identity)
         source_identity = source._make_source_identity_v2(
-            resolved_revision="b" * 40, composition=composition, overlay_root=root / "src")
+            resolved_revision="b" * 40, composition=composition, overlay_root=root / "engines" / "llamacpp" / "overlay")
         source_identity["materialization_plan_id"] = source_identity["source_key"]
         with tempfile.TemporaryDirectory() as temporary:
             work = Path(temporary)

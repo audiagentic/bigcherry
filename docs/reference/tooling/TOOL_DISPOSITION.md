@@ -58,53 +58,52 @@ ownership.
 
 | Path | Disposition | Intended owner / rationale |
 | --- | --- | --- |
-| `patches/_template/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
-| `patches/0100_cmake_options/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
-| `patches/0200_dispatch_hook/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
-| `patches/0300_mmq_forced_j/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
-| `patches/0400_mmvf_forced_block/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
-| `patches/0500_mmf_forced_nwarps/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
-| `patches/0600_mmvq_geometry/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
-| `patches/0650_mmvq_native_variant/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
-| `patches/0700_coverage_counters/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
-| `patches/0800_server_shutdown_endpoint/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
-| `patches/0810_replay_hit_diagnostics/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
-| `patches/0820_measurement_signature_shapes/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
-| `patches/0830_split_reduce_telemetry/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
-| `patches/0900_pool_workspace_metrics/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
-| `patches/1000_rdna4_mmq_q2k_q6k_fix/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
-| `patches/1002_hip_unsafe_math_opt_in/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
-| `patches/1003_quantized_cpy_thread_block_fix/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
-| `patches/1004_rms_norm_mul_rope_fusion/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
-| `patches/1005_prompt_cache_checkpoint_selection/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
-| `patches/1100_hi70_direct_op_evidence/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
-| `patches/1200_rd19_single_gpu_meta_bypass/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
-| `patches/1201_rd20_attn_gate_tp_split/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
-| `patches/1202_rd04_bf16_flash_attn_tile/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
-| `patches/1203_rd050607_rdna4_wmma_fa_q6k_mmq/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
-| `patches/1204_rd08_q6k_mmvq_vdr2/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
-| `patches/1205_rd12_paired_mmvq_dual_output/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
-| `patches/1206_rd13_mul_mat_add_view_fusion/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
-| `patches/1207_rd17_moe_topk_down_fold/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
-| `patches/1208_rd21_gfx1151_mmvq_nwarps_table/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
-| `patches/1209_rd22_integrated_gpu_host_buffer_backout/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
-| `patches/1210_rd26_bitidentical_decode_verify_standalone/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
-| `patches/1215_rd394041_amd_stream_moe_overlap/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
-| `patches/1216_rd43_concurrent_join_fusion_guard/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
-| `patches/1217_rd44_graph_opt_default_rdna35/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
-| `patches/1221_rd50_gdn_chunked_recurrence/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
-| `patches/1222_hi67_deterministic_test_backend_ops_seed/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
-| `patches/1223_hi67_machine_readable_correctness_metrics/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
-| `patches/1224_hi18_reduce_correctness_probe/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
-| `patches/1225_hi85_nccl_heterogeneous_arch_guard/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
-| `patches/1230_hip_autotune_inspect/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
-| `patches/1231_hi14_graph_capture_lifecycle_evidence/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
-| `patches/1232_hi81_windows_cxx_hipcc_flags_reach_compile/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
-| `patches/1233_rd73_stable_graph_cache_key/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
-| `patches/1234_rd58_pin_state_buffer_multigpu_restore/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
-| `patches/1235_rd09_q81_activation_cache_foundation/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
-| `patches/1236_hi105_deterministic_mul_mat_id_ids/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
-| `patches/1237_rd30_moe_mmq_compact_grid/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `engines/llamacpp/patches/_template/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `engines/llamacpp/patches/0100_cmake_options/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `engines/llamacpp/patches/0200_dispatch_hook/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `engines/llamacpp/patches/0300_mmq_forced_j/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `engines/llamacpp/patches/0400_mmvf_forced_block/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `engines/llamacpp/patches/0500_mmf_forced_nwarps/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `engines/llamacpp/patches/0600_mmvq_geometry/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `engines/llamacpp/patches/0650_mmvq_native_variant/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `engines/llamacpp/patches/0700_coverage_counters/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `engines/llamacpp/patches/0800_server_shutdown_endpoint/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `engines/llamacpp/patches/0810_replay_hit_diagnostics/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `engines/llamacpp/patches/0820_measurement_signature_shapes/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `engines/llamacpp/patches/0830_split_reduce_telemetry/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `engines/llamacpp/patches/0900_pool_workspace_metrics/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `engines/llamacpp/patches/1000_rdna4_mmq_q2k_q6k_fix/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `engines/llamacpp/patches/1002_hip_unsafe_math_opt_in/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `engines/llamacpp/patches/1003_quantized_cpy_thread_block_fix/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `engines/llamacpp/patches/1004_rms_norm_mul_rope_fusion/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `engines/llamacpp/patches/1005_prompt_cache_checkpoint_selection/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `engines/llamacpp/patches/1100_hi70_direct_op_evidence/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `engines/llamacpp/patches/1200_rd19_single_gpu_meta_bypass/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `engines/llamacpp/patches/1201_rd20_attn_gate_tp_split/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `engines/llamacpp/patches/1202_rd04_bf16_flash_attn_tile/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `engines/llamacpp/patches/1203_rd050607_rdna4_wmma_fa_q6k_mmq/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `engines/llamacpp/patches/1204_rd08_q6k_mmvq_vdr2/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `engines/llamacpp/patches/1205_rd12_paired_mmvq_dual_output/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `engines/llamacpp/patches/1206_rd13_mul_mat_add_view_fusion/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `engines/llamacpp/patches/1207_rd17_moe_topk_down_fold/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `engines/llamacpp/patches/1208_rd21_gfx1151_mmvq_nwarps_table/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `engines/llamacpp/patches/1209_rd22_integrated_gpu_host_buffer_backout/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `engines/llamacpp/patches/1210_rd26_bitidentical_decode_verify_standalone/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `engines/llamacpp/patches/1215_rd394041_amd_stream_moe_overlap/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `engines/llamacpp/patches/1216_rd43_concurrent_join_fusion_guard/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `engines/llamacpp/patches/1217_rd44_graph_opt_default_rdna35/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `engines/llamacpp/patches/1221_rd50_gdn_chunked_recurrence/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `engines/llamacpp/patches/1222_hi67_deterministic_test_backend_ops_seed/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `engines/llamacpp/patches/1223_hi67_machine_readable_correctness_metrics/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `engines/llamacpp/patches/1224_hi18_reduce_correctness_probe/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `engines/llamacpp/patches/1225_hi85_nccl_heterogeneous_arch_guard/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `engines/llamacpp/patches/1230_hip_autotune_inspect/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `engines/llamacpp/patches/1231_hi14_graph_capture_lifecycle_evidence/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `engines/llamacpp/patches/1232_hi81_windows_cxx_hipcc_flags_reach_compile/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `engines/llamacpp/patches/1233_rd73_stable_graph_cache_key/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `engines/llamacpp/patches/1234_rd58_pin_state_buffer_multigpu_restore/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `engines/llamacpp/patches/1236_hi105_deterministic_mul_mat_id_ids/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `engines/llamacpp/patches/1237_rd30_moe_mmq_compact_grid/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
 | `tools/bigcherry/__init__.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
 | `tools/bigcherry/__main__.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
 | `tools/bigcherry/analysis/candidate_report.py` | **KEEP** | Maintained analysis implementation; invoke with `PYTHONPATH=tools python -m bigcherry.analysis.candidate_report`. |
@@ -148,9 +147,15 @@ ownership.
 | `tools/lab/ar-accuracy/queue-kld-decode.sh` | **TRANSITIONAL** | `ar-accuracy` lab topic file (see `tools/lab/ar-accuracy/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/bump-validation/run_bump_validation.py` | **KEEP** | RHA12: standing bump-validation matrix (PIN_BUMP.md step 5/6) -- builds fresh at the current pin and launches the real production runtime-profiles across every real GPU individually plus the real dual-XTX multi-GPU topology; run on every future bump, not a one-shot experiment. |
 | `tools/lab/bump-validation/smoke_worker.py` | **KEEP** | RHA12: the real per-cell delegate_argv worker run_bump_validation.py's runtime-matrix cells launch -- reuses ServerRunner to actually start each server, wait for /health, send one real completion, and shut down cleanly; part of the same standing bump-validation tool, not a one-shot experiment. |
+| `tools/lab/cross-engine/probe-openai.py` | **TRANSITIONAL** | `cross-engine` lab topic file (see `tools/lab/cross-engine/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/cross-engine/probes-compare.py` | **TRANSITIONAL** | `cross-engine` lab topic file (see `tools/lab/cross-engine/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/cross-engine/run-quality-27b.sh` | **TRANSITIONAL** | `cross-engine` lab topic file (see `tools/lab/cross-engine/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/default-on/smoke-0910.sh` | **TRANSITIONAL** | `default-on` lab topic file (see `tools/lab/default-on/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/default-on/xmodel-ab.sh` | **TRANSITIONAL** | `default-on` lab topic file (see `tools/lab/default-on/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/dflash/dflash-accept-iso.sh` | **TRANSITIONAL** | `dflash` lab topic file (see `tools/lab/dflash/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/dflash/dflash-depth.sh` | **TRANSITIONAL** | `dflash` lab topic file (see `tools/lab/dflash/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/dflash/drafter-files.sh` | **TRANSITIONAL** | `dflash` lab topic file (see `tools/lab/dflash/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/dflash/fetch-drafters.sh` | **TRANSITIONAL** | `dflash` lab topic file (see `tools/lab/dflash/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/dflash/probe-27b.sh` | **TRANSITIONAL** | `dflash` lab topic file (see `tools/lab/dflash/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/dflash/queue-27b-cpuroot.sh` | **TRANSITIONAL** | `dflash` lab topic file (see `tools/lab/dflash/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/dflash/queue-27b-detail.sh` | **TRANSITIONAL** | `dflash` lab topic file (see `tools/lab/dflash/README.md`); experiment-only, disposed per that README. |
@@ -172,6 +177,7 @@ ownership.
 | `tools/lab/flash-next/chunk-prof.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/chunk-sweep.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/combined-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/cross-model-rel.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/ctx-fit-2.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/deploy-sweep.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/determinism.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
@@ -276,7 +282,6 @@ ownership.
 | `tools/lab/flash-next/queue-draft-quant.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/queue-env-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/queue-expert-6900.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/queue-expert-aux6900.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/queue-expert-cpu.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/queue-fa-default.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/queue-fit-probe.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
@@ -314,6 +319,9 @@ ownership.
 | `tools/lab/flash-next/queue-maxctx-search-2.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/queue-maxctx-search.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/queue-meta-mem.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-split-cache-evict.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-promotion-followups.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-promotion-followups-2.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/queue-meta-timing.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/queue-moe-cache.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/queue-moe-copy.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
@@ -385,6 +393,7 @@ ownership.
 | `tools/lab/flash-next/quick-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/rank-census.py` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/rccl-algo-sweep.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/review-with-model.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/routing-profile.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/sched-split-summary.py` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/smoke-models.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
@@ -432,6 +441,13 @@ ownership.
 | `tools/lab/plan-qualification/withdraw_discarded.py` | **TRANSITIONAL** | `plan-qualification` lab topic file (see `tools/lab/plan-qualification/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/plan-qualification/work-root.sh` | **TRANSITIONAL** | Resolves the campaign work root (env var, else environment.local.toml [env], else work/) for the plan-qualification scripts. |
 | `tools/lab/prbe20-rd26-bisect/bisect_ubatch.py` | **TRANSITIONAL** | `prbe20-rd26-bisect` lab topic file (see `tools/lab/prbe20-rd26-bisect/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/radiance/build.sh` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/radiance/rdna3-survey.sh` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/radiance/kdev.sh` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/radiance/libr3-build.sh` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/radiance/kdev_report.py` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/radiance/fetch-gcc14.sh` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/radiance/run-radiance.sh` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/rccl/ar-latency.hip` | **TRANSITIONAL** | `rccl` lab topic file (see `tools/lab/rccl/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/rccl/ar-latency.sh` | **TRANSITIONAL** | `rccl` lab topic file (see `tools/lab/rccl/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/rccl/bidir-check.hip` | **TRANSITIONAL** | `rccl` lab topic file (see `tools/lab/rccl/README.md`); experiment-only, disposed per that README. |
@@ -448,6 +464,9 @@ ownership.
 | `tools/lab/rccl/queue-rccl-env-sweep.sh` | **TRANSITIONAL** | `rccl` lab topic file (see `tools/lab/rccl/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/rccl/queue-rccl-nohostcall.sh` | **TRANSITIONAL** | `rccl` lab topic file (see `tools/lab/rccl/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/rccl/rccl-env-sweep.sh` | **TRANSITIONAL** | `rccl` lab topic file (see `tools/lab/rccl/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/reference-vllm/bench-openai.py` | **TRANSITIONAL** | `reference-vllm` lab topic file (see `tools/lab/reference-vllm/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/reference-vllm/run-llamacpp-r9700.sh` | **TRANSITIONAL** | `reference-vllm` lab topic file (see `tools/lab/reference-vllm/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/reference-vllm/run-radiance.sh` | **TRANSITIONAL** | `reference-vllm` lab topic file (see `tools/lab/reference-vllm/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/results/harvest.sh` | **TRANSITIONAL** | `results` lab topic file (see `tools/lab/results/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/results/summarize.py` | **TRANSITIONAL** | `results` lab topic file (see `tools/lab/results/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/run-campaign-durability/mock_pipeline.py` | **TRANSITIONAL** | `run-campaign-durability` lab topic file (see `tools/lab/run-campaign-durability/README.md`); experiment-only, disposed per that README. |

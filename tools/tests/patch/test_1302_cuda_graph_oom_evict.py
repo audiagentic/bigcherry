@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from bigcherry.patcher import apply_all  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
-_spec = importlib.util.spec_from_file_location("patch_1302", _REPO / "patches/1302_cuda_graph_oom_evict/patch.py")
+_spec = importlib.util.spec_from_file_location("patch_1302", _REPO / "engines/llamacpp/patches/1302_cuda_graph_oom_evict/patch.py")
 assert _spec is not None and _spec.loader is not None
 _module = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_module)

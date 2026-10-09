@@ -37,7 +37,7 @@ from bigcherry.patch import validation_policy as patch_validation_policy  # noqa
 from bigcherry.patch import validation_producer as vp  # noqa: E402
 
 _PATCH_ID = "1203_rd050607_rdna4_wmma_fa_q6k_mmq"
-_PATCH_DIR = REPO_ROOT / "patches" / _PATCH_ID
+_PATCH_DIR = REPO_ROOT / "engines" / "llamacpp" / "patches" / _PATCH_ID
 
 
 class _CapturedExit(Exception):

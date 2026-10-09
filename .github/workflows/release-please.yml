@@ -1,16 +1,23 @@
-# BigCherry releases, versioned by release-please.
+# BigCherry releases, versioned by release-please. One release line per engine plus one for the shared platform
+# (run-multi-engine MEN09); each line has its own release PR, changelog, version and tags.
 #
-# The version is <llama build number>.<minor>.<patch> and release-please's tag bc-<version> is the tag of record:
-#   - a llama.cpp pin bump is released as <build>.0.0 (b11474 -> bc-11474.0.0). This workflow also points the short tag
-#     bc-b<build> at that commit;
-#   - while the pin stays, further BigCherry releases raise minor (features) or patch (fixes): bc-11474.1.0, ...
-# Every release is titled with its tag and gets the generated notes docs/releases/notes/bc-<version>.md (written by
-# `bigcherry release-notes`, committed by `bigcherry pin-release`).
+#   bc-llamacpp   path engines/llamacpp. Version <llama build number>.<minor>.<patch>; release-please's tag
+#                 bc-llamacpp-<version> is the tag of record:
+#                   - a llama.cpp pin bump is released as <build>.0.0 (b11474 -> bc-llamacpp-11474.0.0);
+#                   - while the pin stays, further releases raise minor (features) or patch (fixes).
+#                 This workflow also adds the readable tag bc-llamacpp-b<build>-r<N> to the same commit, N counting
+#                 the releases at that build from 0, and titles the release with it. Each release gets the generated
+#                 notes docs/releases/notes/bc-llamacpp-<version>.md (written by `bigcherry release-notes`, committed
+#                 by `bigcherry pin-release`).
+#   bc-platform   everything outside engines/. Plain semantic version, tag bc-platform-<version>.
 #
-# A release is started by a commit on main with a conventional-commit subject and the footer `Release-As: <version>`
-# (the notes commit, "chore: release notes bc-<version>"); `bigcherry pin-release <llama tag>` makes that commit,
-# fast-forwards main, merges the release PR this workflow opens and waits for the tag. Most commit messages here are
-# not conventional commits and release-please ignores them, footer included.
+# Releases made before the split are tagged bc-<version> on the single line of that time; bc-llamacpp-<version> tags
+# were added to the same commits for the builds still in use so the line continues from them.
+#
+# A llama.cpp release is started by a commit on main with a conventional-commit subject and the footer
+# `Release-As: <version>` (the notes commit, "chore: release notes bc-llamacpp-<version>");
+# `bigcherry pin-release <llama tag>` makes that commit, fast-forwards main, merges the release PR this workflow opens
+# and waits for the tag. Commit messages that are not conventional commits are ignored by release-please.
 #
 # The repository setting "Allow GitHub Actions to create and approve pull requests" must be on for release-please to
 # open the release PR; with it off the action pushes the release branch and fails, and the PR has to be opened by
@@ -35,35 +42,41 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
-      - if: ${{ steps.release.outputs.release_created }}
+      - if: ${{ steps.release.outputs.releases_created == 'true' }}
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Publish the generated notes (and tag bc-b<build> on a pin's first release)
-        if: ${{ steps.release.outputs.release_created }}
+      - name: llama.cpp line - readable tag and generated notes
+        if: ${{ steps.release.outputs['engines/llamacpp--release_created'] == 'true' }}
         env:
           GH_TOKEN: ${{ github.token }}
-          RP_TAG: ${{ steps.release.outputs.tag_name }}
-          RP_SHA: ${{ steps.release.outputs.sha }}
-          LLAMA_BUILD: ${{ steps.release.outputs.major }}
+          RP_TAG: ${{ steps.release.outputs['engines/llamacpp--tag_name'] }}
+          RP_SHA: ${{ steps.release.outputs['engines/llamacpp--sha'] }}
+          LLAMA_BUILD: ${{ steps.release.outputs['engines/llamacpp--major'] }}
         run: |
           set -euo pipefail
-          notes="docs/releases/notes/${RP_TAG}.md"
-          title="${RP_TAG}"
-          if [ "${RP_TAG}" = "bc-${LLAMA_BUILD}.0.0" ]; then
-            bc_tag="bc-b${LLAMA_BUILD}"
-            title="${RP_TAG} (${bc_tag})"
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            if ! git rev-parse -q --verify "refs/tags/${bc_tag}" >/dev/null; then
-              git tag -a "${bc_tag}" "${RP_SHA}" -m "BigCherry on llama.cpp b${LLAMA_BUILD} (release ${RP_TAG})"
-              git push origin "${bc_tag}"
-            fi
+          git fetch -q --tags origin
+          # N = releases at this build before this one (the tag of record for this release already exists)
+          count=$(git tag --list "bc-llamacpp-${LLAMA_BUILD}.*" | wc -l)
+          readable="bc-llamacpp-b${LLAMA_BUILD}-r$((count - 1))"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if ! git rev-parse -q --verify "refs/tags/${readable}" >/dev/null; then
+            git tag -a "${readable}" "${RP_SHA}" -m "BigCherry on llama.cpp b${LLAMA_BUILD}, release ${count} at this build (${RP_TAG})"
+            git push origin "${readable}"
           fi
+          notes="docs/releases/notes/${RP_TAG}.md"
           if [ -f "${notes}" ]; then
-            gh release edit "${RP_TAG}" --title "${title}" --notes-file "${notes}"
+            gh release edit "${RP_TAG}" --title "${readable}" --notes-file "${notes}"
           else
-            gh release edit "${RP_TAG}" --title "${title}"
+            gh release edit "${RP_TAG}" --title "${readable}"
             echo "::warning::${notes} not found - release text left as generated by release-please"
           fi
+
+      - name: platform line - title
+        if: ${{ steps.release.outputs['.--release_created'] == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RP_TAG: ${{ steps.release.outputs['.--tag_name'] }}
+        run: gh release edit "${RP_TAG}" --title "${RP_TAG}"

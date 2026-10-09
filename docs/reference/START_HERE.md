@@ -12,7 +12,7 @@ long-lived llama.cpp fork:
 
 - `src/` mirrors the llama.cpp tree and contains whole files owned by
   bigcherry.
-- `patches/<patch-id>/` contains anchored edits to files owned by upstream,
+- `engines/llamacpp/patches/<patch-id>/` contains anchored edits to files owned by upstream,
   together with the patch's metadata, validation, fixtures, and evidence.
 - `vendor/llama.cpp/` is the real upstream checkout to which the overlay is
   applied and from which builds run.
@@ -64,7 +64,7 @@ When two documents appear to disagree, use this precedence:
 3. The relevant active plan item for current scope, decisions, state, and
    acceptance criteria.
 4. `docs/reference/` for maintained cross-cutting architecture and operations.
-5. Patch-owned files under `patches/<patch-id>/` for a patch's contract and
+5. Patch-owned files under `engines/llamacpp/patches/<patch-id>/` for a patch's contract and
    evidence.
 6. Tracked `docs/evidence/` bundles and transient `artifacts/` outputs for what
    a particular run actually demonstrated.
@@ -81,7 +81,7 @@ substantive implementation work.
 | Project architecture or dispatch concepts | [`architecture/OVERVIEW.md`](architecture/OVERVIEW.md), then the relevant architecture document |
 | Building or bumping llama.cpp | [`build/BUILD.md`](build/BUILD.md) and [`build/PIN_BUMP.md`](build/PIN_BUMP.md) |
 | Tests, tuning, coverage, or replay | [`testing/TEST.md`](testing/TEST.md) |
-| A patch | [`patches/PATCH_SYSTEM.md`](patches/PATCH_SYSTEM.md), then the owning `patches/<patch-id>/` package |
+| A patch | [`patches/PATCH_SYSTEM.md`](patches/PATCH_SYSTEM.md), then the owning `engines/llamacpp/patches/<patch-id>/` package |
 | A new or changed patch | [`patches/PATCH_AUTHORING.md`](patches/PATCH_AUTHORING.md) and [`patches/PATCH_VALIDATION.md`](patches/PATCH_VALIDATION.md) |
 | Finding and shipping performance patches end to end (triage, author, queue, fire, measure, promote; reviewer-agent loop) | [`patches/PATCH_DEVELOPMENT_PIPELINE.md`](patches/PATCH_DEVELOPMENT_PIPELINE.md) |
 | Python tooling or a tooling move/retirement | [`tooling/TOOLING.md`](tooling/TOOLING.md), then [`tooling/TOOL_DISPOSITION.md`](tooling/TOOL_DISPOSITION.md) |
@@ -99,7 +99,7 @@ The complete maintained-reference index is
 | `tools/bigcherry/` | Python CLI and workflow/domain implementations |
 | `tools/tests/` | Offline tooling tests and permanent deterministic fixtures |
 | `src/` | New files overlaid into llama.cpp at matching paths |
-| `patches/` | Packaged anchored edits to upstream-owned files |
+| `engines/llamacpp/patches/` | Packaged anchored edits to upstream-owned files |
 | `config/recipes.toml` | Source, build, platform, and campaign recipes |
 | `sql/` | Record/tune persistence schema plus tested migration history; runtime DB files are untracked |
 | `vendor/llama.cpp/` | Mutable upstream working checkout; not a scratch directory |
@@ -142,7 +142,7 @@ server shutdown. Use the opt-in shutdown endpoint described in
 
 Keep evidence with its owner:
 
-- patch-specific evidence in `patches/<patch-id>/`;
+- patch-specific evidence in `engines/llamacpp/patches/<patch-id>/`;
 - compact, reproducible run evidence in `docs/evidence/<run-id>/`;
 - large raw traces and machine-local outputs in `artifacts/<run-id>/`;
 - reusable cross-cutting conclusions in `docs/reference/`;

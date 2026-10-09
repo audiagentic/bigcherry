@@ -158,7 +158,7 @@ class OfflineCheckAuditTests(unittest.TestCase):
 
 
 class LineEndingOnlyPatchChangeTests(unittest.TestCase):
-    PATH = "patches/1202_rd04_bf16_flash_attn_tile/patch.py"
+    PATH = "engines/llamacpp/patches/1202_rd04_bf16_flash_attn_tile/patch.py"
 
     def test_line_ending_only_patch_py_is_not_an_implementation_change(self) -> None:
         with mock.patch.object(offline_check, "_blob_text_lf", side_effect=[b"a\nb\n", b"a\nb\n"]):
@@ -178,21 +178,35 @@ class LineEndingOnlyPatchChangeTests(unittest.TestCase):
                 ("1202_rd04_bf16_flash_attn_tile",),
             )
 
+    def test_moved_unchanged_patch_py_is_not_an_implementation_change(self) -> None:
+        # absent at this path in base, found under its old path with the same text
+        with mock.patch.object(offline_check, "_renamed_from", return_value="patches/1202_rd04_bf16_flash_attn_tile/patch.py"), \
+                mock.patch.object(offline_check, "_blob_text_lf", side_effect=[None, b"a\nb\n", b"a\nb\n"]):
+            self.assertEqual(offline_check._implementation_patch_ids([self.PATH], "base", "head"), ())
+
+    def test_moved_and_edited_patch_py_still_counts(self) -> None:
+        with mock.patch.object(offline_check, "_renamed_from", return_value="patches/1202_rd04_bf16_flash_attn_tile/patch.py"), \
+                mock.patch.object(offline_check, "_blob_text_lf", side_effect=[None, b"a\nb\n", b"a\nc\n"]):
+            self.assertEqual(
+                offline_check._implementation_patch_ids([self.PATH], "base", "head"),
+                ("1202_rd04_bf16_flash_attn_tile",),
+            )
+
 
 class CompositionPatchIdTests(unittest.TestCase):
     def test_test_only_and_doc_changes_do_not_trigger_the_experiment_audit(self) -> None:
         paths = [
             "tools/tests/patch/test_1307_q81_activation_cache_mmvq.py",
-            "patches/1307_q81_activation_cache_mmvq/README.md",
-            "patches/1307_q81_activation_cache_mmvq/SUMMARY.md",
+            "engines/llamacpp/patches/1307_q81_activation_cache_mmvq/README.md",
+            "engines/llamacpp/patches/1307_q81_activation_cache_mmvq/SUMMARY.md",
         ]
         self.assertEqual(offline_check._composition_patch_ids(paths), ())
 
     def test_patch_py_and_patch_toml_changes_do(self) -> None:
         paths = [
-            "patches/1307_q81_activation_cache_mmvq/patch.py",
-            "patches/1340_meta_per_device_arena/patch.toml",
-            "patches/_template/patch.toml",
+            "engines/llamacpp/patches/1307_q81_activation_cache_mmvq/patch.py",
+            "engines/llamacpp/patches/1340_meta_per_device_arena/patch.toml",
+            "engines/llamacpp/patches/_template/patch.toml",
         ]
         self.assertEqual(
             offline_check._composition_patch_ids(paths),

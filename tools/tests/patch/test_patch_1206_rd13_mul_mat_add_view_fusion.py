@@ -11,13 +11,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from bigcherry.core import paths  # noqa: E402
 from bigcherry.core import csource  # noqa: E402
 from bigcherry.patcher import apply_patch  # noqa: E402
+from bigcherry.patch.pinned_source import read_pinned  # noqa: E402
 
 
 ROOT = Path(__file__).resolve().parents[3]
-PATCH_PATH = ROOT / "patches" / "1206_rd13_mul_mat_add_view_fusion" / "patch.py"
-VENDOR_SOURCE = ROOT / "vendor" / "llama.cpp" / "ggml" / "src" / "ggml-cuda" / "ggml-cuda.cu"
+PATCH_PATH = ROOT / "engines" / "llamacpp" / "patches" / "1206_rd13_mul_mat_add_view_fusion" / "patch.py"
+VENDOR_SOURCE = paths.llama_root() / "ggml" / "src" / "ggml-cuda" / "ggml-cuda.cu"
 
 
 def _load_patch_module():
@@ -53,7 +55,7 @@ class Rd13PatchApplicationTests(unittest.TestCase):
         and is not selected by the production recipe, so an out-of-band
         application must never be a prerequisite for this test.
         """
-        source = VENDOR_SOURCE.read_text(encoding="utf-8")
+        source = read_pinned(VENDOR_SOURCE)  # the pinned text, not a working tree that may have patches applied
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             target = root / RD13.PATCH.path

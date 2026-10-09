@@ -9,7 +9,7 @@ import sys
 
 sys.path.insert(0, "tools")
 pid, old_rev, ids = sys.argv[1], sys.argv[2], set(sys.argv[3:])
-spec = importlib.util.spec_from_file_location("p", f"patches/{pid}/patch.py")
+spec = importlib.util.spec_from_file_location("p", f"engines/llamacpp/patches/{pid}/patch.py")
 P = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(P)
 patches = getattr(P, "PATCHES", None) or [getattr(P, "PATCH")]

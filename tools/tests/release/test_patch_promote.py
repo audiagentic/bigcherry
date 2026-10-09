@@ -10,6 +10,8 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from bigcherry.patch import evidence as patch_evidence  # noqa: E402
+from bigcherry.patch import profile_evidence  # noqa: E402
 from bigcherry.release import patch_promote as pp  # noqa: E402
 
 
@@ -76,7 +78,7 @@ class PatchPromoteTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory(prefix="patch-promote-")
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
-        patch = self.root / "patches" / "1348_demo"
+        patch = self.root / "engines" / "llamacpp" / "patches" / "1348_demo"
         patch.mkdir(parents=True)
         (self.root / "config").mkdir()
         (patch / "patch.toml").write_text(_PATCH_TOML, encoding="utf-8")
@@ -91,7 +93,9 @@ class PatchPromoteTests(unittest.TestCase):
         )
         self.evidence = self.root / "evidence.md"
         self.evidence.write_text(
-            "Model: model-a\nModel: model-b\nBuild: test\nA/B: +3%\n",
+            "Model: model-a\nModel: model-b\nBuild: test\nMechanics: tests pass\n"
+            "Activation: marker in the patched arm only\nIdentity: greedy text identical\nA/B: +3%\n"
+            "No-regression: model-b identical text\n",
             encoding="utf-8",
         )
 
@@ -127,7 +131,41 @@ class PatchPromoteTests(unittest.TestCase):
         self.assertEqual(recipes["experiment"]["demo"]["patches"], [])
         self.assertEqual(recipes["experiment"]["combo"]["patches"], ["1000_base"])
 
+    def test_production_list_keeps_its_comments_and_layout(self):
+        path = self.root / "config" / "recipes.toml"
+        listed = (
+            'patches = [\n'
+            '    "1000_base",\n'
+            '    # PROMOTED 2026-10-08: why 1001 is here\n'
+            '    "1001_other"  # no trailing comma yet\n'
+            ']\n'
+        )
+        path.write_text(_RECIPES.replace('patches = ["1000_base"]\n', listed, 1), encoding="utf-8")
+        before = path.read_text(encoding="utf-8")
 
+        pp._update_recipes(self.root, ("1348_demo",))
+
+        after = path.read_text(encoding="utf-8")
+        self.assertIn(
+            'patches = [\n'
+            '    "1000_base",\n'
+            '    # PROMOTED 2026-10-08: why 1001 is here\n'
+            '    "1001_other",  # no trailing comma yet\n'
+            '    "1348_demo",\n'
+            ']\n',
+            after,
+        )
+        self.assertEqual(
+            tomllib.loads(after)["patch-set"]["validated-enhancements"]["patches"],
+            ["1000_base", "1001_other", "1348_demo"],
+        )
+        # nothing outside the production array and the experiments that held the patch changed
+        self.assertEqual(before.split("[experiment.demo]")[0].replace(listed, ""),
+                         after.split("[experiment.demo]")[0].replace(
+                             listed.replace('"1001_other"  #', '"1001_other",  #').replace(']\n', '    "1348_demo",\n]\n'), ""))
+
+        pp._update_recipes(self.root, ("1348_demo",))  # already listed: no second entry
+        self.assertEqual(after, path.read_text(encoding="utf-8"))
 
     def test_state_update_tolerates_patch_without_python_state(self):
         info = pp._load_patch(self.root, "1348_demo")
@@ -140,7 +178,8 @@ class PatchPromoteTests(unittest.TestCase):
     def test_promotion_requires_second_model_unless_profile_only(self):
         single = self.root / "single.md"
         single.write_text(
-            "Model: model-a\nBuild: test\nnative llama.cpp baseline: matched\n",
+            "Model: model-a\nBuild: test\nMechanics: tests pass\nActivation: marker seen\n"
+            "Identity: greedy text identical\nA/B: +3%\nnative llama.cpp baseline: matched\n",
             encoding="utf-8",
         )
 
@@ -164,9 +203,22 @@ class PatchPromoteTests(unittest.TestCase):
                 "@" + str(single),
             )
 
+        worktree = self.root.parent / f"{self.root.name}-gate"
+        shutil.copytree(self.root, worktree)
+        self.addCleanup(lambda: shutil.rmtree(worktree, ignore_errors=True))
+        seen = {}
+
+        def gate(root, infos):
+            # the gates see the candidate still unpromoted, with its evidence record already in the package
+            seen["state"] = tomllib.loads((infos[0].root / "patch.toml").read_text(encoding="utf-8"))["state"]
+            seen["record"] = profile_evidence.load(infos[0].root)
+            raise pp.PatchPromoteError("stop after gate")
+
         with mock.patch.object(pp, "_git", side_effect=fake_git), \
                 mock.patch.object(pp, "_run", side_effect=pp._run), \
-                mock.patch.object(pp, "_preflight", side_effect=pp.PatchPromoteError("stop after gate")):
+                mock.patch("bigcherry.cli.slice.start_slice", return_value=worktree), \
+                mock.patch.object(pp, "_discard_promotion_slice"), \
+                mock.patch.object(pp, "_preflight", side_effect=gate):
             with self.assertRaisesRegex(pp.PatchPromoteError, "stop after gate"):
                 pp.promote(
                     self.root,
@@ -174,6 +226,57 @@ class PatchPromoteTests(unittest.TestCase):
                     "@" + str(single),
                     profile_only=True,
                 )
+        self.assertEqual(seen["state"], "untested")
+        self.assertEqual(seen["record"].models, ("model-a",))
+        self.assertEqual(seen["record"].pinned, "b11474")
+        self.assertFalse(seen["record"].default_on)
+        self.assertFalse((self.root / "engines/llamacpp/patches/1348_demo/evidence").exists())
+
+    def test_incomplete_evidence_stops_before_a_slice_exists(self):
+        thin = self.root / "thin.md"
+        thin.write_text("Model: model-a\nModel: model-b\nA/B: +3%\n", encoding="utf-8")
+
+        def fake_git(root, *args, check=True):
+            if args[:3] == ("rev-parse", "--abbrev-ref", "HEAD"):
+                return "main"
+            if args[:1] == ("rev-parse",):
+                return "same"
+            return ""
+
+        with mock.patch.object(pp, "_git", side_effect=fake_git), \
+                mock.patch("bigcherry.cli.slice.start_slice") as start:
+            with self.assertRaisesRegex(pp.PatchPromoteError, "check 'identity' is missing"):
+                pp.promote(self.root, ("1348_demo",), "@" + str(thin))
+        start.assert_not_called()
+
+    def test_profile_record_binds_pin_and_implementation_and_survives_the_state_change(self):
+        info = pp._load_patch(self.root, "1348_demo")
+        record = pp._profile_evidence(self.root, info, self.evidence.read_text(encoding="utf-8"))
+        profile_evidence.write(info.root, record)
+
+        def verify(pinned="b11474"):
+            digest = patch_evidence.patch_validation_subject_digest(info.root / "patch.py")
+            return profile_evidence.verify(info.root, patch_id="1348_demo", pinned_ref=pinned, subject_digest=digest)
+
+        self.assertEqual(verify(), ())
+        pp._set_state(info)  # promotion's own edit does not void the record
+        self.assertEqual(verify(), ())
+        self.assertIn("current pin is 'b99999'", " ".join(verify("b99999")))
+
+        py = info.root / "patch.py"
+        py.write_text(py.read_text(encoding="utf-8") + "\n# an edit after the evidence was taken\n", encoding="utf-8")
+        self.assertIn("implementation changed", " ".join(verify()))
+        self.assertIsNone(profile_evidence.verify(self.root, patch_id="x", pinned_ref="b11474", subject_digest="0"))
+
+    def test_default_on_patch_needs_a_second_model_run(self):
+        info = pp._load_patch(self.root, "1348_demo")
+        pp._promote_default_on(info, self.evidence.read_text(encoding="utf-8"))
+        base = "Mechanics: ok\nActivation: ok\nIdentity: ok\nA/B: ok\n"
+        with self.assertRaisesRegex(pp.PatchPromoteError, "no-regression"):
+            pp._profile_evidence(self.root, info, "Model: a\nModel: b\n" + base)
+        with self.assertRaisesRegex(pp.PatchPromoteError, "two distinct named models"):
+            pp._profile_evidence(self.root, info, "Model: a\nNo-regression: ok\n" + base)
+        self.assertTrue(pp._profile_evidence(self.root, info, self.evidence.read_text(encoding="utf-8")).default_on)
 
     def test_default_on_requires_two_named_models_and_flips_gate(self):
         info = pp._load_patch(self.root, "1348_demo")
@@ -267,7 +370,7 @@ class PatchPromoteTests(unittest.TestCase):
         info = pp._load_patch(self.root, "1348_demo")
         payload = pp._ledger_payload(
             (info,),
-            ["patches/1348_demo/patch.toml", "config/recipes.toml"],
+            ["engines/llamacpp/patches/1348_demo/patch.toml", "config/recipes.toml"],
             "feat(patch): promote 1348_demo",
         )
         self.assertEqual(payload["change_class"], "feature")

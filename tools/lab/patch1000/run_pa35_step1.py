@@ -81,12 +81,12 @@ def main() -> int:
     control_src = psi.materialize_composition(
         base_repo=campaign_build.LLAMA_CPP_SRC, worktree_root=source_root / "control",
         resolved_revision=control_revision, composition=control_composition,
-        overlay_root=REPO_ROOT / "src", requested_revision=control_revision,
+        overlay_root=psi.OVERLAY_ROOT, requested_revision=control_revision,
     )
     subject_src = psi.materialize_composition(
         base_repo=campaign_build.LLAMA_CPP_SRC, worktree_root=source_root / "subject",
         resolved_revision=subject_revision, composition=subject_composition,
-        overlay_root=REPO_ROOT / "src", requested_revision=subject_revision,
+        overlay_root=psi.OVERLAY_ROOT, requested_revision=subject_revision,
     )
 
     build_workdir = args.build_root / "builds"

@@ -31,7 +31,7 @@ repository at once, and a change is only proven on the lab hardware.
    production build, the hardware evidence is in the description. Merge method: squash. The branch is deleted on
    merge.
 6. **Releases are cut from `main` by release-please.** Every merged `feat` / `fix` / `perf` updates one open release
-   pull request; merging that pull request tags `bc-<llama build>.<minor>.<patch>` and publishes the notes. Several
+   pull request; merging that pull request tags `bc-llamacpp-<llama build>.<minor>.<patch>` (with the readable alias `bc-llamacpp-b<build>-r<N>`) and publishes the notes. Several
    promotions merged before the release pull request is merged ship as one release.
 7. **No long-lived integration branch.** `patch-refactor` served that role until `bc-11474.0.0`; it was merged into
    `main` and deleted on 2026-10-08. `main` is the only trunk.

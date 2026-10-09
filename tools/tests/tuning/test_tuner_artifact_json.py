@@ -17,7 +17,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
-TUNER = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-tuner.cu"
+TUNER = ROOT / "engines" / "llamacpp" / "overlay" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-tuner.cu"
 
 
 class TunerArtifactJsonContractTests(unittest.TestCase):

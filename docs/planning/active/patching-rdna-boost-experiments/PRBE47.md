@@ -13,43 +13,48 @@ priority: P3
 
 # UP-HIP-002: AMD DPP/native shuffle path
 
-## Description
 
-TODO, corrected per GPT review (req_e17e0bf5a68c48d5). Source-location assumption was wrong: Q6_K MMVQ's vec_dot_q6_K_q8_1* in vecdotq.cuh performs LOCAL DP4A accumulation only and does not call warp_reduce_sum. The actual warp_reduce_sum call sites for the MMVQ hot path are generic, type-templated reductions in mmvq.cu (confirmed: mmvq.cu:795,798,937,940, `tmp[j][i] = warp_reduce_sum<warp_size>(tmp[j][i])` etc.), SHARED by every quant type, not Q6_K/Q8_0-specific. A blanket DPP swap at these sites would affect every quant type's reduction, contradicting the item's own 'no blanket substitution' requirement. DPP reduction sequence and compile guard remain TBD pending real ISA verification.
+## 2026-10-09 authoritative audit: wave32 DPP reduction, not a blanket shuffle replacement
 
-## Steps
+**Disposition:** dormant P3; source/host discriminator completed, no patch or hardware lane queued. Only consider an opt-in Q6_K MMVQ reduction experiment if a current-pin ISA and critical-path census shows a genuine opportunity. The old DPP code sketch and its row-shift assumption are superseded by this section. This is NOT a demonstrated speedup.
 
-1. Do NOT add a new warp_reduce_sum call inside vecdotq.cuh's vec_dot_q6_K_q8_1* (it does not reduce across the warp there -- confirmed by direct read). 2. Target the real call sites instead: mmvq.cu:795/798/937/940 (and any other warp_reduce_sum<warp_size> calls in this file's MMVQ dispatch), which are generic and shared across all quant types. 3. Implement a verified wave32 DPP helper (warp_reduce_sum_dpp) as before. 4. Specialize ONLY these mmvq.cu reduction sites with `if constexpr (type == GGML_TYPE_Q6_K || type == GGML_TYPE_Q8_0)` (or an equivalent type-gated branch keyed off the kernel's template type parameter) plus an AMD wave32 compile guard, calling warp_reduce_sum_dpp for the targeted types only; retain warp_reduce_sum<warp_size> unconditionally for every other type/architecture -- this satisfies the 'no blanket replacement' requirement since the swap is type-gated at the existing generic call site, not a redefinition of warp_reduce_sum itself. 5. Validate generated ISA (hipcc --save-temps) for both a targeted (Q6_K) and non-targeted (e.g. Q4_0) type to confirm the branch correctly isolates codegen. 6. Add a non-target quant type as an explicit negative control in test-backend-ops (must show unchanged codegen/behavior).
+### Verified source and ownership
 
-## Detailed Solution & Technical Design
+Pinned llama.cpp b11474 (b9acf138a1e28ce1fc23b5a4fc4b12444b50f7ea) and upstream master inspected 2026-10-09:
 
-b11126's warp_reduce_sum is a template-free set of overloads in common.cuh used pervasively (attention, MMQ, MMVQ, norm kernels, etc) via `__shfl_xor_sync`, which HIP lowers to `ds_permute`/`ds_bpermute` or `v_shfl` style cross-lane moves depending on target -- on RDNA, native DPP (data-parallel-primitives) row-shuffle instructions can sometimes execute the same butterfly pattern with fewer cycles and no LDS round-trip that HIP's shuffle emulation may need on some RDNA generations, but this is NOT guaranteed to win (RDNA3/4 shuffle lowering has improved across ROCm versions) -- hence the item's own insistence on measuring generated ISA and runtime per kernel rather than assuming a win. The safest implementation shape is a parallel, separately-named helper selected only at specific hot call sites via an architecture-guarded macro/if-constexpr, never a redefinition of the shared warp_reduce_sum (which would silently change every kernel's codegen, violating the item's 'no blanket replacement' requirement and dramatically raising regression surface).
+- ggml/src/ggml-cuda/common.cuh::warp_reduce_sum<float> (~468-474): butterfly offsets **16,8,4,2,1** through __shfl_xor_sync, float additions after each exchange. The float2, half2 and integer overloads are separate and are **not** in scope.
+- ggml/src/ggml-cuda/mmvq.cu::mul_mat_vec_q (~600-835): generic type-templated Q8_1-activation MMVQ. At ~795 and ~798, normal and optional fused-gate sums are reduced **after** cross-warp shared-memory accumulation and __syncthreads(). Preserve that order and every barrier. All quant types instantiate these sites.
+- ggml/src/ggml-cuda/mmvq.cu::mul_mat_vec_q_moe (~843-990): a distinct multi-token MUL_MAT_ID path, reached when has_ids && ncols_dst > 1. It has no inter-warp shared reduction; at ~948/951 it reduces normal and optional fused-gate sums independently. Previous PRBE47 text omitted this second pair of call sites. Both paths require separate eligibility/activation evidence.
+- ggml/src/ggml-cuda/mmvq.cu::get_device_table_id (~106-122) already selects RDNA3_0 / RDNA4 at compile time. The existing 0600/0650 MMVQ geometry and 1273 IQ tuning packages own geometry/dispatch; do not add a table, scheduler, allocator, runtime selector or global warp_reduce_sum override.
+- No DPP MMVQ patch is present in the BigCherry package inventory. Current upstream master still uses the same float shuffle reductions. This audit did not inspect generated HIP ISA, so the stock compiler might already lower exchanges efficiently.
 
-## Code Samples & Guidance
+**Critical lane constraint:** AMD DPP16 row_xmask only addresses XOR partners within each 16-lane row. In wave32, XOR 16 crosses the row boundary and cannot be replaced by row_xmask:16. The historical row_shr:1 sketch is not an XOR butterfly and is also invalid for this reduction. Use the existing full-wave __shfl_xor_sync for offset 16, then consider DPP row_xmask for offsets 8,4,2,1. Do not copy the old update_dpp float sketch or its incorrectly grouped preprocessor condition. AMD ROCm's wavefront guide and LLVM's DPP16 syntax confirm the row boundary; rocPRIM warp_reduce is a reference for warp/participation constraints, **not** a drop-in bit-identical replacement.
 
-Real b11126 anchor (ggml/src/ggml-cuda/common.cuh:472-479, exact):\n```cpp\nstatic __device__ __forceinline__ float warp_reduce_sum(float x) {\n#pragma unroll\n    for (int offset = 16; offset > 0; offset >>= 1) {\n        x += __shfl_xor_sync(0xffffffff, x, offset, width);\n    }\n    return x;\n}\n```\nNew, separately-named DPP variant (sketch -- exact DPP row-op sequence needs verification against ROCm's device intrinsics header for the target ROCm version, this is a genuine implementation task not a copy-paste):\n```cpp\n#if defined(GGML_USE_HIP) && defined(__gfx1100__) || defined(__gfx1201__)\nstatic __device__ __forceinline__ float warp_reduce_sum_dpp(float x) {\n    x += __builtin_amdgcn_update_dpp(0.0f, x, 0x111, 0xf, 0xf, false); // row_shr:1 style butterfly step, repeat log2(warpSize) times\n    ... // full butterfly sequence TBD, verify against real amdgcn DPP ISA docs\n    return x;\n}\n#endif\n```\nCall-site gating (in the identified Q6/Q8 kernel, not in common.cuh):\n```cpp\n#if defined(GGML_USE_HIP) && (defined(__gfx1100__) || defined(__gfx1201__))\n    sum = warp_reduce_sum_dpp(sum);\n#else\n    sum = warp_reduce_sum(sum);\n#endif\n```\npatch.toml: id="<order>_rd56_dpp_shuffle_targeted", state="untested", backend="hip", plan-item="PRBE47", experiment-contracts=["UP-HIP-002-DPP-TARGETED-KERNELS"].
+### Cheapest discriminator (completed, host only)
 
-## Files
+A deterministic NumPy float32 lane simulator compared (A) the stock XOR-16/8/4/2/1 butterfly, (B) XOR-16 + four row_xmask stages with identical addition order, and (C) an invalid row-only reduction. **8,195/8,195** full-wave inputs produced bit-identical 32-lane outputs for A/B; **8,195/8,195** exposed a difference for C. Inputs included 8,192 seeded random vectors plus ramp, unequal half-wave and cancellation vectors. This verifies lane-index algebra and float32 addition order only; it does **not** prove AMD DPP builtin codegen, masked-lane behavior, GPU correctness or speed.
 
-ggml/src/ggml-cuda/common.cuh (new warp_reduce_sum_dpp helper, additive only), ggml/src/ggml-cuda/mmvq.cu and/or mmq-vec-dot.cuh (call-site swap at the identified Q6/Q8 hot loops, exact function names TBD by grep at implementation time), tests/test-backend-ops.cpp (existing MUL_MAT Q6_K/Q8_0 cases as regression oracle), new package patches/<order>_rd56_dpp_shuffle_targeted/.
+### Implementation-ready decision sequence
 
-## Validation
+1. **No patch until ISA Gate 0.** On the installed ROCm compiler, build the existing composed b11474 baseline and inspect gfx1100/gfx1201 disassembly for Q6_K mul_mat_vec_q and mul_mat_vec_q_moe, including fused and unfused instantiations. Record actual v_dpp/ds_bpermute/v_permlane instructions, VGPR/SGPR, scratch, LDS, wave32, and kernel timing/call counts with existing rocprofv3 tooling. If the compiler already emits an equivalent DPP sequence or the targeted reduction's *measured* upper bound is <3% of E2E decode, close without patch or queued A/B. No GPU result is asserted here.
+2. **If Gate 0 survives, prototype one additive helper, never replace common.cuh's generic overload.** Only HIP + (RDNA3_0 or RDNA4) + physical warp_size==32 + type==GGML_TYPE_Q6_K; preserve other architectures/types, including gfx1030, and keep normal/fused-gate reduction paths in both kernels aligned. A type/architecture compile-time gate must resolve before codegen. Use bit-preserving float-to-i32 reinterpretation for mov_dpp and reinterpreted result, not numeric conversion. DPP control encodings and availability must be checked against installed ROCm headers/ISA; use row_mask=bank_mask=0xf and require a full participating wave.
+3. **Pseudocode, not compile-ready code:** for offset in [16,8,4,2,1], partner = offset==16 ? native_shfl_xor(x,16,32) : bitcast_f32(mov_dpp(bitcast_i32(x), verified_ROW_XMASK(offset),0xf,0xf,false)); x = float32(x + partner). Keep each addition and its order. Do not use row_shr, row_bcast, an unverified 0x111 control word or a wave64 fallback.
+4. **Bounded host/device tests before timing:** a host lane-permutation fixture (all 32 lanes; nonuniform halves; signed zero, finite extremes, NaN handling documented); a tiny HIP 32-lane kernel comparing every lane bitwise against native shuffles on gfx1100/gfx1201; reject partial-wave/unsupported-width configurations. Test both normal and fused gate, Q6_K ncols 1..8, MUL_MAT_ID ncols 1 vs >1, multi-ubatch, repeated same-process requests, graph capture/replay, long context, full-vocabulary logits, greedy outputs and MTP acceptance. Include Q4_K/IQ4_XS/Q8_0/gfx1030 negative controls with unchanged ISA and outputs.
+5. **Only then performance qualification:** baseline composed b11474 versus baseline + Q6_K-only DPP package, identical model/quant/graph/ubatch, single gfx1100 and gfx1201 first; optional dual-XTX tensor-split control later to isolate communication from per-device kernel effects. Measure tg128/tg512, 8K/80K context, per-kernel critical-path share, LDS/VALU instructions, register pressure, clocks and E2E throughput. Four independent sessions per architecture, >=10 paired ABBA rounds/session, CI95-low >=3% E2E decode improvement, <=1% prefill/negative-control regression, exact work and output parity. If no causal kernel win or codegen regresses, reject and remove the candidate. Only consider Q8_0 in a **separate** follow-up after verifying the F32-activation 1241/1301 routes and MTP acceptance; do not widen this slice.
+6. **Fallback/rollback:** baseline native shuffle, no new state, no memory lifetime changes, no graph topology changes, no GPU-to-GPU transfers. Do not modify active QFP/MMQ/Meta/MTP plans or queue experiments against occupied hardware.
 
-Offline: patch-lint, patch-rebase-check. Correctness: exact output parity for every targeted kernel/shape (existing test-backend-ops MUL_MAT cases at Q6_K/Q8_0 must stay bit-identical). ISA: hipcc-generated assembly diff showing v_dpp usage and instruction-count/DS-usage delta per kernel. Hardware (Brutus, not run here): targeted-kernel microbench + E2E Qwen decode on gfx1100/gfx1201, non-RDNA/generic-fallback control unaffected.
+### Consolidation, measured context and sources
 
-## Effort & Risk
+PRBE47 owns only Q6_K reduction-lowering proof. PRBE111 owns IQ4_XS/IQ3_XXS vec-dot/VDR metadata and hoisting; PRBE21 owns small-K geometry through 0600/0650; 1273 owns IQ tuning; 1204's rejected Q6_K VDR2 campaign is a **different** mechanism (gfx1201 decode +0.204%, CI95 [+0.094,+0.330] versus required +0.3% low, prefill -0.089%). These historical numbers warn against assuming microkernel gains; they are not DPP measurements. Theoretical E2E gain cannot exceed measured time attributable to the targeted reduction.
 
-M (unchanged) -- lane-topology correctness for DPP row ops is easy to get subtly wrong (silent wrong-sum bugs), and compiler lowering of __shfl_xor_sync already varies by ROCm version, so a measured non-win is a real possible outcome per the item's own acceptance criteria.
+Source references:
+- https://github.com/ggml-org/llama.cpp/blob/b9acf138a1e28ce1fc23b5a4fc4b12444b50f7ea/ggml/src/ggml-cuda/mmvq.cu
+- https://github.com/ggml-org/llama.cpp/blob/b9acf138a1e28ce1fc23b5a4fc4b12444b50f7ea/ggml/src/ggml-cuda/common.cuh
+- https://rocm-handbook.amd.com/projects/amd-rocm-optimization-guide/en/latest/compiler-builtins/cross-arch/wavefront-ref/dpp-builtins.html
+- https://rocm.docs.amd.com/projects/llvm-project/en/latest/LLVM/llvm/html/AMDGPUModifierSyntax.html
+- https://rocm.docs.amd.com/projects/rocPRIM/en/latest/warp_ops/reduce.html
 
-## Standards
-
-No blanket intrinsic substitution -- new helper is additive and call-site-gated, never a redefinition of the shared warp_reduce_sum. Non-RDNA portability preserved via #if guards. Generated-ISA evidence required before promotion.
-
-## Acceptance Criteria
-
-Acceptance requires exact output parity, generated-ISA and DS-use evidence, repeatable targeted-kernel and E2E improvement, and generic fallback on unsupported architectures/patterns; no blanket replacement.
-
-## Notes
+## Historical provenance (superseded design notes)
 
 Supersedes: RD56
 Migration: capability-rebaseline-v3-2026-09
@@ -62,6 +67,8 @@ Supersedes RD56.
 2026-09-24 GPT review req_e17e0bf5a68c48d5 applied: corrected the target call sites from vecdotq.cuh's vec_dot_q6_K_q8_1* (which does not call warp_reduce_sum) to the real generic, type-templated reduction sites in mmvq.cu (confirmed at mmvq.cu:795,798,937,940); specified an if-constexpr type-gated specialization at those sites rather than a blanket redefinition.
 
 ## Change Log
+
+- 2026-10-09 (BCOP84): replaced invalid DPP row-shift sketch and stale four-site inventory with source/host-qualified hybrid wave32 decision gate; no patch/hardware result.
 
 - 2026-10-08 (triage): Kept pending at P3. No RD56 DPP MMVQ specialized patch or measured gfx1100/gfx1201 ISA/perf evidence. Native warp_reduce_sum at mmvq.cu's type-shared sites must remain for unqualified quant types; profile then isolate. Keep pending.
 
