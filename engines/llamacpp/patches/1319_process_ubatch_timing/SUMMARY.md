@@ -1,6 +1,6 @@
 # 1319_process_ubatch_timing
 
-**Status:** untested
+**Status:** validated
 **Plan item:** QFP16
 
 ## What it does
