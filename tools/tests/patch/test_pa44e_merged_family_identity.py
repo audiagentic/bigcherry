@@ -10,12 +10,13 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from bigcherry.core import paths as bc_paths  # noqa: E402
 from bigcherry.patcher import apply_all, env_docs  # noqa: E402
 from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
 _RECIPES = _REPO / "config/recipes.toml"
-_VENDOR = _REPO / "vendor/llama.cpp"
+_VENDOR = bc_paths.llama_root()
 
 
 def _load(name: str, path: Path):

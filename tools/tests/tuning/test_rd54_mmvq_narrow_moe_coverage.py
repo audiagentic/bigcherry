@@ -45,6 +45,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from bigcherry.core import paths  # noqa: E402
 from bigcherry.tuning import catalog as cat
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -121,7 +122,7 @@ def test_forced_geometry_aborts_for_moe_multitoken_not_silently_misattributed():
     assert "has_ids && ncols_dst > 1" in patch_src
     assert "GGML_ABORT" in patch_src
 
-    vendor_src = (ROOT / "vendor" / "llama.cpp" / "ggml" / "src"
+    vendor_src = (paths.llama_root() / "ggml" / "src"
                   / "ggml-cuda" / "mmvq.cu").read_text(encoding="utf-8")
     assert "if (has_ids && ncols_dst > 1)" in vendor_src
     assert "GGML_ABORT" in vendor_src
@@ -135,7 +136,7 @@ def test_ncols_x_is_src0_ne0_not_a_derived_quantity():
     literally `src0->ne[0]` (== `ne00`), passed straight through -- so a
     canonical signature's `ne0[0]` is the correct, direct real-hardware value
     to feed `predicted_nwarps_q8_0()` against, with no unit conversion."""
-    vendor_src = (ROOT / "vendor" / "llama.cpp" / "ggml" / "src"
+    vendor_src = (paths.llama_root() / "ggml" / "src"
                   / "ggml-cuda" / "mmvq.cu").read_text(encoding="utf-8")
     assert "const int64_t ne00 = src0->ne[0];" in vendor_src
     assert "mul_mat_vec_q_switch_type(" in vendor_src

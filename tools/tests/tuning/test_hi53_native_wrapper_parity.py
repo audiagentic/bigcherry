@@ -11,10 +11,14 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from bigcherry.core import paths as bc_paths  # noqa: E402
+
 
 ROOT = Path(__file__).resolve().parents[3]
 UPSTREAM_MMVQ = (
-    ROOT / "vendor" / "llama.cpp" / "ggml" / "src" / "ggml-cuda" / "mmvq.cu"
+    bc_paths.llama_root() / "ggml" / "src" / "ggml-cuda" / "mmvq.cu"
 )
 UPSTREAM_MMVQ_HEADER = UPSTREAM_MMVQ.with_suffix(".cuh")
 DISPATCH = ROOT / "engines" / "llamacpp" / "overlay" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-dispatch.cu"

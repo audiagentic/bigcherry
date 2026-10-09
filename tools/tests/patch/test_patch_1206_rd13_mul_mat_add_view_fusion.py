@@ -11,13 +11,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from bigcherry.core import paths  # noqa: E402
 from bigcherry.core import csource  # noqa: E402
 from bigcherry.patcher import apply_patch  # noqa: E402
 
 
 ROOT = Path(__file__).resolve().parents[3]
 PATCH_PATH = ROOT / "engines" / "llamacpp" / "patches" / "1206_rd13_mul_mat_add_view_fusion" / "patch.py"
-VENDOR_SOURCE = ROOT / "vendor" / "llama.cpp" / "ggml" / "src" / "ggml-cuda" / "ggml-cuda.cu"
+VENDOR_SOURCE = paths.llama_root() / "ggml" / "src" / "ggml-cuda" / "ggml-cuda.cu"
 
 
 def _load_patch_module():

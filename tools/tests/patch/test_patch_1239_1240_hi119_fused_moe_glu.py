@@ -16,6 +16,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from bigcherry.core import paths  # noqa: E402
 from bigcherry.patcher import apply_all
 
 
@@ -52,7 +53,7 @@ def _all_patches():
 
 
 def _apply_to_copy(tmp_path: Path, patches) -> Path:
-    vendor = ROOT / "vendor" / "llama.cpp"
+    vendor = paths.llama_root()
     target = tmp_path / _REL
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(vendor / _REL, target)

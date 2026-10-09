@@ -9,11 +9,12 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from bigcherry.core import paths  # noqa: E402
 from bigcherry.patcher import apply_all  # noqa: E402
 from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
-_VENDOR = _REPO / "vendor/llama.cpp/ggml/src/ggml-backend.cpp"
+_VENDOR = paths.llama_root() / "ggml/src/ggml-backend.cpp"
 
 
 def _load(name: str, rel: str):
@@ -33,7 +34,7 @@ class Patch1293Mechanics(unittest.TestCase):
     def _copy_backend(self, root: Path) -> None:
         rel = "ggml/src/ggml-backend.cpp"
         (root / rel).parent.mkdir(parents=True, exist_ok=True)
-        copy_pinned(_REPO / "vendor/llama.cpp" / rel, root / rel)
+        copy_pinned(paths.llama_root() / rel, root / rel)
 
     def test_apply_and_idempotent(self):
         with tempfile.TemporaryDirectory() as td:
@@ -57,7 +58,7 @@ class Patch1293Mechanics(unittest.TestCase):
             self._copy_backend(root)
             rel = "ggml/src/ggml-backend-meta.cpp"
             (root / rel).parent.mkdir(parents=True, exist_ok=True)
-            copy_pinned(_REPO / "vendor/llama.cpp" / rel, root / rel)
+            copy_pinned(paths.llama_root() / rel, root / rel)
             r1293 = apply_all(_p1293.PATCHES, root)
             self.assertTrue(all(r.ok for r in r1293), [e.detail for r in r1293 for e in r.failed])
             r1326 = apply_all(_p1326.PATCHES, root)

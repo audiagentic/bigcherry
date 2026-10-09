@@ -7,6 +7,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from bigcherry.core import paths as bc_paths  # noqa: E402
 from bigcherry.patcher import apply_all
 
 
@@ -35,7 +36,7 @@ def _base_module():
 
 
 def _copy_sources(tmp_path: Path) -> tuple[Path, Path]:
-    vendor = ROOT / "vendor" / "llama.cpp"
+    vendor = bc_paths.llama_root()
     paths = (
         "ggml/src/ggml-cuda/ggml-cuda.cu",
         "ggml/src/ggml-backend-meta.cpp",

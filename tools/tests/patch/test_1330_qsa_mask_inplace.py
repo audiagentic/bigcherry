@@ -9,6 +9,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from bigcherry.core import paths  # noqa: E402
 from bigcherry.patcher import apply_all  # noqa: E402
 from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
 
@@ -16,7 +17,7 @@ _REPO = Path(__file__).resolve().parents[3]
 _REL = "src/models/qwen4exp.cpp"
 _HDR = "src/models/models.h"
 _REL_GGML = "ggml/src/ggml.c"
-_VENDOR = _REPO / "vendor/llama.cpp"
+_VENDOR = paths.llama_root()
 
 
 def _load(pid: str):

@@ -9,12 +9,13 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from bigcherry.core import paths  # noqa: E402
 from bigcherry.patcher import apply_all  # noqa: E402
 from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
 _PATCH_FILE = _REPO / "engines/llamacpp/patches/1275_ar_small_latency/patch.py"
-_VENDOR = _REPO / "vendor/llama.cpp/ggml/src/ggml-cuda"
+_VENDOR = paths.llama_root() / "ggml/src/ggml-cuda"
 
 
 def _load(name: str, path: Path):
@@ -122,7 +123,7 @@ class Compose1272Tests(unittest.TestCase):
             cuda = root / "ggml/src/ggml-cuda"
             cuda.mkdir(parents=True)
             for name in ("allreduce.cu", "allreduce.cuh"):
-                copy_pinned(repo / "vendor/llama.cpp/ggml/src/ggml-cuda" / name, cuda / name)
+                copy_pinned(_VENDOR / name, cuda / name)
             stack = ("1272_ar_host_compressed_wire", "1275_ar_small_latency")
             for name in stack:
                 patches = [p for p in load(name).PATCHES if Path(p.path).name == "allreduce.cu"]

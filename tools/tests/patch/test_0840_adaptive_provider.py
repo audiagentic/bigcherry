@@ -176,7 +176,10 @@ class Patch0840AdaptiveProvider(unittest.TestCase):
             "0840_hybrid_allreduce_dispatch",
             "1272_ar_host_compressed_wire",
         ]
-        self.assertEqual(data["experiment"]["allreduce-adaptive-wire"]["patches"], expected)
+        # 0860, 1225 and 0840 are in the production set, so the experiment lists only what it adds to it
+        listed = data["experiment"]["allreduce-adaptive-wire"]["patches"]
+        self.assertEqual(listed, ["0830_split_reduce_telemetry", "1272_ar_host_compressed_wire"])
+        self.assertTrue(set(listed) <= set(expected))
         resolved = patchset.resolve_exact(expected, directory=_REPO / "engines" / "llamacpp" / "patches")
         self.assertEqual([m.patch_id for m in resolved.modules], expected)
 

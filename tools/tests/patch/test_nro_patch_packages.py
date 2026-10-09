@@ -43,10 +43,17 @@ EXPECTED = {
 PROMOTED = {"1253_nro04_gfx1100_bf16_chunked_gdn"}
 # Run on hardware with recorded results but not qualified (state "evaluated").
 EVALUATED = {"1250_nro01_allreduce_q8_wire"}
+# Rejected on a measured result at b11474: 1252 (P2P AllReduce faults on the lab topology, 2026-10-07) and 1255
+# (adaptive MTP depth slower than the fixed depth in every configuration, 2026-10-09).
+REJECTED = {"1252_nro03_allreduce_p2p_provider", "1255_nro06_adaptive_mtp_depth"}
 
 
 def _expected_state(patch_id):
-    return "validated" if patch_id in PROMOTED else ("evaluated" if patch_id in EVALUATED else "untested")
+    if patch_id in PROMOTED:
+        return "validated"
+    if patch_id in REJECTED:
+        return "rejected"
+    return "evaluated" if patch_id in EVALUATED else "untested"
 
 
 def _pnro_numbers() -> list[int]:
@@ -193,12 +200,13 @@ class NroSafetyInvariantTests(unittest.TestCase):
 
     def test_adaptive_controller_constants_are_frozen_for_first_sweep(self):
         source = _patch_source("1255_nro06_adaptive_mtp_depth")
+        # the windowed hysteresis controller measured (and rejected) at b11474
         for fragment in (
-            "case 1: return 2", "case 2: return 4", "case 3: return 10",
-            "case 4: return 6", "case 5: return 3", "std::max(depth * 5, 20)",
+            "static constexpr int window_tokens = 32;", "static constexpr int climb_pct = 72;",
+            "static constexpr int drop_pct = 60;", "n_cur = std::min(cap, std::max(floor, 3));",
         ):
             self.assertIn(fragment, source)
-        self.assertIn("Pure/testable controller only", source)
+        self.assertIn("Pure deterministic controller", source)
 
     def test_topk_ports_reproduce_the_fork_and_stay_separate(self):
         """PNRO06/07: 1256 and 1257 are port_diff-generated from the fork's

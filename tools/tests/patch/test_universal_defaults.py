@@ -7,27 +7,50 @@ are off switches: unset means on. A model profile that listed them would hide th
 from __future__ import annotations
 
 import re
+import importlib.util
+import sys
 import unittest
 from pathlib import Path
 
 _REPO = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(_REPO / "tools"))
+_Q81 = "1307_q81_activation_cache_mmvq"  # the merged Q8_1 family: cache, RMS, activation, HC_PRE and MUL producers
 
-# flag -> patches that read it with getenv
+# flag -> patches whose inserted code reads it with getenv
 _DEFAULT_ON = {
-    "BIGCHERRY_RMS_Q81": ("1309_rms_norm_mul_q81",),
-    "BIGCHERRY_ACT_Q81": ("1310_act_q81", "1313_scale_act_fuse"),
-    "BIGCHERRY_HC_Q81": ("1311_hc_pre_q81",),
+    "BIGCHERRY_RMS_Q81": (_Q81,),
+    "BIGCHERRY_ACT_Q81": (_Q81, "1313_scale_act_fuse"),
+    "BIGCHERRY_HC_Q81": (_Q81,),
     "BIGCHERRY_SCALE_ACT_FUSE": ("1313_scale_act_fuse",),
     "BIGCHERRY_FA_SPARSE": ("1334_hip_sparse_flash_attn",),
 }
 _UNIVERSAL_FLAGS = tuple(_DEFAULT_ON) + ("GGML_HIP_Q8_1_CACHE_MODE",)
 
 
+def _module(patch_id):
+    path = _REPO / "engines" / "llamacpp" / "patches" / patch_id / "patch.py"
+    spec = importlib.util.spec_from_file_location("universal_" + patch_id[:4], path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _inserted_text(patch_id):
+    """Everything the package writes into the source tree (a merged package holds its parts as data, not as text)."""
+    return "\n".join(edit.text or "" for file_patch in _module(patch_id).PATCHES for edit in file_patch.edits)
+
+
+def _env_docs(patch_id):
+    module = _module(patch_id)
+    return tuple(getattr(module, "ENV_DOCS", ())) + tuple(getattr(module, "DOCUMENTED_ENV_DOCS", ()))
+
+
 class UniversalDefaults(unittest.TestCase):
     def test_fusion_flags_are_off_switches(self):
         for flag, patch_ids in _DEFAULT_ON.items():
             for patch_id in patch_ids:
-                src = (_REPO / "engines" / "llamacpp" / "patches" / patch_id / "patch.py").read_text(encoding="utf-8")
+                src = _inserted_text(patch_id)
                 self.assertIn(f'getenv("{flag}") == nullptr || atoi(getenv("{flag}")) != 0', src, (flag, patch_id))
                 self.assertNotIn(f'getenv("{flag}") != nullptr && atoi(', src, (flag, patch_id))
 
@@ -38,16 +61,15 @@ class UniversalDefaults(unittest.TestCase):
         self.assertTrue(body.rstrip().endswith("return GGML_HIP_Q81_CACHE_OFF;"))
 
     def test_documented_defaults_say_on(self):
-        for patch_id, flag in (("1307_q81_activation_cache_mmvq", "GGML_HIP_Q8_1_CACHE_MODE"),
-                               ("1309_rms_norm_mul_q81", "BIGCHERRY_RMS_Q81"),
-                               ("1310_act_q81", "BIGCHERRY_ACT_Q81"),
-                               ("1311_hc_pre_q81", "BIGCHERRY_HC_Q81"),
-                               ("1312_mul_q81", "BIGCHERRY_ACT_Q81"),
+        for patch_id, flag in ((_Q81, "GGML_HIP_Q8_1_CACHE_MODE"),
+                               (_Q81, "BIGCHERRY_RMS_Q81"),
+                               (_Q81, "BIGCHERRY_ACT_Q81"),
+                               (_Q81, "BIGCHERRY_HC_Q81"),
                                ("1313_scale_act_fuse", "BIGCHERRY_SCALE_ACT_FUSE")):
-            src = (_REPO / "engines" / "llamacpp" / "patches" / patch_id / "patch.py").read_text(encoding="utf-8")
-            doc = re.search(rf"EnvDoc\('{flag}', '[^']+', '([^']+)'", src)
-            self.assertIsNotNone(doc, (patch_id, flag))
-            self.assertTrue(doc.group(1).startswith(("on", "1")), (patch_id, flag, doc.group(1)))
+            defaults = [doc.default for doc in _env_docs(patch_id) if doc.name == flag]
+            self.assertTrue(defaults, (patch_id, flag))
+            for default in defaults:
+                self.assertTrue(default.startswith(("on", "1")), (patch_id, flag, default))
 
     def test_profiles_do_not_list_universal_flags(self):
         for ini in sorted((_REPO / "engines/llamacpp/overlay/profile").glob("*.ini")):

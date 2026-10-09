@@ -9,11 +9,12 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from bigcherry.core import paths  # noqa: E402
 from bigcherry.patcher import apply_all  # noqa: E402
 from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
-_V = _REPO / "vendor/llama.cpp"
+_V = paths.llama_root()
 _F = "ggml/src/ggml-cuda/dsv4-hc.cu"
 _BC = "ggml/src/ggml-cuda/bc-dsv4-hc-grid.cuh"
 
@@ -27,7 +28,7 @@ def _load(pid):
 
 
 _P = _load("1344_dsv4_hc_grid_index")
-_P1311 = _load("1311_hc_pre_q81")
+_P1307 = _load("1307_q81_activation_cache_mmvq")  # the merged Q8_1 family; carries the HC_PRE consumer
 
 
 def _only(patches):
@@ -88,7 +89,7 @@ class Patch1344Mechanics(unittest.TestCase):
     def test_composes_after_1311(self):
         with tempfile.TemporaryDirectory() as td:
             root = self._root(td)
-            for patches in (_only(_P1311.PATCHES), _P.PATCHES):
+            for patches in (_only(_P1307.PATCHES), _P.PATCHES):
                 res = apply_all(patches, root)
                 self.assertTrue(all(r.ok for r in res), [e.detail for r in res for e in r.failed])
             src = (root / _F).read_text(encoding="utf-8")

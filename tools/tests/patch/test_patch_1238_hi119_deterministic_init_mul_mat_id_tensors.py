@@ -23,6 +23,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from bigcherry.core import paths  # noqa: E402
 from bigcherry.patcher import apply_all
 from bigcherry.patch import registry as patch_registry
 
@@ -47,7 +48,7 @@ _REL = "tests/test-backend-ops.cpp"
 
 
 def _apply_to_copy(tmp_path: Path, patches) -> Path:
-    vendor = ROOT / "vendor" / "llama.cpp"
+    vendor = paths.llama_root()
     target = tmp_path / _REL
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(vendor / _REL, target)
@@ -126,7 +127,7 @@ def test_patch_does_not_touch_1236s_own_site():
     # patch's anchor is scoped to init_mul_mat_id_ids (split out of
     # init_mul_mat_id_tensors upstream at b11126) and does not overlap
     # 1236's anchor text, so the two patches can never collide.
-    text = (ROOT / "vendor" / "llama.cpp" / _REL).read_text(encoding="utf-8")
+    text = (paths.llama_root() / _REL).read_text(encoding="utf-8")
     site = text.index("static void init_mul_mat_id_ids")
     other_site = text.index("} else if (op == GGML_OP_MUL_MAT_ID || op == GGML_OP_ADD_ID) {")
     assert site != other_site

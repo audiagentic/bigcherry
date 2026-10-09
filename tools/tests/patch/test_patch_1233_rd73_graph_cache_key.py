@@ -14,6 +14,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from bigcherry.core import paths  # noqa: E402
 from bigcherry.patcher import apply_all
 
 
@@ -35,7 +36,7 @@ HI14 = _load_patch_module("1231_hi14_graph_capture_lifecycle_evidence")
 
 
 def _apply_to_copy(tmp_path: Path) -> Path:
-    vendor = ROOT / "vendor" / "llama.cpp"
+    vendor = paths.llama_root()
     target = tmp_path / "ggml" / "src" / "ggml-cuda" / "ggml-cuda.cu"
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(vendor / "ggml" / "src" / "ggml-cuda" / "ggml-cuda.cu", target)

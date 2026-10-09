@@ -10,10 +10,11 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from bigcherry.core import paths  # noqa: E402
 from bigcherry.patcher import apply_all  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
-_VENDOR = _REPO / "vendor/llama.cpp"
+_VENDOR = paths.llama_root()
 _spec = importlib.util.spec_from_file_location(
     "patch_1263", _REPO / "engines/llamacpp/patches/1263_prbe41_ssm_conv_channels_major/patch.py")
 assert _spec is not None and _spec.loader is not None

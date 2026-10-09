@@ -23,6 +23,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from bigcherry.core import paths  # noqa: E402
 from bigcherry.patcher import apply_all
 
 
@@ -49,7 +50,7 @@ _FILES = (
 
 
 def _apply_to_copy(tmp_path: Path) -> dict[str, Path]:
-    vendor = ROOT / "vendor" / "llama.cpp"
+    vendor = paths.llama_root()
     targets = {}
     for rel in _FILES:
         target = tmp_path / rel

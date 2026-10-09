@@ -7,6 +7,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from bigcherry.core import paths  # noqa: E402
 from bigcherry.patcher import apply_all
 
 
@@ -96,7 +97,7 @@ def test_reduction_telemetry_is_linked_with_dispatch_only():
 
 def test_pristine_apply_replaces_existing_control_flow_without_duplication(tmp_path):
     """The HI58 edits must compile-shaped apply to untouched pinned sources."""
-    vendor = ROOT / "vendor" / "llama.cpp"
+    vendor = paths.llama_root()
     for relative in ("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml/src/ggml-backend-meta.cpp"):
         target = tmp_path / relative
         target.parent.mkdir(parents=True, exist_ok=True)

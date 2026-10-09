@@ -102,7 +102,6 @@ ownership.
 | `engines/llamacpp/patches/1232_hi81_windows_cxx_hipcc_flags_reach_compile/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
 | `engines/llamacpp/patches/1233_rd73_stable_graph_cache_key/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
 | `engines/llamacpp/patches/1234_rd58_pin_state_buffer_multigpu_restore/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
-| `engines/llamacpp/patches/1235_rd09_q81_activation_cache_foundation/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
 | `engines/llamacpp/patches/1236_hi105_deterministic_mul_mat_id_ids/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
 | `engines/llamacpp/patches/1237_rd30_moe_mmq_compact_grid/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
 | `tools/bigcherry/__init__.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
