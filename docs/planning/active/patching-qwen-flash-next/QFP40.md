@@ -174,7 +174,10 @@ Ordering: fourth overall after QFP32, QFP31, QFP33. These are cheap audits and m
 
 2026-10-07 finding A (per-layer embedding table resident, --lazy-mode off): REJECTED on Brutus. ABBA lazyoff-ab on build b-metamem-rr98, A = default lazy mapping, B = LLAMA_ARG_LAZY_MODE=off: prefill 8K 904/1077 vs 434/629 t/s, 24K 1065/1072 vs one failed load/823; decode 82.5/84.6 vs 77.8/79.9 and 74.9/75.3 vs 70.2; greedy text identical where it ran. Host has 91 GB RAM for an 87 GB model file, so a resident 26.8 GB copy competes with the page cache (not confirmed from memory counters). The default stays. Parts B (MTP decode copies) and C (gathered QSA decode, 1295) are still open.
 
-
+2026-10-09 steps 2 and 3 measured on current main (build b-main2, Flash-Next production profile).
+Step 2, copy audit (rocprofv3 kernel + memory-copy trace, 24K prompt fill + 1,053 decode tokens, 1308 on): GPU copy kernels are 0.24-0.45 s of about 33 s kernel time per target card (0.7-1.4%); memory-copy records: 1,893 device-to-device copies 7.78 s total (mean 4.1 ms; these are the AllReduce / tensor-split transfers, not a same-shape graph copy family), 37,028 host-to-device 4.14 s, 7,920 device-to-host 1.23 s. No dominant same-shape copy sequence remains after 1308, so the copy audit closes with no new mechanism. For scale: all-reduce / collectives are 38-40% of kernel time on every target card (ncclDevKernel_Generic_4 31.5 s, bc_cpu_root_consume 7.1 s) and the cards are 44-45% busy.
+Step 3, 1334 sparse flash attention on / off (ABBA, same binary): 24K prefill 1,277 on vs 1,257-1,260 off (+1.5%), decode 73.3-73.4 on vs 81.1-81.7 off but with different greedy text and different acceptance (326/550 against 343/501), so the decode difference is the text, not the kernel; 98K prefill 1,225-1,226 on vs 1,005 off (+22%), decode 70.0-70.2 on vs 68.4-69.3 off. With 1334 on, decode at 98K (70) is within 5% of decode at 24K (73): long-context decode no longer scales materially with the masked KV scan, so the gathered-decode sub-item (1295 on top of 1334) is closed as not needed.
+Step 1 (residency / --lazy-mode) was not run: the lab launcher has no pass-through for that flag. It is the only part of QFP40 still open.
 
 ## Status 2026-10-08
 
@@ -241,3 +244,4 @@ Finding: **do not promote 1295 as-is**. First measure whether 1334 already remov
 - chg_20261007_133405_flash-next-decode-at-long-cont_5826
 - 2026-10-07T13:34:09.463673+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-08T09:46:22.046779+00:00 (updated-by): Updated: section:notes
+- 2026-10-09T03:10:18.500964+00:00 (updated-by): Updated: section:notes

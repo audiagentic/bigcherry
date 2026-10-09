@@ -70,7 +70,10 @@ No radiance release should be cut before this lands: with the current single com
 - Mapping to r<N>: each numeric release at a pin gets the next N in release order, so r-numbers are dense and ordered.
 Still to verify with a dry run: that the platform package can exclude engines/ so an engine-only commit does not bump the platform line.
 
+2026-10-09 first build step done on branch feat/men09-release-lines (stacked on the engine-layout move, PR #88): release-please-config.json has two packages, engines/llamacpp (component bc-llamacpp, continuing from 11474.2.0) and '.' (component bc-platform, exclude-paths ['engines']), with separate-pull-requests and last-release-sha set to the bc-11474.2.0 commit; the changelog of the old single line moved to engines/llamacpp/CHANGELOG.md; config/release.toml tag-prefix is bc-llamacpp-; pin_release reads the engines/llamacpp package; the release workflow uses per-package outputs, adds the readable tag bc-llamacpp-b<build>-r<N> (N = releases at that build before this one) and titles the release with it. Dry run of release-please 16 against the branch: it would open two separate release PRs, 'bc-llamacpp 11474.3.0' (5 commits) and 'bc-platform 1.0.0' (22 commits). Before merging: push alias tags bc-llamacpp-11474.0.0 / .1.0 / .2.0 onto the commits of bc-11474.0.0 / .1.0 / .2.0, so the tooling's count of releases at this build and the readable r-number continue (next = r3). Not yet verified: that the platform line's changelog leaves out engine-only commits (check the first real release PR). Not in this step: the per-engine pin in engines/<engine>/engine.toml (pin is still `pinned` in config/recipes.toml), and a radiance package (added with its first release). Owner direction the same day: the RDNA3 (gfx1100) kernel library and Flash-Next on radiance are deferred; keep building the platform plans (MEN09, MEN04, MEN05, MEN03, MEN06).
+
 ## Change Log
 
 - 2026-10-09T00:16:08.957474+00:00 (created-by): Created by agent
 - 2026-10-09T00:46:01.548384+00:00 (updated-by): Updated: section:notes
+- 2026-10-09T03:34:03.450100+00:00 (updated-by): Updated: section:notes

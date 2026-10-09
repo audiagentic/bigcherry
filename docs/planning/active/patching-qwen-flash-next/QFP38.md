@@ -19,51 +19,6 @@ External decode work reported gains from small-batch MMVQ/MMVF launch geometry: 
 
 At b11402 several parts already exist, and one tempting Q8_0 variant has already been rejected on the correct BigCherry model. QFP38 must start from the actual MTP verify kernel census, not re-run the external patch set wholesale.
 
-## What we already have
-
-### b11402 MMVQ
-
-- `ggml/src/ggml-cuda/mmvq.cuh` sets `MMVQ_MAX_BATCH_SIZE=8`.
-- `ggml/src/ggml-cuda/mmvq.cu::get_mmvq_mmid_max_batch_rdna3`
-  - IQ4_XS: 6 tokens;
-  - other unlisted types, including Q8_0, use the global max 8.
-- `get_mmvq_mmid_max_batch_rdna4`
-  - IQ4_XS: 5;
-  - Q8_0: 7.
-- Therefore a 4-token verify batch, and the external 5-token IQ4_XS example, already stay on MMVQ on gfx1100/gfx1201. **Do not add a threshold patch for our current verify width.**
-- `mul_mat_vec_q_switch_ncols_dst` compiles widths 1..8.
-- For `ids && ncols_dst > 1`, it uses the dedicated `mul_mat_vec_q_moe_launch`.
-- `mul_mat_vec_q_moe_launch` currently fixes `rows_per_block=2` and launches `block_dims=(warp_size,ncols_dst)`.
-- For ordinary multi-token MMVQ, RDNA3/RDNA4 `calc_nwarps()` returns 1 when `ncols_dst>1`; the existing 8-warp RDNA tuning is single-token only.
-- The upstream `should_use_small_k()`/row-packing mechanism is explicitly disabled for every RDNA architecture, and `calc_rows_per_block()` does not assign an RDNA small-K packing geometry.
-
-### b11402 MMVF
-
-- `ggml/src/ggml-cuda/mmvf.cu::launch_mul_mat_vec_f_cuda` chooses a block size in warp increments by reducing K-loop iterations.
-- The current search caps RDNA at 256 threads and only instantiates block sizes through 256.
-- Thus the external 512/1024-thread F32 experiment is not already present. It is only relevant if the MTP verify census shows tiny-row, long-K F32 MMVF nodes on the critical path.
-
-### BigCherry 1301: read before changing Q8 verify widths
-
-`patches/1301_prbe115_q8_f32_mtp_widths` is **rejected**.
-
-It widened 1241's raw-F32-activation Q8_0 MMVQ path so widths 2..5 bypassed Q8_1 activation quantization. On Qwen3.8-27B Q8_0 dual-XTX with built-in MTP4:
-
-- width cap 2: neutral;
-- width cap 3: neutral;
-- width cap 5: about -12% at 10K and -6% at 32K;
-- activation was proven for widths 1..5.
-
-Conclusion: raw-F32 Q8_0 MMVQ is not the answer for MTP verify on our model. QFP38 must leave the normal quantize-to-Q8_1 + MMVQ data path intact.
-
-### BigCherry 1273
-
-`patches/1273_iq_mmvq_rdna_tuning` is **evaluated, not validated/promoted**.
-
-It provides independently gated lower-VDR and nwarps variants for **single-token** IQ4_XS/IQ3_XXS on gfx1100/gfx1201. Its summary intentionally makes no hardware performance/correctness claim. It also adds compile-time launch-geometry override plumbing that can be reused conceptually.
-
-Do not infer multi-token benefit from 1273. Any new single-token IQ4_XS VDR/nwarps work belongs inside 1273; QFP38 should own only distinct multi-token/MoE/F32 verify geometry.
-
 ## Steps
 
 1. Gate 0: capture a kernel/graph census for one MTP verify round on:
@@ -269,7 +224,55 @@ Expected gain on our topology: low-to-medium until census proves otherwise. The 
 
 Execution order: ninth. First action is a census, not implementation. Expected priority is below QFP35/QFP36 and probably QFP37 unless verify profiling shows a large ordinary MMVQ/MMVF hotspot.
 
+2026-10-09 first action done: decode kernel census on current main (b-main2, Flash-Next production profile, 24K prompt + 1,053 decode tokens with MTP and look-ahead; the trace covers the prompt fill as well as the decode, so shares are for the whole request). Per target card, kernel time about 33 s over a 75 s span (44-45% busy): all-reduce / collectives 38-40%, MMQ 18-22%, MMVQ 8-11% (mul_mat_vec_q<Q8_0, width 4> 8.3 s and mul_mat_vec_q_moe<IQ4_XS, 2 rows> 3.6 s across devices), flash attention 7.6% on the XTXs, float matmul 6.5-10.5% (mul_mat_vec_f<f32,4,256> 2.7 s), norm / activation 5.5%. The draft card (6900 XT) is 11% busy, 41% of it MMVQ. So the MTP verify MMVQ / MMVF launch geometry this item targets is at most about a tenth of target-card kernel time, on cards that are idle more than half the time waiting on collectives and host work. Related measurement the same day: 1273 (IQ4_XS / IQ3_XXS single-token MMVQ VDR and nwarps variants) was neutral in all three settings at 8K / 24K / 98K with identical text and its marker firing; under MTP most decode steps are four tokens wide, so that run barely exercises its single-token path and 1273 is not yet decided. Conclusion for QFP38: no verify-geometry change is justified by this census; the item should stay parked behind the collectives / host-time work unless a no-drafter or width-specific census shows a larger share.
+
+## What we already have
+
+### b11402 MMVQ
+
+- `ggml/src/ggml-cuda/mmvq.cuh` sets `MMVQ_MAX_BATCH_SIZE=8`.
+- `ggml/src/ggml-cuda/mmvq.cu::get_mmvq_mmid_max_batch_rdna3`
+  - IQ4_XS: 6 tokens;
+  - other unlisted types, including Q8_0, use the global max 8.
+- `get_mmvq_mmid_max_batch_rdna4`
+  - IQ4_XS: 5;
+  - Q8_0: 7.
+- Therefore a 4-token verify batch, and the external 5-token IQ4_XS example, already stay on MMVQ on gfx1100/gfx1201. **Do not add a threshold patch for our current verify width.**
+- `mul_mat_vec_q_switch_ncols_dst` compiles widths 1..8.
+- For `ids && ncols_dst > 1`, it uses the dedicated `mul_mat_vec_q_moe_launch`.
+- `mul_mat_vec_q_moe_launch` currently fixes `rows_per_block=2` and launches `block_dims=(warp_size,ncols_dst)`.
+- For ordinary multi-token MMVQ, RDNA3/RDNA4 `calc_nwarps()` returns 1 when `ncols_dst>1`; the existing 8-warp RDNA tuning is single-token only.
+- The upstream `should_use_small_k()`/row-packing mechanism is explicitly disabled for every RDNA architecture, and `calc_rows_per_block()` does not assign an RDNA small-K packing geometry.
+
+### b11402 MMVF
+
+- `ggml/src/ggml-cuda/mmvf.cu::launch_mul_mat_vec_f_cuda` chooses a block size in warp increments by reducing K-loop iterations.
+- The current search caps RDNA at 256 threads and only instantiates block sizes through 256.
+- Thus the external 512/1024-thread F32 experiment is not already present. It is only relevant if the MTP verify census shows tiny-row, long-K F32 MMVF nodes on the critical path.
+
+### BigCherry 1301: read before changing Q8 verify widths
+
+`patches/1301_prbe115_q8_f32_mtp_widths` is **rejected**.
+
+It widened 1241's raw-F32-activation Q8_0 MMVQ path so widths 2..5 bypassed Q8_1 activation quantization. On Qwen3.8-27B Q8_0 dual-XTX with built-in MTP4:
+
+- width cap 2: neutral;
+- width cap 3: neutral;
+- width cap 5: about -12% at 10K and -6% at 32K;
+- activation was proven for widths 1..5.
+
+Conclusion: raw-F32 Q8_0 MMVQ is not the answer for MTP verify on our model. QFP38 must leave the normal quantize-to-Q8_1 + MMVQ data path intact.
+
+### BigCherry 1273
+
+`patches/1273_iq_mmvq_rdna_tuning` is **evaluated, not validated/promoted**.
+
+It provides independently gated lower-VDR and nwarps variants for **single-token** IQ4_XS/IQ3_XXS on gfx1100/gfx1201. Its summary intentionally makes no hardware performance/correctness claim. It also adds compile-time launch-geometry override plumbing that can be reused conceptually.
+
+Do not infer multi-token benefit from 1273. Any new single-token IQ4_XS VDR/nwarps work belongs inside 1273; QFP38 should own only distinct multi-token/MoE/F32 verify geometry.
+
 ## Change Log
 
 - 2026-10-07T00:39:48.982783+00:00 (created-by): Created by agent
 - 2026-10-07: grounded at b11402, rejected 1301 and evaluated 1273; closed the duplicate MMVQ-threshold idea for current verify widths and split remaining launch-geometry candidates by exact kernel owner.
+- 2026-10-09T03:10:25.485425+00:00 (updated-by): Updated: section:notes

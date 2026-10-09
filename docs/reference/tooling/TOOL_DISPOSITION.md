@@ -147,6 +147,9 @@ ownership.
 | `tools/lab/ar-accuracy/queue-kld-decode.sh` | **TRANSITIONAL** | `ar-accuracy` lab topic file (see `tools/lab/ar-accuracy/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/bump-validation/run_bump_validation.py` | **KEEP** | RHA12: standing bump-validation matrix (PIN_BUMP.md step 5/6) -- builds fresh at the current pin and launches the real production runtime-profiles across every real GPU individually plus the real dual-XTX multi-GPU topology; run on every future bump, not a one-shot experiment. |
 | `tools/lab/bump-validation/smoke_worker.py` | **KEEP** | RHA12: the real per-cell delegate_argv worker run_bump_validation.py's runtime-matrix cells launch -- reuses ServerRunner to actually start each server, wait for /health, send one real completion, and shut down cleanly; part of the same standing bump-validation tool, not a one-shot experiment. |
+| `tools/lab/cross-engine/probe-openai.py` | **TRANSITIONAL** | `cross-engine` lab topic file (see `tools/lab/cross-engine/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/cross-engine/probes-compare.py` | **TRANSITIONAL** | `cross-engine` lab topic file (see `tools/lab/cross-engine/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/cross-engine/run-quality-27b.sh` | **TRANSITIONAL** | `cross-engine` lab topic file (see `tools/lab/cross-engine/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/default-on/smoke-0910.sh` | **TRANSITIONAL** | `default-on` lab topic file (see `tools/lab/default-on/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/default-on/xmodel-ab.sh` | **TRANSITIONAL** | `default-on` lab topic file (see `tools/lab/default-on/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/dflash/dflash-accept-iso.sh` | **TRANSITIONAL** | `dflash` lab topic file (see `tools/lab/dflash/README.md`); experiment-only, disposed per that README. |
