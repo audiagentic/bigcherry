@@ -54,4 +54,24 @@ What this means for the port:
   gfx1100, checked unit by unit against the reference. Then native gfx11 versions of the hot kernels, each compared
   with the layered version in this harness.
 
-Not yet measured: whether the 28 units that compile also compute correctly on gfx1100, and any timing.
+Not yet measured: whether the 28 units that compile also compute correctly on gfx1100.
+
+## First harness run, 2026-10-09 (run `kdev-add`, one RX 7900 XTX)
+
+Both first candidates build for gfx1100 (2 s) and pass every `add` case of the fixture bit-exactly against the
+reference: 60 checked, 60 passed, worst rel_l2 0; 40 cases ran inside guarded allocations and none wrote outside.
+The fixture has no `mul` case, so `mul` was built but not exercised.
+
+Time per launch, microseconds, n = 5120:
+
+| M (rows) | `flat_add` (one thread per element) | `rows_add` (8 elements per thread) |
+|---|---|---|
+| 1 | 5.3 | 6.1 |
+| 16 | 5.5 | 5.9 |
+| 64 | 6.9 | 6.9 |
+| 128 | 8.4 | 8.8 |
+| 256 | 10.7 | 13.3 |
+| 512 | 21.1 | 23.1 |
+
+`flat_add` is faster or equal at every shape (geometric mean 7.2 us against 7.8 us). Up to M = 32 the time is the
+launch itself, about 5.5 us. This run proves the loop; the two kernels are deliberately simple.
