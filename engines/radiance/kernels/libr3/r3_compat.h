@@ -91,4 +91,123 @@ __device__ __forceinline__ r3_v2f r3_cvt_pk_f32_fp8(int src, bool hi) {
 #define __builtin_amdgcn_cvt_pk_fp8_f32 r3_cvt_pk_fp8_f32
 #define __builtin_amdgcn_cvt_pk_f32_fp8 r3_cvt_pk_f32_fp8
 
+// ------------------------------------------------------------------ WMMA, 16-bit floats
+//
+// libr4d builds gfx12 fragments and calls the gfx12 instruction. gfx11 has the instruction with other layouts
+// (both probed on gfx1100 for BigCherry patch 1253, gated_delta_net_chunked_bf16_gfx11.cu):
+//
+//             gfx12                                        gfx11
+//   A, B      8 elements a lane: row = lane & 15;          16 elements a lane: row = lane & 15, k = element;
+//             lanes 0-15 hold k 0-3 and 8-11,              lanes 16-31 repeat lanes 0-15
+//             lanes 16-31 hold k 4-7 and 12-15
+//   C, D      column = lane & 15,                          column = lane & 15,
+//             row = 8 * (lane >> 4) + element              row = 2 * element + (lane >> 4)
+//
+// The functions below take gfx12 fragments, exchange the missing half with the partner lane (lane ^ 16) through
+// ds_bpermute, run the gfx11 instruction on a zero accumulator, bring the product back to the gfx12 layout and add
+// the caller's accumulator in f32. That is 12 cross-lane moves a call: correct, not fast. The sum is rounded once
+// more than the instruction rounds it (product, then add), so results agree with gfx12 to rounding, not bit for bit.
+
+typedef unsigned r3_u4 __attribute__((ext_vector_type(4)));
+typedef unsigned r3_u8 __attribute__((ext_vector_type(8)));
+typedef float    r3_v8f __attribute__((ext_vector_type(8)));
+typedef __bf16   r3_v8bf __attribute__((ext_vector_type(8)));
+typedef __bf16   r3_v16bf __attribute__((ext_vector_type(16)));
+typedef __fp16   r3_v8hf __attribute__((ext_vector_type(8)));
+typedef _Float16 r3_v16h __attribute__((ext_vector_type(16)));
+
+// This thread's lane in its wave: threads fill waves in order of their flattened index.
+__device__ __forceinline__ unsigned r3_lane() {
+    return (threadIdx.x + blockDim.x * (threadIdx.y + blockDim.y * threadIdx.z)) & 31u;
+}
+
+// The value `v` holds in lane `src`.
+__device__ __forceinline__ unsigned r3_from_lane(unsigned src, unsigned v) {
+    return static_cast<unsigned>(__builtin_amdgcn_ds_bpermute(static_cast<int>(src << 2), static_cast<int>(v)));
+}
+
+// A or B: a gfx12 fragment (4 dwords, 8 elements) to the gfx11 fragment (8 dwords, the whole row).
+__device__ __forceinline__ r3_u8 r3_frag_12_to_11(r3_u4 own, unsigned lane) {
+    const unsigned partner = lane ^ 16u;
+    const bool hi = (lane >> 4) != 0;
+    r3_u4 other;
+    other.x = r3_from_lane(partner, own.x);
+    other.y = r3_from_lane(partner, own.y);
+    other.z = r3_from_lane(partner, own.z);
+    other.w = r3_from_lane(partner, own.w);
+    const r3_u4 k_0_3_8_11 = hi ? other : own;
+    const r3_u4 k_4_7_12_15 = hi ? own : other;
+    r3_u8 row;
+    row[0] = k_0_3_8_11.x;  row[1] = k_0_3_8_11.y;   // k 0-3
+    row[2] = k_4_7_12_15.x; row[3] = k_4_7_12_15.y;  // k 4-7
+    row[4] = k_0_3_8_11.z;  row[5] = k_0_3_8_11.w;   // k 8-11
+    row[6] = k_4_7_12_15.z; row[7] = k_4_7_12_15.w;  // k 12-15
+    return row;
+}
+
+// C or D: a gfx11 accumulator to the gfx12 layout.
+__device__ __forceinline__ r3_v8f r3_acc_11_to_12(r3_v8f p, unsigned lane) {
+    const unsigned partner = lane ^ 16u;
+    const bool hi = (lane >> 4) != 0;
+    // A lower lane needs the partner's rows 1,3,5,7 (its elements 0-3); an upper lane the partner's rows
+    // 8,10,12,14 (its elements 4-7). So an upper lane sends elements 0-3 and a lower lane elements 4-7.
+    float got[4];
+#pragma unroll
+    for (int i = 0; i < 4; ++i) {
+        const float send = hi ? p[i] : p[4 + i];
+        got[i] = __uint_as_float(r3_from_lane(partner, __float_as_uint(send)));
+    }
+    r3_v8f out;
+#pragma unroll
+    for (int e = 0; e < 8; ++e) {
+        const int h = e >> 1;
+        out[e] = hi ? ((e & 1) ? p[4 + h] : got[h])   // rows 8-15: even rows from the partner, odd rows own
+                    : ((e & 1) ? got[h] : p[h]);      // rows 0-7:  even rows own, odd rows from the partner
+    }
+    return out;
+}
+
+__device__ __forceinline__ r3_v8f r3_wmma_f32_16x16x16_bf16_w32_gfx12(r3_v8bf a, r3_v8bf b, r3_v8f c) {
+    const unsigned lane = r3_lane();
+    const r3_v16bf a11 = __builtin_bit_cast(r3_v16bf, r3_frag_12_to_11(__builtin_bit_cast(r3_u4, a), lane));
+    const r3_v16bf b11 = __builtin_bit_cast(r3_v16bf, r3_frag_12_to_11(__builtin_bit_cast(r3_u4, b), lane));
+    const r3_v8f zero = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+    return c + r3_acc_11_to_12(__builtin_amdgcn_wmma_f32_16x16x16_bf16_w32(a11, b11, zero), lane);
+}
+
+__device__ __forceinline__ r3_v8f r3_wmma_f32_16x16x16_f16_w32_gfx12(r3_v8hf a, r3_v8hf b, r3_v8f c) {
+    const unsigned lane = r3_lane();
+    const r3_v16h a11 = __builtin_bit_cast(r3_v16h, r3_frag_12_to_11(__builtin_bit_cast(r3_u4, a), lane));
+    const r3_v16h b11 = __builtin_bit_cast(r3_v16h, r3_frag_12_to_11(__builtin_bit_cast(r3_u4, b), lane));
+    const r3_v8f zero = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+    return c + r3_acc_11_to_12(__builtin_amdgcn_wmma_f32_16x16x16_f16_w32(a11, b11, zero), lane);
+}
+
+#define __builtin_amdgcn_wmma_f32_16x16x16_bf16_w32_gfx12 r3_wmma_f32_16x16x16_bf16_w32_gfx12
+#define __builtin_amdgcn_wmma_f32_16x16x16_f16_w32_gfx12 r3_wmma_f32_16x16x16_f16_w32_gfx12
+
+// ------------------------------------------------------------------ the gfx12 transposed load
+//
+// global_load_tr_b128: every lane names 128 bits (8 x 16-bit) at its own address, and the instruction returns
+// them transposed within each group of 8 lanes -- lane j of a group receives element j of each of the group's 8
+// lanes, in lane order (libr4d r4d_common.h, load_tr_b128). gfx11 has no such load. Here each lane fetches the 8
+// addresses of its group through ds_bpermute and reads its element from each: 16 cross-lane moves and 8 loads.
+typedef short r3_v8s __attribute__((ext_vector_type(8)));
+
+__device__ __forceinline__ r3_v8s r3_global_load_tr_b128_v8i16(const void* p) {
+    const unsigned lane = r3_lane();
+    const unsigned group = lane & ~7u, j = lane & 7u;
+    const uint64_t address = reinterpret_cast<uint64_t>(p);
+    const unsigned lo = static_cast<unsigned>(address), hi = static_cast<unsigned>(address >> 32);
+    r3_v8s out;
+#pragma unroll
+    for (unsigned i = 0; i < 8; ++i) {
+        const uint64_t src = (static_cast<uint64_t>(r3_from_lane(group + i, hi)) << 32) | r3_from_lane(group + i, lo);
+        out[i] = reinterpret_cast<const short*>(src)[j];
+    }
+    return out;
+}
+
+#define __builtin_amdgcn_global_load_tr_b128_v8i16(p) r3_global_load_tr_b128_v8i16(reinterpret_cast<const void*>(p))
+
 #endif
