@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.0.0...bc-platform-1.0.1) (2026-10-09)
+
+
+### Fixes
+
+* engine-bench stops a production llama.cpp build with SIGINT and reports an unclean stop ([#102](https://github.com/audiagentic/bigcherry/issues/102)) ([b65e52f](https://github.com/audiagentic/bigcherry/commit/b65e52faf1f34bb053e45674ccf25be3dc3bbe13))
+
 ## 1.0.0 (2026-10-09)
 
 
