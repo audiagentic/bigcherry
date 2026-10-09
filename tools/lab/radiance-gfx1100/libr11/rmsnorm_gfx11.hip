@@ -80,6 +80,39 @@ __global__ __launch_bounds__(32) void rms_wave32(Norm g) {
         g.y[size_t(row)*g.yld+c]=narrow((v*inv)*gain(g,c));
     }
 }
+// AMD ROCm wavefront guide: gfx11 has DPP quad/row operations but NOT
+// gfx9 row_bcast15/31. After row-wise permutations, ds_swizzle(0x1e0)
+// supplies the other 16-lane row; lane 31 holds the total.
+// Reference: rocm-handbook AMD optimization guide / wavefront builtins.
+__device__ __forceinline__ float dpp_wave_sum(float sum) {
+    constexpr int quad1032=0xb1,quad2301=0x4e,row4=0x124,row8=0x128;
+    int bits=__float_as_uint(sum);
+    sum += __uint_as_float(__builtin_amdgcn_mov_dpp(bits,quad1032,0xf,0xf,false));
+    bits=__float_as_uint(sum);
+    sum += __uint_as_float(__builtin_amdgcn_mov_dpp(bits,quad2301,0xf,0xf,false));
+    bits=__float_as_uint(sum);
+    sum += __uint_as_float(__builtin_amdgcn_mov_dpp(bits,row4,0xf,0xf,false));
+    bits=__float_as_uint(sum);
+    sum += __uint_as_float(__builtin_amdgcn_mov_dpp(bits,row8,0xf,0xf,false));
+    bits=__float_as_uint(sum);
+    sum += __uint_as_float(__builtin_amdgcn_ds_swizzle(bits,0x1e0));
+    // Broadcast the lane-31 value; don't use gfx9-only row-broadcast DPP.
+    return __uint_as_float(__builtin_amdgcn_readlane(__float_as_uint(sum),31));
+}
+// One wave per row, identical data layout to rms_wave32 but native gfx11 DPP.
+__global__ __launch_bounds__(32) void rms_dpp32(Norm g) {
+    uint32_t lane=threadIdx.x,row=blockIdx.x;
+    float sum=0.f;
+    for(uint32_t c=lane;c<g.n;c+=32) {
+        float v=widen(g.x[size_t(row)*g.xld+c]);
+        sum += v*v;
+    }
+    float inv=rsqrtf(dpp_wave_sum(sum)/float(g.n)+g.eps);
+    for(uint32_t c=lane;c<g.n;c+=32) {
+        float v=widen(g.x[size_t(row)*g.xld+c]);
+        g.y[size_t(row)*g.yld+c]=narrow((v*inv)*gain(g,c));
+    }
+}
 // Eight waves cooperate on a row; a single LDS barrier combines wave sums.
 __global__ __launch_bounds__(256) void rms_block256(Norm g) {
     __shared__ float partials[8];
@@ -102,17 +135,20 @@ __global__ __launch_bounds__(256) void rms_block256(Norm g) {
         g.y[size_t(row)*g.yld+c]=narrow((v*inv)*gain(g,c));
     }
 }
-int run(const RadArgs* args, RadStream stream, bool single_wave) {
+int run(const RadArgs* args, RadStream stream, int variant) {
     Norm g{};
     int status=check(args,&g);
     if(status!=RAD_OK) return status;
     hipStream_t s=reinterpret_cast<hipStream_t>(stream);
-    if(single_wave)
+    if(variant==0)
         hipLaunchKernelGGL(rms_wave32,dim3(g.m),dim3(32),0,s,g);
-    else
+    else if(variant==1)
         hipLaunchKernelGGL(rms_block256,dim3(g.m),dim3(256),0,s,g);
+    else
+        hipLaunchKernelGGL(rms_dpp32,dim3(g.m),dim3(32),0,s,g);
     return hipGetLastError()==hipSuccess?RAD_OK:RAD_E_DEVICE;
 }
 }
-extern "C" int r11_rmsnorm_wave32(const RadArgs* a,RadStream s){return run(a,s,true);}
-extern "C" int r11_rmsnorm_block256(const RadArgs* a,RadStream s){return run(a,s,false);}
+extern "C" int r11_rmsnorm_wave32(const RadArgs* a,RadStream s){return run(a,s,0);}
+extern "C" int r11_rmsnorm_block256(const RadArgs* a,RadStream s){return run(a,s,1);}
+extern "C" int r11_rmsnorm_dpp32(const RadArgs* a,RadStream s){return run(a,s,2);}
