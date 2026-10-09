@@ -67,9 +67,11 @@ HIP_VISIBLE_DEVICES=${GPU:-0} RADIANCE_HOME="$home" "$src/build/bin/rad-info" --
 grep -vE "^\s*$" "$out/plugins.txt" | head -40 | cut -c1-200
 
 echo "== 3. rad-kbench on HIP device ${GPU:-0}"
-kernels=libref; [ -n "$so" ] && kernels=libr4d,libref
-HIP_VISIBLE_DEVICES=${GPU:-0} RADIANCE_HOME="$home" timeout 3600 "$src/build/bin/rad-kbench" --kernels "$kernels" \
-    --report "$out/kbench.md" --bench > "$out/kbench.log" 2>&1
+# without a gfx1100 build there is only the host reference to run: one op is enough to show the harness works on
+# the card, and the whole fixture on the CPU reference takes many minutes under the GPU lock for no information
+kernels=libref ops=(--op add); [ -n "$so" ] && { kernels=libr4d,libref; ops=(); }
+HIP_VISIBLE_DEVICES=${GPU:-0} RADIANCE_HOME="$home" timeout "${KBENCH_TIMEOUT:-1500}" "$src/build/bin/rad-kbench" \
+    --kernels "$kernels" "${ops[@]}" --report "$out/kbench.md" --bench > "$out/kbench.log" 2>&1
 echo "rad-kbench --kernels $kernels exit $?"
 grep -vE "^\s*$" "$out/kbench.log" | tail -25 | cut -c1-200
 [ -f "$out/kbench.md" ] && { echo "-- report head"; grep -vE "^\s*$" "$out/kbench.md" | head -60 | cut -c1-200; }
