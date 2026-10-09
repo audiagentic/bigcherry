@@ -23,7 +23,9 @@ ctest --test-dir /tmp/rad11-build -R r11_bf16_smoke --output-on-failure
 cmake --install /tmp/rad11-build
 ```
 
-Select exactly one verified gfx1100 card with `ROCR_VISIBLE_DEVICES=<XTX-index>` before running CTest, then run `ctest --test-dir /tmp/rad11-build -R r11_gemm_smoke --output-on-failure` as well. For CMake's native HIP language, use ROCm Clang rather than the `hipcc` wrapper as `CMAKE_HIP_COMPILER`.\n\nThe build creates/installs `libr11.so` under Radiance's `kernels/` plugin directory via `rad_add_plugin`. Never place it in `libr4d` or enable an RDNA4 code object for gfx1100. If Radiance reports an ABI mismatch, rebuild against the exact running version; do not bypass the check.
+Select exactly one verified gfx1100 card with `ROCR_VISIBLE_DEVICES=<XTX-index>` before running CTest, then run `ctest --test-dir /tmp/rad11-build -R r11_gemm_smoke --output-on-failure` as well. For CMake's native HIP language, use ROCm Clang rather than the `hipcc` wrapper as `CMAKE_HIP_COMPILER`.
+
+The build creates/installs `libr11.so` under Radiance's `kernels/` plugin directory via `rad_add_plugin`. Never place it in `libr4d` or enable an RDNA4 code object for gfx1100. If Radiance reports an ABI mismatch, rebuild against the exact running version; do not bypass the check.
 
 In a fresh test environment, run `rad-kbench --kernels libr11,libref --report rad11-kbench.md --bench` with matching fixtures and inspect the `add` and `mul` rows for numerical, red-zone, broadcast and performance checks. Uncovered shapes are failures, not assumed successes. Repeat under the ROCm compiler actually used to serve.
 
