@@ -248,7 +248,12 @@ run is not comparable with an unprofiled one, so read it as shares): the MXFP4 G
 (38% gate/up, 20% down, 16% the 16384-wide projection, 11% the K=6144 one, 4% the 12288-wide one); the bf16 logits
 GEMM is 2.8%, everything else under 2.5% each. With the first native build they were 95%.
 
-radiance's checker cannot verify this kernel: with this container it skips every MXFP4 GEMM case (its reference
+Numeric check (RR06): radiance's own kernel selftest carries a host reference for the MXFP4 GEMMs. Its binary runs
+only on gfx1201, so libr3 builds a copy for gfx11 (`r3_selftest`, `tools/lab/radiance/libr3-selftest.sh`). On the
+R9700 radiance's kernels pass 88 of 88 cases (74 decode, 4 nt_m64, 10 tiled; run `r4d-self1`); on the XTX libr3
+with the table-lookup native form passes the same 88 (run `r3-self3`, commit da3dcd0d).
+
+rad-kbench itself cannot verify this kernel: with this container it skips every MXFP4 GEMM case (its reference
 reader wants half the elements the 4-bit plane holds), so the fixture recorded from it
 (`tools/lab/radiance/record-fixture.sh`, 559 cases, all passing through libr3) has none. The evidence is the
 unchanged greedy text. For scale, radiance on the R9700 runs this model at 37-38 tok/s without the drafter.
