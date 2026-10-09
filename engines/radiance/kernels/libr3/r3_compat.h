@@ -351,6 +351,57 @@ __device__ __forceinline__ void r3_store16_e4m3_as_bf16(unsigned short* dst, V c
     r3_store8_e4m3_as_bf16(dst + 8, c[2], c[3]);
 }
 
+// MXFP4 codes straight to bf16, without the E4M3 step. libr4d folds a block's exponent difference d into the
+// weight through kMxfp4Mag[d] (r4d_mxfp4.h): the eight E2M1 magnitudes scaled by 2^-d as E4M3 bytes, looked up by
+// v_perm. The two tables below hold the same sixteen rows widened to bf16 at compile time, split into low and high
+// bytes, so the lookup yields the bf16 of exactly the E4M3 value libr4d would have staged (including its rounding
+// for d >= 9). R3_MXFP4_MAG repeats r4d_mxfp4.h's rows; if libr4d changes that table this must follow.
+constexpr unsigned r3c_e4m3_to_bf16(unsigned code) {
+    const unsigned mag = code & 0x7fu;
+    const unsigned sub[8] = {0x0000u, 0x3b00u, 0x3b80u, 0x3bc0u, 0x3c00u, 0x3c20u, 0x3c40u, 0x3c60u};
+    return mag < 8u ? sub[mag] : (mag << 4) + (120u << 7);
+}
+constexpr unsigned r3c_bf16_bytes(unsigned e4m3x4, unsigned shift) {
+    return ((r3c_e4m3_to_bf16(e4m3x4 & 0xffu) >> shift) & 0xffu)
+         | (((r3c_e4m3_to_bf16((e4m3x4 >> 8) & 0xffu) >> shift) & 0xffu) << 8)
+         | (((r3c_e4m3_to_bf16((e4m3x4 >> 16) & 0xffu) >> shift) & 0xffu) << 16)
+         | (((r3c_e4m3_to_bf16(e4m3x4 >> 24) >> shift) & 0xffu) << 24);
+}
+#define R3_MXFP4_MAG(X) \
+    X(0x3c383000u, 0x4c484440u) X(0x34302800u, 0x44403c38u) X(0x2c282000u, 0x3c383430u) X(0x24201800u, 0x34302c28u) \
+    X(0x1c181000u, 0x2c282420u) X(0x14100800u, 0x24201c18u) X(0x0c080400u, 0x1c181410u) X(0x06040200u, 0x14100c08u) \
+    X(0x03020100u, 0x0c080604u) X(0x02010000u, 0x06040302u) X(0x01000000u, 0x03020201u) X(0x00000000u, 0x02010100u) \
+    X(0x00000000u, 0x01000000u) X(0x00000000u, 0x00000000u) X(0x00000000u, 0x00000000u) X(0x00000000u, 0x00000000u)
+#define R3_MX_LO(a, b) {r3c_bf16_bytes(a, 0), r3c_bf16_bytes(b, 0)},
+#define R3_MX_HI(a, b) {r3c_bf16_bytes(a, 8), r3c_bf16_bytes(b, 8)},
+static __device__ __constant__ unsigned int kR3MxBf16Lo[16][2] = { R3_MXFP4_MAG(R3_MX_LO) };
+static __device__ __constant__ unsigned int kR3MxBf16Hi[16][2] = { R3_MXFP4_MAG(R3_MX_HI) };
+#undef R3_MX_LO
+#undef R3_MX_HI
+
+// Eight E2M1 codes (four packed bytes, element 2j in the low nibble of byte j, as r4d_mxfp4_unpack8 takes them) with
+// exponent difference d, written as eight bf16 in K order at dst. Twelve v_perm: four table lookups (low and high
+// byte, even and odd elements) and eight to interleave bytes and elements; the sign rides as bit 3 of the nibble
+// into bit 7 of the high byte.
+__device__ __forceinline__ void r3_mxfp4_store8_bf16(unsigned short* dst, unsigned wv, int d) {
+    typedef unsigned r3_u4h __attribute__((ext_vector_type(4), aligned(2)));
+    const unsigned ev = wv & 0x0f0f0f0fu, od = (wv >> 4) & 0x0f0f0f0fu;
+    const unsigned ei = ev & 0x07070707u, oi = od & 0x07070707u;
+    const unsigned e_lo = __builtin_amdgcn_perm(kR3MxBf16Lo[d][1], kR3MxBf16Lo[d][0], ei);
+    const unsigned e_hi = __builtin_amdgcn_perm(kR3MxBf16Hi[d][1], kR3MxBf16Hi[d][0], ei) | ((ev & 0x08080808u) << 4);
+    const unsigned o_lo = __builtin_amdgcn_perm(kR3MxBf16Lo[d][1], kR3MxBf16Lo[d][0], oi);
+    const unsigned o_hi = __builtin_amdgcn_perm(kR3MxBf16Hi[d][1], kR3MxBf16Hi[d][0], oi) | ((od & 0x08080808u) << 4);
+    // 16-bit values of even elements 0,1 / 2,3 and of odd elements 0,1 / 2,3
+    const unsigned e01 = __builtin_amdgcn_perm(e_hi, e_lo, 0x05010400u), e23 = __builtin_amdgcn_perm(e_hi, e_lo, 0x07030602u);
+    const unsigned o01 = __builtin_amdgcn_perm(o_hi, o_lo, 0x05010400u), o23 = __builtin_amdgcn_perm(o_hi, o_lo, 0x07030602u);
+    r3_u4 out;
+    out[0] = __builtin_amdgcn_perm(o01, e01, 0x05040100u);  // k 0, 1
+    out[1] = __builtin_amdgcn_perm(o01, e01, 0x07060302u);  // k 2, 3
+    out[2] = __builtin_amdgcn_perm(o23, e23, 0x05040100u);  // k 4, 5
+    out[3] = __builtin_amdgcn_perm(o23, e23, 0x07060302u);  // k 6, 7
+    *reinterpret_cast<r3_u4h*>(dst) = out;
+}
+
 // D = A x B + C on gfx11 fragments, accumulator in the gfx11 layout.
 __device__ __forceinline__ r3_v8f r3_wmma_bf16_native(r3_v16bf a, r3_v16bf b, r3_v8f acc) {
     return __builtin_amdgcn_wmma_f32_16x16x16_bf16_w32(a, b, acc);

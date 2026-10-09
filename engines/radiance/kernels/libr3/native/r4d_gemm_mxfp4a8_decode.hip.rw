@@ -52,10 +52,15 @@
         r3_store16_e4m3_as_bf16(&sA[r * STR + c], ra[j]);
 @@ end
 
+# The weight goes from its 4-bit codes to bf16 in one table lookup (r3_mxfp4_store8_bf16: the bf16 of the E4M3 value
+# libr4d's own table would have produced), not through E4M3 and a per-code conversion.
 @@ find 1
+        unsigned int lo, hi;
+        r4d_mxfp4_unpack8(rw[it][q], r4d_mxfp4_fold_d(s_ref[it][q], rd[it][q]), &lo, &hi);
         *(mxd_u2*)(&sW[(s_r[it] + q) * STR + s_kloc[it]]) = mxd_u2{lo, hi};
 @@ replace
-        r3_store8_e4m3_as_bf16(&sW[(s_r[it] + q) * STR + s_kloc[it]], lo, hi);
+        r3_mxfp4_store8_bf16(&sW[(s_r[it] + q) * STR + s_kloc[it]], rw[it][q],
+                             r4d_mxfp4_fold_d(s_ref[it][q], rd[it][q]));
 @@ end
 
 @@ find 2
