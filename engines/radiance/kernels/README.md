@@ -103,6 +103,21 @@ while other jobs hold the card); rerun with `--max-bytes` when the card is free.
 96 of libr3's rows were not reached by this fixture; the routed-MoE fixture (`kernels_moe.rkb`) and a bf16 model
 fixture will reach more.
 
+## libr3, second check, 2026-10-09 (run `libr3-b2`, commit e2ac3976)
+
+All five "instruction not supported" failures were one instruction, gfx12's `s_wait_storecnt`. libr3 now builds from
+a copy of libr4d's sources in the build tree with one substitution (`rewrites.txt`: `s_waitcnt_vscnt null, 0x0`),
+which matched 8 places. 33 units built, 29 left out; the engine sees 123 device kernels.
+
+`rad-kbench`: 1657 checks passed, 50 failed, 27 skipped; 602 cases in guarded allocations, none wrote outside.
+26 device kernels pass every case: the 23 above plus `cast_bf16_bf16` (its 2D copy is in a recovered unit),
+`gated_quant_fp8` and `rmsnorm_quant_fp8` (worst rel_l2 2.3e-03, inside the checker's tolerance).
+
+Two kernels still refuse: `gemm_bf16_nt_m16` (30 cases, `unsupported`: it reaches a unit that needs the gfx12 WMMA
+builtins) and `gdn_conv_update_w4_h128_bf16` (20 cases, `shape this kernel does not serve`, not yet read).
+
+Timings of the kernels shared with the first check are unchanged (geometric means 0.94 to 1.08 of the earlier run).
+
 ## First kdev run
 
 `flat_add` is faster or equal at every shape (geometric mean 7.2 us against 7.8 us). Up to M = 32 the time is the
