@@ -21,10 +21,22 @@ set(R3_ONLY "" CACHE STRING "build only these units (for a compile check of one 
 if(NOT EXISTS "${RADIANCE_SRC}/libr4d/CMakeLists.txt")
   message(FATAL_ERROR "libr3: -DRADIANCE_SRC must name a radiance source tree (no ${RADIANCE_SRC}/libr4d)")
 endif()
-set(r4d ${RADIANCE_SRC}/libr4d)
+# libr4d's sources, copied into the build tree with rewrites.txt applied (text r3_compat.h cannot supply as a
+# function, such as an inline-assembly mnemonic). Units and headers are built from the copy.
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+set(r4d ${CMAKE_CURRENT_BINARY_DIR}/r4d-src)
+execute_process(
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/r3_rewrite.py ${RADIANCE_SRC}/libr4d ${r4d}
+          ${CMAKE_CURRENT_SOURCE_DIR}/rewrites.txt
+  RESULT_VARIABLE rewrite_rc OUTPUT_VARIABLE rewrite_out ERROR_VARIABLE rewrite_err)
+message(STATUS "libr3: ${rewrite_out}")
+if(NOT rewrite_rc EQUAL 0)
+  message(FATAL_ERROR "libr3: r3_rewrite.py failed: ${rewrite_err}")
+endif()
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/rewrites.txt)
 
 # The unit list and each unit's flags are libr4d's own, read from its build file: `"unit|flags"`.
-file(STRINGS ${r4d}/CMakeLists.txt unit_lines REGEX "^  \"r4d_[a-z0-9_]+\\|")
+file(STRINGS ${RADIANCE_SRC}/libr4d/CMakeLists.txt unit_lines REGEX "^  \"r4d_[a-z0-9_]+\\|")
 file(STRINGS ${CMAKE_CURRENT_SOURCE_DIR}/exclude.txt excluded REGEX "^r4d_")
 set(device "")
 set(built "")
@@ -73,7 +85,6 @@ set_target_properties(libr3 PROPERTIES HIP_STANDARD 17 HIP_STANDARD_REQUIRED ON)
 
 # Stubs for the entry points of the units left out, made from what the objects leave undefined.
 find_program(R3_NM nm REQUIRED)
-find_package(Python3 REQUIRED COMPONENTS Interpreter)
 set(stub_src ${CMAKE_CURRENT_BINARY_DIR}/r3_stubs.S)
 set(stub_obj ${CMAKE_CURRENT_BINARY_DIR}/r3_stubs.o)
 add_custom_command(TARGET libr3 PRE_LINK
