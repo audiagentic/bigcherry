@@ -107,6 +107,10 @@ class GateContext:
     target_revision: str | None = None
 
 
+# G4 detail line that says the evidence is the package's lightweight promotion record (QFP18, PA45)
+PROFILE_EVIDENCE_DETAIL = "tier: profile-evidence"
+
+
 def gate_applies(gate_id: GateId, intent: GateIntent) -> bool:
     """Return the fixed PA21 applicability matrix."""
     applicable = {
@@ -564,6 +568,8 @@ def evaluate_evidence_gate(context: GateContext) -> GateResult:
             # Build-only (carry_forward=True): qualified at an earlier pin;
             # PASS with the revalidate-on-request note as its problem text.
             "carried-forward",
+            # Lightweight promotion record in the patch package (QFP18, PA45).
+            "profile-evidence",
         }
     )
     recognized_statuses = recognized_ok_statuses | {"missing-or-stale"}
@@ -606,9 +612,10 @@ def evaluate_evidence_gate(context: GateContext) -> GateResult:
         return GateResult(
             GateId.G4, GateStatus.FAIL, "evidence", "patch.catalog", tuple(problems)
         )
-    return GateResult(
-        GateId.G4, GateStatus.PASS, "evidence", "patch.catalog", tuple(problems)
-    )
+    detail = tuple(problems)
+    if evidence_status == "profile-evidence":
+        detail = (PROFILE_EVIDENCE_DETAIL, *detail)
+    return GateResult(GateId.G4, GateStatus.PASS, "evidence", "patch.catalog", detail)
 
 
 def evaluate_admission_gate(context: GateContext) -> GateResult:
@@ -860,10 +867,19 @@ def evaluate_lifecycle_gate(
         return GateResult(
             GateId.G5, GateStatus.BLOCKED, "lifecycle", "patch.gates", blocked
         )
+    # Profile-evidence tier: the promotion record in the package stands in for a validation package, so a patch
+    # that has no package obligation (G3 = NA) may be promoted when G4 passed on that record. G3 FAIL still fails.
+    profile_tier = (
+        prior_results[GateId.G4].status is GateStatus.PASS
+        and PROFILE_EVIDENCE_DETAIL in prior_results[GateId.G4].detail
+    )
     failures = tuple(
         f"{gate_id.value}={prior_results[gate_id].status.value}"
         for gate_id in (GateId.G0, GateId.G1, GateId.G2, GateId.G3, GateId.G4)
         if prior_results[gate_id].status is not GateStatus.PASS
+        and not (
+            profile_tier and gate_id is GateId.G3 and prior_results[gate_id].status is GateStatus.NA
+        )
     )
     if failures:
         return GateResult(

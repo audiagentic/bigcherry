@@ -38,7 +38,7 @@ from pathlib import Path
 from typing import Iterable, Mapping
 
 from ..core import paths
-from . import patchset
+from . import patchset, profile_evidence
 from .activation import ActivationEvidence
 
 SCHEMA_VERSION = 4
@@ -94,6 +94,7 @@ class EvidenceCheck:
             "not-required", "validated-evidence", "legacy-grandfathered",
             "ported-benched-evidence", "deferred-hardware-evidence",
             "framework-configuration-evidence", "carried-forward",
+            "profile-evidence",
         }
 
 
@@ -1642,12 +1643,22 @@ def verify_validated_patch(
             ),
         )
 
+    # Profile-evidence tier (QFP18, PA45): the lightweight promotion record in the patch package qualifies the patch
+    # when no HI83 campaign record does. A record that exists but does not qualify is reported with its own reasons.
+    profile_problems = profile_evidence.verify(
+        module.path.parent, patch_id=module.patch_id, pinned_ref=pinned_ref, subject_digest=subject_digest,
+    )
+    if profile_problems is not None and not profile_problems:
+        return EvidenceCheck("profile-evidence")
+
     if allow_legacy_grandfather:
         legacy = _legacy_hashes(root)
         if legacy.get(module.patch_id) == module.content_hash:
             return EvidenceCheck("legacy-grandfathered")
 
     problems: list[str] = []
+    if profile_problems:
+        problems.append("profile-evidence record does not qualify: " + "; ".join(profile_problems))
     if not qualifying:
         problems.append("no current qualifying HI83 validation record")
     if missing_architectures:
