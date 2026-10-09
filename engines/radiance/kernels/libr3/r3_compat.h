@@ -191,6 +191,96 @@ __device__ __forceinline__ r3_v8f r3_wmma_f32_16x16x16_f16_w32_gfx12(A a, B b, C
     return c + r3_acc_11_to_12(__builtin_amdgcn_wmma_f32_16x16x16_f16_w32(a11, b11, zero), lane);
 }
 
+// ------------------------------------------------------------------ WMMA, 8-bit and 4-bit integers, and fp8
+//
+// The integer forms have the same shape one size down: gfx12 passes 8 bytes a lane (2 dwords), gfx11 the whole
+// row of 16 bytes (4 dwords). The split of K between a lane and its partner is ASSUMED to follow the 16-bit
+// fragments (lanes 0-15 hold k 0-3 and 8-11, lanes 16-31 k 4-7 and 12-15); no source states it for bytes, and
+// rad-kbench decides: the integer sums are exact, so a wrong mapping fails every case rather than hiding.
+// The int32 accumulator has the f32 one's layout, and adding the caller's accumulator afterwards is exact.
+typedef int r3_i2 __attribute__((ext_vector_type(2)));
+typedef int r3_i4 __attribute__((ext_vector_type(4)));
+typedef int r3_i8 __attribute__((ext_vector_type(8)));
+
+// A or B, bytes: a gfx12 fragment (2 dwords) to the gfx11 row (4 dwords).
+__device__ __forceinline__ r3_i4 r3_bytes_12_to_11(r3_i2 own, unsigned lane) {
+    const unsigned partner = lane ^ 16u;
+    const bool hi = (lane >> 4) != 0;
+    const int other0 = static_cast<int>(r3_from_lane(partner, static_cast<unsigned>(own.x)));
+    const int other1 = static_cast<int>(r3_from_lane(partner, static_cast<unsigned>(own.y)));
+    r3_i4 row;
+    row.x = hi ? other0 : own.x;   // k 0-3
+    row.y = hi ? own.x : other0;   // k 4-7
+    row.z = hi ? other1 : own.y;   // k 8-11
+    row.w = hi ? own.y : other1;   // k 12-15
+    return row;
+}
+
+__device__ __forceinline__ r3_i8 r3_acc_i32_11_to_12(r3_i8 p, unsigned lane) {
+    return __builtin_bit_cast(r3_i8, r3_acc_11_to_12(__builtin_bit_cast(r3_v8f, p), lane));
+}
+
+// The sign flags are instruction immediates, so they are template arguments; every libr4d call site passes
+// constants. `clamp` is false at every call site and is not implemented.
+template <bool SA, bool SB, class A, class B, class C>
+__device__ __forceinline__ r3_i8 r3_wmma_i32_16x16x16_iu8_w32_gfx12(A a, B b, C acc) {
+    static_assert(sizeof(A) == 8 && sizeof(B) == 8 && sizeof(C) == 32, "gfx12 iu8 WMMA operands: 2 x 64 bits, 8 x i32");
+    const unsigned lane = r3_lane();
+    const r3_i4 a11 = r3_bytes_12_to_11(__builtin_bit_cast(r3_i2, a), lane);
+    const r3_i4 b11 = r3_bytes_12_to_11(__builtin_bit_cast(r3_i2, b), lane);
+    const r3_i8 zero = {0, 0, 0, 0, 0, 0, 0, 0};
+    const r3_i8 product = __builtin_amdgcn_wmma_i32_16x16x16_iu8_w32(SA, a11, SB, b11, zero, false);
+    return __builtin_bit_cast(r3_i8, acc) + r3_acc_i32_11_to_12(product, lane);
+}
+
+// gfx12's 4-bit form covers K = 32 in one instruction (16 nibbles a lane); gfx11's covers K = 16 (the whole row of
+// 16 nibbles in 2 dwords). ASSUMED split, by the same pattern: dword 0 is k 0-7 in lanes 0-15 and k 8-15 in lanes
+// 16-31, dword 1 is k 16-23 and k 24-31. Two gfx11 instructions, one for each half of K.
+template <bool SA, bool SB, class A, class B, class C>
+__device__ __forceinline__ r3_i8 r3_wmma_i32_16x16x32_iu4_w32_gfx12(A a, B b, C acc) {
+    static_assert(sizeof(A) == 8 && sizeof(B) == 8 && sizeof(C) == 32, "gfx12 iu4 WMMA operands: 2 x 64 bits, 8 x i32");
+    const unsigned lane = r3_lane();
+    const r3_i4 a11 = r3_bytes_12_to_11(__builtin_bit_cast(r3_i2, a), lane);   // x,y = k 0-15; z,w = k 16-31
+    const r3_i4 b11 = r3_bytes_12_to_11(__builtin_bit_cast(r3_i2, b), lane);
+    const r3_i8 zero = {0, 0, 0, 0, 0, 0, 0, 0};
+    const r3_i2 a_lo = {a11.x, a11.y}, a_hi = {a11.z, a11.w};
+    const r3_i2 b_lo = {b11.x, b11.y}, b_hi = {b11.z, b11.w};
+    r3_i8 product = __builtin_amdgcn_wmma_i32_16x16x16_iu4_w32(SA, a_lo, SB, b_lo, zero, false);
+    product = __builtin_amdgcn_wmma_i32_16x16x16_iu4_w32(SA, a_hi, SB, b_hi, product, false);
+    return __builtin_bit_cast(r3_i8, acc) + r3_acc_i32_11_to_12(product, lane);
+}
+
+// fp8 x fp8: gfx11 has no fp8 WMMA. Every E4M3 value is exactly a bf16 value (3 mantissa bits, exponents inside
+// bf16's range), so each code is widened to bf16 and the bf16 form does the multiply: the same products, summed in
+// f32. 8 codes a lane (2 dwords) become the gfx12 bf16 fragment's 8 elements, in the same order.
+__device__ __forceinline__ r3_u4 r3_e4m3x8_to_bf16(r3_i2 codes) {
+    r3_u4 out;
+#pragma unroll
+    for (int d = 0; d < 4; ++d) {
+        const unsigned word = static_cast<unsigned>(d < 2 ? codes.x : codes.y) >> ((d & 1) * 16);
+        const unsigned lo = __float_as_uint(r3_e4m3_to_f32(word & 0xffu)) >> 16;
+        const unsigned hi = __float_as_uint(r3_e4m3_to_f32((word >> 8) & 0xffu)) >> 16;
+        out[d] = lo | (hi << 16);
+    }
+    return out;
+}
+
+template <class A, class B, class C>
+__device__ __forceinline__ r3_v8f r3_wmma_f32_16x16x16_fp8_fp8_w32_gfx12(A a, B b, C acc);
+
+#define __builtin_amdgcn_wmma_i32_16x16x16_iu8_w32_gfx12(sa, a, sb, b, c, clamp) \
+    r3_wmma_i32_16x16x16_iu8_w32_gfx12<(sa), (sb)>((a), (b), (c))
+#define __builtin_amdgcn_wmma_i32_16x16x32_iu4_w32_gfx12(sa, a, sb, b, c, clamp) \
+    r3_wmma_i32_16x16x32_iu4_w32_gfx12<(sa), (sb)>((a), (b), (c))
+#define __builtin_amdgcn_wmma_f32_16x16x16_fp8_fp8_w32_gfx12 r3_wmma_f32_16x16x16_fp8_fp8_w32_gfx12
+
+template <class A, class B, class C>
+__device__ __forceinline__ r3_v8f r3_wmma_f32_16x16x16_fp8_fp8_w32_gfx12(A a, B b, C acc) {
+    static_assert(sizeof(A) == 8 && sizeof(B) == 8 && sizeof(C) == 32, "gfx12 fp8 WMMA operands: 2 x 64 bits, 8 x f32");
+    return r3_wmma_f32_16x16x16_bf16_w32_gfx12(r3_e4m3x8_to_bf16(__builtin_bit_cast(r3_i2, a)),
+                                               r3_e4m3x8_to_bf16(__builtin_bit_cast(r3_i2, b)), acc);
+}
+
 #define __builtin_amdgcn_wmma_f32_16x16x16_bf16_w32_gfx12 r3_wmma_f32_16x16x16_bf16_w32_gfx12
 #define __builtin_amdgcn_wmma_f32_16x16x16_f16_w32_gfx12 r3_wmma_f32_16x16x16_f16_w32_gfx12
 
