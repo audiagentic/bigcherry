@@ -11,14 +11,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from bigcherry.release import notes  # noqa: E402
+from bigcherry.release import pin_release  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
 
 
 class ReleaseNotesTests(unittest.TestCase):
-    def test_config_loads_and_names_releases_bc_prefix(self):
+    def test_config_loads_and_names_the_llamacpp_release_line(self):
         config = notes.load_config(_REPO)
-        self.assertEqual(config.tag_prefix, "bc-")
+        self.assertEqual(config.tag_prefix, "bc-llamacpp-")
         self.assertIn("validated-enhancements", config.build_patch_sets)
         self.assertTrue(config.ledger_sections)
 
@@ -42,26 +43,37 @@ class ReleasePleaseWiringTests(unittest.TestCase):
         self.manifest = json.loads((_REPO / ".release-please-manifest.json").read_text(encoding="utf-8"))
         self.workflow = (_REPO / ".github/workflows/release-please.yml").read_text(encoding="utf-8")
 
-    def test_release_please_tags_bc_dash_semver_without_v(self):
-        package = self.config["packages"]["."]
-        self.assertEqual(package["component"], "bc")
+    def test_each_release_line_has_its_own_component_and_tag(self):
+        packages = self.config["packages"]
+        self.assertEqual(sorted(packages), [".", "engines/llamacpp"])
+        self.assertEqual(packages["engines/llamacpp"]["component"], "bc-llamacpp")
+        self.assertEqual(packages["."]["component"], "bc-platform")
+        # an engine-only commit must not also move the platform line
+        self.assertEqual(packages["."]["exclude-paths"], ["engines"])
+        self.assertTrue(self.config["separate-pull-requests"])
         self.assertTrue(self.config["include-component-in-tag"])
         self.assertFalse(self.config["include-v-in-tag"])
         self.assertEqual(self.config["tag-separator"], "-")
+        # the release tooling and release-please must agree on the llama.cpp line's tag
+        self.assertEqual(notes.load_config(_REPO).tag_prefix, packages["engines/llamacpp"]["component"] + "-")
+        self.assertEqual(pin_release.RELEASE_PACKAGE, "engines/llamacpp")
 
-    def test_manifest_version_major_is_a_llama_build_number(self):
-        self.assertRegex(self.manifest["."], r"^\d{4,6}\.\d+\.\d+$")
+    def test_manifest_versions(self):
+        self.assertEqual(sorted(self.manifest), [".", "engines/llamacpp"])
+        # the llama.cpp line's major is a llama build number; the platform line is a plain semantic version
+        self.assertRegex(self.manifest["engines/llamacpp"], r"^\d{4,6}\.\d+\.\d+$")
+        self.assertRegex(self.manifest["."], r"^\d{1,3}\.\d+\.\d+$")
 
-    def test_workflow_adds_the_bc_b_build_tag_and_publishes_the_generated_notes(self):
+    def test_workflow_adds_the_readable_tag_and_publishes_the_generated_notes(self):
         prefix = notes.load_config(_REPO).tag_prefix
-        self.assertIn(f'bc_tag="{prefix}b${{LLAMA_BUILD}}"', self.workflow)
-        self.assertIn("steps.release.outputs.major", self.workflow)
-        # every release publishes the notes file named after its own tag; only a pin's first release gets bc-b<build>
+        self.assertIn("steps.release.outputs['engines/llamacpp--release_created'] == 'true'", self.workflow)
+        self.assertIn("steps.release.outputs['engines/llamacpp--major']", self.workflow)
+        # readable tag: <prefix>b<build>-r<N>, N = releases at that build before this one
+        self.assertIn(f'count=$(git tag --list "{prefix}${{LLAMA_BUILD}}.*" | wc -l)', self.workflow)
+        self.assertIn(f'readable="{prefix}b${{LLAMA_BUILD}}-r$((count - 1))"', self.workflow)
         self.assertIn('notes="docs/releases/notes/${RP_TAG}.md"', self.workflow)
-        self.assertIn(f'if [ "${{RP_TAG}}" = "{prefix}${{LLAMA_BUILD}}.0.0" ]; then', self.workflow)
-        self.assertLess(self.workflow.index(f'if [ "${{RP_TAG}}" = "{prefix}${{LLAMA_BUILD}}.0.0" ]; then'),
-                        self.workflow.index(f'bc_tag="{prefix}b${{LLAMA_BUILD}}"'))
-        self.assertIn('--notes-file "${notes}"', self.workflow)
+        self.assertIn('--title "${readable}" --notes-file "${notes}"', self.workflow)
+        self.assertIn("steps.release.outputs['.--release_created'] == 'true'", self.workflow)
         self.assertTrue(re.search(r"branches:\s*\[main\]", self.workflow))
         self.assertEqual(notes.load_config(_REPO).notes_dir, "docs/releases/notes")
 

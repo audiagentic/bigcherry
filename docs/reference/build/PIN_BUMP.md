@@ -183,19 +183,19 @@ window; bump one, record, then bump the other.
    any stop: `gate` (`pin-status --complete --all-remotes`), `record` (gate
    output and evidence into `releases/<tag>.json`, transition marker removed,
    one commit), `notes` (`release-notes`, committed as `chore: release notes
-   bc-<version>` with the `Release-As: <version>` footer), `main` (the
+   bc-llamacpp-<version>` with the `Release-As: <version>` footer), `main` (the
    work branch takes `origin/main` in if main moved, then main is
    fast-forwarded to it), `release` (release-please's PR is merged and the
    command waits for the tag), `sync` (the work branch takes the release
    commit back). `--through <phase>` stops early, `--dry-run` lists the phases.
 
-   Versions and tags. release-please owns the tags: `bc-<llama build>.<minor>.<patch>`.
+   Versions and tags. release-please owns the tags: `bc-llamacpp-<llama build>.<minor>.<patch>` (the llama.cpp engine's release line; the shared platform has its own, `bc-platform-<version>`).
    A pin bump is released as `<build>.0.0` (`bc-11474.0.0`; the workflow also
-   points the short tag `bc-b11474` at it). While the pin stays, further
+   adds the readable tag `bc-llamacpp-b11474-r0` to it; later releases at the same build get `-r1`, `-r2`, ...). While the pin stays, further
    BigCherry releases use the same command with `--bump minor` (features) or
    `--bump patch` (fixes), giving `bc-11474.1.0`, `bc-11474.1.1`, ...;
    `--version` states the version. Each release has its own notes file
-   (`docs/releases/notes/bc-<version>.md`) and checking its tag out reproduces
+   (`docs/releases/notes/bc-llamacpp-<version>.md`) and checking its tag out reproduces
    that patch set. There is no separate `supports/<release>` tag any more (the
    last one is `supports/b11402`). A tag push does not start a release: the
    workflow runs on pushes to `main` only.
