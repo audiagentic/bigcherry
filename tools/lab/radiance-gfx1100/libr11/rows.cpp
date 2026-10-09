@@ -5,6 +5,8 @@
 
 extern "C" int r11_add_bf16(const RadArgs*, RadStream);
 extern "C" int r11_mul_bf16(const RadArgs*, RadStream);
+extern "C" int r11_add_bf16_packed(const RadArgs*, RadStream);
+extern "C" int r11_mul_bf16_packed(const RadArgs*, RadStream);
 
 // Describe the full-size (non-broadcast) operand geometry for rad-kbench.
 // The broadcast variant is covered separately by r11_selftest.
@@ -53,6 +55,11 @@ static const RadConstraint kBf16Gemm[] = {
 };
 
 static const RadConstraint kBf16[] = { RAD_CIN("dtype", "bf16") };
+// The packed candidate is STRICTLY a narrower row than the scalar baseline.
+static const RadConstraint kPacked[] = {
+    RAD_CIN("dtype","bf16"), RAD_CGE("M",1), RAD_CLE("M",512),
+    RAD_CGE("n",2), RAD_CLE("n",8192), RAD_CDIV("n",2)
+};
 static const RadKernelInfo kKernels[] = {
     {
         .name = "r11_add_bf16",
@@ -80,6 +87,34 @@ static const RadKernelInfo kKernels[] = {
         .constraints = kBf16,
         .n_constraints = 1,
         .launch = r11_mul_bf16,
+        .opd_shape = binary_shape,
+    },
+    {
+        .name = "r11_add_bf16_packed",
+        .op = "add",
+        .family = "elem",
+        .computes = "gfx11 packed 2xBF16 per dword, one thread per pair",
+        .shape = "M<=512, even 2<=n<=8192; dense and dword-aligned",
+        .dtypes = "bf16",
+        .domain = RAD_DOMAIN_DEVICE,
+        .priority = 15,
+        .constraints = kPacked,
+        .n_constraints = sizeof(kPacked)/sizeof(kPacked[0]),
+        .launch = r11_add_bf16_packed,
+        .opd_shape = binary_shape,
+    },
+    {
+        .name = "r11_mul_bf16_packed",
+        .op = "mul",
+        .family = "elem",
+        .computes = "gfx11 packed 2xBF16 per dword, one thread per pair",
+        .shape = "M<=512, even 2<=n<=8192; dense and dword-aligned",
+        .dtypes = "bf16",
+        .domain = RAD_DOMAIN_DEVICE,
+        .priority = 15,
+        .constraints = kPacked,
+        .n_constraints = sizeof(kPacked)/sizeof(kPacked[0]),
+        .launch = r11_mul_bf16_packed,
         .opd_shape = binary_shape,
     },
     {
