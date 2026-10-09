@@ -1,6 +1,6 @@
 # 1328_aux_rocm_expert_backend
 
-**Status:** untested
+**Status:** rejected
 **Plan item:** MET05
 
 ## What it does
@@ -58,3 +58,6 @@ address reuse and asserts linear evaluation count. Hardware revalidation is stil
 ## Upstream
 
 Local BigCherry feature against llama.cpp pin b11474 (`b9acf138a1e2`).
+
+The cache fix itself (evict only the stale entry) now lives in `1358_meta_split_cache_local_evict`, which 1328
+requires: it turned out to speed up prefill on the production build without any expert offload.

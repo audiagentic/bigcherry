@@ -24,6 +24,7 @@ _RELS = (
 _POST_META = (
     "1340_meta_per_device_arena",
     "1341_meta_subset_mirrored",
+    "1358_meta_split_cache_local_evict",
 )
 
 _DEPLOY = (
@@ -171,7 +172,7 @@ class Patch1328Mechanics(unittest.TestCase):
             cache_block = meta[meta.index("const std::pair key = std::make_pair(tensor, assume_sync);"):]
             cache_block = cache_block[:cache_block.index("ggml_backend_meta_split_state ret =")]
             self.assertIn("buf_ctx->split_state_cache.erase(it);", cache_block)
-            self.assertNotIn("buf_ctx->split_state_cache.clear();", cache_block)
+            self.assertIn("if (bc_local_evict) {", cache_block)  # from 1358, which 1328 requires
 
             # Model sequential Meta buffer-init queries for N stacked marked adds. Each new graph tensor reuses
             # an address with one stale prior-graph snapshot. Per-key eviction preserves already-computed current
