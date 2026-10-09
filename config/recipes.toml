@@ -499,7 +499,7 @@ patches = []
 
 [experiment.deploy-v5-plus-1327-aux6900]
 # MET05: v5 + 1327 + 1328 auxiliary ROCm expert backend; off unless BIGCHERRY_EXPERT_AUX_DEVICE is set.
-patches = ["1328_aux_rocm_expert_backend"]
+patches = ["1358_meta_split_cache_local_evict", "1328_aux_rocm_expert_backend"]
 
 
 [experiment.retest-1295]
@@ -1101,3 +1101,10 @@ patches = ["1275_ar_small_latency"]
 [experiment.moe-router-splitk]
 # QFP36: production + 1357; default off, enable with BIGCHERRY_MOE_ROUTER_SPLITK=1.
 patches = ["1357_moe_router_splitk"]
+[experiment.meta-split-cache-evict]
+# 1358: production + local eviction of stale Meta split-state cache entries; on by default, BIGCHERRY_META_SPLIT_CACHE_EVICT=0 restores the clear.
+patches = ["1358_meta_split_cache_local_evict"]
+
+[experiment.router-splitk-with-cache-evict]
+# 1357 + 1358 together on production: 1358 on by default, 1357 with BIGCHERRY_MOE_ROUTER_SPLITK=1.
+patches = ["1357_moe_router_splitk", "1358_meta_split_cache_local_evict"]
