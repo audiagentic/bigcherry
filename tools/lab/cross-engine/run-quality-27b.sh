@@ -28,6 +28,8 @@ docker stop radiance-vllm > /dev/null 2>&1
 
 run_arm() {  # <arm>
     local arm=$1 pid ok=0 log="$out/$1.server.log"
+    # each arm gets its own port: radiance cannot bind one a just-stopped llama-server still holds
+    PORT=$((PORT + 1))
     case "$arm" in
         ref|ref2)
             HIP_VISIBLE_DEVICES=0,1 "$bin" -m "$REF_GGUF" -ngl 99 -c "$CTX" -ub 512 -b 2048 -fa on --parallel 1 --threads 8 \
