@@ -373,7 +373,7 @@ def run_patch1000_verification(
         worktree_root=source_root / "control",
         resolved_revision=control_revision,
         composition=control_composition,
-        overlay_root=psi.REPO_ROOT / "src",
+        overlay_root=psi.OVERLAY_ROOT,
         requested_revision=base_revision,
     )
     subject_src = psi.materialize_composition(
@@ -381,7 +381,7 @@ def run_patch1000_verification(
         worktree_root=source_root / "subject",
         resolved_revision=subject_revision,
         composition=subject_composition,
-        overlay_root=psi.REPO_ROOT / "src",
+        overlay_root=psi.OVERLAY_ROOT,
         requested_revision=base_revision,
     )
 

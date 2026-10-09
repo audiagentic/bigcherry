@@ -737,7 +737,7 @@ def verify_framework_configuration_patch(
             raise ValidationEvidenceError("resolved base revision required for source identity")
         identity = patch_source._make_source_identity_v2(
             resolved_revision=resolved_base_revision, composition=composition,
-            overlay_root=patch_source.REPO_ROOT / "src"
+            overlay_root=patch_source.OVERLAY_ROOT
             if cfg.sources["bigcherry-qualification-tuning"].overlay else None,
         )
         identity["materialization_plan_id"] = identity["source_key"]
