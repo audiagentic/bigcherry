@@ -54,6 +54,10 @@ Avoid shared-memory staging unless register-only hoisting proves insufficient. D
 
 Keep architecture/path choice in existing tuning/dispatch ownership. PRBE111 owns the experiment and evidence, not a new environment-variable or model-specific selector.
 
+## Reduction ownership boundary (2026-10-09 / BCOP84)
+
+PRBE111 owns IQ4_XS/IQ3_XXS vec-dot/VDR descriptor consolidation and metadata hoisting only. PRBE47 owns the separate Q6_K wave32 DPP reduction-lowering hypothesis. Both share generic mmvq.cu call sites, including the dedicated multi-token MoE kernel: preserve the stock warp_reduce_sum for IQ and every unqualified type; do not combine the candidates, add a new dispatch table, or claim DPP gains from IQ A/B results. No PRBE111 implementation or queued lane is changed by this documentation cross-link.
+
 ## Files
 
 - current pinned `vendor/llama.cpp/ggml/src/ggml-cuda/mmvq.cu`

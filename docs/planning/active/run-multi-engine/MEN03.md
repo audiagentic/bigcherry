@@ -62,3 +62,8 @@ Only worth starting if MEN01 or MEN02 says vLLM stays in use.
 
 - 2026-10-08T20:36:14.144983+00:00 (created-by): Created by agent
 - 2026-10-08T20:47:55.960817+00:00 (updated-by): Updated: section:notes
+
+## Ledger-events
+
+- chg_20261009_041445_each-engine-now-declares-how-i_5202
+- 2026-10-09T04:14:52.459208+00:00 (updated-by): Updated: section:ledger-events
