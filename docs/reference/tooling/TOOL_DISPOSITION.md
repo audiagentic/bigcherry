@@ -282,7 +282,6 @@ ownership.
 | `tools/lab/flash-next/queue-draft-quant.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/queue-env-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/queue-expert-6900.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/flash-next/queue-expert-aux6900.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/queue-expert-cpu.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/queue-fa-default.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/queue-fit-probe.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
