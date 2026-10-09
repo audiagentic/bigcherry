@@ -38,8 +38,11 @@ cp -r "$src/libr4d/." "$copy/"
 # the one edit: libr4d declares itself gfx12-only; the survey asks what happens when it is not
 sed -i 's/rad_plugin_gpu_targets(R4D_GPU_TARGETS "^gfx12")/rad_plugin_gpu_targets(R4D_GPU_TARGETS "^gfx11")/' "$copy/CMakeLists.txt"
 grep -q '"^gfx11"' "$copy/CMakeLists.txt" || { echo "TARGET_FILTER_NOT_FOUND in libr4d/CMakeLists.txt"; exit 1; }
-if ! cmake -S "$copy" -B "$build" -G Ninja -DCMAKE_PREFIX_PATH="$src/build" -Dradiance_DIR="$src/build" \
-        -DRAD_GPU_TARGETS="$target" > "$out/configure.log" 2>&1; then
+# an out-of-tree plugin builds against an INSTALLED radiance (the build tree's package file points at an install
+# prefix), so the existing build is installed into a private prefix first
+prefix=$work/radiance-prefix
+cmake --install "$src/build" --prefix "$prefix" > "$out/install.log" 2>&1 || { echo "INSTALL_FAILED"; tail -5 "$out/install.log"; exit 1; }
+if ! cmake -S "$copy" -B "$build" -G Ninja -DCMAKE_PREFIX_PATH="$prefix" -DRAD_GPU_TARGETS="$target" > "$out/configure.log" 2>&1; then
     echo "CONFIGURE_FAILED"; grep -vE "^\s*$" "$out/configure.log" | tail -12 | cut -c1-220
 else
     cmake --build "$build" -j"$(nproc)" -- -k 0 > "$out/build.log" 2>&1
