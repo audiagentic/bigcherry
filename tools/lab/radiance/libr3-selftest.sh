@@ -22,18 +22,28 @@ export PATH="$ROCM_PATH/bin:$PATH"
 for v in $(env | grep -oE "^(BIGCHERRY_[A-Z0-9_]+|GGML_HIP_[A-Z0-9_]+)"); do unset "$v"; done
 plugin=${PLUGIN:-$(find "$work/libr3-$target-build" -name 'libr3.so' 2> /dev/null | head -1)}
 [ -n "$plugin" ] && [ -f "$plugin" ] || { echo "NO_PLUGIN: run libr3-build.sh first, or set PLUGIN"; exit 1; }
-selftest=$src/build/bin/r4d_selftest
+# radiance's own binary takes gfx1201 cards only; for libr3 use the copy libr3's build makes for gfx11 (r3_selftest)
+if [ -n "${PLUGIN:-}" ]; then
+    selftest=$src/build/bin/r4d_selftest
+else
+    GCC14_BIN=${GCC14_BIN:-/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin}
+    command -v g++-14 > /dev/null 2>&1 || export PATH="$GCC14_BIN:$PATH"
+    if ! cmake --build "$work/libr3-$target-build" --target r3_selftest > "$out/selftest-build.log" 2>&1; then
+        echo "SELFTEST_BUILD_FAILED"; grep -E "error|Error" "$out/selftest-build.log" | head -12 | cut -c1-220; exit 1
+    fi
+    selftest=$(find "$work/libr3-$target-build" -name r3_selftest -type f | head -1)
+fi
 [ -x "$selftest" ] || { echo "NO_SELFTEST: $selftest"; exit 1; }
 echo "radiance $(git -C "$src" rev-parse --short HEAD); plugin $plugin; HIP device ${GPU:-0}"
 bad=0
 for row in "${rows[@]}"; do
     HIP_VISIBLE_DEVICES=${GPU:-0} timeout "${CASE_TIMEOUT:-900}" "$selftest" "$plugin" --case "$row" > "$out/$row.log" 2>&1
     rc=$?
-    pass=$(grep -c "^  ok  \|^  PASS\|^  pass" "$out/$row.log")
     fail=$(grep -c "FAIL" "$out/$row.log")
     echo "-- $row: exit $rc, $(grep -cE "^\s+(ok|PASS|pass)\b" "$out/$row.log") passed, $fail failed"
     grep -E "FAIL" "$out/$row.log" | head -8 | cut -c1-230
     tail -2 "$out/$row.log" | cut -c1-200
-    [ $rc -ne 0 ] && bad=1
+    # a run that only skipped proves nothing
+    [ $rc -ne 0 ] || [ "$(grep -cE "^\s+ok" "$out/$row.log")" -eq 0 ] && bad=1
 done
 exit $bad

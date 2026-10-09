@@ -99,3 +99,14 @@ add_custom_command(TARGET libr3 PRE_LINK
   COMMAND ${CMAKE_CXX_COMPILER} -c ${stub_src} -o ${stub_obj}
   COMMAND_EXPAND_LISTS VERBATIM)
 target_link_options(libr3 PRIVATE ${stub_obj})
+
+# radiance's kernel selftest, from the rewritten copy so that it runs on gfx11 cards (rewrites.txt). It dlopens the
+# plugin it is given and carries a host reference for each row, including the MXFP4 GEMMs rad-kbench cannot reach.
+# Not part of the default build: tools/lab/radiance/libr3-selftest.sh builds it.
+if(NOT RAD_HIP_RUNTIME)
+  find_library(RAD_HIP_RUNTIME amdhip64 HINTS /opt/rocm/lib ENV ROCM_PATH PATH_SUFFIXES lib REQUIRED)
+endif()
+add_executable(r3_selftest EXCLUDE_FROM_ALL ${r4d}/r4d_selftest.cpp)
+target_link_libraries(r3_selftest PRIVATE radiance::abi ${CMAKE_DL_LIBS} ${RAD_HIP_RUNTIME})
+target_include_directories(r3_selftest PRIVATE ${r4d} $ENV{ROCM_PATH}/include)
+target_compile_definitions(r3_selftest PRIVATE __HIP_PLATFORM_AMD__)
