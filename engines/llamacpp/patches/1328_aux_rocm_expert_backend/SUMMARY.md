@@ -1,6 +1,6 @@
 # 1328_aux_rocm_expert_backend
 
-**Status:** untested
+**Status:** rejected
 **Plan item:** MET05
 
 ## What it does

@@ -290,6 +290,7 @@ patches = [
     "1325_sched_split_timing",
     "1342_fusion_bisect",
     "1346_mtp_prompt_overlap",
+    "1358_meta_split_cache_local_evict",
 ]
 required-state = "validated"
 
@@ -496,11 +497,6 @@ patches = []
 [experiment.deploy-v5-plus-1327]
 # Post-bump: v5 + 1327 (host-computed QSA dead-slot remap terms; BIGCHERRY_QSA_HOST_REMAP=1).
 patches = []
-
-[experiment.deploy-v5-plus-1327-aux6900]
-# MET05: v5 + 1327 + 1328 auxiliary ROCm expert backend; off unless BIGCHERRY_EXPERT_AUX_DEVICE is set.
-patches = ["1358_meta_split_cache_local_evict", "1328_aux_rocm_expert_backend"]
-
 
 [experiment.retest-1295]
 # QFP21: promoted base (v6 stack) + 1295 QSA gathered-cell decode attention (on unless BIGCHERRY_QSA_GATHER=0).
@@ -1098,13 +1094,10 @@ patches = ["1263_prbe41_ssm_conv_channels_major"]
 # 1275 alone: small mapped-host AllReduce slot-sync and launch-geometry controls; defaults preserve pristine behavior.
 patches = ["1275_ar_small_latency"]
 
+[experiment.meta-split-cache-evict]
+# 1358: production + local eviction of stale Meta split-state cache entries; on by default, BIGCHERRY_META_SPLIT_CACHE_EVICT=0 restores the clear.
+patches = []
+
 [experiment.moe-router-splitk]
 # QFP36: production + 1357; default off, enable with BIGCHERRY_MOE_ROUTER_SPLITK=1.
 patches = ["1357_moe_router_splitk"]
-[experiment.meta-split-cache-evict]
-# 1358: production + local eviction of stale Meta split-state cache entries; on by default, BIGCHERRY_META_SPLIT_CACHE_EVICT=0 restores the clear.
-patches = ["1358_meta_split_cache_local_evict"]
-
-[experiment.router-splitk-with-cache-evict]
-# 1357 + 1358 together on production: 1358 on by default, 1357 with BIGCHERRY_MOE_ROUTER_SPLITK=1.
-patches = ["1357_moe_router_splitk", "1358_meta_split_cache_local_evict"]

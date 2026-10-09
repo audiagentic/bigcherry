@@ -21,6 +21,7 @@ from ..patch import catalog as patch_catalog
 from ..source import sources
 from ..release import pin as _release_pin
 from ..release.patch_promote import cmd_patch_promote
+from ..tuning.engine_bench import cmd_engine_bench
 from .build import cmd_build_new
 from .diagnostics import cmd_check, cmd_doctor, cmd_status
 from .experiment import (
@@ -456,6 +457,32 @@ def build_parser() -> argparse.ArgumentParser:
     )
     patch_promote_cmd.set_defaults(func=cmd_patch_promote)
 
+    engine_bench_cmd = sub.add_parser(
+        "engine-bench",
+        help="MEN03: launch a declared engine's server, measure prefill and decode per depth, write one result record",
+    )
+    engine_bench_cmd.add_argument("--engine", required=True, help="engine name (engines/<name>/engine.toml)")
+    engine_bench_cmd.add_argument("--binary", required=True, help="the engine's server binary")
+    engine_bench_cmd.add_argument("--model", required=True, help="model file, directory or repository id")
+    engine_bench_cmd.add_argument("--out", required=True, help="output directory")
+    engine_bench_cmd.add_argument("--depth", nargs="+", required=True, help="prompt depths in tokens")
+    engine_bench_cmd.add_argument("--corpus", default="/mnt/data/bigcherry-work/corpus/kld-docs.txt")
+    engine_bench_cmd.add_argument("--label", default="run", help="names the log and result files")
+    engine_bench_cmd.add_argument("--reps", type=int, default=2)
+    engine_bench_cmd.add_argument("--decode", type=int, default=512)
+    engine_bench_cmd.add_argument("--port", type=int, default=None, help="default: a free port")
+    engine_bench_cmd.add_argument("--health-timeout", type=int, default=2400)
+    engine_bench_cmd.add_argument(
+        "--shutdown", choices=("http", "sigint"), default=None,
+        help="default: as the engine declares; sigint for a build without the engine's shutdown route",
+    )
+    engine_bench_cmd.add_argument("--env", action="append", help="NAME=VALUE for the server process; repeatable")
+    engine_bench_cmd.add_argument("--unset", action="append", help="environment name the server must not inherit")
+    engine_bench_cmd.add_argument(
+        "server_args", nargs="*", help="after --: further server flags, passed through unchanged"
+    )
+    engine_bench_cmd.set_defaults(func=cmd_engine_bench)
+
     patch_gates_cmd = sub.add_parser(
         "patch-gates",
         help="evaluate the shared PA21 patch gates for one exact composition",
@@ -678,7 +705,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="release a completed pin bump in one resumable command: completion gate "
         "(pin-status --complete --all-remotes) -> release record + transition marker -> "
         "release notes with the Release-As footer -> fast-forward main -> merge "
-        "release-please's PR -> wait for the bc-<llama tag> tag -> sync the work branch.",
+        "release-please's PR -> wait for the bc-llamacpp-<version> tag -> sync the work branch.",
     )
     pin_release_cmd.add_argument("llama_tag", help="llama.cpp tag of the completed bump (e.g. b11474)")
     pin_release_cmd.add_argument(

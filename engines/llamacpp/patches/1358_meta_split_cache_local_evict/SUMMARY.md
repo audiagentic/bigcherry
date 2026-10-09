@@ -1,6 +1,6 @@
 # 1358_meta_split_cache_local_evict
 
-**Status:** untested
+**Status:** validated
 **Plan item:** QFP41
 
 ## What it does
