@@ -1,7 +1,7 @@
 schema = 1
 id = "1325_sched_split_timing"
 order = 1325
-state = "untested"
+state = "validated"
 kind = "enhancement"
 origin = "local"
 backend = "hip"

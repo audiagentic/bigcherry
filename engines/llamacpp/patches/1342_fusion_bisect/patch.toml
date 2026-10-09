@@ -1,7 +1,7 @@
 schema = 1
 id = "1342_fusion_bisect"
 order = 1342
-state = "untested"
+state = "validated"
 kind = "diagnostic"
 origin = "local"
 backend = "hip"

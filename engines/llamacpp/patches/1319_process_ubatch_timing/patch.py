@@ -14,7 +14,7 @@ import re
 from bigcherry.patcher import Edit, EnvDoc, FilePatch
 
 GROUP = "rdna-boosts"
-STATE = "untested"
+STATE = "validated"
 
 _A_START = "    auto * res = get_gf_res_prev();\n    auto * gf  = res->get_gf();\n"
 _N_START = """    // bigcherry 1319: host-time split of process_ubatch (BIGCHERRY_SUBMIT_TIMING=1)

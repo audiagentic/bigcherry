@@ -1,6 +1,6 @@
 # 1342_fusion_bisect
 
-**Status:** untested
+**Status:** validated
 **Plan item:** FKE01
 
 Kind: diagnostic, variable `BIGCHERRY_FUSION_SKIP_OPS` (unset by default).

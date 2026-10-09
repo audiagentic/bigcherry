@@ -16,7 +16,7 @@ import re
 from bigcherry.patcher import Edit, EnvDoc, FilePatch
 
 GROUP = "rdna-boosts"
-STATE = "untested"
+STATE = "validated"
 
 _A_LOOP = ("    int prev_backend_id = -1;\n"
            "\n"
