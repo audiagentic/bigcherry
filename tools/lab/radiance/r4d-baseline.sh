@@ -6,7 +6,7 @@
 #   VIS=2 SCRIPT r4d-base tools/lab/radiance/r4d-baseline.sh @<any build run> <out-dir> [op...]
 # The first argument (a llama-server path from the queue) is ignored. With ops given, only those are run.
 # Usage: r4d-baseline.sh <ignored> <out-dir> [op...]
-# env: RADIANCE_SRC, GPU (HIP index, 0), COMPARE (a libr3 kbench.json: print its times over this run's)
+# env: RADIANCE_SRC, GPU (HIP index of the gfx12 card, 2 on Brutus; the run stops if that card is not gfx12), COMPARE (a libr3 kbench.json: print its times over this run's)
 set -u
 out=$2; shift 2
 mkdir -p "$out"
@@ -17,8 +17,12 @@ export PATH="$ROCM_PATH/bin:$PATH"
 for v in $(env | grep -oE "^(BIGCHERRY_[A-Z0-9_]+|GGML_HIP_[A-Z0-9_]+)"); do unset "$v"; done
 opts=()
 for op in "$@"; do opts+=(--op "$op"); done
-echo "radiance $(git -C "$src" rev-parse --short HEAD); libr4d on HIP device ${GPU:-0}"
-HIP_VISIBLE_DEVICES=${GPU:-0} RADIANCE_HOME="$src/build/radiance_home" timeout "${KBENCH_TIMEOUT:-2400}" \
+gpu=${GPU:-2}
+arch=$(HIP_VISIBLE_DEVICES=$gpu RADIANCE_HOME="$src/build/radiance_home" timeout 30 "$src/build/bin/rad-info" --plugins 2>&1 \
+    | grep -oE "0:gfx[0-9]+" | head -1)
+echo "radiance $(git -C "$src" rev-parse --short HEAD); libr4d on HIP device $gpu ($arch)"
+case "$arch" in 0:gfx12*) ;; *) echo "NOT_GFX12: HIP device $gpu is '$arch'; set GPU to the R9700's HIP index"; exit 1 ;; esac
+HIP_VISIBLE_DEVICES=$gpu RADIANCE_HOME="$src/build/radiance_home" timeout "${KBENCH_TIMEOUT:-2400}" \
     "$src/build/bin/rad-kbench" --kernels libr4d,libref "${opts[@]}" --bench \
     --fixture "${FIXTURE:-$src/build/radiance_home/kernels.rkb}" --report "$out/kbench.md" > "$out/kbench.log" 2>&1
 echo "rad-kbench --kernels libr4d,libref: exit $?"
