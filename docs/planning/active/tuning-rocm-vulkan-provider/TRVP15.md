@@ -15,11 +15,11 @@ priority: P1
 
 ## Description
 
-Qualify and selectively promote RDNA CM1 winners on exact device/driver/signature identities, preserving native fallback and keeping default enablement off without evidence.
+Qualify and selectively promote any *additional* RDNA CM1 route/recipe winner on exact device/driver/signature identities. Upstream CM1 is already native and auto-eligible at b11474; only new BigCherry overrides remain disabled absent evidence.
 
 ## Steps
 
-1. Run native and forced CM1 signatures on gfx1100, gfx115x, and gfx120x, with RADV and proprietary AMD stacks separately. 2. Require correctness for all supported quant types in MUL_MAT and MUL_MAT_ID, including tails, split/non-split K, batched shapes, expert routing, and preparation/reduction. 3. Measure forced candidates under statistical/effect-evidence policy with warm-up excluded and full recipe timing. 4. Tune per exact device/driver/shader/build/signature key; never promote architecture-wide aggregates. 5. Seed RDNA4 negative controls q4_1, q5_1, q4_k, q5_k, nvfp4 MUL_MAT and nvfp4 MUL_MAT_ID. 6. Promote only replay-safe winners with complete identity; stale device/driver/shader/vendor-pin/candidate/signature misses fall back to native. 7. Reassess upstream merge/pin status and retire redundant downstream code only when an equivalent upstream change is pinned.
+1. Run native and forced CM1 signatures on gfx1100, gfx115x, and gfx120x, with RADV and proprietary AMD stacks separately. 2. Require correctness for all supported quant types in MUL_MAT and MUL_MAT_ID, including tails, split/non-split K, batched shapes, expert routing, and preparation/reduction. 3. Measure forced candidates under statistical/effect-evidence policy with warm-up excluded and full recipe timing. 4. Tune per exact device/driver/shader/build/signature key; never promote architecture-wide aggregates. 5. Seed RDNA4 negative controls q4_1, q5_1, q4_k, q5_k, nvfp4 MUL_MAT and nvfp4 MUL_MAT_ID. 6. Promote only replay-safe winners with complete identity; stale device/driver/shader/vendor-pin/candidate/signature misses fall back to native. 7. #27952 is already merged into the b11474 pin: never port 1246. First close PRVP02's A-prefetch end_k correctness gate; retain native shader as control and only qualify separately identifiable new recipes.
 
 ## Detailed Solution & Technical Design
 
@@ -50,6 +50,9 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 Only exact-identity, correctness-passing, statistically supported winners are promoted; default enablement stays off absent evidence. Native fallback is visible and reliable for all misses/failures. RDNA3, RDNA3.5, and RDNA4 plus RADV/proprietary stacks are not conflated, negative controls are retained, and complete campaign lineage is reproducible.
 
 ## Notes
+
+2026-10-08T22:03Z BCOP77: native CM1 is the pinned baseline, not an opt-in BigCherry backport. Preserve RDNA4 negative quant controls and include IQ4_XS; Q2_K has no CM1 shader. PRVP02 owns shader A-prefetch safety; TRVP14 owns any future route override. No Vulkan hardware qualification during the RRVP02 pause. Upstream and external benchmarks are not BigCherry promotion evidence.
+
 
 Supersedes: RO22
 Migration: capability-rebaseline-v3-2026-09
