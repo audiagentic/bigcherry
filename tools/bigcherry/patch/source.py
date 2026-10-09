@@ -50,7 +50,8 @@ from bigcherry.patch.apply import (
 )
 
 REPO_ROOT = paths.REPO_ROOT
-PATCHES_ROOT = REPO_ROOT / "patches"
+PATCHES_ROOT = paths.PATCHES
+OVERLAY_ROOT = paths.SRC_OVERLAY
 MANIFEST_NAME = "manifest.json"
 MANIFEST_SCHEMA_VERSION = 1
 SOURCE_TRANSFORM_SCHEMA_VERSION = 1

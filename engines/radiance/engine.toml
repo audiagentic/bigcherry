@@ -1,0 +1,11 @@
+# Engine pillar: radiance (run-multi-engine MEN01, MEN02). Evaluate lane only: no patches or overlay files yet.
+# On the lab host the source checkout currently lives under the work root (see tools/lab/radiance/); the vendor
+# location below is where it belongs once builds go through the platform's build lanes (MEN04).
+schema = 1
+name = "radiance"
+upstream = "https://codeberg.org/StillDeadcode/radiance"
+
+[layout]
+patches = "engines/radiance/patches"
+overlay = "engines/radiance/overlay"
+vendor = "vendor/radiance"

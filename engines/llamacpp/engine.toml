@@ -1,0 +1,11 @@
+# Engine pillar: llama.cpp (run-multi-engine MEN08).
+# The layout below is where this engine's files live today. The MEN08 migration moves them under engines/llamacpp/
+# and changes only these three lines plus the files themselves.
+schema = 1
+name = "llamacpp"
+upstream = "https://github.com/ggml-org/llama.cpp"
+
+[layout]
+patches = "patches"
+overlay = "src"
+vendor = "vendor/llama.cpp"

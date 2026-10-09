@@ -11,11 +11,16 @@ import re
 import subprocess
 from pathlib import Path
 
+from . import engines
+
 # tools/bigcherry/paths.py -> tools/bigcherry -> tools -> <repo root>
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
-SRC_OVERLAY = REPO_ROOT / "src"
-PATCHES = REPO_ROOT / "patches"
+# The llama.cpp pillar's layout (engines/llamacpp/engine.toml). SRC_OVERLAY and PATCHES are that engine's
+# locations in this checkout; code working on another project root asks LLAMACPP for them.
+LLAMACPP = engines.load(REPO_ROOT, engines.LLAMACPP)
+SRC_OVERLAY = LLAMACPP.overlay_root(REPO_ROOT)
+PATCHES = LLAMACPP.patches_root(REPO_ROOT)
 PATCH_CATALOG = PATCHES / "catalog.toml"
 # VA02: a reviewed, one-time structural-grandfather baseline for the
 # RD-patch validation-package standard (docs/reference/testing/
@@ -101,7 +106,7 @@ def llama_root(override: str | os.PathLike[str] | None = None) -> Path:
     """
     if override is not None:
         return Path(override).expanduser().resolve()
-    return primary_root() / "vendor" / "llama.cpp"
+    return LLAMACPP.vendor_root(primary_root())
 
 
 def cuda_dir(root: Path) -> Path:

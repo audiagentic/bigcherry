@@ -143,7 +143,7 @@ class CampaignProducerRuntime:
             worktree_root=self.workdir / "control",
             resolved_revision=control_revision,
             composition=control_composition,
-            overlay_root=psi.REPO_ROOT / "src",
+            overlay_root=psi.OVERLAY_ROOT,
             requested_revision=self.base_revision,
         )
         subject_src = psi.materialize_composition(
@@ -151,7 +151,7 @@ class CampaignProducerRuntime:
             worktree_root=self.workdir / "subject",
             resolved_revision=subject_revision,
             composition=subject_composition,
-            overlay_root=psi.REPO_ROOT / "src",
+            overlay_root=psi.OVERLAY_ROOT,
             requested_revision=self.base_revision,
         )
         return (

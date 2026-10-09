@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping, Protocol
 
+from bigcherry.core import paths
 from bigcherry.experiment import contract as experiment_contract
 from bigcherry.patch import registry as patch_registry
 from bigcherry.patch import validation_policy
@@ -81,7 +82,7 @@ class ProjectScientificIdentityResolver:
 
     def resolve(self, job: JobSpec) -> Mapping[str, object]:
         root = self.project_root.resolve()
-        patches = root / "patches"
+        patches = paths.LLAMACPP.patches_root(root)
         config = root / "config"
         registry = patch_registry.load_registry(patches)
         contracts = experiment_contract.load_contracts(config / "experiment-contracts.toml")

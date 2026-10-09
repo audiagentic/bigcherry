@@ -143,7 +143,7 @@ def _materialize_framework_source(args: argparse.Namespace, descriptor, cfg) -> 
         worktree_root=args.worktree_root / "framework",
         resolved_revision=base_revision,
         composition=composition,
-        overlay_root=psi.REPO_ROOT / "src",
+        overlay_root=psi.OVERLAY_ROOT,
         requested_revision=cfg.pinned,
     )
     idempotent = psi.verify_composition_idempotent(
@@ -152,7 +152,7 @@ def _materialize_framework_source(args: argparse.Namespace, descriptor, cfg) -> 
         worktree_root=args.worktree_root / "framework",
         resolved_revision=base_revision,
         composition=composition,
-        overlay_root=psi.REPO_ROOT / "src",
+        overlay_root=psi.OVERLAY_ROOT,
         requested_revision=cfg.pinned,
     )
     if not idempotent:
@@ -164,7 +164,7 @@ def _materialize_framework_source(args: argparse.Namespace, descriptor, cfg) -> 
     source_identity = psi._make_source_identity_v2(
         resolved_revision=base_revision,
         composition=composition,
-        overlay_root=psi.REPO_ROOT / "src",
+        overlay_root=psi.OVERLAY_ROOT,
     )
     source_identity["materialization_plan_id"] = source_identity["source_key"]
     if any(source_manifest.get(key) != value for key, value in source_identity.items()):

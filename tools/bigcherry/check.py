@@ -150,7 +150,7 @@ def _referenced_artifact_names(root: Path) -> frozenset[str]:
     tracked prose, not only when the two directory names match verbatim.
     """
     names: set[str] = set()
-    for base in (root / "docs", root / "patches"):
+    for base in (root / "docs", paths.LLAMACPP.patches_root(root)):
         if not base.is_dir():
             continue
         for md_path in base.rglob("*.md"):

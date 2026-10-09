@@ -96,6 +96,6 @@ class ProjectContext:
             artifacts_root=artifacts,
             work_root=work,
             upstream_repo=upstream,
-            overlay_root=project / "src",
-            patches_root=project / "patches",
+            overlay_root=paths.LLAMACPP.overlay_root(project),
+            patches_root=paths.LLAMACPP.patches_root(project),
         )

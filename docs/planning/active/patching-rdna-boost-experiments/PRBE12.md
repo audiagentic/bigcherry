@@ -15,20 +15,29 @@ priority: P2
 
 ## Description
 
-TODO, narrowed to remaining scope -- real hardware correctness evidence already exists. Patch patches/1206_rd13_mul_mat_add_view_fusion (state=untested, experiment-contract=RD13-MUL-MAT-ADD-VIEW-FUSION, conflicts=[]) already has a real gfx1201 PPL-equality run (tierM-gptoss20b-q6k, wikitext2): subject PPL=561.6933+/-1.67373, control identical, delta=0.0, sigma=0.0 -- PASS, proving no regression, but NOT proving the RESHAPE-mediated fusion actually activated (real BIGCHERRY_PATCH_HIT trace markers exist in patch.py per this item's own notes but were not exercised in that run). Remaining work: activation-trace verification, the real performance claim (this contract IS performance-bearing per this item's own notes), the negative-fixture matrix (null addend, wrong wiring, extra consumers, non-VIEW, direct-ADD near-miss), and validation.toml/contract binding (a known, pre-existing blocker: require_execution_package()'s unconditional README+bound-contract+validation.toml gate, same blocker class already hit by RD13/RD17's own producers).
+Current 2026-10-09 disposition: patch 1206 extends native HIP `ggml_cuda_try_fuse` from direct MUL_MAT->ADD to MUL_MAT->RESHAPE/qualified VIEW->ADD. The September 2025-style TODO text below was superseded by implementation in September 2026: WARN-level activation markers, a bound `validation.toml`, positive/negative probes, full-vocabulary backend-reference producer, and paired positive/control benchmark lanes already exist. The patch remains `untested`, not promotable by documentation alone. The unresolved question is clean, current-pin, architecture-specific end-to-end benefit with safe view aliasing, not building another producer.
+
+Measured history: gfx1100 b11126 four independent tg128 sessions +0.66/+0.53/+0.47/+0.65% with flat controls and exact 64x248,320 full-vocabulary comparison; gfx1201 four noisy sessions +0.2/-0.2/+0.3/+0.4% are inconclusive; gfx1030 has activation and historical correctness but no qualifying performance series. Those results are not a b11474 promotion verdict.
 
 ## Steps
 
-1. Re-read patches/1206_rd13_mul_mat_add_view_fusion/patch.py's existing activation markers -- CORRECTED per source audit: both markers (patch.py lines ~222 and ~235) currently use `GGML_LOG_INFO`, which is not reliably visible under normal unattended llama-server/bench verbosity (per this project's own HI90/1231 finding, INFO is filtered below llama-server's default level); change both to `GGML_LOG_WARN`, matching the convention already corrected for sibling patches (e.g. RD12/1205).
-2. Run a real activation-trace probe with BIGCHERRY_PATCH_TRACE=1 (now WARN-level) against an SSM/Mamba-family model and confirm the marker fires during a real request.
-3. Author the negative-fixture matrix: null addend, ADD wired to the wrong operand, extra consumers on the VIEW node, and a non-VIEW node in the mediating position -- CORRECTED: the plan's prior wording said "VIEW" generically but the patch matches exactly `GGML_OP_RESHAPE` in the mediating position, not any VIEW-family op; fixtures must target RESHAPE specifically. A direct ADD (MUL_MAT->ADD with no RESHAPE in between) is NOT a negative-fusion case for this patch -- it must retain the pre-existing legacy (unrelated) direct fusion behavior unchanged and simply must not emit the 1206_rd13 marker; construct that fixture and assert both facts (legacy fusion still fires; RD13 marker does not).
-4. Run graph capture/replay with the fusion active on a real activating model; confirm stability across repeated capture/replay cycles.
-5. Only after 2-4 pass, run the real performance claim comparing baseline vs baseline+1206 on an activating model, with enough repeats for a defensible CI.
-6. Author validation.toml and bind the contract once require_execution_package()'s gate requirements are otherwise satisfiable.
+1. Reuse `tools/tests/patch/test_patch_1206_rd13_mul_mat_add_view_fusion.py` for the existing exact-RESHAPE, reversed ADD, null addend, extra consumer and wrong intermediate near misses. Add bounded host/real-backend cases for PRBE39's qualified `GGML_OP_VIEW`: offset 0 vs nonzero; contiguous vs strided; equal vs unequal byte span; source identity; and disjoint vs overlapping output. Do not duplicate the existing matcher or build a new dispatch table.
+2. Rebaseline against pinned b11474 with the existing patch-local producer `validation/producer.py::run` and `validation.toml` (`--validation-producer 1206_rd13_mul_mat_add_view_fusion/rd13`). One physical architecture per invocation; registered positive `tierA-qwen4b-q6k`, registered negative `tierM-gptoss20b-q6k`, and required `control_model` producer input. Before timed work require subject-only WARN marker, then run the existing paired tg128 positive and negative control, followed by the producer's 64-step, 248,320-vocabulary deterministic server comparison. Validate exact source/build/PCI locator identity and retained artifacts.
+3. Exercise repeated same-process capture/replay and multi-request reset with active fusion; compare greedy tokens and pre-sampling full-vocabulary logprobs against unfused, and assert no changed MTP acceptance/work if an optional MTP control is used. Do not let one-shot `std::atomic_flag` activation logs masquerade as a per-layer invocation count.
+4. For promotion use the **existing frozen** `RD13-MUL-MAT-ADD-VIEW-FUSION` contract: `improvement_no_regression_v1`, >=4 independent sessions per architecture, >=10 paired rounds/session, session-bootstrap CI95 lower bound >0%, and <=1% control regression. Do not substitute a generic 3% materiality rule or stop after a favourable session. Run gfx1100/gfx1201/gfx1030 sequentially on isolated hardware; gfx1201's noisy historical lane is not evidence of benefit.
+5. If an architecture has no reproducible improvement, retain patch 1206 unpromoted there; an architecture-specific gate requires an explicit owner/contract decision, not an implicit change to `validation-architectures`. Do not enqueue duplicate QFP/MMQ, Meta, MTP or Radiance work.
 
 ## Detailed Solution & Technical Design
 
-The correctness foundation (no-regression) is real and already proven; what remains is proving causation (does it actually fire, and does firing help), plus the negative-fixture safety net around the pattern matcher (view specifically at ADD.src[0], reject null/wrong-wiring/extra-consumer/non-VIEW/direct-ADD near-misses per this item's own acceptance criteria) which has never been run for real.
+Authoritative source: `patches/1206_rd13_mul_mat_add_view_fusion/patch.py::_NEW` replaces the direct-fusion block inside pinned `ggml/src/ggml-cuda/ggml-cuda.cu::ggml_cuda_try_fuse`. It checks the next graph node for RESHAPE or a VIEW whose `view_src` is the matmul, offset is zero, both tensors are contiguous and `ggml_nbytes` agrees. `ggml_can_fuse_subgraph` enforces the three-node span/consumer rule; ADD must consume the intermediate at `src[0]`, have a non-null addend and equal operand shapes; `ggml_cuda_check_fusion_memory_ranges` rejects overlapping output. Existing `ggml_cuda_should_fuse_mul_mat_vec_f/q` gates choose F32/F16/BF16 or quantized MMV paths. The fused kernel writes the ADD output and elides two intermediate graph nodes; no new persistent buffer or allocator is needed. Direct MUL_MAT->ADD remains the legacy two-node path and must never emit RD13's activation marker.
+
+The producer's `run` first executes subject/control trace probes, then `run_paired_llama_benchmark` on positive and negative models, then builds one attested server pair for full-vocabulary comparison. It returns `promotion_lane_effects`, `promotion_trigger_evidence`, `contract_correctness_results` and `rd13-performance.json`; `performance_benchmark_cli = "forbid"` prevents a **second** generic benchmark authority, not the producer's own performance measurement. `validation.toml` already requires apply/build/activation/correctness/performance/controls.
+
+Theoretical opportunity per fused ADD is at most one avoided separate ADD launch and approximately two intermediate-output byte transfers (matmul output write/read), with addend read and final output write still required. This is a ceiling, not a measured traffic saving. Derive `output_bytes`, actual fusion invocation count, launch time and E2E share from an isolated profiling lane before interpreting sub-percent gains. Existing once-per-process WARN marker proves activation, not frequency.
+
+Upstream: ggml-org/llama.cpp PR #29633 changed `ggml_cuda_should_fuse_mul_mat_vec_f`'s MMVF eligibility signature to include `warp_size` (merged 2026-10-05), so re-evaluate actual F/Q branch selection at b11474. The current upstream CUDA direct MUL_MAT+ADD matcher remains a direct-only baseline. Vulkan PR #27220 demonstrates reusable `ggml_can_fuse_subgraph`/shape/consumer gating but is a different UNARY+MUL operator, not a transplant. AMD's TLX fused GEMM epilogue analysis motivates measuring avoided intermediate traffic, but its hardware results do not transfer to RDNA3/4.
+
+Ownership: PRBE12/1206 owns this fusion and performance contract; PRBE39's VIEW/overlap hardening is already folded into 1206 (no second patch); PVPS15 owns producer activation-before-timing policy. Active QFP, MTP and engine-registry development must not be edited or benchmarked by this slice.
 
 ## Code Samples & Guidance
 
@@ -36,15 +45,15 @@ The correctness foundation (no-regression) is real and already proven; what rema
 
 ## Files
 
-patches/1206_rd13_mul_mat_add_view_fusion/{patch.toml,patch.py,validation/rd13_correctness.py}; new negative-fixture test cases; activation-trace probe script (BIGCHERRY_PATCH_TRACE=1); validation.toml (to author); campaign artifacts for the activation/performance run.
+Existing owner: `PRBE12.md`, `patches/1206_rd13_mul_mat_add_view_fusion/{patch.py,patch.toml,validation.toml,validation/producer.py,validation/producer.toml,README.md,SUMMARY.md,TESTING.md}`; tests `tools/tests/patch/test_patch_1206_rd13_mul_mat_add_view_fusion.py`, `test_patch_validation_campaign_rd13_backend_reference.py`, `test_patch_validation_campaign_rd13_contract_cli.py`; `config/experiment-contracts.toml`. No new plan, producer, scheduler, allocator or configuration flag.
 
 ## Validation
 
-Offline: `PYTHONPATH=tools python -m bigcherry patch-lint`, `patch-rebase-check --focal-overlay 1206_rd13_mul_mat_add_view_fusion --source bigcherry-tuning`. Hardware (Brutus, not run here): BIGCHERRY_PATCH_TRACE=1 activation probe on a real SSM/Mamba-family model; negative-fixture matrix (marker must NOT fire); graph capture/replay stability; balanced moe_decode-style timing once activation is confirmed real.
+Host: current patch dry-run against b11474 vendor source, near-miss/VIEW/overlap fixtures, producer mock for subject-only activation, typed positive/control lane effects and fail-closed model/attestation checks; existing tests are present but were NOT executed in this documentation audit. Hardware: 1x gfx1100, 1x gfx1201, 1x gfx1030 serial independent lanes, paired ABBA tg128, full-vocab reference, graph replay and MTP-control parity where relevant. Capture `rd13-backend-reference.json`, `rd13-performance.json`, trace logs, build/source hashes and physical locator; do not claim a new b11474 result from older b11126 evidence.
 
 ## Effort & Risk
 
-M effort -- correctness/no-regression already proven; remaining work is activation proof, negative fixtures, and the performance claim, plus the pre-existing validation.toml blocker shared with sibling items.
+Small remaining documentation/fixture work; hardware cost only after source+host gates. Primary risks are false activation attribution, reshape/view aliasing, MMVF dispatch changes and concurrent hardware noise. Retain `untested` and default-off fallback until contract gates pass.
 
 ## Standards
 
@@ -52,9 +61,12 @@ Exact pattern; no false positives; causal isolation; preserve legacy direct-ADD 
 
 ## Acceptance Criteria
 
-All exact-pattern and negative fixtures pass; fused output matches unfused/reference; graph capture/replay is stable; only a statistically supported benefit without regressions is promotable.
+Exact and negative selector fixtures, safe view/output lifetimes, deterministic full-vocab correctness, same-process replay and valid producer evidence must pass. Frozen contract requires four independent sessions with ten paired rounds each, CI95-low >0% positive, <=1% negative-control regression and no work disappearance. Failed/noisy lanes terminate the current decision without optional stopping; no architecture is promoted by extrapolation.
 
 ## Notes
+
+**Current authoritative note (2026-10-09):** The older notes below preserve historical chronology. Their statements that WARN markers, activation, contract binding, `validation.toml`, performance and control producers are missing are superseded by the September 2026 code and this audit. Historical b11126 results do not validate b11474. PRBE39 is folded into 1206 and has no separate active plan.
+
 
 Supersedes: RD13
 Migration: capability-rebaseline-v3-2026-09

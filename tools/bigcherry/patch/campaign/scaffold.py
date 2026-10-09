@@ -192,7 +192,7 @@ def _materialize_scaffold_sources(
         worktree_root=worktree_root / "control",
         resolved_revision=base_revision,
         composition=control_composition,
-        overlay_root=psi.REPO_ROOT / "src",
+        overlay_root=psi.OVERLAY_ROOT,
         requested_revision=base_ref,
     )
     patched_src = psi.materialize_composition(
@@ -200,7 +200,7 @@ def _materialize_scaffold_sources(
         worktree_root=worktree_root / "subject",
         resolved_revision=base_revision,
         composition=subject_composition,
-        overlay_root=psi.REPO_ROOT / "src",
+        overlay_root=psi.OVERLAY_ROOT,
         requested_revision=base_ref,
     )
     _print(f"control source: {control_src}")
@@ -211,7 +211,7 @@ def _materialize_scaffold_sources(
         worktree_root=worktree_root / "control",
         resolved_revision=base_revision,
         composition=control_composition,
-        overlay_root=psi.REPO_ROOT / "src",
+        overlay_root=psi.OVERLAY_ROOT,
         requested_revision=base_ref,
     )
     subject_idempotent = psi.verify_composition_idempotent(
@@ -220,7 +220,7 @@ def _materialize_scaffold_sources(
         worktree_root=worktree_root / "subject",
         resolved_revision=base_revision,
         composition=subject_composition,
-        overlay_root=psi.REPO_ROOT / "src",
+        overlay_root=psi.OVERLAY_ROOT,
         requested_revision=base_ref,
     )
     stock_src = psi.materialize_stock_source(
@@ -243,7 +243,7 @@ def _materialize_scaffold_sources(
             worktree_root=worktree_root / "base",
             resolved_revision=base_revision,
             composition=base_composition,
-            overlay_root=psi.REPO_ROOT / "src",
+            overlay_root=psi.OVERLAY_ROOT,
             requested_revision=base_ref,
         )
     else:

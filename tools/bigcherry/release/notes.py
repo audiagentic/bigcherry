@@ -22,6 +22,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
+from ..core import paths
+
 
 class ReleaseNotesError(RuntimeError):
     pass
@@ -94,8 +96,13 @@ def _patch_ids(repo_root: Path, ref: str) -> set[str]:
     return {name for name in listing if not name.startswith("_")}
 
 
+
+def _patch_file(patch_id: str, name: str) -> str:
+    """Repository-relative path of one file of a patch package."""
+    return f"{paths.LLAMACPP.patches}/{patch_id}/{name}"
+
 def _patch_state(repo_root: Path, ref: str, patch_id: str) -> str:
-    text = _show(repo_root, ref, f"patches/{patch_id}/patch.toml")
+    text = _show(repo_root, ref, _patch_file(patch_id, "patch.toml"))
     return tomllib.loads(text).get("state", "") if text else ""
 
 
@@ -112,16 +119,17 @@ def patch_changes(repo_root: Path, config: ReleaseConfig, old_ref: str, new_ref:
     changes = PatchChanges()
     changes.added = sorted((pid, _patch_state(repo_root, new_ref, pid)) for pid in new_ids - old_ids)
     changes.removed = sorted(old_ids - new_ids)
+    prefix = paths.LLAMACPP.patch_path_prefix()
     touched = {
-        line.split("/")[1]
-        for line in _git(repo_root, "diff", "--name-only", old_ref, new_ref, "--", "patches").splitlines()
-        if line.count("/") >= 2 and line.endswith(("patch.py", "patch.toml"))
+        line[len(prefix):].split("/")[0]
+        for line in _git(repo_root, "diff", "--name-only", old_ref, new_ref, "--", paths.LLAMACPP.patches).splitlines()
+        if line.startswith(prefix) and line[len(prefix):].count("/") >= 1 and line.endswith(("patch.py", "patch.toml"))
     }
     for pid in sorted(touched & old_ids & new_ids):
         old_state, new_state = _patch_state(repo_root, old_ref, pid), _patch_state(repo_root, new_ref, pid)
         if old_state != new_state:
             changes.state_changed.append((pid, old_state, new_state))
-        elif _show(repo_root, old_ref, f"patches/{pid}/patch.py") != _show(repo_root, new_ref, f"patches/{pid}/patch.py"):
+        elif _show(repo_root, old_ref, _patch_file(pid, "patch.py")) != _show(repo_root, new_ref, _patch_file(pid, "patch.py")):
             changes.changed.append(pid)
     old_build, new_build = _build_members(repo_root, config, old_ref), _build_members(repo_root, config, new_ref)
     changes.entered_build = sorted(new_build - old_build)
@@ -155,7 +163,7 @@ def _event_time(event: dict) -> datetime:
 
 def _patch_title(repo_root: Path, ref: str, patch_id: str) -> str:
     """First sentence of the patch module docstring, as the one-line description."""
-    text = _show(repo_root, ref, f"patches/{patch_id}/patch.py") or ""
+    text = _show(repo_root, ref, _patch_file(patch_id, "patch.py")) or ""
     if not text.startswith('"""'):
         return ""
     first = " ".join(text[3:text.find('"""', 3)].strip().split("\n\n")[0].split())
