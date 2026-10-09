@@ -118,6 +118,33 @@ builtins) and `gdn_conv_update_w4_h128_bf16` (20 cases, `shape this kernel does 
 
 Timings of the kernels shared with the first check are unchanged (geometric means 0.94 to 1.08 of the earlier run).
 
+## References for the remaining port (found 2026-10-09; read before writing kernels)
+
+The 29 excluded units need the gfx12 WMMA builtins or the gfx12 transposed load. These exist to adapt from, so none
+of it should be written from nothing:
+
+- **Radiance already patched for gfx1100.** `github.com/mkadrlik/vllm-radiance-p2p`: radiance 0.5.7 (the older,
+  vLLM-based line) serving on two RX 7900 XTX, with gfx1100 patches and HIP kernel sources under `build/` and a
+  `Dockerfile.gfx1100`. Serves Qwen3.8-27B AWQ-INT4 at TP2 with MTP (23.8-28.9 t/s single stream by its README) and
+  W8A8 models. Needs IOMMU off or ACS override for its P2P transport. No licence statement found in the repository;
+  to be settled before any of its code is taken, and its kernels are for 0.5.7's interfaces, not 1.3.0's plugin ABI.
+- **Both layouts in one file.** llama.cpp `ggml/src/ggml-cuda/mma.cuh`: the same `mma()` for RDNA3
+  (`__builtin_amdgcn_wmma_f32_16x16x16_{f16,bf16}_w32`, 16 elements per lane) and RDNA4 (`..._w32_gfx12`, 8 per lane).
+- **A libr4d kernel already ported to gfx11 here.** BigCherry patch `1253_nro04_gfx1100_bf16_chunked_gdn`
+  (`gated_delta_net_chunked_bf16_gfx11.cu` in the patched tree): libr4d's bf16 GDN chunk scan with gfx11 fragments,
+  validated on the XTX cards. The closest model for the GDN and bf16 GEMM units.
+- **gfx12 fragment layout, measured.** `github.com/JohnTDI-cpu/rdna4-wmma-guide` (CC BY 4.0): C/D is column = lane % 16,
+  row = (lane / 16) * 8 + element. ROCm/ROCm issue 6025 is the documentation gap it fills.
+- **gfx11 layout.** On gfx11 lanes 16-31 carry the same A/B data as lanes 0-15, 16 elements per lane (rocWMMA's
+  layout traits are the authority; exact file to be pinned).
+- **Another RDNA3 WMMA port of a QSA kernel.** `github.com/Niko1221/Strata` PR 856 (gfx12 and gfx11 versions of a QSA
+  block-score kernel).
+- **No fp8 or fp4 WMMA on gfx11-class cards** is confirmed independently (anthony-chaudhary/fak issue 13542, for
+  gfx1151): the fp8 paths have to widen to bf16/f16 or use the int8 path.
+
+Asked GPT for exact file-level pointers (rocWMMA layout traits, LLVM builtin definitions, the 0.5.7 fork's kernel
+files and licence); the answer goes here when it arrives.
+
 ## First kdev run
 
 `flat_add` is faster or equal at every shape (geometric mean 7.2 us against 7.8 us). Up to M = 32 the time is the
