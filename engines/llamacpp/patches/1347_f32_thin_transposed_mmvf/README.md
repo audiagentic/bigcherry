@@ -47,3 +47,12 @@ RX 6900 XT), ctx 245760, f16 KV, ub512, build `b-metamem-ft2` (production set + 
 Arm B is native llama.cpp b11402's dispatch for this shape (rocBLAS SGEMM), unmodified, so the ABBAs are native
 against the role-swapped vector kernel inside one BigCherry binary: +3.1% to +4.6% prefill with the MTP draft, +6.8%
 to +7.1% without. No separate run against a fully native binary was made for this patch.
+
+## Prefill-only gate (2026-10-10)
+
+The role swap is taken only when the activation has at least `BIGCHERRY_F32_THIN_MMVF_MIN_COLS` columns (default 64,
+floor 9); smaller batches keep SGEMM. Reason: on the production Flash-Next build at 24K, four requests, switching
+the patch off raised MTP decode by 9.3% pooled (draft acceptance 56.4% -> 63.1%) for 4.6% less prefill. Against a
+CPU f32 reference the swapped sums are no further away than SGEMM's (top-1 23 of 24 against 21 of 24), but in decode
+and MTP verification batches the drafter agrees with them less often. To be re-confirmed on hardware (ABBA and the
+four-request decode check).

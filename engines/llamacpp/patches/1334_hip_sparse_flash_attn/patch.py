@@ -49,6 +49,18 @@ static bool bc_fa_sparse_enabled() {
     return on;
 }
 
+// BigCherry 1334: fewest queries in a batch for the sparse path (BIGCHERRY_FA_SPARSE_MIN_Q, default 64, floor 5).
+// Decode and MTP verification batches stay on the dense path, so their sums are the ones the drafter was matched to;
+// the sparse path's gain is in prefill-sized batches.
+static int64_t bc_fa_sparse_min_q() {
+    static const int64_t n = [] {
+        const char * s = getenv("BIGCHERRY_FA_SPARSE_MIN_Q");
+        const int64_t v = s != nullptr ? atoll(s) : 64;
+        return v < 5 ? (int64_t) 5 : v;
+    }();
+    return n;
+}
+
 // BigCherry 1334: HIP version of the mask compaction below - one list per group of ncols1 queries, a column is
 // selected if any query of the group can see it. Same layout and output as the CUDA kernel (ascending columns, -1
 // fill, count), using the AMD wave primitives: __ballot returns the 64-bit lane mask of the wave and warpSize is the
@@ -165,7 +177,9 @@ _A_ARCH = "    return GGML_CUDA_CC_IS_NVIDIA(cc) && turing_mma_available(cc) &&\
 _N_ARCH = ("#if defined(GGML_USE_HIP)\n"
            "    // BigCherry 1334: the RDNA WMMA kernel runs the same sparse variant (BIGCHERRY_FA_SPARSE=0 turns it off)\n"
            "    // (the WMMA kernel has no device code below 16 columns, so the single-query 1x8 variant stays dense)\n"
-           "    const bool bc_arch_ok = amd_wmma_available(cc) && bc_fa_sparse_enabled() && ncols1*ncols2 >= 16;\n"
+           "    // batches below BIGCHERRY_FA_SPARSE_MIN_Q queries stay dense, exactly as with the flag off\n"
+           "    const bool bc_arch_ok = amd_wmma_available(cc) && bc_fa_sparse_enabled() && ncols1*ncols2 >= 16 &&\n"
+           "        dst->src[0]->ne[1] >= bc_fa_sparse_min_q();\n"
            "#else\n"
            "    const bool bc_arch_ok = GGML_CUDA_CC_IS_NVIDIA(cc) && turing_mma_available(cc);\n"
            "#endif // defined(GGML_USE_HIP)\n"
@@ -192,8 +206,9 @@ _N_RDNA = (_A_RDNA +
            "                static bool bc_hit = false;\n"
            "                if (!bc_hit && getenv(\"BIGCHERRY_PATCH_TRACE\") != nullptr) {\n"
            "                    bc_hit = true;\n"
-           "                    GGML_LOG_WARN(\"BIGCHERRY_PATCH_HIT patch=1334_hip_sparse_flash_attn n_kv=%lld n_queries=%lld n_kv_max=%d\\n\",\n"
-           "                        (long long) K->ne[1], (long long) Q->ne[1], (int) ggml_get_op_params_i32(dst, 4));\n"
+           "                    GGML_LOG_WARN(\"BIGCHERRY_PATCH_HIT patch=1334_hip_sparse_flash_attn n_kv=%lld n_queries=%lld n_kv_max=%d min_q=%lld\\n\",\n"
+           "                        (long long) K->ne[1], (long long) Q->ne[1], (int) ggml_get_op_params_i32(dst, 4),\n"
+           "                        (long long) bc_fa_sparse_min_q());\n"
            "                }\n"
            "                ggml_cuda_flash_attn_ext_mma_f16_switch_ncols1<DKQ, DV, 8>(ctx, dst);\n"
            "                return;\n"
@@ -223,7 +238,7 @@ PATCHES = [
                  guard=r"defined\(GGML_USE_MUSA\)  // BigCherry 1334: compiled for HIP\n    GGML_UNUSED_VARS\(cc, dst, ncols1, ncols2\);",
                  rationale="shall_use_sparse HIP stub.", expect_matches=1, max_span_lines=4),
             Edit(id="fa-sparse-arch", anchor=_re.escape(_A_ARCH), mode="replace", text=_N_ARCH,
-                 guard=r"const bool bc_arch_ok = amd_wmma_available\(cc\) && bc_fa_sparse_enabled\(\) && ncols1\*ncols2 >= 16;",
+                 guard=r"const bool bc_arch_ok = amd_wmma_available\(cc\) && bc_fa_sparse_enabled\(\) && ncols1\*ncols2 >= 16 &&",
                  rationale="Architecture term of the sparse selection.", expect_matches=1, max_span_lines=2),
             Edit(id="fa-sparse-switch-ncols1", anchor=_re.escape(_A_NCOLS1), mode="replace", text=_N_NCOLS1,
                  guard=r"defined\(GGML_USE_MUSA\)  // BigCherry 1334: compiled for HIP\n    if constexpr \(ggml_cuda_flash_attn_ext_mma_f16_may_use_sparse\(DKQ, DV, 1, ncols2\)\)",
@@ -249,4 +264,7 @@ ENV_DOCS = (
     EnvDoc("BIGCHERRY_FA_SPARSE", "0|1", "1",
            "sparse flash attention on RDNA WMMA - masked attention with a per-query cell bound (Qwen4Exp QSA) "
            "reads only the cells its queries can see"),
+    EnvDoc("BIGCHERRY_FA_SPARSE_MIN_Q", "N", "64",
+           "fewest queries in a batch for the sparse flash attention path (floor 5); smaller batches - decode and MTP "
+           "verification - keep the dense path, so draft acceptance is not affected"),
 )

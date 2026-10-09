@@ -53,7 +53,7 @@ class Patch1347Mechanics(unittest.TestCase):
 
             fn = src[src.index("static void ggml_cuda_mul_mat(ggml_backend_cuda_context & ctx, const ggml_tensor * src0, const ggml_tensor * src1, ggml_tensor * dst) {"):]
             fn = fn[:fn.index("\n}\n")]
-            thin = "if (bc_f32_thin_mmvf() && ne01 >= 2 && ne01 <= MMVF_MAX_BATCH_SIZE && ne11 > MMVF_MAX_BATCH_SIZE && ne2 == 1 && ne3 == 1"
+            thin = "if (bc_f32_thin_mmvf() && ne01 >= 2 && ne01 <= MMVF_MAX_BATCH_SIZE && ne11 >= bc_f32_thin_mmvf_min_cols() && ne2 == 1 && ne3 == 1"
             self.assertLess(fn.index("if (ne01 == 1 && ne11 > MMVF_MAX_BATCH_SIZE && ne2 == 1 && ne3 == 1"), fn.index(thin))
             self.assertLess(fn.index(thin), fn.index("if (ggml_cuda_should_use_mmf(src0->type, cc, warp_size, src0->ne, src0->nb, ne11, /*mul_mat_id =*/ false)) {"))
             self.assertEqual(src.count(thin), 1)
@@ -84,7 +84,7 @@ class Patch1347Mechanics(unittest.TestCase):
             self.assertFalse((root / _BC).exists())
 
     def test_env_doc(self):
-        self.assertEqual([doc.name for doc in _P.ENV_DOCS], ["BIGCHERRY_F32_THIN_MMVF"])
+        self.assertEqual([doc.name for doc in _P.ENV_DOCS], ["BIGCHERRY_F32_THIN_MMVF", "BIGCHERRY_F32_THIN_MMVF_MIN_COLS"])
 
 
 if __name__ == "__main__":
