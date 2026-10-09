@@ -91,6 +91,14 @@ __device__ __forceinline__ r3_v2f r3_cvt_pk_f32_fp8(int src, bool hi) {
 #define __builtin_amdgcn_cvt_pk_fp8_f32 r3_cvt_pk_fp8_f32
 #define __builtin_amdgcn_cvt_pk_f32_fp8 r3_cvt_pk_f32_fp8
 
+// ------------------------------------------------------------------ the workgroup barrier
+//
+// gfx12 splits the barrier into s_barrier_signal and s_barrier_wait. libr4d issues them as a pair on the workgroup
+// barrier (-1), signal then wait, which is gfx11's one s_barrier (r4d_gemm_w4a8_prefill.hip). The signal becomes
+// nothing and the wait becomes the barrier; a signal without its wait would be wrong and no unit has one.
+#define __builtin_amdgcn_s_barrier_signal(id) ((void) 0)
+#define __builtin_amdgcn_s_barrier_wait(id) __builtin_amdgcn_s_barrier()
+
 // ------------------------------------------------------------------ WMMA, 16-bit floats
 //
 // libr4d builds gfx12 fragments and calls the gfx12 instruction. gfx11 has the instruction with other layouts
