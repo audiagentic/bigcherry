@@ -76,7 +76,7 @@ class PatchPromoteTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory(prefix="patch-promote-")
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
-        patch = self.root / "patches" / "1348_demo"
+        patch = self.root / "engines" / "llamacpp" / "patches" / "1348_demo"
         patch.mkdir(parents=True)
         (self.root / "config").mkdir()
         (patch / "patch.toml").write_text(_PATCH_TOML, encoding="utf-8")

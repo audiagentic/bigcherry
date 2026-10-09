@@ -22,7 +22,7 @@ import unittest
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__)))))
 CANARY_HEADER = os.path.join(
-    REPO_ROOT, "src", "ggml", "src", "ggml-cuda", "hip-autotune-canary.h"
+    REPO_ROOT, "engines", "llamacpp", "overlay", "ggml", "src", "ggml-cuda", "hip-autotune-canary.h"
 )
 HOST_TEST_CPP = os.path.join(REPO_ROOT, "tools", "tests", "fixtures", "hardware", "canary_decision_host_test.cpp")
 OK_MARKER = "CANARY_DECISION_HOST_TEST_OK"
