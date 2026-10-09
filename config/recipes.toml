@@ -292,6 +292,7 @@ patches = [
     "1346_mtp_prompt_overlap",
     "1358_meta_split_cache_local_evict",
     "1355_hc_post_gate_fuse",
+    "1356_meta_dispatch_workers",
 ]
 required-state = "validated"
 
@@ -538,7 +539,7 @@ patches = []
 
 [experiment.meta-dispatch-workers]
 # QFP41: production + 1356; default off, enable with BIGCHERRY_META_DISPATCH_THREADS=1.
-patches = ["1356_meta_dispatch_workers"]
+patches = []
 
 
 

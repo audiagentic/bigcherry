@@ -1,6 +1,6 @@
 # 1356_meta_dispatch_workers
 
-**Status:** untested
+**Status:** validated
 **Plan item:** QFP41
 
 ## Mechanism
