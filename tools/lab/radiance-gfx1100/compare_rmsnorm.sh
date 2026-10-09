@@ -34,7 +34,7 @@ timeout 180 ctest --test-dir "$build" -R '^r11_rmsnorm_smoke$' --output-on-failu
 timeout "${KBENCH_TIMEOUT:-1800}" "$bench" --kernels libr11,libref \
   --op rmsnorm --bench --report "$out/norm-kbench.md" 2>&1 | tee "$out/kbench.log"
 [[ -s "$out/norm-kbench.md" ]] || { echo "no new kbench report" >&2;exit 1; }
-for kernel in r11_rmsnorm_wave32 r11_rmsnorm_block256; do
+for kernel in r11_rmsnorm_wave32 r11_rmsnorm_block256 r11_rmsnorm_dpp32; do
   grep -Fq "$kernel" "$out/norm-kbench.md" || { echo "row missing: $kernel" >&2;exit 1; }
 done
 echo "COMPLETE: check each row's 'checked', 'skipped', errors and speed in $out/norm-kbench.md"
