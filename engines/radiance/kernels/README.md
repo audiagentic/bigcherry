@@ -235,6 +235,7 @@ Same serve test as above (MXFP4 Qwen3.8-27B, one XTX, drafter off, greedy), one 
 | all emulated (`r3-serve1`, 64 tokens) | 7.0 / 7.7 tok/s | not profiled |
 | native loop, fp8 widened in the K loop (`r3-serve2`, commit d30d2d51) | 8.9 / 8.8 tok/s | 780 us |
 | one-fragment form stages bf16 (`r3-serve4`, commit d105d8f7) | 18.9 / 18.8 tok/s | 332 us |
+| weights from 4-bit codes to bf16 by table lookup (`r3-serve6`, commit ecddc2bf) | 28.4 / 28.4 tok/s | 208 us |
 
 The text is the same in all three. What the kernel does on gfx12 is an fp8 x fp8 WMMA on E4M3 staged in shared
 memory (the MXFP4 weight is unpacked to E4M3 with its block exponent folded in). Native: every lane reads its row's
