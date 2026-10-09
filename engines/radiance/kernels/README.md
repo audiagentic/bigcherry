@@ -221,6 +221,37 @@ check against the reference; a fixture recorded from this container is still nee
 7 tok/s is the emulation's cost, not the card's: every 4-bit and int8 WMMA call goes through software operand
 conversion and cross-lane moves. Not measured here: prefill speed on a long prompt, the drafter, more than one card.
 
+## Native gfx11 forms, first kernel: the MXFP4 decode GEMM, 2026-10-10
+
+`libr3/native/<libr4d source>.rw` holds block rules that replace a kernel's own lines with a native gfx11 form when
+the sources are copied into the build tree (`r3_rewrite.py`; a block that no longer matches fails the configure
+step; `-DR3_NATIVE=OFF`, or `R3_NATIVE=OFF` for `libr3-build.sh`, builds without them). The helpers are in
+`r3_compat.h` under "native gfx11 forms".
+
+Same serve test as above (MXFP4 Qwen3.8-27B, one XTX, drafter off, greedy), one run each:
+
+| Build | Decode | `gemm_nt_q` N=34816 K=5120 (FFN gate/up), per call |
+|---|---|---|
+| all emulated (`r3-serve1`, 64 tokens) | 7.0 / 7.7 tok/s | not profiled |
+| native loop, fp8 widened in the K loop (`r3-serve2`, commit d30d2d51) | 8.9 / 8.8 tok/s | 780 us |
+| one-fragment form stages bf16 (`r3-serve4`, commit d105d8f7) | 18.9 / 18.8 tok/s | 332 us |
+
+The text is the same in all three. What the kernel does on gfx12 is an fp8 x fp8 WMMA on E4M3 staged in shared
+memory (the MXFP4 weight is unpacked to E4M3 with its block exponent folded in). Native: every lane reads its row's
+16 values, the gfx11 bf16 WMMA takes the accumulator as its C operand, and the accumulator is moved to the gfx12
+layout once before the unchanged epilogue. In the one-fragment form (M <= 16) the codes are widened to bf16 once, as
+they are staged (39 KiB of shared memory a block at a 128-wide slab).
+
+Per-op profile of a decode run with the last build (`--profile-ops`, run `r3-serve5`; the engine warns a profiled
+run is not comparable with an unprofiled one, so read it as shares): the MXFP4 GEMMs are still 88% of device time
+(38% gate/up, 20% down, 16% the 16384-wide projection, 11% the K=6144 one, 4% the 12288-wide one); the bf16 logits
+GEMM is 2.8%, everything else under 2.5% each. With the first native build they were 95%.
+
+radiance's checker cannot verify this kernel: with this container it skips every MXFP4 GEMM case (its reference
+reader wants half the elements the 4-bit plane holds), so the fixture recorded from it
+(`tools/lab/radiance/record-fixture.sh`, 559 cases, all passing through libr3) has none. The evidence is the
+unchanged greedy text. For scale, radiance on the R9700 runs this model at 37-38 tok/s without the drafter.
+
 ## References for the remaining port (found 2026-10-09; read before writing kernels)
 
 The 29 excluded units need the gfx12 WMMA builtins or the gfx12 transposed load. These exist to adapt from, so none
