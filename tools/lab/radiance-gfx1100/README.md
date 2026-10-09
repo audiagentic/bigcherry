@@ -60,11 +60,10 @@ Two additional gfx1100 experimental rows implement `add` and `mul` using one ali
 32-bit load/store per pair of BF16 elements, against the existing scalar
 one-element/thread kernels in the same library. Their registration is deliberately
 narrower: even `n`, `1<=M<=512`, `2<=n<=8192`, contiguous operands and
-4-byte pointer alignment. The original scalar rows remain present as controls;
+4-byte pointer alignment for the fast dword load/store path (misaligned views use a separate safe pairwise 16-bit kernel rather than failing selection). The original scalar rows remain present as controls;
 the packed rows have higher selection priority only within their constrained band.
 One-row broadcast of `b` is retained; the GPU smoke checks both broadcast
-operators bit-for-bit. Any unaligned operand is rejected, not silently mislabeled
-as a packed result.
+operators bit-for-bit. Unaligned views still compute correctly but are **not** credited as packed-load speed results.
 
 ```sh
 # Use the same explicit one-XTX environment and Radiance plugin prefix as above.
