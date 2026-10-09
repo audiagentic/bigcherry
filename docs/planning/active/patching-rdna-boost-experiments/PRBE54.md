@@ -78,6 +78,23 @@ Successor key: patching-rdna-boost-experiments-rd64
 
 2026-09-27: materialized as fresh `untested` package `1271_prbe54_q5_kv_dequant_f16` with contract `PRBE54-Q5-KV-DEQUANT-F16`; no hardware evidence is inherited. The positive lane is prefill because b11126's quantized decode path chooses the direct vector FA kernel and does not execute the F16 staging selector.
 
+
+## 2026-10-09 audit: Q5_1 double-rounding and actual-path gate
+
+**Status:** P3/pending; patch 1271 remains untested. Last independent plan triage was 2026-10-08 06:47 UTC, outside the 12-hour exclusion. No Q5-specific GPU benchmark or queued qualification was found. Evidence below is source inspection and deterministic host emulation, **not HIP execution**.
+
+**Exact path:** Pinned llama.cpp b11474 `ggml/src/ggml-cuda/fattn.cu::ggml_cuda_flash_attn_ext_get_alloc_size` requests F16 K/V for TILE and MMA_F16; VEC generally uses direct Q5 handlers. `fattn-common.cuh::launch_fattn` calls `ggml_get_to_fp16_cuda` for **contiguously allocated** non-F16 K/V staging only. Noncontiguous conversion is separate; a V view of K may reuse K's buffer. Patch 1271 replaces only these two call-site selectors with `ggml_get_to_fp16_fattn_cuda`, returning `bigcherry_dequantize_block_q5_f16` for HIP Q5_0/Q5_1. Global conversion, FA allocation, direct vector Q5 and graph scheduling remain unchanged.
+
+**Numerical finding:** Baseline `dequantize.cuh::dequantize_q5_1` computes `float(q)*float(d)+float(m)` then writes F16; candidate Q5_1 uses `__hmul2` then `__hadd2`, introducing an intermediate F16 rounding. A deterministic host fixture decoded 4,096 packed blocks (131,072 values/type): Q5_0 produced **0** F16-bit mismatches, Q5_1 **28,261 (21.56%)** against source float arithmetic; positive-scale/negative-offset Q5_1 control **40,635/131,072**. Output coverage passed for 1/2/3/7/8/9/511/4096 blocks. HIP FMA/denormal behavior was not emulated; this is not proof of GPU corruption or logits drift. The current `validation/producer.py` tests **Q5_0 only**; it cannot qualify Q5_1. The process-once trace marker is not a per-request/per-type kernel count.
+
+**Cheapest discriminator and implementation decision:**
+1. Add package-local packed-`qs`/`qh` high-bit, Q5_0 sign, odd-tail, F16 scale/offset and exact-output fixtures; compare candidate against the pinned source, including subnormal/finite extremes. Reuse existing mechanics tests. For Q5_1, either use baseline float multiply/add and one F16 conversion (verify HIP contraction) or gate the existing FA selector to **Q5_0 only**. Reject Q5_1 promotion if parity is not established; do not widen the global selector.
+2. Prove actual TILE/MMA_F16 **contiguous** K and V staging, input/output byte counts, converter launches, scratch lifetime and graph capture/replay on isolated gfx1100 and gfx1201, including same-process repeated requests. Cover V-as-K-view and noncontiguous controls. Use Q5_0 and separate Q5_1, F16, Q8, and direct VEC tg128 controls. Do not share QFP17/1330 masked Flash-Next lanes or modify that recently active capability.
+3. Profile converter share at pp512/pp2048, ub16/128/512, ctx8K/80K. If staging is <5% of prefill critical path or best-case Amdahl E2E ceiling <3%, **close without A/B**. Otherwise use the existing contract and >=4 sessions/architecture, >=10 paired ABBA rounds, full-vocab/logits/KLD/greedy parity, no missing work, CI95-low positive pp512 and <=1% decode/control regression. A >=3% E2E improvement is required before wider production adoption. No hardware improvement is claimed.
+
+**Upstream/forks:** [llama.cpp #27140](https://github.com/ggml-org/llama.cpp/pull/27140) remains open; its Q5_1 float-then-F16 converter is a parity control, but reported Q5_0 1167 t/s and Q5_1 1164 t/s are on RTX 3090, not AMD. [#29827](https://github.com/ggml-org/llama.cpp/pull/29827) closed unmerged with a 64 MiB capped F16 scratch/chunked-KV alternative; [#29846](https://github.com/ggml-org/llama.cpp/pull/29846) closed unmerged with NVIDIA cp.async/IMMA fused Q4/Q8, not Q5. [vLLM ROCm](https://docs.vllm.ai/en/latest/api/vllm/v1/attention/backends/rocm_attn/) supports FP8 KV, not GGUF Q5. None establishes an RDNA gain. PRBE54 alone owns the converter; no new dispatch/cache/allocator/telemetry system.
+
+
 ## Change Log
 
 - 2026-10-08 (triage): Kept pending at P3. Patch 1271_prbe54_q5_kv_dequant_f16 remains untested and only targets Q5 quantized KV F16 staging; production Flash-Next uses F16 KV. No matching measured Q5_KV optimization lane, so no in_progress status or promotion claim.
