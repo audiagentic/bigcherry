@@ -1,4 +1,4 @@
-"""HI119: patches/1238 gives init_mul_mat_id_tensors() -- the initializer
+"""HI119: engines/llamacpp/patches/1238 gives init_mul_mat_id_tensors() -- the initializer
 every REGISTERED MUL_MAT_ID-family test_case shares (test_mul_mat_id,
 test_mul_mat_vec_fusion, HI119's own planned fused-GLU class) -- a
 deterministic, full-range branch under BIGCHERRY_TEST_DETERMINISTIC_SEED.

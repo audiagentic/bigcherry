@@ -1,4 +1,4 @@
-"""HI85/GP02: patches/1225 fails closed when RCCL lacks a device capability
+"""HI85/GP02: engines/llamacpp/patches/1225 fails closed when RCCL lacks a device capability
 needed by its collective kernel dispatch. The guard uses the real HIP
 per-device host-native-atomic attribute, not a machine-local ordinal or raw
 architecture mismatch, and remains before every guarded communicator init."""

@@ -38,12 +38,12 @@ def _pinned(path):
     return res.stdout
 
 
-_P1283 = _load("patch_1283", _REPO / "patches/1283_qwen4exp_expert_parallel/patch.py")
-_P1303 = _load("patch_1303", _REPO / "patches/1303_attn_kv_tensor_split/patch.py")
-_P1326 = _load("patch_1326", _REPO / "patches/1326_sched_async_host_inputs/patch.py")
-_P1339 = _load("patch_1339", _REPO / "patches/1339_meta_memory_report/patch.py")
-_P1340 = _load("patch_1340", _REPO / "patches/1340_meta_per_device_arena/patch.py")
-_P = _load("patch_1341", _REPO / "patches/1341_meta_subset_mirrored/patch.py")
+_P1283 = _load("patch_1283", _REPO / "engines/llamacpp/patches/1283_qwen4exp_expert_parallel/patch.py")
+_P1303 = _load("patch_1303", _REPO / "engines/llamacpp/patches/1303_attn_kv_tensor_split/patch.py")
+_P1326 = _load("patch_1326", _REPO / "engines/llamacpp/patches/1326_sched_async_host_inputs/patch.py")
+_P1339 = _load("patch_1339", _REPO / "engines/llamacpp/patches/1339_meta_memory_report/patch.py")
+_P1340 = _load("patch_1340", _REPO / "engines/llamacpp/patches/1340_meta_per_device_arena/patch.py")
+_P = _load("patch_1341", _REPO / "engines/llamacpp/patches/1341_meta_subset_mirrored/patch.py")
 _SRC = {path: _pinned(path) for path in (_H, _META, _MODEL, _BACKEND, "ggml/src/ggml-cuda/ggml-cuda.cu")}
 
 

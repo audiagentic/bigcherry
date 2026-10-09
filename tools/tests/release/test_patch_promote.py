@@ -267,7 +267,7 @@ class PatchPromoteTests(unittest.TestCase):
         info = pp._load_patch(self.root, "1348_demo")
         payload = pp._ledger_payload(
             (info,),
-            ["patches/1348_demo/patch.toml", "config/recipes.toml"],
+            ["engines/llamacpp/patches/1348_demo/patch.toml", "config/recipes.toml"],
             "feat(patch): promote 1348_demo",
         )
         self.assertEqual(payload["change_class"], "feature")

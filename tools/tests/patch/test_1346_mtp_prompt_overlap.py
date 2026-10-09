@@ -30,9 +30,9 @@ def _load(path: Path, name: str):
     return module
 
 
-_P = _load(_REPO / "patches/1346_mtp_prompt_overlap/patch.py", "patch_1346")
-_P1255 = _load(_REPO / "patches/1255_nro06_adaptive_mtp_depth/patch.py", "patch_1255")
-_P1268 = _load(_REPO / "patches/1268_prbe52_adaptive_mtp_wiring/patch.py", "patch_1268")
+_P = _load(_REPO / "engines/llamacpp/patches/1346_mtp_prompt_overlap/patch.py", "patch_1346")
+_P1255 = _load(_REPO / "engines/llamacpp/patches/1255_nro06_adaptive_mtp_depth/patch.py", "patch_1255")
+_P1268 = _load(_REPO / "engines/llamacpp/patches/1268_prbe52_adaptive_mtp_wiring/patch.py", "patch_1268")
 
 
 def _only(module, path):
@@ -41,11 +41,11 @@ def _only(module, path):
 
 class Patch1346StaticContracts(unittest.TestCase):
     def test_metadata_and_explicit_edit_contracts(self):
-        meta = tomllib.loads((_REPO / "patches/1346_mtp_prompt_overlap/patch.toml").read_text(encoding="utf-8"))
+        meta = tomllib.loads((_REPO / "engines/llamacpp/patches/1346_mtp_prompt_overlap/patch.toml").read_text(encoding="utf-8"))
         self.assertEqual(meta["id"], "1346_mtp_prompt_overlap")
         self.assertEqual(meta["tags"], ["optimization", "mtp"])
 
-        src = (_REPO / "patches/1346_mtp_prompt_overlap/patch.py").read_text(encoding="utf-8")
+        src = (_REPO / "engines/llamacpp/patches/1346_mtp_prompt_overlap/patch.py").read_text(encoding="utf-8")
         edits = [edit for patch in _P.PATCHES for edit in patch.edits]
         self.assertGreater(len(edits), 0)
         self.assertEqual(src.count("expect_matches=1,"), len(edits))

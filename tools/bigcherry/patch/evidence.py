@@ -10,7 +10,7 @@ evidence exists, or that it still matches the CURRENT patch implementation.
 
 This module is the tracked evidence contract itself: a JSON record per
 patch, stored with packaged patches under their ``evidence/`` directory and
-with the legacy baseline under ``patches/_validation/``. The authority must
+with the legacy baseline under ``engines/llamacpp/patches/_validation/``. The authority must
 be resolvable from the repository alone, not from ``artifacts/``, which is
 gitignored, or the external ledger, which offline pytest/CI/a fresh checkout
 cannot resolve.

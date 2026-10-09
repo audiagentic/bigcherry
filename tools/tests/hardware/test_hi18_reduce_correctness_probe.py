@@ -1,5 +1,5 @@
 """Source contracts for the HI18 SPLIT_REDUCE correctness probe:
-patches/1224's CMake wiring, the standalone test-hip-reduce.cpp probe
+engines/llamacpp/patches/1224's CMake wiring, the standalone test-hip-reduce.cpp probe
 source, and the HI58 telemetry test-capture seam it relies on
 (hip-autotune-reduce-telemetry.h/.cpp)."""
 
@@ -15,9 +15,9 @@ from bigcherry.patcher import apply_all
 
 ROOT = Path(__file__).resolve().parents[3]
 PATCH = (ROOT / "patches" / "1224_hi18_reduce_correctness_probe" / "patch.py").read_text(encoding="utf-8")
-PROBE = (ROOT / "src/tests/test-hip-reduce.cpp").read_text(encoding="utf-8")
-HEADER = (ROOT / "src/ggml/src/ggml-cuda/hip-autotune-reduce-telemetry.h").read_text(encoding="utf-8")
-TELEMETRY = (ROOT / "src/ggml/src/ggml-cuda/hip-autotune-reduce-telemetry.cpp").read_text(encoding="utf-8")
+PROBE = (ROOT / "engines/llamacpp/overlay/tests/test-hip-reduce.cpp").read_text(encoding="utf-8")
+HEADER = (ROOT / "engines/llamacpp/overlay/ggml/src/ggml-cuda/hip-autotune-reduce-telemetry.h").read_text(encoding="utf-8")
+TELEMETRY = (ROOT / "engines/llamacpp/overlay/ggml/src/ggml-cuda/hip-autotune-reduce-telemetry.cpp").read_text(encoding="utf-8")
 
 _spec = importlib.util.spec_from_file_location(
     "hi18_reduce_correctness_probe_patch",

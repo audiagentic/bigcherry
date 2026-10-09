@@ -1,9 +1,9 @@
 """RD09 stage 1: source-contract tests for the per-graph Q8_1
 activation-quantization cache foundation
-(src/ggml/src/ggml-cuda/hip-q81-cache.{h,cpp}).
+(engines/llamacpp/overlay/ggml/src/ggml-cuda/hip-q81-cache.{h,cpp}).
 
 Source-contract only, matching this repo's existing pattern for .cu/.cuh/.cpp
-files under src/ggml/src/ggml-cuda (see test_hi99_tuner_config_macro.py) --
+files under engines/llamacpp/overlay/ggml/src/ggml-cuda (see test_hi99_tuner_config_macro.py) --
 no HIP compiler is assumed available offline. This stage adds no caller in
 mmvq.cu, so there is nothing to real-hardware-validate yet; these tests only
 confirm the structural invariants the design (docs/planning/active/
@@ -21,7 +21,7 @@ req_60a41664e0de43d6) requires before any wiring happens:
     an unrecognized value, and is independent of GGML_HIP_DISPATCH_MODE
   - stage 1 adds no caller: mmvq.cu (the one real call site of
     quantize_row_q8_1_cuda) must not reference this cache yet
-  - the new files are wired into the HIP build via patches/
+  - the new files are wired into the HIP build via engines/llamacpp/patches/
     1235_rd09_q81_activation_cache_foundation.py, not via
     0100_cmake_options.py (keeping the production build surface untouched
     for this first, zero-behavioral-risk slice)

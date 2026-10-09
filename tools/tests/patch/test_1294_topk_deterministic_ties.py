@@ -18,7 +18,7 @@ _VENDOR = _REPO / "vendor/llama.cpp" / _REL
 
 
 def _load():
-    spec = importlib.util.spec_from_file_location("patch_1294", _REPO / "patches/1294_topk_deterministic_ties/patch.py")
+    spec = importlib.util.spec_from_file_location("patch_1294", _REPO / "engines/llamacpp/patches/1294_topk_deterministic_ties/patch.py")
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

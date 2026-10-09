@@ -20,7 +20,7 @@ separately, not fabricated here) depends on:
 1. The compiled candidate catalog already spans the power-of-two nwarps
    space {1,2,4,8} PR #20831 selects from, for width==1 (ncols_dst==1,
    ordinary single-token decode) Q8_0 MMVQ.
-2. BigCherry's own forced-dispatch entry point (patches/0650) already fails
+2. BigCherry's own forced-dispatch entry point (engines/llamacpp/patches/0650) already fails
    closed (GGML_ABORT) rather than silently attributing a measurement to the
    wrong kernel, for `has_ids && ncols_dst > 1` -- the dedicated MoE
    multi-token kernel (`mul_mat_vec_q_moe_launch`) that b10502 routes to

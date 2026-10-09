@@ -25,7 +25,7 @@ _CC = shutil.which("clang") or shutil.which("gcc") or shutil.which("cc")
 
 
 def _load():
-    spec = importlib.util.spec_from_file_location("patch_0910", _REPO / "patches/0910_feature_sets/patch.py")
+    spec = importlib.util.spec_from_file_location("patch_0910", _REPO / "engines/llamacpp/patches/0910_feature_sets/patch.py")
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

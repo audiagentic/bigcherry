@@ -229,7 +229,7 @@ class _ProbeHarness:
         (self.project / "config" / "recipes.toml").write_text(_RECIPES_TOML, encoding="utf-8")
         (self.project / "patches").mkdir()
         (self.project / "patches" / ".gitkeep").write_text("", encoding="utf-8")
-        _git(self.project, "add", "config/recipes.toml", "patches/.gitkeep")
+        _git(self.project, "add", "config/recipes.toml", "engines/llamacpp/patches/.gitkeep")
         _git(self.project, "commit", "-m", "recipes")
         self.mirror = root / "mirror"
         _git(root, "clone", str(self.origin), str(self.mirror))

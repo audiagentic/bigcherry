@@ -1,4 +1,4 @@
-"""RD73: patches/1233 replaces the HIP/CUDA graph-cache key
+"""RD73: engines/llamacpp/patches/1233 replaces the HIP/CUDA graph-cache key
 (ggml_cuda_graph_get_key) with a stable FNV-1a shape fingerprint instead
 of the raw, allocation-dependent first-node pointer. Verified against the
 real pinned vendor source (not a synthetic fixture) that the old

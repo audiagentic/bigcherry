@@ -13,7 +13,7 @@ from bigcherry.patcher import apply_all  # noqa: E402
 from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
-_PATCH_FILE = _REPO / "patches/1273_iq_mmvq_rdna_tuning/patch.py"
+_PATCH_FILE = _REPO / "engines/llamacpp/patches/1273_iq_mmvq_rdna_tuning/patch.py"
 _VENDOR = _REPO / "vendor/llama.cpp/ggml/src/ggml-cuda"
 
 
@@ -29,8 +29,8 @@ def _load(name, path):
 _module = _load("patch_1273", _PATCH_FILE)
 # 1273 requires 0600 (explicit geometry) and 1241 (f32_act); apply both to the fixture first.
 _PREREQS = [
-    _load("patch_0600", _REPO / "patches/0600_mmvq_geometry/patch.py").PATCH,
-    *_load("patch_1241", _REPO / "patches/1241_rd33_mmvq_q8_0_f32_decode/patch.py").PATCHES,
+    _load("patch_0600", _REPO / "engines/llamacpp/patches/0600_mmvq_geometry/patch.py").PATCH,
+    *_load("patch_1241", _REPO / "engines/llamacpp/patches/1241_rd33_mmvq_q8_0_f32_decode/patch.py").PATCHES,
 ]
 
 

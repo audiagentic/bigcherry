@@ -14,7 +14,7 @@ from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
 _VENDOR = _REPO / "vendor/llama.cpp/ggml/src/ggml-cuda/norm.cu"
-_spec = importlib.util.spec_from_file_location("patch_1309", _REPO / "patches/1307_q81_activation_cache_mmvq/patch.py")
+_spec = importlib.util.spec_from_file_location("patch_1309", _REPO / "engines/llamacpp/patches/1307_q81_activation_cache_mmvq/patch.py")
 assert _spec is not None and _spec.loader is not None
 _module = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_module)

@@ -24,8 +24,8 @@ def _load(name, path):
     return module
 
 
-_module = _load("patch_1306", _REPO / "patches/1306_qwen4exp_shexp_split/patch.py")
-_p1303 = _load("patch_1303", _REPO / "patches/1303_attn_kv_tensor_split/patch.py")
+_module = _load("patch_1306", _REPO / "engines/llamacpp/patches/1306_qwen4exp_shexp_split/patch.py")
+_p1303 = _load("patch_1303", _REPO / "engines/llamacpp/patches/1303_attn_kv_tensor_split/patch.py")
 
 
 @unittest.skipUnless(_VENDOR.exists(), "pinned vendor checkout not present")

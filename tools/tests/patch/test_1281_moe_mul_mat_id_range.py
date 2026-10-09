@@ -22,7 +22,7 @@ _QH = "ggml/src/ggml-cuda/quantize.cuh"
 
 
 def _load():
-    spec = importlib.util.spec_from_file_location("patch_1281", _REPO / "patches/1281_moe_mul_mat_id_range/patch.py")
+    spec = importlib.util.spec_from_file_location("patch_1281", _REPO / "engines/llamacpp/patches/1281_moe_mul_mat_id_range/patch.py")
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

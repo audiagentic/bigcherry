@@ -39,7 +39,7 @@ class FrameworkConfigurationEvidenceTests(unittest.TestCase):
         cls.source_identity["materialization_plan_id"] = cls.source_identity["source_key"]
 
     def _record(self, directory):
-        patch = self.root / "patches/0100_cmake_options/patch.py"
+        patch = self.root / "engines/llamacpp/patches/0100_cmake_options/patch.py"
         generated = Path(directory) / "generated"
         generated.mkdir()
         header = generated / "fixture.inc"

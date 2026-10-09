@@ -138,7 +138,7 @@ _ARTIFACTS_REFERENCE_RE = re.compile(r"artifacts/([A-Za-z0-9][A-Za-z0-9._-]*)")
 
 
 def _referenced_artifact_names(root: Path) -> frozenset[str]:
-    """Names cited as ``artifacts/<name>`` anywhere under docs/ or patches/.
+    """Names cited as ``artifacts/<name>`` anywhere under docs/ or engines/llamacpp/patches/.
 
     The project's real evidence convention pairs a short ``artifacts/<name>``
     raw-data directory with a date-prefixed ``docs/evidence/YYYY-MM-DD-<name

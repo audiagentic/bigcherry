@@ -19,7 +19,7 @@ _CUDA = "ggml/src/ggml-cuda/ggml-cuda.cu"
 
 
 def _load():
-    spec = importlib.util.spec_from_file_location("patch_1342", _REPO / "patches/1342_fusion_bisect/patch.py")
+    spec = importlib.util.spec_from_file_location("patch_1342", _REPO / "engines/llamacpp/patches/1342_fusion_bisect/patch.py")
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

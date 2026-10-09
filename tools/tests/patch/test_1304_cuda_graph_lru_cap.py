@@ -24,8 +24,8 @@ def _load(name, path):
     return module
 
 
-_module = _load("patch_1304", _REPO / "patches/1304_cuda_graph_lru_cap/patch.py")
-_p1302 = _load("patch_1302", _REPO / "patches/1302_cuda_graph_oom_evict/patch.py")
+_module = _load("patch_1304", _REPO / "engines/llamacpp/patches/1304_cuda_graph_lru_cap/patch.py")
+_p1302 = _load("patch_1302", _REPO / "engines/llamacpp/patches/1302_cuda_graph_oom_evict/patch.py")
 
 _GGML_CUDA = """\
 static void ggml_cuda_graph_update_executable(ggml_backend_cuda_context * cuda_ctx, const void * graph_key) {

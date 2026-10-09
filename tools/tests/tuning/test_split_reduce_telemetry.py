@@ -12,8 +12,8 @@ from bigcherry.patcher import apply_all
 
 ROOT = Path(__file__).resolve().parents[3]
 PATCH = (ROOT / "patches" / "0830_split_reduce_telemetry" / "patch.py").read_text(encoding="utf-8")
-TELEMETRY = (ROOT / "src/ggml/src/ggml-cuda/hip-autotune-reduce-telemetry.cpp").read_text(encoding="utf-8")
-HEADER = (ROOT / "src/ggml/src/ggml-cuda/hip-autotune-reduce-telemetry.h").read_text(encoding="utf-8")
+TELEMETRY = (ROOT / "engines/llamacpp/overlay/ggml/src/ggml-cuda/hip-autotune-reduce-telemetry.cpp").read_text(encoding="utf-8")
+HEADER = (ROOT / "engines/llamacpp/overlay/ggml/src/ggml-cuda/hip-autotune-reduce-telemetry.h").read_text(encoding="utf-8")
 CMAME = (ROOT / "patches" / "0100_cmake_options" / "patch.py").read_text(encoding="utf-8")
 
 

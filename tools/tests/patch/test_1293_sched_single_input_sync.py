@@ -24,8 +24,8 @@ def _load(name: str, rel: str):
     return module
 
 
-_p1293 = _load("patch_1293", "patches/1293_sched_single_input_sync/patch.py")
-_p1326 = _load("patch_1326_for_1293", "patches/1326_sched_async_host_inputs/patch.py")
+_p1293 = _load("patch_1293", "engines/llamacpp/patches/1293_sched_single_input_sync/patch.py")
+_p1326 = _load("patch_1326_for_1293", "engines/llamacpp/patches/1326_sched_async_host_inputs/patch.py")
 
 
 @unittest.skipUnless(_VENDOR.exists(), "pinned vendor checkout not present")

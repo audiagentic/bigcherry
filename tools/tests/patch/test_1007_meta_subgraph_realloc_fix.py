@@ -18,7 +18,7 @@ _F = "ggml/src/ggml-backend-meta.cpp"
 
 
 def _load():
-    spec = importlib.util.spec_from_file_location("patch_1007", _REPO / "patches/1007_meta_subgraph_realloc_fix/patch.py")
+    spec = importlib.util.spec_from_file_location("patch_1007", _REPO / "engines/llamacpp/patches/1007_meta_subgraph_realloc_fix/patch.py")
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

@@ -78,7 +78,7 @@ class SeriesReportTests(unittest.TestCase):
                 "patch_id": "p",
                 "scientific_identity_hash": "science",
                 "hardware_cohort_hash": "hardware",
-                "destination": "patches/p.json",
+                "destination": "engines/llamacpp/patches/p.json",
                 "runs": run_manifest,
                 "record_digests": [row["record_digest"] for row in rows],
             },

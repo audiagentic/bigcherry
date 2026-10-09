@@ -10,15 +10,15 @@ from bigcherry.patcher import apply_patch
 
 
 ROOT = Path(__file__).resolve().parents[3]
-DISPATCH = (ROOT / "src/ggml/src/ggml-cuda/hip-autotune-dispatch.cu").read_text(
+DISPATCH = (ROOT / "engines/llamacpp/overlay/ggml/src/ggml-cuda/hip-autotune-dispatch.cu").read_text(
     encoding="utf-8")
-RECORD = (ROOT / "src/ggml/src/ggml-cuda/hip-autotune-record.cpp").read_text(
+RECORD = (ROOT / "engines/llamacpp/overlay/ggml/src/ggml-cuda/hip-autotune-record.cpp").read_text(
     encoding="utf-8")
-HEADER = (ROOT / "src/ggml/src/ggml-cuda/hip-autotune-dispatch.cuh").read_text(
+HEADER = (ROOT / "engines/llamacpp/overlay/ggml/src/ggml-cuda/hip-autotune-dispatch.cuh").read_text(
     encoding="utf-8")
-TYPES = (ROOT / "src/ggml/src/ggml-cuda/hip-autotune-types.h").read_text(
+TYPES = (ROOT / "engines/llamacpp/overlay/ggml/src/ggml-cuda/hip-autotune-types.h").read_text(
     encoding="utf-8")
-REPLAY = (ROOT / "src/ggml/src/ggml-cuda/hip-autotune-replay.cpp").read_text(
+REPLAY = (ROOT / "engines/llamacpp/overlay/ggml/src/ggml-cuda/hip-autotune-replay.cpp").read_text(
     encoding="utf-8")
 PATCH = (ROOT / "patches" / "0200_dispatch_hook" / "patch.py").read_text(encoding="utf-8")
 

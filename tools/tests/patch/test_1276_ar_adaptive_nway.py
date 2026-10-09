@@ -29,11 +29,11 @@ def _load(name: str, relative: str):
     return module
 
 
-_P0860 = _load("patch_0860_for_1276", "patches/0860_allreduce_provider_cli/patch.py")
-_P1225 = _load("patch_1225_for_1276", "patches/1225_hi85_nccl_heterogeneous_arch_guard/patch.py")
-_P0840 = _load("patch_0840_for_1276", "patches/0840_hybrid_allreduce_dispatch/patch.py")
-_P1244 = _load("patch_1244_for_1276", "patches/1244_gp11_internal_allreduce_nway_root/patch.py")
-_P1276 = _load("patch_1276", "patches/1276_ar_adaptive_nway/patch.py")
+_P0860 = _load("patch_0860_for_1276", "engines/llamacpp/patches/0860_allreduce_provider_cli/patch.py")
+_P1225 = _load("patch_1225_for_1276", "engines/llamacpp/patches/1225_hi85_nccl_heterogeneous_arch_guard/patch.py")
+_P0840 = _load("patch_0840_for_1276", "engines/llamacpp/patches/0840_hybrid_allreduce_dispatch/patch.py")
+_P1244 = _load("patch_1244_for_1276", "engines/llamacpp/patches/1244_gp11_internal_allreduce_nway_root/patch.py")
+_P1276 = _load("patch_1276", "engines/llamacpp/patches/1276_ar_adaptive_nway/patch.py")
 
 
 def _select(module, path: str, edit_ids: set[str] | None = None) -> list[FilePatch]:
@@ -169,7 +169,7 @@ class Patch1276AdaptiveNway(unittest.TestCase):
 
     def test_metadata_and_recipe_resolve_dependency_closure(self):
         meta = tomllib.loads(
-            (_REPO / "patches/1276_ar_adaptive_nway/patch.toml").read_text(encoding="utf-8")
+            (_REPO / "engines/llamacpp/patches/1276_ar_adaptive_nway/patch.toml").read_text(encoding="utf-8")
         )
         self.assertEqual(meta["state"], "untested")
         self.assertEqual(meta["plan-ids"], ["PGC10"])

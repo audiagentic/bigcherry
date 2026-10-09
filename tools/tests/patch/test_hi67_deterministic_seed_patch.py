@@ -1,4 +1,4 @@
-"""HI67 slice 2a: patches/1222_hi67_deterministic_test_backend_ops_seed/patch.py applies
+"""HI67 slice 2a: engines/llamacpp/patches/1222_hi67_deterministic_test_backend_ops_seed/patch.py applies
 cleanly and idempotently to the real vendored test-backend-ops.cpp, and the
 patched source contains the contract the correctness-evidence generator
 (slice 2c, not yet written) will depend on."""

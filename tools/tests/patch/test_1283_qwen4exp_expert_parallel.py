@@ -20,7 +20,7 @@ _MODEL = "src/llama-model.cpp"
 
 
 def _load():
-    spec = importlib.util.spec_from_file_location("patch_1283", _REPO / "patches/1283_qwen4exp_expert_parallel/patch.py")
+    spec = importlib.util.spec_from_file_location("patch_1283", _REPO / "engines/llamacpp/patches/1283_qwen4exp_expert_parallel/patch.py")
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

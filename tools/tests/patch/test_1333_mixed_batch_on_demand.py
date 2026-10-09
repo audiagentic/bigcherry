@@ -18,7 +18,7 @@ _F = "src/llama-graph.cpp"
 
 
 def _load():
-    spec = importlib.util.spec_from_file_location("patch_1333", _REPO / "patches/1333_mixed_batch_on_demand/patch.py")
+    spec = importlib.util.spec_from_file_location("patch_1333", _REPO / "engines/llamacpp/patches/1333_mixed_batch_on_demand/patch.py")
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

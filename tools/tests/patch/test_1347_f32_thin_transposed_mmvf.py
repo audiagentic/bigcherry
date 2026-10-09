@@ -19,7 +19,7 @@ _BC = "ggml/src/ggml-cuda/bc-f32-thin-transposed-mmvf.cuh"
 
 
 def _load():
-    spec = importlib.util.spec_from_file_location("patch_1347", _REPO / "patches/1347_f32_thin_transposed_mmvf/patch.py")
+    spec = importlib.util.spec_from_file_location("patch_1347", _REPO / "engines/llamacpp/patches/1347_f32_thin_transposed_mmvf/patch.py")
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

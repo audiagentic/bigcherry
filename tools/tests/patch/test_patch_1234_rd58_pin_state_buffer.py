@@ -1,4 +1,4 @@
-"""RD58: patches/1234 registers the state-restore buffer as portable
+"""RD58: engines/llamacpp/patches/1234 registers the state-restore buffer as portable
 pinned host memory during multi-GPU prompt-cache/checkpoint restore, to
 work around ROCm/rocm-systems#4817 (a real, still-open ROCm runtime
 defect: an async H2D copy from pageable host memory can fault mid-

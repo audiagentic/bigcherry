@@ -15,7 +15,7 @@ from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
 _REPO = Path(__file__).resolve().parents[3]
 _REL = "tools/server/server-context.cpp"
 _VENDOR = _REPO / "vendor/llama.cpp" / _REL
-_spec = importlib.util.spec_from_file_location("patch_1317", _REPO / "patches/1317_spec_round_timing/patch.py")
+_spec = importlib.util.spec_from_file_location("patch_1317", _REPO / "engines/llamacpp/patches/1317_spec_round_timing/patch.py")
 assert _spec is not None and _spec.loader is not None
 _module = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_module)

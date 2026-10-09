@@ -1,4 +1,4 @@
-"""HI119: patches/1239 (test_bigcherry_moe_glu_fusion) and 1240
+"""HI119: engines/llamacpp/patches/1239 (test_bigcherry_moe_glu_fusion) and 1240
 (--moe-glu-file CLI hook) against the real pinned vendor source.
 
 Real-hardware validation (Brutus, 2026-08-25) already confirmed these

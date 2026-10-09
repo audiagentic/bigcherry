@@ -32,7 +32,7 @@ class UniversalDefaults(unittest.TestCase):
                 self.assertNotIn(f'getenv("{flag}") != nullptr && atoi(', src, (flag, patch_id))
 
     def test_q81_cache_is_on_when_unset_and_fails_closed_on_a_typo(self):
-        src = (_REPO / "src/ggml/src/ggml-cuda/hip-q81-cache.cpp").read_text(encoding="utf-8")
+        src = (_REPO / "engines/llamacpp/overlay/ggml/src/ggml-cuda/hip-q81-cache.cpp").read_text(encoding="utf-8")
         body = re.search(r"ggml_hip_q81_cache_mode parse_mode\(const char \* s\) \{(.*?)\n\}", src, re.DOTALL).group(1)
         self.assertRegex(body, r"if \(s == nullptr\) \{\s+return GGML_HIP_Q81_CACHE_ON;")
         self.assertTrue(body.rstrip().endswith("return GGML_HIP_Q81_CACHE_OFF;"))
@@ -50,7 +50,7 @@ class UniversalDefaults(unittest.TestCase):
             self.assertTrue(doc.group(1).startswith(("on", "1")), (patch_id, flag, doc.group(1)))
 
     def test_profiles_do_not_list_universal_flags(self):
-        for ini in sorted((_REPO / "src/profile").glob("*.ini")):
+        for ini in sorted((_REPO / "engines/llamacpp/overlay/profile").glob("*.ini")):
             for line in ini.read_text(encoding="utf-8").splitlines():
                 if line.lstrip().startswith("#"):
                     continue
@@ -58,7 +58,7 @@ class UniversalDefaults(unittest.TestCase):
                     self.assertFalse(re.match(rf"\s*{flag}\s*=", line), f"{ini.name}: {line.strip()}")
 
     def test_model_profiles_include_no_generic_bundle(self):
-        text = (_REPO / "src/profile/flashnext.ini").read_text(encoding="utf-8")
+        text = (_REPO / "engines/llamacpp/overlay/profile/flashnext.ini").read_text(encoding="utf-8")
         self.assertNotRegex(text, r"(?m)^@")
 
 

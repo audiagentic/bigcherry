@@ -80,7 +80,7 @@ class TestRegistryStructure(unittest.TestCase):
         # the 2026-08-30 sources-check pass on the b10502->b10680 bump.
         # RD22 is superseded by upstream PR #28604 (reverts PR #24233,
         # making integrated=false HIP's own unconditional default) -- see
-        # patches/1209_rd22_integrated_gpu_host_buffer_backout/SUMMARY.md.
+        # engines/llamacpp/patches/1209_rd22_integrated_gpu_host_buffer_backout/SUMMARY.md.
         self.assertEqual(superseded, {"RD14", "RD16", "RD20", "RD22"})
         # The excluded MTP feature commits are declared, not silently dropped.
         excluded = [e for e in rdna["tracked"] if e["status"] == "excluded"]
@@ -163,13 +163,13 @@ class TestPatchProvenanceCrossCheck(unittest.TestCase):
     # from the same investigation. Removed from validated-enhancements;
     # STATE validated -> rejected. Original promotion evidence preserved in
     # SUMMARY.md, not erased -- see docs/planning/completed/hip-autotune/
-    # HI162.md and patches/1233_rd73_stable_graph_cache_key/SUMMARY.md.
+    # HI162.md and engines/llamacpp/patches/1233_rd73_stable_graph_cache_key/SUMMARY.md.
     RETIRED_RDNA_PATCHES = frozenset({
         "1201_rd20_attn_gate_tp_split",
         "1233_rd73_stable_graph_cache_key",
         # RD22: superseded by upstream PR #28604 (reverts PR #24233, making
         # integrated=false HIP's own unconditional default) -- see
-        # patches/1209_rd22_integrated_gpu_host_buffer_backout/SUMMARY.md.
+        # engines/llamacpp/patches/1209_rd22_integrated_gpu_host_buffer_backout/SUMMARY.md.
         "1209_rd22_integrated_gpu_host_buffer_backout",
         # Rejected 2026-09-23 on measured contract FAILs -- see each patch's
         # SUMMARY.md DEMOTION section.

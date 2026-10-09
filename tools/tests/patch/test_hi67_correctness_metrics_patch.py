@@ -1,4 +1,4 @@
-"""HI67 slice 2b: patches/1223_hi67_machine_readable_correctness_metrics/patch.py
+"""HI67 slice 2b: engines/llamacpp/patches/1223_hi67_machine_readable_correctness_metrics/patch.py
 applies cleanly (stacked on top of 1222, its REQUIRES dependency) and
 idempotently to the real vendored test-backend-ops.cpp."""
 

@@ -42,14 +42,14 @@ at the top level.
 
 | Document | What it is | When to read it |
 | --- | --- | --- |
-| [patches/PATCH_SYSTEM.md](patches/PATCH_SYSTEM.md) | Patch catalog, states, groups, composition | Understanding how patches apply and compose |
-| [patches/PATCH_AUTHORING.md](patches/PATCH_AUTHORING.md) | Writing a new patch | Authoring a patch |
-| [patches/PATCH_VALIDATION.md](patches/PATCH_VALIDATION.md) | Patch-validation navigation pointer; policy lives under testing | Finding the correct validation authority |
-| [patches/PATCH_REFACTOR_RUNBOOK.md](patches/PATCH_REFACTOR_RUNBOOK.md) | Refactoring an existing patch | Restructuring a patch without breaking its evidence |
+| [engines/llamacpp/patches/PATCH_SYSTEM.md](engines/llamacpp/patches/PATCH_SYSTEM.md) | Patch catalog, states, groups, composition | Understanding how patches apply and compose |
+| [engines/llamacpp/patches/PATCH_AUTHORING.md](engines/llamacpp/patches/PATCH_AUTHORING.md) | Writing a new patch | Authoring a patch |
+| [engines/llamacpp/patches/PATCH_VALIDATION.md](engines/llamacpp/patches/PATCH_VALIDATION.md) | Patch-validation navigation pointer; policy lives under testing | Finding the correct validation authority |
+| [engines/llamacpp/patches/PATCH_REFACTOR_RUNBOOK.md](engines/llamacpp/patches/PATCH_REFACTOR_RUNBOOK.md) | Refactoring an existing patch | Restructuring a patch without breaking its evidence |
 
 Patch-specific documentation, fixtures, validators, and validation evidence
-live with the owning package under `patches/<patch-id>/`. The shared
-`patches/_validation/` directory contains only cross-patch baseline data; it is
+live with the owning package under `engines/llamacpp/patches/<patch-id>/`. The shared
+`engines/llamacpp/patches/_validation/` directory contains only cross-patch baseline data; it is
 not a reference-document store.
 
 Plan-item design, status, and decisions belong under the matching

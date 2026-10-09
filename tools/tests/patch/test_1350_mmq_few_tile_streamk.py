@@ -47,7 +47,7 @@ def _patches(mod):
     raise AssertionError(f"{mod.__name__}: patch module exports neither PATCHES nor PATCH")
 
 
-_P = _load("patch_1350", "patches/1350_mmq_few_tile_streamk/patch.py")
+_P = _load("patch_1350", "engines/llamacpp/patches/1350_mmq_few_tile_streamk/patch.py")
 def _composer_order(ids: list[str]) -> list[str]:
     """Production patch ids in the order the real composer applies them.
 
@@ -64,7 +64,7 @@ def _composer_order(ids: list[str]) -> list[str]:
 
 _RECIPE_IDS = _production_patch_ids()
 _PROD_IDS = _composer_order(_RECIPE_IDS)
-_PROD = [(pid, _load("patch_prod_" + pid, f"patches/{pid}/patch.py")) for pid in _PROD_IDS]
+_PROD = [(pid, _load("patch_prod_" + pid, f"engines/llamacpp/patches/{pid}/patch.py")) for pid in _PROD_IDS]
 _PROD_BEFORE_1350 = [(pid, mod) for pid, mod in _PROD if pid != "1350_mmq_few_tile_streamk"]
 
 

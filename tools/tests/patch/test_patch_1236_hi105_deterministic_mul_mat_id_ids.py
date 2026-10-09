@@ -1,4 +1,4 @@
-"""HI105: patches/1236 gives test_generic_op's GGML_OP_MUL_MAT_ID
+"""HI105: engines/llamacpp/patches/1236 gives test_generic_op's GGML_OP_MUL_MAT_ID
 initializer a deterministic, full-expert-range branch under
 BIGCHERRY_TEST_DETERMINISTIC_SEED. Verified against the real pinned
 vendor source (not a synthetic fixture) that the fix is idempotent, that

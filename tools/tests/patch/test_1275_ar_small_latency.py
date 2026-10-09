@@ -13,7 +13,7 @@ from bigcherry.patcher import apply_all  # noqa: E402
 from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
-_PATCH_FILE = _REPO / "patches/1275_ar_small_latency/patch.py"
+_PATCH_FILE = _REPO / "engines/llamacpp/patches/1275_ar_small_latency/patch.py"
 _VENDOR = _REPO / "vendor/llama.cpp/ggml/src/ggml-cuda"
 
 

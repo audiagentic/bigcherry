@@ -1,7 +1,7 @@
 """PA36 sub-slice 2 (T10, dev-gpt-agent req_2ecda033763949a9): the RD12
 bit-identical measurement moved from validation_campaign.py's deleted
 run_rd12_correctness_check() into the patch-local producer at
-patches/1205_rd12_paired_mmvq_dual_output/validation/producer.py.
+engines/llamacpp/patches/1205_rd12_paired_mmvq_dual_output/validation/producer.py.
 
 These tests drive the REAL producer module (loaded through the real
 resolve_producer() loader, so producer.toml policy is exercised too)

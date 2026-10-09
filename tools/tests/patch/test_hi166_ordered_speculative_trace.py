@@ -1,4 +1,4 @@
-"""HI166: patches/0850 adds an ordered per-verify-step speculative-decode
+"""HI166: engines/llamacpp/patches/0850 adds an ordered per-verify-step speculative-decode
 acceptance trace (server_slot_stats.draft_trace), because llama-server's
 existing aggregate (draft_n, draft_n_accepted) scalars cannot distinguish
 two genuinely different per-step work schedules that sum to the same

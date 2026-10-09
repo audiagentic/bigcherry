@@ -26,15 +26,15 @@ def _load(name: str, path: Path):
     return module
 
 
-_Q81 = _load("patch_1307_merged", _REPO / "patches/1307_q81_activation_cache_mmvq/patch.py")
-_META = _load("patch_1340_merged", _REPO / "patches/1340_meta_per_device_arena/patch.py")
-_P0600 = _load("patch_0600", _REPO / "patches/0600_mmvq_geometry/patch.py")
-_P0910 = _load("patch_0910", _REPO / "patches/0910_feature_sets/patch.py")
-_P1241 = _load("patch_1241", _REPO / "patches/1241_rd33_mmvq_q8_0_f32_decode/patch.py")
-_P1283 = _load("patch_1283", _REPO / "patches/1283_qwen4exp_expert_parallel/patch.py")
-_P1303 = _load("patch_1303", _REPO / "patches/1303_attn_kv_tensor_split/patch.py")
-_P1326 = _load("patch_1326", _REPO / "patches/1326_sched_async_host_inputs/patch.py")
-_P1341 = _load("patch_1341", _REPO / "patches/1341_meta_subset_mirrored/patch.py")
+_Q81 = _load("patch_1307_merged", _REPO / "engines/llamacpp/patches/1307_q81_activation_cache_mmvq/patch.py")
+_META = _load("patch_1340_merged", _REPO / "engines/llamacpp/patches/1340_meta_per_device_arena/patch.py")
+_P0600 = _load("patch_0600", _REPO / "engines/llamacpp/patches/0600_mmvq_geometry/patch.py")
+_P0910 = _load("patch_0910", _REPO / "engines/llamacpp/patches/0910_feature_sets/patch.py")
+_P1241 = _load("patch_1241", _REPO / "engines/llamacpp/patches/1241_rd33_mmvq_q8_0_f32_decode/patch.py")
+_P1283 = _load("patch_1283", _REPO / "engines/llamacpp/patches/1283_qwen4exp_expert_parallel/patch.py")
+_P1303 = _load("patch_1303", _REPO / "engines/llamacpp/patches/1303_attn_kv_tensor_split/patch.py")
+_P1326 = _load("patch_1326", _REPO / "engines/llamacpp/patches/1326_sched_async_host_inputs/patch.py")
+_P1341 = _load("patch_1341", _REPO / "engines/llamacpp/patches/1341_meta_subset_mirrored/patch.py")
 
 _Q81_RETIRED = (
     "1235_rd09_q81_activation_cache_foundation",
@@ -197,7 +197,7 @@ class PA44EMergedFamilyIdentity(unittest.TestCase):
 
     def test_survivor_metadata_carries_union_dependencies(self):
         q81 = tomllib.loads(
-            (_REPO / "patches/1307_q81_activation_cache_mmvq/patch.toml").read_text(encoding="utf-8")
+            (_REPO / "engines/llamacpp/patches/1307_q81_activation_cache_mmvq/patch.toml").read_text(encoding="utf-8")
         )
         self.assertEqual(q81["state"], "validated")
         self.assertEqual(q81["plan-ids"], ["PRBE05", "PRBE06", "QFP13"])
@@ -207,7 +207,7 @@ class PA44EMergedFamilyIdentity(unittest.TestCase):
         )
 
         meta = tomllib.loads(
-            (_REPO / "patches/1340_meta_per_device_arena/patch.toml").read_text(encoding="utf-8")
+            (_REPO / "engines/llamacpp/patches/1340_meta_per_device_arena/patch.toml").read_text(encoding="utf-8")
         )
         self.assertEqual(meta["state"], "validated")
         self.assertEqual(meta["plan-ids"], ["MSM01", "MSM02"])

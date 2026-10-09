@@ -259,7 +259,7 @@ class RunVectorRealHttpTests(unittest.TestCase):
 
     def test_run_vector_fails_closed_when_draft_trace_missing_but_draft_n_positive(self):
         # HI166: a response with real draft_n/draft_n_accepted but no
-        # draft_trace means the server is missing patches/
+        # draft_trace means the server is missing engines/llamacpp/patches/
         # 0850_ordered_speculative_trace (or something else stripped it) --
         # must not silently fall back to aggregate-only comparison.
         _FakeCompletionHandler.response_body = json.dumps({

@@ -14,8 +14,8 @@ ROOT = Path(__file__).resolve().parents[3]
 PATCH_PATH = ROOT / "patches" / "1242_hi134_meta_stage_trace" / "patch.py"
 BASE_PATCH_PATH = ROOT / "patches" / "0830_split_reduce_telemetry" / "patch.py"
 PATCH = PATCH_PATH.read_text(encoding="utf-8")
-HEADER = (ROOT / "src/ggml/src/ggml-cuda/hip-autotune-reduce-telemetry.h").read_text(encoding="utf-8")
-TELEMETRY = (ROOT / "src/ggml/src/ggml-cuda/hip-autotune-reduce-telemetry.cpp").read_text(encoding="utf-8")
+HEADER = (ROOT / "engines/llamacpp/overlay/ggml/src/ggml-cuda/hip-autotune-reduce-telemetry.h").read_text(encoding="utf-8")
+TELEMETRY = (ROOT / "engines/llamacpp/overlay/ggml/src/ggml-cuda/hip-autotune-reduce-telemetry.cpp").read_text(encoding="utf-8")
 
 
 def _module():

@@ -45,7 +45,7 @@ class HarvestTests(unittest.TestCase):
         git(self.repo, "config", "user.name", "BigCherry Jobs Test")
         (self.repo / "patches" / "p").mkdir(parents=True)
         (self.repo / "patches" / "p" / "patch.py").write_text("STATE='untested'\n")
-        git(self.repo, "add", "--", "patches/p/patch.py")
+        git(self.repo, "add", "--", "engines/llamacpp/patches/p/patch.py")
         git(self.repo, "commit", "-m", "base")
         self.commit = git(self.repo, "rev-parse", "HEAD")
         self.store = RunStore(self.root / "jobs")

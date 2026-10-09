@@ -9,7 +9,7 @@ and nothing joins it to the path that needs it").
 
 PA36 RD73 legacy compatibility retirement: the three lane functions
 moved from shared validation_campaign.py into RD73's producer
-(patches/1233_rd73_stable_graph_cache_key/validation/producer.py), so
+(engines/llamacpp/patches/1233_rd73_stable_graph_cache_key/validation/producer.py), so
 this golden-thread test now verifies the SAME structural property on
 the producer-side lane functions.
 

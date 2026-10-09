@@ -1,7 +1,7 @@
 """HI68: compile and run the host-side canary decision unit test.
 
 The transition logic under test lives in a GPU-free header
-(src/ggml/src/ggml-cuda/hip-autotune-canary.h -- see the path constant
+(engines/llamacpp/overlay/ggml/src/ggml-cuda/hip-autotune-canary.h -- see the path constant
 below) so it can be exercised by ANY C++17 host compiler without a device,
 driver, or ggml build. This test locates a compiler (ROCm clang++ first,
 then anything on PATH that calls itself clang++ or cl), builds

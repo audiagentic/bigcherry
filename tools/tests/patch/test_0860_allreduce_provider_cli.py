@@ -156,7 +156,7 @@ class Patch0860Mechanics(unittest.TestCase):
         self.assertIn("effective_switch_bytes", helper)
 
     def test_single_named_switch_default_constant(self):
-        source = (_REPO / "patches/0860_allreduce_provider_cli/patch.py").read_text(encoding="utf-8")
+        source = (_REPO / "engines/llamacpp/patches/0860_allreduce_provider_cli/patch.py").read_text(encoding="utf-8")
         self.assertIn("ADAPTIVE_SWITCH_BYTES_DEFAULT = 96 << 10", source)
         self.assertEqual(source.count("98304"), 0)
 

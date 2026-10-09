@@ -24,7 +24,7 @@ def _load(name: str, rel: str):
     return module
 
 
-_MERGED = _load("patch_1307", "patches/1307_q81_activation_cache_mmvq/patch.py")
+_MERGED = _load("patch_1307", "engines/llamacpp/patches/1307_q81_activation_cache_mmvq/patch.py")
 _P1310 = [p for p in _MERGED.PATCHES if p.description.startswith("1310:")]
 _P1312 = [p for p in _MERGED.PATCHES if p.description.startswith("1312:")]
 
