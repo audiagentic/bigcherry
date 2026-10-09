@@ -252,6 +252,43 @@ reader wants half the elements the 4-bit plane holds), so the fixture recorded f
 (`tools/lab/radiance/record-fixture.sh`, 559 cases, all passing through libr3) has none. The evidence is the
 unchanged greedy text. For scale, radiance on the R9700 runs this model at 37-38 tok/s without the drafter.
 
+## What hipfire does on gfx1100 (read 2026-10-10)
+
+`github.com/Kaden-Schutt/hipfire` (Apache-2.0 from v0.3.0; some files MIT by SPDX), commit 0f999cb, cloned to
+`/mnt/data/bigcherry-work/engines/hipfire` on Brutus. A Rust engine with its own HIP kernels; the RX 7900 XTX is
+its primary target and it has 60-odd kernels written for gfx1100 by name. Its published Qwen3.8-27B (MQ4) numbers,
+self-measured, median of 3:
+
+| | 7900 XTX | R9700 |
+|---|---|---|
+| prefill, 8192 tokens | 3,021.5 tok/s | 5,166.1 tok/s |
+| native MTP decode | 87.5 tok/s | 68.0 tok/s |
+
+So on kernels written for each card the XTX is 29% faster at decode (memory-bound; `docs/BENCHMARKS.md` puts its
+27B decode at about 650 GiB/s of the card's 960 GB/s) and the R9700 is 71% faster at prefill (matrix-compute-bound).
+The XTX prefill figure is about what radiance reaches on the R9700 here (3,090 to 3,150 tok/s).
+
+Techniques, by kernel, that apply to libr3:
+
+- **Decode is a GEMV, not a WMMA.** `gemv_hfp4g32.gfx1100.hip`, `gemv_hfq4g256.gfx1100.hip`: one weight row a
+  32-thread block, the 4-bit codes decoded through a 16-entry table, four interleaved accumulators, no shared-memory
+  staging of weights, no matrix instruction. radiance's decode GEMM spends a 16-row fragment on one token; on the
+  XTX that is compute the card does not have to spare, and it is why libr3 is at 19 tok/s where the memory rate
+  allows about 45.
+- **Prefill is one wave a block with the lane owning a weight row.** `gemm_mq4g256v2_residual_wmma_gfx11_bt.hip`:
+  a lane reads its row's 16 codes (8 bytes), dequantises them to f16 in registers once per K tile, and reuses that
+  fragment across B = 4, 6 or 8 batch tiles with independent accumulators. The activation fragment is a plain
+  32-byte load of 16 f16 values of one token. That is the gfx11 fragment used as it is: no conversion in the loop,
+  no shared memory, no cross-lane move. The accumulator is written out in the gfx11 interleaved layout directly.
+- **Activations are f16 (or int8), never fp8.** gfx11 has no fp8 matrix instruction; hipfire's KV default on gfx1100
+  is Q8 for the same reason.
+- **Shared memory for the activations when the weight is wide.**
+  `gemm_hfq4g256_residual_wmma_gfx1100_muse_lds_g256.hip`: 8 waves share one staged group of X (96 tokens x 256 K,
+  49 KiB, laid out tile-major to keep bank conflicts at four-way), cutting X traffic about 16 times.
+- **An int8 route.** `gemm_mq4_packed.gfx1100.hip`: activations quantised to int8 in groups of 32 and the 4-bit
+  weights multiplied with the integer WMMA; its checkpoint note (`docs/perf-checkpoints/2026-09-29-...`) reports
+  +22% prefill over the f16 route and +34% with wider prefill chunks, on one fixture.
+
 ## References for the remaining port (found 2026-10-09; read before writing kernels)
 
 The 29 excluded units need the gfx12 WMMA builtins or the gfx12 transposed load. These exist to adapt from, so none
