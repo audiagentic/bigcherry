@@ -10,9 +10,11 @@ if(NOT R11_GPU_TARGETS)
 endif()
 rad_add_plugin(libr11 kernels
   SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/rows.cpp
-  HIP_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/elementwise.hip
+  HIP_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/elementwise.hip ${CMAKE_CURRENT_SOURCE_DIR}/gemm_bf16.hip
   GPU_TARGETS ${R11_GPU_TARGETS})
 set_target_properties(libr11 PROPERTIES HIP_STANDARD 17 HIP_STANDARD_REQUIRED ON)
+# Radiance's libref contract forbids implicit contraction of FP32 accumulation.
+target_compile_options(libr11 PRIVATE -ffp-contract=off)
 
 # Test is GPU-dependent and intentionally not registered with BigCherry's offline CI.
 enable_testing()
