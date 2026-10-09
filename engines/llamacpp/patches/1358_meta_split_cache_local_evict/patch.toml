@@ -1,7 +1,7 @@
 schema = 1
 id = "1358_meta_split_cache_local_evict"
 order = 1358
-state = "untested"
+state = "validated"
 kind = "enhancement"
 origin = "local"
 backend = "hip"
