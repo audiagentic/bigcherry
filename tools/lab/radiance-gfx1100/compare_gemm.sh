@@ -12,7 +12,11 @@ out=$3
 [[ -n "${ROCR_VISIBLE_DEVICES:-}" ]] || { echo "set ROCR_VISIBLE_DEVICES to exactly one verified gfx1100 GPU" >&2; exit 2; }
 [[ "$ROCR_VISIBLE_DEVICES" =~ ^[0-9]+$ ]] || { echo "only one GPU may be visible" >&2; exit 2; }
 [[ -x "$bench" ]] || { echo "rad-kbench is not executable: $bench" >&2; exit 2; }
-[[ -f "$build/libr11.so" ]] || { echo "libr11.so is missing under $build" >&2; exit 2; }
+mapfile -t plugins < <(find "$build" -type f -name libr11.so)
+[[ "${#plugins[@]}" = 1 ]] || {
+  echo "expected exactly one built libr11.so, found ${#plugins[@]} under $build" >&2; exit 2;
+}
+so=${plugins[0]}
 [[ -n "${RADIANCE_HOME:-}" ]] || { echo "RADIANCE_HOME must point at the installed engine + libr11 plugin home" >&2; exit 2; }
 if [[ -e "$out" ]]; then
   echo "Output directory already exists; refusing stale report: $out" >&2
@@ -24,7 +28,7 @@ mkdir -p "$out"
   echo "ROCR_VISIBLE_DEVICES=$ROCR_VISIBLE_DEVICES"
   echo "RADIANCE_HOME=$RADIANCE_HOME"
   echo "bench=$bench"
-  echo "libr11_so=$build/libr11.so"
+  echo "libr11_so=$so"
   hipcc --version 2>&1 | head -6 || true
 } > "$out/environment.txt"
 # Test the two paths against an asymmetric CPU oracle before interpreting any timings.
