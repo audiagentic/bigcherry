@@ -325,6 +325,32 @@ __device__ __forceinline__ r3_v16bf r3_row16_e4m3_to_bf16(const unsigned char* p
     return __builtin_bit_cast(r3_v16bf, out);
 }
 
+// The same row when the kernel has staged it as bf16 already (r3_store*_e4m3_as_bf16 below): a plain 32-byte load.
+__device__ __forceinline__ r3_v16bf r3_row16_e4m3_to_bf16(const unsigned short* p) {
+    typedef unsigned r3_u8u __attribute__((ext_vector_type(8), aligned(2)));
+    return __builtin_bit_cast(r3_v16bf, *reinterpret_cast<const r3_u8u*>(p));
+}
+
+// Staging: E4M3 codes widened once, as they are written to shared memory, so the K loop only loads. 8 codes in two
+// dwords (what r4d_mxfp4_unpack8 returns) or 16 in four, to 8 or 16 bf16 at dst.
+__device__ __forceinline__ void r3_store8_e4m3_as_bf16(unsigned short* dst, unsigned lo, unsigned hi) {
+    typedef unsigned r3_u4h __attribute__((ext_vector_type(4), aligned(2)));
+    r3_u4 out;
+    out[0] = r3_e4m3_to_bf16_bits(lo & 0xffu) | (r3_e4m3_to_bf16_bits((lo >> 8) & 0xffu) << 16);
+    out[1] = r3_e4m3_to_bf16_bits((lo >> 16) & 0xffu) | (r3_e4m3_to_bf16_bits(lo >> 24) << 16);
+    out[2] = r3_e4m3_to_bf16_bits(hi & 0xffu) | (r3_e4m3_to_bf16_bits((hi >> 8) & 0xffu) << 16);
+    out[3] = r3_e4m3_to_bf16_bits((hi >> 16) & 0xffu) | (r3_e4m3_to_bf16_bits(hi >> 24) << 16);
+    *reinterpret_cast<r3_u4h*>(dst) = out;
+}
+
+template <class V>
+__device__ __forceinline__ void r3_store16_e4m3_as_bf16(unsigned short* dst, V codes) {
+    static_assert(sizeof(V) == 16, "16 E4M3 codes");
+    const r3_u4 c = __builtin_bit_cast(r3_u4, codes);
+    r3_store8_e4m3_as_bf16(dst, c[0], c[1]);
+    r3_store8_e4m3_as_bf16(dst + 8, c[2], c[3]);
+}
+
 // D = A x B + C on gfx11 fragments, accumulator in the gfx11 layout.
 __device__ __forceinline__ r3_v8f r3_wmma_bf16_native(r3_v16bf a, r3_v16bf b, r3_v8f acc) {
     return __builtin_amdgcn_wmma_f32_16x16x16_bf16_w32(a, b, acc);

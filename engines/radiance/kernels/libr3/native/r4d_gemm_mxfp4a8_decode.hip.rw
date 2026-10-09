@@ -30,6 +30,34 @@
         acc[i] = r3_wmma_bf16_native(wf, r3_row16_e4m3_to_bf16(&sA[(i * 16 + col) * STR + kk]), acc[i]);
 @@ end
 
+# The one-fragment form (M <= 16, every single-sequence decode and verify step) also stages bf16 instead of E4M3:
+# the codes are widened once as they are written to shared memory (about 70 a thread a slab) instead of in the K
+# loop (256 a thread a slab), and r3_row16_e4m3_to_bf16 on an unsigned short row is a plain 32-byte load. Shared
+# memory for a block doubles to (16 + 128) * (DBK + 8) * 2 bytes: 39 KiB at DBK 128, inside the 64 KiB a block may
+# hold. The DTM form keeps E4M3 staging (at DTM 8 and DBK 128 the bf16 form would need 68 KiB) and widens in the loop.
+
+@@ find 1
+  constexpr int A_IT = (ROWS * DBK + NTHR * 16 - 1) / (NTHR * 16);
+  __shared__ unsigned char sA[ROWS * STR];
+  __shared__ unsigned char sW[BND * STR];
+@@ replace
+  constexpr int A_IT = (ROWS * DBK + NTHR * 16 - 1) / (NTHR * 16);
+  __shared__ unsigned short sA[ROWS * STR];  // libr3 native: bf16, widened at staging
+  __shared__ unsigned short sW[BND * STR];
+@@ end
+
+@@ find 1
+        *(mxd_u4*)(&sA[r * STR + c]) = ra[j];
+@@ replace
+        r3_store16_e4m3_as_bf16(&sA[r * STR + c], ra[j]);
+@@ end
+
+@@ find 1
+        *(mxd_u2*)(&sW[(s_r[it] + q) * STR + s_kloc[it]]) = mxd_u2{lo, hi};
+@@ replace
+        r3_store8_e4m3_as_bf16(&sW[(s_r[it] + q) * STR + s_kloc[it]], lo, hi);
+@@ end
+
 @@ find 2
   const int kb_end = s_hi > s_lo ? (k_hi - 1) >> 7 : 0;
   mxd_epilogue<DTM, DKS, ABLK>(acc, As, as_rs, Wref, P, cnt, C, M, N, n0, wave, col, kb8, ks,
