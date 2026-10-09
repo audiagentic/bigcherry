@@ -67,19 +67,6 @@ _META_BIN_NEW = r"""    auto handle_bin_bcast = [&](const std::vector<ggml_backe
         if (src_ss[0].axis >= 0 && src_ss[0].axis < GGML_MAX_DIMS &&
 """
 
-_META_CACHE = r"""    if (it != buf_ctx->split_state_cache.end() && memcmp(it->second.second, (const char *) tensor, sizeof(it->second.second)) != 0) {
-        buf_ctx->split_state_cache.clear();
-        it = buf_ctx->split_state_cache.end();
-    }
-"""
-_META_CACHE_NEW = r"""    if (it != buf_ctx->split_state_cache.end() && memcmp(it->second.second, (const char *) tensor, sizeof(it->second.second)) != 0) {
-        // BigCherry 1328: graph tensor addresses are recycled between prefill/decode shapes. Invalidating the
-        // entire buffer cache here destroys split-state memoization for unrelated current-graph tensors while a
-        // recursive walk is in flight. Evict only this stale pointer identity.
-        buf_ctx->split_state_cache.erase(it);
-        it = buf_ctx->split_state_cache.end();
-    }
-"""
 
 _META_END = """ggml_backend_t ggml_backend_meta_simple_backend(ggml_backend_t meta_backend, size_t index) {
     GGML_ASSERT(ggml_backend_is_meta(meta_backend));
@@ -538,10 +525,6 @@ PATCHES = [
                  guard=r"BigCherry 1328: full auxiliary routed-MoE plus the shared-expert branch",
                  rationale="Binary-broadcast split propagation owns ADD's Meta reduction semantics.",
                  expect_matches=1, max_span_lines=3),
-            Edit(id="meta-split-cache-local-evict", anchor=re.escape(_META_CACHE), mode="replace", text=_META_CACHE_NEW,
-                 guard=r"BigCherry 1328: graph tensor addresses are recycled",
-                 rationale="Address recycling across graph shapes must invalidate only the stale tensor key; clearing the whole split-state cache destroys recursive memoization and makes stacked merge evaluation superlinear.",
-                 expect_matches=1, max_span_lines=5),
             Edit(id="meta-aux-helpers", anchor=re.escape(_META_END), mode="replace", text=_META_END_NEW,
                  guard=r"BIGCHERRY_AUX_EXPERT_MERGE_MAGIC",
                  rationale="Public helper implementations sit after the existing Meta backend accessors.",

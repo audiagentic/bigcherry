@@ -494,7 +494,7 @@ patches = []
 
 [experiment.deploy-v5-plus-1327-aux6900]
 # MET05: v5 + 1327 + 1328 auxiliary ROCm expert backend; off unless BIGCHERRY_EXPERT_AUX_DEVICE is set.
-patches = ["1328_aux_rocm_expert_backend"]
+patches = ["1358_meta_split_cache_local_evict", "1328_aux_rocm_expert_backend"]
 
 
 [experiment.retest-1295]
@@ -1084,3 +1084,7 @@ patches = ["1263_prbe41_ssm_conv_channels_major"]
 [experiment.ar-small-latency]
 # 1275 alone: small mapped-host AllReduce slot-sync and launch-geometry controls; defaults preserve pristine behavior.
 patches = ["1275_ar_small_latency"]
+
+[experiment.meta-split-cache-evict]
+# 1358: production + local eviction of stale Meta split-state cache entries; on by default, BIGCHERRY_META_SPLIT_CACHE_EVICT=0 restores the clear.
+patches = ["1358_meta_split_cache_local_evict"]
