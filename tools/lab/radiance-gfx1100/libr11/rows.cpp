@@ -9,6 +9,7 @@ extern "C" int r11_add_bf16_packed(const RadArgs*, RadStream);
 extern "C" int r11_mul_bf16_packed(const RadArgs*, RadStream);
 extern "C" int r11_rmsnorm_wave32(const RadArgs*,RadStream);
 extern "C" int r11_rmsnorm_block256(const RadArgs*,RadStream);
+extern "C" int r11_rmsnorm_dpp32(const RadArgs*,RadStream);
 
 // Describe the full-size (non-broadcast) operand geometry for rad-kbench.
 // The broadcast variant is covered separately by r11_selftest.
@@ -166,6 +167,20 @@ static const RadKernelInfo kKernels[] = {
         .constraints = kRmsNorm,
         .n_constraints = sizeof(kRmsNorm)/sizeof(kRmsNorm[0]),
         .launch = r11_rmsnorm_block256,
+        .opd_shape = rmsnorm_shape,
+    },
+    {
+        .name = "r11_rmsnorm_dpp32",
+        .op = "rmsnorm",
+        .family = "norm",
+        .computes = "gfx1100 BF16 RMSNorm; native DPP row permutes and ds_swizzle",
+        .shape = "1<=M<=1024, 32<=n<=8192 divisible by 32, strided dense rows",
+        .dtypes = "bf16",
+        .domain = RAD_DOMAIN_DEVICE,
+        .priority = 11,
+        .constraints = kRmsNorm,
+        .n_constraints = sizeof(kRmsNorm)/sizeof(kRmsNorm[0]),
+        .launch = r11_rmsnorm_dpp32,
         .opd_shape = rmsnorm_shape,
     },
     {
