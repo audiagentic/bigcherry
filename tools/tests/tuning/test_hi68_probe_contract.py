@@ -25,13 +25,13 @@ from pathlib import Path
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 TUNER = os.path.join(
-    REPO_ROOT, "src", "ggml", "src", "ggml-cuda", "hip-autotune-tuner.cu"
+    REPO_ROOT, "engines", "llamacpp", "overlay", "ggml", "src", "ggml-cuda", "hip-autotune-tuner.cu"
 )
 TUNER_CUH = os.path.join(
-    REPO_ROOT, "src", "ggml", "src", "ggml-cuda", "hip-autotune-tuner.cuh"
+    REPO_ROOT, "engines", "llamacpp", "overlay", "ggml", "src", "ggml-cuda", "hip-autotune-tuner.cuh"
 )
 CANARY_H = os.path.join(
-    REPO_ROOT, "src", "ggml", "src", "ggml-cuda", "hip-autotune-canary.h"
+    REPO_ROOT, "engines", "llamacpp", "overlay", "ggml", "src", "ggml-cuda", "hip-autotune-canary.h"
 )
 HOST_TEST_CPP = os.path.join(
     REPO_ROOT, "tools", "tests", "fixtures", "hardware", "canary_decision_host_test.cpp"

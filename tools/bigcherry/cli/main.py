@@ -345,7 +345,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--kind",
         default=None,
         choices=patch_catalog.KINDS,
-        help="filter to patches/catalog.toml's kind (framework|upstream-backport|"
+        help="filter to engines/llamacpp/patches/catalog.toml's kind (framework|upstream-backport|"
         "enhancement) -- the metadata substitute for a physical folder split "
         "(RE41: browsability metadata instead of a directory split; "
         "patch-system PA02 keeps it metadata-first)",
@@ -354,13 +354,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--backend",
         default=None,
         choices=patch_catalog.BACKENDS,
-        help="filter to patches/catalog.toml's backend (hip|vulkan|agnostic)",
+        help="filter to engines/llamacpp/patches/catalog.toml's backend (hip|vulkan|agnostic)",
     )
     patches_cmd.add_argument(
         "--origin",
         default=None,
         choices=patch_catalog.ORIGINS,
-        help="filter to patches/catalog.toml's origin (local|upstream-commit|"
+        help="filter to engines/llamacpp/patches/catalog.toml's origin (local|upstream-commit|"
         "upstream-pr|external-fork)",
     )
     patches_cmd.set_defaults(func=cmd_patches)

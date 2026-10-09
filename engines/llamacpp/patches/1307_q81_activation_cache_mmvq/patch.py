@@ -5,6 +5,25 @@ from bigcherry.patcher import env_docs
 GROUP = "rdna-boosts"
 STATE = "validated"
 
+# The Q8_1 activation cache is a port from an external fork (config/external-sources.toml, PRBE05). The provenance
+# record belonged to the foundation part (1235); it is stated here as a literal because the source registry
+# cross-check reads it from the package file without executing it.
+PROVENANCE = {'adaptations': ["cache key strengthened with the exact view data address/offset (the fork's key omits it, allowing "
+                 'a same-root/different-offset false-hit collision)',
+                 "backing storage reimplemented as bounded, never-relocated stable slabs instead of the fork's "
+                 'relocatable grow-by-copy arena, for HIP/CUDA graph-capture pointer stability',
+                 "stage 1 (this patch) adds only the cache implementation with no caller; the fork's commit wires "
+                 'straight into mmvq.cu in one step, deliberately split here into a separate future stage 2 patch so '
+                 'the zero-behavioral-risk foundation can be reviewed and tested independently of the actual MMVQ '
+                 'integration'],
+ 'fork-commit': '299f6eaf73b5eeb888bd94eaa66122d003136e6a',
+ 'fork-commit-title': 'CUDA: cache quantized Q8_1 matmul inputs per graph',
+ 'original-commit': 'ff6fde5046ffb86672e05da640d2bfb20d4bfdfc',
+ 'plan-item': 'PRBE05',
+ 'snapshot-base': '4df29be4f4c3673f428170fda944a5b19f743bb8',
+ 'snapshot-head': '9e46e1fdc7a880f9ae9a2f9a693ae3e14c142a22',
+ 'source-id': 'stew675-rdna-boosts'}
+
 def _load_legacy_part(owner: str, source: str):
     ns = {"__name__": f"_bigcherry_merged_{owner}", "__file__": f"<merged:{owner}>"}
     exec(compile(source, ns["__file__"], "exec"), ns)

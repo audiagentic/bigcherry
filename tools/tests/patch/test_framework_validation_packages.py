@@ -8,7 +8,7 @@ import pytest
 from bigcherry.patch import registry, validation, validation_policy
 
 
-ROOT = Path(__file__).resolve().parents[3] / "patches"
+ROOT = Path(__file__).resolve().parents[3] / "engines" / "llamacpp" / "patches"
 
 
 @pytest.mark.parametrize("patch_id,check_id", [

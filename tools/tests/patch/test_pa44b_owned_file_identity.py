@@ -12,15 +12,16 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from bigcherry.core import paths  # noqa: E402
 from bigcherry.patcher import Edit, FilePatch, apply_all  # noqa: E402
 from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
-_V = _REPO / "vendor/llama.cpp"
+_V = paths.llama_root()
 
 
 def _load(pid: str):
-    spec = importlib.util.spec_from_file_location("patch_" + pid[:4], _REPO / "patches" / pid / "patch.py")
+    spec = importlib.util.spec_from_file_location("patch_" + pid[:4], _REPO / "engines" / "llamacpp" / "patches" / pid / "patch.py")
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -234,7 +235,7 @@ class PA44BOwnedFileIdentity(unittest.TestCase):
         for patch_id, module, *_ in CASES:
             with self.subTest(patch_id=patch_id):
                 metadata = tomllib.loads(
-                    (_REPO / "patches" / patch_id / "patch.toml").read_text(encoding="utf-8")
+                    (_REPO / "engines" / "llamacpp" / "patches" / patch_id / "patch.toml").read_text(encoding="utf-8")
                 )
                 self.assertEqual(metadata["state"], "validated")
                 self.assertEqual(module.STATE, "validated")

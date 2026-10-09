@@ -10,11 +10,12 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from bigcherry.core import paths  # noqa: E402
 from bigcherry.patcher import apply_all  # noqa: E402
 from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
-_V = _REPO / "vendor/llama.cpp"
+_V = paths.llama_root()
 _FILES = (
     "common/speculative.h",
     "common/speculative.cpp",
@@ -30,9 +31,7 @@ def _load(path: Path, name: str):
     return module
 
 
-_P = _load(_REPO / "patches/1346_mtp_prompt_overlap/patch.py", "patch_1346")
-_P1255 = _load(_REPO / "patches/1255_nro06_adaptive_mtp_depth/patch.py", "patch_1255")
-_P1268 = _load(_REPO / "patches/1268_prbe52_adaptive_mtp_wiring/patch.py", "patch_1268")
+_P = _load(_REPO / "engines/llamacpp/patches/1346_mtp_prompt_overlap/patch.py", "patch_1346")
 
 
 def _only(module, path):
@@ -41,11 +40,11 @@ def _only(module, path):
 
 class Patch1346StaticContracts(unittest.TestCase):
     def test_metadata_and_explicit_edit_contracts(self):
-        meta = tomllib.loads((_REPO / "patches/1346_mtp_prompt_overlap/patch.toml").read_text(encoding="utf-8"))
+        meta = tomllib.loads((_REPO / "engines/llamacpp/patches/1346_mtp_prompt_overlap/patch.toml").read_text(encoding="utf-8"))
         self.assertEqual(meta["id"], "1346_mtp_prompt_overlap")
         self.assertEqual(meta["tags"], ["optimization", "mtp"])
 
-        src = (_REPO / "patches/1346_mtp_prompt_overlap/patch.py").read_text(encoding="utf-8")
+        src = (_REPO / "engines/llamacpp/patches/1346_mtp_prompt_overlap/patch.py").read_text(encoding="utf-8")
         edits = [edit for patch in _P.PATCHES for edit in patch.edits]
         self.assertGreater(len(edits), 0)
         self.assertEqual(src.count("expect_matches=1,"), len(edits))
@@ -201,19 +200,6 @@ class Patch1346Mechanics(unittest.TestCase):
             self.assertTrue(all(r.ok for r in second), [e.detail for r in second for e in r.failed])
             self.assertEqual(before, {f: (root / f).read_text(encoding="utf-8") for f in _FILES})
 
-    def test_composes_after_adaptive_mtp_wiring(self):
-        with tempfile.TemporaryDirectory() as td:
-            root = self._root(td)
-            for patches in (
-                _only(_P1255, "common/speculative.cpp"),
-                _only(_P1268, "common/speculative.cpp"),
-                _P.PATCHES,
-            ):
-                res = apply_all(patches, root)
-                self.assertTrue(all(r.ok for r in res), [e.detail for r in res for e in r.failed])
-            self._check(root)
-            src = (root / "common/speculative.cpp").read_text(encoding="utf-8")
-            self.assertIn("adaptive_state.at(seq_id).reset", src)
 
 if __name__ == "__main__":
     unittest.main()

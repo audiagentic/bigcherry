@@ -422,7 +422,7 @@ def probe(
     # not attempted -- attempting it always failed with a CampaignBuildError
     # that got misreported as "patch-drift-or-build-failed", when the real
     # situation is "this input does not exist to test against", not "the
-    # patches/build are broken". Compilation compatibility (what this probe
+    # engines/llamacpp/patches/build are broken". Compilation compatibility (what this probe
     # actually answers) is still tested for every build whose needs ARE
     # satisfiable.
     available_inputs = {

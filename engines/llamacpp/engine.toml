@@ -1,13 +1,13 @@
 # Engine pillar: llama.cpp (run-multi-engine MEN08).
-# The layout below is where this engine's files live today. The MEN08 migration moves them under engines/llamacpp/
-# and changes only these three lines plus the files themselves.
+# Patch packages and overlay files live under this directory. The vendor checkout is an untracked clone in the
+# primary checkout and keeps its location.
 schema = 1
 name = "llamacpp"
 upstream = "https://github.com/ggml-org/llama.cpp"
 
 [layout]
-patches = "patches"
-overlay = "src"
+patches = "engines/llamacpp/patches"
+overlay = "engines/llamacpp/overlay"
 vendor = "vendor/llama.cpp"
 
 # How the server is run (run-multi-engine MEN03). The /shutdown route is BigCherry's (patch 0800) and is only

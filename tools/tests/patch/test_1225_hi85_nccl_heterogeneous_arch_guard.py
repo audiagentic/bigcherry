@@ -15,9 +15,9 @@ _REPO = Path(__file__).resolve().parents[3]
 class Patch1225Mechanics(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        registry = patch_registry.load_registry(_REPO / "patches")
+        registry = patch_registry.load_registry(_REPO / "engines" / "llamacpp" / "patches")
         descriptor = registry.get("1225_hi85_nccl_heterogeneous_arch_guard")
-        patches = patch_registry.load_implementation(descriptor, root=_REPO / "patches")
+        patches = patch_registry.load_implementation(descriptor, root=_REPO / "engines" / "llamacpp" / "patches")
         cls.cuda_patch = next(p for p in patches if p.path == "ggml/src/ggml-cuda/ggml-cuda.cu")
 
     def test_admission_helper_is_compile_safe_outside_hip(self):

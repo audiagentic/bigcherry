@@ -13,7 +13,7 @@ buckets:
 - **`src/`** — whole files that are *new* to the tree. The directory mirrors the
   llama.cpp layout exactly, so applying it is a copy and the eventual upstream
   PR diff falls straight out of it. New files never conflict.
-- **`patches/`** — small, *anchored* edits to files upstream already owns. Each
+- **`engines/llamacpp/patches/`** — small, *anchored* edits to files upstream already owns. Each
   edit locates its insertion point by regex anchor and verifies the result, so
   it survives ordinary upstream churn and fails loudly — naming the anchor that
   went missing — when it does not.
@@ -23,7 +23,7 @@ The workflow for a new llama.cpp release is:
 ```bash
 python -m bigcherry pull   --ref b1234        # fetch/checkout upstream
 python -m bigcherry audit                     # strict invariant audit
-python -m bigcherry apply --source bigcherry  # src/ overlay + anchored patches
+python -m bigcherry apply --source bigcherry  # engines/llamacpp/overlay + anchored patches
 python -m bigcherry generate --arch all       # candidate catalog -> artifacts
 python -m bigcherry build   --profile replay-full
 ```
@@ -65,7 +65,7 @@ releases shows exactly which solutions came or went.
 | Path | Contents |
 | --- | --- |
 | `src/` | New files, mirroring the llama.cpp tree at their final paths |
-| `patches/` | Anchored edits to upstream-owned files |
+| `engines/llamacpp/patches/` | Anchored edits to upstream-owned files |
 | `tools/bigcherry/` | The `bigcherry` Python CLI |
 | `tools/lab/` | Temporary plan-owned investigation; no copied upstream source or raw run output |
 | `tools/bigcherry/source/audit.py` | Strict-mode upstream invariant audit (HI01) |

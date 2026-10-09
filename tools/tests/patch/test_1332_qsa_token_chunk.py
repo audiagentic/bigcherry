@@ -9,18 +9,19 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from bigcherry.core import paths  # noqa: E402
 from bigcherry.patcher import apply_all  # noqa: E402
 from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
 _REL = "src/models/qwen4exp.cpp"
-_VENDOR = _REPO / "vendor/llama.cpp" / _REL
+_VENDOR = paths.llama_root() / _REL
 _HDR = "src/models/models.h"
 _GGML = "ggml/src/ggml.c"
 
 
 def _load(pid: str):
-    spec = importlib.util.spec_from_file_location("patch_" + pid, _REPO / "patches" / pid / "patch.py")
+    spec = importlib.util.spec_from_file_location("patch_" + pid, _REPO / "engines" / "llamacpp" / "patches" / pid / "patch.py")
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -36,9 +37,9 @@ class Patch1332Mechanics(unittest.TestCase):
         root = Path(td)
         (root / _REL).parent.mkdir(parents=True)
         copy_pinned(_VENDOR, root / _REL)
-        copy_pinned(_REPO / "vendor/llama.cpp" / _HDR, root / _HDR)
+        copy_pinned(paths.llama_root() / _HDR, root / _HDR)
         (root / _GGML).parent.mkdir(parents=True, exist_ok=True)
-        copy_pinned(_REPO / "vendor/llama.cpp" / _GGML, root / _GGML)
+        copy_pinned(paths.llama_root() / _GGML, root / _GGML)
         return root
 
     def test_apply_and_idempotent(self):

@@ -414,7 +414,7 @@ def resolve_patch_set(
         raise ResolutionError("resolved patch set contains duplicate module IDs")
     # GPT-auto-agent review (RE03/RE05 follow-up, 2026-08-17): this used to
     # call patchset.catalog() with no directory override, defaulting to
-    # paths.PATCHES (the real project's patches/) regardless of what
+    # paths.PATCHES (the real project's engines/llamacpp/patches/) regardless of what
     # directory `catalog` was actually resolved against -- two authorities
     # in one execution, since materialisation/patch application elsewhere
     # in this same call chain correctly use context.patches_root. A caller

@@ -23,7 +23,7 @@ PYTHONPATH=tools python -m bigcherry audit
 PYTHONPATH=tools python -m bigcherry patch-validate <patch-id>
 ```
 
-Run this gate after touching `src/`, `patches/`, or `tools/`. It checks the
+Run this gate after touching `src/`, `engines/llamacpp/patches/`, or `tools/`. It checks the
 repository and patch package without requiring a GPU. `patch-validate` checks
 the named package's static/evidence state; it does not run hardware
 qualification.
