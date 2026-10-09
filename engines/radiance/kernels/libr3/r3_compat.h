@@ -380,11 +380,10 @@ static __device__ __constant__ unsigned int kR3MxBf16Hi[16][2] = { R3_MXFP4_MAG(
 #undef R3_MX_HI
 
 // Eight E2M1 codes (four packed bytes, element 2j in the low nibble of byte j, as r4d_mxfp4_unpack8 takes them) with
-// exponent difference d, written as eight bf16 in K order at dst. Twelve v_perm: four table lookups (low and high
+// exponent difference d, as eight bf16 in K order (two a dword). Twelve v_perm: four table lookups (low and high
 // byte, even and odd elements) and eight to interleave bytes and elements; the sign rides as bit 3 of the nibble
 // into bit 7 of the high byte.
-__device__ __forceinline__ void r3_mxfp4_store8_bf16(unsigned short* dst, unsigned wv, int d) {
-    typedef unsigned r3_u4h __attribute__((ext_vector_type(4), aligned(2)));
+__device__ __forceinline__ r3_u4 r3_mxfp4_unpack8_bf16(unsigned wv, int d) {
     const unsigned ev = wv & 0x0f0f0f0fu, od = (wv >> 4) & 0x0f0f0f0fu;
     const unsigned ei = ev & 0x07070707u, oi = od & 0x07070707u;
     const unsigned e_lo = __builtin_amdgcn_perm(kR3MxBf16Lo[d][1], kR3MxBf16Lo[d][0], ei);
@@ -399,7 +398,12 @@ __device__ __forceinline__ void r3_mxfp4_store8_bf16(unsigned short* dst, unsign
     out[1] = __builtin_amdgcn_perm(o01, e01, 0x07060302u);  // k 2, 3
     out[2] = __builtin_amdgcn_perm(o23, e23, 0x05040100u);  // k 4, 5
     out[3] = __builtin_amdgcn_perm(o23, e23, 0x07060302u);  // k 6, 7
-    *reinterpret_cast<r3_u4h*>(dst) = out;
+    return out;
+}
+
+__device__ __forceinline__ void r3_mxfp4_store8_bf16(unsigned short* dst, unsigned wv, int d) {
+    typedef unsigned r3_u4h __attribute__((ext_vector_type(4), aligned(2)));
+    *reinterpret_cast<r3_u4h*>(dst) = r3_mxfp4_unpack8_bf16(wv, d);
 }
 
 // D = A x B + C on gfx11 fragments, accumulator in the gfx11 layout.

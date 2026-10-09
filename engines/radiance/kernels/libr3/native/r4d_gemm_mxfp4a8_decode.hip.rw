@@ -72,3 +72,24 @@
   for (int i = 0; i < DTM; ++i) acc[i] = r3_acc_native_to_gfx12(acc[i]);  // libr3 native: once, not per WMMA
   mxd_epilogue<DTM, DKS, ABLK>(acc, As, as_rs, Wref, P, cnt, C, M, N, n0, wave, col, kb8, ks,
 @@ end
+
+# One activation row (M = 1, every single-sequence decode step) is a vector product on gfx11, not a matrix one:
+# r3_mxfp4_gemv.h. Same entry point and operands; R3_GEMV=0 in the environment keeps the kernel above.
+@@ find 1
+#include "r4d_mxfp4.h"
+@@ replace
+#include "r4d_mxfp4.h"
+#include "r3_mxfp4_gemv.h"  // libr3 native: the M = 1 vector kernel
+@@ end
+
+@@ find 1
+  const MxdPlan pl = mxd_plan(M, K, N, KS, BK, NT);
+  const int ks = pl.ks, bk = pl.bk;
+@@ replace
+  const MxdPlan pl = mxd_plan(M, K, N, KS, BK, NT);
+  if (M == 1 && K <= R3_GEMV_MAX_K && r3_gemv_on()) {  // libr3 native
+    r3_mxfp4_gemv1_launch(a, ascale, wq, ws, wref, c, K, N, pl.nt, as_group == 128, stream);
+    return;
+  }
+  const int ks = pl.ks, bk = pl.bk;
+@@ end
