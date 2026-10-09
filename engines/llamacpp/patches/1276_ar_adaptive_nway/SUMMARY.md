@@ -22,3 +22,7 @@ synchronization scheme, while preserving 0840's adaptive crossover.
 Local BigCherry composition over llama.cpp b11233. State remains untested;
 this patch makes no new hardware-performance claim until N=3 full-stack
 validation is recorded.
+
+## 2026-10-09 disposition
+
+1276 adds **root-rank selection and N=3 composition only**; it does not supply a new default provider, phase-aware routing, or a replacement for validated 1291 CPU-root. PGC10 owns the conditional comparison; QFP01 owns 1291; GP11/1244 owns root3 kernels. No current-pin, same-model RCCL/CPU-root/root3 qualification is recorded. Root3's F32-only internal size gate and 0840's 96 KiB logical-size gate are separate. Keep state `untested`, avoid production promotion and do not reuse historical RCCL-only comparisons as evidence against CPU-root. Close if no measured CPU-root bottleneck or if a bounded A/B fails PGC10's gate.
