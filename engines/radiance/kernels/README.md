@@ -173,8 +173,32 @@ of it should be written from nothing:
 - **No fp8 or fp4 WMMA on gfx11-class cards** is confirmed independently (anthony-chaudhary/fak issue 13542, for
   gfx1151): the fp8 paths have to widen to bf16/f16 or use the int8 path.
 
-Asked GPT for exact file-level pointers (rocWMMA layout traits, LLVM builtin definitions, the 0.5.7 fork's kernel
-files and licence); the answer goes here when it arrives.
+File-level pointers from the GPT (Codex) research request req_67189053f04240c6, 2026-10-09. Static evidence from its
+reading; not re-verified here except where noted:
+
+- **rocWMMA layout code** (`ROCm/rocWMMA`, branch `develop_deprecated`, `library/include/rocwmma/internal/layout/`):
+  `layout.hpp` (`RegisterLayout::Format`, `WMMA_INPUT_GFX11`, `WMMA_ACC_GFX11`), `register_layout_traits_impl.hpp`,
+  `register_layout_transforms_impl.hpp`, `transforms/transforms_wmma_impl.hpp` (gfx11 input duplication and
+  accumulator padding).
+- **LLVM**: `clang/include/clang/Basic/BuiltinsAMDGPU.td` (builtins), `llvm/include/llvm/IR/IntrinsicsAMDGPU.td`
+  (intrinsics, including `int_amdgcn_global_load_tr_b128`), and the test
+  `llvm/test/CodeGen/AMDGPU/GlobalISel/llvm.amdgcn.wmma_32.ll`: on gfx11 wave32 the f16/bf16 operands are
+  `<16 x half>`, iu8 operands `<4 x i32>`, iu4 operands `<2 x i32>`, accumulators `<8 x ...>`. gfx11 has
+  `V_WMMA_I32_16X16X16_IU4` with K = 16; gfx12's iu4 is K = 32. This matches the operand widths `r3_compat.h` uses.
+- **fp8 through bf16 on gfx11, open source**: `Comfy-Org/comfy-kitchen`, `comfy_kitchen/backends/hip/mma.h`
+  (Apache-2.0): gfx11 fp8 to bf16 conversion feeding `__builtin_amdgcn_wmma_f32_16x16x16_bf16_w32`, with the
+  gfx11/gfx12 fragment differences documented. The closest existing code to `r3_wmma_f32_16x16x16_fp8_fp8_w32_gfx12`.
+  Widening finite E4M3 values to bf16 is exact; NaN, signed zero and saturation need the numeric decode, which
+  `r3_e4m3_to_f32` does.
+- **Generic RDNA WMMA GEMM**: `github.com/adelj88/rocm_wmma_gemm`; AMD's guide `gpuopen.com/learn/wmma_on_rdna3/`.
+- **Transposed load**: the standard gfx11 replacement is ordinary loads into LDS, an explicit LDS rearrangement, then
+  LDS reads into the fragment layout. `r3_global_load_tr_b128_v8i16` does the rearrangement lane to lane instead;
+  the LDS form is the faster one to move to.
+- Accumulator layouts it states agree with the ones here: gfx11 row = 2 * element + lane / 16, gfx12 row = element +
+  8 * (lane / 16), column = lane % 16 on both.
+
+A second request (req_c04e51cd55064790, dev-gpt-agent) asks for a review of `r3_compat.h` itself: the assumed byte
+and nibble layouts, the lane id, cheaper lane exchanges, and the extra rounding of the separate accumulator add.
 
 ## First kdev run
 
