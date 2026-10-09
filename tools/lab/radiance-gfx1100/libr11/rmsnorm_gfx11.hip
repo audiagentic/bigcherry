@@ -7,6 +7,7 @@
 #include <hip/hip_runtime.h>
 #include <cstdint>
 #include <cmath>
+#include <cstring>
 
 namespace {
 __device__ __forceinline__ float widen(uint16_t bits) {
@@ -33,7 +34,7 @@ int check(const RadArgs* args, Norm* g) {
     const auto& y=args->t[2];
     if (!x.data || !w.data || !y.data || w.data==y.data) return RAD_E_INVAL;
     const char* dtype=rad_args_gets(args,"dtype");
-    if (!dtype || __builtin_strcmp(dtype,"bf16") ||
+    if (!dtype || std::strcmp(dtype,"bf16") ||
         x.dtype!=RAD_BF16 || y.dtype!=RAD_BF16 ||
         (w.dtype!=RAD_F32 && w.dtype!=RAD_BF16)) return RAD_E_DTYPE;
     long long m=0,n=0;
@@ -46,7 +47,7 @@ int check(const RadArgs* args, Norm* g) {
         x.stride[0]<n || y.stride[0]<n) return RAD_E_STRIDE;
     const double eps=rad_args_getf_or(args,"eps",1e-6);
     const double wadd=rad_args_getf_or(args,"wadd",0.0);
-    if (!__builtin_isfinite(eps) || eps<0.0 || !__builtin_isfinite(wadd))
+    if (!std::isfinite(eps) || eps<0.0 || !std::isfinite(wadd))
         return RAD_E_INVAL;
     *g={static_cast<const uint16_t*>(x.data),w.data,
         static_cast<uint16_t*>(y.data),uint32_t(m),uint32_t(n),
