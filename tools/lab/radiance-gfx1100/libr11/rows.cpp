@@ -1,9 +1,28 @@
 // A deliberately incomplete gfx1100 Radiance plugin. Never advertise an untested band.
 #include "rad_abi.h"
+#include "rad_plugin.h"
 #include <cstring>
 
 extern "C" int r11_add_bf16(const RadArgs*, RadStream);
 extern "C" int r11_mul_bf16(const RadArgs*, RadStream);
+
+// Describe the full-size (non-broadcast) operand geometry for rad-kbench.
+// The broadcast variant is covered separately by r11_selftest.
+static int binary_shape(const RadParam* p, int n_p, int operand, RadOpdDesc* out) {
+    if (!out || operand < 0 || operand >= 3) return RAD_E_SHAPE;
+    const long long m = rad_param_getdim(p, n_p, "M", 0);
+    const long long n = rad_param_getdim(p, n_p, "n", 0);
+    const char* dtype = rad_param_gets(p, n_p, "dtype", nullptr);
+    if (m < 1 || n < 1 || !dtype || std::strcmp(dtype, "bf16") != 0)
+        return RAD_E_SHAPE;
+    *out = {};
+    out->dtype = RAD_BF16;
+    out->rank = 2;
+    out->shape[0] = m;
+    out->shape[1] = n;
+    out->fill = RAD_FILL_NORMAL;
+    return RAD_OK;
+}
 
 static const RadConstraint kBf16[] = { RAD_CIN("dtype", "bf16") };
 static const RadKernelInfo kKernels[] = {
@@ -19,6 +38,7 @@ static const RadKernelInfo kKernels[] = {
         .constraints = kBf16,
         .n_constraints = 1,
         .launch = r11_add_bf16,
+        .opd_shape = binary_shape,
     },
     {
         .name = "r11_mul_bf16",
@@ -32,6 +52,7 @@ static const RadKernelInfo kKernels[] = {
         .constraints = kBf16,
         .n_constraints = 1,
         .launch = r11_mul_bf16,
+        .opd_shape = binary_shape,
     },
 };
 static const RadPluginInfo kInfo = {
