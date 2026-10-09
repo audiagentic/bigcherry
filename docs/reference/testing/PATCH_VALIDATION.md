@@ -45,7 +45,7 @@ Keep these authorities separate:
 Every production patch is a package:
 
 ```text
-patches/<patch-id>/
+engines/llamacpp/patches/<patch-id>/
     patch.py
     patch.toml
     SUMMARY.md
@@ -486,7 +486,7 @@ resolution until the prospective canonical-composition seam exists.
 The campaign normally writes:
 
 ```text
-patches/<patch-id>/evidence/validation.json
+engines/llamacpp/patches/<patch-id>/evidence/validation.json
 artifacts/patch-validation/<patch-id>/<campaign-identity>/
 ```
 

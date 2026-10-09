@@ -1,4 +1,4 @@
-"""HI105: patches/1236 gives test_generic_op's GGML_OP_MUL_MAT_ID
+"""HI105: engines/llamacpp/patches/1236 gives test_generic_op's GGML_OP_MUL_MAT_ID
 initializer a deterministic, full-expert-range branch under
 BIGCHERRY_TEST_DETERMINISTIC_SEED. Verified against the real pinned
 vendor source (not a synthetic fixture) that the fix is idempotent, that
@@ -15,6 +15,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from bigcherry.core import paths  # noqa: E402
 from bigcherry.patcher import apply_all
 
 
@@ -23,7 +24,7 @@ ROOT = Path(__file__).resolve().parents[3]
 
 def _load_patch_module(patch_id: str):
     spec = importlib.util.spec_from_file_location(
-        patch_id, ROOT / "patches" / patch_id / "patch.py"
+        patch_id, ROOT / "engines" / "llamacpp" / "patches" / patch_id / "patch.py"
     )
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
@@ -38,7 +39,7 @@ _REL = "tests/test-backend-ops.cpp"
 
 
 def _apply_to_copy(tmp_path: Path, patches) -> Path:
-    vendor = ROOT / "vendor" / "llama.cpp"
+    vendor = paths.llama_root()
     target = tmp_path / _REL
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(vendor / _REL, target)

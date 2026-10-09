@@ -1,0 +1,30 @@
+# Engine pillar: radiance (run-multi-engine MEN01, MEN02). Evaluate lane only: no patches or overlay files yet.
+# On the lab host the source checkout currently lives under the work root (see tools/lab/radiance/); the vendor
+# location below is where it belongs once builds go through the platform's build lanes (MEN04).
+schema = 1
+name = "radiance"
+upstream = "https://codeberg.org/StillDeadcode/radiance"
+
+[layout]
+patches = "engines/radiance/patches"
+overlay = "engines/radiance/overlay"
+vendor = "vendor/radiance"
+
+# How the server is run (run-multi-engine MEN03). The plugins (kernel libraries, architectures, quantisers) are found
+# through RADIANCE_HOME, which a source build places beside its bin/ directory.
+[serve]
+binary = "bin/radiance"
+model-flag = "--model"
+host-flag = "--host"
+port-flag = "--port"
+health = "/health"
+shutdown = "sigint"
+
+[serve.env-from-binary]
+RADIANCE_HOME = "../radiance_home"
+
+[serve.draft-stats]
+source = "metrics"
+path = "/metrics"
+drafted = "radiance:draft_tokens_total"
+accepted = "radiance:draft_accepted_total"

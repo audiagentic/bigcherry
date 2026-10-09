@@ -1,18 +1,23 @@
-"""HI130: real llama-server process lifecycle, extracted from
+"""HI130: real server process lifecycle for any declared engine, extracted from
 e2e_smoke_campaign.py's Campaign class so tune-campaign's workflow.py (and
 any other future orchestrator) can drive a real server without duplicating
 this logic or depending on e2e_smoke_campaign's own pre-built-binary,
 non-campaign-engine assumptions.
 
-Real subprocess + real HTTP against a real llama-server -- there is no
+Real subprocess + real HTTP against a real server -- there is no
 mock/simulation mode. Callers that need to avoid touching a GPU should not
 call this module at all.
+
+The engine's declaration (engines/<name>/engine.toml, [serve]) says which flags name the model, host and port, which
+route reports health, how the server is stopped and where its drafter counters are read (MEN03). LLAMACPP_SERVE is
+the llama.cpp engine's.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import re
 import signal
 import subprocess
 import time
@@ -20,6 +25,11 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 from dataclasses import dataclass
+
+from ..core import paths
+from ..core.engines import ServeSpec
+
+LLAMACPP_SERVE = paths.LLAMACPP.serve
 
 
 def _free_port(host: str) -> int:
@@ -57,9 +67,10 @@ class ShutdownResult:
 
 
 class ServerRunner:
-    """One real llama-server process, launched, health-checked, driven
+    """One real engine server process, launched, health-checked, driven
     with real HTTP requests, and shut down cleanly.
 
+    ``serve`` is the engine's declared serve specification. For llama.cpp
     ``LLAMA_SERVER_ENABLE_SHUTDOWN=1`` + the opt-in ``/shutdown`` route is
     used for teardown rather than a bare process kill: a plain kill skips
     backend teardown and silently discards buffered HIP autotune
@@ -69,17 +80,23 @@ class ServerRunner:
     """
 
     def __init__(
-        self, *, binary: Path, model: Path, host: str = "127.0.0.1",
+        self, *, serve: ServeSpec, binary: Path, model: Path, host: str = "127.0.0.1",
         port: int | None = None,
         extra_args: tuple[str, ...] = (), env_overrides: dict[str, str] | None = None,
         env_unset: tuple[str, ...] = (),
         log_path: Path | None = None, command_prefix: tuple[str, ...] = (),
-        shutdown_method: str = "http",
+        shutdown_method: str | None = None,
     ):
+        # None takes the engine's declared method; "sigint" is also how a build without the engine's shutdown route
+        # (a stock upstream llama-server) is stopped.
+        shutdown_method = serve.shutdown_method if shutdown_method is None else shutdown_method
         if shutdown_method not in ("http", "sigint"):
             raise ValueError("shutdown_method must be http or sigint")
+        if shutdown_method == "http" and not serve.shutdown_path:
+            raise ValueError("this engine declares no shutdown route; it is stopped with sigint")
         if shutdown_method == "sigint" and (os.name == "nt" or command_prefix):
             raise ValueError("sigint shutdown requires an unwrapped POSIX server")
+        self.serve = serve
         self.binary = binary
         self.model = model
         self.host = host
@@ -128,12 +145,14 @@ class ServerRunner:
         env = dict(os.environ)
         for name in self.env_unset:
             env.pop(name, None)
+        env.update(dict(self.serve.env))
+        for name, relative in self.serve.env_from_binary:
+            env[name] = str((Path(self.binary).parent / relative).resolve())
         env.update(self.env_overrides)
-        env["LLAMA_SERVER_ENABLE_SHUTDOWN"] = "1"
         args = [
             *self.command_prefix,
-            str(self.binary), "-m", str(self.model),
-            "--port", str(self.port), "--host", self.host,
+            str(self.binary), self.serve.model_flag, str(self.model),
+            self.serve.port_flag, str(self.port), self.serve.host_flag, self.host,
             *self.extra_args,
         ]
         if self.log_path is not None:
@@ -154,7 +173,7 @@ class ServerRunner:
                     f"before becoming healthy: {tail}"
                 )
             try:
-                with urllib.request.urlopen(f"{self._base_url()}/health", timeout=2) as resp:
+                with urllib.request.urlopen(f"{self._base_url()}{self.serve.health}", timeout=2) as resp:
                     if resp.status == 200:
                         return
             except (urllib.error.URLError, OSError, TimeoutError):
@@ -194,7 +213,7 @@ class ServerRunner:
             if self.shutdown_method == "sigint":
                 self._proc.send_signal(signal.SIGINT)
             else:
-                self.post_json("/shutdown", {}, timeout_s=timeout_s)
+                self.post_json(self.serve.shutdown_path, {}, timeout_s=timeout_s)
             requested = True
         except (ServerError, OSError) as exc:
             error = str(exc)
@@ -210,6 +229,36 @@ class ServerRunner:
         )
         self._proc = None
         return self.last_shutdown
+
+    def draft_stats(self) -> tuple[int, int] | None:
+        """(drafted, accepted) token totals so far, read the way the engine declares; None when it declares no
+        source or has reported nothing yet."""
+        stats = self.serve.draft_stats
+        if stats is None:
+            return None
+        if stats.source == "log":
+            if self.log_path is None or not self.log_path.is_file():
+                return None
+            found = None
+            for found in re.finditer(stats.pattern, self.log_path.read_text(encoding="utf-8", errors="replace")):
+                pass
+            return (int(found.group("drafted")), int(found.group("accepted"))) if found else None
+        try:
+            with urllib.request.urlopen(f"{self._base_url()}{stats.path}", timeout=30) as resp:
+                text = resp.read().decode("utf-8", errors="replace")
+        except (urllib.error.URLError, OSError, TimeoutError) as exc:
+            raise ServerError(f"GET {stats.path} failed: {exc}") from exc
+        totals = {}
+        for line in text.splitlines():
+            if line.startswith("#") or not line.strip():
+                continue
+            metric, _, value = line.rpartition(" ")
+            name = metric.split("{", 1)[0]
+            if name in (stats.drafted, stats.accepted):
+                totals[name] = totals.get(name, 0.0) + float(value)
+        if stats.drafted not in totals or stats.accepted not in totals:
+            return None
+        return int(totals[stats.drafted]), int(totals[stats.accepted])
 
     def _log_tail(self, n: int = 15) -> str:
         if self.log_path is None or not self.log_path.is_file():

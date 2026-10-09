@@ -14,10 +14,11 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from bigcherry.core import paths  # noqa: E402
 from bigcherry.patcher import apply_all  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
-_V = _REPO / "vendor/llama.cpp"
+_V = paths.llama_root()
 _PIN = "HEAD"  # the vendor checkout is at the pinned revision
 _META = "ggml/src/ggml-backend-meta.cpp"
 _BACKEND = "ggml/src/ggml-backend.cpp"
@@ -45,13 +46,13 @@ def _pinned(path):
     return res.stdout
 
 
-_P1283 = _load("patch_1283", _REPO / "patches/1283_qwen4exp_expert_parallel/patch.py")
-_P1303 = _load("patch_1303", _REPO / "patches/1303_attn_kv_tensor_split/patch.py")
-_P1326 = _load("patch_1326", _REPO / "patches/1326_sched_async_host_inputs/patch.py")
-_MERGED = _load("patch_1340", _REPO / "patches/1340_meta_per_device_arena/patch.py")
+_P1283 = _load("patch_1283", _REPO / "engines/llamacpp/patches/1283_qwen4exp_expert_parallel/patch.py")
+_P1303 = _load("patch_1303", _REPO / "engines/llamacpp/patches/1303_attn_kv_tensor_split/patch.py")
+_P1326 = _load("patch_1326", _REPO / "engines/llamacpp/patches/1326_sched_async_host_inputs/patch.py")
+_MERGED = _load("patch_1340", _REPO / "engines/llamacpp/patches/1340_meta_per_device_arena/patch.py")
 _P1339 = SimpleNamespace(PATCHES=[p for p in _MERGED.PATCHES if p.description.startswith("1339:")])
 _P = SimpleNamespace(PATCHES=[p for p in _MERGED.PATCHES if p.description.startswith("1340:")])
-_P1341 = _load("patch_1341", _REPO / "patches/1341_meta_subset_mirrored/patch.py")
+_P1341 = _load("patch_1341", _REPO / "engines/llamacpp/patches/1341_meta_subset_mirrored/patch.py")
 _SRC = {path: _pinned(path) for path in (
     _META, _BACKEND, _ALLOC, _ALLOC_H, _META_H, _MODEL, _FATTN, "ggml/src/ggml-cuda/ggml-cuda.cu"
 )}
@@ -266,7 +267,7 @@ class Patch1340Mechanics(unittest.TestCase):
 
     def test_plan_identity_includes_the_output_set(self):
         """A draft enabling layer-input extraction after reserve must not reuse a plan made without those outputs."""
-        src = pathlib.Path(__file__).resolve().parents[3] / "patches" / "1340_meta_per_device_arena" / "patch.py"
+        src = pathlib.Path(__file__).resolve().parents[3] / "engines" / "llamacpp" / "patches" / "1340_meta_per_device_arena" / "patch.py"
         text = src.read_text(encoding="utf-8")
         self.assertIn("ggml_backend_meta_arena_out_sig(const struct ggml_cgraph & cgraph)", text)
         self.assertIn("bc.arena_plans[i_plan].out_sig != out_sig", text)

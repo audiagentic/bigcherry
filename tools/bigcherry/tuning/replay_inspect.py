@@ -22,7 +22,7 @@ from typing import Any
 
 from .catalog import CatalogError, build_descriptor
 
-# hip-autotune-inspect exit codes (src/ggml/src/ggml-cuda/hip-autotune-inspect.cpp).
+# hip-autotune-inspect exit codes (engines/llamacpp/overlay/ggml/src/ggml-cuda/hip-autotune-inspect.cpp).
 EXIT_OK = 0
 EXIT_REGISTRY_ANOMALY = 1
 EXIT_USAGE = 2

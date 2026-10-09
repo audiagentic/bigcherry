@@ -1,5 +1,5 @@
 """Source contracts for the HI18 SPLIT_REDUCE correctness probe:
-patches/1224's CMake wiring, the standalone test-hip-reduce.cpp probe
+engines/llamacpp/patches/1224's CMake wiring, the standalone test-hip-reduce.cpp probe
 source, and the HI58 telemetry test-capture seam it relies on
 (hip-autotune-reduce-telemetry.h/.cpp)."""
 
@@ -10,18 +10,19 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from bigcherry.core import paths  # noqa: E402
 from bigcherry.patcher import apply_all
 
 
 ROOT = Path(__file__).resolve().parents[3]
-PATCH = (ROOT / "patches" / "1224_hi18_reduce_correctness_probe" / "patch.py").read_text(encoding="utf-8")
-PROBE = (ROOT / "src/tests/test-hip-reduce.cpp").read_text(encoding="utf-8")
-HEADER = (ROOT / "src/ggml/src/ggml-cuda/hip-autotune-reduce-telemetry.h").read_text(encoding="utf-8")
-TELEMETRY = (ROOT / "src/ggml/src/ggml-cuda/hip-autotune-reduce-telemetry.cpp").read_text(encoding="utf-8")
+PATCH = (ROOT / "engines" / "llamacpp" / "patches" / "1224_hi18_reduce_correctness_probe" / "patch.py").read_text(encoding="utf-8")
+PROBE = (ROOT / "engines/llamacpp/overlay/tests/test-hip-reduce.cpp").read_text(encoding="utf-8")
+HEADER = (ROOT / "engines/llamacpp/overlay/ggml/src/ggml-cuda/hip-autotune-reduce-telemetry.h").read_text(encoding="utf-8")
+TELEMETRY = (ROOT / "engines/llamacpp/overlay/ggml/src/ggml-cuda/hip-autotune-reduce-telemetry.cpp").read_text(encoding="utf-8")
 
 _spec = importlib.util.spec_from_file_location(
     "hi18_reduce_correctness_probe_patch",
-    ROOT / "patches" / "1224_hi18_reduce_correctness_probe" / "patch.py",
+    ROOT / "engines" / "llamacpp" / "patches" / "1224_hi18_reduce_correctness_probe" / "patch.py",
 )
 assert _spec and _spec.loader
 _module = importlib.util.module_from_spec(_spec)
@@ -29,7 +30,7 @@ _spec.loader.exec_module(_module)
 
 
 def _apply_to_copy(tmp_path: Path) -> Path:
-    vendor = ROOT / "vendor" / "llama.cpp"
+    vendor = paths.llama_root()
     target = tmp_path / "tests" / "CMakeLists.txt"
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(vendor / "tests" / "CMakeLists.txt", target)

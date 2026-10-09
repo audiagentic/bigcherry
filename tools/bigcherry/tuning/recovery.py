@@ -59,7 +59,7 @@ from typing import Any, Protocol
 
 from . import behavioral_gate as behavioral_gate_mod
 from . import replay as replay_mod
-from .server_runner import ServerError, ServerRunner
+from .server_runner import ServerError, ServerRunner, LLAMACPP_SERVE
 
 DEFAULT_MAX_RECOVERY_EVALUATIONS = 24
 RESERVE_FINAL_VALIDATION = 1
@@ -524,6 +524,7 @@ class AssignmentExecutor:
         load, not two, cutting recovery-search cost roughly in half."""
         env = {"HIP_VISIBLE_DEVICES": self.devices, "GGML_HIP_DISPATCH_MODE": "native"}
         runner = ServerRunner(
+            serve=LLAMACPP_SERVE,
             binary=self.binary_path, model=self.model_path, extra_args=self.common_args,
             env_overrides=env, log_path=self.workdir / "recovery-native.log",
         )
@@ -654,6 +655,7 @@ class AssignmentExecutor:
             "GGML_HIP_DISPATCH_CACHE": str(cache_path),
         }
         runner = ServerRunner(
+            serve=LLAMACPP_SERVE,
             binary=self.binary_path, model=self.model_path, extra_args=self.common_args,
             env_overrides=env, log_path=self.workdir / f"recovery-probe-{proposal.label.replace(':', '_')}.log",
         )
