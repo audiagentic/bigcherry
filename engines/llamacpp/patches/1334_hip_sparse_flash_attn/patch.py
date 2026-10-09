@@ -49,14 +49,14 @@ static bool bc_fa_sparse_enabled() {
     return on;
 }
 
-// BigCherry 1334: fewest queries in a batch for the sparse path (BIGCHERRY_FA_SPARSE_MIN_Q, default 64, floor 5).
-// Decode and MTP verification batches stay on the dense path, so their sums are the ones the drafter was matched to;
-// the sparse path's gain is in prefill-sized batches.
+// BigCherry 1334: fewest queries in a batch for the sparse path (BIGCHERRY_FA_SPARSE_MIN_Q, default 64, floor 1).
+// 5 is the patch's first behaviour (batches that reach the 8x8 kernel). At 1 decode and MTP verification batches take
+// the sparse kernel too (2x8 or 4x8), so every batch width forms attention sums the same way.
 static int64_t bc_fa_sparse_min_q() {
     static const int64_t n = [] {
         const char * s = getenv("BIGCHERRY_FA_SPARSE_MIN_Q");
         const int64_t v = s != nullptr ? atoll(s) : 64;
-        return v < 5 ? (int64_t) 5 : v;
+        return v < 1 ? (int64_t) 1 : v;
     }();
     return n;
 }
@@ -200,8 +200,9 @@ _N_RDNA = (_A_RDNA +
            "        // BigCherry 1334: the sparse kernels exist at ncols2 = 8 only; when the sparse path would be taken, reading\n"
            "        // n_kv_max instead of n_kv cells outweighs the padded GQA tile (same choice as the generic rule below)\n"
            "        if constexpr (ggml_cuda_flash_attn_ext_mma_f16_may_use_sparse(DKQ, DV, 8, 8)) {\n"
-           "            // only batches that reach the 8x8 kernel (more than 32/8 queries); smaller ones keep the exact-GQA shape\n"
-           "            if (use_gqa_opt && gqa_ratio > 4 && Q->ne[1] > 32/8 &&\n"
+           "            // batches of at least BIGCHERRY_FA_SPARSE_MIN_Q queries (tested in shall_use_sparse); smaller ones keep\n"
+           "            // the exact-GQA shape. At 1 a decode step runs the 2x8 sparse kernel, the same sums as prefill.\n"
+           "            if (use_gqa_opt && gqa_ratio > 4 &&\n"
            "                    ggml_cuda_flash_attn_ext_mma_f16_shall_use_sparse(cc, dst, 8, 8)) {\n"
            "                static bool bc_hit = false;\n"
            "                if (!bc_hit && getenv(\"BIGCHERRY_PATCH_TRACE\") != nullptr) {\n"
@@ -265,6 +266,6 @@ ENV_DOCS = (
            "sparse flash attention on RDNA WMMA - masked attention with a per-query cell bound (Qwen4Exp QSA) "
            "reads only the cells its queries can see"),
     EnvDoc("BIGCHERRY_FA_SPARSE_MIN_Q", "N", "64",
-           "fewest queries in a batch for the sparse flash attention path (floor 5); smaller batches - decode and MTP "
-           "verification - keep the dense path, so draft acceptance is not affected"),
+           "fewest queries in a batch for the sparse flash attention path (floor 1); 1 sends decode and MTP "
+           "verification batches through the sparse kernel too, the same sums as prefill"),
 )

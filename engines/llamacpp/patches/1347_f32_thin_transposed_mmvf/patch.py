@@ -47,14 +47,14 @@ static bool bc_f32_thin_mmvf() {
     return on;
 }
 
-// bigcherry 1347: fewest activation columns for the role swap (BIGCHERRY_F32_THIN_MMVF_MIN_COLS, default 64, floor
-// MMVF_MAX_BATCH_SIZE + 1). Decode and MTP verification batches stay on SGEMM, so their sums are the ones the drafter
-// was matched to; the gain is in prefill-sized batches.
+// bigcherry 1347: fewest activation columns for the role swap (BIGCHERRY_F32_THIN_MMVF_MIN_COLS, default 64, floor 1).
+// At 8 or less the swap also takes decode and MTP verification batches (see bc_thin_first in ggml_cuda_mul_mat), so
+// every batch width forms these sums in one order.
 static int64_t bc_f32_thin_mmvf_min_cols() {
     static const int64_t n = [] {
         const char * s = getenv("BIGCHERRY_F32_THIN_MMVF_MIN_COLS");
         const int64_t v = s != nullptr ? atoll(s) : 64;
-        return v <= MMVF_MAX_BATCH_SIZE ? (int64_t) MMVF_MAX_BATCH_SIZE + 1 : v;
+        return v < 1 ? (int64_t) 1 : v;
     }();
     return n;
 }
@@ -93,6 +93,21 @@ _N_THIN = r"""    // bigcherry 1347 (QFP34): a thin F32 weight (2..8 rows) again
         return;
     }
 """ + _A_MMF
+
+_A_MMVF = ("    if (ggml_cuda_should_use_mmvf(src0->type, cc, warp_size, src0->ne, src0->nb, ne11)) {\n"
+           "        // The custom F16 vector kernel can be used over batched cuBLAS GEMM.\n")
+_N_MMVF = r"""    // bigcherry 1347: with BIGCHERRY_F32_THIN_MMVF_MIN_COLS at 8 or less, a narrow (decode) batch against a thin F32
+    // weight is left for the role swap below instead of the normal orientation here, so decode forms its sums in
+    // the same order as prefill (the vector kernel's reduction depends on how many vectors it is given: the
+    // weight's rows in the swapped form, the batch's columns in this one).
+    const bool bc_thin_first = bc_f32_thin_mmvf() && ne01 >= 2 && ne01 <= MMVF_MAX_BATCH_SIZE
+            && ne11 >= bc_f32_thin_mmvf_min_cols() && ne11 <= MMVF_MAX_BATCH_SIZE && ne2 == 1 && ne3 == 1
+            && src0->type == GGML_TYPE_F32
+            && ggml_is_contiguous(src0) && ggml_is_contiguous(src1) && ggml_is_contiguous(dst)
+            && ggml_cuda_should_use_mmvf(src1->type, cc, warp_size, src1->ne, src1->nb, /*ne11 =*/ 1);
+    if (!bc_thin_first && ggml_cuda_should_use_mmvf(src0->type, cc, warp_size, src0->ne, src0->nb, ne11)) {
+        // The custom F16 vector kernel can be used over batched cuBLAS GEMM.
+"""
 
 PATCHES = [
     FilePatch(
@@ -139,6 +154,17 @@ PATCHES = [
                 expect_matches=1,
                 max_span_lines=3,
             ),
+            Edit(
+                id="f32-thin-before-mmvf",
+                anchor=re.escape(_A_MMVF),
+                mode="replace",
+                text=_N_MMVF,
+                guard=r"const bool bc_thin_first = bc_f32_thin_mmvf\(\)",
+                rationale="Upstream's first test in ggml_cuda_mul_mat: a batch of up to 8 columns goes to the vector "
+                          "kernel in the normal orientation there, before the thin case is reached.",
+                expect_matches=1,
+                max_span_lines=3,
+            ),
         ),
     ),
 ]
@@ -148,6 +174,6 @@ ENV_DOCS = (
            "F32 matmuls with a 2..8-row weight and more than 8 columns (Qwen4Exp hyper-connection inject projections) "
            "run through the vector kernel with the roles swapped instead of SGEMM; 0 restores SGEMM"),
     EnvDoc("BIGCHERRY_F32_THIN_MMVF_MIN_COLS", "N", "64",
-           "fewest activation columns for the thin-F32 role swap (floor 9); smaller batches - decode and MTP "
-           "verification - keep SGEMM, so draft acceptance is not affected"),
+           "fewest activation columns for the thin-F32 role swap (floor 1); 1 sends every batch width through the "
+           "swap, so decode and MTP verification form these sums in the same order as prefill"),
 )
