@@ -7,14 +7,14 @@ resumable command, so a bump is released the same way every time:
   record   the gate output and the hardware evidence go into the release record, the transition marker is removed
   notes    the release notes are generated and committed with the `Release-As: <llama build>.0.0` footer
   main     the work branch takes origin/main in (if main moved) and main is fast-forwarded to it
-  release  release-please's PR is merged; the workflow tags bc-<llama tag> and publishes the notes
+  release  release-please's PR is merged; the workflow tags bc-llamacpp-<version> and publishes the notes
   sync     the work branch takes the release commit back
 
 Each phase first checks whether it is already done, so the command can be run again after any stop. Nothing here
 decides whether the bump is GOOD: the caller states the hardware evidence (--evidence), which is recorded verbatim.
 
-Versions and tags. release-please owns the tags: bc-<llama build>.<minor>.<patch> (config/release.toml tag-prefix).
-The first release of a pin is <build>.0.0; the workflow also points bc-b<build> at it. While the pin stays, further
+Versions and tags. release-please owns the tags: bc-llamacpp-<llama build>.<minor>.<patch> (config/release.toml tag-prefix).
+The first release of a pin is <build>.0.0; the workflow also adds the readable tag bc-llamacpp-b<build>-r0 to it. While the pin stays, further
 BigCherry releases raise minor (features) or patch (fixes): `pin-release <tag> --bump minor|patch` picks the next
 version after the newest bc-<build>.* tag, `--version` states it. Every release goes through the same phases.
 """
@@ -32,6 +32,10 @@ from pathlib import Path
 from . import notes as _notes
 
 PHASES = ("gate", "record", "notes", "main", "release", "sync")
+
+
+# The release-please package (a path in release-please-config.json) that carries the llama.cpp engine's release line.
+RELEASE_PACKAGE = "engines/llamacpp"
 
 
 class PinReleaseError(RuntimeError):
@@ -225,7 +229,8 @@ def _open_release_pr(plan: Plan) -> bool:
     (the workflow run then fails). Open the PR from that branch, labelled as release-please expects. Returns whether a
     PR was opened."""
     root = plan.repo_root
-    component = json.loads((root / "release-please-config.json").read_text(encoding="utf-8"))["packages"]["."]["component"]
+    package = json.loads((root / "release-please-config.json").read_text(encoding="utf-8"))["packages"][RELEASE_PACKAGE]
+    component = package["component"]
     branch = f"release-please--branches--{plan.main}--components--{component}"
     if not _git(root, "ls-remote", "--heads", plan.remote, f"refs/heads/{branch}", check=False):
         return False
@@ -234,7 +239,7 @@ def _open_release_pr(plan: Plan) -> bool:
     if plan.version not in subject:
         return False   # the branch is still the previous release's
     title = f"release: {component} {plan.version}"
-    body = release_pr_body(_git(root, "show", f"FETCH_HEAD:{json.loads((root / 'release-please-config.json').read_text(encoding='utf-8'))['packages']['.']['changelog-path']}"),
+    body = release_pr_body(_git(root, "show", f"FETCH_HEAD:{RELEASE_PACKAGE}/{package['changelog-path']}"),
                            plan.version)
     made = _run(root, "gh", "pr", "create", "--base", plan.main, "--head", branch, "--title", title, "--body", body,
                 "--label", "autorelease: pending", check=False)
