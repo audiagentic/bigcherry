@@ -263,16 +263,48 @@ def _replace_section_patches(text: str, section: str, patches: Iterable[str]) ->
     return text[: match.start(2)] + new_body + text[match.end(2) :]
 
 
+def _append_section_patches(text: str, section: str, current: Iterable[str], added: Iterable[str]) -> str:
+    """Append ids to a section's patches array in place: every existing line, comment and indent is kept."""
+    added = list(added)
+    if not added:
+        return text
+    section_re = re.compile(rf"(?ms)(^\[{re.escape(section)}\]\s*\n)(.*?)(?=^\[|\Z)")
+    match = section_re.search(text)
+    if not match:
+        raise PatchPromoteError(f"config/recipes.toml: missing [{section}]")
+    array = re.search(r"(?ms)^patches\s*=\s*\[[ \t]*\n(.*?)^\]", match.group(2))
+    if not array:
+        # a one-line or empty array has no per-entry comments to keep
+        return _replace_section_patches(text, section, [*current, *added])
+    body = array.group(1)
+    indents = re.findall(r'(?m)^([ \t]*)"[^"\n]+"', body)
+    indent = indents[-1] if indents else "    "
+    lines = body.splitlines(keepends=True)
+    for i in range(len(lines) - 1, -1, -1):  # the last entry needs a trailing comma before more follow
+        entry = re.match(r'^([ \t]*"[^"\n]+")([ \t]*)(#.*)?(\r?\n?)$', lines[i])
+        if entry:
+            lines[i] = f"{entry.group(1)},{entry.group(2)}{entry.group(3) or ''}{entry.group(4)}"
+            break
+        if re.match(r'^[ \t]*"[^"\n]+",', lines[i]):
+            break
+    body = "".join(lines)
+    if body and not body.endswith("\n"):
+        body += "\n"
+    body += "".join(f"{indent}{json.dumps(x)},\n" for x in added)
+    start = match.start(2) + array.start(1)
+    end = match.start(2) + array.end(1)
+    return text[:start] + body + text[end:]
+
+
 def _update_recipes(root: Path, patch_ids: tuple[str, ...]) -> Path:
     path = root / "config" / "recipes.toml"
     text = path.read_text(encoding="utf-8")
     raw = tomllib.loads(text)
     sets = raw.get("patch-set", {})
     production = list(sets.get("validated-enhancements", {}).get("patches", []))
-    for patch_id in patch_ids:
-        if patch_id not in production:
-            production.append(patch_id)
-    text = _replace_section_patches(text, "patch-set.validated-enhancements", production)
+    text = _append_section_patches(
+        text, "patch-set.validated-enhancements", production, [p for p in patch_ids if p not in production]
+    )
 
     experiments = raw.get("experiment", {})
     for name, config in experiments.items():
