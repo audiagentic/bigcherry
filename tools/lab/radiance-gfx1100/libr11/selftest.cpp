@@ -78,7 +78,7 @@ int main(int argc, char** argv) {
     hipDeviceProp_t props{};
     HIP_CHECK(hipGetDeviceProperties(&props, 0));
     if (std::strncmp(props.gcnArchName, "gfx1100", 7) != 0) {
-        std::fprintf(stderr, "expected gfx1100, got %s\\n", props.gcnArchName);
+        std::fprintf(stderr, "expected gfx1100, got %s\n", props.gcnArchName);
         return 2;
     }
     HIP_CHECK(hipMalloc(reinterpret_cast<void**>(&da), sizeof(ah)));
