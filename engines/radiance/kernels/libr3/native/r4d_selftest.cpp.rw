@@ -1,0 +1,12 @@
+# radiance's selftest has no MXFP4 decode case with one activation row, which is the case libr3's vector kernel
+# (r3_mxfp4_gemv.h) serves. Add them beside the first decode case: both activation scale grids, an N that is not a
+# multiple of the 128-column block, and the 27B's deepest K.
+@@ find 1
+        mxfp4a8_numeric(pl, "gemm_mxfp4a8_decode", 8, 272, 640, 0, false);
+@@ replace
+        mxfp4a8_numeric(pl, "gemm_mxfp4a8_decode", 8, 272, 640, 0, false);
+        mxfp4a8_numeric(pl, "gemm_mxfp4a8_decode", 1, 272, 640, 0, false);   // libr3: M = 1
+        mxfp4a8_numeric(pl, "gemm_mxfp4a8_decode", 1, 272, 640, 0, true);
+        mxfp4a8_numeric(pl, "gemm_mxfp4a8_decode", 1, 400, 2560, 0, true);
+        mxfp4a8_numeric(pl, "gemm_mxfp4a8_decode", 1, 5120, 17408, 0, false);
+@@ end

@@ -3,8 +3,9 @@
 // libr4d's decode kernel (r4d_gemm_mxfp4a8_decode) gives a single token a 16-row WMMA fragment: 15 of every 16
 // products the matrix instruction forms are for rows nobody asked for. On gfx12 the instruction is fast enough that
 // the kernel still runs near the memory rate. On gfx11 it does not, so for M = 1 libr3 launches this kernel from
-// the same entry point, on the same operands, instead (native/r4d_gemm_mxfp4a8_decode.hip.rw). R3_GEMV=0 in the
-// environment keeps libr4d's kernel.
+// the same entry point, on the same operands, instead (native/r4d_gemm_mxfp4a8_decode.hip.rw) when R3_GEMV=1 is in
+// the environment. NOT CORRECT YET: the first serve run (r3-serve8, 2026-10-10) produced wrong text and 11.4 tok/s,
+// so it is off by default.
 //
 // Structure after hipfire's gfx1100 decode kernels (gemv_hfp4g32.gfx1100.hip, Apache-2.0, Kaden Schutt): no matrix
 // instruction and no shared-memory staging of the weight; the weight is decoded in registers as it streams.
@@ -33,7 +34,7 @@
 static inline bool r3_gemv_on() {
     static const bool on = [] {
         const char* e = std::getenv("R3_GEMV");
-        return e == nullptr || std::atoi(e) != 0;
+        return e != nullptr && std::atoi(e) != 0;  // off until it passes the selftest's M = 1 cases
     }();
     return on;
 }
