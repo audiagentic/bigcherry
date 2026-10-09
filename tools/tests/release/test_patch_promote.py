@@ -127,7 +127,41 @@ class PatchPromoteTests(unittest.TestCase):
         self.assertEqual(recipes["experiment"]["demo"]["patches"], [])
         self.assertEqual(recipes["experiment"]["combo"]["patches"], ["1000_base"])
 
+    def test_production_list_keeps_its_comments_and_layout(self):
+        path = self.root / "config" / "recipes.toml"
+        listed = (
+            'patches = [\n'
+            '    "1000_base",\n'
+            '    # PROMOTED 2026-10-08: why 1001 is here\n'
+            '    "1001_other"  # no trailing comma yet\n'
+            ']\n'
+        )
+        path.write_text(_RECIPES.replace('patches = ["1000_base"]\n', listed, 1), encoding="utf-8")
+        before = path.read_text(encoding="utf-8")
 
+        pp._update_recipes(self.root, ("1348_demo",))
+
+        after = path.read_text(encoding="utf-8")
+        self.assertIn(
+            'patches = [\n'
+            '    "1000_base",\n'
+            '    # PROMOTED 2026-10-08: why 1001 is here\n'
+            '    "1001_other",  # no trailing comma yet\n'
+            '    "1348_demo",\n'
+            ']\n',
+            after,
+        )
+        self.assertEqual(
+            tomllib.loads(after)["patch-set"]["validated-enhancements"]["patches"],
+            ["1000_base", "1001_other", "1348_demo"],
+        )
+        # nothing outside the production array and the experiments that held the patch changed
+        self.assertEqual(before.split("[experiment.demo]")[0].replace(listed, ""),
+                         after.split("[experiment.demo]")[0].replace(
+                             listed.replace('"1001_other"  #', '"1001_other",  #').replace(']\n', '    "1348_demo",\n]\n'), ""))
+
+        pp._update_recipes(self.root, ("1348_demo",))  # already listed: no second entry
+        self.assertEqual(after, path.read_text(encoding="utf-8"))
 
     def test_state_update_tolerates_patch_without_python_state(self):
         info = pp._load_patch(self.root, "1348_demo")
