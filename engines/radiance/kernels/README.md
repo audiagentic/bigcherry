@@ -203,6 +203,24 @@ So the layer costs nothing where there is no WMMA, about 2 to 3 times on bf16 WM
 is involved. Native gfx11 kernels are needed first for the fp8 GEMMs and fp8-KV attention; a bf16 or f16 container
 avoids the fp8 cost without any new kernel.
 
+## First model served on one XTX, 2026-10-10 (run `r3-serve1`, `tools/lab/radiance/libr3-serve-smoke.sh`)
+
+radiance 1.3.0 with `--kernels libr3,libref --tp 1` on one RX 7900 XTX serves the MXFP4 Qwen3.8-27B container
+(19 GB file, 14.15 GiB of weights on the card, token embedding in host memory, bf16 KV, context 8192, drafter off).
+Healthy 10 s after start; 16.60 GiB allocated, 6.44 GiB of the card left free.
+
+| Request | Reply | Speed |
+|---|---|---|
+| completion, "The capital of France is", 64 tokens, greedy | " Paris.\nThe capital of Germany is Berlin.\nThe capital of Italy is Rome. ..." | 7.0 tok/s, first token 0.18 s |
+| chat, "numbers one to ten", thinking off | "1, 2, 3, 4, 5, 6, 7, 8, 9, 10" | 7.7 tok/s, first token 0.46 s |
+
+The text is right, which is the first evidence for the emulated int8 and 4-bit WMMA layouts: this container's GEMMs
+are the `gemm_mxfp4a8_*` kernels the fixture never reached. It is evidence from coherent output, not a per-kernel
+check against the reference; a fixture recorded from this container is still needed for that. Server exit 0 on SIGINT.
+
+7 tok/s is the emulation's cost, not the card's: every 4-bit and int8 WMMA call goes through software operand
+conversion and cross-lane moves. Not measured here: prefill speed on a long prompt, the drafter, more than one card.
+
 ## References for the remaining port (found 2026-10-09; read before writing kernels)
 
 The 29 excluded units need the gfx12 WMMA builtins or the gfx12 transposed load. These exist to adapt from, so none
