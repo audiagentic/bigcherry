@@ -1,5 +1,13 @@
 # Changelog
 
+## [11474.5.0](https://github.com/audiagentic/bigcherry/compare/bc-llamacpp-11474.4.0...bc-llamacpp-11474.5.0) (2026-10-09)
+
+
+### New and changed
+
+* **patch:** promote 1355_hc_post_gate_fuse ([#112](https://github.com/audiagentic/bigcherry/issues/112)) ([0a1a75a](https://github.com/audiagentic/bigcherry/commit/0a1a75aafb17e2c464e2b590884360386eeeb6b4))
+* **patch:** promote 1356_meta_dispatch_workers ([#116](https://github.com/audiagentic/bigcherry/issues/116)) ([b1330d8](https://github.com/audiagentic/bigcherry/commit/b1330d8305d3b6c58085d32731a67f3547203c69))
+
 ## [11474.4.0](https://github.com/audiagentic/bigcherry/compare/bc-llamacpp-11474.3.0...bc-llamacpp-11474.4.0) (2026-10-09)
 
 
