@@ -155,19 +155,17 @@ _N_PROLOGUE = r"""    ggml_backend_meta_context * backend_ctx = (ggml_backend_me
     // If the previous cgraph had a defined UID it can be used to skip rebuilding the subgraphs per simple backend.
 """
 
-_A_DISPATCH = r"""    for (size_t i = 0; i < backend_ctx->n_subgraphs; i++) {
-        for (size_t j = 0; j < n_backends; j++) {
+# The anchor is the inner per-backend loop only: 1320 (meta compute timing) adds lines before it and between it and
+# the AllReduce test, so neither neighbour is part of the anchor.
+_A_DISPATCH = r"""        for (size_t j = 0; j < n_backends; j++) {
             auto & bcj = backend_ctx->backend_configs[j];
             const ggml_status status = ggml_backend_graph_compute_async(bcj.backend, bcj.cgraphs[i].cgraph_main);
             if (status != GGML_STATUS_SUCCESS) {
                 return status;
             }
         }
-
-        if (n_backends > 1 && i < backend_ctx->n_subgraphs - 1) {
 """
-_N_DISPATCH = r"""    for (size_t i = 0; i < backend_ctx->n_subgraphs; i++) {
-        if (bc_parallel_dispatch) {
+_N_DISPATCH = r"""        if (bc_parallel_dispatch) {
             GGML_ASSERT(backend_ctx->bc_dispatch_workers.size() == n_backends);
             for (size_t j = 0; j < n_backends; ++j) {
                 auto & bcj = backend_ctx->backend_configs[j];
@@ -198,10 +196,8 @@ _N_DISPATCH = r"""    for (size_t i = 0; i < backend_ctx->n_subgraphs; i++) {
                 }
             }
         }
-
         // The worker join above is a host-submission join, not a GPU synchronize. Collectives preserve the
         // original ordering: every simple backend has enqueued this subgraph before AllReduce is enqueued.
-        if (n_backends > 1 && i < backend_ctx->n_subgraphs - 1) {
 """
 
 # Shared-state fix (2026-10-09): with the workers on, 5 of 12 runs produced a different greedy text; with CUDA graphs
@@ -296,9 +292,9 @@ PATCHES = [
                 mode="replace",
                 text=_N_DISPATCH,
                 guard=r"patch=1356_meta_dispatch_workers",
-                rationale="Exact serial simple-backend submission loop; join remains before the existing AllReduce boundary.",
+                rationale="Exact serial per-backend submission loop; join remains before the existing AllReduce boundary.",
                 expect_matches=1,
-                max_span_lines=11,
+                max_span_lines=8,
             ),
         ),
     ),

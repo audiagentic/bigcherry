@@ -121,8 +121,8 @@ class Patch1356Mechanics(unittest.TestCase):
             root = self._root_with_production(td)
             p = root / _F
             before = p.read_text(encoding="utf-8").replace(
-                "for (size_t i = 0; i < backend_ctx->n_subgraphs; i++) {",
-                "for (size_t i = 0; i != backend_ctx->n_subgraphs; ++i) {",
+                "const ggml_status status = ggml_backend_graph_compute_async(bcj.backend, bcj.cgraphs[i].cgraph_main);",
+                "const ggml_status status = ggml_backend_graph_compute(bcj.backend, bcj.cgraphs[i].cgraph_main);",
                 1,
             )
             p.write_text(before, encoding="utf-8")
