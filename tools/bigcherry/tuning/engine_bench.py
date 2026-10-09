@@ -150,14 +150,20 @@ def _show(value: float | None, digits: int) -> str:
 def run(*, engine: str, binary: Path, model: str, out_dir: Path, depths: Sequence[int], corpus_path: Path,
         reps: int = 2, decode: int = 512, extra_args: Sequence[str] = (), env: dict[str, str] | None = None,
         env_unset: Sequence[str] = (), label: str = "run", health_timeout_s: int = 2400, port: int | None = None,
-        report: Callable[[str], None] = print) -> dict:
-    """Launch ``engine``'s server from ``binary``, measure ``depths``, stop it, and write the result record."""
+        shutdown_method: str | None = None, report: Callable[[str], None] = print) -> dict:
+    """Launch ``engine``'s server from ``binary``, measure ``depths``, stop it, and write the result record.
+
+    ``shutdown_method`` None stops the server the way the engine declares. "sigint" is for a build without the
+    engine's shutdown route: llama.cpp's /shutdown comes from patch 0800, which the tuning source carries and the
+    production source does not.
+    """
     serve = engines.load(paths.REPO_ROOT, engine).serve
     out_dir.mkdir(parents=True, exist_ok=True)
     log_path = out_dir / f"{label}.server.log"
     runner = ServerRunner(
         serve=serve, binary=Path(binary), model=Path(model) if Path(model).exists() else model, port=port,
         extra_args=tuple(extra_args), env_overrides=dict(env or {}), env_unset=tuple(env_unset), log_path=log_path,
+        shutdown_method=shutdown_method,
     )
     record: dict = {
         "schema": SCHEMA, "engine": engine, "label": label, "binary": str(binary), "model": str(model),
@@ -183,8 +189,13 @@ def run(*, engine: str, binary: Path, model: str, out_dir: Path, depths: Sequenc
     finally:
         stopped = runner.shutdown()
         if stopped is not None:
-            record["shutdown"] = {"method": stopped.method, "clean": stopped.clean, "forced": stopped.forced,
-                                  "returncode": stopped.returncode}
+            record["shutdown"] = {"method": stopped.method, "clean": stopped.clean, "requested": stopped.requested,
+                                  "forced": stopped.forced, "returncode": stopped.returncode,
+                                  "error": stopped.error}
+            if not stopped.clean:
+                # a killed server has not flushed what it reports at exit (drafter totals, tuning measurements)
+                report(f"SHUTDOWN_NOT_CLEAN method={stopped.method} requested={int(stopped.requested)} "
+                       f"forced={int(stopped.forced)} returncode={stopped.returncode} {stopped.error or ''}".rstrip())
     if record["draft"] is None and record["server_error"] is None:
         record["draft"] = _draft(runner)  # log-reported totals are complete once the server has exited
     (out_dir / f"{label}.{RESULT}").write_text(json.dumps(record, indent=1) + "\n", encoding="utf-8", newline="\n")
@@ -214,7 +225,10 @@ def cmd_engine_bench(args) -> int:
         engine=args.engine, binary=Path(args.binary), model=args.model, out_dir=Path(args.out),
         depths=[int(d) for d in args.depth], corpus_path=Path(args.corpus), reps=args.reps, decode=args.decode,
         extra_args=tuple(args.server_args or ()), env=env, env_unset=tuple(args.unset or ()), label=args.label,
-        health_timeout_s=args.health_timeout, port=args.port,
+        health_timeout_s=args.health_timeout, port=args.port, shutdown_method=args.shutdown,
     )
-    failed = record["server_error"] is not None or any(row.get("error") for row in record["rows"])
+    failed = (
+        record["server_error"] is not None or any(row.get("error") for row in record["rows"])
+        or not (record["shutdown"] or {}).get("clean", False)
+    )
     return 1 if failed else 0

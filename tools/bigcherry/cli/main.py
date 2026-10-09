@@ -472,6 +472,10 @@ def build_parser() -> argparse.ArgumentParser:
     engine_bench_cmd.add_argument("--decode", type=int, default=512)
     engine_bench_cmd.add_argument("--port", type=int, default=None, help="default: a free port")
     engine_bench_cmd.add_argument("--health-timeout", type=int, default=2400)
+    engine_bench_cmd.add_argument(
+        "--shutdown", choices=("http", "sigint"), default=None,
+        help="default: as the engine declares; sigint for a build without the engine's shutdown route",
+    )
     engine_bench_cmd.add_argument("--env", action="append", help="NAME=VALUE for the server process; repeatable")
     engine_bench_cmd.add_argument("--unset", action="append", help="environment name the server must not inherit")
     engine_bench_cmd.add_argument(

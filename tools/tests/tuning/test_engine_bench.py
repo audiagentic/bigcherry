@@ -8,6 +8,7 @@ import sys
 import tempfile
 import textwrap
 import unittest
+import unittest.mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -50,6 +51,9 @@ _FAKE = textwrap.dedent(
 
         def do_POST(self):
             body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            if self.path == "/shutdown" and "NO_SHUTDOWN_ROUTE" in os.environ:
+                self.send_error(404)
+                return
             if self.path == "/shutdown":
                 self._send("{}")
                 print("draft acceptance = 0.50000 (    6 accepted /    12 generated)", flush=True)
@@ -69,6 +73,8 @@ _FAKE = textwrap.dedent(
             self.wfile.write(("data: " + json.dumps({"choices": [], "usage": usage}) + "\\n\\ndata: [DONE]\\n\\n").encode())
 
     signal.signal(signal.SIGINT, lambda *a: os._exit(0))
+    if "NO_SHUTDOWN_ROUTE" in os.environ:
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
     HTTPServer(("127.0.0.1", port), H).serve_forever()
     '''
 )
@@ -158,6 +164,24 @@ class EngineBenchRunTests(unittest.TestCase):
         self.assertEqual(radiance["shutdown"]["method"], "sigint")
         self.assertEqual(radiance["draft"], {"drafted": 40, "accepted": 10})
         self.assertIn("draft: accepted 10 of 40 (25.0%)", lines)
+
+    def test_a_build_without_the_shutdown_route_is_stopped_with_sigint_or_reported(self):
+        os.environ["NO_SHUTDOWN_ROUTE"] = "1"
+        self.addCleanup(os.environ.pop, "NO_SHUTDOWN_ROUTE", None)
+        record, _ = self._run("llamacpp", label="sig", shutdown_method="sigint")
+        self.assertEqual(record["shutdown"]["method"], "sigint")
+        self.assertTrue(record["shutdown"]["clean"])
+
+        # asked for the declared route on such a build: the request fails, the server is killed, and it says so
+        from bigcherry.tuning import server_runner
+        original = server_runner.ServerRunner.shutdown
+        with unittest.mock.patch.object(server_runner.ServerRunner, "shutdown",
+                                        lambda self, timeout_s=3: original(self, timeout_s=3)):
+            record, lines = self._run("llamacpp", label="route")
+        self.assertFalse(record["shutdown"]["clean"])
+        self.assertFalse(record["shutdown"]["requested"])
+        self.assertTrue(record["shutdown"]["forced"])
+        self.assertTrue(any(line.startswith("SHUTDOWN_NOT_CLEAN method=http requested=0 forced=1") for line in lines))
 
     def test_a_failed_depth_is_recorded_and_the_server_is_still_stopped(self):
         record, lines = self._run("llamacpp", label="fail", env={"FAIL_DEPTH": "400"})
