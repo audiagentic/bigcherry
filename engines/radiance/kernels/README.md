@@ -186,6 +186,23 @@ What to take: the packed add form for small M (as a kdev candidate against `bina
 kernel through the emulated WMMA is already far ahead of it, so the native GEMM work should start from libr4d's
 tiling with gfx11 fragments, not from libr11's.
 
+## libr3 on an XTX over libr4d on the R9700, 2026-10-09 (runs `libr3-b4`, `r4d-base2`)
+
+`tools/lab/radiance/r4d-baseline.sh` runs radiance's own libr4d on the R9700 over the same fixture (2083 checks, 0
+failed) and prints libr3's time over it for every shared case. Different cards, so each ratio is card plus
+compatibility layer together. Geometric mean of time on the XTX / time on the R9700 (above 1 = the XTX is slower):
+
+| Group | Kernels | Ratio |
+|---|---|---|
+| fp8 GEMM (fp8 WMMA emulated through bf16) | `gemm_fp8a8_tiled` 33.2, `gemm_fp8a8_nt_m16` 12.2, `gemm_fp8a8_gated_nt_m16` 4.7 | 5 to 33 |
+| fp8-KV attention | `attn_decode_h256_gqa6_fp8kv` 11.1, `attn_prefill_h256_gqa6_fp8kv` 6.5 | 6 to 11 |
+| bf16 WMMA kernels | `gdn_chunk_scan` 3.1, `attn_decode_h128_gqa4_bf16kv` 2.4, `gemm_bf16_nt_m16` 2.1, `gemm_bf16_nt_m64` 1.8 | 2 to 3 |
+| no WMMA (norms, rope, casts, samplers, quant, KV store) | 28 kernels | 0.57 to 1.46, most within 10% of 1 |
+
+So the layer costs nothing where there is no WMMA, about 2 to 3 times on bf16 WMMA, and 5 to 33 times wherever fp8
+is involved. Native gfx11 kernels are needed first for the fp8 GEMMs and fp8-KV attention; a bf16 or f16 container
+avoids the fp8 cost without any new kernel.
+
 ## References for the remaining port (found 2026-10-09; read before writing kernels)
 
 The 29 excluded units need the gfx12 WMMA builtins or the gfx12 transposed load. These exist to adapt from, so none
