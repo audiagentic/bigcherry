@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from bigcherry.core import paths  # noqa: E402
 from bigcherry.patcher import apply_all  # noqa: E402
 from bigcherry.patch import rebase as patch_rebase  # noqa: E402
-from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
+from bigcherry.patch.pinned_source import copy_pinned, pinned_checkout  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
 _V = paths.llama_root()  # the primary checkout's vendor tree (a slice worktree has none)
@@ -41,9 +41,11 @@ class Patch1356Mechanics(unittest.TestCase):
         texts = patch_rebase._overlay_texts()
         overlay_paths = frozenset(texts)
         for module in selected.modules:
+            if module.patch_id == "1356_meta_dispatch_workers":
+                continue  # in the production selection once validated; each test applies it itself
             probe = patch_rebase.probe_patch(
                 module,
-                _V,
+                pinned_checkout(),  # not the vendor working tree, which is normally patched
                 texts,
                 context_lines=3,
                 previous_revision=None,
