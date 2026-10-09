@@ -24,7 +24,7 @@ Candidate matrix:
 | IQ3_XXS | gfx1100 | VDR2 / NW1 | VDR1 | NW2 |
 | IQ3_XXS | gfx1201 | VDR2 / NW1 | VDR1 | NW2 |
 
-The lower-VDR vec-dot variants split the pristine work without changing quant math: IQ4_XS VDR2 selects the appropriate half of each q8 block; IQ3_XXS VDR1 selects the appropriate q8/sign half of the pristine VDR2 pair.
+The lower-VDR vec-dot variants split the pristine input work, **but they do not preserve stock arithmetic order by construction**: IQ4_XS VDR2 rounds two F32 scaled partials instead of one full scaled sum; IQ3_XXS VDR1 applies a truncating integer scale separately to each half instead of once after their sum. Neither arm is qualified as bit-identical. IQ4_XS VDR2 selects the matching q8 half; IQ3_XXS VDR1 selects the matching q8/sign half.
 
 Activation marker:
 
@@ -55,3 +55,7 @@ Only after the above separates IQ3_XXS unpack cost from table-gather cost should
 ## b11474 BPB01 review
 
 Current-pin composition and disposition options are recorded in `releases/evidence/bpb01-four-evaluated.md`. This review does not change patch state.
+
+## PRBE111 / BCOP96 numerical qualification boundary (2026-10-09)
+
+Source audit: IQ4_XS block scale and IQ3_XXS aux32/ls are already outside their inner loops. A 67,600-case deterministic signed host fixture found 25,344 non-additive IQ3 integer partitions; 131,072 seeded IQ4 float32 split/reassociation cases found 51,459 bit-pattern differences. These are synthetic mathematical discriminators, **not** observed HIP/logit failures. The evaluated 1273 package has no auditable per-arm performance or full-vocabulary receipt. Do not infer unchanged numerics from the existing patch trace marker. Gate exact packed-block parity, kernel dispatch/ISA/critical-path contribution and full-vocab/greedy/MTP correctness before any new hardware campaign. PRBE111 owns only future descriptor/inner-loop work; 1273 owns existing VDR/nwarps arms. No new kernel, selector, runtime flag or hardware queue is authorized by this audit.

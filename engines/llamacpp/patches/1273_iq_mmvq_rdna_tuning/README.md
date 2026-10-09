@@ -17,3 +17,7 @@ unchanged. Quant math is unchanged in every arm.
 `evaluated`: run on hardware with results recorded, not qualified. No experiment contract is bound yet,
 so there is no validation adapter (one returns together with a contract) and no promotion claim is possible.
 See SUMMARY.md for the candidate matrix and the rocprofv3 capture plan that decides the next arm.
+
+## 2026-10-09 correctness gate (PRBE111 / BCOP96)
+
+The opt-in lower-VDR arms are **not established as stock-bit-identical**. IQ3_XXS VDR1 applies the source's integer `(ls*sumi+sumi/2)/2` separately to two partial sums, unlike stock VDR2's single post-accumulation operation; C++ integer truncation is non-additive. IQ4_XS VDR2 splits a single F32 scaled sum into two rounded products. Deterministic synthetic host fixtures exposed both differences; no GPU correctness failure or performance change was measured. Do not describe lower VDR as unchanged quant math or promote from the once-per-process activation marker alone. First test real packed blocks, then actual timed launch and exact greedy/MTP parity. The patch remains `evaluated`, default-off, and unpromoted; no implementation changes here.
