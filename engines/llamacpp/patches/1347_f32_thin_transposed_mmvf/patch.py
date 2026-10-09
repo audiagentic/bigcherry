@@ -47,21 +47,33 @@ static bool bc_f32_thin_mmvf() {
     return on;
 }
 
+// bigcherry 1347: fewest activation columns for the role swap (BIGCHERRY_F32_THIN_MMVF_MIN_COLS, default 64, floor
+// MMVF_MAX_BATCH_SIZE + 1). Decode and MTP verification batches stay on SGEMM, so their sums are the ones the drafter
+// was matched to; the gain is in prefill-sized batches.
+static int64_t bc_f32_thin_mmvf_min_cols() {
+    static const int64_t n = [] {
+        const char * s = getenv("BIGCHERRY_F32_THIN_MMVF_MIN_COLS");
+        const int64_t v = s != nullptr ? atoll(s) : 64;
+        return v <= MMVF_MAX_BATCH_SIZE ? (int64_t) MMVF_MAX_BATCH_SIZE + 1 : v;
+    }();
+    return n;
+}
+
 """
 
 _A_MMF = "    if (ggml_cuda_should_use_mmf(src0->type, cc, warp_size, src0->ne, src0->nb, ne11, /*mul_mat_id =*/ false)) {\n        ggml_cuda_mul_mat_f(ctx, src0, src1, nullptr, dst);\n"
 _N_THIN = r"""    // bigcherry 1347 (QFP34): a thin F32 weight (2..8 rows) against many columns - the one-row role swap above for the
     // batch width the vector kernel supports. The activation matrix is the matrix, the weight rows are the vectors;
     // the result comes out transposed ([columns, rows]) and a small kernel writes it into dst.
-    if (bc_f32_thin_mmvf() && ne01 >= 2 && ne01 <= MMVF_MAX_BATCH_SIZE && ne11 > MMVF_MAX_BATCH_SIZE && ne2 == 1 && ne3 == 1
+    if (bc_f32_thin_mmvf() && ne01 >= 2 && ne01 <= MMVF_MAX_BATCH_SIZE && ne11 >= bc_f32_thin_mmvf_min_cols() && ne2 == 1 && ne3 == 1
             && src0->type == GGML_TYPE_F32
             && ggml_is_contiguous(src0) && ggml_is_contiguous(src1) && ggml_is_contiguous(dst)
             && ggml_cuda_should_use_mmvf(src1->type, cc, warp_size, src1->ne, src1->nb, /*ne11 =*/ 1)) {
         static bool bc_logged = false;
         if (!bc_logged && getenv("BIGCHERRY_PATCH_TRACE") != nullptr) {
             bc_logged = true;
-            fprintf(stderr, "BIGCHERRY_PATCH_HIT patch=1347_f32_thin_transposed_mmvf k=%lld rows=%lld cols=%lld\n",
-                    (long long) ne00, (long long) ne01, (long long) ne11);
+            fprintf(stderr, "BIGCHERRY_PATCH_HIT patch=1347_f32_thin_transposed_mmvf k=%lld rows=%lld cols=%lld min_cols=%lld\n",
+                    (long long) ne00, (long long) ne01, (long long) ne11, (long long) bc_f32_thin_mmvf_min_cols());
         }
         ggml_cuda_pool_alloc<float> bc_dst_t(ctx.pool(), ne11*ne01);
         ggml_tensor dst_t = *dst;
@@ -135,4 +147,7 @@ ENV_DOCS = (
     EnvDoc("BIGCHERRY_F32_THIN_MMVF", "0|1", "1 (on)",
            "F32 matmuls with a 2..8-row weight and more than 8 columns (Qwen4Exp hyper-connection inject projections) "
            "run through the vector kernel with the roles swapped instead of SGEMM; 0 restores SGEMM"),
+    EnvDoc("BIGCHERRY_F32_THIN_MMVF_MIN_COLS", "N", "64",
+           "fewest activation columns for the thin-F32 role swap (floor 9); smaller batches - decode and MTP "
+           "verification - keep SGEMM, so draft acceptance is not affected"),
 )

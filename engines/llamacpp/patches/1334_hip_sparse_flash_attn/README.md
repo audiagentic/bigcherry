@@ -66,3 +66,13 @@ context f16 (native cannot load the 240K f16 deployment), ABA.
 
 The decode gap is the existing production set (it measured 37.1 / 43.9 against 49.9 / 67.3 before this patch); the
 prefill gap at this depth is +13% over native.
+
+## Prefill-only gate (2026-10-10)
+
+The sparse path is taken only for batches of at least `BIGCHERRY_FA_SPARSE_MIN_Q` queries (default 64, floor 5);
+smaller batches keep the dense path and the tile shape they have with the flag off. Reason: on the production
+Flash-Next build at 24K, four requests, switching the patch off raised MTP decode by 7.5% pooled (draft acceptance
+57.0% -> 62.4%) for 1.3% less prefill. The sparse sums are no further from a CPU f32 reference than the dense ones,
+but in decode and MTP verification batches the drafter agrees with them less often. Prefill batches still write
+sparse-path values into the KV cache, so the change must be re-confirmed on hardware (ABBA and the four-request
+decode check) before the decode cost is called closed.

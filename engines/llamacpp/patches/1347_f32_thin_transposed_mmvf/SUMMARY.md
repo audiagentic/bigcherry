@@ -28,3 +28,12 @@ SGEMM forms them: equal within float tolerance, not bit-identical.
 ## Activation
 
 `BIGCHERRY_PATCH_TRACE=1` prints `BIGCHERRY_PATCH_HIT patch=1347_f32_thin_transposed_mmvf k= rows= cols=` once.
+
+## Prefill-only gate (2026-10-10)
+
+The role swap is taken only when the activation has at least `BIGCHERRY_F32_THIN_MMVF_MIN_COLS` columns (default 64,
+floor 9); smaller batches keep SGEMM. Reason: on the production Flash-Next build at 24K, four requests, switching
+the patch off raised MTP decode by 9.3% pooled (draft acceptance 56.4% -> 63.1%) for 4.6% less prefill. Against a
+CPU f32 reference the swapped sums are no further away than SGEMM's (top-1 23 of 24 against 21 of 24), but in decode
+and MTP verification batches the drafter agrees with them less often. To be re-confirmed on hardware (ABBA and the
+four-request decode check).

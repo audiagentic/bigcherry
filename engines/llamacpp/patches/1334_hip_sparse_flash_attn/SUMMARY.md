@@ -28,3 +28,13 @@ Results (b11402, Brutus, 2026-10-05/06; details and the promotion rationale in R
   off and on, with the activation marker proving the 8x8 sparse kernel ran.
 - Fidelity: not bit-identical to the dense path (different summation order feeding a discrete top-k selection);
   against a CPU f32 reference the sparse path is no further away than the dense path.
+
+## Prefill-only gate (2026-10-10)
+
+The sparse path is taken only for batches of at least `BIGCHERRY_FA_SPARSE_MIN_Q` queries (default 64, floor 5);
+smaller batches keep the dense path and the tile shape they have with the flag off. Reason: on the production
+Flash-Next build at 24K, four requests, switching the patch off raised MTP decode by 7.5% pooled (draft acceptance
+57.0% -> 62.4%) for 1.3% less prefill. The sparse sums are no further from a CPU f32 reference than the dense ones,
+but in decode and MTP verification batches the drafter agrees with them less often. Prefill batches still write
+sparse-path values into the KV cache, so the change must be re-confirmed on hardware (ABBA and the four-request
+decode check) before the decode cost is called closed.

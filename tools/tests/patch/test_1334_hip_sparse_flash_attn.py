@@ -63,7 +63,9 @@ class Patch1334Mechanics(unittest.TestCase):
             self.assertEqual(fa.count("#if defined(GGML_USE_HIP) || defined(GGML_USE_MUSA)"), 0)
             # RDNA selection has an off switch and the NVIDIA term is unchanged
             # 16 columns minimum: the WMMA kernel has no 1x8 device code, single-query batches stay dense
-            self.assertIn("const bool bc_arch_ok = amd_wmma_available(cc) && bc_fa_sparse_enabled() && ncols1*ncols2 >= 16;", fa)
+            self.assertIn("const bool bc_arch_ok = amd_wmma_available(cc) && bc_fa_sparse_enabled() && ncols1*ncols2 >= 16 &&", fa)
+            self.assertIn("dst->src[0]->ne[1] >= bc_fa_sparse_min_q();", fa)
+            self.assertIn("BIGCHERRY_FA_SPARSE_MIN_Q", fa)
             self.assertIn("const bool bc_arch_ok = GGML_CUDA_CC_IS_NVIDIA(cc) && turing_mma_available(cc);", fa)
             self.assertIn('getenv("BIGCHERRY_FA_SPARSE") == nullptr || atoi(', fa)
             # RDNA picks ncols2 = 8 only when the sparse path is taken, before its exact-divisibility choices
