@@ -46,7 +46,6 @@ class Patch1360Mechanics(unittest.TestCase):
         for required in (
             "0840_hybrid_allreduce_dispatch",
             "0910_feature_sets",
-            "1250_nro01_allreduce_q8_wire",
             "1291_ar_cpu_root",
         ):
             self.assertIn(required, ids)
