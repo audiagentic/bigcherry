@@ -72,6 +72,7 @@ __global__ __launch_bounds__(R3_D11_WAVES * 32) void r3_gemm_mxfp4a8_dec11_kerne
     typedef float r3_v8fa __attribute__((ext_vector_type(8), aligned(4)));
     __shared__ unsigned short sA[R3_D11_WAVES * MR * 128];  // a wave's strip: MR rows x 128 of K, bf16
     __shared__ float sP[R3_D11_WAVES * 32 * 8];             // every lane's partial accumulator
+    __shared__ unsigned sT[64];                             // the unpack tables: [d] -> lo0, lo1, hi0, hi1
     const int tid = threadIdx.x, lane = tid & 31, wave = tid >> 5;
     const int col = lane & 15, half = lane >> 4;
     const int n0 = blockIdx.x * 16;        // N is a multiple of 16
@@ -88,10 +89,44 @@ __global__ __launch_bounds__(R3_D11_WAVES * 32) void r3_gemm_mxfp4a8_dec11_kerne
     unsigned short* __restrict__ strip = sA + wave * (MR * 128);
     const float* __restrict__ asrow = As + (size_t) m * as_rs;
 
+    // The unpack tables go to shared memory once: read from the constant segment they would be a second load that
+    // depends on the exponent just loaded, in every 32 of K, and the wave would wait on memory twice in sequence.
+    if (tid < 64) {
+        sT[tid] = (tid & 2) ? kR3MxBf16Hi[tid >> 2][tid & 1] : kR3MxBf16Lo[tid >> 2][tid & 1];
+    }
+    __syncthreads();
+
+    // A GROUP'S LOADS ARE ISSUED ONE GROUP AHEAD. The timing ablation of the first form (README, 2026-10-10) left
+    // 124 of 227 us with the weight loads, the unpack and the matrix instruction all switched off: the wave waited on
+    // memory once every two K steps. Here the 16 code dwords and 4 exponents of group g + 1 are requested before
+    // group g is computed, so they are in flight across its eight multiplies and a wave waits once a group at most.
+    const int kblocks = K / 32;
+    auto request = [&](int g, unsigned (&cw)[16], unsigned (&e8)[4]) {
+#pragma unroll
+        for (int s = 0; s < 8; ++s) {
+            const int ks = g * 8 + s < ksteps ? g * 8 + s : ksteps - 1;  // clamped: the tail's extra reads are unused
+            const unsigned int* __restrict__ slot = wp + (size_t) ks * 32 + col;
+            if (mode & 4) {  // timing only: no weight loads
+                cw[2 * s] = (unsigned) ks * 0x01010101u; cw[2 * s + 1] = ~cw[2 * s];
+            } else {
+                cw[2 * s] = NT ? __builtin_nontemporal_load(slot) : slot[0];                // k 0-7
+                cw[2 * s + 1] = NT ? __builtin_nontemporal_load(slot + 16) : slot[16];      // k 8-15
+            }
+        }
+#pragma unroll
+        for (int b = 0; b < 4; ++b) {
+            const int blk = g * 4 + b < kblocks ? g * 4 + b : kblocks - 1;
+            e8[b] = (unsigned) Ws[(size_t) blk * N + nrow];
+        }
+    };
+    unsigned cw[16] = {}, e8[4] = {}, ncw[16] = {}, ne8[4] = {};
+    if (g_lo < g_hi) request(g_lo, cw, e8);
+
     r3_v8f acc = {0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f}, total = acc;
     for (int g = g_lo; g < g_hi; ++g) {
         const int ks0 = g * 8;
         const int nsteps = ks0 + 8 <= ksteps ? 8 : ksteps - ks0;  // K is a multiple of 64: the last group may be half
+        if (g + 1 < g_hi) request(g + 1, ncw, ne8);
         // this wave's activations for the group, E4M3 to bf16: chunk c is 16 of K of strip row c / 8
         for (int c = lane; c < MR * 8; c += 32) {
             const int row = c >> 3, kc = (c & 7) * 16;
@@ -105,20 +140,11 @@ __global__ __launch_bounds__(R3_D11_WAVES * 32) void r3_gemm_mxfp4a8_dec11_kerne
 #pragma unroll
         for (int s = 0; s < 8; ++s) {
             if (s < nsteps) {
-                const int ks = ks0 + s;
                 if ((s & 1) == 0) {  // one E8M0 exponent per 32 of K
-                    const int d = r4d_mxfp4_fold_d(ref, (int) Ws[(size_t) (ks >> 1) * N + nrow]);
-                    lo0 = kR3MxBf16Lo[d][0]; lo1 = kR3MxBf16Lo[d][1];
-                    hi0 = kR3MxBf16Hi[d][0]; hi1 = kR3MxBf16Hi[d][1];
+                    const int d = r4d_mxfp4_fold_d(ref, (int) e8[s >> 1]);
+                    lo0 = sT[d * 4]; lo1 = sT[d * 4 + 1]; hi0 = sT[d * 4 + 2]; hi1 = sT[d * 4 + 3];
                 }
-                const unsigned int* __restrict__ slot = wp + (size_t) ks * 32 + col;
-                unsigned int c0, c1;
-                if (mode & 4) {  // timing only: no weight loads
-                    c0 = (unsigned) ks * 0x01010101u; c1 = ~c0;
-                } else {
-                    c0 = NT ? __builtin_nontemporal_load(slot) : slot[0];            // k 0-7
-                    c1 = NT ? __builtin_nontemporal_load(slot + 16) : slot[16];      // k 8-15
-                }
+                const unsigned int c0 = cw[2 * s], c1 = cw[2 * s + 1];
                 r3_u8 wrow;
                 if (mode & 2) {  // timing only: no unpack
                     wrow[0] = c0; wrow[1] = c1; wrow[2] = c0; wrow[3] = c1; wrow[4] = c0; wrow[5] = c1; wrow[6] = c0; wrow[7] = c1;
@@ -140,6 +166,10 @@ __global__ __launch_bounds__(R3_D11_WAVES * 32) void r3_gemm_mxfp4a8_dec11_kerne
             total += acc * asrow[g];
             acc = r3_v8f{0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f};
         }
+#pragma unroll
+        for (int i = 0; i < 16; ++i) cw[i] = ncw[i];
+#pragma unroll
+        for (int i = 0; i < 4; ++i) e8[i] = ne8[i];
     }
     if constexpr (!ABLK) {
         total = acc;
