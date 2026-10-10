@@ -384,6 +384,7 @@ Mixed-prompt bench (`rad_prompt_bench.py`), tok/s:
 | two XTX, compatibility layer (`fp8a-tp2`, `fp8a-tp2spec`) | 7.7 | 28.4 | 197 / 209 |
 | two XTX, native fp8 GEMM, codes widened to bf16 (`fp8b-tp2`, `fp8b-tp2spec`) | 18.5 | 62.7 | 1,035 / 1,044 |
 | two XTX, native fp8 GEMM, codes widened to half (`fp8c-tp2`, `fp8c-tp2spec`) | 44.0 | 125.9 | 1,188 / 1,182 |
+| the same with one token row as a dot product and about 1,024 streaming waves (`fp8e-*`) | 48.0 | 124.6 | 1,185 / 1,183 |
 | MXFP4 on two XTX, for scale (`p4-*`) | 46.8 | 141.7 | about 1,535 |
 
 The native form is `native/r4d_gemm_fp8a8.hip.rw` (its header says what changes): B staged widened, A widened
@@ -398,6 +399,41 @@ share the subnormal rule, so four codes widen in six bit operations and two v_pe
 and the result is multiplied by 2^16 once. The same GEMM is then 132 us a call, 337 GB/s (`fp8c-tp2prof`), and the
 selftest's host reference still agrees, so the card does not flush half subnormals in the WMMA. Two XTX now decode
 the 8-bit model at about twice the R9700's rate; prefill is at 43% of it.
+
+### Weight bandwidth of the decode GEMM (runs `bw-*`, `tools/lab/radiance/libr3-perf.sh`)
+
+An RX 7900 XTX has 960 GB/s of memory bandwidth on paper (384-bit GDDR6 at 20 Gbps), an R9700 640. radiance's
+timing mode (`r4d_selftest --perf N K M`) gives each decode GEMM's time over a weight replicated past the caches as
+GB/s of the weight stream, M = 1 unless stated:
+
+| kernel, N x K | XTX, libr3 | R9700, libr4d |
+|---|---|---|
+| `logits_gemm_fp8`, 17408 x 5120 | 792 | 597 |
+| `gemm_fp8a16_nt_m1`, 17408 x 5120 | 661 | 593 |
+| `gemm_fp8a8_nt_m16`, 17408 x 5120, WMMA tiles (`bw-xtx`) | 523 | 605 |
+| the same, 5120 x 8704 | 337 | 595 |
+| the same, 8192 x 5120 | 395 | 596 |
+| the same, 17408 x 5120 at M = 8 | 637 | 598 |
+| one token row as a dot product (`bw-xtx2`): 17408 x 5120 / 5120 x 8704 / 8192 x 5120 | 684 / 314 / 419 | |
+| and about 1,024 streaming waves (`bw-xtx3`): the same three | 681 / 664 / 575 | |
+| the same: 8704 x 5120 / 2560 x 8704 | 604 / 527 | |
+
+Two separate limits, both design and neither the card:
+
+- **One token row is not a matrix product.** A 16x16 WMMA tile does one column of useful work in sixteen at M = 1.
+  As a dot product (a lane multiplies the 32 weight bytes it owns in each fragment-order tile by the activation
+  bytes at the same K) the largest shape goes from 523 to 684 GB/s. Served decode did not move with this alone
+  (43.4 against 44.0 tok/s, `fp8d-tp2`), because the shapes the two-card split runs were held by the second limit.
+- **The XTX wants about a thousand waves streaming at once.** A wave has one 1 KiB request in flight, and libr4d
+  stops splitting K at 128 waves, a number fitted on the R9700. N = 5120, K = 8704 runs 320 waves unsplit and reads
+  316 GB/s; with the split target at 512 it reads 480, at 1,024 663 and at 2,048 585 (`bw-st*`). N = 17408 is 1,088
+  waves unsplit and does not move. libr3 builds with 1,024.
+
+With both, two XTX decode the 8-bit model at 48.0 tok/s (`fp8e-tp2`), which is about 650 GB/s a card averaged over
+a whole token and more than the 4-bit container's 46.8. What is left to 960 is the next design step: more than one
+request in flight a wave, so that fewer waves are needed and the split's reduce pass goes away. With the drafter
+the steps carry several token rows and take the WMMA path, which the new split target does not help (124.6 against
+125.9 tok/s; 5120 x 8704 at M = 8 reads 469 GB/s).
 
 ## KL divergence: 4-bit against 8-bit, and libr3 against libr4d (2026-10-10, runs `kld2-*`, `kld3-*`)
 
