@@ -1,7 +1,7 @@
 // QFP49 rungs A and B: the staggered half-batch pair on the real tensor-split (Meta) backend, without llama.
 //
 // A toy model of L layers on every visible GPU. Per layer, for a half of T tokens with hidden state h [n, T]:
-//     u = MUL_MAT(W1[n, K], h)        W1 split along axis 1: every card computes its slice of u
+//     u = MUL_MAT(W1[n, K], h)        W1 (Q8_0) split along axis 1: every card computes its slice of u
 //     y = MUL_MAT(W2[K, n], u)        W2 split along axis 0: every card holds a partial sum -> cross-card sum
 //     z = RMS_NORM(y)
 //     C[:, half] = z                  a static, mirrored cache both halves share (the KV cache's role)
@@ -168,8 +168,9 @@ int main(int argc, char ** argv) {
     };
     ggml_context * ctx_static = ggml_init(static_params);
     for (int l = 0; l < m.L; ++l) {
-        m.w1.push_back(ggml_new_tensor_2d(ctx_static, GGML_TYPE_F32, m.n, m.K));
-        m.w2.push_back(ggml_new_tensor_2d(ctx_static, GGML_TYPE_F32, m.K, m.n));
+        // Q8_0 weights: the quantized matmul kernels production runs (and no BLAS library in the loop)
+        m.w1.push_back(ggml_new_tensor_2d(ctx_static, GGML_TYPE_Q8_0, m.n, m.K));
+        m.w2.push_back(ggml_new_tensor_2d(ctx_static, GGML_TYPE_Q8_0, m.K, m.n));
         m.cache.push_back(ggml_new_tensor_2d(ctx_static, GGML_TYPE_F32, m.n, 2 * m.T));
     }
     m.x_a = ggml_new_tensor_2d(ctx_static, GGML_TYPE_F32, m.n, m.T);
@@ -184,11 +185,14 @@ int main(int argc, char ** argv) {
         std::mt19937 rng(1234);
         std::normal_distribution<float> dist(0.0f, 0.02f);
         std::vector<float> w((size_t) (m.n * m.K));
+        std::vector<uint8_t> q(ggml_nbytes(m.w1[0]));
         for (int l = 0; l < m.L; ++l) {
             for (float & v : w) v = dist(rng);
-            ggml_backend_tensor_set(m.w1[l], w.data(), 0, w.size() * sizeof(float));
+            ggml_quantize_chunk(GGML_TYPE_Q8_0, w.data(), q.data(), 0, m.K, m.n, nullptr);
+            ggml_backend_tensor_set(m.w1[l], q.data(), 0, ggml_nbytes(m.w1[l]));
             for (float & v : w) v = dist(rng);
-            ggml_backend_tensor_set(m.w2[l], w.data(), 0, w.size() * sizeof(float));
+            ggml_quantize_chunk(GGML_TYPE_Q8_0, w.data(), q.data(), 0, m.n, m.K, nullptr);
+            ggml_backend_tensor_set(m.w2[l], q.data(), 0, ggml_nbytes(m.w2[l]));
         }
     }
 
