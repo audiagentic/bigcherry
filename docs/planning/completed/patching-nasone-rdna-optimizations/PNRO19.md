@@ -2,7 +2,7 @@
 id: PNRO19
 order: 0
 plan: patching-nasone-rdna-optimizations
-state: done
+state: completed
 created-at: '2026-09-27T12:55:18.984027+00:00'
 breadth: ''
 skill: ''
@@ -48,6 +48,10 @@ work: S
 
 ## Acceptance Criteria
 
+- The two patch-1270 mechanics failures this item reported (`pnro14-includes`, `pnro14-device-select`) no longer
+  reproduce.
+- Met 2026-10-10: `pytest tools/tests/patch -k "1270 or pnro14"` on main gives 2 passed
+  (`test_1270_pnro14_rdna35_fa_tile_d256.py`), after fix commit `f4228540`.
 
 
 ## Notes
@@ -61,3 +65,4 @@ test_missing_host_selector_fails_closed (the other test in the same file) still 
 - 2026-09-27T12:55:18.984027+00:00 (created-by): Created by agent
 
 ## Ledger-events
+- 2026-10-10T10:27:13.931984+00:00 (state-transition): State: completed → completed

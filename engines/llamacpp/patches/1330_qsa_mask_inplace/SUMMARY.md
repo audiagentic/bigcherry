@@ -1,6 +1,6 @@
 # 1330_qsa_mask_inplace
 
-**Status:** untested
+**Status:** evaluated
 **Plan item:** QFP17
 
 ## What it does
@@ -46,4 +46,30 @@ mask_all + 480 MiB ADD result + 120 MiB kpool + ~180 MiB other. Removing the ADD
 live peak to ~1268 MiB/rank; 256-row padding adds only ~0.5 MiB at this shape. The observed ub1024 fit is the
 mechanism proof.
 
-Final 245760-context confirmation is pending. State remains **untested** until that result is posted.
+## Result: evaluated, ub1024 not adopted at the production context (2026-10-11)
+
+The patch does what it was written for, and ubatch 1024 is still not usable at Flash-Next's production context.
+
+- At ub512 the flag is neutral and the text is identical (2026-10-09). It only matters as the enabler for ub1024.
+- With it, ub1024 loads at ctx 245760 and prefill is about 10 to 13% faster than ub512 at every depth that runs:
+  1,376.9 / 1,371.6 against 1,206.9 / 1,228.9 t/s at 80K (240K context), 1,393 to 1,411 against 1,215 to 1,308 at
+  49K, 1,392.5 / 1,392.7 against 1,181.6 / 1,281.5 at 73K (runs q17x4).
+- At ctx 245760 it fails once about 118K tokens are in the context: `ROCm error: an illegal memory access was
+  encountered` during the chunk that starts at token 117,760 (runs q17r, c200; 98K and 196K depths).
+- The same binary and flags are clean at ctx 196608 with 124K tokens (run q17x3: 1,364.0 / 1,363.0 against 1,147.7
+  / 1,252.9 t/s) and at ctx 131072 with or without this patch (runs q17x1, q17x2: same text in both ub1024 arms).
+- At ctx 245760 it is also clean with sparse flash attention off (run q17y2, but then slower than production:
+  1,091 against 1,256 t/s) and with the deferred catch-up off (run q17y1: 1,178 / 1,197 against 1,194 / 1,248, no
+  gain left).
+- Card memory in use at load, failing arm against production (rocm-smi, run q17r): 25.06 against 24.40 GB on
+  XTX 0, 25.41 against 24.75 GB on XTX 1, 31.71 against 31.34 GB on the R9700. An RX 7900 XTX has 25.75 GB, so
+  ub1024 leaves about 340 MB on XTX 1 where production leaves about 1 GB.
+
+Reading: the configuration fits at load and runs out of card memory later, when the allocations made per call
+(the sparse-attention index lists, the all-reduce's bf16 temporaries, pool growth) come on top of a longer context.
+That reading fits every run above (smaller contexts are clean; taking either allocator of per-call memory out is
+clean) but the faulting allocation itself was not identified: a run with kernels serialised hung at warm-up.
+
+So: state `evaluated`. Not in the production recipe, not in the flashnext profile, and ub1024 is not adopted for
+ctx 245760. It is a candidate again for a profile with a context of 196K or less, or once the per-call memory at
+ub1024 is bounded (QFP47, the prefill scratch lease, is the plan item for that).

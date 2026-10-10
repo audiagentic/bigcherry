@@ -71,7 +71,10 @@ Identical greedy text and probes with the flag on; no run-to-run variation over 
 ## Ledger-events
 
 
+
 - chg_20261009_222135_prefill-is-about-3-faster-on_1298
 - 2026-10-09T22:21:46.034434+00:00 (updated-by): Updated: section:ledger-events
 - chg_20261009_222149_optional-threaded-per-device-d_5728
 - 2026-10-09T22:21:53.512776+00:00 (updated-by): Updated: section:ledger-events
+- chg_20261010_135027_the-optional-threaded-per-devi_8062
+- 2026-10-10T13:50:34.975513+00:00 (updated-by): Updated: section:ledger-events

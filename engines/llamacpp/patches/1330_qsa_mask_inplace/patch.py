@@ -16,7 +16,7 @@ import re
 from bigcherry.patcher import Edit, EnvDoc, FilePatch
 
 GROUP = "rdna-boosts"
-STATE = "untested"
+STATE = "evaluated"
 
 _A = ("    sel = ggml_add(ctx0, sel, kq_mask);\n"
       "    cb(sel, \"indexer_sel\", il);\n")

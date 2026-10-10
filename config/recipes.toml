@@ -292,7 +292,8 @@ patches = [
     "1346_mtp_prompt_overlap",
     "1358_meta_split_cache_local_evict",
     "1355_hc_post_gate_fuse",
-    "1356_meta_dispatch_workers",
+    "1357_moe_router_splitk",
+    "1359_prefill_pipeline",
 ]
 required-state = "validated"
 
@@ -537,9 +538,14 @@ patches = []
 # QFP35: production + 1355. A/default = fused HC gate consumer; BIGCHERRY_HC_POST_GATE_FUSE=0 is the composed 1313/1344 control.
 patches = []
 
+[experiment.prefill-pipeline]
+# QFP50: production + 1359; default off, enable with BIGCHERRY_PREFILL_PIPELINE=1.
+patches = []
+
 [experiment.meta-dispatch-workers]
 # QFP41: production + 1356; default off, enable with BIGCHERRY_META_DISPATCH_THREADS=1.
-patches = []
+# 1356 is `evaluated` since 2026-10-11 (output race at 98K), so it is composed here and not in production.
+patches = ["1356_meta_dispatch_workers"]
 
 
 
@@ -1095,6 +1101,10 @@ patches = ["1263_prbe41_ssm_conv_channels_major"]
 [experiment.ar-small-latency]
 # 1275 alone: small mapped-host AllReduce slot-sync and launch-geometry controls; defaults preserve pristine behavior.
 patches = ["1275_ar_small_latency"]
+
+[experiment.moe-router-splitk]
+# QFP36: production + 1357; default off, enable with BIGCHERRY_MOE_ROUTER_SPLITK=1.
+patches = []
 
 [experiment.meta-split-cache-evict]
 # 1358: production + local eviction of stale Meta split-state cache entries; on by default, BIGCHERRY_META_SPLIT_CACHE_EVICT=0 restores the clear.
