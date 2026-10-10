@@ -57,6 +57,8 @@ Identical greedy text and probes with the flag on; no run-to-run variation over 
 
 2026-10-09 two-build ABBA (chain c167, runs aux3off-r1/r2, A = b-main2 production, B = b-aux3 = production + 1328 with expert offload off, Flash-Next, ctx 245760, f16 KV): text identical in all four runs at each depth; prefill A/B t/s 8K 1233.7 1238.2 1248.0 1229.6 / 1269.2 1281.6 1266.2 1269.0 (+2.8%), 24K 1264.9 1271.7 1263.4 1272.1 / 1309.7 1305.4 1308.2 1309.7 (+3.2%), 98K 1225.0 1225.2 1221.7 1226.0 / 1260.6 1257.2 1258.4 1262.3 (+2.9%); every B above every A; decode and acceptance equal. The only always-on code in 1328 that can do this is its Meta split-state cache edit (erase the stale entry instead of clearing the cache). It is now its own patch, 1358_meta_split_cache_local_evict (PR #93, on by default, off switch BIGCHERRY_META_SPLIT_CACHE_EVICT=0); 1328 requires it. One-binary ABBA queued (chain c171, tag sce1). If it confirms, promote 1358 (lightweight tier) and check Qwen3.8-27B, since the patch is not model-specific.
 
+2026-10-09 1358 isolated on one binary (chain c171, build b-metamem-sce1 = production + 1358, Flash-Next, ctx 245760, f16 KV; A = default on, B = BIGCHERRY_META_SPLIT_CACHE_EVICT=0, order A B B A, two rounds). Greedy text identical in every run at 8K / 24K / 98K; marker count at 24K 1 0 0 1. Prefill t/s 98K: A 1255.7 1259.4 1259.5 1263.5, B 1221.9 1216.0 1223.2 1223.1 (+3.1%, every A above every B); 24K round 2: A 1300.7 1308.9, B 1270.7 1267.2 (+3.0%); 8K round 2: A 1282.9 1248.6, B 1246.1 1217.6 (+2.8%, narrowest gap 2.5 t/s). Decode and acceptance equal. This confirms the two-build result and places the gain in this one edit. Remaining before promotion: Qwen3.8-27B no-regression (chain c175) and the promotion-gate decision.
+
 ## Change Log
 
 - 2026-10-07T00:40:00.113369+00:00 (created-by): Created by agent
@@ -64,3 +66,12 @@ Identical greedy text and probes with the flag on; no run-to-run variation over 
 - 2026-10-08T19:11:36.630281+00:00 (updated-by): Updated: section:notes
 - 2026-10-09T04:14:45.394562+00:00 (updated-by): Updated: section:notes
 - 2026-10-09T04:36:15.933069+00:00 (updated-by): Updated: section:notes
+- 2026-10-09T06:25:21.380514+00:00 (updated-by): Updated: section:notes
+
+## Ledger-events
+
+
+- chg_20261009_222135_prefill-is-about-3-faster-on_1298
+- 2026-10-09T22:21:46.034434+00:00 (updated-by): Updated: section:ledger-events
+- chg_20261009_222149_optional-threaded-per-device-d_5728
+- 2026-10-09T22:21:53.512776+00:00 (updated-by): Updated: section:ledger-events

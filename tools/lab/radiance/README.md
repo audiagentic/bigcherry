@@ -16,7 +16,8 @@ standalone server with a llama-server-compatible API.
   (radiance does not build with g++ 13 or with ROCm's clang as host compiler). Nothing is installed system-wide.
 
 - `run-radiance.sh`: serves a model from that build on the R9700 alone (`--tp 1`, fp8 KV) and measures it with
-  `tools/lab/reference-vllm/bench-openai.py` at the reference-lane depths, with the drafter on and off.
+  `bigcherry engine-bench --engine radiance` at the reference-lane depths, with the drafter on and off. Each arm
+  writes `<arm>.engine-bench.json`, the same record `run-llamacpp-r9700.sh` writes for llama.cpp.
 
 ## Build result on Brutus (2026-10-09)
 

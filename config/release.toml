@@ -1,13 +1,14 @@
 # BigCherry release configuration (read by `bigcherry release-notes`).
 #
-# One release per llama.cpp pin bump, named with the prefix below (b11402 -> bc-b11402). release-please on GitHub owns
+# This file configures the llama.cpp engine's release line (run-multi-engine MEN09): tags bc-llamacpp-<build>.<minor>.<patch>,
+# each with a readable alias bc-llamacpp-b<build>-r<N> added by the release workflow. release-please on GitHub owns
 # the release PR, tag and GitHub release (release-please-config.json, .github/workflows/release-please.yml); this file
 # configures the release text it publishes. The notes are generated from: the change ledger (events since the previous release), the patch registry
 # (patches added, promoted, changed or retired since the previous release, and build-membership changes) and the
 # bump's release record (smoke numbers, regressions found and their disposition).
 version = 1
 
-tag-prefix = "bc-"
+tag-prefix = "bc-llamacpp-"
 notes-dir = "docs/releases/notes"
 ledger = "docs/releases/CURRENT_RELEASE_LEDGER.ndjson"
 release-records = "releases"

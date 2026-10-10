@@ -14,10 +14,11 @@ and a source of ideas to port.
 - `run-radiance.sh`: starts the existing container, waits for health, runs the benchmark, stops the container again
   (it is left running only if it was running before). Run it as a queue `SCRIPT` job so the GPU lock covers it.
 - `run-llamacpp-r9700.sh`: the like-for-like side. BigCherry llama-server on the R9700 alone with a 4-bit
-  Qwen3.8-27B GGUF (no tensor split, so no AllReduce), same client, corpus, depths and repeats. One arm per drafter:
+  Qwen3.8-27B GGUF (no tensor split, so no AllReduce), same corpus, depths and repeats. One arm per drafter:
   built-in MTP, the DFlash2 drafter at 7 tokens (the container's setting), and no drafter. f16 KV, q8_0 only if f16
-  does not fit.
-- `bench-openai.py`: prefill and decode speed of any OpenAI-compatible server. One uncached, streamed, greedy request
+  does not fit. It runs through `bigcherry engine-bench --engine llamacpp` and writes `<arm>-<kv>.engine-bench.json`.
+- `bench-openai.py`: used by the container run only (`engine-bench` launches a process, not a container, and makes
+  the same measurement). Prefill and decode speed of any OpenAI-compatible server. One uncached, streamed, greedy request
   per depth and repeat; the prompt is the lab corpus cut to size with a unique nonce in front.
   prefill t/s = prompt tokens / time to first token; decode t/s = (completion tokens - 1) / (last - first token time).
 
