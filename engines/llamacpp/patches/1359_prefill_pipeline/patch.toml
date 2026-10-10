@@ -1,7 +1,7 @@
 schema = 1
 id = "1359_prefill_pipeline"
 order = 1359
-state = "untested"
+state = "validated"
 kind = "enhancement"
 origin = "local"
 backend = "hip"

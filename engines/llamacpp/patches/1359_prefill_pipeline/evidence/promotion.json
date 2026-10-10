@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "tier": "profile-evidence",
+  "patch-id": "1359_prefill_pipeline",
+  "pinned": "b11474",
+  "subject-digest": "89900591c87064804e30256d0e86e1b102ae942068d3443e157ae86dfe85ba9c",
+  "default-on": false,
+  "models": [
+    "Qwen3.8-Flash-Next UD-IQ4_XS (production profile: 2x RX 7900 XTX + R9700 tensor split, MTP drafter on the RX 6900 XT, ctx 245760, f16 KV, ub512)",
+    "Qwen3.8-27B Q8_0 (two RX 7900 XTX, tensor split, built-in MTP)"
+  ],
+  "checks": {
+    "ab": "one binary (b-pipe1 = production + 1359), BIGCHERRY_PREFILL_PIPELINE=1 against default (off). Prefill +6.0% at 8K, +7.4% to +10.7% at 24K, +10.0% at 98K, every on-run above every off-run at each depth; four requests at 24K, ABBA each: +15.9%, +11.5%, +11.1%, +12.7% (pooled +12.8%). Decode and draft acceptance unchanged.",
+    "activation": "BIGCHERRY_PATCH_HIT patch=1359_prefill_pipeline with the flag on only (run pipe1-d24576: off arm 0, on arm 1).",
+    "identity": "greedy text identical to the flag off in every run: 8K, 24K and 98K (two ABBAs each), twelve runs with the flag on at 98K against one baseline (run pipe3: one md5, b301a49a), prompts of 418 and 1,186 tokens (under one and under three batches, run pipe5), four different requests at 24K (run dacc-p1359-*). The mechanism is a reordering of host work; the order of work on each card's stream is unchanged.",
+    "mechanics": "offline tests for 1359 pass (3 tests: applies after the production set, idempotent, fails closed on a drifted anchor), patch-lint adds no warning, composition with the production set clean (CI offline-patch and compile-only on PR #135).",
+    "no-regression": "Qwen3.8-27B on two RX 7900 XTX, same binary, flag on against off (prod27b-ab.sh, run nr27-1359): text identical at 10K and 32K, prefill and decode unchanged. The pipeline does not engage there (the built-in MTP shares the target's memory, so 1348's deferred path is off)."
+  }
+}

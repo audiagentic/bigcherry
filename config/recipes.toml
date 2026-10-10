@@ -293,6 +293,7 @@ patches = [
     "1358_meta_split_cache_local_evict",
     "1355_hc_post_gate_fuse",
     "1357_moe_router_splitk",
+    "1359_prefill_pipeline",
 ]
 required-state = "validated"
 
@@ -539,7 +540,7 @@ patches = []
 
 [experiment.prefill-pipeline]
 # QFP50: production + 1359; default off, enable with BIGCHERRY_PREFILL_PIPELINE=1.
-patches = ["1359_prefill_pipeline"]
+patches = []
 
 [experiment.meta-dispatch-workers]
 # QFP41: production + 1356; default off, enable with BIGCHERRY_META_DISPATCH_THREADS=1.
