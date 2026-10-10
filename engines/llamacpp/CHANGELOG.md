@@ -1,5 +1,13 @@
 # Changelog
 
+## [11474.8.0](https://github.com/audiagentic/bigcherry/compare/bc-llamacpp-11474.7.0...bc-llamacpp-11474.8.0) (2026-10-10)
+
+
+### New and changed
+
+* **patch:** 1330 keeps decode-sized batches on the dense path; evaluated, ub1024 not adopted at ctx 245760 ([#77](https://github.com/audiagentic/bigcherry/issues/77)) ([456d7eb](https://github.com/audiagentic/bigcherry/commit/456d7ebfd8f225d01abca667c7599ca207bc6728))
+* **patch:** the prefill pipeline defaults on; its flag is an off switch (1359) ([#140](https://github.com/audiagentic/bigcherry/issues/140)) ([a976e32](https://github.com/audiagentic/bigcherry/commit/a976e32f7acdafcf18c5ced3dc35f71fd823cf9a))
+
 ## [11474.7.0](https://github.com/audiagentic/bigcherry/compare/bc-llamacpp-11474.6.0...bc-llamacpp-11474.7.0) (2026-10-10)
 
 
