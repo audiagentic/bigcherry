@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "tier": "profile-evidence",
+  "patch-id": "1357_moe_router_splitk",
+  "pinned": "b11474",
+  "subject-digest": "79c506a2b25471d7bc6c1e439d43dc004c1634c78164d216e1bc4e54784d9ca7",
+  "default-on": false,
+  "models": [
+    "Qwen3.8-Flash-Next UD-IQ4_XS (production profile: 2x RX 7900 XTX + R9700 tensor split, MTP drafter on the RX 6900 XT, ctx 245760, f16 KV, ub512)",
+    "Qwen3.6-35B-A3B (MoE, 256 experts; tensor split, no draft)"
+  ],
+  "checks": {
+    "ab": "one binary (b-metamem-rse1 = production + 1357 + 1358), BIGCHERRY_MOE_ROUTER_SPLITK=1 against default (off), Flash-Next at 24K, four requests, ABBA each (queue-decode-acceptance.sh): prefill +3.2% pooled (+3.1%, +2.7%, +4.5%, +2.5%), consistent in all four.",
+    "activation": "BIGCHERRY_PATCH_HIT patch=1357_moe_router_splitk with the flag on only. Flash-Next: k=2560 experts=512 tokens=512 parts=8 (runs rse1-*). Qwen3.6-35B: k=2048 experts=256 tokens=1661 parts=8 (run om-q36-1357-2-B); absent in the flag-off arms. Gemma 4 26B (no router): absent in both arms.",
+    "identity": "not bit-identical on Flash-Next (the router scores are summed in another order and feed a discrete top-k choice of experts), so the greedy text differs. Against a CPU f32 reference at 8K, 24 probes, no drafter (run rsk1-fid): production top-1 23/24, mean TV 0.0831; with 1357 top-1 23/24, mean TV 0.0799. On Qwen3.6-35B and Gemma 4 26B the greedy text is identical with the flag on and off.",
+    "mechanics": "offline tests for 1357 pass (4 tests), patch-lint clean, composition with the production set clean (CI offline-patch and compile-only on PR #92).",
+    "no-regression": "Qwen3.6-35B-A3B and Gemma 4 26B, tensor split, no draft, ABBA off against on (queue-promotion-followups-2.sh step 8): text identical, prompt and decode speed unchanged."
+  }
+}

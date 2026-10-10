@@ -293,6 +293,7 @@ patches = [
     "1358_meta_split_cache_local_evict",
     "1355_hc_post_gate_fuse",
     "1356_meta_dispatch_workers",
+    "1357_moe_router_splitk",
 ]
 required-state = "validated"
 
@@ -1098,7 +1099,7 @@ patches = ["1275_ar_small_latency"]
 
 [experiment.moe-router-splitk]
 # QFP36: production + 1357; default off, enable with BIGCHERRY_MOE_ROUTER_SPLITK=1.
-patches = ["1357_moe_router_splitk"]
+patches = []
 
 [experiment.meta-split-cache-evict]
 # 1358: production + local eviction of stale Meta split-state cache entries; on by default, BIGCHERRY_META_SPLIT_CACHE_EVICT=0 restores the clear.

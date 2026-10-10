@@ -1,6 +1,6 @@
 # 1357_moe_router_splitk
 
-**Status:** untested
+**Status:** validated
 **Plan item:** QFP36
 
 ## What it does
