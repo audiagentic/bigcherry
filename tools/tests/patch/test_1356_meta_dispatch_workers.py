@@ -102,7 +102,10 @@ class Patch1356Mechanics(unittest.TestCase):
             evaluate = cuda.index("ggml_cuda_graph_evaluate_and_capture(cuda_ctx, cgraph, use_cuda_graph", lock)
             self.assertLess(cuda.index("bc_1356_capture.lock();", lock), begin)
             self.assertLess(cuda.index("bc_1356_replay.lock();", lock), evaluate)
-            self.assertIn("if (bc_1356_threads && use_cuda_graph) {", cuda)
+            # the lock is taken only with the workers on; the counters (BIGCHERRY_META_DISPATCH_STATS) take none
+            self.assertIn("if (use_cuda_graph && (bc_1356_threads || bc_1356_stats.on)) {", cuda)
+            self.assertLess(cuda.index("if (bc_1356_threads) {", lock), cuda.index("bc_1356_capture.lock();", lock))
+            self.assertEqual(cuda.count("BIGCHERRY_1356_LOCK_STATS"), 1)
             self.assertIn("#include <shared_mutex>", cuda)
 
             second = apply_all(_P.PATCHES, root)
@@ -111,8 +114,9 @@ class Patch1356Mechanics(unittest.TestCase):
             self.assertEqual(cuda, (root / _CUDA).read_text(encoding="utf-8"))
 
     def test_default_off_and_worker_lifetime(self):
-        self.assertEqual([doc.name for doc in _P.ENV_DOCS], ["BIGCHERRY_META_DISPATCH_THREADS"])
-        self.assertEqual([doc.default for doc in _P.ENV_DOCS], ["0 (off)"])
+        self.assertEqual([doc.name for doc in _P.ENV_DOCS],
+                         ["BIGCHERRY_META_DISPATCH_THREADS", "BIGCHERRY_META_DISPATCH_STATS"])
+        self.assertEqual([doc.default for doc in _P.ENV_DOCS], ["0 (off)", "0 (off)"])
         text = _P._N_WORKER + _P._N_DTOR + _P._N_DISPATCH
         self.assertIn("thread.join();", text)
         self.assertLess(text.index("bc_dispatch_workers.clear();"), text.index("ggml_backend_free(bc.backend);"))

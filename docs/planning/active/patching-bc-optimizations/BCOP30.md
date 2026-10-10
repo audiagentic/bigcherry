@@ -56,3 +56,7 @@ Close BCOP30 when RPL01 reaches one of:
 - No runtime scheduler is introduced during observation/scoring qualification.
 - Every recommendation exposes its cost decomposition and provenance.
 - Failed prototype code is removed rather than becoming another permanent planning surface.
+
+## 2026-10-10 qualification correction (BCOP118)
+
+The original Phase-B additive cost formula in RPL01 can double-count overlapped compute/copy and scheduler synchronization, and can invert a placement ranking. **Do not implement or promote that formula.** RPL01 now requires a QFP46-owned, event-aligned critical-path receipt before a candidate is scored; aggregated `KernelStat` and per-device kernel-duration sums are hotspot evidence only. Missing clock/dependency/work-equivalence evidence must return `UNKNOWN`, not a fabricated score. Keep BCOP30 as the existing lifecycle owner; BCOP118 is only the new finding/disposition ledger, not a second technical plan. Eight disposable host fixtures passed; no BigCherry pytest/build/GPU/benchmark ran. Existing 80% advisory and 5% two-regime actuation gates remain subordinate to this admission requirement.
