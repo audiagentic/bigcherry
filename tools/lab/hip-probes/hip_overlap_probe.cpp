@@ -278,7 +278,14 @@ static void test_submit() {
 static void test_graphs() {
     const int rounds = 300, nodes = 12, elems = 4096;
     std::printf("\n== graphs: one thread a card, %d rounds of capture + instantiate + launch of a %d-kernel graph\n", rounds, nodes);
+    // Run hp1: with hipStreamCaptureModeGlobal another thread's ordinary stream call fails outright while any thread
+    // captures ("operation failed due to a previous error during capture"), which is that mode's contract. llama.cpp
+    // captures in the relaxed mode, so the question is what the other two modes do to a thread that is NOT capturing.
+    const hipStreamCaptureMode modes[] = {hipStreamCaptureModeRelaxed, hipStreamCaptureModeThreadLocal};
+    const char * mode_names[] = {"relaxed", "thread-local"};
+    for (int m = 0; m < 2; ++m)
     for (int locked = 0; locked < 2; ++locked) {
+        const hipStreamCaptureMode mode = modes[m];
         std::mutex graph_mutex;
         std::atomic<long> wrong{0}, errors{0};
         Rendezvous start(static_cast<int>(g_cards.size()));
@@ -289,17 +296,17 @@ static void test_graphs() {
             std::vector<float> back(elems);
             start.arrive();
             for (int r = 0; r < rounds; ++r) {
-                CK(hipMemsetAsync(x, 0, elems * sizeof(float), c.compute));
+                // an ordinary call outside any capture of this thread: it can land inside another thread's capture
+                bool ok = hipMemsetAsync(x, 0, elems * sizeof(float), c.compute) == hipSuccess;
                 hipGraph_t graph = nullptr;
                 hipGraphExec_t exec = nullptr;
                 float expect = 0;
-                bool ok = true;
                 {
                     std::unique_lock<std::mutex> lock(graph_mutex, std::defer_lock);
                     if (locked) {
                         lock.lock();
                     }
-                    ok = hipStreamBeginCapture(c.compute, hipStreamCaptureModeGlobal) == hipSuccess;
+                    ok = ok && hipStreamBeginCapture(c.compute, mode) == hipSuccess;
                     for (int k = 0; ok && k < nodes; ++k) {
                         const float add = static_cast<float>(1 + (r + k + c.id) % 7);
                         expect += add;
@@ -307,6 +314,11 @@ static void test_graphs() {
                     }
                     ok = ok && hipStreamEndCapture(c.compute, &graph) == hipSuccess;
                     ok = ok && hipGraphInstantiate(&exec, graph, nullptr, nullptr, 0) == hipSuccess;
+                }
+                if (!ok) {
+                    hipGraph_t dropped = nullptr;
+                    hipStreamEndCapture(c.compute, &dropped);  // leave no capture open behind a failed round
+                    (void) hipGetLastError();
                 }
                 ok = ok && hipGraphLaunch(exec, c.compute) == hipSuccess;
                 ok = ok && hipMemcpyAsync(back.data(), x, elems * sizeof(float), hipMemcpyDeviceToHost, c.compute) == hipSuccess;
@@ -330,7 +342,7 @@ static void test_graphs() {
             }
             hipFree(x);
         });
-        std::printf("  %s: %ld of %ld rounds gave a wrong result, %ld returned an error, %.0f ms\n",
+        std::printf("  %s capture, %s: %ld of %ld rounds gave a wrong result, %ld returned an error, %.0f ms\n", mode_names[m],
                     locked ? "capture and instantiate under one process-wide lock" : "no lock", wrong.load(),
                     static_cast<long>(rounds) * static_cast<long>(g_cards.size()), errors.load(), now_ms() - t0);
     }
