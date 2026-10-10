@@ -14,8 +14,7 @@ from bigcherry.patcher import apply_all  # noqa: E402
 from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
-<<<<<<< HEAD
-_V = _REPO / "vendor/llama.cpp"
+_V = paths.llama_root()
 _FILES = (
     "src/llama-cparams.h",
     "src/llama-context.h",
@@ -23,10 +22,6 @@ _FILES = (
     "src/models/dflash.cpp",
     "common/speculative.cpp",
 )
-=======
-_V = paths.llama_root()
-_FILES = ("src/llama-cparams.h", "src/llama-context.h", "src/llama-context.cpp", "src/models/dflash.cpp")
->>>>>>> origin/main
 
 
 def _load(pid: str):
