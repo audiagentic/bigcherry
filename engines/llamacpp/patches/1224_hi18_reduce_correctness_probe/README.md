@@ -8,8 +8,7 @@ that drives the real production META backend through
 machine-readable execution facts to `tools/bigcherry/tuning/reduction.py`.
 This is a native-half correctness-comparison gate that exercises the real
 META split-state/reduce-plan machinery directly -- not a Python
-reimplementation that could silently disagree with it. **D=2 device-count
-slice only** (see HI84 for the planned D=3/D=4 extension).
+reimplementation that could silently disagree with it. **D=2 validated evidence only**. Current probe source admits D=2..4, but D=3/D=4 remain unqualified due to PHC03's recorded D=3 Meta SIGSEGV (see HI84/RU01).
 
 ## Why
 
@@ -67,8 +66,12 @@ scope and does not block D=2 validation." `patch.py`'s `STATE`,
 
 ## Known limitations
 
-- **D=2 only.** Heterogeneous-topology (`{0,2}`/`{1,2}`/`{0,1,2}`) and
+- **D=2 only for validated hardware evidence; source accepts D=2..4.** Heterogeneous-topology (`{0,2}`/`{1,2}`/`{0,1,2}`) and
   D=3/D=4 promotion are explicitly out of this patch's scope, tracked
   separately under GP01/GP06 and HI84 respectively.
 - No `validation.toml` adapter exists (`kind = "diagnostic"`, not eligible
   for the local-framework adapter path).
+
+## PHC03 reconciliation (2026-10-10)
+
+The existing `test-hip-reduce.cpp` guard now accepts D=2..4; its D=2 540/540 evidence does **not** qualify D=3/D=4. Reuse the existing `tools/bigcherry/tuning/reduction.py` CPU-double oracle rather than creating a second harness. PHC03 owns the original D=3 no-P2P Meta crash and paired `GGML_CUDA_NO_PEER_COPY` compile-time discriminator; RU01/HI84 own subsequent hardware qualification. No new GPU result was obtained.
