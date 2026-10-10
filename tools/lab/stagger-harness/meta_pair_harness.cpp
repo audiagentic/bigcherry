@@ -47,6 +47,7 @@ struct model {
     int64_t n = 0, K = 0, k = 0, T = 0;
     int     L = 0;
     std::vector<ggml_tensor *> w1, w2, cache;
+    ggml_tensor * x_a = nullptr, * x_b = nullptr, * x_full = nullptr;  // inputs: static and mirrored, so a graph has no scheduler input copy
 };
 
 ggml_backend_meta_split_state split_state(const ggml_tensor * tensor, void * userdata) {
@@ -76,7 +77,7 @@ struct half_graph {
 };
 
 // first = column of the cache this graph writes; tokens = its width; reads_a = it adds half A's columns (half B)
-half_graph build(const model & m, int64_t first, int64_t tokens, bool reads_a) {
+half_graph build(const model & m, ggml_tensor * x, int64_t first, int64_t tokens, bool reads_a) {
     half_graph g;
     const ggml_init_params params = {
         /*.mem_size   =*/ ggml_tensor_overhead() * (size_t) (m.L * 12 + 8) + ggml_graph_overhead_custom(m.L * 12 + 8, false),
@@ -85,8 +86,7 @@ half_graph build(const model & m, int64_t first, int64_t tokens, bool reads_a) {
     };
     g.ctx = ggml_init(params);
     g.graph = ggml_new_graph_custom(g.ctx, m.L * 12 + 8, false);
-    g.x = ggml_new_tensor_2d(g.ctx, GGML_TYPE_F32, m.n, tokens);
-    ggml_set_input(g.x);
+    g.x = x;
     ggml_tensor * h = g.x;
     for (int l = 0; l < m.L; ++l) {
         ggml_tensor * u = ggml_mul_mat(g.ctx, m.w1[l], h);
@@ -162,7 +162,7 @@ int main(int argc, char ** argv) {
 
     // static tensors: the weights (split) and the caches (mirrored)
     const ggml_init_params static_params = {
-        /*.mem_size   =*/ ggml_tensor_overhead() * (size_t) (m.L * 3 + 1),
+        /*.mem_size   =*/ ggml_tensor_overhead() * (size_t) (m.L * 3 + 4),
         /*.mem_buffer =*/ nullptr,
         /*.no_alloc   =*/ true,
     };
@@ -172,6 +172,9 @@ int main(int argc, char ** argv) {
         m.w2.push_back(ggml_new_tensor_2d(ctx_static, GGML_TYPE_F32, m.K, m.n));
         m.cache.push_back(ggml_new_tensor_2d(ctx_static, GGML_TYPE_F32, m.n, 2 * m.T));
     }
+    m.x_a = ggml_new_tensor_2d(ctx_static, GGML_TYPE_F32, m.n, m.T);
+    m.x_b = ggml_new_tensor_2d(ctx_static, GGML_TYPE_F32, m.n, m.T);
+    m.x_full = ggml_new_tensor_2d(ctx_static, GGML_TYPE_F32, m.n, 2 * m.T);
     ggml_backend_buffer_t static_buf = ggml_backend_alloc_ctx_tensors(ctx_static, meta);
     if (static_buf == nullptr) {
         fail("could not allocate the static tensors");
@@ -189,9 +192,9 @@ int main(int argc, char ** argv) {
         }
     }
 
-    half_graph a = build(m, 0, m.T, false);
-    half_graph b = build(m, m.T, m.T, true);
-    half_graph full = build(m, 0, 2 * m.T, false);
+    half_graph a = build(m, m.x_a, 0, m.T, false);
+    half_graph b = build(m, m.x_b, m.T, m.T, true);
+    half_graph full = build(m, m.x_full, 0, 2 * m.T, false);
 
     ggml_backend_t backends[] = { meta, cpu };
     ggml_backend_buffer_type_t bufts[] = { ggml_backend_get_default_buffer_type(meta), ggml_backend_get_default_buffer_type(cpu) };
