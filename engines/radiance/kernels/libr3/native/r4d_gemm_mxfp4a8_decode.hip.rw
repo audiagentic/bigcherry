@@ -80,6 +80,7 @@
 @@ replace
 #include "r4d_mxfp4.h"
 #include "r3_mxfp4_gemv.h"  // libr3 native: the M = 1 vector kernel
+#include "r3_mxfp4_dec11.h"  // libr3 native: M <= 16 with gfx11 fragments, the weight never staged
 @@ end
 
 @@ find 1
@@ -87,6 +88,10 @@
   const int ks = pl.ks, bk = pl.bk;
 @@ replace
   const MxdPlan pl = mxd_plan(M, K, N, KS, BK, NT);
+  if (M <= 16 && r3_dec11_on()) {  // libr3 native: r3_mxfp4_dec11.h
+    r3_mxfp4_dec11_launch(a, ascale, wq, ws, wref, c, M, K, N, pl.nt, as_group == 128, as_rs, stream);
+    return;
+  }
   if (M == 1 && K <= R3_GEMV_MAX_K && r3_gemv_on()) {  // libr3 native
     r3_mxfp4_gemv1_launch(a, ascale, wq, ws, wref, c, K, N, pl.nt, as_group == 128, stream);
     return;

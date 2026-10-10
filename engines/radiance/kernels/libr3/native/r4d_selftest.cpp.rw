@@ -9,4 +9,7 @@
         mxfp4a8_numeric(pl, "gemm_mxfp4a8_decode", 1, 272, 640, 0, true);
         mxfp4a8_numeric(pl, "gemm_mxfp4a8_decode", 1, 400, 2560, 0, true);
         mxfp4a8_numeric(pl, "gemm_mxfp4a8_decode", 1, 5120, 17408, 0, false);
+        mxfp4a8_numeric(pl, "gemm_mxfp4a8_decode", 3, 272, 640, 0, true);    // libr3: the 4-row strip
+        mxfp4a8_numeric(pl, "gemm_mxfp4a8_decode", 16, 400, 2560, 0, true);  // libr3: a full 16-row fragment
+        mxfp4a8_numeric(pl, "gemm_mxfp4a8_decode", 4, 5120, 6144, 0, false);
 @@ end
