@@ -331,6 +331,11 @@ __device__ __forceinline__ r3_v16bf r3_row16_e4m3_to_bf16(const unsigned short* 
     return __builtin_bit_cast(r3_v16bf, *reinterpret_cast<const r3_u8u*>(p));
 }
 
+// A fragment row of 16 bf16 at a 32-byte aligned address in global memory (a re-tiled activation plane).
+__device__ __forceinline__ r3_v16bf r3_ld16_bf16(const unsigned char* p) {
+    return __builtin_bit_cast(r3_v16bf, *reinterpret_cast<const r3_u8*>(p));
+}
+
 // Staging: E4M3 codes widened once, as they are written to shared memory, so the K loop only loads. 8 codes in two
 // dwords (what r4d_mxfp4_unpack8 returns) or 16 in four, to 8 or 16 bf16 at dst.
 __device__ __forceinline__ void r3_store8_e4m3_as_bf16(unsigned short* dst, unsigned lo, unsigned hi) {

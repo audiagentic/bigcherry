@@ -7,7 +7,8 @@
 # A GPU list is written with '+': GPU=0+1. A config with TP=2 locks both cards.
 # Default configs: base (libr4d's staged form), dec11, dec11 with the drafter, two cards, two cards with dec11,
 # two cards with dec11 and the drafter.
-# env: R (runs root), BUILD (any build run id for the queue line, b-main2), SELFTEST_ENV (R3_DEC11=1), N (128)
+# env: R (runs root), BUILD (any build run id for the queue line, b-main2), SELFTEST_ENV (R3_DEC11=1), SELFTEST_ROWS
+#      (the three MXFP4 GEMM rows), N (128), BENCH (1)
 set -u
 cd "$(cd "$(dirname "$0")/../../.." && pwd)"
 R=${R:-/mnt/data/bigcherry-work/runs}
@@ -32,9 +33,9 @@ if ! grep -q "build exit 0" "$R/$tag-build.log"; then
     grep -E "error:" "$R/$tag-build/build.log" | sed -E 's#.*/([^/:]+:[0-9]+):[0-9]+: #\1 #' | sort | uniq -c | head -8 | cut -c1-200
     rm -f "$jobs"; echo "CYCLE_DONE $tag"; exit 1
 fi
-ENVS=${SELFTEST_ENV:-R3_DEC11=1}; one 0 "$tag-self" tools/lab/radiance/libr3-selftest.sh gemm_mxfp4a8_decode
-echo "selftest [$ENVS]: $(grep -E "^-- gemm_mxfp4a8_decode|verdict" "$R/$tag-self.log" | tr '\n' ' ' | cut -c1-140)"
-grep -E "FAIL" "$R/$tag-self/gemm_mxfp4a8_decode.log" 2> /dev/null | head -4 | cut -c1-200
+ENVS=${SELFTEST_ENV:-R3_DEC11=1}; one 0 "$tag-self" tools/lab/radiance/libr3-selftest.sh ${SELFTEST_ROWS:-gemm_mxfp4a8_decode gemm_mxfp4a8_tiled gemm_mxfp4a8_nt_m64}
+echo "selftest [$ENVS]: $(grep -E "^-- |verdict" "$R/$tag-self.log" | sed 's/^-- //' | tr '\n' ';' | cut -c1-260)"
+grep -hE "FAIL" "$R/$tag-self"/*.log 2> /dev/null | head -6 | cut -c1-200
 for cfg in "${configs[@]}"; do
     name=${cfg%%:*}
     ENVS="N=${N:-128} BENCH=${BENCH:-1} $(echo "${cfg#*:}" | tr ',' ' ' | tr '+' ',')"

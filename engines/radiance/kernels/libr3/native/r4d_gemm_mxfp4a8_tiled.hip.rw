@@ -1,0 +1,110 @@
+# Native gfx11 form of r4d_gemm_mxfp4a8_tiled, the MXFP4 GEMM for prefill row counts (RR08).
+#
+# Why: through the compatibility layer this kernel is what holds prefill on an RX 7900 XTX at about 30 tok/s with
+# the MXFP4 Qwen3.8-27B (runs p2-base, p2-dec11, 2026-10-10: 2,300 and 6,500 token prompts) against 3,100 to 3,200 on
+# the R9700. Every one of its fp8 x fp8 WMMA calls widens 16 codes in software and moves 12 dwords across lanes.
+#
+# libr4d: the activation is re-tiled once into the op's scratch in gfx12 fragment order (per 16-row fragment and
+# K step, 32 slots of 8 E4M3 bytes); the weight slab is unpacked to E4M3 in shared memory; a lane reads 8 bytes of
+# each operand and calls the gfx12 fp8 WMMA.
+#
+# Native:
+#   - the re-tile widens to bf16 and writes gfx11 fragment rows: per fragment and K step, 16 rows of 16 bf16 (32
+#     bytes a row), so an activation fragment is one 32-byte load. The scratch is twice the size, from the same hook.
+#   - the weight slab is staged as bf16, straight from the 4-bit codes by table lookup (r3_mxfp4_store8_bf16).
+#   - the gfx11 bf16 WMMA takes the accumulator as its C operand; the accumulator stays in the gfx11 layout through
+#     the K loop (the boundary rescale is per column, the same in both layouts) and is moved to the gfx12 layout
+#     once, in front of the unchanged epilogue.
+#   - the activation fragments are loaded in the step that uses them, not a whole slab ahead: a gfx11 fragment is 8
+#     dwords, and TM x NS of them at once would not fit a wave's registers.
+
+@@ find 1
+  mxt_u2 v = { 0u, 0u };
+  if (r < M) v = *(const mxt_u2*)(A + (size_t)r * K + k);
+  *(mxt_u2*)(AT + o * 8) = v;
+@@ replace
+  mxt_u2 v = { 0u, 0u };
+  if (r < M) v = *(const mxt_u2*)(A + (size_t)r * K + k);
+  // libr3 native: bf16, a fragment (f) is 16 rows of 32 bytes; this thread's 8 values are its row's half
+  r3_store8_e4m3_as_bf16((unsigned short*)(AT + f * 512 + (long long)(lane & 15) * 32 + (lane >> 4) * 16),
+                         v[0], v[1]);
+@@ end
+
+@@ find 1
+  return M < 1 || K < 16 ? 0 : (long)((M + 15) / 16) * 16 * K;
+@@ replace
+  return M < 1 || K < 16 ? 0 : (long)((M + 15) / 16) * 16 * K * 2;  // libr3 native: the re-tile is bf16
+@@ end
+
+@@ find 1
+  __shared__ unsigned char sW[BNF * STR];
+  __shared__ unsigned int sMag[32];
+@@ replace
+  __shared__ unsigned short sW[BNF * STR];  // libr3 native: bf16
+  __shared__ unsigned int sMag[32];
+@@ end
+
+@@ find 1
+    abase[i] = AT + (size_t)__builtin_amdgcn_readfirstlane(mt * ksteps * 256);
+  }
+  const unsigned int aoff = (unsigned int)lane * 8;
+@@ replace
+    abase[i] = AT + (size_t)__builtin_amdgcn_readfirstlane(mt * ksteps * 512);
+  }
+  const unsigned int aoff = (unsigned int)col * 32;  // libr3 native: this lane's row of the fragment
+@@ end
+
+@@ find 1
+    mxt_v2i af[TM][NS];
+#pragma unroll
+    for (int i = 0; i < TM; ++i)
+#pragma unroll
+      for (int st = 0; st < NS; ++st)
+        af[i][st] = *(const mxt_v2i*)(abase[i] +
+                                      (aoff + (unsigned int)(k0 * 16) + (unsigned int)(st * 256)));
+@@ replace
+    // libr3 native: the activation fragments are loaded in the step that uses them (below)
+@@ end
+
+@@ find 1
+        unsigned int lo, hi;
+        r4d_mxfp4_unpack8_t(wq[q], sMag[d * 2], sMag[d * 2 + 1], &lo, &hi);
+        *(mxt_u2*)(&sW[(wrow[it] + q) * STR + wkloc[it]]) = mxt_u2{lo, hi};
+@@ replace
+        r3_mxfp4_store8_bf16(&sW[(wrow[it] + q) * STR + wkloc[it]], wq[q], d);
+@@ end
+
+@@ find 1
+      const int kk = step * 16 + kb8;
+      mxt_v2i wf[TN];
+#pragma unroll
+      for (int j = 0; j < TN; ++j) {
+        const unsigned char* p = &sW[(wn * TN * 16 + j * 16 + col) * STR + kk];
+        wf[j][0] = *(const int*)p; wf[j][1] = *(const int*)(p + 4);
+      }
+@@ replace
+      const int kk = step * 16;  // libr3 native: the row's 16 values, in every lane
+      r3_v16bf wf[TN], af[TM];
+#pragma unroll
+      for (int j = 0; j < TN; ++j) wf[j] = r3_row16_e4m3_to_bf16(&sW[(wn * TN * 16 + j * 16 + col) * STR + kk]);
+#pragma unroll
+      for (int i = 0; i < TM; ++i)
+        af[i] = r3_ld16_bf16(abase[i] + (aoff + (unsigned int)(k0 * 32) + (unsigned int)(step * 512)));
+@@ end
+
+@@ find 1
+          acc[i][j] = __builtin_amdgcn_wmma_f32_16x16x16_fp8_fp8_w32_gfx12(wf[j], af[i][step],
+                                                                          acc[i][j]);
+@@ replace
+          acc[i][j] = r3_wmma_bf16_native(wf[j], af[i], acc[i][j]);
+@@ end
+
+@@ find 1
+  // Epilogue.  A lane holds row m0 + 64*wm + 16i + col of M fragment i and eight consecutive columns of N fragment
+@@ replace
+#pragma unroll
+  for (int i = 0; i < TM; ++i)
+#pragma unroll
+    for (int j = 0; j < TN; ++j) acc[i][j] = r3_acc_native_to_gfx12(acc[i][j]);  // libr3 native: once
+  // Epilogue.  A lane holds row m0 + 64*wm + 16i + col of M fragment i and eight consecutive columns of N fragment
+@@ end
