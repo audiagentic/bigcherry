@@ -54,3 +54,25 @@ threads.
 **stagger**: 96 rounds of [compute, then every card exchanges one message through the host] on the three target
 cards. Compute only 174.8 ms. As today (the card waits for the exchange): 342.5 ms, the exchange adds 96%. Two
 half-batches staggered: 182.9 ms, the exchange adds 5%. Staggering recovers 95% of what the exchange costs.
+
+**wire** (run hp3): a round trip of one message as f32 against f16 with the narrowing and widening done on the
+card costs 53-56% of f32 on every card, alone or with all three exchanging (R9700: 1.58 ms against 0.83 ms). The
+wire scales with its width; the conversions cost almost nothing.
+
+**replay** (run hp4): one thread a card, 2,700 rounds mixing an in-place update of a graph instance
+(hipGraphExecUpdate), a replay and direct launches, under no lock, 1356's rule, one lock for update and replay,
+and one lock for everything: zero wrong results and zero errors under all four. The HIP graph interface is safe
+from several threads on these cards with small graphs; the 1356 race is in our own code (its bisect needs HIP
+graphs and the fusion pass).
+
+**pipeline** (run hp6; QFP50): 40 batches a card, the host needing 3 ms to prepare each, batch k+1 reusing batch
+k's buffer on the card with its input sent asynchronously.
+
+| card | a batch computes in | one deep (prepare after the batch ends) | two deep (queue k+1, wait on k's event) |
+|---|---|---|---|
+| RX 7900 XTX | 15.4 ms | 18.5 ms a batch | 15.5 ms a batch |
+| R9700 | 17.4 ms | 20.7 ms a batch | 17.5 ms a batch |
+
+Two deep hides the whole preparation, every result is right (0 of 40 wrong in both orders), and the event recorded
+behind batch k's result copy releases the host while batch k+1 is still queued, which a stream synchronise would
+not.
