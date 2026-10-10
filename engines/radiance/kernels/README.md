@@ -248,6 +248,18 @@ run is not comparable with an unprofiled one, so read it as shares): the MXFP4 G
 (38% gate/up, 20% down, 16% the 16384-wide projection, 11% the K=6144 one, 4% the 12288-wide one); the bf16 logits
 GEMM is 2.8%, everything else under 2.5% each. With the first native build they were 95%.
 
+Two things tried after the table-lookup build that did not help (2026-10-10):
+
+- **A vector kernel for one token** (RR07, `r3_mxfp4_gemv.h`, opt-in with `R3_GEMV=1`): no matrix instruction, the
+  weight decoded as it streams. Its second form took 418 us for the gate/up GEMM against 208 us for the matrix form
+  (15.5 tok/s against 28.4), so the 16-row fragment spent on one token is not what limits decode here; the 4-bit
+  unpack and the per-block staging, which both forms share, are. It is also not correct: all three forms (bf16 dot
+  product, f16 dot product, plain f32 math) fail the selftest's four M = 1 cases with the same error (rel_l2 1.519
+  at N=272 K=640), which points at how it reads or pairs its operands; not found. Parked.
+- **The split, slab and load hint** (`R3_MXD_KS`, `R3_MXD_BK`, `R3_MXD_NT`; libr4d's rule was measured on gfx12):
+  one build, eight settings, decode tok/s: rule 28.5, slab 64 26.5, split 2 27.6, split 4 28.1, split 4 with slab
+  64 27.8, split 8 28.8, non-temporal off 27.9, on 28.5. Flat within 8%; the rule stays.
+
 Numeric check (RR06): radiance's own kernel selftest carries a host reference for the MXFP4 GEMMs. Its binary runs
 only on gfx1201, so libr3 builds a copy for gfx11 (`r3_selftest`, `tools/lab/radiance/libr3-selftest.sh`). On the
 R9700 radiance's kernels pass 88 of 88 cases (74 decode, 4 nt_m64, 10 tiled; run `r4d-self1`); on the XTX libr3
