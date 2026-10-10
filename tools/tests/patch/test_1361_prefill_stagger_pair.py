@@ -105,6 +105,8 @@ class Patch1361Mechanics(unittest.TestCase):
             self.assertIn("bc_1360_ar_transfer_begin(comm_ctx, tensors, state->transfer)", cuda)
             self.assertIn("ggml_backend_meta_graph_compute_pair", meta)
             self.assertIn("arena_galloc_pair", meta)
+            self.assertIn("const size_t compute_headroom = bc_stagger_env != nullptr", meta)
+            self.assertIn("? 32 : 16;", meta)
             self.assertIn("backend_ctx->bc_pair_capture = &sets[0]", meta)
             self.assertIn("backend_ctx->bc_pair_capture = &sets[1]", meta)
 
@@ -119,6 +121,9 @@ class Patch1361Mechanics(unittest.TestCase):
             self.assertIn("ggml_backend_sched_graph_compute_async_pair", sched)
             self.assertIn("ggml_backend_sched_set_stagger_pair_arena", hdr)
             self.assertIn("bc_1361_sched_b", ctxh)
+            self.assertIn("if (bc_cached) n_outputs = bc_count_outputs(ubatch);", ctx)
+            self.assertIn("never execute partially prepared graphs", ctx)
+            self.assertIn("retrying would apply memory twice", ctx)
             self.assertEqual(ctx.count("BIGCHERRY_PATCH_HIT patch=1361_prefill_stagger_pair"), 1)
             self.assertIn("n_tokens_all == 2*bc_1361_half", ctx)
             self.assertIn("mctx->get_ubatch().n_tokens == bc_1361_half", ctx)

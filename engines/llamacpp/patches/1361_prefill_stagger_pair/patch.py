@@ -401,8 +401,10 @@ _N_ARENA_DTOR = r'''            bc.arena_plans.clear();
 # both graphs' views land in the same container: twice the views between evals.
 _A_META_HEADROOM = r'''    constexpr size_t compute_headroom = 16; // Maximum number of views per statically allocated tensor that can be created between evals.
 '''
-_N_META_HEADROOM = r'''    // BigCherry 1361: a stagger pair allocates two graphs between evals, so twice upstream's 16 views a tensor.
-    constexpr size_t compute_headroom = 32; // Maximum number of views per statically allocated tensor that can be created between evals.
+_N_META_HEADROOM = r'''    // BigCherry 1361: two graphs need twice the view capacity; flag-off keeps upstream's exact 16.
+    const char * bc_stagger_env = getenv("BIGCHERRY_PREFILL_STAGGER");
+    const size_t compute_headroom = bc_stagger_env != nullptr && strtoul(bc_stagger_env, nullptr, 10) > 0
+        ? 32 : 16; // Maximum views per statically allocated tensor between evals.
 '''
 
 _A_ARENA_ROTATE = r'''// BigCherry 1340 (MSM02): what graph_compute does when it rebuilds - move the Meta buffers a graph uses on to their
@@ -809,6 +811,10 @@ _N_DECODE_LOOP = r'''    int64_t n_outputs_prev = 0;
                             LLAMA_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1361_prefill_stagger_pair\n");
                         });
                     } else {
+                        if (bc_status != GGML_STATUS_SUCCESS) {
+                            // Meta preparation failed (not a provider rejection); never execute partially prepared graphs.
+                            return bc_status == GGML_STATUS_ALLOC_FAILED ? -2 : -3;
+                        }
                         // Pair rejection happens before Meta model compute.  Preserve A-before-B sequential compute.
                         bc_status = graph_compute(bc_pair_res[0]->get_gf(), true);
                         if (bc_status == GGML_STATUS_SUCCESS) {
@@ -819,6 +825,10 @@ _N_DECODE_LOOP = r'''    int64_t n_outputs_prev = 0;
                         if (bc_status != GGML_STATUS_SUCCESS) return -3;
                     }
                 } else {
+                    if (bc_pair_ubatch[1].n_tokens == bc_1361_half) {
+                        // B's apply/build failed; retrying would apply memory twice and invalidate A's state.
+                        return bc_status == GGML_STATUS_ALLOC_FAILED ? -2 : -3;
+                    }
                     // The split was not exactly two halves.  A is already prepared but no pair work started.
                     bc_status = graph_compute(bc_pair_res[0]->get_gf(), true);
                     if (bc_status != GGML_STATUS_SUCCESS) return -3;
@@ -844,6 +854,8 @@ _A_PROCESS = r'''        ggml_status status;
 '''
 _N_PROCESS = r'''        ggml_status status = GGML_STATUS_SUCCESS;
 
+        // process_ubatch normally sets this per ubatch; cached A/B must restore that contract.
+        if (bc_cached) n_outputs = bc_count_outputs(ubatch);
         const llm_graph_result * res = bc_cached ? bc_pair_res[bc_pair_index]
             : process_ubatch(ubatch, ctx_type_to_graph_type(cparams.ctx_type), mctx.get(), status);
         const bool bc_using_b = bc_cached && bc_pair_index == 1;
