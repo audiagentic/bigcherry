@@ -40,12 +40,15 @@ The safety chain for every buffer is therefore compute producer/pre-work -> `e_i
 
 ## Composition
 
-The patch declares the AllReduce-neighbourhood dependencies requested by QFP49:
-`0840_hybrid_allreduce_dispatch`, `1250_nro01_allreduce_q8_wire`, and `1291_ar_cpu_root`.
-It also directly requires `0910_feature_sets` because the patch registers its environment flag there.
+The patch hard-requires `0840_hybrid_allreduce_dispatch` and `1291_ar_cpu_root`, which shape the composed
+communication context/provider path, and `0910_feature_sets` because 1360 registers its environment flag there.
 
-The `ar-transfer-stream` recipe experiment adds 1360 on top of the production source; dependency resolution supplies
-the declared dependency closure. It is not in the production patch set.
+`1250_nro01_allreduce_q8_wire` was also inspected as requested. Its `ggml-cuda.cu` edits are downstream of the
+NCCL helper/anchors changed here and do not alter them, so 1360 does not depend on its output. A hard dependency would
+also make 1360 unresolvable because 1250 currently requires rejected `1252_nro03_allreduce_p2p_provider`.
+
+The `ar-transfer-stream` recipe lists the exact 0860/1225/0840/1291/1360 overlay closure so experiment audits can
+resolve it both on release and tuning sources. 1360 is not in the production patch set.
 
 ## Validation required
 
