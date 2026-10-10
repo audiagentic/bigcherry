@@ -382,13 +382,22 @@ Mixed-prompt bench (`rad_prompt_bench.py`), tok/s:
 |---|---|---|---|
 | R9700, libr4d (`fp8a-r4d`, `fp8a-r4dspec`) | 22.8 | 79.7 | 2,805 / 2,711 |
 | two XTX, compatibility layer (`fp8a-tp2`, `fp8a-tp2spec`) | 7.7 | 28.4 | 197 / 209 |
-| two XTX, native fp8 GEMM (`fp8b-tp2`, `fp8b-tp2spec`) | 18.5 | 62.7 | 1,035 / 1,044 |
+| two XTX, native fp8 GEMM, codes widened to bf16 (`fp8b-tp2`, `fp8b-tp2spec`) | 18.5 | 62.7 | 1,035 / 1,044 |
+| two XTX, native fp8 GEMM, codes widened to half (`fp8c-tp2`, `fp8c-tp2spec`) | 44.0 | 125.9 | 1,188 / 1,182 |
 | MXFP4 on two XTX, for scale (`p4-*`) | 46.8 | 141.7 | about 1,535 |
 
-The native form is `native/r4d_gemm_fp8a8.hip.rw` (its header says what changes): B staged as bf16, A widened where
-it is read, the accumulator in the gfx11 layout until the epilogue. `r3_selftest` passes `gemm_fp8a8_nt_m16` (2
-cases) and `gemm_fp8a8_tiled` (1); `gemm_fp8a8_gated_nt_m16` has no selftest case in radiance and is covered only by
-the served text. Quality against MXFP4 is not measured yet.
+The native form is `native/r4d_gemm_fp8a8.hip.rw` (its header says what changes): B staged widened, A widened
+where it is read, the accumulator in the gfx11 layout until the epilogue. `r3_selftest` passes `gemm_fp8a8_nt_m16`
+(2 cases) and `gemm_fp8a8_tiled` (1) in both forms; `gemm_fp8a8_gated_nt_m16` has no selftest case in radiance and
+is covered only by the served text. Quality against MXFP4 is not measured yet.
+
+Widening to half is what moved decode. The bf16 form needs a table for E4M3's eight subnormal codes and ran the
+gate/up GEMM at 321 us a call, 139 GB/s of weight (`fp8b-prof`). A half built from the code's own bits
+(`(code & 0x7f) << 7 | (code & 0x80) << 8`) is the code's value times 2^-8 for every code, because E4M3 and half
+share the subnormal rule, so four codes widen in six bit operations and two v_perm; the f16 WMMA multiplies them
+and the result is multiplied by 2^16 once. The same GEMM is then 132 us a call, 337 GB/s (`fp8c-tp2prof`), and the
+selftest's host reference still agrees, so the card does not flush half subnormals in the WMMA. Two XTX now decode
+the 8-bit model at about twice the R9700's rate; prefill is at 43% of it.
 
 ## Other engines on the RX 7900 XTX (looked up 2026-10-10)
 
