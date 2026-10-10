@@ -24,7 +24,7 @@ import re
 from bigcherry.patcher import Edit, EnvDoc, FilePatch
 
 GROUP = "rdna-boosts"
-STATE = "untested"
+STATE = "validated"
 
 # ---------------------------------------------------------------------------------------------- llama-context.h
 _A_H_METHOD = "    float * get_embeddings_nextn();\n"

@@ -1,6 +1,6 @@
 # 1359_prefill_pipeline
 
-**Status:** untested
+**Status:** validated
 **Plan item:** QFP50
 
 ## What it does
