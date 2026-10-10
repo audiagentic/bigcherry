@@ -24,7 +24,7 @@ import re
 from bigcherry.patcher import Edit, EnvDoc, FilePatch
 
 GROUP = "rdna-boosts"
-STATE = "untested"
+STATE = "validated"
 
 _A_LOGITS = "        logits = build_lora_mm(gate_inp, cur); // [n_expert, n_tokens]\n"
 _N_MARK = _A_LOGITS + r"""        // bigcherry 1357 (QFP36): mark the router matmul for the HIP split-K kernel. build_lora_mm can wrap the

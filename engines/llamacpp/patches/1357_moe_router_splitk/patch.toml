@@ -1,7 +1,7 @@
 schema = 1
 id = "1357_moe_router_splitk"
 order = 1357
-state = "untested"
+state = "validated"
 kind = "enhancement"
 origin = "local"
 backend = "hip"
