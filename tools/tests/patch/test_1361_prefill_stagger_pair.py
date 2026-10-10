@@ -105,6 +105,8 @@ class Patch1361Mechanics(unittest.TestCase):
             self.assertIn("bc_1360_ar_transfer_begin(comm_ctx, tensors, state->transfer)", cuda)
             self.assertIn("ggml_backend_meta_graph_compute_pair", meta)
             self.assertIn("arena_galloc_pair", meta)
+            self.assertIn("const size_t compute_headroom = bc_stagger_env != nullptr", meta)
+            self.assertIn("? 32 : 16;", meta)
             self.assertIn("backend_ctx->bc_pair_capture = &sets[0]", meta)
             self.assertIn("backend_ctx->bc_pair_capture = &sets[1]", meta)
 
