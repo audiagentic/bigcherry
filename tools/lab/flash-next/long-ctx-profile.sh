@@ -5,7 +5,7 @@
 #   1) unprofiled: prefill + decode timings at several context depths (8K/32K/96K prompt), memory breakdown;
 #   2) rocprofv3 --kernel-trace --memory-copy-trace --stats on a 32K prompt + 128 decode, for the per-kernel
 #      split of prefill and decode at depth (attention vs MoE vs AllReduce vs copies).
-# Usage: long-ctx-profile.sh <llama-server> <out-dir> [full|decode|perf|timing|probes|apitrace|synctrace|prefillsync]
+# Usage: long-ctx-profile.sh <llama-server> <out-dir> [full|decode|perf|timing|probes|apitrace|synctrace|prefillsync|prefillperf]
 # Other drafters: SPEC_TYPE replaces the MTP default (draft-dspark, draft-dflash), SPEC_PMIN sets --spec-draft-p-min,
 # DRAFT names the draft GGUF, SPEC_N the block length. Single-word values, so they pass through AB_ENV. A DFlash /
 # DSpark draft with this tensor-split target needs patch 1286 in the build.
@@ -215,6 +215,12 @@ elif [ "$mode" = probes ]; then  # fidelity: PROBES next-token distributions aft
 elif [ "$mode" = timing ]; then  # unprofiled decode at ~80K cached context (A/B arm)
   DECODE_N=${DECODE_N:-512} CACHE=1 run_pass timing ${DEPTH:-65536}
   exit $?
+elif [ "$mode" = prefillperf ]; then  # QFP49: host-side, where the server's CPU time goes during one uncached prefill
+  DECODE_N=8 CACHE=0 PERF_OUT=$out/prefill.perf.data run_pass prefillperf ${DEPTH:-24576}
+  p=/usr/lib/linux-tools/6.8.0-142-generic/perf
+  $p report -i "$out/prefill.perf.data" --no-children --sort comm --stdio 2>/dev/null | grep -E "^ +[0-9]" | head -12
+  $p report -i "$out/prefill.perf.data" --no-children --sort comm,dso,sym --stdio -g none 2>/dev/null | grep -E "^ +[0-9]" | head -60
+  exit 0
 elif [ "$mode" = perf ]; then  # host-side: where does the CPU spend decode at depth (GPUs ~75% idle)?
   DECODE_N=1024 CACHE=1 PERF_OUT=$out/decode.perf.data run_pass perfdecode ${DEPTH:-65536}
   p=/usr/lib/linux-tools/6.8.0-142-generic/perf

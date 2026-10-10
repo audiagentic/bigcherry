@@ -33,7 +33,7 @@ for d in "${DEPTHS[@]}"; do
     if [ "${MODE:-prefillprof}" = prefillprof ]; then
         python3 tools/lab/flash-next/prefill-kernel-table.py $R/$TAG-d$d/rocprof
     else
-        cut -c1-230 $R/$TAG-d$d/sync-sites.txt 2>/dev/null | head -150
+        if [ -f $R/$TAG-d$d/sync-sites.txt ]; then cut -c1-230 $R/$TAG-d$d/sync-sites.txt | head -150; else grep -E "^ +[0-9]" $R/$TAG-d$d.log | cut -c1-200 | head -72; fi
     fi
 done
 echo ALL_JOBS_DONE
