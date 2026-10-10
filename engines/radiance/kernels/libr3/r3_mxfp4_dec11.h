@@ -68,7 +68,7 @@ template <int MR, bool NT, bool ABLK>
 __global__ __launch_bounds__(R3_D11_WAVES * 32) void r3_gemm_mxfp4a8_dec11_kernel(
         const unsigned char* __restrict__ A, const float* __restrict__ As, const unsigned int* __restrict__ W,
         const unsigned char* __restrict__ Ws, const unsigned char* __restrict__ Wref,
-        __hip_bfloat16* __restrict__ C, int M, int K, int N, int as_rs) {
+        __hip_bfloat16* __restrict__ C, int M, int K, int N, int as_rs, int mode) {
     typedef float r3_v8fa __attribute__((ext_vector_type(8), aligned(4)));
     __shared__ unsigned short sA[R3_D11_WAVES * MR * 128];  // a wave's strip: MR rows x 128 of K, bf16
     __shared__ float sP[R3_D11_WAVES * 32 * 8];             // every lane's partial accumulator
@@ -112,15 +112,28 @@ __global__ __launch_bounds__(R3_D11_WAVES * 32) void r3_gemm_mxfp4a8_dec11_kerne
                     hi0 = kR3MxBf16Hi[d][0]; hi1 = kR3MxBf16Hi[d][1];
                 }
                 const unsigned int* __restrict__ slot = wp + (size_t) ks * 32 + col;
-                const unsigned int c0 = NT ? __builtin_nontemporal_load(slot) : slot[0];            // k 0-7
-                const unsigned int c1 = NT ? __builtin_nontemporal_load(slot + 16) : slot[16];      // k 8-15
-                const r3_u4 w0 = r3_mxfp4_unpack8_bf16_t(c0, lo0, lo1, hi0, hi1);
-                const r3_u4 w1 = r3_mxfp4_unpack8_bf16_t(c1, lo0, lo1, hi0, hi1);
+                unsigned int c0, c1;
+                if (mode & 4) {  // timing only: no weight loads
+                    c0 = (unsigned) ks * 0x01010101u; c1 = ~c0;
+                } else {
+                    c0 = NT ? __builtin_nontemporal_load(slot) : slot[0];            // k 0-7
+                    c1 = NT ? __builtin_nontemporal_load(slot + 16) : slot[16];      // k 8-15
+                }
                 r3_u8 wrow;
-                wrow[0] = w0[0]; wrow[1] = w0[1]; wrow[2] = w0[2]; wrow[3] = w0[3];
-                wrow[4] = w1[0]; wrow[5] = w1[1]; wrow[6] = w1[2]; wrow[7] = w1[3];
-                acc = r3_wmma_bf16_native(__builtin_bit_cast(r3_v16bf, wrow),
-                                          r3_row16_e4m3_to_bf16(strip + mr * 128 + s * 16), acc);
+                if (mode & 2) {  // timing only: no unpack
+                    wrow[0] = c0; wrow[1] = c1; wrow[2] = c0; wrow[3] = c1; wrow[4] = c0; wrow[5] = c1; wrow[6] = c0; wrow[7] = c1;
+                } else {
+                    const r3_u4 w0 = r3_mxfp4_unpack8_bf16_t(c0, lo0, lo1, hi0, hi1);
+                    const r3_u4 w1 = r3_mxfp4_unpack8_bf16_t(c1, lo0, lo1, hi0, hi1);
+                    wrow[0] = w0[0]; wrow[1] = w0[1]; wrow[2] = w0[2]; wrow[3] = w0[3];
+                    wrow[4] = w1[0]; wrow[5] = w1[1]; wrow[6] = w1[2]; wrow[7] = w1[3];
+                }
+                if (mode & 1) {  // timing only: no matrix instruction
+                    acc += __builtin_bit_cast(r3_v8f, wrow);
+                } else {
+                    acc = r3_wmma_bf16_native(__builtin_bit_cast(r3_v16bf, wrow),
+                                              r3_row16_e4m3_to_bf16(strip + mr * 128 + s * 16), acc);
+                }
             }
         }
         if constexpr (ABLK) {  // the group's own activation scale, per column
@@ -159,8 +172,11 @@ static inline void r3_mxfp4_dec11_launch(long a, long ascale, long wq, long ws, 
     auto Zp = (const unsigned char*) ws;
     auto Rp = (const unsigned char*) wref;
     auto Cp = (__hip_bfloat16*) c;
+    // R3_D11_MODE: timing ablation, results are WRONG when set. 1 = no matrix instruction, 2 = no unpack, 4 = no
+    // weight loads; add them to combine. For locating the kernel's cost with --profile-ops, nothing else.
+    static const int mode = std::getenv("R3_D11_MODE") ? std::atoi(std::getenv("R3_D11_MODE")) : 0;
 #define R3_D11_L(MR_, NT_, AB_) \
-    hipLaunchKernelGGL((r3_gemm_mxfp4a8_dec11_kernel<MR_, NT_, AB_>), grid, block, 0, st, Ap, Sp, Wp, Zp, Rp, Cp, M, K, N, as_rs)
+    hipLaunchKernelGGL((r3_gemm_mxfp4a8_dec11_kernel<MR_, NT_, AB_>), grid, block, 0, st, Ap, Sp, Wp, Zp, Rp, Cp, M, K, N, as_rs, mode)
 #define R3_D11_AB(MR_, NT_) { if (ablk) R3_D11_L(MR_, NT_, true); else R3_D11_L(MR_, NT_, false); }
 #define R3_D11_NT(MR_) { if (nt) R3_D11_AB(MR_, true) else R3_D11_AB(MR_, false) }
     if (M == 1) R3_D11_NT(1) else if (M <= 4) R3_D11_NT(4) else R3_D11_NT(16)
