@@ -22,7 +22,7 @@ AttestedServerSession composes ServerRunner rather than replacing it.
 
 REAL BLOCKER FOUND (not just "nobody called it yet"), 2026-09-08: RD73's
 lanes pass ``-sm tensor --fit off`` (required for that model/topology,
-patches/1233's own README documents the real hardware crash without
+engines/llamacpp/patches/1233's own README documents the real hardware crash without
 --fit off). That combination skips the device-fitting code path that
 emits llama-server's "using device ROCm0 (...)" line -- attestation.py's
 own module comment documents this exact caveat, and states server lanes
@@ -48,7 +48,7 @@ from .attestation import (
     parse_llama_server_attestation,
     require_execution_identity,
 )
-from ..tuning.server_runner import ServerRunner
+from ..tuning.server_runner import ServerRunner, LLAMACPP_SERVE
 
 # -sm tensor wraps the physical devices in Meta(): the timed process logs
 # "assigned to device Meta()" and its device inventory, but neither a locator
@@ -108,6 +108,7 @@ class AttestedServerSession:
         self._architecture_by_locator = architecture_by_locator
         self.attestation: ExecutionAttestation | None = None
         self._runner = ServerRunner(
+            serve=LLAMACPP_SERVE,
             binary=binary,
             model=model,
             host=host,

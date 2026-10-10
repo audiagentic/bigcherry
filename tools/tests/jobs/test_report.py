@@ -15,8 +15,8 @@ class SeriesReportTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
         self.repo = self.root / "repo"
-        (self.repo / "patches" / "p").mkdir(parents=True)
-        (self.repo / "patches" / "p" / "patch.py").write_text("STATE='untested'\n")
+        (self.repo / "engines" / "llamacpp" / "patches" / "p").mkdir(parents=True)
+        (self.repo / "engines" / "llamacpp" / "patches" / "p" / "patch.py").write_text("STATE='untested'\n")
         self.store = RunStore(self.root / "jobs")
         self.series_id = "s-report"
         self.store.create_series(
@@ -66,7 +66,7 @@ class SeriesReportTests(unittest.TestCase):
                 }
             )
         for record in rows:
-            patch_evidence.write_record(record, root=self.repo / "patches")
+            patch_evidence.write_record(record, root=self.repo / "engines" / "llamacpp" / "patches")
         verified = {
             "schema": "bigcherry.jobs.harvest-result.v1",
             "series_id": self.series_id,
@@ -78,7 +78,7 @@ class SeriesReportTests(unittest.TestCase):
                 "patch_id": "p",
                 "scientific_identity_hash": "science",
                 "hardware_cohort_hash": "hardware",
-                "destination": "patches/p.json",
+                "destination": "engines/llamacpp/patches/p.json",
                 "runs": run_manifest,
                 "record_digests": [row["record_digest"] for row in rows],
             },

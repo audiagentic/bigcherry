@@ -10,11 +10,12 @@ from types import SimpleNamespace
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from bigcherry.core import paths  # noqa: E402
 from bigcherry.patcher import apply_all  # noqa: E402
 from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
-_CUDA = _REPO / "vendor/llama.cpp/ggml/src/ggml-cuda"
+_CUDA = paths.llama_root() / "ggml/src/ggml-cuda"
 _FILES = ("unary.cu", "unary.cuh", "ggml-cuda.cu")
 
 
@@ -26,9 +27,9 @@ def _load(name: str, rel: str):
     return module
 
 
-_MERGED_Q81 = _load("patch_1307_merged", "patches/1307_q81_activation_cache_mmvq/patch.py")
+_MERGED_Q81 = _load("patch_1307_merged", "engines/llamacpp/patches/1307_q81_activation_cache_mmvq/patch.py")
 _P1310 = SimpleNamespace(PATCHES=[p for p in _MERGED_Q81.PATCHES if p.description.startswith("1310:")])
-_P1313 = _load("patch_1313", "patches/1313_scale_act_fuse/patch.py")
+_P1313 = _load("patch_1313", "engines/llamacpp/patches/1313_scale_act_fuse/patch.py")
 
 
 @unittest.skipUnless((_CUDA / "unary.cu").exists(), "pinned vendor checkout not present")

@@ -41,7 +41,7 @@ from bigcherry.patch import validation_producer as vp  # noqa: E402
 from bigcherry.patch.validation import ArtifactRef  # noqa: E402
 
 SUBJECT_PATCH = "1210_rd26_bitidentical_decode_verify_standalone"
-PATCH_DIR = TOOLS_ROOT.parent / "patches" / SUBJECT_PATCH
+PATCH_DIR = TOOLS_ROOT.parent / "engines" / "llamacpp" / "patches" / SUBJECT_PATCH
 CONTRACT_ARCHITECTURES = ("gfx1100", "gfx1201", "gfx1030")
 FAT_TARGETS = "gfx1100;gfx1201;gfx1030"
 

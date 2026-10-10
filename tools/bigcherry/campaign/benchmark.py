@@ -526,7 +526,7 @@ def run_server_arm_capture(
     """
     from dataclasses import asdict
     from bigcherry.campaign.bench_runner import run_bench_runner_server_bench
-    from bigcherry.tuning.server_runner import ServerRunner
+    from bigcherry.tuning.server_runner import ServerRunner, LLAMACPP_SERVE
 
     if not required_metrics:
         raise ValueError("server cells require explicit expected metrics")
@@ -569,6 +569,7 @@ def run_server_arm_capture(
     # Supply a complete, caller-sanitized environment. Merely overlaying it
     # would resurrect dispatch/tuning variables removed by the caller.
     server = ServerRunner(
+        serve=LLAMACPP_SERVE,
         binary=binary, model=model, extra_args=extra_args,
         env_overrides=env, env_unset=tuple(os.environ),
         log_path=cell / "server.log", shutdown_method=shutdown_method,
@@ -653,7 +654,7 @@ def _run_server_attestation_preflight(
         ExecutionIdentity, merge_rccl_server_attestation,
         parse_llama_server_attestation, require_execution_identity,
     )
-    from bigcherry.tuning.server_runner import ServerRunner
+    from bigcherry.tuning.server_runner import ServerRunner, LLAMACPP_SERVE
 
     if any(value in ("--verbosity", "--log-verbosity", "-lv") for value in extra_args):
         raise ValueError("server_args must not set verbosity; the attestation preflight owns its diagnostic delta")
@@ -666,6 +667,7 @@ def _run_server_attestation_preflight(
         locators=tuple(expected_execution["locators"]),
     )
     runner = ServerRunner(
+        serve=LLAMACPP_SERVE,
         binary=binary, model=model,
         extra_args=(*extra_args, *_SERVER_ATTESTATION_DIAGNOSTIC_DELTA),
         env_overrides={**env, **_SERVER_ATTESTATION_DIAGNOSTIC_ENV},

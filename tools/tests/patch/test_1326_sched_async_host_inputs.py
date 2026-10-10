@@ -9,12 +9,13 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from bigcherry.core import paths  # noqa: E402
 from bigcherry.patcher import apply_all  # noqa: E402
 from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
-_VENDOR = _REPO / "vendor/llama.cpp/ggml/src/ggml-backend.cpp"
-_spec = importlib.util.spec_from_file_location("patch_1326", _REPO / "patches/1326_sched_async_host_inputs/patch.py")
+_VENDOR = paths.llama_root() / "ggml/src/ggml-backend.cpp"
+_spec = importlib.util.spec_from_file_location("patch_1326", _REPO / "engines/llamacpp/patches/1326_sched_async_host_inputs/patch.py")
 assert _spec is not None and _spec.loader is not None
 _module = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_module)
@@ -27,7 +28,7 @@ class Patch1326Mechanics(unittest.TestCase):
             root = Path(td)
             for rel in ("ggml/src/ggml-backend.cpp", "ggml/src/ggml-backend-meta.cpp"):
                 (root / rel).parent.mkdir(parents=True, exist_ok=True)
-                copy_pinned(_REPO / "vendor/llama.cpp" / rel, root / rel)
+                copy_pinned(paths.llama_root() / rel, root / rel)
             results = apply_all(_module.PATCHES, root)
             self.assertTrue(all(r.ok for r in results), [e.detail for r in results for e in r.failed])
             be = (root / "ggml/src/ggml-backend.cpp").read_text(encoding="utf-8")

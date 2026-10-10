@@ -1,4 +1,4 @@
-"""RD58: patches/1234 registers the state-restore buffer as portable
+"""RD58: engines/llamacpp/patches/1234 registers the state-restore buffer as portable
 pinned host memory during multi-GPU prompt-cache/checkpoint restore, to
 work around ROCm/rocm-systems#4817 (a real, still-open ROCm runtime
 defect: an async H2D copy from pageable host memory can fault mid-
@@ -23,6 +23,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from bigcherry.core import paths  # noqa: E402
 from bigcherry.patcher import apply_all
 
 
@@ -31,7 +32,7 @@ ROOT = Path(__file__).resolve().parents[3]
 
 def _load_patch_module(patch_id: str):
     spec = importlib.util.spec_from_file_location(
-        patch_id, ROOT / "patches" / patch_id / "patch.py"
+        patch_id, ROOT / "engines" / "llamacpp" / "patches" / patch_id / "patch.py"
     )
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
@@ -49,7 +50,7 @@ _FILES = (
 
 
 def _apply_to_copy(tmp_path: Path) -> dict[str, Path]:
-    vendor = ROOT / "vendor" / "llama.cpp"
+    vendor = paths.llama_root()
     targets = {}
     for rel in _FILES:
         target = tmp_path / rel

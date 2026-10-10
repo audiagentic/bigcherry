@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from bigcherry.patcher import apply_all  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
-_PATCH_FILE = _REPO / "patches/1268_prbe52_adaptive_mtp_wiring/patch.py"
+_PATCH_FILE = _REPO / "engines/llamacpp/patches/1268_prbe52_adaptive_mtp_wiring/patch.py"
 _spec = importlib.util.spec_from_file_location("patch_1268", _PATCH_FILE)
 assert _spec is not None and _spec.loader is not None
 _module = importlib.util.module_from_spec(_spec)
@@ -31,8 +31,55 @@ _ARG = """    add_opt(common_arg(
         }
     ).set_spec().set_examples({LLAMA_EXAMPLE_SPECULATIVE, LLAMA_EXAMPLE_LOOKUP, LLAMA_EXAMPLE_SERVER, LLAMA_EXAMPLE_CLI}).set_env(\"LLAMA_ARG_SPEC_DRAFT_N_MIN\"));
 """
+_SPEC_H = """int32_t common_speculative_n_max(const common_speculative * spec);
+"""
+_SERVER = """    int get_n_draft_max() const {
+        int n_draft_max = n_ctx - prompt.n_tokens() - 2;
+
+        if (n_remaining() > 0) {
+            n_draft_max = std::min(n_draft_max, n_remaining() - 1);
+        }
+
+        SLT_DBG(*this, "max possible draft: %d\\n", n_draft_max);
+        return n_draft_max;
+    }
+
+    bool load_model() {
+        if (ctx_tgt_seq_rm_type != COMMON_CONTEXT_SEQ_RM_TYPE_NO) {
+            try {
+                spec.reset(common_speculative_init(params_base.speculative, params_base.n_parallel));
+            } catch (const std::exception & e) {
+                SRV_ERR("failed to initialize speculative decoding context: %s\\n", e.what());
+                if (params_base.speculative.has_synth()) {
+                    return false;
+                }
+            }
+        }
+    }
+"""
 _SPEC = """#include <algorithm>
 #include <cassert>
+
+struct common_speculative_impl {
+    int32_t n_max = 4;
+    virtual void accept(llama_seq_id seq_id, uint16_t n_accepted, bool is_other) = 0;
+};
+struct common_speculative {
+    std::vector<std::unique_ptr<common_speculative_impl>> impls;
+};
+int32_t common_speculative_n_max(const common_speculative * spec) {
+    int32_t n_max = 0;
+
+    if (spec == nullptr) {
+        return n_max;
+    }
+
+    for (const auto & impl : spec->impls) {
+        n_max = std::max(n_max, std::max(0, impl->n_max));
+    }
+
+    return n_max;
+}
 
 struct common_speculative_impl_draft_eagle3 : public common_speculative_impl {
     std::vector<std::vector<float>> pending_g_last;
@@ -153,11 +200,11 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
                     dp.result_q->emplace_back(cur_p->data, cur_p->data + cur_p->size);
                 }
 
-                if (params.n_max <= (int) result.size()) {
-                    drafting[seq_id] = false;
-                    n_drafting--;
-                    continue;
-                }
+                    if (bc_front <= result.size() && dp.n_tail <= 0) {
+                        drafting[seq_id] = false;
+                        n_drafting--;
+                        continue;
+                    }
 
                 if (chain_heads) {
                     chain_h[seq_id].push_back(0.0f);
@@ -184,6 +231,10 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
         std::memcpy(pending_h[seq_id].data(), verify_h[seq_id].data() + (size_t) i_h * n_embd, row_bytes);
     }
 };
+
+// state of self-speculation (simple implementation, not ngram-map)
+struct common_speculative_impl_ngram_simple : public common_speculative_impl {
+};
 """
 
 
@@ -192,6 +243,7 @@ class Patch1268Mechanics(unittest.TestCase):
         td = tempfile.TemporaryDirectory()
         root = Path(td.name)
         (root / "common").mkdir(parents=True)
+        (root / "tools/server").mkdir(parents=True)
         common_h = _COMMON_H
         arg = _ARG
         spec = _SPEC
@@ -202,6 +254,8 @@ class Patch1268Mechanics(unittest.TestCase):
         (root / "common/common.h").write_text(common_h, encoding="utf-8")
         (root / "common/arg.cpp").write_text(arg, encoding="utf-8")
         (root / "common/speculative.cpp").write_text(spec, encoding="utf-8")
+        (root / "common/speculative.h").write_text(_SPEC_H, encoding="utf-8")
+        (root / "tools/server/server-context.cpp").write_text(_SERVER, encoding="utf-8")
         return td, root
 
     def test_apply_and_idempotent(self):
@@ -215,22 +269,35 @@ class Patch1268Mechanics(unittest.TestCase):
             self.assertIn("LLAMA_ARG_SPEC_DRAFT_N_MIN_ADAPTIVE", (root / "common/arg.cpp").read_text())
             text = (root / "common/speculative.cpp").read_text()
             self.assertEqual(text.count("adaptive_state.at(seq_id).reset"), 1)
-            self.assertEqual(text.count("last_n_draft.at(seq_id) = 0"), 1)  # begin reset (MTP only)
-            self.assertEqual(text.count("last_n_draft[seq_id] = 0"), 1)  # MTP draft reset only
-            # GPT code review 2026-09-27 (req_6c90e1ebba83464a): an adaptive
-            # floor below n_min is a stuck state (finalize() clears every
-            # draft shorter than n_min, so accept() -- the only thing that
-            # grows n_cur back up -- would never run). The ctor must reject it.
+            self.assertNotIn("last_n_draft", text)
             self.assertIn("this->params.n_min_adaptive < this->params.n_min", text)
-            self.assertIn("BIGCHERRY_MTP_AHEAD", text)
-            self.assertEqual(text.count("adaptive_state[seq_id].n_cur <= (int) result.size()"), 1)
+            self.assertNotIn("adaptive MTP depth cannot be combined with BIGCHERRY_MTP_AHEAD=1", text)
+            self.assertIn("dp.n_tail <= 0", text)
+            self.assertIn("n_rows - 1", text)
             self.assertEqual(text.count("adaptive_state[seq_id].update"), 1)
+            self.assertIn("bool get_state(llama_seq_id seq_id, std::vector<uint8_t> & data) const override", text)
+            self.assertIn("void set_state(llama_seq_id seq_id, const std::vector<uint8_t> & data) override", text)
+            self.assertIn("std::memcpy(data.data(), h.data(), data.size())", text)
+            self.assertIn("std::memcpy(h.data(), data.data(), data.size())", text)
+            self.assertIn("current_n_max(llama_seq_id seq_id) const override", text)
+            self.assertIn("event=depth_change", text)
+            self.assertEqual(text.count("bc_front_cap <= result.size()"), 1)
             self.assertIn("if (params.n_max <= (int) result.size()) {", text)
             self.assertIn("if (dp.result->size() < (size_t) params.n_min) {", text)
+            self.assertIn("common_speculative_n_max(const common_speculative * spec, llama_seq_id seq_id)", text)
+            self.assertIn("common_speculative_n_max(const common_speculative * spec, llama_seq_id seq_id)",
+                          (root / "common/speculative.h").read_text())
+            server = (root / "tools/server/server-context.cpp").read_text()
+            self.assertIn("common_speculative_n_max(spec, id)", server)
+            self.assertIn("requested speculation must never silently degrade", server)
+            self.assertNotIn("if (params_base.speculative.has_synth())", server)
             eagle3_text = text.split("struct common_speculative_impl_draft_mtp", 1)[0]
             self.assertNotIn("n_min_adaptive", eagle3_text)
             self.assertNotIn("last_n_draft", eagle3_text)
-            before = {p: (root / p).read_text() for p in ("common/common.h", "common/arg.cpp", "common/speculative.cpp")}
+            before = {p: (root / p).read_text() for p in (
+                "common/common.h", "common/arg.cpp", "common/speculative.cpp",
+                "common/speculative.h", "tools/server/server-context.cpp",
+            )}
             second = apply_all(_module.PATCHES, root)
             self.assertTrue(all(r.ok for r in second))
             self.assertEqual(before, {p: (root / p).read_text() for p in before})
@@ -245,11 +312,9 @@ class Patch1268Mechanics(unittest.TestCase):
         td, root = self._tree()
         with td:
             path = root / "common/speculative.cpp"
-            target = "params.n_max <= (int) result.size()"
-            first = _SPEC.find(target)
-            second = _SPEC.find(target, first + len(target))
-            self.assertGreaterEqual(second, 0)
-            broken = _SPEC[:second] + _SPEC[second:].replace(target, "false", 1)
+            target = "bc_front <= result.size()"
+            self.assertEqual(_SPEC.count(target), 1)
+            broken = _SPEC.replace(target, "false", 1)
             path.write_text(broken, encoding="utf-8")
             results = apply_all(_module.PATCHES, root)
             self.assertFalse(all(r.ok for r in results))

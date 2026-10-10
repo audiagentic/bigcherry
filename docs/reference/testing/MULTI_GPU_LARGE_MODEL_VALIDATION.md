@@ -64,7 +64,7 @@ the whole lane. This preserves the alternating-order/thermal-drift
 discipline real production benchmarking on this project has found
 necessary (a non-alternating "all control then all subject" design
 previously produced a real, since-corrected measurement artifact on
-this exact model/hardware -- see `patches/1233_rd73_stable_graph_cache_key/README.md`'s
+this exact model/hardware -- see `engines/llamacpp/patches/1233_rd73_stable_graph_cache_key/README.md`'s
 "Historical evidence" section), at the cost of a full server/model
 reload per single request.
 

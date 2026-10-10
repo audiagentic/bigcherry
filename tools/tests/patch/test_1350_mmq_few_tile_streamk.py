@@ -13,11 +13,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from bigcherry.core import csource, paths  # noqa: E402
 from bigcherry.patcher import apply_all  # noqa: E402
-from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
+from bigcherry.patch.pinned_source import copy_pinned, pinned_checkout  # noqa: E402
 from bigcherry.patch import rebase as patch_rebase  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
-_V = paths.llama_root()  # the primary checkout's vendor tree (a slice worktree has none)
+_HAVE_VENDOR = paths.llama_root().is_dir()
+# a pristine copy of the pinned revision: the vendor working tree normally has the production patches applied,
+# and files a patch creates would look like upstream files
+_V = pinned_checkout() if _HAVE_VENDOR else paths.llama_root()
 _F = "ggml/src/ggml-cuda/mmq.cuh"
 
 
@@ -47,7 +50,7 @@ def _patches(mod):
     raise AssertionError(f"{mod.__name__}: patch module exports neither PATCHES nor PATCH")
 
 
-_P = _load("patch_1350", "patches/1350_mmq_few_tile_streamk/patch.py")
+_P = _load("patch_1350", "engines/llamacpp/patches/1350_mmq_few_tile_streamk/patch.py")
 def _composer_order(ids: list[str]) -> list[str]:
     """Production patch ids in the order the real composer applies them.
 
@@ -64,7 +67,7 @@ def _composer_order(ids: list[str]) -> list[str]:
 
 _RECIPE_IDS = _production_patch_ids()
 _PROD_IDS = _composer_order(_RECIPE_IDS)
-_PROD = [(pid, _load("patch_prod_" + pid, f"patches/{pid}/patch.py")) for pid in _PROD_IDS]
+_PROD = [(pid, _load("patch_prod_" + pid, f"engines/llamacpp/patches/{pid}/patch.py")) for pid in _PROD_IDS]
 _PROD_BEFORE_1350 = [(pid, mod) for pid, mod in _PROD if pid != "1350_mmq_few_tile_streamk"]
 
 
@@ -85,7 +88,7 @@ class Patch1350Mechanics(unittest.TestCase):
                 rels[patch.path] = rels.get(patch.path, False) or bool(patch.create)
         for rel, may_create in sorted(rels.items()):
             pinned = _V / rel
-            overlay = _REPO / "src" / rel
+            overlay = _REPO / "engines" / "llamacpp" / "overlay" / rel
             src = overlay if overlay.exists() else pinned
             if not src.exists():
                 self.assertTrue(may_create, f"non-create production source path absent from pin/overlay: {rel}")

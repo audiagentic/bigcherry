@@ -297,10 +297,10 @@ class CppContractTests(unittest.TestCase):
 
     def test_cpp_loader_contract_strings(self):
         cpp = (
-            REPO_ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-replay.cpp"
+            REPO_ROOT / "engines" / "llamacpp" / "overlay" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-replay.cpp"
         ).read_text(encoding="utf-8")
         header = (
-            REPO_ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-replay.h"
+            REPO_ROOT / "engines" / "llamacpp" / "overlay" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-replay.h"
         ).read_text(encoding="utf-8")
         for fragment in (
             "container format version mismatch",  # v4 -> rerun_required

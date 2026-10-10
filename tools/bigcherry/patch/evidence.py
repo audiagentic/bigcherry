@@ -10,7 +10,7 @@ evidence exists, or that it still matches the CURRENT patch implementation.
 
 This module is the tracked evidence contract itself: a JSON record per
 patch, stored with packaged patches under their ``evidence/`` directory and
-with the legacy baseline under ``patches/_validation/``. The authority must
+with the legacy baseline under ``engines/llamacpp/patches/_validation/``. The authority must
 be resolvable from the repository alone, not from ``artifacts/``, which is
 gitignored, or the external ledger, which offline pytest/CI/a fresh checkout
 cannot resolve.
@@ -38,7 +38,7 @@ from pathlib import Path
 from typing import Iterable, Mapping
 
 from ..core import paths
-from . import patchset
+from . import patchset, profile_evidence
 from .activation import ActivationEvidence
 
 SCHEMA_VERSION = 4
@@ -94,6 +94,7 @@ class EvidenceCheck:
             "not-required", "validated-evidence", "legacy-grandfathered",
             "ported-benched-evidence", "deferred-hardware-evidence",
             "framework-configuration-evidence", "carried-forward",
+            "profile-evidence",
         }
 
 
@@ -737,7 +738,7 @@ def verify_framework_configuration_patch(
             raise ValidationEvidenceError("resolved base revision required for source identity")
         identity = patch_source._make_source_identity_v2(
             resolved_revision=resolved_base_revision, composition=composition,
-            overlay_root=patch_source.REPO_ROOT / "src"
+            overlay_root=patch_source.OVERLAY_ROOT
             if cfg.sources["bigcherry-qualification-tuning"].overlay else None,
         )
         identity["materialization_plan_id"] = identity["source_key"]
@@ -1642,12 +1643,22 @@ def verify_validated_patch(
             ),
         )
 
+    # Profile-evidence tier (QFP18, PA45): the lightweight promotion record in the patch package qualifies the patch
+    # when no HI83 campaign record does. A record that exists but does not qualify is reported with its own reasons.
+    profile_problems = profile_evidence.verify(
+        module.path.parent, patch_id=module.patch_id, pinned_ref=pinned_ref, subject_digest=subject_digest,
+    )
+    if profile_problems is not None and not profile_problems:
+        return EvidenceCheck("profile-evidence")
+
     if allow_legacy_grandfather:
         legacy = _legacy_hashes(root)
         if legacy.get(module.patch_id) == module.content_hash:
             return EvidenceCheck("legacy-grandfathered")
 
     problems: list[str] = []
+    if profile_problems:
+        problems.append("profile-evidence record does not qualify: " + "; ".join(profile_problems))
     if not qualifying:
         problems.append("no current qualifying HI83 validation record")
     if missing_architectures:

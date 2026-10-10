@@ -57,8 +57,8 @@ class PrimaryRootTests(unittest.TestCase):
             ):
                 context = ProjectContext.resolve(project_root=worktree)
             self.assertEqual(context.project_root, worktree)
-            self.assertEqual(context.overlay_root, worktree / "src")
-            self.assertEqual(context.patches_root, worktree / "patches")
+            self.assertEqual(context.overlay_root, worktree / "engines" / "llamacpp" / "overlay")
+            self.assertEqual(context.patches_root, worktree / "engines" / "llamacpp" / "patches")
             self.assertEqual(context.work_root, primary / "work")
             self.assertEqual(
                 context.upstream_repo,

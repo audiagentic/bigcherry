@@ -15,8 +15,8 @@ from bigcherry.core import paths  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
 _LLAMA = paths.llama_root()
-_PATCH_FILE = _REPO / "patches/1274_mmvq_kquant_f32_decode/patch.py"
-_BASE_PATCH_FILE = _REPO / "patches/1241_rd33_mmvq_q8_0_f32_decode/patch.py"
+_PATCH_FILE = _REPO / "engines/llamacpp/patches/1274_mmvq_kquant_f32_decode/patch.py"
+_BASE_PATCH_FILE = _REPO / "engines/llamacpp/patches/1241_rd33_mmvq_q8_0_f32_decode/patch.py"
 _VENDOR = _LLAMA / "ggml/src/ggml-cuda"  # pinned source (copy_pinned reads the HEAD commit)
 
 
@@ -32,7 +32,7 @@ _module = _load("patch_1274", _PATCH_FILE)
 _base = _load("patch_1241_for_1274", _BASE_PATCH_FILE)
 # 1241 REQUIRES 0600 (MMVQ geometry adds nwarps_explicit/rows_per_block_explicit), so the
 # test tree carries 0600 first, exactly like any real build stack.
-_geometry = _load("patch_0600_for_1274", _REPO / "patches/0600_mmvq_geometry/patch.py")
+_geometry = _load("patch_0600_for_1274", _REPO / "engines/llamacpp/patches/0600_mmvq_geometry/patch.py")
 
 
 class Patch1274Mechanics(unittest.TestCase):

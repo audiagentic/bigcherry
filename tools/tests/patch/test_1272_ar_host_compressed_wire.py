@@ -15,8 +15,8 @@ from bigcherry.core import paths  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
 _LLAMA = paths.llama_root()
-_PATCH_FILE = _REPO / "patches/1272_ar_host_compressed_wire/patch.py"
-_P2P_PATCH_FILE = _REPO / "patches/1252_nro03_allreduce_p2p_provider/patch.py"
+_PATCH_FILE = _REPO / "engines/llamacpp/patches/1272_ar_host_compressed_wire/patch.py"
+_P2P_PATCH_FILE = _REPO / "engines/llamacpp/patches/1252_nro03_allreduce_p2p_provider/patch.py"
 _VENDOR = _LLAMA / "ggml/src/ggml-cuda"  # pinned source (copy_pinned reads the HEAD commit)
 
 

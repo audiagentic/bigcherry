@@ -1,7 +1,7 @@
 """Per-patch SUMMARY.md rendering and release-doc merging.
 
 Each patch package directory carries a short ``SUMMARY.md`` (see
-``patches/_template/SUMMARY.md`` for the required shape: What it does / Why
+``engines/llamacpp/patches/_template/SUMMARY.md`` for the required shape: What it does / Why
 / Upstream, plus a Status/Plan item header) -- the human-readable
 counterpart to ``patch.toml``, which is the sole machine-metadata authority
 for a packaged patch's state/plan-item (registry.py's
@@ -96,15 +96,15 @@ def read_patch_summary(descriptor: "patch_registry.PatchDescriptor", patches_roo
             f"# {descriptor.patch_id}\n\n"
             f"**Status:** {descriptor.state}\n\n"
             "_No SUMMARY.md found for this patch -- add one under "
-            f"`patches/{descriptor.patch_id}/SUMMARY.md` (see "
-            "`patches/_template/SUMMARY.md`)._\n"
+            f"`engines/llamacpp/patches/{descriptor.patch_id}/SUMMARY.md` (see "
+            "`engines/llamacpp/patches/_template/SUMMARY.md`)._\n"
         )
     return summary_path.read_text(encoding="utf-8")
 
 
 def parse_summary_header(text: str) -> dict[str, str] | None:
     """Extract the Status/Plan item header fields, or None if the
-    required shape (see patches/_template/SUMMARY.md) isn't present."""
+    required shape (see engines/llamacpp/patches/_template/SUMMARY.md) isn't present."""
     match = _HEADER_PATTERN.search(text)
     if not match:
         return None
@@ -127,7 +127,7 @@ def check_summary_for_patch(
     if header is None:
         return (
             f"{descriptor.patch_id}: SUMMARY.md is missing the required "
-            "Status/Plan item header (see patches/_template/SUMMARY.md)",
+            "Status/Plan item header (see engines/llamacpp/patches/_template/SUMMARY.md)",
         )
     if header["status"] != descriptor.state:
         problems.append(

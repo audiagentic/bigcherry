@@ -57,7 +57,7 @@ CAMPAIGN_SRC = (
     TOOLS_ROOT / "bigcherry" / "patch" / "validation_campaign.py"
 ).read_text(encoding="utf-8")
 PRODUCER_SRC = (
-    TOOLS_ROOT.parent / "patches" / PATCH_ID / "validation" / "producer.py"
+    TOOLS_ROOT.parent / "engines" / "llamacpp" / "patches" / PATCH_ID / "validation" / "producer.py"
 ).read_text(encoding="utf-8")
 EXPECTED_ARTIFACT_NAMES = frozenset(
     {
@@ -106,7 +106,7 @@ class Rd13DedicatedPathDeletionTests(unittest.TestCase):
 
     def test_producer_manifest_pins_the_migration_policy(self) -> None:
         selection = vp.resolve_producer(
-            patch_dir=TOOLS_ROOT.parent / "patches" / PATCH_ID,
+            patch_dir=TOOLS_ROOT.parent / "engines" / "llamacpp" / "patches" / PATCH_ID,
             producer_id="rd13",
         )
         self.assertEqual(selection.spec.patch_id, PATCH_ID)

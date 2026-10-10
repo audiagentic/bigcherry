@@ -119,7 +119,7 @@ class BehavioralTrace:
     """What one (native or candidate) run of one vector produced.
 
     HI166: ``draft_trace`` is the ORDERED per-verify-step (draft_n,
-    accepted_n) sequence (patches/0850_ordered_speculative_trace's
+    accepted_n) sequence (engines/llamacpp/patches/0850_ordered_speculative_trace's
     ``timings.draft_trace``), not just the aggregate ``draft_n``/
     ``draft_n_accepted`` scalars -- those cannot distinguish two runs whose
     per-step work schedules differ but happen to sum to the same totals
@@ -208,7 +208,7 @@ def _read_draft_trace(
     timings: dict[str, Any], *, vector_name: str, draft_n: int, draft_n_accepted: int,
     require_mtp: bool,
 ) -> tuple[tuple[int, int], ...]:
-    """Read and validate ``timings.draft_trace`` (patches/
+    """Read and validate ``timings.draft_trace`` (engines/llamacpp/patches/
     0850_ordered_speculative_trace). Fails closed the same way missing
     draft_n/draft_n_accepted already does: an MTP vector with no trace, or
     a trace whose totals do not reconcile with the aggregate scalars the
@@ -221,7 +221,7 @@ def _read_draft_trace(
         if require_mtp and draft_n > 0:
             raise BehavioralGateError(
                 f"vector {vector_name!r}: 'timings' has draft_n={draft_n} > 0 but no "
-                f"'draft_trace' -- server is missing patches/0850_ordered_speculative_trace, "
+                f"'draft_trace' -- server is missing engines/llamacpp/patches/0850_ordered_speculative_trace, "
                 f"or the trace was empty for a run that should have produced verify steps"
             )
         return ()

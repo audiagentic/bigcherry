@@ -9,11 +9,12 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from bigcherry.core import paths  # noqa: E402
 from bigcherry.patcher import apply_all  # noqa: E402
 from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
-_VENDOR = _REPO / "vendor/llama.cpp/src/llama-model.cpp"
+_VENDOR = paths.llama_root() / "src/llama-model.cpp"
 
 
 def _load(name, path):
@@ -24,8 +25,8 @@ def _load(name, path):
     return module
 
 
-_module = _load("patch_1305", _REPO / "patches/1305_ffn_tensor_split/patch.py")
-_p1303 = _load("patch_1303", _REPO / "patches/1303_attn_kv_tensor_split/patch.py")
+_module = _load("patch_1305", _REPO / "engines/llamacpp/patches/1305_ffn_tensor_split/patch.py")
+_p1303 = _load("patch_1303", _REPO / "engines/llamacpp/patches/1303_attn_kv_tensor_split/patch.py")
 
 
 @unittest.skipUnless(_VENDOR.exists(), "pinned vendor checkout not present")

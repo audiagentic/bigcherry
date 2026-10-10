@@ -120,7 +120,7 @@ python -m bigcherry sources check            # ONLINE: has a tracked fork moved/
   - `FINDING drifted ... CHANGED content`: the fork's current version of a
     tracked commit differs from what we based work on. **If the patch_id in
     that finding is already `ported-*` (i.e. it's a live patch in
-    `patches/`), this is the highest-priority thing to review** -- the fork
+    `engines/llamacpp/patches/`), this is the highest-priority thing to review** -- the fork
     may have fixed or changed something we should pull forward.
   - `FINDING drifted ... not found by title`: the commit vanished from the
     fork's history under its recorded title. This does NOT mean "merged
@@ -142,7 +142,7 @@ python -m bigcherry sources check            # ONLINE: has a tracked fork moved/
 - Triage every real finding into its own plan item (do not fix inline during
   the bump unless trivial) -- see `HI154` for the template this session used
   after the first real run surfaced 19 findings, including one on an
-  already-applied production patch (RD05/RD06/RD07 -> `patches/1203_...`).
+  already-applied production patch (RD05/RD06/RD07 -> `engines/llamacpp/patches/1203_...`).
 
 ## 2. Resolve the target and run the orchestrator
 
