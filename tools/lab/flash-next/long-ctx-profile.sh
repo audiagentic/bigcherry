@@ -5,7 +5,7 @@
 #   1) unprofiled: prefill + decode timings at several context depths (8K/32K/96K prompt), memory breakdown;
 #   2) rocprofv3 --kernel-trace --memory-copy-trace --stats on a 32K prompt + 128 decode, for the per-kernel
 #      split of prefill and decode at depth (attention vs MoE vs AllReduce vs copies).
-# Usage: long-ctx-profile.sh <llama-server> <out-dir> [full|decode|perf|timing|probes|apitrace|synctrace]
+# Usage: long-ctx-profile.sh <llama-server> <out-dir> [full|decode|perf|timing|probes|apitrace|synctrace|prefillsync]
 # Other drafters: SPEC_TYPE replaces the MTP default (draft-dspark, draft-dflash), SPEC_PMIN sets --spec-draft-p-min,
 # DRAFT names the draft GGUF, SPEC_N the block length. Single-word values, so they pass through AB_ENV. A DFlash /
 # DSpark draft with this tensor-split target needs patch 1286 in the build.
@@ -174,6 +174,15 @@ elif [ "$mode" = synctrace ]; then  # RNX01: call sites of hipStreamSynchronize 
     WRAP="env LD_PRELOAD=$out/sync-tracer.so SYNC_TRACER_ARM=$out/arm SYNC_TRACER_OUT=$out/sync-sites.txt" \
     run_pass synctrace ${DEPTH:-8192}
   head -120 "$out/sync-sites.txt" 2>/dev/null || echo "no sync-sites.txt (server did not exit cleanly)"
+  exit 0
+elif [ "$mode" = prefillsync ]; then  # QFP49: call sites of hipStreamSynchronize during one uncached prefill at DEPTH
+  # Kernels are queued ahead, so a card only runs dry where the host waited for it and then had work to do before
+  # it could submit again. The sites and their wait times say which calls those are (one a batch is 76 at 24K).
+  here=$(cd "$(dirname "$0")" && pwd)
+  gcc -O2 -shared -fPIC "$here/sync-tracer.c" -o "$out/sync-tracer.so" -ldl
+  rm -f "$out/arm"
+  ARM_FILE=$out/arm DECODE_N=8 CACHE=0     WRAP="env LD_PRELOAD=$out/sync-tracer.so SYNC_TRACER_ARM=$out/arm SYNC_TRACER_OUT=$out/sync-sites.txt"     run_pass prefillsync ${DEPTH:-24576}
+  head -150 "$out/sync-sites.txt" 2>/dev/null || echo "no sync-sites.txt (server did not exit cleanly)"
   exit 0
 elif [ "$mode" = apitrace ]; then  # RNX01: HIP API cost of decode (graph launches vs kernel launches, copies)
   DECODE_N=256 CACHE=1 WRAP="rocprofv3 --hip-runtime-trace --kernel-trace --memory-copy-trace --output-format csv -d $out/rocprof --" run_pass apitrace ${DEPTH:-8192}
