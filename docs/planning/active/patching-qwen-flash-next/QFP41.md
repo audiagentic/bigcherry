@@ -59,6 +59,22 @@ Identical greedy text and probes with the flag on; no run-to-run variation over 
 
 2026-10-09 1358 isolated on one binary (chain c171, build b-metamem-sce1 = production + 1358, Flash-Next, ctx 245760, f16 KV; A = default on, B = BIGCHERRY_META_SPLIT_CACHE_EVICT=0, order A B B A, two rounds). Greedy text identical in every run at 8K / 24K / 98K; marker count at 24K 1 0 0 1. Prefill t/s 98K: A 1255.7 1259.4 1259.5 1263.5, B 1221.9 1216.0 1223.2 1223.1 (+3.1%, every A above every B); 24K round 2: A 1300.7 1308.9, B 1270.7 1267.2 (+3.0%); 8K round 2: A 1282.9 1248.6, B 1246.1 1217.6 (+2.8%, narrowest gap 2.5 t/s). Decode and acceptance equal. This confirms the two-build result and places the gain in this one edit. Remaining before promotion: Qwen3.8-27B no-regression (chain c175) and the promotion-gate decision.
 
+### Threaded-paths program (owner, 2026-10-10)
+
+Owner direction: try every threaded option and make sure the threads do not block each other; locks placed so the work does not end up serial.
+
+Rule for every step: measure the lock before trusting the thread. A threaded path counts as parallel only when its lock counters show it (share of exclusive acquisitions, time waited, time held), not because a worker exists.
+
+Order:
+1. **1356 dispatch workers - measure the lock.** The 1356 lock is process-wide and exclusive for a whole capturing `graph_compute` call. `BIGCHERRY_META_DISPATCH_STATS=1` (PR #129) counts capturing against replaying calls and the wait/hold time, with the workers off and on. If prefill calls mostly capture, the workers are serial and the lock has to be narrowed to the capture/instantiate/update section, with the launch outside it.
+2. **1356 on in the Flash-Next profile** only after step 1 shows overlap and the 1348 crash below is understood.
+3. **1348 deferred catch-up on its own worker.** The drafter sits on its own card but its catch-up decode runs on the target's thread. First find the fault that surfaces there at ctx 245760 + ub1024 past about 118K tokens (needs 1348 and 1334 both on; clean with either off).
+4. **1326 async inputs** (on in the profile): check its copies do not wait on the dispatch lock.
+5. **Combination matrix** on Flash-Next at 8K / 24K / 98K: workers x async inputs x deferred catch-up, with the counters on, repeated-run identity for every combination.
+6. **radiance two-XTX exchange:** one host thread a card already; check whether the two directions of the pinned-host exchange overlap (it was 33% of two-card time on MXFP4).
+
+Shared-state inventory, persistent workers, default-off flag and identity + repeated-run + stress evidence apply to each new thread, as before.
+
 ## Change Log
 
 - 2026-10-07T00:40:00.113369+00:00 (created-by): Created by agent
@@ -70,8 +86,8 @@ Identical greedy text and probes with the flag on; no run-to-run variation over 
 
 ## Ledger-events
 
-
 - chg_20261009_222135_prefill-is-about-3-faster-on_1298
 - 2026-10-09T22:21:46.034434+00:00 (updated-by): Updated: section:ledger-events
 - chg_20261009_222149_optional-threaded-per-device-d_5728
 - 2026-10-09T22:21:53.512776+00:00 (updated-by): Updated: section:ledger-events
+- 2026-10-10T12:13:58.140476+00:00 (updated-by): Updated: section:notes
