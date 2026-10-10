@@ -348,6 +348,14 @@ compatibility layer. Its native form (`native/r4d_gemm_mxfp4a8_tiled.hip.rw`, co
 figures rose with it because verify steps and the drafter's own passes use the same kernels. Two cards do not
 prefill faster than one (1,535 against 1,485); not looked into yet. Prefill is still half the R9700's.
 
+Two cards and the all-reduce (runs `r3-pfprof2`, `r3-wht6`, `r3-wht6spec`). A per-op profile of a prefill-heavy
+two-card run puts the fused all-reduce (`ar_rmsnorm_quant_fp8`) at 33% of rank 0's device time, with the MXFP4
+GEMMs at about 55%: the two XTX have no peer access, so every all-reduce is exchanged through pinned host memory.
+With radiance's lossy wire (`--tp-wire wht6`, a quantised payload for messages of 128 KiB and more) two-card
+prefill goes from about 1,535 to 2,124 / 2,121 tok/s, decode without the drafter stays 46.7, with the drafter
+131.1 (85.1 to 232.7; 141.7 with the exact wire, one run each, so not a difference to read anything into). The
+smoke replies are unchanged; the effect of the lossy wire on output quality has not been measured (`--kld-ref`).
+
 The eight-tiles-a-block form of dec11 (`p3`, commit 6fc8c5cb) was wrong about the cost: decode fell to 15.0 tok/s
 (one card) and 24.0 (two), and its ablation with everything off is 112 us for the gate/up GEMM, the same as before,
 so the remaining time does not follow the number of workgroups after all. dec11 is not the default; the staged
