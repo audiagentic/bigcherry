@@ -100,7 +100,10 @@ Expected ceiling about 9% of prefill time (34 of 389 ms). Independent of the cro
 
 ## Ledger-events
 
+
 - chg_20261010_204543_optional-faster-prompt-process_7611
 - 2026-10-10T20:45:50.985973+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-10T20:46:15.593996+00:00 (updated-by): Updated: section:notes
 - 2026-10-10T20:46:22.889851+00:00 (state-transition): State: pending → completed
+- chg_20261010_213553_prompt-processing-with-a-separ_1650
+- 2026-10-10T21:36:07.756486+00:00 (updated-by): Updated: section:ledger-events
