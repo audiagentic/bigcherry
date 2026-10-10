@@ -8,7 +8,7 @@
 # The first argument (a llama-server path from the queue) is ignored.
 # Usage: rad-convert.sh <ignored> <out.rad>
 # env: INPUT (checkpoint; default the Qwen3.8-27B Q8_0 GGUF), DRAFT (a drafter checkpoint directory to merge),
-#      QUANT (rad-convert --quant rules, separated by ';'), GPU (HIP index of the gfx12 card, 2), KERNELS
+#      RECIPE (a recipe file), SETS (metadata keys K=V separated by ';'), QUANT (--quant rules, separated by ';'), GPU (HIP index of the gfx12 card, 2), KERNELS
 #      (libr4d:libref), RADIANCE_SRC, CONVERT_TIMEOUT (7200 s)
 set -u
 out=$2
@@ -20,6 +20,11 @@ export PATH="$ROCM_PATH/bin:$PATH"
 for v in $(env | grep -oE "^(BIGCHERRY_[A-Z0-9_]+|GGML_HIP_[A-Z0-9_]+)"); do unset "$v"; done
 opts=(--home "$src/build/radiance_home" --kernels "${KERNELS:-libr4d:libref}")
 [ -n "${DRAFT:-}" ] && opts+=(--draft-model "$DRAFT")
+[ -n "${RECIPE:-}" ] && opts+=(--recipe "$RECIPE")
+if [ -n "${SETS:-}" ]; then  # metadata keys, K=V separated by ';' (a value may hold spaces)
+    IFS=';' read -ra sets <<< "$SETS"
+    for kv in "${sets[@]}"; do opts+=(--set "$kv"); done
+fi
 if [ -n "${QUANT:-}" ]; then
     IFS=';' read -ra rules <<< "$QUANT"
     for rule in "${rules[@]}"; do opts+=(--quant "$rule"); done
