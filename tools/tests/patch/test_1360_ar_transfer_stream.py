@@ -39,7 +39,9 @@ class Patch1360Mechanics(unittest.TestCase):
         """Production source plus 1360's dependency closure, with 1360 itself left for the test."""
         root = Path(td)
         selected = patch_rebase.resolve_selection(
-            source_name="bigcherry", all_patches=False, experiment="ar-transfer-stream"
+            source_name="bigcherry",
+            all_patches=False,
+            focal_overlay_patch_id="1360_ar_transfer_stream",
         )
         ids = [m.patch_id for m in selected.modules]
         self.assertIn("1360_ar_transfer_stream", ids)
