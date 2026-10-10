@@ -87,8 +87,11 @@ Expected ceiling: the sum kernel is 32-37% of a card's prefill time, of which ab
 
 Also measured and closed here: sending large sums through the cpu-root path is slower at both chunk sizes (runs ar1, ar2); a 16-bit wire is already what the large path uses; moving the tensor split to help the R9700 does not fit at ctx 245760 (out of memory on an XTX).
 
+2026-10-11 ub256 on its own (run ub256, build b-pipe2 with the pipeline on, Flash-Next 24K, ABBA, B = UB=256 B=256): prefill 1,134.9 / 1,129.7 t/s against 1,443.9 / 1,427.8 at ub512, -21%. The text differs from ub512's (a different batch size is different arithmetic) and decode in that arm is 75 against 91 t/s with lower acceptance, so ub256 is not a setting to adopt by itself. Memory: the Meta compute buffer is 459 MiB a card at ub256 against 1,021 MiB at ub512, and card memory in use drops by 0.45 GB on each XTX and 0.19 GB on the R9700 - so two ub256 graphs alive at once fit in what one ub512 graph takes (918 against 1,021 MiB). Consequence for the staggering: the memory premise holds, and the pair starts 21% behind. It has to win that back and more purely from hiding the exchange (at ub256 there are twice as many sums a token, each half the size), so the first thing the paired build must show is that it beats ub512, not ub256.
+
 ## Change Log
 
 - 2026-10-10T13:54:01.542976+00:00 (created-by): Created by claude
 - 2026-10-10T13:55:13.057445+00:00 (updated-by): Updated: section:notes
 - 2026-10-10T21:32:48.900499+00:00 (updated-by): Updated: section:notes
+- 2026-10-10T21:37:41.672650+00:00 (updated-by): Updated: section:notes
