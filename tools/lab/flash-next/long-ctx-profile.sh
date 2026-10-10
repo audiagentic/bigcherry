@@ -6,6 +6,8 @@
 #   2) rocprofv3 --kernel-trace --memory-copy-trace --stats on a 32K prompt + 128 decode, for the per-kernel
 #      split of prefill and decode at depth (attention vs MoE vs AllReduce vs copies).
 # Usage: long-ctx-profile.sh <llama-server> <out-dir> [full|decode|perf|timing|probes|apitrace|synctrace|prefillsync|prefillperf]
+# CANCEL_AFTER=<s> first sends a long prompt (CANCEL_DEPTH tokens, 30000) and drops the connection after that many
+# seconds, so a pass also covers a request cancelled in mid-prefill.
 # Other drafters: SPEC_TYPE replaces the MTP default (draft-dspark, draft-dflash), SPEC_PMIN sets --spec-draft-p-min,
 # DRAFT names the draft GGUF, SPEC_N the block length. Single-word values, so they pass through AB_ENV. A DFlash /
 # DSpark draft with this tensor-split target needs patch 1286 in the build.
@@ -91,6 +93,21 @@ def chat_prompt(user):
 corpus = open("/mnt/data/bigcherry-work/corpus/kld-docs.txt", errors="replace").read()
 ASK = "\n\n" + __import__("os").environ.get("ASK", "Summarise the above in detail:")  # the request after the filled context
 post({"prompt": "Hello", "n_predict": 8, "cache_prompt": False})
+if __import__("os").environ.get("CANCEL_AFTER"):  # QFP42: abandon a long prompt in mid-prefill, then carry on as usual
+    # The connection is dropped after CANCEL_AFTER seconds, which cancels the task in the server while prompt batches
+    # are in flight (with the prefill pipeline one of them is outstanding in the drafter hook). The requests that
+    # follow must then give the text they give without the cancel.
+    import socket, time, urllib.error
+    doomed = "[cancel] " + (corpus * 2)[1000: 1000 + 4 * int(__import__("os").environ.get("CANCEL_DEPTH", "30000"))]
+    try:
+        req = urllib.request.Request(f"http://127.0.0.1:{port}/completion",
+                                     json.dumps({"prompt": doomed, "n_predict": 8, "cache_prompt": False}).encode(),
+                                     {"Content-Type": "application/json"})
+        urllib.request.urlopen(req, timeout=float(__import__("os").environ["CANCEL_AFTER"])).read()
+        print(f"{name}: CANCEL_NOT_REACHED (the doomed request finished first)", flush=True)
+    except (socket.timeout, TimeoutError, urllib.error.URLError) as e:
+        print(f"{name}: cancelled a prompt after {__import__('os').environ['CANCEL_AFTER']} s ({type(e).__name__})", flush=True)
+    time.sleep(3)
 rows = []
 for d in depths:
     text = (corpus * (1 + 4 * d // max(1, len(corpus))))[: 4 * d]  # ~4 chars/token
