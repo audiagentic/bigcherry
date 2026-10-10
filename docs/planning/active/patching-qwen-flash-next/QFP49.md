@@ -67,6 +67,9 @@ Each step is one patch or one profile setting, lightweight tier: offline mechani
 
 The same structure exists in radiance on two 7900 XTX (collectives through pinned host memory, 33% of two-card time; a lossy wire took prefill from 1,535 to 2,120 tok/s), so what works here should carry over. Threads: QFP41 owns the threading rules and QFP46 the prefill concurrency contracts; the dispatch workers (1356) are evaluated, not validated, since 2026-10-11.
 
+2026-10-11 step 1, message size against the links (arithmetic from the trace and the model header, not a separate measurement). Flash-Next n_embd = 2560, so a 512-token sum is 512 x 2560 x 4 = 5.24 MB of f32 a card; 96 sums a batch = two a layer over 48 layers. Links (queue log, every run): XTX 0 and 1 at PCIe 16 GT/s x8 (about 15.7 GB/s each way), the R9700 at 16 GT/s x4 (about 7.9 GB/s, the slot's maximum), the 6900 XT at 8 GT/s x4. 5.24 MB over the R9700's x4 link is 0.66 ms one way; the measured exchange after the last card arrives is 0.89 ms median. So the exchange is already close to what the R9700's x4 link can carry: it is link-bound, not software-bound. Consequences: (a) a narrower wire is the direct lever (f16 halves it to about 0.33 ms one way); (b) overlap hides the time but cannot shorten it; (c) the R9700 in an x8 slot would halve it with no code - a hardware decision for the owner; (d) any design that makes the R9700 exchange less data per sum (a smaller share of the split on that card does not help: every rank exchanges the full activation).
+
 ## Change Log
 
 - 2026-10-10T13:54:01.542976+00:00 (created-by): Created by claude
+- 2026-10-10T13:55:13.057445+00:00 (updated-by): Updated: section:notes
