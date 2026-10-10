@@ -10,20 +10,25 @@
 # the weight). A lane reads 8 bytes of each and calls the gfx12 fp8 WMMA.
 #
 # Native (the fp8 instantiations only; the int8 ones keep the compatibility layer):
-#   - B is staged as bf16, widened once as it is written. On the prefill tile B is the weight and eight waves read
+#   - codes are widened to IEEE half and multiplied by the f16 WMMA: a half built from a code's own bits is the
+#     code's value times 2^-8 for every code, subnormals included, so widening is a few bit operations
+#     (r3_compat.h, "block fp8"). The first native form widened to bf16 and held the narrow path at 139 GB/s of
+#     weight (run fp8b-prof: gate/up 321 us a call) where the MXFP4 kernel reaches about 430.
+#   - B is staged as halves, widened once as it is written. On the prefill tile B is the weight and eight waves read
 #     every staged row, so this is the conversion that is shared; a B fragment is then one 32-byte load.
 #   - A stays as libr4d has it and is widened where it is read, one fragment a wave a K step: 16 bytes of its row
-#     from shared memory, or the lane's 8 codes with its partner's 8. Staging A as bf16 too would not fit: the
+#     from shared memory, or the lane's 8 codes with its partner's 8. Staging A as halves too would not fit: the
 #     prefill tile would need 82 KiB of shared memory.
-#   - the gfx11 bf16 WMMA takes the accumulator as its C operand and the accumulator stays in the gfx11 layout
-#     through the K loop. The fold at a 128-column boundary is per slot, so it only has to name the gfx11 row of a
-#     slot where the scale is per A row; `out` is moved to the gfx12 layout once, in front of the unchanged epilogue.
+#   - the gfx11 WMMA takes the accumulator as its C operand and the accumulator stays in the gfx11 layout through
+#     the K loop. The fold at a 128-column boundary is per slot, so it only has to name the gfx11 row of a slot
+#     where the scale is per A row; `out` is moved to the gfx12 layout once, in front of the unchanged epilogue,
+#     and multiplied by 2^16 there.
 
 @@ find 1
     __shared__ uint8_t s_b[kBufs][FN * lds_pitch<FK>()];
 @@ replace
-    // libr3 native: B as bf16 for the fp8 instantiations
-    __shared__ uint8_t s_b[kBufs][FN * (I8 ? lds_pitch<FK>() : r3_fp8_bf16_pitch<FK>())];
+    // libr3 native: B as halves for the fp8 instantiations
+    __shared__ uint8_t s_b[kBufs][FN * (I8 ? lds_pitch<FK>() : r3_fp8_f16_pitch<FK>())];
 @@ end
 
 @@ find 1
@@ -31,7 +36,7 @@
 @@ replace
             if (r < FN) {
                 if constexpr (I8) stage8_store<FK>(s_b[buf], r, sk, pb[p]);
-                else r3_fp8_stage_bf16<FK>(s_b[buf], r, sk, 8u, pb[p]);
+                else r3_fp8_stage_f16<FK>(s_b[buf], r, sk, 8u, pb[p]);
             }
 @@ end
 
@@ -43,7 +48,7 @@
                 stage8_store_frag<FK>(s_b[buf], rt * 16u + (blane & 15u),
                                       ks * r4d_fp8::kSuperK + (blane >> 4) * 8u, pw[p]);
             else
-                r3_fp8_stage_bf16<FK>(s_b[buf], rt * 16u + (blane & 15u),
+                r3_fp8_stage_f16<FK>(s_b[buf], rt * 16u + (blane & 15u),
                                       ks * r4d_fp8::kSuperK + (blane >> 4) * 8u, 16u, pw[p]);
 @@ end
 
@@ -60,7 +65,7 @@
                     for (uint32_t j = 0; j < NT; ++j) raw[i][j] = mma8<I8>(af[i], bf[j], raw[i][j]);
             } else {
                 // libr3 native: gfx11 fragments, the accumulator in the gfx11 layout
-                r3_v16bf naf[MT];
+                r3_v16h naf[MT];
                 if (AW) {
                     naf[0] = r3_fp8_frag_reg(af[0], lane);
                 } else {
@@ -70,11 +75,11 @@
                 }
 #pragma unroll
                 for (uint32_t j = 0; j < NT; ++j) {
-                    const r3_v16bf nbf = r3_fp8_frag_bf16<FK>(s_b[buf], wn + j * 16, ks, lane);
+                    const r3_v16h nbf = r3_fp8_frag_f16<FK>(s_b[buf], wn + j * 16, ks, lane);
 #pragma unroll
                     for (uint32_t i = 0; i < MT; ++i)
                         raw[i][j] = __builtin_bit_cast(
-                            f8v, r3_wmma_bf16_native(naf[i], nbf, __builtin_bit_cast(r3_v8f, raw[i][j])));
+                            f8v, r3_wmma_f16_native(naf[i], nbf, __builtin_bit_cast(r3_v8f, raw[i][j])));
                 }
             }
 @@ end
@@ -108,11 +113,11 @@
         for (uint32_t p = 0; p < kAF; ++p) pf[p] = pfn[p];
         if (kBufs > 1u) buf ^= 1u; else __syncthreads();
     }
-    if constexpr (!I8) {  // libr3 native: to the gfx12 layout the epilogue reads
+    if constexpr (!I8) {  // libr3 native: to the gfx12 layout the epilogue reads, and out of the 2^-16 of the halves
 #pragma unroll
         for (uint32_t i = 0; i < MT; ++i)
 #pragma unroll
             for (uint32_t j = 0; j < NT; ++j)
-                out[i][j] = __builtin_bit_cast(f8v, r3_acc_native_to_gfx12(out[i][j]));
+                out[i][j] = __builtin_bit_cast(f8v, r3_acc_native_to_gfx12(out[i][j]) * r3_fp8_f16_unscale);
     }
 @@ end
