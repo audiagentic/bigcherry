@@ -117,7 +117,7 @@ for d in depths:
     perf = None
     if os.environ.get("PERF_OUT"):  # host-side sampling of the server during the timed decode only
         import subprocess
-        perf = subprocess.Popen(["/usr/lib/linux-tools/6.8.0-142-generic/perf", "record", "-F", "499", "-g",
+        perf = subprocess.Popen([os.environ["PERF_BIN"], "record", "-F", "499", "-g",
                                  "-p", os.environ["SERVER_PID"], "-o", os.environ["PERF_OUT"]],
                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     t = post({"prompt": prompt, "n_predict": int(os.environ["DECODE_N"]),
@@ -163,6 +163,8 @@ PY
   return "$client_rc"
 }
 mode=${3:-full}
+# perf from linux-tools: the package version follows the distribution kernel, not the running one
+export PERF_BIN=${PERF_BIN:-$(ls /usr/lib/linux-tools/*/perf 2> /dev/null | sort -V | tail -1)}
 if [ "$mode" = full ]; then
   run_pass plain 8192 32768 98304
   WRAP="rocprofv3 --kernel-trace --memory-copy-trace --stats --output-format csv -d $out/rocprof --" run_pass profiled 32768
@@ -217,13 +219,13 @@ elif [ "$mode" = timing ]; then  # unprofiled decode at ~80K cached context (A/B
   exit $?
 elif [ "$mode" = prefillperf ]; then  # QFP49: host-side, where the server's CPU time goes during one uncached prefill
   DECODE_N=8 CACHE=0 PERF_OUT=$out/prefill.perf.data run_pass prefillperf ${DEPTH:-24576}
-  p=/usr/lib/linux-tools/6.8.0-142-generic/perf
+  p=$PERF_BIN
   $p report -i "$out/prefill.perf.data" --no-children --sort comm --stdio 2>/dev/null | grep -E "^ +[0-9]" | head -12
   $p report -i "$out/prefill.perf.data" --no-children --sort comm,dso,sym --stdio -g none 2>/dev/null | grep -E "^ +[0-9]" | head -60
   exit 0
 elif [ "$mode" = perf ]; then  # host-side: where does the CPU spend decode at depth (GPUs ~75% idle)?
   DECODE_N=1024 CACHE=1 PERF_OUT=$out/decode.perf.data run_pass perfdecode ${DEPTH:-65536}
-  p=/usr/lib/linux-tools/6.8.0-142-generic/perf
+  p=$PERF_BIN
   $p report -i "$out/decode.perf.data" --no-children --sort comm --stdio 2>/dev/null | grep -E "^ +[0-9]" | head -15
   $p report -i "$out/decode.perf.data" --no-children --sort comm,dso,sym --stdio -g none 2>/dev/null | grep -E "^ +[0-9]" | head -50
   exit 0
