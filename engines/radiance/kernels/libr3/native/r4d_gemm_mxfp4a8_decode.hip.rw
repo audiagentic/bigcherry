@@ -93,3 +93,21 @@
   }
   const int ks = pl.ks, bk = pl.bk;
 @@ end
+
+# The split, slab and load hint were measured on gfx12, where a block stages E4M3. The native one-fragment form
+# stages bf16, twice the shared memory a block, so the rule's choices are not known to be right here. R3_MXD_KS,
+# R3_MXD_BK and R3_MXD_NT in the environment override them (0 or unset = libr4d's rule) so they can be swept on one
+# build; a value the launch does not accept is refused there, as for the tunables.
+@@ find 1
+  p.nt = NT == 1 || (NT == 0 && (long)N * K / 2 >= (4l << 20));
+@@ replace
+  p.nt = NT == 1 || (NT == 0 && (long)N * K / 2 >= (4l << 20));
+  {
+    static const int r3_ks = std::getenv("R3_MXD_KS") ? std::atoi(std::getenv("R3_MXD_KS")) : 0;
+    static const int r3_bk = std::getenv("R3_MXD_BK") ? std::atoi(std::getenv("R3_MXD_BK")) : 0;
+    static const int r3_nt = std::getenv("R3_MXD_NT") ? std::atoi(std::getenv("R3_MXD_NT")) : 0;
+    if (r3_ks > 0 && r3_ks * M <= 512 * 2) p.ks = r3_ks;
+    if (r3_bk > 0) p.bk = r3_bk;
+    if (r3_nt > 0) p.nt = r3_nt == 1;
+  }
+@@ end
