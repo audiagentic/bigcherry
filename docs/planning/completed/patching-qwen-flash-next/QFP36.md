@@ -2,7 +2,7 @@
 id: QFP36
 order: 36
 plan: patching-qwen-flash-next
-state: pending
+state: completed
 created-at: '2026-10-07T00:39:40.654749+00:00'
 breadth: ''
 skill: advanced
@@ -290,6 +290,11 @@ Execution order: seventh. Within QFP36, qualify the exact multi-warp helper befo
 
 2026-10-09 (same census) the once-per-layer GEMM is the router: on the R9700 3300 of its 3600 calls are followed directly by topk_moe_cuda > bc_mm_ids_helper_mw, the other 300 by soft_max > argsort (the non-fused top-k path); it is always preceded by dsv4_hc_pre_grid. Router Gate 0 is therefore positive on time: 7.9 ms per 512-token chunk on each XTX, 20.7 ms on the R9700. Caution on the R9700 figure: that card has the largest collective share (it waits for the XTXs), so its router time is probably not on the critical path; the XTX 7.9 ms (~1.9% of prompt wall) is the realistic ceiling, and a custom kernel would recover part of it. Weight type still to be read from the model before any code.
 
+2026-10-11 closure. Both parts are done.
+- (b) multi-warp routing helper: 1345_moe_ids_multiwarp, validated, production, default on (prefill +1.6 to +2.1% on Flash-Next, +2.0% on Gemma, text identical).
+- (a) split-K router GEMM: 1357_moe_router_splitk, promoted (#122), released in bc-llamacpp 11474.6.0, build default off, switched on by the flashnext profile (#126). Prefill +3.2% pooled at promotion and +1.8% to +3.7% on the corrected harness (dacc-c1357b), decode level; no regression on Qwen3.6-35B-A3B and Gemma 4 26B (text identical there).
+- Deviation from the acceptance criteria as written: on Flash-Next the router sums in another order, so the greedy text is NOT bit-identical with the flag on. It was accepted on the CPU f32 reference instead (24 probes at 8K: top-1 23/24 with and without, mean TV 0.0799 with against 0.0831 without) and enabled in the profile by the owner's decision (2026-10-10).
+
 ## Status 2026-10-08
 
 - Part (b), multi-warp routing helper: **done** by 1345_moe_ids_multiwarp (validated, production, default on; 8 warps per expert for >= 128 tokens; prefill +1.6-2.1% on Flash-Next, +2.0% on Gemma, text identical).
@@ -469,8 +474,6 @@ Combined QFP36 expectation on this topology if both gates pass: **+0.4% to +1.5%
 
 ## Ledger-events
 
-
-
 - chg_20261007_073613_flash-next-prefill-is-about-2_3220
 - 2026-10-07T07:36:17.133419+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-08T09:46:17.213927+00:00 (updated-by): Updated: section:notes
@@ -482,3 +485,5 @@ Combined QFP36 expectation on this topology if both gates pass: **+0.4% to +1.5%
 - 2026-10-10T01:57:44.055374+00:00 (updated-by): Updated: section:ledger-events
 - chg_20261010_114843_flash-next-prompt-processing-i_7051
 - 2026-10-10T11:48:51.010778+00:00 (updated-by): Updated: section:ledger-events
+- 2026-10-10T13:52:00.897216+00:00 (updated-by): Updated: section:notes
+- 2026-10-10T13:52:08.256032+00:00 (state-transition): State: pending → completed
