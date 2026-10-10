@@ -1,8 +1,9 @@
 # 1261_nro10_spec_ctx_other_devices
 
-**Status:** untested, unpromoted; structural defect at b11474 (2026-10-09)
+**Status:** untested
 **Plan item:** PNRO10
-**Owner:** PNRO10 only; no new scheduler/placement owner.
+
+Not promoted: structural defect at b11474 (2026-10-09). Owner: PNRO10 only; no new scheduler/placement owner.
 
 Adds `ctx_other` target model device backends to a separate speculative draft context when target-owned shared tensors require them. The **current local insertion is misplaced** inside the ordinary draft-device loop (first of two `backends.emplace_back(backend)` matches); it may duplicate a later backend and skips other devices when draft devices are empty. Const qualification was fixed earlier. The marker is conditional on actually adding a backend, and native same-device MTP does not exercise this path.
 
