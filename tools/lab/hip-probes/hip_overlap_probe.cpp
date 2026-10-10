@@ -9,6 +9,7 @@
 //   graphs   one thread a card capturing, instantiating and launching HIP graphs at the same time, with and without
 //            a process-wide lock: are the results still right (the 1356 dispatch-worker race, in isolation)
 //   replay   the same threads mixing graph update in place, graph replay and direct launches, under four locking rules
+//   pipeline batch k+1 queued while batch k runs, with an event-scoped wait, against preparing it after k ends
 //   stagger  a layer loop of compute + exchange on every card: as today (the card waits for the exchange) against
 //            two half-batches staggered so one half's exchange runs under the other half's compute
 //
@@ -520,6 +521,84 @@ static void test_replay() {
     }
 }
 
+// --------------------------------------------------------------------------------------------- pipeline
+// QFP50: the host prepares batch k+1 only after batch k has finished, so a card runs dry for the length of that
+// preparation. Two batches deep, batch k+1 is queued while k runs and the host waits on an EVENT recorded behind
+// k's result copy, not on the whole stream (which would also wait for k+1). Batch k+1 reuses batch k's buffer on
+// the card and its input arrives by an asynchronous copy, so every write is ordered behind k on the stream; the
+// result of each batch is checked, so a write that overtook the previous batch would show.
+static void test_pipeline() {
+    const int batches = 40, passes = 12, prep_ms = 8;  // a batch: `passes` compute passes; the host needs prep_ms to prepare one
+    const size_t n = kBurnElems / 4;                   // 64 MiB a batch
+    std::printf("\n== pipeline: %d batches, the host needs %d ms to prepare each; result checked every batch\n", batches, prep_ms);
+    for (auto & c : g_cards) {
+        CK(hipSetDevice(c.id));
+        float * in_host = nullptr;
+        float * out_host = nullptr;
+        CK(hipHostMalloc(&in_host, 2 * 4096 * sizeof(float), hipHostMallocDefault));   // two input slots, by batch parity
+        CK(hipHostMalloc(&out_host, 2 * 4096 * sizeof(float), hipHostMallocDefault));  // two result slots, by batch parity
+        hipEvent_t done[2];
+        CK(hipEventCreate(&done[0]));
+        CK(hipEventCreate(&done[1]));
+        auto prepare = [&](int k) {  // host work for batch k: its input, and the time the real preparation takes
+            float * slot = in_host + (k & 1) * 4096;
+            for (int i = 0; i < 4096; ++i) {
+                slot[i] = static_cast<float>(k);
+            }
+            const double until = now_ms() + prep_ms;
+            while (now_ms() < until) {
+            }
+        };
+        auto submit = [&](int k) {  // input into the SAME card buffer every batch, compute, result out, event
+            CK(hipMemcpyAsync(c.buf, in_host + (k & 1) * 4096, 4096 * sizeof(float), hipMemcpyHostToDevice, c.compute));
+            burn(c.compute, c.buf, n, passes);
+            CK(hipMemcpyAsync(out_host + (k & 1) * 4096, c.buf, 4096 * sizeof(float), hipMemcpyDeviceToHost, c.compute));
+            CK(hipEventRecord(done[k & 1], c.compute));
+        };
+        auto check = [&](int k, long & wrong) {  // burn is x = x * 1 + 1 a pass
+            const float * slot = out_host + (k & 1) * 4096;
+            if (slot[0] != static_cast<float>(k + passes) || slot[4095] != static_cast<float>(k + passes)) {
+                ++wrong;
+            }
+        };
+
+        long wrong1 = 0, wrong2 = 0;
+        double t0 = now_ms();
+        for (int k = 0; k < batches; ++k) {  // one deep, as today
+            prepare(k);
+            submit(k);
+            CK(hipStreamSynchronize(c.compute));
+            check(k, wrong1);
+        }
+        const double one = now_ms() - t0;
+
+        t0 = now_ms();
+        prepare(0);
+        submit(0);
+        for (int k = 0; k < batches; ++k) {  // two deep: batch k+1 goes in before the wait for batch k
+            if (k + 1 < batches) {
+                prepare(k + 1);
+                submit(k + 1);
+            }
+            CK(hipEventSynchronize(done[k & 1]));
+            check(k, wrong2);
+        }
+        CK(hipStreamSynchronize(c.compute));
+        const double two = now_ms() - t0;
+
+        double compute = now_ms();
+        burn(c.compute, c.buf, n, passes * 4);
+        CK(hipStreamSynchronize(c.compute));
+        compute = (now_ms() - compute) / 4;
+        std::printf("  card %d: a batch computes in %.1f ms; one deep %.1f ms a batch (%ld wrong), two deep %.1f ms a batch (%ld wrong)\n", c.id,
+                    compute, one / batches, wrong1, two / batches, wrong2);
+        hipEventDestroy(done[0]);
+        hipEventDestroy(done[1]);
+        hipHostFree(in_host);
+        hipHostFree(out_host);
+    }
+}
+
 // ---------------------------------------------------------------------------------------------- stagger
 static void test_stagger() {
     const int layers = 96, passes = 2;  // 96 sums a batch in production; `passes` full passes of compute a sum
@@ -615,7 +694,7 @@ int main(int argc, char ** argv) {
     setup();
     std::vector<std::string> tests(argv + 1, argv + argc);
     if (tests.empty()) {
-        tests = {"links", "wire", "overlap", "submit", "graphs", "replay", "stagger"};
+        tests = {"links", "wire", "overlap", "submit", "graphs", "replay", "pipeline", "stagger"};
     }
     for (const auto & t : tests) {
         if (t == "links") {
@@ -630,6 +709,8 @@ int main(int argc, char ** argv) {
             test_graphs();
         } else if (t == "replay") {
             test_replay();
+        } else if (t == "pipeline") {
+            test_pipeline();
         } else if (t == "stagger") {
             test_stagger();
         } else {

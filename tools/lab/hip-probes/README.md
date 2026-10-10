@@ -13,6 +13,7 @@ design decision does not have to be read out of an engine run (QFP41 threading, 
 | `submit` | Many small kernels on every card: one host thread for all cards against one thread a card. |
 | `graphs` | One thread a card capturing, instantiating and launching HIP graphs at once, with and without a process-wide lock: are the results right? |
 | `replay` | The same threads mixing what llama.cpp does a call (update a graph instance in place, replay it, or launch directly), under four locking rules: which rule keeps every result right? |
+| `pipeline` | Batch k+1 queued while batch k runs, into the same card buffer, with the host waiting on an event behind k and not on the whole stream: does the card stop running dry, and is every result still right? |
 | `stagger` | A loop of compute + exchange on every card as today, against two half-batches staggered so one half's exchange runs under the other half's compute. |
 
 Run on Brutus through the queue, on the cards to test:

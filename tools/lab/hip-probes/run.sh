@@ -2,7 +2,7 @@
 # QFP41 / QFP49: build and run the standalone HIP probes (hip_overlap_probe.cpp) on the cards the queue gives it.
 # Run as a queue SCRIPT job on the target cards:
 #   VIS=0,1,2 SCRIPT hp1 tools/lab/hip-probes/run.sh @<any build run> <out-dir> [test...]
-# The first argument (a llama-server path from the queue) is ignored. Tests: links wire overlap submit graphs replay stagger
+# The first argument (a llama-server path from the queue) is ignored. Tests: links wire overlap submit graphs replay pipeline stagger
 # (default: all). The cards are the ones in HIP_VISIBLE_DEVICES, which the queue sets from VIS.
 # Usage: run.sh <ignored> <out-dir> [test...]
 # env: ROCM_PATH (/opt/rocm-7.2.4), PROBE_TIMEOUT (900 s)
