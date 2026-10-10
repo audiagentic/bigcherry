@@ -13,6 +13,10 @@ priority: P2
 
 # AMD-STREAM-005: Protect concurrent-region join node from fusion
 
+## 2026-10-10 current-state correction (BCOP103)
+
+**Supersedes historical implementation instructions below.** Current `1216/patch.toml` already declares `requires=[]` and `experiment-contract="RD43-CONCURRENT-JOIN-FUSION-GUARD"`; `validation.toml` and evidence exist. Stored b11126 `backend_reference` PASS compared rejected 1215 versus 1215+1216, **not standalone 1216 against b11474**. PRBE35 owns a new standalone QKV join-activation, full-vocab and graph-replay gate on current pin; do not restore 1215 to qualify it. PRBE112 only owns the separate rejected RD42 overlap decision.
+
 ## Description
 
 IMPLEMENTED-AS-PATCH. Patch 1216_rd43_concurrent_join_fusion_guard (state=untested) lowers cgraph->n_nodes around ggml_cuda_try_fuse while a concurrent region (from patch 1215) is active, so op-fusion cannot absorb the join node. This item already has extensive real hardware evidence recorded in its own notes: PASS on gfx1201 capture/replay, byte-exact full-vocab backend_reference match (0/15,892,480 differ) vs baseline+1215, and a fully-scoped, GPT-approved design (req_3e42043eb71a4a92) for the one remaining formal step: wiring run_rd43_contract_qualification() into validation_campaign.py. No further design work or GPT session is needed for this item -- the remaining work is mechanical implementation of an already-approved design.

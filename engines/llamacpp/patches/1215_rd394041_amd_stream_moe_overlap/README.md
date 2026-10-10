@@ -1,5 +1,7 @@
 # 1215 (RD39/RD40/RD41/RD42): honor active HIP stream, per-(device,stream) cuBLAS handles, dedicated concurrent scratch, and MoE shared-expert overlap
 
+> **2026-10-10 authoritative correction (BCOP103 / PRBE112): REJECTED.** Earlier positive single-card results below are historical; later b11126 four-session evidence failed target and dense-control contracts. Pinned b11474 already honors `ctx.stream()`/per-stream cuBLAS handles; its native routed/shared MMVQ fusion requires `concurrent_events.empty()`, while 1215 inserts RD42 events. Model-specific activation and regression causality remain unmeasured. Do not revive 1215. Independent 1216 is PRBE35-owned and not standalone-qualified.
+
 ## Scope
 
 Fixes `ggml_cuda_op_mul_mat` to honor the assigned stream instead of
