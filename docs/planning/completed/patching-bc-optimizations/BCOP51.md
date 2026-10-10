@@ -2,7 +2,7 @@
 id: BCOP51
 order: 51
 plan: patching-bc-optimizations
-state: completed
+state: deprecated
 created-at: '2026-10-08T04:07:42+11:00'
 created-by: agent
 priority: P2
@@ -33,3 +33,7 @@ BigCherry now has native MTP, separate-draft-GPU scheduling/overlap work, draft-
 ## Blockers / dependencies
 
 No blocker remains for PRBE07 closure. BridgeSpec's published throughput is external single-XTX evidence and is not promotion evidence for BigCherry's Linux dual-XTX + R9700 + gfx1030/no-P2P topology. No build, test, prototype or hardware benchmark was run by this audit.
+
+## Change Log
+
+- 2026-10-10T10:25:46.203449+00:00 (state-transition): State: completed → deprecated

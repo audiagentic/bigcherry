@@ -2,7 +2,7 @@
 id: PRBE59
 order: 0
 plan: patching-rdna-boost-experiments
-state: completed
+state: superseded
 created-at: '2026-09-09T10:57:36.613381+00:00'
 breadth: ''
 skill: advanced
@@ -63,3 +63,4 @@ Recheck every historical b11126 anchor on the composed b11474 source before codi
 - 2026-09-24T04:52:43.672823+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:standards, section:notes
 - 2026-09-24T04:53:46.389230+00:00 (updated-by): Updated: section:notes
 - 2026-09-24T05:09:39.917881+00:00 (updated-by): Updated: section:description, section:steps, section:notes
+- 2026-10-10T10:25:41.415012+00:00 (state-transition): State: completed → superseded

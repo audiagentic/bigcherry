@@ -2,7 +2,7 @@
 id: BCOP59
 order: 59
 plan: patching-bc-optimizations
-state: completed
+state: superseded
 created-at: '2026-10-08T15:05:57+11:00'
 created-by: agent
 priority: P2
@@ -21,3 +21,7 @@ Upstream `fattn.cu` / `fattn-mma-f16.cuh` own FA. RD06/1203 is a separate reject
 ## Acceptance / terminal gate
 
 No RD76 action. Reopen only for maintained distinct code after >=5% first-party FA wall-share, full graph/long-context correctness, >=4 sessions and CI95-low >=3% E2E gain with <=1% controls. See PRBE59. Eleven b11474 static assertions passed; no hardware/build. Sources: https://github.com/ggml-org/llama.cpp/pull/26046 and https://github.com/ggml-org/llama.cpp/pull/28102 .
+
+## Change Log
+
+- 2026-10-10T10:25:36.280376+00:00 (state-transition): State: completed → superseded
