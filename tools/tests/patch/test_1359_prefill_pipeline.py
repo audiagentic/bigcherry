@@ -79,7 +79,7 @@ class Patch1359Mechanics(unittest.TestCase):
 
             # the original copy stays where it was; the fenced copy and its events come after it
             first = ctx.index("ggml_backend_tensor_get_async(backend_h, t_h_nextn, embd_nextn_out, 0,")
-            gate = ctx.index('getenv("BIGCHERRY_PREFILL_PIPELINE")', first)
+            gate = ctx.index('static const bool bc_1359_on = getenv("BIGCHERRY_PREFILL_PIPELINE") == nullptr', first)
             wait = ctx.index("bc_nextn_fence_wait(bc_slot);", gate)
             second = ctx.index("ggml_backend_tensor_get_async(backend_h, t_h_nextn, bc_dst, 0, bc_bytes);", wait)
             record = ctx.index("ggml_backend_event_record(bc_events[j], bc_backends[j]);", second)
@@ -95,7 +95,7 @@ class Patch1359Mechanics(unittest.TestCase):
             self.assertIn("LLAMA_API float * llama_get_embeddings_nextn_fenced(struct llama_context * ctx, int32_t slot);", ext)
 
             # the hook: flag read once, the pipeline branch in front of 1348's catch-up-then-wait sequence
-            self.assertIn('std::getenv("BIGCHERRY_PREFILL_PIPELINE")', spec)
+            self.assertIn('bc_pipeline = bc_deferred_enabled && (getenv("BIGCHERRY_PREFILL_PIPELINE") == nullptr', spec)
             hook = spec.index("if (bc_pipeline) {")
             native = spec.index("// The server submits target chunk k+1 before entering here.")
             self.assertLess(hook, native)
@@ -130,7 +130,7 @@ class Patch1359Mechanics(unittest.TestCase):
 
     def test_env_doc(self):
         self.assertEqual([doc.name for doc in _P.ENV_DOCS], ["BIGCHERRY_PREFILL_PIPELINE"])
-        self.assertEqual([doc.default for doc in _P.ENV_DOCS], ["0 (off)"])
+        self.assertEqual([doc.default for doc in _P.ENV_DOCS], ["1 (on)"])  # an off switch: unset means on
 
 
 if __name__ == "__main__":

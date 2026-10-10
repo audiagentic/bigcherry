@@ -1,8 +1,8 @@
 # 1359_prefill_pipeline
 
-Not promoted. Mechanism is in SUMMARY.md: with an MTP drafter, prompt batch k+1 is submitted before the drafter
+Promoted 2026-10-11 (record below). Mechanism is in SUMMARY.md: with an MTP drafter, prompt batch k+1 is submitted before the drafter
 hook collects batch k's hidden states, which it then takes through a backend event that waits for batch k only.
-Off by default; `BIGCHERRY_PREFILL_PIPELINE=1` turns it on.
+On by default; `BIGCHERRY_PREFILL_PIPELINE=0` turns it off.
 
 ## Evidence
 
