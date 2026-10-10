@@ -42,16 +42,17 @@ _P = _load("1359_prefill_pipeline")
 @unittest.skipUnless(all((_V / p).exists() for p in _FILES), "pinned vendor checkout not present")
 class Patch1359Mechanics(unittest.TestCase):
     def _production(self, td):
-        """The production set applied by the resolver patch-rebase-check uses; 1359's files written out."""
+        """The production set without 1359, applied by the resolver patch-rebase-check uses; 1359's files written out."""
         root = Path(td)
         selected = patch_rebase.resolve_selection(source_name="bigcherry", all_patches=False)
         ids = [m.patch_id for m in selected.modules]
         self.assertIn("1348_mtp_deferred_catchup", ids)
         self.assertIn("1346_mtp_prompt_overlap", ids)
-        self.assertNotIn("1359_prefill_pipeline", ids)  # untested: not in the production recipe
         texts = patch_rebase._overlay_texts()
         overlay_paths = frozenset(texts)
         for module in selected.modules:
+            if module.patch_id == "1359_prefill_pipeline":
+                continue  # the patch under test is applied by the test itself, whatever recipe it is in
             probe = patch_rebase.probe_patch(module, _V, texts, context_lines=3, previous_revision=None,
                                              revision="mechanics-test", overlay_paths=overlay_paths)
             self.assertIn(probe.status, (patch_rebase.STATUS_CLEAN, patch_rebase.STATUS_CLEAN_NOOP),
@@ -127,10 +128,9 @@ class Patch1359Mechanics(unittest.TestCase):
             self.assertFalse(all(r.ok for r in res))
             self.assertEqual(drifted, p.read_text(encoding="utf-8"))
 
-    def test_env_doc_and_state(self):
+    def test_env_doc(self):
         self.assertEqual([doc.name for doc in _P.ENV_DOCS], ["BIGCHERRY_PREFILL_PIPELINE"])
         self.assertEqual([doc.default for doc in _P.ENV_DOCS], ["0 (off)"])
-        self.assertEqual(_P.STATE, "untested")
 
 
 if __name__ == "__main__":
