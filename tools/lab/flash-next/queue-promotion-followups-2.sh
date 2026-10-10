@@ -6,6 +6,7 @@
 #   7. Other models, tensor split, no draft (probe-27b.sh plain), ABBA with the patch's off switch:
 #      Gemma 4 26B A4B and Qwen3.6-35B-A3B, for 1358 (b-metamem-sce1) and 1355 (b-metamem-hcf1).
 #      1355 only acts on Qwen4Exp hyper-connection gates, so on these models it can only show "no change".
+#   8. 1357 router split-K on the same two models (b-metamem-rse1), off against on.
 # Waits for queue-promotion-followups.sh (FOLLOWUPS_DONE in WAIT_LOG) when WAIT_LOG is set.
 # Usage: queue-promotion-followups-2.sh [step...]     (default: 5 6 7)
 set -u
@@ -66,6 +67,15 @@ for s in $steps; do
         other_model "qwen3.6 1358" $Q36 b-metamem-sce1 BIGCHERRY_META_SPLIT_CACHE_EVICT=0 om-q36-1358
         other_model "gemma 1355" $GEMMA b-metamem-hcf1 BIGCHERRY_HC_POST_GATE_FUSE=0 om-gem-1355
         other_model "qwen3.6 1355" $Q36 b-metamem-hcf1 BIGCHERRY_HC_POST_GATE_FUSE=0 om-q36-1355
+        ;;
+    8)
+        # 1357 is off by default, so here B = the router kernel ON (BIGCHERRY_MOE_ROUTER_SPLITK=1), A = off.
+        # Qwen3.6-35B-A3B is MoE and builds its FFN through build_moe_ffn, so the router is marked there too;
+        # Gemma 4 has no router and can only show "no change, 0 hits".
+        echo "== step 8: 1357 router split-K on other models (A = off, B = on)"
+        rm -rf $R/om-*-1357*
+        other_model "qwen3.6 1357" $Q36 b-metamem-rse1 BIGCHERRY_MOE_ROUTER_SPLITK=1 om-q36-1357
+        other_model "gemma 1357" $GEMMA b-metamem-rse1 BIGCHERRY_MOE_ROUTER_SPLITK=1 om-gem-1357
         ;;
     *) echo "unknown step $s" ;;
     esac
