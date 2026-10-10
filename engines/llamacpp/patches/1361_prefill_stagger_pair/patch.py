@@ -396,6 +396,15 @@ _N_ARENA_DTOR = r'''            bc.arena_plans.clear();
             ggml_backend_free(bc.backend);
 '''
 
+# A static Meta buffer (KV cache, recurrent state) keeps the views a graph makes of its tensors in one container until
+# the next compute rebuild moves on to the other. A pair allocates graph A and graph B before either is computed, so
+# both graphs' views land in the same container: twice the views between evals.
+_A_META_HEADROOM = r'''    constexpr size_t compute_headroom = 16; // Maximum number of views per statically allocated tensor that can be created between evals.
+'''
+_N_META_HEADROOM = r'''    // BigCherry 1361: a stagger pair allocates two graphs between evals, so twice upstream's 16 views a tensor.
+    constexpr size_t compute_headroom = 32; // Maximum number of views per statically allocated tensor that can be created between evals.
+'''
+
 _A_ARENA_ROTATE = r'''// BigCherry 1340 (MSM02): what graph_compute does when it rebuilds - move the Meta buffers a graph uses on to their
 '''
 _N_ARENA_ROTATE = r'''// BigCherry 1361 (QFP49): reserve/bind scheduler B into a second 1340 physical arena.  Mapping scratch vectors
@@ -981,6 +990,8 @@ PATCHES = [
                   guard=r"arena_galloc_pair", rationale="1340 per-device arena ownership fields."),
             _edit(id="stagger-arena-dtor", anchor=_A_ARENA_DTOR, mode="replace", text=_N_ARENA_DTOR,
                   guard=r"arena_plans_pair.clear", rationale="1340 Meta context destruction before simple backends."),
+            _edit(id="stagger-meta-view-headroom", anchor=_A_META_HEADROOM, mode="replace", text=_N_META_HEADROOM,
+                  guard=r"compute_headroom = 32;", rationale="Static Meta buffer view-container sizing."),
             _edit(id="stagger-arena-pair-helpers", anchor=_A_ARENA_ROTATE, mode="replace", text=_N_ARENA_ROTATE,
                   guard=r"ggml_backend_meta_reserve_graph_pair", rationale="After 1340 reserve/bind helpers and before container rotation."),
         ),
