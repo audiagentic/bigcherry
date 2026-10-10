@@ -1,6 +1,6 @@
 # 1356_meta_dispatch_workers
 
-**Status:** validated
+**Status:** evaluated
 **Plan item:** QFP41
 
 ## Mechanism
@@ -65,3 +65,23 @@ so the share of capturing calls can be read off a production run first.
 Why: the lock above is exclusive for the whole of a capturing call. If most prefill calls capture, the workers run
 the devices one at a time, which would match the measured gain shrinking from +2.5% at 8K to +0.3% at 98K. The
 counters say whether that is so before the lock is narrowed. The mechanism and the lock are unchanged.
+
+## Demoted to evaluated (2026-10-11)
+
+On the current build (main at 1042e84d plus the lock counters of PR #129), Flash-Next production profile, 98K, with
+the request sent through the chat template (#124): 3 of 8 runs with the workers on give a different greedy text;
+all 8 runs with the workers off agree (runs lk1, lk2r1, lk2r2, lk2r3). The three differing runs give the same
+alternative text (md5 10a864c9 against b301a49a) and each counts one HIP graph capture fewer (1977 against 1978).
+The run position does not decide it (2-B, 3-B, 2-B). 8K and 24K are identical in every run.
+
+This contradicts the identity claim the promotion was made on (identical at 8K, 24K and 98K, two ABBAs each, and a
+52-run stress at 8K). Those runs sent a raw completion whose first token was end-of-turn, which the harness then
+forced past; the 98K stress was never run. Two other differences from then are not ruled out: the profile now
+switches on the split-K MoE router (1357), and the counters add timing code inside the locked section.
+
+State is `evaluated`: the prefill gain is measured (+3.5% / +1.7% / +1.6% at promotion, +4.4% / +1.0% / +1.1% in
+run lk1) and the output race is open. The patch is out of the production recipe and composed by the
+`meta-dispatch-workers` experiment. The flag was default off and in no profile, so no served configuration changes.
+
+To promote again: find the race (the missing capture is the lead) and fix it in this package, then at least twelve
+runs with the workers on at 98K with identical text, and 98K added to the stress.
