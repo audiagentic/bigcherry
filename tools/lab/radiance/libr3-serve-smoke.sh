@@ -8,7 +8,8 @@
 # The first argument (a llama-server path from the queue) is ignored.
 # Usage: libr3-serve-smoke.sh <ignored> <out-dir>
 # env: MODEL (.rad container), GPU (HIP index, 0), TARGET (gfx1100), PORT (18431), CTX (8192), KV (bf16), SPEC (0),
-#      N (64 tokens), LOAD_TIMEOUT (900 s), EXTRA (more engine options, e.g. --profile-ops; the per-op table is in
+#      TP (1; tensor-parallel ranks - give GPU a list such as 0,1 and lock both cards with VIS=0,1), P2P (auto | on |
+#      off), N (64 tokens), LOAD_TIMEOUT (900 s), EXTRA (more engine options, e.g. --profile-ops; the per-op table is in
 #      <out-dir>/server.log), RADIANCE_SRC, WORK
 set -u
 out=$2
@@ -27,7 +28,7 @@ home="$(dirname "$(dirname "$r3so")"):$src/build/radiance_home"
 echo "radiance $(git -C "$src" rev-parse --short HEAD); model $(basename "$model") ($(du -h "$model" | cut -f1)); HIP device ${GPU:-0}; kernels libr3"
 
 HIP_VISIBLE_DEVICES=${GPU:-0} "$src/build/bin/radiance" --model "$model" --radiance-home "$home" --kernels libr3,libref \
-    --tp 1 --max-model-len "${CTX:-8192}" --max-num-seqs 1 --kv-cache-dtype "${KV:-bf16}" \
+    --tp "${TP:-1}" --p2p "${P2P:-auto}" --max-model-len "${CTX:-8192}" --max-num-seqs 1 --kv-cache-dtype "${KV:-bf16}" \
     --num-speculative-tokens "${SPEC:-0}" --host 127.0.0.1 --port "$port" ${EXTRA:-} > "$out/server.log" 2>&1 &
 pid=$!
 t0=$(date +%s)
@@ -43,7 +44,7 @@ until curl -sf "http://127.0.0.1:$port/health" > /dev/null 2>&1; do
     sleep 2
 done
 echo "healthy after $(( $(date +%s) - t0 )) s"
-grep -iE "kernel|libr3|placement|vram|refus|fallback|host kernel" "$out/server.log" | head -20 | cut -c1-220
+grep -iE "kernel|libr3|placement|vram|refus|fallback|host kernel|p2p|peer|rank|all-reduce|allreduce" "$out/server.log" | head -30 | cut -c1-220
 
 ask() {  # <name> <path> <json>
     local t1; t1=$(date +%s.%N)
