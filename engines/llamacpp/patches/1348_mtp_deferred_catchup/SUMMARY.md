@@ -25,3 +25,25 @@ Prompt-only MTP catch-up is deferred by one target chunk. After target chunk k f
 Qualified on Brutus at b11474 via the QFP18 lightweight promotion tier: mechanics/lint, activation marker, one-binary
 ABBA with complete separation at 8K/24K/98K, and greedy target identity. Full hardware record is in README.md and
 `releases/evidence/qfp31-mtp-deferred-catchup.md`.
+
+## Snapshot copy: timing and optional threads (2026-10-11, QFP42)
+
+A kernel trace of Flash-Next prefill (run dp1) shows each target card with nothing queued for about 34 ms a
+512-token chunk (81 gaps of 10 ms or longer, 2.8 s of a 29.6 s prefill at 24K). Kernels are queued ahead, so that
+gap is host work done after the wait for chunk k returns and before chunk k+1's first kernels are submitted. The
+synchronisation trace (run ps1) puts that wait in this patch's `llama_get_embeddings_nextn` call, as intended, and
+the host profile (run pp2) shows the main thread in `memmove` for about 13 ms a chunk: the copy of the chunk's
+hidden states into the deferred snapshot. The rest of the gap is the next graph (11.4 ms) and its inputs (4.3 ms),
+which this patch does not own.
+
+Two switches, both leaving the default path as it was:
+
+- `BIGCHERRY_MTP_DEFERRED_STATS=1`: one line at exit, `BIGCHERRY_1348_STATS chunks=.. threads=.. wait_ms=..
+  copy_ms=.. copy_mb=.. catchup_ms=..`, so the copy's cost is measured directly and not read off a profile.
+- `BIGCHERRY_MTP_SNAPSHOT_THREADS=N` (1..16, default 1 = the plain memcpy): the copy is split over N threads.
+
+Host threading conditions: N - 1 helper threads are created once with the MTP object and joined when it is
+destroyed; none is created per chunk. Shared state is the copier's own job list, generation counter and running
+count, all under its mutex. The helpers touch only the byte ranges they are handed, the ranges do not overlap, and
+`copy()` returns only when every part is written, so neither buffer is used by a helper after the call. They make
+no llama, ggml or HIP call. Not yet measured on hardware.

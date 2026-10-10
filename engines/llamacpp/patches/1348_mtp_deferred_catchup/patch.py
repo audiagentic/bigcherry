@@ -49,6 +49,10 @@ _N_INCLUDES = r"""#include <map>
 #include <cinttypes>
 #include <cstdio>
 #include <cstdlib>
+#include <chrono>
+#include <condition_variable>
+#include <mutex>
+#include <thread>
 """
 
 _A_BASE_VIRTUAL = """\
@@ -82,6 +86,101 @@ _N_MTP_FIELDS = r"""    std::vector<std::vector<float>> verify_h;
         std::vector<float> h_nextn;
     };
     std::array<bc_deferred_chunk, 2> bc_chunks;
+
+    // The snapshot copy sits between the wait for target chunk k and the submission of chunk k+1, where the target
+    // cards have nothing queued (host profile pp2: about 13 ms a 512-token chunk in memmove on this thread).
+    // BIGCHERRY_MTP_SNAPSHOT_THREADS=N splits it over N threads: N - 1 persistent helpers (created once, joined in
+    // the destructor) plus the caller, which returns only when every part is copied, so no buffer outlives a copy.
+    // Default 1 is the plain memcpy. BIGCHERRY_MTP_DEFERRED_STATS=1 prints the time in the wait, the copy and the
+    // catch-up once, when this object is destroyed.
+    struct bc_snapshot_copier {
+        struct job { char * dst = nullptr; const char * src = nullptr; size_t n = 0; };
+        std::vector<std::thread> helpers;
+        std::vector<job> jobs;
+        std::mutex mutex;
+        std::condition_variable cv, done_cv;
+        uint64_t generation = 0;
+        int running = 0;
+        bool stop = false;
+        bool stats = false;
+        int64_t n_chunks = 0, sync_us = 0, copy_us = 0, flush_us = 0, copy_bytes = 0;
+
+        bc_snapshot_copier() {
+            const char * t = std::getenv("BIGCHERRY_MTP_SNAPSHOT_THREADS");
+            const int n = t != nullptr ? std::atoi(t) : 1;
+            const char * st = std::getenv("BIGCHERRY_MTP_DEFERRED_STATS");
+            stats = st != nullptr && std::atoi(st) != 0;
+            jobs.resize(n > 1 && n <= 16 ? n - 1 : 0);
+            for (size_t i = 0; i < jobs.size(); ++i) {
+                helpers.emplace_back([this, i] {
+                    uint64_t seen = 0;
+                    for (;;) {
+                        job j;
+                        {
+                            std::unique_lock<std::mutex> lock(mutex);
+                            cv.wait(lock, [&] { return stop || generation != seen; });
+                            if (stop) {
+                                return;
+                            }
+                            seen = generation;
+                            j = jobs[i];
+                        }
+                        std::memcpy(j.dst, j.src, j.n);
+                        {
+                            std::lock_guard<std::mutex> lock(mutex);
+                            if (--running == 0) {
+                                done_cv.notify_one();
+                            }
+                        }
+                    }
+                });
+            }
+        }
+
+        ~bc_snapshot_copier() {
+            {
+                std::lock_guard<std::mutex> lock(mutex);
+                stop = true;
+            }
+            cv.notify_all();
+            for (auto & h : helpers) {
+                h.join();
+            }
+            if (stats) {
+                std::fprintf(stderr, "BIGCHERRY_1348_STATS chunks=%lld threads=%zu wait_ms=%.1f copy_ms=%.1f copy_mb=%.1f catchup_ms=%.1f\n",
+                        (long long) n_chunks, helpers.size() + 1, sync_us / 1000.0, copy_us / 1000.0,
+                        copy_bytes / 1048576.0, flush_us / 1000.0);
+            }
+        }
+
+        void copy(void * dst, const void * src, size_t n) {
+            const size_t parts = helpers.size() + 1;
+            const size_t step = (n / parts) & ~(size_t) 4095;
+            if (helpers.empty() || step == 0) {
+                std::memcpy(dst, src, n);
+                return;
+            }
+            {
+                std::lock_guard<std::mutex> lock(mutex);
+                for (size_t i = 0; i < helpers.size(); ++i) {
+                    jobs[i] = { (char *) dst + i * step, (const char *) src + i * step, step };
+                }
+                running = (int) helpers.size();
+                ++generation;
+            }
+            cv.notify_all();
+            const size_t done = helpers.size() * step;
+            std::memcpy((char *) dst + done, (const char *) src + done, n - done);
+            std::unique_lock<std::mutex> lock(mutex);
+            done_cv.wait(lock, [&] { return running == 0; });
+        }
+
+        static int64_t now_us() {
+            return std::chrono::duration_cast<std::chrono::microseconds>(
+                    std::chrono::steady_clock::now().time_since_epoch()).count();
+        }
+    };
+    bc_snapshot_copier bc_copier;
     int bc_pending = -1;
     int bc_write = 0;
     bool bc_deferred_enabled = false;
@@ -239,7 +338,11 @@ _N_MTP_PROCESS = r"""        if (pos_max < N - 1 && !is_mem_shared) {
 
         const int pending = bc_pending;
         bc_pending = -1;
+        const int64_t bc_t0 = bc_copier.stats ? bc_snapshot_copier::now_us() : 0;
         const bool ok = bc_process_snapshot(bc_chunks[pending]);
+        if (bc_copier.stats) {
+            bc_copier.flush_us += bc_snapshot_copier::now_us() - bc_t0;
+        }
         bc_chunks[pending].valid = false;
         return ok;
     }
@@ -299,16 +402,24 @@ _N_MTP_PROCESS = r"""        if (pos_max < N - 1 && !is_mem_shared) {
         }
 
         auto * ctx_tgt = this->params.ctx_tgt;
+        const int64_t bc_t0 = bc_copier.stats ? bc_snapshot_copier::now_us() : 0;
         const float * h_tgt = llama_get_embeddings_nextn(ctx_tgt); // sync current target only after prior catch-up ran
         if (h_tgt == nullptr) {
             return false;
         }
+        const int64_t bc_t1 = bc_copier.stats ? bc_snapshot_copier::now_us() : 0;
 
         auto & dst = bc_chunks[bc_write];
         dst.tokens = batch_in.tokens;
         dst.h_nextn.resize((size_t) batch_in.size() * n_embd);
-        std::memcpy(dst.h_nextn.data(), h_tgt, dst.h_nextn.size() * sizeof(float));
+        bc_copier.copy(dst.h_nextn.data(), h_tgt, dst.h_nextn.size() * sizeof(float));
         dst.valid = true;
+        if (bc_copier.stats) {
+            bc_copier.n_chunks++;
+            bc_copier.sync_us += bc_t1 - bc_t0;
+            bc_copier.copy_us += bc_snapshot_copier::now_us() - bc_t1;
+            bc_copier.copy_bytes += (int64_t) (dst.h_nextn.size() * sizeof(float));
+        }
 
         bc_pending = bc_write;
         bc_write ^= 1;
@@ -810,5 +921,19 @@ ENV_DOCS = (
         "1 (on)",
         "defer prompt-only MTP draft catch-up by one target chunk so catch-up k runs after target k+1 is submitted; "
         "0 restores native synchronous common_speculative_process behavior",
+    ),
+    EnvDoc(
+        "BIGCHERRY_MTP_SNAPSHOT_THREADS",
+        "1..16",
+        "1",
+        "threads for the per-chunk copy of the target hidden states into the deferred snapshot (persistent helpers; "
+        "the caller waits for all parts); 1 is the plain memcpy",
+    ),
+    EnvDoc(
+        "BIGCHERRY_MTP_DEFERRED_STATS",
+        "0|1",
+        "0 (off)",
+        "diagnostic: at exit print the chunks deferred and the time in the target wait, the snapshot copy and the "
+        "catch-up",
     ),
 )

@@ -112,7 +112,14 @@ class Patch1348Mechanics(unittest.TestCase):
             self.assertIn("bool bc_process_snapshot(const bc_deferred_chunk & chunk)", spec)
             self.assertIn("if (!flush_deferred())", spec)
             self.assertIn("dst.tokens = batch_in.tokens;", spec)
-            self.assertIn("std::memcpy(dst.h_nextn.data(), h_tgt", spec)
+            # the snapshot copy goes through the copier: a plain memcpy at the default of one thread,
+            # persistent helpers joined in its destructor otherwise, and the caller waits for every part
+            self.assertIn("bc_copier.copy(dst.h_nextn.data(), h_tgt", spec)
+            self.assertIn("bc_snapshot_copier bc_copier;", spec)
+            self.assertIn("jobs.resize(n > 1 && n <= 16 ? n - 1 : 0);", spec)
+            self.assertIn("done_cv.wait(lock, [&] { return running == 0; });", spec)
+            self.assertIn("h.join();", spec)
+            self.assertEqual(spec.count("BIGCHERRY_1348_STATS"), 1)
             self.assertIn("if (bc_poisoned[seq_id])", spec)
 
             self.assertIn("bool bc_prompt_only = spec != nullptr && !batch.has_embd();", srv)
@@ -159,7 +166,9 @@ class Patch1348Mechanics(unittest.TestCase):
             self.assertEqual(before, p.read_text(encoding="utf-8"))
 
     def test_env_doc(self):
-        self.assertEqual([doc.name for doc in _P.ENV_DOCS], ["BIGCHERRY_MTP_DEFERRED_CATCHUP"])
+        self.assertEqual([doc.name for doc in _P.ENV_DOCS],
+                         ["BIGCHERRY_MTP_DEFERRED_CATCHUP", "BIGCHERRY_MTP_SNAPSHOT_THREADS",
+                          "BIGCHERRY_MTP_DEFERRED_STATS"])
 
 
 if __name__ == "__main__":
