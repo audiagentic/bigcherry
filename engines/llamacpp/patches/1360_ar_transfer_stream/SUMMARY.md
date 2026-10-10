@@ -64,3 +64,20 @@ The pinned HIP shim exposes the CUDA-named stream/event calls used by this file,
 path uses one stable dedicated transfer stream per device rather than alternating streams between calls. Hardware
 qualification still has to prove that this RCCL/ROCm combination preserves ordering and permits the intended
 compute/collective overlap without hidden serialization.
+
+## First hardware run (2026-10-11)
+
+Flash-Next production profile, 24K (38,725-token prompt), build `b-ar1` (production + 1360), run `tsar`, ABBA on one
+binary, A = flag unset, B = `BIGCHERRY_AR_TRANSFER_STREAM=1`:
+
+| | Prefill t/s | Decode t/s | Greedy md5 |
+|---|---|---|---|
+| A (off) | 1424.1 / 1424.4 | 86.7 / 92.4 | a789c151 |
+| B (on) | 1411.9 / 1438.3 | 90.0 / 86.0 | a789c151 |
+
+The marker `BIGCHERRY_PATCH_HIT patch=1360_ar_transfer_stream` appears in both B passes and in neither A pass. Text
+identical, speed unchanged within the run's spread: called back to back, the split sum is neutral, which is what
+this slice has to show. It is an enabler for the paired schedule (QFP49), not a gain on its own.
+
+Outside the engine (`tools/lab/hip-probes/rccl_stagger_probe.cpp`, run rs1): RCCL takes a stream other than the
+compute stream on the same communicator, and with two half-batches staggered around it 84% of the sum's cost is hidden.
