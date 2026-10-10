@@ -7,7 +7,7 @@ import re
 from bigcherry.patcher import Edit, EnvDoc, FilePatch
 
 GROUP = "rdna-boosts"
-STATE = "validated"
+STATE = "evaluated"
 
 _A_INCLUDE = r"""#include <map>
 """
