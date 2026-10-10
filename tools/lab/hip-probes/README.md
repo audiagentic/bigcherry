@@ -8,6 +8,7 @@ design decision does not have to be read out of an engine run (QFP41 threading, 
 | test | question |
 |---|---|
 | `links` | How fast does a card exchange one prefill-sized message (5.24 MB) with pinned host memory: up, down, both at once, and with every card doing it together? |
+| `wire` | What does a 16-bit wire cost and save: a round trip as f32 against f16 with the conversions done on the card. |
 | `overlap` | Does a transfer on its own stream run beside kernels on the compute stream, and does either slow down? |
 | `submit` | Many small kernels on every card: one host thread for all cards against one thread a card. |
 | `graphs` | One thread a card capturing, instantiating and launching HIP graphs at once, with and without a process-wide lock: are the results right? |

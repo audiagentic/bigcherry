@@ -3,6 +3,7 @@
 //
 //   links    how fast one card exchanges a prefill-sized message with pinned host memory: up, down, both at once,
 //            and with every card doing it at the same time (the cards have no peer-to-peer path)
+//   wire     a round trip as f32 against f16 with the narrowing and widening done on the card
 //   overlap  does a transfer on its own stream run beside kernels on the compute stream, and does either slow down
 //   submit   many small kernels on every card: one host thread feeding all cards against one thread a card
 //   graphs   one thread a card capturing, instantiating and launching HIP graphs at the same time, with and without
@@ -189,6 +190,69 @@ static void test_links() {
     for (auto & c : g_cards) {
         std::printf("  card %d with all  %5.2f MB: up %.3f ms (%.1f GB/s)  down %.3f ms (%.1f GB/s)  both at once %.3f ms\n",
                     c.id, kMsg / 1e6, up[c.id], kMsg / up[c.id] / 1e6, down[c.id], kMsg / down[c.id] / 1e6, both[c.id]);
+    }
+}
+
+// ------------------------------------------------------------------------------------------------- wire
+__global__ void pack_f16_kernel(const float * src, _Float16 * dst, int n) {
+    const int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) {
+        dst[i] = static_cast<_Float16>(src[i]);
+    }
+}
+
+__global__ void unpack_f16_kernel(const _Float16 * src, float * dst, int n) {
+    const int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) {
+        dst[i] = static_cast<float>(src[i]);
+    }
+}
+
+// A round trip of one message as f32 against the same values narrowed to f16 on the card before the upload and
+// widened after the download: what a 16-bit wire costs and saves, conversions included.
+static void test_wire() {
+    std::printf("\n== wire: one message up and down as f32 (%.2f MB) against f16 (%.2f MB) with the conversions on the card\n", kMsg / 1e6,
+                kMsg / 2e6);
+    const int reps = 200, n = static_cast<int>(kMsg / 4);
+    const unsigned grid = (n + 255) / 256;
+    std::vector<double> f32_all(g_cards.size()), f16_all(g_cards.size());
+    auto f32_trip = [&](Card & c) {
+        const double t0 = now_ms();
+        for (int r = 0; r < reps; ++r) {
+            CK(hipMemcpyAsync(c.host, c.msg, kMsg, hipMemcpyDeviceToHost, c.compute));
+            CK(hipMemcpyAsync(c.msg, c.host, kMsg, hipMemcpyHostToDevice, c.compute));
+            CK(hipStreamSynchronize(c.compute));
+        }
+        return (now_ms() - t0) / reps;
+    };
+    auto f16_trip = [&](Card & c) {
+        const double t0 = now_ms();
+        for (int r = 0; r < reps; ++r) {
+            hipLaunchKernelGGL(pack_f16_kernel, dim3(grid), dim3(256), 0, c.compute, reinterpret_cast<const float *>(c.msg),
+                               reinterpret_cast<_Float16 *>(c.msg + kMsg), n);
+            CK(hipMemcpyAsync(c.host, c.msg + kMsg, kMsg / 2, hipMemcpyDeviceToHost, c.compute));
+            CK(hipMemcpyAsync(c.msg + kMsg, c.host, kMsg / 2, hipMemcpyHostToDevice, c.compute));
+            hipLaunchKernelGGL(unpack_f16_kernel, dim3(grid), dim3(256), 0, c.compute,
+                               reinterpret_cast<const _Float16 *>(c.msg + kMsg), reinterpret_cast<float *>(c.msg), n);
+            CK(hipStreamSynchronize(c.compute));
+        }
+        return (now_ms() - t0) / reps;
+    };
+    for (auto & c : g_cards) {
+        CK(hipSetDevice(c.id));
+        const double a = f32_trip(c), b = f16_trip(c);
+        std::printf("  card %d alone:    f32 %.3f ms, f16 with conversions %.3f ms (%.0f%% of f32)\n", c.id, a, b, 100.0 * b / a);
+    }
+    Rendezvous start(static_cast<int>(g_cards.size()));
+    for_each_card_thread([&](Card & c) {
+        start.arrive();
+        f32_all[c.id] = f32_trip(c);
+        start.arrive();
+        f16_all[c.id] = f16_trip(c);
+    });
+    for (auto & c : g_cards) {
+        std::printf("  card %d with all: f32 %.3f ms, f16 with conversions %.3f ms (%.0f%% of f32)\n", c.id, f32_all[c.id], f16_all[c.id],
+                    100.0 * f16_all[c.id] / f32_all[c.id]);
     }
 }
 
@@ -443,11 +507,13 @@ int main(int argc, char ** argv) {
     setup();
     std::vector<std::string> tests(argv + 1, argv + argc);
     if (tests.empty()) {
-        tests = {"links", "overlap", "submit", "graphs", "stagger"};
+        tests = {"links", "wire", "overlap", "submit", "graphs", "stagger"};
     }
     for (const auto & t : tests) {
         if (t == "links") {
             test_links();
+        } else if (t == "wire") {
+            test_wire();
         } else if (t == "overlap") {
             test_overlap();
         } else if (t == "submit") {
