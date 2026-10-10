@@ -327,6 +327,22 @@ Techniques, by kernel, that apply to libr3:
   weights multiplied with the integer WMMA; its checkpoint note (`docs/perf-checkpoints/2026-09-29-...`) reports
   +22% prefill over the f16 route and +34% with wider prefill chunks, on one fixture.
 
+## Other engines on the RX 7900 XTX (looked up 2026-10-10)
+
+- **llama.cpp, Vulkan backend.** llama.cpp issue #20934: on an RX 7900 XTX, Llama-2 7B Q4_0 decodes at 174.6 tok/s
+  through Vulkan against 143.8 through ROCm/HIP, about 20%. The maintainer's explanation: RDNA3 and RDNA4 can run
+  packed FP32 math at twice the throughput, the compiler rarely emits it in wave32, and wave64 on RDNA is available
+  through Vulkan only, not through HIP; the HIP backend's kernels are the CUDA ones, designed for NVIDIA. An
+  experimental `-mwavefrontsize64` HIP build gave +0.2% to +16% on decode and is not supported by AMD. Closed as
+  expected behaviour. Bearing on libr3: every kernel here is wave32 and its matrix builtins are the `_w32` forms.
+- **MLC-LLM** (Apache TVM Unity, generated kernels, ROCm or Vulkan): its 2023 write-up puts the 7900 XTX at 80% of
+  an RTX 4090 on 4-bit Llama-2 single-stream decode. No multi-GPU support.
+- **hipfire**: see the section above; single card per model for Flash-Next, mixed architectures opt-in only.
+- **vLLM on ROCm** (the owner's earlier gfx1100 deployment, above): AITER/Triton kernels.
+
+None of these is a candidate to replace radiance or llama.cpp here; the two with kernels worth reading for this
+card are hipfire and llama.cpp's Vulkan backend.
+
 ## References for the remaining port (found 2026-10-09; read before writing kernels)
 
 The 29 excluded units need the gfx12 WMMA builtins or the gfx12 transposed load. These exist to adapt from, so none
