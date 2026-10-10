@@ -23,6 +23,8 @@ RCCL source is on Brutus (`~/rccl-heterogeneous-src/rccl`, ROCm/rccl `57e58688`)
 
 This correction supersedes the earlier conceptual `bc_shm_slot` design in this plan.
 
+**2026-10-10 SHM CE rebaseline:** Independent commit `9ded4c6e84b1` (2026-10-02) recorded `NCCL_SHM_USE_CUDA_MEMCPY=1` hanging `llama-bench`. Its timeout did not propagate to the sweep exit code. This is a historical failed-run report, not a current-pin reproduction or root-cause proof. **Do not promote CE or tune ring depth until a bounded single-arm test proves no hang, correct data and actual RCCL SHM selection.** The gfx1030 hostcall lane is independent.
+
 ## Steps
 
 1. Hostcall lane: inspect code objects for `hidden_hostcall_buffer`; identify device `printf/assert/abort` users; build a no-hostcall gfx1030 variant and verify with rccl-tests before combining transport changes.
@@ -194,51 +196,11 @@ resources->bc.maxInflight = std::max(resources->bc.maxInflight,
 
 At readiness/window branches, count why progress could not occur. Keep diagnostics host-only; no device printf (hostcall problem).
 
-### Optional contiguous-step coalescing: only after evidence
+### Deferred coalescing: correct slot extent before implementation
 
-If traces show many small consecutive ready slots, combine a non-wrapping run. Preserve FIFO sizes and publish completion only after the whole memcpy finishes.
+**Withdraw the previous coalescing pseudocode.** It admitted a short first FIFO slot followed by a full slot and used `sum(size)` for the contiguous memcpy length. With `stepSize=256` and sizes `[64,256]`, it copies 320 bytes although the second slot ends at offset 512. The proposal also assumed `args->sliceSteps==1`, which is not guaranteed. This is a deterministic host-level counterexample to the proposed sketch, **not** a proven defect in stock RCCL (which does not coalesce).
 
-Add per-slot batch metadata:
-
-```cpp
-struct shmProxyInfo {
-  // existing...
-  uint8_t batchSteps[NCCL_STEPS]; // 0 unless this slot is head of a submitted run
-};
-```
-
-Submission sketch:
-
-```cpp
-const int first = (sub->base + sub->transmitted) % NCCL_STEPS;
-int runSteps = 0;
-size_t runBytes = 0;
-
-while (runSteps < bcMaxCoalesceSteps &&
-       sub->transmitted + runSteps*args->sliceSteps < sub->nsteps &&
-       sub->transmitted + runSteps*args->sliceSteps < sub->done + NCCL_STEPS) {
-  const int slot = (first + runSteps*args->sliceSteps) % NCCL_STEPS;
-  if (slot < first) break; // ring wrap: keep one contiguous pointer range
-  if (*recvTail <= sub->base + sub->transmitted + runSteps*args->sliceSteps) break;
-
-  const int sz = connFifo[slot].size;
-  // Require exact contiguous occupancy; if variable-size holes exist, stop.
-  if (runSteps > 0 && sz != stepSize) break;
-  runBytes += sz;
-  runSteps++;
-}
-
-if (runSteps > 0) {
-  CUDACHECK(cudaMemcpyAsync(resources->shmFifo + first*stepSize,
-                            resources->devFifo + first*stepSize,
-                            runBytes, cudaMemcpyDeviceToHost, resources->stream));
-  CUDACHECK(cudaEventRecord(resources->events[first], resources->stream));
-  resources->batchSteps[first] = runSteps;
-  sub->transmitted += runSteps * args->sliceSteps;
-}
-```
-
-Completion uses `batchSteps[first]` to advance `done` and publish tail for the whole run after the event succeeds. This code is intentionally conservative: if current FIFO layout/size semantics do not guarantee contiguous bytes for a run, reject coalescing rather than copying padding/unpublished data.
+Only reconsider after CE hang-free correctness and traces showing small copies. A first prototype must require `args->sliceSteps==1`, no ring wrap, producer tail proving every slot ready, all non-final slots exactly `stepSize`, final size in `(0,stepSize]`, and memcpy extent `(run_slots-1)*stepSize+last_size`. Publish every FIFO slot size; publish the batch tail only after its completion event. Reject short non-final slots, sliceSteps>1, wrap, missing metadata and event reuse to the existing single-step path. Verify monotone tails, buffer generation and consumer visibility with a host fixture before hardware.
 
 ### Do not conflate SHM transport with CPU-root reduction
 
@@ -247,6 +209,16 @@ RCCL SHM proxy transports protocol buffers between GPUs/host-visible SHM; it is 
 ### Interaction with PGC15
 
 PGC14 reduces service time of each RCCL collective. PGC15 changes when/range size collectives are issued. Keep them independently selectable and run four arms where possible: stock/patched RCCL × whole/tiled AR.
+
+### CE admission, observability and terminal gate (2026-10-10)
+
+- **Pinned source:** `ROCm/rccl@57e58688/src/include/param.h::NCCL_PARAM` prefixes `NCCL_` and caches on first read; `src/transport/shm.cc::initCeOperation` (lines ~501-520) installs process-global callbacks once. Correct keys: `NCCL_SHM_USE_CUDA_MEMCPY=1`, `NCCL_SHM_MEMCPY_MODE=1|2|3`, `NCCL_SHM_LOCALITY=1|2`. Use a **fresh process per arm**, never an in-process environment toggle.
+- `shmCanConnect` may reject SHM, and `shmSendProxyProgress`/`shmRecvProxyProgress` use CE only for `NCCL_PROTO_SIMPLE`. Force the **RCCL** provider on tensor-split prefill, not BigCherry's adaptive/internal two-GPU host AllReduce. Record the selected provider, SHM transport, protocol and callback before timing. Use direct-SHM stock control, then send-only mode 1, recv-only mode 2, both mode 3, each with `NCCL_PROTO=Simple`, finite timeout, and `rccl-tests` correctness.
+- `tools/lab/rccl/rccl-env-sweep.sh` formerly printed `SWEEP_DONE` after timeout/crash/empty CSV. Its fail-closed receipt now records `status.tsv` with per-arm benchmark and CSV exits; a failed arm produces `SWEEP_INCOMPLETE` and nonzero overall exit. A historical timeout is **never** a zero-throughput measurement or successful sweep.
+- First diagnose whether a current-pin hang is sender/receiver/both, readiness/tail publication, event completion, protocol or SHM selection. Do not queue a run over an active Brutus GPU/host-exclusive lane. If CE hangs/corrupts, reject the mode and retain direct SHM. If all modes are correct but none materially improves matched RCCL-only collective wall and pp2048/4096, close CE tuning. Only then profile the existing `NCCL_STEPS` ring; no new ring, scheduler or allocator.
+- Upstream ROCm/rccl PR #2187 (open 2026-10-10) identifies gfx12 LL memory-ordering deadlock risk. `NCCL_PROTO=Simple` is a correctness control for gfx1201, not a proven speedup. vLLM custom AR requires P2P and SGLang PCIe-IPC requires a distinct workspace/peer contract; neither is a drop-in no-P2P substitute.
+
+**Cheap discriminators performed:** six deterministic host FIFO/env assertions, shell syntax, and a reduced fake-benchmark test: success exits 0/`SWEEP_DONE`, CE exit 124 yields `SWEEP_INCOMPLETE`/exit 1 and an explicit per-arm status. No real RCCL, HIP or GPU run.
 
 ## Code Samples & Guidance
 
@@ -274,6 +246,9 @@ Do not introduce a second FIFO/ring in A-D.
 
 ## Validation
 
+**First gate:** process-isolated direct SHM and CE modes 1/2/3; exact `NCCL_` keys; confirmed RCCL/SHM/Simple admission; valid per-arm exit/CSV receipt; no hang or wrong result. Preserve the 2026-10-02 hang as historical, not current performance evidence. A failed arm invalidates the sweep.
+
+
 For every source change: rccl-tests `#wrong=0`, sizes around step/chunk/ring boundaries, >=100 warmed repetitions, 2x XTX and XTX+R9700/3-rank supported topology. Record p50/p90 latency, algbw/busbw, D2H/H2D engine busy, actual copy-size distribution and max inflight.
 
 BigCherry: pp1024/2048/4096 plus Flash-Next long fill; compare collective critical-path wall and prefill t/s. Decode control <=1% regression.
@@ -290,6 +265,10 @@ Pinned RCCL provenance; existing FIFO/step state is authoritative; diagnose befo
 
 ## Acceptance Criteria
 
+- Every CE candidate passes actual SHM activation, correctness, bounded no-hang and per-arm receipt before bandwidth claims. Failed arms fail the sweep; direct SHM stays selectable.
+- No coalescing until the short-first/sliceSteps/wrap host fixtures and event/tail-lifetime invariants pass.
+
+
 - gfx1030 RCCL kernels launch without hostcall dependency and pass correctness.
 - Exact reason for 1.1 GB/s baseline is recorded (direct/CE mode plus proxy diagnostics).
 - No <=1 MiB regression >2%.
@@ -304,6 +283,9 @@ Pinned RCCL provenance; existing FIFO/step state is authoritative; diagnose befo
 2026-10-06 RCCL ALGORITHM / PROTOCOL SCREEN - REJECTED (run chain3, queue-rccl-screen.sh b11402, production build b-fadef-b11402e, Flash-Next production with MTP, ~99K-token prefill (99,342 tokens), ABBA per setting, A = default RCCL, B = the setting). NCCL_PROTO=Simple: A 970.5 / 984.9, B 981.8 / 981.1 t/s - no change. NCCL_PROTO=LL: A 982.6 / 983.0, B 272.8 / 271.9 t/s - 3.6x slower. NCCL_PROTO=LL128: A 980.0 / 982.7, B 985.6 / 983.4 - no change. NCCL_ALGO=Tree: A 981.9 / 982.0, B 981.2 / 982.7 - no change (decode t/s 59.6 / 60.3 vs 57.5 is a different generated text and acceptance, 338/518 and 339/515 vs 332/535; time per decode step is the same 16.6 ms). NCCL_ALGO=Ring: A 981.6, B 984.3 / 982.4 with the last A arm still running when recorded - no change. No RCCL algorithm or protocol setting improves the tensor-split all-reduce on this host and one makes it much worse; the default is already the best of the set. This closes the env-only lever. What remains for the all-reduce cost is structural (PGC15: fewer or larger collectives, tiling), not configuration.
 
 ## Change Log
+
+- 2026-10-10: SHM CE hang-first rebaseline; corrected fail-open sweep receipt, env/process/protocol gates and unsafe coalescing sketch. No new RCCL build or GPU benchmark.
+
 
 - 2026-10-01T11:50:01.913289+00:00 (created-by): Created by agent.
 - 2026-10-05: Expanded prefill transport scope.

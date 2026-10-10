@@ -35,6 +35,14 @@ Mutates canonical BigCherry state: no
 - Queue jobs only (host + GPU locks; PCIe link preflight); R9700/vLLM untouched by the dual-XTX jobs.
 - Do not import this experiment from `bigcherry` production, tests, or maintained analysis.
 
+## CE failure gate (2026-10-10)
+
+Independent commit `9ded4c6e84b1` reported `NCCL_SHM_USE_CUDA_MEMCPY=1` hanging `llama-bench` on 2026-10-02. It is historical failure evidence, not a current-pin throughput measurement. RCCL `NCCL_PARAM` requires the `NCCL_` prefix; the existing sweep already uses it and starts a separate process per arm.
+
+`rccl-env-sweep.sh` now writes `status.tsv` (`pass, arm, bench_exit, csv_exit`) and fails the overall run if any arm times out, crashes or emits invalid CSV. `SWEEP_DONE` means all arms passed; otherwise `SWEEP_INCOMPLETE`. The previous script could report success after a failed arm. No hardware rerun occurred in this audit.
+
+Before any new CE experiment, check Brutus host/GPU queue, force RCCL rather than adaptive host AllReduce, verify actual SHM and Simple protocol, and test direct, send-only, receive-only and both in bounded separate processes. Do not implement the prior unsafe PGC14 FIFO coalescing sketch. The gfx1030 hostcall lane is separate.
+
 ## Disposition
 
 Open. Winning RCCL settings graduate into the production launch profile / adaptive AllReduce defaults via
