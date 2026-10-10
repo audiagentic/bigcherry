@@ -2,7 +2,7 @@
 id: QFP35
 order: 35
 plan: patching-qwen-flash-next
-state: pending
+state: completed
 created-at: '2026-10-07T00:39:37.142989+00:00'
 breadth: ''
 skill: advanced
@@ -238,6 +238,11 @@ Execution order: sixth. Relative final priority is high among kernel items becau
 
 2026-10-09 hardware result for 1355 (SCALE -> SIGMOID -> SCALE gate consumed inside DSV4_HC_POST; PR #54; build b-metamem-hcf1 = production + 1355, Flash-Next production profile). Three ABBAs per depth with the fused arm in both position patterns (r1: fused in runs 1 and 4; x1, x2: fused in runs 2 and 3). Greedy text identical in every run at 8K / 24K / 98K; the activation marker appears only in the fused arms. Prefill: no separation at any depth (the only low values are first-run-position outliers in both arms). Decode t/s, fused against control: 8K 87.3 / 89.7 vs 87.6 / 87.1 (r1), 87.3 / 90.2 vs 83.2 / 84.8 (x1), 85.4 / 87.9 vs 85.8 / 86.2 (x2); 24K 72.5 / 74.1 vs 72.5 / 71.9, 72.1 / 73.6 vs 71.8 / 72.6, 72.1 / 73.8 vs 70.7 / 72.6; 98K 70.7 / 71.6 vs 70.8 / 70.4, 71.6 / 70.4 vs 68.9 / 70.2, 70.8 / 69.8 vs 70.1 / 70.9. The fused mean is higher in 8 of the 9 depth-rounds, about +1% on average; single rounds overlap, so the claim rests on the pooled result, not on complete separation in one ABBA. Decision: promote under the lightweight tier as an output-identical small decode win with no regression (owner rule: small wins count when nothing regresses); it only affects Qwen4Exp hyper-connection gates, so default-on cannot change other models. To do after the engine-layout move (PR #88): rebase PR #54, add 1355 to the production set, release.
 
+2026-10-11 closure. Both mechanisms this item defined are done and in production.
+- (a) hyper-connection kernels without 64-bit div/mod: 1344_dsv4_hc_grid_index, validated, default on (prefill +1.3 to +1.6% on Flash-Next, text identical).
+- (b) the SCALE -> SIGMOID -> SCALE gate consumed inside DSV4_HC_POST: 1355_hc_post_gate_fuse, promoted (#112, released in bc-llamacpp 11474.5.0), default on, BIGCHERRY_HC_POST_GATE_FUSE=0 is the control.
+- The further fusion candidates that were parked here (PRBE11 / 37 / 38 / 39 / 40: GEMV epilogue, residual-add, K+V projection) are not part of this item's acceptance criteria and move to QFP48, which chooses fusions from the 2026-10-10 kernel trace instead of from the external report.
+
 ## Status 2026-10-08
 
 - Part (a), hyper-connection kernels without 64-bit div/mod: **done** by 1344_dsv4_hc_grid_index (validated, production, default on; prefill +1.3-1.6% on Flash-Next, text identical).
@@ -310,11 +315,11 @@ Keep this **separate** from QFP35's already-covered `1313_scale_act_fuse` and HC
 
 ## Ledger-events
 
-
 - chg_20261007_051800_flash-next-prefill-is-about-1_8190
 - 2026-10-07T05:18:06.429391+00:00 (updated-by): Updated: section:ledger-events
 
 - chg_20261009_222146_a-small-output-identical-decod_7278
+
 ## Code-level review (2026-10-07)
 
 ### 1. Verified facts and corrections
@@ -483,3 +488,5 @@ Expected gain on the production three-card Flash-Next topology if Gate 0 passes:
 - 2026-10-08T09:46:12.268171+00:00 (updated-by): Updated: section:notes
 - 2026-10-09T01:50:40.548677+00:00 (updated-by): Updated: section:notes
 - 2026-10-09T22:21:49.767471+00:00 (updated-by): Updated: section:ledger-events
+- 2026-10-10T13:52:39.595795+00:00 (updated-by): Updated: section:notes
+- 2026-10-10T13:52:46.895181+00:00 (state-transition): State: pending → completed
