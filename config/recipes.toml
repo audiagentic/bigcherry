@@ -1103,8 +1103,9 @@ patches = ["1263_prbe41_ssm_conv_channels_major"]
 patches = ["1275_ar_small_latency"]
 
 [experiment.ar-transfer-stream]
-# QFP49: production + 1360 dependency closure; default off, enable with BIGCHERRY_AR_TRANSFER_STREAM=1.
-patches = ["1360_ar_transfer_stream"]
+# QFP49: exact overlay closure for 1360; default off, enable with BIGCHERRY_AR_TRANSFER_STREAM=1.
+# 0860/1225/0840/1291 are already in the release source but are explicit here because experiment audits also resolve on bigcherry-tuning.
+patches = ["0860_allreduce_provider_cli", "1225_hi85_nccl_heterogeneous_arch_guard", "0840_hybrid_allreduce_dispatch", "1291_ar_cpu_root", "1360_ar_transfer_stream"]
 
 [experiment.moe-router-splitk]
 # QFP36: production + 1357; default off, enable with BIGCHERRY_MOE_ROUTER_SPLITK=1.
