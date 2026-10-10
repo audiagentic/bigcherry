@@ -631,14 +631,11 @@ _N_HEADER_SCHED = r'''    GGML_API enum ggml_status     ggml_backend_sched_graph
 
 
 # ------------------------------------------------------------------------------------------------ llama context
+# <cstdlib> and <mutex> are already included there (1316, 1319)
 _A_LLAMA_INCLUDES = r'''#include <cinttypes>
-#include <cmath>
 '''
 _N_LLAMA_INCLUDES = r'''#include <algorithm>
 #include <cinttypes>
-#include <cmath>
-#include <cstdlib>
-#include <mutex>
 '''
 
 _A_CTX_FIELDS = r'''    ggml_backend_sched_ptr sched;
@@ -975,7 +972,7 @@ PATCHES = [
             _edit(id="stagger-meta-force-rebuild", anchor=_A_META_REBUILD, mode="replace", text=_N_META_REBUILD,
                   guard=r"bc_pair_capture != nullptr", rationale="Pair capture must rebuild B even when A/B graph UIDs match."),
             _edit(id="stagger-meta-set-type", anchor=_A_META_GRAPH_FN, mode="replace", text=_N_META_GRAPH_FN,
-                  guard=r"struct bc_1361_graph_set", rationale="Immediately before Meta graph compute."),
+                  guard=r"struct bc_1361_graph_set \{", rationale="Immediately before Meta graph compute."),
             _edit(id="stagger-meta-capture", anchor=_A_META_AUX, mode="replace", text=_N_META_AUX,
                   guard=r"pair capture stops before aux/fallback execution", rationale="After subgraph build and before aux/fallback execution."),
             _edit(id="stagger-meta-pair", anchor=_A_META_IFACE, mode="replace", text=_N_META_IFACE,
@@ -1041,7 +1038,7 @@ PATCHES = [
             _edit(id="stagger-nextn-pair-clear", anchor=_A_NEXTN_AFTER, mode="replace", text=_N_NEXTN_AFTER,
                   guard=r"bc_1361_nextn_pair = false", rationale="Immediately after nextn extraction."),
             _edit(id="stagger-decode-loop-tail", anchor=_A_LOOP_TAIL, mode="replace", text=_N_LOOP_TAIL,
-                  guard=r"bc_pair_mctx_is_b", rationale="Existing per-ubatch output counters and loop advance."),
+                  guard=r"bc_loop_done = !mctx->next\(\);", rationale="Existing per-ubatch output counters and loop advance."),
             _edit(id="stagger-1359-gate", anchor=_A_1359_GATE, mode="replace", text=_N_1359_GATE,
                   guard=r"bc_1361_nextn_pair_slot", rationale="1359 stagger-off gate stays identical; pair B reuses A slot."),
             _edit(id="stagger-1359-size", anchor=_A_1359_BYTES, mode="replace", text=_N_1359_BYTES,
