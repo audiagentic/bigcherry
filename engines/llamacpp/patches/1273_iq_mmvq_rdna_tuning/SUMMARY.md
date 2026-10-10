@@ -55,3 +55,7 @@ Only after the above separates IQ3_XXS unpack cost from table-gather cost should
 ## b11474 BPB01 review
 
 Current-pin composition and disposition options are recorded in `releases/evidence/bpb01-four-evaluated.md`. This review does not change patch state.
+
+## PRBE111 / BCOP125 rebaseline (2026-10-10)
+
+1273 remains **evaluated/default-off**, owns IQ4_XS/IQ3_XXS single-token VDR/nwarps factorial launch experiments, and has no qualified incremental speedup. PRBE111 is **not** a replacement implementation or authority to change 1273's selectors. Pinned b11474 already places IQ4_XS scale after its dot loop and IQ3_XXS `aux32` before its loop; the proposed duplicate hoist is unproven. A descriptor refactor of `get_vec_dot_q_cuda`/`get_vdr_mmvq` would collide with 1273's insertion anchors and must pass patch composition and generated-ISA parity first. The upstream HIP SWAR improvement (#27962) is already present in the pin. Do not schedule new IQ hardware work until an IQ-specific kernel/E2E trace proves sufficient exposed headroom and existing queued experiments are clear. Details and terminal gates: `docs/planning/active/patching-rdna-boost-experiments/PRBE111.md`.
