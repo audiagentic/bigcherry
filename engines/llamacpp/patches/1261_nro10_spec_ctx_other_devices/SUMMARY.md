@@ -3,23 +3,8 @@
 **Status:** untested
 **Plan item:** PNRO10
 
-## What it does
+Not promoted: structural defect at b11474 (2026-10-09). Owner: PNRO10 only; no new scheduler/placement owner.
 
-Adds the `ctx_other` (target context) model devices to the draft context's
-scheduler backend list in `llama-context.cpp`, so shared tensors between a
-speculative draft context and its target context can be scheduled on valid
-backends. Devices are deduplicated by backend device handle, preserving the
-existing ordering relative to ACCEL/CPU backends.
+Adds `ctx_other` target model device backends to a separate speculative draft context when target-owned shared tensors require them. The **current local insertion is misplaced** inside the ordinary draft-device loop (first of two `backends.emplace_back(backend)` matches); it may duplicate a later backend and skips other devices when draft devices are empty. Const qualification was fixed earlier. The marker is conditional on actually adding a backend, and native same-device MTP does not exercise this path.
 
-## Why
-
-When a speculative context (MTP/draft) has a `ctx_other` target, shared
-tensors between the two contexts must be schedulable on backends both
-contexts can use. The target context's model devices may include backends the
-draft context does not have (e.g., a different GPU partition); without adding
-them to the draft's backend list, shared tensors could be un-schedulable.
-
-## Upstream
-
-Local (origin `local`); PNRO10. Anchored on the `backends.emplace_back(backend)`
-site in `llama-context.cpp`.
+**Disposition:** Hold/default-off. Require a real supported separate-draft cross-device shared-tensor stock failure before repairing the existing package. Use open upstream [llama.cpp #26636](https://github.com/ggml-org/llama.cpp/pull/26636) as the correctly placed mechanism; verify backend uniqueness, CPU-last ordering, 16-backend cap, graph/allocator safety, exact output parity and no-P2P fallback. Close without implementation if no such workload exists. No BigCherry PNRO10 speedup or hardware qualification is established.
