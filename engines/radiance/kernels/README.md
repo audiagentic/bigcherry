@@ -248,6 +248,12 @@ run is not comparable with an unprofiled one, so read it as shares): the MXFP4 G
 (38% gate/up, 20% down, 16% the 16384-wide projection, 11% the K=6144 one, 4% the 12288-wide one); the bf16 logits
 GEMM is 2.8%, everything else under 2.5% each. With the first native build they were 95%.
 
+With radiance's own drafter on (`SPEC=auto`, run `r3-spec1`, the table-lookup build, one XTX): the completion prompt
+runs at 131.7 tok/s over 256 tokens and the chat prompt at 171.2 tok/s over 30, same text, server exit 0. The
+drafter's kernels work through libr3 unchanged. Both prompts are very predictable (a list of capitals, counting to
+ten), so acceptance is far above what mixed prompts give; the R9700's 98-105 tok/s with the drafter was measured on
+other prompts, and the two are not comparable until the same prompts are run on both.
+
 Two things tried after the table-lookup build that did not help (2026-10-10):
 
 - **A vector kernel for one token** (RR07, `r3_mxfp4_gemv.h`, opt-in with `R3_GEMV=1`): no matrix instruction, the
