@@ -15,9 +15,12 @@
 //     shared memory, written and read by the same wave, so there is no block barrier either.
 //   D: lane (column j, half h) element e is output row 2e + h of column j, that is C[token j][n0 + 2e + h].
 //
-// A BLOCK is one tile of 16 output columns; its 8 waves each take an eighth of K in whole 128-of-K groups (a wave
-// that walked all of K would run K/16 steps in sequence, which is what made the first vector kernel slow). The
-// eight partial accumulators meet in shared memory after one barrier and wave 0 writes the result.
+// A BLOCK is 8 waves, each owning one tile of 16 output columns over ALL of K, and writing its own result: no
+// barrier in or after the K loop. The first two forms gave a block one tile and split K over its waves, with the
+// partial sums combined after a barrier. Their ablation (README, 2026-10-10) showed the time followed the NUMBER OF
+// BLOCKS, about 50 ns each whatever was in them (N=1024 18 us, N=34816 124 us with every load, unpack and multiply
+// switched off): workgroup launch and barrier cost, 2176 blocks for one gate/up GEMM. This form launches an eighth
+// as many blocks, and a wave's K loop keeps its loads one group ahead so its length is not a memory wait a step.
 //
 // SCALES. The activation scale is one f32 a row, applied at the end, or one a (row, 128 of K), applied to each
 // group's accumulator as it closes: the same sum libr4d forms through its carried-scale bookkeeping. The weight's
@@ -71,20 +74,21 @@ __global__ __launch_bounds__(R3_D11_WAVES * 32) void r3_gemm_mxfp4a8_dec11_kerne
         __hip_bfloat16* __restrict__ C, int M, int K, int N, int as_rs, int mode) {
     typedef float r3_v8fa __attribute__((ext_vector_type(8), aligned(4)));
     __shared__ unsigned short sA[R3_D11_WAVES * MR * 128];  // a wave's strip: MR rows x 128 of K, bf16
-    __shared__ float sP[R3_D11_WAVES * 32 * 8];             // every lane's partial accumulator
     __shared__ unsigned sT[64];                             // the unpack tables: [d] -> lo0, lo1, hi0, hi1
     const int tid = threadIdx.x, lane = tid & 31, wave = tid >> 5;
     const int col = lane & 15, half = lane >> 4;
-    const int n0 = blockIdx.x * 16;        // N is a multiple of 16
+    const int tile = blockIdx.x * R3_D11_WAVES + wave;  // each wave owns one 16-column tile, over all of K
+    const bool live = tile * 16 < N;                    // N is a multiple of 16; the last block may have spare waves
+    const int n0 = live ? tile * 16 : N - 16;           // a spare wave reads the last tile and writes nothing
     const int nrow = n0 + col;             // the weight row this lane's A fragment holds
     const int m = col < M ? col : M - 1;   // the token this lane's B fragment holds (clamped, never predicated)
     const int mr = m < MR ? m : MR - 1;    // its row in the strip (MR >= M, so this is m)
 
     const int ksteps = K / 16;
-    const int groups = (ksteps + 7) / 8, share = (groups + R3_D11_WAVES - 1) / R3_D11_WAVES;
-    const int g_lo = wave * share, g_hi = (wave + 1) * share < groups ? (wave + 1) * share : groups;
+    const int groups = (ksteps + 7) / 8;
+    const int g_lo = 0, g_hi = live ? groups : 0;
 
-    const unsigned int* __restrict__ wp = W + ((size_t) blockIdx.x * ksteps) * 32;
+    const unsigned int* __restrict__ wp = W + ((size_t) (n0 >> 4) * ksteps) * 32;
     const int ref = (int) Wref[nrow];
     unsigned short* __restrict__ strip = sA + wave * (MR * 128);
     const float* __restrict__ asrow = As + (size_t) m * as_rs;
@@ -174,14 +178,8 @@ __global__ __launch_bounds__(R3_D11_WAVES * 32) void r3_gemm_mxfp4a8_dec11_kerne
     if constexpr (!ABLK) {
         total = acc;
     }
-    *reinterpret_cast<r3_v8fa*>(sP + tid * 8) = total;
-    __syncthreads();
-    if (wave == 0 && col < M) {
-        r3_v8f sum = total;
-#pragma unroll
-        for (int j = 1; j < R3_D11_WAVES; ++j) {
-            sum += *reinterpret_cast<const r3_v8fa*>(sP + (j * 32 + lane) * 8);
-        }
+    if (live && col < M) {
+        const r3_v8f sum = total;
         const float sc = ABLK ? 1.f : asrow[0];
 #pragma unroll
         for (int e = 0; e < 8; ++e) {
@@ -194,7 +192,7 @@ __global__ __launch_bounds__(R3_D11_WAVES * 32) void r3_gemm_mxfp4a8_dec11_kerne
 // Launch for M <= 16. Operands are r4d_gemm_mxfp4a8_decode's; `ablk` is the (row, 128) activation scale grid.
 static inline void r3_mxfp4_dec11_launch(long a, long ascale, long wq, long ws, long wref, long c, int M, int K,
                                          int N, bool nt, bool ablk, int as_rs, long stream) {
-    const dim3 grid(N / 16, 1, 1), block(R3_D11_WAVES * 32);
+    const dim3 grid((N / 16 + R3_D11_WAVES - 1) / R3_D11_WAVES, 1, 1), block(R3_D11_WAVES * 32);
     hipStream_t st = (hipStream_t) stream;
     auto Ap = (const unsigned char*) a;
     auto Sp = (const float*) ascale;

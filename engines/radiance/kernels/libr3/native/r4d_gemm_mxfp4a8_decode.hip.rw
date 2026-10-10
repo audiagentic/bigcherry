@@ -120,7 +120,9 @@
   float* P = (float*)scratch;
   unsigned* cnt = mxd_out_ctr((const void*)c);
 @@ replace
-  if (M <= 16 && r3_dec11_on()) {  // libr3 native
+  // One row only for now: with more rows every wave widens the same activations again (run p1: with the drafter
+  // on, 71.6 tok/s against 131.7 for the staged form), which wants the activations widened once per launch.
+  if (M == 1 && r3_dec11_on()) {  // libr3 native
     r3_mxfp4_dec11_launch(a, ascale, wq, ws, wref, c, M, K, N, pl.nt, as_group == 128, as_rs, stream);
     return;
   }
