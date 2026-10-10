@@ -361,6 +361,35 @@ The eight-tiles-a-block form of dec11 (`p3`, commit 6fc8c5cb) was wrong about th
 so the remaining time does not follow the number of workgroups after all. dec11 is not the default; the staged
 native form is.
 
+## An 8-bit Qwen3.8-27B: block fp8, and its GEMM made native (2026-10-10, runs `cv-*`, `fp8a-*`, `fp8b-*`)
+
+What radiance serves at 8 bits for this model is block fp8 (E4M3 codes, one bf16 scale a 128x128 block, the form
+of Qwen's own FP8 release), not a GGUF Q8_0:
+
+- The Q8_0 GGUF is refused: `no architecture plugin claims 'qwen35' at quantisation 'gguf_ftype_7'`.
+- The bf16 GGUF is refused as a source: the qwen35 plugins map the safetensors tensor names
+  (`model.language_model.layers.N...`), and a drafter is merged only into a safetensors target.
+- From the bf16 safetensors release (`tools/lab/radiance/fetch-27b-bf16.sh`, 52 GB) with radiance's recipe
+  `q38-27b-fp8block-df2.recipe`, `tools/lab/radiance/convert-27b-8bit.sh fp8` gives `qwen3.8-27b-fp8-df2.rad`, 29 GB,
+  with the DFlash2 drafter merged. It does not fit one 24 GB XTX.
+- Int8 codes (`recipes/q38-27b-i8-df2.recipe`, the form whose inner product is the iu8 WMMA gfx11 has) are refused
+  by `qwen35_fp8`: `the model did not learn its trunk is int8 before declaring it`. libr4d has the kernels
+  (`gemm_i8a8_nt_m16`, `gemm_i8a8_tiled`); the architecture plugin does not build an int8 trunk for this model.
+
+Mixed-prompt bench (`rad_prompt_bench.py`), tok/s:
+
+| | decode | decode, drafter | prefill, 2,300 / 6,500 tokens |
+|---|---|---|---|
+| R9700, libr4d (`fp8a-r4d`, `fp8a-r4dspec`) | 22.8 | 79.7 | 2,805 / 2,711 |
+| two XTX, compatibility layer (`fp8a-tp2`, `fp8a-tp2spec`) | 7.7 | 28.4 | 197 / 209 |
+| two XTX, native fp8 GEMM (`fp8b-tp2`, `fp8b-tp2spec`) | 18.5 | 62.7 | 1,035 / 1,044 |
+| MXFP4 on two XTX, for scale (`p4-*`) | 46.8 | 141.7 | about 1,535 |
+
+The native form is `native/r4d_gemm_fp8a8.hip.rw` (its header says what changes): B staged as bf16, A widened where
+it is read, the accumulator in the gfx11 layout until the epilogue. `r3_selftest` passes `gemm_fp8a8_nt_m16` (2
+cases) and `gemm_fp8a8_tiled` (1); `gemm_fp8a8_gated_nt_m16` has no selftest case in radiance and is covered only by
+the served text. Quality against MXFP4 is not measured yet.
+
 ## Other engines on the RX 7900 XTX (looked up 2026-10-10)
 
 - **llama.cpp, Vulkan backend.** llama.cpp issue #20934: on an RX 7900 XTX, Llama-2 7B Q4_0 decodes at 174.6 tok/s
