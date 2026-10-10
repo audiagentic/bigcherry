@@ -119,6 +119,7 @@ class Patch1361Mechanics(unittest.TestCase):
             self.assertIn("ggml_backend_sched_graph_compute_async_pair", sched)
             self.assertIn("ggml_backend_sched_set_stagger_pair_arena", hdr)
             self.assertIn("bc_1361_sched_b", ctxh)
+            self.assertIn("if (bc_cached) n_outputs = bc_count_outputs(ubatch);", ctx)
             self.assertEqual(ctx.count("BIGCHERRY_PATCH_HIT patch=1361_prefill_stagger_pair"), 1)
             self.assertIn("n_tokens_all == 2*bc_1361_half", ctx)
             self.assertIn("mctx->get_ubatch().n_tokens == bc_1361_half", ctx)
