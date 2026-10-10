@@ -85,3 +85,29 @@ run lk1) and the output race is open. The patch is out of the production recipe 
 
 To promote again: find the race (the missing capture is the lead) and fix it in this package, then at least twelve
 runs with the workers on at 98K with identical text, and 98K added to the stress.
+
+## The race needs HIP graphs and the fusion pass (2026-10-11, runs mdw4r*, mdw4s*, rb-*, hp2, hp4)
+
+All at 98K on `b-mdw4` (production + 1356, no lock counters), workers on:
+
+| change to both arms | workers-on runs with a text different from the workers-off one |
+|---|---|
+| none | 1 of 6 |
+| router split-K off (`BIGCHERRY_MOE_ROUTER_SPLITK=0`) | 1 of 4 |
+| sparse flash attention off (`BIGCHERRY_FA_SPARSE=0`) | 2 of 6 |
+| deferred catch-up off (`BIGCHERRY_MTP_DEFERRED_CATCHUP=0`) | 2 of 6 |
+| asynchronous inputs off (`BIGCHERRY_SCHED_ASYNC_INPUTS=0`) | 3 of 6 |
+| HIP graphs off (`GGML_CUDA_DISABLE_GRAPHS=1`) | 0 of 6 |
+| fusion pass off (`GGML_CUDA_DISABLE_FUSION=1`) | 0 of 6 |
+
+So the lock counters, the router switch, sparse attention, the deferred catch-up and the asynchronous inputs are
+cleared, and the race goes away when either HIP graphs or the fusion pass is taken out.
+
+The HIP runtime itself is cleared by the standalone probes (`tools/lab/hip-probes`): one thread a card, 900 rounds
+of concurrent capture + instantiate + launch (run hp2) and 2,700 rounds mixing in-place graph update, replay and
+direct launches under four locking rules including this patch's and none at all (run hp4), with zero wrong results
+and zero errors. Those graphs are small; a fault that needs the model's large graphs would not show there.
+
+What is left is state in our own code that is shared between cards on the path where a fused node is captured
+into or replayed from a graph. That is the next thing to read: the fusion pass's per-node decisions and anything
+they cache across devices.
