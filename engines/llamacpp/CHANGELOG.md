@@ -1,5 +1,14 @@
 # Changelog
 
+## [11474.6.0](https://github.com/audiagentic/bigcherry/compare/bc-llamacpp-11474.5.0...bc-llamacpp-11474.6.0) (2026-10-10)
+
+
+### New and changed
+
+* **patch:** promote 1357_moe_router_splitk ([#122](https://github.com/audiagentic/bigcherry/issues/122)) ([c5e8d6b](https://github.com/audiagentic/bigcherry/commit/c5e8d6bed639276db0040678b12cc29a6d8853c0))
+* **patch:** split-K router GEMM for the MoE router, default off (1357) ([#92](https://github.com/audiagentic/bigcherry/issues/92)) ([ad84e71](https://github.com/audiagentic/bigcherry/commit/ad84e71594f1541cd84df59698f3bdd8e4f800af))
+* **qfp43:** add DFlash acceptance input trace ([#78](https://github.com/audiagentic/bigcherry/issues/78)) ([a200912](https://github.com/audiagentic/bigcherry/commit/a200912123b2e4f11f13cbfc3047ce392b84f33a))
+
 ## [11474.5.0](https://github.com/audiagentic/bigcherry/compare/bc-llamacpp-11474.4.0...bc-llamacpp-11474.5.0) (2026-10-09)
 
 
