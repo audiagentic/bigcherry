@@ -236,7 +236,7 @@ Expected gain on our topology: medium. 1313 already captured much of the externa
 
 Execution order: sixth. Relative final priority is high among kernel items because both residual mechanisms are visible in the pin, but expected fusion upside is lower than the external report because 1313 already removes most scale/activation launches.
 
-
+2026-10-09 hardware result for 1355 (SCALE -> SIGMOID -> SCALE gate consumed inside DSV4_HC_POST; PR #54; build b-metamem-hcf1 = production + 1355, Flash-Next production profile). Three ABBAs per depth with the fused arm in both position patterns (r1: fused in runs 1 and 4; x1, x2: fused in runs 2 and 3). Greedy text identical in every run at 8K / 24K / 98K; the activation marker appears only in the fused arms. Prefill: no separation at any depth (the only low values are first-run-position outliers in both arms). Decode t/s, fused against control: 8K 87.3 / 89.7 vs 87.6 / 87.1 (r1), 87.3 / 90.2 vs 83.2 / 84.8 (x1), 85.4 / 87.9 vs 85.8 / 86.2 (x2); 24K 72.5 / 74.1 vs 72.5 / 71.9, 72.1 / 73.6 vs 71.8 / 72.6, 72.1 / 73.8 vs 70.7 / 72.6; 98K 70.7 / 71.6 vs 70.8 / 70.4, 71.6 / 70.4 vs 68.9 / 70.2, 70.8 / 69.8 vs 70.1 / 70.9. The fused mean is higher in 8 of the 9 depth-rounds, about +1% on average; single rounds overlap, so the claim rests on the pooled result, not on complete separation in one ABBA. Decision: promote under the lightweight tier as an output-identical small decode win with no regression (owner rule: small wins count when nothing regresses); it only affects Qwen4Exp hyper-connection gates, so default-on cannot change other models. To do after the engine-layout move (PR #88): rebase PR #54, add 1355 to the production set, release.
 
 ## Status 2026-10-08
 
@@ -310,9 +310,11 @@ Keep this **separate** from QFP35's already-covered `1313_scale_act_fuse` and HC
 
 ## Ledger-events
 
+
 - chg_20261007_051800_flash-next-prefill-is-about-1_8190
 - 2026-10-07T05:18:06.429391+00:00 (updated-by): Updated: section:ledger-events
 
+- chg_20261009_222146_a-small-output-identical-decod_7278
 ## Code-level review (2026-10-07)
 
 ### 1. Verified facts and corrections
@@ -479,3 +481,5 @@ Validation:
 
 Expected gain on the production three-card Flash-Next topology if Gate 0 passes: **+0.1% to +0.5% prefill**. Treat any larger result as requiring a fusion-census explanation rather than assuming the external report transfers.
 - 2026-10-08T09:46:12.268171+00:00 (updated-by): Updated: section:notes
+- 2026-10-09T01:50:40.548677+00:00 (updated-by): Updated: section:notes
+- 2026-10-09T22:21:49.767471+00:00 (updated-by): Updated: section:ledger-events

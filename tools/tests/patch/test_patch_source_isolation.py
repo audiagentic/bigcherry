@@ -613,7 +613,7 @@ patch-sets = ["framework"]
     def test_all_packaged_implementations_pass_production_loader_isolation(self) -> None:
         """Every tracked packaged patch must be executable through the same
         import-restricted loader used by a real materialization run."""
-        root = Path(__file__).resolve().parents[3] / "patches"
+        root = Path(__file__).resolve().parents[3] / "engines" / "llamacpp" / "patches"
         registry = patch_registry.load_registry(root)
         for descriptor in registry.descriptors:
             if descriptor.representation == patch_registry.REPRESENTATION_PACKAGED:

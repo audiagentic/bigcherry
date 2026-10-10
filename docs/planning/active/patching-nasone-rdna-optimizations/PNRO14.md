@@ -11,99 +11,61 @@ work: S
 priority: P2
 ---
 
-# RDNA3.5 D=256 tile FlashAttention occupancy configuration
+# RDNA3.5 D=256 tile FlashAttention: route- and architecture-gated disposition
+
+**2026-10-09 audit (authoritative):** Patch 1270 exists and its two PNRO19 anchor bugs were fixed in f4228540b7 (2026-09-27). Keep it untested and out of production. Current fleet gfx1100/gfx1201/gfx1030 cannot qualify a gfx1151 tuning claim. No BigCherry E2E gain is measured. Historical 2026-09 notes below describe earlier states, not present work.
 
 ## Description
 
-RDNA3.5-only (gfx1151) FlashAttention tile occupancy row for D=256, ncols=32: (DKQ 256, DV 256, ncols 32, nthreads 256, occupancy 4, nbatch_fa 64, nbatch_K 64). Disposition TODO -- NOT upstream: b11126 fattn-tile.cuh has only the generic RDNA row GGML_CUDA_FATTN_TILE_CONFIG_CASE(256, 256, 32, 256, 3, 64, 128) inside ggml_cuda_fattn_tile_get_config_amd_rdna, used for all RDNA including gfx1151 (earlier 'superseded' disposition was wrong; GPT req_14f299d271894983). gfx1100/gfx1201 must keep the generic row. Hardware-blocked for promotion: no gfx1151 in the fleet, so implement + prove non-selection on gfx1100/gfx1201 now; performance only when gfx1151 is available.
+The only candidate is `patches/1270_pnro14_rdna35_fa_tile_d256`, derived from AMD-Ecosystem/llama.cpp PR #41 (merged downstream 2026-07-10). It replaces the native RDNA `(DKQ,DV,ncols,nthreads,occupancy,nbatch_fa,nbatch_K)=(256,256,32,256,3,64,128)` with `(256,256,32,256,4,64,64)` **only if the tile kernel actually launches with 32 columns**. Pinned b11474 and upstream master have the same `fattn-tile.cuh` blob (`b5ea915e`), and neither contains this RDNA3.5-specific override. The package's claim of *gfx1151-only* is imprecise: `GGML_CUDA_CC_IS_RDNA3_5` and `RDNA3_5` cover gfx1150/1151/1152/1153; only gfx1151 is listed for validation. Do not promote with that mismatch.
+
+**Route-level discriminator:** `ggml/src/ggml-cuda/fattn.cu::ggml_cuda_get_best_fattn_kernel` selects AMD WMMA/MMA before TILE when `gqa_opt_applies` and `Q->ne[1] * gqa_ratio_eff > 16`. In `fattn-tile.cuh::launch_fattn_tile_switch_ncols1`, a 32-column tile requires `Q->ne[1] > 16/ncols2`. For ordinary aligned, masked GQA with ratios 2/4/8/16/32, those conditions overlap: cases large enough for tile32 are routed to MMA instead. Therefore the candidate may have **zero activation** on the target GQA prefill lane. MHA (ratio 1), missing/ineligible masks, or other exceptional shapes can reach tile32. This is source-level inference, not hardware timing.
+
+AMD PR #41 measured pp128 +2.7%, pp1024 +0.3%, tg128 -0.1% on gfx1151 Qwen3.6-35B-A3B Q4_K_M with only one repetition (`-r 1`); not statistically qualified and not BigCherry evidence. Upstream #26046 removed rocWMMA FlashAttention, so AMD PR #40's separate rocWMMA-on mechanism is obsolete for this pin. External AITER and vLLM ROCm mechanisms are separate engines, not drop-in tile configurations.
 
 ## Steps
 
-1. Create patch package patches/12xx_nro14_rdna35_fa_tile_d256 (next free order in 1262+; check `ls patches`), state untested, kind enhancement, requires [].
-2. Edit A (fattn-tile.cuh): insert a new function ggml_cuda_fattn_tile_get_config_amd_rdna3_5 immediately BEFORE the host selector `static __host__ uint32_t ggml_cuda_fattn_tile_get_config(const int DKQ, const int DV, const int ncols, const int cc) {` -- it returns the RDNA3.5 row for (256,256,32) and otherwise delegates to ggml_cuda_fattn_tile_get_config_amd_rdna.
-3. Edit B (host selector): replace `        if (GGML_CUDA_CC_IS_RDNA(cc)) {\n            return ggml_cuda_fattn_tile_get_config_amd_rdna(DKQ, DV, ncols);` so RDNA3.5 (GGML_CUDA_CC_IS_RDNA3_5(cc)) calls the new function first.
-4. Edit C (device selector): replace `#ifdef RDNA\n    return ggml_cuda_fattn_tile_get_config_amd_rdna(DKQ, DV, ncols);` with an `#if defined(RDNA3_5)` branch returning the new function, else the generic RDNA function (RDNA3_5 is defined in vendors/hip.h:224 for gfx1150/1151).
-5. Add an activation marker at the host call site that launches the tile kernel for this config (search fattn-tile.cu for the launch using ggml_cuda_fattn_tile_get_config(...,cc)); emit BIGCHERRY_PATCH_HIT patch=<id> only when GGML_CUDA_CC_IS_RDNA3_5(cc) && DKQ==256 && ncols==32, gated on BIGCHERRY_PATCH_TRACE.
-6. Write patch.py with the three anchored edits (exact anchors below), each with a distinctive guard (the new function name / GGML_CUDA_CC_IS_RDNA3_5 line).
-7. Offline: patch-lint; patch-rebase-check --focal-overlay <id> --source bigcherry-tuning.
-8. Hardware now (Brutus): build gfx1100+gfx1201, run test-backend-ops -o FLASH_ATTN_EXT for head 256 and confirm correctness and that the marker never fires (non-selection controls).
-9. Hardware later: on gfx1151 with rocWMMA disabled, D=256 ncols=32 prompt sweep vs generic row; promote only on positive evidence.
+1. **Stop duplicate patch work:** keep package 1270 untested; PNRO19 is terminal because commit `f4228540b7` already fixed `max_span_lines=3` and comment-stripped device-selector anchors. Do not create another patch or run a new hardware lane on the current fleet.
+2. **Cheap static gate (already executed):** compare b11474/master source, patch anchors and selector precedence; enumerate masked-GQA/MHA cases. If the candidate cannot reach tile32 on a model, close that model lane without benchmarking.
+3. **Future gfx1151-only qualification, if such hardware becomes available:** first choose between narrowing both host/device gates to exact gfx1151 or qualifying all gfx115x members. The current broad gate plus gfx1151-only validation is insufficient. Confirm patched and stock binaries share the same pin/build flags, model and backend; `GGML_HIP_ROCWMMA_FATTN` is obsolete on b11474.
+4. Capture real `BEST_FATTN_KERNEL_TILE` selection, `cols_per_block=32`, `DKQ=DV=256`, launch counts, per-kernel GPU time, VGPR/LDS/occupancy, and fraction of E2E prefill. Existing once-per-process `BIGCHERRY_PATCH_HIT` is **not** a per-launch counter or speed proof.
+5. Only if tile32 contributes >=5% of E2E prefill, compare stock vs candidate using a positive MHA D256 case and masked GQA negative controls; 4 sessions x 10 paired ABBA rounds, pp128/512/1024/4096, KV 8K/80K, TG128/512. Reject if no CI95-low >=3% E2E prefill gain, any correctness failure, or >1% TG/control regression. Otherwise retain the untested/deferred disposition.
 
 ## Detailed Solution & Technical Design
 
-Config rows are compile-time constexpr tables (GGML_CUDA_FATTN_TILE_CONFIG_CASE returns early on match), selected by a host function (runtime cc) and a device function (preprocessor arch macros). A dedicated RDNA3.5 function containing only the new row, then falling through to the generic RDNA table, keeps every other shape and every other RDNA arch byte-identical. Both selectors must agree (host decides launch params, device instantiates the kernel), hence edits B and C. gfx1100 (RDNA3_0) and gfx1201 (RDNA4) never define RDNA3_5 and fail GGML_CUDA_CC_IS_RDNA3_5, so they keep (256,256,32,256,3,64,128).
+**Existing code, no new owner:** `ggml_cuda_get_best_fattn_kernel` chooses VEC/MMA/TILE; `launch_fattn_tile_switch_ncols2` chooses GQA packing, `launch_fattn_tile_switch_ncols1` chooses 2/4/8/16/32/64 columns; `ggml_cuda_fattn_tile_get_config` supplies launch bounds and `nbatch_fa` on host and device. The patch's override changes occupancy and K-column tile only, not algorithm, KV ownership, graph topology, transfers or scheduler. Do not introduce a second attention dispatcher/telemetry system.
+
+**Future selector pseudocode:** `if exact_qualified_arch && kernel==TILE && DKQ==DV==256 && cols_per_block==32: use candidate_config; else use native_config`. Current patch implements a broader RDNA3.5 architecture gate, not this proposed narrowed admission. Host/device must agree on the same config word; `GGML_CUDA_FATTN_TILE_CONFIG_CASE` packs threads/occupancy/nbatch_fa/nbatch_K in one uint32. Preserve native fallback for every other shape/arch. No P2P, RCCL or auxiliary-gfx1030 interaction is involved.
+
+**Safety:** run FLASH_ATTN_EXT reference comparisons (greedy/logits or KLD as applicable), masked/unmasked, multi-ubatch, long context and repeated same-process requests. Confirm actual kernel counts/work and graph replay remain unchanged; reject apparent gains from skipped work. Include architecture negative controls gfx1100/gfx1201 and a gfx1030 non-selection check. Use existing profiling/lab primitives, not a new global dispatch/config table.
 
 ## Code Samples & Guidance
 
-File ggml/src/ggml-cuda/fattn-tile.cuh at b11126.
-
-Edit A (insert_before), anchor:
-    static __host__ uint32_t ggml_cuda_fattn_tile_get_config(const int DKQ, const int DV, const int ncols, const int cc) {
-text:
-    static constexpr __host__ __device__ uint32_t ggml_cuda_fattn_tile_get_config_amd_rdna3_5(const int DKQ, const int DV, const int ncols) {
-        GGML_CUDA_FATTN_TILE_CONFIG_CASE(256, 256, 32, 256, 4,  64,  64)
-        return ggml_cuda_fattn_tile_get_config_amd_rdna(DKQ, DV, ncols);
-    }
-
-guard: ggml_cuda_fattn_tile_get_config_amd_rdna3_5\(const int DKQ
-
-Edit B (replace), anchor (host selector, unique):
-        if (GGML_CUDA_CC_IS_RDNA(cc)) {
-            return ggml_cuda_fattn_tile_get_config_amd_rdna(DKQ, DV, ncols);
-text:
-        if (GGML_CUDA_CC_IS_RDNA3_5(cc)) {
-            return ggml_cuda_fattn_tile_get_config_amd_rdna3_5(DKQ, DV, ncols);
-        }
-        if (GGML_CUDA_CC_IS_RDNA(cc)) {
-            return ggml_cuda_fattn_tile_get_config_amd_rdna(DKQ, DV, ncols);
-guard: if \(GGML_CUDA_CC_IS_RDNA3_5\(cc\)\) \{\n\s+return ggml_cuda_fattn_tile_get_config_amd_rdna3_5
-
-Edit C (replace), anchor (device selector):
-    #ifdef RDNA
-        return ggml_cuda_fattn_tile_get_config_amd_rdna(DKQ, DV, ncols);
-text:
-    #if defined(RDNA3_5)
-        return ggml_cuda_fattn_tile_get_config_amd_rdna3_5(DKQ, DV, ncols);
-    #elif defined(RDNA)
-        return ggml_cuda_fattn_tile_get_config_amd_rdna(DKQ, DV, ncols);
-guard: #if defined\(RDNA3_5\)\n\s+return ggml_cuda_fattn_tile_get_config_amd_rdna3_5
-(The existing `#else` / `#endif // RDNA` lines after it remain valid.)
-
-patch.toml:
-    schema = 1
-    id = "12xx_nro14_rdna35_fa_tile_d256"
-    order = 12xx
-    state = "untested"
-    kind = "enhancement"
-    backend = "hip"
-    plan-ids = ["PNRO14"]
-    requires = []
-    conflicts = []
-    validation-architectures = ["gfx1151"]
-
-patch.py: `from bigcherry.patcher import Edit, FilePatch`; PATCHES = [FilePatch(path="ggml/src/ggml-cuda/fattn-tile.cuh", description=..., edits=(A, B, C))] with mode insert_before / replace / replace as above (follow patches/1204_rd08_q6k_mmvq_vdr2/patch.py conventions).
+Current b11474: `ggml/src/ggml-cuda/fattn.cu::ggml_cuda_get_best_fattn_kernel`; `ggml/src/ggml-cuda/fattn-tile.cuh::{ggml_cuda_fattn_tile_get_config_amd_rdna,ggml_cuda_fattn_tile_get_config,launch_fattn_tile_switch_ncols1,launch_fattn_tile_switch_ncols2}`; `ggml/src/ggml-cuda/common.cuh::amd_wmma_available`; `ggml/src/ggml-cuda/vendors/hip.h::RDNA3_5`. Existing `patches/1270_pnro14_rdna35_fa_tile_d256/patch.py` contains four edits, including once-only host logging; do not recreate the three-edit proposal from September.
 
 ## Files
 
-ggml/src/ggml-cuda/fattn-tile.cuh (upstream, 3 anchored edits); ggml/src/ggml-cuda/fattn-tile.cu (activation marker at the launch site); patches/12xx_nro14_rdna35_fa_tile_d256/{patch.toml,patch.py,SUMMARY.md,README.md}; tests: test-backend-ops FLASH_ATTN_EXT head 256 cases (existing).
+Authoritative: this PNRO14 plan. Existing patch package 1270 README/SUMMARY/patch.py/patch.toml and `tools/tests/patch/test_1270_pnro14_rdna35_fa_tile_d256.py`. PNRO19 is a resolved duplicate mechanics issue. BCOP74 is a thin disposition ledger. No new implementation files or benchmark definitions in this audit.
 
 ## Validation
 
-Offline: `PYTHONPATH=tools python -m bigcherry patch-lint`; `PYTHONPATH=tools python -m bigcherry patch-rebase-check --focal-overlay <id> --source bigcherry-tuning` CLEAN. Hardware now (Brutus): gfx1100 and gfx1201 builds, test-backend-ops -o FLASH_ATTN_EXT (hs=256) pass, BIGCHERRY_PATCH_TRACE=1 shows NO patch marker (non-selection). Promotion: only on gfx1151 (not in fleet) -- D=256 ncols=32 correctness plus llama-bench prompt sweep vs the generic row, with LDS/VGPR/occupancy evidence.
+**Executed 2026-10-09 (host-only source checks):** 11/11 assertions passed against exact b11474 `fattn-tile.cuh` and patch 1270; 132 selector-model cases enumerated (masked aligned GQA ratios 2..32: 0 tile32 cases; MHA Q17 and unmasked Q17 can reach tile32). These are static source/route fixtures, **not** compiled patch mechanics, GPU profiling or hardware qualification. Historical PNRO19 failures were fixed by independent commit `f4228540b7`; the actual BigCherry test suite was not executed in this run. Future offline commands: `PYTHONPATH=tools python -m bigcherry patch-lint patches/1270_pnro14_rdna35_fa_tile_d256`; `PYTHONPATH=tools python -m bigcherry patch-rebase-check --focal-overlay 1270_pnro14_rdna35_fa_tile_d256 --source bigcherry-tuning`; `python -m pytest tools/tests/patch/test_1270_pnro14_rdna35_fa_tile_d256.py`. Hardware is unavailable in the fleet.
 
 ## Effort & Risk
 
-S / low risk: one constexpr row behind an arch-exclusive selector; risk is only a host/device selector mismatch, covered by edits B+C together. Promotion blocked on gfx1151 hardware.
+No implementation justified now. Main risk is measuring the wrong attention path or enabling an unqualified gfx115x ISA. Once-per-process activation markers cannot substitute for per-launch attribution. No evidence establishes improvement on gfx1100/gfx1201.
 
 ## Standards
 
-Architecture-scoped evidence; no extrapolation.
+Fail-closed architecture admission; exact b11474 baseline; route proof before benchmarks; do not extrapolate single-run gfx1151 or AITER/vLLM measurements to BigCherry; no interference with current MTP/QFP/Meta lanes.
 
 ## Acceptance Criteria
 
-Correct host/device table selection; no non-RDNA3.5 selection; positive gfx1151 prefill effect with unchanged correctness, otherwise retain deferred status.
+Remain deferred unless an actual qualified gfx1151 (or separately qualified gfx115x) environment proves tile32 activation, exact host/device config parity, no non-target selection, full correctness, CI95-low >=3% E2E prefill benefit and <=1% TG/control regression. Close if tile32 <5% of E2E prefill, no activation, or hardware cannot be qualified.
 
 ## Notes
+
+2026-10-09 authoritative rebaseline: the historical TODO/12xx instructions above have been replaced; 1270 already exists, PNRO19 was fixed in f4228540b7, and the unqualified architecture-wide gate is a release blocker. External: https://github.com/AMD-Ecosystem/llama.cpp/pull/41 ; https://github.com/ggml-org/llama.cpp/discussions/26377 ; https://github.com/ggml-org/llama.cpp/pull/26046 ; https://github.com/vllm-project/vllm/issues/54438 ; https://github.com/ROCm/aiter .
 
 Supersedes: NRO15
 Migration: capability-rebaseline-v3-2026-09

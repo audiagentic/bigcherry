@@ -2,7 +2,7 @@
 
 PA36 RD73 legacy compatibility retirement: the telemetry parser moved
 from shared validation_campaign.py (parse_rd73_resource_telemetry) into
-RD73's producer (patches/1233_rd73_stable_graph_cache_key/
+RD73's producer (engines/llamacpp/patches/1233_rd73_stable_graph_cache_key/
 validation/producer.py, _parse_resource_telemetry). This test now
 exercises the producer-side parser directly.
 
@@ -24,7 +24,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 PRODUCER_DIR = Path(
-    "patches/1233_rd73_stable_graph_cache_key/validation"
+    "engines/llamacpp/patches/1233_rd73_stable_graph_cache_key/validation"
 )
 PRODUCER_MODULE = "patches_1233_rd73_stable_graph_cache_key_validation_producer_va06"
 

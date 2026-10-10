@@ -45,7 +45,7 @@ Keep these authorities separate:
 Every production patch is a package:
 
 ```text
-patches/<patch-id>/
+engines/llamacpp/patches/<patch-id>/
     patch.py
     patch.toml
     SUMMARY.md
@@ -80,9 +80,20 @@ For this tier, promotion to `state = "validated"` and
 
 `validation.toml`, patch-local `evidence/validation.json`, and a full contract campaign are **not required** for a
 QFP18 lightweight promotion. This is an alternative accepted promotion path, not a claim that diagnostic/partial
-campaign evidence satisfies the full G3-G5 contract path. Until the gate tooling models this tier directly, a
-lightweight promotion is reviewed from its mechanics/lint results plus the recorded current-pin hardware evidence; a
-failing or stale full-campaign gate must not be misrepresented as having passed.
+campaign evidence satisfies the full G3-G5 contract path.
+
+The gates model this tier through a **profile-evidence record**, `<patch package>/evidence/promotion.json`
+(`tools/bigcherry/patch/profile_evidence.py`), written by `patch-promote` from the evidence file:
+
+- it names the pin and the patch implementation it was taken for (the same subject digest the campaign records use:
+  the state change that promotion makes does not void it, any other edit to the patch does);
+- it carries one line each for `mechanics`, `activation`, `identity` and `ab`, and at least one named model;
+- a patch whose runtime flag is on by default also needs a `no-regression` line and a second named model.
+
+G4 passes on a qualifying record (`tier: profile-evidence` in its detail), and G5 then accepts G3 = NA, since the
+record stands in for the validation package. A record for another pin, or for an implementation that has since
+changed, does not qualify and is reported with that reason. Nothing else about G0-G5 changes: a failed package check,
+a stale rebase report or a failed lint still stops the promotion.
 
 Use the lightweight tier only when the PR states it explicitly and the evidence is sufficient to establish activation,
 separation, target identity, and the claimed adoption decision. If any of those are missing, or the patch carries a
@@ -486,7 +497,7 @@ resolution until the prospective canonical-composition seam exists.
 The campaign normally writes:
 
 ```text
-patches/<patch-id>/evidence/validation.json
+engines/llamacpp/patches/<patch-id>/evidence/validation.json
 artifacts/patch-validation/<patch-id>/<campaign-identity>/
 ```
 
@@ -584,4 +595,4 @@ contract schema, use
 [EXPERIMENT_CONTRACT.md](../experiments/EXPERIMENT_CONTRACT.md).
 ### Automated promotion (PA45)
 
-After eligible lightweight/full qualification evidence is current, use `bigcherry patch-promote <id>... --evidence @file`. The command requires a real evidence file and, unless `--profile-only` is explicitly selected, at least two distinct `Model:`/`Model-ID:` lines. It records the evidence in both the patch README under `Promotion record` and `releases/evidence/<id>-promotion.md`, changes package state and recipe membership together, removes promoted patches from experiments, runs patch-local/catalog/governance/recipe tests, `patch-lint`, evidence verification, and a production `patch-rebase-check`, then commits/pushes a short-lived slice and opens the conventional-title PR. For validated optimization patches, patch-lint still requires evidence of the native llama.cpp + BigCherry baseline + BigCherry-with-patch 3-arm comparison. A failed check restores every edited file and does not push a promotion. `--default-on` additionally requires two distinct named models and a single recognized default-off EnvDoc/runtime gate. `--release` remains resumable around the promotion PR merge.
+After eligible lightweight/full qualification evidence is current, use `bigcherry patch-promote <id>... --evidence @file`. The command requires a real evidence file and, unless `--profile-only` is explicitly selected, at least two distinct `Model:`/`Model-ID:` lines. The file must also carry `Mechanics:`, `Activation:`, `Identity:` and `A/B:` lines (and `No-regression:` for a default-on patch); the command stops before creating anything when one is missing. In the promotion slice it writes the profile-evidence record, makes a rebase report for exactly that patch over production, and runs the promotion gates (G0-G5) on the still-unpromoted patch before it changes any state. It records the evidence in both the patch README under `Promotion record` and `releases/evidence/<id>-promotion.md`, changes package state and recipe membership together, removes promoted patches from experiments, runs patch-local/catalog/governance/recipe tests, `patch-lint`, evidence verification, and a production `patch-rebase-check`, then commits/pushes a short-lived slice and opens the conventional-title PR. For validated optimization patches, patch-lint still requires evidence of the native llama.cpp + BigCherry baseline + BigCherry-with-patch 3-arm comparison. A failed check restores every edited file and does not push a promotion. `--default-on` additionally requires two distinct named models and a single recognized default-off EnvDoc/runtime gate. `--release` remains resumable around the promotion PR merge.

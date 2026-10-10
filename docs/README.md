@@ -16,7 +16,7 @@ Use this ownership model when adding or moving documentation:
   reproducible validation.
 - `artifacts/<run-id>/` contains large, transient, or machine-local campaign
   outputs and raw traces.
-- `patches/<patch-id>/` contains patch-specific rationale, validation, fixtures,
+- `engines/llamacpp/patches/<patch-id>/` contains patch-specific rationale, validation, fixtures,
   evidence, and support files.
 - `docs/archive/` contains historical or superseded prose and review snapshots;
   it is never a live authority and is not part of the maintained reference

@@ -16,7 +16,7 @@ from bigcherry.patcher import apply_all  # noqa: E402
 
 
 def _load_patch():
-    path = _REPO / "patches/1300_rnx02_q8kv_vec_decode/patch.py"
+    path = _REPO / "engines/llamacpp/patches/1300_rnx02_q8kv_vec_decode/patch.py"
     spec = importlib.util.spec_from_file_location("patch_1300_rnx02", path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)

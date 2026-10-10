@@ -17,8 +17,8 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
-TUNER = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-tuner.cu"
-TUNER_CUH = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-tuner.cuh"
+TUNER = ROOT / "engines" / "llamacpp" / "overlay" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-tuner.cu"
+TUNER_CUH = ROOT / "engines" / "llamacpp" / "overlay" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-tuner.cuh"
 
 
 class Hi24HotListContractTests(unittest.TestCase):
@@ -33,7 +33,7 @@ class Hi24HotListContractTests(unittest.TestCase):
     def test_hot_share_env_override_is_bounded(self):
         # HI99: generated from GGML_HIP_TUNER_CONFIG_FIELDS, not a standalone
         # hand-written double_env() call.
-        header = (ROOT / "src" / "ggml" / "src" / "ggml-cuda"
+        header = (ROOT / "engines" / "llamacpp" / "overlay" / "ggml" / "src" / "ggml-cuda"
                   / "hip-autotune-tuner.cuh").read_text(encoding="utf-8")
         row_idx = header.index("F(DOUBLE, hot_share_pct,")
         row_end = header.index(") \\", row_idx)

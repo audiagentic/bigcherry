@@ -1,9 +1,9 @@
 """RD09 stage 1: source-contract tests for the per-graph Q8_1
 activation-quantization cache foundation
-(src/ggml/src/ggml-cuda/hip-q81-cache.{h,cpp}).
+(engines/llamacpp/overlay/ggml/src/ggml-cuda/hip-q81-cache.{h,cpp}).
 
 Source-contract only, matching this repo's existing pattern for .cu/.cuh/.cpp
-files under src/ggml/src/ggml-cuda (see test_hi99_tuner_config_macro.py) --
+files under engines/llamacpp/overlay/ggml/src/ggml-cuda (see test_hi99_tuner_config_macro.py) --
 no HIP compiler is assumed available offline. This stage adds no caller in
 mmvq.cu, so there is nothing to real-hardware-validate yet; these tests only
 confirm the structural invariants the design (docs/planning/active/
@@ -21,7 +21,7 @@ req_60a41664e0de43d6) requires before any wiring happens:
     an unrecognized value, and is independent of GGML_HIP_DISPATCH_MODE
   - stage 1 adds no caller: mmvq.cu (the one real call site of
     quantize_row_q8_1_cuda) must not reference this cache yet
-  - the new files are wired into the HIP build via patches/
+  - the new files are wired into the HIP build via engines/llamacpp/patches/
     1235_rd09_q81_activation_cache_foundation.py, not via
     0100_cmake_options.py (keeping the production build surface untouched
     for this first, zero-behavioral-risk slice)
@@ -31,16 +31,36 @@ from __future__ import annotations
 
 import re
 import sys
+import ast
+import types
+import tempfile
 import unittest
 from pathlib import Path
 
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from bigcherry.core import paths as bc_paths  # noqa: E402
+from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
+
 ROOT = Path(__file__).resolve().parents[3]
-HEADER = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-q81-cache.h"
-IMPL = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-q81-cache.cpp"
-MMVQ = ROOT / "vendor" / "llama.cpp" / "ggml" / "src" / "ggml-cuda" / "mmvq.cu"
-COMMON_CUH = ROOT / "vendor" / "llama.cpp" / "ggml" / "src" / "ggml-cuda" / "common.cuh"
-PATCH_PATH = ROOT / "patches" / "1235_rd09_q81_activation_cache_foundation" / "patch.py"
-CMAKE_0100 = ROOT / "patches" / "0100_cmake_options" / "patch.py"
+HEADER = ROOT / "engines" / "llamacpp" / "overlay" / "ggml" / "src" / "ggml-cuda" / "hip-q81-cache.h"
+IMPL = ROOT / "engines" / "llamacpp" / "overlay" / "ggml" / "src" / "ggml-cuda" / "hip-q81-cache.cpp"
+MMVQ = bc_paths.llama_root() / "ggml" / "src" / "ggml-cuda" / "mmvq.cu"
+COMMON_CUH = bc_paths.llama_root() / "ggml" / "src" / "ggml-cuda" / "common.cuh"
+# PA44-E merged the foundation package (1235) into 1307, which carries each former package's source verbatim as one
+# of its parts. These tests keep checking the foundation's own source and edits, read out of the merged package.
+MERGED_PATH = ROOT / "engines" / "llamacpp" / "patches" / "1307_q81_activation_cache_mmvq" / "patch.py"
+FOUNDATION = "1235_rd09_q81_activation_cache_foundation"
+
+
+def _foundation_source() -> str:
+    tree = ast.parse(MERGED_PATH.read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Call) and getattr(node.func, "id", "") == "_load_legacy_part"
+                and len(node.args) == 2 and ast.literal_eval(node.args[0]) == FOUNDATION):
+            return ast.literal_eval(node.args[1])
+    raise AssertionError(f"{MERGED_PATH} has no part for {FOUNDATION}")
+CMAKE_0100 = ROOT / "engines" / "llamacpp" / "patches" / "0100_cmake_options" / "patch.py"
 
 sys.path.insert(0, str(ROOT / "tools"))
 
@@ -50,14 +70,19 @@ class Rd09CacheFoundationTests(unittest.TestCase):
     def setUpClass(cls):
         cls.header_src = HEADER.read_text(encoding="utf-8")
         cls.impl_src = IMPL.read_text(encoding="utf-8")
-        cls.mmvq_src = MMVQ.read_text(encoding="utf-8")
-        cls.common_cuh_src = COMMON_CUH.read_text(encoding="utf-8")
-        cls.patch_src = PATCH_PATH.read_text(encoding="utf-8")
-
-        sys.path.insert(0, str(ROOT / "tools"))
-        from bigcherry.patch import patchset as _patchset
-
-        cls.patch_module = _patchset._load_module(PATCH_PATH)
+        # the pinned upstream text, not the working tree: the primary checkout's vendor tree may have patches applied
+        with tempfile.TemporaryDirectory() as td:
+            pinned = {}
+            for name, source in (("mmvq", MMVQ), ("common", COMMON_CUH)):
+                target = Path(td) / source.name
+                copy_pinned(source, target)
+                pinned[name] = target.read_text(encoding="utf-8")
+        cls.mmvq_src = pinned["mmvq"]
+        cls.common_cuh_src = pinned["common"]
+        cls.patch_src = _foundation_source()
+        namespace = {"__name__": "rd09_foundation_part", "__file__": f"<merged:{FOUNDATION}>"}
+        exec(compile(cls.patch_src, namespace["__file__"], "exec"), namespace)
+        cls.patch_module = types.SimpleNamespace(**namespace)
 
     def test_files_exist(self):
         self.assertTrue(HEADER.is_file())
@@ -221,7 +246,7 @@ class Rd09CacheFoundationTests(unittest.TestCase):
 
     def test_patch_is_isolated_and_untested(self):
         self.assertIn('GROUP = "rdna-boosts"', self.patch_src)
-        self.assertIn('STATE = "untested"', self.patch_src)
+        self.assertIn('STATE = "validated"', self.patch_src)  # promoted 2026-10-05 with the Flash-Next stack
 
     def test_patch_does_not_touch_production_cmake_options(self):
         # gpt's design explicitly called for NOT modifying

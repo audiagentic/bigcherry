@@ -142,7 +142,7 @@ def resolve_benchmark_wiring(
     closed, never guess which check/executor was meant.
 
     ``root`` matches build_plan_for_patch()'s own parameter (default:
-    the real patches/ tree) -- exposed here purely so this can be
+    the real engines/llamacpp/patches/ tree) -- exposed here purely so this can be
     unit-tested against isolated fixtures without touching real patches."""
     from bigcherry.patch import validation as patch_validation
 
@@ -599,7 +599,7 @@ def _build_performance_binary_pair(
         worktree_root=args.worktree_root / "control",
         resolved_revision=base_revision,
         composition=control_composition,
-        overlay_root=psi.REPO_ROOT / "src",
+        overlay_root=psi.OVERLAY_ROOT,
         requested_revision=cfg.pinned,
     )
     subject_src = psi.materialize_composition(
@@ -607,7 +607,7 @@ def _build_performance_binary_pair(
         worktree_root=args.worktree_root / "subject",
         resolved_revision=base_revision,
         composition=subject_composition,
-        overlay_root=psi.REPO_ROOT / "src",
+        overlay_root=psi.OVERLAY_ROOT,
         requested_revision=cfg.pinned,
     )
 

@@ -24,7 +24,7 @@ if str(_BC_TOOLS) not in sys.path:
 
 import tomllib
 
-from bigcherry.tuning.server_runner import ServerError, ServerRunner
+from bigcherry.tuning.server_runner import ServerError, ServerRunner, LLAMACPP_SERVE
 
 
 def _load_model(model_id: str) -> tuple[Path, bool]:
@@ -62,6 +62,7 @@ def main() -> int:
         return 1
 
     runner = ServerRunner(
+        serve=LLAMACPP_SERVE,
         binary=Path(cell["binary"]), model=model_path,
         extra_args=tuple(server_args + extra_args),
         shutdown_method="http",

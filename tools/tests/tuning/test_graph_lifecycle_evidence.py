@@ -1,7 +1,7 @@
 """HI14: graph_lifecycle_evidence.py's marker parsing -- no real HIP hardware
 or a compiled binary needed for this layer's own correctness (the C++
 instrumentation and its exact anchor placement were verified separately by
-materializing an isolated worktree for patches/1231 this session)."""
+materializing an isolated worktree for engines/llamacpp/patches/1231 this session)."""
 
 from __future__ import annotations
 

@@ -143,7 +143,7 @@ def _materialize_framework_source(args: argparse.Namespace, descriptor, cfg) -> 
         worktree_root=args.worktree_root / "framework",
         resolved_revision=base_revision,
         composition=composition,
-        overlay_root=psi.REPO_ROOT / "src",
+        overlay_root=psi.OVERLAY_ROOT,
         requested_revision=cfg.pinned,
     )
     idempotent = psi.verify_composition_idempotent(
@@ -152,7 +152,7 @@ def _materialize_framework_source(args: argparse.Namespace, descriptor, cfg) -> 
         worktree_root=args.worktree_root / "framework",
         resolved_revision=base_revision,
         composition=composition,
-        overlay_root=psi.REPO_ROOT / "src",
+        overlay_root=psi.OVERLAY_ROOT,
         requested_revision=cfg.pinned,
     )
     if not idempotent:
@@ -164,7 +164,7 @@ def _materialize_framework_source(args: argparse.Namespace, descriptor, cfg) -> 
     source_identity = psi._make_source_identity_v2(
         resolved_revision=base_revision,
         composition=composition,
-        overlay_root=psi.REPO_ROOT / "src",
+        overlay_root=psi.OVERLAY_ROOT,
     )
     source_identity["materialization_plan_id"] = source_identity["source_key"]
     if any(source_manifest.get(key) != value for key, value in source_identity.items()):
@@ -1204,7 +1204,7 @@ def _absolute_path(value: str) -> Path:
 
 def _add_core_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
-        "--patch", required=True, help="patch module name under patches/"
+        "--patch", required=True, help="patch module name under engines/llamacpp/patches/"
     )
     parser.add_argument(
         "--framework-configuration",
@@ -1360,7 +1360,7 @@ def _add_benchmark_and_producer_arguments(parser: argparse.ArgumentParser) -> No
         metavar="PATCH/PRODUCER_ID",
         default=None,
         help="PA36-F step 5: select one patch-local validation producer "
-        "(patches/<patch>/validation/producer.toml's [producer.<PRODUCER_ID>]) "
+        "(engines/llamacpp/patches/<patch>/validation/producer.toml's [producer.<PRODUCER_ID>]) "
         "and execute it through the generic execute_validation_producer() "
         "dispatcher. Mutually exclusive with every --run-rdXX-*/--run-patchXXXX-* "
         "legacy execution mode -- this is the non-legacy replacement path "

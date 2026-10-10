@@ -84,8 +84,8 @@ required-state = "validated"
 # regression; the two fixes are structurally independent edits, so the
 # correct action is to reject the combined 1000 package (original evidence
 # and claim preserved verbatim in
-# patches/1000_rdna4_mmq_q2k_q6k_fix/SUMMARY.md and
-# patches/1000_rdna4_mmq_q2k_q6k_fix/evidence/validation.json, not erased)
+# engines/llamacpp/patches/1000_rdna4_mmq_q2k_q6k_fix/SUMMARY.md and
+# engines/llamacpp/patches/1000_rdna4_mmq_q2k_q6k_fix/evidence/validation.json, not erased)
 # and extract the independently-real Q6_K gain into a new patch
 # (1006_rdna4_mmq_q6k_codegen_fix, currently untested pending its own
 # fresh Q6-only hardware A/B before promotion -- the combined-package
@@ -120,7 +120,7 @@ required-state = "validated"
 # 0.0% control regression, bit-identical output (contract
 # RD73-STABLE-GRAPH-CACHE-KEY, hash 8827bd6d) -- that original promotion
 # evidence is PRESERVED, not erased; it remains in
-# patches/1233_rd73_stable_graph_cache_key/evidence/validation.json and the
+# engines/llamacpp/patches/1233_rd73_stable_graph_cache_key/evidence/validation.json and the
 # ledger. A later balanced, order-rotated, composition-verified 4-arm A/B on
 # the SAME contract workload (MTP speculative decode, tierL-qwen27b-q8,
 # gfx1100x2, -sm tensor) instead measured RD73 as a REGRESSION: tg128 -1.96%,
@@ -166,7 +166,7 @@ required-state = "validated"
 # flat; bit-identical test-backend-ops correctness every session. Sessions measured
 # while another GPU job ran concurrently are withdrawn (evidence/withdrawn.json).
 # NOT covered: dual-XTX production lane (gate is RDNA4/RDNA2; gfx1100 keeps 1237).
-# This original promotion evidence is PRESERVED (patches/1265.../evidence/), not
+# This original promotion evidence is PRESERVED (engines/llamacpp/patches/1265.../evidence/), not
 # erased. Later the same day the patch's runtime gate was narrowed from open
 # RDNA4/RDNA2 family ranges to exact cc==gfx1201||cc==gfx1030, changing 1265's
 # implementation digest -- a changed implementation invalidates prior evidence
@@ -237,7 +237,7 @@ patches = [
     "1274_mmvq_kquant_f32_decode",
     "1265_rd30b_moe_mmq_compact_grid_rdna4_rdna2",
     # PROMOTED 2026-10-05 (QFP18 lightweight tier): the Qwen3.8 Flash-Next production stack (profile v6), each
-    # measured as promoted base vs base + patch in its adoption ABBA (evidence: patches/<id>/README.md, SUMMARY.md);
+    # measured as promoted base vs base + patch in its adoption ABBA (evidence: engines/llamacpp/patches/<id>/README.md, SUMMARY.md);
     # whole stack vs native llama.cpp +29% / +45% decode at 8K / 48K; 27B dual-XTX no-regression (flags at
     # defaults) identical acceptance and greedy text, decode/prefill within noise. Runtime flags off by default;
     # BIGCHERRY_FEATURES=flashnext enables the profile.
@@ -285,6 +285,14 @@ patches = [
     "1348_mtp_deferred_catchup",
     # PROMOTED 2026-10-08 (QFP18 lightweight tier): Flash-Next prefill +1.8/+1.2/+1.9% at 8K/24K/98K; complete separation; CPU-f32 probes no worse than production. Default off; flashnext profile enables it.
     "1350_mmq_few_tile_streamk",
+    "1319_process_ubatch_timing",
+    "1320_meta_compute_timing",
+    "1325_sched_split_timing",
+    "1342_fusion_bisect",
+    "1346_mtp_prompt_overlap",
+    "1358_meta_split_cache_local_evict",
+    "1355_hc_post_gate_fuse",
+    "1356_meta_dispatch_workers",
 ]
 required-state = "validated"
 
@@ -470,7 +478,7 @@ patches = []
 
 [experiment.deploy-v4-diag]
 # FMTP01/QFP16 diagnostics not already in production: 1319 + 1320 + 1325 (SUBMIT_TIMING incl. meta backend and scheduler splits).
-patches = ["1319_process_ubatch_timing", "1320_meta_compute_timing", "1325_sched_split_timing"]
+patches = []
 
 [experiment.stock-none]
 # QFP15 bisection: source base patch-sets only (serving-core, upstream-fixes, validated-enhancements) - no experiment patches.
@@ -478,7 +486,7 @@ patches = []
 
 [experiment.deploy-v4-plus-1326-diag]
 # QFP16: v4 + 1326 (BIGCHERRY_SCHED_ASYNC_INPUTS=1 async host->device split inputs) + timing diagnostics 1317/1318/1319/1320/1325 (env-gated).
-patches = ["1319_process_ubatch_timing", "1320_meta_compute_timing", "1325_sched_split_timing"]
+patches = []
 
 [experiment.deploy-v5]
 # QFN01 candidate production profile v5: v4 + 1326 (async host->device scheduler split inputs; BIGCHERRY_SCHED_ASYNC_INPUTS=1).
@@ -486,16 +494,11 @@ patches = []
 
 [experiment.deploy-v5-diag]
 # v5 + env-gated timing diagnostics 1317/1318/1319/1325 (1320 is known_broken on 0504396); per-phase comparison across pins.
-patches = ["1319_process_ubatch_timing", "1325_sched_split_timing"]
+patches = []
 
 [experiment.deploy-v5-plus-1327]
 # Post-bump: v5 + 1327 (host-computed QSA dead-slot remap terms; BIGCHERRY_QSA_HOST_REMAP=1).
 patches = []
-
-[experiment.deploy-v5-plus-1327-aux6900]
-# MET05: v5 + 1327 + 1328 auxiliary ROCm expert backend; off unless BIGCHERRY_EXPERT_AUX_DEVICE is set.
-patches = ["1328_aux_rocm_expert_backend"]
-
 
 [experiment.retest-1295]
 # QFP21: promoted base (v6 stack) + 1295 QSA gathered-cell decode attention (on unless BIGCHERRY_QSA_GATHER=0).
@@ -513,7 +516,7 @@ patches = ["1330_qsa_mask_inplace"]
 
 [experiment.fusion-bisect]
 # FKE01: production set (1339's overlap counters) + 1342 (BIGCHERRY_FUSION_SKIP_OPS, per-family fusion counters).
-patches = ["1342_fusion_bisect"]
+patches = []
 
 
 [experiment.mmq-few-tile-streamk]
@@ -522,13 +525,21 @@ patches = []
 
 [experiment.mtp-prompt]
 # QFP31: production set + 1346 (MTP prompt cost: timing split under BIGCHERRY_MTP_PROMPT_TIMING=1, then the overlap).
-patches = ["1346_mtp_prompt_overlap"]
+patches = []
 
 
 [experiment.prefill-diag]
 # Where a prefill chunk's wall time goes on the host: production set + 1319 / 1320 / 1325 (BIGCHERRY_SUBMIT_TIMING=1:
 # process_ubatch phases, meta graph_compute, scheduler splits) + 1346 (BIGCHERRY_MTP_PROMPT_TIMING=1: MTP per prompt).
-patches = ["1319_process_ubatch_timing", "1320_meta_compute_timing", "1325_sched_split_timing", "1346_mtp_prompt_overlap"]
+patches = []
+
+[experiment.hc-post-gate-fuse]
+# QFP35: production + 1355. A/default = fused HC gate consumer; BIGCHERRY_HC_POST_GATE_FUSE=0 is the composed 1313/1344 control.
+patches = []
+
+[experiment.meta-dispatch-workers]
+# QFP41: production + 1356; default off, enable with BIGCHERRY_META_DISPATCH_THREADS=1.
+patches = []
 
 
 
@@ -553,15 +564,6 @@ patches = []
 [experiment.ar-cpu-root-kpool-topk]
 # RNX02: 1291 + 1292 + deterministic radix TOP_K ties (1294); determinism + A/B vs ar-cpu-root-kpool.
 patches = []
-
-[experiment.ar-cpu-root-kpool-sync]
-# QFN01/RNX01: + one scheduler input sync per split (1293); A/B against ar-cpu-root-kpool.
-patches = ["1293_sched_single_input_sync"]
-
-[experiment.adaptive-mtp]
-# 1255 controller + 1268 runtime wiring (+1210 which 1268 requires); adaptive depth is
-# off unless --spec-draft-n-min-adaptive > 0, so one binary serves both A/B arms.
-patches = ["1210_rd26_bitidentical_decode_verify_standalone", "1255_nro06_adaptive_mtp_depth", "1268_prbe52_adaptive_mtp_wiring"]
 
 [experiment.allreduce-root3]
 # 1244 alone: n==3 internal AllReduce (XTX x2 + R9700). Multi-arch build gfx1100,gfx1201.
@@ -1093,3 +1095,7 @@ patches = ["1263_prbe41_ssm_conv_channels_major"]
 [experiment.ar-small-latency]
 # 1275 alone: small mapped-host AllReduce slot-sync and launch-geometry controls; defaults preserve pristine behavior.
 patches = ["1275_ar_small_latency"]
+
+[experiment.meta-split-cache-evict]
+# 1358: production + local eviction of stale Meta split-state cache entries; on by default, BIGCHERRY_META_SPLIT_CACHE_EVICT=0 restores the clear.
+patches = []

@@ -101,6 +101,45 @@ class GateContractTests(unittest.TestCase):
             verifier.call_args.kwargs["assume_validated"], frozenset({"P1"})
         )
 
+    def test_profile_evidence_passes_g4_and_stands_in_for_a_missing_package_in_g5(self) -> None:
+        context = SimpleNamespace(
+            descriptor=SimpleNamespace(patch_id="P1"),
+            catalog_path=None,
+            patches_dir=Path("patches"),
+            pinned_ref="b11474",
+            evidence_root=None,
+            allow_legacy_grandfather=False,
+            resolved_base_revision="abc",
+            intent=GateIntent.PROMOTE,
+            composition=SimpleNamespace(modules=(SimpleNamespace(patch_id="P1", state="untested"),)),
+        )
+        evidence = SimpleNamespace(status="profile-evidence", ok=True, problems=())
+        with mock.patch.object(gates.patch_catalog, "validation_evidence_statuses", return_value={"P1": evidence}):
+            g4 = gates.evaluate_evidence_gate(context)
+        self.assertEqual(g4.status, GateStatus.PASS)
+        self.assertIn(gates.PROFILE_EVIDENCE_DETAIL, g4.detail)
+
+        def result(gate_id, status, detail=()):
+            return gates.GateResult(gate_id, status, "x", "x", detail)
+
+        prior = {g: result(g, GateStatus.PASS) for g in (gates.GateId.G0, gates.GateId.G1, gates.GateId.G2)}
+        prior[gates.GateId.G4] = g4
+
+        prior[gates.GateId.G3] = result(gates.GateId.G3, GateStatus.NA)
+        self.assertEqual(gates.evaluate_lifecycle_gate(context, prior).status, GateStatus.PASS)
+
+        # a package that exists and is invalid still fails; so does any other gate
+        prior[gates.GateId.G3] = result(gates.GateId.G3, GateStatus.FAIL)
+        self.assertEqual(gates.evaluate_lifecycle_gate(context, prior).status, GateStatus.FAIL)
+        prior[gates.GateId.G3] = result(gates.GateId.G3, GateStatus.NA)
+        prior[gates.GateId.G1] = result(gates.GateId.G1, GateStatus.NA)
+        self.assertEqual(gates.evaluate_lifecycle_gate(context, prior).status, GateStatus.FAIL)
+
+        # without the lightweight record, G3 = NA keeps failing promotion as before
+        prior[gates.GateId.G1] = result(gates.GateId.G1, GateStatus.PASS)
+        prior[gates.GateId.G4] = result(gates.GateId.G4, GateStatus.PASS)
+        self.assertEqual(gates.evaluate_lifecycle_gate(context, prior).status, GateStatus.FAIL)
+
     def test_evidence_gate_does_not_treat_required_validation_as_not_required(
         self,
     ) -> None:
@@ -200,6 +239,9 @@ class GateContractTests(unittest.TestCase):
                 gates.patch_registry, "load_registry", return_value=registry
             ) as load_registry,
             mock.patch.object(
+                gates.patch_registry, "load_implementation", return_value=()
+            ),
+            mock.patch.object(
                 gates, "gate_applies", wraps=gates.gate_applies
             ) as gate_applies,
             mock.patch.object(
@@ -294,6 +336,10 @@ class GateContractTests(unittest.TestCase):
         with (
             mock.patch.object(
                 gates.patch_registry, "load_registry", return_value=registry
+            ),
+            # the lint adapter also reads each package's edits (long-anchor rule); these descriptors have none
+            mock.patch.object(
+                gates.patch_registry, "load_implementation", return_value=()
             ),
             mock.patch.object(
                 gates.patch_docs, "check_summary_for_patch", return_value=()
