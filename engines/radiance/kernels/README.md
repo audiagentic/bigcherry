@@ -327,6 +327,32 @@ Techniques, by kernel, that apply to libr3:
   weights multiplied with the integer WMMA; its checkpoint note (`docs/perf-checkpoints/2026-09-29-...`) reports
   +22% prefill over the f16 route and +34% with wider prefill chunks, on one fixture.
 
+## Mixed prompts, and the prefill GEMM made native (2026-10-10, runs `p2-*`, `p3-*`, `p4-*`)
+
+`tools/lab/radiance/rad_prompt_bench.py`: eight varied chat prompts (code, explanation, story, arithmetic,
+translation, code review, plan, JSON; thinking off, 256 tokens) and the lab corpus cut to about 2,300 and 6,500
+tokens, each request uncached, greedy and streamed. MXFP4 Qwen3.8-27B, one run a configuration. Decode is the
+geometric mean over the eight prompts (min to max); prefill is at 2.3K / 6.5K tokens.
+
+| Configuration | Decode, no drafter | Decode, drafter | Prefill |
+|---|---|---|---|
+| R9700, radiance's libr4d | 38.3 | 114.8 (73.6 to 209.4) | 3,104 / 3,214 |
+| one XTX, prefill GEMM emulated (`p2`) | 28.2 | 55.0 (30.9 to 97.4), dec11 first form | 32.6 / 31.4 |
+| one XTX, prefill GEMM native (`p4`) | 27.9 | 89.0 (53.4 to 158.5) | 1,472 / 1,497 |
+| two XTX, prefill GEMM emulated (`p2`) | 46.6 | 91.2 (58.6 to 155.1) | 62.0 / 60.2 |
+| two XTX, prefill GEMM native (`p4`) | 46.8 | 141.7 (83.6 to 252.7) | 1,534 / 1,538 |
+
+Prefill on the XTX was about 30 tok/s: the prefill GEMM (`r4d_gemm_mxfp4a8_tiled`) was still going through the
+compatibility layer. Its native form (`native/r4d_gemm_mxfp4a8_tiled.hip.rw`, commit f68edac1) brings it to about
+1,500 tok/s, 47 times. The selftest passes all three MXFP4 rows with it (decode 81, tiled 10, nt_m64 4). The drafter
+figures rose with it because verify steps and the drafter's own passes use the same kernels. Two cards do not
+prefill faster than one (1,535 against 1,485); not looked into yet. Prefill is still half the R9700's.
+
+The eight-tiles-a-block form of dec11 (`p3`, commit 6fc8c5cb) was wrong about the cost: decode fell to 15.0 tok/s
+(one card) and 24.0 (two), and its ablation with everything off is 112 us for the gate/up GEMM, the same as before,
+so the remaining time does not follow the number of workgroups after all. dec11 is not the default; the staged
+native form is.
+
 ## Other engines on the RX 7900 XTX (looked up 2026-10-10)
 
 - **llama.cpp, Vulkan backend.** llama.cpp issue #20934: on an RX 7900 XTX, Llama-2 7B Q4_0 decodes at 174.6 tok/s
