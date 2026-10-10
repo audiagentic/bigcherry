@@ -11,88 +11,17 @@ work: L
 priority: P1
 ---
 
-# Evaluate Q6_K MMQ sub-scale fold/hoist
+# RD07 Q6_K MMQ safety and dense-shape qualification (downstream of PRBE110)
 
-## Description
+## Current disposition (2026-10-10)
 
-TODO, rescoped off dead identity. PRBE04's target (RD07 Q6_K MMQ sub-scale fold/hoist prefill work) originally lived inside patch 1203, now `rejected` as a bundle for RD06's failure (PA39). RD07 itself passed CLEANLY across gfx1100/gfx1201/gfx1030 within that run (activation, backend-reference, performance, controls all PASS) -- the strongest real result of the three RD05/06/07 slices -- but PA39's own decision (GPT lifecycle review req_f34f50a25c6240fe) voids reuse of 1203's receipt: RD07 may only return as a new, separately-identified `untested` patch with fresh hardware evidence. PRBE110 (separate plan item, already created) owns authoring that new package (rd07-* edits: mmq-vec-dot.cuh fold/hoist/sum-line, mmq.cu activation marker, J_MAX env, test-backend-ops perf cases). PRBE04 owns the downstream re-qualification of that new identity, including the PEF01/HI71 gates this item's own notes flag as never having actually been run under ANY identity.
+The earlier description that RD07 is blocked on PRBE110 *creating* a patch is obsolete: `1267_rd07_q6k_mmq_scale_fold` already exists, with mechanics tests, an experiment contract, a producer, and four-session historical b11126 evidence. It remains **untested** on the current b11474 pin and is **not** in production. Rejected 1203 evidence is historical only. PRBE110 is the sole technical owner of 1267, including current-pin composition and promotion/retirement; PRBE04 does **not** author another Q6_K patch, selector or benchmark producer.
 
-## Steps
+PRBE04 owns only two mandatory gates before any PRBE110 performance campaign:
 
-1. PRBE110 must land a new patches/<id>/ package carrying ONLY the RD07 edits from 1203/patch.py: `rd07-hoist-base-scale`, `rd07-fold-subscale`, `rd07-sum-line` in ggml/src/ggml-cuda/mmq-vec-dot.cuh (anchors verified present at patches/1203_rd050607_rdna4_wmma_fa_q6k_mmq/patch.py lines 752/761/771; note rd07-fold-subscale is order-dependent, anchoring on text inserted by rd07-hoist-base-scale -- preserve edit order), plus the Q6_K dispatch marker/J_MAX/test edits already scoped in 1203. This item is blocked until PRBE110 delivers that exact package.
-2. Bind PRBE04 to PRBE110's final RD07-only package id once it lands.
-3. Audit the Q6_K symbol/hunk in the new package against patch 1000/HI71 (dense-shape-aware eligibility) to resolve baseline composition including 1000.
-4. Run PEF01's illegal-memory/safety gates FIRST -- the 2026-09-12 real-hardware pass under the old 1203 identity did NOT include these; a clean timing number does not satisfy this item without them (standard: 'PEF01 quarantine mandatory... never relax EX02').
-5. Run HI71 dense-shape eligibility verification to confirm the treatment only selects eligible Q6_K shapes.
-6. Compare baseline+new-RD07-patch only, on exact Q6_K shapes, gfx1201 primary with gfx1100 non-regression control -- same shape matrix/repetition discipline as the old run, under the new identity.
-7. Record the new patch identity, PEF01/HI71 gate results, shape matrix, fallback/quarantine decision; only then does the old RD07 performance signal (pp2048 +6.2%, pp512 +3.4%) become a directional expectation, not closing evidence.
+1. **PEF01 / memory safety:** exact composed b11474+0300+1006+1267 backend-op Q6_K boundaries, with particular attention to Q8_1 staging and J allocation. Upstream llama.cpp [#29953](https://github.com/ggml-org/llama.cpp/pull/29953) merged 2026-10-08 to fix MMQ OOB reads from inconsistent allocation/launch tile selection; [#30168](https://github.com/ggml-org/llama.cpp/pull/30168) merged 2026-10-09 to align host precision config. Pinned b11474 retains the old `ggml_cuda_mmq_get_J_max` allocation logic. Source-derived RDNA4 Q6_K `ne11=17` can reserve J=16 and dispatch J=32 if both configurations pass the shared-memory gate. This is **not a reproduced GPU fault**. Require current-pin correction/equivalence evidence and bounded allocation/launch fixtures before hardware performance tests; coordinate the generic fix with its existing upstream-fix owner, not PRBE04.
+2. **HI71 / dense-shape and real activation:** require actual gfx1201 Q6_K MMA execution with 1267, not just the host `ggml_cuda_mul_mat_q_switch_type` once-marker. The patch modifies `ggml_cuda_mmq_vec_dot_q6_K_q8_1_mma`; gfx1030 DP4A is unchanged. Verify J, fallback, K and M shape, source precision, baseline/subject build identity, and non-Q6/DP4A controls. Use the existing PRBE110 producer and profiling infrastructure.
 
-## Detailed Solution & Technical Design
+The b11126 1267 gfx1201 pp512 +2.4675% (CI95 [2.2776%,2.6508%]) was measured without validated 1006 in its stored baseline composition. Current production `validated-enhancements` includes 1006, independently measured around +18% pp512; **do not add effects or reuse the old 1267 delta as incremental**. First measure non-overlapped Q6_K MMA contribution against the actual 1006 baseline. If its theoretical end-to-end ceiling is below 3%, close 1267 without further A/B. Otherwise PRBE110 owns four-session >=10-pair ABBA gfx1201 qualification, full-vocabulary/logit/greedy/MTP parity, multi-request/graph safety, CI95-low >=3% end-to-end improvement and <=1% controls.
 
-This is the highest-confidence candidate of the three ex-1203 slices (it passed cleanly on all three architectures under the old identity) but is still blocked from promotion by two mandatory, never-yet-run gates: PEF01 illegal-memory/safety and HI71 dense-shape eligibility. The re-extraction under a new identity is an opportunity to close both gates properly before any timing claim, exactly as this item's pre-existing standards already require.
-
-## Code Samples & Guidance
-
-No new anchors proposed here -- PRBE110 authors the RD07-only patch.py (fold/hoist of Q6_K mmq sub-scales into the row base-scale, same family as patches/1204_rd08_q6k_mmvq_vdr2's vecdotq.cuh-style edits). PRBE04's deliverable is the PEF01/HI71 gate harness plus the qualification campaign against that package once it exists.
-
-## Files
-
-Depends on PRBE110's package name (TBD, e.g. patches/12xx_rd07_q6k_mmq_prefill_fold/); ggml/src/ggml-cuda/mmq.cu and vecdotq.cuh (Q6_K mmq sub-scale path); patch 1000/HI71 eligibility cross-reference; PEF01 illegal-memory/safety fixtures; campaign artifacts for the new identity.
-
-## Validation
-
-Offline: `PYTHONPATH=tools python -m bigcherry patch-lint`, `patch-rebase-check --focal-overlay <new-rd07-id> --source bigcherry-tuning` once PRBE110's package exists. Hardware (Brutus, not run here): PEF01 illegal-memory/safety gate FIRST; HI71 dense-shape eligibility check; exact Q6_K shapes on gfx1201 primary, gfx1100 non-regression control; balanced repeated llama-bench performance only after both safety gates pass.
-
-## Effort & Risk
-
-M effort (RD07's design is already proven correct and performant under the old identity; the real remaining work is the two mandatory safety/eligibility gates that were never run) -- blocked until PRBE110 delivers the new patch identity.
-
-## Standards
-
-PEF01 quarantine mandatory; exact identity; fail-closed promotion; never relax EX02.
-
-## Acceptance Criteria
-
-No illegal-memory or correctness failure occurs under PEF01/EX02 gates; only eligible Q6_K shapes select the treatment; gfx1201 evidence meets the registered performance boundary and gfx1100 is non-regressed, otherwise quarantine/reject.
-
-## Notes
-
-Supersedes: RD07
-Migration: capability-rebaseline-v3-2026-09
-Successor key: patching-rdna-boost-experiments-rd07
-
-2026-09-11: started a real gfx1201 build+bench campaign for patch 1203 (same in-flight run as PRBE02/PRBE03). CAVEAT, important for this item specifically: this initial pass does NOT include PEF01's specific illegal-memory/safety gates or HI71's dense-shape eligibility verification, both of which this item's acceptance criteria mark as mandatory before any timing claim. Do not treat a clean PPL/bench result from this run as satisfying PRBE04 -- the PEF01 quarantine check and HI71 eligibility check are separate, not-yet-done, and higher-priority than the timing number given this item's own 'PEF01 quarantine mandatory... never relax EX02' standard.
-
-REAL RESULT 2026-09-12: correctness (PPL-equality, see PRBE02) PASS, sigma=1.35. Performance (pp2048 +6.2%, pp512 +3.4%, likely partly attributable to RD07's Q6_K mmq fold specifically, though this run doesn't isolate RD05/RD06/RD07's individual contributions -- 1203 is one bundled patch). STILL BLOCKING per this item's own mandatory standard ('PEF01 quarantine mandatory... never relax EX02'): PEF01's illegal-memory/safety gate and HI71's dense-shape eligibility check were NOT run. Do not treat the real performance numbers above as satisfying this item -- they are encouraging first evidence, not a substitute for the mandatory safety gate.
-
-2026-09-24 relevance at b11126: TODO, blocked on PRBE110; PEF01 safety gate and HI71 eligibility check are the real, never-yet-closed gaps per this item's own prior notes, not the timing claim (which already passed cleanly under the old, now-voided identity). GPT design request submitted (req_990c48138f9b408e, batched with PRBE02); gateway was heavily congested at submission time -- if it doesn't complete, this plan was authored directly against real patch.toml/SUMMARY.md evidence and this item's own prior real-hardware notes.
-
-2026-09-24 GPT review req_7f4dea253b7247f0 applied: pinned PRBE04's PRBE110 dependency to the RD07-only edits (rd07-hoist-base-scale, rd07-fold-subscale, rd07-sum-line in mmq-vec-dot.cuh, verified present and order-dependent in patches/1203.../patch.py) plus Q6_K dispatch marker/J_MAX/test edits; item remains pending/blocked on PRBE110, PEF01/HI71 gates still mandatory.
-
-2026-09-24 GPT review req_7f4dea253b7247f0 applied: pinned PRBE04's PRBE110 dependency to the RD07-only edits (rd07-hoist-base-scale, rd07-fold-subscale, rd07-sum-line in mmq-vec-dot.cuh, verified present and order-dependent in patches/1203.../patch.py) plus Q6_K dispatch marker/J_MAX/test edits; item remains pending/blocked on PRBE110, PEF01/HI71 gates still mandatory.
-
-## Change Log
-
-- 2026-10-08 (triage): pending; 1267_rd07_q6k_mmq_scale_fold remains untested (patches/1267_rd07_q6k_mmq_scale_fold/patch.toml and SUMMARY.md). Historical 1203 is rejected. PRBE110 owns current-pin qualification; no closure evidence.
-
-- 2026-09-09T10:53:43.516065+00:00 (created-by): Created by capability-rebaseline-v3
-- 2026-09-09T11:10:22.973058+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
-
-## Ledger-events
-
-- chg_20260909_115759_created-and-populated-the-192_2958
-- 2026-09-09T11:58:01.142855+00:00 (updated-by): Updated: section:ledger-events
-- chg_20260910_001436_completed-the-planning-rebasel_5794
-- 2026-09-10T00:14:42.816199+00:00 (updated-by): Updated: section:ledger-events
-- 2026-09-10T02:30:25.570783+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria
-- chg_20260910_023037_three-rdna-boost-successors-no_6965
-- 2026-09-10T02:30:37.095824+00:00 (updated-by): Updated: section:ledger-events
-- 2026-09-11T23:50:33.415840+00:00 (updated-by): Updated: section:notes
-- chg_20260911_235103_caught-myself-running-a-real-h_5912
-- 2026-09-11T23:51:03.386145+00:00 (updated-by): Updated: section:ledger-events
-- 2026-09-12T03:21:09.440786+00:00 (updated-by): Updated: section:notes
-- chg_20260912_032330_ran-the-first-ever-real-hardwa_3337
-- 2026-09-12T03:23:30.822091+00:00 (updated-by): Updated: section:ledger-events
-- 2026-09-24T02:31:54.027638+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:notes
-- 2026-09-24T04:34:32.167487+00:00 (updated-by): Updated: section:notes
-- 2026-09-24T04:34:56.164846+00:00 (updated-by): Updated: section:steps, section:notes
+No new patch, test queue, telemetry system, allocator, scheduler, or configuration surface is authorised here. Historical 1203/RD07 +3.4% pp512/+6.2% pp2048 bundled evidence remains confounded and not promotable.

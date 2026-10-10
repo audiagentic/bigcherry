@@ -2,7 +2,7 @@
 id: PNRO03
 order: 0
 plan: patching-nasone-rdna-optimizations
-state: pending
+state: done
 created-at: '2026-09-09T10:52:12.743676+00:00'
 breadth: ''
 skill: advanced
@@ -15,49 +15,41 @@ priority: P0
 
 ## Description
 
-TODO, NOT-READY (rescoped). Verified via patch.py: 1252 only adds an env-var flag (`p->nro03_p2p_requested`) and a `cudaMemcpyPeerAsync` helper function -- there is no peer-capability/enable probe, bidirectional correctness probe, scratch ownership, transport selector, fallback wiring, or activation marker anywhere in the package. Its validation section's `--requires 1001_hip_internal_allreduce` is stale (b11126 already has HIP internal AllReduce natively; that composition flag should be removed).
+**Terminal disposition: closed (2026-10-09).** Patch 1252 was rejected at b11474 on 2026-10-08 after the 2026-10-07 hardware fault. Do not enable, repair, benchmark or queue this direct-P2P AllReduce provider on the current no-P2P topology. Exact-F32 host-staged/RCCL routing (PGC09/PGC12) remains the production control.
+
+The stored `evidence/validation.json` reports bit-identical full-vocabulary outputs but **failed activation** and `NRO03-ALLREDUCE-P2P passed=false`. This proves fallback equivalence, **not** P2P correctness or performance. Historical `ab-27b-p2p.json` has no independent positive route-completion proof.
 
 ## Steps
 
-1. In `ggml_cuda_ar_pipeline_init()` (or the equivalent real init function -- verify exact name at implementation time), probe and enable both peer directions explicitly (not just read the env flag) and validate asymmetric nonzero copies in both directions before allowing P2P selection.
-2. Add source-owned streams/events and destination-owned scratch buffers to the `ggml_cuda_ar_pipeline` struct (verify exact struct name), using the existing `cudaMemcpyPeerAsync` helper as the actual transfer primitive once probes pass.
-3. Select P2P in the real allreduce dispatch function only after both directed probes succeed; otherwise fall back to the existing host-staging path unchanged.
-4. Add a hit/fallback activation marker (BIGCHERRY_PATCH_TRACE-gated) so P2P selection is observable, since none exists today.
-5. Remove the stale `--requires 1001_hip_internal_allreduce` from this item's validation command (b11126 already contains HIP internal AllReduce; 1252 does not need to require it as a separate composed patch unless its own patch.toml says otherwise -- verify at implementation time).
-6. Require exactly two devices, bidirectional peer capability, peer enable, and completed correctness probes as the acceptance gate.
-7. Sweep sizes, validate every element, compare host staging/P2P, then measure real internal-AllReduce decode/prefill; reject if no stable winning envelope.
+1. Keep `1252_nro03_allreduce_p2p_provider/patch.toml` rejected and default-off. Do not queue additional tests on the failed topology.
+2. Preserve historical negative evidence and production host/RCCL fallback.
+3. Reopen only if a materially new topology/driver and supported production workload justify a fresh correctness campaign.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: patching
+In `ggml/src/ggml-cuda/allreduce.cu`, as introduced by patch 1252, `ggml_cuda_ar_p2p_probe()` uses fresh `cudaMalloc` buffers and four fixed copy sizes, synchronizing and comparing host readback. Actual `ggml_cuda_ar_allreduce_p2p_impl()` uses `p->dev_tmp`, source-owned streams, cross-device `p->ev_pool`/`p->p2p_done` events and ring slots. Startup probe success therefore does **not** establish production collective safety. This is a source-derived coverage gap, **not** a demonstrated cause of the hardware fault. The permanent `test_p2p_copy_correctness.py` uses `hipMemcpyDefault`, not 1252's production peer-async copy.
 
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
-
-## Code Samples & Guidance
-
-
+**Conditional re-entry (not queued):** prove both directed copies through actual production scratch, streams and event slots at each dispatch threshold ± one element; bind topology, driver, ROCm, runtime hashes; require positive provider-completion marker, multi-request same-process, graph replay, no crash, full-vocabulary bit identity and exact work accounting. Only then compare matched P2P against host-stage/RCCL for prefill/decode/MTP. Fail closed on any missing activation or incorrect byte. Do not add a second scheduler, selector, allocator or transport.
 
 ## Files
 
-patches/1252_nro03_allreduce_p2p_provider; provider selector/probes; static tests; dual-gfx1100 evidence
+`engines/llamacpp/patches/1252_nro03_allreduce_p2p_provider/`; `tools/tests/hardware/test_p2p_copy_correctness.py`; `docs/evidence/lab-run-summaries/ab-27b-p2p.json`; PNRO18; PGC09/PGC12.
 
 ## Validation
 
-Patch mechanics: `PYTHONPATH=tools python -m bigcherry patch-lint patches/1252_nro03_allreduce_p2p_provider`; `PYTHONPATH=tools python -m bigcherry patch-rebase-check --focal-overlay 1252_nro03_allreduce_p2p_provider --source bigcherry-tuning`; package pytest offline. Bidirectional synthetic validation across sizes/edges, nonzero/asymmetric values, peer-enable handling, forced fallback, GPU-count!=2 control. Hardware (Brutus only, dual gfx1100 required): `python -m bigcherry.patch.validation_campaign --overlay 1252_nro03_allreduce_p2p_provider --requires 1001_hip_internal_allreduce --arch gfx1100 --devices 2` -- correctness before bandwidth; reject if no stable winning envelope.
+Ten pinned-source/evidence static assertions and sixteen disposable fail-closed admission fixtures passed. No repository test suite, HIP compilation, GPU execution or new benchmark ran.
 
 ## Effort & Risk
 
-
+Terminal on existing hardware. Capability bits and isolated copy success do not qualify production P2P.
 
 ## Standards
 
-PGC corrected Brutus evidence; capability bits/API success are not correctness; fail closed to validated host staging.
+Preserve rejected state, negative evidence and exact-F32 host/RCCL fallback. Upstream llama.cpp #27825 enables native HIP internal AllReduce, not direct-P2P qualification. #21648 documents missing-peer-access corruption. External vLLM/dual-R9700 P2P results do not transfer automatically to the no-P2P mixed RDNA3/4/2 topology.
 
 ## Acceptance Criteria
 
-Both directed probes pass repeatedly with source-current push evidence; failures disable P2P without correctness loss; a repeatable collective-level winning envelope exists or the provider is rejected; no global default without independent topology coverage.
+PNRO03 and PNRO18 done; patch 1252 rejected; no new campaign; no fallback equivalence mislabelled as P2P success.
 
 ## Notes
 

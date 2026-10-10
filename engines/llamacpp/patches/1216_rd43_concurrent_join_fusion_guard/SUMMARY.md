@@ -21,5 +21,7 @@ The guard operates on upstream's own graph-optimizer concurrent regions
 (`stream_ctx.concurrent_events`, active under `GGML_CUDA_GRAPH_OPT=1`); 1215
 only added more such regions. With 1215 rejected, 1216 no longer requires it
 and applies cleanly to b11126 alone. Its earlier four-session PASS was measured
-on top of 1215, so it is re-validated standalone (control = validated BC,
-subject = + 1216, GRAPH_OPT on) before any promotion.
+on top of 1215, so it **requires** fresh standalone validation (control = current validated BC,
+subject = +1216, GRAPH_OPT on) before any promotion; old PASS used 1215.
+
+2026-10-10 BCOP103: b11474 native shared-expert MMVQ requires `concurrent_events.empty()`; PRBE112's rejected RD42 overlap is distinct from 1216's QKV join guard.

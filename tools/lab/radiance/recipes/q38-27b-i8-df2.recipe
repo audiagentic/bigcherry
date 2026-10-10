@@ -1,0 +1,36 @@
+# q38-27b-i8-df2.recipe -- a bf16 Qwen3.8-27B checkpoint with its trunk linears as INT8 codes (one bf16 scale a row a
+# 128 columns, symmetric clamp, searched scale), with the DFlash2 drafter. BigCherry's own, derived from radiance's
+# data/recipes/q38-27b-fp8block-df2.recipe with the weight form of qwen4exp-autoround-i8-hc8m.recipe.
+#
+# Why int8 and not fp8: libr4d serves an int8 weight with gemm_i8a8_nt_m16 / gemm_i8a8_tiled, whose inner product is
+# the iu8 WMMA. gfx11 (the 7900 XTX) has that instruction and has no fp8 WMMA, so this is the 8-bit form that needs no
+# code conversion in the inner loop on those cards.
+#
+#   rad-convert <bf16 Qwen3.8-27B checkpoint> --draft-model <z-lab/Qwen3.8-27B-DFlash2> \
+#       --recipe tools/lab/radiance/recipes/q38-27b-i8-df2.recipe \
+#       --set quantization_config.quant_method=fp8 --set quantization_config.fmt=e4m3 \
+#       --set "quantization_config.weight_block_size=128 128" \
+#       --set quantization_config.activation_scheme=dynamic -o model.rad
+#
+# The --set keys select qwen35_fp8, whose shared linear (arch/common/rad_fp8.h) reads an int8 weight at dtype i8a8.
+# Whether that plugin accepts every one of these weights as int8 is what the conversion reports.
+
+blk.*.attn_qg.weight                 rtn  codes=i8 group=128 scale=bf16 clamp=sym rule=search
+blk.*.attn_k.weight                  rtn  codes=i8 group=128 scale=bf16 clamp=sym rule=search
+blk.*.attn_v.weight                  rtn  codes=i8 group=128 scale=bf16 clamp=sym rule=search
+blk.*.attn_output.weight             rtn  codes=i8 group=128 scale=bf16 clamp=sym rule=search
+blk.*.ssm_inz.weight                 rtn  codes=i8 group=128 scale=bf16 clamp=sym rule=search
+blk.*.ssm_out.weight                 rtn  codes=i8 group=128 scale=bf16 clamp=sym rule=search
+blk.*.ffn_gate_up.weight             rtn  codes=i8 group=128 scale=bf16 clamp=sym rule=search
+blk.*.ffn_down.weight                rtn  codes=i8 group=128 scale=bf16 clamp=sym rule=search
+
+output.weight                        rtn  codes=i8 group=128 scale=bf16 clamp=sym rule=search
+dflash.draft_head.weight             rtn  codes=u2 zero=u8 group=128 scale=f16 rule=search
+
+dflash.fc.weight                     rtn  codes=fp4_e2m1 group=32 scale=e8m0
+dflash.blk.*.attn_q.weight           rtn  codes=fp4_e2m1 group=32 scale=e8m0
+dflash.blk.*.attn_k.weight           rtn  codes=fp4_e2m1 group=32 scale=e8m0
+dflash.blk.*.attn_v.weight           rtn  codes=fp4_e2m1 group=32 scale=e8m0
+dflash.blk.*.attn_output.weight      rtn  codes=fp4_e2m1 group=32 scale=e8m0
+dflash.blk.*.ffn_gate_up.weight      rtn  codes=fp4_e2m1 group=32 scale=e8m0
+dflash.blk.*.ffn_down.weight         rtn  codes=fp4_e2m1 group=32 scale=e8m0

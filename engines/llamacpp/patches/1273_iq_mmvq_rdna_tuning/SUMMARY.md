@@ -55,3 +55,7 @@ Only after the above separates IQ3_XXS unpack cost from table-gather cost should
 ## b11474 BPB01 review
 
 Current-pin composition and disposition options are recorded in `releases/evidence/bpb01-four-evaluated.md`. This review does not change patch state.
+
+## 2026-10-10 BCOP111 gate
+
+1273 remains **evaluated, unqualified**. IQ3_XXS VDR1 applies `(ls*sumi + sumi/2)/2` separately to two halves; native VDR2 applies it once to their integer sum. A disposable compiled C++ host discriminator found 37,433/100,000 unequal synthetic pairs (max |integer delta|=1), **not** a model/GPU correctness result. Packed IQ3_XXS/Q8_1 parity is mandatory before a VDR performance campaign; reject that arm if unequal. IQ4_XS VDR2 and nwarps-only are independent. PRBE111 owns the bounded design; do not add another dispatch/descriptor/registry.

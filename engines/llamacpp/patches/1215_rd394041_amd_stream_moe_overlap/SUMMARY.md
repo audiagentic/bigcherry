@@ -22,5 +22,8 @@ target tg128 -2.8..-3.3% on gfx1100 and -8.0..-8.2% on gfx1201, and the control
 lanes regressed too (-1.6..-2.2% gfx1100, -6.8% gfx1201), beyond the 1% budget.
 Owner-approved; GPT review req_4d131e8b7c1c452d concurred. Evidence retained in
 evidence/validation.json. Rework, if any, should build on upstream's own
-concurrency substrate. Dependent 1216 (join-fusion guard for this patch) is
-blocked with it.
+concurrency substrate. 1216 (join-fusion guard) was separated from 1215 and has no hard dependency. Its historical PASS used 1215 in the control and does not qualify standalone 1216.
+
+## Current-pin conflict (2026-10-10; BCOP103)
+
+Native routed/shared MMVQ requires `concurrent_events.empty()`; 1215 inserts RD42 events. Actual model activation and causality are unmeasured. RD39/40 already upstream. Keep rejected; PRBE112 owns a bounded read-only discriminator.

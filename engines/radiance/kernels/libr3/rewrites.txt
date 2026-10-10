@@ -1,0 +1,11 @@
+# Textual rewrites applied to a build-tree copy of libr4d's sources (r3_rewrite.py). One rule per line:
+#   <text to find> ==> <replacement>
+# Only for what r3_compat.h cannot supply as a function.
+
+# gfx12 splits the wait counters and names the store one s_wait_storecnt; gfx11 waits on the same counter with
+# s_waitcnt_vscnt. Used after a peer store in the all-reduce units, the fused fp8 quantiser and the 2D copy's unit.
+asm volatile("s_wait_storecnt 0x0" ::: "memory") ==> asm volatile("s_waitcnt_vscnt null, 0x0" ::: "memory")
+
+# radiance's kernel selftest (r4d_selftest.cpp) runs its device phase on gfx1201 cards only. libr3 builds its own copy
+# (target r3_selftest) that takes gfx11 cards instead, so the same host references check libr3's kernels.
+if (std::strncmp(p.gcnArchName, "gfx1201", 7) == 0) devs.push_back(d); ==> if (std::strncmp(p.gcnArchName, "gfx11", 5) == 0) devs.push_back(d);  /* libr3: gfx11 cards */
