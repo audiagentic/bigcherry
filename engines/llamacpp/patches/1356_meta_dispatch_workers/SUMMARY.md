@@ -50,3 +50,18 @@ is safe across devices.
 
 Re-test required after this change: repeated-run identity at 8K (at least six threaded runs), ABBA at 8K / 24K / 98K,
 and a long decode.
+
+## Lock counters (2026-10-10)
+
+`BIGCHERRY_META_DISPATCH_STATS=1` prints one line when the process exits:
+
+    BIGCHERRY_1356_LOCK_STATS capture n=.. wait_ms=.. hold_ms=.. | replay n=.. wait_ms=.. hold_ms=..
+
+`capture` counts the `graph_compute` calls that needed a HIP graph capture or update (the exclusive lock), `replay`
+the ones that replayed (the shared lock); `wait_ms` is the time spent waiting for the lock and `hold_ms` the time
+from taking it to the end of the call. The calls are counted with the workers off as well, where no lock is taken,
+so the share of capturing calls can be read off a production run first.
+
+Why: the lock above is exclusive for the whole of a capturing call. If most prefill calls capture, the workers run
+the devices one at a time, which would match the measured gain shrinking from +2.5% at 8K to +0.3% at 98K. The
+counters say whether that is so before the lock is narrowed. The mechanism and the lock are unchanged.
