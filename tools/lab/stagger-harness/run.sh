@@ -3,7 +3,7 @@
 # Run as a queue SCRIPT job; the first argument is the build's llama-server path (the queue resolves @<build run>),
 # whose bin directory holds the ggml libraries; the headers come from the source tree named in the build's log.
 #   CARDS=0,1,2 ... VIS=0,1,2 SCRIPT sh1 tools/lab/stagger-harness/run.sh @<build run> <out-dir> [T L n k reps]
-# env: CARDS (0,1,2), SRC (source tree; default: read from the build run's log), BC_HIP_PATH (/mnt/vault/tmp/bc-rocm),
+# env: CARDS (0,1,2), SRC (source tree; default: read from the build run.s log),
 #      HARNESS_TIMEOUT (900 s). Any BIGCHERRY_* / GGML_HIP_* the caller exports is passed through (the pair needs
 #      BIGCHERRY_AR_TRANSFER_STREAM=1 or whichever route flags the build under test wants).
 set -u
@@ -16,8 +16,8 @@ if [ -z "${SRC:-}" ]; then
     SRC=$(grep -hoE "/[^ \"']*/work/sources/[0-9a-f]{32}" "$bin/../compile_commands.json" 2>/dev/null | head -1)
 fi
 [ -d "${SRC:-/nonexistent}/ggml/include" ] || { echo "NO_SOURCE_TREE (set SRC)"; exit 1; }
-rocm=${BC_HIP_PATH:-/mnt/vault/tmp/bc-rocm}
-export LD_LIBRARY_PATH="$bin:$rocm/lib:${LD_LIBRARY_PATH:-}"
+# the ggml libraries find ROCm through their own rpath; adding another ROCm here mixes two rocBLAS installs
+export LD_LIBRARY_PATH="$bin:${LD_LIBRARY_PATH:-}"
 export HIP_VISIBLE_DEVICES=${CARDS:-0,1,2}
 libs=$(ls "$bin"/libggml*.so 2>/dev/null | sed -E 's#.*/lib(.*)\.so#-l\1#' | tr '\n' ' ')
 if ! g++ -O2 -std=c++17 "$here/meta_pair_harness.cpp" -I"$SRC/ggml/include" -L"$bin" $libs -Wl,-rpath,"$bin" \
