@@ -470,6 +470,7 @@ Combined QFP36 expectation on this topology if both gates pass: **+0.4% to +1.5%
 ## Ledger-events
 
 
+
 - chg_20261007_073613_flash-next-prefill-is-about-2_3220
 - 2026-10-07T07:36:17.133419+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-08T09:46:17.213927+00:00 (updated-by): Updated: section:notes
@@ -479,3 +480,5 @@ Combined QFP36 expectation on this topology if both gates pass: **+0.4% to +1.5%
 - 2026-10-09T04:17:11.105956+00:00 (updated-by): Updated: section:notes
 - chg_20261010_015740_optional-faster-moe-router-mat_2362
 - 2026-10-10T01:57:44.055374+00:00 (updated-by): Updated: section:ledger-events
+- chg_20261010_114843_flash-next-prompt-processing-i_7051
+- 2026-10-10T11:48:51.010778+00:00 (updated-by): Updated: section:ledger-events
