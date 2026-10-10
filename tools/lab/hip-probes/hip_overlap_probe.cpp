@@ -528,7 +528,7 @@ static void test_replay() {
 // the card and its input arrives by an asynchronous copy, so every write is ordered behind k on the stream; the
 // result of each batch is checked, so a write that overtook the previous batch would show.
 static void test_pipeline() {
-    const int batches = 40, passes = 12, prep_ms = 8;  // a batch: `passes` compute passes; the host needs prep_ms to prepare one
+    const int batches = 40, passes = 200, prep_ms = 3;  // a batch: `passes` compute passes (about ten times prep_ms, as in prefill)
     const size_t n = kBurnElems / 4;                   // 64 MiB a batch
     std::printf("\n== pipeline: %d batches, the host needs %d ms to prepare each; result checked every batch\n", batches, prep_ms);
     for (auto & c : g_cards) {
