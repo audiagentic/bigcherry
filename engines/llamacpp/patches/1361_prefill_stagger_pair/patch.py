@@ -18,7 +18,7 @@ def _edit(*, id: str, anchor: str, text: str, mode: str, guard: str, rationale: 
         guard=guard,
         rationale=rationale,
         expect_matches=1,
-        max_span_lines=anchor.count("\n") + 2,
+        max_span_lines=len(anchor.splitlines()) + 1,
     )
 
 
