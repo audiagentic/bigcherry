@@ -93,6 +93,8 @@ Gate for staggering, 2026-10-11 (kernel traces, 38,725-token prompt, build b-pip
 
 Standalone check with RCCL, 2026-10-11 (tools/lab/hip-probes/rccl_stagger_probe.cpp, run rs1, 2x RX 7900 XTX + R9700): 96 sums of 2.62 MB with ncclAllReduce from one host thread. Compute only 172.0 ms; as today 255.4 ms; half-size rounds unstaggered 266.0 ms; staggered halves with the sum on each card's transfer stream, fenced by events, 185.6 ms. Staggering hides 84% of today's sum cost, 0 wrong values, and RCCL takes a non-compute stream on the same communicator. Piece 1 (patch 1360, the sum on a transfer stream, default off) is with GPT.
 
+Piece 1 done, 2026-10-11: patch 1360_ar_transfer_stream merged (#145, untested, default off). Flash-Next 24K, build b-ar1, run tsar: text identical, prefill 1411.9 / 1438.3 on against 1424.1 / 1424.4 off, marker in the on passes only. Identity and speed reference for the pair (run ref256, same build, -b 512 -ub 256, stagger off): prefill 1081.2 / 1081.5 t/s, greedy md5 e04e5eb0, decode 76.4 / 77.4, acceptance 333-334 / 531-534; ub512 in the same run 1444.8 / 1437.3, md5 a789c151. Two ub256 halves a call are slower than -b 256 -ub 256 (1,135) because 1359 only fences a one-ubatch call. Targets for the pair at half 256: text e04e5eb0, prefill above 1,445. Pieces 2-4 are patch 1361_prefill_stagger_pair (branch feat/qfp49-stagger-pair, with GPT).
+
 ## Change Log
 
 - 2026-10-10T13:54:01.542976+00:00 (created-by): Created by claude
@@ -101,3 +103,9 @@ Standalone check with RCCL, 2026-10-11 (tools/lab/hip-probes/rccl_stagger_probe.
 - 2026-10-10T21:37:41.672650+00:00 (updated-by): Updated: section:notes
 - 2026-10-10T21:46:35.701673+00:00 (updated-by): Updated: section:notes
 - 2026-10-10T21:49:01.610106+00:00 (updated-by): Updated: section:notes
+
+## Ledger-events
+
+- chg_20261010_223737_groundwork-for-staggered-promp_5862
+- 2026-10-10T22:37:44.216342+00:00 (updated-by): Updated: section:ledger-events
+- 2026-10-10T22:43:01.082723+00:00 (updated-by): Updated: section:notes
