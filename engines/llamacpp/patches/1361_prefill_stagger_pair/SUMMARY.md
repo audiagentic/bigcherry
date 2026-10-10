@@ -31,10 +31,14 @@ the context creates a second scheduler and graph result sized for `half`, reserv
 reserved B compute-buffer size per backend. B's Meta physical compute arena is a second 1340 arena owner; A and B
 therefore cannot alias the same per-device compute allocation while both graphs are live.
 
-The two llama schedulers also own distinct logical Meta compute buffers. Each logical buffer keeps its own upstream
-`stc_compute[2]` generation pair. Building/capturing B rotates B's buffer containers only; it does not rotate or
-reuse A's active simple-tensor container. The Meta pair entry retains independent A/B per-card subgraph metadata until
-the pair completes.
+The two llama schedulers own distinct logical Meta compute buffers with independent `stc_compute[2]`
+generations, and the Meta pair entry retains independent A/B per-card subgraph metadata until completion.
+Static Meta buffers (KV/recurrent state) are intentionally shared: their *external views* do not have independent
+generations. Capturing A can rotate the shared static-buffer container after B's graph has been allocated.
+Before capturing B, the pair re-homes B's static external-view chains into the current container without clearing
+A's captured mappings; B's rebuild then rotates the inactive container. The view headroom is 32 with the flag on
+(two graph sets between evaluations), retaining upstream 16 with the flag off. The physical compute arenas remain
+separate 1340 owners for A and B. Repeated-pair/graph-replay pointer lifetime is still a hardware qualification risk.
 
 ## AllReduce begin/end
 
