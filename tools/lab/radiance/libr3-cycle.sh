@@ -37,12 +37,13 @@ echo "selftest [$ENVS]: $(grep -E "^-- gemm_mxfp4a8_decode|verdict" "$R/$tag-sel
 grep -E "FAIL" "$R/$tag-self/gemm_mxfp4a8_decode.log" 2> /dev/null | head -4 | cut -c1-200
 for cfg in "${configs[@]}"; do
     name=${cfg%%:*}
-    ENVS="N=${N:-128} $(echo "${cfg#*:}" | tr ',' ' ' | tr '+' ',')"
-    vis=0; case " $ENVS " in *" TP=2 "*) vis=0,1 ;; esac
+    ENVS="N=${N:-128} BENCH=${BENCH:-1} $(echo "${cfg#*:}" | tr ',' ' ' | tr '+' ',')"
+    vis=$(echo " $ENVS " | grep -oE " GPU=[0-9,]+ " | tr -d ' ' | cut -d= -f2); vis=${vis:-0}  # lock the cards it runs on
     one "$vis" "$tag-$name" tools/lab/radiance/libr3-serve-smoke.sh
     log=$R/$tag-$name.log
     ok=$(grep -c "Berlin" "$log" 2> /dev/null)
-    echo "$name [$ENVS]: $(grep -oE "[0-9.]+ tok/s" "$log" 2> /dev/null | tr '\n' ' ')text $([ "${ok:-0}" -ge 1 ] && echo ok || echo WRONG) $(grep -E "SERVER_EXITED|LOAD_TIMEOUT" "$log" 2> /dev/null | head -1 | cut -c1-60)"
+    grep -E "decode, geometric mean|prefill at" "$log" 2> /dev/null | sed "s/^/    /" | cut -c1-170
+    echo "$name [$ENVS]: smoke $(grep -E "^I req" "$log" 2> /dev/null | grep -oE "[0-9.]+ tok/s" | tr '\n' ' ')text $([ "${ok:-0}" -ge 1 ] && echo ok || echo WRONG) $(grep -E "SERVER_EXITED|LOAD_TIMEOUT" "$log" 2> /dev/null | head -1 | cut -c1-60)"
 done
 rm -f "$jobs"
 echo "CYCLE_DONE $tag"
