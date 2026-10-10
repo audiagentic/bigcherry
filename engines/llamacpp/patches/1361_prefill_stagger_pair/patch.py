@@ -844,6 +844,8 @@ _A_PROCESS = r'''        ggml_status status;
 '''
 _N_PROCESS = r'''        ggml_status status = GGML_STATUS_SUCCESS;
 
+        // process_ubatch normally sets this per ubatch; cached A/B must restore that contract.
+        if (bc_cached) n_outputs = bc_count_outputs(ubatch);
         const llm_graph_result * res = bc_cached ? bc_pair_res[bc_pair_index]
             : process_ubatch(ubatch, ctx_type_to_graph_type(cparams.ctx_type), mctx.get(), status);
         const bool bc_using_b = bc_cached && bc_pair_index == 1;
