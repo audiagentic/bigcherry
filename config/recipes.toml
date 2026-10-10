@@ -1096,6 +1096,10 @@ patches = ["1263_prbe41_ssm_conv_channels_major"]
 # 1275 alone: small mapped-host AllReduce slot-sync and launch-geometry controls; defaults preserve pristine behavior.
 patches = ["1275_ar_small_latency"]
 
+[experiment.moe-router-splitk]
+# QFP36: production + 1357; default off, enable with BIGCHERRY_MOE_ROUTER_SPLITK=1.
+patches = ["1357_moe_router_splitk"]
+
 [experiment.meta-split-cache-evict]
 # 1358: production + local eviction of stale Meta split-state cache entries; on by default, BIGCHERRY_META_SPLIT_CACHE_EVICT=0 restores the clear.
 patches = []
