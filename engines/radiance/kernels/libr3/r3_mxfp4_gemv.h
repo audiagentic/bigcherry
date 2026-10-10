@@ -149,7 +149,15 @@ __global__ __launch_bounds__(R3_GEMV_WAVES * 32) void r3_gemm_mxfp4a8_gemv1_kern
         const r3_u4 a = *reinterpret_cast<const r3_u4*>(ap + ks * 16);  // byte offset 16 * half + 32 * ks
 #pragma unroll
         for (int p = 0; p < 4; ++p) {
-            acc = __builtin_amdgcn_fdot2(__builtin_bit_cast(r3_v2h, w[p]), __builtin_bit_cast(r3_v2h, a[p]), acc, false);
+            const r3_v2h wv = __builtin_bit_cast(r3_v2h, w[p]), av = __builtin_bit_cast(r3_v2h, a[p]);
+#if defined(R3_GEMV_DOT2)
+            acc = __builtin_amdgcn_fdot2(wv, av, acc, false);
+#else
+            // Plain f32 multiply-adds. Both dot-product forms (v_dot2_f32_bf16 in the first form, v_dot2_f32_f16 in
+            // the second) failed the selftest's M = 1 cases with the SAME error (rel_l2 1.519 at N=272 K=640), so
+            // this isolates the instruction from the indexing: if this passes, the dot product was at fault.
+            acc += (float) wv[0] * (float) av[0] + (float) wv[1] * (float) av[1];
+#endif
         }
         if constexpr (ABLK) {
             if ((ks & 7) == 7 || ks == ks_hi - 1) {  // end of a 128 group (or of K): its own activation scale
