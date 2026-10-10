@@ -401,8 +401,10 @@ _N_ARENA_DTOR = r'''            bc.arena_plans.clear();
 # both graphs' views land in the same container: twice the views between evals.
 _A_META_HEADROOM = r'''    constexpr size_t compute_headroom = 16; // Maximum number of views per statically allocated tensor that can be created between evals.
 '''
-_N_META_HEADROOM = r'''    // BigCherry 1361: a stagger pair allocates two graphs between evals, so twice upstream's 16 views a tensor.
-    constexpr size_t compute_headroom = 32; // Maximum number of views per statically allocated tensor that can be created between evals.
+_N_META_HEADROOM = r'''    // BigCherry 1361: two graphs need twice the view capacity; flag-off keeps upstream's exact 16.
+    const char * bc_stagger_env = getenv("BIGCHERRY_PREFILL_STAGGER");
+    const size_t compute_headroom = bc_stagger_env != nullptr && strtoul(bc_stagger_env, nullptr, 10) > 0
+        ? 32 : 16; // Maximum views per statically allocated tensor between evals.
 '''
 
 _A_ARENA_ROTATE = r'''// BigCherry 1340 (MSM02): what graph_compute does when it rebuilds - move the Meta buffers a graph uses on to their
