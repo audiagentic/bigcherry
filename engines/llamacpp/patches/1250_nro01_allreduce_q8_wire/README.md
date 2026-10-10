@@ -1,11 +1,9 @@
-# 1250_nro01_allreduce_q8_wire
+# 1250_nro01_allreduce_q8_wire — historical evaluated package
 
-Plans `PNRO01` (P2P Q8 wire) and `PNRO02` (fused residual). Requires both `1252_nro03_allreduce_p2p_provider` and `1272_ar_host_compressed_wire`.
+**State:** `evaluated` (unchanged); **not eligible for deployment/qualification on current BigCherry topology**. Plans PNRO01/PNRO02. Package `requires` both `1252_nro03_allreduce_p2p_provider` (**rejected** following the 2026-10-07 hardware fault) and `1272_ar_host_compressed_wire` (**untested**). Do not override the dependency check to enable residual fusion.
 
-Ownership after the b11233 migration is deliberately split: 1272 owns `GGML_CUDA_AR_WIRE`, the single Q8_0 block-32/fp16-scale codec, host/mapped transport, and shared finish kernels. 1250 owns only the provider extension that routes 1272 Q8 copy-engine traffic through 1252 P2P when available plus the optional meta-backend residual-ADD fusion. There is no compatibility copy of the old 1250 codec/parser/finish implementation.
+Source implementation: 1250 adds a Meta backend reduction→reshape→mirrored-F32-ADD matcher, optional `ggml_backend_comm_allreduce_tensor_fused_add_t` hook, and suppression of the ADD after a successful fused finish. It reuses 1272's Q8_0 codec and finish kernels and 1252's P2P provider, with a host-copy fallback inside the composed implementation. **No exact-F32 fused residual path exists**: `ggml_cuda_ar_allreduce_fused_add` accepts only explicit `GGML_CUDA_AR_WIRE=q8_0`, two devices and a positive copy threshold. Q8 is lossy; do not describe this as exact-F32 or bit-identical.
 
-Switches: `GGML_CUDA_AR_WIRE=q8_0` (parsed by 1272) selects Q8; `GGML_CUDA_AR_FUSED_RESIDUAL=1` enables PNRO02. Unset wire keeps 1272/pristine selection semantics and 1250 does not fire.
+`GGML_CUDA_AR_FUSED_RESIDUAL=0` is treated as enabled by the current `getenv(...) != nullptr` check, if all other conditions hold. The trace `patch=1250_nro02 path=allreduce_fused_residual` is not proof of graph replay, numerical equivalence, or provider completion. No qualified PNRO02 hardware benefit is recorded.
 
-Activation markers (`BIGCHERRY_PATCH_TRACE`): `patch=1250_nro01 path=allreduce_q8_0_p2p_shared` when Q8 uses the P2P provider; `patch=1250_nro02 path=allreduce_fused_residual` only after fused execution succeeds. 1272 independently emits `patch=1272_ar_wire path=ar_wire_q8_0` for explicit Q8 selection.
-
-Provenance: nasone commit `e06dcf6300718227cb8cfda9e61fb12ccb693418`; provider ordering remains the source-current 1252 enqueue loop, with codec/fused-finish ownership migrated to 1272 under the no-legacy policy.
+**Disposition:** PNRO02 owns any future default-off **exact-F32** host/CPU-root epilogue, only after a read-only production graph census and >=3% optimistic E2E bound. Preserve PNRO03/1252 rejection and validated PGC09/PGC12/1291 production paths. See PNRO02 and BCOP108; do not queue the old Brutus P2P instructions.

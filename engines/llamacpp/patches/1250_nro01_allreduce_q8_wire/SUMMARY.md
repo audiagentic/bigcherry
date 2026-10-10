@@ -1,24 +1,8 @@
 # 1250_nro01_allreduce_q8_wire
 
-**Status:** evaluated
-**Plan item:** NRO01/NRO02
+**Status:** evaluated (not validated; not promotable on current no-P2P hardware)
+**Plan items:** PNRO01 / PNRO02
 
-## What it does
+1250 depends on rejected 1252 P2P plus untested 1272 wire. Its residual hook/matcher exists, but the fused API admits only **two-rank Q8_0** with a positive copy threshold; it cannot implement PNRO02's proposed exact-F32 fusion. The existing 1250 mechanics tests verify source composition/idempotence, not graph capture, safe fallback after partial enqueue, full-vocabulary parity, or measured improvement. Presence-based `GGML_CUDA_AR_FUSED_RESIDUAL` parsing also treats `0` as enabled.
 
-Extends `1252_nro03_allreduce_p2p_provider` with Q8_0 transport using the codec and finish primitives owned by `1272_ar_host_compressed_wire`. When P2P is available, 1272's Q8 copy-engine route uses peer copies; otherwise it retains 1272's host-staging fallback. PNRO02 optionally folds a following mirrored F32 ADD into the same shared finish.
-
-## Ownership
-
-1250 no longer defines `GGML_CUDA_AR_WIRE`, Q8 quant/dequant kernels, or duplicate finish kernels. It requires 1272 and reuses those definitions directly. The old duplicate implementation and its private Q8 threshold/profile plumbing are removed rather than retained as compatibility paths.
-
-## Why
-
-Two-GPU `-sm tensor` decode can reduce PCIe bytes with Q8_0 while P2P avoids host staging when the provider probe succeeds. Residual fusion removes the separate ADD launch when its strict graph/type checks pass.
-
-## Upstream
-
-Nasone commit `e06dcf6300718227cb8cfda9e61fb12ccb693418`, migrated from a monolithic fork diff to the BigCherry 1252 transport + 1272 codec ownership split.
-
-## b11474 BPB01 review
-
-Current-pin composition and disposition options are recorded in `releases/evidence/bpb01-four-evaluated.md`. This review does not change patch state.
+**Terminal package decision:** Do not re-enable or benchmark 1250 on current topology. Keep historical package state/evidence unchanged; future residual work belongs to PNRO02 and an eligible exact-F32 production finish (PGC09/PGC12/1291), with 1272 retaining Q8 codec ownership. Do not create another transport/cache/scheduler. BPB01 already records 1250 as superseded/infeasible; BCOP108 records the disposition.
