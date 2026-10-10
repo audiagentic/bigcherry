@@ -838,3 +838,228 @@ _A_PROCESS = r'''        ggml_status status;
 '''
 _N_PROCESS = r'''        ggml_status status = GGML_STATUS_SUCCESS;
 
+        const llm_graph_result * res = bc_cached ? bc_pair_res[bc_pair_index]
+            : process_ubatch(ubatch, ctx_type_to_graph_type(cparams.ctx_type), mctx.get(), status);
+        const bool bc_using_b = bc_cached && bc_pair_index == 1;
+        if (bc_using_b) {
+            // Existing extraction code uses sched.get(); point it at B only while extracting B's outputs.
+            std::swap(sched, bc_1361_sched_b);
+        }
+'''
+
+_A_LOOP_TAIL = r'''        n_outputs_prev += n_outputs;
+        n_tokens_prev  += ubatch.n_tokens;
+    } while (mctx->next());
+'''
+_N_LOOP_TAIL = r'''        n_outputs_prev += n_outputs;
+        n_tokens_prev  += ubatch.n_tokens;
+
+        if (bc_using_b) {
+            std::swap(sched, bc_1361_sched_b);
+        }
+        if (bc_cached) {
+            ++bc_pair_index;
+            if (bc_pair_index < bc_pair_count) {
+                continue;
+            }
+            // If exactly two cached halves were prepared, mctx is already on B and the logical batch is complete.
+            if (bc_pair_count == 2) {
+                bc_loop_done = true;
+                continue;
+            }
+            // A-only fallback: mctx may already point at an unprocessed tail B. Do not advance it here.
+            if (bc_pair_mctx_is_b) {
+                bc_pair_count = 0;
+                continue;
+            }
+        }
+        bc_loop_done = !mctx->next();
+    }
+'''
+
+# 1359 fenced NextN copy: pair halves share one slot; B records the event after its copy.
+_A_1359_GATE = r'''                    if (bc_1359_on && !masked && offset == 0) {
+                        const int bc_slot = bc_nextn_cur ^ 1;
+                        // the buffer about to be reused: its last copy must have landed (this also keeps the
+                        // pipeline two batches deep and no deeper)
+                        bc_nextn_fence_wait(bc_slot);
+'''
+_N_1359_GATE = r'''                    if (bc_1359_on && !masked && (offset == 0 || bc_1361_nextn_pair)) {
+                        int bc_slot = bc_nextn_cur ^ 1;
+                        if (bc_1361_nextn_pair) {
+                            if (bc_1361_nextn_pair_slot < 0) bc_1361_nextn_pair_slot = bc_slot;
+                            bc_slot = bc_1361_nextn_pair_slot;
+                        }
+                        // A waits before reusing the slot; B reuses A's slot and must not wait for its own in-flight copy.
+                        if (!bc_1361_nextn_pair || offset == 0) {
+                            bc_nextn_fence_wait(bc_slot);
+                        }
+'''
+
+_A_1359_BYTES = r'''                        const size_t bc_bytes = (size_t) n_rows * n_embd * sizeof(float);
+                        if (bc_ok && (!bc_nextn_buf[bc_slot] || ggml_backend_buffer_get_size(bc_nextn_buf[bc_slot].get()) < bc_bytes)) {
+'''
+_N_1359_BYTES = r'''                        const size_t bc_bytes = (size_t) n_rows * n_embd * sizeof(float);
+                        const size_t bc_off_bytes = (size_t) offset * n_embd * sizeof(float);
+                        const size_t bc_need_bytes = bc_off_bytes + bc_bytes;
+                        if (bc_ok && (!bc_nextn_buf[bc_slot] || ggml_backend_buffer_get_size(bc_nextn_buf[bc_slot].get()) < bc_need_bytes)) {
+'''
+
+_A_1359_CAP = r'''                            const size_t bc_cap = std::max(bc_bytes, (size_t) n_embd * cparams.n_batch * sizeof(float));
+'''
+_N_1359_CAP = r'''                            const size_t bc_cap = std::max(bc_need_bytes, (size_t) n_embd * cparams.n_batch * sizeof(float));
+'''
+
+_A_1359_COPY = r'''                            float * bc_dst = (float *) ggml_backend_buffer_get_base(bc_nextn_buf[bc_slot].get());
+                            ggml_backend_tensor_get_async(backend_h, t_h_nextn, bc_dst, 0, bc_bytes);
+                            for (size_t j = 0; j < bc_events.size(); ++j) {
+                                ggml_backend_event_record(bc_events[j], bc_backends[j]);
+                            }
+                            bc_nextn_cur        = bc_slot;
+                            bc_nextn_slot_valid = true;
+'''
+_N_1359_COPY = r'''                            float * bc_dst = (float *) ggml_backend_buffer_get_base(bc_nextn_buf[bc_slot].get()) + offset*n_embd;
+                            ggml_backend_tensor_get_async(backend_h, t_h_nextn, bc_dst, 0, bc_bytes);
+                            if (!bc_1361_nextn_pair || bc_1361_nextn_pair_last) {
+                                // For a stagger pair, B's event fences both A and B copies in this slot.
+                                for (size_t j = 0; j < bc_events.size(); ++j) {
+                                    ggml_backend_event_record(bc_events[j], bc_backends[j]);
+                                }
+                                bc_nextn_cur        = bc_slot;
+                                bc_nextn_slot_valid = true;
+                                bc_1361_nextn_pair_slot = -1;
+                            }
+'''
+
+# Set the 1359 pair flags around the existing extraction block without changing flag-off behavior.
+_A_NEXTN_BLOCK = r'''        // extract nextn embeddings before
+        // only meaningful in LLAMA_POOLING_TYPE_NONE (per-token); other pooling modes are ignored.
+        {
+'''
+_N_NEXTN_BLOCK = r'''        // extract nextn embeddings before
+        // only meaningful in LLAMA_POOLING_TYPE_NONE (per-token); other pooling modes are ignored.
+        bc_1361_nextn_pair = bc_pair_count == 2;
+        bc_1361_nextn_pair_last = bc_1361_nextn_pair && bc_pair_index == 1;
+        {
+'''
+
+_A_NEXTN_AFTER = r'''        if (extract_all_idxs) {
+'''
+_N_NEXTN_AFTER = r'''        bc_1361_nextn_pair = false;
+        bc_1361_nextn_pair_last = false;
+
+        if (extract_all_idxs) {
+'''
+
+PATCHES = [
+    FilePatch(
+        path="ggml/src/ggml-cuda/ggml-cuda.cu",
+        description="1361: expose RCCL-only transfer-stream begin/end through backend registry",
+        language="none",
+        edits=(
+            _edit(id="stagger-cuda-route", anchor=_A_CUDA_DISPATCH, mode="replace", text=_N_CUDA_DISPATCH,
+                  guard=r"struct bc_1361_ar_state", rationale="Beside the communication dispatch after 1360/provider helpers."),
+            _edit(id="stagger-cuda-procs", anchor=_A_CUDA_REG, mode="replace", text=_N_CUDA_REG,
+                  guard=r"ggml_backend_comm_allreduce_stagger_begin", rationale="CUDA backend registry communication proc-address table."),
+        ),
+    ),
+    FilePatch(
+        path="ggml/src/ggml-backend-meta.cpp",
+        description="1361: independent A/B Meta graph sets, second arena owner, and stagger pair execution",
+        language="none",
+        edits=(
+            _edit(id="stagger-meta-forward", anchor=_A_META_CTX_DECL, mode="replace", text=_N_META_CTX_DECL,
+                  guard=r"struct bc_1361_graph_set;", rationale="Forward declaration for the transient capture pointer."),
+            _edit(id="stagger-meta-context", anchor=_A_META_CONTEXT, mode="replace", text=_N_META_CONTEXT,
+                  guard=r"bc_pair_capture", rationale="Meta context beside its normal UID/communication state."),
+            _edit(id="stagger-meta-force-rebuild", anchor=_A_META_REBUILD, mode="replace", text=_N_META_REBUILD,
+                  guard=r"bc_pair_capture != nullptr", rationale="Pair capture must rebuild B even when A/B graph UIDs match."),
+            _edit(id="stagger-meta-set-type", anchor=_A_META_GRAPH_FN, mode="replace", text=_N_META_GRAPH_FN,
+                  guard=r"struct bc_1361_graph_set", rationale="Immediately before Meta graph compute."),
+            _edit(id="stagger-meta-capture", anchor=_A_META_AUX, mode="replace", text=_N_META_AUX,
+                  guard=r"pair capture stops before aux/fallback execution", rationale="After subgraph build and before aux/fallback execution."),
+            _edit(id="stagger-meta-pair", anchor=_A_META_IFACE, mode="replace", text=_N_META_IFACE,
+                  guard=r"ggml_backend_meta_graph_compute_pair", rationale="Immediately before the Meta backend interface."),
+            _edit(id="stagger-arena-fields", anchor=_A_ARENA_FIELDS, mode="replace", text=_N_ARENA_FIELDS,
+                  guard=r"arena_galloc_pair", rationale="1340 per-device arena ownership fields."),
+            _edit(id="stagger-arena-dtor", anchor=_A_ARENA_DTOR, mode="replace", text=_N_ARENA_DTOR,
+                  guard=r"arena_plans_pair.clear", rationale="1340 Meta context destruction before simple backends."),
+            _edit(id="stagger-arena-pair-helpers", anchor=_A_ARENA_ROTATE, mode="replace", text=_N_ARENA_ROTATE,
+                  guard=r"ggml_backend_meta_reserve_graph_pair", rationale="After 1340 reserve/bind helpers and before container rotation."),
+        ),
+    ),
+    FilePatch(
+        path="ggml/src/ggml-backend.cpp",
+        description="1361: second arena selector and narrow two-scheduler Meta pair dispatch",
+        language="none",
+        edits=(
+            _edit(id="stagger-sched-field", anchor=_A_SCHED_STRUCT, mode="replace", text=_N_SCHED_STRUCT,
+                  guard=r"bc_stagger_pair_arena", rationale="Scheduler private state beside op_offload."),
+            _edit(id="stagger-sched-decls", anchor=_A_BACKEND_DECLS, mode="replace", text=_N_BACKEND_DECLS,
+                  guard=r"ggml_backend_meta_graph_compute_pair", rationale="1340 Meta backend-local declarations."),
+            _edit(id="stagger-sched-alloc-arena", anchor=_A_SCHED_ALLOC, mode="replace", text=_N_SCHED_ALLOC,
+                  guard=r"failed to allocate per-device Meta arena%s", rationale="1340 compute-time Meta arena bind."),
+            _edit(id="stagger-sched-reserve-arena", anchor=_A_SCHED_RESERVE, mode="replace", text=_N_SCHED_RESERVE,
+                  guard=r"failed to reserve per-device Meta arena%s", rationale="1340 reserve-time Meta arena planning."),
+            _edit(id="stagger-sched-pair-api", anchor=_A_SCHED_API_SITE, mode="replace", text=_N_SCHED_API_SITE,
+                  guard=r"ggml_backend_sched_graph_compute_async_pair", rationale="Scheduler API implementation beside eval callback setter."),
+        ),
+    ),
+    FilePatch(
+        path="ggml/include/ggml-backend.h",
+        description="1361: declare scheduler pair and B-arena selector",
+        language="none",
+        edits=(
+            _edit(id="stagger-sched-pair-decl", anchor=_A_HEADER_SCHED, mode="replace", text=_N_HEADER_SCHED,
+                  guard=r"ggml_backend_sched_graph_compute_async_pair", rationale="Scheduler compute declarations."),
+        ),
+    ),
+    FilePatch(
+        path="src/llama-context.h",
+        description="1361: context-owned B scheduler/result and pair-copy state",
+        language="none",
+        edits=(
+            _edit(id="stagger-context-fields", anchor=_A_CTX_FIELDS, mode="replace", text=_N_CTX_FIELDS,
+                  guard=r"bc_1361_sched_b", rationale="Primary scheduler state in llama_context."),
+        ),
+    ),
+    FilePatch(
+        path="src/llama-context.cpp",
+        description="1361: reserve scheduler B, prepare exact half-pairs, dispatch stagger, preserve existing extraction",
+        language="none",
+        edits=(
+            _edit(id="stagger-llama-includes", anchor=_A_LLAMA_INCLUDES, mode="replace", text=_N_LLAMA_INCLUDES,
+                  guard=r"#include <algorithm>", rationale="1361 uses none_of, strtoul, and once_flag."),
+            _edit(id="stagger-reserve-b", anchor=_A_RESERVE_END, mode="replace", text=_N_RESERVE_END,
+                  guard=r"BIGCHERRY_PREFILL_STAGGER reserve_b half", rationale="End of primary scheduler reserve after memory/full graph is available."),
+            _edit(id="stagger-decode-pair-prep", anchor=_A_DECODE_LOOP, mode="replace", text=_N_DECODE_LOOP,
+                  guard=r"bc_pair_candidate", rationale="Immediately before the existing per-ubatch decode loop."),
+            _edit(id="stagger-decode-use-cache", anchor=_A_PROCESS, mode="replace", text=_N_PROCESS,
+                  guard=r"bc_using_b", rationale="Existing process_ubatch call; cached pair results bypass only compute/build."),
+            _edit(id="stagger-nextn-pair-flags", anchor=_A_NEXTN_BLOCK, mode="replace", text=_N_NEXTN_BLOCK,
+                  guard=r"bc_1361_nextn_pair_last", rationale="Immediately before existing nextn extraction/1359 secondary copy."),
+            _edit(id="stagger-nextn-pair-clear", anchor=_A_NEXTN_AFTER, mode="replace", text=_N_NEXTN_AFTER,
+                  guard=r"bc_1361_nextn_pair = false", rationale="Immediately after nextn extraction."),
+            _edit(id="stagger-decode-loop-tail", anchor=_A_LOOP_TAIL, mode="replace", text=_N_LOOP_TAIL,
+                  guard=r"bc_pair_mctx_is_b", rationale="Existing per-ubatch output counters and loop advance."),
+            _edit(id="stagger-1359-gate", anchor=_A_1359_GATE, mode="replace", text=_N_1359_GATE,
+                  guard=r"bc_1361_nextn_pair_slot", rationale="1359 stagger-off gate stays identical; pair B reuses A slot."),
+            _edit(id="stagger-1359-size", anchor=_A_1359_BYTES, mode="replace", text=_N_1359_BYTES,
+                  guard=r"bc_need_bytes", rationale="1359 pinned-buffer sizing for pair offsets."),
+            _edit(id="stagger-1359-cap", anchor=_A_1359_CAP, mode="replace", text=_N_1359_CAP,
+                  guard=r"std::max\(bc_need_bytes", rationale="1359 pinned-buffer allocation capacity."),
+            _edit(id="stagger-1359-copy", anchor=_A_1359_COPY, mode="replace", text=_N_1359_COPY,
+                  guard=r"For a stagger pair, B's event fences both A and B copies", rationale="1359 secondary NextN copy/event sequence."),
+        ),
+    ),
+]
+
+ENV_DOCS = (
+    EnvDoc(
+        "BIGCHERRY_PREFILL_STAGGER",
+        "0|<half tokens>",
+        "0 (off)",
+        "for an exact two-ubatch causal prompt, reserve a second scheduler and stagger equal half-size Meta subgraphs; "
+        "start the server with -b 2*half -ub half",
+    ),
+)
