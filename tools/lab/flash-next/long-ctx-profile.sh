@@ -117,7 +117,7 @@ for d in depths:
     perf = None
     if os.environ.get("PERF_OUT"):  # host-side sampling of the server during the timed decode only
         import subprocess
-        perf = subprocess.Popen([os.environ["PERF_BIN"], "record", "-F", "499", "-g",
+        perf = subprocess.Popen([os.environ["PERF_BIN"], "record", "-F", os.environ.get("PERF_HZ", "499"), "--call-graph", os.environ.get("PERF_CALLGRAPH", "fp"),
                                  "-p", os.environ["SERVER_PID"], "-o", os.environ["PERF_OUT"]],
                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     t = post({"prompt": prompt, "n_predict": int(os.environ["DECODE_N"]),
@@ -218,8 +218,11 @@ elif [ "$mode" = timing ]; then  # unprofiled decode at ~80K cached context (A/B
   DECODE_N=${DECODE_N:-512} CACHE=1 run_pass timing ${DEPTH:-65536}
   exit $?
 elif [ "$mode" = prefillperf ]; then  # QFP49: host-side, where the server's CPU time goes during one uncached prefill
-  DECODE_N=8 CACHE=0 PERF_OUT=$out/prefill.perf.data run_pass prefillperf ${DEPTH:-24576}
+  # dwarf unwinding: the binaries have no frame pointers, so "fp" gives no callers (run pp2)
+  PERF_CALLGRAPH=${PERF_CALLGRAPH:-dwarf,16384} PERF_HZ=${PERF_HZ:-199} DECODE_N=8 CACHE=0 PERF_OUT=$out/prefill.perf.data run_pass prefillperf ${DEPTH:-24576}
   p=$PERF_BIN
+  echo "-- callers of the main thread's host work (children included), without the runtime's wait loop"
+  $p report -i "$out/prefill.perf.data" --children --sort sym --stdio -g none 2>/dev/null | grep -E "^ +[0-9]" | grep -vE "0x0000|bc_cpu_root_worker|\[unknown\]" | head -70
   $p report -i "$out/prefill.perf.data" --no-children --sort comm --stdio 2>/dev/null | grep -E "^ +[0-9]" | head -12
   $p report -i "$out/prefill.perf.data" --no-children --sort comm,dso,sym --stdio -g none 2>/dev/null | grep -E "^ +[0-9]" | head -60
   exit 0
