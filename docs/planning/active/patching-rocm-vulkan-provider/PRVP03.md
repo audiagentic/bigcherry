@@ -70,6 +70,14 @@ Phase 1 is retained only if the mapped-host discriminator is correct and a produ
 
 2026-10-08 audit: PRBE09/RD104 was found stale because PRVP03/1290 had already implemented and hardware-screened the capability it was still tracking as hypothetical. PRBE09 is closed/absorbed here. Current upstream has CUDA/HIP backend-local AllReduce but no Vulkan-local equivalent; external ROCm collective mechanisms are mechanism references only.
 
+## 2026-10-11 safety / upstream disposition (TRVP16, BCOP120)
+
+**Source-level correctness gate, not a reproduced GPU failure.** In pinned b11474, `ggml-backend-meta.cpp::allreduce_fallback` fills ranks lacking `GGML_TENSOR_FLAG_COMPUTE` with zero before reducing (upstream merged #29793). Phase-0 `1290_vulkan_allreduce_host_f32::ggml_backend_vk_comm_allreduce_tensor` reads every rank unconditionally. A disabled/empty split rank with stale or NaN tensor contents can therefore violate the generic fallback's semantics. **PRVP03 owns** the minimal 1290 fix: return false **before any reads/writes** if any rank lacks COMPUTE, letting meta perform its existing FILL fallback. Do not modify the provider in this documentation-only audit. Host model: six passing unittest methods, 10/10 source checks; no GPU failure proven.
+
+The meta caller invokes generic fallback whenever a provider returns false; **never return false after writing or submitting a partial reduction**. Any phase-1 implementation must prevalidate all ranks and commit atomically from the caller's perspective, or surface a terminal error rather than double-apply. The meta destructor frees provider context before rank backends; reuse this lifetime.
+
+[Upstream llama.cpp #25051](https://github.com/ggml-org/llama.cpp/pull/25051) is OPEN (2026-10-08 update, head `99becee6`) and already implements Vulkan mapped-host/timeline-FD AllReduce plus an all-COMPUTE-only F16 ring at >=2 MiB. It is a **source-level replacement candidate**, not a merged/AMD-qualified baseline. Prefer wait/adopt/verify over a parallel phase-1 transport. Its ordinary path zeroes inactive host staging; verify inactive destination initialization, import/coherency, multi-turn and post-submit failures before any port. TRVP16 owns mixed-RDNA/topology performance qualification; RRVP05 owns hardware campaigns and RRVP02's Vulkan implementation pause remains respected.
+
 ## Change Log
 
 - 2026-10-02T12:35:07.968893+00:00 (created-by): Created by agent
