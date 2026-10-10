@@ -2,7 +2,7 @@
 id: BCOP54
 order: 54
 plan: patching-bc-optimizations
-state: completed
+state: deprecated
 created-at: '2026-10-08T10:05:18+11:00'
 created-by: agent
 priority: P2
@@ -25,3 +25,7 @@ PRBE65 owns RD82's terminal research disposition; upstream Vulkan scalar FA owns
 ## Dependencies / validation
 
 Sources: https://github.com/ggml-org/llama.cpp/discussions/21043 and https://github.com/ggml-org/llama.cpp/issues/26163 . Seven pinned-source assertions and five host arithmetic fixtures passed; no build, shader compile, test-backend-ops or hardware benchmark ran. This is an external-evidence-based rejection, not a BigCherry performance claim.
+
+## Change Log
+
+- 2026-10-10T10:25:50.069686+00:00 (state-transition): State: completed → deprecated

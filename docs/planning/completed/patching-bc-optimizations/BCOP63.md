@@ -2,7 +2,7 @@
 id: BCOP63
 order: 63
 plan: patching-bc-optimizations
-state: completed
+state: deprecated
 created-at: '2026-10-08T19:09:00+11:00'
 created-by: agent
 priority: P2
@@ -27,3 +27,7 @@ No action without real gfx1151 hardware plus trace-proven D256/ncols32 TILE disp
 - https://github.com/ggml-org/llama.cpp/blob/b9acf138a1e28ce1fc23b5a4fc4b12444b50f7ea/ggml/src/ggml-cuda/fattn.cu
 - https://github.com/ggml-org/llama.cpp/pull/28102
 - https://github.com/justinappler/llama.cpp-strix-halo/blob/master/strix-halo/fa-mma-d256-26419.md
+
+## Change Log
+
+- 2026-10-10T10:25:58.353034+00:00 (state-transition): State: completed → deprecated
