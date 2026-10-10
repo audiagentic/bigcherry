@@ -2,7 +2,7 @@
 id: QFP50
 order: 50
 plan: patching-qwen-flash-next
-state: pending
+state: completed
 created-at: '2026-10-10T16:51:24.805241+00:00'
 breadth: ''
 skill: advanced
@@ -84,6 +84,23 @@ Greedy text identical to production at 8K / 24K / 98K (the mechanism is a reorde
 
 Expected ceiling about 9% of prefill time (34 of 389 ms). Independent of the cross-card sum work (QFP49, where staggering half-batches recovered 95% of the exchange cost in the standalone probe) and it composes with it: a staggered pair of half-batches is itself a pipeline within a batch. No new host thread, so it is not exposed to the 1356 class of race; the 1356 bisect (needs HIP graphs and the fusion pass) is still worth reading before step 3 because this also changes when graphs are captured relative to a running batch.
 
+2026-10-11 result: done as 1359_prefill_pipeline, promoted (#135 package, #136 test fix, #137 native baseline, #138 promotion; profile-evidence tier). Flag BIGCHERRY_PREFILL_PIPELINE, default off.
+- Scheduler read (the inventory): `ggml_backend_sched_alloc_graph` only synchronises when an allocation has to move (76 calls, 114 ms in all, trace ps1) and nothing else in llama's batch path waits for the previous batch; inputs are stream-ordered through 1326. The one wait is the drafter hook's `llama_get_embeddings_nextn`. So change A of the design was not needed: the patch is B (a second pinned copy of the hidden states with a ggml backend event behind it on every device; ggml's event interface already existed and the HIP backend implements it), C (1348's hook collects batch k-1 after batch k is submitted) and D (two buffers by parity).
+- Ceiling (run nomtp1): the same 24K prefill with no drafter is +14.6%.
+- Standalone probe (tools/lab/hip-probes `pipeline`, run hp6): 15.5 ms a batch against 18.5 on an XTX with a 3 ms host preparation; every result right.
+- Hardware (build b-pipe1, one binary, flag on against off): prefill +6.0% at 8K, +7.4% to +10.7% at 24K, +10.0% at 98K, every on-run above every off-run; +12.8% pooled over four requests at 24K; +15.7% against the native hook order (BIGCHERRY_MTP_DEFERRED_CATCHUP=0, run pipe6). Greedy text identical in every run, including twelve at 98K and prompts of 418 and 1,186 tokens. Decode and acceptance unchanged. Qwen3.8-27B two XTX: identical, unchanged (does not engage: built-in MTP shares the target's memory).
+- Gaps (kernel-gap-stats.py, 24K, per card): 10 ms or longer 81 (2.78 s) -> 13 (0.81 s); 2-10 ms 190 (0.81 s) -> 293 (1.28 s); idle 17.4% -> 12.9%.
+- Rejected on the way: snapshot-copy threads (PR #133: the copy is 1.18 ms, not 13 ms); tensor-split rebalance (out of memory at ctx 245760).
+- Open: the flashnext profile does not switch the flag on yet (owner decision); a request cancelled in mid-prompt and a context shift have no hardware run (both go through reset_deferred, which drops the outstanding batch by 1348's rule); the remaining 2-10 ms gaps (1.3 s) are the next thing to attribute.
+- Correction to QFP49's note: the large sums already travel as bf16 (2.62 MB a card for a 512-token sum, not 5.24 MB).
+
 ## Change Log
 
 - 2026-10-10T16:51:24.805241+00:00 (created-by): Created by claude
+
+## Ledger-events
+
+- chg_20261010_204543_optional-faster-prompt-process_7611
+- 2026-10-10T20:45:50.985973+00:00 (updated-by): Updated: section:ledger-events
+- 2026-10-10T20:46:15.593996+00:00 (updated-by): Updated: section:notes
+- 2026-10-10T20:46:22.889851+00:00 (state-transition): State: pending → completed
