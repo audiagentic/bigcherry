@@ -1,16 +1,16 @@
 # 1253_nro04_gfx1100_bf16_chunked_gdn
 
-**Status:** validated
-**Plan item:** NRO04
+**Status:** validated (production `validated-enhancements`; historical b11126 hardware contract)
+**Plan item:** PNRO04
 
-## What it does
+## Implemented
 
-Adds the nasone fork's BF16/WMMA chunked GatedDeltaNet prefill kernels (gfx11 and gfx12, new files) and routes K == 1 prefill with S_v == 128 on RDNA3/RDNA4 to them by default, falling back to the sequential kernel if the driver rejects the launch. Opt out with `GGML_CUDA_GDN_CHUNKED_BF16=0`.
+Separate gfx11/gfx12 BF16 WMMA K=1 GDN prefill kernels; two ordered launches (KKT scratch, then scan/output/state), stock sequential fallback, opt-out `GGML_CUDA_GDN_CHUNKED_BF16=0`. Source: nasone `4169fbbf`. **Requires no 1221; conflicts with 1221.** 1254 MTP prefix-tail is a separate untested dependent.
 
-## Why
+## Measured evidence
 
-Sequential GDN recurrence dominates prefill on hybrid Qwen models; the chunked form uses tensor cores. Near-lossless, not bit-exact.
+Four bound sessions per gfx1100/gfx1201 at b11126: pp512 gfx1100 +8.2/+8.8/+7.7/+9.3%, gfx1201 +10.4/+11.8/+10.6/+11.0%; tg128 approximately flat; backend-reference pass. Earlier incomplete receipts are not validation. No b11474/current-pin performance claim.
 
-## Upstream
+## Remaining boundary
 
-Port of nasone commit `4169fbbf50d24beb6d269a2350e7f780b85369e6` (block 02). The fp32 chunked kernel is not ported (RD50/1221 scope; conflicts with 1221).
+The dispatcher lacks an explicit supported GQA ratio check before KKT wrappers' `GGML_ABORT` default (ratios other than 1/2/3/4/6/8). BF16 packing uses `bits+0x8000`, which differs from RNE on halfway ties (host fixture: 16,256/32,512 positive-normal exact ties). No GPU failure demonstrated. Upstream #29353's HIP path is gfx115x-only and does not replace gfx1100/gfx1201 1253. PNRO04 / BCOP113 own current-pin attribution and fail-closed admission qualification; no new kernel/queue is authorised by this note.
