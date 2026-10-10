@@ -9,7 +9,8 @@
 # Usage: libr3-serve-smoke.sh <ignored> <out-dir>
 # env: MODEL (.rad container), GPU (HIP index, 0), TARGET (gfx1100), PORT (18431), CTX (8192), KV (bf16), SPEC (0),
 #      TP (1; tensor-parallel ranks - give GPU a list such as 0,1 and lock both cards with VIS=0,1), P2P (auto | on |
-#      off), N (64 tokens), LOAD_TIMEOUT (900 s), EXTRA (more engine options, e.g. --profile-ops; the per-op table is in
+#      off), KERNELS (libr3,libref; libr4d,libref runs radiance's own library, on a gfx12 card), BENCH (1 = also run
+#      rad_prompt_bench.py: eight varied chat prompts and corpus prefill at BENCH_DEPTHS, BENCH_TOKENS each), N (64 tokens), LOAD_TIMEOUT (900 s), EXTRA (more engine options, e.g. --profile-ops; the per-op table is in
 #      <out-dir>/server.log), RADIANCE_SRC, WORK
 set -u
 out=$2
@@ -22,12 +23,16 @@ port=${PORT:-18431}
 export ROCM_PATH=${ROCM_PATH:-/opt/rocm-7.2.4}
 export PATH="$ROCM_PATH/bin:$PATH"
 for v in $(env | grep -oE "^(BIGCHERRY_[A-Z0-9_]+|GGML_HIP_[A-Z0-9_]+)"); do unset "$v"; done
-r3so=$(find "$work/libr3-$target-build" -name 'libr3.so' 2> /dev/null | head -1)
-[ -n "$r3so" ] || { echo "NO_LIBR3: run libr3-build.sh first"; exit 1; }
-home="$(dirname "$(dirname "$r3so")"):$src/build/radiance_home"
-echo "radiance $(git -C "$src" rev-parse --short HEAD); model $(basename "$model") ($(du -h "$model" | cut -f1)); HIP device ${GPU:-0}; kernels libr3"
+kernels=${KERNELS:-libr3,libref}
+home=$src/build/radiance_home
+case ",$kernels," in *,libr3,*)
+    r3so=$(find "$work/libr3-$target-build" -name 'libr3.so' 2> /dev/null | head -1)
+    [ -n "$r3so" ] || { echo "NO_LIBR3: run libr3-build.sh first"; exit 1; }
+    home="$(dirname "$(dirname "$r3so")"):$home" ;;
+esac
+echo "radiance $(git -C "$src" rev-parse --short HEAD); model $(basename "$model") ($(du -h "$model" | cut -f1)); HIP device ${GPU:-0}; kernels $kernels"
 
-HIP_VISIBLE_DEVICES=${GPU:-0} "$src/build/bin/radiance" --model "$model" --radiance-home "$home" --kernels libr3,libref \
+HIP_VISIBLE_DEVICES=${GPU:-0} "$src/build/bin/radiance" --model "$model" --radiance-home "$home" --kernels "$kernels" \
     --tp "${TP:-1}" --p2p "${P2P:-auto}" --max-model-len "${CTX:-8192}" --max-num-seqs 1 --kv-cache-dtype "${KV:-bf16}" \
     --num-speculative-tokens "${SPEC:-0}" --host 127.0.0.1 --port "$port" ${EXTRA:-} > "$out/server.log" 2>&1 &
 pid=$!
@@ -66,6 +71,12 @@ n=${N:-64}
 ask completion /v1/completions "{\"prompt\": \"The capital of France is\", \"max_tokens\": $n, \"temperature\": 0}"
 ask chat /v1/chat/completions "{\"messages\": [{\"role\": \"user\", \"content\": \"Reply with the numbers one to ten, separated by commas, and nothing else.\"}], \"max_tokens\": $n, \"temperature\": 0, \"reasoning_effort\": \"none\"}"
 grep -iE "tok/s|t/s|tokens per|prefill|decode" "$out/server.log" | tail -6 | cut -c1-220
+if [ "${BENCH:-0}" = 1 ]; then
+    # varied prompts and corpus prefill: the two requests above are too predictable to judge a drafter by
+    echo "-- prompt bench"
+    python3 "$(dirname "$0")/rad_prompt_bench.py" "http://127.0.0.1:$port" --tokens "${BENCH_TOKENS:-256}" \
+        --depths "${BENCH_DEPTHS:-2048,6000}" --json "$out/bench.json" 2>&1 | cut -c1-200
+fi
 grep -iE "error|abort|assert|nan|fault" "$out/server.log" | head -8 | cut -c1-220
 kill -INT $pid; wait $pid; echo "server exit $?"
 exit 0
