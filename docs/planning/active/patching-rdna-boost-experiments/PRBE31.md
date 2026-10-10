@@ -13,6 +13,10 @@ priority: P3
 
 # AMD-GEMM-004: Large-M F16 shadow to tuned hipBLASLt crossover
 
+## 2026-10-10 dependency clarification (PRBE29 compute-type audit)
+
+Do not treat a shadow-present pointer as proof that BLAS consumed it. In pinned b11474 `ggml_cuda_mul_mat_cublas` selects F16/F32/BF16 from precision and environment; PRBE29's F16 shadow is admissible only for the **effective F16** route, with actual per-ubatch `ne11` above the measured threshold. AMD-Ecosystem #57's MMQ bypass is not sufficient by itself and its `GGML_PREFILL_DEQUANT=0/off` parsing is fail-open. Before adding any new direct hipBLASLt handle, compare native MMQ against the existing `ggml_cuda_mul_mat_cublas_impl<GGML_TYPE_F16>` path with `ROCBLAS_USE_HIPBLASLT=0/1`, subject to PRBE29 load completion, per-device VRAM and full-vocabulary gates. Retain no-shadow and F32/BF16 controls. No external gfx1151 speedup qualifies gfx1100/gfx1201.
+
 ## 2026-10-09 PRBE28 ownership reconciliation
 
 **First measure the existing rocBLAS/hipBLAS compatibility route before introducing a new direct hipBLASLt API.** AMD-Ecosystem/llama.cpp PR #57 uses the existing `ggml_cuda_mul_mat_cublas_impl` path with `ROCBLAS_USE_HIPBLASLT=1` and an F16 shadow; external gfx1151 M=128 regressions versus M=512 wins show why the *actual per-ubatch* `ne11` matters. The older direct-Lt integration requirement below is a superseded hypothesis, not a prerequisite. Compare native MMQ, existing BLAS-over-PRBE29-shadow and any later direct-Lt candidate only after load/VRAM/correctness gates; no BigCherry speedup is established. PRBE28's float GGUF padding is not a dependency.

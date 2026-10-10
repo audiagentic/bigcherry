@@ -13,6 +13,10 @@ priority: P3
 
 # AMD-GEMM-003: K-pad F16 shadow to avoid aliasing
 
+## 2026-10-10 dependency clarification (PRBE29 load-path audit)
+
+PRBE29 now gates *all* shadow creation on complete model-upload events, verified effective F16 compute, a single buffer owner and a <=256 MiB/device **peak** budget. PRBE30 cannot assume AMD PR #57's synchronous `buffer_set_tensor` hook covers chunked async loads; its full temporary unpadded F16 buffer plus K-padded destination must be counted at peak. First establish an unpadded, exactly-once PRBE29 shadow and correct MMQ/BLAS crossover; then consider a padding parameter in the **same** buffer-owned allocation helper only if a measured K-stride alias class survives. Do not add a second allocator, package self-dependency or a new row-padding policy for quantized GGUF source bytes. No hardware qualification is claimed.
+
 ## 2026-10-09 PRBE28 ownership reconciliation
 
 **K-pad only a PRBE29-created F16 shadow**, not a quantized GGUF source tensor. Reuse PRBE29's owner, buffer lifetime, dequant and leading-dimension metadata. AMD-Ecosystem/llama.cpp PR #57 supplies an implementation reference: one-time dequant then optional 2D-copy into a cache-line-padded F16 shadow, consumed by BLAS. Do not implement a separate allocator or both an additive same-package edit and a `requires` self-dependency. Qualify shadow-only alias/nonalias classes, output parity and incremental VRAM. PRBE28 remains a separate float original-weight path.
