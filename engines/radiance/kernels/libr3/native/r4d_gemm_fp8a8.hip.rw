@@ -1,0 +1,118 @@
+# Native gfx11 form of gemm_fp8a8_kernel, the block-fp8 GEMM (gemm_fp8a8_nt_m16, its gated twin and
+# gemm_fp8a8_tiled): the trunk of an 8-bit Qwen3.8-27B.
+#
+# Why: through the compatibility layer two RX 7900 XTX serve the block-fp8 27B at 7.7 tok/s decode and about 200
+# tok/s prefill (run fp8a-tp2, 2026-10-10) against 22.8 and about 2,750 on one R9700 with libr4d. Every fp8 x fp8
+# WMMA widens 16 codes through f32, moves 4 dwords of operands and 4 of accumulator across lanes.
+#
+# libr4d: both operands are E4M3 bytes; B is always staged in shared memory (the activation on the narrow path, the
+# weight on the prefill tile), A is staged (prefill, the activation) or held in registers in fragment order (narrow,
+# the weight). A lane reads 8 bytes of each and calls the gfx12 fp8 WMMA.
+#
+# Native (the fp8 instantiations only; the int8 ones keep the compatibility layer):
+#   - B is staged as bf16, widened once as it is written. On the prefill tile B is the weight and eight waves read
+#     every staged row, so this is the conversion that is shared; a B fragment is then one 32-byte load.
+#   - A stays as libr4d has it and is widened where it is read, one fragment a wave a K step: 16 bytes of its row
+#     from shared memory, or the lane's 8 codes with its partner's 8. Staging A as bf16 too would not fit: the
+#     prefill tile would need 82 KiB of shared memory.
+#   - the gfx11 bf16 WMMA takes the accumulator as its C operand and the accumulator stays in the gfx11 layout
+#     through the K loop. The fold at a 128-column boundary is per slot, so it only has to name the gfx11 row of a
+#     slot where the scale is per A row; `out` is moved to the gfx12 layout once, in front of the unchanged epilogue.
+
+@@ find 1
+    __shared__ uint8_t s_b[kBufs][FN * lds_pitch<FK>()];
+@@ replace
+    // libr3 native: B as bf16 for the fp8 instantiations
+    __shared__ uint8_t s_b[kBufs][FN * (I8 ? lds_pitch<FK>() : r3_fp8_bf16_pitch<FK>())];
+@@ end
+
+@@ find 1
+            if (r < FN) stage8_store<FK>(s_b[buf], r, sk, pb[p]);
+@@ replace
+            if (r < FN) {
+                if constexpr (I8) stage8_store<FK>(s_b[buf], r, sk, pb[p]);
+                else r3_fp8_stage_bf16<FK>(s_b[buf], r, sk, 8u, pb[p]);
+            }
+@@ end
+
+@@ find 1
+            stage8_store_frag<FK>(s_b[buf], rt * 16u + (blane & 15u),
+                                  ks * r4d_fp8::kSuperK + (blane >> 4) * 8u, pw[p]);
+@@ replace
+            if constexpr (I8)
+                stage8_store_frag<FK>(s_b[buf], rt * 16u + (blane & 15u),
+                                      ks * r4d_fp8::kSuperK + (blane >> 4) * 8u, pw[p]);
+            else
+                r3_fp8_stage_bf16<FK>(s_b[buf], rt * 16u + (blane & 15u),
+                                      ks * r4d_fp8::kSuperK + (blane >> 4) * 8u, 16u, pw[p]);
+@@ end
+
+@@ find 1
+#pragma unroll
+            for (uint32_t i = 0; i < MT; ++i)
+#pragma unroll
+                for (uint32_t j = 0; j < NT; ++j) raw[i][j] = mma8<I8>(af[i], bf[j], raw[i][j]);
+@@ replace
+            if constexpr (I8) {
+#pragma unroll
+                for (uint32_t i = 0; i < MT; ++i)
+#pragma unroll
+                    for (uint32_t j = 0; j < NT; ++j) raw[i][j] = mma8<I8>(af[i], bf[j], raw[i][j]);
+            } else {
+                // libr3 native: gfx11 fragments, the accumulator in the gfx11 layout
+                r3_v16bf naf[MT];
+                if (AW) {
+                    naf[0] = r3_fp8_frag_reg(af[0], lane);
+                } else {
+#pragma unroll
+                    for (uint32_t i = 0; i < MT; ++i)
+                        naf[i] = r3_fp8_frag_bytes(s_a[buf], lds_pitch<FK>(), wm + i * 16, ks, lane);
+                }
+#pragma unroll
+                for (uint32_t j = 0; j < NT; ++j) {
+                    const r3_v16bf nbf = r3_fp8_frag_bf16<FK>(s_b[buf], wn + j * 16, ks, lane);
+#pragma unroll
+                    for (uint32_t i = 0; i < MT; ++i)
+                        raw[i][j] = __builtin_bit_cast(
+                            f8v, r3_wmma_bf16_native(naf[i], nbf, __builtin_bit_cast(r3_v8f, raw[i][j])));
+                }
+            }
+@@ end
+
+@@ find 1
+#pragma unroll
+            for (uint32_t j = 0; j < NT; ++j)       bf[j] = frag<FK>(s_b[buf], wn + j * 16, ks, lane);
+@@ replace
+            if constexpr (I8) {
+#pragma unroll
+                for (uint32_t j = 0; j < NT; ++j)   bf[j] = frag<FK>(s_b[buf], wn + j * 16, ks, lane);
+            }
+@@ end
+
+@@ find 1
+                            const uint32_t r = m0 + wm + i * 16 + acc_row(lane, t);
+                            as[i][t] = (Full || r < rows)
+                                           ? ws * ((const float*)Sa)[(size_t)r * sa_ld + kb]
+@@ replace
+                            // libr3 native: the accumulator is in the gfx11 layout here
+                            const uint32_t r = m0 + wm + i * 16 + r3_acc_row_native(lane, t);
+                            as[i][t] = (Full || r < rows)
+                                           ? ws * ((const float*)Sa)[(size_t)r * sa_ld + kb]
+@@ end
+
+@@ find 1
+        for (uint32_t p = 0; p < kAF; ++p) pf[p] = pfn[p];
+        if (kBufs > 1u) buf ^= 1u; else __syncthreads();
+    }
+@@ replace
+        for (uint32_t p = 0; p < kAF; ++p) pf[p] = pfn[p];
+        if (kBufs > 1u) buf ^= 1u; else __syncthreads();
+    }
+    if constexpr (!I8) {  // libr3 native: to the gfx12 layout the epilogue reads
+#pragma unroll
+        for (uint32_t i = 0; i < MT; ++i)
+#pragma unroll
+            for (uint32_t j = 0; j < NT; ++j)
+                out[i][j] = __builtin_bit_cast(f8v, r3_acc_native_to_gfx12(out[i][j]));
+    }
+@@ end

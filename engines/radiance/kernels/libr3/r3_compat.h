@@ -423,6 +423,62 @@ __device__ __forceinline__ r3_v8f r3_acc_native_to_gfx12(C acc) {
     return r3_acc_11_to_12(__builtin_bit_cast(r3_v8f, acc), r3_lane());
 }
 
+// ---- block fp8 (native/r4d_gemm_fp8a8.hip.rw)
+//
+// The row of the 16-row tile that slot t of a gfx11 accumulator holds; libr4d's acc_row is the gfx12 one.
+__device__ __forceinline__ unsigned r3_acc_row_native(unsigned lane, unsigned t) { return 2u * t + (lane >> 4); }
+
+// Row pitch in bytes of an operand staged in shared memory as bf16, FK values a row. A fragment read is 16 lanes
+// x 32 bytes over consecutive rows; 2 FK is a multiple of 128 bytes for every FK the kernel uses, so 32 more bytes
+// step each row 8 words round the 32 banks and the read is four full bank cycles with no lane waiting on another.
+template <unsigned FK>
+__device__ __forceinline__ constexpr unsigned r3_fp8_bf16_pitch() { return 2u * FK + 32u; }
+
+// Stage 32 E4M3 codes (libr4d's Stage8: two uint4) as bf16: four granules of 8 codes, granule i at K k0 + i * kstep
+// of `row`. kstep is 8 for a row-major operand and 16 for a fragment-order one.
+template <unsigned FK, class S>
+__device__ __forceinline__ void r3_fp8_stage_bf16(unsigned char* lds, unsigned row, unsigned k0, unsigned kstep,
+                                                  const S& r) {
+    const unsigned g[8] = {r.v.x, r.v.y, r.v.z, r.v.w, r.w.x, r.w.y, r.w.z, r.w.w};
+    unsigned short* const base =
+        reinterpret_cast<unsigned short*>(lds + static_cast<size_t>(row) * r3_fp8_bf16_pitch<FK>()) + k0;
+#pragma unroll
+    for (unsigned i = 0; i < 4; ++i) r3_store8_e4m3_as_bf16(base + i * kstep, g[2 * i], g[2 * i + 1]);
+}
+
+// The gfx11 fragment of rows row0 .. row0 + 15 at K k0 .. k0 + 15, out of an operand staged as bf16.
+template <unsigned FK>
+__device__ __forceinline__ r3_v16bf r3_fp8_frag_bf16(const unsigned char* lds, unsigned row0, unsigned k0,
+                                                     unsigned lane) {
+    return r3_row16_e4m3_to_bf16(reinterpret_cast<const unsigned short*>(
+                                     lds + static_cast<size_t>(row0 + (lane & 15u)) * r3_fp8_bf16_pitch<FK>()) + k0);
+}
+
+// The same fragment out of an operand staged as E4M3 bytes at `pitch` bytes a row: 16 codes read and widened here.
+__device__ __forceinline__ r3_v16bf r3_fp8_frag_bytes(const unsigned char* lds, unsigned pitch, unsigned row0,
+                                                      unsigned k0, unsigned lane) {
+    return r3_row16_e4m3_to_bf16(lds + static_cast<size_t>(row0 + (lane & 15u)) * pitch + k0);
+}
+
+// The same fragment when a lane holds its gfx12 half in registers (8 codes: K 0-7 in lanes 0-15, K 8-15 in lanes
+// 16-31, libr4d's fragment order): the other half comes from the partner lane.
+template <class F>
+__device__ __forceinline__ r3_v16bf r3_fp8_frag_reg(F own, unsigned lane) {
+    static_assert(sizeof(F) == 8, "a gfx12 fp8 fragment: 2 dwords");
+    const r3_i2 o = __builtin_bit_cast(r3_i2, own);
+    const unsigned o0 = static_cast<unsigned>(o.x), o1 = static_cast<unsigned>(o.y);
+    const unsigned p0 = r3_from_lane(lane ^ 16u, o0), p1 = r3_from_lane(lane ^ 16u, o1);
+    const bool hi = (lane >> 4) != 0;
+    const unsigned w[4] = {hi ? p0 : o0, hi ? p1 : o1, hi ? o0 : p0, hi ? o1 : p1};
+    r3_u8 out;
+#pragma unroll
+    for (int d = 0; d < 4; ++d) {
+        out[2 * d] = r3_e4m3_to_bf16_bits(w[d] & 0xffu) | (r3_e4m3_to_bf16_bits((w[d] >> 8) & 0xffu) << 16);
+        out[2 * d + 1] = r3_e4m3_to_bf16_bits((w[d] >> 16) & 0xffu) | (r3_e4m3_to_bf16_bits(w[d] >> 24) << 16);
+    }
+    return __builtin_bit_cast(r3_v16bf, out);
+}
+
 // ------------------------------------------------------------------ the gfx12 transposed load
 //
 // global_load_tr_b128: every lane names 128 bits (8 x 16-bit) at its own address, and the instruction returns
