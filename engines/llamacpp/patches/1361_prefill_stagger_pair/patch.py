@@ -271,6 +271,59 @@ bool ggml_backend_meta_graph_compute_pair(
     }
 
     bc_1361_graph_set sets[2];
+
+    // Both schedulers allocate their views before either capture.  Capturing A rotates shared static Meta
+    // buffers to the other compute container, so B's preallocated views are no longer in the current one.
+    // Re-home only those external views into A's current container before B rotates away from it.  This
+    // preserves A's captured mappings while giving B a valid source set for its rebuild.
+    auto rehome_static_views = [](ggml_cgraph * graph) -> ggml_status {
+        auto rehome_one = [](ggml_tensor * tensor) -> ggml_status {
+            if (tensor == nullptr || tensor->view_src == nullptr || !ggml_backend_buffer_is_meta(tensor->buffer)) {
+                return GGML_STATUS_SUCCESS;
+            }
+            auto * buf_ctx = static_cast<ggml_backend_meta_buffer_context *>(tensor->buffer->context);
+            if (buf_ctx->stc_static.simple_tensors.empty() ||
+                    buf_ctx->stc_static.simple_tensors.find(tensor) != buf_ctx->stc_static.simple_tensors.end()) {
+                return GGML_STATUS_SUCCESS;
+            }
+            auto & stc = buf_ctx->stc_compute[buf_ctx->stc_compute_index];
+            if (stc.simple_tensors.find(tensor) != stc.simple_tensors.end()) {
+                return GGML_STATUS_SUCCESS;
+            }
+
+            std::vector<ggml_tensor *> chain;
+            ggml_tensor * cur = tensor;
+            while (cur != nullptr && cur->buffer == tensor->buffer && cur->view_src != nullptr &&
+                    buf_ctx->stc_static.simple_tensors.find(cur) == buf_ctx->stc_static.simple_tensors.end() &&
+                    stc.simple_tensors.find(cur) == stc.simple_tensors.end()) {
+                chain.push_back(cur);
+                cur = cur->view_src;
+            }
+            if (cur != nullptr && cur->buffer == tensor->buffer &&
+                    buf_ctx->stc_static.simple_tensors.find(cur) == buf_ctx->stc_static.simple_tensors.end() &&
+                    stc.simple_tensors.find(cur) == stc.simple_tensors.end()) {
+                return GGML_STATUS_FAILED;
+            }
+            for (auto it = chain.rbegin(); it != chain.rend(); ++it) {
+                const ggml_status st = ggml_backend_meta_buffer_init_tensor_impl(stc, *it);
+                if (st != GGML_STATUS_SUCCESS) {
+                    return st;
+                }
+            }
+            return GGML_STATUS_SUCCESS;
+        };
+
+        for (int i = 0; i < graph->n_leafs; ++i) {
+            const ggml_status st = rehome_one(graph->leafs[i]);
+            if (st != GGML_STATUS_SUCCESS) return st;
+        }
+        for (int i = 0; i < graph->n_nodes; ++i) {
+            const ggml_status st = rehome_one(graph->nodes[i]);
+            if (st != GGML_STATUS_SUCCESS) return st;
+        }
+        return GGML_STATUS_SUCCESS;
+    };
+
     backend_ctx->bc_pair_capture = &sets[0];
     ggml_status status = ggml_backend_meta_graph_compute(backend, cgraph_a);
     backend_ctx->bc_pair_capture = nullptr;
@@ -278,6 +331,13 @@ bool ggml_backend_meta_graph_compute_pair(
         if (status_out) *status_out = status;
         return false;
     }
+
+    status = rehome_static_views(cgraph_b);
+    if (status != GGML_STATUS_SUCCESS) {
+        if (status_out) *status_out = status;
+        return false;
+    }
+
     backend_ctx->bc_pair_capture = &sets[1];
     status = ggml_backend_meta_graph_compute(backend, cgraph_b);
     backend_ctx->bc_pair_capture = nullptr;
@@ -854,8 +914,6 @@ _A_PROCESS = r'''        ggml_status status;
 '''
 _N_PROCESS = r'''        ggml_status status = GGML_STATUS_SUCCESS;
 
-        // process_ubatch normally sets this per ubatch; cached A/B must restore that contract.
-        if (bc_cached) n_outputs = bc_count_outputs(ubatch);
         const llm_graph_result * res = bc_cached ? bc_pair_res[bc_pair_index]
             : process_ubatch(ubatch, ctx_type_to_graph_type(cparams.ctx_type), mctx.get(), status);
         const bool bc_using_b = bc_cached && bc_pair_index == 1;
