@@ -2,7 +2,7 @@
 id: QFP42
 order: 42
 plan: patching-qwen-flash-next
-state: pending
+state: completed
 created-at: '2026-10-08T06:11:00+11:00'
 breadth: ''
 skill: advanced
@@ -18,8 +18,6 @@ work: M
 
 
 ## Steps
-
-
 
 ### Step 0 (2026-10-08): source finding + blocked-time trace
 
@@ -62,7 +60,6 @@ catch-up, terminal flush, and submit-to-submit interval on the same 24K/98K ABBA
 add per-input `set_inputs` timing and CPU split cycle/wall timing before changing scheduling. Only a demonstrated
 non-dependency becomes an implementation step.
 
-
 ## Detailed Solution & Technical Design
 
 
@@ -77,7 +74,13 @@ non-dependency becomes an implementation step.
 
 ## Validation
 
-
+Done as 1359_prefill_pipeline (promoted 2026-10-11, #135-#138; QFP50 holds the design notes and measurements). Build b-pipe1 = production + 1359, one binary, BIGCHERRY_PREFILL_PIPELINE=1 against off, Flash-Next production profile:
+- complete separation at 24K and 98K, and at 8K: prefill 1,380.2 / 1,393.4 against 1,306.7 / 1,309.7 t/s (8K), 1,437.5 / 1,429.1 against 1,261.3 / 1,328.4 (24K), 1,377.7 / 1,373.5 against 1,226.4 / 1,275.6 (98K); four requests at 24K +12.8% pooled; +15.7% against the native hook order;
+- greedy target identity at every depth, twelve runs at 98K, prompts of 418 and 1,186 tokens;
+- decode and acceptance unchanged; no error lines; activation marker BIGCHERRY_PATCH_HIT patch=1359_prefill_pipeline in the on arm only;
+- cancel smoke (run cancel1, tools/lab/flash-next/long-ctx-profile.sh CANCEL_AFTER=8): a 30K-token prompt dropped after 8 s (server: `cancel task`, stopped at n_tokens = 12288), then the usual 24K request: text identical to the run without the cancel (md5 a789c151), no error lines, prefill 1,480.2 / 1,471.6 t/s;
+- timing: kernel-gap-stats.py shows the once-a-batch gap gone (gaps of 10 ms or longer 81 -> 13 a card).
+Not run: a context shift (needs a prompt beyond the context); it goes through the same reset_deferred path as the cancel.
 
 ## Effort & Risk
 
@@ -89,13 +92,16 @@ non-dependency becomes an implementation step.
 
 ## Acceptance Criteria
 
-
+- The server prepares and submits target chunk k+1 before waiting for chunk k's NextN rows, and waits for chunk k only: met by 1359 (ggml backend event behind a second pinned copy of the rows; no host-wide synchronise on that path).
+- Target semantics, KV, logits, MTP row order and catch-up order unchanged: met (greedy identity in every run).
+- The gates listed under Gates: met as recorded under Validation, except the context-shift smoke, which was not run.
+- The control flag returns to 1348's behaviour: met (flag unset = 1348's path, the off arm of every ABBA).
 
 ## Notes
 
 2026-10-08: the retired QFP08 draft's other proposals are already covered - draft-during-verify overlap by 1322 (decode +4-6%), double-buffered hidden-state snapshot for prompt chunks by 1348 (prefill +5-10%), event-scoped NextN handoff by this item. Its promotion thresholds (>=5% or stop) are NOT carried over: owner policy is that small wins count.
 
-
+2026-10-11 closure: done as 1359_prefill_pipeline (QFP50 has the measurements). The follow-ups this item had absorbed on 2026-10-08 are not part of that and were moved out on the owner's instruction: PRBE56 (scheduler split plan reuse) is QFP51, PRBE57 (NextN placement) is QFP52, and the one live idea from PRBE07 (kernels for verify widths 2..8) is noted in QFP38.
 
 ## Step 0, first data (Brutus 2026-10-08, PR #8 build 31a07866, Flash-Next 24K, 76 chunks of 512 tokens, target context)
 
@@ -242,3 +248,6 @@ Decision gate: retain only profiled HIP-specific work that reduces blocked time 
 
 - 2026-10-07T22:53:39.805664+00:00 (updated-by): Updated: section:steps, section:notes
 - 2026-10-08T08:45:47.085065+00:00 (updated-by): Updated: section:notes
+- 2026-10-10T21:11:47.064660+00:00 (updated-by): Updated: section:validation, section:acceptance_criteria
+- 2026-10-10T21:11:54.676673+00:00 (state-transition): State: pending → completed
+- 2026-10-10T21:24:08.031791+00:00 (updated-by): Updated: section:notes

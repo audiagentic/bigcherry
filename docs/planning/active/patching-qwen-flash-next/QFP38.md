@@ -226,6 +226,8 @@ Execution order: ninth. First action is a census, not implementation. Expected p
 
 2026-10-09 first action done: decode kernel census on current main (b-main2, Flash-Next production profile, 24K prompt + 1,053 decode tokens with MTP and look-ahead; the trace covers the prompt fill as well as the decode, so shares are for the whole request). Per target card, kernel time about 33 s over a 75 s span (44-45% busy): all-reduce / collectives 38-40%, MMQ 18-22%, MMVQ 8-11% (mul_mat_vec_q<Q8_0, width 4> 8.3 s and mul_mat_vec_q_moe<IQ4_XS, 2 rows> 3.6 s across devices), flash attention 7.6% on the XTXs, float matmul 6.5-10.5% (mul_mat_vec_f<f32,4,256> 2.7 s), norm / activation 5.5%. The draft card (6900 XT) is 11% busy, 41% of it MMVQ. So the MTP verify MMVQ / MMVF launch geometry this item targets is at most about a tenth of target-card kernel time, on cards that are idle more than half the time waiting on collectives and host work. Related measurement the same day: 1273 (IQ4_XS / IQ3_XXS single-token MMVQ VDR and nwarps variants) was neutral in all three settings at 8K / 24K / 98K with identical text and its marker firing; under MTP most decode steps are four tokens wide, so that run barely exercises its single-token path and 1273 is not yet decided. Conclusion for QFP38: no verify-geometry change is justified by this census; the item should stay parked behind the collectives / host-time work unless a no-drafter or width-specific census shows a larger share.
 
+2026-10-11: QFP42 (closed as done by 1359) carried one idea that belongs here and nowhere else: from the BridgeSpec review (PRBE07, closed as inspiration only), a measured kernel opportunity at MTP verify widths 2..8, or a vocabulary-head design, taken through this item's own patches with first-party hardware and target-authoritative identity. No second sidecar. The other two things QFP42 carried are now QFP51 (scheduler split plan reuse) and QFP52 (NextN placement).
+
 ## What we already have
 
 ### b11402 MMVQ
@@ -276,3 +278,4 @@ Do not infer multi-token benefit from 1273. Any new single-token IQ4_XS VDR/nwar
 - 2026-10-07T00:39:48.982783+00:00 (created-by): Created by agent
 - 2026-10-07: grounded at b11402, rejected 1301 and evaluated 1273; closed the duplicate MMVQ-threshold idea for current verify widths and split remaining launch-geometry candidates by exact kernel owner.
 - 2026-10-09T03:10:25.485425+00:00 (updated-by): Updated: section:notes
+- 2026-10-10T21:23:56.095112+00:00 (updated-by): Updated: section:notes
