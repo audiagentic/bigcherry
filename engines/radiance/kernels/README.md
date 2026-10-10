@@ -254,6 +254,20 @@ drafter's kernels work through libr3 unchanged. Both prompts are very predictabl
 ten), so acceptance is far above what mixed prompts give; the R9700's 98-105 tok/s with the drafter was measured on
 other prompts, and the two are not comparable until the same prompts are run on both.
 
+**Two RX 7900 XTX in tensor parallel** (`TP=2 GPU=0,1`, runs `r3-tp2-auto`, `r3-tp2-off`, 2026-10-10): serves at
+the first attempt. Healthy 6 s after start, 7.51 GiB of weights a rank, the same replies as one card, server exit 0,
+and decode **47.0 / 47.2 tok/s** without the drafter (one card: 28.4; the R9700: 37-38). The cards have no
+peer-to-peer access to each other ("no peer-to-peer access between cards 0->1, 1->0"), so the collectives go through
+pinned host memory; `--p2p off` gives the same 47.1 / 47.3. Not measured yet: prefill, the drafter at two ranks, the
+all-reduce share of a step, the lossy wire.
+
+Where the one-card decode time is (run `tools/lab/radiance/libr3-dec11-ablation.sh`, the dec11 kernel with parts
+switched off; gate/up GEMM N=34816 K=5120, us a call): everything on 227; no matrix instruction 192; no unpack 197;
+no weight loads 186; none of the three 124. So more than half the time is left when the kernel loads no weights,
+unpacks nothing and multiplies nothing: it is the loop itself, which waits on memory once every two K steps (a
+one-byte exponent load, then table loads that depend on it) while a wave walks its 40 steps. The kernel is bound by
+those waits in sequence, not by the instruction, the unpack or the card's memory rate.
+
 Two things tried after the table-lookup build that did not help (2026-10-10):
 
 - **A vector kernel for one token** (RR07, `r3_mxfp4_gemv.h`, opt-in with `R3_GEMV=1`): no matrix instruction, the
