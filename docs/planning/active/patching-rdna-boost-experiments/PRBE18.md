@@ -13,6 +13,12 @@ priority: P3
 
 # Evaluate SSM pre-scan chain fusion (conv + l2_norm pair + gate/beta)
 
+## 2026-10-10 ownership boundary: PRBE21 CONCAT/state producer
+
+The shared `delta-net-base.cpp::build_conv_state` CONCAT output is consumed by **both** `ggml_ssm_conv` and explicit recurrent-state `VIEW -> CPY` nodes (one normal slot or K rollback slots). PRBE18's proposed pre-scan chain cannot skip the producer or its state writes, and cannot subsume PRBE21's CONCAT/CPY experiment. Do not add a second CONCAT/CPY fusion implementation here. Keep PRBE18 blocked on its own exact 16-node graph/edge census and PRBE21's separate state-publication decision; do not modify currently active GDN, QSA or Radiance paths. This is source-only reconciliation, not a tested kernel.
+
+
+
 ## Description
 
 TODO. Ports a 16-node SSM pre-scan chain fusion (conv+SiLU+Q/K-norm+V+gate/beta) as an isolated gfx1100 candidate. Relevance confirmed at b11126: upstream already has SSM_CONV fusion infrastructure (ggml-cuda.cu ggml_can_fuse_subgraph, two existing branches at ~3315 for SSM_CONV+SiLU and ~3330 for SSM_CONV+ADD+SiLU) but nothing beyond 3 nodes -- the 16-node chain (through Q/K normalization, V, gate/beta) is NOT upstream-absorbed. Depends on PRBE05 (patch 1235, q8_1 activation cache -- 4 references in fork source) and PRBE19 (post-fix source-state rule, applied below). GPT design request req_9d3d9188405f49f3 was submitted but the gpt-auto queue was saturated (8 queued/2 running gateway-wide) and did not return within this session; design below was produced directly against verified b11126 source and must be reviewed by GPT before a coding agent starts (resume via that request id or open a fresh dev-gpt-agent session).
