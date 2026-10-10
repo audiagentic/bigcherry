@@ -24,12 +24,16 @@ export BIGCHERRY_FEATURES=flashnext
 docker stop radiance-vllm >/dev/null 2>&1
 for d in "${DEPTHS[@]}"; do
     jobs=$(mktemp)
-    echo "VIS=0,1,2,3 SCRIPT $TAG-d$d tools/lab/flash-next/long-ctx-profile.sh @$RUN $R/$TAG-d$d prefillprof" > "$jobs"
+    echo "VIS=0,1,2,3 SCRIPT $TAG-d$d tools/lab/flash-next/long-ctx-profile.sh @$RUN $R/$TAG-d$d ${MODE:-prefillprof}" > "$jobs"
     DEPTH=$d bash tools/lab/plan-qualification/queue.sh "$jobs"
     echo "QUEUE_EXIT=$? depth=$d $(date -Is)"
     rm -f "$jobs"
     echo "== $TAG depth $d"
     grep -hE "^timing:|prefill|SERVER_FAILED" $R/$TAG-d$d.log | tail -4
-    python3 tools/lab/flash-next/prefill-kernel-table.py $R/$TAG-d$d/rocprof
+    if [ "${MODE:-prefillprof}" = prefillprof ]; then
+        python3 tools/lab/flash-next/prefill-kernel-table.py $R/$TAG-d$d/rocprof
+    else
+        if [ -f $R/$TAG-d$d/sync-sites.txt ]; then cut -c1-230 $R/$TAG-d$d/sync-sites.txt | head -150; else grep -E "^ +[0-9]" $R/$TAG-d$d.log | cut -c1-200 | head -72; fi
+    fi
 done
 echo ALL_JOBS_DONE

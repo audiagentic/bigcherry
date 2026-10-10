@@ -208,6 +208,9 @@ _A_CUDA_INCLUDE = r"""#include <mutex>
 """
 _N_CUDA_INCLUDE = r"""#include <mutex>
 #include <shared_mutex>
+#include <atomic>
+#include <chrono>
+#include <cstdio>
 """
 
 _A_CUDA_CAPTURE = r"^    if \(use_cuda_graph && cuda_graph_update_required\) \{$"
@@ -218,13 +221,56 @@ _N_CUDA_CAPTURE = r"""    // BigCherry 1356 (QFP41): per-device dispatch workers
         const char * s = getenv("BIGCHERRY_META_DISPATCH_THREADS");
         return s != nullptr && atoi(s) != 0;
     }();
+    // BIGCHERRY_META_DISPATCH_STATS=1 (QFP41): how many graph_compute calls captured and how many replayed, how long
+    // they waited for the lock and how long they held it, printed when the process exits. Counted with the workers
+    // off too (no lock is taken then), so the share of capturing calls is known before the workers are switched on:
+    // a threaded path whose calls mostly capture runs its devices one at a time.
+    struct bc_1356_stats_t {
+        std::atomic<uint64_t> n[2], wait_us[2], hold_us[2];  // [0] capture (exclusive), [1] replay (shared)
+        bool on;
+        bc_1356_stats_t() : n{}, wait_us{}, hold_us{} {
+            const char * s = getenv("BIGCHERRY_META_DISPATCH_STATS");
+            on = s != nullptr && atoi(s) != 0;
+        }
+        ~bc_1356_stats_t() {
+            if (on) {
+                fprintf(stderr, "BIGCHERRY_1356_LOCK_STATS capture n=%llu wait_ms=%.1f hold_ms=%.1f | "
+                                "replay n=%llu wait_ms=%.1f hold_ms=%.1f\n",
+                        (unsigned long long) n[0].load(), wait_us[0].load() / 1000.0, hold_us[0].load() / 1000.0,
+                        (unsigned long long) n[1].load(), wait_us[1].load() / 1000.0, hold_us[1].load() / 1000.0);
+            }
+        }
+    };
+    static bc_1356_stats_t bc_1356_stats;
     std::unique_lock<std::shared_mutex> bc_1356_capture(bc_1356_graph_mutex, std::defer_lock);
     std::shared_lock<std::shared_mutex> bc_1356_replay(bc_1356_graph_mutex, std::defer_lock);
-    if (bc_1356_threads && use_cuda_graph) {
-        if (cuda_graph_update_required) {
-            bc_1356_capture.lock();
-        } else {
-            bc_1356_replay.lock();
+    // declared after the locks, so it is destroyed first: the hold time ends just before the lock is released
+    struct bc_1356_hold_t {
+        std::atomic<uint64_t> * sink = nullptr;
+        std::chrono::steady_clock::time_point t0;
+        ~bc_1356_hold_t() {
+            if (sink != nullptr) {
+                *sink += (uint64_t) std::chrono::duration_cast<std::chrono::microseconds>(
+                    std::chrono::steady_clock::now() - t0).count();
+            }
+        }
+    } bc_1356_hold;
+    if (use_cuda_graph && (bc_1356_threads || bc_1356_stats.on)) {
+        const int bc_kind = cuda_graph_update_required ? 0 : 1;
+        const auto bc_t0 = std::chrono::steady_clock::now();
+        if (bc_1356_threads) {
+            if (cuda_graph_update_required) {
+                bc_1356_capture.lock();
+            } else {
+                bc_1356_replay.lock();
+            }
+        }
+        if (bc_1356_stats.on) {
+            bc_1356_hold.t0 = std::chrono::steady_clock::now();
+            bc_1356_stats.n[bc_kind]++;
+            bc_1356_stats.wait_us[bc_kind] += (uint64_t) std::chrono::duration_cast<std::chrono::microseconds>(
+                bc_1356_hold.t0 - bc_t0).count();
+            bc_1356_hold.sink = &bc_1356_stats.hold_us[bc_kind];
         }
     }
 
@@ -334,5 +380,12 @@ ENV_DOCS = (
         "0|1",
         "0 (off)",
         "submit each Meta simple-backend subgraph from a persistent per-device worker; qualification only",
+    ),
+    EnvDoc(
+        "BIGCHERRY_META_DISPATCH_STATS",
+        "0|1",
+        "0 (off)",
+        "diagnostic: at exit print how many graph_compute calls captured (exclusive lock) and replayed (shared), "
+        "with the time waited for and held under the 1356 lock; counted with the workers off too",
     ),
 )
