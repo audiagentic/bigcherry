@@ -251,3 +251,8 @@ Decision gate: retain only profiled HIP-specific work that reduces blocked time 
 - 2026-10-10T21:11:47.064660+00:00 (updated-by): Updated: section:validation, section:acceptance_criteria
 - 2026-10-10T21:11:54.676673+00:00 (state-transition): State: pending → completed
 - 2026-10-10T21:24:08.031791+00:00 (updated-by): Updated: section:notes
+
+## Ledger-events
+
+- chg_20261010_213553_prompt-processing-with-a-separ_1650
+- 2026-10-10T21:36:00.397315+00:00 (updated-by): Updated: section:ledger-events
