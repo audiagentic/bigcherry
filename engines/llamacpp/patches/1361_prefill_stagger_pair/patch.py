@@ -558,3 +558,283 @@ _N_SCHED_API_SITE = r'''void ggml_backend_sched_set_stagger_pair_arena(ggml_back
 enum ggml_status ggml_backend_sched_graph_compute_async_pair(
         ggml_backend_sched_t sched_a, struct ggml_cgraph * graph_a,
         ggml_backend_sched_t sched_b, struct ggml_cgraph * graph_b,
+        bool * supported) {
+    GGML_ASSERT(sched_a && sched_b && supported);
+    *supported = false;
+    GGML_UNUSED(graph_a);
+    GGML_UNUSED(graph_b);
+
+    if (!sched_a->is_alloc || !sched_b->is_alloc || sched_a->callback_eval || sched_b->callback_eval ||
+            sched_a->n_splits != 1 || sched_b->n_splits != 1) {
+        return GGML_STATUS_SUCCESS;
+    }
+    auto * a = &sched_a->splits[0];
+    auto * b = &sched_b->splits[0];
+    if (a->backend_id != b->backend_id ||
+            sched_a->backends[a->backend_id] != sched_b->backends[b->backend_id]) {
+        return GGML_STATUS_SUCCESS;
+    }
+    ggml_backend_t backend = sched_a->backends[a->backend_id];
+    if (!ggml_backend_is_meta(backend)) {
+        return GGML_STATUS_SUCCESS;
+    }
+
+    auto copy_inputs = [](ggml_backend_sched_t sched, ggml_backend_sched_split * split) {
+        for (int input_id = 0; input_id < split->n_inputs; ++input_id) {
+            if (!ggml_backend_sched_is_host_weight(split->inputs[input_id])) {
+                ggml_backend_sched_copy_input(sched, split, split->inputs[input_id]);
+            }
+        }
+        for (int input_id = 0; input_id < split->n_inputs; ++input_id) {
+            if (ggml_backend_sched_is_host_weight(split->inputs[input_id])) {
+                ggml_backend_sched_copy_input(sched, split, split->inputs[input_id]);
+            }
+        }
+    };
+    // A inputs are enqueued first.  B follows on the same simple-device streams after Meta materialises its graph.
+    copy_inputs(sched_a, a);
+    copy_inputs(sched_b, b);
+
+    ggml_status status = GGML_STATUS_SUCCESS;
+    const bool ok = ggml_backend_meta_graph_compute_pair(backend, &a->graph, &b->graph, &status);
+    if (!ok) {
+        return status; // unsupported was decided before model compute; caller runs today's sequential order.
+    }
+    *supported = true;
+    if (status != GGML_STATUS_SUCCESS) {
+        return status;
+    }
+    if (sched_a->events[a->backend_id][sched_a->cur_copy] != nullptr) {
+        ggml_backend_event_record(sched_a->events[a->backend_id][sched_a->cur_copy], backend);
+    }
+    if (sched_b->events[b->backend_id][sched_b->cur_copy] != nullptr) {
+        ggml_backend_event_record(sched_b->events[b->backend_id][sched_b->cur_copy], backend);
+    }
+    return GGML_STATUS_SUCCESS;
+}
+
+void ggml_backend_sched_set_eval_callback(ggml_backend_sched_t sched, ggml_backend_sched_eval_callback callback, void * user_data) {
+'''
+
+_A_HEADER_SCHED = r'''    GGML_API enum ggml_status     ggml_backend_sched_graph_compute_async(ggml_backend_sched_t sched, struct ggml_cgraph * graph);
+    GGML_API void                 ggml_backend_sched_synchronize(ggml_backend_sched_t sched);
+'''
+_N_HEADER_SCHED = r'''    GGML_API enum ggml_status     ggml_backend_sched_graph_compute_async(ggml_backend_sched_t sched, struct ggml_cgraph * graph);
+    // BigCherry 1361 (QFP49): narrow two-scheduler Meta path; supported=false means no model work was launched.
+    GGML_API enum ggml_status     ggml_backend_sched_graph_compute_async_pair(
+        ggml_backend_sched_t sched_a, struct ggml_cgraph * graph_a,
+        ggml_backend_sched_t sched_b, struct ggml_cgraph * graph_b,
+        bool * supported);
+    GGML_API void                 ggml_backend_sched_set_stagger_pair_arena(ggml_backend_sched_t sched, bool enabled);
+    GGML_API void                 ggml_backend_sched_synchronize(ggml_backend_sched_t sched);
+'''
+
+
+# ------------------------------------------------------------------------------------------------ llama context
+_A_LLAMA_INCLUDES = r'''#include <cinttypes>
+#include <cmath>
+'''
+_N_LLAMA_INCLUDES = r'''#include <algorithm>
+#include <cinttypes>
+#include <cmath>
+#include <cstdlib>
+#include <mutex>
+'''
+
+_A_CTX_FIELDS = r'''    ggml_backend_sched_ptr sched;
+
+    bool sched_need_reserve = true;
+'''
+_N_CTX_FIELDS = r'''    ggml_backend_sched_ptr sched;
+
+    // BigCherry 1361 (QFP49): B has a distinct scheduler/result and therefore distinct logical Meta compute buffers.
+    ggml_backend_sched_ptr bc_1361_sched_b;
+    llm_graph_result_ptr   bc_1361_res_b;
+    uint32_t               bc_1361_half = 0;
+    bool                   bc_1361_nextn_pair = false;
+    bool                   bc_1361_nextn_pair_last = false;
+    int                    bc_1361_nextn_pair_slot = -1;
+
+    bool sched_need_reserve = true;
+'''
+
+_A_RESERVE_END = r'''    LLAMA_LOG_INFO("%s: reserve took %.2f ms, sched copies = %d\n",
+            __func__, (t_end_us - t_start_us)/1000.0, ggml_backend_sched_get_n_copies(sched.get()));
+}
+'''
+_N_RESERVE_END = r'''    LLAMA_LOG_INFO("%s: reserve took %.2f ms, sched copies = %d\n",
+            __func__, (t_end_us - t_start_us)/1000.0, ggml_backend_sched_get_n_copies(sched.get()));
+
+    // BigCherry 1361: reserve B only when explicitly requested.  The public batch/ubatch defaults are untouched.
+    const char * bc_env = getenv("BIGCHERRY_PREFILL_STAGGER");
+    const unsigned long bc_half_ul = bc_env ? strtoul(bc_env, nullptr, 10) : 0;
+    bc_1361_half = bc_half_ul <= std::numeric_limits<uint32_t>::max() ? (uint32_t) bc_half_ul : 0;
+    if (bc_1361_half > 1 && cparams.n_ubatch == bc_1361_half && cparams.n_batch >= 2*bc_1361_half &&
+            !model.hparams.no_alloc) {
+        const size_t bc_max_nodes = graph_max_nodes(bc_1361_half);
+        bc_1361_sched_b.reset(ggml_backend_sched_new(
+            backend_ptrs.data(), backend_buft.data(), backend_ptrs.size(), bc_max_nodes,
+            cparams.pipeline_parallel, cparams.op_offload));
+        ggml_backend_sched_set_copy_callback(bc_1361_sched_b.get(), sched_copy_experts, this);
+        ggml_backend_sched_set_stagger_pair_arena(bc_1361_sched_b.get(), true);
+        bc_1361_res_b.reset(new llm_graph_result(bc_max_nodes));
+
+        uint32_t bc_n_seqs = std::min<uint32_t>(cparams.n_seq_max, bc_1361_half);
+        while (bc_n_seqs > 1 && bc_1361_half % bc_n_seqs != 0) --bc_n_seqs;
+        const uint32_t bc_outputs = std::min<uint32_t>(bc_1361_half, cparams.n_outputs_max);
+
+        auto * bc_saved_active = gf_res_prev_active;
+        std::swap(sched, bc_1361_sched_b);
+        std::swap(gf_res_reserve, bc_1361_res_b);
+        ggml_cgraph * bc_gf = graph_reserve(bc_1361_half, bc_n_seqs, bc_outputs, mctx.get());
+        std::swap(gf_res_reserve, bc_1361_res_b);
+        std::swap(sched, bc_1361_sched_b);
+        gf_res_prev_active = bc_saved_active;
+        if (bc_gf == nullptr) {
+            LLAMA_LOG_WARN("BIGCHERRY_PREFILL_STAGGER disabled: failed to reserve B scheduler for half=%u\n", bc_1361_half);
+            bc_1361_sched_b.reset();
+            bc_1361_res_b.reset();
+            bc_1361_half = 0;
+        } else {
+            for (size_t i = 0; i < backend_ptrs.size(); ++i) {
+                const size_t bytes = ggml_backend_sched_get_buffer_size(bc_1361_sched_b.get(), backend_ptrs[i]);
+                if (bytes > 1) {
+                    LLAMA_LOG_INFO("BIGCHERRY_PREFILL_STAGGER reserve_b half=%u backend=%s size_mib=%.2f\n",
+                        bc_1361_half, ggml_backend_name(backend_ptrs[i]), bytes / 1024.0 / 1024.0);
+                }
+            }
+        }
+    } else {
+        bc_1361_sched_b.reset();
+        bc_1361_res_b.reset();
+        if (bc_1361_half != 0) {
+            LLAMA_LOG_WARN("BIGCHERRY_PREFILL_STAGGER disabled: half=%u requires -b >= %u -ub %u and allocated compute buffers\n",
+                bc_1361_half, 2*bc_1361_half, bc_1361_half);
+        }
+        bc_1361_half = 0;
+    }
+}
+'''
+
+# Insert preparation just before the normal do/while.  Existing output extraction remains the single implementation.
+_A_DECODE_LOOP = r'''    int64_t n_outputs_prev = 0;
+    int64_t n_tokens_prev  = 0;
+
+    do {
+        const auto & ubatch = mctx->get_ubatch();
+'''
+_N_DECODE_LOOP = r'''    int64_t n_outputs_prev = 0;
+    int64_t n_tokens_prev  = 0;
+
+    llama_ubatch bc_pair_ubatch[2] = {};
+    llm_graph_result * bc_pair_res[2] = {nullptr, nullptr};
+    int bc_pair_count = 0;
+    int bc_pair_index = 0;
+    bool bc_pair_mctx_is_b = false;
+
+    auto bc_count_outputs = [&](const llama_ubatch & ub) {
+        if (n_outputs_all == n_tokens_all) return (int32_t) ub.n_tokens;
+        int32_t ret = 0;
+        for (uint32_t i = 0; i < ub.n_tokens; ++i) ret += (int32_t) (ub.output[i] != 0);
+        return ret;
+    };
+
+    auto bc_prepare = [&](const llama_ubatch & ub, bool use_b, llm_graph_result * res, ggml_status & ret) -> bool {
+        if (!mctx->apply()) {
+            ret = GGML_STATUS_FAILED;
+            return false;
+        }
+        n_outputs = bc_count_outputs(ub);
+        ggml_backend_sched_ptr * target = use_b ? &bc_1361_sched_b : &sched;
+        if (!*target || !res) {
+            ret = GGML_STATUS_FAILED;
+            return false;
+        }
+        bool swapped = use_b;
+        if (swapped) std::swap(sched, bc_1361_sched_b);
+        if (!use_b) gf_res_prev_active = nullptr;
+        res->reset();
+        ggml_backend_sched_reset(sched.get());
+        ggml_backend_sched_set_eval_callback(sched.get(), nullptr, nullptr);
+        const auto gparams = graph_params(res, ub, mctx.get(), ctx_type_to_graph_type(cparams.ctx_type));
+        ggml_cgraph * gf = model.build_graph(gparams);
+        bool ok = gf != nullptr && ggml_backend_sched_alloc_graph(sched.get(), gf);
+        if (ok) res->set_inputs(&ub);
+        if (swapped) std::swap(sched, bc_1361_sched_b);
+        if (!ok) {
+            ret = gf ? GGML_STATUS_ALLOC_FAILED : GGML_STATUS_FAILED;
+            return false;
+        }
+        ret = GGML_STATUS_SUCCESS;
+        return true;
+    };
+
+    const bool bc_pair_candidate = bc_1361_half > 1 && bc_1361_sched_b && bc_1361_res_b &&
+        n_tokens_all == 2*bc_1361_half && cparams.n_ubatch == bc_1361_half && cparams.causal_attn &&
+        cparams.cb_eval == nullptr && !cparams.embeddings && cparams.pooling_type == LLAMA_POOLING_TYPE_NONE &&
+        std::none_of(cparams.embeddings_layer_inp.begin(), cparams.embeddings_layer_inp.end(), [](bool v) { return v; }) &&
+        mctx->get_ubatch().n_tokens == bc_1361_half;
+
+    if (bc_pair_candidate) {
+        ggml_status bc_status = GGML_STATUS_SUCCESS;
+        bc_pair_ubatch[0] = mctx->get_ubatch();
+        auto * bc_res_a = get_gf_res_prev();
+        if (bc_prepare(bc_pair_ubatch[0], false, bc_res_a, bc_status)) {
+            bc_pair_res[0] = bc_res_a;
+            bc_pair_count = 1;
+            if (mctx->next()) {
+                bc_pair_mctx_is_b = true;
+                bc_pair_ubatch[1] = mctx->get_ubatch();
+                if (bc_pair_ubatch[1].n_tokens == bc_1361_half &&
+                        bc_prepare(bc_pair_ubatch[1], true, bc_1361_res_b.get(), bc_status)) {
+                    bc_pair_res[1] = bc_1361_res_b.get();
+                    bc_pair_count = 2;
+                    bool bc_supported = false;
+                    bc_status = ggml_backend_sched_graph_compute_async_pair(
+                        sched.get(), bc_pair_res[0]->get_gf(),
+                        bc_1361_sched_b.get(), bc_pair_res[1]->get_gf(), &bc_supported);
+                    if (bc_supported) {
+                        if (bc_status != GGML_STATUS_SUCCESS) {
+                            LLAMA_LOG_ERROR("%s: stagger pair failed with status %d\n", __func__, bc_status);
+                            return -3;
+                        }
+                        static std::once_flag bc_1361_logged;
+                        std::call_once(bc_1361_logged, [] {
+                            LLAMA_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1361_prefill_stagger_pair\n");
+                        });
+                    } else {
+                        // Pair rejection happens before Meta model compute.  Preserve A-before-B sequential compute.
+                        bc_status = graph_compute(bc_pair_res[0]->get_gf(), true);
+                        if (bc_status == GGML_STATUS_SUCCESS) {
+                            std::swap(sched, bc_1361_sched_b);
+                            bc_status = graph_compute(bc_pair_res[1]->get_gf(), true);
+                            std::swap(sched, bc_1361_sched_b);
+                        }
+                        if (bc_status != GGML_STATUS_SUCCESS) return -3;
+                    }
+                } else {
+                    // The split was not exactly two halves.  A is already prepared but no pair work started.
+                    bc_status = graph_compute(bc_pair_res[0]->get_gf(), true);
+                    if (bc_status != GGML_STATUS_SUCCESS) return -3;
+                }
+            } else {
+                bc_status = graph_compute(bc_pair_res[0]->get_gf(), true);
+                if (bc_status != GGML_STATUS_SUCCESS) return -3;
+            }
+        } else {
+            return bc_status == GGML_STATUS_ALLOC_FAILED ? -2 : -3;
+        }
+    }
+
+    bool bc_loop_done = false;
+    while (!bc_loop_done) {
+        const bool bc_cached = bc_pair_index < bc_pair_count;
+        const auto & ubatch = bc_cached ? bc_pair_ubatch[bc_pair_index] : mctx->get_ubatch();
+'''
+
+_A_PROCESS = r'''        ggml_status status;
+
+        const auto * res = process_ubatch(ubatch, ctx_type_to_graph_type(cparams.ctx_type), mctx.get(), status);
+'''
+_N_PROCESS = r'''        ggml_status status = GGML_STATUS_SUCCESS;
+
