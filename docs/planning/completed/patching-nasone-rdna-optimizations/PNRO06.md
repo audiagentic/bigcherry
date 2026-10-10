@@ -110,3 +110,4 @@ OUTCOME 2026-09-27 (1256_nro07_topk_hybrid): series 1 (llama-bench MoE decode) n
 - 2026-09-24T15:40:57.228620+00:00 (updated-by): Updated: section:notes
 - 2026-09-27T02:47:42.509365+00:00 (updated-by): Updated: section:notes
 - 2026-09-27T02:47:57.300249+00:00 (state-transition): State: in_progress → pending
+- 2026-10-10T10:25:19.318004+00:00 (state-transition): State: completed → completed

@@ -2,7 +2,7 @@
 id: BCOP62
 order: 62
 plan: patching-bc-optimizations
-state: completed
+state: deprecated
 created-at: '2026-10-08T18:12:33+11:00'
 created-by: agent
 priority: P2
@@ -29,3 +29,7 @@ No new patch, experiment queue or scheduler. Reopen only with a production gener
 - https://github.com/sgl-project/sglang/issues/26771
 - BigCherry PNRO06/PNRO07 2026-09-27 series-2 measurements and 1294 patch summary.
 - 48 host route cases and tie-order illustration ran; source/blob and patch metadata checks passed. No build, HIP test or new hardware measurement.
+
+## Change Log
+
+- 2026-10-10T10:25:54.112553+00:00 (state-transition): State: completed → deprecated
