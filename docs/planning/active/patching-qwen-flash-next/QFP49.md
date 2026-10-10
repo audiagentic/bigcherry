@@ -89,9 +89,12 @@ Also measured and closed here: sending large sums through the cpu-root path is s
 
 2026-10-11 ub256 on its own (run ub256, build b-pipe2 with the pipeline on, Flash-Next 24K, ABBA, B = UB=256 B=256): prefill 1,134.9 / 1,129.7 t/s against 1,443.9 / 1,427.8 at ub512, -21%. The text differs from ub512's (a different batch size is different arithmetic) and decode in that arm is 75 against 91 t/s with lower acceptance, so ub256 is not a setting to adopt by itself. Memory: the Meta compute buffer is 459 MiB a card at ub256 against 1,021 MiB at ub512, and card memory in use drops by 0.45 GB on each XTX and 0.19 GB on the R9700 - so two ub256 graphs alive at once fit in what one ub512 graph takes (918 against 1,021 MiB). Consequence for the staggering: the memory premise holds, and the pair starts 21% behind. It has to win that back and more purely from hiding the exchange (at ub256 there are twice as many sums a token, each half the size), so the first thing the paired build must show is that it beats ub512, not ub256.
 
+Gate for staggering, 2026-10-11 (kernel traces, 38,725-token prompt, build b-pipe2; run dp256 = ub256, run pipe4 = ub512, both under rocprofv3). Per RX 7900 XTX: ub512 kernel time 24.8 s = 10.4 s cross-card sum + 14.4 s compute (prefill 1,330 t/s traced); ub256 kernel time 31.1 s = 12.8 s sum + 18.3 s compute (1,048 t/s traced). R9700: 11.1 s / 13.5 s at ub512, 14.7 s / 16.8 s at ub256. So compute per token is 27% dearer at ub256, and a sum costs 1.43 ms at ub512 against 0.88 ms at ub256. A staggered ub256 pair has a floor of 18.3 s of compute per XTX against 24.8 s of compute plus sum today: it beats ub512 if more than about half of the sum time is hidden (the standalone stagger probe hid 95%). Gate passed; build pieces 1-4. Note for later: a pair of ub512 batches has a 14.4 s floor but needs a second 1,021 MiB compute buffer per card, which does not fit at ctx 245760.
+
 ## Change Log
 
 - 2026-10-10T13:54:01.542976+00:00 (created-by): Created by claude
 - 2026-10-10T13:55:13.057445+00:00 (updated-by): Updated: section:notes
 - 2026-10-10T21:32:48.900499+00:00 (updated-by): Updated: section:notes
 - 2026-10-10T21:37:41.672650+00:00 (updated-by): Updated: section:notes
+- 2026-10-10T21:46:35.701673+00:00 (updated-by): Updated: section:notes
