@@ -1,5 +1,4 @@
-"""Offline mechanics tests for 1286_draft_local_shared_tensors (pinned llama-cparams.h, llama-context.{h,cpp},
-models/dflash.cpp; alone and composed with the promoted 1303 attention split, which also edits llama-context.cpp)."""
+"""Offline mechanics tests for 1286_draft_local_shared_tensors (including the opt-in DFlash input trace)."""
 
 from __future__ import annotations
 
@@ -16,7 +15,13 @@ from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
 _V = paths.llama_root()
-_FILES = ("src/llama-cparams.h", "src/llama-context.h", "src/llama-context.cpp", "src/models/dflash.cpp")
+_FILES = (
+    "src/llama-cparams.h",
+    "src/llama-context.h",
+    "src/llama-context.cpp",
+    "src/models/dflash.cpp",
+    "common/speculative.cpp",
+)
 
 
 def _load(pid: str):
@@ -53,6 +58,15 @@ class Patch1286Mechanics(unittest.TestCase):
             self.assertEqual(dfl.count("output   = cparams.other_output ? cparams.other_output   : model_other->output;"), 2)
             self.assertEqual(dfl.count("output_s = cparams.other_output ? cparams.other_output_s : model_other->output_s;"), 2)
             self.assertNotIn("        tok_embd = model_other->tok_embd;\n", dfl)
+
+            # opt-in diagnostic: borrowed source/destination copies and only the first three feature handoffs
+            ctx = snap["src/llama-context.cpp"]
+            spec = snap["common/speculative.cpp"]
+            self.assertIn("BIGCHERRY_DFLASH_INPUT_TRACE borrowed", ctx)
+            self.assertIn("BIGCHERRY_DFLASH_INPUT_TRACE feature call=", spec)
+            self.assertIn("bc_trace_call < 3", spec)
+            self.assertEqual([doc.name for doc in _P.ENV_DOCS], ["BIGCHERRY_DFLASH_INPUT_TRACE"])
+
             second = apply_all(_P.PATCHES, root)
             self.assertTrue(all(r.ok for r in second), [e.detail for r in second for e in r.failed])
             self.assertEqual(snap, {f: (root / f).read_text(encoding="utf-8") for f in _FILES})

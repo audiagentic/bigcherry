@@ -82,10 +82,30 @@ A separate drafter-file comparison is pending and is evidence, not a prerequisit
 ## Hardware findings 2026-10-08 (Brutus), which reorder this plan
 
 1. **Loading.** At b11474 a DFlash2 / DSpark draft aborts at context creation on a tensor-split target (`pre-allocated tensor (output.weight) in a buffer (Meta()) that cannot run the operation (NONE)`), on native llama.cpp too: upstream issue 27833, open. Our patch 1286_draft_local_shared_tensors fixes it (untested state, experiments `retest-1286` / `draft-local-shared`, composes on today's production set). A layer-split target with the draft on a different card than output.weight fails the same way and 1286 does not cover it.
-2. **Acceptance collapsed.** Production set + 1286, Qwen3.8-27B Q8_0 dual-XTX tensor split, 1665-token prompt, 5 x 128 tokens: no draft 37.9 t/s; MTP depth 5 79.4 t/s at 58.3%, depth 4 80.2 t/s at 67.3%; DFlash2 Q8_0 block 4 / 7 on the 6900 XT 23.8 t/s at 1.7% / 20.7 at 0.7%; Q4_K_M 24.6 at 1.7% / 20.7 at 1.1%; BF16 20.7 at 1.7% / 16.3 at 0.6%; magnitudedev Q8_0 23.9 at 1.7% / 20.6 at 0.7%; DSpark Q8_0 block 6 21.9 at 2.0% (ours) and 23.3 at 2.5% (magnitudedev). All lossless. At b11402 the same files gave 44-59% (74 t/s). Every file behaves the same, so it is not a file problem: the draft receives wrong inputs or its outputs are mapped wrongly. Isolation runs queued (native vs ours on a single-device target; one production switch off per arm). **Nothing else in this plan matters until this is explained.**
+2. **Acceptance collapse resolved (PR #63, merged).** Production set + 1286 at b11474 collapsed every DFlash2 / DSpark file to 0.6-2.5% acceptance. One-switch isolation left acceptance at 1.7% with `BIGCHERRY_MTP_DEFERRED_CATCHUP=0` and `BIGCHERRY_META_SUBSET_MIRROR_INPUTS=0`, but `BIGCHERRY_META_PER_DEVICE_ARENA=0` restored DFlash2 Q8_0 block 4 to 55.1%. Single-device b11474 (no Meta buffer) was normal on native, released and +1286 builds. Root cause was 1340: the per-device arena keyed plans only by node/leaf count. DFlash/DSpark enable target layer-input OUTPUT tensors after context reserve; a same-shape plan made without those OUTPUT lifetimes was reused, so later graph nodes recycled the feature tensors before `extract_layer_inputs()` read them. PR #63 keys the plan by OUTPUT-set signature and propagates OUTPUT flags to the per-device tensors. Hardware with arena ON after the fix: DFlash2 Q8 block 4 70.4 t/s @55.1%, block 7 75.6 @43.6%, DSpark Q8 block 6 62.3 @37.0%; greedy text remained identical and `arena_grew` did not fire. The acceptance blocker is cleared.
 3. **Files.** Our DFlash2 Q8_0 / Q4_K_M are byte-identical to the publisher's current GGUFs. BF16 and the 2026-10-06 magnitudedev re-publications are on the lab disk (hash-checked). Our DSpark file differs from the one public GGUF and is of unknown origin.
 4. **Flash-Next drafter.** PixelML/Qwen3.8-Flash-Next-NVFP4-DFlash converts with the pinned converter unchanged (`--target-model-dir` = Qwen/Qwen3.8-Flash-Next config + tokenizer): `/mnt/data/llm-models/qwen3.8-flash-next/gguf/dflash/Qwen3.8-Flash-Next-DSpark-PixelML-BF16.gguf`, 58 tensors, block 7, no confidence head. With 1286 it loads, then asserts `src/llama-context.cpp:2499: GGML_ASSERT(row_floats == model.hparams.n_embd)` in `extract_layer_inputs`: the Qwen4Exp layer-input tensor is the raw hyper-connection stream, 4 x 2560 = 10240 floats per token, and the extractor requires n_embd (2560). The checkpoint's card states the tap precisely: the five taps `[3, 15, 23, 35, 43]` are the **HC-contracted native-width (2560) residual from each tapped layer's own GatedResidual mix**, taken in vLLM at aux boundary ids tap+1 = `[4, 16, 24, 36, 44]`, i.e. `layers[i].attn_hyper_connection.mix / combine_and_mix(...)[1]`; concatenated `[T, 12800]` into `fc`. So the needed patch is a Qwen4Exp feature tap that hands the draft the contracted 2560-wide tensor at those boundaries instead of the raw stream (the hc-pre contraction already exists in the graph; 1311 / 1344 touch it). Lab launcher support is merged (`SPEC_TYPE=draft-dspark SPEC_PMIN=0 SPEC_N=7 DRAFT=<gguf>`).
 5. **Cross-model rule learnt today.** Look-ahead (1321/1322) costs 24-30% decode where the draft shares the target's cards (27B built-in MTP); any drafter mechanism needs a second-model run before it is more than a profile switch.
+
+### b11402 -> b11474 acceptance regression verdict
+
+Source loci below are the pinned b11474 loci; the composed tree adds BigCherry edits around them. The owning 1340 edit is in `patches/1340_meta_per_device_arena/patch.py` and is exercised by `tools/tests/patch/test_1340_meta_per_device_arena.py::test_plan_identity_includes_the_output_set`.
+
+| candidate | verdict | source | one-run confirmation |
+|---|---|---|---|
+| upstream #29019 original-batch-order layer inputs | ruled out | `src/llama-context.cpp:2287-2315` extraction; `:2388-2395` reorder | already present in b11402; no delta to bisect |
+| upstream #29622 mixed token+embd batches | ruled out | DFlash feature handoff `common/speculative.cpp:1157-1230`; the changed mixed-batch graph path predates b11402 | already present in b11402; no delta to bisect |
+| upstream #30020 NextN re-reserve | ruled out / explanatory | target layer extraction uses `set_embeddings_layer_inp`, `src/llama-context.cpp:1246-1254`, which already forces reserve; #30020 adds the equivalent guard for NextN | no dedicated run needed; it explains why NextN stayed correct while layer-input OUTPUT lifetime was stale |
+| upstream #29943 selective expert-copy refactor | ruled out for this layout | host/selective expert copy path; no host-expert offload in the tested dual-XTX target | single-device target; acceptance was normal |
+| 1348 deferred MTP catch-up | ruled out | deferred state/override is MTP-only; DFlash/DSpark use their own `process()` at `common/speculative.cpp:1157-1240` | `BIGCHERRY_MTP_DEFERRED_CATCHUP=0`: 1.7%, unchanged |
+| 1321/1322 look-ahead | ruled out | MTP-only and `BIGCHERRY_MTP_AHEAD` unset on this 27B run | unset/off arm already used |
+| 1315/1317/1318 diagnostics | ruled out | trace/timing gated; MTP-specific hooks do not alter DFlash features when disabled | leave trace/timing envs unset |
+| 1297 trimmed draft head | ruled out | Qwen4Exp MTP-only | single-device Qwen3.8-27B target |
+| 1341 subset mirrored inputs | ruled out | Qwen4Exp subset-mirror path; parent subset-mirror mechanism is not active here | `BIGCHERRY_META_SUBSET_MIRROR_INPUTS=0`: 1.7%, unchanged |
+| 1286 draft-local shared tensors | ruled out as acceptance cause | copies Meta-backed `tok_embd/output/output_s` once before first use; feature tensors still come from target layer OUTPUTs | +1286 remains enabled while `BIGCHERRY_META_PER_DEVICE_ARENA=0` restores 55.1%; single-device +1286 is normal |
+| **1340 per-device Meta arena** | **confirmed** | target marks layer inputs OUTPUT at `src/llama-graph.cpp:1410-1416`; extraction reads them at `src/llama-context.cpp:2287-2315`; 1340 now propagates OUTPUT and keys `arena_plan_t` by `out_sig` | **`BIGCHERRY_META_PER_DEVICE_ARENA=0`: 55.1% vs 1.7%; fixed arena-ON: 55.1%** |
+
+A trace gate remains useful for future regressions: `BIGCHERRY_DFLASH_INPUT_TRACE=1` should hash each 1286 borrowed tensor source/destination once at context setup, and hash the fused target feature slab for the first three DFlash/DSpark `process()` calls. It must not synchronize or copy extra data unless enabled.
 
 ## Source baseline
 
@@ -378,6 +398,7 @@ accepted length, draft/verify time and output t/s.
 
 ## Change Log
 
+- 2026-10-09T07:35:00+11:00 (agent): Recorded PR #63 root cause/hardware confirmation and per-candidate acceptance-regression verdicts; acceptance blocker cleared before further QFP43 optimization work.
 - 2026-10-08T15:51:00+11:00 (agent): Created from b11474 source audit and current drafter artifact review.
 
 ## Ledger-events
