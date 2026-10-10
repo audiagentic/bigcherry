@@ -537,6 +537,10 @@ patches = []
 # QFP35: production + 1355. A/default = fused HC gate consumer; BIGCHERRY_HC_POST_GATE_FUSE=0 is the composed 1313/1344 control.
 patches = []
 
+[experiment.prefill-pipeline]
+# QFP50: production + 1359; default off, enable with BIGCHERRY_PREFILL_PIPELINE=1.
+patches = ["1359_prefill_pipeline"]
+
 [experiment.meta-dispatch-workers]
 # QFP41: production + 1356; default off, enable with BIGCHERRY_META_DISPATCH_THREADS=1.
 # 1356 is `evaluated` since 2026-10-11 (output race at 98K), so it is composed here and not in production.
