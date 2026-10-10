@@ -23,6 +23,14 @@
 #     the K loop. The fold at a 128-column boundary is per slot, so it only has to name the gfx11 row of a slot
 #     where the scale is per A row; `out` is moved to the gfx12 layout once, in front of the unchanged epilogue,
 #     and multiplied by 2^16 there.
+#   - ONE TOKEN ROW IS NOT A MATRIX PRODUCT. On the narrow path with one row of activation, a 16x16 WMMA tile does
+#     one column of useful work in sixteen, and the kernel reads 337 to 523 GB/s of weight on an XTX where the
+#     single-row vector kernels (gemm_fp8a16_nt_m1, logits_gemm_fp8) read 660 to 790 (run bw-xtx, 2026-10-10). So
+#     with nb == 1 the K loop is replaced by a dot product: a lane multiplies the 32 weight bytes it owns in each
+#     fragment-order tile by the activation bytes at the same K, the pair of lanes that share a weight row add
+#     their halves, and the sixteen row sums are placed in the two lanes that hold the token's column in the gfx12
+#     accumulator, so the epilogue (split-K, the gate, the store) is unchanged. The weight stream is the same
+#     coalesced 1 KiB a wave a step.
 
 @@ find 1
     __shared__ uint8_t s_b[kBufs][FN * lds_pitch<FK>()];
@@ -113,11 +121,52 @@
         for (uint32_t p = 0; p < kAF; ++p) pf[p] = pfn[p];
         if (kBufs > 1u) buf ^= 1u; else __syncthreads();
     }
-    if constexpr (!I8) {  // libr3 native: to the gfx12 layout the epilogue reads, and out of the 2^-16 of the halves
+    if constexpr (!I8) if (!r3_vec) {  // libr3 native: to the gfx12 layout the epilogue reads, and out of the 2^-16 of the halves
 #pragma unroll
         for (uint32_t i = 0; i < MT; ++i)
 #pragma unroll
             for (uint32_t j = 0; j < NT; ++j)
                 out[i][j] = __builtin_bit_cast(f8v, r3_acc_native_to_gfx12(out[i][j]) * r3_fp8_f16_unscale);
     }
+@@ end
+
+@@ find 1
+    for (uint32_t c0 = kbeg; c0 < kend; c0 += FK) {
+@@ replace
+    // libr3 native: one token row is a dot product a weight row, not a 16x16 tile (see the header)
+    const bool r3_vec = AW && !I8 && nb == 1u;
+    if (r3_vec) {
+        float tot = 0.0f, part = 0.0f;
+        const uint8_t* const xrow = Bp + (lane >> 4) * 8u;  // token 0 at this lane's half of each fragment's K
+        for (uint32_t k = kbeg; k < kend; k += r4d_fp8::kSuperK) {
+            r3_u4 wlo = {0u, 0u, 0u, 0u}, whi = {0u, 0u, 0u, 0u};
+            if (alive) {
+                const uint8_t* const wp =
+                    afrag + (size_t)(arow * ksuper + k / r4d_fp8::kSuperK) * r4d_fp8::kTileBytes;
+                wlo = *(const r3_u4u*)wp;
+                whi = *(const r3_u4u*)(wp + 16);
+            }
+            const unsigned w[8] = {wlo[0], wlo[1], wlo[2], wlo[3], whi[0], whi[1], whi[2], whi[3]};
+#pragma unroll
+            for (uint32_t t = 0; t < 4; ++t) {
+                const r3_u2u x = *(const r3_u2u*)(xrow + k + t * 16u);
+                part = r3_fp8_dot8(w[2 * t], w[2 * t + 1], x[0], x[1], part);
+            }
+            if ((k + r4d_fp8::kSuperK) % kBlock == 0u || k + r4d_fp8::kSuperK >= kend) {
+                const uint32_t kb = k / kBlock;
+                const float ws = alive
+                    ? bscale(((const uint16_t*)Sa)[(size_t)(wrow0 / kBlock) * sa_ld + kb]) : 0.0f;
+                tot = fmaf(part, ws * ((const float*)Sb)[kb], tot);
+                part = 0.0f;
+            }
+        }
+        tot *= r3_fp8_f16_unscale;
+        const float row = tot + __uint_as_float(r3_from_lane(lane ^ 16u, __float_as_uint(tot)));
+#pragma unroll
+        for (uint32_t t = 0; t < 8; ++t) {
+            const float v = __uint_as_float(r3_from_lane((lane >> 4) * 8u + t, __float_as_uint(row)));
+            out[0][0][t] = (lane & 15u) == 0u ? v : 0.0f;
+        }
+    } else
+    for (uint32_t c0 = kbeg; c0 < kend; c0 += FK) {
 @@ end

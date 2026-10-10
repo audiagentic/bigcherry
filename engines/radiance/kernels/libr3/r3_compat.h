@@ -505,6 +505,26 @@ __device__ __forceinline__ r3_v16h r3_fp8_frag_bytes(const unsigned char* lds, u
     return r3_e4m3x16_to_f16(c[0], c[1], c[2], c[3]);
 }
 
+// The sum of eight products of E4M3 codes (two dwords of weight, two of activation, the same K in the same byte)
+// added to acc, in the 2^-16 of the halves: the one-token-row form of the block-fp8 GEMM.
+typedef unsigned r3_u2u __attribute__((ext_vector_type(2), aligned(1)));
+__device__ __forceinline__ float r3_half_bits_to_f32(unsigned bits) {
+    return static_cast<float>(__builtin_bit_cast(_Float16, static_cast<unsigned short>(bits)));
+}
+__device__ __forceinline__ float r3_fp8_dot8(unsigned w0, unsigned w1, unsigned x0, unsigned x1, float acc) {
+    unsigned wh[4], xh[4];
+    r3_e4m3x4_to_f16(w0, wh[0], wh[1]);
+    r3_e4m3x4_to_f16(w1, wh[2], wh[3]);
+    r3_e4m3x4_to_f16(x0, xh[0], xh[1]);
+    r3_e4m3x4_to_f16(x1, xh[2], xh[3]);
+#pragma unroll
+    for (int d = 0; d < 4; ++d) {
+        acc = fmaf(r3_half_bits_to_f32(wh[d] & 0xffffu), r3_half_bits_to_f32(xh[d] & 0xffffu), acc);
+        acc = fmaf(r3_half_bits_to_f32(wh[d] >> 16), r3_half_bits_to_f32(xh[d] >> 16), acc);
+    }
+    return acc;
+}
+
 // The same fragment when a lane holds its gfx12 half in registers (8 codes: K 0-7 in lanes 0-15, K 8-15 in lanes
 // 16-31, libr4d's fragment order): the other half comes from the partner lane.
 template <class F>
