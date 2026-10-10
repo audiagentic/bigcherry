@@ -78,6 +78,16 @@ port, name, out = sys.argv[1:4]; depths = [int(d) for d in sys.argv[4:]]
 def post(body):
     req = urllib.request.Request(f"http://127.0.0.1:{port}/completion", json.dumps(body).encode(), {"Content-Type": "application/json"})
     return json.loads(urllib.request.urlopen(req, timeout=3600).read())
+def chat_prompt(user):
+    # The request goes through the model's chat template. Sent as a raw completion, the corpus followed by "Summarise
+    # the above in detail:" makes this model end the turn at once (end-of-turn at p > 0.99999, run q17p 2026-10-10); with
+    # ignore_eos the decode then continues from a token of probability about 2e-6, so which text follows - and the
+    # draft acceptance that goes with it - turned on differences of one unit in the last place. Every "text differs"
+    # and decode comparison made that way measured that tail, not the model's answer.
+    req = urllib.request.Request(f"http://127.0.0.1:{port}/apply-template",
+                                 json.dumps({"messages": [{"role": "user", "content": user}]}).encode(),
+                                 {"Content-Type": "application/json"})
+    return json.loads(urllib.request.urlopen(req, timeout=600).read())["prompt"]
 corpus = open("/mnt/data/bigcherry-work/corpus/kld-docs.txt", errors="replace").read()
 ASK = "\n\n" + __import__("os").environ.get("ASK", "Summarise the above in detail:")  # the request after the filled context
 post({"prompt": "Hello", "n_predict": 8, "cache_prompt": False})
@@ -98,8 +108,9 @@ for d in depths:
         json.dump(probes, open(f"{out}/{name}.{d}.probes.json", "w"))
         print(f"{name}: {len(probes)} probes saved", flush=True)
         continue
+    prompt = chat_prompt(text + ASK)
     if cache:  # fill the KV cache first; the timed request then reuses it and only decodes
-        fill = post({"prompt": text + ASK, "n_predict": 1, "cache_prompt": True})["timings"]
+        fill = post({"prompt": prompt, "n_predict": 1, "cache_prompt": True})["timings"]
         print(f"{name}: fill prefill {fill['prompt_n']} tok at {fill['prompt_per_second']:.1f} t/s", flush=True)
     if os.environ.get("ARM_FILE"):  # sync-tracer.so starts counting once this file exists
         open(os.environ["ARM_FILE"], "w").close()
@@ -109,7 +120,7 @@ for d in depths:
         perf = subprocess.Popen(["/usr/lib/linux-tools/6.8.0-142-generic/perf", "record", "-F", "499", "-g",
                                  "-p", os.environ["SERVER_PID"], "-o", os.environ["PERF_OUT"]],
                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    t = post({"prompt": text + ASK, "n_predict": int(os.environ["DECODE_N"]),
+    t = post({"prompt": prompt, "n_predict": int(os.environ["DECODE_N"]),
               "cache_prompt": cache, "temperature": 0, "ignore_eos": True,
               **({"n_probs": 5} if os.environ.get("REPEAT") == "1" else {})})
     if os.environ.get("REPEAT") == "1":
@@ -117,7 +128,7 @@ for d in depths:
     # temperature 0: the decoded text is the greedy output at this depth, compared across A/B arms
     open(f"{out}/{name}.{d}.greedy.txt", "w").write(t["content"])
     if os.environ.get("REPEAT") == "1":  # same server, same cached prefix: does decode alone diverge?
-        t2 = post({"prompt": text + ASK, "n_predict": int(os.environ["DECODE_N"]),
+        t2 = post({"prompt": prompt, "n_predict": int(os.environ["DECODE_N"]),
                    "cache_prompt": cache, "temperature": 0, "ignore_eos": True, "n_probs": 5})
         open(f"{out}/{name}.{d}.r1.greedy.txt", "w").write(t2["content"])
         json.dump(t2.get("completion_probabilities", [])[:8], open(f"{out}/{name}.{d}.r1.probs.json", "w"))
