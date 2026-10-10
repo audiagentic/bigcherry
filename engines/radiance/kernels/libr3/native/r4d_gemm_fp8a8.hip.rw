@@ -170,3 +170,13 @@
     } else
     for (uint32_t c0 = kbeg; c0 < kend; c0 += FK) {
 @@ end
+
+# The narrow path splits K until about this many waves stream weight at once. libr4d's 128 is fitted on the R9700.
+# On an XTX a wave has one 1 KiB request in flight, and at 128 the small-N shapes run a few hundred waves:
+# N = 5120, K = 8704 reads 316 GB/s at 128, 480 at 512, 663 at 1024 and 585 at 2048; N = 8192, K = 5120 reads 420,
+# 422, 573 and 551; N = 17408 (1088 waves unsplit) does not move (runs bw-st128 .. bw-st2048, 2026-10-10).
+@@ find 1
+constexpr uint32_t kSplitTarget = 128u;
+@@ replace
+constexpr uint32_t kSplitTarget = 1024u;  // libr3 native: fitted on gfx1100
+@@ end
