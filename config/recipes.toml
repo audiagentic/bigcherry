@@ -293,6 +293,7 @@ patches = [
     "1358_meta_split_cache_local_evict",
     "1355_hc_post_gate_fuse",
     "1357_moe_router_splitk",
+    "1359_prefill_pipeline",
 ]
 required-state = "validated"
 
@@ -535,6 +536,10 @@ patches = []
 
 [experiment.hc-post-gate-fuse]
 # QFP35: production + 1355. A/default = fused HC gate consumer; BIGCHERRY_HC_POST_GATE_FUSE=0 is the composed 1313/1344 control.
+patches = []
+
+[experiment.prefill-pipeline]
+# QFP50: production + 1359; default off, enable with BIGCHERRY_PREFILL_PIPELINE=1.
 patches = []
 
 [experiment.meta-dispatch-workers]
