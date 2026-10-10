@@ -7,7 +7,7 @@
 #   MXFP4 on two XTX through libr3    both differences together
 # Start it directly (it queues its own jobs):
 #   bash tools/lab/radiance/kld-fp8-vs-mxfp4.sh <tag>
-# env: R (runs root), BUILD (b-main2), FP8, MXFP4 (containers)
+# env: R (runs root), BUILD (b-main2), FP8, MXFP4 (containers), STEP_TOKENS (512)
 set -u
 cd "$(cd "$(dirname "$0")/../../.." && pwd)"
 R=${R:-/mnt/data/bigcherry-work/runs}
@@ -16,6 +16,9 @@ b=${BUILD:-b-main2}
 fp8=${FP8:-/mnt/data/llm-models/radiance/bigcherry/qwen3.8-27b-fp8/qwen3.8-27b-fp8-df2.rad}
 mxfp4=${MXFP4:-/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-27b-mxfp4/qwen3.8-27b-mxfp4.rad}
 export REF=$R/$tag-ref/reference
+# The KL mode keeps a logits row for every token of a step (2 GiB a rank at the default 4096), which the 29 GB
+# container does not leave on the R9700 (run kld1); every run takes the same smaller step.
+export EXTRA="--max-num-batched-tokens ${STEP_TOKENS:-512}"
 jobs=$(mktemp)
 one() {  # <vis> <run> <env...>
     local vis=$1 run=$2; shift 2
