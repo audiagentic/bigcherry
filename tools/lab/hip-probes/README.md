@@ -55,6 +55,15 @@ threads.
 cards. Compute only 174.8 ms. As today (the card waits for the exchange): 342.5 ms, the exchange adds 96%. Two
 half-batches staggered: 182.9 ms, the exchange adds 5%. Staggering recovers 95% of what the exchange costs.
 
+**stagger with RCCL** (`rccl_stagger_probe.cpp`, `run-rccl.sh`, run rs1): the same schedule with production's
+exchange, `ncclAllReduce` of one 2.62 MB message, issued from one host thread; the staggered arm passes each card's
+transfer stream to RCCL and fences it with events. Five repeats, all within 0.2 ms: compute only 172.0 ms; as
+today 255.4 ms (the sum adds 49%); half-size rounds with no staggering 266.0 ms (+55%, what `-ub 256` does);
+staggered halves 185.6 ms (+8%). Staggering hides 84% of what the sum costs today, the sums are right (0 wrong
+values), and RCCL accepts a stream other than the compute stream on the same communicator.
+
+    CARDS=0,1,2 ... VIS=0,1,2 SCRIPT rs1 tools/lab/hip-probes/run-rccl.sh @<any build run> <out-dir>
+
 **wire** (run hp3): a round trip of one message as f32 against f16 with the narrowing and widening done on the
 card costs 53-56% of f32 on every card, alone or with all three exchanging (R9700: 1.58 ms against 0.83 ms). The
 wire scales with its width; the conversions cost almost nothing.
