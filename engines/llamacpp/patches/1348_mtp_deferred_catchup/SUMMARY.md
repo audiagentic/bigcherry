@@ -36,11 +36,10 @@ the host profile (run pp2) shows the main thread in `memmove` for about 13 ms a 
 hidden states into the deferred snapshot. The rest of the gap is the next graph (11.4 ms) and its inputs (4.3 ms),
 which this patch does not own.
 
-Two switches, both leaving the default path as it was:
-
-- `BIGCHERRY_MTP_DEFERRED_STATS=1`: one line at exit, `BIGCHERRY_1348_STATS chunks=.. threads=.. wait_ms=..
-  copy_ms=.. copy_mb=.. catchup_ms=..`, so the copy's cost is measured directly and not read off a profile.
-- `BIGCHERRY_MTP_SNAPSHOT_THREADS=N` (1..16, default 1 = the plain memcpy): the copy is split over N threads.
+One switch, leaving the default path as it was: `BIGCHERRY_MTP_SNAPSHOT_THREADS=N` (1..16, default 1 = the plain
+memcpy) splits the copy over N threads. The copy is already timed by 1346, which wraps these lines
+(`BIGCHERRY_MTP_PROMPT_TIMING=1`, `snapshot_copy_ms`), so this patch adds no timing of its own; 1346's anchor
+follows the new call.
 
 Host threading conditions: N - 1 helper threads are created once with the MTP object and joined when it is
 destroyed; none is created per chunk. Shared state is the copier's own job list, generation counter and running

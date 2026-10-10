@@ -119,7 +119,6 @@ class Patch1348Mechanics(unittest.TestCase):
             self.assertIn("jobs.resize(n > 1 && n <= 16 ? n - 1 : 0);", spec)
             self.assertIn("done_cv.wait(lock, [&] { return running == 0; });", spec)
             self.assertIn("h.join();", spec)
-            self.assertEqual(spec.count("BIGCHERRY_1348_STATS"), 1)
             self.assertIn("if (bc_poisoned[seq_id])", spec)
 
             self.assertIn("bool bc_prompt_only = spec != nullptr && !batch.has_embd();", srv)
@@ -167,8 +166,7 @@ class Patch1348Mechanics(unittest.TestCase):
 
     def test_env_doc(self):
         self.assertEqual([doc.name for doc in _P.ENV_DOCS],
-                         ["BIGCHERRY_MTP_DEFERRED_CATCHUP", "BIGCHERRY_MTP_SNAPSHOT_THREADS",
-                          "BIGCHERRY_MTP_DEFERRED_STATS"])
+                         ["BIGCHERRY_MTP_DEFERRED_CATCHUP", "BIGCHERRY_MTP_SNAPSHOT_THREADS"])
 
 
 if __name__ == "__main__":

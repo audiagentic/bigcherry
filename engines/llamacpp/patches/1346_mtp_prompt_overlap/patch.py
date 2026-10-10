@@ -472,7 +472,7 @@ _DEFERRED_NEXTN_OLD = r"""        auto * ctx_tgt = this->params.ctx_tgt;
         auto & dst = bc_chunks[bc_write];
         dst.tokens = batch_in.tokens;
         dst.h_nextn.resize((size_t) batch_in.size() * n_embd);
-        std::memcpy(dst.h_nextn.data(), h_tgt, dst.h_nextn.size() * sizeof(float));
+        bc_copier.copy(dst.h_nextn.data(), h_tgt, dst.h_nextn.size() * sizeof(float));
         dst.valid = true;
 
         bc_pending = bc_write;
@@ -497,7 +497,7 @@ _DEFERRED_NEXTN_NEW = r"""        // bigcherry 1346: deferred path timing must u
         dst.tokens = batch_in.tokens;
         const int64_t bc_pt_snapshot_copy_t0 = bc_pt_state ? ggml_time_us() : 0;
         dst.h_nextn.resize((size_t) batch_in.size() * n_embd);
-        std::memcpy(dst.h_nextn.data(), h_tgt, dst.h_nextn.size() * sizeof(float));
+        bc_copier.copy(dst.h_nextn.data(), h_tgt, dst.h_nextn.size() * sizeof(float));
         if (bc_pt_state) {
             bc_pt_state->snapshot_copy_us += ggml_time_us() - bc_pt_snapshot_copy_t0;
         }
