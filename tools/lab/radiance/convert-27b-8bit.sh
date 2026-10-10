@@ -1,5 +1,5 @@
 #!/bin/bash
-# RR01: make an 8-bit Qwen3.8-27B container radiance serves from the bf16 GGUF on Brutus. radiance has no plugin for
+# RR01: make an 8-bit Qwen3.8-27B container radiance serves from the bf16 safetensors release (the plugins map its tensor names, not a GGUF's). radiance has no plugin for
 # a GGUF Q8_0 27B ("qwen35 is served at: (unquantised), fp8_e4m3"), so the Q8_0 file cannot be imported as it is.
 #   fp8  block fp8 (E4M3, one bf16 scale a 128x128 block), the form of Qwen's own FP8 release, with radiance's recipe
 #        of record (data/recipes/q38-27b-fp8block-df2.recipe)
