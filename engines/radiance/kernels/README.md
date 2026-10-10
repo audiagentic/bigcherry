@@ -399,6 +399,32 @@ and the result is multiplied by 2^16 once. The same GEMM is then 132 us a call, 
 selftest's host reference still agrees, so the card does not flush half subnormals in the WMMA. Two XTX now decode
 the 8-bit model at about twice the R9700's rate; prefill is at 43% of it.
 
+## KL divergence: 4-bit against 8-bit, and libr3 against libr4d (2026-10-10, runs `kld2-*`, `kld3-*`)
+
+radiance's KL mode (`rad-kld.sh`) over 24 pieces of the lab's KLD text, 42,761 scored positions, 512-token steps.
+No bf16 container of the 27B fits the cards, so the references are quantised models on the R9700 with libr4d.
+
+| reference | scored | KLD mean | p99 | top-1 | PPL against reference |
+|---|---|---|---|---|---|
+| fp8, R9700 | MXFP4, R9700 (`kld2-mxfp4-r4d`) | 0.0509 | 0.354 | 88.7% | x1.0246 |
+| fp8, R9700 | MXFP4, two XTX (`kld2-mxfp4-xtx`) | 0.0508 | 0.361 | 88.7% | x1.0238 |
+| fp8, R9700 | fp8, two XTX (`kld2-fp8-xtx`) | 0.0044 | 0.029 | 96.4% | x1.0009 |
+| MXFP4, R9700 | MXFP4, R9700 again (`kld3-r4d-again`) | 0 | 0 | 100% | x1.0000 |
+| MXFP4, R9700 | MXFP4, one XTX (`kld3-xtx1`) | 0.0037 | 0.027 | 96.8% | x1.0006 |
+| MXFP4, R9700 | MXFP4, two XTX (`kld3-xtx2`) | 0.0037 | 0.028 | 96.8% | x0.9993 |
+
+- The 4-bit container is 0.051 from the 8-bit one: a different most likely token at 11% of positions and 2.4%
+  more perplexity. That is what the 8-bit model buys, at 44.0 against 46.8 tok/s decode on two XTX.
+- radiance repeats exactly on one library and placement, so there is no noise floor to subtract.
+- libr3 on gfx11 is 0.0037 from libr4d on gfx12 with the same weights, on one card as on two: it is the kernel
+  library, not the two-card split. Perplexity does not move (x1.0006, x0.9993), and per kernel the two libraries
+  are equally far from the host reference: `kbench_accuracy.py` over the 537 device cases of `r4d-base2` and
+  `libr3-b4` gives the same worst error for every kernel and means that differ only in the GEMMs and attention
+  (for example `gemm_fp8a8_nt_m16` 3.0e-06 against 4.1e-06), which are the kernels whose sums the two cards' WMMA
+  instructions order differently. So the difference reads as rounding carried through 64 layers of 8-bit
+  activation quantisation, not as a less accurate kernel. That fixture predates the native forms and has no MXFP4
+  rows; those are checked by `r3_selftest` against the host reference, not against libr4d bit for bit.
+
 ## Other engines on the RX 7900 XTX (looked up 2026-10-10)
 
 - **llama.cpp, Vulkan backend.** llama.cpp issue #20934: on an RX 7900 XTX, Llama-2 7B Q4_0 decodes at 174.6 tok/s
