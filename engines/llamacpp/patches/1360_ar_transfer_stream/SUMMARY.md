@@ -47,8 +47,8 @@ communication context/provider path, and `0910_feature_sets` because 1360 regist
 NCCL helper/anchors changed here and do not alter them, so 1360 does not depend on its output. A hard dependency would
 also make 1360 unresolvable because 1250 currently requires rejected `1252_nro03_allreduce_p2p_provider`.
 
-The `ar-transfer-stream` recipe lists the exact 0860/1225/0840/1291/1360 overlay closure so experiment audits can
-resolve it both on release and tuning sources. 1360 is not in the production patch set.
+The `ar-transfer-stream` recipe lists 1360 alone: its requirements are in the production set, and an overlay may not
+repeat a module of its base. 1360 is not in the production patch set.
 
 ## Validation required
 
