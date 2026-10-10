@@ -8,6 +8,7 @@
 //   submit   many small kernels on every card: one host thread feeding all cards against one thread a card
 //   graphs   one thread a card capturing, instantiating and launching HIP graphs at the same time, with and without
 //            a process-wide lock: are the results still right (the 1356 dispatch-worker race, in isolation)
+//   replay   the same threads mixing graph update in place, graph replay and direct launches, under four locking rules
 //   stagger  a layer loop of compute + exchange on every card: as today (the card waits for the exchange) against
 //            two half-batches staggered so one half's exchange runs under the other half's compute
 //
@@ -23,6 +24,7 @@
 #include <cstring>
 #include <functional>
 #include <mutex>
+#include <shared_mutex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -412,6 +414,112 @@ static void test_graphs() {
     }
 }
 
+// ----------------------------------------------------------------------------------------------- replay
+// What llama.cpp's HIP backend does a call, one thread a card as the 1356 dispatch workers have it: a persistent
+// graph instance that is replayed when the call is the same as the last one, re-captured and patched in place
+// (hipGraphExecUpdate) when it is not, and kernels launched directly when graphs are not used for the call. The
+// bisect of the 1356 output race says it needs HIP graphs (6 of 6 workers-on runs agree with graphs disabled), and
+// `graphs` above says fresh captures alone are safe. This mixes the three kinds of call and checks every result,
+// under four locking rules.
+static void test_replay() {
+    const int rounds = 900, nodes = 12, elems = 4096;
+    std::printf("\n== replay: one thread a card, %d rounds mixing graph update, graph replay and direct launches (%d kernels each)\n", rounds, nodes);
+    const char * rules[] = {"no lock", "1356's rule (update exclusive, replay shared, direct unlocked)",
+                            "update and replay under one lock, direct unlocked", "every call under one lock"};
+    for (int rule = 0; rule < 4; ++rule) {
+        std::shared_mutex sm;
+        std::atomic<long> wrong[3], errors{0}, fallbacks{0};
+        for (auto & w : wrong) {
+            w = 0;
+        }
+        Rendezvous start(static_cast<int>(g_cards.size()));
+        const double t0 = now_ms();
+        for_each_card_thread([&](Card & c) {
+            float * x = nullptr;
+            CK(hipMalloc(&x, elems * sizeof(float)));
+            std::vector<float> back(elems);
+            hipGraphExec_t exec = nullptr;
+            float exec_sum = 0;
+            start.arrive();
+            for (int r = 0; r < rounds; ++r) {
+                const int kind = exec == nullptr ? 0 : (r * 7 + c.id * 3) % 3;  // 0 update, 1 replay, 2 direct
+                std::unique_lock<std::shared_mutex> exclusive(sm, std::defer_lock);
+                std::shared_lock<std::shared_mutex> shared(sm, std::defer_lock);
+                if (rule == 3 || (rule == 2 && kind != 2) || (rule == 1 && kind == 0)) {
+                    exclusive.lock();
+                } else if (rule == 1 && kind == 1) {
+                    shared.lock();
+                }
+                bool ok = hipMemsetAsync(x, 0, elems * sizeof(float), c.compute) == hipSuccess;
+                float expect = 0;
+                if (kind == 0) {
+                    hipGraph_t graph = nullptr;
+                    ok = ok && hipStreamBeginCapture(c.compute, hipStreamCaptureModeRelaxed) == hipSuccess;
+                    for (int k = 0; ok && k < nodes; ++k) {
+                        const float add = static_cast<float>(1 + (r + k + c.id) % 7);
+                        expect += add;
+                        hipLaunchKernelGGL(add_kernel, dim3(elems / 256), dim3(256), 0, c.compute, x, elems, add);
+                    }
+                    ok = ok && hipStreamEndCapture(c.compute, &graph) == hipSuccess;
+                    if (ok && exec != nullptr) {
+                        hipGraphNode_t bad = nullptr;
+                        hipGraphExecUpdateResult result;
+                        if (hipGraphExecUpdate(exec, graph, &bad, &result) != hipSuccess) {
+                            (void) hipGetLastError();
+                            hipGraphExecDestroy(exec);
+                            exec = nullptr;
+                            ++fallbacks;
+                        }
+                    }
+                    if (ok && exec == nullptr) {
+                        ok = hipGraphInstantiate(&exec, graph, nullptr, nullptr, 0) == hipSuccess;
+                    }
+                    if (graph) {
+                        hipGraphDestroy(graph);
+                    }
+                    exec_sum = expect;
+                    ok = ok && hipGraphLaunch(exec, c.compute) == hipSuccess;
+                } else if (kind == 1) {
+                    expect = exec_sum;
+                    ok = ok && hipGraphLaunch(exec, c.compute) == hipSuccess;
+                } else {
+                    for (int k = 0; k < nodes; ++k) {
+                        const float add = static_cast<float>(2 + (r + 2 * k + c.id) % 5);
+                        expect += add;
+                        hipLaunchKernelGGL(add_kernel, dim3(elems / 256), dim3(256), 0, c.compute, x, elems, add);
+                    }
+                }
+                if (exclusive.owns_lock()) {
+                    exclusive.unlock();  // as in llama.cpp, the lock covers the submission, not the wait for the card
+                }
+                if (shared.owns_lock()) {
+                    shared.unlock();
+                }
+                ok = ok && hipMemcpyAsync(back.data(), x, elems * sizeof(float), hipMemcpyDeviceToHost, c.compute) == hipSuccess;
+                ok = ok && hipStreamSynchronize(c.compute) == hipSuccess;
+                if (!ok) {
+                    ++errors;
+                    (void) hipGetLastError();
+                } else {
+                    for (int i = 0; i < elems; i += 97) {
+                        if (back[i] != expect) {
+                            ++wrong[kind];
+                            break;
+                        }
+                    }
+                }
+            }
+            if (exec) {
+                hipGraphExecDestroy(exec);
+            }
+            hipFree(x);
+        });
+        std::printf("  %s: wrong results update %ld, replay %ld, direct %ld of %ld rounds; errors %ld; update fell back to a new instance %ld times; %.0f ms\n",
+                    rules[rule], wrong[0].load(), wrong[1].load(), wrong[2].load(), static_cast<long>(rounds) * static_cast<long>(g_cards.size()),
+                    errors.load(), fallbacks.load(), now_ms() - t0);
+    }
+}
+
 // ---------------------------------------------------------------------------------------------- stagger
 static void test_stagger() {
     const int layers = 96, passes = 2;  // 96 sums a batch in production; `passes` full passes of compute a sum
@@ -507,7 +615,7 @@ int main(int argc, char ** argv) {
     setup();
     std::vector<std::string> tests(argv + 1, argv + argc);
     if (tests.empty()) {
-        tests = {"links", "wire", "overlap", "submit", "graphs", "stagger"};
+        tests = {"links", "wire", "overlap", "submit", "graphs", "replay", "stagger"};
     }
     for (const auto & t : tests) {
         if (t == "links") {
@@ -520,6 +628,8 @@ int main(int argc, char ** argv) {
             test_submit();
         } else if (t == "graphs") {
             test_graphs();
+        } else if (t == "replay") {
+            test_replay();
         } else if (t == "stagger") {
             test_stagger();
         } else {
