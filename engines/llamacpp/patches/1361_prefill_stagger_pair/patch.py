@@ -811,6 +811,10 @@ _N_DECODE_LOOP = r'''    int64_t n_outputs_prev = 0;
                             LLAMA_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1361_prefill_stagger_pair\n");
                         });
                     } else {
+                        if (bc_status != GGML_STATUS_SUCCESS) {
+                            // Meta preparation failed (not a provider rejection); never execute partially prepared graphs.
+                            return bc_status == GGML_STATUS_ALLOC_FAILED ? -2 : -3;
+                        }
                         // Pair rejection happens before Meta model compute.  Preserve A-before-B sequential compute.
                         bc_status = graph_compute(bc_pair_res[0]->get_gf(), true);
                         if (bc_status == GGML_STATUS_SUCCESS) {
@@ -821,6 +825,10 @@ _N_DECODE_LOOP = r'''    int64_t n_outputs_prev = 0;
                         if (bc_status != GGML_STATUS_SUCCESS) return -3;
                     }
                 } else {
+                    if (bc_pair_ubatch[1].n_tokens == bc_1361_half) {
+                        // B's apply/build failed; retrying would apply memory twice and invalidate A's state.
+                        return bc_status == GGML_STATUS_ALLOC_FAILED ? -2 : -3;
+                    }
                     // The split was not exactly two halves.  A is already prepared but no pair work started.
                     bc_status = graph_compute(bc_pair_res[0]->get_gf(), true);
                     if (bc_status != GGML_STATUS_SUCCESS) return -3;
