@@ -5,12 +5,12 @@
 
 ## What it does
 
-With `BIGCHERRY_PREFILL_PIPELINE=1` and an MTP drafter, the server submits prompt batch k+1 before the drafter hook
+With an MTP drafter in its own context, the server submits prompt batch k+1 before the drafter hook
 collects batch k's hidden states. `llama_context::decode` copies an unmasked batch's nextn rows a second time into
 one of two pinned host buffers, by decode-call parity, and records a ggml backend event behind that copy on every
 device of the tensor-split backend. 1348's hook, entered after batch k is submitted, collects batch k-1 through
 `llama_get_embeddings_nextn_fenced` (which waits on that batch's events only), runs its catch-up while k computes,
-and leaves k outstanding. Off by default; unset, every path is as before.
+and leaves k outstanding. On by default since 2026-10-11 (see the end); `BIGCHERRY_PREFILL_PIPELINE=0` gives 1348's order.
 
 ## Why
 
@@ -47,3 +47,18 @@ Offline mechanics and patch-lint; on hardware the marker `BIGCHERRY_PATCH_HIT pa
 text identical to the flag off at 8K, 24K and 98K (a reordering: any difference is a bug), at least twelve runs at
 98K, an ABBA on one binary, `kernel-gap-stats.py` before and after (the long gaps must go), decode and acceptance
 unchanged, and cancel / context shift / a prompt shorter than two batches exercised.
+
+## Default on (2026-10-11)
+
+The flag is now an off switch: unset means on, `BIGCHERRY_PREFILL_PIPELINE=0` restores 1348's order. The patch is
+not model-specific - it engages wherever an MTP drafter runs in its own context with the deferred catch-up on, and
+is inert elsewhere - so by the owner's rule it defaults on and no profile lists it. The mechanism and its output
+are unchanged by this; the evidence above was taken with the path on.
+
+Two models: Qwen3.8-Flash-Next (engages: prefill +6.0% / +7.4 to +10.7% / +10.0% at 8K / 24K / 98K, text
+identical) and Qwen3.8-27B on two RX 7900 XTX (does not engage, built-in MTP shares the target's memory: text
+identical, speed unchanged, run nr27-1359).
+
+Added since promotion: a request cancelled in mid-prefill (run cancel1: a 30K-token prompt dropped after 8 s, the
+server stopped it at 12,288 tokens; the next request's text is identical to a run without the cancel, no error
+lines). A context shift has no hardware run; it takes the same `reset_deferred` path as the cancel.

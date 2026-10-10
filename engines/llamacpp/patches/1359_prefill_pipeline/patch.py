@@ -14,7 +14,8 @@ Nothing else in the batch path waits for the previous batch, so the change is co
   computes, and leaves k outstanding. Every other entry (flush at the prompt boundary, the non-deferred path, reset)
   collects or drops the outstanding batch first, through flush_deferred.
 
-Default off: BIGCHERRY_PREFILL_PIPELINE=1. No new host thread; the order of work on each card's stream is unchanged.
+On by default; BIGCHERRY_PREFILL_PIPELINE=0 restores 1348's order. No new host thread; the order of work on each
+card's stream is unchanged.
 """
 
 from __future__ import annotations
@@ -86,10 +87,8 @@ _N_C_EXTRACT = r"""                ggml_backend_tensor_get_async(backend_h, t_h_
                 // buffers, with an event behind it on every device, so the drafter hook can take this batch's
                 // hidden states after the NEXT batch has been submitted. The copy above is unchanged.
                 {
-                    static const bool bc_1359_on = [] {
-                        const char * s = getenv("BIGCHERRY_PREFILL_PIPELINE");
-                        return s != nullptr && atoi(s) != 0;
-                    }();
+                    // on unless BIGCHERRY_PREFILL_PIPELINE=0 (owner rule: a patch that is not model-specific defaults on)
+                    static const bool bc_1359_on = getenv("BIGCHERRY_PREFILL_PIPELINE") == nullptr || atoi(getenv("BIGCHERRY_PREFILL_PIPELINE")) != 0;
                     bc_nextn_slot_valid = false;
                     if (bc_1359_on && !masked && offset == 0) {
                         const int bc_slot = bc_nextn_cur ^ 1;
@@ -206,10 +205,8 @@ _N_S_FIELD = r"""    std::vector<bool> bc_poisoned;
 
 _A_S_INIT = "        bc_deferred_enabled = !is_mem_shared && (bc_defer == nullptr || std::atoi(bc_defer) != 0);\n"
 _N_S_INIT = r"""        bc_deferred_enabled = !is_mem_shared && (bc_defer == nullptr || std::atoi(bc_defer) != 0);
-        {
-            const char * bc_pipe = std::getenv("BIGCHERRY_PREFILL_PIPELINE");
-            bc_pipeline = bc_deferred_enabled && bc_pipe != nullptr && std::atoi(bc_pipe) != 0;  // BigCherry 1359
-        }
+        // BigCherry 1359: on unless BIGCHERRY_PREFILL_PIPELINE=0
+        bc_pipeline = bc_deferred_enabled && (getenv("BIGCHERRY_PREFILL_PIPELINE") == nullptr || atoi(getenv("BIGCHERRY_PREFILL_PIPELINE")) != 0);
 """
 
 _A_S_FLUSH = ("    bool flush_deferred() override {\n"
@@ -325,7 +322,7 @@ PATCHES = [
                  guard=r"for \(auto & bc_events : bc_nextn_events\) \{  // BigCherry 1359",
                  rationale="The context destructor, after its synchronise.", expect_matches=1, max_span_lines=4),
             Edit(id="pipeline-nextn-copy", anchor=re.escape(_A_C_EXTRACT), mode="replace", text=_N_C_EXTRACT,
-                 guard=r"static const bool bc_1359_on = \[\]",
+                 guard=r"static const bool bc_1359_on = getenv",
                  rationale="The nextn extraction in decode (the encode one reads embd_nextn.data directly).",
                  expect_matches=1, max_span_lines=3),
             Edit(id="pipeline-nextn-api", anchor=re.escape(_A_C_API), mode="insert_before", text=_N_C_API,
@@ -352,7 +349,7 @@ PATCHES = [
                  guard=r"int32_t bc_out_slot = -1;", rationale="1348's last deferred field.",
                  expect_matches=1, max_span_lines=2),
             Edit(id="pipeline-mtp-init", anchor=re.escape(_A_S_INIT), mode="replace", text=_N_S_INIT,
-                 guard=r'std::getenv\("BIGCHERRY_PREFILL_PIPELINE"\)', rationale="Where 1348 reads its own switch.",
+                 guard=r"BigCherry 1359: on unless BIGCHERRY_PREFILL_PIPELINE=0", rationale="Where 1348 reads its own switch.",
                  expect_matches=1, max_span_lines=2),
             Edit(id="pipeline-mtp-collect", anchor=re.escape(_A_S_FLUSH), mode="replace", text=_N_S_FLUSH,
                  guard=r"bool bc_collect_outstanding\(\) \{",
@@ -373,8 +370,8 @@ ENV_DOCS = (
     EnvDoc(
         "BIGCHERRY_PREFILL_PIPELINE",
         "0|1",
-        "0 (off)",
-        "experimental: with an MTP drafter, submit prompt batch k+1 before collecting batch k's hidden states "
-        "(waits on a backend event for batch k only); needs BIGCHERRY_MTP_DEFERRED_CATCHUP on",
+        "1 (on)",
+        "with an MTP drafter in its own context, submit prompt batch k+1 before collecting batch k's hidden states "
+        "(waits on a backend event for batch k only); 0 restores 1348's order; needs BIGCHERRY_MTP_DEFERRED_CATCHUP on",
     ),
 )
