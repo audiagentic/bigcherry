@@ -193,29 +193,34 @@ TOPK = FilePatch(
         ),
         Edit(
             id="topk-launch-ties",
-            anchor=_re.escape("            src, dst, states, ncols, k, blocks_per_row);\n}"),
+            # b11552: upstream runs the rows in chunks (histogram memory bounded to 64 MB): the gather is inside the
+            # chunk loop, src / dst advance a chunk at a time and states holds one chunk's rows, so the tie kernels
+            # are launched per chunk over iter_nrows rows, directly behind that chunk's gather.
+            anchor=_re.escape("                src, dst, states, ncols, k, blocks_per_row);\n"),
             text=(
-                "            src, dst, states, ncols, k, blocks_per_row);\n"
-                "    if (det_ties && top_k_bc_ordered()) {  // BigCherry 1294: one order for the whole row (and the tie rule)\n"
-                "        top_k_radix_gather_ordered<BLOCK_SIZE><<<nrows, BLOCK_SIZE, 0, stream>>>(src, dst, states, ncols, k);\n"
-                "    } else if (det_ties) {  // BigCherry 1294: rewrite only ambiguous cutoffs, after the gather (stream order)\n"
-                "        top_k_radix_gather_ties<BLOCK_SIZE><<<nrows, BLOCK_SIZE, 0, stream>>>(src, dst, states, ncols, k);\n"
-                "    }\n"
-                "}"
+                "                src, dst, states, ncols, k, blocks_per_row);\n"
+                "        if (det_ties && top_k_bc_ordered()) {  // BigCherry 1294: one order for the whole row (and the tie rule)\n"
+                "            top_k_radix_gather_ordered<BLOCK_SIZE><<<iter_nrows, BLOCK_SIZE, 0, stream>>>(src, dst, states, ncols, k);\n"
+                "        } else if (det_ties) {  // BigCherry 1294: rewrite only ambiguous cutoffs, after the gather (stream order)\n"
+                "            top_k_radix_gather_ties<BLOCK_SIZE><<<iter_nrows, BLOCK_SIZE, 0, stream>>>(src, dst, states, ncols, k);\n"
+                "        }\n"
             ),
             mode="replace",
-            guard=r"top_k_radix_gather_ties<BLOCK_SIZE><<<nrows",
+            guard=r"top_k_radix_gather_ties<BLOCK_SIZE><<<iter_nrows",
             expect_matches=1,
-            rationale="The single gather launch at the end of top_k_radix_cuda.",
+            max_span_lines=2,
+            rationale="The gather launch of a chunk in top_k_radix_cuda's row loop.",
         ),
         Edit(
             id="topk-det-flag",
-            anchor=_re.escape("    top_k_radix_reset_counters\n"),
-            text="    const bool det_ties = top_k_bc_deterministic_ties();\n    top_k_radix_reset_counters\n",
+            anchor=_re.escape("    top_k_radix_state * states = states_alloc.get();\n"),
+            text=("    top_k_radix_state * states = states_alloc.get();\n"
+                  "    const bool det_ties = top_k_bc_deterministic_ties();\n"),
             mode="replace",
             guard=r"const bool det_ties = top_k_bc_deterministic_ties\(\);",
             expect_matches=1,
-            rationale="Read the switch once in the launcher before the gather launches.",
+            max_span_lines=2,
+            rationale="Read the switch once in the launcher, before the chunk loop.",
         ),
     ),
 )

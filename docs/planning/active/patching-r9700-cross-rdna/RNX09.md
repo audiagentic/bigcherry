@@ -72,7 +72,7 @@ Depends on: completed candidates from R9X02–R9X08 plus R9X10; R9X11 resolved f
 
 
 
-GPT design pass (req_83e7cdc000be4b9e): sequence work as RNX01 mapping, RNX02 existing-Q8-vector dispatch experiment, RNX04 HC raw-gate microfusion after shape census, then RNX08 H2D attribution. Do not start replacement RNX03 code, RNX07 WHT, RNX06 expert-cache, or a custom collective implementation.
+GPT design pass (req_83e7cdc000be4b9e): sequence work as RNX01 mapping, RNX02 existing-Q8-vector dispatch experiment, RNX04 router-only attribution after active profiling (HC gate/POST already promoted by QFP35/1355), then RNX08 H2D attribution. Do not start replacement RNX03 code, RNX07 WHT, RNX06 expert-cache, or a custom collective implementation.
 
 ## Goal
 
@@ -96,7 +96,7 @@ Workloads:
 
 ## Ablation protocol
 
-For N surviving patches, measure baseline, each patch alone, and the full stack. For interacting groups add pairwise A/B: GDN decode+short-prefill, attention+QSA, router+HC+shared-expert, cache+MoE GEMM, collective+WHT/fixed-grid. Report median/geometric throughput and run-to-run variance; use interleaved ABBA where practical. Record kernel census/launch-count changes so a tok/s change can be attributed.
+For N surviving patches, measure baseline, each patch alone, and the full stack. For interacting groups add pairwise A/B: GDN decode+short-prefill, attention+QSA, router+shared-expert (production HC 1344/1355 fixed; no 1304 arm), cache+MoE GEMM, collective+WHT/fixed-grid. Report median/geometric throughput and run-to-run variance; use interleaved ABBA where practical. Record kernel census/launch-count changes so a tok/s change can be attributed.
 
 If two patches optimize the same dispatch, prefer the simpler patch or a unified selector. If one makes another redundant, mark the redundant patch rejected/subsumed rather than retaining dead branches. Re-tune thresholds after combination because crossover points can move.
 

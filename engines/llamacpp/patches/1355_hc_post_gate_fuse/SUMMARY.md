@@ -16,4 +16,4 @@ Activation: `BIGCHERRY_PATCH_HIT patch=1355_hc_post_gate_fuse`.
 
 ## Qualification
 
-No performance claim yet. Source evidence is exact at b11474; expected gain is inference until Brutus ABBA.
+**Measured historical b11474 A/B (2026-10-09/10):** Qwen3.8-Flash-Next pooled decode means 94.7 vs 94.0 t/s at 8K (+0.7%), 83.8 vs 83.4 at 24K (+0.5%), 64.6 vs 64.3 on a second 24K request (+0.5%). Greedy output and MTP acceptance unchanged; prefill and non-Qwen4Exp controls did not regress. A/B ranges overlap; this is a small profile-tier win, not a >=3% gain. No isolated b11552 HC result; see README and completed QFP35.

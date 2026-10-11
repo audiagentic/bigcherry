@@ -224,15 +224,28 @@ _N_S_FLUSH = r"""    // BigCherry 1359 (QFP50): take the outstanding batch's hid
         if (!flush_deferred()) {  // a snapshot taken earlier goes first; there is none in steady state
             return false;
         }
+        auto * bc_pt_state = bc_prompt_timing_for_tokens(bc_out_tokens);
+        const int64_t bc_pt_pipeline_nextn_t0 = bc_pt_state ? ggml_time_us() : 0;
         const float * h_tgt = llama_get_embeddings_nextn_fenced(this->params.ctx_tgt, slot);
+        if (bc_pt_state) {
+            const int64_t bc_pt_pipeline_nextn_us = ggml_time_us() - bc_pt_pipeline_nextn_t0;
+            bc_pt_state->target_block_us += bc_pt_pipeline_nextn_us;
+            bc_pt_state->target_nextn_us += bc_pt_pipeline_nextn_us;
+        }
         if (h_tgt == nullptr) {
             return false;
         }
         auto & dst = bc_chunks[bc_write];
         dst.tokens = std::move(bc_out_tokens);
         bc_out_tokens.clear();
+        const int64_t bc_pt_pipeline_copy_t0 = bc_pt_state ? ggml_time_us() : 0;
         dst.h_nextn.resize(dst.tokens.size() * (size_t) n_embd);
         std::memcpy(dst.h_nextn.data(), h_tgt, dst.h_nextn.size() * sizeof(float));
+        if (bc_pt_state) {
+            bc_pt_state->snapshot_copy_us += ggml_time_us() - bc_pt_pipeline_copy_t0;
+            bc_pt_state->chunks++;
+            bc_pt_state->tokens += (uint64_t) dst.tokens.size();
+        }
         dst.valid = true;
         bc_pending = bc_write;
         bc_write ^= 1;
@@ -277,7 +290,10 @@ _N_S_HOOK = r"""        if (bc_pipeline) {
             // BigCherry 1359 (QFP50): this batch (k) is already on the cards. Collect batch k-1 - waiting for ITS
             // hidden states only - run its catch-up while k computes, and leave k outstanding for the next call,
             // so the server goes straight on to build and submit k+1.
-            if (!flush_deferred()) {
+            bc_mtp_prompt_timing_in_process_deferred = true;
+            const bool bc_pipeline_flush_ok = flush_deferred();
+            bc_mtp_prompt_timing_in_process_deferred = false;
+            if (!bc_pipeline_flush_ok) {
                 return false;
             }
             const int32_t bc_slot = llama_nextn_fence_slot(this->params.ctx_tgt);

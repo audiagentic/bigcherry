@@ -74,15 +74,7 @@ PATCH = FilePatch(
 # dispatch switch in ggml_cuda_mul_mat_q_switch_type (mmq.cu) immediately
 # before its semantic Q6_K dispatch call. The call text itself is preserved,
 # so 1006 and 1267 can insert their independent markers in either order.
-_MMQ_INCLUDES_OLD = """#include <cstdint>
-
-static void ggml_cuda_mul_mat_q_switch_type(ggml_backend_cuda_context & ctx, const mmq_args & args,"""
-_MMQ_INCLUDES_NEW = """#include <atomic>
-#include <cstdint>
-
-static void ggml_cuda_mul_mat_q_switch_type(ggml_backend_cuda_context & ctx, const mmq_args & args,"""
-
-_MMQ_DISPATCH_CALL = "            mul_mat_q_case<GGML_TYPE_Q6_K>(ctx, args, stream, forced_J);"
+_MMQ_DISPATCH_CALL = "            mul_mat_q_case<GGML_TYPE_Q6_K, GGML_PREC_Q8>(ctx, args, stream);"
 _MMQ_MARKER = """            // bigcherry: RDNA4-MMQ-Q6K-CODEGEN activation evidence, not source-port logic.
             if (getenv("BIGCHERRY_PATCH_TRACE") != nullptr) {
                 static std::atomic_flag bigcherry_1006_logged = ATOMIC_FLAG_INIT;
@@ -98,12 +90,12 @@ ACTIVATION_PATCH = FilePatch(
     edits=(
         Edit(
             id="mmq-includes-atomic",
-            anchor=re.escape(_MMQ_INCLUDES_OLD),
+            anchor=r"^#include <cstdint>$",
             rationale="add <atomic> for the once-per-process activation flag",
-            mode="replace",
-            text=_MMQ_INCLUDES_NEW,
-            guard=r"#include <atomic>",
-            max_span_lines=3,
+            mode="insert_before",
+            text="#include <atomic>\n",
+            guard=r"^#include <atomic>$",
+            max_span_lines=2,
         ),
         Edit(
             id="mmq-q6k-dispatch-marker",
@@ -114,7 +106,7 @@ ACTIVATION_PATCH = FilePatch(
             text=_MMQ_MARKER,
             guard=re.escape("BIGCHERRY_PATCH_HIT patch=1006_rdna4_mmq_q6k_codegen_fix"),
             expect_matches=1,
-            max_span_lines=1,
+            max_span_lines=2,
         ),
     ),
 )

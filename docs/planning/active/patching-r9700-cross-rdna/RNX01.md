@@ -87,7 +87,7 @@ Source: `bkvargyas/r9700-stack@8dfda41f25f8ff6837cce48bd52b7fd249648f0e`
 
 
 
-GPT design pass (request req_83e7cdc000be4b9e, completed): lock each optimization to an exact source-to-target mapping before implementation. Highest-value candidates are the existing Q8 attention-vector selector, the remaining HC inject gate chain, and PLE H2D attribution. Keep verified facts, hypotheses, and hardware-only claims separate.
+GPT design pass (request req_83e7cdc000be4b9e, completed): lock each optimization to an exact source-to-target mapping before implementation. Historical candidates included Q8 attention-vector, HC inject gate and PLE H2D attribution. **HC inject gate/POST is already delivered** by QFP35/1355 with 1344 indexing; RNX04 retains only a profile-gated router question. Keep verified facts, hypotheses, and hardware-only claims separate.
 
 ## Goal
 

@@ -175,7 +175,7 @@ _N_MTP_PROCESS = r"""        if (pos_max < N - 1 && !is_mem_shared) {
                 ? pending_h[seq_id].data()
                 : h_tgt + (size_t) (k - 1) * n_embd;
 
-            batch.set_embd(idx, { h_row, 1, (size_t) n_embd });
+            batch.set_embd_state(idx, { h_row, 1, (size_t) n_embd });
         }
 
         auto * mem_dft = llama_get_memory(ctx_dft);

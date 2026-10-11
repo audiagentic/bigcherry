@@ -11,8 +11,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from bigcherry.core import paths  # noqa: E402
 from bigcherry.patcher import apply_all  # noqa: E402
-from bigcherry.patch import rebase as patch_rebase  # noqa: E402
-from bigcherry.patch.pinned_source import copy_pinned, pinned_checkout  # noqa: E402
+from bigcherry.patch.pinned_source import copy_pinned, pinned_checkout, production_order, production_source  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
 _HAVE_VENDOR = paths.llama_root().is_dir()
@@ -48,47 +47,10 @@ class Patch1348Mechanics(unittest.TestCase):
         return root
 
     def _apply_production_without_1348(self, root):
-        # Use the same exact, dependency-aware resolver and threaded dry-run
-        # apply path as patch-rebase-check. Do not reconstruct production
-        # ordering or source materialization in this test.
-        selected = patch_rebase.resolve_selection(
-            source_name="bigcherry",
-            all_patches=False,
-        )
-        self.assertIn("1348_mtp_deferred_catchup", [m.patch_id for m in selected.modules])
-
-        texts = patch_rebase._overlay_texts()
-        overlay_paths = frozenset(texts)
-        found_1348 = False
-        for module in selected.modules:
-            if module.patch_id == "1348_mtp_deferred_catchup":
-                found_1348 = True
-                break
-            probe = patch_rebase.probe_patch(
-                module,
-                _V,
-                texts,
-                context_lines=3,
-                previous_revision=None,
-                revision="mechanics-test",
-                overlay_paths=overlay_paths,
-            )
-            self.assertIn(
-                probe.status,
-                (patch_rebase.STATUS_CLEAN, patch_rebase.STATUS_CLEAN_NOOP),
-                (module.patch_id, probe.to_dict()),
-            )
-        self.assertTrue(found_1348)
-
-        # Materialize only the files this mechanics test inspects from the
-        # canonical threaded text snapshot immediately before 1348.
-        for rel in _FILES:
-            target = root / rel
-            target.parent.mkdir(parents=True, exist_ok=True)
-            if rel in texts:
-                target.write_text(texts[rel], encoding="utf-8")
-            else:
-                copy_pinned(_V / rel, target)
+        # the files as the production composition leaves them immediately before 1348 (the resolver and dry-run
+        # apply path of patch-rebase-check, not an ordering reconstructed here)
+        self.assertIn("1348_mtp_deferred_catchup", production_order())
+        production_source(_FILES, root, stop_before="1348_mtp_deferred_catchup")
 
     def test_full_production_then_1348_apply_and_idempotent(self):
         with tempfile.TemporaryDirectory() as td:

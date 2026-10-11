@@ -27,13 +27,13 @@ from bigcherry.patcher import Edit, FilePatch
 GROUP = "core"
 STATE = "validated"
 
-_A_GATE = ("    const bool has_mixed = llm_arch_supports_mixed_batch(arch) && cparams.ctx_type == LLAMA_CONTEXT_TYPE_DEFAULT;\n"
-           "    if (has_mixed) {\n")
+# b11552: upstream reworked build_inp_embd (three input paths chosen by ggml_build_forward_select; every mixed-only
+# tensor is still under `if (has_mixed)`), so the anchor is the decision line alone.
+_A_GATE = "    const bool has_mixed = llm_arch_supports_mixed_batch(arch) && cparams.ctx_type == LLAMA_CONTEXT_TYPE_DEFAULT;\n"
 _N_GATE = ("    // BigCherry 1333: only a mixed ubatch pays for the mixed branch (three graph inputs, a dup, a second token\n"
            "    // lookup); llm_graph_params compares is_mixed(), so a graph is never reused across the two shapes\n"
            "    const bool has_mixed = llm_arch_supports_mixed_batch(arch) && cparams.ctx_type == LLAMA_CONTEXT_TYPE_DEFAULT &&\n"
-           "        ubatch.is_mixed();\n"
-           "    if (has_mixed) {\n")
+           "        ubatch.is_mixed();\n")
 
 PATCHES = [
     FilePatch(
@@ -44,7 +44,7 @@ PATCHES = [
             Edit(id="mixed-batch-on-demand", anchor=_re.escape(_A_GATE), mode="replace", text=_N_GATE,
                  guard=r"BigCherry 1333: only a mixed ubatch pays for the mixed branch",
                  rationale="The has_mixed decision in llm_graph_context::build_inp_embd, directly before the branch is built.",
-                 expect_matches=1, max_span_lines=3),
+                 expect_matches=1, max_span_lines=2),
         ),
     ),
 ]

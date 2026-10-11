@@ -13,6 +13,10 @@ work: L
 
 # Conditional expert-weight prefetch: overlap measured host-resident transfers with independent GPU work
 
+## 2026-10-11 MET06 ownership fence
+
+Upstream [llama.cpp #29963](https://github.com/ggml-org/llama.cpp/pull/29963) (open, ready for review) already proposes per-layer, split-owned **exact host-weight uploads** with scheduler input events and buffer reuse. It is layer-split only; it is not a prediction/prefetch cache and cannot be counted as a tensor-split production gain. MET06 owns its HIP source/correctness/performance admission and equal-VRAM comparison. **MET12 must not reimplement #29963's input-copy deduplication, host-weight copy callback, fit balancing, scheduler or transient allocator.** Keep MET12 gated on independently measured *exposed* host-expert copy stalls after MET06's controls, and on safe prediction before the router (never authoritative same-layer expert selection). Do not queue concurrent QFP49/1360/1361 or b11552 scheduler experiments; these are protected active work. No MET12 implementation or benchmark was performed in this documentation audit.
+
 ## Description
 
 Strata-style CPU expert staging is NOT assumed to help the resident three-card Flash-Next production layout. MET07 owns expert cache/profile qualification (1337/1338; prior hardware regressions must be respected); MET10 owns range-aware resident-plus-host-tail graph correctness; MET05 owns auxiliary ROCm transport; MET11 owns load-time placement; MET01/RPL01 own residency decisions. This new item owns only **asynchronous predicted hot-weight transfer and event-protected staging** if and when selected expert H2D copies are a demonstrated prefill critical-path cost on an over-VRAM lane. No duplicate cache policy, 1281 range logic, or Meta scheduler.
