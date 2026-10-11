@@ -122,15 +122,18 @@ class PinReleaseTests(unittest.TestCase):
             self.assertFalse(_pr.phase_notes(plan))
             self.assertEqual(head, _git(root, "rev-parse", "HEAD"))
 
-    def test_notes_refuses_conflicting_release_as(self):
+    def test_notes_refuses_conflicting_release_as_before_writing(self):
         with tempfile.TemporaryDirectory() as td:
             root = self._repo(td)
+            plan = self._plan(root)
             path = root / "release-please-config.json"
             path.write_text(path.read_text(encoding="utf-8").replace(
                 '    "engines/llamacpp": {', '    "engines/llamacpp": {\n      "release-as": "999.0.0",'),
                 encoding="utf-8")
-            with self.assertRaisesRegex(_pr.PinReleaseError, "refusing to replace"):
-                _pr._edit_release_as(root, "11474.0.0", "notes")
+            with mock.patch.object(_notes, "write_notes") as write:
+                with self.assertRaisesRegex(_pr.PinReleaseError, "refusing to replace"):
+                    _pr.phase_notes(plan)
+            write.assert_not_called()
 
     def test_unpin_removes_release_as_and_is_noop_when_absent(self):
         pinned = _RELEASE_CONFIG.replace(
