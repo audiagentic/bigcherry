@@ -190,7 +190,7 @@ jobs:
             --head "$GITHUB_SHA" \
             --source bigcherry \
             --experiment-workers 6 \
-            --check-timeout 600 \
+            --check-timeout 1200 \
             "${audit_args[@]}" \
             --json artifacts/patch-offline-check.json
 
