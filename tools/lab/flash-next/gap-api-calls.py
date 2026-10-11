@@ -61,6 +61,7 @@ def main():
         dev_gap = host_gap = in_api = 0
         funcs = collections.defaultdict(lambda: [0, 0])
         worst = []
+        gaps = []
         for a, b in zip(kernels, kernels[1:]):
             if not (pat_a.search(a[2]) and pat_b.search(b[2])):
                 continue
@@ -88,12 +89,17 @@ def main():
                 i += 1
             in_api += spent
             worst.append(((hi - lo) / 1e3, gap, sorted(detail, reverse=True)[:4]))
+            gaps.append(gap)
         if not n:
             print("%s: no %s -> %s with a gap of %g us or more" % (agent, pat_a.pattern, pat_b.pattern, min_gap))
             continue
         print("%s: %d occurrences of %s -> %s; card idle %.1f us, host interval between the two launches %.1f us "
               "(%.1f us in HIP calls, %.1f us in none)" % (agent, n, pat_a.pattern, pat_b.pattern, dev_gap / n,
                                                            host_gap / n, in_api / n, (host_gap - in_api) / n))
+        gaps.sort()
+        # a few first-use gaps (code object loads of hundreds of ms) can carry the whole mean: show the spread
+        print("  card idle: median %.1f us, 90th percentile %.1f us, max %.1f us; the 3 longest are %.0f%% of the total"
+              % (gaps[len(gaps) // 2], gaps[int(len(gaps) * 0.9)], gaps[-1], 100 * sum(gaps[-3:]) / sum(gaps)))
         print("  calls an occurrence   us an occurrence   us a call   HIP function")
         for fn, (c, us) in sorted(funcs.items(), key=lambda kv: -kv[1][1])[:12]:
             print("  %19.2f   %16.1f   %9.1f   %s" % (c / n, us / n, us / c, fn))

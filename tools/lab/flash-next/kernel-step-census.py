@@ -68,6 +68,7 @@ def main() -> int:
         t_gap = collections.Counter()
         pairs = collections.Counter()
         pair_gap = collections.Counter()
+        pair_gaps = collections.defaultdict(list)
         for s in steps:
             for i, (b, e, name) in enumerate(s):
                 key = short(name)
@@ -77,6 +78,7 @@ def main() -> int:
                     t_gap[key] += max(0, s[i + 1][0] - e)
                     pairs[(key, short(s[i + 1][2]))] += 1
                     pair_gap[(key, short(s[i + 1][2]))] += max(0, s[i + 1][0] - e)
+                    pair_gaps[(key, short(s[i + 1][2]))].append(max(0, s[i + 1][0] - e))
         total = sum(t_kernel.values())
         print("  launches a step   us a launch   share of kernel time   gap after, us   kernel")
         for key, t in t_kernel.most_common(top):
@@ -85,10 +87,14 @@ def main() -> int:
         print("  commonest adjacent pairs:  a step   gap between them, us")
         for (a, b), n in pairs.most_common(top):
             print(f"  {n / len(steps):8.2f}   {pair_gap[(a, b)] * us / n:8.1f}   {a}  ->  {b}")
-        print("  pairs with the most gap time:  a step   gap, us   us a step")
-        for (a, b), g in pair_gap.most_common(top):
-            n = pairs[(a, b)]
-            print(f"  {n / len(steps):8.2f}   {g * us / n:8.1f}   {g * us / len(steps):8.1f}   {a}  ->  {b}")
+        # ranked by median gap x occurrences: a pair's mean can be a few first-use gaps (a code object load of
+        # hundreds of ms after the first mul_mat_q -> convert made a 5 us pair look like 239 us, 2026-10-12)
+        print("  pairs with the most steady gap time:  a step   median gap, us   us a step   (mean gap, us; largest single gap, ms)")
+        steady = {pair: statistics.median(g) * len(g) for pair, g in pair_gaps.items()}
+        for (a, b), g in sorted(steady.items(), key=lambda kv: -kv[1])[:top]:
+            gaps = pair_gaps[(a, b)]
+            print(f"  {len(gaps) / len(steps):8.2f}   {statistics.median(gaps) * us:14.1f}   {g * us / len(steps):9.1f}   "
+                  f"({pair_gap[(a, b)] * us / len(gaps):.1f}; {max(gaps) * us / 1e3:.1f})   {a}  ->  {b}")
     return 0
 
 
