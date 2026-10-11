@@ -634,21 +634,18 @@ _N_SCHED_RESERVE = r'''            if (ggml_backend_is_meta(sched->backends[i]))
             }
 '''
 
+# Two edits, not one: production's 1325 (split timing) sits between the function head and its loop.
 _A_SCHED_PREFIX_START = r'''static enum ggml_status ggml_backend_sched_compute_splits(ggml_backend_sched_t sched) {
     GGML_ASSERT(sched);
-    struct ggml_backend_sched_split * splits = sched->splits;
-
-    int prev_backend_id = -1;
-
-    for (int split_id = 0; split_id < sched->n_splits; split_id++) {
 '''
 _N_SCHED_PREFIX_START = r'''static enum ggml_status ggml_backend_sched_compute_splits_range(ggml_backend_sched_t sched, int end_split) {
     GGML_ASSERT(sched);
-    struct ggml_backend_sched_split * splits = sched->splits;
-
-    int prev_backend_id = -1;
-
-    for (int split_id = 0; split_id < end_split; split_id++) {
+'''
+_A_SCHED_PREFIX_LOOP = r'''    for (int split_id = 0; split_id < sched->n_splits; split_id++) {
+        struct ggml_backend_sched_split * split = &splits[split_id];
+'''
+_N_SCHED_PREFIX_LOOP = r'''    for (int split_id = 0; split_id < end_split; split_id++) {  // BigCherry 1361: the pair runs every split but the last here
+        struct ggml_backend_sched_split * split = &splits[split_id];
 '''
 _A_SCHED_PREFIX_END = r'''    return GGML_STATUS_SUCCESS;
 }
@@ -1157,6 +1154,8 @@ PATCHES = [
                   guard=r"failed to reserve per-device Meta arena%s", rationale="1340 reserve-time Meta arena planning."),
             _edit(id="stagger-sched-prefix-start", anchor=_A_SCHED_PREFIX_START, mode="replace", text=_N_SCHED_PREFIX_START,
                   guard=r"ggml_backend_sched_compute_splits_range", rationale="Use original scheduler loop."),
+            _edit(id="stagger-sched-prefix-loop", anchor=_A_SCHED_PREFIX_LOOP, mode="replace", text=_N_SCHED_PREFIX_LOOP,
+                  guard=r"split_id < end_split; split_id\+\+", rationale="The original scheduler loop, bounded by the range."),
             _edit(id="stagger-sched-prefix-end", anchor=_A_SCHED_PREFIX_END, mode="replace", text=_N_SCHED_PREFIX_END,
                   guard=r"ggml_backend_sched_compute_splits_prefix", rationale="Expose prefix."),
             _edit(id="stagger-sched-pair-api", anchor=_A_SCHED_API_SITE, mode="replace", text=_N_SCHED_API_SITE,
