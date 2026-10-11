@@ -93,8 +93,8 @@ _LAUNCH_NEW = """        static const bool bc_ar_fused = getenv("BIGCHERRY_AR_FU
 
 PATCHES = [
     FilePatch(
-        path="ggml/src/ggml-cuda/ggml-cuda.cu",
-        description="1314: fused produce+consume kernel for 1291's small cpu-root AllReduce (BIGCHERRY_AR_FUSED=1)",
+        path="ggml/src/ggml-cuda/bc-ar-cpu-root.cuh",
+        description="1314: fused produce+consume kernel inside 1291's owned CPU-root implementation (BIGCHERRY_AR_FUSED=1)",
         language="none",
         edits=(
             Edit(
@@ -103,7 +103,7 @@ PATCHES = [
                 mode="insert_before",
                 text=_KERNEL,
                 guard=r"static __global__ void bc_cpu_root_fused\(",
-                rationale="1291's CPU worker follows its produce/consume kernels; the fused kernel goes with them.",
+                rationale="1291's owned CPU-root header contains the worker after its produce/consume kernels; the fused kernel goes with them.",
                 expect_matches=1,
                 max_span_lines=2,
             ),
