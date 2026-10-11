@@ -1,5 +1,8 @@
 # 1266_rd05_wmma_fa_tileq_sync
 
+**Status:** untested
+**Plan item:** PRBE02
+
 **Patch metadata state:** untested (unchanged). **Operational disposition:** do not apply to b11552 unchanged; correctness-only historical candidate, not promoted. **Owner:** PRBE110 (patch); PRBE02 (residual kbc-boundary decision).
 
 This package extracted two synchronization edits from rejected 1203, plus a once-per-process WMMA dispatch marker. Four archived gfx1201 sessions passed full-vocabulary correctness and marker admission but did not improve throughput (target -0.0499%, CI95-low -0.1609%); they did not reproduce a stock race.
