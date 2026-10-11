@@ -11,70 +11,33 @@ priority: P1
 work: M
 ---
 
-# Runtime profiles from config files (no model-specific values in patch code) + 0910 loader rework
+# QFP23: deterministic runtime auto-profile admission
 
-## Description
+## b11552 audit (2026-10-11)
 
-Owner 2026-10-05: model-specific configuration must not be hard-coded in patch code; it belongs in configuration files holding preconfigured settings per model, unless impossible. 0910 keeps only the mechanism (load, validate, apply); profiles (hip-q81, sched-async, flashnext, future qwen27b, ...) move to config/runtime-profiles/*.ini. Folds in deep-dive req_77d168caab954021 (0910 init hooks, no exit in library, whole-request validation + rollback, span parsing, ggml_bigcherry_getenv wrapper).
+**Disposition:** `0910_feature_sets` is already validated. Do not create another loader, parser, placement solver, scheduler or telemetry system. QFP23 owns only deterministic `auto` admission, flag timing and profile identity. No new performance measurement.
 
-## Steps
+**Implementation:** `engines/llamacpp/patches/0910_feature_sets/patch.py` implements `bc_load_profiles`, `bc_parse_profile_file`, `bc_flatten`, `bc_apply_request`, `ggml_bigcherry_features_init` and `ggml_bigcherry_features_apply_arch`. Explicit overrides, include validation, rollback and startup hooks exist. Source profiles are `engines/llamacpp/overlay/profile/{base,flashnext}.ini`; `tools/bigcherry/build/builds.py::resolve_runtime_artifacts` hashes shipped `profile/*.ini`. Historical `config/runtime-profiles/` and `overlay/src/profile/` proposals are obsolete.
 
-1. Profile file format (INI-like, C-parseable): [name] sections; optional arch = <gguf arch>; description = ...; NAME = VALUE lines; @other includes. Default location next to the binary / install share dir, override BIGCHERRY_PROFILES=<file|dir>.
-2. Python validator (bigcherry profiles check, wired into patch-lint/check): duplicates, unknown @refs, cycles, conflicting assignments, flag names must exist in some patch ENV_DOCS, value syntax.
-3. 0910 C loader: read file(s) once in ggml_bigcherry_features_init(); flatten; validate the whole request before mutating env; rollback on failure; no exit/abort (help/list returns a status the tools map to exit codes); log explicit values as <explicit>; max sizes; no strtok.
-4. Init hooks (deep-dive 1): ggml_init first line, get_reg() before the static registry, ggml_backend_load_all_from_path() before dlopen/score, GCC/Clang ctor fast path; tools call init at main and map HELP/ERROR.
-5. ggml_bigcherry_getenv() wrapper; migrate BIGCHERRY_*/GGML_HIP_* consumers (inside each patch) so read order no longer matters.
-6. BIGCHERRY_FEATURES=auto: after model load pick the profile whose arch matches; ENV_DOCS records when each flag is read (load-time vs lazy) so auto only claims lazily read flags.
-7. Move per-model tuned values (1301 width, 1295 threshold, DFlash n_max, ATTN_TS / FFN_TS / DRAFT_VOCAB_N) into profiles; install the profiles dir with release builds.
+### Source-proven gaps
 
-## Detailed Solution & Technical Design
+1. C `bc_load_profiles` uses unsorted `readdir`; `ggml_bigcherry_features_apply_arch` chooses the first matching `arch`. Python `runtime_profiles.py::check` does not reject two profiles claiming the same arch. A reversed-order host fixture selects different profiles; this is not a reproduced GPU failure.
+2. `flashnext.ini` binds `arch=qwen4exp` to `BIGCHERRY_ATTN_TS=1,1,0` and MTP/router settings tuned for 2×gfx1100 + gfx1201 with gfx1030 drafter. Architecture does not prove model hash, quant, GPU count/order, split, VRAM or P2P. Do not auto-admit topology-bound profiles without positive attestation.
+3. C parsing lacks Python's ENV_DOCS whitelist, repeated-key rejection and strict arch grammar for external `BIGCHERRY_PROFILES`. External profile bytes are not in the shipped bundle hash. Record external SHA-256 and effective flags.
+4. `auto` runs in `llama_model_create` after backend init. `EnvDoc` has no read-phase field; early getters may already run. Server handles init error statuses; other tools' init hooks discard them.
 
+### Bounded implementation
 
+**A:** Extend `tools/bigcherry/patch/runtime_profiles.py::check` with global `arch -> profile` uniqueness; add two-file/reversed-order, unique-arch and bad-key fixtures in `test_runtime_profiles.py`.
 
-## Code Samples & Guidance
+**B:** Extend existing 0910 C post-parse admission, before env mutation, to reject cross-profile arch collision, invalid arch, unknown ENV_DOCS flags, duplicate key and unmatched explicit `auto`. Add C compile/run cases to `test_0910_feature_sets.py`: two file orders, bad external override, explicit-wins, help/error and rollback. Preserve current include semantics.
 
+**C:** Keep `BIGCHERRY_FEATURES=flashnext` explicit and model/device-attested. Remove/reject `auto` binding for topology-specific profiles until exact GGUF/quant and physical device split are verified. Census actual getter sites for shipped flags as pre-model/model-load/graph-build/lazy; only late-read flags qualify for auto. No second configuration system.
 
+**D:** Compare explicit and admitted auto in separate processes with identical pinned binary/model. Record profile digest, effective env, physical GPUs, no-P2P, graph allocation and transfers. Negative controls: single R9700, dual XTX, three-card topology, different qwen4exp quant and bad profile. Require logits/KLD, greedy/MTP acceptance, multi-ubatch, long-context and repeated-request parity. If no safe auto use case remains, retain explicit profiles and close; no loader speedup is claimed.
 
-## Files
+### Consolidation and sources
 
+QFP23/0910 owns profile admission; QFP18 owns flag docs; QFP/MET/MMQ/MTP owners retain tuning. Upstream llama.cpp [#17859](https://github.com/ggml-org/llama.cpp/pull/17859) and [#26118](https://github.com/ggml-org/llama.cpp/pull/26118) already implement model/system CLI presets; reuse for ordinary llama arguments, not patch-private env. [vLLM](https://github.com/vllm-project/vllm/blob/main/docs/configuration/serve_args.md) and [SGLang](https://github.com/sgl-project/sglang/blob/main/docs/docs/advanced_features/server_arguments.md) are config-precedence references, not AMD gains.
 
-
-## Validation
-
-Offline: validator rejects bad files; C loader unit tests (file parse, flatten, conflicts, rollback, help status, explicit-wins, overlong); MSVC compile. Hardware: release build with BIGCHERRY_FEATURES=flashnext from the file reproduces v6; auto picks flashnext on Flash-Next and the 27B profile on the 27B.
-
-## Effort & Risk
-
-
-
-## Standards
-
-
-
-## Acceptance Criteria
-
-- No model-specific values compiled into patch code except intrinsic model code paths (1303 arch check, 1308/1327 inside qwen4exp.cpp).
-- Profiles live in config files, validated by tooling and by the loader.
-- Deep-dive 1 findings resolved.
-
-## Notes
-
-What stays in code: behaviour that is part of one model's own code path (qwen4exp.cpp patches, 1303 refusing non-qwen4exp) - code semantics, not tunables.
-
-Owner 2026-10-05 (two directions): (1) profile files must live in a folder relative to the final release - we still ship a releasable package; (2) incorporate per-model tuning. Release layout: canonical source in the overlay src/bigcherry-profiles/ (part of source identity), CMake copies it next to the binaries as bin/bigcherry-profiles.ini (+ install rule), resolve_runtime_artifacts includes it in the runtime bundle hash, the C loader finds it relative to libggml-base (dladdr / GetModuleHandleEx) with BIGCHERRY_PROFILES=<file> override. Per-model tuning: model profiles ([flashnext], [qwen27b], ...) with arch = <gguf arch>; BIGCHERRY_FEATURES=auto picks by architecture after model load (only lazily-read flags; ENV_DOCS records read time); a per-model sweep harness (tools/lab/tune-profile) sweeps each patch's knobs per model (1301 MAXCOLS, 1295 GATHER_MIN, DFlash n_max/placement, AR thresholds, QSA_CHUNK, ATTN_TS/FFN_TS) and writes the winners into that model's profile section with the evidence run id in a comment. First data: 1301 width sweep + DFlash sweep -> [qwen27b].
-
-## Change Log
-
-- 2026-10-04T22:01:19.661087+00:00 (created-by): Created by agent
-- 2026-10-04T22:04:04.431702+00:00 (updated-by): Updated: section:notes
-
-## Ledger-events
-
-
-
-- chg_20261004_235327_model-and-scope-tuning-now-liv_4754
-- 2026-10-04T23:53:33.547468+00:00 (updated-by): Updated: section:ledger-events
-- chg_20261004_235343_model-and-scope-tuning-now-liv_4846
-- 2026-10-04T23:53:49.845549+00:00 (updated-by): Updated: section:ledger-events
-- chg_20261005_113349_the-fused-decode-kernels-now-a_9568
-- 2026-10-05T11:33:52.589848+00:00 (updated-by): Updated: section:ledger-events
+Selected `build/pin-b11552` by independent `9fa502648e4f00ea334d4f783750417edd8f275d` (Oct 11 16:57 UTC). QFP23 last substantive update Oct 5, profile last Oct 10 11:49 UTC; 12h exclusion passed. Protected PA49, MET07, QFP41, QFP48, QFP49, PGC17 untouched. Eight static checks and two-order host fixture passed; no pytest, C/HIP build or GPU run.
