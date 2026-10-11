@@ -7,7 +7,7 @@ import re
 from bigcherry.patcher import Edit, EnvDoc, FilePatch
 
 GROUP = "rdna-boosts"
-STATE = "untested"
+STATE = "rejected"
 
 _A_H_DECL = "class llama_kv_cache : public llama_memory_i {\n"
 _N_H_DECL = r"""// BigCherry 1362: parsed once in llama-kv-cache.cpp; callers pass the cache size so an oversized

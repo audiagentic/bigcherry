@@ -1,7 +1,31 @@
 # 1362_kv_pad_prompt
 
-**Status:** untested  
+**Status:** rejected
 **Plan item:** QFP53
+
+## Rejected (2026-10-12): the graph is reused, prefill does not get faster
+
+Hardware, pin b11552, build `b-kvpad2` (production set + this patch), `BIGCHERRY_KV_PAD=4096`, A B B A on one binary:
+
+| Flash-Next (UD-IQ4_XS, production profile) | off | on |
+|---|---|---|
+| prefill 8K depth (10,154 tokens) | 1299.4 (cold first run), 1443.7 t/s | 1436.3, 1445.8 t/s |
+| prefill 24K depth (38,725 tokens) | 1465.5, 1464.6 t/s | 1466.2, 1467.6 t/s |
+| greedy text | - | identical at both depths |
+
+- The mechanism works: with the pooled-block count padded as well, `BIGCHERRY_SUBMIT_TIMING` shows `reused=1` on 24 of
+  40 512-token submits (0 of 40 before the k-pool fix) and the graph build falls from 7.1 to 3.0 ms a batch.
+- It buys nothing: on a reused graph `process_ubatch` must wait for the previous batch's compute before it may
+  overwrite the shared input tensors, and the time spent in the input step rises from 3.3 to 17.0 ms a batch. Without
+  reuse the next batch's graph is built while the cards still run the previous one (1359's queue-ahead), so the build
+  was not on the critical path in the first place. Reuse and queue-ahead exclude each other on shared inputs.
+- Qwen3.8-27B Q8, dual XTX (dense attention; first revision of the patch, KV padding only): prefill 0.4% lower at 10K
+  and 1.0% lower at 32K (1273.8 / 1272.4 vs 1286.6 / 1284.6 t/s), and the greedy text at 32K differs from the unpadded
+  runs: masked cells do not enter the result, but dense flash attention walks a different number of KV tiles and sums
+  in another order. "Bit-identical" below holds only for the QSA path measured above.
+
+Not in any build; kept as the record of the approach. The remaining per-batch idle (QFP48: about 21 ms a batch at 24K)
+is not the graph build; QFP53 carries what is left.
 
 ## What it does
 
