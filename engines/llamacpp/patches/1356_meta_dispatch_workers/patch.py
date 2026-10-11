@@ -206,7 +206,7 @@ _N_DISPATCH = r"""        if (bc_parallel_dispatch) {
 # "unchanged" without comparing tensor properties. Meta/1340 can rebind per-device simple-tensor data while retaining
 # a subgraph UID, and fused admission/launches are address-sensitive. With workers enabled, always perform the full
 # per-node comparison so a changed address/shape cannot replay a stale fused graph. The existing lock remains
-# capture-exclusive/replay-shared. BIGCHERRY_META_DISPATCH_GRAPH_TRACE logs decision + exact property hash.
+# capture-exclusive/replay-shared. BIGCHERRY_META_DISPATCH_GRAPH_TRACE logs decision + cross-run-stable property hash.
 _A_CUDA_INCLUDE = r"""#include <mutex>
 """
 _N_CUDA_INCLUDE = r"""#include <mutex>
@@ -557,6 +557,6 @@ ENV_DOCS = (
         "0|1",
         "0 (off)",
         "diagnostic: per device graph_compute call, print capture/update/replay/direct plus the exact CUDA graph "
-        "property hash; intended to diff a clean 98K run against a differing run",
+        "cross-run-stable property hash; intended to diff a clean 98K run against a differing run",
     ),
 )
