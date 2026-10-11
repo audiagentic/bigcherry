@@ -23,19 +23,23 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
 
 from . import notes as _notes
 
-PHASES = ("gate", "record", "notes", "main", "release", "sync")
+PHASES = ("gate", "record", "notes", "main", "release", "unpin", "sync")
 
 
 # The release-please package (a path in release-please-config.json) that carries the llama.cpp engine's release line.
 RELEASE_PACKAGE = "engines/llamacpp"
+_RELEASE_CONFIG = "release-please-config.json"
+_MANIFEST = ".release-please-manifest.json"
 
 
 class PinReleaseError(RuntimeError):
@@ -87,7 +91,7 @@ def next_version(existing: list[str], build: int, bump: str | None) -> str:
 
 
 def make_plan(repo_root: Path, llama_tag: str, main: str = "main", remote: str = "origin",
-              version: str | None = None, bump: str | None = None) -> Plan:
+              version: str | None = None, bump: str | None = None, allow_existing: bool = False) -> Plan:
     m = re.fullmatch(r"b(\d+)", llama_tag)
     if not m:
         raise PinReleaseError("gate", f"{llama_tag!r} is not a llama.cpp release tag (b<number>)")
@@ -104,7 +108,14 @@ def make_plan(repo_root: Path, llama_tag: str, main: str = "main", remote: str =
         # a release whose notes commit exists but is not tagged yet is the one in flight: resume it
         in_flight = _git(repo_root, "log", "--format=%s", "--fixed-strings", f"--grep=chore: release notes {config.tag_prefix}{build}.", "-20", check=False)
         pending = [s.rsplit(config.tag_prefix, 1)[-1] for s in in_flight.splitlines() if s.rsplit(config.tag_prefix, 1)[-1] not in existing]
-        version = pending[0] if pending else next_version(existing, build, bump)
+        if pending:
+            version = pending[0]
+        elif allow_existing and bump is None:
+            released = sorted(tuple(int(x) for x in v.split(".")) for v in existing
+                              if re.fullmatch(rf"{build}\.\d+\.\d+", v))
+            version = ".".join(str(x) for x in released[-1]) if released else next_version(existing, build, bump)
+        else:
+            version = next_version(existing, build, bump)
     try:
         version = _notes.release_version(llama_tag, version)
     except _notes.ReleaseNotesError as exc:
