@@ -86,3 +86,9 @@ which is a different graph/batching reference.
 The marker `BIGCHERRY_PATCH_HIT patch=1361_prefill_stagger_pair` is emitted once, only when the first pair actually
 starts. One ubatch, odd/tail batches, decode-sized batches, callbacks, non-causal work, embeddings/rerank, unequal
 subgraph shapes, and unsupported communication providers remain on the existing sequential path.
+
+## Scheduler host-prefix qualification (PR #147 follow-up)
+
+The normal Flash-Next prompt graph has a host-side input split followed by a final Meta split. 1361 now admits matching A/B scheduler shapes with exactly one Meta split, last. All preceding A splits and then B splits use the unchanged upstream scheduler split loop (input-copy ordering, host-weight callbacks, async compute, events and cross-backend waits); final Meta input copies precede the staggered Meta compute. Host-prefix work starts only after Meta has captured both graphs and preflighted every reduction/provider, so unsupported routes perform no prefix work. The B host split consumes B's separately materialized token/embedding/position inputs, not the output of A's Meta split or A's KV/recurrent state. Existing 1359 pipelining likewise permits next-batch host preparation before prior-batch Meta compute finishes. A-before-B dependencies are enforced during final Meta computation on the shared per-card streams.
+
+On first structural/provider decline the context latches `bc_1361_declined` and subsequent batches take the unchanged sequential `process_ubatch`/graph-reuse route; one already-prepared pair is executed sequentially. Declines are logged once per distinct reason, including reduction index for RCCL route failure. A successfully engaged pair still rebuilds/allocates two graph results each candidate call; hardware measurement must quantify this overhead. No additional threads, feature remains default-off.
