@@ -223,6 +223,12 @@ int main(int argc, char ** argv) {
         if (g == &b) {
             ggml_backend_sched_set_stagger_pair_arena(g->sched, true);  // B's own compute arena, as 1361 sets it in llama
         }
+        // reserve first, as llama does: without it the per-device arena (1340) grows after the graph is allocated and
+        // the graph's tensors are left pointing into the arena it replaced
+        if (!ggml_backend_sched_reserve(g->sched, g->graph)) {
+            fail("could not reserve a graph");
+        }
+        ggml_backend_sched_reset(g->sched);
         if (!ggml_backend_sched_alloc_graph(g->sched, g->graph)) {
             fail("could not allocate a graph");
         }
