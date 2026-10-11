@@ -1,7 +1,9 @@
 # 1337_moe_expert_caching
 
-**Status:** untested
+**Status:** superseded
 **Plan item:** MET01
+
+Superseded on pin b11552: upstream #29887 is part of the pin (`src/llama-moe-cache.cpp`, `--moe-cache-mib`).
 
 Kind: upstream backport of llama.cpp #29887, originally taken from commit `6b7b03aab` and rebased to b11474.
 Requires the native selective-copy callback already present at this pin. With `--moe-cache-mib N`, host-resident

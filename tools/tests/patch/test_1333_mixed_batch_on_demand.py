@@ -46,7 +46,8 @@ class Patch1333Mechanics(unittest.TestCase):
             fn = src[src.index("ggml_tensor * llm_graph_context::build_inp_embd("):]
             fn = fn[:fn.index("res->t_inp_embd = cur;")]
             # the branch is conditional on the ubatch being mixed; the select still uses has_mixed for its count
-            self.assertIn("cparams.ctx_type == LLAMA_CONTEXT_TYPE_DEFAULT &&\n        ubatch.is_mixed();\n    if (has_mixed) {", fn)
+            self.assertIn("cparams.ctx_type == LLAMA_CONTEXT_TYPE_DEFAULT &&\n        ubatch.is_mixed();\n\n"
+                          "    const int64_t n_tok_rows = has_mixed ? llm_graph_n_tok_rows(ubatch) : 0;", fn)
             self.assertIn("ggml_build_forward_select(gf, inps.data(), has_mixed ? 3 : 2, idx);", fn)
             self.assertIn("const int idx = ubatch.is_mixed() ? 2 : ubatch.token ? 0 : 1;", fn)
             self.assertEqual(fn.count("const bool has_mixed ="), 1)

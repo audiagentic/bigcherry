@@ -11,8 +11,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from bigcherry.core import paths  # noqa: E402
 from bigcherry.patcher import apply_all  # noqa: E402
-from bigcherry.patch import rebase as patch_rebase  # noqa: E402
-from bigcherry.patch.pinned_source import copy_pinned, pinned_checkout  # noqa: E402
+from bigcherry.patch.pinned_source import production_source  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
 _V = paths.llama_root()  # the primary checkout's vendor tree (a slice worktree has none)
@@ -39,37 +38,8 @@ _P = _load("1355_hc_post_gate_fuse")
 @unittest.skipUnless(all((_V / p).exists() for p in _FILES), "pinned vendor checkout not present")
 class Patch1355Mechanics(unittest.TestCase):
     def _root_with_production(self, td: str) -> Path:
-        root = Path(td)
-        selected = patch_rebase.resolve_selection(source_name="bigcherry", all_patches=False)
-        texts = patch_rebase._overlay_texts()
-        overlay_paths = frozenset(texts)
-
-        for module in selected.modules:
-            if module.patch_id == "1355_hc_post_gate_fuse":
-                continue  # in the production selection once validated; each test applies it itself
-            probe = patch_rebase.probe_patch(
-                module,
-                pinned_checkout(),  # not the vendor working tree, which is normally patched
-                texts,
-                context_lines=3,
-                previous_revision=None,
-                revision="mechanics-test",
-                overlay_paths=overlay_paths,
-            )
-            self.assertIn(
-                probe.status,
-                (patch_rebase.STATUS_CLEAN, patch_rebase.STATUS_CLEAN_NOOP),
-                (module.patch_id, probe.to_dict()),
-            )
-
-        for rel in _FILES:
-            dst = root / rel
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            if rel in texts:
-                dst.write_text(texts[rel], encoding="utf-8")
-            else:
-                copy_pinned(_V / rel, dst)
-        return root
+        # the production set without 1355 (in the selection once validated; each test applies it itself)
+        return production_source(_FILES, td, without="1355_hc_post_gate_fuse")
 
     def test_full_production_then_apply_and_idempotent(self):
         with tempfile.TemporaryDirectory() as td:

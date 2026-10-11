@@ -66,3 +66,75 @@ def test_candidate_field_inserted_into_signature_fails(tmp_path: Path):
 
 def test_identity_check_is_registered_in_full_audit():
     assert source_audit.check_identity_namespace_separation in source_audit.ALL_CHECKS
+
+
+
+def _mmq_context(tmp_path: Path):
+    cuda = tmp_path / "ggml" / "src" / "ggml-cuda"
+    instances = cuda / "template-instances"
+    instances.mkdir(parents=True)
+    return source_audit.AuditContext(root=tmp_path, cuda=cuda, instances=instances)
+
+
+def _by_id(ctx, check_id: str):
+    return next(result for result in ctx.results if result.id == check_id)
+
+
+def test_mmq_generated_types_parser_accepts_b11552_explicit_q8(tmp_path: Path):
+    ctx = _mmq_context(tmp_path)
+    generator = ctx.instances / "generate_cu_files.py"
+    generator.write_text(
+        'TYPES_MMQ = ["GGML_TYPE_Q4_0", "GGML_TYPE_MXFP4"]\n',
+        encoding="utf-8",
+    )
+    (ctx.instances / "mmq-instance-q4_0.cu").write_text("", encoding="utf-8")
+    (ctx.instances / "mmq-instance-mxfp4.cu").write_text("", encoding="utf-8")
+    (ctx.cuda / "mmq.cu").write_text(
+        """
+static void ggml_cuda_mul_mat_q_switch_type() {
+    mul_mat_q_case<GGML_TYPE_Q4_0, GGML_PREC_Q8>(ctx, args, stream);
+    mul_mat_q_case<GGML_TYPE_MXFP4, GGML_PREC_Q4>(ctx, args, stream);
+    mul_mat_q_case<GGML_TYPE_MXFP4, GGML_PREC_Q8>(ctx, args, stream);
+}
+""",
+        encoding="utf-8",
+    )
+
+    source_audit.check_mmq_types(ctx)
+
+    result = _by_id(ctx, "mmq.generated_types_match_runtime")
+    assert result.ok
+    assert result.actual == ["GGML_TYPE_Q4_0", "GGML_TYPE_MXFP4"]
+
+
+def test_mmq_j_search_parser_reads_b11552_top_level_loop(tmp_path: Path):
+    ctx = _mmq_context(tmp_path)
+    cases = "\n".join(
+        f"        launch_mul_mat_q<type, {j}, fallback, prec_src1>(ctx, args, stream);"
+        for j in source_audit.MMQ_J_VALUES
+    )
+    (ctx.cuda / "mmq.cuh").write_text(
+        f"""
+template <ggml_type type, bool fallback, ggml_prec prec_src1>
+void mul_mat_q_switch_J() {{
+{cases}
+}}
+""",
+        encoding="utf-8",
+    )
+    (ctx.cuda / "mmq.cu").write_text(
+        """
+void ggml_cuda_mul_mat_q() {
+    int ntiles_J_best = 99;
+    for (int J = 8; J <= 128 && ntiles_J_best > 1; J += 8) {
+        ntiles_J_best = J;
+    }
+}
+""",
+        encoding="utf-8",
+    )
+
+    source_audit.check_mmq_j(ctx)
+
+    assert _by_id(ctx, "mmq.j_switch_values").ok
+    assert _by_id(ctx, "mmq.j_search_loop_bounds").ok

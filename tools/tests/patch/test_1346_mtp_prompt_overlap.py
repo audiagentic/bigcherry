@@ -12,11 +12,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from bigcherry.core import paths  # noqa: E402
 from bigcherry.patcher import apply_all  # noqa: E402
-from bigcherry.patch import rebase as patch_rebase  # noqa: E402
-from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
+from bigcherry.patch.pinned_source import copy_pinned, pinned_checkout, production_order, production_source  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
-_V = paths.llama_root()  # the primary checkout's vendor tree (a slice worktree has none)
+# a pristine copy of the pinned revision: the vendor working tree normally has the production patches applied
+_V = pinned_checkout() if paths.llama_root().is_dir() else paths.llama_root()
 _FILES = (
     "common/speculative.h",
     "common/speculative.cpp",
@@ -51,11 +51,13 @@ class Patch1346StaticContracts(unittest.TestCase):
         src = (_REPO / "engines/llamacpp/patches/1346_mtp_prompt_overlap/patch.py").read_text(encoding="utf-8")
         edits = [edit for patch in _P.PATCHES for edit in patch.edits]
         self.assertGreater(len(edits), 0)
-        self.assertEqual(src.count("expect_matches=1,"), len(edits))
+        # four process-timing edits take the second of two matches (1348's snapshot repeats the code): expect 2, occurrence 1
+        self.assertEqual(src.count("expect_matches=1,") + src.count("expect_matches=2,"), len(edits))
+        self.assertEqual(src.count("occurrence=1,"), 4)
         self.assertEqual(src.count("max_span_lines="), len(edits))
         self.assertEqual(src.count("guard=r"), len(edits))
         for edit in edits:
-            self.assertEqual(edit.expect_matches, 1)
+            self.assertEqual(edit.expect_matches, 2 if edit.occurrence == 1 else 1)
             self.assertIsNotNone(edit.guard)
             self.assertGreater(edit.max_span_lines, 0)
 
@@ -82,39 +84,17 @@ class Patch1346Mechanics(unittest.TestCase):
         return root
 
     def _apply_prereqs(self, root):
-        """Compose the production set up to, not including, 1346 through the composer's own probe path.
+        """The production set up to, not including, 1346, through the composer's own probe path.
 
         1346 applies after look-ahead (1321/1322), round timing (1317) and deferred catch-up (1348); those in turn
         need their own predecessors, so a hand-picked subset does not reproduce the text 1346 anchors on.
         """
-        selected = patch_rebase.resolve_selection(source_name="bigcherry", all_patches=False)
-        ids = [m.patch_id for m in selected.modules]
+        ids = production_order()
         self.assertIn("1346_mtp_prompt_overlap", ids)
         for required in ("1321_mtp_ahead_primitives", "1322_mtp_ahead_overlap", "1317_spec_round_timing",
                          "1348_mtp_deferred_catchup"):
             self.assertLess(ids.index(required), ids.index("1346_mtp_prompt_overlap"), required)
-        texts = patch_rebase._overlay_texts()
-        overlay_paths = frozenset(texts)
-        for module in selected.modules:
-            if module.patch_id == "1346_mtp_prompt_overlap":
-                break
-            probe = patch_rebase.probe_patch(
-                module,
-                _V,
-                texts,
-                context_lines=3,
-                previous_revision=None,
-                revision="mechanics-test",
-                overlay_paths=overlay_paths,
-            )
-            self.assertIn(
-                probe.status,
-                (patch_rebase.STATUS_CLEAN, patch_rebase.STATUS_CLEAN_NOOP),
-                (module.patch_id, probe.to_dict()),
-            )
-        for rel in _FILES:
-            if rel in texts:
-                (root / rel).write_text(texts[rel], encoding="utf-8")
+        production_source(_FILES, root, stop_before="1346_mtp_prompt_overlap")
 
     def _check(self, root):
         h = (root / "common/speculative.h").read_text(encoding="utf-8")
@@ -146,6 +126,12 @@ class Patch1346Mechanics(unittest.TestCase):
         self.assertIn("bc_pt_state->tokens += (uint64_t) n_tokens;", src)
         self.assertIn("bc_pt_state->tokens += (uint64_t) batch_in.size();", src)
         self.assertIn("llama_synchronize(ctx_tgt);", src)
+        # b11552 native MTP semantics must remain owned by upstream: token IDs
+        # and vision embeddings both pass through the timing wrapper unchanged.
+        self.assertIn("const auto & t = batch_in.tokens[k];", src)
+        self.assertIn("t.id != LLAMA_TOKEN_NULL", src)
+        self.assertIn("batch.add_embd(t.embd, t.pos.data(), seq_id, false)", src)
+        self.assertIn("batch.set_embd_state(idx, { h_row, 1, (size_t) n_embd });", src)
 
         self.assertIn("common_speculative_prefill_begin(spec.get(), slot.id);", server)
         process_beg = "common_speculative_target_process_begin(spec.get(), batch.view);"

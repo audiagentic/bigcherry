@@ -21,7 +21,7 @@ import re as _re
 from bigcherry.patcher import Edit, FilePatch
 
 GROUP = "core"
-STATE = "untested"
+STATE = "superseded"
 
 _A_ARG_CPP_0 = (
     '    ).set_env("LLAMA_ARG_N_CPU_MOE"));\n'

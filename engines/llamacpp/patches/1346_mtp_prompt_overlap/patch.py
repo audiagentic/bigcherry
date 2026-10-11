@@ -36,85 +36,6 @@ _PROCESS_START_OLD = r"""        const int32_t n_tokens = batch_in.size();
         // remember the first and last batch index for each sequence
 """
 
-_PROCESS_NATIVE_OLD = r"""        const size_t row_bytes = (size_t) n_embd * sizeof(float);
-
-        // if kv is shared with target (e.g Gemma4), then we can skip this catch-up decode
-        if (!is_mem_shared) {
-            batch.clear();
-
-            // pair each token with the tgt embedding shifted right by one position, and
-            // the first token of each sequence with the pending embedding from a previous run
-            // assumes that the tokens in the batch are sequential for each sequence
-            // i.e. we cannot have seq_id like this: [0, 0, 0, 1, 1, 0, 1, 1]
-            //                                                       ^--- this is a problem
-            // TODO:this is generally true, but would be nice to assert it
-            const float * h_tgt = llama_get_embeddings_nextn(ctx_tgt);
-
-            for (int k = 0; k < n_tokens; ++k) {
-                const llama_seq_id seq_id = batch_in.tokens[k].seq_id;
-
-                const int32_t idx = batch.add(batch_in.tokens[k].id, batch_in.tokens[k].pos[0], seq_id, false);
-
-                const float * h_row = k == i_batch_beg[seq_id]
-                    ? pending_h[seq_id].data()
-                    : h_tgt + (size_t) (k - 1) * n_embd;
-
-                batch.set_embd(idx, { h_row, 1, (size_t) n_embd });
-            }
-
-            auto * mem_dft = llama_get_memory(ctx_dft);
-
-            bool ok = true;
-            for (int head = 0; head < n_mtp_layers; ++head) {
-                if (chain_heads) {
-                    // ref: https://github.com/ggml-org/llama.cpp/pull/24340/changes#r3413498544
-                    for (llama_seq_id seq_id = 0; seq_id < (llama_seq_id) n_seq; ++seq_id) {
-                        if (i_batch_beg[seq_id] < 0) {
-                            continue;
-                        }
-                        llama_memory_seq_rm(mem_dft, seq_id, batch_in.tokens[i_batch_beg[seq_id]].pos[0], -1);
-                    }
-                    llama_set_nextn_layer_offset(ctx_dft, head);
-                }
-
-                const int32_t rc = llama_process(ctx_dft, LLAMA_PROCESS_TYPE_DECODE, batch.get());
-                if (rc != 0) {
-                    SPC_ERR("llama_process(ctx_dft) head=%d failed rc=%d (pos=%d)\n",
-                            head, (int) rc, (int) batch_in.tokens[0].pos[0]);
-                    ok = false;
-                    break;
-                }
-            }
-
-            if (chain_heads) {
-                llama_set_nextn_layer_offset(ctx_dft, 0); // restore default for non-draft decodes
-            }
-            if (!ok) {
-                return false;
-            }
-        }
-
-        for (llama_seq_id seq_id = 0; seq_id < (llama_seq_id) n_seq; ++seq_id) {
-            if (i_batch_end[seq_id] < 0) {
-                continue;
-            }
-
-            const int32_t n_rows = i_batch_end[seq_id] - i_batch_beg[seq_id] + 1;
-            verify_h_rows[seq_id] = n_rows;
-            verify_h[seq_id].resize((size_t) n_rows * n_embd);
-
-            for (int32_t i = 0; i < n_rows; ++i) {
-                const float * h = llama_get_embeddings_nextn_ith(ctx_tgt, i_batch_beg[seq_id] + i);
-                std::memcpy(verify_h[seq_id].data() + (size_t) i * n_embd, h, row_bytes);
-            }
-
-            std::memcpy(pending_h[seq_id].data(),
-                    verify_h[seq_id].data() + (size_t) (n_rows - 1) * n_embd, row_bytes);
-        }
-
-        return true;
-"""
-
 _WRAPPER_ANCHOR = "void common_speculative_begin(common_speculative * spec, llama_seq_id seq_id, const llama_tokens & prompt) {\n"
 
 _SERVER_ANCHOR = "                        slot.prompt.tokens.keep_first(n_past);\n"
@@ -291,125 +212,66 @@ _PROCESS_START_NEW = r"""        const int32_t n_tokens = batch_in.size();
         int64_t bc_pt_target_sync_us = 0;
         int64_t bc_pt_target_fetch_us = 0;
         int64_t bc_pt_draft_decode_us = 0;
+        int64_t bc_pt_fetch_t0 = 0;
+        int64_t bc_pt_verify_t0 = 0;
+        bool bc_pt_target_fetched = false;
 
         // remember the first and last batch index for each sequence
 """
 
-_PROCESS_NATIVE_NEW = r"""        const size_t row_bytes = (size_t) n_embd * sizeof(float);
 
-        bool bc_pt_target_fetched = false;
-
-        // if kv is shared with target (e.g Gemma4), then we can skip this catch-up decode
-        if (!is_mem_shared) {
-            if (bc_pt_state) {
+_MTP_FETCH_ANCHOR = "            const float * h_tgt = llama_get_embeddings_nextn(ctx_tgt);\n"
+_MTP_FETCH_BEGIN_TEXT = r"""            if (bc_pt_state) {
                 const int64_t bc_pt_sync_t0 = ggml_time_us();
                 llama_synchronize(ctx_tgt);
                 bc_pt_target_sync_us += ggml_time_us() - bc_pt_sync_t0;
+                bc_pt_fetch_t0 = ggml_time_us();
             }
-
-            const int64_t bc_pt_fetch_t0 = bc_pt_state ? ggml_time_us() : 0;
-            const float * h_tgt = llama_get_embeddings_nextn(ctx_tgt);
-            if (bc_pt_state) {
+"""
+_MTP_FETCH_END_TEXT = r"""            if (bc_pt_state) {
                 bc_pt_target_fetch_us += ggml_time_us() - bc_pt_fetch_t0;
                 bc_pt_target_fetched = true;
             }
+"""
 
-            batch.clear();
-
-            // pair each token with the tgt embedding shifted right by one position, and
-            // the first token of each sequence with the pending embedding from a previous run
-            // assumes that the tokens in the batch are sequential for each sequence
-            // i.e. we cannot have seq_id like this: [0, 0, 0, 1, 1, 0, 1, 1]
-            //                                                       ^--- this is a problem
-            // TODO:this is generally true, but would be nice to assert it
-            for (int k = 0; k < n_tokens; ++k) {
-                const llama_seq_id seq_id = batch_in.tokens[k].seq_id;
-
-                const int32_t idx = batch.add(batch_in.tokens[k].id, batch_in.tokens[k].pos[0], seq_id, false);
-
-                const float * h_row = k == i_batch_beg[seq_id]
-                    ? pending_h[seq_id].data()
-                    : h_tgt + (size_t) (k - 1) * n_embd;
-
-                batch.set_embd(idx, { h_row, 1, (size_t) n_embd });
-            }
-
-            auto * mem_dft = llama_get_memory(ctx_dft);
-
-            bool ok = true;
-            for (int head = 0; head < n_mtp_layers; ++head) {
-                if (chain_heads) {
-                    // ref: https://github.com/ggml-org/llama.cpp/pull/24340/changes#r3413498544
-                    for (llama_seq_id seq_id = 0; seq_id < (llama_seq_id) n_seq; ++seq_id) {
-                        if (i_batch_beg[seq_id] < 0) {
-                            continue;
-                        }
-                        llama_memory_seq_rm(mem_dft, seq_id, batch_in.tokens[i_batch_beg[seq_id]].pos[0], -1);
-                    }
-                    llama_set_nextn_layer_offset(ctx_dft, head);
-                }
-
-                const int64_t bc_pt_draft_t0 = bc_pt_state ? ggml_time_us() : 0;
-                const int32_t rc = llama_process(ctx_dft, LLAMA_PROCESS_TYPE_DECODE, batch.get());
-                if (bc_pt_state) {
+_MTP_DRAFT_PROCESS_ANCHOR = "                const int32_t rc = llama_process(ctx_dft, LLAMA_PROCESS_TYPE_DECODE, batch.get());\n"
+_MTP_DRAFT_BEGIN_TEXT = r"""                const int64_t bc_pt_draft_t0 = bc_pt_state ? ggml_time_us() : 0;
+"""
+_MTP_DRAFT_END_TEXT = r"""                if (bc_pt_state) {
                     bc_pt_draft_decode_us += ggml_time_us() - bc_pt_draft_t0;
                 }
-                if (rc != 0) {
-                    SPC_ERR("llama_process(ctx_dft) head=%d failed rc=%d (pos=%d)\n",
-                            head, (int) rc, (int) batch_in.tokens[0].pos[0]);
-                    ok = false;
-                    break;
-                }
-            }
+"""
 
-            if (chain_heads) {
-                llama_set_nextn_layer_offset(ctx_dft, 0); // restore default for non-draft decodes
-            }
-            if (!ok) {
-                return false;
-            }
-        }
-
-        const int64_t bc_pt_verify_t0 = bc_pt_state ? ggml_time_us() : 0;
-
-        for (llama_seq_id seq_id = 0; seq_id < (llama_seq_id) n_seq; ++seq_id) {
-            if (i_batch_end[seq_id] < 0) {
-                continue;
-            }
-
-            const int32_t n_rows = i_batch_end[seq_id] - i_batch_beg[seq_id] + 1;
+_MTP_VERIFY_BEGIN_ANCHOR = r"""            const int32_t n_rows = i_batch_end[seq_id] - i_batch_beg[seq_id] + 1;
             verify_h_rows[seq_id] = n_rows;
-            verify_h[seq_id].resize((size_t) n_rows * n_embd);
-
-            for (int32_t i = 0; i < n_rows; ++i) {
-                const float * h = llama_get_embeddings_nextn_ith(ctx_tgt, i_batch_beg[seq_id] + i);
-                std::memcpy(verify_h[seq_id].data() + (size_t) i * n_embd, h, row_bytes);
+"""
+_MTP_VERIFY_BEGIN_TEXT = r"""            if (bc_pt_state) {
+                bc_pt_verify_t0 = ggml_time_us();
             }
+"""
 
-            std::memcpy(pending_h[seq_id].data(),
+_MTP_PENDING_COPY_ANCHOR = r"""            std::memcpy(pending_h[seq_id].data(),
                     verify_h[seq_id].data() + (size_t) (n_rows - 1) * n_embd, row_bytes);
-        }
-
-        if (bc_pt_state) {
-            if (bc_pt_target_fetched) {
-                bc_pt_target_fetch_us += ggml_time_us() - bc_pt_verify_t0;
+"""
+_MTP_PROCESS_FINISH_TEXT = r"""            if (bc_pt_state) {
+                if (bc_pt_target_fetched) {
+                    bc_pt_target_fetch_us += ggml_time_us() - bc_pt_verify_t0;
+                }
+                bc_pt_state->target_sync_us += bc_pt_target_sync_us;
+                bc_pt_state->target_fetch_us += bc_pt_target_fetch_us;
+                bc_pt_state->target_nextn_us += bc_pt_target_sync_us + bc_pt_target_fetch_us;
+                bc_pt_state->draft_decode_us += bc_pt_draft_decode_us;
+                const int64_t bc_pt_process_us = ggml_time_us() - bc_pt_process_t0;
+                bc_pt_state->process_us += bc_pt_process_us;
+                bc_pt_state->target_block_us += bc_pt_target_sync_us + bc_pt_target_fetch_us;
+                const int64_t bc_pt_catchup_us =
+                    bc_pt_process_us - bc_pt_target_sync_us - bc_pt_target_fetch_us;
+                if (bc_pt_catchup_us > 0) {
+                    bc_pt_state->draft_catchup_us += bc_pt_catchup_us;
+                }
+                bc_pt_state->chunks++;
+                bc_pt_state->tokens += (uint64_t) n_tokens;
             }
-            bc_pt_state->target_sync_us += bc_pt_target_sync_us;
-            bc_pt_state->target_fetch_us += bc_pt_target_fetch_us;
-            bc_pt_state->target_nextn_us += bc_pt_target_sync_us + bc_pt_target_fetch_us;
-            bc_pt_state->draft_decode_us += bc_pt_draft_decode_us;
-            const int64_t bc_pt_process_us = ggml_time_us() - bc_pt_process_t0;
-            bc_pt_state->process_us += bc_pt_process_us;
-            bc_pt_state->target_block_us += bc_pt_target_sync_us + bc_pt_target_fetch_us;
-            const int64_t bc_pt_catchup_us = bc_pt_process_us - bc_pt_target_sync_us - bc_pt_target_fetch_us;
-            if (bc_pt_catchup_us > 0) {
-                bc_pt_state->draft_catchup_us += bc_pt_catchup_us;
-            }
-            bc_pt_state->chunks++;
-            bc_pt_state->tokens += (uint64_t) n_tokens;
-        }
-
-        return true;
 """
 
 _DEFERRED_FLUSH_OLD = r"""    bool flush_deferred() override {
@@ -653,14 +515,68 @@ PATCHES = [
                 max_span_lines=4,
             ),
             Edit(
-                id="mtp-prompt-timing-process",
-                anchor=re.escape(_PROCESS_NATIVE_OLD),
-                mode="replace",
-                text=_PROCESS_NATIVE_NEW,
-                guard=r"bc_pt_state->target_sync_us \+= bc_pt_target_sync_us;",
-                rationale="Time the native target synchronization/fetch and draft catch-up without changing work or order.",
+                id="mtp-prompt-timing-target-fetch-begin",
+                anchor=re.escape(_MTP_FETCH_ANCHOR),
+                mode="insert_before",
+                text=_MTP_FETCH_BEGIN_TEXT,
+                guard=r"const int64_t bc_pt_sync_t0 = ggml_time_us\(\);",
+                rationale="Synchronize and start timing immediately before b11552's unique target NextN fetch.",
                 expect_matches=1,
-                max_span_lines=100,
+                max_span_lines=2,
+            ),
+            Edit(
+                id="mtp-prompt-timing-target-fetch-end",
+                anchor=re.escape(_MTP_FETCH_ANCHOR),
+                mode="insert_after",
+                text=_MTP_FETCH_END_TEXT,
+                guard=r"bc_pt_target_fetched = true;",
+                rationale="Stop the direct NextN fetch timer without replacing the surrounding token/embedding batch construction.",
+                expect_matches=1,
+                max_span_lines=2,
+            ),
+            Edit(
+                id="mtp-prompt-timing-draft-begin",
+                anchor=re.escape(_MTP_DRAFT_PROCESS_ANCHOR),
+                mode="insert_before",
+                text=_MTP_DRAFT_BEGIN_TEXT,
+                guard=r"const int64_t bc_pt_draft_t0 = bc_pt_state \? ggml_time_us\(\) : 0;",
+                rationale="Start draft catch-up timing immediately before the unique MTP draft llama_process call.",
+                expect_matches=2,  # 1348's bc_process_snapshot repeats this code before process(); the timing is for process()
+                occurrence=1,
+                max_span_lines=2,
+            ),
+            Edit(
+                id="mtp-prompt-timing-draft-end",
+                anchor=re.escape(_MTP_DRAFT_PROCESS_ANCHOR),
+                mode="insert_after",
+                text=_MTP_DRAFT_END_TEXT,
+                guard=r"bc_pt_draft_decode_us \+= ggml_time_us\(\) - bc_pt_draft_t0;",
+                rationale="Stop draft catch-up timing immediately after the same MTP draft process call.",
+                expect_matches=2,  # 1348's bc_process_snapshot repeats this code before process(); the timing is for process()
+                occurrence=1,
+                max_span_lines=2,
+            ),
+            Edit(
+                id="mtp-prompt-timing-verify-begin",
+                anchor=re.escape(_MTP_VERIFY_BEGIN_ANCHOR),
+                mode="insert_before",
+                text=_MTP_VERIFY_BEGIN_TEXT,
+                guard=r"bc_pt_verify_t0 = ggml_time_us\(\);",
+                rationale="Start timing the b11552 verify-row extraction before resize/copy work.",
+                expect_matches=2,  # 1348's bc_process_snapshot repeats this code before process(); the timing is for process()
+                occurrence=1,
+                max_span_lines=3,
+            ),
+            Edit(
+                id="mtp-prompt-timing-process",
+                anchor=re.escape(_MTP_PENDING_COPY_ANCHOR),
+                mode="insert_after",
+                text=_MTP_PROCESS_FINISH_TEXT,
+                guard=r"bc_pt_state->target_sync_us \+= bc_pt_target_sync_us;",
+                rationale="Finalize timing after the unique MTP pending-row copy; upstream token/vision construction remains untouched.",
+                expect_matches=2,  # 1348's bc_process_snapshot repeats this code before process(); the timing is for process()
+                occurrence=1,
+                max_span_lines=3,
             ),
             Edit(
                 id="mtp-prompt-timing-deferred-interior",

@@ -27,11 +27,11 @@ _N_INCLUDES = r"""#include <atomic>
 #include <cstdlib>
 """
 
-_A_KERNEL_TEMPLATE = r"""template <ggml_type type, int J, bool fallback, ggml_prec prec_src1 = GGML_PREC_Q8>
+_A_KERNEL_TEMPLATE = r"""template <ggml_type type, int J, bool fallback, ggml_prec prec_src1>
 __launch_bounds__(ggml_cuda_mmq_get_nthreads(type, J, fallback, prec_src1), ggml_cuda_mmq_get_occupancy(type, J, fallback, prec_src1))
 static __global__ void mul_mat_q(
 """
-_N_KERNEL_TEMPLATE = r"""template <ggml_type type, int J, bool fallback, ggml_prec prec_src1 = GGML_PREC_Q8, bool bc_force_stream_k = false>
+_N_KERNEL_TEMPLATE = r"""template <ggml_type type, int J, bool fallback, ggml_prec prec_src1, bool bc_force_stream_k = false>
 __launch_bounds__(ggml_cuda_mmq_get_nthreads(type, J, fallback, prec_src1), ggml_cuda_mmq_get_occupancy(type, J, fallback, prec_src1))
 static __global__ void mul_mat_q(
 """
@@ -41,13 +41,13 @@ _A_DEVICE_BRANCH = r"""    if constexpr (!ggml_cuda_mmq_get_stream_k(type, J, fa
 _N_DEVICE_BRANCH = r"""    if constexpr (!(bc_force_stream_k || ggml_cuda_mmq_get_stream_k(type, J, fallback, prec_src1))) {
 """
 
-_A_LAUNCH_TEMPLATE = r"""template <ggml_type type, int J, bool fallback, ggml_prec prec_src1 = GGML_PREC_Q8>
+_A_LAUNCH_TEMPLATE = r"""template <ggml_type type, int J, bool fallback, ggml_prec prec_src1>
 static void launch_mul_mat_q(ggml_backend_cuda_context & ctx, const mmq_args & args, cudaStream_t stream) {
 """
 _N_LAUNCH_TEMPLATE = r"""template <ggml_type type, int J, bool fallback, ggml_prec prec_src1>
 static void launch_mul_mat_q(ggml_backend_cuda_context & ctx, const mmq_args & args, cudaStream_t stream);
 
-template <ggml_type type, int J, bool fallback, ggml_prec prec_src1 = GGML_PREC_Q8, bool bc_force_stream_k = false>
+template <ggml_type type, int J, bool fallback, ggml_prec prec_src1, bool bc_force_stream_k = false>
 static void bc_launch_mul_mat_q_impl(ggml_backend_cuda_context & ctx, const mmq_args & args, cudaStream_t stream) {
 """
 
@@ -68,10 +68,8 @@ _A_STREAM_LAUNCH = r"""    mul_mat_q<type, J, fallback, prec_src1><<<block_nums_
 _N_STREAM_LAUNCH = r"""    mul_mat_q<type, J, fallback, prec_src1, bc_force_stream_k><<<block_nums_stream_k, block_dims, nbytes_shared, stream>>>
 """
 
-_A_WRAPPER = r"""template <ggml_type type, bool fallback, ggml_prec prec_src1 = GGML_PREC_Q8>
-void mul_mat_q_switch_J(ggml_backend_cuda_context & ctx, const mmq_args & args,
-                        cudaStream_t stream, int forced_J = 0) {
-    int J_best = mul_mat_q_compute_J_best<type, fallback, prec_src1>(args);
+_A_WRAPPER = r"""template <ggml_type type, bool fallback, ggml_prec prec_src1>
+void mul_mat_q_switch_J(ggml_backend_cuda_context & ctx, const mmq_args & args, cudaStream_t stream) {
 """
 _N_WRAPPER = r"""static bool bc_mmq_few_tile_streamk_enabled() {
     static const bool enabled = [] {
@@ -83,7 +81,7 @@ _N_WRAPPER = r"""static bool bc_mmq_few_tile_streamk_enabled() {
 
 static std::atomic_flag bc_mmq_few_tile_streamk_logged = ATOMIC_FLAG_INIT;
 
-template <ggml_type type, int J, bool fallback, ggml_prec prec_src1 = GGML_PREC_Q8>
+template <ggml_type type, int J, bool fallback, ggml_prec prec_src1>
 static void launch_mul_mat_q(ggml_backend_cuda_context & ctx, const mmq_args & args, cudaStream_t stream) {
     // QFP37 V1 is deliberately only the ordinary Q8_0 projection class seen in Flash-Next prefill.
     // Keep every other type/fallback specialization as a compile-time direct call to the native path.
@@ -185,7 +183,7 @@ PATCHES = (
                 mode="replace",
                 text=_N_LAUNCH_TEMPLATE,
                 guard=r"static void bc_launch_mul_mat_q_impl",
-                rationale="Keep the upstream launch body as an implementation selected by a narrow runtime wrapper, while forward-declaring the wrapper before 0300's forced-J helper calls it.",
+                rationale="Keep the upstream launch body as an implementation selected by a narrow runtime wrapper; b11552 switch_J still calls launch_mul_mat_q with explicit precision.",
                 expect_matches=1,
                 max_span_lines=3,
             ),
@@ -225,9 +223,9 @@ PATCHES = (
                 mode="insert_before",
                 text=_N_WRAPPER,
                 guard=r"BIGCHERRY_PATCH_HIT patch=1350_mmq_few_tile_streamk",
-                rationale="Insert the physical-shape/architecture/env qualification before 0300's production mul_mat_q_switch_J.",
+                rationale="Insert the physical-shape/architecture/env qualification immediately before b11552's args.J_best switch.",
                 expect_matches=1,
-                max_span_lines=5,
+                max_span_lines=3,
             ),
         ),
     ),

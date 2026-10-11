@@ -151,20 +151,25 @@ class TestDispatchSafetyContracts(unittest.TestCase):
         self.assertIn("ggml_cuda_mmq_config_is_eligible(", function)
         self.assertNotIn("ggml_cuda_mmq_variant_is_eligible(", function)
 
-    def test_mmq_variant_is_eligible_checks_tail_padding(self):
-        # HI71: dense-shape-aware eligibility must compare the launch's
-        # required tail-padding columns against what upstream's own
-        # J-selection search (ggml_cuda_mmq_get_J_max) would have allocated.
+    def test_mmq_forced_j_is_applied_before_padding_is_sized(self):
+        # HI71 at b11552: upstream sizes the activation padding (and the MoE ids buffer) from J_best, and 0300 forces
+        # J before either allocation, so a forced tile width always gets the padding it needs. The former
+        # required_tail <= available_tail comparison against the native search is gone with the mismatch it guarded.
         source = MMQ_PATCH.read_text(encoding="utf-8")
         start = source.index("bool ggml_cuda_mmq_variant_is_eligible(")
         end = source.index("\n}", start)
         function = source[start:end]
-
         self.assertIn("ncols_max > 0", function)
-        self.assertIn("required_tail", function)
-        self.assertIn("available_tail", function)
-        self.assertIn("ggml_cuda_mmq_get_J_max(", function)
-        self.assertIn("required_tail <= available_tail", function)
+        self.assertIn("ggml_cuda_mmq_config_is_eligible(", function)
+
+        # the forced value is checked for eligibility before it replaces J_best, and the edit goes in directly before
+        # upstream's GGML_ASSERT(J_best > 0), which precedes the J-sized padding (test_0300_mmq_forced_j checks that
+        # order on the composed source)
+        force = source.index("J_best = bc_forced_J;")
+        self.assertLess(source.index("src0->type, bc_forced_J, fallback, cc, smpbo, prec_src1));"), force)
+        edit = source[source.index('id="mmq-force-before-padding"'):]
+        self.assertIn('mode="insert_before"', edit[:400])
+        self.assertIn(r'anchor=r"^    GGML_ASSERT\(J_best > 0\);$"', edit[:400])
 
     def test_tuner_numeric_environment_parsers_reject_empty_and_whitespace(self):
         source = TUNER.read_text(encoding="utf-8")

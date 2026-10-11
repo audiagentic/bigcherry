@@ -44,7 +44,7 @@ _N_H = _A_H + (
     "    float *              tail_min_p = nullptr;  // optional: lowest draft probability among the tail tokens\n")
 
 _A_SEED = ("            const int32_t idx = batch.add(dp.id_last, dp.pos0, seq_id, true);\n"
-           "            batch.set_embd(idx, { pending_h[seq_id].data(), 1, (size_t) n_embd });\n")
+           "            batch.set_embd_state(idx, { pending_h[seq_id].data(), 1, (size_t) n_embd });\n")
 _N_SEED = ("            // bigcherry 1321: forced front / live tail are single-head non-shared MTP only, greedy only\n"
            "            GGML_ASSERT(((dp.forced == nullptr || dp.forced->empty()) && dp.n_tail <= 0) || (!chain_heads && !is_mem_shared));\n"
            "            // forced / tail drafting is greedy only: no candidate distribution, no probabilistic drafter\n"

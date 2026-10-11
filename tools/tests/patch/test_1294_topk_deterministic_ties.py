@@ -54,7 +54,7 @@ class Patch1294Mechanics(unittest.TestCase):
             self.assertIn("if (tie && rt < st.rank) {\n            row_dst[n_greater + rt] = col;", out)
             self.assertLess(out.index("if (det_ties && top_k_bc_ordered()) {"), out.index("} else if (det_ties) {"))
             self.assertIn('const char * e = getenv("BIGCHERRY_TOPK_ORDERED");', out)
-            launch = out.index("top_k_radix_gather_ties<BLOCK_SIZE><<<nrows")
+            launch = out.index("top_k_radix_gather_ties<BLOCK_SIZE><<<iter_nrows")
             self.assertLess(out.index("src, dst, states, ncols, k, blocks_per_row);"), launch)
             self.assertLess(out.index("const bool det_ties = top_k_bc_deterministic_ties();"), launch)
             second = apply_all(_P.PATCHES, root)

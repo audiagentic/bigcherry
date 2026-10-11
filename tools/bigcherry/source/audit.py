@@ -170,7 +170,11 @@ def check_mmq_types(ctx: AuditContext) -> None:
         ctx.fail("mmq.runtime_switch_present",
                  "ggml_cuda_mul_mat_q_switch_type not found in mmq.cu")
         return
-    runtime = re.findall(r"mul_mat_q_case<\s*(GGML_TYPE_\w+)\s*>", body)
+    # b11552 makes the activation precision explicit in every runtime case.
+    # Q8 is the generated MMQ type set; MXFP4/NVFP4 also have extra Q4 cases
+    # for Blackwell and must not be double-counted here.
+    runtime = re.findall(
+        r"mul_mat_q_case<\s*(GGML_TYPE_\w+)\s*,\s*GGML_PREC_Q8\s*>", body)
     ctx.compare("mmq.generated_types_match_runtime", generated, runtime,
                 "MMQ generated types vs runtime switch cases", ordered=False)
 
@@ -187,77 +191,42 @@ def check_mmq_types(ctx: AuditContext) -> None:
 
 
 def check_mmq_j(ctx: AuditContext) -> None:
-    """The J switch and the J search loop must cover the same values.
-
-    The audit is specified to run on a pristine checkout (standards 13.3), but
-    people re-run it, and on an already-patched tree the switch has moved into
-    ``mul_mat_q_launch_forced_J`` and the scan into ``mul_mat_q_compute_J_best``.
-    Reporting a failure then would be a false alarm about our own patch. So each
-    construct is looked for in its post-patch home first, and the check reports
-    which state it found.
-    """
-    source = ctx.read("mmq.cuh")
-    if source is None:
+    """b11552's J switch and top-level J search must cover the same values."""
+    header = ctx.read("mmq.cuh")
+    source = ctx.read("mmq.cu")
+    if header is None or source is None:
         return
 
-    switch_body = csource.function_body(source, "mul_mat_q_launch_forced_J")
-    patched = switch_body is not None
-    if switch_body is None:
-        switch_body = csource.function_body(source, "mul_mat_q_switch_J")
+    switch_body = csource.function_body(header, "mul_mat_q_switch_J")
     if switch_body is None:
         ctx.fail("mmq.j_switch_present",
-                 "neither mul_mat_q_switch_J nor mul_mat_q_launch_forced_J "
-                 "found in mmq.cuh -- the forced-J patch (HI06) has nothing "
-                 "to hook")
+                 "mul_mat_q_switch_J not found in mmq.cuh")
         return
 
-    where = "patched" if patched else "pristine"
     values = csource.int_captures(
         switch_body,
-        # b11233 threads the src1 precision (GGML_PREC_Q8 / Blackwell W4A4 Q4)
-        # through every launch: `launch_mul_mat_q<type, J, fallback, prec_src1>`.
         r"launch_mul_mat_q<\s*type\s*,\s*(\d+)\s*,\s*fallback\s*,\s*prec_src1\s*>")
     ctx.compare("mmq.j_switch_values", MMQ_J_VALUES, values,
-                f"MMQ J switch cases ({where} tree)")
+                "MMQ J switch cases (b11552 args.J_best dispatch)")
 
-    # The switch is the dispatchable set; the search loop is what native
-    # selection walks. They have to agree, or forced-J covers the wrong range.
-    scan_body = csource.function_body(source, "mul_mat_q_compute_J_best") \
-        or csource.function_body(source, "mul_mat_q_switch_J")
-    if scan_body and "ggml_cuda_mmq_native_j_best" in scan_body:
-        mmq_cu = ctx.read("mmq.cu") or ""
-        scan_body = csource.function_body(mmq_cu, "ggml_cuda_mmq_native_j_best")
+    # b11552 moved native J selection out of switch_J and into the public
+    # ggml_cuda_mul_mat_q entry point so J_best is known before padding and
+    # workspace allocation. Audit that exact upstream shape only; this
+    # pre-flight audit intentionally has no old-pin/post-patch fallback parser.
+    scan_body = csource.function_body(source, "ggml_cuda_mul_mat_q")
     if scan_body is None:
-        ctx.fail("mmq.j_search_loop_bounds", "no J search loop found in mmq.cuh")
+        ctx.fail("mmq.j_search_loop_bounds",
+                 "ggml_cuda_mul_mat_q not found in mmq.cu")
         return
 
     loop = re.search(
         r"for\s*\(\s*int\s+J\s*=\s*(\d+)\s*;\s*J\s*<=\s*(\d+)[^;]*;\s*J\s*\+=\s*(\d+)\s*\)",
         csource.strip_noise(scan_body))
     if not loop:
-        # b10362 expresses the same bounded search with a runtime `ret`
-        # cursor (`ret = min(ne11, 512); ret -= ret % 8; for (; ret > 0;
-        # ret -= 8)`) rather than a literal J loop.  Accept that pinned
-        # upstream form; requiring the older textual spelling made a clean
-        # current checkout fail its own strict pre-flight audit.
-        loop = re.search(
-            r"ret\s*=\s*std::min\([^;]+,\s*int64_t\((\d+)\)\).*?"
-            r"ret\s*-=\s*ret\s*%\s*(\d+).*?"
-            r"for\s*\(\s*;\s*ret\s*>\s*0\s*;\s*ret\s*-=?\s*(\d+)\s*\)",
-            csource.strip_noise(scan_body), re.S)
-        if loop:
-            # The runtime ceiling is an upstream search bound; the dispatch
-            # switch remains the authoritative supported set. Compare the
-            # common 8-step range up to the switch's maximum below.
-            start, stop, step = 8, max(MMQ_J_VALUES), int(loop.group(2))
-            found = list(range(start, stop + 1, step))
-            ctx.compare("mmq.j_search_loop_bounds", MMQ_J_VALUES, found,
-                        f"MMQ J search loop (runtime bound, step {step})")
-            return
-    if not loop:
         ctx.fail("mmq.j_search_loop_bounds",
-                 "could not find the J search loop in mmq.cuh")
+                 "could not find b11552's J search loop in ggml_cuda_mul_mat_q")
         return
+
     start, stop, step = (int(loop.group(i)) for i in (1, 2, 3))
     found = list(range(start, stop + 1, step))
     ctx.compare("mmq.j_search_loop_bounds", MMQ_J_VALUES, found,

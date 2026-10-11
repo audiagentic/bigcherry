@@ -53,6 +53,16 @@ Lightweight tier: offline tests + lint, activation marker (BIGCHERRY_PATCH_HIT p
 
 Scope limit: the cache refuses the tensor split and multiple devices, so this does not apply to the 3-GPU production layout, where everything fits in VRAM. Value: single-card use and higher quants.
 
+
+
+### Pin b11552 (2026-10-12): 1337 superseded, 1338 needs a rebuild
+
+- b11552 carries upstream #29887 itself (`src/llama-moe-cache.cpp`, `--moe-cache-mib`, `LLAMA_ARG_MOE_CACHE_MIB`). 1337 (our backport of the pre-final PR) is marked `superseded`; its mechanics test and the experiments `moe-expert-cache` / `moe-cache-profile` are removed.
+- 1338 was written on 1337's revision of the cache. Upstream's merged version is laid out differently: 5 of its 12 edits have no anchor (includes; resolve() now tests `n_tokens == 0 || n_tokens > max_batch || std::min(n_tokens*n_expert_used, l.slot_map->ne[1]) > groups[l.ig].n_slots`; there is no `planned_ids` replay check or assign any more; `lru.plan(il, ids.data(), ids.size(), fills, n_hit)` lost the remapped-ids argument). This is a rebuild against upstream's slot_map design, not a re-anchor.
+- Until then 1338 stays `untested` with a known_broken disposition bound to b11552, its test is skipped with that reason, and it must drop `requires = 1337` when rebuilt (base is upstream).
+- First step of the rebuild: re-measure upstream's cache as shipped (LRU only) on the MET01 setup, since the +60% decode result was taken with our backport.
+
 ## Change Log
 
 - 2026-10-06T14:52:56.714383+00:00 (created-by): Created by agent
+- 2026-10-11T16:56:51.685546+00:00 (updated-by): Updated: section:notes

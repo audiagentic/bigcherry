@@ -47,3 +47,7 @@ ENV_DOCS = (
 The patch loader turns `ENV_DOCS` into rows of this patch's help table, so the help reflects the actual build.
 `patch-lint` validates the profile files (grammar, duplicates, unknown includes, cycles, conflicts) and rejects
 flags that no patch documents.
+
+## b11552 auto-admission qualification (QFP23; 2026-10-11)
+
+The explicit INI loader is implemented; do not duplicate it. `BIGCHERRY_FEATURES=auto` is not yet a model/topology-safe production selector: unsorted C `readdir` plus first matching `arch` is ambiguous when two profiles claim one architecture, and `flashnext.ini` maps `qwen4exp` to a three-GPU-specific tensor split. Python rejects duplicate arch only within one profile. Runtime external-file validation is weaker than Python, and auto runs after backend initialization. Shipped profiles are runtime-bundle-hashed; external `BIGCHERRY_PROFILES` files require a separate SHA-256 receipt. QFP23 owns exact admission fixes, tests and explicit-profile fallback. No 0910 code or GPU qualification changed in this audit.
