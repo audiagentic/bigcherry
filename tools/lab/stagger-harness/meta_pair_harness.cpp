@@ -16,7 +16,8 @@
 //                if it does, the harness is not testing the ordering rule
 //   full         one graph of 2T tokens (the -ub 2T shape), timing only
 //
-// Usage: meta_pair_harness [T=256] [L=96] [n=2560] [k=1024] [reps=5]        (K = k x the number of cards)
+// Usage: meta_pair_harness [T=256] [L=96] [n=2560] [k=1024] [reps=5] [cache=1]   (K = k x the number of cards;
+//        cache=0 drops the shared cache: rung A, where the wrong-order arm cannot differ and is not judged)
 // Exit 0: pair identical and wrong order different. 1: pair differs. 2: wrong order not detected. 3: pair unsupported.
 #include "ggml.h"
 #include "ggml-alloc.h"
@@ -46,6 +47,7 @@ struct model {
     size_t  n_devs = 0;
     int64_t n = 0, K = 0, k = 0, T = 0;
     int     L = 0;
+    bool    use_cache = true;  // false: rung A, no state shared between the halves
     std::vector<ggml_tensor *> w1, w2, cache;
     ggml_tensor * x_a = nullptr, * x_b = nullptr, * x_full = nullptr;  // inputs: static and mirrored, so a graph has no scheduler input copy
 };
@@ -92,12 +94,14 @@ half_graph build(const model & m, ggml_tensor * x, int64_t first, int64_t tokens
         ggml_tensor * u = ggml_mul_mat(g.ctx, m.w1[l], h);
         ggml_tensor * y = ggml_mul_mat(g.ctx, m.w2[l], u);
         ggml_tensor * z = ggml_rms_norm(g.ctx, y, 1e-6f);
+        if (m.use_cache) {
         const size_t col = m.cache[l]->nb[1];
         ggml_tensor * mine = ggml_view_2d(g.ctx, m.cache[l], m.n, tokens, col, (size_t) first * col);
         ggml_build_forward_expand(g.graph, ggml_cpy(g.ctx, z, mine));
         if (reads_a) {
             ggml_tensor * theirs = ggml_view_2d(g.ctx, m.cache[l], m.n, tokens, col, 0);
             z = ggml_add(g.ctx, z, theirs);
+        }
         }
         h = ggml_add(g.ctx, h, z);
     }
@@ -138,6 +142,7 @@ int main(int argc, char ** argv) {
     m.n = argc > 3 ? std::atoll(argv[3]) : 2560;
     m.k = argc > 4 ? std::atoll(argv[4]) : 1024;
     const int reps = argc > 5 ? std::atoi(argv[5]) : 5;
+    m.use_cache = argc > 6 ? std::atoi(argv[6]) != 0 : true;
 
     ggml_backend_load_all();
     std::vector<ggml_backend_dev_t> devs;
@@ -301,5 +306,5 @@ int main(int argc, char ** argv) {
     if (pair_a != 0 || pair_b != 0) {
         return 1;
     }
-    return wrong_b == 0 ? 2 : 0;
+    return m.use_cache && wrong_b == 0 ? 2 : 0;
 }
