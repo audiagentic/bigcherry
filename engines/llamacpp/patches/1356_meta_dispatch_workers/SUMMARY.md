@@ -3,6 +3,15 @@
 **Status:** evaluated
 **Plan item:** QFP41
 
+## Shelved as evaluated (owner decision, 2026-10-12)
+
+Default off and not in the production set. Known defect: with the MTP drafter active, greedy text is wrong on a share
+of server runs (3 of 12 and 5 of 12 in the two fix attempts of PR #159, closed unmerged: caching the CUDA graph
+properties per worker, then a cross-context lock). No reproducer exists outside the server: the slim prefill harness
+is 6 of 6 identical without a drafter and 6 of 6 with a standalone second context. The gain measured before the race
+was found stands as measured; it cannot be used until the race is understood. Any return to this needs the shared-state
+inventory and the stress evidence the threading rule asks for.
+
 ## Mechanism
 
 `ggml_backend_meta_graph_compute` currently submits each simple backend's `cgraph_main` serially from one host
