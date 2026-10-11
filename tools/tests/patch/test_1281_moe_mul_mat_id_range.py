@@ -39,7 +39,7 @@ def _load():
 
 
 _P = _load()
-_INPUTS = [fp.path for fp in _P.PATCHES if fp.path not in _CREATED]
+_INPUTS = [fp.path for fp in _P.PATCHES if fp.path not in _CREATED] + [_MMID]
 _ALL = _INPUTS + sorted(_CREATED)
 
 
