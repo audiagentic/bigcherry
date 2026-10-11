@@ -101,6 +101,23 @@ def main() -> int:
             gaps = pair_gaps[(a, b)]
             print(f"  {len(gaps) / len(steps):8.2f}   {statistics.median(gaps) * us:14.1f}   {g * us / len(steps):9.1f}   "
                   f"({pair_gap[(a, b)] * us / len(gaps):.1f}; {max(gaps) * us / 1e3:.1f})   {a}  ->  {b}")
+        # where the idle time is: every gap between two consecutive kernels of a step, by size
+        buckets = [(10, "< 10 us"), (100, "10 - 100 us"), (1000, "0.1 - 1 ms"), (10000, "1 - 10 ms"), (100000, "10 - 100 ms"),
+                   (float("inf"), "> 100 ms")]
+        count = [0] * len(buckets)
+        idle = [0.0] * len(buckets)
+        by_pair = [collections.Counter() for _ in buckets]
+        for pair, gaps in pair_gaps.items():
+            for g in gaps:
+                i = next(k for k, (limit, _) in enumerate(buckets) if g * us < limit)
+                count[i] += 1
+                idle[i] += g * us
+                by_pair[i][pair] += g * us
+        all_idle = sum(idle) or 1.0
+        print(f"  idle time inside steps by gap size (total {all_idle / 1e6:.2f} s):   gaps   seconds   share   largest contributors")
+        for i, (_, label) in enumerate(buckets):
+            names = ", ".join(f"{a} -> {b} {t / 1e6:.2f} s" for (a, b), t in by_pair[i].most_common(2))
+            print(f"    {label:12s} {count[i]:8d}   {idle[i] / 1e6:7.2f}   {100 * idle[i] / all_idle:4.0f}%   {names}")
     return 0
 
 
