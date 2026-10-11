@@ -142,6 +142,17 @@ class PinReleaseTests(unittest.TestCase):
         self.assertFalse(changed)
         self.assertEqual(again, unpinned)
 
+    def test_plan_resumes_the_tagged_release_for_post_tag_phases(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = self._repo(td)
+            (root / "resume.txt").write_text("resume\n", encoding="utf-8")
+            _git(root, "add", "resume.txt")
+            _git(root, "commit", "-q", "-m", "chore: release notes bc-11474.0.0")
+            _git(root, "tag", "bc-11474.0.0")
+            with mock.patch.object(_notes, "load_config", return_value=_CONFIG):
+                plan = _pr.make_plan(root, "b11474")
+            self.assertEqual(plan.version, "11474.0.0")
+
     def test_versions_on_one_pin(self):
         self.assertEqual(_pr.next_version([], 11474, None), "11474.0.0")
         self.assertEqual(_pr.next_version(["11402.0.0", "b11474"], 11474, None), "11474.0.0")
@@ -207,8 +218,48 @@ class PinReleaseTests(unittest.TestCase):
             self.assertIs(_pr._ensure_pr(plan, "work", "build: new", "main", "body"), existing)
         run.assert_not_called()
 
+    def test_unpin_phase_is_noop_when_main_is_already_clear(self):
+        plan = SimpleNamespace(repo_root=Path("/repo"), remote="origin", main="main", version="11474.0.0",
+                               release_tag="bc-11474.0.0")
+        calls = []
+
+        def fake_git(root, *args, check=True):
+            calls.append(args)
+            if args[:2] == ("show", "origin/main:release-please-config.json"):
+                return _RELEASE_CONFIG
+            return ""
+
+        with mock.patch.object(_pr, "_tag_exists", return_value=True), \
+                mock.patch.object(_pr, "_git", side_effect=fake_git), \
+                mock.patch.object(_pr, "_ensure_pr") as ensure:
+            self.assertFalse(_pr.phase_unpin(plan))
+        ensure.assert_not_called()
+
     def test_phase_order_has_unpin_before_sync(self):
         self.assertEqual(_pr.PHASES, ("gate", "record", "notes", "main", "release", "unpin", "sync"))
+
+    def test_full_dry_run_uses_only_read_git_calls_when_release_is_done(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = self._repo(td)
+            plan = self._plan(root)
+            calls = []
+            real_git = _pr._git
+
+            def recording_git(repo_root, *args, check=True):
+                calls.append(args)
+                return real_git(repo_root, *args, check=check)
+
+            lines = []
+            with mock.patch.object(_pr, "_tag_exists", return_value=True), \
+                    mock.patch.object(_pr, "_git", side_effect=recording_git), \
+                    mock.patch.object(_pr, "_pr_for_head") as pr_for_head, \
+                    mock.patch.object(_pr, "_release_pr") as release_pr:
+                _pr._dry_run(plan, _pr.PHASES.index("sync"), lines.append)
+            writes = {"push", "commit", "add", "rm", "merge", "worktree"}
+            self.assertFalse(any(call and call[0] in writes for call in calls))
+            pr_for_head.assert_not_called()
+            release_pr.assert_not_called()
+            self.assertTrue(any("release  already done" in line for line in lines))
 
     def test_dry_run_lists_concrete_early_phases_and_changes_nothing(self):
         with tempfile.TemporaryDirectory() as td:
