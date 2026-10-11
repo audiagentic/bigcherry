@@ -34,10 +34,30 @@ comment `// The last padded pool is always unused.` remains true. The derived po
 multiple of 64, so the second rounding uses integer ceil-to-multiple rather than `GGML_PAD` (whose alignment operand
 must be a power of two).
 
+## KV padding invariants and consumers
+
+The original 1362 KV-side invariants are unchanged. 256 remains the minimum KV quantum; the constructor's
+`GGML_ASSERT(kv_size % n_pad == 0)` and stored `n_pad` are untouched. `get_n_kv()` still clamps the padded end to
+`cells.size()`, so a configured N does not need to divide the allocation.
+
+At b11552:
+
+- `llama_kv_cache_context::next`, `get_k/get_v`, KQ masks and relative-position inputs all consume the same padded
+  `n_kv`; empty KV cells receive the existing drop mask.
+- generic `llama-graph.cpp` attention allocation and `can_reuse_kq_mask` use that same `n_kv`.
+- iSWA/hybrid wrappers forward their underlying cache contexts; base/SWA caches remain independently bounded.
+- DSA/MSA indexer caches are ordinary KV caches and therefore use the same accessor. DSV4's separate compressed-cache
+  and compression-plan padding remain unchanged.
+- hybrid indexers use `n_kv` only as the one-past-live sentinel for padded `pool_idxs`; pool layout is built from
+  occupied indexer cells, not padded KV rows.
+- state save/restore walks occupied cell ranges and does not serialize padding-only rows, so state content/size is
+  unchanged.
+
 ## b11552 k-pool sizing audit
 
 Every `kpool_pad` consumer at b11552 uses the same new value:
 
+- `kpool_build_sizes()` records the real pool count only; padding is deliberately applied later by the shared helper.
 - `get_n_kpool()` returns `kpool_pad(mem, n_pool_real)`; Qwen4Exp and GLM5-Next allocate `pool_cells`,
   `pool_idxs`, `pool_mask` and their downstream score/selection shapes from it.
 - `set_input_kpool()` asserts against the same `kpool_pad(mem, n_pool_real)` and fills exactly that width.
@@ -98,8 +118,8 @@ Increasing the padded pool count does not make padding visible:
   beyond `n_kv` before the final mask view is restricted back to the first `n_kv` rows. Missing tail cells use the
   same sentinel/dead-slot treatment.
 - Qwen4Exp `n_sel` and GLM5-Next selection width are derived from `min(n_pool, indexer_top_k / kpool)` plus the tail.
-  A larger padded `n_pool` cannot exceed the model's top-k width; extra ranked slots remain dead under the existing
-  masks. GLM5-Next's `sel_mask` likewise marks unavailable selection slots `-INFINITY`.
+  A larger padded `n_pool` cannot increase `n_top_pool` beyond the model's top-k width; extra ranked slots remain
+  dead under the existing masks. GLM5-Next's `sel_mask` likewise marks unavailable selection slots `-INFINITY`.
 
 ## Correctness and validation status
 
