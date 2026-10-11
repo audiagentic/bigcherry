@@ -63,6 +63,12 @@ def main() -> int:
         print(f"\n{agent}: {len(steps)} steps; kernels a step median {statistics.median(counts):.0f}, mean "
               f"{statistics.mean(counts):.1f}, max {max(counts)}; a step runs {statistics.mean(busy) * us:.0f} us of kernels "
               f"in {statistics.mean(span) * us:.0f} us ({100.0 * sum(busy) / max(sum(span), 1):.0f}% of the step is kernel time)")
+        # the totals above include one-off waits (first-use code object loads, the wait for the next prompt batch);
+        # the median step is the steady state
+        share = sorted(b / sp for b, sp in zip(busy, span) if sp > 0)
+        print(f"  median step: {statistics.median(busy) * us:.0f} us of kernels in {statistics.median(span) * us:.0f} us; "
+              f"kernel share of a step median {100 * share[len(share) // 2]:.0f}%, 10th percentile {100 * share[len(share) // 10]:.0f}%; "
+              f"the {max(1, len(span) // 100)} longest steps (1%) hold {100.0 * sum(sorted(span)[-max(1, len(span) // 100):]) / sum(span):.0f}% of all step time")
         n_launch = collections.Counter()
         t_kernel = collections.Counter()
         t_gap = collections.Counter()
