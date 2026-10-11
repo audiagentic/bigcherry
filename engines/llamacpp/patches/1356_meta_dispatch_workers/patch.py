@@ -231,7 +231,8 @@ _N_CUDA_UID_FAST = r"""    // BigCherry 1356 (QFP41): Meta can keep a simple sub
 """
 
 _A_CUDA_GRAPH_COMPUTE = r"^static enum ggml_status ggml_backend_cuda_graph_compute\(ggml_backend_t backend, ggml_cgraph \* cgraph\) \{$"
-_N_CUDA_GRAPH_HASH = r"""// BigCherry 1356 diagnostic: FNV-1a over exactly the node-properties image used by
+_N_CUDA_GRAPH_HASH = r"""#ifdef USE_CUDA_GRAPH
+// BigCherry 1356 diagnostic: FNV-1a over exactly the node-properties image used by
 // ggml_cuda_graph_update_required(). Pointer values are intentional: stale captured addresses are the target.
 static uint64_t bc_1356_graph_property_hash(const ggml_cgraph * cgraph) {
     uint64_t h = 1469598103934665603ull;
@@ -257,6 +258,7 @@ static uint64_t bc_1356_graph_property_hash(const ggml_cgraph * cgraph) {
     }
     return h;
 }
+#endif // USE_CUDA_GRAPH
 
 """
 
@@ -268,6 +270,7 @@ _N_CUDA_CAPTURE = r"""    // BigCherry 1356 (QFP41): per-device dispatch workers
         return s != nullptr && atoi(s) != 0;
     }();
     static std::atomic<uint64_t> bc_1356_graph_calls[GGML_CUDA_MAX_DEVICES] = {};
+#ifdef USE_CUDA_GRAPH
     if (bc_1356_graph_trace) {
         ggml_cuda_graph * bc_graph = graph_key != nullptr ? cuda_ctx->cuda_graph(graph_key) : nullptr;
         const char * bc_decision = "direct";
@@ -286,6 +289,10 @@ _N_CUDA_CAPTURE = r"""    // BigCherry 1356 (QFP41): per-device dispatch workers
                 bc_graph != nullptr && bc_graph->warmup_complete ? 1 : 0,
                 bc_graph != nullptr && bc_graph->instance != nullptr ? 1 : 0);
     }
+#else
+    GGML_UNUSED(bc_1356_graph_trace);
+    GGML_UNUSED(bc_1356_graph_calls);
+#endif
     static std::shared_mutex bc_1356_graph_mutex;
     static const bool bc_1356_threads = [] {
         const char * s = getenv("BIGCHERRY_META_DISPATCH_THREADS");
