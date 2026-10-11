@@ -30,6 +30,7 @@ if [ "${NO_MTP:-}" = 1 ]; then  # deterministic greedy reference: no draft, so n
         -ctk ${CTK:-q8_0} -ctv ${CTV:-q8_0} "${AR_ARG[@]}")
 fi
 [ -n "${EXTRA_OT:-}" ] && args+=(-ot "$EXTRA_OT")  # extra placement override for every target-model mode
+[ -n "${EXTRA_ARGS:-}" ] && args+=(${EXTRA_ARGS})  # extra server arguments, split on spaces (e.g. "--ctx-checkpoints 0")
 if [ "${CPU_REF:-}" = 1 ]; then  # f32 CPU reference (no tensor split, no flash attention): slow, accuracy only
   args=(-m "$model" -ngl 0 --device none -c ${CTX:-16384} -ub ${UB:-512} -b 2048 --flash-attn off --parallel 1
         --threads 20 -lv 4 -ctk f16 -ctv f16)
