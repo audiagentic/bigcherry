@@ -68,6 +68,23 @@ Bit-identical greedy text with the flag on; SUBMIT_TIMING shows reused=1 on (N/5
 
 Measured upper bound of the gain: ~20 ms of ~374 ms per batch at 24K, about 5%, less whatever the masked cells cost. Tools: tools/lab/flash-next/kernel-step-census.py (idle by gap size), gap-api-calls.py, queue-boundary-arms.sh, queue-checkpoint-arms.sh (PR #169). Ruled out on the way: context checkpoints (only 2 per prompt, idle unchanged with them off), the outer scheduler (2 splits per batch), the mul_mat_q -> convert pair (median gap 9 us; the mean was two code object loads).
 
+
+
+### First hardware results for candidate A (patch 1362_kv_pad_prompt, PR #176, build b-kvpad, 2026-10-12)
+
+Flash-Next, BIGCHERRY_KV_PAD=4096, A B B A on one binary (runs kvp4k-d8192, kvp4k-d24576):
+- 8K: prefill 1365 / 1403 t/s off, 1380 / 1430 on (overlapping); 24K: 1468 / 1460 off, 1453 / 1453 on (-0.8%). Decode unchanged. Greedy text identical at both depths.
+- The patch is active (BIGCHERRY_PATCH_HIT pad=4096) but reuse does not happen: SUBMIT_TIMING reused=0 on 40 of 40 512-token submits (run kvp4kt). Qwen4Exp has a second moving size: llm_graph_input_kpool::can_reuse needs pool_cells->ne[0] == get_n_kpool(), and kpool_pad() pads the pooled-block count to 64, which a 512-token batch always crosses. Fix inside 1362 requested from GPT (pad the pool count to a quantum derived from N; branch fix/qfp53-kv-pad-kpool).
+
+Qwen3.8-27B Q8 dual XTX (dense attention, ctx 40960), same flag, prod27b-ab on b-kvpad (run kvp27):
+- 10K: prefill 1322 / 1328 off, 1320.5 / 1320.1 on (-0.4%); text identical.
+- 32K: prefill 1287 / 1285 off, 1274 / 1272 on (-1.0%, both padded runs below both unpadded); decode 75.0 / 74.8 vs 74.1 / 74.1.
+- **Greedy text is NOT identical at 32K** (two padded runs agree with each other, differ from the two unpadded; acceptance 182/287 vs 182/289). Masked cells are excluded from the result mathematically, but dense flash attention walks a different number of KV tiles, so sums are accumulated in a different order and the last bits change. 'Bit-identical' does not hold for dense attention; the 1362 SUMMARY's claim has to be narrowed to 'masked, numerically equivalent'.
+- Verdict for dense-attention models: slower and not identical - do not use KV_PAD there. 1362 can only be a Flash-Next (QSA) setting, and only if the kpool fix produces reuse and a measured gain.
+
+Harness note from the same day: quick-ab.sh's single 'new' arm read ~6% slow for any binary (first run of a different binary); fixed to four arms (PR #178). The env A/B used here runs one binary, so it is not affected.
+
 ## Change Log
 
 - 2026-10-11T21:08:26.013082+00:00 (created-by): Created by agent
+- 2026-10-11T22:17:08.066143+00:00 (updated-by): Updated: section:notes
