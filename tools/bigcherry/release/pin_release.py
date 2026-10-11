@@ -133,6 +133,116 @@ def _tag_exists(plan: Plan) -> bool:
     return bool(_git(plan.repo_root, "ls-remote", "--tags", plan.remote, f"refs/tags/{plan.release_tag}", check=False))
 
 
+def _release_package(root: Path, phase: str = "notes") -> dict:
+    try:
+        document = json.loads((root / _RELEASE_CONFIG).read_text(encoding="utf-8"))
+        package = document["packages"][RELEASE_PACKAGE]
+    except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
+        raise PinReleaseError(phase, f"{_RELEASE_CONFIG} has no valid {RELEASE_PACKAGE!r} package") from exc
+    if not isinstance(package, dict):
+        raise PinReleaseError(phase, f"{_RELEASE_CONFIG} package {RELEASE_PACKAGE!r} is not an object")
+    return package
+
+
+def _package_object_bounds(text: str) -> tuple[int, int]:
+    marker = re.search(rf'(?m)^\s*{re.escape(json.dumps(RELEASE_PACKAGE))}\s*:\s*\{{', text)
+    if marker is None:
+        raise ValueError(f"package {RELEASE_PACKAGE!r} not found")
+    opening = text.find("{", marker.start(), marker.end())
+    depth = 0
+    in_string = False
+    escaped = False
+    for i in range(opening, len(text)):
+        ch = text[i]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return opening, i
+    raise ValueError(f"package {RELEASE_PACKAGE!r} object is not closed")
+
+
+def _release_as_value(text: str, phase: str) -> str | None:
+    try:
+        value = json.loads(text)["packages"][RELEASE_PACKAGE].get("release-as")
+    except (json.JSONDecodeError, KeyError, TypeError) as exc:
+        raise PinReleaseError(phase, f"{_RELEASE_CONFIG} has no valid {RELEASE_PACKAGE!r} package") from exc
+    if value is not None and not isinstance(value, str):
+        raise PinReleaseError(phase, f"{RELEASE_PACKAGE}.release-as must be a string, got {value!r}")
+    return value
+
+
+def _set_release_as_text(text: str, version: str | None, phase: str, expected: str | None = None) -> tuple[str, bool]:
+    current = _release_as_value(text, phase)
+    if version is not None:
+        if current is not None and current != version:
+            raise PinReleaseError(phase, f"{RELEASE_PACKAGE}.release-as is already {current!r}, refusing to replace it with {version!r}")
+        if current == version:
+            return text, False
+        try:
+            opening, _ = _package_object_bounds(text)
+        except ValueError as exc:
+            raise PinReleaseError(phase, str(exc)) from exc
+        line = re.match(r"(\r?\n)([ \t]+)", text[opening + 1:])
+        if line is None:
+            raise PinReleaseError(phase, f"cannot preserve formatting while editing {RELEASE_PACKAGE} in {_RELEASE_CONFIG}")
+        newline, indent = line.group(1), line.group(2)
+        updated = text[:opening + 1] + f'{newline}{indent}"release-as": {json.dumps(version)},' + text[opening + 1:]
+        if _release_as_value(updated, phase) != version:
+            raise PinReleaseError(phase, f"failed to set {RELEASE_PACKAGE}.release-as")
+        return updated, True
+
+    if current is None:
+        return text, False
+    if expected is not None and current != expected:
+        raise PinReleaseError(phase, f"{RELEASE_PACKAGE}.release-as is {current!r}, expected {expected!r}; refusing to clear it")
+    try:
+        opening, closing = _package_object_bounds(text)
+    except ValueError as exc:
+        raise PinReleaseError(phase, str(exc)) from exc
+    package_text = text[opening + 1:closing]
+    match = re.search(r'(?m)^[ \t]*"release-as"[ \t]*:[^\r\n]*(?:\r?\n|$)', package_text)
+    if match is None:
+        raise PinReleaseError(phase, f"could not locate {RELEASE_PACKAGE}.release-as without reformatting {_RELEASE_CONFIG}")
+    start = opening + 1 + match.start()
+    end = opening + 1 + match.end()
+    updated = text[:start] + text[end:]
+    try:
+        json.loads(updated)
+    except json.JSONDecodeError:
+        comma = text.rfind(",", opening + 1, start)
+        if comma < 0:
+            raise PinReleaseError(phase, f"could not remove {RELEASE_PACKAGE}.release-as without reformatting {_RELEASE_CONFIG}")
+        updated = text[:comma] + text[comma + 1:start] + text[end:]
+        try:
+            json.loads(updated)
+        except json.JSONDecodeError as exc:
+            raise PinReleaseError(phase, f"could not remove {RELEASE_PACKAGE}.release-as without reformatting {_RELEASE_CONFIG}") from exc
+    if _release_as_value(updated, phase) is not None:
+        raise PinReleaseError(phase, f"failed to clear {RELEASE_PACKAGE}.release-as")
+    return updated, True
+
+
+def _edit_release_as(root: Path, version: str | None, phase: str, expected: str | None = None) -> bool:
+    path = root / _RELEASE_CONFIG
+    original = path.read_text(encoding="utf-8")
+    updated, changed = _set_release_as_text(original, version, phase, expected)
+    if changed:
+        path.write_text(updated, encoding="utf-8", newline="")
+    return changed
+
+
 def phase_gate(plan: Plan) -> str:
     """Every required tree converged at the pin. Returns the gate's output, which the record keeps."""
     _require_clean(plan, "gate")
