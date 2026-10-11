@@ -100,11 +100,18 @@ def make_plan(repo_root: Path, llama_tag: str, main: str = "main", remote: str =
         local = _git(repo_root, "tag", "--list", f"{config.tag_prefix}{build}.*", check=False)
         names = {line.split("refs/tags/")[-1] for line in refs.splitlines() if "refs/tags/" in line} | set(local.split())
         existing = [name[len(config.tag_prefix):] for name in names]
-        # a release whose notes commit exists but is not tagged yet is the one in flight: resume it
-        in_flight = _git(repo_root, "log", "--format=%s", "--fixed-strings", f"--grep=chore: release notes {config.tag_prefix}{build}.", "-20", check=False)
-        pending = [s.rsplit(config.tag_prefix, 1)[-1] for s in in_flight.splitlines() if s.rsplit(config.tag_prefix, 1)[-1] not in existing]
+        # A notes commit identifies the release this work branch was publishing. Keep using it after the tag
+        # appears so post-tag unpin/sync can resume with the same command. A requested --bump deliberately starts
+        # a new version instead of reusing a completed notes commit.
+        notes_log = _git(repo_root, "log", "--format=%s", "--fixed-strings",
+                         f"--grep=chore: release notes {config.tag_prefix}{build}.", "-20", check=False)
+        note_versions = [line.rsplit(config.tag_prefix, 1)[-1] for line in notes_log.splitlines()
+                         if config.tag_prefix in line]
+        pending = [candidate for candidate in note_versions if candidate not in existing]
         if pending:
             version = pending[0]
+        elif bump is None and note_versions:
+            version = note_versions[0]
         elif allow_existing and bump is None:
             released = sorted(tuple(int(x) for x in v.split(".")) for v in existing
                               if re.fullmatch(rf"{build}\.\d+\.\d+", v))
@@ -282,7 +289,8 @@ def phase_notes(plan: Plan) -> bool:
     subject = f"chore: release notes {plan.release_tag}"
     config_text = (root / _RELEASE_CONFIG).read_text(encoding="utf-8")
     committed = subject in _git(root, "log", "--format=%s", "--fixed-strings", f"--grep={subject}", "-5").splitlines()
-    if committed and _release_as_value(config_text, "notes") == plan.version:
+    current_release_as = _release_as_value(config_text, "notes")
+    if committed and (current_release_as == plan.version or (current_release_as is None and _tag_exists(plan))):
         return False
     _require_clean(plan, "notes")
     try:
@@ -348,6 +356,8 @@ def _main_pr_title(plan: Plan) -> str:
 
 def phase_main(plan: Plan, wait_s: int = 900) -> bool:
     """Publish the work branch and merge it to main through a checked pull request."""
+    if _tag_exists(plan):
+        return False
     root, remote = plan.repo_root, plan.remote
     _require_clean(plan, "main")
     _git(root, "fetch", "-q", remote)
