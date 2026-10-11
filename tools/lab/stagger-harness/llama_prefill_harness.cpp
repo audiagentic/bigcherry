@@ -78,7 +78,7 @@ int main(int argc, char ** argv) {
         }
     }
     if (model_path.empty()) {
-        std::fprintf(stderr, "usage: llama_prefill_harness -m <gguf> [-n tokens] [-b 512] [-ub 256] [-c ctx] [-dev a,b,c] [-ts x,y,z] [-ot 're=CPU'] [--calls K] [-o logits.bin]\n");
+        std::fprintf(stderr, "usage: llama_prefill_harness -m <gguf> [-n tokens] [-b 512] [-ub 256] [-c ctx] [-dev a,b,c] [-ts x,y,z] [-ot 're=CPU'] [--calls K] [-o logits.bin] [--draft-model gguf --draft-dev ROCm3 --draft-n N --draft-ctx C]\n");
         return 10;
     }
 
