@@ -3,6 +3,8 @@
 **Status:** untested
 **Plan item:** MET01/MET07
 
+Does not apply on pin b11552: upstream merged #29887 with a different cache layout; the rebuild is tracked in MET07.
+
 Kind: local enhancement on 1337. Variables: `BIGCHERRY_MOE_CACHE_PROFILE`,
 `BIGCHERRY_MOE_CACHE_PIN_PCT` (default 85), `BIGCHERRY_MOE_CACHE_LARGE`,
 `BIGCHERRY_MOE_CACHE_PROFILE_OUT`.

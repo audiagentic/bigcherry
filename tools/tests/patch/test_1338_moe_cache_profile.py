@@ -32,7 +32,10 @@ _P1337 = _load("1337_moe_expert_caching")
 _FILES = sorted({fp.path for fp in _P1337.PATCHES} - set(_NEW))
 
 
-@unittest.skipUnless(all((_VENDOR / path).exists() for path in _FILES), "pinned vendor checkout not present")
+# b11552 carries upstream #29887 itself (1337 is superseded) and its merged cache differs from the revision 1338 was
+# written on, so 1338 does not apply on this pin (known_broken disposition, MET07). These checks describe the
+# 1337-based revision and come back with the rebuild on upstream's cache.
+@unittest.skip("1338 awaits its rebuild on upstream's MoE cache (MET07)")
 class Patch1338Mechanics(unittest.TestCase):
     def _root(self, td: str):
         root = Path(td)
