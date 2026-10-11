@@ -99,6 +99,6 @@ PATCHES = [
 ]
 
 ENV_DOCS = (
-    EnvDoc('BIGCHERRY_META_TIMING', '0|1', '0',
+    EnvDoc('BIGCHERRY_SUBMIT_TIMING', '0|1', '0',
            'diagnostic: meta backend per-device compute timing'),
 )
