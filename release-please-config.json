@@ -51,6 +51,7 @@
       ]
     },
     ".": {
+      "release-as": "1.1.0",
       "release-type": "simple",
       "component": "bc-platform",
       "exclude-paths": [
