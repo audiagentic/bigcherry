@@ -1,7 +1,7 @@
 # 1266_rd05_wmma_fa_tileq_sync
 
 **Status:** untested
-**Plan item:** PRBE02
+**Plan item:** PRBE110
 
 **Patch metadata state:** untested (unchanged). **Operational disposition:** do not apply to b11552 unchanged; correctness-only historical candidate, not promoted. **Owner:** PRBE110 (patch); PRBE02 (residual kbc-boundary decision).
 
