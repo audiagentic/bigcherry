@@ -173,7 +173,7 @@ class PinReleaseTests(unittest.TestCase):
 
     def test_main_pushes_only_work_branch_and_opens_or_reuses_pr(self):
         plan = SimpleNamespace(repo_root=Path("/repo"), remote="origin", main="main", branch="work",
-                               llama_tag="b11474", release_tag="bc-11474.0.0")
+                               llama_tag="b11474", release_tag="bc-11474.0.0", version="11474.0.0")
         git_calls = []
 
         def fake_git(root, *args, check=True):
