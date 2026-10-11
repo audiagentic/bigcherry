@@ -23,8 +23,8 @@ the allocated KV size. N therefore does not need to divide `kv_size`.
 ## b11552 consumer audit
 
 - `llama-kv-cache.cpp`: `llama_kv_cache_context::next` receives the larger `n_kv`; `get_k/get_v` expose larger
-  in-bounds views and KQ/relative-position inputs iterate the same range. Empty cells are already masked, and allocated
-  KV buffers are zero-initialized.
+  in-bounds views and KQ/relative-position inputs iterate the same range. Empty cells are explicitly assigned the
+  drop mask, so their KV contents are never visible to attention.
 - `llama-graph.cpp`: generic attention mask allocation and `can_reuse_kq_mask` see the larger width. This is the
   intended graph-reuse effect. Position-bucket inputs also grow with `n_kv`; empty-cell values are irrelevant because
   the attention mask excludes them.
