@@ -57,7 +57,12 @@ def main() -> int:
             if edit.status == "failed":
                 bad += 1
                 print(f"    {edit.detail[:400]}")
-    print(f"{bad} failed edit(s); files in {out}")
+            elif edit.status == "already-applied":
+                # on a fresh base nothing of this patch is applied yet: the guard matches the base or an earlier
+                # edit's output, and the engine has skipped this edit without saying so
+                bad += 1
+                print("    guard already matches before this edit ran: the edit was SKIPPED; make its guard unique")
+    print(f"{bad} failed or skipped edit(s); files in {out}")
     return 1 if bad else 0
 
 

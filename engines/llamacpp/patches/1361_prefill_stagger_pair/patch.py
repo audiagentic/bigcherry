@@ -1385,7 +1385,7 @@ PATCHES = [
             _edit(id="stagger-sched-copy-input", anchor=_A_SCHED_COPY_INPUT, mode="replace", text=_N_SCHED_COPY_INPUT,
                   guard=r"struct bc_1361_input_stage_slot", rationale="Extend the existing 1326 scheduler input path with pair-owned pinned staging."),
             _edit(id="stagger-1326-pinned-stage", anchor=_A_1326_STAGE, mode="replace", text=_N_1326_STAGE,
-                  guard=r"bc_1361_copy_input_pinned", rationale="long-anchor: replace the complete 1326 staging block so pair mode can retain its existing eligibility/synchronization gate."),
+                  guard=r"if \(sched->bc_stagger_input_slot > 0\) \{", rationale="long-anchor: replace the complete 1326 staging block so pair mode can retain its existing eligibility/synchronization gate."),
             _edit(id="stagger-stage-free", anchor=_A_SCHED_FREE, mode="replace", text=_N_SCHED_FREE,
                   guard=r"delete sched->bc_stagger_input_stages", rationale="Scheduler owns and frees pair input staging/events."),
             _edit(id="stagger-sched-alloc-arena", anchor=_A_SCHED_ALLOC, mode="replace", text=_N_SCHED_ALLOC,
