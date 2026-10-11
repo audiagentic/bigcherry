@@ -259,7 +259,8 @@ _A_META_IFACE = r'''static const ggml_backend_i ggml_backend_meta_i = {
 _N_META_IFACE = r'''// BigCherry 1361 (QFP49): materialise A and B into independent graph metadata, preflight every reduction,
 // then issue the proven A-compute/A-begin/B-compute/B-begin schedule.  false means unsupported before model compute.
 bool ggml_backend_meta_graph_compute_pair(
-        ggml_backend_t backend, struct ggml_cgraph * cgraph_a, struct ggml_cgraph * cgraph_b, ggml_status * status_out, ggml_status (*prepare)(void *), void * prepare_ctx) {
+        ggml_backend_t backend, struct ggml_cgraph * cgraph_a, struct ggml_cgraph * cgraph_b, ggml_status * status_out,
+        ggml_status (*prepare_half)(void *, int), void * prepare_ctx) {
     GGML_ASSERT(ggml_backend_is_meta(backend));
     auto * backend_ctx = static_cast<ggml_backend_meta_context *>(backend->context);
     const size_t n_backends = backend_ctx->backend_configs.size();
@@ -335,6 +336,17 @@ bool ggml_backend_meta_graph_compute_pair(
         return false;
     }
 
+    // Scheduler copies are graph-external operations. Meta's rotating compute tensor containers only guarantee
+    // that such an operation resolves the simple tensors for the graph that is current now. Snapshot A while
+    // A's just-captured mapping is current; waiting until after B capture can resolve A through a later mapping.
+    if (prepare_half != nullptr) {
+        status = prepare_half(prepare_ctx, 0);
+        if (status != GGML_STATUS_SUCCESS) {
+            if (status_out) *status_out = status;
+            return true;
+        }
+    }
+
     status = rehome_static_views(cgraph_b);
     if (status != GGML_STATUS_SUCCESS) {
         if (status_out) *status_out = status;
@@ -347,6 +359,13 @@ bool ggml_backend_meta_graph_compute_pair(
     if (status != GGML_STATUS_SUCCESS) {
         if (status_out) *status_out = status;
         return false;
+    }
+    if (prepare_half != nullptr) {
+        status = prepare_half(prepare_ctx, 1);
+        if (status != GGML_STATUS_SUCCESS) {
+            if (status_out) *status_out = status;
+            return true;
+        }
     }
     if (sets[0].n_subgraphs != sets[1].n_subgraphs || sets[0].n_subgraphs == 0) {
         return decline("different Meta subgraph shapes");
@@ -393,13 +412,6 @@ bool ggml_backend_meta_graph_compute_pair(
         }
     }
 
-    if (prepare != nullptr) {
-        status = prepare(prepare_ctx);
-        if (status != GGML_STATUS_SUCCESS) {
-            if (status_out) *status_out = status;
-            return true;
-        }
-    }
     void * pending[2] = {nullptr, nullptr};
     auto finish = [&](int h) {
         if (pending[h] != nullptr) {
@@ -604,7 +616,7 @@ bool ggml_backend_meta_reserve_graph_pair(ggml_backend_t meta_backend, struct gg
 bool ggml_backend_meta_alloc_graph_pair(ggml_backend_t meta_backend, struct ggml_cgraph * cgraph);
 bool ggml_backend_meta_graph_compute_pair(
     ggml_backend_t backend, struct ggml_cgraph * cgraph_a, struct ggml_cgraph * cgraph_b,
-    ggml_status * status_out, ggml_status (*prepare)(void *), void * prepare_ctx);
+    ggml_status * status_out, ggml_status (*prepare_half)(void *, int), void * prepare_ctx);
 void ggml_backend_meta_rotate_graph_containers(struct ggml_cgraph * cgraph);
 '''
 
@@ -949,22 +961,32 @@ enum ggml_status ggml_backend_sched_graph_compute_async_pair(
         return decline("pair-safe pinned input staging unavailable");
     }
 
-    // Snapshot A into its final Meta inputs before running B's host prefix. Some graph inputs/prefix temporaries
-    // are backed by host storage whose lifetime is only guaranteed until the next producer runs. The old order
-    // was prefix(A), prefix(B), copy(A), copy(B), so B could replace A's source before A had a device snapshot.
-    auto prepare = [&]() -> ggml_status {
-        ggml_status ec = ggml_backend_sched_compute_splits_prefix(sched_a);
+    // Prefixes must be host-only: prepare_half runs after each half is captured but before provider admission.
+    // That makes the final H2D graph-external copy target the exact Meta mapping just captured without launching
+    // any final Meta model work before the pair is known to be admissible.
+    for (int split_id = 0; split_id + 1 < sched_a->n_splits; ++split_id) {
+        ggml_backend_t ba = sched_a->backends[sched_a->splits[split_id].backend_id];
+        ggml_backend_t bb = sched_b->backends[sched_b->splits[split_id].backend_id];
+        if (ggml_backend_dev_type(ggml_backend_get_device(ba)) != GGML_BACKEND_DEVICE_TYPE_CPU ||
+                ggml_backend_dev_type(ggml_backend_get_device(bb)) != GGML_BACKEND_DEVICE_TYPE_CPU) {
+            return decline("non-host prefix split");
+        }
+    }
+
+    auto prepare_half = [&](int half) -> ggml_status {
+        ggml_backend_sched_t sched = half == 0 ? sched_a : sched_b;
+        ggml_backend_sched_split * split = half == 0 ? a : b;
+        ggml_status ec = ggml_backend_sched_compute_splits_prefix(sched);
         if (ec != GGML_STATUS_SUCCESS) return ec;
-        copy_inputs(sched_a, a);
-        ec = ggml_backend_sched_compute_splits_prefix(sched_b);
-        if (ec != GGML_STATUS_SUCCESS) return ec;
-        copy_inputs(sched_b, b);
+        copy_inputs(sched, split);
         return GGML_STATUS_SUCCESS;
     };
-    using prepare_type = decltype(prepare);
-    auto cb = [](void * p) -> ggml_status { return (*static_cast<prepare_type *>(p))(); };
+    using prepare_type = decltype(prepare_half);
+    auto cb = [](void * p, int half) -> ggml_status {
+        return (*static_cast<prepare_type *>(p))(half);
+    };
     ggml_status status = GGML_STATUS_SUCCESS;
-    const bool ok = ggml_backend_meta_graph_compute_pair(backend, &a->graph, &b->graph, &status, cb, &prepare);
+    const bool ok = ggml_backend_meta_graph_compute_pair(backend, &a->graph, &b->graph, &status, cb, &prepare_half);
     if (!ok) {
         return status; // unsupported was decided before model compute; caller runs today's sequential order.
     }
