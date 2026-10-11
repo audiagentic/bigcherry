@@ -1,5 +1,13 @@
 # Changelog
 
+## [11552.1.2](https://github.com/audiagentic/bigcherry/compare/bc-llamacpp-11552.1.1...bc-llamacpp-11552.1.2) (2026-10-11)
+
+
+### Fixes
+
+* **patch:** shelve 1356 and 1360 as evaluated (owner decision); QFP41 and QFP49 closed; main ruleset prepared for the owner (PA46) ([ff10025](https://github.com/audiagentic/bigcherry/commit/ff10025d48e79e516c85e97c75a0bacc374e1fb9))
+* **patch:** shelve 1356 and 1360 as evaluated; close QFP41 and QFP49 ([5d9c163](https://github.com/audiagentic/bigcherry/commit/5d9c1631c6989e6a85202a9fe17e6c64d2b8e3fa))
+
 ## [11552.1.1](https://github.com/audiagentic/bigcherry/compare/bc-llamacpp-11552.1.0...bc-llamacpp-11552.1.1) (2026-10-11)
 
 
