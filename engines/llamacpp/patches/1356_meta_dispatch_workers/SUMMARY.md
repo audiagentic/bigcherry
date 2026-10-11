@@ -186,3 +186,40 @@ binding still changes the offset/hash.
 Acceptance: twelve 98K worker-on runs, graphs and fusion on, identical greedy text. Keep `BIGCHERRY_META_MEM` off.
 If this fix still differs, a clean-vs-bad trace with the same property hash but different output shifts the lead from
 the graph decision to fused launch state not represented by `node_properties`.
+
+
+## mdw7 / cross-context follow-up (2026-10-11)
+
+Hardware ruled out the UID-shortcut hypothesis: build b-mdw7 with worker mode forced through the full node-property
+comparison still differed in 3 of 12 98K server passes (9 x b301a49a, 3 x 10a864c9). Graph trace is not positionally
+stable even between clean runs, so direct/replay/update/capture call-number diffs are not causal evidence.
+
+The target-only library harness is decisive about scope: at 100,352 tokens, target model only, workers off gave
+1514.9/1505.6 t/s and workers on gave 1512.5-1520.6 t/s across six passes, with bit-identical last-token logits in all
+six. The race therefore needs the second llama_context/drafter workload in the process.
+
+Code reading corrects one premise: Meta worker dispatch does **not** return to its caller before the workers finish
+their host graph_compute calls. It submits every worker, then wait()s every worker before collectives and return.
+The join is host-submission only, not a GPU synchronize. Therefore the MTP hook can overlap target GPU execution,
+but on the same caller path it cannot overlap the target workers' host graph_compute calls from that Meta invocation.
+
+1356's graph mutex already lives in generic ggml_backend_cuda_graph_compute, so a non-Meta CUDA/HIP drafter using
+graphs reaches the same mutex when BIGCHERRY_META_DISPATCH_THREADS=1. The uncovered path was direct/warm-up
+evaluation: it runs the fusion pass but the old lock was conditional on use_cuda_graph. The new boundary is
+process-wide while worker mode is enabled: direct/warm-up/capture/update are exclusive; pure replay is shared.
+This is deliberately conservative. Joining Meta workers cannot be the fix because they are already joined; making
+graph/fusion state per-context is preferable only after an actually shared unsafe object is identified.
+
+The failed UID-force behavior has been removed; BIGCHERRY_META_DISPATCH_GRAPH_TRACE remains available.
+
+Harness reproducer: tools/lab/stagger-harness/llama_prefill_harness.cpp now accepts, default off:
+  --draft-model <gguf> --draft-dev ROCm3 --draft-n <N> [--draft-ctx <C>]
+It loads an independent second llama_model/llama_context and, immediately after every target llama_decode returns,
+runs one N-token llama_decode on that context from the main thread. No new harness thread is created. Compare the
+TARGET logits file/hash against the identical workers-off invocation. This reproduces the server's post-target host
+ordering and target/drafter GPU overlap; by the joined-worker result above it does not and cannot create host-side
+target-worker/drafter graph_compute overlap without adding another thread.
+
+Suggested 98K reproducer shape (substitute model paths/profile placement):
+  -n 100352 -b 512 -ub 512 -c 131072 --draft-model <draft.gguf> --draft-dev ROCm3 --draft-n 512 --draft-ctx 131072
+Run once with BIGCHERRY_META_DISPATCH_THREADS=0 and repeatedly with =1; compare the TARGET -o files byte-for-byte.
