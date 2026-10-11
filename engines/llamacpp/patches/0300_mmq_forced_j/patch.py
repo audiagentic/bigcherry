@@ -258,4 +258,59 @@ CALLER_PATCH = FilePatch(
 )
 
 
-PATCHES = [HEADER_PATCH, SOURCE_PATCH, CALLER_PATCH]
+AUTOTUNE_DISPATCH_PATCH = FilePatch(
+    path="ggml/src/ggml-cuda/hip-autotune-dispatch.cu",
+    description="align autotune native-MMQ J query with b11552 ncols_opt selection",
+    edits=(
+        Edit(
+            id="mmq-native-j-ncols-opt-dispatch",
+            anchor=r"^    if \(self->source_class == GGML_HIP_SOURCE_NATIVE_WRAPPER\) \{$",
+            rationale="native wrapper eligibility must query the same J that b11552 will select",
+            mode="insert_after",
+            text="        const int64_t ncols_opt = (sig.flags & GGML_HIP_SIG_HAS_IDS)\\n"
+                 "            ? (sig.ne1[2] * sig.n_expert_used + sig.ne0[2] - 1) / sig.ne0[2]\\n"
+                 "            : sig.ne1[1];\\n",
+            guard=r"const int64_t ncols_opt = \(sig.flags & GGML_HIP_SIG_HAS_IDS\)",
+            max_span_lines=2,
+        ),
+        Edit(
+            id="mmq-native-j-query-dispatch",
+            anchor=r"^            \(ggml_type\) sig\.src0_type, shape_fallback, ncols_max,$",
+            rationale="feed b11552's optimization width, not destination launch width, to native J selection",
+            mode="replace",
+            text="            (ggml_type) sig.src0_type, shape_fallback, ncols_opt,",
+            guard=r"sig\.src0_type, shape_fallback, ncols_opt,",
+            max_span_lines=2,
+        ),
+    ),
+)
+
+
+AUTOTUNE_TUNER_PATCH = FilePatch(
+    path="ggml/src/ggml-cuda/hip-autotune-tuner.cu",
+    description="align MMQ noise-canary J-best pair with b11552 native selection",
+    edits=(
+        Edit(
+            id="mmq-native-j-ncols-opt-canary",
+            anchor=r"^            const int j_best = ggml_cuda_mmq_native_j_best\($",
+            rationale="the canary must pair native with the candidate using b11552's actual native J",
+            mode="insert_before",
+            text="            const int64_t ncols_opt = (sig.flags & GGML_HIP_SIG_HAS_IDS)\\n"
+                 "                ? (sig.ne1[2] * sig.n_expert_used + sig.ne0[2] - 1) / sig.ne0[2]\\n"
+                 "                : sig.ne1[1];\\n",
+            guard=r"const int64_t ncols_opt = \(sig.flags & GGML_HIP_SIG_HAS_IDS\)",
+            max_span_lines=2,
+        ),
+        Edit(
+            id="mmq-native-j-query-canary",
+            anchor=r"^                \(sig\.flags & GGML_HIP_SIG_HAS_IDS\) \? sig\.ned\[2\] : sig\.ned\[1\],$",
+            rationale="replace the old launch-width query with b11552's optimization width",
+            mode="replace",
+            text="                ncols_opt,",
+            guard=r"^                ncols_opt,$",
+            max_span_lines=2,
+        ),
+    ),
+)
+
+PATCHES = [HEADER_PATCH, SOURCE_PATCH, CALLER_PATCH, AUTOTUNE_DISPATCH_PATCH, AUTOTUNE_TUNER_PATCH]
