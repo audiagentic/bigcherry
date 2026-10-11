@@ -257,8 +257,9 @@ _N_CUDA_UID_FAST = r"""    // BigCherry 1356 (QFP41): Meta can keep a simple sub
 
 _A_CUDA_GRAPH_COMPUTE = r"^static enum ggml_status ggml_backend_cuda_graph_compute\(ggml_backend_t backend, ggml_cgraph \* cgraph\) \{$"
 _N_CUDA_GRAPH_HASH = r"""#ifdef USE_CUDA_GRAPH
-// BigCherry 1356 diagnostic: FNV-1a over exactly the node-properties image used by
-// ggml_cuda_graph_update_required(). Pointer values are intentional: stale captured addresses are the target.
+// BigCherry 1356 diagnostic: cross-run-stable projection of the node properties used by
+// ggml_cuda_graph_update_required(). Absolute pointers are normalized to buffer-relative offsets so a clean and a
+// differing process can be diffed; shape/stride/op/op_params and bound data offsets remain address-sensitive.
 static uint64_t bc_1356_graph_property_hash(const ggml_cgraph * cgraph) {
     uint64_t h = 1469598103934665603ull;
     auto hash_bytes = [&h](const void * p, size_t n) {
@@ -267,24 +268,51 @@ static uint64_t bc_1356_graph_property_hash(const ggml_cgraph * cgraph) {
             h = (h ^ (uint64_t) b[i]) * 1099511628211ull;
         }
     };
+    auto hash_tensor = [&hash_bytes](const ggml_tensor * t) {
+        hash_bytes(&t->type, sizeof(t->type));
+        hash_bytes(t->ne, sizeof(t->ne));
+        hash_bytes(t->nb, sizeof(t->nb));
+        hash_bytes(&t->op, sizeof(t->op));
+        hash_bytes(t->op_params, sizeof(t->op_params));
+        hash_bytes(&t->flags, sizeof(t->flags));
+        hash_bytes(&t->view_offs, sizeof(t->view_offs));
+        hash_bytes(t->name, sizeof(t->name));
+
+        uint64_t data_off = UINT64_MAX;
+        uint64_t buffer_size = 0;
+        if (t->data != nullptr) {
+            data_off = UINT64_MAX - 1; // allocated but not normalizable
+            if (t->buffer != nullptr) {
+                const void * base = ggml_backend_buffer_get_base(t->buffer);
+                buffer_size = (uint64_t) ggml_backend_buffer_get_size(t->buffer);
+                if (base != nullptr) {
+                    data_off = (uint64_t) ((uintptr_t) t->data - (uintptr_t) base);
+                }
+                const char * buffer_name = ggml_backend_buffer_name(t->buffer);
+                if (buffer_name != nullptr) {
+                    hash_bytes(buffer_name, strlen(buffer_name));
+                }
+            }
+        }
+        hash_bytes(&data_off, sizeof(data_off));
+        hash_bytes(&buffer_size, sizeof(buffer_size));
+    };
 
     hash_bytes(&cgraph->n_nodes, sizeof(cgraph->n_nodes));
     for (int i = 0; i < cgraph->n_nodes; ++i) {
-        ggml_cuda_graph::node_properties prop = {};
-        memcpy(&prop.node, cgraph->nodes[i], sizeof(ggml_tensor));
+        hash_tensor(cgraph->nodes[i]);
         for (int j = 0; j < GGML_MAX_SRC; ++j) {
-            if (cgraph->nodes[i]->src[j] != nullptr) {
-                prop.node_src_data_ptrs[j] = cgraph->nodes[i]->src[j]->data;
-                memcpy(prop.node_src_ne[j], cgraph->nodes[i]->src[j]->ne, sizeof(prop.node_src_ne[j]));
-                memcpy(prop.node_src_nb[j], cgraph->nodes[i]->src[j]->nb, sizeof(prop.node_src_nb[j]));
+            const ggml_tensor * src = cgraph->nodes[i]->src[j];
+            const bool present = src != nullptr;
+            hash_bytes(&present, sizeof(present));
+            if (present) {
+                hash_tensor(src);
             }
         }
-        hash_bytes(&prop, sizeof(prop));
     }
     return h;
 }
 #endif // USE_CUDA_GRAPH
-
 """
 
 _A_CUDA_CAPTURE = r"^    if \(use_cuda_graph && cuda_graph_update_required\) \{$"
