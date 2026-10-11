@@ -108,6 +108,14 @@ class Patch1356Mechanics(unittest.TestCase):
             self.assertEqual(cuda.count("BIGCHERRY_1356_LOCK_STATS"), 1)
             self.assertIn("#include <shared_mutex>", cuda)
 
+            # QFP41 98K race hardening: worker mode cannot take the cgraph UID shortcut, the 1339 fusion-overlap
+            # counters are worker-safe, and the default-off trace reports a cross-run-stable property hash.
+            self.assertIn("bc_1356_force_property_compare", cuda)
+            self.assertIn("if (!bc_1356_force_property_compare && cgraph->uid != 0 &&", cuda)
+            self.assertIn("std::atomic<uint64_t> checks{0}, refused{0};", cuda)
+            self.assertEqual(cuda.count("BIGCHERRY_1356_GRAPH device="), 1)
+            self.assertIn("bc_1356_graph_property_hash", cuda)
+
             second = apply_all(_P.PATCHES, root)
             self.assertTrue(all(r.ok for r in second), [e.detail for r in second for e in r.failed])
             self.assertEqual(src, p.read_text(encoding="utf-8"))
@@ -115,8 +123,9 @@ class Patch1356Mechanics(unittest.TestCase):
 
     def test_default_off_and_worker_lifetime(self):
         self.assertEqual([doc.name for doc in _P.ENV_DOCS],
-                         ["BIGCHERRY_META_DISPATCH_THREADS", "BIGCHERRY_META_DISPATCH_STATS"])
-        self.assertEqual([doc.default for doc in _P.ENV_DOCS], ["0 (off)", "0 (off)"])
+                         ["BIGCHERRY_META_DISPATCH_THREADS", "BIGCHERRY_META_DISPATCH_STATS",
+                          "BIGCHERRY_META_DISPATCH_GRAPH_TRACE"])
+        self.assertEqual([doc.default for doc in _P.ENV_DOCS], ["0 (off)", "0 (off)", "0 (off)"])
         text = _P._N_WORKER + _P._N_DTOR + _P._N_DISPATCH
         self.assertIn("thread.join();", text)
         self.assertLess(text.index("bc_dispatch_workers.clear();"), text.index("ggml_backend_free(bc.backend);"))
