@@ -73,7 +73,7 @@ class MmqForcedJValidationAdapterTests(unittest.TestCase):
         caller = next(p for p in module.PATCHES if p.path == "ggml/src/ggml-cuda/ggml-cuda.cu")
         self.assertEqual({e.text for e in caller.edits}, {
             "        ggml_cuda_mul_mat_q(ctx, src0, src1, nullptr, dst, 0);",
-            "        ggml_cuda_mul_mat_q(ctx, src0, src1, ids, dst, 0);",
+            "            ggml_cuda_mul_mat_q(ctx, src0, src1, ids, dst, 0);",
         })
 
     def test_malformed_package_is_error(self):

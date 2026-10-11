@@ -13,10 +13,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from bigcherry.core import paths  # noqa: E402
 from bigcherry.patcher import apply_all  # noqa: E402
 from bigcherry.patch import rebase as patch_rebase  # noqa: E402
-from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
+from bigcherry.patch.pinned_source import copy_pinned, pinned_checkout  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
-_V = paths.llama_root()  # the primary checkout's vendor tree (a slice worktree has none)
+# a pristine copy of the pinned revision: the vendor working tree normally has the production patches applied
+_V = pinned_checkout() if paths.llama_root().is_dir() else paths.llama_root()
 _FILES = (
     "common/speculative.h",
     "common/speculative.cpp",
@@ -51,11 +52,13 @@ class Patch1346StaticContracts(unittest.TestCase):
         src = (_REPO / "engines/llamacpp/patches/1346_mtp_prompt_overlap/patch.py").read_text(encoding="utf-8")
         edits = [edit for patch in _P.PATCHES for edit in patch.edits]
         self.assertGreater(len(edits), 0)
-        self.assertEqual(src.count("expect_matches=1,"), len(edits))
+        # four process-timing edits take the second of two matches (1348's snapshot repeats the code): expect 2, occurrence 1
+        self.assertEqual(src.count("expect_matches=1,") + src.count("expect_matches=2,"), len(edits))
+        self.assertEqual(src.count("occurrence=1,"), 4)
         self.assertEqual(src.count("max_span_lines="), len(edits))
         self.assertEqual(src.count("guard=r"), len(edits))
         for edit in edits:
-            self.assertEqual(edit.expect_matches, 1)
+            self.assertEqual(edit.expect_matches, 2 if edit.occurrence == 1 else 1)
             self.assertIsNotNone(edit.guard)
             self.assertGreater(edit.max_span_lines, 0)
 
