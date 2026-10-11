@@ -131,6 +131,7 @@ size_t differing(const std::vector<float> & a, const std::vector<float> & b) {
 } // namespace
 
 int main(int argc, char ** argv) {
+    std::setvbuf(stdout, nullptr, _IOLBF, 0);  // a hang must not swallow what was printed before it
     model m;
     m.T = argc > 1 ? std::atoll(argv[1]) : 256;
     m.L = argc > 2 ? std::atoi(argv[2]) : 96;
