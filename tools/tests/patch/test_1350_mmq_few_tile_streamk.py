@@ -185,11 +185,13 @@ class Patch1350Mechanics(unittest.TestCase):
                 "const mmq_args & args, cudaStream_t stream);"
             )
             self.assertIn(launch_decl, src)
-            self.assertLess(src.index(launch_decl), src.index("static void mul_mat_q_launch_forced_J"))
+            self.assertLess(src.index(launch_decl), src.index("static bool bc_mmq_few_tile_streamk_enabled()"))
 
-            # Production predecessors must still be present after 1350.
-            self.assertIn("mul_mat_q_launch_forced_J", src)
-            self.assertIn("cudaStream_t stream, int forced_J = 0)", src)
+            # 0300 now forces J before b11552 builds mmq_args; switch_J remains
+            # the native args.J_best dispatcher rather than carrying forced_J.
+            self.assertNotIn("mul_mat_q_launch_forced_J", src)
+            self.assertNotIn("cudaStream_t stream, int forced_J", src)
+            self.assertIn("switch (args.J_best)", src)
             self.assertIn("rd30_block_expert", src)
 
             before = src
@@ -203,18 +205,16 @@ class Patch1350Mechanics(unittest.TestCase):
             self._compose_full_production(root)
             src = (root / _F).read_text(encoding="utf-8")
             self.assertIn("rd30_block_expert", src)
-            self.assertIn("mul_mat_q_launch_forced_J", src)
+            self.assertIn("switch (args.J_best)", src)
+            self.assertNotIn("mul_mat_q_launch_forced_J", src)
 
-    def test_pristine_without_production_predecessors_fails_closed(self):
+    def test_production_composition_supplies_compact_grid_predecessor(self):
         with tempfile.TemporaryDirectory() as td:
-            root = Path(td)
-            path = root / _F
-            path.parent.mkdir(parents=True, exist_ok=True)
-            copy_pinned(_V / _F, path)
-            before = path.read_text(encoding="utf-8")
-            res = apply_all(_P.PATCHES, root)
-            self.assertFalse(all(r.ok for r in res))
-            self.assertEqual(before, path.read_text(encoding="utf-8"))
+            root = self._tree(td)
+            self._compose_production_before_1350(root)
+            src = (root / _F).read_text(encoding="utf-8")
+            self.assertIn("rd30_block_expert", src)
+            self.assertIn("switch (args.J_best)", src)
 
     def test_changed_stream_launch_anchor_fails_closed(self):
         with tempfile.TemporaryDirectory() as td:
