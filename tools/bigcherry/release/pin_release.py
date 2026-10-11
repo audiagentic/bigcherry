@@ -203,7 +203,12 @@ def _release_pr(plan: Plan) -> dict | None:
                "--json", "number,title,headRefName,url", check=False)
     if res.returncode != 0:
         raise PinReleaseError("release", "gh pr list failed (is the GitHub CLI installed and logged in?):\n" + (res.stderr or res.stdout).strip()[-400:])
-    prs = [p for p in json.loads(res.stdout or "[]") if plan.version in p.get("title", "")]
+    # the repository releases several components; another component's release PR can carry the same version number
+    # (2026-10-12: bc-platform's was merged in place of bc-llamacpp's), so the PR is matched by its release branch
+    package = json.loads((plan.repo_root / "release-please-config.json").read_text(encoding="utf-8"))["packages"][RELEASE_PACKAGE]
+    branch = f"release-please--branches--{plan.main}--components--{package['component']}"
+    prs = [p for p in json.loads(res.stdout or "[]")
+           if p.get("headRefName") == branch and plan.version in p.get("title", "")]
     return prs[0] if prs else None
 
 
