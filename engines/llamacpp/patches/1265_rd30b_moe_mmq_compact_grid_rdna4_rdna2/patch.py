@@ -36,7 +36,7 @@ GATE = FilePatch(
             mode="replace",
             guard=_re.escape("cc == GGML_CUDA_CC_OFFSET_AMD + 0x1201"),
             rationale="1237's gate function body is its only code line; replaced whole.",
-            max_span_lines=3,
+            max_span_lines=2,
         ),
     ),
 )
