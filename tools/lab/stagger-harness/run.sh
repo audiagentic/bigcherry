@@ -5,7 +5,8 @@
 #   CARDS=0,1,2 ... VIS=0,1,2 SCRIPT sh1 tools/lab/stagger-harness/run.sh @<build run> <out-dir> [T L n k reps]
 # env: CARDS (0,1,2), SRC (source tree; default: read from the build run.s log),
 #      HARNESS_TIMEOUT (900 s). Any BIGCHERRY_* / GGML_HIP_* the caller exports is passed through (the pair needs
-#      BIGCHERRY_AR_TRANSFER_STREAM=1 or whichever route flags the build under test wants).
+#      BIGCHERRY_AR_TRANSFER_STREAM=1 or whichever route flags the build under test wants). This harness defaults
+#      BIGCHERRY_SCHED_ASYNC_INPUTS=1 so the production host-prefix copy path (1326) is exercised.
 set -u
 server=$1; out=$2; shift 2
 mkdir -p "$out"
@@ -19,6 +20,7 @@ fi
 # the ggml libraries find ROCm through their own rpath; adding another ROCm here mixes two rocBLAS installs
 export LD_LIBRARY_PATH="$bin:${LD_LIBRARY_PATH:-}"
 export HIP_VISIBLE_DEVICES=${CARDS:-0,1,2}
+export BIGCHERRY_SCHED_ASYNC_INPUTS=${BIGCHERRY_SCHED_ASYNC_INPUTS:-1}
 libs=$(ls "$bin"/libggml*.so 2>/dev/null | sed -E 's#.*/lib(.*)\.so#-l\1#' | tr '\n' ' ')
 if ! g++ -O2 -std=c++17 "$here/meta_pair_harness.cpp" -I"$SRC/ggml/include" -L"$bin" $libs -Wl,-rpath,"$bin" \
         -o "$out/meta_pair_harness" > "$out/build.log" 2>&1; then

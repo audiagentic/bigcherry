@@ -1,13 +1,17 @@
 // QFP49 rungs A and B: the staggered half-batch pair on the real tensor-split (Meta) backend, without llama.
 //
-// A toy model of L layers on every visible GPU. Per layer, for a half of T tokens with hidden state h [n, T]:
+// A toy model of L layers on every visible GPU. Each half starts with a CPU prefix op whose output is copied by
+// the scheduler into the final Meta split, matching the real prompt graph's host-prefix/input-copy path.
+// Per layer, for a half of T tokens with hidden state h [n, T]:
 //     u = MUL_MAT(W1[n, K], h)        W1 (Q8_0) split along axis 1: every card computes its slice of u
 //     y = MUL_MAT(W2[K, n], u)        W2 split along axis 0: every card holds a partial sum -> cross-card sum
 //     z = RMS_NORM(y)
-//     C[:, half] = z                  a static, mirrored cache both halves share (the KV cache's role)
-//     z = z + C[:, A]                 half B only: it reads what half A wrote at this layer
+//     z = z + C[:, other half]        A reads B from the previous call; B reads A from this call
+//     C[:, half] = z                  a static, mirrored cache both halves share (the KV/recurrent-state role)
 //     h = h + z
-// Half A and half B are two graphs on two schedulers, as 1361 runs them in llama.
+// Half A and half B are two graphs on two schedulers, as 1361 runs them in llama. The carried-state stress
+// submits many pairs without a host synchronization, changing host inputs every call; this is the path that
+// must expose input-lifetime corruption or a pageable-H2D stall before the production fix.
 //
 // Arms, each from zeroed caches and the same inputs:
 //   sequential   A computed, then B: the reference
@@ -16,9 +20,11 @@
 //                if it does, the harness is not testing the ordering rule
 //   full         one graph of 2T tokens (the -ub 2T shape), timing only
 //
-// Usage: meta_pair_harness [T=256] [L=96] [n=2560] [k=1024] [reps=5] [cache=1]   (K = k x the number of cards;
+// Usage: meta_pair_harness [T=256] [L=96] [n=2560] [k=1024] [reps=8] [cache=1]   (K = k x the number of cards;
 //        cache=0 drops the shared cache: rung A, where the wrong-order arm cannot differ and is not judged)
+// The carried-state stress uses max(32, 4*reps) consecutive pairs.
 // Exit 0: pair identical and wrong order different. 1: pair differs. 2: wrong order not detected. 3: pair unsupported.
+// Exit 4: carried-state pair differs from the sequential reference.
 #include "ggml.h"
 #include "ggml-alloc.h"
 #include "ggml-backend.h"
@@ -49,8 +55,7 @@ struct model {
     int     L = 0;
     bool    use_cache = true;  // false: rung A, no state shared between the halves
     std::vector<ggml_tensor *> w1, w2, cache;
-    ggml_tensor * x_a = nullptr, * x_b = nullptr, * x_full = nullptr;
-    ggml_tensor * y_a = nullptr, * y_b = nullptr, * y_full = nullptr;  // results, copied out of the compute arena by the graph  // inputs: static and mirrored, so a graph has no scheduler input copy
+    ggml_tensor * y_a = nullptr, * y_b = nullptr, * y_full = nullptr;  // results copied out of the compute arena
 };
 
 ggml_backend_meta_split_state split_state(const ggml_tensor * tensor, void * userdata) {
@@ -74,13 +79,14 @@ ggml_backend_meta_split_state split_state(const ggml_tensor * tensor, void * use
 struct half_graph {
     ggml_context * ctx = nullptr;
     ggml_cgraph *  graph = nullptr;
-    ggml_tensor *  x = nullptr;
+    ggml_tensor *  input = nullptr;
+    ggml_tensor *  prefix = nullptr;
     ggml_tensor *  out = nullptr;
     ggml_backend_sched_t sched = nullptr;
 };
 
-// first = column of the cache this graph writes; tokens = its width; reads_a = it adds half A's columns (half B)
-half_graph build(const model & m, ggml_tensor * x, ggml_tensor * result, int64_t first, int64_t tokens, bool reads_a) {
+// first = cache column this graph writes; read_first = cache column it reads first (-1 for no read).
+half_graph build(const model & m, ggml_tensor * result, int64_t first, int64_t tokens, int64_t read_first) {
     half_graph g;
     const ggml_init_params params = {
         /*.mem_size   =*/ ggml_tensor_overhead() * (size_t) (m.L * 12 + 8) + ggml_graph_overhead_custom(m.L * 12 + 8, false),
@@ -89,20 +95,24 @@ half_graph build(const model & m, ggml_tensor * x, ggml_tensor * result, int64_t
     };
     g.ctx = ggml_init(params);
     g.graph = ggml_new_graph_custom(g.ctx, m.L * 12 + 8, false);
-    g.x = x;
-    ggml_tensor * h = g.x;
+    g.input = ggml_new_tensor_2d(g.ctx, GGML_TYPE_F32, m.n, tokens);
+    ggml_set_input(g.input);
+    ggml_format_name(g.input, "host_input_%lld", (long long) first);
+    g.prefix = ggml_scale(g.ctx, g.input, 1.0f);
+    ggml_format_name(g.prefix, "cpu_prefix_%lld", (long long) first);
+    ggml_tensor * h = g.prefix;
     for (int l = 0; l < m.L; ++l) {
         ggml_tensor * u = ggml_mul_mat(g.ctx, m.w1[l], h);
         ggml_tensor * y = ggml_mul_mat(g.ctx, m.w2[l], u);
         ggml_tensor * z = ggml_rms_norm(g.ctx, y, 1e-6f);
         if (m.use_cache) {
-        const size_t col = m.cache[l]->nb[1];
-        ggml_tensor * mine = ggml_view_2d(g.ctx, m.cache[l], m.n, tokens, col, (size_t) first * col);
-        ggml_build_forward_expand(g.graph, ggml_cpy(g.ctx, z, mine));
-        if (reads_a) {
-            ggml_tensor * theirs = ggml_view_2d(g.ctx, m.cache[l], m.n, tokens, col, 0);
-            z = ggml_add(g.ctx, z, theirs);
-        }
+            const size_t col = m.cache[l]->nb[1];
+            if (read_first >= 0) {
+                ggml_tensor * theirs = ggml_view_2d(g.ctx, m.cache[l], m.n, tokens, col, (size_t) read_first * col);
+                z = ggml_add(g.ctx, z, theirs);
+            }
+            ggml_tensor * mine = ggml_view_2d(g.ctx, m.cache[l], m.n, tokens, col, (size_t) first * col);
+            ggml_build_forward_expand(g.graph, ggml_cpy(g.ctx, z, mine));
         }
         h = ggml_add(g.ctx, h, z);
     }
@@ -143,7 +153,7 @@ int main(int argc, char ** argv) {
     m.L = argc > 2 ? std::atoi(argv[2]) : 96;
     m.n = argc > 3 ? std::atoll(argv[3]) : 2560;
     m.k = argc > 4 ? std::atoll(argv[4]) : 1024;
-    const int reps = argc > 5 ? std::atoi(argv[5]) : 5;
+    const int reps = argc > 5 ? std::atoi(argv[5]) : 8;
     m.use_cache = argc > 6 ? std::atoi(argv[6]) != 0 : true;
 
     ggml_backend_load_all();
@@ -182,9 +192,6 @@ int main(int argc, char ** argv) {
         m.w2.push_back(ggml_new_tensor_2d(ctx_static, GGML_TYPE_Q8_0, m.K, m.n));
         m.cache.push_back(ggml_new_tensor_2d(ctx_state, GGML_TYPE_F32, m.n, 2 * m.T));
     }
-    m.x_a = ggml_new_tensor_2d(ctx_state, GGML_TYPE_F32, m.n, m.T);
-    m.x_b = ggml_new_tensor_2d(ctx_state, GGML_TYPE_F32, m.n, m.T);
-    m.x_full = ggml_new_tensor_2d(ctx_state, GGML_TYPE_F32, m.n, 2 * m.T);
     m.y_a = ggml_new_tensor_2d(ctx_state, GGML_TYPE_F32, m.n, m.T);
     m.y_b = ggml_new_tensor_2d(ctx_state, GGML_TYPE_F32, m.n, m.T);
     m.y_full = ggml_new_tensor_2d(ctx_state, GGML_TYPE_F32, m.n, 2 * m.T);
@@ -212,9 +219,9 @@ int main(int argc, char ** argv) {
         }
     }
 
-    half_graph a = build(m, m.x_a, m.y_a, 0, m.T, false);
-    half_graph b = build(m, m.x_b, m.y_b, m.T, m.T, true);
-    half_graph full = build(m, m.x_full, m.y_full, 0, 2 * m.T, false);
+    half_graph a = build(m, m.y_a, 0, m.T, m.T);
+    half_graph b = build(m, m.y_b, m.T, m.T, 0);
+    half_graph full = build(m, m.y_full, 0, 2 * m.T, -1);
 
     ggml_backend_t backends[] = { meta, cpu };
     ggml_backend_buffer_type_t bufts[] = { ggml_backend_get_default_buffer_type(meta), ggml_backend_get_default_buffer_type(cpu) };
@@ -227,9 +234,10 @@ int main(int argc, char ** argv) {
         // the graph's tensors are left pointing into the arena it replaced
         // (with a graph of its own: reserving moves the Meta buffers on to their other view container, so the
         // graph that is computed has to be allocated after it, as llama builds a fresh graph a batch)
-        half_graph measure = g == &a ? build(m, m.x_a, m.y_a, 0, m.T, false)
-                           : g == &b ? build(m, m.x_b, m.y_b, m.T, m.T, true)
-                                     : build(m, m.x_full, m.y_full, 0, 2 * m.T, false);
+        half_graph measure = g == &a ? build(m, m.y_a, 0, m.T, m.T)
+                           : g == &b ? build(m, m.y_b, m.T, m.T, 0)
+                                     : build(m, m.y_full, 0, 2 * m.T, -1);
+        ggml_backend_sched_set_tensor_backend(g->sched, measure.prefix, cpu);
         if (!ggml_backend_sched_reserve(g->sched, measure.graph)) {
             fail("could not reserve a graph");
         }
@@ -239,8 +247,12 @@ int main(int argc, char ** argv) {
     // every reserve is done before any graph is allocated: a reserve empties the view container the earlier graphs'
     // views of the shared static tensors live in
     for (half_graph * g : { &a, &b, &full }) {
+        ggml_backend_sched_set_tensor_backend(g->sched, g->prefix, cpu);
         if (!ggml_backend_sched_alloc_graph(g->sched, g->graph)) {
             fail("could not allocate a graph");
+        }
+        if (ggml_backend_sched_get_n_splits(g->sched) != 2) {
+            fail("host-prefix harness graph did not produce exactly CPU + Meta scheduler splits");
         }
     }
 
@@ -253,9 +265,14 @@ int main(int argc, char ** argv) {
         std::memcpy(xf.data(), xa.data(), xa.size() * sizeof(float));
         std::memcpy(xf.data() + xa.size(), xb.data(), xb.size() * sizeof(float));
     }
-    auto set_inputs = [&] {
-        ggml_backend_tensor_set(a.x, xa.data(), 0, xa.size() * sizeof(float));
-        ggml_backend_tensor_set(b.x, xb.data(), 0, xb.size() * sizeof(float));
+    const std::vector<float> xa0 = xa, xb0 = xb;
+    auto set_inputs = [&](int call = 0) {
+        const float da = 0.0009765625f * (float) call;
+        const float db = -0.001953125f * (float) call;
+        for (size_t i = 0; i < xa.size(); ++i) xa[i] = xa0[i] + da;
+        for (size_t i = 0; i < xb.size(); ++i) xb[i] = xb0[i] + db;
+        ggml_backend_tensor_set(a.input, xa.data(), 0, xa.size() * sizeof(float));
+        ggml_backend_tensor_set(b.input, xb.data(), 0, xb.size() * sizeof(float));
     };
     auto sync = [&] {
         ggml_backend_sched_synchronize(a.sched);
@@ -301,10 +318,38 @@ int main(int argc, char ** argv) {
     const size_t wrong_b = differing(ref_b, read(b));
     std::printf("wrong order (B, A): half B differs in %zu values (must be more than 0)\n", wrong_b);
 
+    // Consecutive-call correctness/lifetime stress. Sequential is synchronized per call; pair intentionally is not,
+    // so the next CPU prefix and H2D input copies arrive while the previous pair can still be executing.
+    const int stress_calls = std::max(32, 4 * reps);
+    zero_caches(m);
+    for (int c = 0; c < stress_calls; ++c) {
+        set_inputs(c + 1);
+        sequential();
+        sync();
+    }
+    const std::vector<float> carry_ref_a = read(a), carry_ref_b = read(b);
+
+    zero_caches(m);
+    bool carry_supported = true;
+    for (int c = 0; c < stress_calls; ++c) {
+        set_inputs(c + 1);
+        carry_supported = pair(a, b) && carry_supported;
+    }
+    sync();
+    const size_t carry_a = differing(carry_ref_a, read(a));
+    const size_t carry_b = differing(carry_ref_b, read(b));
+    std::printf("carried-state stress: %d pairs, %zu + %zu values differ from sequential\n",
+                stress_calls, carry_a, carry_b);
+    if (!carry_supported) {
+        std::printf("PAIR UNSUPPORTED during carried-state stress\n");
+        return 3;
+    }
+
     // timing
-    ggml_backend_tensor_set(full.x, xf.data(), 0, xf.size() * sizeof(float));
+    for (size_t i = 0; i < xf.size(); ++i) xf[i] = i < xa0.size() ? xa0[i] : xb0[i - xa0.size()];
+    ggml_backend_tensor_set(full.input, xf.data(), 0, xf.size() * sizeof(float));
     for (int r = 0; r < reps; ++r) {
-        zero_caches(m); set_inputs(); sync();
+        zero_caches(m); set_inputs(1000 + r); sync();
         double t0 = now_ms();
         sequential(); sync();
         const double t_seq = now_ms() - t0;
@@ -326,6 +371,9 @@ int main(int argc, char ** argv) {
 
     if (pair_a != 0 || pair_b != 0) {
         return 1;
+    }
+    if (carry_a != 0 || carry_b != 0) {
+        return 4;
     }
     return m.use_cache && wrong_b == 0 ? 2 : 0;
 }
