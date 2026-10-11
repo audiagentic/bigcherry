@@ -49,7 +49,8 @@ struct model {
     int     L = 0;
     bool    use_cache = true;  // false: rung A, no state shared between the halves
     std::vector<ggml_tensor *> w1, w2, cache;
-    ggml_tensor * x_a = nullptr, * x_b = nullptr, * x_full = nullptr;  // inputs: static and mirrored, so a graph has no scheduler input copy
+    ggml_tensor * x_a = nullptr, * x_b = nullptr, * x_full = nullptr;
+    ggml_tensor * y_a = nullptr, * y_b = nullptr, * y_full = nullptr;  // results, copied out of the compute arena by the graph  // inputs: static and mirrored, so a graph has no scheduler input copy
 };
 
 ggml_backend_meta_split_state split_state(const ggml_tensor * tensor, void * userdata) {
@@ -79,7 +80,7 @@ struct half_graph {
 };
 
 // first = column of the cache this graph writes; tokens = its width; reads_a = it adds half A's columns (half B)
-half_graph build(const model & m, ggml_tensor * x, int64_t first, int64_t tokens, bool reads_a) {
+half_graph build(const model & m, ggml_tensor * x, ggml_tensor * result, int64_t first, int64_t tokens, bool reads_a) {
     half_graph g;
     const ggml_init_params params = {
         /*.mem_size   =*/ ggml_tensor_overhead() * (size_t) (m.L * 12 + 8) + ggml_graph_overhead_custom(m.L * 12 + 8, false),
@@ -105,9 +106,10 @@ half_graph build(const model & m, ggml_tensor * x, int64_t first, int64_t tokens
         }
         h = ggml_add(g.ctx, h, z);
     }
-    g.out = h;
-    ggml_set_output(g.out);
-    ggml_build_forward_expand(g.graph, g.out);
+    // a compute tensor's memory belongs to the per-device arena (1340) and is not readable after the graph; the
+    // result is copied to a static tensor, as llama copies what it keeps
+    g.out = result;
+    ggml_build_forward_expand(g.graph, ggml_cpy(g.ctx, h, result));
     return g;
 }
 
@@ -168,7 +170,7 @@ int main(int argc, char ** argv) {
 
     // static tensors: the weights (split) and the caches (mirrored)
     const ggml_init_params static_params = {
-        /*.mem_size   =*/ ggml_tensor_overhead() * (size_t) (m.L * 3 + 4),
+        /*.mem_size   =*/ ggml_tensor_overhead() * (size_t) (m.L * 3 + 8),
         /*.mem_buffer =*/ nullptr,
         /*.no_alloc   =*/ true,
     };
@@ -183,6 +185,9 @@ int main(int argc, char ** argv) {
     m.x_a = ggml_new_tensor_2d(ctx_state, GGML_TYPE_F32, m.n, m.T);
     m.x_b = ggml_new_tensor_2d(ctx_state, GGML_TYPE_F32, m.n, m.T);
     m.x_full = ggml_new_tensor_2d(ctx_state, GGML_TYPE_F32, m.n, 2 * m.T);
+    m.y_a = ggml_new_tensor_2d(ctx_state, GGML_TYPE_F32, m.n, m.T);
+    m.y_b = ggml_new_tensor_2d(ctx_state, GGML_TYPE_F32, m.n, m.T);
+    m.y_full = ggml_new_tensor_2d(ctx_state, GGML_TYPE_F32, m.n, 2 * m.T);
     // the caches and inputs get their own buffer, not a weights buffer: llama's KV cache is allocated this way
     if (ggml_backend_alloc_ctx_tensors(ctx_state, meta) == nullptr) {
         fail("could not allocate the caches");
@@ -207,9 +212,9 @@ int main(int argc, char ** argv) {
         }
     }
 
-    half_graph a = build(m, m.x_a, 0, m.T, false);
-    half_graph b = build(m, m.x_b, m.T, m.T, true);
-    half_graph full = build(m, m.x_full, 0, 2 * m.T, false);
+    half_graph a = build(m, m.x_a, m.y_a, 0, m.T, false);
+    half_graph b = build(m, m.x_b, m.y_b, m.T, m.T, true);
+    half_graph full = build(m, m.x_full, m.y_full, 0, 2 * m.T, false);
 
     ggml_backend_t backends[] = { meta, cpu };
     ggml_backend_buffer_type_t bufts[] = { ggml_backend_get_default_buffer_type(meta), ggml_backend_get_default_buffer_type(cpu) };
