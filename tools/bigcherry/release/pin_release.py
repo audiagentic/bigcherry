@@ -586,7 +586,7 @@ def _dry_run(plan: Plan, stop: int, log=print) -> None:
             log("  record   already done" if recorded else
                 f"  record   would update releases/{plan.llama_tag}.json and clear releases/pin-transition.json")
         elif name == "notes":
-            if notes_done and config_value == plan.version:
+            if notes_done and (config_value == plan.version or (config_value is None and tagged)):
                 log("  notes    already done")
             else:
                 log(f"  notes    would write notes and set {RELEASE_PACKAGE}.release-as={plan.version}")
