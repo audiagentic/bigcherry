@@ -1587,7 +1587,7 @@ PATCHES = [
         language="none",
         edits=(
             _edit(id="stagger-cuda-route", anchor=_A_CUDA_DISPATCH, mode="replace", text=_N_CUDA_DISPATCH,
-                  guard=r"struct bc_1361_ar_state", rationale="Beside the communication dispatch after 1360/provider helpers."),
+                  guard=r"struct bc_1361_ar_state", rationale="long-anchor: beside the communication dispatch after 1360/provider helpers."),
             _edit(id="stagger-cuda-procs", anchor=_A_CUDA_REG, mode="replace", text=_N_CUDA_REG,
                   guard=r"ggml_backend_comm_allreduce_stagger_begin", rationale="CUDA backend registry communication proc-address table."),
         ),
@@ -1636,7 +1636,7 @@ PATCHES = [
                   guard=r"struct bc_1361_input_stage_slot", rationale="Extend the existing 1326 scheduler input path with pair-owned pinned staging."),
             _edit(id="stagger-1326-pair-gate", anchor=_A_1326_GATE, mode="replace", text=_N_1326_GATE,
                   guard=r"sched->bc_stagger_input_slot > 0 \|\| bc_async_inputs",
-                  rationale="Production 1326 gate: pair-owned pinned staging bypasses only its 4 MiB policy cap; ordinary 1326 is unchanged."),
+                  rationale="long-anchor: production 1326 gate; pair-owned pinned staging bypasses only its 4 MiB policy cap; ordinary 1326 is unchanged."),
             _edit(id="stagger-1326-pinned-stage", anchor=_A_1326_STAGE, mode="replace", text=_N_1326_STAGE,
                   guard=r"if \(sched->bc_stagger_input_slot > 0\) \{", rationale="long-anchor: replace the complete 1326 staging block so pair mode can retain its existing eligibility/synchronization gate."),
             _edit(id="stagger-stage-free", anchor=_A_SCHED_FREE, mode="replace", text=_N_SCHED_FREE,
@@ -1699,7 +1699,7 @@ PATCHES = [
             _edit(id="stagger-1359-cap", anchor=_A_1359_CAP, mode="replace", text=_N_1359_CAP,
                   guard=r"std::max\(bc_need_bytes", rationale="1359 pinned-buffer allocation capacity."),
             _edit(id="stagger-1359-copy", anchor=_A_1359_COPY, mode="replace", text=_N_1359_COPY,
-                  guard=r"For a stagger pair, B's event fences both A and B copies", rationale="1359 secondary NextN copy/event sequence."),
+                  guard=r"For a stagger pair, B's event fences both A and B copies", rationale="long-anchor: 1359 secondary NextN copy/event sequence."),
         ),
     ),
 ]
