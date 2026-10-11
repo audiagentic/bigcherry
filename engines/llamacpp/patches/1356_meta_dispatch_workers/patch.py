@@ -216,6 +216,31 @@ _N_CUDA_INCLUDE = r"""#include <mutex>
 #include <cstdio>
 """
 
+_A_FUSION_OVERLAP_STATS = r"""struct bc_fusion_overlap_stats_t {
+    uint64_t checks = 0, refused = 0;
+    ~bc_fusion_overlap_stats_t() {
+        if (checks > 0 && getenv("BIGCHERRY_META_MEM") != nullptr && atoi(getenv("BIGCHERRY_META_MEM")) != 0) {
+            fprintf(stderr, "BIGCHERRY_META_MEM fusion_overlap checks=%llu refused=%llu\n",
+                    (unsigned long long) checks, (unsigned long long) refused);
+        }
+    }
+};
+"""
+_N_FUSION_OVERLAP_STATS = r"""struct bc_fusion_overlap_stats_t {
+    // BigCherry 1356: graph_compute now runs per-device fusion checks concurrently. These counters are
+    // process-global (1339/1340), so plain uint64_t increments are a C++ data race even when reporting is off.
+    std::atomic<uint64_t> checks{0}, refused{0};
+    ~bc_fusion_overlap_stats_t() {
+        const uint64_t checks_v  = checks.load(std::memory_order_relaxed);
+        const uint64_t refused_v = refused.load(std::memory_order_relaxed);
+        if (checks_v > 0 && getenv("BIGCHERRY_META_MEM") != nullptr && atoi(getenv("BIGCHERRY_META_MEM")) != 0) {
+            fprintf(stderr, "BIGCHERRY_META_MEM fusion_overlap checks=%llu refused=%llu\n",
+                    (unsigned long long) checks_v, (unsigned long long) refused_v);
+        }
+    }
+};
+"""
+
 _A_CUDA_UID_FAST = r"""    if (cgraph->uid != 0 &&
         cgraph->uid == graph->uid) {
 """
@@ -426,6 +451,18 @@ PATCHES = [
         description="1356: validate graph properties under worker dispatch and serialize capture against replay",
         language="none",
         edits=(
+            Edit(
+                id="dispatch-worker-fusion-overlap-atomic",
+                anchor=re.escape(_A_FUSION_OVERLAP_STATS),
+                mode="replace",
+                text=_N_FUSION_OVERLAP_STATS,
+                guard=r"std::atomic<uint64_t> checks\{0\}, refused\{0\};",
+                rationale="1339/1340's process-global fusion-overlap counters are incremented from every fusion "
+                          "memory-range check. Worker dispatch makes those writes concurrent, so make only the "
+                          "diagnostic counters atomic instead of serializing the fusion pass.",
+                expect_matches=1,
+                max_span_lines=9,
+            ),
             Edit(
                 id="dispatch-worker-graph-full-property-compare",
                 anchor=re.escape(_A_CUDA_UID_FAST),
