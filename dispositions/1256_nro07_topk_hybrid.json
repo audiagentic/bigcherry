@@ -1,0 +1,10 @@
+{
+  "disposition": "known_broken",
+  "failure_status": "FAILED_NEEDS_RECONCILIATION",
+  "owner": "flash-next",
+  "patch_digest": "d96f7f4e3be07ae5a6fe755eff60f9a003f2a3689991b4383b066281235d5596",
+  "patch_id": "1256_nro07_topk_hybrid",
+  "reason": "b11552 bump: does not apply on the new pin; not in the production set, state untested/evaluated",
+  "target_revision": "23b0202a189c44a54625aadcb37a946dd1d6278d",
+  "tracking_item": "PA49"
+}

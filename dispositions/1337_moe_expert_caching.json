@@ -1,0 +1,10 @@
+{
+  "disposition": "known_broken",
+  "failure_status": "FAILED_NEEDS_RECONCILIATION",
+  "owner": "flash-next",
+  "patch_digest": "7d6e3c37546f683d23b475f582de817dbb349de4a108d8d586d6ba3a0b873184",
+  "patch_id": "1337_moe_expert_caching",
+  "reason": "b11552 bump: does not apply on the new pin; not in the production set, state untested/evaluated",
+  "target_revision": "23b0202a189c44a54625aadcb37a946dd1d6278d",
+  "tracking_item": "PA49"
+}
