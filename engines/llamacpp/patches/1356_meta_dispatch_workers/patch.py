@@ -200,10 +200,11 @@ _N_DISPATCH = r"""        if (bc_parallel_dispatch) {
         // original ordering: every simple backend has enqueued this subgraph before AllReduce is enqueued.
 """
 
-# Shared-state fix (2026-10-09): with the workers on, 5 of 12 runs produced a different greedy text; with CUDA graphs
-# disabled (GGML_CUDA_DISABLE_GRAPHS=1) 6 of 6 were identical and the prefill gain stayed. HIP graph capture,
-# instantiate and update are therefore not safe while another thread captures or launches a graph on another device.
-# A capturing graph_compute takes the lock exclusively; a replaying one takes it shared, so replays still overlap.
+# Shared-state hardening. Hardware ruled out the cgraph-UID shortcut: forcing the full property comparison left
+# the 98K failure rate unchanged. The remaining lock boundary must include direct/warm-up evaluation too, because
+# fusion runs there before a graph is capturable. With worker mode enabled, every CUDA/HIP backend context in this
+# process takes the same generic graph_compute lock: direct/capture/update (and therefore fusion evaluation) are
+# exclusive, while pure graph replay is shared. BIGCHERRY_META_DISPATCH_GRAPH_TRACE remains diagnostic only.
 _A_CUDA_INCLUDE = r"""#include <mutex>
 """
 _N_CUDA_INCLUDE = r"""#include <mutex>
@@ -213,20 +214,132 @@ _N_CUDA_INCLUDE = r"""#include <mutex>
 #include <cstdio>
 """
 
+_A_FUSION_OVERLAP_STATS = r"""struct bc_fusion_overlap_stats_t {
+    uint64_t checks = 0, refused = 0;
+    ~bc_fusion_overlap_stats_t() {
+        if (checks > 0 && getenv("BIGCHERRY_META_MEM") != nullptr && atoi(getenv("BIGCHERRY_META_MEM")) != 0) {
+            fprintf(stderr, "BIGCHERRY_META_MEM fusion_overlap checks=%llu refused=%llu\n",
+                    (unsigned long long) checks, (unsigned long long) refused);
+        }
+    }
+};
+"""
+_N_FUSION_OVERLAP_STATS = r"""struct bc_fusion_overlap_stats_t {
+    // BigCherry 1356: graph_compute now runs per-device fusion checks concurrently. These counters are
+    // process-global (1339/1340), so plain uint64_t increments are a C++ data race even when reporting is off.
+    std::atomic<uint64_t> checks{0}, refused{0};
+    ~bc_fusion_overlap_stats_t() {
+        const uint64_t checks_v  = checks.load(std::memory_order_relaxed);
+        const uint64_t refused_v = refused.load(std::memory_order_relaxed);
+        if (checks_v > 0 && getenv("BIGCHERRY_META_MEM") != nullptr && atoi(getenv("BIGCHERRY_META_MEM")) != 0) {
+            fprintf(stderr, "BIGCHERRY_META_MEM fusion_overlap checks=%llu refused=%llu\n",
+                    (unsigned long long) checks_v, (unsigned long long) refused_v);
+        }
+    }
+};
+"""
+
+_A_CUDA_GRAPH_COMPUTE = r"^static enum ggml_status ggml_backend_cuda_graph_compute\(ggml_backend_t backend, ggml_cgraph \* cgraph\) \{$"
+_N_CUDA_GRAPH_HASH = r"""#ifdef USE_CUDA_GRAPH
+// BigCherry 1356 diagnostic: cross-run-stable projection of the node properties used by
+// ggml_cuda_graph_update_required(). Absolute pointers are normalized to buffer-relative offsets so a clean and a
+// differing process can be diffed; shape/stride/op/op_params and bound data offsets remain address-sensitive.
+static uint64_t bc_1356_graph_property_hash(const ggml_cgraph * cgraph) {
+    uint64_t h = 1469598103934665603ull;
+    auto hash_bytes = [&h](const void * p, size_t n) {
+        const unsigned char * b = (const unsigned char *) p;
+        for (size_t i = 0; i < n; ++i) {
+            h = (h ^ (uint64_t) b[i]) * 1099511628211ull;
+        }
+    };
+    auto hash_tensor = [&hash_bytes](const ggml_tensor * t) {
+        hash_bytes(&t->type, sizeof(t->type));
+        hash_bytes(t->ne, sizeof(t->ne));
+        hash_bytes(t->nb, sizeof(t->nb));
+        hash_bytes(&t->op, sizeof(t->op));
+        hash_bytes(t->op_params, sizeof(t->op_params));
+        hash_bytes(&t->flags, sizeof(t->flags));
+        hash_bytes(&t->view_offs, sizeof(t->view_offs));
+        hash_bytes(t->name, sizeof(t->name));
+
+        uint64_t data_off = UINT64_MAX;
+        uint64_t buffer_size = 0;
+        if (t->data != nullptr) {
+            data_off = UINT64_MAX - 1; // allocated but not normalizable
+            if (t->buffer != nullptr) {
+                const void * base = ggml_backend_buffer_get_base(t->buffer);
+                buffer_size = (uint64_t) ggml_backend_buffer_get_size(t->buffer);
+                if (base != nullptr) {
+                    data_off = (uint64_t) ((uintptr_t) t->data - (uintptr_t) base);
+                }
+                const char * buffer_name = ggml_backend_buffer_name(t->buffer);
+                if (buffer_name != nullptr) {
+                    hash_bytes(buffer_name, strlen(buffer_name));
+                }
+            }
+        }
+        hash_bytes(&data_off, sizeof(data_off));
+        hash_bytes(&buffer_size, sizeof(buffer_size));
+    };
+
+    hash_bytes(&cgraph->n_nodes, sizeof(cgraph->n_nodes));
+    for (int i = 0; i < cgraph->n_nodes; ++i) {
+        hash_tensor(cgraph->nodes[i]);
+        for (int j = 0; j < GGML_MAX_SRC; ++j) {
+            const ggml_tensor * src = cgraph->nodes[i]->src[j];
+            const bool present = src != nullptr;
+            hash_bytes(&present, sizeof(present));
+            if (present) {
+                hash_tensor(src);
+            }
+        }
+    }
+    return h;
+}
+#endif // USE_CUDA_GRAPH
+"""
+
 _A_CUDA_CAPTURE = r"^    if \(use_cuda_graph && cuda_graph_update_required\) \{$"
 _N_CUDA_CAPTURE = r"""    // BigCherry 1356 (QFP41): per-device dispatch workers call graph_compute from several threads. HIP graph
     // capture / instantiate / update must not overlap any other device's graph capture or launch.
+    static const bool bc_1356_graph_trace = [] {
+        const char * s = getenv("BIGCHERRY_META_DISPATCH_GRAPH_TRACE");
+        return s != nullptr && atoi(s) != 0;
+    }();
+    static std::atomic<uint64_t> bc_1356_graph_calls[GGML_CUDA_MAX_DEVICES] = {};
+#ifdef USE_CUDA_GRAPH
+    if (bc_1356_graph_trace) {
+        ggml_cuda_graph * bc_graph = graph_key != nullptr ? cuda_ctx->cuda_graph(graph_key) : nullptr;
+        const char * bc_decision = "direct";
+        if (use_cuda_graph) {
+            bc_decision = cuda_graph_update_required ?
+                (bc_graph != nullptr && bc_graph->instance != nullptr ? "update" : "capture") : "replay";
+        }
+        const uint64_t bc_call = ++bc_1356_graph_calls[cuda_ctx->device];
+        const uint64_t bc_hash = bc_1356_graph_property_hash(cgraph);
+        fprintf(stderr,
+                "BIGCHERRY_1356_GRAPH device=%d call=%llu decision=%s props=%016llx uid=%zu "
+                "nodes=%d use=%d update=%d warm=%d instance=%d\n",
+                cuda_ctx->device, (unsigned long long) bc_call, bc_decision, (unsigned long long) bc_hash,
+                (size_t) cgraph->uid, cgraph->n_nodes, use_cuda_graph ? 1 : 0,
+                cuda_graph_update_required ? 1 : 0,
+                bc_graph != nullptr && bc_graph->warmup_complete ? 1 : 0,
+                bc_graph != nullptr && bc_graph->instance != nullptr ? 1 : 0);
+    }
+#else
+    GGML_UNUSED(bc_1356_graph_trace);
+    GGML_UNUSED(bc_1356_graph_calls);
+#endif
     static std::shared_mutex bc_1356_graph_mutex;
     static const bool bc_1356_threads = [] {
         const char * s = getenv("BIGCHERRY_META_DISPATCH_THREADS");
         return s != nullptr && atoi(s) != 0;
     }();
-    // BIGCHERRY_META_DISPATCH_STATS=1 (QFP41): how many graph_compute calls captured and how many replayed, how long
-    // they waited for the lock and how long they held it, printed when the process exits. Counted with the workers
-    // off too (no lock is taken then), so the share of capturing calls is known before the workers are switched on:
-    // a threaded path whose calls mostly capture runs its devices one at a time.
+    // BIGCHERRY_META_DISPATCH_STATS=1 (QFP41): count exclusive direct/capture/update calls versus shared replays,
+    // plus lock wait/hold time. Counted with workers off too (no lock is then taken), so qualification can see how
+    // much of a workload would serialize before enabling worker mode.
     struct bc_1356_stats_t {
-        std::atomic<uint64_t> n[2], wait_us[2], hold_us[2];  // [0] capture (exclusive), [1] replay (shared)
+        std::atomic<uint64_t> n[2], wait_us[2], hold_us[2];  // [0] exclusive direct/capture/update, [1] replay
         bool on;
         bc_1356_stats_t() : n{}, wait_us{}, hold_us{} {
             const char * s = getenv("BIGCHERRY_META_DISPATCH_STATS");
@@ -234,7 +347,7 @@ _N_CUDA_CAPTURE = r"""    // BigCherry 1356 (QFP41): per-device dispatch workers
         }
         ~bc_1356_stats_t() {
             if (on) {
-                fprintf(stderr, "BIGCHERRY_1356_LOCK_STATS capture n=%llu wait_ms=%.1f hold_ms=%.1f | "
+                fprintf(stderr, "BIGCHERRY_1356_LOCK_STATS exclusive n=%llu wait_ms=%.1f hold_ms=%.1f | "
                                 "replay n=%llu wait_ms=%.1f hold_ms=%.1f\n",
                         (unsigned long long) n[0].load(), wait_us[0].load() / 1000.0, hold_us[0].load() / 1000.0,
                         (unsigned long long) n[1].load(), wait_us[1].load() / 1000.0, hold_us[1].load() / 1000.0);
@@ -255,11 +368,16 @@ _N_CUDA_CAPTURE = r"""    // BigCherry 1356 (QFP41): per-device dispatch workers
             }
         }
     } bc_1356_hold;
-    if (use_cuda_graph && (bc_1356_threads || bc_1356_stats.on)) {
-        const int bc_kind = cuda_graph_update_required ? 0 : 1;
+    // The mutex is intentionally in generic ggml_backend_cuda_graph_compute, not the Meta backend: a drafter or
+    // any other CUDA/HIP backend in this process reaches the same lock while worker mode is enabled. Direct/warm-up
+    // evaluation is exclusive because it runs the fusion pass; capture/update are exclusive; replay is read-only
+    // with respect to graph construction and remains shared for the worker speedup.
+    const bool bc_1356_exclusive = !use_cuda_graph || cuda_graph_update_required;
+    if (bc_1356_threads || bc_1356_stats.on) {
+        const int bc_kind = bc_1356_exclusive ? 0 : 1;
         const auto bc_t0 = std::chrono::steady_clock::now();
         if (bc_1356_threads) {
-            if (cuda_graph_update_required) {
+            if (bc_1356_exclusive) {
                 bc_1356_capture.lock();
             } else {
                 bc_1356_replay.lock();
@@ -346,9 +464,32 @@ PATCHES = [
     ),
     FilePatch(
         path="ggml/src/ggml-cuda/ggml-cuda.cu",
-        description="1356: graph capture is exclusive against other devices' graph work when the workers are on",
+        description="1356: make CUDA/HIP graph_compute safe under process-wide worker dispatch",
         language="none",
         edits=(
+            Edit(
+                id="dispatch-worker-fusion-overlap-atomic",
+                anchor=re.escape(_A_FUSION_OVERLAP_STATS),
+                mode="replace",
+                text=_N_FUSION_OVERLAP_STATS,
+                guard=r"std::atomic<uint64_t> checks\{0\}, refused\{0\};",
+                rationale="1339/1340's process-global fusion-overlap counters are incremented from every fusion "
+                          "memory-range check. Worker dispatch makes those writes concurrent, so make only the "
+                          "diagnostic counters atomic instead of serializing the fusion pass.",
+                expect_matches=1,
+                max_span_lines=10,
+            ),
+            Edit(
+                id="dispatch-worker-graph-property-hash",
+                anchor=_A_CUDA_GRAPH_COMPUTE,
+                mode="insert_before",
+                text=_N_CUDA_GRAPH_HASH,
+                guard=r"static uint64_t bc_1356_graph_property_hash\(",
+                rationale="Immediately before graph_compute; hashes the same node_properties representation as "
+                          "ggml_cuda_graph_update_required for env-gated hardware diffing.",
+                expect_matches=1,
+                max_span_lines=1,
+            ),
             Edit(
                 id="dispatch-worker-graph-mutex-include",
                 anchor=re.escape(_A_CUDA_INCLUDE),
@@ -385,7 +526,14 @@ ENV_DOCS = (
         "BIGCHERRY_META_DISPATCH_STATS",
         "0|1",
         "0 (off)",
-        "diagnostic: at exit print how many graph_compute calls captured (exclusive lock) and replayed (shared), "
-        "with the time waited for and held under the 1356 lock; counted with the workers off too",
+        "diagnostic: at exit print exclusive direct/capture/update graph_compute calls and shared replays, "
+        "with time waited for and held under the 1356 lock; counted with the workers off too",
+    ),
+    EnvDoc(
+        "BIGCHERRY_META_DISPATCH_GRAPH_TRACE",
+        "0|1",
+        "0 (off)",
+        "diagnostic: per device graph_compute call, print capture/update/replay/direct plus the exact CUDA graph "
+        "cross-run-stable property hash; intended to diff a clean 98K run against a differing run",
     ),
 )
