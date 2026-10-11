@@ -134,3 +134,7 @@ R9X01 completes only when every R9X02–R9X08 candidate has a concrete target sy
 
 - chg_20261003_040736_removed-redundant-host-synchro_1519
 - 2026-10-03T04:07:39.321793+00:00 (updated-by): Updated: section:ledger-events
+
+## RNX05 format intake resolution (2026-10-11)
+
+Pinned b11474 already supports `GGML_TYPE_MXFP4`, MoE GGUF quantization, RDNA2/3/4 MXFP4 MMVQ/MMQ and Q8_1 activation. RNX05 no longer requests a new GGUF type or proposed 1305/1306 patch IDs (occupied). The only residual intake gate is source-fork FP8-activation WMMA versus native Q8_1 cost/format/graph semantics on a *real MXFP4 GGUF*; the authoritative technical and rejection gates live in RNX05. This is not an RNX01 implementation queue. Active QFP41/QFP49 and Radiance code paths are not modified.
