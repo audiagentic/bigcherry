@@ -1,7 +1,7 @@
 schema = 1
 id = "1362_kv_pad_prompt"
 order = 1362
-state = "untested"
+state = "rejected"
 kind = "enhancement"
 origin = "local"
 backend = "hip"
