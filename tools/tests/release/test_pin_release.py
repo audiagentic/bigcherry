@@ -263,6 +263,7 @@ class PinReleaseTests(unittest.TestCase):
             pr_for_head.assert_not_called()
             release_pr.assert_not_called()
             self.assertTrue(any("release  already done" in line for line in lines))
+            self.assertTrue(any("manifest engines/llamacpp: 11402.0.0" in line for line in lines))
 
     def test_dry_run_lists_concrete_early_phases_and_changes_nothing(self):
         with tempfile.TemporaryDirectory() as td:
