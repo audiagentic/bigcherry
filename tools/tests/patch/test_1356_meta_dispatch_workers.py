@@ -11,7 +11,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from bigcherry.core import paths  # noqa: E402
 from bigcherry.patcher import apply_all  # noqa: E402
-from bigcherry.patch.pinned_source import production_source  # noqa: E402
+from bigcherry.patch import rebase as patch_rebase  # noqa: E402
+from bigcherry.patch.pinned_source import copy_pinned, pinned_checkout  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
 _V = paths.llama_root()  # the primary checkout's vendor tree (a slice worktree has none)
@@ -35,8 +36,35 @@ _P = _load("1356_meta_dispatch_workers")
 @unittest.skipUnless((_V / _F).exists(), "pinned vendor checkout not present")
 class Patch1356Mechanics(unittest.TestCase):
     def _root_with_production(self, td: str) -> Path:
-        # the production set without 1356 (in the selection once validated; each test applies it itself)
-        return production_source((_F, _CUDA), td, without="1356_meta_dispatch_workers")
+        root = Path(td)
+        selected = patch_rebase.resolve_selection(source_name="bigcherry", all_patches=False)
+        texts = patch_rebase._overlay_texts()
+        overlay_paths = frozenset(texts)
+        for module in selected.modules:
+            if module.patch_id == "1356_meta_dispatch_workers":
+                continue  # in the production selection once validated; each test applies it itself
+            probe = patch_rebase.probe_patch(
+                module,
+                pinned_checkout(),  # not the vendor working tree, which is normally patched
+                texts,
+                context_lines=3,
+                previous_revision=None,
+                revision="mechanics-test",
+                overlay_paths=overlay_paths,
+            )
+            self.assertIn(
+                probe.status,
+                (patch_rebase.STATUS_CLEAN, patch_rebase.STATUS_CLEAN_NOOP),
+                (module.patch_id, probe.to_dict()),
+            )
+        for rel in (_F, _CUDA):
+            dst = root / rel
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            if rel in texts:
+                dst.write_text(texts[rel], encoding="utf-8")
+            else:
+                copy_pinned(_V / rel, dst)
+        return root
 
     def test_full_production_then_apply_and_idempotent(self):
         with tempfile.TemporaryDirectory() as td:
@@ -75,10 +103,20 @@ class Patch1356Mechanics(unittest.TestCase):
             self.assertLess(cuda.index("bc_1356_capture.lock();", lock), begin)
             self.assertLess(cuda.index("bc_1356_replay.lock();", lock), evaluate)
             # the lock is taken only with the workers on; the counters (BIGCHERRY_META_DISPATCH_STATS) take none
-            self.assertIn("if (use_cuda_graph && (bc_1356_threads || bc_1356_stats.on)) {", cuda)
+            self.assertIn("if (bc_1356_threads || bc_1356_stats.on) {", cuda)
+            self.assertIn("const bool bc_1356_exclusive = !use_cuda_graph || cuda_graph_update_required;", cuda)
             self.assertLess(cuda.index("if (bc_1356_threads) {", lock), cuda.index("bc_1356_capture.lock();", lock))
             self.assertEqual(cuda.count("BIGCHERRY_1356_LOCK_STATS"), 1)
             self.assertIn("#include <shared_mutex>", cuda)
+
+            # QFP41 98K race hardening: worker mode cannot take the cgraph UID shortcut, the 1339 fusion-overlap
+            # counters are worker-safe, and the default-off trace reports a cross-run-stable property hash.
+            # the first fix attempt (bypassing the CUDA-graph UID shortcut under workers) is not in the code any more;
+            # what stands is the second one, the lock taken in ggml_backend_cuda_graph_compute for every backend
+            self.assertNotIn("bc_1356_force_property_compare", cuda)
+            self.assertIn("std::atomic<uint64_t> checks{0}, refused{0};", cuda)
+            self.assertEqual(cuda.count("BIGCHERRY_1356_GRAPH device="), 1)
+            self.assertIn("bc_1356_graph_property_hash", cuda)
 
             second = apply_all(_P.PATCHES, root)
             self.assertTrue(all(r.ok for r in second), [e.detail for r in second for e in r.failed])
@@ -87,8 +125,9 @@ class Patch1356Mechanics(unittest.TestCase):
 
     def test_default_off_and_worker_lifetime(self):
         self.assertEqual([doc.name for doc in _P.ENV_DOCS],
-                         ["BIGCHERRY_META_DISPATCH_THREADS", "BIGCHERRY_META_DISPATCH_STATS"])
-        self.assertEqual([doc.default for doc in _P.ENV_DOCS], ["0 (off)", "0 (off)"])
+                         ["BIGCHERRY_META_DISPATCH_THREADS", "BIGCHERRY_META_DISPATCH_STATS",
+                          "BIGCHERRY_META_DISPATCH_GRAPH_TRACE"])
+        self.assertEqual([doc.default for doc in _P.ENV_DOCS], ["0 (off)", "0 (off)", "0 (off)"])
         text = _P._N_WORKER + _P._N_DTOR + _P._N_DISPATCH
         self.assertIn("thread.join();", text)
         self.assertLess(text.index("bc_dispatch_workers.clear();"), text.index("ggml_backend_free(bc.backend);"))
