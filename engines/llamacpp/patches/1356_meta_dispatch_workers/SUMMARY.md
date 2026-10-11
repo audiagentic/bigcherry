@@ -155,6 +155,8 @@ overlap and avoids serializing the fusion pass.
 | `ggml-cuda.cu: cuda_ctx->cuda_graphs` incl. 1302 OOM eviction | lookup/create/update/evict | graph decision/replay | per CUDA backend context | per-device; eviction is inside exclusive capture/update |
 | `ggml-cuda.cu: ggml_cuda_stream_context::{concurrent_events,stream_mapping,original_order}` | graph evaluate | graph evaluate | per CUDA backend context | per-device; direct evaluation is intentionally unlocked |
 | `ggml-cuda.cu: cgraph->nodes ordering` | graph evaluate stream reorder/restore | fusion/evaluate | per-device Meta subgraph node-pointer array | no shared tensor-field mutation found |
+| `common.cuh: streams/cublas_handles/workspaces/pools/curr_stream_no` | lazy CUDA/HIP backend use | kernels/fusion | per CUDA backend context | one persistent worker owns each simple backend context; not cross-device |
+| `common.cuh: ggml_cuda_info()` device table | backend initialization | graph compatibility/kernel selection | process-global | initialized before serving, then read-only on graph_compute |
 | `ggml-backend-meta.cpp: backend_config.cgraphs/nodes`, simple-tensor containers, 1358 split-state cache | Meta caller | workers | per Meta context/backend config | caller mutates before submit and waits before reuse |
 | `1340/ggml-alloc.c: arena plans/arena_galloc + tensor data bindings` | caller-side allocator before graph_compute | graph-property/fusion code | per backend config | outside graph lock; full property compare protects graph reuse from changed bindings |
 | `hip-q81-cache.*: q81_cache` generation/cursor/entries/slabs/capture_active | graph_compute + Q8_1 producers | MMVQ/fused producers | per CUDA backend context, internal mutex | independent synchronization; not cross-device |
