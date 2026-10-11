@@ -272,6 +272,8 @@ AUTOTUNE_DISPATCH_PATCH = FilePatch(
                  "            : sig.ne1[1];\n",
             guard=r"const int64_t ncols_opt = \(sig.flags & GGML_HIP_SIG_HAS_IDS\)",
             max_span_lines=2,
+            expect_matches=4,  # the four can_execute functions open the same way; ggml_hip_mmq_can_execute is the first
+            occurrence=0,
         ),
         Edit(
             id="mmq-native-j-query-dispatch",
