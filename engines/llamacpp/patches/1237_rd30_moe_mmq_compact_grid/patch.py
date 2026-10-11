@@ -411,10 +411,9 @@ MMQ_CUH_PATCH = FilePatch(
             # fallback would no longer be in scope inside the function body
             # (caught by a real gfx1100 compile: "undeclared identifier
             # 'type'/'J'/'fallback'" throughout launch_mul_mat_q).
-            # b11233: the template line gained `ggml_prec prec_src1 =
-            # GGML_PREC_Q8` (Blackwell W4A4 src1 precision).
+            # b11552: precision remains explicit but the default argument is gone.
             anchor=r"^template <ggml_type type, int J, bool fallback, "
-                   r"ggml_prec prec_src1 = GGML_PREC_Q8>\n"
+                   r"ggml_prec prec_src1>\n"
                    r"static void launch_mul_mat_q\(ggml_backend_cuda_context & ctx, "
                    r"const mmq_args & args, cudaStream_t stream\) \{$",
             rationale="insert the compact-map helpers and prep kernel "
@@ -424,6 +423,7 @@ MMQ_CUH_PATCH = FilePatch(
             mode="insert_before",
             text=_HELPERS,
             guard=r"mmq_build_moe_block_map",
+            max_span_lines=3,
         ),
         Edit(
             id="rd30-kernel-signature",
@@ -505,14 +505,16 @@ _WORKSPACE_MOE_RETURN_NEW = (
     "\n"
     "            int rd30_effective_J = self->variant.primary;\n"
     "            if (rd30_effective_J == 0) {\n"
+    "                const int64_t rd30_ncols_opt =\n"
+    "                    (sig.ne1[2] * sig.n_expert_used + sig.ne0[2] - 1) / sig.ne0[2];\n"
     "                rd30_effective_J = ggml_cuda_mmq_native_j_best("
-    "type, fallback, sig.ne1[2],\n"
+    "type, fallback, rd30_ncols_opt,\n"
     "                    /*prec_src1 =*/ GGML_PREC_Q8);\n"
     "            }\n"
     "\n"
     "            if (rd30_effective_J > 0 &&\n"
     "                    !ggml_cuda_mmq_get_stream_k(type, "
-    "rd30_effective_J, fallback, cc)) {\n"
+    "rd30_effective_J, fallback, cc, GGML_PREC_Q8)) {\n"
     "                const int64_t rd30_max_m_blocks = "
     "ggml_cuda_mmq_moe_compact_max_blocks(\n"
     "                    (int64_t) ne_get_rows, rd30_n_experts, "
