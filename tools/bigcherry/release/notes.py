@@ -92,7 +92,7 @@ class PatchChanges:
 
 
 def _patch_ids(repo_root: Path, ref: str) -> set[str]:
-    listing = _git(repo_root, "ls-tree", "-d", "--name-only", f"{ref}:patches").split()
+    listing = _git(repo_root, "ls-tree", "-d", "--name-only", f"{ref}:{paths.LLAMACPP.patches}").split()
     return {name for name in listing if not name.startswith("_")}
 
 
