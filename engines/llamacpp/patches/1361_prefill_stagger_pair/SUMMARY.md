@@ -71,9 +71,11 @@ can still pair. Zero comparable reductions still fail closed. All reductions, in
 are provider-preflighted before model work begins.
 
 Pair-owned pinned input staging no longer has 1326's 4 MiB policy cap and no longer assumes a fixed byte count.
-Each input records current bytes and capacity. Capacity only grows; before replacing either pinned slot, 1361 waits
-that slot's previous H2D-completion events, then reallocates both slots. A staging decline names half, input index,
-tensor name, bytes now, bytes before, and reason.
+1361 explicitly widens the composed 1326 eligibility gate only while `bc_stagger_input_slot > 0`; with pair mode
+off, 1326 retains its original environment gate and <=4 MiB policy exactly. Each pair input records current bytes and
+capacity. Capacity only grows; before replacing either pinned slot, 1361 waits that slot's previous H2D-completion
+events, then reallocates both slots. A staging decline names half, input index, tensor name, bytes now, bytes before,
+and reason.
 
 `BIGCHERRY_PREFILL_STAGGER_TIMING=1` emits one
 `BIGCHERRY_PREFILL_STAGGER_HOST` line per successful pair with host microseconds in prefix splits, pinned staging
