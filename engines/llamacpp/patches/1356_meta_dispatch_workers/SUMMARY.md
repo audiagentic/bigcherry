@@ -115,41 +115,60 @@ they cache across devices.
 
 ## Code-read follow-up: graph decision race (2026-10-11)
 
-The strongest explanation for the fixed alternative text plus exactly one missing capture is the upstream UID fast
-path in \`ggml_cuda_graph_update_required()\`: when the current nonzero \`cgraph->uid\` equals the cached graph UID it
-returns false before constructing/comparing \`node_properties\`. That makes the UID an assertion that every tensor
-pointer/shape/stride/op parameter used by the captured graph is unchanged.
+### Ranked causes
 
-That assertion is too strong for Meta + 1340. 1340 binds the current per-device simple graph into its arena before
-compute, so simple-tensor data bindings can change independently of the Meta subgraph object's UID. Fusion admission
-also depends on those addresses (\`ggml_cuda_check_fusion_memory_ranges\`). A false UID hit therefore has exactly the
-observed shape: replay one old fused graph instead of re-capturing it. Graphs-off removes the stale replay; fusion-off
-removes the address-sensitive fused topology/arguments.
+1. **CUDA-graph UID false hit — strongest match, hardware confirmation required.** Upstream
+   \`ggml_cuda_graph_update_required()\` returns \`false\` immediately when the nonzero \`cgraph->uid\` matches the
+   cached graph UID, before comparing \`node_properties\`. That bypasses the only check of tensor bytes,
+   source-data pointers, shapes and strides. 1340 re-binds the current per-device simple graph through
+   \`ggml_gallocr_alloc_graph_reuse_from()\` before compute; the CUDA graph cache does not participate in that
+   binding. If one same-UID call reaches graph_compute with a changed bound property, the UID shortcut classifies
+   exactly one required direct/warm-up/re-capture transition as replay. That matches the fixed alternative text and
+   exactly one missing capture better than a generic memory race. It is still a code-read hypothesis until the 12x
+   98K run confirms it.
+2. **1339/1340 fusion-overlap counters — definite data race, weak match to the symptom.**
+   \`bc_fusion_overlap_stats.checks/refused\` were process-global plain \`uint64_t\` and every concurrent fusion
+   memory-range check writes them. They do not feed fusion admission or graph reuse, so they should not cause one
+   missing capture, but the behavior is C++ UB. 1356 now makes only these counters atomic.
+3. **Optional diagnostic fusion counters — real only when enabled.** 1342's process-global
+   \`bc_fusion_taken_stats.by_op\` map is mutated only with \`BIGCHERRY_META_MEM=1\`; it is not worker-safe. Keep that
+   diagnostic off for acceptance. It does not run in the production profile by default.
+4. **Fused-node cross-device mutation / per-process fused table — not found.** Upstream and 1313/1334/1350/1355/1357
+   fusion paths build launch arguments/local fused tensors on the stack. The fusion pass reorders each device's own
+   cgraph node-pointer array for stream scheduling but does not rewrite shared tensor \`op/src/op_params\`, and there
+   is no process-global fused-node table.
+5. **Q8_1 / dispatcher caches — scoped or synchronized.** 1307's cache is owned by
+   \`ggml_backend_cuda_context\` and internally mutexed; its \`ggml_hip_q81_decode_graph\` flag is intentionally
+   \`thread_local\`, which becomes one stable copy per persistent device worker. 0200's dispatcher has a TLS L1,
+   mutex-protected process L2, per-device \`call_once\` hardware cache, atomic counters, and a TLS recursion guard.
+   No unsynchronized result cache reachable from production graph_compute was found.
 
-1356 now disables only that UID shortcut while \`BIGCHERRY_META_DISPATCH_THREADS=1\`; worker-off remains upstream.
-The full existing property comparison then decides capture/update/replay. This is deliberately narrower than
-serializing all graph_compute calls and preserves replay overlap.
+1356 therefore bypasses only the UID shortcut while \`BIGCHERRY_META_DISPATCH_THREADS=1\`; worker-off remains
+upstream. The existing full node-property comparison decides direct/capture/update/replay. This preserves replay
+overlap and avoids serializing the fusion pass.
 
 ### Mutable-state audit reachable from CUDA graph_compute
 
-| state | writer | reader | scope | 1356 lock |
+| state / file | writer | reader | scope | 1356 coverage |
 |---|---|---|---|---|
-| \`ggml_cuda_graph::{uid,node_props,warmup_complete,graph,instance,nodes}\` | graph decision/capture/update | graph decision/replay | per CUDA backend context + graph key | decision is before lock; capture/update/replay body is covered |
-| \`cuda_ctx->cuda_graphs\` incl. 1302 OOM eviction | graph lookup/update/evict | graph lookup | per CUDA backend context | lookup/decision before lock; eviction occurs in exclusive capture/update |
-| \`ggml_cuda_stream_context::{concurrent_events,stream_mapping,original_order}\` and per-call cgraph node-order restore | CUDA graph evaluate | CUDA graph evaluate/fusion | per CUDA backend context/subgraph | covered for capture/replay; direct evaluation is unlocked |
-| Meta \`backend_config.cgraphs/nodes\`, simple-tensor containers, split-state cache | Meta caller thread | workers | per Meta context | intentionally outside lock; caller finishes mutation before submit and waits before reuse |
-| 1340 arena plans/bindings/simple-tensor \`data\` | Meta caller thread before dispatch | CUDA graph property/fusion code | per backend config, but changes can outlive a reused subgraph UID | not covered by graph lock; fixed by forcing full property comparison in worker mode |
-| 1307 Q8_1 activation cache/generation/capture-active | each CUDA graph_compute | MMVQ/fused producers | per CUDA backend context | backend-local; cache-off hardware still reproduces, ruled out as primary |
-| 1339 fusion-overlap counters (\`bc_fusion_overlap_stats\`) | fusion memory-range checks | exit diagnostic | process-global plain counters | direct calls are unlocked; a diagnostic counter data race under workers, but it does not feed fusion decisions/output |
-| 1342 fusion-family \`std::map\` counters | successful fusion call site when \`BIGCHERRY_META_MEM=1\` | exit diagnostic | process-global | direct calls are unlocked; unsafe diagnostic-only state when that env is enabled |
-| fusion env/lazy flags (upstream disable flag, 1313/1334/1350/1355/1357 gates) | C++ thread-safe first-use init | fusion/kernel selection | process-global read-only after init | no lock needed |
-| one-shot trace booleans in several production patches | trace path | trace path | process-global diagnostic | some are non-atomic; default-off and do not feed math/graph decisions |
-| HIP current device | each worker via \`ggml_cuda_set_device(cuda_ctx->device)\` | kernel/fusion dispatch | HIP thread-local runtime state | no shared lock needed |
-| \`ggml_cuda_lock_counter\` / destructor mutex+cv | capture begin/end/destruction | teardown | process-global atomic/mutex | independent upstream synchronization; does not decide graph reuse |
-
-The 1339/1342/one-shot diagnostic races are real concurrency hygiene issues but are ranked below the UID false-hit:
-they do not feed the graph-update decision, and the observed failure is specifically one missing capture. Avoid
-\`BIGCHERRY_META_MEM=1\` during the 12-run acceptance so its map race cannot confound the result.
+| \`ggml-cuda.cu: ggml_cuda_graph::{uid,node_props,warmup_complete,graph,instance,nodes}\` | graph decision/capture/update | graph decision/replay | per CUDA backend context + graph key | decision precedes lock; capture/update/replay body locked; UID shortcut bypassed in worker mode |
+| \`ggml-cuda.cu: cuda_ctx->cuda_graphs\` incl. 1302 OOM eviction | lookup/create/update/evict | graph decision/replay | per CUDA backend context | per-device; eviction is inside exclusive capture/update |
+| \`ggml-cuda.cu: ggml_cuda_stream_context::{concurrent_events,stream_mapping,original_order}\` | graph evaluate | graph evaluate | per CUDA backend context | per-device; direct evaluation is intentionally unlocked |
+| \`ggml-cuda.cu: cgraph->nodes ordering\` | graph evaluate stream reorder/restore | fusion/evaluate | per-device Meta subgraph node-pointer array | no shared tensor-field mutation found |
+| \`ggml-backend-meta.cpp: backend_config.cgraphs/nodes\`, simple-tensor containers, 1358 split-state cache | Meta caller | workers | per Meta context/backend config | caller mutates before submit and waits before reuse |
+| \`1340/ggml-alloc.c: arena plans/arena_galloc + tensor data bindings\` | caller-side allocator before graph_compute | graph-property/fusion code | per backend config | outside graph lock; full property compare protects graph reuse from changed bindings |
+| \`hip-q81-cache.*: q81_cache\` generation/cursor/entries/slabs/capture_active | graph_compute + Q8_1 producers | MMVQ/fused producers | per CUDA backend context, internal mutex | independent synchronization; not cross-device |
+| \`hip-q81-cache.h: ggml_hip_q81_decode_graph\` | 1307 graph_compute | 1309-1312 producers | thread-local | one persistent worker/device; reset for each cache-enabled graph |
+| \`0200/hip-autotune-dispatch.cu: g_thread_bindings, g_in_dispatch\` | dispatch resolver | dispatch resolver | thread-local | one persistent worker/device; keys include device/signature |
+| \`0200/hip-autotune-dispatch.cu: g_bindings\` | dispatch resolver | dispatch resolver | process-global | guarded by \`g_bindings_mutex\`; exact HW/signature recheck |
+| \`0200: hardware identity cache\` | first lookup | dispatch resolver | per-device static | \`std::call_once\`, immutable after init |
+| \`1339/1340: bc_fusion_overlap_stats\` | fusion memory-range check | exit diagnostic | process-global | **fixed in 1356 to atomics**; did not feed decisions |
+| \`1342: bc_fusion_taken_stats.by_op\` | successful fusion when \`BIGCHERRY_META_MEM=1\` | exit diagnostic | process-global map | not covered; optional diagnostic must stay off during threaded acceptance |
+| upstream/1313/1334/1350/1355/1357 env/lazy gates | magic-static first use | kernel/fusion selection | process-global read-only | C++ thread-safe init; no lock needed |
+| one-shot patch traces | trace paths | trace/report | mostly atomics; some diagnostic-only statics | process-global diagnostics | default off; no math/graph decision input found |
+| HIP current device | worker via \`ggml_cuda_set_device(cuda_ctx->device)\` | HIP launch path | HIP thread-local runtime state | naturally per worker |
+| \`ggml_cuda_lock_counter\` + destructor mutex/cv | graph capture begin/end / teardown | teardown | process-global atomic/mutex | upstream synchronization; does not choose reuse |
+| 1281 MoE ID range helpers / 1350 / 1355 / 1357 launch selection | current call | current call | stack/per-context + immutable gates | no mutable cross-device cache found |
 
 ### Hardware diagnostic
 
@@ -157,11 +176,10 @@ they do not feed the graph-update decision, and the observed failure is specific
 
 \`BIGCHERRY_1356_GRAPH device=<d> call=<per-device-n> decision=<direct|capture|update|replay> props=<fnv64> uid=<uid> ...\`
 
-\`props\` is FNV-1a over the exact \`ggml_cuda_graph::node_properties\` representation used by
-\`ggml_cuda_graph_update_required()\`, including node bytes and every direct source data pointer/shape/stride.
-Diff a clean and differing 98K run by \`device,call\`; the first decision/hash divergence is the useful locus.
+\`props\` is FNV-1a over the same \`ggml_cuda_graph::node_properties\` image used by
+\`ggml_cuda_graph_update_required()\`: node bytes plus every direct source data pointer/shape/stride. Diff a clean
+and differing 98K run by \`device,call\`; the first decision/hash divergence localizes the bad graph_compute.
 
-Acceptance remains twelve 98K worker-on runs with identical greedy text. Keep graphs and fusion on. If the race
-survives this full-compare fix, the trace distinguishes the next branch: a differing property hash with replay means
-the decision path is still wrong; identical hashes with different output points at fused launch state not represented
-by \`node_properties\`.
+Acceptance: twelve 98K worker-on runs, graphs and fusion on, identical greedy text. Keep \`BIGCHERRY_META_MEM\` off.
+If this fix still differs, a clean-vs-bad trace with the same property hash but different output shifts the lead from
+the graph decision to fused launch state not represented by \`node_properties\`.
