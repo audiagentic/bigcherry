@@ -24,3 +24,7 @@ runs correctly or with the expected performance.
 
 Local design, part of this project's own HIP measured-dispatch framework
 (HI09 part 1).
+
+## Scope boundary (b11552 / PRBE21)
+
+This adapter changes the generic `mul_mat_vec_q` template and generated geometry instances **only**. In upstream `mmvq.cu::mul_mat_vec_q_switch_ncols_dst`, `has_ids && ncols_dst > 1` exits via the separate `mul_mat_vec_q_moe_launch`, which **already uses rows_per_block=2**. The existing catalog already enumerates generic rpb2/small_k variants. Neither this adapter nor a catalog rpb2 candidate changes the dedicated multi-token MoE kernel. A single-token `MUL_MAT_ID` (`has_ids && ncols_dst == 1`) can reach the generic path, but no measured BigCherry gain is established. See PRBE21/BCOP139; do not create a duplicate MoE kernel, dispatch or benchmark queue.
