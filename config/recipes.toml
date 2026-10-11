@@ -1096,6 +1096,10 @@ patches = ["1275_ar_small_latency"]
 # QFP49: production + 1360; default off, enable with BIGCHERRY_AR_TRANSFER_STREAM=1.
 patches = ["1360_ar_transfer_stream"]
 
+[experiment.kv-pad-prompt]
+# QFP53: production + 1362; default off, enable with BIGCHERRY_KV_PAD=<cells>.
+patches = ["1362_kv_pad_prompt"]
+
 [experiment.moe-router-splitk]
 # QFP36: production + 1357; default off, enable with BIGCHERRY_MOE_ROUTER_SPLITK=1.
 patches = []
