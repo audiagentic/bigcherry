@@ -67,7 +67,8 @@ def main() -> int:
     overlay_paths = frozenset(texts)
     for mod in selected.modules:
         if mod.patch_id == patch_id:
-            continue
+            # the patch's own place in the composition: what comes later is applied on top of it, not under it
+            break
         probe = patch_rebase.probe_patch(mod, vendor, texts, context_lines=3, previous_revision=None,
                                          revision="compose-apply", overlay_paths=overlay_paths)
         if probe.status not in (patch_rebase.STATUS_CLEAN, patch_rebase.STATUS_CLEAN_NOOP):
