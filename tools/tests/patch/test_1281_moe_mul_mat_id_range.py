@@ -104,8 +104,11 @@ class Patch1281Mechanics(unittest.TestCase):
             self.assertIn("struct ggml_tensor * result = ggml_mul_mat_id(ctx, as, b, ids);", c)
             self.assertIn("ggml_set_op_params_i32(result, 7, id_base);", c)
             self.assertIn("const int64_t bc_local = (int64_t) i02 - (int64_t) bc_id_base;", cpu)
-            self.assertLess(cpu.index("memset(dst->data, 0, ggml_nbytes(dst));"),
-                            cpu.index("    ggml_barrier(params->threadpool);"))
+            # the clear is done by thread 0 before the barrier of the same function, so every lane is written after it
+            clear = cpu.index("memset(dst->data, 0, ggml_nbytes(dst));")
+            barrier = cpu.index("    ggml_barrier(params->threadpool);", clear)
+            self.assertLess(barrier - clear, 2500)
+            self.assertNotIn("\nstatic void ", cpu[clear:barrier])
             repack = read("ggml/src/ggml-cpu/repack.cpp")
             self.assertEqual(repack.count("const int64_t bc_local = (int64_t) i02 - (int64_t) bc_id_base;"), 1)
             self.assertIn("llama_build_and_test(test-mul-mat-id-range.cpp)", read("tests/CMakeLists.txt"))
