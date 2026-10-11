@@ -60,6 +60,21 @@ class MmqForcedJValidationAdapterTests(unittest.TestCase):
             self.assertIn('"run_returncode": 0', text)
             self.assertIn('"helpers_edit_matches_block": true', text)
             self.assertIn('"source_edit_matches_block": true', text)
+            self.assertIn('"force_edit_matches_block": true', text)
+            self.assertIn('"force_precedes_padding_anchor": true', text)
+
+    def test_b11552_design_uses_preallocation_j_best_without_switch_threading(self):
+        module = CHECKS._load_patch(PACKAGE_ROOT)
+        self.assertIn("int bc_forced_J = forced_J;", module._FORCE_SELECTION)
+        self.assertIn("J_best = bc_forced_J;", module._FORCE_SELECTION)
+        self.assertIn("nthreads_best = bc_forced_config.nthreads;", module._FORCE_SELECTION)
+        self.assertNotIn("forced_J", module._HELPERS)
+        self.assertNotIn("mul_mat_q_launch_forced_J", module._HELPERS)
+        caller = next(p for p in module.PATCHES if p.path == "ggml/src/ggml-cuda/ggml-cuda.cu")
+        self.assertEqual({e.text for e in caller.edits}, {
+            "        ggml_cuda_mul_mat_q(ctx, src0, src1, nullptr, dst, 0);",
+            "        ggml_cuda_mul_mat_q(ctx, src0, src1, ids, dst, 0);",
+        })
 
     def test_malformed_package_is_error(self):
         with tempfile.TemporaryDirectory() as directory:
