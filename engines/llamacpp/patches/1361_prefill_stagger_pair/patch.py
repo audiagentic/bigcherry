@@ -259,7 +259,7 @@ _A_META_IFACE = r'''static const ggml_backend_i ggml_backend_meta_i = {
 _N_META_IFACE = r'''// BigCherry 1361 (QFP49): materialise A and B into independent graph metadata, preflight every reduction,
 // then issue the proven A-compute/A-begin/B-compute/B-begin schedule.  false means unsupported before model compute.
 bool ggml_backend_meta_graph_compute_pair(
-        ggml_backend_t backend, struct ggml_cgraph * cgraph_a, struct ggml_cgraph * cgraph_b, ggml_status * status_out) {
+        ggml_backend_t backend, struct ggml_cgraph * cgraph_a, struct ggml_cgraph * cgraph_b, ggml_status * status_out, ggml_status (*prepare)(void *), void * prepare_ctx) {
     GGML_ASSERT(ggml_backend_is_meta(backend));
     auto * backend_ctx = static_cast<ggml_backend_meta_context *>(backend->context);
     const size_t n_backends = backend_ctx->backend_configs.size();
@@ -385,6 +385,13 @@ bool ggml_backend_meta_graph_compute_pair(
         }
     }
 
+    if (prepare != nullptr) {
+        status = prepare(prepare_ctx);
+        if (status != GGML_STATUS_SUCCESS) {
+            if (status_out) *status_out = status;
+            return true;
+        }
+    }
     void * pending[2] = {nullptr, nullptr};
     auto finish = [&](int h) {
         if (pending[h] != nullptr) {
@@ -578,7 +585,8 @@ _N_BACKEND_DECLS = r'''bool ggml_backend_meta_alloc_graph(ggml_backend_t meta_ba
 bool ggml_backend_meta_reserve_graph_pair(ggml_backend_t meta_backend, struct ggml_cgraph * cgraph);
 bool ggml_backend_meta_alloc_graph_pair(ggml_backend_t meta_backend, struct ggml_cgraph * cgraph);
 bool ggml_backend_meta_graph_compute_pair(
-    ggml_backend_t backend, struct ggml_cgraph * cgraph_a, struct ggml_cgraph * cgraph_b, ggml_status * status_out);
+    ggml_backend_t backend, struct ggml_cgraph * cgraph_a, struct ggml_cgraph * cgraph_b,
+    ggml_status * status_out, ggml_status (*prepare)(void *), void * prepare_ctx);
 void ggml_backend_meta_rotate_graph_containers(struct ggml_cgraph * cgraph);
 '''
 
@@ -618,6 +626,39 @@ _N_SCHED_RESERVE = r'''            if (ggml_backend_is_meta(sched->backends[i]))
             }
 '''
 
+_A_SCHED_PREFIX_START = r'''static enum ggml_status ggml_backend_sched_compute_splits(ggml_backend_sched_t sched) {
+    GGML_ASSERT(sched);
+    struct ggml_backend_sched_split * splits = sched->splits;
+
+    int prev_backend_id = -1;
+
+    for (int split_id = 0; split_id < sched->n_splits; split_id++) {
+'''
+_N_SCHED_PREFIX_START = r'''static enum ggml_status ggml_backend_sched_compute_splits_range(ggml_backend_sched_t sched, int end_split) {
+    GGML_ASSERT(sched);
+    struct ggml_backend_sched_split * splits = sched->splits;
+
+    int prev_backend_id = -1;
+
+    for (int split_id = 0; split_id < end_split; split_id++) {
+'''
+_A_SCHED_PREFIX_END = r'''    return GGML_STATUS_SUCCESS;
+}
+
+ggml_backend_sched_t ggml_backend_sched_new(
+'''
+_N_SCHED_PREFIX_END = r'''    return GGML_STATUS_SUCCESS;
+}
+static enum ggml_status ggml_backend_sched_compute_splits(ggml_backend_sched_t sched) {
+    return ggml_backend_sched_compute_splits_range(sched, sched->n_splits);
+}
+static enum ggml_status ggml_backend_sched_compute_splits_prefix(ggml_backend_sched_t sched) {
+    return ggml_backend_sched_compute_splits_range(sched, sched->n_splits - 1);
+}
+
+ggml_backend_sched_t ggml_backend_sched_new(
+'''
+
 _A_SCHED_API_SITE = r'''void ggml_backend_sched_set_eval_callback(ggml_backend_sched_t sched, ggml_backend_sched_eval_callback callback, void * user_data) {
 '''
 _N_SCHED_API_SITE = r'''void ggml_backend_sched_set_stagger_pair_arena(ggml_backend_sched_t sched, bool enabled) {
@@ -655,11 +696,11 @@ enum ggml_status ggml_backend_sched_graph_compute_async_pair(
     auto * b = &sched_b->splits[sched_b->n_splits - 1];
     if (a->backend_id != b->backend_id ||
             sched_a->backends[a->backend_id] != sched_b->backends[b->backend_id]) {
-        return GGML_STATUS_SUCCESS;
+        return decline("different final Meta backend");
     }
     ggml_backend_t backend = sched_a->backends[a->backend_id];
     if (!ggml_backend_is_meta(backend)) {
-        return GGML_STATUS_SUCCESS;
+        return decline("last split not Meta");
     }
 
     auto copy_inputs = [](ggml_backend_sched_t sched, ggml_backend_sched_split * split) {
@@ -674,12 +715,21 @@ enum ggml_status ggml_backend_sched_graph_compute_async_pair(
             }
         }
     };
-    // A inputs are enqueued first.  B follows on the same simple-device streams after Meta materialises its graph.
-    copy_inputs(sched_a, a);
-    copy_inputs(sched_b, b);
-
+    // After Meta/RCCL admission, execute complete upstream prefix split path.
+    // B host input split reads B's tokens/embeddings, not A's device KV/GDN state.
+    auto prepare = [&]() -> ggml_status {
+        ggml_status ec = ggml_backend_sched_compute_splits_prefix(sched_a);
+        if (ec != GGML_STATUS_SUCCESS) return ec;
+        ec = ggml_backend_sched_compute_splits_prefix(sched_b);
+        if (ec != GGML_STATUS_SUCCESS) return ec;
+        copy_inputs(sched_a, a);
+        copy_inputs(sched_b, b);
+        return GGML_STATUS_SUCCESS;
+    };
+    using prepare_type = decltype(prepare);
+    auto cb = [](void * p) -> ggml_status { return (*static_cast<prepare_type *>(p))(); };
     ggml_status status = GGML_STATUS_SUCCESS;
-    const bool ok = ggml_backend_meta_graph_compute_pair(backend, &a->graph, &b->graph, &status);
+    const bool ok = ggml_backend_meta_graph_compute_pair(backend, &a->graph, &b->graph, &status, cb, &prepare);
     if (!ok) {
         return status; // unsupported was decided before model compute; caller runs today's sequential order.
     }
@@ -1097,6 +1147,10 @@ PATCHES = [
                   guard=r"failed to allocate per-device Meta arena%s", rationale="1340 compute-time Meta arena bind."),
             _edit(id="stagger-sched-reserve-arena", anchor=_A_SCHED_RESERVE, mode="replace", text=_N_SCHED_RESERVE,
                   guard=r"failed to reserve per-device Meta arena%s", rationale="1340 reserve-time Meta arena planning."),
+            _edit(id="stagger-sched-prefix-start", anchor=_A_SCHED_PREFIX_START, mode="replace", text=_N_SCHED_PREFIX_START,
+                  guard=r"ggml_backend_sched_compute_splits_range", rationale="Use original scheduler loop."),
+            _edit(id="stagger-sched-prefix-end", anchor=_A_SCHED_PREFIX_END, mode="replace", text=_N_SCHED_PREFIX_END,
+                  guard=r"ggml_backend_sched_compute_splits_prefix", rationale="Expose prefix."),
             _edit(id="stagger-sched-pair-api", anchor=_A_SCHED_API_SITE, mode="replace", text=_N_SCHED_API_SITE,
                   guard=r"ggml_backend_sched_graph_compute_async_pair", rationale="Scheduler API implementation beside eval callback setter."),
         ),
