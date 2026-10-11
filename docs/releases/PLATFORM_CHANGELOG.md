@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.1.1](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.1.0...bc-platform-1.1.1) (2026-10-11)
+
+
+### Fixes
+
+* **patch:** shelve 1356 and 1360 as evaluated (owner decision); QFP41 and QFP49 closed; main ruleset prepared for the owner (PA46) ([ff10025](https://github.com/audiagentic/bigcherry/commit/ff10025d48e79e516c85e97c75a0bacc374e1fb9))
+* **patch:** shelve 1356 and 1360 as evaluated; close QFP41 and QFP49 ([5d9c163](https://github.com/audiagentic/bigcherry/commit/5d9c1631c6989e6a85202a9fe17e6c64d2b8e3fa))
+* **release:** add resumable release phases ([433b4f6](https://github.com/audiagentic/bigcherry/commit/433b4f6b77e9534d1a3b7bd6d012687feb23d015))
+* **release:** expose unpin and PR release flow ([455fc46](https://github.com/audiagentic/bigcherry/commit/455fc46e14fa5a7ec6a75edf0ee4616ea6583b3a))
+* **release:** make publish dry-run concrete ([8327953](https://github.com/audiagentic/bigcherry/commit/8327953d5b991c99a5bc6a66e4d116f7f845eb1e))
+* **release:** merge release record through a pull request ([c719844](https://github.com/audiagentic/bigcherry/commit/c7198447497ac677c436a0d17d87889f7f3af611))
+* **release:** pin version in release-please config ([b374c1b](https://github.com/audiagentic/bigcherry/commit/b374c1b8aa17d72f6e4cfad3f1dcc816c20b6c32))
+* **release:** pin-release goes through pull requests and sets the package version in the release-please config ([af9f6a6](https://github.com/audiagentic/bigcherry/commit/af9f6a618b6bbfb28243d1c51503eed22231f61a))
+* **release:** reject conflicting release-as before writing notes ([2b2ef35](https://github.com/audiagentic/bigcherry/commit/2b2ef35d7e5a39f8e0e4e6ac3b64e788317a03c2))
+* **release:** report post-tag notes as complete in dry run ([2e44aef](https://github.com/audiagentic/bigcherry/commit/2e44aef984a0950c0fb1b08c0d8a44f5f5c18b45))
+* **release:** resume cleanly after release tag exists ([59d7420](https://github.com/audiagentic/bigcherry/commit/59d74207291ddb9f9130b367c3e9f6cb1341ed51))
+* **release:** select previous tag across release families ([23bf18c](https://github.com/audiagentic/bigcherry/commit/23bf18cdd0ec5c0063974bd7fe79797548b8b90e))
+* **release:** show current manifest on completed dry runs ([3c8df01](https://github.com/audiagentic/bigcherry/commit/3c8df01dc4690f769d76f5e61bf2b9b7f7af7622))
+* **release:** validate release PR and clear release-as ([5f2a1e4](https://github.com/audiagentic/bigcherry/commit/5f2a1e44c77c5771cca043fab62a1306b3c76175))
+
 ## [1.1.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.0.1...bc-platform-1.1.0) (2026-10-11)
 
 
