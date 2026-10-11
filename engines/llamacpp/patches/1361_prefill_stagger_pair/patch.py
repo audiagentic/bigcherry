@@ -576,12 +576,22 @@ bool ggml_backend_meta_alloc_graph_pair(ggml_backend_t meta_backend, struct ggml
 '''
 
 # ----------------------------------------------------------------------------------------------- scheduler
+_A_SCHED_TYPE = r'''struct ggml_backend_sched {
+'''
+_N_SCHED_TYPE = r'''struct bc_1361_input_stages;
+
+struct ggml_backend_sched {
+'''
+
 _A_SCHED_STRUCT = r'''    bool op_offload;
 
     int debug;
 '''
 _N_SCHED_STRUCT = r'''    bool op_offload;
     bool bc_stagger_pair_arena = false; // BigCherry 1361: scheduler B selects 1340's second physical owner.
+    // 0 = normal copy path, otherwise final-split input index + 1 while 1361 calls the existing 1326 copier.
+    int bc_stagger_input_slot = 0;
+    bc_1361_input_stages * bc_stagger_input_stages = nullptr;
 
     int debug;
 '''
@@ -645,6 +655,193 @@ _N_SCHED_INCLUDES = r'''#include <algorithm>
 #include <vector>
 '''
 # Two edits, not one: production's 1325 (split timing) sits between the function head and its loop.
+
+_A_SCHED_COPY_INPUT = r'''static void ggml_backend_sched_copy_input(ggml_backend_sched_t sched, struct ggml_backend_sched_split * split, struct ggml_tensor * input) {
+'''
+_N_SCHED_COPY_INPUT = r'''// BigCherry 1361: pinned, two-slot staging for the existing 1326 host-input path. Each slot's events are
+// recorded immediately after its H2D copies, before any pair model work is submitted. Reusing a slot can therefore
+// wait only for that old H2D, never for a later compute kernel or RCCL sum on the same stream.
+struct bc_1361_input_stage_slot {
+    ggml_backend_buffer_t buffer = nullptr;
+    std::vector<ggml_backend_event_t> done;
+    bool pending = false;
+};
+
+struct bc_1361_input_stage_entry {
+    size_t bytes = 0;
+    int next = 0;
+    bc_1361_input_stage_slot slot[2];
+};
+
+struct bc_1361_input_stages {
+    std::vector<bc_1361_input_stage_entry> inputs;
+
+    ~bc_1361_input_stages() {
+        for (auto & input : inputs) {
+            for (auto & slot : input.slot) {
+                for (ggml_backend_event_t event : slot.done) {
+                    ggml_backend_event_free(event);
+                }
+                if (slot.buffer != nullptr) {
+                    ggml_backend_buffer_free(slot.buffer);
+                }
+            }
+        }
+    }
+};
+
+static bool bc_1361_stage_eligible(
+        ggml_backend_sched_t sched, ggml_backend_sched_split * split,
+        ggml_tensor * input, ggml_tensor * input_cpy) {
+    ggml_backend_t split_backend = sched->backends[split->backend_id];
+    return split_backend->iface.set_tensor_async != nullptr &&
+        input->buffer != nullptr && ggml_backend_buffer_is_host(input->buffer) &&
+        ggml_backend_buffer_get_usage(input->buffer) != GGML_BACKEND_BUFFER_USAGE_WEIGHTS &&
+        ggml_is_contiguous(input) && ggml_is_contiguous(input_cpy) &&
+        ggml_nbytes(input) == ggml_nbytes(input_cpy) &&
+        ggml_nbytes(input) <= ((size_t) 4 << 20);
+}
+
+// Called before Meta pair admission. Allocation happens on the first pair, before that pair has any sum outstanding;
+// fixed half-size graphs reuse the same two pinned slots on every later call.
+static bool bc_1361_prepare_input_stages(ggml_backend_sched_t sched, ggml_backend_sched_split * split) {
+    ggml_backend_t split_backend = sched->backends[split->backend_id];
+    if (!ggml_backend_is_meta(split_backend)) {
+        return false;
+    }
+    ggml_backend_buffer_type_t host_buft =
+        ggml_backend_dev_host_buffer_type(ggml_backend_get_device(split_backend));
+    if (host_buft == nullptr) {
+        return false;
+    }
+    if (sched->bc_stagger_input_stages == nullptr) {
+        sched->bc_stagger_input_stages = new bc_1361_input_stages();
+    }
+    auto & stages = sched->bc_stagger_input_stages->inputs;
+    if (stages.size() < (size_t) split->n_inputs) {
+        stages.resize(split->n_inputs);
+    }
+
+    const size_t n_children = ggml_backend_meta_n_backends(split_backend);
+    if (n_children == 0) {
+        return false;
+    }
+    for (int input_id = 0; input_id < split->n_inputs; ++input_id) {
+        ggml_tensor * input = split->inputs[input_id];
+        ggml_tensor * input_cpy = tensor_copy(input, split->backend_id, sched->cur_copy);
+        if (input_cpy == nullptr) {
+            return false;
+        }
+
+        const bool host_nonweight = input->buffer != nullptr && ggml_backend_buffer_is_host(input->buffer) &&
+            ggml_backend_buffer_get_usage(input->buffer) != GGML_BACKEND_BUFFER_USAGE_WEIGHTS;
+        if (!host_nonweight) {
+            continue;
+        }
+        // A host input that cannot use 1326's async path would fall back to a potentially blocking Meta copy.
+        if (!bc_1361_stage_eligible(sched, split, input, input_cpy)) {
+            return false;
+        }
+
+        auto & entry = stages[input_id];
+        const size_t bytes = ggml_nbytes(input);
+        if (entry.bytes != 0 && entry.bytes != bytes) {
+            return false;
+        }
+        entry.bytes = bytes;
+        for (auto & slot : entry.slot) {
+            if (slot.buffer == nullptr) {
+                slot.buffer = ggml_backend_buft_alloc_buffer(host_buft, bytes);
+                if (slot.buffer == nullptr) {
+                    return false;
+                }
+            }
+            if (slot.done.empty()) {
+                for (size_t j = 0; j < n_children; ++j) {
+                    ggml_backend_t child = ggml_backend_meta_simple_backend(split_backend, j);
+                    ggml_backend_event_t event = ggml_backend_event_new(ggml_backend_get_device(child));
+                    if (event == nullptr) {
+                        return false;
+                    }
+                    slot.done.push_back(event);
+                }
+            }
+            if (slot.done.size() != n_children) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+static void bc_1361_copy_input_pinned(
+        ggml_backend_sched_t sched, ggml_backend_sched_split * split,
+        ggml_tensor * input, ggml_tensor * input_cpy) {
+    GGML_ASSERT(sched->bc_stagger_input_slot > 0);
+    const int input_id = sched->bc_stagger_input_slot - 1;
+    GGML_ASSERT(sched->bc_stagger_input_stages != nullptr);
+    GGML_ASSERT((size_t) input_id < sched->bc_stagger_input_stages->inputs.size());
+
+    auto & entry = sched->bc_stagger_input_stages->inputs[input_id];
+    GGML_ASSERT(entry.bytes == ggml_nbytes(input));
+    auto & slot = entry.slot[entry.next];
+    entry.next ^= 1;
+
+    // This fence is behind the old H2D and ahead of that call's model compute. It cannot wait for an old pair sum.
+    if (slot.pending) {
+        for (ggml_backend_event_t event : slot.done) {
+            ggml_backend_event_synchronize(event);
+        }
+    }
+
+    void * stage = ggml_backend_buffer_get_base(slot.buffer);
+    memcpy(stage, input->data, entry.bytes);
+    ggml_backend_t split_backend = sched->backends[split->backend_id];
+    ggml_backend_tensor_set_async(split_backend, input_cpy, stage, 0, entry.bytes);
+
+    GGML_ASSERT(ggml_backend_is_meta(split_backend));
+    GGML_ASSERT(slot.done.size() == ggml_backend_meta_n_backends(split_backend));
+    for (size_t j = 0; j < slot.done.size(); ++j) {
+        ggml_backend_t child = ggml_backend_meta_simple_backend(split_backend, j);
+        ggml_backend_event_record(slot.done[j], child);
+    }
+    slot.pending = true;
+}
+
+static void ggml_backend_sched_copy_input(ggml_backend_sched_t sched, struct ggml_backend_sched_split * split, struct ggml_tensor * input) {
+'''
+
+_A_1326_STAGE = r'''        static thread_local std::unordered_map<const ggml_tensor *, std::vector<uint8_t>> bc_staging;
+        std::vector<uint8_t> & bc_stage = bc_staging[input_cpy];
+        bc_stage.resize(ggml_nbytes(input));
+        memcpy(bc_stage.data(), input->data, ggml_nbytes(input));
+        ggml_backend_tensor_set_async(split_backend, input_cpy, bc_stage.data(), 0, ggml_nbytes(input));
+        return;
+'''
+_N_1326_STAGE = r'''        if (sched->bc_stagger_input_slot > 0) {
+            // 1361 pair path: pinned two-slot staging; lifetime is fenced by events immediately after H2D.
+            bc_1361_copy_input_pinned(sched, split, input, input_cpy);
+            return;
+        }
+        static thread_local std::unordered_map<const ggml_tensor *, std::vector<uint8_t>> bc_staging;
+        std::vector<uint8_t> & bc_stage = bc_staging[input_cpy];
+        bc_stage.resize(ggml_nbytes(input));
+        memcpy(bc_stage.data(), input->data, ggml_nbytes(input));
+        ggml_backend_tensor_set_async(split_backend, input_cpy, bc_stage.data(), 0, ggml_nbytes(input));
+        return;
+'''
+
+_A_SCHED_FREE = r'''    free(sched->graph.leafs);
+    free(sched);
+}
+'''
+_N_SCHED_FREE = r'''    free(sched->graph.leafs);
+    delete sched->bc_stagger_input_stages;
+    sched->bc_stagger_input_stages = nullptr;
+    free(sched);
+}
+'''
+
 _A_SCHED_PREFIX_START = r'''static enum ggml_status ggml_backend_sched_compute_splits(ggml_backend_sched_t sched) {
     GGML_ASSERT(sched);
 '''
@@ -721,7 +918,9 @@ enum ggml_status ggml_backend_sched_graph_compute_async_pair(
     auto copy_inputs = [](ggml_backend_sched_t sched, ggml_backend_sched_split * split) {
         for (int input_id = 0; input_id < split->n_inputs; ++input_id) {
             if (!ggml_backend_sched_is_host_weight(split->inputs[input_id])) {
+                sched->bc_stagger_input_slot = input_id + 1;
                 ggml_backend_sched_copy_input(sched, split, split->inputs[input_id]);
+                sched->bc_stagger_input_slot = 0;
             }
         }
         for (int input_id = 0; input_id < split->n_inputs; ++input_id) {
@@ -742,6 +941,12 @@ enum ggml_status ggml_backend_sched_graph_compute_async_pair(
                 return decline("paired final-split input copies share a buffer");
             }
         }
+    }
+
+    // Preallocate 1326's pair-safe pinned staging before Meta admits either graph. Any host input that would take
+    // the blocking pageable/synchronous route makes the pair decline instead.
+    if (!bc_1361_prepare_input_stages(sched_a, a) || !bc_1361_prepare_input_stages(sched_b, b)) {
+        return decline("pair-safe pinned input staging unavailable");
     }
 
     // Snapshot A into its final Meta inputs before running B's host prefix. Some graph inputs/prefix temporaries
@@ -1169,12 +1374,20 @@ PATCHES = [
         description="1361: second arena selector and narrow two-scheduler Meta pair dispatch",
         language="none",
         edits=(
+            _edit(id="stagger-sched-type", anchor=_A_SCHED_TYPE, mode="replace", text=_N_SCHED_TYPE,
+                  guard=r"struct bc_1361_input_stages;", rationale="Forward declaration immediately before scheduler private state."),
             _edit(id="stagger-sched-includes", anchor=_A_SCHED_INCLUDES, mode="replace", text=_N_SCHED_INCLUDES,
                   guard=r"#include <set>", rationale="The decline diagnostics keep a std::set<std::string> of reasons already logged."),
             _edit(id="stagger-sched-field", anchor=_A_SCHED_STRUCT, mode="replace", text=_N_SCHED_STRUCT,
                   guard=r"bc_stagger_pair_arena", rationale="Scheduler private state beside op_offload."),
             _edit(id="stagger-sched-decls", anchor=_A_BACKEND_DECLS, mode="replace", text=_N_BACKEND_DECLS,
                   guard=r"ggml_backend_meta_graph_compute_pair", rationale="1340 Meta backend-local declarations."),
+            _edit(id="stagger-sched-copy-input", anchor=_A_SCHED_COPY_INPUT, mode="replace", text=_N_SCHED_COPY_INPUT,
+                  guard=r"struct bc_1361_input_stage_slot", rationale="Extend the existing 1326 scheduler input path with pair-owned pinned staging."),
+            _edit(id="stagger-1326-pinned-stage", anchor=_A_1326_STAGE, mode="replace", text=_N_1326_STAGE,
+                  guard=r"bc_1361_copy_input_pinned", rationale="Use pinned two-slot staging only while the 1361 pair invokes 1326."),
+            _edit(id="stagger-stage-free", anchor=_A_SCHED_FREE, mode="replace", text=_N_SCHED_FREE,
+                  guard=r"delete sched->bc_stagger_input_stages", rationale="Scheduler owns and frees pair input staging/events."),
             _edit(id="stagger-sched-alloc-arena", anchor=_A_SCHED_ALLOC, mode="replace", text=_N_SCHED_ALLOC,
                   guard=r"failed to allocate per-device Meta arena%s", rationale="1340 compute-time Meta arena bind."),
             _edit(id="stagger-sched-reserve-arena", anchor=_A_SCHED_RESERVE, mode="replace", text=_N_SCHED_RESERVE,
