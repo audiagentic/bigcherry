@@ -27,4 +27,6 @@ fi
 echo "cards: HIP_VISIBLE_DEVICES=$HIP_VISIBLE_DEVICES   source: $SRC"
 env | grep -E "^(BIGCHERRY_|GGML_HIP_)" | sort | tr '\n' ' '; echo
 timeout "${HARNESS_TIMEOUT:-900}" "$out/meta_pair_harness" "$@" 2>&1 | tee "$out/harness.log" | grep -vE "^(ggml_|load_backend|register_)" | cut -c1-240
-echo "harness exit ${PIPESTATUS[0]}"
+rc=${PIPESTATUS[0]}
+echo "harness exit $rc"
+exit "$rc"
