@@ -63,11 +63,18 @@ def main() -> int:
         print(f"\n{agent}: {len(steps)} steps; kernels a step median {statistics.median(counts):.0f}, mean "
               f"{statistics.mean(counts):.1f}, max {max(counts)}; a step runs {statistics.mean(busy) * us:.0f} us of kernels "
               f"in {statistics.mean(span) * us:.0f} us ({100.0 * sum(busy) / max(sum(span), 1):.0f}% of the step is kernel time)")
+        # the totals above include one-off waits (first-use code object loads, the wait for the next prompt batch);
+        # the median step is the steady state
+        share = sorted(b / sp for b, sp in zip(busy, span) if sp > 0)
+        print(f"  median step: {statistics.median(busy) * us:.0f} us of kernels in {statistics.median(span) * us:.0f} us; "
+              f"kernel share of a step median {100 * share[len(share) // 2]:.0f}%, 10th percentile {100 * share[len(share) // 10]:.0f}%; "
+              f"the {max(1, len(span) // 100)} longest steps (1%) hold {100.0 * sum(sorted(span)[-max(1, len(span) // 100):]) / sum(span):.0f}% of all step time")
         n_launch = collections.Counter()
         t_kernel = collections.Counter()
         t_gap = collections.Counter()
         pairs = collections.Counter()
         pair_gap = collections.Counter()
+        pair_gaps = collections.defaultdict(list)
         for s in steps:
             for i, (b, e, name) in enumerate(s):
                 key = short(name)
@@ -77,6 +84,7 @@ def main() -> int:
                     t_gap[key] += max(0, s[i + 1][0] - e)
                     pairs[(key, short(s[i + 1][2]))] += 1
                     pair_gap[(key, short(s[i + 1][2]))] += max(0, s[i + 1][0] - e)
+                    pair_gaps[(key, short(s[i + 1][2]))].append(max(0, s[i + 1][0] - e))
         total = sum(t_kernel.values())
         print("  launches a step   us a launch   share of kernel time   gap after, us   kernel")
         for key, t in t_kernel.most_common(top):
@@ -85,10 +93,31 @@ def main() -> int:
         print("  commonest adjacent pairs:  a step   gap between them, us")
         for (a, b), n in pairs.most_common(top):
             print(f"  {n / len(steps):8.2f}   {pair_gap[(a, b)] * us / n:8.1f}   {a}  ->  {b}")
-        print("  pairs with the most gap time:  a step   gap, us   us a step")
-        for (a, b), g in pair_gap.most_common(top):
-            n = pairs[(a, b)]
-            print(f"  {n / len(steps):8.2f}   {g * us / n:8.1f}   {g * us / len(steps):8.1f}   {a}  ->  {b}")
+        # ranked by median gap x occurrences: a pair's mean can be a few first-use gaps (a code object load of
+        # hundreds of ms after the first mul_mat_q -> convert made a 5 us pair look like 239 us, 2026-10-12)
+        print("  pairs with the most steady gap time:  a step   median gap, us   us a step   (mean gap, us; largest single gap, ms)")
+        steady = {pair: statistics.median(g) * len(g) for pair, g in pair_gaps.items()}
+        for (a, b), g in sorted(steady.items(), key=lambda kv: -kv[1])[:top]:
+            gaps = pair_gaps[(a, b)]
+            print(f"  {len(gaps) / len(steps):8.2f}   {statistics.median(gaps) * us:14.1f}   {g * us / len(steps):9.1f}   "
+                  f"({pair_gap[(a, b)] * us / len(gaps):.1f}; {max(gaps) * us / 1e3:.1f})   {a}  ->  {b}")
+        # where the idle time is: every gap between two consecutive kernels of a step, by size
+        buckets = [(10, "< 10 us"), (100, "10 - 100 us"), (1000, "0.1 - 1 ms"), (10000, "1 - 10 ms"), (100000, "10 - 100 ms"),
+                   (float("inf"), "> 100 ms")]
+        count = [0] * len(buckets)
+        idle = [0.0] * len(buckets)
+        by_pair = [collections.Counter() for _ in buckets]
+        for pair, gaps in pair_gaps.items():
+            for g in gaps:
+                i = next(k for k, (limit, _) in enumerate(buckets) if g * us < limit)
+                count[i] += 1
+                idle[i] += g * us
+                by_pair[i][pair] += g * us
+        all_idle = sum(idle) or 1.0
+        print(f"  idle time inside steps by gap size (total {all_idle / 1e6:.2f} s):   gaps   seconds   share   largest contributors")
+        for i, (_, label) in enumerate(buckets):
+            names = ", ".join(f"{a} -> {b} {t / 1e6:.2f} s" for (a, b), t in by_pair[i].most_common(2))
+            print(f"    {label:12s} {count[i]:8d}   {idle[i] / 1e6:7.2f}   {100 * idle[i] / all_idle:4.0f}%   {names}")
     return 0
 
 
