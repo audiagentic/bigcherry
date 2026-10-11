@@ -367,8 +367,84 @@ bool ggml_backend_meta_graph_compute_pair(
             return true;
         }
     }
-    if (sets[0].n_subgraphs != sets[1].n_subgraphs || sets[0].n_subgraphs == 0) {
-        return decline("different Meta subgraph shapes");
+    if (sets[0].n_subgraphs == 0 || sets[1].n_subgraphs == 0) {
+        return decline("Meta subgraphs missing");
+    }
+
+    // A prompt pair is intentionally asymmetric at the output end: A usually requests no logits while B carries
+    // the last-token logits head. Pair only the structurally matching reduction-producing prefix, then execute each
+    // half's remaining tail in A-before-B order. n_kv/mask dimensions may differ; operation topology must not.
+    auto subgraph_ops_equal = [&](size_t i, size_t * diff_backend, size_t * diff_node) {
+        for (size_t j = 0; j < n_backends; ++j) {
+            ggml_cgraph * ga = sets[0].cgraphs[j][i];
+            ggml_cgraph * gb = sets[1].cgraphs[j][i];
+            const int n = std::min(ga->n_nodes, gb->n_nodes);
+            for (int k = 0; k < n; ++k) {
+                if (ga->nodes[k]->op != gb->nodes[k]->op) {
+                    if (diff_backend) *diff_backend = j;
+                    if (diff_node) *diff_node = (size_t) k;
+                    return false;
+                }
+            }
+            if (ga->n_nodes != gb->n_nodes) {
+                if (diff_backend) *diff_backend = j;
+                if (diff_node) *diff_node = (size_t) n;
+                return false;
+            }
+        }
+        return true;
+    };
+
+    const size_t common_subgraphs = std::min(sets[0].n_subgraphs, sets[1].n_subgraphs);
+    size_t first_diff = common_subgraphs;
+    size_t diff_backend = 0;
+    size_t diff_node = 0;
+    for (size_t i = 0; i < common_subgraphs; ++i) {
+        size_t db = 0, dn = 0;
+        if (!subgraph_ops_equal(i, &db, &dn)) {
+            first_diff = i;
+            diff_backend = db;
+            diff_node = dn;
+            break;
+        }
+    }
+    if (first_diff == common_subgraphs && sets[0].n_subgraphs != sets[1].n_subgraphs) {
+        first_diff = common_subgraphs;
+    }
+
+    const size_t reductions_a = sets[0].n_subgraphs - 1;
+    const size_t reductions_b = sets[1].n_subgraphs - 1;
+    const size_t max_pair_reductions = std::min(reductions_a, reductions_b);
+    const size_t paired_reductions = std::min(first_diff, max_pair_reductions);
+
+    auto subgraph_desc = [&](int h, size_t i) {
+        if (i >= sets[h].n_subgraphs) return std::string("none");
+        ggml_cgraph * g = sets[h].cgraphs[std::min(diff_backend, n_backends - 1)][i];
+        std::string out = "nodes=" + std::to_string(g->n_nodes);
+        if (g->n_nodes > 0) {
+            const size_t k = std::min(diff_node, (size_t) g->n_nodes - 1);
+            out += " op[" + std::to_string(k) + "]=" + ggml_op_name(g->nodes[k]->op);
+        }
+        return out;
+    };
+    if (first_diff < common_subgraphs || sets[0].n_subgraphs != sets[1].n_subgraphs) {
+        const std::string why =
+            "subgraphs A=" + std::to_string(sets[0].n_subgraphs) +
+            " B=" + std::to_string(sets[1].n_subgraphs) +
+            " first_diff=" + std::to_string(first_diff) +
+            " A(" + subgraph_desc(0, first_diff) + ")" +
+            " B(" + subgraph_desc(1, first_diff) + ")" +
+            " paired_reductions=" + std::to_string(paired_reductions);
+        static std::set<std::string> shape_seen;
+        if (shape_seen.insert(why).second) {
+            GGML_LOG_INFO("BIGCHERRY_PREFILL_STAGGER shape-tail: %s\n", why.c_str());
+        }
+        if (paired_reductions == 0) {
+            return decline(why.c_str());
+        }
+    }
+    if (paired_reductions == 0) {
+        return decline("no common reduction-producing Meta prefix");
     }
 
     ggml_backend_reg_t reg = ggml_backend_dev_backend_reg(ggml_backend_get_device(backend_ctx->backend_configs[0].backend));
@@ -422,33 +498,66 @@ bool ggml_backend_meta_graph_compute_pair(
     };
     auto cleanup = [&]() { finish(0); finish(1); };
 
-    for (size_t i = 0; i < sets[0].n_subgraphs; ++i) {
+    auto compute_subgraph = [&](int h, size_t i) {
+        for (size_t j = 0; j < n_backends; ++j) {
+            status = ggml_backend_graph_compute_async(backend_ctx->backend_configs[j].backend, sets[h].cgraphs[j][i]);
+            if (status != GGML_STATUS_SUCCESS) {
+                if (status_out) *status_out = status;
+                return false;
+            }
+        }
+        return true;
+    };
+    auto begin_reduction = [&](int h, size_t i, void ** state_out) {
+        auto nodes = nodes_for(sets[h], i);
+        *state_out = state_new();
+        if (*state_out == nullptr || !begin(backend_ctx->comm_ctx, nodes.data(), *state_out)) {
+            if (*state_out != nullptr) {
+                state_free(*state_out);
+                *state_out = nullptr;
+            }
+            if (status_out) *status_out = GGML_STATUS_FAILED;
+            return false;
+        }
+        return true;
+    };
+
+    // Only reduction-producing subgraphs are interleaved. The final/common-output tails are deliberately left for
+    // the A-then-B sequential tail below; this admits B's logits head without pretending the two graphs are equal.
+    for (size_t i = 0; i < paired_reductions; ++i) {
         for (int h = 0; h < 2; ++h) {
             finish(h);
-            for (size_t j = 0; j < n_backends; ++j) {
-                status = ggml_backend_graph_compute_async(backend_ctx->backend_configs[j].backend, sets[h].cgraphs[j][i]);
-                if (status != GGML_STATUS_SUCCESS) {
-                    cleanup();
-                    if (status_out) *status_out = status;
-                    return true;
-                }
-            }
-            if (i + 1 < sets[h].n_subgraphs) {
-                auto nodes = nodes_for(sets[h], i);
-                pending[h] = state_new();
-                if (pending[h] == nullptr || !begin(backend_ctx->comm_ctx, nodes.data(), pending[h])) {
-                    if (pending[h] != nullptr) {
-                        state_free(pending[h]);
-                        pending[h] = nullptr;
-                    }
-                    cleanup();
-                    if (status_out) *status_out = GGML_STATUS_FAILED;
-                    return true;
-                }
+            if (!compute_subgraph(h, i) || !begin_reduction(h, i, &pending[h])) {
+                cleanup();
+                return true;
             }
         }
     }
     cleanup();
+
+    // Finish whatever topology is left after the comparable prefix. Reductions here use the same begin/end seam
+    // back-to-back: correct but intentionally not overlapped. A's complete tail precedes B's to preserve shared
+    // KV/recurrent-state ordering even when the output/logits tail exists only on B.
+    auto run_tail = [&](int h) {
+        for (size_t i = paired_reductions; i < sets[h].n_subgraphs; ++i) {
+            if (!compute_subgraph(h, i)) {
+                return false;
+            }
+            if (i + 1 < sets[h].n_subgraphs) {
+                void * state = nullptr;
+                if (!begin_reduction(h, i, &state)) {
+                    return false;
+                }
+                end(state);
+                state_free(state);
+            }
+        }
+        return true;
+    };
+    if (!run_tail(0) || !run_tail(1)) {
+        return true;
+    }
+
     if (status_out) *status_out = GGML_STATUS_SUCCESS;
     return true;
 }
@@ -680,7 +789,8 @@ struct bc_1361_input_stage_slot {
 };
 
 struct bc_1361_input_stage_entry {
-    size_t bytes = 0;
+    size_t current_bytes = 0;
+    size_t capacity = 0;
     int next = 0;
     bc_1361_input_stage_slot slot[2];
 };
@@ -710,20 +820,32 @@ static bool bc_1361_stage_eligible(
         input->buffer != nullptr && ggml_backend_buffer_is_host(input->buffer) &&
         ggml_backend_buffer_get_usage(input->buffer) != GGML_BACKEND_BUFFER_USAGE_WEIGHTS &&
         ggml_is_contiguous(input) && ggml_is_contiguous(input_cpy) &&
-        ggml_nbytes(input) == ggml_nbytes(input_cpy) &&
-        ggml_nbytes(input) <= ((size_t) 4 << 20);
+        ggml_nbytes(input) == ggml_nbytes(input_cpy);
 }
 
-// Called before Meta pair admission. Allocation happens on the first pair, before that pair has any sum outstanding;
-// fixed half-size graphs reuse the same two pinned slots on every later call.
-static bool bc_1361_prepare_input_stages(ggml_backend_sched_t sched, ggml_backend_sched_split * split) {
+static std::string bc_1361_stage_reason(
+        int input_id, ggml_tensor * input, size_t bytes_now, size_t bytes_before, const char * reason) {
+    const char * name = input != nullptr ? ggml_get_name(input) : nullptr;
+    return "input=" + std::to_string(input_id) +
+        " name=" + std::string(name != nullptr && name[0] != '\0' ? name : "<unnamed>") +
+        " bytes_now=" + std::to_string(bytes_now) +
+        " bytes_before=" + std::to_string(bytes_before) +
+        " reason=" + reason;
+}
+
+// Called before Meta pair admission. A growing mask/index input may resize a slot only after that slot's previous
+// H2D completion event has been waited. Capacity grows geometrically; there is deliberately no fixed byte ceiling.
+static bool bc_1361_prepare_input_stages(
+        ggml_backend_sched_t sched, ggml_backend_sched_split * split, std::string & why) {
     ggml_backend_t split_backend = sched->backends[split->backend_id];
     if (!ggml_backend_is_meta(split_backend)) {
+        why = "final split is not Meta";
         return false;
     }
     ggml_backend_buffer_type_t host_buft =
         ggml_backend_dev_host_buffer_type(ggml_backend_get_device(split_backend));
     if (host_buft == nullptr) {
+        why = "Meta host buffer type unavailable";
         return false;
     }
     if (sched->bc_stagger_input_stages == nullptr) {
@@ -736,12 +858,17 @@ static bool bc_1361_prepare_input_stages(ggml_backend_sched_t sched, ggml_backen
 
     const size_t n_children = ggml_backend_meta_n_backends(split_backend);
     if (n_children == 0) {
+        why = "Meta child backends unavailable";
         return false;
     }
     for (int input_id = 0; input_id < split->n_inputs; ++input_id) {
         ggml_tensor * input = split->inputs[input_id];
+        auto & entry = stages[input_id];
+        const size_t before = entry.current_bytes;
+        const size_t bytes = ggml_nbytes(input);
         ggml_tensor * input_cpy = tensor_copy(input, split->backend_id, sched->cur_copy);
         if (input_cpy == nullptr) {
+            why = bc_1361_stage_reason(input_id, input, bytes, before, "missing-copy");
             return false;
         }
 
@@ -750,38 +877,56 @@ static bool bc_1361_prepare_input_stages(ggml_backend_sched_t sched, ggml_backen
         if (!host_nonweight) {
             continue;
         }
-        // A host input that cannot use 1326's async path would fall back to a potentially blocking Meta copy.
         if (!bc_1361_stage_eligible(sched, split, input, input_cpy)) {
+            why = bc_1361_stage_reason(input_id, input, bytes, before, "not-async-eligible");
             return false;
         }
 
-        auto & entry = stages[input_id];
-        const size_t bytes = ggml_nbytes(input);
-        if (entry.bytes != 0 && entry.bytes != bytes) {
-            return false;
-        }
-        entry.bytes = bytes;
         for (auto & slot : entry.slot) {
-            if (slot.buffer == nullptr) {
-                slot.buffer = ggml_backend_buft_alloc_buffer(host_buft, bytes);
-                if (slot.buffer == nullptr) {
-                    return false;
-                }
-            }
             if (slot.done.empty()) {
                 for (size_t j = 0; j < n_children; ++j) {
                     ggml_backend_t child = ggml_backend_meta_simple_backend(split_backend, j);
                     ggml_backend_event_t event = ggml_backend_event_new(ggml_backend_get_device(child));
                     if (event == nullptr) {
+                        why = bc_1361_stage_reason(input_id, input, bytes, before, "event-allocation");
                         return false;
                     }
                     slot.done.push_back(event);
                 }
             }
             if (slot.done.size() != n_children) {
+                why = bc_1361_stage_reason(input_id, input, bytes, before, "child-count-changed");
                 return false;
             }
         }
+
+        if (bytes > entry.capacity) {
+            size_t new_capacity = entry.capacity == 0 ? bytes : entry.capacity;
+            while (new_capacity < bytes && new_capacity <= SIZE_MAX / 2) {
+                new_capacity *= 2;
+            }
+            if (new_capacity < bytes) new_capacity = bytes;
+
+            for (auto & slot : entry.slot) {
+                if (slot.pending) {
+                    for (ggml_backend_event_t event : slot.done) {
+                        ggml_backend_event_synchronize(event);
+                    }
+                    slot.pending = false;
+                }
+                if (slot.buffer != nullptr) {
+                    ggml_backend_buffer_free(slot.buffer);
+                    slot.buffer = nullptr;
+                }
+                slot.buffer = ggml_backend_buft_alloc_buffer(host_buft, new_capacity);
+                if (slot.buffer == nullptr) {
+                    why = bc_1361_stage_reason(input_id, input, bytes, before, "host-stage-allocation");
+                    return false;
+                }
+            }
+            entry.capacity = new_capacity;
+        }
+        entry.current_bytes = bytes;
     }
     return true;
 }
@@ -795,8 +940,10 @@ static void bc_1361_copy_input_pinned(
     GGML_ASSERT((size_t) input_id < sched->bc_stagger_input_stages->inputs.size());
 
     auto & entry = sched->bc_stagger_input_stages->inputs[input_id];
-    GGML_ASSERT(entry.bytes == ggml_nbytes(input));
+    const size_t bytes = ggml_nbytes(input);
+    GGML_ASSERT(entry.current_bytes == bytes);
     auto & slot = entry.slot[entry.next];
+    GGML_ASSERT(slot.buffer != nullptr && ggml_backend_buffer_get_size(slot.buffer) >= bytes);
     entry.next ^= 1;
 
     // This fence is behind the old H2D and ahead of that call's model compute. It cannot wait for an old pair sum.
@@ -807,9 +954,9 @@ static void bc_1361_copy_input_pinned(
     }
 
     void * stage = ggml_backend_buffer_get_base(slot.buffer);
-    memcpy(stage, input->data, entry.bytes);
+    memcpy(stage, input->data, bytes);
     ggml_backend_t split_backend = sched->backends[split->backend_id];
-    ggml_backend_tensor_set_async(split_backend, input_cpy, stage, 0, entry.bytes);
+    ggml_backend_tensor_set_async(split_backend, input_cpy, stage, 0, bytes);
 
     GGML_ASSERT(ggml_backend_is_meta(split_backend));
     GGML_ASSERT(slot.done.size() == ggml_backend_meta_n_backends(split_backend));
@@ -961,8 +1108,15 @@ enum ggml_status ggml_backend_sched_graph_compute_async_pair(
 
     // Preallocate 1326's pair-safe pinned staging before Meta admits either graph. Any host input that would take
     // the blocking pageable/synchronous route makes the pair decline instead.
-    if (!bc_1361_prepare_input_stages(sched_a, a) || !bc_1361_prepare_input_stages(sched_b, b)) {
-        return decline("pair-safe pinned input staging unavailable");
+    std::string bc_stage_why;
+    if (!bc_1361_prepare_input_stages(sched_a, a, bc_stage_why)) {
+        const std::string why = "A staging: " + bc_stage_why;
+        return decline(why.c_str());
+    }
+    bc_stage_why.clear();
+    if (!bc_1361_prepare_input_stages(sched_b, b, bc_stage_why)) {
+        const std::string why = "B staging: " + bc_stage_why;
+        return decline(why.c_str());
     }
 
     // Prefixes must be host-only: prepare_half runs after each half is captured but before provider admission.
