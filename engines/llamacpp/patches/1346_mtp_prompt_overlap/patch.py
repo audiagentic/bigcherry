@@ -541,7 +541,8 @@ PATCHES = [
                 text=_MTP_DRAFT_BEGIN_TEXT,
                 guard=r"const int64_t bc_pt_draft_t0 = bc_pt_state \? ggml_time_us\(\) : 0;",
                 rationale="Start draft catch-up timing immediately before the unique MTP draft llama_process call.",
-                expect_matches=1,
+                expect_matches=2,  # 1348's bc_process_snapshot repeats this code before process(); the timing is for process()
+                occurrence=1,
                 max_span_lines=2,
             ),
             Edit(
@@ -551,7 +552,8 @@ PATCHES = [
                 text=_MTP_DRAFT_END_TEXT,
                 guard=r"bc_pt_draft_decode_us \+= ggml_time_us\(\) - bc_pt_draft_t0;",
                 rationale="Stop draft catch-up timing immediately after the same MTP draft process call.",
-                expect_matches=1,
+                expect_matches=2,  # 1348's bc_process_snapshot repeats this code before process(); the timing is for process()
+                occurrence=1,
                 max_span_lines=2,
             ),
             Edit(
@@ -561,7 +563,8 @@ PATCHES = [
                 text=_MTP_VERIFY_BEGIN_TEXT,
                 guard=r"bc_pt_verify_t0 = ggml_time_us\(\);",
                 rationale="Start timing the b11552 verify-row extraction before resize/copy work.",
-                expect_matches=1,
+                expect_matches=2,  # 1348's bc_process_snapshot repeats this code before process(); the timing is for process()
+                occurrence=1,
                 max_span_lines=3,
             ),
             Edit(
@@ -571,7 +574,8 @@ PATCHES = [
                 text=_MTP_PROCESS_FINISH_TEXT,
                 guard=r"bc_pt_state->target_sync_us \+= bc_pt_target_sync_us;",
                 rationale="Finalize timing after the unique MTP pending-row copy; upstream token/vision construction remains untouched.",
-                expect_matches=1,
+                expect_matches=2,  # 1348's bc_process_snapshot repeats this code before process(); the timing is for process()
+                occurrence=1,
                 max_span_lines=3,
             ),
             Edit(
