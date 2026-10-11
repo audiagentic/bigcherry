@@ -30,7 +30,9 @@ mmq.cu, quantize.cu and ggml-cuda.cu retain only range translation, sentinel, ca
 
 Structural identity audit against the pre-refactor 1281 at commit 15e2818127a7873bc9e8cc2795471f1efae5d2fe:
 the four moved definitions (the id-translation kernel, its public launcher, the range Q8_1 scatter wrapper, and the
-CUDA range-support policy helper) were copied byte-for-byte into the owned files. Their public declarations and all
+CUDA range-support policy helper) were copied byte-for-byte into the owned files. Direct literal comparison was
+920/920 bytes equal for the id-translation kernel+launcher block, 1761/1761 for the Q8_1 range wrapper, and 988/988
+for the CUDA policy helper. Their public declarations and all
 existing call/dispatch sites are unchanged. The quantize_mmq_q8_1 template and its sentinel edit stay in quantize.cu;
 no upstream helper/template was duplicated. Therefore the only compiled-code change is definition placement across
 the owned include/translation-unit boundary. A preprocessed-TU diff and compile remain CI/local-build verification,
