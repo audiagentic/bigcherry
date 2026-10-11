@@ -61,6 +61,30 @@ For promotion of any future implementation: CI95-low >=3% production E2E and <=1
 - MET05/1328 and MTP/QFP/F MTP: protected active work; no edits or overlapping experiments. If a later experiment needs those lanes, coordinate after their active window.
 - BCOP53: thin action ledger; technical design stays here.
 
+## 2026-10-11 b11552 recheck: environment admission and post-pin MoE prepass
+
+**Scope/novelty:** b11552 (`23b0202a189c44a54625aadcb37a946dd1d6278d`, 2026-10-10 19:25 UTC) is now the independent development branch's pinned llama.cpp baseline. The Vulkan queue policy is unchanged from the b11474 audit. A **new, merged upstream MoE mechanism** landed *after* that pin: [#29998](https://github.com/ggml-org/llama.cpp/pull/29998), commit `966baae76b578d5d3dd4c179a75a35c80ff75577` (2026-10-11 12:02 UTC). This changes Vulkan `MUL_MAT_ID` expert-row prepass, row-map allocation, tile dispatch and shader indexing. It is **not in b11552** and cannot be credited to, or mixed into, a b11552 graphics-queue A/B. No PRBE62 implementation or independent PRBE62 hardware lane was found in the prior 12 hours; BCOP53 remains the earlier disposition ledger. This recheck does not take ownership of PA49 pin work or active QFP/Meta/MMQ/collective lanes.
+
+### Source-proven A/B admission pitfall
+
+In b11552 `ggml/src/ggml-vulkan/ggml-vulkan.cpp::ggml_vk_get_device`:
+
+```cpp
+const bool allow_graphics_queue = (getenv("GGML_VK_ALLOW_GRAPHICS_QUEUE") != nullptr);
+device->async_use_transfer_queue = prefers_transfer_queue ||
+    (getenv("GGML_VK_ASYNC_USE_TRANSFER_QUEUE") != nullptr);
+```
+
+Both are **presence** switches, not parsed booleans: setting either variable to `0`, `false` or the empty string **enables** its path. `GGML_VK_ALLOW_GRAPHICS_QUEUE` affects *both* compute and transfer family search and removes the AMD dGPU default `prefers_transfer_queue`; a single-queue device still forces async transfer off. An A/B arm with `GGML_VK_ALLOW_GRAPHICS_QUEUE=0` is **not a control**. The old plan's unset/set wording is correct, but future scripts must fail closed on this easy-to-miss confound.
+
+**Implementation-ready Gate 0 (no patch):** launch **fresh independent processes**, control with both environment variables **absent** (not assigned empty/zero), subject with only `GGML_VK_ALLOW_GRAPHICS_QUEUE=1`; record an exact environment presence/values receipt, driver ID/ICD, physical-device UUID, compute/transfer queue-family indices and flags, `single_queue`, `async_use_transfer_queue`, graph/cmd-pool binding, actual `MUL_MAT_ID` route and `rm_kq`. Reject a result if the compute family did not change, the driver/device identity differs, or the transfer policy changed without being explicitly classified as a *combined policy* result. Do not add a new queue selector or force the async override to equalize arms without synchronization proof.
+
+**Post-pin upstream mechanism and independent correctness fence:** #29998 replaces optional expert-ID hoisting with a compact row-tile map and a one-workgroup expert prepass. Its host upper bound is `max_tiles=min(n_rows, ceil(n_rows/BN)+min(n_experts,n_rows)-1)`; shaders consume `(expert,valid_rows)` tile descriptors and packed 16-bit token/slot IDs. The new device-support gate rejects token/slot dimensions above 65536 for this route. This is a distinct dispatch/work-accounting change, **not** a queue-family optimization. Never compare b11552 control against post-#29998 subject. At a later pin, first prove exact expert multiplicities (including repeated IDs), row-tile coverage, full logits and prefill/decode/MTP parity with the new prepass, and rebaseline both graphics-queue arms on the **same** commit/driver before interpreting performance. If the prepass changes workgroup counts or bytes, report them independently; faster due to missing expert work is FAIL.
+
+**Cheapest discriminator actually run:** nine b11552 source-static queue/transfer assertions (one initial line-range omission corrected) and a deterministic host upper-bound fixture: 42,810 exhaustive small expert-count partitions plus 10,000 seeded random partitions; all satisfied `actual_tiles <= max_tiles`. A separate presence-value fixture confirmed that absent is false and `"", "0", "1", "false"` are all true. These validate only source policy and a mathematical bound; they do **not** verify Vulkan shader correctness, queue selection on an installed driver, performance, GPU execution or actual transfer traffic.
+
+**Promotion/rejection remains BCOP53's gate:** first prove an actual AMDVLK/proprietary graphics-family switch and safe transfers on the deployed R9700 gfx1201, then isolate the single-device Qwen MoE and dense controls; do not infer gains from the dual-XTX HIP or gfx1030 lanes. Keep context, quant, MTP, `rm_kq`, device and pin fixed. Require same-process repeated requests, multi-ubatch, long context, logits/KLD and exact expert-work accounting. No available driver/family switch or MoE CI95-low <3% E2E => terminate with upstream default; positive MoE but >1% dense/prefill regression => only model/driver-scoped **process opt-in**, not a backend scheduler. External AMDVLK +4.7% MoE / -8.1% dense remains external evidence, not a BigCherry measurement.
+
 ## Historical provenance
 
 Created 2026-09-09 by capability-rebaseline-v3; re-reviewed 2026-09-24 against b11126. The original design proposed a new `BIGCHERRY_VK_MOE_GRAPHICS_QUEUE` flag, per-graph dual queues, a new buffer-sharing policy and a hypothetical 1263 patch. Those sketches are superseded by the 2026-10-08 code/evidence audit; preserved in Git history rather than maintained as contradictory active steps. No hardware/build/benchmark ran during this audit; static pinned-source assertions verified the queue/transfer coupling.
