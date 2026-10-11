@@ -225,10 +225,16 @@ int main(int argc, char ** argv) {
         }
         // reserve first, as llama does: without it the per-device arena (1340) grows after the graph is allocated and
         // the graph's tensors are left pointing into the arena it replaced
-        if (!ggml_backend_sched_reserve(g->sched, g->graph)) {
+        // (with a graph of its own: reserving moves the Meta buffers on to their other view container, so the
+        // graph that is computed has to be allocated after it, as llama builds a fresh graph a batch)
+        half_graph measure = g == &a ? build(m, m.x_a, m.y_a, 0, m.T, false)
+                           : g == &b ? build(m, m.x_b, m.y_b, m.T, m.T, true)
+                                     : build(m, m.x_full, m.y_full, 0, 2 * m.T, false);
+        if (!ggml_backend_sched_reserve(g->sched, measure.graph)) {
             fail("could not reserve a graph");
         }
         ggml_backend_sched_reset(g->sched);
+        ggml_free(measure.ctx);
         if (!ggml_backend_sched_alloc_graph(g->sched, g->graph)) {
             fail("could not allocate a graph");
         }
