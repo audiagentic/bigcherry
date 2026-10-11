@@ -1,5 +1,17 @@
 # Changelog
 
+## [11552.0.0](https://github.com/audiagentic/bigcherry/compare/bc-llamacpp-11474.9.0...bc-llamacpp-11552.0.0) (2026-10-11)
+
+
+### Fixes
+
+* **patch:** b11552 - 0300's autotune edit takes the first of four can_execute openings ([34322c1](https://github.com/audiagentic/bigcherry/commit/34322c154d53f1cad4c88f4cf6b64fa8638de060))
+* **patch:** b11552 - 0300's MoE native call sits inside the should_use_mmq branch ([fd926c0](https://github.com/audiagentic/bigcherry/commit/fd926c0a310be81e9ab0773a1a9613914dfde1ef))
+* **patch:** b11552 - 1294 follows top-k's chunked row loop; 1333 anchors on the has_mixed decision alone ([9477827](https://github.com/audiagentic/bigcherry/commit/94778276bd17485a481f04f1ed4328f73309b0d1))
+* **patch:** b11552 - 1321 and 1348 use set_embd_state for hidden-state rows; 1307's unary edit follows the contiguous branch; legacy-part tool ([142a0b8](https://github.com/audiagentic/bigcherry/commit/142a0b80866bb41c770937be43ecb18cf998ad11))
+* **patch:** b11552 - 1337 state superseded, MoE cache experiments removed, 1338 test skipped until its rebuild (MET07) ([9fa5026](https://github.com/audiagentic/bigcherry/commit/9fa502648e4f00ea334d4f783750417edd8f275d))
+* **patch:** b11552 - 1346's process timing edits take the second match (1348's snapshot repeats the code) ([cfb7b63](https://github.com/audiagentic/bigcherry/commit/cfb7b633f6df52ca8ba8dc1854994e2d304b9957))
+
 ## [11474.9.0](https://github.com/audiagentic/bigcherry/compare/bc-llamacpp-11474.8.0...bc-llamacpp-11474.9.0) (2026-10-11)
 
 
