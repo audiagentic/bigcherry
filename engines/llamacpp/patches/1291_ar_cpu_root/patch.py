@@ -447,6 +447,25 @@ static void ggml_backend_cuda_comm_init_cpu_root(ggml_backend_cuda_comm_context 
 #endif // GGML_USE_HIP
 '''
 
+OWNED = FilePatch(
+    path="ggml/src/ggml-cuda/bc-ar-cpu-root.cuh",
+    language="none",
+    description="1291: BigCherry-owned CPU-root AllReduce implementation included once by ggml-cuda.cu.",
+    create=True,
+    edits=(
+        Edit(
+            id="cpu-root-owned-file",
+            anchor=r"\\A",
+            text=_IMPL,
+            mode="insert_after",
+            guard=r"static bool ggml_backend_cuda_comm_try_allreduce_cpu_root\\(",
+            expect_matches=1,
+            max_span_lines=1,
+            rationale="BigCherry-owned implementation; it is file-local and depends on ggml-cuda.cu's visible comm helpers/context.",
+        ),
+    ),
+)
+
 CUDA = FilePatch(
     path="ggml/src/ggml-cuda/ggml-cuda.cu",
     language="none",
@@ -459,6 +478,7 @@ CUDA = FilePatch(
             mode="insert_before",
             guard=r"BigCherry 1291: CPU-root one-shot AllReduce state",
             expect_matches=1,
+            max_span_lines=2,
             rationale="The comm context owns and frees the cpu-root state, defined later with the provider.",
         ),
         Edit(
@@ -468,6 +488,7 @@ CUDA = FilePatch(
             mode="insert_after",
             guard=r"cpu_root = nullptr;  // BigCherry 1291",
             expect_matches=1,
+            max_span_lines=2,
             rationale="Per-communicator cpu-root state, beside the internal pipeline.",
         ),
         Edit(
@@ -483,6 +504,7 @@ CUDA = FilePatch(
             mode="replace",
             guard=r"bc_cpu_root_free\(cpu_root\);  // BigCherry 1291",
             expect_matches=1,
+            max_span_lines=3,
             rationale="Stop the worker and free the pinned buffers with the communicator.",
         ),
         Edit(
@@ -492,16 +514,18 @@ CUDA = FilePatch(
             mode="replace",
             guard=r'p == "butterfly" \|\| p == "cpu-root";',
             expect_matches=1,
+            max_span_lines=2,
             rationale="Accept --allreduce cpu-root in 0860's provider validation.",
         ),
         Edit(
             id="cpu-root-impl",
             anchor=_re.escape("static void * ggml_backend_cuda_comm_init(ggml_backend_t * backends, size_t n_backends) {\n"),
-            text=_IMPL + "\n",
+            text='#include "bc-ar-cpu-root.cuh"  // BigCherry 1291 implementation\n\n',
             mode="insert_before",
-            guard=r"static bool ggml_backend_cuda_comm_try_allreduce_cpu_root\(",
+            guard=r'#include "bc-ar-cpu-root\.cuh"',
             expect_matches=1,
-            rationale="Provider implementation after the NCCL helpers and init chain it reuses.",
+            max_span_lines=2,
+            rationale="Original implementation site: the owned header must see the file-local NCCL/comm helpers defined above.",
         ),
         Edit(
             id="cpu-root-init-dispatch",
@@ -515,6 +539,7 @@ CUDA = FilePatch(
             mode="insert_after",
             guard=r"ggml_backend_cuda_comm_init_cpu_root\(ret\);  // BigCherry 1291",
             expect_matches=1,
+            max_span_lines=3,
             rationale="Select cpu-root beside 0840's adaptive provider.",
         ),
     ),
@@ -532,6 +557,7 @@ ARG = FilePatch(
             mode="replace",
             guard=r"butterfly\|cpu-root \(default: auto\)",
             expect_matches=1,
+            max_span_lines=2,
             rationale="Help text only; validation is in ggml_backend_comm_set_config.",
         ),
     ),
@@ -549,12 +575,13 @@ BENCH = FilePatch(
             mode="replace",
             guard=r"butterfly\|cpu-root> \(default: auto\)",
             expect_matches=1,
+            max_span_lines=2,
             rationale="Help text only.",
         ),
     ),
 )
 
-PATCHES = [CUDA, ARG, BENCH]
+PATCHES = [OWNED, CUDA, ARG, BENCH]
 
 ENV_DOCS = (
     EnvDoc('BIGCHERRY_AR_CPU_ROOT_MAX_BYTES', '<bytes>', '65536',

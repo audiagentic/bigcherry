@@ -177,6 +177,25 @@ static bool top_k_bc_deterministic_ties() {
 
 """
 
+OWNED = FilePatch(
+    path="ggml/src/ggml-cuda/bc-topk-ties.cuh",
+    language="none",
+    description="1294: BigCherry-owned deterministic/ordered radix TOP_K tie kernels and switches.",
+    create=True,
+    edits=(
+        Edit(
+            id="topk-tie-owned-file",
+            anchor=r"\\A",
+            text=_TIE_KERNEL,
+            mode="insert_after",
+            guard=r"static __global__ void top_k_radix_gather_ties\\(",
+            expect_matches=1,
+            max_span_lines=1,
+            rationale="BigCherry-owned implementation included after top_k_radix_state/top_k_float_to_ordered are defined.",
+        ),
+    ),
+)
+
 TOPK = FilePatch(
     path="ggml/src/ggml-cuda/top-k.cu",
     language="none",
@@ -185,11 +204,12 @@ TOPK = FilePatch(
         Edit(
             id="topk-tie-kernel",
             anchor=r"(?m)^static void top_k_radix_cuda\(",
-            text=_TIE_KERNEL,
+            text='#include "bc-topk-ties.cuh"  // BigCherry 1294 implementation\n\n',
             mode="insert_before",
-            guard=r"top_k_radix_gather_ties",
+            guard=r'#include "bc-topk-ties\.cuh"',
             expect_matches=1,
-            rationale="Defined before the launcher that uses it.",
+            max_span_lines=2,
+            rationale="The original block site, after file-local radix state/key helpers and immediately before their launcher.",
         ),
         Edit(
             id="topk-launch-ties",
@@ -225,7 +245,7 @@ TOPK = FilePatch(
     ),
 )
 
-PATCHES = [TOPK]
+PATCHES = [OWNED, TOPK]
 
 ENV_DOCS = (
     EnvDoc('BIGCHERRY_TOPK_DETERMINISTIC', '0|1', '1 (on)',
