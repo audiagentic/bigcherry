@@ -59,6 +59,19 @@ A table: transport chosen and sum latency (small and large) for each card pair, 
 
 ## Notes
 
+
+
+### Review of the P2P-hack kernel on Brutus (2026-10-12, read-only)
+
+- Source: /home/audumla/linux at v7.0.13, one edit, drivers/pci/p2pdma.c (+198/-1): calc_map_type_and_dist() also accepts a pair when brutus_xtx_p2pdma_quirk() says so, next to cpu_supports_p2pdma() (AMD Zen only) and the host-bridge whitelist (no Alder Lake 8086:4668 entry). Stock boot log confirms the gate it removes: 'PCIe P2P access from peer device ... is not supported by the chipset' for every pair.
+- Logic is right for this machine: XTX pair = both 1002:744c, host bridge 8086:4668, root ports 00:01.0 + 00:01.1 (matches lspci: 03:00.0 and 06:00.0 each behind their on-card switch under those ports). R9700 path = exactly one 1002:7551 at 09:00.0 with one XTX at 03:00.0/06:00.0, bus numbers hard-coded, no host-bridge check (harmless here; breaks silently if buses renumber). 6900 XT behind the PCH is left out, correctly. No sleeping calls, no reference leaks. pci_devs_share_bifurcated_slot() is fully implied by brutus_cpu_peg_root_pair() (redundant, not wrong).
+- What it does not do: it only lifts the permission check. The mapping type stays THRU_HOST_BRIDGE, so traffic still goes root port -> root complex -> root port. Root ports run with ACS ReqRedir+/CmpltRedir+/UpstreamFwd+ (intel_iommu=on iommu=pt), i.e. peer requests are redirected up through VT-d. Whether Alder Lake forwards between PEG ports at speed is not something the patch can make true - the 0.9 GB/s XTX<->XTX measured on this kernel says it forwards but slowly (or that the test did not actually use the P2P path; never proven either way).
+- INSTALLED IMAGE IS NOT THIS SOURCE: /boot/vmlinuz-7.0.13-dirty was built 2026-09-04 11:56; p2pdma.c was edited and rebuilt 14:55 the same day and never installed. Installed calc_map_type_and_dist is 0x5c0 bytes and has no brutus_ symbol; the tree's build is 0x6e0 bytes plus brutus_r9700_xtx_endpoint_match. So the installed kernel carries an earlier revision (no R9700 path for certain; the CPU-PEG root-port pin probably missing too). The 0.9 GB/s figure belongs to that earlier revision.
+- The dirty kernel has not been booted since at least 2026-09-09 (journal holds 10 boots, all stock). Config differs from stock only by BTF off. amdgpu pcie_p2p=Y, BARs are 32G (large BAR ok), CONFIG_HSA_AMD_P2P=y in both.
+- Other facts seen: root port 00:06.0 (R9700) has AtomicOpsCtl EgressBlck+ while 00:01.0/00:01.1 have EgressBlck-; PCH port 00:1d.0 (6900 XT) has no AtomicOp routing, 8GT/s x4.
+- To test properly (owner's call - needs a reboot of Brutus): install the current tree's build, boot it, confirm the 'not supported by the chipset' lines are gone for the three CPU-port pairs, then run a GPU->GPU copy with a KFD/dmabuf P2P path proven active (not RCCL SHM) and compare against the host-bounce path. If it stays near 1 GB/s the route is the limit and the hack is not worth carrying.
+
 ## Change Log
 
 - 2026-10-11T13:45:17.976093+00:00 (created-by): Created by agent
+- 2026-10-11T13:49:50.005393+00:00 (updated-by): Updated: section:notes
