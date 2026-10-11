@@ -290,6 +290,9 @@ def phase_notes(plan: Plan) -> bool:
     config_text = (root / _RELEASE_CONFIG).read_text(encoding="utf-8")
     committed = subject in _git(root, "log", "--format=%s", "--fixed-strings", f"--grep={subject}", "-5").splitlines()
     current_release_as = _release_as_value(config_text, "notes")
+    if current_release_as is not None and current_release_as != plan.version:
+        raise PinReleaseError("notes", f"{RELEASE_PACKAGE}.release-as is already {current_release_as!r}, "
+                                       f"refusing to replace it with {plan.version!r}")
     if committed and (current_release_as == plan.version or (current_release_as is None and _tag_exists(plan))):
         return False
     _require_clean(plan, "notes")
