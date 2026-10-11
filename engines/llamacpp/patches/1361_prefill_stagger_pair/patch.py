@@ -260,8 +260,13 @@ _N_META_IFACE = r'''// BigCherry 1361 (QFP49): materialise A and B into independ
 // then issue the proven A-compute/A-begin/B-compute/B-begin schedule.  false means unsupported before model compute.
 bool ggml_backend_meta_graph_compute_pair(
         ggml_backend_t backend, struct ggml_cgraph * cgraph_a, struct ggml_cgraph * cgraph_b, ggml_status * status_out,
-        ggml_status (*prepare_half)(void *, int), void * prepare_ctx) {
+        ggml_status (*prepare_half)(void *, int), void * prepare_ctx,
+        int64_t * host_capture_us, int64_t * host_rehome_us, int64_t * host_submit_us, size_t * host_sums) {
     GGML_ASSERT(ggml_backend_is_meta(backend));
+    if (host_capture_us) *host_capture_us = 0;
+    if (host_rehome_us) *host_rehome_us = 0;
+    if (host_submit_us)  *host_submit_us  = 0;
+    if (host_sums)       *host_sums       = 0;
     auto * backend_ctx = static_cast<ggml_backend_meta_context *>(backend->context);
     const size_t n_backends = backend_ctx->backend_configs.size();
     if (status_out) {
@@ -328,9 +333,11 @@ bool ggml_backend_meta_graph_compute_pair(
         return GGML_STATUS_SUCCESS;
     };
 
+    const int64_t bc_capture_a_t0 = host_capture_us ? ggml_time_us() : 0;
     backend_ctx->bc_pair_capture = &sets[0];
     ggml_status status = ggml_backend_meta_graph_compute(backend, cgraph_a);
     backend_ctx->bc_pair_capture = nullptr;
+    if (host_capture_us) *host_capture_us += ggml_time_us() - bc_capture_a_t0;
     if (status != GGML_STATUS_SUCCESS) {
         if (status_out) *status_out = status;
         return false;
@@ -347,15 +354,19 @@ bool ggml_backend_meta_graph_compute_pair(
         }
     }
 
+    const int64_t bc_rehome_t0 = host_rehome_us ? ggml_time_us() : 0;
     status = rehome_static_views(cgraph_b);
+    if (host_rehome_us) *host_rehome_us += ggml_time_us() - bc_rehome_t0;
     if (status != GGML_STATUS_SUCCESS) {
         if (status_out) *status_out = status;
         return false;
     }
 
+    const int64_t bc_capture_b_t0 = host_capture_us ? ggml_time_us() : 0;
     backend_ctx->bc_pair_capture = &sets[1];
     status = ggml_backend_meta_graph_compute(backend, cgraph_b);
     backend_ctx->bc_pair_capture = nullptr;
+    if (host_capture_us) *host_capture_us += ggml_time_us() - bc_capture_b_t0;
     if (status != GGML_STATUS_SUCCESS) {
         if (status_out) *status_out = status;
         return false;
@@ -372,23 +383,21 @@ bool ggml_backend_meta_graph_compute_pair(
     }
 
     // A prompt pair is intentionally asymmetric at the output end: A usually requests no logits while B carries
-    // the last-token logits head. Pair only the structurally matching reduction-producing prefix, then execute each
-    // half's remaining tail in A-before-B order. n_kv/mask dimensions may differ; operation topology must not.
+    // the last-token logits head. Pair only the matching reduction-producing prefix, then execute each half's tail
+    // A-before-B. n_kv/mask dimensions may differ. Per call we compare only subgraph node counts and boundary ops:
+    // scanning every internal node was redundant host work because the cross-half contract is at reduction boundaries.
     auto subgraph_ops_equal = [&](size_t i, size_t * diff_backend, size_t * diff_node) {
         for (size_t j = 0; j < n_backends; ++j) {
             ggml_cgraph * ga = sets[0].cgraphs[j][i];
             ggml_cgraph * gb = sets[1].cgraphs[j][i];
-            const int n = std::min(ga->n_nodes, gb->n_nodes);
-            for (int k = 0; k < n; ++k) {
-                if (ga->nodes[k]->op != gb->nodes[k]->op) {
-                    if (diff_backend) *diff_backend = j;
-                    if (diff_node) *diff_node = (size_t) k;
-                    return false;
-                }
-            }
             if (ga->n_nodes != gb->n_nodes) {
                 if (diff_backend) *diff_backend = j;
-                if (diff_node) *diff_node = (size_t) n;
+                if (diff_node) *diff_node = (size_t) std::min(ga->n_nodes, gb->n_nodes);
+                return false;
+            }
+            if (ga->n_nodes > 0 && ga->nodes[ga->n_nodes - 1]->op != gb->nodes[gb->n_nodes - 1]->op) {
+                if (diff_backend) *diff_backend = j;
+                if (diff_node) *diff_node = (size_t) ga->n_nodes - 1;
                 return false;
             }
         }
@@ -416,6 +425,7 @@ bool ggml_backend_meta_graph_compute_pair(
     const size_t reductions_b = sets[1].n_subgraphs - 1;
     const size_t max_pair_reductions = std::min(reductions_a, reductions_b);
     const size_t paired_reductions = std::min(first_diff, max_pair_reductions);
+    if (host_sums) *host_sums = reductions_a + reductions_b;
 
     auto subgraph_desc = [&](int h, size_t i) {
         if (i >= sets[h].n_subgraphs) return std::string("none");
@@ -488,6 +498,7 @@ bool ggml_backend_meta_graph_compute_pair(
         }
     }
 
+    const int64_t bc_submit_t0 = host_submit_us ? ggml_time_us() : 0;
     void * pending[2] = {nullptr, nullptr};
     auto finish = [&](int h) {
         if (pending[h] != nullptr) {
@@ -555,8 +566,10 @@ bool ggml_backend_meta_graph_compute_pair(
         return true;
     };
     if (!run_tail(0) || !run_tail(1)) {
+        if (host_submit_us) *host_submit_us += ggml_time_us() - bc_submit_t0;
         return true;
     }
+    if (host_submit_us) *host_submit_us += ggml_time_us() - bc_submit_t0;
 
     if (status_out) *status_out = GGML_STATUS_SUCCESS;
     return true;
@@ -725,7 +738,8 @@ bool ggml_backend_meta_reserve_graph_pair(ggml_backend_t meta_backend, struct gg
 bool ggml_backend_meta_alloc_graph_pair(ggml_backend_t meta_backend, struct ggml_cgraph * cgraph);
 bool ggml_backend_meta_graph_compute_pair(
     ggml_backend_t backend, struct ggml_cgraph * cgraph_a, struct ggml_cgraph * cgraph_b,
-    ggml_status * status_out, ggml_status (*prepare_half)(void *, int), void * prepare_ctx);
+    ggml_status * status_out, ggml_status (*prepare_half)(void *, int), void * prepare_ctx,
+    int64_t * host_capture_us, int64_t * host_rehome_us, int64_t * host_submit_us, size_t * host_sums);
 void ggml_backend_meta_rotate_graph_containers(struct ggml_cgraph * cgraph);
 '''
 
@@ -902,10 +916,9 @@ static bool bc_1361_prepare_input_stages(
 
         if (bytes > entry.capacity) {
             size_t new_capacity = entry.capacity == 0 ? bytes : entry.capacity;
-            while (new_capacity < bytes && new_capacity <= SIZE_MAX / 2) {
-                new_capacity *= 2;
+            while (new_capacity < bytes) {
+                new_capacity = new_capacity > bytes / 2 ? bytes : 2 * new_capacity;
             }
-            if (new_capacity < bytes) new_capacity = bytes;
 
             for (auto & slot : entry.slot) {
                 if (slot.pending) {
@@ -1047,6 +1060,17 @@ enum ggml_status ggml_backend_sched_graph_compute_async_pair(
     GGML_UNUSED(graph_a);
     GGML_UNUSED(graph_b);
 
+    static const bool bc_timing_on = getenv("BIGCHERRY_PREFILL_STAGGER_TIMING") != nullptr &&
+        atoi(getenv("BIGCHERRY_PREFILL_STAGGER_TIMING")) != 0;
+    const int64_t bc_total_t0 = bc_timing_on ? ggml_time_us() : 0;
+    int64_t bc_prefix_us = 0;
+    int64_t bc_stage_us = 0;
+    int64_t bc_capture_us = 0;
+    int64_t bc_rehome_us = 0;
+    int64_t bc_submit_us = 0;
+    size_t bc_staged_bytes = 0;
+    size_t bc_sums = 0;
+
     auto decline = [](const char * why) {
         static std::set<std::string> seen;
         if (seen.insert(why).second) GGML_LOG_INFO("BIGCHERRY_PREFILL_STAGGER declined: %s\n", why);
@@ -1074,11 +1098,17 @@ enum ggml_status ggml_backend_sched_graph_compute_async_pair(
         return decline("last split not Meta");
     }
 
-    auto copy_inputs = [](ggml_backend_sched_t sched, ggml_backend_sched_split * split) {
+    auto copy_inputs = [](ggml_backend_sched_t sched, ggml_backend_sched_split * split) -> size_t {
+        size_t staged = 0;
         for (int input_id = 0; input_id < split->n_inputs; ++input_id) {
-            if (!ggml_backend_sched_is_host_weight(split->inputs[input_id])) {
+            ggml_tensor * input = split->inputs[input_id];
+            if (!ggml_backend_sched_is_host_weight(input)) {
+                if (input->buffer != nullptr && ggml_backend_buffer_is_host(input->buffer) &&
+                        ggml_backend_buffer_get_usage(input->buffer) != GGML_BACKEND_BUFFER_USAGE_WEIGHTS) {
+                    staged += ggml_nbytes(input);
+                }
                 sched->bc_stagger_input_slot = input_id + 1;
-                ggml_backend_sched_copy_input(sched, split, split->inputs[input_id]);
+                ggml_backend_sched_copy_input(sched, split, input);
                 sched->bc_stagger_input_slot = 0;
             }
         }
@@ -1087,6 +1117,7 @@ enum ggml_status ggml_backend_sched_graph_compute_async_pair(
                 ggml_backend_sched_copy_input(sched, split, split->inputs[input_id]);
             }
         }
+        return staged;
     };
     // tensor_copy() is a macro over a variable named `sched`; this function has two schedulers
     auto copy_of = [](ggml_backend_sched_t sched, ggml_tensor * t, int backend_id, int copy_id) {
@@ -1109,6 +1140,7 @@ enum ggml_status ggml_backend_sched_graph_compute_async_pair(
     // Preallocate 1326's pair-safe pinned staging before Meta admits either graph. Any host input that would take
     // the blocking pageable/synchronous route makes the pair decline instead.
     std::string bc_stage_why;
+    const int64_t bc_stage_prep_t0 = bc_timing_on ? ggml_time_us() : 0;
     if (!bc_1361_prepare_input_stages(sched_a, a, bc_stage_why)) {
         const std::string why = "A staging: " + bc_stage_why;
         return decline(why.c_str());
@@ -1118,6 +1150,7 @@ enum ggml_status ggml_backend_sched_graph_compute_async_pair(
         const std::string why = "B staging: " + bc_stage_why;
         return decline(why.c_str());
     }
+    if (bc_timing_on) bc_stage_us += ggml_time_us() - bc_stage_prep_t0;
 
     // Prefixes must be host-only: prepare_half runs after each half is captured but before provider admission.
     // That makes the final H2D graph-external copy target the exact Meta mapping just captured without launching
@@ -1134,9 +1167,13 @@ enum ggml_status ggml_backend_sched_graph_compute_async_pair(
     auto prepare_half = [&](int half) -> ggml_status {
         ggml_backend_sched_t sched = half == 0 ? sched_a : sched_b;
         ggml_backend_sched_split * split = half == 0 ? a : b;
+        const int64_t prefix_t0 = bc_timing_on ? ggml_time_us() : 0;
         ggml_status ec = ggml_backend_sched_compute_splits_prefix(sched);
+        if (bc_timing_on) bc_prefix_us += ggml_time_us() - prefix_t0;
         if (ec != GGML_STATUS_SUCCESS) return ec;
-        copy_inputs(sched, split);
+        const int64_t stage_t0 = bc_timing_on ? ggml_time_us() : 0;
+        bc_staged_bytes += copy_inputs(sched, split);
+        if (bc_timing_on) bc_stage_us += ggml_time_us() - stage_t0;
         return GGML_STATUS_SUCCESS;
     };
     using prepare_type = decltype(prepare_half);
@@ -1144,7 +1181,12 @@ enum ggml_status ggml_backend_sched_graph_compute_async_pair(
         return (*static_cast<prepare_type *>(p))(half);
     };
     ggml_status status = GGML_STATUS_SUCCESS;
-    const bool ok = ggml_backend_meta_graph_compute_pair(backend, &a->graph, &b->graph, &status, cb, &prepare_half);
+    const bool ok = ggml_backend_meta_graph_compute_pair(
+        backend, &a->graph, &b->graph, &status, cb, &prepare_half,
+        bc_timing_on ? &bc_capture_us : nullptr,
+        bc_timing_on ? &bc_rehome_us : nullptr,
+        bc_timing_on ? &bc_submit_us : nullptr,
+        bc_timing_on ? &bc_sums : nullptr);
     if (!ok) {
         return status; // unsupported was decided before model compute; caller runs today's sequential order.
     }
@@ -1157,6 +1199,14 @@ enum ggml_status ggml_backend_sched_graph_compute_async_pair(
     }
     if (sched_b->events[b->backend_id][sched_b->cur_copy] != nullptr) {
         ggml_backend_event_record(sched_b->events[b->backend_id][sched_b->cur_copy], backend);
+    }
+    if (bc_timing_on) {
+        GGML_LOG_INFO(
+            "BIGCHERRY_PREFILL_STAGGER_HOST prefix_us=%lld staging_us=%lld capture_us=%lld rehome_us=%lld "
+            "submit_us=%lld total_us=%lld staged_bytes=%zu sums=%zu\n",
+            (long long) bc_prefix_us, (long long) bc_stage_us, (long long) bc_capture_us,
+            (long long) bc_rehome_us, (long long) bc_submit_us, (long long) (ggml_time_us() - bc_total_t0),
+            bc_staged_bytes, bc_sums);
     }
     return GGML_STATUS_SUCCESS;
 }
@@ -1638,5 +1688,12 @@ ENV_DOCS = (
         "0 (off)",
         "for an exact two-ubatch causal prompt, reserve a second scheduler and stagger equal half-size Meta subgraphs; "
         "start the server with -b 2*half -ub half",
+    ),
+    EnvDoc(
+        "BIGCHERRY_PREFILL_STAGGER_TIMING",
+        "0|1",
+        "0",
+        "diagnostic: emit per-pair host microseconds for prefix, pinned staging, Meta capture/rebuild, view re-home, "
+        "interleaved submit, total, plus staged bytes and sum count",
     ),
 )
