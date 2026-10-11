@@ -704,8 +704,8 @@ def build_parser() -> argparse.ArgumentParser:
         "pin-release",
         help="release a completed pin bump in one resumable command: completion gate "
         "(pin-status --complete --all-remotes) -> release record + transition marker -> "
-        "release notes with the Release-As footer -> fast-forward main -> merge "
-        "release-please's PR -> wait for the bc-llamacpp-<version> tag -> sync the work branch.",
+        "release notes + package release-as -> checked work-branch PR -> release-please PR -> "
+        "wait for the bc-llamacpp-<version> tag -> clear release-as by PR -> sync the work branch.",
     )
     pin_release_cmd.add_argument("llama_tag", help="llama.cpp tag of the completed bump (e.g. b11474)")
     pin_release_cmd.add_argument(
@@ -714,7 +714,7 @@ def build_parser() -> argparse.ArgumentParser:
         "Recorded verbatim in the release record; required until the record carries it",
     )
     pin_release_cmd.add_argument(
-        "--through", default="sync", choices=("gate", "record", "notes", "main", "release", "sync"),
+        "--through", default="sync", choices=("gate", "record", "notes", "main", "release", "unpin", "sync"),
         help="stop after this phase (default: sync, the whole release)",
     )
     pin_release_cmd.add_argument(
@@ -722,7 +722,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="a further release on a pin that is already released: raise minor (features) or patch (fixes)",
     )
     pin_release_cmd.add_argument("--version", default=None, help="state the version (<llama build>.<minor>.<patch>) instead of deriving it")
-    pin_release_cmd.add_argument("--dry-run", action="store_true", help="print the phases that would run")
+    pin_release_cmd.add_argument("--dry-run", action="store_true", help="print concrete read-only actions and release versions")
     pin_release_cmd.set_defaults(func=cmd_pin_release)
 
     replay_inspect_cmd = sub.add_parser(
@@ -1954,7 +1954,7 @@ def cmd_release_notes(args: argparse.Namespace) -> int:
         else:
             out = _notes.write_notes(repo_root, config, args.llama_tag, args.ref, args.version)
             print(f"release-notes: wrote {out}")
-            print("  `bigcherry pin-release` commits it with the Release-As footer and takes the release through main")
+            print("  `bigcherry pin-release` pins the package version in release-please-config.json and takes it through PRs")
     except _notes.ReleaseNotesError as exc:
         print(f"release-notes: {exc}", file=_sys.stderr)
         return 1
