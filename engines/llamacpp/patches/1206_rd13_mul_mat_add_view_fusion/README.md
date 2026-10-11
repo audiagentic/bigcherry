@@ -2,6 +2,9 @@
 
 ## Current package status (2026-10-09)
 
+> **2026-10-12 b11552 safety addendum (BCOP147):** Equal byte count and contiguous VIEW/RESHAPE are insufficient for `ggml_cuda_mul_mat_vec_f/q` destination indexing. The 1206 matcher checks ADD-operand shapes but not `mm_node` versus fused ADD `dst` geometry; both kernels assert no-IDs `dst->ne[1]==1` and derive row/stride indexing from `dst`. Treat shape-changing candidates as unqualified pending PRBE12's graph census and bounded negative fixtures. No GPU failure or performance change has been measured; patch remains default-off/untested.
+
+
 Patch 1206 remains `untested` and not promoted. The 2026-09-21 `validation/producer.py::run` implementation **already** owns positive/negative paired tg128 benchmark lanes, activation probes and full-vocabulary backend-reference correctness; `validation.toml` binds all six checks. The manifest forbids the *generic* benchmark CLI to prevent duplicate measurements, not the producer's own benchmark. The historical September 2026 evidence predates pinned b11474 and cannot satisfy current-pin promotion. The remaining gate is an isolated four-session, ten-pair/rounds-per-session, architecture-specific contract campaign with CI95-low >0% and <=1% control regression, plus VIEW/alias correctness. See PRBE12 and BCOP80.
 
 The historical sections below document previous migration states; any claim that the current producer lacks performance/controls is superseded by this status.

@@ -3,6 +3,9 @@
 **Status:** untested
 **Plan item:** RD13
 
+> **2026-10-12 b11552 shape-admission blocker (BCOP147):** `patch.py::_NEW` permits same-byte-size RESHAPE/VIEW outputs whose logical `ne[]/nb[]` differ from the MUL_MAT output, then passes ADD as `dst` to MMVF/MMVQ. Both fused kernels use destination geometry and assert `dst->ne[1]==1` for no-IDs fusion. The current matcher does not prove compatible geometry; this is a source-level *conditional* assertion/indexing hazard, not a reproduced GPU crash. Do not promote or queue a new hardware campaign until a current-model shape census and fail-closed matcher fixture establish safe activation. See PRBE12 and BCOP147; keep 1206 default-off/untested. Historical b11126 measurements do not discharge this gate.
+
+
 > Current 2026-10-09: patch remains `untested`/not promoted. The September 21 producer now implements real paired positive/control tg128 lanes, trace probes and full-vocab backend reference. The generic performance CLI is forbidden only to avoid duplicate evidence. Old BLOCKED records remain historical; b11474 requalification is outstanding. PRBE12/BCOP80 own the gate.
 
 ## What it does
