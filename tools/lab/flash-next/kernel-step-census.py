@@ -67,6 +67,7 @@ def main() -> int:
         t_kernel = collections.Counter()
         t_gap = collections.Counter()
         pairs = collections.Counter()
+        pair_gap = collections.Counter()
         for s in steps:
             for i, (b, e, name) in enumerate(s):
                 key = short(name)
@@ -75,14 +76,19 @@ def main() -> int:
                 if i + 1 < len(s):
                     t_gap[key] += max(0, s[i + 1][0] - e)
                     pairs[(key, short(s[i + 1][2]))] += 1
+                    pair_gap[(key, short(s[i + 1][2]))] += max(0, s[i + 1][0] - e)
         total = sum(t_kernel.values())
         print("  launches a step   us a launch   share of kernel time   gap after, us   kernel")
         for key, t in t_kernel.most_common(top):
             n = n_launch[key]
             print(f"  {n / len(steps):15.2f}   {t * us / n:11.1f}   {100.0 * t / total:19.1f}%   {t_gap[key] * us / n:13.1f}   {key}")
-        print("  commonest adjacent pairs (a step):")
+        print("  commonest adjacent pairs:  a step   gap between them, us")
         for (a, b), n in pairs.most_common(top):
-            print(f"  {n / len(steps):8.2f}   {a}  ->  {b}")
+            print(f"  {n / len(steps):8.2f}   {pair_gap[(a, b)] * us / n:8.1f}   {a}  ->  {b}")
+        print("  pairs with the most gap time:  a step   gap, us   us a step")
+        for (a, b), g in pair_gap.most_common(top):
+            n = pairs[(a, b)]
+            print(f"  {n / len(steps):8.2f}   {g * us / n:8.1f}   {g * us / len(steps):8.1f}   {a}  ->  {b}")
     return 0
 
 
