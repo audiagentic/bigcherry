@@ -17,6 +17,7 @@ _REPO = Path(__file__).resolve().parents[3]
 _V = paths.llama_root()
 _F = "ggml/src/ggml-cuda/mmid.cu"
 _BC = "ggml/src/ggml-cuda/bc-moe-ids-multiwarp.cuh"
+_RANGE_BC = "ggml/src/ggml-cuda/bc-moe-range-mmid.cu"
 
 
 def _load(pid):
@@ -32,7 +33,7 @@ _P1281 = _load("1281_moe_mul_mat_id_range")
 
 
 def _only(patches):
-    return [p for p in patches if p.path == _F]
+    return [p for p in patches if p.path in {_F, _RANGE_BC}]
 
 
 @unittest.skipUnless((_V / _F).exists(), "pinned vendor checkout not present")
@@ -99,7 +100,8 @@ class Patch1345Mechanics(unittest.TestCase):
             src = (root / _F).read_text(encoding="utf-8")
             owned = (root / _BC).read_text(encoding="utf-8")
             self._check(src, owned)
-            self.assertIn("static __global__ void mm_ids_range_translate(", src)
+            self.assertNotIn("static __global__ void mm_ids_range_translate(", src)
+            self.assertIn("static __global__ void mm_ids_range_translate(", (root / _RANGE_BC).read_text(encoding="utf-8"))
 
     def test_changed_switch_fails_closed_without_creating_owned_file(self):
         with tempfile.TemporaryDirectory() as td:
