@@ -1,5 +1,12 @@
 # Changelog
 
+## [11552.0.1](https://github.com/audiagentic/bigcherry/compare/bc-platform-11552.0.0...bc-platform-11552.0.1) (2026-10-11)
+
+
+### Fixes
+
+* **release:** pin-release takes the release PR of its own component only ([c5107c7](https://github.com/audiagentic/bigcherry/commit/c5107c776d5dc5fcaf822eb0e2035e4f88cb6440))
+
 ## [11552.0.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.0.1...bc-platform-11552.0.0) (2026-10-11)
 
 
