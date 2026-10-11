@@ -6,12 +6,15 @@
 //   compute    no sums
 //   today      [compute, sum of one full message on the compute stream] x 96
 //   halves     [half compute, sum of a half message on the compute stream] x 192          (what -ub 256 does)
+//   (transfer) today and halves again with the sum on the transfer stream, fenced by events, nothing overlapping:
+//              what the second stream costs by itself
 //   staggered  halves A and B alternate; a half's sum runs on the transfer stream, fenced by events, while the
 //              card computes the other half
 // Then a short staggered run from known values to check the sums.
 #include <hip/hip_runtime.h>
 #include <rccl/rccl.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -62,12 +65,19 @@ struct Card {
 static std::vector<Card> g_cards;
 static std::vector<ncclComm_t> g_comms;
 
+// PROBE_SPLIT=N: each pass is N kernels over a 1/N slice, the same work as one kernel (the engine runs some 40
+// small kernels between two sums, not two large ones)
+static int g_split = 1;
+
 static void burn(Card & c, float * x, size_t n, int passes) {
     const unsigned block = 256;
-    const unsigned grid = (unsigned) ((n + block - 1) / block);
+    const size_t slice = n / (size_t) g_split;
+    const unsigned grid = (unsigned) ((slice + block - 1) / block);
     CK(hipSetDevice(c.id));
     for (int p = 0; p < passes; ++p) {
-        hipLaunchKernelGGL(burn_kernel, dim3(grid), dim3(block), 0, c.compute, x, n, 1.0f);
+        for (int k = 0; k < g_split; ++k) {
+            hipLaunchKernelGGL(burn_kernel, dim3(grid), dim3(block), 0, c.compute, x + (size_t) k * slice, slice, 1.0f);
+        }
     }
 }
 
@@ -122,6 +132,34 @@ static double run_serial(int rounds, int passes, size_t burn_elems, size_t msg_e
     return now_ms() - t0;
 }
 
+// today's order, but the sum on the transfer stream, fenced by events both ways (what 1360 does back to back):
+// nothing overlaps it, so any difference from run_serial is the cost of the second stream itself
+static double run_serial_transfer(int rounds, int passes, size_t burn_elems, size_t msg_elems) {
+    const double t0 = now_ms();
+    for (int r = 0; r < rounds; ++r) {
+        for (Card & c : g_cards) {
+            CK(hipSetDevice(c.id));
+            if (r > 0) {
+                CK(hipStreamWaitEvent(c.compute, c.summed[0], 0));
+            }
+            burn(c, c.buf, burn_elems, passes);
+            CK(hipEventRecord(c.burned[0], c.compute));
+            CK(hipStreamWaitEvent(c.transfer, c.burned[0], 0));
+        }
+        sum(0, msg_elems, true);
+        for (Card & c : g_cards) {
+            CK(hipSetDevice(c.id));
+            CK(hipEventRecord(c.summed[0], c.transfer));
+        }
+    }
+    for (Card & c : g_cards) {
+        CK(hipSetDevice(c.id));
+        CK(hipStreamWaitEvent(c.compute, c.summed[0], 0));
+    }
+    sync_all();
+    return now_ms() - t0;
+}
+
 static double run_staggered(int layers, int passes) {
     bool have_sum[2] = {false, false};
     const double t0 = now_ms();
@@ -151,6 +189,9 @@ int main(int argc, char ** argv) {
     const int layers = argc > 1 ? std::atoi(argv[1]) : 96;
     const int passes = argc > 2 ? std::atoi(argv[2]) : 2;
     const int reps = argc > 3 ? std::atoi(argv[3]) : 5;
+    const bool nonblocking = std::getenv("PROBE_NONBLOCKING") != nullptr && std::atoi(std::getenv("PROBE_NONBLOCKING")) != 0;
+    g_split = std::getenv("PROBE_SPLIT") != nullptr ? std::max(1, std::atoi(std::getenv("PROBE_SPLIT"))) : 1;
+    std::printf("transfer stream and events %s; %d kernel(s) a compute pass\n", nonblocking ? "as 1360 creates them (non-blocking, timing off)" : "default", g_split);
     int n = 0;
     CK(hipGetDeviceCount(&n));
     g_cards.resize(n);
@@ -163,13 +204,23 @@ int main(int argc, char ** argv) {
         hipDeviceProp_t props;
         CK(hipGetDeviceProperties(&props, d));
         CK(hipStreamCreate(&c.compute));
-        CK(hipStreamCreate(&c.transfer));
+        // PROBE_NONBLOCKING=1: the transfer stream and the events as patch 1360 creates them
+        if (nonblocking) {
+            CK(hipStreamCreateWithFlags(&c.transfer, hipStreamNonBlocking));
+        } else {
+            CK(hipStreamCreate(&c.transfer));
+        }
         CK(hipMalloc(&c.buf, kBurnElems * sizeof(float)));
         CK(hipMemset(c.buf, 0, kBurnElems * sizeof(float)));
         for (int h = 0; h < 2; ++h) {
             CK(hipMalloc(&c.msg[h], kMsgElems * sizeof(float)));
-            CK(hipEventCreate(&c.burned[h]));
-            CK(hipEventCreate(&c.summed[h]));
+            if (nonblocking) {
+                CK(hipEventCreateWithFlags(&c.burned[h], hipEventDisableTiming));
+                CK(hipEventCreateWithFlags(&c.summed[h], hipEventDisableTiming));
+            } else {
+                CK(hipEventCreate(&c.burned[h]));
+                CK(hipEventCreate(&c.summed[h]));
+            }
         }
         std::printf("card %d: %s (%s)\n", d, props.name, props.gcnArchName);
     }
@@ -184,10 +235,14 @@ int main(int argc, char ** argv) {
         const double compute = run_compute(layers, passes);
         const double today = run_serial(layers, passes, kBurnElems, kMsgElems);
         const double halves = run_serial(2 * layers, passes, kBurnElems / 2, kMsgElems / 2);
+        const double today_t = run_serial_transfer(layers, passes, kBurnElems, kMsgElems);
+        const double halves_t = run_serial_transfer(2 * layers, passes, kBurnElems / 2, kMsgElems / 2);
         const double staggered = run_staggered(layers, passes);
         std::printf("  compute %.1f  today %.1f (+%.0f%%)  halves %.1f (+%.0f%%)  staggered %.1f (+%.0f%%)  hidden %.0f%% of today's sum cost\n",
                     compute, today, 100.0 * (today - compute) / compute, halves, 100.0 * (halves - compute) / compute, staggered,
                     100.0 * (staggered - compute) / compute, 100.0 * (today - staggered) / (today - compute));
+        std::printf("    sum on the transfer stream, nothing overlapping: today %.1f (%+.3f ms a sum against the compute stream)  halves %.1f (%+.3f ms a sum)\n",
+                    today_t, (today_t - today) / layers, halves_t, (halves_t - halves) / (2 * layers));
         std::fflush(stdout);
     }
 

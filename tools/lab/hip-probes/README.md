@@ -64,6 +64,23 @@ values), and RCCL accepts a stream other than the compute stream on the same com
 
     CARDS=0,1,2 ... VIS=0,1,2 SCRIPT rs1 tools/lab/hip-probes/run-rccl.sh @<any build run> <out-dir>
 
+**what the second stream costs, and what kernel count does to staggering** (same probe, runs rs3, rs7-rs12). With
+the sum on the transfer stream, fenced by events, and nothing overlapping it, a sum costs within 0.016 ms of the
+compute stream - also with `PROBE_NONBLOCKING=1`, the stream and event flags patch 1360 uses. But the share of the
+sum's cost that staggering hides depends on how many kernels are launched between two sums (`PROBE_SPLIT=N` cuts
+each compute pass into N kernels, same total work):
+
+| Kernels between two sums | Compute only | As today | Staggered halves | Hidden |
+|---|---|---|---|---|
+| 2 | 172.0 ms | 255.7 | 185.6 | 84% |
+| 10 | 172.7 | 274.7 | 198.3 | 75% |
+| 40 | 181.3 | 283.2 | 240.5 | 42% |
+| 80 | 191.1 | 285.7 | 273.8 | 13% |
+| 160 | 212.2 | 314.3 | 323.3 | -9% |
+
+Flash-Next prefill launches about 44 compute kernels a sum on an RX 7900 XTX. A probe that stands in for the
+engine has to match its kernel count, not only its compute time.
+
 **wire** (run hp3): a round trip of one message as f32 against f16 with the narrowing and widening done on the
 card costs 53-56% of f32 on every card, alone or with all three exchanging (R9700: 1.58 ms against 0.83 ms). The
 wire scales with its width; the conversions cost almost nothing.
