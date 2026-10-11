@@ -1,5 +1,15 @@
 # Changelog
 
+## [11552.1.1](https://github.com/audiagentic/bigcherry/compare/bc-llamacpp-11552.1.0...bc-llamacpp-11552.1.1) (2026-10-11)
+
+
+### Fixes
+
+* **patch:** 1362 pads the pooled-block count too, so Qwen4Exp prompt batches reuse the graph ([30d3f1b](https://github.com/audiagentic/bigcherry/commit/30d3f1b2d6ef2b0ad5ed7e85109ed3125d07ac21))
+* **patch:** reject 1362_kv_pad_prompt - graph reuse brings no prefill gain ([9109acb](https://github.com/audiagentic/bigcherry/commit/9109acb7463f250db8dea45c7122423fdea04560))
+* **patch:** reject 1362_kv_pad_prompt - the graph is reused but prefill does not get faster (QFP53) ([351b18f](https://github.com/audiagentic/bigcherry/commit/351b18f107f729da98b00215a508cb2a1f9da121))
+* **patch:** stabilize Qwen4Exp k-pool padding in 1362 ([0c18af2](https://github.com/audiagentic/bigcherry/commit/0c18af263cb1cc3a55b842d8f6e501283b656bdd))
+
 ## [11552.1.0](https://github.com/audiagentic/bigcherry/compare/bc-llamacpp-11552.0.0...bc-llamacpp-11552.1.0) (2026-10-11)
 
 
