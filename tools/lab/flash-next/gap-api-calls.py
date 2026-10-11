@@ -7,7 +7,8 @@ interval from the end of the HIP call that launched A to the start of the HIP ca
 correlation id) and lists the HIP API calls the launching thread made in it, plus the time in no HIP call at all
 (host code: graph walking, allocation bookkeeping, a lock).
 
-Usage: gap-api-calls.py <rocprof dir> <kernel A regex> <kernel B regex> [min device gap us, default 50]
+Usage: gap-api-calls.py <rocprof dir> <kernel A regex> <kernel B regex> [min device gap us, default 50] [max gap us]
+(a max gap leaves first-use code object loads and start-up waits out)
 Needs a trace taken with --kernel-trace --hip-runtime-trace (long-ctx-profile.sh prefillapi).
 """
 from __future__ import annotations
@@ -37,6 +38,7 @@ def main():
         sys.exit(__doc__)
     root, pat_a, pat_b = sys.argv[1], re.compile(sys.argv[2]), re.compile(sys.argv[3])
     min_gap = float(sys.argv[4]) if len(sys.argv) > 4 else 50.0
+    max_gap = float(sys.argv[5]) if len(sys.argv) > 5 else float("inf")
 
     api = load(root, "hip_api_trace.csv")
     by_corr = {}
@@ -66,7 +68,7 @@ def main():
             if not (pat_a.search(a[2]) and pat_b.search(b[2])):
                 continue
             gap = (b[0] - a[1]) / 1e3
-            if gap < min_gap or a[3] not in by_corr or b[3] not in by_corr:
+            if gap < min_gap or gap > max_gap or a[3] not in by_corr or b[3] not in by_corr:
                 continue
             launch_a, launch_b = by_corr[a[3]], by_corr[b[3]]
             lo, hi, tid = launch_a[1], launch_b[0], launch_b[2]
