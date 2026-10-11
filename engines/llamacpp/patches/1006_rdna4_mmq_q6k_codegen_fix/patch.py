@@ -93,7 +93,7 @@ ACTIVATION_PATCH = FilePatch(
             anchor=r"^#include <cstdint>$",
             rationale="add <atomic> for the once-per-process activation flag",
             mode="insert_before",
-            text="#include <atomic>\\n",
+            text="#include <atomic>\n",
             guard=r"^#include <atomic>$",
             max_span_lines=2,
         ),
