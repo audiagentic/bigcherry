@@ -1,5 +1,17 @@
 # Changelog
 
+## [11474.9.0](https://github.com/audiagentic/bigcherry/compare/bc-llamacpp-11474.8.0...bc-llamacpp-11474.9.0) (2026-10-11)
+
+
+### New and changed
+
+* **patch:** cross-card sum on a transfer stream, default off (1360) ([#145](https://github.com/audiagentic/bigcherry/issues/145)) ([1542986](https://github.com/audiagentic/bigcherry/commit/154298622e9e75e024425be6badcbdd3472350d4))
+
+
+### Fixes
+
+* **patch:** 1360 state keeps its own copy of the reduced tensors ([#150](https://github.com/audiagentic/bigcherry/issues/150)) ([f1fd14c](https://github.com/audiagentic/bigcherry/commit/f1fd14cba71124f263098ade898f7699f3bfb7a9))
+
 ## [11474.8.0](https://github.com/audiagentic/bigcherry/compare/bc-llamacpp-11474.7.0...bc-llamacpp-11474.8.0) (2026-10-10)
 
 
