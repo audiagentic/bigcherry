@@ -168,15 +168,20 @@ int main(int argc, char ** argv) {
         /*.no_alloc   =*/ true,
     };
     ggml_context * ctx_static = ggml_init(static_params);
+    ggml_context * ctx_state = ggml_init(static_params);
     for (int l = 0; l < m.L; ++l) {
         // Q8_0 weights: the quantized matmul kernels production runs (and no BLAS library in the loop)
         m.w1.push_back(ggml_new_tensor_2d(ctx_static, GGML_TYPE_Q8_0, m.n, m.K));
         m.w2.push_back(ggml_new_tensor_2d(ctx_static, GGML_TYPE_Q8_0, m.K, m.n));
-        m.cache.push_back(ggml_new_tensor_2d(ctx_static, GGML_TYPE_F32, m.n, 2 * m.T));
+        m.cache.push_back(ggml_new_tensor_2d(ctx_state, GGML_TYPE_F32, m.n, 2 * m.T));
     }
-    m.x_a = ggml_new_tensor_2d(ctx_static, GGML_TYPE_F32, m.n, m.T);
-    m.x_b = ggml_new_tensor_2d(ctx_static, GGML_TYPE_F32, m.n, m.T);
-    m.x_full = ggml_new_tensor_2d(ctx_static, GGML_TYPE_F32, m.n, 2 * m.T);
+    m.x_a = ggml_new_tensor_2d(ctx_state, GGML_TYPE_F32, m.n, m.T);
+    m.x_b = ggml_new_tensor_2d(ctx_state, GGML_TYPE_F32, m.n, m.T);
+    m.x_full = ggml_new_tensor_2d(ctx_state, GGML_TYPE_F32, m.n, 2 * m.T);
+    // the caches and inputs get their own buffer, not a weights buffer: llama's KV cache is allocated this way
+    if (ggml_backend_alloc_ctx_tensors(ctx_state, meta) == nullptr) {
+        fail("could not allocate the caches");
+    }
     ggml_backend_buffer_t static_buf = ggml_backend_alloc_ctx_tensors(ctx_static, meta);
     if (static_buf == nullptr) {
         fail("could not allocate the static tensors");
