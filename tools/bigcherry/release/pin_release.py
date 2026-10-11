@@ -378,7 +378,7 @@ def _release_pr(plan: Plan) -> dict | None:
         raise PinReleaseError("release", "gh pr list failed (is the GitHub CLI installed and logged in?):\n" + (res.stderr or res.stdout).strip()[-400:])
     # the repository releases several components; another component's release PR can carry the same version number
     # (2026-10-12: bc-platform's was merged in place of bc-llamacpp's), so the PR is matched by its release branch
-    package = json.loads((plan.repo_root / "release-please-config.json").read_text(encoding="utf-8"))["packages"][RELEASE_PACKAGE]
+    package = _release_package(plan.repo_root, "release")
     branch = f"release-please--branches--{plan.main}--components--{package['component']}"
     prs = [p for p in json.loads(res.stdout or "[]")
            if p.get("headRefName") == branch and plan.version in p.get("title", "")]
@@ -407,7 +407,7 @@ def _open_release_pr(plan: Plan) -> bool:
     (the workflow run then fails). Open the PR from that branch, labelled as release-please expects. Returns whether a
     PR was opened."""
     root = plan.repo_root
-    package = json.loads((root / "release-please-config.json").read_text(encoding="utf-8"))["packages"][RELEASE_PACKAGE]
+    package = _release_package(root, "release")
     component = package["component"]
     branch = f"release-please--branches--{plan.main}--components--{component}"
     if not _git(root, "ls-remote", "--heads", plan.remote, f"refs/heads/{branch}", check=False):
@@ -426,6 +426,19 @@ def _open_release_pr(plan: Plan) -> bool:
     return True
 
 
+def _verify_release_pr_files(plan: Plan, pr: dict) -> None:
+    package = _release_package(plan.repo_root, "release")
+    expected = {_MANIFEST, f"{RELEASE_PACKAGE}/{package['changelog-path']}"}
+    viewed = _run(plan.repo_root, "gh", "pr", "view", str(pr["number"]), "--json", "files", check=False)
+    if viewed.returncode != 0:
+        raise PinReleaseError("release", f"could not inspect changed files for {pr.get('url', pr['number'])}: "
+                                         + (viewed.stderr or viewed.stdout).strip()[-400:])
+    actual = {row.get("path") for row in json.loads(viewed.stdout or "{}").get("files", [])}
+    if actual != expected:
+        raise PinReleaseError("release", f"release PR {pr['number']} changes unexpected files: "
+                                         f"expected {sorted(expected)}, got {sorted(x for x in actual if x)}")
+
+
 def phase_release(plan: Plan, wait_s: int = 900, poll_s: int = 20) -> bool:
     """release-please's PR merged and the release tag present. Returns False when the tag already exists."""
     if _tag_exists(plan):
@@ -442,6 +455,7 @@ def phase_release(plan: Plan, wait_s: int = 900, poll_s: int = 20) -> bool:
                                                  "release-please workflow run on main: neither a release PR nor a release branch for "
                                                  "this version exists")
             time.sleep(poll_s)
+    _verify_release_pr_files(plan, pr)
     merged = _run(plan.repo_root, "gh", "pr", "merge", str(pr["number"]), "--merge", check=False)
     if merged.returncode != 0:
         raise PinReleaseError("release", f"could not merge {pr['url']}:\n{(merged.stderr or merged.stdout).strip()[-400:]}")
@@ -454,8 +468,60 @@ def phase_release(plan: Plan, wait_s: int = 900, poll_s: int = 20) -> bool:
     return True
 
 
+def _unpin_branch(plan: Plan) -> str:
+    return f"chore/release-as-clear-{plan.version}"
+
+
+def _unpin_title(plan: Plan) -> str:
+    return f"chore: clear llama.cpp release-as {plan.version}"
+
+
+def _prepare_unpin_branch(plan: Plan, branch: str) -> None:
+    root, remote = plan.repo_root, plan.remote
+    remote_ref = f"refs/heads/{branch}"
+    if _git(root, "ls-remote", "--heads", remote, remote_ref, check=False):
+        _git(root, "fetch", "-q", remote, f"{remote_ref}:refs/remotes/{remote}/{branch}")
+        text = _git(root, "show", f"{remote}/{branch}:{_RELEASE_CONFIG}")
+        if _release_as_value(text, "unpin") is not None:
+            raise PinReleaseError("unpin", f"existing {branch} does not clear {RELEASE_PACKAGE}.release-as")
+        return
+
+    parent = Path(tempfile.mkdtemp(prefix="pin-release-unpin-", dir=root.parent))
+    worktree = parent / "tree"
+    try:
+        _git(root, "worktree", "add", "-q", "--detach", str(worktree), f"{remote}/{plan.main}")
+        if not _edit_release_as(worktree, None, "unpin", expected=plan.version):
+            return
+        _git(worktree, "add", _RELEASE_CONFIG)
+        _git(worktree, "commit", "-q", "-m", _unpin_title(plan))
+        _git(worktree, "push", "-q", remote, f"HEAD:{remote_ref}")
+    finally:
+        _run(root, "git", "worktree", "remove", "--force", str(worktree), check=False)
+        shutil.rmtree(parent, ignore_errors=True)
+
+
+def phase_unpin(plan: Plan, wait_s: int = 900) -> bool:
+    """Clear package release-as after the release tag, through a dedicated PR."""
+    if not _tag_exists(plan):
+        raise PinReleaseError("unpin", f"{plan.release_tag} does not exist yet")
+    root = plan.repo_root
+    _git(root, "fetch", "-q", plan.remote)
+    main_text = _git(root, "show", f"{plan.remote}/{plan.main}:{_RELEASE_CONFIG}")
+    current = _release_as_value(main_text, "unpin")
+    if current is None:
+        return False
+    if current != plan.version:
+        raise PinReleaseError("unpin", f"{RELEASE_PACKAGE}.release-as is {current!r}, expected {plan.version!r}")
+    branch = _unpin_branch(plan)
+    _prepare_unpin_branch(plan, branch)
+    pr = _ensure_pr(plan, branch, _unpin_title(plan), "unpin",
+                    f"Remove the temporary release-as pin after {plan.release_tag} was created.")
+    _wait_and_merge_pr(plan, pr, "unpin", wait_s)
+    return True
+
+
 def phase_sync(plan: Plan) -> bool:
-    """The work branch contains the release commit. Returns False when it already does."""
+    """The work branch contains the release and unpin commits. Returns False when already current."""
     root, remote = plan.repo_root, plan.remote
     _git(root, "fetch", "-q", "--tags", remote)
     main_ref = f"{remote}/{plan.main}"
