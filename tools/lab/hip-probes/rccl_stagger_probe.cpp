@@ -220,8 +220,7 @@ int main(int argc, char ** argv) {
         std::printf("  compute %.1f  today %.1f (+%.0f%%)  halves %.1f (+%.0f%%)  staggered %.1f (+%.0f%%)  hidden %.0f%% of today's sum cost\n",
                     compute, today, 100.0 * (today - compute) / compute, halves, 100.0 * (halves - compute) / compute, staggered,
                     100.0 * (staggered - compute) / compute, 100.0 * (today - staggered) / (today - compute));
-        std::printf("    sum on the transfer stream, nothing overlapping: today %.1f (%+.3f ms a sum against the compute stream)  halves %.1f (%+.3f ms a sum)
-",
+        std::printf("    sum on the transfer stream, nothing overlapping: today %.1f (%+.3f ms a sum against the compute stream)  halves %.1f (%+.3f ms a sum)\n",
                     today_t, (today_t - today) / layers, halves_t, (halves_t - halves) / (2 * layers));
         std::fflush(stdout);
     }
