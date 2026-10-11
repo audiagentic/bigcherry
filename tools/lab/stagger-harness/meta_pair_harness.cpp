@@ -1,7 +1,9 @@
 // QFP49 rungs A and B: the staggered half-batch pair on the real tensor-split (Meta) backend, without llama.
 //
 // A toy model of L layers on every visible GPU. Each half starts with a CPU prefix op whose output is copied by
-// the scheduler into the final Meta split, matching the real prompt graph's host-prefix/input-copy path.
+// the scheduler into the final Meta split, matching the real prompt graph's host-prefix/input-copy path. A and B
+// intentionally share the CPU prefix landing tensor: the pre-fix pair preparation overwrites A with B before A's
+// scheduler copy, while sequential execution and the fixed A-prefix/A-copy/B-prefix/B-copy order are safe.
 // Per layer, for a half of T tokens with hidden state h [n, T]:
 //     u = MUL_MAT(W1[n, K], h)        W1 (Q8_0) split along axis 1: every card computes its slice of u
 //     y = MUL_MAT(W2[K, n], u)        W2 split along axis 0: every card holds a partial sum -> cross-card sum
@@ -55,6 +57,10 @@ struct model {
     int     L = 0;
     bool    use_cache = true;  // false: rung A, no state shared between the halves
     std::vector<ggml_tensor *> w1, w2, cache;
+    // A/B deliberately land their CPU prefix in the same static host tensor. Sequential execution is safe because
+    // A is copied before B writes it; the pre-fix pair order (prefix A, prefix B, copy A, copy B) deterministically
+    // feeds B's input to both halves.
+    ggml_tensor * prefix_shared = nullptr;
     ggml_tensor * y_a = nullptr, * y_b = nullptr, * y_full = nullptr;  // results copied out of the compute arena
 };
 
@@ -98,7 +104,12 @@ half_graph build(const model & m, ggml_tensor * result, int64_t first, int64_t t
     g.input = ggml_new_tensor_2d(g.ctx, GGML_TYPE_F32, m.n, tokens);
     ggml_set_input(g.input);
     ggml_format_name(g.input, "host_input_%lld", (long long) first);
-    g.prefix = ggml_scale(g.ctx, g.input, 1.0f);
+    if (tokens == m.T) {
+        GGML_ASSERT(m.prefix_shared != nullptr);
+        g.prefix = ggml_cpy(g.ctx, g.input, m.prefix_shared);
+    } else {
+        g.prefix = ggml_scale(g.ctx, g.input, 1.0f);
+    }
     ggml_format_name(g.prefix, "cpu_prefix_%lld", (long long) first);
     ggml_tensor * h = g.prefix;
     for (int l = 0; l < m.L; ++l) {
@@ -186,6 +197,12 @@ int main(int argc, char ** argv) {
     };
     ggml_context * ctx_static = ggml_init(static_params);
     ggml_context * ctx_state = ggml_init(static_params);
+    ggml_context * ctx_host = ggml_init(static_params);
+    m.prefix_shared = ggml_new_tensor_2d(ctx_host, GGML_TYPE_F32, m.n, m.T);
+    ggml_set_name(m.prefix_shared, "shared_cpu_prefix");
+    if (ggml_backend_alloc_ctx_tensors(ctx_host, cpu) == nullptr) {
+        fail("could not allocate shared host prefix");
+    }
     for (int l = 0; l < m.L; ++l) {
         // Q8_0 weights: the quantized matmul kernels production runs (and no BLAS library in the loop)
         m.w1.push_back(ggml_new_tensor_2d(ctx_static, GGML_TYPE_Q8_0, m.n, m.K));
