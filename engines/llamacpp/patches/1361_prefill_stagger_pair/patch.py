@@ -634,6 +634,16 @@ _N_SCHED_RESERVE = r'''            if (ggml_backend_is_meta(sched->backends[i]))
             }
 '''
 
+_A_SCHED_INCLUDES = r'''#include <algorithm>
+#include <unordered_map>
+#include <vector>
+'''
+_N_SCHED_INCLUDES = r'''#include <algorithm>
+#include <set>
+#include <string>
+#include <unordered_map>
+#include <vector>
+'''
 # Two edits, not one: production's 1325 (split timing) sits between the function head and its loop.
 _A_SCHED_PREFIX_START = r'''static enum ggml_status ggml_backend_sched_compute_splits(ggml_backend_sched_t sched) {
     GGML_ASSERT(sched);
@@ -1144,6 +1154,8 @@ PATCHES = [
         description="1361: second arena selector and narrow two-scheduler Meta pair dispatch",
         language="none",
         edits=(
+            _edit(id="stagger-sched-includes", anchor=_A_SCHED_INCLUDES, mode="replace", text=_N_SCHED_INCLUDES,
+                  guard=r"#include <set>", rationale="The decline diagnostics keep a std::set<std::string> of reasons already logged."),
             _edit(id="stagger-sched-field", anchor=_A_SCHED_STRUCT, mode="replace", text=_N_SCHED_STRUCT,
                   guard=r"bc_stagger_pair_arena", rationale="Scheduler private state beside op_offload."),
             _edit(id="stagger-sched-decls", anchor=_A_BACKEND_DECLS, mode="replace", text=_N_BACKEND_DECLS,
