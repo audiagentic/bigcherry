@@ -635,12 +635,24 @@ enum ggml_status ggml_backend_sched_graph_compute_async_pair(
     GGML_UNUSED(graph_a);
     GGML_UNUSED(graph_b);
 
-    if (!sched_a->is_alloc || !sched_b->is_alloc || sched_a->callback_eval || sched_b->callback_eval ||
-            sched_a->n_splits != 1 || sched_b->n_splits != 1) {
+    auto decline = [](const char * why) {
+        static std::set<std::string> seen;
+        if (seen.insert(why).second) GGML_LOG_INFO("BIGCHERRY_PREFILL_STAGGER declined: %s\\n", why);
         return GGML_STATUS_SUCCESS;
+    };
+    if (!sched_a->is_alloc || !sched_b->is_alloc) return decline("scheduler unallocated");
+    if (sched_a->callback_eval || sched_b->callback_eval) return decline("evaluation callback");
+    if (sched_a->n_splits < 1 || sched_a->n_splits != sched_b->n_splits) return decline("different split counts");
+    for (int i = 0; i < sched_a->n_splits; ++i) {
+        const auto * sa = &sched_a->splits[i];
+        const auto * sb = &sched_b->splits[i];
+        const bool ma = ggml_backend_is_meta(sched_a->backends[sa->backend_id]);
+        const bool mb = ggml_backend_is_meta(sched_b->backends[sb->backend_id]);
+        if (ma != mb || sa->backend_id != sb->backend_id) return decline("different split shapes");
+        if (ma && i != sched_a->n_splits - 1) return decline("Meta split is not last");
     }
-    auto * a = &sched_a->splits[0];
-    auto * b = &sched_b->splits[0];
+    auto * a = &sched_a->splits[sched_a->n_splits - 1];
+    auto * b = &sched_b->splits[sched_b->n_splits - 1];
     if (a->backend_id != b->backend_id ||
             sched_a->backends[a->backend_id] != sched_b->backends[b->backend_id]) {
         return GGML_STATUS_SUCCESS;
@@ -719,6 +731,7 @@ _N_CTX_FIELDS = r'''    ggml_backend_sched_ptr sched;
     ggml_backend_sched_ptr bc_1361_sched_b;
     llm_graph_result_ptr   bc_1361_res_b;
     uint32_t               bc_1361_half = 0;
+    bool                   bc_1361_declined = false;
     bool                   bc_1361_nextn_pair = false;
     bool                   bc_1361_nextn_pair_last = false;
     int                    bc_1361_nextn_pair_slot = -1;
@@ -737,6 +750,7 @@ _N_RESERVE_END = r'''    LLAMA_LOG_INFO("%s: reserve took %.2f ms, sched copies 
     const char * bc_env = getenv("BIGCHERRY_PREFILL_STAGGER");
     const unsigned long bc_half_ul = bc_env ? strtoul(bc_env, nullptr, 10) : 0;
     bc_1361_half = bc_half_ul <= std::numeric_limits<uint32_t>::max() ? (uint32_t) bc_half_ul : 0;
+    bc_1361_declined = false;
     if (bc_1361_half > 1 && cparams.n_ubatch == bc_1361_half && cparams.n_batch >= 2*bc_1361_half &&
             !model.hparams.no_alloc) {
         const size_t bc_max_nodes = graph_max_nodes(bc_1361_half);
@@ -837,7 +851,7 @@ _N_DECODE_LOOP = r'''    int64_t n_outputs_prev = 0;
         return true;
     };
 
-    const bool bc_pair_candidate = bc_1361_half > 1 && bc_1361_sched_b && bc_1361_res_b &&
+    const bool bc_pair_candidate = !bc_1361_declined && bc_1361_half > 1 && bc_1361_sched_b && bc_1361_res_b &&
         n_tokens_all == 2*bc_1361_half && cparams.n_ubatch == bc_1361_half && cparams.causal_attn &&
         cparams.cb_eval == nullptr && !cparams.embeddings && cparams.pooling_type == LLAMA_POOLING_TYPE_NONE &&
         std::none_of(cparams.embeddings_layer_inp.begin(), cparams.embeddings_layer_inp.end(), [](bool v) { return v; }) &&
@@ -871,6 +885,10 @@ _N_DECODE_LOOP = r'''    int64_t n_outputs_prev = 0;
                             LLAMA_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1361_prefill_stagger_pair\n");
                         });
                     } else {
+                        if (bc_status == GGML_STATUS_SUCCESS) {
+                            bc_1361_declined = true;
+                            gf_res_prev_active = nullptr;
+                        }
                         if (bc_status != GGML_STATUS_SUCCESS) {
                             // Meta preparation failed (not a provider rejection); never execute partially prepared graphs.
                             return bc_status == GGML_STATUS_ALLOC_FAILED ? -2 : -3;
