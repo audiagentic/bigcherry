@@ -84,7 +84,18 @@ Qwen3.8-27B Q8 dual XTX (dense attention, ctx 40960), same flag, prod27b-ab on b
 
 Harness note from the same day: quick-ab.sh's single 'new' arm read ~6% slow for any binary (first run of a different binary); fixed to four arms (PR #178). The env A/B used here runs one binary, so it is not affected.
 
+
+
+### Candidate A rejected (patch 1362, 2026-10-12)
+
+With the k-pool fix (PR #180, build b-kvpad2) reuse happens on Flash-Next: reused=1 on 24 of 40 512-token submits, graph build 7.1 -> 3.0 ms a batch. Prefill does not move: 8K 1443.7 off vs 1436.3 / 1445.8 on (first off run 1299.4 was cold); 24K 1465.5 / 1464.6 off vs 1466.2 / 1467.6 on; greedy text identical (runs kvq4kt, kvq4k).
+
+Why: on a reused graph process_ubatch has to wait for the previous batch's compute before overwriting the shared input tensors - the input step goes from 3.3 to 17.0 ms a batch. Without reuse, 1359's queue-ahead already builds the next graph while the cards run the previous batch. So the graph build was not on the critical path under the production pipeline, and reuse and queue-ahead exclude each other on shared inputs. On 27B the flag is slower and not identical (above). 1362 state -> rejected, experiment kv-pad-prompt removed.
+
+Consequence for this item: my attribution of the ~21 ms per-batch idle to 'graph build + Meta rebuild + inputs' was wrong for the pipeline configuration - those 20 ms of host work are real but overlap card work. What is serial after the previous batch finishes is still unidentified; the kernel trace says it is 6-7 gaps of ~3 ms around buffer copies per batch. Candidate B (build ahead) is moot for the same reason. Next measurement, if this is pursued: per-batch timestamps of (previous compute done, each input upload, first kernel of the next batch) from the HIP API trace on one XTX, i.e. gap-api-calls.py restricted to the first kernel after each batch's last sum.
+
 ## Change Log
 
 - 2026-10-11T21:08:26.013082+00:00 (created-by): Created by agent
 - 2026-10-11T22:17:08.066143+00:00 (updated-by): Updated: section:notes
+- 2026-10-11T22:50:16.583340+00:00 (updated-by): Updated: section:notes
