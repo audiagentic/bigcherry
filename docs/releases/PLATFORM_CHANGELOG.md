@@ -1,5 +1,46 @@
 # Changelog
 
+## [11552.0.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.0.1...bc-platform-11552.0.0) (2026-10-11)
+
+
+### New and changed
+
+* **patch:** 1330 keeps decode-sized batches on the dense path; evaluated, ub1024 not adopted at ctx 245760 ([#77](https://github.com/audiagentic/bigcherry/issues/77)) ([456d7eb](https://github.com/audiagentic/bigcherry/commit/456d7ebfd8f225d01abca667c7599ca207bc6728))
+* **patch:** cross-card sum on a transfer stream, default off (1360) ([#145](https://github.com/audiagentic/bigcherry/issues/145)) ([1542986](https://github.com/audiagentic/bigcherry/commit/154298622e9e75e024425be6badcbdd3472350d4))
+* **patch:** evict only the stale Meta split-state cache entry (1358); reject 1328 expert offload ([#93](https://github.com/audiagentic/bigcherry/issues/93)) ([aadc5a3](https://github.com/audiagentic/bigcherry/commit/aadc5a3338eb622dd56ed1033ea87930cc443f7a))
+* **patch:** keep one prompt batch queued ahead of the cards with an MTP drafter, default off (1359) ([#135](https://github.com/audiagentic/bigcherry/issues/135)) ([94736f1](https://github.com/audiagentic/bigcherry/commit/94736f1b6b1ebdbb799c4b5f04eee5794c7cb46f))
+* **patch:** lock counters for the dispatch workers (1356), standalone HIP probes and prefill trace tools ([#129](https://github.com/audiagentic/bigcherry/issues/129)) ([82bdc03](https://github.com/audiagentic/bigcherry/commit/82bdc0300f765b0ba2098675d8219f028fad1609))
+* **patch:** promote 1355_hc_post_gate_fuse ([#112](https://github.com/audiagentic/bigcherry/issues/112)) ([0a1a75a](https://github.com/audiagentic/bigcherry/commit/0a1a75aafb17e2c464e2b590884360386eeeb6b4))
+* **patch:** promote 1356_meta_dispatch_workers ([#116](https://github.com/audiagentic/bigcherry/issues/116)) ([b1330d8](https://github.com/audiagentic/bigcherry/commit/b1330d8305d3b6c58085d32731a67f3547203c69))
+* **patch:** promote 1357_moe_router_splitk ([#122](https://github.com/audiagentic/bigcherry/issues/122)) ([c5e8d6b](https://github.com/audiagentic/bigcherry/commit/c5e8d6bed639276db0040678b12cc29a6d8853c0))
+* **patch:** promote 1358_meta_split_cache_local_evict ([#107](https://github.com/audiagentic/bigcherry/issues/107)) ([197ca50](https://github.com/audiagentic/bigcherry/commit/197ca504530f3f94f4b39e1169f5501278afb6e9))
+* **patch:** promote 1359_prefill_pipeline ([#138](https://github.com/audiagentic/bigcherry/issues/138)) ([a9ebc43](https://github.com/audiagentic/bigcherry/commit/a9ebc432072ee1504d6482845efbd794c45c1b21))
+* **patch:** split-K router GEMM for the MoE router, default off (1357) ([#92](https://github.com/audiagentic/bigcherry/issues/92)) ([ad84e71](https://github.com/audiagentic/bigcherry/commit/ad84e71594f1541cd84df59698f3bdd8e4f800af))
+* **patch:** the prefill pipeline defaults on; its flag is an off switch (1359) ([#140](https://github.com/audiagentic/bigcherry/issues/140)) ([a976e32](https://github.com/audiagentic/bigcherry/commit/a976e32f7acdafcf18c5ced3dc35f71fd823cf9a))
+* **profile:** Flash-Next switches on the split-K MoE router (1357) ([#126](https://github.com/audiagentic/bigcherry/issues/126)) ([1042e84](https://github.com/audiagentic/bigcherry/commit/1042e84d1fe0e943851c970eb28ca489b04bafad))
+* **qfp43:** add DFlash acceptance input trace ([#78](https://github.com/audiagentic/bigcherry/issues/78)) ([a200912](https://github.com/audiagentic/bigcherry/commit/a200912123b2e4f11f13cbfc3047ce392b84f33a))
+
+
+### Fixes
+
+* **lab:** Flash-Next timing run sends its request through the chat template ([#124](https://github.com/audiagentic/bigcherry/issues/124)) ([ddefe0d](https://github.com/audiagentic/bigcherry/commit/ddefe0dd2f6a3a64393f33a7db2df3413827ee19))
+* **patch:** b11552 - 1294 follows top-k's chunked row loop; 1333 anchors on the has_mixed decision alone ([9477827](https://github.com/audiagentic/bigcherry/commit/94778276bd17485a481f04f1ed4328f73309b0d1))
+* **patch:** b11552 - 1321 and 1348 use set_embd_state for hidden-state rows; 1307's unary edit follows the contiguous branch; legacy-part tool ([142a0b8](https://github.com/audiagentic/bigcherry/commit/142a0b80866bb41c770937be43ecb18cf998ad11))
+* **patch:** b11552 - 1337 state superseded, MoE cache experiments removed, 1338 test skipped until its rebuild (MET07) ([9fa5026](https://github.com/audiagentic/bigcherry/commit/9fa502648e4f00ea334d4f783750417edd8f275d))
+* **patch:** b11552 - 1337 superseded by upstream [#29887](https://github.com/audiagentic/bigcherry/issues/29887) in the pin; 1338 parked until rebuilt on upstream's cache (MET07) ([6f1fe4f](https://github.com/audiagentic/bigcherry/commit/6f1fe4f6a077d47cc8d8b904a0d4972f9a22b141))
+* **patch:** demote 1356_meta_dispatch_workers to evaluated (output race at 98K) ([#130](https://github.com/audiagentic/bigcherry/issues/130)) ([1ce33a5](https://github.com/audiagentic/bigcherry/commit/1ce33a5dbd43dee43d847129b524d876ac5c4b4a))
+* **release:** release notes list patches under engines/llamacpp/patches, not the pre-move patches/ directory ([ebe3527](https://github.com/audiagentic/bigcherry/commit/ebe35277bc7e91158057e5def23c26738b623427))
+
+
+### Performance
+
+* **patch:** registry and contracts read once per unchanged tree; shared production-source helper for mechanics tests ([e8224c7](https://github.com/audiagentic/bigcherry/commit/e8224c777532e2132a3dd84a75b1f4dda69bf366))
+
+
+### Maintenance
+
+* release notes bc-llamacpp-11552.0.0 ([d4912ed](https://github.com/audiagentic/bigcherry/commit/d4912ed917b6b37319cf0e8104cc805dd555ca99))
+
 ## [1.0.1](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.0.0...bc-platform-1.0.1) (2026-10-09)
 
 
