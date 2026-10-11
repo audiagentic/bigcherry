@@ -57,40 +57,42 @@ def read_pinned(src) -> str:
     return blob.decode("utf-8")
 
 
-# composed_before's running state: the production patch ids applied so far and the file texts they left. Mechanics tests
-# of several patches run in one process; each later patch continues the composition instead of starting it again.
-_COMPOSED: dict = {"ids": [], "texts": None}
+# Composed file texts by the tuple of production patch ids applied to reach them. Mechanics tests of several patches
+# run in one process; a later request starts from the longest sequence already composed instead of from the pin.
+_COMPOSED: dict[tuple, dict] = {}
 
 
-def composed_before(patch_id: str, files, out) -> Path:
-    """Write `files` into `out` as the production composition leaves them just before `patch_id` is applied.
+def production_source(files, out, *, stop_before: str | None = None, without: str | None = None) -> Path:
+    """Write `files` into `out` as the production composition (source `bigcherry`) leaves them.
 
     A production patch is written against the composed source (earlier patches create files and move the text its
-    anchors sit in), so its mechanics test needs that source, not the bare pin. The production selection of the
-    `bigcherry` source is applied in order on a pristine pinned tree, stopping at the patch's own place.
+    anchors sit in), so its mechanics test needs that source, not the bare pin. The selection is applied in the
+    composer's order on a pristine pinned tree:
+      stop_before=<id>  everything ordered before that patch (the source the patch itself is applied to);
+      without=<id>      the whole set except that patch (for a patch whose test applies it last, in or out of the set).
+    A patch of the set that does not apply raises RuntimeError naming it.
     """
     from . import rebase  # imported here: rebase imports this package's patch loader
 
-    selected = rebase.resolve_selection(source_name="bigcherry", all_patches=False, focal_overlay_patch_id=patch_id)
-    vendor = pinned_checkout()
-    before = []
+    selected = rebase.resolve_selection(source_name="bigcherry", all_patches=False,
+                                        focal_overlay_patch_id=stop_before or without)
+    modules = []
     for module in selected.modules:
-        if module.patch_id == patch_id:
+        if module.patch_id == stop_before:
             break
-        before.append(module)
-    want = [module.patch_id for module in before]
-    done = _COMPOSED["ids"]
-    if _COMPOSED["texts"] is None or want[:len(done)] != done:
-        _COMPOSED["ids"], _COMPOSED["texts"] = [], rebase._overlay_texts()
-    texts = _COMPOSED["texts"]
+        if module.patch_id != without:
+            modules.append(module)
+    want = tuple(module.patch_id for module in modules)
+    start = max((ids for ids in _COMPOSED if want[:len(ids)] == ids), key=len, default=())
+    texts = dict(_COMPOSED[start]) if start else rebase._overlay_texts()
     overlay_paths = frozenset(rebase._overlay_texts())
-    for module in before[len(_COMPOSED["ids"]):]:
+    vendor = pinned_checkout()
+    for module in modules[len(start):]:
         probe = rebase.probe_patch(module, vendor, texts, context_lines=3, previous_revision=None,
-                                   revision="composed-before", overlay_paths=overlay_paths)
+                                   revision="production-source", overlay_paths=overlay_paths)
         if probe.status not in (rebase.STATUS_CLEAN, rebase.STATUS_CLEAN_NOOP):
-            _COMPOSED["ids"], _COMPOSED["texts"] = [], None
-            raise RuntimeError(f"{module.patch_id} does not apply before {patch_id}: {probe.status}")
-        _COMPOSED["ids"].append(module.patch_id)
+            raise RuntimeError(f"{module.patch_id} does not apply in the production composition: {probe.status}")
+    _COMPOSED[want] = dict(texts)
     out = Path(out)
     for rel in files:
         target = out / rel
@@ -100,3 +102,10 @@ def composed_before(patch_id: str, files, out) -> Path:
         else:
             copy_pinned(vendor / rel, target)
     return out
+
+
+def production_order() -> list[str]:
+    """Patch ids of the production selection in the composer's order."""
+    from . import rebase
+
+    return [module.patch_id for module in rebase.resolve_selection(source_name="bigcherry", all_patches=False).modules]

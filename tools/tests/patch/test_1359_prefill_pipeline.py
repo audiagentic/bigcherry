@@ -11,8 +11,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from bigcherry.core import paths  # noqa: E402
 from bigcherry.patcher import apply_all  # noqa: E402
-from bigcherry.patch import rebase as patch_rebase  # noqa: E402
-from bigcherry.patch.pinned_source import copy_pinned, pinned_checkout  # noqa: E402
+from bigcherry.patch.pinned_source import pinned_checkout, production_order, production_source  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
 _HAVE_VENDOR = paths.llama_root().is_dir()
@@ -43,28 +42,10 @@ _P = _load("1359_prefill_pipeline")
 class Patch1359Mechanics(unittest.TestCase):
     def _production(self, td):
         """The production set without 1359, applied by the resolver patch-rebase-check uses; 1359's files written out."""
-        root = Path(td)
-        selected = patch_rebase.resolve_selection(source_name="bigcherry", all_patches=False)
-        ids = [m.patch_id for m in selected.modules]
+        ids = production_order()
         self.assertIn("1348_mtp_deferred_catchup", ids)
         self.assertIn("1346_mtp_prompt_overlap", ids)
-        texts = patch_rebase._overlay_texts()
-        overlay_paths = frozenset(texts)
-        for module in selected.modules:
-            if module.patch_id == "1359_prefill_pipeline":
-                continue  # the patch under test is applied by the test itself, whatever recipe it is in
-            probe = patch_rebase.probe_patch(module, _V, texts, context_lines=3, previous_revision=None,
-                                             revision="mechanics-test", overlay_paths=overlay_paths)
-            self.assertIn(probe.status, (patch_rebase.STATUS_CLEAN, patch_rebase.STATUS_CLEAN_NOOP),
-                          (module.patch_id, probe.to_dict()))
-        for rel in _FILES:
-            target = root / rel
-            target.parent.mkdir(parents=True, exist_ok=True)
-            if rel in texts:
-                target.write_text(texts[rel], encoding="utf-8")
-            else:
-                copy_pinned(_V / rel, target)
-        return root
+        return production_source(_FILES, td, without="1359_prefill_pipeline")
 
     def test_applies_after_production_and_is_idempotent(self):
         with tempfile.TemporaryDirectory() as td:
