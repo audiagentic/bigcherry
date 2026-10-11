@@ -4,7 +4,8 @@
 #   CARDS=0,1,2 ... VIS=0,1,2 SCRIPT rs1 tools/lab/hip-probes/run-rccl.sh @<any build run> <out-dir> [layers passes repeats]
 # The first argument (a llama-server path from the queue) is ignored.
 # Usage: run-rccl.sh <ignored> <out-dir> [layers [passes [repeats]]]
-# env: ROCM_PATH (/opt/rocm-7.2.4), CARDS (0,1,2), PROBE_TIMEOUT (900 s)
+# env: ROCM_PATH (/opt/rocm-7.2.4), CARDS (0,1,2), PROBE_TIMEOUT (900 s), PROBE_NONBLOCKING=1 (transfer stream and
+#      events as patch 1360 creates them), PROBE_SPLIT=N (N small kernels a compute pass)
 set -u
 out=$2; shift 2
 mkdir -p "$out"
