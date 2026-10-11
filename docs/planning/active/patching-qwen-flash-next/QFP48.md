@@ -69,9 +69,28 @@ Depends on nothing; the AllReduce work (QFP49) is larger and comes first for pre
 
 2026-10-11, which steps and which matmuls (tools/lab/flash-next/mmq-variant-census.py on the production trace pipe4: Flash-Next, -ub 512, MTP drafter; the window includes the decode that follows the prefill). Per RX 7900 XTX, steps classified by content: recurrent (GDN / SSM) 3,095 steps, 49.8 kernels, 1,307 us of kernels, about 45% of step time once a single 3.5 s gap between phases is set aside; MoE feed-forward 4,128 steps, 28.6 kernels, 1,327 us of kernels in a 1,437 us span (92% busy, 3-4 us between kernels), 26%; attention 1,032 steps, 90.9 kernels, 4,733 us in 5,586 us (85%), 25%. mul_mat_q a step: 531 / 830 / 629 us. Where the non-kernel time is: recurrent - __amd_rocclr_copyBuffer -> __amd_rocclr_copyBuffer 0.75 a step x 487 us (365 us a step: the device-host-device round trip of the small sums done on the host by cpu-root), mul_mat_q -> convert_unary_cont_vec4 0.88 x 223 us, copyBuffer -> k_bin_bcast 0.06 x 2.9 ms; attention - mul_mat_q -> convert_unary_cont_vec4 0.88 x 482 us; MoE - nothing above 11 us a step. So the recurrent step's host round trips are the loose part; the MoE step is tight and its cost is the matmul. mul_mat_q: 48,488 launches, 39.7% of kernel time on an XTX (51.2% on the R9700), 32 variants. MoE expert weights with mmq_x 16 (type 20 IQ4_NL grid 1280x3200 288 us a launch 16.0%; type 21 IQ3_S 64x3200 190 us 15.3%; 128x3200 351 us 14.5%) are about 46% of mul_mat_q time, about 18% of all kernel time; Q8_0 with mmq_x 128 (5120x16 88.6 us 11.3%; 1280x16 77.5 us 11.1%; 1536x8 stream-k 82.4 us 10.5%; smaller ones) about a third. Checked in the source: MMQ already uses the 8-bit WMMA instruction on RDNA3 and RDNA4 (__builtin_amdgcn_wmma_i32_16x16x16_iu8_w32 and the gfx12 form in mma.cuh; AMD_WMMA_AVAILABLE is defined for both and selects the MMA data layout), so there is no dot-product path to replace for Q8_0. Needed before any matmul work: bytes of weights a launch per variant (the trace has no shapes; record mode has) to put each against the card's memory bandwidth, and a standalone bench of the expert variants at their real shapes, formats and tile width. Candidates then: fill the expert tiles (group tokens by expert, widen mmq_x when an expert has the tokens), and quantize + mul_mat_q in one launch (launch count, not kernel time). Qwen3.8-27B (65 blocks, 5,120 wide, dense, Q8_0, recurrent + attention): no expert family; not traced yet.
 
+
+
+### Re-measured on pin b11552, and the premise corrected (2026-10-12)
+
+Trace: Flash-Next 24K cold prefill on build b-pq11552 (run c48n-d24576, 38.7K tokens at 1379 t/s under rocprofv3), plus an 8K kernel + HIP API trace (run c48api-d8192). Tools: kernel-step-census.py (now with a median-step line, median-ranked pair gaps and an idle breakdown by gap size) and the new gap-api-calls.py (HIP calls the launching thread makes between two given kernels), on branch lab/qfp48-gap-api.
+
+- The bump changed nothing in the step shape: 8351 steps per XTX, median 37 kernels a step (mean 44.1), mul_mat_q 39.4% of kernel time, flash_attn_ext_f16 17%.
+- **"Only 62-64% of a step is kernel time" is a mean over the whole trace and is wrong as a steady-state figure.** The median step is 1330 us of kernels in 1480 us: the XTXs are 91-92% busy in a typical step (R9700 86%); 10th percentile 74%.
+- Idle time inside steps, XTX 0, 7.98 s in total over the trace:
+  - gaps under 10 us (356K of them, ~3.3 us each): 1.19 s, 15%. This is the launch overhead that fusing kernels can remove: at most ~4% of this prefill.
+  - gaps of 1-100 ms (514 of them): 2.44 s, 30%. Almost all around buffer copies (copyBuffer -> copyBuffer 0.74 + 0.15 s, bc_dsv4_hc_post_gate -> copyBuffer 0.43 s, mul_mat_vec_q -> copyBuffer 0.30 s): the boundary between prompt batches, about 32 ms of idle per 512-token batch, ~8.7% of the prefill. In those gaps the launching thread is mostly in hipStreamSynchronize (about 27 calls, 2.2 ms each) and hipMemcpy2DAsync / hipMemcpyAsync (8K API trace).
+  - gaps over 100 ms (6): 4.21 s, 53%. One 2.97 s wait before the first prompt batch (fillBuffer -> copyBuffer, start-up) and first-use code object loads (hipModuleLoad 120-320 ms each, e.g. the first batched half-precision gemm after mul_mat_q): about 1 s inside the first prefill of a server start, absent afterwards.
+- The pair that looked like a 239 us per-occurrence host gap (mul_mat_q -> convert_unary_cont_vec4) has a median gap of 9 us; its mean was two code object loads. No per-step cost there.
+
+Ranking for prefill time on this configuration: (1) the batch boundary, ~8.7%; (2) launch overhead, <= ~4%, which bounds what kernel fusion (megakernels) can return here; (3) first-use loads, ~1 s once per server start (a warm-up request would move it out of the first user request).
+
+Next: attribute the 32 ms per batch boundary - which streams the synchronizes wait on (drafter / catch-up on the 6900 XT, the slower R9700, KV or input uploads), with 1359 (pipeline) and 1348 (deferred catch-up) on and off, on a warm server so start-up waits are out of the picture. Also seen: under rocprofv3 the server's shutdown hangs and is killed after the run (trace complete); not yet checked without the profiler.
+
 ## Change Log
 
 - 2026-10-10T13:53:50.737727+00:00 (created-by): Created by claude
 - 2026-10-11T05:43:00.138967+00:00 (updated-by): Updated: section:notes
 - 2026-10-11T07:31:20.295965+00:00 (updated-by): Updated: section:notes
 - 2026-10-11T08:06:11.851254+00:00 (updated-by): Updated: section:notes
+- 2026-10-11T20:31:34.192893+00:00 (updated-by): Updated: section:notes

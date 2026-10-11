@@ -5,7 +5,7 @@
 #   1) unprofiled: prefill + decode timings at several context depths (8K/32K/96K prompt), memory breakdown;
 #   2) rocprofv3 --kernel-trace --memory-copy-trace --stats on a 32K prompt + 128 decode, for the per-kernel
 #      split of prefill and decode at depth (attention vs MoE vs AllReduce vs copies).
-# Usage: long-ctx-profile.sh <llama-server> <out-dir> [full|decode|perf|timing|probes|apitrace|synctrace|prefillsync|prefillperf]
+# Usage: long-ctx-profile.sh <llama-server> <out-dir> [full|decode|perf|timing|probes|apitrace|synctrace|prefillsync|prefillperf|prefillprof|prefillapi]
 # CANCEL_AFTER=<s> first sends a long prompt (CANCEL_DEPTH tokens, 30000) and drops the connection after that many
 # seconds, so a pass also covers a request cancelled in mid-prefill.
 # Other drafters: SPEC_TYPE replaces the MTP default (draft-dspark, draft-dflash), SPEC_PMIN sets --spec-draft-p-min,
@@ -30,6 +30,7 @@ if [ "${NO_MTP:-}" = 1 ]; then  # deterministic greedy reference: no draft, so n
         -ctk ${CTK:-q8_0} -ctv ${CTV:-q8_0} "${AR_ARG[@]}")
 fi
 [ -n "${EXTRA_OT:-}" ] && args+=(-ot "$EXTRA_OT")  # extra placement override for every target-model mode
+[ -n "${EXTRA_ARGS:-}" ] && args+=(${EXTRA_ARGS})  # extra server arguments, split on spaces (e.g. "--ctx-checkpoints 0")
 if [ "${CPU_REF:-}" = 1 ]; then  # f32 CPU reference (no tensor split, no flash attention): slow, accuracy only
   args=(-m "$model" -ngl 0 --device none -c ${CTX:-16384} -ub ${UB:-512} -b 2048 --flash-attn off --parallel 1
         --threads 20 -lv 4 -ctk f16 -ctv f16)
@@ -225,6 +226,9 @@ for f, (c, ns) in sorted(agg.items(), key=lambda kv: -kv[1][1])[:20]:
 for tid, ns in per_tid.most_common(6):
     print(f"  thread {tid}: {ns/1e6/steps:.2f} ms/step in HIP API ({100*ns/win:.0f}% of wall)")
 PY
+  exit 0
+elif [ "$mode" = prefillapi ]; then  # QFP48: kernel trace + HIP API trace of one uncached prefill fill (gap-api-calls.py)
+  DECODE_N=8 CACHE=0 WRAP="rocprofv3 --kernel-trace --hip-runtime-trace --output-format csv -d $out/rocprof --" run_pass prefillapi ${DEPTH:-8192}
   exit 0
 elif [ "$mode" = prefillprof ]; then  # QFP17: kernel trace + stats of one uncached prefill fill at DEPTH (8 decode tokens)
   DECODE_N=8 CACHE=0 WRAP="rocprofv3 --kernel-trace --stats --output-format csv -d $out/rocprof --" run_pass prefillprof ${DEPTH:-20480}
