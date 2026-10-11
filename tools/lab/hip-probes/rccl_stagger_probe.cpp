@@ -6,6 +6,8 @@
 //   compute    no sums
 //   today      [compute, sum of one full message on the compute stream] x 96
 //   halves     [half compute, sum of a half message on the compute stream] x 192          (what -ub 256 does)
+//   (transfer) today and halves again with the sum on the transfer stream, fenced by events, nothing overlapping:
+//              what the second stream costs by itself
 //   staggered  halves A and B alternate; a half's sum runs on the transfer stream, fenced by events, while the
 //              card computes the other half
 // Then a short staggered run from known values to check the sums.
@@ -122,6 +124,34 @@ static double run_serial(int rounds, int passes, size_t burn_elems, size_t msg_e
     return now_ms() - t0;
 }
 
+// today's order, but the sum on the transfer stream, fenced by events both ways (what 1360 does back to back):
+// nothing overlaps it, so any difference from run_serial is the cost of the second stream itself
+static double run_serial_transfer(int rounds, int passes, size_t burn_elems, size_t msg_elems) {
+    const double t0 = now_ms();
+    for (int r = 0; r < rounds; ++r) {
+        for (Card & c : g_cards) {
+            CK(hipSetDevice(c.id));
+            if (r > 0) {
+                CK(hipStreamWaitEvent(c.compute, c.summed[0], 0));
+            }
+            burn(c, c.buf, burn_elems, passes);
+            CK(hipEventRecord(c.burned[0], c.compute));
+            CK(hipStreamWaitEvent(c.transfer, c.burned[0], 0));
+        }
+        sum(0, msg_elems, true);
+        for (Card & c : g_cards) {
+            CK(hipSetDevice(c.id));
+            CK(hipEventRecord(c.summed[0], c.transfer));
+        }
+    }
+    for (Card & c : g_cards) {
+        CK(hipSetDevice(c.id));
+        CK(hipStreamWaitEvent(c.compute, c.summed[0], 0));
+    }
+    sync_all();
+    return now_ms() - t0;
+}
+
 static double run_staggered(int layers, int passes) {
     bool have_sum[2] = {false, false};
     const double t0 = now_ms();
@@ -184,10 +214,15 @@ int main(int argc, char ** argv) {
         const double compute = run_compute(layers, passes);
         const double today = run_serial(layers, passes, kBurnElems, kMsgElems);
         const double halves = run_serial(2 * layers, passes, kBurnElems / 2, kMsgElems / 2);
+        const double today_t = run_serial_transfer(layers, passes, kBurnElems, kMsgElems);
+        const double halves_t = run_serial_transfer(2 * layers, passes, kBurnElems / 2, kMsgElems / 2);
         const double staggered = run_staggered(layers, passes);
         std::printf("  compute %.1f  today %.1f (+%.0f%%)  halves %.1f (+%.0f%%)  staggered %.1f (+%.0f%%)  hidden %.0f%% of today's sum cost\n",
                     compute, today, 100.0 * (today - compute) / compute, halves, 100.0 * (halves - compute) / compute, staggered,
                     100.0 * (staggered - compute) / compute, 100.0 * (today - staggered) / (today - compute));
+        std::printf("    sum on the transfer stream, nothing overlapping: today %.1f (%+.3f ms a sum against the compute stream)  halves %.1f (%+.3f ms a sum)
+",
+                    today_t, (today_t - today) / layers, halves_t, (halves_t - halves) / (2 * layers));
         std::fflush(stdout);
     }
 
