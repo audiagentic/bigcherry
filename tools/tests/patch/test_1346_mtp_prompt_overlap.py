@@ -146,6 +146,12 @@ class Patch1346Mechanics(unittest.TestCase):
         self.assertIn("bc_pt_state->tokens += (uint64_t) n_tokens;", src)
         self.assertIn("bc_pt_state->tokens += (uint64_t) batch_in.size();", src)
         self.assertIn("llama_synchronize(ctx_tgt);", src)
+        # b11552 native MTP semantics must remain owned by upstream: token IDs
+        # and vision embeddings both pass through the timing wrapper unchanged.
+        self.assertIn("const auto & t = batch_in.tokens[k];", src)
+        self.assertIn("t.id != LLAMA_TOKEN_NULL", src)
+        self.assertIn("batch.add_embd(t.embd, t.pos.data(), seq_id, false)", src)
+        self.assertIn("batch.set_embd_state(idx, { h_row, 1, (size_t) n_embd });", src)
 
         self.assertIn("common_speculative_prefill_begin(spec.get(), slot.id);", server)
         process_beg = "common_speculative_target_process_begin(spec.get(), batch.view);"
