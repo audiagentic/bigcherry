@@ -56,7 +56,8 @@ _HELPERS = r"""// BigCherry 1360 (QFP49): state retained from begin() until end(
 // the compute-stream post-work has been enqueued, matching the lifetime of the stock monolithic path.
 struct bc_ar_transfer_state {
     ggml_backend_cuda_comm_context * comm_ctx = nullptr;
-    struct ggml_tensor ** tensors = nullptr;
+    // the state's own copy: the caller's array need not outlive begin() (a paired caller ends a sum later)
+    struct ggml_tensor * tensors[GGML_CUDA_MAX_DEVICES] = {};
     int64_t ne = 0;
     size_t n_backends = 0;
     bool small = true;
@@ -110,7 +111,6 @@ static int bc_1360_ar_transfer_acquire_slot(ggml_backend_cuda_comm_context * com
 static bool bc_1360_ar_transfer_begin(
         ggml_backend_cuda_comm_context * comm_ctx, struct ggml_tensor ** tensors, bc_ar_transfer_state & state) {
     state.comm_ctx = comm_ctx;
-    state.tensors = tensors;
     state.ne = ggml_nelements(tensors[0]);
     if (state.ne == 0) {
         return true;
@@ -121,6 +121,7 @@ static bool bc_1360_ar_transfer_begin(
         GGML_ASSERT(tensors[i] != nullptr);
         GGML_ASSERT(ggml_nelements(tensors[i]) == state.ne);
         GGML_ASSERT(ggml_is_contiguously_allocated(tensors[i]));
+        state.tensors[i] = tensors[i];
     }
 
     state.small =
