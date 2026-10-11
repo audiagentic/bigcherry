@@ -49,22 +49,37 @@ class Patch1362Mechanics(unittest.TestCase):
                 for edit in fp.edits:
                     self.assertIsNotNone(re.search(edit.guard, texts[fp.path], re.M), (fp.path, edit.id))
 
+            header = texts["src/llama-kv-cache.h"]
             source = texts["src/llama-kv-cache.cpp"]
-            self.assertIn('getenv("BIGCHERRY_KV_PAD")', source)
+            hybrid = texts["src/llama-memory-hybrid-idx.cpp"]
+
+            self.assertIn("uint32_t llama_bigcherry_kv_pad(uint32_t kv_size);", header)
+            self.assertIn("uint32_t llama_bigcherry_kv_pad(uint32_t kv_size) {", source)
+            self.assertEqual(source.count('getenv("BIGCHERRY_KV_PAD")'), 1)
             self.assertIn("BIGCHERRY_PATCH_HIT patch=1362_kv_pad_prompt pad=%u", source)
             self.assertIn("std::max(n_pad, std::max(256u, bc_kv_pad_cur))", source)
+
+            self.assertIn("uint32_t kpool_pad(const llama_memory_hybrid_idx * mem, uint32_t n_pool)", hybrid)
+            self.assertIn("GGML_PAD(bc_kv_pad / kpool, 64u)", hybrid)
+            self.assertIn("(bc_n_pool + bc_pool_quantum - 1u) / bc_pool_quantum * bc_pool_quantum", hybrid)
+            self.assertIn("kpool_pad(mem, st.n_pool_real) - 1", hybrid)
+            self.assertIn("return kpool_pad(mem, kpool_cur().n_pool_real);", hybrid)
+            self.assertIn("GGML_ASSERT(n_pool == kpool_pad(mem, st.n_pool_real));", hybrid)
+            self.assertNotIn('getenv("BIGCHERRY_KV_PAD")', hybrid)
 
             second = apply_all(_P.PATCHES, root)
             self.assertTrue(all(r.ok for r in second), [e.detail for r in second for e in r.failed])
             for path, text in texts.items():
                 self.assertEqual(text, (root / path).read_text(encoding="utf-8"))
 
-    def test_missing_anchor_fails_closed(self):
-        with tempfile.TemporaryDirectory() as td:
-            root = production_source(_FILES, td, stop_before=_ID)
-            (root / _P.PATCHES[0].path).write_text("// moved upstream\n", encoding="utf-8")
-            res = apply_all(_P.PATCHES, root)
-            self.assertFalse(all(r.ok for r in res))
+    def test_each_missing_anchor_fails_closed(self):
+        for fp in _P.PATCHES:
+            with self.subTest(path=fp.path):
+                with tempfile.TemporaryDirectory() as td:
+                    root = production_source(_FILES, td, stop_before=_ID)
+                    (root / fp.path).write_text("// moved upstream\n", encoding="utf-8")
+                    res = apply_all(_P.PATCHES, root)
+                    self.assertFalse(all(r.ok for r in res))
 
 
 if __name__ == "__main__":
