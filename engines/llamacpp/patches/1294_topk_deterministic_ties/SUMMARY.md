@@ -9,6 +9,18 @@ The HIP parallel radix TOP_K picks tied columns at the cut by lowest column inde
 ballot/popcount prefix count) instead of atomic arrival order. `BIGCHERRY_TOPK_DETERMINISTIC=0` restores the
 old path.
 
+## PA44 packaging / identity proof
+
+The two kernels and two file-local switches now live in `ggml/src/ggml-cuda/bc-topk-ties.cuh`. The header is
+included at the exact old block position, immediately before `top_k_radix_cuda`, rather than at the top of
+`top-k.cu`: these definitions require the file-local upstream `top_k_radix_state` and
+`top_k_float_to_ordered` definitions above that point.
+
+Identity audit: `_TIE_KERNEL` is moved byte-for-byte: 5,589 bytes, 151 physical lines, 142 non-blank lines.
+Comparing the multiset of non-blank, whitespace-stripped lines across the touched `top-k.cu` plus the created file
+gives 142/142 moved lines identical; removed-only lines = 0, added-only lines = 1, the single
+`#include "bc-topk-ties.cuh"` line. Runtime launches, flags, evidence, and ENV_DOCS are unchanged.
+
 ## Why
 
 Qwen4Exp's QSA indexer scores are sums of ReLU, so many pooled KV blocks score exactly 0.0; past ~10K
