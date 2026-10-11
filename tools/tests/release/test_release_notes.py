@@ -6,6 +6,7 @@ import json
 import re
 import sys
 import unittest
+from unittest import mock
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -35,6 +36,22 @@ class ReleaseNotesTests(unittest.TestCase):
         after = datetime(2026, 9, 15, tzinfo=timezone.utc)
         kept = [e for e in events if notes._event_time(e) > after]
         self.assertEqual([e["event-id"] for e in kept], ["chg_20261001_000000_b_2"])
+
+    def test_previous_release_uses_newest_creator_date_across_tag_families(self):
+        config = notes.ReleaseConfig(
+            tag_prefix="bc-llamacpp-", notes_dir="notes", ledger="ledger", release_records="releases",
+            recipes="recipes", build_patch_sets=(), fallback_prefixes=("bc-llamacpp-b",), ledger_sections=(),
+        )
+        listing = "bc-llamacpp-11552.1.1\nbc-llamacpp-b11474-r9\n"
+        with mock.patch.object(notes, "_git", return_value=listing) as git:
+            self.assertEqual(
+                notes.previous_release_tag(Path("/repo"), config, "bc-llamacpp-11552.2.0", "HEAD"),
+                "bc-llamacpp-11552.1.1",
+            )
+        git.assert_called_once_with(
+            Path("/repo"), "tag", "--merged", "HEAD", "--sort=-creatordate", "--list",
+            "bc-llamacpp-*", "bc-llamacpp-b*",
+        )
 
 
 class ReleasePleaseWiringTests(unittest.TestCase):
