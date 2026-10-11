@@ -266,9 +266,12 @@ bool ggml_backend_meta_graph_compute_pair(
     if (status_out) {
         *status_out = GGML_STATUS_SUCCESS;
     }
-    if (n_backends < 2 || backend_ctx->comm_ctx == nullptr) {
+    auto decline = [](const char * why) {
+        static std::set<std::string> seen;
+        if (seen.insert(why).second) GGML_LOG_INFO("BIGCHERRY_PREFILL_STAGGER declined: %s\n", why);
         return false;
-    }
+    };
+    if (n_backends < 2 || backend_ctx->comm_ctx == nullptr) return decline("Meta communication unavailable");
 
     bc_1361_graph_set sets[2];
 
@@ -346,7 +349,7 @@ bool ggml_backend_meta_graph_compute_pair(
         return false;
     }
     if (sets[0].n_subgraphs != sets[1].n_subgraphs || sets[0].n_subgraphs == 0) {
-        return false;
+        return decline("different Meta subgraph shapes");
     }
 
     ggml_backend_reg_t reg = ggml_backend_dev_backend_reg(ggml_backend_get_device(backend_ctx->backend_configs[0].backend));
@@ -361,7 +364,7 @@ bool ggml_backend_meta_graph_compute_pair(
     auto begin      = (begin_t)      ggml_backend_reg_get_proc_address(reg, "ggml_backend_comm_allreduce_stagger_begin");
     auto end        = (end_t)        ggml_backend_reg_get_proc_address(reg, "ggml_backend_comm_allreduce_stagger_end");
     if (!state_new || !state_free || !can_begin || !begin || !end) {
-        return false;
+        return decline("RCCL stagger procs unavailable");
     }
 
     auto nodes_for = [&](bc_1361_graph_set & set, size_t i) {
@@ -380,6 +383,11 @@ bool ggml_backend_meta_graph_compute_pair(
         for (size_t i = 0; i + 1 < sets[h].n_subgraphs; ++i) {
             auto nodes = nodes_for(sets[h], i);
             if (!can_begin(backend_ctx->comm_ctx, nodes.data())) {
+                static std::set<std::string> reductions;
+                const std::string why = "reduction=" + std::to_string(i) +
+                    " half=" + std::to_string(h) + " route=RCCL-unavailable";
+                if (reductions.insert(why).second)
+                    GGML_LOG_INFO("BIGCHERRY_PREFILL_STAGGER declined: %s\n", why.c_str());
                 return false;
             }
         }
