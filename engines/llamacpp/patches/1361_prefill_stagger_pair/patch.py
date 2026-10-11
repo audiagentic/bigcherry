@@ -941,13 +941,17 @@ enum ggml_status ggml_backend_sched_graph_compute_async_pair(
             }
         }
     };
+    // tensor_copy() is a macro over a variable named `sched`; this function has two schedulers
+    auto copy_of = [](ggml_backend_sched_t sched, ggml_tensor * t, int backend_id, int copy_id) {
+        return tensor_copy(t, backend_id, copy_id);
+    };
     // The two schedulers must not land their final split inputs in the same allocation. If they do, B can
     // overwrite a device input that A has not consumed yet; fail closed instead of depending on enqueue timing.
     for (int ia = 0; ia < a->n_inputs; ++ia) {
-        ggml_tensor * ca = tensor_copy(a->inputs[ia], a->backend_id, sched_a->cur_copy);
+        ggml_tensor * ca = copy_of(sched_a, a->inputs[ia], a->backend_id, sched_a->cur_copy);
         if (!ca) return decline("missing A final-split input copy");
         for (int ib = 0; ib < b->n_inputs; ++ib) {
-            ggml_tensor * cb = tensor_copy(b->inputs[ib], b->backend_id, sched_b->cur_copy);
+            ggml_tensor * cb = copy_of(sched_b, b->inputs[ib], b->backend_id, sched_b->cur_copy);
             if (!cb) return decline("missing B final-split input copy");
             if (ca->buffer != nullptr && ca->buffer == cb->buffer) {
                 return decline("paired final-split input copies share a buffer");
