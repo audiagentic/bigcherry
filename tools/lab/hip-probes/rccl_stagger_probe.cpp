@@ -191,8 +191,7 @@ int main(int argc, char ** argv) {
     const int reps = argc > 3 ? std::atoi(argv[3]) : 5;
     const bool nonblocking = std::getenv("PROBE_NONBLOCKING") != nullptr && std::atoi(std::getenv("PROBE_NONBLOCKING")) != 0;
     g_split = std::getenv("PROBE_SPLIT") != nullptr ? std::max(1, std::atoi(std::getenv("PROBE_SPLIT"))) : 1;
-    std::printf("transfer stream and events %s; %d kernel(s) a compute pass
-", nonblocking ? "as 1360 creates them (non-blocking, timing off)" : "default", g_split);
+    std::printf("transfer stream and events %s; %d kernel(s) a compute pass\n", nonblocking ? "as 1360 creates them (non-blocking, timing off)" : "default", g_split);
     int n = 0;
     CK(hipGetDeviceCount(&n));
     g_cards.resize(n);
