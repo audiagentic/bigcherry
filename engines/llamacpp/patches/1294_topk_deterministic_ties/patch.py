@@ -185,10 +185,10 @@ OWNED = FilePatch(
     edits=(
         Edit(
             id="topk-tie-owned-file",
-            anchor=r"\\A",
+            anchor=r"\A",
             text=_TIE_KERNEL,
             mode="insert_after",
-            guard=r"static __global__ void top_k_radix_gather_ties\\(",
+            guard=r"static __global__ void top_k_radix_gather_ties\(",
             expect_matches=1,
             max_span_lines=1,
             rationale="BigCherry-owned implementation included after top_k_radix_state/top_k_float_to_ordered are defined.",

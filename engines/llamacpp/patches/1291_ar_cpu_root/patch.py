@@ -455,10 +455,10 @@ OWNED = FilePatch(
     edits=(
         Edit(
             id="cpu-root-owned-file",
-            anchor=r"\\A",
+            anchor=r"\A",
             text=_IMPL,
             mode="insert_after",
-            guard=r"static bool ggml_backend_cuda_comm_try_allreduce_cpu_root\\(",
+            guard=r"static bool ggml_backend_cuda_comm_try_allreduce_cpu_root\(",
             expect_matches=1,
             max_span_lines=1,
             rationale="BigCherry-owned implementation; it is file-local and depends on ggml-cuda.cu's visible comm helpers/context.",
