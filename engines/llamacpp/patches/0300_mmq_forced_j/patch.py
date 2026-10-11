@@ -247,10 +247,10 @@ CALLER_PATCH = FilePatch(
         ),
         Edit(
             id="mmq-moe-native-call",
-            anchor=r"^        ggml_cuda_mul_mat_q\(ctx, src0, src1, ids, dst\);$",
+            anchor=r"^            ggml_cuda_mul_mat_q\(ctx, src0, src1, ids, dst\);$",  # b11552: inside `if (ggml_cuda_should_use_mmq(...))`
             rationale="native MUL_MAT_ID MMQ call",
             mode="replace",
-            text="        ggml_cuda_mul_mat_q(ctx, src0, src1, ids, dst, 0);",
+            text="            ggml_cuda_mul_mat_q(ctx, src0, src1, ids, dst, 0);",
             guard=r"ggml_cuda_mul_mat_q\(ctx, src0, src1, ids, dst, 0\);",
             max_span_lines=2,
         ),
