@@ -39,7 +39,7 @@ Rules for every implementation:
 |---|---:|---|---|---|
 | R9X01 | P0 | Intake, mapping, baseline, capability matrix | none | PNRO; 1273–1292 |
 | R9X03 | P0 | GDN MTP decode + short-prefill fusion | 1302, 1312 | 1221/1253/1254/1255 |
-| R9X04 | P0 | MoE router + hyper-connection decode fusion | 1303, 1304 | 1207/1237/1256/1257/1279 |
+| R9X04 | P2 / profile gate | Router GEMM only; HC POST already QFP35/1355 | 1303 advisory; **1304 retired** | 1207/1237/1256/1257/1279; QFP35/1344/1355 |
 | R9X10 | P2 / profile gate | Scalar shared-expert gate tail only | none; 1310 occupied by QFP18 | 1207/1215/1237/1265 |
 | R9X02 | P1 | Attention + QSA/indexer | 1300, 1301 | 1201/1202/1203/1266/1270/1271/1280/1292 |
 | R9X06 | P1 | Expert residency/LRU + pinned-host backing | 1307 | 1279 + memory/lifetime work |
