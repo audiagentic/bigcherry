@@ -11,8 +11,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from bigcherry.core import paths  # noqa: E402
 from bigcherry.patcher import apply_all  # noqa: E402
-from bigcherry.patch import rebase as patch_rebase  # noqa: E402
-from bigcherry.patch.pinned_source import copy_pinned, pinned_checkout  # noqa: E402
+from bigcherry.patch.pinned_source import pinned_checkout, production_order, production_source  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
 _HAVE_VENDOR = paths.llama_root().is_dir()
@@ -37,49 +36,10 @@ _P = _load("1360_ar_transfer_stream")
 class Patch1360Mechanics(unittest.TestCase):
     def _composed_base(self, td):
         """Production source plus 1360's dependency closure, with 1360 itself left for the test."""
-        root = Path(td)
-        selected = patch_rebase.resolve_selection(
-            source_name="bigcherry",
-            all_patches=False,
-            focal_overlay_patch_id="1360_ar_transfer_stream",
-        )
-        ids = [m.patch_id for m in selected.modules]
-        self.assertIn("1360_ar_transfer_stream", ids)
-        for required in (
-            "0840_hybrid_allreduce_dispatch",
-            "0910_feature_sets",
-            "1291_ar_cpu_root",
-        ):
+        ids = production_order()
+        for required in ("0840_hybrid_allreduce_dispatch", "0910_feature_sets", "1291_ar_cpu_root"):
             self.assertIn(required, ids)
-
-        texts = patch_rebase._overlay_texts()
-        overlay_paths = frozenset(texts)
-        for module in selected.modules:
-            if module.patch_id == "1360_ar_transfer_stream":
-                continue
-            probe = patch_rebase.probe_patch(
-                module,
-                _V,
-                texts,
-                context_lines=3,
-                previous_revision=None,
-                revision="mechanics-test",
-                overlay_paths=overlay_paths,
-            )
-            self.assertIn(
-                probe.status,
-                (patch_rebase.STATUS_CLEAN, patch_rebase.STATUS_CLEAN_NOOP),
-                (module.patch_id, probe.to_dict()),
-            )
-
-        for rel in _FILES:
-            target = root / rel
-            target.parent.mkdir(parents=True, exist_ok=True)
-            if rel in texts:
-                target.write_text(texts[rel], encoding="utf-8")
-            else:
-                copy_pinned(_V / rel, target)
-        return root
+        return production_source(_FILES, td, without="1360_ar_transfer_stream")
 
     def test_applies_after_composed_base_and_is_idempotent(self):
         with tempfile.TemporaryDirectory() as td:

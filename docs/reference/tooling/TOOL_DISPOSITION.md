@@ -165,6 +165,7 @@ ownership.
 | `tools/lab/flash-next/abba-depths.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/ahead-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/ar-boundary.py` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/ar-prefill-stats.py` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/ar-segment.py` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/ar-trace.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/attn-maxctx.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
@@ -202,11 +203,17 @@ ownership.
 | `tools/lab/flash-next/gather-ref.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/gather-retest.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/gather-v2-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/gdb-wrap.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/gemma-iso.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/gpu-usage-sampler.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/graph-memlog.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/graph-trace-diff.py` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/graphs-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/hang-watch.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/indexer-backend-test.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/kernel-gap-stats.py` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/kernel-overlap-stats.py` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/kernel-step-census.py` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/kpool-ab-2.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/kpool-parity.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/layout-probe.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
@@ -221,6 +228,7 @@ ownership.
 | `tools/lab/flash-next/meta-timing-summary.py` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/mixed-batch-test.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/mmid-range-test.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/mmq-variant-census.py` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/moe-copy-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/native-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/page-cache-fraction.py` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
@@ -238,7 +246,9 @@ ownership.
 | `tools/lab/flash-next/queue-1327.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/queue-1330.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/queue-1330e.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-1356-race-bisect.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/queue-27b-pairs.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-accuracy-off-switches.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/queue-ahead-ctl.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/queue-ahead-gate.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/queue-ahead-pmin.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
@@ -268,6 +278,7 @@ ownership.
 | `tools/lab/flash-next/queue-chunk9.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/queue-combined-ab.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/queue-ctx-fit-2.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-decode-acceptance.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/queue-default-on.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/queue-defaults.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/queue-deploy-sweep.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
@@ -332,6 +343,7 @@ ownership.
 | `tools/lab/flash-next/queue-native-flash.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/queue-p27b-3.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/queue-p27b.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-patch-ablation.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/queue-peak.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/queue-pmin-screen.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/queue-prbe115-quick.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
@@ -347,6 +359,7 @@ ownership.
 | `tools/lab/flash-next/queue-rccl-screen.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/queue-release-smoke.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/queue-rerun-0910.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-router-with-evict.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/queue-routing.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/queue-sched-split.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/flash-next/queue-smoke-v5.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
@@ -415,14 +428,21 @@ ownership.
 | `tools/lab/flash-next/wait-gpus-free.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/hi24-slice-a/verify_slice_a.py` | **TRANSITIONAL** | RA13 plan-owned lab implementation retained behind the documented compatibility wrapper until that entry point is retired. |
 | `tools/lab/hi34-residency-gates/residency_gates.py` | **TRANSITIONAL** | RA12 plan-owned lab implementation retained behind the documented compatibility wrapper until that entry point is retired. |
+| `tools/lab/hip-probes/hip_overlap_probe.cpp` | **TRANSITIONAL** | `hip-probes` lab topic file (see `tools/lab/hip-probes/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/hip-probes/rccl_stagger_probe.cpp` | **TRANSITIONAL** | `hip-probes` lab topic file (see `tools/lab/hip-probes/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/hip-probes/run-rccl.sh` | **TRANSITIONAL** | `hip-probes` lab topic file (see `tools/lab/hip-probes/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/hip-probes/run.sh` | **TRANSITIONAL** | `hip-probes` lab topic file (see `tools/lab/hip-probes/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/native-vs-patched/server-ab-adaptive-switch-mtp.json` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/native-vs-patched/server-ab-adaptive-switch.json` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/native-vs-patched/server-ab-adaptive-switch64k.json` | **TRANSITIONAL** | `native-vs-patched` lab topic file (see `tools/lab/native-vs-patched/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/patch1000/patch1000_verification.py` | **TRANSITIONAL** | PA43: patch 1000 backend-ops/llama-bench verification helpers moved verbatim out of `bigcherry.patch.validation_campaign` (never dispatched by the production CLI); loaded by path from `run_pa35_step1.py` and `tools/tests/patch/test_patch1000_verification.py`. |
 | `tools/lab/patch1000/run_pa35_step1.py` | **TRANSITIONAL** | PA35 step 1: one-off gfx1201 hardware-evidence driver for patch 1000 (control vs subject backend-ops Q2_K/Q6_K correctness + perf); per GPT `req_71c1aaa166f446a1`, deliberately not shared production code. |
 | `tools/lab/plan-qualification/activation-check.sh` | **TRANSITIONAL** | Plan-qualification activation probe used only by the legacy qualification queue; retire with that queue at jobs cutover. |
+| `tools/lab/plan-qualification/after.sh` | **TRANSITIONAL** | `plan-qualification` lab topic file (see `tools/lab/plan-qualification/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/plan-qualification/compose-apply.py` | **TRANSITIONAL** | `plan-qualification` lab topic file (see `tools/lab/plan-qualification/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/plan-qualification/contention_check.sh` | **TRANSITIONAL** | `plan-qualification` lab topic file (see `tools/lab/plan-qualification/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/plan-qualification/cooldown.sh` | **TRANSITIONAL** | `plan-qualification` lab topic file (see `tools/lab/plan-qualification/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/plan-qualification/legacy-part.py` | **TRANSITIONAL** | `plan-qualification` lab topic file (see `tools/lab/plan-qualification/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/plan-qualification/linux-test-suite.sh` | **TRANSITIONAL** | `plan-qualification` lab topic file (see `tools/lab/plan-qualification/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/plan-qualification/locked-run.sh` | **TRANSITIONAL** | `plan-qualification` lab topic file (see `tools/lab/plan-qualification/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/plan-qualification/make-serial-2.sh` | **TRANSITIONAL** | Writes the second plan-qualification job batch from environment-provided host paths. |
@@ -437,6 +457,7 @@ ownership.
 | `tools/lab/plan-qualification/retry-failed.sh` | **TRANSITIONAL** | `plan-qualification` lab topic file (see `tools/lab/plan-qualification/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/plan-qualification/run_campaign.sh` | **TRANSITIONAL** | RDNA/nasone plan implementation loop: one-GPU validation-campaign launcher with host paths from env and output under work/; graduate into a campaign CLI verb or archive when the loop ends. |
 | `tools/lab/plan-qualification/summarize.py` | **TRANSITIONAL** | One-line-per-run summary of plan-qualification campaign results (checks, lane effects, contract verdicts). |
+| `tools/lab/plan-qualification/syntax-check.sh` | **TRANSITIONAL** | `plan-qualification` lab topic file (see `tools/lab/plan-qualification/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/plan-qualification/thermal-log.sh` | **TRANSITIONAL** | `plan-qualification` lab topic file (see `tools/lab/plan-qualification/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/plan-qualification/topk_backend_sampling_check.sh` | **TRANSITIONAL** | `plan-qualification` lab topic file (see `tools/lab/plan-qualification/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/plan-qualification/withdraw_discarded.py` | **TRANSITIONAL** | `plan-qualification` lab topic file (see `tools/lab/plan-qualification/README.md`); experiment-only, disposed per that README. |
@@ -477,6 +498,10 @@ ownership.
 | `tools/lab/run-campaign-durability/slurm_noble_v2_smoke.sh` | **TRANSITIONAL** | `run-campaign-durability` lab topic file (see `tools/lab/run-campaign-durability/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/run-campaign-durability/slurm_noble_v3_smoke.sh` | **TRANSITIONAL** | `run-campaign-durability` lab topic file (see `tools/lab/run-campaign-durability/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/run-campaign-durability/tree_activity_race_smoke.py` | **TRANSITIONAL** | `run-campaign-durability` lab topic file (see `tools/lab/run-campaign-durability/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/stagger-harness/llama_prefill_harness.cpp` | **TRANSITIONAL** | `stagger-harness` lab topic file (see `tools/lab/stagger-harness/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/stagger-harness/meta_pair_harness.cpp` | **TRANSITIONAL** | `stagger-harness` lab topic file (see `tools/lab/stagger-harness/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/stagger-harness/run-llama.sh` | **TRANSITIONAL** | `stagger-harness` lab topic file (see `tools/lab/stagger-harness/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/stagger-harness/run.sh` | **TRANSITIONAL** | `stagger-harness` lab topic file (see `tools/lab/stagger-harness/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/strata/bcop37-build.sh` | **TRANSITIONAL** | `strata` lab topic file (see `tools/lab/strata/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/strata/bcop37-rocm-shim.sh` | **TRANSITIONAL** | `strata` lab topic file (see `tools/lab/strata/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/strata/bcop37-routing.sh` | **TRANSITIONAL** | `strata` lab topic file (see `tools/lab/strata/README.md`); experiment-only, disposed per that README. |

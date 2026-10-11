@@ -12,8 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from bigcherry.core import paths  # noqa: E402
 from bigcherry.patcher import apply_all  # noqa: E402
-from bigcherry.patch import rebase as patch_rebase  # noqa: E402
-from bigcherry.patch.pinned_source import copy_pinned, pinned_checkout  # noqa: E402
+from bigcherry.patch.pinned_source import copy_pinned, pinned_checkout, production_order, production_source  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
 # a pristine copy of the pinned revision: the vendor working tree normally has the production patches applied
@@ -85,39 +84,17 @@ class Patch1346Mechanics(unittest.TestCase):
         return root
 
     def _apply_prereqs(self, root):
-        """Compose the production set up to, not including, 1346 through the composer's own probe path.
+        """The production set up to, not including, 1346, through the composer's own probe path.
 
         1346 applies after look-ahead (1321/1322), round timing (1317) and deferred catch-up (1348); those in turn
         need their own predecessors, so a hand-picked subset does not reproduce the text 1346 anchors on.
         """
-        selected = patch_rebase.resolve_selection(source_name="bigcherry", all_patches=False)
-        ids = [m.patch_id for m in selected.modules]
+        ids = production_order()
         self.assertIn("1346_mtp_prompt_overlap", ids)
         for required in ("1321_mtp_ahead_primitives", "1322_mtp_ahead_overlap", "1317_spec_round_timing",
                          "1348_mtp_deferred_catchup"):
             self.assertLess(ids.index(required), ids.index("1346_mtp_prompt_overlap"), required)
-        texts = patch_rebase._overlay_texts()
-        overlay_paths = frozenset(texts)
-        for module in selected.modules:
-            if module.patch_id == "1346_mtp_prompt_overlap":
-                break
-            probe = patch_rebase.probe_patch(
-                module,
-                _V,
-                texts,
-                context_lines=3,
-                previous_revision=None,
-                revision="mechanics-test",
-                overlay_paths=overlay_paths,
-            )
-            self.assertIn(
-                probe.status,
-                (patch_rebase.STATUS_CLEAN, patch_rebase.STATUS_CLEAN_NOOP),
-                (module.patch_id, probe.to_dict()),
-            )
-        for rel in _FILES:
-            if rel in texts:
-                (root / rel).write_text(texts[rel], encoding="utf-8")
+        production_source(_FILES, root, stop_before="1346_mtp_prompt_overlap")
 
     def _check(self, root):
         h = (root / "common/speculative.h").read_text(encoding="utf-8")

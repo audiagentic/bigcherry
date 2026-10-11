@@ -83,43 +83,43 @@ class PerformanceBenchmarkArgParsingTests(unittest.TestCase):
         self.assertIn("requires --model-root and --device-map", message)
 
     def test_does_not_require_model_manifest_or_amdgpu_targets(self) -> None:
-        # Should get PAST arg validation (i.e. NOT hit parser.error()) and
-        # into real dispatch, which then fails for an unrelated real-
-        # hardware reason (no real ROCm toolchain here) -- proving the
-        # legacy --model/--manifest/--amdgpu-targets gate was actually
-        # bypassed for this mode, not just given defaults. Real source
-        # materialization does run (this is a real-integration entry
-        # point, not mocked) -- --worktree-root/--workdir are pointed at
-        # an isolated tempdir so this does not pollute the real
-        # project-local content-addressed worktree cache.
+        # Should get PAST arg validation (i.e. NOT hit parser.error()) and into real dispatch -- proving the legacy
+        # --model/--manifest/--amdgpu-targets gate was bypassed for this mode, not just given defaults. Dispatch is
+        # cut at its first step, the binary pair build: reaching it is the claim, and letting it run materialized
+        # two composed source worktrees (about a minute) only to fail later for want of a ROCm toolchain.
         import tempfile
+        from unittest import mock
+
+        class _Reached(Exception):
+            pass
 
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
-            try:
-                vc.main(
-                    [
-                        "--patch",
-                        "1202_rd04_bf16_flash_attn_tile",
-                        "--run-performance-benchmark",
-                        "--hip-path",
-                        str(Path(__file__).resolve().parent),
-                        "--workdir",
-                        str(tmp_path / "workdir"),
-                        "--worktree-root",
-                        str(tmp_path / "worktrees"),
-                        "--model-root",
-                        "fake-models",
-                        "--device-map",
-                        "gfx1100=0",
-                    ]
-                )
-            except SystemExit:
-                self.fail(
-                    "--run-performance-benchmark should not hit parser.error() here"
-                )
-            except Exception:
-                pass  # expected: fails later for a real, unrelated (non-arg-parsing) reason
+            with mock.patch("bigcherry.patch.campaign.benchmark._build_performance_binary_pair",
+                            side_effect=_Reached) as build:
+                try:
+                    vc.main(
+                        [
+                            "--patch",
+                            "1202_rd04_bf16_flash_attn_tile",
+                            "--run-performance-benchmark",
+                            "--hip-path",
+                            str(Path(__file__).resolve().parent),
+                            "--workdir",
+                            str(tmp_path / "workdir"),
+                            "--worktree-root",
+                            str(tmp_path / "worktrees"),
+                            "--model-root",
+                            "fake-models",
+                            "--device-map",
+                            "gfx1100=0",
+                        ]
+                    )
+                except SystemExit:
+                    self.fail("--run-performance-benchmark should not hit parser.error() here")
+                except Exception:
+                    pass  # the cut above, or the campaign's own wrapping of it
+            build.assert_called()
 
     def test_legacy_mode_still_requires_amdgpu_targets(self) -> None:
         # Regression check: removing --amdgpu-targets's required=True (so

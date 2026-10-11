@@ -12,7 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from bigcherry.core import paths  # noqa: E402
 from bigcherry.patcher import apply_all  # noqa: E402
-from bigcherry.patch.pinned_source import composed_before  # noqa: E402
+from bigcherry.patch.pinned_source import production_source  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
 _ID = "1237_rd30_moe_mmq_compact_grid"
@@ -34,7 +34,7 @@ _FILES = sorted({fp.path for fp in _P.PATCHES})
 class Patch1237Mechanics(unittest.TestCase):
     def test_apply_on_composition_and_idempotent(self):
         with tempfile.TemporaryDirectory() as td:
-            root = composed_before(_ID, _FILES, td)
+            root = production_source(_FILES, td, stop_before=_ID)
             # no guard may already match: a guard that matches an earlier patch's output skips its edit silently
             for fp in _P.PATCHES:
                 before = (root / fp.path).read_text(encoding="utf-8")
@@ -54,7 +54,7 @@ class Patch1237Mechanics(unittest.TestCase):
 
     def test_missing_anchor_fails_closed(self):
         with tempfile.TemporaryDirectory() as td:
-            root = composed_before(_ID, _FILES, td)
+            root = production_source(_FILES, td, stop_before=_ID)
             # the first file without the text its edits attach to
             (root / _P.PATCHES[0].path).write_text("// moved upstream" + chr(10), encoding="utf-8")
             res = apply_all(_P.PATCHES, root)

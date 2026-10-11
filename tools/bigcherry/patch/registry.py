@@ -36,6 +36,7 @@ from __future__ import annotations
 import ast
 import hashlib
 import json
+import os
 import re
 import sys
 import tomllib
@@ -126,6 +127,33 @@ class PatchRegistryError(ValueError):
 
 def _sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+# load_registry results by (root, contracts path), each with the tree fingerprint it was read at; parsed contracts
+# by (file, content hash). Both are replaced when the tree or the file changes.
+_REGISTRY_CACHE: dict = {}
+_CONTRACTS_CACHE: dict = {}
+
+
+def _tree_fingerprint(root: Path, contracts_file: Path) -> tuple:
+    """(relative path, mtime, size) of every file under ``root`` and of the contracts file."""
+    rows = []
+    stack = [str(root)]
+    while stack:
+        with os.scandir(stack.pop()) as entries:
+            for entry in entries:
+                if entry.is_dir(follow_symlinks=False):
+                    stack.append(entry.path)
+                else:
+                    stat = entry.stat(follow_symlinks=False)
+                    rows.append((entry.path, stat.st_mtime_ns, stat.st_size))
+    rows.sort()
+    try:
+        stat = contracts_file.stat()
+        rows.append((str(contracts_file), stat.st_mtime_ns, stat.st_size))
+    except OSError:
+        rows.append((str(contracts_file), None, None))
+    return tuple(rows)
 
 
 def _contains(base: Path, candidate: Path) -> bool:
@@ -525,12 +553,18 @@ def _contract_hash(contract_id: str, *, contracts_path: Path | None = None) -> s
         )
     from bigcherry.experiment import contract as experiment_contract # noqa: PLC0415 (A1: one-way leaf import)
 
-    try:
-        contracts = experiment_contract.load_contracts(file_path)
-    except Exception as exc:  # noqa: BLE001 - schema errors become tree errors
-        raise PatchRegistryError(
-            f"experiment contracts file {file_path.name} failed to load: {exc}"
-        ) from exc
+    # every contract-bearing patch asks for its hash: parse the file once per content, not once per patch
+    content_key = (file_path.resolve(), _sha256_bytes(file_path.read_bytes()))
+    contracts = _CONTRACTS_CACHE.get(content_key)
+    if contracts is None:
+        try:
+            contracts = experiment_contract.load_contracts(file_path)
+        except Exception as exc:  # noqa: BLE001 - schema errors become tree errors
+            raise PatchRegistryError(
+                f"experiment contracts file {file_path.name} failed to load: {exc}"
+            ) from exc
+        _CONTRACTS_CACHE.clear()
+        _CONTRACTS_CACHE[content_key] = contracts
     try:
         return contracts[contract_id].contract_hash
     except KeyError:
@@ -728,6 +762,17 @@ def load_registry(
     if not resolved_root.is_dir():
         return PatchRegistry(root=resolved_root, descriptors=())
 
+    # One composition asks for the registry once per patch (rebase._load_module_patches) and an offline check
+    # composes dozens of selections: an unchanged tree is read once. The key is every file's (path, mtime, size)
+    # under the root plus the contracts file's, and the framework version that enters the validation digest; the patch bytes that are executed are
+    # digest-checked again by load_implementation whatever this returns.
+    cache_key = (resolved_root, contracts_path)
+    fingerprint = (VALIDATION_FRAMEWORK_VERSION,
+                   _tree_fingerprint(resolved_root, contracts_path or paths.EXPERIMENT_CONTRACTS))
+    cached = _REGISTRY_CACHE.get(cache_key)
+    if cached is not None and cached[0] == fingerprint:
+        return cached[1]
+
     descriptors: list[PatchDescriptor] = []
     seen: dict[str, str] = {}
 
@@ -749,7 +794,9 @@ def load_registry(
         _add(_legacy_descriptor(resolved_root, py_path))
 
     ordered = tuple(sorted(descriptors, key=lambda d: (d.order, d.patch_id)))
-    return PatchRegistry(root=resolved_root, descriptors=ordered)
+    registry = PatchRegistry(root=resolved_root, descriptors=ordered)
+    _REGISTRY_CACHE[cache_key] = (fingerprint, registry)
+    return registry
 
 
 def describe_all(
