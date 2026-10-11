@@ -536,20 +536,93 @@ def phase_sync(plan: Plan) -> bool:
     return True
 
 
+def _manifest_versions(plan: Plan) -> dict[str, str]:
+    try:
+        manifest = json.loads((plan.repo_root / _MANIFEST).read_text(encoding="utf-8"))
+        config = json.loads((plan.repo_root / _RELEASE_CONFIG).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise PinReleaseError("release", f"cannot read release-please manifest/config: {exc}") from exc
+    result: dict[str, str] = {}
+    for package, current in manifest.items():
+        configured = config.get("packages", {}).get(package, {})
+        pinned = configured.get("release-as") if isinstance(configured, dict) else None
+        if package == RELEASE_PACKAGE:
+            result[package] = plan.version
+        elif isinstance(pinned, str):
+            result[package] = pinned
+        else:
+            result[package] = str(current)
+    return result
+
+
+def _dry_run(plan: Plan, stop: int, log=print) -> None:
+    tagged = _tag_exists(plan)
+    record_path = plan.repo_root / "releases" / f"{plan.llama_tag}.json"
+    recorded = record_path.is_file() and f"release {plan.version}" in (
+        json.loads(record_path.read_text(encoding="utf-8")).get("notes") or "")
+    config_value = _release_as_value((plan.repo_root / _RELEASE_CONFIG).read_text(encoding="utf-8"), "notes")
+    notes_subject = f"chore: release notes {plan.release_tag}"
+    notes_done = notes_subject in _git(plan.repo_root, "log", "--format=%s", "--fixed-strings",
+                                       f"--grep={notes_subject}", "-5", check=False).splitlines()
+
+    for name in PHASES[:stop + 1]:
+        if name == "gate":
+            log("  gate     already passed (recorded)" if recorded else
+                "  gate     would run: python -m bigcherry pin-status --complete --all-remotes")
+        elif name == "record":
+            log("  record   already done" if recorded else
+                f"  record   would update releases/{plan.llama_tag}.json and clear releases/pin-transition.json")
+        elif name == "notes":
+            if notes_done and config_value == plan.version:
+                log("  notes    already done")
+            else:
+                log(f"  notes    would write notes and set {RELEASE_PACKAGE}.release-as={plan.version}")
+        elif name == "main":
+            if tagged:
+                log(f"  main     already done ({plan.release_tag} exists)")
+            else:
+                pr = _pr_for_head(plan, plan.branch, "main")
+                if pr is None:
+                    log(f"  main     would open PR base={plan.main} head={plan.branch} title={_main_pr_title(plan)!r}")
+                else:
+                    log(f"  main     would reuse PR #{pr['number']} title={pr.get('title')!r} head={pr.get('headRefName')}")
+        elif name == "release":
+            if tagged:
+                log(f"  release  already done: {plan.release_tag} exists")
+            else:
+                pr = _release_pr(plan)
+                if pr is None:
+                    log("  release  release PR: none exists yet")
+                else:
+                    log(f"  release  would merge PR #{pr['number']} title={pr.get('title')!r} branch={pr.get('headRefName')}")
+            for package, version in _manifest_versions(plan).items():
+                log(f"           manifest {package}: {version}")
+        elif name == "unpin":
+            if tagged and config_value is None:
+                log("  unpin    already done")
+            else:
+                head = _unpin_branch(plan)
+                pr = _pr_for_head(plan, head, "unpin")
+                if pr is None:
+                    log(f"  unpin    would open PR base={plan.main} head={head} title={_unpin_title(plan)!r}")
+                else:
+                    log(f"  unpin    would reuse PR #{pr['number']} title={pr.get('title')!r} head={pr.get('headRefName')}")
+        elif name == "sync":
+            log(f"  sync     would merge {plan.remote}/{plan.main} into {plan.branch} and push only {plan.branch}")
+
+
 def run(repo_root: Path, llama_tag: str, evidence: str, through: str = "sync", dry_run: bool = False, log=print,
         version: str | None = None, bump: str | None = None) -> int:
-    plan = make_plan(repo_root, llama_tag, version=version, bump=bump)
+    plan = make_plan(repo_root, llama_tag, version=version, bump=bump, allow_existing=dry_run)
     stop = PHASES.index(through)
     log(f"pin-release: {plan.llama_tag} -> {plan.release_tag} (version {plan.version}), branch {plan.branch} -> {plan.main}")
     if dry_run:
-        for name in PHASES[:stop + 1]:
-            log(f"  would run: {name}")
+        _dry_run(plan, stop, log)
         return 0
     record_path = repo_root / "releases" / f"{plan.llama_tag}.json"
-    recorded = record_path.is_file() and f"release {plan.version}" in (json.loads(record_path.read_text(encoding="utf-8")).get("notes") or "")
+    recorded = record_path.is_file() and f"release {plan.version}" in (
+        json.loads(record_path.read_text(encoding="utf-8")).get("notes") or "")
     if recorded:
-        # the gate passed and its output is in the record; the commits made since (record, notes, merges) move this
-        # tree's revision ahead of the others by design, so the gate is not asked again for the same release
         gate_output = ""
         log("  gate     already passed (recorded)")
     else:
@@ -560,6 +633,7 @@ def run(repo_root: Path, llama_tag: str, evidence: str, through: str = "sync", d
         ("notes", lambda: phase_notes(plan)),
         ("main", lambda: phase_main(plan)),
         ("release", lambda: phase_release(plan)),
+        ("unpin", lambda: phase_unpin(plan)),
         ("sync", lambda: phase_sync(plan)),
     )
     for name, step in steps:
