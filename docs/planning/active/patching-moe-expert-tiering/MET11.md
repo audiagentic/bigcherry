@@ -53,6 +53,10 @@ Package-only patch, fail-closed anchors, offline test. Off switch = the variable
 
 Also the base for MET10 (host tail): the same per-layer table decides which experts are resident and which stay on the host. Profiles come from 1338's recorder (BIGCHERRY_MOE_CACHE_PROFILE_OUT, with BIGCHERRY_MOE_CACHE_LARGE=1 to include prefill routing); a recorder that works inside the tensor split, not only on a single card, would remove that detour and belongs here or in MET08.
 
+## 2026-10-12 MET09 routing and patch-identity gate (supersedes B1/B2 rationale above)
+
+Use B2 (unchanged original router + old-to-new expert ID translation **after** selection) to preserve original-expert selection and paired slot weights. This remains necessary even when b11552's fused `topk_moe_cuda` is used: its existing deterministic equal-score rule selects the lower **physical** ID, which changes meaning when experts are permuted. Ordinary `ggml_argsort_top_k` is a separate `GGML_OP_ARGSORT` path, not patch 1294's QSA `GGML_OP_TOP_K`. Do not add a duplicate router tie kernel. Prove fused/ARGSORT route identity and old-ID/weight correspondence with the MET09 first-divergence fixture before proposing placement implementation. Ensure the B2 lookup tensor remains graph-owned/mirrored with stable lifetime across replay and multi-request use, and translate only expert-dispatch IDs (not router-weight gathering). The previously proposed **1343** patch slot is already occupied by `1343_mtp_nextn_rereserve`; do not reuse it. Allocate a free identifier only after Gate 1 passes and the active PA49 pin work has settled. This is a planning correction, not a new patch or hardware result.
+
 ## Change Log
 
 - 2026-10-06T16:42:10.474116+00:00 (created-by): Created by agent
