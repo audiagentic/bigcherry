@@ -1,5 +1,18 @@
 # Changelog
 
+## [11552.1.0](https://github.com/audiagentic/bigcherry/compare/bc-llamacpp-11552.0.0...bc-llamacpp-11552.1.0) (2026-10-11)
+
+
+### New and changed
+
+* **patch:** add opt-in prompt KV padding (1362) ([4d690b5](https://github.com/audiagentic/bigcherry/commit/4d690b5013183de60b3d93eac899388e39ad1a85))
+* **patch:** opt-in KV padding so prompt batches reuse the graph (1362) ([215424f](https://github.com/audiagentic/bigcherry/commit/215424f62e0dd19dc1e3487bd114e09dcb097305))
+
+
+### Fixes
+
+* **patch:** 1281 - the MoE kernel edit's guard keeps its indent (without it the guard matches upstream's own line and the edit is skipped); test checks the barrier after the clear ([9e6be0a](https://github.com/audiagentic/bigcherry/commit/9e6be0a7168bc35dc14004fd264c0dd205371b49))
+
 ## [11552.0.0](https://github.com/audiagentic/bigcherry/compare/bc-llamacpp-11474.9.0...bc-llamacpp-11552.0.0) (2026-10-11)
 
 
