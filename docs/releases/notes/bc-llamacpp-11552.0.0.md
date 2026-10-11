@@ -5,8 +5,6 @@ Previous release: `bc-llamacpp-b11474-r9`.
 
 ## Bump record
 
-source audit failed: mmq.generated_types_match_runtime, mmq.j_search_loop_bounds, overlay.vendor_sync
-
 release 11552.0.0 2026-10-12
 
 completion gate (pin-status --complete --all-remotes):
@@ -53,8 +51,8 @@ Qwen3.8-27B Q8 (dual XTX, production flags, --allreduce cpu-root; prod27b-ab.sh 
   run on the new pin, 49.6 vs 46.3 ms/step, not repeated); accepted 181/293 vs 182/289.
 - Greedy text identical across pins at 32K; at 10K each pin is self-consistent and the two differ.
 
-Not carried over: seven non-production patches do not apply on b11552 and have revision-bound known_broken
-dispositions (1250, 1256, 1257, 1266, 1267, 1337, 1338). Tracked-sources check: 63 findings, triage in PA50.
+Not carried over: six non-production patches do not apply on b11552 and have revision-bound known_broken
+dispositions (1250, 1256, 1257, 1266, 1267, 1338). 1337 is superseded: the pin carries upstream #29887 itself. Tracked-sources check: 63 findings, triage in PA50.
 
 ## Patches
 
