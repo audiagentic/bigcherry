@@ -184,8 +184,13 @@ _N_MMVF_K = (
     "        channel_x = (int) bc_local;\n"
     "    }\n"
 )
-_A_MMV_HOST = "    ggml_cuda_mm_fusion_args_device fusion_local{};\n"
+_A_MMV_HOST = (
+    "    ggml_cuda_mm_fusion_args_device fusion_local{};\n"
+    "\n"
+    "    if (fusion) {\n"
+)
 _N_MMV_HOST = (
+    "    ggml_cuda_mm_fusion_args_device fusion_local{};\n"
     "\n"
     "    // BigCherry 1281: range variant. In a plain launch dst is the MUL_MAT_ID node; in a fused launch dst is the\n"
     "    // fused output (GLU) and the caller passes the range. The kernel skips the lanes this device does not hold,\n"
@@ -200,6 +205,8 @@ _N_MMV_HOST = (
     "    if (fusion_local.id_count != 0) {\n"
     "        CUDA_CHECK(cudaMemsetAsync(dst->data, 0, ggml_nbytes(dst), ctx.stream()));\n"
     "    }\n"
+    "\n"
+    "    if (fusion) {\n"
 )
 
 _A_MMID_DECL = (
@@ -920,10 +927,10 @@ PATCHES = [
                  guard=r"uint32_t channel_x = shared_expert \? 0 : ids\[channel_dst \+ token_idx \* ids_stride\];",
                  rationale="mul_mat_vec_q_moe's unique expert-id assignment.",
                  expect_matches=1, max_span_lines=2),
-            Edit(id="mmid-range-mmvq-host", anchor=_re.escape(_A_MMV_HOST), mode="insert_after", text=_N_MMV_HOST,
+            Edit(id="mmid-range-mmvq-host", anchor=_re.escape(_A_MMV_HOST), mode="replace", text=_N_MMV_HOST,
                  guard=r"fusion_local\.id_count = src0->ne\[2\];",
-                 rationale="ggml_cuda_mul_mat_vec_q's local fusion-argument declaration.",
-                 expect_matches=1, max_span_lines=2),
+                 rationale="ggml_cuda_mul_mat_vec_q's local fusion-argument declaration plus the following fusion branch.",
+                 expect_matches=1, max_span_lines=4),
         ),
     ),
     FilePatch(
@@ -935,10 +942,10 @@ PATCHES = [
                  guard=r"const int64_t bc_local = \(int64_t\) channel_x - \(int64_t\) fusion\.id_base;",
                  rationale="mul_mat_vec_f's id-reading branch tail.",
                  expect_matches=1, max_span_lines=4),
-            Edit(id="mmid-range-mmvf-host", anchor=_re.escape(_A_MMV_HOST), mode="insert_after", text=_N_MMV_HOST,
+            Edit(id="mmid-range-mmvf-host", anchor=_re.escape(_A_MMV_HOST), mode="replace", text=_N_MMV_HOST,
                  guard=r"fusion_local\.id_count = src0->ne\[2\];",
-                 rationale="ggml_cuda_mul_mat_vec_f's local fusion-argument declaration.",
-                 expect_matches=1, max_span_lines=2),
+                 rationale="ggml_cuda_mul_mat_vec_f's local fusion-argument declaration plus the following fusion branch.",
+                 expect_matches=1, max_span_lines=4),
         ),
     ),
     FilePatch(
