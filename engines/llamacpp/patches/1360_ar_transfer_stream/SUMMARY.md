@@ -1,7 +1,16 @@
 # 1360_ar_transfer_stream
 
-**Status:** untested
+**Status:** evaluated
 **Plan item:** QFP49
+
+## Shelved as evaluated (owner decision, 2026-10-12)
+
+Default off and in no build. On its own the flag is neutral: Flash-Next prefill and decode with it on are inside the
+run-to-run spread (the first reading of a 19% cost was a bimodal run, corrected). Its purpose was to let the cross-card
+sum overlap the next half-batch of 1361, and 1361 never produced a correct real prompt (PR #147, closed unmerged).
+The standalone probe (tools/lab/hip-probes) bounds what that overlap could hide at Flash-Next's ~44 kernels a step:
+42% of the sum at 40 kernels, 13% at 80; and the b11552 census shows the cards 91-92% busy in a median step. Kept as
+the record of the mechanism; not a candidate for promotion as it stands.
 
 ## What it does
 
