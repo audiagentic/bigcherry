@@ -57,6 +57,11 @@ def read_pinned(src) -> str:
     return blob.decode("utf-8")
 
 
+# composed_before's running state: the production patch ids applied so far and the file texts they left. Mechanics tests
+# of several patches run in one process; each later patch continues the composition instead of starting it again.
+_COMPOSED: dict = {"ids": [], "texts": None}
+
+
 def composed_before(patch_id: str, files, out) -> Path:
     """Write `files` into `out` as the production composition leaves them just before `patch_id` is applied.
 
@@ -68,15 +73,24 @@ def composed_before(patch_id: str, files, out) -> Path:
 
     selected = rebase.resolve_selection(source_name="bigcherry", all_patches=False, focal_overlay_patch_id=patch_id)
     vendor = pinned_checkout()
-    texts = rebase._overlay_texts()
-    overlay_paths = frozenset(texts)
+    before = []
     for module in selected.modules:
         if module.patch_id == patch_id:
             break
+        before.append(module)
+    want = [module.patch_id for module in before]
+    done = _COMPOSED["ids"]
+    if _COMPOSED["texts"] is None or want[:len(done)] != done:
+        _COMPOSED["ids"], _COMPOSED["texts"] = [], rebase._overlay_texts()
+    texts = _COMPOSED["texts"]
+    overlay_paths = frozenset(rebase._overlay_texts())
+    for module in before[len(_COMPOSED["ids"]):]:
         probe = rebase.probe_patch(module, vendor, texts, context_lines=3, previous_revision=None,
                                    revision="composed-before", overlay_paths=overlay_paths)
         if probe.status not in (rebase.STATUS_CLEAN, rebase.STATUS_CLEAN_NOOP):
+            _COMPOSED["ids"], _COMPOSED["texts"] = [], None
             raise RuntimeError(f"{module.patch_id} does not apply before {patch_id}: {probe.status}")
+        _COMPOSED["ids"].append(module.patch_id)
     out = Path(out)
     for rel in files:
         target = out / rel
