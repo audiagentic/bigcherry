@@ -730,14 +730,29 @@ enum ggml_status ggml_backend_sched_graph_compute_async_pair(
             }
         }
     };
-    // After Meta/RCCL admission, execute complete upstream prefix split path.
-    // B host input split reads B's tokens/embeddings, not A's device KV/GDN state.
+    // The two schedulers must not land their final split inputs in the same allocation. If they do, B can
+    // overwrite a device input that A has not consumed yet; fail closed instead of depending on enqueue timing.
+    for (int ia = 0; ia < a->n_inputs; ++ia) {
+        ggml_tensor * ca = tensor_copy(a->inputs[ia], a->backend_id, sched_a->cur_copy);
+        if (!ca) return decline("missing A final-split input copy");
+        for (int ib = 0; ib < b->n_inputs; ++ib) {
+            ggml_tensor * cb = tensor_copy(b->inputs[ib], b->backend_id, sched_b->cur_copy);
+            if (!cb) return decline("missing B final-split input copy");
+            if (ca->buffer != nullptr && ca->buffer == cb->buffer) {
+                return decline("paired final-split input copies share a buffer");
+            }
+        }
+    }
+
+    // Snapshot A into its final Meta inputs before running B's host prefix. Some graph inputs/prefix temporaries
+    // are backed by host storage whose lifetime is only guaranteed until the next producer runs. The old order
+    // was prefix(A), prefix(B), copy(A), copy(B), so B could replace A's source before A had a device snapshot.
     auto prepare = [&]() -> ggml_status {
         ggml_status ec = ggml_backend_sched_compute_splits_prefix(sched_a);
         if (ec != GGML_STATUS_SUCCESS) return ec;
+        copy_inputs(sched_a, a);
         ec = ggml_backend_sched_compute_splits_prefix(sched_b);
         if (ec != GGML_STATUS_SUCCESS) return ec;
-        copy_inputs(sched_a, a);
         copy_inputs(sched_b, b);
         return GGML_STATUS_SUCCESS;
     };

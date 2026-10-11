@@ -129,6 +129,14 @@ class Patch1361Mechanics(unittest.TestCase):
             self.assertIn("if (bc_1359_on && !masked && (offset == 0 || bc_1361_nextn_pair))", ctx)
             self.assertIn("For a stagger pair, B's event fences both A and B copies", ctx)
             self.assertIn("std::swap(sched, bc_1361_sched_b);", ctx)
+            self.assertIn('decline("paired final-split input copies share a buffer")', sched)
+            prefix_a = sched.index("ggml_backend_sched_compute_splits_prefix(sched_a)")
+            copy_a = sched.index("copy_inputs(sched_a, a)", prefix_a)
+            prefix_b = sched.index("ggml_backend_sched_compute_splits_prefix(sched_b)", copy_a)
+            copy_b = sched.index("copy_inputs(sched_b, b)", prefix_b)
+            self.assertLess(prefix_a, copy_a)
+            self.assertLess(copy_a, prefix_b)
+            self.assertLess(prefix_b, copy_b)
 
             before = {p: (root / p).read_text(encoding="utf-8") for p in _FILES}
             again = apply_all(_P.PATCHES, root)
