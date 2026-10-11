@@ -267,9 +267,9 @@ AUTOTUNE_DISPATCH_PATCH = FilePatch(
             anchor=r"^    if \(self->source_class == GGML_HIP_SOURCE_NATIVE_WRAPPER\) \{$",
             rationale="native wrapper eligibility must query the same J that b11552 will select",
             mode="insert_after",
-            text="        const int64_t ncols_opt = (sig.flags & GGML_HIP_SIG_HAS_IDS)\\n"
-                 "            ? (sig.ne1[2] * sig.n_expert_used + sig.ne0[2] - 1) / sig.ne0[2]\\n"
-                 "            : sig.ne1[1];\\n",
+            text="        const int64_t ncols_opt = (sig.flags & GGML_HIP_SIG_HAS_IDS)\n"
+                 "            ? (sig.ne1[2] * sig.n_expert_used + sig.ne0[2] - 1) / sig.ne0[2]\n"
+                 "            : sig.ne1[1];\n",
             guard=r"const int64_t ncols_opt = \(sig.flags & GGML_HIP_SIG_HAS_IDS\)",
             max_span_lines=2,
         ),
@@ -295,9 +295,9 @@ AUTOTUNE_TUNER_PATCH = FilePatch(
             anchor=r"^            const int j_best = ggml_cuda_mmq_native_j_best\($",
             rationale="the canary must pair native with the candidate using b11552's actual native J",
             mode="insert_before",
-            text="            const int64_t ncols_opt = (sig.flags & GGML_HIP_SIG_HAS_IDS)\\n"
-                 "                ? (sig.ne1[2] * sig.n_expert_used + sig.ne0[2] - 1) / sig.ne0[2]\\n"
-                 "                : sig.ne1[1];\\n",
+            text="            const int64_t ncols_opt = (sig.flags & GGML_HIP_SIG_HAS_IDS)\n"
+                 "                ? (sig.ne1[2] * sig.n_expert_used + sig.ne0[2] - 1) / sig.ne0[2]\n"
+                 "                : sig.ne1[1];\n",
             guard=r"const int64_t ncols_opt = \(sig.flags & GGML_HIP_SIG_HAS_IDS\)",
             max_span_lines=2,
         ),
