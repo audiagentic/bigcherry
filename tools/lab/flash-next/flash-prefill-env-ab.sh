@@ -12,9 +12,9 @@ n=0
 for arm in ${ARMS:-A B B A}; do
   n=$((n+1))
   if [ "$arm" = A ]; then
-    out=$(UB=${UB:-512} B=${UB:-512} DEPTH=$depth bash "$s" "$bin" "$root/d$depth-$n-A" timing 2>&1 | grep -E "^timing:|SERVER_FAILED")
+    out=$(UB=${UB:-512} B=${B:-${UB:-512}} DEPTH=$depth bash "$s" "$bin" "$root/d$depth-$n-A" timing 2>&1 | grep -E "^timing:|SERVER_FAILED")
   else
-    out=$(env UB=${UB:-512} B=${UB:-512} DEPTH=$depth "$@" bash "$s" "$bin" "$root/d$depth-$n-B" timing 2>&1 | grep -E "^timing:|SERVER_FAILED")
+    out=$(env UB=${UB:-512} B=${B:-${UB:-512}} DEPTH=$depth "$@" bash "$s" "$bin" "$root/d$depth-$n-B" timing 2>&1 | grep -E "^timing:|SERVER_FAILED")
   fi
   echo "d$depth $n $arm: $(echo $out | tr '\n' ' ')"
 done
