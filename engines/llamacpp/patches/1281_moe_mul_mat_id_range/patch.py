@@ -25,7 +25,7 @@ STATE = "validated"
 _A_H_NEXT = r"""    GGML_API struct ggml_tensor * ggml_out_prod(
 """
 _N_H_RANGE = r"""    // BigCherry 1281: indirect matrix multiplication over a RANGE of a larger expert set
-    // \`as\` holds the experts [id_base, id_base + as->ne[2]); \`ids\` are global expert ids
+    // `as` holds the experts [id_base, id_base + as->ne[2]); `ids` are global expert ids
     // a lane whose id is outside the range is an exact zero and reads no expert weight
     GGML_API struct ggml_tensor * ggml_mul_mat_id_range(
             struct ggml_context * ctx,
@@ -34,7 +34,7 @@ _N_H_RANGE = r"""    // BigCherry 1281: indirect matrix multiplication over a RA
             struct ggml_tensor  * ids,
             int32_t               id_base);
 
-    // true if \`t\` is a GGML_OP_MUL_MAT_ID built by ggml_mul_mat_id_range; the base is only meaningful then
+    // true if `t` is a GGML_OP_MUL_MAT_ID built by ggml_mul_mat_id_range; the base is only meaningful then
     GGML_API bool    ggml_mul_mat_id_is_range(const struct ggml_tensor * t);
     GGML_API int32_t ggml_mul_mat_id_range_base(const struct ggml_tensor * t);
 

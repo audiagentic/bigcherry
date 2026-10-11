@@ -124,8 +124,12 @@ class Patch1281Mechanics(unittest.TestCase):
             self.assertEqual(cpu.count(old), 1)
             (root / _CPU).write_text(cpu.replace(old, old.replace("const int32_t", "int32_t"), 1),
                                      encoding="utf-8", newline="\n")
+            before = {p: self._read(root, p) for p in _INPUTS}
             res = apply_all(_P.PATCHES, root)
             self.assertFalse(all(r.ok for r in res))
+            self.assertEqual(before, {p: self._read(root, p) for p in _INPUTS})
+            for path in _CREATED:
+                self.assertFalse((root / path).exists())
 
     def test_owned_files_are_only_created_by_1281(self):
         with tempfile.TemporaryDirectory() as td:
