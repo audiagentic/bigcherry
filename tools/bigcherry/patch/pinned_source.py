@@ -55,3 +55,34 @@ def read_pinned(src) -> str:
     rel = Path(src).resolve().relative_to(_VENDOR).as_posix()
     blob = subprocess.run(["git", "-C", str(_VENDOR), "show", f"HEAD:{rel}"], capture_output=True, check=True).stdout
     return blob.decode("utf-8")
+
+
+def composed_before(patch_id: str, files, out) -> Path:
+    """Write `files` into `out` as the production composition leaves them just before `patch_id` is applied.
+
+    A production patch is written against the composed source (earlier patches create files and move the text its
+    anchors sit in), so its mechanics test needs that source, not the bare pin. The production selection of the
+    `bigcherry` source is applied in order on a pristine pinned tree, stopping at the patch's own place.
+    """
+    from . import rebase  # imported here: rebase imports this package's patch loader
+
+    selected = rebase.resolve_selection(source_name="bigcherry", all_patches=False, focal_overlay_patch_id=patch_id)
+    vendor = pinned_checkout()
+    texts = rebase._overlay_texts()
+    overlay_paths = frozenset(texts)
+    for module in selected.modules:
+        if module.patch_id == patch_id:
+            break
+        probe = rebase.probe_patch(module, vendor, texts, context_lines=3, previous_revision=None,
+                                   revision="composed-before", overlay_paths=overlay_paths)
+        if probe.status not in (rebase.STATUS_CLEAN, rebase.STATUS_CLEAN_NOOP):
+            raise RuntimeError(f"{module.patch_id} does not apply before {patch_id}: {probe.status}")
+    out = Path(out)
+    for rel in files:
+        target = out / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if rel in texts:
+            target.write_text(texts[rel], encoding="utf-8")
+        else:
+            copy_pinned(vendor / rel, target)
+    return out
