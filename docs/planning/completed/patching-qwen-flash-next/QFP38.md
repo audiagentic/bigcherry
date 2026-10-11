@@ -2,7 +2,7 @@
 id: QFP38
 order: 38
 plan: patching-qwen-flash-next
-state: pending
+state: deprecated
 created-at: '2026-10-07T00:39:48.982783+00:00'
 breadth: ''
 skill: advanced
@@ -228,6 +228,8 @@ Execution order: ninth. First action is a census, not implementation. Expected p
 
 2026-10-11: QFP42 (closed as done by 1359) carried one idea that belongs here and nowhere else: from the BridgeSpec review (PRBE07, closed as inspiration only), a measured kernel opportunity at MTP verify widths 2..8, or a vocabulary-head design, taken through this item's own patches with first-party hardware and target-authoritative identity. No second sidecar. The other two things QFP42 carried are now QFP51 (scheduler split plan reuse) and QFP52 (NextN placement).
 
+2026-10-11 decision: rejected at Gate 0, no patch created. The item's own gate (a verify-kernel census before any code) was run on 2026-10-09 and attributes at most about a tenth of target-card kernel time to the MTP verify MMVQ / MMVF launch geometry, on cards that are idle more than half the time waiting on the cross-card sum and host work; 1273's single-token variants measured neutral at 8K / 24K / 98K. No candidate class reaches the threshold the plan sets for creating a package, so nothing is built. Reopen only if a census after the cross-card sum work (QFP49) shows the verify vector kernels above roughly a quarter of target-card kernel time, or a no-drafter / width-specific census shows a single kernel class dominating. The one idea inherited from QFP42 (BridgeSpec review: a kernel opportunity at verify widths 2..8) carries the same condition. Existing packages are unchanged: 1301 stays rejected, 1273 stays evaluated.
+
 ## What we already have
 
 ### b11402 MMVQ
@@ -279,3 +281,5 @@ Do not infer multi-token benefit from 1273. Any new single-token IQ4_XS VDR/nwar
 - 2026-10-07: grounded at b11402, rejected 1301 and evaluated 1273; closed the duplicate MMVQ-threshold idea for current verify widths and split remaining launch-geometry candidates by exact kernel owner.
 - 2026-10-09T03:10:25.485425+00:00 (updated-by): Updated: section:notes
 - 2026-10-10T21:23:56.095112+00:00 (updated-by): Updated: section:notes
+- 2026-10-11T03:36:20.597161+00:00 (updated-by): Updated: section:notes
+- 2026-10-11T03:36:27.761990+00:00 (state-transition): State: pending → deprecated

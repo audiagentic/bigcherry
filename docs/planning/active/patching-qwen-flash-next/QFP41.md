@@ -75,6 +75,8 @@ Order:
 
 Shared-state inventory, persistent workers, default-off flag and identity + repeated-run + stress evidence apply to each new thread, as before.
 
+2026-10-11, 1356 measured again now that the prefill pipeline (1359) is on by default - the question was whether 1359 had taken 1356's gain. Build b-mdw5 = main ef208fbe + 1356 (experiment meta-dispatch-workers), Flash-Next production profile, run mdw5, ABBA a depth, A = default, B = BIGCHERRY_META_DISPATCH_THREADS=1. Prefill t/s off / on: 8K 1380.4, 1370.8 / 1416.5, 1403.7 (+2.5%, every on-run above every off-run); 24K 1415.6, 1422.5 / 1434.3, 1445.1 (+1.5%, separated); 98K 1380.3, 1374.1 / 1380.9, 1386.0 (+0.4%). Greedy text identical at all three depths in these runs (98K md5 b301a49a in both on-runs; the race showed in about 5 of 12 earlier 98K runs, so two clean runs prove nothing). Decode and acceptance unchanged. So the gain survives 1359, at the same size and with the same fall-off with depth as before; 1356 is not rejected on 'no gain', and it stays `evaluated` because the output race is open. What decides it: find the race (lead: the differing run counts one HIP graph capture fewer; it needs HIP graphs and the fusion pass both on), fix it inside 1356, then twelve identical 98K runs. If the race cannot be located, 1356 is rejected for a +0.4 to +2.5% gain that cannot be made safe. Next step: hand the race to GPT as a code-reading task once the stagger pair (QFP49) is off the gateway.
+
 ## Change Log
 
 - 2026-10-07T00:40:00.113369+00:00 (created-by): Created by agent
@@ -86,9 +88,6 @@ Shared-state inventory, persistent workers, default-off flag and identity + repe
 
 ## Ledger-events
 
-
-
-
 - chg_20261009_222135_prefill-is-about-3-faster-on_1298
 - 2026-10-09T22:21:46.034434+00:00 (updated-by): Updated: section:ledger-events
 - chg_20261009_222149_optional-threaded-per-device-d_5728
@@ -97,3 +96,4 @@ Shared-state inventory, persistent workers, default-off flag and identity + repe
 
 - chg_20261010_135027_the-optional-threaded-per-devi_8062
 - 2026-10-10T13:50:34.975513+00:00 (updated-by): Updated: section:ledger-events
+- 2026-10-11T04:01:29.973404+00:00 (updated-by): Updated: section:notes
