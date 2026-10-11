@@ -16,3 +16,12 @@ AllReduce (no extra collective); VRAM for the shared expert also drops to ~1/n p
 ## Hardware result (2026-10-04 review)
 
 Neutral in screens; parked (QFP09).
+
+
+## 2026-10-12 b11552 disposition (QFP12 terminal)
+
+**Evaluated, not promoted.** The 2026-10-04 screens measured split 47.2 versus 46.0/46.6 ms/step at ~24K, and 53.6 versus 53.3/53.4 at ~80K. MTP acceptance changed; VRAM saving was ~185 MiB/XTX and ~135 MiB/R9700. No qualified speedup or new GPU measurement exists.
+
+The previous “no extra collective” description is conditional: \`ggml_backend_meta_graph_compute::get_i_delayed\` only merges PARTIAL branches when use-count, exact ADD adjacency, shape/type and compute-flag predicates hold. Graph/reduction telemetry must prove this for the Qwen4Exp scalar-gated shared branch before any revival. Upstream b11552/master has only DSV4 shared-expert placement. Manifest \`patch.toml\` remains evaluated; the Python module's legacy \`STATE="untested"\` is not resolved by this docs-only audit.
+
+No duplicate patch, placement policy or collective. Detailed source, correctness and conditional reopen gates: \`docs/planning/completed/patching-qwen-flash-next/QFP12.md\`.
