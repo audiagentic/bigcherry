@@ -4,7 +4,7 @@
   "owner": "flash-next",
   "patch_digest": "cdc71498fcfb21e3274c37e77b472dc604b35c67dc86d5c5761508409f7aa933",
   "patch_id": "1250_nro01_allreduce_q8_wire",
-  "reason": "b11474 bump: failed needs reconciliation; not in the production set",
-  "target_revision": "b9acf138a1e28ce1fc23b5a4fc4b12444b50f7ea",
-  "tracking_item": "BPB01"
+  "reason": "b11552 bump: does not apply on the new pin; not in the production set, state untested/evaluated",
+  "target_revision": "23b0202a189c44a54625aadcb37a946dd1d6278d",
+  "tracking_item": "PA49"
 }
