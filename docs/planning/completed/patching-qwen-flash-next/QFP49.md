@@ -2,7 +2,7 @@
 id: QFP49
 order: 49
 plan: patching-qwen-flash-next
-state: pending
+state: deprecated
 created-at: '2026-10-10T13:54:01.542976+00:00'
 breadth: ''
 skill: advanced
@@ -103,6 +103,10 @@ Profiling pass, 2026-10-11 (owner: prove where and how the work happens). New to
 
 2026-10-11 gate and restart. PR #147 head 542f2729 (build b-stg12) failed the gate set for it (slim harness: bit-identical logits, no decline, sum + compute above zero): the pair aborts on its first call (GGML_ASSERT in bc_1361_copy_input_pinned: slot buffer smaller than the input) and the toy's new host-prefix mode fails its own setup. PR #147 parked as a draft; lab tools moved to main (#156). Restarted in slices; SLICE 1 = what does the sum on its own stream cost, and what does staggering hide, measured outside the engine (tools/lab/hip-probes/rccl_stagger_probe.cpp, new arms and options; 2x RX 7900 XTX + R9700, real RCCL, sums right in every run, runs rs3, rs7-rs12). (a) Sum on a transfer stream fenced by events, nothing overlapping: within +0.016 ms a sum of the compute stream, also with the stream non-blocking and events timing-off as 1360 creates them. So the 0.2-0.4 ms a sum that 1360 costs in the engine (bimodal) is engine-specific and unexplained. (b) DECISIVE: the share of today's sum cost that staggering hides falls with the number of kernels launched between two sums, same total work: 2 kernels 84%, 10 kernels 75%, 40 kernels 42%, 80 kernels 13%, 160 kernels -9% (compute only 172.0 / 172.7 / 181.3 / 191.1 / 212.2 ms; today 255.7 / 274.7 / 283.2 / 285.7 / 314.3; staggered halves 185.6 / 198.3 / 240.5 / 273.8 / 323.3). The engine launches about 44 compute kernels a sum on an XTX (68,819 kernels, 1,528 sums at ub256; 374,406 / 9,216 at ub512), so about 40% hidden at best, against the roughly 70% the ub256 pair needs to beat ub512 (GPT's gate arithmetic). This also explains the earlier proofs: first probe 2 kernels a step (84%), Meta toy 6-8 kernels a layer (pair 22-39% faster), real model 44. Mechanism not established (guess: the card alternates between streams at kernel boundaries, so a waiting sum kernel takes a turn at each). RECOMMENDATION recorded for the owner: reject 1361 as designed and 1360 with it (its only consumer; unexplained slow mode); redirect to fewer, larger kernels a step (QFP48 fusion, megakernel), which removes launch gaps directly (0.40 s of 3.84 s in 10,075 gaps after mul_mat_q) and is the precondition for staggering. Patch state changes held for the owner's word.
 
+
+
+2026-10-12, owner decision: the staggering work is shelved. 1360 (transfer stream) is `evaluated`, default off, in no build. 1361 (staggered half-batch pair) never produced a correct real prompt and was never merged (PR #147 closed). Why it cannot pay on this workload is measured: the standalone probe hides 42% of a sum at 40 kernels between sums and 13% at 80, Flash-Next runs ~44 a step, and on b11552 the cards are 91-92% busy in a median step. The harnesses and probes stay in tools/lab (stagger-harness, hip-probes). This item is closed as not pursued.
+
 ## Change Log
 
 - 2026-10-10T13:54:01.542976+00:00 (created-by): Created by claude
@@ -121,3 +125,5 @@ Profiling pass, 2026-10-11 (owner: prove where and how the work happens). New to
 - 2026-10-11T03:15:29.826530+00:00 (updated-by): Updated: section:notes
 - 2026-10-11T04:43:44.890764+00:00 (updated-by): Updated: section:notes
 - 2026-10-11T05:40:26.127515+00:00 (updated-by): Updated: section:notes
+- 2026-10-11T23:07:23.946556+00:00 (updated-by): Updated: section:notes
+- 2026-10-11T23:07:36.827693+00:00 (state-transition): State: pending → deprecated

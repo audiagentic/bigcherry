@@ -18,7 +18,7 @@ import re
 from bigcherry.patcher import Edit, EnvDoc, FilePatch
 
 GROUP = "rdna-boosts"
-STATE = "untested"
+STATE = "evaluated"
 
 _A_CTX_NCCL = "    std::vector<ncclComm_t>     comms;\n"
 _N_CTX_NCCL = r"""    std::vector<ncclComm_t>     comms;
