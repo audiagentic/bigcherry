@@ -66,3 +66,8 @@ Scope limit: the cache refuses the tensor split and multiple devices, so this do
 
 - 2026-10-06T14:52:56.714383+00:00 (created-by): Created by agent
 - 2026-10-11T16:56:51.685546+00:00 (updated-by): Updated: section:notes
+
+## Ledger-events
+
+- chg_20261011_201458_bigcherry-now-builds-on-llama_8427
+- 2026-10-11T20:15:20.721396+00:00 (updated-by): Updated: section:ledger-events
