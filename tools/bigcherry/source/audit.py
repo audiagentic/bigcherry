@@ -174,7 +174,7 @@ def check_mmq_types(ctx: AuditContext) -> None:
     # Q8 is the generated MMQ type set; MXFP4/NVFP4 also have extra Q4 cases
     # for Blackwell and must not be double-counted here.
     runtime = re.findall(
-        r"mul_mat_q_case<\\s*(GGML_TYPE_\\w+)\\s*,\\s*GGML_PREC_Q8\\s*>", body)
+        r"mul_mat_q_case<\s*(GGML_TYPE_\w+)\s*,\s*GGML_PREC_Q8\s*>", body)
     ctx.compare("mmq.generated_types_match_runtime", generated, runtime,
                 "MMQ generated types vs runtime switch cases", ordered=False)
 
