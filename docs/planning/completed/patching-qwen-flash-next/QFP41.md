@@ -2,7 +2,7 @@
 id: QFP41
 order: 41
 plan: patching-qwen-flash-next
-state: pending
+state: deprecated
 created-at: '2026-10-07T00:40:00.113369+00:00'
 breadth: ''
 skill: advanced
@@ -83,6 +83,10 @@ Shared-state inventory, persistent workers, default-off flag and identity + repe
 
 2026-10-11, second fix attempt and the reproducer search. PR #159 round 2 (GPT: the drafter's / any non-Meta ggml_cuda graph_compute takes 1356's lock too - 'cover cross-context graph compute'), build b-mdw8, run mdw8, twelve workers-on passes at 98K: 7 give the reference (b301a49a), 5 the alternative text (10a864c9). FAILED; prefill 1,37x-1,38x t/s either way. Two-context slim harness (GPT's --draft-model mode: a second llama_context on ROCm3 driven from the main thread after every target llama_decode): with the MTP head file it crashes at reserve in every arm (the head is not a standalone model); with a standalone Qwen3.5-4B as the second context (run lw3, 100,352 target tokens, 64 tokens a call on the second context): workers off 1,513.8 t/s; workers on, six passes, 1,503.3-1,511.5 t/s; target logits bit-identical in all six. So a concurrent second context does not trigger the race; it needs the real MTP drafter path (the NextN hidden-state handoff of 1346 / 1348 / 1359, or tensors the head shares with the target), and there is no reproducer outside the server. Summary of 1356: gain +0.4% (98K) to +2.5% (8K) in the server and none in the harness; wrong output in a quarter to four in ten long-prompt passes with the drafter; two fix attempts failed the twelve-pass acceptance (3 of 12, 5 of 12). RECOMMENDATION to the owner: reject 1356 (close PR #159). Held for the owner's word together with 1361 and 1360.
 
+
+
+2026-10-12, owner decision: 1356 is shelved as `evaluated` (not promoted, not rejected). Default off, not in the production set; the race with the MTP drafter is unresolved and has no reproducer outside the server (two fix attempts in PR #159 gave 3 of 12 and 5 of 12 wrong runs; PR closed unmerged). The patch SUMMARY carries the record. This item is closed as not pursued; reopening needs a reproducer first.
+
 ## Change Log
 
 - 2026-10-07T00:40:00.113369+00:00 (created-by): Created by agent
@@ -106,3 +110,5 @@ Shared-state inventory, persistent workers, default-off flag and identity + repe
 - 2026-10-11T07:09:35.419505+00:00 (updated-by): Updated: section:notes
 - 2026-10-11T07:22:46.659666+00:00 (updated-by): Updated: section:notes
 - 2026-10-11T08:28:36.479807+00:00 (updated-by): Updated: section:notes
+- 2026-10-11T23:07:17.345765+00:00 (updated-by): Updated: section:notes
+- 2026-10-11T23:07:30.123759+00:00 (state-transition): State: pending → deprecated
