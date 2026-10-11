@@ -13,6 +13,52 @@ priority: P2
 
 # Evaluate MUL_MAT plus RESHAPE plus ADD fusion
 
+## 2026-10-12 b11552 safety audit: RESHAPE output geometry is not an MMV epilogue contract (BCOP147)
+
+**Disposition:** PRBE12/1206 remains `untested` and default-off. Before another hardware campaign, prove that the logical matmul output and fused ADD destination have compatible *kernel indexing*, not just equal byte counts. This is a new source-level safety discriminator since BCOP80's producer/status reconciliation, not a reproduced GPU failure or a measured regression.
+
+### Exact implementation path and newly identified admission gap
+
+- At llama.cpp **b11552**, `ggml/src/ggml-cuda/ggml-cuda.cu::ggml_cuda_try_fuse` still matches direct `MUL_MAT[_ID] -> ADD[_ID]` only. The current 1206 `patch.py::_OLD` matches that pinned direct block. The 1206 `_NEW` additionally accepts a `RESHAPE` (without an explicit shape check) or zero-offset contiguous, same-byte-size `VIEW`, then checks `ggml_can_fuse_subgraph`, source identity, ADD-operand shape, and output/input overlap. **None checks `ggml_are_same_shape(mm_node, bias_node)` or destination stride compatibility.**
+- `ggml/src/ggml.c::ggml_can_fuse_subgraph_ext` validates op sequence, compute/output flags, consumer counts and view-source ancestry; it does **not** establish shape or stride compatibility. `ggml_cuda_check_fusion_memory_ranges` is an aliasing guard, not a geometry guard.
+- 1206 passes the **ADD destination** as `dst` into `ggml_cuda_mul_mat_vec_f/q` while their eligibility predicate is evaluated on the **MUL_MAT node**. Both `ggml/src/ggml-cuda/mmvf.cu::ggml_cuda_mul_mat_vec_f` and `mmvq.cu::ggml_cuda_mul_mat_vec_q` derive destination `ne[]/nb[]` from `dst`, assert `ids || dst->ne[1] == 1` for fused paths, and index rows/strides from the destination. Thus an otherwise valid contiguous reshape of `(4096,1,1,1)` to `(128,32,1,1)`, with a matching ADD addend, satisfies byte equality and can satisfy the *static matcher* but violates that no-IDs kernel assertion. `(2048,1,2,1)` retains `ne[1]==1` yet changes the destination row extent/stride. These are **conditional source-level hazards**; no real Qwen graph with this exact failing shape was observed.
+- Historical 64-step/248,320-vocabulary parity and +0.47%..+0.66% gfx1100 tg128 results at b11126 remain valid only for the executed shapes. They cannot prove universal RESHAPE/VIEW admission at b11552. gfx1201 evidence was inconclusive; gfx1030 has no qualifying performance series. No new speedup or GPU failure is claimed.
+
+### Minimal implementation-ready correction, owned by 1206
+
+Gate 0 is a **read-only current-model graph shape census**: for every `MUL_MAT[_ID] -> RESHAPE/VIEW -> ADD[_ID]` candidate, record `op, type, mm.ne/nb, mid.ne/nb, add.ne/nb, addend.ne/nb, ids_present, n_uses, view_offs, contiguous, selected_f_or_q`. Correlate the existing subject-only activation marker with these records outside timed lanes. Do not infer per-layer frequency from the once-per-process `atomic_flag`.
+
+For a conservative initial fix in `1206.../patch.py::_NEW` *after* `mm_node`, `mm_or_view` and `bias_node` are resolved and *before* either fused launch, add an explicit `has_view` guard (pseudocode):
+
+```cpp
+if (has_view) {
+    if (mm_node->type != bias_node->type ||
+        !ggml_is_contiguous(mm_node) ||
+        !ggml_is_contiguous(mm_or_view) ||
+        !ggml_is_contiguous(bias_node) ||
+        !ggml_are_same_shape(mm_node, bias_node) ||
+        !ggml_are_same_stride(mm_node, bias_node)) {
+        continue;  // execute the existing unfused graph
+    }
+}
+```
+
+This is deliberately fail-closed and may reject the intended nontrivial RESHAPE pattern. **Do not silently narrow a previously activating lane**: first report how many positive-model matches survive. If none survive, do not promote the patch or spend GPU time; either close this fusion proposal or separately prove a linearized output-addressing adapter that retains original `MUL_MAT` launch geometry while respecting the ADD's elementwise/broadcast semantics. No new dispatcher, allocator, cache or runtime flag. Keep direct two-node fusion unchanged. An equivalent but less restrictive predicate is acceptable only with a kernel-level proof for both MMVF/MMVQ and `MUL_MAT_ID` indexing.
+
+### Cheapest discriminator and promotion sequence
+
+1. **Completed this audit, host/static only:** 12/12 source assertions on pinned b11552, 1206 and ggml fusion semantics; eight deterministic shape fixtures. Two equal-byte candidate reshapes violate `dst.ne[1]==1`; four equal-byte candidates change `dst.ne[0]`. Fixtures assume otherwise eligible graph flags/uses and do not prove real model activation. No C++/HIP build or repository pytest was run.
+2. **Before a patch or GPU:** add one small table-driven predicate test to the existing `tools/tests/patch/test_patch_1206_rd13_mul_mat_add_view_fusion.py`: same-shape RESHAPE, same-byte shape-changing RESHAPE, zero-offset VIEW, strided/offset VIEW, reversed ADD, extra consumer, alias, null addend, and `MUL_MAT_ID` dimensions. Ensure rejected candidates execute the unfused path and emit **no** 1206 hit marker. Test patch apply/idempotence on the exact b11552 source and composed production recipe; do not invent a second validation producer.
+3. **Only after a nonempty safe activation census:** run one real positive-model graph/correctness gate on each intended gfx1100/gfx1201/gfx1030 architecture: subject-only activation, fused versus unfused full-vocabulary logits/greedy, MTP acceptance where used, repeated same-process requests, multi-ubatch, graph capture/replay, output-byte/work accounting, and memory-safety checks. Negative control must not activate.
+4. **Then** use the existing `validation/producer.py::run` and frozen `RD13-MUL-MAT-ADD-VIEW-FUSION` contract, not another campaign: four independent sessions per architecture, >=10 paired ABBA rounds/session, CI95-low >0% positive and <=1% negative-control regression. Record actual fused invocation count, output bytes, saved launches and exposed critical-path wall; at most one ADD launch plus intermediate write/read is removable per invocation. Reject/no-promote on unsafe geometry, no surviving activation, nonpositive effect or failed correctness. Do not change contract thresholds without its owner.
+
+### Ownership, upstream and external mechanism
+
+PRBE12/1206 remains sole owner of this matcher and safety fix; PRBE39 VIEW/alias rules are already inside 1206, PVPS15 owns activation-before-timing, and the existing validation producer owns evidence. Do not edit protected PA49/release, QFP41/1356 graph workers, QFP48 gap attribution, QFP49/1360/1361 collective work, or active 1281 refactoring.
+
+Upstream llama.cpp [#29633](https://github.com/ggml-org/llama.cpp/pull/29633) merged **2026-10-05** and is in b11552; it changes MMVF eligibility and therefore candidate routing, **not** the fused destination-shape contract. Current pinned upstream retains direct-only ADD fusion. [vLLM epilogue-contract RFC #52776](https://github.com/vllm-project/vllm/issues/52776) explicitly calls for provider capability, layout, alias and fallback admission; [SGLang fused_add_rmsnorm TensorMatcher](https://github.com/sgl-project/sglang/blob/main/python/sglang/kernels/jit/csrc/elementwise/fused_add_rmsnorm.cuh) validates shape/stride before launching. Both are contract examples, **not** drop-in kernels or AMD speed evidence. Original external fork remains stew675/llama.cpp commit `0153d580d`.
+
+
 ## Description
 
 Current 2026-10-09 disposition: patch 1206 extends native HIP `ggml_cuda_try_fuse` from direct MUL_MAT->ADD to MUL_MAT->RESHAPE/qualified VIEW->ADD. The September 2025-style TODO text below was superseded by implementation in September 2026: WARN-level activation markers, a bound `validation.toml`, positive/negative probes, full-vocabulary backend-reference producer, and paired positive/control benchmark lanes already exist. The patch remains `untested`, not promotable by documentation alone. The unresolved question is clean, current-pin, architecture-specific end-to-end benefit with safe view aliasing, not building another producer.
