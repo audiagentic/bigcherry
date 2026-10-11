@@ -106,7 +106,10 @@ half_graph build(const model & m, ggml_tensor * result, int64_t first, int64_t t
     ggml_format_name(g.input, "host_input_%lld", (long long) first);
     if (tokens == m.T) {
         GGML_ASSERT(m.prefix_shared != nullptr);
-        g.prefix = ggml_cpy(g.ctx, g.input, m.prefix_shared);
+        // Distinct graph tensor objects alias the same CPU storage. This shares only the bytes, not op/src metadata.
+        ggml_tensor * prefix_view = ggml_view_2d(
+            g.ctx, m.prefix_shared, m.n, tokens, m.prefix_shared->nb[1], 0);
+        g.prefix = ggml_cpy(g.ctx, g.input, prefix_view);
     } else {
         g.prefix = ggml_scale(g.ctx, g.input, 1.0f);
     }
