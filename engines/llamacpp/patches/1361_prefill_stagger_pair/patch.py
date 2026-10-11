@@ -686,7 +686,7 @@ enum ggml_status ggml_backend_sched_graph_compute_async_pair(
 
     auto decline = [](const char * why) {
         static std::set<std::string> seen;
-        if (seen.insert(why).second) GGML_LOG_INFO("BIGCHERRY_PREFILL_STAGGER declined: %s\\n", why);
+        if (seen.insert(why).second) GGML_LOG_INFO("BIGCHERRY_PREFILL_STAGGER declined: %s\n", why);
         return GGML_STATUS_SUCCESS;
     };
     if (!sched_a->is_alloc || !sched_b->is_alloc) return decline("scheduler unallocated");
