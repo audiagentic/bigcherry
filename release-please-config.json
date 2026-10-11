@@ -7,7 +7,6 @@
   "pull-request-title-pattern": "release: ${component} ${version}",
   "packages": {
     "engines/llamacpp": {
-      "release-as": "11552.0.0",
       "release-type": "simple",
       "component": "bc-llamacpp",
       "changelog-path": "CHANGELOG.md",
