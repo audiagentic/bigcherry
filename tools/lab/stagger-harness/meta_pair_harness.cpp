@@ -235,6 +235,10 @@ int main(int argc, char ** argv) {
         }
         ggml_backend_sched_reset(g->sched);
         ggml_free(measure.ctx);
+    }
+    // every reserve is done before any graph is allocated: a reserve empties the view container the earlier graphs'
+    // views of the shared static tensors live in
+    for (half_graph * g : { &a, &b, &full }) {
         if (!ggml_backend_sched_alloc_graph(g->sched, g->graph)) {
             fail("could not allocate a graph");
         }
