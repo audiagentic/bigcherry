@@ -40,6 +40,21 @@ class ReleasePrSelection(unittest.TestCase):
         with mock.patch.object(pin_release, "_run", return_value=listing):
             self.assertIsNone(pin_release._release_pr(self.plan))
 
+    def test_release_pr_with_unexpected_files_is_refused(self):
+        changed = SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps({"files": [
+                {"path": ".release-please-manifest.json"},
+                {"path": "engines/llamacpp/CHANGELOG.md"},
+                {"path": "docs/releases/PLATFORM_CHANGELOG.md"},
+            ]}),
+            stderr="",
+        )
+        pr = {"number": 168, "url": "u/168"}
+        with mock.patch.object(pin_release, "_run", return_value=changed):
+            with self.assertRaisesRegex(pin_release.PinReleaseError, "unexpected files"):
+                pin_release._verify_release_pr_files(self.plan, pr)
+
 
 if __name__ == "__main__":
     unittest.main()

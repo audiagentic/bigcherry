@@ -25,8 +25,10 @@ repository at once, and a change is only proven on the lab hardware.
    | `perf: ` | a speed-up inside an already promoted patch | patch + 1 |
    | `chore: `, `docs: `, `test: `, `refactor: `, `ci: `, `build: ` | plans, experiments, diagnostics not in the build, tooling internals | none |
 
-   A pin bump is the exception to automatic numbering: its notes commit carries `Release-As: <llama build>.0.0`
-   (made by `bigcherry pin-release`).
+   A pin bump is the exception to automatic numbering: `bigcherry pin-release` temporarily sets
+   `release-as: <llama build>.0.0` on the `engines/llamacpp` package in
+   `release-please-config.json`, then removes that key through a pull request
+   after the release tag exists. Commit-message `Release-As` footers are not used.
 5. **A pull request merges when** its checks are green, its description is filled in, and, if it changes the
    production build, the hardware evidence is in the description. Merge method: squash. The branch is deleted on
    merge.

@@ -182,12 +182,19 @@ window; bump one, record, then bump the other.
    Phases, each skipped when already done, so the command is re-run after
    any stop: `gate` (`pin-status --complete --all-remotes`), `record` (gate
    output and evidence into `releases/<tag>.json`, transition marker removed,
-   one commit), `notes` (`release-notes`, committed as `chore: release notes
-   bc-llamacpp-<version>` with the `Release-As: <version>` footer), `main` (the
-   work branch takes `origin/main` in if main moved, then main is
-   fast-forwarded to it), `release` (release-please's PR is merged and the
-   command waits for the tag), `sync` (the work branch takes the release
-   commit back). `--through <phase>` stops early, `--dry-run` lists the phases.
+   one commit), `notes` (`release-notes` plus package-scoped `release-as` in
+   `release-please-config.json`, one commit), `main` (the work branch takes
+   `origin/main` in if needed, is pushed, then a checked pull request to
+   `main` is opened/reused and merge-committed), `release` (the exact
+   bc-llamacpp release-please PR is file-validated, merged and the command waits
+   for the tag), `unpin` (branch `chore/release-as-clear-<version>` removes
+   `release-as` through another checked pull request), `sync` (the work
+   branch takes current `main` back). `--through <phase>` stops early;
+   `--dry-run` reports the concrete PRs and manifest versions without writes.
+
+   The version is carried only by `release-as` on the `engines/llamacpp`
+   package in `release-please-config.json`; it is removed after the release
+   tag exists. Commit-message `Release-As` footers are not used.
 
    Versions and tags. release-please owns the tags: `bc-llamacpp-<llama build>.<minor>.<patch>` (the llama.cpp engine's release line; the shared platform has its own, `bc-platform-<version>`).
    A pin bump is released as `<build>.0.0` (`bc-11474.0.0`; the workflow also

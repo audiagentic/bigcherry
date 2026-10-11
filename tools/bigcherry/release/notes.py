@@ -71,14 +71,11 @@ def _show(repo_root: Path, ref: str, path: str) -> str | None:
 
 
 def previous_release_tag(repo_root: Path, config: ReleaseConfig, release_tag: str, ref: str) -> str | None:
-    """The newest release tag that is an ancestor of ``ref`` and is not this release: a tag with the configured
-    prefix if one exists, otherwise one from the fallback tag families."""
-    for prefix in (config.tag_prefix, *config.fallback_prefixes):
-        tags = _git(repo_root, "tag", "--list", f"{prefix}*", "--merged", ref, "--sort=-creatordate").split()
-        for tag in tags:
-            if tag != release_tag:
-                return tag
-    return None
+    """The newest release tag that is an ancestor of ``ref`` and is not this release, across the configured
+    canonical prefix and every fallback family."""
+    patterns = [f"{prefix}*" for prefix in (config.tag_prefix, *config.fallback_prefixes)]
+    tags = _git(repo_root, "tag", "--merged", ref, "--sort=-creatordate", "--list", *patterns).split()
+    return next((tag for tag in tags if tag != release_tag), None)
 
 
 @dataclass

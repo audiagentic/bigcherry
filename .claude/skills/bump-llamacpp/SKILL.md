@@ -42,13 +42,14 @@ Use this when the pin is at most a few days old. Anything that stops here drops 
    makes six and settles a 2-3% difference. Identical greedy text and acceptance are required; a consistent
    slowdown is a reason to hold the pin, not to shrug (b11402: Flash-Next decode -3%, 27B prefill -0.8..-1.4%).
 7. Completion gate and ledger event as in sections 5 and 6.
-8. Release: `python -m bigcherry release-notes <tag>` writes `docs/releases/notes/bc-<tag>.md` (ledger events, patch
-   changes and the bump record since the previous release). Commit it with a conventional-commit subject and the
-   footer `Release-As: <llama build number>.0.0`, e.g. `chore: release notes bc-b11402` + `Release-As: 11402.0.0`.
-   The subject matters: release-please drops commits it cannot parse as conventional commits, footer included
-   (a subject like "release notes: ..." is rejected and the release falls back to a patch bump). Once that commit is on `main`,
-   release-please opens the release PR; merging it creates the GitHub release, and the workflow adds the tag
-   `bc-<tag>` and publishes the generated notes. Do not create release tags by hand.
+8. Release: use `python -m bigcherry pin-release <tag> --evidence @<file>`. Its notes phase writes the
+   generated notes and temporarily sets the `engines/llamacpp` package's
+   `release-as` in `release-please-config.json` in the same commit. It then
+   publishes the work branch through a checked pull request, validates and
+   merges the matching release-please component PR, waits for the release tag,
+   and clears `release-as` through a second checked pull request. No phase
+   pushes directly to `main`, and no commit-message `Release-As` footer is
+   used. Do not create release tags by hand.
 
 Still manual: the Brutus pull/build/smoke, and the completion gate.
 
@@ -304,15 +305,17 @@ to a file (build id, smoke result, the A/B numbers, identity) and run:
 python -m bigcherry pin-release <tag> --evidence @<file>
 ```
 
-It runs the gate above, appends the gate output and the evidence to the
-release record, removes the transition marker, generates and commits the
-release notes with the `Release-As: <build>.0.0` footer, takes `origin/main`
-into the work branch if main moved, fast-forwards main, merges the
-release-please PR, waits for the tag `bc-<build>.0.0` (the workflow also adds
-`bc-b<build>`) and brings the release commit back to the work branch. Every
-phase is skipped when already done: after any stop, fix the cause and run the
-same command again. `--through <phase>` stops early; `--dry-run` lists the
-phases.
+It runs phases `gate, record, notes, main, release, unpin, sync`.
+`notes` commits the generated notes and the package-scoped `release-as`
+together. `main` pushes only the work branch, opens/reuses a pull request,
+waits for its checks and merge-commits it. `release` selects the
+release-please PR by component branch and version, refuses it unless its
+changed files are exactly the manifest plus the llama.cpp changelog, merges
+it, and waits for the tag. `unpin` removes `release-as` on
+`chore/release-as-clear-<version>` through the same checked-PR flow, then
+`sync` brings current main back to the work branch. Every phase is skipped
+when already done. `--through <phase>` stops early; `--dry-run` reports the
+concrete PRs and manifest versions without writes.
 
 Merging to main publishes a GitHub release: the owner's go-ahead is needed
 once per bump. A further release on the same pin (features or fixes landed
