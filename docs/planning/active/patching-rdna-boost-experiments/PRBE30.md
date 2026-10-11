@@ -18,6 +18,10 @@ priority: P3
 **K-pad only a PRBE29-created F16 shadow**, not a quantized GGUF source tensor. Reuse PRBE29's owner, buffer lifetime, dequant and leading-dimension metadata. AMD-Ecosystem/llama.cpp PR #57 supplies an implementation reference: one-time dequant then optional 2D-copy into a cache-line-padded F16 shadow, consumed by BLAS. Do not implement a separate allocator or both an additive same-package edit and a `requires` self-dependency. Qualify shadow-only alias/nonalias classes, output parity and incremental VRAM. PRBE28 remains a separate float original-weight path.
 
 
+## 2026-10-10 BCOP126 dependency fence
+
+PRBE29's shadow is only READY after a successful model-buffer load and completion of all async uploads. Do not pad, mutate, or allocate an F16 shadow in `set_tensor` while partial/chunked uploads may still be running. Padding, if ever qualified, is an **optional parameter of PRBE29's existing shadow owner**, after source identity/generation and per-device VRAM admission are proven. Initial PRBE29 control is unpadded; retain the original packed quantized weight and reject any row-stride change without a typed F16 `lda` consumer. No independent PRBE30 patch or hardware queue until a real PRBE29 candidate and causal alias trace exist. This note supersedes the older contradictory "additive Edit plus requires on the same package" wording below.
+
 ## Description
 
 TODO, depends on PRBE29 -- CORRECTED dependency wiring (per GPT review): fold into PRBE29 with NO `requires` (same package), since a separate package that both depends on PRBE29's package AND is anchored via additive Edits into PRBE29's SAME package file would be a self-dependency contradiction as previously worded. K-dimension padding of PRBE29's F16 shadow for shapes (e.g. down_proj) with a measured row-stride aliasing class -- same cache-set-aliasing problem family as PRBE28/RD35, but scoped specifically to the F16 shadow buffer rather than the original quantized weight.
