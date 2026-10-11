@@ -983,6 +983,26 @@ static void bc_1361_copy_input_pinned(
 static void ggml_backend_sched_copy_input(ggml_backend_sched_t sched, struct ggml_backend_sched_split * split, struct ggml_tensor * input) {
 '''
 
+_A_1326_GATE = r'''    if (bc_async_inputs && split_backend->iface.set_tensor_async != nullptr && input->buffer != nullptr &&
+            ggml_backend_buffer_is_host(input->buffer) &&
+            ggml_backend_buffer_get_usage(input->buffer) != GGML_BACKEND_BUFFER_USAGE_WEIGHTS &&
+            ggml_is_contiguous(input) && ggml_is_contiguous(input_cpy) &&
+            ggml_nbytes(input) == ggml_nbytes(input_cpy) &&
+            // decode-sized inputs only: staging a large prefill input (KQ mask ~10 MB per ubatch) through
+            // pageable memory costs more than upstream's synchronous copy (v5c: prefill -2%)
+            ggml_nbytes(input) <= ((size_t) 4 << 20)) {
+'''
+_N_1326_GATE = r'''    if ((sched->bc_stagger_input_slot > 0 || bc_async_inputs) &&
+            split_backend->iface.set_tensor_async != nullptr && input->buffer != nullptr &&
+            ggml_backend_buffer_is_host(input->buffer) &&
+            ggml_backend_buffer_get_usage(input->buffer) != GGML_BACKEND_BUFFER_USAGE_WEIGHTS &&
+            ggml_is_contiguous(input) && ggml_is_contiguous(input_cpy) &&
+            ggml_nbytes(input) == ggml_nbytes(input_cpy) &&
+            // Keep 1326's 4 MiB policy exactly when not in a 1361 pair. Pair mode owns pinned lifetime/fences
+            // and may stage the growing KQ/QSA/indexer inputs at their real size.
+            (sched->bc_stagger_input_slot > 0 || ggml_nbytes(input) <= ((size_t) 4 << 20))) {
+'''
+
 _A_1326_STAGE = r'''        static thread_local std::unordered_map<const ggml_tensor *, std::vector<uint8_t>> bc_staging;
         std::vector<uint8_t> & bc_stage = bc_staging[input_cpy];
         bc_stage.resize(ggml_nbytes(input));
@@ -1614,6 +1634,9 @@ PATCHES = [
                   guard=r"ggml_backend_meta_graph_compute_pair", rationale="1340 Meta backend-local declarations."),
             _edit(id="stagger-sched-copy-input", anchor=_A_SCHED_COPY_INPUT, mode="replace", text=_N_SCHED_COPY_INPUT,
                   guard=r"struct bc_1361_input_stage_slot", rationale="Extend the existing 1326 scheduler input path with pair-owned pinned staging."),
+            _edit(id="stagger-1326-pair-gate", anchor=_A_1326_GATE, mode="replace", text=_N_1326_GATE,
+                  guard=r"sched->bc_stagger_input_slot > 0 \|\| bc_async_inputs",
+                  rationale="Production 1326 gate: pair-owned pinned staging bypasses only its 4 MiB policy cap; ordinary 1326 is unchanged."),
             _edit(id="stagger-1326-pinned-stage", anchor=_A_1326_STAGE, mode="replace", text=_N_1326_STAGE,
                   guard=r"if \(sched->bc_stagger_input_slot > 0\) \{", rationale="long-anchor: replace the complete 1326 staging block so pair mode can retain its existing eligibility/synchronization gate."),
             _edit(id="stagger-stage-free", anchor=_A_SCHED_FREE, mode="replace", text=_N_SCHED_FREE,
