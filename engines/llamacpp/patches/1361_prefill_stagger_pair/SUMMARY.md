@@ -55,6 +55,37 @@ generic fallback is not partially staggered.
 pair output offset, B writes the following rows, and the 1359 completion event is recorded after B's copy. With
 `BIGCHERRY_PREFILL_STAGGER=0`, 1359's existing single-ubatch `offset == 0` gate and bytes are unchanged.
 
+## b-stg11 real-graph follow-up
+
+Code-level root cause of the first-call `different Meta subgraph shapes` decline: the two 256-token ubatches are
+not output-symmetric. `bc_prepare` computes `n_outputs` independently. For a normal prompt A usually requests no
+logits while B, the last ubatch of the decode call, carries the requested last-token logits/output head. The model
+builder therefore gives B an output tail A does not have; depending on where its split reduction lands this changes
+the final Meta subgraph or adds a subgraph. The old 1361 gate required identical total subgraph counts and rejected
+the pair before any staggered work.
+
+1361 now compares only the per-card node count and reduction-boundary op for the common Meta prefix, pairs only the
+common reduction-producing subgraphs, then runs the remaining A tail followed by the remaining B tail. A mismatch
+logs `subgraphs A/B`, first differing subgraph index, node count/op for both sides, and the number of reductions that
+can still pair. Zero comparable reductions still fail closed. All reductions, including asymmetric tail reductions,
+are provider-preflighted before model work begins.
+
+Pair-owned pinned input staging no longer has 1326's 4 MiB policy cap and no longer assumes a fixed byte count.
+Each input records current bytes and capacity. Capacity only grows; before replacing either pinned slot, 1361 waits
+that slot's previous H2D-completion events, then reallocates both slots. A staging decline names half, input index,
+tensor name, bytes now, bytes before, and reason.
+
+`BIGCHERRY_PREFILL_STAGGER_TIMING=1` emits one
+`BIGCHERRY_PREFILL_STAGGER_HOST` line per successful pair with host microseconds in prefix splits, pinned staging
+(including capacity checks/grows), Meta capture/rebuild, static-view re-homing, interleaved/tail submit, total, plus
+staged bytes and sum count. With the diagnostic off no timers are sampled. The per-call shape check was reduced from
+scanning every node op to the reduction-boundary properties needed by the pairing contract.
+
+The Meta harness now deliberately gives B one extra split/reduction output tail while A has none. It also gives each
+half a CPU-produced Meta input and rebuilds that input larger on every pair through 6 MiB, comparing every pair
+bitwise to sequential, then restores the small input before the timing arm. These are source-level tests only until
+the harness is rebuilt on the target hardware.
+
 ## Identity reference
 
 A staggered pair must be bit-identical in logits/text to the same build run sequentially with
