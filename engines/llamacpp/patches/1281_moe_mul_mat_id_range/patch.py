@@ -924,7 +924,7 @@ PATCHES = [
                  rationale="mul_mat_vec_q's three coordinate assignments, immediately after its expert id is read.",
                  expect_matches=1, max_span_lines=4),
             Edit(id="mmid-range-mmvq-moe-kernel", anchor=_re.escape(_A_MMVQ_K2), mode="replace", text=_N_MMVQ_K2,
-                 guard=r"uint32_t channel_x = shared_expert \? 0 : ids\[channel_dst \+ token_idx \* ids_stride\];",
+                 guard=r"    uint32_t channel_x = shared_expert \? 0 : ids\[channel_dst \+ token_idx \* ids_stride\];",
                  rationale="mul_mat_vec_q_moe's unique expert-id assignment.",
                  expect_matches=1, max_span_lines=2),
             Edit(id="mmid-range-mmvq-host", anchor=_re.escape(_A_MMV_HOST), mode="replace", text=_N_MMV_HOST,
