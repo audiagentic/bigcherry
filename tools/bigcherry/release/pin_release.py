@@ -549,7 +549,7 @@ def phase_sync(plan: Plan) -> bool:
     return True
 
 
-def _manifest_versions(plan: Plan) -> dict[str, str]:
+def _manifest_versions(plan: Plan, *, release_pending: bool = True) -> dict[str, str]:
     try:
         manifest = json.loads((plan.repo_root / _MANIFEST).read_text(encoding="utf-8"))
         config = json.loads((plan.repo_root / _RELEASE_CONFIG).read_text(encoding="utf-8"))
@@ -559,9 +559,9 @@ def _manifest_versions(plan: Plan) -> dict[str, str]:
     for package, current in manifest.items():
         configured = config.get("packages", {}).get(package, {})
         pinned = configured.get("release-as") if isinstance(configured, dict) else None
-        if package == RELEASE_PACKAGE:
+        if release_pending and package == RELEASE_PACKAGE:
             result[package] = plan.version
-        elif isinstance(pinned, str):
+        elif release_pending and isinstance(pinned, str):
             result[package] = pinned
         else:
             result[package] = str(current)
@@ -608,7 +608,7 @@ def _dry_run(plan: Plan, stop: int, log=print) -> None:
                     log("  release  release PR: none exists yet")
                 else:
                     log(f"  release  would merge PR #{pr['number']} title={pr.get('title')!r} branch={pr.get('headRefName')}")
-            for package, version in _manifest_versions(plan).items():
+            for package, version in _manifest_versions(plan, release_pending=not tagged).items():
                 log(f"           manifest {package}: {version}")
         elif name == "unpin":
             if tagged and config_value is None:
