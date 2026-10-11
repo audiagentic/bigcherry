@@ -489,7 +489,7 @@ PATCHES = [
                           "memory-range check. Worker dispatch makes those writes concurrent, so make only the "
                           "diagnostic counters atomic instead of serializing the fusion pass.",
                 expect_matches=1,
-                max_span_lines=9,
+                max_span_lines=10,
             ),
             Edit(
                 id="dispatch-worker-graph-full-property-compare",
