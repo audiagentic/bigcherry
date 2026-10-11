@@ -1,22 +1,17 @@
-"""Release a completed pin bump: completion gate -> record -> notes -> main -> release-please PR -> tag.
+"""Release a completed pin bump through pull requests and release-please.
 
-`bigcherry pin-bump` ends when one tree is reconciled at the new pin. This is the rest of the procedure, as one
-resumable command, so a bump is released the same way every time:
+Phases are resumable and idempotent:
 
-  gate     `pin-status --complete --all-remotes` must pass (every required tree converged at the pin)
-  record   the gate output and the hardware evidence go into the release record, the transition marker is removed
-  notes    the release notes are generated and committed with the `Release-As: <llama build>.0.0` footer
-  main     the work branch takes origin/main in (if main moved) and main is fast-forwarded to it
-  release  release-please's PR is merged; the workflow tags bc-llamacpp-<version> and publishes the notes
-  sync     the work branch takes the release commit back
+  gate     `pin-status --complete --all-remotes` must pass
+  record   store gate output/hardware evidence and clear the transition marker
+  notes    generate notes and set the llama.cpp package's release-please `release-as`
+  main     publish/reuse the work-branch PR, wait for checks, merge it
+  release  validate and merge release-please's component PR, wait for the tag
+  unpin    remove `release-as` through a dedicated PR after the tag exists
+  sync     merge current main back into the work branch
 
-Each phase first checks whether it is already done, so the command can be run again after any stop. Nothing here
-decides whether the bump is GOOD: the caller states the hardware evidence (--evidence), which is recorded verbatim.
-
-Versions and tags. release-please owns the tags: bc-llamacpp-<llama build>.<minor>.<patch> (config/release.toml tag-prefix).
-The first release of a pin is <build>.0.0; the workflow also adds the readable tag bc-llamacpp-b<build>-r0 to it. While the pin stays, further
-BigCherry releases raise minor (features) or patch (fixes): `pin-release <tag> --bump minor|patch` picks the next
-version after the newest bc-<build>.* tag, `--version` states it. Every release goes through the same phases.
+No phase pushes directly to main. The release version is carried only by the
+package-scoped `release-as` key; commit-message Release-As footers are not used.
 """
 
 from __future__ import annotations
@@ -282,25 +277,77 @@ def phase_record(plan: Plan, gate_output: str, evidence: str) -> bool:
 
 
 def phase_notes(plan: Plan) -> bool:
-    """Release notes committed with the Release-As footer. Returns False when already done."""
+    """Generate notes and pin the llama.cpp package version in one commit."""
     root = plan.repo_root
     subject = f"chore: release notes {plan.release_tag}"
-    if subject in _git(root, "log", "--format=%s", "--fixed-strings", f"--grep={subject}", "-5").splitlines():
+    config_text = (root / _RELEASE_CONFIG).read_text(encoding="utf-8")
+    committed = subject in _git(root, "log", "--format=%s", "--fixed-strings", f"--grep={subject}", "-5").splitlines()
+    if committed and _release_as_value(config_text, "notes") == plan.version:
         return False
     _require_clean(plan, "notes")
     try:
         out = _notes.write_notes(root, _notes.load_config(root), plan.llama_tag, "HEAD", plan.version)
     except _notes.ReleaseNotesError as exc:
         raise PinReleaseError("notes", str(exc)) from exc
-    _git(root, "add", str(Path(out).resolve().relative_to(root.resolve())).replace("\\", "/"))
-    body = ("release-please reads only conventional-commit subjects; this commit carries the release version "
-            f"(BigCherry on llama.cpp {plan.llama_tag}).\n\nRelease-As: {plan.version}")
+    _edit_release_as(root, plan.version, "notes")
+    note_path = str(Path(out).resolve().relative_to(root.resolve())).replace("\\", "/")
+    _git(root, "add", note_path, _RELEASE_CONFIG)
+    body = ("release-please reads the package-scoped release-as value from release-please-config.json; "
+            f"this commit carries BigCherry on llama.cpp {plan.llama_tag}.")
     _git(root, "commit", "-q", "-m", subject, "-m", body)
     return True
 
 
-def phase_main(plan: Plan) -> bool:
-    """main fast-forwarded to the work branch (after taking main in, if it moved). Returns False when already done."""
+def _pr_for_head(plan: Plan, head: str, phase: str) -> dict | None:
+    res = _run(plan.repo_root, "gh", "pr", "list", "--base", plan.main, "--head", head, "--state", "open",
+               "--json", "number,title,headRefName,url", check=False)
+    if res.returncode != 0:
+        raise PinReleaseError(phase, "gh pr list failed: " + (res.stderr or res.stdout).strip()[-400:])
+    rows = json.loads(res.stdout or "[]")
+    return rows[0] if rows else None
+
+
+def _ensure_pr(plan: Plan, head: str, title: str, phase: str, body: str) -> dict:
+    current = _pr_for_head(plan, head, phase)
+    if current is not None:
+        return current
+    made = _run(plan.repo_root, "gh", "pr", "create", "--base", plan.main, "--head", head,
+                "--title", title, "--body", body, check=False)
+    if made.returncode != 0:
+        raise PinReleaseError(phase, f"could not open pull request {head} -> {plan.main}: "
+                                      + (made.stderr or made.stdout).strip()[-400:])
+    current = _pr_for_head(plan, head, phase)
+    if current is None:
+        raise PinReleaseError(phase, f"pull request for {head} was created but could not be found")
+    return current
+
+
+def _wait_and_merge_pr(plan: Plan, pr: dict, phase: str, wait_s: int = 900) -> None:
+    checks = _run(plan.repo_root, "gh", "pr", "checks", str(pr["number"]), "--watch", "--interval", "10",
+                  check=False, timeout=wait_s)
+    if checks.returncode != 0:
+        raise PinReleaseError(phase, f"checks failed for {pr.get('url', '#'+str(pr['number']))}: "
+                                      + (checks.stderr or checks.stdout).strip()[-600:])
+    view = _run(plan.repo_root, "gh", "pr", "view", str(pr["number"]), "--json", "mergeable,state,url", check=False)
+    if view.returncode != 0:
+        raise PinReleaseError(phase, "could not inspect pull request mergeability: "
+                                      + (view.stderr or view.stdout).strip()[-400:])
+    state = json.loads(view.stdout or "{}")
+    if state.get("state") != "OPEN" or state.get("mergeable") != "MERGEABLE":
+        raise PinReleaseError(phase, f"pull request {pr['number']} is not mergeable: "
+                                      f"state={state.get('state')} mergeable={state.get('mergeable')}")
+    merged = _run(plan.repo_root, "gh", "pr", "merge", str(pr["number"]), "--merge", check=False)
+    if merged.returncode != 0:
+        raise PinReleaseError(phase, f"could not merge {pr.get('url', '#'+str(pr['number']))}: "
+                                      + (merged.stderr or merged.stdout).strip()[-400:])
+
+
+def _main_pr_title(plan: Plan) -> str:
+    return f"build: llama.cpp pin {plan.llama_tag} release record and notes"
+
+
+def phase_main(plan: Plan, wait_s: int = 900) -> bool:
+    """Publish the work branch and merge it to main through a checked pull request."""
     root, remote = plan.repo_root, plan.remote
     _require_clean(plan, "main")
     _git(root, "fetch", "-q", remote)
@@ -309,13 +356,18 @@ def phase_main(plan: Plan) -> bool:
     if _run(root, "git", "merge-base", "--is-ancestor", head, main_ref, check=False).returncode == 0:
         return False
     if _run(root, "git", "merge-base", "--is-ancestor", main_ref, head, check=False).returncode != 0:
-        merge = _run(root, "git", "merge", "--no-edit", "-m", f"merge {plan.main} into {plan.branch} for the {plan.release_tag} release", main_ref, check=False)
+        merge = _run(root, "git", "merge", "--no-edit", "-m",
+                     f"merge {plan.main} into {plan.branch} for the {plan.release_tag} release",
+                     main_ref, check=False)
         if merge.returncode != 0:
             _run(root, "git", "merge", "--abort", check=False)
-            raise PinReleaseError("main", f"{main_ref} does not merge cleanly into {plan.branch}:\n{(merge.stdout + merge.stderr).strip()[-800:]}\n"
+            raise PinReleaseError("main", f"{main_ref} does not merge cleanly into {plan.branch}:\n"
+                                          f"{(merge.stdout + merge.stderr).strip()[-800:]}\n"
                                           "merge it by hand, commit, and run again")
     _git(root, "push", "-q", remote, f"HEAD:refs/heads/{plan.branch}")
-    _git(root, "push", "-q", remote, f"HEAD:refs/heads/{plan.main}")   # a fast-forward by construction; git refuses anything else
+    pr = _ensure_pr(plan, plan.branch, _main_pr_title(plan), "main",
+                    f"Release record and notes for llama.cpp {plan.llama_tag} ({plan.version}).")
+    _wait_and_merge_pr(plan, pr, "main", wait_s)
     return True
 
 
