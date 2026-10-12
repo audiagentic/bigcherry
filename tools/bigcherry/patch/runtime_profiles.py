@@ -136,13 +136,12 @@ def check(location: Path | None = None, documented_flags: set[str] | None = None
         return [str(exc)]
 
 
-def documented_flags(patches_root: Path | None = None) -> set[str]:
+def documented_flags(engine: str, patches_root: Path | None = None) -> set[str]:
     """Every runtime flag name documented by some packaged patch's ENV_DOCS (plus BIGCHERRY_FEATURES)."""
     from bigcherry.patch import registry
 
-    root = patches_root or paths.PATCHES
-    reg = registry.load_registry(root)
+    reg = registry.load_registry(engine, patches_root)
     names = {"BIGCHERRY_FEATURES"}
     for desc in reg.descriptors:
-        names.update(doc.name for doc in registry.load_env_docs(desc, root=root))
+        names.update(doc.name for doc in registry.load_env_docs(engine, desc, root=reg.root))
     return names
