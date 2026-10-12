@@ -25,6 +25,8 @@ _FILES = (
     "src/llama-context.h",
     "src/llama-context.cpp",
 )
+# created by 1340 in the composition (not in the pin); 1361 puts its second-arena helpers there
+_OWNED = ("ggml/src/bc-meta-arena-graph.h",)
 
 
 def _load(pid: str):
@@ -78,7 +80,7 @@ class Patch1361Mechanics(unittest.TestCase):
                 (module.patch_id, probe.to_dict()),
             )
 
-        for rel in _FILES:
+        for rel in _FILES + _OWNED:
             target = root / rel
             target.parent.mkdir(parents=True, exist_ok=True)
             if rel in texts:
