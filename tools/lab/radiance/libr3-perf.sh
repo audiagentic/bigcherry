@@ -26,15 +26,15 @@ plugin=${PLUGIN:-$(find "$work/libr3-$target-build" -name 'libr3.so' 2> /dev/nul
 if [ -n "${PLUGIN:-}" ]; then
     selftest=$src/build/bin/r4d_selftest
 else
-    selftest=$(find "$work/libr3-$target-build" -name r3_selftest -type f | head -1)
-    if [ ! -x "$selftest" ]; then
+    # always rebuilt (incremental): an r3_selftest left by an earlier build does not know modes added since
+    {
         GCC14_BIN=${GCC14_BIN:-/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin}
         command -v g++-14 > /dev/null 2>&1 || export PATH="$GCC14_BIN:$PATH"
         cmake --build "$work/libr3-$target-build" --target r3_selftest > "$out/selftest-build.log" 2>&1 || {
             echo "SELFTEST_BUILD_FAILED"; grep -E "error|Error" "$out/selftest-build.log" | head -12 | cut -c1-220; exit 1;
         }
         selftest=$(find "$work/libr3-$target-build" -name r3_selftest -type f | head -1)
-    fi
+    }
 fi
 [ -x "$selftest" ] || { echo "NO_SELFTEST: $selftest"; exit 1; }
 echo "radiance $(git -C "$src" rev-parse --short HEAD); plugin $plugin; HIP device ${GPU:-0}"
