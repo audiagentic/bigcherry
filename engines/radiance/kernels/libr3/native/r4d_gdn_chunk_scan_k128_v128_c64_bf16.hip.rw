@@ -5,7 +5,7 @@
 // accumulators stay in gfx11 layout across each contraction loop, and are converted only where
 // scalar code or the persistent state/output layout needs gfx12 ordering. This removes the
 // compatibility layer's two operand lane exchanges plus accumulator exchange from every WMMA.
-// R3_GDN_NATIVE=1 selects the native instantiation (off: served output is wrong with it, run kq0).
+// R3_GDN_NATIVE=1 selects the native instantiation (off: served output is wrong with it, runs kq0 and kqg2).
 //
 @@ find 1
 #include <hip/hip_runtime.h>

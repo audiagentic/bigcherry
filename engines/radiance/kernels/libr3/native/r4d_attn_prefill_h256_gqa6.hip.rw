@@ -4,14 +4,14 @@
 # keep both 16-value operands and the accumulator in gfx11 WMMA layout through QK and PV.
 # Lane-pair query ownership and the interleaved gfx11 accumulator structure follow the method
 # documented by Hipfire PR #762 (GQA-fused FA2 gfx11); no Hipfire code, KV format or tile size
-# is copied. R3_ATTN_NATIVE=1 selects the native instantiation (off: served output is wrong with it, run kq0).
+# is copied. The native instantiation is the default (KL-checked, run kqa2); R3_ATTN_NATIVE=0 selects the compatibility one.
 #
 @@ find 1
 #define O_LDSB  2097152
 @@ replace
 #define O_LDSB  2097152
 // libr3 only: keep gfx11 fragments/accumulators native across QK/PV. The host launch only
-// instantiates this bit when R3_ATTN_NATIVE=1; libr4d is unchanged.
+// instantiates this bit unless R3_ATTN_NATIVE=0; libr4d is unchanged.
 #define O_R3NATIVE 4194304
 @@ end
 

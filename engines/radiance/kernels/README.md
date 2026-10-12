@@ -736,7 +736,14 @@ over waves a block, blocks a CU and independent accumulators; best of each eleme
   alike. With both off the same check gives KLD 0.0037 / 96.8% (exact) and 0.0044 / 96.4% (wht6), as before. The
   selftests compared each kernel with the compatibility form on their own rows and passed; they do not cover what
   the served model asks of these kernels. The +8.5% above is the speed of a wrong answer. Both are off again until
-  each is fixed and passes this check; which of the two (or both) is at fault is not yet known.
+  each is fixed and passes this check.
+- One switch at a time, every switch set explicitly (runs `kqa2`, `kqg2`, `kqw2`; the KL script does not rebuild
+  libr3, so a default changed in source is not what an unrebuilt plugin does):
+  - `R3_ATTN_NATIVE=1` alone: KLD 0.0035 / 96.8% exact, 0.0044 / 96.6% wht6 - as good as the compatibility form.
+    It is the default again (prefill 2,247 to 2,307 against 2,135 to 2,188 in the repeats above, +5%).
+  - `R3_GDN_NATIVE=1` alone: KLD 6.50 / 7.3% - this is the broken one. Off.
+  - `R3_AR_WIRE4=1` with wht6: identical to plain wht6 to every digit (0.004422 / 96.382%), and the 4-bit run's
+    prefill was no faster: the 4-bit path is not reached by the served model. Not adopted.
 - The 4-token decode figures in this run (a 71.3 maximum, a 64.0 after the prefill) are too short to mean anything.
 
 ## 27B on two XTX after the native attention and scan: what is left (2026-10-12, run `pp3`)
