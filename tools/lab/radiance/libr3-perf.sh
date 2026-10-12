@@ -27,11 +27,25 @@ if [ -n "${PLUGIN:-}" ]; then
     selftest=$src/build/bin/r4d_selftest
 else
     selftest=$(find "$work/libr3-$target-build" -name r3_selftest -type f | head -1)
+    if [ ! -x "$selftest" ]; then
+        GCC14_BIN=${GCC14_BIN:-/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin}
+        command -v g++-14 > /dev/null 2>&1 || export PATH="$GCC14_BIN:$PATH"
+        cmake --build "$work/libr3-$target-build" --target r3_selftest > "$out/selftest-build.log" 2>&1 || {
+            echo "SELFTEST_BUILD_FAILED"; grep -E "error|Error" "$out/selftest-build.log" | head -12 | cut -c1-220; exit 1;
+        }
+        selftest=$(find "$work/libr3-$target-build" -name r3_selftest -type f | head -1)
+    fi
 fi
-[ -x "$selftest" ] || { echo "NO_SELFTEST (run libr3-selftest.sh once to build it)"; exit 1; }
+[ -x "$selftest" ] || { echo "NO_SELFTEST: $selftest"; exit 1; }
 echo "radiance $(git -C "$src" rev-parse --short HEAD); plugin $plugin; HIP device ${GPU:-0}"
 IFS=';' read -ra shapes <<< "${SHAPES:-17408 5120 1;5120 8704 1;8192 5120 1;17408 5120 8}"
 for mode in "${modes[@]}"; do
+    if [ "$mode" = --perfwmma ]; then
+        echo "== $mode ${ITERS:-8192}"
+        HIP_VISIBLE_DEVICES=${GPU:-0} timeout 900 "$selftest" "$plugin" "$mode" "${ITERS:-8192}" 2>&1 \
+            | tee "$out/perfwmma.log"
+        continue
+    fi
     for shape in "${shapes[@]}"; do
         echo "== $mode $shape"
         # shellcheck disable=SC2086

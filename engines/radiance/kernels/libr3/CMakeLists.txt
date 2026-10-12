@@ -106,7 +106,10 @@ target_link_options(libr3 PRIVATE ${stub_obj})
 if(NOT RAD_HIP_RUNTIME)
   find_library(RAD_HIP_RUNTIME amdhip64 HINTS /opt/rocm/lib ENV ROCM_PATH PATH_SUFFIXES lib REQUIRED)
 endif()
-add_executable(r3_selftest EXCLUDE_FROM_ALL ${r4d}/r4d_selftest.cpp)
+add_executable(r3_selftest EXCLUDE_FROM_ALL
+  ${r4d}/r4d_selftest.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/r3_wmma_perf.hip)
 target_link_libraries(r3_selftest PRIVATE radiance::abi ${CMAKE_DL_LIBS} ${RAD_HIP_RUNTIME})
 target_include_directories(r3_selftest PRIVATE ${r4d} $ENV{ROCM_PATH}/include)
 target_compile_definitions(r3_selftest PRIVATE __HIP_PLATFORM_AMD__)
+set_property(TARGET r3_selftest PROPERTY HIP_ARCHITECTURES ${R3_TARGETS})

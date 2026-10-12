@@ -171,3 +171,45 @@ static void fp8_perf(const Plugin& pl, int64_t N, int64_t K, int64_t M, int iter
                 "             with all weight planes rotated past cache; R3_BT selects implementation.\n"
                 "  --perfw8 N K M [iters]:  the 8-bit trunk GEMMs -- block E4M3 W8A8 and the int8\n"
 @@ end
+
+# RR09-A: native gfx11 WMMA arithmetic roof. r3_wmma_perf.hip is linked only into libr3's
+# rewritten selftest; it does not change any libr4d kernel or production row.
+@@ find 1
+static void mxfp4_prefill_perf(const Plugin& pl, int64_t N, int64_t K, int64_t M, int iters) {
+@@ replace
+extern "C" int r3_perfwmma(int iters);
+
+static void mxfp4_prefill_perf(const Plugin& pl, int64_t N, int64_t K, int64_t M, int iters) {
+@@ end
+
+@@ find 1
+    int perf_it = 50, perf_w2 = 0, perf_bf = 0, perf_w8 = 0, perf_mx = 0;
+@@ replace
+    int perf_it = 50, perf_w2 = 0, perf_bf = 0, perf_w8 = 0, perf_mx = 0, perf_wmma = 0;
+@@ end
+
+@@ find 1
+        } else if (!std::strcmp(argv[i], "--perfmxfp4")) {
+@@ replace
+        } else if (!std::strcmp(argv[i], "--perfwmma")) {
+            perf_wmma = 1;
+            perf_it = 8192;
+            if (i + 1 < argc && argv[i + 1][0] != '-') perf_it = (int)std::strtol(argv[++i], nullptr, 0);
+        } else if (!std::strcmp(argv[i], "--perfmxfp4")) {
+@@ end
+
+@@ find 1
+    if (perf_n) {
+@@ replace
+    if (perf_wmma) return r3_perfwmma(perf_it);
+
+    if (perf_n) {
+@@ end
+
+@@ find 1
+                "  --perfmxfp4 N K M [iters]: the MXFP4 prefill row, including activation pre-pass,\n"
+@@ replace
+                "  --perfwmma [iters]: gfx11 WMMA roof: register-only f16/bf16/iu8/iu4, then\n"
+                "             LDS/global fragment reads at the best register geometry and ILP.\n"
+                "  --perfmxfp4 N K M [iters]: the MXFP4 prefill row, including activation pre-pass,\n"
+@@ end
