@@ -1,0 +1,12 @@
+schema = 1
+id = "0003_mtp_full_head_switch"
+order = 3
+state = "untested"
+kind = "enhancement"
+origin = "local"
+backend = "agnostic"
+plan-item = "RAD01"
+plan-ids = ["RAD01"]
+requires = []
+conflicts = []
+tags = ["mtp", "speculative-decoding"]
