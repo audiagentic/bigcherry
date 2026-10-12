@@ -328,6 +328,13 @@ it, and waits for the tag. `unpin` removes `release-as` on
 when already done. `--through <phase>` stops early; `--dry-run` reports the
 concrete PRs and manifest versions without writes.
 
+Main's ruleset requires `conventional-title` and `index-line-endings`. Release-please PRs created
+or updated by the Actions token can sit with those checks "expected", and stale release branches run stale workflow
+files. `pin-release` now updates each main/release/unpin PR branch to current `main` before merging, resolves only
+the shared release manifest conflict by keeping bc-llamacpp's release-side version and main's value for every other
+package, waits for the ruleset-required checks, and triggers them once if none starts. Any other conflict or failed
+required check stops the command.
+
 Merging to main publishes a GitHub release: the owner's go-ahead is needed
 once per bump. A further release on the same pin (features or fixes landed
 since) is `pin-release <tag> --bump minor|patch --evidence @<file>`.
