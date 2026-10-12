@@ -1,0 +1,407 @@
+# libr3 gfx1100 native paged-prefill attention.
+#
+# Design: retain Radiance's proven causal/softmax/paged-KV algorithm and tile scheduling, but
+# keep both 16-value operands and the accumulator in gfx11 WMMA layout through QK and PV.
+# Lane-pair query ownership and the interleaved gfx11 accumulator structure follow the method
+# documented by Hipfire PR #762 (GQA-fused FA2 gfx11); no Hipfire code, KV format or tile size
+# is copied. R3_ATTN_NATIVE=1 selects the native instantiation; default remains compatibility.
+#
+@@ find 1
+#define O_LDSB  2097152
+@@ replace
+#define O_LDSB  2097152
+// libr3 only: keep gfx11 fragments/accumulators native across QK/PV. The host launch only
+// instantiates this bit when R3_ATTN_NATIVE=1; libr4d and default libr3 remain unchanged.
+#define O_R3NATIVE 4194304
+@@ end
+
+@@ find 1
+    constexpr int KWIDE = (OPT & O_KWIDE) ? 1 : 0;
+@@ replace
+    constexpr int KWIDE = (OPT & O_KWIDE) ? 1 : 0;
+    constexpr int R3N   = (OPT & O_R3NATIVE) ? 1 : 0;
+    static_assert(!R3N || F16, "gfx11 native attention uses the f16 operand form");
+@@ end
+
+@@ find 1
+    frag16 qf[NKS];
+    {
+        const uint16_t* qp = (const uint16_t*)a.q
+                           + ((size_t)(qoff + qrow) * a.q_heads + qhead) * HEAD_DIM;
+        #pragma unroll
+        for (int t = 0; t < NKS; ++t) {
+            // CONTIG reads the same 8 d as ONE run; the split map takes them 4+4.
+            const uint2 l0 = *(const uint2*)(qp + 16 * t + (CTG ? 8 * h : 4 * h));
+            const uint2 h0 = *(const uint2*)(qp + 16 * t + (CTG ? 8 * h + 4 : 8 + 4 * h));
+            qf[t] = D::mk(make_uint2(r4d_qcvt<D, FOLDQ, F16>(l0.x, mul),
+                                     r4d_qcvt<D, FOLDQ, F16>(l0.y, mul)),
+                          make_uint2(r4d_qcvt<D, FOLDQ, F16>(h0.x, mul),
+                                     r4d_qcvt<D, FOLDQ, F16>(h0.y, mul)));
+        }
+    }
+
+@@ replace
+    frag16 qf[NKS];
+    r3_v16h qn[NKS];
+    {
+        const uint16_t* qp = (const uint16_t*)a.q
+                           + ((size_t)(qoff + qrow) * a.q_heads + qhead) * HEAD_DIM;
+        #pragma unroll
+        for (int t = 0; t < NKS; ++t) {
+            if constexpr (R3N) {
+                r3_u8 qw;
+                #pragma unroll
+                for (int d = 0; d < 8; ++d) {
+                    const uint32_t w = *(const uint32_t*)(qp + 16 * t + 2 * d);
+                    qw[d] = r4d_qcvt<D, FOLDQ, F16>(w, mul);
+                }
+                qn[t] = __builtin_bit_cast(r3_v16h, qw);
+            } else {
+                // CONTIG reads the same 8 d as ONE run; the split map takes them 4+4.
+                const uint2 l0 = *(const uint2*)(qp + 16 * t + (CTG ? 8 * h : 4 * h));
+                const uint2 h0 = *(const uint2*)(qp + 16 * t + (CTG ? 8 * h + 4 : 8 + 4 * h));
+                qf[t] = D::mk(make_uint2(r4d_qcvt<D, FOLDQ, F16>(l0.x, mul),
+                                         r4d_qcvt<D, FOLDQ, F16>(l0.y, mul)),
+                              make_uint2(r4d_qcvt<D, FOLDQ, F16>(h0.x, mul),
+                                         r4d_qcvt<D, FOLDQ, F16>(h0.y, mul)));
+            }
+        }
+    }
+@@ end
+
+@@ find 1
+    auto fetchV = [&](int k0, const int* blks) {
+        #pragma unroll
+        for (int r = 0; r < VREGS; ++r) {
+            const int idx = warp + r * NWARPS;
+            if (NTR % NWARPS == 0 || idx < NTR) {
+                constexpr int DG = HEAD_DIM / (KVP ? 32 : 64);
+                const int kg = idx / DG, dg = idx - kg * DG;
+                const int kk = min(k0 + kg * 8 + vj, ctx - 1);
+                const int d0 = dg * (KVP ? 32 : 64) + vg * (KVP ? 8 : 16);
+                const int blk = BTS ? blks[(kk - k0) / BS] : bt[kk / BS];
+                const size_t o = (size_t)blk * a.kv_block_stride
+                               + (size_t)kvh * a.kv_head_stride
+                               + (size_t)(kk % BS) * (2 * HEAD_DIM) + HEAD_DIM + d0;
+                const void* p = KVP ? (const void*)((const uint16_t*)a.kv + o)
+                                    : (const void*)((const uint8_t*)a.kv + o);
+                vreg[r] = __builtin_bit_cast(uint4, load_tr_b128(p));
+            }
+        }
+    };@@ replace
+    auto fetchV = [&](int k0, const int* blks) {
+        if constexpr (R3N) {
+            // hipfire PR #762's useful gfx11 lesson is to keep the WMMA row native. For
+            // Radiance's paged KV, direct contiguous loads plus an LDS scatter are cheaper
+            // than emulating gfx12 global_load_tr_b128 (8 global reads + lane exchanges).
+            constexpr int VE = KVP ? 8 : 16;
+            constexpr int NITEM = TILE * (HEAD_DIM / VE);
+            #pragma unroll
+            for (int r = 0; r < VREGS; ++r) {
+                const int item = tid + r * NTHR;
+                if (item < NITEM) {
+                    const int key = item / (HEAD_DIM / VE);
+                    const int dg  = item - key * (HEAD_DIM / VE);
+                    const int kk  = min(k0 + key, ctx - 1);
+                    const int d0  = dg * VE;
+                    const int blk = BTS ? blks[(kk - k0) / BS] : bt[kk / BS];
+                    const size_t o = (size_t)blk * a.kv_block_stride
+                                   + (size_t)kvh * a.kv_head_stride
+                                   + (size_t)(kk % BS) * (2 * HEAD_DIM) + HEAD_DIM + d0;
+                    vreg[r] = KVP ? *(const uint4*)((const uint16_t*)a.kv + o)
+                                  : *(const uint4*)((const uint8_t*)a.kv + o);
+                }
+            }
+        } else {
+            for (int r = 0; r < VREGS; ++r) {
+                const int idx = warp + r * NWARPS;
+                if (NTR % NWARPS == 0 || idx < NTR) {
+                    constexpr int DG = HEAD_DIM / (KVP ? 32 : 64);
+                    const int kg = idx / DG, dg = idx - kg * DG;
+                    const int kk = min(k0 + kg * 8 + vj, ctx - 1);
+                    const int d0 = dg * (KVP ? 32 : 64) + vg * (KVP ? 8 : 16);
+                    const int blk = BTS ? blks[(kk - k0) / BS] : bt[kk / BS];
+                    const size_t o = (size_t)blk * a.kv_block_stride
+                                   + (size_t)kvh * a.kv_head_stride
+                                   + (size_t)(kk % BS) * (2 * HEAD_DIM) + HEAD_DIM + d0;
+                    const void* p = KVP ? (const void*)((const uint16_t*)a.kv + o)
+                                        : (const void*)((const uint8_t*)a.kv + o);
+                    vreg[r] = __builtin_bit_cast(uint4, load_tr_b128(p));
+                }
+            }
+        }
+    };@@ end
+
+@@ find 1
+    auto storeV = [&]() {
+        #pragma unroll
+        for (int r = 0; r < VREGS; ++r) {
+            const int idx = warp + r * NWARPS;
+            if (NTR % NWARPS == 0 || idx < NTR) {
+                constexpr int DG = HEAD_DIM / (KVP ? 32 : 64);
+                const int kg = idx / DG, dg = idx - kg * DG;
+                const int d0 = dg * (KVP ? 32 : 64) + vg * (KVP ? 8 : 16);
+                const uint4 v = vreg[r];
+                if (KVP) {
+                    uint16_t* dst = &sV16[(d0 + vj) * VSTR + kg * 8];
+                    *(uint2*)(dst)     = make_uint2(D::from_bf16w(v.x), D::from_bf16w(v.y));
+                    *(uint2*)(dst + 4) = make_uint2(D::from_bf16w(v.z), D::from_bf16w(v.w));
+                } else {
+                    // tr_b128 transposes 16-BIT lanes, so each transposed short is two fp8 from
+                    // ADJACENT d; v_perm_b32 splits them back into two d rows.
+                    const uint32_t lo0 = byte_gather(v.x, v.y, 0), lo1 = byte_gather(v.z, v.w, 0);
+                    const uint32_t hi0 = byte_gather(v.x, v.y, 1), hi1 = byte_gather(v.z, v.w, 1);
+                    uint32_t wl[4], wh[4];
+                    fp8x8_to_16x4w<D>(make_uint2(lo0, lo1), wl);
+                    fp8x8_to_16x4w<D>(make_uint2(hi0, hi1), wh);
+                    uint16_t* a0 = &sV16[(d0 + 2 * vj)     * VSTR + kg * 8];
+                    uint16_t* a1 = &sV16[(d0 + 2 * vj + 1) * VSTR + kg * 8];
+                    *(uint2*)(a0)     = make_uint2(wl[0], wl[1]);
+                    *(uint2*)(a0 + 4) = make_uint2(wl[2], wl[3]);
+                    *(uint2*)(a1)     = make_uint2(wh[0], wh[1]);
+                    *(uint2*)(a1 + 4) = make_uint2(wh[2], wh[3]);
+                }
+            }
+        }
+    };@@ replace
+    auto storeV = [&]() {
+        if constexpr (R3N) {
+            constexpr int VE = KVP ? 8 : 16;
+            constexpr int NITEM = TILE * (HEAD_DIM / VE);
+            #pragma unroll
+            for (int r = 0; r < VREGS; ++r) {
+                const int item = tid + r * NTHR;
+                if (item < NITEM) {
+                    const int key = item / (HEAD_DIM / VE);
+                    const int dg  = item - key * (HEAD_DIM / VE);
+                    const int d0  = dg * VE;
+                    const r3_u4 raw = __builtin_bit_cast(r3_u4, vreg[r]);
+                    uint32_t hw[8];
+                    if constexpr (KVP) {
+                        #pragma unroll
+                        for (int d = 0; d < 4; ++d) hw[d] = D::from_bf16w(raw[d]);
+                    } else {
+                        fp8x8_to_16x4w<D>(make_uint2(raw[0], raw[1]), hw);
+                        fp8x8_to_16x4w<D>(make_uint2(raw[2], raw[3]), hw + 4);
+                    }
+                    #pragma unroll
+                    for (int d = 0; d < VE / 2; ++d) {
+                        sV16[(d0 + 2 * d)     * VSTR + key] = (uint16_t)hw[d];
+                        sV16[(d0 + 2 * d + 1) * VSTR + key] = (uint16_t)(hw[d] >> 16);
+                    }
+                }
+            }
+        } else {
+            for (int r = 0; r < VREGS; ++r) {
+                const int idx = warp + r * NWARPS;
+                if (NTR % NWARPS == 0 || idx < NTR) {
+                    constexpr int DG = HEAD_DIM / (KVP ? 32 : 64);
+                    const int kg = idx / DG, dg = idx - kg * DG;
+                    const int d0 = dg * (KVP ? 32 : 64) + vg * (KVP ? 8 : 16);
+                    const uint4 v = vreg[r];
+                    if (KVP) {
+                        uint16_t* dst = &sV16[(d0 + vj) * VSTR + kg * 8];
+                        *(uint2*)(dst)     = make_uint2(D::from_bf16w(v.x), D::from_bf16w(v.y));
+                        *(uint2*)(dst + 4) = make_uint2(D::from_bf16w(v.z), D::from_bf16w(v.w));
+                    } else {
+                        // tr_b128 transposes 16-BIT lanes, so each transposed short is two fp8 from
+                        // ADJACENT d; v_perm_b32 splits them back into two d rows.
+                        const uint32_t lo0 = byte_gather(v.x, v.y, 0), lo1 = byte_gather(v.z, v.w, 0);
+                        const uint32_t hi0 = byte_gather(v.x, v.y, 1), hi1 = byte_gather(v.z, v.w, 1);
+                        uint32_t wl[4], wh[4];
+                        fp8x8_to_16x4w<D>(make_uint2(lo0, lo1), wl);
+                        fp8x8_to_16x4w<D>(make_uint2(hi0, hi1), wh);
+                        uint16_t* a0 = &sV16[(d0 + 2 * vj)     * VSTR + kg * 8];
+                        uint16_t* a1 = &sV16[(d0 + 2 * vj + 1) * VSTR + kg * 8];
+                        *(uint2*)(a0)     = make_uint2(wl[0], wl[1]);
+                        *(uint2*)(a0 + 4) = make_uint2(wl[2], wl[3]);
+                        *(uint2*)(a1)     = make_uint2(wh[0], wh[1]);
+                        *(uint2*)(a1 + 4) = make_uint2(wh[2], wh[3]);
+                    }
+                }
+            }
+        }
+    };@@ end
+
+@@ find 1
+            v8f s = (v8f){0,0,0,0,0,0,0,0};
+            {
+                const uint16_t* krow = &sK[(mt * 16 + c) * KSTR] + (CTG ? 8 * h : 0);
+                // PF fragments are LOADED before the matching PF WMMAs are ISSUED, so the wait in
+                // front of each WMMA becomes `s_wait_dscnt PF-1` instead of a full drain.
+                #pragma unroll
+                for (int g = 0; g < NKS; g += PF) {
+                    frag16 kb[PF];
+                    #pragma unroll
+                    for (int j = 0; j < PF; ++j) {
+                        const uint16_t* kp = krow + 16 * (g + j);
+                        if (CTG) {
+                            const uint4 u = *(const uint4*)kp;
+                            kb[j] = D::mk(make_uint2(u.x, u.y), make_uint2(u.z, u.w));
+                        } else {
+                            kb[j] = D::mk(*(const uint2*)(kp + 4 * h),
+                                          *(const uint2*)(kp + 8 + 4 * h));
+                        }
+                    }
+                    if (SGB) sched_barrier();
+                    #pragma unroll
+                    for (int j = 0; j < PF; ++j) s = D::wmma(kb[j], qf[g + j], s);
+                }
+            }
+@@ replace
+            v8f s = (v8f){0,0,0,0,0,0,0,0};
+            {
+                const uint16_t* krow = &sK[(mt * 16 + c) * KSTR]
+                                     + (R3N ? 0 : (CTG ? 8 * h : 0));
+                #pragma unroll
+                for (int g = 0; g < NKS; g += PF) {
+                    if constexpr (R3N) {
+                        r3_v16h kb[PF];
+                        #pragma unroll
+                        for (int j = 0; j < PF; ++j)
+                            kb[j] = r3_ld16_f16(krow + 16 * (g + j));
+                        if (SGB) sched_barrier();
+                        #pragma unroll
+                        for (int j = 0; j < PF; ++j)
+                            s = r3_wmma_f16_native(kb[j], qn[g + j], s);
+                    } else {
+                        frag16 kb[PF];
+                        #pragma unroll
+                        for (int j = 0; j < PF; ++j) {
+                            const uint16_t* kp = krow + 16 * (g + j);
+                            if (CTG) {
+                                const uint4 u = *(const uint4*)kp;
+                                kb[j] = D::mk(make_uint2(u.x, u.y), make_uint2(u.z, u.w));
+                            } else {
+                                kb[j] = D::mk(*(const uint2*)(kp + 4 * h),
+                                              *(const uint2*)(kp + 8 + 4 * h));
+                            }
+                        }
+                        if (SGB) sched_barrier();
+                        #pragma unroll
+                        for (int j = 0; j < PF; ++j) s = D::wmma(kb[j], qf[g + j], s);
+                    }
+                }
+            }
+@@ end
+
+@@ find 1
+            const int kbase = k0 + mt * 16 + 8 * h;
+            if (!MSKIP || wave_any(kbase + 7 > klimit)) {
+                #pragma unroll
+                for (int e = 0; e < 8; ++e) sc[e] = (kbase + e <= klimit) ? sc[e] : -INFINITY;
+            }
+@@ replace
+            const int kbase = k0 + mt * 16 + (R3N ? h : 8 * h);
+            if (!MSKIP || wave_any(kbase + (R3N ? 14 : 7) > klimit)) {
+                #pragma unroll
+                for (int e = 0; e < 8; ++e) {
+                    const int key = kbase + (R3N ? 2 * e : e);
+                    sc[e] = (key <= klimit) ? sc[e] : -INFINITY;
+                }
+            }
+@@ end
+
+@@ find 1
+                const uint2 lo  = make_uint2(pw[0], pw[1]);
+                const uint2 hi2 = make_uint2(pw[2], pw[3]);
+                // QK leaves lane (c,h) holding keys 8h+e. Under CONTIG that IS the B fragment, so
+                // the cross-half exchange the two-runs-of-four map needed is simply not there.
+                frag16 p16;
+                if (CTG) {
+                    p16 = D::mk(lo, hi2);
+                } else {
+                    const uint2 y = swap16_u2p((h == 0) ? hi2 : lo);
+                    p16 = (h == 0) ? D::mk(lo, y) : D::mk(y, hi2);
+                }
+                const uint16_t* vbase = &sV16[c * VSTR + mt * 16] + (CTG ? 8 * h : 0);
+                #pragma unroll
+                for (int g = 0; g < NKS; g += PF) {
+                    frag16 vb[PF];
+                    #pragma unroll
+                    for (int j = 0; j < PF; ++j) {
+                        const uint16_t* vp = vbase + (g + j) * 16 * VSTR;
+                        if (CTG) {
+                            const uint4 u = *(const uint4*)vp;
+                            vb[j] = D::mk(make_uint2(u.x, u.y), make_uint2(u.z, u.w));
+                        } else {
+                            vb[j] = D::mk(*(const uint2*)(vp + 4 * h),
+                                          *(const uint2*)(vp + 8 + 4 * h));
+                        }
+                    }
+                    if (SGB) sched_barrier();
+                    #pragma unroll
+                    for (int j = 0; j < PF; ++j) acc[g + j] = D::wmma(vb[j], p16, acc[g + j]);
+                }
+@@ replace
+                const uint2 lo  = make_uint2(pw[0], pw[1]);
+                const uint2 hi2 = make_uint2(pw[2], pw[3]);
+                if constexpr (R3N) {
+                    const r3_u4 po = {pw[0], pw[1], pw[2], pw[3]};
+                    const r3_v16h p16n = r3_pair8_f16_native(po, lane);
+                    const uint16_t* vbase = &sV16[c * VSTR + mt * 16];
+                    #pragma unroll
+                    for (int g = 0; g < NKS; g += PF) {
+                        r3_v16h vb[PF];
+                        #pragma unroll
+                        for (int j = 0; j < PF; ++j)
+                            vb[j] = r3_ld16_f16(vbase + (g + j) * 16 * VSTR);
+                        if (SGB) sched_barrier();
+                        #pragma unroll
+                        for (int j = 0; j < PF; ++j)
+                            acc[g + j] = r3_wmma_f16_native(vb[j], p16n, acc[g + j]);
+                    }
+                } else {
+                    // QK leaves lane (c,h) holding keys 8h+e. Under CONTIG that IS the B
+                    // fragment, so the cross-half exchange the two-runs-of-four map needed is absent.
+                    frag16 p16;
+                    if (CTG) {
+                        p16 = D::mk(lo, hi2);
+                    } else {
+                        const uint2 y = swap16_u2p((h == 0) ? hi2 : lo);
+                        p16 = (h == 0) ? D::mk(lo, y) : D::mk(y, hi2);
+                    }
+                    const uint16_t* vbase = &sV16[c * VSTR + mt * 16] + (CTG ? 8 * h : 0);
+                    #pragma unroll
+                    for (int g = 0; g < NKS; g += PF) {
+                        frag16 vb[PF];
+                        #pragma unroll
+                        for (int j = 0; j < PF; ++j) {
+                            const uint16_t* vp = vbase + (g + j) * 16 * VSTR;
+                            if (CTG) {
+                                const uint4 u = *(const uint4*)vp;
+                                vb[j] = D::mk(make_uint2(u.x, u.y), make_uint2(u.z, u.w));
+                            } else {
+                                vb[j] = D::mk(*(const uint2*)(vp + 4 * h),
+                                              *(const uint2*)(vp + 8 + 4 * h));
+                            }
+                        }
+                        if (SGB) sched_barrier();
+                        #pragma unroll
+                        for (int j = 0; j < PF; ++j) acc[g + j] = D::wmma(vb[j], p16, acc[g + j]);
+                    }
+                }
+@@ end
+
+@@ find 1
+    #pragma unroll
+    for (int dt = 0; dt < NKS; ++dt) {
+        uint32_t tw[4];
+        #pragma unroll
+        for (int e = 0; e < 8; e += 2)
+            tw[e >> 1] = (uint32_t)f32_to_bf16(acc[dt][e] * inv)
+                       | ((uint32_t)f32_to_bf16(acc[dt][e + 1] * inv) << 16);
+        *(uint4*)(op + dt * 16 + 8 * h) = make_uint4(tw[0], tw[1], tw[2], tw[3]);
+    }
+@@ replace
+    #pragma unroll
+    for (int dt = 0; dt < NKS; ++dt) {
+        const v8f ao = R3N ? r3_acc_native_to_gfx12(acc[dt]) : acc[dt];
+        uint32_t tw[4];
+        #pragma unroll
+        for (int e = 0; e < 8; e += 2)
+            tw[e >> 1] = (uint32_t)f32_to_bf16(ao[e] * inv)
+                       | ((uint32_t)f32_to_bf16(ao[e + 1] * inv) << 16);
+        *(uint4*)(op + dt * 16 + 8 * h) = make_uint4(tw[0], tw[1], tw[2], tw[3]);
+    }
+@@ end

@@ -452,6 +452,43 @@ __device__ __forceinline__ r3_v8f r3_wmma_f16_native(r3_v16h a, r3_v16h b, r3_v8
     return __builtin_amdgcn_wmma_f32_16x16x16_f16_w32(a, b, acc);
 }
 
+
+// Full 16-half row used by native gfx11 attention/GDN forms. `aligned(2)` is deliberate:
+// Radiance's LDS row pitches are not all 32-byte aligned, while gfx11 WMMA only requires the
+// values in registers to have the full-row layout.
+__device__ __forceinline__ r3_v16h r3_ld16_f16(const unsigned short* p) {
+    typedef unsigned r3_u8h __attribute__((ext_vector_type(8), aligned(2)));
+    return __builtin_bit_cast(r3_v16h, *reinterpret_cast<const r3_u8h*>(p));
+}
+__device__ __forceinline__ r3_v16bf r3_ld16_bf16(const unsigned short* p) {
+    typedef unsigned r3_u8h __attribute__((ext_vector_type(8), aligned(2)));
+    return __builtin_bit_cast(r3_v16bf, *reinterpret_cast<const r3_u8h*>(p));
+}
+
+// A native attention QK leaves a lane-pair holding alternating keys: lower-half lanes own
+// 0,2,...,14 and upper-half lanes own 1,3,...,15. Rebuild the 16-value P row once before
+// PV rather than translating both operands around every WMMA.
+__device__ __forceinline__ r3_v16h r3_pair8_f16_native(r3_u4 own, unsigned lane) {
+    r3_u4 other;
+    const unsigned partner = lane ^ 16u;
+    other.x = r3_from_lane(partner, own.x);
+    other.y = r3_from_lane(partner, own.y);
+    other.z = r3_from_lane(partner, own.z);
+    other.w = r3_from_lane(partner, own.w);
+    const bool hi = (lane >> 4) != 0;
+    r3_u8 row;
+#pragma unroll
+    for (int e = 0; e < 8; ++e) {
+        const unsigned sh = (unsigned)(e & 1) * 16u;
+        const unsigned a = (own[e >> 1] >> sh) & 0xffffu;
+        const unsigned b = (other[e >> 1] >> sh) & 0xffffu;
+        const unsigned even = hi ? b : a;
+        const unsigned odd  = hi ? a : b;
+        row[e] = even | (odd << 16);
+    }
+    return __builtin_bit_cast(r3_v16h, row);
+}
+
 // Row pitch in bytes of an operand staged in shared memory as halves, FK values a row. A fragment read is 16 lanes
 // x 32 bytes over consecutive rows; 2 FK is a multiple of 128 bytes for every FK the kernel uses, so 32 more bytes
 // step each row 8 words round the 32 banks and the read is four full bank cycles with no lane waiting on another.
