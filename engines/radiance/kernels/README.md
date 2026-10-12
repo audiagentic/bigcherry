@@ -1027,6 +1027,19 @@ the stager on. Patched engine, 4K chunks, two XTX only (runs `fnz1`-`fnz5`):
   table was being copied, before the server listened; it recovered and served.
 - Configuration of record for Flash-Next on two XTX: patched engine, `--tp-wire exact`, `--ngram-placement ram`,
   `--host-pool-mib 16384`, `--max-num-seqs 6`, `--max-num-batched-tokens 4096 --checkpoint-interval 4096`, MTP 3.
+MTP against llama.cpp on the same workload (`rad_prompt_bench.py --continue`: the corpus as a raw completion,
+greedy, ignore_eos, 256 tokens - as long-ctx-profile.sh timing does; runs `fnm3`, `fnm0`, configuration of record):
+
+| | radiance two XTX | llama.cpp three cards (`lcfn-*`) |
+|---|---|---|
+| decode at ~3.2K, no draft | 33.0 tok/s | 37.9 |
+| decode at ~3.2K, MTP 3 | 53.6 tok/s | 72.2 |
+| decode at ~6.5K, no draft | 34.1 tok/s | 36.9 |
+| decode at ~6.5K, MTP 3 | 44.8 tok/s | 55.6 |
+| draft acceptance | 0.61-0.64 mostly (`--live`) | 0.79 (179/226), 0.56 (160/284) |
+
+Two gaps: the base step is about 10% slower, and acceptance is lower at the shallow depth. Radiance's draft head is
+the one in the container; llama.cpp uses a separate Q8_0 MTP GGUF - the head's precision is the first suspect.
 Next: a deeper stager and larger prefill steps (`--max-num-batched-tokens 8192`), which raise the
 tokens served per byte of cold experts moved.
 
