@@ -25,7 +25,7 @@ computed during discovery stays cycle-free; ``patch_validation`` re-exports it.
 
 Path fields on :class:`PatchDescriptor` are RELATIVE to the registry root
 (the directory passed to :func:`load_registry`; normally
-``paths.PATCHES``). That is the canonical, checkout-independent form the
+the caller-supplied engine patch root). That is the canonical, checkout-independent form the
 runbook asks for: for the real tree, root-relative IS repo-relative under
 ``engines/llamacpp/patches/``, and tests can point the registry at a temp root without
 changing descriptor contents. Convert to absolute at the I/O boundary only.
@@ -44,7 +44,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
 
-from ..core import engines, paths
+from ..core import paths
 from .apply import FilePatch
 
 # The "validation framework semantic version" (runbook 14.2). Bumping it
@@ -750,12 +750,11 @@ class PatchRegistry:
 
 def load_registry(
     engine: str,
-    root: Path | None = None,
+    root: Path,
     *,
     contracts_path: Path | None = None,
 ) -> PatchRegistry:
-    """Discover + validate every patch under ``root`` (default
-    ``paths.PATCHES``). Fails closed on: unknown ``patch.toml`` keys, bad
+    """Discover + validate every patch under ``root`` (the explicit engine registry root). Fails closed on: unknown ``patch.toml`` keys, bad
     state, directory/ID mismatch, missing ``patch.py``, non-canonical ID
     pattern, duplicate IDs across ANY representation (runbook 5), and
     path/symlink escape.
@@ -764,8 +763,7 @@ def load_registry(
     production callers pass nothing and ``paths.EXPERIMENT_CONTRACTS`` is
     used.
     """
-    layout = engines.load(paths.REPO_ROOT, engine)
-    resolved_root = (root or layout.patches_root(paths.REPO_ROOT)).resolve()
+    resolved_root = root.resolve()
     if not resolved_root.is_dir():
         return PatchRegistry(engine=engine, root=resolved_root, descriptors=())
 
@@ -808,7 +806,7 @@ def load_registry(
 
 def describe_all(
     engine: str,
-    root: Path | None = None,
+    root: Path,
     *,
     contracts_path: Path | None = None,
 ) -> tuple[PatchDescriptor, ...]:
@@ -825,8 +823,7 @@ def describe_all(
     source materialization -- keeps failing closed; this function is only for
     observational/reporting use and must never feed a resolution or a build.
     """
-    layout = engines.load(paths.REPO_ROOT, engine)
-    resolved_root = (root or layout.patches_root(paths.REPO_ROOT)).resolve()
+    resolved_root = root.resolve()
     if not resolved_root.is_dir():
         return ()
     descriptors: list[PatchDescriptor] = []
