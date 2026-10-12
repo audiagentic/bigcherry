@@ -1,5 +1,5 @@
 """Patch registry: one normalized, content-identified descriptor for every
-patch package in ``engines/llamacpp/patches/`` (flat files are compatibility fixtures only).
+patch package in an engine-owned ``engines/<engine>/patches/`` (flat files are compatibility fixtures only).
 
 patch-system PA02 / RS01 (docs/planning/active/patch-system/
 PATCH_REFACTOR_RUNBOOK.md, sections 3-14). Before this module there were two
@@ -10,8 +10,8 @@ downstream code ever decides whether a patch is flat or packaged.
 
 Discovery (runbook section 4), exactly:
 
-* simple:  root-level ``engines/llamacpp/patches/*.py`` compatibility fixtures only
-* packaged: ``engines/llamacpp/patches/**/patch.toml`` at any depth, no relative path
+* simple:  root-level ``engines/<engine>/patches/*.py`` compatibility fixtures only
+* packaged: ``engines/<engine>/patches/**/patch.toml`` at any depth, no relative path
   component may start ``_``
 * NEVER: arbitrary nested ``*.py`` (a package's ``patch.py`` and every
   ``validation/*.py`` are only reachable through their package)
@@ -44,7 +44,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
 
-from ..core import paths
+from ..core import engines, paths
 from .apply import FilePatch
 
 # The "validation framework semantic version" (runbook 14.2). Bumping it
@@ -121,7 +121,7 @@ _PATCH_TOML_KNOWN_KEYS = _PATCH_TOML_REQUIRED_KEYS | _PATCH_TOML_STRING_LIST_KEY
 
 
 class PatchRegistryError(ValueError):
-    """Raised when the engines/llamacpp/patches/ tree violates the registry's fail-closed rules
+    """Raised when an engine patch tree violates the registry's fail-closed rules
     (bad schema, duplicate identity, path escape, missing implementation)."""
 
 
@@ -286,10 +286,11 @@ class PatchDescriptor:
     representation (runbook section 9). ``representation`` is
     ``"simple"`` or ``"packaged"``; for simple patches ``package_root``,
     ``metadata_path``, ``validation_path``/``validation_digest`` and the
-    descriptive fields that legacy keeps in ``engines/llamacpp/patches/catalog.toml`` are
+    descriptive fields that legacy keeps in the engine patch catalog are
     ``None``/empty. Path fields are RELATIVE to the registry root (see
     module docstring)."""
 
+    engine: str
     patch_id: str
     order: int
 
@@ -358,7 +359,7 @@ class PatchDescriptor:
 
 
 def _legacy_descriptor(
-    root: Path, path: Path, *, validate_state: bool = True
+    engine: str, root: Path, path: Path, *, validate_state: bool = True
 ) -> PatchDescriptor:
     patch_id = path.stem
     if not _PATCH_ID_PATTERN.match(patch_id):
@@ -375,6 +376,7 @@ def _legacy_descriptor(
     if state not in STATES and validate_state:
         raise PatchRegistryError(f"{patch_id}: invalid STATE={state!r}")
     return PatchDescriptor(
+        engine=engine,
         patch_id=patch_id,
         order=_module_order(patch_id),
         representation=REPRESENTATION_SIMPLE,
@@ -655,6 +657,7 @@ def _validation_identity(
 
 
 def _packaged_descriptor(
+    engine: str,
     root: Path,
     toml_path: Path,
     *,
@@ -688,6 +691,7 @@ def _packaged_descriptor(
         root, package_dir, contract_ids=contract_ids, contracts_path=contracts_path,
     )
     return PatchDescriptor(
+        engine=engine,
         patch_id=patch_id,
         order=record["order"],
         representation=REPRESENTATION_PACKAGED,
@@ -729,6 +733,7 @@ class PatchRegistry:
     one root (runbook 10). Built by :func:`load_registry` — construct
     descriptors through it so duplicate detection always applies."""
 
+    engine: str
     root: Path
     descriptors: tuple[PatchDescriptor, ...]
 
@@ -744,6 +749,7 @@ class PatchRegistry:
 
 
 def load_registry(
+    engine: str,
     root: Path | None = None,
     *,
     contracts_path: Path | None = None,
@@ -758,15 +764,16 @@ def load_registry(
     production callers pass nothing and ``paths.EXPERIMENT_CONTRACTS`` is
     used.
     """
-    resolved_root = (root or paths.PATCHES).resolve()
+    layout = engines.load(paths.REPO_ROOT, engine)
+    resolved_root = (root or layout.patches_root(paths.REPO_ROOT)).resolve()
     if not resolved_root.is_dir():
-        return PatchRegistry(root=resolved_root, descriptors=())
+        return PatchRegistry(engine=engine, root=resolved_root, descriptors=())
 
     # One composition asks for the registry once per patch (rebase._load_module_patches) and an offline check
     # composes dozens of selections: an unchanged tree is read once. The key is every file's (path, mtime, size)
     # under the root plus the contracts file's, and the framework version that enters the validation digest; the patch bytes that are executed are
     # digest-checked again by load_implementation whatever this returns.
-    cache_key = (resolved_root, contracts_path)
+    cache_key = (engine, resolved_root, contracts_path)
     fingerprint = (VALIDATION_FRAMEWORK_VERSION,
                    _tree_fingerprint(resolved_root, contracts_path or paths.EXPERIMENT_CONTRACTS))
     cached = _REGISTRY_CACHE.get(cache_key)
@@ -789,18 +796,21 @@ def load_registry(
         descriptors.append(descriptor)
 
     for toml_path in discover_packaged_patches(resolved_root):
-        _add(_packaged_descriptor(resolved_root, toml_path, contracts_path=contracts_path))
+        _add(_packaged_descriptor(engine, resolved_root, toml_path, contracts_path=contracts_path))
     for py_path in discover_simple_patches(resolved_root):
-        _add(_legacy_descriptor(resolved_root, py_path))
+        _add(_legacy_descriptor(engine, resolved_root, py_path))
 
     ordered = tuple(sorted(descriptors, key=lambda d: (d.order, d.patch_id)))
-    registry = PatchRegistry(root=resolved_root, descriptors=ordered)
+    registry = PatchRegistry(engine=engine, root=resolved_root, descriptors=ordered)
     _REGISTRY_CACHE[cache_key] = (fingerprint, registry)
     return registry
 
 
 def describe_all(
-    root: Path | None = None, *, contracts_path: Path | None = None
+    engine: str,
+    root: Path | None = None,
+    *,
+    contracts_path: Path | None = None,
 ) -> tuple[PatchDescriptor, ...]:
     """Report-only variant of :func:`load_registry` (runbook compatibility
     facade; RV80 follow-up / GPT ruling b).
@@ -815,7 +825,8 @@ def describe_all(
     source materialization -- keeps failing closed; this function is only for
     observational/reporting use and must never feed a resolution or a build.
     """
-    resolved_root = (root or paths.PATCHES).resolve()
+    layout = engines.load(paths.REPO_ROOT, engine)
+    resolved_root = (root or layout.patches_root(paths.REPO_ROOT)).resolve()
     if not resolved_root.is_dir():
         return ()
     descriptors: list[PatchDescriptor] = []
@@ -835,11 +846,11 @@ def describe_all(
 
     for toml_path in discover_packaged_patches(resolved_root):
         _add(_packaged_descriptor(
-            resolved_root, toml_path, contracts_path=contracts_path,
+            engine, resolved_root, toml_path, contracts_path=contracts_path,
             validate_state=False,
         ))
     for py_path in discover_simple_patches(resolved_root):
-        _add(_legacy_descriptor(resolved_root, py_path, validate_state=False))
+        _add(_legacy_descriptor(engine, resolved_root, py_path, validate_state=False))
 
     return tuple(sorted(descriptors, key=lambda d: (d.order, d.patch_id)))
 
@@ -898,9 +909,10 @@ def _validate_packaged_imports(source: str, descriptor: PatchDescriptor) -> None
 
 
 def _exec_implementation(
+    engine: str,
     descriptor: PatchDescriptor,
     *,
-    root: Path | None = None,
+    root: Path,
     expected_digest: str | None = None,
 ) -> ModuleType:
     """Digest-check and execute a patch implementation in a synthetic module (see load_implementation)."""
@@ -919,7 +931,11 @@ def _exec_implementation(
     tree error, never a silently re-hashed patch. RV80/B5: packaged
     implementations additionally pass static import validation before exec.
     """
-    resolved_root = (root or paths.PATCHES).resolve()
+    if descriptor.engine != engine:
+        raise PatchRegistryError(
+            f"patch {descriptor.patch_id!r} belongs to engine {descriptor.engine!r}, not {engine!r}"
+        )
+    resolved_root = root.resolve()
     path = resolved_root / descriptor.implementation_path
     if not _contains(resolved_root, path):
         raise PatchRegistryError(
@@ -950,14 +966,14 @@ def _exec_implementation(
     return module
 
 
-def load_env_docs(descriptor: PatchDescriptor, *, root: Path | None = None) -> tuple:
+def load_env_docs(engine: str, descriptor: PatchDescriptor, *, root: Path) -> tuple:
     """The patch\'s documented runtime flags, or an empty tuple.
 
     PA44-E merged packages may expose DOCUMENTED_ENV_DOCS while materializing
     historical env-doc rows explicitly inside PATCHES. This preserves exact
     emitted source without making tooling lose the runtime-flag inventory.
     """
-    module = _exec_implementation(descriptor, root=root)
+    module = _exec_implementation(engine, descriptor, root=root)
     return tuple(
         getattr(module, "DOCUMENTED_ENV_DOCS", None)
         or getattr(module, "ENV_DOCS", None)
@@ -966,16 +982,17 @@ def load_env_docs(descriptor: PatchDescriptor, *, root: Path | None = None) -> t
 
 
 def load_implementation(
+    engine: str,
     descriptor: PatchDescriptor,
     *,
-    root: Path | None = None,
+    root: Path,
     expected_digest: str | None = None,
 ) -> list[FilePatch]:
     """Load a patch's production implementation (runbook 12/13), for EITHER
     representation: read current bytes, compile directly, execute in a
     synthetic module, extract ``PATCH``/``PATCHES`` (plus ENV_DOCS help rows).
     Execution and its fail-closed digest/import checks live in _exec_implementation."""
-    module = _exec_implementation(descriptor, root=root, expected_digest=expected_digest)
+    module = _exec_implementation(engine, descriptor, root=root, expected_digest=expected_digest)
     found = getattr(module, "PATCHES", None)
     if found is None:
         single = getattr(module, "PATCH", None)
