@@ -461,6 +461,43 @@ No bf16 container of the 27B fits the cards, so the references are quantised mod
   activation quantisation, not as a less accurate kernel. That fixture predates the native forms and has no MXFP4
   rows; those are checked by `r3_selftest` against the host reference, not against libr4d bit for bit.
 
+## RR08: lane-owned MXFP4 prefill on gfx1100 (ready for lab; results pending)
+
+R3_BT=1 selects libr3's r3_gemm_mxfp4a8_bt_gfx11 implementation inside the existing
+gemm_mxfp4a8_tiled registry row. It is default-off; R3_BT=0 or unset keeps the established tiled
+implementation. The higher-priority decode rows and their entry points are unchanged. R3_BT_B=4, 6 or 8 selects
+how many 16-row activation tiles reuse one weight fragment (default 8); R3_BT_NT=0 or 1 controls the
+non-temporal weight load (default 1).
+
+The implementation deliberately changes RR08's proposed bf16 widened representation to f16. The block-fp8
+measurements above moved the same gfx1100 WMMA path from 321 us / 139 GB/s with bf16 widening to 132 us /
+337 GB/s with bit-built f16. After MXFP4's E2M1 code and E8M0 exponent are folded to the E4M3 byte libr4d
+defines, the same widening applies: both operands are exactly 2^-8 of the E4M3 value and the epilogue applies
+2^16 once. The RR06 host oracle is the correctness gate on this change.
+
+A block is one 32-thread wave. Lane l owns weight row n0 + (l & 15), reads its two fragment-order dwords for a
+16-K step, expands them in registers and reuses the f16 fragment across B activation tiles. Incoming E4M3
+activations are widened once into row-major f16 in the op's scratch; a lane's 16 values are then one 32-byte
+load. Accumulators remain in gfx1100's interleaved layout through the epilogue. No Radiance source or ABI change
+is required: libr3's existing native rewrite makes r4d_rad_gemm_mxfp4a8_tiled_scratch allocate two bytes per
+rounded activation element, up to about 17.8 MiB at M=512, K=17408, and the alternate launcher consumes that
+same scratch.
+
+The decode result that one token row is not a matrix product does not apply at M=64..512: the WMMA activation
+columns are useful. The other gfx1100 result does apply: the card wants roughly a thousand streaming waves.
+The wide prefill grids naturally provide them, so this form does not add split-K. Its expected first limiter is
+BT accumulator VGPR pressure, then repeated activation reads across N tiles. If activation traffic is the
+limiter, the second form is RR08's eight-wave block with one LDS-staged activation group.
+
+Validation uses one built libr3 for both arms. R3_BT_ORACLE=1 expands the RR06 host-reference matrix to all five
+Qwen3.8-27B prefill projections at M=64, 128 and 512 on both activation-scale grids. The ordinary
+gemm_mxfp4a8_tiled r3_selftest case checks the selected arm quickly. libr3-perf.sh --perfmxfp4 rotates the
+codes, E8M0 plane and Wref beyond cache and includes activation widening in the measured row time. Promotion
+requires all oracle cases to pass, decode to remain unchanged, and one-XTX long-prompt prefill to reach at least
+2,500 tok/s; the established native tiled path is about 1,500 and libr4d on the R9700 is about 3,200.
+
+| B | NT | oracle worst rel_l2 | 34816x5120 M512 GB/s | 5120x17408 M512 GB/s | one-XTX 6.5K tok/s | two-XTX wht6 6.5K tok/s |
+|---:|---:|---:|---:|---:|---:|---:|
 ## The lossy two-card wire, measured (2026-10-12, runs `kld4-*`, `tools/lab/radiance/kld-tp-wire.sh`)
 
 `--tp-wire wht6` took two-card MXFP4 prefill from about 1,535 to 2,124 tok/s (above) with no quality number. KL mode
