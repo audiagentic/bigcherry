@@ -217,7 +217,7 @@ static void mxfp4_prefill_perf(const Plugin& pl, int64_t N, int64_t K, int64_t M
 
 # R3_MOE_COMPARE=1 makes --perfmoe run the w4nl64a8h projection once through compatibility and once through
 # R3_MOE_NATIVE on the exact same buffers, then byte-compares the bf16 result. Run at M=1 for decode and M=2048
-# for grouped prefill. This is separate from the timing loop so R3_MOE_NATIVE still selects what --perfmoe times.
+# for grouped prefill, using the production launcher rule in both cases. This is separate from the timing loop.
 @@ find 1
         }
         }
@@ -229,8 +229,9 @@ static void mxfp4_prefill_perf(const Plugin& pl, int64_t N, int64_t K, int64_t M
             const char* oldp = std::getenv("R3_MOE_NATIVE");
             const bool had_old = oldp != nullptr;
             const std::string oldv = oldp ? oldp : "";
-            if (pl.pin_moe) pl.pin_moe(1);
-            if (pl.pin_fk) pl.pin_fk(1);
+            /* Compare the production launcher rule: decode at M=1, grouped prefill at M=2048. */
+            if (pl.pin_moe) pl.pin_moe(0);
+            if (pl.pin_fk) pl.pin_fk(0);
             ::setenv("R3_MOE_NATIVE", "0", 1);
             st_memset(d_y, 0, got.size() * 2);
             const int rc0 = r->launch(&a, nullptr);

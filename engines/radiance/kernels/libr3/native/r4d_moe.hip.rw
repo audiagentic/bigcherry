@@ -108,3 +108,56 @@
     const uint32_t mode = (a_sorted ? 1u : 0u) | (cshift << 1) | (r3_native ? 0x80u : 0u)
                         | ((uint32_t)parts << 8);
 @@ end
+
+
+# The sorted down-projection has its own decode kernel. The production M=1/few-row path takes it,
+# so R3_MOE_NATIVE must carry the same native ownership through that kernel too.
+@@ find 1
+    const uint32_t cshift = (mode >> 1) & 3u, parts = mode >> 8;
+
+    __shared__ uint8_t  s_a[FM * lds_pitch<FK>()];
+@@ replace
+    const uint32_t cshift = (mode >> 1) & 3u, parts = mode >> 8;
+    const bool r3n = W4 == 2 && (mode & 0x80u) != 0; /* down-decode */
+
+    __shared__ uint8_t  s_a[FM * lds_pitch<FK>()];
+@@ end
+
+@@ find 1
+        auto kstep = [&](uint32_t ks, f8v& acc, bool fresh = false) {
+            const i2v af = frag<FK>(s_a, 0, ks, lane);
+            const i2v bf = frag<FK>(s_b, wave * 16, ks, lane);
+            acc = mma(af, bf, fresh ? acc_zero() : acc);
+        };
+@@ replace
+        auto kstep = [&](uint32_t ks, f8v& acc, bool fresh = false) {
+            if (r3n) {
+                const r3_v16bf af = r3_row16_e4m3_to_bf16(
+                    s_a + (size_t)(lane & 15u) * lds_pitch<FK>() + ks);
+                const r3_v16bf bf = r3_row16_e4m3_to_bf16(
+                    s_b + (size_t)(wave * 16 + (lane & 15u)) * lds_pitch<FK>() + ks);
+                acc = r3_wmma_bf16_native(af, bf, fresh ? acc_zero() : acc);
+            } else {
+                const i2v af = frag<FK>(s_a, 0, ks, lane);
+                const i2v bf = frag<FK>(s_b, wave * 16, ks, lane);
+                acc = mma(af, bf, fresh ? acc_zero() : acc);
+            }
+        };
+@@ end
+
+@@ find 1
+        {
+            float as[8];
+#pragma unroll
+            for (uint32_t t = 0; t < 8; ++t) as[t] = s_as[acc_row(lane, t)];
+@@ replace
+        if (r3n) {
+            raw = r3_acc_native_to_gfx12(raw);
+#pragma unroll
+            for (uint32_t q = 0; q + 1 < kSub; ++q) rx[q] = r3_acc_native_to_gfx12(rx[q]);
+        }
+        {
+            float as[8];
+#pragma unroll
+            for (uint32_t t = 0; t < 8; ++t) as[t] = s_as[acc_row(lane, t)];
+@@ end
