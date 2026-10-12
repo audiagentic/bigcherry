@@ -16,4 +16,6 @@ Activation: `BIGCHERRY_PATCH_HIT patch=1355_hc_post_gate_fuse`.
 
 ## Qualification
 
-No performance claim yet. Source evidence is exact at b11474; expected gain is inference until Brutus ABBA.
+**Hardware-screened, not contract-validated.** PR #54 merged 2026-10-09. Historical three-round 8K/24K/98K ABBA reported approximately +1% pooled decode, identical greedy text, and no prefill separation. This is not a four-independent-session full-logits/MTP/graph correctness gate. The package remains experiment-only in config/recipes.toml and metadata state remains untested.
+
+**New audit risk:** bc_dsv4_hc_post_gate_grid_f32 evaluates expf for each embedding-output thread although the gate is invariant over embedding. Relative to the materialized 1313 producer this is n_embd times as many source-level sigmoid evaluations; physical wave/SFU cost is unmeasured. Profile/disassemble before trying a wave-broadcast discriminator. Require backend-op/logits/MTP/graph parity, full activation attribution and independent paired sessions before production adoption. Technical owner QFP35; action ledger BCOP170. No new performance measurement in this audit.

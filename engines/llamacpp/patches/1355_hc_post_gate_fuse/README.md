@@ -12,7 +12,8 @@ AB_ENV="BIGCHERRY_HC_POST_GATE_FUSE=0" \
 tools/lab/flash-next/queue-env-ab.sh qfp35-hcpost <build-run-id> 8192 24576 98304
 ```
 
-A = fused/on; B = composed production/off. Require the patch-hit marker in A, complete prefill timing separation to
-claim a win, unchanged decode control/acceptance, and identical greedy md5 A/B at all three depths. Because this is
+A = fused/on; B = composed production/off. The 2026-10-09 hardware screen showed no prefill separation and approximately +1% pooled decode with identical greedy text. This is experiment-only evidence, not production qualification. Require marker attribution, backend-op F32/logits parity, fixed-draft MTP acceptance, graph/replay and multi-request controls, and four independent paired decode sessions with positive CI95-low and no prefill regression. Do not claim a prefill win.
+
+The fused kernel evaluates expf for each embedding-output thread even though the gate is invariant over embedding; compare generated ISA/SFU counts and paired HC_POST-plus-producer timing before attributing the gain or proposing a wave-broadcast change. See QFP35 and BCOP170. Because this is
 intended to reproduce the same F32 expressions and HC reduction order, any greedy mismatch is a failure pending
 fidelity diagnosis, not an accepted equivalence result.
