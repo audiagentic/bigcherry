@@ -780,6 +780,40 @@ outside the rank group (the R9700 takes about 30 of the 47.68 GiB), which is ask
 Order of work this gives: a native gfx11 `moe_gemm_q` first (two fifths of everything); then `hc_read`
 and `ar_gather_hc_write`.
 
+## Flash-Next on two XTX: the experts that do not fit are the cost (2026-10-12, runs `fnhc1`, `fn7`, `mps2`)
+
+Each rank's experts are 38 GiB and a 24 GB card keeps 19.00 GiB of them; the rest sit in the pinned host pool and
+are read over the link by the kernel, or swapped in by the heat engine.
+
+- The heat engine is busy for the whole bench (`fnhc1-a0`, a card): 108,048 dispatches, 21,375 promotions, 20,934
+  demotions, 64% of promotions of a unit already demoted once, 25.25 GiB moved to the card and 22.87 GiB back;
+  resident units a layer mean 118.8 of 512 (min 0, max 458).
+- Stopping it is worse (`--deterministic`, run `fn7`): decode 19.9 tok/s against 29.2, prefill 178.6 / 229.1 tok/s
+  against 211.7 / 411.4; `moe_gemm_q` 330 us a call against 204, `ar_gather_hc_write` 353 against 126. So the
+  swapping earns its traffic, and what it cannot make resident is what costs.
+- The expert GEMM alone against the share of experts read from host memory (`moe-pool-sweep.sh`, one XTX,
+  `r3_selftest --perfmoe`, the `down` projection, best form of each row):
+
+  | experts in host memory | M=1 | M=2048 |
+  |---|---|---|
+  | 0% | 78 us | 5.13 ms |
+  | 50% | 78 us (no routed row landed on a pooled expert) | 13.4 ms |
+  | 75% | 79 us (same) | 24.7 ms |
+  | 100% | 466 us | 47.1 ms |
+
+  A prefill chunk's expert GEMM is 9 times dearer with every expert over the link than with all resident, and about
+  5 times at the three quarters this model has off a 24 GB card; a decode call that lands on a pooled expert is 6
+  times dearer. The link delivers 3 to 5 GB/s of weight to the kernel.
+- The form that is fastest resident (2 and 4) is the slowest pooled, and form 1 the reverse, at M=2048.
+- Even resident, the w4 expert GEMM does 6.5 TFLOP/s useful at M=2048 (about 40 rows an expert) against a 142 TFLOP/s
+  arithmetic roof, so a native form has room as well.
+- `R3_HC_NATIVE=1` (native E4M3 decode for `hc_read`): 58.2 -> 50.7 us a call, decode 29.2 -> 29.7 tok/s, inside the
+  start-to-start spread; left off.
+
+What follows: the experts off the two cards should be computed where they can be resident (the R9700, 30 GiB, then
+the 6900 XT), with only activations and results crossing host memory - about 5 MiB each way for a 2048-token chunk
+against several hundred MiB of weights a layer - while the hot set stays on the XTX pair as now.
+
 ## Other engines on the RX 7900 XTX (looked up 2026-10-10)
 
 - **llama.cpp, Vulkan backend.** llama.cpp issue #20934: on an RX 7900 XTX, Llama-2 7B Q4_0 decodes at 174.6 tok/s
