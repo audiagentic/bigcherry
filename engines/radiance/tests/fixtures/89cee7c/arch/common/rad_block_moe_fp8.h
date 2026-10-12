@@ -23,10 +23,17 @@ struct MoeFP8 {
         if (!h) return RAD_E_INVAL;
         RAD_ARCH_TRY(span(h, q, 1));
 
-        rad_weight& h2 = w_dn[(size_t)s];
-        h = h2;
+        h = w_gus[(size_t)s];
+        if (!h) return RAD_E_INVAL;
+        RAD_ARCH_TRY(span(h, q, sdiv));
+
+        h = w_dn[(size_t)s];
         if (!h) return RAD_E_INVAL;
         RAD_ARCH_TRY(span(h, q, 1));
+
+        h = w_dns[(size_t)s];
+        if (!h) return RAD_E_INVAL;
+        RAD_ARCH_TRY(span(h, q, sdiv));
 
         w_pgu[(size_t)j] = decl_w();
         if (!w_pgu[(size_t)j]) return RAD_E_INVAL;
