@@ -90,7 +90,7 @@ __global__ __launch_bounds__(THR) void ar_rmsnorm_quant_fp8_kernel(
                 Lpk[((size_t)c * R3_NWORD4 + wi) * ARQ_WV + lane] = acc[wi];
         }
         if (drain == 1) __threadfence_system();
-        else if (drain == 3) asm volatile("s_wait_storecnt 0x0" ::: "memory");
+        else if (drain == 3) asm volatile("s_waitcnt_vscnt null, 0x0" ::: "memory");  // gfx11 form: native text is not run through rewrites.txt
         __syncthreads();
         if (tid == 0) {
             if (drain == 2) __threadfence_system();
