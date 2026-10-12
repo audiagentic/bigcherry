@@ -1,0 +1,20 @@
+From: BigCherry <noreply@anthropic.com>
+Subject: [PATCH] engine: drain each rank's mover queue before its arena is freed at shutdown
+
+Ctx::shutdown() synchronises the compute stream and lane 1, then releases the activation arena.
+The mover's transfer queue is drained only later, in Mover::~Mover. A promotion into an
+arena-lent slab slot, or a prefill-stager copy into the arena top, still queued at shutdown then
+writes freed memory: sq_intr MEMVIOL on gfx1100 and a wedged queue on rank 0 (the first to shut
+down). Seen as aql_copy_link hangs after the last request in Flash-Next two-XTX runs.
+
+--- a/core/engine.cpp
++++ b/core/engine.cpp
+@@ -81,1 +81,8 @@
+-    for (auto& r : ranks_) r->ctx.shutdown();
++    for (auto& r : ranks_) {
++        /* The mover copies into arena-lent slab slots and the prefill stager's buffers at the
++         * arena top: drain it before the arena below is freed. */
++        if (rad_dev_set(r->device) >= 0)
++            if (RadStream s = r->mover.transfer_stream()) rad_stream_sync(s);
++        r->ctx.shutdown();
++    }
