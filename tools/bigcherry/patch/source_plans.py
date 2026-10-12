@@ -57,7 +57,7 @@ class FocalComparison:
 
 
 def _modules_by_id(registry: patch_registry.PatchRegistry) -> dict:
-    return {module.patch_id: module for module in patchset.catalog(registry.root)}
+    return {module.patch_id: module for module in patchset.catalog(registry.engine, registry.root)}
 
 
 def _ordered(registry: patch_registry.PatchRegistry, ids: set[str]) -> tuple[str, ...]:
@@ -72,11 +72,12 @@ def _resolve_ordered(registry: patch_registry.PatchRegistry, ids: set[str]) -> t
     fail-closed on unknown IDs / rejected members / missing requires / internal
     conflicts, returning a TRUE topological order. RV80 follow-up (GPT deep
     review): focal CONTROL and SUBJECT must both pass through this."""
-    resolved = patchset.resolve_exact(sorted(ids), directory=registry.root)
+    resolved = patchset.resolve_exact(registry.engine, sorted(ids), directory=registry.root)
     return tuple(module.patch_id for module in resolved.modules)
 
 
 def build_focal_comparison(
+    engine: str,
     focal: str,
     baseline: tuple[str, ...] | list[str],
     *,
@@ -93,7 +94,7 @@ def build_focal_comparison(
     if registry is None:
         from ..core import paths
 
-        registry = patch_registry.load_registry(paths.PATCHES if root is None else root)
+        registry = patch_registry.load_registry(engine, root)
     try:
         focal_descriptor = registry.get(focal)
     except patch_registry.PatchRegistryError as exc:
@@ -123,7 +124,7 @@ def build_focal_comparison(
     # Ordinary dependency closure of the focal (fail-closed on unknown
     # dependencies or REQUIRES cycles -- tree errors, raised, not
     # swallowed into a BLOCKED result).
-    closure = patchset.expand_composition((focal,), directory=registry.root).expanded
+    closure = patchset.expand_composition(engine, (focal,), directory=registry.root).expanded
     prerequisites = set(closure) - {focal}
 
     rejected = sorted(
@@ -147,7 +148,7 @@ def build_focal_comparison(
     # invalidate those patches). BLOCKED -- never silently drop them.
     for patch_id in sorted(baseline_ids):
         member_closure = patchset.expand_composition(
-            (patch_id,), directory=registry.root
+            engine, (patch_id,), directory=registry.root
         ).expanded
         if focal in member_closure:
             return blocked(
@@ -161,10 +162,10 @@ def build_focal_comparison(
     # diff.
     base_set = baseline_ids | prerequisites
     control_closed = patchset.expand_composition(
-        tuple(sorted(base_set)), directory=registry.root
+        engine, tuple(sorted(base_set)), directory=registry.root
     ).expanded
     subject_closed = patchset.expand_composition(
-        tuple(base_set | {focal}), directory=registry.root
+        engine, tuple(base_set | {focal}), directory=registry.root
     ).expanded
     # RV80 follow-up (GPT deep review): run CONTROL and SUBJECT through the
     # authoritative exact-composition validator (resolve_exact) rather than a
