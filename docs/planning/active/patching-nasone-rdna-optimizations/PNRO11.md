@@ -2,7 +2,7 @@
 id: PNRO11
 order: 0
 plan: patching-nasone-rdna-optimizations
-state: pending
+state: done
 created-at: '2026-09-09T10:52:56.925530+00:00'
 breadth: ''
 skill: advanced
@@ -11,90 +11,46 @@ work: L
 priority: P1
 ---
 
-# Replicate lm_head for DFlash2/DSpark under tensor split
+# DFlash/DSpark shared lm_head: retire target-wide replication
 
-## Description
+## Terminal disposition — 2026-10-12
 
-TODO, NOT-READY (target-load ordering unresolved, bias assumption wrong). Replicate lm_head for DFlash2/DSpark full-vocabulary ranking under tensor split -- CORRECTED per GPT review: (1) target-load ordering is explicitly unresolved (already flagged as NEEDS-VERIFICATION in this item's prior notes -- DFlash metadata is currently consumed after the target model already exists, too late to affect the target's own tensor-split decision); (2) the prior plan's bias assumption is WRONG: verified at b11126 src/llama-model.cpp:595-598, `pattern_output_bias` unconditionally returns `GGML_BACKEND_SPLIT_AXIS_0` -- it does NOT read or mirror `output.weight`'s own split-axis config/MIRRORED state (it only asserts output_weight exists via GGML_ASSERT); (3) the pre-load VRAM-fit check is unspecified.
+**Close the proposed `1264_pnro11_lmhead_replication_tp` without implementation.** The original design would mirror the target's entire `output.weight` (and bias/scale) across every tensor-split target rank, affecting normal target/MTP execution for the sake of a single draft consumer. Existing **untested** BigCherry patch `1286_draft_local_shared_tensors` instead copies only *borrowed* tensors in a Meta buffer to the **single-device draft's** own backend once at draft-context construction. QFP43 owns this compatibility mechanism and any remaining correctness fixes. PNRO11 has no separate patch, runtime selector, allocator, scheduler, CLI flag or hardware queue. Historical September implementation sketches are superseded; consult Git history for them.
 
-## Steps
+Do **not** infer that 1286 is production-qualified or that every DFlash tensor-split failure is solved. Separate the two source-level failure modes:
 
-1. Add a pre-target-load draft GGUF capability/tensor-inventory probe (read the draft's dflash.*/dspark.* metadata and output.weight presence BEFORE target model construction begins) and thread an explicit replication flag through model params/model construction -- resolving the construction-ordering problem flagged in this item's own prior notes (DFlash metadata today is only available after ctx_tgt/target model already exist, per common/speculative.cpp's own constructor assert). A practical alternative if probing before load proves impractical: a CLI-level opt-in `--replicate-output-for-draft` flag set before target load.
-2. In the tensor-config lambda (src/llama-model.cpp, `pattern_output_weight` branch at ~588-594), extend the MIRRORED condition to `is_dsv4 || requires_replicated_output`.
-3. CORRECTED: in the `pattern_output_bias` branch (verified src/llama-model.cpp:595-598, currently unconditionally `return get_tensor_config_impl(GGML_BACKEND_SPLIT_AXIS_0);`), make it ALSO return `GGML_BACKEND_SPLIT_AXIS_MIRRORED` when `requires_replicated_output` is set (matching the weight's new mirrored state) -- otherwise preserve the existing unconditional AXIS_0 behavior. Do not assume the bias branch already reads or mirrors the weight's config; it does not.
-4. Specify the exact pre-load VRAM check/error site (currently unspecified): add an explicit VRAM delta estimate at load time (full output.weight copy per rank instead of a 1/N shard) and fail the load clearly, not silently truncate, if the replicated copy does not fit the declared per-device budget.
-5. Enable replication only when selector/Markov metadata proves full-output ranking and the draft lacks its own output.weight.
-6. Cover shared-target lm_head and draft-owned lm_head; the latter must not force target replication.
-7. Test 2+ GPU tensor split, layer-split, ordinary MTP/Eagle/no-spec controls, candidate selection vs single-GPU/reference, and VRAM fit failure.
+1. **Foreign Meta-buffer ownership:** the single-device draft graph borrows `tok_embd`, `output.weight`, and optionally `output_s` from a tensor-split target. The draft scheduler cannot necessarily execute a preallocated tensor in the target's `Meta()` buffer. Patch 1286's draft-local copies address this ownership/placement mismatch without changing the target's split axis. This is the relevant PNRO11 remainder.
+2. **Split-vocabulary TOP_K:** if the draft itself executes through a tensor-split Meta backend, target `output.weight` with `SPLIT_AXIS_1` produces axis-0 split logits; the in-graph DFlash2 `GGML_OP_TOP_K` cannot consume that representation. Patch 1286 is gated to `!model.devices[0].is_meta` and does **not** solve this separate Meta-selector case. Upstream draft PR #27858 proposes CPU-side selector ranking from gathered logits and keeping the target head sharded, but is **open/unmerged** as checked 2026-10-12. No BigCherry adoption without correctness and host-transfer cost evidence.
 
-## Detailed Solution & Technical Design
+## Exact source path, allocation and lifetime
 
-Full-vocabulary ranking cannot use a single shard without distributed top-k; this fix chooses replication. Weight and bias mirror states must stay coherent. Replication cost is an operational correctness constraint; distributed top-k is separate future work.
+Pinned llama.cpp **b11474** `src/llama-model.cpp` assigns `pattern_output_weight` to `GGML_BACKEND_SPLIT_AXIS_1` unless `is_dsv4`; `pattern_output_bias` independently selects `SPLIT_AXIS_0`. Current upstream master retains this selection. Do not assume bias follows weight's mirrored state. `common/speculative.cpp::common_speculative_impl_draft_dflash` constructs only after `ctx_tgt` and `ctx_dft` exist; discovering the draft's selector metadata there is too late to change target-model load placement. `src/models/dflash.cpp` allows draft-owned `tok_embd`/`output`, otherwise binds the target's tensors through `ctx_other`.
 
-Reuse `GGML_BACKEND_SPLIT_AXIS_MIRRORED` (src/llama-model.cpp) rather than introducing a new `output_replicated` bool/axis kind. In the tensor-config lambda (the one containing the `is_dsv4` check at ~line 590, `pattern_output_weight` match), extend the condition so `output.weight` (and its bias via the existing `pattern_output_bias` branch which already reads output_weight's config) selects `GGML_BACKEND_SPLIT_AXIS_MIRRORED` when EITHER `is_dsv4` (existing) OR a new `requires_replicated_output` flag is true. That flag must be threaded into the tensor-config lambda's captured context (`ud->model` or a sibling struct) from a new field set during model construction/load -- set only when: this is the TARGET model of a speculative setup (not standalone), the attached draft model's metadata proves full-vocabulary ranking (mirror the `is_dflash2`/`selector_top_k` detection already used in common/speculative.cpp -- read the same `dflash.*`/`dspark.*` GGUF keys during target-model construction, or thread the already-parsed draft capability from common_speculative_impl_draft_dflash's construction into llama_model's split-tensor-config path), AND the draft does NOT own its own `output.weight` (check the draft GGUF's own tensor inventory before deciding to replicate the target's). Load-time VRAM accounting: replication means N tensor-split ranks each hold a full output.weight copy instead of a 1/N shard -- add an explicit VRAM delta estimate at load time and fail the load clearly (not silently truncate) if the replicated copy does not fit the declared per-device budget.
+BigCherry `1286_draft_local_shared_tensors/patch.py` edits `src/llama-cparams.h`, `src/llama-context.{h,cpp}`, and `src/models/dflash.cpp`. During draft-context construction it inspects each borrowed tensor's buffer device, creates a `ggml_dup_tensor` in a draft-local `ggml_context` for Meta-resident tensors, allocates one buffer from `ggml_backend_dev_buffer_type(model.devices[0].dev)`, gathers via `ggml_backend_tensor_get` into temporary host bytes, then uploads via `ggml_backend_tensor_set`. `bc_other_ctx`/`bc_other_buf` own the GPU copies for the draft-context lifetime; the temporary `std::vector<uint8_t>` is released after construction. This is **synchronous setup**, not an asynchronous per-token cache or a GPU P2P transfer. The draft-owned-output case is unchanged; layer-split/single-device target buffers are not copied by this Meta-only path.
 
-## Code Samples & Guidance
+**Source-level conditional defect in the untested patch:** the two DFlash graph builders choose
+`output_s = cparams.other_output ? cparams.other_output_s : model_other->output_s`.
+The condition tests the **weight copy**, not the **scale copy**. If weight is Meta and a non-Meta scale exists, it chooses a null scale; if weight is non-Meta but scale is Meta, it ignores the scale copy and uses the original foreign tensor. A 12-case deterministic host truth table over owned/borrowed, Meta-weight, scale-present and Meta-scale configurations found **2 pointer-selection mismatches**. This proves conditional inconsistency, **not** that either mixed-residency case occurs in the deployed GGUF or causes a GPU failure. Fix/qualify this in QFP43/1286 only: choose each tensor independently, prove draft-backend readability for uncopied tensors, and fail closed rather than silently dropping a required scale.
 
-Target file: `src/llama-model.cpp` (b11126). Verified anchor (exact text from source): the block\n```\n        // output\n        if (std::regex_match(tensor_name, pattern_output_weight)) {\n            if (is_dsv4) {\n                return get_tensor_config_impl(GGML_BACKEND_SPLIT_AXIS_MIRRORED);\n            }\n            return get_tensor_config_impl(GGML_BACKEND_SPLIT_AXIS_1);\n        }\n```\n(lines ~588-594) -- mode="replace", new text changes the inner condition to `if (is_dsv4 || requires_replicated_output) {`. NEEDS-VERIFICATION before authoring: (1) exact name/scope to thread `requires_replicated_output` through -- read the full lambda capture list and `ud` struct definition around line ~370-400 to find where a new bool can live; (2) where draft-capability detection happens relative to target-model construction order (today `common_speculative_impl_draft_dflash` builds AFTER `ctx_tgt`/target model per its constructor assert at speculative.cpp ~952 'DFlash requires ctx_tgt and ctx_dft to be set' -- so the target's tensor split decision may need to happen at a later re-plan point, or the flag needs to come from CLI/params set before target load rather than discovered from the draft GGUF after the fact; this ordering question is the single most important thing for the next agent to resolve before writing patch.py, and may require a CLI-level opt-in `--replicate-output-for-draft` as a practical alternative to inferring it late).\nPatch package sketch: `patches/1264_pnro11_lmhead_replication_tp/{patch.toml,patch.py,SUMMARY.md,README.md,TESTING.md}` (next free id -- adjust for actual availability at authoring time). patch.toml: kind="enhancement", state="untested", requires=[].
+**Memory/traffic gate:** compute `ggml_nbytes` for each borrowed full tensor and record draft-device free/peak VRAM, temporary host peak, gather/upload bytes, setup time and device order. A single draft-local full head is not free; on no-P2P gfx1100/gfx1201/gfx1030 topology, expect a host-mediated one-time copy, not peer DMA. Do not silently use the target's mirrored memory budget or rely on `--fit` to discover an OOM after allocation. Original target-wide mirroring adds approximately `full_head_bytes - target_shard_bytes` on **every** target rank and may slow unrelated MTP. Upstream issue #28777 reports an **external NVIDIA** matched-session 7–10% MTP step-time penalty from target-head mirroring; it is not a BigCherry/AMD benchmark.
 
-## Files
+## Existing measured BigCherry evidence and value decision
 
-Speculative model params/load; Meta split-state; DFlash model loading/selector metadata; lm_head weight+bias placement; TP/reference tests; VRAM accounting.
+- 2026-10-04 Qwen3.8-27B Q8_0 dual-XTX target: built-in MTP **72.7/73.1 t/s at 10K**, **71.8/72.0 t/s at 32K**, versus no-spec **37.5/36.5 t/s**. Tensor-split DFlash/DSpark had context-creation/scheduler failures; those runs did not establish a head-replication speedup.
+- QFP43's 2026-10-08 Brutus five-start series with production + **untested 1286**, 1665-token prompt, 128 greedy tokens: MTP depth 4 **80.2 t/s, 67.3% acceptance**; DFlash2 Q8_0 block 4 **23.8 t/s, 1.7%**, block 7 **20.7 t/s, 0.7%**; DSpark Q8_0 block 6 **21.9 t/s, 2.0%**. The draft files and feature semantics require further isolation; this is not a clean 1286-versus-baseline performance A/B. **Do not queue a PNRO11 speed campaign while acceptance is collapsed.**
+- No PNRO11 implementation, new hardware run, new speedup or production promotion occurred in this audit.
 
-src/llama-model.cpp (split-axis tensor-config lambda); common/speculative.cpp (existing DFlash/DSpark metadata detection, reference only); include/llama.h if a new param is needed; patches/1264_pnro11_lmhead_replication_tp/*; TP/reference fixtures; VRAM accounting evidence.
+## QFP43-owned bounded residual gate (not a PNRO11 reopening)
 
-## Validation
+1. **Host correctness first:** extend `tools/tests/patch/test_1286_draft_local_shared_tensors.py` beyond string/idempotence checks with a 2×2×2 owned/borrowed and Meta-residency/scale-presence selector table, both graph builders, draft-owned head, absent scale, asymmetric Meta weight/scale, layer-split and Meta-draft negative controls. Require pointer identity, backend readability and complete scale preservation. Fix the conditional only in 1286 if an admissible mixed case exists; otherwise document and enforce the invariant. Run patch-composition tests with 1303 and the current production recipe.
+2. **Placement/lifetime:** prove one-time copy after target load and before draft graph reservation; buffer stays alive through graph capture/replay, context reset and repeated same-process requests. Measure actual host/device bytes and peak budgets; reject implicit P2P, stale pointers, wrong-device buffers, missing scale or silent fit failure.
+3. **Hardware correctness, only if demand remains:** on dual gfx1100 target plus single-device gfx1030 or gfx1201 draft, compare full-vocab logits/greedy and candidate selection with a same-draft single-GPU/layer-split reference, 10K/32K/98K contexts, multiple ubatches, two requests in one process and graph on/off. Include draft-owned head and ordinary MTP/no-spec controls. DFlash acceptance and feature taps must be correct **before** timing.
+4. **Promotion/rejection:** retain 1286 default-off until the exact foreign-Meta-buffer failure is reproduced in the control and disappears in the subject without numerical, MTP, VRAM or graph regression. If acceptance remains near 1–2% or the Flash-Next 2560-wide contracted feature tap is unavailable, close the performance lane; compatibility-only work needs an explicit user requirement. For a Meta draft TOP_K failure, independently compare upstream #27858's CPU selector and distributed-top-k alternatives; do not broaden PNRO11 into target-wide replication.
 
-Exact candidate selection under TP; full output on every rank; bias placement; no replication when draft owns output; layer/no-spec controls; VRAM delta and fit rejection.
+## Consolidation / dependencies
 
-Offline: `PYTHONPATH=tools python -m bigcherry patch-lint patches/1264_pnro11_lmhead_replication_tp`; `PYTHONPATH=tools python -m bigcherry patch-rebase-check --focal-overlay 1264_pnro11_lmhead_replication_tp --source bigcherry-tuning`; unit-level split-config fixtures: output.weight selects MIRRORED when the new flag is set (matching existing is_dsv4 path's behavior, which is already exercised by DeepSeek-v4 models), still selects AXIS_1 (sharded) when flag is unset, draft-owned-output case never sets the flag. Hardware (Brutus, 2+ GPU tensor split, not run here): compare candidate selection under TP against single-GPU/reference for DFlash2/DSpark drafts with target lacking replication (control, expect wrong/degraded ranking or existing behavior) vs with replication (subject); ordinary MTP/Eagle/no-spec configs must be unaffected (non-selection controls); VRAM-fit-failure case must fail load with a clear explicit error, not truncate.
+**QFP43 + patch 1286** own draft-local borrowed-tensor binding, scale coherence and DFlash/DSpark correctness. **QFP42/1348** own deferred target-feature lifetime; **PRBE52** has rejected adaptive MTP depth; **MSM03** owns Meta attention-input residency; **PGC/active Radiance** own collectives/host transport. Do not modify their active implementations or invent a second shared-tensor registry. Upstream #27833 and #28777 distinguish borrowed-buffer and TOP_K failures; #27858 is an unmerged alternative. vLLM's separate `draft_tensor_parallel_size` illustrates keeping draft placement distinct from target TP, not a portable GGUF patch.
 
-## Effort & Risk
+## Validation / provenance
 
-Work=L (revised down from L given a matching split-axis primitive, GGML_BACKEND_SPLIT_AXIS_MIRRORED, and draft-metadata detection precedent, is_dflash2/selector_top_k, both already exist upstream -- this is wiring, not new-mechanism invention). Main open risk is construction-order (target model split-config decided before the draft model that would inform it is even loaded); resolving that ordering question is the prerequisite design step, flagged NEEDS-VERIFICATION above.
-
-## Standards
-
-Architecture metadata, not names; topology proof; exact selection correctness; resource accounting.
-
-## Acceptance Criteria
-
-Full-vocabulary ranking matches reference under TP; unnecessary replication is absent; weight+bias states are coherent; memory cost is within declared limit or load fails clearly.
-
-## Notes
-
-Supersedes: NRO12
-Migration: capability-rebaseline-v3-2026-09
-Successor key: patching-nasone-rdna-optimizations-nro12
-
-2026-09-24 relevance at b11126: TODO. Grounded directly against b11126 (GGML_BACKEND_SPLIT_AXIS_MIRRORED + is_dsv4 output.weight handling in src/llama-model.cpp; is_dflash2/selector_top_k GGUF-metadata draft detection in common/speculative.cpp) -- anchors grep-verified, not guessed. GPT design request req_fd0a2a33c0804146 (batched PNRO11+PNRO12, dev-gpt-agent) was still running/had not returned a terminal response by the time this item needed to be finalized in this session; design was completed directly from source instead. If/when that GPT response lands later, a follow-up session should read it and reconcile against this design, particularly on the construction-ordering question flagged above.
-
-2026-09-24 GPT review req_215c89d0b13a4bb7 applied: confirmed target-load ordering remains genuinely unresolved (real prerequisite work, not yet a design). Verified via direct read that src/llama-model.cpp's pattern_output_bias branch (lines 595-598) unconditionally returns GGML_BACKEND_SPLIT_AXIS_0 and does NOT read output.weight's own config/MIRRORED state as previously assumed -- corrected step 3 to explicitly extend the bias branch's own condition rather than relying on inherited state. Added the previously-unspecified pre-load VRAM check/failure requirement.
-
-2026-10-04 drafter screen (tools/lab/flash-next/draft27b-ab.sh, draft27b-single.sh):
-- 27B Q8_0 -sm tensor on 2 XTX: DFlash2/DSpark on the TP XTXs -> GGML_ASSERT(src_ss[0].axis != GGML_BACKEND_SPLIT_AXIS_0) ggml-backend-meta.cpp:543; on R9700 (-devd) -> abort in ggml_backend_sched_backend_id_from_cur during draft graph_reserve. Fails at 10K and 32K. Built-in MTP: 72.7/73.1 t/s @10K, 71.8/72.0 @32K vs nospec 37.5/36.5.
-- 27B IQ4_XS single XTX0 (no TP): nospec 40.9/39.4, MTP 75.5/73.5, DFlash2 Q8 77.1/70.4, DFlash2 Q4 78.0/71.7, DSpark 65.3/64.6 t/s at 4K/16K. DFlash2 +2-3% at 4K, -2..4% at 16K (acceptance per draft higher, but falls with depth). DSpark loses.
-- Greedy identity: ALL spec arms (incl MTP) diverge from nospec at the same char with identical text -> batched-verify vs single-token numerics flip near-ties; not drafter-specific. Use spec-vs-spec, not spec-vs-nospec, as identity reference.
-- No DFlash/DSpark drafter exists for Flash-Next (2026-10-04). Verdict: fixing PNRO11 is low value; keep built-in MTP. Revisit only if a Flash-Next DFlash drafter is published.
-
-## Change Log
-
-- 2026-09-09T10:52:56.925530+00:00 (created-by): Created by capability-rebaseline-v3
-- 2026-09-09T11:09:25.733744+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
-
-## Ledger-events
-
-
-- chg_20260909_115759_created-and-populated-the-192_2958
-- 2026-09-09T11:58:01.099464+00:00 (updated-by): Updated: section:ledger-events
-- chg_20260910_001436_completed-the-planning-rebasel_5794
-- 2026-09-10T00:14:42.751906+00:00 (updated-by): Updated: section:ledger-events
-- 2026-09-10T02:44:19.935492+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria
-- chg_20260910_024433_three-more-nasone-successors-n_7555
-- 2026-09-10T02:44:33.164554+00:00 (updated-by): Updated: section:ledger-events
-- 2026-09-24T02:34:51.105317+00:00 (updated-by): Updated: section:description, section:detailed_solution, section:code_samples, section:files, section:validation
-- 2026-09-24T02:35:05.511646+00:00 (updated-by): Updated: section:effort_risk, section:notes
-- 2026-09-24T04:50:35.412744+00:00 (updated-by): Updated: section:description, section:steps, section:notes
-- 2026-10-04T01:02:24.355840+00:00 (updated-by): Updated: section:notes
-- chg_20261004_011520_three-more-flash-next-decode-k_5440
-- 2026-10-04T01:15:30.484663+00:00 (updated-by): Updated: section:ledger-events
+Inspected 1286 patch, mechanics test, QFP43 and pinned b11474 `llama-model.cpp`, `speculative.cpp`, `dflash.cpp`; compared current upstream model split selection; inspected upstream #27858 changed-file diff and #27833/#28777. Source-static checks **13/13** after correcting the inspection line range. Deterministic host pointer-selection model: **12 cases, 2 mismatches**. No repository pytest, HIP/C++ build, real model execution or GPU benchmark was run. Last identified independent PNRO11 update 2026-10-04; no PNRO11/1286/DFlash independent implementation, PR or queued lane in the preceding 12 hours. BCOP159 is the disposition ledger.
