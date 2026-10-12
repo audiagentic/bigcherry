@@ -886,8 +886,23 @@ as memory; nothing is read from the container after the load. `R3_NGRAM_RAM=0` l
 - Two faults fixed on the way: the row count of a call is the output tensor's, not the `M` parameter's upper bound
   (every decode step had gathered, and written, 32,768 rows); the helper library was refused by the engine as a
   plugin when it sat in `kernels`.
-- A smaller host pool alone changed the 7.2K prefill of the disk arm: about 640 to 680 tok/s with 24576 MiB a rank
-  against 330 to 411 with 32768 in earlier runs. Not yet isolated.
+- Unprofiled, one start each (runs `fnp32`, `fnp24`, `fnp20`, `fnp24ng`, `fnp24all`):
+
+  | | decode | prefill 2.6K | prefill 7.2K |
+  |---|---|---|---|
+  | host pool 32768 MiB a rank, table on disk | 29.5 tok/s | 186.9 | 358.2 |
+  | host pool 24576 | 29.8 | 183.5 | 364.3 |
+  | host pool 20480 | 30.1 | 207.0 | 401.3 |
+  | 24576, `R3_NGRAM_DEV=2` | 33.1 | 393.9 | 597.3 |
+  | 24576, `R3_NGRAM_DEV=2 R3_MOE_NATIVE=1 R3_HC_NATIVE=1` | 34.8 | 260.2 | 492.8 |
+
+  The host pool's size changes nothing. The table off the disk is +11% decode and 1.6 to 2.1 times the prefill; the
+  two native kernels add another 5% decode (17% over the base). The prefill figures of one configuration differ by
+  as much as these arms do from start to start (expert residency at the moment of the request), so only the decode
+  column and the disk-against-device prefill step are read as results.
+- The profiled disk arms above did 640 to 680 tok/s at 7.2K where the unprofiled ones do 360 to 400: with the
+  engine synchronising after every op the prefill is faster, not slower. Not explained; it points at work in flight
+  (the mover's transfers, kernels reading experts over the link) contending when the queue runs ahead.
 
 ## Other engines on the RX 7900 XTX (looked up 2026-10-10)
 
