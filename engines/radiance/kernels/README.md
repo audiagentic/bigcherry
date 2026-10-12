@@ -972,6 +972,19 @@ still hung in 2 of 3 runs (`fnh1`-`fnh3`), so the helper is not involved. Engine
 `engines/radiance/engine-patches/0001-drain-mover-before-arena-free.patch` (built beside the pinned engine by
 `tools/lab/radiance/engine-patched-build.sh`) drains each rank's mover before its arena is freed: 3 of 3 runs exit
 cleanly (`fnp1`-`fnp3`), no hang. It changes nothing a step computes.
+With the patched engine, the stager and `R3_NGRAM_DEV=2` together, 2K against 8K prefill chunks, alternating, all
+four runs exiting cleanly (`fnx1`-`fnx4`; 8K is `--max-num-batched-tokens 8192 --checkpoint-interval 8192`):
+
+| chunks | 2.6K prompt | 7.2K prompt | decode |
+|---|---|---|---|
+| 2048 | 4.36 s, 5.42 s (591, 475 tok/s) | 8.95 s, 10.29 s (802, 697 tok/s) | 32.4 |
+| 8192 | 11.83 s, 9.87 s (217, 261 tok/s) | 5.58 s, 5.50 s (1,286, 1,304 tok/s) | 32.1-32.2 |
+
+At 8K chunks a 7.2K prompt is one step that the stager covers, and the cold experts cross the link once for 7.2K
+tokens instead of four times: about 1,300 tok/s, against llama.cpp's 1,469 at 6.2K on three cards. A 2.6K prompt at
+8K chunks is worse than at 2K: the stager arms only for steps above the next-smaller arena level (4096 tokens here),
+so a 2.6K step reads its cold experts in place. The stager's threshold, not the chunk size, is what to fix for short
+prompts.
 Next: a deeper stager and larger prefill steps (`--max-num-batched-tokens 8192`), which raise the
 tokens served per byte of cold experts moved.
 
