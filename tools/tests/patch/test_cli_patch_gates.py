@@ -47,7 +47,7 @@ def _canonical_selection(
     ``selection.identity``, so the mock must carry the real shape."""
     from bigcherry.campaign.resolution import CanonicalSelection, SelectorIdentity
 
-    identity = SelectorIdentity(
+    identity = SelectorIdentity(engine="llamacpp", 
         selector_kind="source",
         selector_name=source_name,
         source_name=source_name,
@@ -204,6 +204,7 @@ class PatchGatesCliTests(unittest.TestCase):
 
         self.assertEqual(exit_code, 0)
         resolve_source.assert_called_once_with(
+            "llamacpp",
             "bigcherry",
             self.cfg,
             [first, focal],
@@ -212,6 +213,7 @@ class PatchGatesCliTests(unittest.TestCase):
             focal_overlay_patch_id=None,
         )
         resolve_exact.assert_called_once_with(
+            "llamacpp",
             ("A", "P1"),
             directory=cli_patch.paths.PATCHES,
             allow_rejected=False,
@@ -307,8 +309,8 @@ class PatchGatesCliTests(unittest.TestCase):
             exit_code = cmd_patch_gates(_args(intent="promote"))
 
         self.assertEqual(exit_code, 0)
-        expand.assert_called_once_with(("P1",), directory=cli_patch.paths.PATCHES)
-        self.assertEqual(resolve.call_args.args[0], ("D", "P1"))
+        expand.assert_called_once_with("llamacpp", ("P1",), directory=cli_patch.paths.PATCHES)
+        self.assertEqual(resolve.call_args.args[1], ("D", "P1"))
         self.assertIsNone(evaluate.call_args.args[0].recipe_patch_ids)
 
     def test_rebase_source_mode_is_successfully_wired(self) -> None:

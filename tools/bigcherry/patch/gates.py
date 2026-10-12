@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from ..campaign import resolution as campaign_resolution
-from ..core import paths
+from ..core import engines, paths
 from . import catalog as patch_catalog
 from . import docs as patch_docs
 from . import patchset
@@ -133,6 +133,7 @@ def evaluate_composition_gate(context: GateContext) -> GateResult:
     ids = tuple(module.patch_id for module in context.composition.modules)
     try:
         resolved = patchset.resolve_exact(
+            context.descriptor.engine,
             ids,
             directory=context.patches_dir,
             allow_rejected=False,
@@ -236,10 +237,11 @@ def _evaluate_lint_package(
 
 
 def evaluate_repository_lint_gates(
+    engine: str,
     *,
-    patches_dir: Path = paths.PATCHES,
+    patches_dir: Path | None = None,
     external_sources_path: Path = paths.EXTERNAL_SOURCES,
-    validation_baseline_path: Path = paths.VALIDATION_PACKAGE_GRANDFATHER,
+    validation_baseline_path: Path | None = None,
 ) -> LintGateReport:
     """Evaluate the repository-static subset of the shared gate taxonomy.
 
@@ -248,7 +250,11 @@ def evaluate_repository_lint_gates(
     therefore evaluated directly against the canonical registry and existing
     static policy authorities rather than by fabricating a ``GateContext``.
     """
-    registry = patch_registry.load_registry(patches_dir)
+    patches_dir = patches_dir or paths.patches_root(engine)
+    registry = patch_registry.load_registry(engine, patches_dir)
+    patches_dir = registry.root
+    if validation_baseline_path is None:
+        validation_baseline_path = patches_dir / "_validation" / "validation-package-grandfather.json"
 
     # PA44-C: long anchors are carry-cost hotspots. Keep this advisory so a
     # pin bump is not blocked by legacy packages, but require an explicit,
@@ -258,7 +264,7 @@ def evaluate_repository_lint_gates(
     for descriptor in registry.descriptors:
         try:
             file_patches = patch_registry.load_implementation(
-                descriptor, root=registry.root
+                engine, descriptor, root=registry.root
             )
         except (OSError, TypeError, ValueError):
             # Strict implementation loading is already owned by the existing
@@ -383,7 +389,7 @@ def evaluate_rebase_gate(context: GateContext) -> GateResult:
         )
     try:
         if context.expected_selector is not None:
-            known_good = rebase.require_fresh_report(
+            known_good = rebase.require_fresh_report("llamacpp", 
                 context.rebase_report,
                 context.source_root,
                 expected_selector=context.expected_selector,
@@ -393,7 +399,7 @@ def evaluate_rebase_gate(context: GateContext) -> GateResult:
             # validate/promote path has no named selector to bind an exact
             # identity against, so G2 binds by the composition's exact
             # (patch_id, content_hash) pairs instead of a 5th selector kind.
-            known_good = rebase.require_fresh_report(
+            known_good = rebase.require_fresh_report("llamacpp", 
                 context.rebase_report,
                 context.source_root,
                 required_module_hashes=tuple(
@@ -519,7 +525,7 @@ def evaluate_evidence_gate(context: GateContext) -> GateResult:
             ("framework PROMOTE requires the prospective canonical-composition seam",),
         )
     try:
-        statuses = patch_catalog.validation_evidence_statuses(
+        statuses = patch_catalog.validation_evidence_statuses("llamacpp", 
             (context.descriptor.patch_id,),
             catalog_path=context.catalog_path,
             patches_dir=context.patches_dir,
@@ -742,7 +748,7 @@ def evaluate_disposition_gate(context: GateContext) -> GateResult:
             ("coverage report upstream revision does not match target revision",),
         )
     try:
-        rebase.require_fresh_report(context.coverage_report, context.source_root)
+        rebase.require_fresh_report("llamacpp", context.coverage_report, context.source_root)
         coverage = patch_disposition.compute_coverage(
             catalog_states=dict(context.catalog_states),
             all_report=dict(context.coverage_report),

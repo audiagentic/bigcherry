@@ -55,7 +55,7 @@ class Rd13PatchApplicationTests(unittest.TestCase):
         and is not selected by the production recipe, so an out-of-band
         application must never be a prerequisite for this test.
         """
-        source = read_pinned(VENDOR_SOURCE)  # the pinned text, not a working tree that may have patches applied
+        source = read_pinned("llamacpp", VENDOR_SOURCE)  # the pinned text, not a working tree that may have patches applied
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             target = root / RD13.PATCH.path

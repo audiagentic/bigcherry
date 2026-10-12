@@ -3,7 +3,7 @@
 
 The pin-consistency guard (``release/pin_status.py``, RE48) answers "is the
 vendor checkout at the revision the pin declares?" -- a pure revision-identity
-question. It says nothing about whether the anchored patches in ``engines/llamacpp/patches/``
+question. It says nothing about whether the anchored patches in the selected engine's patch registry
 still find their anchors in that revision's source. This module answers that
 second, orthogonal question: given the CURRENT vendor revision, which patches
 still apply cleanly, which are legitimately not-applicable-by-design, and
@@ -44,7 +44,7 @@ from . import patchset
 from . import registry as patch_registry
 from .. import pin_transition
 from ..pin_transition import MarkerError
-from ..core import paths
+from ..core import engines, paths
 from .apply import PATCH_APPLICATION_SEMANTICS_VERSION
 from .apply import PatchError
 from ..release import records as releases
@@ -140,7 +140,7 @@ def _git_ok(root: Path, *args: str) -> str | None:
         return None
 
 
-def overlay_digest(overlay_root: Path | None = None) -> str:
+def overlay_digest(engine: str, overlay_root: Path | None = None) -> str:
     """Content digest over every file under ``src/``, independent of
     filesystem iteration order. Part of a rebase report's bound identity:
     an overlay edit changes what an anchored patch sees at apply time
@@ -155,7 +155,7 @@ def overlay_digest(overlay_root: Path | None = None) -> str:
     difference between two overlay files that materialize identically, or
     miss one that doesn't -- the digest must describe what actually gets
     applied, not what happens to be on disk."""
-    overlay_root = overlay_root or paths.SRC_OVERLAY
+    overlay_root = overlay_root or engines.load(paths.REPO_ROOT, engine).overlay_root(paths.REPO_ROOT)
     texts: dict[str, str] = {}
     if overlay_root.is_dir():
         for source in sorted(overlay_root.rglob("*")):
@@ -166,7 +166,7 @@ def overlay_digest(overlay_root: Path | None = None) -> str:
     return _digest_from_texts(texts)
 
 
-def _overlay_texts(overlay_root: Path | None = None) -> dict[str, str]:
+def _overlay_texts(engine: str, overlay_root: Path | None = None) -> dict[str, str]:
     """The overlay's post-install content, keyed by repo-relative path --
     the same seed ``_apply_selection``'s dry-run path feeds ``apply_all``
     (PA16 follow-up to the overlay/dry-run parity fix).
@@ -177,7 +177,7 @@ def _overlay_texts(overlay_root: Path | None = None) -> dict[str, str]:
     normalizes it to LF and the anchor would have matched. See
     :func:`overlay_digest`'s docstring for the same reasoning applied to
     the staleness digest."""
-    overlay_root = overlay_root or paths.SRC_OVERLAY
+    overlay_root = overlay_root or engines.load(paths.REPO_ROOT, engine).overlay_root(paths.REPO_ROOT)
     texts: dict[str, str] = {}
     if overlay_root.is_dir():
         for source in sorted(overlay_root.rglob("*")):
@@ -204,7 +204,7 @@ def _digest_from_texts(texts: dict[str, str]) -> str:
     return hasher.hexdigest()
 
 
-def _load_module_patches(module: patchset.PatchModule) -> list[patcher.FilePatch]:
+def _load_module_patches(engine: str, module: patchset.PatchModule) -> list[patcher.FilePatch]:
     """Load one patch's implementation bound EXACTLY to the digest already
     recorded for it (``module.content_hash``) via
     ``registry.load_implementation``'s own ``expected_digest`` check.
@@ -217,10 +217,17 @@ def _load_module_patches(module: patchset.PatchModule) -> list[patcher.FilePatch
     written much earlier. Going through the digest-checked loader directly
     closes that TOCTOU window instead of silently executing whatever bytes
     happen to be on disk at load time."""
-    root = module.catalog_root or paths.PATCHES
-    registry = patch_registry.load_registry(root)
+    if module.engine != engine:
+        raise RebaseCheckError(
+            f"patch {module.patch_id!r} belongs to engine {module.engine!r}, not {engine!r}"
+        )
+    if module.catalog_root is None:
+        raise RebaseCheckError(f"patch {module.patch_id!r} has no catalog root")
+    root = module.catalog_root
+    registry = patch_registry.load_registry(engine, root)
     descriptor = registry.get(module.patch_id)
     return patch_registry.load_implementation(
+        engine,
         descriptor,
         root=root,
         expected_digest=module.content_hash,
@@ -228,6 +235,7 @@ def _load_module_patches(module: patchset.PatchModule) -> list[patcher.FilePatch
 
 
 def _selector(
+    engine: str,
     *,
     source_name: str | None = None,
     all_patches: bool = False,
@@ -260,14 +268,15 @@ def _selector(
         raise RebaseCheckError("--experiment/--focal-overlay require --source NAME")
     try:
         if all_patches:
-            return campaign_resolution.build_all_patches_identity(patchset.catalog())
+            return campaign_resolution.build_all_patches_identity(engine, patchset.catalog(engine))
         if source_name is None:
             raise RebaseCheckError("patch-rebase-check: --source NAME required")
         cfg = campaign_config.load(core_paths.RECIPES)
         return campaign_resolution.resolve_canonical_selection(
+            engine,
             source_name,
             cfg,
-            patchset.catalog(),
+            patchset.catalog(engine),
             experiment=experiment,
             focal_overlay_patch_id=focal_overlay_patch_id,
         ).identity
@@ -286,6 +295,7 @@ def _selector(
 
 
 def _selection_patch_ids(
+    engine: str,
     *,
     source_name: str | None = None,
     all_patches: bool,
@@ -295,6 +305,7 @@ def _selection_patch_ids(
     """Resolves through ``campaign.resolution.resolve_canonical_selection``
     (PA34: the exact ordered identity composition, not a parallel id list)."""
     return _selector(
+        engine,
         source_name=source_name,
         all_patches=all_patches,
         experiment=experiment,
@@ -322,6 +333,7 @@ class _SelectorSnapshot:
 
 
 def _resolve_selector_snapshot(
+    engine: str,
     *,
     source_name: str | None = None,
     all_patches: bool = False,
@@ -351,14 +363,15 @@ def _resolve_selector_snapshot(
         raise RebaseCheckError("--experiment/--focal-overlay require --source NAME")
     try:
         if all_patches:
-            catalog = patchset.catalog()  # the ONE load for this run
-            identity = campaign_resolution.build_all_patches_identity(catalog)
+            catalog = patchset.catalog(engine)  # the ONE load for this run
+            identity = campaign_resolution.build_all_patches_identity(engine, catalog)
         else:
             if source_name is None:
                 raise RebaseCheckError("patch-rebase-check: --source NAME required")
             cfg = campaign_config.load(core_paths.RECIPES)
-            catalog = patchset.catalog()  # the ONE load for this run
+            catalog = patchset.catalog(engine)  # the ONE load for this run
             identity = campaign_resolution.resolve_canonical_selection(
+                engine,
                 source_name,
                 cfg,
                 catalog,
@@ -463,6 +476,7 @@ def _partition_conflict_free(
 
 
 def resolve_selection(
+    engine: str,
     *,
     source_name: str | None = None,
     all_patches: bool,
@@ -475,13 +489,14 @@ def resolve_selection(
     a dependency-incomplete selection fails closed here, before probing,
     rather than silently probing an unsound subset."""
     ids = _selection_patch_ids(
+        engine,
         source_name=source_name,
         all_patches=all_patches,
         experiment=experiment,
         focal_overlay_patch_id=focal_overlay_patch_id,
     )
     try:
-        return patchset.resolve_exact(ids, allow_rejected=False)
+        return patchset.resolve_exact(engine, ids, allow_rejected=False)
     except ValueError as exc:
         raise RebaseCheckError(f"patch-rebase-check: {exc}") from exc
 
@@ -840,6 +855,7 @@ def _classify_files(files: list[FileProbe]) -> str:
 
 
 def probe_patch(
+    engine: str,
     module: patchset.PatchModule,
     root: Path,
     texts: dict[str, str],
@@ -849,7 +865,7 @@ def probe_patch(
     revision: str,
     overlay_paths: frozenset[str],
 ) -> PatchProbe:
-    file_patches = _load_module_patches(module)
+    file_patches = _load_module_patches(engine, module)
     files = [
         _probe_file_patch(
             fp,
@@ -878,6 +894,7 @@ def probe_patch(
 
 
 def quarantine_fixed_point(
+    engine: str,
     selection: patchset.ResolvedPatchSet,
     root: Path,
     *,
@@ -911,6 +928,7 @@ def quarantine_fixed_point(
             if patch_id in quarantined or patch_id in blocked:
                 continue
             probe = probe_patch(
+                engine,
                 by_id[patch_id],
                 root,
                 texts,
@@ -999,6 +1017,7 @@ def _bigcherry_revision() -> str:
 
 
 def _probe_group(
+    engine: str,
     group_ids: tuple[str, ...],
     *,
     context_ids: frozenset[str],
@@ -1018,6 +1037,7 @@ def _probe_group(
     """
     try:
         selection = patchset.resolve_exact_from_catalog(
+            engine,
             group_ids,
             modules=modules_by_id,
             allow_rejected=False,
@@ -1030,6 +1050,7 @@ def _probe_group(
         try:
             repository.add_detached_worktree(revision, worktree)
             probes, known_good = quarantine_fixed_point(
+                engine,
                 selection,
                 worktree,
                 context_lines=context_lines,
@@ -1046,6 +1067,7 @@ def _probe_group(
 
 
 def run_rebase_check(
+    engine: str,
     root: Path,
     *,
     source_name: str | None = None,
@@ -1076,6 +1098,7 @@ def run_rebase_check(
     # PA34 Q2: resolve the identity AND its modules from ONE catalog load.
     # Every probe below consumes this snapshot; nothing re-reads the registry.
     snapshot = _resolve_selector_snapshot(
+        engine,
         source_name=source_name,
         all_patches=all_patches,
         experiment=experiment,
@@ -1090,7 +1113,7 @@ def run_rebase_check(
     # overlay edit on this shared, multi-agent working tree could otherwise
     # make different rounds see different input and then publish a digest
     # describing only whatever state disk happened to be in last.
-    overlay_snapshot = _overlay_texts()
+    overlay_snapshot = _overlay_texts(engine)
 
     all_modules: list[patchset.PatchModule] = []
     probes: dict[str, PatchProbe] = {}
@@ -1107,6 +1130,7 @@ def run_rebase_check(
                 if requirement not in group_ids
             )
             group_modules, group_probes, group_known_good = _probe_group(
+                engine,
                 group_ids,
                 context_ids=context,
                 repository=repository,
@@ -1120,6 +1144,7 @@ def run_rebase_check(
             known_good += group_known_good
     else:
         all_modules, group_probes, known_good = _probe_group(
+            engine,
             tuple(m.patch_id for m in snapshot.modules),
             context_ids=frozenset(),
             repository=repository,
@@ -1151,6 +1176,7 @@ def run_rebase_check(
 
     return {
         "schema_version": REPORT_SCHEMA_VERSION,
+        "engine": engine,
         "upstream_revision": revision,
         "previous_upstream_revision": _previous_upstream_revision(revision),
         "bigcherry_revision": _bigcherry_revision(),
@@ -1235,6 +1261,7 @@ def load_report(path: Path) -> dict[str, Any]:
 
 
 def _live_identity_for(
+    engine: str,
     reported: campaign_resolution.SelectorIdentity,
 ) -> campaign_resolution.SelectorIdentity:
     """Re-resolve a schema-2 report's selector against the LIVE config.
@@ -1247,25 +1274,27 @@ def _live_identity_for(
     from ..campaign import resolution as campaign_resolution  # noqa: PLC0415
 
     if reported.selector_kind == campaign_resolution.SELECTOR_KIND_ALL_PATCHES:
-        return campaign_resolution.build_all_patches_identity(patchset.catalog())
+        return campaign_resolution.build_all_patches_identity(engine, patchset.catalog(engine))
     if reported.source_name is None:
         raise RebaseCheckError(
             "schema-2 selector identity names no source for a source-bounded kind"
         )
     if reported.selector_kind == campaign_resolution.SELECTOR_KIND_EXPERIMENT:
         return _selector(
+            engine,
             source_name=reported.source_name,
             experiment=reported.selector_name.removeprefix("experiment:"),
         )
     if reported.selector_kind == campaign_resolution.SELECTOR_KIND_FOCAL_OVERLAY:
-        return _selector(
+        return _selector("llamacpp", 
             source_name=reported.source_name,
             focal_overlay_patch_id=reported.selector_name.removeprefix("focal:"),
         )
-    return _selector(source_name=reported.source_name)
+    return _selector(engine, source_name=reported.source_name)
 
 
 def _require_fresh(
+    engine: str,
     report: Mapping[str, Any],
     root: Path,
     *,
@@ -1281,6 +1310,10 @@ def _require_fresh(
     disk reads of ``src/`` is exactly the TOCTOU window a snapshot-once
     caller is trying to close. Defaults to a live read for callers (and
     tests) that only want the freshness check itself."""
+    if report.get("engine") != engine:
+        raise StaleRebaseReportError(
+            f"report engine {report.get('engine')!r} != requested engine {engine!r}"
+        )
     if report.get("schema_version") != REPORT_SCHEMA_VERSION:
         raise StaleRebaseReportError(
             f"report schema_version {report.get('schema_version')!r} != "
@@ -1309,7 +1342,7 @@ def _require_fresh(
     live_overlay_digest = (
         overlay_snapshot_digest
         if overlay_snapshot_digest is not None
-        else overlay_digest()
+        else overlay_digest(engine)
     )
     if report.get("overlay_digest") != live_overlay_digest:
         raise StaleRebaseReportError(
@@ -1339,7 +1372,7 @@ def _require_fresh(
         ) from exc
     selected = reported_identity.patch_ids
     try:
-        current_identity = _live_identity_for(reported_identity)
+        current_identity = _live_identity_for(engine, reported_identity)
     except RebaseCheckError as exc:
         raise StaleRebaseReportError(
             f"report's selector no longer resolves: {exc}"
@@ -1366,7 +1399,7 @@ def _require_fresh(
             "the report is internally inconsistent, re-run patch-rebase-check"
         )
 
-    catalog = {m.patch_id: m for m in patchset.catalog()}
+    catalog = {m.patch_id: m for m in patchset.catalog(engine)}
     for patch_entry in patch_entries:
         patch_id = patch_entry["patch_id"]
         current = catalog.get(patch_id)
@@ -1405,6 +1438,7 @@ def _require_fresh(
 
 
 def require_fresh_report(
+    engine: str,
     report: Mapping[str, Any],
     root: Path,
     *,
@@ -1442,6 +1476,7 @@ def require_fresh_report(
         )
     try:
         known_good = _require_fresh(
+            engine,
             report,
             root,
             overlay_snapshot_digest=overlay_snapshot_digest,
@@ -1551,6 +1586,7 @@ class ApplyKnownGoodResult:
 
 
 def apply_known_good(
+    engine: str,
     root: Path,
     report_path: Path,
     *,
@@ -1576,8 +1612,9 @@ def apply_known_good(
     # bytes below -- never a second, independently-timed disk read that a
     # concurrent overlay edit on this shared, multi-agent working tree
     # could answer differently than the one just verified fresh.
-    overlay_snapshot = _overlay_texts()
+    overlay_snapshot = _overlay_texts(engine)
     known_good = _require_fresh(
+        engine,
         report,
         root,
         overlay_snapshot_digest=_digest_from_texts(overlay_snapshot),
@@ -1609,17 +1646,20 @@ def apply_known_good(
         p["patch_id"]: p["implementation_digest"] for p in report.get("patches", ())
     }
     resolved = (
-        patchset.resolve_exact(known_good, allow_rejected=True)
+        patchset.resolve_exact(engine, known_good, allow_rejected=True)
         if known_good
         else patchset.ResolvedPatchSet((), None)
     )
     file_patches: list[patcher.FilePatch] = []
     for module in resolved.modules:
-        module_root = module.catalog_root or paths.PATCHES
-        module_registry = patch_registry.load_registry(module_root)
+        if module.engine != engine or module.catalog_root is None:
+            raise RebaseCheckError(f"patch {module.patch_id!r} is not bound to engine {engine!r}")
+        module_root = module.catalog_root
+        module_registry = patch_registry.load_registry(engine, module_root)
         descriptor = module_registry.get(module.patch_id)
         file_patches.extend(
             patch_registry.load_implementation(
+                engine,
                 descriptor,
                 root=module_root,
                 expected_digest=report_digests[module.patch_id],

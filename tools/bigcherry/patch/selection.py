@@ -71,7 +71,7 @@ class CliPatchSelection:
         return hashlib.sha256(material.encode()).hexdigest()[:16]
 
 
-def resolve_cli_selection(args: "Namespace") -> CliPatchSelection:
+def resolve_cli_selection(engine: str, args: "Namespace") -> CliPatchSelection:
     """The single selection resolver shared by ``patches`` and ``apply``.
 
     No ``--source`` resolves to the browse-everything selection -- valid
@@ -80,10 +80,10 @@ def resolve_cli_selection(args: "Namespace") -> CliPatchSelection:
     source_name = getattr(args, "source", None)
     if not source_name:
         return CliPatchSelection(label="all patches (no --source)", select_all=True)
-    return _resolve_exact_selection(source_name)
+    return _resolve_exact_selection(engine, source_name)
 
 
-def _resolve_exact_selection(source_name: str) -> CliPatchSelection:
+def _resolve_exact_selection(engine: str, source_name: str) -> CliPatchSelection:
     from ..campaign import resolution as campaign_resolution  # noqa: PLC0415
     from ..core import config as campaign_config  # noqa: PLC0415
     from ..core import paths as core_paths  # noqa: PLC0415
@@ -92,7 +92,7 @@ def _resolve_exact_selection(source_name: str) -> CliPatchSelection:
     try:
         cfg = campaign_config.load(core_paths.RECIPES)
         selection = campaign_resolution.resolve_canonical_selection(
-            source_name, cfg, patchset.catalog(),
+            engine, source_name, cfg, patchset.catalog(engine),
         )
     except (campaign_resolution.ResolutionError, campaign_config.ConfigError) as exc:
         raise SelectionError(str(exc)) from exc
@@ -102,7 +102,7 @@ def _resolve_exact_selection(source_name: str) -> CliPatchSelection:
     if source.overlay:
         from .rebase import overlay_digest as _overlay_digest  # noqa: PLC0415
 
-        overlay_digest_value = _overlay_digest()
+        overlay_digest_value = _overlay_digest(engine)
 
     return CliPatchSelection(
         label=(

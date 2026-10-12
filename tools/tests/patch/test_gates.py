@@ -21,7 +21,7 @@ from bigcherry.patch.gates import GateId, GateIntent, GateStatus, gate_applies  
 def _all_patches_selector_payload() -> dict:
     """The canonical all-patches selector identity payload (PA34 schema 2) --
     produced by the single serializer, never hand-assembled."""
-    identity = campaign_resolution.SelectorIdentity(
+    identity = campaign_resolution.SelectorIdentity(engine="llamacpp", 
         selector_kind=campaign_resolution.SELECTOR_KIND_ALL_PATCHES,
         selector_name=campaign_resolution.SELECTOR_KIND_ALL_PATCHES,
         source_name=None,
@@ -68,7 +68,8 @@ class GateContractTests(unittest.TestCase):
             SimpleNamespace(patch_id="B", content_hash="b"),
         )
         context = SimpleNamespace(
-            composition=SimpleNamespace(modules=modules), patches_dir=Path("patches")
+            composition=SimpleNamespace(modules=modules), patches_dir=Path("patches"),
+            descriptor=SimpleNamespace(engine="llamacpp"),
         )
         with mock.patch.object(
             gates.patchset,
@@ -278,13 +279,13 @@ class GateContractTests(unittest.TestCase):
             ) as dispositions,
             mock.patch("bigcherry.patch_admission.admit") as admission,
         ):
-            report = gates.evaluate_repository_lint_gates(
+            report = gates.evaluate_repository_lint_gates("llamacpp", 
                 patches_dir=Path("patches"),
                 external_sources_path=Path("external.toml"),
                 validation_baseline_path=Path("baseline.json"),
             )
 
-        load_registry.assert_called_once_with(Path("patches"))
+        load_registry.assert_called_once_with("llamacpp", Path("patches"))
         gate_applies.assert_any_call(GateId.G1, GateIntent.LINT)
         gate_applies.assert_any_call(GateId.G3, GateIntent.LINT)
         check_packages.assert_called_once_with(
@@ -355,7 +356,7 @@ class GateContractTests(unittest.TestCase):
                 return_value=(),
             ),
         ):
-            report = gates.evaluate_repository_lint_gates()
+            report = gates.evaluate_repository_lint_gates("llamacpp")
 
         outcome = next(
             item.result

@@ -44,7 +44,7 @@ class Patch1320Mechanics(unittest.TestCase):
             root = Path(td)
             path = root / "ggml/src/ggml-backend-meta.cpp"
             path.parent.mkdir(parents=True)
-            copy_pinned(_VENDOR, path)
+            copy_pinned("llamacpp", _VENDOR, path)
             results = apply_all(_module.PATCHES, root)
             self.assertTrue(all(r.ok for r in results), [e.detail for r in results for e in r.failed])
             out = path.read_text(encoding="utf-8")
@@ -66,7 +66,7 @@ class Patch1320Mechanics(unittest.TestCase):
             root = Path(td)
             path = root / "ggml/src/ggml-backend-meta.cpp"
             path.parent.mkdir(parents=True)
-            copy_pinned(_VENDOR, path)
+            copy_pinned("llamacpp", _VENDOR, path)
             for patches in (
                 _only(_P1340, "ggml/src/ggml-backend-meta.cpp"),
                 _module.PATCHES,

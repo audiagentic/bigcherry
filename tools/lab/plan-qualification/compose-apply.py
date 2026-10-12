@@ -60,16 +60,16 @@ def main() -> int:
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
 
-    vendor = pinned_checkout() if paths.llama_root().is_dir() else paths.llama_root()
-    selected = patch_rebase.resolve_selection(source_name="bigcherry", all_patches=False,
+    vendor = pinned_checkout("llamacpp") if paths.llama_root().is_dir() else paths.llama_root()
+    selected = patch_rebase.resolve_selection("llamacpp", source_name="bigcherry", all_patches=False,
                                               focal_overlay_patch_id=patch_id)
-    texts = patch_rebase._overlay_texts()
+    texts = patch_rebase._overlay_texts("llamacpp")
     overlay_paths = frozenset(texts)
     for mod in selected.modules:
         if mod.patch_id == patch_id:
             # the patch's own place in the composition: what comes later is applied on top of it, not under it
             break
-        probe = patch_rebase.probe_patch(mod, vendor, texts, context_lines=3, previous_revision=None,
+        probe = patch_rebase.probe_patch("llamacpp", mod, vendor, texts, context_lines=3, previous_revision=None,
                                          revision="compose-apply", overlay_paths=overlay_paths)
         if probe.status not in (patch_rebase.STATUS_CLEAN, patch_rebase.STATUS_CLEAN_NOOP):
             # after a pin bump several base patches fail at once: say so and go on, so each can be looked at
@@ -80,7 +80,7 @@ def main() -> int:
         if fp.path in texts:
             target.write_text(texts[fp.path], encoding="utf-8")
         else:
-            copy_pinned(vendor / fp.path, target)
+            copy_pinned("llamacpp", vendor / fp.path, target)
     results = apply_all(module.PATCHES, out)
     bad = 0
     for fp, res in zip(module.PATCHES, results):

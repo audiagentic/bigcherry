@@ -30,17 +30,17 @@ class CampaignSourceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.cfg = campaign_config.load(_RECIPES_PATH)
-        cls.catalog = patchset.catalog()
+        cls.catalog = patchset.catalog("llamacpp")
 
     def test_source_with_no_patch_sets_has_no_patches(self):
-        plan = source_plan_for(self.cfg, "llama-native", catalog=self.catalog)
+        plan = source_plan_for("llamacpp", self.cfg, "llama-native", catalog=self.catalog)
         self.assertEqual(plan.upstream_revision, self.cfg.pinned)
         self.assertEqual(plan.overlay_enabled, False)
         self.assertEqual(plan.patch_ids, ())
         self.assertIsNone(plan.required_state)
 
     def test_bigcherry_source_composes_patch_sets_via_resolve_lane(self):
-        plan = source_plan_for(self.cfg, "bigcherry", catalog=self.catalog)
+        plan = source_plan_for("llamacpp", self.cfg, "bigcherry", catalog=self.catalog)
         self.assertEqual(plan.upstream_revision, self.cfg.pinned)
         self.assertEqual(plan.overlay_enabled, True)
         self.assertGreater(len(plan.patch_ids), 0)
@@ -48,7 +48,7 @@ class CampaignSourceTests(unittest.TestCase):
         # Cross-check against the same content-hash-validated resolution
         # campaign_resolution's own tests assert.
         from bigcherry.campaign import resolution as campaign_resolution
-        lane = campaign_resolution.resolve_lane("bigcherry", self.cfg, self.catalog)
+        lane = campaign_resolution.resolve_lane("llamacpp", "bigcherry", self.cfg, self.catalog)
         self.assertEqual(plan.patch_ids, lane.patch_set.module_ids)
 
     def test_patch_set_id_and_classification_carry_through_from_resolve_lane(self):
@@ -57,8 +57,8 @@ class CampaignSourceTests(unittest.TestCase):
         # downstream of resolution carried this reviewed logical-composition
         # identity. Now it survives into the SourcePlan itself.
         from bigcherry.campaign import resolution as campaign_resolution
-        plan = source_plan_for(self.cfg, "bigcherry", catalog=self.catalog)
-        lane = campaign_resolution.resolve_lane("bigcherry", self.cfg, self.catalog)
+        plan = source_plan_for("llamacpp", self.cfg, "bigcherry", catalog=self.catalog)
+        lane = campaign_resolution.resolve_lane("llamacpp", "bigcherry", self.cfg, self.catalog)
         self.assertEqual(plan.patch_set_id, lane.patch_set.patch_set_id)
         self.assertTrue(plan.patch_set_id)
         self.assertEqual(plan.classification, lane.patch_set.classification)
@@ -66,17 +66,17 @@ class CampaignSourceTests(unittest.TestCase):
     def test_source_with_no_patch_sets_still_carries_a_patch_set_id(self):
         # Empty composition is still a real, reviewed identity (_digest of
         # an empty module list), not an absence of one.
-        plan = source_plan_for(self.cfg, "llama-native", catalog=self.catalog)
+        plan = source_plan_for("llamacpp", self.cfg, "llama-native", catalog=self.catalog)
         self.assertTrue(plan.patch_set_id)
 
     def test_unknown_source_rejected(self):
         with self.assertRaises(CampaignSourceError):
-            source_plan_for(self.cfg, "does-not-exist", catalog=self.catalog)
+            source_plan_for("llamacpp", self.cfg, "does-not-exist", catalog=self.catalog)
 
     def test_defaults_to_the_real_physical_catalog_when_none_supplied(self):
         # No catalog= passed: source_plan_for must fetch patchset.catalog()
         # itself, not silently require every caller to supply one.
-        plan = source_plan_for(self.cfg, "bigcherry")
+        plan = source_plan_for("llamacpp", self.cfg, "bigcherry")
         self.assertGreater(len(plan.patch_ids), 0)
 
     def test_experiment_lane_relaxes_materialize_state_gate(self):
@@ -87,7 +87,7 @@ class CampaignSourceTests(unittest.TestCase):
         # the lane is rejected moments after planning approved it. Base lanes
         # keep the strict gate (covered by
         # test_bigcherry_source_composes_patch_sets_via_resolve_lane).
-        plan = source_plan_for(
+        plan = source_plan_for("llamacpp", 
             self.cfg, "bigcherry-tuning", catalog=self.catalog,
             experiment="rd19-only")
         self.assertEqual(plan.classification, "experimental")
@@ -118,7 +118,7 @@ patch-sets = []
             path = Path(directory) / "recipes.toml"
             path.write_text(self._DOC, encoding="utf-8")
             cfg = campaign_config.load(path)
-        plan = source_plan_for(cfg, "explicit-ref", catalog=[])
+        plan = source_plan_for("llamacpp", cfg, "explicit-ref", catalog=[])
         self.assertEqual(plan.upstream_revision, "deadbeef")
         self.assertEqual(plan.patch_ids, ())
 

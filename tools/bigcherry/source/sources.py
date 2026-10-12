@@ -175,7 +175,7 @@ def cross_check_patches(registry: dict | None = None,
     # Registry side: every tracked entry that names a patch must match the file.
     # RS04: patch file resolution goes through the patch registry descriptor
     # (flat or packaged) -- no f"{patch_id}.py" guessing here.
-    patch_tree = _patch_reg.load_registry(patches_dir)
+    patch_tree = _patch_reg.load_registry("llamacpp", patches_dir)
     for (sid, sha), entry in tracked.items():
         patch_id = entry.get("patch")
         if patch_id is None:

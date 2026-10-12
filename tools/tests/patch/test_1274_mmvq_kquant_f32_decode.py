@@ -41,8 +41,8 @@ class Patch1274Mechanics(unittest.TestCase):
         root = Path(td.name)
         cuda = root / "ggml/src/ggml-cuda"
         cuda.mkdir(parents=True)
-        copy_pinned(_VENDOR / "mmvq.cu", cuda / "mmvq.cu")
-        copy_pinned(_VENDOR / "vecdotq.cuh", cuda / "vecdotq.cuh")
+        copy_pinned("llamacpp", _VENDOR / "mmvq.cu", cuda / "mmvq.cu")
+        copy_pinned("llamacpp", _VENDOR / "vecdotq.cuh", cuda / "vecdotq.cuh")
         geometry = apply_all([_geometry.PATCH], root)
         assert all(r.ok for r in geometry), [e.detail for r in geometry for e in r.failed]
         return td, root, cuda / "mmvq.cu", cuda / "vecdotq.cuh"

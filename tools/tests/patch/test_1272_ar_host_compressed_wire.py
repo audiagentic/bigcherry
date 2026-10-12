@@ -42,8 +42,8 @@ class Patch1272Mechanics(unittest.TestCase):
         root = Path(td.name)
         cuda = root / "ggml/src/ggml-cuda"
         cuda.mkdir(parents=True)
-        copy_pinned(_VENDOR / "allreduce.cu", cuda / "allreduce.cu")
-        copy_pinned(_VENDOR / "allreduce.cuh", cuda / "allreduce.cuh")
+        copy_pinned("llamacpp", _VENDOR / "allreduce.cu", cuda / "allreduce.cu")
+        copy_pinned("llamacpp", _VENDOR / "allreduce.cuh", cuda / "allreduce.cuh")
         return td, root, cuda / "allreduce.cu"
 
     def test_apply_branches_and_idempotent(self):

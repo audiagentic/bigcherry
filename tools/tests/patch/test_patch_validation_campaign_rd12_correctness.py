@@ -694,7 +694,7 @@ class RD12ProducerMeasurementTests(unittest.TestCase):
 
         result, run_dir, _, _, _, _, selection = _run_producer()
 
-        registry = patch_registry.load_registry(bc_paths.PATCHES)
+        registry = patch_registry.load_registry("llamacpp", bc_paths.PATCHES)
         descriptor = registry.get(SUBJECT_PATCH)
         plan = patch_validation_policy.require_execution_package(
             descriptor,

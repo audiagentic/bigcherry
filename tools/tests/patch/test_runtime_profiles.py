@@ -69,7 +69,7 @@ class RuntimeProfiles(unittest.TestCase):
             self.assertTrue(any("no description" in p for p in rp.check(d, documented_flags={"X"})))
 
     def test_repository_profiles_clean(self):
-        self.assertEqual(rp.check(documented_flags=rp.documented_flags()), [])
+        self.assertEqual(rp.check(documented_flags=rp.documented_flags("llamacpp")), [])
 
 
 if __name__ == "__main__":

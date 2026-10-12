@@ -44,7 +44,7 @@ class ResolvedPinShaTests(unittest.TestCase):
     def test_resolved_sha_is_passed_to_validation_evidence_statuses(self):
         captured = {}
 
-        def fake_statuses(patch_ids, **kwargs):
+        def fake_statuses(engine, patch_ids, **kwargs):
             captured.update(kwargs)
             return {}
 

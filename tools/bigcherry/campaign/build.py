@@ -379,7 +379,7 @@ def materialize_source(
     # the authoritative check is the one repeated inside the lock below.
     require_clean_bigcherry(context, allow_dirty_bigcherry=allow_dirty_bigcherry)
 
-    plan = campaign_source.resolve_materialization_inputs(context, plan)
+    plan = campaign_source.resolve_materialization_inputs("llamacpp", context, plan)
     identity = campaign_source.resolve_materialization_identity(context, plan)
     plan_id = campaign_source.materialization_plan_id(identity)
     # PA12 (L6.2): two processes computing this same plan_id must not both
@@ -789,7 +789,7 @@ def _render_build_patch_doc_best_effort(
             "bigcherry revision": bigcherry_revision,
             "source_slice_id": str(source_metadata.get("source_slice_id", "unknown")),
         }
-        return patch_docs.render_patch_selection_doc(
+        return patch_docs.render_patch_selection_doc("llamacpp", 
             patch_ids=patch_ids, pin_info=pin_info,
             selection_label=f"campaign build ({len(patch_ids)} patch(es) resolved)",
             patches_dir=context.patches_root,

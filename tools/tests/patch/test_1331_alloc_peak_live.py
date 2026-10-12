@@ -36,7 +36,7 @@ class Patch1331Mechanics(unittest.TestCase):
     def _tree(self, td):
         root = Path(td)
         (root / _REL).parent.mkdir(parents=True)
-        copy_pinned(_VENDOR, root / _REL)
+        copy_pinned("llamacpp", _VENDOR, root / _REL)
         return root
 
     def _alloc_patches(self, mod):
@@ -44,7 +44,7 @@ class Patch1331Mechanics(unittest.TestCase):
 
     def test_apply_and_idempotent(self):
         with tempfile.TemporaryDirectory() as td:
-            root = production_source((_REL,), td, stop_before=_ID)
+            root = production_source("llamacpp", "bigcherry", (_REL,), td, stop_before=_ID)
             patches = self._alloc_patches(_P)
             before = (root / _REL).read_text(encoding="utf-8")
             self.assertTrue(all(not p.create for p in patches))
@@ -69,7 +69,7 @@ class Patch1331Mechanics(unittest.TestCase):
 
     def test_missing_helper_anchor_fails_closed(self):
         with tempfile.TemporaryDirectory() as td:
-            root = production_source((_REL,), td, stop_before=_ID)
+            root = production_source("llamacpp", "bigcherry", (_REL,), td, stop_before=_ID)
             path = root / _REL
             before = path.read_text(encoding="utf-8")
             anchor = "static void ggml_gallocr_allocate_node(ggml_gallocr_t galloc, struct ggml_tensor * node, int buffer_id) {"
