@@ -733,6 +733,22 @@ over waves a block, blocks a CU and independent accumulators; best of each eleme
   every round. Both native forms are now the default.
 - The 4-token decode figures in this run (a 71.3 maximum, a 64.0 after the prefill) are too short to mean anything.
 
+## 27B on two XTX after the native attention and scan: what is left (2026-10-12, run `pp3`)
+
+`prefill-profile.sh` (`CONFIGS=xtx2`), 7.2K prefill, a rank: `gemm_nt_q` 4,132 ms (70.1%), `ar_rmsnorm_quant_fp8`
+1,177 ms (20.0%, 6,771 calls, 174 us), `attn_paged` 197 ms (3.3%), `gdn_chunk_scan` 92 ms (1.6%), everything else
+5%. Profiled times are inflated by the restored synchronisations; the shares are what to read.
+
+- Unprofiled the pair does 2,344 tok/s, the R9700 3,104 to 3,214: the pair has to shed about 27% of its prefill time.
+- The cross-card sum is a fifth of it. A reduce of a 2048-token chunk carries 2048 x 5120 values at 6 bits, 7.9 MiB,
+  off one card into pinned host memory and then onto the other; two reduces a layer over 64 layers and four chunks is
+  about 500 large reduces, so roughly 2.3 ms each - what two one-after-the-other crossings of an x8 link cost for
+  7.9 MiB. That reading (the sum is link time for the wire's bytes, paid twice in series) is an estimate from the
+  counts, not a measurement; the plugin timers are to confirm it. If it holds, overlapping the two crossings
+  (the receiving card starts on the first slices while the sender is still copying out) is worth about half of it.
+- With the sum at half and the GEMM at 115 TFLOP/s instead of 100, the pair would be at about 2,900 tok/s; matching
+  the R9700 needs the sum near a quarter of today's and the GEMM near 125 (the roof is 142).
+
 ## Qwen3.8-Flash-Next on two XTX, first runs (2026-10-12, runs `fn2`, `fnp1`, `tools/lab/radiance/flashnext-tp2.sh`)
 
 radiance's shipped container `qwen3.8-next-flash-fp8-iq4r-moe.rad` (113.6 GiB: 4-bit codebook experts `w4nl64a8h`,
