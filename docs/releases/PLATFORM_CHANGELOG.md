@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.2.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.1.1...bc-platform-1.2.0) (2026-10-12)
+
+
+### New and changed
+
+* **patch:** keep the shelved 1361 and 1356 code on main (evaluated, default off) ([71d6f49](https://github.com/audiagentic/bigcherry/commit/71d6f498ef45c0423ca24664d677b028f6643784))
+* **patch:** keep the shelved code on main - 1361 as an evaluated patch, 1356 with its lock attempt, harness draft-model mode ([8db3f9a](https://github.com/audiagentic/bigcherry/commit/8db3f9ab325de4637e0aafe52b09bcb354c89eca))
+
+
+### Fixes
+
+* **patch:** 1361 puts its second-arena helpers in 1340's own header (the anchor moved there with the 1340 refactor) ([bf01c91](https://github.com/audiagentic/bigcherry/commit/bf01c9116adaeabef8d297787bb33224d8592d38))
+
 ## [1.1.1](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.1.0...bc-platform-1.1.1) (2026-10-11)
 
 
