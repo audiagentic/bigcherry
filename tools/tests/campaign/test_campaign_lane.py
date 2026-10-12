@@ -102,7 +102,7 @@ class _Harness:
             experiments={},
             campaigns={},
             path=directory / "recipes.toml",
-        )
+        engine="llamacpp")
         self.calls: list[str] = []
 
     def spec(self, **overrides) -> CampaignLaneExecutionSpec:

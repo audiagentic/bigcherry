@@ -122,7 +122,7 @@ class PatchSetIdentityPersistedTests(unittest.TestCase):
                     patch_sets=("core",))},
                 builds={}, platforms={}, experiments={}, campaigns={},
                 path=root / "recipes.toml",
-            )
+            engine="llamacpp")
             catalog = bc_patchset.catalog("llamacpp", directory=context.patches_root)
             # GPT-auto-agent review follow-up (2026-08-17): resolve_patch_set()
             # now re-derives its cross-check directory from the supplied
@@ -188,7 +188,7 @@ class PatchSetIdentityPersistedTests(unittest.TestCase):
                 },
                 builds={}, platforms={}, experiments={}, campaigns={},
                 path=root / "recipes.toml",
-            )
+            engine="llamacpp")
             catalog = bc_patchset.catalog("llamacpp", directory=context.patches_root)
 
             native_plan = source_plan_for("llamacpp", 

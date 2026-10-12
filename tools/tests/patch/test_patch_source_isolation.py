@@ -559,6 +559,7 @@ class Rv80AcceptanceTests(MaterializationTests):
         recipes.write_text(
             """
 version = 2
+engine = "llamacpp"
 pinned = "HEAD"
 [patch-set.framework]
 required-state = "untested"

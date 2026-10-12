@@ -27,6 +27,7 @@ from bigcherry.cli import source as cli_source  # noqa: E402
 
 _RECIPES_TOML = """\
 version = 2
+engine = "llamacpp"
 pinned = "b10705"
 
 [patch-set.framework]
