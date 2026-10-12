@@ -108,3 +108,35 @@
     for (int j = 0; j < TN; ++j) acc[i][j] = r3_acc_native_to_gfx12(acc[i][j]);  // libr3 native: once
   // Epilogue.  A lane holds row m0 + 64*wm + 16i + col of M fragment i and eight consecutive columns of N fragment
 @@ end
+
+
+# RR08: expose the libr3-owned lane-owned gfx11 form in this rewritten unit.
+@@ find 1
+#include "r4d_mxfp4.h"
+@@ replace
+#include "r4d_mxfp4.h"
+#include "r3_mxfp4_bt.h"
+@@ end
+
+# Default off. Both arms use the same upstream row, operands, layout hooks and op scratch.
+@@ find 1
+    R4D_TRY("gemm_mxfp4a8_tiled",
+        r4d_mxfp4a8_tile_a(r4d_addr(g.a), at, (int)g.M, (int)g.K, (long)(uintptr_t)s);
+        r4d_gemm_mxfp4a8_tiled(at, r4d_addr(g.ascale), r4d_addr(g.b), r4d_addr(g.bscale),
+                               r4d_addr(g.bref), r4d_addr(g.y), (int)g.M, (int)g.K, (int)g.N,
+                               t.tn, as_group, as_rs, (long)(uintptr_t)s));
+@@ replace
+    if (r3_bt_on()) {
+        R4D_TRY("gemm_mxfp4a8_bt_gfx11",
+            r3_mxfp4_bt_prepare(r4d_addr(g.a), at, (int)g.M, (int)g.K, (long)(uintptr_t)s);
+            r3_mxfp4_bt_launch(at, r4d_addr(g.ascale), r4d_addr(g.b), r4d_addr(g.bscale),
+                              r4d_addr(g.bref), r4d_addr(g.y), (int)g.M, (int)g.K, (int)g.N,
+                              as_group, as_rs, (long)(uintptr_t)s));
+    } else {
+        R4D_TRY("gemm_mxfp4a8_tiled",
+            r4d_mxfp4a8_tile_a(r4d_addr(g.a), at, (int)g.M, (int)g.K, (long)(uintptr_t)s);
+            r4d_gemm_mxfp4a8_tiled(at, r4d_addr(g.ascale), r4d_addr(g.b), r4d_addr(g.bscale),
+                                   r4d_addr(g.bref), r4d_addr(g.y), (int)g.M, (int)g.K, (int)g.N,
+                                   t.tn, as_group, as_rs, (long)(uintptr_t)s));
+    }
+@@ end

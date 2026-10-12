@@ -13,3 +13,23 @@
         mxfp4a8_numeric(pl, "gemm_mxfp4a8_decode", 16, 400, 2560, 0, true);  // libr3: a full 16-row fragment
         mxfp4a8_numeric(pl, "gemm_mxfp4a8_decode", 4, 5120, 6144, 0, false);
 @@ end
+
+
+# RR08 full host-reference oracle, opt-in because the production-shape matrix is deliberately large.
+# Same built plugin: R3_BT=0 checks the established form and R3_BT=1 checks the new form.
+@@ find 1
+        /* K not a multiple of 128: the TN=2 kernel takes the 64-wide slab. */
+@@ replace
+        if (std::getenv("R3_BT_ORACLE") && std::atoi(std::getenv("R3_BT_ORACLE")) != 0) {
+            struct R3MxPfShape { int N, K; };
+            const R3MxPfShape r3_shapes[] = {
+                {34816, 5120}, {5120, 17408}, {16384, 5120}, {5120, 6144}, {12288, 5120},
+            };
+            for (const R3MxPfShape& sh : r3_shapes)
+                for (int mm : {64, 128, 512}) {
+                    mxfp4a8_numeric(pl, "gemm_mxfp4a8_tiled", mm, sh.N, sh.K, 0, false);
+                    mxfp4a8_numeric(pl, "gemm_mxfp4a8_tiled", mm, sh.N, sh.K, 0, true);
+                }
+        }
+        /* K not a multiple of 128: the TN=2 kernel takes the 64-wide slab. */
+@@ end
