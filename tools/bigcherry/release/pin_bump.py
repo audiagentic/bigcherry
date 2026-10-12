@@ -710,7 +710,7 @@ def _selected_file_patches(
 ) -> list[tuple[str, patch_apply.FilePatch]]:
     """Load the exact selected patch sequence without discarding patch IDs."""
 
-    selection = patch_patchset.resolve_exact(tuple(patch_ids), allow_rejected=False)
+    selection = patch_patchset.resolve_exact("llamacpp", tuple(patch_ids), allow_rejected=False)
     registries: dict[Path, patch_registry.PatchRegistry] = {}
     loaded: list[tuple[str, patch_apply.FilePatch]] = []
     for module in selection.modules:
@@ -728,7 +728,7 @@ def _selected_file_patches(
 def _compile_tree_oid(vendor_root: Path, patch_ids: Sequence[str]) -> str:
     """Exact effective source-tree identity used to invalidate compile resume."""
 
-    allowed_untracked = set(patch_rebase._overlay_texts())
+    allowed_untracked = set(patch_rebase._overlay_texts("llamacpp", ))
     for _, file_patch in _selected_file_patches(patch_ids):
         if file_patch.create:
             allowed_untracked.add(file_patch.path)
@@ -793,7 +793,7 @@ def _build_patch_line_ownership(
     as the real apply phase. It never consults source comments for ownership.
     """
 
-    overlay_texts = patch_rebase._overlay_texts()
+    overlay_texts = patch_rebase._overlay_texts("llamacpp", )
     texts: dict[str, str] = {}
     owners: dict[str, list[SourceLineOwner | None]] = {}
 
@@ -1061,7 +1061,7 @@ def _remove_bigcherry_untracked_source(
     removed explicitly before a compile-failure resume recomposes the tree.
     """
 
-    owned = set(patch_rebase._overlay_texts())
+    owned = set(patch_rebase._overlay_texts("llamacpp", ))
     for _, file_patch in _selected_file_patches(patch_ids):
         if file_patch.create:
             owned.add(file_patch.path)
@@ -1098,7 +1098,7 @@ def _rewind_compile_resume_if_inputs_changed(
         return False
     try:
         report = patch_rebase.load_report(recipe_report_path)
-        patch_rebase._require_fresh(report, vendor_root)
+        patch_rebase._require_fresh("llamacpp", report, vendor_root)
         return False
     except patch_rebase.StaleRebaseReportError:
         try:
@@ -1263,7 +1263,7 @@ def _resolve_fresh_selector(
 
 
 def _selector_patch_ids(*, selector_kind: str, selector_name: str) -> tuple[str, ...]:
-    return patch_rebase._selection_patch_ids(
+    return patch_rebase._selection_patch_ids("llamacpp", 
         source_name=selector_name, all_patches=False
     )
 
@@ -1481,7 +1481,7 @@ def _run_phases(
             state.save(report_dir)
 
         if state.next_phase == "patch-lint":
-            problems = patch_catalog.cross_check(allow_legacy_grandfather=True)
+            problems = patch_catalog.cross_check("llamacpp", allow_legacy_grandfather=True)
             if problems:
                 raise PinBumpStop(
                     "patch-lint",
@@ -1503,15 +1503,15 @@ def _run_phases(
                 selector_kind=selector_kind,
                 selector_name=selector_name,
             )
-            all_report = patch_rebase.run_rebase_check(vendor_root, all_patches=True)
-            recipe_report = patch_rebase.run_rebase_check(
+            all_report = patch_rebase.run_rebase_check("llamacpp", vendor_root, all_patches=True)
+            recipe_report = patch_rebase.run_rebase_check("llamacpp", 
                 vendor_root,
                 source_name=selector_name,
             )
             stop_on_recipe_failures(phase="coverage", recipe_report=recipe_report)
             catalog_states = {
                 patch_id: entry.state
-                for patch_id, entry in patch_catalog.load_catalog().items()
+                for patch_id, entry in patch_catalog.load_catalog("llamacpp", ).items()
             }
 
             def focal_probe(patch_id: str) -> dict | None:
@@ -1521,7 +1521,7 @@ def _run_phases(
                 if selector_kind != "source":
                     return None
                 try:
-                    focal_report = patch_rebase.run_rebase_check(
+                    focal_report = patch_rebase.run_rebase_check("llamacpp", 
                         vendor_root, source_name=selector_name, focal_overlay_patch_id=patch_id
                     )
                 except (RuntimeError, ValueError, KeyError):
@@ -1572,7 +1572,7 @@ def _run_phases(
         if state.next_phase == "apply":
             _require_coverage_report(state, recipe_report_path)
             try:
-                result = patch_rebase.apply_known_good(
+                result = patch_rebase.apply_known_good("llamacpp", 
                     vendor_root, recipe_report_path, force=False, dry_run=False
                 )
             except patch_rebase.StaleRebaseReportError as exc:

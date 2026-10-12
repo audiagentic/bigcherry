@@ -120,6 +120,7 @@ def admit(
     """
     ids = tuple(patch_ids)
     statuses = patch_catalog.validation_evidence_statuses(
+        "llamacpp",
         ids, catalog_path=catalog_path, patches_dir=patches_dir,
         pinned_ref=pinned_ref, evidence_root=evidence_root,
         allow_legacy_grandfather=allow_legacy_grandfather,

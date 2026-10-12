@@ -136,6 +136,7 @@ def applicable(entry: CatalogEntry, context: PatchContext) -> tuple[bool, str | 
 
 
 def resolve_for_context(
+    engine: str,
     patch_ids: tuple[str, ...] | list[str],
     context: PatchContext,
     *,
@@ -157,6 +158,7 @@ def resolve_for_context(
     if effective_patches_dir is None and catalog_path is not None:
         effective_patches_dir = Path(catalog_path).parent
     entries = build_snapshot(
+        engine,
         patches_dir=effective_patches_dir,
         catalog_path=catalog_path,
     ).metadata
