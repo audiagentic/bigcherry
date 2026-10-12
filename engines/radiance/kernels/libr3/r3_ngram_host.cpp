@@ -191,8 +191,7 @@ void ram_copy(State* s, const uint8_t* table) {
     void* m = mmap(nullptr, bytes, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     if (m == MAP_FAILED) {
         std::fprintf(stderr, "libr3: R3_NGRAM_DEV could not map %.2f GiB for the rows off the device(s): %s; "
-                     "they are read from the container
-", (double)bytes / (double)(1ull << 30), std::strerror(errno));
+                     "they are read from the container\n", (double)bytes / (double)(1ull << 30), std::strerror(errno));
         return;
     }
     const uint8_t* src = table + (size_t)s->covered * (size_t)s->n;
@@ -208,8 +207,7 @@ void ram_copy(State* s, const uint8_t* table) {
     const bool locked = mlock(m, bytes) == 0;
     s->ram = (uint8_t*)m;
     s->ram_bytes = bytes;
-    std::fprintf(stderr, "libr3: R3_NGRAM_DEV rows %lld..%lld (%.2f GiB) copied into host memory%s
-",
+    std::fprintf(stderr, "libr3: R3_NGRAM_DEV rows %lld..%lld (%.2f GiB) copied into host memory%s\n",
                  (long long)s->covered, (long long)s->vocab, (double)bytes / (double)(1ull << 30),
                  locked ? ", locked" : " (not locked: RLIMIT_MEMLOCK)");
 }
