@@ -90,3 +90,32 @@ this slice has to show. It is an enabler for the paired schedule (QFP49), not a 
 
 Outside the engine (`tools/lab/hip-probes/rccl_stagger_probe.cpp`, run rs1): RCCL takes a stream other than the
 compute stream on the same communicator, and with two half-batches staggered around it 84% of the sum's cost is hidden.
+
+## Sequential-path cost observed in b-stg11
+
+The earlier production-profile ABBA above was neutral, but the smaller real-library qualification path is not.
+Flash-Next, ctx 65536, 4096 pseudo-random prompt tokens, `-b 512 -ub 256`, eight calls, no stagger pair:
+
+- transfer stream off: 1093.7 t/s; `llama_decode` held the host 3591 / 3745 ms;
+- `BIGCHERRY_AR_TRANSFER_STREAM=1`: 882.9 t/s, -19%, logits bit-identical; calls after the first are about
+  470 ms rather than about 340 ms;
+- trace per XTX: sum resident mean rises from 0.91 to 1.01 ms. Off has every kernel on the compute stream; on moves
+  all 1528 sum kernels to the transfer stream, but both traces still have 0.0% sum+compute overlap.
+
+Therefore the flag alone is a cost on a sequential path and must not be treated as a neutral optimization.
+The 0.10 ms increase in measured sum-kernel residency explains only part of the loss. Event record/wait latency is
+not included in kernel residency, so the remaining cost is in the producer-event -> transfer-stream wait -> RCCL ->
+output-event -> compute-stream wait dependency/enqueue path and resulting idle/serialization; the current trace
+cannot split those components further. The existing F32->BF16 pre-work and BF16->F32 post-work remain on the compute
+stream, so they are not newly moved to the transfer stream.
+
+There is no safe event to remove from the begin/end seam: the input event orders RCCL after its compute producer and
+the output event orders the consumer/post-conversion after RCCL. Streams/events are already persistent and pooled,
+so allocation is not the steady-state cost. A cheaper sequential path is the original monolithic RCCL path; the
+transfer seam should be paid only when independent compute is actually inserted between begin and end. 1361 calls
+the begin/end seam directly for its staggered reductions. Further reduction of the standalone-flag overhead would
+need a ROCm API/host trace to distinguish event/enqueue latency from RCCL dedicated-stream behavior.
+
+Later reading of the same configuration (QFP49): repeated runs of this small real-library path are bimodal with the
+flag on or off, so the 19% above is one mode against the other, not a cost of the flag; the production-profile ABBA
+stays the reference (neutral). The paragraph on where a seam cost would sit is kept for a later revisit.
