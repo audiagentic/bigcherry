@@ -666,6 +666,23 @@ summed by op (`profile_ops_summary.py`); for two XTX the figures are one rank's,
   which would leave only 417 us for 85.9 GFLOP (over 200 TFLOP/s) - but removing the products lets the compiler drop
   the loads that feed them, so this is not a measurement of the instruction rate. A registers-only WMMA loop is.
 
+### The engine's own options on two XTX (2026-10-12, runs `knob1-*`, `tools/lab/radiance/tp2-knobs.sh`)
+
+Serve bench, unprofiled, one run an arm; prefill at about 2.6K / 7.2K tokens, decode over 8 short prompts:
+
+| arm | prefill, tok/s | decode, tok/s |
+|---|---|---|
+| `--tp-wire wht6`, chunks of 2048 (base) | 2,112 / 2,125 | 47.1 |
+| chunks of 4096 | 2,192 / 2,104 | 46.7 |
+| chunks of 1024 | 2,090 / 2,054 | 46.5 |
+| `--tp-wire-min-kb 16` | 2,155 / 2,154 | 46.4 |
+| fp8 KV cache | 2,150 / 2,147 | 45.5 |
+| exact wire | 1,546 / 1,561 | 46.2 |
+
+Nothing but the wire moves prefill by more than a single run's spread (about 2%): chunk size does not change the
+all-reduce's cost a token, the lossy wire is already used for nearly all prefill bytes at the 128 KiB threshold, and
+the KV dtype is not where the time is. What is left is in the kernels and in how the all-reduce is done.
+
 ### RR08, second form (`R3_BT=2`, eight waves sharing an LDS activation tile; runs `rr08b-*`)
 
 Passes the selftest (10 of 10). Slower than the tiled form at M = 512 on every shape (16384 x 5120: 1,553 against
