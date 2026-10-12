@@ -16,7 +16,7 @@
 
 
 # RR08 full host-reference oracle, opt-in because the production-shape matrix is deliberately large.
-# Same built plugin: R3_BT=0 checks the established form and R3_BT=1 checks the new form.
+# Same built plugin: R3_BT=0 checks tiled, R3_BT=1 the direct form, R3_BT=2 the LDS-shared form.
 @@ find 1
         /* K not a multiple of 128: the TN=2 kernel takes the 64-wide slab. */
 @@ replace

@@ -534,6 +534,90 @@ Serve bench (`rad_prompt_bench.py`, MXFP4 Qwen3.8-27B, prefill at about 2,570 / 
 - Next form, as planned: eight waves a block sharing one LDS-staged activation tile, lane-owned f16 weights and
   accumulators kept.
 
+## RR08 second form: eight-wave LDS-shared activation tile (R3_BT=2; awaiting hardware)
+
+The M=512 tiled measurements are already close to gfx1100's matrix roofline. A 16x16x16 WMMA is 8,192
+floating-point operations, so the exact instruction count is (M/16)*(N/16)*(K/16). Against the RX 7900 XTX's
+123-TFLOP/s FP16/BF16 matrix peak, the arithmetic-only floor is:
+
+| N x K | M512 WMMAs | 123-TF floor | measured tiled | floor / measured |
+|---|---:|---:|---:|---:|
+| 34816 x 5120 | 22,282,240 | 1,484 us | 1,807 us | 82% |
+| 5120 x 17408 | 11,141,120 | 742 us | 1,043 us | 71% |
+| 16384 x 5120 | 10,485,760 | 698 us | 854 us | 82% |
+| 5120 x 6144 | 3,932,160 | 262 us | 366 us | 72% |
+| 12288 x 5120 | 7,864,320 | 524 us | 620 us | 84% |
+
+Therefore no re-tiling that still issues the same dense f16/bf16 WMMAs can halve M=512 time. Removing every
+non-WMMA cycle gives only about 1.18-1.41x. The new form is an ablation-driven attempt to recover that remaining
+16-29%, not a 2x claim.
+
+At M=512 the existing TN=2/LBK=128 block is 256 M x 64 N, eight waves, 512 WMMAs per K slab. In libr3 it stages
+64x128 weights as bf16: about 4 KiB packed codes plus 0.25 KiB E8M0 are read globally, about 17 KiB including
+padding is written to LDS, and the four M-waves reuse each N-wave's weight fragments for about 64 KiB of LDS reads.
+Its activation fragments are direct from the widened scratch: about 128 KiB of global/cache loads per block-slab
+because the two N waves load the same 256x128 activation slab independently. The block carries eight v8f
+accumulators per wave (64 f32 VGPR values) plus up to four activation and two weight fragments; LDS is only about
+18 KiB, so register pressure is the likely occupancy limiter.
+
+R3_BT=2 uses an equal-output-area 128 M x 128 N block at B=8. Eight N-waves share one tile-major 128x128 f16
+activation slab (32 KiB LDS): about 32 KiB activation global loads, 4x less than tiled; weights stay lane-owned,
+so there are no weight-LDS stores/reads and no final native-to-gfx12 accumulator shuffle. The trade is 8 KiB of
+packed weight per slab and twice as many weight values expanded for the same output area. It keeps only one live
+activation and one live weight fragment beside the same eight accumulators, so the compiler resource report should
+show lower VGPR pressure; actual resident waves need the lab build to confirm.
+
+The MXFP4 E8M0 exponent can be applied after an integer dot only for the weight side. It does not make the whole
+product an exact IU8/IU4 dot: E2M1 magnitudes need signed values up to 12 after the natural x2 integer mapping, and
+each E4M3 activation has its own element exponent in addition to the row/block scale. Factoring one exponent after
+an integer product therefore cannot reproduce the current product. An exact integer route needs decomposition into
+multiple products and loses the matrix-rate advantage; a lossy activation requantisation would be a different
+numeric contract.
+
+R3_BT_ABL is timing-only and off by default. Bits: 1 replaces weight expansion with constants; 2 replaces activation
+widening with constants while retaining the pre-pass writes; 4 skips WMMA; 8 skips the epilogue/store. Non-zero
+masks intentionally produce garbage.
+
+Run the ablations first, then correctness/perf/serve:
+
+    BT=2 STEPS="build self abl" ABL=1,2,4,8 bash tools/lab/radiance/rr08-cycle.sh rr08b-abl
+    BT=2 ORACLE=1 STEPS="self" bash tools/lab/radiance/rr08-cycle.sh rr08b-oracle
+    BT=2 BT_B=8 STEPS="perf" bash tools/lab/radiance/rr08-cycle.sh rr08b-perf
+    BT=2 BT_B=8 STEPS="serve1 serve2" bash tools/lab/radiance/rr08-cycle.sh rr08b-serve
+
+Row timing, us/call, tiled / R3_BT=2:
+
+| N x K | M=64 | M=128 | M=512 |
+|---|---:|---:|---:|
+| 34816 x 5120 |  |  |  |
+| 5120 x 17408 |  |  |  |
+| 16384 x 5120 |  |  |  |
+| 5120 x 6144 |  |  |  |
+| 12288 x 5120 |  |  |  |
+
+Ablation at M=512, full / mask time in us:
+
+| mask | meaning | tiled | R3_BT=2 |
+|---:|---|---:|---:|
+| 1 | weight expansion -> constants |  |  |
+| 2 | activation widen -> constants |  |  |
+| 4 | skip WMMA |  |  |
+| 8 | skip epilogue/store |  |  |
+
+Serve:
+
+| | tiled | R3_BT=2 |
+|---|---:|---:|
+| one XTX, 2.5K / 6.5K prefill tok/s |  |  |
+| two XTX wht6, 2.5K / 6.5K prefill tok/s |  |  |
+| decode one / two XTX |  |  |
+
+Stop tuning this form if the M=512 mask-4 runs show the non-WMMA remainder at roughly 30% or less and the full
+R3_BT=2 arm does not materially reduce the tiled column: the fixed WMMA count then prevents the required ~2x.
+The next exact form should stay close to the existing weight-staged tiled kernel and change tile aspect/live
+fragments (for example 128 M x 128 N, fewer live A/W fragments) to push toward the 123-TF roofline. Reaching ~2x
+requires a higher-throughput arithmetic representation or a changed numeric contract, not another LDS placement.
+
 ## The lossy two-card wire, measured (2026-10-12, runs `kld4-*`, `tools/lab/radiance/kld-tp-wire.sh`)
 
 `--tp-wire wht6` took two-card MXFP4 prefill from about 1,535 to 2,124 tok/s (above) with no quality number. KL mode
