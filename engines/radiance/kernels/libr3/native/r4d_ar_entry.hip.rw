@@ -158,12 +158,32 @@ void release(ArInst* in) {
     if (nblocks > in->max_blocks) nblocks = in->max_blocks;
     if (nblocks < 1) nblocks = 1;
 
+    const char* const r3_pipe_env = std::getenv("R3_AR_PIPE");
+    const bool r3_pipe = in->host && wire == 6 && M >= 512 &&
+                         r3_pipe_env && std::strcmp(r3_pipe_env, "1") == 0;
+    const int r3_nblocks = r3_pipe ? (nblocks | 0x40000000) : nblocks;
     R3ArTimingScope r3_timing(
         in, "ar_rmsnorm_quant_fp8",
-        wire == 6 ? "wht6_push_wait_read_reduce_rmsnorm_quant_kernel"
-                  : "exact_push_wait_read_reduce_rmsnorm_quant_kernel",
+        r3_pipe ? "wht6_pipe8_push_read_overlap_rmsnorm_quant_kernel"
+                : (wire == 6 ? "wht6_push_wait_read_reduce_rmsnorm_quant_kernel"
+                             : "exact_push_wait_read_reduce_rmsnorm_quant_kernel"),
         wire, M, K, s);
     const int e = r4d_ar_rmsnorm_quant_fp8(
+@@ end
+
+@@ find 1
+    const long flag_words = (long)maxb * ((world == 2) ? 1 : world);
+@@ replace
+    /* Eight slice flags follow the legacy block flags only for the pinned-host two-rank mailbox. */
+    const long flag_words = (long)maxb * ((world == 2) ? (host ? 9 : 1) : world);
+@@ end
+
+@@ find 1
+        (long)(uintptr_t)s, nblocks, nthreads, cfg->drain, cfg->acq, wire,
+        in->locpack, in->slot_bytes / 2);
+@@ replace
+        (long)(uintptr_t)s, r3_nblocks, nthreads, cfg->drain, cfg->acq, wire,
+        in->locpack, in->slot_bytes / 2);
 @@ end
 
 @@ find 1

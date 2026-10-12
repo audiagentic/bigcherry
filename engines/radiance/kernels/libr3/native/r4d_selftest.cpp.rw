@@ -311,3 +311,118 @@ static void mxfp4_prefill_perf(const Plugin& pl, int64_t N, int64_t K, int64_t M
 
     if (timed) {
 @@ end
+
+@@ find 1
+static void ar_two_rank(const Plugin& pl, const std::vector<int>& devs, const char* name) {
+@@ replace
+/* R3_AR_PIPE correctness: host wht6, two launches per arm so stale slice flags are exercised. */
+struct R3ArPipeRun {
+    const RadKernelInfo* row = nullptr;
+    int rank = 0, dev = 0, M = 0;
+    int rc_init = RAD_E_STATE, rc_launch = RAD_E_STATE;
+    void* inst = nullptr;
+    std::vector<unsigned char> bytes;
+};
+
+static uint32_t r3_pipe_rand(uint32_t& s) { s ^= s << 13; s ^= s >> 17; s ^= s << 5; return s; }
+
+static void r3_ar_pipe_worker(R3ArPipeRun* t) {
+    constexpr int K = 5120, G = 128;
+    if (st_set_device(t->dev) != hipSuccess) { t->rc_init = RAD_E_DEVICE; return; }
+    std::vector<RadParam> ps = { PI("M", t->M), PI("n", K), PF("eps", 1e-6), PI("group", G),
+        PI("world_size", 2), PS("dtype", "bf16"), PI("wire", 6) };
+    t->rc_init = t->row->init(ps.data(), (int)ps.size(), t->rank, 2, &t->inst);
+    if (t->rc_init != RAD_OK) return;
+    const size_t ne = (size_t)t->M * K, xb = ne * 2, qb = ne;
+    const size_t sb = (size_t)t->M * (K / G) * 4, yb = xb;
+    void *x = nullptr, *w = nullptr, *q = nullptr, *sc = nullptr, *y = nullptr;
+    if (hipMalloc(&x, xb) != hipSuccess || hipMalloc(&w, K * 4) != hipSuccess ||
+        hipMalloc(&q, qb) != hipSuccess || hipMalloc(&sc, sb) != hipSuccess ||
+        hipMalloc(&y, yb) != hipSuccess) { t->rc_launch = RAD_E_NOMEM; return; }
+    std::vector<uint16_t> hx(ne);
+    std::vector<float> hw(K);
+    uint32_t seed = 0x9e3779b9u ^ (uint32_t)t->M ^ ((uint32_t)t->rank << 24);
+    for (size_t i = 0; i < ne; ++i) {
+        const uint32_t r = r3_pipe_rand(seed);
+        hx[i] = (uint16_t)(0x3f00u | (r & 0x7fu) | ((r & 0x80u) ? 0x8000u : 0u));
+    }
+    for (int i = 0; i < K; ++i)
+        hw[(size_t)i] = 1.0f + (float)((int)(r3_pipe_rand(seed) & 31u) - 16) * (1.0f / 1024.0f);
+    st_memcpy(w, hw.data(), K * 4, hipMemcpyHostToDevice);
+    RadTensor ts[6] = { T(x, RAD_BF16, { t->M, K }), T(nullptr, RAD_BF16, { t->M, K }),
+        T(w, RAD_F32, { K }), T(q, RAD_F8E4M3, { t->M, K }),
+        T(sc, RAD_F32, { t->M, K / G }), T(y, RAD_BF16, { t->M, K }) };
+    absent(ts[1]);
+    RadArgs a;
+    std::memset(&a, 0, sizeof(a));
+    a.t = ts; a.n_t = 6; a.p = ps.data(); a.n_p = (int)ps.size();
+    a.instance = t->inst; a.rank = t->rank; a.world_size = 2;
+    for (int rep = 0; rep < 2; ++rep) {
+        st_memcpy(x, hx.data(), xb, hipMemcpyHostToDevice);
+        st_memset(q, 0, qb); st_memset(sc, 0, sb); st_memset(y, 0, yb);
+        t->rc_launch = t->row->launch(&a, nullptr);
+        if (t->rc_launch != RAD_OK || st_stream_sync(nullptr) != hipSuccess) {
+            if (t->rc_launch == RAD_OK) t->rc_launch = RAD_E_DEVICE;
+            break;
+        }
+    }
+    if (t->rc_launch == RAD_OK) {
+        t->bytes.resize(xb + qb + sb + yb);
+        size_t at = 0;
+        st_memcpy(t->bytes.data() + at, x, xb, hipMemcpyDeviceToHost); at += xb;
+        st_memcpy(t->bytes.data() + at, q, qb, hipMemcpyDeviceToHost); at += qb;
+        st_memcpy(t->bytes.data() + at, sc, sb, hipMemcpyDeviceToHost); at += sb;
+        st_memcpy(t->bytes.data() + at, y, yb, hipMemcpyDeviceToHost);
+    }
+    st_free(x); st_free(w); st_free(q); st_free(sc); st_free(y);
+}
+
+static bool r3_ar_pipe_pair(const RadKernelInfo* row, const std::vector<int>& devs, int M, bool pipe,
+                            std::vector<unsigned char>* aout, std::vector<unsigned char>* bout,
+                            std::string* why) {
+    setenv("R3_AR_PIPE", pipe ? "1" : "0", 1);
+    R3ArPipeRun a{ row, 0, devs[0], M }, b{ row, 1, devs[1], M };
+    std::thread ta(r3_ar_pipe_worker, &a), tb(r3_ar_pipe_worker, &b);
+    ta.join(); tb.join();
+    const bool good = a.rc_init == RAD_OK && b.rc_init == RAD_OK &&
+                      a.rc_launch == RAD_OK && b.rc_launch == RAD_OK;
+    if (!good) *why = "init " + std::to_string(a.rc_init) + "/" + std::to_string(b.rc_init) +
+                      ", launch " + std::to_string(a.rc_launch) + "/" + std::to_string(b.rc_launch);
+    if (a.inst && row->fini) { st_set_device(devs[0]); row->fini(a.inst); }
+    if (b.inst && row->fini) { st_set_device(devs[1]); row->fini(b.inst); }
+    st_set_device(devs[0]);
+    if (good) { *aout = std::move(a.bytes); *bout = std::move(b.bytes); }
+    return good;
+}
+
+static void r3_ar_pipe_case(const Plugin& pl, const std::vector<int>& devs, const char* name) {
+    const RadKernelInfo* row = find(pl, name);
+    if (!row) { ok(name, false, "row absent"); return; }
+    if (devs.size() < 2) { skip(name, "R3_AR_PIPE selftest needs GPU=0,1"); return; }
+    const char* old = std::getenv("R3_AR_PIPE");
+    const bool had_old = old != nullptr;
+    const std::string old_value = old ? old : "";
+    for (const int M : { 2048, 64 }) {
+        std::vector<unsigned char> b0, b1, p0, p1;
+        std::string wb, wp;
+        const bool rb = r3_ar_pipe_pair(row, devs, M, false, &b0, &b1, &wb);
+        const bool rp = r3_ar_pipe_pair(row, devs, M, true,  &p0, &p1, &wp);
+        const std::string launch = "R3_AR_PIPE host wht6 M=" + std::to_string(M) + " launches";
+        ok(launch.c_str(), rb && rp, rb ? wp : wb);
+        const bool same = rb && rp && b0 == p0 && b1 == p1;
+        const std::string bytes = "R3_AR_PIPE=1 vs 0 byte-for-byte M=" + std::to_string(M);
+        ok(bytes.c_str(), same, same ? "" : "x/q/scale/out_bf16 differ");
+    }
+    if (had_old) setenv("R3_AR_PIPE", old_value.c_str(), 1); else unsetenv("R3_AR_PIPE");
+}
+
+static void ar_two_rank(const Plugin& pl, const std::vector<int>& devs, const char* name) {
+@@ end
+
+@@ find 1
+    skip_pair("ar_rmsnorm_quant_fp8", "two-rank fusion: needs a peer rank");
+@@ replace
+    if (sel("ar_rmsnorm_quant_fp8_host")) r3_ar_pipe_case(pl, devs, "ar_rmsnorm_quant_fp8_host");
+    if (sel("ar_rmsnorm_quant_fp8"))
+        skip("ar_rmsnorm_quant_fp8", "R3_AR_PIPE targets the no-P2P host row");
+@@ end
