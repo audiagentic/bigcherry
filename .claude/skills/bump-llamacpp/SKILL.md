@@ -24,14 +24,17 @@ Use this when the pin is at most a few days old. Anything that stops here drops 
 3. `python -m bigcherry pin-bump <tag> --source bigcherry` and let it finish (about 16 minutes; do NOT commit in
    this checkout while it runs - a moved HEAD makes the coverage report stale and it stops with
    `COVERAGE_REPORT_STALE`; `--resume` recomputes). In one run it repins, pulls, audits, probes every patch, runs the
-   patch test suite against the pristine tree, applies the build selection, re-audits and commits the release
-   record. It ends with the list to act on (also in `artifacts/pin-bump/resume-<tag>/patch-failures.json`):
+   patch test suite against the pristine tree, applies the build selection, runs the clang++ source compile phase,
+   re-audits and commits the release record. It ends with the list to act on (also in
+   `artifacts/pin-bump/resume-<tag>/patch-failures.json`):
    - "only collide in the all-patches probe": clean over the build, nothing to do;
    - "outside the build need reconciliation": real failures with file, edit and reason - fix in the patch's own
      package after the bump (they do not block it);
    - "patch test(s) fail against the pristine new revision": mechanics tests to fix.
-   It stops before applying only for `RECIPE_PATCHES_FAILED` (a build patch does not apply), listing every failing
-   build patch and edit at once; reconcile those, then `--resume`.
+   It stops before applying for `RECIPE_PATCHES_FAILED` (a build patch does not apply), listing every failing
+   build patch and edit at once. After apply it stops for `SOURCE_COMPILE_FAILED` with file/line/owning-patch
+   evidence, or `SOURCE_COMPILE_UNAVAILABLE` when clang++ is missing. Reconcile/install and `--resume`.
+   `--skip-compile` is an explicit exception only; it is recorded in the release record notes.
    Check whether upstream caused a listed failure before treating it as bump work:
    `git -C vendor/llama.cpp diff --stat <old-sha> <new-sha> -- <file>`.
 4. Push, then on Brutus `git pull --ff-only` (the build fetches a newly pinned tag itself).
@@ -174,7 +177,15 @@ machine over the individually-proven verbs below. It:
    non-selected patch may be clean OR carry a matching `known_broken`
    disposition (see below); anything undiscovered or untriaged STOPs;
 8. applies the recipe's known-good subset;
-9. re-audits with `--strict`.
+9. runs the source compile check on the patched vendor tree with `clang++` (no ROCm/GPU required);
+10. re-audits with `--strict`.
+
+The compile phase is the bump-time authority for source/type failures caused by the new upstream pin; do not wait
+for the pull request's `Patch compile validation` job to discover them. That CI job still provides general
+admission coverage. `SOURCE_COMPILE_FAILED` reports file/line and patch/edit ownership; an upstream line names the
+nearest related production edit. `SOURCE_COMPILE_UNAVAILABLE` requires installing clang++, unless
+`--skip-compile` is explicitly supplied (the skip is persisted in the release record). This phase does not replace
+the mandatory hardware build + smoke in section 4b.
 
 On any STOP it writes a structured JSON failure envelope (see the exact
 schema in `tools/bigcherry/release/pin_bump.py`'s `failure_envelope()`) under
