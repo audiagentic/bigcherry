@@ -48,7 +48,8 @@ static void r3_ar_timing_print(R3ArTimingRow& r) {
     std::fprintf(stderr,
         "R3_AR_TIMING rank=%d op=%s wire=%s rows=%s calls=%llu total_ms=%.3f phase=%s "
         "p50_us=%.1f p90_us=%.1f max_us=%.1f payload_bytes_per_call=%llu timed=sync_before_and_after\n",
-        r.rank, r.op, r.wire == 6 ? "wht6" : "exact", r3_ar_bucket_name(r.bucket), r.calls, r.total_ms,
+        r.rank, r.op, r.wire == 4 ? "wht4" : (r.wire == 6 ? "wht6" : "exact"),
+        r3_ar_bucket_name(r.bucket), r.calls, r.total_ms,
         r.phase, r.us[(n - 1) * 50 / 100], r.us[(n - 1) * 90 / 100], r.us[n - 1],
         r.calls ? r.payload_bytes / r.calls : 0ULL);
     r.us.clear(); r.calls = 0; r.payload_bytes = 0; r.total_ms = 0.0;
@@ -74,7 +75,9 @@ struct R3ArTimingScope {
         if (!in || !in->timing) return;
         bucket = M >= 1 && M <= 8 ? 0 : (M >= 512 ? 1 : 2);
         const unsigned long long elems = (unsigned long long)M * (unsigned long long)n;
-        payload = wire == 6 ? elems * 25ULL / 32ULL : elems * (unsigned long long)in->esize;
+        payload = wire == 4 ? elems * 17ULL / 32ULL
+                  : wire == 6 ? elems * 25ULL / 32ULL
+                              : elems * (unsigned long long)in->esize;
         stream = (hipStream_t)(uintptr_t)s;
         if (hipStreamSynchronize(stream) != hipSuccess) return;
         t0 = std::chrono::steady_clock::now();
@@ -158,16 +161,21 @@ void release(ArInst* in) {
     if (nblocks > in->max_blocks) nblocks = in->max_blocks;
     if (nblocks < 1) nblocks = 1;
 
+    const char* const r3_wire4_env = std::getenv("R3_AR_WIRE4");
+    const bool r3_wire4 = in->host && wire == 6 && M >= 512 &&
+                          r3_wire4_env && std::strcmp(r3_wire4_env, "1") == 0;
     const char* const r3_pipe_env = std::getenv("R3_AR_PIPE");
-    const bool r3_pipe = in->host && wire == 6 && M >= 512 &&
+    const bool r3_pipe = !r3_wire4 && in->host && wire == 6 && M >= 512 &&
                          r3_pipe_env && std::strcmp(r3_pipe_env, "1") == 0;
-    const int r3_nblocks = r3_pipe ? (nblocks | 0x40000000) : nblocks;
+    const int r3_nblocks = nblocks | (r3_wire4 ? 0x20000000 : 0) |
+                           (r3_pipe ? 0x40000000 : 0);
     R3ArTimingScope r3_timing(
         in, "ar_rmsnorm_quant_fp8",
-        r3_pipe ? "wht6_pipe8_push_read_overlap_rmsnorm_quant_kernel"
-                : (wire == 6 ? "wht6_push_wait_read_reduce_rmsnorm_quant_kernel"
-                             : "exact_push_wait_read_reduce_rmsnorm_quant_kernel"),
-        wire, M, K, s);
+        r3_wire4 ? "wht4_push_wait_read_reduce_rmsnorm_quant_kernel"
+                  : (r3_pipe ? "wht6_pipe8_push_read_overlap_rmsnorm_quant_kernel"
+                             : (wire == 6 ? "wht6_push_wait_read_reduce_rmsnorm_quant_kernel"
+                                          : "exact_push_wait_read_reduce_rmsnorm_quant_kernel")),
+        r3_wire4 ? 4 : wire, M, K, s);
     const int e = r4d_ar_rmsnorm_quant_fp8(
 @@ end
 
@@ -183,7 +191,7 @@ void release(ArInst* in) {
         in->locpack, in->slot_bytes / 2);
 @@ replace
         (long)(uintptr_t)s, r3_nblocks, nthreads, cfg->drain, cfg->acq, wire,
-        in->locpack, in->slot_bytes / 2);
+        in->locpack, r3_wire4 ? in->slot_bytes / 4 : in->slot_bytes / 2);
 @@ end
 
 @@ find 1
