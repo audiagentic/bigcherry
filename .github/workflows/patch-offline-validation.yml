@@ -102,6 +102,15 @@ jobs:
           PYTHONPATH: tools
         run: python -m unittest discover -s tools/tests/release -t .
 
+      - name: Probe pin-release dry run
+        env:
+          PYTHONPATH: tools
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git fetch origin fix/pin-release-required-checks
+          git checkout -B fix/pin-release-required-checks origin/fix/pin-release-required-checks
+          python -m bigcherry pin-release b11552 --dry-run
+
       - name: Run source compile check tests
         env:
           PYTHONPATH: tools
