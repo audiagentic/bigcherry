@@ -427,7 +427,11 @@ def _merge_pr_branch_locally(plan: Plan, pr: dict, phase: str) -> None:
     head = state.get("headRefName") or pr.get("headRefName")
     if not isinstance(head, str) or not head:
         raise PinReleaseError(phase, f"pull request {pr['number']} has no head branch")
-    _git(root, "fetch", "-q", remote, plan.main, head)
+    _git(
+        root, "fetch", "-q", remote,
+        f"{plan.main}:refs/remotes/{remote}/{plan.main}",
+        f"{head}:refs/remotes/{remote}/{head}",
+    )
     parent = Path(tempfile.mkdtemp(prefix="pin-release-pr-update-", dir=root.parent))
     worktree = parent / "tree"
     try:
@@ -493,7 +497,10 @@ def _bring_pr_up_to_main(plan: Plan, pr: dict, phase: str, log=print) -> bool:
         return True
 
     refreshed = _pr_state(plan, pr, phase)
-    if str(refreshed.get("mergeable") or "").upper() == "CONFLICTING" or             str(refreshed.get("mergeStateStatus") or "").upper() == "DIRTY":
+    if (
+        str(refreshed.get("mergeable") or "").upper() == "CONFLICTING"
+        or str(refreshed.get("mergeStateStatus") or "").upper() == "DIRTY"
+    ):
         log(f"  {phase:<8} PR #{pr['number']} became conflicting; merging {plan.main} in a temporary worktree")
         _merge_pr_branch_locally(plan, pr, phase)
         return True
@@ -505,7 +512,10 @@ def _bring_pr_up_to_main(plan: Plan, pr: dict, phase: str, log=print) -> bool:
 
 def _trigger_pr_checks(plan: Plan, pr: dict, phase: str, log=print) -> None:
     state = _pr_state(plan, pr, phase)
-    if str(state.get("mergeStateStatus") or "").upper() in {"BEHIND", "DIRTY"} or             str(state.get("mergeable") or "").upper() == "CONFLICTING":
+    if (
+        str(state.get("mergeStateStatus") or "").upper() in {"BEHIND", "DIRTY"}
+        or str(state.get("mergeable") or "").upper() == "CONFLICTING"
+    ):
         _bring_pr_up_to_main(plan, pr, phase, log)
         log(f"  {phase:<8} triggered required checks by updating PR #{pr['number']} to {plan.main}")
         return
