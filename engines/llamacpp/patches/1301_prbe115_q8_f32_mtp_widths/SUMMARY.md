@@ -22,3 +22,7 @@ ABBA at 10K and 32K, per-width activation confirmed (`ncols=1..5` hits): MAXCOLS
 10K, 72.0 vs 72.1/72.3 at 32K), MAXCOLS 3 neutral (72.7-73.2 vs 72.8-72.9; 72.0-72.1 vs 72.0-72.3), MAXCOLS 5 regressed
 (64.7-64.8 vs 73.0-73.4 at 10K, -12%; 67.8-67.9 vs 72.0-72.1 at 32K, -6%). Raw-F32 Q8_0 MMVQ at MTP verify widths is
 never faster than quantize-to-Q8_1 + MMVQ here; no width helps. Rejected (runs: qfp21-1301-27b, -w2b, -w3b).
+
+## 2026-10-12 terminal reconciliation (PRBE115 / BCOP168)
+
+1301 stays rejected: MAXCOLS 2/3 neutral, MAXCOLS 5 approximately 6–12% slower on the Q8_0 dual-XTX MTP4 control. Its per-width call-once trace is not a launch count. A hoisted Q8_0 weight dequant alone cannot preserve stock Q8_1 activation quantization and integer accumulation; do not queue that variant. Keep validated 1241 width-1 and stock verify widths 2–5. Reopen only under PRBE115's new numerical and critical-path evidence gates. No new GPU result.
