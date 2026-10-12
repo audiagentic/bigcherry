@@ -690,6 +690,28 @@ Passes the selftest (10 of 10). Slower than the tiled form at M = 512 on every s
 tok/s against 1,399 / 1,475). Not adopted; `R3_BT` stays 0. Ablation of the tiled form at 16384 x 5120, M = 512
 (895 us): weight expansion as constants 785, activation widen as constants 889, no epilogue 881, no WMMA 437.
 
+## The WMMA arithmetic roof of one XTX, measured (2026-10-12, run `rr09c`, `tools/lab/radiance/wmma-roof.sh`)
+
+`r3_selftest --perfwmma 8192` on HIP device 0 (48 CUs): the WMMA instruction alone, operands held in registers, swept
+over waves a block, blocks a CU and independent accumulators; best of each element type:
+
+| operands | best | geometry |
+|---|---|---|
+| f16 | 142.0 TFLOP/s | 2 waves a block, 4 blocks a CU, 8 accumulators |
+| bf16 | 142.4 TFLOP/s | 1 wave a block, 8 blocks a CU, 8 accumulators |
+| iu8 | 144.1 TOPS | 2 waves a block, 8 blocks a CU, 8 accumulators |
+| iu4 | 285.8 TOPS | 8 waves a block, 4 blocks a CU, 8 accumulators |
+
+- The roof is above AMD's stated 123 TFLOPs. The tiled MXFP4 prefill GEMM at about 100 TFLOP/s is at 70% of it, so
+  the most a perfect GEMM could return is 1.4x on the 68% of a two-card prefill that is GEMM.
+- iu8 gives no more arithmetic than f16 on this card (144 against 142); iu4 gives twice, but needs both operands in
+  4 bits, and an int8 activation split into two nibbles costs two multiplies, which lands back on the iu8 figure.
+- The bench's `lds` and `global` rows (4.8 and 1.8 TFLOP/s) reload both operands for every multiply; they are not a
+  bound on a GEMM, which loads an operand tile once for many multiplies. They are not used above.
+- The all-reduce phase trace (`ar-phase-profile.sh`, runs `rr10arb-*`) gave nothing: the engine aborts under rocprofv3
+  in `r4d_ar_ipc_alloc` -> `hipMemset` -> `rad_aql_blit_fill` while declaring the graph, and the script still printed
+  its DONE line over empty tables. The phase split has to come from timers inside the plugin, not from a tracer.
+
 ## Qwen3.8-Flash-Next on two XTX, first runs (2026-10-12, runs `fn2`, `fnp1`, `tools/lab/radiance/flashnext-tp2.sh`)
 
 radiance's shipped container `qwen3.8-next-flash-fp8-iq4r-moe.rad` (113.6 GiB: 4-bit codebook experts `w4nl64a8h`,
