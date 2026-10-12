@@ -15,18 +15,25 @@ one() {
     [ "$args" = - ] && args=
     rm -rf "$R/$run.log" "$R/$run"
     echo "VIS=$vis SCRIPT $run tools/lab/radiance/$script @$b $R/$run $args" > "$jobs"
-    env "$@" bash tools/lab/plan-qualification/queue.sh "$jobs" > /dev/null 2>&1
+    if ! env "$@" bash tools/lab/plan-qualification/queue.sh "$jobs" > /dev/null 2>&1; then
+        echo "WMMA_ROOF_QUEUE_FAILED $run"; return 1
+    fi
+    [ -s "$R/$run.log" ] || { echo "WMMA_ROOF_EMPTY_LOG $run"; return 1; }
+    if grep -qE 'SCRIPT_EXIT=[1-9][0-9]*|(^|[[:space:]])exit [1-9][0-9]*' "$R/$run.log"; then
+        echo "WMMA_ROOF_JOB_FAILED $run"; tail -8 "$R/$run.log" | cut -c1-220; return 1
+    fi
     echo "== $run [$*]"
 }
 has() { case " $steps " in *" $1 "*) return 0;; esac; return 1; }
 
 if has build; then
-    one 0 "$tag-build" libr3-build.sh - KBENCH=0 GPU=0
+    one 0 "$tag-build" libr3-build.sh - KBENCH=0 GPU=0 || { rm -f "$jobs"; exit 1; }
     tail -5 "$R/$tag-build.log" | cut -c1-220
 fi
 if has perf; then
-    one 0 "$tag-wmma" libr3-perf.sh --perfwmma GPU=0 ITERS=${ITERS:-8192}
+    one 0 "$tag-wmma" libr3-perf.sh --perfwmma GPU=0 ITERS=${ITERS:-8192} || { rm -f "$jobs"; exit 1; }
     grep -E "^WMMA|^BEST|SKIP|FAILED|failed|error" "$R/$tag-wmma.log" | cut -c1-240
+    grep -qE '^WMMA|^BEST' "$R/$tag-wmma.log" || { echo "WMMA_ROOF_EMPTY_RESULTS $tag-wmma"; rm -f "$jobs"; exit 1; }
 fi
 rm -f "$jobs"
 echo "WMMA_ROOF_DONE $tag"

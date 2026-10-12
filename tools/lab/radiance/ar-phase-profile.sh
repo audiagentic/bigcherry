@@ -18,11 +18,29 @@ one() {
         "EXTRA=--tp-wire $wire" \
         RADIANCE_PREFIX="$PWD/tools/lab/radiance/rocprof-runtime.sh" \
         ROCPROF_OUT="$R/$run/rocprof" \
-        bash tools/lab/plan-qualification/queue.sh "$jobs" > /dev/null 2>&1
+        bash tools/lab/plan-qualification/queue.sh "$jobs" > /dev/null 2>&1 || {
+            echo "AR_PHASE_PROFILE_QUEUE_FAILED $run"; return 1;
+        }
+    [ -s "$R/$run.log" ] || { echo "AR_PHASE_PROFILE_EMPTY_LOG $run"; return 1; }
+    if grep -qE 'SCRIPT_EXIT=[1-9][0-9]*|(^|[[:space:]])exit [1-9][0-9]*' "$R/$run.log"; then
+        echo "AR_PHASE_PROFILE_JOB_FAILED $run"; tail -8 "$R/$run.log" | cut -c1-220; return 1
+    fi
+    trace="$R/$run/rocprof"
+    [ -d "$trace" ] && [ -n "$(find "$trace" -type f -name '*_trace.csv' -size +0c -print -quit 2>/dev/null)" ] || {
+        echo "AR_PHASE_PROFILE_EMPTY_TRACE $run"; return 1;
+    }
     echo "== $run wire=$wire"
     grep -iE "^prefill at|exit [1-9]|^E " "$R/$run.log" | tail -4 | cut -c1-180
-    python3 tools/lab/radiance/ar_phase_summary.py "$R/$run/rocprof" | cut -c1-240
+    python3 tools/lab/radiance/ar_phase_summary.py "$trace" > "$R/$run/ar-phase-summary.txt" || {
+        echo "AR_PHASE_PROFILE_SUMMARY_FAILED $run"; return 1;
+    }
+    cut -c1-240 "$R/$run/ar-phase-summary.txt"
+    grep -qE '^AR/quant kernels[[:space:]]+calls=[[:space:]]*[1-9][0-9]*' "$R/$run/ar-phase-summary.txt" || {
+        echo "AR_PHASE_PROFILE_EMPTY_EVENTS $run"; return 1;
+    }
 }
-for wire in $wires; do one "$tag-$wire" "$wire"; done
+for wire in $wires; do
+    one "$tag-$wire" "$wire" || { rm -f "$jobs"; exit 1; }
+done
 rm -f "$jobs"
 echo "AR_PHASE_PROFILE_DONE $tag"

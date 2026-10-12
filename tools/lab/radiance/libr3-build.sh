@@ -30,6 +30,8 @@ for v in $(env | grep -oE "^(BIGCHERRY_[A-Z0-9_]+|GGML_HIP_[A-Z0-9_]+)"); do uns
 [ -x "$src/build/bin/rad-kbench" ] || { echo "NO_RADIANCE_BUILD under $src (run build.sh first)"; exit 1; }
 echo "radiance $(git -C "$src" rev-parse --short HEAD); libr3 at $(git -C "$repo" rev-parse --short HEAD); target $target"
 
+RADIANCE_SRC="$src" "$here/libr3-rewrite-check.sh" || exit 1
+
 prefix=$work/radiance-prefix
 stamp=$(git -C "$src" rev-parse HEAD)
 if [ "$(cat "$prefix/.kdev-commit" 2> /dev/null)" != "$stamp" ]; then

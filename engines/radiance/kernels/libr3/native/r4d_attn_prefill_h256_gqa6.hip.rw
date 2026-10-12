@@ -88,7 +88,8 @@
                 vreg[r] = __builtin_bit_cast(uint4, load_tr_b128(p));
             }
         }
-    };@@ replace
+    };
+@@ replace
     auto fetchV = [&](int k0, const int* blks) {
         if constexpr (R3N) {
             // hipfire PR #762's useful gfx11 lesson is to keep the WMMA row native. For
@@ -130,7 +131,8 @@
                 }
             }
         }
-    };@@ end
+    };
+@@ end
 
 @@ find 1
     auto storeV = [&]() {
@@ -163,7 +165,8 @@
                 }
             }
         }
-    };@@ replace
+    };
+@@ replace
     auto storeV = [&]() {
         if constexpr (R3N) {
             constexpr int VE = KVP ? 8 : 16;
@@ -221,7 +224,8 @@
                 }
             }
         }
-    };@@ end
+    };
+@@ end
 
 @@ find 1
             v8f s = (v8f){0,0,0,0,0,0,0,0};
