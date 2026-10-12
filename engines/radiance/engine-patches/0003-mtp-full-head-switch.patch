@@ -1,0 +1,22 @@
+From: BigCherry <noreply@anthropic.com>
+Subject: [PATCH] arch: RAD_MTP_FULL_HEAD=1 drafts through the trunk head instead of the 2-bit draft copy
+
+The Flash-Next container quantises the MTP draft head to two bits (u2 g128); draft acceptance on prose
+continuation is 0.61-0.64 against llama.cpp's 0.79 with a Q8_0 head. With the switch the engine takes the
+path it already has for a container without the rule: the draft rounds read the trunk lm_head (int8 here).
+Default off.
+
+diff --git a/arch/common/rad_block_mtp_fp8.h b/arch/common/rad_block_mtp_fp8.h
+index dac7f12..62849e9 100644
+--- a/arch/common/rad_block_mtp_fp8.h
++++ b/arch/common/rad_block_mtp_fp8.h
+@@ -129,6 +129,9 @@ namespace arch {
+  * -- and the block reads the answer back from whether those buffers exist. */
+ inline bool mtp_draft_head_q2(RadBuilder* b, const char* head, const char* lm) {
+     if (!head || !lm) return false;
++    /* BigCherry: RAD_MTP_FULL_HEAD=1 drafts through the trunk head (int8 here) instead of the
++     * 2-bit copy, trading draft-round traffic for acceptance. */
++    if (const char* e = std::getenv("RAD_MTP_FULL_HEAD"); e && *e == 1) return false;
+     if (map_copy(b, head, lm) < 0) return false;
+     RadEncoding e{};
+     return weight_enc(b, head, &e) && e.n_planes > 0 && e.plane[0].dtype == RAD_U2;
