@@ -2,7 +2,7 @@
 id: PRBE67
 order: 0
 plan: patching-rdna-boost-experiments
-state: pending
+state: done
 created-at: '2026-09-09T10:58:14.009489+00:00'
 breadth: ''
 skill: advanced
@@ -11,101 +11,45 @@ work: M
 priority: P2
 ---
 
-# HIP-GRAPH-002: Force graph recapture when FA stream topology changes
+# HIP-GRAPH-002: close speculative FA UID-recapture patch; preserve evidence-triggered re-entry
 
-## Description
+## Disposition (2026-10-12 UTC)
 
-TODO, primary approach (per item's own preference order). Confirmed real gap at b11126: `ggml_cuda_graph_get_key(ggml_cgraph * cgraph)` in ggml/src/ggml-cuda/ggml-cuda.cu returns only `cgraph->nodes[0]` (the first node's pointer) as the cache key for `cuda_ctx->cuda_graph(graph_key)` -- it carries NO shape/topology information, so a captured graph is reused across calls whose FA stream/shape topology differs as long as the first node's address is the same. This is a plausible root cause for R9700/gfx1201 100K+-context FA instability: the graph executable captured for one topology gets blindly `cudaGraphExecUpdate`'d or replayed against a structurally different one.
+**Close PRBE67 without a new fingerprint, recapture patch, graph bypass, hardware queue, or runtime flag.** A graph with a nonzero UID and changed node/source properties would evade the HIP/CUDA graph property check, but no BigCherry long-context failure has been shown to have that identity transition. The ordinary scheduler *assigns new UIDs when it splits/allocates graphs*; the Meta backend assigns new UIDs when it rebuilds per-device subgraphs. Therefore the original claim that first-node-pointer cache keys alone permit arbitrary stale replay is not established for supported scheduler lifetimes. This is an evidence-based no-change disposition, **not proof that HIP graphs can never fail**. Preserve the bounded re-entry gate below; PRBE66 is already completed/merged into this item.
 
-TODO, premise corrected (same underlying disproof as PRBE66). GPT confirmed the prior claim that `ggml_cuda_graph_get_key` returning only `cgraph->nodes[0]` means 'no topology information' is misleading: the caller, `ggml_cuda_graph_update_required` (verified, ggml-cuda.cu ~2591-2635), ALREADY does full per-node/per-source property comparison (memcmp of copied tensor struct plus each source's data ptr/ne[]/nb[]) and forces recapture on any difference -- this plan's proposed FA-only fingerprint (`ggml_cuda_graph_topology_fingerprint`) would DUPLICATE and be WEAKER than what already exists (it only hashes FA nodes' ne[], missing the existing check's src-pointer and full-tensor-struct comparison). The only plausible uncovered case is the early `cgraph->uid != 0 && cgraph->uid == graph->uid` fast path (same line as PRBE66's finding), which skips the property comparison entirely when the cgraph object's own uid is unchanged.
+## Implementation and ownership audit
 
-## Steps
+- Pinned `config/recipes.toml` uses **b11474**. `ggml/src/ggml-cuda/ggml-cuda.cu::ggml_cuda_graph_get_key` indexes the cache with `cgraph->nodes[0]`; it does **not** itself authorize replay. `ggml_cuda_graph_update_required` first returns false on matching nonzero `cgraph->uid == graph->uid` (after asserting equal node count), otherwise compares node count, a copied `ggml_tensor`, and every source's data pointer, `ne[]` and `nb[]`. A changed property with **the same nonzero UID** is the sole demonstrated source-level bypass of that comparison. The function body is identical at b11474, b11552 and current upstream master as inspected 2026-10-12; no new upstream fix was found for this predicate.
+- `ggml/src/ggml-backend.cpp::ggml_backend_sched_split_graph` sets `graph->uid = ggml_graph_next_uid()`; it also assigns fresh UIDs to every split graph. `ggml_backend_sched_alloc_graph` calls `split_graph` before dispatch. `ggml_graph_next_uid` in `ggml/src/ggml.c` is an atomic monotonic counter. In `ggml/src/ggml-backend-meta.cpp::ggml_backend_meta_graph_compute`, a changed parent UID triggers subgraph reconstruction and `cgraph_ij->uid = ggml_graph_next_uid()`; unchanged UID explicitly means reuse of the existing subgraph. UID zero takes the CUDA full-property-comparison path. **Inference:** supported rebuilds normally invalidate UID equality. It remains possible for an independent producer to mutate a live graph without updating its UID; no such producer was identified or reproduced for PRBE67.
+- Existing graph warmup/capture path in `ggml_backend_cuda_graph_compute` already resets warmup when the full property comparison detects changes; `ggml_cuda_graph_update_executable` re-instantiates on `cudaErrorGraphExecUpdateFailure`. A speculative FA-only hash of `ne[]` is weaker than the existing comparison and would add another cache/identity contract.
+- `1233_rd73_stable_graph_cache_key` already tried a shape-derived cache key and was **rejected** after a better-controlled balanced hardware A/B: dual-gfx1100 Qwen MTP tg128 **102.02 -> 100.02 t/s (-1.96%)**, tg512 **100.34 -> 99.09 (-1.24%)**, pp1024 **987.36 -> 980.52 (-0.69%)**. Earlier +1.889% governed evidence remains in that patch's SUMMARY but is superseded by HI162's later controlled regression. These numbers are **not PRBE67 measurements**.
+- `1302_cuda_graph_oom_evict` (QFN03, validated) handles graph-instantiation OOM by evicting cached executables; `1304_cuda_graph_lru_cap` (QFP06, rejected) caused recapture churn below the measured working set. Neither fixes or demonstrates UID staleness. PRBE66's selective graphs-off fallback is completed and consolidated here; no second graph owner, scheduler, allocator, key registry, or telemetry system is authorized.
+- Historical gfx1201/rocWMMA failure in upstream issue #24961 was on an obsolete b9553 legacy kernel and does not establish this UID cause. Issue #23579 describes a different multi-device capture restriction. Draft upstream PR #29287 implements **RPC serialized-graph caching by UID**, not a local HIP graph-recature fix; it is unmerged and its external APU/network speed claims do not transfer to no-P2P dual-XTX/R9700. vLLM's fixed capture sizes and persistent input buffers are a useful lifetime/identity precedent, not a drop-in patch.
 
-1. Reproduce the R9700 100K+ FA failure with GGML_CUDA_OP_TIMING/BIGCHERRY_PATCH_TRACE-style logging added around `ggml_cuda_graph_update_required` and `ggml_cuda_graph_get_key` to confirm: does the key (first-node pointer) stay identical across the failing transition while the actual node count/shapes change underneath it?
-2. If confirmed: extend the key/identity check in `ggml_cuda_graph_update_required` (ggml-cuda.cu, the function that calls `ggml_cuda_graph_get_key` and compares against the cached `ggml_cuda_graph`) to also compare a cheap topology fingerprint -- e.g. `cgraph->n_nodes` plus a hash of each node's `ne[]`/`op` for FA-family ops only (avoid full-graph hashing cost) -- forcing recapture (`ggml_cuda_graph_update_required` returning true, or evicting the cached entry) whenever the fingerprint differs from the one stored alongside the cached graph, even if `nodes[0]` is unchanged.
-3. If NOT confirmed by step 1 (key already effectively distinguishes the failing case some other way, or the bug is elsewhere e.g. in `cudaGraphExecUpdate`'s error handling at ggml-cuda.cu ~line 2641-2657), stop and report the real mechanism found instead of proceeding on the wrong hypothesis -- do not force this design onto an unconfirmed cause.
-4. Add the new topology-fingerprint field to the cached `ggml_cuda_graph` struct (ggml-cuda.cu, near its other members) and thread it through `cuda_ctx->cuda_graph(first_node_ptr)`'s map value.
-5. Correctness/regression test: repeated 100K+-context runs (long-run stability, no crash, output-identical vs graphs-disabled baseline) plus stable-topology controls (short context, repeated identical shape) confirming recapture does NOT fire spuriously and the existing graph speedup is retained.
-6. Compare recapture frequency/cost directly against PRBE66's narrower bypass approach; promote this over PRBE66 only if recapture cost stays bounded and output-identical across repeated long-context runs.
+## Cheap discriminator completed
 
-1. Do NOT implement the `ggml_cuda_graph_topology_fingerprint()` design from the prior plan draft -- it duplicates and is weaker than the existing full node-property comparison already in `ggml_cuda_graph_update_required`.
-2. Instrument the R9700/gfx1201 100K+-context FA failure specifically at the `cgraph->uid == graph->uid` fast-path branch (same instrumentation as PRBE66 step 1 -- this item and PRBE66 must NOT ship two separate, possibly-conflicting fixes to the same function; coordinate and converge on one before either is implemented) to determine: does the failing transition hit this fast path with `uid` unchanged but real node/source data changed underneath?
-3. If confirmed: the correct fix is not a NEW fingerprint mechanism but closing the fast-path gap itself -- either stop trusting `uid` equality alone (always run the existing full property comparison, accepting its cost), or add a narrow, cheap FA-specific check (src[1]->ne[1] for FLASH_ATTN_EXT nodes) that must ALSO match before the fast path is allowed to return false.
-4. If NOT confirmed (uid fast path is not implicated): report the actual mechanism found (e.g. `cudaGraphExecUpdate`'s error handling at ggml-cuda.cu ~2641-2657, already flagged as a fallback hypothesis in the original plan) rather than proceeding on this design.
-5. This item and PRBE66 converge on a single implementation once step 2's evidence is in hand -- do not implement both independently.
-6. Correctness/regression test: repeated 100K+-context runs (no crash, output-identical to graphs-disabled baseline) plus stable-topology controls confirming the fast path still short-circuits when nothing changed (no spurious recapture cost, existing speedup retained).
+Source-static checks against b11474/b11552: **13/13 passed** (UID fast path, full tensor/source comparison, scheduler/Meta UID creation and atomic generator). Disposable host control-flow model: **8/8 cases passed**, including zero UID, fresh UID, unchanged UID and deliberately mutated same-UID properties. The latter demonstrates a *conditional* bypass, not an observed invalid graph replay. No BigCherry repository pytest, C++/HIP build, GPU run or benchmark was executed in this audit.
 
-## Detailed Solution & Technical Design
+## Conditional re-entry — not queued
 
-`ggml_cuda_graph_get_key` intentionally uses a cheap identity (first node pointer) as a proxy for graph structure, valid only because llama.cpp usually reuses the same cgraph object across identical-shape calls. Long-context FA appears to violate that assumption (same first node, different downstream topology as sequence length crosses chunk boundaries or KV cache layout changes). The fix adds a topology fingerprint stored alongside the cached `ggml_cuda_graph` and checked in `ggml_cuda_graph_update_required`, so a real structural change forces recapture even when the first-node identity is stable. This must stay independent of `GGML_CUDA_GRAPH_OPT` (patch 1215/RD42's separate stream-overlap toggle) -- it operates on the base graph-capture mechanism, not the optimization pass.
+Reopen only if a **new, current-pin** gfx1201/R9700 long-context FA/graph failure is reproduced on the same workload with graphs ON and absent with graphs OFF, **and** correlated trace evidence shows a reused nonzero UID with changed node/source properties before a stale launch. Instrument only the existing `ggml_cuda_graph_update_required` / `ggml_backend_cuda_graph_compute` path and existing profiling/graph receipts: request/ubatch identity, device, graph key, old/new UID, node count, FA K `src[1]->ne[1]`, K data pointer and strides, property-compare branch, warmup/reset, capture/update result, recapture count, graph-instance lifetime, GPU error and peak VRAM. Capture the same evidence for stable-shape controls. A graph-on/off difference alone is **not** sufficient to attribute UID staleness.
 
-## Code Samples & Guidance
+If the trace shows **no same-UID property change**, close this hypothesis permanently and triage the actual failure with its existing owner (capture restrictions, FA kernel, MTP sequencing or 1302 OOM). If it **does** show a change, first create a deterministic host/backend regression with a stable first-node key, changed FA source and unchanged UID. Then prototype the **minimum guard** that falls through to the existing full node/source comparison on a changed signature; avoid a second fingerprint map and do not weaken non-FA graph identity. Prefer repairing the producer's UID lifetime if that is the actual contract violation. Use graphs-off only as a control/rollback.
 
-Confirmed anchors at b11126, ggml/src/ggml-cuda/ggml-cuda.cu:
-```cpp
-static const void * ggml_cuda_graph_get_key(ggml_cgraph * cgraph) {
-    return cgraph->nodes[0];
-}
+Before promotion: repeated same-process requests and multi-ubatch, 8K/80K/>=160K context, gfx1201 subject plus gfx1100 control, F16/quant KV, MTP acceptance when applicable, full-vocabulary logits/greedy parity against graphs-off, zero stale replay, expected-vs-observed graph work, bounded recaptures and memory, and <=1% stable-control regression. A demonstrated correctness repair may be adopted without speed gain; a performance-only change requires CI95-low >=3% end-to-end across independent paired sessions. Otherwise reject and leave upstream behavior unchanged. Do not overlap current Radiance attention/GDN, AllReduce, MoE, n-gram, prefill, QFP15 or PA44/PA49 work.
 
-static bool ggml_cuda_graph_update_required(ggml_backend_cuda_context * cuda_ctx, ggml_cgraph * cgraph) {
-    bool res = false;
+## References / provenance
 
-    const void * graph_key = ggml_cuda_graph_get_key(cgraph);
-    ggml_cuda_graph * graph = cuda_ctx->cuda_graph(graph_key);
-    ...
-```
-Design sketch (exact anchor/replacement must be re-verified against the FULL body of `ggml_cuda_graph_update_required` -- only its first lines are shown above; read the rest with `git -C work/upstream/llama.cpp.git show b11126:ggml/src/ggml-cuda/ggml-cuda.cu | sed -n '2595,2645p'` before writing the final patch.py):
-```cpp
-// add near the key function:
-static uint64_t ggml_cuda_graph_topology_fingerprint(ggml_cgraph * cgraph) {
-    uint64_t h = (uint64_t) cgraph->n_nodes;
-    for (int i = 0; i < cgraph->n_nodes; ++i) {
-        const ggml_tensor * t = cgraph->nodes[i];
-        if (t->op != GGML_OP_FLASH_ATTN_EXT) continue;
-        for (int d = 0; d < GGML_MAX_DIMS; ++d) h = h * 1000003 ^ (uint64_t) t->ne[d];
-    }
-    return h;
-}
-```
-followed by storing/comparing this alongside the cached graph in `ggml_cuda_graph_update_required` (exact insertion point TBD pending the full function body read above).
-Patch package sketch: `patches/12xx_hip_graph_fa_topology_recapture/patch.toml` (backend="hip", state="untested", experiment-contracts=["RD84-HIP-GRAPH-RECAPTURE"]).
-
-## Files
-
-ggml/src/ggml-cuda/ggml-cuda.cu; new instrumentation for step 1 (temporary, qualification-only, see PRBE71's ablation-knob convention); patches/12xx_hip_graph_fa_topology_recapture/{patch.toml,patch.py,SUMMARY.md}.
-
-## Validation
-
-PYTHONPATH=tools python -m bigcherry patch-lint; patch-rebase-check. Hardware (not run here): repeated R9700/gfx1201 100K+-context FA runs must not crash and must be output-identical to a graphs-disabled reference; stable-topology short-context runs must show no extra recapture events; PP/TG and recapture-event-count telemetry compared against PRBE66's bypass and against ungated baseline via python -m bigcherry.patch.validation_campaign.
-
-## Effort & Risk
-
-M; risk is fingerprint cost/collision and getting the exact insertion point wrong without reading the full update_required body first (explicitly flagged as a required pre-step, not assumed here).
-
-## Standards
-
-Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
-
-## Acceptance Criteria
-
-Promote over PRBE66 only when repeated long-context runs are robust, output-identical, and recapture cost is bounded while stable graphs retain their speedup.
-
-## Notes
-
-Supersedes: RD84
-Migration: capability-rebaseline-v3-2026-09
-Successor key: patching-rdna-boost-experiments-rd84
-
-2026-09-24 relevance at b11126: TODO confirmed with a real, verified gap -- `ggml_cuda_graph_get_key` returns only `cgraph->nodes[0]` (git show b11126:ggml/src/ggml-cuda/ggml-cuda.cu line 2591-2593), no shape/topology awareness at all, supporting the stale-key hypothesis as plausible root cause (still unconfirmed pending step 1's real reproduction). GPT design request: gateway rejected all submissions this session (VAL-AGW-025 / EXT-GPTAUTO-003); plan authored directly from verified source -- no GPT request id.
-
-2026-09-24 GPT review req_d55aed71224e43a8 applied: NOT-READY -- disproved 'no shape/topology awareness' premise (same finding as PRBE66); the proposed FA-only fingerprint duplicates and is weaker than the existing full node-property comparison in ggml_cuda_graph_update_required; narrowed to instrumenting and closing the uid-equality fast-path gap, converging with PRBE66 on one fix rather than two.
+- llama.cpp b11474/b11552: `ggml/src/ggml-cuda/ggml-cuda.cu`, `ggml/src/ggml-backend.cpp`, `ggml/src/ggml-backend-meta.cpp`, `ggml/src/ggml.c`.
+- https://github.com/ggml-org/llama.cpp/issues/24961 ; https://github.com/ggml-org/llama.cpp/issues/23579 ; https://github.com/ggml-org/llama.cpp/pull/29287 ; https://github.com/vllm-project/vllm/blob/main/vllm/v1/spec_decode/llm_base_proposer.py
+- PRBE66 (completed), PRBE67 history (2026-09-09 through 2026-10-07), QFN03/1302, QFP06/1304, RD73/1233, HI162, BCOP166. Earlier contradictory TODO/fingerprint steps remain in Git history, not as live instructions.
 
 ## Change Log
 
-- 2026-10-08 (triage): pending; Authoritative owner for the UID-fast-path vs node/source-properties repro shared with PRBE66. Do not add FA bypass or fingerprint before reproducing gfx1201 100K+ graph failure; 1302_cuda_graph_oom_evict (validated) addresses separate OOM lifetime.
-
-- 2026-09-09T10:58:14.009489+00:00 (created-by): Created by capability-rebaseline-v3
-- 2026-09-09T11:15:20.253208+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
+- 2026-10-12: Closed speculative UID-recapture work after tracing scheduler and Meta UID ownership; conditional re-entry only on new correlated evidence. No implementation or new benchmark claimed.
+- 2026-10-08: PRBE backlog triage left this pending with a UID-fast-path hypothesis.
+- 2026-10-07: Previous audit identified the same-UID early-return path but did not trace ordinary scheduler UID renewal.
+- 2026-09-24: Prior review disproved the blanket no-topology-comparison premise.
 
 ## Ledger-events
 
