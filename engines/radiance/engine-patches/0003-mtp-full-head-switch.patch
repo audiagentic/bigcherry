@@ -16,7 +16,7 @@ index dac7f12..62849e9 100644
      if (!head || !lm) return false;
 +    /* BigCherry: RAD_MTP_FULL_HEAD=1 drafts through the trunk head (int8 here) instead of the
 +     * 2-bit copy, trading draft-round traffic for acceptance. */
-+    if (const char* e = std::getenv("RAD_MTP_FULL_HEAD"); e && *e == 1) return false;
++    if (const char* e = std::getenv("RAD_MTP_FULL_HEAD"); e && std::atoi(e) != 0) return false;
      if (map_copy(b, head, lm) < 0) return false;
      RadEncoding e{};
      return weight_enc(b, head, &e) && e.n_planes > 0 && e.plane[0].dtype == RAD_U2;
