@@ -336,6 +336,7 @@ def _execute_materialize_phase(
     # real non-default patches_root deployment) would have its logical
     # patch-set resolution silently validated against the wrong catalog.
     source_plan = campaign_source.source_plan_for(
+        "llamacpp",
         cfg,
         spec.source_name,
         catalog=patchset.catalog("llamacpp", directory=context.patches_root),
