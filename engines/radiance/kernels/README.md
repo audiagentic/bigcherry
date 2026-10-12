@@ -690,6 +690,40 @@ Passes the selftest (10 of 10). Slower than the tiled form at M = 512 on every s
 tok/s against 1,399 / 1,475). Not adopted; `R3_BT` stays 0. Ablation of the tiled form at 16384 x 5120, M = 512
 (895 us): weight expansion as constants 785, activation widen as constants 889, no epilogue 881, no WMMA 437.
 
+## Qwen3.8-Flash-Next on two XTX, first runs (2026-10-12, runs `fn2`, `fnp1`, `tools/lab/radiance/flashnext-tp2.sh`)
+
+radiance's shipped container `qwen3.8-next-flash-fp8-iq4r-moe.rad` (113.6 GiB: 4-bit codebook experts `w4nl64a8h`,
+int8 trunk, MTP head, vision), radiance 1.3.0 (89cee7c), libr3, `--tp 2 --tp-wire wht6 --placement expert_tiered
+--host-pool-mib 32768 --gpu-headroom-mib 256 --kv-cache-dtype fp8`, context 32768, no speculation. (The container's
+card also passes `--expert-vs-cache-ratio 0.82`; 1.3.0 does not have that option.)
+
+- It loads and serves: 2,137 declared ops, none without a libr3 kernel; smoke replies correct; clean exit.
+- Placement a card: static weights 3.44 GiB, experts 19.00 GiB, KV 271 MiB; resident expert units a layer mean
+  118.7 of 512 (max 444); the n-gram table (47.68 GiB) is read from disk because it fits neither a card nor the
+  host pool beside the experts.
+- Decode 28.3 tok/s over 8 prompts (27.0 to 29.7). Prefill 2,575 tokens in 14.5 s and 7,176 in 29.2 s (about 178 and
+  245 tok/s); the bench client timed out, the figures are the server's ttft. During prefill the engine reports
+  synchronisations waiting over 5 s on `moe_gemm_q_kernel`.
+- For scale: radiance's own figures on two R9700 are 15.3 ms a decode step and about 6,500 tok/s at 26K
+  (`docs/MOE-W4.md`); BigCherry llama.cpp on this host does about 1,465 tok/s prefill on the IQ4_XS GGUF.
+
+Per-op profile of the same bench (`fnp1`, rank 0, 95.8 s of device and host-site time, decode-heavy):
+
+| op | share | calls | us a call | |
+|---|---|---|---|---|
+| `moe_gemm_q` | 40.9% (46.2% on rank 1) | 190,560 | 205 (232) | routed-expert GEMM, compatibility layer |
+| `embed_lookup_q` | 13.8% | 1,985 | 6,644, host site | the n-gram table read from disk every step |
+| `gemm_nt_q` | 11.4% | 428,760 | 25 | int8 trunk GEMMs |
+| `hc_read` | 11.3% | 192,545 | 56 | hyper-connection read |
+| `ar_gather_hc_write` | 7.5% | 95,280 | 75 | fused all-reduce + hyper-connection write |
+| `attn_paged_gate_quant` | 2.9% | 23,688 | 116 | |
+| `router_gemm_topk_scatter` | 2.3% | 95,088 | 23 | |
+| `qsa_score` | 1.8% | 23,820 | 72 | |
+
+Order of work this gives: a native gfx11 `moe_gemm_q` first (two fifths of everything); the n-gram table out of the
+disk tier (a configuration question: 47.68 GiB in RAM beside a smaller expert pool on a 91 GB host); then `hc_read`
+and `ar_gather_hc_write`.
+
 ## Other engines on the RX 7900 XTX (looked up 2026-10-10)
 
 - **llama.cpp, Vulkan backend.** llama.cpp issue #20934: on an RX 7900 XTX, Llama-2 7B Q4_0 decodes at 174.6 tok/s
