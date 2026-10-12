@@ -461,6 +461,23 @@ No bf16 container of the 27B fits the cards, so the references are quantised mod
   activation quantisation, not as a less accurate kernel. That fixture predates the native forms and has no MXFP4
   rows; those are checked by `r3_selftest` against the host reference, not against libr4d bit for bit.
 
+## The lossy two-card wire, measured (2026-10-12, runs `kld4-*`, `tools/lab/radiance/kld-tp-wire.sh`)
+
+`--tp-wire wht6` took two-card MXFP4 prefill from about 1,535 to 2,124 tok/s (above) with no quality number. KL mode
+over the same 42,761 positions, both rows against MXFP4 on the R9700 with libr4d:
+
+| two XTX, libr3 | KLD mean | median | p99 | max | top-1 | PPL against reference |
+|---|---|---|---|---|---|---|
+| exact wire (`kld4-xtx2-exact`) | 0.003665 | 0.001643 | 0.0275 | 1.78 | 96.79% | x0.9993 |
+| `wht6` (`kld4-xtx2-wht6`) | 0.004422 | 0.001980 | 0.0314 | 4.67 | 96.38% | x1.0003 |
+
+- The exact row repeats `kld3-xtx2` to the last digit, so the difference between the rows is the wire alone:
+  +0.0008 mean KLD, 0.4 points of top-1 agreement, perplexity unchanged (x1.0003 against x0.9993).
+- For scale, the 4-bit container is 0.051 from the 8-bit one (88.7% top-1): the wire costs about a sixtieth of what
+  the 4-bit quantisation already does. The largest single-position error is larger with the wire (4.67 against 1.78).
+- So `--tp-wire wht6` is the two-XTX serving default from here: +38% prefill, decode unchanged (46.7 against 46.8
+  tok/s; with the drafter 131.1 against 141.7 was one run each and is not established either way).
+
 ## Other engines on the RX 7900 XTX (looked up 2026-10-10)
 
 - **llama.cpp, Vulkan backend.** llama.cpp issue #20934: on an RX 7900 XTX, Llama-2 7B Q4_0 decodes at 174.6 tok/s
