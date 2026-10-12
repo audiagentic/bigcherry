@@ -44,3 +44,7 @@ against the BigCherry production build, whose standing against native is recorde
 - The flag only acts when the attention split leaves a device with a zero share; with attention on every device
   nothing changes.
 - Measured on Flash-Next only (the indexer cache exists for the Qwen4Exp family); gfx1100 + gfx1201 in one split.
+
+## 2026-10-12 source correction and ownership gate
+
+The historical "first step / indexer only" narrative above is retained as original promotion evidence. Current `patch.py` also contains a `GGML_OP_NONE` KQ-mask graph-input rule; `BIGCHERRY_META_SUBSET_MIRROR_INPUTS` defaults to 1 when subset mirroring is enabled. That rule currently reads process-global `bc_meta_attn_input_mask`, with no instance/reset/synchronization contract. This is a **conditional source-level risk**, not a reproduced GPU failure. MSM03's 2026-10-12 audit owns the existing-callback per-instance gate, A/B/A host fixture, graph-cache lifetime and exact-name admission. Do not infer new speedup or independent kpool/QSA coverage from the original 1,440 MiB result.
