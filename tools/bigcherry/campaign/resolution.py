@@ -957,6 +957,7 @@ def resolve_canonical_selection(
         kind = SELECTOR_KIND_FOCAL_OVERLAY
     else:
         lane = resolve_lane(
+            engine,
             source_name,
             cfg,
             catalog,
@@ -968,6 +969,7 @@ def resolve_canonical_selection(
 
     return CanonicalSelection(
         identity=SelectorIdentity(
+            engine=engine,
             selector_kind=kind,
             selector_name=selector_name_for(
                 kind,
