@@ -809,6 +809,10 @@ are read over the link by the kernel, or swapped in by the heat engine.
   arithmetic roof, so a native form has room as well.
 - `R3_HC_NATIVE=1` (native E4M3 decode for `hc_read`): 58.2 -> 50.7 us a call, decode 29.2 -> 29.7 tok/s, inside the
   start-to-start spread; left off.
+- `R3_MOE_NATIVE=1` (full 16-code rows and the accumulator kept in gfx11 form through a scale group, run `fnmoe1`):
+  `moe_gemm_q` 187.5 -> 175.5 us a call, decode 29.8 -> 30.9 tok/s, prefill 160.9 / 330.4 -> 205.3 / 373.4 tok/s on
+  one start an arm - the same size as the spread between starts of one configuration (330 to 411 at 7.2K). A 6% cut
+  of the call is what an inner-loop change can give while most of the call is the link; left off until repeated.
 
 What follows: the experts off the two cards should be computed where they can be resident (the R9700, 30 GiB, then
 the 6900 XT), with only activations and results crossing host memory - about 5 MiB each way for a 2048-token chunk
