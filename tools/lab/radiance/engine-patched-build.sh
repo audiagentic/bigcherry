@@ -16,5 +16,6 @@ for p in engines/radiance/engine-patches/*.patch; do
 done
 args=$(grep -E "^(CMAKE_HIP_ARCHITECTURES|RAD_GPU_TARGETS|CMAKE_PREFIX_PATH|CMAKE_HIP_COMPILER|CMAKE_CXX_COMPILER|CMAKE_C_COMPILER):" "$src/build/CMakeCache.txt" | sed -E 's/^([A-Z_]+):[A-Z]+=(.*)$/-D\1=\2/')
 cmake -S "$out" -B "$out/build" -G Ninja $args > "$out/configure.log" 2>&1 || { echo "ENGINE_PATCH_STOP configure"; tail -5 "$out/configure.log"; exit 1; }
-cmake --build "$out/build" -j20 > "$out/build.log" 2>&1 || { echo "ENGINE_PATCH_STOP build"; grep -E "error" "$out/build.log" | head -5; exit 1; }
+# the engine and its tools; the unit tests are not needed to serve and arch_test does not link the patched core
+cmake --build "$out/build" -j20 --target radiance rad-info rad-kbench rad-tune > "$out/build.log" 2>&1 || { echo "ENGINE_PATCH_STOP build"; grep -E "error" "$out/build.log" | head -5; exit 1; }
 echo "ENGINE_PATCHED_OK $out/build/bin/radiance"
