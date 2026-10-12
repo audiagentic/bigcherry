@@ -489,6 +489,56 @@ __device__ __forceinline__ r3_v16h r3_pair8_f16_native(r3_u4 own, unsigned lane)
     return __builtin_bit_cast(r3_v16h, row);
 }
 
+// Convert the gfx12 accumulator view at a scalar-use/memory boundary back to the native
+// gfx11 C layout. This is the inverse of r3_acc_native_to_gfx12 and costs four partner
+// moves per lane once per WMMA chain, rather than twelve around every WMMA.
+template <class C>
+__device__ __forceinline__ r3_v8f r3_acc_gfx12_to_native(C acc) {
+    static_assert(sizeof(C) == 32, "accumulator: 8 x f32");
+    const r3_v8f x = __builtin_bit_cast(r3_v8f, acc);
+    const unsigned lane = r3_lane(), partner = lane ^ 16u;
+    const bool hi = (lane >> 4) != 0;
+    r3_v8f out;
+#pragma unroll
+    for (int i = 0; i < 4; ++i) {
+        const int e = 2 * i + (hi ? 1 : 0);
+        const float peer = __uint_as_float(r3_from_lane(partner, __float_as_uint(x[e])));
+        out[i]     = hi ? peer : x[e];
+        out[4 + i] = hi ? x[e] : peer;
+    }
+    return out;
+}
+
+// GDN's existing rowP/rowGo/ROWO helpers already advance a gfx12 lane by 4*(lane>>4)
+// bf16 values. Back that half-row offset out and load the complete 16-value gfx11 row.
+__device__ __forceinline__ r3_v16bf r3_gdn_fragP_native(const unsigned short* p, unsigned lane) {
+    return r3_ld16_bf16(p - 4u * (lane >> 4));
+}
+__device__ __forceinline__ r3_v16bf r3_gdn_fragGo_native(
+        const unsigned short* base, unsigned off, unsigned lane) {
+    return r3_ld16_bf16(base + off - 4u * (lane >> 4));
+}
+__device__ __forceinline__ r3_v16bf r3_gdn_fragO_native(
+        const char* base, unsigned off, unsigned lane) {
+    const unsigned short* p = reinterpret_cast<const unsigned short*>(base + off);
+    return r3_ld16_bf16(p - 4u * (lane >> 4));
+}
+
+// Transposed K in the state update is the sole source that cannot be a wide row load.
+// gfx12 fetched two runs of four; gfx11 needs all 16 contraction values for this row.
+__device__ __forceinline__ r3_v16bf r3_gdn_fragT_native(
+        const unsigned short* src, int pitch, int base, int kbase, unsigned lane) {
+    const int idx = base + (lane & 15u);
+    r3_u8 w;
+#pragma unroll
+    for (int e = 0; e < 8; ++e) {
+        const unsigned lo = src[(size_t)(kbase + 2 * e) * pitch + idx];
+        const unsigned hi = src[(size_t)(kbase + 2 * e + 1) * pitch + idx];
+        w[e] = lo | (hi << 16);
+    }
+    return __builtin_bit_cast(r3_v16bf, w);
+}
+
 // Row pitch in bytes of an operand staged in shared memory as halves, FK values a row. A fragment read is 16 lanes
 // x 32 bytes over consecutive rows; 2 FK is a multiple of 128 bytes for every FK the kernel uses, so 32 more bytes
 // step each row 8 words round the 32 banks and the read is four full bank cycles with no lane waiting on another.

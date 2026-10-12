@@ -1,0 +1,643 @@
+# Native gfx11 GDN chunk scan for libr3.
+//
+// Radiance's recurrence, shared-memory geometry, masking and state representation are unchanged.
+// The rewrite changes only WMMA ownership on gfx11: full 16-value bf16 rows feed native WMMA,
+// accumulators stay in gfx11 layout across each contraction loop, and are converted only where
+// scalar code or the persistent state/output layout needs gfx12 ordering. This removes the
+// compatibility layer's two operand lane exchanges plus accumulator exchange from every WMMA.
+// R3_GDN_NATIVE=1 selects the native instantiation; default libr3 remains compatibility.
+//
+@@ find 1
+#include <hip/hip_runtime.h>
+#include "r4d.h"
+@@ replace
+#include <hip/hip_runtime.h>
+#include <cstdlib>
+#include "r4d.h"
+@@ end
+
+@@ find 1
+template <int SDT, bool H0 = true, bool HT = true>
+__global__ __launch_bounds__(NTHR) void r4d_gdn_chunk_scan_kernel(
+@@ replace
+template <int SDT, bool H0 = true, bool HT = true, bool R3N = false>
+__global__ __launch_bounds__(NTHR) void r4d_gdn_chunk_scan_kernel(
+@@ end
+
+@@ find 1
+#if APRE
+    v8bf apre[BT / 16];
+    {
+#if GO
+      const unsigned aoh = rowGo((unsigned)ars, mt * 16, lim, lane);
+#pragma unroll
+      for (int sk = 0; sk < BT / 16; ++sk) apre[sk] = fragGo(ag, aoh + sk * 16);
+#else
+      const unsigned short* pah = rowG(ag, ars, mt * 16, lim, lane);
+#pragma unroll
+      for (int sk = 0; sk < BT / 16; ++sk) apre[sk] = fragP(pah + sk * 16);
+#endif
+    }
+#endif
+@@ replace
+#if APRE
+    v8bf apre[BT / 16];
+    r3_v16bf apreN[BT / 16];
+    {
+#if GO
+      const unsigned aoh = rowGo((unsigned)ars, mt * 16, lim, lane);
+#pragma unroll
+      for (int sk = 0; sk < BT / 16; ++sk) {
+        if constexpr (R3N) apreN[sk] = r3_gdn_fragGo_native(ag, aoh + sk * 16, lane);
+        else               apre[sk]  = fragGo(ag, aoh + sk * 16);
+      }
+#else
+      const unsigned short* pah = rowG(ag, ars, mt * 16, lim, lane);
+#pragma unroll
+      for (int sk = 0; sk < BT / 16; ++sk) {
+        if constexpr (R3N) apreN[sk] = r3_gdn_fragP_native(pah + sk * 16, lane);
+        else               apre[sk]  = fragP(pah + sk * 16);
+      }
+#endif
+    }
+#endif
+@@ end
+
+@@ find 1
+#define pSnf(i, ko) fragO(sb, oSn[i] + (ko) * 2u)
+#define pkmf(ko)    fragO(sb, okm + (ko) * 2u)
+#define pknf(i, ko) fragO(sb, okn[i] + (ko) * 2u)
+#else
+@@ replace
+#define pSnf(i, ko) fragO(sb, oSn[i] + (ko) * 2u)
+#define pkmf(ko)    fragO(sb, okm + (ko) * 2u)
+#define pknf(i, ko) fragO(sb, okn[i] + (ko) * 2u)
+#define pSnN(i, ko) r3_gdn_fragO_native(sb, oSn[i] + (ko) * 2u, lane)
+#define pkmN(ko)    r3_gdn_fragO_native(sb, okm + (ko) * 2u, lane)
+#define pknN(i, ko) r3_gdn_fragO_native(sb, okn[i] + (ko) * 2u, lane)
+#else
+@@ end
+
+@@ find 1
+#define pSnf(i, ko) fragP(pSn[i] + (ko))
+#define pkmf(ko)    fragP(pkm + (ko))
+#define pknf(i, ko) fragP(pkn[i] + (ko))
+#endif
+#if GO
+@@ replace
+#define pSnf(i, ko) fragP(pSn[i] + (ko))
+#define pkmf(ko)    fragP(pkm + (ko))
+#define pknf(i, ko) fragP(pkn[i] + (ko))
+#define pSnN(i, ko) r3_gdn_fragP_native(pSn[i] + (ko), lane)
+#define pkmN(ko)    r3_gdn_fragP_native(pkm + (ko), lane)
+#define pknN(i, ko) r3_gdn_fragP_native(pkn[i] + (ko), lane)
+#endif
+#if GO
+@@ end
+
+@@ find 1
+#define pqf(ko) fragGo(qg, qo + (ko))
+#else
+@@ replace
+#define pqf(ko) fragGo(qg, qo + (ko))
+#define pqN(ko) r3_gdn_fragGo_native(qg, qo + (ko), lane)
+#else
+@@ end
+
+@@ find 1
+#define pqf(ko) fragP(pq + (ko))
+#endif
+#pragma unroll
+      for (int sk = 0; sk < KD / 16; ++sk) {
+        const int ko = sk * 16;
+        v8bf ak = pkmf(ko), aq = pqf(ko);
+#if PFIN && PFV == 4
+        if (sk < NKB + NVB) PFONE(sk);
+#endif
+#pragma unroll
+        for (int i = 0; i < NTV; ++i) {
+          v8bf b = pSnf(i, ko);
+#if ABL != 5
+          u[i] = mma(ak, b, u[i]);
+#endif
+#if ABL != 6
+          O[i] = mma(b, aq, O[i]);                     // O^T: m = v-tile, n = token-tile
+#endif
+#if ABL != 4
+          if (doP[i]) p[i] = mma(pknf(i, ko), aq, p[i]);   // P^T: m = j
+#endif
+        }
+      }
+@@ replace
+#define pqf(ko) fragP(pq + (ko))
+#define pqN(ko) r3_gdn_fragP_native(pq + (ko), lane)
+#endif
+#pragma unroll
+      for (int sk = 0; sk < KD / 16; ++sk) {
+        const int ko = sk * 16;
+#if PFIN && PFV == 4
+        if (sk < NKB + NVB) PFONE(sk);
+#endif
+        if constexpr (R3N) {
+          const r3_v16bf ak = pkmN(ko), aq = pqN(ko);
+#pragma unroll
+          for (int i = 0; i < NTV; ++i) {
+            const r3_v16bf b = pSnN(i, ko);
+#if ABL != 5
+            u[i] = r3_wmma_bf16_native(ak, b, u[i]);
+#endif
+#if ABL != 6
+            O[i] = r3_wmma_bf16_native(b, aq, O[i]);
+#endif
+#if ABL != 4
+            if (doP[i]) p[i] = r3_wmma_bf16_native(pknN(i, ko), aq, p[i]);
+#endif
+          }
+        } else {
+          const v8bf ak = pkmf(ko), aq = pqf(ko);
+#pragma unroll
+          for (int i = 0; i < NTV; ++i) {
+            const v8bf b = pSnf(i, ko);
+#if ABL != 5
+            u[i] = mma(ak, b, u[i]);
+#endif
+#if ABL != 6
+            O[i] = mma(b, aq, O[i]);                     // O^T: m = v-tile, n = token-tile
+#endif
+#if ABL != 4
+            if (doP[i]) p[i] = mma(pknf(i, ko), aq, p[i]);   // P^T: m = j
+#endif
+          }
+        }
+      }
+      if constexpr (R3N) {
+#pragma unroll
+        for (int i = 0; i < NTV; ++i) {
+          u[i] = r3_acc_native_to_gfx12(u[i]);
+          O[i] = r3_acc_native_to_gfx12(O[i]);
+          p[i] = r3_acc_native_to_gfx12(p[i]);
+        }
+      }
+@@ end
+
+@@ find 1
+#if SCHED
+      // Ask for one k step's LDS reads to issue against the previous step's WMMAs.
+      // Per step: 5 LDS fragments = 10 ds_read2_b32, 1 global q fragment = 2 loads,
+      // 6 WMMA. Without this the scheduler sinks each read onto its consumer and
+      // every WMMA is preceded by a full s_wait_dscnt 0x0 drain.
+#if SCHED == 4
+      // Explicit one-step software pipeline: ask for step i+1's operand reads to be
+      // issued BEFORE step i's WMMAs, so the wait in front of each WMMA group is for
+      // loads that have had a full WMMA group to land.
+      __builtin_amdgcn_sched_group_barrier(0x020, 2, 0);
+      __builtin_amdgcn_sched_group_barrier(0x100, MLDS, 0);
+#pragma unroll
+      for (int i = 0; i < KD / 16 - 1; ++i) {
+        __builtin_amdgcn_sched_group_barrier(0x008, MWMA, 0);  // WMMA step i
+        __builtin_amdgcn_sched_group_barrier(0x020, 2, 0);     // reads step i+1
+        __builtin_amdgcn_sched_group_barrier(0x100, MLDS, 0);
+      }
+      __builtin_amdgcn_sched_group_barrier(0x008, MWMA, 0);
+#elif SCHED == 5 || SCHED == 6 || SCHED == 7
+      // GRAN k steps per group. Coarser is better here: the group barrier PINS the
+      // order at every boundary, so a per-step pattern over-constrains a loop the
+      // scheduler can already interleave -- it just needs to be told not to sink every
+      // read onto its consumer.
+#if SCHED == 5
+#define GRAN 2
+#elif SCHED == 6
+#define GRAN 4
+#else
+#define GRAN 8
+#endif
+#pragma unroll
+      for (int i = 0; i < KD / (16 * GRAN); ++i) {
+#if NOVM == 0
+        __builtin_amdgcn_sched_group_barrier(0x020, 2 * GRAN, SIDF);
+#endif
+        __builtin_amdgcn_sched_group_barrier(0x100, MLDS * GRAN, SIDF);
+        __builtin_amdgcn_sched_group_barrier(0x008, MWMA * GRAN, SIDF);
+      }
+#else
+#pragma unroll
+      for (int i = 0; i < KD / 16; ++i) {
+#if SCHED == 3                       // finer: rotate reads through the WMMA stream
+        _Pragma("unroll") for (int j = 0; j < 3; ++j) {
+          __builtin_amdgcn_sched_group_barrier(0x100, MLDS / 2, 0);
+          __builtin_amdgcn_sched_group_barrier(0x008, MWMA / 2, 0);
+        }
+#else
+        __builtin_amdgcn_sched_group_barrier(0x020, 2, 0);      // VMEM read (q)
+        __builtin_amdgcn_sched_group_barrier(0x100, MLDS, 0);  // DS read
+        __builtin_amdgcn_sched_group_barrier(0x008, MWMA, 0);  // WMMA
+#endif
+      }
+#endif
+#endif
+@@ replace
+#if SCHED
+      if constexpr (!R3N) {
+      // Ask for one k step's LDS reads to issue against the previous step's WMMAs.
+      // Per step: 5 LDS fragments = 10 ds_read2_b32, 1 global q fragment = 2 loads,
+      // 6 WMMA. Without this the scheduler sinks each read onto its consumer and
+      // every WMMA is preceded by a full s_wait_dscnt 0x0 drain.
+#if SCHED == 4
+      // Explicit one-step software pipeline: ask for step i+1's operand reads to be
+      // issued BEFORE step i's WMMAs, so the wait in front of each WMMA group is for
+      // loads that have had a full WMMA group to land.
+      __builtin_amdgcn_sched_group_barrier(0x020, 2, 0);
+      __builtin_amdgcn_sched_group_barrier(0x100, MLDS, 0);
+#pragma unroll
+      for (int i = 0; i < KD / 16 - 1; ++i) {
+        __builtin_amdgcn_sched_group_barrier(0x008, MWMA, 0);  // WMMA step i
+        __builtin_amdgcn_sched_group_barrier(0x020, 2, 0);     // reads step i+1
+        __builtin_amdgcn_sched_group_barrier(0x100, MLDS, 0);
+      }
+      __builtin_amdgcn_sched_group_barrier(0x008, MWMA, 0);
+#elif SCHED == 5 || SCHED == 6 || SCHED == 7
+      // GRAN k steps per group. Coarser is better here: the group barrier PINS the
+      // order at every boundary, so a per-step pattern over-constrains a loop the
+      // scheduler can already interleave -- it just needs to be told not to sink every
+      // read onto its consumer.
+#if SCHED == 5
+#define GRAN 2
+#elif SCHED == 6
+#define GRAN 4
+#else
+#define GRAN 8
+#endif
+#pragma unroll
+      for (int i = 0; i < KD / (16 * GRAN); ++i) {
+#if NOVM == 0
+        __builtin_amdgcn_sched_group_barrier(0x020, 2 * GRAN, SIDF);
+#endif
+        __builtin_amdgcn_sched_group_barrier(0x100, MLDS * GRAN, SIDF);
+        __builtin_amdgcn_sched_group_barrier(0x008, MWMA * GRAN, SIDF);
+      }
+#else
+#pragma unroll
+      for (int i = 0; i < KD / 16; ++i) {
+#if SCHED == 3                       // finer: rotate reads through the WMMA stream
+        _Pragma("unroll") for (int j = 0; j < 3; ++j) {
+          __builtin_amdgcn_sched_group_barrier(0x100, MLDS / 2, 0);
+          __builtin_amdgcn_sched_group_barrier(0x008, MWMA / 2, 0);
+        }
+#else
+        __builtin_amdgcn_sched_group_barrier(0x020, 2, 0);      // VMEM read (q)
+        __builtin_amdgcn_sched_group_barrier(0x100, MLDS, 0);  // DS read
+        __builtin_amdgcn_sched_group_barrier(0x008, MWMA, 0);  // WMMA
+#endif
+      }
+#endif
+      }
+#endif
+@@ end
+
+@@ find 1
+#if SCHED >= 2                  // per group: SB steps x (1 global A frag, NTV LDS, NTV WMMA)
+#pragma unroll
+      for (int i = 0; i < BT / (16 * SB); ++i) {
+#if NOVM == 0 && APRE == 0
+        __builtin_amdgcn_sched_group_barrier(0x020, 2 * SB, SIDV);
+#endif
+        __builtin_amdgcn_sched_group_barrier(0x100, NTV * SB, SIDV);
+        __builtin_amdgcn_sched_group_barrier(0x008, NTV * SB, SIDV);
+      }
+#endif
+@@ replace
+#if SCHED >= 2                  // per group: SB steps x (1 global A frag, NTV LDS, NTV WMMA)
+      if constexpr (!R3N) {
+#pragma unroll
+      for (int i = 0; i < BT / (16 * SB); ++i) {
+#if NOVM == 0 && APRE == 0
+        __builtin_amdgcn_sched_group_barrier(0x020, 2 * SB, SIDV);
+#endif
+        __builtin_amdgcn_sched_group_barrier(0x100, NTV * SB, SIDV);
+        __builtin_amdgcn_sched_group_barrier(0x008, NTV * SB, SIDV);
+      }
+      }
+#endif
+@@ end
+
+@@ find 1
+#if SCHED >= 2                  // per group: SB steps x (1 + NTV LDS frags, NTV WMMA)
+#pragma unroll
+      for (int i = 0; i < BT / (16 * SB); ++i) {
+        __builtin_amdgcn_sched_group_barrier(0x100, (1 + NTV) * SB, SIDO);
+        __builtin_amdgcn_sched_group_barrier(0x008, NTV * SB, SIDO);
+      }
+#endif
+@@ replace
+#if SCHED >= 2                  // per group: SB steps x (1 + NTV LDS frags, NTV WMMA)
+      if constexpr (!R3N) {
+#pragma unroll
+      for (int i = 0; i < BT / (16 * SB); ++i) {
+        __builtin_amdgcn_sched_group_barrier(0x100, (1 + NTV) * SB, SIDO);
+        __builtin_amdgcn_sched_group_barrier(0x008, NTV * SB, SIDO);
+      }
+      }
+#endif
+@@ end
+
+@@ find 1
+#if SCHED >= 2   // per group: SS steps x (SKT fragT = 8 scalar reads each + SVT fragP, NST WMMA)
+#pragma unroll
+      for (int i = 0; i < BT / (16 * SS); ++i) {
+        __builtin_amdgcn_sched_group_barrier(0x100, (8 * SKT + SVT) * SS, SIDS);
+        __builtin_amdgcn_sched_group_barrier(0x008, NST * SS, SIDS);
+      }
+#endif
+@@ replace
+#if SCHED >= 2   // per group: SS steps x (SKT fragT = 8 scalar reads each + SVT fragP, NST WMMA)
+      if constexpr (!R3N) {
+#pragma unroll
+      for (int i = 0; i < BT / (16 * SS); ++i) {
+        __builtin_amdgcn_sched_group_barrier(0x100, (8 * SKT + SVT) * SS, SIDS);
+        __builtin_amdgcn_sched_group_barrier(0x008, NST * SS, SIDS);
+      }
+      }
+#endif
+@@ end
+
+@@ find 1
+#if APRE
+#define paf(ko) apre[(ko) / 16]
+#elif GO
+@@ replace
+#if APRE
+#define paf(ko)  apre[(ko) / 16]
+#define pafN(ko) apreN[(ko) / 16]
+#elif GO
+@@ end
+
+@@ find 1
+#define paf(ko) fragGo(ag, ao + (ko))
+#else
+@@ replace
+#define paf(ko)  fragGo(ag, ao + (ko))
+#define pafN(ko) r3_gdn_fragGo_native(ag, ao + (ko), lane)
+#else
+@@ end
+
+@@ find 1
+#define paf(ko) fragP(pa + (ko))
+#endif
+@@ replace
+#define paf(ko)  fragP(pa + (ko))
+#define pafN(ko) r3_gdn_fragP_native(pa + (ko), lane)
+#endif
+@@ end
+
+@@ find 1
+#define pwnf(i, ko) fragO(sbase, own[i] + (ko) * 2u)
+#else
+@@ replace
+#define pwnf(i, ko) fragO(sbase, own[i] + (ko) * 2u)
+#define pwnN(i, ko) r3_gdn_fragO_native(sbase, own[i] + (ko) * 2u, lane)
+#else
+@@ end
+
+@@ find 1
+#define pwnf(i, ko) fragP(pwn[i] + (ko))
+#endif
+#pragma unroll
+      for (int sk = 0; sk < BT / 16; ++sk) {
+        if (TRIL && sk > mt) break;         // A is unit lower triangular
+        const int ko = sk * 16;
+        v8bf a = paf(ko);
+#if ABL != 3
+#pragma unroll
+        for (int i = 0; i < NTV; ++i) d[i] = mma(a, pwnf(i, ko), d[i]);
+#endif
+      }
+@@ replace
+#define pwnf(i, ko) fragP(pwn[i] + (ko))
+#define pwnN(i, ko) r3_gdn_fragP_native(pwn[i] + (ko), lane)
+#endif
+#pragma unroll
+      for (int sk = 0; sk < BT / 16; ++sk) {
+        if (TRIL && sk > mt) break;         // A is unit lower triangular
+        const int ko = sk * 16;
+#if ABL != 3
+        if constexpr (R3N) {
+          const r3_v16bf a = pafN(ko);
+#pragma unroll
+          for (int i = 0; i < NTV; ++i) d[i] = r3_wmma_bf16_native(a, pwnN(i, ko), d[i]);
+        } else {
+          const v8bf a = paf(ko);
+#pragma unroll
+          for (int i = 0; i < NTV; ++i) d[i] = mma(a, pwnf(i, ko), d[i]);
+        }
+#endif
+      }
+      if constexpr (R3N) {
+#pragma unroll
+        for (int i = 0; i < NTV; ++i) d[i] = r3_acc_native_to_gfx12(d[i]);
+      }
+@@ end
+
+@@ find 1
+#define pAf(ko)     fragO(sbase, oA + (ko) * 2u)
+#define pdnf(i, ko) fragO(sbase, odn[i] + (ko) * 2u)
+#else
+@@ replace
+#define pAf(ko)      fragO(sbase, oA + (ko) * 2u)
+#define pdnf(i, ko)  fragO(sbase, odn[i] + (ko) * 2u)
+#define pAN(ko)      r3_gdn_fragO_native(sbase, oA + (ko) * 2u, lane)
+#define pdnN(i, ko)  r3_gdn_fragO_native(sbase, odn[i] + (ko) * 2u, lane)
+#else
+@@ end
+
+@@ find 1
+#define pAf(ko)     fragP(pA + (ko))
+#define pdnf(i, ko) fragP(pdn[i] + (ko))
+#endif
+#pragma unroll
+      for (int sk = 0; sk < BT / 16; ++sk) {
+        if (TRIL && sk > mt) break;         // sA is masked to lower triangular
+        const int ko = sk * 16;
+        v8bf b = pAf(ko);
+#if ABL != 2
+#pragma unroll
+        for (int i = 0; i < NTV; ++i) O[i] = mma(pdnf(i, ko), b, O[i]);
+#endif
+      }
+@@ replace
+#define pAf(ko)      fragP(pA + (ko))
+#define pdnf(i, ko)  fragP(pdn[i] + (ko))
+#define pAN(ko)      r3_gdn_fragP_native(pA + (ko), lane)
+#define pdnN(i, ko)  r3_gdn_fragP_native(pdn[i] + (ko), lane)
+#endif
+      if constexpr (R3N) {
+#pragma unroll
+        for (int i = 0; i < NTV; ++i) O[i] = r3_acc_gfx12_to_native(O[i]);
+      }
+#pragma unroll
+      for (int sk = 0; sk < BT / 16; ++sk) {
+        if (TRIL && sk > mt) break;         // sA is masked to lower triangular
+        const int ko = sk * 16;
+#if ABL != 2
+        if constexpr (R3N) {
+          const r3_v16bf b = pAN(ko);
+#pragma unroll
+          for (int i = 0; i < NTV; ++i) O[i] = r3_wmma_bf16_native(pdnN(i, ko), b, O[i]);
+        } else {
+          const v8bf b = pAf(ko);
+#pragma unroll
+          for (int i = 0; i < NTV; ++i) O[i] = mma(pdnf(i, ko), b, O[i]);
+        }
+#endif
+      }
+      if constexpr (R3N) {
+#pragma unroll
+        for (int i = 0; i < NTV; ++i) O[i] = r3_acc_native_to_gfx12(O[i]);
+      }
+@@ end
+
+@@ find 1
+      for (int e = 0; e < 8; ++e) St[t][e] *= ec;
+#if LDSO2
+@@ replace
+      for (int e = 0; e < 8; ++e) St[t][e] *= ec;
+    if constexpr (R3N) {
+#pragma unroll
+      for (int t = 0; t < NST; ++t) St[t] = r3_acc_gfx12_to_native(St[t]);
+    }
+#if LDSO2
+@@ end
+
+@@ find 1
+#define pvnf(j, ko) fragO(sbase, ovn[j] + (ko) * 2u)
+#else
+@@ replace
+#define pvnf(j, ko) fragO(sbase, ovn[j] + (ko) * 2u)
+#define pvnN(j, ko) r3_gdn_fragO_native(sbase, ovn[j] + (ko) * 2u, lane)
+#else
+@@ end
+
+@@ find 1
+#define pvnf(j, ko) fragP(pvn[j] + (ko))
+#endif
+#pragma unroll
+      for (int sk = 0; sk < BT / 16; ++sk) {
+        v8bf bv[SVT];
+#pragma unroll
+        for (int j = 0; j < SVT; ++j) bv[j] = pvnf(j, sk * 16);
+#pragma unroll
+        for (int ki = 0; ki < SKT; ++ki) {
+#if ABL == 7
+          v8bf ak = fragP(rowP(&s.k[0][0], KP, (kt0 + ki) * 16, lane) + sk * 16);
+#else
+          v8bf ak = fragT(&s.k[0][0], KP, (kt0 + ki) * 16, sk * 16, lane);  // K^T: m = k-dim
+#endif
+#if ABL != 1
+#pragma unroll
+          for (int j = 0; j < SVT; ++j)
+            St[ki * SVT + j] = mma(ak, bv[j], St[ki * SVT + j]);
+#else
+          (void)ak;
+#endif
+        }
+#if ABL == 1
+#pragma unroll
+        for (int j = 0; j < SVT; ++j) (void)bv[j];
+#endif
+      }
+@@ replace
+#define pvnf(j, ko) fragP(pvn[j] + (ko))
+#define pvnN(j, ko) r3_gdn_fragP_native(pvn[j] + (ko), lane)
+#endif
+#pragma unroll
+      for (int sk = 0; sk < BT / 16; ++sk) {
+        if constexpr (R3N) {
+          r3_v16bf bv[SVT];
+#pragma unroll
+          for (int j = 0; j < SVT; ++j) bv[j] = pvnN(j, sk * 16);
+#pragma unroll
+          for (int ki = 0; ki < SKT; ++ki) {
+#if ABL == 7
+            const unsigned short* kp = rowP(&s.k[0][0], KP, (kt0 + ki) * 16, lane) + sk * 16;
+            const r3_v16bf ak = r3_gdn_fragP_native(kp, lane);
+#else
+            const r3_v16bf ak = r3_gdn_fragT_native(
+                &s.k[0][0], KP, (kt0 + ki) * 16, sk * 16, lane);
+#endif
+#if ABL != 1
+#pragma unroll
+            for (int j = 0; j < SVT; ++j)
+              St[ki * SVT + j] = r3_wmma_bf16_native(ak, bv[j], St[ki * SVT + j]);
+#else
+            (void)ak;
+#endif
+          }
+        } else {
+          v8bf bv[SVT];
+#pragma unroll
+          for (int j = 0; j < SVT; ++j) bv[j] = pvnf(j, sk * 16);
+#pragma unroll
+          for (int ki = 0; ki < SKT; ++ki) {
+#if ABL == 7
+            v8bf ak = fragP(rowP(&s.k[0][0], KP, (kt0 + ki) * 16, lane) + sk * 16);
+#else
+            v8bf ak = fragT(&s.k[0][0], KP, (kt0 + ki) * 16, sk * 16, lane);
+#endif
+#if ABL != 1
+#pragma unroll
+            for (int j = 0; j < SVT; ++j)
+              St[ki * SVT + j] = mma(ak, bv[j], St[ki * SVT + j]);
+#else
+            (void)ak;
+#endif
+          }
+#if ABL == 1
+#pragma unroll
+          for (int j = 0; j < SVT; ++j) (void)bv[j];
+#endif
+        }
+      }
+      if constexpr (R3N) {
+#pragma unroll
+        for (int t = 0; t < NST; ++t) St[t] = r3_acc_native_to_gfx12(St[t]);
+      }
+@@ end
+
+@@ find 1
+#define CS_LAUNCH(SDTC, H0C, HTC)                                                          \
+  hipLaunchKernelGGL((r4d_gdn_chunk_scan_kernel<SDTC, H0C, HTC>), grid, blk, 0,            \
+      (hipStream_t)stream,                                                                 \
+      (const unsigned short*)q, (const unsigned short*)k, (const unsigned short*)v,        \
+      (const unsigned short*)A, (const float*)g, (const float*)beta,                       \
+      (const cs_state<SDTC>::T*)h0, (unsigned short*)o, (cs_state<SDTC>::T*)ht,            \
+      (const int*)cu, (const int*)ssm_state_indices, (indices_stride > 0 ? indices_stride : 1),  \
+      st_slot, st_head, H, Hg, scale)
+#define CS_PICK(SDTC)                                                                      \
+  do { if (h0 && ht) CS_LAUNCH(SDTC, true, true);                                          \
+       else if (h0)  CS_LAUNCH(SDTC, true, false);                                         \
+       else if (ht)  CS_LAUNCH(SDTC, false, true);                                         \
+       else          CS_LAUNCH(SDTC, false, false); } while (0)
+  if (state_fp16) CS_PICK(1); else CS_PICK(0);
+#undef CS_PICK
+#undef CS_LAUNCH
+@@ replace
+#define CS_LAUNCH(SDTC, H0C, HTC, R3NC)                                                   \
+  hipLaunchKernelGGL((r4d_gdn_chunk_scan_kernel<SDTC, H0C, HTC, R3NC>), grid, blk, 0,      \
+      (hipStream_t)stream,                                                                 \
+      (const unsigned short*)q, (const unsigned short*)k, (const unsigned short*)v,        \
+      (const unsigned short*)A, (const float*)g, (const float*)beta,                       \
+      (const cs_state<SDTC>::T*)h0, (unsigned short*)o, (cs_state<SDTC>::T*)ht,            \
+      (const int*)cu, (const int*)ssm_state_indices, (indices_stride > 0 ? indices_stride : 1), \
+      st_slot, st_head, H, Hg, scale)
+#define CS_PICK(SDTC, R3NC)                                                                \
+  do { if (h0 && ht) CS_LAUNCH(SDTC, true, true, R3NC);                                    \
+       else if (h0)  CS_LAUNCH(SDTC, true, false, R3NC);                                   \
+       else if (ht)  CS_LAUNCH(SDTC, false, true, R3NC);                                   \
+       else          CS_LAUNCH(SDTC, false, false, R3NC); } while (0)
+  const char* r3n = std::getenv("R3_GDN_NATIVE");
+  const bool use_r3n = r3n && *r3n && *r3n != '0';
+  if (state_fp16) { if (use_r3n) CS_PICK(1, true); else CS_PICK(1, false); }
+  else            { if (use_r3n) CS_PICK(0, true); else CS_PICK(0, false); }
+#undef CS_PICK
+#undef CS_LAUNCH
+@@ end
+
