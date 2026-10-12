@@ -834,6 +834,38 @@ What follows: the experts off the two cards should be computed where they can be
 the 6900 XT), with only activations and results crossing host memory - about 5 MiB each way for a 2048-token chunk
 against several hundred MiB of weights a layer - while the hot set stays on the XTX pair as now.
 
+## Flash-Next: the n-gram table on the R9700 and in host memory (2026-10-12, run `fnng7`, `tools/lab/radiance/fn-ngram-dev.sh`)
+
+`R3_NGRAM_DEV=2` (default off): libr3 offers the host kernel for `embed_lookup_q` (the engine keeps the table's
+placement `disk`), and gathers the rows on a card outside the rank group through `libr3_ngram_helper.so` (built for
+gfx1100, gfx1201 and gfx1030, kept in `radiance_home/helpers` because the engine loads every library in `kernels` as a
+plugin). The rows the device does not hold are copied into host memory and gathered from the copy by libavx's kernel
+as memory; nothing is read from the container after the load. `R3_NGRAM_RAM=0` leaves those rows in the container.
+
+- On this host the R9700 takes 199,851,212 of 320,001,536 rows (62.5%, about 29.8 GiB) and 17.90 GiB go to host
+  memory (held but not locked: the account's RLIMIT_MEMLOCK is 11.5 GiB). Both arms run with `--host-pool-mib 24576`
+  so the copy fits beside the two ranks' pools.
+- Helper selftest: 0 of 960 rows differ across shard boundaries. Standalone the gather is 45 us for one row set and
+  191 us at M=2048.
+- Served, two XTX, profiled runs (`--profile-ops`, so slower than unprofiled; the arms are comparable with each other):
+
+  | | table on disk (libavx) | R9700 + host memory |
+  |---|---|---|
+  | decode, 8 short prompts | 23.5 tok/s | 25.3 tok/s |
+  | prefill at 2.6K | 203.3 tok/s | 279.0 tok/s |
+  | prefill at 7.2K | 639.2 tok/s | 728.3 tok/s |
+  | the lookup | 5,642 us a call | 348 us on the device + 24 us from the copy, a gather |
+
+  One start an arm; the disk arm repeated at 23.4 to 23.6 tok/s decode and 638 to 683 tok/s at 7.2K over three runs.
+- The load is 91.5 s and is paid inside the first request (the table's address is only known at the first call);
+  it is read from the container with sequential reads in 256 MiB pieces - through the cold mapping it stalled for
+  over ten minutes.
+- Two faults fixed on the way: the row count of a call is the output tensor's, not the `M` parameter's upper bound
+  (every decode step had gathered, and written, 32,768 rows); the helper library was refused by the engine as a
+  plugin when it sat in `kernels`.
+- A smaller host pool alone changed the 7.2K prefill of the disk arm: about 640 to 680 tok/s with 24576 MiB a rank
+  against 330 to 411 with 32768 in earlier runs. Not yet isolated.
+
 ## Other engines on the RX 7900 XTX (looked up 2026-10-10)
 
 - **llama.cpp, Vulkan backend.** llama.cpp issue #20934: on an RX 7900 XTX, Llama-2 7B Q4_0 decodes at 174.6 tok/s
