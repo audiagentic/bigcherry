@@ -32,7 +32,13 @@ case ",$kernels," in *,libr3,*)
 esac
 echo "radiance $(git -C "$src" rev-parse --short HEAD); model $(basename "$model") ($(du -h "$model" | cut -f1)); HIP device ${GPU:-0}; kernels $kernels"
 
-HIP_VISIBLE_DEVICES=${GPU:-0} "$src/build/bin/radiance" --model "$model" --radiance-home "$home" --kernels "$kernels" \
+rad=("$src/build/bin/radiance")
+if [ -n "${RADIANCE_PREFIX:-}" ]; then
+    read -r -a rad_prefix <<< "$RADIANCE_PREFIX"
+else
+    rad_prefix=()
+fi
+HIP_VISIBLE_DEVICES=${GPU:-0} "${rad_prefix[@]}" "${rad[@]}" --model "$model" --radiance-home "$home" --kernels "$kernels" \
     --tp "${TP:-1}" --p2p "${P2P:-auto}" --max-model-len "${CTX:-8192}" --max-num-seqs 1 --kv-cache-dtype "${KV:-bf16}" \
     --num-speculative-tokens "${SPEC:-0}" --host 127.0.0.1 --port "$port" ${EXTRA:-} > "$out/server.log" 2>&1 &
 pid=$!
