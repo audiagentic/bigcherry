@@ -20,7 +20,7 @@ extra="--tp-wire ${WIRE:-wht6} --placement expert_tiered --host-pool-mib ${POOL_
 [ "${PROFILE:-0}" = 1 ] && extra="$extra --profile-ops"
 jobs=$(mktemp)
 rm -rf "$R/$tag.log" "$R/$tag"
-echo "VIS=0,1 SCRIPT $tag tools/lab/radiance/libr3-serve-smoke.sh @$b $R/$tag" > "$jobs"
+echo "VIS=${VIS:-0,1} SCRIPT $tag tools/lab/radiance/libr3-serve-smoke.sh @$b $R/$tag" > "$jobs"
 env MODEL="$model" GPU=0,1 TP=2 CTX="${CTX:-32768}" KV="${KV:-fp8}" SPEC="${SPEC:-0}" LOAD_TIMEOUT=3000 BENCH=1 \
     BENCH_DEPTHS="${DEPTHS:-2300,6500}" BENCH_TOKENS=256 "EXTRA=$extra" \
     bash tools/lab/plan-qualification/queue.sh "$jobs" > /dev/null 2>&1 || {

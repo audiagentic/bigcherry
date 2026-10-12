@@ -8,7 +8,7 @@
 # The first argument (a llama-server path from the queue) is ignored.
 # Usage: libr3-serve-smoke.sh <ignored> <out-dir>
 # env: MODEL (.rad container), GPU (HIP index, 0), TARGET (gfx1100), PORT (18431), CTX (8192), KV (bf16), SPEC (0),
-#      TP (1; tensor-parallel ranks - give GPU a list such as 0,1 and lock both cards with VIS=0,1), P2P (auto | on |
+#      TP (1; tensor-parallel ranks - give GPU a list such as 0,1), VISIBLE_GPU (defaults to GPU; include non-rank helper cards), P2P (auto | on |
 #      off), KERNELS (libr3,libref; libr4d,libref runs radiance's own library, on a gfx12 card), BENCH (1 = also run
 #      rad_prompt_bench.py: eight varied chat prompts and corpus prefill at BENCH_DEPTHS, BENCH_TOKENS each), N (64 tokens), LOAD_TIMEOUT (900 s), EXTRA (more engine options, e.g. --profile-ops; the per-op table is in
 #      <out-dir>/server.log), RADIANCE_SRC, WORK
@@ -38,7 +38,7 @@ if [ -n "${RADIANCE_PREFIX:-}" ]; then
 else
     rad_prefix=()
 fi
-HIP_VISIBLE_DEVICES=${GPU:-0} "${rad_prefix[@]}" "${rad[@]}" --model "$model" --radiance-home "$home" --kernels "$kernels" \
+HIP_VISIBLE_DEVICES=${VISIBLE_GPU:-${GPU:-0}} "${rad_prefix[@]}" "${rad[@]}" --model "$model" --radiance-home "$home" --kernels "$kernels" \
     --tp "${TP:-1}" --p2p "${P2P:-auto}" --max-model-len "${CTX:-8192}" --max-num-seqs 1 --kv-cache-dtype "${KV:-bf16}" \
     --num-speculative-tokens "${SPEC:-0}" --host 127.0.0.1 --port "$port" ${EXTRA:-} > "$out/server.log" 2>&1 &
 pid=$!
