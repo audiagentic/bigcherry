@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import importlib.util
+import re
+from collections import Counter
 import sys
 import tempfile
 import unittest
@@ -20,6 +22,12 @@ _FILES = (
     "ggml/src/ggml-cuda/dsv4-hc.cuh",
     "ggml/src/ggml-cuda/ggml-cuda.cu",
 )
+_OWNED = "ggml/src/ggml-cuda/bc-hc-post-gate-fuse.cuh"
+_INCLUDE = '#include "bc-hc-post-gate-fuse.cuh"  // BigCherry 1355 owned definitions\n\n'
+
+
+def _lines(*texts):
+    return Counter(line.strip() for text in texts for line in text.splitlines() if line.strip())
 
 
 def _load(pid: str):
@@ -48,13 +56,30 @@ class Patch1355Mechanics(unittest.TestCase):
             self.assertIn("bigcherry 1313: SCALE -> UNARY", cuda.read_text(encoding="utf-8"))
             self.assertIn("bigcherry 1344", (root / "ggml/src/ggml-cuda/dsv4-hc.cu").read_text(encoding="utf-8"))
 
+            before = {p: (root / p).read_text(encoding="utf-8") for p in _FILES}
+            self.assertFalse((root / _OWNED).exists())
+            for fp in _P.PATCHES:
+                if not fp.create:
+                    for edit in fp.edits:
+                        self.assertIsNone(re.search(edit.guard_pattern(), before[fp.path], re.MULTILINE), (fp.path, edit.id))
+
             res = apply_all(_P.PATCHES, root)
             self.assertTrue(all(r.ok for r in res), [e.detail for r in res for e in r.failed])
 
             src = (root / "ggml/src/ggml-cuda/dsv4-hc.cu").read_text(encoding="utf-8")
+            owned = (root / _OWNED).read_text(encoding="utf-8")
             dispatch = cuda.read_text(encoding="utf-8")
-            self.assertIn("bc_dsv4_hc_post_gate_grid_f32", src)
-            self.assertIn("const float gate_scaled = gate_s0 * gate_src", src)
+            self.assertIn("bc_dsv4_hc_post_gate_grid_f32", owned)
+            self.assertIn("const float gate_scaled = gate_s0 * gate_src", owned)
+            self.assertIn(_INCLUDE.strip(), src)
+            self.assertNotIn("static __global__ void bc_dsv4_hc_post_gate_grid_f32(", src)
+            legacy = dict({p: (root / p).read_text(encoding="utf-8") for p in _FILES})
+            legacy["ggml/src/ggml-cuda/dsv4-hc.cu"] = src.replace(_INCLUDE, owned, 1)
+            new_lines = _lines(*[(root / p).read_text(encoding="utf-8") for p in _FILES])
+            new_lines += _lines(owned)
+            old_lines = _lines(*(legacy[p] for p in _FILES))
+            self.assertEqual(new_lines, old_lines + _lines(_INCLUDE))
+            self.assertEqual(sum(new_lines.values()), sum(old_lines.values()) + 1)
             self.assertIn("BIGCHERRY_HC_POST_GATE_FUSE", dispatch)
             self.assertIn("patch=1355_hc_post_gate_fuse", dispatch)
             self.assertLess(
@@ -62,10 +87,10 @@ class Patch1355Mechanics(unittest.TestCase):
                 dispatch.index("bigcherry 1313: SCALE -> UNARY"),
             )
 
-            before = {p: (root / p).read_text(encoding="utf-8") for p in _FILES}
+            before_second = {p: (root / p).read_text(encoding="utf-8") for p in (*_FILES, _OWNED)}
             again = apply_all(_P.PATCHES, root)
             self.assertTrue(all(r.ok for r in again), [e.detail for r in again for e in r.failed])
-            self.assertEqual(before, {p: (root / p).read_text(encoding="utf-8") for p in _FILES})
+            self.assertEqual(before_second, {p: (root / p).read_text(encoding="utf-8") for p in before_second})
 
     def test_changed_1313_anchor_fails_closed(self):
         with tempfile.TemporaryDirectory() as td:

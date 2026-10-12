@@ -37,11 +37,7 @@ _A_KERNEL = ('#include "fattn.cuh"\n'
              "\n"
              "#if !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)\n"
              "// one list per group of ncols1 queries: a column is selected if any query of the group can see it\n")
-_N_KERNEL = r'''#include "fattn.cuh"
-
-#include <cstdlib>  // BigCherry 1334: getenv
-
-#if defined(GGML_USE_HIP)
+_BC_HIP_KERNEL = r'''#if defined(GGML_USE_HIP)
 
 // BigCherry 1334: sparse flash attention on RDNA WMMA is opt-in
 static bool bc_fa_sparse_enabled() {
@@ -142,7 +138,13 @@ static __global__ void flash_attn_mask_to_sparse_indices(
     }
 }
 #endif // defined(GGML_USE_HIP)
+'''
+_KERNEL_INCLUDE = '#include "bc-hip-sparse-flash-attn.cuh"  // BigCherry 1334 owned definitions\n\n'
+_N_KERNEL = r'''#include "fattn.cuh"
 
+#include <cstdlib>  // BigCherry 1334: getenv
+
+''' + _KERNEL_INCLUDE + r'''
 #if !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)
 // one list per group of ncols1 queries: a column is selected if any query of the group can see it
 '''
@@ -209,12 +211,30 @@ _N_CASE = ("#if !defined(GGML_USE_MUSA)  // BigCherry 1334: compiled for HIP\n"
 
 PATCHES = [
     FilePatch(
+        path="ggml/src/ggml-cuda/bc-hip-sparse-flash-attn.cuh",
+        description="1334: BigCherry-owned HIP sparse flash-attention mask compaction definitions",
+        language="none",
+        create=True,
+        edits=(
+            Edit(
+                id="fa-sparse-hip-owned",
+                anchor=r"\A",
+                mode="insert_after",
+                text=_BC_HIP_KERNEL,
+                guard=r"static bool bc_fa_sparse_enabled\(",
+                rationale="Owned include file; definitions use fattn.cu file-local CUDA/HIP helpers/types.",
+                expect_matches=1,
+                max_span_lines=1,
+            ),
+        ),
+    ),
+    FilePatch(
         path="ggml/src/ggml-cuda/fattn.cu",
         description="1334: sparse flash attention index kernel and selection for HIP RDNA WMMA (off switch BIGCHERRY_FA_SPARSE=0)",
         language="none",
         edits=(
             Edit(id="fa-sparse-hip-kernel", anchor=_re.escape(_A_KERNEL), mode="replace", text=_N_KERNEL,
-                 guard=r"BigCherry 1334: HIP version of the mask compaction", rationale="Before upstream's NVIDIA-only index kernel.",
+                 guard=r'#include "bc-hip-sparse-flash-attn\.cuh"', rationale="Owned HIP definitions remain before upstream's NVIDIA-only index kernel.",
                  expect_matches=1, max_span_lines=5),
             Edit(id="fa-sparse-compact-hip", anchor=_re.escape(_A_COMPACT), mode="replace", text=_N_COMPACT,
                  guard=r"BigCherry 1334: HIP has its own index kernel above", rationale="ggml_cuda_flash_attn_ext_compact_mask HIP stub.",
