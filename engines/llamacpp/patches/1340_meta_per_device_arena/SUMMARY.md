@@ -25,3 +25,10 @@ The six file-scope definition blocks formerly pasted into upstream sources now l
 Headers are intentional. At b11552, `ggml/src/CMakeLists.txt` explicitly enumerates `ggml-alloc.c` and `ggml-backend-meta.cpp`; a new translation unit would require a CMake edit. More importantly, these definitions use file-local structs/static helpers from those translation units. Three include sites are therefore used in each upstream source so each block is included only after its local dependencies are defined. Existing edits inside upstream functions remain edits; state, flags, evidence and env docs are unchanged.
 
 Identity proof over the composed production source: the six moved blocks contain 446 physical lines / 403 non-blank lines. Comparing the multiset of non-blank, whitespace-stripped lines across all touched and created files before vs after this ownership refactor gives moved 403/403, removed-only 0, and added-only 6: the six `#include` lines.
+
+## Fix (2026-10-13)
+
+The `meta-arena-graph-owned` anchor no longer requires the accessor to end the file (`\Z` dropped): with patch 1328
+applied first, code after the accessor stretched the match to 28 lines against the 7-line limit. The anchor now ends
+at the accessor's own closing brace; the production composition is byte-identical (checked by hash). The digest
+changes, so the evidence needs the lightweight re-confirmation.
