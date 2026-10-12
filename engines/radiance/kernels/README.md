@@ -771,6 +771,11 @@ payload into mapped pinned host memory and reads the peer's from it; there are n
   they land would take about one crossing instead of two (about 1 ms), which is half of the 20% the sum costs a
   prefill. A 4-bit wire would take a third off the bytes, at a quality cost to be measured in KL mode.
 - Decode-size reduces are 43 to 74 us; nothing to gain there.
+- `R3_AR_PIPE=1` (eight slices with per-slice ready flags in one kernel, run `arp1`, `art4`): selftest byte-identical
+  at M=64, but slower. The large wht6 reduce goes from 2.0-2.15 ms to 2.62-2.74 ms a call, and 27B prefill from
+  2,323-2,358 tok/s to 2,170-2,224 over three starts an arm (complete separation). Left off. Slicing inside one
+  kernel does not make the out and in crossings run together: the waves that read wait on flags the same kernel's
+  writers have not reached, and the flag polling over the link adds traffic of its own.
 
 ## Qwen3.8-Flash-Next on two XTX, first runs (2026-10-12, runs `fn2`, `fnp1`, `tools/lab/radiance/flashnext-tp2.sh`)
 
