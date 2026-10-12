@@ -768,8 +768,13 @@ pool for each rank: with 24576 the engine refuses `--ngram-placement ram` (85.66
 19.00 GiB on its card). The sum that would fit, 2 x 18.5 GiB + 47.68 GiB, leaves the 91 GB host under 1 GiB free and
 needs another 0.6 GiB of experts on each card, so it is not a configuration to serve from. The disk lookup therefore
 stays, at 6.6 ms a decode step (about a fifth of the step); it is a small part of a prefill (1,985 calls in the run).
-Making it cheaper is a question of how the rows are read (the host site reads the container with O_DIRECT, so hot rows
-are never cached), not of placement.
+Loading radiance's host library changes nothing (`KERNELS=libr3,libavx,libref`, runs `fn5` profiled, `fn6` not): the
+lookup is 6,566 us a call averaged either way (about 4.2 to 4.4 ms on decode steps), decode 28.1 tok/s against 28.3.
+The cost is the design's own: libavx keeps 2^19 rows and reads a miss from the container with O_DIRECT, and about half
+of a decode step's rows are new. A random 4 KiB direct read on this drive is about 200 us at one thread
+(`tools/lab/radiance/direct-read-latency.py`), the same on `/mnt/vault` (NTFS through FUSE) and on ext4 `/mnt/data`,
+so the filesystem is not the cause. Removing it means holding the table somewhere other than the disk: on the cards
+outside the rank group (the R9700 takes about 30 of the 47.68 GiB), which is asked of the plugin as its own item.
 
 Order of work this gives: a native gfx11 `moe_gemm_q` first (two fifths of everything); then `hc_read`
 and `ar_gather_hc_write`.
