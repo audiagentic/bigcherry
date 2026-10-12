@@ -314,10 +314,11 @@ def validation_evidence_statuses(
     still binds its composition.
     """
     entries = load_catalog(engine, catalog_path)
-    modules = {module.patch_id: module for module in patchset.catalog(engine, patches_dir)}
+    patches_root = patches_dir or engines.load(paths.REPO_ROOT, engine).patches_root(paths.REPO_ROOT)
+    modules = {module.patch_id: module for module in patchset.catalog(engine, patches_root)}
     # RS03: packaged patches carry their required architectures in
     # patch.toml, not catalog.toml.
-    registry = patchset.patch_registry.load_registry(engine, patches_dir)
+    registry = patchset.patch_registry.load_registry(engine, patches_root)
     packaged = {
         d.patch_id: d for d in registry.descriptors
         if d.representation == patchset.patch_registry.REPRESENTATION_PACKAGED
@@ -504,8 +505,9 @@ def cross_check(
     compatibility; repository consumers that own SUMMARY evaluation can set
     it to False to avoid duplicate diagnostics."""
     entries = load_catalog(engine, catalog_path)
-    registry = patchset.patch_registry.load_registry(engine, patches_dir)
-    modules = {module.patch_id for module in patchset.catalog(engine, patches_dir)}
+    patches_root = patches_dir or engines.load(paths.REPO_ROOT, engine).patches_root(paths.REPO_ROOT)
+    registry = patchset.patch_registry.load_registry(engine, patches_root)
+    modules = {module.patch_id for module in patchset.catalog(engine, patches_root)}
     # RS03: packaged patches' metadata authority is their own patch.toml, so
     # they are exempt from the catalog.toml one-to-one coverage and state
     # cross-checks (and must NOT appear in catalog.toml -- build_snapshot()
@@ -524,7 +526,7 @@ def cross_check(
     for patch_id in dangling_modules:
         problems.append(f"patch module {patch_id!r} has no catalog entry")
 
-    module_states = {module.patch_id: module.state for module in patchset.catalog(engine, patches_dir)}
+    module_states = {module.patch_id: module.state for module in patchset.catalog(engine, patches_root)}
     for patch_id in sorted((set(entries) & modules) - packaged_ids):
         module_state = module_states[patch_id]
         if entries[patch_id].state != module_state:
