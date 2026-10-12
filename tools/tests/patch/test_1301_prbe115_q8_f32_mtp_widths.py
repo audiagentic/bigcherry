@@ -41,7 +41,7 @@ class Patch1301Mechanics(unittest.TestCase):
         cuda = root / "ggml/src/ggml-cuda"
         cuda.mkdir(parents=True)
         for name in ("mmvq.cu", "mmvq.cuh", "vecdotq.cuh"):
-            copy_pinned(_VENDOR / name, cuda / name)
+            copy_pinned("llamacpp", _VENDOR / name, cuda / name)
         prereq = apply_all(_PREREQS, root)
         assert all(r.ok for r in prereq), [e.detail for r in prereq for e in r.failed]
         return td, root, cuda / "mmvq.cu"

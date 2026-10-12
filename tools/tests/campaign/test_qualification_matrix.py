@@ -156,8 +156,8 @@ class QualificationMatrixFixture(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
 
-        self.registry = patch_registry.load_registry(self.patches_root)
-        self.catalog = patchset.catalog(directory=self.patches_root)
+        self.registry = patch_registry.load_registry("llamacpp", self.patches_root)
+        self.catalog = patchset.catalog("llamacpp", directory=self.patches_root)
         self.contract = ec.load_contracts(self.contracts_path).contracts[self.CONTRACT_ID]
 
         self.cfg = config.Config(
@@ -222,9 +222,9 @@ class BuildQualificationMatrixPlanTests(QualificationMatrixFixture):
         plan = self._plan()
         isolated = next(c for c in plan.cells if c.contrast == "isolated")
         release_delta = next(c for c in plan.cells if c.contrast == "release_delta")
-        native = campaign_resolution.resolve_lane(
+        native = campaign_resolution.resolve_lane("llamacpp", 
             "bigcherry-tuning", self.cfg, self.catalog, catalog_directory=self.patches_root)
-        release = campaign_resolution.resolve_lane(
+        release = campaign_resolution.resolve_lane("llamacpp", 
             "bigcherry", self.cfg, self.catalog, catalog_directory=self.patches_root)
         self.assertEqual(isolated.control.patch_set_id, native.patch_set.patch_set_id)
         self.assertEqual(release_delta.control.patch_set_id, release.patch_set.patch_set_id)
@@ -233,7 +233,7 @@ class BuildQualificationMatrixPlanTests(QualificationMatrixFixture):
 
     def test_release_composition_hash_matches_current_release(self):
         plan = self._plan()
-        release = campaign_resolution.resolve_lane(
+        release = campaign_resolution.resolve_lane("llamacpp", 
             "bigcherry", self.cfg, self.catalog, catalog_directory=self.patches_root)
         self.assertEqual(plan.release_composition_hash, release.patch_set.patch_set_id)
 
@@ -261,7 +261,7 @@ class QualificationMatrixFailClosedTests(QualificationMatrixFixture):
         bad_contract_path = Path(self._tmp.name) / "bad-contracts.toml"
         _write_contracts_toml(
             bad_contract_path, contract_id=self.CONTRACT_ID, architectures=("gfx9999",))
-        bad_registry = patch_registry.load_registry(
+        bad_registry = patch_registry.load_registry("llamacpp", 
             self.patches_root, contracts_path=bad_contract_path)
         bad_contract = ec.load_contracts(bad_contract_path).contracts[self.CONTRACT_ID]
         with self.assertRaisesRegex(qm.QualificationMatrixError, "not in the patch"):
@@ -300,7 +300,7 @@ class StaleReleaseDeltaCellsTests(QualificationMatrixFixture):
         )
         cfg = dataclasses.replace(
             self.cfg, patch_sets={**self.cfg.patch_sets, "validated-enhancements": grown})
-        catalog = patchset.catalog(directory=self.patches_root)
+        catalog = patchset.catalog("llamacpp", directory=self.patches_root)
 
         stale = qm.stale_release_delta_cells(plan, cfg, catalog, catalog_directory=self.patches_root)
         self.assertEqual(len(stale), 2)

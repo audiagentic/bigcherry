@@ -177,7 +177,7 @@ CASES = (
 
 def _copy_target(root: Path, target: str) -> None:
     (root / target).parent.mkdir(parents=True, exist_ok=True)
-    copy_pinned(_V / target, root / target)
+    copy_pinned("llamacpp", _V / target, root / target)
 
 
 def _hash_tree(root: Path, *, owned: str | None = None, hook: str | None = None) -> str:
