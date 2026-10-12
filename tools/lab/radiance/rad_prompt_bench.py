@@ -12,6 +12,11 @@ summarise request after it, as tools/bigcherry/tuning/engine_bench.py builds the
 the engine bench.
 
 Usage: rad_prompt_bench.py <base-url> [--tokens N] [--depths 2048,6000] [--corpus FILE] [--json out.json]
+                          [--continue 3158,6205]
+
+--continue: decode measured the way the llama.cpp harness (tools/lab/flash-next/long-ctx-profile.sh, timing) does:
+the corpus cut to each depth as a raw completion, greedy, ignore_eos, --tokens tokens. Prose continuation is where a
+drafter is accepted most, so these rows, not the short chat prompts, are comparable with llama.cpp's MTP figures.
 """
 from __future__ import annotations
 
@@ -114,6 +119,15 @@ def main() -> int:
         r["name"], r["kind"] = f"corpus-{depth}", "long"
         rows.append(r)
 
+    for depth in [int(d) for d in opt("--continue", "").split(",") if d]:
+        corpus = corpus or open(corpus_path, errors="replace").read()
+        text = (corpus * (1 + int(depth * CHARS_PER_TOKEN) // max(1, len(corpus))))[: int(depth * CHARS_PER_TOKEN)]
+        r = stream(base, "/v1/completions", {
+            "model": model, "prompt": f"[{uuid.uuid4().hex}]\n" + text, "max_tokens": tokens, "temperature": 0,
+            "ignore_eos": True})
+        r["name"], r["kind"] = f"continue-{depth}", "continue"
+        rows.append(r)
+
     def show(value, digits=1):
         return "-" if value is None else f"{value:.{digits}f}"
 
@@ -127,6 +141,10 @@ def main() -> int:
           f"(min {show(min([s for s in short if s], default=None))}, max {show(max([s for s in short if s], default=None))})")
     for r in long_:
         print(f"prefill at {r['prompt_tokens']} tokens: {show(r['prefill_tps'])} tok/s; decode after it {show(r['decode_tps'])} tok/s")
+    for r in rows:
+        if r["kind"] == "continue":
+            print(f"continuation at {r['prompt_tokens']} tokens: decode {show(r['decode_tps'])} tok/s over "
+                  f"{r['completion_tokens']} tokens")
     if "--json" in args:
         json.dump({"model": model, "rows": rows}, open(args[args.index("--json") + 1], "w", encoding="utf-8"), indent=1)
     return 0 if all(r["completion_tokens"] > 0 for r in rows) else 1

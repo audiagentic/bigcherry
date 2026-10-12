@@ -81,7 +81,7 @@ if [ "${BENCH:-0}" = 1 ]; then
     # varied prompts and corpus prefill: the two requests above are too predictable to judge a drafter by
     echo "-- prompt bench"
     python3 "$(dirname "$0")/rad_prompt_bench.py" "http://127.0.0.1:$port" --tokens "${BENCH_TOKENS:-256}" \
-        --depths "${BENCH_DEPTHS:-2048,6000}" --json "$out/bench.json" 2>&1 | cut -c1-200
+        --depths "${BENCH_DEPTHS:-2048,6000}" ${BENCH_CONTINUE:+--continue "$BENCH_CONTINUE"} --json "$out/bench.json" 2>&1 | cut -c1-200
 fi
 grep -iE "error|abort|assert|nan|fault" "$out/server.log" | head -8 | cut -c1-220
 kill -INT $pid; wait $pid; echo "server exit $?"
