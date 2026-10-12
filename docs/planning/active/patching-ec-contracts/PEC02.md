@@ -61,6 +61,14 @@ Successor key: patching-ec-contracts-ec18
 
 GPT roadmap provenance: request req_f7a013040828433c, same session ses_76206cac3e6b4be0, exact pushed bb20f104. PEC02 is an authority primitive before PA33. Reconcile these current owners and the existing TriggerEvidence implementation before coding; do not add another evidence schema, gate evaluator, runner, or contract engine. Hardware-free malformed/empty/mismatch tests can proceed before real telemetry artifacts; the real artifact remains required for closure.
 
+## 2026-10-12 qualification evidence audit
+
+The current qualification executor in `tools/bigcherry/campaign/qualification_execution.py` treats absent trigger evidence as `None` and passes it to the legacy-optional promotion gate. Empty required correctness evidence also becomes a passing default after the evaluator raises. These are source-derived evidence-completeness gaps, not reproduced GPU failures.
+
+The trigger evaluator checks positive records supplied by callers, not whether each expected inferential cell supplied a matching record. Require cell-bound evidence and the declared correctness checks before permitting a governed qualification decision. Missing or ambiguous evidence is INVALID; actual measured failure remains FAIL. Preserve the existing evaluator and runner, and keep direct legacy-call compatibility.
+
+Add host regression cases for no evidence, foreign cell, duplicate, zero count, absent correctness, and valid evidence. One existing real artifact may be re-evaluated only after source/build/run identity is established. A standalone eight-assertion host model ran; repository tests, builds and GPU benchmarks did not run. BCOP160 records the disposition.
+
 ## Change Log
 
 - 2026-09-09T10:47:36.919359+00:00 (created-by): Created by capability-rebaseline-v3
