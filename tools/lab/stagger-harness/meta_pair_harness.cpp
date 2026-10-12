@@ -11,9 +11,10 @@
 //     z = z + C[:, other half]        A reads B from the previous call; B reads A from this call
 //     C[:, half] = z                  a static, mirrored cache both halves share (the KV/recurrent-state role)
 //     h = h + z
-// Half A and half B are two graphs on two schedulers, as 1361 runs them in llama. The carried-state stress
-// submits many pairs without a host synchronization, changing host inputs every call; this is the path that
-// must expose input-lifetime corruption or a pageable-H2D stall before the production fix.
+// Half A and half B are two graphs on two schedulers, as 1361 runs them in llama. B deliberately has one extra
+// split/reduction output tail (the real prompt's last-token logits-head asymmetry); A does not. Both halves also
+// have a CPU-produced host input copied into Meta. The growing-input stress rebuilds that input larger every pair
+// through >4 MiB. The carried-state stress still submits fixed-shape pairs without a host synchronization.
 //
 // Arms, each from zeroed caches and the same inputs:
 //   sequential   A computed, then B: the reference
@@ -26,11 +27,12 @@
 //        cache=0 drops the shared cache: rung A, where the wrong-order arm cannot differ and is not judged)
 // The carried-state stress uses max(32, 4*reps) consecutive pairs.
 // Exit 0: pair identical and wrong order different. 1: pair differs. 2: wrong order not detected. 3: pair unsupported.
-// Exit 4: carried-state pair differs from the sequential reference.
+// Exit 4: carried-state pair differs from the sequential reference. Exit 5: growing-input pair differs.
 #include "ggml.h"
 #include "ggml-alloc.h"
 #include "ggml-backend.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -87,20 +89,26 @@ struct half_graph {
     ggml_cgraph *  graph = nullptr;
     ggml_tensor *  input = nullptr;
     ggml_tensor *  prefix = nullptr;
+    ggml_tensor *  grow_input = nullptr;
+    ggml_tensor *  grow_prefix = nullptr;
+    ggml_tensor *  grow_consumer = nullptr;
     ggml_tensor *  out = nullptr;
     ggml_backend_sched_t sched = nullptr;
 };
 
 // first = cache column this graph writes; read_first = cache column it reads first (-1 for no read).
-half_graph build(const model & m, ggml_tensor * result, int64_t first, int64_t tokens, int64_t read_first) {
+half_graph build(
+        const model & m, ggml_tensor * result, int64_t first, int64_t tokens, int64_t read_first,
+        int64_t grow_elems, bool output_tail) {
     half_graph g;
+    const int graph_nodes = m.L * 12 + 24;
     const ggml_init_params params = {
-        /*.mem_size   =*/ ggml_tensor_overhead() * (size_t) (m.L * 12 + 8) + ggml_graph_overhead_custom(m.L * 12 + 8, false),
+        /*.mem_size   =*/ ggml_tensor_overhead() * (size_t) graph_nodes + ggml_graph_overhead_custom(graph_nodes, false),
         /*.mem_buffer =*/ nullptr,
         /*.no_alloc   =*/ true,
     };
     g.ctx = ggml_init(params);
-    g.graph = ggml_new_graph_custom(g.ctx, m.L * 12 + 8, false);
+    g.graph = ggml_new_graph_custom(g.ctx, graph_nodes, false);
     g.input = ggml_new_tensor_2d(g.ctx, GGML_TYPE_F32, m.n, tokens);
     ggml_set_input(g.input);
     ggml_format_name(g.input, "host_input_%lld", (long long) first);
@@ -114,6 +122,17 @@ half_graph build(const model & m, ggml_tensor * result, int64_t first, int64_t t
         g.prefix = ggml_scale(g.ctx, g.input, 1.0f);
     }
     ggml_format_name(g.prefix, "cpu_prefix_%lld", (long long) first);
+
+    // A second CPU prefix is intentionally variable-sized. grow_consumer is pinned to Meta by the harness, so the
+    // complete grow_prefix tensor is a final-split host input and exercises 1361's pair-owned pinned H2D staging.
+    g.grow_input = ggml_new_tensor_1d(g.ctx, GGML_TYPE_F32, grow_elems);
+    ggml_set_input(g.grow_input);
+    ggml_format_name(g.grow_input, "grow_input_%lld", (long long) first);
+    g.grow_prefix = ggml_scale(g.ctx, g.grow_input, 1.0f);
+    ggml_format_name(g.grow_prefix, "grow_prefix_%lld", (long long) first);
+    g.grow_consumer = ggml_sum(g.ctx, g.grow_prefix);
+    ggml_format_name(g.grow_consumer, "grow_sum_%lld", (long long) first);
+
     ggml_tensor * h = g.prefix;
     for (int l = 0; l < m.L; ++l) {
         ggml_tensor * u = ggml_mul_mat(g.ctx, m.w1[l], h);
@@ -130,6 +149,16 @@ half_graph build(const model & m, ggml_tensor * result, int64_t first, int64_t t
         }
         h = ggml_add(g.ctx, h, z);
     }
+    if (output_tail) {
+        // Real llama prompt halves are asymmetric: only B normally carries the requested last-token logits head.
+        // One extra split matmul makes that difference visible at Meta subgraph granularity.
+        ggml_tensor * u_tail = ggml_mul_mat(g.ctx, m.w1[0], h);
+        ggml_tensor * y_tail = ggml_mul_mat(g.ctx, m.w2[0], u_tail);
+        h = ggml_add(g.ctx, h, ggml_rms_norm(g.ctx, y_tail, 1e-6f));
+    }
+    // Consume the variable-size CPU prefix on Meta without changing the tensor shape of h.
+    h = ggml_add1(g.ctx, h, g.grow_consumer);
+
     // a compute tensor's memory belongs to the per-device arena (1340) and is not readable after the graph; the
     // result is copied to a static tensor, as llama copies what it keeps
     g.out = result;
@@ -239,14 +268,25 @@ int main(int argc, char ** argv) {
         }
     }
 
-    half_graph a = build(m, m.y_a, 0, m.T, m.T);
-    half_graph b = build(m, m.y_b, m.T, m.T, 0);
-    half_graph full = build(m, m.y_full, 0, 2 * m.T, -1);
+    // Reserve against a >4 MiB growing input even though normal correctness/timing runs use one float. The explicit
+    // growing-input stress below rebuilds from small to this maximum in eight consecutive pair calls.
+    const int grow_steps = 8;
+    const int64_t grow_max_elems = (int64_t) (6 * 1024 * 1024 / sizeof(float));
+    const int64_t grow_base_elems = 1;
+
+    half_graph a = build(m, m.y_a, 0, m.T, m.T, grow_base_elems, false);
+    half_graph b = build(m, m.y_b, m.T, m.T, 0, grow_base_elems, true);
+    half_graph full = build(m, m.y_full, 0, 2 * m.T, -1, grow_base_elems, true);
 
     ggml_backend_t backends[] = { meta, cpu };
     ggml_backend_buffer_type_t bufts[] = { ggml_backend_get_default_buffer_type(meta), ggml_backend_get_default_buffer_type(cpu) };
+    auto place_graph = [&](half_graph & g) {
+        ggml_backend_sched_set_tensor_backend(g.sched, g.prefix, cpu);
+        ggml_backend_sched_set_tensor_backend(g.sched, g.grow_prefix, cpu);
+        ggml_backend_sched_set_tensor_backend(g.sched, g.grow_consumer, meta);
+    };
     for (half_graph * g : { &a, &b, &full }) {
-        g->sched = ggml_backend_sched_new(backends, bufts, 2, (size_t) (m.L * 12 + 8), false, false);
+        g->sched = ggml_backend_sched_new(backends, bufts, 2, (size_t) (m.L * 12 + 24), false, false);
         if (g == &b) {
             ggml_backend_sched_set_stagger_pair_arena(g->sched, true);  // B's own compute arena, as 1361 sets it in llama
         }
@@ -254,10 +294,13 @@ int main(int argc, char ** argv) {
         // the graph's tensors are left pointing into the arena it replaced
         // (with a graph of its own: reserving moves the Meta buffers on to their other view container, so the
         // graph that is computed has to be allocated after it, as llama builds a fresh graph a batch)
-        half_graph measure = g == &a ? build(m, m.y_a, 0, m.T, m.T)
-                           : g == &b ? build(m, m.y_b, m.T, m.T, 0)
-                                     : build(m, m.y_full, 0, 2 * m.T, -1);
+        half_graph measure = g == &a ? build(m, m.y_a, 0, m.T, m.T, grow_max_elems, false)
+                           : g == &b ? build(m, m.y_b, m.T, m.T, 0, grow_max_elems, true)
+                                     : build(m, m.y_full, 0, 2 * m.T, -1, grow_base_elems, true);
+        // measure belongs to g's scheduler; set its placement directly before reserve.
         ggml_backend_sched_set_tensor_backend(g->sched, measure.prefix, cpu);
+        ggml_backend_sched_set_tensor_backend(g->sched, measure.grow_prefix, cpu);
+        ggml_backend_sched_set_tensor_backend(g->sched, measure.grow_consumer, meta);
         if (!ggml_backend_sched_reserve(g->sched, measure.graph)) {
             fail("could not reserve a graph");
         }
@@ -267,7 +310,7 @@ int main(int argc, char ** argv) {
     // every reserve is done before any graph is allocated: a reserve empties the view container the earlier graphs'
     // views of the shared static tensors live in
     for (half_graph * g : { &a, &b, &full }) {
-        ggml_backend_sched_set_tensor_backend(g->sched, g->prefix, cpu);
+        place_graph(*g);
         if (!ggml_backend_sched_alloc_graph(g->sched, g->graph)) {
             fail("could not allocate a graph");
         }
@@ -286,6 +329,11 @@ int main(int argc, char ** argv) {
         std::memcpy(xf.data() + xa.size(), xb.data(), xb.size() * sizeof(float));
     }
     const std::vector<float> xa0 = xa, xb0 = xb;
+    auto set_grow_input = [](half_graph & g, float marker) {
+        std::vector<float> x((size_t) ggml_nelements(g.grow_input), 0.0f);
+        if (!x.empty()) x[0] = marker;
+        ggml_backend_tensor_set(g.grow_input, x.data(), 0, x.size() * sizeof(float));
+    };
     auto set_inputs = [&](int call = 0) {
         const float da = 0.0009765625f * (float) call;
         const float db = -0.001953125f * (float) call;
@@ -293,6 +341,8 @@ int main(int argc, char ** argv) {
         for (size_t i = 0; i < xb.size(); ++i) xb[i] = xb0[i] + db;
         ggml_backend_tensor_set(a.input, xa.data(), 0, xa.size() * sizeof(float));
         ggml_backend_tensor_set(b.input, xb.data(), 0, xb.size() * sizeof(float));
+        set_grow_input(a, da);
+        set_grow_input(b, db);
     };
     auto sync = [&] {
         ggml_backend_sched_synchronize(a.sched);
@@ -311,6 +361,21 @@ int main(int argc, char ** argv) {
             fail("pair compute failed");
         }
         return supported;
+    };
+    auto rebuild_half = [&](half_graph & g, ggml_tensor * result, int64_t first, int64_t read_first,
+                            int64_t grow_elems, bool output_tail) {
+        ggml_backend_sched_t keep = g.sched;
+        ggml_backend_sched_reset(keep);
+        ggml_free(g.ctx);
+        g = build(m, result, first, m.T, read_first, grow_elems, output_tail);
+        g.sched = keep;
+        place_graph(g);
+        if (!ggml_backend_sched_alloc_graph(g.sched, g.graph)) {
+            fail("could not allocate rebuilt growing-input graph");
+        }
+        if (ggml_backend_sched_get_n_splits(g.sched) != 2) {
+            fail("rebuilt growing-input graph did not produce exactly CPU + Meta scheduler splits");
+        }
     };
 
     std::printf("\n== %d layers, %lld tokens a half, hidden %lld, %lld rows a card, %zu cards; one %0.2f MB sum a layer\n", m.L,
@@ -364,6 +429,42 @@ int main(int argc, char ** argv) {
         std::printf("PAIR UNSUPPORTED during carried-state stress\n");
         return 3;
     }
+
+    // Variable-size staging proof. Every iteration rebuilds both halves with a larger CPU->Meta input; the final
+    // pair crosses the former 4 MiB gate. The schedulers were reserved at grow_max_elems before any graph allocation.
+    size_t grow_diff_a = 0, grow_diff_b = 0;
+    bool grow_supported = true;
+    for (int c = 0; c < grow_steps; ++c) {
+        sync();
+        const int64_t elems = grow_max_elems * (c + 1) / grow_steps;
+        rebuild_half(a, m.y_a, 0, m.T, elems, false);
+        rebuild_half(b, m.y_b, m.T, 0, elems, true);
+
+        zero_caches(m); set_inputs(2000 + c);
+        sequential(); sync();
+        const std::vector<float> grow_ref_a = read(a), grow_ref_b = read(b);
+
+        zero_caches(m); set_inputs(2000 + c);
+        grow_supported = pair(a, b) && grow_supported;
+        sync();
+        grow_diff_a += differing(grow_ref_a, read(a));
+        grow_diff_b += differing(grow_ref_b, read(b));
+    }
+    std::printf("growing-input stress: %d pairs, max %.2f MiB/half, %zu + %zu values differ from sequential\n",
+                grow_steps, grow_max_elems * sizeof(float) / 1024.0 / 1024.0, grow_diff_a, grow_diff_b);
+    if (!grow_supported) {
+        std::printf("PAIR UNSUPPORTED during growing-input stress\n");
+        return 3;
+    }
+    if (grow_diff_a != 0 || grow_diff_b != 0) {
+        return 5;
+    }
+
+    // Restore the small-input shape so the historical timing arm still measures the stagger mechanism rather than
+    // the staging stress.
+    sync();
+    rebuild_half(a, m.y_a, 0, m.T, grow_base_elems, false);
+    rebuild_half(b, m.y_b, m.T, 0, grow_base_elems, true);
 
     // timing
     for (size_t i = 0; i < xf.size(); ++i) xf[i] = i < xa0.size() ? xa0[i] : xb0[i - xa0.size()];
