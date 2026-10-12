@@ -92,7 +92,9 @@ Use the existing `RuntimeProfile` concept, but move engine-specific profiles int
 `engines/<engine>/recipes.toml` with the engine's sources/builds/patch-sets/experiments. Extend RuntimeProfile with
 `environment = { ... }`; keep ordered `server-args`. Do not add another INI loader to Radiance.
 
-The two initial Radiance profiles are:
+The two initial Radiance profiles are below. Owner rule (CLAUDE.local.md, 2026-10-05): a profile lists only the
+settings that differ for that model or topology - component defaults (R3_ATTN_NATIVE=1, every other R3_* off) are
+declared once in component.toml and never repeated in a profile.
 
 ```toml
 [runtime-profile.flashnext-2xtx]
@@ -100,38 +102,22 @@ server-args = [
   "--tp", "2", "--tp-wire", "exact",
   "--placement", "expert_tiered",
   "--ngram-placement", "ram",
-  "--host-pool-mib", "16384",
+  "--host-pool-mib", "14336",
   "--max-num-seqs", "6",
   "--max-num-batched-tokens", "4096",
   "--checkpoint-interval", "4096",
   "--kv-cache-dtype", "fp8",
   "--num-speculative-tokens", "3",
 ]
-environment = {
-  R3_ATTN_NATIVE = "1",
-  R3_GDN_NATIVE = "0",
-  R3_MOE_NATIVE = "0",
-  R3_HC_NATIVE = "0",
-  R3_AR_WIRE4 = "0",
-  R3_AR_PIPE = "0",
-  R3_AR_TIMING = "0"
-}
 
 [runtime-profile.qwen38-27b-2xtx]
-server-args = [
-  "--tp", "2",
-  "--kv-cache-dtype", "bf16"
-]
-environment = {
-  R3_ATTN_NATIVE = "1",
-  R3_GDN_NATIVE = "0",
-  R3_MOE_NATIVE = "0",
-  R3_HC_NATIVE = "0",
-  R3_AR_WIRE4 = "0",
-  R3_AR_PIPE = "0",
-  R3_AR_TIMING = "0"
-}
+server-args = ["--tp", "2", "--tp-wire", "wht6"]
 ```
+
+The Flash-Next profile needs engine patch 0001 (the stager is armed by --max-num-seqs 6 and hangs at shutdown
+without it). fp8 KV is what every measured run used; the owner's KV rule (q8_0 minimum, f16 preferred) is for
+llama.cpp quantised caches - Radiance offers bf16 or fp8 only, and bf16 has not been fitted at this context yet.
+The 27B two-XTX profile uses wht6: on the 27B it costs KLD +0.0008 / -0.4 pt top-1 (measured), unlike Flash-Next.
 
 The 27B profile intentionally contains only settings proven common from the inspected scripts; model-specific wire,
 drafter, context and pool values must be filled from a measured configuration-of-record rather than inferred.
