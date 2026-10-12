@@ -12,6 +12,9 @@ dev=${devs%%,*}
 vis=${VIS:-0,1,2}
 out=${R:-/mnt/data/bigcherry-work/runs}/$tag-lab
 mkdir -p "$out"
+# Both arms with the same host pool, small enough that the rows the device does not hold (about 18 GiB with the
+# R9700 alone) fit in host memory beside the two ranks' pools.
+export POOL_MIB=${POOL_MIB:-24576}
 
 "$here/libr3-rewrite-check.sh"
 KBENCH=0 "$here/libr3-build.sh" /dev/null "$out/build"

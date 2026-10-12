@@ -4,8 +4,10 @@
 
 #include <dlfcn.h>
 #include <link.h>
+#include <sys/mman.h>
 
 #include <algorithm>
+#include <cerrno>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -55,6 +57,13 @@ struct State {
 
     void* avx_h = nullptr;
     RadLaunchFn avx_launch = nullptr;
+
+    /* The rows no device holds, [covered, vocab), as a locked copy in host memory: libavx gathers from it as
+     * memory (its file path, O_DIRECT reads of the container, is for a table left on disk). R3_NGRAM_RAM=0
+     * leaves them in the container instead. */
+    int64_t covered = 0;
+    uint8_t* ram = nullptr;
+    size_t ram_bytes = 0;
 
     std::vector<int32_t> miss_ids;
     std::vector<int> miss_pos;
@@ -170,6 +179,41 @@ uint32_t fbits(float x) {
     return u;
 }
 
+bool ram_wanted() {
+    const char* e = std::getenv("R3_NGRAM_RAM");
+    return !(e && *e == '0');
+}
+
+void ram_copy(State* s, const uint8_t* table) {
+    if (s->ram) { munmap(s->ram, s->ram_bytes); s->ram = nullptr; s->ram_bytes = 0; }
+    if (!ram_wanted() || s->covered >= s->vocab) return;
+    const size_t bytes = (size_t)(s->vocab - s->covered) * (size_t)s->n;
+    void* m = mmap(nullptr, bytes, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (m == MAP_FAILED) {
+        std::fprintf(stderr, "libr3: R3_NGRAM_DEV could not map %.2f GiB for the rows off the device(s): %s; "
+                     "they are read from the container
+", (double)bytes / (double)(1ull << 30), std::strerror(errno));
+        return;
+    }
+    const uint8_t* src = table + (size_t)s->covered * (size_t)s->n;
+    const size_t step = 256ull << 20;
+    for (size_t o = 0; o < bytes; o += step) {
+        const size_t len = std::min(step, bytes - o);
+        std::memcpy((uint8_t*)m + o, src + o, len);
+        /* the container's pages just read are not needed again: the copy is what is gathered from */
+        const uintptr_t lo = ((uintptr_t)(src + o) + 4095) & ~(uintptr_t)4095;
+        const uintptr_t hi = (uintptr_t)(src + o + len) & ~(uintptr_t)4095;
+        if (hi > lo) madvise((void*)lo, hi - lo, MADV_DONTNEED);
+    }
+    const bool locked = mlock(m, bytes) == 0;
+    s->ram = (uint8_t*)m;
+    s->ram_bytes = bytes;
+    std::fprintf(stderr, "libr3: R3_NGRAM_DEV rows %lld..%lld (%.2f GiB) copied into host memory%s
+",
+                 (long long)s->covered, (long long)s->vocab, (double)bytes / (double)(1ull << 30),
+                 locked ? ", locked" : " (not locked: RLIMIT_MEMLOCK)");
+}
+
 int fallback(State* s, const RadArgs* a, int miss, int n, uint16_t* dst) {
     if (!miss) return RAD_OK;
     if (!open_avx(s)) {
@@ -179,6 +223,11 @@ int fallback(State* s, const RadArgs* a, int miss, int n, uint16_t* dst) {
     if (a->n_t < 4 || a->n_t > 5 || a->n_p > 16) return RAD_E_SHAPE;
     RadTensor t[5]{};
     for (int i = 0; i < a->n_t; ++i) t[i] = a->t[i];
+    if (s->ram) {
+        /* libavx indexes the copy from its first row */
+        for (int i = 0; i < miss; ++i) s->miss_ids[i] -= (int32_t)s->covered;
+        t[1].data = s->ram;
+    }
     t[0].data = s->miss_ids.data();
     t[0].rank = 1;
     t[0].shape[0] = miss;
@@ -263,6 +312,7 @@ int init_ngram(const RadParam* p, int n_p, int, int, void** out) {
         limit = limit == UINT64_MAX ? UINT64_MAX : (limit > used ? limit - used : 0);
     }
     if (s->shards.empty()) return RAD_E_NOMEM;
+    s->covered = first;
 
     s->miss_ids.resize((size_t)max_m);
     s->miss_pos.resize((size_t)max_m);
@@ -281,6 +331,7 @@ void fini_ngram(void*) {
     std::lock_guard<std::mutex> lk(g_mu);
     if (!g || --g->refs > 0) return;
     for (const Shard& sh : g->shards) g->hp.release(sh.dev);
+    if (g->ram) munmap(g->ram, g->ram_bytes);
     if (g->avx_h) dlclose(g->avx_h);
     if (g->hp.h) dlclose(g->hp.h);
     g.reset();
@@ -321,6 +372,7 @@ int launch_ngram(const RadArgs* a, RadStream) {
             const int rc = s->hp.load(sh.dev, table + (size_t)sh.first * n, sh.rows * (int64_t)n);
             if (rc != RAD_OK) return rc;
         }
+        ram_copy(s, table);
         s->loaded_table = table;
         s->last_valid = false;
     }
@@ -374,7 +426,7 @@ extern "C" const RadKernelInfo* r3_ngram_row(void) {
         x.name = "r3_ngram_dev";
         x.op = "embed_lookup_q";
         x.family = "vocab";
-        x.computes = "E4M3 n-gram gather on non-rank HIP devices with libavx fallback";
+        x.computes = "E4M3 n-gram gather on non-rank HIP devices; the rows they do not hold from a host copy through libavx";
         x.shape = "any";
         x.dtypes = "i32,fp8_e4m3,bf16";
         x.domain = RAD_DOMAIN_HOST;
