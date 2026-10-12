@@ -943,6 +943,30 @@ as memory; nothing is read from the container after the load. `R3_NGRAM_RAM=0` l
   engine synchronising after every op the prefill is faster, not slower. Not explained; it points at work in flight
   (the mover's transfers, kernels reading experts over the link) contending when the queue runs ahead.
 
+## Flash-Next: radiance's own prefill stager, switched on (2026-10-13, runs `fnsu1`-`fnsu4`)
+
+radiance 1.3.0 has a prefill stager (core/place/stager.h): at a step above the smaller arena levels it copies the next
+routed layer's pooled experts onto the card in bulk while the current layer runs, instead of the GEMM reading them
+in place over the link. It was idle in every earlier run ("0 staged", no "prefill staging" line): its two buffers are
+paid for out of the KV cache, and at one sequence of 32K (271 MiB of KV) the budget cannot fund them. With
+`--max-num-seqs 6` (1.6 GiB of KV, about 1.3 GiB of experts off each card) it arms: two 242.88 MiB buffers, 48 routed
+layers. Same configuration otherwise (two XTX, wht6, `R3_NGRAM_DEV=2`, host pool 24576 MiB), alternating, unprofiled;
+prefill is the server's time to first token (the bench client's long prompts stopped after one token):
+
+| | 2.6K prompt | 7.2K prompt | decode |
+|---|---|---|---|
+| stager on (`fnsu1`, `fnsu3`) | 4.81 s, 5.52 s (535, 466 tok/s) | 9.93 s, 10.48 s (723, 685 tok/s) | 32.4, 32.5 |
+| stager off (`fnsu2`, `fnsu4`) | 9.76 s, 8.61 s (264, 299 tok/s) | 23.24 s, 21.20 s (309, 338 tok/s) | 32.5, 32.5 |
+
+About 1.8 times the prefill at 2.6K and 2.2 times at 7.2K, complete separation, decode unchanged. This is the
+mechanism Strata (Niko1221/Strata) uses for long prefill, there with a deeper ring and 8K chunks.
+
+Not yet usable: `fnsu3` hung after its bench on card 0 - a copy kernel (`aql_copy_link`) stopped advancing, the kernel
+log shows `sq_intr` errors on 0000:03:00.0, and the server had to be killed. The stager-off runs also logged 5 s
+synchronisation waits (three in `fnsu4`) but completed, so the hang is not yet tied to the stager alone.
+Next: the hang; then a deeper stager and larger prefill steps (`--max-num-batched-tokens 8192`), which raise the
+tokens served per byte of cold experts moved.
+
 ## Other engines on the RX 7900 XTX (looked up 2026-10-10)
 
 - **llama.cpp, Vulkan backend.** llama.cpp issue #20934: on an RX 7900 XTX, Llama-2 7B Q4_0 decodes at 174.6 tok/s
