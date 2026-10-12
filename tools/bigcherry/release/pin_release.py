@@ -454,8 +454,8 @@ def _merge_pr_branch_locally(plan: Plan, pr: dict, phase: str) -> None:
                     phase, f"pull request {pr['number']} conflicts with {plan.main} in {', '.join(names) or 'unknown files'}; "
                     f"only {_MANIFEST} may be resolved automatically",
                 )
-            release_text = _git(worktree, "show", f":2:{_MANIFEST}")
-            main_text = _git(worktree, "show", f":3:{_MANIFEST}")
+            release_text = _run(worktree, "git", "show", f":2:{_MANIFEST}").stdout
+            main_text = _run(worktree, "git", "show", f":3:{_MANIFEST}").stdout
             (worktree / _MANIFEST).write_text(
                 _merge_manifest_text(release_text, main_text, phase),
                 encoding="utf-8", newline="",
