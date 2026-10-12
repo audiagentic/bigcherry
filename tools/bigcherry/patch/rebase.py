@@ -368,7 +368,7 @@ def _resolve_selector_snapshot(
             if source_name is None:
                 raise RebaseCheckError("patch-rebase-check: --source NAME required")
             cfg = campaign_config.load(core_paths.RECIPES)
-            catalog = patchset.catalog()  # the ONE load for this run
+            catalog = patchset.catalog(engine)  # the ONE load for this run
             identity = campaign_resolution.resolve_canonical_selection(
                 source_name,
                 cfg,
