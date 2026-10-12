@@ -10,7 +10,7 @@
 # The first argument (a llama-server path from the queue) is ignored.
 # Usage: rad-kld.sh <ignored> <out-dir>
 # env: MODE (record | ref), REF (the reference directory; record writes it, ref reads it), MODEL (.rad container),
-#      GPU (HIP index, 0), TARGET (gfx1100), TP (1), P2P (auto), KERNELS (libr3,libref), CTX (8192), KV (bf16),
+#      GPU (HIP index, 0), VISIBLE_GPU (defaults to GPU; include non-rank helper cards), TARGET (gfx1100), TP (1), P2P (auto), KERNELS (libr3,libref), CTX (8192), KV (bf16),
 #      CORPUS (JSONL), CHUNKS (24), CHUNK_CHARS (6000), EXTRA, KLD_TIMEOUT (3600 s), RADIANCE_SRC, WORK
 set -u
 out=$2
@@ -42,7 +42,7 @@ case ${MODE:?MODE} in
 esac
 echo "radiance $(git -C "$src" rev-parse --short HEAD); $MODE; model $(basename "$model"); HIP device ${GPU:-0}; tp ${TP:-1}; kernels $kernels; corpus $(wc -l < "$corpus") prompts"
 t0=$(date +%s)
-HIP_VISIBLE_DEVICES=${GPU:-0} timeout "${KLD_TIMEOUT:-3600}" "$src/build/bin/radiance" --model "$model" \
+HIP_VISIBLE_DEVICES=${VISIBLE_GPU:-${GPU:-0}} timeout "${KLD_TIMEOUT:-3600}" "$src/build/bin/radiance" --model "$model" \
     --radiance-home "$home" --kernels "$kernels" --tp "${TP:-1}" --p2p "${P2P:-auto}" --max-model-len "${CTX:-8192}" \
     --max-num-seqs 1 --kv-cache-dtype "${KV:-bf16}" "${mode[@]}" ${EXTRA:-} > "$out/kld.log" 2>&1
 rc=$?
