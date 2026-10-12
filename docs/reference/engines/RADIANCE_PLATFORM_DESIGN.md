@@ -77,7 +77,7 @@ The component contains the implementation; an `R3_*` environment value selects a
 Declare libr3 runtime settings in `component.toml` with type/default/diagnostic status so profiles and evidence can
 validate them. Current disposition:
 
-- `R3_ATTN_NATIVE`: supported/default-on in the component, but profile records the value explicitly.
+- `R3_ATTN_NATIVE`: supported/default-on in the component; profiles inherit it rather than restating it.
 - `R3_GDN_NATIVE`: forced off; shelved/correctness-broken.
 - `R3_MOE_NATIVE`, `R3_HC_NATIVE`: experimental until Flash-Next KL + ABBA qualification.
 - `R3_AR_WIRE4`: experimental; requires its numeric/KL gate before use.
@@ -119,8 +119,8 @@ without it). fp8 KV is what every measured run used; the owner's KV rule (q8_0 m
 llama.cpp quantised caches - Radiance offers bf16 or fp8 only, and bf16 has not been fitted at this context yet.
 The 27B two-XTX profile uses wht6: on the 27B it costs KLD +0.0008 / -0.4 pt top-1 (measured), unlike Flash-Next.
 
-The 27B profile intentionally contains only settings proven common from the inspected scripts; model-specific wire,
-drafter, context and pool values must be filled from a measured configuration-of-record rather than inferred.
+The 27B profile explicitly overrides only the two-XTX TP topology and measured `wht6` wire; its other settings
+inherit engine/component defaults until a separately evidenced profile change is needed.
 
 Flash-Next uses `--tp-wire exact`: the feature branch's KL run measured `wht6` at KLD 0.0746 / 87.18% top-1
 against exact, so the earlier fast `wht6` setting is not a production-quality default.
