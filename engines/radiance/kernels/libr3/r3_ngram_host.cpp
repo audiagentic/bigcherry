@@ -9,6 +9,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cerrno>
 #include <cstdint>
 #include <cstdio>
@@ -63,6 +64,10 @@ struct State {
     /* The rows no device holds, [covered, vocab), as a locked copy in host memory: libavx gathers from it as
      * memory (its file path, O_DIRECT reads of the container, is for a table left on disk). R3_NGRAM_RAM=0
      * leaves them in the container instead. */
+    /* where a call's time goes, reported once at shutdown */
+    uint64_t calls = 0, repeats = 0, dev_rows = 0, host_rows = 0;
+    double dev_us = 0, host_us = 0, load_us = 0;
+
     int64_t covered = 0;
     uint8_t* ram = nullptr;
     size_t ram_bytes = 0;
@@ -393,6 +398,11 @@ int init_ngram(const RadParam* p, int n_p, int, int, void** out) {
 void fini_ngram(void*) {
     std::lock_guard<std::mutex> lk(g_mu);
     if (!g || --g->refs > 0) return;
+    std::fprintf(stderr, "libr3: R3_NGRAM_DEV %llu gathers (+%llu repeats served from the last one): device %llu rows "
+                 "%.1f us a gather, host copy %llu rows %.1f us a gather; one-time load %.1f s\n",
+                 (unsigned long long)g->calls, (unsigned long long)g->repeats, (unsigned long long)g->dev_rows,
+                 g->calls ? g->dev_us / (double)g->calls : 0.0, (unsigned long long)g->host_rows,
+                 g->calls ? g->host_us / (double)g->calls : 0.0, g->load_us / 1e6);
     for (const Shard& sh : g->shards) g->hp.release(sh.dev);
     if (g->ram) munmap(g->ram, g->ram_bytes);
     if (g->avx_h) dlclose(g->avx_h);
@@ -427,10 +437,16 @@ int launch_ngram(const RadArgs* a, RadStream) {
         s->last_scale_bits == sbits &&
         !std::memcmp(s->last_ids.data(), ids, (size_t)m * sizeof(int32_t))) {
         std::memcpy(dst, s->last_out.data(), (size_t)m * n * sizeof(uint16_t));
+        ++s->repeats;
         return RAD_OK;
     }
 
+    using clk = std::chrono::steady_clock;
+    auto us_since = [](clk::time_point t0) {
+        return std::chrono::duration<double, std::micro>(clk::now() - t0).count();
+    };
     if (s->loaded_table != table) {
+        const auto t0 = clk::now();
         for (const Shard& sh : s->shards) {
             const int dev = sh.dev;
             const int rc = read_table(table + (size_t)sh.first * n, (size_t)sh.rows * (size_t)n,
@@ -442,6 +458,7 @@ int launch_ngram(const RadArgs* a, RadStream) {
         ram_copy(s, table);
         s->loaded_table = table;
         s->last_valid = false;
+        s->load_us += us_since(t0);
     }
 
     for (Shard& sh : s->shards) sh.count = 0;
@@ -462,16 +479,23 @@ int launch_ngram(const RadArgs* a, RadStream) {
         }
     }
 
+    const auto t_dev = clk::now();
     for (Shard& sh : s->shards) {
         if (!sh.count) continue;
+        s->dev_rows += (uint64_t)sh.count;
         const int rc = s->hp.gather(sh.dev, sh.ids.data(), sh.count, voff, scale, sh.out.data());
         if (rc != RAD_OK) return rc;
         for (int i = 0; i < sh.count; ++i)
             std::memcpy(dst + (size_t)sh.pos[i] * n, sh.out.data() + (size_t)i * n,
                         (size_t)n * sizeof(uint16_t));
     }
+    s->dev_us += us_since(t_dev);
+    const auto t_host = clk::now();
     const int rc = fallback(s, a, miss, n, dst);
     if (rc != RAD_OK) return rc;
+    s->host_us += us_since(t_host);
+    s->host_rows += (uint64_t)miss;
+    ++s->calls;
 
     s->last_table = table; s->last_m = m; s->last_voff = voff; s->last_scale_bits = sbits;
     std::memcpy(s->last_ids.data(), ids, (size_t)m * sizeof(int32_t));
