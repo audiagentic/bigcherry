@@ -80,13 +80,13 @@ def _tracked_entries_by_plan_item(registry: dict) -> dict[str, list[dict]]:
 
 
 def _patch_states(patches_dir: Path | None = None) -> dict[str, str]:
-    return {info.name: info.state for info in patchset.describe("llamacpp", patches_dir)}
+    return {info.name: info.state for info in patchset.describe(patches_dir)}
 
 
 def _plan_items_from_patches(patches_dir: Path | None = None) -> dict[str, list[str]]:
     """plan-item -> [patch_id, ...] from each module's own PROVENANCE dict."""
     by_item: dict[str, list[str]] = {}
-    for module in patchset.catalog("llamacpp", patches_dir):
+    for module in patchset.catalog(patches_dir):
         prov = sources._patch_provenance(module.path)
         item = (prov or {}).get("plan-item")
         if item:

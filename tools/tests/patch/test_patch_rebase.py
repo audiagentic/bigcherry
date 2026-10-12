@@ -139,21 +139,21 @@ class RebaseCheckTests(unittest.TestCase):
         self.overlay_root = self.base / "overlay"
         self.overlay_root.mkdir()
 
-        self._old_patches_root = paths.patches_root
+        self._old_patches = paths.PATCHES
         self._old_overlay = paths.SRC_OVERLAY
-        paths.patches_root = lambda engine: self.patches_root
+        paths.PATCHES = self.patches_root
         paths.SRC_OVERLAY = self.overlay_root
 
     def tearDown(self) -> None:
         _git(self.upstream, "worktree", "prune")
-        paths.patches_root = self._old_patches_root
+        paths.PATCHES = self._old_patches
         paths.SRC_OVERLAY = self._old_overlay
 
     def _patch_by_id(self, report: dict, patch_id: str) -> dict:
         return next(p for p in report["patches"] if p["patch_id"] == patch_id)
 
     def test_clean_not_applicable_failed_and_blocked_by_dependency(self):
-        report = rebase.run_rebase_check("llamacpp", self.upstream, all_patches=True)
+        report = rebase.run_rebase_check(self.upstream, all_patches=True)
 
         self.assertEqual(
             self._patch_by_id(report, "0100_clean")["status"], rebase.STATUS_CLEAN
@@ -183,7 +183,7 @@ class RebaseCheckTests(unittest.TestCase):
         self.assertEqual(status, "")
 
     def test_render_report_reads_from_the_same_model_as_json(self):
-        report = rebase.run_rebase_check("llamacpp", self.upstream, all_patches=True)
+        report = rebase.run_rebase_check(self.upstream, all_patches=True)
         table = rebase.render_report(report)
         self.assertIn("0300_failed", table)
         self.assertIn("FAILED_NEEDS_RECONCILIATION", table)
@@ -192,7 +192,7 @@ class RebaseCheckTests(unittest.TestCase):
         self.assertIn("RECONCILIATION REQUIRED", table)
 
     def test_write_and_load_report_round_trip(self):
-        report = rebase.run_rebase_check("llamacpp", self.upstream, all_patches=True)
+        report = rebase.run_rebase_check(self.upstream, all_patches=True)
         report_path = self.base / "report.json"
         rebase.write_report(report_path, report)
         loaded = rebase.load_report(report_path)
@@ -248,18 +248,18 @@ class ConflictPartitionedAllPatchesTests(unittest.TestCase):
         self.overlay_root = self.base / "overlay"
         self.overlay_root.mkdir()
 
-        self._old_patches_root = paths.patches_root
+        self._old_patches = paths.PATCHES
         self._old_overlay = paths.SRC_OVERLAY
-        paths.patches_root = lambda engine: self.patches_root
+        paths.PATCHES = self.patches_root
         paths.SRC_OVERLAY = self.overlay_root
 
     def tearDown(self) -> None:
         _git(self.upstream, "worktree", "prune")
-        paths.patches_root = self._old_patches_root
+        paths.PATCHES = self._old_patches
         paths.SRC_OVERLAY = self._old_overlay
 
     def test_all_patches_does_not_crash_on_conflicting_alternatives(self):
-        report = rebase.run_rebase_check("llamacpp", self.upstream, all_patches=True)
+        report = rebase.run_rebase_check(self.upstream, all_patches=True)
         statuses = {p["patch_id"]: p["status"] for p in report["patches"]}
         self.assertEqual(statuses["0100_clean"], rebase.STATUS_CLEAN)
         self.assertEqual(statuses["0500_conflict_a"], rebase.STATUS_CLEAN)
@@ -299,7 +299,7 @@ class ConflictPartitionedAllPatchesTests(unittest.TestCase):
 def patchset_catalog():
     from bigcherry.patch import patchset
 
-    return patchset.catalog("llamacpp", )
+    return patchset.catalog()
 
 
 class QuarantineFixedPointTests(unittest.TestCase):
@@ -327,18 +327,18 @@ class QuarantineFixedPointTests(unittest.TestCase):
         self.overlay_root = self.base / "overlay"
         self.overlay_root.mkdir()
 
-        self._old_patches_root = paths.patches_root
+        self._old_patches = paths.PATCHES
         self._old_overlay = paths.SRC_OVERLAY
-        paths.patches_root = lambda engine: self.patches_root
+        paths.PATCHES = self.patches_root
         paths.SRC_OVERLAY = self.overlay_root
 
     def tearDown(self) -> None:
         _git(self.upstream, "worktree", "prune")
-        paths.patches_root = self._old_patches_root
+        paths.PATCHES = self._old_patches
         paths.SRC_OVERLAY = self._old_overlay
 
     def test_undeclared_dependency_is_quarantined_not_failed(self):
-        report = rebase.run_rebase_check("llamacpp", self.upstream, all_patches=True)
+        report = rebase.run_rebase_check(self.upstream, all_patches=True)
         by_id = {p["patch_id"]: p for p in report["patches"]}
         self.assertEqual(by_id["0100_provider"]["status"], rebase.STATUS_FAILED)
         self.assertEqual(by_id["0200_consumer"]["status"], rebase.STATUS_QUARANTINED)
@@ -365,26 +365,26 @@ class StaleReportTests(unittest.TestCase):
         self.overlay_root = self.base / "overlay"
         self.overlay_root.mkdir()
 
-        self._old_patches_root = paths.patches_root
+        self._old_patches = paths.PATCHES
         self._old_overlay = paths.SRC_OVERLAY
-        paths.patches_root = lambda engine: self.patches_root
+        paths.PATCHES = self.patches_root
         paths.SRC_OVERLAY = self.overlay_root
 
-        self.report = rebase.run_rebase_check("llamacpp", self.upstream, all_patches=True)
+        self.report = rebase.run_rebase_check(self.upstream, all_patches=True)
 
     def tearDown(self) -> None:
         _git(self.upstream, "worktree", "prune")
-        paths.patches_root = self._old_patches_root
+        paths.PATCHES = self._old_patches
         paths.SRC_OVERLAY = self._old_overlay
 
     def test_fresh_report_passes(self):
-        known_good = rebase._require_fresh("llamacpp", dict(self.report), self.upstream)
+        known_good = rebase._require_fresh(dict(self.report), self.upstream)
         self.assertEqual(set(known_good), {"0100_clean"})
 
     def test_schema_version_mismatch_is_stale(self):
         stale = dict(self.report, schema_version=self.report["schema_version"] + 1)
         with self.assertRaises(rebase.StaleRebaseReportError):
-            rebase._require_fresh("llamacpp", stale, self.upstream)
+            rebase._require_fresh(stale, self.upstream)
 
     def test_semantics_version_mismatch_is_stale(self):
         stale = dict(
@@ -395,29 +395,29 @@ class StaleReportTests(unittest.TestCase):
             + 1,
         )
         with self.assertRaises(rebase.StaleRebaseReportError):
-            rebase._require_fresh("llamacpp", stale, self.upstream)
+            rebase._require_fresh(stale, self.upstream)
 
     def test_upstream_revision_mismatch_is_stale(self):
         stale = dict(self.report, upstream_revision="0" * 40)
         with self.assertRaises(rebase.StaleRebaseReportError):
-            rebase._require_fresh("llamacpp", stale, self.upstream)
+            rebase._require_fresh(stale, self.upstream)
 
     def test_bigcherry_revision_mismatch_is_stale(self):
         stale = dict(self.report, bigcherry_revision="0" * 40)
         with self.assertRaises(rebase.StaleRebaseReportError):
-            rebase._require_fresh("llamacpp", stale, self.upstream)
+            rebase._require_fresh(stale, self.upstream)
 
     def test_overlay_digest_mismatch_is_stale(self):
         stale = dict(self.report, overlay_digest="deadbeef")
         with self.assertRaises(rebase.StaleRebaseReportError):
-            rebase._require_fresh("llamacpp", stale, self.upstream)
+            rebase._require_fresh(stale, self.upstream)
 
     def test_patch_implementation_digest_mismatch_is_stale(self):
         patches = [dict(p) for p in self.report["patches"]]
         patches[0]["implementation_digest"] = "deadbeef"
         stale = dict(self.report, patches=patches)
         with self.assertRaises(rebase.StaleRebaseReportError):
-            rebase._require_fresh("llamacpp", stale, self.upstream)
+            rebase._require_fresh(stale, self.upstream)
 
     def test_composition_tampered_selection_is_stale(self):
         # patches[] shrunk while the selector's patch_ids was left untouched --
@@ -426,7 +426,7 @@ class StaleReportTests(unittest.TestCase):
         patches = [dict(p) for p in self.report["patches"]]
         stale = dict(self.report, patches=patches[:0])
         with self.assertRaises(rebase.StaleRebaseReportError):
-            rebase._require_fresh("llamacpp", stale, self.upstream)
+            rebase._require_fresh(stale, self.upstream)
 
     def test_requires_drift_is_stale(self):
         # Simulates a packaged patch's patch.toml REQUIRES changing without
@@ -435,14 +435,14 @@ class StaleReportTests(unittest.TestCase):
         patches[0]["requires"] = ["some_other_patch"]
         stale = dict(self.report, patches=patches)
         with self.assertRaises(rebase.StaleRebaseReportError):
-            rebase._require_fresh("llamacpp", stale, self.upstream)
+            rebase._require_fresh(stale, self.upstream)
 
     def test_conflicts_drift_is_stale(self):
         patches = [dict(p) for p in self.report["patches"]]
         patches[0]["conflicts"] = ["some_other_patch"]
         stale = dict(self.report, patches=patches)
         with self.assertRaises(rebase.StaleRebaseReportError):
-            rebase._require_fresh("llamacpp", stale, self.upstream)
+            rebase._require_fresh(stale, self.upstream)
 
     def test_selector_widened_since_report_is_stale(self):
         # No patch bytes, overlay, or revision moved -- just the selector's
@@ -451,12 +451,12 @@ class StaleReportTests(unittest.TestCase):
         # otherwise notice.
         (self.patches_root / "0200_extra.py").write_text(CLEAN_PATCH, encoding="utf-8")
         with self.assertRaises(rebase.StaleRebaseReportError):
-            rebase._require_fresh("llamacpp", dict(self.report), self.upstream)
+            rebase._require_fresh(dict(self.report), self.upstream)
 
     def _source_identity(self, *, patch_set_id: str, source_ref: str) -> object:
         from bigcherry.campaign import resolution as campaign_resolution
 
-        return campaign_resolution.SelectorIdentity(engine="llamacpp", 
+        return campaign_resolution.SelectorIdentity(
             selector_kind=campaign_resolution.SELECTOR_KIND_SOURCE,
             selector_name="bigcherry",
             source_name="bigcherry",
@@ -491,7 +491,7 @@ class StaleReportTests(unittest.TestCase):
             ),
         ):
             # Fresh: the full identity agrees -- passes.
-            rebase._require_fresh("llamacpp", dict(source_report), self.upstream)
+            rebase._require_fresh(dict(source_report), self.upstream)
 
         # Same resulting patch_ids, but a DIFFERENT live patch_set_id (the
         # exact case patch_set_id exists to catch) -- rejected even though
@@ -504,7 +504,7 @@ class StaleReportTests(unittest.TestCase):
             ),
         ):
             with self.assertRaises(rebase.StaleRebaseReportError):
-                rebase._require_fresh("llamacpp", dict(source_report), self.upstream)
+                rebase._require_fresh(dict(source_report), self.upstream)
 
         # Same patch_set_id, but the source's ref moved (e.g. a pin bump) --
         # also rejected.
@@ -516,7 +516,7 @@ class StaleReportTests(unittest.TestCase):
             ),
         ):
             with self.assertRaises(rebase.StaleRebaseReportError):
-                rebase._require_fresh("llamacpp", dict(source_report), self.upstream)
+                rebase._require_fresh(dict(source_report), self.upstream)
 
     def test_order_only_identity_drift_is_stale(self):
         # PA34: same id SET, different ORDER is a different identity -- the
@@ -525,11 +525,11 @@ class StaleReportTests(unittest.TestCase):
         from bigcherry.campaign import resolution as campaign_resolution
 
         (self.patches_root / "0200_second.py").write_text(CLEAN_PATCH, encoding="utf-8")
-        self.report = rebase.run_rebase_check("llamacpp", self.upstream, all_patches=True)
+        self.report = rebase.run_rebase_check(self.upstream, all_patches=True)
         reported = campaign_resolution.SelectorIdentity.from_payload(
             self.report["selector"]
         )
-        reordered = campaign_resolution.SelectorIdentity(engine="llamacpp", 
+        reordered = campaign_resolution.SelectorIdentity(
             selector_kind=reported.selector_kind,
             selector_name=reported.selector_name,
             source_name=reported.source_name,
@@ -540,7 +540,7 @@ class StaleReportTests(unittest.TestCase):
         )
         with mock.patch.object(rebase, "_live_identity_for", return_value=reordered):
             with self.assertRaises(rebase.StaleRebaseReportError):
-                rebase._require_fresh("llamacpp", dict(self.report), self.upstream)
+                rebase._require_fresh(dict(self.report), self.upstream)
 
     def test_hash_only_identity_drift_is_stale(self):
         # PA34: same ids and order, one module's content hash moved -- also
@@ -553,7 +553,7 @@ class StaleReportTests(unittest.TestCase):
         )
         hashes = list(reported.module_hashes)
         hashes[0] = (hashes[0][0], "0" * 64)
-        drifted = campaign_resolution.SelectorIdentity(engine="llamacpp", 
+        drifted = campaign_resolution.SelectorIdentity(
             selector_kind=reported.selector_kind,
             selector_name=reported.selector_name,
             source_name=reported.source_name,
@@ -564,7 +564,7 @@ class StaleReportTests(unittest.TestCase):
         )
         with mock.patch.object(rebase, "_live_identity_for", return_value=drifted):
             with self.assertRaises(rebase.StaleRebaseReportError):
-                rebase._require_fresh("llamacpp", dict(self.report), self.upstream)
+                rebase._require_fresh(dict(self.report), self.upstream)
 
     def test_schema_1_selection_report_is_stale(self):
         # Schema 1 reports carried the ad-hoc `selection` block; under
@@ -574,7 +574,7 @@ class StaleReportTests(unittest.TestCase):
         del v1["selector"]
         v1["selection"] = {"patch_ids": ["0100_clean"], "all_patches": True}
         with self.assertRaises(rebase.StaleRebaseReportError):
-            rebase._require_fresh("llamacpp", v1, self.upstream)
+            rebase._require_fresh(v1, self.upstream)
 
     def test_expected_selector_mismatch_rejects_a_fresh_report(self):
         # G2 (PA34): a FRESH report produced under a different selector is
@@ -585,7 +585,7 @@ class StaleReportTests(unittest.TestCase):
         actual = campaign_resolution.SelectorIdentity.from_payload(
             self.report["selector"]
         )
-        other = campaign_resolution.SelectorIdentity(engine="llamacpp", 
+        other = campaign_resolution.SelectorIdentity(
             selector_kind=campaign_resolution.SELECTOR_KIND_SOURCE,
             selector_name="bigcherry",
             source_name="bigcherry",
@@ -595,13 +595,13 @@ class StaleReportTests(unittest.TestCase):
             module_hashes=actual.module_hashes,
         )
         with self.assertRaises(rebase.StaleRebaseReportError):
-            rebase.require_fresh_report("llamacpp", 
+            rebase.require_fresh_report(
                 dict(self.report),
                 self.upstream,
                 expected_selector=other,
             )
         # The matching expected selector passes.
-        known_good = rebase.require_fresh_report("llamacpp", 
+        known_good = rebase.require_fresh_report(
             dict(self.report),
             self.upstream,
             expected_selector=actual,
@@ -613,7 +613,7 @@ class StaleReportTests(unittest.TestCase):
         stale = dict(self.report, upstream_revision="0" * 40)
         rebase.write_report(report_path, stale)
         with self.assertRaises(rebase.StaleRebaseReportError):
-            rebase.apply_known_good("llamacpp", 
+            rebase.apply_known_good(
                 self.upstream, report_path, force=True, dry_run=True
             )
 
@@ -743,14 +743,14 @@ class ApplyKnownGoodTests(unittest.TestCase):
         self.overlay_root = self.base / "overlay"
         self.overlay_root.mkdir()
 
-        self._old_patches_root = paths.patches_root
+        self._old_patches = paths.PATCHES
         self._old_overlay = paths.SRC_OVERLAY
-        paths.patches_root = lambda engine: self.patches_root
+        paths.PATCHES = self.patches_root
         paths.SRC_OVERLAY = self.overlay_root
 
     def tearDown(self) -> None:
         _git(self.upstream, "worktree", "prune")
-        paths.patches_root = self._old_patches_root
+        paths.PATCHES = self._old_patches
         paths.SRC_OVERLAY = self._old_overlay
 
     def _fake_record(self, *, stage: str = "audited"):
@@ -767,7 +767,7 @@ class ApplyKnownGoodTests(unittest.TestCase):
     def test_apply_known_good_writes_only_the_known_good_subset(self):
         from unittest import mock
 
-        report = rebase.run_rebase_check("llamacpp", self.upstream, all_patches=True)
+        report = rebase.run_rebase_check(self.upstream, all_patches=True)
         self.assertEqual(set(report["known_good_patch_ids"]), {"0100_clean"})
         report_path = self.base / "report.json"
         rebase.write_report(report_path, report)
@@ -776,7 +776,7 @@ class ApplyKnownGoodTests(unittest.TestCase):
         with mock.patch.object(
             rebase.releases, "record_for_checkout", return_value=record
         ):
-            result = rebase.apply_known_good("llamacpp", 
+            result = rebase.apply_known_good(
                 self.upstream, report_path, force=False, dry_run=False
             )
 
@@ -792,7 +792,7 @@ class ApplyKnownGoodTests(unittest.TestCase):
         from unittest import mock
 
         (self.patches_root / "0300_failed.py").unlink()  # only the clean patch remains
-        report = rebase.run_rebase_check("llamacpp", self.upstream, all_patches=True)
+        report = rebase.run_rebase_check(self.upstream, all_patches=True)
         self.assertEqual(set(report["known_good_patch_ids"]), {"0100_clean"})
         self.assertEqual(set(report["selector"]["patch_ids"]), {"0100_clean"})
         report_path = self.base / "report.json"
@@ -802,7 +802,7 @@ class ApplyKnownGoodTests(unittest.TestCase):
         with mock.patch.object(
             rebase.releases, "record_for_checkout", return_value=record
         ):
-            result = rebase.apply_known_good("llamacpp", 
+            result = rebase.apply_known_good(
                 self.upstream, report_path, force=False, dry_run=False
             )
 
@@ -813,7 +813,7 @@ class ApplyKnownGoodTests(unittest.TestCase):
     def test_partial_known_good_apply_refused_on_a_later_stage_tree(self):
         from unittest import mock
 
-        report = rebase.run_rebase_check("llamacpp", self.upstream, all_patches=True)
+        report = rebase.run_rebase_check(self.upstream, all_patches=True)
         self.assertTrue(
             set(report["known_good_patch_ids"]) < set(report["selector"]["patch_ids"])
         )
@@ -827,14 +827,14 @@ class ApplyKnownGoodTests(unittest.TestCase):
             rebase.releases, "record_for_checkout", return_value=record
         ):
             with self.assertRaises(rebase.RebaseCheckError):
-                rebase.apply_known_good("llamacpp", 
+                rebase.apply_known_good(
                     self.upstream, report_path, force=False, dry_run=False
                 )
             # --force explicitly accepts invalidating later-stage evidence --
             # but it must actually invalidate it, not silently leave a
             # 'generated' tree's promotion/manifest pointing at a checkout
             # that was just replaced with an incomplete composition.
-            result = rebase.apply_known_good("llamacpp", 
+            result = rebase.apply_known_good(
                 self.upstream, report_path, force=True, dry_run=False
             )
         self.assertTrue(result.ok)
@@ -856,26 +856,26 @@ class SourceSelectorTests(unittest.TestCase):
         from bigcherry.patch import patchset
 
         cfg = campaign_config.load(paths.RECIPES)
-        catalog = patchset.catalog("llamacpp", )
-        expected = campaign_resolution.resolve_canonical_selection("llamacpp", 
+        catalog = patchset.catalog()
+        expected = campaign_resolution.resolve_canonical_selection(
             "bigcherry", cfg, catalog
         )
-        ids = rebase._selection_patch_ids("llamacpp", source_name="bigcherry", all_patches=False)
+        ids = rebase._selection_patch_ids(source_name="bigcherry", all_patches=False)
         self.assertEqual(set(ids), set(expected.patch_ids))
 
     def test_unknown_source_raises_rebase_check_error(self):
         with self.assertRaises(rebase.RebaseCheckError):
-            rebase._selection_patch_ids("llamacpp", 
+            rebase._selection_patch_ids(
                 source_name="not-a-real-source", all_patches=False
             )
 
     def test_no_selector_given_raises(self):
         with self.assertRaises(rebase.RebaseCheckError):
-            rebase._selection_patch_ids("llamacpp", all_patches=False)
+            rebase._selection_patch_ids(all_patches=False)
 
     def test_source_and_all_together_raises(self):
         with self.assertRaises(rebase.RebaseCheckError):
-            rebase._selection_patch_ids("llamacpp", source_name="bigcherry", all_patches=True)
+            rebase._selection_patch_ids(source_name="bigcherry", all_patches=True)
 
 
 if __name__ == "__main__":

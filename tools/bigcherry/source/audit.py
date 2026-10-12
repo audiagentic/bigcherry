@@ -541,7 +541,7 @@ def _overlay_plus_applied_patches(root: Path, relative: str, source: Path, targe
     registry = patch_registry.load_registry()
     texts = {relative: source.read_text(encoding="utf-8")}
     for descriptor in registry.descriptors:
-        for file_patch in patch_registry.load_implementation("llamacpp", descriptor):
+        for file_patch in patch_registry.load_implementation(descriptor):
             if file_patch.path != relative:
                 continue
             if not all(re.search(e.guard_pattern(), compiled, re.MULTILINE) for e in file_patch.edits):

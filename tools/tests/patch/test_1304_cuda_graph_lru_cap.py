@@ -46,7 +46,7 @@ class Patch1304Mechanics(unittest.TestCase):
         root = Path(td.name)
         cuda = root / "ggml/src/ggml-cuda"
         cuda.mkdir(parents=True)
-        copy_pinned("llamacpp", _COMMON, cuda / "common.cuh")
+        copy_pinned(_COMMON, cuda / "common.cuh")
         (cuda / "ggml-cuda.cu").write_text(_GGML_CUDA, encoding="utf-8")
         prereq = apply_all(_p1302.PATCHES, root)
         assert all(r.ok for r in prereq), [e.detail for r in prereq for e in r.failed]
@@ -83,7 +83,7 @@ class Patch1304Mechanics(unittest.TestCase):
             root = Path(td.name)
             cuda = root / "ggml/src/ggml-cuda"
             cuda.mkdir(parents=True)
-            copy_pinned("llamacpp", _COMMON, cuda / "common.cuh")
+            copy_pinned(_COMMON, cuda / "common.cuh")
             (cuda / "ggml-cuda.cu").write_text(_GGML_CUDA, encoding="utf-8")
             results = apply_all(_module.PATCHES, root)
             self.assertFalse(all(r.ok for r in results))

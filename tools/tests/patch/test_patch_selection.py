@@ -26,7 +26,7 @@ def _args(**kwargs) -> Namespace:
 
 class ResolveCliSelectionTests(unittest.TestCase):
     def test_source_selection_has_real_patch_set_identity(self):
-        sel = selection.resolve_cli_selection("llamacpp", _args(source="bigcherry"))
+        sel = selection.resolve_cli_selection(_args(source="bigcherry"))
         self.assertEqual(sel.source_name, "bigcherry")
         # PA29 cutover (GPT design review req_964ec5fc21c14848): bigcherry is
         # the RELEASE source: serving-core + upstream-fixes +
@@ -35,7 +35,7 @@ class ResolveCliSelectionTests(unittest.TestCase):
         # aggregate `framework`/`bigcherry-native` identifiers were deleted
         # by PA31, so there is no longer a wider control source to compare
         # against here.
-        serving = selection.resolve_cli_selection("llamacpp", _args(source="bigcherry-serving-base"))
+        serving = selection.resolve_cli_selection(_args(source="bigcherry-serving-base"))
         self.assertGreaterEqual(len(sel.patch_ids), len(serving.patch_ids))
         self.assertTrue(set(serving.patch_ids) <= set(sel.patch_ids))
         self.assertIsNotNone(sel.patch_set_id)
@@ -43,17 +43,17 @@ class ResolveCliSelectionTests(unittest.TestCase):
         self.assertIsNotNone(sel.overlay_digest)  # overlay=True -> real digest
 
     def test_source_with_no_overlay_leaves_overlay_digest_none(self):
-        sel = selection.resolve_cli_selection("llamacpp", _args(source="llama-native"))
+        sel = selection.resolve_cli_selection(_args(source="llama-native"))
         self.assertEqual(sel.overlay, False)
         self.assertIsNone(sel.overlay_digest)
         self.assertEqual(sel.patch_ids, ())  # llama-native has no patch-sets
 
     def test_unknown_source_raises_selection_error(self):
         with self.assertRaises(selection.SelectionError):
-            selection.resolve_cli_selection("llamacpp", _args(source="not-a-real-source"))
+            selection.resolve_cli_selection(_args(source="not-a-real-source"))
 
     def test_no_selector_is_select_all(self):
-        sel = selection.resolve_cli_selection("llamacpp", _args())
+        sel = selection.resolve_cli_selection(_args())
         self.assertTrue(sel.select_all)
         self.assertIsNone(sel.source_name)
 
@@ -63,7 +63,7 @@ class MatchesTests(unittest.TestCase):
         sel = selection.CliPatchSelection(
             label="", patch_ids=("0100_cmake_options",),
         )
-        catalog = patchset.catalog("llamacpp", )
+        catalog = patchset.catalog()
         by_id = {m.patch_id: m for m in catalog}
         self.assertTrue(sel.matches(by_id["0100_cmake_options"]))
         self.assertFalse(sel.matches(by_id["1000_rdna4_mmq_q2k_q6k_fix"]))

@@ -47,7 +47,7 @@ def _write_patch(
         + performance_toml,
         encoding="utf-8",
     )
-    registry = patch_registry.load_registry("llamacpp", root)
+    registry = patch_registry.load_registry(root)
     return registry.by_id[patch_id]
 
 
@@ -164,7 +164,7 @@ class ResolveBenchmarkWiringTests(unittest.TestCase):
     def test_real_rd04_patch_resolves(self) -> None:
         from bigcherry.core import paths
 
-        registry = patch_registry.load_registry("llamacpp", paths.PATCHES)
+        registry = patch_registry.load_registry(paths.PATCHES)
         descriptor = registry.by_id["1202_rd04_bf16_flash_attn_tile"]
         wiring = campaign_benchmark.resolve_benchmark_wiring(descriptor)
         self.assertEqual(wiring.executor, "paired-llama-bench-v1")
@@ -173,7 +173,7 @@ class ResolveBenchmarkWiringTests(unittest.TestCase):
     def test_real_rd08_patch_resolves(self) -> None:
         from bigcherry.core import paths
 
-        registry = patch_registry.load_registry("llamacpp", paths.PATCHES)
+        registry = patch_registry.load_registry(paths.PATCHES)
         descriptor = registry.by_id["1204_rd08_q6k_mmvq_vdr2"]
         wiring = campaign_benchmark.resolve_benchmark_wiring(descriptor)
         self.assertEqual(wiring.executor, "paired-llama-bench-v1")

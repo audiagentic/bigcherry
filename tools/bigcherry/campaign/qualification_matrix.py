@@ -172,7 +172,7 @@ def build_qualification_matrix_plan(
             )
     safety_arches = tuple(a for a in ship_arches if a not in set(gain_arches))
 
-    closure = patchset.expand_composition("llamacpp", (patch_id,), directory=catalog_directory).expanded
+    closure = patchset.expand_composition((patch_id,), directory=catalog_directory).expanded
 
     # PA29 cutover (GPT design review req_964ec5fc21c14848): the isolated
     # control moves to bigcherry-tuning -- consistent with
@@ -180,10 +180,10 @@ def build_qualification_matrix_plan(
     # this module's cells back -- not bigcherry-serving-base, since the
     # qualification-matrix control needs the same campaign/tune plumbing
     # (0110) those lanes need.
-    native_lane = resolution.resolve_lane("llamacpp", 
+    native_lane = resolution.resolve_lane(
         "bigcherry-tuning", cfg, catalog, catalog_directory=catalog_directory,
     )
-    release_lane = resolution.resolve_lane("llamacpp", 
+    release_lane = resolution.resolve_lane(
         "bigcherry", cfg, catalog, catalog_directory=catalog_directory,
     )
     if patch_id in release_lane.patch_set.module_ids:
@@ -196,12 +196,12 @@ def build_qualification_matrix_plan(
     isolated_overlay = tuple(m for m in closure if m not in set(native_lane.patch_set.module_ids))
     release_overlay = tuple(m for m in closure if m not in set(release_lane.patch_set.module_ids))
 
-    isolated_subject_lane = resolution.resolve_lane_overlay("llamacpp", 
+    isolated_subject_lane = resolution.resolve_lane_overlay(
         "bigcherry-tuning", cfg, catalog,
         overlay_patch_ids=isolated_overlay, overlay_name=f"pqm:{patch_id}",
         catalog_directory=catalog_directory,
     )
-    release_subject_lane = resolution.resolve_lane_overlay("llamacpp", 
+    release_subject_lane = resolution.resolve_lane_overlay(
         "bigcherry", cfg, catalog,
         overlay_patch_ids=release_overlay, overlay_name=f"pqm:{patch_id}",
         catalog_directory=catalog_directory,
@@ -254,7 +254,7 @@ def stale_release_delta_cells(
 
     Only ``release_delta`` cells are affected; ``isolated`` cells never
     reference the release composition and remain valid regardless."""
-    current_release = resolution.resolve_lane("llamacpp", 
+    current_release = resolution.resolve_lane(
         "bigcherry", cfg, catalog, catalog_directory=catalog_directory,
     )
     if current_release.patch_set.patch_set_id == plan.release_composition_hash:
@@ -287,7 +287,7 @@ def check_counterfactual_composable(
     too -- a non-empty ``blocking_dependents`` is reported as-is; NO
     fallback (e.g. a runtime negative control) is attempted here, per the
     design review's explicit PR1 cut."""
-    release_lane = resolution.resolve_lane("llamacpp", 
+    release_lane = resolution.resolve_lane(
         "bigcherry", cfg, catalog, catalog_directory=catalog_directory,
     )
     if patch_id not in release_lane.patch_set.module_ids:
@@ -303,7 +303,7 @@ def check_counterfactual_composable(
     if blocking_dependents:
         return CounterfactualDisposition(composable=False, blocking_dependents=blocking_dependents)
     try:
-        patchset.resolve_exact("llamacpp", remaining, directory=catalog_directory, required_state=None)
+        patchset.resolve_exact(remaining, directory=catalog_directory, required_state=None)
     except ValueError as exc:
         raise QualificationMatrixError(
             f"release-minus-{patch_id} failed exact resolution unexpectedly: {exc}"

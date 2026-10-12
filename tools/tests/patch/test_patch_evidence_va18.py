@@ -107,7 +107,7 @@ class MakeRecordV4ContractTests(unittest.TestCase):
 def _module(
     patch_path: Path, *, state: str = "validated", catalog_root: Path | None = None,
 ) -> patchset.PatchModule:
-    return patchset.PatchModule(engine="llamacpp", 
+    return patchset.PatchModule(
         patch_id="9999_example", path=patch_path, order=0, state=state,
         upstream=None, content_hash="deadbeef" * 8, catalog_root=catalog_root,
     )

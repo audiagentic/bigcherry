@@ -28,7 +28,7 @@ class Patch1303Mechanics(unittest.TestCase):
         root = Path(td.name)
         path = root / "src/llama-model.cpp"
         path.parent.mkdir(parents=True)
-        copy_pinned("llamacpp", _VENDOR, path)
+        copy_pinned(_VENDOR, path)
         return td, root, path
 
     def test_apply_selects_vector_and_rotation_and_is_idempotent(self):

@@ -59,7 +59,7 @@ def _write(directory: Path, name: str, body: str) -> Path:
 
 
 def _descriptor(patch_id: str = "1201_test") -> patch_registry.PatchDescriptor:
-    return patch_registry.PatchDescriptor(engine="llamacpp", 
+    return patch_registry.PatchDescriptor(
         patch_id=patch_id,
         order=1201,
         representation=patch_registry.REPRESENTATION_SIMPLE,

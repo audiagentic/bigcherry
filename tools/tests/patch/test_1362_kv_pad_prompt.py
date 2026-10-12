@@ -36,7 +36,7 @@ _FILES = sorted({fp.path for fp in _P.PATCHES})
 class Patch1362Mechanics(unittest.TestCase):
     def test_apply_on_composition_and_idempotent(self):
         with tempfile.TemporaryDirectory() as td:
-            root = production_source("llamacpp", "bigcherry", _FILES, td)
+            root = production_source(_FILES, td)
 
             for fp in _P.PATCHES:
                 before = (root / fp.path).read_text(encoding="utf-8")
@@ -78,7 +78,7 @@ class Patch1362Mechanics(unittest.TestCase):
         for fp in _P.PATCHES:
             with self.subTest(path=fp.path):
                 with tempfile.TemporaryDirectory() as td:
-                    root = production_source("llamacpp", "bigcherry", _FILES, td)
+                    root = production_source(_FILES, td)
                     (root / fp.path).write_text("// moved upstream\n", encoding="utf-8")
                     res = apply_all(_P.PATCHES, root)
                     self.assertFalse(all(r.ok for r in res))

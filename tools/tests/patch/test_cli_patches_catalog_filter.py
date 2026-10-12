@@ -33,7 +33,7 @@ def _real_catalog_total() -> int:
     2026-09-08: three assertions here hardcoded a stale total and failed on
     every unrelated catalog growth, independent of whatever change was
     actually under test)."""
-    return len(patchset.catalog("llamacpp"))
+    return len(patchset.catalog())
 
 
 class PatchesCatalogFilterTests(unittest.TestCase):
@@ -84,7 +84,7 @@ class PatchesCatalogFilterTests(unittest.TestCase):
         # disagree today (a real, separate inconsistency worth its own
         # look, out of scope here). This test verifies the CLI's actual
         # behavior, so it must count entries the same way the CLI does.
-        snapshot = patch_catalog.build_snapshot("llamacpp")
+        snapshot = patch_catalog.build_snapshot()
         hip_matching = sum(
             1 for entry in snapshot.metadata.values() if entry.backend == "hip")
         total = _real_catalog_total()
