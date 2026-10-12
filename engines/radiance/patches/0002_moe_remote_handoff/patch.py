@@ -216,7 +216,7 @@ PATCHES = (
             ),
             Edit(
                 id="remote-aware-hc-gather",
-                anchor=r"^\s*return takes_ar\(T\) && gather_taken\(g, T, gather_rows, gather_rows6\);$",
+                anchor=r"^[ \t]*return takes_ar\(T\) && gather_taken\(g, T, gather_rows, gather_rows6\);$",
                 mode="replace",
                 text="""        /* Remote rows join x.x before the collective; only the gather fusion stands down. */
         return !rad_moe_remote_wanted(T) && takes_ar(T) &&
@@ -241,7 +241,7 @@ PATCHES = (
             ),
             Edit(
                 id="remote-weight-probes",
-                anchor=r"^\s*std::vector<rad_weight> w_gu, w_gus, w_dn, w_dns;$",
+                anchor=r"^[ \t]*std::vector<rad_weight> w_gu, w_gus, w_dn, w_dns;$",
                 text="""
     /* Expert-id -> movement-unit probes for the remote residency policy. */
     std::vector<rad_weight> remote_gu, remote_dn;
@@ -252,7 +252,7 @@ PATCHES = (
             ),
             Edit(
                 id="remote-add-op",
-                anchor=r"^\s*rad_op op_ar = 0, op_add = 0;$",
+                anchor=r"^[ \t]*rad_op op_ar = 0, op_add = 0;$",
                 mode="replace",
                 text="    rad_op op_ar = 0, op_add = 0, op_remote_add = 0;",
                 guard=r"op_remote_add = 0",
@@ -261,7 +261,7 @@ PATCHES = (
             ),
             Edit(
                 id="init-remote-weight-probes",
-                anchor=r"^\s*w_dn\.resize\(\(size_t\)ne\); w_dns\.resize\(\(size_t\)ne\);$",
+                anchor=r"^[ \t]*w_dn\.resize\(\(size_t\)ne\); w_dns\.resize\(\(size_t\)ne\);$",
                 text="""
     remote_gu.assign((size_t)ne, 0);
     remote_dn.assign((size_t)ne, 0);""",
@@ -271,7 +271,7 @@ PATCHES = (
             ),
             Edit(
                 id="remember-bf16-gate-up",
-                anchor=r"^\s*if \(!w_gu\[\(size_t\)e\]\) return RAD_E_INVAL;$",
+                anchor=r"^[ \t]*if \(!w_gu\[\(size_t\)e\]\) return RAD_E_INVAL;$",
                 text="\n            remote_gu[(size_t)e] = w_gu[(size_t)e];",
                 guard=r"remote_gu\[\(size_t\)e\] = w_gu\[\(size_t\)e\]",
                 expect_matches=1,
@@ -279,7 +279,7 @@ PATCHES = (
             ),
             Edit(
                 id="remember-bf16-down",
-                anchor=r"^\s*if \(!w_dn\[\(size_t\)e\]\) return RAD_E_INVAL;$",
+                anchor=r"^[ \t]*if \(!w_dn\[\(size_t\)e\]\) return RAD_E_INVAL;$",
                 text="\n            remote_dn[(size_t)e] = w_dn[(size_t)e];",
                 guard=r"remote_dn\[\(size_t\)e\] = w_dn\[\(size_t\)e\]",
                 expect_matches=1,
@@ -287,7 +287,7 @@ PATCHES = (
             ),
             Edit(
                 id="remember-quant-gate-up",
-                anchor=r"^\s*if \(!h\) return RAD_E_INVAL;$",
+                anchor=r"^[ \t]*if \(!h\) return RAD_E_INVAL;$",
                 text="\n            remote_gu[(size_t)e] = h;",
                 guard=r"remote_gu\[\(size_t\)e\] = h;",
                 expect_matches=4,
@@ -296,7 +296,7 @@ PATCHES = (
             ),
             Edit(
                 id="remember-quant-down",
-                anchor=r"^\s*if \(!h\) return RAD_E_INVAL;$",
+                anchor=r"^[ \t]*if \(!h\) return RAD_E_INVAL;$",
                 text="\n            remote_dn[(size_t)e] = h;",
                 guard=r"remote_dn\[\(size_t\)e\] = h;",
                 expect_matches=4,
@@ -305,7 +305,7 @@ PATCHES = (
             ),
             Edit(
                 id="remember-protected-gate-up",
-                anchor=r"^\s*if \(!w_pgu\[\(size_t\)j\]\) return RAD_E_INVAL;$",
+                anchor=r"^[ \t]*if \(!w_pgu\[\(size_t\)j\]\) return RAD_E_INVAL;$",
                 text="\n            remote_gu[(size_t)prot[(size_t)j]] = w_pgu[(size_t)j];",
                 guard=r"remote_gu\[\(size_t\)prot\[\(size_t\)j\]\] = w_pgu",
                 expect_matches=1,
@@ -313,7 +313,7 @@ PATCHES = (
             ),
             Edit(
                 id="remember-protected-down",
-                anchor=r"^\s*if \(!w_pdn\[\(size_t\)j\]\) return RAD_E_INVAL;$",
+                anchor=r"^[ \t]*if \(!w_pdn\[\(size_t\)j\]\) return RAD_E_INVAL;$",
                 text="\n            remote_dn[(size_t)prot[(size_t)j]] = w_pdn[(size_t)j];",
                 guard=r"remote_dn\[\(size_t\)prot\[\(size_t\)j\]\] = w_pdn",
                 expect_matches=1,
@@ -321,7 +321,7 @@ PATCHES = (
             ),
             Edit(
                 id="declare-remote-partial-add",
-                anchor=r"^\s*\{w\.x, w\.h\.x\}, \{w\.x\}\);$",
+                anchor=r"^[ \t]*\{w\.x, w\.h\.x\}, \{w\.x\}\);$",
                 text="""
     if (rad_moe_remote_wanted(g.max_tok)) {
         b_remote = decl_b(b, nm.f("blk.%d.moe_remote_partial", l), RAD_BF16,
@@ -340,7 +340,7 @@ PATCHES = (
             ),
             Edit(
                 id="remote-pass-state",
-                anchor=r"^\s*const bool shared = op_sgate != 0;$",
+                anchor=r"^[ \t]*const bool shared = op_sgate != 0;$",
                 text="""
     const bool remote_policy = op_remote_add && rad_moe_remote_wanted(T);
     RadMoeRemoteHandle remote = nullptr;""",
@@ -350,7 +350,7 @@ PATCHES = (
             ),
             Edit(
                 id="disable-fused-router-for-remote",
-                anchor=r"^\s*const bool rfused = op_router_fused && rows <= router_fused_rows;$",
+                anchor=r"^[ \t]*const bool rfused = op_router_fused && rows <= router_fused_rows;$",
                 mode="replace",
                 text="    const bool rfused = !remote_policy && op_router_fused && rows <= router_fused_rows;",
                 guard=r"rfused = !remote_policy",
@@ -359,7 +359,7 @@ PATCHES = (
             ),
             Edit(
                 id="disable-fused-topk-scatter-for-remote",
-                anchor=r"^\s*\} else if \(op_topk_scatter && rows <= topk_scatter_rows\) \{$",
+                anchor=r"^[ \t]*\} else if \(op_topk_scatter && rows <= topk_scatter_rows\) \{$",
                 mode="replace",
                 text="    } else if (!remote_policy && op_topk_scatter && rows <= topk_scatter_rows) {",
                 guard=r"else if \(!remote_policy && op_topk_scatter",
@@ -368,7 +368,7 @@ PATCHES = (
             ),
             Edit(
                 id="submit-remote-before-scatter",
-                anchor=r"^\s*brow_slice\(w\.ids, r0, rows, k\), brow_slice\(w\.ew, r0, rows, k\)\);$",
+                anchor=r"^[ \t]*brow_slice\(w\.ids, r0, rows, k\), brow_slice\(w\.ew, r0, rows, k\)\);$",
                 text="""
         if (remote_policy)
             remote = rad_moe_remote_submit(
@@ -384,7 +384,7 @@ PATCHES = (
             ),
             Edit(
                 id="force-local-gather-before-remote-merge",
-                anchor=r"^\s*if \(!gather_taken\(g, T, gather_out_rows, gather_out_rows6\)\)$",
+                anchor=r"^[ \t]*if \(!gather_taken\(g, T, gather_out_rows, gather_out_rows6\)\)$",
                 mode="replace",
                 text="    if (remote_policy || !gather_taken(g, T, gather_out_rows, gather_out_rows6))",
                 guard=r"remote_policy \|\| !gather_taken",
@@ -393,7 +393,7 @@ PATCHES = (
             ),
             Edit(
                 id="merge-remote-before-all-reduce",
-                anchor=r"^\s*brow_slice\(w\.h\.x, r0, rows, g\.n_embd\)\);$",
+                anchor=r"^[ \t]*brow_slice\(w\.h\.x, r0, rows, g\.n_embd\)\);$",
                 text="""
     if (remote) {
         if (rad_moe_remote_wait_into(c_, remote, rad_buf_ptr(c_, b_remote),
@@ -418,7 +418,7 @@ PATCHES = (
         edits=(
             Edit(
                 id="publish-host-pool-bit",
-                anchor=r"^void Residency::publish\(rad_weight w, void\* ptr\) \{\n\s*if \(\(size_t\)w >= slot_\.size\(\)\) return;\n\s*slot_\[w\]\.ptr = ptr;\n\s*slot_\[w\]\.ready = nullptr;$",
+                anchor=r"^void Residency::publish\(rad_weight w, void\* ptr\) \{\n[ \t]*if \(\(size_t\)w >= slot_\.size\(\)\) return;\n[ \t]*slot_\[w\]\.ptr = ptr;\n[ \t]*slot_\[w\]\.ready = nullptr;$",
                 mode="replace",
                 text="""void Residency::publish(rad_weight w, void* ptr, bool host_pool) {
     if ((size_t)w >= slot_.size()) return;
@@ -432,7 +432,7 @@ PATCHES = (
             ),
             Edit(
                 id="clear-host-pool-during-transfer",
-                anchor=r"^void Residency::begin_transfer\(rad_weight w, void\* ptr, RadEvent ready\) \{\n\s*if \(\(size_t\)w >= slot_\.size\(\)\) return;\n\s*slot_\[w\]\.ptr = ptr;\n\s*slot_\[w\]\.ready = ready;$",
+                anchor=r"^void Residency::begin_transfer\(rad_weight w, void\* ptr, RadEvent ready\) \{\n[ \t]*if \(\(size_t\)w >= slot_\.size\(\)\) return;\n[ \t]*slot_\[w\]\.ptr = ptr;\n[ \t]*slot_\[w\]\.ready = ready;$",
                 mode="replace",
                 text="""void Residency::begin_transfer(rad_weight w, void* ptr, RadEvent ready) {
     if ((size_t)w >= slot_.size()) return;
@@ -446,7 +446,7 @@ PATCHES = (
             ),
             Edit(
                 id="republish-host-pool-owner",
-                anchor=r"^void Mover::republish\(int32_t unit\) \{\n\s*const MoveUnit& mu = plan_->units\[\(size_t\)unit\];\n\s*char\* base = \(char\*\)unit_base\(unit\);\n\s*for \(size_t i = 0; i < mu\.weights\.size\(\); \+\+i\)\n\s*res_\.publish\(mu\.weights\[i\], base \? base \+ mu\.offset\[i\] : nullptr\);\n\}$",
+                anchor=r"^void Mover::republish\(int32_t unit\) \{\n[ \t]*const MoveUnit& mu = plan_->units\[\(size_t\)unit\];\n[ \t]*char\* base = \(char\*\)unit_base\(unit\);\n[ \t]*for \(size_t i = 0; i < mu\.weights\.size\(\); \+\+i\)\n[ \t]*res_\.publish\(mu\.weights\[i\], base \? base \+ mu\.offset\[i\] : nullptr\);\n\}$",
                 mode="replace",
                 text="""void Mover::republish(int32_t unit) {
     const MoveUnit& mu = plan_->units[(size_t)unit];
@@ -463,7 +463,7 @@ PATCHES = (
             ),
             Edit(
                 id="staged-copy-retains-host-ownership",
-                anchor=r"^\s*res_\.publish\(mu\.weights\[i\], dst \+ at\[k\] \+ mu\.offset\[i\]\);$",
+                anchor=r"^[ \t]*res_\.publish\(mu\.weights\[i\], dst \+ at\[k\] \+ mu\.offset\[i\]\);$",
                 mode="replace",
                 text="""            /* A prefill-stage copy is temporary; keep host ownership visible to the remote policy. */
             res_.publish(mu.weights[i], dst + at[k] + mu.offset[i], true);""",
@@ -478,7 +478,7 @@ PATCHES = (
         description="Allow residency publication to carry host-pool ownership.",
         edits=(Edit(
             id="publish-host-pool-parameter",
-            anchor=r"^\s*void publish\(rad_weight w, void\* ptr\);$",
+            anchor=r"^[ \t]*void publish\(rad_weight w, void\* ptr\);$",
             mode="replace",
             text="    void publish(rad_weight w, void* ptr, bool host_pool = false);",
             guard=r"bool host_pool = false",
@@ -491,7 +491,7 @@ PATCHES = (
         description="Expose whether a weight is still owned by the pinned host pool.",
         edits=(Edit(
             id="weight-in-host-pool-query",
-            anchor=r"^\s*void\* buf_ptr\(rad_buf b\);$",
+            anchor=r"^[ \t]*void\* buf_ptr\(rad_buf b\);$",
             text="""
     bool  weight_in_host_pool(rad_weight w) const {
         if (!residency_) return false;
@@ -508,7 +508,7 @@ PATCHES = (
         description="Record policy-visible host-pool ownership in each residency slot.",
         edits=(Edit(
             id="host-pool-residency-bit",
-            anchor=r"^\s*uint32_t generation;$",
+            anchor=r"^[ \t]*uint32_t generation;$",
             text="""
     /* Policy-visible residency for routed experts. Temporary prefill staging keeps this set:
      * ownership is still the pinned host pool even while that pass has a device copy. */
