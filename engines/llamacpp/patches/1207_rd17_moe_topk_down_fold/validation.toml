@@ -20,7 +20,7 @@ validator = "trace-marker"
 required = true
 marker-regex = "BIGCHERRY_PATCH_HIT patch=1207_rd17 path=moe_topk_down_fold"
 
-# backend_reference: full-vocabulary logprobs within 5e-4, baseline vs +1207.
+# backend_reference: NEAR_LOSSLESS v1 full-vocab KL/material/nucleus gates and exact generated-token match; see PVPS06.
 [[check]]
 id = "correctness"
 capability = "correctness"
