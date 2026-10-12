@@ -52,11 +52,11 @@ def _write_summary(root: Path, patch_id: str, *, status: str,
 
 
 def _descriptor(root: Path, patch_id: str) -> "patch_registry.PatchDescriptor":
-    return patch_registry.load_registry(root).by_id[patch_id]
+    return patch_registry.load_registry("llamacpp", root).by_id[patch_id]
 
 
 def _registry_root(root: Path) -> Path:
-    return patch_registry.load_registry(root).root
+    return patch_registry.load_registry("llamacpp", root).root
 
 
 class ReadPatchSummaryTests(unittest.TestCase):
@@ -92,7 +92,7 @@ class RenderReleaseDocTests(unittest.TestCase):
             (root / "0200_b" / "SUMMARY.md").write_text("# 0200_b\n\nsecond patch\n", encoding="utf-8")
             (root / "0100_a" / "SUMMARY.md").write_text("# 0100_a\n\nfirst patch\n", encoding="utf-8")
 
-            registry = patch_registry.load_registry(root)
+            registry = patch_registry.load_registry("llamacpp", root)
             # Caller order is preserved, NOT re-sorted by numeric id --
             # pass 0200_b before 0100_a deliberately to prove it.
             descriptors = [registry.by_id["0200_b"], registry.by_id["0100_a"]]

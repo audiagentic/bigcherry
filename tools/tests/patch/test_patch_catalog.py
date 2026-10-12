@@ -17,7 +17,7 @@ from bigcherry.patch import catalog as patch_catalog # noqa: E402
 
 class TestPatchCatalogLoads(unittest.TestCase):
     def test_loads_the_real_catalog(self):
-        entries = patch_catalog.build_snapshot().metadata
+        entries = patch_catalog.build_snapshot("llamacpp", ).metadata
         self.assertGreater(len(entries), 0)
         for entry in entries.values():
             self.assertIn(entry.kind, patch_catalog.KINDS)
@@ -28,7 +28,7 @@ class TestPatchCatalogLoads(unittest.TestCase):
         """RE30's own investigation finding: 1000 declares GROUP='upstream-fixes'
         in its Python module but is compiled into the standard framework
         patch-set -- the catalog should classify it by what it actually IS."""
-        entries = patch_catalog.build_snapshot().metadata
+        entries = patch_catalog.build_snapshot("llamacpp", ).metadata
         self.assertEqual(
             entries["1000_rdna4_mmq_q2k_q6k_fix"].kind, "upstream-backport"
         )
@@ -36,7 +36,7 @@ class TestPatchCatalogLoads(unittest.TestCase):
     def test_vulkan_patches_declare_the_vulkan_backend(self):
         # The first Vulkan patch (1269 PRBE55) landed 2026-09-26; every patch
         # that edits the Vulkan backend declares backend = "vulkan".
-        entries = patch_catalog.build_snapshot().metadata
+        entries = patch_catalog.build_snapshot("llamacpp", ).metadata
         vulkan = sorted(pid for pid, e in entries.items() if e.backend == "vulkan")
         self.assertIn("1269_prbe55_vk_smalln_dmmv", vulkan)
 
@@ -144,7 +144,7 @@ class TestPatchCatalogValidation(unittest.TestCase):
                 encoding="utf-8",
             )
             with self.assertRaises(ValueError):
-                patch_catalog.load_catalog(catalog_path)
+                patch_catalog.load_catalog("llamacpp", catalog_path)
 
     def test_rejects_unknown_kind(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -156,7 +156,7 @@ class TestPatchCatalogValidation(unittest.TestCase):
                 encoding="utf-8",
             )
             with self.assertRaises(ValueError):
-                patch_catalog.load_catalog(catalog_path)
+                patch_catalog.load_catalog("llamacpp", catalog_path)
 
 
 class TestPatchContext(unittest.TestCase):
@@ -270,14 +270,14 @@ class TestPatchContext(unittest.TestCase):
         patches_for_backend() matches backend in (backend, 'agnostic') by
         design. Still no HIP-specific patch has vulkan backend; only
         genuinely backend-agnostic patches match."""
-        result = patch_catalog.patches_for_backend("vulkan")
-        entries = patch_catalog.build_snapshot().metadata
+        result = patch_catalog.patches_for_backend("llamacpp", "vulkan")
+        entries = patch_catalog.build_snapshot("llamacpp", ).metadata
         expected = tuple(sorted(pid for pid, e in entries.items() if e.backend in ("vulkan", "agnostic")))
         self.assertEqual(result, expected)
 
     def test_patches_for_backend_on_the_real_catalog_returns_all_hip_patches(self):
-        result = patch_catalog.patches_for_backend("hip")
-        entries = patch_catalog.build_snapshot().metadata
+        result = patch_catalog.patches_for_backend("llamacpp", "hip")
+        entries = patch_catalog.build_snapshot("llamacpp", ).metadata
         expected = tuple(
             sorted(
                 pid for pid, e in entries.items() if e.backend in ("hip", "agnostic")
@@ -346,7 +346,7 @@ class TestPackagedCatalogIntegration(unittest.TestCase):
     def test_build_snapshot_merges_packaged_metadata(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = self._tree(tmp)
-            snapshot = patch_catalog.build_snapshot(
+            snapshot = patch_catalog.build_snapshot("llamacpp", 
                 patches_dir=root, catalog_path=root / "catalog.toml"
             )
             self.assertEqual(
@@ -385,10 +385,10 @@ class TestPackagedCatalogIntegration(unittest.TestCase):
     def test_build_snapshot_deterministic_for_mixed_catalog(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = self._tree(tmp)
-            first = patch_catalog.build_snapshot(
+            first = patch_catalog.build_snapshot("llamacpp", 
                 patches_dir=root, catalog_path=root / "catalog.toml"
             )
-            second = patch_catalog.build_snapshot(
+            second = patch_catalog.build_snapshot("llamacpp", 
                 patches_dir=root, catalog_path=root / "catalog.toml"
             )
             self.assertEqual(first.digest, second.digest)
@@ -403,12 +403,12 @@ class TestPackagedCatalogIntegration(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = self._tree(tmp)
             catalog_path = root / "catalog.toml"
-            before = patch_catalog.build_snapshot(patches_dir=root, catalog_path=catalog_path)
+            before = patch_catalog.build_snapshot("llamacpp", patches_dir=root, catalog_path=catalog_path)
             self.assertEqual(before.metadata["0100_dep"].kind, "framework")
 
             edited = LEGACY_CATALOG_TOML.replace('kind = "framework"', 'kind = "enhancement"')
             catalog_path.write_text(edited, encoding="utf-8")
-            after = patch_catalog.build_snapshot(patches_dir=root, catalog_path=catalog_path)
+            after = patch_catalog.build_snapshot("llamacpp", patches_dir=root, catalog_path=catalog_path)
 
             self.assertEqual(after.metadata["0100_dep"].kind, "enhancement")
             self.assertEqual(set(before.metadata), set(after.metadata))  # same ID set
@@ -421,7 +421,7 @@ class TestPackagedCatalogIntegration(unittest.TestCase):
         already-taken snapshot's identity after the fact."""
         with tempfile.TemporaryDirectory() as tmp:
             root = self._tree(tmp)
-            snapshot = patch_catalog.build_snapshot(
+            snapshot = patch_catalog.build_snapshot("llamacpp", 
                 patches_dir=root, catalog_path=root / "catalog.toml")
             with self.assertRaises(TypeError):
                 snapshot.metadata["0100_dep"] = snapshot.metadata["0100_dep"]
@@ -430,7 +430,7 @@ class TestPackagedCatalogIntegration(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = self._tree(tmp, with_catalog_entry=True)
             with self.assertRaisesRegex(ValueError, "duplicate metadata authority"):
-                patch_catalog.build_snapshot(
+                patch_catalog.build_snapshot("llamacpp", 
                     patches_dir=root, catalog_path=root / "catalog.toml"
                 )
 
@@ -456,7 +456,7 @@ class TestPackagedCatalogIntegration(unittest.TestCase):
     def test_explain_renders_packaged_metadata(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = self._tree(tmp)
-            snapshot = patch_catalog.build_snapshot(
+            snapshot = patch_catalog.build_snapshot("llamacpp", 
                 patches_dir=root, catalog_path=root / "catalog.toml"
             )
             info = patch_catalog.explain("1204_focal", snapshot, cfg=None)
