@@ -1,7 +1,7 @@
 # 1292_kpool_tail_truncate
 
 **Status:** validated
-**Plan item:** QFN01
+**Plan item:** QFP02 (technical), QFN01 (operational)
 
 Qwen4Exp indexer pool layout (`kpool_layout_update`) rebuilt every sequence from scratch after any edit.
 MTP removes the rejected draft tail with `seq_rm [p, inf)` on almost every decode step, so each step walked
@@ -22,3 +22,7 @@ Speed: two ABBAs at ~80K cached context, MTP3 (flashnext-kpool-ab-1/2): 77.1/77.
 vs 65.5/66.4 and 65.5/65.6 (with 1292), -14%; at 10K -2 to -3%. No effect without MTP (no tail edits).
 Parity: greedy text without MTP byte-identical to the 1291+1294 baseline at 10K and 80K, all four arms
 (flashnext-kpool-parity-2; 1294 makes long-context runs deterministic, which this check needed).
+
+## 2026-10-12 residual disposition (BCOP162)
+
+1292 is already validated and remains the Qwen4Exp by-order production baseline. QFP02 now owns only a conditional non-order, position-aligned tail-rescan opportunity: when no complete pool survives, the existing cut can reset `j_next` to zero and re-scan an unchanged sparse prefix. A 70,000-case host model found no pool-list mismatch and a synthetic 80K sparse case reduced modeled candidate checks from 79,985 to 10 with a bounded resume index. This is **not** a GPU result or measured speedup. No implementation is authorized unless a real position-mode workload passes the CPU critical-path and >=3% theoretical end-to-end gates. Preserve existing by-order and full-rebuild fallbacks; see QFP02 and BCOP162.
