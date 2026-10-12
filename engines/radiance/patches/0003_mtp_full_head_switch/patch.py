@@ -8,7 +8,7 @@ PATCH = FilePatch(
     edits=(
         Edit(
             id="mtp-full-head-switch",
-            anchor=r"^\s*if \(!head \|\| !lm\) return false;$",
+            anchor=r"^[ \t]*if \(!head \|\| !lm\) return false;$",
             text="""
     /* BigCherry: RAD_MTP_FULL_HEAD=1 drafts through the trunk head (int8 here) instead of the
      * 2-bit copy, trading draft-round traffic for acceptance. */
