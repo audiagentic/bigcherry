@@ -14,7 +14,7 @@ using std::max;
                        grid, dim3(P_NWARPS * 32), 0, s, *a);
 @@ replace
     const char* r3n = std::getenv("R3_ATTN_NATIVE");
-    if (!(r3n && *r3n == '0'))
+    if (r3n && *r3n == '1')
         hipLaunchKernelGGL((r4d_attn_prefill_kernel<P_NWARPS, P_TILE, A_HEAD_DIM, A_GQA, A_BLOCK_SIZE,
                                                     KVP, P_OPT | O_R3NATIVE>),
                            grid, dim3(P_NWARPS * 32), 0, s, *a);

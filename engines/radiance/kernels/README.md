@@ -715,7 +715,7 @@ over waves a block, blocks a CU and independent accumulators; best of each eleme
 ## Native prefill attention and delta-net scan, measured (2026-10-12, run `rr10d`, `tools/lab/radiance/rr10-native-prefill.sh`)
 
 27B MXFP4, two XTX, `--tp-wire wht6`, one 7.2K prefill a server start; switches `R3_ATTN_NATIVE` and `R3_GDN_NATIVE`
-(off when measured; both are the default since the repeats below, `=0` is the off switch). Selftests pass in every arm (`attn_prefill_h256_gqa6_fp8kv`, `_bf16kv`,
+(both default off: see the correction below). Selftests pass in every arm (`attn_prefill_h256_gqa6_fp8kv`, `_bf16kv`,
 `gdn_chunk_scan_k128_v128_c64_bf16`).
 
 | arm | prefill tok/s | `attn_paged` us a call | `gdn_chunk_scan` us a call |
@@ -731,6 +731,12 @@ over waves a block, blocks a CU and independent accumulators; best of each eleme
   2,246.5 / 2,262.3; native scan 2,283.4 / 2,221.0 / 2,230.1; both 2,330.5 / 2,335.2 / 2,367.0. Both against
   compatibility is complete separation over three starts an arm, mean 2,344 against 2,160 (+8.5%); selftests pass in
   every round. Both native forms are now the default.
+- CORRECTION (runs `kq0`, `kq1`, `kld-tp-wire.sh` against MXFP4 on the R9700): with both native forms on, two-XTX
+  output is wrong - KLD mean 6.50, top-1 agreement 7.3%, PPL 4,908 against 8.56 - on the exact wire and on wht6
+  alike. With both off the same check gives KLD 0.0037 / 96.8% (exact) and 0.0044 / 96.4% (wht6), as before. The
+  selftests compared each kernel with the compatibility form on their own rows and passed; they do not cover what
+  the served model asks of these kernels. The +8.5% above is the speed of a wrong answer. Both are off again until
+  each is fixed and passes this check; which of the two (or both) is at fault is not yet known.
 - The 4-token decode figures in this run (a 71.3 maximum, a 64.0 after the prefill) are too short to mean anything.
 
 ## 27B on two XTX after the native attention and scan: what is left (2026-10-12, run `pp3`)

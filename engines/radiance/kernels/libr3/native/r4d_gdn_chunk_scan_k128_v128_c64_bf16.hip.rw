@@ -5,7 +5,7 @@
 // accumulators stay in gfx11 layout across each contraction loop, and are converted only where
 // scalar code or the persistent state/output layout needs gfx12 ordering. This removes the
 // compatibility layer's two operand lane exchanges plus accumulator exchange from every WMMA.
-// The native instantiation is the default; R3_GDN_NATIVE=0 selects the compatibility one.
+// R3_GDN_NATIVE=1 selects the native instantiation (off: served output is wrong with it, run kq0).
 //
 @@ find 1
 #include <hip/hip_runtime.h>
@@ -634,7 +634,7 @@ __global__ __launch_bounds__(NTHR) void r4d_gdn_chunk_scan_kernel(
        else if (ht)  CS_LAUNCH(SDTC, false, true, R3NC);                                   \
        else          CS_LAUNCH(SDTC, false, false, R3NC); } while (0)
   const char* r3n = std::getenv("R3_GDN_NATIVE");
-  const bool use_r3n = !(r3n && *r3n == '0');
+  const bool use_r3n = r3n && *r3n == '1';
   if (state_fp16) { if (use_r3n) CS_PICK(1, true); else CS_PICK(1, false); }
   else            { if (use_r3n) CS_PICK(0, true); else CS_PICK(0, false); }
 #undef CS_PICK
