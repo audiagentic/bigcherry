@@ -13,18 +13,7 @@ from bigcherry.patcher import Edit, FilePatch
 # 96 KiB; plain decode +3.6%).
 ADAPTIVE_SWITCH_BYTES_DEFAULT = 96 << 10
 
-
-CUDA = FilePatch(
-    path="ggml/src/ggml-cuda/ggml-cuda.cu",
-    description="replace AllReduce env provider selection with explicit provider/wire/switch configuration",
-    language="none",
-    edits=(
-        Edit(
-            id="allreduce-provider-config",
-            anchor=r"^static bool ggml_backend_cuda_comm_try_allreduce_internal\($",
-            rationale="define process-wide CLI configuration before 0840's adaptive per-call dispatcher",
-            mode="insert_before",
-            text=(
+_CUDA_CONFIG = (
                 "struct ggml_backend_cuda_comm_config {\n"
                 "    std::string provider = \"auto\";\n"
                 "    std::string wire = \"native\";\n"
@@ -61,9 +50,37 @@ CUDA = FilePatch(
                 "    g_ggml_backend_cuda_comm_config.switch_bytes = switch_bytes;\n"
                 "    return true;\n"
                 "}\n\n"
-            ),
-            guard=r"static bool ggml_backend_comm_set_config\(",
+            )
+_CUDA_CONFIG_INCLUDE = '#include "bc-allreduce-provider-cli.cuh"  // BigCherry 0860 owned definitions\n\n'
+
+CUDA_OWNED = FilePatch(
+    path="ggml/src/ggml-cuda/bc-allreduce-provider-cli.cuh",
+    description="0860: BigCherry-owned CUDA AllReduce provider configuration definitions",
+    language="none",
+    create=True,
+    edits=(
+        Edit(id="allreduce-provider-config-owned", anchor=r"\A", mode="insert_after", text=_CUDA_CONFIG,
+             guard=r"static bool ggml_backend_comm_set_config\(",
+             rationale="Owned include file; definitions use ggml-cuda.cu file-local communication state.",
+             expect_matches=1, max_span_lines=1),
+    ),
+)
+
+
+CUDA = FilePatch(
+    path="ggml/src/ggml-cuda/ggml-cuda.cu",
+    description="replace AllReduce env provider selection with explicit provider/wire/switch configuration",
+    language="none",
+    edits=(
+        Edit(
+            id="allreduce-provider-config",
+            anchor=r"^static bool ggml_backend_cuda_comm_try_allreduce_internal\($",
+            rationale="define process-wide CLI configuration before 0840's adaptive per-call dispatcher",
+            mode="insert_before",
+            text=_CUDA_CONFIG_INCLUDE,
+            guard=r'#include "bc-allreduce-provider-cli\.cuh"',
             expect_matches=1,
+            max_span_lines=2,
         ),
         Edit(
             id="allreduce-provider-init",
@@ -139,17 +156,7 @@ CUDA = FilePatch(
     ),
 )
 
-ARG_CPP = FilePatch(
-    path="common/arg.cpp",
-    description="add explicit AllReduce provider/wire/switch CLI options and apply them once after parsing",
-    language="none",
-    edits=(
-        Edit(
-            id="allreduce-config-helper",
-            anchor=r"^static bool common_params_parse_ex\(int argc, char \*\* argv, common_params_context & ctx_arg\) \{$",
-            rationale="callbacks record values; parse switch bytes and apply one backend config after parse_cli_args",
-            mode="insert_before",
-            text=(
+_ARG_CONFIG_HELPERS = (
                 "static std::string common_allreduce_provider;\n"
                 "static std::string common_allreduce_wire;\n"
                 "static std::string common_allreduce_switch_bytes;\n\n"
@@ -198,9 +205,37 @@ ARG_CPP = FilePatch(
                 "        throw std::invalid_argument(\"--allreduce requires a CUDA/HIP build\");\n"
                 "    }\n"
                 "}\n\n"
-            ),
-            guard=r"common_apply_allreduce_config",
+            )
+_ARG_CONFIG_INCLUDE = '#include "bc-allreduce-provider-cli.h"  // BigCherry 0860 owned definitions\n\n'
+
+ARG_OWNED = FilePatch(
+    path="common/bc-allreduce-provider-cli.h",
+    description="0860: BigCherry-owned common CLI AllReduce configuration definitions",
+    language="none",
+    create=True,
+    edits=(
+        Edit(id="allreduce-config-helper-owned", anchor=r"\A", mode="insert_after", text=_ARG_CONFIG_HELPERS,
+             guard=r"static void common_apply_allreduce_config\(",
+             rationale="Owned include file; definitions use common/arg.cpp file-local parser state.",
+             expect_matches=1, max_span_lines=1),
+    ),
+)
+
+
+ARG_CPP = FilePatch(
+    path="common/arg.cpp",
+    description="add explicit AllReduce provider/wire/switch CLI options and apply them once after parsing",
+    language="none",
+    edits=(
+        Edit(
+            id="allreduce-config-helper",
+            anchor=r"^static bool common_params_parse_ex\(int argc, char \*\* argv, common_params_context & ctx_arg\) \{$",
+            rationale="callbacks record values; parse switch bytes and apply one backend config after parse_cli_args",
+            mode="insert_before",
+            text=_ARG_CONFIG_INCLUDE,
+            guard=r'#include "bc-allreduce-provider-cli\.h"',
             expect_matches=1,
+            max_span_lines=2,
         ),
         Edit(
             id="allreduce-cli-options",
@@ -246,17 +281,7 @@ ARG_CPP = FilePatch(
     ),
 )
 
-LLAMA_BENCH = FilePatch(
-    path="tools/llama-bench/llama-bench.cpp",
-    description="add llama-bench AllReduce provider/wire/switch controls and apply after parsing",
-    language="none",
-    edits=(
-        Edit(
-            id="bench-allreduce-config-helper",
-            anchor=r"^static void print_usage\(int /\* argc \*/, char \*\* argv\) \{$",
-            rationale="keep benchmark scalar state and registry bridge immediately before usage/parser code",
-            mode="insert_before",
-            text=(
+_BENCH_CONFIG_HELPERS = (
                 "static std::string bench_allreduce_provider = \"auto\";\n"
                 "static std::string bench_allreduce_wire = \"native\";\n"
                 f"static std::string bench_allreduce_switch_bytes = \"{ADAPTIVE_SWITCH_BYTES_DEFAULT}\";\n\n"
@@ -303,9 +328,37 @@ LLAMA_BENCH = FilePatch(
                 "        exit(1);\n"
                 "    }\n"
                 "}\n\n"
-            ),
-            guard=r"bench_apply_allreduce_config",
+            )
+_BENCH_CONFIG_INCLUDE = '#include "bc-allreduce-provider-cli.h"  // BigCherry 0860 owned definitions\n\n'
+
+BENCH_OWNED = FilePatch(
+    path="tools/llama-bench/bc-allreduce-provider-cli.h",
+    description="0860: BigCherry-owned llama-bench AllReduce configuration definitions",
+    language="none",
+    create=True,
+    edits=(
+        Edit(id="bench-allreduce-config-helper-owned", anchor=r"\A", mode="insert_after", text=_BENCH_CONFIG_HELPERS,
+             guard=r"static void bench_apply_allreduce_config\(",
+             rationale="Owned include file; definitions use llama-bench file-local state.",
+             expect_matches=1, max_span_lines=1),
+    ),
+)
+
+
+LLAMA_BENCH = FilePatch(
+    path="tools/llama-bench/llama-bench.cpp",
+    description="add llama-bench AllReduce provider/wire/switch controls and apply after parsing",
+    language="none",
+    edits=(
+        Edit(
+            id="bench-allreduce-config-helper",
+            anchor=r"^static void print_usage\(int /\* argc \*/, char \*\* argv\) \{$",
+            rationale="keep benchmark scalar state and registry bridge immediately before usage/parser code",
+            mode="insert_before",
+            text=_BENCH_CONFIG_INCLUDE,
+            guard=r'#include "bc-allreduce-provider-cli\.h"',
             expect_matches=1,
+            max_span_lines=2,
         ),
         Edit(
             id="bench-allreduce-usage",
@@ -368,4 +421,4 @@ LLAMA_BENCH = FilePatch(
     ),
 )
 
-PATCHES = (CUDA, ARG_CPP, LLAMA_BENCH)
+PATCHES = (CUDA_OWNED, CUDA, ARG_OWNED, ARG_CPP, BENCH_OWNED, LLAMA_BENCH)
