@@ -21,22 +21,30 @@ touch it beyond reporting its result.
 
 from __future__ import annotations
 
+import difflib
 import hashlib
 import json
 import os
+import re
+import shutil
 import subprocess
 import sys
 import uuid
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
+from ..build import source_compile_check
 from ..core import paths
 from ..core import tree_activity
+from ..patch import apply as patch_apply
 from ..patch import disposition as patch_disposition
 from ..patch import overlay as patch_overlay
+from ..patch import patchset as patch_patchset
 from ..patch import rebase as patch_rebase
+from ..patch import registry as patch_registry
+from ..source import identity as source_identity
 from .. import pin_transition
 from .. import recipes as recipes_module
 from . import records as releases
@@ -49,6 +57,7 @@ PHASES = (
     "patch-lint",
     "coverage",
     "apply",
+    "compile",
     "reaudit",
     "complete",
 )
@@ -118,6 +127,11 @@ class PinBumpState:
     #: between phases (by hand, or a bug) is caught, on top of
     #: apply_known_good()'s own live source/ref/patch-set staleness checks.
     coverage_report_sha256: str = ""
+    #: PA44-A: exact effective vendor-tree identity that passed (or was
+    #: explicitly skipped at) the compile phase. A resumed in-flight bump
+    #: re-runs compile when this identity no longer matches the live tree.
+    compile_tree_oid: str = ""
+    compile_status: str = ""
 
     def as_dict(self) -> dict:
         d = {
@@ -149,6 +163,10 @@ class PinBumpState:
                 "patch_ids": list(self.selector_patch_ids),
             }
             d["coverage_report_sha256"] = self.coverage_report_sha256
+            d["compile"] = {
+                "status": self.compile_status,
+                "tree_oid": self.compile_tree_oid,
+            }
         return d
 
     def save(self, state_dir: Path) -> Path:
@@ -221,6 +239,7 @@ class PinBumpState:
             raw_version = 3
         else:
             freeze = {}
+        compile_state = data.get("compile") or {}
         return cls(
             schema_version=raw_version,
             run_id=data["run_id"],
@@ -237,6 +256,8 @@ class PinBumpState:
             selector_name=freeze.get("name", ""),
             selector_patch_ids=tuple(freeze.get("patch_ids", ())),
             coverage_report_sha256=data.get("coverage_report_sha256", ""),
+            compile_tree_oid=str(compile_state.get("tree_oid", "")),
+            compile_status=str(compile_state.get("status", "")),
         )
 
 
@@ -547,6 +568,7 @@ def run(
     dispositions_dir: Path | None = None,
     resume: bool = False,
     report_dir: Path | None = None,
+    skip_compile: bool = False,
 ) -> PinBumpResult:
     """The Phase 1 single-tree orchestrator. Raises PinBumpStop (never a
     bare exception) on anything not provably safe to auto-proceed past;
@@ -612,6 +634,7 @@ def run(
             vendor_root=vendor_root,
             dispositions_dir=dispositions_dir,
             report_dir=report_dir,
+            skip_compile=skip_compile,
         )
     except PinBumpStop as exc:
         # gpt-dev-agent review (session ses_5307d9c58ec645cb, second pass):
@@ -671,6 +694,441 @@ def _load_state_or_stop(report_dir: Path) -> PinBumpState:
 
 def _sha256_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+
+@dataclass(frozen=True)
+class SourceLineOwner:
+    """The production patch edit that last produced one composed source line."""
+
+    patch_id: str
+    edit_id: str
+
+
+def _selected_file_patches(
+    patch_ids: Sequence[str],
+) -> list[tuple[str, patch_apply.FilePatch]]:
+    """Load the exact selected patch sequence without discarding patch IDs."""
+
+    selection = patch_patchset.resolve_exact(tuple(patch_ids), allow_rejected=False)
+    registries: dict[Path, patch_registry.PatchRegistry] = {}
+    loaded: list[tuple[str, patch_apply.FilePatch]] = []
+    for module in selection.modules:
+        root = module.catalog_root or paths.PATCHES
+        registry = registries.get(root)
+        if registry is None:
+            registry = patch_registry.load_registry(root)
+            registries[root] = registry
+        descriptor = registry.get(module.patch_id)
+        for file_patch in patch_registry.load_implementation(descriptor, root=root):
+            loaded.append((module.patch_id, file_patch))
+    return loaded
+
+
+def _compile_tree_oid(vendor_root: Path, patch_ids: Sequence[str]) -> str:
+    """Exact effective source-tree identity used to invalidate compile resume."""
+
+    allowed_untracked = set(patch_rebase._overlay_texts())
+    for _, file_patch in _selected_file_patches(patch_ids):
+        if file_patch.create:
+            allowed_untracked.add(file_patch.path)
+    try:
+        return source_identity.git_tree_oid(
+            vendor_root, allowed_untracked=allowed_untracked
+        )
+    except source_identity.SourceIdentityError as exc:
+        raise PinBumpStop(
+            "compile",
+            "SOURCE_COMPILE_FAILED",
+            f"could not identify the patched source tree before compile: {exc}",
+            evidence={"source_identity_error": str(exc)},
+            recommended_actions=[
+                "inspect unexpected files in vendor/llama.cpp and restore the applied production tree",
+                "rerun bigcherry pin-bump --resume",
+            ],
+        ) from exc
+
+
+def _git_head_text(root: Path, relative: str) -> str | None:
+    result = subprocess.run(
+        ["git", "-C", str(root), "show", f"HEAD:{relative}"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    return result.stdout if result.returncode == 0 else None
+
+
+def _line_owners_after_change(
+    before: str,
+    before_owners: list[SourceLineOwner | None],
+    after: str,
+    changed_owner: SourceLineOwner | None,
+) -> list[SourceLineOwner | None]:
+    """Carry provenance through one exact edit using the edit's real output."""
+
+    before_lines = before.splitlines(keepends=True)
+    after_lines = after.splitlines(keepends=True)
+    if len(before_lines) != len(before_owners):
+        raise ValueError("source provenance line count drifted")
+    owners: list[SourceLineOwner | None] = []
+    matcher = difflib.SequenceMatcher(None, before_lines, after_lines, autojunk=False)
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            owners.extend(before_owners[i1:i2])
+        elif tag in ("replace", "insert"):
+            owners.extend([changed_owner] * (j2 - j1))
+        elif tag != "delete":  # pragma: no cover - SequenceMatcher closed vocabulary
+            raise AssertionError(tag)
+    return owners
+
+
+def _build_patch_line_ownership(
+    vendor_root: Path, patch_ids: Sequence[str]
+) -> dict[str, list[SourceLineOwner | None]]:
+    """Replay selected edits and map patched lines to production patch/edit IDs.
+
+    The replay uses the same FilePatch/Edit objects and apply_patch semantics
+    as the real apply phase. It never consults source comments for ownership.
+    """
+
+    overlay_texts = patch_rebase._overlay_texts()
+    texts: dict[str, str] = {}
+    owners: dict[str, list[SourceLineOwner | None]] = {}
+
+    for patch_id, file_patch in _selected_file_patches(patch_ids):
+        if file_patch.path not in texts:
+            initial = overlay_texts.get(file_patch.path)
+            if initial is None:
+                initial = _git_head_text(vendor_root, file_patch.path)
+            if initial is None:
+                initial = ""
+            texts[file_patch.path] = initial
+            owners[file_patch.path] = [None] * len(initial.splitlines(keepends=True))
+
+        for edit in file_patch.edits:
+            before = texts[file_patch.path]
+            one_text = {file_patch.path: before}
+            one_patch = patch_apply.FilePatch(
+                path=file_patch.path,
+                edits=(edit,),
+                description=file_patch.description,
+                language=file_patch.language,
+                create=file_patch.create,
+            )
+            result = patch_apply.apply_patch(
+                one_patch, vendor_root, dry_run=True, texts=one_text
+            )
+            if not result.ok:
+                raise PinBumpStop(
+                    "compile",
+                    "SOURCE_COMPILE_FAILED",
+                    "could not reconstruct patch ownership for compiler diagnostics",
+                    evidence={
+                        "path": file_patch.path,
+                        "patch_id": patch_id,
+                        "edit_id": edit.id,
+                        "detail": result.failed[0].detail if result.failed else "",
+                    },
+                    recommended_actions=[
+                        "inspect the named production patch edit",
+                        "rerun bigcherry pin-bump --resume",
+                    ],
+                )
+            after = one_text[file_patch.path]
+            if after != before:
+                owners[file_patch.path] = _line_owners_after_change(
+                    before,
+                    owners[file_patch.path],
+                    after,
+                    SourceLineOwner(patch_id, edit.id),
+                )
+                texts[file_patch.path] = after
+
+    # Align the replay with the exact live patched bytes. Any live line not
+    # explained by selected edits remains unowned and is reported as upstream.
+    for relative, replayed in list(texts.items()):
+        target = vendor_root / relative
+        if not target.is_file():
+            continue
+        live = target.read_text(encoding="utf-8", errors="replace")
+        if live != replayed:
+            owners[relative] = _line_owners_after_change(
+                replayed, owners[relative], live, None
+            )
+
+    # Compiler diagnostics can point at an upstream line in a CUDA source file
+    # that no selected patch touched. Keep those real file/line locations too;
+    # their line owners are intentionally all None -> owner "upstream".
+    for source in source_compile_check._source_files(vendor_root):
+        relative = source.relative_to(vendor_root).as_posix()
+        if relative not in owners:
+            text = source.read_text(encoding="utf-8", errors="replace")
+            owners[relative] = [None] * len(text.splitlines(keepends=True))
+    return owners
+
+
+def _location_owner(
+    relative: str,
+    line: int,
+    ownership: dict[str, list[SourceLineOwner | None]],
+) -> dict[str, Any]:
+    line_owners = ownership.get(relative, [])
+    index = line - 1
+    if 0 <= index < len(line_owners) and line_owners[index] is not None:
+        owner = line_owners[index]
+        assert owner is not None
+        return {
+            "owner": owner.patch_id,
+            "edit_id": owner.edit_id,
+            "related_patches": [],
+        }
+
+    preceding = next(
+        (
+            item
+            for item in reversed(line_owners[: max(0, index)])
+            if item is not None
+        ),
+        None,
+    )
+    if preceding is not None:
+        related = [preceding.patch_id]
+    else:
+        related = list(
+            dict.fromkeys(item.patch_id for item in line_owners if item is not None)
+        )
+    return {"owner": "upstream", "edit_id": None, "related_patches": related}
+
+
+def _compile_failure_evidence(
+    failures: Sequence[str],
+    ownership: dict[str, list[SourceLineOwner | None]],
+) -> list[dict[str, Any]]:
+    errors: list[dict[str, Any]] = []
+    known_paths = sorted(ownership, key=len, reverse=True)
+    for failure in failures:
+        message = [line for line in failure.splitlines() if line.strip()][:6]
+        normalized_failure = failure.replace("\\", "/")
+        found: set[tuple[str, int]] = set()
+        for relative in known_paths:
+            for match in re.finditer(
+                re.escape(relative) + r":(\d+)", normalized_failure
+            ):
+                location = (relative, int(match.group(1)))
+                if location in found:
+                    continue
+                found.add(location)
+                error = {
+                    "path": relative,
+                    "line": location[1],
+                    "message": message,
+                }
+                error.update(_location_owner(relative, location[1], ownership))
+                errors.append(error)
+        if not found:
+            errors.append(
+                {
+                    "path": "<compile-probe>",
+                    "line": 0,
+                    "owner": "upstream",
+                    "edit_id": None,
+                    "related_patches": [],
+                    "message": message,
+                }
+            )
+    return errors
+
+
+def run_phase_compile(
+    *,
+    vendor_root: Path,
+    workdir: Path,
+    recipe_report_path: Path,
+    target_ref: str,
+    clangxx: str = "clang++",
+) -> str:
+    """Run PA44-A source compile checks and return the checked tree OID."""
+
+    if shutil.which(clangxx) is None:
+        raise PinBumpStop(
+            "compile",
+            "SOURCE_COMPILE_UNAVAILABLE",
+            f"required source compiler is not available: {clangxx}",
+            evidence={"compiler": clangxx},
+            recommended_actions=[
+                "install clang++ (Ubuntu/Debian: sudo apt-get install clang)",
+                f"rerun python -m bigcherry pin-bump {target_ref} --resume",
+                "only if intentionally accepting the missing gate, rerun with --resume --skip-compile",
+            ],
+        )
+
+    try:
+        report = json.loads(recipe_report_path.read_text(encoding="utf-8"))
+        patch_ids = tuple(report["selector"]["patch_ids"])
+        failures = source_compile_check.check_cuda_contracts(
+            vendor_root.resolve(), workdir.resolve(), clangxx
+        )
+    except (
+        OSError,
+        KeyError,
+        TypeError,
+        json.JSONDecodeError,
+        source_compile_check.SourceCompileCheckError,
+    ) as exc:
+        raise PinBumpStop(
+            "compile",
+            "SOURCE_COMPILE_FAILED",
+            f"source compile check could not run: {type(exc).__name__}: {exc}",
+            evidence={"compiler": clangxx, "error": str(exc)},
+            recommended_actions=[
+                "fix the source or compile-check failure in the owning production patch",
+                f"rerun python -m bigcherry pin-bump {target_ref} --resume",
+            ],
+        ) from exc
+
+    if failures:
+        ownership = _build_patch_line_ownership(vendor_root, patch_ids)
+        errors = _compile_failure_evidence(failures, ownership)
+        raise PinBumpStop(
+            "compile",
+            "SOURCE_COMPILE_FAILED",
+            f"{len(failures)} source compile check failure(s) on the patched tree",
+            evidence={
+                "compiler": clangxx,
+                "errors": errors,
+            },
+            recommended_actions=[
+                "fix each error inside the named owning patch; for an upstream line, start with related_patches",
+                f"rerun python -m bigcherry pin-bump {target_ref} --resume",
+            ],
+        )
+
+    return _compile_tree_oid(vendor_root, patch_ids)
+
+
+def _record_compile_skip(vendor_root: Path) -> None:
+    note = "pin-bump source compile check: SKIPPED explicitly with --skip-compile"
+    try:
+        record = releases.record_for_checkout(vendor_root)
+        existing = record.notes or ""
+        if note not in existing:
+            record.notes = (existing.rstrip() + "\n" + note).lstrip()
+            record.save()
+    except (OSError, ValueError) as exc:
+        raise PinBumpStop(
+            "compile",
+            "SOURCE_COMPILE_SKIP_RECORD_FAILED",
+            f"could not record the explicit compile skip in the release record: {exc}",
+            evidence={"error": str(exc)},
+            recommended_actions=[
+                "fix the release record write failure",
+                "rerun bigcherry pin-bump --resume --skip-compile",
+            ],
+        ) from exc
+
+
+def _rewind_compile_if_tree_changed(
+    state: PinBumpState, *, vendor_root: Path
+) -> bool:
+    """Invalidate compile and later phases when a checked source tree changed."""
+
+    if "compile" not in state.completed_phases or not state.compile_tree_oid:
+        return False
+    live_oid = _compile_tree_oid(vendor_root, state.selector_patch_ids)
+    if live_oid == state.compile_tree_oid:
+        return False
+    state.completed_phases = [
+        phase
+        for phase in state.completed_phases
+        if phase not in {"compile", "reaudit", "complete"}
+    ]
+    state.next_phase = "compile"
+    state.compile_tree_oid = ""
+    state.compile_status = ""
+    return True
+
+
+
+def _remove_bigcherry_untracked_source(
+    vendor_root: Path, patch_ids: Sequence[str]
+) -> None:
+    """Remove only untracked files that overlay/selected patches own.
+
+    A forced checkout restores tracked upstream files but deliberately leaves
+    untracked files alone. FilePatch(create=True) output must therefore be
+    removed explicitly before a compile-failure resume recomposes the tree.
+    """
+
+    owned = set(patch_rebase._overlay_texts())
+    for _, file_patch in _selected_file_patches(patch_ids):
+        if file_patch.create:
+            owned.add(file_patch.path)
+    for relative in sorted(owned):
+        tracked = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(vendor_root),
+                "ls-files",
+                "--error-unmatch",
+                "--",
+                relative,
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        if tracked.returncode == 0:
+            continue
+        target = patch_apply.resolve_contained_target(vendor_root, relative)
+        if target.is_file() or target.is_symlink():
+            target.unlink()
+
+
+def _rewind_compile_resume_if_inputs_changed(
+    state: PinBumpState,
+    *,
+    vendor_root: Path,
+    recipe_report_path: Path,
+) -> bool:
+    """Recompose from pristine upstream when patch inputs changed after apply."""
+
+    if state.next_phase != "compile":
+        return False
+    try:
+        report = patch_rebase.load_report(recipe_report_path)
+        patch_rebase._require_fresh(report, vendor_root)
+        return False
+    except patch_rebase.StaleRebaseReportError:
+        try:
+            _remove_bigcherry_untracked_source(
+                vendor_root, state.selector_patch_ids
+            )
+        except (OSError, patch_apply.PatchError) as exc:
+            raise PinBumpStop(
+                "compile",
+                "SOURCE_COMPILE_FAILED",
+                f"compile inputs changed but the applied tree could not be reset safely: {exc}",
+                evidence={"reset_error": str(exc)},
+                recommended_actions=[
+                    "restore vendor/llama.cpp to the pinned upstream tree without deleting unrelated files",
+                    "rerun bigcherry pin-bump --resume",
+                ],
+            ) from exc
+
+        # cmd_pull's forced checkout restores every tracked patched/overlay
+        # file. From there re-run every controller-side proof that can have
+        # changed with a patch fix before composing again.
+        state.completed_phases = [
+            phase for phase in state.completed_phases
+            if phase in {"preflight", "declare"}
+        ]
+        state.next_phase = "pull"
+        state.coverage_report_sha256 = ""
+        state.compile_tree_oid = ""
+        state.compile_status = ""
+        return True
 
 
 def _require_coverage_report(state: PinBumpState, report_path: Path) -> None:
@@ -887,6 +1345,7 @@ def _run_phases(
     vendor_root: Path,
     dispositions_dir: Path,
     report_dir: Path,
+    skip_compile: bool = False,
 ) -> PinBumpResult:
     from ..patch import catalog as patch_catalog
     from ..source import audit as source_audit
@@ -919,6 +1378,15 @@ def _run_phases(
                 selector_name=selector_name,
                 selector_patch_ids=selector_patch_ids,
             )
+            state.save(report_dir)
+
+        if _rewind_compile_if_tree_changed(state, vendor_root=vendor_root):
+            state.save(report_dir)
+        if _rewind_compile_resume_if_inputs_changed(
+            state,
+            vendor_root=vendor_root,
+            recipe_report_path=report_dir / "rebase-recipe.json",
+        ):
             state.save(report_dir)
 
         if state.next_phase == "declare":
@@ -1135,6 +1603,26 @@ def _run_phases(
                     ],
                 )
             state.completed_phases.append("apply")
+            state.next_phase = "compile"
+            state.save(report_dir)
+
+        if state.next_phase == "compile":
+            if skip_compile:
+                compile_tree_oid = _compile_tree_oid(
+                    vendor_root, state.selector_patch_ids
+                )
+                _record_compile_skip(vendor_root)
+                state.compile_status = "skipped"
+            else:
+                compile_tree_oid = run_phase_compile(
+                    vendor_root=vendor_root,
+                    workdir=repo_root / "work" / "source-compile-check",
+                    recipe_report_path=recipe_report_path,
+                    target_ref=target_ref,
+                )
+                state.compile_status = "passed"
+            state.compile_tree_oid = compile_tree_oid
+            state.completed_phases.append("compile")
             state.next_phase = "reaudit"
             state.save(report_dir)
 

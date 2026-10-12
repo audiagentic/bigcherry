@@ -132,6 +132,9 @@ class PinBumpStopResumeE2ETests(unittest.TestCase):
                 patch.object(pin_bump, "run_patch_tests", return_value=[]),
                 patch.object(pin_bump, "_write_release_doc_best_effort"),
                 patch.object(pin_bump, "_commit_release_records"),
+                patch.object(
+                    pin_bump, "run_phase_compile", return_value="compiled-tree-oid"
+                ) as compile_phase,
             ):
                 with self.assertRaises(pin_bump.PinBumpStop) as stopped:
                     pin_bump.run(
@@ -158,6 +161,16 @@ class PinBumpStopResumeE2ETests(unittest.TestCase):
             self.assertIn("complete", result.state.completed_phases)
             self.assertEqual(result.state.next_phase, "complete")
             self.assertEqual(len(apply_calls), 2)
+            self.assertIn("compile", result.state.completed_phases)
+            self.assertLess(
+                result.state.completed_phases.index("apply"),
+                result.state.completed_phases.index("compile"),
+            )
+            self.assertLess(
+                result.state.completed_phases.index("compile"),
+                result.state.completed_phases.index("reaudit"),
+            )
+            compile_phase.assert_called_once()
 
 
 class SchemaThreeRoundTripTests(unittest.TestCase):
@@ -1307,6 +1320,253 @@ class CoverageClassificationTests(unittest.TestCase):
             )
         self.assertTrue(coverage["complete"])
 
+
+
+
+class SourceCompilePhaseTests(unittest.TestCase):
+    def _state(self, **overrides) -> pin_bump.PinBumpState:
+        base = dict(
+            schema_version=3,
+            run_id="run-compile",
+            from_ref="b11474",
+            from_sha="a" * 40,
+            to_ref="b11552",
+            to_sha="b" * 40,
+            transition_commit="c" * 40,
+            tree_name="local",
+            tree_path="/vendor",
+            completed_phases=[
+                "preflight",
+                "declare",
+                "pull",
+                "audit",
+                "patch-lint",
+                "coverage",
+                "apply",
+                "compile",
+            ],
+            next_phase="reaudit",
+            selector_kind="source",
+            selector_name="bigcherry",
+            selector_patch_ids=("0100_demo",),
+            coverage_report_sha256="report-sha",
+            compile_tree_oid="tree-oid",
+            compile_status="passed",
+        )
+        base.update(overrides)
+        return pin_bump.PinBumpState(**base)
+
+    def test_compile_failure_envelope_names_patch_and_upstream_line(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            report = root / "rebase-recipe.json"
+            report.write_text(
+                json.dumps({"selector": {"patch_ids": ["0100_demo"]}}),
+                encoding="utf-8",
+            )
+            ownership = {
+                "ggml/src/ggml-cuda/demo.cu": [
+                    None,
+                    pin_bump.SourceLineOwner("0100_demo", "insert-helper"),
+                    None,
+                    None,
+                ]
+            }
+            failures = [
+                "ggml/src/ggml-cuda/demo.cu:2: error: wrong argument count\n"
+                "candidate expects 6 arguments",
+                "ggml/src/ggml-cuda/demo.cu:4: error: no matching function\n"
+                "candidate declaration is here",
+            ]
+            with (
+                patch.object(pin_bump.shutil, "which", return_value="/usr/bin/clang++"),
+                patch.object(
+                    pin_bump.source_compile_check,
+                    "check_cuda_contracts",
+                    return_value=failures,
+                ),
+                patch.object(
+                    pin_bump,
+                    "_build_patch_line_ownership",
+                    return_value=ownership,
+                ),
+            ):
+                with self.assertRaises(pin_bump.PinBumpStop) as stopped:
+                    pin_bump.run_phase_compile(
+                        vendor_root=root,
+                        workdir=root / "work",
+                        recipe_report_path=report,
+                        target_ref="b11552",
+                    )
+
+            envelope = pin_bump.failure_envelope(
+                "run-compile",
+                {"from_ref": "b11474", "to_ref": "b11552"},
+                "c" * 40,
+                {"name": "local", "path": str(root)},
+                stopped.exception,
+            )
+            self.assertEqual(
+                envelope["failure"]["code"], "SOURCE_COMPILE_FAILED"
+            )
+            errors = envelope["failure"]["evidence"]["errors"]
+            patched = next(item for item in errors if item["line"] == 2)
+            upstream = next(item for item in errors if item["line"] == 4)
+            self.assertEqual(patched["owner"], "0100_demo")
+            self.assertEqual(patched["edit_id"], "insert-helper")
+            self.assertIn("wrong argument count", patched["message"][0])
+            self.assertEqual(upstream["owner"], "upstream")
+            self.assertEqual(upstream["related_patches"], ["0100_demo"])
+            self.assertTrue(
+                any(
+                    "owning patch" in action
+                    for action in envelope["failure"]["recommended_actions"]
+                )
+            )
+            self.assertTrue(
+                any(
+                    "--resume" in action
+                    for action in envelope["failure"]["recommended_actions"]
+                )
+            )
+
+    def test_compile_unavailable_stops_with_install_hint(self):
+        with patch.object(pin_bump.shutil, "which", return_value=None):
+            with self.assertRaises(pin_bump.PinBumpStop) as stopped:
+                pin_bump.run_phase_compile(
+                    vendor_root=Path("/vendor"),
+                    workdir=Path("/work"),
+                    recipe_report_path=Path("/report"),
+                    target_ref="b11552",
+                )
+        self.assertEqual(stopped.exception.code, "SOURCE_COMPILE_UNAVAILABLE")
+        self.assertTrue(
+            any("install clang++" in action for action in stopped.exception.recommended_actions)
+        )
+        self.assertTrue(
+            any("--skip-compile" in action for action in stopped.exception.recommended_actions)
+        )
+
+    def test_explicit_skip_is_recorded_once_in_release_notes(self):
+        class Record:
+            notes = ""
+            saves = 0
+
+            def save(self):
+                self.saves += 1
+
+        record = Record()
+        with patch.object(
+            pin_bump.releases, "record_for_checkout", return_value=record
+        ):
+            pin_bump._record_compile_skip(Path("/vendor"))
+            pin_bump._record_compile_skip(Path("/vendor"))
+        self.assertIn("--skip-compile", record.notes)
+        self.assertEqual(record.saves, 1)
+
+    def test_completed_compile_is_skipped_on_resume_when_tree_is_unchanged(self):
+        state = self._state()
+        with patch.object(
+            pin_bump, "_compile_tree_oid", return_value="tree-oid"
+        ) as tree_oid:
+            changed = pin_bump._rewind_compile_if_tree_changed(
+                state, vendor_root=Path("/vendor")
+            )
+        self.assertFalse(changed)
+        self.assertEqual(state.next_phase, "reaudit")
+        self.assertIn("compile", state.completed_phases)
+        tree_oid.assert_called_once()
+
+    def test_changed_tree_rewinds_to_compile(self):
+        state = self._state(
+            completed_phases=[
+                "preflight",
+                "declare",
+                "pull",
+                "audit",
+                "patch-lint",
+                "coverage",
+                "apply",
+                "compile",
+                "reaudit",
+                "complete",
+            ],
+            next_phase="complete",
+        )
+        with patch.object(pin_bump, "_compile_tree_oid", return_value="new-tree-oid"):
+            changed = pin_bump._rewind_compile_if_tree_changed(
+                state, vendor_root=Path("/vendor")
+            )
+        self.assertTrue(changed)
+        self.assertEqual(state.next_phase, "compile")
+        self.assertNotIn("compile", state.completed_phases)
+        self.assertNotIn("reaudit", state.completed_phases)
+        self.assertNotIn("complete", state.completed_phases)
+        self.assertEqual(state.compile_tree_oid, "")
+        self.assertEqual(state.compile_status, "")
+
+
+    def test_changed_patch_inputs_rewind_compile_resume_to_pull(self):
+        state = self._state(
+            completed_phases=[
+                "preflight",
+                "declare",
+                "pull",
+                "audit",
+                "patch-lint",
+                "coverage",
+                "apply",
+            ],
+            next_phase="compile",
+            compile_tree_oid="",
+            compile_status="",
+        )
+        stale = pin_bump.patch_rebase.StaleRebaseReportError("patch digest changed")
+        with (
+            patch.object(pin_bump.patch_rebase, "load_report", return_value={}),
+            patch.object(
+                pin_bump.patch_rebase, "_require_fresh", side_effect=stale
+            ),
+            patch.object(
+                pin_bump, "_remove_bigcherry_untracked_source"
+            ) as remove_owned,
+        ):
+            changed = pin_bump._rewind_compile_resume_if_inputs_changed(
+                state,
+                vendor_root=Path("/vendor"),
+                recipe_report_path=Path("/report"),
+            )
+        self.assertTrue(changed)
+        self.assertEqual(state.next_phase, "pull")
+        self.assertEqual(state.completed_phases, ["preflight", "declare"])
+        self.assertEqual(state.coverage_report_sha256, "")
+        self.assertEqual(state.compile_tree_oid, "")
+        remove_owned.assert_called_once()
+
+    def test_historical_completed_bump_is_not_retroactively_rerun(self):
+        state = self._state(
+            completed_phases=[
+                "preflight",
+                "declare",
+                "pull",
+                "audit",
+                "patch-lint",
+                "coverage",
+                "apply",
+                "reaudit",
+                "complete",
+            ],
+            next_phase="complete",
+            compile_tree_oid="",
+            compile_status="",
+        )
+        with patch.object(pin_bump, "_compile_tree_oid") as tree_oid:
+            changed = pin_bump._rewind_compile_if_tree_changed(
+                state, vendor_root=Path("/vendor")
+            )
+        self.assertFalse(changed)
+        self.assertEqual(state.next_phase, "complete")
+        tree_oid.assert_not_called()
 
 if __name__ == "__main__":
     unittest.main()

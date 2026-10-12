@@ -278,13 +278,19 @@ verdict engine):
 
 ## Compile-only admission after composition (PA44-A)
 
-Every patch or packaging change that can affect composed source must pass the `Patch compile validation` pull-request check. The job composes `[source.bigcherry]` at the active pin, then:
+`bigcherry pin-bump` now runs the bump-time source check as its own resumable phase:
 
-1. derives CUDA helper declarations and call sites from the composed source and runs Clang `-fsyntax-only` contract probes without a GPU SDK;
-2. rejects host use of device-only `ggml_cuda_get_physical_warp_size` and signature drift in `ggml_cuda_should_use_mmvf`, reporting composed file/line and nearest BigCherry patch owner;
-3. configures and compiles the CPU-only `llama-server` target so patched/common server translation units receive a real C++ compile.
+`preflight -> declare -> pull -> audit -> patch-lint -> coverage -> apply -> compile -> reaudit -> complete`.
 
-This check is not hardware qualification and does not replace the HIP/ROCm compile/build gates; it exists to catch source/type failures before hardware time is consumed.
+The `compile` phase runs `bigcherry.build.source_compile_check` against the patched vendor tree with `clang++`; it needs neither ROCm nor a GPU. A successful phase records the exact effective source-tree OID. On `--resume` it is skipped when that OID is unchanged and re-run when the checked tree changed.
+
+A compile failure STOPs with `SOURCE_COMPILE_FAILED`. `failure.evidence.errors[]` names the composed file and line, the production patch/edit that produced that line, the first compiler-message lines, and, when the failing line is upstream text, `owner: upstream` plus the nearest preceding production edit (or the patches that edit that file). Fix the named owning patch and resume the same bump.
+
+If `clang++` is unavailable, pin-bump STOPs with `SOURCE_COMPILE_UNAVAILABLE` and an install hint. There is no automatic skip. `--skip-compile` is the explicit exception and writes that skip into the release record notes so a released bump cannot hide that the gate was omitted.
+
+Every patch or packaging change that can affect composed source still passes the `Patch compile validation` pull-request check. That CI job remains general admission coverage (including its CPU-only `llama-server` compile), but a pin bump no longer relies on a later PR job to discover source/type breakage introduced by the upstream move: the `compile` phase catches it before `reaudit`.
+
+This check is not hardware qualification and does not replace the HIP/ROCm build and real-hardware smoke/identity gates. Those remain mandatory after the bump.
 ## Patch promotion releases (PA45)
 
 A patch promotion on the current pin does not repin llama.cpp. Run `bigcherry patch-promote <id>... --evidence @file [--profile-only] [--release]`; its `feat(patch):` squash title drives a minor release and a `fix(patch):` title drives a patch release. Promotion evidence is copied under `releases/evidence/` and normally must name two distinct models; `--profile-only` is the explicit exception for profile-scoped work. The promotion PR must merge through normal checks/review before release-please can create the version PR.
