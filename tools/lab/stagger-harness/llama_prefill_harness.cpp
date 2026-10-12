@@ -1,19 +1,18 @@
-// QFP49 rung C: prefill of the real model through the llama library alone - no server, no drafter, no sampling.
+// QFP49/QFP41: prefill of the real model through the llama library alone - no server or sampling.
 //
-// Loads a model tensor-split across the given cards, feeds it N token ids in calls of -b tokens, waits for the cards,
-// and reports: wall time and tokens per second, how long each llama_decode call held the host, and the last token's
-// logits (hash, arg-max, and the raw vector written to a file). Two runs that differ in one environment variable
-// (for example BIGCHERRY_PREFILL_STAGGER) are compared by their logit files: the pair is right only if they are
-// bit-identical to the same batching run in sequence.
-//
-// The token ids are a fixed pseudo-random sequence unless --tokens <file> gives one id a line: enough to exercise the
-// mechanism and the growing attention state; not a text.
+// Loads the target model tensor-split across the given cards, feeds it N token ids in calls of -b tokens, waits for
+// the target cards, and reports wall time plus the TARGET last-token logits. Optional --draft-model loads a second
+// llama_model/llama_context on --draft-dev and, immediately after every target llama_decode returns, submits
+// --draft-n token ids to that context on the main thread. This reproduces the server's post-target hook timing without
+// adding a harness thread; it is default-off, so all existing invocations retain their old behavior.
 //
 // Usage: llama_prefill_harness -m <gguf> [-n tokens=4096] [-b 512] [-ub 256] [-c 65536] [-dev ROCm0,ROCm1,ROCm2]
-//                              [-ts 0.31,0.27,0.42] [-ot '<regex>=CPU' ...] [--calls K] [--tokens file] [-o logits.bin]
+//   [-ts 0.31,0.27,0.42] [-ot '<regex>=CPU' ...] [--calls K] [--tokens file] [-o logits.bin]
+//   [--draft-model <gguf> --draft-dev ROCm3 --draft-n N [--draft-ctx C]]
 #include "llama.h"
 #include "ggml-backend.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
@@ -45,8 +44,10 @@ static std::vector<std::string> split(const std::string & text, char sep) {
 int main(int argc, char ** argv) {
     std::setvbuf(stdout, nullptr, _IOLBF, 0);
     std::string model_path, devs = "ROCm0,ROCm1,ROCm2", ts = "0.31,0.27,0.42", out_path, tokens_path;
+    std::string draft_model_path, draft_dev = "ROCm3";
     std::vector<std::string> overrides;
     int n_tokens = 4096, n_batch = 512, n_ubatch = 256, n_ctx = 65536, max_calls = 0;
+    int draft_n = 1, draft_ctx_size = 0;
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
         auto next = [&]() -> std::string {
@@ -66,6 +67,10 @@ int main(int argc, char ** argv) {
         else if (a == "-ot") overrides.push_back(next());
         else if (a == "--calls") max_calls = std::atoi(next().c_str());
         else if (a == "--tokens") tokens_path = next();
+        else if (a == "--draft-model") draft_model_path = next();
+        else if (a == "--draft-dev") draft_dev = next();
+        else if (a == "--draft-n") draft_n = std::atoi(next().c_str());
+        else if (a == "--draft-ctx") draft_ctx_size = std::atoi(next().c_str());
         else if (a == "-o") out_path = next();
         else {
             std::fprintf(stderr, "unknown argument %s\n", a.c_str());
@@ -73,7 +78,7 @@ int main(int argc, char ** argv) {
         }
     }
     if (model_path.empty()) {
-        std::fprintf(stderr, "usage: llama_prefill_harness -m <gguf> [-n tokens] [-b 512] [-ub 256] [-c ctx] [-dev a,b,c] [-ts x,y,z] [-ot 're=CPU'] [--calls K] [-o logits.bin]\n");
+        std::fprintf(stderr, "usage: llama_prefill_harness -m <gguf> [-n tokens] [-b 512] [-ub 256] [-c ctx] [-dev a,b,c] [-ts x,y,z] [-ot 're=CPU'] [--calls K] [-o logits.bin] [--draft-model gguf --draft-dev ROCm3 --draft-n N --draft-ctx C]\n");
         return 10;
     }
 
@@ -141,6 +146,50 @@ int main(int argc, char ** argv) {
     }
     const int n_vocab = llama_vocab_n_tokens(llama_model_get_vocab(model));
 
+    llama_model * draft_model = nullptr;
+    llama_context * draft_ctx = nullptr;
+    int draft_vocab = 0;
+    if (!draft_model_path.empty()) {
+        if (draft_n <= 0) {
+            std::fprintf(stderr, "--draft-n must be > 0\n");
+            return 10;
+        }
+        ggml_backend_dev_t draft_backend_dev = ggml_backend_dev_by_name(draft_dev.c_str());
+        if (draft_backend_dev == nullptr) {
+            std::fprintf(stderr, "no draft device named %s\n", draft_dev.c_str());
+            return 10;
+        }
+        std::vector<ggml_backend_dev_t> draft_devices = {draft_backend_dev, nullptr};
+        llama_model_params dmparams = llama_model_default_params();
+        dmparams.devices = draft_devices.data();
+        dmparams.n_gpu_layers = 99;
+        dmparams.split_mode = LLAMA_SPLIT_MODE_NONE;
+        draft_model = llama_model_load_from_file(draft_model_path.c_str(), dmparams);
+        if (draft_model == nullptr) {
+            std::fprintf(stderr, "could not load the draft model\n");
+            return 11;
+        }
+
+        if (draft_ctx_size <= 0) {
+            draft_ctx_size = n_ctx;
+        }
+        llama_context_params dcparams = llama_context_default_params();
+        dcparams.n_ctx = (uint32_t) draft_ctx_size;
+        dcparams.n_batch = (uint32_t) draft_n;
+        dcparams.n_ubatch = (uint32_t) draft_n;
+        dcparams.n_threads = 16;
+        dcparams.n_threads_batch = 16;
+        dcparams.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_ENABLED;
+        dcparams.type_k = GGML_TYPE_F16;
+        dcparams.type_v = GGML_TYPE_F16;
+        draft_ctx = llama_init_from_model(draft_model, dcparams);
+        if (draft_ctx == nullptr) {
+            std::fprintf(stderr, "could not create the draft context\n");
+            return 11;
+        }
+        draft_vocab = llama_vocab_n_tokens(llama_model_get_vocab(draft_model));
+    }
+
     std::vector<llama_token> tokens;
     if (!tokens_path.empty()) {
         std::ifstream f(tokens_path);
@@ -157,10 +206,23 @@ int main(int argc, char ** argv) {
     if (max_calls > 0 && (size_t) max_calls * (size_t) n_batch < tokens.size()) {
         tokens.resize((size_t) max_calls * (size_t) n_batch);
     }
+    const size_t target_calls = (tokens.size() + (size_t) n_batch - 1) / (size_t) n_batch;
+    if (draft_ctx != nullptr && target_calls * (size_t) draft_n > (size_t) draft_ctx_size) {
+        std::fprintf(stderr, "draft workload needs %zu positions but --draft-ctx is %d\n",
+                     target_calls * (size_t) draft_n, draft_ctx_size);
+        return 10;
+    }
 
     std::printf("\n== prefill %zu tokens, -b %d -ub %d, ctx %d, cards %s split %s\n", tokens.size(), n_batch, n_ubatch, n_ctx,
                 devs.c_str(), ts.c_str());
+    if (draft_ctx != nullptr) {
+        std::printf("== interleave draft %s on %s: %d tokens after each target decode, ctx %d\n",
+                    draft_model_path.c_str(), draft_dev.c_str(), draft_n, draft_ctx_size);
+    }
     std::vector<double> held;
+    std::vector<double> draft_held;
+    std::vector<llama_token> draft_tokens((size_t) std::max(draft_n, 1));
+    uint64_t draft_state = 0xd1b54a32d192ed03ull;
     const double t0 = now_ms();
     for (size_t i = 0; i < tokens.size(); i += (size_t) n_batch) {
         const int n = (int) std::min((size_t) n_batch, tokens.size() - i);
@@ -171,11 +233,29 @@ int main(int argc, char ** argv) {
             std::fprintf(stderr, "llama_decode failed with %d at token %zu\n", rc, i);
             return 12;
         }
+        if (draft_ctx != nullptr) {
+            const int base = draft_vocab > 1024 ? 1000 : 0;
+            const int span = std::max(1, draft_vocab - base);
+            for (int j = 0; j < draft_n; ++j) {
+                draft_state = draft_state * 6364136223846793005ull + 1442695040888963407ull;
+                draft_tokens[(size_t) j] = (llama_token) (base + (int) ((draft_state >> 33) % (uint64_t) span));
+            }
+            const double d0 = now_ms();
+            const int drc = llama_decode(draft_ctx, llama_batch_get_one(draft_tokens.data(), draft_n));
+            draft_held.push_back(now_ms() - d0);
+            if (drc != 0) {
+                std::fprintf(stderr, "draft llama_decode failed with %d after target token %zu\n", drc, i);
+                return 12;
+            }
+        }
     }
     const double t_submitted = now_ms() - t0;
     llama_synchronize(ctx);
     const float * logits = llama_get_logits_ith(ctx, -1);
     const double t_total = now_ms() - t0;
+    if (draft_ctx != nullptr) {
+        llama_synchronize(draft_ctx);
+    }
 
     double sum_held = 0.0, max_held = 0.0;
     for (double h : held) {
@@ -190,6 +270,15 @@ int main(int argc, char ** argv) {
         std::printf(" %.1f", held[i]);
     }
     std::printf("%s\n", held.size() > 24 ? " ..." : "");
+    if (!draft_held.empty()) {
+        double draft_sum = 0.0, draft_max = 0.0;
+        for (double h : draft_held) {
+            draft_sum += h;
+            draft_max = std::max(draft_max, h);
+        }
+        std::printf("draft llama_decode held the main thread %.1f ms in %zu calls (mean %.2f, max %.2f)\n",
+                    draft_sum, draft_held.size(), draft_sum / draft_held.size(), draft_max);
+    }
 
     if (logits == nullptr) {
         std::fprintf(stderr, "no logits\n");
@@ -211,6 +300,10 @@ int main(int argc, char ** argv) {
     if (!out_path.empty()) {
         std::ofstream f(out_path, std::ios::binary);
         f.write((const char *) logits, (std::streamsize) ((size_t) n_vocab * sizeof(float)));
+    }
+    if (draft_ctx != nullptr) {
+        llama_free(draft_ctx);
+        llama_model_free(draft_model);
     }
     llama_free(ctx);
     llama_model_free(model);
