@@ -7,9 +7,14 @@ arena-lent slab slot, or a prefill-stager copy into the arena top, still queued 
 writes freed memory: sq_intr MEMVIOL on gfx1100 and a wedged queue on rank 0 (the first to shut
 down). Seen as aql_copy_link hangs after the last request in Flash-Next two-XTX runs.
 
+diff --git a/core/engine.cpp b/core/engine.cpp
+index 3ba2831..20767f7 100644
 --- a/core/engine.cpp
 +++ b/core/engine.cpp
-@@ -81,1 +81,8 @@
+@@ -79,7 +79,13 @@ Engine::~Engine() {
+                  (unsigned long long)r->ctx.route_dropped());
+         RAD_INFO("%s", r->mover.report().c_str());
+     }
 -    for (auto& r : ranks_) r->ctx.shutdown();
 +    for (auto& r : ranks_) {
 +        /* The mover copies into arena-lent slab slots and the prefill stager's buffers at the
@@ -18,3 +23,6 @@ down). Seen as aql_copy_link hangs after the last request in Flash-Next two-XTX 
 +            if (RadStream s = r->mover.transfer_stream()) rad_stream_sync(s);
 +        r->ctx.shutdown();
 +    }
+     step_state_fini();
+     ranks_.clear();
+     for (TableCopy& c : table_copies_) table_copy_free(&c);
