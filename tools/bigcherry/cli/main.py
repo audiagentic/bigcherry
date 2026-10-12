@@ -668,7 +668,7 @@ def build_parser() -> argparse.ArgumentParser:
     pin_bump_cmd = sub.add_parser(
         "pin-bump",
         help="single-tree pin-bump orchestrator (HI153): repin -> pull -> "
-        "audit -> patch-lint -> coverage -> apply -> reaudit, stopping "
+        "audit -> patch-lint -> coverage -> apply -> compile -> reaudit, stopping "
         "with a structured JSON failure envelope on anything not "
         "provably safe to auto-proceed past. Multi-tree sequencing is "
         "still manual -- run `pin-status --complete --all-remotes` "
@@ -685,6 +685,11 @@ def build_parser() -> argparse.ArgumentParser:
         "reuses the run's original one.",
     )
     pin_bump_cmd.add_argument("--resume", action="store_true")
+    pin_bump_cmd.add_argument(
+        "--skip-compile",
+        action="store_true",
+        help="explicitly skip the source compile phase; the skip is recorded in the release record",
+    )
     pin_bump_cmd.add_argument("--report-dir", default=None)
     pin_bump_cmd.set_defaults(func=cmd_pin_bump)
 
@@ -2004,6 +2009,7 @@ def cmd_pin_bump(args: argparse.Namespace) -> int:
             source_name=args.source,
             resume=args.resume,
             report_dir=report_dir,
+            skip_compile=args.skip_compile,
         )
     # The `or` coalesces in this handler are legitimate (exc.run_id is None
     # until run() assigns a run_id, and target/tree are None before the first
@@ -2038,6 +2044,12 @@ def cmd_pin_bump(args: argparse.Namespace) -> int:
         f"pin-bump: PASS -- {result.state.from_ref} -> {result.state.to_ref} "
         f"({result.state.to_sha[:12]})"
     )
+    if result.state.compile_status == "passed":
+        print("  compile: PASS (clang++)")
+    elif result.state.compile_status == "skipped":
+        print("  compile: SKIPPED explicitly (--skip-compile; recorded in release notes)")
+    elif "complete" in result.state.completed_phases:
+        print("  compile: not recorded (this bump completed before the compile phase existed)")
     outstanding = result.coverage.get("outstanding", [])
     collisions = result.coverage.get("composition_only_patch_ids", [])
     if collisions:

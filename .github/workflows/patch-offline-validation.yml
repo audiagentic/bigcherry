@@ -28,6 +28,10 @@ on:
       - 'tools/bigcherry/cli/source.py'
       - 'tools/bigcherry/cli/slice.py'
       - 'tools/bigcherry/release/records.py'
+      - 'tools/bigcherry/release/**'
+      - 'tools/tests/release/**'
+      - 'tools/bigcherry/build/source_compile_check.py'
+      - 'tools/tests/build/test_source_compile_check.py'
       - 'tools/bigcherry/source/upstream.py'
       - 'tools/bigcherry/source/workspace.py'
       - 'dispositions/**'
@@ -54,6 +58,10 @@ on:
       - 'tools/bigcherry/cli/source.py'
       - 'tools/bigcherry/cli/slice.py'
       - 'tools/bigcherry/release/records.py'
+      - 'tools/bigcherry/release/**'
+      - 'tools/tests/release/**'
+      - 'tools/bigcherry/build/source_compile_check.py'
+      - 'tools/tests/build/test_source_compile_check.py'
       - 'tools/bigcherry/source/upstream.py'
       - 'tools/bigcherry/source/workspace.py'
       - 'dispositions/**'
@@ -88,6 +96,16 @@ jobs:
 
       - name: Compile validation harness
         run: python -m py_compile tools/bigcherry/patch/offline_check.py
+
+      - name: Run release orchestration tests
+        env:
+          PYTHONPATH: tools
+        run: python -m unittest discover -s tools/tests/release -t .
+
+      - name: Run source compile check tests
+        env:
+          PYTHONPATH: tools
+        run: python -m unittest tools.tests.build.test_source_compile_check
 
       - name: Run primary-root worktree tests
         env:
