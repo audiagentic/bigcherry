@@ -45,6 +45,8 @@ CASES = {
 # Git blob prefixes from the three original feature-branch diffs against
 # Radiance 1.3.0 (89cee7ce4); mismatches detect a port that merely matches
 # guards while silently changes output.
+# 0003: diff body was amended to std::atoi(e) != 0 after its index line
+# was generated; 62849e9 is stale and the corrected hunk produces 8e1f89e.
 PIN_BLOBS = {
     "0001_drain_mover_before_arena_free": {
         "core/engine.cpp": ("3ba2831", "20767f7"),
@@ -60,7 +62,7 @@ PIN_BLOBS = {
         "core/runtime/residency.h": ("bd73431", "97198f1"),
     },
     "0003_mtp_full_head_switch": {
-        "arch/common/rad_block_mtp_fp8.h": ("dac7f12", "62849e9"),
+        "arch/common/rad_block_mtp_fp8.h": ("dac7f12", "8e1f89e"),
     },
 }
 
