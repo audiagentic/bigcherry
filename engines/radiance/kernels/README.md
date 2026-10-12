@@ -744,6 +744,12 @@ over waves a block, blocks a CU and independent accumulators; best of each eleme
   - `R3_GDN_NATIVE=1` alone: KLD 6.50 / 7.3% - this is the broken one. Off.
   - `R3_AR_WIRE4=1` with wht6: identical to plain wht6 to every digit (0.004422 / 96.382%), and the 4-bit run's
     prefill was no faster: the 4-bit path is not reached by the served model. Not adopted.
+  - After GPT's fixes (9448b430, 9ced23c0, and a6850cb9 for a gfx12-only store wait that broke the gfx1100 build):
+    `R3_GDN_NATIVE=1` still wrong (KLD 5.52, top-1 11.5%, PPL 1,862; run `kqg4`), off.
+    `R3_AR_WIRE4=1` now engages (prints `R3_AR_WIRE4 active`): prefill 2,376-2,387 against 2,251-2,256 tok/s,
+    alternating, three starts an arm (+5.6%, complete separation); quality with wht6 KLD 0.0126 / 94.5% top-1 /
+    PPL 8.605 against 0.0044 / 96.6% / 8.553 for wht6 alone (run `kqw4`). Three times the wire's divergence for
+    5.6%: left opt-in, the owner's call.
 - The 4-token decode figures in this run (a 71.3 maximum, a 64.0 after the prefill) are too short to mean anything.
 
 ## 27B on two XTX after the native attention and scan: what is left (2026-10-12, run `pp3`)
