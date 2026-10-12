@@ -6,6 +6,8 @@ on:
     paths:
       - 'engines/llamacpp/patches/**'
       - 'engines/radiance/patches/**'
+      - 'engines/radiance/tests/**'
+      - 'engines/radiance/patches/**'
       - 'engines/radiance/tests/fixtures/**'
       - 'engines/*/engine.toml'
       - 'tools/tests/patch/**'
@@ -43,6 +45,8 @@ on:
     branches: [main]
     paths:
       - 'engines/llamacpp/patches/**'
+      - 'engines/radiance/patches/**'
+      - 'engines/radiance/tests/**'
       - 'engines/radiance/patches/**'
       - 'engines/radiance/tests/fixtures/**'
       - 'engines/*/engine.toml'
@@ -110,6 +114,11 @@ jobs:
         env:
           PYTHONPATH: tools
         run: python -m unittest tools.tests.build.test_source_compile_check
+
+      - name: Run Radiance patch mechanics tests
+        env:
+          PYTHONPATH: tools
+        run: python -m unittest tools.tests.patch.test_radiance_patch_packages -v
 
       - name: Run primary-root worktree tests
         env:
