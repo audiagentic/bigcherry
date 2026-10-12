@@ -200,8 +200,7 @@ Backing backing_of(const uint8_t* p) {
             continue;
         if ((uintptr_t)p < lo || (uintptr_t)p >= hi) continue;
         std::string name(line + at);
-        while (!name.empty() && (name.back() == '
-' || name.back() == ' ')) name.pop_back();
+        while (!name.empty() && (name.back() == '\n' || name.back() == ' ')) name.pop_back();
         if (inode != 0 && !name.empty() && name[0] == '/') {
             b.fd = ::open(name.c_str(), O_RDONLY | O_CLOEXEC);
             b.off = (long long)off + (long long)((uintptr_t)p - lo);
@@ -266,7 +265,7 @@ void ram_copy(State* s, const uint8_t* table) {
     });
     if (rrc != RAD_OK) {
         std::fprintf(stderr, "libr3: R3_NGRAM_DEV could not read the rows off the device(s) from the container; "
-                     "they are read from it a row at a time" + std::string().size());
+                     "they are read from it a row at a time\n");
         munmap(m, bytes);
         return;
     }
