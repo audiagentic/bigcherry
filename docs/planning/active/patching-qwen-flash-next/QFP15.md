@@ -77,6 +77,23 @@ CORRECTION 2026-10-04: the run-5 'stock-none' build was not pure upstream - [sou
 
 2026-10-05 optimisation review: stop broad nondeterminism bisection until two cheap ownership controls are complete: (1) draft placement gfx1030 -> gfx1100 with target held fixed, and (2) a genuinely unpatched upstream b11396 control. This consolidates the next work around existing 1315 tracing and avoids another meta-backend-unsafe node-hash mechanism. If the residual follows gfx1030, inspect draft QSA/indexer/TOP_K/reduction ordering; if it reproduces unchanged on XTX and pure upstream, treat it as upstream benchmark noise unless it changes greedy output. Current production greedy stability means deterministic rewrites must clear a stricter no-regression gate than ordinary performance patches.
 
+
+
+### Re-screen of verdicts taken from single quick-ab readings (2026-10-12, pin b11552, base build b-m1340)
+
+Why: quick-ab's 256-token single readings swing between ~38.6 and ~42.4 ms/step from one server start to the next for the same binary, so a one-ABA 'neutral' or 'few percent off' was never a measurement. Method (tools/lab/flash-next/queue-rescreen.sh): Flash-Next 24K, 512 decode tokens, eight server starts per arm (build candidates in alternating blocks of four; flags A B B A A B B A on one build).
+
+| candidate | decode ms/step, mean (min-max) | acceptance | prefill t/s | greedy text | verdict |
+|---|---|---|---|---|---|
+| 1205 paired K/V projection (build) | 39.10 (38.0-41.0) vs base 38.71 (38.0-39.5) | 56.1% vs 55.7% | 1455 vs 1453 | identical | neutral, as screened |
+| 1206 mul_mat + add view fusion (build) | 39.14 (38.0-40.5) vs base 38.78 (38.0-40.3) | 56.1% vs 55.8% | 1449 vs 1456 | identical | neutral, as screened |
+| BIGCHERRY_DRAFT_VOCAB_N=32768 (flag, 1297) | 38.47 (37.8-39.1) vs 38.67 (38.0-39.5) | 52.5% vs 56.2% | 1456 vs 1452 | identical | the screen's '-10% ms/step' does not reproduce; acceptance is lower, so 65536 stays |
+| 1306 shared-expert split (flag) | 37.32 (36.6-38.2) vs 39.00 (38.0-40.3) | 63.9% vs 55.7% | 1457 vs 1456 | differs | looked like +4% on this one prompt - see below |
+
+1306 over four prompts (queue-decode-acceptance.sh on build b-rs-1306, ABBA per prompt): decode +13.7%, -8.7%, -6.0%, -1.7%; pooled 69.1 vs 69.8 t/s (-0.9%), acceptance 54.6% vs 55.5%, prefill -0.1%, faster in 1 of 4. The one-prompt gain was the continuation that prompt happened to take once the text changed. 1306 is speed-neutral; its only measured effect is the VRAM it frees (~185 MiB per XTX, ~135 MiB on the R9700 in the 2026-10-04 notes). It stays `evaluated`.
+
+So all four earlier verdicts stand, now with measurements behind them. Two rules that follow: a change that alters the output text is judged on several prompts, never one; and a change that keeps the text is judged on several starts per arm. Not re-screened: 1298, 1301, 1304, 1245, 1262, 1215, 1255 (rejected, no experiment recipe left to build them).
+
 ## Change Log
 
 - 2026-10-04T04:00:27.523971+00:00 (created-by): Created by agent
@@ -87,3 +104,4 @@ CORRECTION 2026-10-04: the run-5 'stock-none' build was not pure upstream - [sou
 - 2026-10-04T06:54:25.842364+00:00 (updated-by): Updated: section:notes
 - 2026-10-04T07:55:38.201733+00:00 (updated-by): Updated: section:notes
 - 2026-10-05T07:04:00+11:00 (updated-by): Deep review: consolidate diagnosis on draft-placement and pure-upstream controls; forbid meta-backend graph-splitting instrumentation.
+- 2026-10-12T03:41:17.231762+00:00 (updated-by): Updated: section:notes
