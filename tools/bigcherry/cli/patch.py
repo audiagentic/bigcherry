@@ -866,7 +866,7 @@ def cmd_patches(args: Namespace) -> int:
     + patch_catalog.load_catalog(engines.LLAMACPP)) this command used to make.
     """
     try:
-        snapshot = patch_catalog.build_snapshot()
+        snapshot = patch_catalog.build_snapshot(engines.LLAMACPP)
     except ValueError as exc:
         print(f"patches: could not load engines/llamacpp/patches/catalog.toml: {exc}", file=sys.stderr)
         return 2
