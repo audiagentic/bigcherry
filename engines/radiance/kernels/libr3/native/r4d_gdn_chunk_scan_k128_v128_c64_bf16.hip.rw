@@ -3,9 +3,11 @@
 // Radiance's recurrence, shared-memory geometry, masking and state representation are unchanged.
 // The rewrite changes only WMMA ownership on gfx11: full 16-value bf16 rows feed native WMMA,
 // accumulators stay in gfx11 layout across each contraction loop, and are converted only where
-// scalar code or the persistent state/output layout needs gfx12 ordering. This removes the
-// compatibility layer's two operand lane exchanges plus accumulator exchange from every WMMA.
-// R3_GDN_NATIVE=1 selects the native instantiation. The recurrent state update stays on the compatibility WMMA:
+// scalar code or the persistent state/output layout needs gfx12 ordering. Each native WMMA uses zero C and adds
+// its product in f32, exactly as libr3's gfx12 compatibility shim does; chaining C through gfx11 WMMA changes
+// rounding and compounds through long multi-chunk recurrence. R3_GDN_NATIVE=1 selects the native instantiation.
+// R3_GDN_COMPARE=1 runs native on copied output/state then compatibility on the real buffers and reports the first
+// mismatch while leaving compatibility results live. The recurrent state update stays on the compatibility WMMA:
 // its K^T contraction owns the state carried into the next chunk. Keep default off until served-model KL passes.
 //
 @@ find 1
@@ -13,8 +15,18 @@
 #include "r4d.h"
 @@ replace
 #include <hip/hip_runtime.h>
+#include <atomic>
+#include <cstdio>
 #include <cstdlib>
+#include <cstring>
+#include <vector>
 #include "r4d.h"
+
+__device__ __forceinline__ r3_v8f r3_gdn_wmma_native_compat(
+        r3_v16bf a, r3_v16bf b, r3_v8f acc) {
+    const r3_v8f zero = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+    return acc + r3_wmma_bf16_native(a, b, zero);
+}
 @@ end
 
 @@ find 1
@@ -145,13 +157,13 @@ __global__ __launch_bounds__(NTHR) void r4d_gdn_chunk_scan_kernel(
           for (int i = 0; i < NTV; ++i) {
             const r3_v16bf b = pSnN(i, ko);
 #if ABL != 5
-            u[i] = r3_wmma_bf16_native(ak, b, u[i]);
+            u[i] = r3_gdn_wmma_native_compat(ak, b, u[i]);
 #endif
 #if ABL != 6
-            O[i] = r3_wmma_bf16_native(b, aq, O[i]);
+            O[i] = r3_gdn_wmma_native_compat(b, aq, O[i]);
 #endif
 #if ABL != 4
-            if (doP[i]) p[i] = r3_wmma_bf16_native(pknN(i, ko), aq, p[i]);
+            if (doP[i]) p[i] = r3_gdn_wmma_native_compat(pknN(i, ko), aq, p[i]);
 #endif
           }
         } else {
@@ -424,7 +436,7 @@ __global__ __launch_bounds__(NTHR) void r4d_gdn_chunk_scan_kernel(
         if constexpr (R3N) {
           const r3_v16bf a = pafN(ko);
 #pragma unroll
-          for (int i = 0; i < NTV; ++i) d[i] = r3_wmma_bf16_native(a, pwnN(i, ko), d[i]);
+          for (int i = 0; i < NTV; ++i) d[i] = r3_gdn_wmma_native_compat(a, pwnN(i, ko), d[i]);
         } else {
           const v8bf a = paf(ko);
 #pragma unroll
@@ -482,7 +494,7 @@ __global__ __launch_bounds__(NTHR) void r4d_gdn_chunk_scan_kernel(
         if constexpr (R3N) {
           const r3_v16bf b = pAN(ko);
 #pragma unroll
-          for (int i = 0; i < NTV; ++i) O[i] = r3_wmma_bf16_native(pdnN(i, ko), b, O[i]);
+          for (int i = 0; i < NTV; ++i) O[i] = r3_gdn_wmma_native_compat(pdnN(i, ko), b, O[i]);
         } else {
           const v8bf b = pAf(ko);
 #pragma unroll
@@ -514,24 +526,176 @@ __global__ __launch_bounds__(NTHR) void r4d_gdn_chunk_scan_kernel(
 #undef CS_PICK
 #undef CS_LAUNCH
 @@ replace
-#define CS_LAUNCH(SDTC, H0C, HTC, R3NC)                                                   \
+#define CS_LAUNCH_TO(SDTC, H0C, HTC, R3NC, H0P, OP, HTP)                         \
   hipLaunchKernelGGL((r4d_gdn_chunk_scan_kernel<SDTC, H0C, HTC, R3NC>), grid, blk, 0,      \
       (hipStream_t)stream,                                                                 \
       (const unsigned short*)q, (const unsigned short*)k, (const unsigned short*)v,        \
       (const unsigned short*)A, (const float*)g, (const float*)beta,                       \
-      (const cs_state<SDTC>::T*)h0, (unsigned short*)o, (cs_state<SDTC>::T*)ht,            \
+      (const cs_state<SDTC>::T*)(H0P), (unsigned short*)(OP), (cs_state<SDTC>::T*)(HTP),  \
       (const int*)cu, (const int*)ssm_state_indices, (indices_stride > 0 ? indices_stride : 1), \
       st_slot, st_head, H, Hg, scale)
-#define CS_PICK(SDTC, R3NC)                                                                \
-  do { if (h0 && ht) CS_LAUNCH(SDTC, true, true, R3NC);                                    \
-       else if (h0)  CS_LAUNCH(SDTC, true, false, R3NC);                                   \
-       else if (ht)  CS_LAUNCH(SDTC, false, true, R3NC);                                   \
-       else          CS_LAUNCH(SDTC, false, false, R3NC); } while (0)
+#define CS_PICK_TO(SDTC, R3NC, H0P, OP, HTP)                                               \
+  do { if (h0 && ht) CS_LAUNCH_TO(SDTC, true, true, R3NC, H0P, OP, HTP);                  \
+       else if (h0)  CS_LAUNCH_TO(SDTC, true, false, R3NC, H0P, OP, HTP);                 \
+       else if (ht)  CS_LAUNCH_TO(SDTC, false, true, R3NC, H0P, OP, HTP);                 \
+       else          CS_LAUNCH_TO(SDTC, false, false, R3NC, H0P, OP, HTP); } while (0)
+
   const char* r3n = std::getenv("R3_GDN_NATIVE");
   const bool use_r3n = r3n && *r3n == '1';
-  if (state_fp16) { if (use_r3n) CS_PICK(1, true); else CS_PICK(1, false); }
-  else            { if (use_r3n) CS_PICK(0, true); else CS_PICK(0, false); }
-#undef CS_PICK
-#undef CS_LAUNCH
+  const char* r3c = std::getenv("R3_GDN_COMPARE");
+  const bool compare_r3 = r3c && *r3c == '1';
+  if (!compare_r3) {
+    if (state_fp16) { if (use_r3n) CS_PICK_TO(1, true, h0, o, ht); else CS_PICK_TO(1, false, h0, o, ht); }
+    else            { if (use_r3n) CS_PICK_TO(0, true, h0, o, ht); else CS_PICK_TO(0, false, h0, o, ht); }
+  } else {
+    hipStream_t r3s = (hipStream_t)stream;
+    std::vector<int> r3cu((size_t)N + 1);
+    hipError_t r3err = hipMemcpyAsync(r3cu.data(), cu, ((size_t)N + 1) * sizeof(int),
+                                      hipMemcpyDeviceToHost, r3s);
+    const long r3_is = indices_stride > 0 ? indices_stride : 1;
+    const size_t r3_idx_n = ssm_state_indices && N > 0 ? (size_t)(N - 1) * (size_t)r3_is + 1 : 0;
+    std::vector<int> r3idx(r3_idx_n);
+    if (r3err == hipSuccess && r3_idx_n)
+      r3err = hipMemcpyAsync(r3idx.data(), ssm_state_indices, r3_idx_n * sizeof(int),
+                             hipMemcpyDeviceToHost, r3s);
+    if (r3err == hipSuccess) r3err = hipStreamSynchronize(r3s);
+
+    int r3_M = r3cu.empty() ? 0 : r3cu.back();
+    int r3_max_slot = N > 0 ? N - 1 : 0;
+    int r3_chunks = 0;
+    if (r3err == hipSuccess) {
+      r3_max_slot = 0;
+      for (int n = 0; n < N; ++n) {
+        const int d = r3cu[(size_t)n + 1] - r3cu[(size_t)n];
+        if (d > 0) r3_chunks += (d + BT - 1) / BT;
+        const int si = ssm_state_indices ? r3idx[(size_t)n * (size_t)r3_is] : n;
+        if (si > r3_max_slot) r3_max_slot = si;
+      }
+    }
+    const size_t r3_esz = state_fp16 ? sizeof(_Float16) : sizeof(float);
+    const size_t r3_state_elems = ((size_t)r3_max_slot + 1) * (size_t)st_slot;
+    const size_t r3_state_bytes = r3_state_elems * r3_esz;
+    const size_t r3_out_elems = r3_M > 0 ? (size_t)r3_M * (size_t)H * (size_t)V : 0;
+    const size_t r3_out_bytes = r3_out_elems * sizeof(unsigned short);
+    void* r3_o = nullptr;
+    void* r3_h0 = nullptr;
+    void* r3_ht = nullptr;
+
+    if (r3err == hipSuccess)
+      r3err = hipMalloc(&r3_o, r3_out_bytes ? r3_out_bytes : sizeof(unsigned short));
+    if (r3err == hipSuccess && h0) {
+      r3err = hipMalloc(&r3_h0, r3_state_bytes ? r3_state_bytes : r3_esz);
+      if (r3err == hipSuccess && r3_state_bytes)
+        r3err = hipMemcpyAsync(r3_h0, h0, r3_state_bytes, hipMemcpyDeviceToDevice, r3s);
+    }
+    if (r3err == hipSuccess && ht) {
+      if (h0 && h0 == ht) {
+        r3_ht = r3_h0;
+      } else {
+        r3err = hipMalloc(&r3_ht, r3_state_bytes ? r3_state_bytes : r3_esz);
+        if (r3err == hipSuccess && r3_state_bytes && h0 && ht)
+          r3err = hipMemcpyAsync(r3_ht, ht, r3_state_bytes, hipMemcpyDeviceToDevice, r3s);
+      }
+    }
+    bool r3_compat_done = false;
+    if (r3err == hipSuccess) {
+      if (state_fp16) CS_PICK_TO(1, true, r3_h0, r3_o, r3_ht);
+      else            CS_PICK_TO(0, true, r3_h0, r3_o, r3_ht);
+      r3err = hipGetLastError();
+    }
+    if (r3err == hipSuccess) {
+      if (state_fp16) CS_PICK_TO(1, false, h0, o, ht);
+      else            CS_PICK_TO(0, false, h0, o, ht);
+      r3_compat_done = true;
+      r3err = hipGetLastError();
+    }
+    if (r3err == hipSuccess) r3err = hipStreamSynchronize(r3s);
+
+    std::vector<unsigned short> r3no, r3co;
+    std::vector<unsigned char> r3ns, r3cs;
+    if (r3err == hipSuccess && r3_out_bytes) {
+      r3no.resize(r3_out_elems); r3co.resize(r3_out_elems);
+      r3err = hipMemcpy(r3no.data(), r3_o, r3_out_bytes, hipMemcpyDeviceToHost);
+      if (r3err == hipSuccess) r3err = hipMemcpy(r3co.data(), o, r3_out_bytes, hipMemcpyDeviceToHost);
+    }
+    if (r3err == hipSuccess && ht && r3_state_bytes) {
+      r3ns.resize(r3_state_bytes); r3cs.resize(r3_state_bytes);
+      r3err = hipMemcpy(r3ns.data(), r3_ht, r3_state_bytes, hipMemcpyDeviceToHost);
+      if (r3err == hipSuccess) r3err = hipMemcpy(r3cs.data(), ht, r3_state_bytes, hipMemcpyDeviceToHost);
+    }
+
+    int r3_kind = 0; size_t r3_diff = 0; unsigned r3_cv = 0, r3_nv = 0;
+    if (r3err == hipSuccess) {
+      for (size_t i = 0; i < r3_out_elems; ++i) if (r3co[i] != r3no[i]) {
+        r3_kind = 1; r3_diff = i; r3_cv = r3co[i]; r3_nv = r3no[i]; break;
+      }
+      if (!r3_kind && ht) {
+        for (int n = 0; n < N && !r3_kind; ++n) {
+          const long si = ssm_state_indices ? (long)r3idx[(size_t)n * (size_t)r3_is] : (long)n;
+          if (si < 0) continue;
+          for (int hv = 0; hv < H && !r3_kind; ++hv) {
+            const size_t base = (size_t)si * (size_t)st_slot + (size_t)hv * (size_t)st_head;
+            for (size_t x = 0; x < (size_t)V * (size_t)K; ++x) {
+              const size_t ix = base + x, bo = ix * r3_esz;
+              if (std::memcmp(r3cs.data() + bo, r3ns.data() + bo, r3_esz) != 0) {
+                r3_kind = 2; r3_diff = ix;
+                std::memcpy(&r3_cv, r3cs.data() + bo, r3_esz);
+                std::memcpy(&r3_nv, r3ns.data() + bo, r3_esz);
+                break;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    static std::atomic<bool> r3_reported{false};
+    if (r3_kind && !r3_reported.exchange(true)) {
+      std::fprintf(stderr,
+        "libr3: R3_GDN_COMPARE mismatch kind=%s idx=%zu compat=0x%08x native=0x%08x "
+        "M=%d chunk=%d chunks=%d N=%d H=%d Hg=%d K=%d V=%d bt=%d scale=%.9g "
+        "h0=%d ht=%d h0_eq_ht=%d state_dtype=%s indices_stride=%ld state_slot_stride=%ld "
+        "state_head_stride=%ld grid=%ux%ux%u block=%ux%ux%u q=%p k=%p v=%p A=%p g=%p beta=%p "
+        "h0_ptr=%p o=%p ht_ptr=%p cu_ptr=%p sidx_ptr=%p stream=%p cu=[",
+        r3_kind == 1 ? "out" : "state", r3_diff, r3_cv, r3_nv,
+        r3_M, BT, r3_chunks, N, H, Hg, K, V, bt, (double)scale,
+        h0 != nullptr, ht != nullptr, h0 && h0 == ht, state_fp16 ? "f16" : "f32",
+        r3_is, st_slot, st_head, grid.x, grid.y, grid.z, blk.x, blk.y, blk.z,
+        q, k, v, A, g, beta, h0, o, ht, cu, ssm_state_indices, stream);
+      for (int n = 0; n <= N; ++n) std::fprintf(stderr, "%s%d", n ? "," : "", r3cu[(size_t)n]);
+      std::fprintf(stderr, "] chunks_per_seq=[");
+      for (int n = 0; n < N; ++n) {
+        const int d = r3cu[(size_t)n + 1] - r3cu[(size_t)n];
+        std::fprintf(stderr, "%s%d", n ? "," : "", d > 0 ? (d + BT - 1) / BT : 0);
+      }
+      std::fprintf(stderr, "] sidx=");
+      if (!ssm_state_indices) std::fprintf(stderr, "null");
+      else {
+        std::fprintf(stderr, "[");
+        for (int n = 0; n < N; ++n)
+          std::fprintf(stderr, "%s%d", n ? "," : "", r3idx[(size_t)n * (size_t)r3_is]);
+        std::fprintf(stderr, "]");
+      }
+      std::fprintf(stderr, " state_offsets=[");
+      for (int n = 0; n < N; ++n) {
+        const long si = ssm_state_indices ? (long)r3idx[(size_t)n * (size_t)r3_is] : (long)n;
+        std::fprintf(stderr, "%s%lld", n ? "," : "", (long long)(si < 0 ? -1 : si * st_slot));
+      }
+      std::fprintf(stderr, "]\n");
+    } else if (r3err != hipSuccess && !r3_reported.exchange(true)) {
+      std::fprintf(stderr, "libr3: R3_GDN_COMPARE setup_failed hip=%s M=%d N=%d H=%d Hg=%d\n",
+                   hipGetErrorString(r3err), r3_M, N, H, Hg);
+      if (!r3_compat_done) {
+        if (state_fp16) CS_PICK_TO(1, false, h0, o, ht);
+        else            CS_PICK_TO(0, false, h0, o, ht);
+      }
+    }
+
+    if (r3_ht && r3_ht != r3_h0) hipFree(r3_ht);
+    if (r3_h0) hipFree(r3_h0);
+    if (r3_o) hipFree(r3_o);
+  }
+#undef CS_PICK_TO
+#undef CS_LAUNCH_TO
 @@ end
 
