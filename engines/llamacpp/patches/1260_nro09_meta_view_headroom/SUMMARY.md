@@ -1,5 +1,10 @@
 # 1260_nro09_meta_view_headroom
 
+
+## 2026-10-12 audit correction
+
+**Untested; not qualified for promotion.** Meta's 16 is a per-static-tensor compute-container multiplier, not a global 16-view cap. The historical real MTP workload succeeded at both 16 and 80; its throughput comparison is confounded. The current validation producer cannot start as written: it confuses build targets with GPU architectures, lacks materialized source trees, uses a zero-length view fixture and copies historical hardware results. See PNRO09 and BCOP157 for a bounded repair/retirement gate. No new build or GPU run was performed.
+
 **Status:** untested
 **Plan item:** PNRO09
 
