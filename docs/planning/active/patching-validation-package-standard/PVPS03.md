@@ -66,3 +66,7 @@ validated-enhancements is empty at 2026-09-25 (RD73 demoted), so arm 3 == arm 2 
 
 - chg_20260925_121417_patch-validation-now-measures_6673
 - 2026-09-25T12:14:20.736304+00:00 (updated-by): Updated: section:ledger-events
+
+## 2026-10-12 PVPS04 dependency (documentation only)
+
+`campaign/scaffold.py::_build_parity_trees` builds stock, control and validation-subject, plus a distinct base only when `base_src != control_src`. PVPS04 may eliminate only producer-unused tune/replay builds after schema-v5 identity validation. It must not remove, alias or fabricate PVPS03's stock/base/validated/subject reference arms, change ladder caching or weaken artifact/identity gates. PVPS03 retains ladder ownership; technical migration belongs to PVPS04 and BCOP165. No build or hardware test was performed for this note.
