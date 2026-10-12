@@ -4,7 +4,9 @@
 
 #include <dlfcn.h>
 #include <link.h>
+#include <fcntl.h>
 #include <sys/mman.h>
+#include <unistd.h>
 
 #include <algorithm>
 #include <cerrno>
@@ -179,6 +181,69 @@ uint32_t fbits(float x) {
     return u;
 }
 
+/* The table's bytes, read from the container with ordinary sequential reads when the pointer is a file mapping:
+ * faulting a cold mapping in page by page is tens of MB/s on this host, a read of the file hundreds. `sink` is
+ * given consecutive pieces. A pointer that is not a file mapping is read as memory. */
+struct Backing { int fd = -1; long long off = 0; };
+
+Backing backing_of(const uint8_t* p) {
+    Backing b;
+    std::FILE* f = std::fopen("/proc/self/maps", "re");
+    if (!f) return b;
+    char line[4352];
+    while (std::fgets(line, sizeof line, f)) {
+        unsigned long long lo = 0, hi = 0, off = 0, inode = 0;
+        char perms[8];
+        unsigned dmaj = 0, dmin = 0;
+        int at = 0;
+        if (std::sscanf(line, "%llx-%llx %7s %llx %x:%x %llu %n", &lo, &hi, perms, &off, &dmaj, &dmin, &inode, &at) < 7)
+            continue;
+        if ((uintptr_t)p < lo || (uintptr_t)p >= hi) continue;
+        std::string name(line + at);
+        while (!name.empty() && (name.back() == '
+' || name.back() == ' ')) name.pop_back();
+        if (inode != 0 && !name.empty() && name[0] == '/') {
+            b.fd = ::open(name.c_str(), O_RDONLY | O_CLOEXEC);
+            b.off = (long long)off + (long long)((uintptr_t)p - lo);
+        }
+        break;
+    }
+    std::fclose(f);
+    return b;
+}
+
+template <class Sink>
+int read_table(const uint8_t* src, size_t bytes, Sink sink) {
+    const size_t step = 256ull << 20;
+    Backing b = backing_of(src);
+    if (b.fd < 0) {
+        for (size_t o = 0; o < bytes; o += step) {
+            const int rc = sink(o, src + o, std::min(step, bytes - o));
+            if (rc != RAD_OK) return rc;
+        }
+        return RAD_OK;
+    }
+    posix_fadvise(b.fd, b.off, (off_t)bytes, POSIX_FADV_SEQUENTIAL);
+    std::vector<uint8_t> buf(std::min(step, bytes));
+    int rc = RAD_OK;
+    for (size_t o = 0; o < bytes && rc == RAD_OK;) {
+        const size_t len = std::min(step, bytes - o);
+        size_t got = 0;
+        while (got < len) {
+            const ssize_t r = ::pread(b.fd, buf.data() + got, len - got, (off_t)(b.off + (long long)(o + got)));
+            if (r <= 0) { rc = RAD_E_IO; break; }
+            got += (size_t)r;
+        }
+        if (rc != RAD_OK) break;
+        rc = sink(o, buf.data(), len);
+        /* read once: these pages are not wanted in the page cache afterwards */
+        posix_fadvise(b.fd, (off_t)(b.off + (long long)o), (off_t)len, POSIX_FADV_DONTNEED);
+        o += len;
+    }
+    ::close(b.fd);
+    return rc;
+}
+
 bool ram_wanted() {
     const char* e = std::getenv("R3_NGRAM_RAM");
     return !(e && *e == '0');
@@ -195,14 +260,15 @@ void ram_copy(State* s, const uint8_t* table) {
         return;
     }
     const uint8_t* src = table + (size_t)s->covered * (size_t)s->n;
-    const size_t step = 256ull << 20;
-    for (size_t o = 0; o < bytes; o += step) {
-        const size_t len = std::min(step, bytes - o);
-        std::memcpy((uint8_t*)m + o, src + o, len);
-        /* the container's pages just read are not needed again: the copy is what is gathered from */
-        const uintptr_t lo = ((uintptr_t)(src + o) + 4095) & ~(uintptr_t)4095;
-        const uintptr_t hi = (uintptr_t)(src + o + len) & ~(uintptr_t)4095;
-        if (hi > lo) madvise((void*)lo, hi - lo, MADV_DONTNEED);
+    const int rrc = read_table(src, bytes, [&](size_t o, const uint8_t* piece, size_t len) {
+        std::memcpy((uint8_t*)m + o, piece, len);
+        return (int)RAD_OK;
+    });
+    if (rrc != RAD_OK) {
+        std::fprintf(stderr, "libr3: R3_NGRAM_DEV could not read the rows off the device(s) from the container; "
+                     "they are read from it a row at a time" + std::string().size());
+        munmap(m, bytes);
+        return;
     }
     const bool locked = mlock(m, bytes) == 0;
     s->ram = (uint8_t*)m;
@@ -367,7 +433,11 @@ int launch_ngram(const RadArgs* a, RadStream) {
 
     if (s->loaded_table != table) {
         for (const Shard& sh : s->shards) {
-            const int rc = s->hp.load(sh.dev, table + (size_t)sh.first * n, sh.rows * (int64_t)n);
+            const int dev = sh.dev;
+            const int rc = read_table(table + (size_t)sh.first * n, (size_t)sh.rows * (size_t)n,
+                [&](size_t o, const uint8_t* piece, size_t len) {
+                    return s->hp.load(dev, (int64_t)o, piece, (int64_t)len);
+                });
             if (rc != RAD_OK) return rc;
         }
         ram_copy(s, table);

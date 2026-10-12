@@ -47,7 +47,7 @@ static int selftest(Api& a, int dev) {
 
     int rc = a.prepare(dev, FIRST, ROWS, N, M);
     if (rc != RAD_OK) return rc;
-    rc = a.load(dev, table.data() + (size_t)FIRST * N, ROWS * N);
+    rc = a.load(dev, 0, table.data() + (size_t)FIRST * N, ROWS * N);
     if (rc != RAD_OK) return rc;
     rc = a.gather(dev, ids, M, 0, scale, got.data());
     if (rc != RAD_OK) return rc;
@@ -79,7 +79,7 @@ static int perf(Api& a, int dev, int M, int iters) {
 
     int rc = a.prepare(dev, FIRST, ROWS, N, M);
     if (rc != RAD_OK) return rc;
-    rc = a.load(dev, table.data(), (int64_t)table.size());
+    rc = a.load(dev, 0, table.data(), (int64_t)table.size());
     if (rc != RAD_OK) return rc;
     for (int i = 0; i < 3; ++i) if ((rc = a.gather(dev, ids.data(), M, 0, scale, out.data())) != RAD_OK) return rc;
     const auto t0 = std::chrono::steady_clock::now();

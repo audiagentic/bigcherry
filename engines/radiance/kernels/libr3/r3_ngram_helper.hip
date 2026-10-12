@@ -109,17 +109,17 @@ extern "C" int r3_ngram_helper_prepare(int device, int64_t first_row, int64_t ro
     return RAD_OK;
 }
 
-extern "C" int r3_ngram_helper_load(int device, const uint8_t* host_codes, int64_t bytes) {
-    if (!host_codes || bytes <= 0) return RAD_E_INVAL;
+extern "C" int r3_ngram_helper_load(int device, int64_t offset, const uint8_t* host_codes, int64_t bytes) {
+    if (!host_codes || bytes <= 0 || offset < 0) return RAD_E_INVAL;
     std::lock_guard<std::mutex> lk(g_mu);
     auto it = g_state.find(device);
     if (it == g_state.end()) return RAD_E_STATE;
     State& s = *it->second;
     const int64_t want = s.rows * (int64_t)s.n;
-    if (bytes != want) return RAD_E_SHAPE;
+    if (offset + bytes > want) return RAD_E_SHAPE;
     DeviceGuard guard(device);
     if (!guard.ok) return RAD_E_DEVICE;
-    return hip_status(hipMemcpy(s.codes, host_codes, (size_t)bytes, hipMemcpyHostToDevice));
+    return hip_status(hipMemcpy((uint8_t*)s.codes + offset, host_codes, (size_t)bytes, hipMemcpyHostToDevice));
 }
 
 extern "C" int r3_ngram_helper_gather(int device, const int32_t* ids, int m, int vocab_offset,
