@@ -715,7 +715,7 @@ over waves a block, blocks a CU and independent accumulators; best of each eleme
 ## Native prefill attention and delta-net scan, measured (2026-10-12, run `rr10d`, `tools/lab/radiance/rr10-native-prefill.sh`)
 
 27B MXFP4, two XTX, `--tp-wire wht6`, one 7.2K prefill a server start; switches `R3_ATTN_NATIVE` and `R3_GDN_NATIVE`
-(both default off). Selftests pass in every arm (`attn_prefill_h256_gqa6_fp8kv`, `_bf16kv`,
+(off when measured; both are the default since the repeats below, `=0` is the off switch). Selftests pass in every arm (`attn_prefill_h256_gqa6_fp8kv`, `_bf16kv`,
 `gdn_chunk_scan_k128_v128_c64_bf16`).
 
 | arm | prefill tok/s | `attn_paged` us a call | `gdn_chunk_scan` us a call |
@@ -727,9 +727,10 @@ over waves a block, blocks a CU and independent accumulators; best of each eleme
 | R9700, libr4d (for scale) | 3,104 to 3,214 | 143 | 133 |
 
 - The scan is now at the R9700's cost a call; attention is at 1.4 to 1.6 times it (from 2.6 times).
-- Both together: +6.5% prefill on one reading an arm. Start-to-start spread on this bench has been about 2%
-  (2,104 to 2,192 over the six `knob1` arms), so the direction is clear and the size is not yet; repeats come before
-  the switches become the default.
+- Repeats (`rr10e`, `rr10f`, same script): compatibility 2,187.8 / 2,134.9 / 2,156.7; native attention 2,306.6 /
+  2,246.5 / 2,262.3; native scan 2,283.4 / 2,221.0 / 2,230.1; both 2,330.5 / 2,335.2 / 2,367.0. Both against
+  compatibility is complete separation over three starts an arm, mean 2,344 against 2,160 (+8.5%); selftests pass in
+  every round. Both native forms are now the default.
 - The 4-token decode figures in this run (a 71.3 maximum, a 64.0 after the prefill) are too short to mean anything.
 
 ## Qwen3.8-Flash-Next on two XTX, first runs (2026-10-12, runs `fn2`, `fnp1`, `tools/lab/radiance/flashnext-tp2.sh`)
