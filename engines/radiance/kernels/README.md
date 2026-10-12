@@ -749,6 +749,29 @@ over waves a block, blocks a CU and independent accumulators; best of each eleme
 - With the sum at half and the GEMM at 115 TFLOP/s instead of 100, the pair would be at about 2,900 tok/s; matching
   the R9700 needs the sum near a quarter of today's and the GEMM near 125 (the roof is 142).
 
+## The cross-card sum, timed: it is the link, by the byte (2026-10-12, run `art3`, `tools/lab/radiance/ar-timing.sh`)
+
+`R3_AR_TIMING=1` times each fused all-reduce call between two stream synchronisations (the engine's HIP layer has no
+`hipEventRecord` on its streams, and aborts under rocprofv3), so the timed run is synchronous and slower; reported
+every 512 calls a row. 27B MXFP4, two XTX, `--p2p off`, 7.2K prefill. Without P2P the kernel itself writes its
+payload into mapped pinned host memory and reads the peer's from it; there are no separate copies to time.
+
+| wire | rows | payload a call | p50 | p90 | calls | total a rank |
+|---|---|---|---|---|---|---|
+| wht6 | 512 and up (the 2048-token chunks) | 7.17 MB | 2.0 to 2.15 ms | 2.6 to 2.8 ms | 508 | 1.00 to 1.02 s |
+| exact | 512 and up | 18.35 MB | 5.0 to 5.1 ms | 5.5 to 5.6 ms | 512 | 2.29 to 2.31 s |
+| wht6 | 9 to 511 | 0.19 to 0.28 MB | 104 to 151 us | 167 to 251 us | 1,143 | 0.16 s |
+| exact | 1 to 8 (decode) | 10 to 36 KB | 43 to 74 us | 54 to 160 us | | |
+
+- The large reduces are the whole cost (1.0 s of the 1.18 s the per-op profile gives the op), and their time follows
+  the bytes: 3.4 to 3.6 MB a millisecond on either wire. A call moves its payload out and the peer's in, so the link
+  is carrying about 7 GB/s; the estimate above (about 2.3 ms, two crossings one after the other) holds.
+- So the sum gets cheaper only by fewer bytes or by the two crossings overlapping. Out and in are opposite
+  directions of the card's own link: a kernel that writes its payload in slices while reading the peer's slices as
+  they land would take about one crossing instead of two (about 1 ms), which is half of the 20% the sum costs a
+  prefill. A 4-bit wire would take a third off the bytes, at a quality cost to be measured in KL mode.
+- Decode-size reduces are 43 to 74 us; nothing to gain there.
+
 ## Qwen3.8-Flash-Next on two XTX, first runs (2026-10-12, runs `fn2`, `fnp1`, `tools/lab/radiance/flashnext-tp2.sh`)
 
 radiance's shipped container `qwen3.8-next-flash-fp8-iq4r-moe.rad` (113.6 GiB: 4-bit codebook experts `w4nl64a8h`,
