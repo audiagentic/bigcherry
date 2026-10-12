@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import re
 import sys
 import tempfile
 import unittest
@@ -11,7 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from bigcherry.core import paths  # noqa: E402
 from bigcherry.patcher import apply_all  # noqa: E402
-from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
+from bigcherry.patch.pinned_source import copy_pinned, production_source  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
 _REL = "ggml/src/ggml-alloc.c"
@@ -27,6 +28,7 @@ def _load(pid: str):
 
 
 _P = _load("1331_alloc_peak_live")
+_ID = "1331_alloc_peak_live"
 
 
 @unittest.skipUnless(_VENDOR.exists(), "pinned vendor checkout not present")
@@ -42,8 +44,14 @@ class Patch1331Mechanics(unittest.TestCase):
 
     def test_apply_and_idempotent(self):
         with tempfile.TemporaryDirectory() as td:
-            root = self._tree(td)
-            res = apply_all(self._alloc_patches(_P), root)
+            root = production_source((_REL,), td, stop_before=_ID)
+            patches = self._alloc_patches(_P)
+            before = (root / _REL).read_text(encoding="utf-8")
+            self.assertTrue(all(not p.create for p in patches))
+            for fp in patches:
+                for edit in fp.edits:
+                    self.assertIsNone(re.search(edit.guard_pattern(), before, re.MULTILINE), edit.id)
+            res = apply_all(patches, root)
             self.assertTrue(all(r.ok for r in res), [e.detail for r in res for e in r.failed])
             out = (root / _REL).read_text(encoding="utf-8")
             self.assertLess(out.index("static void bc_peak_report"), out.index("static void ggml_gallocr_allocate_node(ggml_gallocr_t"))
@@ -57,6 +65,20 @@ class Patch1331Mechanics(unittest.TestCase):
             second = apply_all(self._alloc_patches(_P), root)
             self.assertTrue(all(r.ok for r in second))
             self.assertEqual(out, (root / _REL).read_text(encoding="utf-8"))
+
+
+    def test_missing_helper_anchor_fails_closed(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = production_source((_REL,), td, stop_before=_ID)
+            path = root / _REL
+            before = path.read_text(encoding="utf-8")
+            anchor = "static void ggml_gallocr_allocate_node(ggml_gallocr_t galloc, struct ggml_tensor * node, int buffer_id) {"
+            self.assertEqual(before.count(anchor), 1)
+            drifted = before.replace(anchor, anchor.replace("ggml_gallocr_allocate_node", "ggml_gallocr_allocate_node_drifted"), 1)
+            path.write_text(drifted, encoding="utf-8")
+            res = apply_all(self._alloc_patches(_P), root)
+            self.assertFalse(all(r.ok for r in res))
+            self.assertEqual(drifted, path.read_text(encoding="utf-8"))
 
     def test_composes_with_1329(self):
         with tempfile.TemporaryDirectory() as td:
