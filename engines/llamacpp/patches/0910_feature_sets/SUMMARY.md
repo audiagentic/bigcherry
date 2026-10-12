@@ -47,3 +47,7 @@ ENV_DOCS = (
 The patch loader turns `ENV_DOCS` into rows of this patch's help table, so the help reflects the actual build.
 `patch-lint` validates the profile files (grammar, duplicates, unknown includes, cycles, conflicts) and rejects
 flags that no patch documents.
+
+## 2026-10-12 QFP23 contract audit (documentation-only)
+
+0910 is implemented/validated as a profile-loader **mechanism**, but runtime C parser acceptance is not identical to the Python `runtime_profiles.py` lint contract for duplicate same-value flags, repeated includes, duplicate/invalid `arch` and undocumented flags in a custom override. `BIGCHERRY_FEATURES=auto` selects the first matching architecture from unsorted directory enumeration; an auto-application error is discarded by the `llama_model_create` patch hook. These are conditional source-level correctness gaps, **not** observed production faults or measured throughput regressions. Current shipped `flashnext` has one `qwen4exp` architecture claimant. Keep 0910 enabled, preserve explicit env precedence, and implement the narrow parity/unique-arch/fail-model-load gates under QFP23. Auto is first-model-per-process only; upstream router model presets supply the separate-child process boundary for multi-model tuning. Do not add a second loader, per-model global-env switching, or hardware sweep.
