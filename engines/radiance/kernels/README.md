@@ -742,8 +742,16 @@ Per-op profile of the same bench (`fnp1`, rank 0, 95.8 s of device and host-site
 | `router_gemm_topk_scatter` | 2.3% | 95,088 | 23 | |
 | `qsa_score` | 1.8% | 23,820 | 72 | |
 
-Order of work this gives: a native gfx11 `moe_gemm_q` first (two fifths of everything); the n-gram table out of the
-disk tier (a configuration question: 47.68 GiB in RAM beside a smaller expert pool on a 91 GB host); then `hc_read`
+The n-gram table does not fit in this host's memory beside the experts (runs `fn3`, `fn4`). `--host-pool-mib` is a
+pool for each rank: with 24576 the engine refuses `--ngram-placement ram` (85.66 GiB available, 47.68 GiB table plus
+49.19 GiB of pools); with 10240 the table fits but the experts do not (each rank needs 19.13 GiB of pool beyond the
+19.00 GiB on its card). The sum that would fit, 2 x 18.5 GiB + 47.68 GiB, leaves the 91 GB host under 1 GiB free and
+needs another 0.6 GiB of experts on each card, so it is not a configuration to serve from. The disk lookup therefore
+stays, at 6.6 ms a decode step (about a fifth of the step); it is a small part of a prefill (1,985 calls in the run).
+Making it cheaper is a question of how the rows are read (the host site reads the container with O_DIRECT, so hot rows
+are never cached), not of placement.
+
+Order of work this gives: a native gfx11 `moe_gemm_q` first (two fifths of everything); then `hc_read`
 and `ar_gather_hc_write`.
 
 ## Other engines on the RX 7900 XTX (looked up 2026-10-10)
