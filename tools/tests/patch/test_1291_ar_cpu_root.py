@@ -21,7 +21,8 @@ _CUDA = "ggml/src/ggml-cuda/ggml-cuda.cu"
 _ARG = "common/arg.cpp"
 _BENCH = "tools/llama-bench/llama-bench.cpp"
 _BC = "ggml/src/ggml-cuda/bc-ar-cpu-root.cuh"
-_INPUTS = [_CUDA, _ARG, _BENCH]
+_PROVIDER = "ggml/src/ggml-cuda/bc-allreduce-provider-cli.cuh"
+_INPUTS = [_CUDA, _ARG, _BENCH, _PROVIDER]
 
 
 def _load():
@@ -65,6 +66,7 @@ class Patch1291Mechanics(unittest.TestCase):
             cuda = self._read(root, _CUDA)
             arg = self._read(root, _ARG)
             bench = self._read(root, _BENCH)
+            provider = self._read(root, _PROVIDER)
             owned = self._read(root, _BC)
             self.assertEqual(owned, _P._IMPL)
             self.assertEqual(sum(1 for line in owned.splitlines() if line.strip()), 407)
@@ -89,13 +91,13 @@ class Patch1291Mechanics(unittest.TestCase):
             self.assertLess(include, comm_init)
 
             legacy_cuda = cuda.replace(include_text, _P._IMPL + "\n", 1)
-            legacy_lines = _lines(legacy_cuda, arg, bench)
-            new_lines = _lines(cuda, arg, bench, owned)
+            legacy_lines = _lines(legacy_cuda, arg, bench, provider)
+            new_lines = _lines(cuda, arg, bench, provider, owned)
             include_line = _lines(include_text)
             self.assertEqual(new_lines, legacy_lines + include_line)
             self.assertEqual(sum(new_lines.values()), sum(legacy_lines.values()) + 1)
 
-            texts = {_CUDA: cuda, _ARG: arg, _BENCH: bench, _BC: owned}
+            texts = {_CUDA: cuda, _ARG: arg, _BENCH: bench, _PROVIDER: provider, _BC: owned}
             for fp in _P.PATCHES:
                 for edit in fp.edits:
                     self.assertIsNotNone(re.search(edit.guard, texts[fp.path], re.M), (fp.path, edit.id))
