@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import importlib.util
+import re
+from collections import Counter
 import sys
 import tempfile
 import unittest
@@ -10,7 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from bigcherry.patcher import apply_all  # noqa: E402
-from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
+from bigcherry.patch.pinned_source import copy_pinned, production_source  # noqa: E402
 from bigcherry.core import paths  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
@@ -80,6 +82,103 @@ class Patch1307Mechanics(unittest.TestCase):
 # the TestCase here makes unittest's changed-patch loader execute the materialized
 # pre/post merge tree checks instead of leaving the standalone regression undiscovered.
 from tools.tests.patch.test_pa44e_merged_family_identity import PA44EMergedFamilyIdentity  # noqa: E402,F401
+
+
+_ID = "1307_q81_activation_cache_mmvq"
+_COMPOSE_INPUTS = sorted({fp.path for fp in _module.PATCHES if not fp.create})
+_CREATED = sorted({fp.path for fp in _module.PATCHES if fp.create})
+_OWNED = {
+    "ggml/src/ggml-cuda/bc-rms-norm-q81.cuh": (
+        "ggml/src/ggml-cuda/norm.cu",
+        '#include "bc-rms-norm-q81.cuh"  // BigCherry 1309 owned definition\n\n',
+        "static __global__ void rms_norm_mul_q81_f32(",
+    ),
+    "ggml/src/ggml-cuda/bc-act-q81.cuh": (
+        "ggml/src/ggml-cuda/unary.cu",
+        '#include "bc-act-q81.cuh"  // BigCherry 1310 owned definitions\n\n',
+        "static bool bc_act_q81_try(",
+    ),
+    "ggml/src/ggml-cuda/bc-hc-pre-q81.cuh": (
+        "ggml/src/ggml-cuda/dsv4-hc.cu",
+        '#include "bc-hc-pre-q81.cuh"  // BigCherry 1311 owned definition\n\n',
+        "static __global__ void dsv4_hc_pre_q81_f32(",
+    ),
+}
+
+
+def _lines(*texts):
+    return Counter(line.strip() for text in texts for line in text.splitlines() if line.strip())
+
+
+@unittest.skipUnless(_GGML_CUDA.exists(), "pinned vendor checkout not present")
+class Patch1307OwnedFiles(unittest.TestCase):
+    def _root(self, td):
+        return production_source(_COMPOSE_INPUTS, td, stop_before=_ID)
+
+    def test_composed_source_owned_files_guards_identity_and_idempotent(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = self._root(td)
+            before = {p: (root / p).read_text(encoding="utf-8") for p in _COMPOSE_INPUTS}
+            for fp in _module.PATCHES:
+                if fp.create:
+                    self.assertIn(fp.path, _CREATED)
+                    self.assertFalse((root / fp.path).exists())
+                    continue
+                for edit in fp.edits:
+                    self.assertEqual(edit.expect_matches, 1, (fp.path, edit.id))
+                    self.assertIsNone(re.search(edit.guard_pattern(), before[fp.path], re.MULTILINE), (fp.path, edit.id))
+
+            res = apply_all(_module.PATCHES, root)
+            self.assertTrue(all(r.ok for r in res), [e.detail for r in res for e in r.failed])
+            after = {p: (root / p).read_text(encoding="utf-8") for p in _COMPOSE_INPUTS}
+            owned = {p: (root / p).read_text(encoding="utf-8") for p in _CREATED}
+
+            self.assertEqual(set(_OWNED), set(_CREATED))
+            for path, (upstream, include, definition) in _OWNED.items():
+                self.assertIn(definition, owned[path])
+                self.assertEqual(after[upstream].count(include.strip()), 1)
+                self.assertNotIn(definition, after[upstream])
+
+            self.assertIn("ggml_hip_q81_cache_publish(q81, key, r);", after["ggml/src/ggml-cuda/norm.cu"])
+            self.assertIn("bc_act_q81_try<op, false>", after["ggml/src/ggml-cuda/unary.cu"])
+            self.assertIn("dsv4_hc_pre_q81_f32<true>", after["ggml/src/ggml-cuda/dsv4-hc.cu"])
+            self.assertIn("ggml_hip_q81_cache_begin_generation(", after["ggml/src/ggml-cuda/ggml-cuda.cu"])
+
+            legacy = dict(after)
+            for path, (upstream, include, _) in _OWNED.items():
+                legacy[upstream] = legacy[upstream].replace(include, owned[path], 1)
+            new_lines = _lines(*(after[p] for p in _COMPOSE_INPUTS), *(owned[p] for p in _CREATED))
+            legacy_lines = _lines(*(legacy[p] for p in _COMPOSE_INPUTS))
+            include_lines = _lines(*(v[1] for v in _OWNED.values()))
+            self.assertEqual(new_lines, legacy_lines + include_lines)
+            self.assertEqual(sum(new_lines.values()), sum(legacy_lines.values()) + 3)
+            self.assertEqual(sum(sum(_lines(owned[p]).values()) for p in _CREATED), 180)
+
+            texts = dict(after)
+            texts.update(owned)
+            for fp in _module.PATCHES:
+                for edit in fp.edits:
+                    self.assertIsNotNone(re.search(edit.guard_pattern(), texts[fp.path], re.MULTILINE), (fp.path, edit.id))
+
+            snapshot = {p: (root / p).read_text(encoding="utf-8") for p in _COMPOSE_INPUTS + _CREATED}
+            second = apply_all(_module.PATCHES, root)
+            self.assertTrue(all(r.ok for r in second), [e.detail for r in second for e in r.failed])
+            self.assertEqual(snapshot, {p: (root / p).read_text(encoding="utf-8") for p in snapshot})
+
+    def test_missing_owned_block_anchor_fails_closed(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = self._root(td)
+            path = root / "ggml/src/ggml-cuda/norm.cu"
+            source = path.read_text(encoding="utf-8")
+            anchor = "static __global__ void rms_norm_back_f32("
+            self.assertEqual(source.count(anchor), 1)
+            path.write_text(source.replace(anchor, "static __global__ void rms_norm_back_f32_drifted(", 1), encoding="utf-8")
+            snapshot = {p: (root / p).read_text(encoding="utf-8") for p in _COMPOSE_INPUTS}
+            res = apply_all(_module.PATCHES, root)
+            self.assertFalse(all(r.ok for r in res))
+            self.assertEqual(snapshot, {p: (root / p).read_text(encoding="utf-8") for p in _COMPOSE_INPUTS})
+            for path in _CREATED:
+                self.assertFalse((root / path).exists())
 
 
 if __name__ == "__main__":

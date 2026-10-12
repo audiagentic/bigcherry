@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import importlib.util
+import re
+from collections import Counter
 import sys
 import tempfile
 import unittest
@@ -11,7 +13,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from bigcherry.core import paths  # noqa: E402
 from bigcherry.patcher import apply_all  # noqa: E402
-from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
+from bigcherry.patch.pinned_source import production_source  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
 _V = paths.llama_root()
@@ -27,28 +29,39 @@ def _load():
 
 
 _P = _load()
+_ID = "1334_hip_sparse_flash_attn"
+_OWNED = "ggml/src/ggml-cuda/bc-hip-sparse-flash-attn.cuh"
+_INCLUDE = '#include "bc-hip-sparse-flash-attn.cuh"  // BigCherry 1334 owned definitions\n\n'
+
+
+def _lines(*texts):
+    return Counter(line.strip() for text in texts for line in text.splitlines() if line.strip())
+
 
 
 @unittest.skipUnless(all((_V / f).exists() for f in _FILES), "pinned vendor checkout not present")
 class Patch1334Mechanics(unittest.TestCase):
     def _root(self, td):
-        root = Path(td)
-        for rel in _FILES:
-            (root / rel).parent.mkdir(parents=True, exist_ok=True)
-            copy_pinned(_V / rel, root / rel)
-        return root
+        return production_source(_FILES, td, stop_before=_ID)
 
     def test_apply_and_idempotent(self):
         with tempfile.TemporaryDirectory() as td:
             root = self._root(td)
+            before = {rel: (root / rel).read_text(encoding="utf-8") for rel in _FILES}
+            self.assertFalse((root / _OWNED).exists())
+            for fp in _P.PATCHES:
+                if not fp.create:
+                    for edit in fp.edits:
+                        self.assertIsNone(re.search(edit.guard_pattern(), before[fp.path], re.MULTILINE), (fp.path, edit.id))
             res = apply_all(_P.PATCHES, root)
             self.assertTrue(all(r.ok for r in res), [e.detail for r in res for e in r.failed])
             fa = (root / _FILES[0]).read_text(encoding="utf-8")
             mma = (root / _FILES[1]).read_text(encoding="utf-8")
-            # one HIP index kernel, defined before upstream's NVIDIA one, on the AMD wave primitives
-            # activation marker at the point where a prefill batch is routed to the 8x8 sparse kernel
+            hip = (root / _OWNED).read_text(encoding="utf-8")
+            # one HIP index kernel in the owned file; upstream keeps its NVIDIA definition and all dispatch hooks.
             self.assertIn("BIGCHERRY_PATCH_HIT patch=1334_hip_sparse_flash_attn", fa)
-            hip = fa[fa.index("#if defined(GGML_USE_HIP)\n\n// BigCherry 1334: sparse flash attention on RDNA WMMA is opt-in"):fa.index("#endif // defined(GGML_USE_HIP)\n\n#if !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)")]
+            self.assertIn(_INCLUDE.strip(), fa)
+            self.assertNotIn("static bool bc_fa_sparse_enabled()", fa)
             self.assertEqual(hip.count("static __global__ void flash_attn_mask_to_sparse_indices("), 1)
             self.assertIn("selected_wave[item] = __ballot(selected);", hip)
             self.assertIn("__popcll(selected_wave[item] & lane_mask)", hip)
@@ -57,7 +70,8 @@ class Patch1334Mechanics(unittest.TestCase):
             self.assertIn("const int lane     = tid % warpSize;", hip)
             self.assertIn("indices[i] = -1;", hip)
             self.assertIn("counts_ptr[int64_t(sequence)*gridDim.x + group] = count;", hip)
-            self.assertEqual(fa.count("static __global__ void flash_attn_mask_to_sparse_indices("), 2)
+            self.assertEqual(hip.count("static __global__ void flash_attn_mask_to_sparse_indices("), 1)
+            self.assertEqual(fa.count("static __global__ void flash_attn_mask_to_sparse_indices("), 1)
             # no HIP abort / early false left in the host functions
             self.assertNotIn("sparse flash attention is only supported on NVIDIA CUDA", fa)
             self.assertEqual(fa.count("#if defined(GGML_USE_HIP) || defined(GGML_USE_MUSA)"), 0)
@@ -65,7 +79,7 @@ class Patch1334Mechanics(unittest.TestCase):
             # 16 columns minimum: the WMMA kernel has no 1x8 device code, single-query batches stay dense
             self.assertIn("const bool bc_arch_ok = amd_wmma_available(cc) && bc_fa_sparse_enabled() && ncols1*ncols2 >= 16;", fa)
             self.assertIn("const bool bc_arch_ok = GGML_CUDA_CC_IS_NVIDIA(cc) && turing_mma_available(cc);", fa)
-            self.assertIn('getenv("BIGCHERRY_FA_SPARSE") == nullptr || atoi(', fa)
+            self.assertIn('getenv("BIGCHERRY_FA_SPARSE") == nullptr || atoi(', hip)
             # RDNA picks ncols2 = 8 only when the sparse path is taken, before its exact-divisibility choices
             rdna = fa[fa.index("// On RDNA it is preferable to minimize wasted compute"):]
             self.assertLess(rdna.index("shall_use_sparse(cc, dst, 8, 8)"), rdna.index("if (use_gqa_opt && gqa_ratio % 8 == 0)"))
@@ -74,9 +88,16 @@ class Patch1334Mechanics(unittest.TestCase):
             # both dispatch sites compile for HIP
             self.assertIn("#if !defined(GGML_USE_MUSA)  // BigCherry 1334: compiled for HIP\n    if constexpr", fa)
             self.assertIn("#if !defined(GGML_USE_MUSA)  // BigCherry 1334: compiled for HIP\n        if constexpr", mma)
+            legacy = dict({rel: (root / rel).read_text(encoding="utf-8") for rel in _FILES})
+            legacy[_FILES[0]] = fa.replace(_INCLUDE, hip, 1)
+            new_lines = _lines(*[(root / rel).read_text(encoding="utf-8") for rel in _FILES], hip)
+            old_lines = _lines(*(legacy[rel] for rel in _FILES))
+            self.assertEqual(new_lines, old_lines + _lines(_INCLUDE))
+            self.assertEqual(sum(new_lines.values()), sum(old_lines.values()) + 1)
+            snapshot = {p: (root / p).read_text(encoding="utf-8") for p in (*_FILES, _OWNED)}
             second = apply_all(_P.PATCHES, root)
             self.assertTrue(all(r.ok for r in second), [e.detail for r in second for e in r.failed])
-            self.assertEqual(fa, (root / _FILES[0]).read_text(encoding="utf-8"))
+            self.assertEqual(snapshot, {p: (root / p).read_text(encoding="utf-8") for p in snapshot})
 
     def test_missing_guard_fails_closed(self):
         with tempfile.TemporaryDirectory() as td:
