@@ -1008,6 +1008,25 @@ native form off, the table on disk and the exact wire; 42,761 positions):
 The n-gram helper is exact and the native forms add nothing measurable, but the lossy wire is not acceptable on
 Flash-Next: twenty times its divergence on the 27B (0.0008 over exact there), one top-1 token in eight changed. Every
 Flash-Next speed figure above used wht6; the exact wire is to be measured, and is the default for this model.
+Without the R9700 (owner: the R9700 is for compute, not storage): the whole n-gram table pinned in host memory
+(`--ngram-placement ram`), which fits once the expert pool is smaller - 16384 and 14336 MiB a rank both work with
+the stager on. Patched engine, 4K chunks, two XTX only (runs `fnz1`-`fnz5`):
+
+| | wire | 2.6K prompt | 7.2K prompt | decode |
+|---|---|---|---|---|
+| pool 16384, n-gram in RAM | wht6 | 2.01 s (1,282 tok/s) | 5.34 s (1,343 tok/s) | 32.3 |
+| pool 14336 | wht6 | 2.06 s | 5.33 s | 32.3 |
+| pool 16384 + built-in MTP draft head (`SPEC=3`) | wht6 | 2.12 s | 5.39 s | 38.2 |
+| pool 16384 | exact | 2.15 s (1,198 tok/s) | 5.68 s (1,263 tok/s) | 32.2 |
+| pool 16384 + MTP | exact | 2.24 s (1,149 tok/s) | 5.74 s (1,250 tok/s) | 39.3 |
+
+- The n-gram table in RAM is as fast as the R9700 split, so the R9700 is free. Copying the table in takes 200-270 s
+  at load.
+- The exact wire costs about 5% of prefill on this model, so it is the setting (quality above).
+- The container's MTP head lifts decode 22% (32.2 to 39.3). The `fnz3` load logged 21 queue-stall lines while the
+  table was being copied, before the server listened; it recovered and served.
+- Configuration of record for Flash-Next on two XTX: patched engine, `--tp-wire exact`, `--ngram-placement ram`,
+  `--host-pool-mib 16384`, `--max-num-seqs 6`, `--max-num-batched-tokens 4096 --checkpoint-interval 4096`, MTP 3.
 Next: a deeper stager and larger prefill steps (`--max-num-batched-tokens 8192`), which raise the
 tokens served per byte of cold experts moved.
 
