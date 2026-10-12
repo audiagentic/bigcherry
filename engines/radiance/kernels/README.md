@@ -461,7 +461,7 @@ No bf16 container of the 27B fits the cards, so the references are quantised mod
   activation quantisation, not as a less accurate kernel. That fixture predates the native forms and has no MXFP4
   rows; those are checked by `r3_selftest` against the host reference, not against libr4d bit for bit.
 
-## RR08: lane-owned MXFP4 prefill on gfx1100 (ready for lab; results pending)
+## RR08: lane-owned MXFP4 prefill on gfx1100 (measured 2026-10-12: slower, not adopted)
 
 R3_BT=1 selects libr3's r3_gemm_mxfp4a8_bt_gfx11 implementation inside the existing
 gemm_mxfp4a8_tiled registry row. It is default-off; R3_BT=0 or unset keeps the established tiled
@@ -498,6 +498,42 @@ requires all oracle cases to pass, decode to remain unchanged, and one-XTX long-
 
 | B | NT | oracle worst rel_l2 | 34816x5120 M512 GB/s | 5120x17408 M512 GB/s | one-XTX 6.5K tok/s | two-XTX wht6 6.5K tok/s |
 |---:|---:|---:|---:|---:|---:|---:|
+### Result (2026-10-12, runs `rr08a-*`, `tools/lab/radiance/rr08-cycle.sh`; one RX 7900 XTX unless stated)
+
+Builds (62 units for gfx1100) and passes `r3_selftest` `gemm_mxfp4a8_tiled`, 10 of 10 cases, with `R3_BT=0` and with
+`R3_BT=1`. Row timing (`--perfmxfp4`, us a call; N x K, M = token rows), established tiled form against the
+lane-owned form with `R3_BT_B=8`:
+
+| N x K | M = 64 | M = 128 | M = 512 |
+|---|---|---|---|
+| 34816 x 5120 | 915 / 781 | 930 / 964 | 1,807 / 3,754 |
+| 5120 x 17408 | 545 / 887 | 548 / 902 | 1,043 / 2,632 |
+| 16384 x 5120 | 457 / 383 | 476 / 451 | 854 / 1,863 |
+| 5120 x 6144 | 187 / 306 | 194 / 318 | 366 / 1,028 |
+| 12288 x 5120 | 316 / 325 | 302 / 349 | 620 / 1,442 |
+
+`R3_BT_B=4` and `6` are slower than 8 at every shape (for example 16384 x 5120 at M = 512: 2,109 and 2,273 us).
+
+Serve bench (`rad_prompt_bench.py`, MXFP4 Qwen3.8-27B, prefill at about 2,570 / 7,175 tokens, tok/s):
+
+| | tiled (`R3_BT=0`) | lane-owned (`R3_BT=1`) |
+|---|---|---|
+| one XTX, prefill | 1,544 / 1,504 | 728 / 717 |
+| two XTX, `--tp-wire wht6`, prefill | 2,013 / 2,170 | 1,259 / 1,271 |
+| decode, 8 short prompts (one / two XTX) | 28.1 / 47.0 | 28.2 / 46.6 |
+
+- The lane-owned form is 2.1 to 2.8 times slower at M = 512, the size prefill runs, and prefill halves. It is ahead
+  only at M = 64 on the two shapes with N much larger than K. Decode is unchanged, as intended.
+- The tiled form's time grows 1.9 times from M = 64 to 512 (eight times the rows); the lane-owned form's grows 4.8
+  times. The WMMA tiles amortise the weight stream over 16 token rows at once and the direct form does not: its
+  activation loads repeat for every N tile. That is the reuse assumption failing, which is this item's stop
+  condition, so the direct one-wave form is not tuned further. `R3_BT` stays off.
+- What the table says about the tiled form itself: at M = 512 it moves 45 to 54 GB/s of weight, a tenth of what the
+  card streams in decode, so prefill is compute-bound in the WMMA product and its activation handling, not
+  memory-bound. A form that reaches 2,500 tok/s on one card has to roughly halve the M = 512 column.
+- Next form, as planned: eight waves a block sharing one LDS-staged activation tile, lane-owned f16 weights and
+  accumulators kept.
+
 ## The lossy two-card wire, measured (2026-10-12, runs `kld4-*`, `tools/lab/radiance/kld-tp-wire.sh`)
 
 `--tp-wire wht6` took two-card MXFP4 prefill from about 1,535 to 2,124 tok/s (above) with no quality number. KL mode
