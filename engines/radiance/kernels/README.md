@@ -750,6 +750,10 @@ over waves a block, blocks a CU and independent accumulators; best of each eleme
     alternating, three starts an arm (+5.6%, complete separation); quality with wht6 KLD 0.0126 / 94.5% top-1 /
     PPL 8.605 against 0.0044 / 96.6% / 8.553 for wht6 alone (run `kqw4`). Three times the wire's divergence for
     5.6%: left opt-in, the owner's call.
+  - `R3_GDN_NATIVE=1` after 0b8b7b06 (accumulation matched, `R3_GDN_COMPARE` in-plugin comparison): the comparison
+    run printed "no mismatch" but no comparison line at all, and the KL check is unchanged (KLD 5.52, top-1 11.5%,
+    run `kqg5`). Shelved as evaluated, default off: the scan is about 4% of a 27B prefill, so a correct native form
+    is worth 2-3%. The fault is somewhere the comparison does not reach.
 - The 4-token decode figures in this run (a 71.3 maximum, a 64.0 after the prefill) are too short to mean anything.
 
 ## 27B on two XTX after the native attention and scan: what is left (2026-10-12, run `pp3`)
