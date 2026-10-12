@@ -40,6 +40,14 @@ fi
 echo "radiance $(git -C "$src" rev-parse --short HEAD); plugin $plugin; HIP device ${GPU:-0}"
 IFS=';' read -ra shapes <<< "${SHAPES:-17408 5120 1;5120 8704 1;8192 5120 1;17408 5120 8}"
 for mode in "${modes[@]}"; do
+    if [ "$mode" = --perfhc ]; then
+        echo "== $mode M=${HC_M:-1} iters=${ITERS:-50}"
+        HIP_VISIBLE_DEVICES=${GPU:-0} timeout "${CASE_TIMEOUT:-1800}" "$selftest" "$plugin" "$mode" \
+            "${HC_M:-1}" "${ITERS:-50}" 2>&1 | tee "$out/perfhc-M${HC_M:-1}.log"
+        rc=${PIPESTATUS[0]}
+        [ "$rc" -eq 0 ] || { echo "PERFHC_FAILED rc=$rc"; exit "$rc"; }
+        continue
+    fi
     if [ "$mode" = --perfmoe ]; then
         echo "== $mode M=${MOE_M:-2048} experts=${MOE_EXPERTS:-512} topk=${MOE_TOPK:-10} pool=${MOE_POOL_PCT:-0} iters=${ITERS:-20}"
         HIP_VISIBLE_DEVICES=${GPU:-0} timeout "${CASE_TIMEOUT:-1800}" "$selftest" "$plugin" "$mode" \
