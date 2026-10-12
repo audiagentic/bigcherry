@@ -985,6 +985,17 @@ tokens instead of four times: about 1,300 tok/s, against llama.cpp's 1,469 at 6.
 8K chunks is worse than at 2K: the stager arms only for steps above the next-smaller arena level (4096 tokens here),
 so a 2.6K step reads its cold experts in place. The stager's threshold, not the chunk size, is what to fix for short
 prompts.
+4K chunks fix the short prompt (runs `fny1`-`fny4`, alternating, all clean exits): the stager then arms above 1024
+tokens, so a 2.6K step is staged too.
+
+| chunks | 2.6K prompt | 7.2K prompt | decode |
+|---|---|---|---|
+| 4096 | 2.04 s, 2.09 s (1,262, 1,232 tok/s) | 5.44 s, 5.57 s (1,319, 1,288 tok/s) | 32.3-32.4 |
+| 8192, `R3_MOE_NATIVE=1 R3_HC_NATIVE=1` | 9.03 s, 10.65 s (285, 242 tok/s) | 5.18 s, 5.17 s (1,385, 1,388 tok/s) | 34.3 |
+
+So 4096-token chunks (`--max-num-batched-tokens 4096 --checkpoint-interval 4096`) are the setting: about 1,250 to
+1,320 tok/s at both lengths, against llama.cpp's 1,012 (3.2K) and 1,469 (6.2K) on three cards. The two native kernels
+add 6% decode (32.3 to 34.3); their served quality on Flash-Next is not yet checked (the KL tooling covers the 27B).
 Next: a deeper stager and larger prefill steps (`--max-num-batched-tokens 8192`), which raise the
 tokens served per byte of cold experts moved.
 
