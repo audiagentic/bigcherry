@@ -1,5 +1,12 @@
 # Changelog
 
+## [11552.2.1](https://github.com/audiagentic/bigcherry/compare/bc-llamacpp-11552.2.0...bc-llamacpp-11552.2.1) (2026-10-12)
+
+
+### Fixes
+
+* **patch:** 1361 puts its second-arena helpers in 1340's own header (the anchor moved there with the 1340 refactor) ([bf01c91](https://github.com/audiagentic/bigcherry/commit/bf01c9116adaeabef8d297787bb33224d8592d38))
+
 ## [11552.2.0](https://github.com/audiagentic/bigcherry/compare/bc-llamacpp-11552.1.2...bc-llamacpp-11552.2.0) (2026-10-12)
 
 
