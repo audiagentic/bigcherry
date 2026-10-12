@@ -200,15 +200,6 @@ CUDA_PROVIDER = FilePatch(
             expect_matches=1,
         ),
         Edit(
-            id="adaptive-provider-available",
-            anchor=r'    if \(p == \"adaptive\" \|\| p == \"p2p\" \|\| p == \"root3\"\) \{\n',
-            rationale="0840 provides adaptive, so remove only adaptive from 0860's unavailable list",
-            mode="replace",
-            text='    if (p == "p2p" || p == "root3") {\n',
-            guard=r'    if \(p == \"p2p\" \|\| p == \"root3\"\) \{\n',
-            expect_matches=1,
-        ),
-        Edit(
             id="adaptive-provider-init",
             anchor=(
                 r'    \} else if \(provider == \"butterfly\"\) \{\n'
@@ -226,6 +217,24 @@ CUDA_PROVIDER = FilePatch(
             ),
             guard=r'provider == \"adaptive\"\) \{\n        ggml_backend_cuda_comm_init_hybrid',
             expect_matches=1,
+        ),
+    ),
+)
+
+CUDA_PROVIDER_CONFIG = FilePatch(
+    path="ggml/src/ggml-cuda/bc-allreduce-provider-cli.cuh",
+    language="none",
+    description="register adaptive in 0860's BigCherry-owned provider validation",
+    edits=(
+        Edit(
+            id="adaptive-provider-available",
+            anchor=r'    if \(p == \"adaptive\" \|\| p == \"p2p\" \|\| p == \"root3\"\) \{\n',
+            rationale="0840 provides adaptive; the 0860 provider validation now lives in BigCherry's owned provider header.",
+            mode="replace",
+            text='    if (p == "p2p" || p == "root3") {\n',
+            guard=r'    if \(p == \"p2p\" \|\| p == \"root3\"\) \{\n',
+            expect_matches=1,
+            max_span_lines=2,
         ),
     ),
 )
@@ -289,4 +298,4 @@ AR_SOURCE = FilePatch(
     ),
 )
 
-PATCHES = [CUDA, CUDA_PROVIDER, AR_HEADER, AR_SOURCE]
+PATCHES = [CUDA, CUDA_PROVIDER_CONFIG, CUDA_PROVIDER, AR_HEADER, AR_SOURCE]

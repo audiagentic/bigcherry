@@ -3,10 +3,11 @@
 # 192K deployment config. Ideas that move ms/step here get the full ABBA + parity run; the rest are dropped.
 # Usage: quick-ab.sh <base llama-server> <new llama-server> <out-root> [new-arm env, e.g. BIGCHERRY_X=1]
 #   Same binary for both arms + an env string screens env-gated options.
-# Order is base-a new-a base-b new-b. The first run of a binary that differs from the one before it reads about 6%
-# slow (41.5 vs 38.5-39.2 ms/step on 2026-10-12, with either of two source-identical builds in that position): its
-# first decode pays the one-off loads of its own code objects. So new-a is that binary's warm-up when the binaries
-# differ; compare new-b with base-b. With one binary and an env string all four arms count.
+# Order is base-a new-a base-b new-b: two readings of each.
+# A screen only. Single 256-token readings swing between about 38.6 and 42.4 ms/step from one server start to the
+# next for the same binary (2026-10-12: seen in first and in second arms, with either of two source-identical builds),
+# so one slow arm says nothing. To sign a change off, start each build several times in alternating blocks, e.g.
+#   ARMS="A A A A" AB_ENV=BC_NOOP=1 queue-env-ab.sh <name> <build> 24576     (512 decode tokens; spread ~38-40)
 set -u
 base=$1 new=$2 root=$3 newenv="${*:4}"  # all remaining args form the new-arm env
 s=$(cd "$(dirname "$0")" && pwd)/long-ctx-profile.sh

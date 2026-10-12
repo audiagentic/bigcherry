@@ -28,3 +28,16 @@ Results (b11402, Brutus, 2026-10-05/06; details and the promotion rationale in R
   off and on, with the activation marker proving the 8x8 sparse kernel ran.
 - Fidelity: not bit-identical to the dense path (different summation order feeding a discrete top-k selection);
   against a CPU f32 reference the sparse path is no further away than the dense path.
+
+## PA44-B owned definitions
+
+The HIP-only sparse-mask enable helper and mask-compaction kernel now live in
+`ggml/src/ggml-cuda/bc-hip-sparse-flash-attn.cuh`, included once from `fattn.cu` at the former definition site.
+The `<cstdlib>` include, sparse selection/dispatch edits, activation marker, state and env docs remain upstream and
+unchanged.
+
+## Identity proof
+
+The moved block contains 101 physical lines / 89 non-blank whitespace-stripped lines, preserved
+exactly in the owned header. Replacing the new include line with that header reconstructs the pre-refactor composed
+source; the multiset delta is exactly one include line (owned-definition multiset 89/89, include delta +1).

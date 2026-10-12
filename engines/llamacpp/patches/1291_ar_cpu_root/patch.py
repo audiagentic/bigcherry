@@ -466,6 +466,24 @@ OWNED = FilePatch(
     ),
 )
 
+PROVIDER_CONFIG = FilePatch(
+    path="ggml/src/ggml-cuda/bc-allreduce-provider-cli.cuh",
+    language="none",
+    description="Accept cpu-root in 0860's BigCherry-owned provider validation.",
+    edits=(
+        Edit(
+            id="cpu-root-known-provider",
+            anchor=_re.escape('        p == "adaptive" || p == "p2p" || p == "root3" || p == "butterfly";\n'),
+            text='        p == "adaptive" || p == "p2p" || p == "root3" || p == "butterfly" || p == "cpu-root";\n',
+            mode="replace",
+            guard=r'p == "butterfly" \|\| p == "cpu-root";',
+            expect_matches=1,
+            max_span_lines=2,
+            rationale="Accept --allreduce cpu-root in 0860's BigCherry-owned provider validation.",
+        ),
+    ),
+)
+
 CUDA = FilePatch(
     path="ggml/src/ggml-cuda/ggml-cuda.cu",
     language="none",
@@ -506,16 +524,6 @@ CUDA = FilePatch(
             expect_matches=1,
             max_span_lines=3,
             rationale="Stop the worker and free the pinned buffers with the communicator.",
-        ),
-        Edit(
-            id="cpu-root-known-provider",
-            anchor=_re.escape('        p == "adaptive" || p == "p2p" || p == "root3" || p == "butterfly";\n'),
-            text='        p == "adaptive" || p == "p2p" || p == "root3" || p == "butterfly" || p == "cpu-root";\n',
-            mode="replace",
-            guard=r'p == "butterfly" \|\| p == "cpu-root";',
-            expect_matches=1,
-            max_span_lines=2,
-            rationale="Accept --allreduce cpu-root in 0860's provider validation.",
         ),
         Edit(
             id="cpu-root-impl",
@@ -581,7 +589,7 @@ BENCH = FilePatch(
     ),
 )
 
-PATCHES = [OWNED, CUDA, ARG, BENCH]
+PATCHES = [OWNED, PROVIDER_CONFIG, CUDA, ARG, BENCH]
 
 ENV_DOCS = (
     EnvDoc('BIGCHERRY_AR_CPU_ROOT_MAX_BYTES', '<bytes>', '65536',
