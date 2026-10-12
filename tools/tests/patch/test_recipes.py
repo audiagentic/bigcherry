@@ -111,3 +111,4 @@ def test_parse_filter(arg, expected):
 
 def test_upstream_landed_is_unknown_outside_a_checkout(tmp_path):
     assert patchset.upstream_landed("abc1234", tmp_path) is None
+
