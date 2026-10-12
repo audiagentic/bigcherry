@@ -635,6 +635,44 @@ over the same 42,761 positions, both rows against MXFP4 on the R9700 with libr4d
 - So `--tp-wire wht6` is the two-XTX serving default from here: +38% prefill, decode unchanged (46.7 against 46.8
   tok/s; with the drafter 131.1 against 141.7 was one run each and is not established either way).
 
+## Where a prefill's time goes: one XTX, two XTX, the R9700 (2026-10-12, runs `pp1-*`, `prefill-profile.sh`)
+
+MXFP4 Qwen3.8-27B, one 7.2K-token prompt, `--profile-ops` (so absolute speeds are the profiled ones), device ms
+summed by op (`profile_ops_summary.py`); for two XTX the figures are one rank's, with `--tp-wire wht6`.
+
+| op | one XTX | two XTX, a rank | R9700 (libr4d) |
+|---|---|---|---|
+| prefill, tok/s | 1,467 | 2,137 | 3,206 |
+| all ops, ms | 9,439 | 6,300 | 3,783 |
+| `gemm_nt_q` (MXFP4 GEMMs) | 7,983 (84.6%) | 4,287 (68.1%) | 3,013 (79.6%) |
+| `ar_rmsnorm_quant_fp8` (fused all-reduce) | - | 1,095 (17.4%), 145 us a call | - |
+| `attn_paged` | 619, 656 us a call | 353, 374 us | 135, 143 us |
+| `gdn_chunk_scan` | 300, 417 us | 253, 351 us | 95, 133 us |
+| the rest | 537 | 312 | 540 |
+
+- Two cards give 1.46x one. The GEMMs split almost in half (0.537 of one card's time a rank); what does not scale
+  is the all-reduce (17% of a rank's time even on the lossy wire) and the delta-net scan (300 -> 253 ms).
+- Against the R9700 a rank of two XTX is 2,517 ms behind: 1,274 in the GEMMs, 1,095 in the all-reduce, 218 in
+  attention, 158 in the scan. Attention and the scan are 2.6 to 4.6 times slower a call on the XTX than on the R9700
+  and are still compatibility-layer forms; together they are about 10% of a rank.
+- GEMM throughput: the tiled kernel does a 16384 x 5120 product at M = 512 (85.9 GFLOP) in 854 us, about 100
+  TFLOP/s; AMD states 123 TFLOPs peak FP16 matrix (and 123 TOPS int8) for the RX 7900 XTX and 191 / 383 for the
+  R9700. The R9700's 3,206 tok/s on a model of about 52 GFLOP a token is about 167 TFLOP/s. Prefill is bounded by
+  matrix arithmetic, not memory bandwidth (the tiled form streams 45 to 54 GB/s of weight at M = 512).
+- Arithmetic of what is left for two XTX: all-reduce to zero gives about 2,660 tok/s; attention and the scan at the
+  R9700's per-call cost about +6%; GEMMs at 115 instead of 100 TFLOP/s about +10%. Together about 3,000 to 3,300:
+  level with one R9700 if all three land, on the stated 123 TFLOPs roof.
+- That roof is not yet measured here. With the WMMA instructions ablated (`R3_BT_ABL=4`) the same call takes 437 us,
+  which would leave only 417 us for 85.9 GFLOP (over 200 TFLOP/s) - but removing the products lets the compiler drop
+  the loads that feed them, so this is not a measurement of the instruction rate. A registers-only WMMA loop is.
+
+### RR08, second form (`R3_BT=2`, eight waves sharing an LDS activation tile; runs `rr08b-*`)
+
+Passes the selftest (10 of 10). Slower than the tiled form at M = 512 on every shape (16384 x 5120: 1,553 against
+854 to 895 us; 5120 x 6144: 640 against 366; 12288 x 5120: 1,107 against 620) and in serving (one XTX 984 / 965
+tok/s against 1,399 / 1,475). Not adopted; `R3_BT` stays 0. Ablation of the tiled form at 16384 x 5120, M = 512
+(895 us): weight expansion as constants 785, activation widen as constants 889, no epilogue 881, no WMMA 437.
+
 ## Other engines on the RX 7900 XTX (looked up 2026-10-10)
 
 - **llama.cpp, Vulkan backend.** llama.cpp issue #20934: on an RX 7900 XTX, Llama-2 7B Q4_0 decodes at 174.6 tok/s
