@@ -23,10 +23,18 @@ rm -rf "$R/$tag.log" "$R/$tag"
 echo "VIS=0,1 SCRIPT $tag tools/lab/radiance/libr3-serve-smoke.sh @$b $R/$tag" > "$jobs"
 env MODEL="$model" GPU=0,1 TP=2 CTX="${CTX:-32768}" KV="${KV:-fp8}" SPEC="${SPEC:-0}" LOAD_TIMEOUT=3000 BENCH=1 \
     BENCH_DEPTHS="${DEPTHS:-2300,6500}" BENCH_TOKENS=256 "EXTRA=$extra" \
-    bash tools/lab/plan-qualification/queue.sh "$jobs" > /dev/null 2>&1
+    bash tools/lab/plan-qualification/queue.sh "$jobs" > /dev/null 2>&1 || {
+        rm -f "$jobs"; echo "FLASHNEXT_QUEUE_FAILED $tag"; exit 1;
+    }
 rm -f "$jobs"
+[ -s "$R/$tag.log" ] || { echo "FLASHNEXT_EMPTY_LOG $tag"; exit 1; }
+if grep -qE 'SCRIPT_EXIT=[1-9][0-9]*|(^|[[:space:]])exit [1-9][0-9]*' "$R/$tag.log"; then
+    echo "FLASHNEXT_JOB_FAILED $tag"; tail -10 "$R/$tag.log" | cut -c1-220; exit 1
+fi
 echo "== $tag [$extra]"
 grep -iE "^prefill at|^decode, geometric|chunk geometry|exit [1-9]|^E |no kernel|refused|NO_|not load" "$R/$tag.log" | head -20 | cut -c1-200
 grep -iE "^E|^F|no kernel|refused|unsupported|missing|settled at|resident|experts +[0-9]|host pool|file buffers" "$R/$tag/server.log" 2>/dev/null | head -40 | cut -c1-200
 [ "${PROFILE:-0}" = 1 ] && python3 tools/lab/radiance/profile_ops_summary.py "$R/$tag/server.log" 22 2>&1 | head -30 | cut -c1-140
+grep -qiE '^prefill at' "$R/$tag.log" || { echo "FLASHNEXT_NO_PREFILL_RESULT $tag"; exit 1; }
+grep -qiE '^decode, geometric' "$R/$tag.log" || { echo "FLASHNEXT_NO_DECODE_RESULT $tag"; exit 1; }
 echo "FLASHNEXT_DONE $tag"

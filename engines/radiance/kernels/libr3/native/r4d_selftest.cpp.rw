@@ -213,3 +213,48 @@ static void mxfp4_prefill_perf(const Plugin& pl, int64_t N, int64_t K, int64_t M
                 "             LDS/global fragment reads at the best register geometry and ILP.\n"
                 "  --perfmxfp4 N K M [iters]: the MXFP4 prefill row, including activation pre-pass,\n"
 @@ end
+
+
+# R3_MOE_COMPARE=1 makes --perfmoe run the w4nl64a8h projection once through compatibility and once through
+# R3_MOE_NATIVE on the exact same buffers, then byte-compares the bf16 result. Run at M=1 for decode and M=2048
+# for grouped prefill. This is separate from the timing loop so R3_MOE_NATIVE still selects what --perfmoe times.
+@@ find 1
+        }
+        }
+        if (pl.pin_moe) pl.pin_moe(0);
+        if (pl.pin_fk) pl.pin_fk(0);
+@@ replace
+        }
+        if (sub == 2 && std::getenv("R3_MOE_COMPARE") && std::atoi(std::getenv("R3_MOE_COMPARE")) != 0) {
+            const char* oldp = std::getenv("R3_MOE_NATIVE");
+            const bool had_old = oldp != nullptr;
+            const std::string oldv = oldp ? oldp : "";
+            if (pl.pin_moe) pl.pin_moe(1);
+            if (pl.pin_fk) pl.pin_fk(1);
+            ::setenv("R3_MOE_NATIVE", "0", 1);
+            st_memset(d_y, 0, got.size() * 2);
+            const int rc0 = r->launch(&a, nullptr);
+            const bool ok0 = rc0 == RAD_OK && st_stream_sync(nullptr) == hipSuccess;
+            if (ok0) st_memcpy(first.data(), d_y, first.size() * 2, hipMemcpyDeviceToHost);
+            ::setenv("R3_MOE_NATIVE", "1", 1);
+            st_memset(d_y, 0, got.size() * 2);
+            const int rc1 = r->launch(&a, nullptr);
+            const bool ok1 = rc1 == RAD_OK && st_stream_sync(nullptr) == hipSuccess;
+            if (ok1) st_memcpy(got.data(), d_y, got.size() * 2, hipMemcpyDeviceToHost);
+            int64_t diff = 0;
+            if (ok0 && ok1)
+                for (size_t x = 0; x < got.size(); ++x) diff += got[x] != first[x];
+            if (had_old) ::setenv("R3_MOE_NATIVE", oldv.c_str(), 1); else ::unsetenv("R3_MOE_NATIVE");
+            if (!ok0 || !ok1 || diff) {
+                ++g_fail;
+                std::printf("R3_MOE_COMPARE_FAIL %s M=%lld rc0=%d rc1=%d diff=%lld\n",
+                            P.name, (long long)Mtok, rc0, rc1, (long long)diff);
+            } else {
+                std::printf("R3_MOE_COMPARE_PASS %s M=%lld bytes=%zu\n",
+                            P.name, (long long)Mtok, got.size() * 2);
+            }
+        }
+        }
+        if (pl.pin_moe) pl.pin_moe(0);
+        if (pl.pin_fk) pl.pin_fk(0);
+@@ end
