@@ -379,7 +379,7 @@ def evidence_path(patch_id: str, *, root: Path | None = None) -> Path:
     # migrated; the production tree is package-only after PA18.
     try:
         from . import registry as patch_registry
-        descriptor = patch_registry.load_registry("llamacpp", paths.PATCHES).get(patch_id)
+        descriptor = patch_registry.load_registry(paths.PATCHES).get(patch_id)
     except (OSError, ValueError, KeyError):
         descriptor = None
     if descriptor is not None and descriptor.package_root is not None:
@@ -715,7 +715,7 @@ def verify_framework_configuration_patch(
     descriptor = None
     try:
         from . import registry as patch_registry
-        descriptor = patch_registry.load_registry("llamacpp", module.catalog_root or paths.PATCHES).get(module.patch_id)
+        descriptor = patch_registry.load_registry(module.catalog_root or paths.PATCHES).get(module.patch_id)
     except Exception as exc:
         return EvidenceCheck("missing-or-stale", (f"cannot load packaged descriptor: {exc}",))
     records = poolable_records(module.patch_id, root=root)
@@ -726,11 +726,11 @@ def verify_framework_configuration_patch(
         from bigcherry.campaign import resolution
         catalog_root = module.catalog_root or paths.PATCHES
         cfg = config.load(paths.RECIPES)
-        lane = resolution.resolve_lane("llamacpp", 
-            "bigcherry-qualification-tuning", cfg, patchset.catalog("llamacpp", directory=catalog_root)
+        lane = resolution.resolve_lane(
+            "bigcherry-qualification-tuning", cfg, patchset.catalog(directory=catalog_root)
         )
-        resolved = patchset.resolve_exact("llamacpp", tuple(lane.patch_set.module_ids), directory=catalog_root)
-        registry = patch_registry.load_registry("llamacpp", catalog_root)
+        resolved = patchset.resolve_exact(tuple(lane.patch_set.module_ids), directory=catalog_root)
+        registry = patch_registry.load_registry(catalog_root)
         composition = tuple((member.patch_id, registry.get(member.patch_id).implementation_digest)
                             for member in resolved.modules)
         from . import source as patch_source
@@ -1573,7 +1573,7 @@ def _resolve_contract_identities(
     from . import registry as patch_registry
 
     try:
-        registry = patch_registry.load_registry("llamacpp", module.catalog_root or paths.PATCHES)
+        registry = patch_registry.load_registry(module.catalog_root or paths.PATCHES)
         descriptor = registry.get(module.patch_id)
     except (OSError, KeyError, patch_registry.PatchRegistryError):
         return validation_digest, contracts
@@ -1746,7 +1746,7 @@ def generate_legacy_baseline(*, root: Path | None = None) -> Path:
     prevents HI83 from retroactively invalidating the whole existing
     validated baseline the moment it lands. Editing any grandfathered patch
     by even one byte immediately requires real HI83 evidence."""
-    modules = patchset.catalog("llamacpp")
+    modules = patchset.catalog()
     payload = {
         "schema_version": LEGACY_SCHEMA_VERSION,
         "contract": LEGACY_CONTRACT,

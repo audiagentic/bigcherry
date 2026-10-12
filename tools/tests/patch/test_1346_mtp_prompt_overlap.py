@@ -16,7 +16,7 @@ from bigcherry.patch.pinned_source import copy_pinned, pinned_checkout, producti
 
 _REPO = Path(__file__).resolve().parents[3]
 # a pristine copy of the pinned revision: the vendor working tree normally has the production patches applied
-_V = pinned_checkout("llamacpp") if paths.llama_root().is_dir() else paths.llama_root()
+_V = pinned_checkout() if paths.llama_root().is_dir() else paths.llama_root()
 _FILES = (
     "common/speculative.h",
     "common/speculative.cpp",
@@ -80,7 +80,7 @@ class Patch1346Mechanics(unittest.TestCase):
         root = Path(td)
         for f in _FILES:
             (root / f).parent.mkdir(parents=True, exist_ok=True)
-            copy_pinned("llamacpp", _V / f, root / f)
+            copy_pinned(_V / f, root / f)
         return root
 
     def _apply_prereqs(self, root):
@@ -89,12 +89,12 @@ class Patch1346Mechanics(unittest.TestCase):
         1346 applies after look-ahead (1321/1322), round timing (1317) and deferred catch-up (1348); those in turn
         need their own predecessors, so a hand-picked subset does not reproduce the text 1346 anchors on.
         """
-        ids = production_order("llamacpp", "bigcherry")
+        ids = production_order()
         self.assertIn("1346_mtp_prompt_overlap", ids)
         for required in ("1321_mtp_ahead_primitives", "1322_mtp_ahead_overlap", "1317_spec_round_timing",
                          "1348_mtp_deferred_catchup"):
             self.assertLess(ids.index(required), ids.index("1346_mtp_prompt_overlap"), required)
-        production_source("llamacpp", "bigcherry", _FILES, root, stop_before="1346_mtp_prompt_overlap")
+        production_source(_FILES, root, stop_before="1346_mtp_prompt_overlap")
 
     def _check(self, root):
         h = (root / "common/speculative.h").read_text(encoding="utf-8")

@@ -92,7 +92,7 @@ def _materialize(root: Path, patches):
         if source.is_file():
             target = root / path
             target.parent.mkdir(parents=True, exist_ok=True)
-            copy_pinned("llamacpp", source, target)
+            copy_pinned(source, target)
     result = apply_all(list(patches), root)
     assert all(item.ok for item in result), [
         detail.detail for item in result for detail in item.failed

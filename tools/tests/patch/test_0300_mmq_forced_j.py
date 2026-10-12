@@ -52,7 +52,7 @@ def _lines(*texts):
 class Patch0300Mechanics(unittest.TestCase):
     def test_apply_on_composition_and_idempotent(self):
         with tempfile.TemporaryDirectory() as td:
-            root = production_source("llamacpp", "bigcherry", _FILES, td, stop_before=_ID)
+            root = production_source(_FILES, td, stop_before=_ID)
             # no guard may already match: a guard that matches an earlier patch's output skips its edit silently
             before = {path: (root / path).read_text(encoding="utf-8") for path in _FILES}
             for fp in _P.PATCHES:
@@ -93,7 +93,7 @@ class Patch0300Mechanics(unittest.TestCase):
 
     def test_missing_anchor_fails_closed(self):
         with tempfile.TemporaryDirectory() as td:
-            root = production_source("llamacpp", "bigcherry", _FILES, td, stop_before=_ID)
+            root = production_source(_FILES, td, stop_before=_ID)
             # the first upstream file without the text its edits attach to
             target = root / "ggml/src/ggml-cuda/mmq.cuh"
             target.write_text("// moved upstream" + chr(10), encoding="utf-8")

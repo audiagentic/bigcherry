@@ -71,9 +71,6 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-_EMPTY = gates.LintGateReport(results=(), problems=(), grandfathered=())
-
-
 class PatchLintCliTests(unittest.TestCase):
     def _args(self, *, json_output: bool) -> SimpleNamespace:
         return SimpleNamespace(json=json_output)
@@ -83,8 +80,7 @@ class PatchLintCliTests(unittest.TestCase):
         with (
             mock.patch("bigcherry.cli.patch.patch_catalog.cross_check", return_value=[])
             as cross_check,
-            mock.patch("bigcherry.cli.patch.patch_gates.evaluate_repository_lint_gates",
-                       side_effect=lambda engine: report if engine == "llamacpp" else _EMPTY)
+            mock.patch("bigcherry.cli.patch.patch_gates.evaluate_repository_lint_gates", return_value=report)
             as evaluate,
             mock.patch("bigcherry.patch.validation_policy.check_validation_packages") as legacy_packages,
             mock.patch("bigcherry.patch.validation_policy.check_performance_evidence") as legacy_performance,
@@ -97,18 +93,17 @@ class PatchLintCliTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertEqual(stderr.getvalue(), "")
         expected = json.dumps(
-            {"passed": True, "problems": [], "grandfathered": ["llamacpp:P4"], "warnings": []},
+            {"passed": True, "problems": [], "grandfathered": ["P4"], "warnings": []},
             indent=2,
             sort_keys=True,
         ) + "\n"
         self.assertEqual(stdout.getvalue(), expected)
-        cross_check.assert_any_call(
-            "llamacpp",
+        cross_check.assert_called_once_with(
             verify_validation_evidence=False,
             allow_legacy_grandfather=True,
             check_summaries=False,
         )
-        evaluate.assert_any_call("llamacpp")
+        evaluate.assert_called_once_with()
         legacy_packages.assert_not_called()
         legacy_performance.assert_not_called()
 
@@ -119,10 +114,8 @@ class PatchLintCliTests(unittest.TestCase):
             grandfathered=("P4",),
         )
         with (
-            mock.patch("bigcherry.cli.patch.patch_catalog.cross_check",
-                       side_effect=lambda engine, **_: ["catalog problem"] if engine == "llamacpp" else []),
-            mock.patch("bigcherry.cli.patch.patch_gates.evaluate_repository_lint_gates",
-                       side_effect=lambda engine: report if engine == "llamacpp" else _EMPTY),
+            mock.patch("bigcherry.cli.patch.patch_catalog.cross_check", return_value=["catalog problem"]),
+            mock.patch("bigcherry.cli.patch.patch_gates.evaluate_repository_lint_gates", return_value=report),
         ):
             stdout = StringIO()
             stderr = StringIO()
@@ -133,8 +126,8 @@ class PatchLintCliTests(unittest.TestCase):
         self.assertEqual(stdout.getvalue(), "")
         self.assertEqual(
             stderr.getvalue(),
-            "llamacpp: catalog problem\nllamacpp: SUMMARY problem\nllamacpp: package problem\n"
-            "llamacpp: performance problem\nllamacpp:P4: structurally grandfathered (non-current, not failing)\n",
+            "catalog problem\nSUMMARY problem\npackage problem\nperformance problem\n"
+            "P4: structurally grandfathered (non-current, not failing)\n",
         )
 
     def test_human_anchor_warning_is_advisory(self) -> None:
@@ -146,8 +139,7 @@ class PatchLintCliTests(unittest.TestCase):
         )
         with (
             mock.patch("bigcherry.cli.patch.patch_catalog.cross_check", return_value=[]),
-            mock.patch("bigcherry.cli.patch.patch_gates.evaluate_repository_lint_gates",
-                       side_effect=lambda engine: report if engine == "llamacpp" else _EMPTY),
+            mock.patch("bigcherry.cli.patch.patch_gates.evaluate_repository_lint_gates", return_value=report),
         ):
             stdout = StringIO()
             stderr = StringIO()
@@ -158,7 +150,7 @@ class PatchLintCliTests(unittest.TestCase):
         self.assertEqual(stdout.getvalue(), "")
         self.assertEqual(
             stderr.getvalue(),
-            "warning: llamacpp: P1:x.cu:e1: max_span_lines=8 exceeds 6 without an explicit 'long-anchor:' rationale\n",
+            "warning: P1:x.cu:e1: max_span_lines=8 exceeds 6 without an explicit 'long-anchor:' rationale\n",
         )
 
     def test_internal_lint_intent_is_not_exposed_by_patch_gates_cli(self) -> None:
@@ -237,7 +229,7 @@ class PatchLintCliTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            registry = patch_registry.load_registry("llamacpp", patches)
+            registry = patch_registry.load_registry(patches)
             summary_problems = [
                 problem
                 for descriptor in registry.descriptors
@@ -260,7 +252,7 @@ class PatchLintCliTests(unittest.TestCase):
                 tuple((*summary_problems, *package_report.problems, *performance_problems)),
                 tuple(package_report.grandfathered),
             )
-            report = gates.evaluate_repository_lint_gates("llamacpp", 
+            report = gates.evaluate_repository_lint_gates(
                 patches_dir=patches,
                 external_sources_path=external_sources,
                 validation_baseline_path=baseline,

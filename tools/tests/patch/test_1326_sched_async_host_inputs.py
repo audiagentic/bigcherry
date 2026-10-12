@@ -28,7 +28,7 @@ class Patch1326Mechanics(unittest.TestCase):
             root = Path(td)
             for rel in ("ggml/src/ggml-backend.cpp", "ggml/src/ggml-backend-meta.cpp"):
                 (root / rel).parent.mkdir(parents=True, exist_ok=True)
-                copy_pinned("llamacpp", paths.llama_root() / rel, root / rel)
+                copy_pinned(paths.llama_root() / rel, root / rel)
             results = apply_all(_module.PATCHES, root)
             self.assertTrue(all(r.ok for r in results), [e.detail for r in results for e in r.failed])
             be = (root / "ggml/src/ggml-backend.cpp").read_text(encoding="utf-8")

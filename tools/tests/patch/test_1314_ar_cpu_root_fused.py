@@ -43,7 +43,7 @@ class Patch1314Mechanics(unittest.TestCase):
             root = Path(td)
             path = root / _CUDA
             path.parent.mkdir(parents=True)
-            copy_pinned("llamacpp", _VENDOR / _CUDA, path)
+            copy_pinned(_VENDOR / _CUDA, path)
             for mod in _BASE:
                 res = apply_all(_paths(mod.PATCHES, {_CUDA}), root)
                 self.assertTrue(all(r.ok for r in res), [e.detail for r in res for e in r.failed])

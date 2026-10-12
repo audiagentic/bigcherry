@@ -35,13 +35,13 @@ class FocalComparisonTests(unittest.TestCase):
         )
 
     def _registry(self) -> patch_registry.PatchRegistry:
-        return patch_registry.load_registry("llamacpp", self.root)
+        return patch_registry.load_registry(self.root)
 
     def test_no_dependencies(self) -> None:
         self._add_patch("0100_a")
         self._add_patch("0200_b")
         self._add_patch("0300_x")
-        result = fsp.build_focal_comparison("llamacpp", 
+        result = fsp.build_focal_comparison(
             "0300_x", ["0100_a", "0200_b"], registry=self._registry()
         )
         self.assertFalse(result.is_blocked)
@@ -55,7 +55,7 @@ class FocalComparisonTests(unittest.TestCase):
         self._add_patch("0100_a")
         self._add_patch("0200_p")
         self._add_patch("0300_x", extra='REQUIRES = ("0200_p",)\n')
-        result = fsp.build_focal_comparison("llamacpp", 
+        result = fsp.build_focal_comparison(
             "0300_x", ["0100_a"], registry=self._registry()
         )
         self.assertFalse(result.is_blocked)
@@ -67,7 +67,7 @@ class FocalComparisonTests(unittest.TestCase):
         self._add_patch("0100_a")
         self._add_patch("0200_b", extra='REQUIRES = ("0100_a",)\n')
         self._add_patch("0300_x", extra='REQUIRES = ("0200_b",)\n')
-        result = fsp.build_focal_comparison("llamacpp", "0300_x", [], registry=self._registry())
+        result = fsp.build_focal_comparison("0300_x", [], registry=self._registry())
         self.assertFalse(result.is_blocked)
         self.assertEqual(result.prerequisites, ("0100_a", "0200_b"))
         self.assertEqual(result.control, ("0100_a", "0200_b"))
@@ -76,7 +76,7 @@ class FocalComparisonTests(unittest.TestCase):
     def test_dependency_already_in_baseline(self) -> None:
         self._add_patch("0100_a")
         self._add_patch("0200_x", extra='REQUIRES = ("0100_a",)\n')
-        result = fsp.build_focal_comparison("llamacpp", 
+        result = fsp.build_focal_comparison(
             "0200_x", ["0100_a"], registry=self._registry()
         )
         self.assertFalse(result.is_blocked)
@@ -90,15 +90,15 @@ class FocalComparisonTests(unittest.TestCase):
         self._add_patch("0101_a2", extra='REQUIRES = ("0100_a",)\n')
         self._add_patch("0102_a3", extra='REQUIRES = ("0101_a2",)\n')
         self._add_patch("0200_x", extra='REQUIRES = ("0102_a3",)\n')
-        first = fsp.build_focal_comparison("llamacpp", "0200_x", [], registry=self._registry())
-        second = fsp.build_focal_comparison("llamacpp", "0200_x", [], registry=self._registry())
+        first = fsp.build_focal_comparison("0200_x", [], registry=self._registry())
+        second = fsp.build_focal_comparison("0200_x", [], registry=self._registry())
         self.assertEqual(first, second)
         self.assertEqual(first.prerequisites, ("0100_a", "0101_a2", "0102_a3"))
 
     def test_focal_already_in_baseline(self) -> None:
         self._add_patch("0100_a")
         self._add_patch("0200_x")
-        result = fsp.build_focal_comparison("llamacpp", 
+        result = fsp.build_focal_comparison(
             "0200_x", ["0100_a", "0200_x"], registry=self._registry()
         )
         self.assertTrue(result.is_blocked)
@@ -109,7 +109,7 @@ class FocalComparisonTests(unittest.TestCase):
     def test_baseline_patch_depends_on_focal(self) -> None:
         self._add_patch("0100_x")
         self._add_patch("0200_y", extra='REQUIRES = ("0100_x",)\n')
-        result = fsp.build_focal_comparison("llamacpp", 
+        result = fsp.build_focal_comparison(
             "0100_x", ["0200_y"], registry=self._registry()
         )
         self.assertTrue(result.is_blocked)
@@ -118,7 +118,7 @@ class FocalComparisonTests(unittest.TestCase):
     def test_conflict_introduced_by_focal(self) -> None:
         self._add_patch("0100_a")
         self._add_patch("0200_x", extra='CONFLICTS = ("0100_a",)\n')
-        result = fsp.build_focal_comparison("llamacpp", 
+        result = fsp.build_focal_comparison(
             "0200_x", ["0100_a"], registry=self._registry()
         )
         self.assertTrue(result.is_blocked)
@@ -128,7 +128,7 @@ class FocalComparisonTests(unittest.TestCase):
     def test_rejected_dependency(self) -> None:
         self._add_patch("0100_p", state="rejected")
         self._add_patch("0200_x", extra='REQUIRES = ("0100_p",)\n')
-        result = fsp.build_focal_comparison("llamacpp", "0200_x", [], registry=self._registry())
+        result = fsp.build_focal_comparison("0200_x", [], registry=self._registry())
         self.assertTrue(result.is_blocked)
         self.assertIn("rejected", result.blocked_reason)
         self.assertIn("0100_p", result.blocked_reason)
@@ -136,7 +136,7 @@ class FocalComparisonTests(unittest.TestCase):
     def test_unknown_focal_raises(self) -> None:
         self._add_patch("0100_a")
         with self.assertRaises(fsp.FocalComparisonError):
-            fsp.build_focal_comparison("llamacpp", 
+            fsp.build_focal_comparison(
                 "9999_missing", ["0100_a"], registry=self._registry()
             )
 

@@ -75,7 +75,7 @@ class Rd09CacheFoundationTests(unittest.TestCase):
             pinned = {}
             for name, source in (("mmvq", MMVQ), ("common", COMMON_CUH)):
                 target = Path(td) / source.name
-                copy_pinned("llamacpp", source, target)
+                copy_pinned(source, target)
                 pinned[name] = target.read_text(encoding="utf-8")
         cls.mmvq_src = pinned["mmvq"]
         cls.common_cuh_src = pinned["common"]

@@ -16,7 +16,7 @@ REJECTED = "1215_rd394041_amd_stream_moe_overlap"
 class AllowRejectedCompositionTests(unittest.TestCase):
     def setUp(self) -> None:
         self.base_ref = config.load(paths.RECIPES).pinned
-        state = {m.patch_id: m.state for m in patchset.catalog("llamacpp")}.get(REJECTED)
+        state = {m.patch_id: m.state for m in patchset.catalog()}.get(REJECTED)
         if state not in patchset.RETIRED_STATES:
             self.skipTest(f"{REJECTED} is no longer retired")
 

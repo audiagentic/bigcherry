@@ -292,7 +292,7 @@ class LocalFrameworkStaticPolicyTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
             _write_local_framework_package(root, adapter=FRAMEWORK_APPLY_BUILD)
-            descriptor = patch_registry.load_registry("llamacpp", root).get("9999_example_patch")
+            descriptor = patch_registry.load_registry(root).get("9999_example_patch")
             self.assertTrue(vp.is_framework_configuration_patch(descriptor))
             self.assertTrue(
                 vp.is_framework_configuration_patch(replace(descriptor, state="validated"))
@@ -312,7 +312,7 @@ class LocalFrameworkStaticPolicyTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
             _write_local_framework_package(root, adapter=FRAMEWORK_APPLY_BUILD)
-            descriptor = patch_registry.load_registry("llamacpp", root).get("9999_example_patch")
+            descriptor = patch_registry.load_registry(root).get("9999_example_patch")
             self.assertFalse(
                 vp.is_framework_configuration_patch(
                     replace(descriptor, experiment_contracts=("RD08-Q6K-MMVQ-VDR2",))
@@ -375,7 +375,7 @@ class RequireExecutionPackageTests(unittest.TestCase):
         metadata = metadata.replace('origin = "external-fork"', 'origin = "local"')
         (package / "patch.toml").write_text(metadata, encoding="utf-8")
         (package / "validation.toml").write_text(adapter, encoding="utf-8")
-        return patch_registry.load_registry("llamacpp", root).get("9999_example_patch")
+        return patch_registry.load_registry(root).get("9999_example_patch")
 
     def test_zero_contract_execution_is_limited_to_local_non_rd_framework(self) -> None:
         from bigcherry.patch import registry as patch_registry
@@ -396,7 +396,7 @@ class RequireExecutionPackageTests(unittest.TestCase):
                     'schema = 1\n[[check]]\nid = "apply"\ncapability = "apply"\nvalidator = "apply"\n'
                     '[[check]]\nid = "build"\ncapability = "build"\nvalidator = "build"\n',
                     encoding="utf-8")
-                descriptor = patch_registry.load_registry("llamacpp", root).get("9999_example_patch")
+                descriptor = patch_registry.load_registry(root).get("9999_example_patch")
                 if not allowed:
                     with self.assertRaisesRegex(vp.PolicyError, "no experiment-contract"):
                         vp.require_execution_package(descriptor, root=root)
@@ -406,7 +406,7 @@ class RequireExecutionPackageTests(unittest.TestCase):
                 self.assertEqual(set(plan.required_capabilities), {"apply", "build"})
                 self.assertFalse(vp.patch_validation.compute_verdict(plan, {}).eligible)
                 (package / "validation.toml").unlink()
-                descriptor = patch_registry.load_registry("llamacpp", root).get("9999_example_patch")
+                descriptor = patch_registry.load_registry(root).get("9999_example_patch")
                 with self.assertRaisesRegex(vp.PolicyError, "no validation.toml"):
                     vp.require_execution_package(descriptor, root=root)
 
@@ -424,7 +424,7 @@ class RequireExecutionPackageTests(unittest.TestCase):
                 '[[check]]\nid = "build"\ncapability = "build"\nvalidator = "build"\n',
                 encoding="utf-8",
             )
-            descriptor = patch_registry.load_registry("llamacpp", root).get("9999_example_patch")
+            descriptor = patch_registry.load_registry(root).get("9999_example_patch")
             with self.assertRaisesRegex(vp.PolicyError, "missing README\\.md"):
                 vp.require_execution_package(descriptor, root=root)
 
@@ -471,7 +471,7 @@ class RequireExecutionPackageTests(unittest.TestCase):
                 encoding="utf-8",
             )
             with self.assertRaisesRegex(patch_registry.PatchRegistryError, "not found"):
-                patch_registry.load_registry("llamacpp", root).get("9999_example_patch")
+                patch_registry.load_registry(root).get("9999_example_patch")
 
     def test_refuses_execution_for_grandfathered_but_packageless_patch(self) -> None:
         with tempfile.TemporaryDirectory() as d:
@@ -479,7 +479,7 @@ class RequireExecutionPackageTests(unittest.TestCase):
             _write_patch_package(root) # no README/validation.toml/contract
             from bigcherry.patch import registry as patch_registry
 
-            registry = patch_registry.load_registry("llamacpp", root)
+            registry = patch_registry.load_registry(root)
             descriptor = registry.get("9999_example_patch")
             with self.assertRaises(vp.PolicyError):
                 vp.require_execution_package(descriptor, root=root)
@@ -637,7 +637,7 @@ class PerformanceEvidenceTests(unittest.TestCase):
             self._write_package(
                 root, state="untested", tags='tags = ["optimization"]\n', readme=None,
             )
-            descriptor = patch_registry.load_registry("llamacpp", root).descriptors[0]
+            descriptor = patch_registry.load_registry(root).descriptors[0]
             problems = vp.check_performance_evidence_for_patch(
                 descriptor, root=root, assume_validated=True,
             )

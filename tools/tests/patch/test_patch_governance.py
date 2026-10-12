@@ -20,7 +20,7 @@ class RequiresConflictsBackfillTests(unittest.TestCase):
     docstring for why those stay separate)."""
 
     def setUp(self):
-        self.modules = {m.patch_id: m for m in patchset.catalog("llamacpp", )}
+        self.modules = {m.patch_id: m for m in patchset.catalog()}
 
     def test_1216_is_standalone(self):
         # 2026-09-26: separated from the rejected 1215 -- the guard protects
@@ -45,12 +45,12 @@ class RequiresConflictsBackfillTests(unittest.TestCase):
 
     def test_resolve_exact_enforces_1217_requires_1216(self):
         with self.assertRaises(ValueError) as ctx:
-            patchset.resolve_exact("llamacpp", ["1217_rd44_graph_opt_default_rdna35"])
+            patchset.resolve_exact(["1217_rd44_graph_opt_default_rdna35"])
         self.assertIn("requires explicitly selected", str(ctx.exception))
 
     def test_resolve_exact_enforces_1205_1207_conflict(self):
         with self.assertRaises(ValueError) as ctx:
-            patchset.resolve_exact("llamacpp", [
+            patchset.resolve_exact([
                 "1205_rd12_paired_mmvq_dual_output",
                 "1207_rd17_moe_topk_down_fold",
             ], allow_rejected=True)  # 1207 rejected 2026-09-26; the conflict still holds
@@ -60,7 +60,7 @@ class RequiresConflictsBackfillTests(unittest.TestCase):
         # Regression proof: every existing config/recipes.toml entry naming
         # 1216/1217 includes their full REQUIRES chain (1217 -> 1216; both
         # separated from the rejected 1215 on 2026-09-26).
-        resolved = patchset.resolve_exact("llamacpp", [
+        resolved = patchset.resolve_exact([
             "1216_rd43_concurrent_join_fusion_guard",
             "1217_rd44_graph_opt_default_rdna35",
         ])
@@ -73,8 +73,8 @@ class NoPatchToPatchImportsTests(unittest.TestCase):
 
     def test_no_current_patch_imports_another_patch_module(self):
         violations = []
-        patch_ids = {m.patch_id for m in patchset.catalog("llamacpp", )}
-        for module in patchset.catalog("llamacpp", ):
+        patch_ids = {m.patch_id for m in patchset.catalog()}
+        for module in patchset.catalog():
             tree = ast.parse(module.path.read_text(encoding="utf-8"), filename=str(module.path))
             for node in ast.walk(tree):
                 if isinstance(node, ast.ImportFrom) and node.module:
@@ -93,10 +93,10 @@ class CatalogMetadataExtensionTests(unittest.TestCase):
     """RE40: the new optional plan_ids/backends/subsystems/hardware fields."""
 
     def test_new_fields_default_to_empty_when_absent(self):
-        entries = patch_catalog.load_catalog("llamacpp", )
+        entries = patch_catalog.load_catalog()
         # Packaged patch metadata carries these fields in patch.toml; confirm
         # the absent-field default is an empty tuple, not None or an error.
-        entry = patch_catalog.build_snapshot("llamacpp", ).metadata["0100_cmake_options"]
+        entry = patch_catalog.build_snapshot().metadata["0100_cmake_options"]
         self.assertEqual(entry.plan_ids, ())
         self.assertEqual(entry.backends, ())
         self.assertEqual(entry.subsystems, ())
@@ -120,14 +120,14 @@ backends = ["not-a-real-backend"]
             path = Path(handle.name)
         try:
             with self.assertRaises(ValueError):
-                patch_catalog.load_catalog("llamacpp", path)
+                patch_catalog.load_catalog(path)
         finally:
             path.unlink()
 
     def test_cross_check_still_clean_with_new_optional_fields(self):
         # The real catalog doesn't use the new fields yet, but cross_check's
         # 1:1 coverage proof must still hold with the extended schema.
-        problems = patch_catalog.cross_check("llamacpp")
+        problems = patch_catalog.cross_check()
         self.assertEqual(problems, [])
 
 

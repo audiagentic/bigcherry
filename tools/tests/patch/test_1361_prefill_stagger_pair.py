@@ -16,7 +16,7 @@ from bigcherry.patch.pinned_source import copy_pinned, pinned_checkout  # noqa: 
 
 _REPO = Path(__file__).resolve().parents[3]
 _HAVE_VENDOR = paths.llama_root().is_dir()
-_V = pinned_checkout("llamacpp") if _HAVE_VENDOR else paths.llama_root()
+_V = pinned_checkout() if _HAVE_VENDOR else paths.llama_root()
 _FILES = (
     "ggml/src/ggml-cuda/ggml-cuda.cu",
     "ggml/src/ggml-backend-meta.cpp",
@@ -46,7 +46,7 @@ _P = _load("1361_prefill_stagger_pair")
 class Patch1361Mechanics(unittest.TestCase):
     def _composed_base(self, td):
         root = Path(td)
-        selected = patch_rebase.resolve_selection("llamacpp", 
+        selected = patch_rebase.resolve_selection(
             source_name="bigcherry",
             all_patches=False,
             focal_overlay_patch_id="1361_prefill_stagger_pair",
@@ -60,12 +60,12 @@ class Patch1361Mechanics(unittest.TestCase):
         ):
             self.assertIn(required, ids)
 
-        texts = patch_rebase._overlay_texts("llamacpp")
+        texts = patch_rebase._overlay_texts()
         overlay_paths = frozenset(texts)
         for module in selected.modules:
             if module.patch_id == "1361_prefill_stagger_pair":
                 continue
-            probe = patch_rebase.probe_patch("llamacpp", 
+            probe = patch_rebase.probe_patch(
                 module,
                 _V,
                 texts,
@@ -86,7 +86,7 @@ class Patch1361Mechanics(unittest.TestCase):
             if rel in texts:
                 target.write_text(texts[rel], encoding="utf-8")
             else:
-                copy_pinned("llamacpp", _V / rel, target)
+                copy_pinned(_V / rel, target)
         return root
 
     def test_applies_after_production_plus_1360_and_is_idempotent(self):

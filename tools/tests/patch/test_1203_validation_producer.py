@@ -1297,7 +1297,7 @@ class Patch1203ValidationProducerTests(unittest.TestCase):
         from bigcherry.patch import registry as patch_registry
         from bigcherry.patch import validation_policy as patch_validation_policy
 
-        registry = patch_registry.load_registry("llamacpp", REPO_ROOT / "engines" / "llamacpp" / "patches")
+        registry = patch_registry.load_registry(REPO_ROOT / "engines" / "llamacpp" / "patches")
         descriptor = registry.get(_PATCH_ID)
         # Must not raise ConfigurationError -- this is the real call
         # _run_validation_producer() makes before ever touching hardware.

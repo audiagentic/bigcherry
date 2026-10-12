@@ -16,7 +16,7 @@ from bigcherry.patch.pinned_source import pinned_checkout, production_order, pro
 _REPO = Path(__file__).resolve().parents[3]
 _HAVE_VENDOR = paths.llama_root().is_dir()
 # a pristine copy of the pinned revision: the vendor working tree normally has the production patches applied
-_V = pinned_checkout("llamacpp") if _HAVE_VENDOR else paths.llama_root()
+_V = pinned_checkout() if _HAVE_VENDOR else paths.llama_root()
 _FILES = (
     "src/llama-context.h",
     "src/llama-context.cpp",
@@ -42,10 +42,10 @@ _P = _load("1359_prefill_pipeline")
 class Patch1359Mechanics(unittest.TestCase):
     def _production(self, td):
         """The production set without 1359, applied by the resolver patch-rebase-check uses; 1359's files written out."""
-        ids = production_order("llamacpp", "bigcherry")
+        ids = production_order()
         self.assertIn("1348_mtp_deferred_catchup", ids)
         self.assertIn("1346_mtp_prompt_overlap", ids)
-        return production_source("llamacpp", "bigcherry", _FILES, td, without="1359_prefill_pipeline")
+        return production_source(_FILES, td, without="1359_prefill_pipeline")
 
     def test_applies_after_production_and_is_idempotent(self):
         with tempfile.TemporaryDirectory() as td:

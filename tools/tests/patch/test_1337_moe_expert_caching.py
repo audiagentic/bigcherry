@@ -25,9 +25,9 @@ class Patch1337Superseded(unittest.TestCase):
     @unittest.skipUnless(_V.is_dir(), "pinned vendor checkout not present")
     def test_pin_has_the_upstream_cache(self):
         # the files the backport created exist at the pin, with upstream's option
-        self.assertIn("llama_moe_cache", read_pinned("llamacpp", _V / "src/llama-moe-cache.cpp"))
-        self.assertIn("llama_moe_cache", read_pinned("llamacpp", _V / "src/llama-moe-cache.h"))
-        self.assertIn('"--moe-cache-mib"', read_pinned("llamacpp", _V / "common/arg.cpp"))
+        self.assertIn("llama_moe_cache", read_pinned(_V / "src/llama-moe-cache.cpp"))
+        self.assertIn("llama_moe_cache", read_pinned(_V / "src/llama-moe-cache.h"))
+        self.assertIn('"--moe-cache-mib"', read_pinned(_V / "common/arg.cpp"))
 
 
 if __name__ == "__main__":

@@ -40,7 +40,7 @@ class Patch1313Mechanics(unittest.TestCase):
             dst = root / "ggml/src/ggml-cuda"
             dst.mkdir(parents=True)
             for f in _FILES:
-                copy_pinned("llamacpp", _CUDA / f, dst / f)
+                copy_pinned(_CUDA / f, dst / f)
             self.assertTrue(all(r.ok for r in apply_all(_P1310.PATCHES, root)))
             results = apply_all(_P1313.PATCHES, root)
             self.assertTrue(all(r.ok for r in results), [e.detail for r in results for e in r.failed])

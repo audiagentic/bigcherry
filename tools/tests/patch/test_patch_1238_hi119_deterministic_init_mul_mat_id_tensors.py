@@ -64,9 +64,9 @@ def test_requires_declares_1222_dependency():
 
 
 def test_packaged_patch_passes_production_isolation_loader():
-    registry = patch_registry.load_registry("llamacpp", ROOT / "engines" / "llamacpp" / "patches")
+    registry = patch_registry.load_registry(ROOT / "engines" / "llamacpp" / "patches")
     descriptor = registry.get("1238_hi119_deterministic_init_mul_mat_id_tensors")
-    patches = patch_registry.load_implementation("llamacpp", descriptor, root=ROOT / "engines" / "llamacpp" / "patches")
+    patches = patch_registry.load_implementation(descriptor, root=ROOT / "engines" / "llamacpp" / "patches")
     assert [patch.edits[0].id for patch in patches] == [
         "hi119-deterministic-init-mul-mat-id-tensors"
     ]

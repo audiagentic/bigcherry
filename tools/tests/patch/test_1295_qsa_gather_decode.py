@@ -35,7 +35,7 @@ class Patch1295Mechanics(unittest.TestCase):
         root = Path(td)
         for f in (*_FILES, *extra):
             (root / f).parent.mkdir(parents=True, exist_ok=True)
-            copy_pinned("llamacpp", _V / f, root / f)
+            copy_pinned(_V / f, root / f)
         return root
 
     def test_apply_and_idempotent(self):

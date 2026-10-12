@@ -20,7 +20,7 @@ _REPO = Path(__file__).resolve().parents[3]
 _HAVE_VENDOR = paths.llama_root().is_dir()
 # a pristine copy of the pinned revision: the vendor working tree normally has the production patches applied,
 # and files a patch creates would look like upstream files
-_V = pinned_checkout("llamacpp") if _HAVE_VENDOR else paths.llama_root()
+_V = pinned_checkout() if _HAVE_VENDOR else paths.llama_root()
 _F = "ggml/src/ggml-cuda/mmq.cuh"
 
 
@@ -57,7 +57,7 @@ def _composer_order(ids: list[str]) -> list[str]:
     The recipe lists patch-sets and patches for people; the composer orders modules by their own `order` and
     dependencies. Applying in listing order makes unrelated anchors miss (1317 needs its predecessors).
     """
-    selected = patch_rebase.resolve_selection("llamacpp", source_name="bigcherry", all_patches=False)
+    selected = patch_rebase.resolve_selection(source_name="bigcherry", all_patches=False)
     resolved = [m.patch_id for m in selected.modules]
     missing = sorted(set(ids) - set(resolved))
     assert not missing, f"production recipe ids not resolved by the composer: {missing}"
@@ -96,7 +96,7 @@ class Patch1350Mechanics(unittest.TestCase):
             dst = root / rel
             dst.parent.mkdir(parents=True, exist_ok=True)
             if src == pinned:
-                copy_pinned("llamacpp", src, dst)
+                copy_pinned(src, dst)
             else:
                 dst.write_bytes(src.read_bytes())
         return root
@@ -107,15 +107,15 @@ class Patch1350Mechanics(unittest.TestCase):
         Same resolver, ordering, overlay handling and apply path as `patch-rebase-check --source bigcherry`; the
         test does not rebuild any of that. With stop_before, composition stops just before that package.
         """
-        selected = patch_rebase.resolve_selection("llamacpp", source_name="bigcherry", all_patches=False)
+        selected = patch_rebase.resolve_selection(source_name="bigcherry", all_patches=False)
         ids = [m.patch_id for m in selected.modules]
         self.assertIn("1350_mmq_few_tile_streamk", ids)
-        texts = patch_rebase._overlay_texts("llamacpp")
+        texts = patch_rebase._overlay_texts()
         overlay_paths = frozenset(texts)
         for module in selected.modules:
             if stop_before is not None and module.patch_id == stop_before:
                 break
-            probe = patch_rebase.probe_patch("llamacpp", 
+            probe = patch_rebase.probe_patch(
                 module,
                 _V,
                 texts,

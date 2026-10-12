@@ -16,7 +16,7 @@ from bigcherry.patch.pinned_source import copy_pinned, pinned_checkout, producti
 _REPO = Path(__file__).resolve().parents[3]
 _HAVE_VENDOR = paths.llama_root().is_dir()
 # a pristine copy of the pinned revision: the vendor working tree normally has the production patches applied
-_V = pinned_checkout("llamacpp") if _HAVE_VENDOR else paths.llama_root()
+_V = pinned_checkout() if _HAVE_VENDOR else paths.llama_root()
 _FILES = (
     "common/speculative.h",
     "common/speculative.cpp",
@@ -43,14 +43,14 @@ class Patch1348Mechanics(unittest.TestCase):
         root = Path(td)
         for rel in _FILES:
             (root / rel).parent.mkdir(parents=True, exist_ok=True)
-            copy_pinned("llamacpp", _V / rel, root / rel)
+            copy_pinned(_V / rel, root / rel)
         return root
 
     def _apply_production_without_1348(self, root):
         # the files as the production composition leaves them immediately before 1348 (the resolver and dry-run
         # apply path of patch-rebase-check, not an ordering reconstructed here)
-        self.assertIn("1348_mtp_deferred_catchup", production_order("llamacpp", "bigcherry"))
-        production_source("llamacpp", "bigcherry", _FILES, root, stop_before="1348_mtp_deferred_catchup")
+        self.assertIn("1348_mtp_deferred_catchup", production_order())
+        production_source(_FILES, root, stop_before="1348_mtp_deferred_catchup")
 
     def test_full_production_then_1348_apply_and_idempotent(self):
         with tempfile.TemporaryDirectory() as td:

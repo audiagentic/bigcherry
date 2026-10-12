@@ -36,7 +36,7 @@ class Patch1305Mechanics(unittest.TestCase):
         root = Path(td.name)
         path = root / "src/llama-model.cpp"
         path.parent.mkdir(parents=True)
-        copy_pinned("llamacpp", _VENDOR, path)
+        copy_pinned(_VENDOR, path)
         if with_1303:
             prereq = apply_all(_p1303.PATCHES, root)
             assert all(r.ok for r in prereq), [e.detail for r in prereq for e in r.failed]

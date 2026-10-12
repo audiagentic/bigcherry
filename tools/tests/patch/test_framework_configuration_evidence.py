@@ -21,16 +21,16 @@ class FrameworkConfigurationEvidenceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.root = Path(__file__).resolve().parents[3]
-        cls.descriptor = registry.load_registry("llamacpp", cls.root / "engines" / "llamacpp" / "patches").get("0100_cmake_options")
-        cls.module = next(m for m in patchset.catalog("llamacpp", cls.root / "engines" / "llamacpp" / "patches") if m.patch_id == "0100_cmake_options")
+        cls.descriptor = registry.load_registry(cls.root / "engines" / "llamacpp" / "patches").get("0100_cmake_options")
+        cls.module = next(m for m in patchset.catalog(cls.root / "engines" / "llamacpp" / "patches") if m.patch_id == "0100_cmake_options")
         from bigcherry.core import config
         from bigcherry.campaign import resolution
-        catalog = patchset.catalog("llamacpp", cls.root / "engines" / "llamacpp" / "patches")
-        lane = resolution.resolve_lane("llamacpp", 
+        catalog = patchset.catalog(cls.root / "engines" / "llamacpp" / "patches")
+        lane = resolution.resolve_lane(
             "bigcherry-qualification-tuning", config.load(cls.root / "config/recipes.toml"), catalog
         )
-        resolved = patchset.resolve_exact("llamacpp", tuple(lane.patch_set.module_ids), directory=cls.root / "engines" / "llamacpp" / "patches")
-        descriptors = registry.load_registry("llamacpp", cls.root / "engines" / "llamacpp" / "patches")
+        resolved = patchset.resolve_exact(tuple(lane.patch_set.module_ids), directory=cls.root / "engines" / "llamacpp" / "patches")
+        descriptors = registry.load_registry(cls.root / "engines" / "llamacpp" / "patches")
         cls.composition = tuple((member.patch_id, descriptors.get(member.patch_id).implementation_digest)
                                 for member in resolved.modules)
         from bigcherry.patch import source

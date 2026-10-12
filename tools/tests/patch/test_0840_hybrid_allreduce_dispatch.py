@@ -39,7 +39,7 @@ class Patch0840OwnedProviderAnchor(unittest.TestCase):
         return tuple(fp for fp in _P.PATCHES if fp.path == _PROVIDER)
 
     def _root(self, td):
-        return production_source("llamacpp", "bigcherry", (_PROVIDER,), td, stop_before=_ID)
+        return production_source((_PROVIDER,), td, stop_before=_ID)
 
     def test_owned_provider_edit_guards_and_idempotence(self):
         with tempfile.TemporaryDirectory() as td:

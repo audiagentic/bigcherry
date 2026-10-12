@@ -38,15 +38,15 @@ class CampaignResolutionTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.cfg = config.load(paths.RECIPES)
-        cls.catalog = patchset.catalog("llamacpp")
+        cls.catalog = patchset.catalog()
 
     def test_upstream_has_no_bigcherry_modules(self):
-        lane = campaign_resolution.resolve_lane("llamacpp", "llama-native", self.cfg, self.catalog)
+        lane = campaign_resolution.resolve_lane("llama-native", self.cfg, self.catalog)
         self.assertEqual(lane.patch_set.module_ids, ())
         self.assertEqual(lane.patch_set.classification, "upstream")
 
     def test_base_is_exactly_the_validated_core_modules(self):
-        lane = campaign_resolution.resolve_lane("llamacpp", 
+        lane = campaign_resolution.resolve_lane(
             "bigcherry-qualification-tuning", self.cfg, self.catalog
         )
         # PA31: bigcherry-qualification-tuning (serving-core + campaign-support
@@ -118,10 +118,10 @@ class CampaignResolutionTests(unittest.TestCase):
         the release build's serving-core baseline, not a subset -- the
         subset relationship runs the other way for the non-enhancement
         ids."""
-        serving = campaign_resolution.resolve_lane("llamacpp", 
+        serving = campaign_resolution.resolve_lane(
             "bigcherry-serving-base", self.cfg, self.catalog
         )
-        release = campaign_resolution.resolve_lane("llamacpp", "bigcherry", self.cfg, self.catalog)
+        release = campaign_resolution.resolve_lane("bigcherry", self.cfg, self.catalog)
 
         serving_ids = set(serving.patch_set.module_ids)
         release_ids = set(release.patch_set.module_ids)
@@ -151,7 +151,7 @@ class CampaignResolutionTests(unittest.TestCase):
             conflicts=(),
         )
         cfg = dataclasses.replace(self.cfg, experiments={"one-fix": experiment})
-        lane = campaign_resolution.resolve_lane("llamacpp", 
+        lane = campaign_resolution.resolve_lane(
             "bigcherry-qualification-tuning", cfg, self.catalog, experiment="one-fix"
         )
         # 16 core modules (serving-core + campaign-support +
@@ -173,11 +173,11 @@ class CanonicalSelectionTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.cfg = config.load(paths.RECIPES)
-        cls.catalog = patchset.catalog("llamacpp")
+        cls.catalog = patchset.catalog()
 
     def test_unknown_source_raises(self):
         with self.assertRaises(campaign_resolution.ResolutionError):
-            campaign_resolution.resolve_canonical_selection("llamacpp", 
+            campaign_resolution.resolve_canonical_selection(
                 "not-a-real-source", self.cfg, self.catalog
             )
 
@@ -186,7 +186,7 @@ class CanonicalSelectionTests(unittest.TestCase):
         # `cfg.pinned if source.ref == "pinned" else source.ref` -- a
         # migrated legacy caller must see the identical ref it saw under
         # the old Recipe.follows_pin semantics.
-        selection = campaign_resolution.resolve_canonical_selection("llamacpp", 
+        selection = campaign_resolution.resolve_canonical_selection(
             "bigcherry", self.cfg, self.catalog
         )
         source = self.cfg.sources["bigcherry"]
@@ -198,8 +198,8 @@ class CanonicalSelectionTests(unittest.TestCase):
         # The whole point of this helper is to expose resolve_lane()'s real
         # patch-set identity, not a second, independently-derived one --
         # confirm byte-for-byte agreement, not just "looks similar".
-        lane = campaign_resolution.resolve_lane("llamacpp", "bigcherry", self.cfg, self.catalog)
-        selection = campaign_resolution.resolve_canonical_selection("llamacpp", 
+        lane = campaign_resolution.resolve_lane("bigcherry", self.cfg, self.catalog)
+        selection = campaign_resolution.resolve_canonical_selection(
             "bigcherry", self.cfg, self.catalog
         )
         self.assertEqual(selection.patch_ids, lane.patch_set.module_ids)
@@ -215,7 +215,7 @@ class CanonicalSelectionTests(unittest.TestCase):
             conflicts=(),
         )
         cfg = dataclasses.replace(self.cfg, experiments={"one-fix": experiment})
-        selection = campaign_resolution.resolve_canonical_selection("llamacpp", 
+        selection = campaign_resolution.resolve_canonical_selection(
             "bigcherry-qualification-tuning", cfg, self.catalog, experiment="one-fix"
         )
         self.assertIn("1002_hip_unsafe_math_opt_in", selection.patch_ids)
@@ -225,12 +225,12 @@ class PatchSetIdentityTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.cfg = config.load(paths.RECIPES)
-        cls.catalog = patchset.catalog("llamacpp")
+        cls.catalog = patchset.catalog()
 
     def test_all_is_rejected_and_identity_changes_with_content(self):
         with self.assertRaisesRegex(campaign_resolution.ResolutionError, "not a valid"):
-            campaign_resolution.resolve_patch_set("llamacpp", "all", self.cfg, self.catalog)
-        first = campaign_resolution.resolve_lane("llamacpp", 
+            campaign_resolution.resolve_patch_set("all", self.cfg, self.catalog)
+        first = campaign_resolution.resolve_lane(
             "bigcherry-qualification-tuning", self.cfg, self.catalog
         )
         changed = dataclasses.replace(
@@ -240,7 +240,7 @@ class PatchSetIdentityTests(unittest.TestCase):
         cfg = dataclasses.replace(
             self.cfg, patch_sets={**self.cfg.patch_sets, "serving-core": changed}
         )
-        second = campaign_resolution.resolve_lane("llamacpp", 
+        second = campaign_resolution.resolve_lane(
             "bigcherry-qualification-tuning", cfg, self.catalog
         )
         self.assertNotEqual(first.patch_set.patch_set_id, second.patch_set.patch_set_id)
@@ -262,7 +262,7 @@ class MultiPatchSetCompositionIdentityTests(unittest.TestCase):
             patches_root = Path(directory) / "patches"
             _write_patch(patches_root, "0001_a", marker_text="a")
             _write_patch(patches_root, "0002_b", marker_text="b")
-            catalog = patchset.catalog("llamacpp", directory=patches_root)
+            catalog = patchset.catalog(directory=patches_root)
 
             cfg = config.Config(
                 pinned="unused",
@@ -304,10 +304,10 @@ class MultiPatchSetCompositionIdentityTests(unittest.TestCase):
                 path=Path(directory) / "recipes.toml",
             )
 
-            lane_two_sets = campaign_resolution.resolve_lane("llamacpp", 
+            lane_two_sets = campaign_resolution.resolve_lane(
                 "via-two-sets", cfg, catalog, catalog_directory=patches_root
             )
-            lane_one_set = campaign_resolution.resolve_lane("llamacpp", 
+            lane_one_set = campaign_resolution.resolve_lane(
                 "via-one-set", cfg, catalog, catalog_directory=patches_root
             )
 
@@ -329,7 +329,7 @@ class MultiPatchSetCompositionIdentityTests(unittest.TestCase):
             patches_root = Path(directory) / "patches"
             _write_patch(patches_root, "0001_a", marker_text="a")
             _write_patch(patches_root, "0002_b", marker_text="b")
-            catalog = patchset.catalog("llamacpp", directory=patches_root)
+            catalog = patchset.catalog(directory=patches_root)
 
             cfg = config.Config(
                 pinned="unused",
@@ -368,10 +368,10 @@ class MultiPatchSetCompositionIdentityTests(unittest.TestCase):
                 path=Path(directory) / "recipes.toml",
             )
 
-            lane_1 = campaign_resolution.resolve_lane("llamacpp", 
+            lane_1 = campaign_resolution.resolve_lane(
                 "via-a-then-empty1", cfg, catalog, catalog_directory=patches_root
             )
-            lane_2 = campaign_resolution.resolve_lane("llamacpp", 
+            lane_2 = campaign_resolution.resolve_lane(
                 "via-a-then-empty2", cfg, catalog, catalog_directory=patches_root
             )
 
@@ -392,7 +392,7 @@ class EmptyBaseExperimentResolutionTests(unittest.TestCase):
         self.addCleanup(self.directory.cleanup)
         self.patches_root = Path(self.directory.name) / "patches"
         _write_patch(self.patches_root, "0001_a", marker_text="a")
-        self.catalog = patchset.catalog("llamacpp", directory=self.patches_root)
+        self.catalog = patchset.catalog(directory=self.patches_root)
         experiment = config.Experiment(
             name="exp-a",
             patches=("0001_a",),
@@ -417,14 +417,14 @@ class EmptyBaseExperimentResolutionTests(unittest.TestCase):
         )
 
     def test_empty_base_no_experiment_resolves_empty(self):
-        lane = campaign_resolution.resolve_lane("llamacpp", 
+        lane = campaign_resolution.resolve_lane(
             "clean", self.cfg, self.catalog, catalog_directory=self.patches_root
         )
         self.assertEqual(lane.patch_set.module_ids, ())
         self.assertEqual(lane.patch_set.classification, "upstream")
 
     def test_empty_base_with_experiment_resolves_exactly_the_experiment(self):
-        lane = campaign_resolution.resolve_lane("llamacpp", 
+        lane = campaign_resolution.resolve_lane(
             "clean",
             self.cfg,
             self.catalog,
@@ -438,7 +438,7 @@ class EmptyBaseExperimentResolutionTests(unittest.TestCase):
         with self.assertRaisesRegex(
             campaign_resolution.ResolutionError, "unknown experiment"
         ):
-            campaign_resolution.resolve_lane("llamacpp", 
+            campaign_resolution.resolve_lane(
                 "clean",
                 self.cfg,
                 self.catalog,
@@ -475,7 +475,7 @@ class MultiSetIndependentRequiredStateTests(unittest.TestCase):
             .replace("STATE = 'validated'", f"STATE = {state_b!r}"),
             encoding="utf-8",
         )
-        return patchset.catalog("llamacpp", directory=self.patches_root)
+        return patchset.catalog(directory=self.patches_root)
 
     def test_diverging_policies_validate_each_set_independently(self):
         # set-a requires 'validated' and 0001_a really is validated; set-b
@@ -512,7 +512,7 @@ class MultiSetIndependentRequiredStateTests(unittest.TestCase):
             campaigns={},
             path=Path(self.directory.name) / "recipes.toml",
         )
-        lane = campaign_resolution.resolve_lane("llamacpp", 
+        lane = campaign_resolution.resolve_lane(
             "multi", cfg, catalog, catalog_directory=self.patches_root
         )
         self.assertEqual(set(lane.patch_set.module_ids), {"0001_a", "0002_b"})
@@ -554,7 +554,7 @@ class MultiSetIndependentRequiredStateTests(unittest.TestCase):
             path=Path(self.directory.name) / "recipes.toml",
         )
         with self.assertRaisesRegex(ValueError, "does not satisfy required state"):
-            campaign_resolution.resolve_lane("llamacpp", 
+            campaign_resolution.resolve_lane(
                 "multi", cfg, catalog, catalog_directory=self.patches_root
             )
 
@@ -574,22 +574,22 @@ class MultiSetIndependentRequiredStateTests(unittest.TestCase):
         b = self.patches_root / "0002_b.py"
         b.write_text(b.read_text(encoding="utf-8").replace(
             "STATE = 'validated'\n", "STATE = 'validated'\nREQUIRES = ('0001_a',)\n"), encoding="utf-8")
-        catalog = patchset.catalog("llamacpp", directory=self.patches_root)
-        lane = campaign_resolution.resolve_lane("llamacpp", 
+        catalog = patchset.catalog(directory=self.patches_root)
+        lane = campaign_resolution.resolve_lane(
             "multi", self._cfg(("set-a", "set-b")), catalog, catalog_directory=self.patches_root)
         ids = list(lane.patch_set.module_ids)
         self.assertLess(ids.index("0001_a"), ids.index("0002_b"))
         with self.assertRaisesRegex(ValueError, "requires explicitly selected"):
-            campaign_resolution.resolve_lane("llamacpp", 
+            campaign_resolution.resolve_lane(
                 "multi", self._cfg(("set-b", "set-a")), catalog, catalog_directory=self.patches_root)
 
     def test_earlier_sets_one_way_conflict_with_a_later_set_fails_closed(self):
         a = self.patches_root / "0001_a.py"
         a.write_text(a.read_text(encoding="utf-8").replace(
             "STATE = 'validated'\n", "STATE = 'validated'\nCONFLICTS = ('0002_b',)\n"), encoding="utf-8")
-        catalog = patchset.catalog("llamacpp", directory=self.patches_root)
+        catalog = patchset.catalog(directory=self.patches_root)
         with self.assertRaisesRegex(campaign_resolution.ResolutionError, "0001_a conflicts"):
-            campaign_resolution.resolve_lane("llamacpp", 
+            campaign_resolution.resolve_lane(
                 "multi", self._cfg(("set-a", "set-b")), catalog, catalog_directory=self.patches_root)
 
     def test_shared_policy_across_sets_is_unchanged_backward_compatible(self):
@@ -623,7 +623,7 @@ class MultiSetIndependentRequiredStateTests(unittest.TestCase):
             campaigns={},
             path=Path(self.directory.name) / "recipes.toml",
         )
-        lane = campaign_resolution.resolve_lane("llamacpp", 
+        lane = campaign_resolution.resolve_lane(
             "multi", cfg, catalog, catalog_directory=self.patches_root
         )
         self.assertEqual(lane.patch_set.required_state, "validated")
@@ -684,7 +684,7 @@ class PA28SemanticPatchSetTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.cfg = config.load(paths.RECIPES)
-        cls.catalog = patchset.catalog("llamacpp")
+        cls.catalog = patchset.catalog()
 
     def test_serving_core_membership(self):
         # GPT design-review consult (req_d9bf628dc9954595, 2026-09-15): 0700
@@ -739,7 +739,7 @@ class PA28SemanticPatchSetTests(unittest.TestCase):
         self.assertEqual(len(self._FORMER_FRAMEWORK_MEMBERSHIP), 14)
 
     def test_bigcherry_serving_base_is_serving_core_plus_upstream_fixes(self):
-        lane = campaign_resolution.resolve_lane("llamacpp", 
+        lane = campaign_resolution.resolve_lane(
             "bigcherry-serving-base", self.cfg, self.catalog
         )
         expected = set(self.cfg.patch_sets["serving-core"].patches) | set(
@@ -748,7 +748,7 @@ class PA28SemanticPatchSetTests(unittest.TestCase):
         self.assertEqual(set(lane.patch_set.module_ids), expected)
 
     def test_bigcherry_tuning_is_serving_core_plus_campaign_support_plus_upstream_fixes(self):
-        lane = campaign_resolution.resolve_lane("llamacpp", 
+        lane = campaign_resolution.resolve_lane(
             "bigcherry-tuning", self.cfg, self.catalog
         )
         expected = (
@@ -765,7 +765,7 @@ class PA28SemanticPatchSetTests(unittest.TestCase):
         )
 
     def test_bigcherry_qualification_is_serving_core_plus_qualification_support_plus_upstream_fixes(self):
-        lane = campaign_resolution.resolve_lane("llamacpp", 
+        lane = campaign_resolution.resolve_lane(
             "bigcherry-qualification", self.cfg, self.catalog
         )
         expected = (
@@ -785,7 +785,7 @@ class PA28SemanticPatchSetTests(unittest.TestCase):
 
     def test_new_sources_have_distinct_deterministic_patch_set_ids(self):
         lanes = {
-            name: campaign_resolution.resolve_lane("llamacpp", name, self.cfg, self.catalog)
+            name: campaign_resolution.resolve_lane(name, self.cfg, self.catalog)
             for name in (
                 "bigcherry-serving-base",
                 "bigcherry-tuning",
@@ -796,7 +796,7 @@ class PA28SemanticPatchSetTests(unittest.TestCase):
         self.assertEqual(len(set(ids.values())), 3, f"patch_set_ids collided: {ids}")
         # Deterministic: resolving again gives byte-identical identity.
         for name, lane in lanes.items():
-            again = campaign_resolution.resolve_lane("llamacpp", name, self.cfg, self.catalog)
+            again = campaign_resolution.resolve_lane(name, self.cfg, self.catalog)
             self.assertEqual(again.patch_set.patch_set_id, lane.patch_set.patch_set_id)
             self.assertEqual(again.patch_set.module_ids, lane.patch_set.module_ids)
 
@@ -808,7 +808,7 @@ class PA28SemanticPatchSetTests(unittest.TestCase):
         # bigcherry-qualification. This explicit combined source composes
         # serving-core + campaign-support + qualification-support +
         # upstream-fixes for that exceptional qualification+tuning case.
-        lane = campaign_resolution.resolve_lane("llamacpp", 
+        lane = campaign_resolution.resolve_lane(
             "bigcherry-qualification-tuning", self.cfg, self.catalog
         )
         expected = (
@@ -826,7 +826,7 @@ class PA28SemanticPatchSetTests(unittest.TestCase):
 
     def test_bigcherry_qualification_tuning_has_distinct_deterministic_patch_set_id(self):
         lanes = {
-            name: campaign_resolution.resolve_lane("llamacpp", name, self.cfg, self.catalog)
+            name: campaign_resolution.resolve_lane(name, self.cfg, self.catalog)
             for name in (
                 "bigcherry-serving-base",
                 "bigcherry-tuning",
@@ -836,7 +836,7 @@ class PA28SemanticPatchSetTests(unittest.TestCase):
         }
         ids = {name: lane.patch_set.patch_set_id for name, lane in lanes.items()}
         self.assertEqual(len(set(ids.values())), 4, f"patch_set_ids collided: {ids}")
-        again = campaign_resolution.resolve_lane("llamacpp", 
+        again = campaign_resolution.resolve_lane(
             "bigcherry-qualification-tuning", self.cfg, self.catalog
         )
         self.assertEqual(
@@ -857,7 +857,7 @@ class PA28SemanticPatchSetTests(unittest.TestCase):
         self.assertNotIn("framework", self.cfg.patch_sets)
         self.assertNotIn("bigcherry-native", self.cfg.sources)
 
-        lane = campaign_resolution.resolve_lane("llamacpp", 
+        lane = campaign_resolution.resolve_lane(
             "bigcherry-qualification-tuning", self.cfg, self.catalog
         )
         expected = (

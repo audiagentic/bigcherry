@@ -198,7 +198,7 @@ class RequireExecutionPackageMultiContractTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
             _write_package(root, validation_architectures='"gfx1201"')
-            registry = patch_registry.load_registry("llamacpp", root)
+            registry = patch_registry.load_registry(root)
             descriptor = registry.get("9999_va17_policy_test")
             plan = vp.require_execution_package(descriptor, root=root)
             self.assertEqual(len(plan.contracts), 2)

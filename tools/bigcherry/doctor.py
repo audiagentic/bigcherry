@@ -8,7 +8,7 @@ import tomllib
 from pathlib import Path
 from typing import cast
 
-from .core import config as campaign_config, engines, paths
+from .core import config as campaign_config, paths
 from .release import pin_status
 from .patch import patchset, registry as patch_registry
 from .core.context import ProjectContext
@@ -37,10 +37,10 @@ def build_report(context: ProjectContext | None = None) -> dict[str, object]:
     context = context or ProjectContext.resolve()
     raw = tomllib.loads(context.config_path.read_text(encoding="utf-8"))
     version = raw.get("version", 1)
-    catalog = patchset.catalog(engines.LLAMACPP, directory=context.patches_root)
+    catalog = patchset.catalog(context.patches_root)
     kind_by_id = {
         d.patch_id: d.kind
-        for d in patch_registry.load_registry(engines.LLAMACPP, context.patches_root).descriptors
+        for d in patch_registry.load_registry(context.patches_root).descriptors
     }
     patch_rows = [
         {

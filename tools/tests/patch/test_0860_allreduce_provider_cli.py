@@ -71,9 +71,9 @@ void common_params_add_all(common_params_context & ctx_arg) {
 class Patch0860Mechanics(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        registry = patch_registry.load_registry("llamacpp", _REPO / "engines" / "llamacpp" / "patches")
+        registry = patch_registry.load_registry(_REPO / "engines" / "llamacpp" / "patches")
         descriptor = registry.get("0860_allreduce_provider_cli")
-        patches = patch_registry.load_implementation("llamacpp", descriptor, root=_REPO / "engines" / "llamacpp" / "patches")
+        patches = patch_registry.load_implementation(descriptor, root=_REPO / "engines" / "llamacpp" / "patches")
         cls.cuda_patches = tuple(p for p in patches if p.path == "ggml/src/ggml-cuda/ggml-cuda.cu")
         cls.cuda_owned = tuple(p for p in patches if p.path == "ggml/src/ggml-cuda/bc-allreduce-provider-cli.cuh")
         cls.bench_patches = tuple(p for p in patches if p.path == "tools/llama-bench/llama-bench.cpp")
@@ -206,12 +206,12 @@ def _owned_lines(*texts):
 class Patch0860OwnedFiles(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        registry = patch_registry.load_registry("llamacpp", _REPO / "engines" / "llamacpp" / "patches")
-        cls.patches = tuple(patch_registry.load_implementation("llamacpp", registry.get(_ID), root=_REPO / "engines" / "llamacpp" / "patches"))
+        registry = patch_registry.load_registry(_REPO / "engines" / "llamacpp" / "patches")
+        cls.patches = tuple(patch_registry.load_implementation(registry.get(_ID), root=_REPO / "engines" / "llamacpp" / "patches"))
 
     def test_composed_shape_guards_identity_and_idempotent(self):
         with tempfile.TemporaryDirectory() as td:
-            root = production_source("llamacpp", "bigcherry", _COMPOSE_INPUTS, td, stop_before=_ID)
+            root = production_source(_COMPOSE_INPUTS, td, stop_before=_ID)
             before = {p: (root / p).read_text(encoding="utf-8") for p in _COMPOSE_INPUTS}
             for fp in self.patches:
                 if fp.create:
@@ -244,7 +244,7 @@ class Patch0860OwnedFiles(unittest.TestCase):
 
     def test_missing_owned_anchor_fails_closed(self):
         with tempfile.TemporaryDirectory() as td:
-            root = production_source("llamacpp", "bigcherry", _COMPOSE_INPUTS, td, stop_before=_ID)
+            root = production_source(_COMPOSE_INPUTS, td, stop_before=_ID)
             p = root / "common/arg.cpp"
             source = p.read_text(encoding="utf-8")
             anchor = "static bool common_params_parse_ex(int argc, char ** argv, common_params_context & ctx_arg) {"

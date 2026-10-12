@@ -28,7 +28,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from ..core import engines, paths
+from ..core import paths
 from . import registry as patch_registry
 
 SUMMARY_FILENAME = "SUMMARY.md"
@@ -152,7 +152,7 @@ def check_summary_for_patch(
     return tuple(problems)
 
 
-def check_summary_consistency(engine: str, patches_dir: Path | None = None) -> list[str]:
+def check_summary_consistency(patches_dir: Path | None = None) -> list[str]:
     """Fully mechanical drift check, no judgment involved: every patch's
     SUMMARY.md Status header must equal patch.toml's own state
     (the sole metadata authority for a packaged patch -- packaged
@@ -175,8 +175,7 @@ def check_summary_consistency(engine: str, patches_dir: Path | None = None) -> l
     earlier version loaded it here AND again via patchset.catalog(), two
     reads of the same on-disk state for one check).
     """
-    root = patches_dir or paths.patches_root(engine)
-    registry = patch_registry.load_registry(engine, root)
+    registry = patch_registry.load_registry(patches_dir or paths.PATCHES)
     return [
         problem
         for descriptor in registry.descriptors
@@ -185,7 +184,6 @@ def check_summary_consistency(engine: str, patches_dir: Path | None = None) -> l
 
 
 def resolve_patch_descriptors(
-    engine: str,
     patch_ids: "tuple[str, ...] | list[str]", *, patches_dir: Path | None = None,
 ) -> "tuple[list[patch_registry.PatchDescriptor], Path]":
     """Exact-resolve every id in ``patch_ids`` against the registry, in the
@@ -201,8 +199,7 @@ def resolve_patch_descriptors(
     catch PatchDocError itself and decide whether that's fatal for it,
     not have this module make that call by omission.
     """
-    root = patches_dir or paths.patches_root(engine)
-    registry = patch_registry.load_registry(engine, root)
+    registry = patch_registry.load_registry(patches_dir or paths.PATCHES)
     missing = [pid for pid in patch_ids if pid not in registry.by_id]
     if missing:
         raise PatchDocError(
@@ -247,7 +244,6 @@ def render_release_doc(
 
 
 def render_patch_selection_doc(
-    engine: str,
     *,
     patch_ids: "tuple[str, ...] | list[str]",
     pin_info: dict[str, str],
@@ -267,7 +263,7 @@ def render_patch_selection_doc(
     would make the abstraction worse, not better (gpt-dev-agent review,
     2026-08-31).
     """
-    descriptors, patches_root = resolve_patch_descriptors(engine, patch_ids, patches_dir=patches_dir)
+    descriptors, patches_root = resolve_patch_descriptors(patch_ids, patches_dir=patches_dir)
     return render_release_doc(
         descriptors=descriptors, patches_root=patches_root,
         pin_info=pin_info, selection_label=selection_label,
