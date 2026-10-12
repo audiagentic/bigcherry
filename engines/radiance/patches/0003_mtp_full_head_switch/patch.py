@@ -1,22 +1,21 @@
-"""Opt-in MTP draft logits from the full trunk lm_head (default off)."""
+"""Radiance 1.3.0: optionally draft MTP rounds through the trunk lm_head."""
 
 from bigcherry.patcher import Edit, FilePatch
 
 PATCH = FilePatch(
     path="arch/common/rad_block_mtp_fp8.h",
-    description="Select full head before declaring quantized draft head",
+    description="Add RAD_MTP_FULL_HEAD to bypass the quantized two-bit draft-head name map.",
     edits=(
         Edit(
-            id="full-head-switch",
-            anchor=r"^    if \(!head \|\| !lm\) return false;$",
-            mode="insert_after",
+            id="mtp-full-head-switch",
+            anchor=r"^\s*if \(!head \|\| !lm\) return false;$",
             text="""
     /* BigCherry: RAD_MTP_FULL_HEAD=1 drafts through the trunk head (int8 here) instead of the
      * 2-bit copy, trading draft-round traffic for acceptance. */
     if (const char* e = std::getenv("RAD_MTP_FULL_HEAD"); e && std::atoi(e) != 0) return false;""",
-            guard=r"if \(const char\* e = std::getenv\(\"RAD_MTP_FULL_HEAD\"\); e && std::atoi\(e\) != 0\)",
+            guard=r"RAD_MTP_FULL_HEAD",
             expect_matches=1,
-            rationale="Unique null-head guard at start of mtp_draft_head_q2",
+            rationale="The unique null-name guard is the first executable statement in mtp_draft_head_q2, before map_copy creates the draft-head alias.",
         ),
     ),
 )
