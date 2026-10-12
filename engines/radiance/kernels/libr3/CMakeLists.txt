@@ -98,9 +98,13 @@ target_link_libraries(r3_ngram_helper PRIVATE radiance::abi)
 set_target_properties(r3_ngram_helper PROPERTIES HIP_STANDARD 17 HIP_STANDARD_REQUIRED ON)
 set_property(TARGET r3_ngram_helper PROPERTY HIP_ARCHITECTURES gfx1100 gfx1201 gfx1030)
 add_dependencies(libr3 r3_ngram_helper)
+# Beside the kernels directory, not in it: the engine loads every library there as a plugin and refuses one that
+# exports no rad_plugin_abi_version.
 add_custom_command(TARGET libr3 POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:libr3>/../helpers
   COMMAND ${CMAKE_COMMAND} -E copy_if_different
-          $<TARGET_FILE:r3_ngram_helper> $<TARGET_FILE_DIR:libr3>/libr3_ngram_helper.so
+          $<TARGET_FILE:r3_ngram_helper> $<TARGET_FILE_DIR:libr3>/../helpers/libr3_ngram_helper.so
+  COMMAND ${CMAKE_COMMAND} -E rm -f $<TARGET_FILE_DIR:libr3>/libr3_ngram_helper.so
   VERBATIM)
 
 # Stubs for the entry points of the units left out, made from what the objects leave undefined.

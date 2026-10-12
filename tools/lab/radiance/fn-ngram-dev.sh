@@ -19,7 +19,7 @@ build=$work/libr3-$target-build
 cmake --build "$build" --target r3_selftest r3_ngram_test > "$out/selftest-build.log" 2>&1 || {
     echo "R3_NGRAM_BUILD_FAILED"; grep -E "error:|Error" "$out/selftest-build.log" | head -20 | cut -c1-220; exit 1;
 }
-helper=$(find "$build" -name libr3_ngram_helper.so -type f | head -1)
+helper=$(find "$build" -path "*/helpers/libr3_ngram_helper.so" -type f | head -1)
 test=$(find "$build" -name r3_ngram_test -type f | head -1)
 [ -n "$helper" ] && [ -f "$helper" ] || { echo "R3_NGRAM_NO_HELPER"; exit 1; }
 [ -n "$test" ] && [ -x "$test" ] || { echo "R3_NGRAM_NO_TEST"; exit 1; }

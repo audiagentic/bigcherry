@@ -102,7 +102,7 @@ std::string sibling_helper() {
     if (!dladdr((const void*)&r3_ngram_enabled, &di) || !di.dli_fname) return "libr3_ngram_helper.so";
     std::string p(di.dli_fname);
     const size_t s = p.rfind('/');
-    return (s == std::string::npos ? std::string() : p.substr(0, s + 1)) + "libr3_ngram_helper.so";
+    return (s == std::string::npos ? std::string() : p.substr(0, s + 1)) + "../helpers/libr3_ngram_helper.so";
 }
 
 bool open_helper(Helper* h) {
