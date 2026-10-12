@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+from collections import Counter
 import re
 import sys
 import tempfile
@@ -27,7 +28,24 @@ def _load():
 
 
 _P = _load()
-_FILES = sorted({fp.path for fp in _P.PATCHES})
+_FILES = sorted({fp.path for fp in _P.PATCHES if not fp.create})
+_CREATED = sorted({fp.path for fp in _P.PATCHES if fp.create})
+_OWNED = {
+    "ggml/src/ggml-cuda/bc-mmq-forced-j.cuh": (
+        "ggml/src/ggml-cuda/mmq.cuh",
+        '#include "bc-mmq-forced-j.cuh"  // BigCherry 0300 owned definitions\n\n',
+        "static inline bool ggml_cuda_mmq_config_is_eligible(",
+    ),
+    "ggml/src/ggml-cuda/bc-mmq-forced-j-source.cuh": (
+        "ggml/src/ggml-cuda/mmq.cu",
+        '#include "bc-mmq-forced-j-source.cuh"  // BigCherry 0300 owned definitions\n\n',
+        "bool ggml_cuda_mmq_variant_is_eligible(",
+    ),
+}
+
+
+def _lines(*texts):
+    return Counter(line.strip() for text in texts for line in text.splitlines() if line.strip())
 
 
 @unittest.skipUnless(paths.llama_root().is_dir(), "pinned vendor checkout not present")
@@ -36,18 +54,34 @@ class Patch0300Mechanics(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root = production_source(_FILES, td, stop_before=_ID)
             # no guard may already match: a guard that matches an earlier patch's output skips its edit silently
+            before = {path: (root / path).read_text(encoding="utf-8") for path in _FILES}
             for fp in _P.PATCHES:
-                before = (root / fp.path).read_text(encoding="utf-8")
+                if fp.create:
+                    self.assertFalse((root / fp.path).exists())
+                    continue
                 for edit in fp.edits:
-                    self.assertIsNone(re.search(edit.guard, before, re.M), (fp.path, edit.id))
+                    self.assertIsNone(re.search(edit.guard_pattern(), before[fp.path], re.M), (fp.path, edit.id))
             res = apply_all(_P.PATCHES, root)
             self.assertTrue(all(r.ok for r in res), [e.detail for r in res for e in r.failed])
-            texts = {fp.path: (root / fp.path).read_text(encoding="utf-8") for fp in _P.PATCHES}
+            texts = {path: (root / path).read_text(encoding="utf-8") for path in _FILES + _CREATED}
             for fp in _P.PATCHES:
                 for edit in fp.edits:
-                    self.assertIsNotNone(re.search(edit.guard, texts[fp.path], re.M), (fp.path, edit.id))
+                    self.assertIsNotNone(re.search(edit.guard_pattern(), texts[fp.path], re.M), (fp.path, edit.id))
+            self.assertEqual(set(_OWNED), set(_CREATED))
+            for path, (upstream, include, definition) in _OWNED.items():
+                self.assertIn(definition, texts[path])
+                self.assertIn(include.strip(), texts[upstream])
+                self.assertNotIn(definition, texts[upstream])
             self.assertIn("ggml_cuda_mul_mat_q(ctx, src0, src1, nullptr, dst, 0);", texts["ggml/src/ggml-cuda/ggml-cuda.cu"])
             self.assertIn("int bc_forced_J = forced_J;", texts["ggml/src/ggml-cuda/mmq.cu"])
+            self.assertIn("ggml_cuda_mul_mat_q_variant(", texts["ggml/src/ggml-cuda/bc-mmq-forced-j-source.cuh"])
+            legacy = {path: texts[path] for path in _FILES}
+            for path, (upstream, include, _) in _OWNED.items():
+                legacy[upstream] = legacy[upstream].replace(include, texts[path], 1)
+            new_lines = _lines(*(texts[p] for p in _FILES), *(texts[p] for p in _CREATED))
+            old_lines = _lines(*(legacy[p] for p in _FILES))
+            self.assertEqual(new_lines, old_lines + _lines(*(v[1] for v in _OWNED.values())))
+            self.assertEqual(sum(new_lines.values()), sum(old_lines.values()) + 2)
             # HI71: J is forced before upstream sizes the activation padding from it
             mmq = texts["ggml/src/ggml-cuda/mmq.cu"]
             self.assertLess(mmq.index("J_best = bc_forced_J;"),
@@ -60,8 +94,9 @@ class Patch0300Mechanics(unittest.TestCase):
     def test_missing_anchor_fails_closed(self):
         with tempfile.TemporaryDirectory() as td:
             root = production_source(_FILES, td, stop_before=_ID)
-            # the first file without the text its edits attach to
-            (root / _P.PATCHES[0].path).write_text("// moved upstream" + chr(10), encoding="utf-8")
+            # the first upstream file without the text its edits attach to
+            target = root / "ggml/src/ggml-cuda/mmq.cuh"
+            target.write_text("// moved upstream" + chr(10), encoding="utf-8")
             res = apply_all(_P.PATCHES, root)
             self.assertFalse(all(r.ok for r in res))
 

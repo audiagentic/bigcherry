@@ -42,6 +42,8 @@ int ggml_cuda_mmq_native_j_best(
         ggml_type type, bool fallback, int64_t ncols_opt, ggml_prec prec_src1);
 """
 
+_HELPERS_INCLUDE = '#include "bc-mmq-forced-j.cuh"  // BigCherry 0300 owned definitions\n\n'
+
 _FORCE_SELECTION = r"""
     // bigcherry (HI06): b11552 sizes src1 padding and MoE ids_dst from J_best,
     // so force the value here, before either allocation. An explicit autotune
@@ -148,6 +150,25 @@ void ggml_cuda_mul_mat_q_variant(
 }
 """
 
+_HELPERS_OWNED = FilePatch(
+    path="ggml/src/ggml-cuda/bc-mmq-forced-j.cuh",
+    description="0300: BigCherry-owned MMQ forced-J eligibility helper/declaration",
+    language="none",
+    create=True,
+    edits=(
+        Edit(
+            id="mmq-helpers-owned",
+            anchor=r"\A",
+            mode="insert_after",
+            text=_HELPERS,
+            guard=r"static inline bool ggml_cuda_mmq_config_is_eligible\(",
+            rationale="Owned include file; helper depends on mmq.cuh file-local configuration templates.",
+            expect_matches=1,
+            max_span_lines=1,
+        ),
+    ),
+)
+
 
 HEADER_PATCH = FilePatch(
     path="ggml/src/ggml-cuda/mmq.cuh",
@@ -160,8 +181,9 @@ HEADER_PATCH = FilePatch(
                    r"const mmq_args & args, cudaStream_t stream\) \{$",
             rationale="b11552 J dispatcher, after mmq_get_nbytes_shared is defined",
             mode="insert_before",
-            text=_HELPERS,
-            guard=r"static inline bool ggml_cuda_mmq_config_is_eligible\(",
+            text=_HELPERS_INCLUDE,
+            guard=r'#include "bc-mmq-forced-j\.cuh"',
+            expect_matches=1,
             max_span_lines=3,
         ),
         Edit(
@@ -177,6 +199,27 @@ HEADER_PATCH = FilePatch(
                  "        int forced_J);",
             guard=r"ggml_tensor \* dst,\n        int forced_J\);",
             max_span_lines=3,
+        ),
+    ),
+)
+
+_SOURCE_INCLUDE = '#include "bc-mmq-forced-j-source.cuh"  // BigCherry 0300 owned definitions\n\n'
+
+_SOURCE_OWNED = FilePatch(
+    path="ggml/src/ggml-cuda/bc-mmq-forced-j-source.cuh",
+    description="0300: BigCherry-owned MMQ forced-J tuner/variant definitions",
+    language="none",
+    create=True,
+    edits=(
+        Edit(
+            id="mmq-source-owned",
+            anchor=r"\A",
+            mode="insert_after",
+            text=_MMQ_SOURCE,
+            guard=r"bool ggml_cuda_mmq_variant_is_eligible\(",
+            rationale="Owned include file; definitions remain in mmq.cu to use its file-local MMQ helpers.",
+            expect_matches=1,
+            max_span_lines=1,
         ),
     ),
 )
@@ -224,8 +267,9 @@ SOURCE_PATCH = FilePatch(
                    r"int64_t ne11, int64_t n_experts\) \{$",
             rationale="function following ggml_cuda_mul_mat_q",
             mode="insert_before",
-            text=_MMQ_SOURCE,
-            guard=r"void ggml_cuda_mul_mat_q_variant\(",
+            text=_SOURCE_INCLUDE,
+            guard=r'#include "bc-mmq-forced-j-source\.cuh"',
+            expect_matches=1,
             max_span_lines=2,
         ),
     ),
@@ -315,4 +359,4 @@ AUTOTUNE_TUNER_PATCH = FilePatch(
     ),
 )
 
-PATCHES = [HEADER_PATCH, SOURCE_PATCH, CALLER_PATCH, AUTOTUNE_DISPATCH_PATCH, AUTOTUNE_TUNER_PATCH]
+PATCHES = [_HELPERS_OWNED, HEADER_PATCH, _SOURCE_OWNED, SOURCE_PATCH, CALLER_PATCH, AUTOTUNE_DISPATCH_PATCH, AUTOTUNE_TUNER_PATCH]
