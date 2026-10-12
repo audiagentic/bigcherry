@@ -268,11 +268,12 @@ def _selector(
         raise RebaseCheckError("--experiment/--focal-overlay require --source NAME")
     try:
         if all_patches:
-            return campaign_resolution.build_all_patches_identity(patchset.catalog(engine))
+            return campaign_resolution.build_all_patches_identity(engine, patchset.catalog(engine))
         if source_name is None:
             raise RebaseCheckError("patch-rebase-check: --source NAME required")
         cfg = campaign_config.load(core_paths.RECIPES)
         return campaign_resolution.resolve_canonical_selection(
+            engine,
             source_name,
             cfg,
             patchset.catalog(engine),
@@ -363,13 +364,14 @@ def _resolve_selector_snapshot(
     try:
         if all_patches:
             catalog = patchset.catalog(engine)  # the ONE load for this run
-            identity = campaign_resolution.build_all_patches_identity(catalog)
+            identity = campaign_resolution.build_all_patches_identity(engine, catalog)
         else:
             if source_name is None:
                 raise RebaseCheckError("patch-rebase-check: --source NAME required")
             cfg = campaign_config.load(core_paths.RECIPES)
             catalog = patchset.catalog(engine)  # the ONE load for this run
             identity = campaign_resolution.resolve_canonical_selection(
+                engine,
                 source_name,
                 cfg,
                 catalog,
@@ -1035,6 +1037,7 @@ def _probe_group(
     """
     try:
         selection = patchset.resolve_exact_from_catalog(
+            engine,
             group_ids,
             modules=modules_by_id,
             allow_rejected=False,
