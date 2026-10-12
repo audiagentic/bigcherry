@@ -175,7 +175,7 @@ def check_summary_consistency(engine: str, patches_dir: Path | None = None) -> l
     earlier version loaded it here AND again via patchset.catalog(), two
     reads of the same on-disk state for one check).
     """
-    root = patches_dir or engines.load(paths.REPO_ROOT, engine).patches_root(paths.REPO_ROOT)
+    root = patches_dir or paths.patches_root(engine)
     registry = patch_registry.load_registry(engine, root)
     return [
         problem
@@ -201,7 +201,7 @@ def resolve_patch_descriptors(
     catch PatchDocError itself and decide whether that's fatal for it,
     not have this module make that call by omission.
     """
-    root = patches_dir or engines.load(paths.REPO_ROOT, engine).patches_root(paths.REPO_ROOT)
+    root = patches_dir or paths.patches_root(engine)
     registry = patch_registry.load_registry(engine, root)
     missing = [pid for pid in patch_ids if pid not in registry.by_id]
     if missing:

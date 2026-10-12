@@ -2252,7 +2252,7 @@ def _load_producer_plan(args: argparse.Namespace):
     from bigcherry.patch import validation as patch_validation
     from bigcherry.patch import validation_policy as patch_validation_policy
 
-    registry = patch_registry.load_registry(bc_paths.PATCHES)
+    registry = patch_registry.load_registry("llamacpp", bc_paths.PATCHES)
     descriptor = registry.get(args.patch)
     cfg = campaign_config.load(bc_paths.RECIPES)
 

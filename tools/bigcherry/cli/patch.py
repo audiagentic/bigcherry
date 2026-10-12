@@ -480,7 +480,7 @@ def cmd_patch_verify_evidence(args: Namespace) -> int:
             file=sys.stderr,
         )
         return 2
-    statuses = patch_catalog.validation_evidence_statuses(
+    statuses = patch_catalog.validation_evidence_statuses("llamacpp", 
         [module.patch_id for module in modules],
         pinned_ref=cfg.pinned,
         resolved_base_revision=resolved_base_revision,
@@ -620,7 +620,7 @@ def cmd_patch_gates(args: Namespace) -> int:
         if args.source:
             if args.source not in cfg.sources:
                 raise ValueError(f"unknown source {args.source!r}")
-            selection = campaign_resolution.resolve_canonical_selection(
+            selection = campaign_resolution.resolve_canonical_selection("llamacpp", 
                 args.source,
                 cfg,
                 modules,
@@ -862,7 +862,7 @@ def cmd_patches(args: Namespace) -> int:
     from an external fork").
 
     RE39: reads engines/llamacpp/patches/ and engines/llamacpp/patches/catalog.toml exactly once via a single
-    CatalogSnapshot, instead of the two independent scans (patchset.describe()
+    CatalogSnapshot, instead of the two independent scans (patchset.describe("llamacpp", )
     + patch_catalog.load_catalog(engines.LLAMACPP)) this command used to make.
     """
     try:

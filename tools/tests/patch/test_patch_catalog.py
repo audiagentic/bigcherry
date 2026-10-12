@@ -43,7 +43,7 @@ class TestPatchCatalogLoads(unittest.TestCase):
 
 class TestPatchCatalogCrossCheck(unittest.TestCase):
     def test_cross_check_is_clean_on_the_real_catalog(self):
-        problems = patch_catalog.cross_check()
+        problems = patch_catalog.cross_check("llamacpp")
         self.assertEqual(problems, [])
 
     def test_cross_check_summary_switch_is_backward_compatible(self):
@@ -62,11 +62,11 @@ class TestPatchCatalogCrossCheck(unittest.TestCase):
             ) as check_summary,
         ):
             self.assertEqual(
-                patch_catalog.cross_check(verify_validation_evidence=False),
+                patch_catalog.cross_check("llamacpp", verify_validation_evidence=False),
                 ["summary problem"],
             )
             self.assertEqual(
-                patch_catalog.cross_check(
+                patch_catalog.cross_check("llamacpp", 
                     verify_validation_evidence=False,
                     check_summaries=False,
                 ),
@@ -88,7 +88,7 @@ class TestPatchCatalogCrossCheck(unittest.TestCase):
                 'state = "validated"\n',
                 encoding="utf-8",
             )
-            problems = patch_catalog.cross_check(catalog_path=catalog_path)
+            problems = patch_catalog.cross_check("llamacpp", catalog_path=catalog_path)
             self.assertTrue(any("9999_does_not_exist" in p for p in problems))
 
     def test_cross_check_detects_dangling_module(self):
@@ -101,7 +101,7 @@ class TestPatchCatalogCrossCheck(unittest.TestCase):
             )
             catalog_path = Path(tmp) / "catalog.toml"
             catalog_path.write_text("version = 1\n", encoding="utf-8")
-            problems = patch_catalog.cross_check(
+            problems = patch_catalog.cross_check("llamacpp", 
                 catalog_path=catalog_path, patches_dir=patches_dir
             )
             self.assertTrue(any("0001_untracked" in p for p in problems))
@@ -125,7 +125,7 @@ class TestPatchCatalogCrossCheck(unittest.TestCase):
                 'state = "untested"\n',
                 encoding="utf-8",
             )
-            problems = patch_catalog.cross_check(
+            problems = patch_catalog.cross_check("llamacpp", 
                 catalog_path=catalog_path, patches_dir=patches_dir
             )
             self.assertTrue(any("state" in p and "0001_module" in p for p in problems))
@@ -176,7 +176,7 @@ class TestPatchContext(unittest.TestCase):
             )
             ctx = patch_catalog.PatchContext(backend="hip")
             with self.assertRaises(ValueError):
-                patch_catalog.resolve_for_context(
+                patch_catalog.resolve_for_context("llamacpp", 
                     ["vk_only"], ctx, catalog_path=catalog_path
                 )
 
@@ -191,7 +191,7 @@ class TestPatchContext(unittest.TestCase):
             )
             for backend in ("hip", "vulkan"):
                 ctx = patch_catalog.PatchContext(backend=backend)
-                result = patch_catalog.resolve_for_context(
+                result = patch_catalog.resolve_for_context("llamacpp", 
                     ["any"], ctx, catalog_path=catalog_path
                 )
                 self.assertEqual(result, ("any",))
@@ -207,13 +207,13 @@ class TestPatchContext(unittest.TestCase):
             )
             ctx = patch_catalog.PatchContext(backend="hip", options=())
             with self.assertRaises(ValueError):
-                patch_catalog.resolve_for_context(
+                patch_catalog.resolve_for_context("llamacpp", 
                     ["needs_flag"], ctx, catalog_path=catalog_path
                 )
             ctx_ok = patch_catalog.PatchContext(
                 backend="hip", options=("GGML_HIP_AUTOTUNE",)
             )
-            result = patch_catalog.resolve_for_context(
+            result = patch_catalog.resolve_for_context("llamacpp", 
                 ["needs_flag"], ctx_ok, catalog_path=catalog_path
             )
             self.assertEqual(result, ("needs_flag",))
@@ -231,7 +231,7 @@ class TestPatchContext(unittest.TestCase):
                 backend="hip", options=("GGML_HIP_DISPATCH_REPLAY",)
             )
             with self.assertRaises(ValueError):
-                patch_catalog.resolve_for_context(
+                patch_catalog.resolve_for_context("llamacpp", 
                     ["clashes"], ctx, catalog_path=catalog_path
                 )
 
@@ -253,7 +253,7 @@ class TestPatchContext(unittest.TestCase):
             ctx = patch_catalog.PatchContext(backend="hip")
             with mock.patch.object(paths, "PATCH_CATALOG", catalog_path), \
                  mock.patch("bigcherry.patch_admission.require_admission") as mocked:
-                patch_catalog.resolve_for_context(
+                patch_catalog.resolve_for_context("llamacpp", 
                     ["any"], ctx, catalog_path=catalog_path,
                     patches_dir=catalog_path.parent,
                     resolved_base_revision="deadbeef" * 5,
@@ -370,14 +370,14 @@ class TestPackagedCatalogIntegration(unittest.TestCase):
             root = self._tree(tmp)
             context = patch_catalog.PatchContext(backend="hip")
             self.assertEqual(
-                patch_catalog.resolve_for_context(
+                patch_catalog.resolve_for_context("llamacpp", 
                     ["1204_focal"], context,
                     catalog_path=root / "catalog.toml", patches_dir=root,
                 ),
                 ("1204_focal",),
             )
             with self.assertRaisesRegex(ValueError, "backend mismatch"):
-                patch_catalog.resolve_for_context(
+                patch_catalog.resolve_for_context("llamacpp", 
                     ["1204_focal"], patch_catalog.PatchContext(backend="vulkan"),
                     catalog_path=root / "catalog.toml", patches_dir=root,
                 )
@@ -437,7 +437,7 @@ class TestPackagedCatalogIntegration(unittest.TestCase):
     def test_cross_check_exempts_packaged_patches(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = self._tree(tmp)
-            problems = patch_catalog.cross_check(
+            problems = patch_catalog.cross_check("llamacpp", 
                 catalog_path=root / "catalog.toml", patches_dir=root
             )
             self.assertEqual(problems, [])
@@ -448,7 +448,7 @@ class TestPackagedCatalogIntegration(unittest.TestCase):
             (root / "0200_rogue.py").write_text(
                 "GROUP = 'core'\nSTATE = 'untested'\nPATCHES = []\n", encoding="utf-8"
             )
-            problems = patch_catalog.cross_check(
+            problems = patch_catalog.cross_check("llamacpp", 
                 catalog_path=root / "catalog.toml", patches_dir=root
             )
             self.assertIn("patch module '0200_rogue' has no catalog entry", problems)

@@ -209,7 +209,7 @@ def patches_for_backend(engine: str, backend: str, *, catalog_path: Path | None 
 def load_catalog(engine: str, path: Path | None = None) -> dict[str, CatalogEntry]:
     """Load and validate an engine's optional legacy catalog.toml, keyed by patch ID."""
     if path is None:
-        root = engines.load(paths.REPO_ROOT, engine).patches_root(paths.REPO_ROOT)
+        root = paths.patches_root(engine)
         path = root / "catalog.toml"
     if not path.is_file():
         return {}
@@ -316,7 +316,7 @@ def validation_evidence_statuses(
     still binds its composition.
     """
     entries = load_catalog(engine, catalog_path)
-    patches_root = patches_dir or engines.load(paths.REPO_ROOT, engine).patches_root(paths.REPO_ROOT)
+    patches_root = patches_dir or paths.patches_root(engine)
     modules = {module.patch_id: module for module in patchset.catalog(engine, patches_root)}
     # RS03: packaged patches carry their required architectures in
     # patch.toml, not catalog.toml.
@@ -507,7 +507,7 @@ def cross_check(
     compatibility; repository consumers that own SUMMARY evaluation can set
     it to False to avoid duplicate diagnostics."""
     entries = load_catalog(engine, catalog_path)
-    patches_root = patches_dir or engines.load(paths.REPO_ROOT, engine).patches_root(paths.REPO_ROOT)
+    patches_root = patches_dir or paths.patches_root(engine)
     registry = patchset.patch_registry.load_registry(engine, patches_root)
     modules = {module.patch_id for module in patchset.catalog(engine, patches_root)}
     # RS03: packaged patches' metadata authority is their own patch.toml, so
@@ -587,7 +587,7 @@ class CatalogSnapshot:
     left for a follow-up pass rather than risking those paths' existing
     identity/test guarantees in this one). This phase covers the CLI
     surface that visibly double-reads today (``cmd_patches``, which called
-    ``patchset.describe()`` and ``patch_catalog.load_catalog()``
+    ``patchset.describe("llamacpp", )`` and ``patch_catalog.load_catalog()``
     separately) and gives the rest of the codebase a real, tested
     construction point to adopt incrementally.
 
@@ -666,7 +666,7 @@ def build_snapshot(
     ALSO has a catalog.toml entry is an error -- two metadata authorities
     for one patch is exactly what the packaged representation removes.
     """
-    root = patches_dir or engines.load(paths.REPO_ROOT, engine).patches_root(paths.REPO_ROOT)
+    root = patches_dir or paths.patches_root(engine)
     registry = patchset.patch_registry.load_registry(engine, root)
     modules = tuple(
         patchset._module_from_descriptor(descriptor, registry.root)

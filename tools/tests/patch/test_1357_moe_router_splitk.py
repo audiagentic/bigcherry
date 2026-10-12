@@ -37,7 +37,7 @@ class Patch1357Mechanics(unittest.TestCase):
         root = Path(td)
         for rel in (_F, _G):
             (root / rel).parent.mkdir(parents=True, exist_ok=True)
-            copy_pinned(_V / rel, root / rel)
+            copy_pinned("llamacpp", _V / rel, root / rel)
         return root
 
     def test_apply_marks_router_and_dispatches_before_mmf(self):

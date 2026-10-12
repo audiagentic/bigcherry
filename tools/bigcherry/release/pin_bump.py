@@ -717,10 +717,10 @@ def _selected_file_patches(
         root = module.catalog_root or paths.PATCHES
         registry = registries.get(root)
         if registry is None:
-            registry = patch_registry.load_registry(root)
+            registry = patch_registry.load_registry("llamacpp", root)
             registries[root] = registry
         descriptor = registry.get(module.patch_id)
-        for file_patch in patch_registry.load_implementation(descriptor, root=root):
+        for file_patch in patch_registry.load_implementation("llamacpp", descriptor, root=root):
             loaded.append((module.patch_id, file_patch))
     return loaded
 
@@ -1815,7 +1815,7 @@ def _write_release_doc_best_effort(
             "source": selector_name,
             "target": target_ref,
         }
-        doc = patch_docs.render_patch_selection_doc(
+        doc = patch_docs.render_patch_selection_doc("llamacpp", 
             patch_ids=patch_ids,
             pin_info=pin_info,
             selection_label=f"--source {selector_name}",

@@ -42,7 +42,7 @@ class ValidationEvidenceStatusesDispatchTests(unittest.TestCase):
         ) as fake_benched, mock.patch.object(
             pve, "verify_deferred_hardware_patch",
         ) as fake_deferred:
-            result = patch_catalog.validation_evidence_statuses(
+            result = patch_catalog.validation_evidence_statuses("llamacpp", 
                 ["1202_rd04_bf16_flash_attn_tile"], carry_forward=False,
             )
         fake_benched.assert_called_once()
@@ -62,7 +62,7 @@ class ValidationEvidenceStatusesDispatchTests(unittest.TestCase):
         ) as fake_deferred, mock.patch.object(
             pve, "verify_ported_benched_patch",
         ) as fake_benched:
-            result = patch_catalog.validation_evidence_statuses(
+            result = patch_catalog.validation_evidence_statuses("llamacpp", 
                 ["1217_rd44_graph_opt_default_rdna35"], carry_forward=False,
             )
         fake_deferred.assert_called_once()
@@ -72,7 +72,7 @@ class ValidationEvidenceStatusesDispatchTests(unittest.TestCase):
     def test_untested_patch_with_no_tracked_status_is_not_required(self) -> None:
         with mock.patch.object(pve, "verify_ported_benched_patch") as fake_benched, \
              mock.patch.object(pve, "verify_deferred_hardware_patch") as fake_deferred:
-            result = patch_catalog.validation_evidence_statuses(
+            result = patch_catalog.validation_evidence_statuses("llamacpp", 
                 ["1210_rd26_bitidentical_decode_verify_standalone"], carry_forward=False,
             )
         fake_benched.assert_not_called()
@@ -87,7 +87,7 @@ class ValidationEvidenceStatusesDispatchTests(unittest.TestCase):
             pve, "verify_validated_patch",
             return_value=pve.EvidenceCheck("prospective-validated"),
         ) as fake_validated:
-            result = patch_catalog.validation_evidence_statuses(
+            result = patch_catalog.validation_evidence_statuses("llamacpp", 
                 [patch_id], carry_forward=False, assume_validated=frozenset({patch_id})
             )
         fake_validated.assert_called_once()
@@ -99,7 +99,7 @@ class ValidationEvidenceStatusesDispatchTests(unittest.TestCase):
         # never the new status-obligation verifiers.
         with mock.patch.object(pve, "verify_ported_benched_patch") as fake_benched, \
              mock.patch.object(pve, "verify_deferred_hardware_patch") as fake_deferred:
-            result = patch_catalog.validation_evidence_statuses(["1200_rd19_single_gpu_meta_bypass"], carry_forward=False)
+            result = patch_catalog.validation_evidence_statuses("llamacpp", ["1200_rd19_single_gpu_meta_bypass"], carry_forward=False)
         fake_benched.assert_not_called()
         fake_deferred.assert_not_called()
         self.assertIn(result["1200_rd19_single_gpu_meta_bypass"].status, ("validated-evidence", "missing-or-stale", "legacy-grandfathered"))
@@ -116,7 +116,7 @@ class ValidationEvidenceStatusesDispatchTests(unittest.TestCase):
         ) as fake_framework, mock.patch.object(
             pve, "verify_validated_patch"
         ) as fake_runtime:
-            result = patch_catalog.validation_evidence_statuses(
+            result = patch_catalog.validation_evidence_statuses("llamacpp", 
                 ["0100_cmake_options"], carry_forward=False,
                 default_validation_architectures=("gfx1201",),
             )
@@ -144,7 +144,7 @@ class ValidationEvidenceStatusesDispatchTests(unittest.TestCase):
              mock.patch.object(pve, "verify_framework_configuration_patch", create=True,
                                return_value=pve.EvidenceCheck("framework-configuration-evidence")) as fake:
             load_registry.return_value.descriptors = [descriptor]
-            result = patch_catalog.validation_evidence_statuses(
+            result = patch_catalog.validation_evidence_statuses("llamacpp", 
                 ["framework-test"], carry_forward=False, default_validation_architectures=("gfx1201", "gfx1030")
             )
         self.assertEqual(result["framework-test"].status, "framework-configuration-evidence")

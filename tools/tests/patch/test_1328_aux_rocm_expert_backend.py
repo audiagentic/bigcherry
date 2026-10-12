@@ -64,7 +64,7 @@ class Patch1328Mechanics(unittest.TestCase):
         for rel in _RELS:
             dst = root / rel
             dst.parent.mkdir(parents=True, exist_ok=True)
-            copy_pinned(paths.llama_root() / rel, dst)
+            copy_pinned("llamacpp", paths.llama_root() / rel, dst)
         return root
 
     def test_apply_and_idempotent(self):

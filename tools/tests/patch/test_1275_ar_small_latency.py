@@ -35,8 +35,8 @@ class Patch1275Mechanics(unittest.TestCase):
         root = Path(td.name)
         cuda = root / "ggml/src/ggml-cuda"
         cuda.mkdir(parents=True)
-        copy_pinned(_VENDOR / "allreduce.cu", cuda / "allreduce.cu")
-        copy_pinned(_VENDOR / "allreduce.cuh", cuda / "allreduce.cuh")
+        copy_pinned("llamacpp", _VENDOR / "allreduce.cu", cuda / "allreduce.cu")
+        copy_pinned("llamacpp", _VENDOR / "allreduce.cuh", cuda / "allreduce.cuh")
         return td, root, cuda / "allreduce.cu"
 
     def test_apply_switches_marker_geometry_and_idempotent(self):
@@ -123,7 +123,7 @@ class Compose1272Tests(unittest.TestCase):
             cuda = root / "ggml/src/ggml-cuda"
             cuda.mkdir(parents=True)
             for name in ("allreduce.cu", "allreduce.cuh"):
-                copy_pinned(_VENDOR / name, cuda / name)
+                copy_pinned("llamacpp", _VENDOR / name, cuda / name)
             stack = ("1272_ar_host_compressed_wire", "1275_ar_small_latency")
             for name in stack:
                 patches = [p for p in load(name).PATCHES if Path(p.path).name == "allreduce.cu"]

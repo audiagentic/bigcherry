@@ -1274,7 +1274,7 @@ def _live_identity_for(
     from ..campaign import resolution as campaign_resolution  # noqa: PLC0415
 
     if reported.selector_kind == campaign_resolution.SELECTOR_KIND_ALL_PATCHES:
-        return campaign_resolution.build_all_patches_identity(patchset.catalog(engine))
+        return campaign_resolution.build_all_patches_identity(engine, patchset.catalog(engine))
     if reported.source_name is None:
         raise RebaseCheckError(
             "schema-2 selector identity names no source for a source-bounded kind"
@@ -1286,7 +1286,7 @@ def _live_identity_for(
             experiment=reported.selector_name.removeprefix("experiment:"),
         )
     if reported.selector_kind == campaign_resolution.SELECTOR_KIND_FOCAL_OVERLAY:
-        return _selector(
+        return _selector("llamacpp", 
             source_name=reported.source_name,
             focal_overlay_patch_id=reported.selector_name.removeprefix("focal:"),
         )

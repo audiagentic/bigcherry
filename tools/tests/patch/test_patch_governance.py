@@ -127,7 +127,7 @@ backends = ["not-a-real-backend"]
     def test_cross_check_still_clean_with_new_optional_fields(self):
         # The real catalog doesn't use the new fields yet, but cross_check's
         # 1:1 coverage proof must still hold with the extended schema.
-        problems = patch_catalog.cross_check()
+        problems = patch_catalog.cross_check("llamacpp")
         self.assertEqual(problems, [])
 
 

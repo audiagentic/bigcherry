@@ -161,7 +161,7 @@ def describe(engine: str, directory: Path | None = None) -> list[PatchInfo]:
     a raw malformed lifecycle state (state_valid=False) instead of raising.
     Strict resolution/build paths still fail closed via load_registry.
     """
-    root = (directory or engines.load(paths.REPO_ROOT, engine).patches_root(paths.REPO_ROOT)).resolve()
+    root = (directory or paths.patches_root(engine)).resolve()
     descriptors = patch_registry.describe_all(engine, root)
     return [
         PatchInfo(
@@ -204,7 +204,7 @@ def catalog(engine: str, directory: Path | None = None) -> list[PatchModule]:
     and duplicate rejection). Packaged patches simply appear as extra entries
     once they exist.
     """
-    root = directory or engines.load(paths.REPO_ROOT, engine).patches_root(paths.REPO_ROOT)
+    root = directory or paths.patches_root(engine)
     registry = patch_registry.load_registry(engine, root)
     return [
         _module_from_descriptor(descriptor, registry.root)
@@ -533,7 +533,7 @@ def load_patches(
         directory: path to patches directory (default: paths.PATCHES)
         states: if given, only load patches in these states (None = all states)
     """
-    directory = directory or engines.load(paths.REPO_ROOT, engine).patches_root(paths.REPO_ROOT)
+    directory = directory or paths.patches_root(engine)
     # RS04: discovery AND loading go through the registry (root-level simple
     # + patch.toml packaged; byte-compile, no importlib). For today's flat
     # tree the filter and load behavior is exactly the old one.

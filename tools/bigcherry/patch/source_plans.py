@@ -64,7 +64,7 @@ def _ordered(registry: patch_registry.PatchRegistry, ids: set[str]) -> tuple[str
     """Topological order of a derived (possibly dependency-INCOMPLETE) set --
     used for the focal's prerequisites. A global (order, patch_id) sort is the
     RV80/B4 bug (numbering != REQUIRES), so use the true topological picker."""
-    return patchset.topological_order(sorted(ids), modules=_modules_by_id(registry))
+    return patchset.topological_order(registry.engine, sorted(ids), modules=_modules_by_id(registry))
 
 
 def _resolve_ordered(registry: patch_registry.PatchRegistry, ids: set[str]) -> tuple[str, ...]:
@@ -94,7 +94,7 @@ def build_focal_comparison(
     if registry is None:
         from ..core import engines, paths
 
-        resolved_root = root or engines.load(paths.REPO_ROOT, engine).patches_root(paths.REPO_ROOT)
+        resolved_root = root or paths.patches_root(engine)
         registry = patch_registry.load_registry(engine, resolved_root)
     try:
         focal_descriptor = registry.get(focal)

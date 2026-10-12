@@ -13,7 +13,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from bigcherry.core import paths
+from bigcherry.core import engines, paths
 
 PROFILE_DIR_NAME = "profile"
 _NAME = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
@@ -140,7 +140,7 @@ def documented_flags(engine: str, patches_root: Path | None = None) -> set[str]:
     """Every runtime flag name documented by some packaged patch's ENV_DOCS (plus BIGCHERRY_FEATURES)."""
     from bigcherry.patch import registry
 
-    root = patches_root or engines.load(paths.REPO_ROOT, engine).patches_root(paths.REPO_ROOT)
+    root = patches_root or paths.patches_root(engine)
     reg = registry.load_registry(engine, root)
     names = {"BIGCHERRY_FEATURES"}
     for desc in reg.descriptors:

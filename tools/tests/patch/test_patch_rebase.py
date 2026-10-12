@@ -139,14 +139,14 @@ class RebaseCheckTests(unittest.TestCase):
         self.overlay_root = self.base / "overlay"
         self.overlay_root.mkdir()
 
-        self._old_patches = paths.PATCHES
+        self._old_patches_root = paths.patches_root
         self._old_overlay = paths.SRC_OVERLAY
-        paths.PATCHES = self.patches_root
+        paths.patches_root = lambda engine: self.patches_root
         paths.SRC_OVERLAY = self.overlay_root
 
     def tearDown(self) -> None:
         _git(self.upstream, "worktree", "prune")
-        paths.PATCHES = self._old_patches
+        paths.patches_root = self._old_patches_root
         paths.SRC_OVERLAY = self._old_overlay
 
     def _patch_by_id(self, report: dict, patch_id: str) -> dict:
@@ -248,14 +248,14 @@ class ConflictPartitionedAllPatchesTests(unittest.TestCase):
         self.overlay_root = self.base / "overlay"
         self.overlay_root.mkdir()
 
-        self._old_patches = paths.PATCHES
+        self._old_patches_root = paths.patches_root
         self._old_overlay = paths.SRC_OVERLAY
-        paths.PATCHES = self.patches_root
+        paths.patches_root = lambda engine: self.patches_root
         paths.SRC_OVERLAY = self.overlay_root
 
     def tearDown(self) -> None:
         _git(self.upstream, "worktree", "prune")
-        paths.PATCHES = self._old_patches
+        paths.patches_root = self._old_patches_root
         paths.SRC_OVERLAY = self._old_overlay
 
     def test_all_patches_does_not_crash_on_conflicting_alternatives(self):
@@ -327,14 +327,14 @@ class QuarantineFixedPointTests(unittest.TestCase):
         self.overlay_root = self.base / "overlay"
         self.overlay_root.mkdir()
 
-        self._old_patches = paths.PATCHES
+        self._old_patches_root = paths.patches_root
         self._old_overlay = paths.SRC_OVERLAY
-        paths.PATCHES = self.patches_root
+        paths.patches_root = lambda engine: self.patches_root
         paths.SRC_OVERLAY = self.overlay_root
 
     def tearDown(self) -> None:
         _git(self.upstream, "worktree", "prune")
-        paths.PATCHES = self._old_patches
+        paths.patches_root = self._old_patches_root
         paths.SRC_OVERLAY = self._old_overlay
 
     def test_undeclared_dependency_is_quarantined_not_failed(self):
@@ -365,16 +365,16 @@ class StaleReportTests(unittest.TestCase):
         self.overlay_root = self.base / "overlay"
         self.overlay_root.mkdir()
 
-        self._old_patches = paths.PATCHES
+        self._old_patches_root = paths.patches_root
         self._old_overlay = paths.SRC_OVERLAY
-        paths.PATCHES = self.patches_root
+        paths.patches_root = lambda engine: self.patches_root
         paths.SRC_OVERLAY = self.overlay_root
 
         self.report = rebase.run_rebase_check("llamacpp", self.upstream, all_patches=True)
 
     def tearDown(self) -> None:
         _git(self.upstream, "worktree", "prune")
-        paths.PATCHES = self._old_patches
+        paths.patches_root = self._old_patches_root
         paths.SRC_OVERLAY = self._old_overlay
 
     def test_fresh_report_passes(self):
@@ -456,7 +456,7 @@ class StaleReportTests(unittest.TestCase):
     def _source_identity(self, *, patch_set_id: str, source_ref: str) -> object:
         from bigcherry.campaign import resolution as campaign_resolution
 
-        return campaign_resolution.SelectorIdentity(
+        return campaign_resolution.SelectorIdentity(engine="llamacpp", 
             selector_kind=campaign_resolution.SELECTOR_KIND_SOURCE,
             selector_name="bigcherry",
             source_name="bigcherry",
@@ -529,7 +529,7 @@ class StaleReportTests(unittest.TestCase):
         reported = campaign_resolution.SelectorIdentity.from_payload(
             self.report["selector"]
         )
-        reordered = campaign_resolution.SelectorIdentity(
+        reordered = campaign_resolution.SelectorIdentity(engine="llamacpp", 
             selector_kind=reported.selector_kind,
             selector_name=reported.selector_name,
             source_name=reported.source_name,
@@ -553,7 +553,7 @@ class StaleReportTests(unittest.TestCase):
         )
         hashes = list(reported.module_hashes)
         hashes[0] = (hashes[0][0], "0" * 64)
-        drifted = campaign_resolution.SelectorIdentity(
+        drifted = campaign_resolution.SelectorIdentity(engine="llamacpp", 
             selector_kind=reported.selector_kind,
             selector_name=reported.selector_name,
             source_name=reported.source_name,
@@ -585,7 +585,7 @@ class StaleReportTests(unittest.TestCase):
         actual = campaign_resolution.SelectorIdentity.from_payload(
             self.report["selector"]
         )
-        other = campaign_resolution.SelectorIdentity(
+        other = campaign_resolution.SelectorIdentity(engine="llamacpp", 
             selector_kind=campaign_resolution.SELECTOR_KIND_SOURCE,
             selector_name="bigcherry",
             source_name="bigcherry",
@@ -743,14 +743,14 @@ class ApplyKnownGoodTests(unittest.TestCase):
         self.overlay_root = self.base / "overlay"
         self.overlay_root.mkdir()
 
-        self._old_patches = paths.PATCHES
+        self._old_patches_root = paths.patches_root
         self._old_overlay = paths.SRC_OVERLAY
-        paths.PATCHES = self.patches_root
+        paths.patches_root = lambda engine: self.patches_root
         paths.SRC_OVERLAY = self.overlay_root
 
     def tearDown(self) -> None:
         _git(self.upstream, "worktree", "prune")
-        paths.PATCHES = self._old_patches
+        paths.patches_root = self._old_patches_root
         paths.SRC_OVERLAY = self._old_overlay
 
     def _fake_record(self, *, stage: str = "audited"):
