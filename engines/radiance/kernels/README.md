@@ -964,7 +964,15 @@ mechanism Strata (Niko1221/Strata) uses for long prefill, there with a deeper ri
 Not yet usable: `fnsu3` hung after its bench on card 0 - a copy kernel (`aql_copy_link`) stopped advancing, the kernel
 log shows `sq_intr` errors on 0000:03:00.0, and the server had to be killed. The stager-off runs also logged 5 s
 synchronisation waits (three in `fnsu4`) but completed, so the hang is not yet tied to the stager alone.
-Next: the hang; then a deeper stager and larger prefill steps (`--max-num-batched-tokens 8192`), which raise the
+The hang is a teardown-order bug in the engine, not the stager's copies as such (diagnosis: Ctx::shutdown() drains
+the compute streams and frees the activation arena, while the mover's transfer queue is drained only later in
+Mover::~Mover; a queued promotion into an arena-lent slot or a stager copy into the arena top then writes freed memory
+- sq_intr type 2 is MEMVIOL on gfx11 - and rank 0, the first to shut down, wedges). Without our n-gram helper it
+still hung in 2 of 3 runs (`fnh1`-`fnh3`), so the helper is not involved. Engine patch
+`engines/radiance/engine-patches/0001-drain-mover-before-arena-free.patch` (built beside the pinned engine by
+`tools/lab/radiance/engine-patched-build.sh`) drains each rank's mover before its arena is freed: 3 of 3 runs exit
+cleanly (`fnp1`-`fnp3`), no hang. It changes nothing a step computes.
+Next: a deeper stager and larger prefill steps (`--max-num-batched-tokens 8192`), which raise the
 tokens served per byte of cold experts moved.
 
 ## Other engines on the RX 7900 XTX (looked up 2026-10-10)
