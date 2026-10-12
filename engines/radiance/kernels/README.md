@@ -996,6 +996,18 @@ tokens, so a 2.6K step is staged too.
 So 4096-token chunks (`--max-num-batched-tokens 4096 --checkpoint-interval 4096`) are the setting: about 1,250 to
 1,320 tok/s at both lengths, against llama.cpp's 1,012 (3.2K) and 1,469 (6.2K) on three cards. The two native kernels
 add 6% decode (32.3 to 34.3); their served quality on Flash-Next is not yet checked (the KL tooling covers the 27B).
+Quality on Flash-Next (`tools/lab/radiance/fn-kld.sh`, run `fnk1`; reference: the same two-XTX engine with every
+native form off, the table on disk and the exact wire; 42,761 positions):
+
+| arm | KLD mean | top-1 | PPL (ref 10.106) |
+|---|---|---|---|
+| n-gram rows from the R9700 helper, exact wire | 0.000000 | 100.000% | 10.106 |
+| + `--tp-wire wht6` | 0.0746 | 87.18% | 10.436 (+3.3%) |
+| + native attention, MoE and HC forms | 0.0751 | 87.52% | 10.451 (+3.4%) |
+
+The n-gram helper is exact and the native forms add nothing measurable, but the lossy wire is not acceptable on
+Flash-Next: twenty times its divergence on the 27B (0.0008 over exact there), one top-1 token in eight changed. Every
+Flash-Next speed figure above used wht6; the exact wire is to be measured, and is the default for this model.
 Next: a deeper stager and larger prefill steps (`--max-num-batched-tokens 8192`), which raise the
 tokens served per byte of cold experts moved.
 
