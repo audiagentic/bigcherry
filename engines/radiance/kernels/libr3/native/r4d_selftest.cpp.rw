@@ -558,3 +558,36 @@ static void ar_two_rank(const Plugin& pl, const std::vector<int>& devs, const ch
     if (sel("ar_rmsnorm_quant_fp8"))
         skip("ar_rmsnorm_quant_fp8", "R3_AR_PIPE targets the no-P2P host row");
 @@ end
+
+# Served Qwen prefill is not the stock row: fp16 SSM state, 48/16 value/key heads, and >1 chunk.
+# The old N=2,T=128 row is exactly one 64-token chunk per sequence and therefore never consumes a
+# state produced by the scan. Exercise the next chunk and the fp16 state path.
+@@ find 1
+                std::vector<RadParam> ps = {
+                    PI("M", T_), PI("head_k", K), PI("head_v", V), PI("chunk", chunk),
+                    PF("scale", 0.088388),
+                };
+                run_case(r, ts, ps);
+@@ replace
+                std::vector<RadParam> ps = {
+                    PI("M", T_), PI("head_k", K), PI("head_v", V), PI("chunk", chunk),
+                    PF("scale", 0.088388),
+                };
+                run_case(r, ts, ps);
+                {
+                    const int64_t Ts = 200, Hs = 48, Hgs = 16, Ns = 1;
+                    std::vector<RadTensor> t2 = {
+                        T(nullptr, RAD_BF16, { Ts, Hgs, K }), T(nullptr, RAD_BF16, { Ts, Hgs, K }),
+                        T(nullptr, RAD_BF16, { Ts, Hs, V }),  T(nullptr, RAD_BF16, { Ts, Hs, chunk }),
+                        T(nullptr, RAD_F32,  { Ts, Hs }),     T(nullptr, RAD_F32,  { Ts, Hs }),
+                        T(nullptr, RAD_F16,  { Ns, Hs, V, K }), TI32({ Ns + 1 }, cu_even(Ns, Ts)),
+                        T(nullptr, RAD_BF16, { Ts, Hs, V }),  T(nullptr, RAD_F16, { Ns, Hs, V, K }),
+                        TI32({ Ns }, iota_i32(Ns)),
+                    };
+                    std::vector<RadParam> p2 = {
+                        PI("M", Ts), PI("head_k", K), PI("head_v", V), PI("chunk", chunk),
+                        PF("scale", 0.088388), PI("state_fp16", 1),
+                    };
+                    run_case(r, t2, p2);
+                }
+@@ end

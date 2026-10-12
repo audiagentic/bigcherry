@@ -5,7 +5,8 @@
 // accumulators stay in gfx11 layout across each contraction loop, and are converted only where
 // scalar code or the persistent state/output layout needs gfx12 ordering. This removes the
 // compatibility layer's two operand lane exchanges plus accumulator exchange from every WMMA.
-// R3_GDN_NATIVE=1 selects the native instantiation (off: served output is wrong with it, runs kq0 and kqg2).
+// R3_GDN_NATIVE=1 selects the native instantiation. The recurrent state update stays on the compatibility WMMA:
+// its K^T contraction owns the state carried into the next chunk. Keep default off until served-model KL passes.
 //
 @@ find 1
 #include <hip/hip_runtime.h>
@@ -492,113 +493,6 @@ __global__ __launch_bounds__(NTHR) void r4d_gdn_chunk_scan_kernel(
       if constexpr (R3N) {
 #pragma unroll
         for (int i = 0; i < NTV; ++i) O[i] = r3_acc_native_to_gfx12(O[i]);
-      }
-@@ end
-
-@@ find 1
-      for (int e = 0; e < 8; ++e) St[t][e] *= ec;
-#if LDSO2
-@@ replace
-      for (int e = 0; e < 8; ++e) St[t][e] *= ec;
-    if constexpr (R3N) {
-#pragma unroll
-      for (int t = 0; t < NST; ++t) St[t] = r3_acc_gfx12_to_native(St[t]);
-    }
-#if LDSO2
-@@ end
-
-@@ find 1
-#define pvnf(j, ko) fragO(sbase, ovn[j] + (ko) * 2u)
-#else
-@@ replace
-#define pvnf(j, ko) fragO(sbase, ovn[j] + (ko) * 2u)
-#define pvnN(j, ko) r3_gdn_fragO_native(sbase, ovn[j] + (ko) * 2u, lane)
-#else
-@@ end
-
-@@ find 1
-#define pvnf(j, ko) fragP(pvn[j] + (ko))
-#endif
-#pragma unroll
-      for (int sk = 0; sk < BT / 16; ++sk) {
-        v8bf bv[SVT];
-#pragma unroll
-        for (int j = 0; j < SVT; ++j) bv[j] = pvnf(j, sk * 16);
-#pragma unroll
-        for (int ki = 0; ki < SKT; ++ki) {
-#if ABL == 7
-          v8bf ak = fragP(rowP(&s.k[0][0], KP, (kt0 + ki) * 16, lane) + sk * 16);
-#else
-          v8bf ak = fragT(&s.k[0][0], KP, (kt0 + ki) * 16, sk * 16, lane);  // K^T: m = k-dim
-#endif
-#if ABL != 1
-#pragma unroll
-          for (int j = 0; j < SVT; ++j)
-            St[ki * SVT + j] = mma(ak, bv[j], St[ki * SVT + j]);
-#else
-          (void)ak;
-#endif
-        }
-#if ABL == 1
-#pragma unroll
-        for (int j = 0; j < SVT; ++j) (void)bv[j];
-#endif
-      }
-@@ replace
-#define pvnf(j, ko) fragP(pvn[j] + (ko))
-#define pvnN(j, ko) r3_gdn_fragP_native(pvn[j] + (ko), lane)
-#endif
-#pragma unroll
-      for (int sk = 0; sk < BT / 16; ++sk) {
-        if constexpr (R3N) {
-          r3_v16bf bv[SVT];
-#pragma unroll
-          for (int j = 0; j < SVT; ++j) bv[j] = pvnN(j, sk * 16);
-#pragma unroll
-          for (int ki = 0; ki < SKT; ++ki) {
-#if ABL == 7
-            const unsigned short* kp = rowP(&s.k[0][0], KP, (kt0 + ki) * 16, lane) + sk * 16;
-            const r3_v16bf ak = r3_gdn_fragP_native(kp, lane);
-#else
-            const r3_v16bf ak = r3_gdn_fragT_native(
-                &s.k[0][0], KP, (kt0 + ki) * 16, sk * 16, lane);
-#endif
-#if ABL != 1
-#pragma unroll
-            for (int j = 0; j < SVT; ++j)
-              St[ki * SVT + j] = r3_wmma_bf16_native(ak, bv[j], St[ki * SVT + j]);
-#else
-            (void)ak;
-#endif
-          }
-        } else {
-          v8bf bv[SVT];
-#pragma unroll
-          for (int j = 0; j < SVT; ++j) bv[j] = pvnf(j, sk * 16);
-#pragma unroll
-          for (int ki = 0; ki < SKT; ++ki) {
-#if ABL == 7
-            v8bf ak = fragP(rowP(&s.k[0][0], KP, (kt0 + ki) * 16, lane) + sk * 16);
-#else
-            v8bf ak = fragT(&s.k[0][0], KP, (kt0 + ki) * 16, sk * 16, lane);
-#endif
-#if ABL != 1
-#pragma unroll
-            for (int j = 0; j < SVT; ++j)
-              St[ki * SVT + j] = mma(ak, bv[j], St[ki * SVT + j]);
-#else
-            (void)ak;
-#endif
-          }
-#if ABL == 1
-#pragma unroll
-          for (int j = 0; j < SVT; ++j) (void)bv[j];
-#endif
-        }
-      }
-      if constexpr (R3N) {
-#pragma unroll
-        for (int t = 0; t < NST; ++t) St[t] = r3_acc_native_to_gfx12(St[t]);
       }
 @@ end
 
