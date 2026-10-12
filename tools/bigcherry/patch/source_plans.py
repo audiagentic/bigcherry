@@ -92,9 +92,10 @@ def build_focal_comparison(
     (``patchset.expand_composition``), fail-closed.
     """
     if registry is None:
-        from ..core import paths
+        from ..core import engines, paths
 
-        registry = patch_registry.load_registry(engine, root)
+        resolved_root = root or engines.load(paths.REPO_ROOT, engine).patches_root(paths.REPO_ROOT)
+        registry = patch_registry.load_registry(engine, resolved_root)
     try:
         focal_descriptor = registry.get(focal)
     except patch_registry.PatchRegistryError as exc:
