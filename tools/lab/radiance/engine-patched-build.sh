@@ -10,6 +10,7 @@ pin=$(git -C "$src" rev-parse HEAD)
 if [ ! -d "$out/.git" ] && [ ! -f "$out/.git" ]; then git -C "$src" worktree add --detach "$out" "$pin" > /dev/null; fi
 git -C "$out" checkout -q --detach "$pin"
 git -C "$out" reset -q --hard "$pin"
+git -C "$out" clean -fdq   # files a patch created last time
 for p in engines/radiance/engine-patches/*.patch; do
     git -C "$out" apply --recount "$PWD/$p" || { echo "ENGINE_PATCH_STOP $(basename "$p") does not apply"; exit 1; }
     echo "applied $(basename "$p")"
