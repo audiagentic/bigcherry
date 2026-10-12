@@ -1,4 +1,4 @@
-"""Discovery and loading of the patch set in ``engines/llamacpp/patches/``.
+"""Discovery and loading of the patch set in an engine-owned patch root.
 
 Patch modules live at the repository root rather than inside the tool because
 they are the part a reviewer actually reads: what we change in upstream, and
@@ -31,7 +31,7 @@ from pathlib import Path
 from types import ModuleType
 
 from . import registry as patch_registry
-from ..core import paths
+from ..core import engines, paths
 from .apply import FilePatch
 
 STATES: tuple[str, ...] = patch_registry.STATES
@@ -80,6 +80,7 @@ def module_upstream(path: Path) -> str | None:
 class PatchInfo:
     """Metadata about a single patch module."""
 
+    engine: str
     name: str
     path: Path
     state: str
@@ -94,6 +95,7 @@ class PatchInfo:
 class PatchModule:
     """Canonical, content-identified patch module metadata."""
 
+    engine: str
     patch_id: str
     path: Path
     order: int
@@ -148,7 +150,7 @@ def discover_modules(root: Path) -> list[Path]:
     return sorted(found)
 
 
-def describe(directory=None) -> list[PatchInfo]:
+def describe(engine: str, directory: Path | None = None) -> list[PatchInfo]:
     """Describe every patch (name, state, upstream) without importing.
 
     RS02: backed by the registry, so packaged patches describe the same way
@@ -159,11 +161,11 @@ def describe(directory=None) -> list[PatchInfo]:
     a raw malformed lifecycle state (state_valid=False) instead of raising.
     Strict resolution/build paths still fail closed via load_registry.
     """
-    directory = directory or paths.PATCHES
-    root = directory.resolve()
-    descriptors = patch_registry.describe_all(directory)
+    root = (directory or engines.load(paths.REPO_ROOT, engine).patches_root(paths.REPO_ROOT)).resolve()
+    descriptors = patch_registry.describe_all(engine, root)
     return [
         PatchInfo(
+            engine=descriptor.engine,
             name=descriptor.patch_id,
             path=root / descriptor.implementation_path,
             state=descriptor.state,
@@ -177,6 +179,7 @@ def _module_from_descriptor(descriptor, root: Path) -> PatchModule:
     """Compatibility mapping registry descriptor -> legacy PatchModule shape."""
     path = root / descriptor.implementation_path
     return PatchModule(
+        engine=descriptor.engine,
         patch_id=descriptor.patch_id,
         path=path,
         order=descriptor.order,
@@ -191,7 +194,7 @@ def _module_from_descriptor(descriptor, root: Path) -> PatchModule:
     )
 
 
-def catalog(directory=None) -> list[PatchModule]:
+def catalog(engine: str, directory: Path | None = None) -> list[PatchModule]:
     """Return every patch (flat or packaged) as a canonical, hashed module
     descriptor.
 
@@ -201,8 +204,8 @@ def catalog(directory=None) -> list[PatchModule]:
     and duplicate rejection). Packaged patches simply appear as extra entries
     once they exist.
     """
-    directory = directory or paths.PATCHES
-    registry = patch_registry.load_registry(directory)
+    root = directory or engines.load(paths.REPO_ROOT, engine).patches_root(paths.REPO_ROOT)
+    registry = patch_registry.load_registry(engine, root)
     return [
         _module_from_descriptor(descriptor, registry.root)
         for descriptor in registry.descriptors
@@ -248,6 +251,7 @@ def topological_order(
 
 
 def resolve_exact(
+    engine: str,
     patch_ids: tuple[str, ...] | list[str],
     *,
     directory: Path | None = None,
@@ -264,7 +268,7 @@ def resolve_exact(
     exact modules instead of re-reading the registry mid-run, which would
     otherwise admit a concurrent REQUIRES/CONFLICTS metadata edit between
     identity resolution and probing.)"""
-    modules = {module.patch_id: module for module in catalog(directory)}
+    modules = {module.patch_id: module for module in catalog(engine, directory)}
     return resolve_exact_from_catalog(
         patch_ids,
         modules=modules,
@@ -360,6 +364,7 @@ class CompositionExpansion:
 
 
 def expand_composition(
+    engine: str,
     patch_ids: tuple[str, ...] | list[str],
     *,
     directory: Path | None = None,
@@ -373,7 +378,7 @@ def expand_composition(
     modules instead of re-reading the registry, which would otherwise admit
     a concurrent REQUIRES edit between identity resolution and closure
     expansion.)"""
-    modules = {module.patch_id: module for module in catalog(directory)}
+    modules = {module.patch_id: module for module in catalog(engine, directory)}
     return expand_composition_from_modules(patch_ids, modules=modules)
 
 
@@ -438,7 +443,7 @@ def expand_composition_from_modules(
     return CompositionExpansion(requested=requested, expanded=expanded)
 
 
-def load_resolved(selection: ResolvedPatchSet) -> list[FilePatch]:
+def load_resolved(engine: str, selection: ResolvedPatchSet) -> list[FilePatch]:
     """Load only the already-resolved canonical modules, in catalog order.
 
     RS04: loading goes through ``patch_registry.load_implementation``
@@ -447,13 +452,17 @@ def load_resolved(selection: ResolvedPatchSet) -> list[FilePatch]:
     patches: list[FilePatch] = []
     registries: dict[Path, patch_registry.PatchRegistry] = {}
     for module in selection.modules:
-        root = module.catalog_root or paths.PATCHES
+        if module.engine != engine:
+            raise ValueError(f"patch {module.patch_id!r} belongs to engine {module.engine!r}, not {engine!r}")
+        if module.catalog_root is None:
+            raise ValueError(f"patch {module.patch_id!r} has no catalog root")
+        root = module.catalog_root
         registry = registries.get(root)
         if registry is None:
-            registry = patch_registry.load_registry(root)
+            registry = patch_registry.load_registry(engine, root)
             registries[root] = registry
         descriptor = registry.get(module.patch_id)
-        patches.extend(patch_registry.load_implementation(descriptor, root=root))
+        patches.extend(patch_registry.load_implementation(engine, descriptor, root=root))
     return patches
 
 
@@ -490,6 +499,7 @@ def parse_filter(arg: str | None) -> frozenset[str] | None:
 
 
 def load_patches(
+    engine: str,
     directory: Path | None = None,
     *,
     states: frozenset[str] | None = None,
@@ -504,16 +514,16 @@ def load_patches(
         directory: path to patches directory (default: paths.PATCHES)
         states: if given, only load patches in these states (None = all states)
     """
-    directory = directory or paths.PATCHES
+    directory = directory or engines.load(paths.REPO_ROOT, engine).patches_root(paths.REPO_ROOT)
     # RS04: discovery AND loading go through the registry (root-level simple
     # + patch.toml packaged; byte-compile, no importlib). For today's flat
     # tree the filter and load behavior is exactly the old one.
-    registry = patch_registry.load_registry(directory)
+    registry = patch_registry.load_registry(engine, directory)
     patches: list[FilePatch] = []
     for descriptor in registry.descriptors:
         if states is not None and descriptor.state not in states:
             continue
         patches.extend(
-            patch_registry.load_implementation(descriptor, root=registry.root)
+            patch_registry.load_implementation(engine, descriptor, root=registry.root)
         )
     return patches
