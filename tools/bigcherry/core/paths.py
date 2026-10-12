@@ -21,6 +21,12 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 LLAMACPP = engines.load(REPO_ROOT, engines.LLAMACPP)
 SRC_OVERLAY = LLAMACPP.overlay_root(REPO_ROOT)
 PATCHES = LLAMACPP.patches_root(REPO_ROOT)
+
+
+def patches_root(engine: str) -> Path:
+    """The patch-package tree of ``engine`` (its engine.toml layout). The one place a patch root is resolved, so a
+    test redirects every engine's tree by replacing this function."""
+    return engines.load(REPO_ROOT, engine).patches_root(REPO_ROOT)
 PATCH_CATALOG = PATCHES / "catalog.toml"
 # VA02: a reviewed, one-time structural-grandfather baseline for the
 # RD-patch validation-package standard (docs/reference/testing/

@@ -274,7 +274,7 @@ class VerifyValidatedPatchTests(unittest.TestCase):
         self._tmp.cleanup()
 
     def _module(self, *, state="validated", content_hash="deadbeef" * 8):
-        return patchset.PatchModule(
+        return patchset.PatchModule(engine="llamacpp", 
             patch_id="9999_example", path=self.patch_path, order=0, state=state,
             upstream=None, content_hash=content_hash,
         )

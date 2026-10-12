@@ -411,7 +411,7 @@ def patch_implementation_digest(patch_name: str) -> str:
     edit semantics start changing in ways that matter; note the tradeoff
     rather than silently picking one side of it.
     """
-    registry = _patch_registry().load_registry(PATCHES_ROOT)
+    registry = _patch_registry().load_registry("llamacpp", PATCHES_ROOT)
     try:
         descriptor = registry.get(patch_name)
     except Exception as exc:
@@ -712,7 +712,7 @@ def _apply_composition(
     applied under the OLD identity. When supplied, the recomputed
     ``overlay_digest()`` must match exactly, or this raises.
     """
-    registry = _patch_registry().load_registry(root or PATCHES_ROOT)
+    registry = _patch_registry().load_registry("llamacpp", root or PATCHES_ROOT)
     from bigcherry import patcher  # noqa: E402
 
     if overlay_root is not None:
@@ -763,7 +763,7 @@ def _apply_composition(
                 f"patch {patch_id} implementation changed between identity "
                 f"computation and application: {actual_digest} != {expected_digest}"
             )
-        implementation = _patch_registry().load_implementation(
+        implementation = _patch_registry().load_implementation("llamacpp", 
             descriptor, root=registry.root
         )
         results = patcher.apply_all(implementation, source_dir, dry_run=False)
@@ -1034,8 +1034,8 @@ def resolve_source_composition(
     resolved_revision = resolve_base_revision(base_ref, repo=base_repo)
     cfg = campaign_config.load(recipes or paths.RECIPES)
     patches_root = patches_root or PATCHES_ROOT
-    catalog = patchset.catalog(directory=patches_root)
-    lane = campaign_resolution.resolve_lane(source_name, cfg, catalog)
+    catalog = patchset.catalog("llamacpp", directory=patches_root)
+    lane = campaign_resolution.resolve_lane("llamacpp", source_name, cfg, catalog)
     # lane.patch_set.module_ids is the FULL named composition (the merged
     # multi-set result already contains the validated-enhancements members;
     # lane.promoted_enhancements is a declared-config view of them, not an
@@ -1055,7 +1055,7 @@ def resolve_source_composition(
     # patch later promoted into validated-enhancements) is already present:
     # the resolved composition is the same, so it is not added twice.
     ids = [*ids, *(extra for extra in extras if extra not in ids)]
-    resolved = patchset.resolve_exact(tuple(ids), directory=patches_root, allow_rejected=allow_rejected)
+    resolved = patchset.resolve_exact("llamacpp", tuple(ids), directory=patches_root, allow_rejected=allow_rejected)
     if allow_rejected:
         unexpected = [
             m.patch_id for m in resolved.modules
@@ -1065,7 +1065,7 @@ def resolve_source_composition(
             raise PatchSourceIsolationError(
                 f"allow_rejected admits only explicitly named patches; retired but not named: {unexpected}"
             )
-    registry = _patch_registry().load_registry(patches_root)
+    registry = _patch_registry().load_registry("llamacpp", patches_root)
     composition = tuple(
         (
             module.patch_id,

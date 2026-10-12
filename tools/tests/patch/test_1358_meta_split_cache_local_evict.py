@@ -35,7 +35,7 @@ class Patch1358Mechanics(unittest.TestCase):
     def _root(self, td):
         root = Path(td)
         (root / _F).parent.mkdir(parents=True, exist_ok=True)
-        copy_pinned(_V / _F, root / _F)
+        copy_pinned("llamacpp", _V / _F, root / _F)
         return root
 
     def test_apply_evicts_one_entry_and_keeps_the_off_switch(self):

@@ -55,7 +55,7 @@ def validated_enhancement_patches(
     cfg = campaign_config.load(recipes or bc_paths.RECIPES)
     declared = cfg.patch_sets[VALIDATED_PATCH_SET].patches
     excluded = {patch_id}
-    modules = {m.patch_id: m for m in patchset.catalog(directory=catalog_root)}
+    modules = {m.patch_id: m for m in patchset.catalog("llamacpp", directory=catalog_root)}
     changed = True
     while changed:
         changed = False

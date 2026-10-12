@@ -14,14 +14,14 @@ from bigcherry.patch import patchset # noqa: E402
 
 class PatchResolutionTests(unittest.TestCase):
     def test_catalog_has_canonical_hashes_and_numeric_order(self):
-        catalog = patchset.catalog()
+        catalog = patchset.catalog("llamacpp", )
         self.assertTrue(catalog)
         self.assertEqual(len({item.patch_id for item in catalog}), len(catalog))
         self.assertTrue(all(len(item.content_hash) == 64 for item in catalog))
         self.assertEqual(catalog, sorted(catalog, key=lambda item: (item.order, item.patch_id)))
 
     def test_exact_resolution_is_deterministic_and_state_checked(self):
-        selected = patchset.resolve_exact(
+        selected = patchset.resolve_exact("llamacpp", 
             ["1200_rd19_single_gpu_meta_bypass", "0100_cmake_options"],
             required_state="validated",
         )
@@ -32,11 +32,11 @@ class PatchResolutionTests(unittest.TestCase):
 
     def test_unknown_duplicate_and_untested_fail_closed(self):
         with self.assertRaisesRegex(ValueError, "unknown patch"):
-            patchset.resolve_exact(["does-not-exist"])
+            patchset.resolve_exact("llamacpp", ["does-not-exist"])
         with self.assertRaisesRegex(ValueError, "duplicate"):
-            patchset.resolve_exact(["0100_cmake_options", "0100_cmake_options"])
+            patchset.resolve_exact("llamacpp", ["0100_cmake_options", "0100_cmake_options"])
         with self.assertRaisesRegex(ValueError, "required state"):
-            patchset.resolve_exact(["0850_ordered_speculative_trace"], required_state="validated")
+            patchset.resolve_exact("llamacpp", ["0850_ordered_speculative_trace"], required_state="validated")
 
     def test_context_ids_satisfies_requires_without_joining_the_selection(self):
         # HI134: an experiment overlay patch (1242) REQUIRES a base-set
@@ -46,8 +46,8 @@ class PatchResolutionTests(unittest.TestCase):
         # and re-adding 0830 to the overlay collides with the base/overlay
         # disjointness check in campaign/resolution.py.
         with self.assertRaisesRegex(ValueError, "requires explicitly selected"):
-            patchset.resolve_exact(["1242_hi134_meta_stage_trace"])
-        resolved = patchset.resolve_exact(
+            patchset.resolve_exact("llamacpp", ["1242_hi134_meta_stage_trace"])
+        resolved = patchset.resolve_exact("llamacpp", 
             ["1242_hi134_meta_stage_trace"],
             context_ids=frozenset({"0830_split_reduce_telemetry"}),
         )
@@ -62,7 +62,7 @@ class PatchResolutionTests(unittest.TestCase):
             root = Path(directory)
             (root / "_private.py").write_text("STATE='rejected'\n", encoding="utf-8")
             (root / "0100_first.py").write_text("PATCH=None\n", encoding="utf-8")
-            items = patchset.catalog(root)
+            items = patchset.catalog("llamacpp", root)
             self.assertEqual([item.patch_id for item in items], ["0100_first"])
 
 
@@ -71,7 +71,7 @@ class ExpandCompositionTests(unittest.TestCase):
     exact layer -- new, opt-in, does not change resolve_lane's behavior."""
 
     def test_1217s_real_closure_pulls_in_1216(self):
-        result = patchset.expand_composition(["1217_rd44_graph_opt_default_rdna35"])
+        result = patchset.expand_composition("llamacpp", ["1217_rd44_graph_opt_default_rdna35"])
         self.assertEqual(result.requested, ("1217_rd44_graph_opt_default_rdna35",))
         self.assertEqual(
             result.expanded,
@@ -80,20 +80,20 @@ class ExpandCompositionTests(unittest.TestCase):
         self.assertEqual(result.pulled_in, ("1216_rd43_concurrent_join_fusion_guard",))
 
     def test_a_patch_with_no_requires_expands_to_itself(self):
-        result = patchset.expand_composition(["0100_cmake_options"])
+        result = patchset.expand_composition("llamacpp", ["0100_cmake_options"])
         self.assertEqual(result.expanded, ("0100_cmake_options",))
         self.assertEqual(result.pulled_in, ())
 
     def test_expanded_output_of_1217s_closure_passes_resolve_exact(self):
         # The whole point: the caller can now hand the expanded set straight
         # to resolve_exact() and have it pass, without hand-listing it.
-        result = patchset.expand_composition(["1217_rd44_graph_opt_default_rdna35"])
-        resolved = patchset.resolve_exact(list(result.expanded))
+        result = patchset.expand_composition("llamacpp", ["1217_rd44_graph_opt_default_rdna35"])
+        resolved = patchset.resolve_exact("llamacpp", list(result.expanded))
         self.assertEqual(len(resolved.modules), 2)  # 1217 -> 1216
 
     def test_unknown_patch_id_fails_closed(self):
         with self.assertRaisesRegex(ValueError, "unknown patch"):
-            patchset.expand_composition(["does-not-exist"])
+            patchset.expand_composition("llamacpp", ["does-not-exist"])
 
     def test_cycle_detection(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -103,7 +103,7 @@ class ExpandCompositionTests(unittest.TestCase):
             (root / "0200_b.py").write_text(
                 "PATCH=None\nREQUIRES=('0100_a',)\n", encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "REQUIRES cycle"):
-                patchset.expand_composition(["0100_a"], directory=root)
+                patchset.expand_composition("llamacpp", ["0100_a"], directory=root)
 
     def test_diamond_dependency_expands_without_duplication(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -115,7 +115,7 @@ class ExpandCompositionTests(unittest.TestCase):
                 "PATCH=None\nREQUIRES=('0100_base',)\n", encoding="utf-8")
             (root / "0400_top.py").write_text(
                 "PATCH=None\nREQUIRES=('0200_left', '0300_right')\n", encoding="utf-8")
-            result = patchset.expand_composition(["0400_top"], directory=root)
+            result = patchset.expand_composition("llamacpp", ["0400_top"], directory=root)
             self.assertEqual(
                 result.expanded,
                 ("0100_base", "0200_left", "0300_right", "0400_top"),

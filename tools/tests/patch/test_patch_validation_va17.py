@@ -51,7 +51,7 @@ def _real_bindings() -> tuple[pv.ContractBinding, pv.ContractBinding, pv.Contrac
 
 class RealDescriptorResolutionTests(unittest.TestCase):
     def test_real_1203_descriptor_resolves_all_three_real_bindings(self) -> None:
-        reg = patch_registry.load_registry(paths.PATCHES)
+        reg = patch_registry.load_registry("llamacpp", paths.PATCHES)
         descriptor = next(
             d for d in reg.descriptors if d.patch_id == "1203_rd050607_rdna4_wmma_fa_q6k_mmq"
         )
@@ -82,7 +82,7 @@ class RealDescriptorResolutionTests(unittest.TestCase):
         # tools/tests/patch/test_1203_validation_producer.py for the real
         # end-to-end plan/producer exercise (hardware-free, controlled
         # execution results).
-        reg = patch_registry.load_registry(paths.PATCHES)
+        reg = patch_registry.load_registry("llamacpp", paths.PATCHES)
         descriptor = next(
             d for d in reg.descriptors if d.patch_id == "1203_rd050607_rdna4_wmma_fa_q6k_mmq"
         )

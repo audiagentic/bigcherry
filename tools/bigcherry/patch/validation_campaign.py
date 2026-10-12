@@ -1114,7 +1114,7 @@ def run(args: argparse.Namespace) -> int:
     from bigcherry.core import paths as bc_paths  # noqa: E402
     from bigcherry.core import config as campaign_config  # noqa: E402
 
-    registry = patch_registry.load_registry(bc_paths.PATCHES)
+    registry = patch_registry.load_registry("llamacpp", bc_paths.PATCHES)
     descriptor = registry.get(args.patch)
 
     # GPT round 2 (req_71217bba406f4941, VA04 real-hardware finding): the

@@ -75,13 +75,13 @@ def test_metadata_is_read_without_importing(tmp_path):
         'STATE = "rejected"\n'
         'UPSTREAM = "abc1234def"\n',
         encoding="utf-8")
-    info, = patchset.describe(tmp_path)
+    info, = patchset.describe("llamacpp", tmp_path)
     assert (info.state, info.upstream) == ("rejected", "abc1234def")
 
 
 def test_declared_defaults(tmp_path):
     (tmp_path / "0001_bare.py").write_text("PATCHES = []\n", encoding="utf-8")
-    info, = patchset.describe(tmp_path)
+    info, = patchset.describe("llamacpp", tmp_path)
     assert info.state == patchset.DEFAULT_STATE == "untested"
     assert info.upstream is None
     assert info.state_valid
@@ -89,14 +89,14 @@ def test_declared_defaults(tmp_path):
 
 def test_unrecognised_state_is_reported_not_coerced(tmp_path):
     (tmp_path / "0001_typo.py").write_text('STATE = "validted"\n', encoding="utf-8")
-    info, = patchset.describe(tmp_path)
+    info, = patchset.describe("llamacpp", tmp_path)
     assert info.state == "validted"
     assert not info.state_valid
 
 
 def test_underscore_modules_are_ignored(tmp_path):
     (tmp_path / "_helper.py").write_text('STATE = "validated"\n', encoding="utf-8")
-    assert patchset.describe(tmp_path) == []
+    assert patchset.describe("llamacpp", tmp_path) == []
 
 
 @pytest.mark.parametrize("arg, expected", [

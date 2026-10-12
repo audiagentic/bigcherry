@@ -919,7 +919,7 @@ def _source_audit(root: Path) -> str | None:
 
 
 def _catalog(root: Path) -> str | None:
-    problems = patch_catalog.cross_check()
+    problems = patch_catalog.cross_check("llamacpp")
     return None if not problems else "\n".join(problems)
 
 

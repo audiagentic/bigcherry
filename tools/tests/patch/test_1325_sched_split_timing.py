@@ -28,7 +28,7 @@ class Patch1325Mechanics(unittest.TestCase):
             root = Path(td)
             path = root / "ggml/src/ggml-backend.cpp"
             path.parent.mkdir(parents=True)
-            copy_pinned(_VENDOR, path)
+            copy_pinned("llamacpp", _VENDOR, path)
             results = apply_all(_module.PATCHES, root)
             self.assertTrue(all(r.ok for r in results), [e.detail for r in results for e in r.failed])
             out = path.read_text(encoding="utf-8")

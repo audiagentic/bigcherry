@@ -36,10 +36,10 @@ class Patch1332Mechanics(unittest.TestCase):
     def _tree(self, td):
         root = Path(td)
         (root / _REL).parent.mkdir(parents=True)
-        copy_pinned(_VENDOR, root / _REL)
-        copy_pinned(paths.llama_root() / _HDR, root / _HDR)
+        copy_pinned("llamacpp", _VENDOR, root / _REL)
+        copy_pinned("llamacpp", paths.llama_root() / _HDR, root / _HDR)
         (root / _GGML).parent.mkdir(parents=True, exist_ok=True)
-        copy_pinned(paths.llama_root() / _GGML, root / _GGML)
+        copy_pinned("llamacpp", paths.llama_root() / _GGML, root / _GGML)
         return root
 
     def test_apply_and_idempotent(self):

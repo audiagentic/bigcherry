@@ -68,12 +68,12 @@ class PatchGraphCliTests(unittest.TestCase):
 
 class PatchCatalogExplainUnitTests(unittest.TestCase):
     def test_explain_raises_keyerror_for_unknown_id(self):
-        snapshot = patch_catalog.build_snapshot()
+        snapshot = patch_catalog.build_snapshot("llamacpp")
         with self.assertRaises(KeyError):
             patch_catalog.explain("does-not-exist", snapshot, cfg=None)
 
     def test_explain_without_cfg_still_works(self):
-        snapshot = patch_catalog.build_snapshot()
+        snapshot = patch_catalog.build_snapshot("llamacpp")
         info = patch_catalog.explain(
             "1217_rd44_graph_opt_default_rdna35", snapshot, cfg=None)
         self.assertEqual(info.selected_by_patch_sets, ())

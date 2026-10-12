@@ -123,13 +123,13 @@ class PatchSetIdentityPersistedTests(unittest.TestCase):
                 builds={}, platforms={}, experiments={}, campaigns={},
                 path=root / "recipes.toml",
             )
-            catalog = bc_patchset.catalog(directory=context.patches_root)
+            catalog = bc_patchset.catalog("llamacpp", directory=context.patches_root)
             # GPT-auto-agent review follow-up (2026-08-17): resolve_patch_set()
             # now re-derives its cross-check directory from the supplied
             # catalog itself, rather than defaulting to paths.PATCHES (the
             # real project's engines/llamacpp/patches/) -- no monkeypatch needed any more.
-            plan = source_plan_for(cfg, "test-source", catalog=catalog)
-            lane = campaign_resolution.resolve_lane("test-source", cfg, catalog)
+            plan = source_plan_for("llamacpp", cfg, "test-source", catalog=catalog)
+            lane = campaign_resolution.resolve_lane("llamacpp", "test-source", cfg, catalog)
 
             record = materialize_source(context, plan, allow_dirty_bigcherry=True)
 
@@ -189,15 +189,15 @@ class PatchSetIdentityPersistedTests(unittest.TestCase):
                 builds={}, platforms={}, experiments={}, campaigns={},
                 path=root / "recipes.toml",
             )
-            catalog = bc_patchset.catalog(directory=context.patches_root)
+            catalog = bc_patchset.catalog("llamacpp", directory=context.patches_root)
 
-            native_plan = source_plan_for(
+            native_plan = source_plan_for("llamacpp", 
                 cfg, "bigcherry-native", catalog=catalog, catalog_directory=context.patches_root)
-            full_plan = source_plan_for(
+            full_plan = source_plan_for("llamacpp", 
                 cfg, "bigcherry", catalog=catalog, catalog_directory=context.patches_root)
-            native_lane = campaign_resolution.resolve_lane(
+            native_lane = campaign_resolution.resolve_lane("llamacpp", 
                 "bigcherry-native", cfg, catalog, catalog_directory=context.patches_root)
-            full_lane = campaign_resolution.resolve_lane(
+            full_lane = campaign_resolution.resolve_lane("llamacpp", 
                 "bigcherry", cfg, catalog, catalog_directory=context.patches_root)
 
             # Same byte-producing patch selection...

@@ -115,7 +115,9 @@ class ExecutionPackageTests(unittest.TestCase):
     def test_every_validation_package_passes_the_execution_gate(self):
         from bigcherry.patch import registry, validation_policy
 
-        loaded = registry.load_registry()
+        from bigcherry.core import paths as bc_paths
+
+        loaded = registry.load_registry("llamacpp", bc_paths.PATCHES)
         items = getattr(loaded, "descriptors", None) or getattr(loaded, "patches", None) or loaded
         descriptors = list(items.values()) if isinstance(items, dict) else list(items)
         for descriptor in descriptors:

@@ -41,7 +41,7 @@ class Patch1250SharedWireMechanics(unittest.TestCase):
         root = Path(td.name)
         cuda = root / "ggml/src/ggml-cuda"
         cuda.mkdir(parents=True)
-        copy_pinned(_VENDOR / "allreduce.cu", cuda / "allreduce.cu")
+        copy_pinned("llamacpp", _VENDOR / "allreduce.cu", cuda / "allreduce.cu")
         return td, root, cuda / "allreduce.cu"
 
     def _apply_stack(self, root: Path):

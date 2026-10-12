@@ -486,6 +486,7 @@ class RequireSelectorMembershipUnchangedTests(unittest.TestCase):
             selector_patch_ids=tuple(
                 sorted(
                     pin_bump.patch_rebase._selection_patch_ids(
+                        "llamacpp",
                         source_name="bigcherry-serving-base",
                         all_patches=False,
                     )

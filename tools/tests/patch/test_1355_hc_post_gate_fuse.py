@@ -47,7 +47,7 @@ _P = _load("1355_hc_post_gate_fuse")
 class Patch1355Mechanics(unittest.TestCase):
     def _root_with_production(self, td: str) -> Path:
         # the production set without 1355 (in the selection once validated; each test applies it itself)
-        return production_source(_FILES, td, without="1355_hc_post_gate_fuse")
+        return production_source("llamacpp", "bigcherry", _FILES, td, without="1355_hc_post_gate_fuse")
 
     def test_full_production_then_apply_and_idempotent(self):
         with tempfile.TemporaryDirectory() as td:
