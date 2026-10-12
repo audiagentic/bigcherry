@@ -1,13 +1,13 @@
-# R3_AR_TIMING: deferred HIP-event timing for the fused two-rank all-reduce rows.
+# R3_AR_TIMING: wall-clock timing, between stream synchronisations, of the fused two-rank all-reduce rows.
 # The no-P2P path does not issue D2H/H2D copies: its kernel writes and reads mapped pinned-host
-# scratch around the device-side peer handshake. Time the completed kernel sequence without
-# turning asynchronous submits into host synchronizations; dump the event durations at AR teardown.
+# scratch around the device-side peer handshake, so one call is one phase from the host side.
 #
 @@ find 1
 #include <condition_variable>
 #include <cstdio>
 @@ replace
 #include <algorithm>
+#include <chrono>
 #include <condition_variable>
 #include <cstdio>
 @@ end
@@ -20,14 +20,10 @@
     int  timing     = 0;
 };
 
-struct R3ArTimingEvent {
-    int rank = -1, wire = 0, bucket = 2, device = -1;
-    const char* op = nullptr;
-    const char* phase = nullptr;
-    unsigned long long payload_bytes = 0;
-    hipEvent_t begin = nullptr, end = nullptr;
-};
-
+/* Wall time of one fused all-reduce call, taken between two stream synchronisations: the engine's HIP layer has no
+ * hipEventRecord on its own streams, so a call is timed by draining the stream before it and after it. That makes
+ * every timed call synchronous - the run is for the split, not for speed. Reported every kR3ArTimingBatch calls a
+ * row (the engine does not release the last instance before it exits, so a report at teardown is never printed). */
 struct R3ArTimingRow {
     int rank = -1, wire = 0, bucket = 2;
     const char* op = nullptr;
@@ -38,125 +34,74 @@ struct R3ArTimingRow {
 };
 
 std::mutex g_r3_ar_timing_mu;
-std::vector<R3ArTimingEvent> g_r3_ar_timing_events;
-/* The engine does not release the last all-reduce instance before it exits, so a report at teardown alone is
- * never printed: the events are also reported in batches of this many as they accumulate. */
-static const size_t kR3ArTimingBatch = 4096;
+std::vector<R3ArTimingRow> g_r3_ar_timing_rows;
+static const size_t kR3ArTimingBatch = 512;
 
 static const char* r3_ar_bucket_name(int b) {
     return b == 0 ? "M1_8" : (b == 1 ? "M512plus" : "M9_511");
 }
 
+static void r3_ar_timing_print(R3ArTimingRow& r) {
+    if (r.us.empty()) return;
+    std::sort(r.us.begin(), r.us.end());
+    const size_t n = r.us.size();
+    std::fprintf(stderr,
+        "R3_AR_TIMING rank=%d op=%s wire=%s rows=%s calls=%llu total_ms=%.3f phase=%s "
+        "p50_us=%.1f p90_us=%.1f max_us=%.1f payload_bytes_per_call=%llu timed=sync_before_and_after\n",
+        r.rank, r.op, r.wire == 6 ? "wht6" : "exact", r3_ar_bucket_name(r.bucket), r.calls, r.total_ms,
+        r.phase, r.us[(n - 1) * 50 / 100], r.us[(n - 1) * 90 / 100], r.us[n - 1],
+        r.calls ? r.payload_bytes / r.calls : 0ULL);
+    r.us.clear(); r.calls = 0; r.payload_bytes = 0; r.total_ms = 0.0;
+}
+
 static void r3_ar_timing_dump() {
-    std::vector<R3ArTimingEvent> events;
-    {
-        std::lock_guard<std::mutex> lk(g_r3_ar_timing_mu);
-        events.swap(g_r3_ar_timing_events);
-    }
-    if (events.empty()) return;
-
-    std::vector<R3ArTimingRow> rows;
-    int old_dev = -1;
-    (void)hipGetDevice(&old_dev);
-    for (R3ArTimingEvent& e : events) {
-        if (e.device >= 0) (void)hipSetDevice(e.device);
-        float ms = 0.0f;
-        const hipError_t sync = hipEventSynchronize(e.end);
-        const hipError_t elapsed = sync == hipSuccess
-            ? hipEventElapsedTime(&ms, e.begin, e.end) : sync;
-        if (elapsed == hipSuccess) {
-            R3ArTimingRow* row = nullptr;
-            for (R3ArTimingRow& r : rows) {
-                if (r.rank == e.rank && r.wire == e.wire && r.bucket == e.bucket &&
-                    !std::strcmp(r.op, e.op) && !std::strcmp(r.phase, e.phase)) {
-                    row = &r;
-                    break;
-                }
-            }
-            if (!row) {
-                rows.push_back(R3ArTimingRow{});
-                row = &rows.back();
-                row->rank = e.rank; row->wire = e.wire; row->bucket = e.bucket;
-                row->op = e.op; row->phase = e.phase;
-            }
-            ++row->calls;
-            row->payload_bytes += e.payload_bytes;
-            row->total_ms += ms;
-            row->us.push_back(ms * 1000.0f);
-        } else {
-            std::fprintf(stderr,
-                "R3_AR_TIMING rank=%d op=%s wire=%s rows=%s status=event_error code=%d\n",
-                e.rank, e.op, e.wire == 6 ? "wht6" : "exact", r3_ar_bucket_name(e.bucket),
-                (int)elapsed);
-        }
-        (void)hipEventDestroy(e.begin);
-        (void)hipEventDestroy(e.end);
-    }
-    if (old_dev >= 0) (void)hipSetDevice(old_dev);
-
-    for (R3ArTimingRow& r : rows) {
-        std::sort(r.us.begin(), r.us.end());
-        const size_t n = r.us.size();
-        const float p50 = r.us[(n - 1) * 50 / 100];
-        const float p90 = r.us[(n - 1) * 90 / 100];
-        std::fprintf(stderr,
-            "R3_AR_TIMING rank=%d op=%s wire=%s rows=%s calls=%llu total_ms=%.3f "
-            "phase=%s p50_us=%.1f p90_us=%.1f payload_bytes_per_call=%llu "
-            "completion=deferred_hip_event subphases=in_kernel_not_separately_timed\n",
-            r.rank, r.op, r.wire == 6 ? "wht6" : "exact", r3_ar_bucket_name(r.bucket),
-            r.calls, r.total_ms, r.phase, p50, p90,
-            r.calls ? r.payload_bytes / r.calls : 0ULL);
-    }
+    std::lock_guard<std::mutex> lk(g_r3_ar_timing_mu);
+    for (R3ArTimingRow& r : g_r3_ar_timing_rows) r3_ar_timing_print(r);
 }
 
 struct R3ArTimingScope {
-    R3ArTimingEvent e;
+    const ArInst* in = nullptr;
+    const char* op = nullptr;
+    const char* phase = nullptr;
+    int wire = 0, bucket = 2;
+    unsigned long long payload = 0;
     hipStream_t stream = nullptr;
+    std::chrono::steady_clock::time_point t0;
     bool active = false;
 
-    R3ArTimingScope(const ArInst* in, const char* op, const char* phase, int wire,
-                    long long M, long long n, RadStream s) {
+    R3ArTimingScope(const ArInst* i, const char* o, const char* ph, int w, long long M, long long n, RadStream s)
+        : in(i), op(o), phase(ph), wire(w) {
         if (!in || !in->timing) return;
-        e.rank = in->rank;
-        e.wire = wire;
-        e.bucket = M >= 1 && M <= 8 ? 0 : (M >= 512 ? 1 : 2);
-        e.op = op;
-        e.phase = phase;
+        bucket = M >= 1 && M <= 8 ? 0 : (M >= 512 ? 1 : 2);
         const unsigned long long elems = (unsigned long long)M * (unsigned long long)n;
-        e.payload_bytes = wire == 6 ? elems * 25ULL / 32ULL
-                                    : elems * (unsigned long long)in->esize;
-        (void)hipGetDevice(&e.device);
+        payload = wire == 6 ? elems * 25ULL / 32ULL : elems * (unsigned long long)in->esize;
         stream = (hipStream_t)(uintptr_t)s;
-        if (hipEventCreate(&e.begin) != hipSuccess) return;
-        if (hipEventCreate(&e.end) != hipSuccess) {
-            (void)hipEventDestroy(e.begin);
-            e.begin = nullptr;
-            return;
-        }
-        if (hipEventRecord(e.begin, stream) != hipSuccess) {
-            (void)hipEventDestroy(e.begin);
-            (void)hipEventDestroy(e.end);
-            e.begin = e.end = nullptr;
-            return;
-        }
+        if (hipStreamSynchronize(stream) != hipSuccess) return;
+        t0 = std::chrono::steady_clock::now();
         active = true;
     }
 
     ~R3ArTimingScope() {
         if (!active) return;
-        if (hipEventRecord(e.end, stream) != hipSuccess) {
-            (void)hipEventDestroy(e.begin);
-            (void)hipEventDestroy(e.end);
-            return;
+        if (hipStreamSynchronize(stream) != hipSuccess) return;
+        const float us = std::chrono::duration<float, std::micro>(std::chrono::steady_clock::now() - t0).count();
+        std::lock_guard<std::mutex> lk(g_r3_ar_timing_mu);
+        R3ArTimingRow* row = nullptr;
+        for (R3ArTimingRow& r : g_r3_ar_timing_rows)
+            if (r.rank == in->rank && r.wire == wire && r.bucket == bucket && r.op == op && r.phase == phase) {
+                row = &r;
+                break;
+            }
+        if (!row) {
+            g_r3_ar_timing_rows.push_back(R3ArTimingRow{});
+            row = &g_r3_ar_timing_rows.back();
+            row->rank = in->rank; row->wire = wire; row->bucket = bucket; row->op = op; row->phase = phase;
         }
-        bool full = false;
-        {
-            std::lock_guard<std::mutex> lk(g_r3_ar_timing_mu);
-            g_r3_ar_timing_events.push_back(e);
-            full = g_r3_ar_timing_events.size() >= kR3ArTimingBatch;
-        }
-        e.begin = e.end = nullptr;
-        if (full) r3_ar_timing_dump();
+        ++row->calls;
+        row->payload_bytes += payload;
+        row->total_ms += us / 1000.0;
+        row->us.push_back(us);
+        if (row->us.size() >= kR3ArTimingBatch) r3_ar_timing_print(*row);
     }
 };
 @@ end
