@@ -44,7 +44,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
 
-from ..core import paths
+from ..core import engines, paths
 from .apply import FilePatch
 
 # The "validation framework semantic version" (runbook 14.2). Bumping it
@@ -123,6 +123,24 @@ _PATCH_TOML_KNOWN_KEYS = _PATCH_TOML_REQUIRED_KEYS | _PATCH_TOML_STRING_LIST_KEY
 class PatchRegistryError(ValueError):
     """Raised when the engines/llamacpp/patches/ tree violates the registry's fail-closed rules
     (bad schema, duplicate identity, path escape, missing implementation)."""
+
+
+@dataclass(frozen=True, order=True)
+class PatchKey:
+    """Engine-qualified patch identity; a bare patch ID is never globally unique.
+
+    This value object does not change registry discovery or composition.
+    It is the immutable namespace key for the engine-explicit cutover.
+    """
+
+    engine: str
+    patch_id: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.engine, str) or self.engine not in engines.names(paths.REPO_ROOT):
+            raise PatchRegistryError(f"unknown engine for patch identity: {self.engine!r}")
+        if not isinstance(self.patch_id, str) or not _PATCH_ID_PATTERN.fullmatch(self.patch_id):
+            raise PatchRegistryError(f"invalid patch ID for {self.engine!r}: {self.patch_id!r}")
 
 
 def _sha256_bytes(data: bytes) -> str:
