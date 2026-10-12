@@ -1,5 +1,18 @@
 # Changelog
 
+## [11552.2.0](https://github.com/audiagentic/bigcherry/compare/bc-llamacpp-11552.1.2...bc-llamacpp-11552.2.0) (2026-10-12)
+
+
+### New and changed
+
+* **patch:** keep the shelved 1361 and 1356 code on main (evaluated, default off) ([71d6f49](https://github.com/audiagentic/bigcherry/commit/71d6f498ef45c0423ca24664d677b028f6643784))
+* **patch:** keep the shelved code on main - 1361 as an evaluated patch, 1356 with its lock attempt, harness draft-model mode ([8db3f9a](https://github.com/audiagentic/bigcherry/commit/8db3f9ab325de4637e0aafe52b09bcb354c89eca))
+
+
+### Fixes
+
+* **patch:** correct owned-file guard regexes ([ebf5c71](https://github.com/audiagentic/bigcherry/commit/ebf5c71b1f5288cc14ec216beacf985ac64a2043))
+
 ## [11552.1.2](https://github.com/audiagentic/bigcherry/compare/bc-llamacpp-11552.1.1...bc-llamacpp-11552.1.2) (2026-10-11)
 
 
