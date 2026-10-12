@@ -6,11 +6,11 @@
 # libr3 must have been built first (libr3-build.sh).
 # Run as a queue SCRIPT job (one card):
 #   VIS=0 SCRIPT r3-perf tools/lab/radiance/libr3-perf.sh @<any build run> <out-dir> [mode...]
-# The first argument (a llama-server path from the queue) is ignored. A mode is --perf, --perfbf16, --perfw8, ...
+# The first argument (a llama-server path from the queue) is ignored. A mode is --perf, --perfmxfp4, --perfbf16, --perfw8, ...
 # (default --perf). Shapes: the 27B's gate/up, down and attention projections at M = 1.
 # Usage: libr3-perf.sh <ignored> <out-dir> [mode...]
 # env: GPU (HIP index, 0), TARGET (gfx1100), PLUGIN (a .so to time instead of libr3, e.g. libr4d on the gfx12 card),
-#      SHAPES ("N K M" separated by ';'), ITERS (50), RADIANCE_SRC, WORK
+#      SHAPES ("N K M" separated by ';'), ITERS (50), R3_BT/R3_BT_B/R3_BT_NT for --perfmxfp4, RADIANCE_SRC, WORK
 set -u
 out=$2; shift 2
 mkdir -p "$out"

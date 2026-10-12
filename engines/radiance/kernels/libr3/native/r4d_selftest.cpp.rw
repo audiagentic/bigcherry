@@ -33,3 +33,141 @@
         }
         /* K not a multiple of 128: the TN=2 kernel takes the 64-wide slab. */
 @@ end
+
+
+# RR08 prefill timing mode. It uses the MXFP4 row's own layout hooks, rotates codes/E8M0/Wref past cache and
+# includes the activation pre-pass in the measured row time. R3_BT selects the old or new implementation.
+@@ find 1
+static void fp8_perf(const Plugin& pl, int64_t N, int64_t K, int64_t M, int iters) {
+@@ replace
+static void mxfp4_prefill_perf(const Plugin& pl, int64_t N, int64_t K, int64_t M, int iters) {
+    if (N % 16 || K % 64 || M < 1) {
+        std::printf("--perfmxfp4: N multiple of 16, K of 64, M >= 1\n");
+        return;
+    }
+    const RadKernelInfo* r = find(pl, "gemm_mxfp4a8_tiled");
+    if (!r || !r->layout || !r->relayout) {
+        std::printf("--perfmxfp4: gemm_mxfp4a8_tiled row/hooks absent\n");
+        return;
+    }
+    Planes p;
+    p.enc = rad_enc_affine(RAD_FP4E2M1, RAD_E8M0, 1, 32);
+    p.size(N, K);
+    const int ic = p.find("codes"), is = p.find("scale");
+    if (ic < 0 || is < 0) { std::printf("--perfmxfp4: encoding planes absent\n"); return; }
+    mxfp4_fill(p, ic, is, N, K, 0x81u, false);
+    std::vector<RadParam> lp = { PI("N", N), PI("K", K), PI("group", 32) };
+    std::vector<uint8_t> wq, ws, wr;
+    if (stored(r, lp, 2, p, { "codes" }, &wq) != RAD_OK ||
+        stored(r, lp, 3, p, { "scale" }, &ws) != RAD_OK ||
+        stored(r, lp, 6, p, { "scale" }, &wr) != RAD_OK) {
+        std::printf("--perfmxfp4: relayout failed\n");
+        return;
+    }
+
+    const size_t one = wq.size() + ws.size() + wr.size();
+    int copies = (int)(((size_t)768 << 20) / (one ? one : 1)) + 1;
+    if (copies > 64) copies = 64;
+    void* d_w = dalloc(wq.size() * (size_t)copies);
+    void* d_e = dalloc(ws.size() * (size_t)copies);
+    void* d_r = dalloc(wr.size() * (size_t)copies);
+    const int64_t asc = (K + 127) / 128;
+    void* d_a = dalloc((size_t)M * K);
+    void* d_s = dalloc((size_t)M * asc * 4);
+    void* d_y = dalloc((size_t)M * N * 2);
+    if (!d_w || !d_e || !d_r || !d_a || !d_s || !d_y) {
+        std::printf("--perfmxfp4: hipMalloc failed\n");
+        return;
+    }
+    for (int c = 0; c < copies; ++c) {
+        st_memcpy((uint8_t*)d_w + (size_t)c*wq.size(), wq.data(), wq.size(), hipMemcpyHostToDevice);
+        st_memcpy((uint8_t*)d_e + (size_t)c*ws.size(), ws.data(), ws.size(), hipMemcpyHostToDevice);
+        st_memcpy((uint8_t*)d_r + (size_t)c*wr.size(), wr.data(), wr.size(), hipMemcpyHostToDevice);
+    }
+    std::vector<uint8_t> ha((size_t)M*K, 0x38);
+    std::vector<float> hs((size_t)M*asc, 1.0f);
+    st_memcpy(d_a, ha.data(), ha.size(), hipMemcpyHostToDevice);
+    st_memcpy(d_s, hs.data(), hs.size()*4, hipMemcpyHostToDevice);
+
+    std::vector<RadTensor> ts = {
+        T(d_a, RAD_F8E4M3, {M,K}), T(d_s, RAD_F32, {M,asc}),
+        T(d_w, RAD_U8, {(int64_t)wq.size()}), T(d_e, RAD_U8, {(int64_t)ws.size()}),
+        T(d_y, RAD_BF16, {M,N}), T(nullptr, RAD_F32, {1}),
+        T(d_r, RAD_U8, {(int64_t)wr.size()}),
+    };
+    absent(ts[5]);
+    std::vector<RadParam> ps = {
+        PI("M",M), PI("N",N), PI("K",K), PI("group",32), PS("dtype","mxfp4a8"),
+    };
+    RadArgs a;
+    std::memset(&a, 0, sizeof(a));
+    a.t=ts.data(); a.n_t=(int)ts.size(); a.p=ps.data(); a.n_p=(int)ps.size(); a.world_size=1;
+    if (r->scratch) {
+        const int64_t need = r->scratch(&a);
+        if (need > 0) { a.scratch=dalloc((size_t)need); a.scratch_bytes=need; }
+    }
+    if (r->launch(&a, nullptr) != RAD_OK || st_stream_sync(nullptr) != hipSuccess) {
+        std::printf("--perfmxfp4: warm launch failed\n");
+        return;
+    }
+
+    hipEvent_t e0,e1;
+    st_ev_create(&e0); st_ev_create(&e1); st_ev_record(e0,nullptr);
+    for (int i=0;i<iters;++i) {
+        const int c=i%copies;
+        ts[2].data=(uint8_t*)d_w+(size_t)c*wq.size();
+        ts[3].data=(uint8_t*)d_e+(size_t)c*ws.size();
+        ts[6].data=(uint8_t*)d_r+(size_t)c*wr.size();
+        if (r->launch(&a,nullptr) != RAD_OK) {
+            std::printf("--perfmxfp4: timed launch failed\n");
+            st_ev_destroy(e0); st_ev_destroy(e1);
+            return;
+        }
+    }
+    st_ev_record(e1,nullptr); st_ev_sync(e1);
+    float ms=0.f; st_ev_elapsed(&ms,e0,e1); st_ev_destroy(e0); st_ev_destroy(e1);
+    const double us=(double)ms*1000.0/iters;
+    const double gbps=(double)one/us/1000.0;
+    std::printf("\nMXFP4 prefill GEMM N=%lld K=%lld M=%lld %.1f MiB weight, %d copies, %d iters\n",
+                (long long)N,(long long)K,(long long)M,(double)one/(1<<20),copies,iters);
+    std::printf("  %-22s %9.1f us  %6.1f GB/s\n","gemm_mxfp4a8_tiled",us,gbps);
+}
+
+static void fp8_perf(const Plugin& pl, int64_t N, int64_t K, int64_t M, int iters) {
+@@ end
+
+@@ find 1
+    int perf_it = 50, perf_w2 = 0, perf_bf = 0, perf_w8 = 0;
+@@ replace
+    int perf_it = 50, perf_w2 = 0, perf_bf = 0, perf_w8 = 0, perf_mx = 0;
+@@ end
+
+@@ find 1
+        } else if (!std::strcmp(argv[i], "--perfw8")) {
+@@ replace
+        } else if (!std::strcmp(argv[i], "--perfmxfp4")) {
+            if (i + 3 >= argc) { usage(); return 2; }
+            perf_mx = 1;
+            perf_n = std::strtoll(argv[++i], nullptr, 0);
+            perf_k = std::strtoll(argv[++i], nullptr, 0);
+            perf_m = std::strtoll(argv[++i], nullptr, 0);
+            if (i + 1 < argc && argv[i + 1][0] != '-') perf_it = (int)std::strtol(argv[++i], nullptr, 0);
+        } else if (!std::strcmp(argv[i], "--perfw8")) {
+@@ end
+
+@@ find 1
+        if (perf_bf)      bf16_perf(pl, perf_n, perf_k, perf_m, perf_it);
+        else if (perf_w8) w8_perf(pl, perf_n, perf_k, perf_m, perf_it);
+@@ replace
+        if (perf_bf)      bf16_perf(pl, perf_n, perf_k, perf_m, perf_it);
+        else if (perf_mx) mxfp4_prefill_perf(pl, perf_n, perf_k, perf_m, perf_it);
+        else if (perf_w8) w8_perf(pl, perf_n, perf_k, perf_m, perf_it);
+@@ end
+
+@@ find 1
+                "  --perfw8 N K M [iters]:  the 8-bit trunk GEMMs -- block E4M3 W8A8 and the int8\n"
+@@ replace
+                "  --perfmxfp4 N K M [iters]: the MXFP4 prefill row, including activation pre-pass,\n"
+                "             with all weight planes rotated past cache; R3_BT selects implementation.\n"
+                "  --perfw8 N K M [iters]:  the 8-bit trunk GEMMs -- block E4M3 W8A8 and the int8\n"
+@@ end
