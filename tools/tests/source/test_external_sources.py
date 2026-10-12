@@ -192,7 +192,7 @@ class TestPatchProvenanceCrossCheck(unittest.TestCase):
         groups, so a native build cannot pick them up accidentally -- except
         for patches that have since been promoted or retired (superseded/
         rejected)."""
-        registry = patch_registry.load_registry(ROOT / "engines" / "llamacpp" / "patches")
+        registry = patch_registry.load_registry("llamacpp", ROOT / "engines" / "llamacpp" / "patches")
         for descriptor in registry.descriptors:
             if not re.search(r"_rd\d+_", descriptor.patch_id):
                 continue

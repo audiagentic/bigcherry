@@ -111,7 +111,7 @@ class MaterializationTests(unittest.TestCase):
         (package / "patch.py").write_text(PKG_PATCH_PY, encoding="utf-8")
 
     def _composition(self, *patch_ids: str) -> tuple[tuple[str, str], ...]:
-        registry = psi._patch_registry().load_registry(self.patches_root)
+        registry = psi._patch_registry().load_registry("llamacpp", self.patches_root)
         return tuple(
             (
                 patch_id,
@@ -300,7 +300,7 @@ class MaterializationTests(unittest.TestCase):
         also matches -- a bump there must change identity even though no
         patch.py digest changed."""
         self._flat()
-        selection = patchset.resolve_exact(("0001_flat",), directory=self.patches_root)
+        selection = patchset.resolve_exact("llamacpp", ("0001_flat",), directory=self.patches_root)
         composition = tuple(
             (module.patch_id, module.content_hash) for module in selection.modules
         )
@@ -347,7 +347,7 @@ class Rv80AcceptanceTests(MaterializationTests):
     #    must still apply AFTER its dependency.
     def test_rv80_topological_order_not_global_sort(self) -> None:
         def _mod(patch_id: str, order: int, requires=()) -> patchset.PatchModule:
-            return patchset.PatchModule(
+            return patchset.PatchModule(engine="llamacpp", 
                 patch_id=patch_id, path=Path("/nonexistent") / f"{patch_id}.py",
                 order=order, state="validated", upstream=None,
                 content_hash="ab" * 32, requires=tuple(requires),
@@ -356,7 +356,7 @@ class Rv80AcceptanceTests(MaterializationTests):
         parent = _mod("0200_parent", 200)
         child = _mod("0100_child", 100, requires=("0200_parent",))
         modules = {m.patch_id: m for m in (parent, child)}
-        ordered = patchset.topological_order(("0100_child", "0200_parent"), modules=modules)
+        ordered = patchset.topological_order("llamacpp", ("0100_child", "0200_parent"), modules=modules)
         self.assertEqual(ordered, ("0200_parent", "0100_child"))
         # And a global sort would have been wrong:
         self.assertEqual(
@@ -532,14 +532,14 @@ class Rv80AcceptanceTests(MaterializationTests):
         self._flat()
         self._flat("0200_parent")
         with self.assertRaisesRegex(ValueError, "unknown patch module"):
-            patchset.resolve_exact(("9999_nope",), directory=self.patches_root)
+            patchset.resolve_exact("llamacpp", ("9999_nope",), directory=self.patches_root)
         # Missing explicit requires:
         child = FLAT_PATCH_PY.replace("MARKER", "CHILD").replace(
             "STATE = 'untested'", "STATE = 'untested'\nREQUIRES = ['0200_parent']"
         )
         (self.patches_root / "0101_child.py").write_text(child, encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "requires explicitly selected"):
-            patchset.resolve_exact(("0101_child",), directory=self.patches_root)
+            patchset.resolve_exact("llamacpp", ("0101_child",), directory=self.patches_root)
         # Rejected member:
         (self.patches_root / "0103_rejected.py").write_text(
             FLAT_PATCH_PY.replace("MARKER", "REJ")
@@ -547,7 +547,7 @@ class Rv80AcceptanceTests(MaterializationTests):
             encoding="utf-8",
         )
         with self.assertRaisesRegex(ValueError, "rejected patch requires"):
-            patchset.resolve_exact(("0103_rejected",), directory=self.patches_root)
+            patchset.resolve_exact("llamacpp", ("0103_rejected",), directory=self.patches_root)
 
     # 7b. Focal-already-in-baseline is rejected by resolve_source_composition.
     def test_rv80_focal_guard(self) -> None:
@@ -587,14 +587,14 @@ patch-sets = ["framework"]
     #    executed bytes against the descriptor digest.
     def test_rv80_loader_digest_recheck(self) -> None:
         self._flat()
-        registry = psi._patch_registry().load_registry(self.patches_root)
+        registry = psi._patch_registry().load_registry("llamacpp", self.patches_root)
         descriptor = registry.get("0001_flat")
         # Tamper the descriptor digest -> byte-compile load must fail closed.
         tampered = patch_registry.PatchDescriptor(
             **{**descriptor.__dict__, "implementation_digest": "0" * 64}
         )
         with self.assertRaises(patch_registry.PatchRegistryError):
-            psi._patch_registry().load_implementation(tampered, root=self.patches_root)
+            psi._patch_registry().load_implementation("llamacpp", tampered, root=self.patches_root)
 
     # 9. Packaged patch.py with a relative import is rejected before exec
     #    (B5 import restriction) -> materialization fails closed.
@@ -614,10 +614,10 @@ patch-sets = ["framework"]
         """Every tracked packaged patch must be executable through the same
         import-restricted loader used by a real materialization run."""
         root = Path(__file__).resolve().parents[3] / "engines" / "llamacpp" / "patches"
-        registry = patch_registry.load_registry(root)
+        registry = patch_registry.load_registry("llamacpp", root)
         for descriptor in registry.descriptors:
             if descriptor.representation == patch_registry.REPRESENTATION_PACKAGED:
-                loaded = patch_registry.load_implementation(descriptor, root=root)
+                loaded = patch_registry.load_implementation("llamacpp", descriptor, root=root)
                 self.assertTrue(loaded, descriptor.patch_id)
 
     # 10. Symlink escape out of the patches root is rejected by discovery.
@@ -634,7 +634,7 @@ patch-sets = ["framework"]
                 f"unavailable in this Windows environment: {exc}"
             )
         with self.assertRaisesRegex(patch_registry.PatchRegistryError, "escapes"):
-            psi._patch_registry().load_registry(self.patches_root)
+            psi._patch_registry().load_registry("llamacpp", self.patches_root)
 
     # 11. Variant identity: same composition, different variant digest ->
     #     different keys; same variant -> reuse.
