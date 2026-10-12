@@ -229,7 +229,7 @@ class PatchLintCliTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            registry = patch_registry.load_registry(patches)
+            registry = patch_registry.load_registry("llamacpp", patches)
             summary_problems = [
                 problem
                 for descriptor in registry.descriptors

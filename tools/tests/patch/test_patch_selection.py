@@ -63,7 +63,7 @@ class MatchesTests(unittest.TestCase):
         sel = selection.CliPatchSelection(
             label="", patch_ids=("0100_cmake_options",),
         )
-        catalog = patchset.catalog()
+        catalog = patchset.catalog("llamacpp", )
         by_id = {m.patch_id: m for m in catalog}
         self.assertTrue(sel.matches(by_id["0100_cmake_options"]))
         self.assertFalse(sel.matches(by_id["1000_rdna4_mmq_q2k_q6k_fix"]))
