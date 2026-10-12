@@ -274,7 +274,7 @@ static void mxfp4_prefill_perf(const Plugin& pl, int64_t N, int64_t K, int64_t M
         const bool had_old = oldp != nullptr;
         const std::string oldv = oldp ? oldp : "";
         if (pl.pin_hc) pl.pin_hc(1);
-        auto run_r3 = [&](const char* sw, Out* o) {
+        auto run_r3 = [&](const char* sw, Out* o) -> int {
             ::setenv("R3_HC_NATIVE", sw, 1);
             st_memset(d_x, 0, xb); st_memset(d_inj, 0, ib); st_memset(d_q, 0, qb);
             st_memset(d_qs, 0, sb); st_memset(d_rq, 0, qb); st_memset(d_rs, 0, sb);
