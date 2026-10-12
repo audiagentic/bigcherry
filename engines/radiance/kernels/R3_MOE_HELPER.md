@@ -119,3 +119,38 @@ Since the requested helper does not survive (a)-(d) on the 1.3.0 plugin ABI, the
 use of the R9700 is the n-gram gather. With ~30 GiB available it can hold ~63% of the 47.68 GiB
 table; unlike expert offload, that can be implemented as a host-kernel replacement without
 changing the routed-MoE execution graph.
+
+## f. Step 1 engine hand-off (implemented)
+
+`engine-patches/0002-moe-remote-handoff.patch` is a source patch against the pinned
+`89cee7c` tree. It adds the hand-off only; there is no R9700 helper in this step.
+
+The 1.3.0 hook points are:
+
+- `abi/rad_moe_remote.h`: `RadMoeRemoteHooks` is the C ABI. A loaded plugin registers it
+  directly, or `R3_MOE_REMOTE_SO` exports `rad_moe_remote_hooks()`. `submit` receives layer,
+  rank, token/expert/weight routes and the BF16 activation pointer/stride; `wait` returns the
+  rank's BF16 partial.
+- `core/place/moe_remote.cpp`: `rad_moe_remote_register`,
+  `rad_moe_remote_wanted`, `rad_moe_remote_submit` and `rad_moe_remote_wait_into` own hook
+  loading, `R3_MOE_REMOTE_MIN_ROWS` (unset = never), host-pool route selection, route masking,
+  and engine-stream result copies. No HIP event API is used.
+- `core/runtime/residency.h`, `core/place/mover.h`, `core/place/mover.cpp`:
+  `WeightSlot`, `Residency::publish`, `Residency::begin_transfer`, `Mover::republish` and
+  `Mover::stage_units` expose whether an expert's owning tier is the pinned host pool. A temporary
+  prefill-stage copy retains that ownership bit; a real promotion clears it.
+- `core/runtime/ctx.h`: `Ctx::weight_in_host_pool` is the non-blocking policy query used by the
+  hand-off.
+- `arch/common/rad_block_moe_fp8.h`: `MoeFP8::declare` records expert-id -> gate/up/down
+  residency probes and declares the optional BF16 result scratch/add. `MoeFP8::pass` disables
+  `router_gemm_topk_scatter` / `router_topk_scatter` only on an armed step, submits immediately
+  after `router_topk`, masks accepted remote ids before `moe_scatter` so the local expert GEMMs
+  skip them, then copies/adds the returned partial after `moe_gather` and before the existing
+  all-reduce.
+- `arch/common/rad_block_hc.h`: `HyperConn::takes_gather` declines
+  `ar_gather_hc_write`'s gather fusion on an armed remote step. The standalone gather can then
+  receive the remote partial; the existing fused all-reduce/write still consumes that completed
+  block delta.
+
+With no hook registered, `rad_moe_remote_wanted` is false, no remote scratch/op is declared, and
+the original router/scatter/GEMM/gather issue path is unchanged.

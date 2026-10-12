@@ -1,0 +1,480 @@
+From: BigCherry <noreply@anthropic.com>
+Subject: [PATCH] engine: add a remote whole-expert MoE hand-off before the TP reduction
+
+Add the engine seam for a future R9700 helper without adding the helper itself. When a hook is
+registered and R3_MOE_REMOTE_MIN_ROWS admits the step, host-pool routed experts are removed before
+moe_scatter, so the local gate/up, activation/quant and down path skips them. The hook computes the
+rank partial; the engine copies its BF16 result into an owned scratch and adds it after moe_gather
+and before the existing all-reduce. HyperConn's fused gather stands down only on armed remote
+steps, while its existing reducing write remains available.
+
+With no registered hook, or with the default R3_MOE_REMOTE_MIN_ROWS=never, the original fused
+router/scatter/gather issue path is unchanged.
+
+diff --git a/abi/rad_moe_remote.h b/abi/rad_moe_remote.h
+new file mode 100644
+index 0000000..3a48197
+--- /dev/null
++++ b/abi/rad_moe_remote.h
+@@ -0,0 +1,43 @@
++/* rad_moe_remote.h -- optional whole-expert compute hand-off for routed MoE blocks. */
++#pragma once
++#include <stdint.h>
++#include "rad_runtime.h"
++#ifdef __cplusplus
++extern "C" {
++#endif
++#define RAD_MOE_REMOTE_ABI 1u
++typedef void* RadMoeRemoteHandle;
++typedef struct RadMoeRemoteRoute {
++    int32_t token;
++    int32_t expert;
++    uint16_t weight_bf16;
++    uint16_t reserved;
++} RadMoeRemoteRoute;
++typedef struct RadMoeRemoteHooks {
++    uint32_t abi_version;
++    void* user;
++    RadMoeRemoteHandle (*submit)(void* user, int layer, int rank,
++                                 int64_t rows, int64_t n_embd,
++                                 const RadMoeRemoteRoute* route, int64_t n_route,
++                                 const void* activation, int64_t activation_stride_bytes);
++    const void* (*wait)(void* user, RadMoeRemoteHandle handle);
++} RadMoeRemoteHooks;
++/* Register before architecture declaration. An already-loaded plugin may call this directly.
++ * R3_MOE_REMOTE_SO may instead name a .so exporting
++ *   const RadMoeRemoteHooks* rad_moe_remote_hooks(void)
++ * which the core loads during architecture declaration. */
++int rad_moe_remote_register(const RadMoeRemoteHooks* hooks);
++int rad_moe_remote_wanted(int64_t step_rows);
++RadMoeRemoteHandle rad_moe_remote_submit(RadCtx* c, int layer,
++                                         int64_t step_rows, int64_t rows, int64_t n_embd,
++                                         int64_t top_k, int64_t expert_base,
++                                         const rad_weight* gate_up, const rad_weight* down,
++                                         int64_t n_expert,
++                                         int32_t* ids, const uint16_t* weight_bf16,
++                                         const void* activation, int64_t activation_stride_bytes);
++/* Waits through the registered hook, copies its BF16 partial into dst on the engine's current
++ * stream, and drains that stream before returning so the hook may reuse its returned storage. */
++int rad_moe_remote_wait_into(RadCtx* c, RadMoeRemoteHandle handle, void* dst, int64_t bytes);
++#ifdef __cplusplus
++}
++#endif
+diff --git a/arch/common/rad_block_hc.h b/arch/common/rad_block_hc.h
+index c19c8b6..75a248e 100644
+--- a/arch/common/rad_block_hc.h
++++ b/arch/common/rad_block_hc.h
+@@ -49,6 +49,7 @@
+  */
+ #ifndef RAD_BLOCK_HC_H
+ #define RAD_BLOCK_HC_H
++#include "rad_moe_remote.h"
+ 
+ #include "rad_fp8.h"
+ 
+@@ -168,7 +169,9 @@ struct HyperConn {
+      * beside the exact one, so the two together take every message. */
+     int ar_take() const { return op_ar_write6 ? kArOutBoth : kArOutExact; }
+     bool takes_gather(int64_t T) const {
+-        return takes_ar(T) && gather_taken(g, T, gather_rows, gather_rows6);
++        /* Remote rows join x.x before the collective; only the gather fusion stands down. */
++        return !rad_moe_remote_wanted(T) && takes_ar(T) &&
++               gather_taken(g, T, gather_rows, gather_rows6);
+     }
+ 
+     /* `name` is the declared prefix -- "blk.7.attn_hc" -- and `src` the checkpoint side. */
+diff --git a/arch/common/rad_block_moe_fp8.h b/arch/common/rad_block_moe_fp8.h
+index 51b7c28..1d927d2 100644
+--- a/arch/common/rad_block_moe_fp8.h
++++ b/arch/common/rad_block_moe_fp8.h
+@@ -60,6 +60,7 @@
+ 
+ #include "rad_fp8.h"
+ #include "rad_device.h"
++#include "rad_moe_remote.h"
+ 
+ #include <cstdio>
+ #include <cstdlib>
+@@ -356,6 +357,9 @@ struct MoeFP8 {
+     /* The four runs. Only the FIRST handle and the count reach an issue (RAD_WTAB); the rest are
+      * held so that a declaration failure can be reported against the expert it happened on. */
+     std::vector<rad_weight> w_gu, w_gus, w_dn, w_dns;
++    /* Expert-id -> movement-unit probes for the remote residency policy. */
++    std::vector<rad_weight> remote_gu, remote_dn;
++    rad_buf b_remote = 0;
+ 
+     NormQuantFP8 nq_h{};
+     GateQuantFP8 gq_exp{}, gq_sh{};
+@@ -437,7 +441,7 @@ struct MoeFP8 {
+     mutable bool         calib_dne_failed = false;
+     void calib_experts_pass(RadCtx* c_, int64_t slots) const;
+     rad_op op_sgate = 0;
+-    rad_op op_ar = 0, op_add = 0;
++    rad_op op_ar = 0, op_add = 0, op_remote_add = 0;
+     bool   ar_out = false;
+     /* Which wires the consumer of this block's all-reduce takes. Set before declare; see
+      * AttnGatedFP8::ar_out_take. */
+@@ -837,6 +841,8 @@ inline int MoeFP8::declare(RadBuilder* b, Names& nm, const Geom& geom, int l,
+         if (std::find(prot.begin(), prot.end(), e) == prot.end()) reg.push_back(e);
+     w_gu.resize((size_t)ne); w_gus.resize((size_t)ne);
+     w_dn.resize((size_t)ne); w_dns.resize((size_t)ne);
++    remote_gu.assign((size_t)ne, 0);
++    remote_dn.assign((size_t)ne, 0);
+     /* Each class's width on this rank: the Config's slice when the width is split unevenly, and
+      * `n_ff_exp` for every class otherwise. The buffers between the two GEMMs are the widest
+      * one's. FOUR CLASSES where the Config offers them (Config::ff_lo4), the parity classes
+@@ -959,13 +965,15 @@ inline int MoeFP8::declare(RadBuilder* b, Names& nm, const Geom& geom, int l,
+                                        RAD_BF16, {2 * c.n_ff_exp, g.n_embd}, RAD_ACCESS_CONDITIONAL,
+                                        sh_row, grp_expert_slot(l, (int)e, 0), 0, parts, n_parts);
+             if (!w_gu[(size_t)e]) return RAD_E_INVAL;
++            remote_gu[(size_t)e] = w_gu[(size_t)e];
+         }
+         for (int64_t e = 0; e < ne; ++e) {
+             w_dn[(size_t)e] = decl_w(b, nm.f("blk.%d.ffn_down_exps.%lld.weight", l,
+                                              (long long)(c.expert_base + e)),
+                                      RAD_BF16, {g.n_embd, c.n_ff_exp}, RAD_ACCESS_CONDITIONAL,
+                                      sh_col, grp_expert_slot(l, (int)e, 1));
+             if (!w_dn[(size_t)e]) return RAD_E_INVAL;
++            remote_dn[(size_t)e] = w_dn[(size_t)e];
+         }
+         /* The same two row orders as the quantised GEMMs, and for the same reason (see a_order
+          * above): gate_up gathers token rows, down reads its input in sorted order. */
+@@ -1004,6 +1012,7 @@ inline int MoeFP8::declare(RadBuilder* b, Names& nm, const Geom& geom, int l,
+                           RAD_ACCESS_CONDITIONAL, sh_row, grp_expert_slot(l, (int)s, 0),
+                           parts, n_parts);
+             if (!h) return RAD_E_INVAL;
++            remote_gu[(size_t)e] = h;
+             RAD_ARCH_TRY(span(h, q, 1));
+         }
+     for (int q = 0; q < ncls; ++q)
+@@ -1032,6 +1041,7 @@ inline int MoeFP8::declare(RadBuilder* b, Names& nm, const Geom& geom, int l,
+                           nullptr, ecodes, edt[1], {g.n_embd, wq[q]},
+                           RAD_ACCESS_CONDITIONAL, sh_col, grp_expert_slot(l, (int)s, 1));
+             if (!h) return RAD_E_INVAL;
++            remote_dn[(size_t)e] = h;
+             RAD_ARCH_TRY(span(h, q, 1));
+         }
+     for (int q = 0; q < ncls; ++q)
+@@ -1210,6 +1220,7 @@ inline int MoeFP8::declare(RadBuilder* b, Names& nm, const Geom& geom, int l,
+                                         RAD_BF16, {2 * wp, g.n_embd}, RAD_ACCESS_PER_TOKEN,
+                                         psh_row, grp_layer(l), 0, parts, pparts);
+             if (!w_pgu[(size_t)j]) return RAD_E_INVAL;
++            remote_gu[(size_t)prot[(size_t)j]] = w_pgu[(size_t)j];
+             if (phi > 0) RAD_ARCH_TRY(rad_weight_shard_span(b, w_pgu[(size_t)j], plo, phi));
+         }
+         for (int64_t j = 0; j < np; ++j) {
+@@ -1218,6 +1229,7 @@ inline int MoeFP8::declare(RadBuilder* b, Names& nm, const Geom& geom, int l,
+                                       RAD_BF16, {g.n_embd, wp}, RAD_ACCESS_PER_TOKEN, psh_col,
+                                       grp_layer(l));
+             if (!w_pdn[(size_t)j]) return RAD_E_INVAL;
++            remote_dn[(size_t)prot[(size_t)j]] = w_pdn[(size_t)j];
+             if (phi > 0) RAD_ARCH_TRY(rad_weight_shard_span(b, w_pdn[(size_t)j], plo, phi));
+         }
+         /* The gate_up output and the gate's, a sorted row each and in bf16: the rows of the
+@@ -1469,6 +1481,17 @@ inline int MoeFP8::declare(RadBuilder* b, Names& nm, const Geom& geom, int l,
+                                    RAD_STR("dtype", g.dtype)),
+                         RAD_NOWEIGHTS),
+                     {w.x, w.h.x}, {w.x});
++    if (rad_moe_remote_wanted(g.max_tok)) {
++        b_remote = decl_b(b, nm.f("blk.%d.moe_remote_partial", l), RAD_BF16,
++                          {c.rows, g.n_embd});
++        if (!b_remote) return RAD_E_INVAL;
++        op_remote_add = rw(b, RAD_OP(b, "add",
++                               RAD_PARAMS(RAD_RANGE("M", 1, c.rows), RAD_INT("n", g.n_embd),
++                                          RAD_STR("dtype", g.dtype)),
++                               RAD_NOWEIGHTS),
++                           {w.h.x, b_remote}, {w.h.x});
++        if (!op_remote_add) return RAD_E_INVAL;
++    }
+     return RAD_OK;
+ }
+ 
+@@ -1500,6 +1523,8 @@ inline void MoeFP8::pass(RadCtx* c_, int64_t T, int64_t r0, int64_t rows) const
+      * are the model's width, everything after the scatter is this rank's slice. */
+     const int64_t ne = c.n_expert, ne_all = c.n_expert_all, k = c.top_k;
+     const bool shared = op_sgate != 0;
++    const bool remote_policy = op_remote_add && rad_moe_remote_wanted(T);
++    RadMoeRemoteHandle remote = nullptr;
+ 
+     if (!ext_in) nq_h.step(c_, T, r0, rows);
+ 
+@@ -1524,7 +1549,7 @@ inline void MoeFP8::pass(RadCtx* c_, int64_t T, int64_t r0, int64_t rows) const
+     /* THE FUSED ROUTER where it resolved and the pass is within its rows: the router, the pair
+      * below and -- with `router_fused_gate` -- the shared gate, in one launch with the operands
+      * the three are handed. Otherwise the router and the pair, as declared. */
+-    const bool rfused = op_router_fused && rows <= router_fused_rows;
++    const bool rfused = !remote_policy && op_router_fused && rows <= router_fused_rows;
+     if (rfused)
+         RAD_ISSUE_N(c_, op_router_fused, rows, brow_slice(w.h.x, r0, rows, g.n_embd),
+                     RAD_W(w_router), router_fused_gate ? RAD_W(w_sgate) : RAD_NONE,
+@@ -1539,13 +1564,21 @@ inline void MoeFP8::pass(RadCtx* c_, int64_t T, int64_t r0, int64_t rows) const
+      * every other operand is the one the pair is handed. */
+     if (rfused) {
+         /* the fused router wrote all five */
+-    } else if (op_topk_scatter && rows <= topk_scatter_rows) {
++    } else if (!remote_policy && op_topk_scatter && rows <= topk_scatter_rows) {
+         RAD_ISSUE_N(c_, op_topk_scatter, rows, brow_slice(w.logits, r0, rows, ne_all),
+                     brow_slice(w.ids, r0, rows, k), brow_slice(w.ew, r0, rows, k),
+                     brows(w.sorted, rows * k), brows(w.eoff, ne + 1), ecnt);
+     } else {
+         RAD_ISSUE_N(c_, op_topk, rows, brow_slice(w.logits, r0, rows, ne_all),
+                     brow_slice(w.ids, r0, rows, k), brow_slice(w.ew, r0, rows, k));
++        if (remote_policy)
++            remote = rad_moe_remote_submit(
++                c_, layer, T, rows, g.n_embd, k, c.expert_base,
++                remote_gu.data(), remote_dn.data(), ne,
++                (int32_t*)rad_buf_ptr(c_, w.ids) + r0 * k,
++                (const uint16_t*)rad_buf_ptr(c_, w.ew) + r0 * k,
++                (const uint16_t*)rad_buf_ptr(c_, w.h.x) + r0 * g.n_embd,
++                g.n_embd * (int64_t)sizeof(uint16_t));
+         RAD_ISSUE_N(c_, op_scatter, rows, brow_slice(w.ids, r0, rows, k),
+                     brows(w.sorted, rows * k), brows(w.eoff, ne + 1), ecnt);
+     }
+@@ -1670,12 +1703,23 @@ inline void MoeFP8::pass(RadCtx* c_, int64_t T, int64_t r0, int64_t rows) const
+ 
+     /* THE GATHER LAST, because with the fold it reads the arm. Its operands are the routed slots
+      * plus `sout` and `sgate`, and it writes the block's delta straight into `h.x`. */
+-    if (!gather_taken(g, T, gather_out_rows, gather_out_rows6))
++    if (remote_policy || !gather_taken(g, T, gather_out_rows, gather_out_rows6))
+         RAD_ISSUE_N(c_, op_gather, rows, brows(w.edn, rows * k), brow_slice(w.ew, r0, rows, k),
+                     brows(w.sorted, rows * k),
+                     gfold ? brow_slice(w.sout, r0, rows, g.n_embd) : RAD_NONE,
+                     gfold ? brow_slice(w.sgate, r0, rows, 1) : RAD_NONE,
+                     brow_slice(w.h.x, r0, rows, g.n_embd));
++    if (remote) {
++        if (rad_moe_remote_wait_into(c_, remote, rad_buf_ptr(c_, b_remote),
++                                     rows * g.n_embd * (int64_t)sizeof(uint16_t)) < 0) {
++            rad_step_fail(c_, "MoE remote wait/result copy failed");
++            return;
++        }
++        RAD_ISSUE_N(c_, op_remote_add, rows,
++                    brow_slice(w.h.x, r0, rows, g.n_embd),
++                    brows(b_remote, rows),
++                    brow_slice(w.h.x, r0, rows, g.n_embd));
++    }
+ 
+     /* A write that takes the all-reduce does it ONCE over the whole step, so it answers on T and
+      * this pass has to ask the same question of the same T, not of its own rows. */
+diff --git a/core/place/moe_remote.cpp b/core/place/moe_remote.cpp
+new file mode 100644
+index 0000000..cf82c4e
+--- /dev/null
++++ b/core/place/moe_remote.cpp
+@@ -0,0 +1,126 @@
++/* moe_remote.cpp -- residency policy and C hand-off for remote whole-expert compute. */
++#include "rad_moe_remote.h"
++#include "runtime/ctx.h"
++#include "rad_device.h"
++#include <atomic>
++#include <climits>
++#include <cstdio>
++#include <cstdlib>
++#include <dlfcn.h>
++#include <mutex>
++#include <vector>
++namespace {
++RadMoeRemoteHooks g_hooks{};
++std::atomic<bool> g_active{false};
++std::once_flag g_load_once;
++int64_t min_rows() {
++    static const int64_t v = [] {
++        const char* s = std::getenv("R3_MOE_REMOTE_MIN_ROWS");
++        if (!s || !*s) return (int64_t)LLONG_MAX;
++        char* end = nullptr;
++        const long long n = std::strtoll(s, &end, 10);
++        return end && *end == 0 && n >= 0 ? (int64_t)n : (int64_t)LLONG_MAX;
++    }();
++    return v;
++}
++void load_env_hook() {
++    const char* so = std::getenv("R3_MOE_REMOTE_SO");
++    if (!so || !*so) return;
++    void* h = dlopen(so, RTLD_NOW | RTLD_LOCAL);
++    if (!h) {
++        std::fprintf(stderr, "radiance: R3_MOE_REMOTE_SO '%s' could not be loaded: %s\n",
++                     so, dlerror());
++        return;
++    }
++    using GetHooks = const RadMoeRemoteHooks* (*)(void);
++    auto get = (GetHooks)dlsym(h, "rad_moe_remote_hooks");
++    if (!get) {
++        std::fprintf(stderr, "radiance: R3_MOE_REMOTE_SO '%s' has no rad_moe_remote_hooks\n", so);
++        return;
++    }
++    if (rad_moe_remote_register(get()) < 0)
++        std::fprintf(stderr, "radiance: R3_MOE_REMOTE_SO '%s' returned an invalid MoE remote hook\n",
++                     so);
++}
++void ensure_loaded() { std::call_once(g_load_once, load_env_hook); }
++}
++extern "C" int rad_moe_remote_register(const RadMoeRemoteHooks* hooks) {
++    if (!hooks || hooks->abi_version != RAD_MOE_REMOTE_ABI || !hooks->submit || !hooks->wait)
++        return RAD_E_INVAL;
++    if (g_active.load(std::memory_order_acquire)) return RAD_E_STATE;
++    g_hooks = *hooks;
++    g_active.store(true, std::memory_order_release);
++    const int64_t m = min_rows();
++    if (m == LLONG_MAX)
++        std::fprintf(stderr, "radiance: MoE remote hook active (R3_MOE_REMOTE_MIN_ROWS=never)\n");
++    else
++        std::fprintf(stderr, "radiance: MoE remote hook active (R3_MOE_REMOTE_MIN_ROWS=%lld)\n", (long long)m);
++    return RAD_OK;
++}
++extern "C" int rad_moe_remote_wanted(int64_t step_rows) {
++    ensure_loaded();
++    return g_active.load(std::memory_order_acquire) && step_rows >= min_rows();
++}
++extern "C" RadMoeRemoteHandle rad_moe_remote_submit(
++    RadCtx* base, int layer, int64_t step_rows, int64_t rows, int64_t n_embd,
++    int64_t top_k, int64_t expert_base, const rad_weight* gate_up, const rad_weight* down,
++    int64_t n_expert, int32_t* ids_dev, const uint16_t* ew_dev,
++    const void* activation, int64_t activation_stride_bytes) {
++    if (!base || !rad_moe_remote_wanted(step_rows) || rows <= 0 || n_embd <= 0 || top_k <= 0 ||
++        n_expert <= 0 || !gate_up || !down || !ids_dev || !ew_dev || !activation) return nullptr;
++    auto* c = static_cast<rad::Ctx*>(base);
++    bool any = false;
++    for (int64_t x = 0; x < n_expert; ++x)
++        if (gate_up[x] && down[x] && c->weight_in_host_pool(gate_up[x]) &&
++            c->weight_in_host_pool(down[x])) { any = true; break; }
++    if (!any) return nullptr;
++    const int64_t n = rows * top_k;
++    thread_local std::vector<int32_t> ids;
++    thread_local std::vector<uint16_t> ew;
++    thread_local std::vector<int64_t> slot;
++    thread_local std::vector<RadMoeRemoteRoute> route;
++    ids.resize((size_t)n); ew.resize((size_t)n);
++    RadStream s = c->cur_stream();
++    if (rad_memcpy_async(ids.data(), ids_dev, n * (int64_t)sizeof(int32_t), s) < 0 ||
++        rad_memcpy_async(ew.data(), ew_dev, n * (int64_t)sizeof(uint16_t), s) < 0 ||
++        rad_stream_sync(s) < 0) {
++        rad_step_fail(base, "MoE remote routing copy failed");
++        return nullptr;
++    }
++    slot.clear(); route.clear();
++    for (int64_t i = 0; i < n; ++i) {
++        const int64_t le = (int64_t)ids[(size_t)i] - expert_base;
++        if (le < 0 || le >= n_expert || !gate_up[le] || !down[le] ||
++            !c->weight_in_host_pool(gate_up[le]) || !c->weight_in_host_pool(down[le])) continue;
++        slot.push_back(i);
++        route.push_back(RadMoeRemoteRoute{(int32_t)(i / top_k), ids[(size_t)i], ew[(size_t)i], 0});
++    }
++    if (route.empty()) return nullptr;
++    const RadMoeRemoteHooks hooks = g_hooks;
++    RadMoeRemoteHandle h = hooks.submit(hooks.user, layer, c->rank(), rows, n_embd,
++                                        route.data(), (int64_t)route.size(),
++                                        activation, activation_stride_bytes);
++    if (!h) return nullptr;
++    for (int64_t i : slot) ids[(size_t)i] = -1;
++    if (rad_memcpy_async(ids_dev, ids.data(), n * (int64_t)sizeof(int32_t), s) < 0) {
++        (void)hooks.wait(hooks.user, h);
++        rad_step_fail(base, "MoE remote route mask copy failed");
++        return nullptr;
++    }
++    return h;
++}
++extern "C" int rad_moe_remote_wait_into(RadCtx* base, RadMoeRemoteHandle handle,
++                                          void* dst, int64_t bytes) {
++    if (!base || !handle || !dst || bytes <= 0 ||
++        !g_active.load(std::memory_order_acquire)) return RAD_E_INVAL;
++    const RadMoeRemoteHooks hooks = g_hooks;
++    const void* src = hooks.wait(hooks.user, handle);
++    if (!src) return RAD_E_STATE;
++    auto* c = static_cast<rad::Ctx*>(base);
++    RadStream s = c->cur_stream();
++    const int rc = rad_memcpy_async(dst, src, bytes, s);
++    if (rc < 0) return rc;
++    /* wait() transfers a borrowed result pointer, with no release callback in the minimal ABI.
++     * Drain this engine stream so the hook may immediately recycle that storage safely. */
++    return rad_stream_sync(s);
++}
+diff --git a/core/place/mover.cpp b/core/place/mover.cpp
+index 2de5295..a994f33 100644
+--- a/core/place/mover.cpp
++++ b/core/place/mover.cpp
+@@ -66,10 +66,11 @@ void Residency::init(const Program& prog, const Plan& plan) {
+  * Both writers bump. `publish` settles a slot whose transfer has landed; `begin_transfer` opens
+  * one, and it MUST bump too, because the run phase memoises its stream wait per generation and a
+  * new event at an old generation is a wait that never happens (residency_iface.h). */
+-void Residency::publish(rad_weight w, void* ptr) {
++void Residency::publish(rad_weight w, void* ptr, bool host_pool) {
+     if ((size_t)w >= slot_.size()) return;
+     slot_[w].ptr = ptr;
+     slot_[w].ready = nullptr;
++    slot_[w].host_pool = host_pool ? 1 : 0;
+     ++slot_[w].generation;
+     ++epoch_;
+     note(w);
+@@ -79,6 +80,7 @@ void Residency::begin_transfer(rad_weight w, void* ptr, RadEvent ready) {
+     if ((size_t)w >= slot_.size()) return;
+     slot_[w].ptr = ptr;
+     slot_[w].ready = ready;
++    slot_[w].host_pool = 0;
+     ++slot_[w].generation;
+     ++epoch_;
+     note(w);
+@@ -423,9 +425,11 @@ void* Mover::unit_base(int32_t unit) const {
+ 
+ void Mover::republish(int32_t unit) {
+     const MoveUnit& mu = plan_->units[(size_t)unit];
++    const UnitState& us = unit_[(size_t)unit];
+     char* base = (char*)unit_base(unit);
++    const bool host_pool = us.tier == Tier::HostPinned && us.slab_slot < 0;
+     for (size_t i = 0; i < mu.weights.size(); ++i)
+-        res_.publish(mu.weights[i], base ? base + mu.offset[i] : nullptr);
++        res_.publish(mu.weights[i], base ? base + mu.offset[i] : nullptr, host_pool);
+ }
+ 
+ /* Is a COPY INTO this unit's slot still in flight? The release path needs it: a slot whose
+@@ -634,7 +638,8 @@ int Mover::stage_units(const std::vector<int32_t>& units, char* dst, int64_t cap
+     for (size_t k = 0; k < staged->size(); ++k) {
+         const MoveUnit& mu = plan_->units[(size_t)(*staged)[k]];
+         for (size_t i = 0; i < mu.weights.size(); ++i)
+-            res_.publish(mu.weights[i], dst + at[k] + mu.offset[i]);
++            /* A prefill-stage copy is temporary; keep host ownership visible to the remote policy. */
++            res_.publish(mu.weights[i], dst + at[k] + mu.offset[i], true);
+     }
+     ++stats_.stage_layers;
+     stats_.staged_units += (uint64_t)staged->size();
+diff --git a/core/place/mover.h b/core/place/mover.h
+index 0c28ba3..c4bd33c 100644
+--- a/core/place/mover.h
++++ b/core/place/mover.h
+@@ -312,7 +312,7 @@ class Residency final : public ResidencyTable {
+      * begin_transfer bumping is the part that is easy to get wrong and expensive to debug. The
+      * run phase memoises the wait per generation, so installing a new event at the old generation
+      * makes it skip the wait entirely (residency_iface.h). */
+-    void publish(rad_weight w, void* ptr);
++    void publish(rad_weight w, void* ptr, bool host_pool = false);
+     void begin_transfer(rad_weight w, void* ptr, RadEvent ready);
+     void settle(rad_weight w) {
+         if ((size_t)w >= slot_.size()) return;
+diff --git a/core/runtime/ctx.h b/core/runtime/ctx.h
+index 8a231df..c826093 100644
+--- a/core/runtime/ctx.h
++++ b/core/runtime/ctx.h
+@@ -251,6 +251,11 @@ class Ctx : public RadCtx {
+ 
+     void* weight_ptr(rad_weight w);
+     void* buf_ptr(rad_buf b);
++    bool  weight_in_host_pool(rad_weight w) const {
++        if (!residency_) return false;
++        const WeightSlot* s = residency_->lookup(w);
++        return s && s->host_pool;
++    }
+ 
+     /* ---------------------------------------------------------- routing (spec §5.5) */
+     int route_report(int layer, const RadRouting* r);
+diff --git a/core/runtime/residency.h b/core/runtime/residency.h
+index bd73431..97198f1 100644
+--- a/core/runtime/residency.h
++++ b/core/runtime/residency.h
+@@ -40,6 +40,9 @@ struct WeightSlot {
+     void*    ptr;
+     RadEvent ready;
+     uint32_t generation;
++    /* Policy-visible residency for routed experts. Temporary prefill staging keeps this set:
++     * ownership is still the pinned host pool even while that pass has a device copy. */
++    uint8_t  host_pool;
+ };
+ 
+ class ResidencyTable {
