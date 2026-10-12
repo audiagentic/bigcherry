@@ -42,7 +42,7 @@ class Patch1338Mechanics(unittest.TestCase):
         for path in _FILES:
             dst = root / path
             dst.parent.mkdir(parents=True, exist_ok=True)
-            copy_pinned("llamacpp", _VENDOR / path, dst)
+            copy_pinned(_VENDOR / path, dst)
         return root
 
     def _apply(self, root: Path, *modules):

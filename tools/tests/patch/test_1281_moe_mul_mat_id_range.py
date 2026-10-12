@@ -46,7 +46,7 @@ _ALL = _INPUTS + sorted(_CREATED)
 @unittest.skipUnless((_V / "ggml/include/ggml.h").exists(), "pinned vendor repository not present")
 class Patch1281Mechanics(unittest.TestCase):
     def _root(self, td, overrides=None):
-        root = production_source("llamacpp", "bigcherry", _INPUTS, Path(td), stop_before=_PID)
+        root = production_source(_INPUTS, Path(td), stop_before=_PID)
         for path, source in (overrides or {}).items():
             (root / path).write_text(source, encoding="utf-8", newline="\n")
         return root

@@ -34,7 +34,7 @@ class Patch1322Mechanics(unittest.TestCase):
     def _tree(self, td):
         root = Path(td)
         (root / _REL).parent.mkdir(parents=True)
-        copy_pinned("llamacpp", _VENDOR, root / _REL)
+        copy_pinned(_VENDOR, root / _REL)
         return root
 
     def test_apply_order_and_idempotent(self):

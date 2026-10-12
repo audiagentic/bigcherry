@@ -40,7 +40,7 @@ def _lines(*texts: str) -> Counter[str]:
 @unittest.skipUnless(paths.llama_root().is_dir(), "pinned vendor checkout not present")
 class Patch1294Mechanics(unittest.TestCase):
     def _root(self, td):
-        return production_source("llamacpp", "bigcherry", _INPUTS, Path(td), stop_before=_PID)
+        return production_source(_INPUTS, Path(td), stop_before=_PID)
 
     def test_apply_composed_source_owned_file_guards_identity_and_idempotent(self):
         with tempfile.TemporaryDirectory() as td:

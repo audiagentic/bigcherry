@@ -36,7 +36,7 @@ class Patch1318Mechanics(unittest.TestCase):
         root = Path(td.name)
         path = root / "common/speculative.cpp"
         path.parent.mkdir(parents=True)
-        copy_pinned("llamacpp", _VENDOR, path)
+        copy_pinned(_VENDOR, path)
         for mod in mods:
             res = apply_all(mod.PATCHES, root)
             self.assertTrue(all(r.ok for r in res), [e.detail for r in res for e in r.failed])

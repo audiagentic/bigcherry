@@ -48,7 +48,7 @@ class Patch0910Mechanics(unittest.TestCase):
             root = Path(td)
             for rel in _FILES:
                 (root / rel).parent.mkdir(parents=True, exist_ok=True)
-                copy_pinned("llamacpp", _V / rel, root / rel)
+                copy_pinned(_V / rel, root / rel)
             res = apply_all(_P.PATCHES, root)
             self.assertTrue(all(r.ok for r in res), [e.detail for r in res for e in r.failed])
             snap = {f: (root / f).read_text(encoding="utf-8") for f in _FILES}

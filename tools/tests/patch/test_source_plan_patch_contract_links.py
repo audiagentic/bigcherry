@@ -30,7 +30,7 @@ EXTERNAL_SOURCES_PATH = ROOT / "config" / "external-sources.toml"
 
 
 def _real_patch_ids() -> set[str]:
-    return {module.patch_id for module in patchset.catalog("llamacpp")}
+    return {module.patch_id for module in patchset.catalog()}
 
 
 class RequiresConflictsExistenceTests(unittest.TestCase):
@@ -42,7 +42,7 @@ class RequiresConflictsExistenceTests(unittest.TestCase):
     def test_every_requires_target_exists(self):
         real_ids = _real_patch_ids()
         problems = []
-        for module in patchset.catalog("llamacpp"):
+        for module in patchset.catalog():
             for target in module.requires:
                 if target not in real_ids:
                     problems.append(f"{module.patch_id}: REQUIRES {target!r} does not exist")
@@ -51,14 +51,14 @@ class RequiresConflictsExistenceTests(unittest.TestCase):
     def test_every_conflicts_target_exists(self):
         real_ids = _real_patch_ids()
         problems = []
-        for module in patchset.catalog("llamacpp"):
+        for module in patchset.catalog():
             for target in module.conflicts:
                 if target not in real_ids:
                     problems.append(f"{module.patch_id}: CONFLICTS {target!r} does not exist")
         self.assertEqual(problems, [], f"dangling CONFLICTS targets: {problems}")
 
     def test_no_requires_cycles(self):
-        graph = {module.patch_id: module.requires for module in patchset.catalog("llamacpp")}
+        graph = {module.patch_id: module.requires for module in patchset.catalog()}
         visiting: set[str] = set()
         visited: set[str] = set()
 
@@ -83,9 +83,9 @@ class RequiresConflictsExistenceTests(unittest.TestCase):
         # data bug (the anchor collision is symmetric by construction, a
         # missing reciprocal entry means the OTHER patch could be selected
         # alongside this one with no warning).
-        by_id = {module.patch_id: module for module in patchset.catalog("llamacpp")}
+        by_id = {module.patch_id: module for module in patchset.catalog()}
         problems = []
-        for module in patchset.catalog("llamacpp"):
+        for module in patchset.catalog():
             for target in module.conflicts:
                 other = by_id.get(target)
                 if other is not None and module.patch_id not in other.conflicts:
@@ -102,7 +102,7 @@ class NoDuplicateCanonicalIdsTests(unittest.TestCase):
         # duplicate patch_id (see patchset.py) -- prove it does not silently
         # swallow one by confirming the real catalog call succeeds with a
         # length matching the number of distinct real files on disk.
-        modules = patchset.catalog("llamacpp")
+        modules = patchset.catalog()
         ids = [m.patch_id for m in modules]
         self.assertEqual(len(ids), len(set(ids)), "duplicate patch_id survived catalog()")
 
@@ -115,7 +115,7 @@ class RejectedPatchesAbsentFromProductionSetsTests(unittest.TestCase):
 
     def test_no_rejected_state_patch_in_any_production_patch_set(self):
         recipes = tomllib.loads(RECIPES_PATH.read_text(encoding="utf-8"))
-        states = {info.name: info.state for info in patchset.describe("llamacpp", )}
+        states = {info.name: info.state for info in patchset.describe()}
         problems = []
         for set_name, body in (recipes.get("patch-set") or {}).items():
             for patch_id in body.get("patches", []):

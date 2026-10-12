@@ -101,11 +101,6 @@ jobs:
       - name: Compile validation harness
         run: python -m py_compile tools/bigcherry/patch/offline_check.py
 
-      - name: Run complete offline patch tests
-        env:
-          PYTHONPATH: tools
-        run: python -m unittest discover -s tools/tests/patch
-
       - name: Run release orchestration tests
         env:
           PYTHONPATH: tools

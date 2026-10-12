@@ -15,7 +15,7 @@ from bigcherry.patch.pinned_source import pinned_checkout, production_order, pro
 
 _REPO = Path(__file__).resolve().parents[3]
 _HAVE_VENDOR = paths.llama_root().is_dir()
-_V = pinned_checkout("llamacpp") if _HAVE_VENDOR else paths.llama_root()
+_V = pinned_checkout() if _HAVE_VENDOR else paths.llama_root()
 _FILES = ("ggml/src/ggml-cuda/ggml-cuda.cu",)
 
 
@@ -36,10 +36,10 @@ _P = _load("1360_ar_transfer_stream")
 class Patch1360Mechanics(unittest.TestCase):
     def _composed_base(self, td):
         """Production source plus 1360's dependency closure, with 1360 itself left for the test."""
-        ids = production_order("llamacpp", "bigcherry")
+        ids = production_order()
         for required in ("0840_hybrid_allreduce_dispatch", "0910_feature_sets", "1291_ar_cpu_root"):
             self.assertIn(required, ids)
-        return production_source("llamacpp", "bigcherry", _FILES, td, without="1360_ar_transfer_stream")
+        return production_source(_FILES, td, without="1360_ar_transfer_stream")
 
     def test_applies_after_composed_base_and_is_idempotent(self):
         with tempfile.TemporaryDirectory() as td:
