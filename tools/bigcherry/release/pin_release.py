@@ -35,6 +35,13 @@ PHASES = ("gate", "record", "notes", "main", "release", "unpin", "sync")
 RELEASE_PACKAGE = "engines/llamacpp"
 _RELEASE_CONFIG = "release-please-config.json"
 _MANIFEST = ".release-please-manifest.json"
+_RULESET = ".github/rulesets/main.json"
+
+_CHECK_SUCCESS = {"SUCCESS", "NEUTRAL", "SKIPPED"}
+_CHECK_FAILURE = {
+    "FAILURE", "ERROR", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED",
+    "STALE", "STARTUP_FAILURE",
+}
 
 
 class PinReleaseError(RuntimeError):
@@ -333,32 +340,287 @@ def _ensure_pr(plan: Plan, head: str, title: str, phase: str, body: str) -> dict
     return current
 
 
-def _wait_and_merge_pr(plan: Plan, pr: dict, phase: str, wait_s: int = 900) -> None:
-    checks = _run(plan.repo_root, "gh", "pr", "checks", str(pr["number"]), "--watch", "--interval", "10",
-                  check=False, timeout=wait_s)
-    if checks.returncode != 0:
-        raise PinReleaseError(phase, f"checks failed for {pr.get('url', '#'+str(pr['number']))}: "
-                                      + (checks.stderr or checks.stdout).strip()[-600:])
-    view = _run(plan.repo_root, "gh", "pr", "view", str(pr["number"]), "--json", "mergeable,state,url", check=False)
-    if view.returncode != 0:
-        raise PinReleaseError(phase, "could not inspect pull request mergeability: "
-                                      + (view.stderr or view.stdout).strip()[-400:])
-    state = json.loads(view.stdout or "{}")
+def _required_checks(plan: Plan, phase: str) -> tuple[str, ...]:
+    """Required status-check contexts for main, read from the checked-in ruleset."""
+    try:
+        document = json.loads((plan.repo_root / _RULESET).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise PinReleaseError(phase, f"cannot read {_RULESET}: {exc}") from exc
+    names: list[str] = []
+    for rule in document.get("rules", []):
+        if not isinstance(rule, dict) or rule.get("type") != "required_status_checks":
+            continue
+        rows = rule.get("parameters", {}).get("required_status_checks", [])
+        for row in rows:
+            name = row.get("context") if isinstance(row, dict) else None
+            if isinstance(name, str) and name and name not in names:
+                names.append(name)
+    if not names:
+        raise PinReleaseError(phase, f"{_RULESET} does not declare any required status checks")
+    return tuple(names)
+
+
+def _pr_state(plan: Plan, pr: dict, phase: str) -> dict:
+    viewed = _run(
+        plan.repo_root, "gh", "pr", "view", str(pr["number"]),
+        "--json", "mergeStateStatus,mergeable,state,url,headRefName", check=False,
+    )
+    if viewed.returncode != 0:
+        raise PinReleaseError(
+            phase, f"could not inspect pull request {pr['number']}: "
+            + (viewed.stderr or viewed.stdout).strip()[-400:],
+        )
+    try:
+        state = json.loads(viewed.stdout or "{}")
+    except json.JSONDecodeError as exc:
+        raise PinReleaseError(phase, f"could not parse pull request {pr['number']} state") from exc
+    if not isinstance(state, dict):
+        raise PinReleaseError(phase, f"pull request {pr['number']} state is not an object")
+    return state
+
+
+def _merge_manifest_text(release_text: str, main_text: str, phase: str = "release") -> str:
+    """Resolve the shared manifest without reformatting it: this package from the release side, all others from main."""
+    try:
+        release = json.loads(release_text)
+        main = json.loads(main_text)
+    except json.JSONDecodeError as exc:
+        raise PinReleaseError(phase, f"cannot resolve {_MANIFEST}: invalid JSON side") from exc
+    if not isinstance(release, dict) or not isinstance(main, dict):
+        raise PinReleaseError(phase, f"cannot resolve {_MANIFEST}: both sides must be objects")
+    if RELEASE_PACKAGE not in release:
+        raise PinReleaseError(phase, f"cannot resolve {_MANIFEST}: release side has no {RELEASE_PACKAGE!r} key")
+    if set(release) != set(main):
+        raise PinReleaseError(
+            phase, f"cannot resolve {_MANIFEST}: package keys differ between release and main; refusing to invent formatting",
+        )
+
+    desired = dict(main)
+    desired[RELEASE_PACKAGE] = release[RELEASE_PACKAGE]
+    updated = release_text
+    for key, value in desired.items():
+        if not isinstance(value, str):
+            raise PinReleaseError(phase, f"cannot resolve {_MANIFEST}: {key!r} has non-string version {value!r}")
+        pattern = re.compile(
+            rf'(?m)^([ \t]*){re.escape(json.dumps(key))}([ \t]*:[ \t]*)'
+            r'(?P<value>"(?:\\.|[^"\\])*")(?P<tail>[ \t]*,?[ \t]*(?:\r?\n|$))'
+        )
+        match = pattern.search(updated)
+        if match is None:
+            raise PinReleaseError(phase, f"cannot preserve formatting while resolving {_MANIFEST} key {key!r}")
+        encoded = json.dumps(value)
+        updated = updated[:match.start("value")] + encoded + updated[match.end("value"):]
+
+    try:
+        resolved = json.loads(updated)
+    except json.JSONDecodeError as exc:
+        raise PinReleaseError(phase, f"resolved {_MANIFEST} is invalid JSON") from exc
+    if resolved != desired:
+        raise PinReleaseError(phase, f"resolved {_MANIFEST} does not match the release/main ownership rule")
+    return updated
+
+
+def _merge_pr_branch_locally(plan: Plan, pr: dict, phase: str) -> None:
+    """Merge main into a conflicting PR branch in a temporary worktree; only the shared manifest may conflict."""
+    root, remote = plan.repo_root, plan.remote
+    state = _pr_state(plan, pr, phase)
+    head = state.get("headRefName") or pr.get("headRefName")
+    if not isinstance(head, str) or not head:
+        raise PinReleaseError(phase, f"pull request {pr['number']} has no head branch")
+    _git(root, "fetch", "-q", remote, plan.main, head)
+    parent = Path(tempfile.mkdtemp(prefix="pin-release-pr-update-", dir=root.parent))
+    worktree = parent / "tree"
+    try:
+        _git(root, "worktree", "add", "-q", "--detach", str(worktree), f"{remote}/{head}")
+        merge = _run(
+            worktree, "git", "merge", "--no-edit", "-m",
+            f"merge {plan.main} into {head} before pull request merge",
+            f"{remote}/{plan.main}", check=False,
+        )
+        if merge.returncode != 0:
+            conflicts = tuple(
+                line for line in _git(worktree, "diff", "--name-only", "--diff-filter=U", check=False).splitlines()
+                if line
+            )
+            unexpected = tuple(path for path in conflicts if path != _MANIFEST)
+            if unexpected or conflicts != (_MANIFEST,):
+                _run(worktree, "git", "merge", "--abort", check=False)
+                names = sorted(unexpected or conflicts)
+                raise PinReleaseError(
+                    phase, f"pull request {pr['number']} conflicts with {plan.main} in {', '.join(names) or 'unknown files'}; "
+                    f"only {_MANIFEST} may be resolved automatically",
+                )
+            release_text = _git(worktree, "show", f":2:{_MANIFEST}")
+            main_text = _git(worktree, "show", f":3:{_MANIFEST}")
+            (worktree / _MANIFEST).write_text(
+                _merge_manifest_text(release_text, main_text, phase),
+                encoding="utf-8", newline="",
+            )
+            _git(worktree, "add", _MANIFEST)
+            remaining = _git(worktree, "diff", "--name-only", "--diff-filter=U", check=False)
+            if remaining:
+                _run(worktree, "git", "merge", "--abort", check=False)
+                raise PinReleaseError(phase, f"pull request {pr['number']} still has unresolved conflicts: {remaining}")
+            _git(worktree, "commit", "-q", "--no-edit")
+        pushed = _run(worktree, "git", "push", "-q", remote, f"HEAD:refs/heads/{head}", check=False)
+        if pushed.returncode != 0:
+            raise PinReleaseError(
+                phase, f"could not push updated pull request branch {head}: "
+                + (pushed.stderr or pushed.stdout).strip()[-400:],
+            )
+    finally:
+        _run(root, "git", "worktree", "remove", "--force", str(worktree), check=False)
+        shutil.rmtree(parent, ignore_errors=True)
+
+
+def _bring_pr_up_to_main(plan: Plan, pr: dict, phase: str, log=print) -> bool:
+    """Bring a PR branch to current main without touching the user's checkout."""
+    state = _pr_state(plan, pr, phase)
+    merge_state = str(state.get("mergeStateStatus") or "").upper()
+    mergeable = str(state.get("mergeable") or "").upper()
+    behind = merge_state in {"BEHIND", "DIRTY"} or mergeable == "CONFLICTING"
+    if not behind:
+        return False
+
+    if mergeable == "CONFLICTING" or merge_state == "DIRTY":
+        log(f"  {phase:<8} PR #{pr['number']} is behind with conflicts; merging {plan.main} in a temporary worktree")
+        _merge_pr_branch_locally(plan, pr, phase)
+        return True
+
+    updated = _run(plan.repo_root, "gh", "pr", "update-branch", str(pr["number"]), check=False)
+    if updated.returncode == 0:
+        log(f"  {phase:<8} PR #{pr['number']} was behind; updated it to {plan.main} with gh pr update-branch")
+        return True
+
+    refreshed = _pr_state(plan, pr, phase)
+    if str(refreshed.get("mergeable") or "").upper() == "CONFLICTING" or             str(refreshed.get("mergeStateStatus") or "").upper() == "DIRTY":
+        log(f"  {phase:<8} PR #{pr['number']} became conflicting; merging {plan.main} in a temporary worktree")
+        _merge_pr_branch_locally(plan, pr, phase)
+        return True
+    raise PinReleaseError(
+        phase, f"could not update pull request {pr['number']} to {plan.main}: "
+        + (updated.stderr or updated.stdout).strip()[-400:],
+    )
+
+
+def _trigger_pr_checks(plan: Plan, pr: dict, phase: str, log=print) -> None:
+    state = _pr_state(plan, pr, phase)
+    if str(state.get("mergeStateStatus") or "").upper() in {"BEHIND", "DIRTY"} or             str(state.get("mergeable") or "").upper() == "CONFLICTING":
+        _bring_pr_up_to_main(plan, pr, phase, log)
+        log(f"  {phase:<8} triggered required checks by updating PR #{pr['number']} to {plan.main}")
+        return
+
+    closed = _run(plan.repo_root, "gh", "pr", "close", str(pr["number"]), check=False)
+    if closed.returncode != 0:
+        raise PinReleaseError(
+            phase, f"required checks never started and PR #{pr['number']} could not be closed to trigger them: "
+            + (closed.stderr or closed.stdout).strip()[-400:],
+        )
+    reopened = _run(plan.repo_root, "gh", "pr", "reopen", str(pr["number"]), check=False)
+    if reopened.returncode != 0:
+        raise PinReleaseError(
+            phase, f"PR #{pr['number']} was closed to trigger required checks but could not be reopened: "
+            + (reopened.stderr or reopened.stdout).strip()[-400:],
+        )
+    log(f"  {phase:<8} required checks had not started; closed and reopened PR #{pr['number']} once to trigger them")
+
+
+def _wait_required_checks(
+    plan: Plan,
+    pr: dict,
+    phase: str,
+    wait_s: int = 900,
+    poll_s: int = 5,
+    grace_s: int = 20,
+    log=print,
+) -> None:
+    required = _required_checks(plan, phase)
+    start = time.time()
+    deadline = start + wait_s
+    grace_deadline = min(deadline, start + grace_s)
+    triggered = False
+
+    while True:
+        result = _run(
+            plan.repo_root, "gh", "pr", "checks", str(pr["number"]),
+            "--json", "name,state,link", check=False,
+        )
+        raw = result.stdout.strip()
+        if raw:
+            try:
+                rows = json.loads(raw)
+            except json.JSONDecodeError as exc:
+                raise PinReleaseError(phase, f"could not parse checks for pull request {pr['number']}") from exc
+            if not isinstance(rows, list):
+                raise PinReleaseError(phase, f"checks for pull request {pr['number']} are not a list")
+        else:
+            detail = (result.stderr or "").strip()
+            if result.returncode != 0 and "no checks reported" not in detail.lower():
+                raise PinReleaseError(
+                    phase, f"could not read checks for pull request {pr['number']}: {detail[-400:]}",
+                )
+            rows = []
+
+        by_name = {
+            row.get("name"): row for row in rows
+            if isinstance(row, dict) and row.get("name") in required
+        }
+        for name in required:
+            row = by_name.get(name)
+            if row is None:
+                continue
+            state = str(row.get("state") or "").upper()
+            if state in _CHECK_FAILURE:
+                url = row.get("link") or pr.get("url") or f"PR #{pr['number']}"
+                raise PinReleaseError(phase, f"required check {name} failed: {url}")
+
+        if all(
+            name in by_name and str(by_name[name].get("state") or "").upper() in _CHECK_SUCCESS
+            for name in required
+        ):
+            return
+
+        now = time.time()
+        if not by_name and not triggered and now >= grace_deadline:
+            _trigger_pr_checks(plan, pr, phase, log)
+            triggered = True
+        if now >= deadline:
+            pending = [
+                name for name in required
+                if name not in by_name or str(by_name[name].get("state") or "").upper() not in _CHECK_SUCCESS
+            ]
+            raise PinReleaseError(
+                phase, f"required checks for pull request {pr['number']} did not pass within {wait_s} s: "
+                + ", ".join(pending),
+            )
+        time.sleep(poll_s)
+
+
+def _wait_and_merge_pr(plan: Plan, pr: dict, phase: str, wait_s: int = 900, verify=None, log=print) -> None:
+    _bring_pr_up_to_main(plan, pr, phase, log)
+    _wait_required_checks(plan, pr, phase, wait_s=wait_s, log=log)
+    if verify is not None:
+        verify()
+    state = _pr_state(plan, pr, phase)
     if state.get("state") != "OPEN" or state.get("mergeable") != "MERGEABLE":
-        raise PinReleaseError(phase, f"pull request {pr['number']} is not mergeable: "
-                                      f"state={state.get('state')} mergeable={state.get('mergeable')}")
+        raise PinReleaseError(
+            phase, f"pull request {pr['number']} is not mergeable: "
+            f"state={state.get('state')} mergeable={state.get('mergeable')}",
+        )
     merged = _run(plan.repo_root, "gh", "pr", "merge", str(pr["number"]), "--merge", check=False)
     if merged.returncode != 0:
-        raise PinReleaseError(phase, f"could not merge {pr.get('url', '#'+str(pr['number']))}: "
-                                      + (merged.stderr or merged.stdout).strip()[-400:])
+        raise PinReleaseError(
+            phase, f"could not merge {pr.get('url', '#'+str(pr['number']))}: "
+            + (merged.stderr or merged.stdout).strip()[-400:],
+        )
 
 
 def _main_pr_title(plan: Plan) -> str:
     return f"build: llama.cpp pin {plan.llama_tag} release record and notes"
 
 
-def phase_main(plan: Plan, wait_s: int = 900) -> bool:
-    """Publish the work branch and merge it to main through a checked pull request."""
+def phase_main(plan: Plan, wait_s: int = 900, log=print) -> bool:
+    """Publish the work branch and merge it to main through the shared checked-PR path."""
     if _tag_exists(plan):
         return False
     root, remote = plan.repo_root, plan.remote
@@ -368,19 +630,10 @@ def phase_main(plan: Plan, wait_s: int = 900) -> bool:
     main_ref = f"{remote}/{plan.main}"
     if _run(root, "git", "merge-base", "--is-ancestor", head, main_ref, check=False).returncode == 0:
         return False
-    if _run(root, "git", "merge-base", "--is-ancestor", main_ref, head, check=False).returncode != 0:
-        merge = _run(root, "git", "merge", "--no-edit", "-m",
-                     f"merge {plan.main} into {plan.branch} for the {plan.release_tag} release",
-                     main_ref, check=False)
-        if merge.returncode != 0:
-            _run(root, "git", "merge", "--abort", check=False)
-            raise PinReleaseError("main", f"{main_ref} does not merge cleanly into {plan.branch}:\n"
-                                          f"{(merge.stdout + merge.stderr).strip()[-800:]}\n"
-                                          "merge it by hand, commit, and run again")
     _git(root, "push", "-q", remote, f"HEAD:refs/heads/{plan.branch}")
     pr = _ensure_pr(plan, plan.branch, _main_pr_title(plan), "main",
                     f"Release record and notes for llama.cpp {plan.llama_tag} ({plan.version}).")
-    _wait_and_merge_pr(plan, pr, "main", wait_s)
+    _wait_and_merge_pr(plan, pr, "main", wait_s, log=log)
     return True
 
 
@@ -452,7 +705,7 @@ def _verify_release_pr_files(plan: Plan, pr: dict) -> None:
                                          f"expected {sorted(expected)}, got {sorted(x for x in actual if x)}")
 
 
-def phase_release(plan: Plan, wait_s: int = 900, poll_s: int = 20) -> bool:
+def phase_release(plan: Plan, wait_s: int = 900, poll_s: int = 20, log=print) -> bool:
     """release-please's PR merged and the release tag present. Returns False when the tag already exists."""
     if _tag_exists(plan):
         return False
@@ -468,10 +721,11 @@ def phase_release(plan: Plan, wait_s: int = 900, poll_s: int = 20) -> bool:
                                                  "release-please workflow run on main: neither a release PR nor a release branch for "
                                                  "this version exists")
             time.sleep(poll_s)
-    _verify_release_pr_files(plan, pr)
-    merged = _run(plan.repo_root, "gh", "pr", "merge", str(pr["number"]), "--merge", check=False)
-    if merged.returncode != 0:
-        raise PinReleaseError("release", f"could not merge {pr['url']}:\n{(merged.stderr or merged.stdout).strip()[-400:]}")
+    _wait_and_merge_pr(
+        plan, pr, "release", wait_s,
+        verify=lambda: _verify_release_pr_files(plan, pr),
+        log=log,
+    )
     deadline = time.time() + wait_s
     while not _tag_exists(plan):
         if time.time() > deadline:
@@ -513,7 +767,7 @@ def _prepare_unpin_branch(plan: Plan, branch: str) -> None:
         shutil.rmtree(parent, ignore_errors=True)
 
 
-def phase_unpin(plan: Plan, wait_s: int = 900) -> bool:
+def phase_unpin(plan: Plan, wait_s: int = 900, log=print) -> bool:
     """Clear package release-as after the release tag, through a dedicated PR."""
     if not _tag_exists(plan):
         raise PinReleaseError("unpin", f"{plan.release_tag} does not exist yet")
@@ -529,7 +783,7 @@ def phase_unpin(plan: Plan, wait_s: int = 900) -> bool:
     _prepare_unpin_branch(plan, branch)
     pr = _ensure_pr(plan, branch, _unpin_title(plan), "unpin",
                     f"Remove the temporary release-as pin after {plan.release_tag} was created.")
-    _wait_and_merge_pr(plan, pr, "unpin", wait_s)
+    _wait_and_merge_pr(plan, pr, "unpin", wait_s, log=log)
     return True
 
 
@@ -599,6 +853,8 @@ def _dry_run(plan: Plan, stop: int, log=print) -> None:
                     log(f"  main     would open PR base={plan.main} head={plan.branch} title={_main_pr_title(plan)!r}")
                 else:
                     log(f"  main     would reuse PR #{pr['number']} title={pr.get('title')!r} head={pr.get('headRefName')}")
+                log(f"           will merge {plan.main} if behind; conflicting updates use a temporary worktree")
+                log(f"           will wait for required checks: {', '.join(_required_checks(plan, 'main'))}; trigger once if none starts")
         elif name == "release":
             if tagged:
                 log(f"  release  already done: {plan.release_tag} exists")
@@ -608,6 +864,8 @@ def _dry_run(plan: Plan, stop: int, log=print) -> None:
                     log("  release  release PR: none exists yet")
                 else:
                     log(f"  release  would merge PR #{pr['number']} title={pr.get('title')!r} branch={pr.get('headRefName')}")
+                log(f"           will merge {plan.main} if behind; only {_MANIFEST} conflicts are auto-resolved")
+                log(f"           will wait for required checks: {', '.join(_required_checks(plan, 'release'))}; trigger once if none starts")
             for package, version in _manifest_versions(plan, release_pending=not tagged).items():
                 log(f"           manifest {package}: {version}")
         elif name == "unpin":
@@ -620,6 +878,8 @@ def _dry_run(plan: Plan, stop: int, log=print) -> None:
                     log(f"  unpin    would open PR base={plan.main} head={head} title={_unpin_title(plan)!r}")
                 else:
                     log(f"  unpin    would reuse PR #{pr['number']} title={pr.get('title')!r} head={pr.get('headRefName')}")
+                log(f"           will merge {plan.main} if behind; conflicting updates use a temporary worktree")
+                log(f"           will wait for required checks: {', '.join(_required_checks(plan, 'unpin'))}; trigger once if none starts")
         elif name == "sync":
             log(f"  sync     would merge {plan.remote}/{plan.main} into {plan.branch} and push only {plan.branch}")
 
@@ -644,9 +904,9 @@ def run(repo_root: Path, llama_tag: str, evidence: str, through: str = "sync", d
     steps = (
         ("record", lambda: phase_record(plan, gate_output, evidence)),
         ("notes", lambda: phase_notes(plan)),
-        ("main", lambda: phase_main(plan)),
-        ("release", lambda: phase_release(plan)),
-        ("unpin", lambda: phase_unpin(plan)),
+        ("main", lambda: phase_main(plan, log=log)),
+        ("release", lambda: phase_release(plan, log=log)),
+        ("unpin", lambda: phase_unpin(plan, log=log)),
         ("sync", lambda: phase_sync(plan)),
     )
     for name, step in steps:
