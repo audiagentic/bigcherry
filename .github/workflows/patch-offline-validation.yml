@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - 'engines/llamacpp/patches/**'
+      - 'engines/radiance/patches/**'
+      - 'engines/radiance/tests/**'
       - 'engines/*/engine.toml'
       - 'tools/tests/patch/**'
       - 'tools/tests/cli/test_slice_lab.py'
@@ -41,6 +43,8 @@ on:
     branches: [main]
     paths:
       - 'engines/llamacpp/patches/**'
+      - 'engines/radiance/patches/**'
+      - 'engines/radiance/tests/**'
       - 'engines/*/engine.toml'
       - 'tools/tests/patch/**'
       - 'tools/tests/cli/test_slice_lab.py'
@@ -116,6 +120,11 @@ jobs:
         env:
           PYTHONPATH: tools
         run: python -m unittest tools.tests.cli.test_slice_lab -v
+
+      - name: Run Radiance patch package mechanics tests
+        env:
+          PYTHONPATH: tools
+        run: python -m unittest tools.tests.patch.test_radiance_patch_packages -v
 
       - name: Run patch lint
         shell: bash
