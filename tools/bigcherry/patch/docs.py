@@ -28,7 +28,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from ..core import paths
+from ..core import engines, paths
 from . import registry as patch_registry
 
 SUMMARY_FILENAME = "SUMMARY.md"
@@ -152,7 +152,7 @@ def check_summary_for_patch(
     return tuple(problems)
 
 
-def check_summary_consistency(patches_dir: Path | None = None) -> list[str]:
+def check_summary_consistency(engine: str, patches_dir: Path | None = None) -> list[str]:
     """Fully mechanical drift check, no judgment involved: every patch's
     SUMMARY.md Status header must equal patch.toml's own state
     (the sole metadata authority for a packaged patch -- packaged
@@ -175,7 +175,7 @@ def check_summary_consistency(patches_dir: Path | None = None) -> list[str]:
     earlier version loaded it here AND again via patchset.catalog(), two
     reads of the same on-disk state for one check).
     """
-    registry = patch_registry.load_registry(patches_dir or paths.PATCHES)
+    registry = patch_registry.load_registry(engine, patches_dir)
     return [
         problem
         for descriptor in registry.descriptors
@@ -184,6 +184,7 @@ def check_summary_consistency(patches_dir: Path | None = None) -> list[str]:
 
 
 def resolve_patch_descriptors(
+    engine: str,
     patch_ids: "tuple[str, ...] | list[str]", *, patches_dir: Path | None = None,
 ) -> "tuple[list[patch_registry.PatchDescriptor], Path]":
     """Exact-resolve every id in ``patch_ids`` against the registry, in the
@@ -199,7 +200,7 @@ def resolve_patch_descriptors(
     catch PatchDocError itself and decide whether that's fatal for it,
     not have this module make that call by omission.
     """
-    registry = patch_registry.load_registry(patches_dir or paths.PATCHES)
+    registry = patch_registry.load_registry(engine, patches_dir)
     missing = [pid for pid in patch_ids if pid not in registry.by_id]
     if missing:
         raise PatchDocError(
