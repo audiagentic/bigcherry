@@ -954,7 +954,7 @@ def _exec_implementation(
     if descriptor.representation == REPRESENTATION_PACKAGED:
         _validate_packaged_imports(source, descriptor)
     code = compile(source, str(path), "exec")
-    name = f"bigcherry._patches.{descriptor.patch_id}"
+    name = f"bigcherry._patches.{descriptor.engine}.{descriptor.patch_id}"
     module = ModuleType(name)
     module.__file__ = str(path)
     # Register before exec so a legacy patch module may import its siblings.
