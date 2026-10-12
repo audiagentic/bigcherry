@@ -416,13 +416,145 @@ static void r3_ar_pipe_case(const Plugin& pl, const std::vector<int>& devs, cons
     if (had_old) setenv("R3_AR_PIPE", old_value.c_str(), 1); else unsetenv("R3_AR_PIPE");
 }
 
+/* R3_AR_WIRE4 quality check: the reduced bf16 row is compared with the exact wire on identical
+ * rank inputs. The 6-bit row is scored too, so the extra 4-bit error is visible rather than hidden
+ * behind a pass/fail tolerance. */
+struct R3ArWireRun {
+    const RadKernelInfo* row = nullptr;
+    int rank = 0, dev = 0, M = 0, wire = 0, heavy = 0;
+    int rc_init = RAD_E_STATE, rc_launch = RAD_E_STATE;
+    void* inst = nullptr;
+    std::vector<uint16_t> xout;
+};
+
+static void r3_ar_wire_worker(R3ArWireRun* t) {
+    constexpr int K = 5120, G = 128;
+    if (st_set_device(t->dev) != hipSuccess) { t->rc_init = RAD_E_DEVICE; return; }
+    std::vector<RadParam> ps = { PI("M", t->M), PI("n", K), PF("eps", 1e-6), PI("group", G),
+        PI("world_size", 2), PS("dtype", "bf16"), PI("wire", t->wire) };
+    t->rc_init = t->row->init(ps.data(), (int)ps.size(), t->rank, 2, &t->inst);
+    if (t->rc_init != RAD_OK) return;
+    const size_t ne = (size_t)t->M * K, xb = ne * 2, qb = ne;
+    const size_t sb = (size_t)t->M * (K / G) * 4, yb = xb;
+    void *x = nullptr, *w = nullptr, *q = nullptr, *sc = nullptr, *y = nullptr;
+    if (hipMalloc(&x, xb) != hipSuccess || hipMalloc(&w, K * 4) != hipSuccess ||
+        hipMalloc(&q, qb) != hipSuccess || hipMalloc(&sc, sb) != hipSuccess ||
+        hipMalloc(&y, yb) != hipSuccess) { t->rc_launch = RAD_E_NOMEM; return; }
+    std::vector<uint16_t> hx(ne);
+    std::vector<float> hw(K, 1.0f);
+    uint32_t seed = 0x6a09e667u ^ ((uint32_t)t->rank << 24) ^ (t->heavy ? 0xbb67ae85u : 0u);
+    for (size_t i = 0; i < ne; ++i) {
+        const uint32_t r = r3_pipe_rand(seed);
+        if (t->heavy) {
+            const uint16_t sign = (r & 1u) ? 0x8000u : 0u;
+            const uint16_t exp = (uint16_t)(119u + ((r >> 1) % 17u));
+            hx[i] = (uint16_t)(sign | (exp << 7) | ((r >> 9) & 0x7fu));
+        } else {
+            hx[i] = (uint16_t)(0x3f00u | (r & 0x7fu) | ((r & 0x80u) ? 0x8000u : 0u));
+        }
+    }
+    st_memcpy(x, hx.data(), xb, hipMemcpyHostToDevice);
+    st_memcpy(w, hw.data(), K * 4, hipMemcpyHostToDevice);
+    st_memset(q, 0, qb); st_memset(sc, 0, sb); st_memset(y, 0, yb);
+    RadTensor ts[6] = { T(x, RAD_BF16, { t->M, K }), T(nullptr, RAD_BF16, { t->M, K }),
+        T(w, RAD_F32, { K }), T(q, RAD_F8E4M3, { t->M, K }),
+        T(sc, RAD_F32, { t->M, K / G }), T(y, RAD_BF16, { t->M, K }) };
+    absent(ts[1]);
+    RadArgs a;
+    std::memset(&a, 0, sizeof(a));
+    a.t = ts; a.n_t = 6; a.p = ps.data(); a.n_p = (int)ps.size();
+    a.instance = t->inst; a.rank = t->rank; a.world_size = 2;
+    t->rc_launch = t->row->launch(&a, nullptr);
+    if (t->rc_launch == RAD_OK && st_stream_sync(nullptr) == hipSuccess) {
+        t->xout.resize(ne);
+        st_memcpy(t->xout.data(), x, xb, hipMemcpyDeviceToHost);
+    } else if (t->rc_launch == RAD_OK) {
+        t->rc_launch = RAD_E_DEVICE;
+    }
+    st_free(x); st_free(w); st_free(q); st_free(sc); st_free(y);
+}
+
+static bool r3_ar_wire_pair(const RadKernelInfo* row, const std::vector<int>& devs, int wire,
+                            bool wire4, bool heavy, std::vector<uint16_t>* rank0,
+                            std::vector<uint16_t>* rank1, std::string* why) {
+    setenv("R3_AR_PIPE", "0", 1);
+    setenv("R3_AR_WIRE4", wire4 ? "1" : "0", 1);
+    R3ArWireRun a{ row, 0, devs[0], 2048, wire, heavy ? 1 : 0 };
+    R3ArWireRun b{ row, 1, devs[1], 2048, wire, heavy ? 1 : 0 };
+    std::thread ta(r3_ar_wire_worker, &a), tb(r3_ar_wire_worker, &b);
+    ta.join(); tb.join();
+    const bool good = a.rc_init == RAD_OK && b.rc_init == RAD_OK &&
+                      a.rc_launch == RAD_OK && b.rc_launch == RAD_OK;
+    if (!good) *why = "init " + std::to_string(a.rc_init) + "/" + std::to_string(b.rc_init) +
+                      ", launch " + std::to_string(a.rc_launch) + "/" + std::to_string(b.rc_launch);
+    if (a.inst && row->fini) { st_set_device(devs[0]); row->fini(a.inst); }
+    if (b.inst && row->fini) { st_set_device(devs[1]); row->fini(b.inst); }
+    st_set_device(devs[0]);
+    if (good) { *rank0 = std::move(a.xout); *rank1 = std::move(b.xout); }
+    return good;
+}
+
+static float r3_ar_wire_bf(uint16_t h) {
+    const uint32_t u = (uint32_t)h << 16;
+    float f;
+    std::memcpy(&f, &u, sizeof(f));
+    return f;
+}
+
+static void r3_ar_wire_metric(const std::vector<uint16_t>& ref, const std::vector<uint16_t>& got,
+                              double* rel_l2, double* max_abs) {
+    double se = 0.0, sr = 0.0, ma = 0.0;
+    for (size_t i = 0; i < ref.size(); ++i) {
+        const double r = (double)r3_ar_wire_bf(ref[i]);
+        const double g = (double)r3_ar_wire_bf(got[i]);
+        const double d = g - r;
+        se += d * d; sr += r * r; ma = std::max(ma, std::fabs(d));
+    }
+    *rel_l2 = std::sqrt(se / (sr > 0.0 ? sr : 1.0));
+    *max_abs = ma;
+}
+
+static void r3_ar_wire4_case(const Plugin& pl, const std::vector<int>& devs, const char* name) {
+    const RadKernelInfo* row = find(pl, name);
+    if (!row) { ok(name, false, "row absent"); return; }
+    if (devs.size() < 2) { skip(name, "R3_AR_WIRE4 selftest needs GPU=0,1"); return; }
+    const char* old4 = std::getenv("R3_AR_WIRE4");
+    const char* oldp = std::getenv("R3_AR_PIPE");
+    const bool had4 = old4 != nullptr, hadp = oldp != nullptr;
+    const std::string old4v = old4 ? old4 : "", oldpv = oldp ? oldp : "";
+    for (int heavy = 0; heavy <= 1; ++heavy) {
+        std::vector<uint16_t> e0, e1, w0, w1, q0, q1;
+        std::string we, ww, wq;
+        const bool re = r3_ar_wire_pair(row, devs, 0, false, heavy != 0, &e0, &e1, &we);
+        const bool rw = r3_ar_wire_pair(row, devs, 6, false, heavy != 0, &w0, &w1, &ww);
+        const bool rq = r3_ar_wire_pair(row, devs, 6, true,  heavy != 0, &q0, &q1, &wq);
+        const bool ranks = re && rw && rq && e0 == e1 && w0 == w1 && q0 == q1;
+        const std::string label = std::string("R3_AR_WIRE4 M=2048 ") +
+                                  (heavy ? "heavy-tailed" : "random") + " launches/rank agreement";
+        ok(label.c_str(), ranks, re ? (rw ? (rq ? "rank outputs differ" : wq) : ww) : we);
+        if (ranks && e0.size() == w0.size() && e0.size() == q0.size()) {
+            double wr = 0.0, wm = 0.0, qr = 0.0, qm = 0.0;
+            r3_ar_wire_metric(e0, w0, &wr, &wm);
+            r3_ar_wire_metric(e0, q0, &qr, &qm);
+            std::printf("R3_AR_WIRE4 M=2048 dist=%s wht6_rel_l2=%.8g wht6_max_abs=%.8g "
+                        "wire4_rel_l2=%.8g wire4_max_abs=%.8g\n",
+                        heavy ? "heavy-tailed" : "random", wr, wm, qr, qm);
+        }
+    }
+    if (had4) setenv("R3_AR_WIRE4", old4v.c_str(), 1); else unsetenv("R3_AR_WIRE4");
+    if (hadp) setenv("R3_AR_PIPE", oldpv.c_str(), 1); else unsetenv("R3_AR_PIPE");
+}
+
 static void ar_two_rank(const Plugin& pl, const std::vector<int>& devs, const char* name) {
 @@ end
 
 @@ find 1
     skip_pair("ar_rmsnorm_quant_fp8", "two-rank fusion: needs a peer rank");
 @@ replace
-    if (sel("ar_rmsnorm_quant_fp8_host")) r3_ar_pipe_case(pl, devs, "ar_rmsnorm_quant_fp8_host");
+    if (sel("ar_rmsnorm_quant_fp8_host")) {
+        r3_ar_pipe_case(pl, devs, "ar_rmsnorm_quant_fp8_host");
+        r3_ar_wire4_case(pl, devs, "ar_rmsnorm_quant_fp8_host");
+    }
     if (sel("ar_rmsnorm_quant_fp8"))
         skip("ar_rmsnorm_quant_fp8", "R3_AR_PIPE targets the no-P2P host row");
 @@ end
