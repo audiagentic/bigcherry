@@ -245,6 +245,7 @@ def render_release_doc(
 
 
 def render_patch_selection_doc(
+    engine: str,
     *,
     patch_ids: "tuple[str, ...] | list[str]",
     pin_info: dict[str, str],
@@ -264,7 +265,7 @@ def render_patch_selection_doc(
     would make the abstraction worse, not better (gpt-dev-agent review,
     2026-08-31).
     """
-    descriptors, patches_root = resolve_patch_descriptors(patch_ids, patches_dir=patches_dir)
+    descriptors, patches_root = resolve_patch_descriptors(engine, patch_ids, patches_dir=patches_dir)
     return render_release_doc(
         descriptors=descriptors, patches_root=patches_root,
         pin_info=pin_info, selection_label=selection_label,
