@@ -48,7 +48,7 @@ from typing import Mapping
 
 from ..core import config as campaign_config
 from . import evidence as patch_validation_evidence
-from ..core import paths
+from ..core import engines, paths
 from . import patchset
 from . import validation_policy
 
@@ -191,12 +191,12 @@ def resolve_for_context(
     return tuple(patch_ids)
 
 
-def patches_for_backend(backend: str, *, catalog_path: Path | None = None) -> tuple[str, ...]:
+def patches_for_backend(engine: str, backend: str, *, catalog_path: Path | None = None) -> tuple[str, ...]:
     """Every catalog patch ID whose backend is ``backend`` or 'agnostic'."""
     entries = (
-        build_snapshot().metadata
+        build_snapshot(engine).metadata
         if catalog_path is None
-        else load_catalog(catalog_path)
+        else load_catalog(engine, catalog_path)
     )
     return tuple(sorted(
         patch_id for patch_id, entry in entries.items()
@@ -204,9 +204,13 @@ def patches_for_backend(backend: str, *, catalog_path: Path | None = None) -> tu
     ))
 
 
-def load_catalog(path: Path | None = None) -> dict[str, CatalogEntry]:
-    """Load and validate ``engines/llamacpp/patches/catalog.toml``, keyed by patch ID."""
-    path = path or paths.PATCH_CATALOG
+def load_catalog(engine: str, path: Path | None = None) -> dict[str, CatalogEntry]:
+    """Load and validate an engine's optional legacy catalog.toml, keyed by patch ID."""
+    if path is None:
+        root = engines.load(paths.REPO_ROOT, engine).patches_root(paths.REPO_ROOT)
+        path = root / "catalog.toml"
+    if not path.is_file():
+        return {}
     raw = tomllib.loads(path.read_text(encoding="utf-8"))
     if raw.get("version") != 1:
         raise ValueError(f"{path}: unsupported catalog version {raw.get('version')!r}")
@@ -282,6 +286,7 @@ def load_catalog(path: Path | None = None) -> dict[str, CatalogEntry]:
 
 
 def validation_evidence_statuses(
+    engine: str,
     patch_ids: tuple[str, ...] | list[str],
     *,
     catalog_path: Path | None = None,
@@ -308,11 +313,11 @@ def validation_evidence_statuses(
     framework-configuration evidence (compile-only, cheap to regenerate)
     still binds its composition.
     """
-    entries = load_catalog(catalog_path)
-    modules = {module.patch_id: module for module in patchset.catalog(patches_dir)}
+    entries = load_catalog(engine, catalog_path)
+    modules = {module.patch_id: module for module in patchset.catalog(engine, patches_dir)}
     # RS03: packaged patches carry their required architectures in
     # patch.toml, not catalog.toml.
-    registry = patchset.patch_registry.load_registry(patches_dir or paths.PATCHES)
+    registry = patchset.patch_registry.load_registry(engine, patches_dir)
     packaged = {
         d.patch_id: d for d in registry.descriptors
         if d.representation == patchset.patch_registry.REPRESENTATION_PACKAGED
@@ -438,6 +443,7 @@ def _carried_forward(patch_id, check, pinned_ref, resolved_base_revision, eviden
     return check
 
 def require_validation_evidence(
+    engine: str,
     patch_ids: tuple[str, ...] | list[str],
     *,
     catalog_path: Path | None = None,
@@ -453,6 +459,7 @@ def require_validation_evidence(
     and where to treat that as fatal -- this function itself does not gate
     anything on its own."""
     statuses = validation_evidence_statuses(
+        engine,
         patch_ids, catalog_path=catalog_path, patches_dir=patches_dir, pinned_ref=pinned_ref,
         evidence_root=evidence_root, allow_legacy_grandfather=allow_legacy_grandfather,
         resolved_base_revision=resolved_base_revision,
@@ -470,6 +477,7 @@ def require_validation_evidence(
 
 
 def cross_check(
+    engine: str,
     catalog_path: Path | None = None,
     patches_dir: Path | None = None,
     *,
@@ -495,9 +503,9 @@ def cross_check(
     independently of the catalog/module checks.  It defaults to True for
     compatibility; repository consumers that own SUMMARY evaluation can set
     it to False to avoid duplicate diagnostics."""
-    entries = load_catalog(catalog_path)
-    registry = patchset.patch_registry.load_registry(patches_dir or paths.PATCHES)
-    modules = {module.patch_id for module in patchset.catalog(patches_dir)}
+    entries = load_catalog(engine, catalog_path)
+    registry = patchset.patch_registry.load_registry(engine, patches_dir)
+    modules = {module.patch_id for module in patchset.catalog(engine, patches_dir)}
     # RS03: packaged patches' metadata authority is their own patch.toml, so
     # they are exempt from the catalog.toml one-to-one coverage and state
     # cross-checks (and must NOT appear in catalog.toml -- build_snapshot()
@@ -516,7 +524,7 @@ def cross_check(
     for patch_id in dangling_modules:
         problems.append(f"patch module {patch_id!r} has no catalog entry")
 
-    module_states = {module.patch_id: module.state for module in patchset.catalog(patches_dir)}
+    module_states = {module.patch_id: module.state for module in patchset.catalog(engine, patches_dir)}
     for patch_id in sorted((set(entries) & modules) - packaged_ids):
         module_state = module_states[patch_id]
         if entries[patch_id].state != module_state:
@@ -530,13 +538,14 @@ def cross_check(
     # gating verify_validation_evidence already uses below.
     if check_summaries and catalog_path is None and patches_dir is None:
         from . import docs as patch_docs
-        problems.extend(patch_docs.check_summary_consistency(patches_dir))
+        problems.extend(patch_docs.check_summary_consistency(engine, patches_dir))
 
     if verify_validation_evidence is None:
         verify_validation_evidence = catalog_path is None and patches_dir is None
 
     if verify_validation_evidence:
         statuses = validation_evidence_statuses(
+            engine,
             sorted(set(entries) & modules), catalog_path=catalog_path, patches_dir=patches_dir,
             pinned_ref=pinned_ref, evidence_root=evidence_root,
             allow_legacy_grandfather=allow_legacy_grandfather,
@@ -591,6 +600,7 @@ class CatalogSnapshot:
     change CatalogSnapshot exists to detect.
     """
 
+    engine: str
     root: Path
     modules: tuple["patchset.PatchModule", ...]
     metadata: Mapping[str, CatalogEntry]
@@ -638,6 +648,7 @@ def catalog_entry_from_descriptor(descriptor) -> "CatalogEntry | None":
 
 
 def build_snapshot(
+    engine: str,
     *,
     patches_dir: Path | None = None,
     catalog_path: Path | None = None,
@@ -651,13 +662,13 @@ def build_snapshot(
     ALSO has a catalog.toml entry is an error -- two metadata authorities
     for one patch is exactly what the packaged representation removes.
     """
-    root = patches_dir or paths.PATCHES
-    registry = patchset.patch_registry.load_registry(root)
+    root = patches_dir or engines.load(paths.REPO_ROOT, engine).patches_root(paths.REPO_ROOT)
+    registry = patchset.patch_registry.load_registry(engine, root)
     modules = tuple(
         patchset._module_from_descriptor(descriptor, registry.root)
         for descriptor in registry.descriptors
     )
-    metadata = dict(load_catalog(catalog_path))
+    metadata = dict(load_catalog(engine, catalog_path))
     packaged = [
         d for d in registry.descriptors
         if d.representation == patchset.patch_registry.REPRESENTATION_PACKAGED
@@ -693,7 +704,7 @@ def build_snapshot(
         b"bigcherry/catalog-snapshot/v2\0" + encoded, digest_size=16
     ).hexdigest()
     return CatalogSnapshot(
-        root=root, modules=modules, metadata=MappingProxyType(metadata), digest=digest,
+        engine=engine, root=root, modules=modules, metadata=MappingProxyType(metadata), digest=digest,
     )
 
 
@@ -753,9 +764,10 @@ def explain(patch_id: str, snapshot: "CatalogSnapshot", cfg=None) -> PatchExplan
     try:
         # RS04: implementation loading through the registry (descriptor-driven,
         # byte-compile) instead of a direct module-path load.
-        registry = patchset.patch_registry.load_registry(snapshot.root)
+        registry = patchset.patch_registry.load_registry(snapshot.engine, snapshot.root)
         descriptor = registry.get(module.patch_id)
         implementation = patchset.patch_registry.load_implementation(
+            snapshot.engine,
             descriptor, root=registry.root
         )
         files_touched = tuple(sorted({patch.path for patch in implementation}))
@@ -822,7 +834,7 @@ def dependency_graph(snapshot: "CatalogSnapshot", *, roots: tuple[str, ...] = ()
     all, skipping isolated nodes so the graph stays readable."""
     by_id = snapshot.by_id
     if roots:
-        expansion = patchset.expand_composition(roots, directory=snapshot.root)
+        expansion = patchset.expand_composition(snapshot.engine, roots, directory=snapshot.root)
         patch_ids = expansion.expanded
     else:
         patch_ids = tuple(sorted(
