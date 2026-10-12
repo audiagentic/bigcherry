@@ -776,6 +776,17 @@ payload into mapped pinned host memory and reads the peer's from it; there are n
   2,323-2,358 tok/s to 2,170-2,224 over three starts an arm (complete separation). Left off. Slicing inside one
   kernel does not make the out and in crossings run together: the waves that read wait on flags the same kernel's
   writers have not reached, and the flag polling over the link adds traffic of its own.
+- `R3_AR_WIRE4=1` is the next opt-in candidate (not measured yet): only the pinned-host two-rank fused
+  `ar_rmsnorm_quant_fp8` path with `wire=wht6` and `M >= 512` changes; smaller prefill calls and decode retain
+  wht6 exactly. It keeps wht6's 64-value orthonormal Walsh-Hadamard block and one BF16 scale per block, but uses
+  `scale = bf16(amax / 7)`, RNE `rintf(value / scale)`, clamp [-8, 7], then stores code+8 in four bits. A
+  512-element chunk is 256 code bytes plus 16 BF16 scale bytes (17/32 byte per element), against wht6's 384+16
+  (25/32), so the measured 7.17 MB large payload should become about 4.87 MB.
+  The shared exact scratch keeps its full `slot_bytes` stride/capacity; wire4 writes codes from the slot base and
+  moves the peer BF16 scale plane from `slot_bytes/2` to `slot_bytes/4`. `locpack` likewise keeps codes at
+  offset zero and moves its local f32 scale plane from `slot_bytes/2` to `slot_bytes/4`. The lab gate is
+  `tools/lab/radiance/ar-wire4.sh`: random and heavy-tailed M=2048 error against exact (with wht6 beside it),
+  three 27B MXFP4 starts per arm, then KLD/top-1 against an exact reference.
 
 ## Qwen3.8-Flash-Next on two XTX, first runs (2026-10-12, runs `fn2`, `fnp1`, `tools/lab/radiance/flashnext-tp2.sh`)
 
