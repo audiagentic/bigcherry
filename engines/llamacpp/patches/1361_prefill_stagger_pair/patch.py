@@ -1615,6 +1615,15 @@ PATCHES = [
                   guard=r"arena_plans_pair.clear", rationale="1340 Meta context destruction before simple backends."),
             _edit(id="stagger-meta-view-headroom", anchor=_A_META_HEADROOM, mode="replace", text=_N_META_HEADROOM,
                   guard=r"const size_t compute_headroom = bc_stagger_env != nullptr", rationale="Static Meta buffer view-container sizing."),
+        ),
+    ),
+    FilePatch(
+        # 1340 keeps its reserve/bind helpers and the container rotation in its own header since PA44-B (2026-10-12);
+        # the pair helpers go in at the same place as before, between the two.
+        path="ggml/src/bc-meta-arena-graph.h",
+        description="1361: second-arena reserve/bind helpers beside 1340's",
+        language="none",
+        edits=(
             _edit(id="stagger-arena-pair-helpers", anchor=_A_ARENA_ROTATE, mode="replace", text=_N_ARENA_ROTATE,
                   guard=r"ggml_backend_meta_reserve_graph_pair", rationale="After 1340 reserve/bind helpers and before container rotation."),
         ),
