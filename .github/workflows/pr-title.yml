@@ -15,6 +15,7 @@ jobs:
       - name: Validate conventional commit title
         env:
           PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_HEAD: ${{ github.event.pull_request.head.ref }}
         run: |
           python - <<'PY'
           import os
@@ -26,6 +27,13 @@ jobs:
               r"^(feat|fix|perf|chore|docs|test|refactor|ci|build|bump)"
               r"(\([a-z0-9][a-z0-9._/-]*\))?!?: .+"
           )
+          # release-please's own pull requests are titled "release: <component> <version>" (release-please-config.json,
+          # pull-request-title-pattern); accepted only from its release branches. This check is required on main, so
+          # without this a release pull request could never be merged.
+          head = os.environ.get("PR_HEAD", "")
+          release = re.compile(r"^release: +[a-z0-9-]+ [0-9]+[.][0-9]+[.][0-9]+$")
+          if head.startswith("release-please--branches--") and release.fullmatch(title):
+              raise SystemExit(0)
           if not pattern.fullmatch(title):
               print(
                   "PR title must be a conventional commit: "
