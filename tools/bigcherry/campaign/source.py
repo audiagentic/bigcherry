@@ -52,10 +52,11 @@ def _overlay_content_hash(overlay_root: Path) -> str | None:
 
 
 def resolve_materialization_inputs(
-    context: ProjectContext, plan: workspace.SourcePlan,
+    engine: str, context: ProjectContext, plan: workspace.SourcePlan,
 ) -> workspace.SourcePlan:
     """Resolve patch paths/digests and overlay paths/digests exactly once."""
     selection = patchset.resolve_exact(
+        engine,
         plan.patch_ids, directory=context.patches_root,
         required_state=plan.required_state,
     )
@@ -187,6 +188,7 @@ def source_plan_id(plan: workspace.SourcePlan) -> str:
 
 
 def source_plan_for(
+    engine: str,
     cfg: campaign_config.Config,
     source_name: str,
     *,
@@ -221,10 +223,11 @@ def source_plan_for(
         )
     source = cfg.sources[source_name]
     revision = cfg.pinned if source.ref == "pinned" else source.ref
-    resolved_catalog = catalog if catalog is not None else patchset.catalog()
+    resolved_catalog = catalog if catalog is not None else patchset.catalog(engine)
 
     try:
         lane = campaign_resolution.resolve_lane(
+            engine,
             source_name, cfg, resolved_catalog, experiment=experiment,
             catalog_directory=catalog_directory,
         )
