@@ -15,6 +15,11 @@ from pathlib import Path
 from . import engines, paths
 
 
+# The repository this code belongs to, fixed at import: the engines a recipes document may name are the ones this
+# checkout declares, whatever a caller later points REPO_ROOT at.
+_REPOSITORY = paths.REPO_ROOT
+
+
 class ConfigError(ValueError):
     pass
 
@@ -375,7 +380,7 @@ def load(path: str | Path) -> Config:
     engine = raw.get("engine")
     if not isinstance(engine, str) or not engine:
         raise ConfigError(f"{path}: engine must name the engine these recipes belong to")
-    declared = engines.names(paths.REPO_ROOT)
+    declared = engines.names(_REPOSITORY)
     if engine not in declared:
         raise ConfigError(f"{path}: engine {engine!r} is not declared (engines: {', '.join(declared)})")
     pinned = raw.get("pinned")
