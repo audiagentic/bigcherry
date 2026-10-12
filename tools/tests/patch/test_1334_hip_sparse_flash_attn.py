@@ -42,7 +42,7 @@ def _lines(*texts):
 @unittest.skipUnless(all((_V / f).exists() for f in _FILES), "pinned vendor checkout not present")
 class Patch1334Mechanics(unittest.TestCase):
     def _root(self, td):
-        return production_source(_FILES, td, stop_before=_ID)
+        return production_source("llamacpp", "bigcherry", _FILES, td, stop_before=_ID)
 
     def test_apply_and_idempotent(self):
         with tempfile.TemporaryDirectory() as td:

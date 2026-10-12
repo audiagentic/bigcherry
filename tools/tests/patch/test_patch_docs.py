@@ -52,11 +52,11 @@ def _write_summary(root: Path, patch_id: str, *, status: str,
 
 
 def _descriptor(root: Path, patch_id: str) -> "patch_registry.PatchDescriptor":
-    return patch_registry.load_registry(root).by_id[patch_id]
+    return patch_registry.load_registry("llamacpp", root).by_id[patch_id]
 
 
 def _registry_root(root: Path) -> Path:
-    return patch_registry.load_registry(root).root
+    return patch_registry.load_registry("llamacpp", root).root
 
 
 class ReadPatchSummaryTests(unittest.TestCase):
@@ -92,7 +92,7 @@ class RenderReleaseDocTests(unittest.TestCase):
             (root / "0200_b" / "SUMMARY.md").write_text("# 0200_b\n\nsecond patch\n", encoding="utf-8")
             (root / "0100_a" / "SUMMARY.md").write_text("# 0100_a\n\nfirst patch\n", encoding="utf-8")
 
-            registry = patch_registry.load_registry(root)
+            registry = patch_registry.load_registry("llamacpp", root)
             # Caller order is preserved, NOT re-sorted by numeric id --
             # pass 0200_b before 0100_a deliberately to prove it.
             descriptors = [registry.by_id["0200_b"], registry.by_id["0100_a"]]
@@ -114,7 +114,7 @@ class ResolvePatchDescriptorsTests(unittest.TestCase):
             root = Path(directory)
             _write_packaged_patch(root, "0100_x")
             with self.assertRaises(patch_docs.PatchDocError):
-                patch_docs.resolve_patch_descriptors(
+                patch_docs.resolve_patch_descriptors("llamacpp", 
                     ("0100_x", "not-a-real-id"), patches_dir=root,
                 )
 
@@ -123,7 +123,7 @@ class ResolvePatchDescriptorsTests(unittest.TestCase):
             root = Path(directory)
             _write_packaged_patch(root, "0200_b")
             _write_packaged_patch(root, "0100_a")
-            resolved, patches_root = patch_docs.resolve_patch_descriptors(
+            resolved, patches_root = patch_docs.resolve_patch_descriptors("llamacpp", 
                 ("0200_b", "0100_a"), patches_dir=root,
             )
             self.assertEqual([d.patch_id for d in resolved], ["0200_b", "0100_a"])
@@ -140,7 +140,7 @@ class RenderPatchSelectionDocTests(unittest.TestCase):
             _write_packaged_patch(root, "0100_x")
             _write_summary(root, "0100_x", status="validated", plan_item="none")
             with self.assertRaises(patch_docs.PatchDocError):
-                patch_docs.render_patch_selection_doc(
+                patch_docs.render_patch_selection_doc("llamacpp", 
                     patch_ids=("0100_x", "ghost-id"),
                     pin_info={}, selection_label="test", patches_dir=root,
                 )
@@ -151,7 +151,7 @@ class RenderPatchSelectionDocTests(unittest.TestCase):
             _write_packaged_patch(root, "0100_x")
             _write_summary(root, "0100_x", status="validated", plan_item="none",
                             body="real content\n")
-            doc = patch_docs.render_patch_selection_doc(
+            doc = patch_docs.render_patch_selection_doc("llamacpp", 
                 patch_ids=("0100_x",), pin_info={}, selection_label="test", patches_dir=root,
             )
             self.assertIn("1 patch(es) included", doc)
@@ -190,7 +190,7 @@ class CheckSummaryConsistencyTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             _write_packaged_patch(root, "0100_x", state="validated")
-            problems = patch_docs.check_summary_consistency(root)
+            problems = patch_docs.check_summary_consistency("llamacpp", root)
             self.assertEqual(problems, ["0100_x: missing SUMMARY.md"])
 
     def test_flags_status_drift(self):
@@ -198,7 +198,7 @@ class CheckSummaryConsistencyTests(unittest.TestCase):
             root = Path(directory)
             _write_packaged_patch(root, "0100_x", state="superseded")
             _write_summary(root, "0100_x", status="untested", plan_item="none")
-            problems = patch_docs.check_summary_consistency(root)
+            problems = patch_docs.check_summary_consistency("llamacpp", root)
             self.assertEqual(len(problems), 1)
             self.assertIn("Status='untested'", problems[0])
             self.assertIn("state='superseded'", problems[0])
@@ -208,7 +208,7 @@ class CheckSummaryConsistencyTests(unittest.TestCase):
             root = Path(directory)
             _write_packaged_patch(root, "0100_x", state="validated")
             _write_summary(root, "0100_x", status="validated", plan_item="none")
-            self.assertEqual(patch_docs.check_summary_consistency(root), [])
+            self.assertEqual(patch_docs.check_summary_consistency("llamacpp", root), [])
 
     def test_no_plan_item_declared_requires_summary_to_say_none_not_anything(self):
         """A real false-negative this replaces: an absent plan-item used to
@@ -217,7 +217,7 @@ class CheckSummaryConsistencyTests(unittest.TestCase):
             root = Path(directory)
             _write_packaged_patch(root, "0100_x", state="validated")
             _write_summary(root, "0100_x", status="validated", plan_item="RD999")
-            problems = patch_docs.check_summary_consistency(root)
+            problems = patch_docs.check_summary_consistency("llamacpp", root)
             self.assertEqual(len(problems), 1)
             self.assertIn("Plan item='RD999'", problems[0])
             self.assertIn("'none'", problems[0])
@@ -231,7 +231,7 @@ class CheckSummaryConsistencyTests(unittest.TestCase):
             )
             _write_summary(root, "1215_x", status="untested",
                             plan_item="RD39/RD40/RD41/RD42")
-            self.assertEqual(patch_docs.check_summary_consistency(root), [])
+            self.assertEqual(patch_docs.check_summary_consistency("llamacpp", root), [])
 
     def test_plan_ids_take_priority_over_singular_plan_item_when_both_set(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -242,7 +242,7 @@ class CheckSummaryConsistencyTests(unittest.TestCase):
             )
             _write_summary(root, "1215_x", status="untested",
                             plan_item="RD39")  # matches the stale singular field, not plan_ids
-            problems = patch_docs.check_summary_consistency(root)
+            problems = patch_docs.check_summary_consistency("llamacpp", root)
             self.assertEqual(len(problems), 1)
             self.assertIn("'RD39/RD40'", problems[0])
 

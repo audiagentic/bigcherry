@@ -84,7 +84,7 @@ class ProjectScientificIdentityResolver:
         root = self.project_root.resolve()
         patches = paths.LLAMACPP.patches_root(root)
         config = root / "config"
-        registry = patch_registry.load_registry(patches)
+        registry = patch_registry.load_registry("llamacpp", patches)
         contracts = experiment_contract.load_contracts(config / "experiment-contracts.toml")
         by_id = {descriptor.patch_id: descriptor for descriptor in registry.descriptors}
         try:

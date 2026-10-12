@@ -148,7 +148,7 @@ class ContractBindingTests(unittest.TestCase):
             (self.root / "validation.toml").unlink(missing_ok=True)
 
     def _registry(self) -> patch_registry.PatchRegistry:
-        return patch_registry.load_registry(self.root.parent.parent,
+        return patch_registry.load_registry("llamacpp", self.root.parent.parent,
                                             contracts_path=self.contracts)
 
     def _plan(self) -> pv.ValidationPlan | None:
@@ -279,7 +279,7 @@ class ContractBindingTests(unittest.TestCase):
         flat_root = self.base / "patches"
         flat = flat_root / "0900_legacy.py"
         flat.write_text('STATE = "untested"\nPATCHES = []\n', encoding="utf-8")
-        registry = patch_registry.load_registry(flat_root, contracts_path=self.contracts)
+        registry = patch_registry.load_registry("llamacpp", flat_root, contracts_path=self.contracts)
         descriptor = registry.get("0900_legacy")
         self.assertIsNone(
             pv.build_plan_for_patch(descriptor, root=flat_root,
@@ -321,10 +321,10 @@ class ContractExitCriterionTests(unittest.TestCase):
         (self.root / "validation.toml").write_text(ADAPTER_FULL, encoding="utf-8")
 
     def test_contract_change_changes_only_validation_identity(self) -> None:
-        first = patch_registry.load_registry(self.patches_root,
+        first = patch_registry.load_registry("llamacpp", self.patches_root,
                                              contracts_path=self.contracts).get("1201_test")
         self.write(gain=7.5)  # ONLY the contract changes
-        second = patch_registry.load_registry(self.patches_root,
+        second = patch_registry.load_registry("llamacpp", self.patches_root,
                                               contracts_path=self.contracts).get("1201_test")
 
         self.assertNotEqual(first.validation_digest, second.validation_digest,
@@ -349,13 +349,13 @@ class ContractExitCriterionTests(unittest.TestCase):
         # Build the first plan while the first contract is still current, then
         # change only the contract and build the second plan.
         self.write(gain=0.3)
-        first_descriptor = patch_registry.load_registry(
+        first_descriptor = patch_registry.load_registry("llamacpp", 
             self.patches_root, contracts_path=self.contracts
         ).get("1201_test")
         plan_first = pv.build_plan_for_patch(
             first_descriptor, root=self.patches_root, contracts_path=self.contracts)
         self.write(gain=7.5)
-        second_descriptor = patch_registry.load_registry(
+        second_descriptor = patch_registry.load_registry("llamacpp", 
             self.patches_root, contracts_path=self.contracts
         ).get("1201_test")
         plan_second = pv.build_plan_for_patch(

@@ -18,7 +18,7 @@ Policy decisions:
 * Performance/qualification evidence is re-established on request, not at
   every pin bump: evidence that fully qualifies at an earlier pin it was
   recorded at is admitted as ``carried-forward`` with a warning (shared
-  authority: ``patch.catalog.validation_evidence_statuses(carry_forward=True)``).
+  authority: ``patch.catalog.validation_evidence_statuses("llamacpp", carry_forward=True)``).
   Any non-pin mismatch, or no eligible record, stays a hard failure.  Hard
   mechanical validity (applies without conflict, not absorbed upstream) is
   enforced separately by patch-rebase-check and the apply transaction.
@@ -120,6 +120,7 @@ def admit(
     """
     ids = tuple(patch_ids)
     statuses = patch_catalog.validation_evidence_statuses(
+        "llamacpp",
         ids, catalog_path=catalog_path, patches_dir=patches_dir,
         pinned_ref=pinned_ref, evidence_root=evidence_root,
         allow_legacy_grandfather=allow_legacy_grandfather,

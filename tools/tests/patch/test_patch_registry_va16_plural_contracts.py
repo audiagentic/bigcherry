@@ -145,7 +145,7 @@ class PluralContractRegistryTests(unittest.TestCase):
         (package / "patch.py").write_text(NO_CONTRACT_PY, encoding="utf-8")
 
     def _load(self):
-        return patch_registry.load_registry(self.root, contracts_path=self.contracts)
+        return patch_registry.load_registry("llamacpp", self.root, contracts_path=self.contracts)
 
     def test_singular_legacy_normalizes_to_one_element_tuple(self) -> None:
         self._write_package("1300_singular", 1300, 'experiment-contract = "TEST-CONTRACT-A"')
@@ -274,7 +274,7 @@ class GeneratedToolingResidueExcludedFromDigestTests(unittest.TestCase):
         )
 
     def _digest(self) -> str:
-        return patch_registry.load_registry(
+        return patch_registry.load_registry("llamacpp", 
             self.root, contracts_path=self.contracts
         ).get("1300_residue").validation_digest
 

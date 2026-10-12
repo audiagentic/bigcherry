@@ -29,7 +29,7 @@ class Patch1308Mechanics(unittest.TestCase):
             root = Path(td.name)
             path = root / "src/models/qwen4exp.cpp"
             path.parent.mkdir(parents=True)
-            copy_pinned(_VENDOR, path)
+            copy_pinned("llamacpp", _VENDOR, path)
             results = apply_all(_module.PATCHES, root)
             self.assertTrue(all(r.ok for r in results), [e.detail for r in results for e in r.failed])
             out = path.read_text(encoding="utf-8")

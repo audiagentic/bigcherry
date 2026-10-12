@@ -45,8 +45,8 @@ class Patch1307Mechanics(unittest.TestCase):
         cuda = root / "ggml/src/ggml-cuda"
         cuda.mkdir(parents=True)
         for name in ("mmvq.cu", "mmvq.cuh", "vecdotq.cuh"):
-            copy_pinned(_VENDOR / name, cuda / name)
-        copy_pinned(_GGML_CUDA, cuda / "ggml-cuda.cu")
+            copy_pinned("llamacpp", _VENDOR / name, cuda / name)
+        copy_pinned("llamacpp", _GGML_CUDA, cuda / "ggml-cuda.cu")
         prereq = apply_all(_PREREQS, root)
         assert all(r.ok for r in prereq), [e.detail for r in prereq for e in r.failed]
         return td, root, cuda
@@ -113,7 +113,7 @@ def _lines(*texts):
 @unittest.skipUnless(_GGML_CUDA.exists(), "pinned vendor checkout not present")
 class Patch1307OwnedFiles(unittest.TestCase):
     def _root(self, td):
-        return production_source(_COMPOSE_INPUTS, td, stop_before=_ID)
+        return production_source("llamacpp", "bigcherry", _COMPOSE_INPUTS, td, stop_before=_ID)
 
     def test_composed_source_owned_files_guards_identity_and_idempotent(self):
         with tempfile.TemporaryDirectory() as td:
