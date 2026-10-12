@@ -29,7 +29,7 @@ class ResolutionError(ValueError):
 # test).
 # ---------------------------------------------------------------------------
 
-SELECTOR_IDENTITY_SCHEMA_VERSION = 2
+SELECTOR_IDENTITY_SCHEMA_VERSION = 3
 
 #: The closed set of selector kinds. Each kind's applicable fields are
 #: validated in ``SelectorIdentity.__post_init__`` -- non-applicable fields
@@ -61,6 +61,7 @@ _SOURCE_BOUNDED_KINDS = frozenset(
 _PAYLOAD_KEYS = frozenset(
     (
         "schema_version",
+        "engine",
         "selector_kind",
         "selector_name",
         "source_name",
@@ -119,6 +120,7 @@ class SelectorIdentity:
     module hash is a different identity.
     """
 
+    engine: str
     selector_kind: str
     selector_name: str
     source_name: str | None
@@ -128,6 +130,8 @@ class SelectorIdentity:
     module_hashes: tuple[tuple[str, str], ...]
 
     def __post_init__(self) -> None:
+        if not isinstance(self.engine, str) or not self.engine:
+            raise ResolutionError("selector identity engine must be a non-empty string")
         if self.selector_kind not in _SELECTOR_KINDS:
             raise ResolutionError(f"unknown selector kind {self.selector_kind!r}")
         if not isinstance(self.selector_name, str) or not self.selector_name:
@@ -222,7 +226,8 @@ class SelectorIdentity:
         if not isinstance(other, SelectorIdentity):
             return NotImplemented
         return (
-            self.selector_kind == other.selector_kind
+            self.engine == other.engine
+            and self.selector_kind == other.selector_kind
             and self.selector_name == other.selector_name
             and self.source_name == other.source_name
             and self.source_ref == other.source_ref
@@ -234,6 +239,7 @@ class SelectorIdentity:
     def __hash__(self) -> int:
         return hash(
             (
+                self.engine,
                 self.selector_kind,
                 self.selector_name,
                 self.source_name,
@@ -251,6 +257,7 @@ class SelectorIdentity:
         differing = [
             field
             for field in (
+                "engine",
                 "selector_kind",
                 "selector_name",
                 "source_name",
@@ -270,6 +277,7 @@ class SelectorIdentity:
         preserved, non-applicable fields explicitly null."""
         return {
             "schema_version": SELECTOR_IDENTITY_SCHEMA_VERSION,
+            "engine": self.engine,
             "selector_kind": self.selector_kind,
             "selector_name": self.selector_name,
             "source_name": self.source_name,
@@ -299,7 +307,7 @@ class SelectorIdentity:
                 f"selector identity schema_version {payload['schema_version']!r} "
                 f"!= current {SELECTOR_IDENTITY_SCHEMA_VERSION!r}"
             )
-        for key in ("selector_kind", "selector_name"):
+        for key in ("engine", "selector_kind", "selector_name"):
             if not isinstance(payload[key], str):
                 raise ResolutionError(f"selector identity {key!r} must be a string")
         for key in ("source_name", "source_ref", "patch_set_id"):
@@ -330,6 +338,7 @@ class SelectorIdentity:
                 "[patch_id, content_hash] pairs aligned with patch_ids"
             )
         return cls(
+            engine=payload["engine"],  # type: ignore[arg-type]
             selector_kind=payload["selector_kind"],  # type: ignore[arg-type]
             selector_name=payload["selector_name"],  # type: ignore[arg-type]
             source_name=payload["source_name"],  # type: ignore[arg-type]
@@ -344,6 +353,7 @@ class SelectorIdentity:
 
 
 def build_all_patches_identity(
+    engine: str,
     catalog: list[patchset.PatchModule],
 ) -> SelectorIdentity:
     """The all-patches coverage identity (PA34): every non-rejected registry
@@ -354,8 +364,14 @@ def build_all_patches_identity(
     conflict-free probe groups; this identity never claims otherwise)."""
     from ..patch.patchset import RETIRED_STATES
 
+    wrong = sorted(m.patch_id for m in catalog if m.engine != engine)
+    if wrong:
+        raise ResolutionError(
+            f"catalog contains patch module(s) outside engine {engine!r}: {', '.join(wrong)}"
+        )
     live = [m for m in catalog if m.state not in RETIRED_STATES]
     return SelectorIdentity(
+        engine=engine,
         selector_kind=SELECTOR_KIND_ALL_PATCHES,
         selector_name=SELECTOR_KIND_ALL_PATCHES,
         source_name=None,
@@ -368,6 +384,7 @@ def build_all_patches_identity(
 
 @dataclass(frozen=True)
 class ResolvedPatchSet:
+    engine: str
     name: str
     module_ids: tuple[str, ...]
     module_hashes: tuple[tuple[str, str], ...]
@@ -378,6 +395,7 @@ class ResolvedPatchSet:
 
 @dataclass(frozen=True)
 class ResolvedLane:
+    engine: str
     name: str
     source_name: str
     patch_set: ResolvedPatchSet
@@ -392,6 +410,7 @@ def _digest(payload: object) -> str:
 
 
 def resolve_patch_set(
+    engine: str,
     name: str,
     cfg: config.Config,
     catalog: list[patchset.PatchModule],
@@ -438,6 +457,7 @@ def resolve_patch_set(
         # probing. The physical-consistency check below is skipped because
         # the supplied snapshot IS the authority on this path.
         selected = patchset.resolve_exact_from_catalog(
+            engine,
             ids,
             modules=modules,
             required_state=required_state_override or declared.required_state,
@@ -453,6 +473,7 @@ def resolve_patch_set(
             )
         )
         selected = patchset.resolve_exact(
+            engine,
             ids,
             directory=resolved_catalog_directory,
             required_state=required_state_override or declared.required_state,
@@ -461,7 +482,7 @@ def resolve_patch_set(
         by_id = {module.patch_id: module for module in catalog}
         if set(by_id) != {
             module.patch_id
-            for module in patchset.catalog(directory=resolved_catalog_directory)
+            for module in patchset.catalog(engine, directory=resolved_catalog_directory)
         }:
             raise ResolutionError(
                 "catalog argument does not match the physical patch catalog"
@@ -498,6 +519,7 @@ def resolve_patch_set(
         "composition_names": list(composition_names or (name,)),
     }
     return ResolvedPatchSet(
+        engine=engine,
         name=name,
         module_ids=module_ids,
         module_hashes=module_hashes,
@@ -508,6 +530,7 @@ def resolve_patch_set(
 
 
 def resolve_lane_overlay(
+    engine: str,
     source_name: str,
     cfg: config.Config,
     catalog: list[patchset.PatchModule],
@@ -539,6 +562,7 @@ def resolve_lane_overlay(
     if source_name not in cfg.sources:
         raise ResolutionError(f"unknown source {source_name!r}")
     base = resolve_lane(
+        engine,
         source_name,
         cfg,
         catalog,
@@ -550,6 +574,7 @@ def resolve_lane_overlay(
         # consume the caller's single catalog snapshot -- never re-read the
         # registry for the overlay either.
         overlay_selection = patchset.resolve_exact_from_catalog(
+            engine,
             tuple(overlay_patch_ids),
             modules=modules,
             required_state=None,
@@ -565,6 +590,7 @@ def resolve_lane_overlay(
             )
         )
         overlay_selection = patchset.resolve_exact(
+            engine,
             tuple(overlay_patch_ids),
             directory=resolved_catalog_directory,
             required_state=None,
@@ -595,7 +621,7 @@ def resolve_lane_overlay(
         *(m.patch_id for m in overlay_selection.modules),
     ]
     merged_modules = tuple(
-        by_id[pid] for pid in patchset.topological_order(merged_ids, modules=by_id)
+        by_id[pid] for pid in patchset.topological_order(engine, merged_ids, modules=by_id)
     )
     module_ids = tuple(module.patch_id for module in merged_modules)
     module_hashes = tuple(
@@ -610,6 +636,7 @@ def resolve_lane_overlay(
         "composition_names": list(cfg.sources[source_name].patch_sets) + [overlay_name],
     }
     resolved = ResolvedPatchSet(
+        engine=engine,
         name=base.patch_set.name,
         module_ids=module_ids,
         module_hashes=module_hashes,
@@ -618,6 +645,7 @@ def resolve_lane_overlay(
         patch_set_id=_digest(identity),
     )
     return ResolvedLane(
+        engine=engine,
         name=f"{source_name}+{overlay_name}",
         source_name=source_name,
         patch_set=resolved,
@@ -626,6 +654,7 @@ def resolve_lane_overlay(
 
 
 def resolve_lane(
+    engine: str,
     source_name: str,
     cfg: config.Config,
     catalog: list[patchset.PatchModule],
@@ -647,11 +676,12 @@ def resolve_lane(
         raise ResolutionError(f"unknown experiment {experiment!r}")
     if not source.patch_sets:
         resolved = ResolvedPatchSet(
-            "empty", (), (), "upstream", None, _digest({"modules": []})
+            engine, "empty", (), (), "upstream", None, _digest({"modules": []})
         )
     elif len(source.patch_sets) == 1:
         base_name = source.patch_sets[0]
         resolved = resolve_patch_set(
+            engine,
             base_name,
             cfg,
             catalog,
@@ -677,6 +707,7 @@ def resolve_lane(
         earlier: frozenset[str] = frozenset()
         for name in source.patch_sets:
             resolved_set = resolve_patch_set(
+                engine,
                 name,
                 cfg,
                 catalog,
@@ -725,7 +756,7 @@ def resolve_lane(
             patch_id for resolved_set in per_set for patch_id in resolved_set.module_ids
         ]
         merged_modules = tuple(
-            by_id[pid] for pid in patchset.topological_order(merged_ids, modules=by_id)
+            by_id[pid] for pid in patchset.topological_order(engine, merged_ids, modules=by_id)
         )
         module_ids = tuple(module.patch_id for module in merged_modules)
         module_hashes = tuple(
@@ -753,6 +784,7 @@ def resolve_lane(
             "composition_names": list(source.patch_sets),
         }
         resolved = ResolvedPatchSet(
+            engine=engine,
             name="__merged__",
             module_ids=module_ids,
             module_hashes=module_hashes,
@@ -769,6 +801,7 @@ def resolve_lane(
         # candidate overlay share one implementation of the composition
         # identity rules, rather than drifting independently.
         overlaid = resolve_lane_overlay(
+            engine,
             source_name,
             cfg,
             catalog,
@@ -779,6 +812,7 @@ def resolve_lane(
         )
         resolved = overlaid.patch_set
     return ResolvedLane(
+        engine=engine,
         name=f"{source_name}+{experiment}" if experiment else source_name,
         source_name=source_name,
         patch_set=resolved,
@@ -842,6 +876,7 @@ class CanonicalSelection:
 
 
 def resolve_canonical_selection(
+    engine: str,
     source_name: str,
     cfg: config.Config,
     catalog: list[patchset.PatchModule],
@@ -891,6 +926,7 @@ def resolve_canonical_selection(
         if focal_overlay_patch_id not in by_id:
             raise ResolutionError(f"unknown focal patch {focal_overlay_patch_id!r}")
         base = resolve_lane(
+            engine,
             source_name,
             cfg,
             catalog,
@@ -898,6 +934,7 @@ def resolve_canonical_selection(
             modules=by_id,
         )
         closure = patchset.expand_composition_from_modules(
+            engine,
             (focal_overlay_patch_id,),
             modules=by_id,
         ).expanded
@@ -906,6 +943,7 @@ def resolve_canonical_selection(
             patch_id for patch_id in closure if patch_id not in base_ids
         )
         lane = resolve_lane_overlay(
+            engine,
             source_name,
             cfg,
             catalog,
