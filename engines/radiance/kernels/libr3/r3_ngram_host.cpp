@@ -414,12 +414,18 @@ int launch_ngram(const RadArgs* a, RadStream) {
     if (!a || a->n_t < 4) return RAD_E_INVAL;
     State* s = static_cast<State*>(a->instance);
     if (!s || s != g.get()) return RAD_E_STATE;
-    const long long lm = pget(a->p, a->n_p, "M", 0);
     const long long ln = pget(a->p, a->n_p, "n_embd", 0);
     const long long lv = pget(a->p, a->n_p, "n_vocab", 0);
     const int voff = (int)pget(a->p, a->n_p, "vocab_offset", 0);
-    if (lm <= 0 || lm > s->max_m || ln != s->n || lv != s->vocab) return RAD_E_SHAPE;
-    const int m = (int)lm, n = s->n;
+    if (ln != s->n || lv != s->vocab) return RAD_E_SHAPE;
+    const int n = s->n;
+    /* The rows of THIS call are the output tensor's, as libavx takes them: the M parameter is a declared range and
+     * its upper bound is the largest chunk, not what a decode step asks for. */
+    long long out_elems = a->t[3].rank > 0 ? 1 : 0;
+    for (int d = 0; d < a->t[3].rank; ++d) out_elems *= a->t[3].shape[d];
+    const long long lm = out_elems / n;
+    if (lm <= 0 || lm > s->max_m || lm * n != out_elems) return RAD_E_SHAPE;
+    const int m = (int)lm;
     if (!a->t[0].data || !a->t[1].data || !a->t[3].data ||
         a->t[0].dtype != RAD_I32 || a->t[1].dtype != RAD_F8E4M3 ||
         a->t[3].dtype != RAD_BF16 || !rad_tensor_is_contiguous(&a->t[0]) ||
