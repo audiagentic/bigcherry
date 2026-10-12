@@ -39,7 +39,9 @@ struct R3ArTimingRow {
 
 std::mutex g_r3_ar_timing_mu;
 std::vector<R3ArTimingEvent> g_r3_ar_timing_events;
-bool g_r3_ar_timing_dumped = false;
+/* The engine does not release the last all-reduce instance before it exits, so a report at teardown alone is
+ * never printed: the events are also reported in batches of this many as they accumulate. */
+static const size_t kR3ArTimingBatch = 4096;
 
 static const char* r3_ar_bucket_name(int b) {
     return b == 0 ? "M1_8" : (b == 1 ? "M512plus" : "M9_511");
@@ -49,8 +51,6 @@ static void r3_ar_timing_dump() {
     std::vector<R3ArTimingEvent> events;
     {
         std::lock_guard<std::mutex> lk(g_r3_ar_timing_mu);
-        if (g_r3_ar_timing_dumped) return;
-        g_r3_ar_timing_dumped = true;
         events.swap(g_r3_ar_timing_events);
     }
     if (events.empty()) return;
@@ -149,9 +149,14 @@ struct R3ArTimingScope {
             (void)hipEventDestroy(e.end);
             return;
         }
-        std::lock_guard<std::mutex> lk(g_r3_ar_timing_mu);
-        g_r3_ar_timing_events.push_back(e);
+        bool full = false;
+        {
+            std::lock_guard<std::mutex> lk(g_r3_ar_timing_mu);
+            g_r3_ar_timing_events.push_back(e);
+            full = g_r3_ar_timing_events.size() >= kR3ArTimingBatch;
+        }
         e.begin = e.end = nullptr;
+        if (full) r3_ar_timing_dump();
     }
 };
 @@ end
