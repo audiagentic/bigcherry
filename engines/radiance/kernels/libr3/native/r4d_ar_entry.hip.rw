@@ -18,6 +18,7 @@
 @@ replace
     int  host       = 0;
     int  timing     = 0;
+    int  wire4      = 0;
 };
 
 /* Wall time of one fused all-reduce call, taken between two stream synchronisations: the engine's HIP layer has no
@@ -120,6 +121,14 @@ struct R3ArTimingScope {
     in->host = host;
     const char* const timing = std::getenv("R3_AR_TIMING");
     in->timing = timing && std::strcmp(timing, "1") == 0;
+    const char* const wire4 = std::getenv("R3_AR_WIRE4");
+    in->wire4 = host && wire4 && std::strcmp(wire4, "1") == 0;
+    if (in->wire4) {
+        static std::once_flag r3_wire4_once;
+        std::call_once(r3_wire4_once, [] {
+            std::fprintf(stderr, "libr3: R3_AR_WIRE4 active for M>=512\n");
+        });
+    }
     in->dtype = dtype_code;
 @@ end
 
@@ -161,9 +170,9 @@ void release(ArInst* in) {
     if (nblocks > in->max_blocks) nblocks = in->max_blocks;
     if (nblocks < 1) nblocks = 1;
 
-    const char* const r3_wire4_env = std::getenv("R3_AR_WIRE4");
-    const bool r3_wire4 = in->host && wire == 6 && M >= 512 &&
-                          r3_wire4_env && std::strcmp(r3_wire4_env, "1") == 0;
+    /* The host twin latches the opt-in at instance init. This is the served path: the large
+     * two-XTX reduction is ar_rmsnorm_quant_fp8_host, not the standalone all_reduce row. */
+    const bool r3_wire4 = in->wire4 && wire == 6 && M >= 512;
     const char* const r3_pipe_env = std::getenv("R3_AR_PIPE");
     const bool r3_pipe = !r3_wire4 && in->host && wire == 6 && M >= 512 &&
                          r3_pipe_env && std::strcmp(r3_pipe_env, "1") == 0;
