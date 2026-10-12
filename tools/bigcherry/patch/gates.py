@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from ..campaign import resolution as campaign_resolution
-from ..core import paths
+from ..core import engines, paths
 from . import catalog as patch_catalog
 from . import docs as patch_docs
 from . import patchset
@@ -250,6 +250,7 @@ def evaluate_repository_lint_gates(
     therefore evaluated directly against the canonical registry and existing
     static policy authorities rather than by fabricating a ``GateContext``.
     """
+    patches_dir = patches_dir or engines.load(paths.REPO_ROOT, engine).patches_root(paths.REPO_ROOT)
     registry = patch_registry.load_registry(engine, patches_dir)
     patches_dir = registry.root
     if validation_baseline_path is None:
