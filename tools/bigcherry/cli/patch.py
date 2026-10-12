@@ -76,7 +76,7 @@ def _apply_exact_selection(
             file=sys.stderr,
         )
         return False
-    fresh = patch_selection._resolve_exact_selection(selection.source_name)
+    fresh = patch_selection._resolve_exact_selection(engines.LLAMACPP, selection.source_name)
     if (
         fresh.patch_set_id != selection.patch_set_id
         or fresh.patch_ids != selection.patch_ids
@@ -227,7 +227,7 @@ def cmd_apply(args: Namespace) -> int:
         return 0 if result.ok else 1
 
     try:
-        selection = patch_selection.resolve_cli_selection(args)
+        selection = patch_selection.resolve_cli_selection(engines.LLAMACPP, args)
     except patch_selection.SelectionError as exc:
         print(str(exc), file=sys.stderr)
         return 2
@@ -875,7 +875,7 @@ def cmd_patches(args: Namespace) -> int:
         return 1
 
     try:
-        selection = patch_selection.resolve_cli_selection(args)
+        selection = patch_selection.resolve_cli_selection(engines.LLAMACPP, args)
     except patch_selection.SelectionError as exc:
         print(str(exc), file=sys.stderr)
         return 2
