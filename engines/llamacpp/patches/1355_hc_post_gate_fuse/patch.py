@@ -143,6 +143,8 @@ void bc_cuda_op_dsv4_hc_post_gate(
 
 """
 
+_KERNEL_INCLUDE = '#include "bc-hc-post-gate-fuse.cuh"  // BigCherry 1355 owned definitions\n\n'
+
 _A_FUSE_SITE = r"""#if defined(GGML_USE_HIP)
     // bigcherry 1313: SCALE -> UNARY(SILU|SIGMOID) [-> SCALE] in one launch (BIGCHERRY_SCALE_ACT_FUSE=1).
 """
@@ -184,7 +186,27 @@ _N_FUSE = r"""#if defined(GGML_USE_HIP)
 #endif
 """
 
+OWNED = FilePatch(
+    path="ggml/src/ggml-cuda/bc-hc-post-gate-fuse.cuh",
+    description="1355: BigCherry-owned HC_POST gate-fusion kernel and dispatcher",
+    language="none",
+    create=True,
+    edits=(
+        Edit(
+            id="hc-post-gate-owned",
+            anchor=r"\A",
+            mode="insert_after",
+            text=_N_KERNEL,
+            guard=r"void bc_cuda_op_dsv4_hc_post_gate\(",
+            rationale="Owned include file; definitions use dsv4-hc.cu file-local kernel helpers/types.",
+            expect_matches=1,
+            max_span_lines=1,
+        ),
+    ),
+)
+
 PATCHES = [
+    OWNED,
     FilePatch(
         path="ggml/src/ggml-cuda/dsv4-hc.cuh",
         description="1355: declare HC_POST gate-consumer fusion",
@@ -211,9 +233,9 @@ PATCHES = [
                 id="hc-post-gate-kernel",
                 anchor=re.escape(_A_KERNEL_SITE),
                 mode="insert_before",
-                text=_N_KERNEL,
-                guard=r"bc_dsv4_hc_post_gate_grid_f32",
-                rationale="Narrow function-signature anchor after 1344's grid variants and before HC comb dispatch.",
+                text=_KERNEL_INCLUDE,
+                guard=r'#include "bc-hc-post-gate-fuse\.cuh"',
+                rationale="Include the owned definitions at their former site before HC comb dispatch.",
                 expect_matches=1,
                 max_span_lines=2,
             ),
