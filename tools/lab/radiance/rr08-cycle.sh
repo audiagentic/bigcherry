@@ -33,7 +33,8 @@ if has self; then
     grep -E "pass|fail|PASS|FAIL|error|exit" "$R/$tag-self-old.log" | tail -4 | cut -c1-200
     one 0 "$tag-self-bt" libr3-selftest.sh gemm_mxfp4a8_tiled R3_BT=1 R3_BT_B=$btb R3_BT_NT=1 GPU=0
     grep -E "pass|fail|PASS|FAIL|error|exit" "$R/$tag-self-bt.log" | tail -6 | cut -c1-200
-    if grep -qiE "fail|mismatch|error" "$R/$tag-self-bt.log"; then echo "RR08_STOP selftest of the new form does not pass"; rm -f "$jobs"; exit 1; fi
+    # "0 failed" is the pass line: stop only on a failed case or a FAIL verdict
+    if grep -qE "[1-9][0-9]* failed|verdict: FAIL" "$R/$tag-self-bt.log" || ! grep -q "verdict: PASS" "$R/$tag-self-bt.log"; then echo "RR08_STOP selftest of the new form does not pass"; rm -f "$jobs"; exit 1; fi
 fi
 if [ "${ORACLE:-0}" = 1 ]; then
     one 0 "$tag-oracle-bt" libr3-selftest.sh gemm_mxfp4a8_tiled R3_BT_ORACLE=1 R3_BT=1 R3_BT_B=$btb R3_BT_NT=1 GPU=0 CASE_TIMEOUT=3600
