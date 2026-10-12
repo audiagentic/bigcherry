@@ -213,6 +213,7 @@ def catalog(engine: str, directory: Path | None = None) -> list[PatchModule]:
 
 
 def topological_order(
+    engine: str,
     patch_ids: Sequence[str],
     *,
     modules: Mapping[str, PatchModule],
@@ -230,6 +231,11 @@ def topological_order(
     dependency-complete (every ``requires`` target is in ``patch_ids``); an
     unsatisfiable remainder is reported as a cycle.
     """
+    wrong = sorted(pid for pid, module in modules.items() if module.engine != engine)
+    if wrong:
+        raise ValueError(
+            f"catalog contains patch module(s) outside engine {engine!r}: {', '.join(wrong)}"
+        )
     remaining = set(patch_ids)
     unmet = {
         pid: {dep for dep in modules[pid].requires if dep in remaining}
@@ -270,6 +276,7 @@ def resolve_exact(
     identity resolution and probing.)"""
     modules = {module.patch_id: module for module in catalog(engine, directory)}
     return resolve_exact_from_catalog(
+        engine,
         patch_ids,
         modules=modules,
         required_state=required_state,
@@ -279,6 +286,7 @@ def resolve_exact(
 
 
 def resolve_exact_from_catalog(
+    engine: str,
     patch_ids: tuple[str, ...] | list[str],
     *,
     modules: dict[str, PatchModule],
@@ -309,6 +317,11 @@ def resolve_exact_from_catalog(
     way to be satisfied without also re-adding that module to the overlay
     itself -- which then collided with the overlay/base disjointness check.
     """
+    wrong = sorted(pid for pid, module in modules.items() if module.engine != engine)
+    if wrong:
+        raise ValueError(
+            f"catalog contains patch module(s) outside engine {engine!r}: {', '.join(wrong)}"
+        )
     ids = tuple(patch_ids)
     if len(set(ids)) != len(ids):
         raise ValueError("patch selection contains duplicate canonical IDs")
@@ -340,7 +353,7 @@ def resolve_exact_from_catalog(
             raise ValueError(
                 f"{module.patch_id} conflicts with selected module(s): {', '.join(conflicts)}"
             )
-    ordered_ids = topological_order(ids, modules=modules)
+    ordered_ids = topological_order(engine, ids, modules=modules)
     return ResolvedPatchSet(tuple(modules[pid] for pid in ordered_ids), required_state)
 
 
@@ -379,10 +392,11 @@ def expand_composition(
     a concurrent REQUIRES edit between identity resolution and closure
     expansion.)"""
     modules = {module.patch_id: module for module in catalog(engine, directory)}
-    return expand_composition_from_modules(patch_ids, modules=modules)
+    return expand_composition_from_modules(engine, patch_ids, modules=modules)
 
 
 def expand_composition_from_modules(
+    engine: str,
     patch_ids: tuple[str, ...] | list[str],
     *,
     modules: dict[str, PatchModule],
@@ -408,6 +422,11 @@ def expand_composition_from_modules(
     Raises ``ValueError`` on an unknown patch ID or a REQUIRES cycle
     (reported with the exact cycle path, not just "a cycle exists").
     """
+    wrong = sorted(pid for pid, module in modules.items() if module.engine != engine)
+    if wrong:
+        raise ValueError(
+            f"catalog contains patch module(s) outside engine {engine!r}: {', '.join(wrong)}"
+        )
     requested = tuple(patch_ids)
     unknown = sorted(set(requested) - set(modules))
     if unknown:
@@ -439,7 +458,7 @@ def expand_composition_from_modules(
     # true topological picker (minimum ready (order, patch_id)) instead of a
     # GLOBAL re-sort by (order, patch_id), which would put a numerically
     # earlier dependent ahead of its numerically later dependency.
-    expanded = topological_order(order, modules=modules)
+    expanded = topological_order(engine, order, modules=modules)
     return CompositionExpansion(requested=requested, expanded=expanded)
 
 
