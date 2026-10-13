@@ -44,8 +44,8 @@ CASES = {
 
 # Git blob prefixes for the exact package outputs against Radiance 1.3.0
 # (89cee7ce4); mismatches detect a port that merely matches guards while
-# silently changes output. 0002 now contains only the decode-row policy gate
-# and graph declarations/issues for libr3's GPU mailbox publish/join ops.
+# silently changes output. 0002 now contains the decode-row policy gate,
+# post-gather mailbox add, and HyperConn fused-path exclusion needed by remote passes.
 # 0003: diff body was amended to std::atoi(e) != 0 after its index line
 # was generated; 62849e9 is stale and the corrected hunk produces 8e1f89e.
 PIN_BLOBS = {
@@ -54,7 +54,8 @@ PIN_BLOBS = {
     },
     "0002_moe_remote_handoff": {
         "abi/rad_moe_remote.h": (None, "9e5f03d"),
-        "arch/common/rad_block_moe_fp8.h": ("51b7c28", "f314606"),
+        "arch/common/rad_block_hc.h": ("c19c8b6", "14c5886"),
+        "arch/common/rad_block_moe_fp8.h": ("51b7c28", "6794711"),
         "core/place/moe_remote.cpp": (None, "3705adf"),
     },
     "0003_mtp_full_head_switch": {
@@ -140,19 +141,27 @@ class TestRadiancePatchPackages(unittest.TestCase):
                         )
                         self.assertNotIn("rfused = !remote_policy", moe)
                         self.assertNotIn("!remote_policy && op_topk_scatter", moe)
-                        self.assertIn(
-                            "{w.sorted, w.edn}, {w.sorted, w.edn});", moe
-                        )
+                        self.assertIn("{w.h.x}, {w.h.x});", moe)
                         pub = moe.index("RAD_ISSUE_N(c_, op_remote_publish, rows")
                         rescatter = moe.index("RAD_ISSUE_N(c_, op_scatter, rows", pub)
                         routed_gemm = moe.index("if (op_hq)", rescatter)
                         self.assertLess(pub, rescatter)
                         self.assertLess(rescatter, routed_gemm)
-                        down = moe.index("RAD_ISSUE_N(c_, op_pdn, rows")
-                        join = moe.index("RAD_ISSUE_N(c_, op_remote_join, rows")
                         gather = moe.index("RAD_ISSUE_N(c_, op_gather, rows")
-                        self.assertLess(down, join)
-                        self.assertLess(join, gather)
+                        add = moe.index("RAD_ISSUE_N(c_, op_remote_add, rows")
+                        ar = moe.index("RAD_ISSUE_N(c_, op_ar, rows * g.n_embd", add)
+                        self.assertLess(gather, add)
+                        self.assertLess(add, ar)
+                        self.assertIn(
+                            "if (remote_policy || !gather_taken(g, T, gather_out_rows, gather_out_rows6))",
+                            moe,
+                        )
+                        self.assertIn("if (op_ar && (remote_policy ||", moe)
+                        hc = (root / "arch/common/rad_block_hc.h").read_text(encoding="utf-8")
+                        self.assertIn("if (!remote_policy && takes_gather(T)) {", hc)
+                        self.assertIn(
+                            "(!remote_policy && takes_ar(T)) ? ar_write(T) : op_write", hc
+                        )
                     if package_id == "0003_mtp_full_head_switch":
                         text = (root / "arch/common/rad_block_mtp_fp8.h").read_text(encoding="utf-8")
                         self.assertIn("std::atoi(e) != 0", text)
@@ -175,15 +184,20 @@ class TestRadiancePatchPackages(unittest.TestCase):
                 finally:
                     temp.cleanup()
 
-    def test_remote_helper_preserves_engine_policy_and_local_prefix(self):
+    def test_remote_helper_adds_after_gather_and_exposes_poison_proof(self):
         helper = REPO / "engines" / "radiance" / "components" / "libr3" / "helper"
         hook = (helper / "moe_remote_hook.cpp").read_text(encoding="utf-8")
         ops = (helper / "moe_mailbox_ops.hip").read_text(encoding="utf-8")
         self.assertIn('setenv("R3_MOE_REMOTE_MIN_ROWS", "0", 0)', hook)
         self.assertIn('setenv("R3_MOE_REMOTE_MAX_ROWS", mr.c_str(), 0)', hook)
         self.assertNotIn('setenv("R3_MOE_REMOTE_MAX_ROWS", mr.c_str(), 1)', hook)
-        self.assertIn('{"sorted", RAD_OPD_INOUT, 0}', ops)
-        self.assertIn('{"down", RAD_OPD_INOUT, 0}', ops)
+        self.assertIn('{"out", RAD_OPD_INOUT, 0}', ops)
+        self.assertIn('r.weight_bf16', ops)
+        self.assertIn('acc += bf16_product(weight, value);', ops)
+        self.assertIn('R3_MOE_HELPER poison', hook)
+        gpu = (helper / "moe_remote_gpu.h").read_text(encoding="utf-8")
+        self.assertIn('R3_MOE_HELPER_POISON', gpu)
+        self.assertIn('poison ? (uint16_t)0x447au : down[i]', gpu)
 
     def test_missing_anchor_fails_closed_and_is_atomic(self):
         for package_id, (relative, before, after) in CASES.items():
