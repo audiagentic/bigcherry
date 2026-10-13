@@ -34,3 +34,7 @@ source = "metrics"
 path = "/metrics"
 drafted = "radiance:draft_tokens_total"
 accepted = "radiance:draft_accepted_total"
+
+# BigCherry-owned source built against the pinned engine and installed into its runtime (RAD01 PR 5).
+[components]
+libr3 = "engines/radiance/components/libr3"
