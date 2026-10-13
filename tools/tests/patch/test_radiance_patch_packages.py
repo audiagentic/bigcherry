@@ -54,10 +54,10 @@ PIN_BLOBS = {
         "core/engine.cpp": ("3ba2831", "20767f7"),
     },
     "0002_moe_remote_handoff": {
-        "abi/rad_moe_remote.h": (None, "1268f0e"),
+        "abi/rad_moe_remote.h": (None, "e83c5f2"),
         "arch/common/rad_block_hc.h": ("c19c8b6", "75a248e"),
-        "arch/common/rad_block_moe_fp8.h": ("51b7c28", "1d927d2"),
-        "core/place/moe_remote.cpp": (None, "ea305e0"),
+        "arch/common/rad_block_moe_fp8.h": ("51b7c28", "2f16a77"),
+        "core/place/moe_remote.cpp": (None, "98c6dcc"),
         "core/place/mover.cpp": ("2de5295", "a994f33"),
         "core/place/mover.h": ("0c28ba3", "c4bd33c"),
         "core/runtime/ctx.h": ("8a231df", "c826093"),

@@ -34,6 +34,8 @@ typedef struct RadMoeRemoteHooks {
  * which the core loads during architecture declaration. */
 int rad_moe_remote_register(const RadMoeRemoteHooks* hooks);
 int rad_moe_remote_wanted(int64_t step_rows);
+/* Nonzero when some step of at most max_step_rows would be handed off: what a declaration asks. */
+int rad_moe_remote_wanted_upto(int64_t max_step_rows);
 RadMoeRemoteHandle rad_moe_remote_submit(RadCtx* c, int layer,
                                          int64_t step_rows, int64_t rows, int64_t n_embd,
                                          int64_t top_k, int64_t expert_base,
@@ -123,6 +125,10 @@ extern "C" int rad_moe_remote_register(const RadMoeRemoteHooks* hooks) {
 extern "C" int rad_moe_remote_wanted(int64_t step_rows) {
     ensure_loaded();
     return g_active.load(std::memory_order_acquire) && step_rows >= min_rows() && step_rows <= max_rows();
+}
+extern "C" int rad_moe_remote_wanted_upto(int64_t max_step_rows) {
+    ensure_loaded();
+    return g_active.load(std::memory_order_acquire) && min_rows() <= max_step_rows && min_rows() <= max_rows();
 }
 extern "C" RadMoeRemoteHandle rad_moe_remote_submit(
     RadCtx* base, int layer, int64_t step_rows, int64_t rows, int64_t n_embd,
@@ -338,7 +344,7 @@ PATCHES = (
                 id="declare-remote-partial-add",
                 anchor=r"^[ \t]*\{w\.x, w\.h\.x\}, \{w\.x\}\);$",
                 text="""
-    if (rad_moe_remote_wanted(g.max_tok)) {
+    if (rad_moe_remote_wanted_upto(g.max_tok)) {
         b_remote = decl_b(b, nm.f("blk.%d.moe_remote_partial", l), RAD_BF16,
                           {c.rows, g.n_embd});
         if (!b_remote) return RAD_E_INVAL;
