@@ -233,9 +233,12 @@ int publish_launch(const RadArgs* a, RadStream stream) {
 int join_launch(const RadArgs* a, RadStream stream) {
     if (!a || !a->instance || !stream || a->n_t != 2) return RAD_E_INVAL;
     auto* d = static_cast<R3MoeMailboxDevice*>(a->instance);
-    const long long rows = geti(a, "M");
     const long long hidden = geti(a, "n");
     const long long top_k = geti(a, "top_k");
+    /* "M" answers the declared band (2,048), not this pass: the pass's rows come from its id slots. */
+    long long id_slots = 1;
+    for (int i = 0; i < a->t[0].rank; ++i) id_slots *= a->t[0].shape[i];
+    const long long rows = top_k > 0 ? id_slots / top_k : 0;
     const long long total = rows * top_k;
     /* Both are the engine's top-k slot buffers ([rows, top_k] ids and [rows*top_k, hidden] rows, or their flat
      * forms), allocated at capacity; the pass uses the first rows*top_k slots. Check element counts, not rank. */
