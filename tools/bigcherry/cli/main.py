@@ -956,8 +956,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     new_build_cmd.add_argument(
         "--binary-relative-path",
-        default="bin/llama-bench",
+        default=None,
         help="which binary each planned lane builds/publishes as its "
+        "primary artifact (default: the engine's [build] binary in engine.toml) "
         "primary artifact, e.g. 'bin/llama-server' for a real "
         "production/deployment build -- matches campaign-build's own "
         "flag of the same name (re14_real_run.py); every lane in the "

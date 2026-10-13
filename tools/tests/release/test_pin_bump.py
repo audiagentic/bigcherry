@@ -669,7 +669,7 @@ class SyncCampaignMirrorBestEffortTests(unittest.TestCase):
             tempfile.TemporaryDirectory() as work,
             tempfile.TemporaryDirectory() as project,
         ):
-            fake_context = ProjectContext(
+            fake_context = ProjectContext(engine="llamacpp", 
                 project_root=Path(project),
                 config_path=Path(project) / "config" / "recipes.toml",
                 artifacts_root=Path(project) / "artifacts",
@@ -699,7 +699,7 @@ class SyncCampaignMirrorBestEffortTests(unittest.TestCase):
             mirror = Path(work) / "upstream" / "llama.cpp.git"
             mirror.mkdir(parents=True)
             (mirror / "HEAD").write_text("not a real git dir\n", encoding="utf-8")
-            fake_context = ProjectContext(
+            fake_context = ProjectContext(engine="llamacpp", 
                 project_root=Path(project),
                 config_path=Path(project) / "config" / "recipes.toml",
                 artifacts_root=Path(project) / "artifacts",
@@ -1154,7 +1154,7 @@ class AcquireMaintenanceLockTests(unittest.TestCase):
             tempfile.TemporaryDirectory() as work,
             tempfile.TemporaryDirectory() as project,
         ):
-            fake_context = ProjectContext(
+            fake_context = ProjectContext(engine="llamacpp", 
                 project_root=Path(project),
                 config_path=Path(project) / "config" / "recipes.toml",
                 artifacts_root=Path(project) / "artifacts",

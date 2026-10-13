@@ -45,7 +45,8 @@ def _init_upstream(directory: Path) -> tuple[Path, str]:
 
 def _context(directory: Path, upstream_repo: Path) -> ProjectContext:
     return ProjectContext(
-        project_root=directory, config_path=directory / "recipes.toml",
+            engine="llamacpp",
+            project_root=directory, config_path=directory / "recipes.toml",
         artifacts_root=directory / "artifacts", work_root=directory / "work",
         upstream_repo=upstream_repo, overlay_root=directory / "src",
         patches_root=directory / "patches",
@@ -65,7 +66,7 @@ class CmakeArgsTests(unittest.TestCase):
     def test_configure_args_include_platform_and_build_options(self):
         build, platform = self._build_platform()
         args = cmake_configure_args(
-            build, platform, Path("/src"), Path("/build"))
+            build, platform, Path("/src"), Path("/build"), targets_option="AMDGPU_TARGETS")
         joined = " ".join(args)
         self.assertIn("-DAMDGPU_TARGETS=gfx1100;gfx1030", joined)
         self.assertIn("-DGGML_HIP=ON", joined)
@@ -80,7 +81,7 @@ class CmakeArgsTests(unittest.TestCase):
             name="p", targets=("gfx1100",), options=())
         args = cmake_configure_args(
             build, platform, Path("/src"), Path("/build"),
-            generated_root=Path("/gen"), inventory=Path("/inv.json"))
+            generated_root=Path("/gen"), inventory=Path("/inv.json"), targets_option="AMDGPU_TARGETS")
         joined = " ".join(args)
         self.assertNotIn("GGML_HIP_AUTOTUNE_GENERATED_DIR", joined)
         self.assertNotIn("GGML_HIP_AUTOTUNE_SIGNATURE_FILE", joined)
@@ -93,8 +94,8 @@ class CmakeArgsTests(unittest.TestCase):
         """RE30 phase 1 regression proof: adding the ``backend`` kwarg must
         not change a single byte of output for any existing (HIP) caller."""
         build, platform = self._build_platform()
-        explicit = cmake_configure_args(build, platform, Path("/src"), Path("/build"), backend="hip")
-        default = cmake_configure_args(build, platform, Path("/src"), Path("/build"))
+        explicit = cmake_configure_args(build, platform, Path("/src"), Path("/build"), backend="hip", targets_option="AMDGPU_TARGETS")
+        default = cmake_configure_args(build, platform, Path("/src"), Path("/build"), targets_option="AMDGPU_TARGETS")
         self.assertEqual(explicit, default)
         self.assertIn("-DAMDGPU_TARGETS=gfx1100;gfx1030", " ".join(default))
 
@@ -102,7 +103,7 @@ class CmakeArgsTests(unittest.TestCase):
         build = campaign_config.Build(name="vulkan-stock", options=(), variant_set=None, needs=frozenset())
         platform = campaign_config.Platform(name="p", targets=(), options=())
         args = cmake_configure_args(
-            build, platform, Path("/src"), Path("/build"), backend="vulkan")
+            build, platform, Path("/src"), Path("/build"), backend="vulkan", targets_option="AMDGPU_TARGETS")
         joined = " ".join(args)
         self.assertNotIn("AMDGPU_TARGETS", joined)
         self.assertIn("-DGGML_VULKAN=ON", joined)
@@ -110,7 +111,7 @@ class CmakeArgsTests(unittest.TestCase):
     def test_unknown_backend_is_rejected(self):
         build, platform = self._build_platform()
         with self.assertRaises(ValueError):
-            cmake_configure_args(build, platform, Path("/src"), Path("/build"), backend="cuda")
+            cmake_configure_args(build, platform, Path("/src"), Path("/build"), backend="cuda", targets_option="AMDGPU_TARGETS")
 
 
 class ToolchainRequestTests(unittest.TestCase):
@@ -244,7 +245,7 @@ class CmakePrefixPathTests(unittest.TestCase):
             build = campaign_config.Build(name="tune", options=(), variant_set=None, needs=frozenset())
             platform = campaign_config.Platform(name="p", targets=("gfx1100",), options=())
             args = cmake_configure_args(
-                build, platform, Path("/src"), Path("/build"), c_compiler=str(clang))
+                build, platform, Path("/src"), Path("/build"), c_compiler=str(clang), targets_option="AMDGPU_TARGETS")
 
             joined = " ".join(args)
             self.assertIn(f"-DCMAKE_PREFIX_PATH={rocm_root.as_posix()}", joined)
@@ -258,7 +259,7 @@ class CmakePrefixPathTests(unittest.TestCase):
             build = campaign_config.Build(name="tune", options=(), variant_set=None, needs=frozenset())
             platform = campaign_config.Platform(name="p", targets=("gfx1100",), options=())
             args = cmake_configure_args(
-                build, platform, Path("/src"), Path("/build"), c_compiler=str(clang))
+                build, platform, Path("/src"), Path("/build"), c_compiler=str(clang), targets_option="AMDGPU_TARGETS")
 
             self.assertNotIn("CMAKE_PREFIX_PATH", " ".join(args))
 

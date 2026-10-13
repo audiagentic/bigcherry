@@ -30,6 +30,7 @@ from typing import Any, Callable
 
 from . import source as campaign_source
 from ..core import config as campaign_config
+from ..core import engines, paths
 from ..build import builds
 from ..source import identity as source_identity
 from ..core.artifacts import ArtifactStore
@@ -228,6 +229,7 @@ def _default_runner(args: list[str], cwd: Path) -> None:
 def _backend_configure_options(
     backend: str,
     platform: campaign_config.Platform,
+    targets_option: str,
 ) -> dict[str, str]:
     """Backend-specific cmake options that don't belong in a shared dict
     literal (RE30 phase 1: the split this project's Vulkan evaluation
@@ -239,7 +241,7 @@ def _backend_configure_options(
     *stock* build configure) are known. Any other value is a caller bug.
     """
     if backend == "hip":
-        return {"AMDGPU_TARGETS": ";".join(platform.targets)}
+        return {targets_option: ";".join(platform.targets)}
     if backend == "vulkan":
         # Stock lane only (RE30 phase 1): GGML_VULKAN=ON if the caller
         # hasn't already set it via build/platform options. No SDK/glslc
@@ -260,6 +262,7 @@ def cmake_configure_args(
     c_compiler: str | None = None,
     cxx_compiler: str | None = None,
     backend: str = "hip",
+    targets_option: str,
 ) -> list[str]:
     """The cmake configure argv for one v2 ``config.Build``/``config.Platform``.
 
@@ -281,7 +284,7 @@ def cmake_configure_args(
         "CMAKE_BUILD_TYPE": "Release",
         **dict(platform.options),
         **dict(build.options),
-        **_backend_configure_options(backend, platform),
+        **_backend_configure_options(backend, platform, targets_option),
     }
     if build.variant_set:
         options["GGML_HIP_AUTOTUNE_VARIANT_SET"] = build.variant_set
@@ -737,6 +740,7 @@ def execute_build_stage(
         inventory=inventory,
         c_compiler=c_compiler,
         cxx_compiler=cxx_compiler,
+        targets_option=engines.load(paths.REPO_ROOT, context.engine).targets_option,
     )
     runner(configure_args, source_root)
     runner(cmake_build_args(build_dir, targets=cmake_targets), source_root)

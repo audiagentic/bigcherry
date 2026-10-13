@@ -163,7 +163,7 @@ def cmd_experiment_run(args: Namespace) -> int:
     except (ec.ExperimentContractError, KeyError) as exc:
         print(f"experiment-contract run: {exc}", file=sys.stderr)
         return 1
-    context = ProjectContext.resolve(work_root=None)
+    context = ProjectContext.resolve(engine="llamacpp", work_root=None)
     try:
         cfg = campaign_config.load(Path(args.config) if args.config else paths.RECIPES)
         lanes = expand_contract(

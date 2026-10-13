@@ -508,7 +508,7 @@ def _check(args: argparse.Namespace) -> int:
         sid = source["id"]
         print(f"== {sid} ==  {source['repo']}  locator={source['locator']}")
         active = next(s for s in source["snapshots"] if s.get("active"))
-        scratch = ProjectContext.resolve().work_root / "tmp"
+        scratch = ProjectContext.resolve(engine="llamacpp").work_root / "tmp"
         scratch.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(prefix="bc-src-", dir=scratch) as tmp:
             clone = subprocess.run(

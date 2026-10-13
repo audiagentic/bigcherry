@@ -76,6 +76,13 @@ class EngineLayout:
     vendor: str
     recipes: str
     serve: ServeSpec
+    #: the CMake cache variable a HIP build names its GPU targets in (llama.cpp AMDGPU_TARGETS, radiance RAD_GPU_TARGETS)
+    targets_option: str
+    #: the binary a lane builds and publishes unless the request names another
+    build_binary: str
+
+    def recipes_path(self, project_root: Path) -> Path:
+        return project_root / self.recipes
 
     def recipes_path(self, project_root: Path) -> Path:
         return project_root / self.recipes
@@ -172,6 +179,18 @@ def _serve(table: object, name: str) -> ServeSpec:
     )
 
 
+def _build_table(table: object, name: str) -> dict[str, str]:
+    if not isinstance(table, dict):
+        raise EngineError(f"engine {name!r}: missing [build] table")
+    unknown = sorted(set(table) - {"targets-option", "binary"})
+    if unknown:
+        raise EngineError(f"engine {name!r}: unknown build key(s): {', '.join(unknown)}")
+    return {
+        "targets_option": _text(table, "targets-option", "build", name),
+        "build_binary": _relative(table.get("binary"), "build.binary", name),
+    }
+
+
 def declaration_path(repo_root: Path, name: str) -> Path:
     return repo_root / ENGINES_DIR / name / DECLARATION
 
@@ -206,6 +225,7 @@ def load(repo_root: Path, name: str) -> EngineLayout:
         vendor=_relative(layout.get("vendor"), "vendor", name),
         recipes=_relative(layout.get("recipes"), "recipes", name),
         serve=_serve(data.get("serve"), name),
+        **_build_table(data.get("build"), name),
     )
 
 

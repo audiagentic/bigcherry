@@ -55,7 +55,7 @@ class PrimaryRootTests(unittest.TestCase):
                     {"BC_PRIMARY_ROOT": "", "BIGCHERRY_WORK_ROOT": ""},
                 ),
             ):
-                context = ProjectContext.resolve(project_root=worktree)
+                context = ProjectContext.resolve(engine="llamacpp", project_root=worktree)
             self.assertEqual(context.project_root, worktree)
             self.assertEqual(context.overlay_root, worktree / "engines" / "llamacpp" / "overlay")
             self.assertEqual(context.patches_root, worktree / "engines" / "llamacpp" / "patches")

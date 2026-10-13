@@ -177,7 +177,8 @@ class ExitCodeConventionTests(unittest.TestCase):
 
         with patch("bigcherry.campaign.planner.plan", side_effect=fake_plan), \
              patch("bigcherry.campaign.planner.run_campaign", side_effect=fake_run_campaign), \
-             patch("bigcherry.core.config.load"):
+             patch("bigcherry.core.config.load"), \
+             patch("bigcherry.core.config.engine_defining", return_value="llamacpp"):
             code = cli.cmd_build_new(args)
         self.assertEqual(code, 1)
 
@@ -200,7 +201,8 @@ class ExitCodeConventionTests(unittest.TestCase):
 
         with patch("bigcherry.campaign.planner.plan", side_effect=fake_plan), \
              patch("bigcherry.campaign.planner.run_campaign", side_effect=fake_run_campaign), \
-             patch("bigcherry.core.config.load"):
+             patch("bigcherry.core.config.load"), \
+             patch("bigcherry.core.config.engine_defining", return_value="llamacpp"):
             code = cli.cmd_build_new(args)
         self.assertEqual(code, 0)
 

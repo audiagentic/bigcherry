@@ -34,7 +34,7 @@ def _resolve_upstream(root: Path, ref: str) -> str | None:
 
 
 def build_report(context: ProjectContext | None = None) -> dict[str, object]:
-    context = context or ProjectContext.resolve()
+    context = context or ProjectContext.resolve(engine="llamacpp")
     raw = tomllib.loads(context.config_path.read_text(encoding="utf-8"))
     version = raw.get("version", 1)
     catalog = patchset.catalog(engines.LLAMACPP, directory=context.patches_root)

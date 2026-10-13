@@ -77,7 +77,7 @@ def check_inventory_tamper(
         store = ArtifactStore(disposable)
         target = _artifact_path_for(store, dispatch_db_artifact_id)
         _flip_a_byte(target)
-        context = ProjectContext.resolve(work_root=work_root / "tamper-inventory-work")
+        context = ProjectContext.resolve(engine="llamacpp", work_root=work_root / "tamper-inventory-work")
         try:
             lifecycle.execute_tune_stage(
                 context=context, store=store, run_id="tamper-inventory",
@@ -116,7 +116,7 @@ def check_runtime_bundle_member_tamper(
             raise SystemExit("runtime bundle has no non-entrypoint member to tamper")
         member_path = manifest_path.parent / member_names[0]
         _flip_a_byte(member_path)
-        context = ProjectContext.resolve(work_root=work_root / "tamper-runtime-bundle-work")
+        context = ProjectContext.resolve(engine="llamacpp", work_root=work_root / "tamper-runtime-bundle-work")
         try:
             lifecycle.execute_replay_validation_stage(
                 context=context, store=store, run_id="tamper-runtime-bundle",
