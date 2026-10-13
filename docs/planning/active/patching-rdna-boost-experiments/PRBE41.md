@@ -92,3 +92,11 @@ Recheck every historical b11126 anchor on the composed b11474 source before codi
 - 2026-09-24T05:07:59.505020+00:00 (updated-by): Updated: section:description, section:steps, section:notes
 - 2026-09-25T10:49:09.867182+00:00 (updated-by): Updated: section:notes
 - 2026-09-25T10:49:12.783952+00:00 (state-transition): State: pending → in_progress
+
+## 2026-10-14 evidence/route reconciliation (authoritative over earlier historical wording)
+
+**1263 remains `untested` in `patch.toml` for the current production pin; historical validated receipts do not automatically promote it.** The current `patch.py` explicitly gates all three Qwen hybrid model call sites on `model.split_mode() != LLAMA_SPLIT_MODE_TENSOR`. Tensor split builds the original time-major graph, emits `ssm_conv_channels_major_declined_split` when tracing, and must **not** be required to emit the positive channels-major marker. The b11233 pre-guard tensor-split crash is historical, not the expected behavior of the guarded patch.
+
+The existing `evidence/validation.json` includes contract-passing, single-device `tierA-qwen4b-q6k` pp512 sessions: gfx1100 b11233 approximately +1.13% to +1.43%; gfx1201 b11126 +2.37% and +2.58%. Correctness receipts report zero full-vocabulary logprob difference; `tierM-gptoss20b-q6k` tg128 is a non-SSM control. Do not conflate these with dual-XTX Qwen3.8-27B `-sm tensor`: `docs/evidence/lab-run-summaries/ab-27b-1263.json` reports only +0.14% pp4096, and the current guarded route does not remove its transpose. All are historical measurements on older pins, not new b11552 GPU qualification.
+
+**Ownership:** PRBE41/1263 retains single-device channels-major kernel/layout and contract ownership. PRBE114/BCOP195 closes the unqualified generic Meta RESHAPE/VIEW tensor-split rewrite; no second scheduler or split-state cache. Preserve the mode-specific conv-state lifetime, explicit fallback, full-vocab/MTP correctness, and current-pin composition/activation checks before any future promotion.
