@@ -14,6 +14,7 @@
 #include <fcntl.h>
 #include <memory>
 #include <string>
+#include <thread>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -522,6 +523,14 @@ int main(int argc, char** argv) {
     init(map, model.layers);
     publish_owned(map, owned);
     auto* h = static_cast<Header*>(map);
+    void* dev_map = nullptr;
+    if (!cpu) {
+        if (!r3_moe_gpu::hip_ok(hipHostRegister(map, lay.bytes, hipHostRegisterPortable | hipHostRegisterMapped),
+                                "hipHostRegister mailbox") ||
+            !r3_moe_gpu::hip_ok(hipHostGetDevicePointer(&dev_map, map, 0), "hipHostGetDevicePointer mailbox")) {
+            munmap(map, lay.bytes); close(fd); shm_unlink(name); return 1;
+        }
+    }
     /* No SA_RESTART (std::signal sets it): the futex wait must return EINTR so the loop sees g_stop. */
     struct sigaction sa{};
     sa.sa_handler = on_signal;
@@ -532,28 +541,63 @@ int main(int argc, char** argv) {
                  name, model.layers, (unsigned long long)lay.bytes,
                  cpu ? "host fp32 reference" : gpu->arch().c_str());
 
-    uint32_t seq = 1;
     uint64_t stat_req = 0, stat_rows = 0, stat_routes = 0;
     double stat_us = 0.0;
-    while (!g_stop) {
-        Request* q = request(map, seq);
-        while (!g_stop && load(&q->sequence) != seq) {
-            const uint32_t seen = load(&h->publish_sequence);
-            if (load(&q->sequence) != seq) (void)futex_wait(&h->publish_sequence, seen);
+    if (cpu) {
+        uint32_t seq = 1;
+        while (!g_stop) {
+            Request* q = request(map, seq);
+            while (!g_stop && load(&q->sequence) != seq) {
+                const uint32_t seen = load(&h->publish_sequence);
+                if (load(&q->sequence) != seq) (void)futex_wait(&h->publish_sequence, seen);
+            }
+            if (g_stop) break;
+            const auto t0 = std::chrono::steady_clock::now();
+            q->status = compute_host(model, map, q);
+            stat_us += std::chrono::duration<double, std::micro>(
+                std::chrono::steady_clock::now() - t0).count();
+            ++stat_req; stat_rows += q->rows; stat_routes += q->route_count;
+            store(&q->completion_sequence, seq);
+            (void)futex_wake(&q->completion_sequence);
+            if (++seq == 0) break;
         }
-        if (g_stop) break;
-        const auto t0 = std::chrono::steady_clock::now();
-        q->status = cpu ? compute_host(model, map, q) : gpu->compute(map, q);
-        stat_us += std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - t0).count();
-        ++stat_req; stat_rows += q->rows; stat_routes += q->route_count;
-        store(&q->completion_sequence, seq);
-        (void)futex_wake(&q->completion_sequence);
-        if (++seq == 0) break;
+    } else {
+        std::array<uint64_t, kMaxRanks> lane_req{}, lane_rows{}, lane_routes{};
+        std::array<std::thread, kMaxRanks> workers;
+        for (uint32_t rank = 0; rank < kMaxRanks; ++rank) {
+            workers[rank] = std::thread([&, rank] {
+                uint32_t seq = 1;
+                while (!g_stop) {
+                    Request* q = lane_request(map, rank, seq);
+                    while (!g_stop && q && load(&q->sequence) != seq) {
+                        const uint32_t seen = load(&h->publish_sequence);
+                        if (load(&q->sequence) != seq) (void)futex_wait(&h->publish_sequence, seen);
+                    }
+                    if (g_stop || !q) break;
+                    q->status = gpu->enqueue_lane(map, dev_map, q, rank, seq);
+                    if (q->status != 0) {
+                        std::fprintf(stderr, "r3_moe_helper: lane %u enqueue seq %u failed rc=%d\n",
+                                     rank, seq, q->status);
+                        g_stop = 1;
+                        break;
+                    }
+                    ++lane_req[rank]; lane_rows[rank] += q->rows; lane_routes[rank] += q->route_count;
+                    if (++seq == 0) { g_stop = 1; break; }
+                }
+            });
+        }
+        while (!g_stop) ::sleep(1);
+        (void)futex_wake(&h->publish_sequence, 32);
+        for (auto& w : workers) if (w.joinable()) w.join();
+        for (uint32_t rank = 0; rank < kMaxRanks; ++rank) {
+            stat_req += lane_req[rank]; stat_rows += lane_rows[rank]; stat_routes += lane_routes[rank];
+        }
     }
 
     std::fprintf(stderr, "r3_moe_helper: served %llu requests, %llu rows, %llu routes, compute %.1f ms (%.1f us a request)\n",
                  (unsigned long long)stat_req, (unsigned long long)stat_rows, (unsigned long long)stat_routes,
                  stat_us / 1000.0, stat_req ? stat_us / (double)stat_req : 0.0);
+    if (!cpu) (void)hipHostUnregister(map);
     munmap(map, lay.bytes);
     close(fd);
     shm_unlink(name);

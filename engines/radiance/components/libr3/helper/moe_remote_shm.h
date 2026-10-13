@@ -11,11 +11,12 @@
 namespace r3::moe_shm {
 
 constexpr uint64_t kMagic = 0x31454f4d33485253ull; /* "SRH3MOE1": reject unrelated/stale shm. */
-constexpr uint32_t kVersion = 3;
+constexpr uint32_t kVersion = 4;
 constexpr uint32_t kPage = 4096;
 constexpr uint32_t kMaxRanks = 2;       /* Flash-Next configuration of record: TP=2. */
 constexpr uint32_t kMaxLayers = 128;     /* ownership bitmap bound; Flash-Next is below this. */
-constexpr uint32_t kRingSlots = 16;     /* metadata only; each rank owns one bulk-data slot. */
+constexpr uint32_t kRingSlots = 16;
+constexpr uint32_t kLaneSlots = kRingSlots / kMaxRanks; /* rank-private metadata ring; bulk slots stay per-rank. */
 constexpr uint32_t kHidden = 2560;
 constexpr uint32_t kTopK = 10;
 constexpr uint32_t kExperts = 512;
@@ -51,6 +52,13 @@ struct alignas(64) Request {
 };
 static_assert(sizeof(Request) % 64 == 0);
 
+struct alignas(64) LaneSignal {
+    uint32_t request_sequence; /* engine GPU writes after route/activation data is visible. */
+    uint32_t done_sequence;    /* helper GPU writes after the result is visible. */
+    uint32_t reserved[14];
+};
+static_assert(sizeof(LaneSignal) == 64);
+
 struct alignas(kPage) Header {
     uint64_t magic;                 /* segment identity. */
     uint32_t version;               /* protocol compatibility gate. */
@@ -71,6 +79,7 @@ struct alignas(kPage) Header {
     uint64_t owner_offset;           /* [kMaxLayers][kExperts] bitset. */
     uint32_t next_sequence;         /* atomic ticket allocator; sequence 0 is reserved. */
     uint32_t publish_sequence;      /* newest published ticket; helper FUTEX_WAITs here. */
+    LaneSignal lane[kMaxRanks];       /* GPU-only request/done words, one cache line per producer rank. */
     uint64_t ring_offset;           /* Request[kRingSlots], page aligned. */
     uint64_t route_offset[kMaxRanks];
     uint64_t activation_offset[kMaxRanks];
@@ -168,6 +177,17 @@ inline Request* request(void* base, uint32_t seq) {
 inline const Request* request(const void* base, uint32_t seq) {
     auto* h = static_cast<const Header*>(base);
     return ptr<Request>(base, h->ring_offset) + ((seq - 1) % kRingSlots);
+}
+
+inline Request* lane_request(void* base, uint32_t rank, uint32_t seq) {
+    auto* h = static_cast<Header*>(base);
+    if (rank >= kMaxRanks || seq == 0) return nullptr;
+    return ptr<Request>(base, h->ring_offset) + rank * kLaneSlots + ((seq - 1) % kLaneSlots);
+}
+inline const Request* lane_request(const void* base, uint32_t rank, uint32_t seq) {
+    auto* h = static_cast<const Header*>(base);
+    if (rank >= kMaxRanks || seq == 0) return nullptr;
+    return ptr<Request>(base, h->ring_offset) + rank * kLaneSlots + ((seq - 1) % kLaneSlots);
 }
 
 inline uint8_t* owner_bits(void* base) {
