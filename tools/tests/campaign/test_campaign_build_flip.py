@@ -113,6 +113,7 @@ class FaultIsolationAtCliLevelTests(unittest.TestCase):
         with patch("bigcherry.campaign.planner.plan", side_effect=fake_plan), \
              patch("bigcherry.campaign.planner.run_campaign", side_effect=fake_run_campaign), \
              patch("bigcherry.core.config.load"), \
+             patch("bigcherry.core.config.engine_defining", return_value="llamacpp"), \
              patch("sys.stdout", stdout), patch("sys.stderr", stderr):
             code = cli.cmd_build_new(args)
 
@@ -181,7 +182,7 @@ class NoLegacyTreeStateMechanicsTests(unittest.TestCase):
         # context.py) defaults to the project-local work/ -- never under
         # vendor/.
         legacy_root = paths.llama_root().resolve()
-        context = context_module.ProjectContext.resolve()
+        context = context_module.ProjectContext.resolve(engine="llamacpp")
         new_work_root = context.work_root.resolve()
         self.assertNotEqual(legacy_root, new_work_root)
         self.assertFalse(

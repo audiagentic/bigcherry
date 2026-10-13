@@ -69,6 +69,7 @@ def _init_upstream(directory: Path) -> tuple[Path, str]:
 class _Harness:
     def __init__(self, directory: Path, upstream: Path, revision: str):
         self.context = ProjectContext(
+            engine="llamacpp",
             project_root=directory,
             config_path=directory / "recipes.toml",
             artifacts_root=directory / "artifacts",
@@ -472,7 +473,7 @@ class ExecuteCampaignLaneTests(unittest.TestCase):
             self.assertEqual(platform.targets, ("gfx1100",))
             args = campaign_build.cmake_configure_args(
                 captured["build"], platform, root / "source", root / "build",
-            )
+            targets_option="AMDGPU_TARGETS")
             self.assertIn("-DAMDGPU_TARGETS=gfx1100", args)
 
     def test_hip_and_vulkan_produce_different_build_plan_id(self):
@@ -534,6 +535,7 @@ class ExecuteCampaignLaneTests(unittest.TestCase):
         from bigcherry.build.builds import build_directory
 
         context = ProjectContext(
+            engine="llamacpp",
             project_root=Path("/root"),
             config_path=Path("/root/recipes.toml"),
             artifacts_root=Path("/root/artifacts"),
@@ -783,6 +785,7 @@ GGML_HIP:BOOL=ON
         _git(source, "commit", "-m", "initial")
 
         context = ProjectContext(
+            engine="llamacpp",
             project_root=root,
             config_path=root / "recipes.toml",
             artifacts_root=root / "artifacts",

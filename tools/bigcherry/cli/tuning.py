@@ -494,7 +494,7 @@ def cmd_tune_campaign(args: Namespace) -> int:
     from ..tuning import workflow
     from dataclasses import asdict
 
-    context = ProjectContext.resolve(
+    context = ProjectContext.resolve(engine="llamacpp", 
         work_root=None, upstream_repo=Path(args.llama_root) if args.llama_root else None
     )
     try:

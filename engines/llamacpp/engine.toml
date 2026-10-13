@@ -14,6 +14,12 @@ recipes = "config/recipes.toml"
 # How the server is run (run-multi-engine MEN03). The /shutdown route is BigCherry's (patch 0800) and is only
 # registered when LLAMA_SERVER_ENABLE_SHUTDOWN is set; a stock upstream build is stopped with SIGINT instead, which
 # the caller selects per run.
+# How a build names its GPU targets (CMake cache variable).
+[build]
+targets-option = "AMDGPU_TARGETS"
+# llama-bench, because the runtime-smoke stage is llama-bench shaped; a serving build asks for bin/llama-server.
+binary = "bin/llama-bench"
+
 [serve]
 binary = "bin/llama-server"
 model-flag = "-m"

@@ -129,7 +129,7 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true", help="resolve and write the matrix without launching")
     args = parser.parse_args()
 
-    context = ProjectContext.resolve(
+    context = ProjectContext.resolve(engine="llamacpp", 
         work_root=None, upstream_repo=Path(args.llama_root) if args.llama_root else None
     )
     store = ArtifactStore(context.work_root / "artifacts-store")

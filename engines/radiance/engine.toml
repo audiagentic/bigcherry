@@ -13,6 +13,11 @@ recipes = "engines/radiance/recipes.toml"
 
 # How the server is run (run-multi-engine MEN03). The plugins (kernel libraries, architectures, quantisers) are found
 # through RADIANCE_HOME, which a source build places beside its bin/ directory.
+# How a build names its GPU targets (CMake cache variable).
+[build]
+targets-option = "RAD_GPU_TARGETS"
+binary = "bin/radiance"
+
 [serve]
 binary = "bin/radiance"
 model-flag = "--model"

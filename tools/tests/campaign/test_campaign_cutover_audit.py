@@ -127,7 +127,7 @@ class _Harness:
         self.revision = revision
         project = directory / "project"
         _init_project(project)
-        self.context = ProjectContext(
+        self.context = ProjectContext(engine="llamacpp", 
             project_root=project, config_path=directory / "recipes.toml",
             artifacts_root=directory / "artifacts", work_root=directory / "work",
             upstream_repo=upstream, overlay_root=directory / "src",

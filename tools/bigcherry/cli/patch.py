@@ -469,7 +469,7 @@ def cmd_patch_verify_evidence(args: Namespace) -> int:
     try:
         import os
 
-        mirror = ProjectContext.resolve(
+        mirror = ProjectContext.resolve(engine="llamacpp", 
             work_root=os.environ.get("BC_CACHE")
         ).upstream_repo
         upstream = mirror if mirror.exists() else paths.llama_root()
