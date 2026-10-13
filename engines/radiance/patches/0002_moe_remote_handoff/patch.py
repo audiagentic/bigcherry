@@ -114,7 +114,10 @@ PATCHES = (
                 id="declare-remote-mailbox-ops",
                 anchor=r"^[ \t]*\{w\.x, w\.h\.x\}, \{w\.x\}\);$",
                 text="""
-    if (rad_moe_remote_wanted_upto(g.max_tok)) {
+    /* Only layers without protected (plain-bf16) experts hand off: removing protected experts from reg[]
+     * renumbers the regular slots, and TP class/half follows the slot, not the expert id. Shadow showed
+     * those layers (34/44/46/47 on Flash-Next) wrong while every other layer matched to ~2e-4. */
+    if (rad_moe_remote_wanted_upto(g.max_tok) && n_reg == (int64_t)c.n_expert) {
         const rad_buf remote_q = c.expert_rot ? w.hr.q : w.h.q;
         const rad_buf remote_s = c.expert_rot ? w.hr.s : w.h.s;
         op_remote_publish = rw(b, RAD_OP(b, "moe_mailbox_publish",
