@@ -54,7 +54,7 @@ PIN_BLOBS = {
     },
     "0002_moe_remote_handoff": {
         "abi/rad_moe_remote.h": (None, "9e5f03d"),
-        "arch/common/rad_block_moe_fp8.h": ("51b7c28", "49e79a9"),
+        "arch/common/rad_block_moe_fp8.h": ("51b7c28", "f314606"),
         "core/place/moe_remote.cpp": (None, "3705adf"),
     },
     "0003_mtp_full_head_switch": {
@@ -145,7 +145,7 @@ class TestRadiancePatchPackages(unittest.TestCase):
                         )
                         pub = moe.index("RAD_ISSUE_N(c_, op_remote_publish, rows")
                         rescatter = moe.index("RAD_ISSUE_N(c_, op_scatter, rows", pub)
-                        routed_gemm = moe.index("const bool rot = c.expert_rot != 0;", rescatter)
+                        routed_gemm = moe.index("if (op_hq)", rescatter)
                         self.assertLess(pub, rescatter)
                         self.assertLess(rescatter, routed_gemm)
                         down = moe.index("RAD_ISSUE_N(c_, op_pdn, rows")

@@ -140,8 +140,11 @@ PATCHES = (
             ),
             Edit(
                 id="publish-remote-and-rescatter",
-                anchor=r"^[ \t]*/\* The rotated re-quantisation of the same input, when the expert plane carries a$",
-                mode="replace",
+                # Anchors on code: the patch engine strips comments before matching, so the comment above
+                # the rotated re-quantisation can never match; `if (op_hq)` is the step's issue of it
+                # (declare() has the same `const bool rot` line, so that one matches twice).
+                anchor=r"^[ \t]*if \(op_hq\)$",
+                mode="insert_before",
                 text="""    if (remote_policy) {
         RAD_ISSUE_N(c_, op_remote_publish, rows,
                     brow_slice(w.ids, r0, rows, k),
@@ -152,9 +155,8 @@ PATCHES = (
         RAD_ISSUE_N(c_, op_scatter, rows, brow_slice(w.ids, r0, rows, k),
                     brows(w.sorted, rows * k), brows(w.eoff, ne + 1), ecnt);
     }
-
-    /* The rotated re-quantisation of the same input, when the expert plane carries a""",
-                guard=r"Preserve the normal router/top-k arithmetic",
+""",
+                guard=r"RAD_ISSUE_N\(c_, op_remote_publish, rows,",
                 expect_matches=1,
                 rationale="Publish after whichever normal router/top-k path ran, then rebuild only scatter from the masked ids so helper-on does not globally change router arithmetic.",
             ),
