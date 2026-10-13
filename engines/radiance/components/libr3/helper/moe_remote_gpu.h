@@ -264,7 +264,11 @@ public:
     explicit Runner(const Container& model) : model_(model) {}
     ~Runner() {
         if (stream_) (void)hipStreamDestroy(stream_);
-        for (auto& l : lane_) if (l.stream) (void)hipStreamDestroy(l.stream);
+        for (auto& l : lane_) {
+            if (l.sample_start) (void)hipEventDestroy(l.sample_start);
+            if (l.sample_stop) (void)hipEventDestroy(l.sample_stop);
+            if (l.stream) (void)hipStreamDestroy(l.stream);
+        }
         for (void* p : persistent_) if (p) (void)hipFree(p);
         if (plugin_opened_ && plugin_close_) plugin_close_();
         if (so_) dlclose(so_);
@@ -285,9 +289,12 @@ public:
         }
         if (!load_plugin()) return false;
         if (!hip_ok(hipStreamCreateWithFlags(&stream_, hipStreamNonBlocking), "hipStreamCreate")) return false;
-        for (uint32_t r = 0; r < r3::moe_shm::kMaxRanks; ++r)
-            if (!hip_ok(hipStreamCreateWithFlags(&lane_[r].stream, hipStreamNonBlocking), "hipStreamCreate lane"))
+        for (uint32_t r = 0; r < r3::moe_shm::kMaxRanks; ++r) {
+            if (!hip_ok(hipStreamCreateWithFlags(&lane_[r].stream, hipStreamNonBlocking), "hipStreamCreate lane") ||
+                !hip_ok(hipEventCreate(&lane_[r].sample_start), "hipEventCreate lane start") ||
+                !hip_ok(hipEventCreate(&lane_[r].sample_stop), "hipEventCreate lane stop"))
                 return false;
+        }
         experts_.resize((size_t)model_.layers * r3::moe_shm::kExperts);
         tables_.resize(model_.layers);
         return true;
