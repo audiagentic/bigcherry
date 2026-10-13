@@ -53,31 +53,20 @@ The existing event path therefore cannot represent the POSIX-shm sequence words 
 cross-process mailbox. Calling HIP stream operations on the engine stream is not valid: Radiance
 owns that stream as its AQL `Stream`/HSA queue.
 
-**Result:** patch 0002 is not changed to the GPU mailbox path in this slice. The primitive required
-by the owner direction is absent. Protocol-v4 libr3 deliberately refuses to register the legacy
-CPU-mediated D2H/futex/H2D hook rather than silently retaining it.
+**Current path:** patch 0002 uses libr3 device ops on the rank stream. Publish masks helper-owned
+route ids to -1 and re-scatters the remaining local ids. Local expert work then runs unchanged.
+For a remote pass, the engine forces the ordinary MoE gather so the token output is materialized;
+`moe_mailbox_add` waits for the lane completion and adds each helper result using the published
+`Route::weight_bf16`. Contributions are accumulated in fp32 for each token in ascending top-k slot
+order and the token row is written once before the standalone all-reduce and residual/HyperConn
+write. HyperConn's fused gather+all-reduce and fused all-reduce write are disabled for that pass.
 
-## Patch 0002 change once the AQL primitive exists
+## Mandatory remote-result proof
 
-Add two Radiance device operations with system-scope ordering on mapped host memory, implemented by
-the AQL backend rather than forwarded to HIP:
-
-- stream wait: do not pass until `*addr >= value`;
-- stream write: store `value` to `*addr` after prior queue writes are system-visible.
-
-Then replace `core/place/moe_remote.cpp`'s current device-to-host copies, `rad_stream_sync`, CPU
-route loop, hook submit, CPU wait, and host-to-device route-mask copy with this stream-ordered path:
-
-1. issue an on-GPU route-select/compact kernel on the rank stream. It reads `ids_dev` and
-   `ew_dev`, applies the helper ownership bitmap, masks selected local IDs in place, and writes
-   compact `Route` records to that rank's mapped mailbox slot;
-2. copy the activation to the mapped mailbox with the engine GPU stream (GPU to host-mapped memory;
-   no CPU copy), then stream-write `request_sequence`;
-3. continue queuing local work while the R9700 lane stream waits, computes and stream-writes
-   `done_sequence`;
-4. immediately before the remote partial is merged, stream-wait on `done_sequence`, copy/read the
-   mapped result into the rank's remote-partial buffer, then issue the existing add and all-reduce.
-
-The sequence words need system-scope release/acquire semantics because both GPUs access pinned host
-memory and P2P is unavailable. Route selection and mailbox readiness must remain on the GPU; a host
-callback or host event wait would reintroduce the service latency RAD03 removes.
+Set `R3_MOE_HELPER_POISON=1` on the helper and engine environment. The helper replaces every
+remote result element it writes with BF16 1000 and the engine hook prints exactly one
+`libr3: R3_MOE_HELPER poison` marker at mailbox registration. Run the normal helper-on KL workload
+against the helper-off reference. The poison run must diverge catastrophically (PPL far above the
+reference); a non-poison helper run must return to the helper-off quality envelope. This proves the
+R9700 result crosses the mailbox, is weighted by the published route weight, and reaches the model
+token output rather than being dropped by gather bookkeeping.
