@@ -6,6 +6,8 @@ name = "radiance"
 upstream = "https://codeberg.org/StillDeadcode/radiance"
 
 [layout]
+# Every patch ID starts with this before its order digits, so IDs never collide across engines.
+patch-id-prefix = "rad"
 patches = "engines/radiance/patches"
 overlay = "engines/radiance/overlay"
 vendor = "vendor/radiance"

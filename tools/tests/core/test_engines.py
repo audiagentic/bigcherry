@@ -19,7 +19,7 @@ def _declare(root: Path, name: str, body: str) -> None:
     path.write_text(body, encoding="utf-8")
 
 
-_GOOD = 'schema = 1\nname = "{name}"\nupstream = "https://example.invalid/{name}"\n\n[layout]\npatches = "{p}"\noverlay = "{o}"\nvendor = "{v}"\nrecipes = "{v}.recipes.toml"\n\n[build]\ntargets-option = "AMDGPU_TARGETS"\nbinary = "bin/server"\n\n'
+_GOOD = 'schema = 1\nname = "{name}"\nupstream = "https://example.invalid/{name}"\n\n[layout]\npatches = "{p}"\npatch-id-prefix = ""\noverlay = "{o}"\nvendor = "{v}"\nrecipes = "{v}.recipes.toml"\n\n[build]\ntargets-option = "AMDGPU_TARGETS"\nbinary = "bin/server"\n\n'
 _GOOD += '[serve]\nbinary = "bin/server"\nmodel-flag = "--model"\nhost-flag = "--host"\nport-flag = "--port"\nhealth = "/health"\nshutdown = "sigint"\n'
 
 
@@ -29,6 +29,9 @@ class EngineDeclarations(unittest.TestCase):
         self.assertEqual(sorted(layouts), ["llamacpp", "radiance"])
         self.assertEqual(layouts["llamacpp"].upstream, "https://github.com/ggml-org/llama.cpp")
         self.assertEqual(layouts["radiance"].upstream, "https://codeberg.org/StillDeadcode/radiance")
+        # patch IDs never collide across engines: each declares its own prefix
+        self.assertEqual(layouts["llamacpp"].patch_id_prefix, "")
+        self.assertEqual(layouts["radiance"].patch_id_prefix, "rad")
 
     def test_paths_constants_follow_the_llamacpp_declaration(self):
         layout = engines.load(_REPO, engines.LLAMACPP)

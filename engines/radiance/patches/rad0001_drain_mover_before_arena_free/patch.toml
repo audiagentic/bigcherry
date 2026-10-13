@@ -1,5 +1,5 @@
 schema = 1
-id = "0001_drain_mover_before_arena_free"
+id = "rad0001_drain_mover_before_arena_free"
 order = 1
 state = "evaluated"
 kind = "enhancement"

@@ -102,7 +102,7 @@ void register_hook() {
     g.copy2d = reinterpret_cast<HipMemcpy2D>(::dlsym(RTLD_DEFAULT, "hipMemcpy2D"));
     auto reg = reinterpret_cast<int (*)(const RadMoeRemoteHooks*)>(::dlsym(RTLD_DEFAULT, "rad_moe_remote_register"));
     if (!g.copy2d || !reg) {
-        std::fprintf(stderr, "libr3: R3_MOE_HELPER requires hipMemcpy2D and patch 0002 ABI\n"); return;
+        std::fprintf(stderr, "libr3: R3_MOE_HELPER requires hipMemcpy2D and patch rad0002 ABI\n"); return;
     }
     static RadMoeRemoteHooks hooks{RAD_MOE_REMOTE_ABI, &g, submit, wait};
     if (reg(&hooks) < 0) std::fprintf(stderr, "libr3: R3_MOE_HELPER hook registration refused\n");
