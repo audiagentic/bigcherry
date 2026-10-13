@@ -26,23 +26,91 @@ constexpr int64_t kGateUpWidth = 2 * kExpertWidth;
 constexpr int64_t kGroup = 128;
 constexpr const char* kDtype = "w4nl64a8h";
 
-__global__ void lane_route_count(const r3::moe_shm::Route* route, uint32_t n, uint32_t rows,
-                                 uint32_t* counts, uint32_t* token_slot, int32_t* flat,
-                                 uint16_t* ew) {
+struct DeviceLayerTables {
+    void* gu_code[2]{};
+    void* gu_scale[2]{};
+    void* dn_code[2]{};
+    void* dn_scale[2]{};
+};
+
+__device__ __forceinline__ bool lane_request_valid(
+    const r3::moe_shm::Request* q, uint32_t rank, uint32_t sequence,
+    uint32_t max_rows, uint32_t layers) {
+    using namespace r3::moe_shm;
+    return q && q->sequence == sequence && q->rank == rank && q->rank_count == kMaxRanks &&
+           q->layer < layers && q->rows > 0 && q->rows <= max_rows &&
+           q->hidden == kHidden && q->route_count > 0 &&
+           q->route_count <= q->rows * kTopK &&
+           q->activation_stride == kHidden * (uint32_t)sizeof(uint16_t);
+}
+
+__global__ void lane_prepare_activation(
+    r3::moe_shm::Request* q, const uint16_t* src, uint16_t* dst,
+    uint32_t rank, uint32_t sequence, uint32_t max_rows, uint32_t layers,
+    uint64_t* stats) {
+    using namespace r3::moe_shm;
+    const bool valid = lane_request_valid(q, rank, sequence, max_rows, layers);
+    if (blockIdx.x == 0 && threadIdx.x == 0) {
+        q->status = valid ? 0 : -EINVAL;
+        if (valid) {
+            atomicAdd(reinterpret_cast<unsigned long long*>(stats) + 0, 1ull);
+            atomicAdd(reinterpret_cast<unsigned long long*>(stats) + 1,
+                      (unsigned long long)q->rows);
+            atomicAdd(reinterpret_cast<unsigned long long*>(stats) + 2,
+                      (unsigned long long)q->route_count);
+        }
+    }
+    const uint64_t i = (uint64_t)blockIdx.x * blockDim.x + threadIdx.x;
+    const uint64_t total = (uint64_t)max_rows * kHidden;
+    if (i >= total) return;
+    const uint32_t row = (uint32_t)(i / kHidden);
+    dst[i] = valid && row < q->rows ? src[i] : 0;
+}
+
+__global__ void lane_select_tables(
+    const r3::moe_shm::Request* q, const DeviceLayerTables* layers_table,
+    uint32_t layers, uint32_t rank, uint32_t sequence, uint32_t max_rows,
+    void** guc0, void** gus0, void** dnc0, void** dns0,
+    void** guc1, void** gus1, void** dnc1, void** dns1) {
+    using namespace r3::moe_shm;
     const uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= n) return;
-    const r3::moe_shm::Route r = route[i];
-    if (r.token < 0 || (uint32_t)r.token >= rows || r.expert < 0 ||
-        r.expert >= (int32_t)r3::moe_shm::kExperts) {
+    if (i >= kExperts / 2) return;
+    const bool valid = lane_request_valid(q, rank, sequence, max_rows, layers);
+    if (!valid) {
+        guc0[i] = gus0[i] = dnc0[i] = dns0[i] = nullptr;
+        guc1[i] = gus1[i] = dnc1[i] = dns1[i] = nullptr;
+        return;
+    }
+    const DeviceLayerTables t = layers_table[q->layer];
+    guc0[i] = static_cast<void**>(t.gu_code[0])[i];
+    gus0[i] = static_cast<void**>(t.gu_scale[0])[i];
+    dnc0[i] = static_cast<void**>(t.dn_code[0])[i];
+    dns0[i] = static_cast<void**>(t.dn_scale[0])[i];
+    guc1[i] = static_cast<void**>(t.gu_code[1])[i];
+    gus1[i] = static_cast<void**>(t.gu_scale[1])[i];
+    dnc1[i] = static_cast<void**>(t.dn_code[1])[i];
+    dns1[i] = static_cast<void**>(t.dn_scale[1])[i];
+}
+
+__global__ void lane_route_count(
+    const r3::moe_shm::Route* route, const r3::moe_shm::Request* q,
+    uint32_t rank, uint32_t sequence, uint32_t max_rows, uint32_t layers,
+    uint32_t* counts, uint32_t* token_slot, int32_t* flat, uint16_t* ew) {
+    using namespace r3::moe_shm;
+    const uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (!lane_request_valid(q, rank, sequence, max_rows, layers) || i >= q->route_count) return;
+    const Route r = route[i];
+    if (r.token < 0 || (uint32_t)r.token >= q->rows || r.expert < 0 ||
+        r.expert >= (int32_t)kExperts) {
         flat[i] = -1;
         return;
     }
     const uint32_t slot = atomicAdd(token_slot + r.token, 1u);
-    if (slot >= r3::moe_shm::kTopK) {
+    if (slot >= kTopK) {
         flat[i] = -1;
         return;
     }
-    const uint32_t f = (uint32_t)r.token * r3::moe_shm::kTopK + slot;
+    const uint32_t f = (uint32_t)r.token * kTopK + slot;
     flat[i] = (int32_t)f;
     ew[f] = r.weight_bf16;
     atomicAdd(counts + (uint32_t)r.expert, 1u);
@@ -59,11 +127,14 @@ __global__ void lane_route_prefix(const uint32_t* counts, int32_t* off, uint32_t
     off[r3::moe_shm::kExperts] = (int32_t)at;
 }
 
-__global__ void lane_route_scatter(const r3::moe_shm::Route* route, uint32_t n,
-                                   const int32_t* flat, uint32_t* cursor,
-                                   int32_t* sorted, int32_t* sorted_expert) {
+__global__ void lane_route_scatter(
+    const r3::moe_shm::Route* route, const r3::moe_shm::Request* q,
+    uint32_t rank, uint32_t sequence, uint32_t max_rows, uint32_t layers,
+    const int32_t* flat, uint32_t* cursor, int32_t* sorted, int32_t* sorted_expert) {
+    using namespace r3::moe_shm;
     const uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= n || flat[i] < 0) return;
+    if (!lane_request_valid(q, rank, sequence, max_rows, layers) ||
+        i >= q->route_count || flat[i] < 0) return;
     const uint32_t e = (uint32_t)route[i].expert;
     const uint32_t pos = atomicAdd(cursor + e, 1u);
     sorted[pos] = flat[i];
@@ -169,8 +240,13 @@ struct LayerTables {
 
 struct LaneWork {
     hipStream_t stream = nullptr;
+    hipEvent_t sample_start = nullptr;
+    hipEvent_t sample_stop = nullptr;
+    uint32_t sample_sequence = 0;
+    bool sample_pending = false;
     Buffer d_counts, d_cursor, d_token_slot, d_flat, d_sorted, d_sorted_expert, d_off, d_ew;
-    Buffer d_aq, d_as, d_gu, d_mid, d_mid_s, d_mid_rank, d_down, scratch;
+    Buffer d_act, d_aq, d_as, d_gu, d_mid, d_mid_s, d_mid_rank, d_down, d_stats, scratch;
+    Buffer gu_code[2], gu_scale[2], dn_code[2], dn_scale[2];
 };
 
 struct WeightPlan {
