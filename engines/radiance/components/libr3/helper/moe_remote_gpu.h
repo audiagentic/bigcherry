@@ -113,7 +113,7 @@ public:
     ~Runner() {
         if (stream_) (void)hipStreamDestroy(stream_);
         for (void* p : persistent_) if (p) (void)hipFree(p);
-        if (plugin_close_) plugin_close_();
+        if (plugin_opened_ && plugin_close_) plugin_close_();
         if (so_) dlclose(so_);
     }
 
@@ -160,7 +160,7 @@ public:
 
     int compute(void* map, r3::moe_shm::Request* q) {
         using namespace r3::moe_shm;
-        if (!map || !q || q->rank_count != kMaxRanks || q->layer >= model_.layers ||
+        if (!map || !q || q->rank >= kMaxRanks || q->rank_count != kMaxRanks || q->layer >= model_.layers ||
             q->rows == 0 || q->rows > kMaxRows || q->hidden != kHidden ||
             q->route_count == 0 || q->route_count > kMaxRoutes ||
             q->activation_stride != kHidden * (uint32_t)sizeof(uint16_t)) return -EINVAL;
@@ -298,7 +298,10 @@ private:
     std::string arch_;
     void* so_ = nullptr;
     void (*plugin_close_)() = nullptr;
+    bool plugin_opened_ = false;
     hipStream_t stream_ = nullptr;
+    uint32_t gu_code_dtype_ = 0, gu_scale_dtype_ = 0;
+    uint32_t dn_code_dtype_ = 0, dn_scale_dtype_ = 0;
     const RadKernelInfo* moe_ = nullptr;
     const RadKernelInfo* had_quant_ = nullptr;
     const RadKernelInfo* gated_quant_ = nullptr;
@@ -368,6 +371,7 @@ private:
             std::fprintf(stderr, "r3_moe_helper: libr4d rad_plugin_open refused this device\n");
             return false;
         }
+        plugin_opened_ = true;
         auto find = [&](const char* op, const char* preferred) -> const RadKernelInfo* {
             const RadKernelInfo* fallback = nullptr;
             for (int i = 0; i < count(); ++i) {
@@ -469,6 +473,13 @@ private:
                     "upload expert scales")) return false;
         out->code_dtype = p.code.dtype; out->scale_dtype = p.scale.dtype;
         out->code_bytes = p.code.bytes; out->scale_bytes = p.scale.bytes;
+        uint32_t& cd = gate_up ? gu_code_dtype_ : dn_code_dtype_;
+        uint32_t& sd = gate_up ? gu_scale_dtype_ : dn_scale_dtype_;
+        if ((cd && cd != out->code_dtype) || (sd && sd != out->scale_dtype)) {
+            std::fprintf(stderr, "r3_moe_helper: owned expert stored layouts disagree\n");
+            return false;
+        }
+        cd = out->code_dtype; sd = out->scale_dtype;
         return true;
     }
 
@@ -482,6 +493,8 @@ private:
         constexpr size_t nclass = r3::moe_shm::kExperts / 2;
         for (uint32_t l = 0; l < model_.layers; ++l) {
             LayerTables& lt = tables_[l];
+            lt.gu_code_dtype = gu_code_dtype_; lt.gu_scale_dtype = gu_scale_dtype_;
+            lt.dn_code_dtype = dn_code_dtype_; lt.dn_scale_dtype = dn_scale_dtype_;
             for (int parity = 0; parity < 2; ++parity) {
                 std::vector<void*> guc(nclass, nullptr), gus(nclass, nullptr);
                 std::vector<void*> dnc(nclass, nullptr), dns(nclass, nullptr);
@@ -491,8 +504,6 @@ private:
                     const size_t ix = e / 2;
                     guc[ix] = x.gu.code; gus[ix] = x.gu.scale;
                     dnc[ix] = x.dn.code; dns[ix] = x.dn.scale;
-                    lt.gu_code_dtype = x.gu.code_dtype; lt.gu_scale_dtype = x.gu.scale_dtype;
-                    lt.dn_code_dtype = x.dn.code_dtype; lt.dn_scale_dtype = x.dn.scale_dtype;
                 }
                 if (!build_one_table(guc, &lt.gu_code[parity]) ||
                     !build_one_table(gus, &lt.gu_scale[parity]) ||
