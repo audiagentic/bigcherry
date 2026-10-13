@@ -44,7 +44,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
 
-from ..core import paths
+from ..core import engines, paths
 from .apply import FilePatch
 
 # The "validation framework semantic version" (runbook 14.2). Bumping it
@@ -104,9 +104,11 @@ ENV_DOCS_PATCH_ID = "0910_feature_sets"
 REPRESENTATION_SIMPLE = "simple"
 REPRESENTATION_PACKAGED = "packaged"
 
-# Canonical patch ID: numeric order prefix + ``_`` + identifier characters.
-# Mirrors every existing flat module filename (0100_..., 1204_...).
-_PATCH_ID_PATTERN = re.compile(r"^(\d{2,})_[0-9A-Za-z_]+$")
+# Canonical patch ID: the engine's declared prefix (engine.toml layout.patch-id-prefix: "" for llama.cpp, "rad"
+# for radiance) + numeric order + ``_`` + identifier characters, so IDs never collide across engines.
+def _patch_id_pattern(engine: str) -> re.Pattern[str]:
+    prefix = engines.load(paths.REPO_ROOT, engine).patch_id_prefix
+    return re.compile(rf"^{re.escape(prefix)}(\d{{2,}})_[0-9A-Za-z_]+$")
 
 _PATCH_TOML_REQUIRED_KEYS = frozenset({"schema", "id", "order", "state", "kind"})
 _PATCH_TOML_STRING_LIST_KEYS = frozenset({
@@ -362,10 +364,10 @@ def _legacy_descriptor(
     engine: str, root: Path, path: Path, *, validate_state: bool = True
 ) -> PatchDescriptor:
     patch_id = path.stem
-    if not _PATCH_ID_PATTERN.match(patch_id):
+    if not _patch_id_pattern(engine).match(patch_id):
         raise PatchRegistryError(
             f"simple patch filename {patch_id!r} does not match the canonical "
-            f"ID pattern <numeric-order>_<name>"
+            f"ID pattern <engine-prefix><numeric-order>_<name>"
         )
     state = module_state(path)
     # RV80 follow-up (GPT ruling b): the reporting facade (patchset.describe)
@@ -427,7 +429,7 @@ def _string_list(record: dict, key: str, *, patch_id: str, label: str) -> tuple[
 
 
 def _parse_patch_toml(
-    root: Path, toml_path: Path, *, validate_state: bool = True
+    engine: str, root: Path, toml_path: Path, *, validate_state: bool = True
 ) -> dict:
     """Parse + schema-validate one ``patch.toml`` (runbook 6/7). Returns the
     validated record. All errors name the file and fail closed. With
@@ -456,10 +458,11 @@ def _parse_patch_toml(
         )
 
     patch_id = raw["id"]
-    if not isinstance(patch_id, str) or not _PATCH_ID_PATTERN.match(patch_id):
+    id_match = _patch_id_pattern(engine).match(patch_id) if isinstance(patch_id, str) else None
+    if not id_match:
         raise PatchRegistryError(
             f"{where}: id {patch_id!r} does not match the canonical ID pattern "
-            f"<numeric-order>_<name>"
+            f"<engine-prefix><numeric-order>_<name> for engine {engine!r}"
         )
 
     # Directory basename == patch ID (runbook 6: mandatory).
@@ -472,10 +475,10 @@ def _parse_patch_toml(
     order = raw["order"]
     if isinstance(order, bool) or not isinstance(order, int):
         raise PatchRegistryError(f"{where}: order must be an integer")
-    if order != int(patch_id.split("_", 1)[0]):
+    if order != int(id_match.group(1)):
         raise PatchRegistryError(
-            f"{where}: order {order} does not match id prefix "
-            f"{patch_id.split('_', 1)[0]!r}"
+            f"{where}: order {order} does not match id order digits "
+            f"{id_match.group(1)!r}"
         )
 
     state = raw["state"]
@@ -664,7 +667,7 @@ def _packaged_descriptor(
     contracts_path: Path | None = None,
     validate_state: bool = True,
 ) -> PatchDescriptor:
-    record = _parse_patch_toml(root, toml_path, validate_state=validate_state)
+    record = _parse_patch_toml(engine, root, toml_path, validate_state=validate_state)
     package_dir = toml_path.parent
     patch_id = record["id"]
     implementation = package_dir / "patch.py"

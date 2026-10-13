@@ -18,9 +18,9 @@ class EngineRegistryIsolationTests(unittest.TestCase):
         llama = registry.load_registry("llamacpp", llama_root)
         radiance = registry.load_registry("radiance", radiance_root)
         expected = {
-            "0001_drain_mover_before_arena_free",
-            "0002_moe_remote_handoff",
-            "0003_mtp_full_head_switch",
+            "rad0001_drain_mover_before_arena_free",
+            "rad0002_moe_remote_handoff",
+            "rad0003_mtp_full_head_switch",
         }
         self.assertTrue(expected <= set(radiance.by_id))
         self.assertFalse(expected & set(llama.by_id))
@@ -33,38 +33,46 @@ class EngineRegistryIsolationTests(unittest.TestCase):
             self.assertTrue(implementation)
         with self.assertRaises(registry.PatchRegistryError):
             registry.load_implementation(
-                "llamacpp", radiance.get("0001_drain_mover_before_arena_free"),
+                "llamacpp", radiance.get("rad0001_drain_mover_before_arena_free"),
                 root=radiance.root,
             )
 
-    def test_same_patch_id_in_two_engine_roots_has_separate_identity(self) -> None:
+    def test_each_engine_accepts_only_its_own_patch_id_prefix(self) -> None:
+        """IDs never collide across engines: radiance IDs carry "rad", llama.cpp IDs none."""
+        def package(root: Path, patch_id: str) -> None:
+            pkg = root / patch_id
+            pkg.mkdir(parents=True)
+            (pkg / "patch.toml").write_text(
+                f'schema = 1\nid = "{patch_id}"\norder = 1\n'
+                'state = "validated"\nkind = "framework"\n',
+                encoding="utf-8",
+            )
+            (pkg / "patch.py").write_text(
+                "from bigcherry.patcher import FilePatch, Edit\n"
+                'PATCHES = [FilePatch(path="x.txt", edits=('
+                'Edit(id="marker", anchor="old", text="new", rationale="test"),))]\n',
+                encoding="utf-8",
+            )
+
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)
-            roots = {engine: base / engine for engine in ("llamacpp", "radiance")}
-            for engine, root in roots.items():
-                package = root / "0001_same_id"
-                package.mkdir(parents=True)
-                (package / "patch.toml").write_text(
-                    'schema = 1\nid = "0001_same_id"\norder = 1\n'
-                    'state = "validated"\nkind = "framework"\n',
-                    encoding="utf-8",
-                )
-                (package / "patch.py").write_text(
-                    "from bigcherry.patcher import FilePatch, Edit\n"
-                    'PATCHES = [FilePatch(path="x.txt", edits=('
-                    'Edit(id="marker", anchor="old", text="new", rationale="test"),))]\n',
-                    encoding="utf-8",
-                )
-            a = registry.load_registry("llamacpp", roots["llamacpp"])
-            b = registry.load_registry("radiance", roots["radiance"])
-            self.assertEqual(a.get("0001_same_id").engine, "llamacpp")
-            self.assertEqual(b.get("0001_same_id").engine, "radiance")
-            self.assertNotEqual(a.get("0001_same_id"), b.get("0001_same_id"))
-            registry.load_implementation("llamacpp", a.get("0001_same_id"), root=a.root)
-            registry.load_implementation("radiance", b.get("0001_same_id"), root=b.root)
-            self.assertIn("bigcherry._patches.llamacpp.0001_same_id", sys.modules)
-            self.assertIn("bigcherry._patches.radiance.0001_same_id", sys.modules)
+            package(base / "llama-ok", "0001_same_name")
+            package(base / "radiance-ok", "rad0001_same_name")
+            a = registry.load_registry("llamacpp", base / "llama-ok")
+            b = registry.load_registry("radiance", base / "radiance-ok")
+            self.assertEqual(a.get("0001_same_name").engine, "llamacpp")
+            self.assertEqual(b.get("rad0001_same_name").engine, "radiance")
+            registry.load_implementation("llamacpp", a.get("0001_same_name"), root=a.root)
+            registry.load_implementation("radiance", b.get("rad0001_same_name"), root=b.root)
+            self.assertIn("bigcherry._patches.llamacpp.0001_same_name", sys.modules)
+            self.assertIn("bigcherry._patches.radiance.rad0001_same_name", sys.modules)
 
+            package(base / "radiance-bare", "0001_same_name")
+            package(base / "llama-prefixed", "rad0001_same_name")
+            with self.assertRaisesRegex(registry.PatchRegistryError, "engine 'radiance'"):
+                registry.load_registry("radiance", base / "radiance-bare")
+            with self.assertRaisesRegex(registry.PatchRegistryError, "engine 'llamacpp'"):
+                registry.load_registry("llamacpp", base / "llama-prefixed")
 
 if __name__ == "__main__":
     unittest.main()

@@ -1040,7 +1040,7 @@ greedy, ignore_eos, 256 tokens - as long-ctx-profile.sh timing does; runs `fnm3`
 
 Two gaps: the base step is about 10% slower, and acceptance is lower at the shallow depth.
 Isolated (runs `fnmh3-1`, `fnmh3-0`, `fnr97`): drafting through the int8 trunk head instead of the u2 draft head
-(engine patch 0003, `RAD_MTP_FULL_HEAD=1`) leaves acceptance at 0.63-0.65 (0.62-0.64 with the u2 head); and the same
+(engine patch rad0003, `RAD_MTP_FULL_HEAD=1`) leaves acceptance at 0.63-0.65 (0.62-0.64 with the u2 head); and the same
 container on the R9700 alone with radiance's own libr4d kernels accepts 0.63-0.66. So neither the draft head's
 precision nor libr3 is the cause: the acceptance is the container's MTP layer as radiance runs it (fp8 e4m3 g128,
 against llama.cpp's Q8_0 MTP GGUF). With a 14 GiB expert pool a rank, two-XTX MTP decode is 52.5-53.3 at 3.3K and

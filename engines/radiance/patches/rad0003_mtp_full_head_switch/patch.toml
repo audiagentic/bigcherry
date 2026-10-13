@@ -1,5 +1,5 @@
 schema = 1
-id = "0003_mtp_full_head_switch"
+id = "rad0003_mtp_full_head_switch"
 order = 3
 state = "untested"
 kind = "enhancement"

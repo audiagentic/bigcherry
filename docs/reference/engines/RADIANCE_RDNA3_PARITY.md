@@ -13,7 +13,7 @@ Qwen3.8-27B and Flash-Next first" (2026-10-12/13). Evidence and run names: [engi
 | Flash-Next decode, MTP 3, prose | 53.6 / 51.6 tok/s (3.3K / 6.8K) | llama.cpp 72.2 / 55.6 | 74-93% |
 
 What moved the numbers: native gfx11 prefill attention (+5%), the lossy wht6 wire on the 27B (+35%), the prefill
-stager armed (`--max-num-seqs 6`, ~2x Flash-Next prefill) with engine patch 0001 fixing its shutdown hang, 4K prefill
+stager armed (`--max-num-seqs 6`, ~2x Flash-Next prefill) with engine patch rad0001 fixing its shutdown hang, 4K prefill
 chunks (+50-60% at short prompts), the n-gram table off disk (+11% decode, 1.6-2.1x prefill), a smaller expert pool
 (+15% long-prompt decode). What did not: RR08 GEMM forms, the pipelined all-reduce (-6%), the native delta-net scan
 (wrong output), the 2-bit draft head (not the cause of low acceptance).
@@ -31,7 +31,7 @@ chunks (+50-60% at short prompts), the n-gram table off disk (+11% decode, 1.6-2
 ## How to close it, ranked
 
 1. R9700 expert helper (Flash-Next prefill, decode at long context): keep the cold experts resident on the R9700 and
-   compute them there; only activations and partials cross host memory. Engine patch 0002 (hand-off point) is
+   compute them there; only activations and partials cross host memory. Engine patch rad0002 (hand-off point) is
    merged; the helper process is the remaining step. Expected 1.5-3x prefill per the measured pooled-vs-resident
    GEMM (47 vs 5 ms a 2K chunk).
 2. 27B cross-card sum: fewer bytes (4-bit wire measured +5.6% at a quality cost, owner's call) or overlap with the

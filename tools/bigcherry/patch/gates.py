@@ -298,6 +298,7 @@ def evaluate_repository_lint_gates(
         tuple[ScopedGateResult, ...], tuple[str, ...], tuple[str, ...]
     ]:
         package_report = validation_policy.check_validation_packages(
+            engine=registry.engine,
             root=patches_dir,
             registry_path=patches_dir,
             external_sources_path=external_sources_path,
@@ -426,6 +427,7 @@ def evaluate_package_gate(context: GateContext) -> GateResult:
     """Evaluate the focal package policy without unrelated patch poisoning."""
     try:
         report = validation_policy.check_validation_packages(
+            engine=context.descriptor.engine,
             root=context.patches_dir,
             registry_path=context.patches_dir,
             external_sources_path=context.external_sources_path,

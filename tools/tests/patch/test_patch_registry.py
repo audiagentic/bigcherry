@@ -264,7 +264,7 @@ class PackagedSchemaTests(unittest.TestCase):
             PACKAGE_TOML.format(patch_id="1204_rd08_test", order=1205, extra="")
         )
         with self.assertRaisesRegex(patch_registry.PatchRegistryError,
-                                    "does not match id prefix"):
+                                    "does not match id order digits"):
             self._load()
 
     def test_unknown_experiment_contract_rejected(self) -> None:

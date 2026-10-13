@@ -155,6 +155,7 @@ class GrandfatherIdentityTests(unittest.TestCase):
             baseline_path = self._baseline(root, package_dir)
             src_path = _write_external_sources(root)
             report = vp.check_validation_packages(
+                engine="llamacpp",
                 root=root, external_sources_path=src_path, baseline_path=baseline_path
             )
             self.assertEqual(report.grandfathered, ("9999_example_patch",))
@@ -168,6 +169,7 @@ class GrandfatherIdentityTests(unittest.TestCase):
             (package_dir / "patch.py").write_text(PATCH_PY + "\n# changed\n", encoding="utf-8")
             src_path = _write_external_sources(root)
             report = vp.check_validation_packages(
+                engine="llamacpp",
                 root=root, external_sources_path=src_path, baseline_path=baseline_path
             )
             self.assertEqual(report.grandfathered, ())
@@ -181,6 +183,7 @@ class GrandfatherIdentityTests(unittest.TestCase):
             (package_dir / "patch.toml").write_text(PATCH_TOML + "\n", encoding="utf-8")
             src_path = _write_external_sources(root)
             report = vp.check_validation_packages(
+                engine="llamacpp",
                 root=root, external_sources_path=src_path, baseline_path=baseline_path
             )
             self.assertEqual(report.grandfathered, ())
@@ -199,6 +202,7 @@ class GrandfatherIdentityTests(unittest.TestCase):
                 encoding="utf-8",
             )
             report = vp.check_validation_packages(
+                engine="llamacpp",
                 root=root, external_sources_path=src_path, baseline_path=baseline_path
             )
             self.assertEqual(report.grandfathered, ())
@@ -214,6 +218,7 @@ class GrandfatherIdentityTests(unittest.TestCase):
             baseline_path.write_text(json.dumps(data), encoding="utf-8")
             src_path = _write_external_sources(root)
             report = vp.check_validation_packages(
+                engine="llamacpp",
                 root=root, external_sources_path=src_path, baseline_path=baseline_path
             )
             self.assertEqual(report.grandfathered, ())
@@ -226,6 +231,7 @@ class GrandfatherIdentityTests(unittest.TestCase):
             src_path = _write_external_sources(root)
             missing_baseline = root / "does-not-exist.json"
             report = vp.check_validation_packages(
+                engine="llamacpp",
                 root=root, external_sources_path=src_path, baseline_path=missing_baseline
             )
             self.assertEqual(report.grandfathered, ())
@@ -243,6 +249,7 @@ class GrandfatherIdentityTests(unittest.TestCase):
             baseline_path = self._baseline(root, package_dir)
             src_path = _write_external_sources(root)
             report = vp.check_validation_packages(
+                engine="llamacpp",
                 root=root, external_sources_path=src_path, baseline_path=baseline_path
             )
             # The baseline identity still matches (patch.py/patch.toml/
@@ -261,6 +268,7 @@ class GrandfatherIdentityTests(unittest.TestCase):
 class LocalFrameworkStaticPolicyTests(unittest.TestCase):
     def _report(self, root: Path, *, baseline: Path | None = None) -> vp.PackagePolicyReport:
         return vp.check_validation_packages(
+            engine="llamacpp",
             root=root,
             external_sources_path=_write_untracked_external_sources(root),
             baseline_path=baseline,
@@ -518,6 +526,7 @@ class RegressionTests(unittest.TestCase):
                 encoding="utf-8",
             )
             report = vp.check_validation_packages(
+                engine="llamacpp",
                 root=root, external_sources_path=src_path, baseline_path=baseline_path
             )
             statuses = {s.patch_id: s.status for s in report.statuses}

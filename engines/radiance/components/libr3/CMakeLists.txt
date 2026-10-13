@@ -81,12 +81,12 @@ set(declaration ${r4d}/r4d_rows.cpp ${r4d}/r4d_layout.cpp ${r4d}/r4d_fp8_layout.
 set_source_files_properties(${r4d}/r4d_rows.cpp PROPERTIES COMPILE_DEFINITIONS
   "rad_plugin_info=r4d_up_plugin_info;rad_kernel_count=r4d_up_kernel_count;rad_kernel_at=r4d_up_kernel_at;rad_kernel_concurrent=r4d_up_kernel_concurrent")
 
-# The remote-MoE hook implements engine patch 0002's hand-off ABI (abi/rad_moe_remote.h). A source without that patch
+# The remote-MoE hook implements engine patch rad0002's hand-off ABI (abi/rad_moe_remote.h). A source without that patch
 # has no hand-off point, so libr3 is built without the hook rather than failing.
 set(r3_moe_remote_sources "")
 if(EXISTS "${RADIANCE_SRC}/abi/rad_moe_remote.h")
   set(r3_moe_remote_sources ${CMAKE_CURRENT_SOURCE_DIR}/helper/moe_remote_hook.cpp)
-  message(STATUS "libr3: remote-MoE hook built (engine source has patch 0002)")
+  message(STATUS "libr3: remote-MoE hook built (engine source has patch rad0002)")
 else()
   message(STATUS "libr3: remote-MoE hook left out (engine source has no abi/rad_moe_remote.h)")
 endif()
