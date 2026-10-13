@@ -145,8 +145,10 @@ set_property(TARGET r3_selftest PROPERTY HIP_ARCHITECTURES ${R3_TARGETS})
 add_executable(r3_ngram_test EXCLUDE_FROM_ALL ${CMAKE_CURRENT_SOURCE_DIR}/r3_ngram_test.cpp)
 target_link_libraries(r3_ngram_test PRIVATE radiance::abi ${CMAKE_DL_LIBS})
 
-# Slice 2a remote-MoE reference helper. The executable consumes only the installed container ABI;
-# the hook is already compiled into libr3 above and registers only when R3_MOE_HELPER is non-empty.
+# Remote-MoE helper. The executable consumes only the installed container ABI. Its GPU mailbox
+# service owns one HIP stream per producer rank; the current engine hook fails closed until patch
+# 0002 has an AQL host-memory wait/write primitive (gpu-mailbox/README.md).
+find_package(Threads REQUIRED)
 set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/helper/r3_moe_helper.cpp PROPERTIES LANGUAGE HIP)
 add_executable(r3_moe_helper ${CMAKE_CURRENT_SOURCE_DIR}/helper/r3_moe_helper.cpp)
 set_property(TARGET r3_moe_helper PROPERTY HIP_ARCHITECTURES gfx1201)
@@ -155,14 +157,13 @@ if(r3_moe_remote_sources)
   target_include_directories(libr3 PRIVATE ${RADIANCE_SRC}/abi)
 endif()
 target_compile_definitions(r3_moe_helper PRIVATE __HIP_PLATFORM_AMD__)
-target_link_libraries(r3_moe_helper PRIVATE radiance::abi ${CMAKE_DL_LIBS} ${RAD_HIP_RUNTIME})
+target_link_libraries(r3_moe_helper PRIVATE radiance::abi ${CMAKE_DL_LIBS} ${RAD_HIP_RUNTIME} Threads::Threads)
 set_target_properties(r3_moe_helper PROPERTIES HIP_STANDARD 17 HIP_STANDARD_REQUIRED ON
   RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/helpers)
 add_dependencies(libr3 r3_moe_helper)
 
 include(CTest)
 if(BUILD_TESTING)
-  find_package(Threads REQUIRED)
   add_executable(r3_moe_shm_test EXCLUDE_FROM_ALL ${CMAKE_CURRENT_SOURCE_DIR}/helper/moe_remote_shm_test.cpp)
   target_include_directories(r3_moe_shm_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/helper)
   target_link_libraries(r3_moe_shm_test PRIVATE Threads::Threads)

@@ -144,6 +144,16 @@ void register_hook() {
         std::fprintf(stderr, "libr3: R3_MOE_HELPER shared-memory protocol mismatch\n"); return;
     }
     g.hdr = static_cast<Header*>(g.map);
+    /* Protocol v4 is GPU-signalled. Pinned Radiance 89cee7ce has stream events backed by
+     * engine-private HSA signals, but no stream primitive that waits on or writes an arbitrary
+     * uint32_t in mapped host memory. Do not silently run the old D2H/futex/H2D service. */
+    if (g.hdr->version >= 4) {
+        std::fprintf(stderr,
+            "libr3: R3_MOE_HELPER protocol v4 needs engine GPU mailbox wait/write support; "
+            "pinned Radiance has no such primitive, refusing legacy CPU-mediated hook\n");
+        g.hdr = nullptr;
+        return;
+    }
     g.copy2d = reinterpret_cast<HipMemcpy2D>(::dlsym(RTLD_DEFAULT, "hipMemcpy2D"));
     /* Pin the segment for both cards: pageable copies fell onto a staging path that once cost
      * 10 ms a call (62 s for one request) instead of ~0.08 ms. */
