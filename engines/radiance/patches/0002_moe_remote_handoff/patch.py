@@ -13,6 +13,11 @@ extern "C" {
 int rad_moe_remote_wanted(int64_t step_rows);
 int rad_moe_remote_wanted_upto(int64_t max_step_rows);
 int rad_moe_remote_shadow(void);
+typedef void (*rad_moe_remote_layer_map_hook)(
+    int layer, int n_expert, const int32_t* slot_of_expert);
+void rad_moe_remote_set_layer_map_hook(rad_moe_remote_layer_map_hook hook);
+void rad_moe_remote_layer_map(
+    int layer, int n_expert, const int32_t* slot_of_expert);
 #ifdef __cplusplus
 }
 #endif
@@ -20,10 +25,13 @@ int rad_moe_remote_shadow(void);
 
 _MOE_REMOTE_CPP = r"""/* moe_remote.cpp -- decode-sized policy gate for GPU-lane remote MoE. */
 #include "rad_moe_remote.h"
+#include <atomic>
 #include <climits>
 #include <cstdlib>
 
 namespace {
+std::atomic<rad_moe_remote_layer_map_hook> g_layer_map_hook{nullptr};
+
 int64_t min_rows() {
     static const int64_t v = [] {
         const char* s = std::getenv("R3_MOE_REMOTE_MIN_ROWS");
@@ -59,6 +67,16 @@ extern "C" int rad_moe_remote_wanted_upto(int64_t max_step_rows) {
 extern "C" int rad_moe_remote_shadow(void) {
     const char* e = std::getenv("R3_MOE_HELPER_SHADOW");
     return e && *e && !(e[0] == '0' && e[1] == 0);
+}
+
+extern "C" void rad_moe_remote_set_layer_map_hook(rad_moe_remote_layer_map_hook hook) {
+    g_layer_map_hook.store(hook, std::memory_order_release);
+}
+
+extern "C" void rad_moe_remote_layer_map(
+    int layer, int n_expert, const int32_t* slot_of_expert) {
+    const auto hook = g_layer_map_hook.load(std::memory_order_acquire);
+    if (hook) hook(layer, n_expert, slot_of_expert);
 }
 """
 
@@ -111,13 +129,24 @@ PATCHES = (
                 rationale="The output op declaration is the unique home for the pre-reduction mailbox ops.",
             ),
             Edit(
+                id="publish-runtime-layer-map",
+                anchor=r"^[ \t]*if \(std::find\(prot\.begin\(\), prot\.end\(\), e\) == prot\.end\(\)\) reg\.push_back\(e\);$",
+                text="""
+    if (rad_moe_remote_wanted_upto(g.max_tok)) {
+        std::vector<int32_t> remote_slot((size_t)ne, -1);
+        for (int64_t s = 0; s < n_reg; ++s)
+            remote_slot[(size_t)reg[(size_t)s]] = (int32_t)s;
+        rad_moe_remote_layer_map(l, (int)ne, remote_slot.data());
+    }""",
+                guard=r"rad_moe_remote_layer_map\(l, \(int\)ne, remote_slot\.data\(\)\);",
+                expect_matches=1,
+                rationale="The reg[] fill line is the first point where runtime protected-expert removal and compact regular slots are both final.",
+            ),
+            Edit(
                 id="declare-remote-mailbox-ops",
                 anchor=r"^[ \t]*\{w\.x, w\.h\.x\}, \{w\.x\}\);$",
                 text="""
-    /* Only layers without protected (plain-bf16) experts hand off: removing protected experts from reg[]
-     * renumbers the regular slots, and TP class/half follows the slot, not the expert id. Shadow showed
-     * those layers (34/44/46/47 on Flash-Next) wrong while every other layer matched to ~2e-4. */
-    if (rad_moe_remote_wanted_upto(g.max_tok) && n_reg == (int64_t)c.n_expert) {
+    if (rad_moe_remote_wanted_upto(g.max_tok)) {
         const rad_buf remote_q = c.expert_rot ? w.hr.q : w.h.q;
         const rad_buf remote_s = c.expert_rot ? w.hr.s : w.h.s;
         op_remote_publish = rw(b, RAD_OP(b, "moe_mailbox_publish",
