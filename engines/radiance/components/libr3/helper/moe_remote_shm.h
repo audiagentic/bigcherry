@@ -11,7 +11,7 @@
 namespace r3::moe_shm {
 
 constexpr uint64_t kMagic = 0x31454f4d33485253ull; /* "SRH3MOE1": reject unrelated/stale shm. */
-constexpr uint32_t kVersion = 4;
+constexpr uint32_t kVersion = 5;
 constexpr uint32_t kPage = 4096;
 constexpr uint32_t kMaxRanks = 2;       /* Flash-Next configuration of record: TP=2. */
 constexpr uint32_t kMaxLayers = 128;     /* ownership bitmap bound; Flash-Next is below this. */
@@ -27,7 +27,7 @@ struct Route {
     int32_t token;       /* activation/result row to which this expert contribution belongs. */
     int32_t expert;      /* global expert id; addresses the .rad expert group directly. */
     uint16_t weight_bf16;/* router weight exactly as supplied by the patch ABI. */
-    uint16_t reserved;
+    uint16_t slot;        /* original top-k slot; gather arithmetic is defined in slot order. */
 };
 static_assert(sizeof(Route) == 12);
 
