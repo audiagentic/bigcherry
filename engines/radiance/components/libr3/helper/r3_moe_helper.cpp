@@ -343,7 +343,7 @@ int compute_host_engine(const Container& f, void* map, Request* q,
             rad_enc_fwht(f.encoding(gu)) != 128 || rad_enc_fwht(f.encoding(dn)) != 128)
             return -EINVAL;
 
-        const int32_t es = f.expert_slot(q->layer, e);
+        const int32_t es = layer_slot(map, q->layer, e);
         if (es < 0) return -ENOTSUP;
         const bool wide = q->rank == ((uint32_t)es & 1u);
         const int64_t lo = wide ? 0 : 384;
@@ -413,7 +413,7 @@ int compute_host(const Container& f, void* map, Request* q) {
         const RadFileEntry* gu=f.weight(q->layer,e,0); const RadFileEntry* dn=f.weight(q->layer,e,1); if(!gu||!dn) return -ENOENT;
         int64_t gur=1,guc=1,dnr=1,dnc=1; rad_enc_view(gu->rank,gu->shape,&gur,&guc); rad_enc_view(dn->rank,dn->shape,&dnr,&dnc);
         if(guc!=kHidden || dnr!=kHidden || gur!=2*dnc || dnc!=640) return -EINVAL;
-        const int32_t es=f.expert_slot(q->layer,e); if(es<0) return -ENOTSUP;
+        const int32_t es=layer_slot(map,q->layer,e); if(es<0) return -ENOTSUP;
         const int parity=(int)((uint32_t)es&1u); const bool wide=((int)q->rank==parity); const int64_t lo=wide?0:384, hi=wide?384:640, width=hi-lo;
         std::vector<float> mid(ri.size()*(size_t)width);
         for(int64_t j=0;j<width;++j) {
@@ -518,9 +518,6 @@ bool select_owned(const Container& f, r3_moe_gpu::Runner* gpu, uint64_t budget, 
         uint8_t& was = seen[(size_t)l * kExperts + e];
         if (was) continue;
         was = 1;
-        /* Protected BF16 experts are the engine's separate trailing run. The helper's resident
-         * kernel serves only regular w4 experts, and their compact slot is what defines TP class. */
-        if (f.expert_slot(l, e) < 0) continue;
         const int64_t bytes = gpu ? gpu->expert_bytes(l, e) : canonical_expert_bytes(f, l, e);
         if (bytes <= 0) {
             std::fprintf(stderr, "r3_moe_helper: expert (%u,%u) cannot be laid out as w4nl64a8h\n", l, e);
@@ -557,12 +554,25 @@ bool parse_u32(const char* s, uint32_t lo, uint32_t hi, uint32_t* out) {
 }
 
 int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& owned,
-                 uint32_t layer, uint32_t rows, uint32_t lane_max_rows) {
+                 uint32_t layer, uint32_t rows, uint32_t lane_max_rows,
+                 bool synthetic_protect) {
     if (layer >= model.layers || rows == 0 || rows > lane_max_rows) return 2;
+    std::array<int32_t, kExperts> runtime_slot{};
+    runtime_slot.fill(-1);
+    static constexpr uint32_t kSyntheticProtected[8] = {1, 17, 63, 127, 191, 255, 319, 383};
+    uint32_t next_slot = 0;
+    for (uint32_t e = 0; e < kExperts; ++e) {
+        if (!model.weight(layer, e, 0) || !model.weight(layer, e, 1)) continue;
+        bool protect = false;
+        if (synthetic_protect)
+            for (uint32_t p : kSyntheticProtected) protect = protect || e == p;
+        if (!protect) runtime_slot[e] = (int32_t)next_slot++;
+    }
+
     std::vector<uint32_t> remote_expert, local_expert;
     std::vector<uint8_t> owned_here(kExperts, 0);
     for (auto [l, e] : owned.expert) {
-        if (l != layer) continue;
+        if (l != layer || runtime_slot[e] < 0) continue;
         remote_expert.push_back(e);
         owned_here[e] = 1;
     }
@@ -640,6 +650,16 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
     init(map, model.layers);
     publish_owned(map, owned);
     Header* h = static_cast<Header*>(map);
+    std::memcpy(layer_slots(map, layer), runtime_slot.data(), sizeof(runtime_slot));
+    store(&h->layer_map_ready[layer], 1);
+    if (!gpu.load_layer(layer, owned.expert, runtime_slot.data())) {
+        std::fprintf(stderr, "r3_moe_helper: --compare layer %u runtime table build failed\n", layer);
+        munmap(map, lay.bytes);
+        return 1;
+    }
+    store(&h->layer_map_consumed[layer], 1);
+    if (synthetic_protect)
+        std::printf("synthetic_protect layer %u removed=8 regular=%u\n", layer, next_slot);
     bool pinned = false;
     void* dev_map = nullptr;
     if (!r3_moe_gpu::hip_ok(
@@ -830,23 +850,26 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
 
 int main(int argc, char** argv) {
     bool compare = argc > 1 && std::strcmp(argv[1], "--compare") == 0;
+    bool synthetic_protect = compare && argc > 2 &&
+        std::strcmp(argv[argc - 1], "--synthetic-protect") == 0;
+    const int carg = argc - (synthetic_protect ? 1 : 0);
     const char* model_path = nullptr;
     uint32_t compare_layer = 0, compare_rows = 0;
     bool compare_one_layer = false;
     if (compare) {
-        if (argc == 5 && std::strcmp(argv[3], "--rows") == 0) {
+        if (carg == 5 && std::strcmp(argv[3], "--rows") == 0) {
             if (!parse_u32(argv[4], 1, kMaxRows, &compare_rows)) {
                 std::fprintf(stderr, "usage: r3_moe_helper --compare MODEL.rad --rows M\n");
                 return 2;
             }
-        } else if (argc == 7 && std::strcmp(argv[3], "--layer") == 0 &&
+        } else if (carg == 7 && std::strcmp(argv[3], "--layer") == 0 &&
                    std::strcmp(argv[5], "--rows") == 0 &&
                    parse_u32(argv[4], 0, kMaxLayers - 1, &compare_layer) &&
                    parse_u32(argv[6], 1, kMaxRows, &compare_rows)) {
             compare_one_layer = true;
         } else {
             std::fprintf(stderr,
-                "usage: r3_moe_helper --compare MODEL.rad [--layer L] --rows M\n");
+                "usage: r3_moe_helper --compare MODEL.rad [--layer L] --rows M [--synthetic-protect]\n");
             return 2;
         }
         model_path = argv[2];
@@ -875,10 +898,9 @@ int main(int argc, char** argv) {
     const uint64_t budget = helper_budget_bytes();
     Owned owned;
     if (!select_owned(model, gpu.get(), budget, &owned)) return 1;
-    if (gpu && !gpu->upload(owned.expert)) return 1;
+    if (gpu && !gpu->allocate(owned.expert)) return 1;
     const uint32_t lane_max_rows = helper_lane_rows();
     if (gpu && !gpu->prepare_lanes(lane_max_rows)) return 1;
-    if (gpu && !compare) (void)posix_fadvise(model.fd, 0, 0, POSIX_FADV_DONTNEED);
     long rss_pages = 0;
     if (FILE* sf = std::fopen("/proc/self/statm", "r")) {
         long total_pages = 0;
@@ -891,7 +913,8 @@ int main(int argc, char** argv) {
 
     if (compare) {
         if (compare_one_layer)
-            return compare_mode(model, *gpu, owned, compare_layer, compare_rows, lane_max_rows);
+            return compare_mode(model, *gpu, owned, compare_layer, compare_rows, lane_max_rows,
+                                synthetic_protect);
         int rc = 0;
         for (uint32_t layer : {0u, 20u, 34u, 47u}) {
             if (layer >= model.layers) {
@@ -901,7 +924,8 @@ int main(int argc, char** argv) {
                 continue;
             }
             std::printf("layer %u\n", layer);
-            rc |= compare_mode(model, *gpu, owned, layer, compare_rows, lane_max_rows);
+            rc |= compare_mode(model, *gpu, owned, layer, compare_rows, lane_max_rows,
+                               synthetic_protect);
         }
         return rc;
     }
@@ -933,6 +957,39 @@ int main(int argc, char** argv) {
             munmap(map, lay.bytes); close(fd); shm_unlink(name); return 1;
         }
     }
+
+    std::fprintf(stderr, "r3_moe_helper: waiting for engine runtime expert maps\n");
+    for (uint32_t layer = 0; layer < model.layers; ++layer) {
+        while (!load(&h->layer_map_ready[layer])) {
+            const uint32_t seen = load(&h->layer_map_ready[layer]);
+            if (!seen) (void)futex_wait(&h->layer_map_ready[layer], seen);
+        }
+        const int32_t* slots = layer_slots(map, layer);
+        if (!slots) {
+            munmap(map, lay.bytes); close(fd); shm_unlink(name); return 1;
+        }
+        for (auto [l, e] : owned.expert)
+            if (l == layer && slots[e] < 0) (void)clear_owned(map, l, e);
+        if (gpu && !gpu->load_layer(layer, owned.expert, slots)) {
+            std::fprintf(stderr, "r3_moe_helper: layer %u runtime table build failed\n", layer);
+            store(&h->layer_map_consumed[layer], 1);
+            (void)futex_wake(&h->layer_map_consumed[layer]);
+            munmap(map, lay.bytes); close(fd); shm_unlink(name); return 1;
+        }
+        store(&h->layer_map_consumed[layer], 1);
+        (void)futex_wake(&h->layer_map_consumed[layer]);
+    }
+    Owned runtime_owned;
+    for (auto [l, e] : owned.expert) {
+        if (layer_slot(map, l, e) < 0) continue;
+        runtime_owned.expert.emplace_back(l, e);
+        const int64_t eb = gpu ? gpu->expert_bytes(l, e) : canonical_expert_bytes(model, l, e);
+        if (eb > 0) runtime_owned.bytes += (uint64_t)eb;
+    }
+    owned = std::move(runtime_owned);
+    h->owned_bytes = owned.bytes;
+    if (gpu) (void)posix_fadvise(model.fd, 0, 0, POSIX_FADV_DONTNEED);
+
     /* No SA_RESTART (std::signal sets it): the futex wait must return EINTR so the loop sees g_stop. */
     struct sigaction sa{};
     sa.sa_handler = on_signal;
