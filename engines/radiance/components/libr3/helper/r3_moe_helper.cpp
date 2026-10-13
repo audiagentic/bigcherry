@@ -534,7 +534,7 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
     if (layer >= model.layers || rows == 0 || rows > lane_max_rows) return 2;
     std::array<int32_t, kExperts> runtime_slot{};
     runtime_slot.fill(-1);
-    static constexpr uint32_t kSyntheticProtected[8] = {1, 17, 63, 127, 191, 255, 319, 383};
+    static constexpr uint32_t kSyntheticProtected[8] = {1, 17, 63, 127, 191, 255, 319, 511};
     uint32_t next_slot = 0;
     for (uint32_t e = 0; e < kExperts; ++e) {
         if (!model.weight(layer, e, 0) || !model.weight(layer, e, 1)) continue;
@@ -559,6 +559,17 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
                      "r3_moe_helper: --compare layer %u needs >=2 owned and >=1 local experts\n",
                      layer);
         return 1;
+    }
+    if (synthetic_protect) {
+        bool shifted_parity = false;
+        for (uint32_t e : remote_expert)
+            shifted_parity = shifted_parity ||
+                (((uint32_t)runtime_slot[e] & 1u) != (e & 1u));
+        if (!shifted_parity) {
+            std::fprintf(stderr,
+                         "r3_moe_helper: --compare synthetic protection did not shift an owned TP class\n");
+            return 1;
+        }
     }
 
     const uint32_t remote_per_token =
