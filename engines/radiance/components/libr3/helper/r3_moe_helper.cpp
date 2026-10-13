@@ -658,6 +658,10 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
         return 1;
     }
     store(&h->layer_map_consumed[layer], 1);
+    if (!gpu.prepare_lanes(lane_max_rows)) {
+        munmap(map, lay.bytes);
+        return 1;
+    }
     if (synthetic_protect)
         std::printf("synthetic_protect layer %u removed=8 regular=%u\n", layer, next_slot);
     bool pinned = false;
@@ -900,7 +904,6 @@ int main(int argc, char** argv) {
     if (!select_owned(model, gpu.get(), budget, &owned)) return 1;
     if (gpu && !gpu->allocate(owned.expert)) return 1;
     const uint32_t lane_max_rows = helper_lane_rows();
-    if (gpu && !gpu->prepare_lanes(lane_max_rows)) return 1;
     long rss_pages = 0;
     if (FILE* sf = std::fopen("/proc/self/statm", "r")) {
         long total_pages = 0;
@@ -908,7 +911,7 @@ int main(int argc, char** argv) {
         std::fclose(sf);
     }
     const double rss_mib = rss_pages > 0 ? (double)rss_pages * (double)sysconf(_SC_PAGESIZE) / (1024.0 * 1024.0) : -1.0;
-    std::fprintf(stderr, "r3_moe_helper: owns %zu experts, %.3f GiB; host RSS after load %.1f MiB\n",
+    std::fprintf(stderr, "r3_moe_helper: selected %zu expert candidates, %.3f GiB; host RSS %.1f MiB\n",
                  owned.expert.size(), (double)owned.bytes / (1024.0 * 1024.0 * 1024.0), rss_mib);
 
     if (compare) {
@@ -988,7 +991,13 @@ int main(int argc, char** argv) {
     }
     owned = std::move(runtime_owned);
     h->owned_bytes = owned.bytes;
+    if (gpu && !gpu->prepare_lanes(lane_max_rows)) {
+        (void)hipHostUnregister(map);
+        munmap(map, lay.bytes); close(fd); shm_unlink(name); return 1;
+    }
     if (gpu) (void)posix_fadvise(model.fd, 0, 0, POSIX_FADV_DONTNEED);
+    std::fprintf(stderr, "r3_moe_helper: runtime map owns %zu experts, %.3f GiB\n",
+                 owned.expert.size(), (double)owned.bytes / (1024.0 * 1024.0 * 1024.0));
 
     /* No SA_RESTART (std::signal sets it): the futex wait must return EINTR so the loop sees g_stop. */
     struct sigaction sa{};
