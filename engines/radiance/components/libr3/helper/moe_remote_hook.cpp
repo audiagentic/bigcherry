@@ -37,7 +37,6 @@ uint64_t now_ns() {
         std::chrono::steady_clock::now().time_since_epoch()).count();
 }
 
-void report_hook() __attribute__((destructor));
 void report_hook() {
     if (!g.hdr) return;
     for (uint32_t r = 0; r < kMaxRanks; ++r) {
@@ -119,7 +118,6 @@ const void* wait(void* user, RadMoeRemoteHandle handle) {
     return ptr<void>(s->map, q->result_offset[q->rank]);
 }
 
-void register_hook() __attribute__((constructor));
 void register_hook() {
     if (!enabled()) return; /* Default path: no registration, therefore byte-identical engine behaviour. */
     /* R3_MOE_HELPER=1 is the switch for this component. Preserve an explicit engine threshold,
@@ -144,4 +142,11 @@ void register_hook() {
     static RadMoeRemoteHooks hooks{RAD_MOE_REMOTE_ABI, &g, owns_remote, submit, wait};
     if (reg(&hooks) < 0) std::fprintf(stderr, "libr3: R3_MOE_HELPER hook registration refused\n");
 }
+/* Registration runs from an object defined after `g`: C++ initialises one translation unit's
+ * globals in order, whereas an __attribute__((constructor)) ran before g's dynamic initialiser,
+ * which then reset the mapped header to null and every ownership query answered no. */
+struct HookLifetime {
+    HookLifetime() { register_hook(); }
+    ~HookLifetime() { report_hook(); }
+} g_lifetime;
 } // namespace
