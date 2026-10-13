@@ -1,0 +1,159 @@
+# libr3: BigCherry's gfx1100 (RX 7900 XTX) kernel plugin for radiance (RAD01 PR 5;
+# docs/reference/engines/RADIANCE_PLATFORM_DESIGN.md decision 2). Built against the pinned radiance's libr4d sources
+# (rewrites.txt + native/*.rw applied to a build-tree copy, never to vendor/radiance) and loaded through
+# RADIANCE_HOME; it is BigCherry source, not a patch to the engine.
+schema = 1
+name = "libr3"
+engine = "radiance"
+targets = ["gfx1100"]
+# radiance 1.3.0: the rewrite blocks are written against this revision's libr4d and refuse any other.
+built-against = "89cee7ce414486c717aa2085c99e1f522e4c0ea6"
+outputs = ["kernels/libr3.so", "helpers/libr3_ngram_helper.so"]
+
+# Runtime settings: each environment variable the plugin reads, its default, and what it is.
+#   status = production    on (or meaningful) in served configurations, with quality and speed evidence
+#   status = experimental  measured, not adopted; may appear only in an experiment
+#   status = evaluated     shelved with evidence (kept, default off); never in a profile
+#   status = diagnostic    instrumentation or comparison; never in a production profile
+#   status = tuning        a kernel geometry knob for the lab's sweeps
+# Evidence: engines/radiance/README.md (the measurement log, moved from the feature branch), sections per entry.
+
+[setting.R3_ATTN_NATIVE]
+default = "1"
+status = "production"
+summary = "native gfx11 prefill attention; KLD 0.0035 / 96.8% top-1 vs the compatibility form's 0.0037, +5% prefill"
+
+[setting.R3_GDN_NATIVE]
+default = "0"
+status = "evaluated"
+summary = "native delta-net chunk scan; wrong in serving (KLD 5.52) after three fixes, shelved"
+
+[setting.R3_MOE_NATIVE]
+default = "0"
+status = "experimental"
+summary = "native w4nl64 MoE inner loop; -6% call time, Flash-Next quality neutral (KLD unchanged)"
+
+[setting.R3_HC_NATIVE]
+default = "0"
+status = "experimental"
+summary = "native E4M3 decode for hc_read; 58 -> 51 us a call"
+
+[setting.R3_AR_WIRE4]
+default = "0"
+status = "experimental"
+summary = "4-bit cross-card wire at M >= 512; +5.6% 27B prefill at KLD 0.0044 -> 0.0126 (owner's call)"
+
+[setting.R3_AR_PIPE]
+default = "0"
+status = "evaluated"
+summary = "sliced all-reduce in one kernel; byte-identical but 6% slower, shelved"
+
+[setting.R3_AR_TIMING]
+default = "0"
+status = "diagnostic"
+summary = "wall-clock all-reduce timing between stream synchronisations"
+
+[setting.R3_NGRAM_DEV]
+default = ""
+status = "evaluated"
+summary = "n-gram rows gathered on a non-rank card; exact, but the R9700 belongs to compute (owner, 2026-10-13)"
+
+[setting.R3_NGRAM_HELPER_SO]
+default = ""
+status = "evaluated"
+summary = "path of the n-gram helper library (R3_NGRAM_DEV)"
+
+[setting.R3_NGRAM_AVX]
+default = ""
+status = "evaluated"
+summary = "path of libavx for the n-gram host-copy gather (R3_NGRAM_DEV)"
+
+[setting.R3_NGRAM_RAM]
+default = "1"
+status = "evaluated"
+summary = "rows the n-gram device does not hold go to a host copy (R3_NGRAM_DEV)"
+
+[setting.R3_NGRAM_MIB]
+default = ""
+status = "evaluated"
+summary = "cap on the device share of the n-gram table (R3_NGRAM_DEV)"
+
+[setting.R3_NGRAM_RESERVE_MIB]
+default = "2048"
+status = "evaluated"
+summary = "device memory the n-gram helper leaves free (R3_NGRAM_DEV)"
+
+[setting.R3_NGRAM_MAX_M]
+default = "32768"
+status = "evaluated"
+summary = "largest n-gram gather the helper sizes for (R3_NGRAM_DEV)"
+
+[setting.R3_GDN_COMPARE]
+default = "0"
+status = "diagnostic"
+summary = "run compatibility and native delta-net scan side by side and report the first mismatch"
+
+[setting.R3_HC_COMPARE]
+default = "0"
+status = "diagnostic"
+summary = "selftest: compare compatibility and native hc_read byte for byte"
+
+[setting.R3_MOE_COMPARE]
+default = "0"
+status = "diagnostic"
+summary = "selftest: compare compatibility and native MoE forms"
+
+[setting.R3_BT]
+default = "0"
+status = "evaluated"
+summary = "RR08 bf16-tile MXFP4 GEMM forms 1 and 2; slower at M=512, shelved"
+
+[setting.R3_BT_B]
+default = ""
+status = "tuning"
+summary = "RR08 tile geometry (R3_BT)"
+
+[setting.R3_BT_NT]
+default = ""
+status = "tuning"
+summary = "RR08 tile geometry (R3_BT)"
+
+[setting.R3_BT_ABL]
+default = "0"
+status = "diagnostic"
+summary = "RR08 ablation masks (R3_BT)"
+
+[setting.R3_BT_ORACLE]
+default = "0"
+status = "diagnostic"
+summary = "RR08 selftest oracle (R3_BT)"
+
+[setting.R3_DEC11]
+default = "0"
+status = "experimental"
+summary = "gfx11 MXFP4 decode GEMV form"
+
+[setting.R3_D11_MODE]
+default = ""
+status = "tuning"
+summary = "decode GEMV variant (R3_DEC11)"
+
+[setting.R3_GEMV]
+default = ""
+status = "tuning"
+summary = "decode GEMV selection"
+
+[setting.R3_MXD_BK]
+default = ""
+status = "tuning"
+summary = "MXFP4 decode geometry"
+
+[setting.R3_MXD_KS]
+default = ""
+status = "tuning"
+summary = "MXFP4 decode geometry"
+
+[setting.R3_MXD_NT]
+default = ""
+status = "tuning"
+summary = "MXFP4 decode geometry"

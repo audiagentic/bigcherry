@@ -1,0 +1,131 @@
+# Native gfx11 inner loop for r4d_gemm_mxfp4a8_decode (both kernels: the DTM form and the one-fragment form).
+#
+# libr4d: each lane reads 8 E4M3 codes of its row from LDS (lower lanes k 0-7, upper lanes k 8-15) and calls the
+# gfx12 fp8 x fp8 WMMA. Through r3_compat.h that call costs two software fp8 -> bf16 conversions, 8 cross-lane moves
+# for the fragments, the gfx11 instruction on a zero accumulator, 4 cross-lane moves for the product and an f32 add.
+#
+# Native: each lane reads its row's 16 codes (a gfx11 fragment holds the whole row in every lane), widens them to
+# bf16 and runs the gfx11 instruction with the accumulator as its C operand. The accumulator stays in the gfx11
+# layout through the K loop; the boundary rescale multiplies a lane by its column's ratio, which is the same in
+# both layouts. It is moved to the gfx12 layout once, in front of the epilogue, which is unchanged.
+
+@@ find 2
+      const int kk = step * 16 + kb8;
+      mxd_v2i af[DTM], wf;
+#pragma unroll
+      for (int i = 0; i < DTM; ++i) {
+        const unsigned char* pa = &sA[(i * 16 + col) * STR + kk];
+        af[i][0] = *(const int*)pa; af[i][1] = *(const int*)(pa + 4);
+      }
+      const unsigned char* pw = &sW[(wave * 16 + col) * STR + kk];
+      wf[0] = *(const int*)pw; wf[1] = *(const int*)(pw + 4);
+#pragma unroll
+      for (int i = 0; i < DTM; ++i)
+        acc[i] = __builtin_amdgcn_wmma_f32_16x16x16_fp8_fp8_w32_gfx12(wf, af[i], acc[i]);
+@@ replace
+      const int kk = step * 16;  // libr3 native: the row's 16 codes, in every lane
+      const r3_v16bf wf = r3_row16_e4m3_to_bf16(&sW[(wave * 16 + col) * STR + kk]);
+#pragma unroll
+      for (int i = 0; i < DTM; ++i)
+        acc[i] = r3_wmma_bf16_native(wf, r3_row16_e4m3_to_bf16(&sA[(i * 16 + col) * STR + kk]), acc[i]);
+@@ end
+
+# The one-fragment form (M <= 16, every single-sequence decode and verify step) also stages bf16 instead of E4M3:
+# the codes are widened once as they are written to shared memory (about 70 a thread a slab) instead of in the K
+# loop (256 a thread a slab), and r3_row16_e4m3_to_bf16 on an unsigned short row is a plain 32-byte load. Shared
+# memory for a block doubles to (16 + 128) * (DBK + 8) * 2 bytes: 39 KiB at DBK 128, inside the 64 KiB a block may
+# hold. The DTM form keeps E4M3 staging (at DTM 8 and DBK 128 the bf16 form would need 68 KiB) and widens in the loop.
+
+@@ find 1
+  constexpr int A_IT = (ROWS * DBK + NTHR * 16 - 1) / (NTHR * 16);
+  __shared__ unsigned char sA[ROWS * STR];
+  __shared__ unsigned char sW[BND * STR];
+@@ replace
+  constexpr int A_IT = (ROWS * DBK + NTHR * 16 - 1) / (NTHR * 16);
+  __shared__ unsigned short sA[ROWS * STR];  // libr3 native: bf16, widened at staging
+  __shared__ unsigned short sW[BND * STR];
+@@ end
+
+@@ find 1
+        *(mxd_u4*)(&sA[r * STR + c]) = ra[j];
+@@ replace
+        r3_store16_e4m3_as_bf16(&sA[r * STR + c], ra[j]);
+@@ end
+
+# The weight goes from its 4-bit codes to bf16 in one table lookup (r3_mxfp4_store8_bf16: the bf16 of the E4M3 value
+# libr4d's own table would have produced), not through E4M3 and a per-code conversion.
+@@ find 1
+        unsigned int lo, hi;
+        r4d_mxfp4_unpack8(rw[it][q], r4d_mxfp4_fold_d(s_ref[it][q], rd[it][q]), &lo, &hi);
+        *(mxd_u2*)(&sW[(s_r[it] + q) * STR + s_kloc[it]]) = mxd_u2{lo, hi};
+@@ replace
+        r3_mxfp4_store8_bf16(&sW[(s_r[it] + q) * STR + s_kloc[it]], rw[it][q],
+                             r4d_mxfp4_fold_d(s_ref[it][q], rd[it][q]));
+@@ end
+
+@@ find 2
+  const int kb_end = s_hi > s_lo ? (k_hi - 1) >> 7 : 0;
+  mxd_epilogue<DTM, DKS, ABLK>(acc, As, as_rs, Wref, P, cnt, C, M, N, n0, wave, col, kb8, ks,
+@@ replace
+  const int kb_end = s_hi > s_lo ? (k_hi - 1) >> 7 : 0;
+#pragma unroll
+  for (int i = 0; i < DTM; ++i) acc[i] = r3_acc_native_to_gfx12(acc[i]);  // libr3 native: once, not per WMMA
+  mxd_epilogue<DTM, DKS, ABLK>(acc, As, as_rs, Wref, P, cnt, C, M, N, n0, wave, col, kb8, ks,
+@@ end
+
+# One activation row (M = 1, every single-sequence decode step) is a vector product on gfx11, not a matrix one:
+# r3_mxfp4_gemv.h. Same entry point and operands; R3_GEMV=0 in the environment keeps the kernel above.
+@@ find 1
+#include "r4d_mxfp4.h"
+@@ replace
+#include "r4d_mxfp4.h"
+#include "r3_mxfp4_gemv.h"  // libr3 native: the M = 1 vector kernel
+#include "r3_mxfp4_dec11.h"  // libr3 native: M <= 16 with gfx11 fragments, the weight never staged
+@@ end
+
+@@ find 1
+  const MxdPlan pl = mxd_plan(M, K, N, KS, BK, NT);
+  const int ks = pl.ks, bk = pl.bk;
+@@ replace
+  const MxdPlan pl = mxd_plan(M, K, N, KS, BK, NT);
+  if (M == 1 && K <= R3_GEMV_MAX_K && r3_gemv_on()) {  // libr3 native
+    r3_mxfp4_gemv1_launch(a, ascale, wq, ws, wref, c, K, N, pl.nt, as_group == 128, stream);
+    return;
+  }
+  const int ks = pl.ks, bk = pl.bk;
+@@ end
+
+# The split, slab and load hint were measured on gfx12, where a block stages E4M3. The native one-fragment form
+# stages bf16, twice the shared memory a block, so the rule's choices are not known to be right here. R3_MXD_KS,
+# R3_MXD_BK and R3_MXD_NT in the environment override them (0 or unset = libr4d's rule) so they can be swept on one
+# build; a value the launch does not accept is refused there, as for the tunables.
+@@ find 1
+  p.nt = NT == 1 || (NT == 0 && (long)N * K / 2 >= (4l << 20));
+@@ replace
+  p.nt = NT == 1 || (NT == 0 && (long)N * K / 2 >= (4l << 20));
+  {
+    static const int r3_ks = std::getenv("R3_MXD_KS") ? std::atoi(std::getenv("R3_MXD_KS")) : 0;
+    static const int r3_bk = std::getenv("R3_MXD_BK") ? std::atoi(std::getenv("R3_MXD_BK")) : 0;
+    static const int r3_nt = std::getenv("R3_MXD_NT") ? std::atoi(std::getenv("R3_MXD_NT")) : 0;
+    if (r3_ks > 0 && r3_ks * M <= 512 * 2) p.ks = r3_ks;
+    if (r3_bk > 0) p.bk = r3_bk;
+    if (r3_nt > 0) p.nt = r3_nt == 1;
+  }
+@@ end
+
+# M <= 16 with gfx11 fragments and no weight staging: r3_mxfp4_dec11.h, opt-in with R3_DEC11=1. Placed after the
+# scratch check so the row still refuses a scratch shorter than its hook asked for, as its contract says, although
+# this kernel does not use the partial.
+@@ find 1
+  float* P = (float*)scratch;
+  unsigned* cnt = mxd_out_ctr((const void*)c);
+@@ replace
+  // One row only for now: with more rows every wave widens the same activations again (run p1: with the drafter
+  // on, 71.6 tok/s against 131.7 for the staged form), which wants the activations widened once per launch.
+  if (M == 1 && r3_dec11_on()) {  // libr3 native
+    r3_mxfp4_dec11_launch(a, ascale, wq, ws, wref, c, M, K, N, pl.nt, as_group == 128, as_rs, stream);
+    return;
+  }
+  float* P = (float*)scratch;
+  unsigned* cnt = mxd_out_ctr((const void*)c);
+@@ end

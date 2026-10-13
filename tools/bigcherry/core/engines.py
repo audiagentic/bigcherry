@@ -80,6 +80,8 @@ class EngineLayout:
     targets_option: str
     #: the binary a lane builds and publishes unless the request names another
     build_binary: str
+    #: (name, repository-relative directory) of each component the engine builds, from [components]
+    components: tuple[tuple[str, str], ...] = ()
 
     def recipes_path(self, project_root: Path) -> Path:
         return project_root / self.recipes
@@ -191,6 +193,12 @@ def _build_table(table: object, name: str) -> dict[str, str]:
     }
 
 
+def _components(table: object, name: str) -> tuple[tuple[str, str], ...]:
+    if not isinstance(table, dict):
+        raise EngineError(f"engine {name!r}: [components] must be a table of name = directory")
+    return tuple(sorted((key, _relative(value, f"components.{key}", name)) for key, value in table.items()))
+
+
 def declaration_path(repo_root: Path, name: str) -> Path:
     return repo_root / ENGINES_DIR / name / DECLARATION
 
@@ -226,6 +234,7 @@ def load(repo_root: Path, name: str) -> EngineLayout:
         recipes=_relative(layout.get("recipes"), "recipes", name),
         serve=_serve(data.get("serve"), name),
         **_build_table(data.get("build"), name),
+        components=_components(data.get("components", {}), name),
     )
 
 
