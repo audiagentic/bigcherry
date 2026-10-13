@@ -1,6 +1,7 @@
 #include "moe_remote_hook.h"
 #include "moe_remote_shm.h"
 #include "rad_abi.h"
+#include "rad_moe_remote.h"
 
 #include <hip/hip_runtime.h>
 
@@ -76,6 +77,27 @@ bool hip_ok(hipError_t e, const char* what) {
     return false;
 }
 
+void publish_layer_map(int layer, int n_expert, const int32_t* slot_of_expert) {
+    if (!g.hdr || !g.pinned || !slot_of_expert || layer < 0 ||
+        layer >= (int)g.hdr->layer_count || n_expert <= 0 ||
+        n_expert > (int)kExperts)
+        return;
+    std::lock_guard<std::mutex> lock(g.mu);
+    int32_t* dst = layer_slots(g.map, (uint32_t)layer);
+    if (!dst) return;
+    if (load(&g.hdr->layer_map_ready[layer])) {
+        if (std::memcmp(dst, slot_of_expert, (size_t)n_expert * sizeof(int32_t)) != 0)
+            std::fprintf(stderr, "libr3: R3_MOE_HELPER layer %d runtime slot map changed across ranks\n",
+                         layer);
+    } else {
+        std::memcpy(dst, slot_of_expert, (size_t)n_expert * sizeof(int32_t));
+        for (int e = n_expert; e < (int)kExperts; ++e) dst[e] = -1;
+        store(&g.hdr->layer_map_ready[layer], 1);
+        (void)futex_wake(&g.hdr->layer_map_ready[layer]);
+    }
+    wait_until(&g.hdr->layer_map_consumed[layer], 1);
+}
+
 void register_mailbox() {
     if (!enabled_env()) return;
     g.fd = ::shm_open(shm_name(), O_RDWR | O_CLOEXEC, 0);
@@ -98,6 +120,7 @@ void register_mailbox() {
         return;
     }
     g.pinned = true;
+    rad_moe_remote_set_layer_map_hook(publish_layer_map);
 
     /* The engine policy only decides whether the graph contains/uses the two mailbox ops.
      * All route selection and synchronisation stays on the rank GPU. */
@@ -164,6 +187,7 @@ void close_mailbox() {
         if (s.owner) (void)hipFree(s.owner);
         s = RankState{};
     }
+    rad_moe_remote_set_layer_map_hook(nullptr);
     if (g.pinned) (void)hipHostUnregister(g.map);
     if (g.map != MAP_FAILED) ::munmap(g.map, g.bytes);
     if (g.fd >= 0) ::close(g.fd);
