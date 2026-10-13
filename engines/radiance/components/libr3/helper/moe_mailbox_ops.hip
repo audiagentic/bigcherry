@@ -239,7 +239,8 @@ int join_launch(const RadArgs* a, RadStream stream) {
     if (rows <= 0 || rows > (long long)d->max_rows || hidden != (long long)kHidden ||
         top_k != (long long)kTopK || total <= 0 || total > (long long)kMaxRows ||
         !a->t[0].data || !a->t[1].data || a->t[0].rank != 1 || a->t[1].rank < 2 ||
-        a->t[0].shape[0] != total || a->t[1].shape[0] != total ||
+        /* Both are the engine's top-k slot buffers, allocated at capacity; the pass uses the first rows*top_k. */
+        a->t[0].shape[0] < total || a->t[1].shape[0] < total ||
         a->t[1].shape[1] != hidden || a->t[0].dtype != RAD_I32 ||
         a->t[1].dtype != RAD_BF16 || !rad_tensor_is_contiguous(&a->t[0]) ||
         !rad_tensor_is_contiguous(&a->t[1]))
