@@ -86,6 +86,7 @@ from ..build.builds import (
     validate_reuse,
 )
 from ..core import engines, paths
+from . import runtime_bundle
 from ..core.context import ProjectContext
 from ..core.pipeline import ArtifactRef
 from ..source import identity as source_identity
@@ -570,6 +571,12 @@ def make_build_worker(
                 campaign_build.cmake_build_args(build_dir, targets=cmake_targets),
                 cwd=source_root,
                 check=True,
+            )
+
+            # The engine's runtime beside the binary (plugins, components); nothing for an engine without one.
+            runtime_bundle.build_runtime(
+                context.engine, source_root=source_root, build_dir=build_dir,
+                c_compiler=platform.c_compiler, cxx_compiler=platform.cxx_compiler,
             )
 
             # A source mutation during configure/compile invalidates the

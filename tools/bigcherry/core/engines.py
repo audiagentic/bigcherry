@@ -80,6 +80,10 @@ class EngineLayout:
     targets_option: str
     #: the binary a lane builds and publishes unless the request names another
     build_binary: str
+    #: CMake targets a served build also needs (plugins, runtime home); built after the binary
+    runtime_targets: tuple[str, ...] = ()
+    #: build-tree directory components install their outputs into; empty when the engine has none
+    runtime_home: str = ""
     #: (name, repository-relative directory) of each component the engine builds, from [components]
     components: tuple[tuple[str, str], ...] = ()
 
@@ -181,15 +185,17 @@ def _serve(table: object, name: str) -> ServeSpec:
     )
 
 
-def _build_table(table: object, name: str) -> dict[str, str]:
+def _build_table(table: object, name: str) -> dict[str, object]:
     if not isinstance(table, dict):
         raise EngineError(f"engine {name!r}: missing [build] table")
-    unknown = sorted(set(table) - {"targets-option", "binary"})
+    unknown = sorted(set(table) - {"targets-option", "binary", "runtime-targets", "runtime-home"})
     if unknown:
         raise EngineError(f"engine {name!r}: unknown build key(s): {', '.join(unknown)}")
     return {
         "targets_option": _text(table, "targets-option", "build", name),
         "build_binary": _relative(table.get("binary"), "build.binary", name),
+        "runtime_targets": tuple(table.get("runtime-targets", ())),
+        "runtime_home": _relative(table["runtime-home"], "build.runtime-home", name) if "runtime-home" in table else "",
     }
 
 
