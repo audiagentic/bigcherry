@@ -1,12 +1,13 @@
+#include "moe_remote_hook.h"
 #include "moe_remote_shm.h"
-#include "rad_moe_remote.h"
+#include "rad_abi.h"
 
-#include <atomic>
-#include <chrono>
+#include <hip/hip_runtime.h>
+
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <dlfcn.h>
 #include <fcntl.h>
 #include <mutex>
 #include <string>
@@ -16,165 +17,154 @@
 
 namespace {
 using namespace r3::moe_shm;
-using HipMemcpy2D = int (*)(void*, size_t, const void*, size_t, size_t, size_t, int);
-constexpr int kHipMemcpyDeviceToHost = 2;
+
+struct RankState {
+    R3MoeMailboxDevice dev{};
+    int device = -1;
+    uint8_t* owner = nullptr;
+    uint32_t* sequence = nullptr;
+    bool ready = false;
+};
 
 struct HookState {
     int fd = -1;
     void* map = MAP_FAILED;
     size_t bytes = 0;
     Header* hdr = nullptr;
-    HipMemcpy2D copy2d = nullptr;
-    std::mutex submit_mu[kMaxRanks];
-    /* Per-rank exchange cost, printed at unload: calls, rows, host copy of activations, wait for results. */
-    std::atomic<uint64_t> calls[kMaxRanks]{}, rows[kMaxRanks]{}, copy_ns[kMaxRanks]{}, wait_ns[kMaxRanks]{};
-    std::atomic<uint32_t> rank_of[kRingSlots]{};
+    bool pinned = false;
+    std::mutex mu;
+    RankState rank[kMaxRanks];
 };
 HookState g;
 
-uint64_t now_ns() {
-    return (uint64_t)std::chrono::duration_cast<std::chrono::nanoseconds>(
-        std::chrono::steady_clock::now().time_since_epoch()).count();
-}
-
-void report_hook() {
-    if (!g.hdr) return;
-    for (uint32_t r = 0; r < kMaxRanks; ++r) {
-        const uint64_t c = g.calls[r].load();
-        std::fprintf(stderr, "libr3: R3_MOE_HELPER rank %u: %llu calls, %llu rows, copy %.1f ms, wait %.1f ms (%.1f us a call)\n",
-                     r, (unsigned long long)c, (unsigned long long)g.rows[r].load(),
-                     g.copy_ns[r].load() / 1e6, g.wait_ns[r].load() / 1e6,
-                     c ? (g.copy_ns[r].load() + g.wait_ns[r].load()) / 1e3 / (double)c : 0.0);
-    }
-}
-
-bool enabled() {
+bool enabled_env() {
     const char* e = std::getenv("R3_MOE_HELPER");
     return e && *e && std::strcmp(e, "0") != 0;
 }
+
 const char* shm_name() {
     const char* e = std::getenv("R3_MOE_HELPER_SHM");
     return e && *e ? e : "/r3-moe-helper";
 }
 
 int64_t max_rows() {
-    static const int64_t v = [] {
-        const char* e = std::getenv("R3_MOE_HELPER_MAX_ROWS");
-        const long long n = e && *e ? std::atoll(e) : 64;
-        return (int64_t)(n > 0 ? n : 64);
-    }();
-    return v;
+    const char* e = std::getenv("R3_MOE_HELPER_MAX_ROWS");
+    const long long n = e && *e ? std::atoll(e) : 64;
+    return std::min<int64_t>(n > 0 ? n : 64, kMaxRows);
 }
 
-int owns_remote(void* user, int layer, int expert) {
-    auto* s = static_cast<HookState*>(user);
-    return s && s->hdr && layer >= 0 && expert >= 0 &&
-           owns(s->map, (uint32_t)layer, (uint32_t)expert);
+bool hip_ok(hipError_t e, const char* what) {
+    if (e == hipSuccess) return true;
+    std::fprintf(stderr, "libr3: R3_MOE_HELPER %s: %s\n", what, hipGetErrorString(e));
+    return false;
 }
 
-RadMoeRemoteHandle submit(void* user, int layer, int rank, int64_t rows, int64_t n_embd,
-                          const RadMoeRemoteRoute* route, int64_t n_route,
-                          const void* activation, int64_t activation_stride_bytes) {
-    auto* s = static_cast<HookState*>(user);
-    if (!s || !s->hdr || !route || !activation || rank < 0 || rank >= (int)kMaxRanks ||
-        layer < 0 || (uint32_t)layer >= s->hdr->layer_count || rows <= 0 || rows > kMaxRows || rows > max_rows() ||
-        n_embd != kHidden || n_route <= 0 || n_route > kMaxRoutes ||
-        activation_stride_bytes < (int64_t)kHidden * 2) return nullptr;
-
-    /* The engine cannot have two remote blocks in flight on one rank: it waits/merges before the
-     * next layer. Serialising submit per rank makes that protocol invariant explicit. */
-    std::lock_guard<std::mutex> lock(s->submit_mu[rank]);
-    uint32_t seq = fetch_add(&s->hdr->next_sequence, 1);
-    if (seq == 0) return nullptr; /* 32-bit wrap is intentionally a hard stop in this diagnostic path. */
-    Request* q = request(s->map, seq);
-    if (seq > kRingSlots) wait_until(&q->completion_sequence, seq - kRingSlots);
-
-    auto* rr = ptr<Route>(s->map, s->hdr->route_offset[rank]);
-    static_assert(sizeof(Route) == sizeof(RadMoeRemoteRoute));
-    std::memcpy(rr, route, static_cast<size_t>(n_route) * sizeof(Route));
-
-    void* act = ptr<void>(s->map, s->hdr->activation_offset[rank]);
-    const size_t row_bytes = kHidden * sizeof(uint16_t);
-    const uint64_t t0 = now_ns();
-    if (!s->copy2d || s->copy2d(act, row_bytes, activation, (size_t)activation_stride_bytes,
-                                row_bytes, (size_t)rows, kHipMemcpyDeviceToHost) != 0) return nullptr;
-    s->copy_ns[rank] += now_ns() - t0; s->calls[rank] += 1; s->rows[rank] += (uint64_t)rows;
-    s->rank_of[seq % kRingSlots] = (uint32_t)rank;
-
-    q->status = 0; q->layer = (uint32_t)layer; q->rank = (uint32_t)rank;
-    q->rank_count = kMaxRanks; q->rows = (uint32_t)rows; q->hidden = kHidden;
-    q->route_count = (uint32_t)n_route; q->route_offset = s->hdr->route_offset[rank];
-    q->activation_offset = s->hdr->activation_offset[rank]; q->activation_stride = (uint32_t)row_bytes;
-    for (uint32_t r = 0; r < kMaxRanks; ++r) {
-        q->result_offset[r] = s->hdr->result_offset[(uint32_t)rank * kMaxRanks + r];
-        q->result_stride[r] = kHidden * sizeof(uint16_t);
-    }
-    store(&q->sequence, seq);
-    store(&s->hdr->publish_sequence, seq);
-    futex_wake(&s->hdr->publish_sequence);
-    return reinterpret_cast<RadMoeRemoteHandle>((uintptr_t)seq);
-}
-
-const void* wait(void* user, RadMoeRemoteHandle handle) {
-    auto* s = static_cast<HookState*>(user);
-    const uint32_t seq = (uint32_t)(uintptr_t)handle;
-    if (!s || !s->hdr || !seq) return nullptr;
-    Request* q = request(s->map, seq);
-    const uint64_t t0 = now_ns();
-    wait_until(&q->completion_sequence, seq);
-    s->wait_ns[s->rank_of[seq % kRingSlots].load() % kMaxRanks] += now_ns() - t0;
-    if (q->status != 0 || q->sequence != seq || q->rank >= kMaxRanks) return nullptr;
-    return ptr<void>(s->map, q->result_offset[q->rank]);
-}
-
-void register_hook() {
-    if (!enabled()) return; /* Default path: no registration, therefore byte-identical engine behaviour. */
-    /* R3_MOE_HELPER=1 is the switch for this component. setenv(.., 0) preserves an explicit engine threshold,
-     * otherwise make patch 0002 hand every eligible owned route to the helper. */
-    (void)::setenv("R3_MOE_REMOTE_MIN_ROWS", "0", 0);
-    /* Prefill-sized steps stay on the engine's own path (no routing copy, gather fusion kept). */
-    (void)::setenv("R3_MOE_REMOTE_MAX_ROWS", std::to_string((long long)max_rows()).c_str(), 0);
+void register_mailbox() {
+    if (!enabled_env()) return;
     g.fd = ::shm_open(shm_name(), O_RDWR | O_CLOEXEC, 0);
-    if (g.fd < 0) { std::fprintf(stderr, "libr3: R3_MOE_HELPER shm %s is not ready\n", shm_name()); return; }
+    if (g.fd < 0) {
+        std::fprintf(stderr, "libr3: R3_MOE_HELPER shm %s is not ready\n", shm_name());
+        return;
+    }
     struct stat st{};
     if (::fstat(g.fd, &st) != 0 || st.st_size < (off_t)sizeof(Header)) return;
     g.bytes = (size_t)st.st_size;
     g.map = ::mmap(nullptr, g.bytes, PROT_READ | PROT_WRITE, MAP_SHARED, g.fd, 0);
     if (g.map == MAP_FAILED || !valid(static_cast<Header*>(g.map), g.bytes)) {
-        std::fprintf(stderr, "libr3: R3_MOE_HELPER shared-memory protocol mismatch\n"); return;
+        std::fprintf(stderr, "libr3: R3_MOE_HELPER shared-memory protocol mismatch\n");
+        return;
     }
     g.hdr = static_cast<Header*>(g.map);
-    /* Protocol v4 is GPU-signalled. Pinned Radiance 89cee7ce has stream events backed by
-     * engine-private HSA signals, but no stream primitive that waits on or writes an arbitrary
-     * uint32_t in mapped host memory. Do not silently run the old D2H/futex/H2D service. */
-    if (g.hdr->version >= 4) {
-        std::fprintf(stderr,
-            "libr3: R3_MOE_HELPER protocol v4 needs engine GPU mailbox wait/write support; "
-            "pinned Radiance has no such primitive, refusing legacy CPU-mediated hook\n");
+    if (!hip_ok(hipHostRegister(g.map, g.bytes, hipHostRegisterPortable | hipHostRegisterMapped),
+                "could not pin/map shared segment")) {
         g.hdr = nullptr;
         return;
     }
-    g.copy2d = reinterpret_cast<HipMemcpy2D>(::dlsym(RTLD_DEFAULT, "hipMemcpy2D"));
-    /* Pin the segment for both cards: pageable copies fell onto a staging path that once cost
-     * 10 ms a call (62 s for one request) instead of ~0.08 ms. */
-    using HipHostRegister = int (*)(void*, size_t, unsigned);
-    auto host_register = reinterpret_cast<HipHostRegister>(::dlsym(RTLD_DEFAULT, "hipHostRegister"));
-    constexpr unsigned kHipHostRegisterPortable = 1u;
-    if (!host_register || host_register(g.map, g.bytes, kHipHostRegisterPortable) != 0) {
-        std::fprintf(stderr, "libr3: R3_MOE_HELPER could not pin the shared segment\n"); g.hdr = nullptr; return;
-    }
-    auto reg = reinterpret_cast<int (*)(const RadMoeRemoteHooks*)>(::dlsym(RTLD_DEFAULT, "rad_moe_remote_register"));
-    if (!g.copy2d || !reg) {
-        std::fprintf(stderr, "libr3: R3_MOE_HELPER requires hipMemcpy2D and patch 0002 ABI\n"); return;
-    }
-    static RadMoeRemoteHooks hooks{RAD_MOE_REMOTE_ABI, &g, owns_remote, submit, wait};
-    if (reg(&hooks) < 0) std::fprintf(stderr, "libr3: R3_MOE_HELPER hook registration refused\n");
+    g.pinned = true;
+
+    /* The engine policy only decides whether the graph contains/uses the two mailbox ops.
+     * All route selection and synchronisation stays on the rank GPU. */
+    (void)::setenv("R3_MOE_REMOTE_MIN_ROWS", "0", 1);
+    const std::string mr = std::to_string((long long)max_rows());
+    (void)::setenv("R3_MOE_REMOTE_MAX_ROWS", mr.c_str(), 1);
+    std::fprintf(stderr,
+        "libr3: R3_MOE_HELPER GPU mailbox ready, %u owned experts, decode rows <= %lld\n",
+        g.hdr->owned_count, (long long)max_rows());
 }
-/* Registration runs from an object defined after `g`: C++ initialises one translation unit's
- * globals in order, whereas an __attribute__((constructor)) ran before g's dynamic initialiser,
- * which then reset the mapped header to null and every ownership query answered no. */
+
+void close_mailbox() {
+    std::lock_guard<std::mutex> lock(g.mu);
+    for (uint32_t r = 0; r < kMaxRanks; ++r) {
+        RankState& s = g.rank[r];
+        if (!s.ready) continue;
+        if (s.device >= 0) (void)hipSetDevice(s.device);
+        if (s.sequence) (void)hipFree(s.sequence);
+        if (s.owner) (void)hipFree(s.owner);
+        s = RankState{};
+    }
+    if (g.pinned) (void)hipHostUnregister(g.map);
+    if (g.map != MAP_FAILED) ::munmap(g.map, g.bytes);
+    if (g.fd >= 0) ::close(g.fd);
+    g.hdr = nullptr;
+    g.map = MAP_FAILED;
+    g.fd = -1;
+    g.pinned = false;
+}
+
 struct HookLifetime {
-    HookLifetime() { register_hook(); }
-    ~HookLifetime() { report_hook(); }
+    HookLifetime() { register_mailbox(); }
+    ~HookLifetime() { close_mailbox(); }
 } g_lifetime;
-} // namespace
+
+}  // namespace
+
+extern "C" int r3_moe_mailbox_enabled(void) {
+    return g.hdr && g.pinned;
+}
+
+extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevice** out) {
+    if (!out || !g.hdr || !g.pinned || world_size != (int)kMaxRanks ||
+        rank < 0 || rank >= (int)kMaxRanks)
+        return RAD_E_INVAL;
+
+    std::lock_guard<std::mutex> lock(g.mu);
+    RankState& s = g.rank[rank];
+    int device = -1;
+    if (!hip_ok(hipGetDevice(&device), "hipGetDevice")) return RAD_E_DEVICE;
+    if (s.ready) {
+        if (s.device != device) return RAD_E_STATE;
+        *out = &s.dev;
+        return RAD_OK;
+    }
+
+    void* dev_map = nullptr;
+    if (!hip_ok(hipHostGetDevicePointer(&dev_map, g.map, 0), "hipHostGetDevicePointer"))
+        return RAD_E_DEVICE;
+    if (!hip_ok(hipMalloc(reinterpret_cast<void**>(&s.owner), g.hdr->owner_slot_bytes),
+                "hipMalloc ownership bitmap"))
+        return RAD_E_NOMEM;
+    if (!hip_ok(hipMemcpy(s.owner, owner_bits(g.map), g.hdr->owner_slot_bytes,
+                          hipMemcpyHostToDevice), "upload ownership bitmap")) {
+        (void)hipFree(s.owner);
+        s.owner = nullptr;
+        return RAD_E_DEVICE;
+    }
+    if (!hip_ok(hipMalloc(reinterpret_cast<void**>(&s.sequence), sizeof(uint32_t)),
+                "hipMalloc sequence counter") ||
+        !hip_ok(hipMemset(s.sequence, 0, sizeof(uint32_t)), "zero sequence counter")) {
+        if (s.sequence) (void)hipFree(s.sequence);
+        (void)hipFree(s.owner);
+        s.sequence = nullptr;
+        s.owner = nullptr;
+        return RAD_E_DEVICE;
+    }
+
+    s.device = device;
+    s.dev.mailbox = dev_map;
+    s.dev.owner = s.owner;
+    s.dev.sequence = s.sequence;
+    s.dev.rank = (uint32_t)rank;
+    s.ready = true;
+    *out = &s.dev;
+    return RAD_OK;
+}
