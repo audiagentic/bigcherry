@@ -43,6 +43,8 @@ class Component:
     built_against: str
     outputs: tuple[str, ...]
     settings: dict[str, Setting]
+    #: CMake cache values for the component's configure; {engine_source} and {targets} are substituted
+    configure: tuple[tuple[str, str], ...] = ()
 
     def content_digest(self) -> str:
         """sha256 over every file of the component (path and bytes), the identity a build binds."""
@@ -75,7 +77,7 @@ def load(root: Path, engine: str) -> Component:
         raise ComponentError(f"{path}: name {name!r} must match its directory {root.name!r}")
     if data.get("engine") != engine:
         raise ComponentError(f"{path}: engine {data.get('engine')!r} is not {engine!r}, the engine listing it")
-    unknown = sorted(set(data) - {"schema", "name", "engine", "targets", "built-against", "outputs", "setting"})
+    unknown = sorted(set(data) - {"schema", "name", "engine", "targets", "built-against", "outputs", "setting", "build"})
     if unknown:
         raise ComponentError(f"{path}: unknown key(s): {', '.join(unknown)}")
     built_against = data.get("built-against")
@@ -103,6 +105,7 @@ def load(root: Path, engine: str) -> Component:
         built_against=built_against,
         outputs=_strings(data.get("outputs"), f"{path}: outputs"),
         settings=settings,
+        configure=tuple(sorted((str(k), str(v)) for k, v in (data.get("build", {}).get("configure", {}) or {}).items())),
     )
 
 

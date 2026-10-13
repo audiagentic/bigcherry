@@ -17,6 +17,9 @@ recipes = "engines/radiance/recipes.toml"
 [build]
 targets-option = "RAD_GPU_TARGETS"
 binary = "bin/radiance"
+# The runtime a served build needs beside its binary: radiance's own plugin libraries and the home they load from.
+runtime-targets = ["libr4d", "libavx", "libref", "radiance_home"]
+runtime-home = "radiance_home"
 
 [serve]
 binary = "bin/radiance"
