@@ -150,6 +150,17 @@ __global__ void lane_route_scatter(
     if (sorted_expert) sorted_expert[pos] = (int32_t)e;
 }
 
+__global__ void lane_unsort_down(const uint16_t* down, const int32_t* sorted,
+                                 uint16_t* dst, uint32_t routes, uint32_t hidden) {
+    const uint64_t i = (uint64_t)blockIdx.x * blockDim.x + threadIdx.x;
+    const uint64_t total = (uint64_t)routes * hidden;
+    if (i >= total) return;
+    const uint32_t row = (uint32_t)(i / hidden);
+    const int32_t flat = sorted[row];
+    if (flat < 0 || (uint32_t)flat >= routes) return;
+    dst[(uint64_t)(uint32_t)flat * hidden + (i - (uint64_t)row * hidden)] = down[i];
+}
+
 
 inline bool hip_ok(hipError_t e, const char* what) {
     if (e == hipSuccess) return true;
@@ -455,7 +466,7 @@ public:
 
     bool prepare_lanes(uint32_t max_rows) {
         using namespace r3::moe_shm;
-        if (max_rows == 0 || max_rows > kMaxRows || !d_layer_tables_.p) return false;
+        if (max_rows == 0 || max_rows > kMaxRows / kTopK || !d_layer_tables_.p) return false;
         lane_rows_ = max_rows;
         lane_routes_ = max_rows * kTopK;
         constexpr size_t nclass = kExperts / 2;
@@ -521,8 +532,8 @@ public:
 
         const uint32_t rows = lane_rows_;
         const uint32_t routes = lane_routes_;
-        if (!hip_ok(hipMemsetAsync(dst, 0, (size_t)rows * kHidden * sizeof(uint16_t), w.stream),
-                    "clear lane result") ||
+        if (!hip_ok(hipMemsetAsync(dst, 0, (size_t)routes * kHidden * sizeof(uint16_t), w.stream),
+                    "clear lane route result") ||
             !hip_ok(hipMemsetAsync(w.d_counts.p, 0, kExperts * sizeof(uint32_t), w.stream),
                     "clear route counts") ||
             !hip_ok(hipMemsetAsync(w.d_ew.p, 0, routes * sizeof(uint16_t), w.stream),
@@ -621,16 +632,13 @@ public:
                       dp, w.stream, w.scratch) < 0)
             return -EIO;
 
-        std::vector<RadParam> mp = {
-            pi("M", rows), pi("n", kHidden), pi("top_k", kTopK), ps("dtype", "bf16")
-        };
-        if (launch_on(gather_,
-                      { tensor(w.d_down.p, RAD_BF16, {routes, kHidden}),
-                        tensor(w.d_ew.p, RAD_BF16, {rows, kTopK}),
-                        tensor(w.d_sorted.p, RAD_I32, {routes}),
-                        absent(), absent(), tensor(dst, RAD_BF16, {rows, kHidden}) },
-                      mp, w.stream, w.scratch) < 0)
-            return -EIO;
+        const uint64_t down_elems = (uint64_t)routes * kHidden;
+        hipLaunchKernelGGL(lane_unsort_down,
+                           dim3((down_elems + block.x - 1) / block.x), block, 0, w.stream,
+                           static_cast<const uint16_t*>(w.d_down.p),
+                           static_cast<const int32_t*>(w.d_sorted.p),
+                           dst, routes, kHidden);
+        if (!hip_ok(hipGetLastError(), "lane unsort down rows")) return -EIO;
 
         if (sample && w.sample_pending && w.sample_sequence == sequence &&
             !hip_ok(hipEventRecord(w.sample_stop, w.stream), "lane timing stop"))
