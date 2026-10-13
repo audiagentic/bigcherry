@@ -125,15 +125,26 @@ __global__ void lane_route_count(
     atomicAdd(counts + (uint32_t)r.expert, 1u);
 }
 
+/* Exclusive prefix over the 512 expert counts in one block of kExperts threads (was one thread walking all 512:
+ * ~43 us a request). */
 __global__ void lane_route_prefix(const uint32_t* counts, int32_t* off, uint32_t* cursor) {
-    if (blockIdx.x || threadIdx.x) return;
-    uint32_t at = 0;
-    for (uint32_t e = 0; e < r3::moe_shm::kExperts; ++e) {
-        off[e] = (int32_t)at;
-        cursor[e] = at;
-        at += counts[e];
+    constexpr uint32_t n = r3::moe_shm::kExperts;
+    __shared__ uint32_t s[n];
+    const uint32_t e = threadIdx.x;
+    if (blockIdx.x || e >= n) return;
+    const uint32_t mine = counts[e];
+    s[e] = mine;
+    __syncthreads();
+    for (uint32_t d = 1; d < n; d <<= 1) {
+        const uint32_t add = e >= d ? s[e - d] : 0u;
+        __syncthreads();
+        s[e] += add;
+        __syncthreads();
     }
-    off[r3::moe_shm::kExperts] = (int32_t)at;
+    const uint32_t excl = s[e] - mine;
+    off[e] = (int32_t)excl;
+    cursor[e] = excl;
+    if (e == n - 1) off[n] = (int32_t)s[e];
 }
 
 __global__ void lane_route_scatter(
@@ -534,9 +545,10 @@ public:
         const uint32_t rows = lane_rows_;
         const uint32_t routes = lane_routes_;
         const uint32_t slots = rows * kTopK;
-        if (!hip_ok(hipMemsetAsync(dst, 0, (size_t)slots * kHidden * sizeof(uint16_t), w.stream),
-                    "clear lane route result") ||
-            !hip_ok(hipMemsetAsync(w.d_counts.p, 0, kExperts * sizeof(uint32_t), w.stream),
+        /* No clear of the result slot: it is mapped host memory (64 x 10 x 2560 bf16 = 3.3 MB over the x4 link,
+         * ~250 us a request), and join reads only the slots this request's routes name. */
+        (void)dst; (void)slots;
+        if (!hip_ok(hipMemsetAsync(w.d_counts.p, 0, kExperts * sizeof(uint32_t), w.stream),
                     "clear route counts") ||
             !hip_ok(hipMemsetAsync(w.d_ew.p, 0, routes * sizeof(uint16_t), w.stream),
                     "clear route weights") ||
@@ -569,7 +581,7 @@ public:
                            static_cast<uint32_t*>(w.d_counts.p),
                            static_cast<int32_t*>(w.d_flat.p),
                            static_cast<uint16_t*>(w.d_ew.p));
-        hipLaunchKernelGGL(lane_route_prefix, dim3(1), dim3(1), 0, w.stream,
+        hipLaunchKernelGGL(lane_route_prefix, dim3(1), dim3(kExperts), 0, w.stream,
                            static_cast<const uint32_t*>(w.d_counts.p),
                            static_cast<int32_t*>(w.d_off.p),
                            static_cast<uint32_t*>(w.d_cursor.p));
