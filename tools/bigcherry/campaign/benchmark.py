@@ -824,9 +824,13 @@ def run_server_comparison_capture(
         if mode not in ("stock", "native", "record", "tune", "replay"):
             raise ValueError(f"unsupported dispatch mode: {mode}")
         build_dir = binary.parent.parent
-        observation = inspect_dispatch_build(build_dir)
-        if observation["issues"] or bool(observation["instrumented"]) != (role == "diagnostic"):
-            raise ValueError(f"{arm['name']}: compiled instrumentation disagrees with evidence role")
+        if engine == _engines.LLAMACPP:
+            # The dispatch-instrumentation contract is llama.cpp's (GGML_HIP_DISPATCH builds).
+            observation = inspect_dispatch_build(build_dir)
+            if observation["issues"] or bool(observation["instrumented"]) != (role == "diagnostic"):
+                raise ValueError(f"{arm['name']}: compiled instrumentation disagrees with evidence role")
+        elif mode != "stock":
+            raise ValueError(f"{arm['name']}: {engine} has no dispatch modes; an arm runs in mode 'stock'")
         metadata_path = build_dir / f"bigcherry-build-metadata-{binary.name}.json"
         metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
         # Every managed comparison must record its canonical source worktree;
