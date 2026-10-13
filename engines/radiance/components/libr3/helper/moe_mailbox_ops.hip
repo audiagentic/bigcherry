@@ -53,20 +53,22 @@ __device__ __forceinline__ bool owner_has(const uint8_t* bits, uint32_t layer, u
 }
 
 __global__ void mailbox_publish_kernel(
-    uint8_t* base, const uint8_t* owner, uint32_t* sequence, uint32_t rank,
+    uint8_t* base, const uint8_t* owner, uint32_t* sequence, uint32_t* published, uint32_t rank,
     int32_t* ids, const uint16_t* ew, const uint16_t* x,
     uint32_t layer, uint32_t rows, uint32_t hidden, uint32_t top_k,
-    int32_t expert_base, uint32_t n_expert) {
+    int32_t expert_base, uint32_t n_expert, uint32_t max_rows) {
     __shared__ uint32_t seq;
     __shared__ uint32_t nr;
     __shared__ uint8_t selected[kMaxRows];
 
     Header* h = reinterpret_cast<Header*>(base);
     if (threadIdx.x == 0) {
-        seq = atomicAdd(sequence, 1u) + 1u;
+        *published = 0;
         nr = 0;
-        if (seq == 0) __builtin_trap();
     }
+    __syncthreads();
+    if (rows == 0 || rows > max_rows || rows > kMaxRows) return;
+
     for (uint32_t r = threadIdx.x; r < rows; r += blockDim.x) selected[r] = 0;
     __syncthreads();
 
@@ -86,6 +88,13 @@ __global__ void mailbox_publish_kernel(
             selected[i / top_k] = 1;
             ids[i] = -1;
         }
+    }
+    __syncthreads();
+    if (nr == 0) return;
+
+    if (threadIdx.x == 0) {
+        seq = atomicAdd(sequence, 1u) + 1u;
+        if (seq == 0) __builtin_trap();
     }
     __syncthreads();
 
@@ -118,23 +127,26 @@ __global__ void mailbox_publish_kernel(
         q->sequence = seq;
     }
 
-    /* Every lane store must reach the host-mapped page before the release publication. This is
-     * the same all-thread drain + one-thread system-scope flag pattern used by libr4d all-reduce. */
+    /* Every lane store must reach the host-mapped page before the release publication. */
     __threadfence_system();
     __syncthreads();
-    if (threadIdx.x == 0)
+    if (threadIdx.x == 0) {
         store_sys_rel(&h->lane[rank].request_sequence, seq);
+        *published = 1;
+    }
 }
 
 __global__ void mailbox_join_kernel(
-    uint8_t* base, const uint32_t* sequence, uint32_t rank,
+    uint8_t* base, const uint32_t* sequence, uint32_t* published, uint32_t rank,
     uint16_t* out, uint64_t elems) {
     __shared__ uint32_t seq;
+    __shared__ uint32_t active;
     Header* h = reinterpret_cast<Header*>(base);
     if (threadIdx.x == 0) {
-        seq = *sequence;
+        active = *published;
+        seq = active ? *sequence : 0;
         unsigned long long spins = 0;
-        while ((int32_t)(load_sys_acq(&h->lane[rank].done_sequence) - seq) < 0) {
+        while (active && (int32_t)(load_sys_acq(&h->lane[rank].done_sequence) - seq) < 0) {
             __builtin_amdgcn_s_sleep(2);
             if (++spins > 4000000000ULL) __builtin_trap();
         }
@@ -143,7 +155,10 @@ __global__ void mailbox_join_kernel(
 
     const uint16_t* src = reinterpret_cast<const uint16_t*>(
         base + h->result_offset[rank * kMaxRanks + rank]);
-    for (uint64_t i = threadIdx.x; i < elems; i += blockDim.x) out[i] = src[i];
+    for (uint64_t i = threadIdx.x; i < elems; i += blockDim.x)
+        out[i] = active ? src[i] : 0;
+    __syncthreads();
+    if (threadIdx.x == 0) *published = 0;
 }
 
 long long geti(const RadArgs* a, const char* key, long long bad = -1) {
@@ -179,12 +194,12 @@ int publish_launch(const RadArgs* a, RadStream stream) {
         return RAD_E_SHAPE;
 
     hipLaunchKernelGGL(mailbox_publish_kernel, dim3(1), dim3(256), 0, (hipStream_t)stream,
-                       static_cast<uint8_t*>(d->mailbox), d->owner, d->sequence, d->rank,
+                       static_cast<uint8_t*>(d->mailbox), d->owner, d->sequence, d->published, d->rank,
                        static_cast<int32_t*>(a->t[0].data),
                        static_cast<const uint16_t*>(a->t[1].data),
                        static_cast<const uint16_t*>(a->t[2].data),
                        (uint32_t)layer, (uint32_t)rows, (uint32_t)hidden, (uint32_t)top_k,
-                       (int32_t)expert_base, (uint32_t)n_expert);
+                       (int32_t)expert_base, (uint32_t)n_expert, d->max_rows);
     return hipGetLastError() == hipSuccess ? RAD_OK : RAD_E_DEVICE;
 }
 
@@ -197,7 +212,7 @@ int join_launch(const RadArgs* a, RadStream stream) {
         !a->t[0].data || a->t[0].dtype != RAD_BF16 || !rad_tensor_is_contiguous(&a->t[0]))
         return RAD_E_SHAPE;
     hipLaunchKernelGGL(mailbox_join_kernel, dim3(1), dim3(256), 0, (hipStream_t)stream,
-                       static_cast<uint8_t*>(d->mailbox), d->sequence, d->rank,
+                       static_cast<uint8_t*>(d->mailbox), d->sequence, d->published, d->rank,
                        static_cast<uint16_t*>(a->t[0].data), (uint64_t)rows * (uint64_t)hidden);
     return hipGetLastError() == hipSuccess ? RAD_OK : RAD_E_DEVICE;
 }
