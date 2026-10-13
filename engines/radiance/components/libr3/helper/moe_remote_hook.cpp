@@ -73,7 +73,7 @@ RadMoeRemoteHandle submit(void* user, int layer, int rank, int64_t rows, int64_t
     q->route_count = (uint32_t)n_route; q->route_offset = s->hdr->route_offset[rank];
     q->activation_offset = s->hdr->activation_offset[rank]; q->activation_stride = (uint32_t)row_bytes;
     for (uint32_t r = 0; r < kMaxRanks; ++r) {
-        q->result_offset[r] = s->hdr->result_offset[r];
+        q->result_offset[r] = s->hdr->result_offset[(uint32_t)rank * kMaxRanks + r];
         q->result_stride[r] = kHidden * sizeof(uint16_t);
     }
     store(&q->sequence, seq);
