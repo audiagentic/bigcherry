@@ -123,8 +123,11 @@ def _worker(cell, *, root: Path, base_env: Mapping[str, str]):
         ):
             raise MatrixResolutionError(f"cell {cell.cell_id!r}: server_capture environment must be a string map")
         from ..campaign.benchmark import run_server_arm_capture
+        engine = server_capture.get("engine")
+        if not isinstance(engine, str) or not engine:
+            raise MatrixResolutionError(f"cell {cell.cell_id!r}: server_capture must name its engine")
         result = run_server_arm_capture(
-            binary=Path(cell.binary), model=Path(model), extra_args=tuple(extra_args),
+            engine=engine, binary=Path(cell.binary), model=Path(model), extra_args=tuple(extra_args),
             output=root, pair=0, side=cell.cell_id, position=0,
             env={**dict(cell.visibility), **dict(env_overrides)}, bench_configs=bench_configs,
             runner_root=Path(runner_root), required_metrics=tuple(metrics),

@@ -62,7 +62,7 @@ class RuntimeMatrixRunTests(unittest.TestCase):
     def test_server_capture_worker_reuses_maintained_capture_boundary(self):
         raw = cell()
         raw["workload"] = {
-            "server_capture": {
+            "server_capture": {"engine": "llamacpp", 
                 "model": "/models/9b.gguf", "bench_configs": "pp512",
                 "runner_root": "/bench", "required_metrics": ["pp512_tps"],
                 "extra_args": ["-ngl", "99"], "execution_evidence": "observe",

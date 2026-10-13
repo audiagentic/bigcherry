@@ -1,5 +1,10 @@
 # RD43: keep the concurrent-region join node out of op-fusion
 
+## Current b11552 disposition (2026-10-13)
+
+**1216 is standalone, untested and correctness-only.** Canonical `patch.toml` has `requires = []`; rejected 1215 is not required. The historical central-runner/`+1215` instructions and "no validation.toml" claims below are superseded. The existing `validation/producer.py::run` and `validation.toml` implement validated-BC versus validated-BC+1216, full-vocab near-lossless parity, marker and paired controls. The `validation/producer.toml` comment and `patch.py::REQUIRES` remain stale metadata pending a tested source cleanup. The marker proves only that a cap was applied, **not** that a would-be crossing fusion was prevented. All 22 tracked 1216 records were collected at b11126; none qualifies the current b11552 pin. No new GPU or performance result is claimed. See PRBE35 and BCOP175 for the bounded gate.
+
+
 ## Scope
 
 Temporarily lowers `cgraph->n_nodes` around `ggml_cuda_try_fuse` while a

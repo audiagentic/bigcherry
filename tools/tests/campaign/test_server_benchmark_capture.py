@@ -52,7 +52,7 @@ class ServerCaptureTests(unittest.TestCase):
                     "bigcherry.campaign.bench_runner.run_bench_runner_server_bench",
                     return_value={"tg512_tps": 30.0},
                 ) as bench:
-                    result = run_server_arm_capture(
+                    result = run_server_arm_capture(engine="llamacpp", 
                         binary=Path("llama-server"), model=Path("model.gguf"), extra_args=(),
                         output=Path(tmp), pair=0, side="native", position=1, env={},
                         bench_configs="tg512", runner_root=Path("runner"),
@@ -69,7 +69,7 @@ class ServerCaptureTests(unittest.TestCase):
     def test_rejects_missing_expected_metrics_before_launch(self):
         with patch("bigcherry.tuning.server_runner.ServerRunner") as server:
             with self.assertRaisesRegex(ValueError, "expected metrics"):
-                run_server_arm_capture(
+                run_server_arm_capture(engine="llamacpp", 
                     binary=Path("server"), model=Path("model"), extra_args=(),
                     output=Path("unused"), pair=0, side="native", position=0,
                     env={}, bench_configs="full", runner_root=Path("runner"), required_metrics=(),
@@ -108,7 +108,7 @@ class ServerComparisonCaptureTests(unittest.TestCase):
             )
             self.arms.append({"name": name, "binary": str(binary), "mode": mode})
         self.base_config = {
-            "schema_version": 1, "evidence_role": "production",
+            "schema_version": 1, "engine": "llamacpp", "evidence_role": "production",
             "model": str(self.model), "server_args": ["-sm", "tensor"],
             "required_metrics": ["tg128_tps"], "bench_configs": "mtp-dual",
             "runner_root": str(self.runner), "repetitions": 1,
@@ -373,7 +373,7 @@ class ServerExecutionAttestationTests(unittest.TestCase):
             "bigcherry.campaign.bench_runner.run_bench_runner_server_bench",
             return_value={"tg128_tps": 30.0},
         ) as bench:
-            result = run_server_arm_capture(
+            result = run_server_arm_capture(engine="llamacpp", 
                 binary=Path("server"), model=Path("model"), extra_args=(),
                 output=self.root, pair=0, side="native", position=0, env={},
                 bench_configs="mtp-dual", runner_root=Path("runner"),
