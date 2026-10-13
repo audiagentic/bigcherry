@@ -200,10 +200,10 @@ PATCHES = (
                 id="remote-hc-write-state",
                 anchor=r"^[ \t]*if \(!op_write\) return;$",
                 text="""
-    const bool remote_policy = rad_moe_remote_wanted(rows);""",
-                guard=r"const bool remote_policy = rad_moe_remote_wanted\(rows\);",
+    const bool remote_policy = gsrc.top_k > 0 && rad_moe_remote_wanted(rows);""",
+                guard=r"const bool remote_policy = gsrc\.top_k > 0 && rad_moe_remote_wanted\(rows\);",
                 expect_matches=1,
-                rationale="The write knows this pass's row count before choosing any fused gather or collective form.",
+                rationale="Only a connection with a declared MoE gather source may open the remote window; attention and delta-net writes keep their normal fused reductions.",
             ),
             Edit(
                 id="remote-disable-hc-gather-ar",
