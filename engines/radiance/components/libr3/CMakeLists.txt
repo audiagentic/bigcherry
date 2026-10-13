@@ -81,9 +81,18 @@ set(declaration ${r4d}/r4d_rows.cpp ${r4d}/r4d_layout.cpp ${r4d}/r4d_fp8_layout.
 set_source_files_properties(${r4d}/r4d_rows.cpp PROPERTIES COMPILE_DEFINITIONS
   "rad_plugin_info=r4d_up_plugin_info;rad_kernel_count=r4d_up_kernel_count;rad_kernel_at=r4d_up_kernel_at;rad_kernel_concurrent=r4d_up_kernel_concurrent")
 
+# The remote-MoE hook implements engine patch 0002's hand-off ABI (abi/rad_moe_remote.h). A source without that patch
+# has no hand-off point, so libr3 is built without the hook rather than failing.
+set(r3_moe_remote_sources "")
+if(EXISTS "${RADIANCE_SRC}/abi/rad_moe_remote.h")
+  set(r3_moe_remote_sources ${CMAKE_CURRENT_SOURCE_DIR}/helper/moe_remote_hook.cpp)
+  message(STATUS "libr3: remote-MoE hook built (engine source has patch 0002)")
+else()
+  message(STATUS "libr3: remote-MoE hook left out (engine source has no abi/rad_moe_remote.h)")
+endif()
 rad_add_plugin(libr3 kernels
   SOURCES     ${declaration} ${CMAKE_CURRENT_SOURCE_DIR}/r3_registry.cpp ${CMAKE_CURRENT_SOURCE_DIR}/r3_ngram_host.cpp
-              ${CMAKE_CURRENT_SOURCE_DIR}/helper/moe_remote_hook.cpp
+              ${r3_moe_remote_sources}
   HIP_SOURCES ${device}
   GPU_TARGETS ${R3_TARGETS}
   INCLUDES    ${r4d} ${CMAKE_CURRENT_SOURCE_DIR})
@@ -140,6 +149,9 @@ target_link_libraries(r3_ngram_test PRIVATE radiance::abi ${CMAKE_DL_LIBS})
 # the hook is already compiled into libr3 above and registers only when R3_MOE_HELPER is non-empty.
 add_executable(r3_moe_helper ${CMAKE_CURRENT_SOURCE_DIR}/helper/r3_moe_helper.cpp)
 target_include_directories(r3_moe_helper PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/helper)
+if(r3_moe_remote_sources)
+  target_include_directories(libr3 PRIVATE ${RADIANCE_SRC}/abi)
+endif()
 target_link_libraries(r3_moe_helper PRIVATE radiance::abi)
 set_target_properties(r3_moe_helper PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON
   RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/helpers)
