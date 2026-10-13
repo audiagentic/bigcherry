@@ -84,31 +84,6 @@ PATCHES = (
         ),),
     ),
     FilePatch(
-        path="arch/common/rad_block_hc.h",
-        description="Keep the fused gather down while a remote partial must join before the collective.",
-        edits=(
-            Edit(
-                id="include-remote-moe-abi",
-                anchor=r"^#define RAD_BLOCK_HC_H$",
-                text='\n#include "rad_moe_remote.h"',
-                guard=r'^#include "rad_moe_remote\.h"$',
-                expect_matches=1,
-                rationale="The header guard define is unique and precedes the existing architecture includes.",
-            ),
-            Edit(
-                id="remote-aware-hc-gather",
-                anchor=r"^[ \t]*return takes_ar\(T\) && gather_taken\(g, T, gather_rows, gather_rows6\);$",
-                mode="replace",
-                text="""        /* Remote rows join before the collective; only the gather fusion stands down. */
-        return !rad_moe_remote_wanted(T) && takes_ar(T) &&
-               gather_taken(g, T, gather_rows, gather_rows6);""",
-                guard=r"!rad_moe_remote_wanted\(T\)",
-                expect_matches=1,
-                rationale="The unique takes_gather return is the policy point controlling the gather/write fusion.",
-            ),
-        ),
-    ),
-    FilePatch(
         path="arch/common/rad_block_moe_fp8.h",
         description="Publish and join remote experts as ordinary device ops on the rank stream.",
         edits=(
@@ -146,7 +121,7 @@ PATCHES = (
                                            RAD_INT("n", g.n_embd),
                                            RAD_INT("top_k", c.top_k)),
                                 RAD_NOWEIGHTS),
-                            {}, {w.sorted, w.edn});
+                            {w.sorted, w.edn}, {w.sorted, w.edn});
         if (!op_remote_publish || !op_remote_join) return RAD_E_INVAL;
     }""",
                 guard=r'moe_mailbox_publish',
@@ -164,44 +139,24 @@ PATCHES = (
                 rationale="The shared-arm state is the first per-pass policy declaration after row geometry is resolved.",
             ),
             Edit(
-                id="disable-fused-router-for-remote",
-                anchor=r"^[ \t]*const bool rfused = op_router_fused && rows <= router_fused_rows;$",
+                id="publish-remote-and-rescatter",
+                anchor=r"^[ \\t]*/\\* The rotated re-quantisation of the same input, when the expert plane carries a$",
                 mode="replace",
-                text="    const bool rfused = !remote_policy && op_router_fused && rows <= router_fused_rows;",
-                guard=r"rfused = !remote_policy",
+                text="""    if (remote_policy) {
+        RAD_ISSUE_N(c_, op_remote_publish, rows,
+                    brow_slice(w.ids, r0, rows, k),
+                    brow_slice(w.ew, r0, rows, k),
+                    brow_slice(w.h.x, r0, rows, g.n_embd));
+        /* Preserve the normal router/top-k arithmetic. Fused paths already scattered the
+         * unmasked ids, so rebuild the cheap integer scatter after publish masks remote slots. */
+        RAD_ISSUE_N(c_, op_scatter, rows, brow_slice(w.ids, r0, rows, k),
+                    brows(w.sorted, rows * k), brows(w.eoff, ne + 1), ecnt);
+    }
+
+    /* The rotated re-quantisation of the same input, when the expert plane carries a""",
+                guard=r"Preserve the normal router/top-k arithmetic",
                 expect_matches=1,
-                rationale="The fused router must stand down so publish sees the device top-k buffers before scatter.",
-            ),
-            Edit(
-                id="disable-fused-topk-scatter-for-remote",
-                anchor=r"^[ \t]*\} else if \(op_topk_scatter && rows <= topk_scatter_rows\) \{$",
-                mode="replace",
-                text="    } else if (!remote_policy && op_topk_scatter && rows <= topk_scatter_rows) {",
-                guard=r"else if \(!remote_policy && op_topk_scatter",
-                expect_matches=1,
-                rationale="The fused top-k/scatter path must stand down so remote ids can be masked on the rank GPU.",
-            ),
-            Edit(
-                id="publish-remote-before-scatter",
-                anchor=r"^[ \t]*brow_slice\(w\.ids, r0, rows, k\), brow_slice\(w\.ew, r0, rows, k\)\);$",
-                text="""
-        if (remote_policy)
-            RAD_ISSUE_N(c_, op_remote_publish, rows,
-                        brow_slice(w.ids, r0, rows, k),
-                        brow_slice(w.ew, r0, rows, k),
-                        brow_slice(w.h.x, r0, rows, g.n_embd));""",
-                guard=r"op_remote_publish, rows",
-                expect_matches=1,
-                rationale="The standalone top-k issue uniquely precedes scatter and leaves ids/weights device-resident for mailbox publication.",
-            ),
-            Edit(
-                id="force-local-gather-before-remote-merge",
-                anchor=r"^[ \t]*if \(!gather_taken\(g, T, gather_out_rows, gather_out_rows6\)\)$",
-                mode="replace",
-                text="    if (remote_policy || !gather_taken(g, T, gather_out_rows, gather_out_rows6))",
-                guard=r"remote_policy \|\| !gather_taken",
-                expect_matches=1,
-                rationale="The engine gather must run after remote down rows are restored into its normal routed buffer.",
+                rationale="Publish after whichever normal router/top-k path ran, then rebuild only scatter from the masked ids so helper-on does not globally change router arithmetic.",
             ),
             Edit(
                 id="join-remote-before-gather",
