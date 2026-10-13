@@ -57,6 +57,15 @@ const char* shm_name() {
     return e && *e ? e : "/r3-moe-helper";
 }
 
+int64_t max_rows() {
+    static const int64_t v = [] {
+        const char* e = std::getenv("R3_MOE_HELPER_MAX_ROWS");
+        const long long n = e && *e ? std::atoll(e) : 64;
+        return (int64_t)(n > 0 ? n : 64);
+    }();
+    return v;
+}
+
 int owns_remote(void* user, int layer, int expert) {
     auto* s = static_cast<HookState*>(user);
     return s && s->hdr && layer >= 0 && expert >= 0 &&
@@ -68,7 +77,7 @@ RadMoeRemoteHandle submit(void* user, int layer, int rank, int64_t rows, int64_t
                           const void* activation, int64_t activation_stride_bytes) {
     auto* s = static_cast<HookState*>(user);
     if (!s || !s->hdr || !route || !activation || rank < 0 || rank >= (int)kMaxRanks ||
-        layer < 0 || (uint32_t)layer >= s->hdr->layer_count || rows <= 0 || rows > kMaxRows ||
+        layer < 0 || (uint32_t)layer >= s->hdr->layer_count || rows <= 0 || rows > kMaxRows || rows > max_rows() ||
         n_embd != kHidden || n_route <= 0 || n_route > kMaxRoutes ||
         activation_stride_bytes < (int64_t)kHidden * 2) return nullptr;
 

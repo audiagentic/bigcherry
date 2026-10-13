@@ -54,6 +54,11 @@ default = "28672"
 status = "experimental"
 summary = "VRAM budget in MiB for cold full-expert units owned by the gfx1201 helper"
 
+[setting.R3_MOE_HELPER_MAX_ROWS]
+default = "64"
+status = "experimental"
+summary = "largest step (rows) the hook hands to the helper; larger prefill steps keep the engine's own path"
+
 [setting.R3_MOE_HELPER_R4D]
 default = ""
 status = "diagnostic"
