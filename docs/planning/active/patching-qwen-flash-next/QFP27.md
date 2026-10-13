@@ -61,16 +61,14 @@ This is the same fundamental invariant QFP24 needs: source generation N cannot b
 
 ## Steps
 
-1. Rebase/port only the #29963 scheduler input-event portion onto the current BigCherry pin in an isolated experiment; do not import MoE placement policy for this test.
-2. Instrument 1326/QFP24 source lifetime with `{cur_copy,next_copy,generation,backend,input_ptr,bytes,event_wait_us}` and prove which physical host allocation is associated with each scheduler copy.
-3. Stress immediate source overwrite after submission for >=10,000 generations with 2/3/4 scheduler copies and 3 Meta children. Validate byte-generation tags on every child.
-4. Determine whether Meta exposes one ordering stream/event that completes after all child `set_tensor_async` fanout. If yes, use one scheduler `input_event` per Meta backend/copy. If no, factor a Meta completion event/ticket internally, but attach it to the **existing scheduler generation**, not a QFP24 ring generation.
-5. Compare pageable versus backend-host-buffer/pinned storage while holding scheduler copy depth and event protocol identical. Pinning is a transport optimisation, not lifetime correctness.
-6. Measure copy-depth 2/3/4. Choose the smallest depth that hides >=95% of observed H2D latency without increasing peak VRAM/host-pinned memory unnecessarily.
-7. On ring/copy reuse, retain slot-local synchronization only. Do not add a generic event-query API unless measured `input_event` reuse waits consume >=1% of prefill wall time.
-8. If #29963 lifetime semantics pass and pinned memory adds <3% prefill/TTFT improvement, close QFP24 and fold only the upstream event-generation design into 1326.
-9. If pinning adds >=3%, revise QFP24 implementation to allocate pinned backing for scheduler-owned copy slots while reusing #29963 events/generations; delete its proposed duplicate `bc_async_input_lane`, `bc_async_input_slot::done[]`, and tracked simple-backend protocol.
-10. Re-run decode/MTP <=4 MiB to ensure no regression; this item must not widen the fast path without evidence.
+1. Prove split-mode, copy count, Meta event support and exact current-pin source semantics before attempting any upstream transplant; #29963 is layer-pipeline-only, not a tensor-split solution.
+2. Reuse existing 1325/1326 trace and admit further work only for >=1 ms AND >=3% exposed prefill input-handling cost.
+3. Reuse QFP16/1326 as implementation owner and its existing pageable <=4 MiB control; never add a second scheduler generation or host-weight policy.
+4. If qualified, implement a bounded pinned slot with **all-child** Meta completion or fail closed to pageable/synchronous copy before partial submission.
+5. Run static admission and 10,000-generation source-shaped host tests before HIP work; test 2/3/4 slots, delayed children, cancel/reset and graph reuse.
+6. Qualify on exact BigCherry GPU topology, multiple requests/ubatches, long context, MTP acceptance, logits/KLD and measured H2D/CPU timings.
+7. Promote only >=5% median prefill/TTFT, positive CI95-low, <=2% decode regression, zero lifetime violations and <=64 MiB pinned; otherwise retire residual.
+8. Recheck upstream PR #29963 only if it changes tensor-split admission and Meta event semantics; do not port unrelated MoE placement.
 
 ## Detailed Solution & Technical Design
 
@@ -127,6 +125,28 @@ Keep a bounded per-copy size-class pool. No per-ubatch `hipHostMalloc`, no point
 
 QFP24 currently proposes a second ring, its own generations, per-slot child events, a tracked Meta `set_tensor_async`, and potentially a new event-query proc. #29963 demonstrates that the generic scheduler already needs copy-indexed input completion for pipeline parallelism. Consolidating there removes two independent notions of when an input is safe to overwrite and makes ordinary user inputs and transient host weights share one tested lifetime invariant.
 
+## 2026-10-13 exact-pin applicability correction (b11552; upstream #29963 head 273cd26)
+
+**Source-confirmed disposition: upstream input-event pipeline is NOT an applicable lifetime fix for BigCherry's production `-sm tensor` / Meta input copies.** It remains an **open** upstream PR (updated 2026-10-12), not a merged pin or an AMD-qualified improvement.
+
+- `src/llama-context.cpp::llama_context` enables `cparams.pipeline_parallel` only for **layer** split with multiple devices, sufficient GPU layers, KQV offload, no tensor overrides/cache and device async+event support. `sched_new(..., cparams.pipeline_parallel, ...)` passes that boolean into `ggml_backend_sched_new`.
+- `ggml/src/ggml-backend.cpp::ggml_backend_sched_new` sets `n_copies = parallel ? GGML_SCHED_MAX_COPIES : 1`; PR #29963's `ggml_backend_sched_upload_user_inputs` and `input_events[backend][copy]` are used only when `n_copies > 1`. The production Meta tensor split has **one** scheduler copy; merely cherry-picking `input_events` does not activate it.
+- `ggml/src/ggml-backend-meta.cpp::ggml_backend_meta_device_get_props` reports `caps.events=false`; `ggml_backend_meta_device_iface.event_new=nullptr`. `ggml_backend_meta_set_tensor_async` fans mirrored inputs to each child backend stream, without a Meta completion event. Even a forced multi-copy Meta experiment cannot interpret a null Meta event as completed H2D. A single child's event cannot protect source reuse while other children are reading it.
+- BigCherry `1326_sched_async_host_inputs/patch.py` stages eligible contiguous non-weight inputs through scheduler-owned **pageable** `std::vector` memory and caps the shortcut at **4 MiB**. HIP's pageable-copy semantics explain why this path removes destination synchronization but does not prove genuine H2D overlap. Converting storage to pinned without child-completion tracking is unsafe. Existing v5c measurements remain historical (decode +9.4% at ~8K, +7.8% at ~64K; prefill -2.3%/-2% before the 4 MiB cap), not current-pin performance.
+
+### Bounded owner implementation and decision gates
+
+1. **No speculative port:** Do not transplant #29963's host-expert placement, `single_copy` aliases or pipeline-parallel allocation policy into tensor split. QFP16/1326 is the only implementation owner; QFP27 owns applicability; QFP24 owns *conditional* pinned backing, not another copy-generation scheduler. MET06 retains host-weight policy.
+2. **Cheapest discriminator:** In existing 1325/1326 trace record `{phase, n_copies, split_backend, bytes, Meta-child-count, source-pinned, stage-pinned, memcpy_us, set_async_us, sync_us}` at ub512/1024/2048/4096. Confirm real prefill cost **>=1 ms AND >=3% of prefill wall** before any pinned-memory implementation. If either threshold fails, close residual without a hardware campaign.
+3. **If qualified, extend 1326 in-place:** Use bounded per-scheduler, per-generation pinned staging (initial cap 64 MiB) only for large eligible inputs. Never reuse/overwrite slot G until **every** child backend consuming G has completed. Record child events after each destination enqueue; wait/join all child completions before slot reuse. If an event cannot be created/recorded, a child fails, or Meta split shape is unsupported, fall back to existing pageable/synchronous path **before submitting a partial copy**. A null event is not success. No global event-query API or second scheduler registry.
+4. **Lifetime/graph safety:** Keep source bytes stable from CPU memcpy until the last child H2D read; generation must not be keyed solely by `ggml_tensor *` or graph pointer. Handle cancellation, reset, graph realloc/rebind, backend teardown, failed enqueue and slot wrap with wait-or-safe-fallback; do not free a live pinned buffer. Preserve compute ordering and per-rank bytes. No normal P2P exists on the dual-XTX/R9700/6900-XT topology.
+5. **Host before GPU:** Static admission tests for `layer/tensor`, `n_copies=1/>1`, Meta `events=false`, 4 MiB threshold, null event and one-delayed-child; deterministic 10,000-generation 2/3/4-slot, 1/2/3-child host fixture with delayed completion, immediate producer overwrite, failure/cancel and allocation reuse. Then on idle hardware test two requests in one process, multi-ubatch prefill, long-context MTP/no-MTP, greedy/full-logit/KLD parity, all child completions, graph reuse and pinned high-water.
+6. **Promotion/rejection:** Compare same-pin control 1326 with subject + pinned backing, four independent order-balanced sessions. Promote only with **>=5% median prefill/TTFT improvement**, positive CI95 lower bound, **<=2% decode regression**, zero stale generations/incorrect bytes and <=64 MiB pinned budget; otherwise retain safe <=4 MiB path and close QFP24/QFP27. Historical unsafe-source prefill gains are not evidence for promotion.
+
+Upstream: [llama.cpp #29963](https://github.com/ggml-org/llama.cpp/pull/29963) (open, head `273cd26`, updated 2026-10-12). Other-engine mechanism: [vLLM multimodal H2D](https://github.com/vllm-project/vllm/blob/main/vllm/multimodal/inputs.py) pins dense CPU inputs before nonblocking transfer; it supplies neither Meta fanout completion nor transferable AMD speedup.
+
+**Evidence performed:** 10/10 actual-source static assertions; 9/9 source-shaped host-model tests and Python compile. No repository pytest, patch application, HIP/Vulkan build, GPU run or new throughput measurement.
+
 ## Validation
 
 Matrix:
@@ -142,7 +162,7 @@ Record: generation mismatches, wait_us per reused copy, H2D GB/s, copy-engine ov
 
 Correctness gate: zero stale-generation reads in >=10,000 reuse cycles and no reuse before the slowest child completes.
 
-Performance gate: adopt pinned backing only for >=3% prefill or TTFT improvement over the same #29963-style event lifecycle. Event-query work is allowed only if copy-reuse synchronization itself is >=1% of prefill wall.
+Performance gate: adopt pinned backing only for >=5% median prefill or TTFT improvement, positive CI95-low over the same #29963-style event lifecycle. Event-query work is allowed only if copy-reuse synchronization itself is >=1% of prefill wall.
 
 ## External References
 
