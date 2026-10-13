@@ -17,6 +17,10 @@ recipes = "engines/radiance/recipes.toml"
 [build]
 targets-option = "RAD_GPU_TARGETS"
 binary = "bin/radiance"
+# The runtime a served build needs beside its binary: radiance builds its plugin libraries, architectures and
+# quantisers into radiance_home as part of its default target.
+runtime-targets = ["all"]
+runtime-home = "radiance_home"
 
 [serve]
 binary = "bin/radiance"

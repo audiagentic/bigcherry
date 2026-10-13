@@ -41,7 +41,7 @@ from . import plan as campaign_plan
 from . import source as campaign_source
 from . import workers as campaign_workers
 from ..core import config as campaign_config
-from ..core import engines, paths
+from ..core import components, engines, paths
 from ..patch import catalog as patch_catalog
 from ..patch import patchset
 from . import smoke as smoke_module
@@ -783,7 +783,14 @@ def _execute_build_phase(
         # BuildPlan's own docstring for why this replaced the old
         # inventory_hash/winners_hash pair.
         input_hashes=tuple(
-            sorted((name, ref.content_hash) for name, ref in input_refs.items())
+            sorted(
+                [(name, ref.content_hash) for name, ref in input_refs.items()]
+                # RAD01 PR 8b: the engine's runtime (plugin targets, components by content) is part of what a build
+                # produces, so it is part of the build's identity.
+                + [(f"runtime-target:{target}", "") for target in engines.load(paths.REPO_ROOT, cfg.engine).runtime_targets]
+                + [(f"component:{name}", component.content_digest())
+                   for name, component in components.load_all(paths.REPO_ROOT, cfg.engine).items()]
+            )
         ),
         toolchain_request=campaign_build.toolchain_request_for_platform(platform_cfg),
         environment=campaign_build.resolve_build_environment(),

@@ -10,6 +10,11 @@ targets = ["gfx1100"]
 built-against = "89cee7ce414486c717aa2085c99e1f522e4c0ea6"
 outputs = ["kernels/libr3.so", "helpers/libr3_ngram_helper.so"]
 
+# How the build lane builds it: CMake against the engine installed from the lane's own build (CMAKE_PREFIX_PATH) and
+# the lane's materialised source ({engine_source}); outputs are copied into the engine's runtime home.
+[build]
+configure = { RADIANCE_SRC = "{engine_source}", R3_TARGETS = "{targets}", R3_NATIVE = "ON" }
+
 # Runtime settings: each environment variable the plugin reads, its default, and what it is.
 #   status = production    on (or meaningful) in served configurations, with quality and speed evidence
 #   status = experimental  measured, not adopted; may appear only in an experiment
