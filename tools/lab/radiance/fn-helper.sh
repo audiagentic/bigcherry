@@ -49,6 +49,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+if [ "${HELPER:-1}" != 0 ]; then
 echo "== helper: HIP device 2"
 HIP_VISIBLE_DEVICES=2 RADIANCE_HOME="$home" \
     "$helper" "$model" >"$out/helper.log" 2>&1 &
@@ -64,9 +65,10 @@ until grep -q '^r3_moe_helper: ready ' "$out/helper.log"; do
     sleep 1
 done
 grep -E '^r3_moe_helper: (owns|ready) ' "$out/helper.log"
+fi
 
 echo "== radiance: HIP devices 0,1; runtime-profile flashnext-2xtx"
-HIP_VISIBLE_DEVICES=0,1 R3_MOE_HELPER=1 RADIANCE_HOME="$home" \
+HIP_VISIBLE_DEVICES=0,1 R3_MOE_HELPER=${HELPER:-1} RADIANCE_HOME="$home" \
     "$rad" --model "$model" --radiance-home "$home" --kernels libr3,libref \
     "${profile_args[@]}" ${EXTRA_ARGS:-} --max-model-len "$ctx" --host 127.0.0.1 --port "$port" \
     >"$out/server.log" 2>&1 &
@@ -76,7 +78,7 @@ until curl -sf "http://127.0.0.1:$port/health" >/dev/null 2>&1; do
     if ! kill -0 "$server_pid" 2>/dev/null; then
         echo "SERVER_EXITED_BEFORE_HEALTH" >&2; tail -60 "$out/server.log" >&2; exit 1
     fi
-    if ! kill -0 "$helper_pid" 2>/dev/null; then
+    if [ -n "$helper_pid" ] && ! kill -0 "$helper_pid" 2>/dev/null; then
         echo "HELPER_EXITED_DURING_LOAD" >&2; tail -60 "$out/helper.log" >&2; exit 1
     fi
     if [ "$SECONDS" -ge "$deadline" ]; then
