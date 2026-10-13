@@ -68,7 +68,7 @@ grep -E '^r3_moe_helper: (owns|ready) ' "$out/helper.log"
 echo "== radiance: HIP devices 0,1; runtime-profile flashnext-2xtx"
 HIP_VISIBLE_DEVICES=0,1 R3_MOE_HELPER=1 RADIANCE_HOME="$home" \
     "$rad" --model "$model" --radiance-home "$home" --kernels libr3,libref \
-    "${profile_args[@]}" --max-model-len "$ctx" --host 127.0.0.1 --port "$port" \
+    "${profile_args[@]}" ${EXTRA_ARGS:-} --max-model-len "$ctx" --host 127.0.0.1 --port "$port" \
     >"$out/server.log" 2>&1 &
 server_pid=$!
 deadline=$((SECONDS + ${LOAD_TIMEOUT:-900}))
