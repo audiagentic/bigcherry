@@ -824,6 +824,7 @@ def run_server_comparison_capture(
         if mode not in ("stock", "native", "record", "tune", "replay"):
             raise ValueError(f"unsupported dispatch mode: {mode}")
         build_dir = binary.parent.parent
+        observation = None
         if engine == _engines.LLAMACPP:
             # The dispatch-instrumentation contract is llama.cpp's (GGML_HIP_DISPATCH builds).
             observation = inspect_dispatch_build(build_dir)
