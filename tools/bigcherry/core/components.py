@@ -30,6 +30,8 @@ class Setting:
     default: str
     status: str
     summary: str
+    #: a regular expression the server log matches when the setting's path ran; empty when there is none
+    activation: str = ""
 
 
 @dataclass(frozen=True)
@@ -85,13 +87,14 @@ def load(root: Path, engine: str) -> Component:
         raise ComponentError(f"{path}: [setting.*] must be tables")
     for key, body in raw.items():
         where = f"{path}: setting.{key}"
-        if not isinstance(body, dict) or sorted(body) != ["default", "status", "summary"]:
-            raise ComponentError(f"{where} must have exactly default, status and summary")
+        if not isinstance(body, dict) or not {"default", "status", "summary"} <= set(body) or set(body) - {
+            "default", "status", "summary", "activation"}:
+            raise ComponentError(f"{where} must have default, status and summary, and may have activation")
         if not all(isinstance(body[k], str) for k in body):
             raise ComponentError(f"{where}: every field must be a string")
         if body["status"] not in STATUSES:
             raise ComponentError(f"{where}: status {body['status']!r} is not one of {', '.join(STATUSES)}")
-        settings[key] = Setting(key, body["default"], body["status"], body["summary"])
+        settings[key] = Setting(key, body["default"], body["status"], body["summary"], body.get("activation", ""))
     return Component(
         name=name,
         engine=engine,
