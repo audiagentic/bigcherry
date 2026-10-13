@@ -105,7 +105,7 @@ __global__ void lane_select_tables(
 __global__ void lane_route_count(
     const r3::moe_shm::Route* route, const r3::moe_shm::Request* q,
     uint32_t rank, uint32_t sequence, uint32_t max_rows, uint32_t layers,
-    uint32_t* counts, uint32_t* token_slot, int32_t* flat, uint16_t* ew) {
+    uint32_t* counts, int32_t* flat, uint16_t* ew) {
     using namespace r3::moe_shm;
     const uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
     if (!lane_request_valid(q, rank, sequence, max_rows, layers) || i >= q->route_count) return;
@@ -115,12 +115,11 @@ __global__ void lane_route_count(
         flat[i] = -1;
         return;
     }
-    const uint32_t slot = atomicAdd(token_slot + r.token, 1u);
-    if (slot >= kTopK) {
+    if (r.slot >= kTopK) {
         flat[i] = -1;
         return;
     }
-    const uint32_t f = (uint32_t)r.token * kTopK + slot;
+    const uint32_t f = (uint32_t)r.token * kTopK + r.slot;
     flat[i] = (int32_t)f;
     ew[f] = r.weight_bf16;
     atomicAdd(counts + (uint32_t)r.expert, 1u);
@@ -242,7 +241,7 @@ struct LaneWork {
     hipEvent_t sample_stop = nullptr;
     uint32_t sample_sequence = 0;
     bool sample_pending = false;
-    Buffer d_counts, d_cursor, d_token_slot, d_flat, d_sorted, d_off, d_ew;
+    Buffer d_counts, d_cursor, d_flat, d_sorted, d_off, d_ew;
     Buffer d_act, d_aq, d_as, d_gu, d_mid, d_mid_s, d_down, d_stats, scratch;
     Buffer gu_code[2], gu_scale[2], dn_code[2], dn_scale[2];
 };
@@ -350,14 +349,12 @@ public:
 
         std::vector<std::vector<uint32_t>> by_exp(kExperts);
         std::vector<uint16_t> ew((size_t)rows * kTopK, 0);
-        std::vector<uint8_t> next_slot(rows, 0);
         for (uint32_t i = 0; i < q->route_count; ++i) {
             const Route& r = route[i];
             if (r.token < 0 || (uint32_t)r.token >= rows || r.expert < 0 ||
                 r.expert >= (int32_t)kExperts || !owns(q->layer, (uint32_t)r.expert)) return -EINVAL;
-            uint8_t& slot = next_slot[(uint32_t)r.token];
-            if (slot >= kTopK) return -EINVAL;
-            const uint32_t flat = (uint32_t)r.token * kTopK + slot++;
+            if (r.slot >= kTopK) return -EINVAL;
+            const uint32_t flat = (uint32_t)r.token * kTopK + r.slot;
             ew[flat] = r.weight_bf16;
             by_exp[(uint32_t)r.expert].push_back(flat);
         }
@@ -528,8 +525,6 @@ public:
                     "clear lane result") ||
             !hip_ok(hipMemsetAsync(w.d_counts.p, 0, kExperts * sizeof(uint32_t), w.stream),
                     "clear route counts") ||
-            !hip_ok(hipMemsetAsync(w.d_token_slot.p, 0, rows * sizeof(uint32_t), w.stream),
-                    "clear token slots") ||
             !hip_ok(hipMemsetAsync(w.d_ew.p, 0, routes * sizeof(uint16_t), w.stream),
                     "clear route weights") ||
             !hip_ok(hipMemsetAsync(w.d_sorted.p, 0xff, routes * sizeof(int32_t), w.stream),
@@ -559,7 +554,6 @@ public:
         hipLaunchKernelGGL(lane_route_count, route_grid, block, 0, w.stream,
                            route, q, rank, sequence, rows, model_.layers,
                            static_cast<uint32_t*>(w.d_counts.p),
-                           static_cast<uint32_t*>(w.d_token_slot.p),
                            static_cast<int32_t*>(w.d_flat.p),
                            static_cast<uint16_t*>(w.d_ew.p));
         hipLaunchKernelGGL(lane_route_prefix, dim3(1), dim3(1), 0, w.stream,
@@ -1162,7 +1156,6 @@ private:
         return w.d_counts.ensure((size_t)r3::moe_shm::kExperts * 4) &&
                w.d_cursor.ensure((size_t)r3::moe_shm::kExperts * 4) &&
                w.d_act.ensure((size_t)rows * r3::moe_shm::kHidden * 2) &&
-               w.d_token_slot.ensure((size_t)rows * 4) &&
                w.d_flat.ensure((size_t)routes * 4) &&
                w.d_sorted.ensure((size_t)tr * 4) &&
                w.d_off.ensure((r3::moe_shm::kExperts + 1ull) * 4) &&
