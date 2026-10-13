@@ -55,7 +55,7 @@ PIN_BLOBS = {
     "0002_moe_remote_handoff": {
         "abi/rad_moe_remote.h": (None, "c79b5b1"),
         "arch/common/rad_block_hc.h": ("c19c8b6", "df35634"),
-        "arch/common/rad_block_moe_fp8.h": ("51b7c28", "e5eefd1"),
+        "arch/common/rad_block_moe_fp8.h": ("51b7c28", "8200a23"),
         "core/place/moe_remote.cpp": (None, "5792381"),
     },
     "0003_mtp_full_head_switch": {
@@ -202,7 +202,8 @@ class TestRadiancePatchPackages(unittest.TestCase):
         self.assertNotIn('setenv("R3_MOE_REMOTE_MAX_ROWS", mr.c_str(), 1)', hook)
         self.assertIn('{"out", RAD_OPD_INOUT, 0}', ops)
         self.assertIn('r.weight_bf16', ops)
-        self.assertIn('acc += weight * value;', ops)\n        self.assertNotIn('bf16_product', ops)
+        self.assertIn('acc += weight * value;', ops)
+        self.assertNotIn('bf16_product', ops)
         self.assertIn('R3_MOE_HELPER poison', hook)
         self.assertIn('R3_MOE_HELPER_SHADOW enabled', hook)
         self.assertIn('R3_MOE_HELPER_SHADOW layer=', hook)

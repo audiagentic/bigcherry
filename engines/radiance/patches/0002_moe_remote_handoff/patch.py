@@ -136,7 +136,12 @@ PATCHES = (
                                              RAD_INT("top_k", c.top_k)),
                                   RAD_NOWEIGHTS),
                               {w.sorted, w.edn}, {w.edn});
-        if (!op_remote_publish || !op_remote_add || !op_remote_shadow) return RAD_E_INVAL;
+        if (!op_remote_publish || !op_remote_add || !op_remote_shadow) {
+            std::fprintf(stderr, "radiance: MoE remote ops not declared at layer %d (publish %d add %d shadow %d; "
+                         "q %d s %d rot %d)\\n", l, op_remote_publish != 0, op_remote_add != 0,
+                         op_remote_shadow != 0, remote_q != 0, remote_s != 0, (int)c.expert_rot);
+            return RAD_E_INVAL;
+        }
     }""",
                 guard=r'moe_mailbox_publish',
                 expect_matches=1,
