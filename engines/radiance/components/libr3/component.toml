@@ -42,6 +42,7 @@ summary = "native E4M3 decode for hc_read; 58 -> 51 us a call"
 default = "0"
 status = "experimental"
 summary = "4-bit cross-card wire at M >= 512; +5.6% 27B prefill at KLD 0.0044 -> 0.0126 (owner's call)"
+activation = "R3_AR_WIRE4 active"
 
 [setting.R3_AR_PIPE]
 default = "0"
@@ -52,11 +53,13 @@ summary = "sliced all-reduce in one kernel; byte-identical but 6% slower, shelve
 default = "0"
 status = "diagnostic"
 summary = "wall-clock all-reduce timing between stream synchronisations"
+activation = "^R3_AR_TIMING "
 
 [setting.R3_NGRAM_DEV]
 default = ""
 status = "evaluated"
 summary = "n-gram rows gathered on a non-rank card; exact, but the R9700 belongs to compute (owner, 2026-10-13)"
+activation = "libr3: R3_NGRAM_DEV rows="
 
 [setting.R3_NGRAM_HELPER_SO]
 default = ""
