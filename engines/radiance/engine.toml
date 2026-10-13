@@ -15,7 +15,7 @@ recipes = "engines/radiance/recipes.toml"
 # through RADIANCE_HOME, which a source build places beside its bin/ directory.
 # How a build names its GPU targets (CMake cache variable).
 [build]
-targets-option = "CMAKE_HIP_ARCHITECTURES"
+targets-option = "RAD_GPU_TARGETS"
 binary = "bin/radiance"
 
 [serve]
