@@ -610,13 +610,21 @@ int main(int argc, char** argv) {
     bool compare = argc > 1 && std::strcmp(argv[1], "--compare") == 0;
     const char* model_path = nullptr;
     uint32_t compare_layer = 0, compare_rows = 0;
+    bool compare_one_layer = false;
     if (compare) {
-        if (argc != 7 || std::strcmp(argv[3], "--layer") != 0 ||
-            std::strcmp(argv[5], "--rows") != 0 ||
-            !parse_u32(argv[4], 0, kMaxLayers - 1, &compare_layer) ||
-            !parse_u32(argv[6], 1, kMaxRows, &compare_rows)) {
+        if (argc == 5 && std::strcmp(argv[3], "--rows") == 0) {
+            if (!parse_u32(argv[4], 1, kMaxRows, &compare_rows)) {
+                std::fprintf(stderr, "usage: r3_moe_helper --compare MODEL.rad --rows M\n");
+                return 2;
+            }
+        } else if (argc == 7 && std::strcmp(argv[3], "--layer") == 0 &&
+                   std::strcmp(argv[5], "--rows") == 0 &&
+                   parse_u32(argv[4], 0, kMaxLayers - 1, &compare_layer) &&
+                   parse_u32(argv[6], 1, kMaxRows, &compare_rows)) {
+            compare_one_layer = true;
+        } else {
             std::fprintf(stderr,
-                "usage: r3_moe_helper --compare MODEL.rad --layer L --rows M\n");
+                "usage: r3_moe_helper --compare MODEL.rad [--layer L] --rows M\n");
             return 2;
         }
         model_path = argv[2];
@@ -659,8 +667,22 @@ int main(int argc, char** argv) {
     std::fprintf(stderr, "r3_moe_helper: owns %zu experts, %.3f GiB; host RSS after load %.1f MiB\n",
                  owned.expert.size(), (double)owned.bytes / (1024.0 * 1024.0 * 1024.0), rss_mib);
 
-    if (compare)
-        return compare_mode(model, *gpu, owned, compare_layer, compare_rows);
+    if (compare) {
+        if (compare_one_layer)
+            return compare_mode(model, *gpu, owned, compare_layer, compare_rows);
+        int rc = 0;
+        for (uint32_t layer : {0u, 20u, 47u}) {
+            if (layer >= model.layers) {
+                std::fprintf(stderr, "r3_moe_helper: --compare layer %u unavailable (layers=%u)\n",
+                             layer, model.layers);
+                rc = 1;
+                continue;
+            }
+            std::printf("layer %u\n", layer);
+            rc |= compare_mode(model, *gpu, owned, layer, compare_rows);
+        }
+        return rc;
+    }
 
     const Layout lay = layout();
     const char* name = shm_name();
