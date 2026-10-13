@@ -46,6 +46,9 @@ struct DeviceLayerTables {
 __device__ __forceinline__ void lane_store_sys_rel(uint32_t* p, uint32_t v) {
     __hip_atomic_store(p, v, __ATOMIC_RELEASE, __HIP_MEMORY_SCOPE_SYSTEM);
 }
+__device__ __forceinline__ uint32_t lane_load_sys_acq(const uint32_t* p) {
+    return __hip_atomic_load(p, __ATOMIC_ACQUIRE, __HIP_MEMORY_SCOPE_SYSTEM);
+}
 
 __device__ __forceinline__ bool lane_request_valid(
     const r3::moe_shm::Request* q, uint32_t rank, uint32_t sequence,
@@ -185,6 +188,41 @@ __global__ void lane_unsort_down(const uint16_t* down, const int32_t* sorted,
 __global__ void lane_publish_done(uint32_t* done_sequence, uint32_t sequence) {
     if (blockIdx.x || threadIdx.x) return;
     lane_store_sys_rel(done_sequence, sequence);
+}
+
+/* Comparator-side copy of the engine join's synchronization and row mapping. It runs on an
+ * independent stream before any producer synchronization, so --compare exercises publication
+ * visibility instead of turning it into a host-synchronized memcpy test. */
+__global__ void lane_compare_join_wait(const uint32_t* done_sequence, uint32_t sequence) {
+    if (blockIdx.x || threadIdx.x) return;
+    unsigned long long spins = 0;
+    while ((int32_t)(lane_load_sys_acq(done_sequence) - sequence) < 0) {
+        __builtin_amdgcn_s_sleep(2);
+        if (++spins > 4000000000ULL) __builtin_trap();
+    }
+}
+
+__global__ void lane_compare_join_rows(
+    const r3::moe_shm::Request* q, const r3::moe_shm::Route* route,
+    const uint16_t* src, const uint32_t* done_sequence,
+    int32_t* sorted, uint16_t* down, uint32_t rank, uint32_t sequence,
+    uint32_t rows, uint32_t hidden, uint32_t top_k) {
+    using namespace r3::moe_shm;
+    if ((int32_t)(lane_load_sys_acq(done_sequence) - sequence) < 0) __builtin_trap();
+    const uint32_t nr = q->route_count;
+    const uint32_t total = rows * top_k;
+    const uint32_t j = blockIdx.x;
+    if (q->sequence != sequence || q->rank != rank || q->rows != rows ||
+        q->hidden != hidden || nr == 0 || nr > total || j >= nr)
+        return;
+    const Route r = route[j];
+    if (r.token < 0 || (uint32_t)r.token >= rows || r.slot >= top_k) __builtin_trap();
+    const uint32_t flat = (uint32_t)r.token * top_k + r.slot;
+    const uint32_t dst_row = total - nr + j;
+    if (threadIdx.x == 0) sorted[dst_row] = (int32_t)flat;
+    const uint16_t* from = src + (uint64_t)flat * hidden;
+    uint16_t* to = down + (uint64_t)dst_row * hidden;
+    for (uint32_t col = threadIdx.x; col < hidden; col += blockDim.x) to[col] = from[col];
 }
 
 
