@@ -43,6 +43,10 @@ struct DeviceLayerTables {
     void* dn_scale[r3::moe_shm::kMaxRanks][2]{};
 };
 
+__device__ __forceinline__ void lane_store_sys_rel(uint32_t* p, uint32_t v) {
+    __hip_atomic_store(p, v, __ATOMIC_RELEASE, __HIP_MEMORY_SCOPE_SYSTEM);
+}
+
 __device__ __forceinline__ bool lane_request_valid(
     const r3::moe_shm::Request* q, uint32_t rank, uint32_t sequence,
     uint32_t max_rows, uint32_t layers) {
@@ -171,6 +175,16 @@ __global__ void lane_unsort_down(const uint16_t* down, const int32_t* sorted,
     const int32_t flat = sorted[row];
     if (flat < 0 || (uint32_t)flat >= slots) return;
     dst[(uint64_t)(uint32_t)flat * hidden + (i - (uint64_t)row * hidden)] = down[i];
+}
+
+/* Publish completion with the same system-scope release discipline as the rank-side mailbox
+ * publisher. The preceding kernel writes mapped host memory on another GPU; a plain stream
+ * write-value completion signal does not itself establish the release ordering the consumer's
+ * system-scope acquire relies on. */
+__global__ void lane_publish_done(uint32_t* done_sequence, uint32_t sequence) {
+    if (blockIdx.x || threadIdx.x) return;
+    __threadfence_system();
+    lane_store_sys_rel(done_sequence, sequence);
 }
 
 
@@ -657,9 +671,9 @@ public:
         if (sample && w.sample_pending && w.sample_sequence == sequence &&
             !hip_ok(hipEventRecord(w.sample_stop, w.stream), "lane timing stop"))
             return -EIO;
-        if (!hip_ok(hipStreamWriteValue32(w.stream, done_seq, sequence, 0),
-                    "lane write done"))
-            return -EIO;
+        hipLaunchKernelGGL(lane_publish_done, dim3(1), dim3(1), 0, w.stream,
+                           done_seq, sequence);
+        if (!hip_ok(hipGetLastError(), "lane publish done")) return -EIO;
         return 0;
     }
 
