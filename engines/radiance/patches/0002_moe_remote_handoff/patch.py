@@ -121,19 +121,10 @@ PATCHES = (
                 rationale="The device include is unique in this header and sits with architecture dependencies.",
             ),
             Edit(
-                id="remote-partial-buffer",
-                anchor=r"^[ \t]*std::vector<rad_weight> w_gu, w_gus, w_dn, w_dns;$",
-                text="""
-    rad_buf b_remote = 0;""",
-                guard=r"rad_buf b_remote = 0",
-                expect_matches=1,
-                rationale="The expert weight vectors are the stable declaration boundary for the remote partial buffer.",
-            ),
-            Edit(
                 id="remote-ops",
                 anchor=r"^[ \t]*rad_op op_ar = 0, op_add = 0;$",
                 mode="replace",
-                text="    rad_op op_ar = 0, op_add = 0, op_remote_publish = 0, op_remote_join = 0, op_remote_add = 0;",
+                text="    rad_op op_ar = 0, op_add = 0, op_remote_publish = 0, op_remote_join = 0;",
                 guard=r"op_remote_publish = 0",
                 expect_matches=1,
                 rationale="The output op declaration is the unique home for the pre-reduction mailbox ops.",
@@ -143,9 +134,6 @@ PATCHES = (
                 anchor=r"^[ \t]*\{w\.x, w\.h\.x\}, \{w\.x\}\);$",
                 text="""
     if (rad_moe_remote_wanted_upto(g.max_tok)) {
-        b_remote = decl_b(b, nm.f("blk.%d.moe_remote_partial", l), RAD_BF16,
-                          {c.rows, g.n_embd});
-        if (!b_remote) return RAD_E_INVAL;
         op_remote_publish = rw(b, RAD_OP(b, "moe_mailbox_publish",
                                    RAD_PARAMS(RAD_INT("layer", l), RAD_RANGE("M", 1, c.rows),
                                               RAD_INT("n", g.n_embd), RAD_INT("top_k", c.top_k),
@@ -155,19 +143,15 @@ PATCHES = (
                                {w.ids, w.ew, w.h.x}, {w.ids});
         op_remote_join = rw(b, RAD_OP(b, "moe_mailbox_join",
                                 RAD_PARAMS(RAD_RANGE("M", 1, c.rows),
-                                           RAD_INT("n", g.n_embd)),
+                                           RAD_INT("n", g.n_embd),
+                                           RAD_INT("top_k", c.top_k)),
                                 RAD_NOWEIGHTS),
-                            {}, {b_remote});
-        op_remote_add = rw(b, RAD_OP(b, "add",
-                               RAD_PARAMS(RAD_RANGE("M", 1, c.rows), RAD_INT("n", g.n_embd),
-                                          RAD_STR("dtype", g.dtype)),
-                               RAD_NOWEIGHTS),
-                           {w.h.x, b_remote}, {w.h.x});
-        if (!op_remote_publish || !op_remote_join || !op_remote_add) return RAD_E_INVAL;
+                            {}, {w.sorted, w.edn});
+        if (!op_remote_publish || !op_remote_join) return RAD_E_INVAL;
     }""",
                 guard=r'moe_mailbox_publish',
                 expect_matches=1,
-                rationale="The final residual declaration is immediately before the collective declarations and has all mailbox buffers available.",
+                rationale="The final residual declaration is immediately before the collective declarations and has the route/down buffers available.",
             ),
             Edit(
                 id="remote-pass-state",
@@ -217,22 +201,18 @@ PATCHES = (
                 text="    if (remote_policy || !gather_taken(g, T, gather_out_rows, gather_out_rows6))",
                 guard=r"remote_policy \|\| !gather_taken",
                 expect_matches=1,
-                rationale="The local routed partial must materialize before the remote partial is joined and added.",
+                rationale="The engine gather must run after remote down rows are restored into its normal routed buffer.",
             ),
             Edit(
-                id="join-remote-before-all-reduce",
-                anchor=r"^[ \t]*gfold \? brow_slice\(w\.sgate, r0, rows, 1\) : RAD_NONE,\n[ \t]*brow_slice\(w\.h\.x, r0, rows, g\.n_embd\)\);$",
+                id="join-remote-before-gather",
+                anchor=r"^[ \t]*if \(shared\) sh_down\.step\(c_, w\.sff, w\.sout, T, r0, rows\);$",
                 text="""
-    if (remote_policy) {
-        RAD_ISSUE_N(c_, op_remote_join, rows, brows(b_remote, rows));
-        RAD_ISSUE_N(c_, op_remote_add, rows,
-                    brow_slice(w.h.x, r0, rows, g.n_embd),
-                    brows(b_remote, rows),
-                    brow_slice(w.h.x, r0, rows, g.n_embd));
-    }""",
+    if (remote_policy)
+        RAD_ISSUE_N(c_, op_remote_join, rows,
+                    brows(w.sorted, rows * k), brows(w.edn, rows * k));""",
                 guard=r"op_remote_join, rows",
                 expect_matches=1,
-                rationale="This line uniquely closes the local MoE gather; join/add must execute immediately before the existing collective.",
+                rationale="All local down writers have finished here; restore helper rows and their sorted-slot mapping before the unchanged engine gather.",
             ),
         ),
     ),
