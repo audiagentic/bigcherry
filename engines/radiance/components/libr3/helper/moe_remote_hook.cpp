@@ -1,9 +1,10 @@
 #include "moe_remote_hook.h"
 #include "moe_remote_shm.h"
 #include "rad_abi.h"
-#include "rad_moe_remote.h"
 
 #include <hip/hip_runtime.h>
+
+#include <dlfcn.h>
 
 #include <algorithm>
 #include <cmath>
@@ -29,12 +30,16 @@ struct RankState {
     bool ready = false;
 };
 
+using LayerMapHook = void (*)(int, int, const int32_t*);
+using SetLayerMapHook = void (*)(LayerMapHook);
+
 struct HookState {
     int fd = -1;
     void* map = MAP_FAILED;
     size_t bytes = 0;
     Header* hdr = nullptr;
     bool pinned = false;
+    SetLayerMapHook set_layer_map = nullptr;
     std::mutex mu;
     RankState rank[kMaxRanks];
 };
@@ -120,7 +125,19 @@ void register_mailbox() {
         return;
     }
     g.pinned = true;
-    rad_moe_remote_set_layer_map_hook(publish_layer_map);
+    dlerror();
+    g.set_layer_map = reinterpret_cast<SetLayerMapHook>(
+        dlsym(RTLD_DEFAULT, "rad_moe_remote_set_layer_map_hook"));
+    if (const char* e = dlerror(); e || !g.set_layer_map) {
+        std::fprintf(stderr,
+            "libr3: R3_MOE_HELPER engine does not export rad_moe_remote_set_layer_map_hook%s%s\n",
+            e ? ": " : "", e ? e : "");
+        (void)hipHostUnregister(g.map);
+        g.pinned = false;
+        g.hdr = nullptr;
+        return;
+    }
+    g.set_layer_map(publish_layer_map);
 
     /* The engine policy only decides whether the graph contains/uses the two mailbox ops.
      * All route selection and synchronisation stays on the rank GPU. */
@@ -187,7 +204,8 @@ void close_mailbox() {
         if (s.owner) (void)hipFree(s.owner);
         s = RankState{};
     }
-    rad_moe_remote_set_layer_map_hook(nullptr);
+    if (g.set_layer_map) g.set_layer_map(nullptr);
+    g.set_layer_map = nullptr;
     if (g.pinned) (void)hipHostUnregister(g.map);
     if (g.map != MAP_FAILED) ::munmap(g.map, g.bytes);
     if (g.fd >= 0) ::close(g.fd);
