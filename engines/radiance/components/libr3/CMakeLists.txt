@@ -82,7 +82,7 @@ set_source_files_properties(${r4d}/r4d_rows.cpp PROPERTIES COMPILE_DEFINITIONS
   "rad_plugin_info=r4d_up_plugin_info;rad_kernel_count=r4d_up_kernel_count;rad_kernel_at=r4d_up_kernel_at;rad_kernel_concurrent=r4d_up_kernel_concurrent")
 
 rad_add_plugin(libr3 kernels
-  SOURCES     ${declaration} ${CMAKE_CURRENT_SOURCE_DIR}/r3_registry.cpp ${CMAKE_CURRENT_SOURCE_DIR}/r3_ngram_host.cpp
+  SOURCES     ${declaration} ${CMAKE_CURRENT_SOURCE_DIR}/r3_registry.cpp ${CMAKE_CURRENT_SOURCE_DIR}/r3_ngram_host.cpp\n              ${CMAKE_CURRENT_SOURCE_DIR}/helper/moe_remote_hook.cpp
   HIP_SOURCES ${device}
   GPU_TARGETS ${R3_TARGETS}
   INCLUDES    ${r4d} ${CMAKE_CURRENT_SOURCE_DIR})
@@ -134,3 +134,22 @@ set_property(TARGET r3_selftest PROPERTY HIP_ARCHITECTURES ${R3_TARGETS})
 # Direct helper correctness/perf harness. It is separate from r3_selftest because it owns a non-rank HIP device.
 add_executable(r3_ngram_test EXCLUDE_FROM_ALL ${CMAKE_CURRENT_SOURCE_DIR}/r3_ngram_test.cpp)
 target_link_libraries(r3_ngram_test PRIVATE radiance::abi ${CMAKE_DL_LIBS})
+
+# Slice 2a remote-MoE reference helper. The executable consumes only the installed container ABI;
+# the hook is already compiled into libr3 above and registers only when R3_MOE_HELPER is non-empty.
+add_executable(r3_moe_helper ${CMAKE_CURRENT_SOURCE_DIR}/helper/r3_moe_helper.cpp)
+target_include_directories(r3_moe_helper PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/helper)
+target_link_libraries(r3_moe_helper PRIVATE radiance::abi)
+set_target_properties(r3_moe_helper PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON
+  RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/helpers)
+add_dependencies(libr3 r3_moe_helper)
+
+include(CTest)
+if(BUILD_TESTING)
+  find_package(Threads REQUIRED)
+  add_executable(r3_moe_shm_test EXCLUDE_FROM_ALL ${CMAKE_CURRENT_SOURCE_DIR}/helper/moe_remote_shm_test.cpp)
+  target_include_directories(r3_moe_shm_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/helper)
+  target_link_libraries(r3_moe_shm_test PRIVATE Threads::Threads)
+  set_target_properties(r3_moe_shm_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+  add_test(NAME r3_moe_shm_test COMMAND r3_moe_shm_test)
+endif()
