@@ -625,15 +625,16 @@ int main(int argc, char** argv) {
                     }
                 }
 
+                const uint32_t final_done = load(&h->lane[rank].done_sequence);
+                (void)gpu->collect_lane_timing(rank, final_done,
+                                               &lane_sample_us[rank],
+                                               &lane_samples[rank]);
                 const uint32_t queued = next - 1u;
                 store(&h->lane[rank].request_sequence, queued);
                 if (!gpu->sync_lane(rank)) {
                     g_stop = 1;
                     return;
                 }
-                (void)gpu->collect_lane_timing(rank, queued,
-                                               &lane_sample_us[rank],
-                                               &lane_samples[rank]);
                 uint64_t stats[3]{};
                 if (!gpu->lane_stats(rank, stats)) {
                     g_stop = 1;
