@@ -403,38 +403,61 @@ public:
         return pg.code.bytes + pg.scale.bytes + pd.code.bytes + pd.scale.bytes;
     }
 
-    bool upload(const std::vector<std::pair<uint32_t, uint32_t>>& owned) {
+    bool allocate(const std::vector<std::pair<uint32_t, uint32_t>>& owned) {
         constexpr size_t kLoadBounceBytes = 64ull * 1024ull * 1024ull;
         if (!load_bounce_.ensure(kLoadBounceBytes)) return false;
-        /* One arena for every resident expert: tens of thousands of small hipMallocs exhaust the
-         * device on allocation overhead long before the budget does. */
         size_t total = 0;
         for (auto [l, e] : owned) {
-            const int32_t es = model_.expert_slot(l, e);
-            if (es < 0) {
-                std::fprintf(stderr, "r3_moe_helper: protected expert (%u,%u) cannot be helper-owned\n", l, e);
-                return false;
-            }
             for (uint32_t rank = 0; rank < r3::moe_shm::kMaxRanks; ++rank) {
                 int64_t cb = 0, sb = 0;
-                if (!slice_bytes(model_.weight(l, e, 0), true, (uint32_t)es, rank, &cb, &sb)) return false;
+                if (!slice_bytes(model_.weight(l, e, 0), true, 0, rank, &cb, &sb)) return false;
                 total += arena_round(cb) + arena_round(sb);
-                if (!slice_bytes(model_.weight(l, e, 1), false, (uint32_t)es, rank, &cb, &sb)) return false;
+                if (!slice_bytes(model_.weight(l, e, 1), false, 0, rank, &cb, &sb)) return false;
                 total += arena_round(cb) + arena_round(sb);
             }
         }
         if (!hip_ok(hipMalloc(&arena_, total ? total : 16), "hipMalloc resident expert arena")) return false;
         persistent_.push_back(arena_);
         arena_size_ = total; arena_used_ = 0;
+        layer_loaded_.assign(model_.layers, 0);
+        const size_t slot_bytes = (size_t)model_.layers * r3::moe_shm::kExperts * sizeof(uint16_t);
+        const size_t table_bytes = (size_t)model_.layers * sizeof(DeviceLayerTables);
+        return d_expert_slot_.ensure(slot_bytes) &&
+               d_layer_tables_.ensure(table_bytes) &&
+               hip_ok(hipMemset(d_expert_slot_.p, 0xff, slot_bytes), "initialize expert slot map") &&
+               hip_ok(hipMemset(d_layer_tables_.p, 0, table_bytes), "initialize layer table index");
+    }
+
+    bool load_layer(uint32_t layer,
+                    const std::vector<std::pair<uint32_t, uint32_t>>& owned,
+                    const int32_t* slot_of_expert) {
+        using namespace r3::moe_shm;
+        if (layer >= model_.layers || !slot_of_expert || layer_loaded_.empty()) return false;
+        if (layer_loaded_[layer]) return true;
+
+        std::array<uint8_t, kExperts> seen{};
+        uint32_t nreg = 0;
+        for (uint32_t e = 0; e < kExperts; ++e) {
+            const int32_t es = slot_of_expert[e];
+            if (es < 0) continue;
+            if (es >= (int32_t)kExperts || seen[(uint32_t)es]) return false;
+            seen[(uint32_t)es] = 1;
+            nreg = std::max(nreg, (uint32_t)es + 1u);
+        }
+        for (uint32_t es = 0; es < nreg; ++es) if (!seen[es]) return false;
+
         for (auto [l, e] : owned) {
-            const int32_t es = model_.expert_slot(l, e);
-            if (es < 0) return false;
-            Expert& x = experts_[(size_t)l * r3::moe_shm::kExperts + e];
-            if (!upload_weight(model_.weight(l, e, 0), true, (uint32_t)es, &x.gu) ||
-                !upload_weight(model_.weight(l, e, 1), false, (uint32_t)es, &x.dn)) return false;
+            if (l != layer || slot_of_expert[e] < 0) continue;
+            const uint32_t es = (uint32_t)slot_of_expert[e];
+            Expert& x = experts_[(size_t)l * kExperts + e];
+            if (!upload_weight(model_.weight(l, e, 0), true, es, &x.gu) ||
+                !upload_weight(model_.weight(l, e, 1), false, es, &x.dn))
+                return false;
             x.live = true;
         }
-        return build_tables();
+        if (!build_layer_table(layer, slot_of_expert)) return false;
+        layer_loaded_[layer] = 1;
+        return true;
     }
 
     int compute(void* map, r3::moe_shm::Request* q) {
@@ -456,7 +479,7 @@ public:
             if (r.token < 0 || (uint32_t)r.token >= rows || r.expert < 0 ||
                 r.expert >= (int32_t)kExperts || !owns(q->layer, (uint32_t)r.expert)) return -EINVAL;
             if (r.slot >= kTopK) return -EINVAL;
-            const int32_t es = model_.expert_slot(q->layer, (uint32_t)r.expert);
+            const int32_t es = layer_slot(map, q->layer, (uint32_t)r.expert);
             if (es < 0 || es >= (int32_t)kExperts) return -EINVAL;
             const uint32_t flat = (uint32_t)r.token * kTopK + r.slot;
             ew[flat] = r.weight_bf16;
@@ -820,6 +843,7 @@ private:
     const RadKernelInfo* gather_ = nullptr;
     std::vector<Expert> experts_;
     std::vector<LayerTables> tables_;
+    std::vector<uint8_t> layer_loaded_;
     std::vector<void*> persistent_;
     void* arena_ = nullptr;
     size_t arena_size_ = 0, arena_used_ = 0;
@@ -1117,61 +1141,61 @@ private:
                                         hipMemcpyHostToDevice), "upload expert pointer table");
     }
 
-    bool build_tables() {
-        constexpr size_t nclass = r3::moe_shm::kExperts / 2;
-        std::vector<uint16_t> slot_map((size_t)model_.layers * r3::moe_shm::kExperts, 0xffffu);
-        for (uint32_t l = 0; l < model_.layers; ++l) {
-            for (uint32_t e = 0; e < r3::moe_shm::kExperts; ++e) {
-                const int32_t es = model_.expert_slot(l, e);
-                if (es >= 0) slot_map[(size_t)l * r3::moe_shm::kExperts + e] = (uint16_t)es;
-            }
-            LayerTables& lt = tables_[l];
-            lt.gu_code_dtype = gu_code_dtype_; lt.gu_scale_dtype = gu_scale_dtype_;
-            lt.dn_code_dtype = dn_code_dtype_; lt.dn_scale_dtype = dn_scale_dtype_;
-            for (uint32_t rank = 0; rank < r3::moe_shm::kMaxRanks; ++rank) {
-                for (uint32_t parity = 0; parity < 2; ++parity) {
-                    std::vector<void*> guc(nclass, nullptr), gus(nclass, nullptr);
-                    std::vector<void*> dnc(nclass, nullptr), dns(nclass, nullptr);
-                    for (uint32_t e = 0; e < r3::moe_shm::kExperts; ++e) {
-                        const int32_t es = model_.expert_slot(l, e);
-                        if (es < 0 || ((uint32_t)es & 1u) != parity) continue;
-                        const Expert& x = experts_[(size_t)l * r3::moe_shm::kExperts + e];
-                        if (!x.live) continue;
-                        const size_t ix = (size_t)es / 2;
-                        guc[ix] = x.gu[rank].code; gus[ix] = x.gu[rank].scale;
-                        dnc[ix] = x.dn[rank].code; dns[ix] = x.dn[rank].scale;
-                    }
-                    if (!build_one_table(guc, &lt.gu_code[rank][parity]) ||
-                        !build_one_table(gus, &lt.gu_scale[rank][parity]) ||
-                        !build_one_table(dnc, &lt.dn_code[rank][parity]) ||
-                        !build_one_table(dns, &lt.dn_scale[rank][parity])) return false;
+    bool build_layer_table(uint32_t l, const int32_t* slot_of_expert) {
+        using namespace r3::moe_shm;
+        if (l >= model_.layers || !slot_of_expert) return false;
+        constexpr size_t nclass = kExperts / 2;
+        std::array<uint16_t, kExperts> slot_map{};
+        slot_map.fill(0xffffu);
+        for (uint32_t e = 0; e < kExperts; ++e) {
+            const int32_t es = slot_of_expert[e];
+            if (es >= 0) slot_map[e] = (uint16_t)es;
+        }
+
+        LayerTables& lt = tables_[l];
+        lt.gu_code_dtype = gu_code_dtype_; lt.gu_scale_dtype = gu_scale_dtype_;
+        lt.dn_code_dtype = dn_code_dtype_; lt.dn_scale_dtype = dn_scale_dtype_;
+        for (uint32_t rank = 0; rank < kMaxRanks; ++rank) {
+            for (uint32_t parity = 0; parity < 2; ++parity) {
+                std::vector<void*> guc(nclass, nullptr), gus(nclass, nullptr);
+                std::vector<void*> dnc(nclass, nullptr), dns(nclass, nullptr);
+                for (uint32_t e = 0; e < kExperts; ++e) {
+                    const int32_t es = slot_of_expert[e];
+                    if (es < 0 || ((uint32_t)es & 1u) != parity) continue;
+                    const Expert& x = experts_[(size_t)l * kExperts + e];
+                    if (!x.live) continue;
+                    const size_t ix = (size_t)es / 2;
+                    guc[ix] = x.gu[rank].code; gus[ix] = x.gu[rank].scale;
+                    dnc[ix] = x.dn[rank].code; dns[ix] = x.dn[rank].scale;
                 }
+                if (!build_one_table(guc, &lt.gu_code[rank][parity]) ||
+                    !build_one_table(gus, &lt.gu_scale[rank][parity]) ||
+                    !build_one_table(dnc, &lt.dn_code[rank][parity]) ||
+                    !build_one_table(dns, &lt.dn_scale[rank][parity]))
+                    return false;
             }
         }
-        const size_t slot_bytes = slot_map.size() * sizeof(uint16_t);
-        if (!d_expert_slot_.ensure(slot_bytes) ||
-            !hip_ok(hipMemcpy(d_expert_slot_.p, slot_map.data(), slot_bytes,
-                              hipMemcpyHostToDevice), "upload expert slot map"))
+
+        const size_t slot_off = (size_t)l * kExperts * sizeof(uint16_t);
+        if (!hip_ok(hipMemcpy(static_cast<uint8_t*>(d_expert_slot_.p) + slot_off,
+                              slot_map.data(), sizeof(slot_map), hipMemcpyHostToDevice),
+                    "upload runtime expert slot map"))
             return false;
 
-        std::vector<DeviceLayerTables> device_tables(model_.layers);
-        for (uint32_t l = 0; l < model_.layers; ++l) {
-            for (uint32_t rank = 0; rank < r3::moe_shm::kMaxRanks; ++rank) {
-                for (uint32_t parity = 0; parity < 2; ++parity) {
-                    device_tables[l].gu_code[rank][parity] = tables_[l].gu_code[rank][parity];
-                    device_tables[l].gu_scale[rank][parity] = tables_[l].gu_scale[rank][parity];
-                    device_tables[l].dn_code[rank][parity] = tables_[l].dn_code[rank][parity];
-                    device_tables[l].dn_scale[rank][parity] = tables_[l].dn_scale[rank][parity];
-                }
+        DeviceLayerTables dt{};
+        for (uint32_t rank = 0; rank < kMaxRanks; ++rank) {
+            for (uint32_t parity = 0; parity < 2; ++parity) {
+                dt.gu_code[rank][parity] = lt.gu_code[rank][parity];
+                dt.gu_scale[rank][parity] = lt.gu_scale[rank][parity];
+                dt.dn_code[rank][parity] = lt.dn_code[rank][parity];
+                dt.dn_scale[rank][parity] = lt.dn_scale[rank][parity];
             }
-            device_tables[l].expert_slot =
-                static_cast<const uint16_t*>(d_expert_slot_.p) +
-                (size_t)l * r3::moe_shm::kExperts;
         }
-        const size_t bytes = device_tables.size() * sizeof(DeviceLayerTables);
-        return d_layer_tables_.ensure(bytes) &&
-               hip_ok(hipMemcpy(d_layer_tables_.p, device_tables.data(), bytes,
-                                hipMemcpyHostToDevice), "upload layer table index");
+        dt.expert_slot = static_cast<const uint16_t*>(d_expert_slot_.p) + (size_t)l * kExperts;
+        return hip_ok(hipMemcpy(static_cast<uint8_t*>(d_layer_tables_.p) +
+                                    (size_t)l * sizeof(DeviceLayerTables),
+                                &dt, sizeof(dt), hipMemcpyHostToDevice),
+                      "upload runtime layer table index");
     }
 
     bool owns(uint32_t layer, uint32_t expert) const {
