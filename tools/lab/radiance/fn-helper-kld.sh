@@ -31,7 +31,7 @@ run() {  # <name> <helper 0|1> <mode args...>
     if [ "$h" = 1 ]; then
         env ${HELPER_ENV:-} HIP_VISIBLE_DEVICES=2 RADIANCE_HOME="$home" R3_MOE_HELPER_MAX_ROWS=64 "$helper" "$model" > "$out/$name.helper.log" 2>&1 &
         hp=$!
-        until grep -q '^r3_moe_helper: ready ' "$out/$name.helper.log"; do
+        until grep -qE '^r3_moe_helper: (ready |waiting for engine runtime expert maps)' "$out/$name.helper.log"; do
             kill -0 "$hp" 2>/dev/null || { echo "HELPER_EXITED"; tail -5 "$out/$name.helper.log"; return 1; }
             sleep 2
         done

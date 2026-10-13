@@ -55,7 +55,7 @@ HIP_VISIBLE_DEVICES=2 RADIANCE_HOME="$home" \
     "$helper" "$model" >"$out/helper.log" 2>&1 &
 helper_pid=$!
 deadline=$((SECONDS + ${HELPER_TIMEOUT:-900}))
-until grep -q '^r3_moe_helper: ready ' "$out/helper.log"; do
+until grep -qE '^r3_moe_helper: (ready |waiting for engine runtime expert maps)' "$out/helper.log"; do
     if ! kill -0 "$helper_pid" 2>/dev/null; then
         echo "HELPER_EXITED" >&2; tail -40 "$out/helper.log" >&2; exit 1
     fi
@@ -64,7 +64,7 @@ until grep -q '^r3_moe_helper: ready ' "$out/helper.log"; do
     fi
     sleep 1
 done
-grep -E '^r3_moe_helper: (owns|ready) ' "$out/helper.log"
+grep -E "^r3_moe_helper: (owns|selected|ready|waiting)" "$out/helper.log"
 fi
 
 echo "== radiance: HIP devices 0,1; runtime-profile flashnext-2xtx"
