@@ -85,9 +85,11 @@ void register_mailbox() {
 
     /* The engine policy only decides whether the graph contains/uses the two mailbox ops.
      * All route selection and synchronisation stays on the rank GPU. */
-    (void)::setenv("R3_MOE_REMOTE_MIN_ROWS", "0", 1);
+    /* Explicit engine bounds are policy. Supply defaults only when the caller did not set them;
+     * in particular R3_MOE_REMOTE_MAX_ROWS=0 must disable hand-off without disabling the helper. */
+    (void)::setenv("R3_MOE_REMOTE_MIN_ROWS", "0", 0);
     const std::string mr = std::to_string((long long)max_rows());
-    (void)::setenv("R3_MOE_REMOTE_MAX_ROWS", mr.c_str(), 1);
+    (void)::setenv("R3_MOE_REMOTE_MAX_ROWS", mr.c_str(), 0);
     std::fprintf(stderr,
         "libr3: R3_MOE_HELPER GPU mailbox ready, %u owned experts, decode rows <= %lld\n",
         g.hdr->owned_count, (long long)max_rows());
