@@ -6,6 +6,8 @@ struct R3MoeMailboxDevice {
     void* mailbox = nullptr;
     const uint8_t* owner = nullptr;
     uint32_t* sequence = nullptr;
+    uint32_t* published = nullptr;
+    uint32_t max_rows = 0;
     uint32_t rank = 0;
 };
 
