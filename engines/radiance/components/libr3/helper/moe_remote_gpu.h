@@ -149,6 +149,19 @@ public:
     }
 
     bool upload(const std::vector<std::pair<uint32_t, uint32_t>>& owned) {
+        /* One arena for every resident expert: tens of thousands of small hipMallocs exhaust the
+         * device on allocation overhead long before the budget does. */
+        size_t total = 0;
+        for (auto [l, e] : owned) {
+            WeightPlan pg, pd;
+            if (!plan_weight(model_.weight(l, e, 0), true, &pg) || !plan_weight(model_.weight(l, e, 1), false, &pd))
+                return false;
+            total += arena_round(pg.code.bytes) + arena_round(pg.scale.bytes) +
+                     arena_round(pd.code.bytes) + arena_round(pd.scale.bytes);
+        }
+        if (!hip_ok(hipMalloc(&arena_, total ? total : 16), "hipMalloc resident expert arena")) return false;
+        persistent_.push_back(arena_);
+        arena_size_ = total; arena_used_ = 0;
         for (auto [l, e] : owned) {
             Expert& x = experts_[(size_t)l * r3::moe_shm::kExperts + e];
             if (!upload_weight(model_.weight(l, e, 0), true, &x.gu) ||
@@ -309,6 +322,8 @@ private:
     std::vector<Expert> experts_;
     std::vector<LayerTables> tables_;
     std::vector<void*> persistent_;
+    void* arena_ = nullptr;
+    size_t arena_size_ = 0, arena_used_ = 0;
 
     Buffer d_act_, d_aq_, d_as_, d_sorted_, d_off_, d_ew_, d_gu_;
     Buffer d_mid_, d_mid_s_, d_mid_rank_, d_down_, d_result_, scratch_;
@@ -394,6 +409,19 @@ private:
         return true;
     }
 
+    static size_t arena_round(int64_t n) { return ((size_t)(n > 0 ? n : 1) + 255u) & ~(size_t)255u; }
+
+    void* arena_take(size_t n) {
+        const size_t r = arena_round((int64_t)n);
+        if (!arena_ || arena_used_ + r > arena_size_) {
+            std::fprintf(stderr, "r3_moe_helper: resident expert arena overflow\n");
+            return nullptr;
+        }
+        void* p = (uint8_t*)arena_ + arena_used_;
+        arena_used_ += r;
+        return p;
+    }
+
     void* alloc_persistent(size_t n) {
         void* p = nullptr;
         if (!hip_ok(hipMalloc(&p, n ? n : 16), "hipMalloc resident expert")) return nullptr;
@@ -465,8 +493,8 @@ private:
             std::fprintf(stderr, "r3_moe_helper: libr4d refused expert relayout\n");
             return false;
         }
-        out->code = alloc_persistent(code.size());
-        out->scale = alloc_persistent(scale.size());
+        out->code = arena_take(code.size());
+        out->scale = arena_take(scale.size());
         if (!out->code || !out->scale) return false;
         if (!hip_ok(hipMemcpy(out->code, code.data(), code.size(), hipMemcpyHostToDevice),
                     "upload expert codes") ||
