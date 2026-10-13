@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <array>
 #include <cerrno>
+#include <chrono>
 #include <cmath>
 #include <csignal>
 #include <cstdio>
@@ -479,6 +480,8 @@ int main(int argc, char** argv) {
                  cpu ? "host fp32 reference" : gpu->arch().c_str());
 
     uint32_t seq = 1;
+    uint64_t stat_req = 0, stat_rows = 0, stat_routes = 0;
+    double stat_us = 0.0;
     while (!g_stop) {
         Request* q = request(map, seq);
         while (!g_stop && load(&q->sequence) != seq) {
@@ -486,12 +489,18 @@ int main(int argc, char** argv) {
             if (load(&q->sequence) != seq) (void)futex_wait(&h->publish_sequence, seen);
         }
         if (g_stop) break;
+        const auto t0 = std::chrono::steady_clock::now();
         q->status = cpu ? compute_host(model, map, q) : gpu->compute(map, q);
+        stat_us += std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - t0).count();
+        ++stat_req; stat_rows += q->rows; stat_routes += q->route_count;
         store(&q->completion_sequence, seq);
         (void)futex_wake(&q->completion_sequence);
         if (++seq == 0) break;
     }
 
+    std::fprintf(stderr, "r3_moe_helper: served %llu requests, %llu rows, %llu routes, compute %.1f ms (%.1f us a request)\n",
+                 (unsigned long long)stat_req, (unsigned long long)stat_rows, (unsigned long long)stat_routes,
+                 stat_us / 1000.0, stat_req ? stat_us / (double)stat_req : 0.0);
     munmap(map, lay.bytes);
     close(fd);
     shm_unlink(name);

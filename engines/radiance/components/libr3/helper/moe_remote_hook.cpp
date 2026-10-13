@@ -1,6 +1,8 @@
 #include "moe_remote_shm.h"
 #include "rad_moe_remote.h"
 
+#include <atomic>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -24,8 +26,28 @@ struct HookState {
     Header* hdr = nullptr;
     HipMemcpy2D copy2d = nullptr;
     std::mutex submit_mu[kMaxRanks];
+    /* Per-rank exchange cost, printed at unload: calls, rows, host copy of activations, wait for results. */
+    std::atomic<uint64_t> calls[kMaxRanks]{}, rows[kMaxRanks]{}, copy_ns[kMaxRanks]{}, wait_ns[kMaxRanks]{};
+    std::atomic<uint32_t> rank_of[kRingSlots]{};
 };
 HookState g;
+
+uint64_t now_ns() {
+    return (uint64_t)std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+void report_hook() __attribute__((destructor));
+void report_hook() {
+    if (!g.hdr) return;
+    for (uint32_t r = 0; r < kMaxRanks; ++r) {
+        const uint64_t c = g.calls[r].load();
+        std::fprintf(stderr, "libr3: R3_MOE_HELPER rank %u: %llu calls, %llu rows, copy %.1f ms, wait %.1f ms (%.1f us a call)\n",
+                     r, (unsigned long long)c, (unsigned long long)g.rows[r].load(),
+                     g.copy_ns[r].load() / 1e6, g.wait_ns[r].load() / 1e6,
+                     c ? (g.copy_ns[r].load() + g.wait_ns[r].load()) / 1e3 / (double)c : 0.0);
+    }
+}
 
 bool enabled() {
     const char* e = std::getenv("R3_MOE_HELPER");
@@ -65,8 +87,11 @@ RadMoeRemoteHandle submit(void* user, int layer, int rank, int64_t rows, int64_t
 
     void* act = ptr<void>(s->map, s->hdr->activation_offset[rank]);
     const size_t row_bytes = kHidden * sizeof(uint16_t);
+    const uint64_t t0 = now_ns();
     if (!s->copy2d || s->copy2d(act, row_bytes, activation, (size_t)activation_stride_bytes,
                                 row_bytes, (size_t)rows, kHipMemcpyDeviceToHost) != 0) return nullptr;
+    s->copy_ns[rank] += now_ns() - t0; s->calls[rank] += 1; s->rows[rank] += (uint64_t)rows;
+    s->rank_of[seq % kRingSlots] = (uint32_t)rank;
 
     q->status = 0; q->layer = (uint32_t)layer; q->rank = (uint32_t)rank;
     q->rank_count = kMaxRanks; q->rows = (uint32_t)rows; q->hidden = kHidden;
@@ -87,7 +112,9 @@ const void* wait(void* user, RadMoeRemoteHandle handle) {
     const uint32_t seq = (uint32_t)(uintptr_t)handle;
     if (!s || !s->hdr || !seq) return nullptr;
     Request* q = request(s->map, seq);
+    const uint64_t t0 = now_ns();
     wait_until(&q->completion_sequence, seq);
+    s->wait_ns[s->rank_of[seq % kRingSlots].load() % kMaxRanks] += now_ns() - t0;
     if (q->status != 0 || q->sequence != seq || q->rank >= kMaxRanks) return nullptr;
     return ptr<void>(s->map, q->result_offset[q->rank]);
 }
