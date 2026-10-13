@@ -28,9 +28,11 @@ static const RadOperandSpec kPublishOperands[] = {
 static const RadParamSpec kJoinParams[] = {
     {"M", RAD_P_INT, RAD_REQUIRED},
     {"n", RAD_P_INT, RAD_REQUIRED},
+    {"top_k", RAD_P_INT, RAD_REQUIRED},
 };
 static const RadOperandSpec kJoinOperands[] = {
-    {"remote", RAD_OPD_OUT, 0},
+    {"sorted", RAD_OPD_OUT, 0},
+    {"down", RAD_OPD_OUT, 0},
 };
 static const RadOpSchema kSchemas[] = {
     {"moe_mailbox_publish", kPublishParams, NELEM(kPublishParams),
@@ -38,7 +40,7 @@ static const RadOpSchema kSchemas[] = {
      "publish helper-owned MoE routes and activations to the mapped GPU mailbox"},
     {"moe_mailbox_join", kJoinParams, NELEM(kJoinParams),
      kJoinOperands, NELEM(kJoinOperands),
-     "wait for the helper GPU lane and copy its BF16 partial from the mapped mailbox"},
+     "wait for the helper GPU lane and restore its BF16 expert rows before the engine gather"},
 };
 
 __device__ __forceinline__ void store_sys_rel(uint32_t* p, uint32_t v) {
@@ -136,29 +138,49 @@ __global__ void mailbox_publish_kernel(
     }
 }
 
-__global__ void mailbox_join_kernel(
-    uint8_t* base, const uint32_t* sequence, uint32_t* published, uint32_t rank,
-    uint16_t* out, uint64_t elems) {
-    __shared__ uint32_t seq;
-    __shared__ uint32_t active;
+__global__ void mailbox_join_wait_kernel(
+    uint8_t* base, const uint32_t* sequence, const uint32_t* published, uint32_t rank) {
+    if (blockIdx.x || threadIdx.x || !*published) return;
     Header* h = reinterpret_cast<Header*>(base);
-    if (threadIdx.x == 0) {
-        active = *published;
-        seq = active ? *sequence : 0;
-        unsigned long long spins = 0;
-        while (active && (int32_t)(load_sys_acq(&h->lane[rank].done_sequence) - seq) < 0) {
-            __builtin_amdgcn_s_sleep(2);
-            if (++spins > 4000000000ULL) __builtin_trap();
-        }
+    const uint32_t seq = *sequence;
+    unsigned long long spins = 0;
+    while ((int32_t)(load_sys_acq(&h->lane[rank].done_sequence) - seq) < 0) {
+        __builtin_amdgcn_s_sleep(2);
+        if (++spins > 4000000000ULL) __builtin_trap();
     }
-    __syncthreads();
+}
+
+__global__ void mailbox_join_rows_kernel(
+    uint8_t* base, const uint32_t* sequence, const uint32_t* published, uint32_t rank,
+    int32_t* sorted, uint16_t* down, uint32_t rows, uint32_t hidden, uint32_t top_k) {
+    if (!*published) return;
+    Header* h = reinterpret_cast<Header*>(base);
+    const uint32_t seq = *sequence;
+    if ((int32_t)(load_sys_acq(&h->lane[rank].done_sequence) - seq) < 0) __builtin_trap();
+
+    Request* ring = reinterpret_cast<Request*>(base + h->ring_offset);
+    const Request* q = ring + rank * kLaneSlots + ((seq - 1u) % kLaneSlots);
+    const uint32_t nr = q->route_count;
+    const uint32_t total = rows * top_k;
+    const uint32_t j = blockIdx.x;
+    if (q->sequence != seq || q->rank != rank || q->rows != rows || q->hidden != hidden ||
+        nr == 0 || nr > total || j >= nr) return;
+
+    const Route* route = reinterpret_cast<const Route*>(base + q->route_offset);
+    const Route r = route[j];
+    if (r.token < 0 || (uint32_t)r.token >= rows || r.slot >= top_k) __builtin_trap();
+    const uint32_t flat = (uint32_t)r.token * top_k + r.slot;
+    const uint32_t dst_row = total - nr + j;
+    if (threadIdx.x == 0) sorted[dst_row] = (int32_t)flat;
 
     const uint16_t* src = reinterpret_cast<const uint16_t*>(
-        base + h->result_offset[rank * kMaxRanks + rank]);
-    for (uint64_t i = threadIdx.x; i < elems; i += blockDim.x)
-        out[i] = active ? src[i] : 0;
-    __syncthreads();
-    if (threadIdx.x == 0) *published = 0;
+        base + h->result_offset[rank * kMaxRanks + rank]) + (uint64_t)flat * hidden;
+    uint16_t* dst = down + (uint64_t)dst_row * hidden;
+    for (uint32_t c = threadIdx.x; c < hidden; c += blockDim.x) dst[c] = src[c];
+}
+
+__global__ void mailbox_join_finish_kernel(uint32_t* published) {
+    if (!blockIdx.x && !threadIdx.x) *published = 0;
 }
 
 long long geti(const RadArgs* a, const char* key, long long bad = -1) {
@@ -208,17 +230,31 @@ int publish_launch(const RadArgs* a, RadStream stream) {
 }
 
 int join_launch(const RadArgs* a, RadStream stream) {
-    if (!a || !a->instance || !stream || a->n_t != 1) return RAD_E_INVAL;
+    if (!a || !a->instance || !stream || a->n_t != 2) return RAD_E_INVAL;
     auto* d = static_cast<R3MoeMailboxDevice*>(a->instance);
+    const long long rows = geti(a, "M");
     const long long hidden = geti(a, "n");
-    const long long rows = a->t[0].rank > 0 ? a->t[0].shape[0] : 0;
-    if (rows <= 0 || rows > (long long)kMaxRows || hidden != (long long)kHidden ||
-        !a->t[0].data || a->t[0].rank < 2 || a->t[0].shape[1] != hidden ||
-        a->t[0].dtype != RAD_BF16 || !rad_tensor_is_contiguous(&a->t[0]))
+    const long long top_k = geti(a, "top_k");
+    const long long total = rows * top_k;
+    if (rows <= 0 || rows > (long long)d->max_rows || hidden != (long long)kHidden ||
+        top_k != (long long)kTopK || total <= 0 || total > (long long)kMaxRows ||
+        !a->t[0].data || !a->t[1].data || a->t[0].rank != 1 || a->t[1].rank < 2 ||
+        a->t[0].shape[0] != total || a->t[1].shape[0] != total ||
+        a->t[1].shape[1] != hidden || a->t[0].dtype != RAD_I32 ||
+        a->t[1].dtype != RAD_BF16 || !rad_tensor_is_contiguous(&a->t[0]) ||
+        !rad_tensor_is_contiguous(&a->t[1]))
         return RAD_E_SHAPE;
-    hipLaunchKernelGGL(mailbox_join_kernel, dim3(1), dim3(256), 0, (hipStream_t)stream,
-                       static_cast<uint8_t*>(d->mailbox), d->sequence, d->published, d->rank,
-                       static_cast<uint16_t*>(a->t[0].data), (uint64_t)rows * (uint64_t)hidden);
+
+    hipLaunchKernelGGL(mailbox_join_wait_kernel, dim3(1), dim3(1), 0, (hipStream_t)stream,
+                       static_cast<uint8_t*>(d->mailbox), d->sequence, d->published, d->rank);
+    hipLaunchKernelGGL(mailbox_join_rows_kernel, dim3((uint32_t)total), dim3(256), 0,
+                       (hipStream_t)stream, static_cast<uint8_t*>(d->mailbox),
+                       d->sequence, d->published, d->rank,
+                       static_cast<int32_t*>(a->t[0].data),
+                       static_cast<uint16_t*>(a->t[1].data),
+                       (uint32_t)rows, (uint32_t)hidden, (uint32_t)top_k);
+    hipLaunchKernelGGL(mailbox_join_finish_kernel, dim3(1), dim3(1), 0, (hipStream_t)stream,
+                       d->published);
     return hipGetLastError() == hipSuccess ? RAD_OK : RAD_E_DEVICE;
 }
 
@@ -242,9 +278,9 @@ const RadKernelInfo kJoin = [] {
     x.name = "r3_moe_mailbox_join";
     x.op = "moe_mailbox_join";
     x.family = "moe";
-    x.computes = "GPU-only remote MoE mailbox completion join";
-    x.shape = "decode rows, hidden=2560";
-    x.dtypes = "bf16";
+    x.computes = "GPU-only remote MoE row restore before engine gather";
+    x.shape = "decode rows, hidden=2560, top_k=10";
+    x.dtypes = "i32,bf16";
     x.domain = RAD_DOMAIN_DEVICE;
     x.priority = 1000;
     x.init = mailbox_init;
