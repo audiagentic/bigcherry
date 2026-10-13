@@ -12,9 +12,11 @@ capability = "build"
 validator = "build"
 required = true
 
-# PNRO10-SPEC-CTX-OTHER-DEVICES requires correctness.greedy_parity only (no
-# activation marker -- 1261's fix is unconditional whenever a draft/MTP
-# context is created, so there is no opt-in trace to probe).
+# PNRO10-SPEC-CTX-OTHER-DEVICES currently checks greedy parity only.
+# This is NOT proof of activation: 1261 emits BIGCHERRY_PATCH_HIT under
+# BIGCHERRY_PATCH_TRACE only if a missing ctx_other device is appended.
+# Same-device tensor-split MTP is a negative control, not a positive lane.
+# See PNRO10/TESTING.md; patch placement is currently BLOCKED_SOURCE.
 [[check]]
 id = "correctness"
 capability = "correctness"

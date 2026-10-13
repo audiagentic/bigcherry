@@ -1,25 +1,16 @@
 # 1261_nro10_spec_ctx_other_devices
 
-**Status:** untested
-**Plan item:** PNRO10
+**Status:** untested / BLOCKED_SOURCE (2026-10-14)
+**Authoritative plan:** PNRO10
 
-## What it does
+## Scope and current defect
 
-Adds the `ctx_other` (target context) model devices to the draft context's
-scheduler backend list in `llama-context.cpp`, so shared tensors between a
-speculative draft context and its target context can be scheduled on valid
-backends. Devices are deduplicated by backend device handle, preserving the
-existing ordering relative to ACCEL/CPU backends.
+Register target `ctx_other` model devices missing from a separate draft context's scheduler, with physical-device deduplication and owned `ggml_backend_dev_init` instances. Intended order: ordinary draft GPUs → missing target GPUs → ACCEL → CPU.
 
-## Why
+At llama.cpp b11552, `patch.py`'s `insert_after` of `backends.emplace_back(backend);` (`expect_matches=2, occurrence=0`) places the enumeration **inside** the ordinary GPU loop. Empty draft list adds none; a later overlapping ordinary device can be added twice. The earlier documentation claiming this placement was fixed is stale. Do not promote or claim correctness based on an MTP same-device benchmark.
 
-When a speculative context (MTP/draft) has a `ctx_other` target, shared
-tensors between the two contexts must be schedulable on backends both
-contexts can use. The target context's model devices may include backends the
-draft context does not have (e.g., a different GPU partition); without adding
-them to the draft's backend list, shared tensors could be un-schedulable.
+The `const llama_model *` fix is present. `BIGCHERRY_PATCH_TRACE` emits `BIGCHERRY_PATCH_HIT patch=1261_nro10 path=ctx_other_backend` only when a missing device is appended. No unconditional activation is possible. This does not replace 1286's Meta borrowed-tensor copy.
 
-## Upstream
+**Next gate:** move the insertion immediately before the unique ACCEL comment (outside the GPU loop), then run static placement/unique-device fixtures, patch composition, gfx1100 build, and a foreign-device draft positive control with numerical and lifetime parity. If no eligible foreign-device draft exists, `AWAIT_ELIGIBLE_DRAFT`; no hardware queue or performance claim.
 
-Local (origin `local`); PNRO10. Anchored on the `backends.emplace_back(backend)`
-site in `llama-context.cpp`.
+**Upstream reference:** [llama.cpp #26636](https://github.com/ggml-org/llama.cpp/pull/26636) (open; diff places the block after the ordinary loop).
