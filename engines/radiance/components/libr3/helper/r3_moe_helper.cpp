@@ -518,6 +518,9 @@ bool select_owned(const Container& f, r3_moe_gpu::Runner* gpu, uint64_t budget, 
         uint8_t& was = seen[(size_t)l * kExperts + e];
         if (was) continue;
         was = 1;
+        /* Protected BF16 experts are the engine's separate trailing run. The helper's resident
+         * kernel serves only regular w4 experts, and their compact slot is what defines TP class. */
+        if (f.expert_slot(l, e) < 0) continue;
         const int64_t bytes = gpu ? gpu->expert_bytes(l, e) : canonical_expert_bytes(f, l, e);
         if (bytes <= 0) {
             std::fprintf(stderr, "r3_moe_helper: expert (%u,%u) cannot be laid out as w4nl64a8h\n", l, e);
