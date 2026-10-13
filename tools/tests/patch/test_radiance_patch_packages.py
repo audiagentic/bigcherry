@@ -53,10 +53,10 @@ PIN_BLOBS = {
         "core/engine.cpp": ("3ba2831", "20767f7"),
     },
     "0002_moe_remote_handoff": {
-        "abi/rad_moe_remote.h": (None, "c79b5b1"),
+        "abi/rad_moe_remote.h": (None, "7403ad9"),
         "arch/common/rad_block_hc.h": ("c19c8b6", "df35634"),
-        "arch/common/rad_block_moe_fp8.h": ("51b7c28", "d05f0be"),
-        "core/place/moe_remote.cpp": (None, "5792381"),
+        "arch/common/rad_block_moe_fp8.h": ("51b7c28", "644b669"),
+        "core/place/moe_remote.cpp": (None, "efef1e5"),
     },
     "0003_mtp_full_head_switch": {
         "arch/common/rad_block_mtp_fp8.h": ("dac7f12", "8e1f89e"),
@@ -142,6 +142,19 @@ class TestRadiancePatchPackages(unittest.TestCase):
                         self.assertNotIn("rfused = !remote_policy", moe)
                         self.assertNotIn("!remote_policy && op_topk_scatter", moe)
                         self.assertIn("{w.h.x}, {w.h.x});", moe)
+                        self.assertIn(
+                            "rad_moe_remote_layer_map(l, (int)ne, remote_slot.data());", moe
+                        )
+                        self.assertIn(
+                            "remote_slot[(size_t)reg[(size_t)s]] = (int32_t)s;", moe
+                        )
+                        self.assertNotIn(
+                            "n_reg == (int64_t)c.n_expert", moe
+                        )
+                        abi = (root / "abi/rad_moe_remote.h").read_text(encoding="utf-8")
+                        core = (root / "core/place/moe_remote.cpp").read_text(encoding="utf-8")
+                        self.assertIn("rad_moe_remote_set_layer_map_hook", abi)
+                        self.assertIn("g_layer_map_hook.store(hook, std::memory_order_release);", core)
                         op_hq = moe.index("if (op_hq)")
                         pub = moe.index("RAD_ISSUE_N(c_, op_remote_publish, rows")
                         routed_gemm = moe.index("const int64_t n4[4]", pub)
@@ -207,6 +220,9 @@ class TestRadiancePatchPackages(unittest.TestCase):
         self.assertIn('R3_MOE_HELPER poison', hook)
         self.assertIn('R3_MOE_HELPER_SHADOW enabled', hook)
         self.assertIn('R3_MOE_HELPER_SHADOW layer=', hook)
+        self.assertIn('rad_moe_remote_set_layer_map_hook(publish_layer_map)', hook)
+        self.assertIn('layer_map_consumed', hook)
+        self.assertIn('slot_map[(uint32_t)le] < 0', ops)
         self.assertIn('{"aq", RAD_OPD_IN, 0}', ops)
         self.assertIn('{"as", RAD_OPD_IN, 0}', ops)
         self.assertIn('{"aq_base", RAD_OPD_IN, 0}', ops)
@@ -215,6 +231,9 @@ class TestRadiancePatchPackages(unittest.TestCase):
         gpu = (helper / "moe_remote_gpu.h").read_text(encoding="utf-8")
         self.assertIn('R3_MOE_HELPER_POISON', gpu)
         self.assertIn('poison ? (uint16_t)0x447au : down[i]', gpu)
+        self.assertIn('build_layer_table', gpu)
+        self.assertIn('slot_of_expert', gpu)
+        self.assertNotIn('model_.expert_slot', gpu)
         self.assertIn('stage_compare_activation', gpu)
         self.assertIn('q, act_q, act_s', gpu)
         component = (REPO / "engines" / "radiance" / "components" / "libr3" / "component.toml").read_text(encoding="utf-8")
