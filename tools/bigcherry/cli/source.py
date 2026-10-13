@@ -168,7 +168,7 @@ def cmd_pull(args: Namespace) -> int:
         from ..core.context import ProjectContext  # noqa: PLC0415
 
         warning = upstream.sync_mirror_ref(
-            ProjectContext.resolve().upstream_repo, ref, record.revision,
+            ProjectContext.resolve(engine="llamacpp").upstream_repo, ref, record.revision,
         )
         if warning:
             print(f"pull: WARNING {warning}", file=sys.stderr)

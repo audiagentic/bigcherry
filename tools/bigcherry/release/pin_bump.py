@@ -352,7 +352,7 @@ def acquire_maintenance_lock(project_root: Path) -> tree_activity.MaintenanceLoc
     tripping its own "already held" check.)"""
     from ..core.context import ProjectContext
 
-    context = ProjectContext.resolve(project_root=project_root)
+    context = ProjectContext.resolve(engine="llamacpp", project_root=project_root)
     return tree_activity.MaintenanceLock(context.work_root, context.project_root)
 
 
@@ -365,7 +365,7 @@ def _sync_campaign_mirror_best_effort(*, target_ref: str, revision: str) -> None
     from ..source import upstream
 
     warning = upstream.sync_mirror_ref(
-        ProjectContext.resolve().upstream_repo, target_ref, revision or None
+        ProjectContext.resolve(engine="llamacpp").upstream_repo, target_ref, revision or None
     )
     if warning:
         print(f"pin-bump: WARNING {warning}", file=sys.stderr)

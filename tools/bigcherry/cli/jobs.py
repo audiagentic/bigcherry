@@ -42,7 +42,7 @@ def _load_document(path: Path) -> dict[str, object]:
 
 
 def build_service() -> tuple[JobService, object]:
-    context = ProjectContext.resolve()
+    context = ProjectContext.resolve(engine="llamacpp")
     jobs_root = Path(
         os.environ.get("BIGCHERRY_JOBS_ROOT", context.work_root / "jobs")
     ).resolve()
@@ -201,7 +201,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         service, registry = build_service()
-        context = ProjectContext.resolve()
+        context = ProjectContext.resolve(engine="llamacpp")
         if args.action in {"plan", "validate", "submit"}:
             batch = batch_from_mapping(_load_document(args.spec))
             plan = service.plan_batch(batch)

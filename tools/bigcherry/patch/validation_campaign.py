@@ -124,7 +124,7 @@ def _materialize_framework_source(args: argparse.Namespace, descriptor, cfg) -> 
 
     from bigcherry.core.context import ProjectContext
 
-    base_repo = ProjectContext.resolve(
+    base_repo = ProjectContext.resolve(engine="llamacpp", 
         work_root=os.environ.get("BC_CACHE")
     ).upstream_repo
     baseline_source = "bigcherry-qualification-tuning"
@@ -1425,7 +1425,7 @@ def main(argv: list[str] | None = None) -> int:
     _add_benchmark_and_producer_arguments(parser)
     args = parser.parse_args(argv)
     if args.worktree_root is None:
-        args.worktree_root = ProjectContext.resolve().work_root / "worktrees"
+        args.worktree_root = ProjectContext.resolve(engine="llamacpp").work_root / "worktrees"
     if args.validation_producer is not None:
         return _dispatch_validation_producer(parser, args)
     if (

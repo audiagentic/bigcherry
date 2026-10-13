@@ -87,7 +87,7 @@ class _Harness:
 
     def __init__(self, directory: Path) -> None:
         self.directory = directory
-        self.context = ProjectContext(
+        self.context = ProjectContext(engine="llamacpp", 
             project_root=directory,
             config_path=directory / "recipes.toml",
             artifacts_root=directory / "artifacts",

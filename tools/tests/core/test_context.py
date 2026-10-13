@@ -17,7 +17,7 @@ class ProjectContextTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             work = root / "work"
-            ctx = ProjectContext.resolve(
+            ctx = ProjectContext.resolve(engine="llamacpp", 
                 project_root=root,
                 config_path=root / "cfg.toml",
                 artifacts_root=root / "artifacts",
@@ -33,7 +33,7 @@ class ProjectContextTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             with self.assertRaisesRegex(ValueError, "must be disjoint"):
-                ProjectContext.resolve(work_root=root, upstream_repo=root)
+                ProjectContext.resolve(engine="llamacpp", work_root=root, upstream_repo=root)
 
     def test_nested_roots_are_rejected_in_either_direction(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -44,12 +44,12 @@ class ProjectContextTests(unittest.TestCase):
             ):
                 with self.subTest(work=work, upstream=upstream):
                     with self.assertRaisesRegex(ValueError, "must be disjoint"):
-                        ProjectContext.resolve(work_root=work, upstream_repo=upstream)
+                        ProjectContext.resolve(engine="llamacpp", work_root=work, upstream_repo=upstream)
 
     def test_sibling_roots_remain_valid(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            ctx = ProjectContext.resolve(
+            ctx = ProjectContext.resolve(engine="llamacpp", 
                 work_root=root / "work",
                 upstream_repo=root / "work-old" / "upstream.git",
             )

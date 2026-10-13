@@ -58,7 +58,7 @@ def main(argv: list[str] | None = None) -> int:
     run_id = args.run_id or uuid.uuid4().hex[:12]
     print(f"=== RE14 real run {run_id} ===")
 
-    context = ProjectContext.resolve(work_root=args.work_root, upstream_repo=args.upstream_repo)
+    context = ProjectContext.resolve(engine="llamacpp", work_root=args.work_root, upstream_repo=args.upstream_repo)
     cfg = config.load(context.config_path)
     store = ArtifactStore(context.work_root / "artifacts-store")
 

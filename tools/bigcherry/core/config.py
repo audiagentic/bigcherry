@@ -677,3 +677,19 @@ def load(path: str | Path) -> Config:
         stacks,
         engine=engine,
     )
+
+
+def engine_defining(kind: str, name: str) -> str:
+    """The engine whose recipes define ``[<kind>.<name>]`` (kind: "source" or "campaign"). Names are looked up in
+    every declared engine's recipes; none or more than one is an error, never a guess."""
+    found = []
+    for engine in engines.names(_REPOSITORY):
+        recipes = engines.load(_REPOSITORY, engine).recipes_path(_REPOSITORY)
+        document = load(recipes)
+        table = document.sources if kind == "source" else document.campaigns
+        if name in table:
+            found.append(engine)
+    if len(found) != 1:
+        where = ", ".join(found) if found else "no engine"
+        raise ConfigError(f"{kind} {name!r} is defined by {where}; it must be defined by exactly one engine")
+    return found[0]

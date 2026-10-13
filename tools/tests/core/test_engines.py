@@ -19,7 +19,7 @@ def _declare(root: Path, name: str, body: str) -> None:
     path.write_text(body, encoding="utf-8")
 
 
-_GOOD = 'schema = 1\nname = "{name}"\nupstream = "https://example.invalid/{name}"\n\n[layout]\npatches = "{p}"\noverlay = "{o}"\nvendor = "{v}"\nrecipes = "{v}.recipes.toml"\n\n'
+_GOOD = 'schema = 1\nname = "{name}"\nupstream = "https://example.invalid/{name}"\n\n[layout]\npatches = "{p}"\noverlay = "{o}"\nvendor = "{v}"\nrecipes = "{v}.recipes.toml"\n\n[build]\ntargets-option = "AMDGPU_TARGETS"\nbinary = "bin/server"\n\n'
 _GOOD += '[serve]\nbinary = "bin/server"\nmodel-flag = "--model"\nhost-flag = "--host"\nport-flag = "--port"\nhealth = "/health"\nshutdown = "sigint"\n'
 
 

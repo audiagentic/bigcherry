@@ -84,7 +84,7 @@ def _run_real_lane(root: Path):
     upstream, revision = _init_upstream(root)
     project = root / "project"
     _init_project(project)
-    context = ProjectContext.resolve(
+    context = ProjectContext.resolve(engine="llamacpp", 
         project_root=project, config_path=root / "recipes.toml",
         artifacts_root=root / "artifacts", work_root=root / "work",
         upstream_repo=upstream)
@@ -123,7 +123,7 @@ def _run_real_lane_with_generate(root: Path, *, architectures: tuple[str, ...]):
     upstream, revision = _init_upstream(root)
     project = root / "project"
     _init_project(project)
-    context = ProjectContext.resolve(
+    context = ProjectContext.resolve(engine="llamacpp", 
         project_root=project, config_path=root / "recipes.toml",
         artifacts_root=root / "artifacts", work_root=root / "work",
         upstream_repo=upstream)

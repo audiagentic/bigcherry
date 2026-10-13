@@ -66,7 +66,7 @@ class PathArgumentTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             args = self._parsed(["--workdir", str(Path(tmp) / "run")])
         self.assertEqual(
-            args.worktree_root, ProjectContext.resolve().work_root / "worktrees"
+            args.worktree_root, ProjectContext.resolve(engine="llamacpp").work_root / "worktrees"
         )
 
 

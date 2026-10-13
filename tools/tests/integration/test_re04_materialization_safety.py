@@ -59,7 +59,7 @@ def _context(root: Path, upstream: Path) -> ProjectContext:
     # project_root git repo used for the dirty-tree check tests below.
     project = root / "project"
     project.mkdir(parents=True, exist_ok=True)
-    return ProjectContext(
+    return ProjectContext(engine="llamacpp", 
         project_root=project, config_path=root / "recipes.toml",
         artifacts_root=root / "artifacts", work_root=root / "work",
         upstream_repo=upstream, overlay_root=root / "src",

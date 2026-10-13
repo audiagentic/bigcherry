@@ -376,8 +376,8 @@ def probe(
                              "run IDs are suffixed by build name, so a repeat "
                              "would collide"))
 
-    default_context = ProjectContext.resolve()
-    context = ProjectContext.resolve(
+    default_context = ProjectContext.resolve(engine="llamacpp")
+    context = ProjectContext.resolve(engine="llamacpp", 
         work_root=run / "work", upstream_repo=default_context.upstream_repo)
 
     try:

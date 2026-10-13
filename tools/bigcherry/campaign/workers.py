@@ -85,6 +85,7 @@ from ..build.builds import (
     runtime_bundle_hash,
     validate_reuse,
 )
+from ..core import engines, paths
 from ..core.context import ProjectContext
 from ..core.pipeline import ArtifactRef
 from ..source import identity as source_identity
@@ -543,6 +544,7 @@ def make_build_worker(
                 c_compiler=platform.c_compiler,
                 cxx_compiler=platform.cxx_compiler,
                 backend=backend,
+                targets_option=engines.load(paths.REPO_ROOT, context.engine).targets_option,
             )
             # Adversarial-review follow-up: the worker-entry check above and
             # the post-compile check below leave a real window between them

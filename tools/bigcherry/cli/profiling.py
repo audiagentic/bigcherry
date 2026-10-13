@@ -18,7 +18,7 @@ def cmd_profile_campaign(args: Namespace) -> int:
     from ..core.context import ProjectContext
     from ..profiling import workflow
 
-    context = ProjectContext.resolve(
+    context = ProjectContext.resolve(engine="llamacpp", 
         work_root=None, upstream_repo=Path(args.llama_root) if args.llama_root else None
     )
     try:

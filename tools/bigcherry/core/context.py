@@ -11,7 +11,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import paths
+from . import engines, paths
 
 
 def _absolute(value: str | os.PathLike[str]) -> Path:
@@ -32,8 +32,14 @@ def _paths_overlap(first: Path, second: Path) -> bool:
     return common == first or common == second
 
 
+# Engine declarations are read from the repository this code belongs to (fixed at import); their relative layout is
+# then resolved against whichever project root a context is for.
+_DECLARATIONS = paths.REPO_ROOT
+
+
 @dataclass(frozen=True)
 class ProjectContext:
+    engine: str
     project_root: Path
     config_path: Path
     artifacts_root: Path
@@ -46,6 +52,7 @@ class ProjectContext:
     def resolve(
         cls,
         *,
+        engine: str,
         project_root: str | os.PathLike[str] | None = None,
         config_path: str | os.PathLike[str] | None = None,
         artifacts_root: str | os.PathLike[str] | None = None,
@@ -53,6 +60,7 @@ class ProjectContext:
         upstream_repo: str | os.PathLike[str] | None = None,
     ) -> "ProjectContext":
         """Resolve slice-local source paths and primary-checkout shared state."""
+        layout = engines.load(_DECLARATIONS, engine)
         project = _absolute(
             project_root
             or os.environ.get("BIGCHERRY_PROJECT_ROOT")
@@ -61,7 +69,7 @@ class ProjectContext:
         config = _absolute(
             config_path
             or os.environ.get("BIGCHERRY_CONFIG_PATH")
-            or project / "config" / "recipes.toml"
+            or layout.recipes_path(project)
         )
         artifacts = _absolute(
             artifacts_root
@@ -79,7 +87,7 @@ class ProjectContext:
         )
         upstream_was_explicit = upstream_repo is not None
         upstream = _absolute(
-            upstream_repo or work / "upstream" / "llama.cpp.git"
+            upstream_repo or work / "upstream" / f"{Path(layout.vendor).name}.git"
         )
         # The default deliberately nests its bare upstream cache below the
         # work root.  The guard protects explicit topology configuration,
@@ -91,11 +99,12 @@ class ProjectContext:
                 f"{work} vs {upstream}"
             )
         return cls(
+            engine=engine,
             project_root=project,
             config_path=config,
             artifacts_root=artifacts,
             work_root=work,
             upstream_repo=upstream,
-            overlay_root=paths.LLAMACPP.overlay_root(project),
-            patches_root=paths.LLAMACPP.patches_root(project),
+            overlay_root=layout.overlay_root(project),
+            patches_root=layout.patches_root(project),
         )

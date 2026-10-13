@@ -20,7 +20,7 @@ def _emit(value: object) -> None:
 
 
 def _catalog() -> InventoryCatalog:
-    context = ProjectContext.resolve()
+    context = ProjectContext.resolve(engine="llamacpp")
     root = Path(
         os.environ.get("BIGCHERRY_HARDWARE_ROOT", context.work_root / "hardware")
     ).resolve()

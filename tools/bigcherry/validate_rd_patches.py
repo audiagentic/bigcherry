@@ -115,7 +115,7 @@ def main() -> int:
     # calls while still showing the child's output. Line-buffer instead.
     sys.stdout.reconfigure(line_buffering=True)
     cfg = config.load(paths.RECIPES)
-    context = ProjectContext.resolve()
+    context = ProjectContext.resolve(engine="llamacpp")
     store = ArtifactStore(context.artifacts_root)
 
     # Always the platform's full declared target list -- never a

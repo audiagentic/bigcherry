@@ -29,6 +29,7 @@ def cmd_build_new(args: Namespace) -> int:
         plan,
         run_campaign,
     )
+    from ..core import engines, paths
     from ..core.context import ProjectContext
     from ..campaign.smoke import RuntimeSmokeSpec
 
@@ -39,8 +40,19 @@ def cmd_build_new(args: Namespace) -> int:
         )
         return 2
 
+    try:
+        if args.lane:
+            lane_engines = {campaign_config.engine_defining("source", lane.split(":", 1)[0]) for lane in args.lane}
+            if len(lane_engines) != 1:
+                raise campaign_config.ConfigError(f"lanes span engines {sorted(lane_engines)}; build one engine at a time")
+            engine = lane_engines.pop()
+        else:
+            engine = campaign_config.engine_defining("campaign", args.profile or "standard")
+    except campaign_config.ConfigError as exc:
+        print(f"build: {exc}", file=sys.stderr)
+        return 2
     context = ProjectContext.resolve(
-        work_root=None, upstream_repo=Path(args.llama_root) if args.llama_root else None
+        engine=engine, work_root=None, upstream_repo=Path(args.llama_root) if args.llama_root else None
     )
     try:
         cfg = campaign_config.load(context.config_path)
@@ -130,7 +142,7 @@ def cmd_build_new(args: Namespace) -> int:
         architectures=architectures,
         inputs_by_build=inputs_by_build,
         validation_by_build=validation_by_build,
-        binary_relative_path=args.binary_relative_path,
+        binary_relative_path=args.binary_relative_path or engines.load(paths.REPO_ROOT, engine).build_binary,
         c_compiler=args.c_compiler,
         cxx_compiler=args.cxx_compiler,
         smoke_environment=smoke_environment_for_backend("hip", args.hip_visible_devices),

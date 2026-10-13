@@ -41,6 +41,7 @@ from . import plan as campaign_plan
 from . import source as campaign_source
 from . import workers as campaign_workers
 from ..core import config as campaign_config
+from ..core import engines, paths
 from ..patch import catalog as patch_catalog
 from ..patch import patchset
 from . import smoke as smoke_module
@@ -700,7 +701,8 @@ def _execute_build_phase(
     backend = cfg.sources[spec.source_name].backend
     merged_options = dict(platform_cfg.options)
     merged_options.update(dict(build_cfg.options))
-    merged_options.update(campaign_build._backend_configure_options(backend, platform_cfg))
+    merged_options.update(campaign_build._backend_configure_options(
+        backend, platform_cfg, engines.load(paths.REPO_ROOT, cfg.engine).targets_option))
 
     # RE30 P0-3 (external review, 2026-08-20): resolve_lane() already
     # enforced patch-set-name/state policy at materialize time, but never

@@ -241,10 +241,10 @@ class _ProbeHarness:
         calls = calls if calls is not None else []
         real_resolve = ProjectContext.resolve.__func__
 
-        def fake_resolve(cls, *, project_root=None, config_path=None,
+        def fake_resolve(cls, *, engine, project_root=None, config_path=None,
                          artifacts_root=None, work_root=None, upstream_repo=None):
             return real_resolve(
-                cls, project_root=project_root or self.project,
+                cls, engine=engine, project_root=project_root or self.project,
                 config_path=config_path, artifacts_root=artifacts_root,
                 work_root=work_root or (self.root / "default-work"),
                 upstream_repo=upstream_repo or self.mirror,
