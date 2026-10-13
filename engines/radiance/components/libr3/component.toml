@@ -37,7 +37,7 @@ summary = "native delta-net chunk scan; wrong in serving (KLD 5.52) after three 
 default = ""
 status = "experimental"
 summary = "enable patch 0002 GPU mailbox ops; helper process must already own the configured POSIX shm segment"
-activation = "r3_moe_helper: owns [0-9]+ experts, [0-9.]+ GiB"
+activation = "r3_moe_helper: runtime map owns [0-9]+ experts, [0-9.]+ GiB"
 
 [setting.R3_MOE_HELPER_SHM]
 default = "/r3-moe-helper"
