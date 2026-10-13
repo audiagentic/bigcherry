@@ -85,7 +85,7 @@ PATCHES = (
     ),
     FilePatch(
         path="arch/common/rad_block_moe_fp8.h",
-        description="Publish and join remote experts as ordinary device ops on the rank stream.",
+        description="Publish remote experts and add their weighted results after the plain gather.",
         edits=(
             Edit(
                 id="include-remote-moe-abi",
@@ -99,7 +99,7 @@ PATCHES = (
                 id="remote-ops",
                 anchor=r"^[ \t]*rad_op op_ar = 0, op_add = 0;$",
                 mode="replace",
-                text="    rad_op op_ar = 0, op_add = 0, op_remote_publish = 0, op_remote_join = 0;",
+                text="    rad_op op_ar = 0, op_add = 0, op_remote_publish = 0, op_remote_add = 0;",
                 guard=r"op_remote_publish = 0",
                 expect_matches=1,
                 rationale="The output op declaration is the unique home for the pre-reduction mailbox ops.",
@@ -116,24 +116,24 @@ PATCHES = (
                                               RAD_INT("n_expert", c.n_expert)),
                                    RAD_NOWEIGHTS),
                                {w.ids, w.ew, w.h.x}, {w.ids});
-        op_remote_join = rw(b, RAD_OP(b, "moe_mailbox_join",
-                                RAD_PARAMS(RAD_RANGE("M", 1, c.rows),
-                                           RAD_INT("n", g.n_embd),
-                                           RAD_INT("top_k", c.top_k)),
-                                RAD_NOWEIGHTS),
-                            {w.sorted, w.edn}, {w.sorted, w.edn});
-        if (!op_remote_publish || !op_remote_join) return RAD_E_INVAL;
+        op_remote_add = rw(b, RAD_OP(b, "moe_mailbox_add",
+                               RAD_PARAMS(RAD_RANGE("M", 1, c.rows),
+                                          RAD_INT("n", g.n_embd),
+                                          RAD_INT("top_k", c.top_k)),
+                               RAD_NOWEIGHTS),
+                           {w.h.x}, {w.h.x});
+        if (!op_remote_publish || !op_remote_add) return RAD_E_INVAL;
     }""",
                 guard=r'moe_mailbox_publish',
                 expect_matches=1,
-                rationale="The final residual declaration is immediately before the collective declarations and has the route/down buffers available.",
+                rationale="The final residual declaration is immediately before the collective declarations and has the gathered token output available.",
             ),
             Edit(
                 id="remote-pass-state",
                 anchor=r"^[ \t]*const bool shared = op_sgate != 0;$",
                 text="""
     const bool remote_policy =
-        op_remote_publish && op_remote_join && rad_moe_remote_wanted(T);""",
+        op_remote_publish && op_remote_add && rad_moe_remote_wanted(rows);""",
                 guard=r"remote_policy =",
                 expect_matches=1,
                 rationale="The shared-arm state is the first per-pass policy declaration after row geometry is resolved.",
@@ -161,15 +161,67 @@ PATCHES = (
                 rationale="Publish after whichever normal router/top-k path ran, then rebuild only scatter from the masked ids so helper-on does not globally change router arithmetic.",
             ),
             Edit(
-                id="join-remote-before-gather",
-                anchor=r"^[ \t]*if \(shared\) sh_down\.step\(c_, w\.sff, w\.sout, T, r0, rows\);$",
-                text="""
-    if (remote_policy)
-        RAD_ISSUE_N(c_, op_remote_join, rows,
-                    brows(w.sorted, rows * k), brows(w.edn, rows * k));""",
-                guard=r"op_remote_join, rows",
+                id="force-plain-gather-for-remote",
+                anchor=r"^[ \t]*if \(!gather_taken\(g, T, gather_out_rows, gather_out_rows6\)\)$",
+                mode="replace",
+                text="    if (remote_policy || !gather_taken(g, T, gather_out_rows, gather_out_rows6))",
+                guard=r"remote_policy \|\| !gather_taken\(g, T, gather_out_rows, gather_out_rows6\)",
                 expect_matches=1,
-                rationale="All local down writers have finished here; restore helper rows and their sorted-slot mapping before the unchanged engine gather.",
+                rationale="A remote pass needs a materialized token output between gather and collective, so the downstream fused gather+all-reduce cannot consume the gather.",
+            ),
+            Edit(
+                id="add-remote-before-all-reduce",
+                anchor=r"^[ \t]*if \(op_ar && !ar_taken\(g, ar_out_take != kArOutNorm \? T : rows, ar_out, ar_out_take\)\)$",
+                mode="replace",
+                text="""    if (remote_policy)
+        RAD_ISSUE_N(c_, op_remote_add, rows,
+                    brow_slice(w.h.x, r0, rows, g.n_embd));
+    if (op_ar && (remote_policy ||
+                  !ar_taken(g, ar_out_take != kArOutNorm ? T : rows, ar_out, ar_out_take)))""",
+                guard=r"op_remote_add, rows",
+                expect_matches=1,
+                rationale="Add weighted helper contributions only after the plain gather produced token rows, then force the standalone all-reduce before the residual write.",
+            ),
+        ),
+    ),
+    FilePatch(
+        path="arch/common/rad_block_hc.h",
+        description="Disable HyperConn fused gather/all-reduce writes while a remote-MoE pass needs a post-gather add.",
+        edits=(
+            Edit(
+                id="include-remote-moe-abi-hc",
+                anchor=r'^#include "rad_fp8\.h"$',
+                text='\n#include "rad_moe_remote.h"',
+                guard=r'^#include "rad_moe_remote\.h"$',
+                expect_matches=1,
+                rationale="The fp8 include is the unique architecture dependency line in this header.",
+            ),
+            Edit(
+                id="remote-hc-write-state",
+                anchor=r"^[ \t]*if \(!op_write\) return;$",
+                text="""
+    const bool remote_policy = rad_moe_remote_wanted(rows);""",
+                guard=r"const bool remote_policy = rad_moe_remote_wanted\(rows\);",
+                expect_matches=1,
+                rationale="The write knows this pass's row count before choosing any fused gather or collective form.",
+            ),
+            Edit(
+                id="remote-disable-hc-gather-ar",
+                anchor=r"^[ \t]*if \(takes_gather\(T\)\) \{$",
+                mode="replace",
+                text="    if (!remote_policy && takes_gather(T)) {",
+                guard=r"!remote_policy && takes_gather\(T\)",
+                expect_matches=1,
+                rationale="Remote passes must leave the gather to MoeFP8 so its output exists before the helper contribution is added.",
+            ),
+            Edit(
+                id="remote-disable-hc-ar-write",
+                anchor=r"^[ \t]*RAD_ISSUE_N\(c_, takes_ar\(T\) \? ar_write\(T\) : op_write, rows,$",
+                mode="replace",
+                text="    RAD_ISSUE_N(c_, (!remote_policy && takes_ar(T)) ? ar_write(T) : op_write, rows,",
+                guard=r"\(!remote_policy && takes_ar\(T\)\) \? ar_write\(T\) : op_write",
+                expect_matches=1,
+                rationale="MoeFP8 already issued the standalone all-reduce on a remote pass; HyperConn must use its plain write instead of reducing again.",
             ),
         ),
     ),
