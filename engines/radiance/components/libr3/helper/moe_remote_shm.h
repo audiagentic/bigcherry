@@ -46,7 +46,7 @@ struct alignas(64) Request {
     uint64_t activation_offset;    /* staged BF16 input rows for this rank. */
     uint32_t activation_stride;    /* bytes between staged rows; allows ABI stride to differ. */
     uint32_t result_stride[kMaxRanks]; /* BF16 row stride for each TP rank's result slot. */
-    uint64_t result_offset[kMaxRanks]; /* partial-output slots; helper writes only req.rank. */
+    uint64_t result_offset[kMaxRanks * kMaxRanks]; /* partial-output slots; helper writes only req.rank. */
     uint64_t reserved[4];
 };
 static_assert(sizeof(Request) % 64 == 0);
@@ -64,7 +64,7 @@ struct alignas(kPage) Header {
     uint32_t expert_count;          /* model contract: 512 global routed experts. */
     uint32_t route_slot_bytes[kMaxRanks];      /* per-rank routing-list capacity. */
     uint32_t activation_slot_bytes[kMaxRanks]; /* per-rank staged BF16 activation capacity. */
-    uint32_t result_slot_bytes[kMaxRanks];     /* per-rank BF16 partial capacity. */
+    uint32_t result_slot_bytes[kMaxRanks * kMaxRanks]; /* [producer rank][output rank]. */
     uint32_t owned_count;            /* number of set (layer, expert) ownership bits. */
     uint32_t owner_slot_bytes;       /* fixed bitmap bytes at owner_offset. */
     uint64_t owned_bytes;            /* resident expert bytes charged against helper budget. */
@@ -91,7 +91,7 @@ struct Layout {
     uint64_t owner;
     uint64_t route[kMaxRanks];
     uint64_t activation[kMaxRanks];
-    uint64_t result[kMaxRanks];
+    uint64_t result[kMaxRanks * kMaxRanks];
     uint64_t bytes;
 };
 
@@ -105,7 +105,10 @@ constexpr Layout layout() {
     for (uint32_t r = 0; r < kMaxRanks; ++r) {
         x.route[r] = at; at = align_page(at + route_slot_bytes());
         x.activation[r] = at; at = align_page(at + activation_slot_bytes());
-        x.result[r] = at; at = align_page(at + result_slot_bytes());
+        for (uint32_t o = 0; o < kMaxRanks; ++o) {
+            x.result[r * kMaxRanks + o] = at;
+            at = align_page(at + result_slot_bytes());
+        }
     }
     x.bytes = align_page(at);
     return x;
@@ -124,9 +127,12 @@ inline void init(void* base, uint32_t layers) {
     for (uint32_t r = 0; r < kMaxRanks; ++r) {
         h->route_slot_bytes[r] = route_slot_bytes();
         h->activation_slot_bytes[r] = activation_slot_bytes();
-        h->result_slot_bytes[r] = result_slot_bytes();
         h->route_offset[r] = l.route[r]; h->activation_offset[r] = l.activation[r];
-        h->result_offset[r] = l.result[r];
+        for (uint32_t o = 0; o < kMaxRanks; ++o) {
+            const uint32_t i = r * kMaxRanks + o;
+            h->result_slot_bytes[i] = result_slot_bytes();
+            h->result_offset[i] = l.result[i];
+        }
     }
 }
 
@@ -141,9 +147,11 @@ inline bool valid(const Header* h, size_t mapped) {
         h->segment_bytes != l.bytes || mapped < l.bytes) return false;
     for (uint32_t r = 0; r < kMaxRanks; ++r)
         if (h->route_offset[r] != l.route[r] || h->activation_offset[r] != l.activation[r] ||
-            h->result_offset[r] != l.result[r] || h->route_slot_bytes[r] != route_slot_bytes() ||
-            h->activation_slot_bytes[r] != activation_slot_bytes() ||
-            h->result_slot_bytes[r] != result_slot_bytes()) return false;
+            h->route_slot_bytes[r] != route_slot_bytes() ||
+            h->activation_slot_bytes[r] != activation_slot_bytes()) return false;
+    for (uint32_t i = 0; i < kMaxRanks * kMaxRanks; ++i)
+        if (h->result_offset[i] != l.result[i] ||
+            h->result_slot_bytes[i] != result_slot_bytes()) return false;
     return true;
 }
 
