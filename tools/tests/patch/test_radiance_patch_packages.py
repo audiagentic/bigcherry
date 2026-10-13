@@ -54,8 +54,7 @@ PIN_BLOBS = {
     },
     "0002_moe_remote_handoff": {
         "abi/rad_moe_remote.h": (None, "9e5f03d"),
-        "arch/common/rad_block_hc.h": ("c19c8b6", "8859327"),
-        "arch/common/rad_block_moe_fp8.h": ("51b7c28", "be01017"),
+        "arch/common/rad_block_moe_fp8.h": ("51b7c28", "49e79a9"),
         "core/place/moe_remote.cpp": (None, "3705adf"),
     },
     "0003_mtp_full_head_switch": {
@@ -131,6 +130,29 @@ class TestRadiancePatchPackages(unittest.TestCase):
                     if package_id == "0002_moe_remote_handoff":
                         self.assertTrue((root / "abi/rad_moe_remote.h").is_file())
                         self.assertTrue((root / "core/place/moe_remote.cpp").is_file())
+                        moe = (root / "arch/common/rad_block_moe_fp8.h").read_text(encoding="utf-8")
+                        # Remote hand-off must not globally change the normal router/top-k arithmetic.
+                        self.assertIn(
+                            "const bool rfused = op_router_fused && rows <= router_fused_rows;", moe
+                        )
+                        self.assertIn(
+                            "} else if (op_topk_scatter && rows <= topk_scatter_rows) {", moe
+                        )
+                        self.assertNotIn("rfused = !remote_policy", moe)
+                        self.assertNotIn("!remote_policy && op_topk_scatter", moe)
+                        self.assertIn(
+                            "{w.sorted, w.edn}, {w.sorted, w.edn});", moe
+                        )
+                        pub = moe.index("RAD_ISSUE_N(c_, op_remote_publish, rows")
+                        rescatter = moe.index("RAD_ISSUE_N(c_, op_scatter, rows", pub)
+                        routed_gemm = moe.index("const bool rot = c.expert_rot != 0;", rescatter)
+                        self.assertLess(pub, rescatter)
+                        self.assertLess(rescatter, routed_gemm)
+                        down = moe.index("RAD_ISSUE_N(c_, op_pdn, rows")
+                        join = moe.index("RAD_ISSUE_N(c_, op_remote_join, rows")
+                        gather = moe.index("RAD_ISSUE_N(c_, op_gather, rows")
+                        self.assertLess(down, join)
+                        self.assertLess(join, gather)
                     if package_id == "0003_mtp_full_head_switch":
                         text = (root / "arch/common/rad_block_mtp_fp8.h").read_text(encoding="utf-8")
                         self.assertIn("std::atoi(e) != 0", text)
