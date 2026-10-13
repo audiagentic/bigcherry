@@ -51,7 +51,7 @@ const char* shm_name() {
 int64_t max_rows() {
     const char* e = std::getenv("R3_MOE_HELPER_MAX_ROWS");
     const long long n = e && *e ? std::atoll(e) : 64;
-    return std::min<int64_t>(n > 0 ? n : 64, kMaxRows);
+    return std::min<int64_t>(n > 0 ? n : 64, kMaxRows / kTopK);
 }
 
 bool hip_ok(hipError_t e, const char* what) {
