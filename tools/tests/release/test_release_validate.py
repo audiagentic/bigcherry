@@ -181,6 +181,7 @@ def _init_project(directory: Path) -> None:
 
 _RECIPES_TOML = """\
 version = 2
+engine = "llamacpp"
 pinned = "unused"
 
 [source.test-source]

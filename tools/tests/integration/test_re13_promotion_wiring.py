@@ -98,7 +98,7 @@ def _run_real_lane(root: Path):
         platforms={"linux-multi": campaign_config.Platform(
             name="linux-multi", targets=("gfx1100",), options=())},
         experiments={}, campaigns={}, path=root / "recipes.toml",
-    )
+    engine="llamacpp")
     spec = CampaignLaneExecutionSpec(
         source_name="test-source", build_name="stock", platform_name="linux-multi",
         architectures=("gfx1100",), inputs=(), validation=None,
@@ -137,7 +137,7 @@ def _run_real_lane_with_generate(root: Path, *, architectures: tuple[str, ...]):
         platforms={"linux-multi": campaign_config.Platform(
             name="linux-multi", targets=architectures, options=())},
         experiments={}, campaigns={}, path=root / "recipes.toml",
-    )
+    engine="llamacpp")
     spec = CampaignLaneExecutionSpec(
         source_name="test-source", build_name="gen-build", platform_name="linux-multi",
         architectures=architectures, inputs=(), validation=None,

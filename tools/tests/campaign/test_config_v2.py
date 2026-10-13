@@ -46,6 +46,7 @@ class ConfigV2Tests(unittest.TestCase):
         path = _write(
             """
 version = 2
+engine = "llamacpp"
 pinned = "b10362"
 [patch-set.framework]
 patches = ["0100_cmake_options"]
@@ -81,6 +82,7 @@ options = { GGML_HIP = "ON" }
         path = _write(
             """
 version = 2
+engine = "llamacpp"
 pinned = "b10362"
 [source.llama-native]
 ref = "pinned"
@@ -95,6 +97,7 @@ patch-sets = []
         path = _write(
             """
 version = 2
+engine = "llamacpp"
 pinned = "b10362"
 [source.vulkan-stock]
 ref = "pinned"
@@ -110,6 +113,7 @@ backend = "vulkan"
         path = _write(
             """
 version = 2
+engine = "llamacpp"
 pinned = "b10362"
 [stack.rocm-10]
 backend = "hip"
@@ -136,6 +140,7 @@ options = { GGML_HIP = "ON" }
         path = _write(
             """
 version = 2
+engine = "llamacpp"
 pinned = "b10362"
 [stack.bad]
 backend = "cuda"
@@ -148,6 +153,7 @@ backend = "cuda"
         path = _write(
             """
 version = 2
+engine = "llamacpp"
 pinned = "b10362"
 [stack.bad]
 backend = "hip"
@@ -161,6 +167,7 @@ environment = { HIP_VISIBLE_DEVICES = true }
         path = _write(
             """
 version = 2
+engine = "llamacpp"
 pinned = "b10362"
 [source.bad]
 ref = "pinned"
@@ -176,6 +183,7 @@ backend = "cuda"
         path = _write(
             """
 version = 2
+engine = "llamacpp"
 pinned = "b10362"
 [source.bad]
 ref = "pinned"
@@ -190,6 +198,7 @@ patch-sets = ["missing"]
         path = _write(
             """
 version = 2
+engine = "llamacpp"
 pinned = "b10362"
 [source.bad]
 ref = "pinned"

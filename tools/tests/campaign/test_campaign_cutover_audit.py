@@ -148,7 +148,7 @@ class _Harness:
             platforms={"linux-multi": campaign_config.Platform(
                 name="linux-multi", targets=("gfx1100",), options=())},
             experiments={}, campaigns={}, path=directory / "recipes.toml",
-        )
+        engine="llamacpp")
 
     def spec(self) -> CampaignLaneExecutionSpec:
         return CampaignLaneExecutionSpec(

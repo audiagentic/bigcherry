@@ -23,6 +23,7 @@ from bigcherry.campaign.planner import (CampaignLane, CampaignPlannerError,
 
 def _cfg(**overrides) -> campaign_config.Config:
     values = dict(
+        engine="llamacpp",
         pinned="rev1", patch_sets={},
         sources={
             "src-a": campaign_config.Source(name="src-a", ref="rev1", overlay=False, patch_sets=()),

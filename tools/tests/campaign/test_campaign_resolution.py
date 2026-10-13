@@ -302,7 +302,7 @@ class MultiPatchSetCompositionIdentityTests(unittest.TestCase):
                 experiments={},
                 campaigns={},
                 path=Path(directory) / "recipes.toml",
-            )
+            engine="llamacpp")
 
             lane_two_sets = campaign_resolution.resolve_lane("llamacpp", 
                 "via-two-sets", cfg, catalog, catalog_directory=patches_root
@@ -366,7 +366,7 @@ class MultiPatchSetCompositionIdentityTests(unittest.TestCase):
                 experiments={},
                 campaigns={},
                 path=Path(directory) / "recipes.toml",
-            )
+            engine="llamacpp")
 
             lane_1 = campaign_resolution.resolve_lane("llamacpp", 
                 "via-a-then-empty1", cfg, catalog, catalog_directory=patches_root
@@ -414,7 +414,7 @@ class EmptyBaseExperimentResolutionTests(unittest.TestCase):
             experiments={"exp-a": experiment},
             campaigns={},
             path=Path(self.directory.name) / "recipes.toml",
-        )
+        engine="llamacpp")
 
     def test_empty_base_no_experiment_resolves_empty(self):
         lane = campaign_resolution.resolve_lane("llamacpp", 
@@ -511,7 +511,7 @@ class MultiSetIndependentRequiredStateTests(unittest.TestCase):
             experiments={},
             campaigns={},
             path=Path(self.directory.name) / "recipes.toml",
-        )
+        engine="llamacpp")
         lane = campaign_resolution.resolve_lane("llamacpp", 
             "multi", cfg, catalog, catalog_directory=self.patches_root
         )
@@ -552,7 +552,7 @@ class MultiSetIndependentRequiredStateTests(unittest.TestCase):
             experiments={},
             campaigns={},
             path=Path(self.directory.name) / "recipes.toml",
-        )
+        engine="llamacpp")
         with self.assertRaisesRegex(ValueError, "does not satisfy required state"):
             campaign_resolution.resolve_lane("llamacpp", 
                 "multi", cfg, catalog, catalog_directory=self.patches_root
@@ -568,7 +568,7 @@ class MultiSetIndependentRequiredStateTests(unittest.TestCase):
             sources={"multi": config.Source(name="multi", ref="pinned", overlay=False, patch_sets=order)},
             builds={}, platforms={}, experiments={}, campaigns={},
             path=Path(self.directory.name) / "recipes.toml",
-        )
+        engine="llamacpp")
 
     def test_later_set_requires_may_be_satisfied_by_an_earlier_set(self):
         b = self.patches_root / "0002_b.py"
@@ -622,7 +622,7 @@ class MultiSetIndependentRequiredStateTests(unittest.TestCase):
             experiments={},
             campaigns={},
             path=Path(self.directory.name) / "recipes.toml",
-        )
+        engine="llamacpp")
         lane = campaign_resolution.resolve_lane("llamacpp", 
             "multi", cfg, catalog, catalog_directory=self.patches_root
         )

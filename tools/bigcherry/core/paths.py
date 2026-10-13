@@ -43,7 +43,7 @@ ARTIFACTS = REPO_ROOT / "artifacts"
 # were silently never committed, defeating the whole point.
 DISPOSITIONS = REPO_ROOT / "dispositions"
 CONFIG = REPO_ROOT / "config"
-RECIPES = CONFIG / "recipes.toml"
+RECIPES = LLAMACPP.recipes_path(REPO_ROOT)
 EXTERNAL_SOURCES = CONFIG / "external-sources.toml"
 EXPERIMENT_CONTRACTS = CONFIG / "experiment-contracts.toml"
 MODELS = CONFIG / "models.toml"

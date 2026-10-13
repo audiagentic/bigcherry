@@ -74,7 +74,11 @@ class EngineLayout:
     patches: str
     overlay: str
     vendor: str
+    recipes: str
     serve: ServeSpec
+
+    def recipes_path(self, project_root: Path) -> Path:
+        return project_root / self.recipes
 
     def patches_root(self, project_root: Path) -> Path:
         return project_root / self.patches
@@ -191,7 +195,7 @@ def load(repo_root: Path, name: str) -> EngineLayout:
     layout = data.get("layout")
     if not isinstance(layout, dict):
         raise EngineError(f"engine {name!r}: missing [layout] table")
-    unknown = sorted(set(layout) - {"patches", "overlay", "vendor"})
+    unknown = sorted(set(layout) - {"patches", "overlay", "vendor", "recipes"})
     if unknown:
         raise EngineError(f"engine {name!r}: unknown layout key(s): {', '.join(unknown)}")
     return EngineLayout(
@@ -200,6 +204,7 @@ def load(repo_root: Path, name: str) -> EngineLayout:
         patches=_relative(layout.get("patches"), "patches", name),
         overlay=_relative(layout.get("overlay"), "overlay", name),
         vendor=_relative(layout.get("vendor"), "vendor", name),
+        recipes=_relative(layout.get("recipes"), "recipes", name),
         serve=_serve(data.get("serve"), name),
     )
 
@@ -215,7 +220,7 @@ def names(repo_root: Path) -> tuple[str, ...]:
 def load_all(repo_root: Path) -> dict[str, EngineLayout]:
     """Every declared engine. No two engines may share a patches, overlay or vendor location."""
     layouts = {name: load(repo_root, name) for name in names(repo_root)}
-    for field in ("patches", "overlay", "vendor"):
+    for field in ("patches", "overlay", "vendor", "recipes"):
         seen: dict[str, str] = {}
         for name, layout in layouts.items():
             location = getattr(layout, field)

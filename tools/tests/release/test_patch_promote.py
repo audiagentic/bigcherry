@@ -54,6 +54,7 @@ ENV_DOCS = (
 
 _RECIPES = """\
 version = 2
+engine = "llamacpp"
 pinned = "b11474"
 
 [patch-set.validated-enhancements]

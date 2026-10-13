@@ -1,6 +1,7 @@
 # BigCherry campaign configuration v2.
 # All CLI commands resolve exclusively through source/build/patch-set objects.
 version = 2
+engine = "llamacpp"
 pinned = "b11552"
 
 # serving-core is PA26's real-hardware-proven serving boundary, confirmed
