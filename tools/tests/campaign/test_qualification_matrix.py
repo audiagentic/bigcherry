@@ -180,7 +180,7 @@ class QualificationMatrixFixture(unittest.TestCase):
             },
             builds={}, platforms={}, experiments={}, campaigns={},
             path=root / "recipes.toml",
-        )
+        engine="llamacpp")
 
     def _plan(self, **kwargs) -> qm.QualificationMatrixPlan:
         return qm.build_qualification_matrix_plan(

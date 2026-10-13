@@ -104,6 +104,7 @@ class ExplicitRefTests(unittest.TestCase):
 
     _DOC = """
 version = 2
+engine = "llamacpp"
 pinned = "abc123"
 
 [source.explicit-ref]

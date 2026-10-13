@@ -14,6 +14,7 @@ from bigcherry.core import config as campaign_config # noqa: E402
 
 _DOC = """
 version = 2
+engine = "llamacpp"
 pinned = "abc123"
 
 [platform.with-toolchain]
@@ -63,6 +64,7 @@ class PlatformToolchainTests(unittest.TestCase):
 
 _CAMPAIGN_DOC = """
 version = 2
+engine = "llamacpp"
 pinned = "abc123"
 
 [source.a]
@@ -140,6 +142,7 @@ class CampaignProfileTests(unittest.TestCase):
 
 _RUNTIME_PROFILE_DOC = """
 version = 2
+engine = "llamacpp"
 pinned = "abc123"
 
 [runtime-profile.production-dual-xtx]

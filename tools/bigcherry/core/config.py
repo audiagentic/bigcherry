@@ -9,10 +9,15 @@ from __future__ import annotations
 import os
 import re
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import paths
+from . import engines, paths
+
+
+# The repository this code belongs to, fixed at import: the engines a recipes document may name are the ones this
+# checkout declares, whatever a caller later points REPO_ROOT at.
+_REPOSITORY = paths.REPO_ROOT
 
 
 class ConfigError(ValueError):
@@ -312,6 +317,9 @@ class Tree:
 @dataclass(frozen=True)
 class Config:
     pinned: str
+    # The engine these recipes belong to (engines/<engine>/engine.toml declares where its recipes live). Required:
+    # there is no default engine.
+    engine: str = field(kw_only=True)
     patch_sets: dict[str, PatchSet]
     sources: dict[str, Source]
     builds: dict[str, Build]
@@ -352,6 +360,7 @@ def load(path: str | Path) -> Config:
         set(raw)
         - {
             "version",
+            "engine",
             "pinned",
             "patch-set",
             "source",
@@ -368,6 +377,12 @@ def load(path: str | Path) -> Config:
         raise ConfigError(
             f"{path}: unknown top-level field(s): {', '.join(unknown_top_level)}"
         )
+    engine = raw.get("engine")
+    if not isinstance(engine, str) or not engine:
+        raise ConfigError(f"{path}: engine must name the engine these recipes belong to")
+    declared = engines.names(_REPOSITORY)
+    if engine not in declared:
+        raise ConfigError(f"{path}: engine {engine!r} is not declared (engines: {', '.join(declared)})")
     pinned = raw.get("pinned")
     if not isinstance(pinned, str) or not pinned:
         raise ConfigError(f"{path}: pinned must be a non-empty string")
@@ -660,4 +675,5 @@ def load(path: str | Path) -> Config:
         tuple(trees),
         runtime_profiles,
         stacks,
+        engine=engine,
     )

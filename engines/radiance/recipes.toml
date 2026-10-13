@@ -1,0 +1,67 @@
+# Radiance engine recipes (RAD01 PR 3; docs/reference/engines/RADIANCE_PLATFORM_DESIGN.md).
+# Patch sets, sources, builds, experiments and runtime profiles for the radiance engine pillar. The patches named
+# here are engines/radiance/patches/<id>/ packages; they never mix with llama.cpp's.
+version = 2
+engine = "radiance"
+# radiance 1.3.0 (codeberg StillDeadcode/radiance; exact-SHA mirror Quackster/radiance)
+pinned = "89cee7ce414486c717aa2085c99e1f522e4c0ea6"
+
+# Validated engine fixes only. 0001 is evaluated with hardware evidence (3/3 clean exits against 2/3 shutdown hangs);
+# it moves here once promoted, so the set starts empty rather than claiming a validated state 0001 does not have.
+[patch-set.serving-core]
+patches = []
+
+[patch-set.engine-fixes-evaluated]
+patches = ["0001_drain_mover_before_arena_free"]
+required-state = "evaluated"
+
+[source.radiance-native]
+description = "radiance 1.3.0 as released: no overlay, no patches."
+overlay = false
+patch-sets = []
+
+[source.radiance]
+description = "radiance 1.3.0 with BigCherry's validated engine patch sets."
+overlay = false
+patch-sets = ["serving-core"]
+
+[source.radiance-lab]
+description = "radiance 1.3.0 with the evaluated engine fixes the Flash-Next two-XTX configuration needs (0001)."
+overlay = false
+patch-sets = ["engine-fixes-evaluated"]
+
+[build.stock]
+description = "radiance's own release build of the engine binary."
+options = {}
+needs = []
+
+# One focal engine patch per experiment; the 0001-0003 stack is never one indivisible experiment.
+[experiment.moe-remote-handoff]
+patches = ["0002_moe_remote_handoff"]
+
+[experiment.mtp-full-head-switch]
+patches = ["0003_mtp_full_head_switch"]
+
+# Profiles list only what they switch; libr3's runtime defaults (R3_ATTN_NATIVE on, every other R3_* off) are the
+# component's, never restated here.
+[runtime-profile.flashnext-2xtx]
+server-args = [
+  "--tp", "2", "--tp-wire", "exact",
+  "--placement", "expert_tiered",
+  "--ngram-placement", "ram",
+  "--host-pool-mib", "14336",
+  "--max-num-seqs", "6",
+  "--max-num-batched-tokens", "4096",
+  "--checkpoint-interval", "4096",
+  "--kv-cache-dtype", "fp8",
+  "--num-speculative-tokens", "3",
+]
+tune-context = 4096
+production-context = 32768
+min-free-vram-bytes-per-device = 268435456
+
+[runtime-profile.qwen38-27b-2xtx]
+server-args = ["--tp", "2", "--tp-wire", "wht6"]
+tune-context = 4096
+production-context = 8192
+min-free-vram-bytes-per-device = 268435456
