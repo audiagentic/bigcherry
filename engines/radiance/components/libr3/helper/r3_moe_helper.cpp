@@ -274,7 +274,8 @@ float dot_f32(const float* x, const std::vector<float>& w) {
     return s;
 }
 
-int compute_host_engine(const Container& f, void* map, Request* q) {
+int compute_host_engine(const Container& f, void* map, Request* q,
+                        std::vector<uint16_t>* route_down = nullptr) {
     if (q->rank_count != kMaxRanks || q->rank >= kMaxRanks || q->layer >= f.layers ||
         q->rows == 0 || q->rows > kMaxRows || q->hidden != kHidden ||
         q->route_count > kMaxRoutes || q->activation_stride != kHidden * 2)
@@ -348,6 +349,8 @@ int compute_host_engine(const Container& f, void* map, Request* q) {
             }
         }
     }
+
+    if (route_down) *route_down = down;
 
     /* r4d_moe gather: ascending original top-k slot order, f32 accumulator, one BF16 narrow. */
     for (uint32_t t = 0; t < q->rows; ++t) {
@@ -523,84 +526,207 @@ bool parse_u32(const char* s, uint32_t lo, uint32_t hi, uint32_t* out) {
 }
 
 int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& owned,
-                 uint32_t layer, uint32_t rows) {
-    if (layer >= model.layers || rows == 0 || rows > kMaxRows) return 2;
-    std::vector<uint32_t> avail;
-    for (auto [l, e] : owned.expert) if (l == layer) avail.push_back(e);
-    if (avail.empty()) {
-        std::fprintf(stderr, "r3_moe_helper: --compare layer %u has no owned experts\n", layer);
+                 uint32_t layer, uint32_t rows, uint32_t lane_max_rows) {
+    if (layer >= model.layers || rows == 0 || rows > lane_max_rows) return 2;
+    std::vector<uint32_t> remote_expert, local_expert;
+    std::vector<uint8_t> owned_here(kExperts, 0);
+    for (auto [l, e] : owned.expert) {
+        if (l != layer) continue;
+        remote_expert.push_back(e);
+        owned_here[e] = 1;
+    }
+    for (uint32_t e = 0; e < kExperts; ++e)
+        if (!owned_here[e] && model.weight(layer, e, 0) && model.weight(layer, e, 1))
+            local_expert.push_back(e);
+    if (remote_expert.size() < 2 || local_expert.empty()) {
+        std::fprintf(stderr,
+                     "r3_moe_helper: --compare layer %u needs >=2 owned and >=1 local experts\n",
+                     layer);
         return 1;
     }
-    const uint32_t k = std::min<uint32_t>(kTopK, (uint32_t)avail.size());
-    const Layout lay = layout();
-    std::vector<uint8_t> mem((size_t)lay.bytes);
-    init(mem.data(), model.layers);
-    publish_owned(mem.data(), owned);
-    Header* h = reinterpret_cast<Header*>(mem.data());
-    Request* q = request(mem.data(), 1);
-    q->status = 0; q->layer = layer; q->rank = 0; q->rank_count = kMaxRanks;
-    q->rows = rows; q->hidden = kHidden; q->route_count = rows * k;
-    q->route_offset = h->route_offset[0]; q->activation_offset = h->activation_offset[0];
-    q->activation_stride = kHidden * sizeof(uint16_t);
-    for (uint32_t r = 0; r < kMaxRanks; ++r) {
-        q->result_offset[r] = h->result_offset[r];
-        q->result_stride[r] = kHidden * sizeof(uint16_t);
-    }
 
-    uint64_t rng = 0x8f3f73b5cf1c9ad1ull;
+    const uint32_t remote_per_token =
+        std::min<uint32_t>(4, (uint32_t)remote_expert.size());
+    const uint32_t total = rows * kTopK;
+    std::vector<int32_t> full_expert(total, -1);
+    std::vector<uint16_t> full_weight(total, 0);
+    std::vector<uint8_t> is_remote(total, 0);
+    std::vector<uint16_t> activation((size_t)rows * kHidden);
+
+    uint64_t rng = 0x8f3f73b5cf1c9ad1ull ^ ((uint64_t)layer << 32) ^ rows;
     auto rnd = [&]() -> uint32_t {
         rng ^= rng << 13; rng ^= rng >> 7; rng ^= rng << 17;
         return (uint32_t)(rng >> 16);
     };
-    uint16_t* act = ptr<uint16_t>(mem.data(), q->activation_offset);
-    for (size_t i = 0; i < (size_t)rows * kHidden; ++i) {
+    for (size_t i = 0; i < activation.size(); ++i) {
         const float x = ((int32_t)(rnd() & 0xffffu) - 32768) * (1.0f / 32768.0f);
-        act[i] = to_bf16(x);
-    }
-    Route* rr = ptr<Route>(mem.data(), q->route_offset);
-    uint32_t at = 0;
-    for (uint32_t t = 0; t < rows; ++t) {
-        const float w = 1.0f / (float)k;
-        for (uint32_t j = 0; j < k; ++j) {
-            const uint32_t ix = (uint32_t)((t * 17ull + j * 29ull + rnd()) % avail.size());
-            rr[at++] = Route{(int32_t)t, (int32_t)avail[ix], to_bf16(w), (uint16_t)j};
-        }
+        activation[i] = to_bf16(x);
     }
 
-    const int grc = gpu.compute(mem.data(), q);
-    if (grc != 0) {
-        std::fprintf(stderr, "r3_moe_helper: --compare GPU path failed rc=%d\n", grc);
+    std::vector<Route> published;
+    published.reserve((size_t)rows * remote_per_token);
+    for (uint32_t t = 0; t < rows; ++t) {
+        uint32_t ri = 0, li = 0;
+        for (uint32_t slot = 0; slot < kTopK; ++slot) {
+            const uint32_t flat = t * kTopK + slot;
+            const bool remote = ((slot + 3 * t) % kTopK) < remote_per_token;
+            const float w = (float)(slot + 1) / 55.0f;
+            full_weight[flat] = to_bf16(w);
+            if (remote) {
+                const uint32_t e = remote_expert[(t * 5u + ri) % remote_expert.size()];
+                full_expert[flat] = (int32_t)e;
+                is_remote[flat] = 1;
+                published.push_back(Route{(int32_t)t, (int32_t)e, full_weight[flat],
+                                          (uint16_t)slot});
+                ++ri;
+            } else {
+                const uint32_t e = local_expert[(t * 7u + li) % local_expert.size()];
+                full_expert[flat] = (int32_t)e;
+                ++li;
+            }
+        }
+    }
+    const uint32_t nr = (uint32_t)published.size();
+    const uint32_t local_rows = total - nr;
+
+    /* moe_scatter sees helper-owned ids masked to -1: its live local rows are compacted at
+     * the front and the tail is -1, so the join begins exactly at local_rows. */
+    std::vector<int32_t> local_sorted;
+    local_sorted.reserve(local_rows);
+    for (uint32_t e = 0; e < kExperts; ++e)
+        for (uint32_t flat = 0; flat < total; ++flat)
+            if (!is_remote[flat] && full_expert[flat] == (int32_t)e)
+                local_sorted.push_back((int32_t)flat);
+    if (local_sorted.size() != local_rows) return 1;
+
+    const Layout lay = layout();
+    void* map = mmap(nullptr, lay.bytes, PROT_READ | PROT_WRITE,
+                     MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (map == MAP_FAILED) {
+        std::fprintf(stderr, "r3_moe_helper: --compare mmap: %s\n", std::strerror(errno));
         return 1;
     }
-    std::array<std::vector<uint16_t>, kMaxRanks> got;
-    for (uint32_t r = 0; r < kMaxRanks; ++r) {
-        const uint16_t* p = ptr<uint16_t>(mem.data(), q->result_offset[r]);
-        got[r].assign(p, p + (size_t)rows * kHidden);
+    init(map, model.layers);
+    publish_owned(map, owned);
+    Header* h = static_cast<Header*>(map);
+    bool pinned = false;
+    void* dev_map = nullptr;
+    if (!r3_moe_gpu::hip_ok(
+            hipHostRegister(map, lay.bytes, hipHostRegisterPortable | hipHostRegisterMapped),
+            "--compare hipHostRegister")) {
+        munmap(map, lay.bytes);
+        return 1;
+    }
+    pinned = true;
+    if (!r3_moe_gpu::hip_ok(hipHostGetDevicePointer(&dev_map, map, 0),
+                            "--compare hipHostGetDevicePointer")) {
+        (void)hipHostUnregister(map);
+        munmap(map, lay.bytes);
+        return 1;
     }
 
     bool bad = false;
-    for (uint32_t r = 0; r < kMaxRanks; ++r) {
-        q->rank = r;
-        const int hrc = compute_host_engine(model, mem.data(), q);
-        if (hrc != 0) {
-            std::fprintf(stderr, "r3_moe_helper: --compare engine-quant host path rank %u failed rc=%d\n", r, hrc);
-            return 1;
+    constexpr uint32_t sequence = 1;
+    for (uint32_t rank = 0; rank < kMaxRanks; ++rank) {
+        Request* q = lane_request(map, rank, sequence);
+        q->completion_sequence = 0;
+        q->status = 0;
+        q->layer = layer;
+        q->rank = rank;
+        q->rank_count = kMaxRanks;
+        q->rows = rows;
+        q->hidden = kHidden;
+        q->route_count = nr;
+        q->reserved0 = 0;
+        q->route_offset = h->route_offset[rank];
+        q->activation_offset = h->activation_offset[rank];
+        q->activation_stride = kHidden * sizeof(uint16_t);
+        for (uint32_t r = 0; r < kMaxRanks; ++r) {
+            q->result_offset[r] = h->result_offset[rank * kMaxRanks + r];
+            q->result_stride[r] = kHidden * sizeof(uint16_t);
         }
-        const uint16_t* want = ptr<uint16_t>(mem.data(), q->result_offset[r]);
+        q->sequence = sequence;
+        std::memcpy(ptr<Route>(map, q->route_offset), published.data(),
+                    published.size() * sizeof(Route));
+        std::memcpy(ptr<uint16_t>(map, q->activation_offset), activation.data(),
+                    activation.size() * sizeof(uint16_t));
+
+        /* Queue the production lane before publishing the sequence, as the service worker does. */
+        const int erc = gpu.enqueue_lane(map, dev_map, rank, sequence, false);
+        if (erc != 0) {
+            std::fprintf(stderr, "r3_moe_helper: --compare lane rank %u enqueue failed rc=%d\n",
+                         rank, erc);
+            bad = true;
+            break;
+        }
+        store(&h->lane[rank].request_sequence, sequence);
+        if (!gpu.sync_lane(rank) || load(&h->lane[rank].done_sequence) != sequence ||
+            q->status != 0) {
+            std::fprintf(stderr,
+                         "r3_moe_helper: --compare lane rank %u completion failed status=%d done=%u\n",
+                         rank, q->status, load(&h->lane[rank].done_sequence));
+            bad = true;
+            break;
+        }
+
+        const uint16_t* result_slot = ptr<uint16_t>(
+            map, h->result_offset[rank * kMaxRanks + rank]);
+        std::vector<uint16_t> got_slot(result_slot,
+                                       result_slot + (size_t)total * kHidden);
+        std::vector<uint16_t> want_route;
+        const int hrc = compute_host_engine(model, map, q, &want_route);
+        if (hrc != 0 || want_route.size() != (size_t)nr * kHidden) {
+            std::fprintf(stderr,
+                         "r3_moe_helper: --compare local-path host rank %u failed rc=%d\n",
+                         rank, hrc);
+            bad = true;
+            break;
+        }
+
+        std::vector<int32_t> got_sorted(total, -1);
+        std::copy(local_sorted.begin(), local_sorted.end(), got_sorted.begin());
+        std::vector<uint16_t> got_joined((size_t)total * kHidden, 0x3f80u);
+        const std::vector<uint16_t> prefix_before(
+            got_joined.begin(), got_joined.begin() + (size_t)local_rows * kHidden);
+        for (uint32_t j = 0; j < nr; ++j) {
+            const Route& r = published[j];
+            const uint32_t flat = (uint32_t)r.token * kTopK + r.slot;
+            const uint32_t dst_row = total - nr + j;
+            got_sorted[dst_row] = (int32_t)flat;
+            std::memcpy(got_joined.data() + (size_t)dst_row * kHidden,
+                        got_slot.data() + (size_t)flat * kHidden,
+                        kHidden * sizeof(uint16_t));
+        }
+        const bool prefix_ok = std::equal(
+            prefix_before.begin(), prefix_before.end(), got_joined.begin());
+
         long double num = 0.0L, den = 0.0L;
         double max_abs = 0.0;
-        for (size_t i = 0; i < got[r].size(); ++i) {
-            const double a = (double)bf16(got[r][i]);
-            const double b = (double)bf16(want[i]);
-            const double d = a - b;
-            num += (long double)d * d;
-            den += (long double)b * b;
-            max_abs = std::max(max_abs, std::abs(d));
+        for (uint32_t j = 0; j < nr; ++j) {
+            const uint32_t dst_row = total - nr + j;
+            if (got_sorted[dst_row] !=
+                published[j].token * (int32_t)kTopK + (int32_t)published[j].slot) {
+                bad = true;
+                continue;
+            }
+            for (uint32_t col = 0; col < kHidden; ++col) {
+                const double a = bf16(got_joined[(size_t)dst_row * kHidden + col]);
+                const double b = bf16(want_route[(size_t)j * kHidden + col]);
+                const double d = a - b;
+                num += (long double)d * d;
+                den += (long double)b * b;
+                max_abs = std::max(max_abs, std::abs(d));
+            }
         }
-        const double rel = std::sqrt((double)(num / std::max<long double>(den, 1.0e-30L)));
-        std::printf("engine_quant rank %u rel_l2=%.8g max_abs=%.8g\n", r, rel, max_abs);
-        bad = bad || !std::isfinite(rel) || rel >= 1.0e-3;
+        const double rel =
+            std::sqrt((double)(num / std::max<long double>(den, 1.0e-30L)));
+        std::printf("engine_join rank %u routes=%u rel_l2=%.8g max_abs=%.8g prefix_ok=%u\n",
+                    rank, nr, rel, max_abs, prefix_ok ? 1u : 0u);
+        bad = bad || !prefix_ok || !std::isfinite(rel) || rel >= 5.0e-3;
     }
+
+    if (pinned) (void)hipHostUnregister(map);
+    munmap(map, lay.bytes);
     return bad ? 1 : 0;
 }
 
@@ -655,7 +781,7 @@ int main(int argc, char** argv) {
     if (!select_owned(model, gpu.get(), budget, &owned)) return 1;
     if (gpu && !gpu->upload(owned.expert)) return 1;
     const uint32_t lane_max_rows = helper_lane_rows();
-    if (gpu && !compare && !gpu->prepare_lanes(lane_max_rows)) return 1;
+    if (gpu && !gpu->prepare_lanes(lane_max_rows)) return 1;
     if (gpu && !compare) (void)posix_fadvise(model.fd, 0, 0, POSIX_FADV_DONTNEED);
     long rss_pages = 0;
     if (FILE* sf = std::fopen("/proc/self/statm", "r")) {
@@ -669,7 +795,7 @@ int main(int argc, char** argv) {
 
     if (compare) {
         if (compare_one_layer)
-            return compare_mode(model, *gpu, owned, compare_layer, compare_rows);
+            return compare_mode(model, *gpu, owned, compare_layer, compare_rows, lane_max_rows);
         int rc = 0;
         for (uint32_t layer : {0u, 20u, 47u}) {
             if (layer >= model.layers) {
@@ -679,7 +805,7 @@ int main(int argc, char** argv) {
                 continue;
             }
             std::printf("layer %u\n", layer);
-            rc |= compare_mode(model, *gpu, owned, layer, compare_rows);
+            rc |= compare_mode(model, *gpu, owned, layer, compare_rows, lane_max_rows);
         }
         return rc;
     }
