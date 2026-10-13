@@ -13,6 +13,7 @@
 #include <cstring>
 #include <fcntl.h>
 #include <memory>
+#include <limits>
 #include <string>
 #include <thread>
 #include <sys/mman.h>
