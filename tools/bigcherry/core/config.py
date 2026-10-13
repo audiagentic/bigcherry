@@ -12,7 +12,7 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import engines, paths
+from . import components, engines, paths
 
 
 # The repository this code belongs to, fixed at import: the engines a recipes document may name are the ones this
@@ -272,6 +272,8 @@ class RuntimeProfile:
     # line). None means "no corpus configured" (equivalent to behavioral_
     # classes=() -- nothing to check for this profile).
     behavioral_corpus_edition: str | None = None
+    #: environment the server is launched with: only settings that differ from the engine components' defaults
+    environment: tuple[tuple[str, str], ...] = ()
 
     @property
     def digest(self) -> str:
@@ -290,6 +292,7 @@ class RuntimeProfile:
                 "min_free_vram_bytes_per_device": self.min_free_vram_bytes_per_device,
                 "behavioral_classes": sorted(self.behavioral_classes),
                 "behavioral_corpus_edition": self.behavioral_corpus_edition,
+                "environment": [list(pair) for pair in self.environment],
             },
             sort_keys=True, separators=(",", ":"),
         )
@@ -661,7 +664,13 @@ def load(path: str | Path) -> Config:
                 data.get("behavioral-classes"), f"runtime-profile.{name}.behavioral-classes"
             ),
             behavioral_corpus_edition=_behavioral_corpus_edition(data, name),
+            environment=_options(data.get("environment"), f"runtime-profile.{name}.environment"),
         )
+    for name, profile in runtime_profiles.items():
+        for component in components.load_all(_REPOSITORY, engine).values():
+            problems = components.check_environment(component, dict(profile.environment), production=False)
+            if problems:
+                raise ConfigError(f"runtime-profile.{name}.environment: {'; '.join(problems)}")
 
     return Config(
         pinned,
