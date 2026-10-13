@@ -13,6 +13,29 @@ priority: P2
 
 # Make decode and speculative-verify batches bit-identical (attention + mmvq + CPU cluster)
 
+
+## 2026-10-13 authoritative audit: width-5 MoE MMVQ admission and first-divergent-op gate
+
+**Disposition:** pending/P2; 1210 remains untested/default-off. This section supersedes the historical two-hunk-only and global MMVQ_MAX_BATCH_SIZE=8 explanations. No new build, GPU test or speedup.
+
+**Source-confirmed gap:** pinned llama.cpp b11552 (23b0202a) `mmvq.cu::get_mmvq_mmid_max_batch_rdna3` caps Q4_K/Q5_K/Q6_K MoE MMVQ at **4**; RDNA4 caps Q4_K at 4, Q5_K/Q6_K at 5. `ggml-cuda.cu::ggml_cuda_mul_mat_id` and `ggml_cuda_should_fuse_mul_mat_vec_q` enforce this per-type limit. Width 5 can therefore leave MMVQ on gfx1100 despite the global maximum of 8. Patch 1210 changes `calc_nwarps` but not this admission. Current upstream retains the limit. This is **not proof** that the historical model used a matching quant type or route.
+
+**Measured historical correctness:** Brutus gfx1100 2026-09-28 `llama-results` width 1 vs 5 diverged at the first logit row (GGUF byte 480); widths 2/3/4 first diverged much later (~1,987,040). Wave1+Wave2 and MMVF fusion-gate edits did not fix it. These may be distinct mechanisms; neither root cause is established. The existing `validation/producer.py` compares whole GGUF SHA with two process replicates, not per-op routing; its two-hunk comment is stale. Bitwise failure does not by itself prove incorrect speculative sampling.
+
+**Bounded gate (no new framework):**
+1. Inspect exact GGUF quant metadata and physical `MUL_MAT_ID` width/type/arch; test Q4_K/Q5_K/Q6_K 1..5 against Q8_0 and non-MoE controls. Reject MMVQ-boundary hypothesis if no eligible op.
+2. If eligible, reuse `validation/producer.py` / `tools/lab/prbe20-rd26-bisect` for one disposable dispatch trace at `ggml_cuda_mul_mat_id` and fusion admission: model/source/patch SHA, layer, logical token, `ne2`, type, cap, actual MMVQ/MMQ/MMF/BLAS route, KV type, GPU. Do not change production selector yet.
+3. Find **first divergent intermediate** with pinned `llama_context_params.cb_eval` forwarded through `src/llama-context.cpp` to `ggml_backend_sched_set_eval_callback` and `ggml-backend.cpp`'s pre/post-node callback. Hash matched logical F32 rows, first coarse layer then operator (embedding, RoPE/FA, SSM/GDN, MoE router, MUL_MAT_ID, residual, logits). Callback synchronizes backend splits and may alter graph behaviour: diagnostic only, **never** use its timing for performance. If instrumentation changes the mismatch, record INSTRUMENTATION_SENSITIVE, not a cause.
+4. Classify MMVQ_BOUNDARY_CONFIRMED only if the first divergent tensor follows a proven width-dependent route; otherwise OTHER_OP_CONFIRMED / NOT_REPRODUCED / UNATTRIBUTED. Treat the late width-2/3/4 mismatch separately with exact token/KV/SSM state and same-process replay. No kernel edit or hardware queue without attribution.
+5. If confirmed, try a single opt-in fixed-route discriminator using existing patch/catalog infrastructure; do **not** globally override the tuned per-type limit. Require F16/BF16-KV widths 1..8 full-logit identity or explicitly narrow the contract, greedy/KLD/MTP acceptance, multi-request/multi-ubatch/graph replay, gfx1100 then gfx1201 paired sessions (>=4 sessions, >=10 rounds), <=1% tg128 regression and positive end-to-end MTP gain. Otherwise reject/retire. gfx1030 remains a separate negative control.
+
+**Ownership:** PRBE20/1210 owns the experiment; existing producer and lab bisection own diagnostics. PRBE52/1268 is rejected, not a new implementation dependency. Recently active Radiance/RAD01/1340/MTP work is protected; no edits to those plans. No second dispatcher, cache, scheduler or telemetry system.
+
+**External mechanism:** [vLLM #48391](https://github.com/vllm-project/vllm/pull/48391) pins C++ RMSNorm reduction block size in batch-invariant mode (actual diff and tests inspected), a mechanism/test precedent, **not** an AMD/GGUF port. [llama.cpp #16016](https://github.com/ggml-org/llama.cpp/pull/16016) is an open opt-in deterministic inference proposal. [vLLM #54506](https://github.com/vllm-project/vllm/issues/54506) documents forward-pass verification batch dependence. No external performance claim transfers to gfx1100/gfx1201.
+
+**Checks actually run:** 14/14 actual-source static assertions; 9/9 source-shaped host selector assertions plus Python compile. No repository pytest, HIP compilation, GPU execution or new performance measurement.
+
+
 ## Description
 
 IMPLEMENTED-AS-PATCH, needs extension. Patch 1210_rd26_bitidentical_decode_verify_standalone (state=untested) already ports 2 of 5 fork commits. Real contract-gate hardware run (2026-09-13/14, gfx1100) confirms the FULL cross-batch bit-identity property still FAILS with just these 2 hunks (first_file_byte_mismatch=480) -- Wave 1 (flash-attn, commit 93510434f) and Wave 2 (RDNA4/RDNA3 MMVQ/SSM, commits 10b83d6b2/6cdf5aff9) are not yet ported. CORRECTED (source-verified): the Wave-1 verified anchor is `ggml_cuda_flash_attn_ext_mma_f16_switch_ncols1` in ggml/src/ggml-cuda/fattn.cu, whose specialization selection branches on `Q->ne[1] <= 8/ncols2`, `<= 16/ncols2`, `<= 32/ncols2` -- the exact invariant specialization boundary for n_q=1..8 must be pinned here, not left TBD. Wave-2's nwarps_explicit/rows_per_block_explicit HI09 template params are NOT b11126 source -- they are added by patch 0600_mmvq_geometry, so 1210 must declare `requires=["0600_mmvq_geometry"]` before anchoring on them (currently requires=[]). The "RD26-determinism build flag" referenced below is undefined; package activation itself is the gate (no separate compile/runtime flag exists or should be invented).
