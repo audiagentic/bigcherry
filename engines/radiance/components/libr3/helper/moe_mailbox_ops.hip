@@ -183,12 +183,12 @@ __global__ void mailbox_add_rows_kernel(
     const Route* route = reinterpret_cast<const Route*>(base + q->route_offset);
     __shared__ uint32_t route_index[kTopK];
     if (threadIdx.x == 0) {
-        for (uint32_t slot = 0; slot < top_k; ++slot) route_index[slot] = UINT32_MAX;
+        for (uint32_t slot = 0; slot < top_k; ++slot) route_index[slot] = 0xffffffffu;
         for (uint32_t j = 0; j < nr; ++j) {
             const Route r = route[j];
             if (r.token < 0 || (uint32_t)r.token >= rows || r.slot >= top_k) __builtin_trap();
             if ((uint32_t)r.token != token) continue;
-            if (route_index[r.slot] != UINT32_MAX) __builtin_trap();
+            if (route_index[r.slot] != 0xffffffffu) __builtin_trap();
             route_index[r.slot] = j;
         }
     }
@@ -202,7 +202,7 @@ __global__ void mailbox_add_rows_kernel(
         bool any = false;
         for (uint32_t slot = 0; slot < top_k; ++slot) {
             const uint32_t j = route_index[slot];
-            if (j == UINT32_MAX) continue;
+            if (j == 0xffffffffu) continue;
             any = true;
             const Route r = route[j];
             const uint32_t flat = token * top_k + slot;
