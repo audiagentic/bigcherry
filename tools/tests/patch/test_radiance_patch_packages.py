@@ -175,6 +175,16 @@ class TestRadiancePatchPackages(unittest.TestCase):
                 finally:
                     temp.cleanup()
 
+    def test_remote_helper_preserves_engine_policy_and_local_prefix(self):
+        helper = REPO / "engines" / "radiance" / "components" / "libr3" / "helper"
+        hook = (helper / "moe_remote_hook.cpp").read_text(encoding="utf-8")
+        ops = (helper / "moe_mailbox_ops.hip").read_text(encoding="utf-8")
+        self.assertIn('setenv("R3_MOE_REMOTE_MIN_ROWS", "0", 0)', hook)
+        self.assertIn('setenv("R3_MOE_REMOTE_MAX_ROWS", mr.c_str(), 0)', hook)
+        self.assertNotIn('setenv("R3_MOE_REMOTE_MAX_ROWS", mr.c_str(), 1)', hook)
+        self.assertIn('{"sorted", RAD_OPD_INOUT, 0}', ops)
+        self.assertIn('{"down", RAD_OPD_INOUT, 0}', ops)
+
     def test_missing_anchor_fails_closed_and_is_atomic(self):
         for package_id, (relative, before, after) in CASES.items():
             with self.subTest(package=package_id):
