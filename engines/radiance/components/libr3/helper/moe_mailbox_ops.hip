@@ -1,3 +1,4 @@
+#include <cstdio>
 #include "helper/moe_remote_hook.h"
 #include "helper/moe_remote_shm.h"
 #include "rad_abi.h"
@@ -236,15 +237,29 @@ int join_launch(const RadArgs* a, RadStream stream) {
     const long long hidden = geti(a, "n");
     const long long top_k = geti(a, "top_k");
     const long long total = rows * top_k;
-    if (rows <= 0 || rows > (long long)d->max_rows || hidden != (long long)kHidden ||
-        top_k != (long long)kTopK || total <= 0 || total > (long long)kMaxRows ||
-        !a->t[0].data || !a->t[1].data || a->t[0].rank != 1 || a->t[1].rank < 2 ||
-        /* Both are the engine's top-k slot buffers, allocated at capacity; the pass uses the first rows*top_k. */
-        a->t[0].shape[0] < total || a->t[1].shape[0] < total ||
-        a->t[1].shape[1] != hidden || a->t[0].dtype != RAD_I32 ||
-        a->t[1].dtype != RAD_BF16 || !rad_tensor_is_contiguous(&a->t[0]) ||
-        !rad_tensor_is_contiguous(&a->t[1]))
+    /* Both are the engine's top-k slot buffers ([rows, top_k] ids and [rows*top_k, hidden] rows, or their flat
+     * forms), allocated at capacity; the pass uses the first rows*top_k slots. Check element counts, not rank. */
+    auto numel = [](const RadTensor& t) {
+        long long n = 1;
+        for (int i = 0; i < t.rank; ++i) n *= t.shape[i];
+        return n;
+    };
+    const bool ok = rows > 0 && rows <= (long long)d->max_rows && hidden == (long long)kHidden &&
+        top_k == (long long)kTopK && total > 0 && total <= (long long)kMaxRows &&
+        a->t[0].data && a->t[1].data && a->t[0].rank >= 1 && a->t[1].rank >= 2 &&
+        numel(a->t[0]) >= total && numel(a->t[1]) >= total * hidden &&
+        a->t[1].shape[a->t[1].rank - 1] == hidden && a->t[0].dtype == RAD_I32 &&
+        a->t[1].dtype == RAD_BF16 && rad_tensor_is_contiguous(&a->t[0]) &&
+        rad_tensor_is_contiguous(&a->t[1]);
+    if (!ok) {
+        std::fprintf(stderr, "libr3: moe_mailbox_join refused rows=%lld max_rows=%u hidden=%lld top_k=%lld "
+                     "ids rank %d numel %lld dtype %u, rows rank %d numel %lld last %lld dtype %u\n",
+                     rows, (unsigned)d->max_rows, hidden, top_k,
+                     a->t[0].rank, numel(a->t[0]), (unsigned)a->t[0].dtype,
+                     a->t[1].rank, numel(a->t[1]), a->t[1].rank ? (long long)a->t[1].shape[a->t[1].rank - 1] : -1LL,
+                     (unsigned)a->t[1].dtype);
         return RAD_E_SHAPE;
+    }
 
     hipLaunchKernelGGL(mailbox_join_wait_kernel, dim3(1), dim3(1), 0, (hipStream_t)stream,
                        static_cast<uint8_t*>(d->mailbox), d->sequence, d->published, d->rank);
