@@ -142,7 +142,7 @@ struct Container {
     }
     const RadEncoding* encoding(const RadFileEntry* e) const { return e ? &encs[e->enc] : nullptr; }
     const RadFilePlane* plane(const RadFileEntry* e, int p) const { return &planes[e->plane_first + p]; }
-}
+};
 
 float raw_value(uint32_t dtype, const uint8_t* row, int64_t col) {
     const int bits = rad_dtype_bits(dtype);
