@@ -5,6 +5,7 @@
 #include <hip/hip_runtime.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -45,6 +46,16 @@ bool enabled_env() {
 
 bool poison_env() {
     const char* e = std::getenv("R3_MOE_HELPER_POISON");
+    return e && *e && std::strcmp(e, "0") != 0;
+}
+
+bool shadow_env() {
+    const char* e = std::getenv("R3_MOE_HELPER_SHADOW");
+    return e && *e && std::strcmp(e, "0") != 0;
+}
+
+bool cpu_ref_env() {
+    const char* e = std::getenv("R3_MOE_HELPER_CPU");
     return e && *e && std::strcmp(e, "0") != 0;
 }
 
@@ -99,6 +110,43 @@ void register_mailbox() {
         "libr3: R3_MOE_HELPER GPU mailbox ready, %u owned experts, decode rows <= %lld\n",
         g.hdr->owned_count, (long long)max_rows());
     if (poison_env()) std::fprintf(stderr, "libr3: R3_MOE_HELPER poison\n");
+    if (shadow_env()) std::fprintf(stderr, "libr3: R3_MOE_HELPER_SHADOW enabled\n");
+}
+
+void report_shadow(uint32_t rank, RankState& s) {
+    if (!s.dev.shadow || !s.dev.shadow_stats || !s.dev.shadow_first) return;
+    (void)hipDeviceSynchronize();
+    R3MoeShadowLayerStats stats[kMaxLayers]{};
+    R3MoeShadowFirst first{};
+    if (!hip_ok(hipMemcpy(stats, s.dev.shadow_stats, sizeof(stats), hipMemcpyDeviceToHost),
+                "read shadow layer stats") ||
+        !hip_ok(hipMemcpy(&first, s.dev.shadow_first, sizeof(first), hipMemcpyDeviceToHost),
+                "read shadow first mismatch"))
+        return;
+    for (uint32_t l = 0; l < kMaxLayers; ++l) {
+        const auto& x = stats[l];
+        if (!x.elems) continue;
+        float max_abs = 0.0f;
+        std::memcpy(&max_abs, &x.max_abs_bits, sizeof(max_abs));
+        const double rel = std::sqrt((double)x.diff2 / std::max(1.0e-30, (double)x.ref2));
+        std::fprintf(stderr,
+            "libr3: R3_MOE_HELPER_SHADOW layer=%u rank=%u rows=%llu mean_abs=%.8g "
+            "max_abs=%.8g rel_l2=%.8g bad_rows=%u\n",
+            l, rank, (unsigned long long)x.rows,
+            (double)x.sum_abs / (double)x.elems, (double)max_abs, rel, x.bad_rows);
+    }
+    if (first.claimed) {
+        std::fprintf(stderr,
+            "libr3: R3_MOE_HELPER_SHADOW first_bad layer=%u rank=%u r0=%u token=%d "
+            "slot=%u expert=%d rel_l2=%.8g max_abs=%.8g "
+            "local=[%.8g %.8g %.8g %.8g] helper=[%.8g %.8g %.8g %.8g]\n",
+            first.layer, first.rank, first.row_base, first.token, (unsigned)first.slot,
+            first.expert, (double)first.rel_l2, (double)first.max_abs,
+            (double)first.local[0], (double)first.local[1],
+            (double)first.local[2], (double)first.local[3],
+            (double)first.helper[0], (double)first.helper[1],
+            (double)first.helper[2], (double)first.helper[3]);
+    }
 }
 
 void close_mailbox() {
@@ -107,6 +155,9 @@ void close_mailbox() {
         RankState& s = g.rank[r];
         if (!s.ready) continue;
         if (s.device >= 0) (void)hipSetDevice(s.device);
+        report_shadow(r, s);
+        if (s.dev.shadow_first) (void)hipFree(s.dev.shadow_first);
+        if (s.dev.shadow_stats) (void)hipFree(s.dev.shadow_stats);
         if (s.published) (void)hipFree(s.published);
         if (s.sequence) (void)hipFree(s.sequence);
         if (s.owner) (void)hipFree(s.owner);
@@ -174,13 +225,41 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
         return RAD_E_DEVICE;
     }
 
+    const bool shadow = shadow_env();
+    R3MoeShadowLayerStats* shadow_stats = nullptr;
+    R3MoeShadowFirst* shadow_first = nullptr;
+    if (shadow &&
+        (!hip_ok(hipMalloc(reinterpret_cast<void**>(&shadow_stats),
+                           sizeof(R3MoeShadowLayerStats) * kMaxLayers),
+                 "hipMalloc shadow stats") ||
+         !hip_ok(hipMemset(shadow_stats, 0, sizeof(R3MoeShadowLayerStats) * kMaxLayers),
+                 "zero shadow stats") ||
+         !hip_ok(hipMalloc(reinterpret_cast<void**>(&shadow_first), sizeof(R3MoeShadowFirst)),
+                 "hipMalloc shadow first") ||
+         !hip_ok(hipMemset(shadow_first, 0, sizeof(R3MoeShadowFirst)),
+                 "zero shadow first"))) {
+        if (shadow_first) (void)hipFree(shadow_first);
+        if (shadow_stats) (void)hipFree(shadow_stats);
+        (void)hipFree(s.published);
+        (void)hipFree(s.sequence);
+        (void)hipFree(s.owner);
+        s.published = nullptr;
+        s.sequence = nullptr;
+        s.owner = nullptr;
+        return RAD_E_DEVICE;
+    }
+
     s.device = device;
     s.dev.mailbox = dev_map;
     s.dev.owner = s.owner;
     s.dev.sequence = s.sequence;
     s.dev.published = s.published;
+    s.dev.shadow_stats = shadow_stats;
+    s.dev.shadow_first = shadow_first;
     s.dev.max_rows = (uint32_t)max_rows();
     s.dev.rank = (uint32_t)rank;
+    s.dev.shadow = shadow ? 1u : 0u;
+    s.dev.cpu_ref = cpu_ref_env() ? 1u : 0u;
     s.ready = true;
     *out = &s.dev;
     return RAD_OK;

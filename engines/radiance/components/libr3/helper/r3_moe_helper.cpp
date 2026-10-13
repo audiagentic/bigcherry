@@ -653,10 +653,15 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
         q->rows = rows;
         q->hidden = kHidden;
         q->route_count = nr;
-        q->reserved0 = 0;
+        q->row_base = 0;
         q->route_offset = h->route_offset[rank];
         q->activation_offset = h->activation_offset[rank];
+        q->activation_q_offset = h->activation_offset[rank] + kActivationBf16Bytes;
+        q->activation_s_offset =
+            h->activation_offset[rank] + kActivationBf16Bytes + kActivationQBytes;
         q->activation_stride = kHidden * sizeof(uint16_t);
+        q->activation_q_stride = kHidden;
+        q->activation_s_stride = (kHidden / kActGroup) * sizeof(float);
         for (uint32_t r = 0; r < kMaxRanks; ++r) {
             q->result_offset[r] = h->result_offset[rank * kMaxRanks + r];
             q->result_stride[r] = kHidden * sizeof(uint16_t);
@@ -666,6 +671,12 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
                     published.size() * sizeof(Route));
         std::memcpy(ptr<uint16_t>(map, q->activation_offset), activation.data(),
                     activation.size() * sizeof(uint16_t));
+        if (!gpu.stage_compare_activation(map, rank, activation.data(), rows)) {
+            std::fprintf(stderr,
+                         "r3_moe_helper: --compare rank %u could not stage exact q/s\n", rank);
+            bad = true;
+            break;
+        }
 
         std::vector<int32_t> got_sorted(total, -1);
         std::copy(local_sorted.begin(), local_sorted.end(), got_sorted.begin());

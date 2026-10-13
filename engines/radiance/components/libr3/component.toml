@@ -65,6 +65,12 @@ status = "diagnostic"
 summary = "replace every helper-produced remote result value with 1e3 to prove the post-gather contribution reaches model output"
 activation = "R3_MOE_HELPER poison"
 
+[setting.R3_MOE_HELPER_SHADOW]
+default = "0"
+status = "diagnostic"
+summary = "publish owned routes without masking them and compare helper unweighted down rows against the engine rows"
+activation = "R3_MOE_HELPER_SHADOW layer="
+
 [setting.R3_MOE_HELPER_R4D]
 default = ""
 status = "diagnostic"

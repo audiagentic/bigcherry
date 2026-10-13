@@ -58,11 +58,14 @@ __device__ __forceinline__ bool lane_request_valid(
            q->layer < layers && q->rows > 0 && q->rows <= max_rows &&
            q->hidden == kHidden && q->route_count > 0 &&
            q->route_count <= q->rows * kTopK &&
-           q->activation_stride == kHidden * (uint32_t)sizeof(uint16_t);
+           q->activation_stride == kHidden * (uint32_t)sizeof(uint16_t) &&
+           q->activation_q_stride == kHidden &&
+           q->activation_s_stride == (kHidden / kActGroup) * (uint32_t)sizeof(float);
 }
 
 __global__ void lane_prepare_activation(
-    r3::moe_shm::Request* q, const uint16_t* src, uint16_t* dst,
+    r3::moe_shm::Request* q, const uint8_t* src_q, const float* src_s,
+    uint8_t* dst_q, float* dst_s,
     uint32_t rank, uint32_t sequence, uint32_t max_rows, uint32_t layers,
     uint64_t* stats) {
     using namespace r3::moe_shm;
@@ -78,10 +81,17 @@ __global__ void lane_prepare_activation(
         }
     }
     const uint64_t i = (uint64_t)blockIdx.x * blockDim.x + threadIdx.x;
-    const uint64_t total = (uint64_t)max_rows * kHidden;
-    if (i >= total) return;
-    const uint32_t row = (uint32_t)(i / kHidden);
-    dst[i] = valid && row < q->rows ? src[i] : 0;
+    const uint64_t q_total = (uint64_t)max_rows * kHidden;
+    if (i < q_total) {
+        const uint32_t row = (uint32_t)(i / kHidden);
+        dst_q[i] = valid && row < q->rows ? src_q[i] : 0;
+    }
+    const uint32_t scale_cols = kHidden / kActGroup;
+    const uint64_t s_total = (uint64_t)max_rows * scale_cols;
+    if (i < s_total) {
+        const uint32_t row = (uint32_t)(i / scale_cols);
+        dst_s[i] = valid && row < q->rows ? src_s[i] : 0.0f;
+    }
 }
 
 __global__ void lane_select_tables(
@@ -556,6 +566,41 @@ public:
         return true;
     }
 
+    bool stage_compare_activation(void* host_map, uint32_t rank,
+                                  const uint16_t* activation, uint32_t rows) {
+        using namespace r3::moe_shm;
+        if (!host_map || !activation || rank >= kMaxRanks || rows == 0 || rows > lane_rows_)
+            return false;
+        LaneWork& w = lane_[rank];
+        const size_t xbytes = (size_t)rows * kHidden * sizeof(uint16_t);
+        if (!hip_ok(hipMemcpyAsync(w.d_act.p, activation, xbytes,
+                                   hipMemcpyHostToDevice, w.stream),
+                    "--compare upload BF16 activation"))
+            return false;
+        std::vector<RadParam> aqp = {
+            pi("M", rows), pi("n", kHidden), pi("group", kGroup), ps("dtype", "bf16")
+        };
+        if (launch_on(had_quant_,
+                      { tensor(w.d_act.p, RAD_BF16, {rows, kHidden}),
+                        tensor(w.d_aq.p, RAD_F8E4M3, {rows, kHidden}),
+                        tensor(w.d_as.p, RAD_F32, {rows, kHidden / kGroup}) },
+                      aqp, w.stream, w.scratch) < 0)
+            return false;
+        Header* h = static_cast<Header*>(host_map);
+        auto* hq = ptr<uint8_t>(host_map, h->activation_offset[rank] + kActivationBf16Bytes);
+        auto* hs = ptr<float>(host_map,
+            h->activation_offset[rank] + kActivationBf16Bytes + kActivationQBytes);
+        if (!hip_ok(hipMemcpyAsync(hq, w.d_aq.p, (size_t)rows * kHidden,
+                                   hipMemcpyDeviceToHost, w.stream),
+                    "--compare stage exact q") ||
+            !hip_ok(hipMemcpyAsync(hs, w.d_as.p,
+                                   (size_t)rows * (kHidden / kGroup) * sizeof(float),
+                                   hipMemcpyDeviceToHost, w.stream),
+                    "--compare stage exact scales"))
+            return false;
+        return hip_ok(hipStreamSynchronize(w.stream), "--compare stage q/s sync");
+    }
+
     int enqueue_lane(void* host_map, void* device_map, uint32_t rank, uint32_t sequence,
                      bool sample) {
         using namespace r3::moe_shm;
@@ -580,8 +625,12 @@ public:
             static_cast<uint32_t*>(dev_at(&hhost->lane[rank].done_sequence));
         auto* route = static_cast<const Route*>(
             dev_at(ptr<Route>(host_map, hhost->route_offset[rank])));
-        auto* act = static_cast<const uint16_t*>(
-            dev_at(ptr<uint16_t>(host_map, hhost->activation_offset[rank])));
+        auto* act_q = static_cast<const uint8_t*>(
+            dev_at(ptr<uint8_t>(host_map,
+                hhost->activation_offset[rank] + kActivationBf16Bytes)));
+        auto* act_s = static_cast<const float*>(
+            dev_at(ptr<float>(host_map,
+                hhost->activation_offset[rank] + kActivationBf16Bytes + kActivationQBytes)));
         auto* dst = static_cast<uint16_t*>(
             dev_at(ptr<uint16_t>(
                 host_map, hhost->result_offset[rank * kMaxRanks + rank])));
@@ -616,7 +665,8 @@ public:
             ((uint64_t)rows * kHidden + block.x - 1) / block.x);
         const dim3 route_grid((routes + block.x - 1) / block.x);
         hipLaunchKernelGGL(lane_prepare_activation, act_grid, block, 0, w.stream,
-                           q, act, static_cast<uint16_t*>(w.d_act.p),
+                           q, act_q, act_s,
+                           static_cast<uint8_t*>(w.d_aq.p), static_cast<float*>(w.d_as.p),
                            rank, sequence, rows, model_.layers,
                            static_cast<uint64_t*>(w.d_stats.p));
         hipLaunchKernelGGL(lane_select_tables,
@@ -647,16 +697,6 @@ public:
                            static_cast<int32_t*>(w.d_sorted.p),
                            nullptr);
         if (!hip_ok(hipGetLastError(), "lane request kernels")) return -EIO;
-
-        std::vector<RadParam> aqp = {
-            pi("M", rows), pi("n", kHidden), pi("group", kGroup), ps("dtype", "bf16")
-        };
-        if (launch_on(had_quant_,
-                      { tensor(w.d_act.p, RAD_BF16, {rows, kHidden}),
-                        tensor(w.d_aq.p, RAD_F8E4M3, {rows, kHidden}),
-                        tensor(w.d_as.p, RAD_F32, {rows, kHidden / kGroup}) },
-                      aqp, w.stream, w.scratch) < 0)
-            return -EIO;
 
         const int64_t w0 = rank_slice_width(rank, 0);
         const int64_t w1 = rank_slice_width(rank, 1);

@@ -11,7 +11,7 @@
 namespace r3::moe_shm {
 
 constexpr uint64_t kMagic = 0x31454f4d33485253ull; /* "SRH3MOE1": reject unrelated/stale shm. */
-constexpr uint32_t kVersion = 5;
+constexpr uint32_t kVersion = 6;
 constexpr uint32_t kPage = 4096;
 constexpr uint32_t kMaxRanks = 2;       /* Flash-Next configuration of record: TP=2. */
 constexpr uint32_t kMaxLayers = 128;     /* ownership bitmap bound; Flash-Next is below this. */
@@ -22,6 +22,11 @@ constexpr uint32_t kTopK = 10;
 constexpr uint32_t kExperts = 512;
 constexpr uint32_t kMaxRows = 4096;
 constexpr uint32_t kMaxRoutes = kMaxRows * kTopK;
+constexpr uint32_t kActGroup = 128;
+constexpr uint32_t kActivationBf16Bytes = kMaxRows * kHidden * sizeof(uint16_t);
+constexpr uint32_t kActivationQBytes = kMaxRows * kHidden;
+constexpr uint32_t kActivationScaleBytes =
+    kMaxRows * (kHidden / kActGroup) * sizeof(float);
 
 struct Route {
     int32_t token;       /* activation/result row to which this expert contribution belongs. */
@@ -42,13 +47,17 @@ struct alignas(64) Request {
     uint32_t rows;                 /* number of activation/result rows in this pass. */
     uint32_t hidden;               /* must be 2560; explicit so ABI/model mismatch fails closed. */
     uint32_t route_count;          /* number of Route records valid at route_offset. */
-    uint32_t reserved0;
+    uint32_t row_base;             /* pass r0 in the step; diagnostic only. */
     uint64_t route_offset;         /* routed (token,expert,weight) list for this rank. */
-    uint64_t activation_offset;    /* staged BF16 input rows for this rank. */
-    uint32_t activation_stride;    /* bytes between staged rows; allows ABI stride to differ. */
+    uint64_t activation_offset;    /* staged BF16 input rows; compare/CPU-reference only. */
+    uint64_t activation_q_offset;  /* exact E4M3 operand consumed by the local gate/up GEMM. */
+    uint64_t activation_s_offset;  /* exact F32 group scales consumed with activation_q_offset. */
+    uint32_t activation_stride;    /* bytes between BF16 reference rows. */
+    uint32_t activation_q_stride;  /* bytes between E4M3 rows. */
+    uint32_t activation_s_stride;  /* bytes between F32 scale rows. */
     uint32_t result_stride[kMaxRanks]; /* BF16 row stride for each TP rank's result slot. */
     uint64_t result_offset[kMaxRanks * kMaxRanks]; /* partial-output slots; helper writes only req.rank. */
-    uint64_t reserved[4];
+    uint64_t reserved[2];
 };
 static_assert(sizeof(Request) % 64 == 0);
 
@@ -71,7 +80,7 @@ struct alignas(kPage) Header {
     uint32_t top_k;                 /* capacity contract: 10 routes per token. */
     uint32_t expert_count;          /* model contract: 512 global routed experts. */
     uint32_t route_slot_bytes[kMaxRanks];      /* per-rank routing-list capacity. */
-    uint32_t activation_slot_bytes[kMaxRanks]; /* per-rank staged BF16 activation capacity. */
+    uint32_t activation_slot_bytes[kMaxRanks]; /* per-rank BF16 reference + exact E4M3 q/F32 scale staging. */
     uint32_t result_slot_bytes[kMaxRanks * kMaxRanks]; /* [producer rank][output rank]. */
     uint32_t owned_count;            /* number of set (layer, expert) ownership bits. */
     uint32_t owner_slot_bytes;       /* fixed bitmap bytes at owner_offset. */
@@ -91,7 +100,7 @@ static_assert(sizeof(Header) <= kPage);
 
 constexpr uint64_t align_page(uint64_t n) { return (n + kPage - 1) & ~(uint64_t(kPage) - 1); }
 constexpr uint32_t route_slot_bytes() { return kMaxRoutes * sizeof(Route); }
-constexpr uint32_t activation_slot_bytes() { return kMaxRows * kHidden * sizeof(uint16_t); }
+constexpr uint32_t activation_slot_bytes() { return kActivationBf16Bytes + kActivationQBytes + kActivationScaleBytes; }
 constexpr uint32_t result_slot_bytes() { return kMaxRows * kHidden * sizeof(uint16_t); }
 constexpr uint32_t owner_slot_bytes() { return kMaxLayers * ((kExperts + 7u) / 8u); }
 
