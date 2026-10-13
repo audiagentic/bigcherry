@@ -73,6 +73,19 @@ struct Buffer {
     }
 };
 
+struct HostBounce {
+    void* p = nullptr;
+    size_t bytes = 0;
+    ~HostBounce() { if (p) (void)hipHostFree(p); }
+    bool ensure(size_t need) {
+        if (need <= bytes) return true;
+        if (p) { (void)hipHostFree(p); p = nullptr; bytes = 0; }
+        if (!hip_ok(hipHostMalloc(&p, need, hipHostMallocPortable), "hipHostMalloc load bounce")) return false;
+        bytes = need;
+        return true;
+    }
+};
+
 struct StoredWeight {
     void* code = nullptr;
     void* scale = nullptr;
@@ -149,6 +162,8 @@ public:
     }
 
     bool upload(const std::vector<std::pair<uint32_t, uint32_t>>& owned) {
+        constexpr size_t kLoadBounceBytes = 64ull * 1024ull * 1024ull;
+        if (!load_bounce_.ensure(kLoadBounceBytes)) return false;
         /* One arena for every resident expert: tens of thousands of small hipMallocs exhaust the
          * device on allocation overhead long before the budget does. */
         size_t total = 0;
@@ -325,6 +340,7 @@ private:
     void* arena_ = nullptr;
     size_t arena_size_ = 0, arena_used_ = 0;
 
+    HostBounce load_bounce_;
     Buffer d_act_, d_aq_, d_as_, d_sorted_, d_off_, d_ew_, d_gu_;
     Buffer d_mid_, d_mid_s_, d_mid_rank_, d_down_, d_result_, scratch_;
 
@@ -445,7 +461,7 @@ private:
             rad_enc_plane_dims(&ep, rows, cols, &pr, &pc);
             const RadFilePlane* fp = model_.plane(e, s[i]);
             (*sel)[i] = s[i];
-            (*out)[i] = tensor((void*)(model_.base + fp->offset), ep.dtype, {pr, pc});
+            (*out)[i] = tensor(nullptr, ep.dtype, {pr, pc});
         }
         return true;
     }
@@ -476,30 +492,60 @@ private:
         return rc0 == RAD_OK && rc1 == RAD_OK && out->code.bytes > 0 && out->scale.bytes > 0;
     }
 
+    bool load_plane_data(const RadFileEntry* e, int sel, RadTensor* t, std::vector<uint8_t>* out) {
+        if (!e || !t || !out || sel < 0 || (uint32_t)sel >= e->n_planes) return false;
+        const RadFilePlane* fp = model_.plane(e, sel);
+        out->resize((size_t)fp->bytes);
+        size_t done = 0;
+        while (done < out->size()) {
+            const size_t n = std::min(load_bounce_.bytes, out->size() - done);
+            if (!model_.pread_full(fp->offset + done, load_bounce_.p, n)) return false;
+            std::memcpy(out->data() + done, load_bounce_.p, n);
+            done += n;
+        }
+        t->data = out->data();
+        return true;
+    }
+
     bool upload_weight(const RadFileEntry* e, bool gate_up, StoredWeight* out) {
         WeightPlan p;
         if (!plan_weight(e, gate_up, &p)) {
             std::fprintf(stderr, "r3_moe_helper: expert weight is not %s-compatible\n", kDtype);
             return false;
         }
-        std::vector<uint8_t> code((size_t)p.code.bytes), scale((size_t)p.scale.bytes);
-        const RadEncoding* enc = model_.encoding(e);
-        if (moe_->relayout(p.params.data(), (int)p.params.size(), 2, enc,
-                           p.code_sel.data(), p.code_planes.data(), 2,
-                           code.data(), p.code.bytes) != RAD_OK ||
-            moe_->relayout(p.params.data(), (int)p.params.size(), 3, enc,
-                           p.scale_sel.data(), p.scale_planes.data(), 2,
-                           scale.data(), p.scale.bytes) != RAD_OK) {
-            std::fprintf(stderr, "r3_moe_helper: libr4d refused expert relayout\n");
+        if ((size_t)p.code.bytes > load_bounce_.bytes || (size_t)p.scale.bytes > load_bounce_.bytes) {
+            std::fprintf(stderr, "r3_moe_helper: relayout output exceeds 64 MiB load bounce\n");
             return false;
         }
-        out->code = arena_take(code.size());
-        out->scale = arena_take(scale.size());
+        std::array<std::vector<uint8_t>, 2> code_src, scale_src;
+        auto code_planes = p.code_planes;
+        auto scale_planes = p.scale_planes;
+        for (int i = 0; i < 2; ++i) {
+            if (!load_plane_data(e, p.code_sel[i], &code_planes[i], &code_src[i]) ||
+                !load_plane_data(e, p.scale_sel[i], &scale_planes[i], &scale_src[i])) {
+                std::fprintf(stderr, "r3_moe_helper: pread expert plane failed\n");
+                return false;
+            }
+        }
+        const RadEncoding* enc = model_.encoding(e);
+        out->code = arena_take((size_t)p.code.bytes);
+        out->scale = arena_take((size_t)p.scale.bytes);
         if (!out->code || !out->scale) return false;
-        if (!hip_ok(hipMemcpy(out->code, code.data(), code.size(), hipMemcpyHostToDevice),
-                    "upload expert codes") ||
-            !hip_ok(hipMemcpy(out->scale, scale.data(), scale.size(), hipMemcpyHostToDevice),
-                    "upload expert scales")) return false;
+        if (moe_->relayout(p.params.data(), (int)p.params.size(), 2, enc,
+                           p.code_sel.data(), code_planes.data(), 2,
+                           load_bounce_.p, p.code.bytes) != RAD_OK ||
+            !hip_ok(hipMemcpyAsync(out->code, load_bounce_.p, (size_t)p.code.bytes,
+                                   hipMemcpyHostToDevice, stream_), "upload expert codes") ||
+            !hip_ok(hipStreamSynchronize(stream_), "upload expert codes sync") ||
+            moe_->relayout(p.params.data(), (int)p.params.size(), 3, enc,
+                           p.scale_sel.data(), scale_planes.data(), 2,
+                           load_bounce_.p, p.scale.bytes) != RAD_OK ||
+            !hip_ok(hipMemcpyAsync(out->scale, load_bounce_.p, (size_t)p.scale.bytes,
+                                   hipMemcpyHostToDevice, stream_), "upload expert scales") ||
+            !hip_ok(hipStreamSynchronize(stream_), "upload expert scales sync")) {
+            std::fprintf(stderr, "r3_moe_helper: libr4d refused expert relayout/upload\n");
+            return false;
+        }
         out->code_dtype = p.code.dtype; out->scale_dtype = p.scale.dtype;
         out->code_bytes = p.code.bytes; out->scale_bytes = p.scale.bytes;
         uint32_t& cd = gate_up ? gu_code_dtype_ : dn_code_dtype_;

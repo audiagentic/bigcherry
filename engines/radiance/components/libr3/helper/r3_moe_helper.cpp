@@ -62,38 +62,75 @@ int64_t sbits(uint64_t x, int bits) {
 /* The helper deliberately consumes only Radiance's installed container ABI (rad_format.h and
  * rad_encoding.h): no core/private reader or kernel layout is linked into this reference path. */
 struct Container {
-    int fd = -1; size_t bytes = 0; const uint8_t* base = nullptr; const RadFileHeader* h = nullptr;
-    const RadFileEntry* dir = nullptr; const RadFilePlane* planes = nullptr; const RadEncoding* encs = nullptr;
+    int fd = -1;
+    size_t bytes = 0;
+    RadFileHeader hdr{};
+    const RadFileHeader* h = &hdr;
+    std::vector<RadFileEntry> dir_store;
+    std::vector<RadFilePlane> plane_store;
+    std::vector<RadEncoding> enc_store;
+    std::vector<RadFileProfile> profile_store;
+    const RadFileEntry* dir = nullptr;
+    const RadFilePlane* planes = nullptr;
+    const RadEncoding* encs = nullptr;
     const RadFileProfile* profile = nullptr;
     uint32_t layers = 0;
-    std::vector<std::array<const RadFileEntry*, 2>> expert; /* [layer*512+expert][gate_up,down]. */
+    std::vector<std::array<const RadFileEntry*, 2>> expert;
 
-    ~Container() { if (base) munmap((void*)base, bytes); if (fd >= 0) close(fd); }
+    ~Container() { if (fd >= 0) close(fd); }
     bool range(uint64_t off, uint64_t n) const { return off <= bytes && n <= bytes - off; }
+    bool pread_full(uint64_t off, void* dst, size_t n) const {
+        if (!range(off, n)) return false;
+        auto* p = static_cast<uint8_t*>(dst);
+        while (n) {
+            const ssize_t got = ::pread(fd, p, n, (off_t)off);
+            if (got < 0) {
+                if (errno == EINTR) continue;
+                return false;
+            }
+            if (got == 0) return false;
+            p += (size_t)got;
+            off += (uint64_t)got;
+            n -= (size_t)got;
+        }
+        return true;
+    }
     bool open(const char* path) {
-        fd = ::open(path, O_RDONLY | O_CLOEXEC); if (fd < 0) return false;
-        struct stat st{}; if (fstat(fd, &st) || st.st_size < (off_t)sizeof(RadFileHeader)) return false;
-        bytes = (size_t)st.st_size; base = (const uint8_t*)mmap(nullptr, bytes, PROT_READ, MAP_PRIVATE, fd, 0);
-        if (base == MAP_FAILED) { base = nullptr; return false; }
-        h = (const RadFileHeader*)base;
-        if (h->magic != RAD_MAGIC || h->version != RAD_FORMAT_VER || h->file_bytes > bytes ||
-            !range(h->dir_off, h->dir_count * sizeof(RadFileEntry)) ||
-            !range(h->plane_off, h->plane_count * sizeof(RadFilePlane)) ||
-            !range(h->enc_off, h->enc_count * sizeof(RadEncoding)) ||
-            (h->prof_count && !range(h->prof_off, h->prof_count * sizeof(RadFileProfile)))) return false;
-        dir = (const RadFileEntry*)(base + h->dir_off); planes = (const RadFilePlane*)(base + h->plane_off);
-        encs = (const RadEncoding*)(base + h->enc_off);
-        profile = h->prof_count ? (const RadFileProfile*)(base + h->prof_off) : nullptr;
+        fd = ::open(path, O_RDONLY | O_CLOEXEC);
+        if (fd < 0) return false;
+        struct stat st{};
+        if (fstat(fd, &st) || st.st_size < (off_t)sizeof(RadFileHeader)) return false;
+        bytes = (size_t)st.st_size;
+        if (!pread_full(0, &hdr, sizeof(hdr))) return false;
+        if (hdr.magic != RAD_MAGIC || hdr.version != RAD_FORMAT_VER || hdr.file_bytes > bytes ||
+            !range(hdr.dir_off, hdr.dir_count * sizeof(RadFileEntry)) ||
+            !range(hdr.plane_off, hdr.plane_count * sizeof(RadFilePlane)) ||
+            !range(hdr.enc_off, hdr.enc_count * sizeof(RadEncoding)) ||
+            (hdr.prof_count && !range(hdr.prof_off, hdr.prof_count * sizeof(RadFileProfile)))) return false;
+        dir_store.resize((size_t)hdr.dir_count);
+        plane_store.resize((size_t)hdr.plane_count);
+        enc_store.resize((size_t)hdr.enc_count);
+        profile_store.resize((size_t)hdr.prof_count);
+        if ((hdr.dir_count && !pread_full(hdr.dir_off, dir_store.data(), dir_store.size() * sizeof(RadFileEntry))) ||
+            (hdr.plane_count && !pread_full(hdr.plane_off, plane_store.data(), plane_store.size() * sizeof(RadFilePlane))) ||
+            (hdr.enc_count && !pread_full(hdr.enc_off, enc_store.data(), enc_store.size() * sizeof(RadEncoding))) ||
+            (hdr.prof_count && !pread_full(hdr.prof_off, profile_store.data(), profile_store.size() * sizeof(RadFileProfile))))
+            return false;
+        dir = dir_store.data();
+        planes = plane_store.data();
+        encs = enc_store.data();
+        profile = profile_store.empty() ? nullptr : profile_store.data();
         int32_t max_layer = -1;
-        /* Only expert entries count: the container numbers other tensors past the MoE layers (Flash-Next: 139). */
-        for (uint64_t i = 0; i < h->dir_count; ++i)
+        for (uint64_t i = 0; i < hdr.dir_count; ++i)
             if (dir[i].layer >= 0 && dir[i].expert >= 0) max_layer = std::max(max_layer, dir[i].layer);
-        layers = (uint32_t)(max_layer + 1); expert.resize((size_t)layers * kExperts);
-        for (uint64_t i = 0; i < h->dir_count; ++i) {
+        layers = (uint32_t)(max_layer + 1);
+        expert.resize((size_t)layers * kExperts);
+        for (uint64_t i = 0; i < hdr.dir_count; ++i) {
             const auto& e = dir[i];
             if (e.layer < 0 || e.expert < 0 || e.expert >= (int)kExperts || e.slot < 0 || e.slot >= 2) continue;
-            if ((uint32_t)e.layer >= layers || e.enc >= h->enc_count || e.plane_first + e.n_planes > h->plane_count) return false;
-            for (uint32_t p = 0; p < e.n_planes; ++p) if (!range(planes[e.plane_first+p].offset, planes[e.plane_first+p].bytes)) return false;
+            if ((uint32_t)e.layer >= layers || e.enc >= hdr.enc_count || e.plane_first + e.n_planes > hdr.plane_count) return false;
+            for (uint32_t p = 0; p < e.n_planes; ++p)
+                if (!range(planes[e.plane_first + p].offset, planes[e.plane_first + p].bytes)) return false;
             expert[(size_t)e.layer * kExperts + (uint32_t)e.expert][e.slot] = &e;
         }
         return layers != 0;
@@ -104,7 +141,7 @@ struct Container {
     }
     const RadEncoding* encoding(const RadFileEntry* e) const { return e ? &encs[e->enc] : nullptr; }
     const RadFilePlane* plane(const RadFileEntry* e, int p) const { return &planes[e->plane_first + p]; }
-};
+}
 
 float raw_value(uint32_t dtype, const uint8_t* row, int64_t col) {
     const int bits = rad_dtype_bits(dtype);
@@ -134,7 +171,16 @@ float plane_value(const Container& f, const RadFileEntry* e, int pi, int64_t row
     else { rr = ep.block[0] > 0 ? row / ep.block[0] : 0; cc = ep.block[1] > 0 ? col / ep.block[1] : 0; }
     if (rr < 0 || rr >= pr || cc < 0 || cc >= pc) return NAN;
     const int64_t rb = rad_enc_row_bytes(ep.dtype, pc);
-    return raw_value(ep.dtype, f.base + fp->offset + rr*rb, cc);
+    struct CacheRow { uint64_t key = ~0ull; std::vector<uint8_t> bytes; };
+    thread_local std::array<CacheRow, 16> cache;
+    const uint64_t key = fp->offset + (uint64_t)rr * (uint64_t)rb;
+    CacheRow& cr = cache[(size_t)((key >> 6) & (cache.size() - 1))];
+    if (cr.key != key || cr.bytes.size() != (size_t)rb) {
+        cr.bytes.resize((size_t)rb);
+        if (!f.pread_full(key, cr.bytes.data(), cr.bytes.size())) return NAN;
+        cr.key = key;
+    }
+    return raw_value(ep.dtype, cr.bytes.data(), cc);
 }
 
 bool decode_row(const Container& f, const RadFileEntry* e, int64_t row, std::vector<float>& out) {
@@ -443,14 +489,16 @@ int main(int argc, char** argv) {
     Owned owned;
     if (!select_owned(model, gpu.get(), budget, &owned)) return 1;
     if (gpu && !gpu->upload(owned.expert)) return 1;
-    if (gpu && !compare) {
-        /* The experts now live on the card: give the ~28 GiB of container pages back to the host.
-         * Kept resident, they cost the engine ~11% prefill even with the hook off. */
-        (void)madvise((void*)model.base, model.bytes, MADV_DONTNEED);
-        (void)posix_fadvise(model.fd, 0, 0, POSIX_FADV_DONTNEED);
+    if (gpu && !compare) (void)posix_fadvise(model.fd, 0, 0, POSIX_FADV_DONTNEED);
+    long rss_pages = 0;
+    if (FILE* sf = std::fopen("/proc/self/statm", "r")) {
+        long total_pages = 0;
+        if (std::fscanf(sf, "%ld %ld", &total_pages, &rss_pages) != 2) rss_pages = 0;
+        std::fclose(sf);
     }
-    std::fprintf(stderr, "r3_moe_helper: owns %zu experts, %.3f GiB\n",
-                 owned.expert.size(), (double)owned.bytes / (1024.0 * 1024.0 * 1024.0));
+    const double rss_mib = rss_pages > 0 ? (double)rss_pages * (double)sysconf(_SC_PAGESIZE) / (1024.0 * 1024.0) : -1.0;
+    std::fprintf(stderr, "r3_moe_helper: owns %zu experts, %.3f GiB; host RSS after load %.1f MiB\n",
+                 owned.expert.size(), (double)owned.bytes / (1024.0 * 1024.0 * 1024.0), rss_mib);
 
     if (compare)
         return compare_mode(model, *gpu, owned, compare_layer, compare_rows);
