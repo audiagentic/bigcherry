@@ -84,6 +84,9 @@ class EngineLayout:
     def recipes_path(self, project_root: Path) -> Path:
         return project_root / self.recipes
 
+    def recipes_path(self, project_root: Path) -> Path:
+        return project_root / self.recipes
+
     def patches_root(self, project_root: Path) -> Path:
         return project_root / self.patches
 
