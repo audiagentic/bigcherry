@@ -430,7 +430,7 @@ uint32_t helper_lane_rows() {
     errno = 0;
     const unsigned long v = std::strtoul(e, &end, 10);
     if (errno || !end || *end || v == 0) return 64;
-    return (uint32_t)std::min<unsigned long>(v, kMaxRows);
+    return (uint32_t)std::min<unsigned long>(v, kMaxRows / kTopK);
 }
 
 int64_t canonical_expert_bytes(const Container& f, uint32_t l, uint32_t e) {
