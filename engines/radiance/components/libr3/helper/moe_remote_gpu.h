@@ -175,15 +175,15 @@ __global__ void lane_unsort_down(const uint16_t* down, const int32_t* sorted,
     const int32_t flat = sorted[row];
     if (flat < 0 || (uint32_t)flat >= slots) return;
     dst[(uint64_t)(uint32_t)flat * hidden + (i - (uint64_t)row * hidden)] = down[i];
+    /* Mapped host memory is fine-grained/uncached. Drain every writer wave's posted stores
+     * before the later release flag, matching libr4d's no-P2P all-reduce host path. */
+    asm volatile("s_wait_storecnt 0x0" ::: "memory");
 }
 
-/* Publish completion with the same system-scope release discipline as the rank-side mailbox
- * publisher. The preceding kernel writes mapped host memory on another GPU; a plain stream
- * write-value completion signal does not itself establish the release ordering the consumer's
- * system-scope acquire relies on. */
+/* Every mapped result writer has drained before this kernel can run. Publish completion with a
+ * system-scope release; the engine-side join waits with a system-scope acquire. */
 __global__ void lane_publish_done(uint32_t* done_sequence, uint32_t sequence) {
     if (blockIdx.x || threadIdx.x) return;
-    __threadfence_system();
     lane_store_sys_rel(done_sequence, sequence);
 }
 
