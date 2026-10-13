@@ -84,7 +84,7 @@ __global__ void mailbox_publish_kernel(
             route[p].token = (int32_t)(i / top_k);
             route[p].expert = le;
             route[p].weight_bf16 = ew[i];
-            route[p].reserved = 0;
+            route[p].slot = (uint16_t)(i % top_k);
             selected[i / top_k] = 1;
             ids[i] = -1;
         }
