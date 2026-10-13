@@ -229,6 +229,7 @@ def validate_custom_callable_spec(spec: str, *, package_root: str | Path) -> Non
 
 def check_validation_packages(
     *,
+    engine: str,
     root: Path | None = None,
     registry_path: Path | None = None,
     external_sources_path: str | Path | None = None,
@@ -242,7 +243,7 @@ def check_validation_packages(
     coverage). Grandfathered legacy patches are reported non-fatally;
     everything else that's missing or malformed is a real problem."""
     resolved_root = root or paths.PATCHES
-    reg = patch_registry.load_registry("llamacpp", registry_path or resolved_root)
+    reg = patch_registry.load_registry(engine, registry_path or resolved_root)
     baseline = load_grandfather_baseline(baseline_path)
 
     statuses: list[PackagePolicyStatus] = []
@@ -435,6 +436,7 @@ def check_performance_evidence(
     patch whose README exists but lacks the required evidence marker."""
     problems: list[str] = []
     resolved_root = root or paths.PATCHES
+    # The 3-arm native/baseline/patched rule is llama.cpp's; radiance has no native-upstream arm here.
     reg = patch_registry.load_registry("llamacpp", registry_path or resolved_root)
     for descriptor in reg.descriptors:
         problems.extend(check_performance_evidence_for_patch(descriptor, root=resolved_root))

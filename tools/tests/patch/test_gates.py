@@ -212,7 +212,7 @@ class GateContractTests(unittest.TestCase):
             SimpleNamespace(patch_id=patch_id)
             for patch_id in ("P1", "P2", "P3", "P4", "LEGACY")
         )
-        registry = SimpleNamespace(descriptors=descriptors, root=Path("patches"))
+        registry = SimpleNamespace(engine="llamacpp", descriptors=descriptors, root=Path("patches"))
         package_report = gates.validation_policy.PackagePolicyReport(
             statuses=(
                 gates.validation_policy.PackagePolicyStatus("P1", "current"),
@@ -289,6 +289,7 @@ class GateContractTests(unittest.TestCase):
         gate_applies.assert_any_call(GateId.G1, GateIntent.LINT)
         gate_applies.assert_any_call(GateId.G3, GateIntent.LINT)
         check_packages.assert_called_once_with(
+            engine="llamacpp",
             root=Path("patches"),
             registry_path=Path("patches"),
             external_sources_path=Path("external.toml"),
@@ -330,7 +331,7 @@ class GateContractTests(unittest.TestCase):
 
     def test_repository_lint_unknown_package_status_is_fail_closed(self) -> None:
         descriptor = SimpleNamespace(patch_id="P1")
-        registry = SimpleNamespace(descriptors=(descriptor,), root=Path("patches"))
+        registry = SimpleNamespace(engine="llamacpp", descriptors=(descriptor,), root=Path("patches"))
         package_report = gates.validation_policy.PackagePolicyReport(
             statuses=(gates.validation_policy.PackagePolicyStatus("P1", "future"),),
         )

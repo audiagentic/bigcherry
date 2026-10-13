@@ -244,6 +244,7 @@ class PatchLintCliTests(unittest.TestCase):
                 for problem in patch_docs.check_summary_for_patch(descriptor, registry.root)
             ]
             package_report = validation_policy.check_validation_packages(
+                engine="llamacpp",
                 root=patches,
                 registry_path=patches,
                 external_sources_path=external_sources,

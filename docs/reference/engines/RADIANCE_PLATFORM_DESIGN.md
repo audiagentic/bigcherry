@@ -28,9 +28,9 @@ Move the three current diffs to:
 
 ```text
 engines/radiance/patches/
-  0001_drain_mover_before_arena_free/
-  0002_moe_remote_handoff/
-  0003_mtp_full_head_switch/
+  rad0001_drain_mover_before_arena_free/
+  rad0002_moe_remote_handoff/
+  rad0003_mtp_full_head_switch/
 ```
 
 Each uses the existing `patch.toml` + `patch.py` + `SUMMARY.md` package contract. Existing-file changes use
@@ -114,7 +114,7 @@ server-args = [
 server-args = ["--tp", "2", "--tp-wire", "wht6"]
 ```
 
-The Flash-Next profile needs engine patch 0001 (the stager is armed by --max-num-seqs 6 and hangs at shutdown
+The Flash-Next profile needs engine patch rad0001 (the stager is armed by --max-num-seqs 6 and hangs at shutdown
 without it). fp8 KV is what every measured run used; the owner's KV rule (q8_0 minimum, f16 preferred) is for
 llama.cpp quantised caches - Radiance offers bf16 or fp8 only, and bf16 has not been fitted at this context yet.
 The 27B two-XTX profile uses wht6: on the 27B it costs KLD +0.0008 / -0.4 pt top-1 (measured), unlike Flash-Next.

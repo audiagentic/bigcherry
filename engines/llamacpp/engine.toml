@@ -6,6 +6,8 @@ name = "llamacpp"
 upstream = "https://github.com/ggml-org/llama.cpp"
 
 [layout]
+# Every patch ID starts with this before its order digits, so IDs never collide across engines.
+patch-id-prefix = ""
 patches = "engines/llamacpp/patches"
 overlay = "engines/llamacpp/overlay"
 vendor = "vendor/llama.cpp"

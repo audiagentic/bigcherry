@@ -36,7 +36,7 @@ summary = "native delta-net chunk scan; wrong in serving (KLD 5.52) after three 
 [setting.R3_MOE_HELPER]
 default = ""
 status = "experimental"
-summary = "enable patch 0002 remote-MoE hook; helper process must already own the configured POSIX shm segment"
+summary = "enable patch rad0002 remote-MoE hook; helper process must already own the configured POSIX shm segment"
 
 [setting.R3_MOE_HELPER_SHM]
 default = "/r3-moe-helper"
