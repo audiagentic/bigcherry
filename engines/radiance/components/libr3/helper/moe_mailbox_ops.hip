@@ -181,39 +181,36 @@ __global__ void mailbox_add_rows_kernel(
         return;
 
     const Route* route = reinterpret_cast<const Route*>(base + q->route_offset);
-    __shared__ uint32_t begin;
-    __shared__ uint32_t end;
+    __shared__ uint32_t route_index[kTopK];
     if (threadIdx.x == 0) {
-        begin = nr;
-        end = nr;
+        for (uint32_t slot = 0; slot < top_k; ++slot) route_index[slot] = UINT32_MAX;
         for (uint32_t j = 0; j < nr; ++j) {
             const Route r = route[j];
             if (r.token < 0 || (uint32_t)r.token >= rows || r.slot >= top_k) __builtin_trap();
-            if ((uint32_t)r.token == token) {
-                if (begin == nr) begin = j;
-                end = j + 1u;
-            } else if (begin != nr && (uint32_t)r.token > token) {
-                break;
-            }
+            if ((uint32_t)r.token != token) continue;
+            if (route_index[r.slot] != UINT32_MAX) __builtin_trap();
+            route_index[r.slot] = j;
         }
     }
     __syncthreads();
-    if (begin == nr) return;
 
     uint16_t* dst = out + (uint64_t)token * hidden;
     const uint16_t* result = reinterpret_cast<const uint16_t*>(
         base + h->result_offset[rank * kMaxRanks + rank]);
     for (uint32_t col = threadIdx.x; col < hidden; col += blockDim.x) {
         float acc = bf16_to_f32(dst[col]);
-        for (uint32_t j = begin; j < end; ++j) {
+        bool any = false;
+        for (uint32_t slot = 0; slot < top_k; ++slot) {
+            const uint32_t j = route_index[slot];
+            if (j == UINT32_MAX) continue;
+            any = true;
             const Route r = route[j];
-            if ((uint32_t)r.token != token) continue;
-            const uint32_t flat = token * top_k + r.slot;
+            const uint32_t flat = token * top_k + slot;
             const float weight = bf16_to_f32(r.weight_bf16);
             const float value = bf16_to_f32(result[(uint64_t)flat * hidden + col]);
             acc += bf16_product(weight, value);
         }
-        dst[col] = f32_to_bf16_rn(acc);
+        if (any) dst[col] = f32_to_bf16_rn(acc);
     }
 }
 
