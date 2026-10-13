@@ -78,6 +78,7 @@ struct Container {
     const RadFileProfile* profile = nullptr;
     uint32_t layers = 0;
     std::vector<std::array<const RadFileEntry*, 2>> expert;
+    std::vector<int16_t> regular_slot;
 
     ~Container() { if (fd >= 0) close(fd); }
     bool range(uint64_t off, uint64_t n) const { return off <= bytes && n <= bytes - off; }
@@ -135,6 +136,21 @@ struct Container {
                 if (!range(planes[e.plane_first + p].offset, planes[e.plane_first + p].bytes)) return false;
             expert[(size_t)e.layer * kExperts + (uint32_t)e.expert][e.slot] = &e;
         }
+        /* The engine sorts protected BF16 experts last. Its quantised GEMM numbers only the
+         * remaining experts, so the helper's rank slice class follows this compact place, not e&1. */
+        regular_slot.assign((size_t)layers * kExperts, (int16_t)-1);
+        for (uint32_t l = 0; l < layers; ++l) {
+            int32_t slot = 0;
+            for (uint32_t e = 0; e < kExperts; ++e) {
+                const RadFileEntry* gu = weight(l, e, 0);
+                const RadFileEntry* dn = weight(l, e, 1);
+                if (!gu || !dn) continue;
+                const bool gp = plain_bf16(gu), dp = plain_bf16(dn);
+                if (gp != dp || slot >= (int32_t)kExperts) return false;
+                if (gp) continue;
+                regular_slot[(size_t)l * kExperts + e] = (int16_t)slot++;
+            }
+        }
         return layers != 0;
     }
     const RadFileEntry* weight(uint32_t layer, uint32_t exp, uint32_t slot) const {
@@ -143,6 +159,15 @@ struct Container {
     }
     const RadEncoding* encoding(const RadFileEntry* e) const { return e ? &encs[e->enc] : nullptr; }
     const RadFilePlane* plane(const RadFileEntry* e, int p) const { return &planes[e->plane_first + p]; }
+    bool plain_bf16(const RadFileEntry* e) const {
+        const RadEncoding* enc = encoding(e);
+        return enc && rad_enc_is(enc, "plain") && enc->n_planes == 1 &&
+               enc->plane[0].dtype == RAD_BF16;
+    }
+    int32_t expert_slot(uint32_t layer, uint32_t exp) const {
+        if (layer >= layers || exp >= kExperts || regular_slot.empty()) return -1;
+        return regular_slot[(size_t)layer * kExperts + exp];
+    }
 };
 
 float raw_value(uint32_t dtype, const uint8_t* row, int64_t col) {
@@ -318,7 +343,9 @@ int compute_host_engine(const Container& f, void* map, Request* q,
             rad_enc_fwht(f.encoding(gu)) != 128 || rad_enc_fwht(f.encoding(dn)) != 128)
             return -EINVAL;
 
-        const bool wide = q->rank == (e & 1u);
+        const int32_t es = f.expert_slot(q->layer, e);
+        if (es < 0) return -ENOTSUP;
+        const bool wide = q->rank == ((uint32_t)es & 1u);
         const int64_t lo = wide ? 0 : 384;
         const int64_t width = wide ? 384 : 256;
         std::vector<float> mid(ri.size() * 384u, 0.0f);
@@ -386,7 +413,8 @@ int compute_host(const Container& f, void* map, Request* q) {
         const RadFileEntry* gu=f.weight(q->layer,e,0); const RadFileEntry* dn=f.weight(q->layer,e,1); if(!gu||!dn) return -ENOENT;
         int64_t gur=1,guc=1,dnr=1,dnc=1; rad_enc_view(gu->rank,gu->shape,&gur,&guc); rad_enc_view(dn->rank,dn->shape,&dnr,&dnc);
         if(guc!=kHidden || dnr!=kHidden || gur!=2*dnc || dnc!=640) return -EINVAL;
-        const int parity=(int)(e&1u); const bool wide=((int)q->rank==parity); const int64_t lo=wide?0:384, hi=wide?384:640, width=hi-lo;
+        const int32_t es=f.expert_slot(q->layer,e); if(es<0) return -ENOTSUP;
+        const int parity=(int)((uint32_t)es&1u); const bool wide=((int)q->rank==parity); const int64_t lo=wide?0:384, hi=wide?384:640, width=hi-lo;
         std::vector<float> mid(ri.size()*(size_t)width);
         for(int64_t j=0;j<width;++j) {
             if(!decode_row(f,gu,lo+j,wg) || !decode_row(f,gu,dnc+lo+j,wu)) return -ENOTSUP;
@@ -784,8 +812,8 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
         }
         const double rel =
             std::sqrt((double)(num / std::max<long double>(den, 1.0e-30L)));
-        std::printf("engine_join rank %u routes=%u rel_l2=%.8g max_abs=%.8g prefix_ok=%u\n",
-                    rank, nr, rel, max_abs, prefix_ok ? 1u : 0u);
+        std::printf("engine_join layer %u rank %u routes=%u rel_l2=%.8g max_abs=%.8g prefix_ok=%u\n",
+                    layer, rank, nr, rel, max_abs, prefix_ok ? 1u : 0u);
         bad = bad || !prefix_ok || !std::isfinite(rel) || rel >= 5.0e-3;
     }
 
@@ -862,7 +890,7 @@ int main(int argc, char** argv) {
         if (compare_one_layer)
             return compare_mode(model, *gpu, owned, compare_layer, compare_rows, lane_max_rows);
         int rc = 0;
-        for (uint32_t layer : {0u, 20u, 47u}) {
+        for (uint32_t layer : {0u, 20u, 34u, 47u}) {
             if (layer >= model.layers) {
                 std::fprintf(stderr, "r3_moe_helper: --compare layer %u unavailable (layers=%u)\n",
                              layer, model.layers);

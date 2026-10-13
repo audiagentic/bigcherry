@@ -41,6 +41,7 @@ struct DeviceLayerTables {
     void* gu_scale[r3::moe_shm::kMaxRanks][2]{};
     void* dn_code[r3::moe_shm::kMaxRanks][2]{};
     void* dn_scale[r3::moe_shm::kMaxRanks][2]{};
+    const uint16_t* expert_slot = nullptr;
 };
 
 __device__ __forceinline__ void lane_store_sys_rel(uint32_t* p, uint32_t v) {
@@ -120,7 +121,8 @@ __global__ void lane_select_tables(
 }
 
 __global__ void lane_route_count(
-    const r3::moe_shm::Route* route, const r3::moe_shm::Request* q,
+    const r3::moe_shm::Route* route, r3::moe_shm::Request* q,
+    const DeviceLayerTables* layers_table,
     uint32_t rank, uint32_t sequence, uint32_t max_rows, uint32_t layers,
     uint32_t* counts, int32_t* flat, uint16_t* ew) {
     using namespace r3::moe_shm;
@@ -128,18 +130,20 @@ __global__ void lane_route_count(
     if (!lane_request_valid(q, rank, sequence, max_rows, layers) || i >= q->route_count) return;
     const Route r = route[i];
     if (r.token < 0 || (uint32_t)r.token >= q->rows || r.expert < 0 ||
-        r.expert >= (int32_t)kExperts) {
+        r.expert >= (int32_t)kExperts || r.slot >= kTopK) {
         flat[i] = -1;
         return;
     }
-    if (r.slot >= kTopK) {
+    const uint16_t es = layers_table[q->layer].expert_slot[(uint32_t)r.expert];
+    if (es >= kExperts) {
         flat[i] = -1;
+        atomicExch(&q->status, -EINVAL);
         return;
     }
     const uint32_t f = (uint32_t)r.token * kTopK + r.slot;
     flat[i] = (int32_t)f;
     ew[f] = r.weight_bf16;
-    atomicAdd(counts + (uint32_t)r.expert, 1u);
+    atomicAdd(counts + (uint32_t)es, 1u);
 }
 
 /* Exclusive prefix over the 512 expert counts in one block of kExperts threads (was one thread walking all 512:
@@ -166,6 +170,7 @@ __global__ void lane_route_prefix(const uint32_t* counts, int32_t* off, uint32_t
 
 __global__ void lane_route_scatter(
     const r3::moe_shm::Route* route, const r3::moe_shm::Request* q,
+    const DeviceLayerTables* layers_table,
     uint32_t rank, uint32_t sequence, uint32_t max_rows, uint32_t layers,
     const int32_t* flat, uint32_t* cursor, int32_t* sorted, int32_t* sorted_expert) {
     using namespace r3::moe_shm;
@@ -173,7 +178,9 @@ __global__ void lane_route_scatter(
     if (!lane_request_valid(q, rank, sequence, max_rows, layers) ||
         i >= q->route_count || flat[i] < 0) return;
     const uint32_t e = (uint32_t)route[i].expert;
-    const uint32_t pos = atomicAdd(cursor + e, 1u);
+    const uint32_t es = layers_table[q->layer].expert_slot[e];
+    if (es >= kExperts) return;
+    const uint32_t pos = atomicAdd(cursor + es, 1u);
     sorted[pos] = flat[i];
     if (sorted_expert) sorted_expert[pos] = (int32_t)e;
 }
@@ -403,11 +410,16 @@ public:
          * device on allocation overhead long before the budget does. */
         size_t total = 0;
         for (auto [l, e] : owned) {
+            const int32_t es = model_.expert_slot(l, e);
+            if (es < 0) {
+                std::fprintf(stderr, "r3_moe_helper: protected expert (%u,%u) cannot be helper-owned\n", l, e);
+                return false;
+            }
             for (uint32_t rank = 0; rank < r3::moe_shm::kMaxRanks; ++rank) {
                 int64_t cb = 0, sb = 0;
-                if (!slice_bytes(model_.weight(l, e, 0), true, e, rank, &cb, &sb)) return false;
+                if (!slice_bytes(model_.weight(l, e, 0), true, (uint32_t)es, rank, &cb, &sb)) return false;
                 total += arena_round(cb) + arena_round(sb);
-                if (!slice_bytes(model_.weight(l, e, 1), false, e, rank, &cb, &sb)) return false;
+                if (!slice_bytes(model_.weight(l, e, 1), false, (uint32_t)es, rank, &cb, &sb)) return false;
                 total += arena_round(cb) + arena_round(sb);
             }
         }
@@ -415,9 +427,11 @@ public:
         persistent_.push_back(arena_);
         arena_size_ = total; arena_used_ = 0;
         for (auto [l, e] : owned) {
+            const int32_t es = model_.expert_slot(l, e);
+            if (es < 0) return false;
             Expert& x = experts_[(size_t)l * r3::moe_shm::kExperts + e];
-            if (!upload_weight(model_.weight(l, e, 0), true, e, &x.gu) ||
-                !upload_weight(model_.weight(l, e, 1), false, e, &x.dn)) return false;
+            if (!upload_weight(model_.weight(l, e, 0), true, (uint32_t)es, &x.gu) ||
+                !upload_weight(model_.weight(l, e, 1), false, (uint32_t)es, &x.dn)) return false;
             x.live = true;
         }
         return build_tables();
@@ -435,24 +449,26 @@ public:
         const uint32_t rows = q->rows;
         const uint32_t tr = rows * kTopK;
 
-        std::vector<std::vector<uint32_t>> by_exp(kExperts);
+        std::vector<std::vector<uint32_t>> by_slot(kExperts);
         std::vector<uint16_t> ew((size_t)rows * kTopK, 0);
         for (uint32_t i = 0; i < q->route_count; ++i) {
             const Route& r = route[i];
             if (r.token < 0 || (uint32_t)r.token >= rows || r.expert < 0 ||
                 r.expert >= (int32_t)kExperts || !owns(q->layer, (uint32_t)r.expert)) return -EINVAL;
             if (r.slot >= kTopK) return -EINVAL;
+            const int32_t es = model_.expert_slot(q->layer, (uint32_t)r.expert);
+            if (es < 0 || es >= (int32_t)kExperts) return -EINVAL;
             const uint32_t flat = (uint32_t)r.token * kTopK + r.slot;
             ew[flat] = r.weight_bf16;
-            by_exp[(uint32_t)r.expert].push_back(flat);
+            by_slot[(uint32_t)es].push_back(flat);
         }
 
         std::vector<int32_t> sorted(tr, -1);
         std::array<int32_t, kExperts + 1> off{};
         uint32_t at = 0;
-        for (uint32_t e = 0; e < kExperts; ++e) {
-            off[e] = (int32_t)at;
-            for (uint32_t flat : by_exp[e]) sorted[at++] = (int32_t)flat;
+        for (uint32_t es = 0; es < kExperts; ++es) {
+            off[es] = (int32_t)at;
+            for (uint32_t flat : by_slot[es]) sorted[at++] = (int32_t)flat;
         }
         off[kExperts] = (int32_t)at;
         if (at != q->route_count) return -EINVAL;
@@ -682,7 +698,8 @@ public:
                            static_cast<void**>(w.dn_code[1].p),
                            static_cast<void**>(w.dn_scale[1].p));
         hipLaunchKernelGGL(lane_route_count, route_grid, block, 0, w.stream,
-                           route, q, rank, sequence, rows, model_.layers,
+                           route, q, static_cast<const DeviceLayerTables*>(d_layer_tables_.p),
+                           rank, sequence, rows, model_.layers,
                            static_cast<uint32_t*>(w.d_counts.p),
                            static_cast<int32_t*>(w.d_flat.p),
                            static_cast<uint16_t*>(w.d_ew.p));
@@ -691,7 +708,8 @@ public:
                            static_cast<int32_t*>(w.d_off.p),
                            static_cast<uint32_t*>(w.d_cursor.p));
         hipLaunchKernelGGL(lane_route_scatter, route_grid, block, 0, w.stream,
-                           route, q, rank, sequence, rows, model_.layers,
+                           route, q, static_cast<const DeviceLayerTables*>(d_layer_tables_.p),
+                           rank, sequence, rows, model_.layers,
                            static_cast<const int32_t*>(w.d_flat.p),
                            static_cast<uint32_t*>(w.d_cursor.p),
                            static_cast<int32_t*>(w.d_sorted.p),
@@ -809,7 +827,7 @@ private:
     HostBounce load_bounce_;
     Buffer d_act_, d_aq_, d_as_, d_sorted_, d_off_, d_ew_, d_gu_;
     Buffer d_mid_, d_mid_s_, d_down_, d_result_, scratch_;
-    Buffer d_layer_tables_;
+    Buffer d_layer_tables_, d_expert_slot_;
     uint32_t lane_rows_ = 0;
     uint32_t lane_routes_ = 0;
     bool poison_ = false;
@@ -897,12 +915,12 @@ private:
 
     static size_t arena_round(int64_t n) { return ((size_t)(n > 0 ? n : 1) + 255u) & ~(size_t)255u; }
 
-    bool slice_bytes(const RadFileEntry* e, bool gate_up, uint32_t expert, uint32_t rank,
+    bool slice_bytes(const RadFileEntry* e, bool gate_up, uint32_t expert_slot, uint32_t rank,
                      int64_t* code, int64_t* scale) const {
         if (!e || !code || !scale || rank >= r3::moe_shm::kMaxRanks) return false;
         int64_t nr = 1, nc = 1;
         rad_enc_view(e->rank, e->shape, &nr, &nc);
-        const int64_t width = rank_slice_width(rank, expert & 1u);
+        const int64_t width = rank_slice_width(rank, expert_slot & 1u);
         if (gate_up) {
             if (nr != kGateUpWidth || nc != r3::moe_shm::kHidden) return false;
             *code = (2 * width) * nc / 2;
@@ -995,7 +1013,7 @@ private:
         return true;
     }
 
-    bool upload_weight(const RadFileEntry* e, bool gate_up, uint32_t expert,
+    bool upload_weight(const RadFileEntry* e, bool gate_up, uint32_t expert_slot,
                        std::array<StoredWeight, r3::moe_shm::kMaxRanks>* out) {
         WeightPlan p;
         if (!plan_weight(e, gate_up, &p)) {
@@ -1034,10 +1052,10 @@ private:
         }
 
         for (uint32_t rank = 0; rank < r3::moe_shm::kMaxRanks; ++rank) {
-            const int64_t lo = rank_slice_lo(rank, expert & 1u);
-            const int64_t width = rank_slice_width(rank, expert & 1u);
+            const int64_t lo = rank_slice_lo(rank, expert_slot & 1u);
+            const int64_t width = rank_slice_width(rank, expert_slot & 1u);
             int64_t cb = 0, sb = 0;
-            if (!slice_bytes(e, gate_up, expert, rank, &cb, &sb)) return false;
+            if (!slice_bytes(e, gate_up, expert_slot, rank, &cb, &sb)) return false;
             std::vector<uint8_t> code((size_t)cb);
             std::vector<uint8_t> scale((size_t)sb);
             if (gate_up) {
@@ -1101,18 +1119,25 @@ private:
 
     bool build_tables() {
         constexpr size_t nclass = r3::moe_shm::kExperts / 2;
+        std::vector<uint16_t> slot_map((size_t)model_.layers * r3::moe_shm::kExperts, 0xffffu);
         for (uint32_t l = 0; l < model_.layers; ++l) {
+            for (uint32_t e = 0; e < r3::moe_shm::kExperts; ++e) {
+                const int32_t es = model_.expert_slot(l, e);
+                if (es >= 0) slot_map[(size_t)l * r3::moe_shm::kExperts + e] = (uint16_t)es;
+            }
             LayerTables& lt = tables_[l];
             lt.gu_code_dtype = gu_code_dtype_; lt.gu_scale_dtype = gu_scale_dtype_;
             lt.dn_code_dtype = dn_code_dtype_; lt.dn_scale_dtype = dn_scale_dtype_;
             for (uint32_t rank = 0; rank < r3::moe_shm::kMaxRanks; ++rank) {
-                for (int parity = 0; parity < 2; ++parity) {
+                for (uint32_t parity = 0; parity < 2; ++parity) {
                     std::vector<void*> guc(nclass, nullptr), gus(nclass, nullptr);
                     std::vector<void*> dnc(nclass, nullptr), dns(nclass, nullptr);
-                    for (uint32_t e = (uint32_t)parity; e < r3::moe_shm::kExperts; e += 2) {
+                    for (uint32_t e = 0; e < r3::moe_shm::kExperts; ++e) {
+                        const int32_t es = model_.expert_slot(l, e);
+                        if (es < 0 || ((uint32_t)es & 1u) != parity) continue;
                         const Expert& x = experts_[(size_t)l * r3::moe_shm::kExperts + e];
                         if (!x.live) continue;
-                        const size_t ix = e / 2;
+                        const size_t ix = (size_t)es / 2;
                         guc[ix] = x.gu[rank].code; gus[ix] = x.gu[rank].scale;
                         dnc[ix] = x.dn[rank].code; dns[ix] = x.dn[rank].scale;
                     }
@@ -1123,6 +1148,12 @@ private:
                 }
             }
         }
+        const size_t slot_bytes = slot_map.size() * sizeof(uint16_t);
+        if (!d_expert_slot_.ensure(slot_bytes) ||
+            !hip_ok(hipMemcpy(d_expert_slot_.p, slot_map.data(), slot_bytes,
+                              hipMemcpyHostToDevice), "upload expert slot map"))
+            return false;
+
         std::vector<DeviceLayerTables> device_tables(model_.layers);
         for (uint32_t l = 0; l < model_.layers; ++l) {
             for (uint32_t rank = 0; rank < r3::moe_shm::kMaxRanks; ++rank) {
@@ -1133,6 +1164,9 @@ private:
                     device_tables[l].dn_scale[rank][parity] = tables_[l].dn_scale[rank][parity];
                 }
             }
+            device_tables[l].expert_slot =
+                static_cast<const uint16_t*>(d_expert_slot_.p) +
+                (size_t)l * r3::moe_shm::kExperts;
         }
         const size_t bytes = device_tables.size() * sizeof(DeviceLayerTables);
         return d_layer_tables_.ensure(bytes) &&

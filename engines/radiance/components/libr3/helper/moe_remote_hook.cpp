@@ -117,11 +117,11 @@ void report_shadow(uint32_t rank, RankState& s) {
     if (!s.dev.shadow || !s.dev.shadow_stats || !s.dev.shadow_first) return;
     (void)hipDeviceSynchronize();
     R3MoeShadowLayerStats stats[kMaxLayers]{};
-    R3MoeShadowFirst first{};
+    R3MoeShadowFirst first[kMaxLayers]{};
     if (!hip_ok(hipMemcpy(stats, s.dev.shadow_stats, sizeof(stats), hipMemcpyDeviceToHost),
                 "read shadow layer stats") ||
-        !hip_ok(hipMemcpy(&first, s.dev.shadow_first, sizeof(first), hipMemcpyDeviceToHost),
-                "read shadow first mismatch"))
+        !hip_ok(hipMemcpy(first, s.dev.shadow_first, sizeof(first), hipMemcpyDeviceToHost),
+                "read shadow first mismatches"))
         return;
     for (uint32_t l = 0; l < kMaxLayers; ++l) {
         const auto& x = stats[l];
@@ -134,18 +134,19 @@ void report_shadow(uint32_t rank, RankState& s) {
             "max_abs=%.8g rel_l2=%.8g bad_rows=%u\n",
             l, rank, (unsigned long long)x.rows,
             (double)x.sum_abs / (double)x.elems, (double)max_abs, rel, x.bad_rows);
-    }
-    if (first.claimed) {
-        std::fprintf(stderr,
-            "libr3: R3_MOE_HELPER_SHADOW first_bad layer=%u rank=%u r0=%u token=%d "
-            "slot=%u expert=%d rel_l2=%.8g max_abs=%.8g "
-            "local=[%.8g %.8g %.8g %.8g] helper=[%.8g %.8g %.8g %.8g]\n",
-            first.layer, first.rank, first.row_base, first.token, (unsigned)first.slot,
-            first.expert, (double)first.rel_l2, (double)first.max_abs,
-            (double)first.local[0], (double)first.local[1],
-            (double)first.local[2], (double)first.local[3],
-            (double)first.helper[0], (double)first.helper[1],
-            (double)first.helper[2], (double)first.helper[3]);
+        const auto& f = first[l];
+        if (f.claimed) {
+            std::fprintf(stderr,
+                "libr3: R3_MOE_HELPER_SHADOW first_bad layer=%u rank=%u r0=%u token=%d "
+                "slot=%u expert=%d rel_l2=%.8g max_abs=%.8g "
+                "local=[%.8g %.8g %.8g %.8g] helper=[%.8g %.8g %.8g %.8g]\n",
+                f.layer, f.rank, f.row_base, f.token, (unsigned)f.slot,
+                f.expert, (double)f.rel_l2, (double)f.max_abs,
+                (double)f.local[0], (double)f.local[1],
+                (double)f.local[2], (double)f.local[3],
+                (double)f.helper[0], (double)f.helper[1],
+                (double)f.helper[2], (double)f.helper[3]);
+        }
     }
 }
 
@@ -234,9 +235,10 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
                  "hipMalloc shadow stats") ||
          !hip_ok(hipMemset(shadow_stats, 0, sizeof(R3MoeShadowLayerStats) * kMaxLayers),
                  "zero shadow stats") ||
-         !hip_ok(hipMalloc(reinterpret_cast<void**>(&shadow_first), sizeof(R3MoeShadowFirst)),
+         !hip_ok(hipMalloc(reinterpret_cast<void**>(&shadow_first),
+                           sizeof(R3MoeShadowFirst) * kMaxLayers),
                  "hipMalloc shadow first") ||
-         !hip_ok(hipMemset(shadow_first, 0, sizeof(R3MoeShadowFirst)),
+         !hip_ok(hipMemset(shadow_first, 0, sizeof(R3MoeShadowFirst) * kMaxLayers),
                  "zero shadow first"))) {
         if (shadow_first) (void)hipFree(shadow_first);
         if (shadow_stats) (void)hipFree(shadow_stats);

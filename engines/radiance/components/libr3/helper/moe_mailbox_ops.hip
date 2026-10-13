@@ -295,7 +295,7 @@ __global__ void mailbox_shadow_rows_kernel(
             atomicAdd(reinterpret_cast<unsigned long long*>(&st->rows), 1ull);
             atomicAdd(&st->bad_rows, 1u);
             const uint16_t zero[4] = {0, 0, 0, 0};
-            shadow_claim(first, q, r, __int_as_float(0x7f800000), __int_as_float(0x7f800000),
+            shadow_claim(first + q->layer, q, r, __int_as_float(0x7f800000), __int_as_float(0x7f800000),
                          zero, zero);
         }
         return;
@@ -338,7 +338,7 @@ __global__ void mailbox_shadow_rows_kernel(
         atomicMax(&st->max_abs_bits, __float_as_uint(sm[0]));
         if (!isfinite(rel) || rel >= 2.0e-3f) {
             atomicAdd(&st->bad_rows, 1u);
-            shadow_claim(first, q, r, rel, sm[0], local, helper);
+            shadow_claim(first + q->layer, q, r, rel, sm[0], local, helper);
         }
     }
 }
