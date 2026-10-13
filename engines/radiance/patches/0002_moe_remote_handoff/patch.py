@@ -174,8 +174,7 @@ PATCHES = (
                 anchor=r"^[ \t]*const bool shared = op_sgate != 0;$",
                 text="""
     const bool remote_policy =
-        op_remote_publish && op_remote_join &&
-        rad_moe_remote_wanted(T) && rad_moe_remote_wanted(rows);""",
+        op_remote_publish && op_remote_join && rad_moe_remote_wanted(T);""",
                 guard=r"remote_policy =",
                 expect_matches=1,
                 rationale="The shared-arm state is the first per-pass policy declaration after row geometry is resolved.",
