@@ -59,6 +59,12 @@ default = "64"
 status = "experimental"
 summary = "largest step (rows) published to the helper GPU lanes; larger prefill steps keep the engine path"
 
+[setting.R3_MOE_HELPER_POISON]
+default = "0"
+status = "diagnostic"
+summary = "replace every helper-produced remote result value with 1e3 to prove the post-gather contribution reaches model output"
+activation = "R3_MOE_HELPER poison"
+
 [setting.R3_MOE_HELPER_R4D]
 default = ""
 status = "diagnostic"
