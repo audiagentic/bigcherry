@@ -36,6 +36,12 @@ const char* shm_name() {
     return e && *e ? e : "/r3-moe-helper";
 }
 
+int owns_remote(void* user, int layer, int expert) {
+    auto* s = static_cast<HookState*>(user);
+    return s && s->hdr && layer >= 0 && expert >= 0 &&
+           owns(s->map, (uint32_t)layer, (uint32_t)expert);
+}
+
 RadMoeRemoteHandle submit(void* user, int layer, int rank, int64_t rows, int64_t n_embd,
                           const RadMoeRemoteRoute* route, int64_t n_route,
                           const void* activation, int64_t activation_stride_bytes) {
@@ -104,7 +110,7 @@ void register_hook() {
     if (!g.copy2d || !reg) {
         std::fprintf(stderr, "libr3: R3_MOE_HELPER requires hipMemcpy2D and patch 0002 ABI\n"); return;
     }
-    static RadMoeRemoteHooks hooks{RAD_MOE_REMOTE_ABI, &g, submit, wait};
+    static RadMoeRemoteHooks hooks{RAD_MOE_REMOTE_ABI, &g, owns_remote, submit, wait};
     if (reg(&hooks) < 0) std::fprintf(stderr, "libr3: R3_MOE_HELPER hook registration refused\n");
 }
 } // namespace
