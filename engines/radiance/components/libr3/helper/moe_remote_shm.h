@@ -150,7 +150,7 @@ inline void init(void* base, uint32_t layers) {
     h->owned_count = 0; h->owner_slot_bytes = owner_slot_bytes(); h->owned_bytes = 0;
     h->owner_offset = l.owner;
     h->layer_map_slot_bytes = layer_map_slot_bytes(); h->layer_map_offset = l.layer_map;
-    std::memset(ptr<uint8_t>(base, l.layer_map), 0xff, layer_map_slot_bytes());
+    std::memset(static_cast<uint8_t*>(base) + l.layer_map, 0xff, layer_map_slot_bytes());
     h->next_sequence = 1; h->ring_offset = l.ring; h->segment_bytes = l.bytes;
     for (uint32_t r = 0; r < kMaxRanks; ++r) {
         h->route_slot_bytes[r] = route_slot_bytes();
