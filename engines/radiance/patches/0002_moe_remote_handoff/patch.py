@@ -221,7 +221,7 @@ PATCHES = (
             ),
             Edit(
                 id="join-remote-before-all-reduce",
-                anchor=r"^[ \t]*brow_slice\(w\.h\.x, r0, rows, g\.n_embd\)\);$",
+                anchor=r"^[ \t]*gfold \? brow_slice\(w\.sgate, r0, rows, 1\) : RAD_NONE,\n[ \t]*brow_slice\(w\.h\.x, r0, rows, g\.n_embd\)\);$",
                 text="""
     if (remote_policy) {
         RAD_ISSUE_N(c_, op_remote_join, rows, brows(b_remote, rows));
