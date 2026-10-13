@@ -184,7 +184,8 @@ float plane_value(const Container& f, const RadFileEntry* e, int pi, int64_t row
     return raw_value(ep.dtype, cr.bytes.data(), cc);
 }
 
-bool decode_row(const Container& f, const RadFileEntry* e, int64_t row, std::vector<float>& out) {
+bool decode_row(const Container& f, const RadFileEntry* e, int64_t row, std::vector<float>& out,
+                bool undo_fwht = true) {
     if (!e || row < 0 || e->rank == 0) return false;
     int64_t nr=1, nc=1; rad_enc_view(e->rank, e->shape, &nr, &nc); if (row >= nr || nc <= 0) return false;
     const RadEncoding* enc = f.encoding(e); if (!enc || !rad_enc_valid(enc)) return false;
@@ -206,7 +207,7 @@ bool decode_row(const Container& f, const RadFileEntry* e, int64_t row, std::vec
     }
     const int64_t fw = rad_enc_fwht(enc);
     if (fw < 0 || (fw && nc % fw)) return false;
-    if (fw) for (int64_t b=0;b<nc;b+=fw) for(int64_t d=1;d<fw;d<<=1)
+    if (undo_fwht && fw) for (int64_t b=0;b<nc;b+=fw) for(int64_t d=1;d<fw;d<<=1)
         for(int64_t i=0;i<fw;i+=2*d) for(int64_t j=0;j<d;++j) {
             float a=out[(size_t)(b+i+j)], z=out[(size_t)(b+i+j+d)];
             out[(size_t)(b+i+j)]=a+z; out[(size_t)(b+i+j+d)]=a-z;
@@ -218,6 +219,150 @@ float dot_bf16(const uint16_t* x, const std::vector<float>& w) {
     float s=0.f; for(size_t i=0;i<w.size();++i) s += bf16(x[i])*w[i]; return s;
 }
 float silu(float x) { return x / (1.f + std::exp(-x)); }
+
+
+/* Host emulation of Radiance's w4nl64a8h path. The container stores Hadamard-domain expert
+ * weights (including the transform's residual scale); unlike decode_row's fp32 reference this
+ * path deliberately does not invert that transform. */
+void fwht128(float* v) {
+    for (int d = 1; d < 128; d <<= 1)
+        for (int i = 0; i < 128; i += 2 * d)
+            for (int j = 0; j < d; ++j) {
+                const float a = v[i + j], b = v[i + j + d];
+                v[i + j] = a + b;
+                v[i + j + d] = a - b;
+            }
+}
+
+float e4m3_round(float x) {
+    if (!std::isfinite(x)) return x;
+    const bool neg = std::signbit(x);
+    const float a = std::min(std::abs(x), 448.0f);
+    uint8_t best = 0;
+    float best_d = std::numeric_limits<float>::infinity();
+    for (uint32_t c = 0; c <= 0x7eu; ++c) {
+        const float v = f8e4m3((uint8_t)c);
+        const float d = std::abs(v - a);
+        if (d < best_d || (d == best_d && ((c & 1u) == 0u) && (best & 1u))) {
+            best = (uint8_t)c;
+            best_d = d;
+        }
+    }
+    return f8e4m3((uint8_t)(best | (neg ? 0x80u : 0u)));
+}
+
+bool quant_had_engine(float* v, size_t n) {
+    if (!v || n == 0 || n % 128 != 0) return false;
+    for (size_t b = 0; b < n; b += 128) {
+        fwht128(v + b);
+        float m = 0.0f;
+        for (size_t j = 0; j < 128; ++j) m = std::max(m, std::abs(v[b + j]));
+        const float sc = m > 0.0f ? m * (1.0f / 448.0f) : 1.0f;
+        const float inv = 1.0f / sc;
+        for (size_t j = 0; j < 128; ++j) {
+            const float q = std::max(-448.0f, std::min(448.0f, v[b + j] * inv));
+            v[b + j] = e4m3_round(q) * sc;
+        }
+    }
+    return true;
+}
+
+float dot_f32(const float* x, const std::vector<float>& w) {
+    float s = 0.0f;
+    for (size_t i = 0; i < w.size(); ++i) s += x[i] * w[i];
+    return s;
+}
+
+int compute_host_engine(const Container& f, void* map, Request* q) {
+    if (q->rank_count != kMaxRanks || q->rank >= kMaxRanks || q->layer >= f.layers ||
+        q->rows == 0 || q->rows > kMaxRows || q->hidden != kHidden ||
+        q->route_count > kMaxRoutes || q->activation_stride != kHidden * 2)
+        return -EINVAL;
+
+    const Route* routes = ptr<Route>(map, q->route_offset);
+    const uint16_t* act = ptr<uint16_t>(map, q->activation_offset);
+    uint16_t* dst = ptr<uint16_t>(map, q->result_offset[q->rank]);
+
+    std::vector<float> aq((size_t)q->rows * kHidden);
+    for (size_t i = 0; i < aq.size(); ++i) aq[i] = bf16(act[i]);
+    for (uint32_t t = 0; t < q->rows; ++t)
+        if (!quant_had_engine(aq.data() + (size_t)t * kHidden, kHidden)) return -EINVAL;
+
+    std::array<std::vector<uint32_t>, kExperts> by_exp;
+    std::vector<int32_t> slot_route((size_t)q->rows * kTopK, -1);
+    for (uint32_t i = 0; i < q->route_count; ++i) {
+        const Route& r = routes[i];
+        if (r.token < 0 || (uint32_t)r.token >= q->rows || r.expert < 0 ||
+            r.expert >= (int32_t)kExperts || r.slot >= kTopK)
+            return -EINVAL;
+        const size_t fslot = (size_t)r.token * kTopK + r.slot;
+        if (slot_route[fslot] >= 0) return -EINVAL;
+        slot_route[fslot] = (int32_t)i;
+        by_exp[(uint32_t)r.expert].push_back(i);
+    }
+
+    std::vector<uint16_t> down((size_t)q->route_count * kHidden, 0);
+    std::vector<float> wg, wu, wd;
+    for (uint32_t e = 0; e < kExperts; ++e) {
+        const auto& ri = by_exp[e];
+        if (ri.empty()) continue;
+        const RadFileEntry* gu = f.weight(q->layer, e, 0);
+        const RadFileEntry* dn = f.weight(q->layer, e, 1);
+        if (!gu || !dn) return -ENOENT;
+        int64_t gur = 1, guc = 1, dnr = 1, dnc = 1;
+        rad_enc_view(gu->rank, gu->shape, &gur, &guc);
+        rad_enc_view(dn->rank, dn->shape, &dnr, &dnc);
+        if (guc != kHidden || dnr != kHidden || gur != 2 * dnc || dnc != 640 ||
+            rad_enc_fwht(f.encoding(gu)) != 128 || rad_enc_fwht(f.encoding(dn)) != 128)
+            return -EINVAL;
+
+        const bool wide = q->rank == (e & 1u);
+        const int64_t lo = wide ? 0 : 384;
+        const int64_t width = wide ? 384 : 256;
+        std::vector<float> mid(ri.size() * 384u, 0.0f);
+
+        for (int64_t j = 0; j < width; ++j) {
+            if (!decode_row(f, gu, lo + j, wg, false) ||
+                !decode_row(f, gu, dnc + lo + j, wu, false))
+                return -ENOTSUP;
+            for (size_t a = 0; a < ri.size(); ++a) {
+                const Route& r = routes[ri[a]];
+                const float* x = aq.data() + (size_t)r.token * kHidden;
+                const float gate = bf16(to_bf16(dot_f32(x, wg)));
+                const float up = bf16(to_bf16(dot_f32(x, wu)));
+                mid[a * 384u + (size_t)j] =
+                    bf16(to_bf16((gate / (1.0f + ::expf(-gate))) * up));
+            }
+        }
+        for (size_t a = 0; a < ri.size(); ++a)
+            if (!quant_had_engine(mid.data() + a * 384u, 384u)) return -EINVAL;
+
+        for (int64_t h = 0; h < kHidden; ++h) {
+            if (!decode_row(f, dn, h, wd, false)) return -ENOTSUP;
+            for (size_t a = 0; a < ri.size(); ++a) {
+                float sum = 0.0f;
+                const float* m = mid.data() + a * 384u;
+                for (int64_t j = 0; j < width; ++j) sum += m[j] * wd[(size_t)(lo + j)];
+                down[(size_t)ri[a] * kHidden + (size_t)h] = to_bf16(sum);
+            }
+        }
+    }
+
+    /* r4d_moe gather: ascending original top-k slot order, f32 accumulator, one BF16 narrow. */
+    for (uint32_t t = 0; t < q->rows; ++t) {
+        for (uint32_t h = 0; h < kHidden; ++h) {
+            float acc = 0.0f;
+            for (uint32_t slot = 0; slot < kTopK; ++slot) {
+                const int32_t ri = slot_route[(size_t)t * kTopK + slot];
+                if (ri < 0) continue;
+                acc += bf16(routes[(uint32_t)ri].weight_bf16) *
+                       bf16(down[(size_t)(uint32_t)ri * kHidden + h]);
+            }
+            dst[(size_t)t * kHidden + h] = to_bf16(acc);
+        }
+    }
+    return 0;
+}
 
 int compute_host(const Container& f, void* map, Request* q) {
     if (q->rank_count != kMaxRanks || q->rank >= kMaxRanks || q->layer >= f.layers || q->rows > kMaxRows ||
@@ -417,7 +562,7 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
         const float w = 1.0f / (float)k;
         for (uint32_t j = 0; j < k; ++j) {
             const uint32_t ix = (uint32_t)((t * 17ull + j * 29ull + rnd()) % avail.size());
-            rr[at++] = Route{(int32_t)t, (int32_t)avail[ix], to_bf16(w), 0};
+            rr[at++] = Route{(int32_t)t, (int32_t)avail[ix], to_bf16(w), (uint16_t)j};
         }
     }
 
@@ -435,9 +580,9 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
     bool bad = false;
     for (uint32_t r = 0; r < kMaxRanks; ++r) {
         q->rank = r;
-        const int hrc = compute_host(model, mem.data(), q);
+        const int hrc = compute_host_engine(model, mem.data(), q);
         if (hrc != 0) {
-            std::fprintf(stderr, "r3_moe_helper: --compare host path rank %u failed rc=%d\n", r, hrc);
+            std::fprintf(stderr, "r3_moe_helper: --compare engine-quant host path rank %u failed rc=%d\n", r, hrc);
             return 1;
         }
         const uint16_t* want = ptr<uint16_t>(mem.data(), q->result_offset[r]);
@@ -452,8 +597,8 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
             max_abs = std::max(max_abs, std::abs(d));
         }
         const double rel = std::sqrt((double)(num / std::max<long double>(den, 1.0e-30L)));
-        std::printf("rank %u rel_l2=%.8g max_abs=%.8g\n", r, rel, max_abs);
-        bad = bad || !std::isfinite(rel) || rel > 2.0e-3;
+        std::printf("engine_quant rank %u rel_l2=%.8g max_abs=%.8g\n", r, rel, max_abs);
+        bad = bad || !std::isfinite(rel) || rel >= 1.0e-3;
     }
     return bad ? 1 : 0;
 }
