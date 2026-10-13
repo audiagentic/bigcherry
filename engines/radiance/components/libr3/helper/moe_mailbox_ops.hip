@@ -32,8 +32,9 @@ static const RadParamSpec kJoinParams[] = {
     {"top_k", RAD_P_INT, RAD_REQUIRED},
 };
 static const RadOperandSpec kJoinOperands[] = {
-    {"sorted", RAD_OPD_OUT, 0},
-    {"down", RAD_OPD_OUT, 0},
+    /* Join patches only the remote tail; the engine-written local prefix must survive. */
+    {"sorted", RAD_OPD_INOUT, 0},
+    {"down", RAD_OPD_INOUT, 0},
 };
 static const RadOpSchema kSchemas[] = {
     {"moe_mailbox_publish", kPublishParams, NELEM(kPublishParams),
