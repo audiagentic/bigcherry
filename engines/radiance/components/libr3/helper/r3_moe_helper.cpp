@@ -277,6 +277,16 @@ uint64_t helper_budget_bytes() {
     return (uint64_t)mib * 1024ull * 1024ull;
 }
 
+uint32_t helper_lane_rows() {
+    const char* e = std::getenv("R3_MOE_HELPER_MAX_ROWS");
+    if (!e || !*e) return 64;
+    char* end = nullptr;
+    errno = 0;
+    const unsigned long v = std::strtoul(e, &end, 10);
+    if (errno || !end || *end || v == 0) return 64;
+    return (uint32_t)std::min<unsigned long>(v, kMaxRows);
+}
+
 int64_t canonical_expert_bytes(const Container& f, uint32_t l, uint32_t e) {
     int64_t n = 0;
     for (uint32_t slot = 0; slot < 2; ++slot) {
@@ -490,6 +500,8 @@ int main(int argc, char** argv) {
     Owned owned;
     if (!select_owned(model, gpu.get(), budget, &owned)) return 1;
     if (gpu && !gpu->upload(owned.expert)) return 1;
+    const uint32_t lane_max_rows = helper_lane_rows();
+    if (gpu && !compare && !gpu->prepare_lanes(lane_max_rows)) return 1;
     if (gpu && !compare) (void)posix_fadvise(model.fd, 0, 0, POSIX_FADV_DONTNEED);
     long rss_pages = 0;
     if (FILE* sf = std::fopen("/proc/self/statm", "r")) {
@@ -537,9 +549,10 @@ int main(int argc, char** argv) {
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = 0;
     sigaction(SIGINT, &sa, nullptr); sigaction(SIGTERM, &sa, nullptr);
-    std::fprintf(stderr, "r3_moe_helper: ready shm=%s layers=%u bytes=%llu (%s)\n",
+    std::fprintf(stderr,
+                 "r3_moe_helper: ready shm=%s layers=%u bytes=%llu (%s, lane rows <= %u)\n",
                  name, model.layers, (unsigned long long)lay.bytes,
-                 cpu ? "host fp32 reference" : gpu->arch().c_str());
+                 cpu ? "host fp32 reference" : gpu->arch().c_str(), lane_max_rows);
 
     uint64_t stat_req = 0, stat_rows = 0, stat_routes = 0;
     double stat_us = 0.0;
@@ -562,37 +575,93 @@ int main(int argc, char** argv) {
             if (++seq == 0) break;
         }
     } else {
-        std::array<uint64_t, kMaxRanks> lane_req{}, lane_rows{}, lane_routes{};
+        constexpr uint32_t kQueueDepth = 4;
+        std::array<uint64_t, kMaxRanks> lane_req{}, lane_rows{}, lane_routes{}, lane_samples{};
+        std::array<double, kMaxRanks> lane_sample_us{};
         std::array<std::thread, kMaxRanks> workers;
         for (uint32_t rank = 0; rank < kMaxRanks; ++rank) {
             workers[rank] = std::thread([&, rank] {
-                uint32_t seq = 1;
-                while (!g_stop) {
-                    Request* q = lane_request(map, rank, seq);
-                    while (!g_stop &&
-                           (int32_t)(load(&h->lane[rank].request_sequence) - seq) < 0)
-                        std::this_thread::yield();
-                    while (!g_stop && q && load(&q->sequence) != seq)
-                        std::this_thread::yield();
-                    if (g_stop || !q) break;
-                    q->status = gpu->enqueue_lane(map, dev_map, q, rank, seq);
-                    if (q->status != 0) {
-                        std::fprintf(stderr, "r3_moe_helper: lane %u enqueue seq %u failed rc=%d\n",
-                                     rank, seq, q->status);
+                uint32_t next = 1;
+                uint32_t done_seen = 0;
+                auto queue_one = [&]() -> bool {
+                    if (next == 0) return false;
+                    const bool sample = (next & 63u) == 0;
+                    const int rc = gpu->enqueue_lane(map, dev_map, rank, next, sample);
+                    if (rc != 0) {
+                        std::fprintf(stderr,
+                                     "r3_moe_helper: lane %u enqueue seq %u failed rc=%d\n",
+                                     rank, next, rc);
+                        return false;
+                    }
+                    ++next;
+                    return next != 0;
+                };
+
+                for (uint32_t i = 0; i < kQueueDepth && !g_stop; ++i) {
+                    if (!queue_one()) {
                         g_stop = 1;
                         break;
                     }
-                    ++lane_req[rank]; lane_rows[rank] += q->rows; lane_routes[rank] += q->route_count;
-                    if (++seq == 0) { g_stop = 1; break; }
                 }
+                while (!g_stop) {
+                    const uint32_t done = load(&h->lane[rank].done_sequence);
+                    if ((int32_t)(done - done_seen) <= 0) {
+                        std::this_thread::yield();
+                        continue;
+                    }
+                    if (!gpu->collect_lane_timing(rank, done,
+                                                  &lane_sample_us[rank],
+                                                  &lane_samples[rank])) {
+                        g_stop = 1;
+                        break;
+                    }
+                    done_seen = done;
+                    while (!g_stop &&
+                           (uint32_t)(next - done_seen - 1u) < kQueueDepth) {
+                        if (!queue_one()) {
+                            g_stop = 1;
+                            break;
+                        }
+                    }
+                }
+
+                const uint32_t queued = next - 1u;
+                store(&h->lane[rank].request_sequence, queued);
+                if (!gpu->sync_lane(rank)) {
+                    g_stop = 1;
+                    return;
+                }
+                (void)gpu->collect_lane_timing(rank, queued,
+                                               &lane_sample_us[rank],
+                                               &lane_samples[rank]);
+                uint64_t stats[3]{};
+                if (!gpu->lane_stats(rank, stats)) {
+                    g_stop = 1;
+                    return;
+                }
+                lane_req[rank] = stats[0];
+                lane_rows[rank] = stats[1];
+                lane_routes[rank] = stats[2];
             });
         }
         while (!g_stop) ::sleep(1);
-        (void)futex_wake(&h->publish_sequence, 32);
         for (auto& w : workers) if (w.joinable()) w.join();
+        uint64_t timing_samples = 0;
+        double sampled_us = 0.0;
         for (uint32_t rank = 0; rank < kMaxRanks; ++rank) {
-            stat_req += lane_req[rank]; stat_rows += lane_rows[rank]; stat_routes += lane_routes[rank];
+            stat_req += lane_req[rank];
+            stat_rows += lane_rows[rank];
+            stat_routes += lane_routes[rank];
+            timing_samples += lane_samples[rank];
+            sampled_us += lane_sample_us[rank];
         }
+        if (timing_samples && stat_req)
+            stat_us = (sampled_us / (double)timing_samples) * (double)stat_req;
+        std::fprintf(stderr,
+                     "r3_moe_helper: GPU timing samples=%llu sampled=%.1f ms avg=%.1f us\n",
+                     (unsigned long long)timing_samples, sampled_us / 1000.0,
+                     timing_samples ? sampled_us / (double)timing_samples : 0.0);
+
     }
 
     std::fprintf(stderr, "r3_moe_helper: served %llu requests, %llu rows, %llu routes, compute %.1f ms (%.1f us a request)\n",
