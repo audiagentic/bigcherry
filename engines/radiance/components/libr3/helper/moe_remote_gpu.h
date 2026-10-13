@@ -170,14 +170,15 @@ __global__ void lane_route_scatter(
 
 __global__ void lane_unsort_down(const uint16_t* down, const int32_t* sorted,
                                  uint16_t* dst, uint32_t routes, uint32_t slots,
-                                 uint32_t hidden) {
+                                 uint32_t hidden, bool poison) {
     const uint64_t i = (uint64_t)blockIdx.x * blockDim.x + threadIdx.x;
     const uint64_t total = (uint64_t)routes * hidden;
     if (i >= total) return;
     const uint32_t row = (uint32_t)(i / hidden);
     const int32_t flat = sorted[row];
     if (flat < 0 || (uint32_t)flat >= slots) return;
-    dst[(uint64_t)(uint32_t)flat * hidden + (i - (uint64_t)row * hidden)] = down[i];
+    dst[(uint64_t)(uint32_t)flat * hidden + (i - (uint64_t)row * hidden)] =
+        poison ? (uint16_t)0x447au : down[i];
     /* Mapped host memory is fine-grained/uncached. Drain every writer wave's posted stores
      * before the later release flag, matching libr4d's no-P2P all-reduce host path. */
     asm volatile("s_wait_storecnt 0x0" ::: "memory");
@@ -347,6 +348,8 @@ public:
     }
 
     bool open() {
+        const char* poison = std::getenv("R3_MOE_HELPER_POISON");
+        poison_ = poison && *poison && std::strcmp(poison, "0") != 0;
         if (!hip_ok(hipSetDevice(0), "hipSetDevice(0)")) return false;
         hipDeviceProp_t prop{};
         if (!hip_ok(hipGetDeviceProperties(&prop, 0), "hipGetDeviceProperties")) return false;
@@ -703,7 +706,7 @@ public:
                            dim3((down_elems + block.x - 1) / block.x), block, 0, w.stream,
                            static_cast<const uint16_t*>(w.d_down.p),
                            static_cast<const int32_t*>(w.d_sorted.p),
-                           dst, routes, slots, kHidden);
+                           dst, routes, slots, kHidden, poison_);
         if (!hip_ok(hipGetLastError(), "lane unsort down rows")) return -EIO;
 
         if (sample && w.sample_pending && w.sample_sequence == sequence &&
@@ -769,6 +772,7 @@ private:
     Buffer d_layer_tables_;
     uint32_t lane_rows_ = 0;
     uint32_t lane_routes_ = 0;
+    bool poison_ = false;
 
     template <class T> bool symbol(const char* name, T* out, bool required = true) {
         dlerror();
