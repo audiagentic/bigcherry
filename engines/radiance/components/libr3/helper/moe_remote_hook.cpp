@@ -23,6 +23,7 @@ struct RankState {
     int device = -1;
     uint8_t* owner = nullptr;
     uint32_t* sequence = nullptr;
+    uint32_t* published = nullptr;
     bool ready = false;
 };
 
@@ -98,6 +99,7 @@ void close_mailbox() {
         RankState& s = g.rank[r];
         if (!s.ready) continue;
         if (s.device >= 0) (void)hipSetDevice(s.device);
+        if (s.published) (void)hipFree(s.published);
         if (s.sequence) (void)hipFree(s.sequence);
         if (s.owner) (void)hipFree(s.owner);
         s = RankState{};
@@ -151,9 +153,14 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
     }
     if (!hip_ok(hipMalloc(reinterpret_cast<void**>(&s.sequence), sizeof(uint32_t)),
                 "hipMalloc sequence counter") ||
-        !hip_ok(hipMemset(s.sequence, 0, sizeof(uint32_t)), "zero sequence counter")) {
+        !hip_ok(hipMemset(s.sequence, 0, sizeof(uint32_t)), "zero sequence counter") ||
+        !hip_ok(hipMalloc(reinterpret_cast<void**>(&s.published), sizeof(uint32_t)),
+                "hipMalloc published flag") ||
+        !hip_ok(hipMemset(s.published, 0, sizeof(uint32_t)), "zero published flag")) {
+        if (s.published) (void)hipFree(s.published);
         if (s.sequence) (void)hipFree(s.sequence);
         (void)hipFree(s.owner);
+        s.published = nullptr;
         s.sequence = nullptr;
         s.owner = nullptr;
         return RAD_E_DEVICE;
@@ -163,6 +170,8 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
     s.dev.mailbox = dev_map;
     s.dev.owner = s.owner;
     s.dev.sequence = s.sequence;
+    s.dev.published = s.published;
+    s.dev.max_rows = (uint32_t)max_rows();
     s.dev.rank = (uint32_t)rank;
     s.ready = true;
     *out = &s.dev;
