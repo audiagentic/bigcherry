@@ -140,7 +140,7 @@ PATCHES = (
             ),
             Edit(
                 id="publish-remote-and-rescatter",
-                anchor=r"^[ \\t]*/\\* The rotated re-quantisation of the same input, when the expert plane carries a$",
+                anchor=r"^[ \t]*/\* The rotated re-quantisation of the same input, when the expert plane carries a$"
                 mode="replace",
                 text="""    if (remote_policy) {
         RAD_ISSUE_N(c_, op_remote_publish, rows,
