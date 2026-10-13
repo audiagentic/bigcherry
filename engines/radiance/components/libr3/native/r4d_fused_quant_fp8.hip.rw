@@ -1,0 +1,293 @@
+# R3_AR_PIPE: pipeline large-M pinned-host wht6 in one AQL-stream kernel; same-stream kernels serialize.
+
+@@ find 1
+#define ARQ_MASK ((1u << ARQ_BITS) - 1u)
+@@ replace
+#define ARQ_MASK ((1u << ARQ_BITS) - 1u)
+#define R3_AR_PIPE_SLICES 8
+@@ end
+
+@@ find 1
+template <bool WF32, bool RES, uint32_t THR, int WIRE>
+__global__ __launch_bounds__(THR) void ar_rmsnorm_quant_fp8_kernel(
+@@ replace
+template <bool WF32, bool RES, uint32_t THR, int WIRE, bool PIPE = false>
+__global__ __launch_bounds__(THR) void ar_rmsnorm_quant_fp8_kernel(
+@@ end
+
+@@ find 1
+    __shared__ float lds[THR / kWave];
+    __shared__ unsigned int s_seq, s_slot;
+@@ replace
+    __shared__ float lds[THR / kWave];
+    __shared__ unsigned int s_seq, s_slot;
+    __shared__ unsigned int r3_pipe_done[R3_AR_PIPE_SLICES];
+    __shared__ unsigned int r3_pipe_ready[R3_AR_PIPE_SLICES];
+@@ end
+
+# R3_AR_WIRE4 uses the same 64-value WHT/scales as wht6, but its 4-bit payload ends at
+# one quarter of the exact bf16 slot instead of the wht6 scale plane at one half.
+@@ find 1
+    unsigned short* const p_sc =
+        (unsigned short*)((char*)ps + (size_t)(slot_stride16 >> 1) * 16);
+    const unsigned short* const m_sc =
+        (const unsigned short*)((const char*)ms + (size_t)(slot_stride16 >> 1) * 16);
+@@ replace
+    const size_t r3_peer_scale_off =
+        WIRE == 4 ? (size_t)slot_stride16 * 4u : (size_t)(slot_stride16 >> 1) * 16u;
+    unsigned short* const p_sc = (unsigned short*)((char*)ps + r3_peer_scale_off);
+    const unsigned short* const m_sc =
+        (const unsigned short*)((const char*)ms + r3_peer_scale_off);
+@@ end
+
+@@ find 1
+    float* const Lsc = (float*)(loc_pack + loc_scale_off);
+
+    if constexpr (WIRE == 0) {
+@@ replace
+    float* const Lsc = (float*)(loc_pack + loc_scale_off);
+
+    if constexpr (WIRE == 4) {
+        /* Same 64-value orthonormal WHT and one BF16 amax/7 scale per group as wht6. The only
+         * format change is four signed bits: RNE (rintf), clamp [-8,7], then store code+8. A
+         * 512-element chunk is 256 code bytes (two dwords per lane) instead of wht6's 384. */
+        constexpr int R3_NWORD4 = 2;
+        constexpr int R3_CBYTES4 = ARQ_CE / 2;
+        constexpr int R3_QMAX4 = 7, R3_QMIN4 = -8;
+        constexpr unsigned int R3_MASK4 = 15u;
+        for (int ci = (int)wave; ci < cpb; ci += (int)(THR / ARQ_WV)) {
+            const int c = c00 + ci;
+            unsigned int acc[R3_NWORD4] = { 0u, 0u };
+#pragma unroll
+            for (int t = 0; t < ARQ_ITERS; ++t) {
+                const int g = c * ARQ_CG + t * ARQ_GPW + gw;
+                const long off = (long)g * ARQ_GROUP + (long)lig * ARQ_EPL;
+                float v[ARQ_EPL];
+#pragma unroll
+                for (int i = 0; i < ARQ_EPL; ++i) v[i] = bf2f(x[off + i]);
+                arq_wht(v, lig);
+                float a = 0.0f;
+#pragma unroll
+                for (int i = 0; i < ARQ_EPL; ++i) a = fmaxf(a, fabsf(v[i]));
+                a = fmaxf(a, r4d_xor_lane<1>(a)); a = fmaxf(a, r4d_xor_lane<2>(a));
+                a = fmaxf(a, r4d_xor_lane<4>(a));
+                float sc = (a > 0.0f) ? bf2f(f2bf(a * (1.0f / (float)R3_QMAX4))) : 1.0f;
+                if (!(sc > 0.0f)) sc = 1.0f;
+                if (lig == 0) { p_sc[g] = (unsigned short)(__float_as_uint(sc) >> 16); Lsc[g] = sc; }
+                const float inv = 1.0f / sc;
+#pragma unroll
+                for (int i = 0; i < ARQ_EPL; ++i) {
+                    const unsigned int sym = (unsigned int)(
+                        min(max((int)rintf(v[i] * inv), R3_QMIN4), R3_QMAX4) - R3_QMIN4);
+                    const int bit = (t * ARQ_EPL + i) * 4, wi = bit >> 5, bo = bit & 31;
+                    acc[wi] |= sym << bo;
+                }
+            }
+            char* const pb = p_pay + (size_t)c * R3_CBYTES4;
+            *(uint2*)(pb + lane * 8) = make_uint2(acc[0], acc[1]);
+#pragma unroll
+            for (int wi = 0; wi < R3_NWORD4; ++wi)
+                Lpk[((size_t)c * R3_NWORD4 + wi) * ARQ_WV + lane] = acc[wi];
+        }
+        if (drain == 1) __threadfence_system();
+        else if (drain == 3) asm volatile("s_waitcnt_vscnt null, 0x0" ::: "memory");  // gfx11 form: native text is not run through rewrites.txt
+        __syncthreads();
+        if (tid == 0) {
+            if (drain == 2) __threadfence_system();
+            arq_store_rel(&peer_flags[b], sq);
+            unsigned long long z = 0;
+            while (r4d_ar_seq_behind(arq_load_acq(&my_flags[b]), sq))
+                if (++z > R4D_ARQ_SPIN_MAX) __builtin_trap();
+        }
+        __syncthreads();
+        if (acq) __threadfence_system();
+
+        for (int ci = (int)wave; ci < cpb; ci += (int)(THR / ARQ_WV)) {
+            const int c = c00 + ci;
+            const char* const pb = m_pay + (size_t)c * R3_CBYTES4;
+            const uint2 pq = *(const uint2*)(pb + lane * 8);
+            unsigned int pac[R3_NWORD4] = { pq.x, pq.y };
+            unsigned int lac[R3_NWORD4];
+#pragma unroll
+            for (int wi = 0; wi < R3_NWORD4; ++wi)
+                lac[wi] = Lpk[((size_t)c * R3_NWORD4 + wi) * ARQ_WV + lane];
+#pragma unroll
+            for (int t = 0; t < ARQ_ITERS; ++t) {
+                const int gl = t * ARQ_GPW + gw, g = c * ARQ_CG + gl;
+                const float psc = __uint_as_float((unsigned int)m_sc[g] << 16), lsc = Lsc[g];
+                float v[ARQ_EPL];
+#pragma unroll
+                for (int i = 0; i < ARQ_EPL; ++i) {
+                    const int bit = (t * ARQ_EPL + i) * 4, wi = bit >> 5, bo = bit & 31;
+                    const unsigned int psy = (pac[wi] >> bo) & R3_MASK4;
+                    const unsigned int lsy = (lac[wi] >> bo) & R3_MASK4;
+                    v[i] = (float)((int)psy + R3_QMIN4) * psc
+                         + (float)((int)lsy + R3_QMIN4) * lsc;
+                }
+                arq_wht(v, lig);
+                const long off = (long)g * ARQ_GROUP + (long)lig * ARQ_EPL;
+#pragma unroll
+                for (int i = 0; i < ARQ_EPL; ++i) x[off + i] = f2bf(v[i]);
+            }
+        }
+        __syncthreads();
+    }
+
+    if constexpr (PIPE) {
+        static_assert(WIRE == 6, "R3_AR_PIPE is only the wht6 path");
+        constexpr int NW = (int)(THR / ARQ_WV), PW = NW / 2, CW = NW - PW;
+        if (tid < R3_AR_PIPE_SLICES) { r3_pipe_done[tid] = 0u; r3_pipe_ready[tid] = 0u; }
+        __syncthreads();
+        if ((int)wave < PW) {
+            for (int sk = 0; sk < R3_AR_PIPE_SLICES; ++sk) {
+                const int lo = cpb * sk / R3_AR_PIPE_SLICES, hi = cpb * (sk + 1) / R3_AR_PIPE_SLICES;
+                for (int ci = lo + (int)wave; ci < hi; ci += PW) {
+                    const int c = c00 + ci;
+                    unsigned int acc[ARQ_NWORD];
+#pragma unroll
+                    for (int wi = 0; wi < ARQ_NWORD; ++wi) acc[wi] = 0u;
+#pragma unroll
+                    for (int t = 0; t < ARQ_ITERS; ++t) {
+                        const int g = c * ARQ_CG + t * ARQ_GPW + gw;
+                        const long off = (long)g * ARQ_GROUP + (long)lig * ARQ_EPL;
+                        float v[ARQ_EPL];
+#pragma unroll
+                        for (int i = 0; i < ARQ_EPL; ++i) v[i] = bf2f(x[off + i]);
+                        arq_wht(v, lig);
+                        float a = 0.0f;
+#pragma unroll
+                        for (int i = 0; i < ARQ_EPL; ++i) a = fmaxf(a, fabsf(v[i]));
+                        a = fmaxf(a, r4d_xor_lane<1>(a)); a = fmaxf(a, r4d_xor_lane<2>(a));
+                        a = fmaxf(a, r4d_xor_lane<4>(a));
+                        float sc = (a > 0.0f) ? bf2f(f2bf(a * (1.0f / (float)ARQ_QMAX))) : 1.0f;
+                        if (!(sc > 0.0f)) sc = 1.0f;
+                        if (lig == 0) { p_sc[g] = (unsigned short)(__float_as_uint(sc) >> 16); Lsc[g] = sc; }
+                        const float inv = 1.0f / sc;
+#pragma unroll
+                        for (int i = 0; i < ARQ_EPL; ++i) {
+                            const unsigned int sym = (unsigned int)(min(max((int)rintf(v[i] * inv), ARQ_QMIN), ARQ_QMAX) - ARQ_QMIN);
+                            const int bit = (t * ARQ_EPL + i) * ARQ_BITS, wi = bit >> 5, bo = bit & 31;
+                            acc[wi] |= sym << bo;
+                            if (bo + ARQ_BITS > 32) acc[wi + 1] |= sym >> (32 - bo);
+                        }
+                    }
+                    char* const pb = p_pay + (size_t)c * ARQ_CBYTES;
+#pragma unroll
+                    for (int w4 = 0; w4 + 4 <= ARQ_NWORD; w4 += 4)
+                        *(uint4*)(pb + w4 * 4 * ARQ_WV + lane * 16) = make_uint4(acc[w4], acc[w4 + 1], acc[w4 + 2], acc[w4 + 3]);
+                    if constexpr (ARQ_NWORD % 4 >= 2)
+                        *(uint2*)(pb + (ARQ_NWORD & ~3) * 4 * ARQ_WV + lane * 8) = make_uint2(acc[ARQ_NWORD & ~3], acc[(ARQ_NWORD & ~3) + 1]);
+                    if constexpr (ARQ_NWORD % 2 == 1)
+                        *(unsigned int*)(pb + (ARQ_NWORD - 1) * 4 * ARQ_WV + lane * 4) = acc[ARQ_NWORD - 1];
+#pragma unroll
+                    for (int wi = 0; wi < ARQ_NWORD; ++wi) Lpk[((size_t)c * ARQ_NWORD + wi) * ARQ_WV + lane] = acc[wi];
+                }
+                /* Every producer wave drains its slice stores before lane 0 marks that wave done. */
+                asm volatile("s_waitcnt_vscnt null, 0x0" ::: "memory");
+                if (lane == 0) {
+                    const unsigned int prior = atomicAdd(&r3_pipe_done[sk], 1u);
+                    if (prior + 1u == (unsigned int)PW) {
+                        atomicExch(&r3_pipe_ready[sk], sq);
+                        arq_store_rel(&peer_flags[nbw + (unsigned)b * R3_AR_PIPE_SLICES + sk], sq);
+                    }
+                }
+            }
+        } else {
+            const int cwave = (int)wave - PW;
+            for (int sk = 0; sk < R3_AR_PIPE_SLICES; ++sk) {
+                unsigned long long z = 0;
+                while (atomicAdd(&r3_pipe_ready[sk], 0u) != sq) if (++z > R4D_ARQ_SPIN_MAX) __builtin_trap();
+                const unsigned int fi = nbw + (unsigned)b * R3_AR_PIPE_SLICES + (unsigned)sk;
+                z = 0;
+                while (r4d_ar_seq_behind(arq_load_acq(&my_flags[fi]), sq)) if (++z > R4D_ARQ_SPIN_MAX) __builtin_trap();
+                if (acq) __threadfence_system();
+                const int lo = cpb * sk / R3_AR_PIPE_SLICES, hi = cpb * (sk + 1) / R3_AR_PIPE_SLICES;
+                for (int ci = lo + cwave; ci < hi; ci += CW) {
+                    const int c = c00 + ci;
+                    const char* const pb = m_pay + (size_t)c * ARQ_CBYTES;
+                    unsigned int pac[ARQ_NWORD], lac[ARQ_NWORD];
+#pragma unroll
+                    for (int w4 = 0; w4 + 4 <= ARQ_NWORD; w4 += 4) {
+                        const uint4 pq = *(const uint4*)(pb + w4 * 4 * ARQ_WV + lane * 16);
+                        pac[w4] = pq.x; pac[w4 + 1] = pq.y; pac[w4 + 2] = pq.z; pac[w4 + 3] = pq.w;
+                    }
+                    if constexpr (ARQ_NWORD % 4 >= 2) {
+                        const uint2 pu = *(const uint2*)(pb + (ARQ_NWORD & ~3) * 4 * ARQ_WV + lane * 8);
+                        pac[ARQ_NWORD & ~3] = pu.x; pac[(ARQ_NWORD & ~3) + 1] = pu.y;
+                    }
+                    if constexpr (ARQ_NWORD % 2 == 1) pac[ARQ_NWORD - 1] = *(const unsigned int*)(pb + (ARQ_NWORD - 1) * 4 * ARQ_WV + lane * 4);
+#pragma unroll
+                    for (int wi = 0; wi < ARQ_NWORD; ++wi) lac[wi] = Lpk[((size_t)c * ARQ_NWORD + wi) * ARQ_WV + lane];
+#pragma unroll
+                    for (int t = 0; t < ARQ_ITERS; ++t) {
+                        const int gl = t * ARQ_GPW + gw, g = c * ARQ_CG + gl;
+                        const float psc = __uint_as_float((unsigned int)m_sc[g] << 16), lsc = Lsc[g];
+                        float v[ARQ_EPL];
+#pragma unroll
+                        for (int i = 0; i < ARQ_EPL; ++i) {
+                            const int bit = (t * ARQ_EPL + i) * ARQ_BITS, wi = bit >> 5, bo = bit & 31;
+                            unsigned int psy = pac[wi] >> bo, lsy = lac[wi] >> bo;
+                            if (bo + ARQ_BITS > 32) { psy |= pac[wi + 1] << (32 - bo); lsy |= lac[wi + 1] << (32 - bo); }
+                            v[i] = (float)((int)(psy & ARQ_MASK) + ARQ_QMIN) * psc + (float)((int)(lsy & ARQ_MASK) + ARQ_QMIN) * lsc;
+                        }
+                        arq_wht(v, lig);
+                        const long off = (long)g * ARQ_GROUP + (long)lig * ARQ_EPL;
+#pragma unroll
+                        for (int i = 0; i < ARQ_EPL; ++i) x[off + i] = f2bf(v[i]);
+                    }
+                }
+            }
+        }
+        __syncthreads();
+    }
+
+    if constexpr (!PIPE && WIRE != 4) {
+    if constexpr (WIRE == 0) {
+@@ end
+
+@@ find 1
+        /* Pass two reads `x` across the whole row and a wave only wrote its own chunks of it. */
+        __syncthreads();
+    }
+
+    /* The peer's rows are now in MY scratch, in the same [M][n] layout as x -- WIRE == 0 only;
+@@ replace
+        /* Pass two reads `x` across the whole row and a wave only wrote its own chunks of it. */
+        __syncthreads();
+    }
+    }  /* !PIPE && WIRE != 4: legacy exact/wht6 whole-message push, one flag, then read */
+
+    /* The peer's rows are now in MY scratch, in the same [M][n] layout as x -- WIRE == 0 only;
+@@ end
+
+@@ find 1
+    int nb = nblocks < 1 ? 1 : nblocks;
+@@ replace
+    const bool r3_wire4 = (nblocks & 0x20000000) != 0;
+    const bool r3_pipe = (nblocks & 0x40000000) != 0;
+    nblocks &= ~0x60000000;
+    if (r3_pipe && (wire != 6 || r3_wire4)) return -10;
+    if (r3_wire4 && wire != 6) return -11;
+    int nb = nblocks < 1 ? 1 : nblocks;
+@@ end
+
+@@ find 1
+#define R4D_ARQ_T(wf, rs, T, W)                                                                  \
+    hipLaunchKernelGGL((ar_rmsnorm_quant_fp8_kernel<wf, rs, T, W>), dim3((uint32_t)nb), dim3(T),  \
+@@ replace
+#define R4D_ARQ_T(wf, rs, T, W, P)                                                               \
+    hipLaunchKernelGGL((ar_rmsnorm_quant_fp8_kernel<wf, rs, T, W, P>), dim3((uint32_t)nb),        \
+                       dim3(T),                                                                   \
+@@ end
+
+@@ find 1
+#define R4D_ARQ_W(wf, rs, T)                                                                     \
+    do { if (wire == 6) R4D_ARQ_T(wf, rs, T, 6); else R4D_ARQ_T(wf, rs, T, 0); } while (0)
+@@ replace
+#define R4D_ARQ_W(wf, rs, T)                                                                     \
+    do { if (wire == 6) {                                                                        \
+             if (r3_wire4)  R4D_ARQ_T(wf, rs, T, 4, false);                                      \
+             else if (r3_pipe) R4D_ARQ_T(wf, rs, T, 6, true);                                    \
+             else              R4D_ARQ_T(wf, rs, T, 6, false);                                   \
+         } else R4D_ARQ_T(wf, rs, T, 0, false); } while (0)
+@@ end

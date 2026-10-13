@@ -1,0 +1,182 @@
+# Native gfx11 form of gemm_fp8a8_kernel, the block-fp8 GEMM (gemm_fp8a8_nt_m16, its gated twin and
+# gemm_fp8a8_tiled): the trunk of an 8-bit Qwen3.8-27B.
+#
+# Why: through the compatibility layer two RX 7900 XTX serve the block-fp8 27B at 7.7 tok/s decode and about 200
+# tok/s prefill (run fp8a-tp2, 2026-10-10) against 22.8 and about 2,750 on one R9700 with libr4d. Every fp8 x fp8
+# WMMA widens 16 codes through f32, moves 4 dwords of operands and 4 of accumulator across lanes.
+#
+# libr4d: both operands are E4M3 bytes; B is always staged in shared memory (the activation on the narrow path, the
+# weight on the prefill tile), A is staged (prefill, the activation) or held in registers in fragment order (narrow,
+# the weight). A lane reads 8 bytes of each and calls the gfx12 fp8 WMMA.
+#
+# Native (the fp8 instantiations only; the int8 ones keep the compatibility layer):
+#   - codes are widened to IEEE half and multiplied by the f16 WMMA: a half built from a code's own bits is the
+#     code's value times 2^-8 for every code, subnormals included, so widening is a few bit operations
+#     (r3_compat.h, "block fp8"). The first native form widened to bf16 and held the narrow path at 139 GB/s of
+#     weight (run fp8b-prof: gate/up 321 us a call) where the MXFP4 kernel reaches about 430.
+#   - B is staged as halves, widened once as it is written. On the prefill tile B is the weight and eight waves read
+#     every staged row, so this is the conversion that is shared; a B fragment is then one 32-byte load.
+#   - A stays as libr4d has it and is widened where it is read, one fragment a wave a K step: 16 bytes of its row
+#     from shared memory, or the lane's 8 codes with its partner's 8. Staging A as halves too would not fit: the
+#     prefill tile would need 82 KiB of shared memory.
+#   - the gfx11 WMMA takes the accumulator as its C operand and the accumulator stays in the gfx11 layout through
+#     the K loop. The fold at a 128-column boundary is per slot, so it only has to name the gfx11 row of a slot
+#     where the scale is per A row; `out` is moved to the gfx12 layout once, in front of the unchanged epilogue,
+#     and multiplied by 2^16 there.
+#   - ONE TOKEN ROW IS NOT A MATRIX PRODUCT. On the narrow path with one row of activation, a 16x16 WMMA tile does
+#     one column of useful work in sixteen, and the kernel reads 337 to 523 GB/s of weight on an XTX where the
+#     single-row vector kernels (gemm_fp8a16_nt_m1, logits_gemm_fp8) read 660 to 790 (run bw-xtx, 2026-10-10). So
+#     with nb == 1 the K loop is replaced by a dot product: a lane multiplies the 32 weight bytes it owns in each
+#     fragment-order tile by the activation bytes at the same K, the pair of lanes that share a weight row add
+#     their halves, and the sixteen row sums are placed in the two lanes that hold the token's column in the gfx12
+#     accumulator, so the epilogue (split-K, the gate, the store) is unchanged. The weight stream is the same
+#     coalesced 1 KiB a wave a step.
+
+@@ find 1
+    __shared__ uint8_t s_b[kBufs][FN * lds_pitch<FK>()];
+@@ replace
+    // libr3 native: B as halves for the fp8 instantiations
+    __shared__ uint8_t s_b[kBufs][FN * (I8 ? lds_pitch<FK>() : r3_fp8_f16_pitch<FK>())];
+@@ end
+
+@@ find 1
+            if (r < FN) stage8_store<FK>(s_b[buf], r, sk, pb[p]);
+@@ replace
+            if (r < FN) {
+                if constexpr (I8) stage8_store<FK>(s_b[buf], r, sk, pb[p]);
+                else r3_fp8_stage_f16<FK>(s_b[buf], r, sk, 8u, pb[p]);
+            }
+@@ end
+
+@@ find 1
+            stage8_store_frag<FK>(s_b[buf], rt * 16u + (blane & 15u),
+                                  ks * r4d_fp8::kSuperK + (blane >> 4) * 8u, pw[p]);
+@@ replace
+            if constexpr (I8)
+                stage8_store_frag<FK>(s_b[buf], rt * 16u + (blane & 15u),
+                                      ks * r4d_fp8::kSuperK + (blane >> 4) * 8u, pw[p]);
+            else
+                r3_fp8_stage_f16<FK>(s_b[buf], rt * 16u + (blane & 15u),
+                                      ks * r4d_fp8::kSuperK + (blane >> 4) * 8u, 16u, pw[p]);
+@@ end
+
+@@ find 1
+#pragma unroll
+            for (uint32_t i = 0; i < MT; ++i)
+#pragma unroll
+                for (uint32_t j = 0; j < NT; ++j) raw[i][j] = mma8<I8>(af[i], bf[j], raw[i][j]);
+@@ replace
+            if constexpr (I8) {
+#pragma unroll
+                for (uint32_t i = 0; i < MT; ++i)
+#pragma unroll
+                    for (uint32_t j = 0; j < NT; ++j) raw[i][j] = mma8<I8>(af[i], bf[j], raw[i][j]);
+            } else {
+                // libr3 native: gfx11 fragments, the accumulator in the gfx11 layout
+                r3_v16h naf[MT];
+                if (AW) {
+                    naf[0] = r3_fp8_frag_reg(af[0], lane);
+                } else {
+#pragma unroll
+                    for (uint32_t i = 0; i < MT; ++i)
+                        naf[i] = r3_fp8_frag_bytes(s_a[buf], lds_pitch<FK>(), wm + i * 16, ks, lane);
+                }
+#pragma unroll
+                for (uint32_t j = 0; j < NT; ++j) {
+                    const r3_v16h nbf = r3_fp8_frag_f16<FK>(s_b[buf], wn + j * 16, ks, lane);
+#pragma unroll
+                    for (uint32_t i = 0; i < MT; ++i)
+                        raw[i][j] = __builtin_bit_cast(
+                            f8v, r3_wmma_f16_native(naf[i], nbf, __builtin_bit_cast(r3_v8f, raw[i][j])));
+                }
+            }
+@@ end
+
+@@ find 1
+#pragma unroll
+            for (uint32_t j = 0; j < NT; ++j)       bf[j] = frag<FK>(s_b[buf], wn + j * 16, ks, lane);
+@@ replace
+            if constexpr (I8) {
+#pragma unroll
+                for (uint32_t j = 0; j < NT; ++j)   bf[j] = frag<FK>(s_b[buf], wn + j * 16, ks, lane);
+            }
+@@ end
+
+@@ find 1
+                            const uint32_t r = m0 + wm + i * 16 + acc_row(lane, t);
+                            as[i][t] = (Full || r < rows)
+                                           ? ws * ((const float*)Sa)[(size_t)r * sa_ld + kb]
+@@ replace
+                            // libr3 native: the accumulator is in the gfx11 layout here
+                            const uint32_t r = m0 + wm + i * 16 + r3_acc_row_native(lane, t);
+                            as[i][t] = (Full || r < rows)
+                                           ? ws * ((const float*)Sa)[(size_t)r * sa_ld + kb]
+@@ end
+
+@@ find 1
+        for (uint32_t p = 0; p < kAF; ++p) pf[p] = pfn[p];
+        if (kBufs > 1u) buf ^= 1u; else __syncthreads();
+    }
+@@ replace
+        for (uint32_t p = 0; p < kAF; ++p) pf[p] = pfn[p];
+        if (kBufs > 1u) buf ^= 1u; else __syncthreads();
+    }
+    if constexpr (!I8) if (!r3_vec) {  // libr3 native: to the gfx12 layout the epilogue reads, and out of the 2^-16 of the halves
+#pragma unroll
+        for (uint32_t i = 0; i < MT; ++i)
+#pragma unroll
+            for (uint32_t j = 0; j < NT; ++j)
+                out[i][j] = __builtin_bit_cast(f8v, r3_acc_native_to_gfx12(out[i][j]) * r3_fp8_f16_unscale);
+    }
+@@ end
+
+@@ find 1
+    for (uint32_t c0 = kbeg; c0 < kend; c0 += FK) {
+@@ replace
+    // libr3 native: one token row is a dot product a weight row, not a 16x16 tile (see the header)
+    const bool r3_vec = AW && !I8 && nb == 1u;
+    if (r3_vec) {
+        float tot = 0.0f, part = 0.0f;
+        const uint8_t* const xrow = Bp + (lane >> 4) * 8u;  // token 0 at this lane's half of each fragment's K
+        for (uint32_t k = kbeg; k < kend; k += r4d_fp8::kSuperK) {
+            r3_u4 wlo = {0u, 0u, 0u, 0u}, whi = {0u, 0u, 0u, 0u};
+            if (alive) {
+                const uint8_t* const wp =
+                    afrag + (size_t)(arow * ksuper + k / r4d_fp8::kSuperK) * r4d_fp8::kTileBytes;
+                wlo = *(const r3_u4u*)wp;
+                whi = *(const r3_u4u*)(wp + 16);
+            }
+            const unsigned w[8] = {wlo[0], wlo[1], wlo[2], wlo[3], whi[0], whi[1], whi[2], whi[3]};
+#pragma unroll
+            for (uint32_t t = 0; t < 4; ++t) {
+                const r3_u2u x = *(const r3_u2u*)(xrow + k + t * 16u);
+                part = r3_fp8_dot8(w[2 * t], w[2 * t + 1], x[0], x[1], part);
+            }
+            if ((k + r4d_fp8::kSuperK) % kBlock == 0u || k + r4d_fp8::kSuperK >= kend) {
+                const uint32_t kb = k / kBlock;
+                const float ws = alive
+                    ? bscale(((const uint16_t*)Sa)[(size_t)(wrow0 / kBlock) * sa_ld + kb]) : 0.0f;
+                tot = fmaf(part, ws * ((const float*)Sb)[kb], tot);
+                part = 0.0f;
+            }
+        }
+        tot *= r3_fp8_f16_unscale;
+        const float row = tot + __uint_as_float(r3_from_lane(lane ^ 16u, __float_as_uint(tot)));
+#pragma unroll
+        for (uint32_t t = 0; t < 8; ++t) {
+            const float v = __uint_as_float(r3_from_lane((lane >> 4) * 8u + t, __float_as_uint(row)));
+            out[0][0][t] = (lane & 15u) == 0u ? v : 0.0f;
+        }
+    } else
+    for (uint32_t c0 = kbeg; c0 < kend; c0 += FK) {
+@@ end
+
+# The narrow path splits K until about this many waves stream weight at once. libr4d's 128 is fitted on the R9700.
+# On an XTX a wave has one 1 KiB request in flight, and at 128 the small-N shapes run a few hundred waves:
+# N = 5120, K = 8704 reads 316 GB/s at 128, 480 at 512, 663 at 1024 and 585 at 2048; N = 8192, K = 5120 reads 420,
+# 422, 573 and 551; N = 17408 (1088 waves unsplit) does not move (runs bw-st128 .. bw-st2048, 2026-10-10).
+@@ find 1
+constexpr uint32_t kSplitTarget = 128u;
+@@ replace
+constexpr uint32_t kSplitTarget = 1024u;  // libr3 native: fitted on gfx1100
+@@ end

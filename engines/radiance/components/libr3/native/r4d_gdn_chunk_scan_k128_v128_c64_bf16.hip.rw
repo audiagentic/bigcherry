@@ -1,0 +1,701 @@
+# Native gfx11 GDN chunk scan for libr3.
+//
+// Radiance's recurrence, shared-memory geometry, masking and state representation are unchanged.
+// The rewrite changes only WMMA ownership on gfx11: full 16-value bf16 rows feed native WMMA,
+// accumulators stay in gfx11 layout across each contraction loop, and are converted only where
+// scalar code or the persistent state/output layout needs gfx12 ordering. Each native WMMA uses zero C and adds
+// its product in f32, exactly as libr3's gfx12 compatibility shim does; chaining C through gfx11 WMMA changes
+// rounding and compounds through long multi-chunk recurrence. R3_GDN_NATIVE=1 selects the native instantiation.
+// R3_GDN_COMPARE=1 runs native on copied output/state then compatibility on the real buffers and reports the first
+// mismatch while leaving compatibility results live. The recurrent state update stays on the compatibility WMMA:
+// its K^T contraction owns the state carried into the next chunk. Keep default off until served-model KL passes.
+//
+@@ find 1
+#include <hip/hip_runtime.h>
+#include "r4d.h"
+@@ replace
+#include <hip/hip_runtime.h>
+#include <atomic>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <vector>
+#include "r4d.h"
+
+__device__ __forceinline__ r3_v8f r3_gdn_wmma_native_compat(
+        r3_v16bf a, r3_v16bf b, r3_v8f acc) {
+    const r3_v8f zero = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+    return acc + r3_wmma_bf16_native(a, b, zero);
+}
+@@ end
+
+@@ find 1
+template <int SDT, bool H0 = true, bool HT = true>
+__global__ __launch_bounds__(NTHR) void r4d_gdn_chunk_scan_kernel(
+@@ replace
+template <int SDT, bool H0 = true, bool HT = true, bool R3N = false>
+__global__ __launch_bounds__(NTHR) void r4d_gdn_chunk_scan_kernel(
+@@ end
+
+@@ find 1
+#if APRE
+    v8bf apre[BT / 16];
+    {
+#if GO
+      const unsigned aoh = rowGo((unsigned)ars, mt * 16, lim, lane);
+#pragma unroll
+      for (int sk = 0; sk < BT / 16; ++sk) apre[sk] = fragGo(ag, aoh + sk * 16);
+#else
+      const unsigned short* pah = rowG(ag, ars, mt * 16, lim, lane);
+#pragma unroll
+      for (int sk = 0; sk < BT / 16; ++sk) apre[sk] = fragP(pah + sk * 16);
+#endif
+    }
+#endif
+@@ replace
+#if APRE
+    v8bf apre[BT / 16];
+    r3_v16bf apreN[BT / 16];
+    {
+#if GO
+      const unsigned aoh = rowGo((unsigned)ars, mt * 16, lim, lane);
+#pragma unroll
+      for (int sk = 0; sk < BT / 16; ++sk) {
+        if constexpr (R3N) apreN[sk] = r3_gdn_fragGo_native(ag, aoh + sk * 16, lane);
+        else               apre[sk]  = fragGo(ag, aoh + sk * 16);
+      }
+#else
+      const unsigned short* pah = rowG(ag, ars, mt * 16, lim, lane);
+#pragma unroll
+      for (int sk = 0; sk < BT / 16; ++sk) {
+        if constexpr (R3N) apreN[sk] = r3_gdn_fragP_native(pah + sk * 16, lane);
+        else               apre[sk]  = fragP(pah + sk * 16);
+      }
+#endif
+    }
+#endif
+@@ end
+
+@@ find 1
+#define pSnf(i, ko) fragO(sb, oSn[i] + (ko) * 2u)
+#define pkmf(ko)    fragO(sb, okm + (ko) * 2u)
+#define pknf(i, ko) fragO(sb, okn[i] + (ko) * 2u)
+#else
+@@ replace
+#define pSnf(i, ko) fragO(sb, oSn[i] + (ko) * 2u)
+#define pkmf(ko)    fragO(sb, okm + (ko) * 2u)
+#define pknf(i, ko) fragO(sb, okn[i] + (ko) * 2u)
+#define pSnN(i, ko) r3_gdn_fragO_native(sb, oSn[i] + (ko) * 2u, lane)
+#define pkmN(ko)    r3_gdn_fragO_native(sb, okm + (ko) * 2u, lane)
+#define pknN(i, ko) r3_gdn_fragO_native(sb, okn[i] + (ko) * 2u, lane)
+#else
+@@ end
+
+@@ find 1
+#define pSnf(i, ko) fragP(pSn[i] + (ko))
+#define pkmf(ko)    fragP(pkm + (ko))
+#define pknf(i, ko) fragP(pkn[i] + (ko))
+#endif
+#if GO
+@@ replace
+#define pSnf(i, ko) fragP(pSn[i] + (ko))
+#define pkmf(ko)    fragP(pkm + (ko))
+#define pknf(i, ko) fragP(pkn[i] + (ko))
+#define pSnN(i, ko) r3_gdn_fragP_native(pSn[i] + (ko), lane)
+#define pkmN(ko)    r3_gdn_fragP_native(pkm + (ko), lane)
+#define pknN(i, ko) r3_gdn_fragP_native(pkn[i] + (ko), lane)
+#endif
+#if GO
+@@ end
+
+@@ find 1
+#define pqf(ko) fragGo(qg, qo + (ko))
+#else
+@@ replace
+#define pqf(ko) fragGo(qg, qo + (ko))
+#define pqN(ko) r3_gdn_fragGo_native(qg, qo + (ko), lane)
+#else
+@@ end
+
+@@ find 1
+#define pqf(ko) fragP(pq + (ko))
+#endif
+#pragma unroll
+      for (int sk = 0; sk < KD / 16; ++sk) {
+        const int ko = sk * 16;
+        v8bf ak = pkmf(ko), aq = pqf(ko);
+#if PFIN && PFV == 4
+        if (sk < NKB + NVB) PFONE(sk);
+#endif
+#pragma unroll
+        for (int i = 0; i < NTV; ++i) {
+          v8bf b = pSnf(i, ko);
+#if ABL != 5
+          u[i] = mma(ak, b, u[i]);
+#endif
+#if ABL != 6
+          O[i] = mma(b, aq, O[i]);                     // O^T: m = v-tile, n = token-tile
+#endif
+#if ABL != 4
+          if (doP[i]) p[i] = mma(pknf(i, ko), aq, p[i]);   // P^T: m = j
+#endif
+        }
+      }
+@@ replace
+#define pqf(ko) fragP(pq + (ko))
+#define pqN(ko) r3_gdn_fragP_native(pq + (ko), lane)
+#endif
+#pragma unroll
+      for (int sk = 0; sk < KD / 16; ++sk) {
+        const int ko = sk * 16;
+#if PFIN && PFV == 4
+        if (sk < NKB + NVB) PFONE(sk);
+#endif
+        if constexpr (R3N) {
+          const r3_v16bf ak = pkmN(ko), aq = pqN(ko);
+#pragma unroll
+          for (int i = 0; i < NTV; ++i) {
+            const r3_v16bf b = pSnN(i, ko);
+#if ABL != 5
+            u[i] = r3_gdn_wmma_native_compat(ak, b, u[i]);
+#endif
+#if ABL != 6
+            O[i] = r3_gdn_wmma_native_compat(b, aq, O[i]);
+#endif
+#if ABL != 4
+            if (doP[i]) p[i] = r3_gdn_wmma_native_compat(pknN(i, ko), aq, p[i]);
+#endif
+          }
+        } else {
+          const v8bf ak = pkmf(ko), aq = pqf(ko);
+#pragma unroll
+          for (int i = 0; i < NTV; ++i) {
+            const v8bf b = pSnf(i, ko);
+#if ABL != 5
+            u[i] = mma(ak, b, u[i]);
+#endif
+#if ABL != 6
+            O[i] = mma(b, aq, O[i]);                     // O^T: m = v-tile, n = token-tile
+#endif
+#if ABL != 4
+            if (doP[i]) p[i] = mma(pknf(i, ko), aq, p[i]);   // P^T: m = j
+#endif
+          }
+        }
+      }
+      if constexpr (R3N) {
+#pragma unroll
+        for (int i = 0; i < NTV; ++i) {
+          u[i] = r3_acc_native_to_gfx12(u[i]);
+          O[i] = r3_acc_native_to_gfx12(O[i]);
+          p[i] = r3_acc_native_to_gfx12(p[i]);
+        }
+      }
+@@ end
+
+@@ find 1
+#if SCHED
+      // Ask for one k step's LDS reads to issue against the previous step's WMMAs.
+      // Per step: 5 LDS fragments = 10 ds_read2_b32, 1 global q fragment = 2 loads,
+      // 6 WMMA. Without this the scheduler sinks each read onto its consumer and
+      // every WMMA is preceded by a full s_wait_dscnt 0x0 drain.
+#if SCHED == 4
+      // Explicit one-step software pipeline: ask for step i+1's operand reads to be
+      // issued BEFORE step i's WMMAs, so the wait in front of each WMMA group is for
+      // loads that have had a full WMMA group to land.
+      __builtin_amdgcn_sched_group_barrier(0x020, 2, 0);
+      __builtin_amdgcn_sched_group_barrier(0x100, MLDS, 0);
+#pragma unroll
+      for (int i = 0; i < KD / 16 - 1; ++i) {
+        __builtin_amdgcn_sched_group_barrier(0x008, MWMA, 0);  // WMMA step i
+        __builtin_amdgcn_sched_group_barrier(0x020, 2, 0);     // reads step i+1
+        __builtin_amdgcn_sched_group_barrier(0x100, MLDS, 0);
+      }
+      __builtin_amdgcn_sched_group_barrier(0x008, MWMA, 0);
+#elif SCHED == 5 || SCHED == 6 || SCHED == 7
+      // GRAN k steps per group. Coarser is better here: the group barrier PINS the
+      // order at every boundary, so a per-step pattern over-constrains a loop the
+      // scheduler can already interleave -- it just needs to be told not to sink every
+      // read onto its consumer.
+#if SCHED == 5
+#define GRAN 2
+#elif SCHED == 6
+#define GRAN 4
+#else
+#define GRAN 8
+#endif
+#pragma unroll
+      for (int i = 0; i < KD / (16 * GRAN); ++i) {
+#if NOVM == 0
+        __builtin_amdgcn_sched_group_barrier(0x020, 2 * GRAN, SIDF);
+#endif
+        __builtin_amdgcn_sched_group_barrier(0x100, MLDS * GRAN, SIDF);
+        __builtin_amdgcn_sched_group_barrier(0x008, MWMA * GRAN, SIDF);
+      }
+#else
+#pragma unroll
+      for (int i = 0; i < KD / 16; ++i) {
+#if SCHED == 3                       // finer: rotate reads through the WMMA stream
+        _Pragma("unroll") for (int j = 0; j < 3; ++j) {
+          __builtin_amdgcn_sched_group_barrier(0x100, MLDS / 2, 0);
+          __builtin_amdgcn_sched_group_barrier(0x008, MWMA / 2, 0);
+        }
+#else
+        __builtin_amdgcn_sched_group_barrier(0x020, 2, 0);      // VMEM read (q)
+        __builtin_amdgcn_sched_group_barrier(0x100, MLDS, 0);  // DS read
+        __builtin_amdgcn_sched_group_barrier(0x008, MWMA, 0);  // WMMA
+#endif
+      }
+#endif
+#endif
+@@ replace
+#if SCHED
+      if constexpr (!R3N) {
+      // Ask for one k step's LDS reads to issue against the previous step's WMMAs.
+      // Per step: 5 LDS fragments = 10 ds_read2_b32, 1 global q fragment = 2 loads,
+      // 6 WMMA. Without this the scheduler sinks each read onto its consumer and
+      // every WMMA is preceded by a full s_wait_dscnt 0x0 drain.
+#if SCHED == 4
+      // Explicit one-step software pipeline: ask for step i+1's operand reads to be
+      // issued BEFORE step i's WMMAs, so the wait in front of each WMMA group is for
+      // loads that have had a full WMMA group to land.
+      __builtin_amdgcn_sched_group_barrier(0x020, 2, 0);
+      __builtin_amdgcn_sched_group_barrier(0x100, MLDS, 0);
+#pragma unroll
+      for (int i = 0; i < KD / 16 - 1; ++i) {
+        __builtin_amdgcn_sched_group_barrier(0x008, MWMA, 0);  // WMMA step i
+        __builtin_amdgcn_sched_group_barrier(0x020, 2, 0);     // reads step i+1
+        __builtin_amdgcn_sched_group_barrier(0x100, MLDS, 0);
+      }
+      __builtin_amdgcn_sched_group_barrier(0x008, MWMA, 0);
+#elif SCHED == 5 || SCHED == 6 || SCHED == 7
+      // GRAN k steps per group. Coarser is better here: the group barrier PINS the
+      // order at every boundary, so a per-step pattern over-constrains a loop the
+      // scheduler can already interleave -- it just needs to be told not to sink every
+      // read onto its consumer.
+#if SCHED == 5
+#define GRAN 2
+#elif SCHED == 6
+#define GRAN 4
+#else
+#define GRAN 8
+#endif
+#pragma unroll
+      for (int i = 0; i < KD / (16 * GRAN); ++i) {
+#if NOVM == 0
+        __builtin_amdgcn_sched_group_barrier(0x020, 2 * GRAN, SIDF);
+#endif
+        __builtin_amdgcn_sched_group_barrier(0x100, MLDS * GRAN, SIDF);
+        __builtin_amdgcn_sched_group_barrier(0x008, MWMA * GRAN, SIDF);
+      }
+#else
+#pragma unroll
+      for (int i = 0; i < KD / 16; ++i) {
+#if SCHED == 3                       // finer: rotate reads through the WMMA stream
+        _Pragma("unroll") for (int j = 0; j < 3; ++j) {
+          __builtin_amdgcn_sched_group_barrier(0x100, MLDS / 2, 0);
+          __builtin_amdgcn_sched_group_barrier(0x008, MWMA / 2, 0);
+        }
+#else
+        __builtin_amdgcn_sched_group_barrier(0x020, 2, 0);      // VMEM read (q)
+        __builtin_amdgcn_sched_group_barrier(0x100, MLDS, 0);  // DS read
+        __builtin_amdgcn_sched_group_barrier(0x008, MWMA, 0);  // WMMA
+#endif
+      }
+#endif
+      }
+#endif
+@@ end
+
+@@ find 1
+#if SCHED >= 2                  // per group: SB steps x (1 global A frag, NTV LDS, NTV WMMA)
+#pragma unroll
+      for (int i = 0; i < BT / (16 * SB); ++i) {
+#if NOVM == 0 && APRE == 0
+        __builtin_amdgcn_sched_group_barrier(0x020, 2 * SB, SIDV);
+#endif
+        __builtin_amdgcn_sched_group_barrier(0x100, NTV * SB, SIDV);
+        __builtin_amdgcn_sched_group_barrier(0x008, NTV * SB, SIDV);
+      }
+#endif
+@@ replace
+#if SCHED >= 2                  // per group: SB steps x (1 global A frag, NTV LDS, NTV WMMA)
+      if constexpr (!R3N) {
+#pragma unroll
+      for (int i = 0; i < BT / (16 * SB); ++i) {
+#if NOVM == 0 && APRE == 0
+        __builtin_amdgcn_sched_group_barrier(0x020, 2 * SB, SIDV);
+#endif
+        __builtin_amdgcn_sched_group_barrier(0x100, NTV * SB, SIDV);
+        __builtin_amdgcn_sched_group_barrier(0x008, NTV * SB, SIDV);
+      }
+      }
+#endif
+@@ end
+
+@@ find 1
+#if SCHED >= 2                  // per group: SB steps x (1 + NTV LDS frags, NTV WMMA)
+#pragma unroll
+      for (int i = 0; i < BT / (16 * SB); ++i) {
+        __builtin_amdgcn_sched_group_barrier(0x100, (1 + NTV) * SB, SIDO);
+        __builtin_amdgcn_sched_group_barrier(0x008, NTV * SB, SIDO);
+      }
+#endif
+@@ replace
+#if SCHED >= 2                  // per group: SB steps x (1 + NTV LDS frags, NTV WMMA)
+      if constexpr (!R3N) {
+#pragma unroll
+      for (int i = 0; i < BT / (16 * SB); ++i) {
+        __builtin_amdgcn_sched_group_barrier(0x100, (1 + NTV) * SB, SIDO);
+        __builtin_amdgcn_sched_group_barrier(0x008, NTV * SB, SIDO);
+      }
+      }
+#endif
+@@ end
+
+@@ find 1
+#if SCHED >= 2   // per group: SS steps x (SKT fragT = 8 scalar reads each + SVT fragP, NST WMMA)
+#pragma unroll
+      for (int i = 0; i < BT / (16 * SS); ++i) {
+        __builtin_amdgcn_sched_group_barrier(0x100, (8 * SKT + SVT) * SS, SIDS);
+        __builtin_amdgcn_sched_group_barrier(0x008, NST * SS, SIDS);
+      }
+#endif
+@@ replace
+#if SCHED >= 2   // per group: SS steps x (SKT fragT = 8 scalar reads each + SVT fragP, NST WMMA)
+      if constexpr (!R3N) {
+#pragma unroll
+      for (int i = 0; i < BT / (16 * SS); ++i) {
+        __builtin_amdgcn_sched_group_barrier(0x100, (8 * SKT + SVT) * SS, SIDS);
+        __builtin_amdgcn_sched_group_barrier(0x008, NST * SS, SIDS);
+      }
+      }
+#endif
+@@ end
+
+@@ find 1
+#if APRE
+#define paf(ko) apre[(ko) / 16]
+#elif GO
+@@ replace
+#if APRE
+#define paf(ko)  apre[(ko) / 16]
+#define pafN(ko) apreN[(ko) / 16]
+#elif GO
+@@ end
+
+@@ find 1
+#define paf(ko) fragGo(ag, ao + (ko))
+#else
+@@ replace
+#define paf(ko)  fragGo(ag, ao + (ko))
+#define pafN(ko) r3_gdn_fragGo_native(ag, ao + (ko), lane)
+#else
+@@ end
+
+@@ find 1
+#define paf(ko) fragP(pa + (ko))
+#endif
+@@ replace
+#define paf(ko)  fragP(pa + (ko))
+#define pafN(ko) r3_gdn_fragP_native(pa + (ko), lane)
+#endif
+@@ end
+
+@@ find 1
+#define pwnf(i, ko) fragO(sbase, own[i] + (ko) * 2u)
+#else
+@@ replace
+#define pwnf(i, ko) fragO(sbase, own[i] + (ko) * 2u)
+#define pwnN(i, ko) r3_gdn_fragO_native(sbase, own[i] + (ko) * 2u, lane)
+#else
+@@ end
+
+@@ find 1
+#define pwnf(i, ko) fragP(pwn[i] + (ko))
+#endif
+#pragma unroll
+      for (int sk = 0; sk < BT / 16; ++sk) {
+        if (TRIL && sk > mt) break;         // A is unit lower triangular
+        const int ko = sk * 16;
+        v8bf a = paf(ko);
+#if ABL != 3
+#pragma unroll
+        for (int i = 0; i < NTV; ++i) d[i] = mma(a, pwnf(i, ko), d[i]);
+#endif
+      }
+@@ replace
+#define pwnf(i, ko) fragP(pwn[i] + (ko))
+#define pwnN(i, ko) r3_gdn_fragP_native(pwn[i] + (ko), lane)
+#endif
+#pragma unroll
+      for (int sk = 0; sk < BT / 16; ++sk) {
+        if (TRIL && sk > mt) break;         // A is unit lower triangular
+        const int ko = sk * 16;
+#if ABL != 3
+        if constexpr (R3N) {
+          const r3_v16bf a = pafN(ko);
+#pragma unroll
+          for (int i = 0; i < NTV; ++i) d[i] = r3_gdn_wmma_native_compat(a, pwnN(i, ko), d[i]);
+        } else {
+          const v8bf a = paf(ko);
+#pragma unroll
+          for (int i = 0; i < NTV; ++i) d[i] = mma(a, pwnf(i, ko), d[i]);
+        }
+#endif
+      }
+      if constexpr (R3N) {
+#pragma unroll
+        for (int i = 0; i < NTV; ++i) d[i] = r3_acc_native_to_gfx12(d[i]);
+      }
+@@ end
+
+@@ find 1
+#define pAf(ko)     fragO(sbase, oA + (ko) * 2u)
+#define pdnf(i, ko) fragO(sbase, odn[i] + (ko) * 2u)
+#else
+@@ replace
+#define pAf(ko)      fragO(sbase, oA + (ko) * 2u)
+#define pdnf(i, ko)  fragO(sbase, odn[i] + (ko) * 2u)
+#define pAN(ko)      r3_gdn_fragO_native(sbase, oA + (ko) * 2u, lane)
+#define pdnN(i, ko)  r3_gdn_fragO_native(sbase, odn[i] + (ko) * 2u, lane)
+#else
+@@ end
+
+@@ find 1
+#define pAf(ko)     fragP(pA + (ko))
+#define pdnf(i, ko) fragP(pdn[i] + (ko))
+#endif
+#pragma unroll
+      for (int sk = 0; sk < BT / 16; ++sk) {
+        if (TRIL && sk > mt) break;         // sA is masked to lower triangular
+        const int ko = sk * 16;
+        v8bf b = pAf(ko);
+#if ABL != 2
+#pragma unroll
+        for (int i = 0; i < NTV; ++i) O[i] = mma(pdnf(i, ko), b, O[i]);
+#endif
+      }
+@@ replace
+#define pAf(ko)      fragP(pA + (ko))
+#define pdnf(i, ko)  fragP(pdn[i] + (ko))
+#define pAN(ko)      r3_gdn_fragP_native(pA + (ko), lane)
+#define pdnN(i, ko)  r3_gdn_fragP_native(pdn[i] + (ko), lane)
+#endif
+      if constexpr (R3N) {
+#pragma unroll
+        for (int i = 0; i < NTV; ++i) O[i] = r3_acc_gfx12_to_native(O[i]);
+      }
+#pragma unroll
+      for (int sk = 0; sk < BT / 16; ++sk) {
+        if (TRIL && sk > mt) break;         // sA is masked to lower triangular
+        const int ko = sk * 16;
+#if ABL != 2
+        if constexpr (R3N) {
+          const r3_v16bf b = pAN(ko);
+#pragma unroll
+          for (int i = 0; i < NTV; ++i) O[i] = r3_gdn_wmma_native_compat(pdnN(i, ko), b, O[i]);
+        } else {
+          const v8bf b = pAf(ko);
+#pragma unroll
+          for (int i = 0; i < NTV; ++i) O[i] = mma(pdnf(i, ko), b, O[i]);
+        }
+#endif
+      }
+      if constexpr (R3N) {
+#pragma unroll
+        for (int i = 0; i < NTV; ++i) O[i] = r3_acc_native_to_gfx12(O[i]);
+      }
+@@ end
+
+@@ find 1
+#define CS_LAUNCH(SDTC, H0C, HTC)                                                          \
+  hipLaunchKernelGGL((r4d_gdn_chunk_scan_kernel<SDTC, H0C, HTC>), grid, blk, 0,            \
+      (hipStream_t)stream,                                                                 \
+      (const unsigned short*)q, (const unsigned short*)k, (const unsigned short*)v,        \
+      (const unsigned short*)A, (const float*)g, (const float*)beta,                       \
+      (const cs_state<SDTC>::T*)h0, (unsigned short*)o, (cs_state<SDTC>::T*)ht,            \
+      (const int*)cu, (const int*)ssm_state_indices, (indices_stride > 0 ? indices_stride : 1),  \
+      st_slot, st_head, H, Hg, scale)
+#define CS_PICK(SDTC)                                                                      \
+  do { if (h0 && ht) CS_LAUNCH(SDTC, true, true);                                          \
+       else if (h0)  CS_LAUNCH(SDTC, true, false);                                         \
+       else if (ht)  CS_LAUNCH(SDTC, false, true);                                         \
+       else          CS_LAUNCH(SDTC, false, false); } while (0)
+  if (state_fp16) CS_PICK(1); else CS_PICK(0);
+#undef CS_PICK
+#undef CS_LAUNCH
+@@ replace
+#define CS_LAUNCH_TO(SDTC, H0C, HTC, R3NC, H0P, OP, HTP)                         \
+  hipLaunchKernelGGL((r4d_gdn_chunk_scan_kernel<SDTC, H0C, HTC, R3NC>), grid, blk, 0,      \
+      (hipStream_t)stream,                                                                 \
+      (const unsigned short*)q, (const unsigned short*)k, (const unsigned short*)v,        \
+      (const unsigned short*)A, (const float*)g, (const float*)beta,                       \
+      (const cs_state<SDTC>::T*)(H0P), (unsigned short*)(OP), (cs_state<SDTC>::T*)(HTP),  \
+      (const int*)cu, (const int*)ssm_state_indices, (indices_stride > 0 ? indices_stride : 1), \
+      st_slot, st_head, H, Hg, scale)
+#define CS_PICK_TO(SDTC, R3NC, H0P, OP, HTP)                                               \
+  do { if (h0 && ht) CS_LAUNCH_TO(SDTC, true, true, R3NC, H0P, OP, HTP);                  \
+       else if (h0)  CS_LAUNCH_TO(SDTC, true, false, R3NC, H0P, OP, HTP);                 \
+       else if (ht)  CS_LAUNCH_TO(SDTC, false, true, R3NC, H0P, OP, HTP);                 \
+       else          CS_LAUNCH_TO(SDTC, false, false, R3NC, H0P, OP, HTP); } while (0)
+
+  const char* r3n = std::getenv("R3_GDN_NATIVE");
+  const bool use_r3n = r3n && *r3n == '1';
+  const char* r3c = std::getenv("R3_GDN_COMPARE");
+  const bool compare_r3 = r3c && *r3c == '1';
+  if (!compare_r3) {
+    if (state_fp16) { if (use_r3n) CS_PICK_TO(1, true, h0, o, ht); else CS_PICK_TO(1, false, h0, o, ht); }
+    else            { if (use_r3n) CS_PICK_TO(0, true, h0, o, ht); else CS_PICK_TO(0, false, h0, o, ht); }
+  } else {
+    hipStream_t r3s = (hipStream_t)stream;
+    std::vector<int> r3cu((size_t)N + 1);
+    hipError_t r3err = hipMemcpyAsync(r3cu.data(), cu, ((size_t)N + 1) * sizeof(int),
+                                      hipMemcpyDeviceToHost, r3s);
+    const long r3_is = indices_stride > 0 ? indices_stride : 1;
+    const size_t r3_idx_n = ssm_state_indices && N > 0 ? (size_t)(N - 1) * (size_t)r3_is + 1 : 0;
+    std::vector<int> r3idx(r3_idx_n);
+    if (r3err == hipSuccess && r3_idx_n)
+      r3err = hipMemcpyAsync(r3idx.data(), ssm_state_indices, r3_idx_n * sizeof(int),
+                             hipMemcpyDeviceToHost, r3s);
+    if (r3err == hipSuccess) r3err = hipStreamSynchronize(r3s);
+
+    int r3_M = r3cu.empty() ? 0 : r3cu.back();
+    int r3_max_slot = N > 0 ? N - 1 : 0;
+    int r3_chunks = 0;
+    if (r3err == hipSuccess) {
+      r3_max_slot = 0;
+      for (int n = 0; n < N; ++n) {
+        const int d = r3cu[(size_t)n + 1] - r3cu[(size_t)n];
+        if (d > 0) r3_chunks += (d + BT - 1) / BT;
+        const int si = ssm_state_indices ? r3idx[(size_t)n * (size_t)r3_is] : n;
+        if (si > r3_max_slot) r3_max_slot = si;
+      }
+    }
+    const size_t r3_esz = state_fp16 ? sizeof(_Float16) : sizeof(float);
+    const size_t r3_state_elems = ((size_t)r3_max_slot + 1) * (size_t)st_slot;
+    const size_t r3_state_bytes = r3_state_elems * r3_esz;
+    const size_t r3_out_elems = r3_M > 0 ? (size_t)r3_M * (size_t)H * (size_t)V : 0;
+    const size_t r3_out_bytes = r3_out_elems * sizeof(unsigned short);
+    void* r3_o = nullptr;
+    void* r3_h0 = nullptr;
+    void* r3_ht = nullptr;
+
+    if (r3err == hipSuccess)
+      r3err = hipMalloc(&r3_o, r3_out_bytes ? r3_out_bytes : sizeof(unsigned short));
+    if (r3err == hipSuccess && h0) {
+      r3err = hipMalloc(&r3_h0, r3_state_bytes ? r3_state_bytes : r3_esz);
+      if (r3err == hipSuccess && r3_state_bytes)
+        r3err = hipMemcpyAsync(r3_h0, h0, r3_state_bytes, hipMemcpyDeviceToDevice, r3s);
+    }
+    if (r3err == hipSuccess && ht) {
+      if (h0 && h0 == ht) {
+        r3_ht = r3_h0;
+      } else {
+        r3err = hipMalloc(&r3_ht, r3_state_bytes ? r3_state_bytes : r3_esz);
+        if (r3err == hipSuccess && r3_state_bytes && h0 && ht)
+          r3err = hipMemcpyAsync(r3_ht, ht, r3_state_bytes, hipMemcpyDeviceToDevice, r3s);
+      }
+    }
+    bool r3_compat_done = false;
+    if (r3err == hipSuccess) {
+      if (state_fp16) CS_PICK_TO(1, true, r3_h0, r3_o, r3_ht);
+      else            CS_PICK_TO(0, true, r3_h0, r3_o, r3_ht);
+      r3err = hipGetLastError();
+    }
+    if (r3err == hipSuccess) {
+      if (state_fp16) CS_PICK_TO(1, false, h0, o, ht);
+      else            CS_PICK_TO(0, false, h0, o, ht);
+      r3_compat_done = true;
+      r3err = hipGetLastError();
+    }
+    if (r3err == hipSuccess) r3err = hipStreamSynchronize(r3s);
+
+    std::vector<unsigned short> r3no, r3co;
+    std::vector<unsigned char> r3ns, r3cs;
+    if (r3err == hipSuccess && r3_out_bytes) {
+      r3no.resize(r3_out_elems); r3co.resize(r3_out_elems);
+      r3err = hipMemcpy(r3no.data(), r3_o, r3_out_bytes, hipMemcpyDeviceToHost);
+      if (r3err == hipSuccess) r3err = hipMemcpy(r3co.data(), o, r3_out_bytes, hipMemcpyDeviceToHost);
+    }
+    if (r3err == hipSuccess && ht && r3_state_bytes) {
+      r3ns.resize(r3_state_bytes); r3cs.resize(r3_state_bytes);
+      r3err = hipMemcpy(r3ns.data(), r3_ht, r3_state_bytes, hipMemcpyDeviceToHost);
+      if (r3err == hipSuccess) r3err = hipMemcpy(r3cs.data(), ht, r3_state_bytes, hipMemcpyDeviceToHost);
+    }
+
+    int r3_kind = 0; size_t r3_diff = 0; unsigned r3_cv = 0, r3_nv = 0;
+    if (r3err == hipSuccess) {
+      for (size_t i = 0; i < r3_out_elems; ++i) if (r3co[i] != r3no[i]) {
+        r3_kind = 1; r3_diff = i; r3_cv = r3co[i]; r3_nv = r3no[i]; break;
+      }
+      if (!r3_kind && ht) {
+        for (int n = 0; n < N && !r3_kind; ++n) {
+          const long si = ssm_state_indices ? (long)r3idx[(size_t)n * (size_t)r3_is] : (long)n;
+          if (si < 0) continue;
+          for (int hv = 0; hv < H && !r3_kind; ++hv) {
+            const size_t base = (size_t)si * (size_t)st_slot + (size_t)hv * (size_t)st_head;
+            for (size_t x = 0; x < (size_t)V * (size_t)K; ++x) {
+              const size_t ix = base + x, bo = ix * r3_esz;
+              if (std::memcmp(r3cs.data() + bo, r3ns.data() + bo, r3_esz) != 0) {
+                r3_kind = 2; r3_diff = ix;
+                std::memcpy(&r3_cv, r3cs.data() + bo, r3_esz);
+                std::memcpy(&r3_nv, r3ns.data() + bo, r3_esz);
+                break;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    static std::atomic<bool> r3_reported{false};
+    if (r3_kind && !r3_reported.exchange(true)) {
+      std::fprintf(stderr,
+        "libr3: R3_GDN_COMPARE mismatch kind=%s idx=%zu compat=0x%08x native=0x%08x "
+        "M=%d chunk=%d chunks=%d N=%d H=%d Hg=%d K=%d V=%d bt=%d scale=%.9g "
+        "h0=%d ht=%d h0_eq_ht=%d state_dtype=%s indices_stride=%ld state_slot_stride=%ld "
+        "state_head_stride=%ld grid=%ux%ux%u block=%ux%ux%u q=%p k=%p v=%p A=%p g=%p beta=%p "
+        "h0_ptr=%p o=%p ht_ptr=%p cu_ptr=%p sidx_ptr=%p stream=%p cu=[",
+        r3_kind == 1 ? "out" : "state", r3_diff, r3_cv, r3_nv,
+        r3_M, BT, r3_chunks, N, H, Hg, K, V, bt, (double)scale,
+        h0 != nullptr, ht != nullptr, h0 && h0 == ht, state_fp16 ? "f16" : "f32",
+        r3_is, st_slot, st_head, grid.x, grid.y, grid.z, blk.x, blk.y, blk.z,
+        q, k, v, A, g, beta, h0, o, ht, cu, ssm_state_indices, stream);
+      for (int n = 0; n <= N; ++n) std::fprintf(stderr, "%s%d", n ? "," : "", r3cu[(size_t)n]);
+      std::fprintf(stderr, "] chunks_per_seq=[");
+      for (int n = 0; n < N; ++n) {
+        const int d = r3cu[(size_t)n + 1] - r3cu[(size_t)n];
+        std::fprintf(stderr, "%s%d", n ? "," : "", d > 0 ? (d + BT - 1) / BT : 0);
+      }
+      std::fprintf(stderr, "] sidx=");
+      if (!ssm_state_indices) std::fprintf(stderr, "null");
+      else {
+        std::fprintf(stderr, "[");
+        for (int n = 0; n < N; ++n)
+          std::fprintf(stderr, "%s%d", n ? "," : "", r3idx[(size_t)n * (size_t)r3_is]);
+        std::fprintf(stderr, "]");
+      }
+      std::fprintf(stderr, " state_offsets=[");
+      for (int n = 0; n < N; ++n) {
+        const long si = ssm_state_indices ? (long)r3idx[(size_t)n * (size_t)r3_is] : (long)n;
+        std::fprintf(stderr, "%s%lld", n ? "," : "", (long long)(si < 0 ? -1 : si * st_slot));
+      }
+      std::fprintf(stderr, "]\n");
+    } else if (r3err != hipSuccess && !r3_reported.exchange(true)) {
+      std::fprintf(stderr, "libr3: R3_GDN_COMPARE setup_failed hip=%s M=%d N=%d H=%d Hg=%d\n",
+                   hipGetErrorString(r3err), r3_M, N, H, Hg);
+      if (!r3_compat_done) {
+        if (state_fp16) CS_PICK_TO(1, false, h0, o, ht);
+        else            CS_PICK_TO(0, false, h0, o, ht);
+      }
+    }
+
+    if (r3_ht && r3_ht != r3_h0) hipFree(r3_ht);
+    if (r3_h0) hipFree(r3_h0);
+    if (r3_o) hipFree(r3_o);
+  }
+#undef CS_PICK_TO
+#undef CS_LAUNCH_TO
+@@ end
+

@@ -1,0 +1,597 @@
+# radiance's selftest has no MXFP4 decode case with one activation row, which is the case libr3's vector kernel
+# (r3_mxfp4_gemv.h) serves. Add them beside the first decode case: both activation scale grids, an N that is not a
+# multiple of the 128-column block, and the 27B's deepest K.
+@@ find 1
+        mxfp4a8_numeric(pl, "gemm_mxfp4a8_decode", 8, 272, 640, 0, false);
+@@ replace
+        mxfp4a8_numeric(pl, "gemm_mxfp4a8_decode", 8, 272, 640, 0, false);
+        mxfp4a8_numeric(pl, "gemm_mxfp4a8_decode", 1, 272, 640, 0, false);   // libr3: M = 1
+        mxfp4a8_numeric(pl, "gemm_mxfp4a8_decode", 1, 272, 640, 0, true);
+        mxfp4a8_numeric(pl, "gemm_mxfp4a8_decode", 1, 400, 2560, 0, true);
+        mxfp4a8_numeric(pl, "gemm_mxfp4a8_decode", 1, 5120, 17408, 0, false);
+        mxfp4a8_numeric(pl, "gemm_mxfp4a8_decode", 3, 272, 640, 0, true);    // libr3: the 4-row strip
+        mxfp4a8_numeric(pl, "gemm_mxfp4a8_decode", 16, 400, 2560, 0, true);  // libr3: a full 16-row fragment
+        mxfp4a8_numeric(pl, "gemm_mxfp4a8_decode", 4, 5120, 6144, 0, false);
+@@ end
+
+
+# RR08 full host-reference oracle, opt-in because the production-shape matrix is deliberately large.
+# Same built plugin: R3_BT=0 checks tiled, R3_BT=1 the direct form, R3_BT=2 the LDS-shared form.
+@@ find 1
+        /* K not a multiple of 128: the TN=2 kernel takes the 64-wide slab. */
+@@ replace
+        if (std::getenv("R3_BT_ORACLE") && std::atoi(std::getenv("R3_BT_ORACLE")) != 0) {
+            struct R3MxPfShape { int N, K; };
+            const R3MxPfShape r3_shapes[] = {
+                {34816, 5120}, {5120, 17408}, {16384, 5120}, {5120, 6144}, {12288, 5120},
+            };
+            for (const R3MxPfShape& sh : r3_shapes)
+                for (int mm : {64, 128, 512}) {
+                    mxfp4a8_numeric(pl, "gemm_mxfp4a8_tiled", mm, sh.N, sh.K, 0, false);
+                    mxfp4a8_numeric(pl, "gemm_mxfp4a8_tiled", mm, sh.N, sh.K, 0, true);
+                }
+        }
+        /* K not a multiple of 128: the TN=2 kernel takes the 64-wide slab. */
+@@ end
+
+
+# RR08 prefill timing mode. It uses the MXFP4 row's own layout hooks, rotates codes/E8M0/Wref past cache and
+# includes the activation pre-pass in the measured row time. R3_BT selects the old or new implementation.
+@@ find 1
+static void fp8_perf(const Plugin& pl, int64_t N, int64_t K, int64_t M, int iters) {
+@@ replace
+static void mxfp4_prefill_perf(const Plugin& pl, int64_t N, int64_t K, int64_t M, int iters) {
+    if (N % 16 || K % 64 || M < 1) {
+        std::printf("--perfmxfp4: N multiple of 16, K of 64, M >= 1\n");
+        return;
+    }
+    const RadKernelInfo* r = find(pl, "gemm_mxfp4a8_tiled");
+    if (!r || !r->layout || !r->relayout) {
+        std::printf("--perfmxfp4: gemm_mxfp4a8_tiled row/hooks absent\n");
+        return;
+    }
+    Planes p;
+    p.enc = rad_enc_affine(RAD_FP4E2M1, RAD_E8M0, 1, 32);
+    p.size(N, K);
+    const int ic = p.find("codes"), is = p.find("scale");
+    if (ic < 0 || is < 0) { std::printf("--perfmxfp4: encoding planes absent\n"); return; }
+    mxfp4_fill(p, ic, is, N, K, 0x81u, false);
+    std::vector<RadParam> lp = { PI("N", N), PI("K", K), PI("group", 32) };
+    std::vector<uint8_t> wq, ws, wr;
+    if (stored(r, lp, 2, p, { "codes" }, &wq) != RAD_OK ||
+        stored(r, lp, 3, p, { "scale" }, &ws) != RAD_OK ||
+        stored(r, lp, 6, p, { "scale" }, &wr) != RAD_OK) {
+        std::printf("--perfmxfp4: relayout failed\n");
+        return;
+    }
+
+    const size_t one = wq.size() + ws.size() + wr.size();
+    int copies = (int)(((size_t)768 << 20) / (one ? one : 1)) + 1;
+    if (copies > 64) copies = 64;
+    void* d_w = dalloc(wq.size() * (size_t)copies);
+    void* d_e = dalloc(ws.size() * (size_t)copies);
+    void* d_r = dalloc(wr.size() * (size_t)copies);
+    const int64_t asc = (K + 127) / 128;
+    void* d_a = dalloc((size_t)M * K);
+    void* d_s = dalloc((size_t)M * asc * 4);
+    void* d_y = dalloc((size_t)M * N * 2);
+    if (!d_w || !d_e || !d_r || !d_a || !d_s || !d_y) {
+        std::printf("--perfmxfp4: hipMalloc failed\n");
+        return;
+    }
+    for (int c = 0; c < copies; ++c) {
+        st_memcpy((uint8_t*)d_w + (size_t)c*wq.size(), wq.data(), wq.size(), hipMemcpyHostToDevice);
+        st_memcpy((uint8_t*)d_e + (size_t)c*ws.size(), ws.data(), ws.size(), hipMemcpyHostToDevice);
+        st_memcpy((uint8_t*)d_r + (size_t)c*wr.size(), wr.data(), wr.size(), hipMemcpyHostToDevice);
+    }
+    std::vector<uint8_t> ha((size_t)M*K, 0x38);
+    std::vector<float> hs((size_t)M*asc, 1.0f);
+    st_memcpy(d_a, ha.data(), ha.size(), hipMemcpyHostToDevice);
+    st_memcpy(d_s, hs.data(), hs.size()*4, hipMemcpyHostToDevice);
+
+    std::vector<RadTensor> ts = {
+        T(d_a, RAD_F8E4M3, {M,K}), T(d_s, RAD_F32, {M,asc}),
+        T(d_w, RAD_U8, {(int64_t)wq.size()}), T(d_e, RAD_U8, {(int64_t)ws.size()}),
+        T(d_y, RAD_BF16, {M,N}), T(nullptr, RAD_F32, {1}),
+        T(d_r, RAD_U8, {(int64_t)wr.size()}),
+    };
+    absent(ts[5]);
+    std::vector<RadParam> ps = {
+        PI("M",M), PI("N",N), PI("K",K), PI("group",32), PS("dtype","mxfp4a8"),
+    };
+    RadArgs a;
+    std::memset(&a, 0, sizeof(a));
+    a.t=ts.data(); a.n_t=(int)ts.size(); a.p=ps.data(); a.n_p=(int)ps.size(); a.world_size=1;
+    if (r->scratch) {
+        const int64_t need = r->scratch(&a);
+        if (need > 0) { a.scratch=dalloc((size_t)need); a.scratch_bytes=need; }
+    }
+    if (r->launch(&a, nullptr) != RAD_OK || st_stream_sync(nullptr) != hipSuccess) {
+        std::printf("--perfmxfp4: warm launch failed\n");
+        return;
+    }
+
+    hipEvent_t e0,e1;
+    st_ev_create(&e0); st_ev_create(&e1); st_ev_record(e0,nullptr);
+    for (int i=0;i<iters;++i) {
+        const int c=i%copies;
+        ts[2].data=(uint8_t*)d_w+(size_t)c*wq.size();
+        ts[3].data=(uint8_t*)d_e+(size_t)c*ws.size();
+        ts[6].data=(uint8_t*)d_r+(size_t)c*wr.size();
+        if (r->launch(&a,nullptr) != RAD_OK) {
+            std::printf("--perfmxfp4: timed launch failed\n");
+            st_ev_destroy(e0); st_ev_destroy(e1);
+            return;
+        }
+    }
+    st_ev_record(e1,nullptr); st_ev_sync(e1);
+    float ms=0.f; st_ev_elapsed(&ms,e0,e1); st_ev_destroy(e0); st_ev_destroy(e1);
+    const double us=(double)ms*1000.0/iters;
+    const double gbps=(double)one/us/1000.0;
+    std::printf("\nMXFP4 prefill GEMM N=%lld K=%lld M=%lld %.1f MiB weight, %d copies, %d iters\n",
+                (long long)N,(long long)K,(long long)M,(double)one/(1<<20),copies,iters);
+    std::printf("  %-22s %9.1f us  %6.1f GB/s\n","gemm_mxfp4a8_tiled",us,gbps);
+}
+
+static void fp8_perf(const Plugin& pl, int64_t N, int64_t K, int64_t M, int iters) {
+@@ end
+
+@@ find 1
+    int perf_it = 50, perf_w2 = 0, perf_bf = 0, perf_w8 = 0;
+@@ replace
+    int perf_it = 50, perf_w2 = 0, perf_bf = 0, perf_w8 = 0, perf_mx = 0;
+@@ end
+
+@@ find 1
+        } else if (!std::strcmp(argv[i], "--perfw8")) {
+@@ replace
+        } else if (!std::strcmp(argv[i], "--perfmxfp4")) {
+            if (i + 3 >= argc) { usage(); return 2; }
+            perf_mx = 1;
+            perf_n = std::strtoll(argv[++i], nullptr, 0);
+            perf_k = std::strtoll(argv[++i], nullptr, 0);
+            perf_m = std::strtoll(argv[++i], nullptr, 0);
+            if (i + 1 < argc && argv[i + 1][0] != '-') perf_it = (int)std::strtol(argv[++i], nullptr, 0);
+        } else if (!std::strcmp(argv[i], "--perfw8")) {
+@@ end
+
+@@ find 1
+        if (perf_bf)      bf16_perf(pl, perf_n, perf_k, perf_m, perf_it);
+        else if (perf_w8) w8_perf(pl, perf_n, perf_k, perf_m, perf_it);
+@@ replace
+        if (perf_bf)      bf16_perf(pl, perf_n, perf_k, perf_m, perf_it);
+        else if (perf_mx) mxfp4_prefill_perf(pl, perf_n, perf_k, perf_m, perf_it);
+        else if (perf_w8) w8_perf(pl, perf_n, perf_k, perf_m, perf_it);
+@@ end
+
+@@ find 1
+                "  --perfw8 N K M [iters]:  the 8-bit trunk GEMMs -- block E4M3 W8A8 and the int8\n"
+@@ replace
+                "  --perfmxfp4 N K M [iters]: the MXFP4 prefill row, including activation pre-pass,\n"
+                "             with all weight planes rotated past cache; R3_BT selects implementation.\n"
+                "  --perfw8 N K M [iters]:  the 8-bit trunk GEMMs -- block E4M3 W8A8 and the int8\n"
+@@ end
+
+# RR09-A: native gfx11 WMMA arithmetic roof. r3_wmma_perf.hip is linked only into libr3's
+# rewritten selftest; it does not change any libr4d kernel or production row.
+@@ find 1
+static void mxfp4_prefill_perf(const Plugin& pl, int64_t N, int64_t K, int64_t M, int iters) {
+@@ replace
+extern "C" int r3_perfwmma(int iters);
+
+static void mxfp4_prefill_perf(const Plugin& pl, int64_t N, int64_t K, int64_t M, int iters) {
+@@ end
+
+@@ find 1
+    int perf_it = 50, perf_w2 = 0, perf_bf = 0, perf_w8 = 0, perf_mx = 0;
+@@ replace
+    int perf_it = 50, perf_w2 = 0, perf_bf = 0, perf_w8 = 0, perf_mx = 0, perf_wmma = 0;
+@@ end
+
+@@ find 1
+        } else if (!std::strcmp(argv[i], "--perfmxfp4")) {
+@@ replace
+        } else if (!std::strcmp(argv[i], "--perfwmma")) {
+            perf_wmma = 1;
+            perf_it = 8192;
+            if (i + 1 < argc && argv[i + 1][0] != '-') perf_it = (int)std::strtol(argv[++i], nullptr, 0);
+        } else if (!std::strcmp(argv[i], "--perfmxfp4")) {
+@@ end
+
+@@ find 1
+    if (perf_n) {
+@@ replace
+    if (perf_wmma) return r3_perfwmma(perf_it);
+
+    if (perf_n) {
+@@ end
+
+@@ find 1
+                "  --perfmxfp4 N K M [iters]: the MXFP4 prefill row, including activation pre-pass,\n"
+@@ replace
+                "  --perfwmma [iters]: gfx11 WMMA roof: register-only f16/bf16/iu8/iu4, then\n"
+                "             LDS/global fragment reads at the best register geometry and ILP.\n"
+                "  --perfmxfp4 N K M [iters]: the MXFP4 prefill row, including activation pre-pass,\n"
+@@ end
+
+
+# R3_MOE_COMPARE=1 makes --perfmoe run the w4nl64a8h projection once through compatibility and once through
+# R3_MOE_NATIVE on the exact same buffers, then byte-compares the bf16 result. Run at M=1 for decode and M=2048
+# for grouped prefill, using the production launcher rule in both cases. This is separate from the timing loop.
+@@ find 1
+        }
+        }
+        if (pl.pin_moe) pl.pin_moe(0);
+        if (pl.pin_fk) pl.pin_fk(0);
+@@ replace
+        }
+        if (sub == 2 && std::getenv("R3_MOE_COMPARE") && std::atoi(std::getenv("R3_MOE_COMPARE")) != 0) {
+            const char* oldp = std::getenv("R3_MOE_NATIVE");
+            const bool had_old = oldp != nullptr;
+            const std::string oldv = oldp ? oldp : "";
+            /* Compare the production launcher rule: decode at M=1, grouped prefill at M=2048. */
+            if (pl.pin_moe) pl.pin_moe(0);
+            if (pl.pin_fk) pl.pin_fk(0);
+            ::setenv("R3_MOE_NATIVE", "0", 1);
+            st_memset(d_y, 0, got.size() * 2);
+            const int rc0 = r->launch(&a, nullptr);
+            const bool ok0 = rc0 == RAD_OK && st_stream_sync(nullptr) == hipSuccess;
+            if (ok0) st_memcpy(first.data(), d_y, first.size() * 2, hipMemcpyDeviceToHost);
+            ::setenv("R3_MOE_NATIVE", "1", 1);
+            st_memset(d_y, 0, got.size() * 2);
+            const int rc1 = r->launch(&a, nullptr);
+            const bool ok1 = rc1 == RAD_OK && st_stream_sync(nullptr) == hipSuccess;
+            if (ok1) st_memcpy(got.data(), d_y, got.size() * 2, hipMemcpyDeviceToHost);
+            int64_t diff = 0;
+            if (ok0 && ok1)
+                for (size_t x = 0; x < got.size(); ++x) diff += got[x] != first[x];
+            if (had_old) ::setenv("R3_MOE_NATIVE", oldv.c_str(), 1); else ::unsetenv("R3_MOE_NATIVE");
+            if (!ok0 || !ok1 || diff) {
+                ++g_fail;
+                std::printf("R3_MOE_COMPARE_FAIL %s M=%lld rc0=%d rc1=%d diff=%lld\n",
+                            P.name, (long long)Mtok, rc0, rc1, (long long)diff);
+            } else {
+                std::printf("R3_MOE_COMPARE_PASS %s M=%lld bytes=%zu\n",
+                            P.name, (long long)Mtok, got.size() * 2);
+            }
+        }
+        }
+        if (pl.pin_moe) pl.pin_moe(0);
+        if (pl.pin_fk) pl.pin_fk(0);
+@@ end
+
+
+# R3_HC_COMPARE=1: exact compatibility-vs-native comparison on the same E4M3 hc_read buffers.
+@@ find 1
+    for (size_t f = 1; f < outs.size(); ++f) same(f, kForm[f_lo + (int)f]);
+
+    if (timed) {
+@@ replace
+    for (size_t f = 1; f < outs.size(); ++f) same(f, kForm[f_lo + (int)f]);
+
+    if (f8 && std::getenv("R3_HC_COMPARE") && std::atoi(std::getenv("R3_HC_COMPARE")) != 0) {
+        const char* oldp = std::getenv("R3_HC_NATIVE");
+        const bool had_old = oldp != nullptr;
+        const std::string oldv = oldp ? oldp : "";
+        if (pl.pin_hc) pl.pin_hc(1);
+        auto run_r3 = [&](const char* sw, Out* o) -> int {
+            ::setenv("R3_HC_NATIVE", sw, 1);
+            st_memset(d_x, 0, xb); st_memset(d_inj, 0, ib); st_memset(d_q, 0, qb);
+            st_memset(d_qs, 0, sb); st_memset(d_rq, 0, qb); st_memset(d_rs, 0, sb);
+            const int rc = r->launch(&a, rst);
+            if (rc != RAD_OK || st_stream_sync(hs) != hipSuccess) return rc == RAD_OK ? RAD_E_DEVICE : rc;
+            auto get_r3 = [&](std::vector<uint8_t>& v, void* d, size_t b) {
+                v.resize(b); st_memcpy(v.data(), d, b, hipMemcpyDeviceToHost);
+            };
+            get_r3(o->x, d_x, xb); get_r3(o->inj, d_inj, ib); get_r3(o->q, d_q, qb);
+            get_r3(o->qs, d_qs, sb); get_r3(o->rq, d_rq, qb); get_r3(o->rs, d_rs, sb);
+            return RAD_OK;
+        };
+        Out c0, c1;
+        const int rc0 = run_r3("0", &c0), rc1 = run_r3("1", &c1);
+        std::string bad;
+        if (rc0 == RAD_OK && rc1 == RAD_OK) {
+            if (c0.x != c1.x) bad += " x";
+            if (c0.inj != c1.inj) bad += " inj";
+            if (c0.q != c1.q) bad += " q";
+            if (c0.qs != c1.qs) bad += " qs";
+            if (c0.rq != c1.rq) bad += " rq";
+            if (c0.rs != c1.rs) bad += " rs";
+        }
+        if (had_old) ::setenv("R3_HC_NATIVE", oldv.c_str(), 1); else ::unsetenv("R3_HC_NATIVE");
+        if (rc0 != RAD_OK || rc1 != RAD_OK || !bad.empty()) {
+            ++g_fail;
+            std::printf("R3_HC_COMPARE_FAIL M=%lld rc0=%d rc1=%d%s\n",
+                        (long long)M, rc0, rc1, bad.c_str());
+        } else {
+            std::printf("R3_HC_COMPARE_PASS M=%lld bytes=%zu\n",
+                        (long long)M, xb + ib + 2 * qb + 2 * sb);
+        }
+    }
+
+    if (timed) {
+@@ end
+
+@@ find 1
+static void ar_two_rank(const Plugin& pl, const std::vector<int>& devs, const char* name) {
+@@ replace
+/* R3_AR_PIPE correctness: host wht6, two launches per arm so stale slice flags are exercised. */
+struct R3ArPipeRun {
+    const RadKernelInfo* row = nullptr;
+    int rank = 0, dev = 0, M = 0;
+    int rc_init = RAD_E_STATE, rc_launch = RAD_E_STATE;
+    void* inst = nullptr;
+    std::vector<unsigned char> bytes;
+};
+
+static uint32_t r3_pipe_rand(uint32_t& s) { s ^= s << 13; s ^= s >> 17; s ^= s << 5; return s; }
+
+static void r3_ar_pipe_worker(R3ArPipeRun* t) {
+    constexpr int K = 5120, G = 128;
+    if (st_set_device(t->dev) != hipSuccess) { t->rc_init = RAD_E_DEVICE; return; }
+    std::vector<RadParam> ps = { PI("M", t->M), PI("n", K), PF("eps", 1e-6), PI("group", G),
+        PI("world_size", 2), PS("dtype", "bf16"), PI("wire", 6) };
+    t->rc_init = t->row->init(ps.data(), (int)ps.size(), t->rank, 2, &t->inst);
+    if (t->rc_init != RAD_OK) return;
+    const size_t ne = (size_t)t->M * K, xb = ne * 2, qb = ne;
+    const size_t sb = (size_t)t->M * (K / G) * 4, yb = xb;
+    void *x = nullptr, *w = nullptr, *q = nullptr, *sc = nullptr, *y = nullptr;
+    if (hipMalloc(&x, xb) != hipSuccess || hipMalloc(&w, K * 4) != hipSuccess ||
+        hipMalloc(&q, qb) != hipSuccess || hipMalloc(&sc, sb) != hipSuccess ||
+        hipMalloc(&y, yb) != hipSuccess) { t->rc_launch = RAD_E_NOMEM; return; }
+    std::vector<uint16_t> hx(ne);
+    std::vector<float> hw(K);
+    uint32_t seed = 0x9e3779b9u ^ (uint32_t)t->M ^ ((uint32_t)t->rank << 24);
+    for (size_t i = 0; i < ne; ++i) {
+        const uint32_t r = r3_pipe_rand(seed);
+        hx[i] = (uint16_t)(0x3f00u | (r & 0x7fu) | ((r & 0x80u) ? 0x8000u : 0u));
+    }
+    for (int i = 0; i < K; ++i)
+        hw[(size_t)i] = 1.0f + (float)((int)(r3_pipe_rand(seed) & 31u) - 16) * (1.0f / 1024.0f);
+    st_memcpy(w, hw.data(), K * 4, hipMemcpyHostToDevice);
+    RadTensor ts[6] = { T(x, RAD_BF16, { t->M, K }), T(nullptr, RAD_BF16, { t->M, K }),
+        T(w, RAD_F32, { K }), T(q, RAD_F8E4M3, { t->M, K }),
+        T(sc, RAD_F32, { t->M, K / G }), T(y, RAD_BF16, { t->M, K }) };
+    absent(ts[1]);
+    RadArgs a;
+    std::memset(&a, 0, sizeof(a));
+    a.t = ts; a.n_t = 6; a.p = ps.data(); a.n_p = (int)ps.size();
+    a.instance = t->inst; a.rank = t->rank; a.world_size = 2;
+    for (int rep = 0; rep < 2; ++rep) {
+        st_memcpy(x, hx.data(), xb, hipMemcpyHostToDevice);
+        st_memset(q, 0, qb); st_memset(sc, 0, sb); st_memset(y, 0, yb);
+        t->rc_launch = t->row->launch(&a, nullptr);
+        if (t->rc_launch != RAD_OK || st_stream_sync(nullptr) != hipSuccess) {
+            if (t->rc_launch == RAD_OK) t->rc_launch = RAD_E_DEVICE;
+            break;
+        }
+    }
+    if (t->rc_launch == RAD_OK) {
+        t->bytes.resize(xb + qb + sb + yb);
+        size_t at = 0;
+        st_memcpy(t->bytes.data() + at, x, xb, hipMemcpyDeviceToHost); at += xb;
+        st_memcpy(t->bytes.data() + at, q, qb, hipMemcpyDeviceToHost); at += qb;
+        st_memcpy(t->bytes.data() + at, sc, sb, hipMemcpyDeviceToHost); at += sb;
+        st_memcpy(t->bytes.data() + at, y, yb, hipMemcpyDeviceToHost);
+    }
+    st_free(x); st_free(w); st_free(q); st_free(sc); st_free(y);
+}
+
+static bool r3_ar_pipe_pair(const RadKernelInfo* row, const std::vector<int>& devs, int M, bool pipe,
+                            std::vector<unsigned char>* aout, std::vector<unsigned char>* bout,
+                            std::string* why) {
+    setenv("R3_AR_PIPE", pipe ? "1" : "0", 1);
+    R3ArPipeRun a{ row, 0, devs[0], M }, b{ row, 1, devs[1], M };
+    std::thread ta(r3_ar_pipe_worker, &a), tb(r3_ar_pipe_worker, &b);
+    ta.join(); tb.join();
+    const bool good = a.rc_init == RAD_OK && b.rc_init == RAD_OK &&
+                      a.rc_launch == RAD_OK && b.rc_launch == RAD_OK;
+    if (!good) *why = "init " + std::to_string(a.rc_init) + "/" + std::to_string(b.rc_init) +
+                      ", launch " + std::to_string(a.rc_launch) + "/" + std::to_string(b.rc_launch);
+    if (a.inst && row->fini) { st_set_device(devs[0]); row->fini(a.inst); }
+    if (b.inst && row->fini) { st_set_device(devs[1]); row->fini(b.inst); }
+    st_set_device(devs[0]);
+    if (good) { *aout = std::move(a.bytes); *bout = std::move(b.bytes); }
+    return good;
+}
+
+static void r3_ar_pipe_case(const Plugin& pl, const std::vector<int>& devs, const char* name) {
+    const RadKernelInfo* row = find(pl, name);
+    if (!row) { ok(name, false, "row absent"); return; }
+    if (devs.size() < 2) { skip(name, "R3_AR_PIPE selftest needs GPU=0,1"); return; }
+    const char* old = std::getenv("R3_AR_PIPE");
+    const bool had_old = old != nullptr;
+    const std::string old_value = old ? old : "";
+    for (const int M : { 2048, 64 }) {
+        std::vector<unsigned char> b0, b1, p0, p1;
+        std::string wb, wp;
+        const bool rb = r3_ar_pipe_pair(row, devs, M, false, &b0, &b1, &wb);
+        const bool rp = r3_ar_pipe_pair(row, devs, M, true,  &p0, &p1, &wp);
+        const std::string launch = "R3_AR_PIPE host wht6 M=" + std::to_string(M) + " launches";
+        ok(launch.c_str(), rb && rp, rb ? wp : wb);
+        const bool same = rb && rp && b0 == p0 && b1 == p1;
+        const std::string bytes = "R3_AR_PIPE=1 vs 0 byte-for-byte M=" + std::to_string(M);
+        ok(bytes.c_str(), same, same ? "" : "x/q/scale/out_bf16 differ");
+    }
+    if (had_old) setenv("R3_AR_PIPE", old_value.c_str(), 1); else unsetenv("R3_AR_PIPE");
+}
+
+/* R3_AR_WIRE4 quality check: the reduced bf16 row is compared with the exact wire on identical
+ * rank inputs. The 6-bit row is scored too, so the extra 4-bit error is visible rather than hidden
+ * behind a pass/fail tolerance. */
+struct R3ArWireRun {
+    const RadKernelInfo* row = nullptr;
+    int rank = 0, dev = 0, M = 0, wire = 0, heavy = 0;
+    int rc_init = RAD_E_STATE, rc_launch = RAD_E_STATE;
+    void* inst = nullptr;
+    std::vector<uint16_t> xout;
+};
+
+static void r3_ar_wire_worker(R3ArWireRun* t) {
+    constexpr int K = 5120, G = 128;
+    if (st_set_device(t->dev) != hipSuccess) { t->rc_init = RAD_E_DEVICE; return; }
+    std::vector<RadParam> ps = { PI("M", t->M), PI("n", K), PF("eps", 1e-6), PI("group", G),
+        PI("world_size", 2), PS("dtype", "bf16"), PI("wire", t->wire) };
+    t->rc_init = t->row->init(ps.data(), (int)ps.size(), t->rank, 2, &t->inst);
+    if (t->rc_init != RAD_OK) return;
+    const size_t ne = (size_t)t->M * K, xb = ne * 2, qb = ne;
+    const size_t sb = (size_t)t->M * (K / G) * 4, yb = xb;
+    void *x = nullptr, *w = nullptr, *q = nullptr, *sc = nullptr, *y = nullptr;
+    if (hipMalloc(&x, xb) != hipSuccess || hipMalloc(&w, K * 4) != hipSuccess ||
+        hipMalloc(&q, qb) != hipSuccess || hipMalloc(&sc, sb) != hipSuccess ||
+        hipMalloc(&y, yb) != hipSuccess) { t->rc_launch = RAD_E_NOMEM; return; }
+    std::vector<uint16_t> hx(ne);
+    std::vector<float> hw(K, 1.0f);
+    uint32_t seed = 0x6a09e667u ^ ((uint32_t)t->rank << 24) ^ (t->heavy ? 0xbb67ae85u : 0u);
+    for (size_t i = 0; i < ne; ++i) {
+        const uint32_t r = r3_pipe_rand(seed);
+        if (t->heavy) {
+            const uint16_t sign = (r & 1u) ? 0x8000u : 0u;
+            const uint16_t exp = (uint16_t)(119u + ((r >> 1) % 17u));
+            hx[i] = (uint16_t)(sign | (exp << 7) | ((r >> 9) & 0x7fu));
+        } else {
+            hx[i] = (uint16_t)(0x3f00u | (r & 0x7fu) | ((r & 0x80u) ? 0x8000u : 0u));
+        }
+    }
+    st_memcpy(x, hx.data(), xb, hipMemcpyHostToDevice);
+    st_memcpy(w, hw.data(), K * 4, hipMemcpyHostToDevice);
+    st_memset(q, 0, qb); st_memset(sc, 0, sb); st_memset(y, 0, yb);
+    RadTensor ts[6] = { T(x, RAD_BF16, { t->M, K }), T(nullptr, RAD_BF16, { t->M, K }),
+        T(w, RAD_F32, { K }), T(q, RAD_F8E4M3, { t->M, K }),
+        T(sc, RAD_F32, { t->M, K / G }), T(y, RAD_BF16, { t->M, K }) };
+    absent(ts[1]);
+    RadArgs a;
+    std::memset(&a, 0, sizeof(a));
+    a.t = ts; a.n_t = 6; a.p = ps.data(); a.n_p = (int)ps.size();
+    a.instance = t->inst; a.rank = t->rank; a.world_size = 2;
+    t->rc_launch = t->row->launch(&a, nullptr);
+    if (t->rc_launch == RAD_OK && st_stream_sync(nullptr) == hipSuccess) {
+        t->xout.resize(ne);
+        st_memcpy(t->xout.data(), x, xb, hipMemcpyDeviceToHost);
+    } else if (t->rc_launch == RAD_OK) {
+        t->rc_launch = RAD_E_DEVICE;
+    }
+    st_free(x); st_free(w); st_free(q); st_free(sc); st_free(y);
+}
+
+static bool r3_ar_wire_pair(const RadKernelInfo* row, const std::vector<int>& devs, int wire,
+                            bool wire4, bool heavy, std::vector<uint16_t>* rank0,
+                            std::vector<uint16_t>* rank1, std::string* why) {
+    setenv("R3_AR_PIPE", "0", 1);
+    setenv("R3_AR_WIRE4", wire4 ? "1" : "0", 1);
+    R3ArWireRun a{ row, 0, devs[0], 2048, wire, heavy ? 1 : 0 };
+    R3ArWireRun b{ row, 1, devs[1], 2048, wire, heavy ? 1 : 0 };
+    std::thread ta(r3_ar_wire_worker, &a), tb(r3_ar_wire_worker, &b);
+    ta.join(); tb.join();
+    const bool good = a.rc_init == RAD_OK && b.rc_init == RAD_OK &&
+                      a.rc_launch == RAD_OK && b.rc_launch == RAD_OK;
+    if (!good) *why = "init " + std::to_string(a.rc_init) + "/" + std::to_string(b.rc_init) +
+                      ", launch " + std::to_string(a.rc_launch) + "/" + std::to_string(b.rc_launch);
+    if (a.inst && row->fini) { st_set_device(devs[0]); row->fini(a.inst); }
+    if (b.inst && row->fini) { st_set_device(devs[1]); row->fini(b.inst); }
+    st_set_device(devs[0]);
+    if (good) { *rank0 = std::move(a.xout); *rank1 = std::move(b.xout); }
+    return good;
+}
+
+static float r3_ar_wire_bf(uint16_t h) {
+    const uint32_t u = (uint32_t)h << 16;
+    float f;
+    std::memcpy(&f, &u, sizeof(f));
+    return f;
+}
+
+static void r3_ar_wire_metric(const std::vector<uint16_t>& ref, const std::vector<uint16_t>& got,
+                              double* rel_l2, double* max_abs) {
+    double se = 0.0, sr = 0.0, ma = 0.0;
+    for (size_t i = 0; i < ref.size(); ++i) {
+        const double r = (double)r3_ar_wire_bf(ref[i]);
+        const double g = (double)r3_ar_wire_bf(got[i]);
+        const double d = g - r;
+        se += d * d; sr += r * r; ma = std::max(ma, std::fabs(d));
+    }
+    *rel_l2 = std::sqrt(se / (sr > 0.0 ? sr : 1.0));
+    *max_abs = ma;
+}
+
+static void r3_ar_wire4_case(const Plugin& pl, const std::vector<int>& devs, const char* name) {
+    const RadKernelInfo* row = find(pl, name);
+    if (!row) { ok(name, false, "row absent"); return; }
+    if (devs.size() < 2) { skip(name, "R3_AR_WIRE4 selftest needs GPU=0,1"); return; }
+    const char* old4 = std::getenv("R3_AR_WIRE4");
+    const char* oldp = std::getenv("R3_AR_PIPE");
+    const bool had4 = old4 != nullptr, hadp = oldp != nullptr;
+    const std::string old4v = old4 ? old4 : "", oldpv = oldp ? oldp : "";
+    for (int heavy = 0; heavy <= 1; ++heavy) {
+        std::vector<uint16_t> e0, e1, w0, w1, q0, q1;
+        std::string we, ww, wq;
+        const bool re = r3_ar_wire_pair(row, devs, 0, false, heavy != 0, &e0, &e1, &we);
+        const bool rw = r3_ar_wire_pair(row, devs, 6, false, heavy != 0, &w0, &w1, &ww);
+        const bool rq = r3_ar_wire_pair(row, devs, 6, true,  heavy != 0, &q0, &q1, &wq);
+        const bool ranks = re && rw && rq && e0 == e1 && w0 == w1 && q0 == q1;
+        const std::string label = std::string("R3_AR_WIRE4 M=2048 ") +
+                                  (heavy ? "heavy-tailed" : "random") + " launches/rank agreement";
+        ok(label.c_str(), ranks, re ? (rw ? (rq ? "rank outputs differ" : wq) : ww) : we);
+        if (ranks && e0.size() == w0.size() && e0.size() == q0.size()) {
+            double wr = 0.0, wm = 0.0, qr = 0.0, qm = 0.0;
+            r3_ar_wire_metric(e0, w0, &wr, &wm);
+            r3_ar_wire_metric(e0, q0, &qr, &qm);
+            std::printf("R3_AR_WIRE4 M=2048 dist=%s wht6_rel_l2=%.8g wht6_max_abs=%.8g "
+                        "wire4_rel_l2=%.8g wire4_max_abs=%.8g\n",
+                        heavy ? "heavy-tailed" : "random", wr, wm, qr, qm);
+        }
+    }
+    if (had4) setenv("R3_AR_WIRE4", old4v.c_str(), 1); else unsetenv("R3_AR_WIRE4");
+    if (hadp) setenv("R3_AR_PIPE", oldpv.c_str(), 1); else unsetenv("R3_AR_PIPE");
+}
+
+static void ar_two_rank(const Plugin& pl, const std::vector<int>& devs, const char* name) {
+@@ end
+
+@@ find 1
+    skip_pair("ar_rmsnorm_quant_fp8", "two-rank fusion: needs a peer rank");
+@@ replace
+    if (sel("ar_rmsnorm_quant_fp8_host")) {
+        r3_ar_pipe_case(pl, devs, "ar_rmsnorm_quant_fp8_host");
+        r3_ar_wire4_case(pl, devs, "ar_rmsnorm_quant_fp8_host");
+    }
+    if (sel("ar_rmsnorm_quant_fp8"))
+        skip("ar_rmsnorm_quant_fp8", "R3_AR_PIPE targets the no-P2P host row");
+@@ end
+
+# The served 27B TP2 call is fp32 state, 24/8 value/key heads per rank, h0==ht, and a long
+# cu_seqlens row. The previous 48/16 fp16 M=200 row was neither the TP2 geometry nor the state dtype.
+# BENCH_DEPTHS=2300 makes this one sequence span 36 chunks, the parameter that exposed native
+# accumulation drift: libr3 compatibility WMMA computes product(C=0) then f32-adds it, so native
+# must do the same rather than chain C through hardware WMMA.
+@@ find 1
+                std::vector<RadParam> ps = {
+                    PI("M", T_), PI("head_k", K), PI("head_v", V), PI("chunk", chunk),
+                    PF("scale", 0.088388),
+                };
+                run_case(r, ts, ps);
+@@ replace
+                std::vector<RadParam> ps = {
+                    PI("M", T_), PI("head_k", K), PI("head_v", V), PI("chunk", chunk),
+                    PF("scale", 0.088388),
+                };
+                run_case(r, ts, ps);
+                {
+                    const int64_t Ts = 2300, Hs = 24, Hgs = 8, Ns = 1;
+                    RadTensor state = T(nullptr, RAD_F32, { Ns, Hs, V, K });
+                    state.data = alloc_for(state);
+                    std::vector<RadTensor> t2 = {
+                        T(nullptr, RAD_BF16, { Ts, Hgs, K }), T(nullptr, RAD_BF16, { Ts, Hgs, K }),
+                        T(nullptr, RAD_BF16, { Ts, Hs, V }),  T(nullptr, RAD_BF16, { Ts, Hs, chunk }),
+                        T(nullptr, RAD_F32,  { Ts, Hs }),     T(nullptr, RAD_F32,  { Ts, Hs }),
+                        state, TI32({ Ns + 1 }, { 0, (int32_t)Ts }),
+                        T(nullptr, RAD_BF16, { Ts, Hs, V }), state,
+                        TI32({ Ns }, { 0 }),
+                    };
+                    std::vector<RadParam> p2 = {
+                        PI("M", Ts), PI("head_k", K), PI("head_v", V), PI("chunk", chunk),
+                        PF("scale", 0.08838834764831845), PI("state_fp16", 0),
+                    };
+                    run_case(r, t2, p2);
+                }
+@@ end
