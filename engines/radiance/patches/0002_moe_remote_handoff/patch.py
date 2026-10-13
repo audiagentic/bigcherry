@@ -132,12 +132,10 @@ PATCHES = (
                 id="publish-runtime-layer-map",
                 anchor=r"^[ \t]*if \(std::find\(prot\.begin\(\), prot\.end\(\), e\) == prot\.end\(\)\) reg\.push_back\(e\);$",
                 text="""
-    if (rad_moe_remote_wanted_upto(g.max_tok)) {
-        std::vector<int32_t> remote_slot((size_t)ne, -1);
-        for (int64_t s = 0; s < n_reg; ++s)
-            remote_slot[(size_t)reg[(size_t)s]] = (int32_t)s;
-        rad_moe_remote_layer_map(l, (int)ne, remote_slot.data());
-    }""",
+    std::vector<int32_t> remote_slot((size_t)ne, -1);
+    for (int64_t s = 0; s < n_reg; ++s)
+        remote_slot[(size_t)reg[(size_t)s]] = (int32_t)s;
+    rad_moe_remote_layer_map(l, (int)ne, remote_slot.data());""",
                 guard=r"rad_moe_remote_layer_map\(l, \(int\)ne, remote_slot\.data\(\)\);",
                 expect_matches=1,
                 rationale="The reg[] fill line is the first point where runtime protected-expert removal and compact regular slots are both final.",
