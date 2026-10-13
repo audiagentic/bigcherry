@@ -11,8 +11,7 @@
 
 // Release builds define NDEBUG, which removes assert() and any call inside it; these checks always run.
 static void check(bool ok, const char* what) {
-    if (!ok) { std::fprintf(stderr, "r3_moe_shm_test: FAILED %s
-", what); std::exit(1); }
+    if (!ok) { std::fprintf(stderr, "r3_moe_shm_test: FAILED %s\n", what); std::exit(1); }
 }
 
 using namespace r3::moe_shm;
