@@ -394,7 +394,7 @@ public:
         using namespace r3::moe_shm;
         if (!host_map || !device_map || !q || rank >= kMaxRanks || q->rank != rank ||
             q->rank_count != kMaxRanks || q->layer >= model_.layers || q->rows == 0 ||
-            q->rows > kMaxRows || q->hidden != kHidden || q->route_count == 0 ||
+            q->rows > kMaxRows || q->hidden != kHidden ||
             q->route_count > q->rows * kTopK || q->activation_stride != kHidden * sizeof(uint16_t))
             return -EINVAL;
         LaneWork& w = lane_[rank];
@@ -415,6 +415,13 @@ public:
         if (!hip_ok(hipStreamWaitValue32(w.stream, request_seq, sequence,
                                          hipStreamWaitValueGte, 0xffffffffu),
                     "lane wait request")) return -EIO;
+        if (q->route_count == 0) {
+            const size_t result_bytes = (size_t)rows * kHidden * sizeof(uint16_t);
+            if (!hip_ok(hipMemsetAsync(dst, 0, result_bytes, w.stream), "zero empty lane result") ||
+                !hip_ok(hipStreamWriteValue32(w.stream, done_seq, sequence, 0), "lane write empty done"))
+                return -EIO;
+            return 0;
+        }
         if (!hip_ok(hipMemsetAsync(w.d_counts.p, 0, kExperts * sizeof(uint32_t), w.stream), "clear route counts") ||
             !hip_ok(hipMemsetAsync(w.d_token_slot.p, 0, rows * sizeof(uint32_t), w.stream), "clear token slots") ||
             !hip_ok(hipMemsetAsync(w.d_ew.p, 0, tr * sizeof(uint16_t), w.stream), "clear route weights") ||
