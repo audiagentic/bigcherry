@@ -202,7 +202,7 @@ class TestRadiancePatchPackages(unittest.TestCase):
         self.assertNotIn('setenv("R3_MOE_REMOTE_MAX_ROWS", mr.c_str(), 1)', hook)
         self.assertIn('{"out", RAD_OPD_INOUT, 0}', ops)
         self.assertIn('r.weight_bf16', ops)
-        self.assertIn('acc += bf16_product(weight, value);', ops)
+        self.assertIn('acc += weight * value;', ops)\n        self.assertNotIn('bf16_product', ops)
         self.assertIn('R3_MOE_HELPER poison', hook)
         self.assertIn('R3_MOE_HELPER_SHADOW enabled', hook)
         self.assertIn('R3_MOE_HELPER_SHADOW layer=', hook)
