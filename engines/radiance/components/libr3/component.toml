@@ -44,6 +44,21 @@ default = "/r3-moe-helper"
 status = "diagnostic"
 summary = "POSIX shm segment shared by libr3's engine hook and r3_moe_helper"
 
+[setting.R3_MOE_HELPER_CPU]
+default = "0"
+status = "diagnostic"
+summary = "force the slice-2a fp32 host reference path instead of gfx1201 compute"
+
+[setting.R3_MOE_HELPER_MIB]
+default = "28672"
+status = "experimental"
+summary = "VRAM budget in MiB for cold full-expert units owned by the gfx1201 helper"
+
+[setting.R3_MOE_HELPER_R4D]
+default = ""
+status = "diagnostic"
+summary = "override the installed gfx1201 libr4d.so used through the rad_plugin ABI"
+
 [setting.R3_MOE_NATIVE]
 default = "0"
 status = "experimental"
