@@ -37,11 +37,32 @@ summary = "native delta-net chunk scan; wrong in serving (KLD 5.52) after three 
 default = ""
 status = "experimental"
 summary = "enable patch 0002 remote-MoE hook; helper process must already own the configured POSIX shm segment"
+activation = "r3_moe_helper: owns [0-9]+ experts, [0-9.]+ GiB"
 
 [setting.R3_MOE_HELPER_SHM]
 default = "/r3-moe-helper"
 status = "diagnostic"
 summary = "POSIX shm segment shared by libr3's engine hook and r3_moe_helper"
+
+[setting.R3_MOE_HELPER_CPU]
+default = "0"
+status = "diagnostic"
+summary = "force the slice-2a fp32 host reference path instead of gfx1201 compute"
+
+[setting.R3_MOE_HELPER_MIB]
+default = "28672"
+status = "experimental"
+summary = "VRAM budget in MiB for cold full-expert units owned by the gfx1201 helper"
+
+[setting.R3_MOE_HELPER_MAX_ROWS]
+default = "64"
+status = "experimental"
+summary = "largest step (rows) the hook hands to the helper; larger prefill steps keep the engine's own path"
+
+[setting.R3_MOE_HELPER_R4D]
+default = ""
+status = "diagnostic"
+summary = "override the installed gfx1201 libr4d.so used through the rad_plugin ABI"
 
 [setting.R3_MOE_NATIVE]
 default = "0"

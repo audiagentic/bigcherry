@@ -1,12 +1,10 @@
 #include "moe_remote_shm.h"
-#include <cassert>
 #include <cstdio>
 #include <fcntl.h>
 #include <string>
 #include <sys/mman.h>
 #include <thread>
 #include <unistd.h>
-#include <cstdio>
 #include <cstdlib>
 
 // Release builds define NDEBUG, which removes assert() and any call inside it; these checks always run.
@@ -24,6 +22,13 @@ int main() {
     void* m = mmap(nullptr, l.bytes, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     check(m != MAP_FAILED, "mmap"); init(m, 48); check(valid((Header*)m, l.bytes), "header valid");
     auto* h = (Header*)m;
+    check(!owns(m, 7, 23), "ownership starts clear");
+    check(set_owned(m, 7, 23), "publish ownership");
+    check(owns(m, 7, 23) && h->owned_count == 1, "ownership is visible");
+    check(!set_owned(m, 7, 23) && h->owned_count == 1, "duplicate ownership is idempotent");
+    check(h->result_offset[0] != h->result_offset[kMaxRanks] &&
+          h->result_offset[1] != h->result_offset[kMaxRanks + 1],
+          "producer ranks have isolated result slots");
 
     std::thread helper([&] {
         Request* q = request(m, 1);

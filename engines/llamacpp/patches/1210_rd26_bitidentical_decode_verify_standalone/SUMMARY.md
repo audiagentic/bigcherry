@@ -1,16 +1,11 @@
-# 1210_rd26_bitidentical_decode_verify_standalone: Decode vs speculative-verify bit-identity, base-standalone hunks (RD26a)
+# 1210_rd26_bitidentical_decode_verify_standalone
 
-**Status:** untested
-**Plan item:** RD26
+**State:** untested (not promoted). **Authoritative plan:** PRBE20. **Audit:** 2026-10-13 / BCOP184.
 
-## What it does
+The patch is **not** just the original two-hunk subset. `patch.py` includes plain/fused MMVF selection, CPU sgemm gate, FlashAttention WMMA/tile selection and RDNA3/RDNA4 MMVQ nwarps changes. The source provenance remains the stew675 fork; the historical “remaining three hunks deferred” statement is obsolete.
 
-Ports the two hunks (MMVF decision for ne11<=8 in ggml-cuda.cu, and an n<=8 vs n<2 rejection fix in llamafile/sgemm.cpp) from a five-commit fork cluster that make decode (n_q=1) and speculative-verify (n_q=n_draft+1) batches produce bit-identical logits, restricted to the hunks whose pre-images anchor cleanly on the framework base alone.
+**Actual evidence:** Brutus gfx1100 `llama-results` width 1 versus width 5 raw-logit comparison still failed at the first logit row (historical offset 480); widths 2/3/4 differ later (~1,987,040). Historical PPL parity does not qualify this invariant. No new GPU run or performance gain.
 
-## Why
+**Unresolved source-level discriminator:** llama.cpp b11552 `mmvq.cu::get_mmvq_mmid_max_batch_rdna3` returns 4 for Q4_K/Q5_K/Q6_K, and `ggml-cuda.cu::ggml_cuda_mul_mat_id` enforces that limit. Width 5 may leave MMVQ while 1210 only normalizes `calc_nwarps`; the historical model's actual quant type/route are **not yet proven**. Do not override the tuned threshold without tracing first divergence.
 
-Bit-identical decode/verify logits are a soundness precondition for speculative acceptance checks; the remaining three hunks of the cluster are deferred because their pre-images depend on code introduced by patches 1202 (RD04) and 1203 (RD05/06), so they will be added once those are benched and retained.
-
-## Upstream / provenance
-
-Ported from a five-commit stew675-rdna-boosts fork cluster (93510434f, b2655d381, d152888fc, plus RD26b commits 10b83d6b2/6cdf5aff9, https://github.com/stew675/llama.cpp). Not merged into ggml-org/llama.cpp master.
+**Next gate:** reuse `validation/producer.py` and `tools/lab/prbe20-rd26-bisect`; first check GGUF quant type and actual per-node dispatch, then a bounded diagnostic `cb_eval` first-divergent-op trace (not a performance run). Separate early width-5 from late width-2/3/4 divergence. Only after causal proof consider an opt-in selector change; require full-logit/greedy/MTP correctness, same-process replay and paired AMD performance. Do not duplicate routing, scheduling or telemetry. See PRBE20 for exact gates and terminal outcomes.

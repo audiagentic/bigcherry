@@ -9,7 +9,7 @@ _RAD_MOE_REMOTE_H = r"""/* rad_moe_remote.h -- optional whole-expert compute han
 #ifdef __cplusplus
 extern "C" {
 #endif
-#define RAD_MOE_REMOTE_ABI 1u
+#define RAD_MOE_REMOTE_ABI 2u
 typedef void* RadMoeRemoteHandle;
 typedef struct RadMoeRemoteRoute {
     int32_t token;
@@ -20,6 +20,8 @@ typedef struct RadMoeRemoteRoute {
 typedef struct RadMoeRemoteHooks {
     uint32_t abi_version;
     void* user;
+    /* Nonzero only for experts this helper owns. The engine asks before it masks a local route. */
+    int (*owns)(void* user, int layer, int expert);
     RadMoeRemoteHandle (*submit)(void* user, int layer, int rank,
                                  int64_t rows, int64_t n_embd,
                                  const RadMoeRemoteRoute* route, int64_t n_route,
@@ -32,6 +34,8 @@ typedef struct RadMoeRemoteHooks {
  * which the core loads during architecture declaration. */
 int rad_moe_remote_register(const RadMoeRemoteHooks* hooks);
 int rad_moe_remote_wanted(int64_t step_rows);
+/* Nonzero when some step of at most max_step_rows would be handed off: what a declaration asks. */
+int rad_moe_remote_wanted_upto(int64_t max_step_rows);
 RadMoeRemoteHandle rad_moe_remote_submit(RadCtx* c, int layer,
                                          int64_t step_rows, int64_t rows, int64_t n_embd,
                                          int64_t top_k, int64_t expert_base,
@@ -72,6 +76,17 @@ int64_t min_rows() {
     }();
     return v;
 }
+/* Steps above this keep the engine's own path untouched: no routing copy, gather fusion kept. */
+int64_t max_rows() {
+    static const int64_t v = [] {
+        const char* s = std::getenv("R3_MOE_REMOTE_MAX_ROWS");
+        if (!s || !*s) return (int64_t)LLONG_MAX;
+        char* end = nullptr;
+        const long long n = std::strtoll(s, &end, 10);
+        return end && *end == 0 && n >= 0 ? (int64_t)n : (int64_t)LLONG_MAX;
+    }();
+    return v;
+}
 void load_env_hook() {
     const char* so = std::getenv("R3_MOE_REMOTE_SO");
     if (!so || !*so) return;
@@ -94,8 +109,8 @@ void load_env_hook() {
 void ensure_loaded() { std::call_once(g_load_once, load_env_hook); }
 }
 extern "C" int rad_moe_remote_register(const RadMoeRemoteHooks* hooks) {
-    if (!hooks || hooks->abi_version != RAD_MOE_REMOTE_ABI || !hooks->submit || !hooks->wait)
-        return RAD_E_INVAL;
+    if (!hooks || hooks->abi_version != RAD_MOE_REMOTE_ABI || !hooks->owns ||
+        !hooks->submit || !hooks->wait) return RAD_E_INVAL;
     if (g_active.load(std::memory_order_acquire)) return RAD_E_STATE;
     g_hooks = *hooks;
     g_active.store(true, std::memory_order_release);
@@ -103,12 +118,17 @@ extern "C" int rad_moe_remote_register(const RadMoeRemoteHooks* hooks) {
     if (m == LLONG_MAX)
         std::fprintf(stderr, "radiance: MoE remote hook active (R3_MOE_REMOTE_MIN_ROWS=never)\n");
     else
-        std::fprintf(stderr, "radiance: MoE remote hook active (R3_MOE_REMOTE_MIN_ROWS=%lld)\n", (long long)m);
+        std::fprintf(stderr, "radiance: MoE remote hook active (R3_MOE_REMOTE_MIN_ROWS=%lld MAX_ROWS=%lld)\n",
+                     (long long)m, (long long)max_rows());
     return RAD_OK;
 }
 extern "C" int rad_moe_remote_wanted(int64_t step_rows) {
     ensure_loaded();
-    return g_active.load(std::memory_order_acquire) && step_rows >= min_rows();
+    return g_active.load(std::memory_order_acquire) && step_rows >= min_rows() && step_rows <= max_rows();
+}
+extern "C" int rad_moe_remote_wanted_upto(int64_t max_step_rows) {
+    ensure_loaded();
+    return g_active.load(std::memory_order_acquire) && min_rows() <= max_step_rows && min_rows() <= max_rows();
 }
 extern "C" RadMoeRemoteHandle rad_moe_remote_submit(
     RadCtx* base, int layer, int64_t step_rows, int64_t rows, int64_t n_embd,
@@ -137,15 +157,16 @@ extern "C" RadMoeRemoteHandle rad_moe_remote_submit(
         return nullptr;
     }
     slot.clear(); route.clear();
+    const RadMoeRemoteHooks hooks = g_hooks;
     for (int64_t i = 0; i < n; ++i) {
         const int64_t le = (int64_t)ids[(size_t)i] - expert_base;
         if (le < 0 || le >= n_expert || !gate_up[le] || !down[le] ||
-            !c->weight_in_host_pool(gate_up[le]) || !c->weight_in_host_pool(down[le])) continue;
+            !c->weight_in_host_pool(gate_up[le]) || !c->weight_in_host_pool(down[le]) ||
+            !hooks.owns(hooks.user, layer, (int)le)) continue;
         slot.push_back(i);
-        route.push_back(RadMoeRemoteRoute{(int32_t)(i / top_k), ids[(size_t)i], ew[(size_t)i], 0});
+        route.push_back(RadMoeRemoteRoute{(int32_t)(i / top_k), (int32_t)le, ew[(size_t)i], 0});
     }
     if (route.empty()) return nullptr;
-    const RadMoeRemoteHooks hooks = g_hooks;
     RadMoeRemoteHandle h = hooks.submit(hooks.user, layer, c->rank(), rows, n_embd,
                                         route.data(), (int64_t)route.size(),
                                         activation, activation_stride_bytes);
@@ -184,7 +205,7 @@ PATCHES = (
             id="create-remote-moe-abi",
             anchor=r"\A",
             text=_RAD_MOE_REMOTE_H,
-            guard=r"^#define RAD_MOE_REMOTE_ABI 1u$",
+            guard=r"^#define RAD_MOE_REMOTE_ABI 2u$",
             expect_matches=1,
             rationale="Created files are anchored at the empty upstream file; create=True rejects any upstream collision.",
         ),),
@@ -323,7 +344,7 @@ PATCHES = (
                 id="declare-remote-partial-add",
                 anchor=r"^[ \t]*\{w\.x, w\.h\.x\}, \{w\.x\}\);$",
                 text="""
-    if (rad_moe_remote_wanted(g.max_tok)) {
+    if (rad_moe_remote_wanted_upto(g.max_tok)) {
         b_remote = decl_b(b, nm.f("blk.%d.moe_remote_partial", l), RAD_BF16,
                           {c.rows, g.n_embd});
         if (!b_remote) return RAD_E_INVAL;

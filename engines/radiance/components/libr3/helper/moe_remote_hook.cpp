@@ -1,6 +1,8 @@
 #include "moe_remote_shm.h"
 #include "rad_moe_remote.h"
 
+#include <atomic>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -24,8 +26,27 @@ struct HookState {
     Header* hdr = nullptr;
     HipMemcpy2D copy2d = nullptr;
     std::mutex submit_mu[kMaxRanks];
+    /* Per-rank exchange cost, printed at unload: calls, rows, host copy of activations, wait for results. */
+    std::atomic<uint64_t> calls[kMaxRanks]{}, rows[kMaxRanks]{}, copy_ns[kMaxRanks]{}, wait_ns[kMaxRanks]{};
+    std::atomic<uint32_t> rank_of[kRingSlots]{};
 };
 HookState g;
+
+uint64_t now_ns() {
+    return (uint64_t)std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+void report_hook() {
+    if (!g.hdr) return;
+    for (uint32_t r = 0; r < kMaxRanks; ++r) {
+        const uint64_t c = g.calls[r].load();
+        std::fprintf(stderr, "libr3: R3_MOE_HELPER rank %u: %llu calls, %llu rows, copy %.1f ms, wait %.1f ms (%.1f us a call)\n",
+                     r, (unsigned long long)c, (unsigned long long)g.rows[r].load(),
+                     g.copy_ns[r].load() / 1e6, g.wait_ns[r].load() / 1e6,
+                     c ? (g.copy_ns[r].load() + g.wait_ns[r].load()) / 1e3 / (double)c : 0.0);
+    }
+}
 
 bool enabled() {
     const char* e = std::getenv("R3_MOE_HELPER");
@@ -36,12 +57,27 @@ const char* shm_name() {
     return e && *e ? e : "/r3-moe-helper";
 }
 
+int64_t max_rows() {
+    static const int64_t v = [] {
+        const char* e = std::getenv("R3_MOE_HELPER_MAX_ROWS");
+        const long long n = e && *e ? std::atoll(e) : 64;
+        return (int64_t)(n > 0 ? n : 64);
+    }();
+    return v;
+}
+
+int owns_remote(void* user, int layer, int expert) {
+    auto* s = static_cast<HookState*>(user);
+    return s && s->hdr && layer >= 0 && expert >= 0 &&
+           owns(s->map, (uint32_t)layer, (uint32_t)expert);
+}
+
 RadMoeRemoteHandle submit(void* user, int layer, int rank, int64_t rows, int64_t n_embd,
                           const RadMoeRemoteRoute* route, int64_t n_route,
                           const void* activation, int64_t activation_stride_bytes) {
     auto* s = static_cast<HookState*>(user);
     if (!s || !s->hdr || !route || !activation || rank < 0 || rank >= (int)kMaxRanks ||
-        layer < 0 || (uint32_t)layer >= s->hdr->layer_count || rows <= 0 || rows > kMaxRows ||
+        layer < 0 || (uint32_t)layer >= s->hdr->layer_count || rows <= 0 || rows > kMaxRows || rows > max_rows() ||
         n_embd != kHidden || n_route <= 0 || n_route > kMaxRoutes ||
         activation_stride_bytes < (int64_t)kHidden * 2) return nullptr;
 
@@ -59,15 +95,18 @@ RadMoeRemoteHandle submit(void* user, int layer, int rank, int64_t rows, int64_t
 
     void* act = ptr<void>(s->map, s->hdr->activation_offset[rank]);
     const size_t row_bytes = kHidden * sizeof(uint16_t);
+    const uint64_t t0 = now_ns();
     if (!s->copy2d || s->copy2d(act, row_bytes, activation, (size_t)activation_stride_bytes,
                                 row_bytes, (size_t)rows, kHipMemcpyDeviceToHost) != 0) return nullptr;
+    s->copy_ns[rank] += now_ns() - t0; s->calls[rank] += 1; s->rows[rank] += (uint64_t)rows;
+    s->rank_of[seq % kRingSlots] = (uint32_t)rank;
 
     q->status = 0; q->layer = (uint32_t)layer; q->rank = (uint32_t)rank;
     q->rank_count = kMaxRanks; q->rows = (uint32_t)rows; q->hidden = kHidden;
     q->route_count = (uint32_t)n_route; q->route_offset = s->hdr->route_offset[rank];
     q->activation_offset = s->hdr->activation_offset[rank]; q->activation_stride = (uint32_t)row_bytes;
     for (uint32_t r = 0; r < kMaxRanks; ++r) {
-        q->result_offset[r] = s->hdr->result_offset[r];
+        q->result_offset[r] = s->hdr->result_offset[(uint32_t)rank * kMaxRanks + r];
         q->result_stride[r] = kHidden * sizeof(uint16_t);
     }
     store(&q->sequence, seq);
@@ -81,14 +120,20 @@ const void* wait(void* user, RadMoeRemoteHandle handle) {
     const uint32_t seq = (uint32_t)(uintptr_t)handle;
     if (!s || !s->hdr || !seq) return nullptr;
     Request* q = request(s->map, seq);
+    const uint64_t t0 = now_ns();
     wait_until(&q->completion_sequence, seq);
+    s->wait_ns[s->rank_of[seq % kRingSlots].load() % kMaxRanks] += now_ns() - t0;
     if (q->status != 0 || q->sequence != seq || q->rank >= kMaxRanks) return nullptr;
     return ptr<void>(s->map, q->result_offset[q->rank]);
 }
 
-void register_hook() __attribute__((constructor));
 void register_hook() {
     if (!enabled()) return; /* Default path: no registration, therefore byte-identical engine behaviour. */
+    /* R3_MOE_HELPER=1 is the switch for this component. setenv(.., 0) preserves an explicit engine threshold,
+     * otherwise make patch 0002 hand every eligible owned route to the helper. */
+    (void)::setenv("R3_MOE_REMOTE_MIN_ROWS", "0", 0);
+    /* Prefill-sized steps stay on the engine's own path (no routing copy, gather fusion kept). */
+    (void)::setenv("R3_MOE_REMOTE_MAX_ROWS", std::to_string((long long)max_rows()).c_str(), 0);
     g.fd = ::shm_open(shm_name(), O_RDWR | O_CLOEXEC, 0);
     if (g.fd < 0) { std::fprintf(stderr, "libr3: R3_MOE_HELPER shm %s is not ready\n", shm_name()); return; }
     struct stat st{};
@@ -100,11 +145,26 @@ void register_hook() {
     }
     g.hdr = static_cast<Header*>(g.map);
     g.copy2d = reinterpret_cast<HipMemcpy2D>(::dlsym(RTLD_DEFAULT, "hipMemcpy2D"));
+    /* Pin the segment for both cards: pageable copies fell onto a staging path that once cost
+     * 10 ms a call (62 s for one request) instead of ~0.08 ms. */
+    using HipHostRegister = int (*)(void*, size_t, unsigned);
+    auto host_register = reinterpret_cast<HipHostRegister>(::dlsym(RTLD_DEFAULT, "hipHostRegister"));
+    constexpr unsigned kHipHostRegisterPortable = 1u;
+    if (!host_register || host_register(g.map, g.bytes, kHipHostRegisterPortable) != 0) {
+        std::fprintf(stderr, "libr3: R3_MOE_HELPER could not pin the shared segment\n"); g.hdr = nullptr; return;
+    }
     auto reg = reinterpret_cast<int (*)(const RadMoeRemoteHooks*)>(::dlsym(RTLD_DEFAULT, "rad_moe_remote_register"));
     if (!g.copy2d || !reg) {
         std::fprintf(stderr, "libr3: R3_MOE_HELPER requires hipMemcpy2D and patch 0002 ABI\n"); return;
     }
-    static RadMoeRemoteHooks hooks{RAD_MOE_REMOTE_ABI, &g, submit, wait};
+    static RadMoeRemoteHooks hooks{RAD_MOE_REMOTE_ABI, &g, owns_remote, submit, wait};
     if (reg(&hooks) < 0) std::fprintf(stderr, "libr3: R3_MOE_HELPER hook registration refused\n");
 }
+/* Registration runs from an object defined after `g`: C++ initialises one translation unit's
+ * globals in order, whereas an __attribute__((constructor)) ran before g's dynamic initialiser,
+ * which then reset the mapped header to null and every ownership query answered no. */
+struct HookLifetime {
+    HookLifetime() { register_hook(); }
+    ~HookLifetime() { report_hook(); }
+} g_lifetime;
 } // namespace

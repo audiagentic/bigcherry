@@ -148,11 +148,12 @@ target_link_libraries(r3_ngram_test PRIVATE radiance::abi ${CMAKE_DL_LIBS})
 # Slice 2a remote-MoE reference helper. The executable consumes only the installed container ABI;
 # the hook is already compiled into libr3 above and registers only when R3_MOE_HELPER is non-empty.
 add_executable(r3_moe_helper ${CMAKE_CURRENT_SOURCE_DIR}/helper/r3_moe_helper.cpp)
-target_include_directories(r3_moe_helper PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/helper)
+target_include_directories(r3_moe_helper PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/helper $ENV{ROCM_PATH}/include)
 if(r3_moe_remote_sources)
   target_include_directories(libr3 PRIVATE ${RADIANCE_SRC}/abi)
 endif()
-target_link_libraries(r3_moe_helper PRIVATE radiance::abi)
+target_compile_definitions(r3_moe_helper PRIVATE __HIP_PLATFORM_AMD__)
+target_link_libraries(r3_moe_helper PRIVATE radiance::abi ${CMAKE_DL_LIBS} ${RAD_HIP_RUNTIME})
 set_target_properties(r3_moe_helper PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON
   RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/helpers)
 add_dependencies(libr3 r3_moe_helper)

@@ -1,5 +1,11 @@
 # RD26a: decode vs speculative-verify bit-identity, base-standalone hunks
 
+## Current status (2026-10-13; supersedes historical scope below)
+
+Actual patch.py contains plain/fused MMVF, CPU sgemm, FlashAttention tile/WMMA, and RDNA3/RDNA4 MMVQ nwarps edits, not just two hunks. Patch 1210 remains untested: historical gfx1100 ubatch 1 vs 5 diverges at the first logit row, while 2/3/4 differ later. PPL equality is not a cross-batch identity result.
+
+New b11552 source finding: RDNA3 get_mmvq_mmid_max_batch_rdna3 caps Q4_K/Q5_K/Q6_K at width 4, enforced in ggml_cuda_mul_mat_id and fusion admission. Width 5 can leave MMVQ despite global MMVQ_MAX_BATCH_SIZE=8; 1210 does not change this cap. The historical model's quant type and executed route have not been verified, so no cause is claimed. See PRBE20/BCOP184 for bounded dispatch and first-divergent-op gates. No GPU run or speedup from this audit.
+
 ## Scope
 
 Ports the two hunks (the MMVF decision for `ne11<=8` in `ggml-cuda.cu`, and
