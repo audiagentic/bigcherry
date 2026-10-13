@@ -176,10 +176,6 @@ __device__ __forceinline__ uint16_t f32_to_bf16_rn(float v) {
     return (uint16_t)(u >> 16);
 }
 
-__device__ __forceinline__ float bf16_product(float a, float b) {
-    return bf16_to_f32(f32_to_bf16_rn(a * b));
-}
-
 __global__ void mailbox_add_wait_kernel(
     uint8_t* base, const uint32_t* sequence, const uint32_t* published, uint32_t rank) {
     if (blockIdx.x || threadIdx.x || !*published) return;
@@ -236,7 +232,7 @@ __global__ void mailbox_add_rows_kernel(
             const uint32_t flat = token * top_k + slot;
             const float weight = bf16_to_f32(r.weight_bf16);
             const float value = bf16_to_f32(result[(uint64_t)flat * hidden + col]);
-            acc += bf16_product(weight, value);
+            acc += weight * value;
         }
         if (any) dst[col] = f32_to_bf16_rn(acc);
     }
@@ -489,7 +485,7 @@ const RadKernelInfo kPublish = [] {
     x.family = "moe";
     x.computes = "GPU-only remote MoE mailbox publication";
     x.shape = "decode rows, hidden=2560, top_k=10";
-    x.dtypes = "i32,bf16,bf16";
+    x.dtypes = "i32,bf16,bf16,f8e4m3,f32,f8e4m3";
     x.domain = RAD_DOMAIN_DEVICE;
     x.priority = 1000;
     x.init = mailbox_init;
