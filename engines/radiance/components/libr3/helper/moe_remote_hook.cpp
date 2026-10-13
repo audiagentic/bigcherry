@@ -129,10 +129,11 @@ const void* wait(void* user, RadMoeRemoteHandle handle) {
 
 void register_hook() {
     if (!enabled()) return; /* Default path: no registration, therefore byte-identical engine behaviour. */
-    /* R3_MOE_HELPER=1 is the switch for this component. Preserve an explicit engine threshold,
+    /* R3_MOE_HELPER=1 is the switch for this component. setenv(.., 0) preserves an explicit engine threshold,
      * otherwise make patch 0002 hand every eligible owned route to the helper. */
-    if (!std::getenv("R3_MOE_REMOTE_MIN_ROWS"))
-        (void)::setenv("R3_MOE_REMOTE_MIN_ROWS", "0", 0);
+    (void)::setenv("R3_MOE_REMOTE_MIN_ROWS", "0", 0);
+    /* Prefill-sized steps stay on the engine's own path (no routing copy, gather fusion kept). */
+    (void)::setenv("R3_MOE_REMOTE_MAX_ROWS", std::to_string((long long)max_rows()).c_str(), 0);
     g.fd = ::shm_open(shm_name(), O_RDWR | O_CLOEXEC, 0);
     if (g.fd < 0) { std::fprintf(stderr, "libr3: R3_MOE_HELPER shm %s is not ready\n", shm_name()); return; }
     struct stat st{};
@@ -144,6 +145,14 @@ void register_hook() {
     }
     g.hdr = static_cast<Header*>(g.map);
     g.copy2d = reinterpret_cast<HipMemcpy2D>(::dlsym(RTLD_DEFAULT, "hipMemcpy2D"));
+    /* Pin the segment for both cards: pageable copies fell onto a staging path that once cost
+     * 10 ms a call (62 s for one request) instead of ~0.08 ms. */
+    using HipHostRegister = int (*)(void*, size_t, unsigned);
+    auto host_register = reinterpret_cast<HipHostRegister>(::dlsym(RTLD_DEFAULT, "hipHostRegister"));
+    constexpr unsigned kHipHostRegisterPortable = 1u;
+    if (!host_register || host_register(g.map, g.bytes, kHipHostRegisterPortable) != 0) {
+        std::fprintf(stderr, "libr3: R3_MOE_HELPER could not pin the shared segment\n"); g.hdr = nullptr; return;
+    }
     auto reg = reinterpret_cast<int (*)(const RadMoeRemoteHooks*)>(::dlsym(RTLD_DEFAULT, "rad_moe_remote_register"));
     if (!g.copy2d || !reg) {
         std::fprintf(stderr, "libr3: R3_MOE_HELPER requires hipMemcpy2D and patch 0002 ABI\n"); return;

@@ -74,6 +74,17 @@ int64_t min_rows() {
     }();
     return v;
 }
+/* Steps above this keep the engine's own path untouched: no routing copy, gather fusion kept. */
+int64_t max_rows() {
+    static const int64_t v = [] {
+        const char* s = std::getenv("R3_MOE_REMOTE_MAX_ROWS");
+        if (!s || !*s) return (int64_t)LLONG_MAX;
+        char* end = nullptr;
+        const long long n = std::strtoll(s, &end, 10);
+        return end && *end == 0 && n >= 0 ? (int64_t)n : (int64_t)LLONG_MAX;
+    }();
+    return v;
+}
 void load_env_hook() {
     const char* so = std::getenv("R3_MOE_REMOTE_SO");
     if (!so || !*so) return;
@@ -105,12 +116,13 @@ extern "C" int rad_moe_remote_register(const RadMoeRemoteHooks* hooks) {
     if (m == LLONG_MAX)
         std::fprintf(stderr, "radiance: MoE remote hook active (R3_MOE_REMOTE_MIN_ROWS=never)\n");
     else
-        std::fprintf(stderr, "radiance: MoE remote hook active (R3_MOE_REMOTE_MIN_ROWS=%lld)\n", (long long)m);
+        std::fprintf(stderr, "radiance: MoE remote hook active (R3_MOE_REMOTE_MIN_ROWS=%lld MAX_ROWS=%lld)\n",
+                     (long long)m, (long long)max_rows());
     return RAD_OK;
 }
 extern "C" int rad_moe_remote_wanted(int64_t step_rows) {
     ensure_loaded();
-    return g_active.load(std::memory_order_acquire) && step_rows >= min_rows();
+    return g_active.load(std::memory_order_acquire) && step_rows >= min_rows() && step_rows <= max_rows();
 }
 extern "C" RadMoeRemoteHandle rad_moe_remote_submit(
     RadCtx* base, int layer, int64_t step_rows, int64_t rows, int64_t n_embd,

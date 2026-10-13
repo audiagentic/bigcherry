@@ -45,7 +45,8 @@ CASES = {
 # Git blob prefixes for the exact package outputs against Radiance 1.3.0
 # (89cee7ce4); mismatches detect a port that merely matches guards while
 # silently changes output. 0002 intentionally evolved in helper slice 2b
-# to add the ownership query required before masking a local route.
+# to add the ownership query required before masking a local route, and
+# R3_MOE_REMOTE_MAX_ROWS so prefill-sized steps keep the engine path.
 # 0003: diff body was amended to std::atoi(e) != 0 after its index line
 # was generated; 62849e9 is stale and the corrected hunk produces 8e1f89e.
 PIN_BLOBS = {
@@ -56,7 +57,7 @@ PIN_BLOBS = {
         "abi/rad_moe_remote.h": (None, "1268f0e"),
         "arch/common/rad_block_hc.h": ("c19c8b6", "75a248e"),
         "arch/common/rad_block_moe_fp8.h": ("51b7c28", "1d927d2"),
-        "core/place/moe_remote.cpp": (None, "f1cbe85"),
+        "core/place/moe_remote.cpp": (None, "ea305e0"),
         "core/place/mover.cpp": ("2de5295", "a994f33"),
         "core/place/mover.h": ("0c28ba3", "c4bd33c"),
         "core/runtime/ctx.h": ("8a231df", "c826093"),

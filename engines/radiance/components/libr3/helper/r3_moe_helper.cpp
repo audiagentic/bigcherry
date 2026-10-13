@@ -218,10 +218,6 @@ const char* shm_name() { const char* e=std::getenv("R3_MOE_HELPER_SHM"); return 
 
 namespace {
 
-bool env_on(const char* name) {
-    const char* e = std::getenv(name);
-    return e && *e && std::strcmp(e, "0") != 0;
-}
 
 uint64_t helper_budget_bytes() {
     const char* e = std::getenv("R3_MOE_HELPER_MIB");
@@ -435,7 +431,8 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    const bool cpu = env_on("R3_MOE_HELPER_CPU") && !compare;
+    const char* cpu_env = std::getenv("R3_MOE_HELPER_CPU");
+    const bool cpu = cpu_env && *cpu_env && std::strcmp(cpu_env, "0") != 0 && !compare;
     std::unique_ptr<r3_moe_gpu::Runner> gpu;
     if (!cpu) {
         gpu = std::make_unique<r3_moe_gpu::Runner>(model);
