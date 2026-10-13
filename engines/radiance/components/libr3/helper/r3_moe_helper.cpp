@@ -443,6 +443,12 @@ int main(int argc, char** argv) {
     Owned owned;
     if (!select_owned(model, gpu.get(), budget, &owned)) return 1;
     if (gpu && !gpu->upload(owned.expert)) return 1;
+    if (gpu && !compare) {
+        /* The experts now live on the card: give the ~28 GiB of container pages back to the host.
+         * Kept resident, they cost the engine ~11% prefill even with the hook off. */
+        (void)madvise((void*)model.base, model.bytes, MADV_DONTNEED);
+        (void)posix_fadvise(model.fd, 0, 0, POSIX_FADV_DONTNEED);
+    }
     std::fprintf(stderr, "r3_moe_helper: owns %zu experts, %.3f GiB\n",
                  owned.expert.size(), (double)owned.bytes / (1024.0 * 1024.0 * 1024.0));
 
