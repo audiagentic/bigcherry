@@ -38,14 +38,15 @@ int main() {
         }
         check(q->layer == 7 && q->rank == 0 && q->rows == 1 && q->route_count == 1, "q->layer == 7 && q->rank == 0 && q->rows");
         const Route* r = ptr<Route>(m, q->route_offset);
-        check(r[0].token == 0 && r[0].expert == 23 && r[0].weight_bf16 == 0x3f80, "r[0].token == 0 && r[0].expert == 23 && ");
+        check(r[0].token == 0 && r[0].expert == 23 && r[0].weight_bf16 == 0x3f80 && r[0].slot == 7,
+              "route payload preserves token/expert/weight/top-k slot");
         uint16_t* out = ptr<uint16_t>(m, q->result_offset[0]); out[0] = 0x4000;
         q->status = 0; store(&q->completion_sequence, 1); futex_wake(&q->completion_sequence);
     });
 
     uint32_t seq = fetch_add(&h->next_sequence, 1); check(seq == 1, "first sequence");
     Request* q = request(m, seq);
-    Route* r = ptr<Route>(m, h->route_offset[0]); r[0] = {0, 23, 0x3f80, 0};
+    Route* r = ptr<Route>(m, h->route_offset[0]); r[0] = {0, 23, 0x3f80, 7};
     q->layer = 7; q->rank = 0; q->rank_count = 2; q->rows = 1; q->hidden = kHidden;
     q->route_count = 1; q->route_offset = h->route_offset[0]; q->activation_offset = h->activation_offset[0];
     q->activation_stride = kHidden * 2; q->result_offset[0] = h->result_offset[0]; q->result_stride[0] = kHidden * 2;
