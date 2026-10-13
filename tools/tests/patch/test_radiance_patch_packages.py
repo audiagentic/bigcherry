@@ -30,9 +30,9 @@ CASES = {
         "for (auto& r : ranks_) r->ctx.shutdown_now();",
     ),
     "0002_moe_remote_handoff": (
-        "core/place/mover.h",
-        "void publish(rad_weight w, void* ptr);",
-        "void publish(rad_weight w, void* ptr, int changed_shape);",
+        "arch/common/rad_block_moe_fp8.h",
+        "rad_op op_ar = 0, op_add = 0;",
+        "rad_op op_ar = 0, op_add = 0, int changed_shape;",
     ),
     "0003_mtp_full_head_switch": (
         "arch/common/rad_block_mtp_fp8.h",
@@ -44,9 +44,8 @@ CASES = {
 
 # Git blob prefixes for the exact package outputs against Radiance 1.3.0
 # (89cee7ce4); mismatches detect a port that merely matches guards while
-# silently changes output. 0002 intentionally evolved in helper slice 2b
-# to add the ownership query required before masking a local route, and
-# R3_MOE_REMOTE_MAX_ROWS so prefill-sized steps keep the engine path.
+# silently changes output. 0002 now contains only the decode-row policy gate
+# and graph declarations/issues for libr3's GPU mailbox publish/join ops.
 # 0003: diff body was amended to std::atoi(e) != 0 after its index line
 # was generated; 62849e9 is stale and the corrected hunk produces 8e1f89e.
 PIN_BLOBS = {
@@ -54,14 +53,10 @@ PIN_BLOBS = {
         "core/engine.cpp": ("3ba2831", "20767f7"),
     },
     "0002_moe_remote_handoff": {
-        "abi/rad_moe_remote.h": (None, "e83c5f2"),
-        "arch/common/rad_block_hc.h": ("c19c8b6", "75a248e"),
-        "arch/common/rad_block_moe_fp8.h": ("51b7c28", "2f16a77"),
-        "core/place/moe_remote.cpp": (None, "98c6dcc"),
-        "core/place/mover.cpp": ("2de5295", "a994f33"),
-        "core/place/mover.h": ("0c28ba3", "c4bd33c"),
-        "core/runtime/ctx.h": ("8a231df", "c826093"),
-        "core/runtime/residency.h": ("bd73431", "97198f1"),
+        "abi/rad_moe_remote.h": (None, "9e5f03d"),
+        "arch/common/rad_block_hc.h": ("c19c8b6", "8859327"),
+        "arch/common/rad_block_moe_fp8.h": ("51b7c28", "e8530f6"),
+        "core/place/moe_remote.cpp": (None, "3705adf"),
     },
     "0003_mtp_full_head_switch": {
         "arch/common/rad_block_mtp_fp8.h": ("dac7f12", "8e1f89e"),
