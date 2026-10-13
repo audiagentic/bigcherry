@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <cerrno>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -489,7 +490,8 @@ public:
                     !w.dn_scale[parity].ensure(nclass * sizeof(void*)))
                     return false;
             }
-            if (!hip_ok(hipMemset(w.d_stats.p, 0, 3 * sizeof(uint64_t)), "zero lane stats"))
+            if (!prepare_lane_scratch(w, lane_rows_, lane_routes_) ||
+                !hip_ok(hipMemset(w.d_stats.p, 0, 3 * sizeof(uint64_t)), "zero lane stats"))
                 return false;
         }
         return true;
@@ -1000,6 +1002,86 @@ private:
             pi("top_k", r3::moe_shm::kTopK), pi("group", kGroup),
             ps("a_order", order), ps("dtype", kDtype)
         };
+    }
+
+    bool scratch_need(const RadKernelInfo* r, std::vector<RadTensor> ts,
+                      std::vector<RadParam> ps, size_t* need) {
+        if (!r || !need) return false;
+        if (!r->scratch) return true;
+        RadArgs a{};
+        a.t = ts.data(); a.n_t = (int)ts.size();
+        a.p = ps.data(); a.n_p = (int)ps.size();
+        a.rank = 0; a.world_size = 1;
+        const int64_t n = r->scratch(&a);
+        if (n < 0) return false;
+        *need = std::max(*need, (size_t)std::max<int64_t>(n, 1));
+        return true;
+    }
+
+    bool prepare_lane_scratch(LaneWork& w, uint32_t rows, uint32_t routes) {
+        using namespace r3::moe_shm;
+        size_t need = 1;
+        std::vector<RadParam> aqp = {
+            pi("M", rows), pi("n", kHidden), pi("group", kGroup), ps("dtype", "bf16")
+        };
+        if (!scratch_need(had_quant_,
+                          { tensor(w.d_act.p, RAD_BF16, {rows, kHidden}),
+                            tensor(w.d_aq.p, RAD_F8E4M3, {rows, kHidden}),
+                            tensor(w.d_as.p, RAD_F32, {rows, kHidden / kGroup}) },
+                          aqp, &need))
+            return false;
+
+        std::vector<RadParam> gp = gemm_params(rows, kGateUpWidth, kHidden, 2, "token");
+        if (!scratch_need(moe_,
+                          { tensor(w.d_aq.p, RAD_F8E4M3, {rows, kHidden}),
+                            tensor(w.d_as.p, RAD_F32, {rows, kHidden / kGroup}),
+                            table_tensor(w.gu_code[0].p, gu_code_dtype_, kGateUpWidth, kHidden),
+                            table_tensor(w.gu_scale[0].p, gu_scale_dtype_, kGateUpWidth, kHidden / 64),
+                            tensor(w.d_sorted.p, RAD_I32, {routes}),
+                            tensor(w.d_off.p, RAD_I32, {kExperts + 1}),
+                            table_tensor(w.gu_code[1].p, gu_code_dtype_, kGateUpWidth, kHidden),
+                            table_tensor(w.gu_scale[1].p, gu_scale_dtype_, kGateUpWidth, kHidden / 64),
+                            tensor(w.d_gu.p, RAD_BF16, {routes, kGateUpWidth}) },
+                          gp, &need))
+            return false;
+
+        std::vector<RadParam> gqp = {
+            pi("M", routes), pi("n", kExpertWidth), pi("group", kGroup),
+            ps("dtype", "bf16"), ps("act", "silu")
+        };
+        if (!scratch_need(gated_quant_,
+                          { tensor(w.d_gu.p, RAD_BF16, {routes, kGateUpWidth}),
+                            tensor(w.d_mid.p, RAD_F8E4M3, {routes, kExpertWidth}),
+                            tensor(w.d_mid_s.p, RAD_F32, {routes, kExpertWidth / kGroup}),
+                            absent() },
+                          gqp, &need))
+            return false;
+
+        std::vector<RadParam> dp = gemm_params(rows, kHidden, kExpertWidth, 1, "sorted");
+        if (!scratch_need(moe_,
+                          { tensor(w.d_mid_rank.p, RAD_F8E4M3, {routes, kExpertWidth}),
+                            tensor(w.d_mid_s.p, RAD_F32, {routes, kExpertWidth / kGroup}),
+                            table_tensor(w.dn_code[0].p, dn_code_dtype_, kHidden, kExpertWidth),
+                            table_tensor(w.dn_scale[0].p, dn_scale_dtype_, kHidden, kExpertWidth / 64),
+                            tensor(w.d_sorted.p, RAD_I32, {routes}),
+                            tensor(w.d_off.p, RAD_I32, {kExperts + 1}),
+                            table_tensor(w.dn_code[1].p, dn_code_dtype_, kHidden, kExpertWidth),
+                            table_tensor(w.dn_scale[1].p, dn_scale_dtype_, kHidden, kExpertWidth / 64),
+                            tensor(w.d_down.p, RAD_BF16, {routes, kHidden}) },
+                          dp, &need))
+            return false;
+
+        std::vector<RadParam> mp = {
+            pi("M", rows), pi("n", kHidden), pi("top_k", kTopK), ps("dtype", "bf16")
+        };
+        if (!scratch_need(gather_,
+                          { tensor(w.d_down.p, RAD_BF16, {routes, kHidden}),
+                            tensor(w.d_ew.p, RAD_BF16, {rows, kTopK}),
+                            tensor(w.d_sorted.p, RAD_I32, {routes}),
+                            absent(), absent(), tensor(w.d_act.p, RAD_BF16, {rows, kHidden}) },
+                          mp, &need))
+            return false;
+        return w.scratch.ensure(need);
     }
 
     int launch_on(const RadKernelInfo* r, std::vector<RadTensor> ts, std::vector<RadParam> ps,
