@@ -95,6 +95,10 @@ const void* wait(void* user, RadMoeRemoteHandle handle) {
 void register_hook() __attribute__((constructor));
 void register_hook() {
     if (!enabled()) return; /* Default path: no registration, therefore byte-identical engine behaviour. */
+    /* R3_MOE_HELPER=1 is the switch for this component. Preserve an explicit engine threshold,
+     * otherwise make patch 0002 hand every eligible owned route to the helper. */
+    if (!std::getenv("R3_MOE_REMOTE_MIN_ROWS"))
+        (void)::setenv("R3_MOE_REMOTE_MIN_ROWS", "0", 0);
     g.fd = ::shm_open(shm_name(), O_RDWR | O_CLOEXEC, 0);
     if (g.fd < 0) { std::fprintf(stderr, "libr3: R3_MOE_HELPER shm %s is not ready\n", shm_name()); return; }
     struct stat st{};
