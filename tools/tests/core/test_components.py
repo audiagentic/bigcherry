@@ -40,6 +40,29 @@ class Libr3ComponentTests(unittest.TestCase):
         self.assertIn("R3_GDN_NATIVE is evaluated in libr3; a production profile may not set it", problems)
         self.assertIn("R3_TYPO is not a setting libr3 declares", problems)
 
+    def test_a_profile_environment_is_checked_against_the_components(self):
+        import tempfile
+        from pathlib import Path
+        text = "\n".join([
+            "version = 2",
+            'engine = "radiance"',
+            'pinned = "p"',
+            "[runtime-profile.x]",
+            "server-args = []",
+            "tune-context = 1",
+            "production-context = 1",
+            "min-free-vram-bytes-per-device = 0",
+            'environment = { R3_ATTN_NATIVE = "1" }',
+            "",
+        ])
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "r.toml"
+            path.write_text(text, encoding="utf-8")
+            with self.assertRaisesRegex(config.ConfigError, "restates libr3's default"):
+                config.load(path)
+            path.write_text(text.replace('R3_ATTN_NATIVE = "1"', 'R3_MOE_NATIVE = "1"'), encoding="utf-8")
+            self.assertEqual(dict(config.load(path).runtime_profiles["x"].environment), {"R3_MOE_NATIVE": "1"})
+
     def test_llamacpp_declares_no_components(self):
         self.assertEqual(components.load_all(paths.REPO_ROOT, engines.LLAMACPP), {})
 
