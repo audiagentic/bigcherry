@@ -151,13 +151,14 @@ __global__ void lane_route_scatter(
 }
 
 __global__ void lane_unsort_down(const uint16_t* down, const int32_t* sorted,
-                                 uint16_t* dst, uint32_t routes, uint32_t hidden) {
+                                 uint16_t* dst, uint32_t routes, uint32_t slots,
+                                 uint32_t hidden) {
     const uint64_t i = (uint64_t)blockIdx.x * blockDim.x + threadIdx.x;
     const uint64_t total = (uint64_t)routes * hidden;
     if (i >= total) return;
     const uint32_t row = (uint32_t)(i / hidden);
     const int32_t flat = sorted[row];
-    if (flat < 0 || (uint32_t)flat >= routes) return;
+    if (flat < 0 || (uint32_t)flat >= slots) return;
     dst[(uint64_t)(uint32_t)flat * hidden + (i - (uint64_t)row * hidden)] = down[i];
 }
 
@@ -532,7 +533,8 @@ public:
 
         const uint32_t rows = lane_rows_;
         const uint32_t routes = lane_routes_;
-        if (!hip_ok(hipMemsetAsync(dst, 0, (size_t)routes * kHidden * sizeof(uint16_t), w.stream),
+        const uint32_t slots = rows * kTopK;
+        if (!hip_ok(hipMemsetAsync(dst, 0, (size_t)slots * kHidden * sizeof(uint16_t), w.stream),
                     "clear lane route result") ||
             !hip_ok(hipMemsetAsync(w.d_counts.p, 0, kExperts * sizeof(uint32_t), w.stream),
                     "clear route counts") ||
@@ -637,7 +639,7 @@ public:
                            dim3((down_elems + block.x - 1) / block.x), block, 0, w.stream,
                            static_cast<const uint16_t*>(w.d_down.p),
                            static_cast<const int32_t*>(w.d_sorted.p),
-                           dst, routes, kHidden);
+                           dst, routes, slots, kHidden);
         if (!hip_ok(hipGetLastError(), "lane unsort down rows")) return -EIO;
 
         if (sample && w.sample_pending && w.sample_sequence == sequence &&
