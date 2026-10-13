@@ -78,7 +78,6 @@ struct Container {
     const RadFileProfile* profile = nullptr;
     uint32_t layers = 0;
     std::vector<std::array<const RadFileEntry*, 2>> expert;
-    std::vector<int16_t> regular_slot;
 
     ~Container() { if (fd >= 0) close(fd); }
     bool range(uint64_t off, uint64_t n) const { return off <= bytes && n <= bytes - off; }
@@ -136,21 +135,6 @@ struct Container {
                 if (!range(planes[e.plane_first + p].offset, planes[e.plane_first + p].bytes)) return false;
             expert[(size_t)e.layer * kExperts + (uint32_t)e.expert][e.slot] = &e;
         }
-        /* The engine sorts protected BF16 experts last. Its quantised GEMM numbers only the
-         * remaining experts, so the helper's rank slice class follows this compact place, not e&1. */
-        regular_slot.assign((size_t)layers * kExperts, (int16_t)-1);
-        for (uint32_t l = 0; l < layers; ++l) {
-            int32_t slot = 0;
-            for (uint32_t e = 0; e < kExperts; ++e) {
-                const RadFileEntry* gu = weight(l, e, 0);
-                const RadFileEntry* dn = weight(l, e, 1);
-                if (!gu || !dn) continue;
-                const bool gp = plain_bf16(gu), dp = plain_bf16(dn);
-                if (gp != dp || slot >= (int32_t)kExperts) return false;
-                if (gp) continue;
-                regular_slot[(size_t)l * kExperts + e] = (int16_t)slot++;
-            }
-        }
         return layers != 0;
     }
     const RadFileEntry* weight(uint32_t layer, uint32_t exp, uint32_t slot) const {
@@ -159,15 +143,6 @@ struct Container {
     }
     const RadEncoding* encoding(const RadFileEntry* e) const { return e ? &encs[e->enc] : nullptr; }
     const RadFilePlane* plane(const RadFileEntry* e, int p) const { return &planes[e->plane_first + p]; }
-    bool plain_bf16(const RadFileEntry* e) const {
-        const RadEncoding* enc = encoding(e);
-        return enc && rad_enc_is(enc, "plain") && enc->n_planes == 1 &&
-               enc->plane[0].dtype == RAD_BF16;
-    }
-    int32_t expert_slot(uint32_t layer, uint32_t exp) const {
-        if (layer >= layers || exp >= kExperts || regular_slot.empty()) return -1;
-        return regular_slot[(size_t)layer * kExperts + exp];
-    }
 };
 
 float raw_value(uint32_t dtype, const uint8_t* row, int64_t col) {
