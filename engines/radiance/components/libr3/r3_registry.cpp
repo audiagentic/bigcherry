@@ -36,7 +36,7 @@ const std::vector<LiveRow>& live() {
         }
         if (r3_ngram_enabled()) out.push_back({-1, r3_ngram_row()});
         if (r3_moe_mailbox_enabled())
-            for (int i = 0; i < 2; ++i) out.push_back({-1, r3_moe_mailbox_row(i)});
+            for (int i = 0; r3_moe_mailbox_row(i); ++i) out.push_back({-1, r3_moe_mailbox_row(i)});  // every mailbox row: publish, add, shadow
         return out;
     }();
     return rows;
