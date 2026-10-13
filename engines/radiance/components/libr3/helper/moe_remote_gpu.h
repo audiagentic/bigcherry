@@ -354,8 +354,9 @@ private:
         const RadKernelInfo* (*at)(int) = nullptr;
         int (*open_fn)() = nullptr;
         if (!symbol("rad_plugin_abi_version", &abi) || !symbol("rad_plugin_info", &info) ||
-            !symbol("rad_kernel_count", &count) || !symbol("rad_kernel_at", &at) ||
-            !symbol("rad_plugin_open", &open_fn)) return false;
+            !symbol("rad_kernel_count", &count) || !symbol("rad_kernel_at", &at)) return false;
+        /* rad_plugin_open/close are optional in the ABI (rad_abi.h); libr4d exports neither. */
+        (void)symbol("rad_plugin_open", &open_fn, false);
         (void)symbol("rad_plugin_close", &plugin_close_, false);
         if (abi() != RAD_ABI_VERSION) {
             std::fprintf(stderr, "r3_moe_helper: libr4d ABI %u, helper ABI %u\n",
@@ -367,7 +368,7 @@ private:
             std::fprintf(stderr, "r3_moe_helper: libr4d is not a gfx1201 plugin\n");
             return false;
         }
-        if (open_fn() != RAD_OK) {
+        if (open_fn && open_fn() != RAD_OK) {
             std::fprintf(stderr, "r3_moe_helper: libr4d rad_plugin_open refused this device\n");
             return false;
         }
