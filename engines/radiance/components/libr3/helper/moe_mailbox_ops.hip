@@ -179,15 +179,19 @@ int publish_launch(const RadArgs* a, RadStream stream) {
     if (!a || !a->instance || !stream || a->n_t != 3) return RAD_E_INVAL;
     auto* d = static_cast<R3MoeMailboxDevice*>(a->instance);
     const long long layer = geti(a, "layer");
-    const long long rows = geti(a, "M");
     const long long hidden = geti(a, "n");
     const long long top_k = geti(a, "top_k");
     const long long expert_base = geti(a, "expert_base");
     const long long n_expert = geti(a, "n_expert");
+    const long long rows = a->t[2].rank > 0 ? a->t[2].shape[0] : 0;
     if (layer < 0 || layer >= (long long)kMaxLayers || rows <= 0 || rows > (long long)kMaxRows ||
         hidden != (long long)kHidden || top_k != (long long)kTopK ||
         expert_base < 0 || n_expert <= 0 || n_expert > (long long)kExperts ||
         !a->t[0].data || !a->t[1].data || !a->t[2].data ||
+        a->t[0].rank < 2 || a->t[1].rank < 2 || a->t[2].rank < 2 ||
+        a->t[0].shape[0] != rows || a->t[1].shape[0] != rows ||
+        a->t[0].shape[1] != top_k || a->t[1].shape[1] != top_k ||
+        a->t[2].shape[1] != hidden ||
         a->t[0].dtype != RAD_I32 || a->t[1].dtype != RAD_BF16 || a->t[2].dtype != RAD_BF16 ||
         !rad_tensor_is_contiguous(&a->t[0]) || !rad_tensor_is_contiguous(&a->t[1]) ||
         !rad_tensor_is_contiguous(&a->t[2]))
@@ -206,10 +210,11 @@ int publish_launch(const RadArgs* a, RadStream stream) {
 int join_launch(const RadArgs* a, RadStream stream) {
     if (!a || !a->instance || !stream || a->n_t != 1) return RAD_E_INVAL;
     auto* d = static_cast<R3MoeMailboxDevice*>(a->instance);
-    const long long rows = geti(a, "M");
     const long long hidden = geti(a, "n");
+    const long long rows = a->t[0].rank > 0 ? a->t[0].shape[0] : 0;
     if (rows <= 0 || rows > (long long)kMaxRows || hidden != (long long)kHidden ||
-        !a->t[0].data || a->t[0].dtype != RAD_BF16 || !rad_tensor_is_contiguous(&a->t[0]))
+        !a->t[0].data || a->t[0].rank < 2 || a->t[0].shape[1] != hidden ||
+        a->t[0].dtype != RAD_BF16 || !rad_tensor_is_contiguous(&a->t[0]))
         return RAD_E_SHAPE;
     hipLaunchKernelGGL(mailbox_join_kernel, dim3(1), dim3(256), 0, (hipStream_t)stream,
                        static_cast<uint8_t*>(d->mailbox), d->sequence, d->published, d->rank,
