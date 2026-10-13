@@ -8,7 +8,7 @@ engine = "radiance"
 targets = ["gfx1100"]
 # radiance 1.3.0: the rewrite blocks are written against this revision's libr4d and refuse any other.
 built-against = "89cee7ce414486c717aa2085c99e1f522e4c0ea6"
-outputs = ["kernels/libr3.so", "helpers/libr3_ngram_helper.so"]
+outputs = ["kernels/libr3.so", "helpers/libr3_ngram_helper.so", "helpers/r3_moe_helper"]
 
 # How the build lane builds it: CMake against the engine installed from the lane's own build (CMAKE_PREFIX_PATH) and
 # the lane's materialised source ({engine_source}); outputs are copied into the engine's runtime home.
@@ -32,6 +32,16 @@ summary = "native gfx11 prefill attention; KLD 0.0035 / 96.8% top-1 vs the compa
 default = "0"
 status = "evaluated"
 summary = "native delta-net chunk scan; wrong in serving (KLD 5.52) after three fixes, shelved"
+
+[setting.R3_MOE_HELPER]
+default = ""
+status = "experimental"
+summary = "enable patch 0002 remote-MoE hook; helper process must already own the configured POSIX shm segment"
+
+[setting.R3_MOE_HELPER_SHM]
+default = "/r3-moe-helper"
+status = "diagnostic"
+summary = "POSIX shm segment shared by libr3's engine hook and r3_moe_helper"
 
 [setting.R3_MOE_NATIVE]
 default = "0"
