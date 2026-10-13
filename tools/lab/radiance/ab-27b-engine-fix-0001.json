@@ -1,0 +1,24 @@
+{
+ "schema_version": 1,
+ "engine": "radiance",
+ "evidence_role": "diagnostic",
+ "execution_evidence": "observe",
+ "model": "/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-27b-mxfp4/qwen3.8-27b-mxfp4.rad",
+ "server_args": ["--tp", "2", "--tp-wire", "wht6", "--max-model-len", "8192", "--kernels", "libr3,libref"],
+ "environment": {
+  "HIP_VISIBLE_DEVICES": "0,1",
+  "ROCR_VISIBLE_DEVICES": "0,1"
+ },
+ "expected_execution": {
+  "backend": "ROCm",
+  "architectures": ["gfx1100", "gfx1100"],
+  "locators": ["0000:03:00.0", "0000:06:00.0"]
+ },
+ "bench_configs": "mtp-dual",
+ "required_metrics": ["pp1024_tps", "tg512_tps"],
+ "repetitions": 1,
+ "arms": [
+  {"mode": "stock", "shutdown_method": "sigint", "binary": "${RAD_NATIVE_BIN}", "name": "native", "server_args": [], "environment": {}},
+  {"mode": "stock", "shutdown_method": "sigint", "binary": "${RAD_LAB_BIN}", "name": "fix0001", "server_args": [], "environment": {}}
+ ]
+}
