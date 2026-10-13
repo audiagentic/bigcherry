@@ -224,6 +224,7 @@ def _stage_record(
         binary=binary_path, model=model_path,
         extra_args=("-ngl", "99", "-c", str(runtime_profile.production_context), *runtime_profile.server_args),
         env_overrides={
+            **dict(runtime_profile.environment),
             **_gpu_visibility_env(devices),
             "GGML_HIP_DISPATCH_MODE": "record",
             "GGML_HIP_DISPATCH_DB": str(record_db_path),
@@ -314,6 +315,7 @@ def _stage_tune(
         binary=binary_path, model=model_path,
         extra_args=("-ngl", "99", "-c", str(runtime_profile.tune_context), *runtime_profile.server_args),
         env_overrides={
+            **dict(runtime_profile.environment),
             **_gpu_visibility_env(devices),
             "GGML_HIP_DISPATCH_MODE": "tune",
             "GGML_HIP_DISPATCH_DB": str(tune_db_path),
