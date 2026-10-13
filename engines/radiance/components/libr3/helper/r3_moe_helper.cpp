@@ -264,7 +264,9 @@ bool select_owned(const Container& f, r3_moe_gpu::Runner* gpu, uint64_t budget, 
     std::vector<RadFileProfile> flat;
     if (!f.profile || !f.h->prof_count) {
         std::fprintf(stderr, "r3_moe_helper: container has no expert profile; owning experts evenly across layers\n");
-        for (uint32_t e = 0; e < kExperts; ++e)
+        /* Highest ids first: the engine's initial placement keeps low ids resident on the XTX and
+         * leaves the high ids in its host pool (measured: every host-pool route was expert >= 302). */
+        for (uint32_t e = kExperts; e-- > 0;)
             for (uint32_t l = 0; l < f.layers; ++l)
                 if (f.weight(l, e, 0)) flat.push_back(RadFileProfile{(int32_t)l, (int32_t)e, 0.0f, 0.0f});
         for (const RadFileProfile& p : flat) order.push_back(&p);
