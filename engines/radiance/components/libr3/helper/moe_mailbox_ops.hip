@@ -86,15 +86,18 @@ __global__ void mailbox_publish_kernel(
         nr = 0;
     }
     __syncthreads();
-    if (rows == 0 || rows > max_rows || rows > kMaxRows) return;
+    if (rows == 0 || rows > max_rows || rows > kMaxRows ||
+        layer >= h->layer_count || !load_sys_acq(&h->layer_map_ready[layer])) return;
 
+    const int32_t* slot_map = reinterpret_cast<const int32_t*>(
+        base + h->layer_map_offset) + (uint64_t)layer * kExperts;
     Route* route = reinterpret_cast<Route*>(base + h->route_offset[rank]);
     if (threadIdx.x == 0) {
         const uint32_t nroute = rows * top_k;
         for (uint32_t i = 0; i < nroute; ++i) {
             const int32_t le = ids[i] - expert_base;
             if (le < 0 || (uint32_t)le >= n_expert || (uint32_t)le >= kExperts ||
-                !owner_has(owner, layer, (uint32_t)le))
+                slot_map[(uint32_t)le] < 0 || !owner_has(owner, layer, (uint32_t)le))
                 continue;
             const uint32_t p = nr++;
             route[p].token = (int32_t)(i / top_k);
