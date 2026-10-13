@@ -253,19 +253,28 @@ struct Owned {
 };
 
 bool select_owned(const Container& f, r3_moe_gpu::Runner* gpu, uint64_t budget, Owned* out) {
-    if (!out || !budget || !f.profile || !f.h->prof_count) {
-        std::fprintf(stderr, "r3_moe_helper: container has no usable expert profile or helper budget\n");
+    if (!out || !budget) {
+        std::fprintf(stderr, "r3_moe_helper: no helper budget\n");
         return false;
     }
     std::vector<const RadFileProfile*> order;
-    order.reserve((size_t)f.h->prof_count);
-    for (uint64_t i = 0; i < f.h->prof_count; ++i) {
+    /* A container converted without calibration has no profile: take experts expert-major (unsorted)
+     * so the budget spreads over all layers. */
+    std::vector<RadFileProfile> flat;
+    if (!f.profile || !f.h->prof_count) {
+        std::fprintf(stderr, "r3_moe_helper: container has no expert profile; owning experts evenly across layers\n");
+        for (uint32_t e = 0; e < kExperts; ++e)
+            for (uint32_t l = 0; l < f.layers; ++l)
+                if (f.weight(l, e, 0)) flat.push_back(RadFileProfile{(int32_t)l, (int32_t)e, 0.0f, 0.0f});
+        for (const RadFileProfile& p : flat) order.push_back(&p);
+    }
+    for (uint64_t i = 0; f.profile && i < f.h->prof_count; ++i) {
         const RadFileProfile& p = f.profile[i];
         if (p.layer < 0 || p.expert < 0 || (uint32_t)p.layer >= f.layers ||
             p.expert >= (int32_t)kExperts) continue;
         order.push_back(&p);
     }
-    std::stable_sort(order.begin(), order.end(), [](const RadFileProfile* a, const RadFileProfile* b) {
+    if (flat.empty()) std::stable_sort(order.begin(), order.end(), [](const RadFileProfile* a, const RadFileProfile* b) {
         if (a->share != b->share) return a->share < b->share;
         if (a->layer != b->layer) return a->layer < b->layer;
         return a->expert < b->expert;
