@@ -11,6 +11,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <fcntl.h>
+#include <memory>
 #include <string>
 #include <sys/mman.h>
 #include <sys/stat.h>
@@ -62,6 +63,7 @@ int64_t sbits(uint64_t x, int bits) {
 struct Container {
     int fd = -1; size_t bytes = 0; const uint8_t* base = nullptr; const RadFileHeader* h = nullptr;
     const RadFileEntry* dir = nullptr; const RadFilePlane* planes = nullptr; const RadEncoding* encs = nullptr;
+    const RadFileProfile* profile = nullptr;
     uint32_t layers = 0;
     std::vector<std::array<const RadFileEntry*, 2>> expert; /* [layer*512+expert][gate_up,down]. */
 
@@ -76,9 +78,11 @@ struct Container {
         if (h->magic != RAD_MAGIC || h->version != RAD_FORMAT_VER || h->file_bytes > bytes ||
             !range(h->dir_off, h->dir_count * sizeof(RadFileEntry)) ||
             !range(h->plane_off, h->plane_count * sizeof(RadFilePlane)) ||
-            !range(h->enc_off, h->enc_count * sizeof(RadEncoding))) return false;
+            !range(h->enc_off, h->enc_count * sizeof(RadEncoding)) ||
+            (h->prof_count && !range(h->prof_off, h->prof_count * sizeof(RadFileProfile)))) return false;
         dir = (const RadFileEntry*)(base + h->dir_off); planes = (const RadFilePlane*)(base + h->plane_off);
         encs = (const RadEncoding*)(base + h->enc_off);
+        profile = h->prof_count ? (const RadFileProfile*)(base + h->prof_off) : nullptr;
         int32_t max_layer = -1;
         for (uint64_t i = 0; i < h->dir_count; ++i) if (dir[i].layer >= 0) max_layer = std::max(max_layer, dir[i].layer);
         layers = (uint32_t)(max_layer + 1); expert.resize((size_t)layers * kExperts);
@@ -165,7 +169,7 @@ float dot_bf16(const uint16_t* x, const std::vector<float>& w) {
 }
 float silu(float x) { return x / (1.f + std::exp(-x)); }
 
-int compute(const Container& f, void* map, Request* q) {
+int compute_host(const Container& f, void* map, Request* q) {
     if (q->rank_count != kMaxRanks || q->rank >= kMaxRanks || q->layer >= f.layers || q->rows > kMaxRows ||
         q->hidden != kHidden || q->route_count > kMaxRoutes || q->activation_stride != kHidden*2) return -EINVAL;
     const Route* routes = ptr<Route>(map,q->route_offset);
@@ -207,27 +211,273 @@ int compute(const Container& f, void* map, Request* q) {
 const char* shm_name() { const char* e=std::getenv("R3_MOE_HELPER_SHM"); return e&&*e?e:"/r3-moe-helper"; }
 }
 
-int main(int argc,char** argv) {
-    if(argc!=2) { std::fprintf(stderr,"usage: r3_moe_helper MODEL.rad\n"); return 2; }
-    Container model; if(!model.open(argv[1])) { std::fprintf(stderr,"r3_moe_helper: cannot open/validate %s\n",argv[1]); return 1; }
-    const Layout l=layout(); const char* name=shm_name();
-    int fd=shm_open(name,O_CREAT|O_EXCL|O_RDWR|O_CLOEXEC,0600);
-    if(fd<0) { std::fprintf(stderr,"r3_moe_helper: shm_open %s: %s\n",name,std::strerror(errno)); return 1; }
-    if(ftruncate(fd,(off_t)l.bytes)!=0) { std::fprintf(stderr,"r3_moe_helper: ftruncate: %s\n",std::strerror(errno)); shm_unlink(name); return 1; }
-    void* map=mmap(nullptr,l.bytes,PROT_READ|PROT_WRITE,MAP_SHARED,fd,0);
-    if(map==MAP_FAILED) { std::fprintf(stderr,"r3_moe_helper: mmap: %s\n",std::strerror(errno)); shm_unlink(name); return 1; }
-    init(map,model.layers); auto* h=(Header*)map;
-    std::signal(SIGINT,on_signal); std::signal(SIGTERM,on_signal);
-    std::fprintf(stderr,"r3_moe_helper: ready shm=%s layers=%u bytes=%llu (host fp32 reference)\n",name,model.layers,(unsigned long long)l.bytes);
-    uint32_t seq=1;
-    while(!g_stop) {
-        Request* q=request(map,seq);
-        while(!g_stop && load(&q->sequence)!=seq) {
-            uint32_t seen=load(&h->publish_sequence); if(load(&q->sequence)!=seq) futex_wait(&h->publish_sequence,seen);
+#include "moe_remote_gpu.h"
+
+namespace {
+
+bool env_on(const char* name) {
+    const char* e = std::getenv(name);
+    return e && *e && std::strcmp(e, "0") != 0;
+}
+
+uint64_t helper_budget_bytes() {
+    const char* e = std::getenv("R3_MOE_HELPER_MIB");
+    if (!e || !*e) return 28672ull * 1024ull * 1024ull;
+    char* end = nullptr;
+    errno = 0;
+    const unsigned long long mib = std::strtoull(e, &end, 10);
+    if (errno || !end || *end || mib == 0 ||
+        mib > std::numeric_limits<uint64_t>::max() / (1024ull * 1024ull)) return 0;
+    return (uint64_t)mib * 1024ull * 1024ull;
+}
+
+int64_t canonical_expert_bytes(const Container& f, uint32_t l, uint32_t e) {
+    int64_t n = 0;
+    for (uint32_t slot = 0; slot < 2; ++slot) {
+        const RadFileEntry* w = f.weight(l, e, slot);
+        if (!w) return -1;
+        for (uint32_t p = 0; p < w->n_planes; ++p) {
+            const uint64_t b = f.plane(w, (int)p)->bytes;
+            if (b > (uint64_t)std::numeric_limits<int64_t>::max() - (uint64_t)n) return -1;
+            n += (int64_t)b;
         }
-        if(g_stop) break;
-        q->status=compute(model,map,q); store(&q->completion_sequence,seq); futex_wake(&q->completion_sequence);
-        if(++seq==0) break;
     }
-    munmap(map,l.bytes); close(fd); shm_unlink(name); return 0;
+    return n;
+}
+
+struct Owned {
+    std::vector<std::pair<uint32_t,uint32_t>> expert;
+    uint64_t bytes = 0;
+};
+
+bool select_owned(const Container& f, r3_moe_gpu::Runner* gpu, uint64_t budget, Owned* out) {
+    if (!out || !budget || !f.profile || !f.h->prof_count) {
+        std::fprintf(stderr, "r3_moe_helper: container has no usable expert profile or helper budget\n");
+        return false;
+    }
+    std::vector<const RadFileProfile*> order;
+    order.reserve((size_t)f.h->prof_count);
+    for (uint64_t i = 0; i < f.h->prof_count; ++i) {
+        const RadFileProfile& p = f.profile[i];
+        if (p.layer < 0 || p.expert < 0 || (uint32_t)p.layer >= f.layers ||
+            p.expert >= (int32_t)kExperts) continue;
+        order.push_back(&p);
+    }
+    std::stable_sort(order.begin(), order.end(), [](const RadFileProfile* a, const RadFileProfile* b) {
+        if (a->share != b->share) return a->share < b->share;
+        if (a->layer != b->layer) return a->layer < b->layer;
+        return a->expert < b->expert;
+    });
+    std::vector<uint8_t> seen((size_t)f.layers * kExperts, 0);
+    for (const RadFileProfile* p : order) {
+        const uint32_t l = (uint32_t)p->layer, e = (uint32_t)p->expert;
+        uint8_t& was = seen[(size_t)l * kExperts + e];
+        if (was) continue;
+        was = 1;
+        const int64_t bytes = gpu ? gpu->expert_bytes(l, e) : canonical_expert_bytes(f, l, e);
+        if (bytes <= 0) {
+            std::fprintf(stderr, "r3_moe_helper: expert (%u,%u) cannot be laid out as w4nl64a8h\n", l, e);
+            return false;
+        }
+        if ((uint64_t)bytes > budget - out->bytes) continue;
+        out->expert.emplace_back(l, e);
+        out->bytes += (uint64_t)bytes;
+    }
+    if (out->expert.empty()) {
+        std::fprintf(stderr, "r3_moe_helper: R3_MOE_HELPER_MIB fits no profiled expert\n");
+        return false;
+    }
+    return true;
+}
+
+void publish_owned(void* map, const Owned& owned) {
+    Header* h = static_cast<Header*>(map);
+    h->owned_bytes = owned.bytes;
+    for (auto [l, e] : owned.expert) {
+        if (!set_owned(map, l, e))
+            std::fprintf(stderr, "r3_moe_helper: duplicate/invalid ownership (%u,%u)\n", l, e);
+    }
+}
+
+bool parse_u32(const char* s, uint32_t lo, uint32_t hi, uint32_t* out) {
+    if (!s || !*s || !out) return false;
+    char* end = nullptr;
+    errno = 0;
+    const unsigned long v = std::strtoul(s, &end, 10);
+    if (errno || !end || *end || v < lo || v > hi) return false;
+    *out = (uint32_t)v;
+    return true;
+}
+
+int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& owned,
+                 uint32_t layer, uint32_t rows) {
+    if (layer >= model.layers || rows == 0 || rows > kMaxRows) return 2;
+    std::vector<uint32_t> avail;
+    for (auto [l, e] : owned.expert) if (l == layer) avail.push_back(e);
+    if (avail.empty()) {
+        std::fprintf(stderr, "r3_moe_helper: --compare layer %u has no owned experts\n", layer);
+        return 1;
+    }
+    const uint32_t k = std::min<uint32_t>(kTopK, (uint32_t)avail.size());
+    const Layout lay = layout();
+    std::vector<uint8_t> mem((size_t)lay.bytes);
+    init(mem.data(), model.layers);
+    publish_owned(mem.data(), owned);
+    Header* h = reinterpret_cast<Header*>(mem.data());
+    Request* q = request(mem.data(), 1);
+    q->status = 0; q->layer = layer; q->rank = 0; q->rank_count = kMaxRanks;
+    q->rows = rows; q->hidden = kHidden; q->route_count = rows * k;
+    q->route_offset = h->route_offset[0]; q->activation_offset = h->activation_offset[0];
+    q->activation_stride = kHidden * sizeof(uint16_t);
+    for (uint32_t r = 0; r < kMaxRanks; ++r) {
+        q->result_offset[r] = h->result_offset[r];
+        q->result_stride[r] = kHidden * sizeof(uint16_t);
+    }
+
+    uint64_t rng = 0x8f3f73b5cf1c9ad1ull;
+    auto rnd = [&]() -> uint32_t {
+        rng ^= rng << 13; rng ^= rng >> 7; rng ^= rng << 17;
+        return (uint32_t)(rng >> 16);
+    };
+    uint16_t* act = ptr<uint16_t>(mem.data(), q->activation_offset);
+    for (size_t i = 0; i < (size_t)rows * kHidden; ++i) {
+        const float x = ((int32_t)(rnd() & 0xffffu) - 32768) * (1.0f / 32768.0f);
+        act[i] = to_bf16(x);
+    }
+    Route* rr = ptr<Route>(mem.data(), q->route_offset);
+    uint32_t at = 0;
+    for (uint32_t t = 0; t < rows; ++t) {
+        const float w = 1.0f / (float)k;
+        for (uint32_t j = 0; j < k; ++j) {
+            const uint32_t ix = (uint32_t)((t * 17ull + j * 29ull + rnd()) % avail.size());
+            rr[at++] = Route{(int32_t)t, (int32_t)avail[ix], to_bf16(w), 0};
+        }
+    }
+
+    const int grc = gpu.compute(mem.data(), q);
+    if (grc != 0) {
+        std::fprintf(stderr, "r3_moe_helper: --compare GPU path failed rc=%d\n", grc);
+        return 1;
+    }
+    std::array<std::vector<uint16_t>, kMaxRanks> got;
+    for (uint32_t r = 0; r < kMaxRanks; ++r) {
+        const uint16_t* p = ptr<uint16_t>(mem.data(), q->result_offset[r]);
+        got[r].assign(p, p + (size_t)rows * kHidden);
+    }
+
+    bool bad = false;
+    for (uint32_t r = 0; r < kMaxRanks; ++r) {
+        q->rank = r;
+        const int hrc = compute_host(model, mem.data(), q);
+        if (hrc != 0) {
+            std::fprintf(stderr, "r3_moe_helper: --compare host path rank %u failed rc=%d\n", r, hrc);
+            return 1;
+        }
+        const uint16_t* want = ptr<uint16_t>(mem.data(), q->result_offset[r]);
+        long double num = 0.0L, den = 0.0L;
+        double max_abs = 0.0;
+        for (size_t i = 0; i < got[r].size(); ++i) {
+            const double a = (double)bf16(got[r][i]);
+            const double b = (double)bf16(want[i]);
+            const double d = a - b;
+            num += (long double)d * d;
+            den += (long double)b * b;
+            max_abs = std::max(max_abs, std::abs(d));
+        }
+        const double rel = std::sqrt((double)(num / std::max<long double>(den, 1.0e-30L)));
+        std::printf("rank %u rel_l2=%.8g max_abs=%.8g\n", r, rel, max_abs);
+        bad = bad || !std::isfinite(rel) || rel > 2.0e-3;
+    }
+    return bad ? 1 : 0;
+}
+
+} // namespace
+
+int main(int argc, char** argv) {
+    bool compare = argc > 1 && std::strcmp(argv[1], "--compare") == 0;
+    const char* model_path = nullptr;
+    uint32_t compare_layer = 0, compare_rows = 0;
+    if (compare) {
+        if (argc != 7 || std::strcmp(argv[3], "--layer") != 0 ||
+            std::strcmp(argv[5], "--rows") != 0 ||
+            !parse_u32(argv[4], 0, kMaxLayers - 1, &compare_layer) ||
+            !parse_u32(argv[6], 1, kMaxRows, &compare_rows)) {
+            std::fprintf(stderr,
+                "usage: r3_moe_helper --compare MODEL.rad --layer L --rows M\n");
+            return 2;
+        }
+        model_path = argv[2];
+    } else {
+        if (argc != 2) {
+            std::fprintf(stderr, "usage: r3_moe_helper MODEL.rad\n");
+            return 2;
+        }
+        model_path = argv[1];
+    }
+
+    Container model;
+    if (!model.open(model_path) || model.layers > kMaxLayers) {
+        std::fprintf(stderr, "r3_moe_helper: cannot open/validate %s\n", model_path);
+        return 1;
+    }
+
+    const bool cpu = env_on("R3_MOE_HELPER_CPU") && !compare;
+    std::unique_ptr<r3_moe_gpu::Runner> gpu;
+    if (!cpu) {
+        gpu = std::make_unique<r3_moe_gpu::Runner>(model);
+        if (!gpu->open()) return 1;
+    }
+
+    const uint64_t budget = helper_budget_bytes();
+    Owned owned;
+    if (!select_owned(model, gpu.get(), budget, &owned)) return 1;
+    if (gpu && !gpu->upload(owned.expert)) return 1;
+    std::fprintf(stderr, "r3_moe_helper: owns %zu experts, %.3f GiB\n",
+                 owned.expert.size(), (double)owned.bytes / (1024.0 * 1024.0 * 1024.0));
+
+    if (compare)
+        return compare_mode(model, *gpu, owned, compare_layer, compare_rows);
+
+    const Layout lay = layout();
+    const char* name = shm_name();
+    int fd = shm_open(name, O_CREAT | O_EXCL | O_RDWR | O_CLOEXEC, 0600);
+    if (fd < 0) {
+        std::fprintf(stderr, "r3_moe_helper: shm_open %s: %s\n", name, std::strerror(errno));
+        return 1;
+    }
+    if (ftruncate(fd, (off_t)lay.bytes) != 0) {
+        std::fprintf(stderr, "r3_moe_helper: ftruncate: %s\n", std::strerror(errno));
+        shm_unlink(name); close(fd); return 1;
+    }
+    void* map = mmap(nullptr, lay.bytes, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    if (map == MAP_FAILED) {
+        std::fprintf(stderr, "r3_moe_helper: mmap: %s\n", std::strerror(errno));
+        shm_unlink(name); close(fd); return 1;
+    }
+    init(map, model.layers);
+    publish_owned(map, owned);
+    auto* h = static_cast<Header*>(map);
+    std::signal(SIGINT, on_signal); std::signal(SIGTERM, on_signal);
+    std::fprintf(stderr, "r3_moe_helper: ready shm=%s layers=%u bytes=%llu (%s)\n",
+                 name, model.layers, (unsigned long long)lay.bytes,
+                 cpu ? "host fp32 reference" : gpu->arch().c_str());
+
+    uint32_t seq = 1;
+    while (!g_stop) {
+        Request* q = request(map, seq);
+        while (!g_stop && load(&q->sequence) != seq) {
+            const uint32_t seen = load(&h->publish_sequence);
+            if (load(&q->sequence) != seq) (void)futex_wait(&h->publish_sequence, seen);
+        }
+        if (g_stop) break;
+        q->status = cpu ? compute_host(model, map, q) : gpu->compute(map, q);
+        store(&q->completion_sequence, seq);
+        (void)futex_wake(&q->completion_sequence);
+        if (++seq == 0) break;
+    }
+
+    munmap(map, lay.bytes);
+    close(fd);
+    shm_unlink(name);
+    return 0;
 }
