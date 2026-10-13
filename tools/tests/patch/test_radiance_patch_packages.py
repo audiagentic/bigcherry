@@ -54,7 +54,7 @@ PIN_BLOBS = {
     },
     "0002_moe_remote_handoff": {
         "abi/rad_moe_remote.h": (None, "9e5f03d"),
-        "arch/common/rad_block_hc.h": ("c19c8b6", "14c5886"),
+        "arch/common/rad_block_hc.h": ("c19c8b6", "0984d05"),
         "arch/common/rad_block_moe_fp8.h": ("51b7c28", "6794711"),
         "core/place/moe_remote.cpp": (None, "3705adf"),
     },
@@ -158,6 +158,10 @@ class TestRadiancePatchPackages(unittest.TestCase):
                         )
                         self.assertIn("if (op_ar && (remote_policy ||", moe)
                         hc = (root / "arch/common/rad_block_hc.h").read_text(encoding="utf-8")
+                        self.assertIn(
+                            "const bool remote_policy = gsrc.top_k > 0 && rad_moe_remote_wanted(rows);",
+                            hc,
+                        )
                         self.assertIn("if (!remote_policy && takes_gather(T)) {", hc)
                         self.assertIn(
                             "(!remote_policy && takes_ar(T)) ? ar_write(T) : op_write", hc
