@@ -9,7 +9,7 @@ _RAD_MOE_REMOTE_H = r"""/* rad_moe_remote.h -- optional whole-expert compute han
 #ifdef __cplusplus
 extern "C" {
 #endif
-#define RAD_MOE_REMOTE_ABI 1u
+#define RAD_MOE_REMOTE_ABI 2u
 typedef void* RadMoeRemoteHandle;
 typedef struct RadMoeRemoteRoute {
     int32_t token;
@@ -20,6 +20,8 @@ typedef struct RadMoeRemoteRoute {
 typedef struct RadMoeRemoteHooks {
     uint32_t abi_version;
     void* user;
+    /* Nonzero only for experts this helper owns. The engine asks before it masks a local route. */
+    int (*owns)(void* user, int layer, int expert);
     RadMoeRemoteHandle (*submit)(void* user, int layer, int rank,
                                  int64_t rows, int64_t n_embd,
                                  const RadMoeRemoteRoute* route, int64_t n_route,
@@ -94,8 +96,8 @@ void load_env_hook() {
 void ensure_loaded() { std::call_once(g_load_once, load_env_hook); }
 }
 extern "C" int rad_moe_remote_register(const RadMoeRemoteHooks* hooks) {
-    if (!hooks || hooks->abi_version != RAD_MOE_REMOTE_ABI || !hooks->submit || !hooks->wait)
-        return RAD_E_INVAL;
+    if (!hooks || hooks->abi_version != RAD_MOE_REMOTE_ABI || !hooks->owns ||
+        !hooks->submit || !hooks->wait) return RAD_E_INVAL;
     if (g_active.load(std::memory_order_acquire)) return RAD_E_STATE;
     g_hooks = *hooks;
     g_active.store(true, std::memory_order_release);
@@ -137,15 +139,16 @@ extern "C" RadMoeRemoteHandle rad_moe_remote_submit(
         return nullptr;
     }
     slot.clear(); route.clear();
+    const RadMoeRemoteHooks hooks = g_hooks;
     for (int64_t i = 0; i < n; ++i) {
         const int64_t le = (int64_t)ids[(size_t)i] - expert_base;
         if (le < 0 || le >= n_expert || !gate_up[le] || !down[le] ||
-            !c->weight_in_host_pool(gate_up[le]) || !c->weight_in_host_pool(down[le])) continue;
+            !c->weight_in_host_pool(gate_up[le]) || !c->weight_in_host_pool(down[le]) ||
+            !hooks.owns(hooks.user, layer, ids[(size_t)i])) continue;
         slot.push_back(i);
         route.push_back(RadMoeRemoteRoute{(int32_t)(i / top_k), ids[(size_t)i], ew[(size_t)i], 0});
     }
     if (route.empty()) return nullptr;
-    const RadMoeRemoteHooks hooks = g_hooks;
     RadMoeRemoteHandle h = hooks.submit(hooks.user, layer, c->rank(), rows, n_embd,
                                         route.data(), (int64_t)route.size(),
                                         activation, activation_stride_bytes);
@@ -184,7 +187,7 @@ PATCHES = (
             id="create-remote-moe-abi",
             anchor=r"\A",
             text=_RAD_MOE_REMOTE_H,
-            guard=r"^#define RAD_MOE_REMOTE_ABI 1u$",
+            guard=r"^#define RAD_MOE_REMOTE_ABI 2u$",
             expect_matches=1,
             rationale="Created files are anchored at the empty upstream file; create=True rejects any upstream collision.",
         ),),
