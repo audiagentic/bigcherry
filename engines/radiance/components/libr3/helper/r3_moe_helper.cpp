@@ -569,10 +569,11 @@ int main(int argc, char** argv) {
                 uint32_t seq = 1;
                 while (!g_stop) {
                     Request* q = lane_request(map, rank, seq);
-                    while (!g_stop && q && load(&q->sequence) != seq) {
-                        const uint32_t seen = load(&h->publish_sequence);
-                        if (load(&q->sequence) != seq) (void)futex_wait(&h->publish_sequence, seen);
-                    }
+                    while (!g_stop &&
+                           (int32_t)(load(&h->lane[rank].request_sequence) - seq) < 0)
+                        std::this_thread::yield();
+                    while (!g_stop && q && load(&q->sequence) != seq)
+                        std::this_thread::yield();
                     if (g_stop || !q) break;
                     q->status = gpu->enqueue_lane(map, dev_map, q, rank, seq);
                     if (q->status != 0) {
