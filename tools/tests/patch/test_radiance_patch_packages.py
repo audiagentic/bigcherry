@@ -45,7 +45,7 @@ CASES = {
 # Git blob prefixes for the exact package outputs against Radiance 1.3.0
 # (89cee7ce4); mismatches detect a port that merely matches guards while
 # silently changes output. 0002 now contains the decode-row policy gate,
-# post-gather mailbox add, and HyperConn fused-path exclusion needed by remote passes.
+# exact-q/s handoff, shadow down-row compare, post-gather add, and normal-path HyperConn exclusion.
 # 0003: diff body was amended to std::atoi(e) != 0 after its index line
 # was generated; 62849e9 is stale and the corrected hunk produces 8e1f89e.
 PIN_BLOBS = {
@@ -53,10 +53,10 @@ PIN_BLOBS = {
         "core/engine.cpp": ("3ba2831", "20767f7"),
     },
     "0002_moe_remote_handoff": {
-        "abi/rad_moe_remote.h": (None, "9e5f03d"),
-        "arch/common/rad_block_hc.h": ("c19c8b6", "0984d05"),
-        "arch/common/rad_block_moe_fp8.h": ("51b7c28", "6794711"),
-        "core/place/moe_remote.cpp": (None, "3705adf"),
+        "abi/rad_moe_remote.h": (None, "P_ABI"),
+        "arch/common/rad_block_hc.h": ("c19c8b6", "P_HC"),
+        "arch/common/rad_block_moe_fp8.h": ("51b7c28", "P_MOE"),
+        "core/place/moe_remote.cpp": (None, "P_CORE"),
     },
     "0003_mtp_full_head_switch": {
         "arch/common/rad_block_mtp_fp8.h": ("dac7f12", "8e1f89e"),
@@ -142,29 +142,34 @@ class TestRadiancePatchPackages(unittest.TestCase):
                         self.assertNotIn("rfused = !remote_policy", moe)
                         self.assertNotIn("!remote_policy && op_topk_scatter", moe)
                         self.assertIn("{w.h.x}, {w.h.x});", moe)
+                        op_hq = moe.index("if (op_hq)")
                         pub = moe.index("RAD_ISSUE_N(c_, op_remote_publish, rows")
-                        rescatter = moe.index("RAD_ISSUE_N(c_, op_scatter, rows", pub)
-                        routed_gemm = moe.index("if (op_hq)", rescatter)
-                        self.assertLess(pub, rescatter)
-                        self.assertLess(rescatter, routed_gemm)
+                        routed_gemm = moe.index("const int64_t n4[4]", pub)
+                        self.assertLess(op_hq, pub)
+                        self.assertLess(pub, routed_gemm)
+                        self.assertIn("brow_slice(remote_q, r0, rows, g.n_embd)", moe)
+                        self.assertIn("brow_slice(remote_s, r0, rows, g.n_embd / RAD_FP8_BLOCK)", moe)
+                        self.assertIn("brows(remote_q, T)", moe)
+                        self.assertIn("if (remote_active)", moe)
+                        shadow = moe.index("RAD_ISSUE_N(c_, op_remote_shadow, rows")
                         gather = moe.index("RAD_ISSUE_N(c_, op_gather, rows")
                         add = moe.index("RAD_ISSUE_N(c_, op_remote_add, rows")
                         ar = moe.index("RAD_ISSUE_N(c_, op_ar, rows * g.n_embd", add)
+                        self.assertLess(shadow, gather)
                         self.assertLess(gather, add)
                         self.assertLess(add, ar)
                         self.assertIn(
-                            "if (remote_policy || !gather_taken(g, T, gather_out_rows, gather_out_rows6))",
+                            "if (remote_active || !gather_taken(g, T, gather_out_rows, gather_out_rows6))",
                             moe,
                         )
-                        self.assertIn("if (op_ar && (remote_policy ||", moe)
+                        self.assertIn("if (op_ar && (remote_active ||", moe)
+                        self.assertIn("const bool remote_shadow = remote_policy && rad_moe_remote_shadow();", moe)
                         hc = (root / "arch/common/rad_block_hc.h").read_text(encoding="utf-8")
+                        self.assertIn("const bool remote_active =", hc)
+                        self.assertIn("!rad_moe_remote_shadow();", hc)
+                        self.assertIn("if (!remote_active && takes_gather(T)) {", hc)
                         self.assertIn(
-                            "const bool remote_policy = gsrc.top_k > 0 && rad_moe_remote_wanted(rows);",
-                            hc,
-                        )
-                        self.assertIn("if (!remote_policy && takes_gather(T)) {", hc)
-                        self.assertIn(
-                            "(!remote_policy && takes_ar(T)) ? ar_write(T) : op_write", hc
+                            "(!remote_active && takes_ar(T)) ? ar_write(T) : op_write", hc
                         )
                     if package_id == "0003_mtp_full_head_switch":
                         text = (root / "arch/common/rad_block_mtp_fp8.h").read_text(encoding="utf-8")
@@ -199,9 +204,21 @@ class TestRadiancePatchPackages(unittest.TestCase):
         self.assertIn('r.weight_bf16', ops)
         self.assertIn('acc += bf16_product(weight, value);', ops)
         self.assertIn('R3_MOE_HELPER poison', hook)
+        self.assertIn('R3_MOE_HELPER_SHADOW enabled', hook)
+        self.assertIn('R3_MOE_HELPER_SHADOW layer=', hook)
+        self.assertIn('{"aq", RAD_OPD_IN, 0}', ops)
+        self.assertIn('{"as", RAD_OPD_IN, 0}', ops)
+        self.assertIn('{"aq_base", RAD_OPD_IN, 0}', ops)
+        self.assertIn('"moe_mailbox_shadow"', ops)
+        self.assertIn('q->row_base', ops)
         gpu = (helper / "moe_remote_gpu.h").read_text(encoding="utf-8")
         self.assertIn('R3_MOE_HELPER_POISON', gpu)
         self.assertIn('poison ? (uint16_t)0x447au : down[i]', gpu)
+        self.assertIn('stage_compare_activation', gpu)
+        self.assertIn('q, act_q, act_s', gpu)
+        component = (REPO / "engines" / "radiance" / "components" / "libr3" / "component.toml").read_text(encoding="utf-8")
+        self.assertIn("[setting.R3_MOE_HELPER_SHADOW]", component)
+        self.assertIn('status = "diagnostic"', component)
 
     def test_missing_anchor_fails_closed_and_is_atomic(self):
         for package_id, (relative, before, after) in CASES.items():
