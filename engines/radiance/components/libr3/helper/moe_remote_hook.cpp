@@ -43,6 +43,11 @@ bool enabled_env() {
     return e && *e && std::strcmp(e, "0") != 0;
 }
 
+bool poison_env() {
+    const char* e = std::getenv("R3_MOE_HELPER_POISON");
+    return e && *e && std::strcmp(e, "0") != 0;
+}
+
 const char* shm_name() {
     const char* e = std::getenv("R3_MOE_HELPER_SHM");
     return e && *e ? e : "/r3-moe-helper";
@@ -93,6 +98,7 @@ void register_mailbox() {
     std::fprintf(stderr,
         "libr3: R3_MOE_HELPER GPU mailbox ready, %u owned experts, decode rows <= %lld\n",
         g.hdr->owned_count, (long long)max_rows());
+    if (poison_env()) std::fprintf(stderr, "libr3: R3_MOE_HELPER poison\n");
 }
 
 void close_mailbox() {
