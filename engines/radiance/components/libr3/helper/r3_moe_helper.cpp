@@ -625,6 +625,22 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
         return 1;
     }
 
+    hipStream_t consumer = nullptr;
+    r3_moe_gpu::Buffer compare_sorted, compare_down;
+    if (!r3_moe_gpu::hip_ok(hipStreamCreateWithFlags(&consumer, hipStreamNonBlocking),
+                            "--compare consumer stream") ||
+        !compare_sorted.ensure((size_t)total * sizeof(int32_t)) ||
+        !compare_down.ensure((size_t)total * kHidden * sizeof(uint16_t))) {
+        if (consumer) (void)hipStreamDestroy(consumer);
+        (void)hipHostUnregister(map);
+        munmap(map, lay.bytes);
+        return 1;
+    }
+    auto dev_at = [&](const void* hp) -> void* {
+        return static_cast<uint8_t*>(dev_map) +
+               (static_cast<const uint8_t*>(hp) - static_cast<const uint8_t*>(map));
+    };
+
     bool bad = false;
     constexpr uint32_t sequence = 1;
     for (uint32_t rank = 0; rank < kMaxRanks; ++rank) {
@@ -651,6 +667,27 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
         std::memcpy(ptr<uint16_t>(map, q->activation_offset), activation.data(),
                     activation.size() * sizeof(uint16_t));
 
+        std::vector<int32_t> got_sorted(total, -1);
+        std::copy(local_sorted.begin(), local_sorted.end(), got_sorted.begin());
+        std::vector<uint16_t> got_joined((size_t)total * kHidden, 0x3f80u);
+        const std::vector<uint16_t> prefix_before(
+            got_joined.begin(), got_joined.begin() + (size_t)local_rows * kHidden);
+        if (!r3_moe_gpu::hip_ok(
+                hipMemcpyAsync(compare_sorted.p, got_sorted.data(),
+                               (size_t)total * sizeof(int32_t),
+                               hipMemcpyHostToDevice, consumer),
+                "--compare initialize sorted") ||
+            !r3_moe_gpu::hip_ok(
+                hipMemcpyAsync(compare_down.p, got_joined.data(),
+                               (size_t)total * kHidden * sizeof(uint16_t),
+                               hipMemcpyHostToDevice, consumer),
+                "--compare initialize down") ||
+            !r3_moe_gpu::hip_ok(hipStreamSynchronize(consumer),
+                                "--compare initialize consumer")) {
+            bad = true;
+            break;
+        }
+
         /* Queue the production lane before publishing the sequence, as the service worker does. */
         const int erc = gpu.enqueue_lane(map, dev_map, rank, sequence, false);
         if (erc != 0) {
@@ -660,19 +697,49 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
             break;
         }
         store(&h->lane[rank].request_sequence, sequence);
-        if (!gpu.sync_lane(rank) || load(&h->lane[rank].done_sequence) != sequence ||
-            q->status != 0) {
+
+        auto* dq = static_cast<Request*>(dev_at(q));
+        auto* droute = static_cast<const Route*>(
+            dev_at(ptr<Route>(map, q->route_offset)));
+        auto* dresult = static_cast<const uint16_t*>(
+            dev_at(ptr<uint16_t>(
+                map, h->result_offset[rank * kMaxRanks + rank])));
+        auto* ddone = static_cast<const uint32_t*>(
+            dev_at(&h->lane[rank].done_sequence));
+        hipLaunchKernelGGL(r3_moe_gpu::lane_compare_join_wait,
+                           dim3(1), dim3(1), 0, consumer, ddone, sequence);
+        hipLaunchKernelGGL(r3_moe_gpu::lane_compare_join_rows,
+                           dim3(nr), dim3(256), 0, consumer,
+                           dq, droute, dresult, ddone,
+                           static_cast<int32_t*>(compare_sorted.p),
+                           static_cast<uint16_t*>(compare_down.p),
+                           rank, sequence, rows, kHidden, kTopK);
+        if (!r3_moe_gpu::hip_ok(hipGetLastError(), "--compare join kernels") ||
+            !r3_moe_gpu::hip_ok(hipStreamSynchronize(consumer),
+                                "--compare join consumer")) {
+            bad = true;
+            break;
+        }
+        if (load(&h->lane[rank].done_sequence) != sequence || q->status != 0) {
             std::fprintf(stderr,
                          "r3_moe_helper: --compare lane rank %u completion failed status=%d done=%u\n",
                          rank, q->status, load(&h->lane[rank].done_sequence));
             bad = true;
             break;
         }
+        if (!r3_moe_gpu::hip_ok(
+                hipMemcpy(got_sorted.data(), compare_sorted.p,
+                          (size_t)total * sizeof(int32_t), hipMemcpyDeviceToHost),
+                "--compare read joined sorted") ||
+            !r3_moe_gpu::hip_ok(
+                hipMemcpy(got_joined.data(), compare_down.p,
+                          (size_t)total * kHidden * sizeof(uint16_t), hipMemcpyDeviceToHost),
+                "--compare read joined down") ||
+            !gpu.sync_lane(rank)) {
+            bad = true;
+            break;
+        }
 
-        const uint16_t* result_slot = ptr<uint16_t>(
-            map, h->result_offset[rank * kMaxRanks + rank]);
-        std::vector<uint16_t> got_slot(result_slot,
-                                       result_slot + (size_t)total * kHidden);
         std::vector<uint16_t> want_route;
         const int hrc = compute_host_engine(model, map, q, &want_route);
         if (hrc != 0 || want_route.size() != (size_t)nr * kHidden) {
@@ -683,20 +750,6 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
             break;
         }
 
-        std::vector<int32_t> got_sorted(total, -1);
-        std::copy(local_sorted.begin(), local_sorted.end(), got_sorted.begin());
-        std::vector<uint16_t> got_joined((size_t)total * kHidden, 0x3f80u);
-        const std::vector<uint16_t> prefix_before(
-            got_joined.begin(), got_joined.begin() + (size_t)local_rows * kHidden);
-        for (uint32_t j = 0; j < nr; ++j) {
-            const Route& r = published[j];
-            const uint32_t flat = (uint32_t)r.token * kTopK + r.slot;
-            const uint32_t dst_row = total - nr + j;
-            got_sorted[dst_row] = (int32_t)flat;
-            std::memcpy(got_joined.data() + (size_t)dst_row * kHidden,
-                        got_slot.data() + (size_t)flat * kHidden,
-                        kHidden * sizeof(uint16_t));
-        }
         const bool prefix_ok = std::equal(
             prefix_before.begin(), prefix_before.end(), got_joined.begin());
 
@@ -725,6 +778,7 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
         bad = bad || !prefix_ok || !std::isfinite(rel) || rel >= 5.0e-3;
     }
 
+    if (consumer) (void)hipStreamDestroy(consumer);
     if (pinned) (void)hipHostUnregister(map);
     munmap(map, lay.bytes);
     return bad ? 1 : 0;
