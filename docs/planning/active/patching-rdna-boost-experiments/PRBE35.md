@@ -13,229 +13,45 @@ priority: P2
 
 # AMD-STREAM-005: Protect concurrent-region join node from fusion
 
-## Description
+## Authoritative disposition — 2026-10-13, llama.cpp b11552
 
-IMPLEMENTED-AS-PATCH. Patch 1216_rd43_concurrent_join_fusion_guard (state=untested) lowers cgraph->n_nodes around ggml_cuda_try_fuse while a concurrent region (from patch 1215) is active, so op-fusion cannot absorb the join node. This item already has extensive real hardware evidence recorded in its own notes: PASS on gfx1201 capture/replay, byte-exact full-vocab backend_reference match (0/15,892,480 differ) vs baseline+1215, and a fully-scoped, GPT-approved design (req_3e42043eb71a4a92) for the one remaining formal step: wiring run_rd43_contract_qualification() into validation_campaign.py. No further design work or GPT session is needed for this item -- the remaining work is mechanical implementation of an already-approved design.
+**Pending; standalone correctness-only; opt-in/untested; no speedup claim.** This replaces the duplicated September implementation instructions, central-runner proposal, and 1215-dependent qualification procedure. Historical evidence and earlier designs remain available in Git history and `engines/llamacpp/patches/1216_rd43_concurrent_join_fusion_guard/README.md`. **1215/RD39–42 was rejected** in the later four-session b11126 qualification; do not reuse its earlier positive measurements or reactivate its implementation. PRBE112 owns 1215's remaining diagnostic; PRBE35 owns only 1216's native concurrent-region join safety.
 
-## Steps
+### Pinned implementation and dataflow
 
-1. Author run_rd43_contract_qualification() in tools/bigcherry/patch/validation_campaign.py following the RD08/RD73 pattern already used in that file: control=baseline+1215, subject=baseline+1215+1216, GGML_CUDA_GRAPH_OPT=1 both arms, reuse the existing PPL-equality primitive (tools/bigcherry/experiment/perplexity.py) but emit CorrectnessResult(check_id="backend_reference", ...) explicitly per the design in this item's 2026-09-12 notes.
-2. Correct the [contract.RD43-CONCURRENT-JOIN-FUSION-GUARD] model binding in config/experiment-contracts.toml to tierM-qwen35b-a3b-moe-mtp (the model the real evidence was actually gathered on), matching the same fix already applied to RD39-42's contract per the VA24 migration note below.
-3. Author validation.toml for 1216 binding the corrected contract and the new qualification function.
-4. Run patch-verify-evidence to confirm eligible_for_validated_state for 1216; this requires real hardware (Brutus) and is not run from this planning session.
-5. Do not enable PRBE36 (default-on) until this item's contract-qualification verdict is formally recorded.
+- Pinned llama.cpp b11552 = `23b0202a189c44a54625aadcb37a946dd1d6278d`. Its `ggml/src/ggml-cuda/ggml-cuda.cu` is byte-identical to upstream `master` at this audit. `ggml_cuda_graph_evaluate_and_capture` restores concurrent-region node order, forks streams through `try_launch_concurrent_event`, detects `concurrent_event->join_node`, records/waits join events, and calls `ggml_cuda_try_fuse` before `i += nodes_to_skip`. Upstream has no join-fusion cap. The two old-string anchors in 1216's `patch.py` each match b11552 exactly once (static only, no applied-patch build).
+- `1216/patch.py` inserts `exec_node_idx` (tensor pointer -> execution index) after order restoration. For a live region it finds `join_idx`, saves `cgraph->n_nodes`, caps the fusion horizon at `join_idx`, calls `ggml_cuda_try_fuse`, restores the original node count, and asserts no returned fusion skip crosses the join. The cap must precede fusion: joining after a fused op has already read the shared-expert result would not repair ordering. No additional scheduler, allocator, stream, cache, or dispatch table is justified.
+- This creates an `O(cgraph->n_nodes)` host map and allocation when native concurrent events are launchable. It duplicates some traversal work in the upstream restore-order block, but that earlier index map predates the restore and cannot automatically be reused after reorder. Cost is theoretical; no CPU/capture timing or inference speedup was measured.
+- **Canonical package identity:** `1216/patch.toml` has `requires = []`, `state = "untested"`, and `experiment-contract = "RD43-CONCURRENT-JOIN-FUSION-GUARD"`. `tools/bigcherry/patch/registry.py::_packaged_descriptor` reads manifest `record["requires"]`; `patchset.py::_module_from_descriptor` forwards it. Legacy `1216/patch.py::REQUIRES = ("1215_...",)` is stale, non-authoritative source metadata. A future *tested* patch metadata cleanup should remove it; **do not** restore the rejected 1215 dependency.
+- `1216/validation.toml` and `validation/producer.py::run` already exist. Current producer uses validated BC as control, validated BC + 1216 as subject, `GGML_CUDA_GRAPH_OPT=1` for both, `full_vocab.compare_servers(criterion=NEAR_LOSSLESS)`, subject-only trace-marker activation, and `run_paired_llama_benchmark` for 10 `tg128` control rounds. It requires standard control/subject llama-server and llama-bench binaries. The `validation/producer.toml` comment claiming a +1215 control and skipped scaffold is obsolete. Do not add a central `run_rd43_contract_qualification` or a second producer.
+- `config/experiment-contracts.toml` puts `prerequisites = ["RD39-42-STREAM-MOE-OVERLAP"]` under `[contract.RD43-CONCURRENT-JOIN-FUSION-GUARD.source]`, while `experiment/contract.py::parse_contract` reads prerequisites only from the **contract top level**. Thus that nested entry does not enforce a prerequisite. Treat it as stale provenance text, not permission to re-enable 1215; reconcile via the existing contract owner with a parser/contract-hash fixture.
 
-1. Author run_rd43_contract_qualification() in tools/bigcherry/patch/validation_campaign.py -- verified: no such central runner currently exists (only run_rd08_contract_qualification()-style single-op patterns exist; there is no generic contract-qualification dispatcher). Follow the RD08 pattern: control=baseline+1215, subject=baseline+1215+1216, GGML_CUDA_GRAPH_OPT=1 both arms, emit CorrectnessResult(check="backend_reference", ...) explicitly -- do NOT reuse the existing patch-local producer's current check="ppl_equality" output as-is; it must be relabeled/re-emitted under check="backend_reference" per the RD43-CONCURRENT-JOIN-FUSION-GUARD contract's actual requirement.
-2. Confirm the [contract.RD43-CONCURRENT-JOIN-FUSION-GUARD] model binding in config/experiment-contracts.toml already correctly names tierM-qwen35b-a3b-moe-mtp (the VA24 migration note below already fixed this) -- do not re-apply a now-stale 'correct the binding' step; verify only.
-3. Add `experiment-contract = "RD43-CONCURRENT-JOIN-FUSION-GUARD"` to patches/1216_rd43_concurrent_join_fusion_guard/patch.toml (verified: currently no experiment-contract binding field present).
-4. Author patches/1216_rd43_concurrent_join_fusion_guard/validation.toml binding the corrected contract and the new qualification function; a validation/ directory already exists for this patch (has a prior rd43_correctness.py-style producer per notes) -- update/extend it in place rather than creating a duplicate.
-5. Run patch-verify-evidence to confirm eligible_for_validated_state for 1216 (hardware, Brutus, not run here).
-6. Do not enable PRBE36 (default-on) until this item's contract-qualification verdict is formally recorded.
+### Source-confirmed limitation of the activation marker
 
-## Detailed Solution & Technical Design
+`BIGCHERRY_PATCH_HIT patch=1216_rd43 path=join_fusion_cap` is emitted when `is_concurrent_event_active && join_idx > i` and tracing is enabled. It does **not** ask whether an uncapped `ggml_cuda_try_fuse` would cross the join. Therefore the marker proves guard-path execution, **not** a prevented capture abort or a throughput gain. Synthetic no-crossing and crossing cases both emit it. A missing marker on the correctly bound model can mean no native region; it must not be silently treated as a successful safety qualification.
 
-See this item's own 2026-09-12 notes entries ("full GPT design for the formal qualification runners", req_3e42043eb71a4a92) for the complete, already-approved design: a shared _run_decode_logit_reference_pair() primitive plus two contract-specific runner functions (run_rd39_42_contract_qualification for 1215's bit_identical leg, run_rd43_contract_qualification for 1216's backend_reference leg, reusing the PPL-equality primitive). Only run_rd43_contract_qualification() plus the contract model-binding fix remain unimplemented for this item specifically; 1215's own bit_identical work is tracked under PRBE34.
+### Historical measurements versus current pin
 
-## Code Samples & Guidance
+- The tracked 1216 `evidence/validation.json` contains **22 records, all `base_ref=b11126`**; 8 were marked eligible on that historical pin. The 1215 evidence contains 8 b11126 records, none eligible. No b11552 1216 validation record was found.
+- Earlier combined 1215+1216 gfx1100 single-GPU tests reported +2.38% (10 paired rounds, 95% CI [1.45%, 3.32%]) and 82.28% overlap of auxiliary-stream busy time. These were real **historical combined-stack** observations, not independent 1216 gains. The later b11126 four-session 1215 qualification rejected the stack: target decode -2.8..-3.3% gfx1100 and -8.0..-8.2% gfx1201, with control regressions. Do not promote 1216 or claim a speedup using the older result.
+- All previous full-vocabulary parity and graph-capture results are historical b11126 evidence. A new b11552 standalone run must establish current behavior independently.
 
-Follow the exact pattern of the existing run_rd08_contract_qualification()/run_rd73_contract_qualification() functions in tools/bigcherry/patch/validation_campaign.py (read one of these first for the real function signature/CorrectnessResult/EvidenceRecord conventions before authoring run_rd43_contract_qualification()). No new patch package needed -- 1216 already exists (patch.py/patch.toml/README.md); this item's remaining work is validation-campaign wiring plus contract-file correction, not patch edits.
+### Cheapest discriminator and bounded implementation gate
 
-## Files
+1. **Host tests before GPU:** extend existing 1216 patch/producer/contract tests for (a) a synthetic candidate crossing the join, (b) legal within-region fusion, (c) no native concurrent event, (d) stale/missing join-node index, (e) cap restoration and repeated capture, (f) rejected 1215 absent from canonical dependency closure, (g) contract TOML prerequisite scoping, and (h) marker-present but no candidate crossing. Verify current b11552 patch composition and `validation/producer.toml` comments/actual binaries. Do not add another matcher or producer.
+2. **Native-event reachability gate:** on the correctly bound `tierM-qwen35b-a3b-moe-mtp` model, first prove an upstream **native** concurrent region exists without 1215 under `GGML_CUDA_GRAPH_OPT=1`. Record exact model SHA, runtime build, GPU stable identity, graph nodes/fork/join, prompt/context/ubatch and MTP configuration. If absent, close 1216 as dormant/no-op without a throughput campaign.
+3. **Safety/correctness if reachable:** control=validated b11552 BC, subject=identical BC + 1216; same fixed model/seed/prompt/context and device. Require >=20 same-process graph capture/replay and multi-request/multi-ubatch runs, zero capture errors or invalid join state, full-vocabulary near-lossless comparison, fixed-draft MTP acceptance parity and no disappeared work. Check graph-opt-off and dense-model negative controls. Qualify gfx1100 and gfx1201 separately; gfx1030 is an auxiliary, model-fit-gated control, not a mixed-GPU performance extrapolation. For dual-XTX/layer-split/R9700 configurations, test only if native events actually activate and distinguish lack of GPU P2P from a join failure.
+4. **Performance and promotion:** use existing paired `tg128` controls (>=10 rounds/session, >=4 independent sessions per eligible architecture), record capture/recapture time, host map overhead, GPU launches and peak memory. Enforce contract <=1% control regression and all correctness/activation gates. **No speedup threshold** for a safety guard; do not infer one from external gfx1151 results. If map cost is measurable, optimize within existing graph-index ownership only.
+5. **Terminal outcomes:** (A) native region absent -> retire/close with no patch; (B) reachable and safe/non-regressing -> keep opt-in until fresh current-pin evidence qualifies lifecycle promotion; (C) abort, mismatch or regression -> default-off, localize minimal join fix. Do not queue hardware work overlapping current RAD01/Radiance activity.
 
-tools/bigcherry/patch/validation_campaign.py (add run_rd43_contract_qualification); config/experiment-contracts.toml ([contract.RD43-CONCURRENT-JOIN-FUSION-GUARD] model-binding fix); patches/1216_rd43_concurrent_join_fusion_guard/validation.toml (new); patches/1216_rd43_concurrent_join_fusion_guard/README.md (already documents the real evidence).
+### Upstream, forks, and ownership
 
-tools/bigcherry/patch/validation_campaign.py (add run_rd43_contract_qualification); patches/1216_rd43_concurrent_join_fusion_guard/patch.toml (add experiment-contract binding); config/experiment-contracts.toml ([contract.RD43-CONCURRENT-JOIN-FUSION-GUARD], verify model binding, already tierM-qwen35b-a3b-moe-mtp per notes); patches/1216_rd43_concurrent_join_fusion_guard/validation.toml (new); patches/1216_rd43_concurrent_join_fusion_guard/validation/ (existing directory, extend producer to emit check="backend_reference").
+- [AMD-Ecosystem llama.cpp PR #71](https://github.com/AMD-Ecosystem/llama.cpp/pull/71) (merged 2026-07-27): source of 1216's horizon-cap mechanism and external gfx1151 decode result. Its causal failure involved 1215-style MoE overlap, not proven current native-only events.
+- [llama.cpp b11552](https://github.com/ggml-org/llama.cpp/blob/b11552/ggml/src/ggml-cuda/ggml-cuda.cu) and current upstream master: existing fork/join, no 1216 cap. Do not port an already-present guard or infer a stock regression.
+- [SGLang breakable CUDA graph](https://github.com/sgl-project/sglang/blob/main/docs/docs/advanced_features/breakable_cuda_graph.mdx): explicit fork/join tracking across graph breaks on CUDA/ROCm; **test-design precedent only**, not a llama.cpp port or BigCherry benchmark.
+- PRBE112 owns rejected 1215; PVPS15 owns generic activation evidence; 1216's patch-local producer owns its tests. Current RAD01/Radiance/1340/release capabilities worked within 12h are protected and were not modified.
 
-## Validation
+### Audit validation / change log
 
-Offline: PYTHONPATH=tools python -m bigcherry patch-lint patches/1216_rd43_concurrent_join_fusion_guard; patch-rebase-check --focal-overlay 1216_rd43_concurrent_join_fusion_guard --source bigcherry-tuning; unit test for the new qualification function following the RD08/RD73 test pattern. Hardware (on Brutus, not run here): execute run_rd43_contract_qualification() once authored, on tierM-qwen35b-a3b-moe-mtp with GGML_CUDA_GRAPH_OPT=1, to obtain the formal eligible_for_validated_state verdict -- reuses evidence-gathering methodology already proven real in this item's notes.
+2026-10-13: 15/15 actual-source static assertions passed; 2/2 pinned patch anchors matched once; 6/6 synthetic host assertions passed (TOML nesting and marker non-causality). No repository pytest, patch application, HIP compilation, GPU execution or new performance benchmark ran. Historical details remain in Git history and patch README. This is a documentation-only reconciliation.
 
-Offline: PYTHONPATH=tools python -m bigcherry patch-lint patches/1216_rd43_concurrent_join_fusion_guard; patch-rebase-check --focal-overlay 1216_rd43_concurrent_join_fusion_guard --source bigcherry-tuning; unit test for run_rd43_contract_qualification() following the RD08 test pattern, asserting the emitted CorrectnessResult uses check="backend_reference". Hardware (Brutus, gfx1100/gfx1201 -- this item's contract targets those architectures, not gfx1151; Brutus is a correct host): execute run_rd43_contract_qualification() once authored, on tierM-qwen35b-a3b-moe-mtp with GGML_CUDA_GRAPH_OPT=1, to obtain the formal eligible_for_validated_state verdict -- reuses the byte-exact backend_reference evidence already gathered per notes.
-
-## Effort & Risk
-
-
-
-## Standards
-
-Concurrency join correctness; dependency-aware defaulting; no fusion false positives.
-
-## Acceptance Criteria
-
-Join protection prevents capture failure and preserves output under eligible concurrency; PRBE36 remains blocked until this gate passes.
-
-## Notes
-
-Supersedes: RD43
-Migration: capability-rebaseline-v3-2026-09
-Successor key: patching-rdna-boost-experiments-rd43
-
-
-
-CORRECTION (2026-09-11/12): an earlier session's survey of this item incorrectly reported "no patch materialized yet -- pre-authoring backlog work." That was wrong -- patch 1216_rd43_concurrent_join_fusion_guard is a real, materialized patch package (patch.py/patch.toml/README.md all exist), with patch.toml's REQUIRES correctly declaring its real hard prerequisite (1215_rd394041_amd_stream_moe_overlap, itself a real materialized patch). Corrected here rather than left standing.
-
-REAL HARDWARE CORRECTNESS CHECK RUN (2026-09-11/12), first-ever real execution of this patch: authored patches/1216_rd43_concurrent_join_fusion_guard/validation/rd43_correctness.py (reusing the shared tools/bigcherry/experiment/perplexity.py primitive, its third real caller) plus run_rd43_ppl_check() in validation_campaign.py. Subject = 1215+1216 applied; control = 1215 alone (same "no bespoke control-variant worktree needed" reasoning as RD13 -- one self-contained ggml-cuda.cu edit, no other-file plumbing left compiled-but-inert under a partial revert). Crucially, BOTH runs set GGML_CUDA_GRAPH_OPT=1 -- the exact env var this patch's own docstring names as the real-hardware reproduction condition for the crash it exists to fix ("capturing stream has unjoined work" at cudaStreamEndCapture).
-
-Ran for real on Brutus: gfx1201, tierM-gptoss20b-q6k (gpt-oss-20B, the contract's own declared model), real wikitext2 corpus. Result: PASS. Both subject and control builds completed AND RAN TO COMPLETION under GGML_CUDA_GRAPH_OPT=1 -- no capture abort, the primary proof this patch's own acceptance criteria call for. Secondary proof: exact PPL match (561.6933 both arms, delta=0.0) -- no output regression.
-
-Honest scope note: this proves RD43 does not crash and does not regress output for this one real MoE-with-shared-expert workload/model/architecture. PRBE35's full acceptance criteria (repeated capture/replay cycles, graph-opt-off and dense-model controls, output parity specifically attributable to the fusion-cap fix rather than absence of the failure mode in this exact run) are broader than this one check -- this closes the first real data point, not the full item. Patch state remains "untested" -- this is real evidence, not a promotion. PRBE36 (default-on) stays blocked pending the item's full remaining scope.
-
-1215's README.md authored (2026-09-11), documenting real indirect evidence it is exercised (builds, doesn't corrupt PPL, doesn't abort under GGML_CUDA_GRAPH_OPT=1) via RD43/1216's and RD44/1217's own already-run campaigns, since both require it. Core +7.4% tg128 performance claim still not independently reproduced. Ledger event chg_20260911_221000_found-and-documented-real-evid_3917 (mis-linked to PRBE13 initially, corrected here).
-
-### 2026-09-12: real performance + activation + cross-architecture evidence (GPT-reviewed, req_893357b8c0bd4a4e / req_58a8c6465fd249f1 / req_40c25c3069ab4852)
-
-First-ever dedicated performance campaign for the combined 1215+1216 unit (required together per this item's own PRBE34 dependency). Corrected methodology after GPT review: RD42/1215's shared-expert overlap is intra-token, single-GPU, batch-1-decode, opt-in behind GGML_CUDA_GRAPH_OPT=1 -- an initial dual-GPU/-sm-tensor/graph-opt-unset test structurally could not exercise it.
-
-**gfx1100 single-GPU, corrected condition** (Qwen3.6-35B-A3B-UD-Q4_K_M): 6-round interleaved 2x2 (OFF=GGML_CUDA_GRAPH_OPT=0 control, ON==1 subject). OFF mean -0.23% (flat, as expected). ON mean +2.47%, all 6 rounds positive -- real, reproducible, non-regressing gain (smaller than the fork's own +7.41%, measured on a different architecture gfx1151/RDNA3.5).
-
-**Direct profiler proof**: rocprofv3 kernel-trace, 103,768 real dispatches across 4 HSA queues. Computed real wall-clock union-intersection between the two populous queues (82,750 vs 20,170 dispatches) -- 82.28% of the auxiliary (shared-expert) stream's busy time genuinely overlaps in real time with the main (routed-expert) stream. Not just the 'Adding shared-expert stream at node...' marker firing (also independently confirmed via debug-verbosity log) -- actual concurrent GPU kernel execution.
-
-**Cross-architecture**: gfx1201 (single-GPU, same model) shows a directionally similar but noisier/weaker signal (ON +2.59% mean, but OFF control itself non-flat at +1.38%, higher baseline noise on this device). gfx1030 (single-GPU, smaller IQ3_S quant since Q4_K_M doesn't fit in 16GB) shows a noisy NET NEGATIVE (ON -1.19% mean, one severe -6.25% outlier) -- no clear benefit, possibly harmful, possibly just measurement noise from less VRAM headroom on this older/smaller GPU. Not conclusive either way.
-
-**Split-mode impact** (gfx1100 dual-GPU, GRAPH_OPT=1): `-sm layer` shows a real, consistent REGRESSION (~-4.4% mean, all 3 rounds negative). `-sm tensor` is flat/neutral (no benefit, no harm).
-
-**Production guidance**: real benefit is conditional on single-GPU deployment with GGML_CUDA_GRAPH_OPT=1 explicitly set; must NOT be enabled for multi-GPU -sm layer (real regression); safe-but-inert under -sm tensor. Generalization beyond gfx1100 is unproven/mixed.
-
-**GPT-reviewed disposition**: gfx1100 single-GPU performance/mechanism qualification is substantively complete (real E2E gain + activation marker + direct profiler overlap proof satisfy RD42's own claimed gate) -- recorded as a real positive finding on its own merits, independent of any specific percentage threshold (per explicit user correction this session: do not gate promotion on a fixed percentage bar). Do NOT promote to validated yet: this project's policy requires a complete validation package and patch-verify-evidence-passing persisted evidence; 1215's own contract requires a bit_identical correctness check and 1216's requires backend_reference (existing PPL-equality evidence does not formally substitute for that named check). GPT: 'stop hardware profiling now -- remaining gaps are package/contract work, not more performance evidence.' The cross-architecture/split-mode sweep was completed as a direct answer to a generalization question, not further promotion-path profiling.
-
-Patches 1215 and 1216 stay state=untested. Real, substantial evidence now exists; the formal validated-state package (validation.toml, bound Experiment Contract with its two named correctness checks) remains the concrete next step if pursued.
-
-### 2026-09-12: concrete next-step scoping for the formal validated-state package
-
-Checked what the pre-authored contracts (`config/experiment-contracts.toml`) actually require, to make the remaining gap concrete rather than abstract:
-
-- `[contract.RD39-42-STREAM-MOE-OVERLAP]` (1215): model `tierM-gptoss20b-q6k`, workloads `moe_decode`/`decode`, correctness=`bit_identical` (required), architectures `[gfx1100, gfx1201, gfx1030]`, acceptance `target_kernel_gain_pct=1, max_control_regression_pct=1` -- easily cleared by the already-measured +2.47% gfx1100 result, so this is not the blocker.
-- `[contract.RD43-CONCURRENT-JOIN-FUSION-GUARD]` (1216): same model/workloads, correctness=`backend_reference` (required), `prerequisites = ["RD39-42-STREAM-MOE-OVERLAP"]`.
-
-Both contracts already exist pre-authored -- the real remaining gap is that no qualification RUNNER exists to bind and execute them. `validation_campaign.py` has exactly two patch-specific qualification functions today (`run_rd08_contract_qualification`, `run_rd73_contract_qualification`), no generic one. Writing `run_rd39_42_contract_qualification()` (and wiring 1216's `backend_reference` check, which per its prerequisite likely composes with 1215's rather than needing a fully separate runner) following that same real, careful pattern -- anchor-tested, GPT-reviewed, offline-tested, then real-hardware-run on `tierM-gptoss20b-q6k` -- is genuine new authoring work, not a quick script. Deliberately NOT rushed into this already-long session; scoped here so the next session picking this up has the exact target (function name, contract IDs, model, correctness-check kind) rather than needing to re-derive it.
-
-Note: PA33 (patch-validate orchestrator) would eventually make this kind of per-patch qualification-function authoring unnecessary by consuming the contract generically -- but PA33 itself doesn't exist yet either, so for 1215/1216 specifically the nearer-term path is still a dedicated qualification function matching the existing RD08/RD73 pattern.
-
-### 2026-09-12: full GPT design for the formal qualification runners (req_3e42043eb71a4a92)
-
-Got a design review before writing any code, given RD08's single-op test-backend-ops pattern is a category error for a graph-scheduling patch like 1215/1216. Key correction: completion text/token equality (what I used for 1207) is TOO WEAK for a bit_identical claim -- different logits can produce identical greedy tokens. Full per-step raw logits comparison is the right bar, not text diffing.
-
-**Design (GPT-approved, concrete, ready to implement)**:
-
-1. One shared low-level primitive, `_run_decode_logit_reference_pair(...)`: materializes/builds two isolated compositions, fixed model/prompt/context/seed, 64 deterministic decode steps (sampling disabled), captures the FULL raw logits buffer after every decode step, computes a per-step SHA256 digest over a documented dtype/byte representation, records generated token IDs as diagnostics, returns exact equality + first mismatching step + per-step digests + aggregate digest + full command/env/build identities. **Caveat**: if `/completion`'s HTTP API cannot expose raw logits (it likely cannot beyond n_probs top-k, not the full vocab), a small bespoke llama_decode/logits-capture helper is needed -- NOT a test-backend-ops-style tool, something closer to `examples/eval-callback`.
-
-2. `run_rd39_42_contract_qualification()` (1215): control=baseline (no 1215/1216), subject=baseline+1215+1216 (1216 included because it's operationally inseparable from RD42's execution path -- document this explicitly in evidence), single gfx1100, GGML_CUDA_GRAPH_OPT=1 both arms, require the subject's shared-expert activation marker to fire, `CorrectnessResult(check_id="bit_identical", passed=<all 64 per-step digests match exactly>, method="full-model-decode-logit-digest", details={...})`.
-
-3. `run_rd43_contract_qualification()` (1216): causal control=baseline+1215 (NOT plain baseline -- isolates 1216's own marginal effect), subject=baseline+1215+1216, GGML_CUDA_GRAPH_OPT=1 both arms, reuse the existing PPL-equality primitive (RD19 already establishes PPL subject/reference comparison as legitimate backend_reference methodology) but emit `check_id="backend_reference"` explicitly -- do NOT silently relabel the existing 561.6933==561.6933 historical PPL result as satisfying this; that result stands as corroboration only, a fresh formal run under this exact check_id is required. A stronger version could reuse the logit-digest primitive for an exact 1215-only-vs-1215+1216 match, but GPT says this isn't required -- the contract asks backend_reference, not bit_identical, for 1216.
-
-4. 1215 and 1216 must each independently obtain their own contract verdict and `eligible_for_validated_state` -- a convenience `run_amd_stream_contract_qualification()` may call both runners, but their evidence records stay separate.
-
-**Not implemented this session** -- this is genuine new engineering (a real logits-capture mechanism plus two carefully-designed contract-specific runner functions, each needing GPT-reviewed implementation, offline tests, and real hardware execution) deliberately left for a dedicated future pass rather than rushed at the end of an already very long session. This note carries the complete, ready-to-implement design so the next session/agent can go straight to authoring.
-
-### 2026-09-12: RD43 backend_reference CLOSED (real evidence, GPT-approved); RD39-42 bit_identical attempt via llama-results -- real negative finding, correctly discarded per GPT's own stated rule
-
-**RD43/1216 backend_reference: DONE.** Real hardware, GPT-designed and GPT-approved (req_3e42043eb71a4a92 / req_a457561b33ac4f24): control=baseline+1215, subject=baseline+1215+1216, GGML_CUDA_GRAPH_OPT=1 both, full-vocab (248320 entries) HTTP logprob comparison, zero truncation. Exact match: 0 of 15,892,480 comparisons differ, max_abs_diff=0.0. Recorded in patches/1216.../README.md and committed. Real caveat: the pre-authored contract binds a different model (tierM-gptoss20b-q6k) than this run used (Qwen3.6-35B-A3B) -- persisted as real evidence, not yet the final contract-qualified result until that binding is resolved (an AUTHOR-then-VERIFY step, one rerun, no extra matrix needed since RD43 is fixed-effect/correctness-only).
-
-**RD39-42/1215 bit_identical: attempted via GPT's proposed llama-results approach, real negative result.** GPT's design: run `llama-results -ub 1` (teacher-forced single-microbatch forward pass) on control/subject, extract raw F32 logits from the output GGUF, byte-compare, gated on the RD42 'Adding shared-expert stream' activation marker firing as the 'decisive coverage check.' Built control+subject llama-results binaries, ran the subject on real hardware (single gfx1100, GGML_CUDA_GRAPH_OPT=1, -ub 1, -lv 4, real prompt) -- completed successfully, wrote a real 18.8MB output GGUF, but the activation marker fired ZERO times.
-
-Root cause (my working hypothesis, not yet GPT-confirmed at the time of closing this out): llama-results does one llama_decode() call over the WHOLE prompt as a single logical batch (n_tokens = full prompt length, every position outputs) -- -ub 1 only controls internal microbatch chunking for that call, not the logical batch shape RD42's gate actually checks. RD42's 'single-token decode' precondition likely requires a genuine autoregressive decode-loop call (KV-cache continuation, batch containing exactly one newly-generated token), which a one-shot teacher-forced forward pass structurally cannot produce regardless of -ub.
-
-Per GPT's own explicit, already-stated rule for this exact scenario (req_3e42043eb71a4a92): "If it does not [hit the activation path], stop and leave the bespoke incremental-logit producer as PRBE35 future work." Applying that rule here -- NOT continuing to chase llama-results further.
-
-**Remaining scope for RD39-42's bit_identical check** (real future work, not done this session): a genuine decode-loop-based raw-logits capture is needed -- e.g. a small instrumentation patch to llama-server exposing llama_get_logits_ith() during real autoregressive generation (matching this project's own established BIGCHERRY_PATCH_TRACE/telemetry conventions), not llama-results' one-shot batch approach. The full-vocab HTTP logprob technique (proven, real, exact-match evidence already gathered for both the pilot 1215+1216-vs-baseline comparison and RD43's backend_reference check) remains valid, real, useful evidence -- just not a literal bit_identical proof per GPT's earlier correction (post-softmax/sampler-output identity, not raw pre-softmax logit identity).
-
-**Overall 1215/1216 status**: both patches have now accumulated substantial real, GPT-reviewed hardware evidence (activation, full-vocab numerical parity via two independent real comparisons, direct profiler-confirmed stream overlap, a real interleaved-paired performance win, cross-architecture and split-mode characterization) but remain `state=untested` pending: (a) 1215's own bit_identical check (scoped above, needs new instrumentation), (b) the contract model-binding correction for 1216 backend_reference, (c) formal validation.toml/Experiment Contract wiring for both. Not rushed to closure -- real, substantial, honest progress recorded; genuine remaining formal-package work left explicitly scoped for a focused future pass.
-
-### 2026-09-12: RD39-42/1215 bit_identical CLOSED -- real, decisive, byte-exact evidence (GPT-designed and GPT-approved, req_3e42043eb71a4a92 / req_d6534fe00b8140ca / req_013ff2ae8b0c4c4c)
-
-Corrected an earlier stalled attempt: the previous session note below (llama-results discarded) was itself based on an INVALID negative finding -- GPT caught that the activation marker check used -lv 4, but GGML_LOG_DEBUG (RD42's marker level) requires -lv 5. Rerun at the correct verbosity found the marker firing 1000 times -- RD42 genuinely activates under llama-results -ub 1.
-
-Used the real existing llama-results tool (tools/results/results.cpp, already in the vendor tree, no bespoke tool needed) to dump raw pre-softmax F32 logits via llama_get_logits_ith() to a GGUF file. Ran control (baseline) and subject (baseline+1215+1216) on real single gfx1100 hardware, GGML_CUDA_GRAPH_OPT=1, -ub 1, identical real 19-token prompt. Wrote a minimal pure-Python GGUF binary parser (no external dependency) to extract the raw tokens and logits tensors byte-for-byte.
-
-**Result: fully byte-exact identical.** Tokens: identical 19-token sequence (SHA256 c3937aa6...dccac matches both). Logits: raw F32 tensor, (19, 248320) shape, 4,718,080 values, 18,872,320 bytes, byte-for-byte identical (SHA256 788844674b53...b41fec matches both control and subject). This is literal, decisive bit_identical evidence -- genuine raw pre-softmax model logit byte-identity, not the HTTP-logprob proxy used for the pilot/RD43 evidence.
-
-GPT-approved disposition: bit_identical methodology PASS, real gfx1100 evidence PASS, RD42 activation coverage PASS (1000 marker hits). Same caveat as RD43: real evidence, not yet the FORMAL contract-qualified result until the RD39-42-STREAM-MOE-OVERLAP contract's model binding (currently tierM-gptoss20b-q6k, this run used Qwen3.6-35B-A3B) is resolved.
-
-Recorded in patches/1215.../README.md with the full CorrectnessResult shape and all SHA256 hashes for independent auditability, per GPT's explicit instruction.
-
-**Both 1215's bit_identical and 1216's backend_reference checks now have real, GPT-approved evidence.** Remaining formal work before either patch can transition to validated: (a) resolve the model-binding mismatch on both contracts (AUTHOR-then-VERIFY the correct model, one rerun each -- no new methodology needed, the producers are proven), (b) author validation.toml + wire run_rd39_42_contract_qualification()/run_rd43_contract_qualification() per the design already recorded above, (c) run patch-verify-evidence to confirm eligible_for_validated_state. This is now real, bounded, well-scoped remaining work -- not open-ended investigation.
-
-### 2026-09-12: VA24 legacy-waiver migration applied per GPT's exact guidance (req_2c6da8edd6e247ba); performance evidence extended to satisfy the new policy
-
-GPT confirmed Option B was correct: editing RD39-42-STREAM-MOE-OVERLAP's model binding legitimately invalidated its frozen legacy point-estimate waiver (by VA24's own design -- a changed contract hash cannot acquire fresh legacy qualification). Applied the exact fix, following RD21's own prior precedent for the identical situation: removed `[legacy.RD39-42-STREAM-MOE-OVERLAP]` entirely from `config/experiment-contract-legacy.toml`, added `effect_evidence_policy = "ci95_threshold_bound_v1"` + `min_paired_rounds = 10` to the contract's `[acceptance]` section in `config/experiment-contracts.toml`. RD43 needed no analogous change (no legacy entry, no gain threshold -- VA24 lint exempts correctness-only contracts).
-
-GPT flagged that the existing 6-round performance evidence was insufficient for the newly-declared 10-round policy. Ran 4 additional real paired rounds (single gfx1100, GGML_CUDA_GRAPH_OPT=1, same interleaved methodology): deltas [1.81%, 2.12%, 2.54%, 2.57%], all positive. **Full 10-round result: mean +2.38%, SD 1.31%, 95% CI [1.45%, 3.32%]** -- entirely positive, excludes zero, comfortably clears `target_kernel_gain_pct=1` with real statistical confidence. Recorded in patches/1215.../README.md.
-
-Caught and self-corrected a real process mistake along the way: used `git stash` while investigating (this project's CLAUDE.md explicitly forbids this in the shared multi-agent working tree). No work was lost (verified via git status after `stash pop`), but noting this so it is not repeated.
-
-**Current status of 1215+1216's contract-level qualification**: activation (real, marker-confirmed), bit_identical correctness (real, byte-exact raw logits), backend_reference correctness (real, exact full-vocab match), and now a properly ci95-policy-compliant 10-round performance result, all on the correctly contract-bound model (tierM-qwen35b-a3b-moe-mtp, after fixing the model-binding defect this session found). Remaining formal step: wiring these into actual `run_rd39_42_contract_qualification()`/`run_rd43_contract_qualification()` producer functions (design fully scoped above) so `patch-verify-evidence` can compute `eligible_for_validated_state` -- the substantive evidence-gathering is now complete and contract-policy-consistent; what remains is packaging/wiring, not further investigation.
-
-### 2026-09-12: RD39-42-STREAM-MOE-OVERLAP contract-level qualification evidence COMPLETE (GPT-confirmed, req_eafaa56c9f334674)
-
-GPT's final review identified one remaining gap: the CONTROL lane also needed its own 10-round CI under the migrated ci95_threshold_bound_v1 policy, since max_control_regression_pct=1 is independently mandatory (not just the positive/subject gain leg). Ran 4 additional real OFF-condition (GGML_CUDA_GRAPH_OPT=0) paired rounds to extend that lane to 10 too.
-
-**Final complete result, both lanes at 10 real paired rounds each:**
-- ON/subject (gain leg): mean +2.38%, SD 1.31%, 95% CI [1.45%, 3.32%] -- entirely positive, clears target_kernel_gain_pct=1.
-- OFF/control (regression leg): mean -0.19%, SD 1.12%, 95% CI [-0.99%, 0.61%] -- flat as expected, upper bound 0.61% comfortably under max_control_regression_pct=1.
-
-**GPT's final disposition**: bit_identical PASS, activation PASS (1000 real marker hits), positive gain >=1% PASS, control regression <=1% now satisfied with the extended 10-round control lane -- all four required contract-qualification legs for RD39-42-STREAM-MOE-OVERLAP are now complete with real, GPT-approved, statistically rigorous evidence on the correctly contract-bound model (tierM-qwen35b-a3b-moe-mtp).
-
-**What remains is purely mechanical**: emitting this real evidence through BigCherry's canonical paired/geometric bootstrap producer function (run_rd39_42_contract_qualification(), fully designed above) so patch-verify-evidence can compute eligible_for_validated_state -- and the equivalent for RD43's backend_reference (already exact-match evidence gathered on the same corrected model). The substantive scientific work (activation proof, correctness proof at raw-logit byte level, statistically powered performance evidence for both gain and regression legs) is done. Patches 1215/1216 stay state=untested pending only that formal producer-function wiring, not further investigation.
-
-2026-09-24 relevance at b11126: IMPLEMENTED-AS-PATCH (1216_rd43_concurrent_join_fusion_guard, state=untested). This item's own prior notes already contain a complete GPT-approved design for the remaining formal qualification wiring (req_3e42043eb71a4a92) and real byte-exact backend_reference evidence -- no new GPT session was needed this batch; the structured plan sections above were written directly from that existing scoped design. GPT gateway was also unavailable this session for unrelated items (4 rejected attempts on PRBE32-34, see PRBE32 notes).
-
-2026-09-24 GPT review req_c18183e0a9034c94 applied: NOT-READY fixes applied -- added experiment-contract binding to patch.toml requirement, corrected producer to emit check="backend_reference" (not ppl_equality), removed stale central-runner-exists assumption.
-
-2026-09-25: implemented as a patch-local producer (not a central runner -- PA36 moved all producers patch-local). 1216: WARN activation marker when the fusion horizon is capped; experiment-contract bound; validation.toml; producer: control=bigcherry+1215, subject=+1216, GRAPH_OPT=1, full-vocab backend_reference (tol 5e-4) via shared tools/bigcherry/experiment/full_vocab.py, server-log activation, 10-round tg128 controls. Old PPL-only rd43_correctness.py removed. GPT review req_997c7ff3ed5944bf: tolerance appropriate; noted limits -- marker proves the cap engaged, not that graph capture succeeded; evidence shows guard harmless, not reproduction of the abort. Hardware run pending a free 24GB GPU (model tierM-qwen35b-a3b-moe-mtp).
-
-## Change Log
-
-- 2026-10-08 (triage): pending; 1216_rd43_concurrent_join_fusion_guard state=untested, now independent of rejected 1215 (patch.toml requires=[]). Keep narrowly for upstream join guard correctness and graph-capture evidence; do not inherit 1215 gains.
-
-- 2026-09-09T10:55:53.286868+00:00 (created-by): Created by capability-rebaseline-v3
-- 2026-09-09T11:13:05.382498+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
-
-## Ledger-events
-
-
-- chg_20260909_115759_created-and-populated-the-192_2958
-- 2026-09-09T11:58:01.285865+00:00 (updated-by): Updated: section:ledger-events
-- chg_20260910_001436_completed-the-planning-rebasel_5794
-- 2026-09-10T00:14:43.037669+00:00 (updated-by): Updated: section:ledger-events
-- 2026-09-10T02:59:39.595087+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:standards, section:acceptance_criteria
-- chg_20260910_030005_amd-streamfus-successors-prbe_8761
-- 2026-09-10T03:00:05.752127+00:00 (updated-by): Updated: section:ledger-events
-- 2026-09-11T15:32:01.953695+00:00 (updated-by): Updated: section:notes
-- chg_20260911_153207_real-hardware-test-confirms-a_1251
-- 2026-09-11T15:32:07.442514+00:00 (updated-by): Updated: section:ledger-events
-- chg_20260911_212645_documented-two-more-optimizati_8645
-- 2026-09-11T21:26:45.045884+00:00 (updated-by): Updated: section:ledger-events
-- 2026-09-11T22:10:30.357360+00:00 (updated-by): Updated: section:notes
-- chg_20260911_230135_found-and-documented-a-real-sa_9076
-- 2026-09-11T23:01:35.306535+00:00 (updated-by): Updated: section:ledger-events
-- 2026-09-12T09:17:39.246458+00:00 (updated-by): Updated: section:notes
-- chg_20260912_091821_validated-a-gpu-concurrency-op_8669
-- 2026-09-12T09:18:21.067473+00:00 (updated-by): Updated: section:ledger-events
-- 2026-09-12T09:49:37.378827+00:00 (updated-by): Updated: section:notes
-- 2026-09-12T09:58:46.097569+00:00 (updated-by): Updated: section:notes
-- chg_20260912_131203_gathered-and-gpt-approved-the_6475
-- 2026-09-12T13:12:03.629518+00:00 (updated-by): Updated: section:ledger-events
-- 2026-09-12T13:23:48.429640+00:00 (updated-by): Updated: section:notes
-- 2026-09-12T13:32:04.406756+00:00 (updated-by): Updated: section:notes
-- chg_20260912_133232_confirmed-with-exact-byte-leve_9051
-- 2026-09-12T13:32:32.389039+00:00 (updated-by): Updated: section:ledger-events
-- chg_20260912_134912_fixed-a-real-configuration-bug_3724
-- 2026-09-12T13:49:12.543739+00:00 (updated-by): Updated: section:ledger-events
-- 2026-09-12T13:52:12.634324+00:00 (updated-by): Updated: section:notes
-- chg_20260912_135302_completed-the-statistical-evid_5013
-- 2026-09-12T13:53:02.080192+00:00 (updated-by): Updated: section:ledger-events
-- 2026-09-12T13:57:26.301994+00:00 (updated-by): Updated: section:notes
-- chg_20260912_135807_finished-gathering-all-require_7893
-- 2026-09-12T13:58:07.808223+00:00 (updated-by): Updated: section:ledger-events
-- chg_20260912_141111_patches-1215-amd-stream-moe-o_6030
-- 2026-09-12T14:11:11.710754+00:00 (updated-by): Updated: section:ledger-events
-- 2026-09-24T02:29:56.168794+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation
-- 2026-09-24T02:30:01.847594+00:00 (updated-by): Updated: section:notes
-- chg_20260924_023553_re-scoped-11-rdna-boost-planni_1625
-- 2026-09-24T02:36:10.506291+00:00 (updated-by): Updated: section:ledger-events
-- 2026-09-24T04:39:07.154381+00:00 (updated-by): Updated: section:steps, section:files, section:validation
-- 2026-09-24T04:39:50.878577+00:00 (updated-by): Updated: section:notes
-- 2026-09-24T14:09:54.966168+00:00 (state-transition): State: pending → in_progress
-- 2026-09-24T14:09:57.889202+00:00 (updated-by): Updated: section:notes
-- chg_20260924_141016_five-experimental-rdna-patches_5706
-- 2026-09-24T14:10:27.645383+00:00 (updated-by): Updated: section:ledger-events

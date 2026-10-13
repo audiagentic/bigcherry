@@ -1,5 +1,10 @@
 # 1216_rd43_concurrent_join_fusion_guard: Keep a concurrent-region join node out of op-fusion (RD43)
 
+## 2026-10-13 b11552 audit
+
+**Current:** standalone `untested` safety guard; no 1215 dependency in authoritative `patch.toml`, no measured standalone speedup. The patch-local producer and validation manifest already exist; legacy `patch.py::REQUIRES`, `validation/producer.toml` comment, and older README/PRBE35 steps disagree. Historical 22 evidence records all target b11126. The cap marker does not prove a fusion would have crossed the join. Fresh current-pin native-concurrent-event reachability, graph correctness and <=1% control regression are required before promotion; do not reuse rejected 1215 results. PRBE35 owns technical detail; BCOP175 owns disposition.
+
+
 **Status:** untested
 **Plan item:** RD43
 

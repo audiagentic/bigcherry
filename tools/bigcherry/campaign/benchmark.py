@@ -510,7 +510,7 @@ def _run_arm(
 
 
 def run_server_arm_capture(
-    *, binary: Path, model: Path, extra_args: tuple[str, ...],
+    *, engine: str, binary: Path, model: Path, extra_args: tuple[str, ...],
     output: Path, pair: int, side: str, position: int,
     env: dict[str, str], bench_configs: str, runner_root: Path,
     required_metrics: tuple[str, ...], repetitions: int = 1,
@@ -568,8 +568,11 @@ def run_server_arm_capture(
             return run
     # Supply a complete, caller-sanitized environment. Merely overlaying it
     # would resurrect dispatch/tuning variables removed by the caller.
+    from bigcherry.core import engines as _engines
+    from bigcherry.core import paths as _paths
+
     server = ServerRunner(
-        serve=LLAMACPP_SERVE,
+        serve=_engines.load(_paths.REPO_ROOT, engine).serve,
         binary=binary, model=model, extra_args=extra_args,
         env_overrides=env, env_unset=tuple(os.environ),
         log_path=cell / "server.log", shutdown_method=shutdown_method,
@@ -798,6 +801,13 @@ def run_server_comparison_capture(
     execution_evidence = config.get("execution_evidence", "required")
     if execution_evidence not in ("required", "observe"):
         raise ValueError("execution_evidence must be required or observe")
+    engine = config.get("engine")
+    from bigcherry.core import engines as _engines
+    from bigcherry.core import paths as _paths
+    if engine not in _engines.names(_paths.REPO_ROOT):
+        raise ValueError("server comparison requires the engine its arms run (engine = a declared engine)")
+    if engine != _engines.LLAMACPP and execution_evidence == "required":
+        raise ValueError(f"{engine}: device-execution attestation is only parsed for llama.cpp; use execution_evidence 'observe'")
     if "execution_attestor" in config:
         raise ValueError("optional execution_attestor integration is deferred under HI169")
     if not isinstance(expected_execution, dict) or not expected_execution.get("locators"):
@@ -814,9 +824,14 @@ def run_server_comparison_capture(
         if mode not in ("stock", "native", "record", "tune", "replay"):
             raise ValueError(f"unsupported dispatch mode: {mode}")
         build_dir = binary.parent.parent
-        observation = inspect_dispatch_build(build_dir)
-        if observation["issues"] or bool(observation["instrumented"]) != (role == "diagnostic"):
-            raise ValueError(f"{arm['name']}: compiled instrumentation disagrees with evidence role")
+        observation = None
+        if engine == _engines.LLAMACPP:
+            # The dispatch-instrumentation contract is llama.cpp's (GGML_HIP_DISPATCH builds).
+            observation = inspect_dispatch_build(build_dir)
+            if observation["issues"] or bool(observation["instrumented"]) != (role == "diagnostic"):
+                raise ValueError(f"{arm['name']}: compiled instrumentation disagrees with evidence role")
+        elif mode != "stock":
+            raise ValueError(f"{arm['name']}: {engine} has no dispatch modes; an arm runs in mode 'stock'")
         metadata_path = build_dir / f"bigcherry-build-metadata-{binary.name}.json"
         metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
         # Every managed comparison must record its canonical source worktree;
@@ -921,7 +936,7 @@ def run_server_comparison_capture(
                     persist()
                     return 1
             print(f"[server-capture] round {pair + 1}/{rounds} position {position + 1}: {name}", flush=True)
-            result = run_server_arm_capture(
+            result = run_server_arm_capture(engine=engine, 
                 binary=arm["binary"], model=arm["model"], extra_args=arm["extra_args"], output=output,
                 pair=pair, side=name, position=position, env=arm["env"],
                 bench_configs=config["bench_configs"], runner_root=runner_root,
