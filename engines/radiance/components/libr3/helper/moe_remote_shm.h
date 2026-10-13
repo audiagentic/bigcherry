@@ -11,9 +11,10 @@
 namespace r3::moe_shm {
 
 constexpr uint64_t kMagic = 0x31454f4d33485253ull; /* "SRH3MOE1": reject unrelated/stale shm. */
-constexpr uint32_t kVersion = 1;
+constexpr uint32_t kVersion = 2;
 constexpr uint32_t kPage = 4096;
 constexpr uint32_t kMaxRanks = 2;       /* Flash-Next configuration of record: TP=2. */
+constexpr uint32_t kMaxLayers = 128;     /* ownership bitmap bound; Flash-Next is below this. */
 constexpr uint32_t kRingSlots = 16;     /* metadata only; each rank owns one bulk-data slot. */
 constexpr uint32_t kHidden = 2560;
 constexpr uint32_t kTopK = 10;
@@ -64,6 +65,10 @@ struct alignas(kPage) Header {
     uint32_t route_slot_bytes[kMaxRanks];      /* per-rank routing-list capacity. */
     uint32_t activation_slot_bytes[kMaxRanks]; /* per-rank staged BF16 activation capacity. */
     uint32_t result_slot_bytes[kMaxRanks];     /* per-rank BF16 partial capacity. */
+    uint32_t owned_count;            /* number of set (layer, expert) ownership bits. */
+    uint32_t owner_slot_bytes;       /* fixed bitmap bytes at owner_offset. */
+    uint64_t owned_bytes;            /* resident expert bytes charged against helper budget. */
+    uint64_t owner_offset;           /* [kMaxLayers][kExperts] bitset. */
     uint32_t next_sequence;         /* atomic ticket allocator; sequence 0 is reserved. */
     uint32_t publish_sequence;      /* newest published ticket; helper FUTEX_WAITs here. */
     uint64_t ring_offset;           /* Request[kRingSlots], page aligned. */
@@ -79,9 +84,11 @@ constexpr uint64_t align_page(uint64_t n) { return (n + kPage - 1) & ~(uint64_t(
 constexpr uint32_t route_slot_bytes() { return kMaxRoutes * sizeof(Route); }
 constexpr uint32_t activation_slot_bytes() { return kMaxRows * kHidden * sizeof(uint16_t); }
 constexpr uint32_t result_slot_bytes() { return kMaxRows * kHidden * sizeof(uint16_t); }
+constexpr uint32_t owner_slot_bytes() { return kMaxLayers * ((kExperts + 7u) / 8u); }
 
 struct Layout {
     uint64_t ring;
+    uint64_t owner;
     uint64_t route[kMaxRanks];
     uint64_t activation[kMaxRanks];
     uint64_t result[kMaxRanks];
@@ -93,6 +100,8 @@ constexpr Layout layout() {
     uint64_t at = kPage;
     x.ring = at;
     at = align_page(at + sizeof(Request) * kRingSlots);
+    x.owner = at;
+    at = align_page(at + owner_slot_bytes());
     for (uint32_t r = 0; r < kMaxRanks; ++r) {
         x.route[r] = at; at = align_page(at + route_slot_bytes());
         x.activation[r] = at; at = align_page(at + activation_slot_bytes());
@@ -109,6 +118,8 @@ inline void init(void* base, uint32_t layers) {
     h->magic = kMagic; h->version = kVersion; h->header_bytes = sizeof(Header);
     h->layer_count = layers; h->rank_count = kMaxRanks; h->ring_slots = kRingSlots;
     h->max_rows = kMaxRows; h->hidden = kHidden; h->top_k = kTopK; h->expert_count = kExperts;
+    h->owned_count = 0; h->owner_slot_bytes = owner_slot_bytes(); h->owned_bytes = 0;
+    h->owner_offset = l.owner;
     h->next_sequence = 1; h->ring_offset = l.ring; h->segment_bytes = l.bytes;
     for (uint32_t r = 0; r < kMaxRanks; ++r) {
         h->route_slot_bytes[r] = route_slot_bytes();
@@ -122,9 +133,12 @@ inline void init(void* base, uint32_t layers) {
 inline bool valid(const Header* h, size_t mapped) {
     if (!h || h->magic != kMagic || h->version != kVersion || h->header_bytes != sizeof(Header) ||
         h->rank_count != kMaxRanks || h->ring_slots != kRingSlots || h->max_rows != kMaxRows ||
-        h->hidden != kHidden || h->top_k != kTopK || h->expert_count != kExperts) return false;
+        h->hidden != kHidden || h->top_k != kTopK || h->expert_count != kExperts ||
+        h->layer_count == 0 || h->layer_count > kMaxLayers) return false;
     const Layout l = layout();
-    if (h->ring_offset != l.ring || h->segment_bytes != l.bytes || mapped < l.bytes) return false;
+    if (h->ring_offset != l.ring || h->owner_offset != l.owner ||
+        h->owner_slot_bytes != owner_slot_bytes() ||
+        h->segment_bytes != l.bytes || mapped < l.bytes) return false;
     for (uint32_t r = 0; r < kMaxRanks; ++r)
         if (h->route_offset[r] != l.route[r] || h->activation_offset[r] != l.activation[r] ||
             h->result_offset[r] != l.result[r] || h->route_slot_bytes[r] != route_slot_bytes() ||
@@ -146,6 +160,35 @@ inline Request* request(void* base, uint32_t seq) {
 inline const Request* request(const void* base, uint32_t seq) {
     auto* h = static_cast<const Header*>(base);
     return ptr<Request>(base, h->ring_offset) + ((seq - 1) % kRingSlots);
+}
+
+inline uint8_t* owner_bits(void* base) {
+    auto* h = static_cast<Header*>(base);
+    return ptr<uint8_t>(base, h->owner_offset);
+}
+inline const uint8_t* owner_bits(const void* base) {
+    auto* h = static_cast<const Header*>(base);
+    return ptr<uint8_t>(base, h->owner_offset);
+}
+inline uint64_t owner_bit(uint32_t layer, uint32_t expert) {
+    return (uint64_t)layer * kExperts + expert;
+}
+inline bool owns(const void* base, uint32_t layer, uint32_t expert) {
+    const auto* h = static_cast<const Header*>(base);
+    if (!h || layer >= h->layer_count || expert >= kExperts) return false;
+    const uint64_t bit = owner_bit(layer, expert);
+    return (owner_bits(base)[bit >> 3] & (uint8_t)(1u << (bit & 7u))) != 0;
+}
+inline bool set_owned(void* base, uint32_t layer, uint32_t expert) {
+    auto* h = static_cast<Header*>(base);
+    if (!h || layer >= h->layer_count || expert >= kExperts) return false;
+    const uint64_t bit = owner_bit(layer, expert);
+    uint8_t* b = owner_bits(base) + (bit >> 3);
+    const uint8_t mask = (uint8_t)(1u << (bit & 7u));
+    if (*b & mask) return false;
+    *b |= mask;
+    ++h->owned_count;
+    return true;
 }
 
 inline uint32_t load(const uint32_t* p) { return __atomic_load_n(p, __ATOMIC_ACQUIRE); }
