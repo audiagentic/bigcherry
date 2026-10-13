@@ -88,9 +88,9 @@ until curl -sf "http://127.0.0.1:$port/health" >/dev/null 2>&1; do
 done
 
 echo "== prefill/decode"
-python3 - "http://127.0.0.1:$port" "${CORPUS:-/mnt/data/bigcherry-work/corpus/kld-docs.txt}" "${N:-256}" <<'PY'
+python3 - "http://127.0.0.1:$port" "${CORPUS:-/mnt/data/bigcherry-work/corpus/kld-docs.txt}" "${N:-256}" "$out" <<'PY'
 import json, sys, time, urllib.request
-base, corpus_path, n = sys.argv[1], sys.argv[2], int(sys.argv[3])
+base, corpus_path, n, out_dir = sys.argv[1], sys.argv[2], int(sys.argv[3]), sys.argv[4]
 try:
     text = open(corpus_path, encoding="utf-8", errors="replace").read()[:24000]
 except OSError:
@@ -104,6 +104,7 @@ t0 = time.monotonic()
 first = last = None
 usage = {}
 pieces = 0
+texts = []
 with urllib.request.urlopen(req, timeout=1800) as resp:
     for raw in resp:
         line = raw.decode("utf-8", "replace").strip()
@@ -118,10 +119,13 @@ with urllib.request.urlopen(req, timeout=1800) as resp:
         for ch in d.get("choices") or []:
             s = ch.get("text") or ""
             if s:
+                texts.append(s)
                 now = time.monotonic()
                 first = first or now
                 last = now
                 pieces += 1
+# The greedy completion, so two arms can be checked for identical output.
+open(f"{out_dir}/completion.txt", "w", encoding="utf-8").write("".join(texts))
 prompt = int(usage.get("prompt_tokens") or 0)
 gen = int(usage.get("completion_tokens") or 0)
 if not first or prompt <= 0 or gen <= 1:
@@ -133,7 +137,7 @@ print(f"prefill {prefill:.1f} tok/s ({prompt} tokens)")
 print(f"decode {decode:.1f} tok/s ({gen} tokens)")
 PY
 
-kill -0 "$helper_pid" 2>/dev/null || { echo "HELPER_DIED" >&2; tail -60 "$out/helper.log" >&2; exit 1; }
+[ -z "$helper_pid" ] || kill -0 "$helper_pid" 2>/dev/null || { echo "HELPER_DIED" >&2; tail -60 "$out/helper.log" >&2; exit 1; }
 kill -0 "$server_pid" 2>/dev/null || { echo "SERVER_DIED" >&2; tail -60 "$out/server.log" >&2; exit 1; }
 
 grep -E 'MoE remote hook active|R3_MOE_HELPER|error|abort|assert|fault' "$out/server.log" | tail -20 || true
