@@ -144,9 +144,9 @@ extern "C" RadMoeRemoteHandle rad_moe_remote_submit(
         const int64_t le = (int64_t)ids[(size_t)i] - expert_base;
         if (le < 0 || le >= n_expert || !gate_up[le] || !down[le] ||
             !c->weight_in_host_pool(gate_up[le]) || !c->weight_in_host_pool(down[le]) ||
-            !hooks.owns(hooks.user, layer, ids[(size_t)i])) continue;
+            !hooks.owns(hooks.user, layer, (int)le)) continue;
         slot.push_back(i);
-        route.push_back(RadMoeRemoteRoute{(int32_t)(i / top_k), ids[(size_t)i], ew[(size_t)i], 0});
+        route.push_back(RadMoeRemoteRoute{(int32_t)(i / top_k), (int32_t)le, ew[(size_t)i], 0});
     }
     if (route.empty()) return nullptr;
     RadMoeRemoteHandle h = hooks.submit(hooks.user, layer, c->rank(), rows, n_embd,
