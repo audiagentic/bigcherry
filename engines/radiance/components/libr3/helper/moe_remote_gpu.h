@@ -472,49 +472,109 @@ public:
     }
 
 
-    int enqueue_lane(void* host_map, void* device_map, r3::moe_shm::Request* q,
-                     uint32_t rank, uint32_t sequence) {
+    bool prepare_lanes(uint32_t max_rows) {
         using namespace r3::moe_shm;
-        if (!host_map || !device_map || !q || rank >= kMaxRanks || q->rank != rank ||
-            q->rank_count != kMaxRanks || q->layer >= model_.layers || q->rows == 0 ||
-            q->rows > kMaxRows || q->hidden != kHidden ||
-            q->route_count > q->rows * kTopK || q->activation_stride != kHidden * sizeof(uint16_t))
+        if (max_rows == 0 || max_rows > kMaxRows || !d_layer_tables_.p) return false;
+        lane_rows_ = max_rows;
+        lane_routes_ = max_rows * kTopK;
+        constexpr size_t nclass = kExperts / 2;
+        for (auto& w : lane_) {
+            if (!ensure_lane_work(w, lane_rows_, lane_routes_, lane_routes_) ||
+                !w.d_stats.ensure(3 * sizeof(uint64_t)))
+                return false;
+            for (uint32_t parity = 0; parity < 2; ++parity) {
+                if (!w.gu_code[parity].ensure(nclass * sizeof(void*)) ||
+                    !w.gu_scale[parity].ensure(nclass * sizeof(void*)) ||
+                    !w.dn_code[parity].ensure(nclass * sizeof(void*)) ||
+                    !w.dn_scale[parity].ensure(nclass * sizeof(void*)))
+                    return false;
+            }
+            if (!hip_ok(hipMemset(w.d_stats.p, 0, 3 * sizeof(uint64_t)), "zero lane stats"))
+                return false;
+        }
+        return true;
+    }
+
+    int enqueue_lane(void* host_map, void* device_map, uint32_t rank, uint32_t sequence,
+                     bool sample) {
+        using namespace r3::moe_shm;
+        if (!host_map || !device_map || rank >= kMaxRanks || sequence == 0 ||
+            lane_rows_ == 0 || lane_routes_ != lane_rows_ * kTopK)
             return -EINVAL;
+
         LaneWork& w = lane_[rank];
-        const uint32_t rows = q->rows;
-        const uint32_t tr = rows * kTopK;
-        if (!ensure_lane_work(w, rows, q->route_count, tr)) return -ENOMEM;
         auto* hhost = static_cast<Header*>(host_map);
         auto* dbase = static_cast<uint8_t*>(device_map);
         auto dev_at = [&](const void* hp) -> void* {
-            return dbase + (static_cast<const uint8_t*>(hp) - static_cast<const uint8_t*>(host_map));
+            return dbase + (static_cast<const uint8_t*>(hp) -
+                            static_cast<const uint8_t*>(host_map));
         };
-        auto* request_seq = static_cast<uint32_t*>(dev_at(&hhost->lane[rank].request_sequence));
-        auto* done_seq = static_cast<uint32_t*>(dev_at(&hhost->lane[rank].done_sequence));
-        auto* route = static_cast<const Route*>(dev_at(ptr<Route>(host_map, q->route_offset)));
-        auto* act = static_cast<uint16_t*>(dev_at(ptr<uint16_t>(host_map, q->activation_offset)));
-        auto* dst = static_cast<uint16_t*>(dev_at(ptr<uint16_t>(host_map, q->result_offset[rank])));
+
+        Request* qhost = lane_request(host_map, rank, sequence);
+        if (!qhost) return -EINVAL;
+        auto* q = static_cast<Request*>(dev_at(qhost));
+        auto* request_seq =
+            static_cast<uint32_t*>(dev_at(&hhost->lane[rank].request_sequence));
+        auto* done_seq =
+            static_cast<uint32_t*>(dev_at(&hhost->lane[rank].done_sequence));
+        auto* route = static_cast<const Route*>(
+            dev_at(ptr<Route>(host_map, hhost->route_offset[rank])));
+        auto* act = static_cast<const uint16_t*>(
+            dev_at(ptr<uint16_t>(host_map, hhost->activation_offset[rank])));
+        auto* dst = static_cast<uint16_t*>(
+            dev_at(ptr<uint16_t>(
+                host_map, hhost->result_offset[rank * kMaxRanks + rank])));
 
         if (!hip_ok(hipStreamWaitValue32(w.stream, request_seq, sequence,
                                          hipStreamWaitValueGte, 0xffffffffu),
-                    "lane wait request")) return -EIO;
-        if (q->route_count == 0) {
-            const size_t result_bytes = (size_t)rows * kHidden * sizeof(uint16_t);
-            if (!hip_ok(hipMemsetAsync(dst, 0, result_bytes, w.stream), "zero empty lane result") ||
-                !hip_ok(hipStreamWriteValue32(w.stream, done_seq, sequence, 0), "lane write empty done"))
-                return -EIO;
-            return 0;
-        }
-        if (!hip_ok(hipMemsetAsync(w.d_counts.p, 0, kExperts * sizeof(uint32_t), w.stream), "clear route counts") ||
-            !hip_ok(hipMemsetAsync(w.d_token_slot.p, 0, rows * sizeof(uint32_t), w.stream), "clear token slots") ||
-            !hip_ok(hipMemsetAsync(w.d_ew.p, 0, tr * sizeof(uint16_t), w.stream), "clear route weights") ||
-            !hip_ok(hipMemsetAsync(w.d_sorted.p, 0xff, tr * sizeof(int32_t), w.stream), "clear sorted routes") ||
-            !hip_ok(hipMemsetAsync(w.d_sorted_expert.p, 0xff, tr * sizeof(int32_t), w.stream), "clear sorted experts"))
+                    "lane wait request"))
             return -EIO;
+        if (sample && !w.sample_pending) {
+            if (!hip_ok(hipEventRecord(w.sample_start, w.stream), "lane timing start"))
+                return -EIO;
+            w.sample_sequence = sequence;
+            w.sample_pending = true;
+        }
+
+        const uint32_t rows = lane_rows_;
+        const uint32_t routes = lane_routes_;
+        if (!hip_ok(hipMemsetAsync(dst, 0, (size_t)rows * kHidden * sizeof(uint16_t), w.stream),
+                    "clear lane result") ||
+            !hip_ok(hipMemsetAsync(w.d_counts.p, 0, kExperts * sizeof(uint32_t), w.stream),
+                    "clear route counts") ||
+            !hip_ok(hipMemsetAsync(w.d_token_slot.p, 0, rows * sizeof(uint32_t), w.stream),
+                    "clear token slots") ||
+            !hip_ok(hipMemsetAsync(w.d_ew.p, 0, routes * sizeof(uint16_t), w.stream),
+                    "clear route weights") ||
+            !hip_ok(hipMemsetAsync(w.d_sorted.p, 0xff, routes * sizeof(int32_t), w.stream),
+                    "clear sorted routes") ||
+            !hip_ok(hipMemsetAsync(w.d_sorted_expert.p, 0xff,
+                                   routes * sizeof(int32_t), w.stream),
+                    "clear sorted experts"))
+            return -EIO;
+
         const dim3 block(256);
-        const dim3 route_grid((q->route_count + block.x - 1) / block.x);
+        const dim3 act_grid(
+            ((uint64_t)rows * kHidden + block.x - 1) / block.x);
+        const dim3 route_grid((routes + block.x - 1) / block.x);
+        hipLaunchKernelGGL(lane_prepare_activation, act_grid, block, 0, w.stream,
+                           q, act, static_cast<uint16_t*>(w.d_act.p),
+                           rank, sequence, rows, model_.layers,
+                           static_cast<uint64_t*>(w.d_stats.p));
+        hipLaunchKernelGGL(lane_select_tables,
+                           dim3((kExperts / 2 + block.x - 1) / block.x), block, 0, w.stream,
+                           q, static_cast<const DeviceLayerTables*>(d_layer_tables_.p),
+                           model_.layers, rank, sequence, rows,
+                           static_cast<void**>(w.gu_code[0].p),
+                           static_cast<void**>(w.gu_scale[0].p),
+                           static_cast<void**>(w.dn_code[0].p),
+                           static_cast<void**>(w.dn_scale[0].p),
+                           static_cast<void**>(w.gu_code[1].p),
+                           static_cast<void**>(w.gu_scale[1].p),
+                           static_cast<void**>(w.dn_code[1].p),
+                           static_cast<void**>(w.dn_scale[1].p));
         hipLaunchKernelGGL(lane_route_count, route_grid, block, 0, w.stream,
-                           route, q->route_count, rows,
+                           route, q, rank, sequence, rows, model_.layers,
                            static_cast<uint32_t*>(w.d_counts.p),
                            static_cast<uint32_t*>(w.d_token_slot.p),
                            static_cast<int32_t*>(w.d_flat.p),
@@ -524,81 +584,117 @@ public:
                            static_cast<int32_t*>(w.d_off.p),
                            static_cast<uint32_t*>(w.d_cursor.p));
         hipLaunchKernelGGL(lane_route_scatter, route_grid, block, 0, w.stream,
-                           route, q->route_count,
+                           route, q, rank, sequence, rows, model_.layers,
                            static_cast<const int32_t*>(w.d_flat.p),
                            static_cast<uint32_t*>(w.d_cursor.p),
                            static_cast<int32_t*>(w.d_sorted.p),
                            static_cast<int32_t*>(w.d_sorted_expert.p));
-        if (!hip_ok(hipGetLastError(), "lane route kernels")) return -EIO;
+        if (!hip_ok(hipGetLastError(), "lane request kernels")) return -EIO;
 
         std::vector<RadParam> aqp = {
             pi("M", rows), pi("n", kHidden), pi("group", kGroup), ps("dtype", "bf16")
         };
         if (launch_on(had_quant_,
-                      { tensor(act, RAD_BF16, {rows, kHidden}),
+                      { tensor(w.d_act.p, RAD_BF16, {rows, kHidden}),
                         tensor(w.d_aq.p, RAD_F8E4M3, {rows, kHidden}),
                         tensor(w.d_as.p, RAD_F32, {rows, kHidden / kGroup}) },
-                      aqp, w.stream, w.scratch) < 0) return -EIO;
+                      aqp, w.stream, w.scratch) < 0)
+            return -EIO;
 
-        LayerTables& lt = tables_[q->layer];
         std::vector<RadParam> gp = gemm_params(rows, kGateUpWidth, kHidden, 2, "token");
         if (launch_on(moe_,
                       { tensor(w.d_aq.p, RAD_F8E4M3, {rows, kHidden}),
                         tensor(w.d_as.p, RAD_F32, {rows, kHidden / kGroup}),
-                        table_tensor(lt.gu_code[0], lt.gu_code_dtype, kGateUpWidth, kHidden),
-                        table_tensor(lt.gu_scale[0], lt.gu_scale_dtype, kGateUpWidth, kHidden / 64),
-                        tensor(w.d_sorted.p, RAD_I32, {tr}),
+                        table_tensor(w.gu_code[0].p, gu_code_dtype_, kGateUpWidth, kHidden),
+                        table_tensor(w.gu_scale[0].p, gu_scale_dtype_, kGateUpWidth, kHidden / 64),
+                        tensor(w.d_sorted.p, RAD_I32, {routes}),
                         tensor(w.d_off.p, RAD_I32, {kExperts + 1}),
-                        table_tensor(lt.gu_code[1], lt.gu_code_dtype, kGateUpWidth, kHidden),
-                        table_tensor(lt.gu_scale[1], lt.gu_scale_dtype, kGateUpWidth, kHidden / 64),
-                        tensor(w.d_gu.p, RAD_BF16, {tr, kGateUpWidth}) },
-                      gp, w.stream, w.scratch) < 0) return -EIO;
+                        table_tensor(w.gu_code[1].p, gu_code_dtype_, kGateUpWidth, kHidden),
+                        table_tensor(w.gu_scale[1].p, gu_scale_dtype_, kGateUpWidth, kHidden / 64),
+                        tensor(w.d_gu.p, RAD_BF16, {routes, kGateUpWidth}) },
+                      gp, w.stream, w.scratch) < 0)
+            return -EIO;
 
         std::vector<RadParam> gqp = {
-            pi("M", q->route_count), pi("n", kExpertWidth), pi("group", kGroup),
+            pi("M", routes), pi("n", kExpertWidth), pi("group", kGroup),
             ps("dtype", "bf16"), ps("act", "silu")
         };
         if (launch_on(gated_quant_,
-                      { tensor(w.d_gu.p, RAD_BF16, {q->route_count, kGateUpWidth}),
-                        tensor(w.d_mid.p, RAD_F8E4M3, {q->route_count, kExpertWidth}),
-                        tensor(w.d_mid_s.p, RAD_F32, {q->route_count, kExpertWidth / kGroup}),
-                        absent() }, gqp, w.stream, w.scratch) < 0) return -EIO;
+                      { tensor(w.d_gu.p, RAD_BF16, {routes, kGateUpWidth}),
+                        tensor(w.d_mid.p, RAD_F8E4M3, {routes, kExpertWidth}),
+                        tensor(w.d_mid_s.p, RAD_F32, {routes, kExpertWidth / kGroup}),
+                        absent() }, gqp, w.stream, w.scratch) < 0)
+            return -EIO;
 
-        const uint32_t middle_n = q->route_count * (uint32_t)kExpertWidth;
-        const dim3 middle_grid((middle_n + block.x - 1) / block.x);
-        hipLaunchKernelGGL(lane_mask_middle, middle_grid, block, 0, w.stream,
+        hipLaunchKernelGGL(lane_mask_middle,
+                           dim3(((uint64_t)routes * kExpertWidth + block.x - 1) / block.x),
+                           block, 0, w.stream,
                            static_cast<const uint8_t*>(w.d_mid.p),
                            static_cast<uint8_t*>(w.d_mid_rank.p),
                            static_cast<const int32_t*>(w.d_sorted_expert.p),
-                           q->route_count, rank);
+                           routes, rank);
         if (!hip_ok(hipGetLastError(), "lane TP mask")) return -EIO;
 
         std::vector<RadParam> dp = gemm_params(rows, kHidden, kExpertWidth, 1, "sorted");
         if (launch_on(moe_,
-                      { tensor(w.d_mid_rank.p, RAD_F8E4M3, {tr, kExpertWidth}),
-                        tensor(w.d_mid_s.p, RAD_F32, {tr, kExpertWidth / kGroup}),
-                        table_tensor(lt.dn_code[0], lt.dn_code_dtype, kHidden, kExpertWidth),
-                        table_tensor(lt.dn_scale[0], lt.dn_scale_dtype, kHidden, kExpertWidth / 64),
-                        tensor(w.d_sorted.p, RAD_I32, {tr}),
+                      { tensor(w.d_mid_rank.p, RAD_F8E4M3, {routes, kExpertWidth}),
+                        tensor(w.d_mid_s.p, RAD_F32, {routes, kExpertWidth / kGroup}),
+                        table_tensor(w.dn_code[0].p, dn_code_dtype_, kHidden, kExpertWidth),
+                        table_tensor(w.dn_scale[0].p, dn_scale_dtype_, kHidden, kExpertWidth / 64),
+                        tensor(w.d_sorted.p, RAD_I32, {routes}),
                         tensor(w.d_off.p, RAD_I32, {kExperts + 1}),
-                        table_tensor(lt.dn_code[1], lt.dn_code_dtype, kHidden, kExpertWidth),
-                        table_tensor(lt.dn_scale[1], lt.dn_scale_dtype, kHidden, kExpertWidth / 64),
-                        tensor(w.d_down.p, RAD_BF16, {tr, kHidden}) },
-                      dp, w.stream, w.scratch) < 0) return -EIO;
+                        table_tensor(w.dn_code[1].p, dn_code_dtype_, kHidden, kExpertWidth),
+                        table_tensor(w.dn_scale[1].p, dn_scale_dtype_, kHidden, kExpertWidth / 64),
+                        tensor(w.d_down.p, RAD_BF16, {routes, kHidden}) },
+                      dp, w.stream, w.scratch) < 0)
+            return -EIO;
 
         std::vector<RadParam> mp = {
             pi("M", rows), pi("n", kHidden), pi("top_k", kTopK), ps("dtype", "bf16")
         };
         if (launch_on(gather_,
-                      { tensor(w.d_down.p, RAD_BF16, {tr, kHidden}),
+                      { tensor(w.d_down.p, RAD_BF16, {routes, kHidden}),
                         tensor(w.d_ew.p, RAD_BF16, {rows, kTopK}),
-                        tensor(w.d_sorted.p, RAD_I32, {tr}),
+                        tensor(w.d_sorted.p, RAD_I32, {routes}),
                         absent(), absent(), tensor(dst, RAD_BF16, {rows, kHidden}) },
-                      mp, w.stream, w.scratch) < 0) return -EIO;
+                      mp, w.stream, w.scratch) < 0)
+            return -EIO;
 
-        if (!hip_ok(hipStreamWriteValue32(w.stream, done_seq, sequence, 0), "lane write done"))
+        if (sample && w.sample_pending && w.sample_sequence == sequence &&
+            !hip_ok(hipEventRecord(w.sample_stop, w.stream), "lane timing stop"))
+            return -EIO;
+        if (!hip_ok(hipStreamWriteValue32(w.stream, done_seq, sequence, 0),
+                    "lane write done"))
             return -EIO;
         return 0;
+    }
+
+    bool collect_lane_timing(uint32_t rank, uint32_t done_sequence,
+                             double* sampled_us, uint64_t* samples) {
+        if (rank >= r3::moe_shm::kMaxRanks || !sampled_us || !samples) return false;
+        LaneWork& w = lane_[rank];
+        if (!w.sample_pending ||
+            (int32_t)(done_sequence - w.sample_sequence) < 0)
+            return true;
+        float ms = 0.0f;
+        if (!hip_ok(hipEventElapsedTime(&ms, w.sample_start, w.sample_stop),
+                    "lane timing elapsed"))
+            return false;
+        *sampled_us += (double)ms * 1000.0;
+        ++*samples;
+        w.sample_pending = false;
+        return true;
+    }
+
+    bool sync_lane(uint32_t rank) {
+        return rank < r3::moe_shm::kMaxRanks &&
+               hip_ok(hipStreamSynchronize(lane_[rank].stream), "lane stream sync");
+    }
+
+    bool lane_stats(uint32_t rank, uint64_t out[3]) {
+        if (rank >= r3::moe_shm::kMaxRanks || !out) return false;
+        return hip_ok(hipMemcpy(out, lane_[rank].d_stats.p, 3 * sizeof(uint64_t),
+                                hipMemcpyDeviceToHost), "read lane stats");
     }
 
 private:
@@ -624,6 +720,9 @@ private:
     HostBounce load_bounce_;
     Buffer d_act_, d_aq_, d_as_, d_sorted_, d_off_, d_ew_, d_gu_;
     Buffer d_mid_, d_mid_s_, d_mid_rank_, d_down_, d_result_, scratch_;
+    Buffer d_layer_tables_;
+    uint32_t lane_rows_ = 0;
+    uint32_t lane_routes_ = 0;
 
     template <class T> bool symbol(const char* name, T* out, bool required = true) {
         dlerror();
@@ -867,7 +966,19 @@ private:
                     !build_one_table(dns, &lt.dn_scale[parity])) return false;
             }
         }
-        return true;
+        std::vector<DeviceLayerTables> device_tables(model_.layers);
+        for (uint32_t l = 0; l < model_.layers; ++l) {
+            for (uint32_t parity = 0; parity < 2; ++parity) {
+                device_tables[l].gu_code[parity] = tables_[l].gu_code[parity];
+                device_tables[l].gu_scale[parity] = tables_[l].gu_scale[parity];
+                device_tables[l].dn_code[parity] = tables_[l].dn_code[parity];
+                device_tables[l].dn_scale[parity] = tables_[l].dn_scale[parity];
+            }
+        }
+        const size_t bytes = device_tables.size() * sizeof(DeviceLayerTables);
+        return d_layer_tables_.ensure(bytes) &&
+               hip_ok(hipMemcpy(d_layer_tables_.p, device_tables.data(), bytes,
+                                hipMemcpyHostToDevice), "upload layer table index");
     }
 
     bool owns(uint32_t layer, uint32_t expert) const {
@@ -916,6 +1027,7 @@ private:
     bool ensure_lane_work(LaneWork& w, uint32_t rows, uint32_t routes, uint32_t tr) {
         return w.d_counts.ensure((size_t)r3::moe_shm::kExperts * 4) &&
                w.d_cursor.ensure((size_t)r3::moe_shm::kExperts * 4) &&
+               w.d_act.ensure((size_t)rows * r3::moe_shm::kHidden * 2) &&
                w.d_token_slot.ensure((size_t)rows * 4) &&
                w.d_flat.ensure((size_t)routes * 4) &&
                w.d_sorted.ensure((size_t)tr * 4) &&
