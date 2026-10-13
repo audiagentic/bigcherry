@@ -84,7 +84,9 @@ struct Container {
         encs = (const RadEncoding*)(base + h->enc_off);
         profile = h->prof_count ? (const RadFileProfile*)(base + h->prof_off) : nullptr;
         int32_t max_layer = -1;
-        for (uint64_t i = 0; i < h->dir_count; ++i) if (dir[i].layer >= 0) max_layer = std::max(max_layer, dir[i].layer);
+        /* Only expert entries count: the container numbers other tensors past the MoE layers (Flash-Next: 139). */
+        for (uint64_t i = 0; i < h->dir_count; ++i)
+            if (dir[i].layer >= 0 && dir[i].expert >= 0) max_layer = std::max(max_layer, dir[i].layer);
         layers = (uint32_t)(max_layer + 1); expert.resize((size_t)layers * kExperts);
         for (uint64_t i = 0; i < h->dir_count; ++i) {
             const auto& e = dir[i];
