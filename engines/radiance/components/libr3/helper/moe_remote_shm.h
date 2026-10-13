@@ -11,7 +11,7 @@
 namespace r3::moe_shm {
 
 constexpr uint64_t kMagic = 0x31454f4d33485253ull; /* "SRH3MOE1": reject unrelated/stale shm. */
-constexpr uint32_t kVersion = 2;
+constexpr uint32_t kVersion = 3;
 constexpr uint32_t kPage = 4096;
 constexpr uint32_t kMaxRanks = 2;       /* Flash-Next configuration of record: TP=2. */
 constexpr uint32_t kMaxLayers = 128;     /* ownership bitmap bound; Flash-Next is below this. */
@@ -74,7 +74,7 @@ struct alignas(kPage) Header {
     uint64_t ring_offset;           /* Request[kRingSlots], page aligned. */
     uint64_t route_offset[kMaxRanks];
     uint64_t activation_offset[kMaxRanks];
-    uint64_t result_offset[kMaxRanks];
+    uint64_t result_offset[kMaxRanks * kMaxRanks]; /* [producer rank][output rank], like result_slot_bytes. */
     uint64_t segment_bytes;         /* exact mmap/ftruncate/hipHostRegister-able length. */
     uint64_t reserved[16];
 };

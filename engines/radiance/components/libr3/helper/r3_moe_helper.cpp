@@ -468,7 +468,12 @@ int main(int argc, char** argv) {
     init(map, model.layers);
     publish_owned(map, owned);
     auto* h = static_cast<Header*>(map);
-    std::signal(SIGINT, on_signal); std::signal(SIGTERM, on_signal);
+    /* No SA_RESTART (std::signal sets it): the futex wait must return EINTR so the loop sees g_stop. */
+    struct sigaction sa{};
+    sa.sa_handler = on_signal;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    sigaction(SIGINT, &sa, nullptr); sigaction(SIGTERM, &sa, nullptr);
     std::fprintf(stderr, "r3_moe_helper: ready shm=%s layers=%u bytes=%llu (%s)\n",
                  name, model.layers, (unsigned long long)lay.bytes,
                  cpu ? "host fp32 reference" : gpu->arch().c_str());
