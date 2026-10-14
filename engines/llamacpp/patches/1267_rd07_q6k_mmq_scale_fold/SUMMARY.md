@@ -1,7 +1,7 @@
 # 1267_rd07_q6k_mmq_scale_fold
 
-**Status:** untested; **known_broken on b11552** (not adopted).
-**Plan item:** PRBE110; downstream PRBE04.
+**Status:** untested
+**Plan item:** PRBE110
 
 Hoists Q6_K MMQ row scales and folds sub-scales outside the j0 loop. Historical b11126 gfx1201 pp512 +2.4675% (CI95 [2.2776%,2.6508%]); not a current-pin or validated-state gain.
 

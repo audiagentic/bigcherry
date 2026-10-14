@@ -1,7 +1,7 @@
 # 1261_nro10_spec_ctx_other_devices
 
-**Status:** untested / BLOCKED_SOURCE (2026-10-14)
-**Authoritative plan:** PNRO10
+**Status:** untested
+**Plan item:** PNRO10
 
 ## Scope and current defect
 

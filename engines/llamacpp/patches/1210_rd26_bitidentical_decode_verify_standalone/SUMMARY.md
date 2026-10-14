@@ -1,5 +1,8 @@
 # 1210_rd26_bitidentical_decode_verify_standalone
 
+**Status:** untested
+**Plan item:** RD26
+
 **State:** untested (not promoted). **Authoritative plan:** PRBE20. **Audit:** 2026-10-13 / BCOP184.
 
 The patch is **not** just the original two-hunk subset. `patch.py` includes plain/fused MMVF selection, CPU sgemm gate, FlashAttention WMMA/tile selection and RDNA3/RDNA4 MMVQ nwarps changes. The source provenance remains the stew675 fork; the historical “remaining three hunks deferred” statement is obsolete.

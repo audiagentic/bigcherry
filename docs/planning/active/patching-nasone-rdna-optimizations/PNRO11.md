@@ -13,7 +13,9 @@ priority: P1
 
 # DFlash/DSpark tensor-split shared lm_head: retire target-wide replication
 
-## Authoritative disposition — 2026-10-14 (llama.cpp b11552)
+## Description
+
+### Authoritative disposition — 2026-10-14 (llama.cpp b11552)
 
 **Done for the original target-wide lm_head replication proposal. No new patch, queue or GPU claim.** The proposed `src/llama-model.cpp` change from `GGML_BACKEND_SPLIT_AXIS_1` to `MIRRORED` would affect **every consumer of the target model**, including native MTP, to solve a draft-only access problem. BigCherry **1286_draft_local_shared_tensors** already provides the narrower, one-time, draft-device copy for the observed **single-device DFlash/DSpark draft + tensor-split target** route. QFP43/1286 own that implementation and qualification. Do not add a second model-load flag, global mirrored head, selector, allocator or speculative scheduler here. Earlier implementation steps, bias-mirroring edits and the proposed `1264_pnro11_lmhead_replication_tp` package are superseded; historical text is retained in Git history.
 
@@ -48,3 +50,27 @@ QFP43's 2026-10-05 dual-XTX 27B target + 6900 XT draft measurements: built-in MT
 3. **Performance admission:** no implementation/benchmark queue unless an eligible real draft exists and a matched current-pin screen shows an exposed end-to-end opportunity of **at least 3% versus the best working native MTP**, without losing prompt throughput or acceptance. If admitted, require >=4 independent sessions per relevant AMD architecture, >=10 paired ABBA rounds, positive CI95 lower bound on end-to-end gain, full numerical/candidate correctness, no >1% negative-control regression, and VRAM fit. Otherwise terminal **NO_PORT / KEEP_MTP**.
 
 **Validation this audit:** 12/12 source assertions against pinned llama.cpp, 1286 and QFP43; 6/6 upstream PR-head assertions; 9/9 disposable host route/accounting assertions; Python compilation passed. No HIP compilation, GPU run, repository pytest or new benchmark. Recent independent work is Radiance mailbox/helper, patch-prefix and release; no PNRO11/1286/QFP43 changes in the preceding 12 hours. BCOP192 records this disposition.
+
+## Steps
+
+## Detailed Solution & Technical Design
+
+## Code Samples & Guidance
+
+## Files
+
+## Validation
+
+## Effort & Risk
+
+## Standards
+
+## Acceptance Criteria
+
+## Notes
+
+## Change Log
+
+- 2026-10-14 (state): Marked done; target-wide replication proposal retired in favor of narrower 1286/QFP43 draft-local route.
+
+## Ledger-events
