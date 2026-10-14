@@ -949,11 +949,28 @@ int main(int argc, char** argv) {
     }
 
     std::fprintf(stderr, "r3_moe_helper: waiting for engine runtime expert maps\n");
+    /* The first map waits as long as the engine takes to start. After that the engine declares its
+     * layers back to back, so a layer whose map has not come within 10 s is one this engine never
+     * declares (the MTP layer in a run without speculation, e.g. KL mode): drop its ownership. */
+    bool any_map = false;
     for (uint32_t layer = 0; layer < model.layers; ++layer) {
         while (!load(&h->layer_map_ready[layer])) {
-            const uint32_t seen = load(&h->layer_map_ready[layer]);
-            if (!seen) (void)futex_wait(&h->layer_map_ready[layer], seen);
+            if (!any_map) {
+                (void)futex_wait(&h->layer_map_ready[layer], 0);
+                continue;
+            }
+            struct timespec ts{10, 0};
+            (void)::syscall(SYS_futex, &h->layer_map_ready[layer], FUTEX_WAIT, 0, &ts, nullptr, 0);
+            if (!load(&h->layer_map_ready[layer])) break;
         }
+        if (!load(&h->layer_map_ready[layer])) {
+            std::fprintf(stderr, "r3_moe_helper: layer %u has no runtime map (not declared by the engine); not owned\n",
+                         layer);
+            for (auto [l, e] : owned.expert)
+                if (l == layer) (void)clear_owned(map, l, e);
+            continue;
+        }
+        any_map = true;
         const int32_t* slots = layer_slots(map, layer);
         if (!slots) {
             munmap(map, lay.bytes); close(fd); shm_unlink(name); return 1;
@@ -971,7 +988,7 @@ int main(int argc, char** argv) {
     }
     Owned runtime_owned;
     for (auto [l, e] : owned.expert) {
-        if (layer_slot(map, l, e) < 0) continue;
+        if (!load(&h->layer_map_ready[l]) || layer_slot(map, l, e) < 0) continue;
         runtime_owned.expert.emplace_back(l, e);
         const int64_t eb = gpu ? gpu->expert_bytes(l, e) : canonical_expert_bytes(model, l, e);
         if (eb > 0) runtime_owned.bytes += (uint64_t)eb;
