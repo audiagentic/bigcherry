@@ -434,6 +434,19 @@ PATCHES = (
                 expect_matches=1,
                 rationale="pin_mapped's per-unit loop starts with this declaration; a remote unit is decided before any host/ngram logic and leaves the loop.",
             ),
+            Edit(
+                id="rank-units-skip-preplaced",
+                anchor=r"^    for \(int32_t i = 0; i < \(int32_t\)p->units\.size\(\); \+\+i\) order->push_back\(i\);$",
+                mode="replace",
+                text="""    /* A preplaced unit is never filled (the rule every assignment pass states). Upstream only ever
+     * preplaced model-level units the expert fill skips anyway; a helper-owned routed expert is
+     * conditional, so the fill must not see it. */
+    for (int32_t i = 0; i < (int32_t)p->units.size(); ++i)
+        if (!p->units[(size_t)i].preplaced()) order->push_back(i);""",
+                guard=r"if \(!p->units\[\(size_t\)i\]\.preplaced\(\)\) order->push_back\(i\);",
+                expect_matches=1,
+                rationale="rank_units' order is what the expert-tiered fill walks; leaving preplaced units out keeps a helper-owned expert on the mapped tier.",
+            ),
         ),
     ),
     FilePatch(
