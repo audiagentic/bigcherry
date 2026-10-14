@@ -461,9 +461,13 @@ public:
     bool open() {
         const char* poison = std::getenv("R3_MOE_HELPER_POISON");
         /* "zero" returns zeros (the same output as dropping the remote routes); anything else non-"0" is 1e3. */
-        if (const char* gv = std::getenv("R3_MOE_HELPER_GEMV"); gv && *gv && std::strcmp(gv, "0") != 0) {
-            gemv_ = std::strcmp(gv, "2") != 0;
-            gemv_debug_ = std::strcmp(gv, "2") == 0;
+        /* The decode GEMV is the default (RAD05: decode +37%, KLD inside the noise floor); 0 turns it off,
+         * 2 runs the grouped GEMM and compares the two (--compare). */
+        {
+            const char* gv = std::getenv("R3_MOE_HELPER_GEMV");
+            const bool off = gv && std::strcmp(gv, "0") == 0;
+            gemv_debug_ = gv && std::strcmp(gv, "2") == 0;
+            gemv_ = !off && !gemv_debug_;
         }
         poison_ = !poison || !*poison || std::strcmp(poison, "0") == 0 ? 0u
                 : std::strcmp(poison, "zero") == 0 ? 2u : 1u;
@@ -1077,7 +1081,7 @@ private:
     int64_t mid_w() const { return full_width() ? kExpertWidth : kRankWidth; }
     uint32_t large_rows_ = 0;   /* large-lane capacity */
     uint32_t poison_ = 0;
-    bool gemv_ = false;         /* R3_MOE_HELPER_GEMV: decode GEMV on the small lane (RAD05) */
+    bool gemv_ = true;          /* R3_MOE_HELPER_GEMV: decode GEMV on the small lane (RAD05); 0 = off */
     bool gemv_debug_ = false;   /* R3_MOE_HELPER_GEMV=2: grouped GEMM AND GEMV gate/up, compared (--compare) */
 
     template <class T> bool symbol(const char* name, T* out, bool required = true) {
