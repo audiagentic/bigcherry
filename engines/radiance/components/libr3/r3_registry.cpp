@@ -4,6 +4,8 @@
 #include <vector>
 
 extern "C" {
+int r4d_up_kernel_schema_count(void);
+const RadOpSchema* r4d_up_kernel_schema_at(int i);
 int r4d_up_kernel_count(void);
 const RadKernelInfo* r4d_up_kernel_at(int i);
 int r4d_up_kernel_concurrent(int i);
@@ -12,6 +14,10 @@ extern const char r3_stub_begin[];
 extern const char r3_stub_end[];
 int r3_ngram_enabled(void);
 const RadKernelInfo* r3_ngram_row(void);
+int r3_moe_mailbox_enabled(void);
+int r3_moe_mailbox_schema_count(void);
+const RadOpSchema* r3_moe_mailbox_schema_at(int i);
+const RadKernelInfo* r3_moe_mailbox_row(int i);
 }
 
 namespace {
@@ -29,6 +35,8 @@ const std::vector<LiveRow>& live() {
             if (k && k->launch && !is_stub(reinterpret_cast<const void*>(k->launch))) out.push_back({i, nullptr});
         }
         if (r3_ngram_enabled()) out.push_back({-1, r3_ngram_row()});
+        if (r3_moe_mailbox_enabled())
+            for (int i = 0; r3_moe_mailbox_row(i); ++i) out.push_back({-1, r3_moe_mailbox_row(i)});  // every mailbox row: publish, merge, shadow, mask-ref
         return out;
     }();
     return rows;
@@ -38,9 +46,17 @@ const std::vector<LiveRow>& live() {
 extern "C" const RadPluginInfo* rad_plugin_info(void) {
     static const RadPluginInfo info = {
         RAD_PLUGIN_KERNEL, "libr3", "0.0.1",
-        "libr4d gfx11 kernels plus opt-in host helpers for non-rank devices", R3_TARGETS,
+        "libr4d gfx11 kernels plus opt-in GPU mailbox and host helpers", R3_TARGETS,
     };
     return &info;
+}
+extern "C" int rad_kernel_schema_count(void) {
+    return r4d_up_kernel_schema_count() + r3_moe_mailbox_schema_count();
+}
+extern "C" const RadOpSchema* rad_kernel_schema_at(int i) {
+    const int up = r4d_up_kernel_schema_count();
+    if (i < 0) return nullptr;
+    return i < up ? r4d_up_kernel_schema_at(i) : r3_moe_mailbox_schema_at(i - up);
 }
 extern "C" int rad_kernel_count(void) { return static_cast<int>(live().size()); }
 extern "C" const RadKernelInfo* rad_kernel_at(int i) {
