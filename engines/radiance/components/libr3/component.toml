@@ -59,6 +59,16 @@ default = "64"
 status = "experimental"
 summary = "largest step (rows) published to the helper GPU lanes; larger prefill steps keep the engine path"
 
+[setting.R3_MOE_HELPER_DUMP]
+default = ""
+status = "diagnostic"
+summary = "directory: in mask-only modes, write one request's routes, helper rows and engine-captured rows per rank (r<rank>.{routes,helper,engine}.bin)"
+
+[setting.R3_MOE_HELPER_DUMP_LAYER]
+default = "20"
+status = "diagnostic"
+summary = "layer whose first request R3_MOE_HELPER_DUMP writes"
+
 [setting.R3_MOE_HELPER_POISON]
 default = "0"
 status = "diagnostic"
