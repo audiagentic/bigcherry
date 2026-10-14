@@ -229,7 +229,7 @@ class TestRadiancePatchPackages(unittest.TestCase):
         self.assertIn('{"shared_gate", RAD_OPD_IN, 1}', ops)
         self.assertIn('{"out", RAD_OPD_OUT, 0}', ops)
         self.assertIn('for (uint32_t slot = 0; slot < top_k; ++slot)', ops)
-        self.assertIn('acc += bf16_to_f32(ew[flat]) * bf16_to_f32(src[col]);', ops)
+        self.assertIn('acc += bf16_to_f32(ew[flat]) * bf16_to_f32(v);', ops)
         self.assertIn('const uint16_t gathered = f32_to_bf16_rn(acc);', ops)
         self.assertIn(
             'f32_to_bf16_rn(bf16_to_f32(part) + bf16_to_f32(gathered))', ops
