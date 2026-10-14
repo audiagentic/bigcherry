@@ -423,7 +423,8 @@ struct LaneWork {
     uint32_t sample_sequence = 0;
     bool sample_pending = false;
     uint32_t cap_rows = 0;
-    Buffer d_counts, d_cursor, d_flat, d_sorted, d_off, d_ew, d_inv;
+    Buffer d_counts, d_cursor, d_flat, d_sorted, d_off, d_ew, d_inv, d_dbg;
+    uint32_t dbg_routes = 0;
     Buffer d_act, d_aq, d_as, d_gu, d_mid, d_mid_s, d_down, d_stats, scratch;
     Buffer gu_code[2], gu_scale[2], dn_code[2], dn_scale[2];
 };
@@ -893,31 +894,8 @@ public:
                                    static_cast<void* const*>(w.gu_code[0].p), static_cast<void* const*>(w.gu_scale[0].p),
                                    static_cast<void* const*>(w.gu_code[1].p), static_cast<void* const*>(w.gu_scale[1].p),
                                    (uint32_t)(2 * w0), (uint32_t)(2 * w1), (uint32_t)kHidden, (uint32_t)kHidden,
-                                   (uint32_t)kHidden, (uint32_t)(2 * mid_w()), static_cast<uint16_t*>(w.d_down.p));
-                std::vector<uint16_t> g((size_t)routes * 2 * mid_w()), v((size_t)routes * 2 * mid_w());
-                int32_t total = 0;
-                if (hip_ok(hipStreamSynchronize(w.stream), "gemv debug sync") &&
-                    hip_ok(hipMemcpy(g.data(), w.d_gu.p, g.size() * 2, hipMemcpyDeviceToHost), "gemv debug read gemm") &&
-                    hip_ok(hipMemcpy(v.data(), w.d_down.p, v.size() * 2, hipMemcpyDeviceToHost), "gemv debug read gemv") &&
-                    hip_ok(hipMemcpy(&total, static_cast<int32_t*>(w.d_off.p) + kExperts, 4, hipMemcpyDeviceToHost), "gemv debug off")) {
-                    auto f = [](uint16_t b) { uint32_t u = (uint32_t)b << 16; float x; std::memcpy(&x, &u, 4); return x; };
-                    double num = 0, den = 0;
-                    for (int32_t r = 0; r < total; ++r)
-                        for (int64_t n = 0; n < 2 * mid_w(); ++n) {
-                            const double a = f(g[(size_t)r * 2 * mid_w() + n]), b = f(v[(size_t)r * 2 * mid_w() + n]);
-                            num += (a - b) * (a - b); den += a * a;
-                        }
-                    std::fprintf(stderr, "gemv-debug routes %d rel_l2 %.5g\n  gemm row0:", total,
-                                 std::sqrt(num / (den + 1e-30)));
-                    for (int n = 0; n < 8; ++n) std::fprintf(stderr, " %.5g", f(g[n]));
-                    std::fprintf(stderr, "\n  gemv row0:");
-                    for (int n = 0; n < 8; ++n) std::fprintf(stderr, " %.5g", f(v[n]));
-                    std::fprintf(stderr, "\n  gemm row0 n=%lld..:", (long long)mid_w());
-                    for (int n = 0; n < 4; ++n) std::fprintf(stderr, " %.5g", f(g[mid_w() + n]));
-                    std::fprintf(stderr, "\n  gemv row0 n=%lld..:", (long long)mid_w());
-                    for (int n = 0; n < 4; ++n) std::fprintf(stderr, " %.5g", f(v[mid_w() + n]));
-                    std::fprintf(stderr, "\n");
-                }
+                                   (uint32_t)kHidden, (uint32_t)(2 * mid_w()), static_cast<uint16_t*>(w.d_dbg.p));
+                w.dbg_routes = routes;
             }
             if (sampling && !hip_ok(hipEventRecord(w.stage[1], w.stream), "lane stage 1")) return -EIO;
             std::vector<RadParam> gqp = {
@@ -1008,6 +986,37 @@ public:
         std::fprintf(stderr, "r3_moe_helper: lane %u stages (us/request): routes %.1f gate_up %.1f quant %.1f "
                      "down %.1f reduce %.1f\n", lane, w.stage_us[0] / samples, w.stage_us[1] / samples,
                      w.stage_us[2] / samples, w.stage_us[3] / samples, w.stage_us[4] / samples);
+    }
+
+    /* R3_MOE_HELPER_GEMV=2 (--compare): the grouped GEMM's gate/up beside the GEMV's, after the lane synced. */
+    void gemv_debug_report(uint32_t lane) {
+        using namespace r3::moe_shm;
+        LaneWork& w = lane_[lane];
+        const uint32_t routes = w.dbg_routes;
+        if (!gemv_debug_ || !routes) return;
+        std::vector<uint16_t> g((size_t)routes * 2 * mid_w()), v((size_t)routes * 2 * mid_w());
+        int32_t total = 0;
+        if (hip_ok(hipMemcpy(g.data(), w.d_gu.p, g.size() * 2, hipMemcpyDeviceToHost), "gemv debug read gemm") &&
+            hip_ok(hipMemcpy(v.data(), w.d_dbg.p, v.size() * 2, hipMemcpyDeviceToHost), "gemv debug read gemv") &&
+            hip_ok(hipMemcpy(&total, static_cast<int32_t*>(w.d_off.p) + kExperts, 4, hipMemcpyDeviceToHost), "gemv debug off")) {
+            auto f = [](uint16_t b) { uint32_t u = (uint32_t)b << 16; float x; std::memcpy(&x, &u, 4); return x; };
+            double num = 0, den = 0;
+            for (int32_t r = 0; r < total; ++r)
+                for (int64_t n = 0; n < 2 * mid_w(); ++n) {
+                    const double a = f(g[(size_t)r * 2 * mid_w() + n]), b = f(v[(size_t)r * 2 * mid_w() + n]);
+                    num += (a - b) * (a - b); den += a * a;
+                }
+            std::fprintf(stderr, "gemv-debug routes %d rel_l2 %.5g\n  gemm row0:", total,
+                         std::sqrt(num / (den + 1e-30)));
+            for (int n = 0; n < 8; ++n) std::fprintf(stderr, " %.5g", f(g[n]));
+            std::fprintf(stderr, "\n  gemv row0:");
+            for (int n = 0; n < 8; ++n) std::fprintf(stderr, " %.5g", f(v[n]));
+            std::fprintf(stderr, "\n  gemm row0 n=%lld..:", (long long)mid_w());
+            for (int n = 0; n < 4; ++n) std::fprintf(stderr, " %.5g", f(g[mid_w() + n]));
+            std::fprintf(stderr, "\n  gemv row0 n=%lld..:", (long long)mid_w());
+            for (int n = 0; n < 4; ++n) std::fprintf(stderr, " %.5g", f(v[mid_w() + n]));
+            std::fprintf(stderr, "\n");
+        }
     }
 
     bool sync_lane(uint32_t lane) {
@@ -1552,7 +1561,8 @@ private:
                w.d_gu.ensure((size_t)tr * 2 * mid_w() * 2) &&
                w.d_mid.ensure((size_t)tr * mid_w()) &&
                w.d_mid_s.ensure((size_t)tr * (mid_w() / kGroup) * 4) &&
-               w.d_down.ensure((size_t)tr * r3::moe_shm::kHidden * 2);
+               w.d_down.ensure((size_t)tr * r3::moe_shm::kHidden * 2) &&
+               w.d_dbg.ensure((size_t)tr * 2 * mid_w() * 2);
     }
 
     bool ensure_work(uint32_t rows, uint32_t tr) {

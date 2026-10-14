@@ -737,6 +737,7 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
             break;
         }
         store(&h->lane[lane].request_sequence, sequence);
+        if (gpu.sync_lane(lane)) gpu.gemv_debug_report(lane);
         if (!gpu.sync_lane(lane) || load(&h->lane[lane].done_sequence) != sequence || q->status != 0) {
             std::fprintf(stderr,
                          "r3_moe_helper: --compare lane rank %u completion failed status=%d done=%u\n",
