@@ -28,6 +28,9 @@ _MOE_REMOTE_CPP = r"""/* moe_remote.cpp -- decode-sized policy gate for GPU-lane
 #include <atomic>
 #include <climits>
 #include <cstdlib>
+#include <map>
+#include <mutex>
+#include <vector>
 
 namespace {
 std::atomic<rad_moe_remote_layer_map_hook> g_layer_map_hook{nullptr};
@@ -69,12 +72,27 @@ extern "C" int rad_moe_remote_shadow(void) {
     return e && *e && !(e[0] == '0' && e[1] == 0);
 }
 
+/* Layer maps are published at declare, which can run before the plugin installs its hook (libr3 installs
+ * it when the mailbox device is first created). Keep every published map and replay them when the hook
+ * arrives, so no layer's map is lost to that ordering. */
+namespace {
+std::mutex g_layer_map_mu;
+std::map<int, std::vector<int32_t>> g_layer_maps;
+}
+
 extern "C" void rad_moe_remote_set_layer_map_hook(rad_moe_remote_layer_map_hook hook) {
+    std::lock_guard<std::mutex> lock(g_layer_map_mu);
     g_layer_map_hook.store(hook, std::memory_order_release);
+    if (hook)
+        for (const auto& [layer, slots] : g_layer_maps)
+            hook(layer, (int)slots.size(), slots.data());
 }
 
 extern "C" void rad_moe_remote_layer_map(
     int layer, int n_expert, const int32_t* slot_of_expert) {
+    if (n_expert <= 0 || !slot_of_expert) return;
+    std::lock_guard<std::mutex> lock(g_layer_map_mu);
+    g_layer_maps[layer].assign(slot_of_expert, slot_of_expert + n_expert);
     const auto hook = g_layer_map_hook.load(std::memory_order_acquire);
     if (hook) hook(layer, n_expert, slot_of_expert);
 }
