@@ -92,10 +92,10 @@ status = "diagnostic"
 summary = "1: mask and rescatter after the local GEMMs, merge engine-captured rows; 2: same late publish, merge the helper rows; 3: helper rows only where bit-identical to the engine's; 4: helper rows only where they differ; 5: only where 1-8 elements differ; 6: only where more than 8 differ"
 activation = "R3_MOE_HELPER_MASK_ONLY enabled"
 
-[setting.R3_MOE_HELPER_R4D]
+[setting.R3_MOE_HELPER_PLUGIN]
 default = ""
 status = "diagnostic"
-summary = "override the installed gfx1201 libr4d.so used through the rad_plugin ABI"
+summary = "override the kernel plugin the helper loads through the rad_plugin ABI (default: libr4d.so on gfx1201, libr3.so on gfx1100)"
 
 [setting.R3_MOE_NATIVE]
 default = "0"

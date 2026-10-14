@@ -375,9 +375,11 @@ public:
         arch_ = prop.gcnArchName;
         const size_t colon = arch_.find(':');
         if (colon != std::string::npos) arch_.resize(colon);
-        if (arch_ != "gfx1201") {
+        /* The expert kernels come from the plugin built for this card: libr4d on gfx1201 (the R9700 helping two
+         * XTX ranks), libr3 on gfx1100 (an XTX helping an R9700 engine, RAD02). Both export the same rows. */
+        if (arch_ != "gfx1201" && arch_ != "gfx1100") {
             std::fprintf(stderr,
-                "r3_moe_helper: visible GPU is %s, want gfx1201 (set R3_MOE_HELPER_CPU=1 for host path)\n",
+                "r3_moe_helper: visible GPU is %s, want gfx1201 or gfx1100 (set R3_MOE_HELPER_CPU=1 for host path)\n",
                 arch_.c_str());
             return false;
         }
@@ -872,17 +874,18 @@ private:
     }
 
     std::string plugin_path() const {
-        if (const char* e = std::getenv("R3_MOE_HELPER_R4D"); e && *e) return e;
+        if (const char* e = std::getenv("R3_MOE_HELPER_PLUGIN"); e && *e) return e;
+        const std::string so = arch_ == "gfx1100" ? "libr3.so" : "libr4d.so";
         if (const char* e = std::getenv("RADIANCE_HOME"); e && *e) {
             std::string h(e);
             const size_t colon = h.find(':');
             if (colon != std::string::npos) h.resize(colon);
-            return h + "/kernels/libr4d.so";
+            return h + "/kernels/" + so;
         }
 #ifdef RAD_DEFAULT_HOME
-        return std::string(RAD_DEFAULT_HOME) + "/kernels/libr4d.so";
+        return std::string(RAD_DEFAULT_HOME) + "/kernels/" + so;
 #else
-        return "libr4d.so";
+        return so;
 #endif
     }
 
@@ -909,8 +912,8 @@ private:
             return false;
         }
         const RadPluginInfo* inf = info();
-        if (!inf || !inf->build_target || !std::strstr(inf->build_target, "gfx1201")) {
-            std::fprintf(stderr, "r3_moe_helper: libr4d is not a gfx1201 plugin\n");
+        if (!inf || !inf->build_target || !std::strstr(inf->build_target, arch_.c_str())) {
+            std::fprintf(stderr, "r3_moe_helper: %s is not a %s plugin\n", path.c_str(), arch_.c_str());
             return false;
         }
         if (open_fn && open_fn() != RAD_OK) {
