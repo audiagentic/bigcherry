@@ -266,10 +266,20 @@ __global__ void mailbox_add_rows_kernel(
         const int32_t flat = sorted[i];
         if (flat >= lo && flat < hi) local_index[(uint32_t)(flat - lo)] = (int32_t)i;
     }
-    for (uint32_t j = threadIdx.x; j < nr; j += blockDim.x) {
-        const Route r = route[j];
-        if (r.token < 0 || (uint32_t)r.token >= rows || r.slot >= top_k) __builtin_trap();
-        if ((uint32_t)r.token == token) remote_slot[r.slot] = 1;
+    if (threadIdx.x == 0) {
+        for (uint32_t j = 0; j < nr; ++j) {
+            const Route r = route[j];
+            if (r.token < 0 || (uint32_t)r.token >= rows || r.slot >= top_k) __builtin_trap();
+            if ((uint32_t)r.token != token) continue;
+            const uint32_t flat = token * top_k + r.slot;
+            if (remote_slot[r.slot] || r.weight_bf16 != ew[flat]) __builtin_trap();
+            remote_slot[r.slot] = 1;
+        }
+    }
+    __syncthreads();
+    if (mask_only && threadIdx.x == 0) {
+        for (uint32_t slot = 0; slot < top_k; ++slot)
+            if (remote_slot[slot] && local_index[slot] >= 0) __builtin_trap();
     }
     __syncthreads();
 
