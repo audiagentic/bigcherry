@@ -153,6 +153,12 @@ PATCHES = (
     std::vector<int32_t> remote_slot((size_t)ne, -1);
     for (int64_t s = 0; s < n_reg; ++s)
         remote_slot[(size_t)reg[(size_t)s]] = (int32_t)s;
+    if (!prot.empty() && rad_moe_remote_shadow()) {
+        std::string pl;
+        for (int64_t e : prot) pl += (pl.empty() ? "" : ",") + std::to_string(e);
+        fprintf(stderr, "radiance: MoE remote shadow: layer %d protected [%s] n_reg %lld ncls %d\\n",
+                l, pl.c_str(), (long long)n_reg, c.ff_hi4[0] > 0 ? 4 : 2);
+    }
     rad_moe_remote_layer_map(l, (int)ne, remote_slot.data());""",
                 guard=r"rad_moe_remote_layer_map\(l, \(int\)ne, remote_slot\.data\(\)\);",
                 expect_matches=1,

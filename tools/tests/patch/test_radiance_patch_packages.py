@@ -55,7 +55,7 @@ PIN_BLOBS = {
     "0002_moe_remote_handoff": {
         "abi/rad_moe_remote.h": (None, "7403ad9"),
         "arch/common/rad_block_hc.h": ("c19c8b6", "df35634"),
-        "arch/common/rad_block_moe_fp8.h": ("51b7c28", "644b669"),
+        "arch/common/rad_block_moe_fp8.h": ("51b7c28", "ec24b46"),
         "core/place/moe_remote.cpp": (None, "8c87c93"),
     },
     "0003_mtp_full_head_switch": {
