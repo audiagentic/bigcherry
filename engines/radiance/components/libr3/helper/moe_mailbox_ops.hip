@@ -301,7 +301,10 @@ __global__ void mailbox_add_rows_kernel(
                 src = down + (uint64_t)(uint32_t)local_index[slot] * hidden;
             }
             if (!src) continue;
-            acc += bf16_to_f32(ew[flat]) * bf16_to_f32(src[col]);
+            /* The helper's rows live in host-mapped memory the R9700 rewrites every request; a cached
+             * read can return the previous request's row. Read them non-temporally (bypass caches). */
+            const uint16_t v = (remote_slot[slot] && !mask_only) ? __builtin_nontemporal_load(src + col) : src[col];
+            acc += bf16_to_f32(ew[flat]) * bf16_to_f32(v);
         }
         const uint16_t gathered = f32_to_bf16_rn(acc);
         if (!shared) {
