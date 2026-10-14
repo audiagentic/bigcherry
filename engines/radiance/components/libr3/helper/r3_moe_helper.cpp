@@ -430,15 +430,18 @@ uint64_t helper_budget_bytes() {
     return (uint64_t)mib * 1024ull * 1024ull;
 }
 
-uint32_t helper_lane_rows() {
-    const char* e = std::getenv("R3_MOE_HELPER_MAX_ROWS");
-    if (!e || !*e) return 64;
+uint32_t env_rows(const char* name, uint32_t fallback) {
+    const char* e = std::getenv(name);
+    if (!e || !*e) return fallback;
     char* end = nullptr;
     errno = 0;
     const unsigned long v = std::strtoul(e, &end, 10);
-    if (errno || !end || *end || v == 0) return 64;
+    if (errno || !end || *end || v == 0) return fallback;
     return (uint32_t)std::min<unsigned long>(v, kMaxRows);
 }
+/* The largest step handed off (the engine reads the same variable) and the small, pre-queued lane size. */
+uint32_t helper_max_rows() { return env_rows("R3_MOE_HELPER_MAX_ROWS", 64); }
+uint32_t helper_small_rows() { return std::min(env_rows("R3_MOE_HELPER_SMALL_ROWS", 64), helper_max_rows()); }
 
 int64_t canonical_expert_bytes(const Container& f, uint32_t l, uint32_t e) {
     int64_t n = 0;
@@ -530,9 +533,13 @@ bool parse_u32(const char* s, uint32_t lo, uint32_t hi, uint32_t* out) {
 }
 
 int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& owned,
-                 uint32_t layer, uint32_t rows, uint32_t lane_max_rows,
+                 uint32_t layer, uint32_t rows, uint32_t lane_max_rows, uint32_t lane_large_rows,
                  bool synthetic_protect) {
-    if (layer >= model.layers || rows == 0 || rows > lane_max_rows) return 2;
+    if (layer >= model.layers || rows == 0 || rows > lane_large_rows) {
+        std::fprintf(stderr, "r3_moe_helper: --compare rows %u above R3_MOE_HELPER_MAX_ROWS %u\n",
+                     rows, lane_large_rows);
+        return 2;
+    }
     std::array<int32_t, kExperts> runtime_slot{};
     runtime_slot.fill(-1);
     static constexpr uint32_t kSyntheticProtected[8] = {1, 17, 63, 127, 191, 255, 319, 511};
@@ -634,7 +641,8 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
         return 1;
     }
     store(&h->layer_map_consumed[layer], 1);
-    if (!gpu.prepare_lanes(lane_max_rows)) {
+    h->small_rows = lane_max_rows;
+    if (!gpu.prepare_lanes(lane_max_rows, lane_large_rows)) {
         munmap(map, lay.bytes);
         return 1;
     }
@@ -659,7 +667,8 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
     bool bad = false;
     constexpr uint32_t sequence = 1;
     for (uint32_t rank = 0; rank < kMaxRanks; ++rank) {
-        Request* q = lane_request(map, rank, sequence);
+        const uint32_t lane = lane_of(rank, rows > lane_max_rows ? 1u : 0u);
+        Request* q = lane_request(map, lane, sequence);
         q->completion_sequence = 0;
         q->status = 0;
         q->layer = layer;
@@ -686,7 +695,7 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
                     published.size() * sizeof(Route));
         std::memcpy(ptr<uint16_t>(map, q->activation_offset), activation.data(),
                     activation.size() * sizeof(uint16_t));
-        if (!gpu.stage_compare_activation(map, rank, activation.data(), rows)) {
+        if (!gpu.stage_compare_activation(map, lane, activation.data(), rows)) {
             std::fprintf(stderr,
                          "r3_moe_helper: --compare rank %u could not stage exact q/s\n", rank);
             bad = true;
@@ -694,18 +703,19 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
         }
 
         /* Queue the production lane before publishing the sequence, as the service worker does. */
-        const int erc = gpu.enqueue_lane(map, dev_map, rank, sequence, false);
+        const int erc = gpu.enqueue_lane(map, dev_map, lane, sequence,
+                                         lane < kMaxRanks ? lane_max_rows : rows, false);
         if (erc != 0) {
             std::fprintf(stderr, "r3_moe_helper: --compare lane rank %u enqueue failed rc=%d\n",
                          rank, erc);
             bad = true;
             break;
         }
-        store(&h->lane[rank].request_sequence, sequence);
-        if (!gpu.sync_lane(rank) || load(&h->lane[rank].done_sequence) != sequence || q->status != 0) {
+        store(&h->lane[lane].request_sequence, sequence);
+        if (!gpu.sync_lane(lane) || load(&h->lane[lane].done_sequence) != sequence || q->status != 0) {
             std::fprintf(stderr,
                          "r3_moe_helper: --compare lane rank %u completion failed status=%d done=%u\n",
-                         rank, q->status, load(&h->lane[rank].done_sequence));
+                         rank, q->status, load(&h->lane[lane].done_sequence));
             bad = true;
             break;
         }
@@ -752,8 +762,8 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
         }
         const double rel =
             std::sqrt((double)(num / std::max<long double>(den, 1.0e-30L)));
-        std::printf("engine_join layer %u rank %u routes=%u tokens=%u rel_l2=%.8g max_abs=%.8g\n",
-                    layer, rank, nr, tokens, rel, max_abs);
+        std::printf("engine_join layer %u rank %u lane %u routes=%u tokens=%u rel_l2=%.8g max_abs=%.8g\n",
+                    layer, rank, lane, nr, tokens, rel, max_abs);
         bad = bad || tokens == 0 || !std::isfinite(rel) || rel >= 5.0e-3;
     }
 
@@ -815,7 +825,8 @@ int main(int argc, char** argv) {
     Owned owned;
     if (!select_owned(model, gpu.get(), budget, &owned)) return 1;
     if (gpu && !gpu->allocate(owned.expert)) return 1;
-    const uint32_t lane_max_rows = helper_lane_rows();
+    const uint32_t lane_max_rows = helper_small_rows();
+    const uint32_t lane_large_rows = helper_max_rows();
     long rss_pages = 0;
     if (FILE* sf = std::fopen("/proc/self/statm", "r")) {
         long total_pages = 0;
@@ -829,7 +840,7 @@ int main(int argc, char** argv) {
     if (compare) {
         if (compare_one_layer)
             return compare_mode(model, *gpu, owned, compare_layer, compare_rows, lane_max_rows,
-                                synthetic_protect);
+                                lane_large_rows, synthetic_protect);
         int rc = 0;
         for (uint32_t layer : {0u, 20u, 34u, 47u}) {
             if (layer >= model.layers) {
@@ -840,7 +851,7 @@ int main(int argc, char** argv) {
             }
             std::printf("layer %u\n", layer);
             rc |= compare_mode(model, *gpu, owned, layer, compare_rows, lane_max_rows,
-                               synthetic_protect);
+                               lane_large_rows, synthetic_protect);
         }
         return rc;
     }
@@ -864,6 +875,7 @@ int main(int argc, char** argv) {
     init(map, model.layers);
     publish_owned(map, owned);
     auto* h = static_cast<Header*>(map);
+    h->small_rows = lane_max_rows;
     void* dev_map = nullptr;
     if (!cpu) {
         if (!r3_moe_gpu::hip_ok(hipHostRegister(map, lay.bytes, hipHostRegisterPortable | hipHostRegisterMapped),
@@ -920,7 +932,7 @@ int main(int argc, char** argv) {
     }
     owned = std::move(runtime_owned);
     h->owned_bytes = owned.bytes;
-    if (gpu && !gpu->prepare_lanes(lane_max_rows)) {
+    if (gpu && !gpu->prepare_lanes(lane_max_rows, lane_large_rows)) {
         (void)hipHostUnregister(map);
         munmap(map, lay.bytes); close(fd); shm_unlink(name); return 1;
     }
@@ -935,9 +947,9 @@ int main(int argc, char** argv) {
     sa.sa_flags = 0;
     sigaction(SIGINT, &sa, nullptr); sigaction(SIGTERM, &sa, nullptr);
     std::fprintf(stderr,
-                 "r3_moe_helper: ready shm=%s layers=%u bytes=%llu (%s, lane rows <= %u)\n",
+                 "r3_moe_helper: ready shm=%s layers=%u bytes=%llu (%s, small lane rows <= %u, large <= %u)\n",
                  name, model.layers, (unsigned long long)lay.bytes,
-                 cpu ? "host fp32 reference" : gpu->arch().c_str(), lane_max_rows);
+                 cpu ? "host fp32 reference" : gpu->arch().c_str(), lane_max_rows, lane_large_rows);
 
     uint64_t stat_req = 0, stat_rows = 0, stat_routes = 0;
     double stat_us = 0.0;
@@ -961,86 +973,109 @@ int main(int argc, char** argv) {
         }
     } else {
         constexpr uint32_t kQueueDepth = 4;
-        std::array<uint64_t, kMaxRanks> lane_req{}, lane_rows{}, lane_routes{}, lane_samples{};
-        std::array<double, kMaxRanks> lane_sample_us{};
-        std::array<std::thread, kMaxRanks> workers;
-        for (uint32_t rank = 0; rank < kMaxRanks; ++rank) {
-            workers[rank] = std::thread([&, rank] {
+        std::array<uint64_t, kLanes> lane_req{}, lane_rows{}, lane_routes{}, lane_samples{};
+        std::array<double, kLanes> lane_sample_us{};
+        std::array<std::thread, kLanes> workers;
+        for (uint32_t lane = 0; lane < kLanes; ++lane) {
+            workers[lane] = std::thread([&, lane] {
+                const bool large = lane >= kMaxRanks;
                 uint32_t next = 1;
                 uint32_t done_seen = 0;
-                auto queue_one = [&]() -> bool {
-                    if (next == 0) return false;
-                    const bool sample = (next & 63u) == 0;
-                    const int rc = gpu->enqueue_lane(map, dev_map, rank, next, sample);
-                    if (rc != 0) {
-                        std::fprintf(stderr,
-                                     "r3_moe_helper: lane %u enqueue seq %u failed rc=%d\n",
-                                     rank, next, rc);
-                        return false;
+                if (large) {
+                    /* Sized on arrival: wait for the engine's request word, read its rows, launch that size. */
+                    while (!g_stop) {
+                        if ((int32_t)(load(&h->lane[lane].request_sequence) - next) < 0) {
+                            std::this_thread::yield();
+                            continue;
+                        }
+                        const Request* q = lane_request(map, lane, next);
+                        const uint32_t rows = load(&q->rows);
+                        const int rc = gpu->enqueue_lane(map, dev_map, lane, next, rows, false);
+                        if (rc != 0) {
+                            std::fprintf(stderr, "r3_moe_helper: large lane %u seq %u rows %u failed rc=%d\n",
+                                         lane, next, rows, rc);
+                            g_stop = 1;
+                            break;
+                        }
+                        if (++next == 0) break;
                     }
-                    ++next;
-                    return next != 0;
-                };
+                } else {
+                    auto queue_one = [&]() -> bool {
+                        if (next == 0) return false;
+                        const bool sample = (next & 63u) == 0;
+                        const int rc = gpu->enqueue_lane(map, dev_map, lane, next, lane_max_rows, sample);
+                        if (rc != 0) {
+                            std::fprintf(stderr,
+                                         "r3_moe_helper: lane %u enqueue seq %u failed rc=%d\n",
+                                         lane, next, rc);
+                            return false;
+                        }
+                        ++next;
+                        return next != 0;
+                    };
 
-                for (uint32_t i = 0; i < kQueueDepth && !g_stop; ++i) {
-                    if (!queue_one()) {
-                        g_stop = 1;
-                        break;
-                    }
-                }
-                while (!g_stop) {
-                    const uint32_t done = load(&h->lane[rank].done_sequence);
-                    if ((int32_t)(done - done_seen) <= 0) {
-                        std::this_thread::yield();
-                        continue;
-                    }
-                    if (!gpu->collect_lane_timing(rank, done,
-                                                  &lane_sample_us[rank],
-                                                  &lane_samples[rank])) {
-                        g_stop = 1;
-                        break;
-                    }
-                    done_seen = done;
-                    while (!g_stop &&
-                           (uint32_t)(next - done_seen - 1u) < kQueueDepth) {
+                    for (uint32_t i = 0; i < kQueueDepth && !g_stop; ++i) {
                         if (!queue_one()) {
                             g_stop = 1;
                             break;
                         }
                     }
+                    while (!g_stop) {
+                        const uint32_t done = load(&h->lane[lane].done_sequence);
+                        if ((int32_t)(done - done_seen) <= 0) {
+                            std::this_thread::yield();
+                            continue;
+                        }
+                        if (!gpu->collect_lane_timing(lane, done,
+                                                      &lane_sample_us[lane],
+                                                      &lane_samples[lane])) {
+                            g_stop = 1;
+                            break;
+                        }
+                        done_seen = done;
+                        while (!g_stop &&
+                               (uint32_t)(next - done_seen - 1u) < kQueueDepth) {
+                            if (!queue_one()) {
+                                g_stop = 1;
+                                break;
+                            }
+                        }
+                    }
+                    const uint32_t final_done = load(&h->lane[lane].done_sequence);
+                    (void)gpu->collect_lane_timing(lane, final_done,
+                                                   &lane_sample_us[lane],
+                                                   &lane_samples[lane]);
+                    /* Release the pre-queued waits so the stream drains. */
+                    store(&h->lane[lane].request_sequence, next - 1u);
                 }
-
-                const uint32_t final_done = load(&h->lane[rank].done_sequence);
-                (void)gpu->collect_lane_timing(rank, final_done,
-                                               &lane_sample_us[rank],
-                                               &lane_samples[rank]);
-                const uint32_t queued = next - 1u;
-                store(&h->lane[rank].request_sequence, queued);
-                if (!gpu->sync_lane(rank)) {
+                if (!gpu->sync_lane(lane)) {
                     g_stop = 1;
                     return;
                 }
                 uint64_t stats[3]{};
-                if (!gpu->lane_stats(rank, stats)) {
+                if (!gpu->lane_stats(lane, stats)) {
                     g_stop = 1;
                     return;
                 }
-                lane_req[rank] = stats[0];
-                lane_rows[rank] = stats[1];
-                lane_routes[rank] = stats[2];
+                lane_req[lane] = stats[0];
+                lane_rows[lane] = stats[1];
+                lane_routes[lane] = stats[2];
             });
         }
         while (!g_stop) ::sleep(1);
         for (auto& w : workers) if (w.joinable()) w.join();
         uint64_t timing_samples = 0;
         double sampled_us = 0.0;
-        for (uint32_t rank = 0; rank < kMaxRanks; ++rank) {
-            stat_req += lane_req[rank];
-            stat_rows += lane_rows[rank];
-            stat_routes += lane_routes[rank];
-            timing_samples += lane_samples[rank];
-            sampled_us += lane_sample_us[rank];
+        for (uint32_t lane = 0; lane < kLanes; ++lane) {
+            stat_req += lane_req[lane];
+            stat_rows += lane_rows[lane];
+            stat_routes += lane_routes[lane];
+            timing_samples += lane_samples[lane];
+            sampled_us += lane_sample_us[lane];
         }
+        std::fprintf(stderr, "r3_moe_helper: large-lane requests %llu (%llu rows)\n",
+                     (unsigned long long)(lane_req[kMaxRanks] + lane_req[kMaxRanks + 1]),
+                     (unsigned long long)(lane_rows[kMaxRanks] + lane_rows[kMaxRanks + 1]));
         if (timing_samples && stat_req)
             stat_us = (sampled_us / (double)timing_samples) * (double)stat_req;
         std::fprintf(stderr,

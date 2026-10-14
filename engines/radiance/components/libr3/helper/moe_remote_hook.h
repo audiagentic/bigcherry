@@ -30,7 +30,7 @@ struct R3MoeShadowFirst {
 struct R3MoeMailboxDevice {
     void* mailbox = nullptr;
     const uint8_t* owner = nullptr;
-    uint32_t* sequence = nullptr;
+    uint32_t* sequence = nullptr;   /* [2]: per-lane-class request counters (small, large) */
     uint32_t* published = nullptr;
     uint16_t* mask_ref = nullptr;
     int32_t* inv = nullptr;     /* [max_rows * top_k] engine sorted row of each locally computed slot, else -1. */

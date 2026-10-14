@@ -57,7 +57,12 @@ summary = "VRAM budget in MiB for cold full-expert units owned by the gfx1201 he
 [setting.R3_MOE_HELPER_MAX_ROWS]
 default = "64"
 status = "experimental"
-summary = "largest step (rows) published to the helper GPU lanes; larger prefill steps keep the engine path"
+summary = "largest step (rows) handed to the helper (engine and helper both read it); larger steps keep the engine path. Steps above R3_MOE_HELPER_SMALL_ROWS take the large lane, launched sized to the request"
+
+[setting.R3_MOE_HELPER_SMALL_ROWS]
+default = "64"
+status = "experimental"
+summary = "helper small-lane size: steps up to this many rows run on GPU work the helper pre-queues at this fixed size (no host in the loop)"
 
 [setting.R3_MOE_HELPER_POISON]
 default = "0"

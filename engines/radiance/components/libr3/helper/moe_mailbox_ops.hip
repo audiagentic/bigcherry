@@ -132,8 +132,10 @@ __global__ void mailbox_publish_kernel(
     __syncthreads();
     if (nr == 0) return;
 
+    const uint32_t large = rows > h->small_rows ? 1u : 0u;
+    const uint32_t lane = lane_of(rank, large);
     if (threadIdx.x == 0) {
-        seq = atomicAdd(sequence, 1u) + 1u;
+        seq = atomicAdd(sequence + large, 1u) + 1u;
         if (seq == 0) __builtin_trap();
     }
     __syncthreads();
@@ -154,7 +156,7 @@ __global__ void mailbox_publish_kernel(
     }
 
     Request* ring = reinterpret_cast<Request*>(base + h->ring_offset);
-    Request* q = ring + rank * kLaneSlots + ((seq - 1u) % kLaneSlots);
+    Request* q = ring + lane * kLaneSlots + ((seq - 1u) % kLaneSlots);
     if (threadIdx.x == 0) {
         const uintptr_t qptr = reinterpret_cast<uintptr_t>(aq);
         const uintptr_t qbase = reinterpret_cast<uintptr_t>(aq_base);
@@ -186,8 +188,8 @@ __global__ void mailbox_publish_kernel(
     __threadfence_system();
     __syncthreads();
     if (threadIdx.x == 0) {
-        store_sys_rel(&h->lane[rank].request_sequence, seq);
-        *published = 1;
+        store_sys_rel(&h->lane[lane].request_sequence, seq);
+        *published = 1u + large;   /* 0: nothing published; else 1 + the lane class */
     }
 }
 
@@ -205,9 +207,11 @@ __global__ void mailbox_add_wait_kernel(
     uint8_t* base, const uint32_t* sequence, const uint32_t* published, uint32_t rank) {
     if (blockIdx.x || threadIdx.x || !*published) return;
     Header* h = reinterpret_cast<Header*>(base);
-    const uint32_t seq = *sequence;
+    const uint32_t large = *published - 1u;
+    const uint32_t seq = sequence[large];
+    const uint32_t lane = lane_of(rank, large);
     unsigned long long spins = 0;
-    while ((int32_t)(load_sys_acq(&h->lane[rank].done_sequence) - seq) < 0) {
+    while ((int32_t)(load_sys_acq(&h->lane[lane].done_sequence) - seq) < 0) {
         __builtin_amdgcn_s_sleep(2);
         if (++spins > 4000000000ULL) __builtin_trap();
     }
@@ -237,10 +241,12 @@ __global__ void mailbox_route_mark_kernel(
     const uint16_t* ew, uint32_t* rmask, uint32_t rows, uint32_t hidden, uint32_t top_k) {
     if (!*published) return;
     Header* h = reinterpret_cast<Header*>(base);
-    const uint32_t seq = *sequence;
-    if ((int32_t)(load_sys_acq(&h->lane[rank].done_sequence) - seq) < 0) __builtin_trap();
+    const uint32_t large = *published - 1u;
+    const uint32_t seq = sequence[large];
+    const uint32_t lane = lane_of(rank, large);
+    if ((int32_t)(load_sys_acq(&h->lane[lane].done_sequence) - seq) < 0) __builtin_trap();
     Request* ring = reinterpret_cast<Request*>(base + h->ring_offset);
-    const Request* q = ring + rank * kLaneSlots + ((seq - 1u) % kLaneSlots);
+    const Request* q = ring + lane * kLaneSlots + ((seq - 1u) % kLaneSlots);
     if (q->sequence != seq || q->rank != rank || q->rows != rows || q->hidden != hidden ||
         q->status != 0 || q->route_count == 0 || q->route_count > rows * top_k)
         __builtin_trap();
@@ -335,9 +341,10 @@ __global__ void mailbox_shadow_rows_kernel(
     const uint32_t token = blockIdx.x;
     if (!*published || token >= rows) return;
     Header* h = reinterpret_cast<Header*>(base);
-    const uint32_t seq = *sequence;
+    const uint32_t large = *published - 1u;
+    const uint32_t seq = sequence[large];
     Request* ring = reinterpret_cast<Request*>(base + h->ring_offset);
-    const Request* q = ring + rank * kLaneSlots + ((seq - 1u) % kLaneSlots);
+    const Request* q = ring + lane_of(rank, large) * kLaneSlots + ((seq - 1u) % kLaneSlots);
     if (q->layer >= kMaxLayers) return;
     __shared__ uint32_t any;
     __shared__ uint32_t missing;

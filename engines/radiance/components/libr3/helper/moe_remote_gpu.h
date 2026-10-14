@@ -330,6 +330,7 @@ struct LaneWork {
     hipEvent_t sample_stop = nullptr;
     uint32_t sample_sequence = 0;
     bool sample_pending = false;
+    uint32_t cap_rows = 0;
     Buffer d_counts, d_cursor, d_flat, d_sorted, d_off, d_ew, d_inv;
     Buffer d_act, d_aq, d_as, d_gu, d_mid, d_mid_s, d_down, d_stats, scratch;
     Buffer gu_code[2], gu_scale[2], dn_code[2], dn_scale[2];
@@ -381,7 +382,7 @@ public:
         }
         if (!load_plugin()) return false;
         if (!hip_ok(hipStreamCreateWithFlags(&stream_, hipStreamNonBlocking), "hipStreamCreate")) return false;
-        for (uint32_t r = 0; r < r3::moe_shm::kMaxRanks; ++r) {
+        for (uint32_t r = 0; r < r3::moe_shm::kLanes; ++r) {
             if (!hip_ok(hipStreamCreateWithFlags(&lane_[r].stream, hipStreamNonBlocking), "hipStreamCreate lane") ||
                 !hip_ok(hipEventCreate(&lane_[r].sample_start), "hipEventCreate lane start") ||
                 !hip_ok(hipEventCreate(&lane_[r].sample_stop), "hipEventCreate lane stop"))
@@ -580,15 +581,21 @@ public:
         return hip_ok(hipStreamSynchronize(stream_), "helper stream sync") ? 0 : -EIO;
     }
 
-    bool prepare_lanes(uint32_t max_rows) {
+    /* Small lanes are sized to small_rows and pre-queued; large lanes to large_rows, launched per request. */
+    bool prepare_lanes(uint32_t small_rows, uint32_t large_rows) {
         using namespace r3::moe_shm;
-        if (max_rows == 0 || max_rows > kMaxRows || !d_layer_tables_.p) return false;
-        lane_rows_ = max_rows;
-        lane_routes_ = max_rows * kTopK;
+        if (small_rows == 0 || small_rows > kMaxRows || large_rows < small_rows || large_rows > kMaxRows ||
+            !d_layer_tables_.p)
+            return false;
+        lane_rows_ = small_rows;
+        large_rows_ = large_rows;
         constexpr size_t nclass = kExperts / 2;
-        for (uint32_t rank = 0; rank < kMaxRanks; ++rank) {
-            LaneWork& w = lane_[rank];
-            if (!ensure_lane_work(w, lane_rows_, lane_routes_, lane_routes_) ||
+        for (uint32_t lane = 0; lane < kLanes; ++lane) {
+            const uint32_t rank = lane % kMaxRanks;
+            const uint32_t cap = lane < kMaxRanks ? lane_rows_ : large_rows_;
+            LaneWork& w = lane_[lane];
+            w.cap_rows = cap;
+            if (!ensure_lane_work(w, cap, cap * kTopK, cap * kTopK) ||
                 !w.d_stats.ensure(3 * sizeof(uint64_t)))
                 return false;
             for (uint32_t parity = 0; parity < 2; ++parity) {
@@ -598,19 +605,20 @@ public:
                     !w.dn_scale[parity].ensure(nclass * sizeof(void*)))
                     return false;
             }
-            if (!prepare_lane_scratch(w, rank, lane_rows_, lane_routes_) ||
+            if (!prepare_lane_scratch(w, rank, cap, cap * kTopK) ||
                 !hip_ok(hipMemset(w.d_stats.p, 0, 3 * sizeof(uint64_t)), "zero lane stats"))
                 return false;
         }
         return true;
     }
 
-    bool stage_compare_activation(void* host_map, uint32_t rank,
+    bool stage_compare_activation(void* host_map, uint32_t lane,
                                   const uint16_t* activation, uint32_t rows) {
         using namespace r3::moe_shm;
-        if (!host_map || !activation || rank >= kMaxRanks || rows == 0 || rows > lane_rows_)
+        if (!host_map || !activation || lane >= kLanes || rows == 0 || rows > lane_[lane].cap_rows)
             return false;
-        LaneWork& w = lane_[rank];
+        const uint32_t rank = lane % kMaxRanks;
+        LaneWork& w = lane_[lane];
         const size_t xbytes = (size_t)rows * kHidden * sizeof(uint16_t);
         if (!hip_ok(hipMemcpyAsync(w.d_act.p, activation, xbytes,
                                    hipMemcpyHostToDevice, w.stream),
@@ -640,14 +648,15 @@ public:
         return hip_ok(hipStreamSynchronize(w.stream), "--compare stage q/s sync");
     }
 
-    int enqueue_lane(void* host_map, void* device_map, uint32_t rank, uint32_t sequence,
-                     bool sample) {
+    /* rows: the fixed small-lane size (pre-queued), or the request's own row count on a large lane. */
+    int enqueue_lane(void* host_map, void* device_map, uint32_t lane, uint32_t sequence,
+                     uint32_t rows, bool sample) {
         using namespace r3::moe_shm;
-        if (!host_map || !device_map || rank >= kMaxRanks || sequence == 0 ||
-            lane_rows_ == 0 || lane_routes_ != lane_rows_ * kTopK)
+        if (!host_map || !device_map || lane >= kLanes || sequence == 0 || rows == 0 ||
+            rows > lane_[lane].cap_rows)
             return -EINVAL;
-
-        LaneWork& w = lane_[rank];
+        const uint32_t rank = lane % kMaxRanks;
+        LaneWork& w = lane_[lane];
         auto* hhost = static_cast<Header*>(host_map);
         auto* dbase = static_cast<uint8_t*>(device_map);
         auto dev_at = [&](const void* hp) -> void* {
@@ -655,13 +664,13 @@ public:
                             static_cast<const uint8_t*>(host_map));
         };
 
-        Request* qhost = lane_request(host_map, rank, sequence);
+        Request* qhost = lane_request(host_map, lane, sequence);
         if (!qhost) return -EINVAL;
         auto* q = static_cast<Request*>(dev_at(qhost));
         auto* request_seq =
-            static_cast<uint32_t*>(dev_at(&hhost->lane[rank].request_sequence));
+            static_cast<uint32_t*>(dev_at(&hhost->lane[lane].request_sequence));
         auto* done_seq =
-            static_cast<uint32_t*>(dev_at(&hhost->lane[rank].done_sequence));
+            static_cast<uint32_t*>(dev_at(&hhost->lane[lane].done_sequence));
         auto* route = static_cast<const Route*>(
             dev_at(ptr<Route>(host_map, hhost->route_offset[rank])));
         auto* act_q = static_cast<const uint8_t*>(
@@ -685,9 +694,8 @@ public:
             w.sample_pending = true;
         }
 
-        const uint32_t rows = lane_rows_;
-        const uint32_t routes = lane_routes_;
-        const uint32_t slots = rows * kTopK;
+        const uint32_t routes = rows * kTopK;
+        const uint32_t slots = routes;
         /* No clear of the result slot: it is mapped host memory, and the merge reads only the tokens this
          * request's routes name, each of which the reduction writes. */
         if (!hip_ok(hipMemsetAsync(w.d_counts.p, 0, kExperts * sizeof(uint32_t), w.stream),
@@ -802,10 +810,10 @@ public:
         return 0;
     }
 
-    bool collect_lane_timing(uint32_t rank, uint32_t done_sequence,
+    bool collect_lane_timing(uint32_t lane, uint32_t done_sequence,
                              double* sampled_us, uint64_t* samples) {
-        if (rank >= r3::moe_shm::kMaxRanks || !sampled_us || !samples) return false;
-        LaneWork& w = lane_[rank];
+        if (lane >= r3::moe_shm::kLanes || !sampled_us || !samples) return false;
+        LaneWork& w = lane_[lane];
         if (!w.sample_pending ||
             (int32_t)(done_sequence - w.sample_sequence) < 0)
             return true;
@@ -819,14 +827,14 @@ public:
         return true;
     }
 
-    bool sync_lane(uint32_t rank) {
-        return rank < r3::moe_shm::kMaxRanks &&
-               hip_ok(hipStreamSynchronize(lane_[rank].stream), "lane stream sync");
+    bool sync_lane(uint32_t lane) {
+        return lane < r3::moe_shm::kLanes &&
+               hip_ok(hipStreamSynchronize(lane_[lane].stream), "lane stream sync");
     }
 
-    bool lane_stats(uint32_t rank, uint64_t out[3]) {
-        if (rank >= r3::moe_shm::kMaxRanks || !out) return false;
-        return hip_ok(hipMemcpy(out, lane_[rank].d_stats.p, 3 * sizeof(uint64_t),
+    bool lane_stats(uint32_t lane, uint64_t out[3]) {
+        if (lane >= r3::moe_shm::kLanes || !out) return false;
+        return hip_ok(hipMemcpy(out, lane_[lane].d_stats.p, 3 * sizeof(uint64_t),
                                 hipMemcpyDeviceToHost), "read lane stats");
     }
 
@@ -837,7 +845,7 @@ private:
     void (*plugin_close_)() = nullptr;
     bool plugin_opened_ = false;
     hipStream_t stream_ = nullptr;
-    std::array<LaneWork, r3::moe_shm::kMaxRanks> lane_{};
+    std::array<LaneWork, r3::moe_shm::kLanes> lane_{};
     uint32_t gu_code_dtype_ = 0, gu_scale_dtype_ = 0;
     uint32_t dn_code_dtype_ = 0, dn_scale_dtype_ = 0;
     const RadKernelInfo* moe_ = nullptr;
@@ -855,8 +863,8 @@ private:
     Buffer d_act_, d_aq_, d_as_, d_sorted_, d_off_, d_ew_, d_gu_;
     Buffer d_mid_, d_mid_s_, d_down_, d_result_, scratch_;
     Buffer d_layer_tables_, d_expert_slot_;
-    uint32_t lane_rows_ = 0;
-    uint32_t lane_routes_ = 0;
+    uint32_t lane_rows_ = 0;    /* small-lane (pre-queued) step size */
+    uint32_t large_rows_ = 0;   /* large-lane capacity */
     uint32_t poison_ = 0;
 
     template <class T> bool symbol(const char* name, T* out, bool required = true) {
