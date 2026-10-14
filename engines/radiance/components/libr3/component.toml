@@ -8,7 +8,7 @@ engine = "radiance"
 targets = ["gfx1100"]
 # radiance 1.3.0: the rewrite blocks are written against this revision's libr4d and refuse any other.
 built-against = "89cee7ce414486c717aa2085c99e1f522e4c0ea6"
-outputs = ["kernels/libr3.so", "helpers/libr3_ngram_helper.so", "helpers/r3_moe_helper"]
+outputs = ["kernels/libr3.so", "kernels/libr3moe.so", "helpers/libr3_ngram_helper.so", "helpers/r3_moe_helper"]
 
 # How the build lane builds it: CMake against the engine installed from the lane's own build (CMAKE_PREFIX_PATH) and
 # the lane's materialised source ({engine_source}); outputs are copied into the engine's runtime home.

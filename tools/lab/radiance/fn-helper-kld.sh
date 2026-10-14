@@ -18,7 +18,7 @@ mkdir -p "$out"
 [ -s "$corpus" ] || { echo "NO_CORPUS $corpus"; exit 1; }
 args=(--tp 2 --tp-wire exact --placement expert_tiered --host-pool-mib 14336 --gpu-headroom-mib 320
       --kv-cache-dtype fp8 --max-model-len 8192 --max-num-seqs 1 --max-num-batched-tokens 64
-      --radiance-home "$home" --kernels libr3,libref --model "$model")
+      --radiance-home "$home" --kernels libr3,libr3moe,libref --model "$model")
 
 # EXTRA_ARGS is appended to the arm's engine arguments only (a later flag overrides the default above).
 # REF_DIR reuses a recorded reference (skips ref + control); ARM names the helper arm; HELPER_ENV adds

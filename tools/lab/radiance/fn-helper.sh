@@ -72,7 +72,7 @@ fi
 
 echo "== radiance: HIP devices 0,1; runtime-profile flashnext-2xtx"
 HIP_VISIBLE_DEVICES=0,1 R3_MOE_HELPER=${HOOK:-${HELPER:-1}} RADIANCE_HOME="$home" \
-    "$rad" --model "$model" --radiance-home "$home" --kernels libr3,libref \
+    "$rad" --model "$model" --radiance-home "$home" --kernels libr3,libr3moe,libref \
     "${profile_args[@]}" ${EXTRA_ARGS:-} --max-model-len "$ctx" --host 127.0.0.1 --port "$port" \
     >"$out/server.log" 2>&1 &
 server_pid=$!

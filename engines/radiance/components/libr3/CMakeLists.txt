@@ -81,14 +81,9 @@ set(declaration ${r4d}/r4d_rows.cpp ${r4d}/r4d_layout.cpp ${r4d}/r4d_fp8_layout.
 set_source_files_properties(${r4d}/r4d_rows.cpp PROPERTIES COMPILE_DEFINITIONS
   "rad_plugin_info=r4d_up_plugin_info;rad_kernel_schema_count=r4d_up_kernel_schema_count;rad_kernel_schema_at=r4d_up_kernel_schema_at;rad_kernel_count=r4d_up_kernel_count;rad_kernel_at=r4d_up_kernel_at;rad_kernel_concurrent=r4d_up_kernel_concurrent")
 
-# Remote-MoE mailbox registration is a libr3 facility. Engine patch 0002 declares the device ops
-# and exports the optional layer-map setter; libr3 resolves that setter dynamically so standalone
-# schema/selftest loaders retain no hard dependency on the engine core.
-set(r3_moe_remote_sources ${CMAKE_CURRENT_SOURCE_DIR}/helper/moe_remote_hook.cpp)
 rad_add_plugin(libr3 kernels
   SOURCES     ${declaration} ${CMAKE_CURRENT_SOURCE_DIR}/r3_registry.cpp ${CMAKE_CURRENT_SOURCE_DIR}/r3_ngram_host.cpp
-              ${r3_moe_remote_sources}
-  HIP_SOURCES ${device} ${CMAKE_CURRENT_SOURCE_DIR}/helper/moe_mailbox_ops.hip
+  HIP_SOURCES ${device}
   GPU_TARGETS ${R3_TARGETS}
   INCLUDES    ${r4d} ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_definitions(libr3 PRIVATE R3_TARGETS="${R3_TARGETS}")
@@ -148,11 +143,27 @@ add_executable(r3_moe_helper ${CMAKE_CURRENT_SOURCE_DIR}/helper/r3_moe_helper.cp
 set_property(TARGET r3_moe_helper PROPERTY HIP_ARCHITECTURES gfx1100 gfx1201)
 target_include_directories(r3_moe_helper PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/helper $ENV{ROCM_PATH}/include)
 target_include_directories(libr3 PRIVATE ${RADIANCE_SRC}/abi)
+
+# Remote-MoE mailbox: its own plugin, for both card families, so the hand-off runs beside libr3 on the XTX ranks
+# and beside libr4d on an R9700 engine (RAD02). Engine patch rad0002 declares the device ops and exports the
+# optional layer-map setter; the hook resolves that setter dynamically so schema/selftest loaders keep no hard
+# dependency on the engine core.
+set(R3MOE_TARGETS "gfx1100;gfx1201" CACHE STRING "GPU targets the remote-MoE mailbox plugin is compiled for")
+rad_add_plugin(libr3moe kernels
+  SOURCES     ${CMAKE_CURRENT_SOURCE_DIR}/helper/moe_mailbox_plugin.cpp ${CMAKE_CURRENT_SOURCE_DIR}/helper/moe_remote_hook.cpp
+  HIP_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/helper/moe_mailbox_ops.hip
+  GPU_TARGETS ${R3MOE_TARGETS}
+  INCLUDES    ${CMAKE_CURRENT_SOURCE_DIR})
+string(REPLACE ";" "," r3moe_targets_csv "${R3MOE_TARGETS}")
+target_compile_definitions(libr3moe PRIVATE R3MOE_TARGETS="${r3moe_targets_csv}")
+target_include_directories(libr3moe PRIVATE ${RADIANCE_SRC}/abi)
+set_target_properties(libr3moe PROPERTIES HIP_STANDARD 17 HIP_STANDARD_REQUIRED ON)
+target_link_libraries(libr3moe PRIVATE ${CMAKE_DL_LIBS})
+add_dependencies(libr3moe r3_moe_helper)
 target_compile_definitions(r3_moe_helper PRIVATE __HIP_PLATFORM_AMD__)
 target_link_libraries(r3_moe_helper PRIVATE radiance::abi ${CMAKE_DL_LIBS} ${RAD_HIP_RUNTIME} Threads::Threads)
 set_target_properties(r3_moe_helper PROPERTIES HIP_STANDARD 17 HIP_STANDARD_REQUIRED ON
   RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/helpers)
-add_dependencies(libr3 r3_moe_helper)
 
 include(CTest)
 if(BUILD_TESTING)
