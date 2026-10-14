@@ -87,7 +87,7 @@ summary = "decode MoE GEMV for the helper's small lane (RAD05): no WMMA, dot pro
 [setting.R3_MOE_HELPER_ROWS]
 default = "0"
 status = "experimental"
-summary = "few-rows-a-expert MoE kernel for the helper's large (prefill) lane (RAD06): one block an (expert, 32 outputs), each decoded weight applied to up to 16 of the expert's rows"
+summary = "few-rows-a-expert MoE kernel for the helper's large (prefill) lane (RAD06): one block an (expert, 32 outputs), each decoded weight applied to up to 16 of the expert's rows. Shelved: correct but 38% slower prefill than the grouped GEMM (RAD06, 2026-10-15)"
 
 [setting.R3_MOE_HELPER_INDEX]
 default = "0"
