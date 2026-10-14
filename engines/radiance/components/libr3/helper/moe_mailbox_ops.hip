@@ -7,7 +7,10 @@
 
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
+#include <string>
+#include <vector>
 
 namespace {
 using namespace r3::moe_shm;
@@ -517,6 +520,48 @@ int mask_ref_launch(const RadArgs* a, RadStream stream) {
     return hipGetLastError() == hipSuccess ? RAD_OK : RAD_E_DEVICE;
 }
 
+/* Diagnostic (R3_MOE_HELPER_DUMP=<dir>, mask-only modes only): once per rank, for the first request on layer
+ * R3_MOE_HELPER_DUMP_LAYER (default 20), synchronise after the add and write the request's routes, the helper's
+ * result rows and the engine's captured rows (mask_ref) to <dir>/r<rank>.{routes,helper,engine}.bin. Host side
+ * only: device printf is not serviced on radiance's streams. */
+void dump_rows(R3MoeMailboxDevice* d, RadStream stream, uint32_t rows, uint32_t hidden, uint32_t top_k) {
+    static bool done[kMaxRanks] = {};
+    const char* dir = std::getenv("R3_MOE_HELPER_DUMP");
+    if (!dir || !*dir || !d->mask_only || !d->mask_ref || d->rank >= kMaxRanks || done[d->rank]) return;
+    const char* le = std::getenv("R3_MOE_HELPER_DUMP_LAYER");
+    const uint32_t want = le && *le ? (uint32_t)std::atoi(le) : 20u;
+    if (hipStreamSynchronize((hipStream_t)stream) != hipSuccess) return;
+    uint32_t seq = 0;
+    if (hipMemcpy(&seq, d->sequence, sizeof(seq), hipMemcpyDeviceToHost) != hipSuccess || seq == 0) return;
+    auto* base = static_cast<uint8_t*>(d->mailbox);
+    Header h{};
+    Request q{};
+    if (hipMemcpy(&h, base, sizeof(h), hipMemcpyDeviceToHost) != hipSuccess) return;
+    const uint64_t qoff = h.ring_offset +
+        (uint64_t)(d->rank * kLaneSlots + ((seq - 1u) % kLaneSlots)) * sizeof(Request);
+    if (hipMemcpy(&q, base + qoff, sizeof(q), hipMemcpyDeviceToHost) != hipSuccess) return;
+    if (q.sequence != seq || q.layer != want || q.route_count == 0 || q.rows != rows) return;
+    const size_t elems = (size_t)rows * top_k * hidden;
+    std::vector<Route> routes(q.route_count);
+    std::vector<uint16_t> helper(elems), engine(elems);
+    if (hipMemcpy(routes.data(), base + q.route_offset, routes.size() * sizeof(Route),
+                  hipMemcpyDeviceToHost) != hipSuccess ||
+        hipMemcpy(helper.data(), base + h.result_offset[d->rank * kMaxRanks + d->rank],
+                  elems * sizeof(uint16_t), hipMemcpyDeviceToHost) != hipSuccess ||
+        hipMemcpy(engine.data(), d->mask_ref, elems * sizeof(uint16_t), hipMemcpyDeviceToHost) != hipSuccess)
+        return;
+    auto write = [&](const char* ext, const void* p, size_t n) {
+        const std::string path = std::string(dir) + "/r" + std::to_string(d->rank) + "." + ext + ".bin";
+        if (FILE* f = std::fopen(path.c_str(), "wb")) { std::fwrite(p, 1, n, f); std::fclose(f); }
+    };
+    write("routes", routes.data(), routes.size() * sizeof(Route));
+    write("helper", helper.data(), helper.size() * sizeof(uint16_t));
+    write("engine", engine.data(), engine.size() * sizeof(uint16_t));
+    std::fprintf(stderr, "libr3: R3_MOE_HELPER dump rank %u layer %u seq %u rows %u routes %u hidden %u top_k %u\n",
+                 d->rank, q.layer, seq, rows, q.route_count, hidden, top_k);
+    done[d->rank] = true;
+}
+
 int add_launch(const RadArgs* a, RadStream stream) {
     if (!a || !a->instance || !stream || a->n_t != 6) return RAD_E_INVAL;
     auto* d = static_cast<R3MoeMailboxDevice*>(a->instance);
@@ -561,7 +606,9 @@ int add_launch(const RadArgs* a, RadStream stream) {
                        (uint32_t)rows, (uint32_t)hidden, (uint32_t)top_k);
     hipLaunchKernelGGL(mailbox_add_finish_kernel, dim3(1), dim3(1), 0, (hipStream_t)stream,
                        d->published);
-    return hipGetLastError() == hipSuccess ? RAD_OK : RAD_E_DEVICE;
+    if (hipGetLastError() != hipSuccess) return RAD_E_DEVICE;
+    dump_rows(d, stream, (uint32_t)rows, (uint32_t)hidden, (uint32_t)top_k);
+    return RAD_OK;
 }
 
 int shadow_launch(const RadArgs* a, RadStream stream) {
