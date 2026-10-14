@@ -129,6 +129,10 @@ void publish_layer_map(int layer, int n_expert, const int32_t* slot_of_expert) {
     wait_until(&g.hdr->layer_map_consumed[layer], 1);
 }
 
+int owner_query(int layer, int expert) {
+    return g.hdr && layer >= 0 && expert >= 0 && owns(g.map, (uint32_t)layer, (uint32_t)expert) ? 1 : 0;
+}
+
 void register_mailbox() {
     if (!enabled_env()) return;
     g.fd = ::shm_open(shm_name(), O_RDWR | O_CLOEXEC, 0);
@@ -164,6 +168,12 @@ void register_mailbox() {
         return;
     }
     g.set_layer_map(publish_layer_map);
+    /* Ownership for placement (R3_MOE_HELPER_SKIP_OWNED): the helper's bitmap as published before the engine
+     * starts. The engine applies the protected-layer and slot tests itself, the same ones the helper uses
+     * when it narrows ownership to the runtime maps, so both sides agree on what is never placed here. */
+    if (auto set_owner = reinterpret_cast<void (*)(int (*)(int, int))>(
+            dlsym(RTLD_DEFAULT, "rad_moe_remote_set_owner_hook")))
+        set_owner(owner_query);
 
     /* The engine policy only decides whether the graph contains/uses the two mailbox ops.
      * All route selection and synchronisation stays on the rank GPU. */

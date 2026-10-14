@@ -19,6 +19,11 @@ typedef void (*rad_moe_remote_layer_map_hook)(
 void rad_moe_remote_set_layer_map_hook(rad_moe_remote_layer_map_hook hook);
 void rad_moe_remote_layer_map(
     int layer, int n_expert, const int32_t* slot_of_expert);
+/* Placement: whether the engine may leave a routed expert unit unplaced because the helper computes it.
+ * The plugin answers ownership; the engine adds the conditions under which nothing local reads it. */
+typedef int (*rad_moe_remote_owner_hook)(int layer, int expert);
+void rad_moe_remote_set_owner_hook(rad_moe_remote_owner_hook hook);
+int rad_moe_remote_skip_unit(int layer, int expert, int64_t max_step_rows);
 #ifdef __cplusplus
 }
 #endif
@@ -101,6 +106,36 @@ extern "C" void rad_moe_remote_layer_map(
     g_layer_maps[layer].assign(slot_of_expert, slot_of_expert + n_expert);
     const auto hook = g_layer_map_hook.load(std::memory_order_acquire);
     if (hook) hook(layer, n_expert, slot_of_expert);
+}
+
+namespace {
+std::atomic<rad_moe_remote_owner_hook> g_owner_hook{nullptr};
+}
+
+extern "C" void rad_moe_remote_set_owner_hook(rad_moe_remote_owner_hook hook) {
+    g_owner_hook.store(hook, std::memory_order_release);
+}
+
+/* R3_MOE_HELPER_SKIP_OWNED=1: a helper-owned expert is not placed at all -- no VRAM, no host pool -- which is
+ * what lets one engine rank (the R9700) hold a model whose experts it could not hold alone. Only when nothing
+ * local will ever read the unit: every step is handed off (the hand-off cap covers the largest step), no
+ * shadow or mask-only diagnostic recomputes owned experts locally, and the layer's runtime map gives the
+ * expert a regular slot with no protected expert in the layer (those layers stay local; the helper drops
+ * ownership on exactly the same test). */
+extern "C" int rad_moe_remote_skip_unit(int layer, int expert, int64_t max_step_rows) {
+    const char* e = std::getenv("R3_MOE_HELPER_SKIP_OWNED");
+    if (!e || !*e || (e[0] == '0' && e[1] == 0)) return 0;
+    const auto hook = g_owner_hook.load(std::memory_order_acquire);
+    if (!hook || rad_moe_remote_shadow() || rad_moe_remote_mask_only()) return 0;
+    if (min_rows() == (int64_t)LLONG_MAX || min_rows() > 1 || max_rows() < max_step_rows) return 0;
+    {
+        std::lock_guard<std::mutex> lock(g_layer_map_mu);
+        const auto it = g_layer_maps.find(layer);
+        if (it == g_layer_maps.end() || expert < 0 || expert >= (int)it->second.size()) return 0;
+        for (int32_t slot : it->second)
+            if (slot < 0) return 0;
+    }
+    return hook(layer, expert) ? 1 : 0;
 }
 """
 
@@ -365,6 +400,80 @@ PATCHES = (
                 guard=r"\(!remote_active && takes_ar\(T\)\) \? ar_write\(T\) : op_write",
                 expect_matches=1,
                 rationale="Normal remote passes already reduce in MoeFP8; shadow leaves HyperConn's original reduction untouched.",
+            ),
+        ),
+    ),
+    FilePatch(
+        path="core/place/planner.cpp",
+        description="Leave helper-owned expert units unplaced (mapped, never read) when nothing local reads them.",
+        edits=(
+            Edit(
+                id="include-remote-moe-abi-planner",
+                anchor=r'^#include "planner\.h"$',
+                text='\n#include "rad_moe_remote.h"',
+                guard=r'^#include "rad_moe_remote\.h"$',
+                expect_matches=1,
+                rationale="The planner's own header include is its unique first include line.",
+            ),
+            Edit(
+                id="remote-owned-unit-unplaced",
+                anchor=r"^[ \t]*bool host_only = false, direct = in_\.container;$",
+                text="""
+        /* A routed expert the remote helper computes, when the engine never reads it (rad_moe_remote_skip_unit):
+         * no slot, no pool and no copy. It stays on the mapped tier as a placeholder the loader publishes
+         * without reading; the zero-copy site keeps it out of the host-site and mixed-operand logic below. */
+        if (mu.layer >= 0 && mu.expert >= 0 &&
+            rad_moe_remote_skip_unit(mu.layer, mu.expert, in_.config->max_tok)) {
+            mu.tier = Tier::Mapped;
+            mu.movable = false;
+            mu.site = Site::DeviceZeroCopy;
+            mu.reason = "computed by the remote MoE helper; never read on this rank";
+            continue;
+        }""",
+                guard=r"rad_moe_remote_skip_unit\(mu\.layer, mu\.expert, in_\.config->max_tok\)",
+                expect_matches=1,
+                rationale="pin_mapped's per-unit loop starts with this declaration; a remote unit is decided before any host/ngram logic and leaves the loop.",
+            ),
+        ),
+    ),
+    FilePatch(
+        path="core/engine_bringup.cpp",
+        description="Publish helper-owned expert units as never-read placeholders instead of loading them.",
+        edits=(
+            Edit(
+                id="include-remote-moe-abi-bringup",
+                anchor=r'^#include "engine_priv\.h"$',
+                text='\n#include "rad_moe_remote.h"',
+                guard=r'^#include "rad_moe_remote\.h"$',
+                expect_matches=1,
+                rationale="engine_priv.h is the bring-up's unique first include line.",
+            ),
+            Edit(
+                id="remote-owned-unit-direct-check",
+                anchor=r"^[ \t]*if \(\(w\.tier == Tier::Mapped \|\| w\.tier == Tier::SSD\) && \(!direct \|\| !e\)\) \{$",
+                mode="replace",
+                text="""            /* The planner left a helper-owned expert unplaced (rad_moe_remote_skip_unit, same answer here):
+             * its stored form never matters because this rank never reads it. */
+            const bool remote_unit = w.decl.group.layer >= 0 && w.decl.group.expert >= 0 && e &&
+                rad_moe_remote_skip_unit(w.decl.group.layer, w.decl.group.expert, cfg_.max_tok);
+            if ((w.tier == Tier::Mapped || w.tier == Tier::SSD) && (!direct || !e) && !remote_unit) {""",
+                guard=r"&& \(!direct \|\| !e\) && !remote_unit\) \{",
+                expect_matches=1,
+                rationale="The single tier/stored-form check in the weight publish loop; a remote unit is exempt because nothing reads it.",
+            ),
+            Edit(
+                id="remote-owned-unit-publish",
+                anchor=r"^            if \(w\.tier == Tier::Mapped\) \{$",
+                text="""
+                if (remote_unit) {
+                    w.ptr = (void*)file_->data(file_->plane(*e, w.sel[0]));
+                    w.host_ptr = w.ptr;
+                    r->mover.publish_mapped((rad_weight)i, w.ptr);
+                    continue;
+                }""",
+                guard=r"^[ \t]*if \(remote_unit\) \{$",
+                expect_matches=1,
+                rationale="The mapped-tier publish branch; a remote unit publishes the container address as a never-dereferenced placeholder and skips the byte-count check its relayouted form would fail.",
             ),
         ),
     ),
