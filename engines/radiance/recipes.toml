@@ -42,6 +42,9 @@ patches = ["rad0002_moe_remote_handoff"]
 [experiment.mtp-full-head-switch]
 patches = ["rad0003_mtp_full_head_switch"]
 
+[experiment.two-half-prefill]
+patches = ["rad0004_two_half_prefill"]
+
 # Profiles list only what they switch; libr3's runtime defaults (R3_ATTN_NATIVE on, every other R3_* off) are the
 # component's, never restated here.
 [runtime-profile.flashnext-2xtx]

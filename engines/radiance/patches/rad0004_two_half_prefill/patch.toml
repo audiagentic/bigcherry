@@ -1,0 +1,12 @@
+schema = 1
+id = "rad0004_two_half_prefill"
+order = 4
+state = "untested"
+kind = "enhancement"
+origin = "local"
+backend = "agnostic"
+plan-item = "RAD04"
+plan-ids = ["RAD04"]
+requires = []
+conflicts = []
+tags = ["prefill", "two-half", "scheduling", "qwen35"]
