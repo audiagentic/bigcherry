@@ -15,6 +15,7 @@
 #include <fcntl.h>
 #include <mutex>
 #include <string>
+#include <vector>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -230,6 +231,24 @@ void report_shadow(uint32_t rank, RankState& s) {
     }
 }
 
+/* R3_MOE_HELPER_HISTOGRAM=<path>: this rank's route counts, uint32[kMaxLayers][kExperts], written at shutdown
+ * to <path>.rank<r>. A helper given it as R3_MOE_HELPER_HEAT owns the coldest experts first. */
+void write_heat(uint32_t rank, RankState& s) {
+    const char* path = std::getenv("R3_MOE_HELPER_HISTOGRAM");
+    if (!path || !*path || !s.dev.heat) return;
+    std::vector<uint32_t> heat((size_t)kMaxLayers * kExperts);
+    if (!hip_ok(hipDeviceSynchronize(), "sync before route histogram") ||
+        !hip_ok(hipMemcpy(heat.data(), s.dev.heat, heat.size() * sizeof(uint32_t), hipMemcpyDeviceToHost),
+                "read route histogram"))
+        return;
+    const std::string out = std::string(path) + ".rank" + std::to_string(rank);
+    if (FILE* f = std::fopen(out.c_str(), "wb")) {
+        const size_t n = std::fwrite(heat.data(), sizeof(uint32_t), heat.size(), f);
+        std::fclose(f);
+        std::fprintf(stderr, "libr3: R3_MOE_HELPER route histogram %s (%zu counts)\n", out.c_str(), n);
+    }
+}
+
 void close_mailbox() {
     std::lock_guard<std::mutex> lock(g.mu);
     for (uint32_t r = 0; r < kMaxRanks; ++r) {
@@ -237,6 +256,8 @@ void close_mailbox() {
         if (!s.ready) continue;
         if (s.device >= 0) (void)hipSetDevice(s.device);
         report_shadow(r, s);
+        write_heat(r, s);
+        if (s.dev.heat) (void)hipFree(s.dev.heat);
         if (s.dev.shadow_first) (void)hipFree(s.dev.shadow_first);
         if (s.dev.shadow_stats) (void)hipFree(s.dev.shadow_stats);
         if (s.mask_ref) (void)hipFree(s.mask_ref);
@@ -379,6 +400,12 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
     s.dev.max_rows = row_cap;
     s.dev.rank = (uint32_t)rank;
     s.dev.world = (uint32_t)world_size;
+    if (const char* hp = std::getenv("R3_MOE_HELPER_HISTOGRAM"); hp && *hp) {
+        const size_t hb = (size_t)kMaxLayers * kExperts * sizeof(uint32_t);
+        if (!hip_ok(hipMalloc(reinterpret_cast<void**>(&s.dev.heat), hb), "hipMalloc route histogram") ||
+            !hip_ok(hipMemset(s.dev.heat, 0, hb), "zero route histogram"))
+            s.dev.heat = nullptr;
+    }
     s.dev.helpers = helpers;
     s.dev.shadow = shadow ? 1u : 0u;
     /* 1: add the engine's captured rows; 2: same late publish/mask/rescatter, but add the helper's rows. */

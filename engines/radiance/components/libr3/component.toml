@@ -69,6 +69,16 @@ default = "1"
 status = "experimental"
 summary = "helpers sharing the segment: 2 = two XTX helpers behind a one-rank (R9700) engine, each owning half the candidates and serving its own rank slot"
 
+[setting.R3_MOE_HELPER_HISTOGRAM]
+default = ""
+status = "diagnostic"
+summary = "path prefix: the engine counts every routed (layer, expert) in VRAM and writes uint32[128][512] to <path>.rank<r> at shutdown"
+
+[setting.R3_MOE_HELPER_HEAT]
+default = ""
+status = "experimental"
+summary = "a R3_MOE_HELPER_HISTOGRAM file: the helper owns the coldest experts first, so the engine keeps the hot ones and decode hands off less"
+
 [setting.R3_MOE_HELPER_INDEX]
 default = "0"
 status = "experimental"

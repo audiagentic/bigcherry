@@ -471,7 +471,28 @@ bool select_owned(const Container& f, r3_moe_gpu::Runner* gpu, uint64_t budget, 
     /* A container converted without calibration has no profile: take experts expert-major (unsorted)
      * so the budget spreads over all layers. */
     std::vector<RadFileProfile> flat;
-    if (!f.profile || !f.h->prof_count) {
+    /* R3_MOE_HELPER_HEAT: route counts a profiling run wrote (R3_MOE_HELPER_HISTOGRAM). Coldest first, so the
+     * engine keeps the experts most tokens route to and a decode step hands off as little as possible. */
+    if (const char* hp = std::getenv("R3_MOE_HELPER_HEAT"); hp && *hp) {
+        std::vector<uint32_t> heat((size_t)kMaxLayers * kExperts, 0);
+        FILE* hf = std::fopen(hp, "rb");
+        const size_t got = hf ? std::fread(heat.data(), sizeof(uint32_t), heat.size(), hf) : 0;
+        if (hf) std::fclose(hf);
+        if (got != heat.size()) {
+            std::fprintf(stderr, "r3_moe_helper: R3_MOE_HELPER_HEAT %s: want %zu counts, read %zu\n",
+                         hp, heat.size(), got);
+            return false;
+        }
+        for (uint32_t l = 0; l < f.layers; ++l)
+            for (uint32_t e = 0; e < kExperts; ++e)
+                if (f.weight(l, e, 0))
+                    flat.push_back(RadFileProfile{(int32_t)l, (int32_t)e, (float)heat[(size_t)l * kExperts + e], 0.0f});
+        std::stable_sort(flat.begin(), flat.end(), [](const RadFileProfile& a, const RadFileProfile& b) {
+            return a.share < b.share;
+        });
+        std::fprintf(stderr, "r3_moe_helper: owning the coldest experts of %s first\n", hp);
+        for (const RadFileProfile& p : flat) order.push_back(&p);
+    } else if (!f.profile || !f.h->prof_count) {
         std::fprintf(stderr, "r3_moe_helper: container has no expert profile; owning experts evenly across layers\n");
         /* Highest ids first: the engine's initial placement keeps low ids resident on the XTX and
          * leaves the high ids in its host pool (measured: every host-pool route was expert >= 302). */
@@ -480,7 +501,7 @@ bool select_owned(const Container& f, r3_moe_gpu::Runner* gpu, uint64_t budget, 
                 if (f.weight(l, e, 0)) flat.push_back(RadFileProfile{(int32_t)l, (int32_t)e, 0.0f, 0.0f});
         for (const RadFileProfile& p : flat) order.push_back(&p);
     }
-    for (uint64_t i = 0; f.profile && i < f.h->prof_count; ++i) {
+    for (uint64_t i = 0; flat.empty() && f.profile && i < f.h->prof_count; ++i) {
         const RadFileProfile& p = f.profile[i];
         if (p.layer < 0 || p.expert < 0 || (uint32_t)p.layer >= f.layers ||
             p.expert >= (int32_t)kExperts) continue;

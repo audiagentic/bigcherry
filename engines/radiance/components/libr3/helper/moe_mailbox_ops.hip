@@ -129,7 +129,7 @@ __global__ void mailbox_stage_kernel(
 
 __global__ void mailbox_publish_kernel(
     uint8_t* base, const uint8_t* owner, uint32_t* sequence, uint32_t* published, uint32_t rank,
-    uint32_t helpers, int32_t* ids, const uint16_t* ew,
+    uint32_t helpers, int32_t* ids, const uint16_t* ew, uint32_t* heat,
     const uint8_t* aq, const uint8_t* aq_base,
     uint32_t layer, uint32_t rows, uint32_t hidden, uint32_t top_k,
     int32_t expert_base, uint32_t n_expert, uint32_t max_rows,
@@ -159,8 +159,10 @@ __global__ void mailbox_publish_kernel(
         Route* route = reinterpret_cast<Route*>(base + h->route_offset[slot]);
         for (uint32_t i = threadIdx.x; i < rows * top_k; i += blockDim.x) {
             const int32_t le = ids[i] - expert_base;
-            if (le < 0 || (uint32_t)le >= n_expert || (uint32_t)le >= kExperts ||
-                slot_map[(uint32_t)le] < 0 || !owner_has(own, layer, (uint32_t)le))
+            const bool in_range = le >= 0 && (uint32_t)le < n_expert && (uint32_t)le < kExperts;
+            /* R3_MOE_HELPER_HISTOGRAM: every route this step makes, owned or not, counted once (first slot). */
+            if (heat && k == 0 && in_range) atomicAdd(heat + (size_t)layer * kExperts + (uint32_t)le, 1u);
+            if (!in_range || slot_map[(uint32_t)le] < 0 || !owner_has(own, layer, (uint32_t)le))
                 continue;
             const uint32_t p = atomicAdd(&nr, 1u);
             route[p].token = (int32_t)(i / top_k);
@@ -529,7 +531,7 @@ int publish_launch(const RadArgs* a, RadStream stream) {
     hipLaunchKernelGGL(mailbox_publish_kernel, dim3(1), dim3(256), 0, (hipStream_t)stream,
                        static_cast<uint8_t*>(d->mailbox), d->owner, d->sequence, d->published, d->rank,
                        d->helpers, static_cast<int32_t*>(a->t[0].data),
-                       static_cast<const uint16_t*>(a->t[1].data),
+                       static_cast<const uint16_t*>(a->t[1].data), d->heat,
                        static_cast<const uint8_t*>(a->t[3].data),
                        static_cast<const uint8_t*>(a->t[5].data),
                        (uint32_t)layer, (uint32_t)rows, (uint32_t)hidden, (uint32_t)top_k,
