@@ -1,19 +1,8 @@
 # 1315_mtp_draft_trace
 
-**Status:** validated
+**Status:** validated (diagnostic activation only)
 **Plan item:** QFP15
 
-## What it does
+Default-off trace of sampled draft token/probability, draft hidden-row hash and post-accept target hidden-row hash. The first differing step identifies the first observed divergence, **not** whether the target or draft caused it: the initial pre-draft target seed is not recorded and accept-row selection depends on accepted count. The FNV-1a helper uses nonstandard offset 1469598103934665603; old hashes remain comparable within the same implementation but are not canonical FNV-1a. Do not infer a GPU race or numerical identity from hashes alone.
 
-Diagnostic only. With `BIGCHERRY_DRAFT_TRACE=1`, the single-head MTP draft path logs one
-`BIGCHERRY_DRAFT_TRACE step` line per draft step (top token, probability as exact hex float, FNV-1a hash of the draft
-hidden row) and one `BIGCHERRY_DRAFT_TRACE accept` line per round (accepted count, FNV-1a hash of the target hidden row
-seeding the next round). Diffing two runs of the same build/prompt shows whether the target or the draft diverges
-first. No behaviour change.
-
-## Qualification
-
-QFP18 lightweight promotion on b11474, Brutus 2026-10-08: build `deploy-v4-diag` compiled clean; with
-`BIGCHERRY_DRAFT_TRACE=1 BIGCHERRY_SPEC_TIMING=1 BIGCHERRY_DRAFT_TIMING=1` the log contained 92 DRAFT_TRACE,
-23 SPEC_TIMING and 23 DRAFT_TIMING lines, 0 error lines, and greedy text identical to production
-(md5 `a34a34c1f48d`).
+Historical qualification: QFP18 lightweight tier, b11474, Brutus 2026-10-08, build deploy-v4-diag; 92 DRAFT_TRACE, 23 SPEC_TIMING, 23 DRAFT_TIMING, 0 error lines; greedy text matched production (md5 a34a34c1f48d). This proves activation and observed neutrality, not causal attribution, b11552 qualification or a throughput gain.
