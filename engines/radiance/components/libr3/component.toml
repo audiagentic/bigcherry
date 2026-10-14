@@ -79,6 +79,11 @@ default = ""
 status = "experimental"
 summary = "a R3_MOE_HELPER_HISTOGRAM file: the helper owns the coldest experts first, so the engine keeps the hot ones and decode hands off less"
 
+[setting.R3_MOE_HELPER_GEMV]
+default = "0"
+status = "experimental"
+summary = "decode MoE GEMV for the helper's small lane (RAD05): no WMMA, dot products straight off the packed w4nl64 nibbles; gfx11 runs the grouped GEMM's fp8 WMMA widened to bf16"
+
 [setting.R3_MOE_HELPER_INDEX]
 default = "0"
 status = "experimental"

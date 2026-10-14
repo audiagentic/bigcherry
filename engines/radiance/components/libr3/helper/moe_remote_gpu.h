@@ -188,6 +188,87 @@ __global__ void lane_route_scatter(
     if (sorted_expert) sorted_expert[pos] = (int32_t)e;
 }
 
+/* DECODE-SIZED MoE GEMV for w4nl64a8h (RAD05), the helper's small lane on gfx1100. The grouped GEMM's inner
+ * loop is gfx12 fp8 WMMA, which gfx11 runs widened to bf16 -- ~4x off the weight-bandwidth bound at a decode
+ * step's handful of rows a expert. Here no WMMA: one block a (routed row, 64 outputs), the row's activation
+ * dequantised into LDS once, each wave a dot product per output straight off the packed nibbles.
+ *
+ * The weight is the relayout's own form (r4d_layout.cpp): a row of K codes is K/2 bytes, and inside each dword
+ * byte b holds element b (low nibble) and element b+4 (high nibble) -- moew4_permute's order. A code indexes
+ * kW4nlTable; its scale is one E4M3 byte a (row, 64 of K) times 2^-13 (kW4G64Scale). The activation is E4M3
+ * with an f32 scale a 128 of K; the Hadamard rotation is already in both. f32 accumulate, one bf16 narrow.
+ * TOKEN: gate/up, whose activation row is the routed slot's token (sorted[r] / top_k); otherwise down, whose
+ * activation row is the sorted row itself. Rows [off[e], off[e+1]) belong to expert slot e; class e & 1, table
+ * entry e / 2, and that class's N and K (the two TP halves of a two-rank engine differ). */
+__device__ __forceinline__ float gemv_e4m3(uint8_t v) {
+    const uint32_t s = v >> 7, e = (v >> 3) & 15u, m = v & 7u;
+    float f = e ? __uint_as_float(((e + 120u) << 23) | (m << 20)) : (float)m * 0x1p-9f;
+    return s ? -f : f;
+}
+
+__constant__ float kGemvW4nl[16] = { 1.125f, 3.25f, 5.5f, 8.0f, 11.0f, 14.0f, 18.0f, 22.0f,
+                                     -1.125f, -3.25f, -5.5f, -8.0f, -11.0f, -14.0f, -18.0f, -22.0f };
+
+constexpr uint32_t kGemvTile = 64;        /* outputs a block */
+constexpr uint32_t kGemvMaxK = 2560;
+
+template <bool TOKEN>
+__global__ __launch_bounds__(256) void lane_moe_gemv(
+    const uint8_t* aq, const float* as, const int32_t* sorted, const int32_t* off, uint32_t top_k,
+    void* const* code0, void* const* scale0, void* const* code1, void* const* scale1,
+    uint32_t n0, uint32_t n1, uint32_t k0, uint32_t k1, uint32_t a_stride, uint32_t out_stride, uint16_t* out) {
+    using namespace r3::moe_shm;
+    const uint32_t r = blockIdx.x;
+    if (r >= (uint32_t)off[kExperts]) return;
+    __shared__ float a[kGemvMaxK];
+    __shared__ uint32_t sh_e;
+    if (threadIdx.x == 0) {
+        uint32_t lo = 0, hi = kExperts;                 /* last e with off[e] <= r */
+        while (hi - lo > 1) { const uint32_t mid = (lo + hi) / 2; if ((uint32_t)off[mid] <= r) lo = mid; else hi = mid; }
+        sh_e = lo;
+    }
+    __syncthreads();
+    const uint32_t e = sh_e, cls = e & 1u, ix = e >> 1;
+    const uint32_t N = cls ? n1 : n0, K = cls ? k1 : k0;
+    const uint32_t n_base = blockIdx.y * kGemvTile;
+    if (n_base >= N || K > kGemvMaxK) return;
+    const uint32_t arow = TOKEN ? (uint32_t)sorted[r] / top_k : r;
+    const uint8_t* ar = aq + (uint64_t)arow * a_stride;
+    const float* asr = as + (uint64_t)arow * (a_stride / 128u);
+    for (uint32_t k = threadIdx.x; k < K; k += blockDim.x) a[k] = gemv_e4m3(ar[k]) * asr[k / 128u];
+    __syncthreads();
+
+    const uint8_t* codes = static_cast<const uint8_t*>(cls ? code1[ix] : code0[ix]);
+    const uint8_t* scales = static_cast<const uint8_t*>(cls ? scale1[ix] : scale0[ix]);
+    if (!codes || !scales) return;
+    const uint32_t lane = threadIdx.x % warpSize, wave = threadIdx.x / warpSize, waves = blockDim.x / warpSize;
+    const uint32_t dwords = K / 8u;
+    for (uint32_t j = wave; j < kGemvTile; j += waves) {
+        const uint32_t n = n_base + j;
+        if (n >= N) break;
+        const uint32_t* crow = reinterpret_cast<const uint32_t*>(codes + (uint64_t)n * (K / 2u));
+        const uint8_t* srow = scales + (uint64_t)n * (K / 64u);
+        float acc = 0.0f;
+        for (uint32_t d = lane; d < dwords; d += warpSize) {
+            const uint32_t w = crow[d];
+            const float* x = a + 8u * d;
+            float part = 0.0f;
+#pragma unroll
+            for (uint32_t b = 0; b < 4; ++b) {
+                const uint32_t byte = (w >> (8u * b)) & 0xFFu;
+                part += x[b] * kGemvW4nl[byte & 15u] + x[b + 4] * kGemvW4nl[byte >> 4];
+            }
+            acc += part * gemv_e4m3(srow[(8u * d) / 64u]);
+        }
+        for (uint32_t o = warpSize / 2; o; o >>= 1) acc += __shfl_down(acc, o);
+        if (lane == 0) {
+            uint32_t u = __float_as_uint(acc * 0x1p-13f);
+            u += 0x7fffu + ((u >> 16) & 1u);
+            out[(uint64_t)r * out_stride + n] = (uint16_t)(u >> 16);
+        }
+    }
+}
+
 __global__ void lane_route_inverse(const int32_t* sorted, int32_t* inv, uint32_t routes, uint32_t slots) {
     const uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= routes) return;
@@ -374,6 +455,7 @@ public:
     bool open() {
         const char* poison = std::getenv("R3_MOE_HELPER_POISON");
         /* "zero" returns zeros (the same output as dropping the remote routes); anything else non-"0" is 1e3. */
+        if (const char* gv = std::getenv("R3_MOE_HELPER_GEMV"); gv && *gv && std::strcmp(gv, "0") != 0) gemv_ = true;
         poison_ = !poison || !*poison || std::strcmp(poison, "0") == 0 ? 0u
                 : std::strcmp(poison, "zero") == 0 ? 2u : 1u;
         if (!hip_ok(hipSetDevice(0), "hipSetDevice(0)")) return false;
@@ -770,9 +852,23 @@ public:
                                static_cast<void**>(w.dn_scale[1].p));
             const int64_t w0 = slice_w(slice, 0);
             const int64_t w1 = slice_w(slice, 1);
+            /* Small lane, decode GEMV (RAD05): the step's routes, one block a (row, 64 outputs). */
+            const bool gemv = gemv_ && lane < kMaxRanks;
+            const dim3 gemv_grid_gu(routes, (uint32_t)((2 * std::max(w0, w1) + kGemvTile - 1) / kGemvTile));
+            const dim3 gemv_grid_dn(routes, (uint32_t)((kHidden + kGemvTile - 1) / kGemvTile));
             std::vector<RadParam> gp =
                 gemm_params(rows, 2 * w0, kHidden, 2, "token", 2 * w1, kHidden);
-            if (launch_on(moe_,
+            if (gemv) {
+                hipLaunchKernelGGL(lane_moe_gemv<true>, gemv_grid_gu, dim3(256), 0, w.stream,
+                                   static_cast<const uint8_t*>(w.d_aq.p), static_cast<const float*>(w.d_as.p),
+                                   static_cast<const int32_t*>(w.d_sorted.p), static_cast<const int32_t*>(w.d_off.p),
+                                   (uint32_t)kTopK,
+                                   static_cast<void* const*>(w.gu_code[0].p), static_cast<void* const*>(w.gu_scale[0].p),
+                                   static_cast<void* const*>(w.gu_code[1].p), static_cast<void* const*>(w.gu_scale[1].p),
+                                   (uint32_t)(2 * w0), (uint32_t)(2 * w1), (uint32_t)kHidden, (uint32_t)kHidden,
+                                   (uint32_t)kHidden, (uint32_t)(2 * mid_w()), static_cast<uint16_t*>(w.d_gu.p));
+                if (!hip_ok(hipGetLastError(), "lane gate/up GEMV")) return -EIO;
+            } else if (launch_on(moe_,
                           { tensor(w.d_aq.p, RAD_F8E4M3, {rows, kHidden}),
                             tensor(w.d_as.p, RAD_F32, {rows, kHidden / kGroup}),
                             table_tensor(w.gu_code[0].p, gu_code_dtype_, 2 * w0, kHidden),
@@ -800,7 +896,17 @@ public:
             if (sampling && !hip_ok(hipEventRecord(w.stage[2], w.stream), "lane stage 2")) return -EIO;
             std::vector<RadParam> dp =
                 gemm_params(rows, kHidden, w0, 1, "sorted", kHidden, w1);
-            if (launch_on(moe_,
+            if (gemv) {
+                hipLaunchKernelGGL(lane_moe_gemv<false>, gemv_grid_dn, dim3(256), 0, w.stream,
+                                   static_cast<const uint8_t*>(w.d_mid.p), static_cast<const float*>(w.d_mid_s.p),
+                                   static_cast<const int32_t*>(w.d_sorted.p), static_cast<const int32_t*>(w.d_off.p),
+                                   (uint32_t)kTopK,
+                                   static_cast<void* const*>(w.dn_code[0].p), static_cast<void* const*>(w.dn_scale[0].p),
+                                   static_cast<void* const*>(w.dn_code[1].p), static_cast<void* const*>(w.dn_scale[1].p),
+                                   (uint32_t)kHidden, (uint32_t)kHidden, (uint32_t)w0, (uint32_t)w1,
+                                   (uint32_t)mid_w(), (uint32_t)kHidden, static_cast<uint16_t*>(out_down));
+                if (!hip_ok(hipGetLastError(), "lane down GEMV")) return -EIO;
+            } else if (launch_on(moe_,
                           { tensor(w.d_mid.p, RAD_F8E4M3, {routes, mid_w()}),
                             tensor(w.d_mid_s.p, RAD_F32, {routes, mid_w() / kGroup}),
                             table_tensor(w.dn_code[0].p, dn_code_dtype_, kHidden, w0),
@@ -918,6 +1024,7 @@ private:
     int64_t mid_w() const { return full_width() ? kExpertWidth : kRankWidth; }
     uint32_t large_rows_ = 0;   /* large-lane capacity */
     uint32_t poison_ = 0;
+    bool gemv_ = false;         /* R3_MOE_HELPER_GEMV: decode GEMV on the small lane (RAD05) */
 
     template <class T> bool symbol(const char* name, T* out, bool required = true) {
         dlerror();
