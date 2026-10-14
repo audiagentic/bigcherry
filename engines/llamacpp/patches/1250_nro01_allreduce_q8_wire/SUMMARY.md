@@ -1,5 +1,9 @@
 # 1250_nro01_allreduce_q8_wire
 
+## 2026-10-14 qualification (BCOP212)
+1250 remains evaluated/not adopted. Rejected 1252 and untested 1272 are prerequisites. The fused API requires 2 ranks, Q8_0 and >=1 MiB compressed bytes; width 5120 needs >=193 tokens/AR. No ordinary decode/MTP or three-rank CPU-root exact-F32 fusion can activate. No new GPU result; see PNRO02/PGC11.
+
+
 **Status:** evaluated
 **Plan item:** NRO01/NRO02
 

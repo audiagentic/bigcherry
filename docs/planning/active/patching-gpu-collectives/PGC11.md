@@ -13,6 +13,10 @@ work: M
 
 # AllReduce wire precision: f32 vs bf16 vs safe f16, and best-of-all combinations
 
+## 2026-10-14 wire/1250 correction (BCOP212)
+1250 is not independent exact-F32 fusion. Its fused API requires two ranks, explicit Q8_0 and >=1 MiB compressed payload: at width 5120, >=193 tokens, excluding normal decode and <=6-token MTP. 1252 P2P is rejected, 1272 Q8 host fallback untested; do not re-anchor 1250 or add a Q8 provider to study exact-F32 fusion. PGC11/1272 owns wire quality, PNRO02 owns conditional CPU-root exact-F32 epilogue. bf16/f16 historical acceptance failures do not prove Q8 failure; Q8 remains unqualified.
+
+
 ## Description
 
 Owner request (2026-10-01): investigate the f16 wire option, whether bf16 vs f32 differ significantly, and build combinations that get the best of all options. Context: adaptive with exact f32 host side = +4.1% decode vs RCCL, acceptance equal; bf16 host side ~+6.7% decode, acceptance -2.2 pp; 1272's f16 is a plain cast (overflow -> Inf, unsafe as default); stock RCCL prefill is already bf16 >= 32768 elements; KLD noise floor ~0.
