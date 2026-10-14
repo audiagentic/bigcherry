@@ -147,8 +147,8 @@ PATCHES = (
                 id="remote-ops",
                 anchor=r"^[ \t]*rad_op op_ar = 0, op_add = 0;$",
                 mode="replace",
-                text="    rad_op op_ar = 0, op_add = 0, op_remote_publish = 0, op_remote_add = 0, op_remote_shadow = 0;
-    rad_op op_remote_mask_capture = 0, op_remote_mask_restore = 0;",
+                text="""    rad_op op_ar = 0, op_add = 0, op_remote_publish = 0, op_remote_add = 0, op_remote_shadow = 0;
+    rad_op op_remote_mask_capture = 0, op_remote_mask_restore = 0;""",
                 guard=r"op_remote_publish = 0",
                 expect_matches=1,
                 rationale="The output op declaration is the unique home for the pre-reduction mailbox ops.",
