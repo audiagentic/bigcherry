@@ -20,6 +20,7 @@ args=(--tp 2 --tp-wire exact --placement expert_tiered --host-pool-mib 14336 --g
       --kv-cache-dtype fp8 --max-model-len 8192 --max-num-seqs 1 --max-num-batched-tokens 64
       --radiance-home "$home" --kernels libr3,libref --model "$model")
 
+# EXTRA_ARGS is appended to the arm's engine arguments only (a later flag overrides the default above).
 # REF_DIR reuses a recorded reference (skips ref + control); ARM names the helper arm; HELPER_ENV adds
 # variables to both helper and engine for that arm (e.g. "R3_MOE_HELPER_MIB=512" or "R3_MOE_REMOTE_MAX_ROWS=0").
 [ -n "${REF_DIR:-}" ] && ref=$REF_DIR
@@ -50,6 +51,6 @@ if [ -z "${REF_DIR:-}" ]; then
     run ref 0 --kld-record "$ref" --kld-corpus "$corpus" || exit 1
     run control 0 --kld-ref "$ref" --kld-out "$out/control.json"
 fi
-run "$arm" 1 --kld-ref "$ref" --kld-out "$out/$arm.json"
+run "$arm" "${ARM_HELPER:-1}" --kld-ref "$ref" --kld-out "$out/$arm.json" ${EXTRA_ARGS:-}
 [ -n "${REF_DIR:-}" ] || [ "${KEEP_REF:-0}" = 1 ] || rm -rf "$ref"
 echo FN_HELPER_KLD_DONE
