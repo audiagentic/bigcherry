@@ -187,7 +187,7 @@ __global__ void lane_route_scatter(
 
 __global__ void lane_unsort_down(const uint16_t* down, const int32_t* sorted,
                                  uint16_t* dst, uint32_t routes, uint32_t slots,
-                                 uint32_t hidden, bool poison) {
+                                 uint32_t hidden, uint32_t poison) {
     const uint64_t i = (uint64_t)blockIdx.x * blockDim.x + threadIdx.x;
     const uint64_t total = (uint64_t)routes * hidden;
     if (i >= total) return;
@@ -195,7 +195,7 @@ __global__ void lane_unsort_down(const uint16_t* down, const int32_t* sorted,
     const int32_t flat = sorted[row];
     if (flat < 0 || (uint32_t)flat >= slots) return;
     dst[(uint64_t)(uint32_t)flat * hidden + (i - (uint64_t)row * hidden)] =
-        poison ? (uint16_t)0x447au : down[i];
+        poison == 1u ? (uint16_t)0x447au : poison == 2u ? (uint16_t)0 : down[i];
     /* Mapped host memory is fine-grained/uncached. Drain every writer wave's posted stores
      * before the later release flag, matching libr4d's no-P2P all-reduce host path. */
     asm volatile("s_wait_storecnt 0x0" ::: "memory");
@@ -366,7 +366,9 @@ public:
 
     bool open() {
         const char* poison = std::getenv("R3_MOE_HELPER_POISON");
-        poison_ = poison && *poison && std::strcmp(poison, "0") != 0;
+        /* "zero" returns zeros (the same output as dropping the remote routes); anything else non-"0" is 1e3. */
+        poison_ = !poison || !*poison || std::strcmp(poison, "0") == 0 ? 0u
+                : std::strcmp(poison, "zero") == 0 ? 2u : 1u;
         if (!hip_ok(hipSetDevice(0), "hipSetDevice(0)")) return false;
         hipDeviceProp_t prop{};
         if (!hip_ok(hipGetDeviceProperties(&prop, 0), "hipGetDeviceProperties")) return false;
@@ -854,7 +856,7 @@ private:
     Buffer d_layer_tables_, d_expert_slot_;
     uint32_t lane_rows_ = 0;
     uint32_t lane_routes_ = 0;
-    bool poison_ = false;
+    uint32_t poison_ = 0;
 
     template <class T> bool symbol(const char* name, T* out, bool required = true) {
         dlerror();
