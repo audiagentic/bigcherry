@@ -293,7 +293,7 @@ PATCHES = (
         RAD_ISSUE_N(c_, op_remote_shadow, rows,
                     brows(w.sorted, rows * k), brows(w.edn, rows * k));
 """,
-                guard=r"remote_mask_only\) \{|RAD_ISSUE_N\(c_, op_remote_shadow, rows,",
+                guard=r"RAD_ISSUE_N\(c_, op_remote_mask_capture, rows,",
                 expect_matches=1,
                 rationale="The shared-down issue is the first code line after every routed/protected down writer, so mask-only can snapshot engine rows before masking and restore local row order after the diagnostic rescatter.",
             ),

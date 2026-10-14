@@ -256,7 +256,7 @@ class TestRadiancePatchPackages(unittest.TestCase):
         self.assertIn('q->row_base', ops)
         gpu = (helper / "moe_remote_gpu.h").read_text(encoding="utf-8")
         self.assertIn('R3_MOE_HELPER_POISON', gpu)
-        self.assertIn('poison ? (uint16_t)0x447au : down[i]', gpu)
+        self.assertIn('poison == 1u ? (uint16_t)0x447au : poison == 2u ? (uint16_t)0 : down[i]', gpu)
         self.assertIn('build_layer_table', gpu)
         self.assertIn('slot_of_expert', gpu)
         self.assertNotIn('model_.expert_slot', gpu)
