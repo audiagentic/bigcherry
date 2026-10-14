@@ -150,9 +150,11 @@ if ! wait "$server_pid"; then
     echo "SERVER_STOP_FAILED" >&2; tail -60 "$out/server.log" >&2; exit 1
 fi
 server_pid=
-kill -TERM "$helper_pid"
-if ! wait "$helper_pid"; then
-    echo "HELPER_STOP_FAILED" >&2; tail -60 "$out/helper.log" >&2; exit 1
+if [ -n "$helper_pid" ]; then
+    kill -TERM "$helper_pid"
+    if ! wait "$helper_pid"; then
+        echo "HELPER_STOP_FAILED" >&2; tail -60 "$out/helper.log" >&2; exit 1
+    fi
 fi
 helper_pid=
 trap - EXIT INT TERM
