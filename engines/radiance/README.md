@@ -40,8 +40,9 @@ and not yet measured here).
 | Qwen3.8-27B (dense) | `qwen3.8-27b-mxfp4.rad` | 19 GB | linear weights **MXFP4** (fp4 e2m1, group 32, e8m0 scale); block fp8 128x128 (1.2 GiB); bf16 (3.6 GiB); source quantisation fp8 E4M3 |
 | Qwen3.8-27B (dense), 8-bit | `qwen3.8-27b-fp8-df2.rad` | 29 GB | block fp8 (E4M3, one bf16 scale a 128x128 block), Qwen's own FP8 form; see "An 8-bit Qwen3.8-27B" below |
 
-The RDNA4 references quoted against these (R9700 27B prefill 3,104-3,214; two R9700 Flash-Next prefill ~6,500) are on
-the same containers. llama.cpp comparisons elsewhere in this log are GGUF quantisations and are not like-for-like.
+The R9700 27B reference (prefill 3,104-3,214) is on the MXFP4 container above. The two-R9700 Flash-Next prefill
+reference (~6,500) is carried from the RDNA3 parity assessment and its container is not recorded here, so treat it as
+indicative. llama.cpp comparisons elsewhere in this log are GGUF quantisations and are not like-for-like.
 
 ## Survey, 2026-10-09 (radiance 1.3.0, commit 89cee7c; ROCm 7.2.4; run `rdna3-survey`)
 
