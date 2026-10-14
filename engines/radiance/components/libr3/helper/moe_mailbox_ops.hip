@@ -536,6 +536,8 @@ void dump_rows(R3MoeMailboxDevice* d, RadStream stream, uint32_t rows, uint32_t 
     if (hipStreamSynchronize((hipStream_t)stream) != hipSuccess) return;
     uint32_t seq = 0;
     if (hipMemcpy(&seq, d->sequence, sizeof(seq), hipMemcpyDeviceToHost) != hipSuccess || seq == 0) return;
+    const char* sk = std::getenv("R3_MOE_HELPER_DUMP_SKIP");
+    if (sk && *sk && seq < (uint32_t)std::atoi(sk)) return;
     auto* base = static_cast<uint8_t*>(d->mailbox);
     Header h{};
     Request q{};

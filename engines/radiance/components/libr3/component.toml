@@ -69,6 +69,11 @@ default = "20"
 status = "diagnostic"
 summary = "layer R3_MOE_HELPER_DUMP writes (first 8 requests), or \"all\": the first request of every layer"
 
+[setting.R3_MOE_HELPER_DUMP_SKIP]
+default = "0"
+status = "diagnostic"
+summary = "R3_MOE_HELPER_DUMP ignores requests whose per-rank sequence is below this"
+
 [setting.R3_MOE_HELPER_POISON]
 default = "0"
 status = "diagnostic"
