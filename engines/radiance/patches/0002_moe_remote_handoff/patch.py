@@ -201,7 +201,7 @@ PATCHES = (
                                              RAD_INT("n", g.n_embd),
                                              RAD_INT("top_k", c.top_k)),
                                   RAD_NOWEIGHTS),
-                              {w.sorted, w.edn}, {w.edn});
+                              {w.sorted, w.edn, w.ew}, {w.edn});
         op_remote_mask_capture = rw(b, RAD_OP(b, "moe_mailbox_mask_ref",
                                         RAD_PARAMS(RAD_RANGE("M", 1, c.rows),
                                                    RAD_INT("n", g.n_embd),
@@ -291,7 +291,8 @@ PATCHES = (
     }
     if (remote_shadow)
         RAD_ISSUE_N(c_, op_remote_shadow, rows,
-                    brows(w.sorted, rows * k), brows(w.edn, rows * k));
+                    brows(w.sorted, rows * k), brows(w.edn, rows * k),
+                    brow_slice(w.ew, r0, rows, k));
 """,
                 guard=r"RAD_ISSUE_N\(c_, op_remote_mask_capture, rows,",
                 expect_matches=1,

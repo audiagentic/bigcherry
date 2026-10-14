@@ -64,6 +64,7 @@ static const RadParamSpec kShadowParams[] = {
 static const RadOperandSpec kShadowOperands[] = {
     {"sorted", RAD_OPD_IN, 0},
     {"down", RAD_OPD_INOUT, 0},
+    {"ew", RAD_OPD_IN, 0},
 };
 static const RadOpSchema kSchemas[] = {
     {"moe_mailbox_publish", kPublishParams, NELEM(kPublishParams),
@@ -71,13 +72,13 @@ static const RadOpSchema kSchemas[] = {
      "publish helper-owned MoE routes and activations to the mapped GPU mailbox"},
     {"moe_mailbox_add", kAddParams, NELEM(kAddParams),
      kAddOperands, NELEM(kAddOperands),
-     "merge local and remote expert rows in original slot order with moe_gather arithmetic"},
+     "merge local expert rows (slot order, f32) with the helper per-token weighted row and the shared expert"},
     {"moe_mailbox_mask_ref", kMaskRefParams, NELEM(kMaskRefParams),
      kMaskRefOperands, NELEM(kMaskRefOperands),
      "capture or restore engine down rows for the mask-only diagnostic"},
     {"moe_mailbox_shadow", kShadowParams, NELEM(kShadowParams),
      kShadowOperands, NELEM(kShadowOperands),
-     "compare helper unweighted down rows against the engine rows without changing model output"},
+     "compare the helper per-token weighted row against the engine own rows without changing model output"},
 };
 
 __device__ __forceinline__ void store_sys_rel(uint32_t* p, uint32_t v) {
@@ -227,82 +228,72 @@ __global__ void mailbox_mask_ref_kernel(
     }
 }
 
-__global__ void mailbox_add_rows_kernel(
+/* Per-step maps the merge and shadow kernels read instead of scanning the step: rmask[flat] marks the
+ * slots the helper computed (and checks each route's weight against the router's), inv[flat] is the
+ * engine's sorted row for a slot it computed locally (-1 otherwise). Linear in the step, so a 4096-row
+ * prefill step costs the same per row as a decode step. */
+__global__ void mailbox_route_mark_kernel(
     uint8_t* base, const uint32_t* sequence, const uint32_t* published, uint32_t rank,
-    const int32_t* sorted, const uint16_t* down, const uint16_t* ew,
+    const uint16_t* ew, uint32_t* rmask, uint32_t rows, uint32_t hidden, uint32_t top_k) {
+    if (!*published) return;
+    Header* h = reinterpret_cast<Header*>(base);
+    const uint32_t seq = *sequence;
+    if ((int32_t)(load_sys_acq(&h->lane[rank].done_sequence) - seq) < 0) __builtin_trap();
+    Request* ring = reinterpret_cast<Request*>(base + h->ring_offset);
+    const Request* q = ring + rank * kLaneSlots + ((seq - 1u) % kLaneSlots);
+    if (q->sequence != seq || q->rank != rank || q->rows != rows || q->hidden != hidden ||
+        q->status != 0 || q->route_count == 0 || q->route_count > rows * top_k)
+        __builtin_trap();
+    const Route* route = reinterpret_cast<const Route*>(base + q->route_offset);
+    for (uint32_t j = blockIdx.x * blockDim.x + threadIdx.x; j < q->route_count;
+         j += gridDim.x * blockDim.x) {
+        const Route r = route[j];
+        if (r.token < 0 || (uint32_t)r.token >= rows || r.slot >= top_k) __builtin_trap();
+        const uint32_t flat = (uint32_t)r.token * top_k + r.slot;
+        if (r.weight_bf16 != ew[flat]) __builtin_trap();
+        if (atomicExch(rmask + flat, 1u) != 0u) __builtin_trap();   /* two routes for one slot */
+    }
+}
+
+__global__ void mailbox_inverse_kernel(const int32_t* sorted, int32_t* inv, uint32_t slots) {
+    const uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= slots) return;
+    const int32_t flat = sorted[i];
+    if (flat >= 0 && (uint32_t)flat < slots) inv[flat] = (int32_t)i;
+}
+
+/* The helper returns ONE row a token: the router-weighted sum of that token's helper-owned experts, in
+ * slot order with an f32 accumulator, narrowed once to bf16. The merge adds it to the token's locally
+ * computed slots (f32, slot order) and the shared expert. Mask-only mode 1 merges the engine's own
+ * captured rows for the helper's slots instead (the exact control); mode 2 merges the helper's row on the
+ * late-publish schedule. */
+__global__ void mailbox_add_rows_kernel(
+    uint8_t* base, const uint32_t* published, uint32_t rank,
+    const int32_t* inv, const uint32_t* rmask, const uint16_t* down, const uint16_t* ew,
     const uint16_t* shared, const uint16_t* shared_gate, uint16_t* out,
-    const uint16_t* mask_ref, uint32_t mask_only, uint16_t* seen,
+    const uint16_t* mask_ref, uint32_t mask_only,
     uint32_t rows, uint32_t hidden, uint32_t top_k) {
     const uint32_t token = blockIdx.x;
     if (token >= rows) return;
-
     Header* h = reinterpret_cast<Header*>(base);
+    const bool live = *published != 0u;
     __shared__ int32_t local_index[kTopK];
     __shared__ uint8_t remote_slot[kTopK];
-    __shared__ uint32_t nr;
-    __shared__ const Route* route;
+    __shared__ uint32_t any_remote;
     if (threadIdx.x == 0) {
+        any_remote = 0;
         for (uint32_t slot = 0; slot < top_k; ++slot) {
-            local_index[slot] = -1;
-            remote_slot[slot] = 0;
+            const uint32_t flat = token * top_k + slot;
+            local_index[slot] = inv[flat];
+            remote_slot[slot] = live && rmask[flat] ? 1 : 0;
+            any_remote |= remote_slot[slot];
+            if (mask_only && remote_slot[slot] && local_index[slot] >= 0) __builtin_trap();
         }
-        nr = 0;
-        route = nullptr;
-        if (*published) {
-            const uint32_t seq = *sequence;
-            if ((int32_t)(load_sys_acq(&h->lane[rank].done_sequence) - seq) < 0) __builtin_trap();
-            Request* ring = reinterpret_cast<Request*>(base + h->ring_offset);
-            const Request* q = ring + rank * kLaneSlots + ((seq - 1u) % kLaneSlots);
-            if (q->sequence != seq || q->rank != rank || q->rows != rows ||
-                q->hidden != hidden || q->status != 0 ||
-                q->route_count == 0 || q->route_count > rows * top_k)
-                __builtin_trap();
-            nr = q->route_count;
-            route = reinterpret_cast<const Route*>(base + q->route_offset);
-        }
-    }
-    __syncthreads();
-
-    const int32_t lo = (int32_t)(token * top_k);
-    const int32_t hi = lo + (int32_t)top_k;
-    for (uint32_t i = threadIdx.x; i < rows * top_k; i += blockDim.x) {
-        const int32_t flat = sorted[i];
-        if (flat >= lo && flat < hi) local_index[(uint32_t)(flat - lo)] = (int32_t)i;
-    }
-    if (threadIdx.x == 0) {
-        for (uint32_t j = 0; j < nr; ++j) {
-            const Route r = route[j];
-            if (r.token < 0 || (uint32_t)r.token >= rows || r.slot >= top_k) __builtin_trap();
-            if ((uint32_t)r.token != token) continue;
-            const uint32_t flat = token * top_k + r.slot;
-            if (remote_slot[r.slot] || r.weight_bf16 != ew[flat]) __builtin_trap();
-            remote_slot[r.slot] = 1;
-        }
-    }
-    __syncthreads();
-    if (mask_only && threadIdx.x == 0) {
-        for (uint32_t slot = 0; slot < top_k; ++slot)
-            if (remote_slot[slot] && local_index[slot] >= 0) __builtin_trap();
     }
     __syncthreads();
 
     const uint16_t* result = reinterpret_cast<const uint16_t*>(
-        base + h->result_offset[rank * kMaxRanks + rank]);
-    /* Modes 3/4 split the helper's rows by whether they are bit-identical to the engine's: 3 merges the
-     * helper row only where identical (engine row otherwise), 4 only where they differ. */
-    __shared__ uint32_t differ[kTopK];
-    if (threadIdx.x < kTopK) differ[threadIdx.x] = 0;
-    __syncthreads();
-    if (mask_only >= 3u) {
-        for (uint32_t slot = 0; slot < top_k; ++slot) {
-            if (!remote_slot[slot]) continue;
-            const uint64_t off = (uint64_t)(token * top_k + slot) * hidden;
-            for (uint32_t col = threadIdx.x; col < hidden; col += blockDim.x)
-                if (__builtin_nontemporal_load(result + off + col) != mask_ref[off + col])
-                    atomicAdd(&differ[slot], 1u);
-        }
-    }
-    __syncthreads();
+        base + h->result_offset[rank * kMaxRanks + rank]) + (uint64_t)token * hidden;
     float gate = 0.0f;
     if (shared) {
         const float v = bf16_to_f32(shared_gate[token]);
@@ -314,22 +305,14 @@ __global__ void mailbox_add_rows_kernel(
             const uint32_t flat = token * top_k + slot;
             const uint16_t* src = nullptr;
             if (remote_slot[slot]) {
-                /* 5: helper row only where it differs in 1..8 elements (rounding-level); 6: only > 8. */
-                const uint32_t n = differ[slot];
-                const bool engine_row = mask_only == 1u || (mask_only == 3u && n) ||
-                                        (mask_only == 4u && !n) || (mask_only == 5u && (n == 0 || n > 8)) ||
-                                        (mask_only == 6u && n <= 8);
-                src = (engine_row ? mask_ref : result) + (uint64_t)flat * hidden;
+                if (mask_only == 1u) src = mask_ref + (uint64_t)flat * hidden;
             } else if (local_index[slot] >= 0) {
                 src = down + (uint64_t)(uint32_t)local_index[slot] * hidden;
             }
-            if (!src) continue;
-            /* The helper's rows live in host-mapped memory the R9700 rewrites every request; a cached
-             * read can return the previous request's row. Read them non-temporally (bypass caches). */
-            const uint16_t v = (remote_slot[slot] && mask_only != 1u) ? __builtin_nontemporal_load(src + col) : src[col];
-            if (seen && remote_slot[slot]) seen[(uint64_t)flat * hidden + col] = v;
-            acc += bf16_to_f32(ew[flat]) * bf16_to_f32(v);
+            if (src) acc += bf16_to_f32(ew[flat]) * bf16_to_f32(src[col]);
         }
+        /* Host-mapped and rewritten every request by the helper: read past the caches. */
+        if (any_remote && mask_only != 1u) acc += bf16_to_f32(__builtin_nontemporal_load(result + col));
         const uint16_t gathered = f32_to_bf16_rn(acc);
         if (!shared) {
             out[(uint64_t)token * hidden + col] = gathered;
@@ -342,84 +325,58 @@ __global__ void mailbox_add_rows_kernel(
     }
 }
 
-__device__ __forceinline__ void shadow_claim(
-    R3MoeShadowFirst* first, const Request* q, const Route& r,
-    float rel, float max_abs, const uint16_t* local, const uint16_t* helper) {
-    if (atomicCAS(&first->claimed, 0u, 1u) != 0u) return;
-    first->layer = q->layer;
-    first->rank = q->rank;
-    first->row_base = q->row_base;
-    first->token = r.token;
-    first->slot = r.slot;
-    first->expert = r.expert;
-    first->rel_l2 = rel;
-    first->max_abs = max_abs;
-    for (uint32_t i = 0; i < 4; ++i) {
-        first->local[i] = bf16_to_f32(local[i]);
-        first->helper[i] = bf16_to_f32(helper[i]);
-    }
-}
-
+/* Shadow: the engine computed every slot locally; compare, per token with helper routes, the helper's
+ * returned row with the same weighted sum over the engine's own rows for those slots. */
 __global__ void mailbox_shadow_rows_kernel(
     uint8_t* base, const uint32_t* sequence, const uint32_t* published, uint32_t rank,
-    const int32_t* sorted, const uint16_t* down, uint32_t rows, uint32_t hidden, uint32_t top_k,
+    const int32_t* inv, const uint32_t* rmask, const uint16_t* down, const uint16_t* ew,
+    uint32_t rows, uint32_t hidden, uint32_t top_k,
     R3MoeShadowLayerStats* stats, R3MoeShadowFirst* first) {
-    if (!*published) return;
+    const uint32_t token = blockIdx.x;
+    if (!*published || token >= rows) return;
     Header* h = reinterpret_cast<Header*>(base);
     const uint32_t seq = *sequence;
-    if ((int32_t)(load_sys_acq(&h->lane[rank].done_sequence) - seq) < 0) __builtin_trap();
-
     Request* ring = reinterpret_cast<Request*>(base + h->ring_offset);
     const Request* q = ring + rank * kLaneSlots + ((seq - 1u) % kLaneSlots);
-    const uint32_t j = blockIdx.x;
-    if (q->sequence != seq || q->rank != rank || q->rows != rows || q->hidden != hidden ||
-        q->status != 0 || j >= q->route_count || q->layer >= kMaxLayers)
-        return;
-
-    const Route* route = reinterpret_cast<const Route*>(base + q->route_offset);
-    const Route r = route[j];
-    if (r.token < 0 || (uint32_t)r.token >= rows || r.slot >= top_k) __builtin_trap();
-    const int32_t flat = r.token * (int32_t)top_k + (int32_t)r.slot;
-
-    __shared__ int32_t sorted_row;
+    if (q->layer >= kMaxLayers) return;
+    __shared__ uint32_t any;
+    __shared__ uint32_t missing;
     if (threadIdx.x == 0) {
-        sorted_row = -1;
-        for (uint32_t i = 0; i < rows * top_k; ++i) {
-            if (sorted[i] == flat) {
-                sorted_row = (int32_t)i;
-                break;
-            }
+        any = 0; missing = 0;
+        for (uint32_t slot = 0; slot < top_k; ++slot) {
+            const uint32_t flat = token * top_k + slot;
+            if (!rmask[flat]) continue;
+            any = 1;
+            if (inv[flat] < 0) missing = 1;
         }
     }
     __syncthreads();
-
+    if (!any) return;
     R3MoeShadowLayerStats* st = stats + q->layer;
-    if (sorted_row < 0) {
+    const uint16_t* helper = reinterpret_cast<const uint16_t*>(
+        base + h->result_offset[rank * kMaxRanks + rank]) + (uint64_t)token * hidden;
+    if (missing) {
         if (threadIdx.x == 0) {
             atomicAdd(reinterpret_cast<unsigned long long*>(&st->rows), 1ull);
             atomicAdd(&st->bad_rows, 1u);
-            const uint16_t zero[4] = {0, 0, 0, 0};
-            shadow_claim(first + q->layer, q, r, __int_as_float(0x7f800000), __int_as_float(0x7f800000),
-                         zero, zero);
         }
         return;
     }
-
-    const uint16_t* local = down + (uint64_t)(uint32_t)sorted_row * hidden;
-    const uint16_t* helper = reinterpret_cast<const uint16_t*>(
-        base + q->result_offset[rank]) + (uint64_t)(uint32_t)flat * hidden;
-
     __shared__ float sa[256], sd2[256], sr2[256], sm[256];
+    __shared__ float lref[4], lhelp[4];
     float a = 0.0f, d2 = 0.0f, r2 = 0.0f, m = 0.0f;
     for (uint32_t col = threadIdx.x; col < hidden; col += blockDim.x) {
-        const float lv = bf16_to_f32(local[col]);
+        float ref = 0.0f;
+        for (uint32_t slot = 0; slot < top_k; ++slot) {
+            const uint32_t flat = token * top_k + slot;
+            if (!rmask[flat]) continue;
+            ref += bf16_to_f32(ew[flat]) * bf16_to_f32(down[(uint64_t)(uint32_t)inv[flat] * hidden + col]);
+        }
+        ref = bf16_to_f32(f32_to_bf16_rn(ref));
         const float hv = bf16_to_f32(helper[col]);
-        const float d = lv - hv;
-        const float ad = fabsf(d);
-        a += ad;
-        d2 += d * d;
-        r2 += lv * lv;
-        m = fmaxf(m, ad);
+        if (col < 4) { lref[col] = ref; lhelp[col] = hv; }
+        const float d = ref - hv;
+        a += fabsf(d); d2 += d * d; r2 += ref * ref; m = fmaxf(m, fabsf(d));
     }
     sa[threadIdx.x] = a; sd2[threadIdx.x] = d2; sr2[threadIdx.x] = r2; sm[threadIdx.x] = m;
     __syncthreads();
@@ -442,7 +399,13 @@ __global__ void mailbox_shadow_rows_kernel(
         atomicMax(&st->max_abs_bits, __float_as_uint(sm[0]));
         if (!isfinite(rel) || rel >= 2.0e-3f) {
             atomicAdd(&st->bad_rows, 1u);
-            shadow_claim(first + q->layer, q, r, rel, sm[0], local, helper);
+            R3MoeShadowFirst* f = first + q->layer;
+            if (atomicCAS(&f->claimed, 0u, 1u) == 0u) {
+                f->layer = q->layer; f->rank = q->rank; f->row_base = q->row_base;
+                f->token = (int32_t)token; f->slot = 0xffffu; f->expert = -1;
+                f->rel_l2 = rel; f->max_abs = sm[0];
+                for (uint32_t i = 0; i < 4; ++i) { f->local[i] = lref[i]; f->helper[i] = lhelp[i]; }
+            }
         }
     }
 }
@@ -541,53 +504,21 @@ int mask_ref_launch(const RadArgs* a, RadStream stream) {
     return hipGetLastError() == hipSuccess ? RAD_OK : RAD_E_DEVICE;
 }
 
-/* Diagnostic (R3_MOE_HELPER_DUMP=<dir>, mask-only modes only): once per rank, for the first request on layer
- * R3_MOE_HELPER_DUMP_LAYER (default 20), synchronise after the add and write the request's routes, the helper's
- * result rows and the engine's captured rows (mask_ref) to <dir>/r<rank>.{routes,helper,engine}.bin. Host side
- * only: device printf is not serviced on radiance's streams. */
-void dump_rows(R3MoeMailboxDevice* d, RadStream stream, uint32_t rows, uint32_t hidden, uint32_t top_k) {
-    static uint32_t done[kMaxRanks] = {};
-    static bool layer_done[kMaxRanks][kMaxLayers] = {};
-    const char* dir = std::getenv("R3_MOE_HELPER_DUMP");
-    const char* le = std::getenv("R3_MOE_HELPER_DUMP_LAYER");
-    const bool all = le && std::strcmp(le, "all") == 0;
-    if (!dir || !*dir || !d->mask_only || !d->mask_ref || d->rank >= kMaxRanks || (!all && done[d->rank] >= 8u)) return;
-    const uint32_t want = le && *le && !all ? (uint32_t)std::atoi(le) : 20u;
-    if (hipStreamSynchronize((hipStream_t)stream) != hipSuccess) return;
-    uint32_t seq = 0;
-    if (hipMemcpy(&seq, d->sequence, sizeof(seq), hipMemcpyDeviceToHost) != hipSuccess || seq == 0) return;
-    const char* sk = std::getenv("R3_MOE_HELPER_DUMP_SKIP");
-    if (sk && *sk && seq < (uint32_t)std::atoi(sk)) return;
-    auto* base = static_cast<uint8_t*>(d->mailbox);
-    Header h{};
-    Request q{};
-    if (hipMemcpy(&h, base, sizeof(h), hipMemcpyDeviceToHost) != hipSuccess) return;
-    const uint64_t qoff = h.ring_offset +
-        (uint64_t)(d->rank * kLaneSlots + ((seq - 1u) % kLaneSlots)) * sizeof(Request);
-    if (hipMemcpy(&q, base + qoff, sizeof(q), hipMemcpyDeviceToHost) != hipSuccess) return;
-    if (q.sequence != seq || q.layer >= kMaxLayers || (all ? layer_done[d->rank][q.layer] : q.layer != want) || q.route_count == 0 || q.rows != rows) return;
-    const size_t elems = (size_t)rows * top_k * hidden;
-    std::vector<Route> routes(q.route_count);
-    std::vector<uint16_t> helper(elems), engine(elems), seen(elems);
-    if (hipMemcpy(routes.data(), base + q.route_offset, routes.size() * sizeof(Route),
-                  hipMemcpyDeviceToHost) != hipSuccess ||
-        hipMemcpy(helper.data(), base + h.result_offset[d->rank * kMaxRanks + d->rank],
-                  elems * sizeof(uint16_t), hipMemcpyDeviceToHost) != hipSuccess ||
-        hipMemcpy(engine.data(), d->mask_ref, elems * sizeof(uint16_t), hipMemcpyDeviceToHost) != hipSuccess ||
-        hipMemcpy(seen.data(), d->seen, elems * sizeof(uint16_t), hipMemcpyDeviceToHost) != hipSuccess)
-        return;
-    auto write = [&](const char* ext, const void* p, size_t n) {
-        const std::string path = std::string(dir) + "/r" + std::to_string(d->rank) + "." + (all ? "L" + std::to_string(q.layer) : std::to_string(done[d->rank])) + "." + ext + ".bin";
-        if (FILE* f = std::fopen(path.c_str(), "wb")) { std::fwrite(p, 1, n, f); std::fclose(f); }
-    };
-    write("routes", routes.data(), routes.size() * sizeof(Route));
-    write("helper", helper.data(), helper.size() * sizeof(uint16_t));
-    write("engine", engine.data(), engine.size() * sizeof(uint16_t));
-    write("seen", seen.data(), seen.size() * sizeof(uint16_t));
-    std::fprintf(stderr, "libr3: R3_MOE_HELPER dump rank %u layer %u seq %u rows %u routes %u hidden %u top_k %u\n",
-                 d->rank, q.layer, seq, rows, q.route_count, hidden, top_k);
-    ++done[d->rank];
-    layer_done[d->rank][q.layer] = true;
+/* Wait for the helper, then build the step's slot maps (see mailbox_route_mark_kernel). */
+int launch_maps(R3MoeMailboxDevice* d, RadStream stream, const int32_t* sorted, const uint16_t* ew,
+                uint32_t rows, uint32_t hidden, uint32_t top_k) {
+    const uint32_t slots = rows * top_k;
+    hipLaunchKernelGGL(mailbox_add_wait_kernel, dim3(1), dim3(1), 0, (hipStream_t)stream,
+                       static_cast<uint8_t*>(d->mailbox), d->sequence, d->published, d->rank);
+    if (hipMemsetAsync(d->rmask, 0, (size_t)slots * sizeof(uint32_t), (hipStream_t)stream) != hipSuccess ||
+        hipMemsetAsync(d->inv, 0xff, (size_t)slots * sizeof(int32_t), (hipStream_t)stream) != hipSuccess)
+        return RAD_E_DEVICE;
+    hipLaunchKernelGGL(mailbox_route_mark_kernel, dim3((slots + 255u) / 256u), dim3(256), 0,
+                       (hipStream_t)stream, static_cast<uint8_t*>(d->mailbox),
+                       d->sequence, d->published, d->rank, ew, d->rmask, rows, hidden, top_k);
+    hipLaunchKernelGGL(mailbox_inverse_kernel, dim3((slots + 255u) / 256u), dim3(256), 0,
+                       (hipStream_t)stream, sorted, d->inv, slots);
+    return hipGetLastError() == hipSuccess ? RAD_OK : RAD_E_DEVICE;
 }
 
 int add_launch(const RadArgs* a, RadStream stream) {
@@ -619,28 +550,27 @@ int add_launch(const RadArgs* a, RadStream stream) {
         (!d->mask_only || d->mask_ref);
     if (!ok) return RAD_E_SHAPE;
 
-    hipLaunchKernelGGL(mailbox_add_wait_kernel, dim3(1), dim3(1), 0, (hipStream_t)stream,
-                       static_cast<uint8_t*>(d->mailbox), d->sequence, d->published, d->rank);
+    if (launch_maps(d, stream, static_cast<const int32_t*>(a->t[0].data),
+                    static_cast<const uint16_t*>(a->t[2].data),
+                    (uint32_t)rows, (uint32_t)hidden, (uint32_t)top_k) != RAD_OK)
+        return RAD_E_DEVICE;
     hipLaunchKernelGGL(mailbox_add_rows_kernel, dim3((uint32_t)rows), dim3(256), 0,
                        (hipStream_t)stream, static_cast<uint8_t*>(d->mailbox),
-                       d->sequence, d->published, d->rank,
-                       static_cast<const int32_t*>(a->t[0].data),
+                       d->published, d->rank, d->inv, d->rmask,
                        static_cast<const uint16_t*>(a->t[1].data),
                        static_cast<const uint16_t*>(a->t[2].data),
                        static_cast<const uint16_t*>(a->t[3].data),
                        static_cast<const uint16_t*>(a->t[4].data),
                        static_cast<uint16_t*>(a->t[5].data),
-                       d->mask_ref, d->mask_only, d->seen,
+                       d->mask_ref, d->mask_only,
                        (uint32_t)rows, (uint32_t)hidden, (uint32_t)top_k);
     hipLaunchKernelGGL(mailbox_add_finish_kernel, dim3(1), dim3(1), 0, (hipStream_t)stream,
                        d->published);
-    if (hipGetLastError() != hipSuccess) return RAD_E_DEVICE;
-    dump_rows(d, stream, (uint32_t)rows, (uint32_t)hidden, (uint32_t)top_k);
-    return RAD_OK;
+    return hipGetLastError() == hipSuccess ? RAD_OK : RAD_E_DEVICE;
 }
 
 int shadow_launch(const RadArgs* a, RadStream stream) {
-    if (!a || !a->instance || !stream || a->n_t != 2) return RAD_E_INVAL;
+    if (!a || !a->instance || !stream || a->n_t != 3) return RAD_E_INVAL;
     auto* d = static_cast<R3MoeMailboxDevice*>(a->instance);
     if (!d->shadow || !d->shadow_stats || !d->shadow_first) return RAD_E_STATE;
     const long long hidden = geti(a, "n");
@@ -649,20 +579,23 @@ int shadow_launch(const RadArgs* a, RadStream stream) {
         !a->t[0].data || !a->t[1].data || a->t[0].dtype != RAD_I32 ||
         a->t[1].dtype != RAD_BF16 || a->t[1].rank < 2 ||
         a->t[1].shape[1] != hidden || !rad_tensor_is_contiguous(&a->t[0]) ||
-        !rad_tensor_is_contiguous(&a->t[1]))
+        !rad_tensor_is_contiguous(&a->t[1]) || !a->t[2].data || a->t[2].dtype != RAD_BF16 ||
+        !rad_tensor_is_contiguous(&a->t[2]))
         return RAD_E_SHAPE;
     const long long slots = a->t[1].shape[0];
     if (slots <= 0 || slots % top_k != 0 || slots / top_k > (long long)d->max_rows)
         return RAD_E_SHAPE;
     const uint32_t rows = (uint32_t)(slots / top_k);
 
-    hipLaunchKernelGGL(mailbox_add_wait_kernel, dim3(1), dim3(1), 0, (hipStream_t)stream,
-                       static_cast<uint8_t*>(d->mailbox), d->sequence, d->published, d->rank);
-    hipLaunchKernelGGL(mailbox_shadow_rows_kernel, dim3((uint32_t)slots), dim3(256), 0,
+    if (launch_maps(d, stream, static_cast<const int32_t*>(a->t[0].data),
+                    static_cast<const uint16_t*>(a->t[2].data), rows, (uint32_t)hidden,
+                    (uint32_t)top_k) != RAD_OK)
+        return RAD_E_DEVICE;
+    hipLaunchKernelGGL(mailbox_shadow_rows_kernel, dim3(rows), dim3(256), 0,
                        (hipStream_t)stream, static_cast<uint8_t*>(d->mailbox),
-                       d->sequence, d->published, d->rank,
-                       static_cast<const int32_t*>(a->t[0].data),
+                       d->sequence, d->published, d->rank, d->inv, d->rmask,
                        static_cast<const uint16_t*>(a->t[1].data),
+                       static_cast<const uint16_t*>(a->t[2].data),
                        rows, (uint32_t)hidden, (uint32_t)top_k,
                        d->shadow_stats, d->shadow_first);
     hipLaunchKernelGGL(mailbox_add_finish_kernel, dim3(1), dim3(1), 0, (hipStream_t)stream,

@@ -185,17 +185,45 @@ __global__ void lane_route_scatter(
     if (sorted_expert) sorted_expert[pos] = (int32_t)e;
 }
 
-__global__ void lane_unsort_down(const uint16_t* down, const int32_t* sorted,
-                                 uint16_t* dst, uint32_t routes, uint32_t slots,
-                                 uint32_t hidden, uint32_t poison) {
-    const uint64_t i = (uint64_t)blockIdx.x * blockDim.x + threadIdx.x;
-    const uint64_t total = (uint64_t)routes * hidden;
-    if (i >= total) return;
-    const uint32_t row = (uint32_t)(i / hidden);
-    const int32_t flat = sorted[row];
-    if (flat < 0 || (uint32_t)flat >= slots) return;
-    dst[(uint64_t)(uint32_t)flat * hidden + (i - (uint64_t)row * hidden)] =
-        poison == 1u ? (uint16_t)0x447au : poison == 2u ? (uint16_t)0 : down[i];
+__global__ void lane_route_inverse(const int32_t* sorted, int32_t* inv, uint32_t routes, uint32_t slots) {
+    const uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= routes) return;
+    const int32_t flat = sorted[i];
+    if (flat >= 0 && (uint32_t)flat < slots) inv[flat] = (int32_t)i;
+}
+
+/* One row a token with any helper route: the router-weighted sum of its helper-computed experts, slot
+ * order, f32 accumulator, narrowed once to bf16 (moe_gather arithmetic over the slots this helper owns).
+ * Tokens without a route are not written; the engine's merge reads only tokens it routed here. */
+__global__ void lane_reduce_tokens(const uint16_t* down, const int32_t* inv, const uint16_t* ew,
+                                   uint16_t* dst, uint32_t rows, uint32_t hidden, uint32_t poison) {
+    using namespace r3::moe_shm;
+    const uint32_t token = blockIdx.x;
+    if (token >= rows) return;
+    __shared__ int32_t row[kTopK];
+    __shared__ float w[kTopK];
+    __shared__ uint32_t any;
+    if (threadIdx.x == 0) {
+        any = 0;
+        for (uint32_t slot = 0; slot < kTopK; ++slot) {
+            const uint32_t flat = token * kTopK + slot;
+            row[slot] = inv[flat];
+            w[slot] = __uint_as_float((uint32_t)ew[flat] << 16);
+            any |= row[slot] >= 0 ? 1u : 0u;
+        }
+    }
+    __syncthreads();
+    if (!any) return;
+    uint16_t* out = dst + (uint64_t)token * hidden;
+    for (uint32_t col = threadIdx.x; col < hidden; col += blockDim.x) {
+        float acc = 0.0f;
+        for (uint32_t slot = 0; slot < kTopK; ++slot)
+            if (row[slot] >= 0)
+                acc += w[slot] * __uint_as_float((uint32_t)down[(uint64_t)(uint32_t)row[slot] * hidden + col] << 16);
+        uint32_t u = __float_as_uint(acc);
+        u += 0x7fffu + ((u >> 16) & 1u);
+        out[col] = poison == 1u ? (uint16_t)0x447au : poison == 2u ? (uint16_t)0 : (uint16_t)(u >> 16);
+    }
     /* Mapped host memory is fine-grained/uncached. Drain every writer wave's posted stores
      * before the later release flag, matching libr4d's no-P2P all-reduce host path. */
 #if defined(__gfx1100__)
@@ -211,42 +239,6 @@ __global__ void lane_publish_done(uint32_t* done_sequence, uint32_t sequence) {
     if (blockIdx.x || threadIdx.x) return;
     lane_store_sys_rel(done_sequence, sequence);
 }
-
-/* Comparator-side copy of the engine join's synchronization and row mapping. It runs on an
- * independent stream before any producer synchronization, so --compare exercises publication
- * visibility instead of turning it into a host-synchronized memcpy test. */
-__global__ void lane_compare_join_wait(const uint32_t* done_sequence, uint32_t sequence) {
-    if (blockIdx.x || threadIdx.x) return;
-    unsigned long long spins = 0;
-    while ((int32_t)(lane_load_sys_acq(done_sequence) - sequence) < 0) {
-        __builtin_amdgcn_s_sleep(2);
-        if (++spins > 4000000000ULL) __builtin_trap();
-    }
-}
-
-__global__ void lane_compare_join_rows(
-    const r3::moe_shm::Request* q, const r3::moe_shm::Route* route,
-    const uint16_t* src, const uint32_t* done_sequence,
-    int32_t* sorted, uint16_t* down, uint32_t rank, uint32_t sequence,
-    uint32_t rows, uint32_t hidden, uint32_t top_k) {
-    using namespace r3::moe_shm;
-    if ((int32_t)(lane_load_sys_acq(done_sequence) - sequence) < 0) __builtin_trap();
-    const uint32_t nr = q->route_count;
-    const uint32_t total = rows * top_k;
-    const uint32_t j = blockIdx.x;
-    if (q->sequence != sequence || q->rank != rank || q->rows != rows ||
-        q->hidden != hidden || nr == 0 || nr > total || j >= nr)
-        return;
-    const Route r = route[j];
-    if (r.token < 0 || (uint32_t)r.token >= rows || r.slot >= top_k) __builtin_trap();
-    const uint32_t flat = (uint32_t)r.token * top_k + r.slot;
-    const uint32_t dst_row = total - nr + j;
-    if (threadIdx.x == 0) sorted[dst_row] = (int32_t)flat;
-    const uint16_t* from = src + (uint64_t)flat * hidden;
-    uint16_t* to = down + (uint64_t)dst_row * hidden;
-    for (uint32_t col = threadIdx.x; col < hidden; col += blockDim.x) to[col] = from[col];
-}
-
 
 inline bool hip_ok(hipError_t e, const char* what) {
     if (e == hipSuccess) return true;
@@ -338,7 +330,7 @@ struct LaneWork {
     hipEvent_t sample_stop = nullptr;
     uint32_t sample_sequence = 0;
     bool sample_pending = false;
-    Buffer d_counts, d_cursor, d_flat, d_sorted, d_off, d_ew;
+    Buffer d_counts, d_cursor, d_flat, d_sorted, d_off, d_ew, d_inv;
     Buffer d_act, d_aq, d_as, d_gu, d_mid, d_mid_s, d_down, d_stats, scratch;
     Buffer gu_code[2], gu_scale[2], dn_code[2], dn_scale[2];
 };
@@ -590,7 +582,7 @@ public:
 
     bool prepare_lanes(uint32_t max_rows) {
         using namespace r3::moe_shm;
-        if (max_rows == 0 || max_rows > kMaxRows / kTopK || !d_layer_tables_.p) return false;
+        if (max_rows == 0 || max_rows > kMaxRows || !d_layer_tables_.p) return false;
         lane_rows_ = max_rows;
         lane_routes_ = max_rows * kTopK;
         constexpr size_t nclass = kExperts / 2;
@@ -696,15 +688,16 @@ public:
         const uint32_t rows = lane_rows_;
         const uint32_t routes = lane_routes_;
         const uint32_t slots = rows * kTopK;
-        /* No clear of the result slot: it is mapped host memory (64 x 10 x 2560 bf16 = 3.3 MB over the x4 link,
-         * ~250 us a request), and join reads only the slots this request's routes name. */
-        (void)dst; (void)slots;
+        /* No clear of the result slot: it is mapped host memory, and the merge reads only the tokens this
+         * request's routes name, each of which the reduction writes. */
         if (!hip_ok(hipMemsetAsync(w.d_counts.p, 0, kExperts * sizeof(uint32_t), w.stream),
                     "clear route counts") ||
             !hip_ok(hipMemsetAsync(w.d_ew.p, 0, routes * sizeof(uint16_t), w.stream),
                     "clear route weights") ||
             !hip_ok(hipMemsetAsync(w.d_sorted.p, 0xff, routes * sizeof(int32_t), w.stream),
-                    "clear sorted routes"))
+                    "clear sorted routes") ||
+            !hip_ok(hipMemsetAsync(w.d_inv.p, 0xff, slots * sizeof(int32_t), w.stream),
+                    "clear slot inverse"))
             return -EIO;
 
         const dim3 block(256);
@@ -790,13 +783,15 @@ public:
                       dp, w.stream, w.scratch) < 0)
             return -EIO;
 
-        const uint64_t down_elems = (uint64_t)routes * kHidden;
-        hipLaunchKernelGGL(lane_unsort_down,
-                           dim3((down_elems + block.x - 1) / block.x), block, 0, w.stream,
-                           static_cast<const uint16_t*>(w.d_down.p),
+        hipLaunchKernelGGL(lane_route_inverse, route_grid, block, 0, w.stream,
                            static_cast<const int32_t*>(w.d_sorted.p),
-                           dst, routes, slots, kHidden, poison_);
-        if (!hip_ok(hipGetLastError(), "lane unsort down rows")) return -EIO;
+                           static_cast<int32_t*>(w.d_inv.p), routes, slots);
+        hipLaunchKernelGGL(lane_reduce_tokens, dim3(rows), block, 0, w.stream,
+                           static_cast<const uint16_t*>(w.d_down.p),
+                           static_cast<const int32_t*>(w.d_inv.p),
+                           static_cast<const uint16_t*>(w.d_ew.p),
+                           dst, rows, kHidden, poison_);
+        if (!hip_ok(hipGetLastError(), "lane reduce tokens")) return -EIO;
 
         if (sample && w.sample_pending && w.sample_sequence == sequence &&
             !hip_ok(hipEventRecord(w.sample_stop, w.stream), "lane timing stop"))
@@ -1345,6 +1340,7 @@ private:
                w.d_sorted.ensure((size_t)tr * 4) &&
                w.d_off.ensure((r3::moe_shm::kExperts + 1ull) * 4) &&
                w.d_ew.ensure((size_t)tr * 2) &&
+               w.d_inv.ensure((size_t)tr * 4) &&
                w.d_aq.ensure((size_t)rows * r3::moe_shm::kHidden) &&
                w.d_as.ensure((size_t)rows * (r3::moe_shm::kHidden / kGroup) * 4) &&
                w.d_gu.ensure((size_t)tr * kRankGateUpWidth * 2) &&

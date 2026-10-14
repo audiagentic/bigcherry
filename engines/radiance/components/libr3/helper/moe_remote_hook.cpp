@@ -29,6 +29,7 @@ struct RankState {
     uint32_t* sequence = nullptr;
     uint32_t* published = nullptr;
     uint16_t* mask_ref = nullptr;
+    void* maps = nullptr;   /* inv + rmask, one allocation */
     bool ready = false;
 };
 
@@ -80,7 +81,7 @@ const char* shm_name() {
 int64_t max_rows() {
     const char* e = std::getenv("R3_MOE_HELPER_MAX_ROWS");
     const long long n = e && *e ? std::atoll(e) : 64;
-    return std::min<int64_t>(n > 0 ? n : 64, kMaxRows / kTopK);
+    return std::min<int64_t>(n > 0 ? n : 64, kMaxRows);
 }
 
 bool hip_ok(hipError_t e, const char* what) {
@@ -226,6 +227,7 @@ void close_mailbox() {
         if (s.dev.shadow_first) (void)hipFree(s.dev.shadow_first);
         if (s.dev.shadow_stats) (void)hipFree(s.dev.shadow_stats);
         if (s.mask_ref) (void)hipFree(s.mask_ref);
+        if (s.maps) (void)hipFree(s.maps);
         if (s.published) (void)hipFree(s.published);
         if (s.sequence) (void)hipFree(s.sequence);
         if (s.owner) (void)hipFree(s.owner);
@@ -285,10 +287,14 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
         !hip_ok(hipMemset(s.sequence, 0, sizeof(uint32_t)), "zero sequence counter") ||
         !hip_ok(hipMalloc(reinterpret_cast<void**>(&s.published), sizeof(uint32_t)),
                 "hipMalloc published flag") ||
-        !hip_ok(hipMemset(s.published, 0, sizeof(uint32_t)), "zero published flag")) {
+        !hip_ok(hipMemset(s.published, 0, sizeof(uint32_t)), "zero published flag") ||
+        !hip_ok(hipMalloc(&s.maps, (size_t)max_rows() * kTopK * (sizeof(int32_t) + sizeof(uint32_t))),
+                "hipMalloc merge slot maps")) {
+        if (s.maps) (void)hipFree(s.maps);
         if (s.published) (void)hipFree(s.published);
         if (s.sequence) (void)hipFree(s.sequence);
         (void)hipFree(s.owner);
+        s.maps = nullptr;
         s.published = nullptr;
         s.sequence = nullptr;
         s.owner = nullptr;
@@ -299,12 +305,14 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
     const bool mask_only = mask_only_env();
     const uint32_t row_cap = (uint32_t)max_rows();
     if (mask_only) {
-        const size_t bytes = 2 * (size_t)row_cap * kTopK * kHidden * sizeof(uint16_t);
+        const size_t bytes = (size_t)row_cap * kTopK * kHidden * sizeof(uint16_t);
         if (!hip_ok(hipMalloc(reinterpret_cast<void**>(&s.mask_ref), bytes),
                     "hipMalloc mask-only engine rows")) {
+            (void)hipFree(s.maps);
             (void)hipFree(s.published);
             (void)hipFree(s.sequence);
             (void)hipFree(s.owner);
+            s.maps = nullptr;
             s.published = nullptr;
             s.sequence = nullptr;
             s.owner = nullptr;
@@ -328,6 +336,8 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
         if (shadow_stats) (void)hipFree(shadow_stats);
         if (s.mask_ref) (void)hipFree(s.mask_ref);
         s.mask_ref = nullptr;
+        (void)hipFree(s.maps);
+        s.maps = nullptr;
         (void)hipFree(s.published);
         (void)hipFree(s.sequence);
         (void)hipFree(s.owner);
@@ -343,7 +353,8 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
     s.dev.sequence = s.sequence;
     s.dev.published = s.published;
     s.dev.mask_ref = s.mask_ref;
-    s.dev.seen = s.mask_ref ? s.mask_ref + (size_t)row_cap * kTopK * kHidden : nullptr;
+    s.dev.inv = static_cast<int32_t*>(s.maps);
+    s.dev.rmask = reinterpret_cast<uint32_t*>(s.dev.inv + (size_t)row_cap * kTopK);
     s.dev.shadow_stats = shadow_stats;
     s.dev.shadow_first = shadow_first;
     s.dev.max_rows = row_cap;
@@ -352,8 +363,7 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
     /* 1: add the engine's captured rows; 2: same late publish/mask/rescatter, but add the helper's rows. */
     {
         const char* e = std::getenv("R3_MOE_HELPER_MASK_ONLY");
-        const int m = e ? std::atoi(e) : 0;
-        s.dev.mask_only = !mask_only ? 0u : (m >= 2 && m <= 6 ? (uint32_t)m : 1u);
+        s.dev.mask_only = !mask_only ? 0u : (e && std::strcmp(e, "2") == 0 ? 2u : 1u);
     }
     s.dev.cpu_ref = cpu_ref_env() ? 1u : 0u;
     s.ready = true;

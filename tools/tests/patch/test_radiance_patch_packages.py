@@ -55,7 +55,7 @@ PIN_BLOBS = {
     "0002_moe_remote_handoff": {
         "abi/rad_moe_remote.h": (None, "1ea4d95"),
         "arch/common/rad_block_hc.h": ("c19c8b6", "df35634"),
-        "arch/common/rad_block_moe_fp8.h": ("51b7c28", "1e6ff77"),
+        "arch/common/rad_block_moe_fp8.h": ("51b7c28", "3170170"),
         "core/place/moe_remote.cpp": (None, "e97bb6a"),
     },
     "0003_mtp_full_head_switch": {
@@ -229,7 +229,8 @@ class TestRadiancePatchPackages(unittest.TestCase):
         self.assertIn('{"shared_gate", RAD_OPD_IN, 1}', ops)
         self.assertIn('{"out", RAD_OPD_OUT, 0}', ops)
         self.assertIn('for (uint32_t slot = 0; slot < top_k; ++slot)', ops)
-        self.assertIn('acc += bf16_to_f32(ew[flat]) * bf16_to_f32(v);', ops)
+        self.assertIn('if (src) acc += bf16_to_f32(ew[flat]) * bf16_to_f32(src[col]);', ops)
+        self.assertIn('acc += bf16_to_f32(__builtin_nontemporal_load(result + col))', ops)
         self.assertIn('const uint16_t gathered = f32_to_bf16_rn(acc);', ops)
         self.assertIn(
             'f32_to_bf16_rn(bf16_to_f32(part) + bf16_to_f32(gathered))', ops
@@ -241,7 +242,7 @@ class TestRadiancePatchPackages(unittest.TestCase):
         self.assertIn('R3_MOE_HELPER_SHADOW layer=', hook)
         self.assertIn('hipMalloc mask-only engine rows', hook)
         self.assertIn('"moe_mailbox_mask_ref"', ops)
-        self.assertIn('(engine_row ? mask_ref : result)', ops)
+        self.assertIn('if (mask_only == 1u) src = mask_ref + (uint64_t)flat * hidden;', ops)
         self.assertIn('r.weight_bf16 != ew[flat]', ops)
         self.assertIn('remote_slot[slot] && local_index[slot] >= 0', ops)
         self.assertIn('hipMemsetAsync(d->mask_ref, 0', ops)
@@ -256,7 +257,7 @@ class TestRadiancePatchPackages(unittest.TestCase):
         self.assertIn('q->row_base', ops)
         gpu = (helper / "moe_remote_gpu.h").read_text(encoding="utf-8")
         self.assertIn('R3_MOE_HELPER_POISON', gpu)
-        self.assertIn('poison == 1u ? (uint16_t)0x447au : poison == 2u ? (uint16_t)0 : down[i]', gpu)
+        self.assertIn('poison == 1u ? (uint16_t)0x447au : poison == 2u ? (uint16_t)0 : (uint16_t)(u >> 16)', gpu)
         self.assertIn('build_layer_table', gpu)
         self.assertIn('slot_of_expert', gpu)
         self.assertNotIn('model_.expert_slot', gpu)

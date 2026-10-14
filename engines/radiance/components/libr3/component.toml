@@ -59,21 +59,6 @@ default = "64"
 status = "experimental"
 summary = "largest step (rows) published to the helper GPU lanes; larger prefill steps keep the engine path"
 
-[setting.R3_MOE_HELPER_DUMP]
-default = ""
-status = "diagnostic"
-summary = "directory: in mask-only modes, write one request's routes, helper rows and engine-captured rows per rank (r<rank>.{routes,helper,engine}.bin)"
-
-[setting.R3_MOE_HELPER_DUMP_LAYER]
-default = "20"
-status = "diagnostic"
-summary = "layer R3_MOE_HELPER_DUMP writes (first 8 requests), or \"all\": the first request of every layer"
-
-[setting.R3_MOE_HELPER_DUMP_SKIP]
-default = "0"
-status = "diagnostic"
-summary = "R3_MOE_HELPER_DUMP ignores requests whose per-rank sequence is below this"
-
 [setting.R3_MOE_HELPER_POISON]
 default = "0"
 status = "diagnostic"
@@ -89,7 +74,7 @@ activation = "R3_MOE_HELPER_SHADOW layer="
 [setting.R3_MOE_HELPER_MASK_ONLY]
 default = "0"
 status = "diagnostic"
-summary = "1: mask and rescatter after the local GEMMs, merge engine-captured rows; 2: same late publish, merge the helper rows; 3: helper rows only where bit-identical to the engine's; 4: helper rows only where they differ; 5: only where 1-8 elements differ; 6: only where more than 8 differ"
+summary = "1: mask and rescatter after the local GEMMs, merge engine-captured rows; 2: same late publish, merge the helper's per-token rows"
 activation = "R3_MOE_HELPER_MASK_ONLY enabled"
 
 [setting.R3_MOE_HELPER_PLUGIN]
