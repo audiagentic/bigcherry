@@ -57,6 +57,9 @@ Offline tests: each verb resolves radiance paths with --engine radiance and stil
 
 No back-compat: every caller migrates to the engine-explicit shape. Plan items for radiance work themselves live in patching-radiance-rdna3.
 
+Scope widened 2026-10-15 (owner: 'Is bigcherry now exposing multiple engines via the same cli? Do we need to clean this up'). Today the engine is chosen four inconsistent ways: build lanes imply it through recipe source names (radiance-lab:...); engine-bench takes --engine; patch-lint and the registry walk every engine; and 22 sites hard-code ProjectContext.resolve(engine="llamacpp") (cli/experiment, hardware, jobs, patch, profiling, source, tuning; release/pin_bump; source/sources; patch/validation_campaign; doctor; jobs/worker; validate/re14/re15 scripts), plus patches filter help text naming engines/llamacpp/patches/catalog.toml. Rule to land: every engine-scoped command takes one --engine resolved from engines/<name>/engine.toml (or derives it unambiguously from a lane/source and refuses a mismatch); platform-wide commands (patch-lint, check, doctor) report per engine; no command silently assumes llama.cpp. Migrate every site; delete one-off scripts (re14/re15/validate_rd_patches) if obsolete rather than migrating them.
+
 ## Change Log
 
 - 2026-10-14T22:16:07.786755+00:00 (created-by): Created by agent
+- 2026-10-14T22:29:45.466300+00:00 (updated-by): Updated: section:notes
