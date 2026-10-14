@@ -71,6 +71,12 @@ status = "diagnostic"
 summary = "publish owned routes without masking them and compare helper unweighted down rows against the engine rows"
 activation = "R3_MOE_HELPER_SHADOW layer="
 
+[setting.R3_MOE_HELPER_MASK_ONLY]
+default = "0"
+status = "diagnostic"
+summary = "mask and rescatter as normal, but merge engine-computed routed rows instead of helper rows"
+activation = "R3_MOE_HELPER_MASK_ONLY enabled"
+
 [setting.R3_MOE_HELPER_R4D]
 default = ""
 status = "diagnostic"

@@ -32,11 +32,13 @@ struct R3MoeMailboxDevice {
     const uint8_t* owner = nullptr;
     uint32_t* sequence = nullptr;
     uint32_t* published = nullptr;
+    uint16_t* mask_ref = nullptr;
     R3MoeShadowLayerStats* shadow_stats = nullptr;
     R3MoeShadowFirst* shadow_first = nullptr;
     uint32_t max_rows = 0;
     uint32_t rank = 0;
     uint32_t shadow = 0;
+    uint32_t mask_only = 0;
     uint32_t cpu_ref = 0;
 };
 

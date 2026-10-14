@@ -36,7 +36,22 @@ static const RadParamSpec kAddParams[] = {
     {"top_k", RAD_P_INT, RAD_REQUIRED},
 };
 static const RadOperandSpec kAddOperands[] = {
-    {"out", RAD_OPD_INOUT, 0},
+    {"sorted", RAD_OPD_IN, 0},
+    {"down", RAD_OPD_IN, 0},
+    {"ew", RAD_OPD_IN, 0},
+    {"shared", RAD_OPD_IN, 1},
+    {"shared_gate", RAD_OPD_IN, 1},
+    {"out", RAD_OPD_OUT, 0},
+};
+static const RadParamSpec kMaskRefParams[] = {
+    {"M", RAD_P_INT, RAD_REQUIRED},
+    {"n", RAD_P_INT, RAD_REQUIRED},
+    {"top_k", RAD_P_INT, RAD_REQUIRED},
+    {"restore", RAD_P_INT, RAD_REQUIRED},
+};
+static const RadOperandSpec kMaskRefOperands[] = {
+    {"sorted", RAD_OPD_IN, 0},
+    {"down", RAD_OPD_INOUT, 0},
 };
 static const RadParamSpec kShadowParams[] = {
     {"M", RAD_P_INT, RAD_REQUIRED},
@@ -53,7 +68,10 @@ static const RadOpSchema kSchemas[] = {
      "publish helper-owned MoE routes and activations to the mapped GPU mailbox"},
     {"moe_mailbox_add", kAddParams, NELEM(kAddParams),
      kAddOperands, NELEM(kAddOperands),
-     "wait for the helper GPU lane and add weighted remote expert rows after the engine gather"},
+     "merge local and remote expert rows in original slot order with moe_gather arithmetic"},
+    {"moe_mailbox_mask_ref", kMaskRefParams, NELEM(kMaskRefParams),
+     kMaskRefOperands, NELEM(kMaskRefOperands),
+     "capture or restore engine down rows for the mask-only diagnostic"},
     {"moe_mailbox_shadow", kShadowParams, NELEM(kShadowParams),
      kShadowOperands, NELEM(kShadowOperands),
      "compare helper unweighted down rows against the engine rows without changing model output"},
@@ -191,53 +209,99 @@ __global__ void mailbox_add_wait_kernel(
     }
 }
 
+__global__ void mailbox_mask_ref_kernel(
+    uint16_t* mask_ref, const int32_t* sorted, uint16_t* down,
+    uint32_t slots, uint32_t hidden, uint32_t restore) {
+    const uint32_t row = blockIdx.x;
+    if (row >= slots) return;
+    const int32_t flat = sorted[row];
+    if (flat < 0 || (uint32_t)flat >= slots) return;
+    for (uint32_t col = threadIdx.x; col < hidden; col += blockDim.x) {
+        uint16_t* ref = mask_ref + (uint64_t)(uint32_t)flat * hidden + col;
+        uint16_t* local = down + (uint64_t)row * hidden + col;
+        if (restore) *local = *ref;
+        else *ref = *local;
+    }
+}
+
 __global__ void mailbox_add_rows_kernel(
     uint8_t* base, const uint32_t* sequence, const uint32_t* published, uint32_t rank,
-    uint16_t* out, uint32_t rows, uint32_t hidden, uint32_t top_k) {
-    if (!*published) return;
-    Header* h = reinterpret_cast<Header*>(base);
-    const uint32_t seq = *sequence;
-    if ((int32_t)(load_sys_acq(&h->lane[rank].done_sequence) - seq) < 0) __builtin_trap();
-
-    Request* ring = reinterpret_cast<Request*>(base + h->ring_offset);
-    const Request* q = ring + rank * kLaneSlots + ((seq - 1u) % kLaneSlots);
-    const uint32_t nr = q->route_count;
+    const int32_t* sorted, const uint16_t* down, const uint16_t* ew,
+    const uint16_t* shared, const uint16_t* shared_gate, uint16_t* out,
+    const uint16_t* mask_ref, uint32_t mask_only,
+    uint32_t rows, uint32_t hidden, uint32_t top_k) {
     const uint32_t token = blockIdx.x;
-    if (q->sequence != seq || q->rank != rank || q->rows != rows || q->hidden != hidden ||
-        q->status != 0 || nr == 0 || nr > rows * top_k || token >= rows)
-        return;
+    if (token >= rows) return;
 
-    const Route* route = reinterpret_cast<const Route*>(base + q->route_offset);
-    __shared__ uint32_t route_index[kTopK];
+    Header* h = reinterpret_cast<Header*>(base);
+    __shared__ int32_t local_index[kTopK];
+    __shared__ uint8_t remote_slot[kTopK];
+    __shared__ uint32_t nr;
+    __shared__ const Route* route;
     if (threadIdx.x == 0) {
-        for (uint32_t slot = 0; slot < top_k; ++slot) route_index[slot] = 0xffffffffu;
-        for (uint32_t j = 0; j < nr; ++j) {
-            const Route r = route[j];
-            if (r.token < 0 || (uint32_t)r.token >= rows || r.slot >= top_k) __builtin_trap();
-            if ((uint32_t)r.token != token) continue;
-            if (route_index[r.slot] != 0xffffffffu) __builtin_trap();
-            route_index[r.slot] = j;
+        for (uint32_t slot = 0; slot < top_k; ++slot) {
+            local_index[slot] = -1;
+            remote_slot[slot] = 0;
+        }
+        nr = 0;
+        route = nullptr;
+        if (*published) {
+            const uint32_t seq = *sequence;
+            if ((int32_t)(load_sys_acq(&h->lane[rank].done_sequence) - seq) < 0) __builtin_trap();
+            Request* ring = reinterpret_cast<Request*>(base + h->ring_offset);
+            const Request* q = ring + rank * kLaneSlots + ((seq - 1u) % kLaneSlots);
+            if (q->sequence != seq || q->rank != rank || q->rows != rows ||
+                q->hidden != hidden || q->status != 0 ||
+                q->route_count == 0 || q->route_count > rows * top_k)
+                __builtin_trap();
+            nr = q->route_count;
+            route = reinterpret_cast<const Route*>(base + q->route_offset);
         }
     }
     __syncthreads();
 
-    uint16_t* dst = out + (uint64_t)token * hidden;
+    const int32_t lo = (int32_t)(token * top_k);
+    const int32_t hi = lo + (int32_t)top_k;
+    for (uint32_t i = threadIdx.x; i < rows * top_k; i += blockDim.x) {
+        const int32_t flat = sorted[i];
+        if (flat >= lo && flat < hi) local_index[(uint32_t)(flat - lo)] = (int32_t)i;
+    }
+    for (uint32_t j = threadIdx.x; j < nr; j += blockDim.x) {
+        const Route r = route[j];
+        if (r.token < 0 || (uint32_t)r.token >= rows || r.slot >= top_k) __builtin_trap();
+        if ((uint32_t)r.token == token) remote_slot[r.slot] = 1;
+    }
+    __syncthreads();
+
     const uint16_t* result = reinterpret_cast<const uint16_t*>(
         base + h->result_offset[rank * kMaxRanks + rank]);
+    float gate = 0.0f;
+    if (shared) {
+        const float v = bf16_to_f32(shared_gate[token]);
+        gate = 1.0f / (1.0f + __expf(-v));
+    }
     for (uint32_t col = threadIdx.x; col < hidden; col += blockDim.x) {
-        float acc = bf16_to_f32(dst[col]);
-        bool any = false;
+        float acc = 0.0f;
         for (uint32_t slot = 0; slot < top_k; ++slot) {
-            const uint32_t j = route_index[slot];
-            if (j == 0xffffffffu) continue;
-            any = true;
-            const Route r = route[j];
             const uint32_t flat = token * top_k + slot;
-            const float weight = bf16_to_f32(r.weight_bf16);
-            const float value = bf16_to_f32(result[(uint64_t)flat * hidden + col]);
-            acc += weight * value;
+            const uint16_t* src = nullptr;
+            if (remote_slot[slot]) {
+                src = (mask_only ? mask_ref : result) + (uint64_t)flat * hidden;
+            } else if (local_index[slot] >= 0) {
+                src = down + (uint64_t)(uint32_t)local_index[slot] * hidden;
+            }
+            if (!src) continue;
+            acc += bf16_to_f32(ew[flat]) * bf16_to_f32(src[col]);
         }
-        if (any) dst[col] = f32_to_bf16_rn(acc);
+        const uint16_t gathered = f32_to_bf16_rn(acc);
+        if (!shared) {
+            out[(uint64_t)token * hidden + col] = gathered;
+            continue;
+        }
+        const uint16_t part = f32_to_bf16_rn(
+            bf16_to_f32(shared[(uint64_t)token * hidden + col]) * gate);
+        out[(uint64_t)token * hidden + col] =
+            f32_to_bf16_rn(bf16_to_f32(part) + bf16_to_f32(gathered));
     }
 }
 
@@ -412,38 +476,75 @@ int publish_launch(const RadArgs* a, RadStream stream) {
     return hipGetLastError() == hipSuccess ? RAD_OK : RAD_E_DEVICE;
 }
 
+int mask_ref_launch(const RadArgs* a, RadStream stream) {
+    if (!a || !a->instance || !stream || a->n_t != 2) return RAD_E_INVAL;
+    auto* d = static_cast<R3MoeMailboxDevice*>(a->instance);
+    if (!d->mask_only || !d->mask_ref) return RAD_E_STATE;
+    const long long hidden = geti(a, "n");
+    const long long top_k = geti(a, "top_k");
+    const long long restore = geti(a, "restore");
+    const long long slots = a->t[1].rank > 0 ? a->t[1].shape[0] : 0;
+    if (hidden != (long long)kHidden || top_k != (long long)kTopK ||
+        (restore != 0 && restore != 1) || slots <= 0 || slots % top_k != 0 ||
+        slots / top_k > (long long)d->max_rows ||
+        !a->t[0].data || !a->t[1].data || a->t[0].dtype != RAD_I32 ||
+        a->t[1].dtype != RAD_BF16 || a->t[0].rank < 1 || a->t[1].rank < 2 ||
+        a->t[0].shape[0] < slots || a->t[1].shape[1] != hidden ||
+        !rad_tensor_is_contiguous(&a->t[0]) || !rad_tensor_is_contiguous(&a->t[1]))
+        return RAD_E_SHAPE;
+
+    if (!restore)
+        (void)hipMemsetAsync(d->mask_ref, 0,
+            (size_t)slots * (size_t)hidden * sizeof(uint16_t), (hipStream_t)stream);
+    hipLaunchKernelGGL(mailbox_mask_ref_kernel, dim3((uint32_t)slots), dim3(256), 0,
+                       (hipStream_t)stream, d->mask_ref,
+                       static_cast<const int32_t*>(a->t[0].data),
+                       static_cast<uint16_t*>(a->t[1].data),
+                       (uint32_t)slots, (uint32_t)hidden, (uint32_t)restore);
+    return hipGetLastError() == hipSuccess ? RAD_OK : RAD_E_DEVICE;
+}
+
 int add_launch(const RadArgs* a, RadStream stream) {
-    if (!a || !a->instance || !stream || a->n_t != 1) return RAD_E_INVAL;
+    if (!a || !a->instance || !stream || a->n_t != 6) return RAD_E_INVAL;
     auto* d = static_cast<R3MoeMailboxDevice*>(a->instance);
     const long long hidden = geti(a, "n");
     const long long top_k = geti(a, "top_k");
-    const long long rows = a->t[0].rank > 0 ? a->t[0].shape[0] : 0;
-    auto numel = [](const RadTensor& t) {
-        long long n = 1;
-        for (int i = 0; i < t.rank; ++i) n *= t.shape[i];
-        return n;
-    };
+    const long long rows = a->t[5].rank > 0 ? a->t[5].shape[0] : 0;
+    const bool has_shared = a->t[3].data || a->t[4].data;
     const bool ok = rows > 0 && rows <= (long long)d->max_rows &&
         hidden == (long long)kHidden && top_k == (long long)kTopK &&
-        a->t[0].data && a->t[0].rank >= 2 && numel(a->t[0]) >= rows * hidden &&
-        a->t[0].shape[a->t[0].rank - 1] == hidden && a->t[0].dtype == RAD_BF16 &&
-        rad_tensor_is_contiguous(&a->t[0]);
-    if (!ok) {
-        std::fprintf(stderr, "libr3: moe_mailbox_add refused rows=%lld max_rows=%u hidden=%lld top_k=%lld "
-                     "out rank %d numel %lld last %lld dtype %u\n",
-                     rows, (unsigned)d->max_rows, hidden, top_k,
-                     a->t[0].rank, numel(a->t[0]),
-                     a->t[0].rank ? (long long)a->t[0].shape[a->t[0].rank - 1] : -1LL,
-                     (unsigned)a->t[0].dtype);
-        return RAD_E_SHAPE;
-    }
+        a->t[0].data && a->t[1].data && a->t[2].data && a->t[5].data &&
+        a->t[0].dtype == RAD_I32 && a->t[1].dtype == RAD_BF16 &&
+        a->t[2].dtype == RAD_BF16 && a->t[5].dtype == RAD_BF16 &&
+        a->t[0].rank >= 1 && a->t[1].rank >= 2 && a->t[2].rank >= 2 &&
+        a->t[5].rank >= 2 && a->t[0].shape[0] >= rows * top_k &&
+        a->t[1].shape[0] >= rows * top_k && a->t[1].shape[1] == hidden &&
+        a->t[2].shape[0] == rows && a->t[2].shape[1] == top_k &&
+        a->t[5].shape[1] == hidden &&
+        (!has_shared || (a->t[3].data && a->t[4].data &&
+                         a->t[3].dtype == RAD_BF16 && a->t[4].dtype == RAD_BF16 &&
+                         a->t[3].rank >= 2 && a->t[4].rank >= 2 &&
+                         a->t[3].shape[0] == rows && a->t[3].shape[1] == hidden &&
+                         a->t[4].shape[0] == rows && a->t[4].shape[1] == 1)) &&
+        rad_tensor_is_contiguous(&a->t[0]) && rad_tensor_is_contiguous(&a->t[1]) &&
+        rad_tensor_is_contiguous(&a->t[2]) && rad_tensor_is_contiguous(&a->t[5]) &&
+        (!has_shared || (rad_tensor_is_contiguous(&a->t[3]) &&
+                         rad_tensor_is_contiguous(&a->t[4]))) &&
+        (!d->mask_only || d->mask_ref);
+    if (!ok) return RAD_E_SHAPE;
 
     hipLaunchKernelGGL(mailbox_add_wait_kernel, dim3(1), dim3(1), 0, (hipStream_t)stream,
                        static_cast<uint8_t*>(d->mailbox), d->sequence, d->published, d->rank);
     hipLaunchKernelGGL(mailbox_add_rows_kernel, dim3((uint32_t)rows), dim3(256), 0,
                        (hipStream_t)stream, static_cast<uint8_t*>(d->mailbox),
                        d->sequence, d->published, d->rank,
-                       static_cast<uint16_t*>(a->t[0].data),
+                       static_cast<const int32_t*>(a->t[0].data),
+                       static_cast<const uint16_t*>(a->t[1].data),
+                       static_cast<const uint16_t*>(a->t[2].data),
+                       static_cast<const uint16_t*>(a->t[3].data),
+                       static_cast<const uint16_t*>(a->t[4].data),
+                       static_cast<uint16_t*>(a->t[5].data),
+                       d->mask_ref, d->mask_only,
                        (uint32_t)rows, (uint32_t)hidden, (uint32_t)top_k);
     hipLaunchKernelGGL(mailbox_add_finish_kernel, dim3(1), dim3(1), 0, (hipStream_t)stream,
                        d->published);
@@ -501,13 +602,28 @@ const RadKernelInfo kAdd = [] {
     x.name = "r3_moe_mailbox_add";
     x.op = "moe_mailbox_add";
     x.family = "moe";
-    x.computes = "GPU-only weighted remote MoE add after engine gather";
+    x.computes = "GPU-only exact slot-order merge of local and remote MoE rows";
     x.shape = "decode rows, hidden=2560, top_k=10";
     x.dtypes = "bf16";
     x.domain = RAD_DOMAIN_DEVICE;
     x.priority = 1000;
     x.init = mailbox_init;
     x.launch = add_launch;
+    return x;
+}();
+
+const RadKernelInfo kMaskRef = [] {
+    RadKernelInfo x{};
+    x.name = "r3_moe_mailbox_mask_ref";
+    x.op = "moe_mailbox_mask_ref";
+    x.family = "moe";
+    x.computes = "diagnostic engine-row capture/restore around masked rescatter";
+    x.shape = "decode rows, hidden=2560, top_k=10";
+    x.dtypes = "i32,bf16";
+    x.domain = RAD_DOMAIN_DEVICE;
+    x.priority = 1000;
+    x.init = mailbox_init;
+    x.launch = mask_ref_launch;
     return x;
 }();
 
@@ -536,5 +652,6 @@ extern "C" const RadKernelInfo* r3_moe_mailbox_row(int i) {
     if (i == 0) return &kPublish;
     if (i == 1) return &kAdd;
     if (i == 2) return &kShadow;
+    if (i == 3) return &kMaskRef;
     return nullptr;
 }

@@ -13,6 +13,7 @@ extern "C" {
 int rad_moe_remote_wanted(int64_t step_rows);
 int rad_moe_remote_wanted_upto(int64_t max_step_rows);
 int rad_moe_remote_shadow(void);
+int rad_moe_remote_mask_only(void);
 typedef void (*rad_moe_remote_layer_map_hook)(
     int layer, int n_expert, const int32_t* slot_of_expert);
 void rad_moe_remote_set_layer_map_hook(rad_moe_remote_layer_map_hook hook);
@@ -72,6 +73,11 @@ extern "C" int rad_moe_remote_shadow(void) {
     return e && *e && !(e[0] == '0' && e[1] == 0);
 }
 
+extern "C" int rad_moe_remote_mask_only(void) {
+    const char* e = std::getenv("R3_MOE_HELPER_MASK_ONLY");
+    return e && *e && !(e[0] == '0' && e[1] == 0);
+}
+
 /* Layer maps are published at declare, which can run before the plugin installs its hook (libr3 installs
  * it when the mailbox device is first created). Keep every published map and replay them when the hook
  * arrives, so no layer's map is lost to that ordering. */
@@ -127,7 +133,7 @@ PATCHES = (
     ),
     FilePatch(
         path="arch/common/rad_block_moe_fp8.h",
-        description="Publish remote experts and add their weighted results after the plain gather.",
+        description="Publish remote experts and merge local/helper rows with exact moe_gather arithmetic.",
         edits=(
             Edit(
                 id="include-remote-moe-abi",
@@ -141,7 +147,8 @@ PATCHES = (
                 id="remote-ops",
                 anchor=r"^[ \t]*rad_op op_ar = 0, op_add = 0;$",
                 mode="replace",
-                text="    rad_op op_ar = 0, op_add = 0, op_remote_publish = 0, op_remote_add = 0, op_remote_shadow = 0;",
+                text="    rad_op op_ar = 0, op_add = 0, op_remote_publish = 0, op_remote_add = 0, op_remote_shadow = 0;
+    rad_op op_remote_mask_capture = 0, op_remote_mask_restore = 0;",
                 guard=r"op_remote_publish = 0",
                 expect_matches=1,
                 rationale="The output op declaration is the unique home for the pre-reduction mailbox ops.",
@@ -178,22 +185,44 @@ PATCHES = (
                                               RAD_INT("n_expert", c.n_expert)),
                                    RAD_NOWEIGHTS),
                                {w.ids, w.ew, w.h.x, remote_q, remote_s, remote_q}, {w.ids});
-        op_remote_add = rw(b, RAD_OP(b, "moe_mailbox_add",
+        op_remote_add = RAD_OP(b, "moe_mailbox_add",
                                RAD_PARAMS(RAD_RANGE("M", 1, c.rows),
                                           RAD_INT("n", g.n_embd),
                                           RAD_INT("top_k", c.top_k)),
-                               RAD_NOWEIGHTS),
-                           {w.h.x}, {w.h.x});
+                               RAD_NOWEIGHTS);
+        if (op_remote_add) {
+            const rad_buf rd[5] = { w.sorted, w.edn, w.ew, w.sout, w.sgate };
+            const rad_buf wr[1] = { w.h.x };
+            rad_op_reads(b, op_remote_add, rd, gfold ? 5 : 3);
+            rad_op_writes(b, op_remote_add, wr, 1);
+        }
         op_remote_shadow = rw(b, RAD_OP(b, "moe_mailbox_shadow",
                                   RAD_PARAMS(RAD_RANGE("M", 1, c.rows),
                                              RAD_INT("n", g.n_embd),
                                              RAD_INT("top_k", c.top_k)),
                                   RAD_NOWEIGHTS),
                               {w.sorted, w.edn}, {w.edn});
-        if (!op_remote_publish || !op_remote_add || !op_remote_shadow) {
-            std::fprintf(stderr, "radiance: MoE remote ops not declared at layer %d (publish %d add %d shadow %d; "
+        op_remote_mask_capture = rw(b, RAD_OP(b, "moe_mailbox_mask_ref",
+                                        RAD_PARAMS(RAD_RANGE("M", 1, c.rows),
+                                                   RAD_INT("n", g.n_embd),
+                                                   RAD_INT("top_k", c.top_k),
+                                                   RAD_INT("restore", 0)),
+                                        RAD_NOWEIGHTS),
+                                    {w.sorted, w.edn}, {w.edn});
+        op_remote_mask_restore = rw(b, RAD_OP(b, "moe_mailbox_mask_ref",
+                                        RAD_PARAMS(RAD_RANGE("M", 1, c.rows),
+                                                   RAD_INT("n", g.n_embd),
+                                                   RAD_INT("top_k", c.top_k),
+                                                   RAD_INT("restore", 1)),
+                                        RAD_NOWEIGHTS),
+                                    {w.sorted, w.edn}, {w.edn});
+        if (!op_remote_publish || !op_remote_add || !op_remote_shadow ||
+            !op_remote_mask_capture || !op_remote_mask_restore) {
+            std::fprintf(stderr, "radiance: MoE remote ops not declared at layer %d (publish %d merge %d shadow %d mask %d/%d; "
                          "q %d s %d rot %d)\\n", l, op_remote_publish != 0, op_remote_add != 0,
-                         op_remote_shadow != 0, remote_q != 0, remote_s != 0, (int)c.expert_rot);
+                         op_remote_shadow != 0, op_remote_mask_capture != 0,
+                         op_remote_mask_restore != 0, remote_q != 0, remote_s != 0,
+                         (int)c.expert_rot);
             return RAD_E_INVAL;
         }
     }""",
@@ -206,9 +235,12 @@ PATCHES = (
                 anchor=r"^[ \t]*const bool shared = op_sgate != 0;$",
                 text="""
     const bool remote_policy =
-        op_remote_publish && op_remote_add && op_remote_shadow && rad_moe_remote_wanted(rows);
+        op_remote_publish && op_remote_add && op_remote_shadow &&
+        op_remote_mask_capture && op_remote_mask_restore && rad_moe_remote_wanted(rows);
     const bool remote_shadow = remote_policy && rad_moe_remote_shadow();
-    const bool remote_active = remote_policy && !remote_shadow;""",
+    const bool remote_active = remote_policy && !remote_shadow;
+    const bool remote_mask_only =
+        remote_active && rad_moe_remote_mask_only();""",
                 guard=r"remote_policy =",
                 expect_matches=1,
                 rationale="The shared-arm state is the first per-pass policy declaration after row geometry is resolved.",
@@ -217,7 +249,7 @@ PATCHES = (
                 id="publish-remote-and-rescatter",
                 anchor=r"^[ \t]*const int64_t n4\[4\] = \{",
                 mode="insert_before",
-                text="""    if (remote_policy) {
+                text="""    if (remote_policy && !remote_mask_only) {
         const rad_buf remote_q = rot ? w.hr.q : w.h.q;
         const rad_buf remote_s = rot ? w.hr.s : w.h.s;
         RAD_ISSUE_N(c_, op_remote_publish, rows,
@@ -240,41 +272,62 @@ PATCHES = (
                 id="shadow-compare-remote-down",
                 anchor=r"^[ \t]*if \(shared\) sh_down\.step\(c_, w\.sff, w\.sout, T, r0, rows\);$",
                 mode="insert_before",
-                text="""    if (remote_shadow)
+                text="""    if (remote_mask_only) {
+        RAD_ISSUE_N(c_, op_remote_mask_capture, rows,
+                    brows(w.sorted, rows * k), brows(w.edn, rows * k));
+        const rad_buf remote_q = rot ? w.hr.q : w.h.q;
+        const rad_buf remote_s = rot ? w.hr.s : w.h.s;
+        RAD_ISSUE_N(c_, op_remote_publish, rows,
+                    brow_slice(w.ids, r0, rows, k),
+                    brow_slice(w.ew, r0, rows, k),
+                    brow_slice(w.h.x, r0, rows, g.n_embd),
+                    brow_slice(remote_q, r0, rows, g.n_embd),
+                    brow_slice(remote_s, r0, rows, g.n_embd / RAD_FP8_BLOCK),
+                    brows(remote_q, T));
+        RAD_ISSUE_N(c_, op_scatter, rows, brow_slice(w.ids, r0, rows, k),
+                    brows(w.sorted, rows * k), brows(w.eoff, ne + 1), ecnt);
+        RAD_ISSUE_N(c_, op_remote_mask_restore, rows,
+                    brows(w.sorted, rows * k), brows(w.edn, rows * k));
+    }
+    if (remote_shadow)
         RAD_ISSUE_N(c_, op_remote_shadow, rows,
                     brows(w.sorted, rows * k), brows(w.edn, rows * k));
 """,
-                guard=r"RAD_ISSUE_N\(c_, op_remote_shadow, rows,",
+                guard=r"remote_mask_only\) \{|RAD_ISSUE_N\(c_, op_remote_shadow, rows,",
                 expect_matches=1,
-                rationale="The shared-down issue is the first code line after every routed/protected down writer, before calibration and gather.",
+                rationale="The shared-down issue is the first code line after every routed/protected down writer, so mask-only can snapshot engine rows before masking and restore local row order after the diagnostic rescatter.",
             ),
             Edit(
                 id="force-plain-gather-for-remote",
                 anchor=r"^[ \t]*if \(!gather_taken\(g, T, gather_out_rows, gather_out_rows6\)\)$",
                 mode="replace",
-                text="    if (remote_active || !gather_taken(g, T, gather_out_rows, gather_out_rows6))",
-                guard=r"remote_active \|\| !gather_taken\(g, T, gather_out_rows, gather_out_rows6\)",
+                text="""    if (remote_active)
+        RAD_ISSUE_N(c_, op_remote_add, rows,
+                    brows(w.sorted, rows * k), brows(w.edn, rows * k),
+                    brow_slice(w.ew, r0, rows, k),
+                    gfold ? brow_slice(w.sout, r0, rows, g.n_embd) : RAD_NONE,
+                    gfold ? brow_slice(w.sgate, r0, rows, 1) : RAD_NONE,
+                    brow_slice(w.h.x, r0, rows, g.n_embd));
+    else if (!gather_taken(g, T, gather_out_rows, gather_out_rows6))""",
+                guard=r"else if \(!gather_taken\(g, T, gather_out_rows, gather_out_rows6\)\)",
                 expect_matches=1,
-                rationale="A remote pass needs a materialized token output between gather and collective, so the downstream fused gather+all-reduce cannot consume the gather.",
+                rationale="Normal remote mode replaces moe_gather with one slot-order merge, avoiding a local bf16 narrow followed by a second remote-add narrow.",
             ),
             Edit(
                 id="add-remote-before-all-reduce",
                 anchor=r"^[ \t]*if \(op_ar && !ar_taken\(g, ar_out_take != kArOutNorm \? T : rows, ar_out, ar_out_take\)\)$",
                 mode="replace",
-                text="""    if (remote_active)
-        RAD_ISSUE_N(c_, op_remote_add, rows,
-                    brow_slice(w.h.x, r0, rows, g.n_embd));
-    if (op_ar && (remote_active ||
+                text="""    if (op_ar && (remote_active ||
                   !ar_taken(g, ar_out_take != kArOutNorm ? T : rows, ar_out, ar_out_take)))""",
-                guard=r"op_remote_add, rows",
+                guard=r"op_ar && \(remote_active \|\|",
                 expect_matches=1,
-                rationale="Add weighted helper contributions only after the plain gather produced token rows, then force the standalone all-reduce before the residual write.",
+                rationale="The remote merge already wrote the exact gathered bf16 row, so only force the standalone all-reduce before the residual write.",
             ),
         ),
     ),
     FilePatch(
         path="arch/common/rad_block_hc.h",
-        description="Disable HyperConn fused gather/all-reduce writes while a remote-MoE pass needs a post-gather add.",
+        description="Disable HyperConn fused gather/all-reduce writes while a remote-MoE pass uses the mailbox merge.",
         edits=(
             Edit(
                 id="include-remote-moe-abi-hc",
@@ -301,7 +354,7 @@ PATCHES = (
                 text="    if (!remote_active && takes_gather(T)) {",
                 guard=r"!remote_active && takes_gather\(T\)",
                 expect_matches=1,
-                rationale="Normal remote passes must leave the gather to MoeFP8; shadow keeps the original fused output path.",
+                rationale="Normal remote passes use the mailbox slot-order merge; shadow keeps HyperConn's original fused gather path.",
             ),
             Edit(
                 id="remote-disable-hc-ar-write",

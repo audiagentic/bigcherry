@@ -28,6 +28,7 @@ struct RankState {
     uint8_t* owner = nullptr;
     uint32_t* sequence = nullptr;
     uint32_t* published = nullptr;
+    uint16_t* mask_ref = nullptr;
     bool ready = false;
 };
 
@@ -58,6 +59,11 @@ bool poison_env() {
 
 bool shadow_env() {
     const char* e = std::getenv("R3_MOE_HELPER_SHADOW");
+    return e && *e && std::strcmp(e, "0") != 0;
+}
+
+bool mask_only_env() {
+    const char* e = std::getenv("R3_MOE_HELPER_MASK_ONLY");
     return e && *e && std::strcmp(e, "0") != 0;
 }
 
@@ -170,6 +176,7 @@ void register_mailbox() {
         g.hdr->owned_count, (long long)max_rows());
     if (poison_env()) std::fprintf(stderr, "libr3: R3_MOE_HELPER poison\n");
     if (shadow_env()) std::fprintf(stderr, "libr3: R3_MOE_HELPER_SHADOW enabled\n");
+    if (mask_only_env()) std::fprintf(stderr, "libr3: R3_MOE_HELPER_MASK_ONLY enabled\n");
 }
 
 void report_shadow(uint32_t rank, RankState& s) {
@@ -218,6 +225,7 @@ void close_mailbox() {
         report_shadow(r, s);
         if (s.dev.shadow_first) (void)hipFree(s.dev.shadow_first);
         if (s.dev.shadow_stats) (void)hipFree(s.dev.shadow_stats);
+        if (s.mask_ref) (void)hipFree(s.mask_ref);
         if (s.published) (void)hipFree(s.published);
         if (s.sequence) (void)hipFree(s.sequence);
         if (s.owner) (void)hipFree(s.owner);
@@ -288,6 +296,21 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
     }
 
     const bool shadow = shadow_env();
+    const bool mask_only = mask_only_env();
+    const uint32_t row_cap = (uint32_t)max_rows();
+    if (mask_only) {
+        const size_t bytes = (size_t)row_cap * kTopK * kHidden * sizeof(uint16_t);
+        if (!hip_ok(hipMalloc(reinterpret_cast<void**>(&s.mask_ref), bytes),
+                    "hipMalloc mask-only engine rows")) {
+            (void)hipFree(s.published);
+            (void)hipFree(s.sequence);
+            (void)hipFree(s.owner);
+            s.published = nullptr;
+            s.sequence = nullptr;
+            s.owner = nullptr;
+            return RAD_E_NOMEM;
+        }
+    }
     R3MoeShadowLayerStats* shadow_stats = nullptr;
     R3MoeShadowFirst* shadow_first = nullptr;
     if (shadow &&
@@ -303,6 +326,8 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
                  "zero shadow first"))) {
         if (shadow_first) (void)hipFree(shadow_first);
         if (shadow_stats) (void)hipFree(shadow_stats);
+        if (s.mask_ref) (void)hipFree(s.mask_ref);
+        s.mask_ref = nullptr;
         (void)hipFree(s.published);
         (void)hipFree(s.sequence);
         (void)hipFree(s.owner);
@@ -317,11 +342,13 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
     s.dev.owner = s.owner;
     s.dev.sequence = s.sequence;
     s.dev.published = s.published;
+    s.dev.mask_ref = s.mask_ref;
     s.dev.shadow_stats = shadow_stats;
     s.dev.shadow_first = shadow_first;
-    s.dev.max_rows = (uint32_t)max_rows();
+    s.dev.max_rows = row_cap;
     s.dev.rank = (uint32_t)rank;
     s.dev.shadow = shadow ? 1u : 0u;
+    s.dev.mask_only = mask_only ? 1u : 0u;
     s.dev.cpu_ref = cpu_ref_env() ? 1u : 0u;
     s.ready = true;
     *out = &s.dev;
