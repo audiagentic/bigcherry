@@ -217,7 +217,8 @@ template <bool TOKEN>
 __global__ __launch_bounds__(256) void lane_moe_gemv(
     const uint8_t* aq, const float* as, const int32_t* sorted, const int32_t* off, uint32_t top_k,
     void* const* code0, void* const* scale0, void* const* code1, void* const* scale1,
-    uint32_t n0, uint32_t n1, uint32_t k0, uint32_t k1, uint32_t a_stride, uint32_t out_stride, uint16_t* out) {
+    uint32_t n0, uint32_t n1, uint32_t k0, uint32_t k1, uint32_t a_stride, uint32_t out_stride, uint16_t* out,
+    uint32_t part_pitch) {
     using namespace r3::moe_shm;
     const uint32_t r = blockIdx.x;
     if (r >= (uint32_t)off[kExperts]) return;
@@ -265,7 +266,10 @@ __global__ __launch_bounds__(256) void lane_moe_gemv(
         if (lane == 0) {
             uint32_t u = __float_as_uint(acc * 0x1p-13f);
             u += 0x7fffu + ((u >> 16) & 1u);
-            out[(uint64_t)r * out_stride + n] = (uint16_t)(u >> 16);
+            /* Two parts (gate, up): the grouped GEMM puts part 1 at a fixed column, the lane's widest
+             * half (part_pitch), whatever this class's width -- so a narrower class's up half starts there. */
+            const uint32_t col = TOKEN && part_pitch && n >= N / 2 ? n - N / 2 + part_pitch : n;
+            out[(uint64_t)r * out_stride + col] = (uint16_t)(u >> 16);
         }
     }
 }
@@ -871,7 +875,8 @@ public:
                                    static_cast<void* const*>(w.gu_code[0].p), static_cast<void* const*>(w.gu_scale[0].p),
                                    static_cast<void* const*>(w.gu_code[1].p), static_cast<void* const*>(w.gu_scale[1].p),
                                    (uint32_t)(2 * w0), (uint32_t)(2 * w1), (uint32_t)kHidden, (uint32_t)kHidden,
-                                   (uint32_t)kHidden, (uint32_t)(2 * mid_w()), static_cast<uint16_t*>(w.d_gu.p));
+                                   (uint32_t)kHidden, (uint32_t)(2 * mid_w()), static_cast<uint16_t*>(w.d_gu.p),
+                                   (uint32_t)mid_w());
                 if (!hip_ok(hipGetLastError(), "lane gate/up GEMV")) return -EIO;
             } else if (launch_on(moe_,
                           { tensor(w.d_aq.p, RAD_F8E4M3, {rows, kHidden}),
@@ -894,7 +899,8 @@ public:
                                    static_cast<void* const*>(w.gu_code[0].p), static_cast<void* const*>(w.gu_scale[0].p),
                                    static_cast<void* const*>(w.gu_code[1].p), static_cast<void* const*>(w.gu_scale[1].p),
                                    (uint32_t)(2 * w0), (uint32_t)(2 * w1), (uint32_t)kHidden, (uint32_t)kHidden,
-                                   (uint32_t)kHidden, (uint32_t)(2 * mid_w()), static_cast<uint16_t*>(w.d_dbg.p));
+                                   (uint32_t)kHidden, (uint32_t)(2 * mid_w()), static_cast<uint16_t*>(w.d_dbg.p),
+                                   (uint32_t)mid_w());
                 w.dbg_routes = routes;
             }
             if (sampling && !hip_ok(hipEventRecord(w.stage[1], w.stream), "lane stage 1")) return -EIO;
@@ -920,7 +926,7 @@ public:
                                    static_cast<void* const*>(w.dn_code[0].p), static_cast<void* const*>(w.dn_scale[0].p),
                                    static_cast<void* const*>(w.dn_code[1].p), static_cast<void* const*>(w.dn_scale[1].p),
                                    (uint32_t)kHidden, (uint32_t)kHidden, (uint32_t)w0, (uint32_t)w1,
-                                   (uint32_t)mid_w(), (uint32_t)kHidden, static_cast<uint16_t*>(out_down));
+                                   (uint32_t)mid_w(), (uint32_t)kHidden, static_cast<uint16_t*>(out_down), 0u);
                 if (!hip_ok(hipGetLastError(), "lane down GEMV")) return -EIO;
             } else if (launch_on(moe_,
                           { tensor(w.d_mid.p, RAD_F8E4M3, {routes, mid_w()}),
