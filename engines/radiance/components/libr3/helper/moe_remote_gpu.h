@@ -4,6 +4,7 @@
 #include <hip/hip_runtime.h>
 
 #include <algorithm>
+#include <cmath>
 #include <array>
 #include <cstdint>
 #include <cerrno>
@@ -455,7 +456,10 @@ public:
     bool open() {
         const char* poison = std::getenv("R3_MOE_HELPER_POISON");
         /* "zero" returns zeros (the same output as dropping the remote routes); anything else non-"0" is 1e3. */
-        if (const char* gv = std::getenv("R3_MOE_HELPER_GEMV"); gv && *gv && std::strcmp(gv, "0") != 0) gemv_ = true;
+        if (const char* gv = std::getenv("R3_MOE_HELPER_GEMV"); gv && *gv && std::strcmp(gv, "0") != 0) {
+            gemv_ = std::strcmp(gv, "2") != 0;
+            gemv_debug_ = std::strcmp(gv, "2") == 0;
+        }
         poison_ = !poison || !*poison || std::strcmp(poison, "0") == 0 ? 0u
                 : std::strcmp(poison, "zero") == 0 ? 2u : 1u;
         if (!hip_ok(hipSetDevice(0), "hipSetDevice(0)")) return false;
@@ -881,6 +885,44 @@ public:
                           gp, w.stream, w.scratch) < 0)
                 return -EIO;
 
+            if (gemv_debug_ && lane < kMaxRanks) {
+                hipLaunchKernelGGL(lane_moe_gemv<true>, gemv_grid_gu, dim3(256), 0, w.stream,
+                                   static_cast<const uint8_t*>(w.d_aq.p), static_cast<const float*>(w.d_as.p),
+                                   static_cast<const int32_t*>(w.d_sorted.p), static_cast<const int32_t*>(w.d_off.p),
+                                   (uint32_t)kTopK,
+                                   static_cast<void* const*>(w.gu_code[0].p), static_cast<void* const*>(w.gu_scale[0].p),
+                                   static_cast<void* const*>(w.gu_code[1].p), static_cast<void* const*>(w.gu_scale[1].p),
+                                   (uint32_t)(2 * w0), (uint32_t)(2 * w1), (uint32_t)kHidden, (uint32_t)kHidden,
+                                   (uint32_t)kHidden, (uint32_t)(2 * mid_w()), static_cast<uint16_t*>(w.d_down.p));
+                std::vector<uint16_t> g((size_t)routes * 2 * mid_w()), v((size_t)routes * 2 * mid_w());
+                int32_t total = 0;
+                if (hip_ok(hipStreamSynchronize(w.stream), "gemv debug sync") &&
+                    hip_ok(hipMemcpy(g.data(), w.d_gu.p, g.size() * 2, hipMemcpyDeviceToHost), "gemv debug read gemm") &&
+                    hip_ok(hipMemcpy(v.data(), w.d_down.p, v.size() * 2, hipMemcpyDeviceToHost), "gemv debug read gemv") &&
+                    hip_ok(hipMemcpy(&total, static_cast<int32_t*>(w.d_off.p) + kExperts, 4, hipMemcpyDeviceToHost), "gemv debug off")) {
+                    auto f = [](uint16_t b) { uint32_t u = (uint32_t)b << 16; float x; std::memcpy(&x, &u, 4); return x; };
+                    double num = 0, den = 0;
+                    for (int32_t r = 0; r < total; ++r)
+                        for (int64_t n = 0; n < 2 * mid_w(); ++n) {
+                            const double a = f(g[(size_t)r * 2 * mid_w() + n]), b = f(v[(size_t)r * 2 * mid_w() + n]);
+                            num += (a - b) * (a - b); den += a * a;
+                        }
+                    std::fprintf(stderr, "gemv-debug routes %d rel_l2 %.5g
+  gemm row0:", total, std::sqrt(num / (den + 1e-30)));
+                    for (int n = 0; n < 8; ++n) std::fprintf(stderr, " %.5g", f(g[n]));
+                    std::fprintf(stderr, "
+  gemv row0:");
+                    for (int n = 0; n < 8; ++n) std::fprintf(stderr, " %.5g", f(v[n]));
+                    std::fprintf(stderr, "
+  gemm row0 n=%lld..:", (long long)mid_w());
+                    for (int n = 0; n < 4; ++n) std::fprintf(stderr, " %.5g", f(g[mid_w() + n]));
+                    std::fprintf(stderr, "
+  gemv row0 n=%lld..:", (long long)mid_w());
+                    for (int n = 0; n < 4; ++n) std::fprintf(stderr, " %.5g", f(v[mid_w() + n]));
+                    std::fprintf(stderr, "
+");
+                }
+            }
             if (sampling && !hip_ok(hipEventRecord(w.stage[1], w.stream), "lane stage 1")) return -EIO;
             std::vector<RadParam> gqp = {
                 pi("M", routes), pi("n", mid_w()), pi("group", kGroup),
@@ -1025,6 +1067,7 @@ private:
     uint32_t large_rows_ = 0;   /* large-lane capacity */
     uint32_t poison_ = 0;
     bool gemv_ = false;         /* R3_MOE_HELPER_GEMV: decode GEMV on the small lane (RAD05) */
+    bool gemv_debug_ = false;   /* R3_MOE_HELPER_GEMV=2: grouped GEMM AND GEMV gate/up, compared (--compare) */
 
     template <class T> bool symbol(const char* name, T* out, bool required = true) {
         dlerror();
