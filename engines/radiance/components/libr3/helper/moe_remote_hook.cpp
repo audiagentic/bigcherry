@@ -352,7 +352,8 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
     /* 1: add the engine's captured rows; 2: same late publish/mask/rescatter, but add the helper's rows. */
     {
         const char* e = std::getenv("R3_MOE_HELPER_MASK_ONLY");
-        s.dev.mask_only = !mask_only ? 0u : (e && std::strcmp(e, "2") == 0 ? 2u : 1u);
+        const int m = e ? std::atoi(e) : 0;
+        s.dev.mask_only = !mask_only ? 0u : (m >= 2 && m <= 4 ? (uint32_t)m : 1u);
     }
     s.dev.cpu_ref = cpu_ref_env() ? 1u : 0u;
     s.ready = true;

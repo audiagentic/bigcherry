@@ -288,6 +288,23 @@ __global__ void mailbox_add_rows_kernel(
 
     const uint16_t* result = reinterpret_cast<const uint16_t*>(
         base + h->result_offset[rank * kMaxRanks + rank]);
+    /* Modes 3/4 split the helper's rows by whether they are bit-identical to the engine's: 3 merges the
+     * helper row only where identical (engine row otherwise), 4 only where they differ. */
+    __shared__ uint32_t differ[kTopK];
+    if (threadIdx.x < kTopK) differ[threadIdx.x] = 0;
+    __syncthreads();
+    if (mask_only >= 3u) {
+        for (uint32_t slot = 0; slot < top_k; ++slot) {
+            if (!remote_slot[slot]) continue;
+            const uint64_t off = (uint64_t)(token * top_k + slot) * hidden;
+            for (uint32_t col = threadIdx.x; col < hidden; col += blockDim.x)
+                if (__builtin_nontemporal_load(result + off + col) != mask_ref[off + col]) {
+                    atomicOr(&differ[slot], 1u);
+                    break;
+                }
+        }
+    }
+    __syncthreads();
     float gate = 0.0f;
     if (shared) {
         const float v = bf16_to_f32(shared_gate[token]);
@@ -299,7 +316,9 @@ __global__ void mailbox_add_rows_kernel(
             const uint32_t flat = token * top_k + slot;
             const uint16_t* src = nullptr;
             if (remote_slot[slot]) {
-                src = (mask_only == 1u ? mask_ref : result) + (uint64_t)flat * hidden;
+                const bool engine_row = mask_only == 1u || (mask_only == 3u && differ[slot]) ||
+                                        (mask_only == 4u && !differ[slot]);
+                src = (engine_row ? mask_ref : result) + (uint64_t)flat * hidden;
             } else if (local_index[slot] >= 0) {
                 src = down + (uint64_t)(uint32_t)local_index[slot] * hidden;
             }
