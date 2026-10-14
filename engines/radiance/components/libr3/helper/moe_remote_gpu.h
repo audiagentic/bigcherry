@@ -907,20 +907,16 @@ public:
                             const double a = f(g[(size_t)r * 2 * mid_w() + n]), b = f(v[(size_t)r * 2 * mid_w() + n]);
                             num += (a - b) * (a - b); den += a * a;
                         }
-                    std::fprintf(stderr, "gemv-debug routes %d rel_l2 %.5g
-  gemm row0:", total, std::sqrt(num / (den + 1e-30)));
+                    std::fprintf(stderr, "gemv-debug routes %d rel_l2 %.5g\n  gemm row0:", total,
+                                 std::sqrt(num / (den + 1e-30)));
                     for (int n = 0; n < 8; ++n) std::fprintf(stderr, " %.5g", f(g[n]));
-                    std::fprintf(stderr, "
-  gemv row0:");
+                    std::fprintf(stderr, "\n  gemv row0:");
                     for (int n = 0; n < 8; ++n) std::fprintf(stderr, " %.5g", f(v[n]));
-                    std::fprintf(stderr, "
-  gemm row0 n=%lld..:", (long long)mid_w());
+                    std::fprintf(stderr, "\n  gemm row0 n=%lld..:", (long long)mid_w());
                     for (int n = 0; n < 4; ++n) std::fprintf(stderr, " %.5g", f(g[mid_w() + n]));
-                    std::fprintf(stderr, "
-  gemv row0 n=%lld..:", (long long)mid_w());
+                    std::fprintf(stderr, "\n  gemv row0 n=%lld..:", (long long)mid_w());
                     for (int n = 0; n < 4; ++n) std::fprintf(stderr, " %.5g", f(v[mid_w() + n]));
-                    std::fprintf(stderr, "
-");
+                    std::fprintf(stderr, "\n");
                 }
             }
             if (sampling && !hip_ok(hipEventRecord(w.stage[1], w.stream), "lane stage 1")) return -EIO;
