@@ -129,3 +129,9 @@ Next: attribute the 32 ms per batch boundary - which streams the synchronizes wa
 - 2026-10-11T07:31:20.295965+00:00 (updated-by): Updated: section:notes
 - 2026-10-11T08:06:11.851254+00:00 (updated-by): Updated: section:notes
 - 2026-10-11T20:31:34.192893+00:00 (updated-by): Updated: section:notes
+
+## 2026-10-14 BCOP206: residual batch-boundary gap is here, not in QFP53
+
+QFP53/1362 is terminal: coarser KV+k-pool padding produced 24/40 graph reuses and cut host graph build 7.1 -> 3.0 ms/batch, but Flash-Next prefill was neutral and shared-input wait rose 3.3 -> 17.0 ms. Dense 27B regressed and changed greedy output at 32K. Move the rejected graph-reuse proposal to `docs/planning/completed/patching-qwen-flash-next/QFP53.md`; do **not** implement QFP53 candidate B, because validated 1359 already queues the next graph while the previous batch computes.
+
+QFP48 owns **only** a bounded warm per-batch HIP API/device trace join for the remaining ~6-7 gaps near copies. Record previous last kernel/event, upload/copy/sync, first next-batch kernel, graph UID, Meta rebuild, 1359 NextN fence and physical rank on correlated clocks. Separate overlapped host graph work from exposed wall time. At 1465 t/s a 512-token batch is ~349.5 ms, so +3% throughput requires >=10.18 ms *removable exposed* wall time. Reject without a new implementation if the joined trace falls below this gate; otherwise delegate one local default-off fix to the existing copy/wait owner (QFP50/1359 or QFP16/27), not a new scheduler/allocator. Preserve output/graph/event lifetime, multi-slot, MTP acceptance and numeric controls. Upstream llama.cpp #30453 (merged 2026-10-13) fixes Meta graph-slot reallocation after b11552 and is a prerequisite for any future persistent-graph candidate.

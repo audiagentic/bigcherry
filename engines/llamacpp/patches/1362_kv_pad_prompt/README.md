@@ -1,27 +1,16 @@
-# 1362_kv_pad_prompt
+# 1362_kv_pad_prompt — rejected
 
-QFP53 experimental patch; state is `untested` and it is not in the production patch set.
+**State: rejected.** QFP53 is superseded; see `docs/planning/completed/patching-qwen-flash-next/QFP53.md` and this package's `SUMMARY.md`. This patch is **not** in production or an active experiment. Do not use the old `--experiment kv-pad-prompt` invocation or queue further 1362 qualification without new independent evidence.
 
-Enable through the experiment composition and choose a KV-cell padding quantum:
+## Historical mechanism (retained for evidence)
 
-```text
---experiment kv-pad-prompt
-BIGCHERRY_KV_PAD=4096
-```
+`BIGCHERRY_KV_PAD=N` pads both `llama_kv_cache::get_n_kv` and Qwen4Exp/GLM5-Next `kpool_pad` to larger quanta (pool quantum derived from `N/indexer_kpool`). Zero/unset preserves upstream behavior; nonzero N must be a multiple of 256 and no larger than the active KV cache. The patch preserves dead/masked pools and `n_kv` sentinels. It was tested on the b11552 composition.
 
-Valid nonzero values are multiples of 256 no larger than the active KV cache. Unset/0 is exact upstream behavior.
-The same value also stabilizes Qwen4Exp/GLM5-Next k-pool graph sizing with a pool quantum of
-`max(64, GGML_PAD(BIGCHERRY_KV_PAD / indexer_kpool, 64))`. Padding-only pools remain masked and use the `n_kv`
-sentinel. `BIGCHERRY_PATCH_TRACE=1` emits the one-time activation marker.
+After the k-pool fix, 24/40 512-token prompt submits reused the graph and host graph-build time fell from 7.1 to 3.0 ms/batch. But shared input storage increased the input step from 3.3 to 17.0 ms/batch; Flash-Next prefill remained neutral at 8K/24K. Dense Qwen3.8-27B was slower at 10K/32K and had different greedy output at 32K. The graph-build work was already hidden by 1359 queue-ahead. **Reuse count is not a performance acceptance metric.**
 
-## Qualification
+## Archived mechanics checks (not promotion evidence)
 
-Mechanics:
-- `python -m bigcherry patch-lint`
-- `python tools/tests/patch/test_1362_kv_pad_prompt.py`
-- `python -m bigcherry patch-rebase-check --source bigcherry`
-- `python -m bigcherry patch-rebase-check --source bigcherry --experiment kv-pad-prompt`
+- `python tools/tests/patch/test_1362_kv_pad_prompt.py` (requires pinned vendor source; may skip when absent).
+- `python -m bigcherry patch-lint` and `python -m bigcherry patch-rebase-check --source bigcherry` for historical patch integrity only.
 
-Hardware acceptance: Flash-Next production profile at 8K/24K/98K with full 512-token prompt batches, recording
-`BIGCHERRY_SUBMIT_TIMING` and requiring consecutive prompt batches to report `reused=1`, balanced prefill A/B, and
-greedy identity. Decode/training and irregular/multi-sequence prompt reuse are not claimed qualified until measured.
+Do not re-enable this package to investigate the remaining prompt-boundary gaps. QFP48 owns the read-only HIP API/device timeline; QFP50/1359 owns queue-ahead and QFP27/1326 owns input-copy lifetime.
