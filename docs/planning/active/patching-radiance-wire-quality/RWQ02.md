@@ -15,7 +15,7 @@ work: L
 
 ## Description
 
-Prototype an orthonormal Hadamard 8-bit wire with BF16 block scales, preserving the proven two-rank handshake and fused epilogues. WHT6 uses 64 coefficients, 6 signed bits and one BF16 scale (50 bytes/64 values = 6.25 bits/value). WHT8 would use 64 signed bits? No: 64 * 8-bit coefficients plus a 2-byte scale (66 bytes/64 = 8.25 bits/value), i.e. 51.5625% of exact BF16 size versus WHT6's 39.0625%. This is a proposed codec, not demonstrated model fidelity.
+Prototype an orthonormal Hadamard 8-bit wire with BF16 block scales, preserving the proven two-rank handshake and fused epilogues. WHT6 uses 64 coefficients, 6 signed bits and one BF16 scale (50 bytes/64 values = 6.25 bits/value). WHT8 would use 64 signed 8-bit coefficients plus a 2-byte scale (66 bytes/64 = 8.25 bits/value), i.e. 51.5625% of exact BF16 size versus WHT6's 39.0625%. This is a proposed codec, not demonstrated model fidelity.
 
 ## Steps
 
@@ -28,7 +28,7 @@ Prototype an orthonormal Hadamard 8-bit wire with BF16 block scales, preserving 
 
 ## Detailed Solution & Technical Design
 
-Pinned source: Quackster/radiance 89cee7c, libr4d/r4d_ar_oneshot_2rank_wht6.h and .hip, libr4d/r4d_ar_entry.hip, arch/common/rad_block_hc.h; BigCherry libr3/native/r4d_ar_entry.hip.rw. For BITS=8: signed qmin=-128, qmax=127, scale=BF16_RNE(amax/127), q=clamp(rintf(rotated/scale),-128,127); scale zero/invalid returns 1.0 as current codec semantics. Retain -ffp-contract=off for reduction commutativity where needed. For CHUNK_GROUPS=32: 2048 elements per chunk, 512 code bytes per wave chunk, 16 dwords/lane = four uint4/lane versus WHT6's three uint4/lane. A local packet includes a BF16 scale for every 64 values. The current locpack allocation (half slot + slot/32 + guard) is plausibly sufficient for eight bits and f32 local scales, but must be asserted at kernel launch rather than assumed. The peer scale plane currently lives at slot_bytes/2: for 8 bits code bytes equal slot_bytes/2, so scales begin immediately after the payload. Check max slot, alignment and no overwrite of flags/adjacent slot on largest graph.
+Pinned source: Quackster/radiance 89cee7c, libr4d/r4d_ar_oneshot_2rank_wht6.h and .hip, libr4d/r4d_ar_entry.hip, arch/common/rad_block_hc.h; BigCherry libr3/native/r4d_ar_entry.hip.rw. For BITS=8: signed qmin=-128, qmax=127, scale=BF16_RNE(amax/127), q=clamp(rintf(rotated/scale),-128,127); scale zero/invalid returns 1.0 as current codec semantics. Retain -ffp-contract=off for reduction commutativity where needed. For CHUNK_GROUPS=32: 2048 elements per chunk, 2048 code bytes per wave chunk, 16 dwords/lane = four uint4/lane versus WHT6's three uint4/lane. A local packet includes a BF16 scale for every 64 values. The current locpack allocation (half slot + slot/32 + guard) is plausibly sufficient for eight bits and f32 local scales, but must be asserted at kernel launch rather than assumed. The peer scale plane currently lives at slot_bytes/2: for 8 bits code bytes equal slot_bytes/2, so scales begin immediately after the payload. Check max slot, alignment and no overwrite of flags/adjacent slot on largest graph.
 The host scratch and system-scope publish protocol remain unchanged; do not add CPU polling/stream sync to the critical path. Use GPU-side saturation checks and positive scale finite guards. Validate under native attention and helper-off controls first, then helper-on as a separate factor. Round on both ranks exactly the same way (packed local copy must be read back, not recomputed).
 
 ## Code Samples & Guidance
