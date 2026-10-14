@@ -298,7 +298,7 @@ __global__ __launch_bounds__(256) void lane_moe_rows(
     const uint32_t cls = e & 1u, ix = e >> 1;
     const uint32_t N = cls ? n1 : n0, K = cls ? k1 : k0;
     const uint32_t n_base = blockIdx.y * kRowsTileN;
-    if (n_base >= N || K % kRowsKC) return;
+    if (n_base >= N || K % 8u) return;
     const uint8_t* codes = static_cast<const uint8_t*>(cls ? code1[ix] : code0[ix]);
     const uint8_t* scales = static_cast<const uint8_t*>(cls ? scale1[ix] : scale0[ix]);
     if (!codes || !scales) return;
@@ -318,15 +318,17 @@ __global__ __launch_bounds__(256) void lane_moe_rows(
             for (uint32_t r = 0; r < kRowsRB; ++r) acc[j][r] = 0.0f;
 
         for (uint32_t kc = 0; kc < K; kc += kRowsKC) {
+            const uint32_t kl = K - kc < kRowsKC ? K - kc : kRowsKC;   /* the last chunk may be short */
             __syncthreads();
             for (uint32_t i = threadIdx.x; i < nr * kRowsKC; i += blockDim.x) {
+                if (i % kRowsKC >= kl) continue;
                 const uint32_t r = i / kRowsKC, k = kc + i % kRowsKC;
                 const uint32_t ar = arow[r];
                 a[r][i % kRowsKC] = gemv_e4m3(aq[(uint64_t)ar * a_stride + k]) *
                                     as[(uint64_t)ar * (a_stride / 128u) + k / 128u];
             }
             __syncthreads();
-            for (uint32_t d = lane; d < kRowsKC / 8u; d += warpSize) {
+            for (uint32_t d = lane; d < kl / 8u; d += warpSize) {
 #pragma unroll
                 for (uint32_t j = 0; j < kRowsOut; ++j) {
                     const uint32_t n = n_first + j;
