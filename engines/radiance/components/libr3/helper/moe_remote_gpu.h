@@ -862,8 +862,7 @@ public:
         if (lane >= r3::moe_shm::kLanes || !samples) return;
         const LaneWork& w = lane_[lane];
         std::fprintf(stderr, "r3_moe_helper: lane %u stages (us/request): routes %.1f gate_up %.1f quant %.1f "
-                     "down %.1f reduce %.1f
-", lane, w.stage_us[0] / samples, w.stage_us[1] / samples,
+                     "down %.1f reduce %.1f\n", lane, w.stage_us[0] / samples, w.stage_us[1] / samples,
                      w.stage_us[2] / samples, w.stage_us[3] / samples, w.stage_us[4] / samples);
     }
 
