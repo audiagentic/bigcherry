@@ -81,7 +81,7 @@ Successor key: patching-rdna-boost-experiments-rd64
 
 ## 2026-10-09 audit: Q5_1 double-rounding and actual-path gate
 
-**Status:** P3/pending; patch 1271 remains untested. Last independent plan triage was 2026-10-08 06:47 UTC, outside the 12-hour exclusion. No Q5-specific GPU benchmark or queued qualification was found. Evidence below is source inspection and deterministic host emulation, **not HIP execution**.
+**Status:** P3/pending; patch 1271 remains untested. Last independent plan triage was 2026-10-08 06:47 UTC, outside the 12-hour exclusion. No new Q5-specific GPU benchmark or queued qualification was found during that audit; archived GPU evidence is reconciled below. Evidence below is source inspection and deterministic host emulation, **not HIP execution**.
 
 **Exact path:** Pinned llama.cpp b11474 `ggml/src/ggml-cuda/fattn.cu::ggml_cuda_flash_attn_ext_get_alloc_size` requests F16 K/V for TILE and MMA_F16; VEC generally uses direct Q5 handlers. `fattn-common.cuh::launch_fattn` calls `ggml_get_to_fp16_cuda` for **contiguously allocated** non-F16 K/V staging only. Noncontiguous conversion is separate; a V view of K may reuse K's buffer. Patch 1271 replaces only these two call-site selectors with `ggml_get_to_fp16_fattn_cuda`, returning `bigcherry_dequantize_block_q5_f16` for HIP Q5_0/Q5_1. Global conversion, FA allocation, direct vector Q5 and graph scheduling remain unchanged.
 
@@ -98,3 +98,30 @@ Successor key: patching-rdna-boost-experiments-rd64
 ## Change Log
 
 - 2026-10-08 (triage): Kept pending at P3. Patch 1271_prbe54_q5_kv_dequant_f16 remains untested and only targets Q5 quantized KV F16 staging; production Flash-Next uses F16 KV. No matching measured Q5_KV optimization lane, so no in_progress status or promotion claim.
+
+## 2026-10-14 audit: reconcile archived GPU correctness and cost gates
+
+**Current disposition:** Patch 1271 remains registry-`untested` (**not validated**) and **NOT_ADOPTED**. The earlier 2026-10-09 audit said no hardware test; archived b11126 **Q5_0 GPU** records already existed in `engines/llamacpp/patches/1271_prbe54_q5_kv_dequant_f16/evidence/validation.json`. No new GPU work was done for this audit.
+
+| Architecture | Q5_0 pp512 geometric effect (within-session CI95) | tg128 control | Full-vocab correctness | Contract |
+|---|---|---|---|---|
+| gfx1201 | +0.0143%, [-0.2110%, +0.2306%] | +0.1247%, [+0.0505%, +0.1962%] | PASS: 64 decode steps, 15,892,480 logprobs, KL=0, material diff=0 | INVALID: 1 of 4 sessions |
+| gfx1100 | +0.7658%, [-0.0309%, +2.0003%] | +0.0341%, [-0.1487%, +0.2052%] | **FAIL:** material logprob diff 0.342 > 0.02 | INVALID: correctness + 1 of 4 sessions |
+
+**Evidence interpretation:** These are real archived hardware runs, not validated gains or current-pin measurements. gfx1100 divergence is observed but **not causally attributed** to 1271: an A/A reproducibility control is missing. The process-once `BIGCHERRY_PATCH_HIT` marker proves selector entry, not each converter launch or critical-path work. The gfx1201 CI includes zero, and gfx1100 CI lower bound is negative; no architecture demonstrated positive pp512 CI95-low.
+
+**b11552 source/data flow:** `ggml/src/ggml-cuda/fattn.cu::ggml_cuda_fattn_kv_type_supported` includes Q5_0 and Q5_1. `ggml_cuda_flash_attn_ext_get_alloc_size` sets `need_f16_K/V` for TILE/MMA_F16 and certain VEC fallbacks. `ggml/src/ggml-cuda/fattn-common.cuh::launch_fattn` invokes `ggml_get_to_fp16_cuda` only for *contiguously allocated* non-F16 K/V; noncontiguous conversion uses a separate selector, and a V view of K reuses K's F16 buffer. `ggml_cuda_flash_attn_ext_get_f16_extra_data` places aligned scratch after the graph output allocation; ownership/lifetime is the existing graph/output, not 1271. The 1271 patch swaps only those two FA call-site selectors for `ggml_get_to_fp16_fattn_cuda`, preserving the global converter and scheduler. Q5_0 candidate uses half multiply; Q5_1 uses `__hmul2` then `__hadd2`, unlike stock `dequantize.cuh::dequantize_q5_1` F32 multiply/add followed by one F16 conversion.
+
+**Q5_1 correctness:** Prior 131,072-value host fixture found Q5_1 28,261 F16-bit mismatches; a fresh seeded host fixture found 28,727/131,072 (Q5_0 0/131,072). These are host arithmetic demonstrations, **not** HIP correctness or an explanation of the gfx1100 Q5_0 GPU failure. `validation/producer.py` exercises only Q5_0, so cannot qualify Q5_1.
+
+**Implementation-ready bounded gates (existing owner only):**
+1. **Correctness before optimisation:** On isolated gfx1100, replay the archived Q5_0 64-step full-vocab prompt with same-process A/A control/control and A/B control/1271, same pin/model/quant/flags, repeated request and graph reuse. Capture actual TILE/MMA_F16/VEC route, contiguous K/V shape, converter kernel counts, physical rank, event waits, F16 scratch bytes and graph lifetime. A/A mismatch -> `UNSTABLE_REFERENCE`; A/A pass and A/B mismatch -> `Q5_0_CORRECTNESS_FAIL` and reject 1271. Never infer GPU correctness from host half parity.
+2. **Q5_1 is blocked:** Before any Q5_1 hardware lane, use the existing 1271-local selector to fall back to stock conversion for Q5_1 or implement F32 multiply/add with one final F16 rounding; validate packed high bits, odd blocks, F16 scales/minimums, subnormals, signed zero, contraction and exact output. Do not widen global dispatch or add a new kernel family.
+3. **Cost gate:** Only if Q5_0 correctness passes, reuse existing rocprof and FA diagnostics at pp512/pp2048, ub16/128/512, 8K/80K; quantify physical K/V transfer/conversion bytes, scratch lifetime, converter time and *exposed* critical-path fraction. Include Q5_1 negative, F16/Q8 and direct VEC tg128 controls. If optimistic removable E2E time <3%, stop `BELOW_EXPOSED_GATE` **without** four-session hardware sweeps.
+4. **Promotion gate:** Only if prior gates pass, reuse existing `PRBE54-Q5-KV-DEQUANT-F16` producer/contract: >=4 independent sessions per gfx1100/gfx1201, >=10 paired rounds, full-vocab/KLD/greedy, multi-request/ubatch/graph, no skipped work, CI95-low positive, >=3% E2E and <=1% unaffected-control regression. Otherwise `NO_VALIDATED_GAIN`.
+
+**Consolidation:** PRBE54/1271 is the only FA Q5 converter owner; RD64 superseded, BCOP79 already covers Q5_1 rounding. QFP17 masked FA and PRBE115 Q8_1 MMVQ are distinct; no new scheduler, cache, allocator, dispatch table or telemetry. Active RAD02/RAD03 remote-MoE and RAD04 two-half prefill remain untouched.
+
+**Upstream/forks:** [llama.cpp #27140](https://github.com/ggml-org/llama.cpp/pull/27140) remains open (checked 2026-10-14) and uses float-before-half Q5_1 conversion; RTX 3090 results do not transfer to AMD. [#29846](https://github.com/ggml-org/llama.cpp/pull/29846) closed unmerged (NVIDIA Q4/Q8 fused FA, not Q5). [SGLang quantized-KV docs](https://github.com/sgl-project/sglang/blob/main/docs/docs/advanced_features/quantized_kv_cache.mdx) warn that unfused dequant can negate cache benefits, but use different FP8/FP4 formats. The old #28455 CPU fallback issue does not establish fallback at b11552, whose type-support switch explicitly includes Q5.
+
+**Validation actually performed:** host arithmetic discriminator (131,072 values/type, Q5_0 0 differences, Q5_1 28,727), Python compilation, source/archived evidence inspection. No repository pytest, patch apply, HIP build, GPU run or new benchmark.
