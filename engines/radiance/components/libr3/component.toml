@@ -81,7 +81,7 @@ summary = "a R3_MOE_HELPER_HISTOGRAM file: the helper owns the coldest experts f
 
 [setting.R3_MOE_HELPER_GEMV]
 default = "1"
-status = "production"
+status = "experimental"
 summary = "decode MoE GEMV for the helper's small lane (RAD05): no WMMA, dot products straight off the packed w4nl64 nibbles. R9700 engine + two XTX helpers, Flash-Next: decode 69.6/69.7 -> 95.7/95.5 tok/s, prefill unchanged, KLD 0.0605 (noise floor 0.058-0.062). 0 turns it off; 2 compares it with the grouped GEMM (--compare)"
 
 [setting.R3_MOE_HELPER_INDEX]
