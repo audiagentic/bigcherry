@@ -22,6 +22,7 @@ int live_count() {
 }
 }  // namespace
 
+extern "C" uint32_t rad_plugin_abi_version(void) { return RAD_ABI_VERSION; }
 extern "C" const RadPluginInfo* rad_plugin_info(void) {
     static const RadPluginInfo info = {
         RAD_PLUGIN_KERNEL, "libr3moe", "0.0.1",
