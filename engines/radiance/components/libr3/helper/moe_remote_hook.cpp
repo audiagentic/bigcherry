@@ -353,7 +353,7 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
     {
         const char* e = std::getenv("R3_MOE_HELPER_MASK_ONLY");
         const int m = e ? std::atoi(e) : 0;
-        s.dev.mask_only = !mask_only ? 0u : (m >= 2 && m <= 4 ? (uint32_t)m : 1u);
+        s.dev.mask_only = !mask_only ? 0u : (m >= 2 && m <= 6 ? (uint32_t)m : 1u);
     }
     s.dev.cpu_ref = cpu_ref_env() ? 1u : 0u;
     s.ready = true;

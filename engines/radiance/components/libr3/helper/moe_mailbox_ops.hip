@@ -298,10 +298,8 @@ __global__ void mailbox_add_rows_kernel(
             if (!remote_slot[slot]) continue;
             const uint64_t off = (uint64_t)(token * top_k + slot) * hidden;
             for (uint32_t col = threadIdx.x; col < hidden; col += blockDim.x)
-                if (__builtin_nontemporal_load(result + off + col) != mask_ref[off + col]) {
-                    atomicOr(&differ[slot], 1u);
-                    break;
-                }
+                if (__builtin_nontemporal_load(result + off + col) != mask_ref[off + col])
+                    atomicAdd(&differ[slot], 1u);
         }
     }
     __syncthreads();
@@ -316,8 +314,11 @@ __global__ void mailbox_add_rows_kernel(
             const uint32_t flat = token * top_k + slot;
             const uint16_t* src = nullptr;
             if (remote_slot[slot]) {
-                const bool engine_row = mask_only == 1u || (mask_only == 3u && differ[slot]) ||
-                                        (mask_only == 4u && !differ[slot]);
+                /* 5: helper row only where it differs in 1..8 elements (rounding-level); 6: only > 8. */
+                const uint32_t n = differ[slot];
+                const bool engine_row = mask_only == 1u || (mask_only == 3u && n) ||
+                                        (mask_only == 4u && !n) || (mask_only == 5u && (n == 0 || n > 8)) ||
+                                        (mask_only == 6u && n <= 8);
                 src = (engine_row ? mask_ref : result) + (uint64_t)flat * hidden;
             } else if (local_index[slot] >= 0) {
                 src = down + (uint64_t)(uint32_t)local_index[slot] * hidden;
