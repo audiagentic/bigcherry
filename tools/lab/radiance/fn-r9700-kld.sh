@@ -3,7 +3,8 @@
 # Scored against an exact reference the two XTX record (helper-off, tp 2) -- the same reference the RAD03 noise floor
 # was measured on (XTX re-chunking: KLD ~0.06 on the 4-doc corpus), so the bar is that floor, not bit-exactness.
 # Usage: B=<lane build dir> MODEL=<.rad> tools/lab/radiance/fn-r9700-kld.sh <out-dir>
-#   HELPER_DEVS ("0 1"), HELPER_MIB (20480), HOST_POOL_MIB (30720), SMALL_ROWS (8), REF_DIR (reuse a reference)
+#   HELPER_DEVS ("0 1"), HELPER_MIB (20480), HOST_POOL_MIB (30720), SMALL_ROWS (8), HELPER_MAX_ROWS (helper lane cap, 64),
+#   REF_DIR (reuse a reference)
 set -u
 out=${1:?out dir}
 B=${B:?set B to the lane build directory}
@@ -39,7 +40,7 @@ read -r -a devs <<< "${HELPER_DEVS:-0 1}"
 pids=()
 for i in "${!devs[@]}"; do
     env HIP_VISIBLE_DEVICES=${devs[$i]} R3_MOE_HELPER_ENGINE_RANKS=1 R3_MOE_HELPER_COUNT=${#devs[@]} R3_MOE_HELPER_INDEX=$i \
-        R3_MOE_HELPER_MIB=${HELPER_MIB:-20480} R3_MOE_HELPER_MAX_ROWS=64 R3_MOE_HELPER_SMALL_ROWS=${SMALL_ROWS:-8} \
+        R3_MOE_HELPER_MIB=${HELPER_MIB:-20480} R3_MOE_HELPER_MAX_ROWS=${HELPER_MAX_ROWS:-64} R3_MOE_HELPER_SMALL_ROWS=${SMALL_ROWS:-8} \
         RADIANCE_HOME="$home" "$helper" "$model" > "$out/helper$i.log" 2>&1 &
     pids+=($!)
 done
