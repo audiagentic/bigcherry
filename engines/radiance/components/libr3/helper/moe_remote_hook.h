@@ -33,6 +33,7 @@ struct R3MoeMailboxDevice {
     uint32_t* sequence = nullptr;
     uint32_t* published = nullptr;
     uint16_t* mask_ref = nullptr;
+    uint16_t* seen = nullptr; /* mask-only: remote rows exactly as the add kernel read them (dump diagnostic). */
     R3MoeShadowLayerStats* shadow_stats = nullptr;
     R3MoeShadowFirst* shadow_first = nullptr;
     uint32_t max_rows = 0;

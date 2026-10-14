@@ -231,7 +231,7 @@ __global__ void mailbox_add_rows_kernel(
     uint8_t* base, const uint32_t* sequence, const uint32_t* published, uint32_t rank,
     const int32_t* sorted, const uint16_t* down, const uint16_t* ew,
     const uint16_t* shared, const uint16_t* shared_gate, uint16_t* out,
-    const uint16_t* mask_ref, uint32_t mask_only,
+    const uint16_t* mask_ref, uint32_t mask_only, uint16_t* seen,
     uint32_t rows, uint32_t hidden, uint32_t top_k) {
     const uint32_t token = blockIdx.x;
     if (token >= rows) return;
@@ -307,6 +307,7 @@ __global__ void mailbox_add_rows_kernel(
             /* The helper's rows live in host-mapped memory the R9700 rewrites every request; a cached
              * read can return the previous request's row. Read them non-temporally (bypass caches). */
             const uint16_t v = (remote_slot[slot] && mask_only != 1u) ? __builtin_nontemporal_load(src + col) : src[col];
+            if (seen && remote_slot[slot]) seen[(uint64_t)flat * hidden + col] = v;
             acc += bf16_to_f32(ew[flat]) * bf16_to_f32(v);
         }
         const uint16_t gathered = f32_to_bf16_rn(acc);
@@ -525,9 +526,9 @@ int mask_ref_launch(const RadArgs* a, RadStream stream) {
  * result rows and the engine's captured rows (mask_ref) to <dir>/r<rank>.{routes,helper,engine}.bin. Host side
  * only: device printf is not serviced on radiance's streams. */
 void dump_rows(R3MoeMailboxDevice* d, RadStream stream, uint32_t rows, uint32_t hidden, uint32_t top_k) {
-    static bool done[kMaxRanks] = {};
+    static uint32_t done[kMaxRanks] = {};
     const char* dir = std::getenv("R3_MOE_HELPER_DUMP");
-    if (!dir || !*dir || !d->mask_only || !d->mask_ref || d->rank >= kMaxRanks || done[d->rank]) return;
+    if (!dir || !*dir || !d->mask_only || !d->mask_ref || d->rank >= kMaxRanks || done[d->rank] >= 8u) return;
     const char* le = std::getenv("R3_MOE_HELPER_DUMP_LAYER");
     const uint32_t want = le && *le ? (uint32_t)std::atoi(le) : 20u;
     if (hipStreamSynchronize((hipStream_t)stream) != hipSuccess) return;
@@ -543,23 +544,25 @@ void dump_rows(R3MoeMailboxDevice* d, RadStream stream, uint32_t rows, uint32_t 
     if (q.sequence != seq || q.layer != want || q.route_count == 0 || q.rows != rows) return;
     const size_t elems = (size_t)rows * top_k * hidden;
     std::vector<Route> routes(q.route_count);
-    std::vector<uint16_t> helper(elems), engine(elems);
+    std::vector<uint16_t> helper(elems), engine(elems), seen(elems);
     if (hipMemcpy(routes.data(), base + q.route_offset, routes.size() * sizeof(Route),
                   hipMemcpyDeviceToHost) != hipSuccess ||
         hipMemcpy(helper.data(), base + h.result_offset[d->rank * kMaxRanks + d->rank],
                   elems * sizeof(uint16_t), hipMemcpyDeviceToHost) != hipSuccess ||
-        hipMemcpy(engine.data(), d->mask_ref, elems * sizeof(uint16_t), hipMemcpyDeviceToHost) != hipSuccess)
+        hipMemcpy(engine.data(), d->mask_ref, elems * sizeof(uint16_t), hipMemcpyDeviceToHost) != hipSuccess ||
+        hipMemcpy(seen.data(), d->seen, elems * sizeof(uint16_t), hipMemcpyDeviceToHost) != hipSuccess)
         return;
     auto write = [&](const char* ext, const void* p, size_t n) {
-        const std::string path = std::string(dir) + "/r" + std::to_string(d->rank) + "." + ext + ".bin";
+        const std::string path = std::string(dir) + "/r" + std::to_string(d->rank) + "." + std::to_string(done[d->rank]) + "." + ext + ".bin";
         if (FILE* f = std::fopen(path.c_str(), "wb")) { std::fwrite(p, 1, n, f); std::fclose(f); }
     };
     write("routes", routes.data(), routes.size() * sizeof(Route));
     write("helper", helper.data(), helper.size() * sizeof(uint16_t));
     write("engine", engine.data(), engine.size() * sizeof(uint16_t));
+    write("seen", seen.data(), seen.size() * sizeof(uint16_t));
     std::fprintf(stderr, "libr3: R3_MOE_HELPER dump rank %u layer %u seq %u rows %u routes %u hidden %u top_k %u\n",
                  d->rank, q.layer, seq, rows, q.route_count, hidden, top_k);
-    done[d->rank] = true;
+    ++done[d->rank];
 }
 
 int add_launch(const RadArgs* a, RadStream stream) {
@@ -602,7 +605,7 @@ int add_launch(const RadArgs* a, RadStream stream) {
                        static_cast<const uint16_t*>(a->t[3].data),
                        static_cast<const uint16_t*>(a->t[4].data),
                        static_cast<uint16_t*>(a->t[5].data),
-                       d->mask_ref, d->mask_only,
+                       d->mask_ref, d->mask_only, d->seen,
                        (uint32_t)rows, (uint32_t)hidden, (uint32_t)top_k);
     hipLaunchKernelGGL(mailbox_add_finish_kernel, dim3(1), dim3(1), 0, (hipStream_t)stream,
                        d->published);

@@ -299,7 +299,7 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
     const bool mask_only = mask_only_env();
     const uint32_t row_cap = (uint32_t)max_rows();
     if (mask_only) {
-        const size_t bytes = (size_t)row_cap * kTopK * kHidden * sizeof(uint16_t);
+        const size_t bytes = 2 * (size_t)row_cap * kTopK * kHidden * sizeof(uint16_t);
         if (!hip_ok(hipMalloc(reinterpret_cast<void**>(&s.mask_ref), bytes),
                     "hipMalloc mask-only engine rows")) {
             (void)hipFree(s.published);
@@ -343,6 +343,7 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
     s.dev.sequence = s.sequence;
     s.dev.published = s.published;
     s.dev.mask_ref = s.mask_ref;
+    s.dev.seen = s.mask_ref ? s.mask_ref + (size_t)row_cap * kTopK * kHidden : nullptr;
     s.dev.shadow_stats = shadow_stats;
     s.dev.shadow_first = shadow_first;
     s.dev.max_rows = row_cap;
