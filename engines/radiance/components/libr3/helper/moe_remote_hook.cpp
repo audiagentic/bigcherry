@@ -130,7 +130,10 @@ void publish_layer_map(int layer, int n_expert, const int32_t* slot_of_expert) {
 }
 
 int owner_query(int layer, int expert) {
-    return g.hdr && layer >= 0 && expert >= 0 && owns(g.map, (uint32_t)layer, (uint32_t)expert) ? 1 : 0;
+    if (!g.hdr || layer < 0 || expert < 0) return 0;
+    for (uint32_t h = 0; h < g.hdr->helper_count && h < kMaxRanks; ++h)
+        if (owns(g.map, (uint32_t)layer, (uint32_t)expert, h)) return 1;
+    return 0;
 }
 
 void register_mailbox() {
@@ -283,21 +286,27 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
     void* dev_map = nullptr;
     if (!hip_ok(hipHostGetDevicePointer(&dev_map, g.map, 0), "hipHostGetDevicePointer"))
         return RAD_E_DEVICE;
-    if (!hip_ok(hipMalloc(reinterpret_cast<void**>(&s.owner), g.hdr->owner_slot_bytes),
+    const uint32_t helpers = g.hdr->helper_count;
+    if (helpers < 1 || helpers > kMaxRanks || (helpers > 1 && world_size != 1)) {
+        std::fprintf(stderr, "libr3: R3_MOE_HELPER %u helpers need a one-rank engine (world %d)\n",
+                     helpers, world_size);
+        return RAD_E_STATE;
+    }
+    if (!hip_ok(hipMalloc(reinterpret_cast<void**>(&s.owner), (size_t)kMaxRanks * g.hdr->owner_slot_bytes),
                 "hipMalloc ownership bitmap"))
         return RAD_E_NOMEM;
-    if (!hip_ok(hipMemcpy(s.owner, owner_bits(g.map), g.hdr->owner_slot_bytes,
+    if (!hip_ok(hipMemcpy(s.owner, owner_bits(g.map, 0), (size_t)kMaxRanks * g.hdr->owner_slot_bytes,
                           hipMemcpyHostToDevice), "upload ownership bitmap")) {
         (void)hipFree(s.owner);
         s.owner = nullptr;
         return RAD_E_DEVICE;
     }
-    if (!hip_ok(hipMalloc(reinterpret_cast<void**>(&s.sequence), 2 * sizeof(uint32_t)),
+    if (!hip_ok(hipMalloc(reinterpret_cast<void**>(&s.sequence), 2 * kMaxRanks * sizeof(uint32_t)),
                 "hipMalloc lane sequence counters") ||
-        !hip_ok(hipMemset(s.sequence, 0, 2 * sizeof(uint32_t)), "zero lane sequence counters") ||
-        !hip_ok(hipMalloc(reinterpret_cast<void**>(&s.published), sizeof(uint32_t)),
-                "hipMalloc published flag") ||
-        !hip_ok(hipMemset(s.published, 0, sizeof(uint32_t)), "zero published flag") ||
+        !hip_ok(hipMemset(s.sequence, 0, 2 * kMaxRanks * sizeof(uint32_t)), "zero lane sequence counters") ||
+        !hip_ok(hipMalloc(reinterpret_cast<void**>(&s.published), kMaxRanks * sizeof(uint32_t)),
+                "hipMalloc published flags") ||
+        !hip_ok(hipMemset(s.published, 0, kMaxRanks * sizeof(uint32_t)), "zero published flags") ||
         !hip_ok(hipMalloc(&s.maps, (size_t)max_rows() * kTopK * (sizeof(int32_t) + sizeof(uint32_t))),
                 "hipMalloc merge slot maps")) {
         if (s.maps) (void)hipFree(s.maps);
@@ -370,6 +379,7 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
     s.dev.max_rows = row_cap;
     s.dev.rank = (uint32_t)rank;
     s.dev.world = (uint32_t)world_size;
+    s.dev.helpers = helpers;
     s.dev.shadow = shadow ? 1u : 0u;
     /* 1: add the engine's captured rows; 2: same late publish/mask/rescatter, but add the helper's rows. */
     {

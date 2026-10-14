@@ -3,7 +3,8 @@
 # experts it owns at full width (R3_MOE_HELPER_ENGINE_RANKS=1). HELPER=0 runs the same R9700 engine without the
 # helper: the baseline for this layout.
 # Usage: B=<lane build dir> MODEL=<.rad> tools/lab/radiance/fn-r9700-engine.sh <out-dir>
-#   ENGINE_DEV (2, the R9700), HELPER_DEV (0, an XTX), HELPER_MIB (20480), HOST_POOL_MIB (45056), N (256),
+#   ENGINE_DEV (2, the R9700), HELPER_DEVS ("0": one XTX; "0 1": both, R3_MOE_HELPER_COUNT=2), HELPER_MIB
+#   (20480 a helper), HOST_POOL_MIB (45056), N (256),
 #   PROMPT (text file), EXTRA_ARGS
 set -euo pipefail
 
@@ -45,29 +46,37 @@ with open(sys.argv[1], "rb") as f:
 PY
 )
 
-helper_pid=
+helper_pids=()
 server_pid=
 cleanup() {
     set +e
     if [ -n "${server_pid:-}" ] && kill -0 "$server_pid" 2>/dev/null; then kill -INT "$server_pid"; wait "$server_pid"; fi
-    if [ -n "${helper_pid:-}" ] && kill -0 "$helper_pid" 2>/dev/null; then kill -TERM "$helper_pid"; wait "$helper_pid"; fi
+    for p in "${helper_pids[@]}"; do kill -0 "$p" 2>/dev/null && { kill -TERM "$p"; wait "$p"; }; done
 }
 trap cleanup EXIT INT TERM
 
 pgrep -x r3_moe_helper >/dev/null && { pkill -TERM -x r3_moe_helper; sleep 3; pkill -KILL -x r3_moe_helper; }
 rm -f /dev/shm/r3-moe-helper
+read -r -a helper_devs <<< "${HELPER_DEVS:-0}"
 if [ "${HELPER:-1}" != 0 ]; then
-    echo "== helper: HIP device ${HELPER_DEV:-0} (XTX), full expert width"
-    HIP_VISIBLE_DEVICES=${HELPER_DEV:-0} R3_MOE_HELPER_ENGINE_RANKS=1 R3_MOE_HELPER_MIB=${HELPER_MIB:-20480} \
-        RADIANCE_HOME="$home" "$helper" "$model" >"$out/helper.log" 2>&1 &
-    helper_pid=$!
-    deadline=$((SECONDS + 900))
-    until grep -qE '^r3_moe_helper: (ready |waiting for engine runtime expert maps)' "$out/helper.log"; do
-        kill -0 "$helper_pid" 2>/dev/null || { echo "HELPER_EXITED" >&2; tail -40 "$out/helper.log" >&2; exit 1; }
-        [ "$SECONDS" -lt "$deadline" ] || { echo "HELPER_READY_TIMEOUT" >&2; exit 1; }
-        sleep 1
+    i=0
+    for dev in "${helper_devs[@]}"; do
+        echo "== helper $i of ${#helper_devs[@]}: HIP device $dev (XTX), full expert width"
+        HIP_VISIBLE_DEVICES=$dev R3_MOE_HELPER_ENGINE_RANKS=1 R3_MOE_HELPER_MIB=${HELPER_MIB:-20480} \
+            R3_MOE_HELPER_COUNT=${#helper_devs[@]} R3_MOE_HELPER_INDEX=$i \
+            RADIANCE_HOME="$home" "$helper" "$model" >"$out/helper$i.log" 2>&1 &
+        helper_pids+=($!)
+        i=$((i + 1))
     done
-    grep -E "^r3_moe_helper: (owns|selected|ready|waiting)" "$out/helper.log"
+    deadline=$((SECONDS + 900))
+    for i in "${!helper_pids[@]}"; do
+        until grep -qE '^r3_moe_helper: (ready |waiting for engine runtime expert maps)' "$out/helper$i.log"; do
+            kill -0 "${helper_pids[$i]}" 2>/dev/null || { echo "HELPER_EXITED $i" >&2; tail -40 "$out/helper$i.log" >&2; exit 1; }
+            [ "$SECONDS" -lt "$deadline" ] || { echo "HELPER_READY_TIMEOUT $i" >&2; exit 1; }
+            sleep 1
+        done
+        grep -E "^r3_moe_helper: (owns|selected|ready|waiting)" "$out/helper$i.log"
+    done
 fi
 
 echo "== radiance: HIP device ${ENGINE_DEV:-2} (R9700), tp 1: ${engine_args[*]}"
@@ -79,9 +88,9 @@ server_pid=$!
 deadline=$((SECONDS + ${LOAD_TIMEOUT:-1500}))
 until curl -sf "http://127.0.0.1:$port/health" >/dev/null 2>&1; do
     kill -0 "$server_pid" 2>/dev/null || { echo "SERVER_EXITED_BEFORE_HEALTH" >&2; tail -60 "$out/server.log" >&2; exit 1; }
-    if [ -n "$helper_pid" ] && ! kill -0 "$helper_pid" 2>/dev/null; then
-        echo "HELPER_EXITED_DURING_LOAD" >&2; tail -60 "$out/helper.log" >&2; exit 1
-    fi
+    for i in "${!helper_pids[@]}"; do
+        kill -0 "${helper_pids[$i]}" 2>/dev/null || { echo "HELPER_EXITED_DURING_LOAD $i" >&2; tail -60 "$out/helper$i.log" >&2; exit 1; }
+    done
     [ "$SECONDS" -lt "$deadline" ] || { echo "SERVER_HEALTH_TIMEOUT" >&2; tail -60 "$out/server.log" >&2; exit 1; }
     sleep 1
 done
@@ -90,18 +99,20 @@ echo "== prefill/decode"
 python3 "$here/fn-bench-once.py" "http://127.0.0.1:$port" "${PROMPT:-/mnt/data/bigcherry-work/corpus/kld-docs.txt}" \
     "${N:-256}" "$out"
 
-[ -z "$helper_pid" ] || kill -0 "$helper_pid" 2>/dev/null || { echo "HELPER_DIED" >&2; tail -60 "$out/helper.log" >&2; exit 1; }
+for i in "${!helper_pids[@]}"; do
+    kill -0 "${helper_pids[$i]}" 2>/dev/null || { echo "HELPER_DIED $i" >&2; tail -60 "$out/helper$i.log" >&2; exit 1; }
+done
 kill -0 "$server_pid" 2>/dev/null || { echo "SERVER_DIED" >&2; tail -60 "$out/server.log" >&2; exit 1; }
 grep -E 'MoE remote hook active|R3_MOE_HELPER|error|abort|assert|fault' "$out/server.log" | tail -20 || true
 
 kill -INT "$server_pid"
 wait "$server_pid" || { echo "SERVER_STOP_FAILED" >&2; tail -60 "$out/server.log" >&2; exit 1; }
 server_pid=
-if [ -n "$helper_pid" ]; then
-    kill -TERM "$helper_pid"
-    wait "$helper_pid" || { echo "HELPER_STOP_FAILED" >&2; tail -60 "$out/helper.log" >&2; exit 1; }
-    helper_pid=
-    grep -E "served|large-lane" "$out/helper.log" || true
-fi
+for i in "${!helper_pids[@]}"; do
+    kill -TERM "${helper_pids[$i]}"
+    wait "${helper_pids[$i]}" || { echo "HELPER_STOP_FAILED $i" >&2; tail -60 "$out/helper$i.log" >&2; exit 1; }
+    grep -E "served|large-lane" "$out/helper$i.log" | sed "s/^/helper $i: /" || true
+done
+helper_pids=()
 trap - EXIT INT TERM
 echo "FN_R9700_ENGINE_DONE"

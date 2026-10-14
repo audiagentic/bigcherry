@@ -461,7 +461,8 @@ struct Owned {
     uint64_t bytes = 0;
 };
 
-bool select_owned(const Container& f, r3_moe_gpu::Runner* gpu, uint64_t budget, Owned* out) {
+bool select_owned(const Container& f, r3_moe_gpu::Runner* gpu, uint64_t budget, uint32_t helper,
+                  uint32_t helpers, Owned* out) {
     if (!out || !budget) {
         std::fprintf(stderr, "r3_moe_helper: no helper budget\n");
         return false;
@@ -491,11 +492,14 @@ bool select_owned(const Container& f, r3_moe_gpu::Runner* gpu, uint64_t budget, 
         return a->expert < b->expert;
     });
     std::vector<uint8_t> seen((size_t)f.layers * kExperts, 0);
+    uint64_t position = 0;
     for (const RadFileProfile* p : order) {
         const uint32_t l = (uint32_t)p->layer, e = (uint32_t)p->expert;
         uint8_t& was = seen[(size_t)l * kExperts + e];
         if (was) continue;
         was = 1;
+        /* Helper h of n takes every n-th candidate: disjoint sets, each spread over the same order. */
+        if (position++ % helpers != helper) continue;
         const int64_t bytes = gpu ? gpu->expert_bytes(l, e) : canonical_expert_bytes(f, l, e);
         if (bytes <= 0) {
             std::fprintf(stderr, "r3_moe_helper: expert (%u,%u) cannot be laid out as w4nl64a8h\n", l, e);
@@ -512,11 +516,11 @@ bool select_owned(const Container& f, r3_moe_gpu::Runner* gpu, uint64_t budget, 
     return true;
 }
 
-void publish_owned(void* map, const Owned& owned) {
+void publish_owned(void* map, const Owned& owned, uint32_t helper) {
     Header* h = static_cast<Header*>(map);
-    h->owned_bytes = owned.bytes;
+    __atomic_fetch_add(&h->owned_bytes, owned.bytes, __ATOMIC_ACQ_REL);
     for (auto [l, e] : owned.expert) {
-        if (!set_owned(map, l, e))
+        if (!set_owned(map, l, e, helper))
             std::fprintf(stderr, "r3_moe_helper: duplicate/invalid ownership (%u,%u)\n", l, e);
     }
 }
@@ -630,8 +634,9 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
         return 1;
     }
     init(map, model.layers);
-    publish_owned(map, owned);
+    publish_owned(map, owned, 0);
     Header* h = static_cast<Header*>(map);
+    h->helper_count = 1;
     std::memcpy(layer_slots(map, layer), runtime_slot.data(), sizeof(runtime_slot));
     store(&h->layer_map_ready[layer], 1);
     if (!gpu.load_layer(layer, owned.expert, runtime_slot.data())) {
@@ -828,9 +833,22 @@ int main(int argc, char** argv) {
         if (!gpu->open()) return 1;
     }
 
+    /* R3_MOE_HELPER_COUNT=2 with R3_MOE_HELPER_INDEX=0/1: two helpers (the XTX cards) behind a one-rank engine
+     * (the R9700) share one segment; helper 0 creates it, helper 1 attaches, each owns half the candidates and
+     * serves its own rank slot. */
+    uint32_t helper_index = 0, helper_count = 1;
+    if (const char* e = std::getenv("R3_MOE_HELPER_COUNT"); e && *e) helper_count = (uint32_t)std::atoi(e);
+    if (const char* e = std::getenv("R3_MOE_HELPER_INDEX"); e && *e) helper_index = (uint32_t)std::atoi(e);
+    if (helper_count < 1 || helper_count > kMaxRanks || helper_index >= helper_count ||
+        (helper_count > 1 && (!gpu || gpu->engine_ranks_ != 1 || compare))) {
+        std::fprintf(stderr, "r3_moe_helper: R3_MOE_HELPER_INDEX %u of R3_MOE_HELPER_COUNT %u: want index < count <= %u, "
+                     "and two helpers only on GPU behind a one-rank engine (R3_MOE_HELPER_ENGINE_RANKS=1), not --compare\n",
+                     helper_index, helper_count, kMaxRanks);
+        return 2;
+    }
     const uint64_t budget = helper_budget_bytes();
     Owned owned;
-    if (!select_owned(model, gpu.get(), budget, &owned)) return 1;
+    if (!select_owned(model, gpu.get(), budget, helper_index, helper_count, &owned)) return 1;
     if (gpu && !gpu->allocate(owned.expert)) return 1;
     const uint32_t lane_max_rows = helper_small_rows();
     const uint32_t lane_large_rows = helper_max_rows();
@@ -865,30 +883,51 @@ int main(int argc, char** argv) {
 
     const Layout lay = layout();
     const char* name = shm_name();
-    int fd = shm_open(name, O_CREAT | O_EXCL | O_RDWR | O_CLOEXEC, 0600);
+    const bool creator = helper_index == 0;
+    /* Only the creator removes the segment. */
+    auto drop_name = [&] { if (creator) shm_unlink(name); };
+    int fd = -1;
+    if (creator) {
+        fd = shm_open(name, O_CREAT | O_EXCL | O_RDWR | O_CLOEXEC, 0600);
+    } else {
+        for (int i = 0; i < 1800 && fd < 0 && !g_stop; ++i) {
+            fd = shm_open(name, O_RDWR | O_CLOEXEC, 0);
+            if (fd < 0) ::sleep(1);
+        }
+    }
     if (fd < 0) {
         std::fprintf(stderr, "r3_moe_helper: shm_open %s: %s\n", name, std::strerror(errno));
         return 1;
     }
-    if (ftruncate(fd, (off_t)lay.bytes) != 0) {
+    if (creator && ftruncate(fd, (off_t)lay.bytes) != 0) {
         std::fprintf(stderr, "r3_moe_helper: ftruncate: %s\n", std::strerror(errno));
-        shm_unlink(name); close(fd); return 1;
+        drop_name(); close(fd); return 1;
     }
     void* map = mmap(nullptr, lay.bytes, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     if (map == MAP_FAILED) {
         std::fprintf(stderr, "r3_moe_helper: mmap: %s\n", std::strerror(errno));
-        shm_unlink(name); close(fd); return 1;
+        drop_name(); close(fd); return 1;
     }
-    init(map, model.layers);
-    publish_owned(map, owned);
     auto* h = static_cast<Header*>(map);
-    h->small_rows = lane_max_rows;
+    if (creator) {
+        init(map, model.layers);
+        h->small_rows = lane_max_rows;
+        store(&h->helper_count, helper_count);   /* last: an attaching helper waits for it */
+    } else {
+        for (int i = 0; i < 1800 && !g_stop && load(&h->helper_count) != helper_count; ++i) ::sleep(1);
+        if (load(&h->helper_count) != helper_count || !valid(h, lay.bytes) || h->small_rows != lane_max_rows) {
+            std::fprintf(stderr, "r3_moe_helper: segment %s is not helper 0's %u-helper segment (small rows %u, ours %u)\n",
+                         name, helper_count, h->small_rows, lane_max_rows);
+            munmap(map, lay.bytes); close(fd); return 1;
+        }
+    }
+    publish_owned(map, owned, helper_index);
     void* dev_map = nullptr;
     if (!cpu) {
         if (!r3_moe_gpu::hip_ok(hipHostRegister(map, lay.bytes, hipHostRegisterPortable | hipHostRegisterMapped),
                                 "hipHostRegister mailbox") ||
             !r3_moe_gpu::hip_ok(hipHostGetDevicePointer(&dev_map, map, 0), "hipHostGetDevicePointer mailbox")) {
-            munmap(map, lay.bytes); close(fd); shm_unlink(name); return 1;
+            munmap(map, lay.bytes); close(fd); drop_name(); return 1;
         }
     }
 
@@ -911,21 +950,21 @@ int main(int argc, char** argv) {
             std::fprintf(stderr, "r3_moe_helper: layer %u has no runtime map (not declared by the engine); not owned\n",
                          layer);
             for (auto [l, e] : owned.expert)
-                if (l == layer) (void)clear_owned(map, l, e);
+                if (l == layer) (void)clear_owned(map, l, e, helper_index);
             continue;
         }
         any_map = true;
         const int32_t* slots = layer_slots(map, layer);
         if (!slots) {
-            munmap(map, lay.bytes); close(fd); shm_unlink(name); return 1;
+            munmap(map, lay.bytes); close(fd); drop_name(); return 1;
         }
         for (auto [l, e] : owned.expert)
-            if (l == layer && slots[e] < 0) (void)clear_owned(map, l, e);
+            if (l == layer && slots[e] < 0) (void)clear_owned(map, l, e, helper_index);
         if (gpu && !gpu->load_layer(layer, owned.expert, slots)) {
             std::fprintf(stderr, "r3_moe_helper: layer %u runtime table build failed\n", layer);
             store(&h->layer_map_consumed[layer], 1);
             (void)futex_wake(&h->layer_map_consumed[layer]);
-            munmap(map, lay.bytes); close(fd); shm_unlink(name); return 1;
+            munmap(map, lay.bytes); close(fd); drop_name(); return 1;
         }
         store(&h->layer_map_consumed[layer], 1);
         (void)futex_wake(&h->layer_map_consumed[layer]);
@@ -941,7 +980,7 @@ int main(int argc, char** argv) {
     h->owned_bytes = owned.bytes;
     if (gpu && !gpu->prepare_lanes(lane_max_rows, lane_large_rows)) {
         (void)hipHostUnregister(map);
-        munmap(map, lay.bytes); close(fd); shm_unlink(name); return 1;
+        munmap(map, lay.bytes); close(fd); drop_name(); return 1;
     }
     if (gpu) (void)posix_fadvise(model.fd, 0, 0, POSIX_FADV_DONTNEED);
     std::fprintf(stderr, "r3_moe_helper: runtime map owns %zu experts, %.3f GiB\n",
@@ -984,6 +1023,8 @@ int main(int argc, char** argv) {
         std::array<double, kLanes> lane_sample_us{};
         std::array<std::thread, kLanes> workers;
         for (uint32_t lane = 0; lane < kLanes; ++lane) {
+            /* Two helpers: each serves only its own rank slot's two lanes. */
+            if (helper_count > 1 && lane % kMaxRanks != helper_index) continue;
             workers[lane] = std::thread([&, lane] {
                 const bool large = lane >= kMaxRanks;
                 uint32_t next = 1;
@@ -1098,6 +1139,6 @@ int main(int argc, char** argv) {
     if (!cpu) (void)hipHostUnregister(map);
     munmap(map, lay.bytes);
     close(fd);
-    shm_unlink(name);
+    drop_name();
     return 0;
 }

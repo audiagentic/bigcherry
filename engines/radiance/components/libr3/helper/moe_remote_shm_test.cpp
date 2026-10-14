@@ -31,13 +31,13 @@ int main() {
     store(&h->layer_map_ready[7], 1);
     check(layer_slot(m, 7, 3) == -1 && layer_slot(m, 7, 23) == 22,
           "runtime map preserves protection and compact slots");
-    check(!owns(m, 7, 23), "ownership starts clear");
-    check(set_owned(m, 7, 23), "publish ownership");
-    check(owns(m, 7, 23) && h->owned_count == 1, "ownership is visible");
-    check(!set_owned(m, 7, 23) && h->owned_count == 1, "duplicate ownership is idempotent");
-    check(clear_owned(m, 7, 23) && !owns(m, 7, 23) && h->owned_count == 0,
+    check(!owns(m, 7, 23, 0), "ownership starts clear");
+    check(set_owned(m, 7, 23, 0), "publish ownership");
+    check(owns(m, 7, 23, 0) && !owns(m, 7, 23, 1) && h->owned_count == 1, "ownership is visible, per helper");
+    check(!set_owned(m, 7, 23, 0) && h->owned_count == 1, "duplicate ownership is idempotent");
+    check(clear_owned(m, 7, 23, 0) && !owns(m, 7, 23, 0) && h->owned_count == 0,
           "runtime protection clears candidate ownership");
-    check(set_owned(m, 7, 23) && h->owned_count == 1, "ownership can be restored");
+    check(set_owned(m, 7, 23, 0) && h->owned_count == 1, "ownership can be restored");
     check(h->result_offset[0] != h->result_offset[kMaxRanks] &&
           h->result_offset[1] != h->result_offset[kMaxRanks + 1],
           "producer ranks have isolated result slots");

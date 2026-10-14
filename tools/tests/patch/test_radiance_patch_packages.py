@@ -246,7 +246,7 @@ class TestRadiancePatchPackages(unittest.TestCase):
         self.assertIn('"moe_mailbox_mask_ref"', ops)
         self.assertIn('if (mask_only == 1u) src = mask_ref + (uint64_t)flat * hidden;', ops)
         self.assertIn('r.weight_bf16 != ew[flat]', ops)
-        self.assertIn('remote_slot[slot] && local_index[slot] >= 0', ops)
+        self.assertIn('if (mask_only && m && local_index[slot] >= 0) __builtin_trap();', ops)
         self.assertIn('hipMemsetAsync(d->mask_ref, 0', ops)
         self.assertIn('dlsym(RTLD_DEFAULT, "rad_moe_remote_set_layer_map_hook")', hook)
         self.assertIn('g.set_layer_map(publish_layer_map)', hook)

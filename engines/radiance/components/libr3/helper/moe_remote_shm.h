@@ -11,7 +11,7 @@
 namespace r3::moe_shm {
 
 constexpr uint64_t kMagic = 0x31454f4d33485253ull; /* "SRH3MOE1": reject unrelated/stale shm. */
-constexpr uint32_t kVersion = 9;   /* 9: small (pre-queued) and large (sized on arrival) lanes a rank */
+constexpr uint32_t kVersion = 10;  /* 10: up to kMaxRanks helpers share a segment behind a one-rank engine */
 constexpr uint32_t kPage = 4096;
 constexpr uint32_t kMaxRanks = 2;       /* Flash-Next configuration of record: TP=2. */
 constexpr uint32_t kMaxLayers = 128;     /* ownership bitmap bound; Flash-Next is below this. */
@@ -88,10 +88,10 @@ struct alignas(kPage) Header {
     uint32_t route_slot_bytes[kMaxRanks];      /* per-rank routing-list capacity. */
     uint32_t activation_slot_bytes[kMaxRanks]; /* per-rank BF16 reference + exact E4M3 q/F32 scale staging. */
     uint32_t result_slot_bytes[kMaxRanks * kMaxRanks]; /* [producer rank][output rank]. */
-    uint32_t owned_count;            /* number of set (layer, expert) ownership bits. */
+    uint32_t owned_count;            /* number of set (layer, expert) ownership bits, all helpers. */
     uint32_t owner_slot_bytes;       /* fixed bitmap bytes at owner_offset. */
     uint64_t owned_bytes;            /* resident expert bytes charged against helper budget. */
-    uint64_t owner_offset;           /* [kMaxLayers][kExperts] bitset. */
+    uint64_t owner_offset;           /* [kMaxRanks helpers][kMaxLayers][kExperts] bitsets. */
     uint32_t layer_map_slot_bytes;   /* int32_t[kMaxLayers][kExperts], -1 means protected/not regular. */
     uint32_t layer_map_ready[kMaxLayers];    /* engine release-stores after publishing one layer map. */
     uint32_t layer_map_consumed[kMaxLayers]; /* helper release-stores after rebuilding that layer. */
@@ -100,6 +100,10 @@ struct alignas(kPage) Header {
     uint32_t publish_sequence;      /* newest published ticket; helper FUTEX_WAITs here. */
     LaneSignal lane[kLanes];          /* GPU-only request/done words, one cache line per lane (lane_of). */
     uint32_t small_rows;            /* helper-set: steps above this many rows go to the large lane. */
+    /* Helpers serving this segment (helper 0 sets it). 1: one helper serves every rank's slot. 2: a one-rank
+     * engine (the R9700) with two helpers (the XTX cards); helper h owns bitmap h and serves rank slot h, and
+     * the engine sends each route to the slot of the helper that owns its expert. */
+    uint32_t helper_count;
     uint64_t ring_offset;           /* Request[kRingSlots], page aligned. */
     uint64_t route_offset[kMaxRanks];
     uint64_t activation_offset[kMaxRanks];
@@ -132,7 +136,7 @@ constexpr Layout layout() {
     x.ring = at;
     at = align_page(at + sizeof(Request) * kRingSlots);
     x.owner = at;
-    at = align_page(at + owner_slot_bytes());
+    at = align_page(at + (uint64_t)kMaxRanks * owner_slot_bytes());
     x.layer_map = at;
     at = align_page(at + layer_map_slot_bytes());
     for (uint32_t r = 0; r < kMaxRanks; ++r) {
@@ -217,13 +221,13 @@ inline const Request* lane_request(const void* base, uint32_t lane, uint32_t seq
     return ptr<Request>(base, h->ring_offset) + lane * kLaneSlots + ((seq - 1) % kLaneSlots);
 }
 
-inline uint8_t* owner_bits(void* base) {
+inline uint8_t* owner_bits(void* base, uint32_t helper) {
     auto* h = static_cast<Header*>(base);
-    return ptr<uint8_t>(base, h->owner_offset);
+    return ptr<uint8_t>(base, h->owner_offset) + (size_t)helper * h->owner_slot_bytes;
 }
-inline const uint8_t* owner_bits(const void* base) {
+inline const uint8_t* owner_bits(const void* base, uint32_t helper) {
     auto* h = static_cast<const Header*>(base);
-    return ptr<uint8_t>(base, h->owner_offset);
+    return ptr<uint8_t>(base, h->owner_offset) + (size_t)helper * h->owner_slot_bytes;
 }
 inline int32_t* layer_slots(void* base, uint32_t layer) {
     auto* h = static_cast<Header*>(base);
@@ -242,32 +246,32 @@ inline int32_t layer_slot(const void* base, uint32_t layer, uint32_t expert) {
 inline uint64_t owner_bit(uint32_t layer, uint32_t expert) {
     return (uint64_t)layer * kExperts + expert;
 }
-inline bool owns(const void* base, uint32_t layer, uint32_t expert) {
+inline bool owns(const void* base, uint32_t layer, uint32_t expert, uint32_t helper) {
     const auto* h = static_cast<const Header*>(base);
-    if (!h || layer >= h->layer_count || expert >= kExperts) return false;
+    if (!h || layer >= h->layer_count || expert >= kExperts || helper >= kMaxRanks) return false;
     const uint64_t bit = owner_bit(layer, expert);
-    return (owner_bits(base)[bit >> 3] & (uint8_t)(1u << (bit & 7u))) != 0;
+    return (owner_bits(base, helper)[bit >> 3] & (uint8_t)(1u << (bit & 7u))) != 0;
 }
-inline bool set_owned(void* base, uint32_t layer, uint32_t expert) {
+inline bool set_owned(void* base, uint32_t layer, uint32_t expert, uint32_t helper) {
     auto* h = static_cast<Header*>(base);
-    if (!h || layer >= h->layer_count || expert >= kExperts) return false;
+    if (!h || layer >= h->layer_count || expert >= kExperts || helper >= kMaxRanks) return false;
     const uint64_t bit = owner_bit(layer, expert);
-    uint8_t* b = owner_bits(base) + (bit >> 3);
+    uint8_t* b = owner_bits(base, helper) + (bit >> 3);
     const uint8_t mask = (uint8_t)(1u << (bit & 7u));
     if (*b & mask) return false;
     *b |= mask;
-    ++h->owned_count;
+    __atomic_fetch_add(&h->owned_count, 1u, __ATOMIC_ACQ_REL);
     return true;
 }
-inline bool clear_owned(void* base, uint32_t layer, uint32_t expert) {
+inline bool clear_owned(void* base, uint32_t layer, uint32_t expert, uint32_t helper) {
     auto* h = static_cast<Header*>(base);
-    if (!h || layer >= h->layer_count || expert >= kExperts) return false;
+    if (!h || layer >= h->layer_count || expert >= kExperts || helper >= kMaxRanks) return false;
     const uint64_t bit = owner_bit(layer, expert);
-    uint8_t* b = owner_bits(base) + (bit >> 3);
+    uint8_t* b = owner_bits(base, helper) + (bit >> 3);
     const uint8_t mask = (uint8_t)(1u << (bit & 7u));
     if (!(*b & mask)) return false;
     *b &= (uint8_t)~mask;
-    if (h->owned_count) --h->owned_count;
+    __atomic_fetch_sub(&h->owned_count, 1u, __ATOMIC_ACQ_REL);
     return true;
 }
 

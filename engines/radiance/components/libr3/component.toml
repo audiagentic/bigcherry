@@ -64,6 +64,16 @@ default = "2"
 status = "experimental"
 summary = "engine TP ranks the helper serves: 2 = two XTX ranks, each asking for its TP slice; 1 = one engine (the R9700, RAD02) asking for full expert width (the helper runs both slices and sums them)"
 
+[setting.R3_MOE_HELPER_COUNT]
+default = "1"
+status = "experimental"
+summary = "helpers sharing the segment: 2 = two XTX helpers behind a one-rank (R9700) engine, each owning half the candidates and serving its own rank slot"
+
+[setting.R3_MOE_HELPER_INDEX]
+default = "0"
+status = "experimental"
+summary = "this helper's index under R3_MOE_HELPER_COUNT: 0 creates the segment, 1 attaches to it"
+
 [setting.R3_MOE_HELPER_SMALL_ROWS]
 default = "64"
 status = "experimental"

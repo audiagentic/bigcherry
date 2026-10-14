@@ -30,8 +30,8 @@ struct R3MoeShadowFirst {
 struct R3MoeMailboxDevice {
     void* mailbox = nullptr;
     const uint8_t* owner = nullptr;
-    uint32_t* sequence = nullptr;   /* [2]: per-lane-class request counters (small, large) */
-    uint32_t* published = nullptr;
+    uint32_t* sequence = nullptr;   /* [kMaxRanks slots][2 lane classes] request counters */
+    uint32_t* published = nullptr;  /* [kMaxRanks slots]: 0, or 1 + the lane class of this step's request */
     uint16_t* mask_ref = nullptr;
     int32_t* inv = nullptr;     /* [max_rows * top_k] engine sorted row of each locally computed slot, else -1. */
     uint32_t* rmask = nullptr;  /* [max_rows * top_k] 1 where the helper computed the slot. */
@@ -40,6 +40,7 @@ struct R3MoeMailboxDevice {
     uint32_t max_rows = 0;
     uint32_t rank = 0;
     uint32_t world = 0;   /* engine TP ranks: 1 asks the helper for full expert width, 2 for this rank's slice */
+    uint32_t helpers = 1; /* 1: this rank's slot only; 2 (world 1): slot h is helper h's */
     uint32_t shadow = 0;
     uint32_t mask_only = 0;
     uint32_t cpu_ref = 0;
