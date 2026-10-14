@@ -242,6 +242,8 @@ class TestRadiancePatchPackages(unittest.TestCase):
         self.assertIn('hipMalloc mask-only engine rows', hook)
         self.assertIn('"moe_mailbox_mask_ref"', ops)
         self.assertIn('(mask_only ? mask_ref : result)', ops)
+        self.assertIn('r.weight_bf16 != ew[flat]', ops)
+        self.assertIn('remote_slot[slot] && local_index[slot] >= 0', ops)
         self.assertIn('hipMemsetAsync(d->mask_ref, 0', ops)
         self.assertIn('dlsym(RTLD_DEFAULT, "rad_moe_remote_set_layer_map_hook")', hook)
         self.assertIn('g.set_layer_map(publish_layer_map)', hook)
