@@ -471,6 +471,16 @@ ownership.
 | `tools/lab/radiance/build.sh` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/radiance/fetch-gcc14.sh` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/radiance/run-radiance.sh` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/radiance/fn-bench-once.py` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, replaced by bigcherry commands under MEN11/MEN14. |
+| `tools/lab/radiance/fn-helper-gate.sh` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, replaced by bigcherry commands under MEN11/MEN14. |
+| `tools/lab/radiance/fn-helper-kld.sh` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, replaced by bigcherry commands under MEN11/MEN14. |
+| `tools/lab/radiance/fn-helper.sh` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, replaced by bigcherry commands under MEN11/MEN14. |
+| `tools/lab/radiance/fn-profile-compare.py` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, replaced by bigcherry commands under MEN11/MEN14. |
+| `tools/lab/radiance/fn-profile.sh` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, replaced by bigcherry commands under MEN11/MEN14. |
+| `tools/lab/radiance/fn-r9700-engine.sh` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, replaced by bigcherry commands under MEN11/MEN14. |
+| `tools/lab/radiance/fn-r9700-kld.sh` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, replaced by bigcherry commands under MEN11/MEN14. |
+| `tools/lab/radiance/gpu-mailbox/README.md` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, replaced by bigcherry commands under MEN11/MEN14. |
+| `tools/lab/radiance/gpu-mailbox/mailbox_probe.cpp` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, replaced by bigcherry commands under MEN11/MEN14. |
 | `tools/lab/rccl/ar-latency.hip` | **TRANSITIONAL** | `rccl` lab topic file (see `tools/lab/rccl/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/rccl/ar-latency.sh` | **TRANSITIONAL** | `rccl` lab topic file (see `tools/lab/rccl/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/rccl/bidir-check.hip` | **TRANSITIONAL** | `rccl` lab topic file (see `tools/lab/rccl/README.md`); experiment-only, disposed per that README. |
