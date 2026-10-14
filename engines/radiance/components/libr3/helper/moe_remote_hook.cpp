@@ -107,6 +107,15 @@ void publish_layer_map(int layer, int n_expert, const int32_t* slot_of_expert) {
     } else {
         std::memcpy(dst, slot_of_expert, (size_t)n_expert * sizeof(int32_t));
         for (int e = n_expert; e < (int)kExperts; ++e) dst[e] = -1;
+        /* Layers with protected experts stay fully local for now: shadow still disagrees on exactly those
+         * layers (34/44/46/47 on Flash-Next) after the runtime map. An all-local map means the helper owns
+         * nothing there and publish sends nothing. */
+        bool protected_layer = false;
+        for (int e = 0; e < n_expert; ++e) protected_layer |= slot_of_expert[e] < 0;
+        if (protected_layer) {
+            for (int e = 0; e < (int)kExperts; ++e) dst[e] = -1;
+            std::fprintf(stderr, "libr3: R3_MOE_HELPER layer %d has protected experts; kept local\n", layer);
+        }
         store(&g.hdr->layer_map_ready[layer], 1);
         (void)futex_wake(&g.hdr->layer_map_ready[layer]);
     }
