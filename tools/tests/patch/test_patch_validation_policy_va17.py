@@ -114,7 +114,7 @@ class MultiContractHasContractTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
             _write_package(root, validation_architectures='"gfx1201"')
-            report = vp.check_validation_packages(root=root)
+            report = vp.check_validation_packages(engine="llamacpp", root=root)
             problems = [p for p in report.problems if "9999_va17_policy_test" in p]
             self.assertFalse(
                 any("no experiment-contract bound" in p for p in problems),
@@ -130,7 +130,7 @@ class ArchitectureUnionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
             _write_package(root, validation_architectures='"gfx1201"')
-            report = vp.check_validation_packages(root=root)
+            report = vp.check_validation_packages(engine="llamacpp", root=root)
             problems = [p for p in report.problems if "9999_va17_policy_test" in p]
             self.assertFalse(
                 any("validation-architectures" in p for p in problems),
@@ -147,7 +147,7 @@ class ArchitectureUnionTests(unittest.TestCase):
             # contradicts the declared set). Both are real, correct
             # fail-closed signals for the same underlying mismatch.
             _write_package(root, validation_architectures='"gfx1100"')
-            report = vp.check_validation_packages(root=root)
+            report = vp.check_validation_packages(engine="llamacpp", root=root)
             problems = [p for p in report.problems if "9999_va17_policy_test" in p]
             self.assertTrue(
                 any("architectures" in p for p in problems),
@@ -185,7 +185,7 @@ class ArchitectureUnionTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            report = vp.check_validation_packages(root=root)
+            report = vp.check_validation_packages(engine="llamacpp", root=root)
             problems = [p for p in report.problems if "9999_va17_policy_test" in p]
             self.assertTrue(
                 any("validation-architectures" in p for p in problems),

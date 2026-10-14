@@ -72,6 +72,9 @@ class EngineLayout:
     name: str
     upstream: str
     patches: str
+    #: what every patch ID of this engine starts with before its order digits ("" for llama.cpp, "rad" for radiance),
+    #: so IDs never collide across engines
+    patch_id_prefix: str
     overlay: str
     vendor: str
     recipes: str
@@ -228,13 +231,14 @@ def load(repo_root: Path, name: str) -> EngineLayout:
     layout = data.get("layout")
     if not isinstance(layout, dict):
         raise EngineError(f"engine {name!r}: missing [layout] table")
-    unknown = sorted(set(layout) - {"patches", "overlay", "vendor", "recipes"})
+    unknown = sorted(set(layout) - {"patches", "patch-id-prefix", "overlay", "vendor", "recipes"})
     if unknown:
         raise EngineError(f"engine {name!r}: unknown layout key(s): {', '.join(unknown)}")
     return EngineLayout(
         name=name,
         upstream=upstream,
         patches=_relative(layout.get("patches"), "patches", name),
+        patch_id_prefix=_patch_id_prefix(layout.get("patch-id-prefix"), name),
         overlay=_relative(layout.get("overlay"), "overlay", name),
         vendor=_relative(layout.get("vendor"), "vendor", name),
         recipes=_relative(layout.get("recipes"), "recipes", name),
@@ -242,6 +246,12 @@ def load(repo_root: Path, name: str) -> EngineLayout:
         **_build_table(data.get("build"), name),
         components=_components(data.get("components", {}), name),
     )
+
+
+def _patch_id_prefix(value: object, name: str) -> str:
+    if not isinstance(value, str) or not re.fullmatch(r"[a-z]*", value):
+        raise EngineError(f"engine {name!r}: layout.patch-id-prefix must be a lowercase string (\"\" for none)")
+    return value
 
 
 def names(repo_root: Path) -> tuple[str, ...]:

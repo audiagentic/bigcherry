@@ -24,17 +24,17 @@ PACKAGES = REPO / "engines" / "radiance" / "patches"
 FIXTURE = REPO / "engines" / "radiance" / "tests" / "fixtures" / "89cee7c"
 
 CASES = {
-    "0001_drain_mover_before_arena_free": (
+    "rad0001_drain_mover_before_arena_free": (
         "core/engine.cpp",
         "for (auto& r : ranks_) r->ctx.shutdown();",
         "for (auto& r : ranks_) r->ctx.shutdown_now();",
     ),
-    "0002_moe_remote_handoff": (
+    "rad0002_moe_remote_handoff": (
         "arch/common/rad_block_moe_fp8.h",
         "rad_op op_ar = 0, op_add = 0;",
         "rad_op op_ar = 0, op_add = 0, int changed_shape;",
     ),
-    "0003_mtp_full_head_switch": (
+    "rad0003_mtp_full_head_switch": (
         "arch/common/rad_block_mtp_fp8.h",
         "if (!head || !lm) return false;",
         "if (!head || !lm) return true;",
@@ -49,10 +49,10 @@ CASES = {
 # 0003: diff body was amended to std::atoi(e) != 0 after its index line
 # was generated; 62849e9 is stale and the corrected hunk produces 8e1f89e.
 PIN_BLOBS = {
-    "0001_drain_mover_before_arena_free": {
+    "rad0001_drain_mover_before_arena_free": {
         "core/engine.cpp": ("3ba2831", "20767f7"),
     },
-    "0002_moe_remote_handoff": {
+    "rad0002_moe_remote_handoff": {
         "abi/rad_moe_remote.h": (None, "f6e911b"),
         "arch/common/rad_block_hc.h": ("c19c8b6", "df35634"),
         "arch/common/rad_block_moe_fp8.h": ("51b7c28", "3170170"),
@@ -60,7 +60,7 @@ PIN_BLOBS = {
         "core/place/planner.cpp": ("e7a413d", "cb382bf"),
         "core/engine_bringup.cpp": ("d1bd222", "0e0a616"),
     },
-    "0003_mtp_full_head_switch": {
+    "rad0003_mtp_full_head_switch": {
         "arch/common/rad_block_mtp_fp8.h": ("dac7f12", "8e1f89e"),
     },
 }
@@ -130,7 +130,7 @@ class TestRadiancePatchPackages(unittest.TestCase):
                                 f"{package_id}:{patch.path}:{edit.id}",
                             )
 
-                    if package_id == "0002_moe_remote_handoff":
+                    if package_id == "rad0002_moe_remote_handoff":
                         self.assertTrue((root / "abi/rad_moe_remote.h").is_file())
                         self.assertTrue((root / "core/place/moe_remote.cpp").is_file())
                         moe = (root / "arch/common/rad_block_moe_fp8.h").read_text(encoding="utf-8")
@@ -195,7 +195,7 @@ class TestRadiancePatchPackages(unittest.TestCase):
                         self.assertIn(
                             "(!remote_active && takes_ar(T)) ? ar_write(T) : op_write", hc
                         )
-                    if package_id == "0003_mtp_full_head_switch":
+                    if package_id == "rad0003_mtp_full_head_switch":
                         text = (root / "arch/common/rad_block_mtp_fp8.h").read_text(encoding="utf-8")
                         self.assertIn("std::atoi(e) != 0", text)
                         self.assertNotIn("*e == 1", text)
@@ -288,7 +288,7 @@ class TestRadiancePatchPackages(unittest.TestCase):
                     results = apply_all(list(_load(package_id)), root)
                     self.assertTrue(any(not result.ok for result in results), results)
                     self.assertEqual(_snapshot(root), before_apply)
-                    if package_id == "0002_moe_remote_handoff":
+                    if package_id == "rad0002_moe_remote_handoff":
                         self.assertFalse((root / "abi/rad_moe_remote.h").exists())
                         self.assertFalse((root / "core/place/moe_remote.cpp").exists())
                 finally:
