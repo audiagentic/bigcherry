@@ -3,7 +3,7 @@ id: BCOP219
 order: 219
 plan: patching-bc-optimizations
 state: pending
-created-at: '2026-10-15T00:00:00Z'
+created-at: '2026-10-14T23:11:28Z'
 created-by: agent
 priority: P1
 work: S
