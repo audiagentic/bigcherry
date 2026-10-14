@@ -249,7 +249,10 @@ __global__ void mailbox_add_wait_kernel(
         const uint32_t seq = sequence[slot * 2u + large];
         const uint32_t lane = lane_of(slot, large);
         unsigned long long spins = 0;
-        while ((int32_t)(load_sys_acq(&h->lane[lane].done_sequence) - seq) < 0) {
+        /* Exactly this request's generation: one request is in flight a lane, so the helper's done word
+         * reaches seq and no further before the engine's next publish. */
+        while (load_sys_acq(&h->lane[lane].done_sequence) != seq) {
+            if (load_sys_acq(&h->helper_fault)) __builtin_trap();   /* a helper stopped: fail now, not hang */
             __builtin_amdgcn_s_sleep(2);
             if (++spins > 4000000000ULL) __builtin_trap();
         }
@@ -284,8 +287,8 @@ __global__ void mailbox_route_mark_kernel(
         const Request* q = slot_request(base, sequence, published, slot);
         if (!q) continue;
         const uint32_t large = published[slot] - 1u;
-        if ((int32_t)(load_sys_acq(&h->lane[lane_of(slot, large)].done_sequence) -
-                      sequence[slot * 2u + large]) < 0) __builtin_trap();
+        if (load_sys_acq(&h->lane[lane_of(slot, large)].done_sequence) != sequence[slot * 2u + large])
+            __builtin_trap();
         if (q->sequence != sequence[slot * 2u + large] || q->rank != slot || q->rows != rows ||
             q->hidden != hidden || q->status != 0 || q->route_count == 0 || q->route_count > rows * top_k)
             __builtin_trap();

@@ -1149,6 +1149,8 @@ int main(int argc, char** argv) {
         }
         while (!g_stop) ::sleep(1);
         for (auto& w : workers) if (w.joinable()) w.join();
+        /* The lanes are gone: an engine still waiting on them must fail rather than hang. */
+        store(&h->helper_fault, 1u);
         uint64_t timing_samples = 0;
         double sampled_us = 0.0;
         for (uint32_t lane = 0; lane < kLanes; ++lane) {

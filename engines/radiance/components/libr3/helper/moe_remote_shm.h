@@ -12,7 +12,7 @@
 namespace r3::moe_shm {
 
 constexpr uint64_t kMagic = 0x31454f4d33485253ull; /* "SRH3MOE1": reject unrelated/stale shm. */
-constexpr uint32_t kVersion = 10;  /* 10: up to kMaxRanks helpers share a segment behind a one-rank engine */
+constexpr uint32_t kVersion = 11;  /* 11: helper_fault; completion is an exact generation */
 constexpr uint32_t kPage = 4096;
 constexpr uint32_t kMaxRanks = 2;       /* Flash-Next configuration of record: TP=2. */
 constexpr uint32_t kMaxLayers = 128;     /* ownership bitmap bound; Flash-Next is below this. */
@@ -105,6 +105,9 @@ struct alignas(kPage) Header {
      * engine (the R9700) with two helpers (the XTX cards); helper h owns bitmap h and serves rank slot h, and
      * the engine sends each route to the slot of the helper that owns its expert. */
     uint32_t helper_count;
+    /* Set by a helper whose lanes stopped (error or shutdown): an engine still waiting traps at once
+     * instead of spinning on a done word that will never move. */
+    uint32_t helper_fault;
     uint64_t ring_offset;           /* Request[kRingSlots], page aligned. */
     uint64_t route_offset[kMaxRanks];
     uint64_t activation_offset[kMaxRanks];
