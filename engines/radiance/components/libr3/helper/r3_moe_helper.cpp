@@ -779,7 +779,13 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
 } // namespace
 
 int main(int argc, char** argv) {
-    bool compare = argc > 1 && std::strcmp(argv[1], "--compare") == 0;
+    /* EVERY LANE STREAM ON ITS OWN HARDWARE QUEUE. A small lane pre-queues "wait for the next request" packets;
+     * a stream sharing a hardware queue with one sits behind that wait until a small request arrives. With
+     * every step large (KL mode's 64-token steps over an 8-row small lane) none ever does, and the large lane's
+     * work never runs. HIP maps streams onto GPU_MAX_HW_QUEUES queues (4 by default) and the helper opens five
+     * streams (four lanes and its own), so it asks for more before HIP initialises; an explicit setting wins. */
+    (void)::setenv("GPU_MAX_HW_QUEUES", "8", 0);
+    bool compare =argc > 1 && std::strcmp(argv[1], "--compare") == 0;
     bool synthetic_protect = compare && argc > 2 &&
         std::strcmp(argv[argc - 1], "--synthetic-protect") == 0;
     const int carg = argc - (synthetic_protect ? 1 : 0);
