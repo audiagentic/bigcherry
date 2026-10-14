@@ -1,16 +1,8 @@
 # 1267_rd07_q6k_mmq_scale_fold
 
-**Status:** untested
-**Plan item:** PRBE110
+**Status:** untested; **known_broken on b11552** (not adopted).
+**Plan item:** PRBE110; downstream PRBE04.
 
-## What it does
+Hoists Q6_K MMQ row scales and folds sub-scales outside the j0 loop. Historical b11126 gfx1201 pp512 +2.4675% (CI95 [2.2776%,2.6508%]); not a current-pin or validated-state gain.
 
-Hoists and folds Q6_K MMQ scales and emits a one-shot activation marker from the composed forced-J dispatch path.
-
-## Why
-
-RD07 is isolated from rejected bundle 1203 and requires fresh validation under its own identity.
-
-## Upstream
-
-Adapted from stew675 RD07. Requires `0300_mmq_forced_j` because the activation edit anchors on its composed Q6_K dispatch signature.
+**Blocker:** b11552/0300 changed Q6_K dispatch to `mul_mat_q_case<GGML_TYPE_Q6_K, GGML_PREC_Q8>(...)`, invalidating the old `forced_J` marker anchor; the old `mmq.cuh` J-max anchor also disappeared. 0300 already owns preallocation J and HIP `GGML_HIP_MMQ_FORCE_J`. Keep 1267 default-off until PRBE110 proves an eligible Q6_K route and reworks this same package without a duplicate J selector. Preserve PEF01 quarantine and gfx1100/gfx1030 stock fallback.
