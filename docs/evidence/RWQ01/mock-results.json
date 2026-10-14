@@ -1,0 +1,103 @@
+{
+  "gpu_tested": false,
+  "groups_per_rank": 8,
+  "kind": "synthetic-cpu-only",
+  "model_kl_tested": false,
+  "results": {
+    "gaussian": {
+      "wht4": {
+        "max_abs": 0.5390625,
+        "payload_ratio_to_bf16": 0.265625,
+        "rel_l2": 0.09923772840682822,
+        "rmse": 0.14503830248789998,
+        "wire_bytes_per_rank": 272
+      },
+      "wht6": {
+        "max_abs": 0.109375,
+        "payload_ratio_to_bf16": 0.390625,
+        "rel_l2": 0.02255687956811167,
+        "rmse": 0.03296741647058703,
+        "wire_bytes_per_rank": 400
+      },
+      "wht8": {
+        "max_abs": 0.03857421875,
+        "payload_ratio_to_bf16": 0.515625,
+        "rel_l2": 0.005892425764964728,
+        "rmse": 0.008611920528681162,
+        "wire_bytes_per_rank": 528
+      }
+    },
+    "heavy_tail": {
+      "wht4": {
+        "max_abs": 1.62890625,
+        "payload_ratio_to_bf16": 0.265625,
+        "rel_l2": 0.05565492545278928,
+        "rmse": 0.5509756718229109,
+        "wire_bytes_per_rank": 272
+      },
+      "wht6": {
+        "max_abs": 0.3828125,
+        "payload_ratio_to_bf16": 0.390625,
+        "rel_l2": 0.012317818937748441,
+        "rmse": 0.1219446169301945,
+        "wire_bytes_per_rank": 400
+      },
+      "wht8": {
+        "max_abs": 0.25,
+        "payload_ratio_to_bf16": 0.515625,
+        "rel_l2": 0.003187117151823226,
+        "rmse": 0.03155199651455317,
+        "wire_bytes_per_rank": 528
+      }
+    },
+    "scale_mixed": {
+      "wht4": {
+        "max_abs": 8.6875,
+        "payload_ratio_to_bf16": 0.265625,
+        "rel_l2": 0.1013152576707261,
+        "rmse": 1.586159963903168,
+        "wire_bytes_per_rank": 272
+      },
+      "wht6": {
+        "max_abs": 1.46875,
+        "payload_ratio_to_bf16": 0.390625,
+        "rel_l2": 0.023525905029069143,
+        "rmse": 0.368314205871873,
+        "wire_bytes_per_rank": 400
+      },
+      "wht8": {
+        "max_abs": 0.375,
+        "payload_ratio_to_bf16": 0.515625,
+        "rel_l2": 0.005996499025903229,
+        "rmse": 0.09387931193329296,
+        "wire_bytes_per_rank": 528
+      }
+    },
+    "sparse": {
+      "wht4": {
+        "max_abs": 0.1865234375,
+        "payload_ratio_to_bf16": 0.265625,
+        "rel_l2": 0.08249200184543878,
+        "rmse": 0.03289787070418916,
+        "wire_bytes_per_rank": 272
+      },
+      "wht6": {
+        "max_abs": 0.033935546875,
+        "payload_ratio_to_bf16": 0.390625,
+        "rel_l2": 0.01777154840223292,
+        "rmse": 0.007087306508154825,
+        "wire_bytes_per_rank": 400
+      },
+      "wht8": {
+        "max_abs": 0.01171875,
+        "payload_ratio_to_bf16": 0.515625,
+        "rel_l2": 0.004856312414323581,
+        "rmse": 0.0019367009447158862,
+        "wire_bytes_per_rank": 528
+      }
+    }
+  },
+  "schema": 1,
+  "seed": 7107,
+  "wire_layout": "logical-bitstream-not-gpu-interleaved"
+}
