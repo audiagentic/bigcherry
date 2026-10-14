@@ -304,6 +304,18 @@ __global__ void mailbox_add_rows_kernel(
             /* The helper's rows live in host-mapped memory the R9700 rewrites every request; a cached
              * read can return the previous request's row. Read them non-temporally (bypass caches). */
             const uint16_t v = (remote_slot[slot] && !mask_only) ? __builtin_nontemporal_load(src + col) : src[col];
+            /* Mask-only diagnostic: the helper's row for this remote slot is in `result` at the same
+             * moment; report the first element that differs materially from the engine's captured row. */
+            if (mask_only && remote_slot[slot]) {
+                const float e = bf16_to_f32(v);
+                const float hv = bf16_to_f32(__builtin_nontemporal_load(result + (uint64_t)flat * hidden + col));
+                if (fabsf(e - hv) > 0.02f + 0.05f * fabsf(e)) {
+                    static __device__ unsigned int said = 0;
+                    if (atomicCAS(&said, 0u, 1u) == 0u)
+                        printf("libr3: R3_MOE_HELPER add-compare first mismatch: rank %u token %u slot %u col %u "
+                               "engine %f helper %f\n", rank, token, slot, col, e, hv);
+                }
+            }
             acc += bf16_to_f32(ew[flat]) * bf16_to_f32(v);
         }
         const uint16_t gathered = f32_to_bf16_rn(acc);
