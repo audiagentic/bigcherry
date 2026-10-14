@@ -83,10 +83,19 @@ bool hip_ok(hipError_t e, const char* what) {
 }
 
 void publish_layer_map(int layer, int n_expert, const int32_t* slot_of_expert) {
+    static std::atomic<int> seen{0};
+    if (seen.fetch_add(1) == 0)
+        std::fprintf(stderr, "libr3: R3_MOE_HELPER first layer map: layer %d n_expert %d\n", layer, n_expert);
     if (!g.hdr || !g.pinned || !slot_of_expert || layer < 0 ||
         layer >= (int)g.hdr->layer_count || n_expert <= 0 ||
-        n_expert > (int)kExperts)
+        n_expert > (int)kExperts) {
+        static std::atomic<int> said{0};
+        if (said.fetch_add(1) == 0)
+            std::fprintf(stderr, "libr3: R3_MOE_HELPER layer map dropped: hdr %d pinned %d map %d layer %d of %u "
+                         "n_expert %d\n", g.hdr != nullptr, (int)g.pinned, slot_of_expert != nullptr, layer,
+                         g.hdr ? g.hdr->layer_count : 0u, n_expert);
         return;
+    }
     std::lock_guard<std::mutex> lock(g.mu);
     int32_t* dst = layer_slots(g.map, (uint32_t)layer);
     if (!dst) return;
