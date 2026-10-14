@@ -807,6 +807,10 @@ int main(int argc, char** argv) {
      * work never runs. HIP maps streams onto GPU_MAX_HW_QUEUES queues (4 by default) and the helper opens five
      * streams (four lanes and its own), so it asks for more before HIP initialises; an explicit setting wins. */
     (void)::setenv("GPU_MAX_HW_QUEUES", "8", 0);
+    /* The helper's grouped MoE GEMM (prefill) on gfx11's native bf16 WMMA path: R9700 engine + two XTX helpers,
+     * Flash-Next, prefill 2,518 -> 2,665 tok/s and helper gate/up -25%, KLD 0.064 (noise floor). Read by libr3
+     * when the plugin is loaded, so set before it; an explicit setting wins. */
+    (void)::setenv("R3_MOE_NATIVE", "1", 0);
     bool compare =argc > 1 && std::strcmp(argv[1], "--compare") == 0;
     bool synthetic_protect = compare && argc > 2 &&
         std::strcmp(argv[argc - 1], "--synthetic-protect") == 0;
