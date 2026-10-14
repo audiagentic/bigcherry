@@ -484,6 +484,7 @@ class RenderBuildPatchDocBestEffortTests(unittest.TestCase):
         from bigcherry.core import paths as core_paths
 
         context = SimpleNamespace(
+            engine="llamacpp",
             patches_root=core_paths.REPO_ROOT / "engines" / "llamacpp" / "patches",
             project_root=core_paths.REPO_ROOT,
         )
