@@ -430,8 +430,7 @@ uint64_t helper_budget_bytes() {
     return (uint64_t)mib * 1024ull * 1024ull;
 }
 
-uint32_t env_rows(const char* name, uint32_t fallback) {
-    const char* e = std::getenv(name);
+uint32_t env_rows(const char* e, uint32_t fallback) {
     if (!e || !*e) return fallback;
     char* end = nullptr;
     errno = 0;
@@ -440,8 +439,8 @@ uint32_t env_rows(const char* name, uint32_t fallback) {
     return (uint32_t)std::min<unsigned long>(v, kMaxRows);
 }
 /* The largest step handed off (the engine reads the same variable) and the small, pre-queued lane size. */
-uint32_t helper_max_rows() { return env_rows("R3_MOE_HELPER_MAX_ROWS", 64); }
-uint32_t helper_small_rows() { return std::min(env_rows("R3_MOE_HELPER_SMALL_ROWS", 64), helper_max_rows()); }
+uint32_t helper_max_rows() { return env_rows(std::getenv("R3_MOE_HELPER_MAX_ROWS"), 64); }
+uint32_t helper_small_rows() { return std::min(env_rows(std::getenv("R3_MOE_HELPER_SMALL_ROWS"), 64), helper_max_rows()); }
 
 int64_t canonical_expert_bytes(const Container& f, uint32_t l, uint32_t e) {
     int64_t n = 0;
