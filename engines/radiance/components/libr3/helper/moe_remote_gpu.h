@@ -55,7 +55,8 @@ __device__ __forceinline__ bool lane_request_valid(
     const r3::moe_shm::Request* q, uint32_t rank, uint32_t sequence,
     uint32_t max_rows, uint32_t layers) {
     using namespace r3::moe_shm;
-    return q && q->sequence == sequence && q->rank == rank && q->rank_count == kMaxRanks &&
+    return q && q->sequence == sequence && q->rank == rank &&
+           q->rank_count >= 1 && q->rank_count <= kMaxRanks && rank < q->rank_count &&
            q->layer < layers && q->rows > 0 && q->rows <= max_rows &&
            q->hidden == kHidden && q->route_count > 0 &&
            q->route_count <= q->rows * kTopK &&
@@ -97,7 +98,7 @@ __global__ void lane_prepare_activation(
 
 __global__ void lane_select_tables(
     const r3::moe_shm::Request* q, const DeviceLayerTables* layers_table,
-    uint32_t layers, uint32_t rank, uint32_t sequence, uint32_t max_rows,
+    uint32_t layers, uint32_t rank, uint32_t slice, uint32_t sequence, uint32_t max_rows,
     void** guc0, void** gus0, void** dnc0, void** dns0,
     void** guc1, void** gus1, void** dnc1, void** dns1) {
     using namespace r3::moe_shm;
@@ -110,14 +111,14 @@ __global__ void lane_select_tables(
         return;
     }
     const DeviceLayerTables t = layers_table[q->layer];
-    guc0[i] = static_cast<void**>(t.gu_code[rank][0])[i];
-    gus0[i] = static_cast<void**>(t.gu_scale[rank][0])[i];
-    dnc0[i] = static_cast<void**>(t.dn_code[rank][0])[i];
-    dns0[i] = static_cast<void**>(t.dn_scale[rank][0])[i];
-    guc1[i] = static_cast<void**>(t.gu_code[rank][1])[i];
-    gus1[i] = static_cast<void**>(t.gu_scale[rank][1])[i];
-    dnc1[i] = static_cast<void**>(t.dn_code[rank][1])[i];
-    dns1[i] = static_cast<void**>(t.dn_scale[rank][1])[i];
+    guc0[i] = static_cast<void**>(t.gu_code[slice][0])[i];
+    gus0[i] = static_cast<void**>(t.gu_scale[slice][0])[i];
+    dnc0[i] = static_cast<void**>(t.dn_code[slice][0])[i];
+    dns0[i] = static_cast<void**>(t.dn_scale[slice][0])[i];
+    guc1[i] = static_cast<void**>(t.gu_code[slice][1])[i];
+    gus1[i] = static_cast<void**>(t.gu_scale[slice][1])[i];
+    dnc1[i] = static_cast<void**>(t.dn_code[slice][1])[i];
+    dns1[i] = static_cast<void**>(t.dn_scale[slice][1])[i];
 }
 
 __global__ void lane_route_count(
@@ -195,8 +196,9 @@ __global__ void lane_route_inverse(const int32_t* sorted, int32_t* inv, uint32_t
 /* One row a token with any helper route: the router-weighted sum of its helper-computed experts, slot
  * order, f32 accumulator, narrowed once to bf16 (moe_gather arithmetic over the slots this helper owns).
  * Tokens without a route are not written; the engine's merge reads only tokens it routed here. */
-__global__ void lane_reduce_tokens(const uint16_t* down, const int32_t* inv, const uint16_t* ew,
-                                   uint16_t* dst, uint32_t rows, uint32_t hidden, uint32_t poison) {
+__global__ void lane_reduce_tokens(const uint16_t* down, const uint16_t* down2, const int32_t* inv,
+                                   const uint16_t* ew, uint16_t* dst, uint32_t rows, uint32_t hidden,
+                                   uint32_t poison) {
     using namespace r3::moe_shm;
     const uint32_t token = blockIdx.x;
     if (token >= rows) return;
@@ -217,9 +219,14 @@ __global__ void lane_reduce_tokens(const uint16_t* down, const int32_t* inv, con
     uint16_t* out = dst + (uint64_t)token * hidden;
     for (uint32_t col = threadIdx.x; col < hidden; col += blockDim.x) {
         float acc = 0.0f;
-        for (uint32_t slot = 0; slot < kTopK; ++slot)
-            if (row[slot] >= 0)
-                acc += w[slot] * __uint_as_float((uint32_t)down[(uint64_t)(uint32_t)row[slot] * hidden + col] << 16);
+        for (uint32_t slot = 0; slot < kTopK; ++slot) {
+            if (row[slot] < 0) continue;
+            const uint64_t at = (uint64_t)(uint32_t)row[slot] * hidden + col;
+            /* One-rank engine: the expert's two TP slices are partial sums of the same down product. */
+            float v = __uint_as_float((uint32_t)down[at] << 16);
+            if (down2) v += __uint_as_float((uint32_t)down2[at] << 16);
+            acc += w[slot] * v;
+        }
         uint32_t u = __float_as_uint(acc);
         u += 0x7fffu + ((u >> 16) & 1u);
         out[col] = poison == 1u ? (uint16_t)0x447au : poison == 2u ? (uint16_t)0 : (uint16_t)(u >> 16);
@@ -331,7 +338,7 @@ struct LaneWork {
     uint32_t sample_sequence = 0;
     bool sample_pending = false;
     uint32_t cap_rows = 0;
-    Buffer d_counts, d_cursor, d_flat, d_sorted, d_off, d_ew, d_inv;
+    Buffer d_counts, d_cursor, d_flat, d_sorted, d_off, d_ew, d_inv, d_down2;
     Buffer d_act, d_aq, d_as, d_gu, d_mid, d_mid_s, d_down, d_stats, scratch;
     Buffer gu_code[2], gu_scale[2], dn_code[2], dn_scale[2];
 };
@@ -717,18 +724,6 @@ public:
                            static_cast<uint8_t*>(w.d_aq.p), static_cast<float*>(w.d_as.p),
                            rank, sequence, rows, model_.layers,
                            static_cast<uint64_t*>(w.d_stats.p));
-        hipLaunchKernelGGL(lane_select_tables,
-                           dim3((kExperts / 2 + block.x - 1) / block.x), block, 0, w.stream,
-                           q, static_cast<const DeviceLayerTables*>(d_layer_tables_.p),
-                           model_.layers, rank, sequence, rows,
-                           static_cast<void**>(w.gu_code[0].p),
-                           static_cast<void**>(w.gu_scale[0].p),
-                           static_cast<void**>(w.dn_code[0].p),
-                           static_cast<void**>(w.dn_scale[0].p),
-                           static_cast<void**>(w.gu_code[1].p),
-                           static_cast<void**>(w.gu_scale[1].p),
-                           static_cast<void**>(w.dn_code[1].p),
-                           static_cast<void**>(w.dn_scale[1].p));
         hipLaunchKernelGGL(lane_route_count, route_grid, block, 0, w.stream,
                            route, q, static_cast<const DeviceLayerTables*>(d_layer_tables_.p),
                            rank, sequence, rows, model_.layers,
@@ -748,54 +743,73 @@ public:
                            nullptr);
         if (!hip_ok(hipGetLastError(), "lane request kernels")) return -EIO;
 
-        const int64_t w0 = rank_slice_width(rank, 0);
-        const int64_t w1 = rank_slice_width(rank, 1);
-        std::vector<RadParam> gp =
-            gemm_params(rows, 2 * w0, kHidden, 2, "token", 2 * w1, kHidden);
-        if (launch_on(moe_,
-                      { tensor(w.d_aq.p, RAD_F8E4M3, {rows, kHidden}),
-                        tensor(w.d_as.p, RAD_F32, {rows, kHidden / kGroup}),
-                        table_tensor(w.gu_code[0].p, gu_code_dtype_, 2 * w0, kHidden),
-                        table_tensor(w.gu_scale[0].p, gu_scale_dtype_, 2 * w0, kHidden / 64),
-                        tensor(w.d_sorted.p, RAD_I32, {routes}),
-                        tensor(w.d_off.p, RAD_I32, {kExperts + 1}),
-                        table_tensor(w.gu_code[1].p, gu_code_dtype_, 2 * w1, kHidden),
-                        table_tensor(w.gu_scale[1].p, gu_scale_dtype_, 2 * w1, kHidden / 64),
-                        tensor(w.d_gu.p, RAD_BF16, {routes, kRankGateUpWidth}) },
-                      gp, w.stream, w.scratch) < 0)
-            return -EIO;
+        /* A two-rank engine asks for its own TP slice; a one-rank engine for both, each into its own rows. */
+        const uint32_t nslice = engine_ranks_ == 1 ? 2u : 1u;
+        for (uint32_t k = 0; k < nslice; ++k) {
+            const uint32_t slice = nslice == 2 ? k : rank;
+            void* out_down = k == 0 ? w.d_down.p : w.d_down2.p;
+            hipLaunchKernelGGL(lane_select_tables,
+                               dim3((kExperts / 2 + block.x - 1) / block.x), block, 0, w.stream,
+                               q, static_cast<const DeviceLayerTables*>(d_layer_tables_.p),
+                               model_.layers, rank, slice, sequence, rows,
+                               static_cast<void**>(w.gu_code[0].p),
+                               static_cast<void**>(w.gu_scale[0].p),
+                               static_cast<void**>(w.dn_code[0].p),
+                               static_cast<void**>(w.dn_scale[0].p),
+                               static_cast<void**>(w.gu_code[1].p),
+                               static_cast<void**>(w.gu_scale[1].p),
+                               static_cast<void**>(w.dn_code[1].p),
+                               static_cast<void**>(w.dn_scale[1].p));
+            const int64_t w0 = rank_slice_width(slice, 0);
+            const int64_t w1 = rank_slice_width(slice, 1);
+            std::vector<RadParam> gp =
+                gemm_params(rows, 2 * w0, kHidden, 2, "token", 2 * w1, kHidden);
+            if (launch_on(moe_,
+                          { tensor(w.d_aq.p, RAD_F8E4M3, {rows, kHidden}),
+                            tensor(w.d_as.p, RAD_F32, {rows, kHidden / kGroup}),
+                            table_tensor(w.gu_code[0].p, gu_code_dtype_, 2 * w0, kHidden),
+                            table_tensor(w.gu_scale[0].p, gu_scale_dtype_, 2 * w0, kHidden / 64),
+                            tensor(w.d_sorted.p, RAD_I32, {routes}),
+                            tensor(w.d_off.p, RAD_I32, {kExperts + 1}),
+                            table_tensor(w.gu_code[1].p, gu_code_dtype_, 2 * w1, kHidden),
+                            table_tensor(w.gu_scale[1].p, gu_scale_dtype_, 2 * w1, kHidden / 64),
+                            tensor(w.d_gu.p, RAD_BF16, {routes, kRankGateUpWidth}) },
+                          gp, w.stream, w.scratch) < 0)
+                return -EIO;
 
-        std::vector<RadParam> gqp = {
-            pi("M", routes), pi("n", kRankWidth), pi("group", kGroup),
-            ps("dtype", "bf16"), ps("act", "silu")
-        };
-        if (launch_on(gated_quant_,
-                      { tensor(w.d_gu.p, RAD_BF16, {routes, kRankGateUpWidth}),
-                        tensor(w.d_mid.p, RAD_F8E4M3, {routes, kRankWidth}),
-                        tensor(w.d_mid_s.p, RAD_F32, {routes, kRankWidth / kGroup}),
-                        absent() }, gqp, w.stream, w.scratch) < 0)
-            return -EIO;
+            std::vector<RadParam> gqp = {
+                pi("M", routes), pi("n", kRankWidth), pi("group", kGroup),
+                ps("dtype", "bf16"), ps("act", "silu")
+            };
+            if (launch_on(gated_quant_,
+                          { tensor(w.d_gu.p, RAD_BF16, {routes, kRankGateUpWidth}),
+                            tensor(w.d_mid.p, RAD_F8E4M3, {routes, kRankWidth}),
+                            tensor(w.d_mid_s.p, RAD_F32, {routes, kRankWidth / kGroup}),
+                            absent() }, gqp, w.stream, w.scratch) < 0)
+                return -EIO;
 
-        std::vector<RadParam> dp =
-            gemm_params(rows, kHidden, w0, 1, "sorted", kHidden, w1);
-        if (launch_on(moe_,
-                      { tensor(w.d_mid.p, RAD_F8E4M3, {routes, kRankWidth}),
-                        tensor(w.d_mid_s.p, RAD_F32, {routes, kRankWidth / kGroup}),
-                        table_tensor(w.dn_code[0].p, dn_code_dtype_, kHidden, w0),
-                        table_tensor(w.dn_scale[0].p, dn_scale_dtype_, kHidden, w0 / 64),
-                        tensor(w.d_sorted.p, RAD_I32, {routes}),
-                        tensor(w.d_off.p, RAD_I32, {kExperts + 1}),
-                        table_tensor(w.dn_code[1].p, dn_code_dtype_, kHidden, w1),
-                        table_tensor(w.dn_scale[1].p, dn_scale_dtype_, kHidden, w1 / 64),
-                        tensor(w.d_down.p, RAD_BF16, {routes, kHidden}) },
-                      dp, w.stream, w.scratch) < 0)
-            return -EIO;
+            std::vector<RadParam> dp =
+                gemm_params(rows, kHidden, w0, 1, "sorted", kHidden, w1);
+            if (launch_on(moe_,
+                          { tensor(w.d_mid.p, RAD_F8E4M3, {routes, kRankWidth}),
+                            tensor(w.d_mid_s.p, RAD_F32, {routes, kRankWidth / kGroup}),
+                            table_tensor(w.dn_code[0].p, dn_code_dtype_, kHidden, w0),
+                            table_tensor(w.dn_scale[0].p, dn_scale_dtype_, kHidden, w0 / 64),
+                            tensor(w.d_sorted.p, RAD_I32, {routes}),
+                            tensor(w.d_off.p, RAD_I32, {kExperts + 1}),
+                            table_tensor(w.dn_code[1].p, dn_code_dtype_, kHidden, w1),
+                            table_tensor(w.dn_scale[1].p, dn_scale_dtype_, kHidden, w1 / 64),
+                            tensor(out_down, RAD_BF16, {routes, kHidden}) },
+                          dp, w.stream, w.scratch) < 0)
+                return -EIO;
+        }
 
         hipLaunchKernelGGL(lane_route_inverse, route_grid, block, 0, w.stream,
                            static_cast<const int32_t*>(w.d_sorted.p),
                            static_cast<int32_t*>(w.d_inv.p), routes, slots);
         hipLaunchKernelGGL(lane_reduce_tokens, dim3(rows), block, 0, w.stream,
                            static_cast<const uint16_t*>(w.d_down.p),
+                           nslice == 2 ? static_cast<const uint16_t*>(w.d_down2.p) : nullptr,
                            static_cast<const int32_t*>(w.d_inv.p),
                            static_cast<const uint16_t*>(w.d_ew.p),
                            dst, rows, kHidden, poison_);
@@ -864,6 +878,11 @@ private:
     Buffer d_mid_, d_mid_s_, d_down_, d_result_, scratch_;
     Buffer d_layer_tables_, d_expert_slot_;
     uint32_t lane_rows_ = 0;    /* small-lane (pre-queued) step size */
+public:
+    /* Engine tensor-parallel ranks (R3_MOE_HELPER_ENGINE_RANKS): 2 = two XTX ranks, each asking for its TP
+     * slice; 1 = one engine (the R9700, RAD02), asking for the full expert width -- both slices, summed. */
+    uint32_t engine_ranks_ = r3::moe_shm::kMaxRanks;
+private:
     uint32_t large_rows_ = 0;   /* large-lane capacity */
     uint32_t poison_ = 0;
 
@@ -1354,7 +1373,8 @@ private:
                w.d_gu.ensure((size_t)tr * kRankGateUpWidth * 2) &&
                w.d_mid.ensure((size_t)tr * kRankWidth) &&
                w.d_mid_s.ensure((size_t)tr * (kRankWidth / kGroup) * 4) &&
-               w.d_down.ensure((size_t)tr * r3::moe_shm::kHidden * 2);
+               w.d_down.ensure((size_t)tr * r3::moe_shm::kHidden * 2) &&
+               (engine_ranks_ != 1 || w.d_down2.ensure((size_t)tr * r3::moe_shm::kHidden * 2));
     }
 
     bool ensure_work(uint32_t rows, uint32_t tr) {

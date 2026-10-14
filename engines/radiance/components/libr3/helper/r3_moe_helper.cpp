@@ -817,6 +817,14 @@ int main(int argc, char** argv) {
     std::unique_ptr<r3_moe_gpu::Runner> gpu;
     if (!cpu) {
         gpu = std::make_unique<r3_moe_gpu::Runner>(model);
+        if (const char* e = std::getenv("R3_MOE_HELPER_ENGINE_RANKS"); e && *e) {
+            const int n = std::atoi(e);
+            if (n < 1 || n > (int)kMaxRanks) {
+                std::fprintf(stderr, "r3_moe_helper: R3_MOE_HELPER_ENGINE_RANKS=%s, want 1..%u\n", e, kMaxRanks);
+                return 2;
+            }
+            gpu->engine_ranks_ = (uint32_t)n;
+        }
         if (!gpu->open()) return 1;
     }
 

@@ -256,8 +256,8 @@ extern "C" int r3_moe_mailbox_enabled(void) {
 }
 
 extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevice** out) {
-    if (!out || !g.hdr || !g.pinned || world_size != (int)kMaxRanks ||
-        rank < 0 || rank >= (int)kMaxRanks)
+    if (!out || !g.hdr || !g.pinned || world_size < 1 || world_size > (int)kMaxRanks ||
+        rank < 0 || rank >= world_size)
         return RAD_E_INVAL;
 
     std::lock_guard<std::mutex> lock(g.mu);
@@ -359,6 +359,7 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
     s.dev.shadow_first = shadow_first;
     s.dev.max_rows = row_cap;
     s.dev.rank = (uint32_t)rank;
+    s.dev.world = (uint32_t)world_size;
     s.dev.shadow = shadow ? 1u : 0u;
     /* 1: add the engine's captured rows; 2: same late publish/mask/rescatter, but add the helper's rows. */
     {

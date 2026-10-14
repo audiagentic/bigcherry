@@ -124,7 +124,7 @@ __global__ void mailbox_publish_kernel(
     const uint8_t* aq, const float* as, const uint8_t* aq_base,
     uint32_t layer, uint32_t rows, uint32_t hidden, uint32_t top_k,
     int32_t expert_base, uint32_t n_expert, uint32_t max_rows,
-    uint32_t shadow, uint32_t stage_bf16) {
+    uint32_t shadow, uint32_t stage_bf16, uint32_t world) {
     __shared__ uint32_t seq;
     __shared__ uint32_t nr;
 
@@ -175,7 +175,7 @@ __global__ void mailbox_publish_kernel(
         q->status = 0;
         q->layer = layer;
         q->rank = rank;
-        q->rank_count = kMaxRanks;
+        q->rank_count = world;
         q->rows = rows;
         q->hidden = hidden;
         q->route_count = nr;
@@ -495,7 +495,7 @@ int publish_launch(const RadArgs* a, RadStream stream) {
                        static_cast<const uint8_t*>(a->t[5].data),
                        (uint32_t)layer, (uint32_t)rows, (uint32_t)hidden, (uint32_t)top_k,
                        (int32_t)expert_base, (uint32_t)n_expert, d->max_rows,
-                       d->shadow, d->cpu_ref);
+                       d->shadow, d->cpu_ref, d->world);
     return hipGetLastError() == hipSuccess ? RAD_OK : RAD_E_DEVICE;
 }
 

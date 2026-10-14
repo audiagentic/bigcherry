@@ -16,6 +16,7 @@ struct R3MoeShadowFirst {
     uint32_t claimed = 0;
     uint32_t layer = 0;
     uint32_t rank = 0;
+    uint32_t world = 0;   /* engine TP ranks: 1 asks the helper for full expert width, 2 for this rank's slice */
     uint32_t row_base = 0;
     int32_t token = -1;
     uint16_t slot = 0;
