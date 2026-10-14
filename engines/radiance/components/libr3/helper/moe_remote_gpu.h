@@ -198,7 +198,11 @@ __global__ void lane_unsort_down(const uint16_t* down, const int32_t* sorted,
         poison == 1u ? (uint16_t)0x447au : poison == 2u ? (uint16_t)0 : down[i];
     /* Mapped host memory is fine-grained/uncached. Drain every writer wave's posted stores
      * before the later release flag, matching libr4d's no-P2P all-reduce host path. */
+#if defined(__gfx1100__)
+    asm volatile("s_waitcnt_vscnt null, 0x0" ::: "memory");   /* gfx11 spelling of the store drain */
+#else
     asm volatile("s_wait_storecnt 0x0" ::: "memory");
+#endif
 }
 
 /* Every mapped result writer has drained before this kernel can run. Publish completion with a
