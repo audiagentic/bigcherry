@@ -62,7 +62,7 @@ summary = "largest step (rows) published to the helper GPU lanes; larger prefill
 [setting.R3_MOE_HELPER_POISON]
 default = "0"
 status = "diagnostic"
-summary = "1 (any non-zero): every helper result value becomes 1e3 (proves the post-gather add reaches the output); zero: results become 0 (same output as dropping the remote routes)"
+summary = "1 (any non-zero): every helper result value becomes 1e3 (proves the mailbox merge consumes helper rows); zero: results become 0 (same output as dropping remote routes)"
 activation = "R3_MOE_HELPER poison"
 
 [setting.R3_MOE_HELPER_SHADOW]
