@@ -67,7 +67,7 @@ summary = "directory: in mask-only modes, write one request's routes, helper row
 [setting.R3_MOE_HELPER_DUMP_LAYER]
 default = "20"
 status = "diagnostic"
-summary = "layer whose first request R3_MOE_HELPER_DUMP writes"
+summary = "layer R3_MOE_HELPER_DUMP writes (first 8 requests), or \"all\": the first request of every layer"
 
 [setting.R3_MOE_HELPER_POISON]
 default = "0"

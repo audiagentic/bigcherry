@@ -15,7 +15,7 @@ def bf16(path):
 
 def main():
     d, top_k, hidden = Path(sys.argv[1]), int(sys.argv[2]), int(sys.argv[3])
-    for rank, k in [(r, k) for k in range(8) for r in (0, 1)]:
+    for rank, k in [(r, k) for k in list(range(8)) + [f"L{i}" for i in range(64)] for r in (0, 1)]:
         rp = d / f"r{rank}.{k}.routes.bin"
         if not rp.exists():
             continue
@@ -39,7 +39,7 @@ def main():
             if rel >= 2e-3:
                 # Which engine row does the helper row best match? Exposes a row/slot offset.
                 best = int(np.argmin(np.linalg.norm(engine - h, axis=1)))
-                print(f"  tok {token} slot {slot} expert {expert} flat {flat} rel {rel:.3e} "
+                print(f"  {k} tok {token} slot {slot} expert {expert} flat {flat} rel {rel:.3e} "
                       f"|h| {np.linalg.norm(h):.3g} |e| {np.linalg.norm(e):.3g} best-engine-flat {best}")
                 bad += rel >= 2e-3
         print(f"  bad rows {bad}")
