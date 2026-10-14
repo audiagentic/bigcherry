@@ -1149,6 +1149,7 @@ int main(int argc, char** argv) {
             stat_routes += lane_routes[lane];
             timing_samples += lane_samples[lane];
             sampled_us += lane_sample_us[lane];
+            gpu->stage_report(lane, lane_samples[lane]);
         }
         std::fprintf(stderr, "r3_moe_helper: large-lane requests %llu (%llu rows)\n",
                      (unsigned long long)(lane_req[kMaxRanks] + lane_req[kMaxRanks + 1]),

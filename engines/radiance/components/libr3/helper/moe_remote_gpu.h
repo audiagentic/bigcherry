@@ -334,6 +334,10 @@ struct LaneWork {
     hipStream_t stream = nullptr;
     hipEvent_t sample_start = nullptr;
     hipEvent_t sample_stop = nullptr;
+    /* Stage marks inside a sampled request: routes, gate/up GEMM, gated quant, down GEMM (then reduce = stop). */
+    static constexpr int kStages = 4;
+    hipEvent_t stage[kStages] = {};
+    double stage_us[kStages + 1] = {};
     uint32_t sample_sequence = 0;
     bool sample_pending = false;
     uint32_t cap_rows = 0;
@@ -391,7 +395,11 @@ public:
         for (uint32_t r = 0; r < r3::moe_shm::kLanes; ++r) {
             if (!hip_ok(hipStreamCreateWithFlags(&lane_[r].stream, hipStreamNonBlocking), "hipStreamCreate lane") ||
                 !hip_ok(hipEventCreate(&lane_[r].sample_start), "hipEventCreate lane start") ||
-                !hip_ok(hipEventCreate(&lane_[r].sample_stop), "hipEventCreate lane stop"))
+                !hip_ok(hipEventCreate(&lane_[r].sample_stop), "hipEventCreate lane stop") ||
+                !hip_ok(hipEventCreate(&lane_[r].stage[0]), "hipEventCreate lane stage") ||
+                !hip_ok(hipEventCreate(&lane_[r].stage[1]), "hipEventCreate lane stage") ||
+                !hip_ok(hipEventCreate(&lane_[r].stage[2]), "hipEventCreate lane stage") ||
+                !hip_ok(hipEventCreate(&lane_[r].stage[3]), "hipEventCreate lane stage"))
                 return false;
         }
         experts_.resize((size_t)model_.layers * r3::moe_shm::kExperts);
@@ -741,6 +749,8 @@ public:
                            static_cast<int32_t*>(w.d_sorted.p),
                            nullptr);
         if (!hip_ok(hipGetLastError(), "lane request kernels")) return -EIO;
+        const bool sampling = sample && w.sample_pending && w.sample_sequence == sequence;
+        if (sampling && !hip_ok(hipEventRecord(w.stage[0], w.stream), "lane stage 0")) return -EIO;
 
         /* A two-rank engine asks for its own TP slice; a one-rank engine for the whole expert (full width). */
         {
@@ -775,6 +785,7 @@ public:
                           gp, w.stream, w.scratch) < 0)
                 return -EIO;
 
+            if (sampling && !hip_ok(hipEventRecord(w.stage[1], w.stream), "lane stage 1")) return -EIO;
             std::vector<RadParam> gqp = {
                 pi("M", routes), pi("n", mid_w()), pi("group", kGroup),
                 ps("dtype", "bf16"), ps("act", "silu")
@@ -786,6 +797,7 @@ public:
                             absent() }, gqp, w.stream, w.scratch) < 0)
                 return -EIO;
 
+            if (sampling && !hip_ok(hipEventRecord(w.stage[2], w.stream), "lane stage 2")) return -EIO;
             std::vector<RadParam> dp =
                 gemm_params(rows, kHidden, w0, 1, "sorted", kHidden, w1);
             if (launch_on(moe_,
@@ -802,6 +814,7 @@ public:
                 return -EIO;
         }
 
+        if (sampling && !hip_ok(hipEventRecord(w.stage[3], w.stream), "lane stage 3")) return -EIO;
         hipLaunchKernelGGL(lane_route_inverse, route_grid, block, 0, w.stream,
                            static_cast<const int32_t*>(w.d_sorted.p),
                            static_cast<int32_t*>(w.d_inv.p), routes, slots);
@@ -834,8 +847,24 @@ public:
             return false;
         *sampled_us += (double)ms * 1000.0;
         ++*samples;
+        hipEvent_t mark[LaneWork::kStages + 2] = {w.sample_start, w.stage[0], w.stage[1], w.stage[2], w.stage[3],
+                                                  w.sample_stop};
+        for (int i = 0; i <= LaneWork::kStages; ++i) {
+            float part = 0.0f;
+            if (hipEventElapsedTime(&part, mark[i], mark[i + 1]) == hipSuccess) w.stage_us[i] += (double)part * 1000.0;
+        }
         w.sample_pending = false;
         return true;
+    }
+
+    /* Sampled small-lane requests, per stage: activation+routes, gate/up GEMM, gated quant, down GEMM, reduce. */
+    void stage_report(uint32_t lane, uint64_t samples) const {
+        if (lane >= r3::moe_shm::kLanes || !samples) return;
+        const LaneWork& w = lane_[lane];
+        std::fprintf(stderr, "r3_moe_helper: lane %u stages (us/request): routes %.1f gate_up %.1f quant %.1f "
+                     "down %.1f reduce %.1f
+", lane, w.stage_us[0] / samples, w.stage_us[1] / samples,
+                     w.stage_us[2] / samples, w.stage_us[3] / samples, w.stage_us[4] / samples);
     }
 
     bool sync_lane(uint32_t lane) {
