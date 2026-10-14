@@ -3,6 +3,7 @@
 #include <cerrno>
 #include <cstddef>
 #include <cstdint>
+#include <climits>
 #include <cstring>
 #include <linux/futex.h>
 #include <sys/syscall.h>
@@ -281,8 +282,9 @@ inline uint32_t fetch_add(uint32_t* p, uint32_t v) { return __atomic_fetch_add(p
 inline int futex_wait(uint32_t* p, uint32_t expected) {
     return static_cast<int>(::syscall(SYS_futex, p, FUTEX_WAIT, expected, nullptr, nullptr, 0));
 }
-inline int futex_wake(uint32_t* p, int n = 1) {
-    return static_cast<int>(::syscall(SYS_futex, p, FUTEX_WAKE, n, nullptr, nullptr, 0));
+/* Every waiter: two helpers (and the engine) can wait on the same word of a shared segment. */
+inline int futex_wake(uint32_t* p) {
+    return static_cast<int>(::syscall(SYS_futex, p, FUTEX_WAKE, INT_MAX, nullptr, nullptr, 0));
 }
 inline void wait_until(uint32_t* p, uint32_t value) {
     for (;;) {
