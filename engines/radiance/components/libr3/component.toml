@@ -36,12 +36,51 @@ summary = "native delta-net chunk scan; wrong in serving (KLD 5.52) after three 
 [setting.R3_MOE_HELPER]
 default = ""
 status = "experimental"
-summary = "enable patch rad0002 remote-MoE hook; helper process must already own the configured POSIX shm segment"
+summary = "enable patch 0002 GPU mailbox ops; helper process must already own the configured POSIX shm segment"
+activation = "r3_moe_helper: runtime map owns [0-9]+ experts, [0-9.]+ GiB"
 
 [setting.R3_MOE_HELPER_SHM]
 default = "/r3-moe-helper"
 status = "diagnostic"
-summary = "POSIX shm segment shared by libr3's engine hook and r3_moe_helper"
+summary = "POSIX shm segment mapped by libr3 GPU mailbox ops and r3_moe_helper"
+
+[setting.R3_MOE_HELPER_CPU]
+default = "0"
+status = "diagnostic"
+summary = "force the slice-2a fp32 host reference path instead of gfx1201 compute"
+
+[setting.R3_MOE_HELPER_MIB]
+default = "28672"
+status = "experimental"
+summary = "VRAM budget in MiB for cold full-expert units owned by the gfx1201 helper"
+
+[setting.R3_MOE_HELPER_MAX_ROWS]
+default = "64"
+status = "experimental"
+summary = "largest step (rows) published to the helper GPU lanes; larger prefill steps keep the engine path"
+
+[setting.R3_MOE_HELPER_POISON]
+default = "0"
+status = "diagnostic"
+summary = "1 (any non-zero): every helper result value becomes 1e3 (proves the mailbox merge consumes helper rows); zero: results become 0 (same output as dropping remote routes)"
+activation = "R3_MOE_HELPER poison"
+
+[setting.R3_MOE_HELPER_SHADOW]
+default = "0"
+status = "diagnostic"
+summary = "publish owned routes without masking them and compare helper unweighted down rows against the engine rows"
+activation = "R3_MOE_HELPER_SHADOW layer="
+
+[setting.R3_MOE_HELPER_MASK_ONLY]
+default = "0"
+status = "diagnostic"
+summary = "mask and rescatter as normal, but merge engine-computed routed rows instead of helper rows"
+activation = "R3_MOE_HELPER_MASK_ONLY enabled"
+
+[setting.R3_MOE_HELPER_R4D]
+default = ""
+status = "diagnostic"
+summary = "override the installed gfx1201 libr4d.so used through the rad_plugin ABI"
 
 [setting.R3_MOE_NATIVE]
 default = "0"
