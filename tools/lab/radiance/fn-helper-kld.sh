@@ -27,6 +27,8 @@ arm=${ARM:-helper}
 run() {  # <name> <helper 0|1> <mode args...>
     local name=$1 h=$2; shift 2
     local hp=
+    # A helper left by an interrupted run keeps its 28 GiB on the R9700 and the next one runs out of memory.
+    pgrep -x r3_moe_helper >/dev/null && { pkill -TERM -x r3_moe_helper; sleep 3; pkill -KILL -x r3_moe_helper; }
     rm -f /dev/shm/r3-moe-helper
     if [ "$h" = 1 ]; then
         env ${HELPER_ENV:-} HIP_VISIBLE_DEVICES=2 RADIANCE_HOME="$home" R3_MOE_HELPER_MAX_ROWS=64 "$helper" "$model" > "$out/$name.helper.log" 2>&1 &

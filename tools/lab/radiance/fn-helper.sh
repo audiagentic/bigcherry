@@ -49,6 +49,9 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+# A helper left by an interrupted run keeps its 28 GiB on the R9700 and the next one runs out of memory.
+pgrep -x r3_moe_helper >/dev/null && { pkill -TERM -x r3_moe_helper; sleep 3; pkill -KILL -x r3_moe_helper; }
+rm -f /dev/shm/r3-moe-helper
 if [ "${HELPER:-1}" != 0 ]; then
 echo "== helper: HIP device 2"
 HIP_VISIBLE_DEVICES=2 RADIANCE_HOME="$home" \
