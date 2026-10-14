@@ -1068,10 +1068,17 @@ int main(int argc, char** argv) {
                         }
                         const Request* q = lane_request(map, lane, next);
                         const uint32_t rows = load(&q->rows);
-                        const int rc = gpu->enqueue_lane(map, dev_map, lane, next, rows, false);
+                        /* Every large request is timed by stage: they are few, and the engine cannot send
+                         * the next one until it has merged this one, so waiting here costs nothing. */
+                        const int rc = gpu->enqueue_lane(map, dev_map, lane, next, rows, true);
                         if (rc != 0) {
                             std::fprintf(stderr, "r3_moe_helper: large lane %u seq %u rows %u failed rc=%d\n",
                                          lane, next, rows, rc);
+                            g_stop = 1;
+                            break;
+                        }
+                        if (!gpu->sync_lane(lane) ||
+                            !gpu->collect_lane_timing(lane, next, &lane_sample_us[lane], &lane_samples[lane])) {
                             g_stop = 1;
                             break;
                         }
