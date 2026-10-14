@@ -187,7 +187,9 @@ inline bool valid(const Header* h, size_t mapped) {
         h->layer_map_offset != l.layer_map || h->layer_map_slot_bytes != layer_map_slot_bytes() ||
         h->segment_bytes != l.bytes || mapped < l.bytes) return false;
     for (uint32_t r = 0; r < kMaxRanks; ++r)
-        if (h->route_offset[r] != l.route[r] || h->activation_offset[r] != l.activation[r] ||
+        /* Two helpers share slot 0's activation staging (helper 0 aliases the others to it). */
+        if (h->route_offset[r] != l.route[r] ||
+            (h->activation_offset[r] != l.activation[r] && h->activation_offset[r] != l.activation[0]) ||
             h->route_slot_bytes[r] != route_slot_bytes() ||
             h->activation_slot_bytes[r] != activation_slot_bytes()) return false;
     for (uint32_t i = 0; i < kMaxRanks * kMaxRanks; ++i)

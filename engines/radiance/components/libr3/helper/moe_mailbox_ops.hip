@@ -108,7 +108,8 @@ __global__ void mailbox_stage_kernel(
     Header* h = reinterpret_cast<Header*>(base);
     const uint64_t stride = (uint64_t)gridDim.x * blockDim.x;
     const uint64_t t0 = (uint64_t)blockIdx.x * blockDim.x + threadIdx.x;
-    for (uint32_t k = 0; k < helpers; ++k) {
+    /* One staging copy: a lone helper reads its rank slot, two helpers share slot 0 (aliased by helper 0). */
+    for (uint32_t k = 0; k < 1u; ++k) {
         const uint32_t slot = step_slot(k, rank, helpers);
         uint8_t* staged_q = base + h->activation_offset[slot] + kActivationBf16Bytes;
         float* staged_s = reinterpret_cast<float*>(

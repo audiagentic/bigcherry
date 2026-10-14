@@ -939,6 +939,8 @@ int main(int argc, char** argv) {
     if (creator) {
         init(map, model.layers);
         h->small_rows = lane_max_rows;
+        /* Every helper reads the same step activations: stage them once, in slot 0. */
+        for (uint32_t r = 1; r < helper_count; ++r) h->activation_offset[r] = h->activation_offset[0];
         store(&h->helper_count, helper_count);   /* last: an attaching helper waits for it */
     } else {
         for (int i = 0; i < 1800 && !g_stop && load(&h->helper_count) != helper_count; ++i) ::sleep(1);
