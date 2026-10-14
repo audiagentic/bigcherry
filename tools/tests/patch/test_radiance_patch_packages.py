@@ -57,7 +57,7 @@ PIN_BLOBS = {
         "arch/common/rad_block_hc.h": ("c19c8b6", "df35634"),
         "arch/common/rad_block_moe_fp8.h": ("51b7c28", "3170170"),
         "core/place/moe_remote.cpp": (None, "4b5f436"),
-        "core/place/planner.cpp": ("e7a413d", "4fba11f"),
+        "core/place/planner.cpp": ("e7a413d", "cb382bf"),
         "core/engine_bringup.cpp": ("d1bd222", "0e0a616"),
     },
     "0003_mtp_full_head_switch": {

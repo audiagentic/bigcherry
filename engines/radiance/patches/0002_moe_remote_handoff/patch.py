@@ -435,6 +435,20 @@ PATCHES = (
                 rationale="pin_mapped's per-unit loop starts with this declaration; a remote unit is decided before any host/ngram logic and leaves the loop.",
             ),
             Edit(
+                id="remote-owned-unit-footprint",
+                anchor=r"^    for \(U& mu : units\) mu\.mapped = mapped_unit\(mu\.mapped, container && mu\.direct, host_backend\);$",
+                text="""
+    /* The pre-plan budget makes the same call pin_mapped does: a helper-owned expert costs this rank nothing.
+     * The step-cap condition is the planner's and bring-up's to enforce (0 skips it here); a cap below the
+     * largest step only makes this budget generous, and the plan then reports what did not fit. */
+    for (U& mu : units)
+        if (mu.layer >= 0 && mu.expert >= 0 && rad_moe_remote_skip_unit(mu.layer, mu.expert, 0))
+            mu.mapped = true;""",
+                guard=r"rad_moe_remote_skip_unit\(mu\.layer, mu\.expert, 0\)",
+                expect_matches=1,
+                rationale="weight_footprint's unit pass ends with this mapped resolution; the budgets read mu.mapped right after it.",
+            ),
+            Edit(
                 id="rank-units-skip-preplaced",
                 anchor=r"^    for \(int32_t i = 0; i < \(int32_t\)p->units\.size\(\); \+\+i\) order->push_back\(i\);$",
                 mode="replace",
