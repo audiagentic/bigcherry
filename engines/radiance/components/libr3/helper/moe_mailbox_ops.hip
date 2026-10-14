@@ -92,6 +92,32 @@ __device__ __forceinline__ bool owner_has(const uint8_t* bits, uint32_t layer, u
     return (bits[bit >> 3] & (uint8_t)(1u << (bit & 7u))) != 0;
 }
 
+/* The step's exact activation operand (E4M3 codes + f32 group scales, and the bf16 rows for the host
+ * reference) into this rank's staging slot, across the whole grid; the publish kernel that follows on the
+ * same stream signals the helper only after it. The helper has finished the rank's previous request (the
+ * merge waited on it), so the slot is free. Copied 16 bytes a thread where the row width allows. */
+__global__ void mailbox_stage_kernel(
+    uint8_t* base, uint32_t rank, const uint8_t* aq, const float* as, const uint16_t* x,
+    uint32_t rows, uint32_t hidden, uint32_t stage_bf16) {
+    Header* h = reinterpret_cast<Header*>(base);
+    uint8_t* staged_q = base + h->activation_offset[rank] + kActivationBf16Bytes;
+    float* staged_s = reinterpret_cast<float*>(
+        base + h->activation_offset[rank] + kActivationBf16Bytes + kActivationQBytes);
+    const uint64_t stride = (uint64_t)gridDim.x * blockDim.x;
+    const uint64_t t0 = (uint64_t)blockIdx.x * blockDim.x + threadIdx.x;
+    const uint64_t q16 = (uint64_t)rows * hidden / 16u;
+    for (uint64_t i = t0; i < q16; i += stride)
+        reinterpret_cast<uint4*>(staged_q)[i] = reinterpret_cast<const uint4*>(aq)[i];
+    const uint64_t s_total = (uint64_t)rows * (hidden / kActGroup);
+    for (uint64_t i = t0; i < s_total; i += stride) staged_s[i] = as[i];
+    if (stage_bf16) {
+        uint16_t* staged_x = reinterpret_cast<uint16_t*>(base + h->activation_offset[rank]);
+        const uint64_t x8 = (uint64_t)rows * hidden / 8u;
+        for (uint64_t i = t0; i < x8; i += stride)
+            reinterpret_cast<uint4*>(staged_x)[i] = reinterpret_cast<const uint4*>(x)[i];
+    }
+}
+
 __global__ void mailbox_publish_kernel(
     uint8_t* base, const uint8_t* owner, uint32_t* sequence, uint32_t* published, uint32_t rank,
     int32_t* ids, const uint16_t* ew, const uint16_t* x,
@@ -114,20 +140,17 @@ __global__ void mailbox_publish_kernel(
     const int32_t* slot_map = reinterpret_cast<const int32_t*>(
         base + h->layer_map_offset) + (uint64_t)layer * kExperts;
     Route* route = reinterpret_cast<Route*>(base + h->route_offset[rank]);
-    if (threadIdx.x == 0) {
-        const uint32_t nroute = rows * top_k;
-        for (uint32_t i = 0; i < nroute; ++i) {
-            const int32_t le = ids[i] - expert_base;
-            if (le < 0 || (uint32_t)le >= n_expert || (uint32_t)le >= kExperts ||
-                slot_map[(uint32_t)le] < 0 || !owner_has(owner, layer, (uint32_t)le))
-                continue;
-            const uint32_t p = nr++;
-            route[p].token = (int32_t)(i / top_k);
-            route[p].expert = le;
-            route[p].weight_bf16 = ew[i];
-            route[p].slot = (uint16_t)(i % top_k);
-            if (!shadow) ids[i] = -1;
-        }
+    for (uint32_t i = threadIdx.x; i < rows * top_k; i += blockDim.x) {
+        const int32_t le = ids[i] - expert_base;
+        if (le < 0 || (uint32_t)le >= n_expert || (uint32_t)le >= kExperts ||
+            slot_map[(uint32_t)le] < 0 || !owner_has(owner, layer, (uint32_t)le))
+            continue;
+        const uint32_t p = atomicAdd(&nr, 1u);
+        route[p].token = (int32_t)(i / top_k);
+        route[p].expert = le;
+        route[p].weight_bf16 = ew[i];
+        route[p].slot = (uint16_t)(i % top_k);
+        if (!shadow) ids[i] = -1;
     }
     __syncthreads();
     if (nr == 0) return;
@@ -140,20 +163,7 @@ __global__ void mailbox_publish_kernel(
     }
     __syncthreads();
 
-    uint8_t* staged_q = reinterpret_cast<uint8_t*>(
-        base + h->activation_offset[rank] + kActivationBf16Bytes);
-    float* staged_s = reinterpret_cast<float*>(
-        base + h->activation_offset[rank] + kActivationBf16Bytes + kActivationQBytes);
-    const uint64_t q_total = (uint64_t)rows * hidden;
-    for (uint64_t i = threadIdx.x; i < q_total; i += blockDim.x) staged_q[i] = aq[i];
     const uint32_t scale_cols = hidden / kActGroup;
-    const uint64_t s_total = (uint64_t)rows * scale_cols;
-    for (uint64_t i = threadIdx.x; i < s_total; i += blockDim.x) staged_s[i] = as[i];
-
-    if (stage_bf16) {
-        uint16_t* staged_x = reinterpret_cast<uint16_t*>(base + h->activation_offset[rank]);
-        for (uint64_t i = threadIdx.x; i < q_total; i += blockDim.x) staged_x[i] = x[i];
-    }
 
     Request* ring = reinterpret_cast<Request*>(base + h->ring_offset);
     Request* q = ring + lane * kLaneSlots + ((seq - 1u) % kLaneSlots);
@@ -469,6 +479,12 @@ int publish_launch(const RadArgs* a, RadStream stream) {
         (long long)((q - qb) / (uintptr_t)hidden) + rows > a->t[5].shape[0])
         return RAD_E_SHAPE;
 
+    /* kHidden is a multiple of 16, so the 16-byte copies cover every row exactly. */
+    hipLaunchKernelGGL(mailbox_stage_kernel, dim3(((uint32_t)rows * (uint32_t)hidden / 16u + 255u) / 256u > 512u ? 512u : ((uint32_t)rows * (uint32_t)hidden / 16u + 255u) / 256u),
+                       dim3(256), 0, (hipStream_t)stream, static_cast<uint8_t*>(d->mailbox), d->rank,
+                       static_cast<const uint8_t*>(a->t[3].data), static_cast<const float*>(a->t[4].data),
+                       static_cast<const uint16_t*>(a->t[2].data), (uint32_t)rows, (uint32_t)hidden,
+                       d->cpu_ref);
     hipLaunchKernelGGL(mailbox_publish_kernel, dim3(1), dim3(256), 0, (hipStream_t)stream,
                        static_cast<uint8_t*>(d->mailbox), d->owner, d->sequence, d->published, d->rank,
                        static_cast<int32_t*>(a->t[0].data),
