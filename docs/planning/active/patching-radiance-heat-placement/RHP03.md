@@ -62,11 +62,11 @@ Depends on RHP02. Reuses existing BigCherry artifacts and experiment evidence li
 
 ### Canonical state ownership
 
-\`HeatEngine\` owns **current local residency heat**; \`Mover\` owns transfer state and published tier; RHP04 policy owns a **candidate cross-GPU owner map**; \`libr3moe\`/engine deployment owns **active cross-GPU owner generation**. Never persist or scrape half-published device bitmaps as authority. One page reporting joins these sources without copying them into a new telemetry datastore.
+`HeatEngine` owns **current local residency heat**; `Mover` owns transfer state and published tier; RHP04 policy owns a **candidate cross-GPU owner map**; `libr3moe`/engine deployment owns **active cross-GPU owner generation**. Never persist or scrape half-published device bitmaps as authority. One page reporting joins these sources without copying them into a new telemetry datastore.
 
 ### Proposed stable aggregate metric names
 
-\`\`\`text
+```text
 radiance:route_histograms_issued_total{phase}
 radiance:route_histograms_credited_total{phase}
 radiance:route_histograms_dropped_total{phase}
@@ -79,13 +79,13 @@ radiance:moe_ownership_generation
 radiance:moe_owner_evaluations_total{outcome}
 radiance:moe_owner_migrations_total{outcome}
 radiance:moe_owner_moved_bytes_total
-\`\`\`
+```
 
 Names are proposals; conform to existing upstream metrics style and vLLM-compatible naming. **Do not** expose expert ID, layer index, request ID, model hash or ownership generation as high-cardinality *labels*. A small fixed device label set is allowed. Preserve upstream counters; new aggregates must not reinterpret old metrics. Separate heat decisions from mover's existing VRAM promotion statistics.
 
 ### Placement snapshot schema v1
 
-\`\`\`json
+```json
 {
   "schema": 1,
   "generation": 7,
@@ -102,13 +102,13 @@ Names are proposals; conform to existing upstream metrics style and vLLM-compati
   "created_at_utc": "<timestamp>",
   "sha256": "<canonical-json-excluding-sha256 checksum>"
 }
-\`\`\`
+```
 
 The two owners are an illustrative *partial excerpt*, not a valid complete map. Production validator demands **all routed expert IDs**, including protected local-only units. Canonical sorted keys/owners and a pinned checksum algorithm; check full cohort stable identities, not current HIP ordinal. Refuse unknown schema, unverified model, unqualified source, capacity overflow, duplicate/missing ID, invalid MTP map or damaged checksum. Durable write = create temp file mode 0600 -> write -> flush -> fsync file -> atomically rename -> fsync directory on supported systems; never truncate the active file directly. Two-generation last-good recovery, generation monotonicity.
 
 ### Artifacts vs runtime state
 
-Operational snapshot: \`<work>/state/radiance/<model-digest>/<stable-cohort>/placement.json\`, machine-local and gitignored by environment policy. Bench/control samples: \`artifacts/<run-id>/\` with manifest and checksums; compact reviewed summary: \`docs/evidence/<run-id>/\`. No SQLite, external metrics backend, duplicate stage logger or prompt text. Retain only rolling windows required for RHP04 confidence and bounded debug traces.
+Operational snapshot: `<work>/state/radiance/<model-digest>/<stable-cohort>/placement.json`, machine-local and gitignored by environment policy. Bench/control samples: `artifacts/<run-id>/` with manifest and checksums; compact reviewed summary: `docs/evidence/<run-id>/`. No SQLite, external metrics backend, duplicate stage logger or prompt text. Retain only rolling windows required for RHP04 confidence and bounded debug traces.
 
 ### Negative tests
 
