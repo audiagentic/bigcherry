@@ -334,7 +334,7 @@ This supersedes only the old-pin implementation details above; the ownership and
 2. `ggml/src/ggml-backend-meta.cpp` around b11402 lines ~1800-1845, `struct ggml_backend_meta_context`: existing anchors are `void * comm_ctx = nullptr;` and `ggml_backend_comm_allreduce_tensor_t comm_allreduce = nullptr;`. Add range callback + preflight callback and proc-address lookup in the constructor.
 3. `ggml/src/ggml-backend-meta.cpp` around ~2430-2470, `ggml_backend_meta_graph_compute()`: current anchor is the loop which runs every rank's `bcj.cgraphs[i].cgraph_main`, then builds `nodes` from the last node and calls `backend_ctx->comm_allreduce(...)`. This is the serialization point to replace only for a preflight-qualified tiled boundary.
 4. `src/models/qwen4exp.cpp`, `llama_model_qwen4exp::graph::build_layer_attn()` (b11402 ~930-1050): the first producer is already named by the anchor `cur = build_lora_mm(model.layers[il].wo, cur, model.layers[il].wo_s); cb(cur, "attn_output", il);`. **No model edit is required in phase 1.** Meta qualifies the terminal simple-backend node corresponding to this `GGML_OP_MUL_MAT` boundary.
-5. `ggml/src/ggml-cuda/ggml-cuda.cu` around ~1000-1200, `ggml_backend_cuda_comm_allreduce_nccl()`: factor the large/small collective body into a private range helper accepting element offset/count and an explicit stream array. Production tile ranges remain above the 3-rank BF16 threshold for tile sizes >=64, so preserve the current F32->BF16 / RCCL BF16 / BF16->F32 behavior.
+5. `ggml/src/ggml-cuda/ggml-cuda.cu` around ~1000-1200, `ggml_backend_cuda_comm_allreduce_nccl()`: factor the large/small collective body into a private range helper accepting element offset/count, an explicit stream array, and the reduction precision selected for the **whole original reduction**. Do not recalculate the F32/BF16 threshold per tile: a whole reduction can be above the threshold while an individual tile is below it. Preserve the current F32->BF16 / RCCL BF16 / BF16->F32 behavior selected before partitioning.
 6. `ggml/src/ggml-cuda/ggml-cuda.cu`, `ggml_backend_cuda_reg_get_proc_address()`: export the two optional range symbols. Existing whole-tensor provider remains the fallback.
 
 ### Patch package
@@ -371,6 +371,8 @@ typedef bool (*ggml_backend_comm_allreduce_tensor_range_t)(
 ```
 
 Meta takes the tiled path only if `range_supported()` succeeds for every planned range. After that, a runtime range failure is an execution error, not a silent whole-tensor retry.
+
+The provider's precision decision is also part of preflight. At the b11552 RCCL pin, the F32/BF16 choice is made from the whole reduction's element count. For example, a 768 x 512 reduction is above the 131072-element boundary while a 768 x 128 tile is below it; choosing independently per tile would silently change the arithmetic. Snapshot the whole-reduction policy before launching tile zero and carry it through every range. If the range provider cannot honor that explicit policy, reject the tiled path before any producer work is submitted.
 
 ### First producer: attention `wo`, not FFN/MoE
 
@@ -474,6 +476,10 @@ Patch tests:
 - graph replay: same request shape repeatedly plus cache reuse/multi-request; stable graph UIDs, no dynamic realloc;
 - default-off output and provider call path unchanged.
 
-Numerics: b11402's production 3-rank RCCL path is BF16 for these ranges, so do **not** demand generic byte identity with exact-F32 AllReduce. Compare tiled RCCL against whole RCCL using the same BF16 policy, record max abs/ULP/logit deltas, and gate model output against CPU-f32/top-k at near ties. For any F32-under-threshold direct test, require exact equality.
+Numerics: b11402's production 3-rank RCCL path is BF16 for these ranges, so do **not** demand generic byte identity with exact-F32 AllReduce. Compare tiled RCCL against whole RCCL using the same whole-reduction precision policy, including a boundary case where the total reduction is above the threshold but a tile is below it. Record max abs/ULP/logit deltas and gate model output against CPU-f32/top-k at near ties. For any F32-under-threshold direct test, require exact equality.
 
 Mechanism acceptance: rocprof timeline proves overlap and `BIGCHERRY_AR_TILE_TRACE` shows only attention-output boundaries firing. Performance: same-build flag-off vs tile128/256 ABBA at ~32K/~100K/~200K, >=4 arms/config, clocks stable; first test isolated from 1334/other new prefill changes, then compose. Phase-1 promotion threshold: >=3% representative E2E prefill or >=30% of the attention-output reduction wall hidden with no offsetting regression. Full PGC15's existing >=10% target remains the bar before generalizing to multiple producer families. Decode control <=1%.
+
+### 2026-10-15 audit amendment - preserve whole-reduction precision
+
+The tiled design must not derive provider precision from a tile's element count. Preflight must select the F32/BF16 policy once from the original reduction and pass that policy to every tile. Any failure after tile submission is an execution failure: never retry a partially reduced tensor through the whole-tensor fallback. Provider-owned scratch, streams, events and completion fences must remain live until the final conversion and all queued tile collectives have completed.
