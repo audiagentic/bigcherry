@@ -16,9 +16,9 @@ continue with [`PATCH_VALIDATION.md`](PATCH_VALIDATION.md).
    will carry the patch. Check existing topology and conflicts:
 
    ```text
-   PYTHONPATH=tools python -m bigcherry patches --source <source-name>
-   PYTHONPATH=tools python -m bigcherry patch-explain <patch-id>
-   PYTHONPATH=tools python -m bigcherry patch-graph --roots <patch-id>
+   PYTHONPATH=tools python -m bigcherry --engine llamacpp patches --source <source-name>
+   PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-explain <patch-id>
+   PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-graph --roots <patch-id>
    ```
 
 3. If the patch is experimental or makes a correctness/performance claim,

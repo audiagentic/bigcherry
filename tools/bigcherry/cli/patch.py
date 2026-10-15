@@ -22,6 +22,7 @@ from ..patch import overlay as patch_overlay
 from ..patch import patchset
 from ..patch import rebase as patch_rebase
 from ..patch import registry as patch_registry
+from ..patch import runtime_profiles
 from ..patch import selection as patch_selection
 from ..release import records as releases
 from ..source.workspace import UpstreamRepository, WorkspaceError
@@ -37,7 +38,24 @@ _restore_overlay = patch_overlay.restore_overlay
 _record_for = releases.record_for_checkout
 
 
+def _context(args: Namespace) -> ProjectContext:
+    """The chosen engine's project context (its patch tree, recipes and overlay)."""
+    return ProjectContext.resolve(engine=args.engine)
+
+
+def _vendor_root(engine: str) -> Path:
+    """The engine's vendor checkout (declared in its engine.toml); it belongs to the primary checkout."""
+    return engines.load(paths.REPO_ROOT, engine).vendor_root(paths.primary_root())
+
+
+def _checkout_root(args: Namespace) -> Path:
+    """The checkout a command reads: ``--llama-root`` when given, otherwise the chosen engine's vendor checkout."""
+    override = getattr(args, "llama_root", None)
+    return paths.llama_root(override) if override is not None else _vendor_root(args.engine)
+
+
 def _apply_exact_selection(
+    engine: str,
     root: Path,
     selection: CliPatchSelection,
     *,
@@ -76,7 +94,7 @@ def _apply_exact_selection(
             file=sys.stderr,
         )
         return False
-    fresh = patch_selection._resolve_exact_selection(engines.LLAMACPP, selection.source_name)
+    fresh = patch_selection._resolve_exact_selection(engine, selection.source_name)
     if (
         fresh.patch_set_id != selection.patch_set_id
         or fresh.patch_ids != selection.patch_ids
@@ -133,8 +151,8 @@ def _apply_exact_selection(
             sim_texts=overlay_sim,
         )
 
-    resolved = patchset.resolve_exact(engines.LLAMACPP, selection.patch_ids, allow_rejected=False)
-    patches = patchset.load_resolved(engines.LLAMACPP, resolved)
+    resolved = patchset.resolve_exact(engine, selection.patch_ids, allow_rejected=False)
+    patches = patchset.load_resolved(engine, resolved)
     results = patcher.apply_all(
         patches, root, dry_run=dry_run, initial_texts=overlay_sim
     )
@@ -208,7 +226,7 @@ def cmd_apply(args: Namespace) -> int:
             return 2
         try:
             result = patch_rebase.apply_known_good(
-                engines.LLAMACPP,
+                args.engine,
                 root,
                 Path(report_path),
                 force=args.force,
@@ -227,7 +245,7 @@ def cmd_apply(args: Namespace) -> int:
         return 0 if result.ok else 1
 
     try:
-        selection = patch_selection.resolve_cli_selection(engines.LLAMACPP, args)
+        selection = patch_selection.resolve_cli_selection(args.engine, args)
     except patch_selection.SelectionError as exc:
         print(str(exc), file=sys.stderr)
         return 2
@@ -236,6 +254,7 @@ def cmd_apply(args: Namespace) -> int:
         return 2
 
     ok = _apply_exact_selection(
+        args.engine,
         root,
         selection,
         force=args.force,
@@ -253,7 +272,7 @@ def cmd_patch_rebase_check(args: Namespace) -> int:
     root = paths.llama_root(args.llama_root)
     try:
         report = patch_rebase.run_rebase_check(
-            engines.LLAMACPP,
+            args.engine,
             root,
             source_name=getattr(args, "source", None),
             all_patches=bool(getattr(args, "all_patches", False)),
@@ -297,18 +316,18 @@ def cmd_patch_status(args: Namespace) -> int:
 
 
 def cmd_patch_explain(args: Namespace) -> int:
+    ctx = _context(args)
     try:
-        snapshot = patch_catalog.build_snapshot(engines.LLAMACPP)
+        snapshot = patch_catalog.build_snapshot(args.engine)
     except ValueError as exc:
         print(
-            f"patch explain: could not load engines/llamacpp/patches/catalog.toml: {exc}",
+            f"patch explain: could not load {ctx.patches_root / 'catalog.toml'}: {exc}",
             file=sys.stderr,
         )
         return 2
-    from ..core import config as campaign_config
 
     try:
-        cfg = campaign_config.load(paths.RECIPES)
+        cfg = campaign_config.load(ctx.config_path)
     except (campaign_config.ConfigError, OSError):
         cfg = None
     try:
@@ -323,10 +342,10 @@ def cmd_patch_explain(args: Namespace) -> int:
 def cmd_patch_graph(args: Namespace) -> int:
     """Render the patch dependency topology."""
     try:
-        snapshot = patch_catalog.build_snapshot(engines.LLAMACPP)
+        snapshot = patch_catalog.build_snapshot(args.engine)
     except ValueError as exc:
         print(
-            f"patch graph: could not load engines/llamacpp/patches/catalog.toml: {exc}", file=sys.stderr
+            f"patch graph: could not load {_context(args).patches_root / 'catalog.toml'}: {exc}", file=sys.stderr
         )
         return 2
     try:
@@ -360,13 +379,15 @@ def cmd_patch_lint(args: Namespace) -> int:
         problems.extend(f"{engine}: {problem}" for problem in lint_report.problems)
         grandfathered.extend(f"{engine}:{patch_id}" for patch_id in lint_report.grandfathered)
         warnings.extend(f"{engine}: {warning}" for warning in lint_report.warnings)
-    # Runtime profiles are currently a llama.cpp configuration surface.
-    from bigcherry.patch import runtime_profiles
-    problems.extend(
-        runtime_profiles.check(
-            documented_flags=runtime_profiles.documented_flags(engines.LLAMACPP)
-        )
-    )
+        # An engine that ships runtime profiles keeps them in its overlay; one without the folder has none to check.
+        profile_dir = runtime_profiles.profile_dir(ProjectContext.resolve(engine=engine).overlay_root)
+        if profile_dir.is_dir():
+            problems.extend(
+                f"{engine}: {problem}"
+                for problem in runtime_profiles.check(
+                    profile_dir, documented_flags=runtime_profiles.documented_flags(engine)
+                )
+            )
     if args.json:
         print(
             json.dumps(
@@ -449,11 +470,9 @@ def cmd_patch_disposition(args: Namespace) -> int:
 
 def cmd_patch_verify_evidence(args: Namespace) -> int:
     """Report current validation evidence for selected patches."""
-    from ..core import config as campaign_config
-    from ..source.workspace import UpstreamRepository, WorkspaceError
-
-    cfg = campaign_config.load(paths.RECIPES)
-    modules = patchset.catalog(engines.LLAMACPP)
+    ctx = _context(args)
+    cfg = campaign_config.load(ctx.config_path)
+    modules = patchset.catalog(args.engine, directory=ctx.patches_root)
     if args.patch_id is not None:
         modules = [module for module in modules if module.patch_id == args.patch_id]
         if not modules:
@@ -469,10 +488,10 @@ def cmd_patch_verify_evidence(args: Namespace) -> int:
     try:
         import os
 
-        mirror = ProjectContext.resolve(engine="llamacpp", 
-            work_root=os.environ.get("BC_CACHE")
+        mirror = ProjectContext.resolve(
+            engine=args.engine, work_root=os.environ.get("BC_CACHE")
         ).upstream_repo
-        upstream = mirror if mirror.exists() else paths.llama_root()
+        upstream = mirror if mirror.exists() else _vendor_root(args.engine)
         resolved_base_revision = UpstreamRepository(upstream).resolve_ref(cfg.pinned)
     except WorkspaceError as exc:
         print(
@@ -480,7 +499,8 @@ def cmd_patch_verify_evidence(args: Namespace) -> int:
             file=sys.stderr,
         )
         return 2
-    statuses = patch_catalog.validation_evidence_statuses("llamacpp", 
+    statuses = patch_catalog.validation_evidence_statuses(
+        args.engine,
         [module.patch_id for module in modules],
         pinned_ref=cfg.pinned,
         resolved_base_revision=resolved_base_revision,
@@ -603,11 +623,12 @@ def cmd_patch_gates(args: Namespace) -> int:
     from ..campaign import resolution as campaign_resolution
 
     intent = patch_gates.GateIntent(args.intent)
+    ctx = _context(args)
     try:
-        cfg = campaign_config.load(paths.RECIPES)
-        registry = patch_registry.load_registry(engines.LLAMACPP, paths.PATCHES)
+        cfg = campaign_config.load(ctx.config_path)
+        registry = patch_registry.load_registry(args.engine, ctx.patches_root)
         descriptor = registry.get(args.patch_id)
-        modules = patchset.catalog(engines.LLAMACPP, directory=paths.PATCHES)
+        modules = patchset.catalog(args.engine, directory=ctx.patches_root)
 
         # PA34: the exact selection is named by its canonical identity.
         # --experiment / --focal-overlay qualify a --source selection; the
@@ -620,11 +641,12 @@ def cmd_patch_gates(args: Namespace) -> int:
         if args.source:
             if args.source not in cfg.sources:
                 raise ValueError(f"unknown source {args.source!r}")
-            selection = campaign_resolution.resolve_canonical_selection("llamacpp", 
+            selection = campaign_resolution.resolve_canonical_selection(
+                args.engine,
                 args.source,
                 cfg,
                 modules,
-                catalog_directory=paths.PATCHES,
+                catalog_directory=ctx.patches_root,
                 experiment=experiment,
                 focal_overlay_patch_id=args.patch_id if focal_overlay else None,
             )
@@ -656,14 +678,14 @@ def cmd_patch_gates(args: Namespace) -> int:
             if intent in (patch_gates.GateIntent.BUILD, patch_gates.GateIntent.REBASE):
                 raise ValueError(f"--source is required for {intent.value}")
             selected_ids = patchset.expand_composition(
-                engines.LLAMACPP,
+                args.engine,
                 (args.patch_id,),
-                directory=paths.PATCHES,
+                directory=ctx.patches_root,
             ).expanded
         composition = patchset.resolve_exact(
-            engines.LLAMACPP,
+            args.engine,
             tuple(selected_ids),
-            directory=paths.PATCHES,
+            directory=ctx.patches_root,
             allow_rejected=False,
         )
     except (
@@ -676,7 +698,7 @@ def cmd_patch_gates(args: Namespace) -> int:
         print(f"patch-gates: cannot resolve composition: {exc}", file=sys.stderr)
         return 2
 
-    source_root = paths.llama_root(getattr(args, "llama_root", None))
+    source_root = _checkout_root(args)
     try:
         repository = UpstreamRepository(source_root)
         resolved_base_revision = repository.resolve_ref(cfg.pinned)
@@ -721,12 +743,12 @@ def cmd_patch_gates(args: Namespace) -> int:
             backend=backend,
             source=args.source,
         ),
-        patches_dir=paths.PATCHES,
+        patches_dir=ctx.patches_root,
         resolved_base_revision=resolved_base_revision,
-        catalog_path=paths.PATCH_CATALOG,
+        catalog_path=ctx.patches_root / "catalog.toml",
         evidence_root=None,
         external_sources_path=paths.EXTERNAL_SOURCES,
-        validation_baseline_path=paths.VALIDATION_PACKAGE_GRANDFATHER,
+        validation_baseline_path=ctx.patches_root / "_validation" / "validation-package-grandfather.json",
         dispositions_dir=paths.DISPOSITIONS,
         source_root=source_root,
         expected_selector=selection.identity if selection is not None else None,
@@ -811,12 +833,12 @@ def cmd_patch_doc(args: Namespace) -> int:
     --all) so "what's in this doc" always matches "what's in this build" --
     no separate selection language to drift out of sync.
     """
-    root = paths.llama_root(args.llama_root)
+    root = _checkout_root(args)
     source_name = getattr(args, "source", None)
     all_patches = bool(getattr(args, "all_patches", False))
     try:
         patch_ids = patch_rebase._selection_patch_ids(
-            engines.LLAMACPP,
+            args.engine,
             source_name=source_name,
             all_patches=all_patches,
         )
@@ -827,14 +849,14 @@ def cmd_patch_doc(args: Namespace) -> int:
     upstream_revision = patch_rebase._git(root, "rev-parse", "HEAD")
     bigcherry_revision = patch_rebase._git(paths.REPO_ROOT, "rev-parse", "HEAD")
     pin_info = {
-        "llama.cpp revision": upstream_revision,
+        f"{args.engine} upstream revision": upstream_revision,
         "bigcherry revision": bigcherry_revision,
     }
     selection_label = f"--source {source_name}" if source_name else "--all"
 
     try:
         doc = patch_docs.render_patch_selection_doc(
-            engines.LLAMACPP,
+            args.engine,
             patch_ids=patch_ids,
             pin_info=pin_info,
             selection_label=selection_label,
@@ -856,33 +878,32 @@ def cmd_patches(args: Namespace) -> int:
 
     --kind/--backend/--origin filter against patch metadata: catalog.toml
     for legacy flat patches (RE30 phase 1's declarative metadata), and
-    patch.toml for packaged patches (patch-system PA02: engines/llamacpp/patches/ may now
+    patch.toml for packaged patches (patch-system PA02: the engine's patch tree may now
     hold <id>/ package directories -- the metadata, not a directory move,
     answers "which patches form the framework / are HIP vs Vulkan / came
     from an external fork").
 
-    RE39: reads engines/llamacpp/patches/ and engines/llamacpp/patches/catalog.toml exactly once via a single
-    CatalogSnapshot, instead of the two independent scans (patchset.describe("llamacpp", )
-    + patch_catalog.load_catalog(engines.LLAMACPP)) this command used to make.
+    RE39: reads the engine's patch tree and its catalog.toml exactly once via a single CatalogSnapshot, instead of
+    two independent scans (patchset.describe + patch_catalog.load_catalog) this command used to make.
     """
     try:
-        snapshot = patch_catalog.build_snapshot(engines.LLAMACPP)
+        snapshot = patch_catalog.build_snapshot(args.engine)
     except ValueError as exc:
-        print(f"patches: could not load engines/llamacpp/patches/catalog.toml: {exc}", file=sys.stderr)
+        print(f"patches: could not load {_context(args).patches_root / 'catalog.toml'}: {exc}", file=sys.stderr)
         return 2
     if not snapshot.modules:
         print("no patches found", file=sys.stderr)
         return 1
 
     try:
-        selection = patch_selection.resolve_cli_selection(engines.LLAMACPP, args)
+        selection = patch_selection.resolve_cli_selection(args.engine, args)
     except patch_selection.SelectionError as exc:
         print(str(exc), file=sys.stderr)
         return 2
 
     catalog_filter_active = bool(args.kind or args.backend or args.origin)
 
-    root = paths.llama_root(args.llama_root)
+    root = _checkout_root(args)
     print(f"selection: {selection.label}")
     print(f"checkout:  {root}")
     if catalog_filter_active:

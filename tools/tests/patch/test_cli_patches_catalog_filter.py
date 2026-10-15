@@ -13,13 +13,15 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from bigcherry import __main__ as cli  # noqa: E402
+from bigcherry.cli import engine_scope  # noqa: E402
 from bigcherry.patch import catalog as patch_catalog  # noqa: E402
 from bigcherry.patch import patchset  # noqa: E402
 
 
 def _run(argv: list[str]) -> tuple[int, str, str]:
     parser = cli.build_parser()
-    args = parser.parse_args(argv)
+    args = parser.parse_args(["--engine", "llamacpp", *argv])
+    engine_scope.resolve(args, parser)
     out, err = io.StringIO(), io.StringIO()
     with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
         code = args.func(args)

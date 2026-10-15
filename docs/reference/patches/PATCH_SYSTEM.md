@@ -43,9 +43,9 @@ failure; do not skip ahead to hardware or promotion.
 2. Inspect the intended source composition:
 
    ```text
-   PYTHONPATH=tools python -m bigcherry patches --source <source-name>
-   PYTHONPATH=tools python -m bigcherry patch-explain <patch-id>
-   PYTHONPATH=tools python -m bigcherry patch-graph --roots <patch-id>
+   PYTHONPATH=tools python -m bigcherry --engine llamacpp patches --source <source-name>
+   PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-explain <patch-id>
+   PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-graph --roots <patch-id>
    ```
 
 3. Create or edit the package. Keep `patch.toml` authoritative for packaged
@@ -80,7 +80,7 @@ failure; do not skip ahead to hardware or promotion.
    pin SHA, hardware identity, and artifact hashes. Then run:
 
    ```text
-   PYTHONPATH=tools python -m bigcherry patch-verify-evidence <patch-id>
+   PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-verify-evidence <patch-id>
    ```
 
    Use `--no-legacy-grandfather` when the decision must rely only on current
