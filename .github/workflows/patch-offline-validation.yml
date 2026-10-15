@@ -185,7 +185,7 @@ jobs:
       - name: Prepare pinned llama.cpp source
         env:
           PYTHONPATH: tools
-        run: python -m bigcherry pull --source bigcherry
+        run: python -m bigcherry --engine llamacpp pull --source bigcherry
 
       - name: Run slice branch safety tests
         env:

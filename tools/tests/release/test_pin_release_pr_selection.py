@@ -22,7 +22,7 @@ def _prs(*rows):
 
 class ReleasePrSelection(unittest.TestCase):
     def setUp(self):
-        self.plan = SimpleNamespace(repo_root=_REPO, main="main", version="11552.0.0")
+        self.plan = SimpleNamespace(repo_root=_REPO, main="main", version="11552.0.0", package="engines/llamacpp")
 
     def test_other_component_with_the_same_version_is_not_taken(self):
         listing = _prs((106, "release:  bc-platform 11552.0.0", "release-please--branches--main--components--bc-platform"))

@@ -26,6 +26,7 @@ from ..patch import runtime_profiles
 from ..patch import selection as patch_selection
 from ..release import records as releases
 from ..source.workspace import UpstreamRepository, WorkspaceError
+from .engine_scope import checkout_root, vendor_root
 
 if TYPE_CHECKING:
     from ..patch.selection import CliPatchSelection
@@ -41,17 +42,6 @@ _record_for = releases.record_for_checkout
 def _context(args: Namespace) -> ProjectContext:
     """The chosen engine's project context (its patch tree, recipes and overlay)."""
     return ProjectContext.resolve(engine=args.engine)
-
-
-def _vendor_root(engine: str) -> Path:
-    """The engine's vendor checkout (declared in its engine.toml); it belongs to the primary checkout."""
-    return engines.load(paths.REPO_ROOT, engine).vendor_root(paths.primary_root())
-
-
-def _checkout_root(args: Namespace) -> Path:
-    """The checkout a command reads: ``--llama-root`` when given, otherwise the chosen engine's vendor checkout."""
-    override = getattr(args, "llama_root", None)
-    return paths.llama_root(override) if override is not None else _vendor_root(args.engine)
 
 
 def _apply_exact_selection(
@@ -135,7 +125,7 @@ def _apply_exact_selection(
     if not force and not record.audit.get("passed"):
         print(
             "refusing to patch a tree that has not passed a strict audit.\n"
-            "  run `python -m bigcherry audit` first, or pass --force.",
+            f"  run `python -m bigcherry --engine {engine} audit` first, or pass --force.",
             file=sys.stderr,
         )
         return False
@@ -146,6 +136,7 @@ def _apply_exact_selection(
     if selection.overlay:
         written = _copy_overlay(
             root,
+            ProjectContext.resolve(engine=engine).overlay_root,
             dry_run=dry_run,
             backup=overlay_backup,
             sim_texts=overlay_sim,
@@ -269,7 +260,7 @@ def cmd_apply(args: Namespace) -> int:
 def cmd_patch_rebase_check(args: Namespace) -> int:
     """PA16: revision-specific patch compatibility report. Observational --
     never advances release stage, never mutates the vendor checkout."""
-    root = paths.llama_root(args.llama_root)
+    root = checkout_root(args)
     try:
         report = patch_rebase.run_rebase_check(
             args.engine,
@@ -491,7 +482,7 @@ def cmd_patch_verify_evidence(args: Namespace) -> int:
         mirror = ProjectContext.resolve(
             engine=args.engine, work_root=os.environ.get("BC_CACHE")
         ).upstream_repo
-        upstream = mirror if mirror.exists() else _vendor_root(args.engine)
+        upstream = mirror if mirror.exists() else vendor_root(args.engine)
         resolved_base_revision = UpstreamRepository(upstream).resolve_ref(cfg.pinned)
     except WorkspaceError as exc:
         print(
@@ -698,7 +689,7 @@ def cmd_patch_gates(args: Namespace) -> int:
         print(f"patch-gates: cannot resolve composition: {exc}", file=sys.stderr)
         return 2
 
-    source_root = _checkout_root(args)
+    source_root = checkout_root(args)
     try:
         repository = UpstreamRepository(source_root)
         resolved_base_revision = repository.resolve_ref(cfg.pinned)
@@ -833,7 +824,7 @@ def cmd_patch_doc(args: Namespace) -> int:
     --all) so "what's in this doc" always matches "what's in this build" --
     no separate selection language to drift out of sync.
     """
-    root = _checkout_root(args)
+    root = checkout_root(args)
     source_name = getattr(args, "source", None)
     all_patches = bool(getattr(args, "all_patches", False))
     try:
@@ -846,7 +837,11 @@ def cmd_patch_doc(args: Namespace) -> int:
         print(f"patch-doc: {exc}", file=sys.stderr)
         return 2
 
-    upstream_revision = patch_rebase._git(root, "rev-parse", "HEAD")
+    try:
+        upstream_revision = patch_rebase._git(root, "rev-parse", "HEAD")
+    except patch_rebase.RebaseCheckError as exc:
+        print(f"patch-doc: {args.engine} checkout {root} is not usable: {exc}", file=sys.stderr)
+        return 2
     bigcherry_revision = patch_rebase._git(paths.REPO_ROOT, "rev-parse", "HEAD")
     pin_info = {
         f"{args.engine} upstream revision": upstream_revision,
@@ -903,7 +898,7 @@ def cmd_patches(args: Namespace) -> int:
 
     catalog_filter_active = bool(args.kind or args.backend or args.origin)
 
-    root = _checkout_root(args)
+    root = checkout_root(args)
     print(f"selection: {selection.label}")
     print(f"checkout:  {root}")
     if catalog_filter_active:

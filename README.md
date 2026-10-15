@@ -21,8 +21,8 @@ buckets:
 The workflow for a new llama.cpp release is:
 
 ```bash
-python -m bigcherry pull   --ref b1234        # fetch/checkout upstream
-python -m bigcherry audit                     # strict invariant audit
+python -m bigcherry --engine llamacpp pull   --ref b1234        # fetch/checkout upstream
+python -m bigcherry --engine llamacpp audit                     # strict invariant audit
 python -m bigcherry apply --source bigcherry  # engines/llamacpp/overlay + anchored patches
 python -m bigcherry generate --arch all       # candidate catalog -> artifacts
 python -m bigcherry build   --profile replay-full

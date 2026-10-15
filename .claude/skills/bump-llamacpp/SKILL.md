@@ -17,11 +17,11 @@ went looking for it.
 
 Use this when the pin is at most a few days old. Anything that stops here drops you into the matching full section.
 
-1. Orient (about 10 s): `python -m bigcherry pin-status --all-remotes`; confirm Brutus is idle
+1. Orient (about 10 s): `python -m bigcherry --engine llamacpp pin-status --all-remotes`; confirm Brutus is idle
    (`pgrep -af "llama-server|ninja|queue-"`). Latest tag: `gh api repos/ggml-org/llama.cpp/releases --jq '.[0].tag_name'`.
-2. Optional, in the background: `python -m bigcherry sources check` (30+ minutes; one fork's `git cherry` times
+2. Optional, in the background: `python -m bigcherry --engine llamacpp sources check` (30+ minutes; one fork's `git cherry` times
    out at 600 s). Findings are triage input, not a bump blocker.
-3. `python -m bigcherry pin-bump <tag> --source bigcherry` and let it finish (about 16 minutes; do NOT commit in
+3. `python -m bigcherry --engine llamacpp pin-bump <tag> --source bigcherry` and let it finish (about 16 minutes; do NOT commit in
    this checkout while it runs - a moved HEAD makes the coverage report stale and it stops with
    `COVERAGE_REPORT_STALE`; `--resume` recomputes). In one run it repins, pulls, audits, probes every patch, runs the
    patch test suite against the pristine tree, applies the build selection, runs the clang++ source compile phase,
@@ -45,7 +45,7 @@ Use this when the pin is at most a few days old. Anything that stops here drops 
    makes six and settles a 2-3% difference. Identical greedy text and acceptance are required; a consistent
    slowdown is a reason to hold the pin, not to shrug (b11402: Flash-Next decode -3%, 27B prefill -0.8..-1.4%).
 7. Completion gate and ledger event as in sections 5 and 6.
-8. Release: use `python -m bigcherry pin-release <tag> --evidence @<file>`. Its notes phase writes the
+8. Release: use `python -m bigcherry --engine llamacpp pin-release <tag> --evidence @<file>`. Its notes phase writes the
    generated notes and temporarily sets the `engines/llamacpp` package's
    `release-as` in `release-please-config.json` in the same commit. It then
    publishes the work branch through a checked pull request, validates and
@@ -59,7 +59,7 @@ Still manual: the Brutus pull/build/smoke, and the completion gate.
 If a regression needs a bisect: build each upstream point from a separate clone with a local-only branch that sets
 `pinned` to the commit (the queue's `@build-run` names are shared through the work root, so existing scripts compare
 across clones). That clone must have its OWN `vendor/llama.cpp` - `/mnt/data/bigcherry-work/test-clone` symlinks it
-to the main workspace, so every `bigcherry pull` there moves the campaign tree's vendor checkout and the completion
+to the main workspace, so every `bigcherry --engine llamacpp pull` there moves the campaign tree's vendor checkout and the completion
 gate then reports a mismatch. Afterwards put it back (`git -C vendor/llama.cpp checkout <tag>` in the main
 workspace) before running `pin-status --complete`. Compare every bisect point against the SAME reference binary;
 a five-point bisect of 14 commits took about 20 minutes per point (7 build + 13 for the Flash-Next and 27B runs).
@@ -67,7 +67,7 @@ a five-point bisect of 14 commits took about 20 minutes per point (7 build + 13 
 ## 0. Orient before touching anything
 
 ```
-python -m bigcherry pin-status --all-remotes
+python -m bigcherry --engine llamacpp pin-status --all-remotes
 ```
 
 Read the `VERDICT` for local and every remote tree. If it already says
@@ -107,8 +107,8 @@ skipped, because it's slow and its output needs a human, not a script, to
 interpret.
 
 ```
-python -m bigcherry sources status          # offline: what we track, ported/planned/superseded
-python -m bigcherry sources check            # ONLINE: has a tracked fork moved/rebased/merged/drifted
+python -m bigcherry --engine llamacpp sources status          # offline: what we track, ported/planned/superseded
+python -m bigcherry --engine llamacpp sources check            # ONLINE: has a tracked fork moved/rebased/merged/drifted
 ```
 
 - `sources status` reads `config/external-sources.toml` -- every patch that
@@ -151,7 +151,7 @@ python -m bigcherry sources check            # ONLINE: has a tracked fork moved/
 ## 2. Resolve the target and run the orchestrator
 
 ```
-python -m bigcherry pin-bump <target-tag> [--source bigcherry] [--resume]
+python -m bigcherry --engine llamacpp pin-bump <target-tag> [--source bigcherry] [--resume]
 ```
 
 This is `tools/bigcherry/release/pin_bump.py` (HI153), a single-tree state
@@ -161,7 +161,7 @@ machine over the individually-proven verbs below. It:
    exists -- HI151);
 2. resolves the ref, requires a clean controller checkout, refuses an
    incompatible uncommitted transition marker;
-3. repins + commits `config/recipes.toml` + `releases/pin-transition.json`
+3. repins + commits `config/recipes.toml` + `releases/pin-transition-llamacpp.json`
    together, in one commit;
 4. pulls the vendor checkout to the new tag;
 5. audits it -- with ONE narrow, provably-safe auto-repair: if
@@ -221,14 +221,14 @@ See `docs/reference/build/PIN_BUMP.md` for the full authoritative manual
 procedure this skill and the orchestrator both implement. Short version:
 
 ```
-python -m bigcherry repin <tag>
-git add config/recipes.toml releases/pin-transition.json
+python -m bigcherry --engine llamacpp repin <tag>
+git add config/recipes.toml releases/pin-transition-llamacpp.json
 git commit -m "pin: <old> -> <tag> (<sha-prefix>) -- rebase in flight"
-python -m bigcherry pull --source bigcherry
-python -m bigcherry audit
-python -m bigcherry patch-rebase-check --source bigcherry --json releases/patch-rebase.json
+python -m bigcherry --engine llamacpp pull --source bigcherry
+python -m bigcherry --engine llamacpp audit
+python -m bigcherry --engine llamacpp patch-rebase-check --source bigcherry --json releases/patch-rebase.json
 python -m bigcherry apply --rebase-report releases/patch-rebase.json --known-good [--force]
-python -m bigcherry pin-status --all-remotes
+python -m bigcherry --engine llamacpp pin-status --all-remotes
 ```
 
 `--force` on `apply` is expected and correct, not a red flag, when `audit`
@@ -303,7 +303,7 @@ python -m bigcherry build --lane <source>:<build>:<platform> \
 ## 5. Completion gate
 
 ```
-python -m bigcherry pin-status --complete --all-remotes
+python -m bigcherry --engine llamacpp pin-status --complete --all-remotes
 ```
 
 Must report PASS: every required tree reachable, converged, consistent, and
@@ -313,7 +313,7 @@ Do not do the rest by hand. Once step 4b's hardware evidence is in, write it
 to a file (build id, smoke result, the A/B numbers, identity) and run:
 
 ```
-python -m bigcherry pin-release <tag> --evidence @<file>
+python -m bigcherry --engine llamacpp pin-release <tag> --evidence @<file>
 ```
 
 It runs phases `gate, record, notes, main, release, unpin, sync`.

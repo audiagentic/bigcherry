@@ -1,4 +1,4 @@
-"""Talking to the llama.cpp remote. Fetching only what a checkout-able ref
+"""Talking to an engine's upstream remote (the URL its engine.toml declares). Fetching only what a checkout-able ref
 needs, and self-healing the stale-lock damage a killed fetch leaves behind."""
 
 from __future__ import annotations
@@ -7,7 +7,6 @@ import re
 import subprocess
 from pathlib import Path
 
-UPSTREAM_URL = "https://github.com/ggml-org/llama.cpp"
 _RELEASE_TAG = re.compile(r"^b(\d+)$")
 LATEST = "latest"
 
@@ -27,7 +26,7 @@ def _git(root: Path | None, *args: str, timeout: int = 300) -> str:
     return done.stdout
 
 
-def release_tags(root: Path | None = None, url: str = UPSTREAM_URL) -> list[str]:
+def release_tags(url: str, root: Path | None = None) -> list[str]:
     """Every b<n> release tag on the remote, oldest first. Asks the remote,
     not the local clone -- a shallow checkout only knows the handful of tags
     it happened to fetch, and answering locally gives a confidently stale
@@ -44,12 +43,12 @@ def release_tags(root: Path | None = None, url: str = UPSTREAM_URL) -> list[str]
     return [tag for _, tag in sorted(numbered)]  # sort numerically, NOT lexically -- b9999 < b10362
 
 
-def latest_release(root: Path | None = None, url: str = UPSTREAM_URL) -> str:
-    return release_tags(root, url)[-1]
+def latest_release(url: str, root: Path | None = None) -> str:
+    return release_tags(url, root)[-1]
 
 
-def resolve_ref(ref: str, root: Path | None = None, url: str = UPSTREAM_URL) -> str:
-    return latest_release(root, url) if ref == LATEST else ref
+def resolve_ref(ref: str, url: str, root: Path | None = None) -> str:
+    return latest_release(url, root) if ref == LATEST else ref
 
 
 def ensure_ref(root: Path, ref: str, *, deepen: bool = True) -> str:

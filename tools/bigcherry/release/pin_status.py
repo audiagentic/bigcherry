@@ -35,11 +35,12 @@ import re
 import shlex
 import subprocess
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from .. import pin_transition
 from ..core.config import require_resolved
+from ..core.engines import EngineLayout
 from ..pin_transition import MarkerError, PinTransition
 
 VERDICT_CONSISTENT = "consistent"
@@ -82,12 +83,23 @@ def _git_ok(root: Path, *args: str, timeout: int = 30) -> str | None:
 
 @dataclass(frozen=True)
 class RepoPaths:
-    """Injectable locations so tests run against fake trees."""
+    """Injectable locations so tests run against fake trees. ``layout`` is the engine whose pin is read: its recipes
+    file holds the pin, its vendor checkout is what the pin is compared with, and its transition marker lives in
+    ``releases_dir``."""
 
     repo_root: Path
-    llama_root: Path
+    vendor_root: Path
     releases_dir: Path
     artifacts_dir: Path
+    layout: EngineLayout
+
+    @property
+    def recipes_path(self) -> Path:
+        return self.layout.recipes_path(self.repo_root)
+
+    @property
+    def marker_path(self) -> Path:
+        return pin_transition.marker_path(self.layout.name, self.releases_dir.parent)
 
 
 @dataclass
@@ -127,31 +139,31 @@ class PinStatusReport:
     aggregate_reasons: list[str] = field(default_factory=list)
 
 
-def _read_pinned_ref(repo_root: Path) -> str | None:
+def _read_pinned_ref(recipes_path: Path) -> str | None:
     try:
-        text = (repo_root / "config" / "recipes.toml").read_text(encoding="utf-8")
+        text = recipes_path.read_text(encoding="utf-8")
     except (OSError, FileNotFoundError):
         return None
     match = _PIN_LINE.search(text)
     return match.group(1) if match else None
 
 
-def _resolve_sha(llama_root: Path, ref: str) -> str | None:
+def _resolve_sha(vendor_root: Path, ref: str) -> str | None:
     """Resolve a ref to a commit SHA using LOCAL refs only (no network)."""
-    return _git_ok(llama_root, "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}")
+    return _git_ok(vendor_root, "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}")
 
 
-def _vendor_info(llama_root: Path) -> tuple[str, tuple[str, ...], int, int] | None:
+def _vendor_info(vendor_root: Path) -> tuple[str, tuple[str, ...], int, int] | None:
     """HEAD, tags-at-HEAD, modified count, untracked count. None = absent."""
-    if not (llama_root / ".git").exists():
+    if not (vendor_root / ".git").exists():
         return None
-    head = _git_ok(llama_root, "rev-parse", "HEAD")
+    head = _git_ok(vendor_root, "rev-parse", "HEAD")
     if head is None:
         return None
-    tags = _git_ok(llama_root, "tag", "--points-at", "HEAD") or ""
+    tags = _git_ok(vendor_root, "tag", "--points-at", "HEAD") or ""
     tag_list = tuple(sorted(t for t in tags.splitlines() if t.strip()))
     modified = untracked = 0
-    status = _git_ok(llama_root, "status", "--porcelain") or ""
+    status = _git_ok(vendor_root, "status", "--porcelain") or ""
     for line in status.splitlines():
         if len(line) < 2:
             continue
@@ -211,10 +223,10 @@ def _is_ancestor(repo_root: Path, commit: str, head: str) -> bool:
 
 def local_status(paths: RepoPaths) -> LocalStatus:
     """Pure reader: one LocalStatus for the tree at `paths`."""
-    pinned_ref = _read_pinned_ref(paths.repo_root)
+    pinned_ref = _read_pinned_ref(paths.recipes_path)
     reasons: list[str] = []
 
-    vendor = _vendor_info(paths.llama_root)
+    vendor = _vendor_info(paths.vendor_root)
     if vendor is None:
         return LocalStatus(
             pinned_ref=pinned_ref,
@@ -235,12 +247,12 @@ def local_status(paths: RepoPaths) -> LocalStatus:
 
     pinned_sha: str | None = None
     if pinned_ref is not None:
-        pinned_sha = _resolve_sha(paths.llama_root, pinned_ref)
+        pinned_sha = _resolve_sha(paths.vendor_root, pinned_ref)
     if pinned_sha is None:
         reason = (
             (f"pinned ref {pinned_ref!r} does not resolve in the local upstream clone")
             if pinned_ref is not None
-            else "no pinned ref in config/recipes.toml"
+            else f"no pinned ref in {paths.layout.recipes}"
         )
         return LocalStatus(
             pinned_ref=pinned_ref,
@@ -262,16 +274,14 @@ def local_status(paths: RepoPaths) -> LocalStatus:
     bigcherry_head = _git_ok(paths.repo_root, "rev-parse", "HEAD") or ""
 
     try:
-        marker = pin_transition.load(paths.releases_dir / "pin-transition.json")
+        marker = pin_transition.load(paths.marker_path)
     except MarkerError as exc:
         marker = None
         reasons.append(f"corrupt transition marker: {exc}")
 
     marker_state = "absent"
-    if (paths.releases_dir / "pin-transition.json").is_file():
-        marker_state = pin_transition.committed_state(
-            paths.releases_dir / "pin-transition.json"
-        )
+    if paths.marker_path.is_file():
+        marker_state = pin_transition.committed_state(paths.marker_path)
 
     base = {
         "pinned_ref": pinned_ref,
@@ -367,19 +377,30 @@ def local_status(paths: RepoPaths) -> LocalStatus:
 Probe = Callable[[str, str], tuple[str | None, str | None, str | None]]
 
 
-def _default_probe(alias: str, path: str) -> tuple[str | None, str | None, str | None]:
+def ssh_probe(layout: EngineLayout) -> Probe:
+    """The probe of one engine's tree on a remote host: its vendor checkout, its recipes' pin and the tooling HEAD."""
+
+    def probe(alias: str, path: str) -> tuple[str | None, str | None, str | None]:
+        return _probe_over_ssh(alias, path, layout)
+
+    return probe
+
+
+def _probe_over_ssh(
+    alias: str, path: str, layout: EngineLayout
+) -> tuple[str | None, str | None, str | None]:
     remote = (
         f"cd {shlex.quote(path)} && "
-        f"printf 'VENDOR %s\\n' \"$(git -C vendor/llama.cpp rev-parse HEAD "
+        f"printf 'VENDOR %s\\n' \"$(git -C {shlex.quote(layout.vendor)} rev-parse HEAD "
         f'2>/dev/null || printf none)" && '
-        # `tr -d '\r'` first: config/recipes.toml is committed CRLF (this
-        # project's established convention for that file) -- the `$`-anchored
+        # `tr -d '\r'` first: a recipes file may be committed CRLF (this
+        # project's convention for config/recipes.toml) -- the `$`-anchored
         # sed pattern below never matches a line whose real last character
         # before the newline is \r, not the closing quote, so the remote
         # probe silently returned an empty pin on any tree checked out with
         # CRLF preserved (e.g. a fresh git checkout on the remote host).
         # Found live during the b10680->b10687 bump's Brutus convergence.
-        f"printf 'PIN %s\\n' \"$(tr -d '\\r' < config/recipes.toml 2>/dev/null | sed -n "
+        f"printf 'PIN %s\\n' \"$(tr -d '\\r' < {shlex.quote(layout.recipes)} 2>/dev/null | sed -n "
         f"'s/^pinned[[:space:]]*=[[:space:]]*\\\"\\(.*\\)\\\"$/\\1/p' "
         f'| sed -n 1p)" && '
         f"printf 'HEAD %s\\n' \"$(git rev-parse HEAD 2>/dev/null "
@@ -404,8 +425,8 @@ def remote_status(
     alias: str,
     remote_path: str,
     local: LocalStatus,
-    llama_root: Path,
-    probe: Probe = _default_probe,
+    vendor_root: Path,
+    probe: Probe,
 ) -> RemoteStatus:
     """Probe one remote tree. Verdicts: consistent / mismatch /
     unreachable / unresolvable-pin -- and nothing else (RV78)."""
@@ -422,9 +443,9 @@ def remote_status(
     if vendor_head is None:
         reasons.append("remote vendor checkout missing or not a git repo")
     elif pinned_ref is None:
-        reasons.append("remote config/recipes.toml has no pinned ref")
+        reasons.append("remote recipes file has no pinned ref")
     else:
-        pinned_sha = _resolve_sha(llama_root, pinned_ref)
+        pinned_sha = _resolve_sha(vendor_root, pinned_ref)
         if pinned_sha is None:
             return RemoteStatus(
                 name,
@@ -467,8 +488,7 @@ def remote_status(
 def build_report(
     paths: RepoPaths,
     trees: tuple,
-    llama_root: Path | None = None,
-    probe: Probe = _default_probe,
+    probe: Probe | None = None,
     local_tooling_expected: dict[str, str] | None = None,
 ) -> PinStatusReport:
     """Full report: local status + remotes + cross-tree aggregate.
@@ -478,7 +498,7 @@ def build_report(
     = local HEAD).
     """
     local = local_status(paths)
-    llama = llama_root if llama_root is not None else paths.llama_root
+    probe = ssh_probe(paths.layout) if probe is None else probe
     expected = local_tooling_expected or {}
 
     remotes: list[RemoteStatus] = []
@@ -488,7 +508,7 @@ def build_report(
         status = remote_status(
             tree.name, tree.alias,
             require_resolved(tree.path, f"trees.{tree.name}.path"),
-            local, llama, probe=probe,
+            local, paths.vendor_root, probe=probe,
         )
         if tree.role == "campaign" and status.reachable:
             want = expected.get(tree.name, tree.expected_tooling_revision)
@@ -551,14 +571,7 @@ def campaign_preflight(
     """
     if not (clone_source / ".git").exists():
         return [], False
-    status = local_status(
-        RepoPaths(
-            repo_root=repo_paths.repo_root,
-            llama_root=clone_source,
-            releases_dir=repo_paths.releases_dir,
-            artifacts_dir=repo_paths.artifacts_dir,
-        )
-    )
+    status = local_status(replace(repo_paths, vendor_root=clone_source))
     if status.verdict == VERDICT_UNAVAILABLE:
         return [], False
     if status.verdict == VERDICT_MID_REBASE:

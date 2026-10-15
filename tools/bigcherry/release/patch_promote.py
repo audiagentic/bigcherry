@@ -12,11 +12,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
-from ..core import paths
+from ..core import engines, paths
 from ..patch import evidence as patch_evidence
 from ..patch import profile_evidence
 from . import notes as release_notes
 from . import pin_release
+
+
+#: promotion is a llama.cpp tool (its patch tree, recipes and release line)
+ENGINE = engines.LLAMACPP
 
 
 class PatchPromoteError(RuntimeError):
@@ -341,7 +345,7 @@ def _run_checks(root: Path, infos: tuple[PatchInfo, ...]) -> None:
                 "-m",
                 "bigcherry",
                 "--engine",
-                paths.LLAMACPP.name,
+                ENGINE,
                 "patch-verify-evidence",
                 info.patch_id,
                 "--no-legacy-grandfather",
@@ -357,7 +361,7 @@ def _run_checks(root: Path, infos: tuple[PatchInfo, ...]) -> None:
     _check_command(root, [sys.executable, "-m", "bigcherry", "patch-lint"], "patch-lint")
     _check_command(
         root,
-        [sys.executable, "-m", "bigcherry", "patch-rebase-check", "--source", "bigcherry"],
+        [sys.executable, "-m", "bigcherry", "--engine", ENGINE, "patch-rebase-check", "--source", "bigcherry"],
         "production composition/rebase check",
     )
 
@@ -430,7 +434,7 @@ def _preflight(root: Path, infos: tuple[PatchInfo, ...]) -> None:
         _check_command(
             root,
             [
-                sys.executable, "-m", "bigcherry", "patch-rebase-check",
+                sys.executable, "-m", "bigcherry", "--engine", ENGINE, "patch-rebase-check",
                 "--source", "bigcherry", "--focal-overlay", info.patch_id, "--json", str(report),
             ],
             f"{info.patch_id} rebase check over production",
@@ -442,7 +446,7 @@ def _preflight(root: Path, infos: tuple[PatchInfo, ...]) -> None:
                 "-m",
                 "bigcherry",
                 "--engine",
-                paths.LLAMACPP.name,
+                ENGINE,
                 "patch-gates",
                 info.patch_id,
                 "--intent",
@@ -504,13 +508,13 @@ def _ledger_payload(infos: tuple[PatchInfo, ...], changed: Iterable[str], title:
 
 
 def _release_version(root: Path, bump: str) -> tuple[str, str, int]:
-    recipes = tomllib.loads((root / "config" / "recipes.toml").read_text(encoding="utf-8"))
+    recipes = tomllib.loads(paths.LLAMACPP.recipes_path(root).read_text(encoding="utf-8"))
     llama_tag = str(recipes["pinned"])
     match = re.fullmatch(r"b(\d+)", llama_tag)
     if not match:
         raise PatchPromoteError(f"invalid pinned llama.cpp tag {llama_tag!r}")
     build = int(match.group(1))
-    config = release_notes.load_config(root)
+    config = release_notes.load_config(root, ENGINE)
     remote = _git(root, "ls-remote", "--tags", "--refs", "origin", f"refs/tags/{config.tag_prefix}{build}.*", check=False)
     local = _git(root, "tag", "--list", f"{config.tag_prefix}{build}.*", check=False)
     names = {line.split("refs/tags/")[-1] for line in remote.splitlines() if "refs/tags/" in line}
@@ -522,10 +526,13 @@ def _release_version(root: Path, bump: str) -> tuple[str, str, int]:
 
 def _finish_release_if_ready(root: Path, bump: str) -> bool:
     llama_tag, version, build = _release_version(root, bump)
-    config = release_notes.load_config(root)
+    config = release_notes.load_config(root, ENGINE)
     branch = _git(root, "rev-parse", "--abbrev-ref", "HEAD")
     plan = pin_release.Plan(
         repo_root=root,
+        engine=ENGINE,
+        package=paths.LLAMACPP.release_package(),
+        upstream_name=config.upstream_name,
         llama_tag=llama_tag,
         build=build,
         release_tag=f"{config.tag_prefix}{version}",

@@ -1,17 +1,18 @@
 """External-source registry: where backported patches came from, and how to
 keep watching those sources.
 
-The registry lives at ``<repo>/external-sources.toml``. Every patch that
+Each engine declares its registry in its engine.toml (``layout.external-sources``; llama.cpp's is
+``config/external-sources.toml``); an engine that declares none has no external sources. Every patch that
 backports code from an external repository, fork branch, or upstream PR
 declares a machine-readable ``PROVENANCE`` dict (see the patches in group
 ``rdna-boosts``); the cross-check below fails if the patch and the registry
 disagree, so a future agent can always answer *where did this come from and
 is it still up to date* without re-deriving anything.
 
-Commands:
-    python -m bigcherry sources status    offline: print the registry and
+Commands (``--engine`` names the engine whose registry and patch tree are used):
+    python -m bigcherry --engine E sources status    offline: print the registry and
                                           validate patch<->registry links
-    python -m bigcherry sources check     online: read-only fetch of each
+    python -m bigcherry --engine E sources check     online: read-only fetch of each
                                           source into a temp dir (never the
                                           vendor tree) and report, per
                                           source: branch moved / rebased,
@@ -31,9 +32,8 @@ import tempfile
 import tomllib
 from pathlib import Path
 
-from ..core import paths
+from ..core import engines, paths
 from ..core.context import ProjectContext
-from .. import recipes
 from ..patch import registry as _patch_reg
 
 REGISTRY_NAME = "external-sources.toml"
@@ -56,13 +56,20 @@ TRACKED_STATUSES = (
 _SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
-def registry_path(override: str | Path | None = None) -> Path:
-    return Path(override) if override is not None else paths.EXTERNAL_SOURCES
+def registry_path(engine: str) -> Path | None:
+    """Where the engine's external-source registry lives; None when it declares none."""
+    return engines.load(paths.REPO_ROOT, engine).external_sources_path(paths.REPO_ROOT)
 
 
-def load_registry(path: str | Path | None = None) -> dict:
-    """Parse and structurally validate the registry."""
-    reg_path = registry_path(path)
+def load_engine_registry(engine: str) -> dict:
+    """The engine's registry; an engine that declares none has an empty one."""
+    path = registry_path(engine)
+    return {"version": 1, "sources": []} if path is None else load_registry(path)
+
+
+def load_registry(path: str | Path) -> dict:
+    """Parse and structurally validate the registry at ``path``."""
+    reg_path = Path(path)
     if not reg_path.is_file():
         raise FileNotFoundError(f"external source registry not found: {reg_path}")
     raw = tomllib.loads(reg_path.read_text(encoding="utf-8"))
@@ -70,7 +77,7 @@ def load_registry(path: str | Path | None = None) -> dict:
         raise ValueError(f"{REGISTRY_NAME}: unsupported version {raw.get('version')!r}")
     sources = raw.get("sources") or []
     if not sources:
-        raise ValueError(f"{REGISTRY_NAME}: no [[sources]] entries")
+        raise ValueError(f"{reg_path}: no [[sources]] entries")
     for source in sources:
         for field in ("id", "repo", "locator"):
             if not source.get(field):
@@ -131,11 +138,9 @@ def _patch_provenance(patch_path: Path) -> dict | None:
     return None
 
 
-def cross_check_patches(registry: dict | None = None,
-                        *, engine: str, patches_dir: str | Path) -> list[str]:
+def cross_check_patches(registry: dict, *, engine: str, patches_dir: str | Path) -> list[str]:
     """Validate the two-way link between patch PROVENANCE dicts and the
     registry. Returns a list of problems (empty = consistent)."""
-    registry = registry or load_registry()
     patches_dir = Path(patches_dir)
 
     by_source: dict[str, dict] = {s["id"]: s for s in registry.get("sources", [])}
@@ -210,10 +215,12 @@ def cmd_sources(args: argparse.Namespace) -> int:
 
 def _status(engine: str) -> int:
     try:
-        registry = load_registry()
+        registry = load_engine_registry(engine)
     except (FileNotFoundError, ValueError, tomllib.TOMLDecodeError) as exc:
         print(f"registry error: {exc}", file=sys.stderr)
         return 1
+    if not registry["sources"]:
+        print(f"{engine}: no external sources declared")
 
     problems = cross_check_patches(registry, engine=engine, patches_dir=paths.patches_root(engine))
     for source in registry["sources"]:
@@ -283,8 +290,8 @@ def _git(cwd: str, *argv: str, timeout: int) -> subprocess.CompletedProcess:
 def ancestral_to_pin(
     candidate_sha: str,
     *,
-    vendor_root: Path | None = None,
-    pin_ref: str | None = None,
+    vendor_root: Path,
+    pin_ref: str,
     timeout: int = 30,
 ) -> str:
     """Is ``candidate_sha`` an ancestor of this project's pinned vendor
@@ -315,14 +322,10 @@ def ancestral_to_pin(
                                by construction -- unresolvable is not
                                evidence of redundancy.
 
-    ``vendor_root`` defaults to ``paths.llama_root()`` (the real, local
-    pinned checkout); ``pin_ref`` defaults to the currently configured pin
-    (``recipes.pinned()``, e.g. ``"b10502"``) resolved within
-    that checkout.
+    ``vendor_root`` is the engine's local pinned checkout; ``pin_ref`` (e.g.
+    ``"b10502"``) is resolved within that checkout.
     """
-    root = vendor_root if vendor_root is not None else paths.llama_root()
-    if pin_ref is None:
-        pin_ref = recipes.pinned()
+    root = vendor_root
     if not root.is_dir():
         return "unknown"
 
@@ -347,8 +350,8 @@ def ancestral_to_pin(
 def baseline_candidates_at_pin(
     candidate_pin: str,
     *,
-    vendor_root: str | Path | None = None,
-    registry: dict | str | Path | None = None,
+    vendor_root: str | Path,
+    registry: dict | str | Path,
     timeout: int = 30,
 ) -> dict:
     """Return tracked external-source changes proven baseline at candidate_pin.
@@ -371,7 +374,7 @@ def baseline_candidates_at_pin(
     upstream-equivalent matching (patch-id/diff heuristic) is attempted here;
     ``upstream-equivalent`` is populated by manual annotation only.
     """
-    root = Path(vendor_root) if vendor_root is not None else paths.llama_root()
+    root = Path(vendor_root)
     reg = registry if isinstance(registry, dict) else load_registry(registry)
 
     report: dict = {
@@ -497,7 +500,7 @@ def print_baseline_candidates(report: dict) -> None:
 
 def _check(args: argparse.Namespace) -> int:
     try:
-        registry = load_registry()
+        registry = load_engine_registry(args.engine)
     except (FileNotFoundError, ValueError, tomllib.TOMLDecodeError) as exc:
         print(f"registry error: {exc}", file=sys.stderr)
         return 1

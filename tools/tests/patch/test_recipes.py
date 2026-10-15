@@ -12,6 +12,7 @@ import pytest
 
 from bigcherry.patch import patchset
 from bigcherry import recipes
+from bigcherry.core import engines, paths
 
 
 def write(tmp_path, body: str):
@@ -43,7 +44,9 @@ def test_missing_file_is_a_recipe_error_not_an_oserror(tmp_path):
 
 
 def test_shipped_pin_is_readable():
-    assert recipes.pinned()
+    # every engine pins in the recipes file its own declaration names
+    for engine in engines.names(paths.REPO_ROOT):
+        assert recipes.pinned(engines.load(paths.REPO_ROOT, engine).recipes_path(paths.REPO_ROOT)), engine
 
 
 # ----------------------------------------------------------------- repin

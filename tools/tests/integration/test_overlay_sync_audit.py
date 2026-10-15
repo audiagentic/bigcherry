@@ -5,7 +5,7 @@ is what cmake actually compiles. `apply` mirrors the former onto the latter,
 but nothing previously verified they stayed in sync -- an overlay edit could
 be committed and pass every test while the compiled tree kept running the
 old content. These tests pin the drift-detection check's behavior directly
-against a synthetic overlay/checkout pair (monkeypatched paths.SRC_OVERLAY),
+against a synthetic overlay/checkout pair (the audit context names the overlay),
 independent of this repo's real src/ and vendor/ contents.
 """
 
@@ -16,7 +16,6 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from bigcherry.core import paths
 from bigcherry.source import audit as source_audit # noqa: E402
 
 
@@ -30,9 +29,8 @@ def _make_overlay_and_checkout(tmp_path: Path):
 
 
 def _audit_overlay_sync(monkeypatch, overlay: Path, checkout: Path, cuda: Path):
-    monkeypatch.setattr(paths, "SRC_OVERLAY", overlay)
     ctx = source_audit.AuditContext(engine="llamacpp",
-        root=checkout, cuda=cuda, instances=cuda / "template-instances")
+        root=checkout, cuda=cuda, instances=cuda / "template-instances", overlay_root=overlay)
     source_audit.check_overlay_sync(ctx)
     return ctx.results
 

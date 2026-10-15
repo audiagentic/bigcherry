@@ -91,9 +91,10 @@ def cmd_build_new(args: Namespace) -> int:
     try:
         pin_repo_paths = pin_status.RepoPaths(
             repo_root=context.project_root,
-            llama_root=context.upstream_repo,
+            vendor_root=context.upstream_repo,
             releases_dir=context.project_root / "releases",
             artifacts_dir=context.project_root / "artifacts",
+            layout=context.layout,
         )
         pin_failures, pin_mid_rebase = pin_status.campaign_preflight(
             context.upstream_repo, pin_repo_paths
@@ -105,7 +106,7 @@ def cmd_build_new(args: Namespace) -> int:
         for reason in pin_failures:
             print(f"build: pin preflight FAIL: {reason}", file=sys.stderr)
         print(
-            "build: run `bigcherry pin-status` for the full report and see "
+            f"build: run `bigcherry --engine {context.engine} pin-status` for the full report and see "
             "docs/reference/build/PIN_BUMP.md (fail closed)",
             file=sys.stderr,
         )

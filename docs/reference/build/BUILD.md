@@ -202,7 +202,7 @@ A source's `patch-sets` list is exact and curated -- there is no groups/states p
 ### Repinning
 
 ```bash
-cd $BC/tools && python3 -m bigcherry repin [--ref <ref>]
+cd $BC/tools && python3 -m bigcherry --engine llamacpp repin [--ref <ref>]
 ```
 
 Rewrites `recipes.toml`'s top-level `pinned = "..."` line in place, leaving comments intact (omit `--ref` to query for the newest upstream release). Sources with `ref = "pinned"` (the default) now build from the new ref; sources naming an explicit ref remain frozen and do not move. This lets you keep a historical source around for comparison without the file bloating.
@@ -236,7 +236,7 @@ Applies to `[build.<name>]` entries in `config/recipes.toml`, selected via `buil
 
 ```bash
 # 1. Verify the tree (audit + apply) -- shared-checkout patch selection
-cd $BC/tools && python3 -m bigcherry audit
+cd $BC/tools && python3 -m bigcherry --engine llamacpp audit
 python3 -m bigcherry apply --source bigcherry
 
 # 2. Build via the campaign engine (canonical v2 -- isolated per-lane sources)
@@ -467,7 +467,7 @@ version. System-wide `/opt/rocm*` still works unmodified if you don't
 
 ```bash
 cd $BC/tools
-python3 -m bigcherry audit
+python3 -m bigcherry --engine llamacpp audit
 python3 -m bigcherry apply --source bigcherry
 python3 -m bigcherry generate --variant-set workload-max --inventory <inv.json>
 

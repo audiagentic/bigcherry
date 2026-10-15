@@ -47,14 +47,14 @@ not enough for evidence; the resolved commit SHA is part of the identity.
 For the exact source that will be applied:
 
 ```text
-PYTHONPATH=tools python -m bigcherry patch-rebase-check \
+PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-rebase-check \
     --source <source-name> --json <rebase-report.json>
 ```
 
 For release-wide coverage, probe every non-retired registry patch:
 
 ```text
-PYTHONPATH=tools python -m bigcherry patch-rebase-check \
+PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-rebase-check \
     --all --json <all-patches-rebase-report.json>
 ```
 
@@ -209,7 +209,7 @@ PYTHONPATH=tools python -m bigcherry patch-lint --json
 PYTHONPATH=tools python -m bigcherry check --quick
 PYTHONPATH=tools python -m bigcherry check --default
 PYTHONPATH=tools python -m unittest discover -s tools/tests
-PYTHONPATH=tools python -m bigcherry patch-rebase-check --all --json <final-report.json>
+PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-rebase-check --all --json <final-report.json>
 PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-verify-evidence --no-legacy-grandfather
 ```
 

@@ -251,7 +251,6 @@ def _selector(
     """
     from ..campaign import resolution as campaign_resolution  # noqa: PLC0415
     from ..core import config as campaign_config  # noqa: PLC0415
-    from ..core import paths as core_paths  # noqa: PLC0415
 
     given = sum(bool(x) for x in (source_name, all_patches))
     if given != 1:
@@ -271,7 +270,7 @@ def _selector(
             return campaign_resolution.build_all_patches_identity(engine, patchset.catalog(engine))
         if source_name is None:
             raise RebaseCheckError("patch-rebase-check: --source NAME required")
-        cfg = campaign_config.load(core_paths.RECIPES)
+        cfg = campaign_config.load(_recipes_path(engine))
         return campaign_resolution.resolve_canonical_selection(
             engine,
             source_name,
@@ -346,7 +345,6 @@ def _resolve_selector_snapshot(
     resolution."""
     from ..campaign import resolution as campaign_resolution  # noqa: PLC0415
     from ..core import config as campaign_config  # noqa: PLC0415
-    from ..core import paths as core_paths  # noqa: PLC0415
 
     given = sum(bool(x) for x in (source_name, all_patches))
     if given != 1:
@@ -368,7 +366,7 @@ def _resolve_selector_snapshot(
         else:
             if source_name is None:
                 raise RebaseCheckError("patch-rebase-check: --source NAME required")
-            cfg = campaign_config.load(core_paths.RECIPES)
+            cfg = campaign_config.load(_recipes_path(engine))
             catalog = patchset.catalog(engine)  # the ONE load for this run
             identity = campaign_resolution.resolve_canonical_selection(
                 engine,
@@ -1002,9 +1000,13 @@ def _propagate_dependency_blocks(
 # --------------------------------------------------------------- top level
 
 
-def _previous_upstream_revision(revision: str) -> str | None:
+def _recipes_path(engine: str) -> Path:
+    return engines.load(paths.REPO_ROOT, engine).recipes_path(paths.REPO_ROOT)
+
+
+def _previous_upstream_revision(engine: str, revision: str) -> str | None:
     try:
-        marker = pin_transition.load()
+        marker = pin_transition.load(pin_transition.marker_path(engine))
     except MarkerError:
         return None
     if marker is not None and marker.to_sha == revision:
@@ -1054,7 +1056,7 @@ def _probe_group(
                 selection,
                 worktree,
                 context_lines=context_lines,
-                previous_revision=_previous_upstream_revision(revision),
+                previous_revision=_previous_upstream_revision(engine, revision),
                 revision=revision,
                 overlay_texts=overlay_snapshot,
             )
@@ -1178,7 +1180,7 @@ def run_rebase_check(
         "schema_version": REPORT_SCHEMA_VERSION,
         "engine": engine,
         "upstream_revision": revision,
-        "previous_upstream_revision": _previous_upstream_revision(revision),
+        "previous_upstream_revision": _previous_upstream_revision(engine, revision),
         "bigcherry_revision": _bigcherry_revision(),
         "patch_application_semantics_version": PATCH_APPLICATION_SEMANTICS_VERSION,
         "overlay_digest": _digest_from_texts(overlay_snapshot),

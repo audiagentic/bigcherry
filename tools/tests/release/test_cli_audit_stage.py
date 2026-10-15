@@ -17,8 +17,12 @@ from bigcherry.release import records as releases # noqa: E402
 class AuditStageTests(unittest.TestCase):
     def test_later_stage_is_preserved_after_successful_reaudit(self):
         record = releases.ReleaseRecord(revision="abc123", stage="patched")
+        checkout = tempfile.TemporaryDirectory()
+        self.addCleanup(checkout.cleanup)
+        (Path(checkout.name) / ".git").mkdir()
         args = mock.Mock()
-        args.llama_root = "."
+        args.engine = "llamacpp"
+        args.llama_root = checkout.name
         args.strict = True
         args.verbose = False
         # cmd_audit writes its report under paths.ARTIFACTS; keep it out of the repo.
@@ -40,6 +44,7 @@ class PullStageTests(unittest.TestCase):
         self.addCleanup(checkout.cleanup)
         (Path(checkout.name) / ".git").mkdir()
         args = mock.Mock()
+        args.engine = "llamacpp"
         args.llama_root = checkout.name
         args.ref = None
         args.source = None

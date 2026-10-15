@@ -520,7 +520,7 @@ class ReleaseLifecycleTests(unittest.TestCase):
             changed=False, ok=False,
         )
 
-        def copy_overlay(root, *, dry_run, backup, sim_texts):
+        def copy_overlay(root, overlay_root, *, dry_run, backup, sim_texts):
             backup["overlay/example.cpp"] = "old\n"
             sim_texts["overlay/example.cpp"] = "new\n"
             return ["overlay/example.cpp"]
@@ -578,7 +578,7 @@ class ReleaseLifecycleTests(unittest.TestCase):
             path="src/example.cpp", results=[], failed=[], changed=True, ok=True,
         )
 
-        def copy_overlay(root, *, dry_run, backup, sim_texts):
+        def copy_overlay(root, overlay_root, *, dry_run, backup, sim_texts):
             sim_texts["overlay/example.cpp"] = "new\n"
             return ["overlay/example.cpp"]
 

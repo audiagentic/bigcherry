@@ -1,4 +1,4 @@
-"""Pin management: the single ``pinned = "..."`` ref config/recipes.toml
+"""Pin management: the single ``pinned = "..."`` ref an engine's recipes file
 records.
 
 Patch selection is entirely the v2 ``[source.*]``/``[patch-set.*]``
@@ -10,18 +10,15 @@ from __future__ import annotations
 import re
 import tomllib
 from pathlib import Path
-from .core import paths
-
-RECIPES_PATH = paths.RECIPES
 
 
 class RecipeError(ValueError):
     pass
 
 
-def pinned(path=None) -> str:
-    """The top-level ``pinned = "..."`` value."""
-    path = Path(path) if path is not None else RECIPES_PATH
+def pinned(path) -> str:
+    """The top-level ``pinned = "..."`` value of the recipes file at ``path``."""
+    path = Path(path)
 
     try:
         raw = tomllib.loads(path.read_text(encoding="utf-8"))
@@ -36,14 +33,11 @@ def pinned(path=None) -> str:
     return value
 
 
-def repin(new_ref: str, path=None) -> str:
+def repin(new_ref: str, path) -> str:
     """Rewrites ONLY the `pinned = "..."` line in place via regex
     substitution on the raw text -- NOT a full TOML re-serialise, so comments
     and formatting survive. Returns the old value."""
-    if path is None:
-        path = RECIPES_PATH
-    else:
-        path = Path(path)
+    path = Path(path)
 
     content = path.read_text(encoding='utf-8')
 

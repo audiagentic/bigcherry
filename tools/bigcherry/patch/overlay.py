@@ -11,17 +11,17 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from ..core import paths
 
 
 def copy_overlay(
     root: Path,
+    overlay_root: Path,
     *,
     dry_run: bool,
     backup: dict[str, str | None] | None = None,
     sim_texts: dict[str, str] | None = None,
 ) -> list[str]:
-    """Mirror ``src/`` onto the checkout and return paths that would change.
+    """Mirror the engine's overlay (``overlay_root``) onto the checkout and return paths that would change.
 
     ``backup`` captures original target content before each write so a caller
     can roll back this transaction if anchored patch application fails.
@@ -29,10 +29,10 @@ def copy_overlay(
     patch engine sees the same overlay bytes that a real apply would see.
     """
     written: list[str] = []
-    for source in sorted(paths.SRC_OVERLAY.rglob("*")):
+    for source in sorted(overlay_root.rglob("*")):
         if not source.is_file():
             continue
-        relative = source.relative_to(paths.SRC_OVERLAY)
+        relative = source.relative_to(overlay_root)
         target = root / relative
         text = source.read_text(encoding="utf-8")
         # Read raw bytes so a stale CRLF target is not mistaken for an

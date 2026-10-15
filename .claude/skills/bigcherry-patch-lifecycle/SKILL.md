@@ -244,7 +244,7 @@ PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-verify-evidence <pa
 
 Where rebase compatibility matters:
 
-PYTHONPATH=tools python -m bigcherry patch-rebase-check --all --json <report-path>
+PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-rebase-check --all --json <report-path>
 
 Also inspect source/recipe membership before quarantine/demotion.
 
@@ -437,7 +437,7 @@ PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-verify-evidence <pa
 
 Where rebase/disposition changed:
 
-PYTHONPATH=tools python -m bigcherry patch-rebase-check --all
+PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-rebase-check --all
 10. Planning/release handoff
 
 If the lifecycle mutation changes a tracked plan item, use the repository's planning tooling rather than editing generated planning surfaces by hand.
@@ -452,8 +452,8 @@ PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-status --item <plan
 PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-explain <patch-id>
 PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-graph --roots <patch-id>
 PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-verify-evidence <patch-id>
-PYTHONPATH=tools python -m bigcherry patch-rebase-check --all
-PYTHONPATH=tools python -m bigcherry patch-rebase-check --all --json <report-path>
+PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-rebase-check --all
+PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-rebase-check --all --json <report-path>
 
 PYTHONPATH=tools python -m bigcherry patch-disposition set \
   --patch-id <patch-id> \

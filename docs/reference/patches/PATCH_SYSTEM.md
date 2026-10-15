@@ -62,7 +62,7 @@ failure; do not skip ahead to hardware or promotion.
    only the named source composition:
 
    ```text
-   PYTHONPATH=tools python -m bigcherry patch-rebase-check \
+   PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-rebase-check \
        --source <source-name> --json <rebase-report.json>
    PYTHONPATH=tools python -m bigcherry apply --source <source-name> --dry-run
    PYTHONPATH=tools python -m bigcherry apply --source <source-name>

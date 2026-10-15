@@ -19,6 +19,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from bigcherry.core.context import ProjectContext  # noqa: E402
 from bigcherry.patch import disposition as patch_disposition  # noqa: E402
 from bigcherry.release import pin_bump  # noqa: E402
 
@@ -138,6 +139,7 @@ class PinBumpStopResumeE2ETests(unittest.TestCase):
             ):
                 with self.assertRaises(pin_bump.PinBumpStop) as stopped:
                     pin_bump.run(
+                        engine="llamacpp",
                         target_ref="b10680",
                         root=root,
                         dispositions_dir=dispositions,
@@ -150,6 +152,7 @@ class PinBumpStopResumeE2ETests(unittest.TestCase):
                 self.assertIn("coverage", saved.completed_phases)
 
                 result = pin_bump.run(
+                    engine="llamacpp",
                     target_ref="b10680",
                     root=root,
                     dispositions_dir=dispositions,
@@ -495,6 +498,7 @@ class RequireSelectorMembershipUnchangedTests(unittest.TestCase):
         )
         pin_bump._require_selector_membership_unchanged(
             state,
+            engine="llamacpp",
             selector_kind="source",
             selector_name="bigcherry-serving-base",
         )  # no raise -- real catalog, unchanged since state was built above
@@ -519,6 +523,7 @@ class RequireSelectorMembershipUnchangedTests(unittest.TestCase):
         with self.assertRaises(pin_bump.PinBumpStop) as ctx:
             pin_bump._require_selector_membership_unchanged(
                 state,
+                engine="llamacpp",
                 selector_kind="source",
                 selector_name="bigcherry-serving-base",
             )
@@ -641,6 +646,7 @@ class OverlaySelfHealTests(unittest.TestCase):
                 with self.assertRaises(pin_bump.PinBumpStop) as stopped:
                     pin_bump._run_phases(
                         state=state,
+                        engine="llamacpp",
                         target_ref="b2",
                         selector_kind="source",
                         selector_name="bigcherry",
@@ -651,7 +657,9 @@ class OverlaySelfHealTests(unittest.TestCase):
                     )
 
             self.assertEqual(stopped.exception.code, "PATCH_LINT_FAILED")
-            copy_overlay.assert_called_once_with(vendor_root, dry_run=False)
+            copy_overlay.assert_called_once_with(
+                vendor_root, ProjectContext.resolve(engine="llamacpp").overlay_root, dry_run=False
+            )
 
 
 class SyncCampaignMirrorBestEffortTests(unittest.TestCase):
@@ -684,7 +692,7 @@ class SyncCampaignMirrorBestEffortTests(unittest.TestCase):
                 ProjectContext, "resolve", return_value=fake_context
             ):
                 pin_bump._sync_campaign_mirror_best_effort(
-                    target_ref="b99999", revision="a" * 40
+                    engine="llamacpp", target_ref="b99999", revision="a" * 40
                 )
                 # must not raise -- that is the entire test
 
@@ -712,7 +720,7 @@ class SyncCampaignMirrorBestEffortTests(unittest.TestCase):
                 ProjectContext, "resolve", return_value=fake_context
             ):
                 pin_bump._sync_campaign_mirror_best_effort(
-                    target_ref="b99999", revision="a" * 40
+                    engine="llamacpp", target_ref="b99999", revision="a" * 40
                 )
 
 
@@ -723,6 +731,7 @@ class WriteReleaseDocBestEffortTests(unittest.TestCase):
 
     def test_never_raises_on_a_bogus_recipe(self):
         pin_bump._write_release_doc_best_effort(
+            engine="llamacpp",
             repo_root=Path("H:/development/projects/bigcherry"),
             vendor_root=Path("does-not-exist"),
             selector_kind="source",
@@ -919,7 +928,7 @@ class ContextRecoveryNeverMasksOriginalStopTests(unittest.TestCase):
             # per its unconditional pre-try initialization).
             (report_dir / "state.json").write_text("{not valid json", encoding="utf-8")
             with self.assertRaises(pin_bump.PinBumpStop) as ctx:
-                pin_bump.run(target_ref="b99999", resume=True, report_dir=report_dir)
+                pin_bump.run(engine="llamacpp", target_ref="b99999", resume=True, report_dir=report_dir)
             # The ORIGINAL failure must survive -- not get replaced by a
             # second failure from the except block's own disk re-read.
             self.assertEqual(ctx.exception.code, "RESUME_STATE_INVALID")
@@ -934,6 +943,7 @@ class RunResumeStateMissingTests(unittest.TestCase):
             report_dir = Path(directory) / "resume-b99999"  # never created
             with self.assertRaises(pin_bump.PinBumpStop) as ctx:
                 pin_bump.run(
+                    engine="llamacpp",
                     target_ref="b99999",
                     resume=True,
                     report_dir=report_dir,
@@ -977,6 +987,7 @@ class RunResumeStateMissingTests(unittest.TestCase):
             state.save(report_dir)
             with self.assertRaises(pin_bump.PinBumpStop) as ctx:
                 pin_bump.run(
+                    engine="llamacpp",
                     target_ref="b99999-WRONG",  # deliberate mismatch
                     resume=True,
                     report_dir=report_dir,
@@ -1003,6 +1014,7 @@ class WriteReleaseDocReportBindingTests(unittest.TestCase):
                 "bigcherry.patch.rebase._selection_patch_ids",
             ) as fresh_resolve:
                 pin_bump._write_release_doc_best_effort(
+                    engine="llamacpp",
                     repo_root=Path("H:/development/projects/bigcherry"),
                     vendor_root=Path("does-not-exist"),
                     selector_kind="source",
@@ -1166,7 +1178,7 @@ class AcquireMaintenanceLockTests(unittest.TestCase):
             with mock.patch.object(
                 ProjectContext, "resolve", return_value=fake_context
             ):
-                lock = pin_bump.acquire_maintenance_lock(Path(project))
+                lock = pin_bump.acquire_maintenance_lock(Path(project), "llamacpp")
                 self.assertFalse(lock.path.is_dir())
                 with lock:  # must not raise -- __enter__ does the one real acquire
                     self.assertTrue(lock.path.is_dir())
@@ -1394,6 +1406,7 @@ class SourceCompilePhaseTests(unittest.TestCase):
             ):
                 with self.assertRaises(pin_bump.PinBumpStop) as stopped:
                     pin_bump.run_phase_compile(
+                        engine="llamacpp",
                         vendor_root=root,
                         workdir=root / "work",
                         recipe_report_path=report,
@@ -1435,6 +1448,7 @@ class SourceCompilePhaseTests(unittest.TestCase):
         with patch.object(pin_bump.shutil, "which", return_value=None):
             with self.assertRaises(pin_bump.PinBumpStop) as stopped:
                 pin_bump.run_phase_compile(
+                    engine="llamacpp",
                     vendor_root=Path("/vendor"),
                     workdir=Path("/work"),
                     recipe_report_path=Path("/report"),
@@ -1471,7 +1485,7 @@ class SourceCompilePhaseTests(unittest.TestCase):
             pin_bump, "_compile_tree_oid", return_value="tree-oid"
         ) as tree_oid:
             changed = pin_bump._rewind_compile_if_tree_changed(
-                state, vendor_root=Path("/vendor")
+                state, engine="llamacpp", vendor_root=Path("/vendor")
             )
         self.assertFalse(changed)
         self.assertEqual(state.next_phase, "reaudit")
@@ -1496,7 +1510,7 @@ class SourceCompilePhaseTests(unittest.TestCase):
         )
         with patch.object(pin_bump, "_compile_tree_oid", return_value="new-tree-oid"):
             changed = pin_bump._rewind_compile_if_tree_changed(
-                state, vendor_root=Path("/vendor")
+                state, engine="llamacpp", vendor_root=Path("/vendor")
             )
         self.assertTrue(changed)
         self.assertEqual(state.next_phase, "compile")
@@ -1534,6 +1548,7 @@ class SourceCompilePhaseTests(unittest.TestCase):
         ):
             changed = pin_bump._rewind_compile_resume_if_inputs_changed(
                 state,
+                engine="llamacpp",
                 vendor_root=Path("/vendor"),
                 recipe_report_path=Path("/report"),
             )
@@ -1563,7 +1578,7 @@ class SourceCompilePhaseTests(unittest.TestCase):
         )
         with patch.object(pin_bump, "_compile_tree_oid") as tree_oid:
             changed = pin_bump._rewind_compile_if_tree_changed(
-                state, vendor_root=Path("/vendor")
+                state, engine="llamacpp", vendor_root=Path("/vendor")
             )
         self.assertFalse(changed)
         self.assertEqual(state.next_phase, "complete")

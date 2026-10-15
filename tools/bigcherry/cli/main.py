@@ -15,8 +15,6 @@ import sys
 from pathlib import Path
 
 from .. import __version__
-from ..core import config as campaign_config
-from ..core import paths as core_paths
 from ..patch import catalog as patch_catalog
 from ..source import sources
 from ..release import pin as _release_pin
@@ -80,23 +78,11 @@ meaningful against a manifest generated from that same tree.
 """
 
 
-def _v2_source_names() -> list[str] | None:
-    """The canonical v2 ``[source.*]`` names, for ``--source`` choices.
-    Mirrors argparse's own fail-soft shape (``choices=None`` accepts
-    anything) so a config load error here does not crash unrelated CLI
-    startup."""
-    try:
-        return sorted(campaign_config.load(core_paths.RECIPES).sources) or None
-    except Exception:
-        return None
-
-
 def _add_selection_args(parser: argparse.ArgumentParser) -> None:
     """The patch-selection flag, shared by every command that selects."""
     parser.add_argument(
         "--source",
         default=None,
-        choices=_v2_source_names(),
         help="canonical v2 [source.*] name (e.g. 'bigcherry') -- the exact, "
         "curated patch-set this source declares. Omit to browse/select "
         "every catalog patch (patches only; apply requires --source, "
@@ -110,7 +96,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--llama-root",
         default=None,
-        help="llama.cpp checkout (default: primary checkout vendor/llama.cpp)",
+        help="checkout to read instead of the engine's vendor checkout (the primary checkout's vendor directory the "
+        "engine declares)",
     )
     parser.add_argument(
         "--engine",
@@ -120,7 +107,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
-    pull = sub.add_parser("pull", help="clone or update the llama.cpp checkout")
+    pull = sub.add_parser("pull", help="clone or update the engine's upstream checkout (needs --engine)")
     pull.add_argument(
         "--ref",
         default=None,
@@ -130,7 +117,6 @@ def build_parser() -> argparse.ArgumentParser:
     pull.add_argument(
         "--source",
         default=None,
-        choices=_v2_source_names(),
         help="take the ref from this canonical v2 [source.*] name (e.g. 'bigcherry')",
     )
     pull.add_argument(
@@ -274,7 +260,6 @@ def build_parser() -> argparse.ArgumentParser:
     rebase_selection.add_argument(
         "--source",
         default=None,
-        choices=_v2_source_names(),
         help="probe the exact logical patch selection for this canonical "
         "v2 [source.*] name (e.g. 'bigcherry')",
     )
@@ -325,7 +310,6 @@ def build_parser() -> argparse.ArgumentParser:
     patch_doc_selection.add_argument(
         "--source",
         default=None,
-        choices=_v2_source_names(),
         help="document the exact logical patch selection for this "
         "canonical v2 [source.*] name (e.g. 'bigcherry')",
     )
@@ -504,7 +488,6 @@ def build_parser() -> argparse.ArgumentParser:
     patch_gates_cmd.add_argument(
         "--source",
         default=None,
-        choices=_v2_source_names(),
         help="canonical v2 source name; required for build and rebase",
     )
     gates_qualifier = patch_gates_cmd.add_mutually_exclusive_group()
@@ -629,7 +612,7 @@ def build_parser() -> argparse.ArgumentParser:
     sources.register(sub)
 
     repin = sub.add_parser(
-        "repin", help="move config/recipes.toml's pin to the newest upstream release"
+        "repin", help="move the engine's recipes pin to the newest upstream release (needs --engine)"
     )
     repin.add_argument(
         "--ref",
@@ -706,7 +689,7 @@ def build_parser() -> argparse.ArgumentParser:
         "from the ledger, the patch registry and the bump's release record "
         "(config/release.toml). release-please publishes them with the release.",
     )
-    release_notes_cmd.add_argument("llama_tag", help="llama.cpp tag of the completed bump (e.g. b11402)")
+    release_notes_cmd.add_argument("llama_tag", help="upstream release tag of the completed bump (e.g. b11402)")
     release_notes_cmd.add_argument("--ref", default="HEAD", help="release commit (default: HEAD)")
     release_notes_cmd.add_argument("--stdout", action="store_true", help="print the notes instead of writing the file")
     release_notes_cmd.add_argument("--version", default=None, help="release version <llama build>.<minor>.<patch> (default: <build>.0.0)")
@@ -719,7 +702,7 @@ def build_parser() -> argparse.ArgumentParser:
         "release notes + package release-as -> checked work-branch PR -> release-please PR -> "
         "wait for the bc-llamacpp-<version> tag -> clear release-as by PR -> sync the work branch.",
     )
-    pin_release_cmd.add_argument("llama_tag", help="llama.cpp tag of the completed bump (e.g. b11474)")
+    pin_release_cmd.add_argument("llama_tag", help="upstream release tag of the completed bump (e.g. b11474)")
     pin_release_cmd.add_argument(
         "--evidence", default="",
         help="hardware evidence that makes the bump releasable (build, smoke, A/B result); text, or @file. "
@@ -1964,7 +1947,7 @@ def cmd_release_notes(args: argparse.Namespace) -> int:
 
     repo_root = _paths.REPO_ROOT
     try:
-        config = _notes.load_config(repo_root)
+        config = _notes.load_config(repo_root, args.engine)
         if args.stdout:
             _sys.stdout.write(_notes.render(repo_root, config, args.llama_tag, args.ref, args.version))
         else:
@@ -1991,7 +1974,7 @@ def cmd_pin_release(args: argparse.Namespace) -> int:
             print(f"pin-release: cannot read the evidence file: {exc}", file=_sys.stderr)
             return 2
     try:
-        return _pin_release.run(_paths.REPO_ROOT, args.llama_tag, evidence, through=args.through, dry_run=args.dry_run,
+        return _pin_release.run(_paths.REPO_ROOT, args.engine, args.llama_tag, evidence, through=args.through, dry_run=args.dry_run,
                                 version=args.version, bump=args.bump)
     except _pin_release.PinReleaseError as exc:
         print(f"pin-release: STOPPED at phase {exc.phase!r}: {exc}", file=_sys.stderr)
@@ -2005,6 +1988,7 @@ def cmd_pin_bump(args: argparse.Namespace) -> int:
     from pathlib import Path as _Path
 
     from ..core import paths as _paths
+    from ..core.context import ProjectContext
     from ..core.tree_activity import TreeActivityError
     from ..release import pin_bump as _pin_bump
     from ..release.pin_bump import PinBumpStop
@@ -2012,10 +1996,11 @@ def cmd_pin_bump(args: argparse.Namespace) -> int:
     report_dir = (
         _Path(args.report_dir)
         if args.report_dir
-        else _paths.ARTIFACTS / "pin-bump" / f"resume-{args.target}"
+        else _pin_bump.default_report_dir(args.engine, args.target)
     )
     try:
         result = _pin_bump.run(
+            engine=args.engine,
             target_ref=args.target,
             source_name=args.source,
             resume=args.resume,
@@ -2031,7 +2016,7 @@ def cmd_pin_bump(args: argparse.Namespace) -> int:
             exc.run_id or "unresolved",
             exc.target or {"from_ref": "?", "to_ref": args.target},
             exc.transition_commit,
-            exc.tree or {"name": "local", "path": str(_paths.llama_root())},
+            exc.tree or {"name": "local", "path": str(ProjectContext.resolve(engine=args.engine).vendor_root)},
             exc,
         )
         out = report_dir / "failure.json"
@@ -2082,7 +2067,7 @@ def cmd_pin_bump(args: argparse.Namespace) -> int:
     if not outstanding and not test_failures:
         print("pin-bump: no patch failures")
     print(
-        "next: run `bigcherry pin-status --complete --all-remotes` once every "
+        f"next: run `bigcherry --engine {args.engine} pin-status --complete --all-remotes` once every "
         "required tree has been bumped the same way"
     )
     return 0

@@ -222,7 +222,7 @@ Do not interpret a passing check as hardware qualification.
 For a configured source selection:
 
 cd $BC
-PYTHONPATH=tools python -m bigcherry audit
+PYTHONPATH=tools python -m bigcherry --engine llamacpp audit
 PYTHONPATH=tools python -m bigcherry apply --dry-run --source <source>
 
 Use dry-run for shared-tree verification.
@@ -258,16 +258,16 @@ expand_composition() exists as a separate API, but exact composition does not au
 For the exact production source selection:
 
 cd $BC
-PYTHONPATH=tools python -m bigcherry patch-rebase-check --source <source>
+PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-rebase-check --source <source>
 
 For all non-retired registry patches:
 
 cd $BC
-PYTHONPATH=tools python -m bigcherry patch-rebase-check --all
+PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-rebase-check --all
 
 Optional structured report:
 
-PYTHONPATH=tools python -m bigcherry patch-rebase-check --all --json <report-path>
+PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-rebase-check --all --json <report-path>
 
 This check is observational and uses isolated revision-specific probing. It does not advance release stage or mutate the vendor checkout.
 
@@ -311,13 +311,13 @@ PYTHONPATH=tools python -m bigcherry patch-lint
 PYTHONPATH=tools python -m bigcherry check
 PYTHONPATH=tools python -m unittest discover -s tools/tests/patch
 PYTHONPATH=tools python -m unittest discover -s tools/tests
-PYTHONPATH=tools python -m bigcherry audit
+PYTHONPATH=tools python -m bigcherry --engine llamacpp audit
 PYTHONPATH=tools python -m bigcherry apply --dry-run --source <source>
 PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-explain <patch-id>
 PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-graph --roots <patch-id>
-PYTHONPATH=tools python -m bigcherry patch-rebase-check --source <source>
-PYTHONPATH=tools python -m bigcherry patch-rebase-check --all
-PYTHONPATH=tools python -m bigcherry patch-rebase-check --all --json <report-path>
+PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-rebase-check --source <source>
+PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-rebase-check --all
+PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-rebase-check --all --json <report-path>
 
 Do not invent a single-patch patch-rebase-check selector; current CLI selection is --source or --all.
 

@@ -4,7 +4,7 @@ Phases are resumable and idempotent:
 
   gate     `pin-status --complete --all-remotes` must pass
   record   store gate output/hardware evidence and clear the transition marker
-  notes    generate notes and set the llama.cpp package's release-please `release-as`
+  notes    generate notes and set the engine's package's release-please `release-as`
   main     publish/reuse the work-branch PR, wait for checks, merge it
   release  validate and merge release-please's component PR, wait for the tag
   unpin    remove `release-as` through a dedicated PR after the tag exists
@@ -26,13 +26,13 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from ..core import engines
+from .. import pin_transition
 from . import notes as _notes
 
 PHASES = ("gate", "record", "notes", "main", "release", "unpin", "sync")
 
 
-# The release-please package (a path in release-please-config.json) that carries the llama.cpp engine's release line.
-RELEASE_PACKAGE = "engines/llamacpp"
 _RELEASE_CONFIG = "release-please-config.json"
 _MANIFEST = ".release-please-manifest.json"
 
@@ -48,6 +48,9 @@ class PinReleaseError(RuntimeError):
 @dataclass(frozen=True)
 class Plan:
     repo_root: Path
+    engine: str          # the engine whose pin is released
+    package: str         # its release-please package (a path in release-please-config.json), engines/<engine>
+    upstream_name: str   # llama.cpp, for messages
     llama_tag: str       # b11474
     build: int           # 11474
     release_tag: str     # bc-11474.0.0 - release-please's tag, the tag of record
@@ -75,7 +78,7 @@ def next_version(existing: list[str], build: int, bump: str | None) -> str:
                       if re.fullmatch(rf"{build}\.\d+\.\d+", v))
     if not released:
         if bump is not None:
-            raise PinReleaseError("gate", f"llama.cpp b{build} has no release yet: its first release is {build}.0.0, without --bump")
+            raise PinReleaseError("gate", f"b{build} has no release yet: its first release is {build}.0.0, without --bump")
         return f"{build}.0.0"
     if bump is None:
         newest = ".".join(str(x) for x in released[-1])
@@ -85,13 +88,28 @@ def next_version(existing: list[str], build: int, bump: str | None) -> str:
     return f"{build}.{minor + 1}.0" if bump == "minor" else f"{build}.{minor}.{patch + 1}"
 
 
-def make_plan(repo_root: Path, llama_tag: str, main: str = "main", remote: str = "origin",
+def make_plan(repo_root: Path, engine: str, llama_tag: str, main: str = "main", remote: str = "origin",
               version: str | None = None, bump: str | None = None, allow_existing: bool = False) -> Plan:
+    try:
+        layout = engines.load(repo_root, engine)
+    except engines.EngineError as exc:
+        raise PinReleaseError("gate", str(exc)) from exc
+    package = layout.release_package()
+    try:
+        packages = json.loads((repo_root / _RELEASE_CONFIG).read_text(encoding="utf-8")).get("packages", {})
+    except (OSError, json.JSONDecodeError) as exc:
+        raise PinReleaseError("gate", f"cannot read {_RELEASE_CONFIG}: {exc}") from exc
+    if package not in packages:
+        raise PinReleaseError("gate", f"{_RELEASE_CONFIG} has no package {package!r}: {engine} has no release line "
+                                      "configured yet, so its pin cannot be released")
     m = re.fullmatch(r"b(\d+)", llama_tag)
     if not m:
-        raise PinReleaseError("gate", f"{llama_tag!r} is not a llama.cpp release tag (b<number>)")
+        raise PinReleaseError("gate", f"{llama_tag!r} is not a {layout.upstream_name} release tag (b<number>)")
     build = int(m.group(1))
-    config = _notes.load_config(repo_root)
+    try:
+        config = _notes.load_config(repo_root, engine)
+    except _notes.ReleaseNotesError as exc:
+        raise PinReleaseError("gate", str(exc)) from exc
     branch = _git(repo_root, "rev-parse", "--abbrev-ref", "HEAD")
     if branch in (main, "HEAD"):
         raise PinReleaseError("gate", f"run this from the work branch, not from {branch!r}")
@@ -122,7 +140,8 @@ def make_plan(repo_root: Path, llama_tag: str, main: str = "main", remote: str =
         version = _notes.release_version(llama_tag, version)
     except _notes.ReleaseNotesError as exc:
         raise PinReleaseError("gate", str(exc)) from exc
-    return Plan(repo_root, llama_tag, build, f"{config.tag_prefix}{version}", version, branch, main, remote)
+    return Plan(repo_root, engine, package, layout.upstream_name, llama_tag, build, f"{config.tag_prefix}{version}",
+                version, branch, main, remote)
 
 
 def _require_clean(plan: Plan, phase: str) -> None:
@@ -135,21 +154,21 @@ def _tag_exists(plan: Plan) -> bool:
     return bool(_git(plan.repo_root, "ls-remote", "--tags", plan.remote, f"refs/tags/{plan.release_tag}", check=False))
 
 
-def _release_package(root: Path, phase: str = "notes") -> dict:
+def _release_package(root: Path, package: str, phase: str) -> dict:
     try:
         document = json.loads((root / _RELEASE_CONFIG).read_text(encoding="utf-8"))
-        package = document["packages"][RELEASE_PACKAGE]
+        entry = document["packages"][package]
     except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
-        raise PinReleaseError(phase, f"{_RELEASE_CONFIG} has no valid {RELEASE_PACKAGE!r} package") from exc
-    if not isinstance(package, dict):
-        raise PinReleaseError(phase, f"{_RELEASE_CONFIG} package {RELEASE_PACKAGE!r} is not an object")
-    return package
+        raise PinReleaseError(phase, f"{_RELEASE_CONFIG} has no valid {package!r} package") from exc
+    if not isinstance(entry, dict):
+        raise PinReleaseError(phase, f"{_RELEASE_CONFIG} package {package!r} is not an object")
+    return entry
 
 
-def _package_object_bounds(text: str) -> tuple[int, int]:
-    marker = re.search(rf'(?m)^\s*{re.escape(json.dumps(RELEASE_PACKAGE))}\s*:\s*\{{', text)
+def _package_object_bounds(text: str, package: str) -> tuple[int, int]:
+    marker = re.search(rf'(?m)^\s*{re.escape(json.dumps(package))}\s*:\s*\{{', text)
     if marker is None:
-        raise ValueError(f"package {RELEASE_PACKAGE!r} not found")
+        raise ValueError(f"package {package!r} not found")
     opening = text.find("{", marker.start(), marker.end())
     depth = 0
     in_string = False
@@ -172,51 +191,51 @@ def _package_object_bounds(text: str) -> tuple[int, int]:
             depth -= 1
             if depth == 0:
                 return opening, i
-    raise ValueError(f"package {RELEASE_PACKAGE!r} object is not closed")
+    raise ValueError(f"package {package!r} object is not closed")
 
 
-def _release_as_value(text: str, phase: str) -> str | None:
+def _release_as_value(text: str, package: str, phase: str) -> str | None:
     try:
-        value = json.loads(text)["packages"][RELEASE_PACKAGE].get("release-as")
+        value = json.loads(text)["packages"][package].get("release-as")
     except (json.JSONDecodeError, KeyError, TypeError) as exc:
-        raise PinReleaseError(phase, f"{_RELEASE_CONFIG} has no valid {RELEASE_PACKAGE!r} package") from exc
+        raise PinReleaseError(phase, f"{_RELEASE_CONFIG} has no valid {package!r} package") from exc
     if value is not None and not isinstance(value, str):
-        raise PinReleaseError(phase, f"{RELEASE_PACKAGE}.release-as must be a string, got {value!r}")
+        raise PinReleaseError(phase, f"{package}.release-as must be a string, got {value!r}")
     return value
 
 
-def _set_release_as_text(text: str, version: str | None, phase: str, expected: str | None = None) -> tuple[str, bool]:
-    current = _release_as_value(text, phase)
+def _set_release_as_text(text: str, package: str, version: str | None, phase: str, expected: str | None = None) -> tuple[str, bool]:
+    current = _release_as_value(text, package, phase)
     if version is not None:
         if current is not None and current != version:
-            raise PinReleaseError(phase, f"{RELEASE_PACKAGE}.release-as is already {current!r}, refusing to replace it with {version!r}")
+            raise PinReleaseError(phase, f"{package}.release-as is already {current!r}, refusing to replace it with {version!r}")
         if current == version:
             return text, False
         try:
-            opening, _ = _package_object_bounds(text)
+            opening, _ = _package_object_bounds(text, package)
         except ValueError as exc:
             raise PinReleaseError(phase, str(exc)) from exc
         line = re.match(r"(\r?\n)([ \t]+)", text[opening + 1:])
         if line is None:
-            raise PinReleaseError(phase, f"cannot preserve formatting while editing {RELEASE_PACKAGE} in {_RELEASE_CONFIG}")
+            raise PinReleaseError(phase, f"cannot preserve formatting while editing {package} in {_RELEASE_CONFIG}")
         newline, indent = line.group(1), line.group(2)
         updated = text[:opening + 1] + f'{newline}{indent}"release-as": {json.dumps(version)},' + text[opening + 1:]
-        if _release_as_value(updated, phase) != version:
-            raise PinReleaseError(phase, f"failed to set {RELEASE_PACKAGE}.release-as")
+        if _release_as_value(updated, package, phase) != version:
+            raise PinReleaseError(phase, f"failed to set {package}.release-as")
         return updated, True
 
     if current is None:
         return text, False
     if expected is not None and current != expected:
-        raise PinReleaseError(phase, f"{RELEASE_PACKAGE}.release-as is {current!r}, expected {expected!r}; refusing to clear it")
+        raise PinReleaseError(phase, f"{package}.release-as is {current!r}, expected {expected!r}; refusing to clear it")
     try:
-        opening, closing = _package_object_bounds(text)
+        opening, closing = _package_object_bounds(text, package)
     except ValueError as exc:
         raise PinReleaseError(phase, str(exc)) from exc
     package_text = text[opening + 1:closing]
     match = re.search(r'(?m)^[ \t]*"release-as"[ \t]*:[^\r\n]*(?:\r?\n|$)', package_text)
     if match is None:
-        raise PinReleaseError(phase, f"could not locate {RELEASE_PACKAGE}.release-as without reformatting {_RELEASE_CONFIG}")
+        raise PinReleaseError(phase, f"could not locate {package}.release-as without reformatting {_RELEASE_CONFIG}")
     start = opening + 1 + match.start()
     end = opening + 1 + match.end()
     updated = text[:start] + text[end:]
@@ -225,21 +244,21 @@ def _set_release_as_text(text: str, version: str | None, phase: str, expected: s
     except json.JSONDecodeError:
         comma = text.rfind(",", opening + 1, start)
         if comma < 0:
-            raise PinReleaseError(phase, f"could not remove {RELEASE_PACKAGE}.release-as without reformatting {_RELEASE_CONFIG}")
+            raise PinReleaseError(phase, f"could not remove {package}.release-as without reformatting {_RELEASE_CONFIG}")
         updated = text[:comma] + text[comma + 1:start] + text[end:]
         try:
             json.loads(updated)
         except json.JSONDecodeError as exc:
-            raise PinReleaseError(phase, f"could not remove {RELEASE_PACKAGE}.release-as without reformatting {_RELEASE_CONFIG}") from exc
-    if _release_as_value(updated, phase) is not None:
-        raise PinReleaseError(phase, f"failed to clear {RELEASE_PACKAGE}.release-as")
+            raise PinReleaseError(phase, f"could not remove {package}.release-as without reformatting {_RELEASE_CONFIG}") from exc
+    if _release_as_value(updated, package, phase) is not None:
+        raise PinReleaseError(phase, f"failed to clear {package}.release-as")
     return updated, True
 
 
-def _edit_release_as(root: Path, version: str | None, phase: str, expected: str | None = None) -> bool:
+def _edit_release_as(root: Path, package: str, version: str | None, phase: str, expected: str | None = None) -> bool:
     path = root / _RELEASE_CONFIG
     original = path.read_text(encoding="utf-8")
-    updated, changed = _set_release_as_text(original, version, phase, expected)
+    updated, changed = _set_release_as_text(original, package, version, phase, expected)
     if changed:
         path.write_text(updated, encoding="utf-8", newline="")
     return changed
@@ -248,10 +267,11 @@ def _edit_release_as(root: Path, version: str | None, phase: str, expected: str 
 def phase_gate(plan: Plan) -> str:
     """Every required tree converged at the pin. Returns the gate's output, which the record keeps."""
     _require_clean(plan, "gate")
-    res = _run(plan.repo_root, sys.executable, "-m", "bigcherry", "pin-status", "--complete", "--all-remotes", check=False, timeout=900)
+    res = _run(plan.repo_root, sys.executable, "-m", "bigcherry", "--engine", plan.engine, "pin-status", "--complete",
+               "--all-remotes", check=False, timeout=900)
     out = (res.stdout + res.stderr).strip()
     if res.returncode != 0:
-        raise PinReleaseError("gate", "pin-status --complete --all-remotes did not pass:\n" + out[-1500:]
+        raise PinReleaseError("gate", f"--engine {plan.engine} pin-status --complete --all-remotes did not pass:\n" + out[-1500:]
                               + "\nbring every required tree to the pin (pull it, run pin-bump there), then run again")
     return out
 
@@ -260,9 +280,9 @@ def phase_record(plan: Plan, gate_output: str, evidence: str) -> bool:
     """Completion into the release record, transition marker removed. Returns False when already done."""
     root = plan.repo_root
     record_path = root / "releases" / f"{plan.llama_tag}.json"
-    marker = root / "releases" / "pin-transition.json"
+    marker = pin_transition.marker_path(plan.engine, root)
     if not record_path.is_file():
-        raise PinReleaseError("record", f"{record_path} does not exist: was `pin-bump {plan.llama_tag}` run in this tree?")
+        raise PinReleaseError("record", f"{record_path} does not exist: was `--engine {plan.engine} pin-bump {plan.llama_tag}` run in this tree?")
     record = json.loads(record_path.read_text(encoding="utf-8"))
     stamp = f"release {plan.version}"
     if stamp in (record.get("notes") or "") and not marker.exists():
@@ -276,7 +296,7 @@ def phase_record(plan: Plan, gate_output: str, evidence: str) -> bool:
     record_path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
     _git(root, "add", str(record_path.relative_to(root)).replace("\\", "/"))
     if marker.exists():
-        _git(root, "rm", "-q", "releases/pin-transition.json")
+        _git(root, "rm", "-q", marker.relative_to(root).as_posix())
     what = "bump complete -- " if plan.version.endswith(".0.0") else ""
     _git(root, "commit", "-q", "-m", f"release: {plan.release_tag} {what}completion gate and hardware evidence recorded"
                                      + (", transition marker cleared" if what else ""))
@@ -284,27 +304,27 @@ def phase_record(plan: Plan, gate_output: str, evidence: str) -> bool:
 
 
 def phase_notes(plan: Plan) -> bool:
-    """Generate notes and pin the llama.cpp package version in one commit."""
+    """Generate notes and pin the engine's package version in one commit."""
     root = plan.repo_root
     subject = f"chore: release notes {plan.release_tag}"
     config_text = (root / _RELEASE_CONFIG).read_text(encoding="utf-8")
     committed = subject in _git(root, "log", "--format=%s", "--fixed-strings", f"--grep={subject}", "-5").splitlines()
-    current_release_as = _release_as_value(config_text, "notes")
+    current_release_as = _release_as_value(config_text, plan.package, "notes")
     if current_release_as is not None and current_release_as != plan.version:
-        raise PinReleaseError("notes", f"{RELEASE_PACKAGE}.release-as is already {current_release_as!r}, "
+        raise PinReleaseError("notes", f"{plan.package}.release-as is already {current_release_as!r}, "
                                        f"refusing to replace it with {plan.version!r}")
     if committed and (current_release_as == plan.version or (current_release_as is None and _tag_exists(plan))):
         return False
     _require_clean(plan, "notes")
     try:
-        out = _notes.write_notes(root, _notes.load_config(root), plan.llama_tag, "HEAD", plan.version)
+        out = _notes.write_notes(root, _notes.load_config(root, plan.engine), plan.llama_tag, "HEAD", plan.version)
     except _notes.ReleaseNotesError as exc:
         raise PinReleaseError("notes", str(exc)) from exc
-    _edit_release_as(root, plan.version, "notes")
+    _edit_release_as(root, plan.package, plan.version, "notes")
     note_path = str(Path(out).resolve().relative_to(root.resolve())).replace("\\", "/")
     _git(root, "add", note_path, _RELEASE_CONFIG)
     body = ("release-please reads the package-scoped release-as value from release-please-config.json; "
-            f"this commit carries BigCherry on llama.cpp {plan.llama_tag}.")
+            f"this commit carries BigCherry on {plan.upstream_name} {plan.llama_tag}.")
     _git(root, "commit", "-q", "-m", subject, "-m", body)
     return True
 
@@ -354,7 +374,7 @@ def _wait_and_merge_pr(plan: Plan, pr: dict, phase: str, wait_s: int = 900) -> N
 
 
 def _main_pr_title(plan: Plan) -> str:
-    return f"build: llama.cpp pin {plan.llama_tag} release record and notes"
+    return f"build: {plan.upstream_name} pin {plan.llama_tag} release record and notes"
 
 
 def phase_main(plan: Plan, wait_s: int = 900) -> bool:
@@ -379,7 +399,7 @@ def phase_main(plan: Plan, wait_s: int = 900) -> bool:
                                           "merge it by hand, commit, and run again")
     _git(root, "push", "-q", remote, f"HEAD:refs/heads/{plan.branch}")
     pr = _ensure_pr(plan, plan.branch, _main_pr_title(plan), "main",
-                    f"Release record and notes for llama.cpp {plan.llama_tag} ({plan.version}).")
+                    f"Release record and notes for {plan.upstream_name} {plan.llama_tag} ({plan.version}).")
     _wait_and_merge_pr(plan, pr, "main", wait_s)
     return True
 
@@ -391,7 +411,7 @@ def _release_pr(plan: Plan) -> dict | None:
         raise PinReleaseError("release", "gh pr list failed (is the GitHub CLI installed and logged in?):\n" + (res.stderr or res.stdout).strip()[-400:])
     # the repository releases several components; another component's release PR can carry the same version number
     # (2026-10-12: bc-platform's was merged in place of bc-llamacpp's), so the PR is matched by its release branch
-    package = _release_package(plan.repo_root, "release")
+    package = _release_package(plan.repo_root, plan.package, "release")
     branch = f"release-please--branches--{plan.main}--components--{package['component']}"
     prs = [p for p in json.loads(res.stdout or "[]")
            if p.get("headRefName") == branch and plan.version in p.get("title", "")]
@@ -420,7 +440,7 @@ def _open_release_pr(plan: Plan) -> bool:
     (the workflow run then fails). Open the PR from that branch, labelled as release-please expects. Returns whether a
     PR was opened."""
     root = plan.repo_root
-    package = _release_package(root, "release")
+    package = _release_package(root, plan.package, "release")
     component = package["component"]
     branch = f"release-please--branches--{plan.main}--components--{component}"
     if not _git(root, "ls-remote", "--heads", plan.remote, f"refs/heads/{branch}", check=False):
@@ -430,7 +450,7 @@ def _open_release_pr(plan: Plan) -> bool:
     if plan.version not in subject:
         return False   # the branch is still the previous release's
     title = f"release: {component} {plan.version}"
-    body = release_pr_body(_git(root, "show", f"FETCH_HEAD:{RELEASE_PACKAGE}/{package['changelog-path']}"),
+    body = release_pr_body(_git(root, "show", f"FETCH_HEAD:{plan.package}/{package['changelog-path']}"),
                            plan.version)
     made = _run(root, "gh", "pr", "create", "--base", plan.main, "--head", branch, "--title", title, "--body", body,
                 "--label", "autorelease: pending", check=False)
@@ -440,8 +460,8 @@ def _open_release_pr(plan: Plan) -> bool:
 
 
 def _verify_release_pr_files(plan: Plan, pr: dict) -> None:
-    package = _release_package(plan.repo_root, "release")
-    expected = {_MANIFEST, f"{RELEASE_PACKAGE}/{package['changelog-path']}"}
+    package = _release_package(plan.repo_root, plan.package, "release")
+    expected = {_MANIFEST, f"{plan.package}/{package['changelog-path']}"}
     viewed = _run(plan.repo_root, "gh", "pr", "view", str(pr["number"]), "--json", "files", check=False)
     if viewed.returncode != 0:
         raise PinReleaseError("release", f"could not inspect changed files for {pr.get('url', pr['number'])}: "
@@ -486,7 +506,7 @@ def _unpin_branch(plan: Plan) -> str:
 
 
 def _unpin_title(plan: Plan) -> str:
-    return f"chore: clear llama.cpp release-as {plan.version}"
+    return f"chore: clear {plan.upstream_name} release-as {plan.version}"
 
 
 def _prepare_unpin_branch(plan: Plan, branch: str) -> None:
@@ -495,15 +515,15 @@ def _prepare_unpin_branch(plan: Plan, branch: str) -> None:
     if _git(root, "ls-remote", "--heads", remote, remote_ref, check=False):
         _git(root, "fetch", "-q", remote, f"{remote_ref}:refs/remotes/{remote}/{branch}")
         text = _git(root, "show", f"{remote}/{branch}:{_RELEASE_CONFIG}")
-        if _release_as_value(text, "unpin") is not None:
-            raise PinReleaseError("unpin", f"existing {branch} does not clear {RELEASE_PACKAGE}.release-as")
+        if _release_as_value(text, plan.package, "unpin") is not None:
+            raise PinReleaseError("unpin", f"existing {branch} does not clear {plan.package}.release-as")
         return
 
     parent = Path(tempfile.mkdtemp(prefix="pin-release-unpin-", dir=root.parent))
     worktree = parent / "tree"
     try:
         _git(root, "worktree", "add", "-q", "--detach", str(worktree), f"{remote}/{plan.main}")
-        if not _edit_release_as(worktree, None, "unpin", expected=plan.version):
+        if not _edit_release_as(worktree, plan.package, None, "unpin", expected=plan.version):
             return
         _git(worktree, "add", _RELEASE_CONFIG)
         _git(worktree, "commit", "-q", "-m", _unpin_title(plan))
@@ -520,11 +540,11 @@ def phase_unpin(plan: Plan, wait_s: int = 900) -> bool:
     root = plan.repo_root
     _git(root, "fetch", "-q", plan.remote)
     main_text = _git(root, "show", f"{plan.remote}/{plan.main}:{_RELEASE_CONFIG}")
-    current = _release_as_value(main_text, "unpin")
+    current = _release_as_value(main_text, plan.package, "unpin")
     if current is None:
         return False
     if current != plan.version:
-        raise PinReleaseError("unpin", f"{RELEASE_PACKAGE}.release-as is {current!r}, expected {plan.version!r}")
+        raise PinReleaseError("unpin", f"{plan.package}.release-as is {current!r}, expected {plan.version!r}")
     branch = _unpin_branch(plan)
     _prepare_unpin_branch(plan, branch)
     pr = _ensure_pr(plan, branch, _unpin_title(plan), "unpin",
@@ -559,7 +579,7 @@ def _manifest_versions(plan: Plan, *, release_pending: bool = True) -> dict[str,
     for package, current in manifest.items():
         configured = config.get("packages", {}).get(package, {})
         pinned = configured.get("release-as") if isinstance(configured, dict) else None
-        if release_pending and package == RELEASE_PACKAGE:
+        if release_pending and package == plan.package:
             result[package] = plan.version
         elif release_pending and isinstance(pinned, str):
             result[package] = pinned
@@ -573,7 +593,7 @@ def _dry_run(plan: Plan, stop: int, log=print) -> None:
     record_path = plan.repo_root / "releases" / f"{plan.llama_tag}.json"
     recorded = record_path.is_file() and f"release {plan.version}" in (
         json.loads(record_path.read_text(encoding="utf-8")).get("notes") or "")
-    config_value = _release_as_value((plan.repo_root / _RELEASE_CONFIG).read_text(encoding="utf-8"), "notes")
+    config_value = _release_as_value((plan.repo_root / _RELEASE_CONFIG).read_text(encoding="utf-8"), plan.package, "notes")
     notes_subject = f"chore: release notes {plan.release_tag}"
     notes_done = notes_subject in _git(plan.repo_root, "log", "--format=%s", "--fixed-strings",
                                        f"--grep={notes_subject}", "-5", check=False).splitlines()
@@ -581,15 +601,16 @@ def _dry_run(plan: Plan, stop: int, log=print) -> None:
     for name in PHASES[:stop + 1]:
         if name == "gate":
             log("  gate     already passed (recorded)" if recorded else
-                "  gate     would run: python -m bigcherry pin-status --complete --all-remotes")
+                f"  gate     would run: python -m bigcherry --engine {plan.engine} pin-status --complete --all-remotes")
         elif name == "record":
             log("  record   already done" if recorded else
-                f"  record   would update releases/{plan.llama_tag}.json and clear releases/pin-transition.json")
+                f"  record   would update releases/{plan.llama_tag}.json and clear "
+                f"{pin_transition.marker_path(plan.engine, plan.repo_root).relative_to(plan.repo_root).as_posix()}")
         elif name == "notes":
             if notes_done and (config_value == plan.version or (config_value is None and tagged)):
                 log("  notes    already done")
             else:
-                log(f"  notes    would write notes and set {RELEASE_PACKAGE}.release-as={plan.version}")
+                log(f"  notes    would write notes and set {plan.package}.release-as={plan.version}")
         elif name == "main":
             if tagged:
                 log(f"  main     already done ({plan.release_tag} exists)")
@@ -624,9 +645,9 @@ def _dry_run(plan: Plan, stop: int, log=print) -> None:
             log(f"  sync     would merge {plan.remote}/{plan.main} into {plan.branch} and push only {plan.branch}")
 
 
-def run(repo_root: Path, llama_tag: str, evidence: str, through: str = "sync", dry_run: bool = False, log=print,
-        version: str | None = None, bump: str | None = None) -> int:
-    plan = make_plan(repo_root, llama_tag, version=version, bump=bump, allow_existing=dry_run)
+def run(repo_root: Path, engine: str, llama_tag: str, evidence: str, through: str = "sync", dry_run: bool = False,
+        log=print, version: str | None = None, bump: str | None = None) -> int:
+    plan = make_plan(repo_root, engine, llama_tag, version=version, bump=bump, allow_existing=dry_run)
     stop = PHASES.index(through)
     log(f"pin-release: {plan.llama_tag} -> {plan.release_tag} (version {plan.version}), branch {plan.branch} -> {plan.main}")
     if dry_run:

@@ -327,7 +327,7 @@ def validation_evidence_statuses(
     }
 
     if pinned_ref is None:
-        pinned_ref = campaign_config.load(paths.RECIPES).pinned
+        pinned_ref = campaign_config.load(engines.load(paths.REPO_ROOT, engine).recipes_path(paths.REPO_ROOT)).pinned
 
     def _evaluate(patch_id: str, ref: str, resolved: str | None) -> patch_validation_evidence.EvidenceCheck:
         entry = entries.get(patch_id)

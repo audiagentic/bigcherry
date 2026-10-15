@@ -13,7 +13,8 @@ import re
 import sys
 
 from ..core import config as campaign_config
-from ..core import paths
+from ..core import engines, paths
+from ..core.context import ProjectContext
 from ..release import pin_status
 from .. import pin_transition
 from .. import recipes
@@ -22,10 +23,16 @@ from ..source import sources, upstream
 _PIN_LINE = re.compile(r'^pinned\s*=\s*"([^"]+)"', re.MULTILINE)
 
 
-def uncommitted_pin_change() -> str | None:
+def recipes_path(engine: str):
+    """The recipes file that holds an engine's pin."""
+    return engines.load(paths.REPO_ROOT, engine).recipes_path(paths.REPO_ROOT)
+
+
+def uncommitted_pin_change(engine: str) -> str | None:
     """Return the working-tree pin when it differs from committed config."""
+    recipes_file = recipes_path(engine)
     try:
-        text = paths.RECIPES.read_text(encoding="utf-8")
+        text = recipes_file.read_text(encoding="utf-8")
     except FileNotFoundError:
         return None
     working = _PIN_LINE.search(text)
@@ -35,7 +42,7 @@ def uncommitted_pin_change() -> str | None:
         committed = upstream._git(
             paths.REPO_ROOT,
             "show",
-            "HEAD:" + str(paths.RECIPES.relative_to(paths.REPO_ROOT)).replace("\\", "/"),
+            "HEAD:" + str(recipes_file.relative_to(paths.REPO_ROOT)).replace("\\", "/"),
         )
     except upstream.UpstreamError:
         committed = ""
@@ -46,12 +53,13 @@ def uncommitted_pin_change() -> str | None:
     return None
 
 
-def resolve_pin_sha(ref: str) -> str:
-    """Resolve a pin ref to a full commit SHA in the vendor clone."""
-    root = paths.llama_root()
+def resolve_pin_sha(engine: str, ref: str, root=None) -> str:
+    """Resolve a pin ref to a full commit SHA in the engine's vendor clone (``root`` overrides the checkout)."""
+    if root is None:
+        root = ProjectContext.resolve(engine=engine).vendor_root
     if not (root / ".git").exists():
         raise upstream.UpstreamError(
-            f"vendor checkout missing at {root}; run 'python -m bigcherry pull' "
+            f"vendor checkout missing at {root}; run 'python -m bigcherry --engine {engine} pull' "
             "before repinning"
         )
     checkout_ref = upstream.ensure_ref(root, ref)
@@ -60,14 +68,16 @@ def resolve_pin_sha(ref: str) -> str:
 
 
 def cmd_repin(args: argparse.Namespace) -> int:
-    """Move the pin and declare the transition without changing semantics."""
+    """Move the engine's pin and declare the transition without changing semantics."""
+    engine = args.engine
+    context = ProjectContext.resolve(engine=engine)
     try:
-        target = args.ref or upstream.latest_release()
+        target = args.ref or upstream.latest_release(context.upstream_url)
     except upstream.UpstreamError as exc:
         print(str(exc), file=sys.stderr)
         return 1
     try:
-        old = recipes.repin(target)
+        old = recipes.repin(target, recipes_path(engine))
     except recipes.RecipeError as exc:
         print(str(exc), file=sys.stderr)
         return 1
@@ -77,8 +87,8 @@ def cmd_repin(args: argparse.Namespace) -> int:
         return 0
 
     try:
-        from_sha = resolve_pin_sha(old)
-        to_sha = resolve_pin_sha(target)
+        from_sha = resolve_pin_sha(engine, old)
+        to_sha = resolve_pin_sha(engine, target)
         declaring = upstream._git(paths.REPO_ROOT, "rev-parse", "HEAD")
     except upstream.UpstreamError as exc:
         print(
@@ -93,16 +103,19 @@ def cmd_repin(args: argparse.Namespace) -> int:
         )
         return 1
 
-    pin_transition.write(from_sha, to_sha, target, declaring)
+    marker = pin_transition.marker_path(engine)
+    pin_transition.write(from_sha, to_sha, target, declaring, marker)
     print(f"pinned: {old} -> {target}")
     print(
         "recipes following the pin now build from it; recipes naming their "
         "own ref are unchanged."
     )
-    print(f"transition marker: {pin_transition.MARKER_PATH} ({old} -> {target})")
+    print(f"transition marker: {marker} ({old} -> {target})")
 
     try:
-        report = sources.baseline_candidates_at_pin(target)
+        report = sources.baseline_candidates_at_pin(
+            target, vendor_root=context.vendor_root, registry=sources.load_engine_registry(engine)
+        )
         sources.print_baseline_candidates(report)
     except Exception as exc:  # noqa: BLE001 -- advisory report is non-fatal
         print(
@@ -112,20 +125,22 @@ def cmd_repin(args: argparse.Namespace) -> int:
         )
 
     print(
-        "next: COMMIT recipes.toml + the marker together, then "
-        "python -m bigcherry pull --source <name>"
+        "next: COMMIT the recipes file + the marker together, then "
+        f"python -m bigcherry --engine {engine} pull --source <name>"
     )
     return 0
 
 
-def pin_status_paths() -> tuple[pin_status.RepoPaths, object, list]:
-    """Build local RepoPaths and configured remote trees from real config."""
-    cfg = campaign_config.load(paths.RECIPES)
+def pin_status_paths(engine: str) -> tuple[pin_status.RepoPaths, object, list]:
+    """Build the engine's local RepoPaths and configured remote trees from real config."""
+    layout = engines.load(paths.REPO_ROOT, engine)
+    cfg = campaign_config.load(layout.recipes_path(paths.REPO_ROOT))
     repo_paths = pin_status.RepoPaths(
         repo_root=paths.REPO_ROOT,
-        llama_root=paths.llama_root(),
+        vendor_root=layout.vendor_root(paths.primary_root()),
         releases_dir=paths.REPO_ROOT / "releases",
         artifacts_dir=paths.REPO_ROOT / "artifacts",
+        layout=layout,
     )
     return repo_paths, cfg, list(cfg.trees)
 
@@ -201,7 +216,7 @@ def render_pin_status(report, trees) -> str:
 def cmd_pin_status(args: argparse.Namespace) -> int:
     """Name the pin state; this command only reads."""
     try:
-        repo_paths, _cfg, trees = pin_status_paths()
+        repo_paths, _cfg, trees = pin_status_paths(args.engine)
     except Exception as exc:  # ConfigError, RecipeError, OSError
         print(f"pin-status: config error: {exc}", file=sys.stderr)
         return 2

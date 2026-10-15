@@ -143,19 +143,6 @@ class AncestralToPinTests(unittest.TestCase):
             verdict = src.ancestral_to_pin(sibling, vendor_root=root, pin_ref="the-pin")
             self.assertEqual(verdict, "not-ancestral")
 
-    def test_pin_ref_defaults_to_real_project_config_when_omitted(self):
-        # Real integration point: pin_ref=None must resolve through
-        # recipes.load_config().pinned (this project's real config), not
-        # silently no-op. Exercised against the throwaway repo (which has
-        # no tag named after the real pin, e.g. "b10502"), so the real
-        # config value is genuinely consulted and then fails closed to
-        # "unknown" via the rev-parse-failure path -- never crashes, never
-        # silently reports "ancestral".
-        with _ThrowawayRepo() as root:
-            commit = _commit(root, "a.txt", "1")
-            verdict = src.ancestral_to_pin(commit, vendor_root=root, pin_ref=None)
-            self.assertEqual(verdict, "unknown")
-
 
 class BaselineCandidatesAtPinTests(unittest.TestCase):
     def test_reports_only_commits_proven_ancestral(self):

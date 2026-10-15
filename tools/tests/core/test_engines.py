@@ -33,6 +33,15 @@ class EngineDeclarations(unittest.TestCase):
         self.assertEqual(layouts["llamacpp"].patch_id_prefix, "")
         self.assertEqual(layouts["radiance"].patch_id_prefix, "rad")
 
+    def test_release_package_and_external_sources_come_from_the_declaration(self):
+        layouts = engines.load_all(_REPO)
+        self.assertEqual(layouts["llamacpp"].release_package(), "engines/llamacpp")
+        self.assertEqual(layouts["radiance"].release_package(), "engines/radiance")
+        self.assertEqual(layouts["llamacpp"].upstream_name, "llama.cpp")
+        self.assertEqual(layouts["llamacpp"].external_sources_path(_REPO), _REPO / "config" / "external-sources.toml")
+        # an engine that declares no external-source registry has none
+        self.assertIsNone(layouts["radiance"].external_sources_path(_REPO))
+
     def test_paths_constants_follow_the_llamacpp_declaration(self):
         layout = engines.load(_REPO, engines.LLAMACPP)
         self.assertEqual(paths.PATCHES, _REPO / layout.patches)
