@@ -25,3 +25,8 @@ The existing 1263 patch implements CPU/CUDA/HIP channels-major SSM_CONV and chan
 ## Future current-pin qualification
 
 Before any promotion, confirm exact b11552 patch composition, HIP build, backend-op and full-vocabulary/logits/greedy correctness, same-process repeated requests, multi-ubatch, MTP rollback/state lifetime and graph replay. Positive lane: single-device Qwen hybrid GDN pp512 (or separately justified model/shape); negative: non-SSM tg128 and tensor-split fallback. Four independent order-balanced sessions per declared architecture with >=10 paired rounds, appropriate CI and no >1% control regression. PRBE114 owns any future tensor-split expansion and is closed absent a >=3% exposed E2E opportunity; do not modify generic Meta reshape to qualify this package by assertion suppression.
+
+
+## 2026-10-15 BCOP234 — prefix-marker qualification blocker
+
+`validation/producer.py::_MARKER_REGEX` and `validation.toml::activation.marker-regex` currently match the positive marker as a prefix of `ssm_conv_channels_major_declined_split`. A tensor-split fallback can therefore pass as `executed`. Bound both patterns with `(?![A-Za-z0-9_])`, parse the decline separately, and reject mixed markers. Host-test the actual producer/TOML on positive, declined, absent, both, control-only, wrong-patch and same-process cases. The process-once positive server marker precedes HIP completion and does not prove the separate `llama-bench` route. Require a benchmark-side HIP `ssm_conv_f32<...,channels_major=true,...>` kernel/graph witness, no CPU fallback and per-ubatch CONCAT/CONT accounting. PRBE41 owns the full correctness/performance gate; no GPU lane is queued.
