@@ -480,6 +480,50 @@ Numerics: b11402's production 3-rank RCCL path is BF16 for these ranges, so do *
 
 Mechanism acceptance: rocprof timeline proves overlap and `BIGCHERRY_AR_TILE_TRACE` shows only attention-output boundaries firing. Performance: same-build flag-off vs tile128/256 ABBA at ~32K/~100K/~200K, >=4 arms/config, clocks stable; first test isolated from 1334/other new prefill changes, then compose. Phase-1 promotion threshold: >=3% representative E2E prefill or >=30% of the attention-output reduction wall hidden with no offsetting regression. Full PGC15's existing >=10% target remains the bar before generalizing to multiple producer families. Decode control <=1%.
 
-### 2026-10-15 audit amendment - preserve whole-reduction precision
+### 2026-10-15 source-grounded audit appendix
 
-The tiled design must not derive provider precision from a tile's element count. Preflight must select the F32/BF16 policy once from the original reduction and pass that policy to every tile. Any failure after tile submission is an execution failure: never retry a partially reduced tensor through the whole-tensor fallback. Provider-owned scratch, streams, events and completion fences must remain live until the final conversion and all queued tile collectives have completed.
+**Disposition:** PGC15 remains the sole owner of token-tiled prefill compute/AllReduce overlap. Do not implement the older range-callback sketch without freezing the original whole-boundary wire policy. This is a correctness defect in a proposed algorithm, **not** a reproduced BigCherry runtime defect. Current llama.cpp pin is b11552 (`23b0202a189c44a54625aadcb37a946dd1d6278d`).
+
+### Source-grounded contract
+
+- `ggml/src/ggml-backend-meta.cpp::ggml_backend_meta_graph_compute` (b11552 approximately 2463–2500) submits every rank's complete `cgraph_main`, then invokes a whole-tensor `comm_allreduce`. If that returns false, Meta executes `allreduce_fallback`. Splitting only this callback after the complete producer graph cannot overlap compute with communication.
+- `ggml/src/ggml-cuda/ggml-cuda.cu::ggml_backend_cuda_comm_allreduce_nccl` (b11552 approximately 993–1075) chooses F32 when the **whole** tensor has fewer than 32768 elements for two ranks, 131072 for three ranks, or 262144 for four or more ranks. Otherwise it converts F32 to BF16, calls NCCL/RCCL, and converts back. These thresholds are **elements**, not bytes.
+- A three-rank `[768,512]` output has 393216 elements (BF16 whole path); a 128-token tile has 98304 elements (naively F32). `[2560,512]` with 128-token tiles remains BF16. The range provider must freeze the **whole-boundary codec** during preflight, rather than rerun the provider heuristic for each tile. Even when the codec matches, changed collective message geometry may alter reduction order, so numerical equivalence still needs testing.
+- Keep the existing `ggml_backend_comm_allreduce_tensor_t` ABI and provider registry. Do not introduce another dispatch table, allocator, scheduler, or telemetry system. PGC12 owns provider-completion evidence, PGC14 owns RCCL SHM transport, PGC16's redundant fold is retired, and QFP17 owns prefill acceptance.
+
+### Proposed dataflow and lifetime
+
+```text
+Before any tile/producer submission:
+  Identify a real, launch-tileable terminal attention-output GGML_OP_MUL_MAT.
+  Read whole-boundary rank count, whole element count, F32 tensor layout,
+    split-state/compute flags, device identity and graph UID.
+  Freeze the whole-boundary F32/BF16 codec and zero/inactive-rank semantics.
+  Validate ALL tile ranges, strides, alignment, rank agreement and graph lifetimes.
+  Require the existing RCCL provider, preallocated BF16 scratch, per-rank
+    compute/comm streams and persistent event generations.
+  If any check fails: use untouched original whole graph, before side effects.
+
+For each admitted tile:
+  Launch real producer(tile) on each rank's compute stream.
+  Record ready event on that rank's current HIP device.
+  Comm stream waits for ready; run frozen-codec conversion/RCCL/conversion.
+  Record done event on same comm stream and advance generation safely.
+After final tile: compute stream waits for final comm completion on each rank.
+After any producer/collective submission failure: terminal execution error;
+  NEVER return false to Meta's whole-tensor fallback on mutated output.
+```
+
+The final completion event orders prior tiles only if every tile uses the same per-rank comm stream, is enqueued in order, and no event/scratch generation is reused while in flight. Verify cancellation, multi-request and graph replay. No new `MUL_MAT_ID`, recurrent, MTP or active Radiance implementation path is authorized.
+
+### Cheapest gate and promotion
+
+Host-only discriminator `pgc15_range_codec_host_gate.py`: Python compilation and **9/9 tests passed**. Covered 3-rank codec threshold, a tile-induced codec switch, BF16-vs-F32 numerical distinction, preflight before side effects, post-submit fallback prohibition, and theoretical overlap ceiling. No HIP build, GPU execution, repository pytest, or benchmark occurred.
+
+Next gate: trace one real eligible `attn_output` Meta boundary with `{graph_uid, physical_rank_set, producer_op, whole_ne, tile_ne, codec, range, provider_completed, ready/done}`. Do not mistake 1277's preferred route for a completed provider. Require a static/host test that rejects `[768,512]/tile128` unless the range provider explicitly retains BF16. Reject unsupported layout, partial rank, missing streams or changing graph identities.
+
+Only after that gate passes, use existing `tools/lab/rccl` controls to compare serial versus two-stream pipelined **identical work and codec** on the actual three-rank Brutus topology. Require rocprof evidence of `producer(i+1)` overlapping collective(i) and positive pipeline wall gain; otherwise terminal `NO_OVERLAP`, no patch. Then qualify default-off tile128/256 against the same-pin whole-tensor baseline with four independent order-balanced sessions, pp1024/2048/4096, long-context Flash-Next, multi-request/ubatch, graph replay, full logits/KLD/greedy/MTP acceptance, exact byte/work accounting, memory safety and injected failure after tile0. Require >=3% representative end-to-end prefill gain or >=30% of eligible attention-reduction wall hidden, <=1% decode regression and no correctness regression. Otherwise `REJECT_TILE_OVERLAP`.
+
+Historical ~0.93 s compute and ~2.4 s collective service imply a **theoretical** ceiling of `min(0.93,2.4)/(0.93+2.4) ~= 27.9%` reduction of their summed service time if *all* work overlapped without overhead. Only an attention-output subset is eligible in phase 1, so its actual ceiling is lower and unknown; no measured speedup.
+
+**Upstream/forks:** Current llama.cpp Meta retains whole-graph/whole-tensor boundaries. [llama.cpp #26827](https://github.com/ggml-org/llama.cpp/pull/26827) provides a negative test for MTP multi-ubatch/Meta stream ordering on no-P2P hardware. [vLLM capture ordering](https://github.com/vllm-project/vllm/blob/main/vllm/distributed/parallel_state.py) and [SGLang breakable graph #22218](https://github.com/sgl-project/sglang/pull/22218) suggest ordering/segmentation controls but are not transferable GPU implementations or AMD speedup evidence.
