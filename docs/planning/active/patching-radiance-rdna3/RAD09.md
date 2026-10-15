@@ -51,6 +51,8 @@ patch tests and patch-lint pass; rad0002 dry-run applies at the pin; helper layo
 
 ## Acceptance Criteria
 
+Met 2026-10-15: one rad0002 and one hook (libr3moe) on main via #236 (63cc952f); patch-lint and patch tests pass; radiance-lab build ok on Brutus; helper vs engine rel_l2 0.0011; prefill 2,760/2,761 tok/s, decode 108.4/108.9, identical completion hash.
+
 
 
 ## Notes
@@ -60,3 +62,10 @@ Blocks merging any of RAD02-RAD06's code to main.
 ## Change Log
 
 - 2026-10-14T22:21:18.124989+00:00 (created-by): Created by agent
+
+## Ledger-events
+
+- chg_20261014_233548_radiance-builds-that-apply-pat_7437
+- 2026-10-14T23:35:56.607672+00:00 (updated-by): Updated: section:ledger-events
+- 2026-10-15T00:20:15.841891+00:00 (updated-by): Updated: section:acceptance_criteria
+- 2026-10-15T00:20:22.319899+00:00 (state-transition): State: pending → completed
