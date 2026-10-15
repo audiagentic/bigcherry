@@ -196,6 +196,13 @@ window; bump one, record, then bump the other.
    package in `release-please-config.json`; it is removed after the release
    tag exists. Commit-message `Release-As` footers are not used.
 
+   Main's ruleset requires `conventional-title` and `index-line-endings`. Release-please PRs opened or updated
+   by the Actions token can leave those checks at "expected", and an older release branch also runs its own older
+   workflow files. Before any release/main/unpin PR is merged, `pin-release` therefore brings its branch up to
+   current `main`, resolves only the shared manifest conflict (bc-llamacpp keeps the release-side version; every
+   other package takes main's version), waits for the ruleset's required checks, and triggers them once if none
+   starts. Any other merge conflict or failing required check stops the release.
+
    Versions and tags. release-please owns the tags: `bc-llamacpp-<llama build>.<minor>.<patch>` (the llama.cpp engine's release line; the shared platform has its own, `bc-platform-<version>`).
    A pin bump is released as `<build>.0.0` (`bc-11474.0.0`; the workflow also
    adds the readable tag `bc-llamacpp-b11474-r0` to it; later releases at the same build get `-r1`, `-r2`, ...). While the pin stays, further
