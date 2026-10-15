@@ -30,4 +30,6 @@ experts= tokens= parts=` once.
 
 ## Evidence
 
-None yet. Offline mechanics tests only.
+Validated and promoted on 2026-10-10 (pin b11474); see [promotion evidence](../../../../releases/evidence/1357_moe_router_splitk-promotion.md) and README.md. Four-request Flash-Next 24K same-binary ABBA measured +3.2% pooled prefill, but greedy text differed and pooled decode was 69.8 -> 67.2 t/s; this is profile-scoped evidence, not bit-identical router scores. The Flash-Next runtime profile enables 1357; the patch remains default-off otherwise.
+
+**BCOP239 (2026-10-16):** QFP48's proposed partial/reduce fusion is not admitted: no measured exposed reduction cost or cross-workgroup completion protocol. Retain both launches and existing pool lifetime; do not mistake the 1357 SGEMM replacement gain for a fusion gain.
