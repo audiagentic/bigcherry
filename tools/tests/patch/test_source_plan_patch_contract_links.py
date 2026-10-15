@@ -161,7 +161,7 @@ class OrphanReportTests(unittest.TestCase):
         from bigcherry.patch import lifecycle as patch_lifecycle
 
         real_ids = _real_patch_ids()
-        registry = sources.load_registry()
+        registry = sources.load_engine_registry("llamacpp")
         tracked_plan_items = {
             entry.get("plan-item")
             for source in registry.get("sources", [])

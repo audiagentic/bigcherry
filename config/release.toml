@@ -1,21 +1,24 @@
 # BigCherry release configuration (read by `bigcherry release-notes`).
 #
-# This file configures the llama.cpp engine's release line (run-multi-engine MEN09): tags bc-llamacpp-<build>.<minor>.<patch>,
+# This file configures the engines' release lines (run-multi-engine MEN09; llama.cpp today): tags bc-llamacpp-<build>.<minor>.<patch>,
 # each with a readable alias bc-llamacpp-b<build>-r<N> added by the release workflow. release-please on GitHub owns
 # the release PR, tag and GitHub release (release-please-config.json, .github/workflows/release-please.yml); this file
 # configures the release text it publishes. The notes are generated from: the change ledger (events since the previous release), the patch registry
 # (patches added, promoted, changed or retired since the previous release, and build-membership changes) and the
 # bump's release record (smoke numbers, regressions found and their disposition).
-version = 1
+version = 2
 
-tag-prefix = "bc-llamacpp-"
 notes-dir = "docs/releases/notes"
 ledger = "docs/releases/CURRENT_RELEASE_LEDGER.ndjson"
 release-records = "releases"
-recipes = "config/recipes.toml"
-# patch sets whose membership is "in the production build"
+
+# One table per engine that has a release line: its tag prefix (the component of its release-please package, plus a
+# hyphen), the patch sets whose membership is "in the production build", and an older tag family that may mark the
+# previous release when no tag with the prefix exists yet. The engine's recipes file and patch tree come from its
+# engine.toml; an engine with no table here has no releases configured and release-notes / pin-release refuse it.
+[engine.llamacpp]
+tag-prefix = "bc-llamacpp-"
 build-patch-sets = ["upstream-fixes", "validated-enhancements"]
-# an older tag family that may mark the previous release when no tag with tag-prefix exists yet
 previous-tag-fallback-prefixes = ["supports/"]
 
 # ledger change-class -> section heading, in output order; classes not listed are omitted from the notes

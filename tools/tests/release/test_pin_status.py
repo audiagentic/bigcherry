@@ -22,9 +22,21 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from bigcherry.core import engines, paths as real_paths  # noqa: E402
 from bigcherry.release import pin_status # noqa: E402
 from bigcherry.release import pin as release_pin # noqa: E402
 from bigcherry import pin_transition  # noqa: E402
+
+_LAYOUT = engines.load(real_paths.REPO_ROOT, "llamacpp")
+_MARKER = "pin-transition-llamacpp.json"
+
+
+def _declare_engine(root: Path) -> None:
+    """Give a fake tree the engine declaration the real repository has."""
+    declaration = engines.declaration_path(root, "llamacpp")
+    declaration.parent.mkdir(parents=True, exist_ok=True)
+    declaration.write_text(
+        engines.declaration_path(real_paths.REPO_ROOT, "llamacpp").read_text(encoding="utf-8"), encoding="utf-8")
 
 _PIN_LINE = re.compile(r'^pinned\s*=\s*"([^"]+)"', re.MULTILINE)
 
@@ -55,13 +67,13 @@ class UncommittedPinApiTests(unittest.TestCase):
             recipes = root / "config" / "recipes.toml"
             recipes.parent.mkdir()
             recipes.write_text('version = 2\npinned = "b2"\n', encoding="utf-8")
-            with mock.patch.object(release_pin.paths, "RECIPES", recipes), \
-                    mock.patch.object(release_pin.paths, "REPO_ROOT", root), \
+            _declare_engine(root)
+            with mock.patch.object(release_pin.paths, "REPO_ROOT", root), \
                     mock.patch.object(
                         release_pin.upstream, "_git",
                         return_value='version = 2\npinned = "b1"\n',
                     ):
-                self.assertEqual(release_pin.uncommitted_pin_change(), "b2")
+                self.assertEqual(release_pin.uncommitted_pin_change("llamacpp"), "b2")
 
     def test_uncommitted_pin_api_returns_none_when_committed_pin_matches(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -69,13 +81,13 @@ class UncommittedPinApiTests(unittest.TestCase):
             recipes = root / "config" / "recipes.toml"
             recipes.parent.mkdir()
             recipes.write_text('version = 2\npinned = "b1"\n', encoding="utf-8")
-            with mock.patch.object(release_pin.paths, "RECIPES", recipes), \
-                    mock.patch.object(release_pin.paths, "REPO_ROOT", root), \
+            _declare_engine(root)
+            with mock.patch.object(release_pin.paths, "REPO_ROOT", root), \
                     mock.patch.object(
                         release_pin.upstream, "_git",
                         return_value='version = 2\npinned = "b1"\n',
                     ):
-                self.assertIsNone(release_pin.uncommitted_pin_change())
+                self.assertIsNone(release_pin.uncommitted_pin_change("llamacpp"))
 
 
 def _git(root: Path, *args: str) -> str:
@@ -113,6 +125,7 @@ def _fake_tree(tmp: Path, name: str, upstream: Path, pin: str, at_tag: str,
     root = tmp / name
     (root / "config").mkdir(parents=True)
     (root / "vendor").mkdir(parents=True)
+    _declare_engine(root)
     _git(root, "init", "-q")
     (root / "config" / "recipes.toml").write_text(
         f'pinned = "{pin}"\n', encoding="utf-8")
@@ -138,9 +151,10 @@ def _fake_tree(tmp: Path, name: str, upstream: Path, pin: str, at_tag: str,
 def _paths_for(root: Path) -> pin_status.RepoPaths:
     return pin_status.RepoPaths(
         repo_root=root,
-        llama_root=root / "vendor" / "llama.cpp",
+        vendor_root=root / "vendor" / "llama.cpp",
         releases_dir=root / "releases",
         artifacts_dir=root / "artifacts",
+        layout=_LAYOUT,
     )
 
 
@@ -152,11 +166,11 @@ def _write_marker(root: Path, from_tag: str, to_tag: str,
         _git(vendor, "rev-parse", f"{to_tag}^{{commit}}"),
         to_tag,
         _git(root, "rev-parse", "HEAD"),
-        root / "releases" / "pin-transition.json",
+        root / "releases" / _MARKER,
     )
     assert marker is not None
     if commit:
-        _git(root, "add", "releases/pin-transition.json")
+        _git(root, "add", f"releases/{_MARKER}")
         _git(root, "commit", "-q", "-m", "rebase: declare transition")
 
 
@@ -228,9 +242,10 @@ class VerdictMatrixTests(unittest.TestCase):
         root = _fake_tree(self.tmp, "t", self.upstream, "b2", "b2")
         status = pin_status.local_status(pin_status.RepoPaths(
             repo_root=root,
-            llama_root=root / "nope",
+            vendor_root=root / "nope",
             releases_dir=root / "releases",
             artifacts_dir=root / "artifacts",
+            layout=_LAYOUT,
         ))
         self.assertEqual(status.verdict, "unavailable")
 
@@ -267,7 +282,7 @@ class RemoteAndAggregateTests(unittest.TestCase):
             name, "alias", str(root),
             pin_status.local_status(_paths_for(self.local_root)),
             self.local_root / "vendor" / "llama.cpp",
-            probe=probe or self._probe(),
+            probe or self._probe(),
         )
 
     def test_remote_consistent(self):
@@ -377,16 +392,14 @@ class RepinAndPullGuardTests(unittest.TestCase):
     """(e)+(f): repin writes the marker atomically with the pin move; pull
     refuses while the marker is uncommitted.
 
-    cmd_repin/cmd_pull read module-level bigcherry.core.paths / bigcherry.recipes
-    constants, so the tests monkeypatch those to the fake tree and restore
-    them afterwards. repin deliberately does NOT check out the vendor (the
+    cmd_repin/cmd_pull read the module-level bigcherry.core.paths.REPO_ROOT and the primary checkout, so
+    the tests point both at the fake tree and restore them afterwards. repin deliberately does NOT check out the vendor (the
     checkout happens on the next `pull`), so after repin the tree is
     exactly: pin=b2, vendor=b1, marker uncommitted -> uncommitted-transition.
     """
 
     def setUp(self):
         import bigcherry.core.paths as bigcherry_paths
-        import bigcherry.recipes as bigcherry_recipes
         self._tmp = tempfile.TemporaryDirectory()
         self.tmp = Path(self._tmp.name)
         self.upstream = _upstream(self.tmp)
@@ -394,34 +407,25 @@ class RepinAndPullGuardTests(unittest.TestCase):
                                records={"b1": "audited"})
         self.vendor = self.root / "vendor" / "llama.cpp"
         self._paths_mod = bigcherry_paths
-        self._recipes_mod = bigcherry_recipes
-        self._saved = (
-            bigcherry_paths.REPO_ROOT,
-            bigcherry_paths.RECIPES,
-            bigcherry_recipes.RECIPES_PATH,
-            os.environ.get("BIGCHERRY_LLAMA_ROOT"),
-        )
+        self._saved = (bigcherry_paths.REPO_ROOT, os.environ.get("BC_PRIMARY_ROOT"))
         bigcherry_paths.REPO_ROOT = self.root
-        bigcherry_paths.RECIPES = self.root / "config" / "recipes.toml"
-        bigcherry_recipes.RECIPES_PATH = self.root / "config" / "recipes.toml"
-        os.environ["BIGCHERRY_LLAMA_ROOT"] = str(self.vendor)
+        # the vendor checkout belongs to the primary checkout, which is the fake tree here
+        os.environ["BC_PRIMARY_ROOT"] = str(self.root)
 
     def tearDown(self):
         self._paths_mod.REPO_ROOT = self._saved[0]
-        self._paths_mod.RECIPES = self._saved[1]
-        self._recipes_mod.RECIPES_PATH = self._saved[2]
-        saved_env = self._saved[3]
+        saved_env = self._saved[1]
         if saved_env is None:
-            os.environ.pop("BIGCHERRY_LLAMA_ROOT", None)
+            os.environ.pop("BC_PRIMARY_ROOT", None)
         else:
-            os.environ["BIGCHERRY_LLAMA_ROOT"] = saved_env
+            os.environ["BC_PRIMARY_ROOT"] = saved_env
         self._tmp.cleanup()
 
     def test_repin_writes_marker_with_pin(self):
         from argparse import Namespace
 
         from bigcherry import __main__ as bigcherry_main
-        rc = bigcherry_main.cmd_repin(Namespace(ref="b2"))
+        rc = bigcherry_main.cmd_repin(Namespace(engine="llamacpp", ref="b2"))
         self.assertEqual(rc, 0, "cmd_repin failed")
         pin = _PIN_LINE.search(
             (self.root / "config" / "recipes.toml").read_text(encoding="utf-8"))
@@ -432,7 +436,7 @@ class RepinAndPullGuardTests(unittest.TestCase):
         # (detached HEAD at the b1 tag)
         self.assertEqual(_git(self.vendor, "rev-parse", "HEAD"),
                          _git(self.vendor, "rev-parse", "b1^{commit}"))
-        marker_path = self.root / "releases" / "pin-transition.json"
+        marker_path = self.root / "releases" / _MARKER
         self.assertTrue(marker_path.is_file())
         marker = pin_transition.load(marker_path)
         if marker is None:
@@ -461,10 +465,13 @@ class RepinAndPullGuardTests(unittest.TestCase):
                           "candidates": []},
         ) as spy_report, mock.patch.object(
             bigcherry_sources, "print_baseline_candidates",
-        ) as spy_print:
-            rc = bigcherry_main.cmd_repin(Namespace(ref="b2"))
+        ) as spy_print, mock.patch.object(
+            bigcherry_sources, "load_engine_registry", return_value={"sources": []},
+        ):
+            rc = bigcherry_main.cmd_repin(Namespace(engine="llamacpp", ref="b2"))
         self.assertEqual(rc, 0)
-        spy_report.assert_called_once_with("b2")
+        self.assertEqual(spy_report.call_args.args, ("b2",))
+        self.assertEqual(spy_report.call_args.kwargs["vendor_root"], self.vendor)
         spy_print.assert_called_once()
 
     def test_repin_succeeds_even_if_ancestry_report_raises(self):
@@ -481,13 +488,15 @@ class RepinAndPullGuardTests(unittest.TestCase):
         with mock.patch.object(
             bigcherry_sources, "baseline_candidates_at_pin",
             side_effect=RuntimeError("boom"),
+        ), mock.patch.object(
+            bigcherry_sources, "load_engine_registry", return_value={"sources": []},
         ):
             buf = StringIO()
             with redirect_stderr(buf):
-                rc = bigcherry_main.cmd_repin(Namespace(ref="b2"))
+                rc = bigcherry_main.cmd_repin(Namespace(engine="llamacpp", ref="b2"))
         self.assertEqual(rc, 0, "a report failure must not fail the repin")
         self.assertTrue(
-            (self.root / "releases" / "pin-transition.json").is_file(),
+            (self.root / "releases" / _MARKER).is_file(),
             "the transition marker must still be written",
         )
         self.assertIn("report unavailable", buf.getvalue())
@@ -503,7 +512,7 @@ class RepinAndPullGuardTests(unittest.TestCase):
         buffer = io.StringIO()
         with redirect_stderr(buffer):
             rc = bigcherry_main.cmd_pull(
-                Namespace(llama_root=None, ref=None))
+                Namespace(engine="llamacpp", llama_root=None, ref=None))
         self.assertEqual(rc, 2)
         self.assertIn("uncommitted", buffer.getvalue())
 
@@ -521,7 +530,7 @@ class RepinAndPullGuardTests(unittest.TestCase):
         with redirect_stderr(buffer):
             try:
                 rc = bigcherry_main.cmd_pull(
-                    Namespace(llama_root=None, ref=None))
+                    Namespace(engine="llamacpp", llama_root=None, ref=None))
             except Exception:
                 rc = "raised"
         output = buffer.getvalue()

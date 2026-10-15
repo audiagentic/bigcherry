@@ -25,7 +25,7 @@ repository at once, and a change is only proven on the lab hardware.
    | `perf: ` | a speed-up inside an already promoted patch | patch + 1 |
    | `chore: `, `docs: `, `test: `, `refactor: `, `ci: `, `build: ` | plans, experiments, diagnostics not in the build, tooling internals | none |
 
-   A pin bump is the exception to automatic numbering: `bigcherry pin-release` temporarily sets
+   A pin bump is the exception to automatic numbering: `bigcherry --engine llamacpp pin-release` temporarily sets
    `release-as: <llama build>.0.0` on the `engines/llamacpp` package in
    `release-please-config.json`, then removes that key through a pull request
    after the release tag exists. Commit-message `Release-As` footers are not used.
@@ -49,7 +49,7 @@ repository at once, and a change is only proven on the lab hardware.
 | 5. Evidence | validator | Paste the result into the pull request: build id, activation marker, the A/B table, identity statement. For a promotion the same text goes into the patch's README. |
 | 6. Review | a second agent or the owner | Reads the diff and the evidence. The author does not approve their own pull request. |
 | 7. Merge | validator or owner | Squash merge with the conventional title. |
-| 8. Release | `bigcherry pin-release` / release-please | The release pull request is merged when the owner wants the batch out. |
+| 8. Release | `bigcherry --engine llamacpp pin-release` / release-please | The release pull request is merged when the owner wants the batch out. |
 
 Changes that cannot alter the build (plans, docs, lab scripts, tests) skip steps 4 and 5.
 

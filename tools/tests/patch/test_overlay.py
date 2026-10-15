@@ -10,7 +10,6 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from bigcherry.core import paths  # noqa: E402
 from bigcherry.patch import overlay  # noqa: E402
 
 
@@ -45,12 +44,12 @@ class TestOverlayIO(unittest.TestCase):
             backup: dict[str, str | None] = {}
             simulated: dict[str, str] = {}
             with (
-                mock.patch.object(paths, "SRC_OVERLAY", source_root),
                 mock.patch.object(path_type, "read_bytes", new=tracked_read_bytes),
                 mock.patch.object(path_type, "read_text", new=tracked_read_text),
             ):
                 changed = overlay.copy_overlay(
                     checkout,
+                    source_root,
                     dry_run=False,
                     backup=backup,
                     sim_texts=simulated,
@@ -77,13 +76,13 @@ class TestOverlayIO(unittest.TestCase):
             backup: dict[str, str | None] = {}
             simulated: dict[str, str] = {}
 
-            with mock.patch.object(paths, "SRC_OVERLAY", source_root):
-                changed = overlay.copy_overlay(
-                    checkout,
-                    dry_run=False,
-                    backup=backup,
-                    sim_texts=simulated,
-                )
+            changed = overlay.copy_overlay(
+                checkout,
+                source_root,
+                dry_run=False,
+                backup=backup,
+                sim_texts=simulated,
+            )
 
             self.assertEqual(changed, [])
             self.assertEqual(backup, {})
@@ -103,13 +102,13 @@ class TestOverlayIO(unittest.TestCase):
             backup: dict[str, str | None] = {}
             simulated: dict[str, str] = {}
 
-            with mock.patch.object(paths, "SRC_OVERLAY", source_root):
-                changed = overlay.copy_overlay(
-                    checkout,
-                    dry_run=True,
-                    backup=backup,
-                    sim_texts=simulated,
-                )
+            changed = overlay.copy_overlay(
+                checkout,
+                source_root,
+                dry_run=True,
+                backup=backup,
+                sim_texts=simulated,
+            )
 
             self.assertEqual(changed, ["file.txt"])
             self.assertEqual(backup, {"file.txt": "old\n"})

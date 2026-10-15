@@ -225,13 +225,13 @@ Older reports fail freshness.
 Use the canonical configured source name, not a filesystem placeholder:
 
 ```bash
-PYTHONPATH=tools python -m bigcherry patch-rebase-check \
+PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-rebase-check \
   --source <source-name> --json <fresh-report.json>
 # Named experiment selector (mutually exclusive with --focal-overlay):
-PYTHONPATH=tools python -m bigcherry patch-rebase-check \
+PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-rebase-check \
   --source <source-name> --experiment <experiment-name> --json <fresh-report.json>
 # Deterministic focal-overlay selector (takes the overlay PATCH_ID):
-PYTHONPATH=tools python -m bigcherry patch-rebase-check \
+PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-rebase-check \
   --source <source-name> --focal-overlay <patch-id> --json <fresh-report.json>
 PYTHONPATH=tools python -m bigcherry apply --source <source-name> --dry-run
 ```

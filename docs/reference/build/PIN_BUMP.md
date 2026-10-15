@@ -1,7 +1,7 @@
 # Pin-bump procedure (llama.cpp pin movement)
 
 The procedure for moving the llama.cpp pin, and the completion rule that says
-when it is done. Companion to `bigcherry pin-status` (RE48), which is the guard
+when it is done. Companion to `bigcherry --engine llamacpp pin-status` (RE48), which is the guard
 that names the current state at every step.
 
 ## Why the ordering is load-bearing
@@ -16,7 +16,7 @@ is not an error — but it must be *nameable*. The engine that names it
 - **uncommitted-transition** — the transition marker exists in the working
   tree but is not committed: the bump is declared, but not yet declared
 - **mid-rebase** — a **committed transition marker**
-  (`releases/pin-transition.json`) declares the move from the current vendor
+  (`releases/pin-transition-llamacpp.json`) declares the move from the current vendor
   revision to the pinned revision, and the declared base's release record is
   not broken; the move is in flight
 - **drift** — vendor checkout is at a revision the pin never declared (a
@@ -24,9 +24,17 @@ is not an error — but it must be *nameable*. The engine that names it
   a committed marker the state is drift, with sub-reasons stale-marker /
   marker-mismatch / broken-base / no-transition)
 
+Every pin command acts on one engine and needs the global `--engine` option
+(`bigcherry --engine <engine> pin-status`). The engine's `engines/<engine>/engine.toml` names its upstream, its
+vendor checkout and its recipes file (which holds the pin); each engine has its own transition marker
+`releases/pin-transition-<engine>.json`, so one engine's bump never reads as another's drift. `pin-release` and
+`release-notes` additionally need a release line for the engine: an `[engine.<name>]` table in
+`config/release.toml` and a package in `release-please-config.json` (`engines/<engine>`); an engine without them
+(radiance, today) is refused with that message. This document describes the llama.cpp bump.
+
 The transition that turns "drift" into "mid-rebase" is **committing the pin
 move and the transition marker together, before moving the checkout**.
-`bigcherry repin` writes the marker atomically with the pin line; the commit
+`bigcherry --engine llamacpp repin` writes the marker atomically with the pin line; the commit
 is the declaration that a bump is in flight, and every tree that shares the
 bigcherry history reads the same state from it. A manual
 `git -C vendor/llama.cpp checkout <sha>` that skips the pin move is exactly
@@ -43,15 +51,15 @@ window; bump one, record, then bump the other.
 1. **Move the pin, then commit — in that order, in the same minute.**
 
    ```text
-   bigcherry repin <tag>
-   git add config/recipes.toml releases/pin-transition.json
+   bigcherry --engine llamacpp repin <tag>
+   git add config/recipes.toml releases/pin-transition-llamacpp.json
    git commit -m "pin: <old> -> <tag> (<sha-prefix>) — rebase in flight"
    ```
 
    `repin` rewrites the `pinned = "..."` line **and** writes the
-   transition marker `releases/pin-transition.json` atomically. Both go in
+   transition marker `releases/pin-transition-llamacpp.json` atomically. Both go in
    the SAME commit: an uncommitted marker is the `uncommitted-transition`
-   state (a named, distinguishable state), and `bigcherry pull` refuses to
+   state (a named, distinguishable state), and `bigcherry --engine llamacpp pull` refuses to
    move the checkout while the marker is uncommitted. The committed marker
    is the declaration that a bump is in flight; from this moment on, the old
    checkout state is *mid-rebase*, not drift, on every tree that shares the
@@ -60,7 +68,7 @@ window; bump one, record, then bump the other.
 2. **Move the checkout.**
 
    ```text
-   bigcherry pull --source bigcherry
+   bigcherry --engine llamacpp pull --source bigcherry
    ```
 
 3. **Audit the new upstream tree, then mechanically rebase-check the selected
@@ -72,8 +80,8 @@ window; bump one, record, then bump the other.
    report.
 
    ```text
-   bigcherry audit
-   bigcherry patch-rebase-check --source bigcherry --json releases/patch-rebase.json
+   bigcherry --engine llamacpp audit
+   bigcherry --engine llamacpp patch-rebase-check --source bigcherry --json releases/patch-rebase.json
    ```
 
    This is a mechanical gate, not prose review: `patch-rebase-check` runs in
@@ -125,7 +133,7 @@ window; bump one, record, then bump the other.
    revision identity (is the checkout at the pinned SHA?); `patch-rebase-check`
    is whether the patches still apply to whatever revision is checked out.
 
-4. **`bigcherry pin-status --all-remotes`** — confirm the local tree now
+4. **`bigcherry --engine llamacpp pin-status --all-remotes`** — confirm the local tree now
    reads `consistent` (or `mid-rebase` while the checkout move of step 2 is
    outstanding on some tree — the marker is shared history, so every tree
    reads the same transition state until its checkout catches up and the
@@ -154,7 +162,7 @@ window; bump one, record, then bump the other.
 
 7. **Completion rule — the bump is DONE only when:**
 
-   - `bigcherry pin-status --complete --all-remotes` reports PASS: the local
+   - `bigcherry --engine llamacpp pin-status --complete --all-remotes` reports PASS: the local
      tree is `consistent`, every **required** configured tree is reachable
      and converged at the same pin, and (for `role = "campaign"` trees) the
      tooling revision matches the expected one, AND
@@ -176,7 +184,7 @@ window; bump one, record, then bump the other.
    everything after it:
 
    ```sh
-   python -m bigcherry pin-release <tag> --evidence @<file with the hardware result>
+   python -m bigcherry --engine llamacpp pin-release <tag> --evidence @<file with the hardware result>
    ```
 
    Phases, each skipped when already done, so the command is re-run after
@@ -278,7 +286,7 @@ verdict engine):
 
 ## Compile-only admission after composition (PA44-A)
 
-`bigcherry pin-bump` now runs the bump-time source check as its own resumable phase:
+`bigcherry --engine llamacpp pin-bump` now runs the bump-time source check as its own resumable phase:
 
 `preflight -> declare -> pull -> audit -> patch-lint -> coverage -> apply -> compile -> reaudit -> complete`.
 

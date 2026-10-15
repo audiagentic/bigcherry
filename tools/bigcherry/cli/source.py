@@ -8,13 +8,13 @@ import sys
 from argparse import Namespace
 
 from ..core import paths
+from ..core.context import ProjectContext
 from ..release import records as releases
 from ..release import pin as pin_release
 from .. import pin_transition
 from ..source import audit as source_audit
 from ..source import upstream
-
-UPSTREAM_URL = upstream.UPSTREAM_URL
+from .engine_scope import checkout_root
 
 
 def _run(
@@ -25,7 +25,13 @@ def _run(
 
 
 def cmd_audit(args: Namespace) -> int:
-    root = paths.llama_root(args.llama_root)
+    root = checkout_root(args)
+    if not (root / ".git").exists():
+        print(
+            f"audit: no {args.engine} checkout at {root}; run 'python -m bigcherry --engine {args.engine} pull' first",
+            file=sys.stderr,
+        )
+        return 2
     report = source_audit.audit(root, engine=args.engine)
     report["strict"] = args.strict
     out = paths.artifact_dir(report["source_revision"]) / "source-audit.json"
@@ -56,13 +62,16 @@ def cmd_audit(args: Namespace) -> int:
 
 
 def cmd_pull(args: Namespace) -> int:
-    root = paths.llama_root(args.llama_root)
+    root = checkout_root(args)
+    context = ProjectContext.resolve(engine=args.engine)
+    recipes_file = context.layout.recipes
+    marker_path = pin_transition.marker_path(args.engine)
 
     # RE48: never move the checkout over an uncommitted pin change.
-    uncommitted_pin = pin_release.uncommitted_pin_change()
+    uncommitted_pin = pin_release.uncommitted_pin_change(args.engine)
     if uncommitted_pin is not None and args.ref:
         print(
-            f"refusing: the pin in config/recipes.toml is uncommitted "
+            f"refusing: the pin in {recipes_file} is uncommitted "
             f"(working tree pins {uncommitted_pin!r}).",
             file=sys.stderr,
         )
@@ -75,18 +84,17 @@ def cmd_pull(args: Namespace) -> int:
 
     # RE48: never move the checkout while a pin-transition marker exists
     # but is uncommitted (the bump's declaration commit is still missing).
-    marker_path = paths.REPO_ROOT / "releases" / "pin-transition.json"
     if (
         marker_path.is_file()
         and pin_transition.committed_state(marker_path) != "committed-clean"
     ):
         print(
-            "refusing: releases/pin-transition.json (the pin-transition "
+            f"refusing: {marker_path.relative_to(paths.REPO_ROOT).as_posix()} (the pin-transition "
             "marker) is uncommitted.",
             file=sys.stderr,
         )
         print(
-            "commit it together with config/recipes.toml first (see "
+            f"commit it together with {recipes_file} first (see "
             "docs/reference/build/PIN_BUMP.md), then pull -- or delete it if the "
             "bump was abandoned.",
             file=sys.stderr,
@@ -102,7 +110,7 @@ def cmd_pull(args: Namespace) -> int:
         from ..core import config as campaign_config  # noqa: PLC0415
 
         try:
-            cfg = campaign_config.load(paths.RECIPES)
+            cfg = campaign_config.load(context.layout.recipes_path(paths.REPO_ROOT))
             source = cfg.sources[source_name]
         except (campaign_config.ConfigError, KeyError) as exc:
             print(f"pull: unknown source {source_name!r}: {exc}", file=sys.stderr)
@@ -110,7 +118,7 @@ def cmd_pull(args: Namespace) -> int:
         ref = cfg.pinned if source.ref == "pinned" else source.ref
     try:
         if ref:
-            resolved = upstream.resolve_ref(ref)
+            resolved = upstream.resolve_ref(ref, context.upstream_url)
             if resolved != ref:
                 print(f"{ref} -> {resolved}")
             ref = resolved
@@ -120,9 +128,9 @@ def cmd_pull(args: Namespace) -> int:
 
     if not (root / ".git").exists():
         root.parent.mkdir(parents=True, exist_ok=True)
-        print(f"cloning {UPSTREAM_URL} -> {root}")
+        print(f"cloning {context.upstream_url} -> {root}")
         depth = [] if args.full else ["--depth", "1"]
-        _run(["git", "clone", *depth, UPSTREAM_URL, str(root)])
+        _run(["git", "clone", *depth, context.upstream_url, str(root)])
         # Upstream is LF throughout. Letting git rewrite line endings in the
         # working tree would make every generated diff unreviewable.
         _run(["git", "-C", str(root), "config", "core.autocrlf", "false"])
@@ -165,11 +173,7 @@ def cmd_pull(args: Namespace) -> int:
 
     record = releases.record_for_checkout(root)
     if ref:
-        from ..core.context import ProjectContext  # noqa: PLC0415
-
-        warning = upstream.sync_mirror_ref(
-            ProjectContext.resolve(engine="llamacpp").upstream_repo, ref, record.revision,
-        )
+        warning = upstream.sync_mirror_ref(context.upstream_repo, ref, record.revision)
         if warning:
             print(f"pull: WARNING {warning}", file=sys.stderr)
     # Like a repeated audit, re-pulling a revision must not demote a record

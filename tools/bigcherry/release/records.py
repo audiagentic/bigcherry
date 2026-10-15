@@ -192,7 +192,7 @@ def record_apply_result(
 
 @dataclass
 class ReleaseRecord:
-    """Everything known about one llama.cpp revision."""
+    """Everything known about one upstream revision."""
 
     revision: str
     #: Upstream release tag when the revision is one (``b1234``), else "".

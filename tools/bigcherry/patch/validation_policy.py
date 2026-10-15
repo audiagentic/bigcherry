@@ -99,7 +99,7 @@ def tracked_statuses_for_patch(
     across config/external-sources.toml's [[sources.tracked]] entries.
     Exact-patch binding (``entry["patch"] == patch_id``), not plan-item
     aggregation -- a plan item can span multiple engines/llamacpp/patches/hypotheses."""
-    registry = source_registry.load_registry(external_sources_path)
+    registry = source_registry.load_registry(external_sources_path or paths.EXTERNAL_SOURCES)
     statuses: set[str] = set()
     for src in registry.get("sources", ()):
         for entry in src.get("tracked") or []:

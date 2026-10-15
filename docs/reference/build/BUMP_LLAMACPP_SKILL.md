@@ -17,7 +17,7 @@ went looking for it.
 ## 0. Orient before touching anything
 
 ```
-python -m bigcherry pin-status --all-remotes
+python -m bigcherry --engine llamacpp pin-status --all-remotes
 ```
 
 Read the `VERDICT` for local and every remote tree. If it already says
@@ -57,8 +57,8 @@ skipped, because it's slow and its output needs a human, not a script, to
 interpret.
 
 ```
-python -m bigcherry sources status          # offline: what we track, ported/planned/superseded
-python -m bigcherry sources check            # ONLINE: has a tracked fork moved/rebased/merged/drifted
+python -m bigcherry --engine llamacpp sources status          # offline: what we track, ported/planned/superseded
+python -m bigcherry --engine llamacpp sources check            # ONLINE: has a tracked fork moved/rebased/merged/drifted
 ```
 
 - `sources status` reads `config/external-sources.toml` -- every patch that
@@ -101,7 +101,7 @@ python -m bigcherry sources check            # ONLINE: has a tracked fork moved/
 ## 2. Resolve the target and run the orchestrator
 
 ```
-python -m bigcherry pin-bump <target-tag> [--source bigcherry] [--resume]
+python -m bigcherry --engine llamacpp pin-bump <target-tag> [--source bigcherry] [--resume]
 ```
 
 This is `tools/bigcherry/release/pin_bump.py` (HI153), a single-tree state
@@ -111,7 +111,7 @@ machine over the individually-proven verbs below. It:
    exists -- HI151);
 2. resolves the ref, requires a clean controller checkout, refuses an
    incompatible uncommitted transition marker;
-3. repins + commits `config/recipes.toml` + `releases/pin-transition.json`
+3. repins + commits `config/recipes.toml` + `releases/pin-transition-llamacpp.json`
    together, in one commit;
 4. pulls the vendor checkout to the new tag;
 5. audits it -- with ONE narrow, provably-safe auto-repair: if
@@ -163,14 +163,14 @@ See `docs/reference/build/PIN_BUMP.md` for the full authoritative manual
 procedure this skill and the orchestrator both implement. Short version:
 
 ```
-python -m bigcherry repin <tag>
-git add config/recipes.toml releases/pin-transition.json
+python -m bigcherry --engine llamacpp repin <tag>
+git add config/recipes.toml releases/pin-transition-llamacpp.json
 git commit -m "pin: <old> -> <tag> (<sha-prefix>) -- rebase in flight"
-python -m bigcherry pull --source bigcherry
-python -m bigcherry audit
-python -m bigcherry patch-rebase-check --source bigcherry --json releases/patch-rebase.json
+python -m bigcherry --engine llamacpp pull --source bigcherry
+python -m bigcherry --engine llamacpp audit
+python -m bigcherry --engine llamacpp patch-rebase-check --source bigcherry --json releases/patch-rebase.json
 python -m bigcherry apply --rebase-report releases/patch-rebase.json --known-good [--force]
-python -m bigcherry pin-status --all-remotes
+python -m bigcherry --engine llamacpp pin-status --all-remotes
 ```
 
 `--force` on `apply` is expected and correct, not a red flag, when `audit`
@@ -246,7 +246,7 @@ python -m bigcherry build --lane <source>:<build>:<platform> \
 ## 5. Completion gate
 
 ```
-python -m bigcherry pin-status --complete --all-remotes
+python -m bigcherry --engine llamacpp pin-status --complete --all-remotes
 ```
 
 Must report PASS: every required tree reachable, converged, consistent, and

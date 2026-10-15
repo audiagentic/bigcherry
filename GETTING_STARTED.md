@@ -34,9 +34,9 @@ PYTHONPATH=tools python -m bigcherry check --default # deterministic local CI ga
 ## Taking a new upstream llama.cpp release (or standing up a fresh checkout)
 
 ```bash
-PYTHONPATH=tools python -m bigcherry pull   --ref <upstream-rev>
-PYTHONPATH=tools python -m bigcherry audit                # strict invariant audit on the unpatched tree -- must pass before apply
-PYTHONPATH=tools python -m bigcherry patch-rebase-check --source bigcherry --json releases/patch-rebase.json
+PYTHONPATH=tools python -m bigcherry --engine llamacpp pull   --ref <upstream-rev>
+PYTHONPATH=tools python -m bigcherry --engine llamacpp audit                # strict invariant audit on the unpatched tree -- must pass before apply
+PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-rebase-check --source bigcherry --json releases/patch-rebase.json
 PYTHONPATH=tools python -m bigcherry apply --rebase-report releases/patch-rebase.json --known-good  # or: apply --source bigcherry (all-or-nothing)
 PYTHONPATH=tools python -m bigcherry generate --arch all   # candidate catalog -> artifacts
 ```
