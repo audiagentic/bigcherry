@@ -148,8 +148,8 @@ def cmd_experiment_run(args: Namespace) -> int:
     orchestration, identical to `bigcherry build`'s own engine. Does NOT
     yet run the correctness/aggregation/promotion chain (EC06-EC09) --
     those consume real benchmark measurements this command does not
-    itself capture; wire a real comparison harness (see
-    tools/bigcherry/re15_acceptance_run.py's stage-by-stage pattern) on
+    itself capture; wire a real comparison harness (a
+    stage-by-stage harness) on
     top of this lane execution to close that gap."""
     from ..core import config as campaign_config
     from ..experiment import contract as ec
@@ -163,7 +163,7 @@ def cmd_experiment_run(args: Namespace) -> int:
     except (ec.ExperimentContractError, KeyError) as exc:
         print(f"experiment-contract run: {exc}", file=sys.stderr)
         return 1
-    context = ProjectContext.resolve(engine="llamacpp", work_root=None)
+    context = ProjectContext.resolve(engine=args.engine, work_root=None)
     try:
         cfg = campaign_config.load(Path(args.config) if args.config else paths.RECIPES)
         lanes = expand_contract(
