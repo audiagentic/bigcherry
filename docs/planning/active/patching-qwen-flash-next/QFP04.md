@@ -13,6 +13,15 @@ work: L
 
 # 1295/1296 QSA gather-based sparse decode attention (gather in stored KV type, dequant in FA)
 
+## 2026-10-15 1295 activation witness correction (BCOP237)
+
+**Source finding, not a reproduced GPU bug:** `patch.py::_GATHER` evaluates `bc_qsa_gather_enabled()` before computing/checking `plain`. `_ENABLED` logs `BIGCHERRY_PATCH_HIT patch=1295_qsa_gather_decode` once on the first enabled call. An eligible non-plain graph can therefore log a false activation, while a later actual gather has no new marker. The existing `kqv_out_qsa_gather` callback names a selected graph, not executed HIP kernels. Historical ABBA/numerical results are not disproved, but the once-per-process marker cannot prove per-request execution.
+
+**Ownership/action:** QFP04/1295 alone owns a minimal selected-route marker relocation/versioning and existing graph/profiler correlation to K/V GET_ROWS plus FA execution; QFP28 owns multi-request/cache/abort corruption qualification. QFP25/1334 owns sparse prefill union capacity. Do not introduce another gather dispatcher, cache, scheduler or telemetry registry. Negative controls: `n_tokens>8`, cache below threshold, QSA absent, switch off, multi-stream K/V and noncontiguous V. The `n_kv` sentinel is clamped for K/V and masked by appended `-inf`; it is not evidence of external DEVGATHER's uninitialized destination.
+
+**Gate:** host route/sentinel fixture, then current-pin gfx1100/gfx1201 executed-route proof per request, full logits/KLD, graph reuse, multi-request tokens, MTP acceptance and bytes/time accounting. Retain QFP04's existing >=5% GPU-share or >=0.5 ms/token admission before any 1296/direct-index work. No new GPU measurement in BCOP237.
+
+
 ## 2026-10-14 sparse-prefill ownership correction
 
 The historical proposal below to add a separate direct-index sparse prefill op is **not** an open QFP04 implementation request: validated 1334 already enables upstream sparse-mask FA on HIP for Qwen4Exp prefill. QFP25/1334 exclusively owns its eight-query union-capacity proof and any bounded fix; see QFP25's 2026-10-14 gate. QFP04 retains decode gather/typed-KV qualification only. Do not introduce a second selected-cell representation or count historical 1334 prefill gains as a new QFP04 result.

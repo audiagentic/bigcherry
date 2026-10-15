@@ -36,3 +36,7 @@ RX 6900 XT), ctx 245760, f16 KV, ub512. ABBA on one binary with `tools/lab/flash
 The masked path of arm A is native llama.cpp b11402's Qwen4Exp sparse attention on HIP (upstream's gathered kernel is
 compiled out for HIP), so the ABBAs are native against gathered inside one BigCherry binary. No separate run against a
 fully native binary was made for this patch.
+
+## BCOP237: patch-hit is not an execution witness (2026-10-15)
+
+`patch.py::_GATHER` calls `bc_qsa_gather_enabled()` before checking the `plain` K/V-layout predicate. The getter logs `BIGCHERRY_PATCH_HIT patch=1295_qsa_gather_decode` only once per process. It can appear when `plain=false` and dense masked attention runs, and be absent for later true gathers. This is a source-level log-contract defect, **not** a reproduced wrong-output bug or refutation of historical ABBA. `cb(cur, "kqv_out_qsa_gather", il)` proves a selected graph build, not GPU execution. Qualify per-request graph route plus actual K/V GET_ROWS and FA HIP execution before claiming activation/performance. QFP04 owns the minimal patch/validation fix; QFP28 owns same-process corruption tests. BCOP237 changes no patch code.
