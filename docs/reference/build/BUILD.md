@@ -246,7 +246,7 @@ python3 -m bigcherry build --profile standard
 # --all is shorthand for --profile standard
 
 # 3. View what patches a source would use (apply/patches only, not build)
-python3 -m bigcherry patches --source bigcherry
+python3 -m bigcherry --engine llamacpp patches --source bigcherry
 ```
 
 See `build --help` for the full current flag set (`--lane`/`--profile`/`--all`, `--inventory`/`--winners`, `--model`/`--hip-visible-devices` for real runtime-smoke validation, `--binary-relative-path` to select which binary a lane publishes as its primary artifact, e.g. `bin/llama-server` for a real server build vs the `bin/llama-bench` default). `--source`/`--variant-set`/`--force`/`--target` are NOT valid `build` flags -- argparse rejects them outright (exit 2); `--source` selects patches for `apply`/`patches` against the one shared checkout, a different axis from `build`'s isolated per-lane sources.

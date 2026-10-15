@@ -539,7 +539,7 @@ New validation creates new evidence.
 Use:
 
 cd $BC
-PYTHONPATH=tools python -m bigcherry patch-verify-evidence <patch-id>
+PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-verify-evidence <patch-id>
 
 Equivalent evidence-inspection alias:
 
@@ -588,7 +588,7 @@ Verified commands
 Hardware-free:
 
 PYTHONPATH=tools python -m bigcherry patch-lint
-PYTHONPATH=tools python -m bigcherry patch-verify-evidence <patch-id>
+PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-verify-evidence <patch-id>
 PYTHONPATH=tools python -m bigcherry patch-validate <patch-id>
 
 Hardware command entrypoint:

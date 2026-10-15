@@ -355,7 +355,7 @@ class ReleaseLifecycleTests(unittest.TestCase):
             ),
         ):
             ok = cli_patch._apply_exact_selection(
-                Path("/tmp/bigcherry-test-tree"), selection,
+                "llamacpp", Path("/tmp/bigcherry-test-tree"), selection,
             )
         self.assertFalse(ok)
 
@@ -378,7 +378,7 @@ class ReleaseLifecycleTests(unittest.TestCase):
             "bigcherry.patch.selection._resolve_exact_selection", return_value=drifted,
         ):
             ok = cli_patch._apply_exact_selection(
-                Path("/tmp/bigcherry-test-tree"), selection,
+                "llamacpp", Path("/tmp/bigcherry-test-tree"), selection,
             )
         self.assertFalse(ok)
 
@@ -396,7 +396,7 @@ class ReleaseLifecycleTests(unittest.TestCase):
             "bigcherry.patch.selection._resolve_exact_selection", return_value=selection,
         ):
             ok = cli_patch._apply_exact_selection(
-                Path("/tmp/bigcherry-test-tree"), selection,
+                "llamacpp", Path("/tmp/bigcherry-test-tree"), selection,
             )
         self.assertFalse(ok)
 
@@ -419,7 +419,7 @@ class ReleaseLifecycleTests(unittest.TestCase):
             cli_patch.patch_admission, "admit", return_value=rejected,
         ), mock.patch.object(cli_patch, "_copy_overlay") as copy_overlay:
             ok = cli_patch._apply_exact_selection(
-                Path("/tmp/bigcherry-test-tree"), selection,
+                "llamacpp", Path("/tmp/bigcherry-test-tree"), selection,
             )
         self.assertFalse(ok)
         copy_overlay.assert_not_called()
@@ -452,7 +452,7 @@ class ReleaseLifecycleTests(unittest.TestCase):
             cli_patch.patcher, "apply_all", return_value=[],
         ), mock.patch.object(record, "save"):
             ok = cli_patch._apply_exact_selection(
-                Path("/tmp/bigcherry-test-tree"), selection,
+                "llamacpp", Path("/tmp/bigcherry-test-tree"), selection,
             )
         self.assertTrue(ok)
         copy_overlay.assert_not_called()
@@ -493,7 +493,7 @@ class ReleaseLifecycleTests(unittest.TestCase):
             cli_patch.patcher, "apply_all", return_value=[patch_result],
         ), mock.patch.object(record, "save"):
             ok = cli_patch._apply_exact_selection(
-                Path("/tmp/bigcherry-test-tree"), selection,
+                "llamacpp", Path("/tmp/bigcherry-test-tree"), selection,
             )
         self.assertTrue(ok)
         self.assertEqual(record.stage, "patched")
@@ -549,7 +549,7 @@ class ReleaseLifecycleTests(unittest.TestCase):
             cli_patch.patcher, "apply_all", return_value=[patch_result],
         ), mock.patch.object(record, "save"):
             ok = cli_patch._apply_exact_selection(
-                Path("/tmp/bigcherry-test-tree"), selection,
+                "llamacpp", Path("/tmp/bigcherry-test-tree"), selection,
             )
 
         self.assertFalse(ok)
@@ -600,7 +600,7 @@ class ReleaseLifecycleTests(unittest.TestCase):
             cli_patch.patcher, "apply_all", return_value=[apply_result],
         ) as apply_all, mock.patch.object(record, "save") as save:
             ok = cli_patch._apply_exact_selection(
-                Path("/tmp/bigcherry-test-tree"), selection,
+                "llamacpp", Path("/tmp/bigcherry-test-tree"), selection,
                 dry_run=True, allow_stale_validation_evidence=True,
             )
 
@@ -659,7 +659,7 @@ class ReleaseLifecycleTests(unittest.TestCase):
             after, "save"
         ) as after_save:
             ok = cli_patch._apply_exact_selection(
-                Path("/tmp/bigcherry-test-tree"), selection,
+                "llamacpp", Path("/tmp/bigcherry-test-tree"), selection,
             )
 
         self.assertTrue(ok)
@@ -669,7 +669,7 @@ class ReleaseLifecycleTests(unittest.TestCase):
 
     def test_cmd_apply_preserves_exit_taxonomy_and_streams(self):
         args = SimpleNamespace(
-            llama_root=None, rebase_report=None, known_good=False,
+            engine="llamacpp", llama_root=None, rebase_report=None, known_good=False,
             allow_stale_validation_evidence=False, source="bigcherry",
             force=False, dry_run=False,
         )

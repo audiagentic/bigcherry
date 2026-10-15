@@ -89,8 +89,8 @@ both). Full lane/recipe list: `config/recipes.toml`.
 ## Patches — inspecting and validating one
 
 ```bash
-PYTHONPATH=tools python -m bigcherry patches                 # list with group/state/upstream status
-PYTHONPATH=tools python -m bigcherry patch-explain <name>     # source, requires/conflicts, which recipes select it
+PYTHONPATH=tools python -m bigcherry --engine llamacpp patches                 # list with group/state/upstream status
+PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-explain <name>     # source, requires/conflicts, which recipes select it
 PYTHONPATH=tools python -m bigcherry patch-lint                # metadata lint, no mutation
 PYTHONPATH=tools python -m bigcherry patch-validate <name>    # run its validation.toml checks
 ```

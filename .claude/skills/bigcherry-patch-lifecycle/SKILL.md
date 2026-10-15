@@ -237,10 +237,10 @@ Workflow
 Run:
 
 cd $BC
-PYTHONPATH=tools python -m bigcherry patch-status --item <plan-item>
-PYTHONPATH=tools python -m bigcherry patch-explain <patch-id>
-PYTHONPATH=tools python -m bigcherry patch-graph --roots <patch-id>
-PYTHONPATH=tools python -m bigcherry patch-verify-evidence <patch-id>
+PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-status --item <plan-item>
+PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-explain <patch-id>
+PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-graph --roots <patch-id>
+PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-verify-evidence <patch-id>
 
 Where rebase compatibility matters:
 
@@ -428,12 +428,12 @@ At minimum:
 cd $BC
 PYTHONPATH=tools python -m bigcherry patch-lint
 PYTHONPATH=tools python -m bigcherry check
-PYTHONPATH=tools python -m bigcherry patch-explain <patch-id>
-PYTHONPATH=tools python -m bigcherry patch-graph --roots <patch-id>
+PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-explain <patch-id>
+PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-graph --roots <patch-id>
 
 Where the claim depends on current evidence:
 
-PYTHONPATH=tools python -m bigcherry patch-verify-evidence <patch-id>
+PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-verify-evidence <patch-id>
 
 Where rebase/disposition changed:
 
@@ -447,11 +447,11 @@ After substantive implementation/lifecycle work, follow repository ledger requir
 Do not edit generated release outputs as a substitute for the authoritative ledger process.
 
 Verified commands
-PYTHONPATH=tools python -m bigcherry patch-status
-PYTHONPATH=tools python -m bigcherry patch-status --item <plan-item>
-PYTHONPATH=tools python -m bigcherry patch-explain <patch-id>
-PYTHONPATH=tools python -m bigcherry patch-graph --roots <patch-id>
-PYTHONPATH=tools python -m bigcherry patch-verify-evidence <patch-id>
+PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-status
+PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-status --item <plan-item>
+PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-explain <patch-id>
+PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-graph --roots <patch-id>
+PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-verify-evidence <patch-id>
 PYTHONPATH=tools python -m bigcherry patch-rebase-check --all
 PYTHONPATH=tools python -m bigcherry patch-rebase-check --all --json <report-path>
 

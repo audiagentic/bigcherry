@@ -24,7 +24,17 @@ PLATFORM = "platform"
 SELF = "self"
 
 #: Commands that act on any engine, with their handler migrated to ``args.engine``.
-_ENGINE_COMMANDS: frozenset[str] = frozenset()
+_ENGINE_COMMANDS: frozenset[str] = frozenset(
+    {
+        "patches",
+        "patch-status",
+        "patch-explain",
+        "patch-graph",
+        "patch-verify-evidence",
+        "patch-gates",
+        "patch-doc",
+    }
+)
 
 _LANE_COMMANDS = frozenset({"build", "campaign-build"})
 _PLATFORM_COMMANDS = frozenset({"patch-lint"})
