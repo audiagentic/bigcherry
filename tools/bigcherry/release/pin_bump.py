@@ -36,7 +36,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from ..build import source_compile_check
-from ..core import paths
+from ..core import engines, paths
 from ..core import tree_activity
 from ..patch import apply as patch_apply
 from ..patch import disposition as patch_disposition
@@ -1433,7 +1433,7 @@ def _run_phases(
             state.save(report_dir)
 
         if state.next_phase == "audit":
-            report = source_audit.audit(vendor_root)
+            report = source_audit.audit(vendor_root, engine=engines.LLAMACPP)
             if not source_audit.passed(report, strict=False):
                 safe, drifted = check_overlay_self_heal(report)
                 if not safe:
@@ -1452,7 +1452,7 @@ def _run_phases(
                         ],
                     )
                 patch_overlay.copy_overlay(vendor_root, dry_run=False)
-                report = source_audit.audit(vendor_root)
+                report = source_audit.audit(vendor_root, engine=engines.LLAMACPP)
                 if not source_audit.passed(report, strict=False):
                     raise PinBumpStop(
                         "audit",
@@ -1627,7 +1627,7 @@ def _run_phases(
             state.save(report_dir)
 
         if state.next_phase == "reaudit":
-            report = source_audit.audit(vendor_root)
+            report = source_audit.audit(vendor_root, engine=engines.LLAMACPP)
             if not source_audit.passed(report, strict=True):
                 raise PinBumpStop(
                     "reaudit",

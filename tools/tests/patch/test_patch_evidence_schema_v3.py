@@ -226,7 +226,7 @@ class WriteRecordSchemaUpgradeTests(unittest.TestCase):
             validation_build_identities={"control": _build_identity("c"), "subject": _build_identity("j")},
             campaign_workdir=self.workdir, lane_effects=(),
         )
-        pve.write_record(new_record, root=self.root)
+        pve.write_record(new_record, engine="llamacpp", patches_root=self.root, root=self.root)
 
         after = json.loads(path.read_text(encoding="utf-8"))
         self.assertEqual(after["schema_version"], 4) # container header upgraded (VA18: 3 -> 4)

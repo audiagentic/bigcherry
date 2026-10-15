@@ -168,7 +168,7 @@ class OrphanReportTests(unittest.TestCase):
             for entry in source.get("tracked", [])
             if entry.get("plan-item") and entry.get("plan-item") != "-"
         }
-        statuses = patch_lifecycle.compute_all()
+        statuses = patch_lifecycle.compute_all(engine="llamacpp")
 
         # "source-pinned but never materialized" -- a real, expected, large
         # category today (most of the 65-item backlog is still planned).

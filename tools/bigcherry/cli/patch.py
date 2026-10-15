@@ -277,7 +277,7 @@ def cmd_patch_rebase_check(args: Namespace) -> int:
 
 def cmd_patch_status(args: Namespace) -> int:
     """Render computed patch lifecycle status."""
-    statuses = patch_lifecycle.compute_all()
+    statuses = patch_lifecycle.compute_all(engine=args.engine)
     if args.item:
         statuses = {key: value for key, value in statuses.items() if key == args.item}
         if not statuses:

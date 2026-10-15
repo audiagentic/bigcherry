@@ -477,7 +477,9 @@ def _record_framework_configuration(
         artifact_hashes=artifacts,
         campaign_workdir=run_dir,
     )
-    path = patch_validation_evidence.write_record(record)
+    path = patch_validation_evidence.write_record(
+        record, engine=bc_engines.LLAMACPP, patches_root=bc_paths.PATCHES
+    )
     _print(f"framework configuration evidence: {path}")
     return 0 if record["eligible_for_validated_state"] else 1
 
@@ -1083,7 +1085,9 @@ def _persist_validation_record(args: argparse.Namespace, st: SimpleNamespace) ->
         subject_tree=patched_source_tree,
         stock_tree=psi.git_worktree_tree(stock_src),
     )
-    validation_record_path = patch_validation_evidence.write_record(validation_record)
+    validation_record_path = patch_validation_evidence.write_record(
+        validation_record, engine=bc_engines.LLAMACPP, patches_root=bc_paths.PATCHES
+    )
     _print(f"validation evidence: {validation_record_path}")
     _print(
         "STATE='validated' eligible: "

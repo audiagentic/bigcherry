@@ -1883,7 +1883,9 @@ def _aggregate_producer_session_effects(
     ):
         from bigcherry.patch import evidence as patch_validation_evidence
 
-        prior_records = patch_validation_evidence.poolable_records(args.patch)
+        prior_records = patch_validation_evidence.poolable_records(
+            args.patch, engine=bc_engines.LLAMACPP, patches_root=bc_paths.PATCHES
+        )
         # GPT round 6 BLOCKER: schema-v4 persists contracts as a
         # list of {"id": ..., "hash": ...}, not a mapping.
         matching_records = [
@@ -2198,7 +2200,9 @@ def _persist_producer_validation_record(
         subject_tree=psi.git_worktree_tree(scaffold.subject_source),
         stock_tree=psi.git_worktree_tree(scaffold.stock_source),
     )
-    record_path = patch_validation_evidence.write_record(validation_record)
+    record_path = patch_validation_evidence.write_record(
+        validation_record, engine=bc_engines.LLAMACPP, patches_root=bc_paths.PATCHES
+    )
     return record_path, validation_contract_verdicts
 
 

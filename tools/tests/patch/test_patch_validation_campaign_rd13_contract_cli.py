@@ -473,7 +473,7 @@ def _dispatch(
         scaffold_recorder.calls.append(kwargs)
         return scaffold
 
-    def fake_write_record(record) -> Path:
+    def fake_write_record(record, **_where) -> Path:
         write_record_recorder.calls.append({"record": record})
         path = tmp / "records" / f"record-{len(write_record_recorder.calls) - 1}.json"
         path.parent.mkdir(parents=True, exist_ok=True)
