@@ -3,22 +3,22 @@ id: BCOP220
 order: 220
 plan: patching-bc-optimizations
 state: pending
-created-at: '2026-10-15T11:42:17+11:00'
+created-at: '2026-10-15T00:07:39Z'
 created-by: agent
 priority: P1
 work: S
 ---
 
-# PGC15: fence tiled AllReduce precision and partial-fallback safety
+# PGC15: freeze whole-boundary reduction codec before tiled prefill overlap
 
-**Finding:** PGC15's token-tiled compute/AllReduce overlap is a documentation and design candidate, not an implemented or qualified patch. At the pinned b11552 RCCL path, provider precision is selected from the whole reduction's element count. Recomputing that decision for each tile can silently change arithmetic: a 768 x 512 reduction is above the 131072-element boundary, while a 768 x 128 tile is below it and would select a different path. The tile implementation must preserve the original reduction's precision policy for every range.
+**Discovery:** Pinned llama.cpp b11552 selects RCCL F32/BF16 by **whole tensor** element count. A naive per-tile threshold changes the numerical contract: 3-rank `[768,512]` whole BF16 versus tile128 F32. Proposed post-submit false-to-Meta fallback can re-reduce mutated outputs. These are proposed-code hazards, not observed GPU failures.
 
-**Owner/consolidation:** PGC15 remains authoritative for producer tiling, range AllReduce, stream/event lifetime and eligibility proof. PGC12 owns phase/provider provenance; PGC14 owns RCCL transport/SHM; PGC09/11 own provider and wire precision; QFP17 owns Flash-Next prefill acceptance. Do not add a second scheduler, allocator, dispatcher, provider registry or telemetry framework.
+**Owner:** PGC15 owns producer tiling, admission, per-rank event/stream lifetime and frozen codec. PGC12 owns actual provider-completion traces, PGC14 RCCL SHM, PGC16 native fold retirement, QFP17 acceptance. No duplicate scheduler/allocator/dispatcher. Active Radiance helper, RWQ, MEN10 and PNRO11 work untouched.
 
-**Eligibility:** The audit used `feat/rad03-gpu-lanes` at independent HEAD `6786b9d477e3d725a2ede2a7c5624786f06d8674` (2026-10-15 10:40:50 +11:00). PGC15 had no same-capability repository update, open PR or queued experiment in the preceding 12 hours. Active Radiance/RAD02-RAD06, MEN10, release automation and other GPU/helper work were excluded as concurrent independent work; they were not modified. The named proposal files were not available in the local checkout, Brutus `/mnt/data`, or the configured workspace search paths.
+**Eligibility:** Branch `feat/rad03-gpu-lanes`, independent HEAD `6786b9d477e3d725a2ede2a7c5624786f06d8674` (2026-10-14 23:40 UTC). PGC15 last substantive independent update 2026-10-05; no independent PGC15 PR/patch/queue or related modification found in preceding 12 hours. Recent BCOP214-219 cover other capabilities.
 
-**Fail-closed gate:** Complete preflight for every planned range before submitting tile zero. Snapshot the whole-reduction F32/BF16 policy before partitioning. If preflight fails, use the untouched whole path. If a range operation fails after submission, surface an execution error and stop; never fall back to a whole-tensor retry after a partial reduction. Keep provider-owned scratch, streams and events alive until completion fences prove that all queued ranges are finished.
+**Action:** Preserve whole-boundary F32/BF16 policy in range-provider preflight; reject all unsupported ranges before submission; any later provider failure must be terminal, never whole-tensor fallback. First require a real attention-output producer boundary and codec/actual-provider trace; then an isolated identical-work two-stream RCCL overlap proof. Do not queue GPU work before source gate.
 
-**Qualification gate:** First prove a real attention-output producer tile `i+1` overlaps range AllReduce tile `i` on the actual three-rank Brutus configuration. Run host/direct precision-boundary and admission tests, then same-build flag-off versus tile128/256 ABBA at representative prefill depths with logits/top-k and decode controls. Reject implementation or promotion if the provider cannot preserve whole-reduction precision, if temporal overlap is not observed, if any lifetime/fallback case is unsafe, or if the exposed end-to-end opportunity does not meet PGC15's existing threshold.
+**Terminal:** `INELIGIBLE_BOUNDARY`, `CODEC_UNPRESERVED`, `NO_OVERLAP`, `POST_SUBMIT_ERROR`, `REJECT_TILE_OVERLAP`, or qualified default-off prototype. Promotion: >=3% E2E prefill or >=30% eligible attention-AR wall hidden, <=1% decode regression, full correctness and graph lifetime checks.
 
-**Status:** No production patch, hardware benchmark, or performance gain is claimed. This ledger records the correctness fence for a future PGC15 phase-1 qualification; it does not authorize implementation or queue a hardware run.
+**Validation:** Host-only Python compile and 9/9 synthetic tests passed. No repository pytest, HIP build, GPU run or new benchmark. Technical design belongs in PGC15; this is disposition only.
