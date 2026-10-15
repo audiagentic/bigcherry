@@ -211,9 +211,9 @@ Verified commands
 The router may use these observational commands only when needed to classify state:
 
 cd $BC
-PYTHONPATH=tools python -m bigcherry patch-status
-PYTHONPATH=tools python -m bigcherry patch-explain <patch-id>
-PYTHONPATH=tools python -m bigcherry patch-graph --roots <patch-id>
+PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-status
+PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-explain <patch-id>
+PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-graph --roots <patch-id>
 
 Do not execute a validation campaign from this orchestrator.
 

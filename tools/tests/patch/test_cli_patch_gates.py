@@ -32,6 +32,7 @@ def _args(**overrides: object) -> argparse.Namespace:
         "no_legacy_grandfather": False,
         "json": True,
         "llama_root": None,
+        "engine": "llamacpp",
     }
     values.update(overrides)
     return argparse.Namespace(**values)

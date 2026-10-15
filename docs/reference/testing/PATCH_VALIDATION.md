@@ -147,8 +147,8 @@ PYTHONPATH=tools python -m bigcherry check --quick
 PYTHONPATH=tools python -m unittest discover -s tools/tests
 PYTHONPATH=tools python -m bigcherry patch-lint --json
 PYTHONPATH=tools python -m bigcherry patch-validate <patch-id>
-PYTHONPATH=tools python -m bigcherry patch-explain <patch-id>
-PYTHONPATH=tools python -m bigcherry patch-graph --roots <patch-id>
+PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-explain <patch-id>
+PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-graph --roots <patch-id>
 ```
 
 `patch-lint` is the internal LINT consumer of G1 and G3 only. It has no focal
@@ -243,17 +243,17 @@ directory.
 The public gate examples are:
 
 ```bash
-PYTHONPATH=tools python -m bigcherry patch-gates <patch-id> --intent validate --rebase-report <fresh-report>
-PYTHONPATH=tools python -m bigcherry patch-gates <patch-id> --intent promote --rebase-report <fresh-report>
-PYTHONPATH=tools python -m bigcherry patch-gates <patch-id> --intent build --source <source-name> \
+PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-gates <patch-id> --intent validate --rebase-report <fresh-report>
+PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-gates <patch-id> --intent promote --rebase-report <fresh-report>
+PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-gates <patch-id> --intent build --source <source-name> \
   --rebase-report <fresh-report> --all-report <fresh-all-patches-report>
-PYTHONPATH=tools python -m bigcherry patch-gates <patch-id> --intent rebase --source <source-name> \
+PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-gates <patch-id> --intent rebase --source <source-name> \
   --rebase-report <fresh-report> --all-report <fresh-all-patches-report>
 # Named experiment (mutually exclusive with --focal-overlay): layer [experiment.<name>] over --source.
-PYTHONPATH=tools python -m bigcherry patch-gates <patch-id> --intent build --source <source-name> \
+PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-gates <patch-id> --intent build --source <source-name> \
   --experiment <experiment-name> --rebase-report <fresh-report> --all-report <fresh-all-patches-report>
 # Focal overlay: the <patch-id> is the overlay patch (a boolean flag, not a PATCH_ID arg).
-PYTHONPATH=tools python -m bigcherry patch-gates <patch-id> --intent build --source <source-name> \
+PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-gates <patch-id> --intent build --source <source-name> \
   --focal-overlay --rebase-report <fresh-report> --all-report <fresh-all-patches-report>
 ```
 
@@ -510,7 +510,7 @@ campaign identity and never rewrites an old result.
 The verifier commands are read-only observations:
 
 ```bash
-PYTHONPATH=tools python -m bigcherry patch-verify-evidence <patch-id>
+PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-verify-evidence <patch-id>
 PYTHONPATH=tools python -m bigcherry patch-validate <patch-id>
 ```
 

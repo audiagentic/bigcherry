@@ -33,9 +33,9 @@ revision, the canonical source name, overlay identity, patch IDs, and each
 implementation digest. Inspect the exact composition:
 
 ```text
-PYTHONPATH=tools python -m bigcherry patches --source <source-name>
-PYTHONPATH=tools python -m bigcherry patch-explain <patch-id>
-PYTHONPATH=tools python -m bigcherry patch-graph --roots <patch-id>
+PYTHONPATH=tools python -m bigcherry --engine llamacpp patches --source <source-name>
+PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-explain <patch-id>
+PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-graph --roots <patch-id>
 ```
 
 Do not reuse a report, build directory, or evidence record from a different
@@ -210,7 +210,7 @@ PYTHONPATH=tools python -m bigcherry check --quick
 PYTHONPATH=tools python -m bigcherry check --default
 PYTHONPATH=tools python -m unittest discover -s tools/tests
 PYTHONPATH=tools python -m bigcherry patch-rebase-check --all --json <final-report.json>
-PYTHONPATH=tools python -m bigcherry patch-verify-evidence --no-legacy-grandfather
+PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-verify-evidence --no-legacy-grandfather
 ```
 
 Use `check --full` when the active plan/acceptance gate requires it. Before a

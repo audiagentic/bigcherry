@@ -22,7 +22,7 @@ from bigcherry.source.workspace import WorkspaceError # noqa: E402
 
 
 def _args(**overrides) -> Namespace:
-    base = {"patch_id": None, "json": False, "no_legacy_grandfather": False}
+    base = {"engine": "llamacpp", "patch_id": None, "json": False, "no_legacy_grandfather": False}
     base.update(overrides)
     return Namespace(**base)
 
@@ -34,8 +34,8 @@ class ResolvedPinShaTests(unittest.TestCase):
             mirror.mkdir()
             with patch("bigcherry.core.config.load", return_value=Namespace(pinned="pin")), \
                  patch("bigcherry.patch.patchset.catalog", return_value=[]), \
-                 patch("bigcherry.core.context.ProjectContext.resolve", return_value=Namespace(upstream_repo=mirror)), \
-                 patch("bigcherry.source.workspace.UpstreamRepository") as repository, \
+                 patch("bigcherry.core.context.ProjectContext.resolve", return_value=Namespace(upstream_repo=mirror, config_path=None, patches_root=None)), \
+                 patch("bigcherry.cli.patch.UpstreamRepository") as repository, \
                  patch("bigcherry.patch.catalog.validation_evidence_statuses", return_value={}):
                 repository.return_value.resolve_ref.return_value = "a" * 40
                 self.assertEqual(cli_patch.cmd_patch_verify_evidence(_args()), 0)
@@ -50,7 +50,7 @@ class ResolvedPinShaTests(unittest.TestCase):
 
         with patch("bigcherry.core.config.load") as fake_load, \
              patch("bigcherry.patch.patchset.catalog", return_value=[]), \
-             patch("bigcherry.source.workspace.UpstreamRepository") as fake_repo_cls, \
+             patch("bigcherry.cli.patch.UpstreamRepository") as fake_repo_cls, \
              patch("bigcherry.patch.catalog.validation_evidence_statuses", side_effect=fake_statuses):
             fake_load.return_value = Namespace(pinned="b10692")
             fake_repo_cls.return_value.resolve_ref.return_value = "f" * 40
@@ -63,7 +63,7 @@ class ResolvedPinShaTests(unittest.TestCase):
     def test_unresolvable_pin_fails_closed_with_cli_error(self):
         with patch("bigcherry.core.config.load") as fake_load, \
              patch("bigcherry.patch.patchset.catalog", return_value=[]), \
-             patch("bigcherry.source.workspace.UpstreamRepository") as fake_repo_cls, \
+             patch("bigcherry.cli.patch.UpstreamRepository") as fake_repo_cls, \
              patch("bigcherry.patch.catalog.validation_evidence_statuses") as fake_statuses:
             fake_load.return_value = Namespace(pinned="b10692")
             fake_repo_cls.return_value.resolve_ref.side_effect = WorkspaceError("no such ref")

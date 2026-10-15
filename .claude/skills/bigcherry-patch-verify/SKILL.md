@@ -238,8 +238,8 @@ An already-owned edit should be recognized by its guard, not inserted twice.
 Run:
 
 cd $BC
-PYTHONPATH=tools python -m bigcherry patch-explain <patch-id>
-PYTHONPATH=tools python -m bigcherry patch-graph --roots <patch-id>
+PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-explain <patch-id>
+PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-graph --roots <patch-id>
 
 Verify:
 
@@ -313,8 +313,8 @@ PYTHONPATH=tools python -m unittest discover -s tools/tests/patch
 PYTHONPATH=tools python -m unittest discover -s tools/tests
 PYTHONPATH=tools python -m bigcherry audit
 PYTHONPATH=tools python -m bigcherry apply --dry-run --source <source>
-PYTHONPATH=tools python -m bigcherry patch-explain <patch-id>
-PYTHONPATH=tools python -m bigcherry patch-graph --roots <patch-id>
+PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-explain <patch-id>
+PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-graph --roots <patch-id>
 PYTHONPATH=tools python -m bigcherry patch-rebase-check --source <source>
 PYTHONPATH=tools python -m bigcherry patch-rebase-check --all
 PYTHONPATH=tools python -m bigcherry patch-rebase-check --all --json <report-path>
