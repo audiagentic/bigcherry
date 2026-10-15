@@ -13,6 +13,32 @@ priority: P1
 
 # CK-001 / PRBE70: bounded offline Composable Kernel GEMM oracle
 
+## 2026-10-15 b11552 CK oracle: correct the physical output layout and dtype contract (BCOP227)
+
+**Disposition:** PRBE70 remains an *offline*, default-off typed GEMM oracle; no runtime patch, CK dependency or new benchmark queue. This is a new source-level correction to the 2026-10-09 oracle plan, not a measured GPU regression. The old example `A[M,K]=src0; B[N,K]=src1; C[M,N]` is mathematically equivalent to ggml MUL_MAT but **not byte-layout equivalent**: CK `gemm` always emits row-major `C[M,N]`, whereas ggml's `dst[ne01,ne11]` has `ne01` contiguous. Comparing flat outputs or declaring native parity with the old CK operand order is invalid for nonsquare, multi-token shapes.
+
+### Source-verified seam and canonical zero-copy mapping
+
+- Pinned llama.cpp b11552 `ggml/src/ggml.c::ggml_mul_mat` creates F32 `dst` with `ne={src0->ne[1],src1->ne[1],...}`; `ggml/src/ggml-cuda/ggml-cuda.cu::ggml_cuda_mul_mat_cublas_impl` uses `CUBLAS_OP_T,CUBLAS_OP_N` with `ne01,ne11,ne10`, source leading strides `s01,s11`, destination `ldc=nb1/sizeof(float)`. It may convert src0/src1 and use temporary output before final F32 storage. This is a *physical* layout and conversion contract, not merely the matrix equation.
+- Current ROCm/rocm-libraries `projects/composablekernel/profiler/src/profile_gemm.cpp::profile_gemm` (source inspected 2026-10-15) supports layout 1 `A[m,k] * B[n,k] = C[m,n]`, with row-major C and typed `F32/F16/BF16` output. BF16 requires `CK_ENABLE_BF16`; source support does not establish an installed gfx1100/gfx1201 kernel instance. Its README's older GEMM datatype list omits BF16: **installed `ckProfiler gemm` help and a verified invocation are authoritative**. Its `argc` is 14 or 16 (with warmup and iterations); do not copy `gemm_universal`'s split-K syntax.
+- For a **contiguous, non-batched** ggml `src0[K,O]` weight and `src1[K,T]` activation, use CK **layout 1 with swapped operands**: `A=src1[T,K]`, `B=src0[O,K]`, `M=T`, `N=O`, `K=ne00`, `StrideA=K`, `StrideB=K`, `StrideC=O`. The CK row-major `C[T,O]` then has the *same flattened index* `t*O+o` as ggml `dst[O,T]`. This is a transpose-equivalent matrix product, **not** a claim of identical kernel tile choice or arithmetic.
+- Reject direct zero-copy admission when `ne12/ne02` broadcast, nontrivial batch, `src0/src1` views/strides, output `nb1` padding, conversion, or a different physical route is not explicitly modeled. Strided variants must be derived from actual element strides and checked for valid address bounds; never substitute GGUF storage strides for converted BLAS pointers.
+
+### Output-precision gate before any oracle parity claim
+
+`ggml_mul_mat`'s observable output is F32. CK `gemm` with datatype 1 or 2 produces F16 or BF16 **output** (despite F32 accumulation). Consequently `ckProfiler gemm 1/2 ...` cannot be advertised as a like-for-like F32-output native comparator. For F16/BF16 inputs, record `OUTPUT_TYPE_MISMATCH`: CK is a *kernel-only screening lower bound* with an explicitly costed cast/materialization back to F32, not a direct logits/parity proof. Either obtain a verified CK variant supporting the actual F32 output without an extra path, or retain native BLAS as the correctness authority and stop at a screening decision. F32 `gemm 0` has matching storage type, but still requires numerical-tolerance and source-route checks.
+
+**Bounded host discriminator (run 2026-10-15):** five source-shaped Python tests passed: non-square `O=3,T=2,K=4` old-layout flat-order mismatch, corrected A/B swap equality, physical shape, F16-output rounding mismatch, and corrected mapping across five shape families. These tests do **not** compile CK or BigCherry, exercise HIP, establish kernel instance support, or measure performance.
+
+### Revised implementation/terminal gate
+
+1. From existing `tools/bigcherry/profiling/rocprof.py::parse_kernel_trace` and `tools/lab/flash-next/prefill-kernel-table.py`, select one physically executed **BLAS** `MUL_MAT` signature, not MMQ/MMVQ or `MUL_MAT_ID`; join to a typed ggml tensor/dispatch receipt, including actual `s01/s11/ldc`, output dtype, conversions, rank and context/ubatch. Kernel-family summed time is **not** critical-path time.
+2. Host fixture first: build canonical CK `A=src1,B=src0,M=T,N=O`; compare flat `C` to a ggml row oracle, check non-square and multi-token cases, and reject unknown/batched/padded layouts. Record source SHA, `CK_ENABLE_*` and actual `ckProfiler` help/instance availability. Do not queue an unverified CK command.
+3. If F16/BF16 CK output remains narrow, account for F32 materialization and return `OUTPUT_TYPE_MISMATCH`/screen-only; no native-parity or promotion claim. If dtype/layout/route match, require native typed reference, verified CK profiler output, exposed serialized GEMM share `f` and `1/(1-f)-1 >= 3%` theoretical E2E ceiling **before** any owner handoff. Account for conversion, scratch, GPU synchronization, and graph lifetime.
+4. Owner handoff only to existing PRBE28 (original float layout) or PRBE29/30/31 (shadow/BLAS crossover) after their independent gates; no new CK runtime dispatch. gfx1100 and gfx1201 require separate instance, numerics and VRAM qualification; gfx1030 is a negative control. Stop `UNKNOWN_SIGNATURE`, `CK_UNAVAILABLE`, `OUTPUT_TYPE_MISMATCH`, `NO_EXPOSED_HEADROOM`, `NO_PORT` or `OWNER_HANDOFF` with source/receipt IDs.
+
+**External comparison:** ROCm CK profiler's layout/type/compile-time admission is a concrete offline mechanism. llama.cpp #30168 (merged 2026-10-09) makes host MMQ precision explicit but does not replace a float BLAS oracle; vLLM/AITER CK MXFP4 grouped MoE is a different quantized, architecture-gated route. No NVIDIA/CDNA/gfx1151 result transfers to gfx1100/gfx1201 without physical qualification. No new BigCherry performance measurement.
+
 ## Authoritative audit and disposition (2026-10-09; b11474)
 
 **Remain pending; no runtime patch or CK dependency.** PRBE70 owns an *offline, typed, architecture-local* comparison of eligible float GEMM signatures. Do not build a new GEMM dispatcher, allocator, profiler, CK runtime integration or per-model selector. Do not run or modify queued QFP/MMQ/MTP/Meta/Radiance experiments. Existing BigCherry profile receipts and per-device rocprof traces are the first source of cost attribution; an oracle result is **not** a production performance claim.
