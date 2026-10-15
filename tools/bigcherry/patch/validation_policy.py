@@ -242,7 +242,7 @@ def check_validation_packages(
     resolution, compatibility, and required-capability producer
     coverage). Grandfathered legacy patches are reported non-fatally;
     everything else that's missing or malformed is a real problem."""
-    resolved_root = root or paths.PATCHES
+    resolved_root = root or paths.patches_root(engine)
     reg = patch_registry.load_registry(engine, registry_path or resolved_root)
     baseline = load_grandfather_baseline(baseline_path)
 
@@ -415,7 +415,7 @@ _NATIVE_LLAMACPP_BASELINE_MARKERS = (
 
 
 def check_performance_evidence(
-    *, root: Path | None = None, registry_path: Path | None = None,
+    *, engine: str, root: Path | None = None, registry_path: Path | None = None,
 ) -> tuple[str, ...]:
     """User-directed policy (2026-09-11): a patch tagged 'optimization'
     (registry.PATCH_TAGS -- 'makes an existing path faster', the tag that
@@ -435,9 +435,9 @@ def check_performance_evidence(
     check_validation_packages()'s job) -- only on a validated+optimization
     patch whose README exists but lacks the required evidence marker."""
     problems: list[str] = []
-    resolved_root = root or paths.PATCHES
+    resolved_root = root or paths.patches_root(engine)
     # The 3-arm native/baseline/patched rule is llama.cpp's; radiance has no native-upstream arm here.
-    reg = patch_registry.load_registry("llamacpp", registry_path or resolved_root)
+    reg = patch_registry.load_registry(engine, registry_path or resolved_root)
     for descriptor in reg.descriptors:
         problems.extend(check_performance_evidence_for_patch(descriptor, root=resolved_root))
     return tuple(problems)
@@ -450,7 +450,7 @@ def check_performance_evidence_for_patch(
     assume_validated: bool = False,
 ) -> tuple[str, ...]:
     """Check one optimization package without inspecting unrelated patches."""
-    resolved_root = root or paths.PATCHES
+    resolved_root = root or paths.patches_root(descriptor.engine)
     if descriptor.representation != patch_registry.REPRESENTATION_PACKAGED:
         return ()
     if descriptor.state != "validated" and not assume_validated:
@@ -486,7 +486,7 @@ def require_execution_package(
     grant eligibility or relax the persisted evidence verifier.
     Never consults grandfather status --
     that status only ever makes lint non-fatal, never authorizes a run."""
-    resolved_root = root or paths.PATCHES
+    resolved_root = root or paths.patches_root(descriptor.engine)
     package_root = resolved_root / (descriptor.package_root or descriptor.patch_id)
     if not (package_root / "README.md").is_file():
         raise PolicyError(

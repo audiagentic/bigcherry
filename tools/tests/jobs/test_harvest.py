@@ -65,8 +65,10 @@ class HarvestTests(unittest.TestCase):
         for session, char in ((1, "b"), (2, "c")):
             worktree = self.root / f"worktree-{session}"
             git(self.repo, "worktree", "add", "--detach", str(worktree), self.commit)
+            worktree_patches = worktree / "engines" / "llamacpp" / "patches"
             patch_evidence.write_record(
-                evidence_record(digest_char=char), root=worktree / "engines" / "llamacpp" / "patches"
+                evidence_record(digest_char=char),
+                engine="llamacpp", patches_root=worktree_patches, root=worktree_patches,
             )
             self.worktrees.append(worktree)
             run_id = f"r-{session}"
@@ -113,6 +115,10 @@ class HarvestTests(unittest.TestCase):
             )
         self.temp.cleanup()
 
+    def _where(self) -> dict:
+        patches = self.repo / "engines" / "llamacpp" / "patches"
+        return {"engine": "llamacpp", "patches_root": patches, "root": patches}
+
     def test_commit_harvest_is_exact_and_idempotent(self):
         before = self.commit
         result = harvest_series(
@@ -121,18 +127,17 @@ class HarvestTests(unittest.TestCase):
             project_root=self.repo,
             work_root=self.root / "work",
             commit=True,
+            engine="llamacpp",
         )
         self.assertTrue(result["verified"])
         self.assertNotEqual(result["commit"], before)
-        records = patch_evidence.load_records("p", root=self.repo / "engines" / "llamacpp" / "patches")
+        records = patch_evidence.load_records("p", **self._where())
         self.assertEqual(len(records), 2)
         self.assertEqual(
             {row["campaign_identity_digest"] for row in records},
             {"b" * 64, "c" * 64},
         )
-        expected = patch_evidence.evidence_path(
-            "p", root=self.repo / "engines" / "llamacpp" / "patches"
-        ).relative_to(self.repo).as_posix()
+        expected = patch_evidence.evidence_path("p", **self._where()).relative_to(self.repo).as_posix()
         changed = git(self.repo, "show", "--pretty=format:", "--name-only", result["commit"])
         self.assertEqual(changed.strip(), expected)
         replay = harvest_series(
@@ -141,6 +146,7 @@ class HarvestTests(unittest.TestCase):
             project_root=self.repo,
             work_root=self.root / "work",
             commit=True,
+            engine="llamacpp",
         )
         self.assertTrue(replay["already_harvested"])
         self.assertEqual(git(self.repo, "rev-parse", "HEAD"), result["commit"])
@@ -156,14 +162,15 @@ class HarvestTests(unittest.TestCase):
                 project_root=self.repo,
                 work_root=self.root / "work",
                 commit=True,
+                engine="llamacpp",
             )
         self.assertEqual(git(self.repo, "diff", "--cached", "--name-only"), "unrelated.txt")
         self.assertFalse(
-            patch_evidence.evidence_path("p", root=self.repo / "engines" / "llamacpp" / "patches").exists()
+            patch_evidence.evidence_path("p", **self._where()).exists()
         )
 
     def test_dirty_destination_is_refused_before_merge(self):
-        destination = patch_evidence.evidence_path("p", root=self.repo / "engines" / "llamacpp" / "patches")
+        destination = patch_evidence.evidence_path("p", **self._where())
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_text('{"operator":"uncommitted"}\n', encoding="utf-8")
         with self.assertRaises(GitOpsError):
@@ -173,6 +180,7 @@ class HarvestTests(unittest.TestCase):
                 project_root=self.repo,
                 work_root=self.root / "work",
                 commit=True,
+                engine="llamacpp",
             )
         self.assertEqual(destination.read_text(encoding="utf-8"), '{"operator":"uncommitted"}\n')
 

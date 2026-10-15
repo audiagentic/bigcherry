@@ -48,7 +48,7 @@ class PortedBenchedTests(unittest.TestCase):
     def _module(self) -> patchset.PatchModule:
         return patchset.PatchModule(engine="llamacpp", 
             patch_id="9999_example", path=self.patch_path, order=0, state="untested",
-            upstream=None, content_hash="deadbeef" * 8,
+            upstream=None, content_hash="deadbeef" * 8, catalog_root=self.root,
         )
 
     def _real_check_results(self, *, with_artifact: bool = True) -> dict:
@@ -133,21 +133,21 @@ class PortedBenchedTests(unittest.TestCase):
         # require activation executed+verified or eligible_for_validated_state.
         record = self._real_v3_record()
         self.assertFalse(record["eligible_for_validated_state"])  # proves this is a REAL sub-validated record
-        pve.write_record(record, root=self.root)
+        pve.write_record(record, engine="llamacpp", patches_root=self.root, root=self.root)
         result = pve.verify_ported_benched_patch(self._module(), pinned_ref="b10705", root=self.root)
         self.assertEqual(result.status, "ported-benched-evidence")
         self.assertTrue(result.ok)
 
     def test_correctness_failure_fails(self) -> None:
         record = self._real_v3_record(correctness_disposition="failed")
-        pve.write_record(record, root=self.root)
+        pve.write_record(record, engine="llamacpp", patches_root=self.root, root=self.root)
         result = pve.verify_ported_benched_patch(self._module(), pinned_ref="b10705", root=self.root)
         self.assertEqual(result.status, "missing-or-stale")
         self.assertFalse(result.ok)
 
     def test_stale_base_revision_fails(self) -> None:
         record = self._real_v3_record()
-        pve.write_record(record, root=self.root)
+        pve.write_record(record, engine="llamacpp", patches_root=self.root, root=self.root)
         result = pve.verify_ported_benched_patch(
             self._module(), pinned_ref="b10705", root=self.root,
             resolved_base_revision="c" * 40,  # does not match record's base_revision (_HEX40 = "b"*40)
@@ -159,7 +159,7 @@ class PortedBenchedTests(unittest.TestCase):
         record = self._real_v3_record()
         del record["validation_build_identities"]
         record["record_digest"] = pve._record_digest(record)
-        pve.write_record(record, root=self.root)
+        pve.write_record(record, engine="llamacpp", patches_root=self.root, root=self.root)
         result = pve.verify_ported_benched_patch(self._module(), pinned_ref="b10705", root=self.root)
         self.assertEqual(result.status, "missing-or-stale")
         self.assertFalse(result.ok)
@@ -170,7 +170,7 @@ class PortedBenchedTests(unittest.TestCase):
         # build-only record (check_results defaults to activation+
         # correctness only, no performance/controls entry) must fail.
         record = self._real_v3_record(check_results=None)
-        pve.write_record(record, root=self.root)
+        pve.write_record(record, engine="llamacpp", patches_root=self.root, root=self.root)
         result = pve.verify_ported_benched_patch(self._module(), pinned_ref="b10705", root=self.root)
         self.assertEqual(result.status, "missing-or-stale")
         self.assertFalse(result.ok)
@@ -182,7 +182,7 @@ class PortedBenchedTests(unittest.TestCase):
         record = self._real_v3_record(
             check_results=self._real_check_results(with_artifact=False)
         )
-        pve.write_record(record, root=self.root)
+        pve.write_record(record, engine="llamacpp", patches_root=self.root, root=self.root)
         result = pve.verify_ported_benched_patch(self._module(), pinned_ref="b10705", root=self.root)
         self.assertEqual(result.status, "missing-or-stale")
         self.assertFalse(result.ok)
@@ -197,7 +197,7 @@ class PortedBenchedTests(unittest.TestCase):
             {"name": "performance", "path": "not-a-real-tracked-file.json", "sha256": "d" * 64}
         ]
         record = self._real_v3_record(check_results=check_results)
-        pve.write_record(record, root=self.root)
+        pve.write_record(record, engine="llamacpp", patches_root=self.root, root=self.root)
         result = pve.verify_ported_benched_patch(self._module(), pinned_ref="b10705", root=self.root)
         self.assertEqual(result.status, "missing-or-stale")
         self.assertFalse(result.ok)
@@ -209,7 +209,7 @@ class PortedBenchedTests(unittest.TestCase):
             {"name": "performance", "path": real_path, "sha256": "e" * 64}  # wrong hash
         ]
         record = self._real_v3_record(check_results=check_results)
-        pve.write_record(record, root=self.root)
+        pve.write_record(record, engine="llamacpp", patches_root=self.root, root=self.root)
         result = pve.verify_ported_benched_patch(self._module(), pinned_ref="b10705", root=self.root)
         self.assertEqual(result.status, "missing-or-stale")
         self.assertFalse(result.ok)
@@ -234,7 +234,7 @@ class DeferredHardwareTests(unittest.TestCase):
     def _module(self) -> patchset.PatchModule:
         return patchset.PatchModule(engine="llamacpp", 
             patch_id="9999_example", path=self.patch_path, order=0, state="untested",
-            upstream=None, content_hash="deadbeef" * 8,
+            upstream=None, content_hash="deadbeef" * 8, catalog_root=self.root,
         )
 
     def _blocked_record(self, **overrides) -> dict:
@@ -249,13 +249,13 @@ class DeferredHardwareTests(unittest.TestCase):
         return record
 
     def test_fresh_structured_blocked_evidence_passes(self) -> None:
-        pve.write_record(self._blocked_record(), root=self.root)
+        pve.write_record(self._blocked_record(), engine="llamacpp", patches_root=self.root, root=self.root)
         result = pve.verify_deferred_hardware_patch(self._module(), pinned_ref="b10705", root=self.root)
         self.assertEqual(result.status, "deferred-hardware-evidence")
         self.assertTrue(result.ok)
 
     def test_no_blockers_fails(self) -> None:
-        pve.write_record(self._blocked_record(blockers=[]), root=self.root)
+        pve.write_record(self._blocked_record(blockers=[]), engine="llamacpp", patches_root=self.root, root=self.root)
         result = pve.verify_deferred_hardware_patch(self._module(), pinned_ref="b10705", root=self.root)
         self.assertEqual(result.status, "missing-or-stale")
         self.assertFalse(result.ok)
@@ -266,13 +266,13 @@ class DeferredHardwareTests(unittest.TestCase):
         self.assertFalse(result.ok)
 
     def test_malformed_stale_patch_identity_fails(self) -> None:
-        pve.write_record(self._blocked_record(patch_validation_subject_digest="stale-digest"), root=self.root)
+        pve.write_record(self._blocked_record(patch_validation_subject_digest="stale-digest"), engine="llamacpp", patches_root=self.root, root=self.root)
         result = pve.verify_deferred_hardware_patch(self._module(), pinned_ref="b10705", root=self.root)
         self.assertEqual(result.status, "missing-or-stale")
         self.assertFalse(result.ok)
 
     def test_stale_resolved_base_revision_fails(self) -> None:
-        pve.write_record(self._blocked_record(), root=self.root)
+        pve.write_record(self._blocked_record(), engine="llamacpp", patches_root=self.root, root=self.root)
         result = pve.verify_deferred_hardware_patch(
             self._module(), pinned_ref="b10705", root=self.root, resolved_base_revision="c" * 40,
         )

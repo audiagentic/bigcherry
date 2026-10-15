@@ -11,7 +11,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-from bigcherry.core import paths
+from bigcherry.core import engines, paths
 from bigcherry.experiment.contract import bootstrap_session_effect
 from bigcherry.patch import evidence as patch_evidence
 
@@ -37,14 +37,17 @@ def _verified(store: RunStore, series_id: str) -> dict[str, Any]:
 
 
 def _manifest_records(
-    *, project_root: Path, manifest: dict[str, Any]
+    *, project_root: Path, manifest: dict[str, Any], engine: str
 ) -> dict[str, dict[str, Any]]:
     patch_id = str(manifest["patch_id"])
     wanted = {str(value) for value in manifest.get("record_digests", [])}
     if not wanted:
         raise ReportError("verified evidence manifest contains no record digests")
     available: dict[str, dict[str, Any]] = {}
-    for row in patch_evidence.load_records(patch_id, root=paths.LLAMACPP.patches_root(project_root)):
+    patches_root = engines.load(paths.REPO_ROOT, engine).patches_root(project_root)
+    for row in patch_evidence.load_records(
+        patch_id, engine=engine, patches_root=patches_root, root=patches_root
+    ):
         record = dict(row)
         digest = record.get("record_digest")
         if not isinstance(digest, str):
@@ -64,12 +67,14 @@ def _manifest_records(
 
 
 def build_series_report(
-    *, store: RunStore, series_id: str, project_root: Path
+    *, store: RunStore, series_id: str, project_root: Path, engine: str
 ) -> dict[str, Any]:
     series = store.series(series_id)
     verified = _verified(store, series_id)
     manifest = dict(verified["manifest"])
-    records = _manifest_records(project_root=project_root.resolve(), manifest=manifest)
+    records = _manifest_records(
+        project_root=project_root.resolve(), manifest=manifest, engine=engine
+    )
     manifest_runs = manifest.get("runs")
     if not isinstance(manifest_runs, list):
         raise ReportError("verified evidence manifest has no run list")

@@ -58,6 +58,10 @@ Promotion is architecture-specific; shared paths must show no material regressio
 - No duplicate default implementation remains for one role.
 - Campaign completion is reconstructable from committed evidence rather than chat history.
 
+## 2026-10-15 RNX11 collective protocol ownership (BCOP221)
+
+RNX11 is a correctness-only gate for existing custom-collective generation/replay and staging lifetime. Do not allocate historical patch 1311 or duplicate 1291's small device-owned epoch, 0840/0860 provider routing, PGC10 root3 qualification or RCCL. The 1291 large-host path is default-off and historically slower; any replay risk is conditional pending actual HIP capture. Only a terminal RNX11 receipt can enter RNX09's combined-stack promotion matrix. RNX07 is absent from the active RNX plan folder; historical references are not an active implementation dependency. This note does not authorize a new GPU queue or touch active Radiance helper transport.
+
 ## Notes
 
 Original source alias is R9X09. Depends on candidates RNX02–RNX08, RNX10, and RNX11 for custom collective candidates.

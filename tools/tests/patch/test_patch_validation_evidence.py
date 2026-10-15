@@ -191,16 +191,16 @@ class WriteLoadRecordTests(unittest.TestCase):
 
     def test_write_then_load_round_trips(self):
         record = self._record()
-        pve.write_record(record, root=self.root)
-        loaded = pve.load_records("9999_example", root=self.root)
+        pve.write_record(record, engine="llamacpp", patches_root=self.root, root=self.root)
+        loaded = pve.load_records("9999_example", engine="llamacpp", patches_root=self.root, root=self.root)
         self.assertEqual(len(loaded), 1)
         self.assertEqual(loaded[0]["some_field"], "value")
 
     def test_rewriting_identical_record_is_idempotent(self):
         record = self._record()
-        pve.write_record(record, root=self.root)
-        pve.write_record(record, root=self.root)
-        self.assertEqual(len(pve.load_records("9999_example", root=self.root)), 1)
+        pve.write_record(record, engine="llamacpp", patches_root=self.root, root=self.root)
+        pve.write_record(record, engine="llamacpp", patches_root=self.root, root=self.root)
+        self.assertEqual(len(pve.load_records("9999_example", engine="llamacpp", patches_root=self.root, root=self.root)), 1)
 
     def test_same_build_measured_twice_records_both(self):
         # RV96, deliberately REPLACING an earlier test that asserted this
@@ -211,11 +211,11 @@ class WriteLoadRecordTests(unittest.TestCase):
         # N_min/N_max extension policy unimplementable, and meant whichever
         # run was written first owned the digest for good.
         record = self._record()
-        pve.write_record(record, root=self.root)
+        pve.write_record(record, engine="llamacpp", patches_root=self.root, root=self.root)
         second = dict(record)
         second["some_field"] = "different"
-        pve.write_record(second, root=self.root)
-        loaded = pve.load_records("9999_example", root=self.root)
+        pve.write_record(second, engine="llamacpp", patches_root=self.root, root=self.root)
+        loaded = pve.load_records("9999_example", engine="llamacpp", patches_root=self.root, root=self.root)
         self.assertEqual(len(loaded), 2)
         self.assertEqual(
             {row["some_field"] for row in loaded}, {"value", "different"}
@@ -225,11 +225,11 @@ class WriteLoadRecordTests(unittest.TestCase):
         # The property that must survive: evidence is append-only. A second
         # measurement must not be able to overwrite or remove the first --
         # notably not a later PASS quietly displacing an earlier FAIL.
-        pve.write_record(self._record(), root=self.root)
+        pve.write_record(self._record(), engine="llamacpp", patches_root=self.root, root=self.root)
         second = dict(self._record())
         second["some_field"] = "different"
-        pve.write_record(second, root=self.root)
-        loaded = pve.load_records("9999_example", root=self.root)
+        pve.write_record(second, engine="llamacpp", patches_root=self.root, root=self.root)
+        loaded = pve.load_records("9999_example", engine="llamacpp", patches_root=self.root, root=self.root)
         self.assertIn("value", {row["some_field"] for row in loaded})
 
     def test_records_disagreeing_on_patch_identity_still_fail_closed(self):
@@ -238,11 +238,11 @@ class WriteLoadRecordTests(unittest.TestCase):
         # is not identifying what it claims to -- corruption, not replication.
         record = dict(self._record())
         record["patch_implementation_digest"] = "a" * 64
-        pve.write_record(record, root=self.root)
+        pve.write_record(record, engine="llamacpp", patches_root=self.root, root=self.root)
         contradictory = dict(record)
         contradictory["patch_implementation_digest"] = "b" * 64
         with self.assertRaises(pve.ValidationEvidenceError) as caught:
-            pve.write_record(contradictory, root=self.root)
+            pve.write_record(contradictory, engine="llamacpp", patches_root=self.root, root=self.root)
         self.assertIn("patch_implementation_digest", str(caught.exception))
 
     def test_multiple_measurements_are_ordered_deterministically(self):
@@ -251,15 +251,15 @@ class WriteLoadRecordTests(unittest.TestCase):
         for tag, value in (("1", "b"), ("1", "a"), ("1", "c")):
             row = self._record(tag)
             row["record_digest"] = value * 64
-            pve.write_record(row, root=self.root)
-        loaded = pve.load_records("9999_example", root=self.root)
+            pve.write_record(row, engine="llamacpp", patches_root=self.root, root=self.root)
+        loaded = pve.load_records("9999_example", engine="llamacpp", patches_root=self.root, root=self.root)
         self.assertEqual(
             [row["record_digest"] for row in loaded],
             ["a" * 64, "b" * 64, "c" * 64],
         )
 
     def test_load_missing_returns_empty(self):
-        self.assertEqual(pve.load_records("nonexistent", root=self.root), ())
+        self.assertEqual(pve.load_records("nonexistent", engine="llamacpp", patches_root=self.root, root=self.root), ())
 
 
 class VerifyValidatedPatchTests(unittest.TestCase):
@@ -276,7 +276,7 @@ class VerifyValidatedPatchTests(unittest.TestCase):
     def _module(self, *, state="validated", content_hash="deadbeef" * 8):
         return patchset.PatchModule(engine="llamacpp", 
             patch_id="9999_example", path=self.patch_path, order=0, state=state,
-            upstream=None, content_hash=content_hash,
+            upstream=None, content_hash=content_hash, catalog_root=self.root,
         )
 
     def _qualifying_record(self):
@@ -310,14 +310,14 @@ class VerifyValidatedPatchTests(unittest.TestCase):
         self.assertFalse(result.ok)
 
     def test_validated_with_current_qualifying_record_passes(self):
-        pve.write_record(self._qualifying_record(), root=self.root)
+        pve.write_record(self._qualifying_record(), engine="llamacpp", patches_root=self.root, root=self.root)
         module = self._module()
         result = pve.verify_validated_patch(module, pinned_ref="b10502", root=self.root)
         self.assertEqual(result.status, "validated-evidence")
         self.assertTrue(result.ok)
 
     def test_editing_patch_after_evidence_makes_it_stale(self):
-        pve.write_record(self._qualifying_record(), root=self.root)
+        pve.write_record(self._qualifying_record(), engine="llamacpp", patches_root=self.root, root=self.root)
         self.patch_path.write_text('STATE = "validated"\nEXTRA = 1\n', encoding="utf-8")
         module = self._module()
         result = pve.verify_validated_patch(
@@ -326,7 +326,7 @@ class VerifyValidatedPatchTests(unittest.TestCase):
         self.assertFalse(result.ok)
 
     def test_pin_change_makes_old_evidence_stale(self):
-        pve.write_record(self._qualifying_record(), root=self.root)
+        pve.write_record(self._qualifying_record(), engine="llamacpp", patches_root=self.root, root=self.root)
         module = self._module()
         result = pve.verify_validated_patch(
             module, pinned_ref="different-pin", root=self.root, allow_legacy_grandfather=False,
@@ -338,7 +338,7 @@ class VerifyValidatedPatchTests(unittest.TestCase):
         # doesn't catch a moving ref that has since resolved to a different
         # commit -- only checked when a caller supplies the real resolved
         # commit (opt-in, backward compatible).
-        pve.write_record(self._qualifying_record(), root=self.root)
+        pve.write_record(self._qualifying_record(), engine="llamacpp", patches_root=self.root, root=self.root)
         module = self._module()
         result = pve.verify_validated_patch(
             module, pinned_ref="b10502", root=self.root, allow_legacy_grandfather=False,
@@ -348,7 +348,7 @@ class VerifyValidatedPatchTests(unittest.TestCase):
 
     def test_resolved_base_revision_match_still_passes(self):
         record = self._qualifying_record()
-        pve.write_record(record, root=self.root)
+        pve.write_record(record, engine="llamacpp", patches_root=self.root, root=self.root)
         module = self._module()
         result = pve.verify_validated_patch(
             module, pinned_ref="b10502", root=self.root,
@@ -357,7 +357,7 @@ class VerifyValidatedPatchTests(unittest.TestCase):
         self.assertTrue(result.ok)
 
     def test_missing_required_architecture_fails(self):
-        pve.write_record(self._qualifying_record(), root=self.root)
+        pve.write_record(self._qualifying_record(), engine="llamacpp", patches_root=self.root, root=self.root)
         module = self._module()
         result = pve.verify_validated_patch(
             module, pinned_ref="b10502", required_architectures=("gfx1201",), root=self.root,
@@ -369,7 +369,7 @@ class VerifyValidatedPatchTests(unittest.TestCase):
         record["activation"] = {"status": "not_applicable", "disposition": "gate-verified-blocked"}
         record["eligible_for_validated_state"] = False
         record["validation_disposition"] = "incomplete"
-        pve.write_record(record, root=self.root)
+        pve.write_record(record, engine="llamacpp", patches_root=self.root, root=self.root)
         module = self._module()
         result = pve.verify_validated_patch(
             module, pinned_ref="b10502", root=self.root, allow_legacy_grandfather=False,

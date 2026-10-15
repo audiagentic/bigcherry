@@ -50,7 +50,6 @@ from bigcherry.patch.apply import (
 )
 
 REPO_ROOT = paths.REPO_ROOT
-PATCHES_ROOT = paths.PATCHES
 OVERLAY_ROOT = paths.SRC_OVERLAY
 MANIFEST_NAME = "manifest.json"
 MANIFEST_SCHEMA_VERSION = 1
@@ -397,7 +396,7 @@ def _make_source_identity_v2(
     return {**payload, "source_key": _stable_digest(payload)}
 
 
-def patch_implementation_digest(patch_name: str) -> str:
+def patch_implementation_digest(patch_name: str, *, engine: str, patches_root: Path) -> str:
     """sha256 of the patch implementation's own bytes (flat OR packaged).
 
     RS05: resolved through the registry descriptor -- no flat-only
@@ -411,7 +410,7 @@ def patch_implementation_digest(patch_name: str) -> str:
     edit semantics start changing in ways that matter; note the tradeoff
     rather than silently picking one side of it.
     """
-    registry = _patch_registry().load_registry("llamacpp", PATCHES_ROOT)
+    registry = _patch_registry().load_registry(engine, patches_root)
     try:
         descriptor = registry.get(patch_name)
     except Exception as exc:
@@ -517,6 +516,7 @@ def _verify_by_rematerialization(
     base_repo: Path, resolved_revision: str,
     composition: Sequence[tuple[str, str]], overlay_root: Path | None,
     variant_transform: "SourceTransform | None",
+    engine: str, patches_root: Path,
 ) -> None:
     """Deterministic re-materialization comparison (PA14, adversarial-review
     follow-up).
@@ -540,7 +540,8 @@ def _verify_by_rematerialization(
     scratch_dir = source_dir.parent / f".verify-{uuid.uuid4().hex}"
     try:
         _add_worktree(base_repo, scratch_dir, resolved_revision)
-        _apply_composition(scratch_dir, composition, overlay_root=overlay_root, root=PATCHES_ROOT)
+        _apply_composition(scratch_dir, composition, overlay_root=overlay_root,
+                           engine=engine, patches_root=patches_root)
         if variant_transform is not None:
             variant_transform.apply(scratch_dir)
         expected_tree = git_worktree_tree(scratch_dir)
@@ -564,6 +565,8 @@ def _verify_reuse(
     composition: Sequence[tuple[str, str]] | None = None,
     overlay_root: Path | None = None,
     variant_transform: "SourceTransform | None" = None,
+    engine: str,
+    patches_root: Path,
 ) -> bool:
     """True if source_dir can be reused as-is for expected_identity.
 
@@ -654,6 +657,7 @@ def _verify_reuse(
             base_repo=base_repo, resolved_revision=resolved_revision,
             composition=composition or (), overlay_root=overlay_root,
             variant_transform=variant_transform,
+            engine=engine, patches_root=patches_root,
         )
 
     return True
@@ -689,7 +693,8 @@ def _apply_composition(
     composition: Sequence[tuple[str, str]],
     *,
     overlay_root: Path | None,
-    root: Path | None = None,
+    engine: str,
+    patches_root: Path,
     expected_overlay_digest: str | None = None,
 ) -> None:
     """Overlay bigcherry's own source additions (EXACTLY the files whose bytes
@@ -712,7 +717,7 @@ def _apply_composition(
     applied under the OLD identity. When supplied, the recomputed
     ``overlay_digest()`` must match exactly, or this raises.
     """
-    registry = _patch_registry().load_registry("llamacpp", root or PATCHES_ROOT)
+    registry = _patch_registry().load_registry(engine, patches_root)
     from bigcherry import patcher  # noqa: E402
 
     if overlay_root is not None:
@@ -763,8 +768,8 @@ def _apply_composition(
                 f"patch {patch_id} implementation changed between identity "
                 f"computation and application: {actual_digest} != {expected_digest}"
             )
-        implementation = _patch_registry().load_implementation("llamacpp", 
-            descriptor, root=registry.root
+        implementation = _patch_registry().load_implementation(
+            engine, descriptor, root=registry.root
         )
         results = patcher.apply_all(implementation, source_dir, dry_run=False)
         for result in results:
@@ -785,6 +790,8 @@ def _materialize_v2(
     overlay_root: Path | None,
     requested_revision: str | None = None,
     variant_transform: SourceTransform | None = None,
+    engine: str,
+    patches_root: Path,
 ) -> Path:
     """The single v2 worktree-construction path (RV80/B2).
 
@@ -814,6 +821,7 @@ def _materialize_v2(
             base_repo=base_repo, resolved_revision=resolved_revision,
             composition=composition, overlay_root=overlay_root,
             variant_transform=variant_transform,
+            engine=engine, patches_root=patches_root,
         ):
             return source_dir
 
@@ -822,7 +830,8 @@ def _materialize_v2(
             source_dir,
             composition,
             overlay_root=overlay_root,
-            root=PATCHES_ROOT,
+            engine=engine,
+            patches_root=patches_root,
             expected_overlay_digest=identity["overlay_digest"],
         )
 
@@ -857,6 +866,8 @@ def verify_composition_idempotent(
     composition: Sequence[tuple[str, str]],
     overlay_root: Path | None = None,
     requested_revision: str | None = None,
+    engine: str,
+    patches_root: Path,
 ) -> bool:
     """Re-run exact materialization and prove it reused the same tree.
 
@@ -871,6 +882,8 @@ def verify_composition_idempotent(
         composition=composition,
         overlay_root=overlay_root,
         requested_revision=requested_revision,
+        engine=engine,
+        patches_root=patches_root,
     )
     return again == source and git_worktree_tree(again) == before
 
@@ -883,6 +896,8 @@ def materialize_composition(
     composition: Sequence[tuple[str, str]],
     overlay_root: Path | None = None,
     requested_revision: str | None = None,
+    engine: str,
+    patches_root: Path,
 ) -> Path:
     """Materialize an isolated worktree for an EXPLICIT composition.
 
@@ -901,6 +916,8 @@ def materialize_composition(
         composition=tuple(composition),
         overlay_root=overlay_root,
         requested_revision=requested_revision,
+        engine=engine,
+        patches_root=patches_root,
     )
 
 
@@ -918,6 +935,8 @@ def materialize_source_variant(
     # identity evidence; the transform digest is always derived below.
     variant_digest: str | None = None,
     apply_variant: Callable[[Path], None] | None = None,
+    engine: str,
+    patches_root: Path,
 ) -> Path:
     """Materialize an isolated worktree for an EXPLICIT composition plus a
     post-composition variant transform ("subject vs control" evidence).
@@ -966,6 +985,8 @@ def materialize_source_variant(
         overlay_root=overlay_root,
         requested_revision=requested_revision,
         variant_transform=transform,
+        engine=engine,
+        patches_root=patches_root,
     )
 
 
@@ -974,6 +995,8 @@ def materialize_stock_source(
     base_repo: Path,
     worktree_root: Path,
     base_revision: str,
+    engine: str,
+    patches_root: Path,
 ) -> Path:
     """A genuinely pristine pinned-upstream worktree for stock bench
     comparison: v2 identity with the EMPTY composition and no overlay. The
@@ -988,6 +1011,8 @@ def materialize_stock_source(
         composition=(),
         overlay_root=None,
         requested_revision=base_revision,
+        engine=engine,
+        patches_root=patches_root,
     )
 
 
@@ -998,8 +1023,9 @@ def resolve_source_composition(
     extra_patches: tuple[str, ...] = (),
     base_ref: str = "HEAD",
     base_repo: Path | None = None,
-    recipes: Path | None = None,
-    patches_root: Path | None = None,
+    engine: str,
+    recipes: Path,
+    patches_root: Path,
     allow_rejected: bool = False,
 ) -> tuple[str, tuple[tuple[str, str], ...]]:
     """Resolve a source's EXPLICIT named composition for identity purposes.
@@ -1028,14 +1054,12 @@ def resolve_source_composition(
     sys.path.insert(0, str(REPO_ROOT / "tools"))
     from bigcherry.campaign import resolution as campaign_resolution # noqa: E402
     from bigcherry.core import config as campaign_config # noqa: E402
-    from bigcherry.core import paths # noqa: E402
     from bigcherry.patch import patchset # noqa: E402
 
     resolved_revision = resolve_base_revision(base_ref, repo=base_repo)
-    cfg = campaign_config.load(recipes or paths.RECIPES)
-    patches_root = patches_root or PATCHES_ROOT
-    catalog = patchset.catalog("llamacpp", directory=patches_root)
-    lane = campaign_resolution.resolve_lane("llamacpp", source_name, cfg, catalog)
+    cfg = campaign_config.load(recipes)
+    catalog = patchset.catalog(engine, directory=patches_root)
+    lane = campaign_resolution.resolve_lane(engine, source_name, cfg, catalog)
     # lane.patch_set.module_ids is the FULL named composition (the merged
     # multi-set result already contains the validated-enhancements members;
     # lane.promoted_enhancements is a declared-config view of them, not an
@@ -1055,7 +1079,7 @@ def resolve_source_composition(
     # patch later promoted into validated-enhancements) is already present:
     # the resolved composition is the same, so it is not added twice.
     ids = [*ids, *(extra for extra in extras if extra not in ids)]
-    resolved = patchset.resolve_exact("llamacpp", tuple(ids), directory=patches_root, allow_rejected=allow_rejected)
+    resolved = patchset.resolve_exact(engine, tuple(ids), directory=patches_root, allow_rejected=allow_rejected)
     if allow_rejected:
         unexpected = [
             m.patch_id for m in resolved.modules
@@ -1065,7 +1089,7 @@ def resolve_source_composition(
             raise PatchSourceIsolationError(
                 f"allow_rejected admits only explicitly named patches; retired but not named: {unexpected}"
             )
-    registry = _patch_registry().load_registry("llamacpp", patches_root)
+    registry = _patch_registry().load_registry(engine, patches_root)
     composition = tuple(
         (
             module.patch_id,

@@ -21,6 +21,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "tools"))
 
+from bigcherry.core import engines, paths  # noqa: E402
 from bigcherry.patch import evidence  # noqa: E402
 
 
@@ -73,9 +74,10 @@ def main() -> int:
         if patch_id and vectors:
             by_patch.setdefault(patch_id, []).append((run_dir, reason, vectors))
     for patch_id, runs in sorted(by_patch.items()):
-        records = evidence.load_records(patch_id)
-        already = evidence.withdrawn_digests(patch_id)
-        path = evidence.evidence_path(patch_id).parent / evidence.WITHDRAWALS_FILE
+        where = {"engine": engines.LLAMACPP, "patches_root": paths.PATCHES}
+        records = evidence.load_records(patch_id, **where)
+        already = evidence.withdrawn_digests(patch_id, **where)
+        path = evidence.evidence_path(patch_id, **where).parent / evidence.WITHDRAWALS_FILE
         document = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {"withdrawn": []}
         added = 0
         for record in records:

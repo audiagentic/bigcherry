@@ -419,14 +419,17 @@ def validation_evidence_statuses(
         if carry_forward and not check.ok and check.status != "not-required":
             check = _carried_forward(
                 patch_id, check, pinned_ref, resolved_base_revision, evidence_root, _evaluate,
+                engine=engine, patches_root=patches_root,
             )
         result[patch_id] = check
     return result
 
 
-def _carried_forward(patch_id, check, pinned_ref, resolved_base_revision, evidence_root, evaluate):
+def _carried_forward(patch_id, check, pinned_ref, resolved_base_revision, evidence_root, evaluate, *, engine, patches_root):
     try:
-        records = patch_validation_evidence.load_records(patch_id, root=evidence_root)
+        records = patch_validation_evidence.load_records(
+            patch_id, engine=engine, patches_root=patches_root, root=evidence_root
+        )
     except patch_validation_evidence.ValidationEvidenceError:
         return check
     earlier_pins: list[tuple[str, str]] = []
@@ -587,7 +590,7 @@ class CatalogSnapshot:
     left for a follow-up pass rather than risking those paths' existing
     identity/test guarantees in this one). This phase covers the CLI
     surface that visibly double-reads today (``cmd_patches``, which called
-    ``patchset.describe("llamacpp", )`` and ``patch_catalog.load_catalog()``
+    ``patchset.describe(engine, )`` and ``patch_catalog.load_catalog()``
     separately) and gives the rest of the codebase a real, tested
     construction point to adopt incrementally.
 
@@ -659,7 +662,7 @@ def build_snapshot(
 ) -> CatalogSnapshot:
     """Build one ``CatalogSnapshot`` -- the single real filesystem read this
     phase covers. ``patches_dir``/``catalog_path`` default to the real
-    project locations (``paths.PATCHES``/``paths.PATCH_CATALOG``).
+    project locations (the engine patch tree and its catalog.toml).
 
     RS03: metadata = catalog.toml (legacy compatibility authority) merged with
     each packaged patch's patch.toml (production authority). A packaged patch that

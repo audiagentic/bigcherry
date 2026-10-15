@@ -70,7 +70,7 @@ class FrameworkConfigurationCampaignTests(unittest.TestCase):
                          "GGML_HIP_DISPATCH_DIAGNOSTICS": int(directory.name.endswith("diagnostic")),
                          "GGML_HIP_AUTOTUNE": 0, "GGML_HIP_AUTOTUNE_RECORD": 0,
                          "GGML_HIP_REPLAY_DIAGNOSTICS": 0, "GGML_HIP_WORKSPACE_METRICS": 0}}), \
-                 mock.patch.object(evidence, "write_record", side_effect=lambda record: records.append(record) or work / "record.json"):
+                 mock.patch.object(evidence, "write_record", side_effect=lambda record, **_where: records.append(record) or work / "record.json"):
                 result = vc._run_framework_configuration(args, descriptor, SimpleNamespace(pinned="pin"))
             self.assertEqual(result, 0)
             self.assertEqual(set(records[0]["check_results"]), {"apply", "build", "serving-source-selection"})

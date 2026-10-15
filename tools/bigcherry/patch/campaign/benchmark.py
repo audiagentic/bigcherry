@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from bigcherry.build.builds import capture_completed_build_evidence
+from bigcherry.core import engines as bc_engines, paths as bc_paths
 from bigcherry.patch.campaign.build import (
     _atomic_write_json,
     _full_requested_cmake_args,
@@ -579,12 +580,18 @@ def _build_performance_binary_pair(
         focal=None,
         base_ref=cfg.pinned,
         base_repo=LLAMA_CPP_SRC,
+        engine=bc_engines.LLAMACPP,
+        patches_root=bc_paths.PATCHES,
+        recipes=bc_paths.RECIPES,
     )
     subject_revision, subject_composition = psi.resolve_source_composition(
         baseline_source,
         focal=args.patch,
         base_ref=cfg.pinned,
         base_repo=LLAMA_CPP_SRC,
+        engine=bc_engines.LLAMACPP,
+        patches_root=bc_paths.PATCHES,
+        recipes=bc_paths.RECIPES,
     )
     if control_revision != subject_revision:
         raise RuntimeError(
@@ -601,6 +608,8 @@ def _build_performance_binary_pair(
         composition=control_composition,
         overlay_root=psi.OVERLAY_ROOT,
         requested_revision=cfg.pinned,
+        engine=bc_engines.LLAMACPP,
+        patches_root=bc_paths.PATCHES,
     )
     subject_src = psi.materialize_composition(
         base_repo=LLAMA_CPP_SRC,
@@ -609,6 +618,8 @@ def _build_performance_binary_pair(
         composition=subject_composition,
         overlay_root=psi.OVERLAY_ROOT,
         requested_revision=cfg.pinned,
+        engine=bc_engines.LLAMACPP,
+        patches_root=bc_paths.PATCHES,
     )
 
     build_root: Path = (args.build_root or args.workdir) / subject_src.name

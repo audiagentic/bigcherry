@@ -17,6 +17,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 ROOT = Path(__file__).resolve().parents[3]
+from bigcherry.core import paths # noqa: E402
 from bigcherry.patch import patchset as _patchset # noqa: E402
 from bigcherry.patch import registry as _patch_registry # noqa: E402
 from bigcherry.source import sources as _sources # noqa: E402
@@ -89,7 +90,7 @@ class TestRegistryStructure(unittest.TestCase):
 
 class TestPatchProvenanceCrossCheck(unittest.TestCase):
     def test_cross_check_is_clean(self):
-        problems = src.cross_check_patches()
+        problems = src.cross_check_patches(engine="llamacpp", patches_dir=paths.PATCHES)
         self.assertEqual(problems, [], f"patch<->registry problems: {problems}")
 
     def test_rd19_rd20_patches_carry_provenance(self):
@@ -255,7 +256,7 @@ class TestPatchProvenanceCrossCheck(unittest.TestCase):
                 .replace('"plan-item": "RD19"', '"plan-item": "RD99"'),
                 encoding="utf-8",
             )
-            problems = src.cross_check_patches(src.load_registry(), tmp_path)
+            problems = src.cross_check_patches(src.load_registry(), engine="llamacpp", patches_dir=tmp_path)
             self.assertTrue(
                 any("plan-item" in p for p in problems),
                 f"expected a plan-item mismatch problem, got {problems}",
@@ -269,7 +270,7 @@ class TestPatchProvenanceCrossCheck(unittest.TestCase):
 
         buf = io.StringIO()
         with redirect_stdout(buf):
-            rc = src._status()
+            rc = src._status("llamacpp")
         self.assertEqual(rc, 0)
         self.assertIn("stew675-rdna-boosts", buf.getvalue())
         self.assertIn("cross-check: OK", buf.getvalue())

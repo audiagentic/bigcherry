@@ -14,10 +14,10 @@ class ExtraAlreadyInBaselineTests(unittest.TestCase):
     def test_promoted_common_patch_resolves_once(self) -> None:
         base_ref = config.load(paths.RECIPES).pinned
         _, named = psi.resolve_source_composition(
-            "bigcherry-tuning", base_ref=base_ref, base_repo=LLAMA_CPP_SRC)
+            "bigcherry-tuning", base_ref=base_ref, base_repo=LLAMA_CPP_SRC, engine="llamacpp", patches_root=paths.PATCHES, recipes=paths.RECIPES)
         member = named[-1][0]
         _, with_extra = psi.resolve_source_composition(
-            "bigcherry-tuning", extra_patches=(member,), base_ref=base_ref, base_repo=LLAMA_CPP_SRC)
+            "bigcherry-tuning", extra_patches=(member,), base_ref=base_ref, base_repo=LLAMA_CPP_SRC, engine="llamacpp", patches_root=paths.PATCHES, recipes=paths.RECIPES)
         self.assertEqual(with_extra, named)
 
 

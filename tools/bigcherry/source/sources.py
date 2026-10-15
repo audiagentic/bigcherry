@@ -132,11 +132,11 @@ def _patch_provenance(patch_path: Path) -> dict | None:
 
 
 def cross_check_patches(registry: dict | None = None,
-                        patches_dir: str | Path | None = None) -> list[str]:
+                        *, engine: str, patches_dir: str | Path) -> list[str]:
     """Validate the two-way link between patch PROVENANCE dicts and the
     registry. Returns a list of problems (empty = consistent)."""
     registry = registry or load_registry()
-    patches_dir = Path(patches_dir) if patches_dir is not None else paths.PATCHES
+    patches_dir = Path(patches_dir)
 
     by_source: dict[str, dict] = {s["id"]: s for s in registry.get("sources", [])}
     tracked: dict[tuple[str, str], dict] = {}
@@ -175,7 +175,7 @@ def cross_check_patches(registry: dict | None = None,
     # Registry side: every tracked entry that names a patch must match the file.
     # RS04: patch file resolution goes through the patch registry descriptor
     # (flat or packaged) -- no f"{patch_id}.py" guessing here.
-    patch_tree = _patch_reg.load_registry("llamacpp", patches_dir)
+    patch_tree = _patch_reg.load_registry(engine, patches_dir)
     for (sid, sha), entry in tracked.items():
         patch_id = entry.get("patch")
         if patch_id is None:
@@ -204,18 +204,18 @@ def cmd_sources(args: argparse.Namespace) -> int:
         print("usage: bigcherry sources {status,check}", file=sys.stderr)
         return 2
     if args.src_subcommand == "status":
-        return _status()
+        return _status(args.engine)
     return _check(args)
 
 
-def _status() -> int:
+def _status(engine: str) -> int:
     try:
         registry = load_registry()
     except (FileNotFoundError, ValueError, tomllib.TOMLDecodeError) as exc:
         print(f"registry error: {exc}", file=sys.stderr)
         return 1
 
-    problems = cross_check_patches(registry)
+    problems = cross_check_patches(registry, engine=engine, patches_dir=paths.patches_root(engine))
     for source in registry["sources"]:
         print(f"source: {source['id']}")
         print(f"  repo:     {source['repo']}")
@@ -508,7 +508,7 @@ def _check(args: argparse.Namespace) -> int:
         sid = source["id"]
         print(f"== {sid} ==  {source['repo']}  locator={source['locator']}")
         active = next(s for s in source["snapshots"] if s.get("active"))
-        scratch = ProjectContext.resolve(engine="llamacpp").work_root / "tmp"
+        scratch = ProjectContext.resolve(engine=args.engine).work_root / "tmp"
         scratch.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(prefix="bc-src-", dir=scratch) as tmp:
             clone = subprocess.run(

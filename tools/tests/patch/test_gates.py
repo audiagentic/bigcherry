@@ -81,7 +81,7 @@ class GateContractTests(unittest.TestCase):
 
     def test_evidence_gate_passes_and_marks_promotion_prospectively(self) -> None:
         context = SimpleNamespace(
-            descriptor=SimpleNamespace(patch_id="P1"),
+            descriptor=SimpleNamespace(patch_id="P1", engine="llamacpp"),
             catalog_path=None,
             patches_dir=Path("patches"),
             pinned_ref="b10901",
@@ -104,7 +104,7 @@ class GateContractTests(unittest.TestCase):
 
     def test_profile_evidence_passes_g4_and_stands_in_for_a_missing_package_in_g5(self) -> None:
         context = SimpleNamespace(
-            descriptor=SimpleNamespace(patch_id="P1"),
+            descriptor=SimpleNamespace(patch_id="P1", engine="llamacpp"),
             catalog_path=None,
             patches_dir=Path("patches"),
             pinned_ref="b11474",
@@ -145,7 +145,7 @@ class GateContractTests(unittest.TestCase):
         self,
     ) -> None:
         context = SimpleNamespace(
-            descriptor=SimpleNamespace(patch_id="P1"),
+            descriptor=SimpleNamespace(patch_id="P1", engine="llamacpp"),
             catalog_path=None,
             patches_dir=Path("patches"),
             pinned_ref="b10901",
@@ -165,7 +165,7 @@ class GateContractTests(unittest.TestCase):
 
     def test_evidence_gate_blocks_unknown_or_inconsistent_status(self) -> None:
         context = SimpleNamespace(
-            descriptor=SimpleNamespace(patch_id="P1"),
+            descriptor=SimpleNamespace(patch_id="P1", engine="llamacpp"),
             catalog_path=None,
             patches_dir=Path("patches"),
             pinned_ref="b10901",
@@ -630,7 +630,7 @@ class GateContractTests(unittest.TestCase):
     def test_lifecycle_gate_blocks_without_all_prerequisites(self) -> None:
         context = SimpleNamespace(
             intent=GateIntent.PROMOTE,
-            descriptor=SimpleNamespace(patch_id="P1"),
+            descriptor=SimpleNamespace(patch_id="P1", engine="llamacpp"),
             composition=SimpleNamespace(
                 modules=(SimpleNamespace(patch_id="P1", state="untested"),)
             ),
@@ -642,7 +642,7 @@ class GateContractTests(unittest.TestCase):
     def test_lifecycle_gate_passes_untested_patch_after_g0_to_g4(self) -> None:
         context = SimpleNamespace(
             intent=GateIntent.PROMOTE,
-            descriptor=SimpleNamespace(patch_id="P1"),
+            descriptor=SimpleNamespace(patch_id="P1", engine="llamacpp"),
             composition=SimpleNamespace(
                 modules=(SimpleNamespace(patch_id="P1", state="untested"),)
             ),
@@ -657,7 +657,7 @@ class GateContractTests(unittest.TestCase):
     def test_lifecycle_gate_propagates_blocked_prerequisite(self) -> None:
         context = SimpleNamespace(
             intent=GateIntent.PROMOTE,
-            descriptor=SimpleNamespace(patch_id="P1"),
+            descriptor=SimpleNamespace(patch_id="P1", engine="llamacpp"),
             composition=SimpleNamespace(
                 modules=(SimpleNamespace(patch_id="P1", state="untested"),)
             ),
@@ -683,6 +683,7 @@ class GateContractTests(unittest.TestCase):
 
     def test_disposition_gate_maps_authority_coverage(self) -> None:
         base = {
+            "descriptor": SimpleNamespace(engine="llamacpp"),
             "catalog_states": {"P1": "untested"},
             "coverage_report": {
                 "selector": _all_patches_selector_payload(),
@@ -721,6 +722,7 @@ class GateContractTests(unittest.TestCase):
 
     def test_disposition_gate_blocks_malformed_authority_result(self) -> None:
         base = {
+            "descriptor": SimpleNamespace(engine="llamacpp"),
             "catalog_states": {"P1": "untested"},
             "coverage_report": {
                 "selector": _all_patches_selector_payload(),

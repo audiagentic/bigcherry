@@ -614,8 +614,9 @@ class BuildPairOverrideParamsTests(unittest.TestCase):
             extra_patches=(),
             base_ref="HEAD",
             base_repo=None,
-            recipes=None,
-            patches_root=None,
+            engine,
+            recipes,
+            patches_root,
         ):
             resolve_calls.append(
                 {"focal": focal, "extra_patches": tuple(extra_patches)}

@@ -130,7 +130,8 @@ class CarryForwardAuthorityTests(unittest.TestCase):
             return patch_evidence.EvidenceCheck("validated-evidence" if ref == "old" else "missing-or-stale")
 
         with mock.patch.object(patch_evidence, "load_records", return_value=self._records(("old", "a" * 40))):
-            check = catalog._carried_forward("p", failing, "new", None, None, evaluate)
+            check = catalog._carried_forward("p", failing, "new", None, None, evaluate,
+                                             engine="llamacpp", patches_root=None)
         self.assertEqual(check.status, "carried-forward")
         self.assertIn("old", check.problems[0])
         self.assertEqual(seen, ["old"])
@@ -142,6 +143,7 @@ class CarryForwardAuthorityTests(unittest.TestCase):
             check = catalog._carried_forward(
                 "p", failing, "new", None, None,
                 lambda pid, ref, rev: patch_evidence.EvidenceCheck("missing-or-stale"),
+                engine="llamacpp", patches_root=None,
             )
         self.assertIs(check, failing)
 
@@ -154,6 +156,7 @@ class CarryForwardAuthorityTests(unittest.TestCase):
                 "p", failing, "moving", "b" * 40, None,
                 lambda pid, ref, rev: patch_evidence.EvidenceCheck(
                     "validated-evidence" if rev == "a" * 40 else "missing-or-stale"),
+                engine="llamacpp", patches_root=None,
             )
         self.assertEqual(check.status, "carried-forward")
 

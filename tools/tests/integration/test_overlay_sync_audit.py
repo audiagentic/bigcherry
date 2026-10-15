@@ -31,7 +31,7 @@ def _make_overlay_and_checkout(tmp_path: Path):
 
 def _audit_overlay_sync(monkeypatch, overlay: Path, checkout: Path, cuda: Path):
     monkeypatch.setattr(paths, "SRC_OVERLAY", overlay)
-    ctx = source_audit.AuditContext(
+    ctx = source_audit.AuditContext(engine="llamacpp",
         root=checkout, cuda=cuda, instances=cuda / "template-instances")
     source_audit.check_overlay_sync(ctx)
     return ctx.results

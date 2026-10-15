@@ -11,6 +11,7 @@ from pathlib import Path
 from .executor import ExecutionHandle, ExecutorControl
 from .local import LocalExecutor
 from .remote import request_from_dict
+from ..core import engines
 from ..core.context import ProjectContext
 
 
@@ -58,7 +59,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("action", choices=("submit", "correlate", "status", "cancel", "control", "allocation", "events", "capabilities"))
     parser.add_argument("--root", type=Path, default=None)
     args = parser.parse_args(argv)
-    root = args.root or Path(os.environ.get("BIGCHERRY_JOBS_WORK_ROOT") or ProjectContext.resolve(engine="llamacpp").work_root / "jobs-worker")
+    root = args.root or Path(os.environ.get("BIGCHERRY_JOBS_WORK_ROOT") or ProjectContext.resolve(engine=engines.LLAMACPP).work_root / "jobs-worker")
     executor = LocalExecutor(root / "local-executor")
     try:
         result = run(args.action, _payload(), executor)

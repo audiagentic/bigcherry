@@ -31,7 +31,7 @@ def _audit_result(tmp_path: Path, header: str):
     cuda = tmp_path / "ggml" / "src" / "ggml-cuda"
     cuda.mkdir(parents=True)
     (cuda / "hip-autotune-types.h").write_text(header, encoding="utf-8")
-    ctx = source_audit.AuditContext(
+    ctx = source_audit.AuditContext(engine="llamacpp",
         root=tmp_path, cuda=cuda, instances=cuda / "template-instances")
     source_audit.check_identity_namespace_separation(ctx)
     return ctx.results
@@ -73,7 +73,7 @@ def _mmq_context(tmp_path: Path):
     cuda = tmp_path / "ggml" / "src" / "ggml-cuda"
     instances = cuda / "template-instances"
     instances.mkdir(parents=True)
-    return source_audit.AuditContext(root=tmp_path, cuda=cuda, instances=instances)
+    return source_audit.AuditContext(engine="llamacpp", root=tmp_path, cuda=cuda, instances=instances)
 
 
 def _by_id(ctx, check_id: str):

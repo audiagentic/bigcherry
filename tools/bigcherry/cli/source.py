@@ -26,7 +26,7 @@ def _run(
 
 def cmd_audit(args: Namespace) -> int:
     root = paths.llama_root(args.llama_root)
-    report = source_audit.audit(root)
+    report = source_audit.audit(root, engine=args.engine)
     report["strict"] = args.strict
     out = paths.artifact_dir(report["source_revision"]) / "source-audit.json"
     out.parent.mkdir(parents=True, exist_ok=True)

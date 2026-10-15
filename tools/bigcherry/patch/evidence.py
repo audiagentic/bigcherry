@@ -371,7 +371,14 @@ def _validate_build_identity(value: object, *, field: str) -> dict[str, object]:
     return result
 
 
-def evidence_path(patch_id: str, *, root: Path | None = None) -> Path:
+def _module_patches_root(module: patchset.PatchModule) -> Path:
+    """The catalog root a module was discovered under; evidence lookups need it explicitly."""
+    if module.catalog_root is None:
+        raise ValidationEvidenceError(f"patch module {module.patch_id} carries no catalog_root")
+    return module.catalog_root
+
+
+def evidence_path(patch_id: str, *, engine: str, patches_root: Path, root: Path | None = None) -> Path:
     if root is not None:
         return Path(root) / f"{patch_id}.json"
     # Package-local evidence follows the patch's own identity. Legacy flat
@@ -379,14 +386,14 @@ def evidence_path(patch_id: str, *, root: Path | None = None) -> Path:
     # migrated; the production tree is package-only after PA18.
     try:
         from . import registry as patch_registry
-        descriptor = patch_registry.load_registry("llamacpp", paths.PATCHES).get(patch_id)
+        descriptor = patch_registry.load_registry(engine, patches_root).get(patch_id)
     except (OSError, ValueError, KeyError):
         descriptor = None
     if descriptor is not None and descriptor.package_root is not None:
         return (
-            paths.PATCHES / descriptor.package_root / "evidence" / "validation.json"
+            patches_root / descriptor.package_root / "evidence" / "validation.json"
         )
-    return paths.PATCHES / "_validation" / f"{patch_id}.json"
+    return patches_root / "_validation" / f"{patch_id}.json"
 
 
 # PA36-F step 4: generic, patch/RD-agnostic campaign artifacts every
@@ -715,22 +722,22 @@ def verify_framework_configuration_patch(
     descriptor = None
     try:
         from . import registry as patch_registry
-        descriptor = patch_registry.load_registry("llamacpp", module.catalog_root or paths.PATCHES).get(module.patch_id)
+        descriptor = patch_registry.load_registry(module.engine, _module_patches_root(module)).get(module.patch_id)
     except Exception as exc:
         return EvidenceCheck("missing-or-stale", (f"cannot load packaged descriptor: {exc}",))
-    records = poolable_records(module.patch_id, root=root)
+    records = poolable_records(module.patch_id, engine=module.engine, patches_root=_module_patches_root(module), root=root)
     qualifying: list[dict[str, object]] = []
     stale: list[str] = []
     try:
         from bigcherry.core import config
         from bigcherry.campaign import resolution
-        catalog_root = module.catalog_root or paths.PATCHES
+        catalog_root = _module_patches_root(module)
         cfg = config.load(paths.RECIPES)
-        lane = resolution.resolve_lane("llamacpp", 
-            "bigcherry-qualification-tuning", cfg, patchset.catalog("llamacpp", directory=catalog_root)
+        lane = resolution.resolve_lane(module.engine, 
+            "bigcherry-qualification-tuning", cfg, patchset.catalog(module.engine, directory=catalog_root)
         )
-        resolved = patchset.resolve_exact("llamacpp", tuple(lane.patch_set.module_ids), directory=catalog_root)
-        registry = patch_registry.load_registry("llamacpp", catalog_root)
+        resolved = patchset.resolve_exact(module.engine, tuple(lane.patch_set.module_ids), directory=catalog_root)
+        registry = patch_registry.load_registry(module.engine, catalog_root)
         composition = tuple((member.patch_id, registry.get(member.patch_id).implementation_digest)
                             for member in resolved.modules)
         from . import source as patch_source
@@ -762,7 +769,7 @@ def verify_framework_configuration_patch(
         return EvidenceCheck("framework-configuration-evidence", campaign_digests=tuple(
             sorted(str(r.get("campaign_identity_digest", "")) for r in qualifying)
         ))
-    if allow_legacy_grandfather and _legacy_hashes(root).get(module.patch_id) == module.content_hash:
+    if allow_legacy_grandfather and _legacy_hashes(root, patches_root=_module_patches_root(module)).get(module.patch_id) == module.content_hash:
         return EvidenceCheck("legacy-grandfathered")
     return EvidenceCheck("missing-or-stale", tuple(stale or ("no current framework configuration evidence",)))
 
@@ -992,10 +999,10 @@ def make_record(
     return result
 
 
-def write_record(record: Mapping[str, object], *, root: Path | None = None) -> Path:
+def write_record(record: Mapping[str, object], *, engine: str, patches_root: Path, root: Path | None = None) -> Path:
     patch_id = _require_string(record.get("patch_id"), "patch_id")
     campaign_digest = _require_hex(record.get("campaign_identity_digest"), "campaign_identity_digest", (64,))
-    path = evidence_path(patch_id, root=root)
+    path = evidence_path(patch_id, engine=engine, patches_root=patches_root, root=root)
 
     if path.is_file():
         try:
@@ -1080,8 +1087,8 @@ def write_record(record: Mapping[str, object], *, root: Path | None = None) -> P
     return path
 
 
-def load_records(patch_id: str, *, root: Path | None = None) -> tuple[dict[str, object], ...]:
-    path = evidence_path(patch_id, root=root)
+def load_records(patch_id: str, *, engine: str, patches_root: Path, root: Path | None = None) -> tuple[dict[str, object], ...]:
+    path = evidence_path(patch_id, engine=engine, patches_root=patches_root, root=root)
     if not path.is_file():
         return ()
     try:
@@ -1100,14 +1107,14 @@ def load_records(patch_id: str, *, root: Path | None = None) -> tuple[dict[str, 
 WITHDRAWALS_FILE = "withdrawn.json"
 
 
-def withdrawn_digests(patch_id: str, *, root: Path | None = None) -> frozenset[str]:
+def withdrawn_digests(patch_id: str, *, engine: str, patches_root: Path, root: Path | None = None) -> frozenset[str]:
     """Record digests withdrawn from session pooling.
 
     Evidence stays append-only: a withdrawn record is kept in the evidence
     file as history, and ``withdrawn.json`` beside it names its
     ``record_digest`` with the reason (e.g. measured while another GPU job ran
     concurrently). Only session aggregation skips it."""
-    path = evidence_path(patch_id, root=root).parent / WITHDRAWALS_FILE
+    path = evidence_path(patch_id, engine=engine, patches_root=patches_root, root=root).parent / WITHDRAWALS_FILE
     if not path.is_file():
         return frozenset()
     try:
@@ -1123,7 +1130,7 @@ def withdrawn_digests(patch_id: str, *, root: Path | None = None) -> frozenset[s
     return frozenset(row["record_digest"] for row in rows)
 
 
-def poolable_records(patch_id: str, *, root: Path | None = None) -> tuple[dict[str, object], ...]:
+def poolable_records(patch_id: str, *, engine: str, patches_root: Path, root: Path | None = None) -> tuple[dict[str, object], ...]:
     """Evidence records eligible for session pooling (withdrawn ones excluded).
 
     GPT review req_6c90e1ebba83464a: a withdrawn digest that names no real
@@ -1131,12 +1138,12 @@ def poolable_records(patch_id: str, *, root: Path | None = None) -> tuple[dict[s
     be silently accepted -- it withdrew nothing, while the record the caller
     actually meant to exclude stayed poolable. Every withdrawn digest must
     name a record that exists in this patch's own evidence file."""
-    records = load_records(patch_id, root=root)
+    records = load_records(patch_id, engine=engine, patches_root=patches_root, root=root)
     present = {r.get("record_digest") for r in records}
-    withdrawn = withdrawn_digests(patch_id, root=root)
+    withdrawn = withdrawn_digests(patch_id, engine=engine, patches_root=patches_root, root=root)
     unknown = withdrawn - present
     if unknown:
-        path = evidence_path(patch_id, root=root).parent / WITHDRAWALS_FILE
+        path = evidence_path(patch_id, engine=engine, patches_root=patches_root, root=root).parent / WITHDRAWALS_FILE
         raise ValidationEvidenceError(
             f"{path}: withdraws digest(s) {sorted(unknown)!r} not present in {patch_id}'s evidence"
         )
@@ -1527,8 +1534,8 @@ def _record_qualifies_for_deferred_hardware(
     return (not problems, tuple(problems))
 
 
-def _legacy_hashes(root: Path | None) -> dict[str, str]:
-    path = Path(root or paths.PATCHES / "_validation") / "legacy-baseline.json"
+def _legacy_hashes(root: Path | None, *, patches_root: Path) -> dict[str, str]:
+    path = Path(root or patches_root / "_validation") / "legacy-baseline.json"
     if not path.is_file():
         return {}
     try:
@@ -1573,7 +1580,7 @@ def _resolve_contract_identities(
     from . import registry as patch_registry
 
     try:
-        registry = patch_registry.load_registry("llamacpp", module.catalog_root or paths.PATCHES)
+        registry = patch_registry.load_registry(module.engine, _module_patches_root(module))
         descriptor = registry.get(module.patch_id)
     except (OSError, KeyError, patch_registry.PatchRegistryError):
         return validation_digest, contracts
@@ -1614,7 +1621,7 @@ def verify_validated_patch(
     qualifying: list[dict[str, object]] = []
     stale: list[str] = []
 
-    for record in poolable_records(module.patch_id, root=root):
+    for record in poolable_records(module.patch_id, engine=module.engine, patches_root=_module_patches_root(module), root=root):
         ok, why = _record_qualifies(
             record, module=module, pinned_ref=pinned_ref, subject_digest=subject_digest,
             resolved_base_revision=resolved_base_revision,
@@ -1652,7 +1659,7 @@ def verify_validated_patch(
         return EvidenceCheck("profile-evidence")
 
     if allow_legacy_grandfather:
-        legacy = _legacy_hashes(root)
+        legacy = _legacy_hashes(root, patches_root=_module_patches_root(module))
         if legacy.get(module.patch_id) == module.content_hash:
             return EvidenceCheck("legacy-grandfathered")
 
@@ -1683,7 +1690,7 @@ def verify_ported_benched_patch(
     validation_digest, contracts = _resolve_contract_identities(module)
     qualifying: list[dict[str, object]] = []
     stale: list[str] = []
-    for record in poolable_records(module.patch_id, root=root):
+    for record in poolable_records(module.patch_id, engine=module.engine, patches_root=_module_patches_root(module), root=root):
         ok, why = _record_qualifies_for_benched(
             record, module=module, pinned_ref=pinned_ref, subject_digest=subject_digest,
             resolved_base_revision=resolved_base_revision, validation_digest=validation_digest,
@@ -1718,7 +1725,7 @@ def verify_deferred_hardware_patch(
     subject_digest = patch_validation_subject_digest(module.path)
     qualifying: list[dict[str, object]] = []
     stale: list[str] = []
-    for record in poolable_records(module.patch_id, root=root):
+    for record in poolable_records(module.patch_id, engine=module.engine, patches_root=_module_patches_root(module), root=root):
         ok, why = _record_qualifies_for_deferred_hardware(
             record, module=module, pinned_ref=pinned_ref, subject_digest=subject_digest,
             resolved_base_revision=resolved_base_revision,
@@ -1739,14 +1746,14 @@ def verify_deferred_hardware_patch(
     return EvidenceCheck("missing-or-stale", tuple(problems))
 
 
-def generate_legacy_baseline(*, root: Path | None = None) -> Path:
+def generate_legacy_baseline(*, engine: str, patches_root: Path, root: Path | None = None) -> Path:
     """One-time migration snapshot: every currently-STATE='validated' patch's
     exact content hash, as project history already accepted it pre-HI83.
     This does NOT claim those patches have HI82 hardware evidence -- it only
     prevents HI83 from retroactively invalidating the whole existing
     validated baseline the moment it lands. Editing any grandfathered patch
     by even one byte immediately requires real HI83 evidence."""
-    modules = patchset.catalog("llamacpp")
+    modules = patchset.catalog(engine, directory=patches_root)
     payload = {
         "schema_version": LEGACY_SCHEMA_VERSION,
         "contract": LEGACY_CONTRACT,
@@ -1755,6 +1762,6 @@ def generate_legacy_baseline(*, root: Path | None = None) -> Path:
             for module in modules if module.state == "validated"
         },
     }
-    output = Path(root or paths.PATCHES / "_validation") / "legacy-baseline.json"
+    output = Path(root or patches_root / "_validation") / "legacy-baseline.json"
     _atomic_json(output, payload)
     return output

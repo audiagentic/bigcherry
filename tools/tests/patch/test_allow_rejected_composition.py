@@ -22,7 +22,10 @@ class AllowRejectedCompositionTests(unittest.TestCase):
 
     def _resolve(self, **kwargs):
         return psi.resolve_source_composition(
-            "bigcherry-tuning", base_ref=self.base_ref, base_repo=LLAMA_CPP_SRC, **kwargs
+            "bigcherry-tuning", base_ref=self.base_ref, base_repo=LLAMA_CPP_SRC, **kwargs,
+            engine="llamacpp",
+            patches_root=paths.PATCHES,
+            recipes=paths.RECIPES,
         )
 
     def test_named_rejected_focal_needs_the_flag(self) -> None:
