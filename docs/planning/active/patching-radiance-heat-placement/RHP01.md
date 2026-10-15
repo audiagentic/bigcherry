@@ -88,7 +88,7 @@ Reconcile \`issued = credited + dropped + pending\` after all known GPU events s
 
 ### Offline fixtures / probes
 
-Use \`tools/lab/radiance/heat-placement/heat_mock.py::Collector\`: delayed completion; out-of-order completion; ring wrap before completion; already-completed bank overwritten; same-step duplicates; steps marked complete only after the source step is finished; shutdown accounting. Extend with variable 1/8/64/1024/4096 rows and dynamic bank size; record observed counts independent from calculated heat.
+Use \`tools/lab/radiance/heat-placement/heat_mock.mjs::Collector\`: delayed completion; out-of-order completion; ring wrap before completion; already-completed bank overwritten; same-step duplicates; steps marked complete only after the source step is finished; shutdown accounting. Extend with variable 1/8/64/1024/4096 rows and dynamic bank size; record observed counts independent from calculated heat.
 
 ### Hardware scripts, measurement and exit gate
 
