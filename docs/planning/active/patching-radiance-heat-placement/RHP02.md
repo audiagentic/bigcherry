@@ -62,7 +62,7 @@ Depends on RHP01 and merged/verified RAD09. Does not implement ownership migrati
 
 ### ABI: proposed, NOT implemented
 
-\`\`\`cpp
+```cpp
 // abi/rad_moe_heat.h, versioned opt-in observer, no ownership mutations.
 typedef struct RadMoeHeatRowV1 {
     uint32_t abi_version;       // 1; struct_size checked before every callback
@@ -75,27 +75,27 @@ typedef struct RadMoeHeatRowV1 {
 } RadMoeHeatRowV1;
 typedef void (*RadMoeHeatObserverV1)(void*, const RadMoeHeatRowV1*);
 void rad_moe_heat_set_observer_v1(void* context, RadMoeHeatObserverV1 fn);
-\`\`\`
+```
 
-This is a design sketch; verify ABI and registry/layout conventions in pinned Radiance before choosing the header location. \`count[e]\` uses model-global expert \`e\`, not \`slot_of_expert[e]\` nor helper-local packed IDs. Distinguish *histogram report phase* from row count: a mixed batch may contain both prefill/decode tokens; if the existing row aggregates across both, mark \`phase=mixed\` rather than inventing a split. A true per-phase split is a separately measured API enhancement, not a guessed label. Same for speculative draft reports.
+This is a design sketch; verify ABI and registry/layout conventions in pinned Radiance before choosing the header location. `count[e]` uses model-global expert `e`, not `slot_of_expert[e]` nor helper-local packed IDs. Distinguish *histogram report phase* from row count: a mixed batch may contain both prefill/decode tokens; if the existing row aggregates across both, mark `phase=mixed` rather than inventing a split. A true per-phase split is a separately measured API enhancement, not a guessed label. Same for speculative draft reports.
 
 ### Registration / ownership / lifetime
 
-- Register the callback at engine/plugin initialization through the existing explicit \`rad0002\` ABI wiring; use fixed \`abi_version/struct_size\`, no implicit symbol lookup or default-on behavior.
-- The engine retains ownership of the histogram bank. Callback has **no right** to retain \`counts\` pointer after return.
+- Register the callback at engine/plugin initialization through the existing explicit `rad0002` ABI wiring; use fixed `abi_version/struct_size`, no implicit symbol lookup or default-on behavior.
+- The engine retains ownership of the histogram bank. Callback has **no right** to retain `counts` pointer after return.
 - Implement a fixed-capacity SPSC CPU ring per engine rank, or copy/accumulate bounded compact host data in a preallocated per-rank window. For each callback, O(n_expert) copying might be required; measure versus existing dense HeatEngine pass; avoid allocation and system calls.
-- Release/acquire publication from callback to CPU worker. Consumer thread may be behind and coalesce only **mathematically equivalent** reports; never reorder decayed-LFU updates or count the same MTP report twice. Queue overflow increments shared \`lost_observation\`, reduces confidence, and disables replacement when coverage insufficient.
+- Release/acquire publication from callback to CPU worker. Consumer thread may be behind and coalesce only **mathematically equivalent** reports; never reorder decayed-LFU updates or count the same MTP report twice. Queue overflow increments shared `lost_observation`, reduces confidence, and disables replacement when coverage insufficient.
 - Callback failures, unsupported ABI or helper absence leave Radiance heat/residency unchanged and suppress only new ownership planning. Do not call a C++ exception through C ABI.
-- \`HeatEngine::enabled()==false\`: RHP02 can drain route evidence independently of promotion; no dummy movable weights and no forced \`HeatEngine::step()\` calls. In deterministic mode read-only diagnostics may be enabled explicitly, but adaptation must remain off.
+- `HeatEngine::enabled()==false`: RHP02 can drain route evidence independently of promotion; no dummy movable weights and no forced `HeatEngine::step()` calls. In deterministic mode read-only diagnostics may be enabled explicitly, but adaptation must remain off.
 
 ### Parity fixture
 
-For every matched tuple \`(rank,step,layer,model-global expert)\`, compare source count and report multiplicity to the legacy \`R3_MOE_HELPER_HISTOGRAM\` diagnostic. If the old histogram is cumulative rather than step-scoped, compare exact sums over an identical known-complete window and report the difference in coverage. Count a route only once across mirrored TP ranks; don't erroneously halve partitioned tensors. Protected experts must appear in **routing evidence** even though never remote-eligible.
+For every matched tuple `(rank,step,layer,model-global expert)`, compare source count and report multiplicity to the legacy `R3_MOE_HELPER_HISTOGRAM` diagnostic. If the old histogram is cumulative rather than step-scoped, compare exact sums over an identical known-complete window and report the difference in coverage. Count a route only once across mirrored TP ranks; don't erroneously halve partitioned tensors. Protected experts must appear in **routing evidence** even though never remote-eligible.
 
 ### Patch-engine mechanics and placement
 
-Keep engine package separate from libr3 component modifications. Use exact code-line anchors in \`patch.py\` and \`PIN_BLOBS\` in \`tools/tests/patch/test_radiance_patch_packages.py\`; the patch matcher strips comments. If extending \`rad0002\`, do so in a single cohesive package after merging \`RAD09\`; otherwise choose next free \`radNNNN\`, never assume 0004 is unused. Component source builds only when new ABI header exists, with no legacy callback shim.
+Keep engine package separate from libr3 component modifications. Use exact code-line anchors in `patch.py` and `PIN_BLOBS` in `tools/tests/patch/test_radiance_patch_packages.py`; the patch matcher strips comments. If extending `rad0002`, do so in a single cohesive package after merging `RAD09`; otherwise choose next free `radNNNN`, never assume 0004 is unused. Component source builds only when new ABI header exists, with no legacy callback shim.
 
 ### Gate
 
-Offline tests: ABI mismatch, null observer, early unregister, borrowed-pointer lifetime, no histogram after helper init, phase=mixed, MTP reports >1, dropped event and deterministic/all-VRAM. Hardware: parity across full 32K prefill, four-doc KL unchanged, no extra GPU-side counter or D2H copy and no blocking in critical path. Remove \`R3_MOE_HELPER_HISTOGRAM\` and \`R3_MOE_HELPER_HEAT\` only when full parity passes.
+Offline tests: ABI mismatch, null observer, early unregister, borrowed-pointer lifetime, no histogram after helper init, phase=mixed, MTP reports >1, dropped event and deterministic/all-VRAM. Hardware: parity across full 32K prefill, four-doc KL unchanged, no extra GPU-side counter or D2H copy and no blocking in critical path. Remove `R3_MOE_HELPER_HISTOGRAM` and `R3_MOE_HELPER_HEAT` only when full parity passes.
