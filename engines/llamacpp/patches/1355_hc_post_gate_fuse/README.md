@@ -74,3 +74,10 @@ With `BIGCHERRY_HC_POST_GATE_FUSE=0` the gate runs as the separate SCALE, SIGMOI
 b11474 emits for this graph, feeding the composed 1313/1344 consumer, on the same binary. The off arm is therefore
 the unfused behaviour for the code this patch changes; the rest of the build is the BigCherry production baseline in
 both arms.
+
+
+## Future pin gate: upstream #30602 (BCOP235, 2026-10-15)
+
+Upstream [#30602](https://github.com/ggml-org/llama.cpp/pull/30602) is open/unmerged at audit and independently proposes the same CUDA four-node HC_POST gate fusion. **Do not stack it on validated 1355 or transfer its RTX Pro 6000 ~3% claim to AMD.** Its changed `dsv4-hc.cuh` declaration collides with 1355's exact anchor, and its `ggml_cuda_try_fuse` matcher duplicates 1355. Upstream supports only zero-bias gates in a flat 1-D kernel; 1355 supports both biases in a 3-D no-divide grid. `BIGCHERRY_HC_POST_GATE_FUSE=0` remains the current-pin 1313+1344 control.
+
+When #30602 reaches the actual pin, QFP35/BCOP235 owns **one** composition, route, graph-lifetime, numerical and no-regression gate: either retain 1355 without the native duplicate or adapt 1344 to native gated/ungated HC_POST and retire 1355 only after qualified gfx1100/gfx1201/gfx1030 evidence. No second fusion package or immediate hardware queue.
