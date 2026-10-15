@@ -42,6 +42,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from bigcherry.build.builds import capture_completed_build_evidence
+from bigcherry.core import engines as bc_engines, paths as bc_paths
 from bigcherry.core.context import ProjectContext
 from bigcherry.core.paths import REPO_ROOT
 from bigcherry.patch.activation import (
@@ -133,6 +134,9 @@ def _materialize_framework_source(args: argparse.Namespace, descriptor, cfg) -> 
         focal=None,
         base_ref=cfg.pinned,
         base_repo=base_repo,
+        engine=bc_engines.LLAMACPP,
+        patches_root=bc_paths.PATCHES,
+        recipes=bc_paths.RECIPES,
     )
     if (descriptor.patch_id, descriptor.implementation_digest) not in composition:
         raise PatchCampaignError(
@@ -145,6 +149,8 @@ def _materialize_framework_source(args: argparse.Namespace, descriptor, cfg) -> 
         composition=composition,
         overlay_root=psi.OVERLAY_ROOT,
         requested_revision=cfg.pinned,
+        engine=bc_engines.LLAMACPP,
+        patches_root=bc_paths.PATCHES,
     )
     idempotent = psi.verify_composition_idempotent(
         base_repo=base_repo,
@@ -154,6 +160,8 @@ def _materialize_framework_source(args: argparse.Namespace, descriptor, cfg) -> 
         composition=composition,
         overlay_root=psi.OVERLAY_ROOT,
         requested_revision=cfg.pinned,
+        engine=bc_engines.LLAMACPP,
+        patches_root=bc_paths.PATCHES,
     )
     if not idempotent:
         raise PatchCampaignError("framework composition did not reapply idempotently")
@@ -559,7 +567,7 @@ def _prepare_standard_campaign(args: argparse.Namespace, st: SimpleNamespace) ->
     )
 
     # Hoisted: HI83's evidence record (below) needs the same values.
-    patch_digest = psi.patch_implementation_digest(args.patch)
+    patch_digest = psi.patch_implementation_digest(args.patch, engine=bc_engines.LLAMACPP, patches_root=bc_paths.PATCHES)
     control_source_tree = psi.git_worktree_tree(control_src)
     patched_source_tree = psi.git_worktree_tree(patched_src)
 

@@ -19,6 +19,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from bigcherry.core.paths import REPO_ROOT
+from bigcherry.core import engines as bc_engines, paths as bc_paths
 from bigcherry.experiment.attestation import ExecutionIdentity
 from bigcherry.patch.campaign.benchmark import run_paired_llama_benchmark
 from bigcherry.patch.campaign.build import (
@@ -322,23 +323,35 @@ def run_patch1000_verification(
         "llama-native",
         base_ref=base_revision,
         base_repo=LLAMA_CPP_SRC,
+        engine=bc_engines.LLAMACPP,
+        patches_root=bc_paths.PATCHES,
+        recipes=bc_paths.RECIPES,
     )
     control_revision, control_composition = psi.resolve_source_composition(
         "llama-native",
         extra_patches=serving_core_ids,
         base_ref=base_revision,
         base_repo=LLAMA_CPP_SRC,
+        engine=bc_engines.LLAMACPP,
+        patches_root=bc_paths.PATCHES,
+        recipes=bc_paths.RECIPES,
     )
     subject_revision, subject_composition = psi.resolve_source_composition(
         "llama-native",
         extra_patches=(*serving_core_ids, _PATCH1000_ID),
         base_ref=base_revision,
         base_repo=LLAMA_CPP_SRC,
+        engine=bc_engines.LLAMACPP,
+        patches_root=bc_paths.PATCHES,
+        recipes=bc_paths.RECIPES,
     )
     production_revision, production_composition = psi.resolve_source_composition(
         "bigcherry-serving-base",
         base_ref=base_revision,
         base_repo=LLAMA_CPP_SRC,
+        engine=bc_engines.LLAMACPP,
+        patches_root=bc_paths.PATCHES,
+        recipes=bc_paths.RECIPES,
     )
 
     revisions = {
@@ -367,6 +380,8 @@ def run_patch1000_verification(
         composition=stock_composition,
         overlay_root=None,
         requested_revision=base_revision,
+        engine=bc_engines.LLAMACPP,
+        patches_root=bc_paths.PATCHES,
     )
     control_src = psi.materialize_composition(
         base_repo=LLAMA_CPP_SRC,
@@ -375,6 +390,8 @@ def run_patch1000_verification(
         composition=control_composition,
         overlay_root=psi.OVERLAY_ROOT,
         requested_revision=base_revision,
+        engine=bc_engines.LLAMACPP,
+        patches_root=bc_paths.PATCHES,
     )
     subject_src = psi.materialize_composition(
         base_repo=LLAMA_CPP_SRC,
@@ -383,6 +400,8 @@ def run_patch1000_verification(
         composition=subject_composition,
         overlay_root=psi.OVERLAY_ROOT,
         requested_revision=base_revision,
+        engine=bc_engines.LLAMACPP,
+        patches_root=bc_paths.PATCHES,
     )
 
     # Load-bearing PA35 rule: these builds are outside the per-device loop.

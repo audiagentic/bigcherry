@@ -89,12 +89,9 @@ class MaterializationTests(unittest.TestCase):
         self.worktrees = self.base / "worktrees"
         self.patches_root = self.base / "patches"
         self.patches_root.mkdir()
-        self._old_patches_root = psi.PATCHES_ROOT
-        psi.PATCHES_ROOT = self.patches_root
 
     def tearDown(self) -> None:
         _git(self.upstream, "worktree", "prune")
-        psi.PATCHES_ROOT = self._old_patches_root
 
     def _flat(self, patch_id: str = "0001_flat", state: str = "untested") -> None:
         text = FLAT_PATCH_PY if state == "untested" else FLAT_PATCH_PY_VALIDATED
@@ -128,6 +125,8 @@ class MaterializationTests(unittest.TestCase):
             base_repo=self.upstream, worktree_root=self.worktrees,
             resolved_revision=resolved or self.base_rev,
             composition=self._composition(*patch_ids),
+            engine="llamacpp",
+            patches_root=self.patches_root,
         )
 
     def test_legacy_materialization(self) -> None:
@@ -374,6 +373,8 @@ class Rv80AcceptanceTests(MaterializationTests):
             base_repo=self.upstream, worktree_root=self.worktrees,
             resolved_revision=self.base_rev, composition=self._composition("0001_flat"),
             overlay_root=overlay,
+            engine="llamacpp",
+            patches_root=self.patches_root,
         )
         self.assertEqual((first / "src" / "extra" / "new.cpp").read_text(encoding="utf-8"), "v1\n")
         (overlay / "src" / "extra" / "new.cpp").write_text("v2\n", encoding="utf-8")
@@ -381,6 +382,8 @@ class Rv80AcceptanceTests(MaterializationTests):
             base_repo=self.upstream, worktree_root=self.worktrees,
             resolved_revision=self.base_rev, composition=self._composition("0001_flat"),
             overlay_root=overlay,
+            engine="llamacpp",
+            patches_root=self.patches_root,
         )
         self.assertNotEqual(first, second)
         self.assertEqual((second / "src" / "extra" / "new.cpp").read_text(encoding="utf-8"), "v2\n")
@@ -412,6 +415,8 @@ class Rv80AcceptanceTests(MaterializationTests):
                         resolved_revision=self.base_rev,
                         composition=self._composition("0001_flat"),
                         overlay_root=overlay,
+                        engine="llamacpp",
+                        patches_root=self.patches_root,
                     )
             except OSError:
                 self.skipTest("symlink creation not permitted in this environment")
@@ -442,8 +447,10 @@ class Rv80AcceptanceTests(MaterializationTests):
         psi._add_worktree(self.upstream, source_dir, self.base_rev)
         with self.assertRaisesRegex(psi.PatchSourceIsolationError, "overlay file set changed"):
             psi._apply_composition(
-                source_dir, composition, overlay_root=overlay, root=self.patches_root,
+                source_dir, composition, overlay_root=overlay,
                 expected_overlay_digest=identity["overlay_digest"],
+                engine="llamacpp",
+                patches_root=self.patches_root,
             )
 
     # 3. Patch implementation change -> new identity (composition entry
@@ -491,11 +498,15 @@ class Rv80AcceptanceTests(MaterializationTests):
             base_repo=self.upstream, worktree_root=self.worktrees,
             resolved_revision=sha_v1, composition=self._composition("0001_flat"),
             requested_revision="pin",
+            engine="llamacpp",
+            patches_root=self.patches_root,
         )
         second = psi.materialize_composition(
             base_repo=self.upstream, worktree_root=self.worktrees,
             resolved_revision=sha_v2, composition=self._composition("0001_flat"),
             requested_revision="pin",
+            engine="llamacpp",
+            patches_root=self.patches_root,
         )
         self.assertNotEqual(first, second)
         # The requested ref is manifest-info only, NOT the hashed payload:
@@ -505,6 +516,8 @@ class Rv80AcceptanceTests(MaterializationTests):
             base_repo=self.upstream, worktree_root=self.worktrees,
             resolved_revision=sha_v1, composition=self._composition("0001_flat"),
             requested_revision="HEAD",
+            engine="llamacpp",
+            patches_root=self.patches_root,
         )
         self.assertEqual(third, first)
 
@@ -516,6 +529,8 @@ class Rv80AcceptanceTests(MaterializationTests):
         source = psi.materialize_composition(
             base_repo=self.upstream, worktree_root=self.worktrees,
             resolved_revision=self.base_rev, composition=composition,
+            engine="llamacpp",
+            patches_root=self.patches_root,
         )
         (self.patches_root / "0001_flat.py").write_text(
             FLAT_PATCH_PY.replace("MARKER", "MARKER3"), encoding="utf-8"
@@ -523,7 +538,7 @@ class Rv80AcceptanceTests(MaterializationTests):
         # Reuse the SAME directory (same key) with the stale digest:
         # _apply_composition re-hashes and must fail closed.
         with self.assertRaisesRegex(psi.PatchSourceIsolationError, "changed between identity"):
-            psi._apply_composition(source, composition, overlay_root=None, root=self.patches_root)
+            psi._apply_composition(source, composition, overlay_root=None, engine="llamacpp", patches_root=self.patches_root)
 
     # 7. Exact-composition violations fail closed (resolve_exact is the
     #    authoritative validator): unknown ID, missing explicit requires,
@@ -576,10 +591,12 @@ patch-sets = ["framework"]
             psi.resolve_source_composition(
                 "bigcherry", focal="0001_flat", base_ref="HEAD",
                 base_repo=self.upstream, recipes=recipes, patches_root=self.patches_root,
+                engine="llamacpp",
             )
         sha, composition = psi.resolve_source_composition(
             "bigcherry", base_ref="HEAD", base_repo=self.upstream,
             recipes=recipes, patches_root=self.patches_root,
+            engine="llamacpp",
         )
         self.assertEqual(sha, self.base_rev)
         self.assertEqual([pid for pid, _ in composition], ["0001_flat"])
@@ -649,6 +666,8 @@ patch-sets = ["framework"]
                 name="v1", schema_version=1,
                 operations=(("replace", "a.txt", "one", "one"),),
             ),
+            engine="llamacpp",
+            patches_root=self.patches_root,
         )
         b = psi.materialize_source_variant(
             base_repo=self.upstream, worktree_root=self.worktrees,
@@ -657,6 +676,8 @@ patch-sets = ["framework"]
                 name="v1", schema_version=1,
                 operations=(("replace", "a.txt", "two", "two"),),
             ),
+            engine="llamacpp",
+            patches_root=self.patches_root,
         )
         self.assertNotEqual(a, b)
         again = psi.materialize_source_variant(
@@ -666,6 +687,8 @@ patch-sets = ["framework"]
                 name="v1", schema_version=1,
                 operations=(("replace", "a.txt", "one", "one"),),
             ),
+            engine="llamacpp",
+            patches_root=self.patches_root,
         )
         self.assertEqual(again, a)
         manifest = json.loads(psi._manifest_path(a).read_text(encoding="utf-8"))
@@ -708,12 +731,16 @@ patch-sets = ["framework"]
             resolved_revision=self.base_rev, composition=composition,
             variant_name="control", variant_digest="unchanged-label",
             apply_variant=apply_v1,
+            engine="llamacpp",
+            patches_root=self.patches_root,
         )
         second = psi.materialize_source_variant(
             base_repo=self.upstream, worktree_root=self.worktrees,
             resolved_revision=self.base_rev, composition=composition,
             variant_name="control", variant_digest="unchanged-label",
             apply_variant=apply_v2,
+            engine="llamacpp",
+            patches_root=self.patches_root,
         )
         self.assertNotEqual(first, second)
         self.assertEqual((first / "a.txt").read_text(encoding="utf-8"), "control-v1\n")
@@ -724,6 +751,7 @@ patch-sets = ["framework"]
     def test_rv80_stock_identity(self) -> None:
         first = psi.materialize_stock_source(
             base_repo=self.upstream, worktree_root=self.worktrees, base_revision="HEAD",
+            engine="llamacpp", patches_root=self.patches_root,
         )
         manifest = json.loads(psi._manifest_path(first).read_text(encoding="utf-8"))
         self.assertEqual(manifest["schema"], "bigcherry-patch-source-v2")
@@ -733,6 +761,7 @@ patch-sets = ["framework"]
         self.assertEqual((first / "a.txt").read_text(encoding="utf-8"), "one\ntwo\n")
         again = psi.materialize_stock_source(
             base_repo=self.upstream, worktree_root=self.worktrees, base_revision="HEAD",
+            engine="llamacpp", patches_root=self.patches_root,
         )
         self.assertEqual(again, first)
 

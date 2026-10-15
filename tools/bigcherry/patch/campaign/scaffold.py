@@ -7,6 +7,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from bigcherry.core import engines as bc_engines, paths as bc_paths
 from bigcherry.build.builds import (
     capture_completed_build_evidence,
     CompletedBuildEvidence,
@@ -172,6 +173,9 @@ def _materialize_scaffold_sources(
         allow_rejected=allow_rejected,
         base_ref=base_ref,
         base_repo=LLAMA_CPP_SRC,
+        engine=bc_engines.LLAMACPP,
+        patches_root=bc_paths.PATCHES,
+        recipes=bc_paths.RECIPES,
     )
     subject_revision, subject_composition = psi.resolve_source_composition(
         baseline_source,
@@ -180,6 +184,9 @@ def _materialize_scaffold_sources(
         allow_rejected=allow_rejected,
         base_ref=base_ref,
         base_repo=LLAMA_CPP_SRC,
+        engine=bc_engines.LLAMACPP,
+        patches_root=bc_paths.PATCHES,
+        recipes=bc_paths.RECIPES,
     )
     if control_revision != subject_revision:
         raise RuntimeError(
@@ -194,6 +201,8 @@ def _materialize_scaffold_sources(
         composition=control_composition,
         overlay_root=psi.OVERLAY_ROOT,
         requested_revision=base_ref,
+        engine=bc_engines.LLAMACPP,
+        patches_root=bc_paths.PATCHES,
     )
     patched_src = psi.materialize_composition(
         base_repo=LLAMA_CPP_SRC,
@@ -202,6 +211,8 @@ def _materialize_scaffold_sources(
         composition=subject_composition,
         overlay_root=psi.OVERLAY_ROOT,
         requested_revision=base_ref,
+        engine=bc_engines.LLAMACPP,
+        patches_root=bc_paths.PATCHES,
     )
     _print(f"control source: {control_src}")
     _print(f"subject source: {patched_src}")
@@ -213,6 +224,8 @@ def _materialize_scaffold_sources(
         composition=control_composition,
         overlay_root=psi.OVERLAY_ROOT,
         requested_revision=base_ref,
+        engine=bc_engines.LLAMACPP,
+        patches_root=bc_paths.PATCHES,
     )
     subject_idempotent = psi.verify_composition_idempotent(
         base_repo=LLAMA_CPP_SRC,
@@ -222,11 +235,15 @@ def _materialize_scaffold_sources(
         composition=subject_composition,
         overlay_root=psi.OVERLAY_ROOT,
         requested_revision=base_ref,
+        engine=bc_engines.LLAMACPP,
+        patches_root=bc_paths.PATCHES,
     )
     stock_src = psi.materialize_stock_source(
         base_repo=LLAMA_CPP_SRC,
         worktree_root=worktree_root / "stock",
         base_revision=base_revision,
+        engine=bc_engines.LLAMACPP,
+        patches_root=bc_paths.PATCHES,
     )
     _print(f"stock source: {stock_src}")
     if validated:
@@ -237,6 +254,9 @@ def _materialize_scaffold_sources(
             base_ref=base_ref,
             base_repo=LLAMA_CPP_SRC,
             allow_rejected=allow_rejected,
+            engine=bc_engines.LLAMACPP,
+            patches_root=bc_paths.PATCHES,
+            recipes=bc_paths.RECIPES,
         )
         base_src = psi.materialize_composition(
             base_repo=LLAMA_CPP_SRC,
@@ -245,6 +265,8 @@ def _materialize_scaffold_sources(
             composition=base_composition,
             overlay_root=psi.OVERLAY_ROOT,
             requested_revision=base_ref,
+            engine=bc_engines.LLAMACPP,
+            patches_root=bc_paths.PATCHES,
         )
     else:
         base_composition, base_src = control_composition, control_src

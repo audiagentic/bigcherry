@@ -492,7 +492,7 @@ def _dispatch(
         mock.patch.object(campaign_producer, "_build_standard_campaign_scaffold", fake_scaffold),
         mock.patch.object(campaign_producer, "CampaignProducerRuntime", _FakeDispatcherRuntime),
         mock.patch.object(psi, "git_worktree_tree", _fake_tree),
-        mock.patch.object(psi, "patch_implementation_digest", lambda pid: "d" * 64),
+        mock.patch.object(psi, "patch_implementation_digest", lambda pid, **_kw: "d" * 64),
         mock.patch.object(psi, "composition_digest", lambda c: "e" * 64),
         mock.patch.object(campaign_producer, "run_trace_activation_probes", fake_probe),
         mock.patch.object(patch_evidence, "make_record", make_record_recorder),
