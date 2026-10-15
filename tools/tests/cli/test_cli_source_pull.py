@@ -56,28 +56,27 @@ class PullSourceRefResolutionTests(unittest.TestCase):
         work = mock.patch.dict(os.environ, {"BIGCHERRY_WORK_ROOT": str(Path(self._tmp.name) / "work")})
         work.start()
         self.addCleanup(work.stop)
-        self.recipes_path = Path(self._tmp.name) / "recipes.toml"
+        # the recipes file of the engine, where its declaration puts it
+        self.recipes_path = Path(self._tmp.name) / "config" / "recipes.toml"
+        self.recipes_path.parent.mkdir()
         self.recipes_path.write_text(_RECIPES_TOML, encoding="utf-8")
 
     def _args(self, **kwargs):
         # an explicit checkout: REPO_ROOT is patched to a plain temp directory, which has no primary checkout to
         # derive the default vendor location from
-        base = {"llama_root": str(Path(self._tmp.name) / "vendor" / "llama.cpp"), "ref": None, "source": None,
+        base = {"engine": "llamacpp", "llama_root": str(Path(self._tmp.name) / "vendor" / "llama.cpp"), "ref": None, "source": None,
                 "full": False}
         base.update(kwargs)
         return Namespace(**base)
 
     def test_source_with_pinned_ref_resolves_to_cfg_pinned(self):
-        from bigcherry.core import paths as core_paths
-
         resolved_refs = []
 
-        def fake_resolve_ref(ref):
+        def fake_resolve_ref(ref, url):
             resolved_refs.append(ref)
             return ref
 
-        with mock.patch.object(core_paths, "RECIPES", self.recipes_path), \
-                mock.patch("bigcherry.cli.source.pin_release.uncommitted_pin_change", return_value=None), \
+        with mock.patch("bigcherry.cli.source.pin_release.uncommitted_pin_change", return_value=None), \
                 mock.patch("bigcherry.cli.source.pin_transition.committed_state"), \
                 mock.patch("bigcherry.cli.source.paths.REPO_ROOT", Path(self._tmp.name)), \
                 mock.patch("bigcherry.cli.source.upstream.resolve_ref", side_effect=fake_resolve_ref), \
@@ -96,16 +95,13 @@ class PullSourceRefResolutionTests(unittest.TestCase):
         self.assertEqual(resolved_refs, ["b10705"])
 
     def test_source_with_explicit_ref_uses_that_ref_not_the_pin(self):
-        from bigcherry.core import paths as core_paths
-
         resolved_refs = []
 
-        def fake_resolve_ref(ref):
+        def fake_resolve_ref(ref, url):
             resolved_refs.append(ref)
             return ref
 
-        with mock.patch.object(core_paths, "RECIPES", self.recipes_path), \
-                mock.patch("bigcherry.cli.source.pin_release.uncommitted_pin_change", return_value=None), \
+        with mock.patch("bigcherry.cli.source.pin_release.uncommitted_pin_change", return_value=None), \
                 mock.patch("bigcherry.cli.source.pin_transition.committed_state"), \
                 mock.patch("bigcherry.cli.source.paths.REPO_ROOT", Path(self._tmp.name)), \
                 mock.patch("bigcherry.cli.source.upstream.resolve_ref", side_effect=fake_resolve_ref), \
@@ -121,10 +117,7 @@ class PullSourceRefResolutionTests(unittest.TestCase):
         self.assertEqual(resolved_refs, ["b9999"])
 
     def test_unknown_source_fails_closed(self):
-        from bigcherry.core import paths as core_paths
-
-        with mock.patch.object(core_paths, "RECIPES", self.recipes_path), \
-                mock.patch("bigcherry.cli.source.pin_release.uncommitted_pin_change", return_value=None), \
+        with mock.patch("bigcherry.cli.source.pin_release.uncommitted_pin_change", return_value=None), \
                 mock.patch("bigcherry.cli.source.pin_transition.committed_state"), \
                 mock.patch("bigcherry.cli.source.paths.REPO_ROOT", Path(self._tmp.name)):
             rc = cli_source.cmd_pull(self._args(source="not-a-real-source"))

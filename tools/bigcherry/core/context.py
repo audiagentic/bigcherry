@@ -48,6 +48,21 @@ class ProjectContext:
     overlay_root: Path
     patches_root: Path
 
+    @property
+    def layout(self) -> engines.EngineLayout:
+        """The engine's declaration (engines/<name>/engine.toml)."""
+        return engines.load(_DECLARATIONS, self.engine)
+
+    @property
+    def vendor_root(self) -> Path:
+        """The engine's vendor checkout; it belongs to the primary checkout, never to a slice worktree."""
+        return self.layout.vendor_root(paths.primary_root())
+
+    @property
+    def upstream_url(self) -> str:
+        """Where the engine's source is published (the remote ``pull`` clones and release tags are read from)."""
+        return self.layout.upstream
+
     @classmethod
     def resolve(
         cls,

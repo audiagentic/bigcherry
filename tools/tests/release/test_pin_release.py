@@ -12,12 +12,15 @@ from types import SimpleNamespace
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from bigcherry.core import paths  # noqa: E402
 from bigcherry.release import notes as _notes  # noqa: E402
 from bigcherry.release import pin_release as _pr  # noqa: E402
 
 _CONFIG = _notes.ReleaseConfig(
+    engine="llamacpp", upstream_name="llama.cpp",
     tag_prefix="bc-", notes_dir="docs/releases/notes", ledger="ledger.ndjson", release_records="releases",
-    recipes="config/recipes.toml", build_patch_sets=(), fallback_prefixes=(), ledger_sections=(),
+    recipes="config/recipes.toml", patches="engines/llamacpp/patches",
+    build_patch_sets=(), fallback_prefixes=(), ledger_sections=(),
 )
 
 _RELEASE_CONFIG = """\
@@ -50,7 +53,12 @@ class PinReleaseTests(unittest.TestCase):
         _git(root, "config", "user.name", "t")
         (root / "releases").mkdir()
         (root / "releases" / "b11474.json").write_text(json.dumps({"release_tag": "b11474", "notes": ""}), encoding="utf-8")
-        (root / "releases" / "pin-transition.json").write_text("{}", encoding="utf-8")
+        (root / "releases" / "pin-transition-llamacpp.json").write_text("{}", encoding="utf-8")
+        for engine in ("llamacpp", "radiance"):
+            declaration = root / "engines" / engine / "engine.toml"
+            declaration.parent.mkdir(parents=True)
+            declaration.write_text((paths.REPO_ROOT / "engines" / engine / "engine.toml").read_text(encoding="utf-8"),
+                                   encoding="utf-8")
         (root / "release-please-config.json").write_text(_RELEASE_CONFIG, encoding="utf-8")
         (root / ".release-please-manifest.json").write_text(
             json.dumps({"engines/llamacpp": "11402.0.0", ".": "1.1.0"}, indent=2) + "\n", encoding="utf-8")
@@ -60,7 +68,7 @@ class PinReleaseTests(unittest.TestCase):
 
     def _plan(self, root: Path) -> _pr.Plan:
         with mock.patch.object(_notes, "load_config", return_value=_CONFIG):
-            return _pr.make_plan(root, "b11474")
+            return _pr.make_plan(root, "llamacpp", "b11474")
 
     def test_plan_names(self):
         with tempfile.TemporaryDirectory() as td:
@@ -73,10 +81,18 @@ class PinReleaseTests(unittest.TestCase):
             root = self._repo(td)
             with mock.patch.object(_notes, "load_config", return_value=_CONFIG):
                 with self.assertRaises(_pr.PinReleaseError):
-                    _pr.make_plan(root, "v1.2.3")
+                    _pr.make_plan(root, "llamacpp", "v1.2.3")
                 _git(root, "checkout", "-q", "-b", "main")
                 with self.assertRaises(_pr.PinReleaseError):
-                    _pr.make_plan(root, "b11474")
+                    _pr.make_plan(root, "llamacpp", "b11474")
+
+    def test_an_engine_without_a_release_package_is_refused(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = self._repo(td)
+            with self.assertRaisesRegex(_pr.PinReleaseError, "no package 'engines/radiance'"):
+                _pr.make_plan(root, "radiance", "b11474")
+            with self.assertRaises(_pr.PinReleaseError):
+                _pr.run(root, "radiance", "b11474", "", dry_run=True, log=lambda _line: None)
 
     def test_record_needs_evidence_then_records_once(self):
         with tempfile.TemporaryDirectory() as td:
@@ -84,13 +100,13 @@ class PinReleaseTests(unittest.TestCase):
             plan = self._plan(root)
             with self.assertRaises(_pr.PinReleaseError):
                 _pr.phase_record(plan, "VERDICT consistent", "")
-            self.assertTrue((root / "releases" / "pin-transition.json").exists())
+            self.assertTrue((root / "releases" / "pin-transition-llamacpp.json").exists())
             self.assertTrue(_pr.phase_record(plan, "VERDICT consistent", "build b-x: smoke identical"))
             record = json.loads((root / "releases" / "b11474.json").read_text(encoding="utf-8"))
             self.assertIn("release 11474.0.0", record["notes"])
             self.assertIn("VERDICT consistent", record["notes"])
             self.assertIn("build b-x: smoke identical", record["notes"])
-            self.assertFalse((root / "releases" / "pin-transition.json").exists())
+            self.assertFalse((root / "releases" / "pin-transition-llamacpp.json").exists())
             self.assertEqual(_git(root, "status", "--porcelain"), "")
             self.assertIn("bc-11474.0.0 bump complete", _git(root, "log", "-1", "--format=%s"))
             head = _git(root, "rev-parse", "HEAD")
@@ -138,10 +154,10 @@ class PinReleaseTests(unittest.TestCase):
     def test_unpin_removes_release_as_and_is_noop_when_absent(self):
         pinned = _RELEASE_CONFIG.replace(
             '    "engines/llamacpp": {', '    "engines/llamacpp": {\n      "release-as": "11474.0.0",')
-        unpinned, changed = _pr._set_release_as_text(pinned, None, "unpin", expected="11474.0.0")
+        unpinned, changed = _pr._set_release_as_text(pinned, "engines/llamacpp", None, "unpin", expected="11474.0.0")
         self.assertTrue(changed)
         self.assertEqual(unpinned, _RELEASE_CONFIG)
-        again, changed = _pr._set_release_as_text(unpinned, None, "unpin", expected="11474.0.0")
+        again, changed = _pr._set_release_as_text(unpinned, "engines/llamacpp", None, "unpin", expected="11474.0.0")
         self.assertFalse(changed)
         self.assertEqual(again, unpinned)
 
@@ -153,7 +169,7 @@ class PinReleaseTests(unittest.TestCase):
             _git(root, "commit", "-q", "-m", "chore: release notes bc-11474.0.0")
             _git(root, "tag", "bc-11474.0.0")
             with mock.patch.object(_notes, "load_config", return_value=_CONFIG):
-                plan = _pr.make_plan(root, "b11474")
+                plan = _pr.make_plan(root, "llamacpp", "b11474")
             self.assertEqual(plan.version, "11474.0.0")
 
     def test_versions_on_one_pin(self):
@@ -173,7 +189,8 @@ class PinReleaseTests(unittest.TestCase):
 
     def test_main_pushes_only_work_branch_and_opens_or_reuses_pr(self):
         plan = SimpleNamespace(repo_root=Path("/repo"), remote="origin", main="main", branch="work",
-                               llama_tag="b11474", release_tag="bc-11474.0.0", version="11474.0.0")
+                               llama_tag="b11474", release_tag="bc-11474.0.0", version="11474.0.0",
+                               upstream_name="llama.cpp")
         git_calls = []
 
         def fake_git(root, *args, check=True):
@@ -223,7 +240,7 @@ class PinReleaseTests(unittest.TestCase):
 
     def test_unpin_phase_is_noop_when_main_is_already_clear(self):
         plan = SimpleNamespace(repo_root=Path("/repo"), remote="origin", main="main", version="11474.0.0",
-                               release_tag="bc-11474.0.0")
+                               release_tag="bc-11474.0.0", package="engines/llamacpp")
         calls = []
 
         def fake_git(root, *args, check=True):
@@ -272,8 +289,8 @@ class PinReleaseTests(unittest.TestCase):
             config = (root / "release-please-config.json").read_text(encoding="utf-8")
             lines = []
             with mock.patch.object(_notes, "load_config", return_value=_CONFIG):
-                self.assertEqual(_pr.run(root, "b11474", "", through="notes", dry_run=True, log=lines.append), 0)
-            self.assertTrue(any("pin-status --complete --all-remotes" in line for line in lines))
+                self.assertEqual(_pr.run(root, "llamacpp", "b11474", "", through="notes", dry_run=True, log=lines.append), 0)
+            self.assertTrue(any("--engine llamacpp pin-status --complete --all-remotes" in line for line in lines))
             self.assertTrue(any("release-as=11474.0.0" in line for line in lines))
             self.assertEqual(head, _git(root, "rev-parse", "HEAD"))
             self.assertEqual(config, (root / "release-please-config.json").read_text(encoding="utf-8"))

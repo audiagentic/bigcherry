@@ -28,7 +28,7 @@ from typing import Any, Callable
 
 from .. import ARTIFACT_VERSION
 from ..core import csource
-from ..core import paths
+from ..core import engines, paths
 
 # --------------------------------------------------------------------- expected
 
@@ -100,6 +100,8 @@ class AuditContext:
     root: Path
     cuda: Path
     instances: Path
+    #: the engine's tracked overlay (engine.toml layout.overlay), which ``apply`` mirrors onto the checkout
+    overlay_root: Path
     results: list[CheckResult] = field(default_factory=list)
 
     def add(self, result: CheckResult) -> CheckResult:
@@ -466,7 +468,7 @@ def check_identity_namespace_separation(ctx: AuditContext) -> None:
 # ----------------------------------------------------------------- build files
 
 def check_overlay_sync(ctx: AuditContext) -> None:
-    """Detect drift between the tracked overlay (engines/llamacpp/overlay/) and the compiled tree.
+    """Detect drift between the engine's tracked overlay (``ctx.overlay_root``) and the compiled tree.
 
     ``src/`` is this repo's tracked canonical source for files ``apply``
     mirrors onto the checkout (see ``_copy_overlay`` in __main__.py);
@@ -481,7 +483,7 @@ def check_overlay_sync(ctx: AuditContext) -> None:
     BOTH sides with DIFFERENT content is drift -- that means ``apply`` ran at
     some point but the overlay has since moved on without a re-run.
     """
-    overlay_root = paths.SRC_OVERLAY
+    overlay_root = ctx.overlay_root
     if not overlay_root.is_dir():
         ctx.fail("overlay.root_present", f"missing overlay root {overlay_root}")
         return
@@ -539,10 +541,11 @@ def _overlay_plus_applied_patches(engine: str, root: Path, relative: str, source
     from ..patch import registry as patch_registry
 
     compiled = target.read_text(encoding="utf-8")
-    registry = patch_registry.load_registry(engine, paths.patches_root(engine))
+    patches_root = paths.patches_root(engine)
+    registry = patch_registry.load_registry(engine, patches_root)
     texts = {relative: source.read_text(encoding="utf-8")}
     for descriptor in registry.descriptors:
-        for file_patch in patch_registry.load_implementation(engine, descriptor):
+        for file_patch in patch_registry.load_implementation(engine, descriptor, root=patches_root):
             if file_patch.path != relative:
                 continue
             if not all(re.search(e.guard_pattern(), compiled, re.MULTILINE) for e in file_patch.edits):
@@ -780,6 +783,7 @@ def vulkan_audit(root: Path, *, engine: str) -> dict[str, Any]:
         root=root,
         cuda=paths.cuda_dir(root),
         instances=paths.template_instances_dir(root),
+        overlay_root=engines.load(paths.REPO_ROOT, engine).overlay_root(paths.REPO_ROOT),
     )
     vk_dir = paths.vulkan_dir(root)
     if not vk_dir.is_dir():
@@ -816,11 +820,12 @@ def audit(root: Path, *, engine: str) -> dict[str, Any]:
         root=root,
         cuda=paths.cuda_dir(root),
         instances=paths.template_instances_dir(root),
+        overlay_root=engines.load(paths.REPO_ROOT, engine).overlay_root(paths.REPO_ROOT),
     )
     if not ctx.cuda.is_dir():
-        ctx.fail("root.is_llama_checkout",
-                 f"{root} does not look like a llama.cpp checkout "
-                 f"(no ggml/src/ggml-cuda)")
+        ctx.fail("root.is_ggml_cuda_checkout",
+                 f"{root} does not look like a ggml-cuda checkout "
+                 f"(no ggml/src/ggml-cuda); these invariants are the ggml HIP/CUDA ones")
     else:
         for check in ALL_CHECKS:
             check(ctx)
@@ -886,7 +891,11 @@ def main(argv: list[str] | None = None) -> int:
                         help="also print passing checks")
     args = parser.parse_args(argv)
 
-    root = paths.llama_root(args.llama_root)
+    root = (
+        paths.llama_root(args.llama_root)
+        if args.llama_root is not None
+        else engines.load(paths.REPO_ROOT, args.engine).vendor_root(paths.primary_root())
+    )
     report = audit(root, engine=args.engine)
     report["strict"] = args.strict
 

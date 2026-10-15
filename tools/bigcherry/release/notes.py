@@ -1,6 +1,6 @@
 """Per-bump release notes (``bigcherry release-notes``).
 
-One release per llama.cpp pin bump, named ``<tag-prefix><llama tag>`` (config/release.toml). release-please on GitHub
+One release per pin bump of an engine, named ``<tag-prefix><upstream tag>`` (the engine's ``[engine.<name>]`` table in config/release.toml; an engine without one has no release line yet). release-please on GitHub
 owns the release PR, the tag and the GitHub release (release-please-config.json, .github/workflows/release-please.yml);
 this module produces the release text it publishes. The notes are assembled from three sources, each bounded by the
 previous release:
@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ..core import paths
+from ..core import engines
 
 
 class ReleaseNotesError(RuntimeError):
@@ -31,28 +31,47 @@ class ReleaseNotesError(RuntimeError):
 
 @dataclass(frozen=True)
 class ReleaseConfig:
+    engine: str
+    #: what the upstream project is called (llama.cpp), for the notes text
+    upstream_name: str
     tag_prefix: str
     notes_dir: str
     ledger: str
     release_records: str
+    #: repository-relative recipes file and patch tree of the engine
     recipes: str
+    patches: str
     build_patch_sets: tuple[str, ...]
     fallback_prefixes: tuple[str, ...]
     ledger_sections: tuple[tuple[str, str], ...]  # (change-class, heading)
 
 
-def load_config(repo_root: Path) -> ReleaseConfig:
+def load_config(repo_root: Path, engine: str) -> ReleaseConfig:
+    """The release configuration of one engine: the shared part of config/release.toml, that engine's
+    [engine.<name>] release line, and its recipes and patch tree from engine.toml."""
     raw = tomllib.loads((repo_root / "config" / "release.toml").read_text(encoding="utf-8"))
-    if raw.get("version") != 1:
+    if raw.get("version") != 2:
         raise ReleaseNotesError(f"config/release.toml: unsupported version {raw.get('version')!r}")
+    line = raw.get("engine", {}).get(engine)
+    if line is None:
+        raise ReleaseNotesError(
+            f"config/release.toml has no [engine.{engine}] release line: {engine} has no releases configured yet"
+        )
+    try:
+        layout = engines.load(repo_root, engine)
+    except engines.EngineError as exc:
+        raise ReleaseNotesError(str(exc)) from exc
     return ReleaseConfig(
-        tag_prefix=raw["tag-prefix"],
+        engine=engine,
+        upstream_name=layout.upstream_name,
+        tag_prefix=line["tag-prefix"],
         notes_dir=raw["notes-dir"],
         ledger=raw["ledger"],
         release_records=raw["release-records"],
-        recipes=raw["recipes"],
-        build_patch_sets=tuple(raw["build-patch-sets"]),
-        fallback_prefixes=tuple(raw["previous-tag-fallback-prefixes"]),
+        recipes=layout.recipes,
+        patches=layout.patches,
+        build_patch_sets=tuple(line["build-patch-sets"]),
+        fallback_prefixes=tuple(line["previous-tag-fallback-prefixes"]),
         ledger_sections=tuple((s["class"], s["heading"]) for s in raw["ledger-section"]),
     )
 
@@ -88,18 +107,18 @@ class PatchChanges:
     left_build: list[str] = field(default_factory=list)
 
 
-def _patch_ids(repo_root: Path, ref: str) -> set[str]:
-    listing = _git(repo_root, "ls-tree", "-d", "--name-only", f"{ref}:{paths.LLAMACPP.patches}").split()
+def _patch_ids(repo_root: Path, config: ReleaseConfig, ref: str) -> set[str]:
+    listing = _git(repo_root, "ls-tree", "-d", "--name-only", f"{ref}:{config.patches}").split()
     return {name for name in listing if not name.startswith("_")}
 
 
-
-def _patch_file(patch_id: str, name: str) -> str:
+def _patch_file(config: ReleaseConfig, patch_id: str, name: str) -> str:
     """Repository-relative path of one file of a patch package."""
-    return f"{paths.LLAMACPP.patches}/{patch_id}/{name}"
+    return f"{config.patches}/{patch_id}/{name}"
 
-def _patch_state(repo_root: Path, ref: str, patch_id: str) -> str:
-    text = _show(repo_root, ref, _patch_file(patch_id, "patch.toml"))
+
+def _patch_state(repo_root: Path, config: ReleaseConfig, ref: str, patch_id: str) -> str:
+    text = _show(repo_root, ref, _patch_file(config, patch_id, "patch.toml"))
     return tomllib.loads(text).get("state", "") if text else ""
 
 
@@ -112,21 +131,24 @@ def _build_members(repo_root: Path, config: ReleaseConfig, ref: str) -> set[str]
 
 
 def patch_changes(repo_root: Path, config: ReleaseConfig, old_ref: str, new_ref: str) -> PatchChanges:
-    old_ids, new_ids = _patch_ids(repo_root, old_ref), _patch_ids(repo_root, new_ref)
+    old_ids, new_ids = _patch_ids(repo_root, config, old_ref), _patch_ids(repo_root, config, new_ref)
     changes = PatchChanges()
-    changes.added = sorted((pid, _patch_state(repo_root, new_ref, pid)) for pid in new_ids - old_ids)
+    changes.added = sorted((pid, _patch_state(repo_root, config, new_ref, pid)) for pid in new_ids - old_ids)
     changes.removed = sorted(old_ids - new_ids)
-    prefix = paths.LLAMACPP.patch_path_prefix()
+    prefix = config.patches + "/"
     touched = {
         line[len(prefix):].split("/")[0]
-        for line in _git(repo_root, "diff", "--name-only", old_ref, new_ref, "--", paths.LLAMACPP.patches).splitlines()
+        for line in _git(repo_root, "diff", "--name-only", old_ref, new_ref, "--", config.patches).splitlines()
         if line.startswith(prefix) and line[len(prefix):].count("/") >= 1 and line.endswith(("patch.py", "patch.toml"))
     }
     for pid in sorted(touched & old_ids & new_ids):
-        old_state, new_state = _patch_state(repo_root, old_ref, pid), _patch_state(repo_root, new_ref, pid)
+        old_state = _patch_state(repo_root, config, old_ref, pid)
+        new_state = _patch_state(repo_root, config, new_ref, pid)
         if old_state != new_state:
             changes.state_changed.append((pid, old_state, new_state))
-        elif _show(repo_root, old_ref, _patch_file(pid, "patch.py")) != _show(repo_root, new_ref, _patch_file(pid, "patch.py")):
+        elif _show(repo_root, old_ref, _patch_file(config, pid, "patch.py")) != _show(
+            repo_root, new_ref, _patch_file(config, pid, "patch.py")
+        ):
             changes.changed.append(pid)
     old_build, new_build = _build_members(repo_root, config, old_ref), _build_members(repo_root, config, new_ref)
     changes.entered_build = sorted(new_build - old_build)
@@ -158,9 +180,9 @@ def _event_time(event: dict) -> datetime:
     return datetime.strptime(day + clock, "%Y%m%d%H%M%S").replace(tzinfo=timezone.utc)
 
 
-def _patch_title(repo_root: Path, ref: str, patch_id: str) -> str:
+def _patch_title(repo_root: Path, config: ReleaseConfig, ref: str, patch_id: str) -> str:
     """First sentence of the patch module docstring, as the one-line description."""
-    text = _show(repo_root, ref, _patch_file(patch_id, "patch.py")) or ""
+    text = _show(repo_root, ref, _patch_file(config, patch_id, "patch.py")) or ""
     if not text.startswith('"""'):
         return ""
     first = " ".join(text[3:text.find('"""', 3)].strip().split("\n\n")[0].split())
@@ -191,7 +213,7 @@ def render(repo_root: Path, config: ReleaseConfig, llama_tag: str, ref: str = "H
     after = datetime.fromisoformat(_git(repo_root, "log", "-1", "--format=%cI", previous).strip()) if previous else None
 
     lines = [f"# {release_tag}", ""]
-    lines.append(f"BigCherry on llama.cpp `{llama_tag}` (`{record['revision'][:12]}`), "
+    lines.append(f"BigCherry on {config.upstream_name} `{llama_tag}` (`{record['revision'][:12]}`), "
                  f"BigCherry commit `{_git(repo_root, 'rev-parse', '--short=12', ref).strip()}`.")
     lines.append(f"Previous release: `{previous}`." if previous else "First tagged release.")
     lines.append("")
@@ -204,7 +226,7 @@ def render(repo_root: Path, config: ReleaseConfig, llama_tag: str, ref: str = "H
         changes = patch_changes(repo_root, config, previous, ref)
         lines += ["## Patches", ""]
         blocks = (
-            ("New patches", [f"`{pid}` ({state}) - {_patch_title(repo_root, ref, pid)}" for pid, state in changes.added]),
+            ("New patches", [f"`{pid}` ({state}) - {_patch_title(repo_root, config, ref, pid)}" for pid, state in changes.added]),
             ("State changes", [f"`{pid}`: {old or 'none'} -> {new}" for pid, old, new in changes.state_changed]),
             ("Entered the production build", [f"`{pid}`" for pid in changes.entered_build]),
             ("Left the production build", [f"`{pid}`" for pid in changes.left_build]),

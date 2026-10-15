@@ -86,11 +86,11 @@ def resolve_cli_selection(engine: str, args: "Namespace") -> CliPatchSelection:
 def _resolve_exact_selection(engine: str, source_name: str) -> CliPatchSelection:
     from ..campaign import resolution as campaign_resolution  # noqa: PLC0415
     from ..core import config as campaign_config  # noqa: PLC0415
-    from ..core import paths as core_paths  # noqa: PLC0415
+    from ..core import engines, paths as core_paths  # noqa: PLC0415
     from . import patchset  # noqa: PLC0415
 
     try:
-        cfg = campaign_config.load(core_paths.RECIPES)
+        cfg = campaign_config.load(engines.load(core_paths.REPO_ROOT, engine).recipes_path(core_paths.REPO_ROOT))
         selection = campaign_resolution.resolve_canonical_selection(
             engine, source_name, cfg, patchset.catalog(engine),
         )

@@ -94,7 +94,9 @@ def _plan_items_from_patches(engine: str, patches_dir: Path | None = None) -> di
     return by_item
 
 
-def _contracts_by_plan_item(contracts_path: Path | None = None) -> dict[str, list[str]]:
+def _contracts_by_plan_item(
+    contracts_path: Path | None, source_ids: set[str], patch_ids: set[str]
+) -> dict[str, list[str]]:
     """plan-item -> [contract_id, ...], derived from each contract id's own
     leading RDxx/HIxx/EXxx token (e.g. "RD08-Q6K-..." -> "RD08",
     "RD39-42-STREAM-..." -> "RD39-42" -- a real, already-used multi-item
@@ -108,7 +110,11 @@ def _contracts_by_plan_item(contracts_path: Path | None = None) -> dict[str, lis
         return {}
     raw = tomllib.loads(path.read_text(encoding="utf-8"))
     by_item: dict[str, list[str]] = {}
-    for contract_id in (raw.get("contract") or {}):
+    for contract_id, body in (raw.get("contract") or {}).items():
+        # a contract belongs to the engine whose external source or whose patch it names
+        origin = (body.get("source") or {}) if isinstance(body, dict) else {}
+        if origin.get("source_id") not in source_ids and origin.get("atomic_part") not in patch_ids:
+            continue
         parts = contract_id.split("-")
         head = parts[0]
         prefix = head.rstrip("0123456789").upper()
@@ -131,13 +137,17 @@ def compute_all(
     patches_dir: Path | None = None,
     contracts_path: Path | None = None,
 ) -> dict[str, LifecycleStatus]:
-    """One LifecycleStatus per plan-item this module has ANY signal for --
-    a tracked source entry, a materialized patch, or a contract."""
-    registry = registry if registry is not None else sources.load_registry()
+    """One LifecycleStatus per plan-item of ``engine`` this module has a signal for --
+    a source entry tracked in the engine's registry or a patch in the engine's patch tree.
+
+    The experiment contracts are repository-wide; one belongs to the engine whose external source or patch its
+    ``source`` table names."""
+    registry = registry if registry is not None else sources.load_engine_registry(engine)
     tracked = _tracked_entries_by_plan_item(registry)
     patch_states = _patch_states(engine, patches_dir)
     patches_by_item = _plan_items_from_patches(engine, patches_dir)
-    contracts_by_item = _contracts_by_plan_item(contracts_path)
+    source_ids = {source.get("id") for source in registry.get("sources", [])}
+    contracts_by_item = _contracts_by_plan_item(contracts_path, source_ids, set(patch_states))
 
     all_items = set(tracked) | set(patches_by_item) | set(contracts_by_item)
     results: dict[str, LifecycleStatus] = {}

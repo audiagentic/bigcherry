@@ -11,6 +11,7 @@ A command moves from ``ONLY`` to ``ENGINE`` when its handler has been migrated t
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 
 from ..core import engines, paths
 
@@ -33,11 +34,23 @@ _ENGINE_COMMANDS: frozenset[str] = frozenset(
         "patch-verify-evidence",
         "patch-gates",
         "patch-doc",
+        "patch-rebase-check",
+        "pull",
+        "audit",
+        "repin",
+        "pin-status",
+        "pin-bump",
+        "pin-release",
+        "release-notes",
+        "sources",
     }
 )
 
 _LANE_COMMANDS = frozenset({"build", "campaign-build"})
-_PLATFORM_COMMANDS = frozenset({"patch-lint"})
+#: patch-lint checks every engine's patch tree. patch-disposition keeps one repository-wide store keyed by patch ID
+#: (IDs carry their engine's prefix, so they never collide) and bound to an exact revision and digest, so it has no
+#: engine to choose.
+_PLATFORM_COMMANDS = frozenset({"patch-lint", "patch-disposition"})
 _SELF_COMMANDS = frozenset({"engine-bench"})
 
 #: Everything else is today a llama.cpp tool. Each entry is either genuinely llama.cpp-only (tuning, replay,
@@ -55,6 +68,17 @@ def scope(command: str) -> str:
     if command in _SELF_COMMANDS:
         return SELF
     return _ONLY_LLAMACPP
+
+
+def vendor_root(engine: str) -> Path:
+    """The engine's vendor checkout (declared in its engine.toml); it belongs to the primary checkout."""
+    return engines.load(paths.REPO_ROOT, engine).vendor_root(paths.primary_root())
+
+
+def checkout_root(args: argparse.Namespace) -> Path:
+    """The checkout a command reads: ``--llama-root`` when given, otherwise the chosen engine's vendor checkout."""
+    override = getattr(args, "llama_root", None)
+    return paths.llama_root(override) if override is not None else vendor_root(args.engine)
 
 
 def resolve(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:

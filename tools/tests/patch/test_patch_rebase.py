@@ -667,18 +667,13 @@ class CopyOverlayTests(unittest.TestCase):
         self.overlay_root.mkdir()
         self.root = self.base / "root"
         self.root.mkdir()
-        self._old_overlay = paths.SRC_OVERLAY
-        paths.SRC_OVERLAY = self.overlay_root
-
-    def tearDown(self) -> None:
-        paths.SRC_OVERLAY = self._old_overlay
 
     def test_rewrites_a_target_that_only_differs_by_line_ending(self):
         (self.overlay_root / "overlay-file.cpp").write_bytes(b"line1\nline2\n")
         target = self.root / "overlay-file.cpp"
         target.write_bytes(b"line1\r\nline2\r\n")
 
-        written = overlay.copy_overlay(self.root, dry_run=False)
+        written = overlay.copy_overlay(self.root, self.overlay_root, dry_run=False)
 
         self.assertEqual(written, ["overlay-file.cpp"])
         self.assertEqual(target.read_bytes(), b"line1\nline2\n")
@@ -688,7 +683,7 @@ class CopyOverlayTests(unittest.TestCase):
         target = self.root / "overlay-file.cpp"
         target.write_bytes(b"line1\nline2\n")
 
-        written = overlay.copy_overlay(self.root, dry_run=False)
+        written = overlay.copy_overlay(self.root, self.overlay_root, dry_run=False)
 
         self.assertEqual(written, [])
 
@@ -701,6 +696,7 @@ class CopyOverlayTests(unittest.TestCase):
 
         written = overlay.copy_overlay(
             self.root,
+            self.overlay_root,
             dry_run=True,
             backup=backup,
             sim_texts=simulated,

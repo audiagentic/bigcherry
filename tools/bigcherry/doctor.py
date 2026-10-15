@@ -136,9 +136,10 @@ def _pin_status_section(context: ProjectContext) -> dict[str, object]:
     the gate is `pin-status --strict` / `--complete`, not doctor."""
     repo_paths = pin_status.RepoPaths(
         repo_root=context.project_root,
-        llama_root=paths.llama_root(),
+        vendor_root=paths.llama_root(),
         releases_dir=context.project_root / "releases",
         artifacts_dir=context.project_root / "artifacts",
+        layout=context.layout,
     )
     status = pin_status.local_status(repo_paths)
     return {

@@ -36,8 +36,9 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from ..build import source_compile_check
-from ..core import engines, paths
+from ..core import paths
 from ..core import tree_activity
+from ..core.context import ProjectContext
 from ..patch import apply as patch_apply
 from ..patch import disposition as patch_disposition
 from ..patch import overlay as patch_overlay
@@ -48,6 +49,7 @@ from ..source import identity as source_identity
 from .. import pin_transition
 from .. import recipes as recipes_module
 from . import records as releases
+from .pin import recipes_path, resolve_pin_sha
 
 PHASES = (
     "preflight",
@@ -344,7 +346,7 @@ def check_overlay_self_heal(audit_report: dict) -> tuple[bool, list[str]]:
     return True, drifted
 
 
-def acquire_maintenance_lock(project_root: Path) -> tree_activity.MaintenanceLock:
+def acquire_maintenance_lock(project_root: Path, engine: str) -> tree_activity.MaintenanceLock:
     """Returns an UNACQUIRED lock -- the caller uses it as `with lock:`, whose
     __enter__ does the single real acquire() call. (Found live on pin-bump's
     first real invocation: this used to call .acquire() itself AND get used
@@ -352,30 +354,32 @@ def acquire_maintenance_lock(project_root: Path) -> tree_activity.MaintenanceLoc
     tripping its own "already held" check.)"""
     from ..core.context import ProjectContext
 
-    context = ProjectContext.resolve(engine="llamacpp", project_root=project_root)
+    context = ProjectContext.resolve(engine=engine, project_root=project_root)
     return tree_activity.MaintenanceLock(context.work_root, context.project_root)
 
 
-def _sync_campaign_mirror_best_effort(*, target_ref: str, revision: str) -> None:
+def _sync_campaign_mirror_best_effort(*, engine: str, target_ref: str, revision: str) -> None:
     """Bring the new pin into the campaign build mirror (ProjectContext.
-    upstream_repo), which does not learn tags from vendor/llama.cpp. Found
+    upstream_repo), which does not learn tags from the vendor checkout. Found
     live on three bumps (b10687, b10692, b11126). Best-effort: never raises
     PinBumpStop, but always warns when the mirror still lacks the tag."""
     from ..core.context import ProjectContext
     from ..source import upstream
 
     warning = upstream.sync_mirror_ref(
-        ProjectContext.resolve(engine="llamacpp").upstream_repo, target_ref, revision or None
+        ProjectContext.resolve(engine=engine).upstream_repo, target_ref, revision or None
     )
     if warning:
         print(f"pin-bump: WARNING {warning}", file=sys.stderr)
 
-def run_phase_preflight(*, repo_root: Path, target_ref: str) -> tuple[str, str]:
+def run_phase_preflight(
+    *, repo_root: Path, engine: str, vendor_root: Path, target_ref: str
+) -> tuple[str, str]:
     """Returns (resolved_from_ref, resolved_to_sha). Requires a clean
     controller checkout and refuses an incompatible existing transition
     marker (RE48's invariant, reused rather than re-derived)."""
     require_clean_controller_checkout(repo_root)
-    marker_path = paths.REPO_ROOT / "releases" / "pin-transition.json"
+    marker_path = pin_transition.marker_path(engine)
     if (
         marker_path.is_file()
         and pin_transition.committed_state(marker_path) != "committed-clean"
@@ -387,14 +391,12 @@ def run_phase_preflight(*, repo_root: Path, target_ref: str) -> tuple[str, str]:
             "was declared but not committed",
             evidence={"marker_path": str(marker_path)},
             recommended_actions=[
-                "commit the marker together with config/recipes.toml, or delete "
+                "commit the marker together with the recipes file, or delete "
                 "it if that bump was abandoned",
             ],
         )
-    from .pin import resolve_pin_sha
-
     try:
-        to_sha = resolve_pin_sha(target_ref)
+        to_sha = resolve_pin_sha(engine, target_ref, vendor_root)
     except Exception as exc:  # upstream.UpstreamError et al.
         raise PinBumpStop(
             "preflight",
@@ -406,22 +408,27 @@ def run_phase_preflight(*, repo_root: Path, target_ref: str) -> tuple[str, str]:
                 "rerun with --resume",
             ],
         ) from exc
-    current_pinned = recipes_module.pinned()
+    current_pinned = recipes_module.pinned(recipes_path(engine))
     return current_pinned, to_sha
 
 
-def run_phase_declare(*, repo_root: Path, target_ref: str) -> str:
+def run_phase_declare(*, repo_root: Path, engine: str, vendor_root: Path, target_ref: str) -> str:
     """Calls the existing, already-real repin() + pin_transition.write(),
-    then commits config/recipes.toml + the marker together. Returns the
+    then commits the recipes file + the marker together. Returns the
     declaring commit SHA."""
-    from .pin import resolve_pin_sha
-
-    old = recipes_module.repin(target_ref)
-    from_sha = resolve_pin_sha(old)
-    to_sha = resolve_pin_sha(target_ref)
+    recipes_file = recipes_path(engine)
+    old = recipes_module.repin(target_ref, recipes_file)
+    from_sha = resolve_pin_sha(engine, old, vendor_root)
+    to_sha = resolve_pin_sha(engine, target_ref, vendor_root)
     declaring_before = _git(repo_root, "rev-parse", "HEAD")
-    pin_transition.write(from_sha, to_sha, target_ref, declaring_before)
-    _git(repo_root, "add", "config/recipes.toml", "releases/pin-transition.json")
+    marker = pin_transition.marker_path(engine)
+    pin_transition.write(from_sha, to_sha, target_ref, declaring_before, marker)
+    _git(
+        repo_root,
+        "add",
+        recipes_file.relative_to(repo_root).as_posix(),
+        marker.relative_to(repo_root).as_posix(),
+    )
     _git(
         repo_root,
         "commit",
@@ -473,7 +480,7 @@ def stop_on_recipe_failures(*, phase: str, recipe_report: dict) -> None:
         recommended_actions=[
             "reconcile each listed patch in its own package (failed_edits names the anchors)",
             "if UPSTREAM_ABSORBED: retire the patch (state superseded) via the patch-lifecycle procedure",
-            "rerun `bigcherry pin-bump --resume`",
+            "rerun `bigcherry --engine <engine> pin-bump --resume`",
         ],
     )
 
@@ -560,8 +567,14 @@ class PinBumpResult:
     coverage: dict
 
 
+def default_report_dir(engine: str, target_ref: str) -> Path:
+    """Where a run state and reports live unless --report-dir says otherwise: one directory per engine and target."""
+    return paths.ARTIFACTS / "pin-bump" / engine / f"resume-{target_ref}"
+
+
 def run(
     *,
+    engine: str,
     target_ref: str,
     source_name: str | None = None,
     root: Path | None = None,
@@ -583,9 +596,9 @@ def run(
     rather than re-defaulting.
     """
     repo_root = paths.REPO_ROOT
-    vendor_root = root if root is not None else paths.llama_root()
+    vendor_root = root if root is not None else ProjectContext.resolve(engine=engine).vendor_root
     dispositions_dir = dispositions_dir or paths.DISPOSITIONS
-    report_dir = report_dir or (paths.ARTIFACTS / "pin-bump" / f"resume-{target_ref}")
+    report_dir = report_dir or default_report_dir(engine, target_ref)
 
     # Bound before the try, unconditionally: RESUME_STATE_MISSING and
     # _load_state_or_stop() can both raise before any assignment below
@@ -622,10 +635,11 @@ def run(
         else:
             state = None
             resolved_kind, resolved_name = _resolve_fresh_selector(
-                source_name=source_name,
+                engine, source_name=source_name,
             )
 
         return _run_phases(
+            engine=engine,
             state=state,
             target_ref=target_ref,
             selector_kind=resolved_kind,
@@ -706,30 +720,31 @@ class SourceLineOwner:
 
 
 def _selected_file_patches(
+    engine: str,
     patch_ids: Sequence[str],
 ) -> list[tuple[str, patch_apply.FilePatch]]:
     """Load the exact selected patch sequence without discarding patch IDs."""
 
-    selection = patch_patchset.resolve_exact("llamacpp", tuple(patch_ids), allow_rejected=False)
+    selection = patch_patchset.resolve_exact(engine, tuple(patch_ids), allow_rejected=False)
     registries: dict[Path, patch_registry.PatchRegistry] = {}
     loaded: list[tuple[str, patch_apply.FilePatch]] = []
     for module in selection.modules:
-        root = module.catalog_root or paths.PATCHES
+        root = module.catalog_root or paths.patches_root(engine)
         registry = registries.get(root)
         if registry is None:
-            registry = patch_registry.load_registry("llamacpp", root)
+            registry = patch_registry.load_registry(engine, root)
             registries[root] = registry
         descriptor = registry.get(module.patch_id)
-        for file_patch in patch_registry.load_implementation("llamacpp", descriptor, root=root):
+        for file_patch in patch_registry.load_implementation(engine, descriptor, root=root):
             loaded.append((module.patch_id, file_patch))
     return loaded
 
 
-def _compile_tree_oid(vendor_root: Path, patch_ids: Sequence[str]) -> str:
+def _compile_tree_oid(engine: str, vendor_root: Path, patch_ids: Sequence[str]) -> str:
     """Exact effective source-tree identity used to invalidate compile resume."""
 
-    allowed_untracked = set(patch_rebase._overlay_texts("llamacpp", ))
-    for _, file_patch in _selected_file_patches(patch_ids):
+    allowed_untracked = set(patch_rebase._overlay_texts(engine))
+    for _, file_patch in _selected_file_patches(engine, patch_ids):
         if file_patch.create:
             allowed_untracked.add(file_patch.path)
     try:
@@ -743,8 +758,8 @@ def _compile_tree_oid(vendor_root: Path, patch_ids: Sequence[str]) -> str:
             f"could not identify the patched source tree before compile: {exc}",
             evidence={"source_identity_error": str(exc)},
             recommended_actions=[
-                "inspect unexpected files in vendor/llama.cpp and restore the applied production tree",
-                "rerun bigcherry pin-bump --resume",
+                "inspect unexpected files in the vendor checkout and restore the applied production tree",
+                "rerun bigcherry --engine <engine> pin-bump --resume",
             ],
         ) from exc
 
@@ -785,7 +800,7 @@ def _line_owners_after_change(
 
 
 def _build_patch_line_ownership(
-    vendor_root: Path, patch_ids: Sequence[str]
+    engine: str, vendor_root: Path, patch_ids: Sequence[str]
 ) -> dict[str, list[SourceLineOwner | None]]:
     """Replay selected edits and map patched lines to production patch/edit IDs.
 
@@ -793,11 +808,11 @@ def _build_patch_line_ownership(
     as the real apply phase. It never consults source comments for ownership.
     """
 
-    overlay_texts = patch_rebase._overlay_texts("llamacpp", )
+    overlay_texts = patch_rebase._overlay_texts(engine)
     texts: dict[str, str] = {}
     owners: dict[str, list[SourceLineOwner | None]] = {}
 
-    for patch_id, file_patch in _selected_file_patches(patch_ids):
+    for patch_id, file_patch in _selected_file_patches(engine, patch_ids):
         if file_patch.path not in texts:
             initial = overlay_texts.get(file_patch.path)
             if initial is None:
@@ -833,7 +848,7 @@ def _build_patch_line_ownership(
                     },
                     recommended_actions=[
                         "inspect the named production patch edit",
-                        "rerun bigcherry pin-bump --resume",
+                        "rerun bigcherry --engine <engine> pin-bump --resume",
                     ],
                 )
             after = one_text[file_patch.path]
@@ -943,6 +958,7 @@ def _compile_failure_evidence(
 
 def run_phase_compile(
     *,
+    engine: str,
     vendor_root: Path,
     workdir: Path,
     recipe_report_path: Path,
@@ -959,7 +975,7 @@ def run_phase_compile(
             evidence={"compiler": clangxx},
             recommended_actions=[
                 "install clang++ (Ubuntu/Debian: sudo apt-get install clang)",
-                f"rerun python -m bigcherry pin-bump {target_ref} --resume",
+                f"rerun python -m bigcherry --engine {engine} pin-bump {target_ref} --resume",
                 "only if intentionally accepting the missing gate, rerun with --resume --skip-compile",
             ],
         )
@@ -984,12 +1000,12 @@ def run_phase_compile(
             evidence={"compiler": clangxx, "error": str(exc)},
             recommended_actions=[
                 "fix the source or compile-check failure in the owning production patch",
-                f"rerun python -m bigcherry pin-bump {target_ref} --resume",
+                f"rerun python -m bigcherry --engine {engine} pin-bump {target_ref} --resume",
             ],
         ) from exc
 
     if failures:
-        ownership = _build_patch_line_ownership(vendor_root, patch_ids)
+        ownership = _build_patch_line_ownership(engine, vendor_root, patch_ids)
         errors = _compile_failure_evidence(failures, ownership)
         raise PinBumpStop(
             "compile",
@@ -1001,11 +1017,11 @@ def run_phase_compile(
             },
             recommended_actions=[
                 "fix each error inside the named owning patch; for an upstream line, start with related_patches",
-                f"rerun python -m bigcherry pin-bump {target_ref} --resume",
+                f"rerun python -m bigcherry --engine {engine} pin-bump {target_ref} --resume",
             ],
         )
 
-    return _compile_tree_oid(vendor_root, patch_ids)
+    return _compile_tree_oid(engine, vendor_root, patch_ids)
 
 
 def _record_compile_skip(vendor_root: Path) -> None:
@@ -1024,19 +1040,19 @@ def _record_compile_skip(vendor_root: Path) -> None:
             evidence={"error": str(exc)},
             recommended_actions=[
                 "fix the release record write failure",
-                "rerun bigcherry pin-bump --resume --skip-compile",
+                "rerun bigcherry --engine <engine> pin-bump --resume --skip-compile",
             ],
         ) from exc
 
 
 def _rewind_compile_if_tree_changed(
-    state: PinBumpState, *, vendor_root: Path
+    state: PinBumpState, *, engine: str, vendor_root: Path
 ) -> bool:
     """Invalidate compile and later phases when a checked source tree changed."""
 
     if "compile" not in state.completed_phases or not state.compile_tree_oid:
         return False
-    live_oid = _compile_tree_oid(vendor_root, state.selector_patch_ids)
+    live_oid = _compile_tree_oid(engine, vendor_root, state.selector_patch_ids)
     if live_oid == state.compile_tree_oid:
         return False
     state.completed_phases = [
@@ -1052,7 +1068,7 @@ def _rewind_compile_if_tree_changed(
 
 
 def _remove_bigcherry_untracked_source(
-    vendor_root: Path, patch_ids: Sequence[str]
+    engine: str, vendor_root: Path, patch_ids: Sequence[str]
 ) -> None:
     """Remove only untracked files that overlay/selected patches own.
 
@@ -1061,8 +1077,8 @@ def _remove_bigcherry_untracked_source(
     removed explicitly before a compile-failure resume recomposes the tree.
     """
 
-    owned = set(patch_rebase._overlay_texts("llamacpp", ))
-    for _, file_patch in _selected_file_patches(patch_ids):
+    owned = set(patch_rebase._overlay_texts(engine))
+    for _, file_patch in _selected_file_patches(engine, patch_ids):
         if file_patch.create:
             owned.add(file_patch.path)
     for relative in sorted(owned):
@@ -1089,6 +1105,7 @@ def _remove_bigcherry_untracked_source(
 def _rewind_compile_resume_if_inputs_changed(
     state: PinBumpState,
     *,
+    engine: str,
     vendor_root: Path,
     recipe_report_path: Path,
 ) -> bool:
@@ -1098,12 +1115,12 @@ def _rewind_compile_resume_if_inputs_changed(
         return False
     try:
         report = patch_rebase.load_report(recipe_report_path)
-        patch_rebase._require_fresh("llamacpp", report, vendor_root)
+        patch_rebase._require_fresh(engine, report, vendor_root)
         return False
     except patch_rebase.StaleRebaseReportError:
         try:
             _remove_bigcherry_untracked_source(
-                vendor_root, state.selector_patch_ids
+                engine, vendor_root, state.selector_patch_ids
             )
         except (OSError, patch_apply.PatchError) as exc:
             raise PinBumpStop(
@@ -1112,8 +1129,8 @@ def _rewind_compile_resume_if_inputs_changed(
                 f"compile inputs changed but the applied tree could not be reset safely: {exc}",
                 evidence={"reset_error": str(exc)},
                 recommended_actions=[
-                    "restore vendor/llama.cpp to the pinned upstream tree without deleting unrelated files",
-                    "rerun bigcherry pin-bump --resume",
+                    "restore the vendor checkout to the pinned upstream tree without deleting unrelated files",
+                    "rerun bigcherry --engine <engine> pin-bump --resume",
                 ],
             ) from exc
 
@@ -1253,18 +1270,37 @@ def _validate_resume(
         )
 
 
+DEFAULT_RELEASE_SOURCE = "bigcherry"
+
+
 def _resolve_fresh_selector(
+    engine: str,
     *,
     source_name: str | None,
 ) -> tuple[str, str]:
     """Fresh-run selector default: no ``--source`` supplied -> "bigcherry"
-    -- the real v2 release-source composition."""
-    return "source", source_name if source_name is not None else "bigcherry"
+    -- the real v2 release-source composition -- when the recipes of the
+    engine declare a source of that name; otherwise the run must name one."""
+    if source_name is not None:
+        return "source", source_name
+    from ..core import config as campaign_config
+
+    declared = sorted(campaign_config.load(recipes_path(engine)).sources)
+    if DEFAULT_RELEASE_SOURCE not in declared:
+        raise PinBumpStop(
+            "preflight",
+            "SOURCE_REQUIRED",
+            f"the {engine} recipes declare no {DEFAULT_RELEASE_SOURCE!r} source to default to; "
+            "pass --source NAME",
+            evidence={"declared_sources": declared},
+            recommended_actions=[f"rerun with --source (one of: {', '.join(declared)})"],
+        )
+    return "source", DEFAULT_RELEASE_SOURCE
 
 
-def _selector_patch_ids(*, selector_kind: str, selector_name: str) -> tuple[str, ...]:
-    return patch_rebase._selection_patch_ids("llamacpp", 
-        source_name=selector_name, all_patches=False
+def _selector_patch_ids(engine: str, *, selector_kind: str, selector_name: str) -> tuple[str, ...]:
+    return patch_rebase._selection_patch_ids(
+        engine, source_name=selector_name, all_patches=False
     )
 
 
@@ -1302,6 +1338,7 @@ def _resume_selector(
 def _require_selector_membership_unchanged(
     state: PinBumpState,
     *,
+    engine: str,
     selector_kind: str,
     selector_name: str,
 ) -> None:
@@ -1314,7 +1351,7 @@ def _require_selector_membership_unchanged(
     current_ids = tuple(
         sorted(
             _selector_patch_ids(
-                selector_kind=selector_kind, selector_name=selector_name
+                engine, selector_kind=selector_kind, selector_name=selector_name
             )
         )
     )
@@ -1337,6 +1374,7 @@ def _require_selector_membership_unchanged(
 
 def _run_phases(
     *,
+    engine: str,
     state: PinBumpState | None,
     target_ref: str,
     selector_kind: str,
@@ -1350,15 +1388,16 @@ def _run_phases(
     from ..patch import catalog as patch_catalog
     from ..source import audit as source_audit
 
-    with acquire_maintenance_lock(repo_root):
+    context = ProjectContext.resolve(engine=engine)
+    with acquire_maintenance_lock(repo_root, engine):
         if state is None:
             from_ref, to_sha = run_phase_preflight(
-                repo_root=repo_root, target_ref=target_ref
+                repo_root=repo_root, engine=engine, vendor_root=vendor_root, target_ref=target_ref
             )
             selector_patch_ids = tuple(
                 sorted(
                     _selector_patch_ids(
-                        selector_kind=selector_kind, selector_name=selector_name
+                        engine, selector_kind=selector_kind, selector_name=selector_name
                     )
                 )
             )
@@ -1380,17 +1419,20 @@ def _run_phases(
             )
             state.save(report_dir)
 
-        if _rewind_compile_if_tree_changed(state, vendor_root=vendor_root):
+        if _rewind_compile_if_tree_changed(state, engine=engine, vendor_root=vendor_root):
             state.save(report_dir)
         if _rewind_compile_resume_if_inputs_changed(
             state,
+            engine=engine,
             vendor_root=vendor_root,
             recipe_report_path=report_dir / "rebase-recipe.json",
         ):
             state.save(report_dir)
 
         if state.next_phase == "declare":
-            declaring = run_phase_declare(repo_root=repo_root, target_ref=target_ref)
+            declaring = run_phase_declare(
+                repo_root=repo_root, engine=engine, vendor_root=vendor_root, target_ref=target_ref
+            )
             state.transition_commit = declaring
             state.completed_phases.append("declare")
             state.next_phase = "pull"
@@ -1408,6 +1450,7 @@ def _run_phases(
             # fallback for resolving a ref from a name).
             rc = cli_source.cmd_pull(
                 Namespace(
+                    engine=engine,
                     llama_root=None,
                     ref=target_ref,
                     source=None,
@@ -1418,7 +1461,7 @@ def _run_phases(
                 raise PinBumpStop(
                     "pull",
                     "PULL_FAILED",
-                    "bigcherry pull did not exit cleanly",
+                    "bigcherry --engine <engine> pull did not exit cleanly",
                     evidence={"exit_code": rc},
                     recommended_actions=[
                         "inspect the vendor checkout directly",
@@ -1426,14 +1469,14 @@ def _run_phases(
                     ],
                 )
             _sync_campaign_mirror_best_effort(
-                target_ref=target_ref, revision=state.to_sha
+                engine=engine, target_ref=target_ref, revision=state.to_sha
             )
             state.completed_phases.append("pull")
             state.next_phase = "audit"
             state.save(report_dir)
 
         if state.next_phase == "audit":
-            report = source_audit.audit(vendor_root, engine=engines.LLAMACPP)
+            report = source_audit.audit(vendor_root, engine=engine)
             if not source_audit.passed(report, strict=False):
                 safe, drifted = check_overlay_self_heal(report)
                 if not safe:
@@ -1447,12 +1490,12 @@ def _run_phases(
                             ]
                         },
                         recommended_actions=[
-                            "run `bigcherry audit --verbose` and reconcile",
+                            f"run `bigcherry --engine {engine} audit --verbose` and reconcile",
                             "rerun with --resume",
                         ],
                     )
-                patch_overlay.copy_overlay(vendor_root, dry_run=False)
-                report = source_audit.audit(vendor_root, engine=engines.LLAMACPP)
+                patch_overlay.copy_overlay(vendor_root, context.overlay_root, dry_run=False)
+                report = source_audit.audit(vendor_root, engine=engine)
                 if not source_audit.passed(report, strict=False):
                     raise PinBumpStop(
                         "audit",
@@ -1481,7 +1524,7 @@ def _run_phases(
             state.save(report_dir)
 
         if state.next_phase == "patch-lint":
-            problems = patch_catalog.cross_check("llamacpp", allow_legacy_grandfather=True)
+            problems = patch_catalog.cross_check(engine, allow_legacy_grandfather=True)
             if problems:
                 raise PinBumpStop(
                     "patch-lint",
@@ -1500,18 +1543,20 @@ def _run_phases(
         if state.next_phase == "coverage":
             _require_selector_membership_unchanged(
                 state,
+                engine=engine,
                 selector_kind=selector_kind,
                 selector_name=selector_name,
             )
-            all_report = patch_rebase.run_rebase_check("llamacpp", vendor_root, all_patches=True)
-            recipe_report = patch_rebase.run_rebase_check("llamacpp", 
+            all_report = patch_rebase.run_rebase_check(engine, vendor_root, all_patches=True)
+            recipe_report = patch_rebase.run_rebase_check(
+                engine,
                 vendor_root,
                 source_name=selector_name,
             )
             stop_on_recipe_failures(phase="coverage", recipe_report=recipe_report)
             catalog_states = {
                 patch_id: entry.state
-                for patch_id, entry in patch_catalog.load_catalog("llamacpp", ).items()
+                for patch_id, entry in patch_catalog.load_catalog(engine).items()
             }
 
             def focal_probe(patch_id: str) -> dict | None:
@@ -1521,8 +1566,8 @@ def _run_phases(
                 if selector_kind != "source":
                     return None
                 try:
-                    focal_report = patch_rebase.run_rebase_check("llamacpp", 
-                        vendor_root, source_name=selector_name, focal_overlay_patch_id=patch_id
+                    focal_report = patch_rebase.run_rebase_check(
+                        engine, vendor_root, source_name=selector_name, focal_overlay_patch_id=patch_id
                     )
                 except (RuntimeError, ValueError, KeyError):
                     return None
@@ -1572,8 +1617,8 @@ def _run_phases(
         if state.next_phase == "apply":
             _require_coverage_report(state, recipe_report_path)
             try:
-                result = patch_rebase.apply_known_good("llamacpp", 
-                    vendor_root, recipe_report_path, force=False, dry_run=False
+                result = patch_rebase.apply_known_good(
+                    engine, vendor_root, recipe_report_path, force=False, dry_run=False
                 )
             except patch_rebase.StaleRebaseReportError as exc:
                 # The controller checkout or the registry moved after coverage ran
@@ -1588,7 +1633,7 @@ def _run_phases(
                     str(exc),
                     recommended_actions=[
                         "do not commit in this checkout while a bump is running",
-                        "rerun `bigcherry pin-bump --resume` (coverage is recomputed)",
+                        "rerun `bigcherry --engine <engine> pin-bump --resume` (coverage is recomputed)",
                     ],
                 ) from exc
             if not result.ok:
@@ -1609,12 +1654,13 @@ def _run_phases(
         if state.next_phase == "compile":
             if skip_compile:
                 compile_tree_oid = _compile_tree_oid(
-                    vendor_root, state.selector_patch_ids
+                    engine, vendor_root, state.selector_patch_ids
                 )
                 _record_compile_skip(vendor_root)
                 state.compile_status = "skipped"
             else:
                 compile_tree_oid = run_phase_compile(
+                    engine=engine,
                     vendor_root=vendor_root,
                     workdir=repo_root / "work" / "source-compile-check",
                     recipe_report_path=recipe_report_path,
@@ -1627,7 +1673,7 @@ def _run_phases(
             state.save(report_dir)
 
         if state.next_phase == "reaudit":
-            report = source_audit.audit(vendor_root, engine=engines.LLAMACPP)
+            report = source_audit.audit(vendor_root, engine=engine)
             if not source_audit.passed(report, strict=True):
                 raise PinBumpStop(
                     "reaudit",
@@ -1639,7 +1685,7 @@ def _run_phases(
                         ]
                     },
                     recommended_actions=[
-                        "run `bigcherry audit --verbose` and reconcile",
+                        f"run `bigcherry --engine {engine} audit --verbose` and reconcile",
                         "rerun with --resume",
                     ],
                 )
@@ -1649,6 +1695,7 @@ def _run_phases(
 
         if state.next_phase == "complete" and "complete" not in state.completed_phases:
             _write_release_doc_best_effort(
+                engine=engine,
                 repo_root=repo_root,
                 vendor_root=vendor_root,
                 selector_kind=selector_kind,
@@ -1753,6 +1800,7 @@ def _commit_release_records(*, repo_root: Path, target_ref: str) -> None:
 
 def _write_release_doc_best_effort(
     *,
+    engine: str,
     repo_root: Path,
     vendor_root: Path,
     selector_kind: str,
@@ -1806,16 +1854,18 @@ def _write_release_doc_best_effort(
             )
         else:
             patch_ids = _selector_patch_ids(
+                engine,
                 selector_kind=selector_kind,
                 selector_name=selector_name,
             )
         pin_info = {
-            "llama.cpp revision": patch_rebase._git(vendor_root, "rev-parse", "HEAD"),
+            f"{engine} upstream revision": patch_rebase._git(vendor_root, "rev-parse", "HEAD"),
             "bigcherry revision": patch_rebase._git(repo_root, "rev-parse", "HEAD"),
             "source": selector_name,
             "target": target_ref,
         }
-        doc = patch_docs.render_patch_selection_doc("llamacpp", 
+        doc = patch_docs.render_patch_selection_doc(
+            engine,
             patch_ids=patch_ids,
             pin_info=pin_info,
             selection_label=f"--source {selector_name}",

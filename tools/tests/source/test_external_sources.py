@@ -29,7 +29,7 @@ patch_registry: Any = _patch_registry
 
 class TestRegistryStructure(unittest.TestCase):
     def setUp(self):
-        self.registry = src.load_registry()
+        self.registry = src.load_engine_registry("llamacpp")
 
     def test_version_and_sources_present(self):
         self.assertEqual(self.registry["version"], 1)
@@ -90,7 +90,7 @@ class TestRegistryStructure(unittest.TestCase):
 
 class TestPatchProvenanceCrossCheck(unittest.TestCase):
     def test_cross_check_is_clean(self):
-        problems = src.cross_check_patches(engine="llamacpp", patches_dir=paths.PATCHES)
+        problems = src.cross_check_patches(src.load_engine_registry("llamacpp"), engine="llamacpp", patches_dir=paths.PATCHES)
         self.assertEqual(problems, [], f"patch<->registry problems: {problems}")
 
     def test_rd19_rd20_patches_carry_provenance(self):
@@ -256,7 +256,7 @@ class TestPatchProvenanceCrossCheck(unittest.TestCase):
                 .replace('"plan-item": "RD19"', '"plan-item": "RD99"'),
                 encoding="utf-8",
             )
-            problems = src.cross_check_patches(src.load_registry(), engine="llamacpp", patches_dir=tmp_path)
+            problems = src.cross_check_patches(src.load_engine_registry("llamacpp"), engine="llamacpp", patches_dir=tmp_path)
             self.assertTrue(
                 any("plan-item" in p for p in problems),
                 f"expected a plan-item mismatch problem, got {problems}",
@@ -374,7 +374,7 @@ class UpstreamEquivalentSchemaTests(unittest.TestCase):
         any future annotation is genuine; that verification happens by
         hand when the field is populated (RD99's own scope note: populate
         only by confirming a real landed change, never invent one)."""
-        registry = src.load_registry()
+        registry = src.load_engine_registry("llamacpp")
         for source in registry["sources"]:
             for entry in source.get("tracked", []):
                 equiv = entry.get("upstream-equivalent")

@@ -19,7 +19,7 @@ hardware-bound; see [PATCH_VALIDATION.md](PATCH_VALIDATION.md).
 cd $BC
 PYTHONPATH=tools python -m unittest discover -s tools/tests
 PYTHONPATH=tools python -m bigcherry check
-PYTHONPATH=tools python -m bigcherry audit
+PYTHONPATH=tools python -m bigcherry --engine llamacpp audit
 PYTHONPATH=tools python -m bigcherry patch-validate <patch-id>
 ```
 

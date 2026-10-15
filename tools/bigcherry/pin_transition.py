@@ -6,7 +6,7 @@ satisfies it, and that is the S1 stale-trace incident class. The marker is
 the only thing that names a mismatched state as mid-rebase instead of drift.
 
 Lifecycle:
-  written  -- bigcherry repin (atomically with the recipes.toml rewrite,
+  written  -- bigcherry --engine <name> repin (atomically with the recipes.toml rewrite,
               UNCOMMITTED; step 1 of PIN_BUMP.md commits both together)
   consumed -- pin-status --complete succeeds and the operator commits the
               clear; the marker file is deleted
@@ -33,13 +33,14 @@ from typing import Any
 from .core import paths
 
 
-def _default_marker_path() -> Path:
-    """Computed at call time (not import time) so a redirected
-    bigcherry.core.paths.REPO_ROOT takes effect."""
-    return paths.REPO_ROOT / "releases" / "pin-transition.json"
+def marker_path(engine: str, repo_root: Path | None = None) -> Path:
+    """The transition marker of one engine's pin. Each engine moves its pin on its own, so each has its own marker.
+
+    ``repo_root`` is resolved at call time (not import time) so a redirected bigcherry.core.paths.REPO_ROOT takes
+    effect."""
+    return (paths.REPO_ROOT if repo_root is None else repo_root) / "releases" / f"pin-transition-{engine}.json"
 
 
-MARKER_PATH = _default_marker_path()
 SCHEMA_VERSION = 1
 
 
@@ -83,10 +84,9 @@ def _atomic_write_json(path: Path, document: dict[str, Any]) -> None:
         raise
 
 
-def load(path: Path | None = None) -> PinTransition | None:
+def load(path: Path) -> PinTransition | None:
     """Read the marker; None when absent. Malformed => MarkerError (fail
     closed: a corrupt marker is a broken state, not an absent one)."""
-    path = _default_marker_path() if path is None else path
     if not path.is_file():
         return None
     try:
@@ -114,7 +114,7 @@ def write(
     to_sha: str,
     tag: str,
     declaring_commit: str,
-    path: Path | None = None,
+    path: Path,
     *,
     now: str | None = None,
 ) -> PinTransition:
@@ -126,21 +126,19 @@ def write(
         declaring_commit=declaring_commit,
         set_at=now or datetime.now(timezone.utc).isoformat(),
     )
-    _atomic_write_json(
-        _default_marker_path() if path is None else path, marker.to_json())
+    _atomic_write_json(path, marker.to_json())
     return marker
 
 
-def clear(path: Path | None = None) -> bool:
+def clear(path: Path) -> bool:
     """Delete the marker. Returns True if a marker was present."""
-    path = _default_marker_path() if path is None else path
     if path.is_file():
         path.unlink()
         return True
     return False
 
 
-def committed_state(path: Path | None = None) -> str:
+def committed_state(path: Path) -> str:
     """git status of the marker file in its bigcherry repo.
 
     Returns one of: "absent", "committed-clean", "uncommitted".
@@ -152,7 +150,6 @@ def committed_state(path: Path | None = None) -> str:
     for any tree the marker may live in -- a marker committed in one repo is
     still uncommitted in another.
     """
-    path = _default_marker_path() if path is None else path
     if not path.is_file():
         return "absent"
     import subprocess

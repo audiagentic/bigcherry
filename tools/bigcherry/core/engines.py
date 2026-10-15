@@ -89,12 +89,24 @@ class EngineLayout:
     runtime_home: str = ""
     #: (name, repository-relative directory) of each component the engine builds, from [components]
     components: tuple[tuple[str, str], ...] = ()
+    #: repository-relative registry of the external sources (forks, upstream PRs) this engine's patches are ported
+    #: from; "" when the engine has none
+    external_sources: str = ""
+
+    @property
+    def upstream_name(self) -> str:
+        """What the upstream project is called: the last segment of its URL (llama.cpp, radiance)."""
+        return self.upstream.rstrip("/").rsplit("/", 1)[-1]
+
+    def external_sources_path(self, project_root: Path) -> Path | None:
+        return project_root / self.external_sources if self.external_sources else None
 
     def recipes_path(self, project_root: Path) -> Path:
         return project_root / self.recipes
 
-    def recipes_path(self, project_root: Path) -> Path:
-        return project_root / self.recipes
+    def release_package(self) -> str:
+        """The release-please package (a path in release-please-config.json) that carries this engine's release line."""
+        return f"{ENGINES_DIR}/{self.name}"
 
     def patches_root(self, project_root: Path) -> Path:
         return project_root / self.patches
@@ -231,7 +243,7 @@ def load(repo_root: Path, name: str) -> EngineLayout:
     layout = data.get("layout")
     if not isinstance(layout, dict):
         raise EngineError(f"engine {name!r}: missing [layout] table")
-    unknown = sorted(set(layout) - {"patches", "patch-id-prefix", "overlay", "vendor", "recipes"})
+    unknown = sorted(set(layout) - {"patches", "patch-id-prefix", "overlay", "vendor", "recipes", "external-sources"})
     if unknown:
         raise EngineError(f"engine {name!r}: unknown layout key(s): {', '.join(unknown)}")
     return EngineLayout(
@@ -245,6 +257,9 @@ def load(repo_root: Path, name: str) -> EngineLayout:
         serve=_serve(data.get("serve"), name),
         **_build_table(data.get("build"), name),
         components=_components(data.get("components", {}), name),
+        external_sources=(
+            _relative(layout["external-sources"], "external-sources", name) if "external-sources" in layout else ""
+        ),
     )
 
 
