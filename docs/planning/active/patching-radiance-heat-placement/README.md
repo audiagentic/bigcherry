@@ -47,3 +47,24 @@ BigCherry current duplicate: `libr3/helper/moe_remote_hook.cpp` allocates option
 ## Out of scope
 
 Rewrite of Radiance's existing `HeatEngine` policy, independent heat-store service, scheduler rewrite, online training of router, changing model expert selection/top-k, or unqualified automatic live migration.
+
+## Implementation contracts and mock evidence (2026-10-15)
+
+Each RHP01–RHP06 plan now contains low-level source seams, explicit algorithm/API contracts, negative cases, owner-map and lifecycle invariants, measurement requirements and go/no-go checks. RHP01 and RHP02 must establish reliable common histogram evidence **before** cost-aware ownership is trusted; RHP05 applies via controlled restart; RHP06 remains a separate, optional high-risk epoch/mover project.
+
+- Standalone CPU design simulator: [`tools/lab/radiance/heat-placement/heat_mock.mjs`](../../../../tools/lab/radiance/heat-placement/heat_mock.mjs), invoked with `node tools/lab/radiance/heat-placement/heat_mock.mjs`.
+- Unittest integration: `python3 -m unittest tools/tests/radiance/test_heat_placement_mock.py` (skips without Node).
+- Mock methodology: [`tools/lab/radiance/heat-placement/README.md`](../../../../tools/lab/radiance/heat-placement/README.md).
+- Evidence: [`docs/evidence/RHP01/mock-results.json`](../../../evidence/RHP01/mock-results.json): **23/23 pure CPU simulated assertions**. Not a Brutus GPU or model-quality result.
+
+### Implementation handoff sequence
+
+1. Work on a branch from `main` after verifying `RAD09` and `rad0002` are reconciled. Inspect upstream at the pinned SHA; allocate a free engine-scoped patch package; never edit unpinned vendor source directly.
+2. Begin RHP01 by collecting issued/completed/credited/overwritten counts in existing `Ctx` route banks and reproduce the 2% long-prefill capture observation. Decide if evidence is merely late or actually dropped. **Do not add a second GPU histogram**.
+3. RHP02 adds read-only engine hook once per credited row and tests exact multiplicity/phase attribution. Retain legacy diagnostic only until the shared producer passes parity, then remove old collection path without aliases.
+4. RHP03 publishes bounded metrics and a verified atomic full owner map snapshot; RHP04 scores bounded CPU-only owner candidates against measured per-phase cost curves in shadow mode. Preserve existing local `HeatEngine` and `Mover` semantics.
+5. RHP05 evaluates on OR-count/time trigger and stages proposals without disruption; apply under explicit restart authority and canary/rollback gates. RHP06 is gated by evidence that controlled restart cost is materially too high.
+
+### Design caveats requiring confirmation
+
+The pinned engine's route bank may aggregate multiple MTP passes and its histogram phase might be mixed/unknown; do not create fake per-phase counts. Initial all-VRAM / remote-only plans can disable the HeatEngine: the shared reader must not unintentionally activate weight movement. A helper-owned expert marked unplaced in the engine cannot be moved local without weight reallocation and loading. Rank 0-only deduplication is valid **only** for confirmed mirrored TP routing; never discard genuine partitioned routing data. Placement snapshots and the mock's checksum are not production crypto/storage code. GPU parity, real histogram retention and throughput remain unverified.

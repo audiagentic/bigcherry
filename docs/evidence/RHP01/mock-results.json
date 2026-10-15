@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "type": "cpu-only-radiance-heat-placement-design-mock",
+  "date": "2026-10-15",
+  "source": "tools/lab/radiance/heat-placement/heat_mock.mjs",
+  "runner": "JavaScript V8 deterministic evaluation of same committed source",
+  "cases": 23,
+  "passed": 23,
+  "failed": 0,
+  "domains": [
+    "asynchronous-bank-accounting",
+    "MTP-phase-and-TP-heat",
+    "critical-path-owner-optimiser",
+    "budget-and-protected-eligibility",
+    "trigger-count-or-time",
+    "epoch-ACK-and-inflight-fencing",
+    "snapshot-identity-and-integrity"
+  ],
+  "limitations": "No Radiance/ROCm build or Brutus GPU run. Mock uses noncryptographic checksum; production requires SHA-256."
+}
