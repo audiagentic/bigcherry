@@ -22,6 +22,7 @@ from ..source import sources
 from ..release import pin as _release_pin
 from ..release.patch_promote import cmd_patch_promote
 from ..tuning.engine_bench import cmd_engine_bench
+from . import engine_scope
 from .build import cmd_build_new
 from .diagnostics import cmd_check, cmd_doctor, cmd_status
 from .experiment import (
@@ -110,6 +111,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--llama-root",
         default=None,
         help="llama.cpp checkout (default: primary checkout vendor/llama.cpp)",
+    )
+    parser.add_argument(
+        "--engine",
+        dest="global_engine",
+        default=None,
+        help="engine to act on (engines/<name>/engine.toml); which commands take it: cli/engine_scope.py",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -1865,6 +1872,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     inv_reattest.set_defaults(func=cmd_reattest)
 
+    # The subcommand's own name for cli/engine_scope.py: some subcommands reuse `command` for an argument.
+    for name, subparser in sub.choices.items():
+        subparser.set_defaults(subcommand=name)
     return parser
 
 
@@ -2082,6 +2092,7 @@ def _legacy_main(argv: list[str] | None = None) -> int:
     _configure_output()
     parser = build_parser()
     args = parser.parse_args(argv)
+    engine_scope.resolve(args, parser)
     return int(args.func(args))
 
 
