@@ -87,6 +87,41 @@ Ranking for prefill time on this configuration: (1) the batch boundary, ~8.7%; (
 
 Next: attribute the 32 ms per batch boundary - which streams the synchronizes wait on (drafter / catch-up on the 6900 XT, the slower R9700, KV or input uploads), with 1359 (pipeline) and 1348 (deferred catch-up) on and off, on a warm server so start-up waits are out of the picture. Also seen: under rocprofv3 the server's shutdown hangs and is killed after the run (trace complete); not yet checked without the profiler.
 
+
+## 2026-10-14 BCOP191: Q8_1 quantize -> MMQ producer-fusion admission (b11552)
+
+**Disposition for this one candidate:** no generic producer/MMQ fusion patch or hardware queue. Keep QFP48 pending for its *other* trace-led candidates and batch-boundary attribution. This section supersedes the broad suggestion above to fuse every adjacent `quantize_mmq_q8_1 -> mul_mat_q` pair; adjacency does not prove a compatible producer, saved quantization work, or an end-to-end critical path. No BigCherry GPU experiment was performed in this audit.
+
+### Actual dispatch and lifetime
+
+- `ggml/src/ggml-cuda/ggml-cuda.cu::{ggml_cuda_mul_mat,ggml_cuda_mul_mat_id}` selects MMVQ, MMQ, MMF or cuBLAS based on batch, weight type and device. A graph-level `GGML_OP_MUL_MAT[_ID]` is not necessarily an MMQ launch.
+- `ggml/src/ggml-cuda/mmq.cu::ggml_cuda_mul_mat_q` requires F32 `src1`, chooses precision via `ggml_cuda_mmq_get_prec_src1`, allocates per-call `src1_q8_1` from `ctx.pool()`, then launches `quantize_mmq_q8_1_cuda` (or `quantize_mmq_fp4_cuda`) **before** `ggml_cuda_mul_mat_q_switch_type` on the same stream. The dense path and routed `ids` path have different strides, allocation sizes and producer calls. The routed path runs `ggml_cuda_launch_mm_ids_helper`; when `ne11 == 1 && n_expert_used > 1` it uses `quantize_scatter_mmq_q8_1_cuda` and an inverse slot map. This is not a plain adjacent graph-node fusion.
+- `ggml/src/ggml-cuda/quantize.cu::quantize_mmq_q8_1_cuda` selects **D4 / DS4 / D2S6** scale/sum layouts according to weight type. `block_q8_1_mmq` and its padding/stride are not interchangeable with the `block_q8_1` used by `quantize_row_q8_1_cuda` in MMVQ.
+- Validated BigCherry `1307_q81_activation_cache_mmvq` already owns context-scoped stable-slab **MMVQ** Q8_1 caching and fused RMSNorm/activation/hyper-connection producers (former 1235/1309-1312). It is **not** a reusable MMQ producer for prefill; no second cache, graph dispatcher, allocation owner or quantization format should be introduced by QFP48. `1313_scale_act_fuse` and `1355_hc_post_gate_fuse` own their existing elementwise/gate fusions.
+
+### Evidence and upper bounds, not a claimed gain
+
+- Historical ub256 Flash-Next trace: `quantize_mmq_q8_1 -> mul_mat_q` appeared **5.12 times/step**; quantization averaged **5.6 us/launch**; ordinary short gaps were about **3.3 us**; the **mean** step span was **1,592 us**. A deliberately optimistic illustrative bound, assuming *all* those quantization launches and short gaps disappear with no overlap, is `5.12*(5.6+3.3)/1592 = 2.86%` of a step. It is **not** a measured end-to-end gain, and the 3.3 us is not a matched pair-specific gap.
+- The later **b11552** trace is a different run: typical XTX step is 91-92% kernel-busy, and **all** sub-10-us gaps total only about 4% of prefill wall time. Its 24K quantization aggregate (1.37 s GPU kernel duration) is work still needed for MMQ, not 1.37 s of automatically removable wall time. **Do not multiply old per-step counts by new trace step counts.**
+- The measured larger opportunity is batch-boundary copy/synchronization idle (~8.7% of the traced prefill), already under the QFP48/QFP50/QFP16 evidence path; no change to their current implementations or queued lanes is authorized by this audit.
+
+### Upstream/fork comparison and decision
+
+- [llama.cpp #29948](https://github.com/ggml-org/llama.cpp/pull/29948), inspected at `b6e0f03348b519d6118d5b66bff43d253385ada5` (open 2026-10-13), fuses **dense FFN gate/up matmuls plus GLU** in the MMQ writeback, reusing one Q8_1 activation quantization. Its code explicitly gates on `turing_mma_available`, excludes `ids`/MoE, checks quant precision, row/tile shapes and stream-K efficiency. It is **not** an AMD or Flash-Next routed-expert result; keep as a separate dense-only correctness/tiling reference, not a patch to stack here.
+- [vLLM RMSNorm+quant fusion](https://github.com/vllm-project/vllm/blob/main/vllm/compilation/passes/fusion/rms_quant_fusion.py) implements dtype/scale-matched graph patterns and ROCm FP8 producer kernels. The reusable idea is **typed producer/consumer matching**; FP8 scales and layouts do not transfer to GGUF Q8_1 MMQ. No SGLang/NVIDIA performance claim is admitted as gfx1100/gfx1201 evidence.
+
+### Bounded reopening and implementation contract
+
+**Stage 0 (no patch, reuse existing evidence):** On one warm, exact-revision Flash-Next production trace, join `kernel-step-census.py` and `mmq-variant-census.py` with existing `gap-api-calls.py` / backend dispatch receipts. Per physical GPU and same stream, record: graph op and consumer count; source weight type; `src1` type/shape/strides; `ids` and dedup/scatter route; `prec_src1` and D4/DS4/D2S6 layout; actual quant/MMQ kernel pair; bytes written/read; producer kernel; quant time; short gap; and **exposed** wall-time share. Separate prompt from MTP verification and dense from routed MoE. Fail closed if any required identity is missing. Do not reuse the older mixed-trace estimate as a promotion gate.
+
+**Reject/terminate** this candidate if there is no single-consumer, F32, format-compatible dense MMQ producer, if quantization must still materialize for another consumer, if the measured **perfect-removal** end-to-end ceiling is <3%, or if the candidate relies on a routed `ids`/scatter map without a complete slot-preserving proof. Keep stock `ggml_cuda_mul_mat_q` and 1307.
+
+**Only if Stage 0 clears >=3%:** one default-off, *existing-owner* 1307/MMQ extension may produce the exact `block_q8_1_mmq` layout from one proven producer, with no extra global cache/selector. Reserve scratch via the existing `ctx.pool()`; lifetime lasts through the consuming MMQ launch/graph replay, and any type, layout, view-offset, device, stream, consumer-count or pool-reservation mismatch falls back **before** writing output or skipping a kernel. Routed MoE is excluded from v1. The producer must still materialize its original F32 result when other consumers require it. Do not silently replace D4/DS4/D2S6 or FP4 precision.
+
+**Validation:** first a host selector/shape/layout fixture, then patch composition + `test-backend-ops` dense `MUL_MAT` with negative `MUL_MAT_ID`/FP4/multi-consumer cases; repeated same-process requests, graph capture/replay and reallocation, ubatch 1/4/16/128/512, long context, greedy/full logits/KLD and MTP acceptance. Count actual quant launches and expected vs observed bytes; a missing MMQ/quant step without a valid fused replacement is failure. If safe, paired same-binary ABBA at 8K/24K/98K on dual gfx1100 and separately gfx1201; gfx1030 only if a supported route is positively demonstrated. Require >=3% E2E median gain with positive CI95 lower bound, no >1% decode/control regression, no extra VRAM/pinned-buffer growth beyond the measured reserve. Otherwise retire the candidate.
+
+**Audit-only validation:** actual b11552 and BigCherry 1307 source assertions 14/14; disposable source-shaped host admission fixture 10/10 and `py_compile` passed; 2.86% is an illustrative arithmetic ceiling. No patch application, pytest, HIP build, GPU benchmark or performance gain was produced.
+
 ## Change Log
 
 - 2026-10-10T13:53:50.737727+00:00 (created-by): Created by claude
@@ -94,3 +129,9 @@ Next: attribute the 32 ms per batch boundary - which streams the synchronizes wa
 - 2026-10-11T07:31:20.295965+00:00 (updated-by): Updated: section:notes
 - 2026-10-11T08:06:11.851254+00:00 (updated-by): Updated: section:notes
 - 2026-10-11T20:31:34.192893+00:00 (updated-by): Updated: section:notes
+
+## 2026-10-14 BCOP206: residual batch-boundary gap is here, not in QFP53
+
+QFP53/1362 is terminal: coarser KV+k-pool padding produced 24/40 graph reuses and cut host graph build 7.1 -> 3.0 ms/batch, but Flash-Next prefill was neutral and shared-input wait rose 3.3 -> 17.0 ms. Dense 27B regressed and changed greedy output at 32K. Move the rejected graph-reuse proposal to `docs/planning/completed/patching-qwen-flash-next/QFP53.md`; do **not** implement QFP53 candidate B, because validated 1359 already queues the next graph while the previous batch computes.
+
+QFP48 owns **only** a bounded warm per-batch HIP API/device trace join for the remaining ~6-7 gaps near copies. Record previous last kernel/event, upload/copy/sync, first next-batch kernel, graph UID, Meta rebuild, 1359 NextN fence and physical rank on correlated clocks. Separate overlapped host graph work from exposed wall time. At 1465 t/s a 512-token batch is ~349.5 ms, so +3% throughput requires >=10.18 ms *removable exposed* wall time. Reject without a new implementation if the joined trace falls below this gate; otherwise delegate one local default-off fix to the existing copy/wait owner (QFP50/1359 or QFP16/27), not a new scheduler/allocator. Preserve output/graph/event lifetime, multi-slot, MTP acceptance and numeric controls. Upstream llama.cpp #30453 (merged 2026-10-13) fixes Meta graph-slot reallocation after b11552 and is a prerequisite for any future persistent-graph candidate.

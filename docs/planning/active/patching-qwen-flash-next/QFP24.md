@@ -13,6 +13,12 @@ work: M
 
 # Safe pinned scheduler input ring for asynchronous large prefill host->GPU copies
 
+## 2026-10-13 binding correction (see QFP27)
+
+**Do not implement the private `bc_async_input_lane` / `bc_async_input_slot::done[]` pseudocode below as an approved parallel scheduler.** Upstream #29963's input-event generations are enabled only for layer-pipeline `n_copies>1`, while production Meta tensor split uses `n_copies=1` and its device has `events=false` / `event_new=nullptr`. Upstream therefore does **not** currently solve QFP24's tensor-split source lifetime. The detailed code below is historical design, not a ready patch.
+
+QFP16/1326 remains implementation owner; QFP27 owns the admission/compatibility and all-child fanout proof. QFP24 remains **conditional pinned-backing qualification only**. First measure >=1 ms AND >=3% prefill cost; if qualified, add <=64 MiB pinned backing inside 1326 with every child completed before reuse or retain pageable/synchronous fallback. No independent event-query API, scheduler registry or second ring implementation.
+
 ## Description
 
 Patch 1326/QFP16 proved that synchronous split-input handling is expensive and async host->device copies can improve serving. The original pinned-source shortcut improved prefill but was unsafe because graph-input storage may be rewritten before true DMA consumes it. Current 1326 therefore copies into scheduler-owned pageable `std::vector<uint8_t>` staging and caps the path at 4 MiB; safe for decode, but large prefill inputs lose the overlap.
@@ -36,16 +42,13 @@ There is no generic nonblocking `event_query` at this pin. The plan therefore sp
 
 ## Steps
 
-1. Extend 1326 trace/timing with input name, bytes, source/split backend, Meta fanout count, CPU staging memcpy, enqueue and slot-reuse distance.
-2. Allocate bounded scheduler-owned pinned buffers using the destination device's host buffer type; no per-ubatch `hipHostMalloc`.
-3. Replace large-input `std::vector` staging with lanes/ring slots keyed by stable destination-copy identity/size class, not source tensor pointer.
-4. For Meta fanout, record one child-backend event immediately after each `set_tensor_async` enqueue. A slot is live until all required child events are complete.
-5. v1 correctness prototype: on ring wrap, synchronize only that slot's completion events. Measure; this may already amortize the wait if depth is sufficient.
-6. v2 preferred: add an optional CUDA/HIP proc-address `ggml_backend_event_query` (or equivalent private helper) returning completion without blocking; scheduler tries another slot/falls back when busy.
-7. Ring-full behavior is fallback, not unbounded host wait. Keep 1326 pageable/synchronous path intact.
-8. Cap pinned memory globally/per scheduler; collect reserved/active/high-water and fallback counters.
-9. Stress graph reuse, sequential ubatches, two server slots, source overwrite immediately after staging, and 3-rank mirrored Meta fanout.
-10. If positive, fold implementation into patch 1326 and close QFP24 as its design/qualification owner.
+1. QFP27 must first establish that large prefill input handling on the actual tensor-split production pin costs >=1 ms AND >=3% of prefill wall.
+2. Retain QFP16/1326's <=4 MiB pageable path as the control; the proposed private ring below is historical, not an approved second scheduler.
+3. If Gate 1 passes, extend 1326 in-place with <=64 MiB scheduler-owned pinned backing, not another registry or independent generation system.
+4. For Meta mirrored fanout, obtain and join completion from **every** consuming simple backend; Meta has no device event at b11552.
+5. Fall back before partial submission when any event/shape/child is unsupported; never reuse pinned bytes until all children finish.
+6. Test immediate overwrite, 10,000 generations, 2/3/4 slots, multi-request, graph rebind, cancel, delayed child, MTP/full logits/KLD and peak pinned bytes.
+7. Qualify paired control/subject on idle hardware: >=5% median prefill/TTFT gain, positive CI95-low, <=2% decode regression; otherwise close without implementation.
 
 ## Detailed Solution & Technical Design
 

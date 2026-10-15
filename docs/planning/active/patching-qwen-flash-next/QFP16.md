@@ -21,7 +21,7 @@ FMTP01 Gate 0 (1317) measured llama_process(ctx_tgt) host time at 5.06 ms median
 
 1. Break submit into sub-spans with ggml_time_us (graph build/reuse hit, sched alloc/split, per-backend graph_compute_async submit incl. HIP graph launch/update) and log per round; record whether llama graph reuse hit.
 2. rocprof: GPU idle time between the previous sync and the first target kernel of the next round (is submit on the critical path?).
-3. Candidates by evidence: (a) keep llama graph reuse across MTP verify widths (pad verify batch to a fixed n_max+1 or cache one graph per width); (b) HIP graph instances keyed per width already cached (QFP06) - confirm no recapture; (c) move CPU token_embd lookup off the critical path; (d) cheaper sched re-split when the graph is reused.
+3. Candidates by evidence: (a) keep llama graph reuse across MTP verify widths (pad verify batch to a fixed n_max+1 or cache one graph per width); (b) HIP graph instances keyed per width already cached (QFP06) - confirm no recapture; (c) move CPU token_embd lookup off the critical path; (d) scheduler re-splitting is **not** a cost on reused graphs (QFP51 closed); attribute the remaining split-input copies and Meta submit through 1325/1320 instead.
 4. Patch the dominant term; ABBA ms/step.
 
 ## Detailed Solution & Technical Design
@@ -121,3 +121,7 @@ Correctness must include >=3 requests in one process, multi-ubatch prefill, forc
 Hardware promotion requires >=5% median prefill improvement at ubatch 2048 or 4096, no >2% decode regression and no correctness failure. Otherwise close the residual and retain 1326 unchanged.
 
 External mechanism references: ROCm HIP host-memory/asynchronous-copy documentation; current llama.cpp ggml_backend_sched_compute_splits; vLLM's use of pinned host inputs for non-blocking H2D and event-scoped reusable offload buffers.
+
+## 2026-10-13 QFP51 scheduler attribution correction
+
+The historical step-3(d) hypothesis is retired: `llama_context::process_ubatch` skips `ggml_backend_sched_alloc_graph` on a reused graph, and `ggml_backend_sched_graph_compute_async` executes already-allocated splits without `ggml_backend_sched_split_graph`. The 1325 `BIGCHERRY_SCHED_SPLIT` lines time **compute-split execution**, not split construction. QFP16 remains authoritative for the measured 2.63 ms Meta input-handling and 2.23 ms submit cost at ~10K, and QFP51 is closed without a template cache. Do not reinterpret 1319's 0.003 ms reused-graph build time or the 24K 11.4 ms combined build/alloc time as a reusable split-plan win.

@@ -1,20 +1,27 @@
-# Testing — PRBE41 SSM_CONV channels-major
+# Testing — PRBE41 SSM_CONV channels-major (route-corrected 2026-10-14)
 
-## Lane applicability
-Changes `ggml_ssm_conv` to support channels-major input and makes the Qwen delta-net/GDN graph feed convolution without the physical transpose; CPU and CUDA/HIP implement the layout. This can affect gfx1100 `-sm tensor` Qwen3.8-27B-Q8_0 because the model is hybrid GDN/SSM+attention: prefill is the primary target and recurrent/MTP decode can also traverse SSM_CONV. **Applicable to this lane: yes.** Recurrent conv-state layout changes, so do not reuse state across control/subject builds.
+## Applicability and source identity
 
-## Hardware-free
+The existing 1263 patch implements CPU/CUDA/HIP channels-major SSM_CONV and changes the recurrent conv-state layout. `src/models/qwen35.cpp`, `qwen35moe.cpp`, and `qwen3next.cpp` select it only when `model.split_mode() != LLAMA_SPLIT_MODE_TENSOR`. The current dual-XTX `-sm tensor` production lane **does not execute channels-major**; it retains stock time-major RESHAPE/TRANSPOSE/CONCAT and recurrent-state views. Do not reuse recurrent state across builds/layout modes. Do not claim the old pre-guard b11233 crash remains active.
+
+## Offline checks
+
 - `PYTHONPATH=tools python -m bigcherry patch-rebase-check --source bigcherry --focal-overlay 1263_prbe41_ssm_conv_channels_major`
-- Unit mechanics: apply/idempotence; missing anchor fails closed; channels-major CPU/CUDA backend-op cases; graph asserts Qwen delta-net selects channels-major and removes the redundant transpose while unsupported backends reject/fallback.
+- Existing `tools/tests/patch/test_1263_prbe41_ssm_conv_channels_major.py`: apply/idempotence, anchor cardinality, backend-op layout and three Qwen model call sites.
+- New gate before any tensor-split proposal: source-shaped test for `channels_major=(split_mode != TENSOR)`, exact `declined_split` marker and unmodified time-major RESHAPE/TRANSPOSE/CONCAT/rollback; graph-only per-rank Meta split-state fixture belongs to PRBE114 only if reopened.
 
-## Activation
-With `BIGCHERRY_PATCH_TRACE=1`, require exact marker: `BIGCHERRY_PATCH_HIT patch=1263_prbe41 path=ssm_conv_channels_major`. Marker must appear on subject and not control during the measured workload.
+## Activation (route-specific)
 
-## Correctness
-Dual 7900 XTX/gfx1100, `-sm tensor`, Qwen3.8-27B-Q8_0, MTP `n_max=4` (verify batch 5 columns). Compare control/subject MTP logprobs; max abs diff must be <= `5e-4`. Report any greedy-token divergence. Require MTP draft-acceptance parity against the standard server-bench control reference `0.90101` (record accepted/drafted counts and ratio).
+- **Eligible single-device/layer-split subject:** `BIGCHERRY_PATCH_HIT patch=1263_prbe41 path=ssm_conv_channels_major`; control must not hit.
+- **Tensor-split subject:** require `BIGCHERRY_PATCH_HIT patch=1263_prbe41 path=ssm_conv_channels_major_declined_split` when tracing the guarded graph, and **no positive channels-major hit**. A positive marker in tensor split is a correctness/route regression, not a performance success.
+- Marker presence alone does not prove kernel execution or speedup; correlate with exact model, build/patch manifest and graph/dispatch.
 
-## Performance
-Run order-balanced `bigcherry ab-benchmark --server-config` A/B with patch presence as the only variable; report `pp1024`, `pp4096`, `tg512`, `tg2048`, pair order/raw observations/deltas and Mann-Whitney. Expect strongest opportunity in prefill from transpose removal; do not infer benefit from activation alone.
+## Existing measured evidence (do not rerun blindly)
 
-## Promotion
-Promotion requires a contract campaign for `PRBE41-SSM-CONV-CHANNELS-MAJOR` producing `patch-verify-evidence` validated-evidence with architecture/workload identity, activation, correctness and statistical performance evidence. Ad-hoc A/B is diagnostic only and is not promotion evidence.
+- `evidence/validation.json`: historical contract-passing single-architecture `tierA-qwen4b-q6k` pp512 sessions: gfx1100 b11233 +1.13%..+1.43%, gfx1201 b11126 +2.37%/+2.58%; full-vocabulary correctness reported zero logprob difference. Non-SSM `tierM-gptoss20b-q6k` tg128 is the control. Incomplete/withdrawn sessions are not promotion evidence.
+- `docs/evidence/lab-run-summaries/ab-27b-1263.json`: dual-XTX Qwen3.8-27B Q8_0 `-sm tensor` MTP4 pp4096 +0.14% [0.03%, 0.24%], acceptance 84.29% both. The current fallback means this is **not** measured channels-major tensor-split acceleration.
+- `docs/evidence/native-vs-patched-historical/ssm1263-activation/RESULT.md`: b11233 pre-fallback tensor-split startup assert; historical failure only.
+
+## Future current-pin qualification
+
+Before any promotion, confirm exact b11552 patch composition, HIP build, backend-op and full-vocabulary/logits/greedy correctness, same-process repeated requests, multi-ubatch, MTP rollback/state lifetime and graph replay. Positive lane: single-device Qwen hybrid GDN pp512 (or separately justified model/shape); negative: non-SSM tg128 and tensor-split fallback. Four independent order-balanced sessions per declared architecture with >=10 paired rounds, appropriate CI and no >1% control regression. PRBE114 owns any future tensor-split expansion and is closed absent a >=3% exposed E2E opportunity; do not modify generic Meta reshape to qualify this package by assertion suppression.

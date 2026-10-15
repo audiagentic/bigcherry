@@ -5,7 +5,7 @@
 
 ## What it does
 
-Adds an optional whole-expert MoE hand-off ABI. When a hook is registered and `R3_MOE_REMOTE_MIN_ROWS` admits the step, host-pool expert routes are removed from local grouped GEMMs, computed by the hook, copied into an engine-owned BF16 partial, and merged before the existing tensor-parallel all-reduce. With no hook or the default threshold, the existing path remains selected.
+Adds an optional whole-expert MoE hand-off ABI. When the mailbox hook is registered and the row policy admits a pass, helper-owned routes are masked from the local grouped GEMMs and published to the GPU helper. The normal MoE gather materializes the local token output, `moe_mailbox_add` then adds the helper rows with their published BF16 route weights, and the existing standalone tensor-parallel all-reduce runs afterward. HyperConn fused gather/reduce forms are disabled only for connections with a declared MoE gather source on those remote passes. With no mailbox or an excluded row count, the existing fused path is unchanged.
 
 ## Why
 

@@ -13,6 +13,10 @@ work: L
 
 # DFlash/DSpark drafter path: selector, prompt catch-up, adaptive budget and Flash-Next conversion
 
+## 2026-10-14 PNRO11 ownership reconciliation
+
+**Do not mirror the target lm_head across every TP rank.** The older Candidate 4 / acceptance text below is historical. Existing 1286 already copies a borrowed Meta-backed target head **once to the single-device DFlash/DSpark draft**, leaving the target vocab-sharded and MTP unchanged; QFP43 owns its untested hardware qualification. A **tensor-split draft** is different: 1286 excludes Meta draft devices and native DFlash2 in-graph `TOP_K` rejects axis-0 logits. Open upstream [#27858](https://github.com/ggml-org/llama.cpp/pull/27858) moves that selector to host instead of mirroring the target, but is not AMD-qualified. [#28777](https://github.com/ggml-org/llama.cpp/issues/28777) measured an external 7–10% native-MTP decode-step regression from global mirroring. Do not queue new work without a real draft, exact-route correctness and a >=3% E2E opportunity over working MTP. PNRO11 is closed for the duplicate global-mirror proposal; the Flash-Next hyper-connection tap remains a separate QFP43 gate.
+
 ## Description
 
 DFlash2/DSpark are already close to MTP decode throughput on the Qwen3.8-27B hardware profile, but they pay a
@@ -69,8 +73,7 @@ A separate drafter-file comparison is pending and is evidence, not a prerequisit
   time.
 - Deferred DFlash catch-up reuses/generalises 1348 lifecycle rather than introducing a second state machine.
 - One speculative budget controller serves MTP, DFlash2 and DSpark.
-- Tensor-split shared-head behaviour is explained by owned/shared tensor placement and has a clean one-time mirror
-  design if required.
+- Tensor-split shared-head behaviour reuses 1286's draft-local copy; target-wide mirroring is retired (PNRO11).
 - Flash-Next conversion work extends the pinned converter rather than duplicating architecture support.
 - Every later runtime patch is default off, has an explicit off switch and `BIGCHERRY_PATCH_HIT`.
 - Every `patch.py` generated C/C++ string containing escapes is a raw Python string.

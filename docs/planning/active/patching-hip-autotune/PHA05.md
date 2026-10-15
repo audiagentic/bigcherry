@@ -15,6 +15,10 @@ priority: null
 
 ## Description
 
+## 2026-10-14 PHA04 candidate-identity promotion fence
+
+PHA04's source audit found that `rccl_qualify.py` records requested/observed channels but neither applies `RcclCase.channels` to the launched process nor compares channels in `_classify`. Its `PLAN_VERIFIED` status means **algorithm/protocol only**. It is **not** a qualified RCCL algorithm/protocol/channel candidate. A modern `rcclGetCollImplInfo` query is build-gated by `RCCL_EXPOSE_STATIC` and predicts an implementation for specified buffers/capture; it does not prove the executed route. PHA05 must reject legacy results, query-only records, plugin-requested settings and unknown/addon substitutions as promotion evidence. Preserve the existing 1225 fail-closed admission and require PHA03 plus PHA04 executed-route correlation before any default-build change. No hardware or build was performed for this note.
+
 Promotion remains intentionally pending. It may only consume completed PHA03 level-1 topology admission and PHA04 level-2 per-call candidate binding evidence; no default-build wiring is justified from current capability-only guard, diagnostic runs, nearest RCCL source, or historical qualification artifacts.
 
 ## Steps

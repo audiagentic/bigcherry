@@ -1,17 +1,15 @@
 # 1267 RD07 Q6_K MMQ scale fold
 
-Fresh `untested` extraction of the RD07 sub-piece from rejected package 1203. It hoists Q6_K row base scales and folds the per-k01 sub-scale before the j0 accumulation, removing repeated scale work without importing RD05/RD06 or diagnostic timing code.
+**Status:** `untested`; b11552 `known_broken` / `FAILED_NEEDS_RECONCILIATION` in `dispositions/1267_rd07_q6k_mmq_scale_fold.json`. **Not production, not a successful current-pin application.** Owner: PRBE110 (code/rebase), PRBE04 (downstream PEF01/HI71 safety).
 
-## Provenance
+The b11126 extraction of RD07 from rejected 1203 hoists Q6_K row scales and folds per-k01 sub-scales before the j0 accumulation in `ggml/src/ggml-cuda/mmq-vec-dot.cuh`. The original and folded expressions differ in F32 association. Historical b11126 gfx1201 pp512 +2.4675%, CI95 [2.2776%,2.6508%], tg128 -0.0331%, CI95 [-0.0592%,-0.0071%]; contract verdict PASS but the record remains `validation_disposition=incomplete`, `eligible_for_validated_state=false` and has failed controls/performance checks. No b11552 or production gain is claimed.
 
-- Source fork commit: https://github.com/stew675/llama.cpp/commit/1d525bd45f9e8f844856ecbc5dd8ae33c8d34eff
-- Pinned upstream dispatch verified at `ggml-org/llama.cpp` b11126: `ggml/src/ggml-cuda/mmq.cu` uses `mul_mat_q_case<GGML_TYPE_Q6_K>(ctx, args, stream);` with no `forced_J` argument.
-- Rejected source package: `1203_rd050607_rdna4_wmma_fa_q6k_mmq`; its validation evidence is not inherited.
+## Exact b11552 rebase failures
 
-## Scope
+- `patch.py::rd07-activation-marker` anchors on `mul_mat_q_case<GGML_TYPE_Q6_K>(ctx, args, stream, forced_J)`, but b11552 plus validated 0300 dispatches `mul_mat_q_case<GGML_TYPE_Q6_K, GGML_PREC_Q8>(ctx, args, stream)`.
+- `patch.py::rd07-jmax-env` expects `int ret = std::min(ne11, int64_t(512)); ret -= ret % 8;` in `mmq.cuh`; the old J-max selection is gone. Validated 0300 already chooses J before activation padding and owns `GGML_HIP_MMQ_FORCE_J`. Do **not** reintroduce a late J override.
+- The MMA hoist/fold/sum source still has a corresponding unhoisted Q6_K path at pinned b11552 and current upstream master, but the whole package cannot be applied as-is.
 
-Includes only RD07 Q6_K scale hoist/fold, a `BIGCHERRY_PATCH_TRACE` Q6_K MMQ dispatch marker, `GGML_CUDA_MMQ_J_MAX` qualification knob, and Q6_K-only perf cases with Q8_0/F16/F32 controls. It explicitly excludes all RD05/RD06 flash-attention changes and 1203 op-timing instrumentation.
+**Bounded next action:** PRBE110 first proves an actual Q6_K model/kernel route and >=3% optimistic exposed E2E ceiling; otherwise close without code. If admitted, update only this existing package's marker, drop J-max edit, preserve the PEF01 gfx1100 J112 quarantine, gate transformed arithmetic to qualified gfx1201, and run composed source/host safety checks before any HIP benchmark. No duplicate J dispatcher or profiling framework.
 
-## Validation
-
-Contract `PRBE110-RD07-Q6K-MMQ-SCALE-FOLD`: gfx1100/gfx1201/gfx1030, backend-reference correctness, subject-only marker, prefill positive and decode control, 10 paired rounds/session, 4 sessions, `improvement_no_regression_v1`, combined llama-bench invocation. State remains `untested` until fresh evidence is produced.
+**Provenance:** https://github.com/stew675/llama.cpp/commit/1d525bd45f9e8f844856ecbc5dd8ae33c8d34eff ; current RDNA-boosts block 07 carries the same fold and relocates its own J cap into native J search (not directly portable over BigCherry 0300). Source package `1203_rd050607_rdna4_wmma_fa_q6k_mmq` remains rejected.

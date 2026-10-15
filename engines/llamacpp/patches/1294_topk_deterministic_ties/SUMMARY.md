@@ -35,3 +35,9 @@ prefill timing A/B, test-backend-ops TOP_K.
 Cross-start greedy identity, no MTP, cpu-root: 32K 317/317 chars identical (s1 vs s2), 80K 262/262 identical;
 before 1294 the same probe diverged at character 45 (32K) and 0-1 (80K). Speed neutral: ~50 ms/MTP step at
 10K and ~66 ms at 80K in all ABBA arms; with MTP at 10K three arms reached identical acceptance (351/478).
+
+## 2026-10-14 ordered-path dependency audit (QFP03 / BCOP202)
+
+At pinned b11552, the default-on `top_k_radix_gather_ordered` runs after upstream counter-reset and atomic gather, but reads only the radix prefix/rank and original input; it rewrites every output slot without reading the counters or the previous gather output. The reset and atomic gather are therefore redundant **only when deterministic+ordered are both enabled**. QFP03 specifies one in-place guarded 1294 simplification; no code change or GPU speedup has been demonstrated. The tie-only and stock paths must retain the reset/gather. Host model: 6 fixed + 20,000 random comparisons passed; 11/11 source checks passed. Historical 2026-10-03 speed-neutral measurements predate ordered output (added 2026-10-07).
+
+**Precision:** ordered output is deterministic **partitioned index order**, not globally ascending indices: all greater-than-cut indices ascending, then the lowest-index cutoff-equal indices ascending. Example `[0,2,0,3], k=3` -> `[1,3,0]`. This preserves consumer reduction order. No code/kernel changes in this documentation audit.

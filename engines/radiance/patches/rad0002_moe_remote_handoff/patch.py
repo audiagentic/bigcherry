@@ -1,67 +1,46 @@
-"""Radiance 1.3.0: optional remote whole-expert MoE compute hand-off."""
+"""Radiance 1.3.0: GPU-lane remote whole-expert MoE hand-off."""
 
 from bigcherry.patcher import Edit, FilePatch
 
-_RAD_MOE_REMOTE_H = r"""/* rad_moe_remote.h -- optional whole-expert compute hand-off for routed MoE blocks. */
+_RAD_MOE_REMOTE_H = r"""/* rad_moe_remote.h -- policy gate for GPU-lane remote whole-expert compute. */
 #pragma once
 #include <stdint.h>
-#include "rad_runtime.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
-#define RAD_MOE_REMOTE_ABI 1u
-typedef void* RadMoeRemoteHandle;
-typedef struct RadMoeRemoteRoute {
-    int32_t token;
-    int32_t expert;
-    uint16_t weight_bf16;
-    uint16_t reserved;
-} RadMoeRemoteRoute;
-typedef struct RadMoeRemoteHooks {
-    uint32_t abi_version;
-    void* user;
-    RadMoeRemoteHandle (*submit)(void* user, int layer, int rank,
-                                 int64_t rows, int64_t n_embd,
-                                 const RadMoeRemoteRoute* route, int64_t n_route,
-                                 const void* activation, int64_t activation_stride_bytes);
-    const void* (*wait)(void* user, RadMoeRemoteHandle handle);
-} RadMoeRemoteHooks;
-/* Register before architecture declaration. An already-loaded plugin may call this directly.
- * R3_MOE_REMOTE_SO may instead name a .so exporting
- *   const RadMoeRemoteHooks* rad_moe_remote_hooks(void)
- * which the core loads during architecture declaration. */
-int rad_moe_remote_register(const RadMoeRemoteHooks* hooks);
+/* Runtime step gate. The libr3 mailbox component sets the bounds only after its mapped segment
+ * is pinned and ready; an unset minimum means remote MoE is disabled. */
 int rad_moe_remote_wanted(int64_t step_rows);
-RadMoeRemoteHandle rad_moe_remote_submit(RadCtx* c, int layer,
-                                         int64_t step_rows, int64_t rows, int64_t n_embd,
-                                         int64_t top_k, int64_t expert_base,
-                                         const rad_weight* gate_up, const rad_weight* down,
-                                         int64_t n_expert,
-                                         int32_t* ids, const uint16_t* weight_bf16,
-                                         const void* activation, int64_t activation_stride_bytes);
-/* Waits through the registered hook, copies its BF16 partial into dst on the engine's current
- * stream, and drains that stream before returning so the hook may reuse its returned storage. */
-int rad_moe_remote_wait_into(RadCtx* c, RadMoeRemoteHandle handle, void* dst, int64_t bytes);
+int rad_moe_remote_wanted_upto(int64_t max_step_rows);
+int rad_moe_remote_shadow(void);
+int rad_moe_remote_mask_only(void);
+typedef void (*rad_moe_remote_layer_map_hook)(
+    int layer, int n_expert, const int32_t* slot_of_expert);
+void rad_moe_remote_set_layer_map_hook(rad_moe_remote_layer_map_hook hook);
+void rad_moe_remote_layer_map(
+    int layer, int n_expert, const int32_t* slot_of_expert);
+/* Placement: whether the engine may leave a routed expert unit unplaced because the helper computes it.
+ * The plugin answers ownership; the engine adds the conditions under which nothing local reads it. */
+typedef int (*rad_moe_remote_owner_hook)(int layer, int expert);
+void rad_moe_remote_set_owner_hook(rad_moe_remote_owner_hook hook);
+int rad_moe_remote_skip_unit(int layer, int expert, int64_t max_step_rows);
 #ifdef __cplusplus
 }
 #endif
 """
 
-_MOE_REMOTE_CPP = r"""/* moe_remote.cpp -- residency policy and C hand-off for remote whole-expert compute. */
+_MOE_REMOTE_CPP = r"""/* moe_remote.cpp -- decode-sized policy gate for GPU-lane remote MoE. */
 #include "rad_moe_remote.h"
-#include "runtime/ctx.h"
-#include "rad_device.h"
 #include <atomic>
 #include <climits>
-#include <cstdio>
 #include <cstdlib>
-#include <dlfcn.h>
+#include <map>
 #include <mutex>
 #include <vector>
+
 namespace {
-RadMoeRemoteHooks g_hooks{};
-std::atomic<bool> g_active{false};
-std::once_flag g_load_once;
+std::atomic<rad_moe_remote_layer_map_hook> g_layer_map_hook{nullptr};
+
 int64_t min_rows() {
     static const int64_t v = [] {
         const char* s = std::getenv("R3_MOE_REMOTE_MIN_ROWS");
@@ -72,106 +51,91 @@ int64_t min_rows() {
     }();
     return v;
 }
-void load_env_hook() {
-    const char* so = std::getenv("R3_MOE_REMOTE_SO");
-    if (!so || !*so) return;
-    void* h = dlopen(so, RTLD_NOW | RTLD_LOCAL);
-    if (!h) {
-        std::fprintf(stderr, "radiance: R3_MOE_REMOTE_SO '%s' could not be loaded: %s\n",
-                     so, dlerror());
-        return;
-    }
-    using GetHooks = const RadMoeRemoteHooks* (*)(void);
-    auto get = (GetHooks)dlsym(h, "rad_moe_remote_hooks");
-    if (!get) {
-        std::fprintf(stderr, "radiance: R3_MOE_REMOTE_SO '%s' has no rad_moe_remote_hooks\n", so);
-        return;
-    }
-    if (rad_moe_remote_register(get()) < 0)
-        std::fprintf(stderr, "radiance: R3_MOE_REMOTE_SO '%s' returned an invalid MoE remote hook\n",
-                     so);
+int64_t max_rows() {
+    static const int64_t v = [] {
+        const char* s = std::getenv("R3_MOE_REMOTE_MAX_ROWS");
+        if (!s || !*s) return (int64_t)LLONG_MAX;
+        char* end = nullptr;
+        const long long n = std::strtoll(s, &end, 10);
+        return end && *end == 0 && n >= 0 ? (int64_t)n : (int64_t)LLONG_MAX;
+    }();
+    return v;
 }
-void ensure_loaded() { std::call_once(g_load_once, load_env_hook); }
 }
-extern "C" int rad_moe_remote_register(const RadMoeRemoteHooks* hooks) {
-    if (!hooks || hooks->abi_version != RAD_MOE_REMOTE_ABI || !hooks->submit || !hooks->wait)
-        return RAD_E_INVAL;
-    if (g_active.load(std::memory_order_acquire)) return RAD_E_STATE;
-    g_hooks = *hooks;
-    g_active.store(true, std::memory_order_release);
-    const int64_t m = min_rows();
-    if (m == LLONG_MAX)
-        std::fprintf(stderr, "radiance: MoE remote hook active (R3_MOE_REMOTE_MIN_ROWS=never)\n");
-    else
-        std::fprintf(stderr, "radiance: MoE remote hook active (R3_MOE_REMOTE_MIN_ROWS=%lld)\n", (long long)m);
-    return RAD_OK;
-}
+
 extern "C" int rad_moe_remote_wanted(int64_t step_rows) {
-    ensure_loaded();
-    return g_active.load(std::memory_order_acquire) && step_rows >= min_rows();
+    const int64_t lo = min_rows(), hi = max_rows();
+    return lo != LLONG_MAX && step_rows >= lo && step_rows <= hi;
 }
-extern "C" RadMoeRemoteHandle rad_moe_remote_submit(
-    RadCtx* base, int layer, int64_t step_rows, int64_t rows, int64_t n_embd,
-    int64_t top_k, int64_t expert_base, const rad_weight* gate_up, const rad_weight* down,
-    int64_t n_expert, int32_t* ids_dev, const uint16_t* ew_dev,
-    const void* activation, int64_t activation_stride_bytes) {
-    if (!base || !rad_moe_remote_wanted(step_rows) || rows <= 0 || n_embd <= 0 || top_k <= 0 ||
-        n_expert <= 0 || !gate_up || !down || !ids_dev || !ew_dev || !activation) return nullptr;
-    auto* c = static_cast<rad::Ctx*>(base);
-    bool any = false;
-    for (int64_t x = 0; x < n_expert; ++x)
-        if (gate_up[x] && down[x] && c->weight_in_host_pool(gate_up[x]) &&
-            c->weight_in_host_pool(down[x])) { any = true; break; }
-    if (!any) return nullptr;
-    const int64_t n = rows * top_k;
-    thread_local std::vector<int32_t> ids;
-    thread_local std::vector<uint16_t> ew;
-    thread_local std::vector<int64_t> slot;
-    thread_local std::vector<RadMoeRemoteRoute> route;
-    ids.resize((size_t)n); ew.resize((size_t)n);
-    RadStream s = c->cur_stream();
-    if (rad_memcpy_async(ids.data(), ids_dev, n * (int64_t)sizeof(int32_t), s) < 0 ||
-        rad_memcpy_async(ew.data(), ew_dev, n * (int64_t)sizeof(uint16_t), s) < 0 ||
-        rad_stream_sync(s) < 0) {
-        rad_step_fail(base, "MoE remote routing copy failed");
-        return nullptr;
-    }
-    slot.clear(); route.clear();
-    for (int64_t i = 0; i < n; ++i) {
-        const int64_t le = (int64_t)ids[(size_t)i] - expert_base;
-        if (le < 0 || le >= n_expert || !gate_up[le] || !down[le] ||
-            !c->weight_in_host_pool(gate_up[le]) || !c->weight_in_host_pool(down[le])) continue;
-        slot.push_back(i);
-        route.push_back(RadMoeRemoteRoute{(int32_t)(i / top_k), ids[(size_t)i], ew[(size_t)i], 0});
-    }
-    if (route.empty()) return nullptr;
-    const RadMoeRemoteHooks hooks = g_hooks;
-    RadMoeRemoteHandle h = hooks.submit(hooks.user, layer, c->rank(), rows, n_embd,
-                                        route.data(), (int64_t)route.size(),
-                                        activation, activation_stride_bytes);
-    if (!h) return nullptr;
-    for (int64_t i : slot) ids[(size_t)i] = -1;
-    if (rad_memcpy_async(ids_dev, ids.data(), n * (int64_t)sizeof(int32_t), s) < 0) {
-        (void)hooks.wait(hooks.user, h);
-        rad_step_fail(base, "MoE remote route mask copy failed");
-        return nullptr;
-    }
-    return h;
+
+extern "C" int rad_moe_remote_wanted_upto(int64_t max_step_rows) {
+    const int64_t lo = min_rows(), hi = max_rows();
+    return lo != LLONG_MAX && lo <= hi && lo <= max_step_rows;
 }
-extern "C" int rad_moe_remote_wait_into(RadCtx* base, RadMoeRemoteHandle handle,
-                                          void* dst, int64_t bytes) {
-    if (!base || !handle || !dst || bytes <= 0 ||
-        !g_active.load(std::memory_order_acquire)) return RAD_E_INVAL;
-    const RadMoeRemoteHooks hooks = g_hooks;
-    const void* src = hooks.wait(hooks.user, handle);
-    if (!src) return RAD_E_STATE;
-    auto* c = static_cast<rad::Ctx*>(base);
-    RadStream s = c->cur_stream();
-    const int rc = rad_memcpy_async(dst, src, bytes, s);
-    if (rc < 0) return rc;
-    /* wait() transfers a borrowed result pointer, with no release callback in the minimal ABI.
-     * Drain this engine stream so the hook may immediately recycle that storage safely. */
-    return rad_stream_sync(s);
+
+extern "C" int rad_moe_remote_shadow(void) {
+    const char* e = std::getenv("R3_MOE_HELPER_SHADOW");
+    return e && *e && !(e[0] == '0' && e[1] == 0);
+}
+
+extern "C" int rad_moe_remote_mask_only(void) {
+    const char* e = std::getenv("R3_MOE_HELPER_MASK_ONLY");
+    return e && *e && !(e[0] == '0' && e[1] == 0);
+}
+
+/* Layer maps are published at declare, which can run before the plugin installs its hook (libr3 installs
+ * it when the mailbox device is first created). Keep every published map and replay them when the hook
+ * arrives, so no layer's map is lost to that ordering. */
+namespace {
+std::mutex g_layer_map_mu;
+std::map<int, std::vector<int32_t>> g_layer_maps;
+}
+
+extern "C" void rad_moe_remote_set_layer_map_hook(rad_moe_remote_layer_map_hook hook) {
+    std::lock_guard<std::mutex> lock(g_layer_map_mu);
+    g_layer_map_hook.store(hook, std::memory_order_release);
+    if (hook)
+        for (const auto& [layer, slots] : g_layer_maps)
+            hook(layer, (int)slots.size(), slots.data());
+}
+
+extern "C" void rad_moe_remote_layer_map(
+    int layer, int n_expert, const int32_t* slot_of_expert) {
+    if (n_expert <= 0 || !slot_of_expert) return;
+    std::lock_guard<std::mutex> lock(g_layer_map_mu);
+    g_layer_maps[layer].assign(slot_of_expert, slot_of_expert + n_expert);
+    const auto hook = g_layer_map_hook.load(std::memory_order_acquire);
+    if (hook) hook(layer, n_expert, slot_of_expert);
+}
+
+namespace {
+std::atomic<rad_moe_remote_owner_hook> g_owner_hook{nullptr};
+}
+
+extern "C" void rad_moe_remote_set_owner_hook(rad_moe_remote_owner_hook hook) {
+    g_owner_hook.store(hook, std::memory_order_release);
+}
+
+/* R3_MOE_HELPER_SKIP_OWNED=1: a helper-owned expert is not placed at all -- no VRAM, no host pool -- which is
+ * what lets one engine rank (the R9700) hold a model whose experts it could not hold alone. Only when nothing
+ * local will ever read the unit: every step is handed off (the hand-off cap covers the largest step), no
+ * shadow or mask-only diagnostic recomputes owned experts locally, and the layer's runtime map gives the
+ * expert a regular slot with no protected expert in the layer (those layers stay local; the helper drops
+ * ownership on exactly the same test). */
+extern "C" int rad_moe_remote_skip_unit(int layer, int expert, int64_t max_step_rows) {
+    const char* e = std::getenv("R3_MOE_HELPER_SKIP_OWNED");
+    if (!e || !*e || (e[0] == '0' && e[1] == 0)) return 0;
+    const auto hook = g_owner_hook.load(std::memory_order_acquire);
+    if (!hook || rad_moe_remote_shadow() || rad_moe_remote_mask_only()) return 0;
+    if (min_rows() == (int64_t)LLONG_MAX || min_rows() > 1 || max_rows() < max_step_rows) return 0;
+    {
+        std::lock_guard<std::mutex> lock(g_layer_map_mu);
+        const auto it = g_layer_maps.find(layer);
+        if (it == g_layer_maps.end() || expert < 0 || expert >= (int)it->second.size()) return 0;
+        for (int32_t slot : it->second)
+            if (slot < 0) return 0;
+    }
+    return hook(layer, expert) ? 1 : 0;
 }
 """
 
@@ -179,12 +143,12 @@ PATCHES = (
     FilePatch(
         path="abi/rad_moe_remote.h",
         create=True,
-        description="Create the optional remote-MoE C ABI.",
+        description="Create the GPU-lane remote-MoE policy ABI.",
         edits=(Edit(
             id="create-remote-moe-abi",
             anchor=r"\A",
             text=_RAD_MOE_REMOTE_H,
-            guard=r"^#define RAD_MOE_REMOTE_ABI 1u$",
+            guard=r"^int rad_moe_remote_wanted\(int64_t step_rows\);$",
             expect_matches=1,
             rationale="Created files are anchored at the empty upstream file; create=True rejects any upstream collision.",
         ),),
@@ -192,44 +156,19 @@ PATCHES = (
     FilePatch(
         path="core/place/moe_remote.cpp",
         create=True,
-        description="Create remote-MoE hook loading, routing, and result hand-off.",
+        description="Create decode-sized remote-MoE policy gating; no CPU hand-off path exists.",
         edits=(Edit(
             id="create-remote-moe-core",
             anchor=r"\A",
             text=_MOE_REMOTE_CPP,
-            guard=r'^extern "C" int rad_moe_remote_register',
+            guard=r'^extern "C" int rad_moe_remote_wanted',
             expect_matches=1,
             rationale="Created files are anchored at the empty upstream file; create=True rejects any upstream collision.",
         ),),
     ),
     FilePatch(
-        path="arch/common/rad_block_hc.h",
-        description="Disable fused MoE gather only while remote rows must join before the collective.",
-        edits=(
-            Edit(
-                id="include-remote-moe-abi",
-                anchor=r"^#define RAD_BLOCK_HC_H$",
-                text='\n#include "rad_moe_remote.h"',
-                guard=r'^#include "rad_moe_remote\.h"$',
-                expect_matches=1,
-                rationale="The header guard define is unique and precedes the existing architecture includes.",
-            ),
-            Edit(
-                id="remote-aware-hc-gather",
-                anchor=r"^[ \t]*return takes_ar\(T\) && gather_taken\(g, T, gather_rows, gather_rows6\);$",
-                mode="replace",
-                text="""        /* Remote rows join x.x before the collective; only the gather fusion stands down. */
-        return !rad_moe_remote_wanted(T) && takes_ar(T) &&
-               gather_taken(g, T, gather_rows, gather_rows6);""",
-                guard=r"!rad_moe_remote_wanted\(T\)",
-                expect_matches=1,
-                rationale="The unique takes_gather return is the policy point controlling the gather/write fusion.",
-            ),
-        ),
-    ),
-    FilePatch(
         path="arch/common/rad_block_moe_fp8.h",
-        description="Route host-pool experts through the remote hook and add their partial before all-reduce.",
+        description="Publish remote experts and merge local/helper rows with exact moe_gather arithmetic.",
         edits=(
             Edit(
                 id="include-remote-moe-abi",
@@ -237,285 +176,332 @@ PATCHES = (
                 text='\n#include "rad_moe_remote.h"',
                 guard=r'^#include "rad_moe_remote\.h"$',
                 expect_matches=1,
-                rationale="The device include is unique in this header and sits with the architecture dependencies.",
+                rationale="The device include is unique in this header and sits with architecture dependencies.",
             ),
             Edit(
-                id="remote-weight-probes",
-                anchor=r"^[ \t]*std::vector<rad_weight> w_gu, w_gus, w_dn, w_dns;$",
-                text="""
-    /* Expert-id -> movement-unit probes for the remote residency policy. */
-    std::vector<rad_weight> remote_gu, remote_dn;
-    rad_buf b_remote = 0;""",
-                guard=r"remote_gu, remote_dn",
-                expect_matches=1,
-                rationale="The expert weight vectors are the unique declaration owning the per-expert movement handles.",
-            ),
-            Edit(
-                id="remote-add-op",
+                id="remote-ops",
                 anchor=r"^[ \t]*rad_op op_ar = 0, op_add = 0;$",
                 mode="replace",
-                text="    rad_op op_ar = 0, op_add = 0, op_remote_add = 0;",
-                guard=r"op_remote_add = 0",
+                text="""    rad_op op_ar = 0, op_add = 0, op_remote_publish = 0, op_remote_add = 0, op_remote_shadow = 0;
+    rad_op op_remote_mask_capture = 0, op_remote_mask_restore = 0;""",
+                guard=r"op_remote_publish = 0",
                 expect_matches=1,
-                rationale="The output all-reduce/add declaration is the unique place for the pre-reduction remote merge op.",
+                rationale="The output op declaration is the unique home for the pre-reduction mailbox ops.",
             ),
             Edit(
-                id="init-remote-weight-probes",
-                anchor=r"^[ \t]*w_dn\.resize\(\(size_t\)ne\); w_dns\.resize\(\(size_t\)ne\);$",
+                id="publish-runtime-layer-map",
+                anchor=r"^[ \t]*if \(std::find\(prot\.begin\(\), prot\.end\(\), e\) == prot\.end\(\)\) reg\.push_back\(e\);$",
                 text="""
-    remote_gu.assign((size_t)ne, 0);
-    remote_dn.assign((size_t)ne, 0);""",
-                guard=r"remote_gu\.assign\(\(size_t\)ne, 0\)",
+    std::vector<int32_t> remote_slot((size_t)ne, -1);
+    for (int64_t s = 0; s < n_reg; ++s)
+        remote_slot[(size_t)reg[(size_t)s]] = (int32_t)s;
+    if (!prot.empty() && rad_moe_remote_shadow()) {
+        std::string pl;
+        for (int64_t e : prot) pl += (pl.empty() ? "" : ",") + std::to_string(e);
+        fprintf(stderr, "radiance: MoE remote shadow: layer %d protected [%s] n_reg %lld ncls %d\\n",
+                l, pl.c_str(), (long long)n_reg, c.ff_hi4[0] > 0 ? 4 : 2);
+    }
+    rad_moe_remote_layer_map(l, (int)ne, remote_slot.data());""",
+                guard=r"rad_moe_remote_layer_map\(l, \(int\)ne, remote_slot\.data\(\)\);",
                 expect_matches=1,
-                rationale="The existing expert vector sizing is the stable declaration-time initialization boundary.",
+                rationale="The reg[] fill line is the first point where runtime protected-expert removal and compact regular slots are both final.",
             ),
             Edit(
-                id="remember-bf16-gate-up",
-                anchor=r"^[ \t]*if \(!w_gu\[\(size_t\)e\]\) return RAD_E_INVAL;$",
-                text="\n            remote_gu[(size_t)e] = w_gu[(size_t)e];",
-                guard=r"remote_gu\[\(size_t\)e\] = w_gu\[\(size_t\)e\]",
-                expect_matches=1,
-                rationale="The unique successful BF16 gate/up declaration has the movement handle needed by the policy.",
-            ),
-            Edit(
-                id="remember-bf16-down",
-                anchor=r"^[ \t]*if \(!w_dn\[\(size_t\)e\]\) return RAD_E_INVAL;$",
-                text="\n            remote_dn[(size_t)e] = w_dn[(size_t)e];",
-                guard=r"remote_dn\[\(size_t\)e\] = w_dn\[\(size_t\)e\]",
-                expect_matches=1,
-                rationale="The unique successful BF16 down declaration has the movement handle needed by the policy.",
-            ),
-            Edit(
-                id="remember-quant-gate-up",
-                anchor=r"^[ \t]*if \(!h\) return RAD_E_INVAL;$",
-                text="\n            remote_gu[(size_t)e] = h;",
-                guard=r"remote_gu\[\(size_t\)e\] = h;",
-                expect_matches=4,
-                occurrence=0,
-                rationale="Exactly four quantized view success checks exist here; the first is the gate/up code-plane declaration.",
-            ),
-            Edit(
-                id="remember-quant-down",
-                anchor=r"^[ \t]*if \(!h\) return RAD_E_INVAL;$",
-                text="\n            remote_dn[(size_t)e] = h;",
-                guard=r"remote_dn\[\(size_t\)e\] = h;",
-                expect_matches=4,
-                occurrence=2,
-                rationale="Exactly four quantized view success checks exist here; the third is the down code-plane declaration.",
-            ),
-            Edit(
-                id="remember-protected-gate-up",
-                anchor=r"^[ \t]*if \(!w_pgu\[\(size_t\)j\]\) return RAD_E_INVAL;$",
-                text="\n            remote_gu[(size_t)prot[(size_t)j]] = w_pgu[(size_t)j];",
-                guard=r"remote_gu\[\(size_t\)prot\[\(size_t\)j\]\] = w_pgu",
-                expect_matches=1,
-                rationale="The protected gate/up success check uniquely follows its per-expert handle declaration.",
-            ),
-            Edit(
-                id="remember-protected-down",
-                anchor=r"^[ \t]*if \(!w_pdn\[\(size_t\)j\]\) return RAD_E_INVAL;$",
-                text="\n            remote_dn[(size_t)prot[(size_t)j]] = w_pdn[(size_t)j];",
-                guard=r"remote_dn\[\(size_t\)prot\[\(size_t\)j\]\] = w_pdn",
-                expect_matches=1,
-                rationale="The protected down success check uniquely follows its per-expert handle declaration.",
-            ),
-            Edit(
-                id="declare-remote-partial-add",
+                id="declare-remote-mailbox-ops",
                 anchor=r"^[ \t]*\{w\.x, w\.h\.x\}, \{w\.x\}\);$",
                 text="""
-    if (rad_moe_remote_wanted(g.max_tok)) {
-        b_remote = decl_b(b, nm.f("blk.%d.moe_remote_partial", l), RAD_BF16,
-                          {c.rows, g.n_embd});
-        if (!b_remote) return RAD_E_INVAL;
-        op_remote_add = rw(b, RAD_OP(b, "add",
-                               RAD_PARAMS(RAD_RANGE("M", 1, c.rows), RAD_INT("n", g.n_embd),
-                                          RAD_STR("dtype", g.dtype)),
-                               RAD_NOWEIGHTS),
-                           {w.h.x, b_remote}, {w.h.x});
-        if (!op_remote_add) return RAD_E_INVAL;
+    if (rad_moe_remote_wanted_upto(g.max_tok)) {
+        const rad_buf remote_q = c.expert_rot ? w.hr.q : w.h.q;
+        const rad_buf remote_s = c.expert_rot ? w.hr.s : w.h.s;
+        op_remote_publish = rw(b, RAD_OP(b, "moe_mailbox_publish",
+                                   RAD_PARAMS(RAD_INT("layer", l), RAD_RANGE("M", 1, c.rows),
+                                              RAD_INT("n", g.n_embd), RAD_INT("top_k", c.top_k),
+                                              RAD_INT("expert_base", c.expert_base),
+                                              RAD_INT("n_expert", c.n_expert)),
+                                   RAD_NOWEIGHTS),
+                               {w.ids, w.ew, w.h.x, remote_q, remote_s, remote_q}, {w.ids});
+        op_remote_add = RAD_OP(b, "moe_mailbox_add",
+                               RAD_PARAMS(RAD_RANGE("M", 1, c.rows),
+                                          RAD_INT("n", g.n_embd),
+                                          RAD_INT("top_k", c.top_k)),
+                               RAD_NOWEIGHTS);
+        if (op_remote_add) {
+            const rad_buf rd[5] = { w.sorted, w.edn, w.ew, w.sout, w.sgate };
+            const rad_buf wr[1] = { w.h.x };
+            rad_op_reads(b, op_remote_add, rd, gfold ? 5 : 3);
+            rad_op_writes(b, op_remote_add, wr, 1);
+        }
+        op_remote_shadow = rw(b, RAD_OP(b, "moe_mailbox_shadow",
+                                  RAD_PARAMS(RAD_RANGE("M", 1, c.rows),
+                                             RAD_INT("n", g.n_embd),
+                                             RAD_INT("top_k", c.top_k)),
+                                  RAD_NOWEIGHTS),
+                              {w.sorted, w.edn, w.ew}, {w.edn});
+        op_remote_mask_capture = rw(b, RAD_OP(b, "moe_mailbox_mask_ref",
+                                        RAD_PARAMS(RAD_RANGE("M", 1, c.rows),
+                                                   RAD_INT("n", g.n_embd),
+                                                   RAD_INT("top_k", c.top_k),
+                                                   RAD_INT("restore", 0)),
+                                        RAD_NOWEIGHTS),
+                                    {w.sorted, w.edn}, {w.edn});
+        op_remote_mask_restore = rw(b, RAD_OP(b, "moe_mailbox_mask_ref",
+                                        RAD_PARAMS(RAD_RANGE("M", 1, c.rows),
+                                                   RAD_INT("n", g.n_embd),
+                                                   RAD_INT("top_k", c.top_k),
+                                                   RAD_INT("restore", 1)),
+                                        RAD_NOWEIGHTS),
+                                    {w.sorted, w.edn}, {w.edn});
+        if (!op_remote_publish || !op_remote_add || !op_remote_shadow ||
+            !op_remote_mask_capture || !op_remote_mask_restore) {
+            std::fprintf(stderr, "radiance: MoE remote ops not declared at layer %d (publish %d merge %d shadow %d mask %d/%d; "
+                         "q %d s %d rot %d)\\n", l, op_remote_publish != 0, op_remote_add != 0,
+                         op_remote_shadow != 0, op_remote_mask_capture != 0,
+                         op_remote_mask_restore != 0, remote_q != 0, remote_s != 0,
+                         (int)c.expert_rot);
+            return RAD_E_INVAL;
+        }
     }""",
-                guard=r"moe_remote_partial",
+                guard=r'moe_mailbox_publish',
                 expect_matches=1,
-                rationale="The unique final residual add declaration is immediately before MoeFP8::declare returns.",
+                rationale="The final residual declaration is immediately before the collective declarations and has the gathered token output available.",
             ),
             Edit(
                 id="remote-pass-state",
                 anchor=r"^[ \t]*const bool shared = op_sgate != 0;$",
                 text="""
-    const bool remote_policy = op_remote_add && rad_moe_remote_wanted(T);
-    RadMoeRemoteHandle remote = nullptr;""",
-                guard=r"remote_policy = op_remote_add",
+    const bool remote_policy =
+        op_remote_publish && op_remote_add && op_remote_shadow &&
+        op_remote_mask_capture && op_remote_mask_restore && rad_moe_remote_wanted(rows);
+    const bool remote_shadow = remote_policy && rad_moe_remote_shadow();
+    const bool remote_active = remote_policy && !remote_shadow;
+    const bool remote_mask_only =
+        remote_active && rad_moe_remote_mask_only();""",
+                guard=r"remote_policy =",
                 expect_matches=1,
                 rationale="The shared-arm state is the first per-pass policy declaration after row geometry is resolved.",
             ),
             Edit(
-                id="disable-fused-router-for-remote",
-                anchor=r"^[ \t]*const bool rfused = op_router_fused && rows <= router_fused_rows;$",
-                mode="replace",
-                text="    const bool rfused = !remote_policy && op_router_fused && rows <= router_fused_rows;",
-                guard=r"rfused = !remote_policy",
+                id="publish-remote-and-rescatter",
+                anchor=r"^[ \t]*const int64_t n4\[4\] = \{",
+                mode="insert_before",
+                text="""    if (remote_policy && !remote_mask_only) {
+        const rad_buf remote_q = rot ? w.hr.q : w.h.q;
+        const rad_buf remote_s = rot ? w.hr.s : w.h.s;
+        RAD_ISSUE_N(c_, op_remote_publish, rows,
+                    brow_slice(w.ids, r0, rows, k),
+                    brow_slice(w.ew, r0, rows, k),
+                    brow_slice(w.h.x, r0, rows, g.n_embd),
+                    brow_slice(remote_q, r0, rows, g.n_embd),
+                    brow_slice(remote_s, r0, rows, g.n_embd / RAD_FP8_BLOCK),
+                    brows(remote_q, T));
+        if (remote_active)
+            RAD_ISSUE_N(c_, op_scatter, rows, brow_slice(w.ids, r0, rows, k),
+                        brows(w.sorted, rows * k), brows(w.eoff, ne + 1), ecnt);
+    }
+""",
+                guard=r"RAD_ISSUE_N\(c_, op_remote_publish, rows,",
                 expect_matches=1,
-                rationale="The unique rfused decision must stand down so the hook can inspect top-k output before scatter.",
+                rationale="The n4 declaration is the first routed-GEMM code after op_hq, so the exact q/s operand is ready before publication.",
             ),
             Edit(
-                id="disable-fused-topk-scatter-for-remote",
-                anchor=r"^[ \t]*\} else if \(op_topk_scatter && rows <= topk_scatter_rows\) \{$",
-                mode="replace",
-                text="    } else if (!remote_policy && op_topk_scatter && rows <= topk_scatter_rows) {",
-                guard=r"else if \(!remote_policy && op_topk_scatter",
+                id="shadow-compare-remote-down",
+                anchor=r"^[ \t]*if \(shared\) sh_down\.step\(c_, w\.sff, w\.sout, T, r0, rows\);$",
+                mode="insert_before",
+                text="""    if (remote_mask_only) {
+        RAD_ISSUE_N(c_, op_remote_mask_capture, rows,
+                    brows(w.sorted, rows * k), brows(w.edn, rows * k));
+        const rad_buf remote_q = rot ? w.hr.q : w.h.q;
+        const rad_buf remote_s = rot ? w.hr.s : w.h.s;
+        RAD_ISSUE_N(c_, op_remote_publish, rows,
+                    brow_slice(w.ids, r0, rows, k),
+                    brow_slice(w.ew, r0, rows, k),
+                    brow_slice(w.h.x, r0, rows, g.n_embd),
+                    brow_slice(remote_q, r0, rows, g.n_embd),
+                    brow_slice(remote_s, r0, rows, g.n_embd / RAD_FP8_BLOCK),
+                    brows(remote_q, T));
+        RAD_ISSUE_N(c_, op_scatter, rows, brow_slice(w.ids, r0, rows, k),
+                    brows(w.sorted, rows * k), brows(w.eoff, ne + 1), ecnt);
+        RAD_ISSUE_N(c_, op_remote_mask_restore, rows,
+                    brows(w.sorted, rows * k), brows(w.edn, rows * k));
+    }
+    if (remote_shadow)
+        RAD_ISSUE_N(c_, op_remote_shadow, rows,
+                    brows(w.sorted, rows * k), brows(w.edn, rows * k),
+                    brow_slice(w.ew, r0, rows, k));
+""",
+                guard=r"RAD_ISSUE_N\(c_, op_remote_mask_capture, rows,",
                 expect_matches=1,
-                rationale="The unique fused top-k/scatter branch must stand down so remote routes can be masked before scatter.",
+                rationale="The shared-down issue is the first code line after every routed/protected down writer, so mask-only can snapshot engine rows before masking and restore local row order after the diagnostic rescatter.",
             ),
             Edit(
-                id="submit-remote-before-scatter",
-                anchor=r"^[ \t]*brow_slice\(w\.ids, r0, rows, k\), brow_slice\(w\.ew, r0, rows, k\)\);$",
-                text="""
-        if (remote_policy)
-            remote = rad_moe_remote_submit(
-                c_, layer, T, rows, g.n_embd, k, c.expert_base,
-                remote_gu.data(), remote_dn.data(), ne,
-                (int32_t*)rad_buf_ptr(c_, w.ids) + r0 * k,
-                (const uint16_t*)rad_buf_ptr(c_, w.ew) + r0 * k,
-                (const uint16_t*)rad_buf_ptr(c_, w.h.x) + r0 * g.n_embd,
-                g.n_embd * (int64_t)sizeof(uint16_t));""",
-                guard=r"remote = rad_moe_remote_submit",
-                expect_matches=1,
-                rationale="This operand line uniquely closes the standalone top-k issue immediately before scatter consumes ids.",
-            ),
-            Edit(
-                id="force-local-gather-before-remote-merge",
+                id="force-plain-gather-for-remote",
                 anchor=r"^[ \t]*if \(!gather_taken\(g, T, gather_out_rows, gather_out_rows6\)\)$",
                 mode="replace",
-                text="    if (remote_policy || !gather_taken(g, T, gather_out_rows, gather_out_rows6))",
-                guard=r"remote_policy \|\| !gather_taken",
+                text="""    if (remote_active)
+        RAD_ISSUE_N(c_, op_remote_add, rows,
+                    brows(w.sorted, rows * k), brows(w.edn, rows * k),
+                    brow_slice(w.ew, r0, rows, k),
+                    gfold ? brow_slice(w.sout, r0, rows, g.n_embd) : RAD_NONE,
+                    gfold ? brow_slice(w.sgate, r0, rows, 1) : RAD_NONE,
+                    brow_slice(w.h.x, r0, rows, g.n_embd));
+    else if (!gather_taken(g, T, gather_out_rows, gather_out_rows6))""",
+                guard=r"else if \(!gather_taken\(g, T, gather_out_rows, gather_out_rows6\)\)",
                 expect_matches=1,
-                rationale="The unique gather decision must materialize the local routed partial before the remote partial is added.",
+                rationale="Normal remote mode replaces moe_gather with one slot-order merge, avoiding a local bf16 narrow followed by a second remote-add narrow.",
             ),
             Edit(
-                id="merge-remote-before-all-reduce",
-                anchor=r"^[ \t]*brow_slice\(w\.h\.x, r0, rows, g\.n_embd\)\);$",
-                text="""
-    if (remote) {
-        if (rad_moe_remote_wait_into(c_, remote, rad_buf_ptr(c_, b_remote),
-                                     rows * g.n_embd * (int64_t)sizeof(uint16_t)) < 0) {
-            rad_step_fail(c_, "MoE remote wait/result copy failed");
-            return;
-        }
-        RAD_ISSUE_N(c_, op_remote_add, rows,
-                    brow_slice(w.h.x, r0, rows, g.n_embd),
-                    brows(b_remote, rows),
-                    brow_slice(w.h.x, r0, rows, g.n_embd));
-    }""",
-                guard=r"rad_moe_remote_wait_into",
+                id="add-remote-before-all-reduce",
+                anchor=r"^[ \t]*if \(op_ar && !ar_taken\(g, ar_out_take != kArOutNorm \? T : rows, ar_out, ar_out_take\)\)$",
+                mode="replace",
+                text="""    if (op_ar && (remote_active ||
+                  !ar_taken(g, ar_out_take != kArOutNorm ? T : rows, ar_out, ar_out_take)))""",
+                guard=r"op_ar && \(remote_active \|\|",
                 expect_matches=1,
-                rationale="This line uniquely closes the MoE gather issue; the remote result must join immediately before the existing all-reduce.",
+                rationale="The remote merge already wrote the exact gathered bf16 row, so only force the standalone all-reduce before the residual write.",
             ),
         ),
     ),
     FilePatch(
-        path="core/place/mover.cpp",
-        description="Expose host-pool ownership through residency publication.",
+        path="arch/common/rad_block_hc.h",
+        description="Disable HyperConn fused gather/all-reduce writes while a remote-MoE pass uses the mailbox merge.",
         edits=(
             Edit(
-                id="publish-host-pool-bit",
-                anchor=r"^void Residency::publish\(rad_weight w, void\* ptr\) \{\n[ \t]*if \(\(size_t\)w >= slot_\.size\(\)\) return;\n[ \t]*slot_\[w\]\.ptr = ptr;\n[ \t]*slot_\[w\]\.ready = nullptr;$",
-                mode="replace",
-                text="""void Residency::publish(rad_weight w, void* ptr, bool host_pool) {
-    if ((size_t)w >= slot_.size()) return;
-    slot_[w].ptr = ptr;
-    slot_[w].ready = nullptr;
-    slot_[w].host_pool = host_pool ? 1 : 0;""",
-                guard=r"host_pool = host_pool \? 1 : 0",
+                id="include-remote-moe-abi-hc",
+                anchor=r'^#include "rad_fp8\.h"$',
+                text='\n#include "rad_moe_remote.h"',
+                guard=r'^#include "rad_moe_remote\.h"$',
                 expect_matches=1,
-                max_span_lines=4,
-                rationale="The publish prologue uniquely settles a residency slot; ownership must be recorded with the settled pointer.",
+                rationale="The fp8 include is the unique architecture dependency line in this header.",
             ),
             Edit(
-                id="clear-host-pool-during-transfer",
-                anchor=r"^void Residency::begin_transfer\(rad_weight w, void\* ptr, RadEvent ready\) \{\n[ \t]*if \(\(size_t\)w >= slot_\.size\(\)\) return;\n[ \t]*slot_\[w\]\.ptr = ptr;\n[ \t]*slot_\[w\]\.ready = ready;$",
-                mode="replace",
-                text="""void Residency::begin_transfer(rad_weight w, void* ptr, RadEvent ready) {
-    if ((size_t)w >= slot_.size()) return;
-    slot_[w].ptr = ptr;
-    slot_[w].ready = ready;
-    slot_[w].host_pool = 0;""",
-                guard=r"slot_\[w\]\.host_pool = 0",
+                id="remote-hc-write-state",
+                anchor=r"^[ \t]*if \(!op_write\) return;$",
+                text="""
+    const bool remote_active =
+        gsrc.top_k > 0 && rad_moe_remote_wanted(rows) && !rad_moe_remote_shadow();""",
+                guard=r"const bool remote_active =",
                 expect_matches=1,
-                max_span_lines=4,
-                rationale="The begin_transfer prologue uniquely installs an in-flight device destination, which is not host-pool residency.",
+                rationale="Only a connection with a declared MoE gather source may open the remote window; attention and delta-net writes keep their normal fused reductions.",
             ),
             Edit(
-                id="republish-host-pool-owner",
-                anchor=r"^void Mover::republish\(int32_t unit\) \{\n[ \t]*const MoveUnit& mu = plan_->units\[\(size_t\)unit\];\n[ \t]*char\* base = \(char\*\)unit_base\(unit\);\n[ \t]*for \(size_t i = 0; i < mu\.weights\.size\(\); \+\+i\)\n[ \t]*res_\.publish\(mu\.weights\[i\], base \? base \+ mu\.offset\[i\] : nullptr\);\n\}$",
+                id="remote-disable-hc-gather-ar",
+                anchor=r"^[ \t]*if \(takes_gather\(T\)\) \{$",
                 mode="replace",
-                text="""void Mover::republish(int32_t unit) {
-    const MoveUnit& mu = plan_->units[(size_t)unit];
-    const UnitState& us = unit_[(size_t)unit];
-    char* base = (char*)unit_base(unit);
-    const bool host_pool = us.tier == Tier::HostPinned && us.slab_slot < 0;
-    for (size_t i = 0; i < mu.weights.size(); ++i)
-        res_.publish(mu.weights[i], base ? base + mu.offset[i] : nullptr, host_pool);
-}""",
-                guard=r"const bool host_pool = us\.tier == Tier::HostPinned",
+                text="    if (!remote_active && takes_gather(T)) {",
+                guard=r"!remote_active && takes_gather\(T\)",
                 expect_matches=1,
-                max_span_lines=6,
-                rationale="The complete six-line republish function is atomic because tier ownership and every published weight must change together.",
+                rationale="Normal remote passes use the mailbox slot-order merge; shadow keeps HyperConn's original fused gather path.",
             ),
             Edit(
-                id="staged-copy-retains-host-ownership",
-                anchor=r"^[ \t]*res_\.publish\(mu\.weights\[i\], dst \+ at\[k\] \+ mu\.offset\[i\]\);$",
+                id="remote-disable-hc-ar-write",
+                anchor=r"^[ \t]*RAD_ISSUE_N\(c_, takes_ar\(T\) \? ar_write\(T\) : op_write, rows,$",
                 mode="replace",
-                text="""            /* A prefill-stage copy is temporary; keep host ownership visible to the remote policy. */
-            res_.publish(mu.weights[i], dst + at[k] + mu.offset[i], true);""",
-                guard=r"A prefill-stage copy is temporary",
+                text="    RAD_ISSUE_N(c_, (!remote_active && takes_ar(T)) ? ar_write(T) : op_write, rows,",
+                guard=r"\(!remote_active && takes_ar\(T\)\) \? ar_write\(T\) : op_write",
                 expect_matches=1,
-                rationale="The unique stager publication records a temporary device copy whose source ownership remains the host pool.",
+                rationale="Normal remote passes already reduce in MoeFP8; shadow leaves HyperConn's original reduction untouched.",
             ),
         ),
     ),
     FilePatch(
-        path="core/place/mover.h",
-        description="Allow residency publication to carry host-pool ownership.",
-        edits=(Edit(
-            id="publish-host-pool-parameter",
-            anchor=r"^[ \t]*void publish\(rad_weight w, void\* ptr\);$",
-            mode="replace",
-            text="    void publish(rad_weight w, void* ptr, bool host_pool = false);",
-            guard=r"bool host_pool = false",
-            expect_matches=1,
-            rationale="The unique Residency::publish declaration mirrors the implementation and preserves existing callers through the default.",
-        ),),
+        path="core/place/planner.cpp",
+        description="Leave helper-owned expert units unplaced (mapped, never read) when nothing local reads them.",
+        edits=(
+            Edit(
+                id="include-remote-moe-abi-planner",
+                anchor=r'^#include "planner\.h"$',
+                text='\n#include "rad_moe_remote.h"',
+                guard=r'^#include "rad_moe_remote\.h"$',
+                expect_matches=1,
+                rationale="The planner's own header include is its unique first include line.",
+            ),
+            Edit(
+                id="remote-owned-unit-unplaced",
+                anchor=r"^[ \t]*bool host_only = false, direct = in_\.container;$",
+                text="""
+        /* A routed expert the remote helper computes, when the engine never reads it (rad_moe_remote_skip_unit):
+         * no slot, no pool and no copy. It stays on the mapped tier as a placeholder the loader publishes
+         * without reading; the zero-copy site keeps it out of the host-site and mixed-operand logic below. */
+        if (mu.layer >= 0 && mu.expert >= 0 &&
+            rad_moe_remote_skip_unit(mu.layer, mu.expert, in_.config->max_tok)) {
+            mu.tier = Tier::Mapped;
+            mu.movable = false;
+            mu.site = Site::DeviceZeroCopy;
+            mu.reason = "computed by the remote MoE helper; never read on this rank";
+            continue;
+        }""",
+                guard=r"rad_moe_remote_skip_unit\(mu\.layer, mu\.expert, in_\.config->max_tok\)",
+                expect_matches=1,
+                rationale="pin_mapped's per-unit loop starts with this declaration; a remote unit is decided before any host/ngram logic and leaves the loop.",
+            ),
+            Edit(
+                id="remote-owned-unit-footprint",
+                anchor=r"^    for \(U& mu : units\) mu\.mapped = mapped_unit\(mu\.mapped, container && mu\.direct, host_backend\);$",
+                text="""
+    /* The pre-plan budget makes the same call pin_mapped does: a helper-owned expert costs this rank nothing.
+     * The step-cap condition is the planner's and bring-up's to enforce (0 skips it here); a cap below the
+     * largest step only makes this budget generous, and the plan then reports what did not fit. */
+    for (U& mu : units)
+        if (mu.layer >= 0 && mu.expert >= 0 && rad_moe_remote_skip_unit(mu.layer, mu.expert, 0))
+            mu.mapped = true;""",
+                guard=r"rad_moe_remote_skip_unit\(mu\.layer, mu\.expert, 0\)",
+                expect_matches=1,
+                rationale="weight_footprint's unit pass ends with this mapped resolution; the budgets read mu.mapped right after it.",
+            ),
+            Edit(
+                id="rank-units-skip-preplaced",
+                anchor=r"^    for \(int32_t i = 0; i < \(int32_t\)p->units\.size\(\); \+\+i\) order->push_back\(i\);$",
+                mode="replace",
+                text="""    /* A preplaced unit is never filled (the rule every assignment pass states). Upstream only ever
+     * preplaced model-level units the expert fill skips anyway; a helper-owned routed expert is
+     * conditional, so the fill must not see it. */
+    for (int32_t i = 0; i < (int32_t)p->units.size(); ++i)
+        if (!p->units[(size_t)i].preplaced()) order->push_back(i);""",
+                guard=r"if \(!p->units\[\(size_t\)i\]\.preplaced\(\)\) order->push_back\(i\);",
+                expect_matches=1,
+                rationale="rank_units' order is what the expert-tiered fill walks; leaving preplaced units out keeps a helper-owned expert on the mapped tier.",
+            ),
+        ),
     ),
     FilePatch(
-        path="core/runtime/ctx.h",
-        description="Expose whether a weight is still owned by the pinned host pool.",
-        edits=(Edit(
-            id="weight-in-host-pool-query",
-            anchor=r"^[ \t]*void\* buf_ptr\(rad_buf b\);$",
-            text="""
-    bool  weight_in_host_pool(rad_weight w) const {
-        if (!residency_) return false;
-        const WeightSlot* s = residency_->lookup(w);
-        return s && s->host_pool;
-    }""",
-            guard=r"weight_in_host_pool\(rad_weight w\)",
-            expect_matches=1,
-            rationale="The buffer accessor is the unique adjacent runtime pointer-query boundary used by architecture code.",
-        ),),
-    ),
-    FilePatch(
-        path="core/runtime/residency.h",
-        description="Record policy-visible host-pool ownership in each residency slot.",
-        edits=(Edit(
-            id="host-pool-residency-bit",
-            anchor=r"^[ \t]*uint32_t generation;$",
-            text="""
-    /* Policy-visible residency for routed experts. Temporary prefill staging keeps this set:
-     * ownership is still the pinned host pool even while that pass has a device copy. */
-    uint8_t  host_pool;""",
-            guard=r"uint8_t\s+host_pool;",
-            expect_matches=1,
-            rationale="The generation field is unique in WeightSlot and ownership belongs to that same residency record.",
-        ),),
+        path="core/engine_bringup.cpp",
+        description="Publish helper-owned expert units as never-read placeholders instead of loading them.",
+        edits=(
+            Edit(
+                id="include-remote-moe-abi-bringup",
+                anchor=r'^#include "engine_priv\.h"$',
+                text='\n#include "rad_moe_remote.h"',
+                guard=r'^#include "rad_moe_remote\.h"$',
+                expect_matches=1,
+                rationale="engine_priv.h is the bring-up's unique first include line.",
+            ),
+            Edit(
+                id="remote-owned-unit-direct-check",
+                anchor=r"^[ \t]*if \(\(w\.tier == Tier::Mapped \|\| w\.tier == Tier::SSD\) && \(!direct \|\| !e\)\) \{$",
+                mode="replace",
+                text="""            /* The planner left a helper-owned expert unplaced (rad_moe_remote_skip_unit, same answer here):
+             * its stored form never matters because this rank never reads it. */
+            const bool remote_unit = w.decl.group.layer >= 0 && w.decl.group.expert >= 0 && e &&
+                rad_moe_remote_skip_unit(w.decl.group.layer, w.decl.group.expert, cfg_.max_tok);
+            if ((w.tier == Tier::Mapped || w.tier == Tier::SSD) && (!direct || !e) && !remote_unit) {""",
+                guard=r"&& \(!direct \|\| !e\) && !remote_unit\) \{",
+                expect_matches=1,
+                rationale="The single tier/stored-form check in the weight publish loop; a remote unit is exempt because nothing reads it.",
+            ),
+            Edit(
+                id="remote-owned-unit-publish",
+                anchor=r"^            if \(w\.tier == Tier::Mapped\) \{$",
+                text="""
+                if (remote_unit) {
+                    w.ptr = (void*)file_->data(file_->plane(*e, w.sel[0]));
+                    w.host_ptr = w.ptr;
+                    r->mover.publish_mapped((rad_weight)i, w.ptr);
+                    continue;
+                }""",
+                guard=r"^[ \t]*if \(remote_unit\) \{$",
+                expect_matches=1,
+                rationale="The mapped-tier publish branch; a remote unit publishes the container address as a never-dereferenced placeholder and skips the byte-count check its relayouted form would fail.",
+            ),
+        ),
     ),
 )

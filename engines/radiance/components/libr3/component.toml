@@ -8,7 +8,7 @@ engine = "radiance"
 targets = ["gfx1100"]
 # radiance 1.3.0: the rewrite blocks are written against this revision's libr4d and refuse any other.
 built-against = "89cee7ce414486c717aa2085c99e1f522e4c0ea6"
-outputs = ["kernels/libr3.so", "helpers/libr3_ngram_helper.so", "helpers/r3_moe_helper"]
+outputs = ["kernels/libr3.so", "kernels/libr3moe.so", "helpers/libr3_ngram_helper.so", "helpers/r3_moe_helper"]
 
 # How the build lane builds it: CMake against the engine installed from the lane's own build (CMAKE_PREFIX_PATH) and
 # the lane's materialised source ({engine_source}); outputs are copied into the engine's runtime home.
@@ -36,12 +36,91 @@ summary = "native delta-net chunk scan; wrong in serving (KLD 5.52) after three 
 [setting.R3_MOE_HELPER]
 default = ""
 status = "experimental"
-summary = "enable patch rad0002 remote-MoE hook; helper process must already own the configured POSIX shm segment"
+summary = "enable patch rad0002 GPU mailbox ops; helper process must already own the configured POSIX shm segment"
+activation = "r3_moe_helper: runtime map owns [0-9]+ experts, [0-9.]+ GiB"
 
 [setting.R3_MOE_HELPER_SHM]
 default = "/r3-moe-helper"
 status = "diagnostic"
-summary = "POSIX shm segment shared by libr3's engine hook and r3_moe_helper"
+summary = "POSIX shm segment mapped by libr3 GPU mailbox ops and r3_moe_helper"
+
+[setting.R3_MOE_HELPER_CPU]
+default = "0"
+status = "diagnostic"
+summary = "force the slice-2a fp32 host reference path instead of gfx1201 compute"
+
+[setting.R3_MOE_HELPER_MIB]
+default = "28672"
+status = "experimental"
+summary = "VRAM budget in MiB for cold full-expert units owned by the gfx1201 helper"
+
+[setting.R3_MOE_HELPER_MAX_ROWS]
+default = "64"
+status = "experimental"
+summary = "largest step (rows) handed to the helper (engine and helper both read it); larger steps keep the engine path. Steps above R3_MOE_HELPER_SMALL_ROWS take the large lane, launched sized to the request"
+
+[setting.R3_MOE_HELPER_ENGINE_RANKS]
+default = "2"
+status = "experimental"
+summary = "engine TP ranks the helper serves: 2 = two XTX ranks, each asking for its TP slice; 1 = one engine (the R9700, RAD02) asking for full expert width (the helper runs both slices and sums them)"
+
+[setting.R3_MOE_HELPER_COUNT]
+default = "1"
+status = "experimental"
+summary = "helpers sharing the segment: 2 = two XTX helpers behind a one-rank (R9700) engine, each owning half the candidates and serving its own rank slot"
+
+[setting.R3_MOE_HELPER_HISTOGRAM]
+default = ""
+status = "diagnostic"
+summary = "path prefix: the engine counts every routed (layer, expert) in VRAM and writes uint32[128][512] to <path>.rank<r> at shutdown"
+
+[setting.R3_MOE_HELPER_HEAT]
+default = ""
+status = "experimental"
+summary = "a R3_MOE_HELPER_HISTOGRAM file: the helper owns the coldest experts first, so the engine keeps the hot ones and decode hands off less"
+
+[setting.R3_MOE_HELPER_GEMV]
+default = "1"
+status = "experimental"
+summary = "decode MoE GEMV for the helper's small lane (RAD05): no WMMA, dot products straight off the packed w4nl64 nibbles. R9700 engine + two XTX helpers, Flash-Next: decode 69.6/69.7 -> 95.7/95.5 tok/s, prefill unchanged, KLD 0.0605 (noise floor 0.058-0.062). 0 turns it off; 2 compares it with the grouped GEMM (--compare)"
+
+[setting.R3_MOE_HELPER_ROWS]
+default = "0"
+status = "experimental"
+summary = "few-rows-a-expert MoE kernel for the helper's large (prefill) lane (RAD06): one block an (expert, 32 outputs), each decoded weight applied to up to 16 of the expert's rows. Shelved: correct but 38% slower prefill than the grouped GEMM (RAD06, 2026-10-15)"
+
+[setting.R3_MOE_HELPER_INDEX]
+default = "0"
+status = "experimental"
+summary = "this helper's index under R3_MOE_HELPER_COUNT: 0 creates the segment, 1 attaches to it"
+
+[setting.R3_MOE_HELPER_SMALL_ROWS]
+default = "64"
+status = "experimental"
+summary = "helper small-lane size: steps up to this many rows run on GPU work the helper pre-queues at this fixed size (no host in the loop)"
+
+[setting.R3_MOE_HELPER_POISON]
+default = "0"
+status = "diagnostic"
+summary = "1 (any non-zero): every helper result value becomes 1e3 (proves the mailbox merge consumes helper rows); zero: results become 0 (same output as dropping remote routes)"
+activation = "R3_MOE_HELPER poison"
+
+[setting.R3_MOE_HELPER_SHADOW]
+default = "0"
+status = "diagnostic"
+summary = "publish owned routes without masking them and compare helper unweighted down rows against the engine rows"
+activation = "R3_MOE_HELPER_SHADOW layer="
+
+[setting.R3_MOE_HELPER_MASK_ONLY]
+default = "0"
+status = "diagnostic"
+summary = "1: mask and rescatter after the local GEMMs, merge engine-captured rows; 2: same late publish, merge the helper's per-token rows"
+activation = "R3_MOE_HELPER_MASK_ONLY enabled"
+
+[setting.R3_MOE_HELPER_PLUGIN]
+default = ""
+status = "diagnostic"
+summary = "override the kernel plugin the helper loads through the rad_plugin ABI (default: libr4d.so on gfx1201, libr3.so on gfx1100)"
 
 [setting.R3_MOE_NATIVE]
 default = "0"

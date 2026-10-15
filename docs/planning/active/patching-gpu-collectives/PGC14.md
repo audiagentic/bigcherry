@@ -12,6 +12,16 @@ work: L
 
 # RCCL source patches: hostcall-free gfx1030 kernels and SHM transport throughput
 
+## 2026-10-15 source/host audit — coalescing NOT implementation-ready (BCOP219)
+
+**Disposition:** preserve the existing `NCCL_STEPS` CE/event proxy and its per-slot FIFO semantics. The optional multi-slot memcpy sketch below was unsafe and is replaced by explicit admission/rejection gates. This is a *plan correction*, not a demonstrated RCCL runtime defect or speedup. PGC14 last received independent changes on 2026-10-06; no PGC14/rccl-lab commit or associated new queue/PR was found in the preceding 12 hours. Active Radiance helper/RAD02-06 and MEN10 work is excluded.
+
+**Exact source:** pinned `ROCm/rccl@57e58688:src/transport/shm.cc`, `shmSendProxyProgress` and `shmRecvProxyProgress`: slot address is `(base + transmitted) % NCCL_STEPS`, submission advances by `args->sliceSteps`, per-slot `connFifo[slot].size` is authoritative, and `cudaEventQuery(events[slot]) == cudaSuccess` precedes publication of the consumer-visible tail. `shmSendSetup` already logs `via SHM/CE/direct` per channel; do not add duplicate mode telemetry before inspecting that log. `SHM_USE_CUDA_MEMCPY` defaults off. The current ROCm source of truth is `ROCm/rocm-systems:projects/rccl/src/transport/shm.cc`; its CE proxy still uses per-slot events and `sliceSteps`, not a coalescing ring.
+
+**Host discriminator (9/9 synthetic cases, no GPU):** for `sliceSteps=2`, slots 0 and 2 both carry 16 bytes but the old `runBytes=32` memcpy from slot 0 copies slot 0 and *unready slot 1*, omitting slot 2. For `sliceSteps=1`, a four-byte first slot followed by a full 16-byte slot copies 12 bytes of padding and only four bytes of the second slot. The old sketch also omitted `recvMem->connFifo[slot].size` publication for each batched slot. These are correctness counterexamples to the *proposed pseudocode*, not evidence of an executed RCCL corruption.
+
+**Evidence boundaries:** historical ~1.1 GB/s large-message RCCL and 13.3/14.3 GB/s pinned host-DMA measurements are from different transfer paths and do not prove CE mode is selected or coalescing can help. The 2026-10-06 Simple/LL/LL128/Tree/Ring experiment rejected protocol/algorithm tuning; do not repeat that screen. `PGC15` owns independent compute/AR tiling, not this SHM FIFO; `PGC09/PGC11` own provider/wire precision. A 2026-09-23 external gfx1030 SHM AllGather corruption report (ROCm/rocm-systems#12145) is a **negative test hypothesis**, not a reproduced BigCherry failure.
+
 ## Description
 
 RCCL source is on Brutus (`~/rccl-heterogeneous-src/rccl`, ROCm/rccl `57e58688`). Two problems:
@@ -194,51 +204,22 @@ resources->bc.maxInflight = std::max(resources->bc.maxInflight,
 
 At readiness/window branches, count why progress could not occur. Keep diagnostics host-only; no device printf (hostcall problem).
 
-### Optional contiguous-step coalescing: only after evidence
+### Optional contiguous-step coalescing — BLOCKED until a safe admission proof
 
-If traces show many small consecutive ready slots, combine a non-wrapping run. Preserve FIFO sizes and publish completion only after the whole memcpy finishes.
+Do **not** implement the previous `batchSteps[]`/single-memcpy sketch: its `runSteps * sliceSteps` indexing does not imply byte adjacency, it accepted a partial first slot, and it failed to propagate every destination FIFO size. The pinned and current RCCL implementations already pipeline single-slot async copies with events; do not add a second ring or queue.
 
-Add per-slot batch metadata:
+**Cheap admission before RCCL source work:** use the existing `tools/lab/rccl` launch/logs and a host-only model of `shmSendProxyProgress` and `shmRecvProxyProgress`. Reject `NO_CE_PATH` if the actual SHM channel is direct; reject `NO_SMALL_COPY_LIMITER` if event/step traces do not show many adjacent ready, full slots; reject `NO_E2E_HEADROOM` if optimistic removable copy/proxy overhead is <3% of representative prefill wall. If all three reject, close coalescing without a source patch. Instrument the existing proxy only if the CE path is observed and the current traces cannot distinguish source-not-ready, window-full and event-not-ready.
 
-```cpp
-struct shmProxyInfo {
-  // existing...
-  uint8_t batchSteps[NCCL_STEPS]; // 0 unless this slot is head of a submitted run
-};
-```
+**Required preflight for a *future* non-default prototype (before any DMA):**
 
-Submission sketch:
+1. `NCCL_PROTO_SIMPLE`, CE path actually installed, positive `stepSize`, fixed source/destination FIFO stride and `args->sliceSteps == 1` for this first version. Any `sliceSteps > 1` uses the original one-slot memcpy path; never infer adjacency from `transmitted` alone.
+2. For proposed slots `first ... first+count-1`: no modulo wrap, all within `nsteps` and `done + NCCL_STEPS`; source tail proves **each** slot ready; `0 < size[i] <= stepSize` and every slot except possibly the last has `size[i] == stepSize`. A partial first/middle slot forbids batching. Confirm byte intervals exactly equal the contiguous memcpy interval, with no holes, padding or unpublished bytes.
+3. Snapshot every source `connFifo[slot].size` after its readiness fence; copy/publish the corresponding **destination** `connFifo[slot].size` for every slot on send/D2H. Retain the current required host memory-order fence. One ordered memcpy may use one head event, but **no consumer-visible tail may advance** until that event reports success and all metadata is visible. Receive/H2D must likewise wait for the event before advancing `ceRecvMem->tail`.
+4. Batch metadata must be generation/slot scoped and cleared on completion/reuse. Do not overwrite an outstanding event or metadata; check ring wrap, simultaneous proxy subs and cancellation/error paths. If admission fails *before submission*, run the unchanged per-slot path; after a DMA/collective error, fail the operation rather than pretending the whole operation can be retried safely.
 
-```cpp
-const int first = (sub->base + sub->transmitted) % NCCL_STEPS;
-int runSteps = 0;
-size_t runBytes = 0;
+**Host gate:** deterministic cases for `sliceSteps={1,2,4}`, ring wrap, partial first/middle/last, empty/not-ready tail, window saturation, variable sizes, slot/event reuse and per-slot destination metadata; compare exact copied-byte sets and tail ordering. The disposable nine-case Python geometry model passed; it does **not** test event races, GPU ordering or physical bandwidth. Hardware gate, only if admitted: rccl-tests AllReduce **and** AllGather with exact per-rank patterns, #wrong=0, 2/3 ranks plus gfx1030 mixed topology where supported, ≥100 warmed runs and full graph/repeated-request soak. The external gfx1030 AllGather report warrants this negative case but is not BigCherry evidence. Promote only with ≥5% representative Flash-Next prefill or ≥20% measured collective critical-wall gain, no >2% small-message or >1% decode regression, and no lost/duplicated bytes. Otherwise `REJECT_COALESCE` and retain stock per-slot CE.
 
-while (runSteps < bcMaxCoalesceSteps &&
-       sub->transmitted + runSteps*args->sliceSteps < sub->nsteps &&
-       sub->transmitted + runSteps*args->sliceSteps < sub->done + NCCL_STEPS) {
-  const int slot = (first + runSteps*args->sliceSteps) % NCCL_STEPS;
-  if (slot < first) break; // ring wrap: keep one contiguous pointer range
-  if (*recvTail <= sub->base + sub->transmitted + runSteps*args->sliceSteps) break;
-
-  const int sz = connFifo[slot].size;
-  // Require exact contiguous occupancy; if variable-size holes exist, stop.
-  if (runSteps > 0 && sz != stepSize) break;
-  runBytes += sz;
-  runSteps++;
-}
-
-if (runSteps > 0) {
-  CUDACHECK(cudaMemcpyAsync(resources->shmFifo + first*stepSize,
-                            resources->devFifo + first*stepSize,
-                            runBytes, cudaMemcpyDeviceToHost, resources->stream));
-  CUDACHECK(cudaEventRecord(resources->events[first], resources->stream));
-  resources->batchSteps[first] = runSteps;
-  sub->transmitted += runSteps * args->sliceSteps;
-}
-```
-
-Completion uses `batchSteps[first]` to advance `done` and publish tail for the whole run after the event succeeds. This code is intentionally conservative: if current FIFO layout/size semantics do not guarantee contiguous bytes for a run, reject coalescing rather than copying padding/unpublished data.
+**References:** https://github.com/ROCm/rccl/blob/57e58688/src/transport/shm.cc ; https://github.com/ROCm/rocm-systems/blob/develop/projects/rccl/src/transport/shm.cc ; https://github.com/ROCm/rocm-systems/issues/12145 . No NVIDIA/MI300 performance gain is assumed transferable to gfx1100/gfx1201/gfx1030.
 
 ### Do not conflate SHM transport with CPU-root reduction
 

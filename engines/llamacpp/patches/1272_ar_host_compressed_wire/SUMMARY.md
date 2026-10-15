@@ -9,4 +9,4 @@ Unset `GGML_CUDA_AR_WIRE` preserves pristine BF16-threshold selection; explicit
 Q8_0 uses 32-element blocks with fp16 scale and fused receiver dequantization + F32 accumulation.
 
 Validation required: apply, HIP build on gfx1100, activation marker, correctness, and paired performance A/B.
-Conflicts with `1250_nro01_allreduce_q8_wire`; 1244 root3 is intentionally untouched.
+1250 depends on 1272 (and rejected 1252); current patch metadata declares no 1250/1272 conflict. The Q8-only 1250 fused path is not adopted and does not provide exact-F32 CPU-root fusion. 1244 root3 remains untouched. See PNRO02/PGC11/BCOP212.

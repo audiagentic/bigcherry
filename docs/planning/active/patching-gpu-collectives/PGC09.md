@@ -23,7 +23,7 @@ Dual-XTX 27B Q8_0 provider A/B (ab-27b-allreduce, 6 balanced rounds, complete se
 2. Measure 1272 host f32/bf16/f16/q8_0 (ab-27b-ar-wire, ab-27b-ar-wire-q8, queued).
 3. Accuracy gates (tools/lab/ar-accuracy): KLD vs exact RCCL reference on a fixed corpus; MTP acceptance equality across A/B arms.
 4. Pick the fastest configuration that passes; if f32 host keeps the decode win, prefer it (no tolerance needed).
-5. Make it the production default (0860 --allreduce default / recipe) with contract evidence; tune the adaptive threshold (PGC05).
+5. Make it the production default (0860 --allreduce default / recipe) with contract evidence; use the existing scalar threshold; any offline calibration belongs to PGC13 (PGC05 closed by BCOP183).
 
 ## Detailed Solution & Technical Design
 
@@ -73,6 +73,10 @@ Yardstick: Q8_0 weight quantization itself is ~0.001-0.003 mean KLD vs full prec
 
 ## 2026-10-09 PGC13 calibration reconciliation
 Current `0860_allreduce_provider_cli/patch.py` sets `ADAPTIVE_SWITCH_BYTES_DEFAULT = 96 << 10`, and 0840 snapshots it per comm context. The historical 1 MiB/64 KiB notes above describe other runs, sometimes BF16 wire; do not pool them with exact-F32 evidence. Validated `t-0840e-gfx1100-s1..s4`: tg128 +3.87%..+3.98%, pp512 +0.02%..+0.04%, bit-identical. No measured auto-calibration gain. PGC13 owns a bounded offline comparison only; PGC12 owns phase/transition attribution. N=3 CPU-root (1291, 64 KiB) is a separate provider, not an 0840 threshold arm.
+
+## 2026-10-13 PGC05 ownership closure (BCOP183)
+
+PGC05's threshold CLI is implemented in 0860/0840; its proposed independent size-bucket table and Q8 threshold are retired. PGC09 remains the only runtime provider/configuration owner. PGC13 owns conditional offline scalar calibration after PGC12 establishes actual provider completion and transition cost; PGC11 owns wire correctness. Preserve the validated 96 KiB exact-F32 dual-gfx1100 baseline. No runtime change or new measured speedup.
 
 ## Change Log
 

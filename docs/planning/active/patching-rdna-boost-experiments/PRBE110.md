@@ -10,125 +10,43 @@ created-by: agent
 priority: P1
 work: M
 ---
+# RD07 Q6_K MMQ scale fold — b11552 source and admission gate
 
-# RD07 Q6_K MMQ scale-fold — gfx1201-only qualification; RD05 retired
+## Authoritative decision (2026-10-14)
 
-## Description
+**Pending / 1267 remains `untested` and `known_broken` on b11552. Do not adopt, queue a GPU campaign, or resurrect 1203.** The tracked `dispositions/1267_rd07_q6k_mmq_scale_fold.json` already records `FAILED_NEEDS_RECONCILIATION` against pinned llama.cpp `23b0202a189c44a54625aadcb37a946dd1d6278d`. The existing PRBE04 prose incorrectly says PRBE110 has not delivered the package: 1267 exists and was hardware-exercised on b11126. This item owns only the 1267 source/rebase and architecture-selection decision. PRBE04 owns downstream PEF01/HI71 safety qualification.
 
-Fresh package evidence resolves the two extracted slices differently.
+**12-hour protection:** no independent PRBE110/PRBE04/1267 implementation, plan, evidence, PR or queued experiment was found in the 12 hours preceding this audit (latest relevant independent plan commit 2026-10-08 06:47 UTC; package/evidence relocation 2026-10-09 04:20 UTC). Active RAD02/RAD03 helper/mailbox and RAD04 two-half prefill remain untouched. Recent BCOP190–210 do not own this Q6_K scale-fold path.
 
-- **1266 / RD05 WMMA tile_Q synchronization: reject/retire.** Four gfx1201 sessions prove activation and full-vocabulary correctness but do not establish a gain. The completed contract fails: aggregate target point estimate -0.0499%, CI95 low -0.1609%. No stock correctness failure was reproduced, so more performance sessions are not justified without new race evidence.
-- **1267 / RD07 Q6_K MMQ scale fold: continue only on gfx1201.** Four gfx1201 sessions pass with pp512 +2.4675%, CI95 [2.2776%, 2.6508%], while tg128 control is -0.0331%, CI95 [-0.0592%, -0.0071%]. Completed gfx1100 and gfx1030 evidence fails to establish a gain.
+## Implementation and failure trace
 
-This item now owns one bounded decision: prove that 1267 still applies and retains its gfx1201 benefit on b11474, then promote through existing architecture dispatch or retire it. It owns no new MMQ selector, tuning table, or generic Q6_K implementation.
+1. Pinned `ggml/src/ggml-cuda/mmq.cu::ggml_cuda_mul_mat_q_switch_type` dispatches Q6_K as `mul_mat_q_case<GGML_TYPE_Q6_K, GGML_PREC_Q8>(ctx, args, stream)`. Current 0300/HI06 chooses an eligible `J_best` **before** MMQ activation padding and workspace allocation, with `GGML_HIP_MMQ_FORCE_J` for HIP diagnostics; it deliberately does not thread `forced_J` through `mul_mat_q_case` or `mul_mat_q_switch_J`.
+2. 1267 `patch.py` still inserts its activation marker before the obsolete `mul_mat_q_case<GGML_TYPE_Q6_K>(ctx, args, stream, forced_J)` call. Its `rd07-jmax-env` edit also anchors on `int ret = std::min(ne11, int64_t(512)); ret -= ret % 8;` in `mmq.cuh`; that old J-max selector is absent at b11552. **Both are exact missing anchors.** Merely changing the marker is insufficient to make the package applicable.
+3. The three Q6_K kernel edits still match the source mechanism in `ggml/src/ggml-cuda/mmq-vec-dot.cuh::ggml_cuda_mmq_vec_dot_q6_K_q8_1_mma`: hoist `x_df` per output element outside `k01`; load `x_sc` and fold `x_sc * x_df` outside the `j0` loop; accumulate `(float) C.x[l] * x_s2_reg[n][l] * dB`. Existing code instead accumulates `C.x[l] * sc[k01/4] * x_df[i*sram_stride] * dB`. This reduces repeated scale work but **changes floating-point association**. It does not remove a matrix product, output row or required accumulation.
+4. The MMA branch is shared by `AMD_MFMA_AVAILABLE || AMD_WMMA_AVAILABLE`; the present 1267 kernel edit has no gfx1201-only guard. A default-on patch would affect gfx1100 and gfx1030 code paths too, despite their negative/neutral historical receipts. Qualify a compile-time architecture gate using the existing `RDNA4`/backend configuration and preserve stock arithmetic for unqualified devices. Do not add a new MMQ selector, J table or runtime dispatcher. The exact gfx1201 code-object gate must be verified; `RDNA4` alone is a family, not proof of every member.
+5. The patch's `GGML_CUDA_MMQ_J_MAX` knob is redundant/unsafe to re-anchor at a late selection point. **Remove that edit from the candidate** and reuse 0300's preallocation `J_best`/eligibility path. Preserve PEF01's gfx1100 Q6_K J=112/fallback=0 quarantine; never use an unqualified forced-J to bypass it.
 
-## Steps
+**Host-only numerical discriminator:** 200,000 bounded int32-C/int8-subscale/F32-scale/F32-activation samples, evaluated in explicit F32 arithmetic, yielded 38,735 bit-different results between the old and folded association (maximum absolute difference 0.0625). This proves general host expression non-equivalence, **not** an observed GPU/logit failure. A 12-predicate live-source static audit passed; no C++ compilation, HIP run, patch application or GPU benchmark was performed.
 
-1. Run current-pin patch lint/rebase, 1267 mechanics tests, and standalone composition with 0300/1006.
-2. Compare materialized control/subject source. If upstream already performs equivalent scale folding, mark 1267 upstream-absorbed and stop.
-3. Otherwise run exactly one current-pin gfx1201 campaign with the existing 1267 producer. Do not rerun gfx1100/gfx1030.
-4. Require subject-only activation, full-vocabulary correctness, >=4 independent sessions and >=10 paired rounds/session.
-5. Promote only if pp512 CI95-low >=2.0% and tg128 regression <=1.0%; otherwise retire unchanged.
+## Historical measured evidence — do not re-label as current
 
-## Repository / code path
+At **b11126**, `1267/evidence/validation.json` contains four-session gfx1201 evidence: pp512 +2.4675%, CI95 [2.2776%, 2.6508%]; tg128 -0.0331%, CI95 [-0.0592%, -0.0071%]. Gfx1100 and gfx1030 completed four-session campaigns without established prefill gain. The gfx1201 record's **contract verdict says pass**, but its `validation_disposition` remains `incomplete`, `eligible_for_validated_state=false`, and the `performance`/`controls` checks report fail. These fields must be reconciled against the authoritative contract evaluator before promotion; do not silently equate a contract-pass field with validated state. The archived full-vocabulary check reports 12,869,632 log-probabilities, max KL/material difference zero, but does not establish current-pin or all-route bit identity. The rejected 1203 bundle's older +3.4%/+6.2% numbers are non-transferable.
 
-- `ggml/src/ggml-cuda/mmq-vec-dot.cuh`: Q6_K row-scale hoist/fold.
-- `ggml/src/ggml-cuda/mmq.cu`: existing Q6_K dispatch activation marker.
-- `ggml/src/ggml-cuda/mmq.cuh`: existing bounded forced-J support; not owned by this decision.
-- `patches/1267_rd07_q6k_mmq_scale_fold/validation/producer.py`: authoritative qualification producer.
+**Production applicability:** current Flash-Next IQ4_XS/Q8_0 files do not exercise Q6_K weight MMQ. A standalone Q6_K model or executed Q6_K tensors are required to justify any deployment-specific benefit. A single-R9700 pp512 improvement is not a three-GPU Flash-Next throughput claim.
 
-The b11474 bump does not list 1267 as broken. Do not reimplement it unless current rebase/apply evidence fails.
+## One bounded implementation path (only if admitted)
 
-## Ownership / consolidation
+- **Gate 0 — actual route and opportunity:** record exact Q6_K GGUF tensor types, physical GPU and `ggml_cuda_mul_mat_q` MMQ/BLAS dispatch at the tested M/N/K, `J_best`, fallback, activation Q8_1 layout and graph mode. Estimate the *exposed* model E2E ceiling from kernel time and critical-path overlap; close `NO_RELEVANT_Q6K` if no representative Q6_K lane, `NO_EXPOSED_GAIN` if optimistic E2E <3%. No speculative port or four-session queue before this.
+- **Gate 1 — one existing-package rebase:** update only 1267's marker to the pinned `<GGML_TYPE_Q6_K, GGML_PREC_Q8>` dispatch, drop the stale J-max edit/knob, retain the three kernel transformations and Q6_K-only backend-op cases, and gate the transformed branch to qualified gfx1201 code objects. Keep `patch.toml` `untested`, opt-in and 1203 conflict. Re-run `patch-lint`, `patch-rebase-check`, missing/duplicate-anchor negative controls, and composition with 0300 and 1006/related Q6_K codegen owners. Do not alter 0300.
+- **Gate 2 — cheapest correctness:** host scale/address oracle (including tail rows and all legal J), float32 association/logit tolerance, reference Q6_K MMQ backend ops, graph on/off, multi-ubatch and repeated same-process requests. Require subject-only marker, actual executed Q6_K kernel, full-vocab/KLD/greedy and unchanged output/work accounting. PEF01 quarantine and HI71 launchability must remain effective on gfx1100.
+- **Gate 3 — measured gfx1201 lane only:** if prior gates pass, one existing validation producer, matched control and candidate with same pin/model/quant/physical placement. Four independent sessions, >=10 paired rounds each, pp512 and pp2048, tg128 and non-Q6_K controls, short/24K/80K when supported, GPU kernel/launch/VRAM counters. Promote only with current-pin pp512 CI95-low >=2%, controls <=1% regression, no safety/numerical failure and >=3% exposed end-to-end gain for any production feature. Otherwise `NO_VALIDATED_GAIN` or `NOT_PRODUCTION_RELEVANT`; leave 1267 untested/parked.
 
-1267 is the sole owner for this scale-fold mechanism. Existing MMQ architecture/geometry dispatch remains authoritative; any promotion gate must reuse it rather than create another table. 1006 retains Q6_K codegen/cast ownership and 0300 retains forced-J tuning. 1203 remains rejected. 1266 is terminal here unless a reproducible stock correctness race appears.
+## Ownership and external comparison
 
-## Current evidence
+PRBE110/1267 is the **sole** RD07 code/architecture owner; PRBE04 owns the downstream PEF01/HI71 and campaign acceptance fence. `0300_mmq_forced_j` owns preallocation J/eligibility; existing MMQ configs own tile geometry; 1006 owns Q6_K codegen/casts; PEF01 owns the gfx1100 J112 quarantine. Do not fork any of these. Upstream llama.cpp master (inspected 2026-10-14) still uses the unhoisted Q6_K MMA expression. The current stew675 RDNA-boosts block 07 carries the same scale-fold mechanism, but moves `GGML_CUDA_MMQ_J_MAX` to the native **preallocation J search**; do not port its knob on top of 0300. SGLang's `gguf.py::fused_mul_mat_gguf` routes Q6_K to its GGUF MMQ when available, but its implementation/AMD performance is not a BigCherry gfx1201 receipt.
 
-First-party archived evidence is promotion-relevant but pin-bound:
-- 1266 gfx1201: four-session FAIL, target -0.0499% with CI95 low -0.1609%; correctness/activation pass.
-- 1267 gfx1201: four-session PASS, pp512 +2.4675%, CI95 [2.2776%, 2.6508%]; tg128 -0.0331%, CI95 [-0.0592%, -0.0071%].
-- 1267 gfx1100 and gfx1030: completed evidence fails the gain gate and converges near zero.
+References: https://github.com/ggml-org/llama.cpp/blob/master/ggml/src/ggml-cuda/mmq-vec-dot.cuh ; https://github.com/stew675/llama-cpp-rdna-boosts/blob/main/patches/0007-rdna-boosts-block-07-k-quant-boosts-mmvq-VDR-Q6_K-MM.patch ; https://github.com/sgl-project/sglang/blob/main/python/sglang/srt/layers/quantization/gguf.py .
 
-Current upstream and the rdna-boosts fork both continue architecture-sensitive AMD kernel selection; the fork still carries Q6_K MMQ prefill tuning. This supports architecture-specific qualification, not cross-RDNA extrapolation.
+## Terminal disposition
 
-## Steps
-
-1. Package 1266: move only `rd05-k00-sync` and `rd05-kbc-sync`; add the required `<atomic>` include and a standalone RD05 activation marker at `BEST_FATTN_KERNEL_MMA_F16` dispatch. Exclude RD06 table/gating/softcap edits.
-2. Package 1267: move `rd07-hoist-base-scale`, `rd07-fold-subscale`, `rd07-sum-line` in that order; add RD07-only Q6_K dispatch marker, `GGML_CUDA_MMQ_J_MAX`, and RD07-only MUL_MAT perf cases. Exclude FA perf cases and per-op timing diagnostics.
-3. Give each package `state="untested"`, fresh experiment-contract identity, explicit `expect_matches=1`, distinctive guards, and conflict with rejected 1203 because source edits overlap.
-4. Add package-local producers using contract-declared paired rounds and measurement mode. Llama-bench lanes use one combined invocation per paired round.
-5. Add focused mechanics tests for apply, idempotence, missing-anchor failure, and ambiguous-anchor failure.
-6. Keep this plan `pending` until owner hardware validation completes.
-
-## Detailed Solution
-
-### 1266 / RD05
-
-`fattn-mma-f16.cuh` receives exactly two barrier changes. The first extends the end-of-`k00` synchronization condition so writers cannot overwrite `tile_Q` while another warp still consumes it. The second inserts an unconditional block synchronization before the next `process_tile` iteration reuses the same scratch. No kernel configuration, head-size envelope, or softcap behavior changes.
-
-`fattn.cu` receives only `<atomic>` plus a `BIGCHERRY_PATCH_TRACE` once-marker immediately before the actual WMMA-F16 launch. The marker proves the fixed implementation was dispatched; it does not claim that the race manifested.
-
-### 1267 / RD07
-
-`mmq-vec-dot.cuh` hoists row base scales out of inner loops, loads per-`k01` subscales once, folds them to F32, and uses the folded scale in the hot accumulation line. The three edits are intentionally ordered because later anchors depend on text inserted by earlier edits. The sum anchor accepts the two real base forms (plain and the independent 1006 cast form) but still requires exactly one match.
-
-`mmq.cu` adds only the Q6_K MMQ dispatch marker. At b11126 the call is `mul_mat_q_case<GGML_TYPE_Q6_K>(ctx, args, stream);`; no `forced_J` parameter exists and the rejected package's older anchor must not be copied. `mmq.cuh` keeps the env-bounded J-max sweep knob. `tests/test-backend-ops.cpp` receives only Q6_K MUL_MAT performance shapes plus Q8_0/F16/F32 controls; RD05/RD06 flash-attention cases are excluded.
-
-## Code Samples
-
-1266 synchronization guard:
-```cpp
-if (np > 1 || k00 + nbatch_combine < DV/2) {
-    __syncthreads();
-}
-```
-
-1267 corrected dispatch shape:
-```cpp
-case GGML_TYPE_Q6_K: {
-    // trace marker
-    mul_mat_q_case<GGML_TYPE_Q6_K>(ctx, args, stream);
-    break;
-}
-```
-
-Fresh contracts:
-```toml
-[contract.PRBE110-RD05-WMMA-TILEQ-SYNC.measurement]
-bench_invocation = "combined"
-
-[contract.PRBE110-RD07-Q6K-MMQ-SCALE-FOLD.measurement]
-bench_invocation = "combined"
-```
-Both use `improvement_no_regression_v1`, `min_sessions=4`, `min_paired_rounds=10`, and zero materiality threshold per owner policy.
-
-## Files
-
-- `patches/1266_rd05_wmma_fa_tileq_sync/{patch.toml,patch.py,README.md,SUMMARY.md,validation.toml,validation/producer.py}`
-- `patches/1267_rd07_q6k_mmq_scale_fold/{patch.toml,patch.py,README.md,SUMMARY.md,validation.toml,validation/producer.py}`
-- `tools/tests/patch/test_1266_rd05_wmma_fa_tileq_sync.py`
-- `tools/tests/patch/test_1267_rd07_q6k_mmq_scale_fold.py`
-- `config/experiment-contracts.toml`
-- source targets: `ggml/src/ggml-cuda/fattn-mma-f16.cuh`, `ggml/src/ggml-cuda/fattn.cu`, `ggml/src/ggml-cuda/mmq-vec-dot.cuh`, `ggml/src/ggml-cuda/mmq.cu`, `ggml/src/ggml-cuda/mmq.cuh`, `tests/test-backend-ops.cpp`
-
-## Validation
-
-Offline owner run: patch lint; mechanics tests; standalone apply/idempotence; missing/duplicate-anchor negative tests; rebase check against b11126 and production composition; build control/subject.
-
-Hardware: 1266 on gfx1201 must show subject-only WMMA marker, full-vocabulary backend-reference correctness, positive decode and prefill control measurements over 10 paired rounds for each of at least 4 sessions. 1267 must do the same on each declared gfx1100/gfx1201/gfx1030 architecture, with Q6_K MMQ prefill as positive and decode as control. Historical 1203 results are provenance only and cannot satisfy either fresh contract.
-
-## Effort & Risk
-
-M. Code risk is low-to-medium because source logic is already reviewed, but split/lifecycle risk is material. Primary hazards: accidentally carrying RD06 edits; losing RD07 edit ordering; copying 1203's stale `forced_J` dispatch anchor; accepting an ambiguous scale-fold anchor; or reusing rejected evidence. All are fail-closed by package scope, exact match counts, mechanics tests, and fresh contracts.
-
-## Notes
-
-- 1203 remains rejected and is not a compatibility fallback.
-- RD06 remains parked; neither new package broadens WMMA head coverage.
-- Fresh contracts are intentional even though logical RD05/RD07 contract names already exist: rejected-bundle evidence must not bind the extracted patch identities.
-- Source: https://github.com/stew675/llama.cpp/commit/1d525bd45f9e8f844856ecbc5dd8ae33c8d34eff
-
-## Change Log
-
-- 2026-10-08 (triage): pending; 1267_rd07_q6k_mmq_scale_fold patch.toml state=untested, SUMMARY.md requires new validation. Historical gfx1201 pp512 +2.4675% is not current-pin promotion; b11474 requalification remains; 1203 rejected.
+Keep `pending` until Gate 0. Outcomes: `NO_RELEVANT_Q6K`, `NO_EXPOSED_GAIN`, `SOURCE_REBASE_BLOCKED`, `SAFETY_OR_NUMERIC_FAIL`, `NO_VALIDATED_GAIN`, `NOT_PRODUCTION_RELEVANT`, or `PROMOTABLE`. No new patch, hardware experiment, scheduler, cache, allocator, dispatcher or telemetry system was created by this audit.

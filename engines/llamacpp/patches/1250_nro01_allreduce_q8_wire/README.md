@@ -1,5 +1,9 @@
 # 1250_nro01_allreduce_q8_wire
 
+## 2026-10-14 b11552 qualification (BCOP212)
+**Evaluated, not adopted; no production re-anchor.** Requires rejected 1252 P2P and untested 1272 Q8 codec; host Q8 fallback is unqualified. Residual fusion is Q8-only, two-rank and >=1 MiB Q8 copy-engine threshold. At width 5120 the first eligible whole-token batch is 193 tokens; plain decode/MTP <=6 cannot enter. Three-rank 1291 CPU-root has no 1250 fused hook. PNRO02 owns future exact-F32 epilogue, PGC11 wire. A trace marker is not a numerical or performance proof.
+
+
 Plans `PNRO01` (P2P Q8 wire) and `PNRO02` (fused residual). Requires both `1252_nro03_allreduce_p2p_provider` and `1272_ar_host_compressed_wire`.
 
 Ownership after the b11233 migration is deliberately split: 1272 owns `GGML_CUDA_AR_WIRE`, the single Q8_0 block-32/fp16-scale codec, host/mapped transport, and shared finish kernels. 1250 owns only the provider extension that routes 1272 Q8 copy-engine traffic through 1252 P2P when available plus the optional meta-backend residual-ADD fusion. There is no compatibility copy of the old 1250 codec/parser/finish implementation.

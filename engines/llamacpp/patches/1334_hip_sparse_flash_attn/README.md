@@ -1,5 +1,9 @@
 # 1334_hip_sparse_flash_attn
 
+## 2026-10-14 qualification boundary (QFP25 / BCOP199)
+
+The b11402 ABBA and 18/18 backend-op results above are historical, valid observations, not a proof of the **unclamped eight-query union size** on current b11552. The HIP compactor builds a union of finite-mask positions over `ncols1=8` but caps output at `n_kv_max`, a per-query Qwen4Exp hint. If the union exceeds the cap, selected cells can be dropped. The upstream CUDA compactor shares this boundary. A deterministic host-only model reproduced lost positions for disjoint/random masks; no GPU or real-model failure has been reproduced. Preserve the existing status pending exact-pin, per-case route+unclamped-union, dense/f32 numerical and repeated-request qualification. QFP25 is the sole owner; do not duplicate the sparse op or alter this package's implementation in a documentation-only audit.
+
 Promotion record (QFP18 lightweight evidence-reuse tier, pin b11402 / d89651a7). Mechanism is in SUMMARY.md; this
 file records why the patch is promoted into `[patch-set.validated-enhancements]`. The path is on by default
 (`BIGCHERRY_FA_SPARSE=0` is the off switch): it is taken only when a graph sets `n_kv_max` on its attention, which

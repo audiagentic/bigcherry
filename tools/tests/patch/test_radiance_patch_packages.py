@@ -30,9 +30,9 @@ CASES = {
         "for (auto& r : ranks_) r->ctx.shutdown_now();",
     ),
     "rad0002_moe_remote_handoff": (
-        "core/place/mover.h",
-        "void publish(rad_weight w, void* ptr);",
-        "void publish(rad_weight w, void* ptr, int changed_shape);",
+        "arch/common/rad_block_moe_fp8.h",
+        "rad_op op_ar = 0, op_add = 0;",
+        "rad_op op_ar = 0, op_add = 0, int changed_shape;",
     ),
     "rad0003_mtp_full_head_switch": (
         "arch/common/rad_block_mtp_fp8.h",
@@ -42,9 +42,10 @@ CASES = {
 }
 
 
-# Git blob prefixes from the three original feature-branch diffs against
-# Radiance 1.3.0 (89cee7ce4); mismatches detect a port that merely matches
-# guards while silently changes output.
+# Git blob prefixes for the exact package outputs against Radiance 1.3.0
+# (89cee7ce4); mismatches detect a port that merely matches guards while
+# silently changes output. 0002 now contains the decode-row policy gate,
+# exact-q/s handoff, mask-only engine-row diagnostic, exact slot-order merge, and normal-path HyperConn exclusion.
 # 0003: diff body was amended to std::atoi(e) != 0 after its index line
 # was generated; 62849e9 is stale and the corrected hunk produces 8e1f89e.
 PIN_BLOBS = {
@@ -52,14 +53,12 @@ PIN_BLOBS = {
         "core/engine.cpp": ("3ba2831", "20767f7"),
     },
     "rad0002_moe_remote_handoff": {
-        "abi/rad_moe_remote.h": (None, "3a48197"),
-        "arch/common/rad_block_hc.h": ("c19c8b6", "75a248e"),
-        "arch/common/rad_block_moe_fp8.h": ("51b7c28", "1d927d2"),
-        "core/place/moe_remote.cpp": (None, "cf82c4e"),
-        "core/place/mover.cpp": ("2de5295", "a994f33"),
-        "core/place/mover.h": ("0c28ba3", "c4bd33c"),
-        "core/runtime/ctx.h": ("8a231df", "c826093"),
-        "core/runtime/residency.h": ("bd73431", "97198f1"),
+        "abi/rad_moe_remote.h": (None, "f6e911b"),
+        "arch/common/rad_block_hc.h": ("c19c8b6", "df35634"),
+        "arch/common/rad_block_moe_fp8.h": ("51b7c28", "3170170"),
+        "core/place/moe_remote.cpp": (None, "4b5f436"),
+        "core/place/planner.cpp": ("e7a413d", "cb382bf"),
+        "core/engine_bringup.cpp": ("d1bd222", "0e0a616"),
     },
     "rad0003_mtp_full_head_switch": {
         "arch/common/rad_block_mtp_fp8.h": ("dac7f12", "8e1f89e"),
@@ -134,6 +133,68 @@ class TestRadiancePatchPackages(unittest.TestCase):
                     if package_id == "rad0002_moe_remote_handoff":
                         self.assertTrue((root / "abi/rad_moe_remote.h").is_file())
                         self.assertTrue((root / "core/place/moe_remote.cpp").is_file())
+                        moe = (root / "arch/common/rad_block_moe_fp8.h").read_text(encoding="utf-8")
+                        # Remote hand-off must not globally change the normal router/top-k arithmetic.
+                        self.assertIn(
+                            "const bool rfused = op_router_fused && rows <= router_fused_rows;", moe
+                        )
+                        self.assertIn(
+                            "} else if (op_topk_scatter && rows <= topk_scatter_rows) {", moe
+                        )
+                        self.assertNotIn("rfused = !remote_policy", moe)
+                        self.assertNotIn("!remote_policy && op_topk_scatter", moe)
+                        self.assertIn("{w.h.x}, {w.h.x});", moe)
+                        self.assertIn(
+                            "rad_moe_remote_layer_map(l, (int)ne, remote_slot.data());", moe
+                        )
+                        self.assertIn(
+                            "remote_slot[(size_t)reg[(size_t)s]] = (int32_t)s;", moe
+                        )
+                        self.assertNotIn(
+                            "n_reg == (int64_t)c.n_expert", moe
+                        )
+                        abi = (root / "abi/rad_moe_remote.h").read_text(encoding="utf-8")
+                        core = (root / "core/place/moe_remote.cpp").read_text(encoding="utf-8")
+                        self.assertIn("rad_moe_remote_set_layer_map_hook", abi)
+                        self.assertIn("rad_moe_remote_mask_only(void);", abi)
+                        self.assertIn("g_layer_map_hook.store(hook, std::memory_order_release);", core)
+                        self.assertIn('std::getenv("R3_MOE_HELPER_MASK_ONLY")', core)
+                        op_hq = moe.index("if (op_hq)")
+                        pub = moe.index("RAD_ISSUE_N(c_, op_remote_publish, rows")
+                        routed_gemm = moe.index("const int64_t n4[4]", pub)
+                        self.assertLess(op_hq, pub)
+                        self.assertLess(pub, routed_gemm)
+                        self.assertIn("brow_slice(remote_q, r0, rows, g.n_embd)", moe)
+                        self.assertIn("brow_slice(remote_s, r0, rows, g.n_embd / RAD_FP8_BLOCK)", moe)
+                        self.assertIn("brows(remote_q, T)", moe)
+                        self.assertIn("if (remote_active)", moe)
+                        shadow = moe.index("RAD_ISSUE_N(c_, op_remote_shadow, rows")
+                        capture = moe.index("RAD_ISSUE_N(c_, op_remote_mask_capture, rows")
+                        restore = moe.index("RAD_ISSUE_N(c_, op_remote_mask_restore, rows")
+                        add = moe.index("RAD_ISSUE_N(c_, op_remote_add, rows")
+                        gather = moe.index("RAD_ISSUE_N(c_, op_gather, rows")
+                        ar = moe.index("RAD_ISSUE_N(c_, op_ar, rows * g.n_embd", add)
+                        self.assertLess(capture, restore)
+                        self.assertLess(restore, shadow)
+                        self.assertLess(shadow, add)
+                        self.assertLess(add, gather)
+                        self.assertLess(gather, ar)
+                        self.assertIn(
+                            "else if (!gather_taken(g, T, gather_out_rows, gather_out_rows6))",
+                            moe,
+                        )
+                        self.assertIn("if (op_ar && (remote_active ||", moe)
+                        self.assertIn("const bool remote_shadow = remote_policy && rad_moe_remote_shadow();", moe)
+                        self.assertIn("remote_active && rad_moe_remote_mask_only();", moe)
+                        self.assertIn("gfold ? brow_slice(w.sout, r0, rows, g.n_embd) : RAD_NONE", moe)
+                        self.assertIn("gfold ? brow_slice(w.sgate, r0, rows, 1) : RAD_NONE", moe)
+                        hc = (root / "arch/common/rad_block_hc.h").read_text(encoding="utf-8")
+                        self.assertIn("const bool remote_active =", hc)
+                        self.assertIn("!rad_moe_remote_shadow();", hc)
+                        self.assertIn("if (!remote_active && takes_gather(T)) {", hc)
+                        self.assertIn(
+                            "(!remote_active && takes_ar(T)) ? ar_write(T) : op_write", hc
+                        )
                     if package_id == "rad0003_mtp_full_head_switch":
                         text = (root / "arch/common/rad_block_mtp_fp8.h").read_text(encoding="utf-8")
                         self.assertIn("std::atoi(e) != 0", text)
@@ -155,6 +216,63 @@ class TestRadiancePatchPackages(unittest.TestCase):
                     self.assertEqual(_snapshot(root), after_first)
                 finally:
                     temp.cleanup()
+
+    def test_remote_helper_merges_in_gather_order_and_exposes_diagnostics(self):
+        helper = REPO / "engines" / "radiance" / "components" / "libr3" / "helper"
+        hook = (helper / "moe_remote_hook.cpp").read_text(encoding="utf-8")
+        ops = (helper / "moe_mailbox_ops.hip").read_text(encoding="utf-8")
+        self.assertIn('setenv("R3_MOE_REMOTE_MIN_ROWS", "0", 0)', hook)
+        self.assertIn('setenv("R3_MOE_REMOTE_MAX_ROWS", mr.c_str(), 0)', hook)
+        self.assertNotIn('setenv("R3_MOE_REMOTE_MAX_ROWS", mr.c_str(), 1)', hook)
+        self.assertIn('{"sorted", RAD_OPD_IN, 0}', ops)
+        self.assertIn('{"down", RAD_OPD_IN, 0}', ops)
+        self.assertIn('{"ew", RAD_OPD_IN, 0}', ops)
+        self.assertIn('{"shared", RAD_OPD_IN, 1}', ops)
+        self.assertIn('{"shared_gate", RAD_OPD_IN, 1}', ops)
+        self.assertIn('{"out", RAD_OPD_OUT, 0}', ops)
+        self.assertIn('for (uint32_t slot = 0; slot < top_k; ++slot)', ops)
+        self.assertIn('if (src) acc += bf16_to_f32(ew[flat]) * bf16_to_f32(src[col]);', ops)
+        self.assertIn('acc += bf16_to_f32(__builtin_nontemporal_load(result + col))', ops)
+        self.assertIn('const uint16_t gathered = f32_to_bf16_rn(acc);', ops)
+        self.assertIn(
+            'f32_to_bf16_rn(bf16_to_f32(part) + bf16_to_f32(gathered))', ops
+        )
+        self.assertNotIn('float acc = bf16_to_f32(dst[col]);', ops)
+        self.assertIn('R3_MOE_HELPER poison', hook)
+        self.assertIn('R3_MOE_HELPER_SHADOW enabled', hook)
+        self.assertIn('R3_MOE_HELPER_MASK_ONLY enabled', hook)
+        self.assertIn('R3_MOE_HELPER_SHADOW layer=', hook)
+        self.assertIn('hipMalloc mask-only engine rows', hook)
+        self.assertIn('"moe_mailbox_mask_ref"', ops)
+        self.assertIn('if (mask_only == 1u) src = mask_ref + (uint64_t)flat * hidden;', ops)
+        self.assertIn('r.weight_bf16 != ew[flat]', ops)
+        self.assertIn('if (mask_only && m && local_index[slot] >= 0) __builtin_trap();', ops)
+        self.assertIn('hipMemsetAsync(d->mask_ref, 0', ops)
+        self.assertIn('dlsym(RTLD_DEFAULT, "rad_moe_remote_set_layer_map_hook")', hook)
+        self.assertIn('g.set_layer_map(publish_layer_map)', hook)
+        self.assertIn('layer_map_consumed', hook)
+        self.assertIn('slot_map[(uint32_t)le] < 0', ops)
+        self.assertIn('{"aq", RAD_OPD_IN, 0}', ops)
+        self.assertIn('{"as", RAD_OPD_IN, 0}', ops)
+        self.assertIn('{"aq_base", RAD_OPD_IN, 0}', ops)
+        self.assertIn('"moe_mailbox_shadow"', ops)
+        self.assertIn('q->row_base', ops)
+        gpu = (helper / "moe_remote_gpu.h").read_text(encoding="utf-8")
+        self.assertIn('R3_MOE_HELPER_POISON', gpu)
+        self.assertIn('poison == 1u ? (uint16_t)0x447au : poison == 2u ? (uint16_t)0 : (uint16_t)(u >> 16)', gpu)
+        self.assertIn('build_layer_table', gpu)
+        self.assertIn('slot_of_expert', gpu)
+        self.assertNotIn('model_.expert_slot', gpu)
+        self.assertIn('stage_compare_activation', gpu)
+        self.assertIn('q, act_q, act_s', gpu)
+        helper_main = (helper / "r3_moe_helper.cpp").read_text(encoding="utf-8")
+        self.assertIn("--synthetic-protect", helper_main)
+        self.assertIn("did not shift an owned TP class", helper_main)
+        self.assertNotIn("regular_slot", helper_main)
+        component = (REPO / "engines" / "radiance" / "components" / "libr3" / "component.toml").read_text(encoding="utf-8")
+        self.assertIn("[setting.R3_MOE_HELPER_SHADOW]", component)
+        self.assertIn("[setting.R3_MOE_HELPER_MASK_ONLY]", component)
+        self.assertIn('status = "diagnostic"', component)
 
     def test_missing_anchor_fails_closed_and_is_atomic(self):
         for package_id, (relative, before, after) in CASES.items():

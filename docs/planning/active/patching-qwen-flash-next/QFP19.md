@@ -13,6 +13,10 @@ work: S
 
 # Reconcile patches broken by the 0504396 pin bump (1250, 1268, 1275, 1320)
 
+## 2026-10-14 1250 disposition (BCOP212)
+Do not re-anchor 1250 merely to clear historical `known_broken`: it depends on rejected 1252 P2P, and its residual hook is two-rank Q8-only, >=1 MiB copy-engine-gated, not exact-F32 or production 1291 CPU-root. PNRO02/PGC11 own the follow-up. The independent 1268/1275/1320 need-triggered rebase items remain untouched.
+
+
 ## Description
 
 Pin bump c061df198 -> 0504396140d1 (upstream master, 58 commits: #29825, #29824, #29856, #27694 probabilistic MTP). Non-recipe patches with anchor-no-match recorded as known_broken (revision+digest bound): 1250_nro01_allreduce_q8_wire (allreduce.cu nro01-p2p-q8-outer / nro01-q8-provider-route), 1268_prbe52_adaptive_mtp_wiring (speculative.cpp begin-reset / draft-reset / depth-limit), 1275_ar_small_latency (allreduce.cu ar-small-init-once), 1320_meta_compute_timing (ggml-backend-meta.cpp meta-timing-ar / meta-timing-end, collide with a base patch-set edit of the AllReduce loop). 1315/1317 re-anchored in the bump commit.

@@ -13,6 +13,28 @@ work: M
 
 # Decode kernel-count reduction for Flash-Next (launch-gap bound: ~3.5 us gap per ~1.7 us kernel)
 
+## 2026-10-14 b11552 rollback-copy route reconciliation (BCOP209)
+
+**Disposition:** Retain validated 1308 and its default-on direct-strided snapshot copy. The historical `~108 copyBuffer*/token` item is **not unassigned**. The old v2 census attributed ~89 to recurrent rollback snapshot `CONT + CPY` pairs and ~19 to other copy neighbourhoods. 1308 removed the intermediate CONT, **not the required cache snapshot CPY**. A current-pin residual runtime-copy count cannot be obtained by subtracting ~44 from ~108: the surviving direct-strided CPY can dispatch as a *different kernel class*. Historical 1270 -> 1212 kernels/token and +3%/+3.6% adoption measurements are first-party, pin/profile-bound, not new b11552 measurements.
+
+### Actual implementation and lifetime
+
+- `src/models/qwen4exp.cpp::graph::build_conv_state_at` constructs `conv_input = CONCAT(state, TRANSPOSE(x))`, then for each of `n_rs_seq+1` rollback slots builds a strided `VIEW_3D tail` and a cache `VIEW_2D dst`. The original `ggml_cpy(ggml_cont(tail),dst)` materializes an intermediate; 1308 replaces it with `ggml_cpy(tail,dst)` (default on; `BIGCHERRY_ROLLBACK_NO_CONT=0` restores the original).
+- `ggml/src/ggml-cuda/cpy.cu::ggml_cuda_cpy` chooses contiguous `cudaMemcpyAsync`, then `ggml_cuda_cpy_as_memcpy_2d`, then type-specific kernels. The 2D fast path requires `ggml_are_same_shape(src,dst)`. Production multi-channel rollback source `[state_cols,channels,n_seqs,1]` and flattened cache destination `[state_cols*channels,n_seqs,1,1]` differ in shape, so that fast path is **not** admitted; for F32-to-F32 the direct-strided route reaches `ggml_cpy_scalar_cuda`. Do not describe it as an equivalent one-shot DMA copy or assume its kernel appears under the old `copyBuffer*` name.
+- `ggml/src/ggml-backend-meta.cpp` handles `GGML_OP_CPY` through `handle_cpy` and `CONT/RESHAPE` through `handle_reshape`; the eliminated graph node changes split/allocation topology. The cache destination must be fully written for every slot/sequence before any rollback reader; input-view backing and destination lifetimes must survive graph reuse and multi-request reuse.
+- Existing upstream `ggml_cuda_try_gdn_cache_fusion` and `ggml_cuda_try_ssm_scan_cache_fusion` fold **other** state-tail writes when their exact producer/view/contiguity/shape guards hold. They do not match Qwen4Exp's `CONCAT`-owned convolution tail. Do not add a duplicate generic state-cache fusion matcher.
+
+### Narrow residual-copy gate, not another implementation plan
+
+1. Re-census the **current b11552 composed production profile** with 1308 on/off, same prompt and MTP depth; report per generated token and per rank separately: runtime `copyBuffer*`, `cpy_scalar`, `CONT`, `CPY`, their launch IDs and device durations. Associate every candidate with graph node, producer/view ancestry, `ne/nb`, slot/sequence, owning rank and stream via correlated HIP activity. Do not equate kernel-name counts with GGML node counts or infer overlap from adjacent timestamps.
+2. First isolate the historical ~19 **nonrollback** copy neighbourhoods. Classify each as required state write, input staging, scalar broadcast, or removable intermediate. Existing QFP16/1326/QFP27 owns scheduler input lifetimes; 1308 owns rollback; QFP13 only ranks measured residuals and routes a qualified candidate to its existing owner.
+3. Cheap controls before GPU work: compare direct-strided vs CONT+CPY on host for slot 0..3, `n_seqs=1..3`, channels and tail widths; reject any shape/stride mismatch. Host-only fixture passed **216 synthetic semantic cases, 2 shape-admission guards and 9 launch-count identities**; Python compilation passed. This is **not** a HIP/Meta correctness test.
+4. A deliberately optimistic arithmetic illustration for the *19 historical nonrollback launches* is `19*(3.1+1.6)..19*(3.7+1.8) us = 0.0893..0.1045 ms/token` if every global-median gap and kernel duration is serial and removable. These are **not measured copy costs or rigorous upper bounds**; actual launch duration, overlap and route must be measured. Do not schedule a new fusion unless the correlated critical-path saving can clear QFP13's existing `>=0.10 ms/token` or `>=0.5% E2E` acceptance gate.
+5. Qualify any future owner-local change with same-process sequential requests, multiple sequences, ubatches, MTP depths `0/3/7`, cache rollback/replay, long context, graph reallocation, exact greedy/logit and draft acceptance comparisons, and rank-specific GPU tracing. No new scheduler, allocator, generic copy fusion or trace framework.
+
+**Terminal:** `ALREADY_COVERED_1308` for the rollback pair; `UNVERIFIED_ROUTE` if kernel-to-node correlation fails; `REQUIRED_STATE_WRITE` for necessary cache copies; `BELOW_EXPOSED_GATE` if the measured residual cannot meet the QFP13 gate. Otherwise route a *single* bounded correction to the existing owner. vLLM's `causal_conv1d_update` writes indexed state in-kernel, but its packed state and scheduler semantics differ; it is a correctness/mechanism reference, not an AMD performance claim. Upstream llama.cpp #25057's 2D memcpy path already exists in b11552 and is excluded here by shape.
+
+
 ## Description
 
 QFP13 is the Flash-Next **measurement, ranking, and acceptance umbrella** for local decode launch reduction. It does not own backend fusion implementations.
@@ -31,7 +53,7 @@ Implementation details belong in the canonical owner item. Do not duplicate matc
 ## Steps
 
 1. Maintain an adjacent-kernel/n-gram census for the selected production decode window on gfx1100 and gfx1201.
-2. Attribute the highest-frequency unexplained transitions to graph nodes/source. Current first attribution task: the ~108/token HIP runtime `copyBuffer*` kernels.
+2. Re-census the current-pin residual nonrollback copy neighbourhoods using node-to-HIP-event correlation. The old ~108/token `copyBuffer*` baseline was already largely attributed to 1308; do not reopen it as unassigned.
 3. For each ranked candidate, record: frequency/token, maximum removable launches/token, expected serial gap time, semantic risk, and canonical owner.
 4. Send implementation work to that owner (PRBE38/39/40/05/etc.); QFP13 must not gain backend matcher/kernel pseudocode.
 5. Re-run the same census after each owner lands an accepted experiment. Measure actual launch reduction, gap-time reduction, GPU busy share, ms/step, and effective TG.
@@ -112,7 +134,7 @@ Profile-v2 observations:
 - `scale_f32`: 98/token;
 - `mul_mat_vec_f`: 82/token;
 - `rms_norm`: 79/token;
-- HIP runtime copy kernels: ~108/token (`copyBufferRectAligned` + `copyBuffer`), origin still to attribute;
+- HIP runtime copy kernels: ~108/token (`copyBufferRectAligned` + `copyBuffer`) in the historical pre-1308 census; ~89 attributed to rollback CONT+CPY, not an unassigned current-pin count;
 - `unary_gated`: ~30/token;
 - cpu-root AllReduce produce/consume: ~30/token each.
 
@@ -131,7 +153,7 @@ Important interpretation: an adjacency count is an **opportunity count**, not pr
 | AllReduce split/graph-boundary removal | **QFP11** | Lower priority: measured split/round-trip boundary is a minority of the loss; rank-arrival skew dominates. |
 | MMVQ -> SCALE / MMVF -> SCALE (~30 + ~30 adjacencies/token in one census) | **unassigned candidate** | Source + numerical proof first. Do not create an implementation item until exact topology, output dtype, rounding equivalence, and removable-launch count are established. |
 | RMSNorm -> Q8_1 quantize | **PRBE06** | Existing quantization/fusion owner; keep separate from PRBE05 cache identity work. |
-| Runtime `copyBuffer*` pair (~108 kernels/token) | **unassigned evidence task** | Attribute with HIP API trace before assigning an implementation owner. |
+| Runtime rollback `CONT + CPY` pair (~89 of ~108 historical copyBuffer* launches/token) | **1308 / QFP13 (validated)** | Already implemented; preserve direct-strided cache writes, distinguish scalar CPY from runtime copyBuffer class. Residual ~19 nonrollback neighbourhoods are a QFP13 *measurement-only* gate, with implementation routed to an existing owner. |
 
 ## Promotion Rule For New Candidates
 
