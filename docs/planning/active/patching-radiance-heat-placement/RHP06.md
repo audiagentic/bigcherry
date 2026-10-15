@@ -58,3 +58,27 @@ Very high: correctness, deadlocks and missing mapped weights. Implement as a sep
 ## Notes
 
 Depends on RHP05; strictly optional. Does not change the model router or numerical method.
+
+## Implementation-grade notes (2026-10-15)
+
+### Gate before any implementation
+
+Measure total actual service interruption for RHP05, frequency of changed optimal placements, network/PCIe and GPU memory cost of transferring expert bytes, and expected payback. If changes are rare and planned restarts are acceptable, **close RHP06 as intentionally not implemented**. Never make live migration a prerequisite for RHP05 production use.
+
+### Epoch and quiescence protocol
+
+A map generation is a 64-bit monotonically increasing **placement** epoch, distinct from existing v11 mailbox **request completion** sequence. Every GPU mailbox request is bound to a generation; helper completion must contain the same epoch, exact request generation and checksum. Participants: all engine ranks and all configured helpers; every participant must ACK `(epoch+1, map digest, loaded weights, layer slot geometry)`. Old epoch remains live until no consumer retains it, including draft/verify passes and submitted graph replay operations.
+
+Recommended phases: `ACTIVE(n)` -> `PROPOSED(n+1)` -> `LOADING(n+1)` -> `READY(n+1)` -> `QUIESCING(n)` -> `COMMITTING` -> `ACTIVE(n+1)`, with `ABORT` on any mismatch. Publish ownership only once all rank streams reach a global safe boundary and all old tickets retired. Engine/remote hook must use a single table per model step, not per route, to prevent mixed-owner outputs. Reuse mapped-host release/acquire and GPU-stream fences already in the mailbox protocol; do **not** substitute CPU polling for a GPU-lane dependency.
+
+### Memory and weight lifetime
+
+A remote-owned engine expert may be intentionally absent locally due to `R3_MOE_HELPER_SKIP_OWNED`; consequently switching remote -> local requires **new local weight allocation and verified full weight load**, not just new bitmap bits. Local -> remote requires the helper to preload the correct quantized whole-expert weights and keep engine copy until all prior steps finish. Per-device peak budget must include old + new residency, transfer staging, kernel scratch, KV and host pool; if it does not fit, refuse the migration or use RHP05 restart. Restore pool/slab accounting after abort, including shadow slots and in-flight events. Never repurpose protected or MTP-only weights.
+
+### Failure matrix
+
+Wrong generation, same-generation checksum mismatch, helper crash before ACK, helper crashes after ACK before commit, event never completes, stale DMA writes, mapped-host visibility lag, helper capacity exhaustion, GPU OOM, rank disagreement, missing local source for skipped weight, cancel during prefill, simultaneous ownership updates, rolling request-counter wrap, restart during live migration and graph replay referencing old weights. Validate exact output contribution once per selected expert; rollback may need `SAFE_STOP` if old weights were already released.
+
+### Test design
+
+CPU protocol mock proves ACK/quiescence/generation fencing; GPU stress requires 0,1,2 helpers, 1/8/64/1024/4096 rows, protected-slot perturbations, long prefill/MTP decode, fault injection on every transition, poison freed buffers, host-mapped visibility and TSAN/ASAN where practical. Verify `KL/top-1` vs current helper-off/control, no extra numerical divergence due to ownership and no repeat expert contributions. Record transfer bytes, overlapping work, p95/p99 service latency and negative-case recovery.

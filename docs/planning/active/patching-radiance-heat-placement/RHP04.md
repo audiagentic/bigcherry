@@ -58,3 +58,32 @@ High: cold experts may incur disproportionately expensive gfx11 prefill kernels;
 ## Notes
 
 Depends on RHP02–03; no automatic activation before RHP05.
+
+## Implementation-grade notes (2026-10-15)
+
+### Objective and constraints
+
+Let `r[l,e,p]` be routed rows or demand estimate for phase `p` (prefill/decode). For each layer and device `d`, predict `T[l,p,d]` using measured kernel curves (startup + fixed per-expert weight read + variable rows/tiles + mailbox/merge + possible host-pool misses). Minimise
+
+```text
+J(owners) = sum_phase demand_weight[phase]
+              * sum_layer max_device(T[layer, phase, device])
+          + relocation_penalty(owners,current)
+          + uncertainty_penalty(coverage,fit_error)
+```
+
+Do **not** sum concurrent engine+helper work as serial time. Model communication on critical path including helper wait, and count a remote expert only once per layer where applicable. For mixed steps, qualify independent curves rather than interpolating unobserved tensor shapes.
+
+Hard constraints: each `(layer,global_expert)` assigned exactly once; `allowed_owners` derives from runtime protected expert map, output semantics, `RAD_MOE_REMOTE_MIN/MAX_ROWS`, source weight location and GPU ISA; per-device resident byte <= measured safe budget including launch scratch, KV/headroom, helper kernels and shadow-transfer workspace; rank parity and top-k routing identity unchanged. `R3_MOE_HELPER_SKIP_OWNED` means a local candidate may need restart reload; no illusion that a bitmap change is free.
+
+### Calibration data and sampling
+
+Record per-layer actual selected expert IDs/rows, per-device active routes, top-k count, per-expert nonzero token rows, hist coverage and duplicate count, occupancy, GEMM shape and padded tile size, helper stage latency (route/publish/gate_up/quant/down/merge), engine local MoE time and time waiting on helper. Cross-link each curve to engine build SHA, libr3 package digest, GPU UUID, ROCm version, model and numerical mode. Fit simple piecewise monotone upper envelopes by phase/shape/device (not high-dimensional ML), with conservative p95 prediction error. If too few samples for a bucket, refuse automatic change.
+
+### Bounded production policy versus oracle
+
+The included `heat_mock.mjs::Planner` enumerates single moves and 2-way swaps on **small synthetic models only** to serve as a correctness oracle. Real Flash-Next has tens of thousands of expert units: use a bounded, stable, deterministic candidate shortlist by `heat * expected net ms` and per-layer helper imbalance, then limited pair or slot-preserving swaps with strict time budget. Stop after no positive marginal improvement, hitting max swaps, or planner budget. Never enumerate O(N²) swaps in the production dispatch path.
+
+### Replay and acceptance matrix
+
+Cold startup profile vs hot-ranked static ownership vs RHP04 recommended; compare same model prompts and routing windows in prefill-only, decode-only, mixed, MTP verify, protected layers and decode helper-disabled. Replay phase-shift mid-run: prefill-heavy to decode-heavy, alternated and uniform. Report predicted/actual total and p95 layer waits, operator estimate error, bytes loaded, churn, source heat coverage, KLD/top-1 and speed ABBA. Proposed 5% predicted threshold is a search parameter; production gate is independent measured benefit with a confidence interval and no material quality regression.
