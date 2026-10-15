@@ -1,5 +1,9 @@
 # 1237 (RD30 / AMD-MOE-001): compact the MoE MMQ launch grid
 
+**Current authoritative status (2026-10-15):** `patch.toml` and `config/recipes.toml` mark 1237 **validated** for gfx1100 following the b11126 four-session formal contract PASS (2026-09-26). The earlier `untested` discussion below is historical and superseded; `validation.toml` and its producer now exist. Dependent 1265 extends the gate to exact gfx1201/gfx1030. QFP44/BCOP228 own only residual receipt-first headroom.
+
+**Precise launch semantics:** `mmq_build_moe_block_map` writes the real `R=block_start[n_experts]`, but the host launches the safe bound `B=ceil((ncols_dst+n_experts*(J-1))/J)` in `grid.y`, not exactly R. `m_block>=R` returns before accessing `block_expert[m]`. A skewed 256-expert/J128 example with 256 assignments to one expert has B=256, R=2 (254 padded no-work blocks). No GPU readback or extra synchronization is used. This does not invalidate the formal b11126 measured gain, but limits claims about eliminated launches. See QFP44.
+
 ## Scope
 
 Adds a prep kernel (`mmq_build_moe_block_map`) that turns `expert_bounds[]`
@@ -77,7 +81,7 @@ This is the most extensively validated untested patch in the RD-series:
    own +/-4-6 t/s stdev), RD30 won every round, no ordering flip -- ruling
    out drift/noise as the explanation.
 
-## Lifecycle status: deliberately still `untested`
+## Historical lifecycle status (superseded by formal 2026-09-26 promotion)
 
 This patch's real-hardware evidence (build, correctness across native and
 tune dispatch modes and two quant types, hostile-routing at real scale, and
@@ -127,7 +131,7 @@ acceptance gates (`target_kernel_gain_pct=0.5`,
 from this patch's own earlier informal manual A/B (which predates this
 contract and is explicitly not treated as a preregistration of it).
 
-## Known limitations
+## Historical known limitations (superseded where noted above)
 
 - No `validation.toml` adapter exists yet (no bound Experiment Contract).
 - The record->tune->promote->replay campaign establishing durable candidate
