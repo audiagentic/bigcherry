@@ -8,7 +8,7 @@ breadth: ''
 skill: advanced
 created-by: agent
 priority: P2
-work: XL
+work: L
 ---
 
 # Optional live cross-GPU expert migration with versioned ownership epochs
