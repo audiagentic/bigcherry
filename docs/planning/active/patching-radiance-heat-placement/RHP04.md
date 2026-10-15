@@ -82,7 +82,7 @@ Record per-layer actual selected expert IDs/rows, per-device active routes, top-
 
 ### Bounded production policy versus oracle
 
-The included \`heat_mock.py::Planner\` enumerates single moves and 2-way swaps on **small synthetic models only** to serve as a correctness oracle. Real Flash-Next has tens of thousands of expert units: use a bounded, stable, deterministic candidate shortlist by \`heat * expected net ms\` and per-layer helper imbalance, then limited pair or slot-preserving swaps with strict time budget. Stop after no positive marginal improvement, hitting max swaps, or planner budget. Never enumerate O(N²) swaps in the production dispatch path.
+The included \`heat_mock.mjs::Planner\` enumerates single moves and 2-way swaps on **small synthetic models only** to serve as a correctness oracle. Real Flash-Next has tens of thousands of expert units: use a bounded, stable, deterministic candidate shortlist by \`heat * expected net ms\` and per-layer helper imbalance, then limited pair or slot-preserving swaps with strict time budget. Stop after no positive marginal improvement, hitting max swaps, or planner budget. Never enumerate O(N²) swaps in the production dispatch path.
 
 ### Replay and acceptance matrix
 
