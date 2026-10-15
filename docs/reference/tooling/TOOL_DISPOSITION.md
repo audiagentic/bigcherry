@@ -129,8 +129,6 @@ ownership.
 | `tools/bigcherry/pool_protocol.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
 | `tools/bigcherry/rank_replay.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
 | `tools/bigcherry/re14_real_run.py` | **TRANSITIONAL** | Historical acceptance harness; preserve campaign/artifact invariants before retirement. |
-| `tools/bigcherry/re15_acceptance_run.py` | **TRANSITIONAL** | Historical acceptance harness; preserve campaign/artifact invariants before retirement. |
-| `tools/bigcherry/re15_tamper_evidence.py` | **TRANSITIONAL** | Historical tamper/evidence harness; retain until integrity checks have a permanent owner. |
 | `tools/bigcherry/recipes.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
 | `tools/bigcherry/release_validate.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
 | `tools/bigcherry/replay_build_audit.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
@@ -138,7 +136,6 @@ ownership.
 | `tools/bigcherry/rocprof.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
 | `tools/bigcherry/transform_loader.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
 | `tools/bigcherry/transform_records.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/validate_rd_patches.py` | **TRANSITIONAL** | Historical RD validator; generic validation remains authoritative. |
 | `tools/bigcherry/vk_autotune_types.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
 | `tools/lab/ar-accuracy/gates.py` | **TRANSITIONAL** | `ar-accuracy` lab topic file (see `tools/lab/ar-accuracy/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/ar-accuracy/kld.sh` | **TRANSITIONAL** | `ar-accuracy` lab topic file (see `tools/lab/ar-accuracy/README.md`); experiment-only, disposed per that README. |

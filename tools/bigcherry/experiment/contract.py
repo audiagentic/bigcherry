@@ -2236,8 +2236,7 @@ def aggregate_contract_effects(
 class CorrectnessResult:
     """One required check's outcome, however it was actually produced --
     parity.check_parity() for build-identity parity, a test-backend-ops
-    native/tune-mode run (see validate_rd_patches.py's own pattern this
-    session) for backend_reference/bit_identical, an external PPL harness
+    native/tune-mode run (a harness run) for backend_reference/bit_identical, an external PPL harness
     for ppl_equality, a temp-0 MTP repro for greedy_parity. This module
     does not run any of them -- EC07's job is the GATE (every check the
     contract declares required must have a passing result attached), not
