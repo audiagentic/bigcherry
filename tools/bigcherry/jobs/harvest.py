@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from bigcherry.core import paths
+from bigcherry.core import engines, paths
 from bigcherry.core.tree_activity import MaintenanceLock
 from bigcherry.patch import evidence as patch_evidence
 from bigcherry.tuning.journal import atomic_write
@@ -67,6 +67,8 @@ def _atomic_json(path: Path, value: dict[str, Any]) -> None:
 def _attempt_added_records(
     store: RunStore,
     run: dict[str, Any],
+    *,
+    engine: str,
 ) -> tuple[int, tuple[dict[str, Any], ...]]:
     run_id = str(run["run_id"])
     attempt_no = store.latest_attempt(run_id)
@@ -79,13 +81,17 @@ def _attempt_added_records(
     attempt = store.attempt(run_id, attempt_no)
     project_root = Path(str(attempt["project_root"])).resolve()
     patch_id = str(run["job"]["patch"])
-    source_root = paths.LLAMACPP.patches_root(project_root)
-    source_path = patch_evidence.evidence_path(patch_id, root=source_root)
+    source_root = engines.load(paths.REPO_ROOT, engine).patches_root(project_root)
+    source_path = patch_evidence.evidence_path(
+        patch_id, engine=engine, patches_root=source_root, root=source_root
+    )
     if not source_path.is_file():
         raise HarvestError(
             f"run {run_id} produced no tracked validation evidence at {source_path}"
         )
-    source_records = patch_evidence.load_records(patch_id, root=source_root)
+    source_records = patch_evidence.load_records(
+        patch_id, engine=engine, patches_root=source_root, root=source_root
+    )
     relpath = source_path.relative_to(project_root).as_posix()
     baseline = _container_records(
         show_text(project_root, str(attempt["commit"]), relpath), patch_id
@@ -159,6 +165,7 @@ def harvest_series(
     project_root: Path,
     work_root: Path,
     commit: bool,
+    engine: str,
 ) -> dict[str, Any]:
     """Harvest one complete series into the canonical repository.
 
@@ -188,7 +195,7 @@ def harvest_series(
     records_to_merge: list[dict[str, Any]] = []
     seen_digests: set[str] = set()
     for run in runs:
-        attempt_no, added = _attempt_added_records(store, run)
+        attempt_no, added = _attempt_added_records(store, run, engine=engine)
         digests: list[str] = []
         for record in added:
             record_digest = _verify_record_for_run(record, run)
@@ -205,8 +212,10 @@ def harvest_series(
             }
         )
 
-    canonical_root = paths.LLAMACPP.patches_root(project_root)
-    destination = patch_evidence.evidence_path(patch_id, root=canonical_root)
+    canonical_root = engines.load(paths.REPO_ROOT, engine).patches_root(project_root)
+    destination = patch_evidence.evidence_path(
+        patch_id, engine=engine, patches_root=canonical_root, root=canonical_root
+    )
     try:
         destination_rel = destination.relative_to(project_root).as_posix()
     except ValueError as exc:
@@ -235,7 +244,9 @@ def harvest_series(
         existing_verified = store.read_optional(verified_path)
         canonical_digests = {
             str(record.get("record_digest"))
-            for record in patch_evidence.load_records(patch_id, root=canonical_root)
+            for record in patch_evidence.load_records(
+                patch_id, engine=engine, patches_root=canonical_root, root=canonical_root
+            )
         }
         if (
             existing_verified
@@ -245,7 +256,9 @@ def harvest_series(
             return dict(existing_verified, already_harvested=True)
 
         for record in records_to_merge:
-            patch_evidence.write_record(record, root=canonical_root)
+            patch_evidence.write_record(
+                record, engine=engine, patches_root=canonical_root, root=canonical_root
+            )
         stage_exact(project_root, (destination_rel,))
         commit_sha: str | None = None
         if commit:

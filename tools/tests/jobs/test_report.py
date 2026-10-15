@@ -66,7 +66,10 @@ class SeriesReportTests(unittest.TestCase):
                 }
             )
         for record in rows:
-            patch_evidence.write_record(record, root=self.repo / "engines" / "llamacpp" / "patches")
+            patches = self.repo / "engines" / "llamacpp" / "patches"
+            patch_evidence.write_record(
+                record, engine="llamacpp", patches_root=patches, root=patches
+            )
         verified = {
             "schema": "bigcherry.jobs.harvest-result.v1",
             "series_id": self.series_id,
@@ -92,7 +95,7 @@ class SeriesReportTests(unittest.TestCase):
 
     def test_report_uses_existing_session_bootstrap(self):
         report = build_series_report(
-            store=self.store, series_id=self.series_id, project_root=self.repo
+            store=self.store, series_id=self.series_id, project_root=self.repo, engine="llamacpp"
         )
         self.assertTrue(report["review_ready"])
         self.assertEqual(len(report["aggregate_lanes"]), 2)
@@ -110,7 +113,7 @@ class SeriesReportTests(unittest.TestCase):
         (self.store.root / "series" / self.series_id / "verified-evidence.json").unlink()
         with self.assertRaises(ReportError):
             build_series_report(
-                store=self.store, series_id=self.series_id, project_root=self.repo
+                store=self.store, series_id=self.series_id, project_root=self.repo, engine="llamacpp"
             )
 
 

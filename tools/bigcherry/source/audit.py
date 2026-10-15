@@ -96,6 +96,7 @@ class CheckResult:
 
 @dataclass
 class AuditContext:
+    engine: str
     root: Path
     cuda: Path
     instances: Path
@@ -499,7 +500,7 @@ def check_overlay_sync(ctx: AuditContext) -> None:
         if source.read_bytes() == target.read_bytes():
             continue
         rel = str(relative).replace("\\", "/")
-        if _overlay_plus_applied_patches(ctx.root, rel, source, target):
+        if _overlay_plus_applied_patches(ctx.engine, ctx.root, rel, source, target):
             patched.append(rel)
         else:
             drifted.append(rel)
@@ -523,7 +524,7 @@ def check_overlay_sync(ctx: AuditContext) -> None:
         )
 
 
-def _overlay_plus_applied_patches(root: Path, relative: str, source: Path, target: Path) -> bool:
+def _overlay_plus_applied_patches(engine: str, root: Path, relative: str, source: Path, target: Path) -> bool:
     """True when ``target`` is exactly the overlay ``source`` plus the registered
     patches that edit ``relative`` and are applied in the compiled tree.
 
@@ -538,10 +539,10 @@ def _overlay_plus_applied_patches(root: Path, relative: str, source: Path, targe
     from ..patch import registry as patch_registry
 
     compiled = target.read_text(encoding="utf-8")
-    registry = patch_registry.load_registry()
+    registry = patch_registry.load_registry(engine, paths.patches_root(engine))
     texts = {relative: source.read_text(encoding="utf-8")}
     for descriptor in registry.descriptors:
-        for file_patch in patch_registry.load_implementation("llamacpp", descriptor):
+        for file_patch in patch_registry.load_implementation(engine, descriptor):
             if file_patch.path != relative:
                 continue
             if not all(re.search(e.guard_pattern(), compiled, re.MULTILINE) for e in file_patch.edits):
@@ -764,7 +765,7 @@ VULKAN_CHECKS: tuple[Callable[[AuditContext], None], ...] = (
 )
 
 
-def vulkan_audit(root: Path) -> dict[str, Any]:
+def vulkan_audit(root: Path, *, engine: str) -> dict[str, Any]:
     """The Vulkan-profile counterpart to ``audit()`` (RE30 phase 1).
 
     Deliberately a SEPARATE function, not a flag on ``audit()``: the
@@ -775,6 +776,7 @@ def vulkan_audit(root: Path) -> dict[str, Any]:
     real anchor/registration contract to validate.
     """
     ctx = AuditContext(
+        engine=engine,
         root=root,
         cuda=paths.cuda_dir(root),
         instances=paths.template_instances_dir(root),
@@ -808,8 +810,9 @@ def vulkan_audit(root: Path) -> dict[str, Any]:
     }
 
 
-def audit(root: Path) -> dict[str, Any]:
+def audit(root: Path, *, engine: str) -> dict[str, Any]:
     ctx = AuditContext(
+        engine=engine,
         root=root,
         cuda=paths.cuda_dir(root),
         instances=paths.template_instances_dir(root),
@@ -870,6 +873,7 @@ def main(argv: list[str] | None = None) -> int:
         prog="bigcherry audit",
         description="Audit an upstream llama.cpp checkout for the invariants "
                     "bigcherry's patches depend on.")
+    parser.add_argument("--engine", required=True, help="engine whose patches are audited against the checkout")
     parser.add_argument("--llama-root", default=None,
                         help="llama.cpp checkout (default: vendor/llama.cpp)")
     parser.add_argument("--out", default=None,
@@ -883,7 +887,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     root = paths.llama_root(args.llama_root)
-    report = audit(root)
+    report = audit(root, engine=args.engine)
     report["strict"] = args.strict
 
     out = Path(args.out) if args.out else \

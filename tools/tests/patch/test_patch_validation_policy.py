@@ -585,7 +585,7 @@ class PerformanceEvidenceTests(unittest.TestCase):
             self._write_package(
                 root, state="validated", tags='tags = ["optimization"]\n', readme=None,
             )
-            problems = vp.check_performance_evidence(root=root)
+            problems = vp.check_performance_evidence(engine="llamacpp", root=root)
             self.assertEqual(len(problems), 1)
             self.assertIn("no README.md", problems[0])
 
@@ -596,7 +596,7 @@ class PerformanceEvidenceTests(unittest.TestCase):
                 root, state="validated", tags='tags = ["optimization"]\n',
                 readme="# example\n\nControl vs subject A/B within BigCherry only.\n",
             )
-            problems = vp.check_performance_evidence(root=root)
+            problems = vp.check_performance_evidence(engine="llamacpp", root=root)
             self.assertEqual(len(problems), 1)
             self.assertIn("no evidence of a native-llama.cpp baseline", problems[0])
 
@@ -607,14 +607,14 @@ class PerformanceEvidenceTests(unittest.TestCase):
                 root, state="validated", tags='tags = ["optimization"]\n',
                 readme="# example\n\nCompared against native llama.cpp RCCL.\n",
             )
-            problems = vp.check_performance_evidence(root=root)
+            problems = vp.check_performance_evidence(engine="llamacpp", root=root)
             self.assertEqual(problems, ())
 
     def test_untagged_validated_patch_is_not_checked(self) -> None:
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
             self._write_package(root, state="validated", tags="", readme=None)
-            problems = vp.check_performance_evidence(root=root)
+            problems = vp.check_performance_evidence(engine="llamacpp", root=root)
             self.assertEqual(problems, ())
 
     def test_marker_split_across_a_line_wrap_still_matches(self) -> None:
@@ -628,7 +628,7 @@ class PerformanceEvidenceTests(unittest.TestCase):
                 root, state="validated", tags='tags = ["optimization"]\n',
                 readme="# example\n\nCompared against native\nllama.cpp on this hardware.\n",
             )
-            problems = vp.check_performance_evidence(root=root)
+            problems = vp.check_performance_evidence(engine="llamacpp", root=root)
             self.assertEqual(problems, ())
 
     def test_untested_optimization_patch_is_not_checked(self) -> None:
@@ -637,7 +637,7 @@ class PerformanceEvidenceTests(unittest.TestCase):
             self._write_package(
                 root, state="untested", tags='tags = ["optimization"]\n', readme=None,
             )
-            problems = vp.check_performance_evidence(root=root)
+            problems = vp.check_performance_evidence(engine="llamacpp", root=root)
             self.assertEqual(problems, ())
 
     def test_scoped_optimization_check_can_evaluate_prospective_validated_state(self) -> None:

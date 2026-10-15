@@ -110,7 +110,7 @@ def production_source(engine: str, source_name: str, files, out, *, stop_before:
     overlay_paths = frozenset(rebase._overlay_texts(engine))
     vendor = pinned_checkout(engine)
     for module in modules[len(start):]:
-        probe = rebase.probe_patch("llamacpp", module, vendor, texts, context_lines=3, previous_revision=None,
+        probe = rebase.probe_patch(engine, module, vendor, texts, context_lines=3, previous_revision=None,
                                    revision="production-source", overlay_paths=overlay_paths)
         if probe.status not in (rebase.STATUS_CLEAN, rebase.STATUS_CLEAN_NOOP):
             raise RuntimeError(f"{module.patch_id} does not apply in the production composition: {probe.status}")

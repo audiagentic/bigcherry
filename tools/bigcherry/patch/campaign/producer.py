@@ -13,6 +13,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from bigcherry.build.builds import capture_completed_build_evidence
+from bigcherry.core import engines as bc_engines, paths as bc_paths
 from bigcherry.core.paths import REPO_ROOT
 from bigcherry.experiment import contract as experiment_contract
 from bigcherry.experiment.attestation import ExecutionIdentity
@@ -124,6 +125,9 @@ class CampaignProducerRuntime:
             extra_patches=common_extra_patches,
             base_ref=self.base_revision,
             base_repo=LLAMA_CPP_SRC,
+            engine=bc_engines.LLAMACPP,
+            patches_root=bc_paths.PATCHES,
+            recipes=bc_paths.RECIPES,
         )
         subject_revision, subject_composition = psi.resolve_source_composition(
             baseline_source,
@@ -131,6 +135,9 @@ class CampaignProducerRuntime:
             extra_patches=(*common_extra_patches, *subject_companion_patches),
             base_ref=self.base_revision,
             base_repo=LLAMA_CPP_SRC,
+            engine=bc_engines.LLAMACPP,
+            patches_root=bc_paths.PATCHES,
+            recipes=bc_paths.RECIPES,
         )
         if control_revision != subject_revision:
             raise PatchCampaignError(
@@ -145,6 +152,8 @@ class CampaignProducerRuntime:
             composition=control_composition,
             overlay_root=psi.OVERLAY_ROOT,
             requested_revision=self.base_revision,
+            engine=bc_engines.LLAMACPP,
+            patches_root=bc_paths.PATCHES,
         )
         subject_src = psi.materialize_composition(
             base_repo=LLAMA_CPP_SRC,
@@ -153,6 +162,8 @@ class CampaignProducerRuntime:
             composition=subject_composition,
             overlay_root=psi.OVERLAY_ROOT,
             requested_revision=self.base_revision,
+            engine=bc_engines.LLAMACPP,
+            patches_root=bc_paths.PATCHES,
         )
         return (
             control_revision,
@@ -1626,7 +1637,7 @@ def _prepare_standard_producer_campaign(
     control_tree = psi.git_worktree_tree(scaffold.control_source)
     subject_tree = psi.git_worktree_tree(scaffold.subject_source)
     patch_file = registry.root / descriptor.implementation_path
-    patch_digest = psi.patch_implementation_digest(args.patch)
+    patch_digest = psi.patch_implementation_digest(args.patch, engine=bc_engines.LLAMACPP, patches_root=bc_paths.PATCHES)
 
     campaign_identity_digest = _producer_campaign_identity_digest(
         args,
@@ -1872,7 +1883,9 @@ def _aggregate_producer_session_effects(
     ):
         from bigcherry.patch import evidence as patch_validation_evidence
 
-        prior_records = patch_validation_evidence.poolable_records(args.patch)
+        prior_records = patch_validation_evidence.poolable_records(
+            args.patch, engine=bc_engines.LLAMACPP, patches_root=bc_paths.PATCHES
+        )
         # GPT round 6 BLOCKER: schema-v4 persists contracts as a
         # list of {"id": ..., "hash": ...}, not a mapping.
         matching_records = [
@@ -2132,7 +2145,7 @@ def _persist_producer_validation_record(
     validation_record = patch_validation_evidence.make_record(
         patch_id=args.patch,
         patch_path=registry.root / descriptor.implementation_path,
-        patch_implementation_digest=psi.patch_implementation_digest(args.patch),
+        patch_implementation_digest=psi.patch_implementation_digest(args.patch, engine=bc_engines.LLAMACPP, patches_root=bc_paths.PATCHES),
         base_ref=cfg.pinned,
         base_revision=scaffold.base_revision,
         framework_baseline_digest=psi.composition_digest(
@@ -2187,7 +2200,9 @@ def _persist_producer_validation_record(
         subject_tree=psi.git_worktree_tree(scaffold.subject_source),
         stock_tree=psi.git_worktree_tree(scaffold.stock_source),
     )
-    record_path = patch_validation_evidence.write_record(validation_record)
+    record_path = patch_validation_evidence.write_record(
+        validation_record, engine=bc_engines.LLAMACPP, patches_root=bc_paths.PATCHES
+    )
     return record_path, validation_contract_verdicts
 
 

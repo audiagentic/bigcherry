@@ -39,6 +39,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT / "tools"))
 
 from bigcherry.patch import source as psi  # noqa: E402
+from bigcherry.core import engines as bc_engines, paths as bc_paths  # noqa: E402
 from bigcherry.experiment.attestation import ExecutionIdentity  # noqa: E402
 from bigcherry.patch.campaign import build as campaign_build  # noqa: E402
 
@@ -70,9 +71,15 @@ def main() -> int:
 
     control_revision, control_composition = psi.resolve_source_composition(
         "llama-native", extra_patches=serving_core_ids, base_repo=campaign_build.LLAMA_CPP_SRC,
+        engine=bc_engines.LLAMACPP,
+        patches_root=bc_paths.PATCHES,
+        recipes=bc_paths.RECIPES,
     )
     subject_revision, subject_composition = psi.resolve_source_composition(
         "llama-native", extra_patches=(*serving_core_ids, patch_id), base_repo=campaign_build.LLAMA_CPP_SRC,
+        engine=bc_engines.LLAMACPP,
+        patches_root=bc_paths.PATCHES,
+        recipes=bc_paths.RECIPES,
     )
     if control_revision != subject_revision:
         raise SystemExit("control/subject resolved different base revisions")
@@ -82,11 +89,15 @@ def main() -> int:
         base_repo=campaign_build.LLAMA_CPP_SRC, worktree_root=source_root / "control",
         resolved_revision=control_revision, composition=control_composition,
         overlay_root=psi.OVERLAY_ROOT, requested_revision=control_revision,
+        engine=bc_engines.LLAMACPP,
+        patches_root=bc_paths.PATCHES,
     )
     subject_src = psi.materialize_composition(
         base_repo=campaign_build.LLAMA_CPP_SRC, worktree_root=source_root / "subject",
         resolved_revision=subject_revision, composition=subject_composition,
         overlay_root=psi.OVERLAY_ROOT, requested_revision=subject_revision,
+        engine=bc_engines.LLAMACPP,
+        patches_root=bc_paths.PATCHES,
     )
 
     build_workdir = args.build_root / "builds"

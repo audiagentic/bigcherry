@@ -18,7 +18,7 @@ class ComputeAllRealRegistryTests(unittest.TestCase):
     whole point of EC19 is that this reflects reality, not a mock of it."""
 
     def setUp(self):
-        self.statuses = patch_lifecycle.compute_all()
+        self.statuses = patch_lifecycle.compute_all(engine="llamacpp")
 
     def test_rd08_is_source_pinned_materialized_and_contracted(self):
         s = self.statuses["RD08"]
@@ -131,7 +131,7 @@ class ComputeAllFilteredInputsTests(unittest.TestCase):
             sources_module._patch_provenance = lambda path: {"plan-item": "RDXX"}
             try:
                 statuses = patch_lifecycle.compute_all(
-                    registry=registry, contracts_path=Path("/nonexistent/contracts.toml"),
+                    engine="llamacpp", registry=registry, contracts_path=Path("/nonexistent/contracts.toml"),
                 )
             finally:
                 sources_module._patch_provenance = real_prov
@@ -143,7 +143,7 @@ class ComputeAllFilteredInputsTests(unittest.TestCase):
 
     def test_item_with_zero_signals_is_absent_not_fabricated(self):
         statuses = patch_lifecycle.compute_all(
-            registry={"sources": []}, patches_dir=Path("/nonexistent"),
+            engine="llamacpp", registry={"sources": []}, patches_dir=Path("/nonexistent"),
             contracts_path=Path("/nonexistent/contracts.toml"),
         )
         self.assertEqual(statuses, {})

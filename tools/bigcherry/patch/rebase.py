@@ -1286,7 +1286,8 @@ def _live_identity_for(
             experiment=reported.selector_name.removeprefix("experiment:"),
         )
     if reported.selector_kind == campaign_resolution.SELECTOR_KIND_FOCAL_OVERLAY:
-        return _selector("llamacpp", 
+        return _selector(
+            engine,
             source_name=reported.source_name,
             focal_overlay_patch_id=reported.selector_name.removeprefix("focal:"),
         )

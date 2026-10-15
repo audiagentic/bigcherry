@@ -79,14 +79,14 @@ def _tracked_entries_by_plan_item(registry: dict) -> dict[str, list[dict]]:
     return by_item
 
 
-def _patch_states(patches_dir: Path | None = None) -> dict[str, str]:
-    return {info.name: info.state for info in patchset.describe("llamacpp", patches_dir)}
+def _patch_states(engine: str, patches_dir: Path | None = None) -> dict[str, str]:
+    return {info.name: info.state for info in patchset.describe(engine, patches_dir)}
 
 
-def _plan_items_from_patches(patches_dir: Path | None = None) -> dict[str, list[str]]:
+def _plan_items_from_patches(engine: str, patches_dir: Path | None = None) -> dict[str, list[str]]:
     """plan-item -> [patch_id, ...] from each module's own PROVENANCE dict."""
     by_item: dict[str, list[str]] = {}
-    for module in patchset.catalog("llamacpp", patches_dir):
+    for module in patchset.catalog(engine, patches_dir):
         prov = sources._patch_provenance(module.path)
         item = (prov or {}).get("plan-item")
         if item:
@@ -126,6 +126,7 @@ def _contracts_by_plan_item(contracts_path: Path | None = None) -> dict[str, lis
 
 def compute_all(
     *,
+    engine: str,
     registry: dict | None = None,
     patches_dir: Path | None = None,
     contracts_path: Path | None = None,
@@ -134,8 +135,8 @@ def compute_all(
     a tracked source entry, a materialized patch, or a contract."""
     registry = registry if registry is not None else sources.load_registry()
     tracked = _tracked_entries_by_plan_item(registry)
-    patch_states = _patch_states(patches_dir)
-    patches_by_item = _plan_items_from_patches(patches_dir)
+    patch_states = _patch_states(engine, patches_dir)
+    patches_by_item = _plan_items_from_patches(engine, patches_dir)
     contracts_by_item = _contracts_by_plan_item(contracts_path)
 
     all_items = set(tracked) | set(patches_by_item) | set(contracts_by_item)

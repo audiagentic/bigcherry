@@ -18,7 +18,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import cast
 
-from .core import paths
+from .core import engines, paths
 from .patch import catalog as patch_catalog
 from .source import audit as source_audit
 
@@ -910,7 +910,7 @@ def _source_audit(root: Path) -> str | None:
     # root argument remains the repository root for check artifacts, while
     # BIGCHERRY_LLAMA_ROOT may point source auditing at an isolated checkout.
     checkout = paths.llama_root()
-    report = source_audit.audit(checkout)
+    report = source_audit.audit(checkout, engine=engines.LLAMACPP)
     return (
         None
         if source_audit.passed(report, strict=True)
