@@ -64,7 +64,7 @@ Depends on RHP04. This phase deliberately avoids live migration; request-count a
 
 ### Control state machine (restart rollout)
 
-\`\`\`text
+```text
 DISABLED
   -> COLLECTING
   -> EVALUATING       (request count OR monotonic-time trigger)
@@ -78,17 +78,17 @@ DISABLED
   -> ACTIVE           (generation durably committed)
   -> ROLLING_BACK     (failure; restart previous generation)
   -> SAFE_STOP        (rollback impossible)
-\`\`\`
+```
 
-No state transition is a token-routing operation. No candidate may enter \`RESTARTING\` without operator/deployment authority; in environments without an approved graceful restart surface, stop at \`STAGED\` for a manual apply. The trigger defaults are *experimental* and must be explicit non-default profile values; 1,000 completed requests or 1,800 monotonic seconds **since last completed evaluation**, not every raw request or wall-clock timestamp. A request arriving during in-progress evaluation must not enqueue another one. Backoff/cooldown after errors; preserve exactly one pending proposal.
+No state transition is a token-routing operation. No candidate may enter `RESTARTING` without operator/deployment authority; in environments without an approved graceful restart surface, stop at `STAGED` for a manual apply. The trigger defaults are *experimental* and must be explicit non-default profile values; 1,000 completed requests or 1,800 monotonic seconds **since last completed evaluation**, not every raw request or wall-clock timestamp. A request arriving during in-progress evaluation must not enqueue another one. Backoff/cooldown after errors; preserve exactly one pending proposal.
 
 ### Restart transaction and journal
 
-Write immutable proposal with digest, all owners, source count/coverage, budget proof and expected before/after benefit. Validate original active generation and engine model build before applying. Stop admission, wait on in-flight model steps (including MTP verify), wait exact GPU mailbox request/completion generations, then stop old helpers and engine. Start helpers with proposed map and confirm **both weights loaded and ownership map ready**. Start engine with the same map before the plan materialises and compare \`runtime_slotmap_digest\`; do not reuse stale shm or old bitmap. Canary: exact helper health, actual model generation, latency under known control, KL threshold against per-model established floor and GPU memory. If any check fails, shut down candidate and restart pinned last-good. Never serve a half-initialised allocation.
+Write immutable proposal with digest, all owners, source count/coverage, budget proof and expected before/after benefit. Validate original active generation and engine model build before applying. Stop admission, wait on in-flight model steps (including MTP verify), wait exact GPU mailbox request/completion generations, then stop old helpers and engine. Start helpers with proposed map and confirm **both weights loaded and ownership map ready**. Start engine with the same map before the plan materialises and compare `runtime_slotmap_digest`; do not reuse stale shm or old bitmap. Canary: exact helper health, actual model generation, latency under known control, KL threshold against per-model established floor and GPU memory. If any check fails, shut down candidate and restart pinned last-good. Never serve a half-initialised allocation.
 
 ### Trigger and performance thresholds
 
-Request and clock windows must share a single last-evaluation checkpoint. Proposed initial \`min_coverage=0.99\`, \`min_observed_requests=1000\`, \`min_predicted_gain=0.05\`, \`cooldown_seconds=1800\`, \`max_owner_changes_per_apply\` conservatively bounded; treat numbers as hypotheses. Long enough stale evidence may be used for ranking but not for an unqualified confidence claim; report age in steps/seconds separately from dropped fraction. Require live A/B validation and reversible rollout before unattended application.
+Request and clock windows must share a single last-evaluation checkpoint. Proposed initial `min_coverage=0.99`, `min_observed_requests=1000`, `min_predicted_gain=0.05`, `cooldown_seconds=1800`, `max_owner_changes_per_apply` conservatively bounded; treat numbers as hypotheses. Long enough stale evidence may be used for ranking but not for an unqualified confidence claim; report age in steps/seconds separately from dropped fraction. Require live A/B validation and reversible rollout before unattended application.
 
 ### Crash/recovery table
 
@@ -103,4 +103,4 @@ Request and clock windows must share a single last-evaluation checkpoint. Propos
 | After committed ACTIVE | New generation retained; last-good rollback pointer kept |
 | Snapshot checksum/cohort mismatch | Refuse apply and serve verified fallback only |
 
-Mock \`Trigger\`, \`Epoch\`, \`snapshot/read_snapshot\` exercise the core guards; they do not implement a server control plane or prove restart ordering.
+Mock `Trigger`, `Epoch`, `snapshot/read_snapshot` exercise the core guards; they do not implement a server control plane or prove restart ordering.
