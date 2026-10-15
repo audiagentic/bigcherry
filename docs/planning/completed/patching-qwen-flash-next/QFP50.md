@@ -94,6 +94,10 @@ Expected ceiling about 9% of prefill time (34 of 389 ms). Independent of the cro
 - Open: the flashnext profile does not switch the flag on yet (owner decision); a request cancelled in mid-prompt and a context shift have no hardware run (both go through reset_deferred, which drops the outstanding batch by 1348's rule); the remaining 2-10 ms gaps (1.3 s) are the next thing to attribute.
 - Correction to QFP49's note: the large sums already travel as bf16 (2.62 MB a card for a 512-token sum, not 5.24 MB).
 
+## 2026-10-14 current-state correction (BCOP215 / QFP08 retirement)
+
+QFP08's earlier independent draft-prefill pipeline proposal is **superseded by this completed QFP50/1359 implementation together with validated 1348**; no second worker/ring/event scheduler is authorised. **Current source default:** 1359 `patch.py` enables `BIGCHERRY_PREFILL_PIPELINE` when the variable is absent; `=0` disables it. The 2026-10-11 promotion text below saying "default off" and "profile does not switch the flag on" is **historical at the original qualification**, superseded by commit `a976e32f7acdafcf18c5ced3dc35f71fd823cf9a` (2026-10-10 21:36 UTC) and the later patch source. In future A/B runs, use **explicit** `=0` versus `=1` and record the full environment; never call an unset variable an off arm. Original b11474 measured gains remain historical and do not prove b11552 requalification. Event/fanout/lifetime or remaining-gap work stays with 1359/1348, not QFP08.
+
 ## Change Log
 
 - 2026-10-10T16:51:24.805241+00:00 (created-by): Created by claude

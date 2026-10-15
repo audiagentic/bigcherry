@@ -1,5 +1,9 @@
 # 1342_fusion_bisect
 
+## 2026-10-15 diagnostic interpretation (FKE01 / BCOP217)
+
+`BIGCHERRY_FUSION_SKIP_OPS` skips **every candidate starting with that first-node op**, not one unique kernel or top-k mode. Later nodes may take other fusions; taken/elided counters are not paired execution evidence. In particular, `SOFT_MAX`-off changing greedy text does not prove a specific numerical cause. The pinned `tests/test-backend-ops.cpp::test_topk_moe::err` independently sorts expert IDs and weights before NMSE, hiding ordering and ID→weight association. Reuse that test with deterministic inputs and exact **ordered ID + corresponding F32 weight** comparisons; require fused/unfused route identity, alias safety, model/build and shape controls. No change to 1342's default-neutral behavior.
+
 ## Promotion record
 
 Promotion record (QFP18 lightweight evidence-reuse tier, pin b11474 / b9acf138, 2026-10-08). A diagnostic, promoted as a

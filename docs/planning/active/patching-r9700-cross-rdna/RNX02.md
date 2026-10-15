@@ -174,3 +174,7 @@ Before spending a production E2E lane on 1300:
 - **Measured upstream evidence:** llama.cpp #27796 reports gfx1201 Qwen3.6-27B D=256 at d16384: F16 23.44 t/s, Q8_0 22.43 t/s (-4%), Q4_0 18.56 t/s (-21%). This is useful RDNA4 mechanism evidence, not a BigCherry benchmark.
 - **Upstream hypothesis:** flat `nthreads_KQ_q = 2` may under-parallelize quantized KV dequantization. Treat only the sweep/profiler result as causal evidence.
 - **Measured BigCherry evidence:** 1298 MTP3 vector override was ~6% slower at ~30K and is rejected.
+
+## 2026-10-14 ownership boundary (QFP03 / BCOP202)
+
+RNX02 retains D=256 quantized-KV attention selector/1300 ownership. The historical QSA/top-k proposal in RNX02 and 1294's `plan-ids=[RNX02]` do **not** authorize a second TOP_K implementation: QFP03 owns deterministic radix tie/partitioned ordering and its bounded 1294 dead-gather qualification. QFP15 owns residual draft acceptance nondeterminism; QFP04 consumes ordered indices. No RNX02 kernel or attention dispatch is changed by this audit.

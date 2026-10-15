@@ -43,3 +43,7 @@ promoted base (A) vs base + Flash-Next set (B), `tools/lab/flash-next/queue-p27b
 
 Greedy text identical between A and B at both depths. 1303 fails closed when BIGCHERRY_ATTN_TS is set for a
 non-qwen4exp model (observed on the first 27B attempt), so the flag cannot silently misplace another model's KV.
+
+## 2026-10-14 current-pin source audit (BCOP198)
+
+Historical 0504396 ABBA and native-v6 comparisons above are not isolated b11552 results. b11552 and current upstream master share the same `llama-memory-hybrid-idx.cpp` source blob, and all three 1292 anchors still match uniquely. Qwen4Exp uses order-based pooling; the generic position-based branch may re-scan a long unchanged prefix when no complete pool survives a tail edit. A source-shaped host model matched full rebuild for 120,070 cases and demonstrated that performance-boundary case. **No** actual C++ patch application, HIP compilation, server request, logits, graph replay or GPU benchmark was executed in this audit. Existing `validated` status remains based on the original measurements. QFN01 retains production/patch ownership; QFP02 owns only the bounded cross-operation/current-pin qualification gate, not another implementation.

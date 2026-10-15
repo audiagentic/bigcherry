@@ -13,6 +13,12 @@ work: M
 
 # Per-rank critical-path census by op class (R9700 slow rank) -> selective per-class skew
 
+## 2026-10-14 BCOP208: one-to-one AR evidence identity
+
+QFP09's `tools/lab/flash-next/ar-segment.py::main` aligns each reference produce timestamp to an independently nearest remote timestamp within 2 ms. This is **not** guaranteed one-to-one; an absent remote event can be selected twice. QFP11's `ar-boundary.py` uses rank ordinals and can shift all pairs after a clipped event. Both read only the first rocprof trace CSV. Existing 78/82 us arrival-skew evidence is historical, not revalidated by this audit. Synthetic host controls 5/5 passed; no real trace or GPU ran.
+
+QFP09 owns one shared epoch/dispatch-correlated monotonic matcher inside existing trace tooling, consumed by QFP11; do not add a second telemetry framework. Load all relevant trace shards; verify device/stream and clock domain; pair each rank's produce/consume; require unique non-crossing cross-rank identity, report dropped/ambiguous coverage, and **fail closed** where genuine 800 us skew cannot be distinguished from adjacent ARs by time alone. Preserve MTP per-verify and per-generated-token denominators. The first gate is an offline fixture and archived 10K/80K trace replay with >=99.5% unambiguous coverage; if unavailable, label skew `UNVERIFIED_TRACE`, not zero. QFP07's recently audited placement plan remains untouched.
+
 ## Description
 
 QFP09 owns **cross-rank placement and arrival-skew diagnosis only**. The original hypothesis that a single R9700-heavy tensor family could be moved to remove most skew has now been tested and is not supported: 1305 expert-only placement was neutral/worse, and the late rank flips with context because XTX-only attention becomes dominant at long context. QFP09 therefore keeps the per-AllReduce segment attribution needed to decide placement, but must not grow a second launch/fusion programme.

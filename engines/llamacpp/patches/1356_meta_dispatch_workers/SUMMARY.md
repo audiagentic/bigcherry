@@ -234,3 +234,7 @@ target-worker/drafter graph_compute overlap without adding another thread.
 Suggested 98K reproducer shape (substitute model paths/profile placement):
   -n 100352 -b 512 -ub 512 -c 131072 --draft-model <draft.gguf> --draft-dev ROCm3 --draft-n 512 --draft-ctx 131072
 Run once with BIGCHERRY_META_DISPATCH_THREADS=0 and repeatedly with =1; compare the TARGET -o files byte-for-byte.
+
+## 2026-10-13 PRBE67 diagnostic-identity qualification note (documentation only)
+
+`BIGCHERRY_META_DISPATCH_GRAPH_TRACE` emits a buffer-relative `props` digest: `bc_1356_graph_property_hash` hashes `data - buffer_base`, buffer name and buffer size, but not the absolute base. Two same-shaped bindings at different physical/virtual buffer bases can therefore have identical `props` hashes even though native `ggml_cuda_graph_update_required` would detect different absolute source pointers **if its UID shortcut were not taken**. Equal trace digests are not proof of safe graph reuse. PRBE67 owns the proposed same-process absolute-pointer/property discriminator; do not extend this shelved patch or revive worker mode based only on normalized hashes. The prior UID-bypass experiment and the current lock attempt both failed 98K greedy-identity acceptance. No new GPU evidence is claimed here.

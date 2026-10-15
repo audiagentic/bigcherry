@@ -2,7 +2,7 @@
 id: PGC05
 order: 0
 plan: patching-gpu-collectives
-state: pending
+state: done
 created-at: '2026-09-29T09:34:02.512413+00:00'
 breadth: ''
 skill: intermediate
@@ -11,63 +11,40 @@ priority: P2
 work: S
 ---
 
-# adaptive provider: threshold arg and size-bucket routing table
+# Adaptive AllReduce threshold CLI: implemented; bucket table retired
 
-## Description
+## 2026-10-13 terminal disposition (BCOP183)
 
-Make the adaptive crossover an argument (`--allreduce-switch-bytes`), later a size-bucket table; move the Q8 threshold to an argument. Depends on PGC04.
+**Done.** The original `--allreduce-switch-bytes` request was implemented by 0860/0840 on 2026-09-30. Do not add a second size-bucket dispatcher or Q8 threshold. This closes duplicate planning; it does not introduce a code change or measured speedup.
 
-## Steps
+### Exact implementation and ownership
 
-1. Finish candidate-path qualification first on dual gfx1100/Qwen3.8-27B-Q8_0: isolate 1254, 1261, 1241, 1206, 1245, 1205 and the located 1263 candidate; no combo throughput attribution until correctness/work equivalence passes.
-2. For 1254, preserve required 1253, `GGML_CUDA_GDN_CHUNKED=0` opt-out, and marker `BIGCHERRY_PATCH_HIT patch=1254_nro05 path=gdn_mtp_prefix_bf16`.
-3. For patches without activation proof, add/review trace markers before performance qualification; 1245 specifically needs `BIGCHERRY_PATCH_HIT patch=1245_gp11 path=mmvq_fusion_q8_0_ncols6`.
-4. Only then sweep provider thresholds/buckets.
+- `engines/llamacpp/patches/0860_allreduce_provider_cli/patch.py`: `ADAPTIVE_SWITCH_BYTES_DEFAULT = 96 << 10`, CLI parser `common_parse_allreduce_switch_bytes`, and `common_apply_allreduce_config` applied once after argument parsing through `ggml_backend_comm_set_config`. The process-global value is an initialization input, not a per-call policy table.
+- `engines/llamacpp/patches/0840_hybrid_allreduce_dispatch/patch.py::ggml_backend_cuda_comm_init_hybrid`: snapshot to `comm_ctx->adaptive_switch_bytes`. `ggml_backend_cuda_comm_try_allreduce_hybrid`: host exact-F32 for `ggml_nbytes(tensors[0]) < switch_bytes`, RCCL at or above it when available. Equality selects RCCL. Missing RCCL falls back to available internal host. An attempted RCCL failure is not replayed on host after potential partial execution.
+- Auto-adaptive admission: two distinct physical gfx1100 HIP devices and RCCL eligibility; other devices retain the base provider. Explicit `adaptive` and startup `BIGCHERRY_PATCH_TRACE` are not proof of actual per-reduction provider completion. PGC12 owns correlated route/transition evidence.
+- `tools/tests/patch/test_0860_allreduce_provider_cli.py` checks CLI option, post-parse application and idempotence; `test_0840_adaptive_provider.py` checks auto admission and per-context snapshot. `PGC04` in the 0860 SUMMARY is historical patch provenance, not a second current runtime owner.
+- The old `Q8 threshold` is not implemented as a generic adaptive crossover. `--allreduce-wire q8` is a restricted provider/codec selection; **PGC11** owns precision and MTP acceptance. No new Q8 threshold is justified.
 
-## Detailed Solution & Technical Design
+### First-party evidence and limits
 
+Validated `t-0840e-gfx1100-s1..s4`, dual gfx1100 exact-F32 96 KiB: **tg128 +3.87%..+3.98%**, **pp512 +0.02%..+0.04%**, bit-identical. Historical 1 MiB plain pp1024 regressed approximately **4.2%**, including a four-token prompt tail of 128 reductions around 80 KiB; its additional latency remains unattributed. Decode around 20 KiB, tail around 80 KiB, MTP verify around 120 KiB and large prefill are compatible with one monotone 96 KiB threshold. This is **not proof** that all models have a monotone crossover. Historical BF16 MTP gains must not be pooled with exact-F32 sessions; PGC11 observed BF16 acceptance loss. No new GPU measurement in this audit.
 
+### Consolidation and conditional reopen gate
 
-## Code Samples & Guidance
+**PGC09** alone owns production provider/configuration (0860/0840). **PGC13** owns a bounded *offline* comparison of existing 64/96/128 KiB scalar settings, after **PGC12** proves actual provider-completion/first-transition cost and >=3% exposed E2E opportunity. **PGC11** owns wire, **PGC14** RCCL; **QFP01/1291** validated N=3 CPU-root; **PGC10/1276** experimental root3. Do not combine N=2/N=3, mixed architectures, P2P, PCIe, wire or driver contexts.
 
+Reopen a size-bucket table only on matched source/build/model, physical GPU UUID/order, ROCm/RCCL, graph/phase, wire and provider-completion traces showing **two disjoint size intervals with reversed optimal providers after transition cost**. First run a host-only selector fixture. If the optimistic E2E ceiling is below 3%, close without hardware. Otherwise require four independent order-balanced paired sessions (>=10 ABBA rounds each), pp256/512/1024/4096, tg128/512, long context, MTP verify widths, multi-request same-process and graph replay, full-vocabulary logits/KLD/greedy and acceptance, no skipped reductions/hangs, <=0.5% prefill regression. Promote only CI95-low >=3% E2E over the validated 96 KiB baseline, under PGC09 ownership.
 
+### Upstream and other engines
 
-## Files
+[llama.cpp #27825](https://github.com/ggml-org/llama.cpp/pull/27825) merged 2026-09-15, enabling HIP two-GPU host-staged AllReduce using mapped host memory and `__builtin_amdgcn_s_sleep`; it does not supply the BigCherry adaptive CLI. [vLLM](https://github.com/vllm-project/vllm/blob/main/vllm/distributed/device_communicators/cuda_communicator.py) and [SGLang](https://github.com/sgl-project/sglang/blob/main/test/manual/test_quick_allreduce.py) gate QuickAllReduce to different ROCm hardware (MI300/gfx94*), not validated on gfx1100/gfx1201 or no-P2P Brutus.
 
+### Audit evidence
 
-
-## Validation
-
-Use full-vocabulary MTP logprobs (<=5e-4 where required), greedy parity, drafted/accepted counts and MTP acceptance parity, fixed-work `llama-bench`, then order-balanced `tools/lab/native-vs-patched/server-ab-*.json`. Known fact: 1254 `nro05-ab2` measured pp4096 +2.12%, decode flat, identical acceptance; this is not sign-off.
-
-## Effort & Risk
-
-
-
-## Standards
-
-
-
-## Acceptance Criteria
-
-No lifecycle-state changes from planning. Any throughput claim is causal, single-patch or otherwise explicitly isolated, correctness-gated, and work-equivalent.
-
-## Notes
-
-2026-09-30 threshold-arg work done (--allreduce-switch-bytes via 0860/0840, per-context snapshot 892019c0). Size-bucket routing remains only if the crossover sweep (ab-27b-adaptive-sweep, 256K/1M/4M) shows a non-single-threshold region; otherwise close. RCCL protocol tuning measured: NCCL_PROTO=LL -23..-27% prefill, -3% decode; LL128 == default -> keep RCCL defaults.
+Actual-source static checks **15/15**; source-shaped host threshold/availability fixture **11/11**. No repository pytest, HIP build, GPU test or new performance gain. The original PGC05 1254/1261/1241/1206/1245/1205/1263 activation tasks belong to their individual patch owners and are not adaptive-provider prerequisites.
 
 ## Change Log
 
-- 2026-09-29: added concrete candidate qualification prerequisites and evidence rules.
-- 2026-09-29T09:34:02.512413+00:00 (created-by): Created by agent
-
-## Ledger-events
-
-
-- chg_20260929_135722_allreduce-methods-are-now-sele_7144
-- 2026-09-29T13:57:29.109931+00:00 (updated-by): Updated: section:ledger-events
-- chg_20260929_215656_dual-xtx-27b-q8_0-plain-decode_1707
-- 2026-09-29T21:57:05.647193+00:00 (updated-by): Updated: section:ledger-events
-- 2026-09-30T12:49:47.975320+00:00 (updated-by): Updated: section:notes
-- chg_20260930_125153_reviewed-and-consolidated-toda_3870
-- 2026-09-30T12:52:06.498687+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-29: initial threshold and bucket proposal.
+- 2026-09-30: threshold CLI implemented by 0860/0840.
+- 2026-10-13: BCOP183 closes duplicate bucket/Q8 threshold ownership.

@@ -4,6 +4,10 @@ Promoted 2026-10-11 (record below). Mechanism is in SUMMARY.md: with an MTP draf
 hook collects batch k's hidden states, which it then takes through a backend event that waits for batch k only.
 On by default; `BIGCHERRY_PREFILL_PIPELINE=0` turns it off.
 
+## Current switch semantics (2026-10-14; BCOP215)
+
+The actual 1359 `patch.py` predicate is `getenv("BIGCHERRY_PREFILL_PIPELINE") == nullptr || atoi(getenv("BIGCHERRY_PREFILL_PIPELINE")) != 0`: **unset means ON**; `=0` means OFF. The original promotion A/B below used a default-off version and remains valid as historical evidence; it is **not** a correct description of current controls. Use explicit `=0`/`=1` in any current-pin comparison. QFP08's independent draft-prefill overlap plan is completed/superseded by 1348+1359. Keep all further work in these existing owners.
+
 ## Evidence
 
 - Gate (Flash-Next 24K, production profile): each target card has nothing queued for about 34 ms a 512-token batch
@@ -47,7 +51,7 @@ Identity: greedy text identical to the flag off in every run: 8K, 24K and 98K (t
 A/B: one binary (b-pipe1 = production + 1359), BIGCHERRY_PREFILL_PIPELINE=1 against default (off). Prefill +6.0% at 8K, +7.4% to +10.7% at 24K, +10.0% at 98K, every on-run above every off-run at each depth; four requests at 24K, ABBA each: +15.9%, +11.5%, +11.1%, +12.7% (pooled +12.8%). Decode and draft acceptance unchanged.
 No-regression: Qwen3.8-27B on two RX 7900 XTX, same binary, flag on against off (prod27b-ab.sh, run nr27-1359): text identical at 10K and 32K, prefill and decode unchanged. The pipeline does not engage there (the built-in MTP shares the target's memory, so 1348's deferred path is off).
 
-Scope: profile-scoped. The flag stays default off; the patch engages only with an MTP drafter in its own context and BIGCHERRY_MTP_DEFERRED_CATCHUP on.
+Scope at original promotion: profile-scoped, flag then default off. Current source defaults ON (see correction above); the patch engages only with an MTP drafter in its own context and BIGCHERRY_MTP_DEFERRED_CATCHUP on.
 
 ## Flash-Next, one binary, pipeline on against off
 

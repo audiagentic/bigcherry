@@ -43,3 +43,7 @@ promoted base (A) vs base + Flash-Next set (B), `tools/lab/flash-next/queue-p27b
 
 Greedy text identical between A and B at both depths. 1303 fails closed when BIGCHERRY_ATTN_TS is set for a
 non-qwen4exp model (observed on the first 27B attempt), so the flag cannot silently misplace another model's KV.
+
+## Current-pin ordered-radix qualification (2026-10-14)
+
+QFP03/BCOP202 identifies a source-proven redundant counter-reset + atomic gather before the default-on ordered output kernel. The existing historical **speed-neutral** evidence was collected on 2026-10-03, before ordered output was added on 2026-10-07; profile-v6 versus native results include multiple other patches. Neither is a standalone b11552 timing result for eliminating this gather. Do not claim an end-to-end gain until matched gfx1100/gfx1201 TOP_K activation, exact ordered-index parity, multi-request/MTP correctness and paired timing pass QFP03's gate.

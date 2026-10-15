@@ -8,6 +8,10 @@ Validate the explicit AllReduce CLI/configuration seam across `llama-server`, `l
 - `PYTHONPATH=tools python -m bigcherry patch-rebase-check --source bigcherry --focal-overlay 0860_allreduce_provider_cli`
 - Exercise both `llama-server` common-argument parsing and `llama-bench` benchmark-local parsing. Reject unknown providers/wires and comma-list values; require startup failure rather than fallback.
 
+### Composed 0840 default (PGC05 closed; BCOP183)
+
+The `auto` resolution described below is **base 0860-only** behavior. When validated `0840_hybrid_allreduce_dispatch` is composed, `auto` instead selects adaptive for two distinct physical gfx1100 HIP devices with RCCL admission; other configurations retain base fallback. The scalar `--allreduce-switch-bytes` is implemented and snapshotted per communication context. It is not a bucket table or low-precision wire threshold. PGC09/PGC12/PGC13 own runtime policy, provider-completion evidence and conditional offline calibration respectively.
+
 ## Provider/startup matrix
 Hardware: dual gfx1100 (2x Radeon RX 7900 XTX), RCCL-capable build, no P2P, `-sm tensor`. Set `BIGCHERRY_PATCH_TRACE=1`.
 

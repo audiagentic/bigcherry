@@ -1,7 +1,9 @@
-# 1261 PNRO10 ctx_other speculative scheduler devices
+# 1261 PNRO10 — ctx_other speculative scheduler devices
 
-Untested. Adds `ctx_other`'s model devices to the draft/MTP context's scheduler backend list, deduplicated, so shared tensors between the draft and target contexts can be scheduled when the two contexts' device sets differ.
+**State: untested; source placement blocker (2026-10-14).** The patch intends to register missing target-model physical device backends in a separate draft context, after draft-model backends and before ACCEL/CPU. It does not optimize native same-device/tensor-split MTP.
 
-## Validation
+Current `patch.py` inserts after the first `backends.emplace_back(backend);`, which is **inside** the ordinary model-device loop at pinned llama.cpp b11552. Empty draft lists skip foreign devices; overlap with a later ordinary device can duplicate a backend. PNRO10 owns the exact fix and validation. Do not promote 1261 until the anchor is moved outside the loop and source/compile/correctness gates pass.
 
-Contract `PNRO10-SPEC-CTX-OTHER-DEVICES`. Execution target is Brutus, dual gfx1100 only. Require greedy token parity under MTP on the dual-gfx1100 `-sm tensor` server (no activation marker -- the fix is unconditional), and `ci95_threshold_bound_v1` with `max_control_regression_pct=1`, `min_paired_rounds=10`.
+**Positive activation:** a separate draft/target pair with a missing physical device, `BIGCHERRY_PATCH_TRACE=1`, and observed `BIGCHERRY_PATCH_HIT patch=1261_nro10 path=ctx_other_backend` for the appended device. Same-device MTP produces **no** marker and is a negative control. Backend registration alone does not prove Meta-backed borrowed tensors are schedulable; QFP43/1286 owns the distinct draft-local copy.
+
+See PNRO10 and `TESTING.md`. No current-pin hardware qualification or speedup is established.

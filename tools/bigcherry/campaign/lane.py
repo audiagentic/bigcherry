@@ -337,10 +337,10 @@ def _execute_materialize_phase(
     # real non-default patches_root deployment) would have its logical
     # patch-set resolution silently validated against the wrong catalog.
     source_plan = campaign_source.source_plan_for(
-        "llamacpp",
+        context.engine,
         cfg,
         spec.source_name,
-        catalog=patchset.catalog("llamacpp", directory=context.patches_root),
+        catalog=patchset.catalog(context.engine, directory=context.patches_root),
         # Explicit, not just inferred from the catalog's own first entry:
         # a genuinely empty context.patches_root (zero patch files) would
         # otherwise lose this directory entirely and silently fall back to
@@ -722,7 +722,7 @@ def _execute_build_phase(
     if materialized.patch_ids and lane_catalog_path.is_file():
         try:
             patch_catalog.resolve_for_context(
-                "llamacpp",
+                context.engine,
                 materialized.patch_ids,
                 patch_catalog.PatchContext(
                     backend=backend,

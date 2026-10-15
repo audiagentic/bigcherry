@@ -18,3 +18,7 @@ load with a clear error (Gemma 4 produced garbage silently with the split on, 20
 ## Hardware result (2026-10-04 review)
 
 Production profile v2 (BIGCHERRY_ATTN_TS=1,1,0 BIGCHERRY_ATTN_ROTATE=0): f16/f16 KV at 240K; profile ABBA +3% at ~10K, +7% at ~80K; greedy identical. Fails closed on non-qwen4exp (Gemma 4 smoke).
+
+## QFP07 / BCOP207: physical two-head split admission (2026-10-14)
+
+For the observed two-KV-head Flash-Next GGUF on three Meta ranks, 1303's pinned cumulative split rounds to whole KV heads. A nonzero three-way `BIGCHERRY_ATTN_TS` vector cannot give three ranks KV in **one** QSA layer: `1,1,1` with `BIGCHERRY_ATTN_ROTATE=0` yields `(0,1,1)` head counts. Rotation can redistribute the active pair *between* layers, subject to effective-layer ordering. Keep validated production `1,1,0; rotate=0`; QFP07 owns physical-layout oracle and bounded static ABBA before any sequence-shard design. The existing QSA global top-k/mask and KV cache are not sequence-sharded by this patch. Host fixture passed; no new GPU performance claim.

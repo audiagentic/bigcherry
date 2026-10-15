@@ -1,9 +1,12 @@
-// libr3 kernel table: upstream gfx11 rows plus opt-in host helpers.
+// libr3 kernel table: upstream gfx11 rows plus opt-in host helpers. The remote-MoE mailbox rows live in
+// their own plugin, libr3moe (helper/moe_mailbox_plugin.cpp).
 #include "rad_abi.h"
 
 #include <vector>
 
 extern "C" {
+int r4d_up_kernel_schema_count(void);
+const RadOpSchema* r4d_up_kernel_schema_at(int i);
 int r4d_up_kernel_count(void);
 const RadKernelInfo* r4d_up_kernel_at(int i);
 int r4d_up_kernel_concurrent(int i);
@@ -38,9 +41,15 @@ const std::vector<LiveRow>& live() {
 extern "C" const RadPluginInfo* rad_plugin_info(void) {
     static const RadPluginInfo info = {
         RAD_PLUGIN_KERNEL, "libr3", "0.0.1",
-        "libr4d gfx11 kernels plus opt-in host helpers for non-rank devices", R3_TARGETS,
+        "libr4d gfx11 kernels plus opt-in host helpers", R3_TARGETS,
     };
     return &info;
+}
+extern "C" int rad_kernel_schema_count(void) {
+    return r4d_up_kernel_schema_count();
+}
+extern "C" const RadOpSchema* rad_kernel_schema_at(int i) {
+    return r4d_up_kernel_schema_at(i);
 }
 extern "C" int rad_kernel_count(void) { return static_cast<int>(live().size()); }
 extern "C" const RadKernelInfo* rad_kernel_at(int i) {

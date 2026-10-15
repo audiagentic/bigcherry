@@ -199,13 +199,13 @@ def materialize(
                 allowed_untracked.add(relative.as_posix())
     if not plan.inputs_resolved:
         raise WorkspaceError("source plan has no resolved patch/overlay inputs")
-    registry = patch_registry.load_registry("llamacpp", context.patches_root)
+    registry = patch_registry.load_registry(context.engine, context.patches_root)
     loaded = []
     for resolved in plan.resolved_patch_inputs:
         descriptor = registry.get(resolved.patch_id)
         if descriptor.implementation_path != resolved.implementation_path:
             raise WorkspaceError(f"patch path changed after plan resolution: {resolved.patch_id}")
-        loaded.extend(patch_registry.load_implementation("llamacpp", 
+        loaded.extend(patch_registry.load_implementation(context.engine,
             descriptor, root=context.patches_root,
             expected_digest=resolved.implementation_digest,
         ))

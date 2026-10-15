@@ -127,7 +127,7 @@ def resolve_materialization_identity(
     architecturally larger physical-cache/logical-provenance split.
     """
     if not plan.inputs_resolved:
-        plan = resolve_materialization_inputs("llamacpp", context, plan)
+        plan = resolve_materialization_inputs(context.engine, context, plan)
     return {
         "upstream_revision": plan.upstream_revision,
         "overlay_enabled": plan.overlay_enabled,

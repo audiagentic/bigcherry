@@ -13,6 +13,10 @@ work: L
 
 # 1295/1296 QSA gather-based sparse decode attention (gather in stored KV type, dequant in FA)
 
+## 2026-10-14 sparse-prefill ownership correction
+
+The historical proposal below to add a separate direct-index sparse prefill op is **not** an open QFP04 implementation request: validated 1334 already enables upstream sparse-mask FA on HIP for Qwen4Exp prefill. QFP25/1334 exclusively owns its eight-query union-capacity proof and any bounded fix; see QFP25's 2026-10-14 gate. QFP04 retains decode gather/typed-KV qualification only. Do not introduce a second selected-cell representation or count historical 1334 prefill gains as a new QFP04 result.
+
 ## Description
 
 Patch 1295_qsa_gather_decode (evaluated v2): for n_tokens<=8 and n_kv>=BIGCHERRY_QSA_GATHER_MIN (32768) build_attn_qsa gathers only the QSA-selected cells (bc_qsa_idx) via ggml_reshape_2d(k_all, hd*nh_kv, n_kv) + get_rows (f32) + cast f16, mask gathered with a -inf sentinel column, padded to 256, row indices clamped. Upstream sparse FA (n_kv_max, mask compaction) is NVIDIA-only; HIP QSA attention is dense. 1296 = next step: (1) gather rows in the cache's stored type (f16 or q8_0 byte gather) with no f32 round trip, one rows_idx/mask gather per layer; (2) tile FA dequant-on-load for q8_0 so no full-cache conversion.
