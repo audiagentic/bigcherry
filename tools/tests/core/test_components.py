@@ -6,6 +6,8 @@ import unittest
 from bigcherry.core import components, config, engines, paths
 
 _GETENV = re.compile(r'getenv\("(R3_[A-Z0-9_]+)"\)')
+#: settings the campaign harness reads (engine_adapters/radiance.py), not the plugin source
+HARNESS_ONLY = {"R3_MOE_HELPER_DEVICES"}
 
 
 class Libr3ComponentTests(unittest.TestCase):
@@ -23,7 +25,7 @@ class Libr3ComponentTests(unittest.TestCase):
         for path in self.libr3.root.rglob("*"):
             if path.is_file() and path.suffix in {".cpp", ".hip", ".h", ".rw"}:
                 read |= set(_GETENV.findall(path.read_text(encoding="utf-8", errors="replace")))
-        self.assertEqual(read, set(self.libr3.settings))
+        self.assertEqual(read, set(self.libr3.settings) - HARNESS_ONLY)
 
     def test_only_native_attention_is_production(self):
         production = {s.name for s in self.libr3.settings.values() if s.status == "production"}
