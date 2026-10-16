@@ -52,7 +52,7 @@ class ServerCaptureTests(unittest.TestCase):
                     "bigcherry.campaign.bench_runner.run_bench_runner_server_bench",
                     return_value={"tg512_tps": 30.0},
                 ) as bench:
-                    result = run_server_arm_capture(engine="llamacpp", 
+                    result = run_server_arm_capture(engine="llamacpp", settings={},
                         binary=Path("llama-server"), model=Path("model.gguf"), extra_args=(),
                         output=Path(tmp), pair=0, side="native", position=1, env={},
                         bench_configs="tg512", runner_root=Path("runner"),
@@ -69,7 +69,7 @@ class ServerCaptureTests(unittest.TestCase):
     def test_rejects_missing_expected_metrics_before_launch(self):
         with patch("bigcherry.tuning.server_runner.ServerRunner") as server:
             with self.assertRaisesRegex(ValueError, "expected metrics"):
-                run_server_arm_capture(engine="llamacpp", 
+                run_server_arm_capture(engine="llamacpp", settings={},
                     binary=Path("server"), model=Path("model"), extra_args=(),
                     output=Path("unused"), pair=0, side="native", position=0,
                     env={}, bench_configs="full", runner_root=Path("runner"), required_metrics=(),
@@ -342,6 +342,104 @@ class ServerComparisonCaptureTests(unittest.TestCase):
         summary = json.loads((self.output / "run.json").read_text())
         self.assertEqual(summary["runs"][-1]["source_attestation_error"], "live source changed")
 
+    # --- MEN11: per-arm environment/settings on an engine with component settings -------------------------------
+
+    def radiance_config(self, control_settings, subject_settings, **updates):
+        arms = [dict(self.arms[0], settings=control_settings), dict(self.arms[1], mode="stock", settings=subject_settings)]
+        arms[0]["mode"] = "stock"
+        self.write_config(engine="radiance", arms=arms, **{"execution_evidence": "observe", **updates})
+
+    def run_radiance(self, fake_capture=None, name="capture"):
+        captured = []
+
+        def effect(**kwargs):
+            captured.append(kwargs)
+            if fake_capture is not None:
+                return fake_capture(**kwargs)
+            return {"pair": kwargs["pair"] + 1, "mode": kwargs["side"], "position": kwargs["position"],
+                    "returncode": 0, "metrics": {"tg128_tps": 30.0}}
+
+        with self.patches_for_preflight(), patch(
+            "bigcherry.campaign.benchmark.run_server_arm_capture", side_effect=effect,
+        ):
+            rc = benchmark.run_server_comparison_capture(self.config, self.output / name, rounds=2, seed=0, settle_seconds=0)
+        return rc, captured
+
+    def test_arm_settings_become_server_variables_and_are_recorded(self):
+        self.radiance_config({"R3_MOE_HELPER_ROWS": "0"}, {"R3_MOE_HELPER_ROWS": "1"})
+        rc, captured = self.run_radiance()
+        self.assertEqual(rc, 0)
+        by_side = {item["side"]: item for item in captured}
+        stock, native = self.arms[0]["name"], self.arms[1]["name"]
+        self.assertEqual(by_side[stock]["env"]["R3_MOE_HELPER_ROWS"], "0")
+        self.assertEqual(by_side[native]["env"]["R3_MOE_HELPER_ROWS"], "1")
+        self.assertEqual(by_side[native]["settings"], {"R3_MOE_HELPER_ROWS": "1"})
+        self.assertEqual(by_side[native]["env"]["HIP_VISIBLE_DEVICES"], "0,1")
+        summary = json.loads((self.output / "capture" / "run.json").read_text())
+        self.assertEqual(summary["arm_variables"][native], {"environment": {}, "settings": {"R3_MOE_HELPER_ROWS": "1"}})
+
+    def test_unknown_setting_and_bad_arm_variables_are_refused(self):
+        self.radiance_config({}, {"NOT_A_SETTING": "1"})
+        with self.patches_for_preflight(), self.assertRaisesRegex(ValueError, "unknown radiance component setting"):
+            benchmark.run_server_comparison_capture(self.config, self.output / "a", rounds=2, seed=0, settle_seconds=0)
+        self.radiance_config({}, {"R3_MOE_HELPER_ROWS": "1"})
+        config = json.loads(self.config.read_text())
+        config["arms"][1]["environment"] = {"ROCR_VISIBLE_DEVICES": "0"}
+        self.config.write_text(json.dumps(config), encoding="utf-8")
+        with self.patches_for_preflight(), self.assertRaisesRegex(ValueError, "topology belongs"):
+            benchmark.run_server_comparison_capture(self.config, self.output / "b", rounds=2, seed=0, settle_seconds=0)
+        config["arms"][1]["environment"] = {"R3_MOE_HELPER_ROWS": "1"}
+        self.config.write_text(json.dumps(config), encoding="utf-8")
+        with self.patches_for_preflight(), self.assertRaisesRegex(ValueError, "one place"):
+            benchmark.run_server_comparison_capture(self.config, self.output / "c", rounds=2, seed=0, settle_seconds=0)
+
+    def test_arm_environment_merges_over_shared_environment_for_radiance(self):
+        self.radiance_config({}, {})
+        config = json.loads(self.config.read_text())
+        config["environment"]["R3_SHARED"] = "x"
+        config["arms"][1]["environment"] = {"R3_AR_TIMING_EXTRA": "7"}
+        self.config.write_text(json.dumps(config), encoding="utf-8")
+        _, captured = self.run_radiance()
+        by_side = {item["side"]: item["env"] for item in captured}
+        self.assertEqual(by_side[self.arms[0]["name"]]["R3_SHARED"], "x")
+        self.assertEqual(by_side[self.arms[1]["name"]]["R3_SHARED"], "x")
+        self.assertEqual(by_side[self.arms[1]["name"]]["R3_AR_TIMING_EXTRA"], "7")
+        self.assertNotIn("R3_AR_TIMING_EXTRA", by_side[self.arms[0]["name"]])
+
+    def test_non_dispatch_engine_refuses_dispatch_modes_and_required_attestation(self):
+        self.radiance_config({}, {})
+        config = json.loads(self.config.read_text())
+        config["arms"][1]["mode"] = "native"
+        self.config.write_text(json.dumps(config), encoding="utf-8")
+        with self.patches_for_preflight(), self.assertRaisesRegex(ValueError, "unsupported dispatch mode"):
+            benchmark.run_server_comparison_capture(self.config, self.output / "m", rounds=2, seed=0, settle_seconds=0)
+        self.radiance_config({}, {}, execution_evidence="required")
+        with self.patches_for_preflight(), self.assertRaisesRegex(ValueError, "not parsed"):
+            benchmark.run_server_comparison_capture(self.config, self.output / "e", rounds=2, seed=0, settle_seconds=0)
+
+    def test_setting_activation_is_recorded_from_server_and_sidecar_logs(self):
+        self.radiance_config({}, {"R3_MOE_HELPER": "1", "R3_MOE_HELPER_DEVICES": "0"})
+        marker = "r3_moe_helper: runtime map owns 12 experts, 3.500 GiB\n"
+
+        def fake(**kwargs):
+            cell = kwargs["output"] / f"pair-{kwargs['pair'] + 1:03d}-{kwargs['side']}"
+            cell.mkdir(parents=True)
+            (cell / "server.log").write_text("server up\n",encoding="utf-8")
+            sidecars = []
+            if kwargs["settings"]:
+                (cell / "helper0.log").write_text(marker, encoding="utf-8")
+                sidecars.append({"name": "helper0", "log": str(cell / "helper0.log")})
+            return {"pair": kwargs["pair"] + 1, "mode": kwargs["side"], "position": kwargs["position"],
+                    "returncode": 0, "metrics": {"tg128_tps": 30.0}, "server_log": str(cell / "server.log"),
+                    "sidecars": sidecars}
+
+        rc, _ = self.run_radiance(fake)
+        self.assertEqual(rc, 0)
+        summary = json.loads((self.output / "capture" / "run.json").read_text())
+        evidence = summary["setting_activation"][self.arms[1]["name"]]
+        self.assertEqual(evidence["R3_MOE_HELPER"]["status"], "executed")
+        self.assertEqual(evidence["R3_MOE_HELPER_DEVICES"]["status"], "unobservable")
+
 
 class ServerExecutionAttestationTests(unittest.TestCase):
     def setUp(self):
@@ -373,7 +471,7 @@ class ServerExecutionAttestationTests(unittest.TestCase):
             "bigcherry.campaign.bench_runner.run_bench_runner_server_bench",
             return_value={"tg128_tps": 30.0},
         ) as bench:
-            result = run_server_arm_capture(engine="llamacpp", 
+            result = run_server_arm_capture(engine="llamacpp", settings={},
                 binary=Path("server"), model=Path("model"), extra_args=(),
                 output=self.root, pair=0, side="native", position=0, env={},
                 bench_configs="mtp-dual", runner_root=Path("runner"),

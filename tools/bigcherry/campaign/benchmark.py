@@ -512,7 +512,7 @@ def _run_arm(
 def run_server_arm_capture(
     *, engine: str, binary: Path, model: Path, extra_args: tuple[str, ...],
     output: Path, pair: int, side: str, position: int,
-    env: dict[str, str], bench_configs: str, runner_root: Path,
+    env: dict[str, str], settings: dict[str, str], bench_configs: str, runner_root: Path,
     required_metrics: tuple[str, ...], repetitions: int = 1,
     shutdown_method: str = "http",
     expected_execution: dict[str, Any] | None = None,
@@ -526,7 +526,8 @@ def run_server_arm_capture(
     """
     from dataclasses import asdict
     from bigcherry.campaign.bench_runner import run_bench_runner_server_bench
-    from bigcherry.tuning.server_runner import ServerRunner, LLAMACPP_SERVE
+    from bigcherry.engine_adapters import SidecarSet, adapter as engine_adapter
+    from bigcherry.tuning.server_runner import ServerRunner
 
     if not required_metrics:
         raise ValueError("server cells require explicit expected metrics")
@@ -540,7 +541,9 @@ def run_server_arm_capture(
         "pair": pair + 1, "mode": side, "position": position,
         "returncode": 1, "performance_admitted": False,
         "server_log": str(cell / "server.log"),
+        "settings": dict(settings),
     }
+    adapter_ = engine_adapter(engine)
     started = time.monotonic()
     # Required server captures use a separate, untimed diagnostic preflight.
     # The timed process below intentionally receives the original arguments
@@ -577,7 +580,11 @@ def run_server_arm_capture(
         env_overrides=env, env_unset=tuple(os.environ),
         log_path=cell / "server.log", shutdown_method=shutdown_method,
     )
+    sidecars = SidecarSet(adapter_.sidecars(
+        {"name": side, "model": model, "settings": dict(settings)}, env, cell, binary))
     try:
+        # Sidecars start (sequentially, each ready) before the server and stop after it.
+        sidecars.start()
         with server:
             if expected_execution is not None and execution_evidence == "observe":
                 from bigcherry.experiment.attestation import (
@@ -591,7 +598,7 @@ def run_server_arm_capture(
                 observed = parse_llama_server_attestation(
                     (cell / "server.log").read_text(encoding="utf-8", errors="replace"),
                     architecture_by_locator=dict(zip(expected.locators, expected.architectures)),
-                )
+                ) if adapter_.parses_execution_attestation else None
                 run["execution_attestation"] = observed.document() if observed else None
                 if observed is None and execution_evidence == "observe":
                     run["execution_evidence_status"] = "missing"
@@ -616,6 +623,12 @@ def run_server_arm_capture(
     finally:
         run["elapsed_s"] = time.monotonic() - started
         run["shutdown"] = asdict(server.last_shutdown) if server.last_shutdown else None
+        run["sidecars"] = sidecars.stop()
+        bad = [r["name"] for r in run["sidecars"] if r["killed"] or r["exited_before_stop"]]
+        if bad:
+            run["returncode"] = 1
+            run.pop("metrics", None)
+            run.setdefault("metric_error", f"sidecar(s) {', '.join(bad)} died or had to be killed")
         (cell / "cell.json").write_text(json.dumps(run, indent=2) + "\n", encoding="utf-8")
     return run
 
@@ -758,6 +771,71 @@ def _verify_attestation_binding(
             )
 
 
+def _declared_settings(engine: str) -> dict[str, Any]:
+    """Every component setting the engine declares: name -> (component, setting)."""
+    from bigcherry.core import components as _components
+    from bigcherry.core import paths as _paths
+
+    declared: dict[str, Any] = {}
+    for component in _components.load_all(_paths.REPO_ROOT, engine).values():
+        for name, setting in component.settings.items():
+            declared[name] = (component, setting)
+    return declared
+
+
+def resolve_arm_settings(engine: str, settings: Any, *, conflicts: dict[str, str]) -> dict[str, str]:
+    """Validate an arm's settings against the engine's component declarations; the values become server variables."""
+    if not isinstance(settings, dict):
+        raise ValueError("arm settings must be an object of component setting name -> value")
+    declared = _declared_settings(engine)
+    resolved: dict[str, str] = {}
+    for key, value in settings.items():
+        if key not in declared:
+            raise ValueError(f"unknown {engine} component setting: {key}")
+        if not isinstance(value, str):
+            raise ValueError(f"setting {key} must be a string")
+        if key in conflicts:
+            raise ValueError(f"setting {key} is also in the arm environment; set it in one place")
+        resolved[key] = os.path.expandvars(value)
+    return resolved
+
+
+def apply_arm_settings(engine: str, env: dict[str, str], settings: Any) -> tuple[dict[str, str], dict[str, str]]:
+    """(env with the validated settings applied, the resolved settings) for a single cell."""
+    resolved = resolve_arm_settings(engine, settings, conflicts=env)
+    return {**env, **resolved}, resolved
+
+
+def _cell_log(run: dict[str, Any]) -> str:
+    """The server log of a cell plus its sidecar logs: an activation marker may be printed by either."""
+    paths = [run.get("server_log"), *(sidecar["log"] for sidecar in run.get("sidecars", []))]
+    return "\n".join(
+        Path(path).read_text(encoding="utf-8", errors="replace") for path in paths if path and Path(path).is_file()
+    )
+
+
+def _setting_activation_evidence(engine: str, names: list[str], prepared: dict[str, Any], runs: list[dict[str, Any]]) -> dict[str, Any]:
+    """Per candidate arm, activation evidence for each setting it varies against the first arm, from the cell logs."""
+    from dataclasses import asdict
+    from bigcherry.experiment.engine_quality import setting_activation
+
+    declared = _declared_settings(engine)
+    first = {name: next((run for run in runs if run["mode"] == name and run.get("returncode") == 0), None) for name in names}
+    evidence: dict[str, Any] = {}
+    control = names[0]
+    for candidate in names[1:]:
+        if first[control] is None or first[candidate] is None:
+            continue
+        control_log, subject_log = _cell_log(first[control]), _cell_log(first[candidate])
+        for key, value in prepared[candidate]["settings"].items():
+            component, setting = declared[key]
+            if value == prepared[control]["settings"].get(key, setting.default):
+                continue
+            evidence.setdefault(candidate, {})[key] = asdict(
+                setting_activation(component, key, control_log=control_log, subject_log=subject_log))
+    return evidence
+
+
 def run_server_comparison_capture(
     config_path: Path, output: Path, *, rounds: int, seed: int, settle_seconds: float,
 ) -> int:
@@ -768,7 +846,8 @@ def run_server_comparison_capture(
     activation. Keep those missing gates visible rather than implying that a
     successful subprocess constitutes a production performance result.
     """
-    from bigcherry.build.builds import binary_hash, inspect_dispatch_build, resolve_runtime_artifacts, runtime_artifact_key
+    from bigcherry.build.builds import binary_hash, resolve_runtime_artifacts, runtime_artifact_key
+    from bigcherry.engine_adapters import adapter as engine_adapter
     from bigcherry.campaign.bench_runner import _resolve_runner_root
     from bigcherry.campaign.run_advisories import evaluate_ab_result
 
@@ -806,8 +885,9 @@ def run_server_comparison_capture(
     from bigcherry.core import paths as _paths
     if engine not in _engines.names(_paths.REPO_ROOT):
         raise ValueError("server comparison requires the engine its arms run (engine = a declared engine)")
-    if engine != _engines.LLAMACPP and execution_evidence == "required":
-        raise ValueError(f"{engine}: device-execution attestation is only parsed for llama.cpp; use execution_evidence 'observe'")
+    adapter_ = engine_adapter(engine)
+    if not adapter_.parses_execution_attestation and execution_evidence == "required":
+        raise ValueError(f"{engine}: device-execution attestation is not parsed for this engine; use execution_evidence 'observe'")
     if "execution_attestor" in config:
         raise ValueError("optional execution_attestor integration is deferred under HI169")
     if not isinstance(expected_execution, dict) or not expected_execution.get("locators"):
@@ -818,20 +898,16 @@ def run_server_comparison_capture(
         raise ValueError("both explicit device selectors are required")
     runner_root = _resolve_runner_root(Path(os.path.expandvars(config["runner_root"])) if config.get("runner_root") else None)
     prepared = {}
+    declared_settings = _declared_settings(engine)
     for arm in arms:
         binary = Path(os.path.expandvars(arm["binary"])).expanduser().resolve()
         mode = arm["mode"]
-        if mode not in ("stock", "native", "record", "tune", "replay"):
-            raise ValueError(f"unsupported dispatch mode: {mode}")
+        if mode not in adapter_.dispatch_modes():
+            raise ValueError(f"unsupported dispatch mode: {mode} ({engine} supports {', '.join(adapter_.dispatch_modes())})")
         build_dir = binary.parent.parent
-        observation = None
-        if engine == _engines.LLAMACPP:
-            # The dispatch-instrumentation contract is llama.cpp's (GGML_HIP_DISPATCH builds).
-            observation = inspect_dispatch_build(build_dir)
-            if observation["issues"] or bool(observation["instrumented"]) != (role == "diagnostic"):
-                raise ValueError(f"{arm['name']}: compiled instrumentation disagrees with evidence role")
-        elif mode != "stock":
-            raise ValueError(f"{arm['name']}: {engine} has no dispatch modes; an arm runs in mode 'stock'")
+        observation = adapter_.inspect_build(build_dir)
+        if observation is not None and (observation["issues"] or bool(observation["instrumented"]) != (role == "diagnostic")):
+            raise ValueError(f"{arm['name']}: compiled instrumentation disagrees with evidence role")
         metadata_path = build_dir / f"bigcherry-build-metadata-{binary.name}.json"
         metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
         # Every managed comparison must record its canonical source worktree;
@@ -870,24 +946,24 @@ def run_server_comparison_capture(
             env["GGML_HIP_DISPATCH_MODE"] = mode
         # Only explicitly supplied arm controls survive ambient sanitization.
         controls = {key: os.path.expandvars(value) for key, value in arm.get("environment", {}).items()}
-        if any(
-            key != "GGML_CUDA_ALLREDUCE"
-            and not key.startswith(("GGML_HIP_DISPATCH_", "GGML_HIP_TUNE_", "GGML_HIP_AUTOTUNE_", "GGML_CUDA_AR_",
-                                    "NCCL_", "RCCL_"))
-            and not (key.startswith("BIGCHERRY_") and key != "BIGCHERRY_PATCH_TRACE")
-            for key in controls
-        ):
-            raise ValueError("arm-specific environment is limited to dispatch/tuning/allreduce/RCCL and BigCherry patch controls (not tracing); topology belongs to the shared environment")
-        if "GGML_HIP_DISPATCH_MODE" in controls:
-            raise ValueError("arm environment cannot override the declared dispatch mode")
+        if {"HIP_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES"} & set(controls):
+            raise ValueError(f"{arm['name']}: device selectors are topology; topology belongs to the shared environment")
+        adapter_.check_arm_environment(controls)
+        # A component setting is an environment variable of the server (and is passed to the adapter); an ambient
+        # value of a declared setting never leaks into an arm.
+        for key in declared_settings:
+            if key not in supplied_env:
+                env.pop(key, None)
         env.update(controls)
+        settings = resolve_arm_settings(engine, arm.get("settings", {}), conflicts=controls)
+        env.update(settings)
         if mode == "replay" and not Path(env.get("GGML_HIP_DISPATCH_CACHE", "")).is_file():
             raise ValueError("replay arm requires an existing explicit cache")
         arm_args = tuple(os.path.expandvars(value) for value in arm.get("server_args", []))
         if any(value.split("=", 1)[0] in ("-m", "--model", "--host", "--port") for value in arm_args):
             raise ValueError(f"{arm['name']}: server_args cannot override the managed model or endpoint")
         prepared[arm["name"]] = {
-            "binary": binary, "env": env, "extra_args": (*extra_args, *arm_args),
+            "binary": binary, "env": env, "settings": settings, "controls": controls, "extra_args": (*extra_args, *arm_args),
             "model": Path(os.path.expandvars(arm["model"])).expanduser().resolve() if "model" in arm else model, "shutdown_method": arm.get("shutdown_method", "sigint" if mode == "stock" else "http"),
             "source_root": source_root, "source_attestation": source_attestation,
             "provenance": {"campaign_metadata": metadata, "observed_runtime_artifacts": runtime,
@@ -912,6 +988,9 @@ def run_server_comparison_capture(
         "configuration": config, "model_sha256": binary_hash(model),
         "arm_model_sha256": {name: binary_hash(arm["model"]) for name, arm in prepared.items() if arm["model"] != model},
         "arm_provenance": {name: value["provenance"] for name, value in prepared.items()},
+        # The varied variables of each arm: what differs between arms is visible here, not only in the configuration.
+        "arm_variables": {name: {"environment": value["controls"], "settings": value["settings"]}
+                          for name, value in prepared.items()},
         "schedule": run_schedule, "schedule_seed": seed, "settle_seconds": settle_seconds,
         "runs": [],
     }
@@ -938,7 +1017,7 @@ def run_server_comparison_capture(
             print(f"[server-capture] round {pair + 1}/{rounds} position {position + 1}: {name}", flush=True)
             result = run_server_arm_capture(engine=engine, 
                 binary=arm["binary"], model=arm["model"], extra_args=arm["extra_args"], output=output,
-                pair=pair, side=name, position=position, env=arm["env"],
+                pair=pair, side=name, position=position, env=arm["env"], settings=arm["settings"],
                 bench_configs=config["bench_configs"], runner_root=runner_root,
                 required_metrics=metrics, repetitions=repetitions, shutdown_method=arm["shutdown_method"],
                 expected_execution=expected_execution,
@@ -955,6 +1034,7 @@ def run_server_comparison_capture(
                                       for metric in metrics}
         for candidate in names[1:]
     }
+    summary["setting_activation"] = _setting_activation_evidence(engine, names, prepared, summary["runs"])
     persist()
     print("Capture complete; performance admission remains false.", flush=True)
     return 0

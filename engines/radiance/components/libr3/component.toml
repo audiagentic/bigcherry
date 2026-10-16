@@ -39,6 +39,11 @@ status = "experimental"
 summary = "enable patch rad0002 GPU mailbox ops; helper process must already own the configured POSIX shm segment"
 activation = "r3_moe_helper: runtime map owns [0-9]+ experts, [0-9.]+ GiB"
 
+[setting.R3_MOE_HELPER_DEVICES]
+default = ""
+status = "experimental"
+summary = "harness-only: space-separated HIP device indices, one r3_moe_helper process each (e.g. \"0 1\"); the campaign adapter starts them before the server, sets R3_MOE_HELPER_INDEX and R3_MOE_HELPER_COUNT per helper, and stops them after it"
+
 [setting.R3_MOE_HELPER_SHM]
 default = "/r3-moe-helper"
 status = "diagnostic"
