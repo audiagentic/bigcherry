@@ -4,13 +4,13 @@
  "engine": "radiance",
  "evidence_role": "diagnostic",
  "execution_evidence": "observe",
- "model": "/mnt/data/llm-models/radiance/flash-next/flash-next.rad",
+ "model": "/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad",
  "server_args": [
   "--radiance-home", "${RAD_HOME}", "--kernels", "libr4d,libr3moe,libref",
   "--placement", "expert_tiered", "--ngram-placement", "ram",
   "--max-num-seqs", "6", "--max-num-batched-tokens", "4096", "--checkpoint-interval", "4096",
   "--kv-cache-dtype", "fp8", "--num-speculative-tokens", "3",
-  "--tp", "1", "--host-pool-mib", "45056", "--max-model-len", "32768"
+  "--tp", "1", "--host-pool-mib", "30720", "--max-model-len", "32768"
  ],
  "environment": {
   "HIP_VISIBLE_DEVICES": "2",
