@@ -25,7 +25,7 @@ ALLOWLIST: dict[str, str] = {
     "cli/jobs.py": "jobs plane has no CLI engine selector yet",
     "jobs/worker.py": "jobs worker runs llama.cpp jobs only",
     "experiment/engine_quality.py": "per-engine quality adapters name their engine",
-    "campaign/benchmark.py": "execution-evidence branch until it moves into an adapter",
+    "engine_adapters/": "per-engine adapters name their engine (MEN11)",
     "core/paths.py": "module-level LLAMACPP binding for this checkout's default engine layout",
     "cli/engine_scope.py": "maps not-yet-migrated commands to the llama.cpp-only scope",
     "cli/hardware.py": "hardware inventory CLI has its own argv and no engine selector (needs only work_root)",

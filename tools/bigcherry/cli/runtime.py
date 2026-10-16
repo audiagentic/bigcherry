@@ -126,10 +126,13 @@ def _worker(cell, *, root: Path, base_env: Mapping[str, str]):
         engine = server_capture.get("engine")
         if not isinstance(engine, str) or not engine:
             raise MatrixResolutionError(f"cell {cell.cell_id!r}: server_capture must name its engine")
+        from ..campaign.benchmark import apply_arm_settings
+        env, settings = apply_arm_settings(
+            engine, {**dict(cell.visibility), **dict(env_overrides)}, server_capture.get("settings", {}))
         result = run_server_arm_capture(
             engine=engine, binary=Path(cell.binary), model=Path(model), extra_args=tuple(extra_args),
             output=root, pair=0, side=cell.cell_id, position=0,
-            env={**dict(cell.visibility), **dict(env_overrides)}, bench_configs=bench_configs,
+            env=env, settings=settings, bench_configs=bench_configs,
             runner_root=Path(runner_root), required_metrics=tuple(metrics),
             repetitions=int(server_capture.get("repetitions", 1)),
             shutdown_method=str(server_capture.get("shutdown_method", "http")),
