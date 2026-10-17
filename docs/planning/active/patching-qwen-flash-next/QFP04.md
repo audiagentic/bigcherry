@@ -13,13 +13,49 @@ work: L
 
 # 1295/1296 QSA gather-based sparse decode attention (gather in stored KV type, dequant in FA)
 
+
+## 2026-10-18 b11552 kernel audit: F16 QSA decode GET_ROWS-to-CAST staging (BCOP288)
+
+**Disposition: receipt-first; no implementation or GPU job authorized.** Narrow residual: validated 1295 emits GET_ROWS into F32 and CAST to F16 separately for K and V even when source KV is F16. The original 1296 'typed gather' cannot be achieved by changing a flag on the existing ggml_get_rows constructor: pinned ggml/src/ggml.c fixes non-I32 GET_ROWS output to F32. Q8_0 packed-copy and dequant-on-load are separate, unadmitted routes; do not infer their performance from this F16 audit.
+
+**Exact source/dispatch:** engines/llamacpp/patches/1295_qsa_gather_decode/patch.py::_GATHER enters only with bc_qsa_idx, n_tokens <= 8, n_kv >= BIGCHERRY_QSA_GATHER_MIN (32768 default), contiguous single-stream K/V and a V-stride guard. It pads selected indices per query to 256, uses sentinel n_kv to fetch a -infinity mask column, clamps K/V fetch indices to n_kv-1, then computes F32 GET_ROWS -> F16 CAST for each K and V, permutes into FLASH_ATTN_EXT and preserves self_v_rot. QFP03/1294 owns the deterministic selected-index order. Pinned ggml/src/ggml-cuda/getrows.cu::get_rows_cuda already has destination-F16 template instantiations, including F16 source, but graph construction never requests that output. ggml/src/ggml-cpu/ops.cpp::ggml_compute_forward_get_rows_f16 writes F32, so globally changing the tensor dtype without a CPU fallback is unsafe. ggml/src/ggml-backend-meta.cpp::handle_get_rows preserves split axis 0 only with mirrored indices, otherwise applies scalar-only generic split handling. Verify physical rank, graph allocation, stream, strides and consumer count on the composed recipe before reusing this backend primitive.
+
+**Measured control, not incremental benefit:** validated 1295/README.md reports ordered-topk gathered versus masked 98K decode 65.4/65.7 versus 56.9/57.6 tokens/s (~14%); earlier 196K screen ~13%; 24K neutral. Those gains already belong to 1295. Its old dense attention cost increased 0.44 to 3.36 ms/token from 10K to 80K in summed kernel observations; this is not a measurement of removable F32 staging.
+
+**Theoretical byte ceiling:** per selected K or V scalar, F16 read 2 B + F32 write 4 B + F32 CAST read 4 B + F16 write 2 B = 12 logical B. Direct F16 gather would read 2 and write 2 = 4 B, at most 8 B avoidable per scalar plus two CAST launches per eligible QSA layer. Illustrative D=256, one KV head, 2048 selected, four queries, K+V: 4,194,304 scalars, 32 MiB redundant logical traffic and 16 MiB F32 intermediates. These are neither measured DRAM bytes nor end-to-end gains; multiply only by actually executed layers/ranks and account for concurrent GPU intervals.
+
+**Gate 0 (host/static, completed):** 19/19 source assertions against 1295, pinned ggml.c, CUDA/CPU GET_ROWS and FA dispatch; 4/4 NumPy host tests including 65,536 F16 bit patterns, 64 deterministic index/pad/sentinel cases, duplicate/tail and logical-byte accounting. Host equivalence is not HIP bit-identity or a real QSA workload.
+
+**Gate 1 (no new code):** first inspect terminal receipts, then only on idle hardware capture the exact b11552 1295+1294 F16 decode path with existing rocprofv3 and tools/bigcherry/profiling/rocprof.py, tools/lab/flash-next/kernel-step-census.py, QFP16/17 timing. For widths 1..8 at 24K/98K/160K/196K (fit tiers), record physical GPU UUID/rank, per-layer GET_ROWS/CAST calls, duration and serial critical-path overlap, VGPR/scratch/spills, allocated F32 bytes, graph UID, actual K/V type/strides, MTP acceptance, output/selected-work counts and PCIe traffic. If F16 1295 is not executed, close NO_ROUTE. If optimistic *serialized* removable F32-staging+CAST time is <2.9126% of baseline decode latency (minimum for +3% throughput), close BELOW_CEILING. Do not queue a lane conflicting with active RAD06 experiments.
+
+**Gate 2 (conditional single-owner implementation):** extend only QFP04/1295, default-off in an isolated build A/B. Reuse CUDA/HIP GET_ROWS destination-F16 kernel via a properly constructed typed GGML_OP_GET_ROWS result with valid F16 strides, not by mutating tensor->type or aliasing F32 storage. Prefer a narrowly scoped F16-source/F16-destination constructor with tested CPU F16-copy semantics and fail-closed other-backend/Meta admission. If this requires unsafe generic API or graph rewrites, close UNSUPPORTED_TYPED_GRAPH; do not add another index cache, selector, scheduler, allocator or global dispatch table. Preserve exactly the same bc_qsa_idx, order, sentinel, mask, GQA and FA output. Q8_0 remains excluded. Pseudocode:
+
+~~~text
+if 1295_admitted && K.type == F16 && V.type == F16
+   && one_consumer_per_GET_ROWS_is_CAST_F16
+   && typed_backend_supported && mirrored_indices
+   && meta_split_and_graph_lifetime_safe:
+    K_sel = typed_get_rows_f16(K_rows, rows_idx)
+    V_sel = typed_get_rows_f16(V_rows, rows_idx)
+else:
+    K_sel = cast_f16(get_rows(K_rows, rows_idx))
+    V_sel = cast_f16(get_rows(V_rows, rows_idx))
+# preserve existing per-token mask and FLASH_ATTN_EXT
+~~~
+
+**Gate 3:** compare to *validated 1295*, not masked attention, with full logits/KLD and CPU-F32 reference, deterministic/greedy and MTP acceptance, widths 1..8, multi-request same process, multi-ubatch, 24K/98K/160K/196K, sentinel/duplicates/partial tail/NaN/Inf, Meta split 2xgfx1100+gfx1201, graph recapture and allocation checks, and expected-versus-observed selected work. Record physical bandwidth plausibility. Require >=4 independent sessions per architecture, >=10 paired ABBA rounds, CI95-low >=3% incremental end-to-end decode throughput at 98K/160K, <=2% shorter-context/prefill regression, no correctness or lifetime failure. Otherwise retain 1295 and close NO_GAIN or CORRECTNESS_FAIL.
+
+**External mechanism and consolidation:** merged llama.cpp [#29639](https://github.com/ggml-org/llama.cpp/pull/29639) uses per-row sparse Vulkan indices, direct quantized K/V loads and an AMD-measured 16x quantized sparsity threshold (external Q8_0 +15.6% decode at 64K, +4.1% at 128K; not HIP/BigCherry). Its shader routes scalar quantized K loads through fa_kv_index. [vLLM AMD QSA](https://github.com/vllm-project/vllm/blob/main/vllm/models/qwen4_exp/amd/qsa.py) feeds packed selected indices directly to Triton sparse GQA but currently requires BF16 KV; not a drop-in GGUF F16/Q8 HIP port. QFP25/1334 owns sparse HIP *prefill* and eight-query union-capacity correctness; QFP03/1294 owns order; QFP17/1335 owns indexer; QFP04/1295 alone owns decode gather. No neighbouring protected plans, implementation or hardware queues changed.
+
+**Terminal outcomes:** NO_ROUTE, BELOW_CEILING, UNSUPPORTED_TYPED_GRAPH, CORRECTNESS_FAIL, NO_GAIN, QUALIFIED_F16_ONLY.
+
 ## 2026-10-14 sparse-prefill ownership correction
 
 The historical proposal below to add a separate direct-index sparse prefill op is **not** an open QFP04 implementation request: validated 1334 already enables upstream sparse-mask FA on HIP for Qwen4Exp prefill. QFP25/1334 exclusively owns its eight-query union-capacity proof and any bounded fix; see QFP25's 2026-10-14 gate. QFP04 retains decode gather/typed-KV qualification only. Do not introduce a second selected-cell representation or count historical 1334 prefill gains as a new QFP04 result.
 
 ## Description
 
-Patch 1295_qsa_gather_decode (evaluated v2): for n_tokens<=8 and n_kv>=BIGCHERRY_QSA_GATHER_MIN (32768) build_attn_qsa gathers only the QSA-selected cells (bc_qsa_idx) via ggml_reshape_2d(k_all, hd*nh_kv, n_kv) + get_rows (f32) + cast f16, mask gathered with a -inf sentinel column, padded to 256, row indices clamped. Upstream sparse FA (n_kv_max, mask compaction) is NVIDIA-only; HIP QSA attention is dense. 1296 = next step: (1) gather rows in the cache's stored type (f16 or q8_0 byte gather) with no f32 round trip, one rows_idx/mask gather per layer; (2) tile FA dequant-on-load for q8_0 so no full-cache conversion.
+Historical v2 description (1295 is now validated/default-on): for n_tokens<=8 and n_kv>=BIGCHERRY_QSA_GATHER_MIN (32768) build_attn_qsa gathers only the QSA-selected cells (bc_qsa_idx) via ggml_reshape_2d(k_all, hd*nh_kv, n_kv) + get_rows (f32) + cast f16, mask gathered with a -inf sentinel column, padded to 256, row indices clamped. At the b11402 screen, upstream sparse FA was NVIDIA-only; without later 1334 HIP QSA attention was dense. 1296 = next step: (1) gather rows in the cache's stored type (f16 or q8_0 byte gather) with no f32 round trip, one rows_idx/mask gather per layer; (2) tile FA dequant-on-load for q8_0 so no full-cache conversion.
 
 Upstream llama.cpp PR #29825 is now the memory baseline for this item. It merged 2026-10-03 and changes Qwen4Exp/QSA indexer scoring from all-heads-at-once plus a separate ReLU copy to sequential-head scoring with in-place ReLU and accumulation. Published CUDA compute-buffer usage roughly halves without pp/tg loss (131K/ub2048 3.0 -> 1.5 GiB; 131K/ub4096 6.1 -> 3.0 GiB; 262K/ub4096 11.7 -> 5.6 GiB). BigCherry must rebase this upstream change before attributing any remaining long-context OOM or workspace cost to QSA gather/FA.
 

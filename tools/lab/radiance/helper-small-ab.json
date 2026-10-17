@@ -1,0 +1,93 @@
+{
+ "_comment": "RAD06 (2026-10-18): helper small-lane size - replayed real requests show 9-row steps (decode / MTP verify just over the 8-row small lane) taking ~0.5 ms a grouped-GEMM call on the large lane for 25-51 routes. 'small8' (production) vs 'small16' (SMALL_ROWS=16) was rejected (decode 50-81 vs 131: the pre-queued small lane pads every step); 'gemv-large32' (R3_MOE_HELPER_GEMV_LARGE_ROWS=32: large-lane requests up to 32 rows take the GEMV). Set RAD_BIN, RAD_HOME, R9700_BDF before use.",
+ "schema_version": 1,
+ "engine": "radiance",
+ "evidence_role": "diagnostic",
+ "execution_evidence": "observe",
+ "model": "/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad",
+ "server_args": [
+  "--radiance-home",
+  "${RAD_HOME}",
+  "--kernels",
+  "libr4d,libr3moe,libref",
+  "--placement",
+  "expert_tiered",
+  "--ngram-placement",
+  "ram",
+  "--max-num-seqs",
+  "6",
+  "--max-num-batched-tokens",
+  "4096",
+  "--checkpoint-interval",
+  "4096",
+  "--kv-cache-dtype",
+  "fp8",
+  "--num-speculative-tokens",
+  "3",
+  "--tp",
+  "1",
+  "--host-pool-mib",
+  "30720",
+  "--max-model-len",
+  "32768"
+ ],
+ "environment": {
+  "HIP_VISIBLE_DEVICES": "0",
+  "ROCR_VISIBLE_DEVICES": "2",
+  "RADIANCE_HOME": "${RAD_HOME}",
+  "R3_MOE_HELPER_SKIP_OWNED": "1"
+ },
+ "expected_execution": {
+  "backend": "ROCm",
+  "architectures": [
+   "gfx1201"
+  ],
+  "locators": [
+   "${R9700_BDF}"
+  ]
+ },
+ "bench_configs": "mtp-dual",
+ "required_metrics": [
+  "pp1024_tps",
+  "tg512_tps"
+ ],
+ "repetitions": 1,
+ "health_timeout_s": 900,
+ "arms": [
+  {
+   "name": "small8",
+   "mode": "stock",
+   "shutdown_method": "sigint",
+   "binary": "${RAD_BIN}",
+   "settings": {
+    "R3_MOE_HELPER": "1",
+    "R3_MOE_HELPER_DEVICES": "0 1",
+    "R3_MOE_HELPER_MOE_DOWN_TILE": "1",
+    "R3_MOE_HELPER_ENGINE_RANKS": "1",
+    "R3_MOE_HELPER_MAX_ROWS": "4096",
+    "R3_MOE_HELPER_SMALL_ROWS": "8",
+    "R3_MOE_HELPER_MIB": "22528",
+    "R3_MOE_HELPER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
+    "R3_MOE_HELPER_ROWS": "0"
+   }
+  },
+  {
+   "name": "gemv-large32",
+   "mode": "stock",
+   "shutdown_method": "sigint",
+   "binary": "${RAD_BIN}",
+   "settings": {
+    "R3_MOE_HELPER": "1",
+    "R3_MOE_HELPER_DEVICES": "0 1",
+    "R3_MOE_HELPER_MOE_DOWN_TILE": "1",
+    "R3_MOE_HELPER_ENGINE_RANKS": "1",
+    "R3_MOE_HELPER_MAX_ROWS": "4096",
+    "R3_MOE_HELPER_SMALL_ROWS": "8",
+    "R3_MOE_HELPER_MIB": "22528",
+    "R3_MOE_HELPER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
+    "R3_MOE_HELPER_ROWS": "0",
+    "R3_MOE_HELPER_GEMV_LARGE_ROWS": "32"
+   }
+  }
+ ]
+}

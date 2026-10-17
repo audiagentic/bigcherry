@@ -107,6 +107,27 @@ status = "experimental"
 summary = "pin libr4d's down-projection tile in the helper (RAD06 gfx1100 sweep): 1 the 64/128-column tile, 2 the 256-column 16-wave tile; unset leaves libr4d's choice"
 activation = "r3_moe_helper: R3_MOE_HELPER_MOE_DOWN_TILE="
 
+[setting.R3_MOE_HELPER_CAPTURE]
+default = ""
+status = "diagnostic"
+summary = "directory: the helper writes real large-lane requests (layer slot map, routes, bf16 activations) there for `r3_moe_helper --replay MODEL FILE` (RAD06 kernel tuning on real request shapes)"
+
+[setting.R3_MOE_HELPER_CAPTURE_EVERY]
+default = "37"
+status = "diagnostic"
+summary = "with R3_MOE_HELPER_CAPTURE: capture every Nth large-lane request"
+
+[setting.R3_MOE_HELPER_CAPTURE_MAX]
+default = "16"
+status = "diagnostic"
+summary = "with R3_MOE_HELPER_CAPTURE: at most this many request files"
+
+[setting.R3_MOE_HELPER_GEMV_LARGE_ROWS]
+default = "0"
+status = "experimental"
+summary = "large-lane requests of at most this many rows take the decode GEMV (RAD06): replayed real requests show 9-row steps at ~0.5 ms a grouped-GEMM call for 25-51 routes; the large lane is sized per request, so the small lane is untouched"
+activation = "r3_moe_helper: large-lane requests up to"
+
 [setting.R3_MOE_HELPER_ROWS]
 default = "0"
 status = "experimental"

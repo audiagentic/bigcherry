@@ -166,6 +166,8 @@ Why the supporting flags are set (lab log, "Flash-Next: radiance's own prefill s
 | Higher-precision draft head (`RAD_MTP_FULL_HEAD`, rad0003) | acceptance 0.63-0.65 vs 0.62-0.64; not the cause of low acceptance | lab log runs `fnmh3-1`, `fnmh3-0`, `fnr97` |
 | `R3_HC_NATIVE=1` (native E4M3 hc_read) | 58.2 to 50.7 us a call, decode 29.2 to 29.7 tok/s (inside spread); declared experimental, off | lab log, `fnhc1`/`fn7`/`mps2` section |
 | Stopping the heat engine (`--deterministic`) on the XTX pair | worse: decode 19.9 vs 29.2 | lab log, run `fn7` |
+| Small lane 16 rows (`R3_MOE_HELPER_SMALL_ROWS=16`) | decode 50-81 vs 131 tok/s: the pre-queued small lane pads every step | RAD06 2026-10-18 |
+| Large-lane GEMV up to 32 rows (`R3_MOE_HELPER_GEMV_LARGE_ROWS=32`) | bit-exact on replay; prefill flat (pp4096 2145-2148 vs 2148-2149) but decode 80.4-81.1 vs 130.5-142.4 (-39%); default off, evaluated | run `rad06-gemvl-10180418` (2 pairs) |
 | Helper at 20 GiB with the final kernels | decode 89.2 (vs ~108.5 at 22 GiB), no prefill gain | RAD06 08:10 |
 
 ## Open levers
