@@ -1,6 +1,6 @@
 # 1357_moe_router_splitk
 
-Not promoted. Mechanism is in SUMMARY.md: the marked MoE router matmul runs through a split-K F32 GEMM with a
+**Status: validated (2026-10-10), included in validated-enhancements and enabled by the Flash-Next runtime profile.** Mechanism is in SUMMARY.md: the marked MoE router matmul runs through a split-K F32 GEMM with a
 fixed-order reduction instead of rocBLAS SGEMM. Off by default; `BIGCHERRY_MOE_ROUTER_SPLITK=1` turns it on.
 
 ## Evidence
@@ -11,11 +11,9 @@ fixed-order reduction instead of rocBLAS SGEMM. Off by default; `BIGCHERRY_MOE_R
   followed directly by `topk_moe_cuda`, the rest by the unfused top-k kernels.
 - Weight: `ffn_gate_inp.weight` is F32 `[2560, 512]` in all 48 layers of the UD-IQ4_XS model.
 
-## Still to show
+## Historical qualification (completed 2026-10-10)
 
-Offline mechanics and patch-lint, then on hardware: the activation marker, kernel time of the two new kernels against
-SGEMM, an ABBA on one binary with `tools/lab/flash-next/queue-env-ab.sh` (flag on / off), and identical greedy output
-at 8K, 24K and 98K. A changed output rejects the patch: expert selection must not move.
+The offline mechanics, patch-lint, activation and same-binary ABBA work was recorded in the promotion evidence below. Greedy Flash-Next output differs because the router accumulation order changes; profile-scoped acceptance does **not** establish bit identity or a new reduction-fusion opportunity.
 
 ## Promotion record
 
@@ -63,3 +61,7 @@ The prompt there is about 1,700 tokens, so these are no-regression figures, not 
 With `BIGCHERRY_MOE_ROUTER_SPLITK` unset the router matmul goes to rocBLAS SGEMM exactly as native llama.cpp b11474
 sends it, on the same binary. The off arm is therefore the native behaviour for the code this patch changes; the
 rest of the build is the BigCherry production baseline in both arms.
+
+## 2026-10-16 BCOP239 reduction-fusion disposition
+
+Keep the two ordered HIP launches and backend-pool scratch. QFP48's old partial->reduce fusion suggestion is closed without a new implementation: the partial workgroups have no cross-CTA barrier, and the reduction's exposed wall-time cost is not measured. Any last-CTA/counter alternative must first pass QFP48's epoch, graph replay, numeric and >=3% exposed-cost gates. The 2026-10-10 +3.2% prefill ABBA measures **1357 versus native SGEMM**, not the proposed fusion.
