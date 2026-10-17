@@ -28,13 +28,13 @@ find_package(Python3 REQUIRED COMPONENTS Interpreter)
 set(r4d ${CMAKE_CURRENT_BINARY_DIR}/r4d-src)
 set(native_arg)
 if(R3_NATIVE)
-  set(native_arg ${CMAKE_CURRENT_SOURCE_DIR}/native)
+  set(native_arg --native ${CMAKE_CURRENT_SOURCE_DIR}/native)
   file(GLOB native_rules ${CMAKE_CURRENT_SOURCE_DIR}/native/*.rw)
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${native_rules})
 endif()
 execute_process(
-  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/r3_rewrite.py ${RADIANCE_SRC}/libr4d ${r4d}
-          ${CMAKE_CURRENT_SOURCE_DIR}/rewrites.txt ${native_arg}
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/r3_rewrite.py --source ${RADIANCE_SRC}/libr4d --out ${r4d}
+          --rules ${CMAKE_CURRENT_SOURCE_DIR}/rewrites.txt ${native_arg}
   RESULT_VARIABLE rewrite_rc OUTPUT_VARIABLE rewrite_out ERROR_VARIABLE rewrite_err)
 message(STATUS "libr3: ${rewrite_out}")
 if(NOT rewrite_rc EQUAL 0)

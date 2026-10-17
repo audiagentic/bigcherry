@@ -13,6 +13,7 @@ subprocess boundaries (``Runner``, ``AbiReader``) are injectable so the offline 
 
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 import sys
@@ -25,7 +26,7 @@ from ..campaign import build as campaign_build
 from ..campaign import runtime_bundle
 from ..core import components, engines, paths
 from ..core import config as campaign_config
-from .base import BumpCheck, BumpCheckError
+from .base import BumpCheck, BumpCheckError, DriftCheck
 
 if TYPE_CHECKING:
     from ..core.context import ProjectContext
@@ -200,6 +201,62 @@ def compile_checks(
         BumpCheck("component-plugin-abi", "PLUGIN_ABI_MISMATCH", (), "", gate.plugin_abi),
         BumpCheck("component-tests", "COMPONENT_TEST_FAILED", ("ctest",), cmake_hint, gate.component_tests),
     )
+
+
+# ---------------------------------------------------------------------------------------------------------- drift
+
+#: a component that turns the engine's own sources into another form carries this script (libr3: libr4d -> gfx11 forms)
+REWRITE_SCRIPT = "r3_rewrite.py"
+REWRITE_RULES = "rewrites.txt"
+REWRITE_NATIVE = "native"
+REWRITE_SOURCE = "libr4d"
+NATIVE_REWRITE_DRIFT = "NATIVE_REWRITE_DRIFT"
+RewriteRunner = Callable[[list[str]], "subprocess.CompletedProcess[str]"]
+
+
+def _run_rewrite(argv: list[str]) -> "subprocess.CompletedProcess[str]":
+    return subprocess.run(argv, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600)
+
+
+def rewrite_drift(component: components.Component, source_dir: Path, runner: RewriteRunner = _run_rewrite) -> dict[str, list[str]]:
+    """The component's rewrite script in its no-write mode against ``source_dir``: failing rules and blocks by file name,
+    prefixed with the component. BumpCheckError when the script cannot run or does not answer with the JSON document."""
+    script = component.root / REWRITE_SCRIPT
+    argv = [sys.executable, str(script), "--check", "--source", str(source_dir / REWRITE_SOURCE),
+            "--rules", str(component.root / REWRITE_RULES)]
+    if (component.root / REWRITE_NATIVE).is_dir():
+        argv += ["--native", str(component.root / REWRITE_NATIVE)]
+    try:
+        result = runner(argv)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise BumpCheckError(f"{component.name}: cannot run {script}: {exc}") from exc
+    try:
+        document = json.loads(result.stdout)
+        failures = document["failures"]
+    except (json.JSONDecodeError, KeyError, TypeError) as exc:
+        detail = (result.stderr or result.stdout).strip()[-400:]
+        raise BumpCheckError(f"{component.name}: {REWRITE_SCRIPT} --check exited {result.returncode} without a failure report: {detail}") from exc
+    if (result.returncode == 0) != (not failures):
+        raise BumpCheckError(f"{component.name}: {REWRITE_SCRIPT} --check exited {result.returncode} but reported {len(failures)} failing file(s)")
+    return {f"{component.name}/{name}": list(problems) for name, problems in sorted(failures.items())}
+
+
+def source_drift_checks(context: ProjectContext, source_dir: Path, runner: RewriteRunner = _run_rewrite) -> tuple[DriftCheck, ...]:
+    """One drift check per declared component that rewrites the engine's sources (it carries r3_rewrite.py)."""
+    declared = components.load_all(paths.REPO_ROOT, context.engine)
+    checks = []
+    for name, component in sorted(declared.items()):
+        if not (component.root / REWRITE_SCRIPT).is_file():
+            continue
+
+        def run(component: components.Component = component) -> dict[str, list[str]]:
+            return rewrite_drift(component, source_dir, runner)
+
+        checks.append(DriftCheck(
+            f"{name}-native-rewrite", NATIVE_REWRITE_DRIFT,
+            f"re-port the failing blocks in engines/{context.engine}/components/{name} (rewrites.txt, native/*.rw) to the bumped "
+            f"{REWRITE_SOURCE} sources, or run `python {component.root / REWRITE_SCRIPT} --check ...` to list them again", run))
+    return tuple(checks)
 
 
 # ------------------------------------------------------------------------------------------------------------ audit

@@ -332,6 +332,11 @@ Merging to main publishes a GitHub release: the owner's go-ahead is needed
 once per bump. A further release on the same pin (features or fixes landed
 since) is `pin-release <tag> --bump minor|patch --evidence @<file>`.
 
+Main's ruleset requires `conventional-title` and `index-line-endings`. A release-please PR created by the Actions bot never triggers workflows, so those checks never run and the base-branch policy blocks the merge (bc-radiance 170.0.0, PR #253). Before any main/release/unpin PR is merged, `pin-release` brings its branch up to current `main` (only the shared release manifest may conflict: the released package keeps the release side's version, every other package main's), waits for the ruleset-required checks, and if none is reported triggers them once as the account (a close and reopen of the PR) and waits again. A failing or missing required check stops the command. Built on #208.
+
+Before the `release` phase one confirmation is required: answer the prompt at a terminal, or pass `--yes`; without a
+terminal and without `--yes` the command stops before tagging (finished phases stay recorded) and the same command continues.
+
 If the gate fails with a tooling-revision mismatch, the other trees are behind
 the commits made since their bump: pull them (no work may be running there),
 then run the command again.

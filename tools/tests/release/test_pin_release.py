@@ -245,11 +245,11 @@ class PinReleaseTests(unittest.TestCase):
     def test_main_failing_check_stops_before_merge(self):
         plan = SimpleNamespace(repo_root=Path("/repo"))
         pr = {"number": 7, "url": "u/7"}
-        failed = SimpleNamespace(returncode=1, stdout="failed check", stderr="")
-        with mock.patch.object(_pr, "_run", return_value=failed) as run:
-            with self.assertRaisesRegex(_pr.PinReleaseError, "checks failed"):
+        failure = _pr.PinReleaseError("main", "required check conventional-title failed: u/check")
+        with mock.patch.object(_pr, "_bring_pr_up_to_main"),                 mock.patch.object(_pr, "_wait_required_checks", side_effect=failure),                 mock.patch.object(_pr, "_run") as run:
+            with self.assertRaisesRegex(_pr.PinReleaseError, "conventional-title failed"):
                 _pr._wait_and_merge_pr(plan, pr, "main")
-        self.assertFalse(any(call.args[1:4] == ("gh", "pr", "merge") for call in run.call_args_list))
+        run.assert_not_called()
 
     def test_ensure_pr_reuses_open_pr_from_same_branch(self):
         plan = SimpleNamespace(repo_root=Path("/repo"), main="main")
