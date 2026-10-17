@@ -1138,8 +1138,7 @@ public:
         for (uint64_t h : w.run_hist) runs += h;
         if (runs)
             std::fprintf(stderr, "r3_moe_helper: lane %u experts a request by rows: 1 %.1f, 2 %.1f, 3-4 %.1f, 5-8 %.1f, "
-                         "9-16 %.1f, 17-32 %.1f, 33-64 %.1f, 65+ %.1f
-", lane,
+                         "9-16 %.1f, 17-32 %.1f, 33-64 %.1f, 65+ %.1f\n", lane,
                          (double)w.run_hist[0] / samples, (double)w.run_hist[1] / samples, (double)w.run_hist[2] / samples,
                          (double)w.run_hist[3] / samples, (double)w.run_hist[4] / samples, (double)w.run_hist[5] / samples,
                          (double)w.run_hist[6] / samples, (double)w.run_hist[7] / samples);
