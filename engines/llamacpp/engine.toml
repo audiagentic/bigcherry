@@ -51,5 +51,5 @@ pattern = 'draft acceptance = [0-9.]+ \(\s*(?P<accepted>\d+) accepted /\s*(?P<dr
 # GGUF (about 15 to 150M parameters, e.g. a stories15M-class llama; docs/reference/build/RELEASES.md "CPU smoke").
 [smoke.cpu]
 model = "smoke/tiny-llama.gguf"
-sha256 = "PLACEHOLDER-pin-the-sha256-of-the-tiny-gguf"
+sha256 = "61b50d457809a5194818fd22e6724b456cd7bb9a6264c52c8110684c53f3704a"
 args = ["-c", "512", "--threads", "4", "--no-webui"]
