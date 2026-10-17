@@ -857,7 +857,11 @@ def run_server_comparison_capture(
     arms = config.get("arms", [])
     if not isinstance(arms, list) or not 2 <= len(arms) <= 3:
         raise ValueError("server comparisons require two or three arms; use separate balanced contrasts for larger matrices")
-    if rounds < 2 or rounds % math.factorial(len(arms)) or not math.isfinite(settle_seconds) or settle_seconds < 0:
+    quality_only = config.get("quality_only", False)
+    if not isinstance(quality_only, bool) or (quality_only and "quality" not in config):
+        raise ValueError("quality_only must be true or false, and needs a quality block")
+    if not math.isfinite(settle_seconds) or settle_seconds < 0 or (
+            not quality_only and (rounds < 2 or rounds % math.factorial(len(arms)))):
         raise ValueError("server captures require complete permutation blocks and nonnegative finite settling")
     names = [arm["name"] for arm in arms]
     if len(set(names)) != len(names) or any(not re.fullmatch(r"[A-Za-z0-9_-]+", name) for name in names):
@@ -869,8 +873,8 @@ def run_server_comparison_capture(
     extra_args = tuple(os.path.expandvars(value) for value in config["server_args"])
     if any(value.split("=", 1)[0] in ("-m", "--model", "--host", "--port") for value in extra_args):
         raise ValueError("server_args cannot override the managed model or endpoint")
-    metrics = tuple(config["required_metrics"])
-    if not metrics or any(not re.fullmatch(r"\w+_tps", name) for name in metrics):
+    metrics = () if quality_only else tuple(config["required_metrics"])
+    if not quality_only and (not metrics or any(not re.fullmatch(r"\w+_tps", name) for name in metrics)):
         raise ValueError("explicit server-bench throughput metrics required")
     repetitions = config.get("repetitions", 1)
     if not isinstance(repetitions, int) or isinstance(repetitions, bool) or repetitions < 1:
@@ -896,7 +900,13 @@ def run_server_comparison_capture(
     ExecutionIdentity(expected_execution["backend"], tuple(expected_execution["architectures"]), tuple(expected_execution["locators"]))
     if any(not supplied_env.get(key) for key in ("HIP_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES")):
         raise ValueError("both explicit device selectors are required")
-    runner_root = _resolve_runner_root(Path(os.path.expandvars(config["runner_root"])) if config.get("runner_root") else None)
+    runner_root = None if quality_only else _resolve_runner_root(
+        Path(os.path.expandvars(config["runner_root"])) if config.get("runner_root") else None)
+    quality = None
+    if "quality" in config:
+        from bigcherry.campaign.quality_capture import check_reference_state, validate_quality_block
+        quality = validate_quality_block(config["quality"], names)
+        check_reference_state(quality)
     prepared = {}
     declared_settings = _declared_settings(engine)
     for arm in arms:
@@ -974,11 +984,16 @@ def run_server_comparison_capture(
                                if source_attestation is not None else None
                            )},
         }
+    if quality is not None:
+        first = prepared[names[0]]
+        if adapter_.quality_command("score", {"name": names[0], "model": first["model"], "settings": {}}, {},
+                                    Path("."), first["binary"], first["model"], quality) is None:
+            raise ValueError(f"{engine} has no quality measurement mode; remove the quality block")
     if "stock" in names and "native" in names:
         validate_build_parity(prepared["stock"]["binary"].parent.parent / "CMakeCache.txt",
                               prepared["native"]["binary"].parent.parent / "CMakeCache.txt")
     output.mkdir(parents=True, exist_ok=False)
-    run_schedule = schedule_named_arms(rounds, names, seed)
+    run_schedule = [] if quality_only else schedule_named_arms(rounds, names, seed)
     summary = {
         "schema_version": 1, "capture_kind": "server-bench-balanced-v1", "evidence_role": role,
         "performance_admitted": False, "admission_blockers": [
@@ -1033,9 +1048,25 @@ def run_server_comparison_capture(
         f"{candidate}_vs_{names[0]}": {metric: block_bootstrap_effect(summary["runs"], candidate, names[0], metric)
                                       for metric in metrics}
         for candidate in names[1:]
-    }
-    summary["setting_activation"] = _setting_activation_evidence(engine, names, prepared, summary["runs"])
+    } if not quality_only else {}
+    activation_cells = summary["runs"]
+    quality_passed = True
+    if quality is not None:
+        from bigcherry.campaign.quality_capture import run_quality_capture
+        reference_env = {key: value for key, value in prepared[quality["control"]]["env"].items()
+                         if key not in declared_settings}
+        print("[server-capture] quality measurement", flush=True)
+        summary["quality"], quality_cells = run_quality_capture(
+            adapter=adapter_, quality=quality, prepared=prepared, names=names, output=output,
+            reference_env=reference_env)
+        quality_passed = summary["quality"]["passed"]
+        if quality_only:
+            activation_cells = quality_cells
+    summary["setting_activation"] = _setting_activation_evidence(engine, names, prepared, activation_cells)
     persist()
+    if not quality_passed:
+        print("Quality measurement failed or breached its thresholds; see run.json quality.", flush=True)
+        return 1
     print("Capture complete; performance admission remains false.", flush=True)
     return 0
 

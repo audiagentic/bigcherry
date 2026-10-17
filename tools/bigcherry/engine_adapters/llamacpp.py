@@ -6,7 +6,7 @@ from pathlib import Path
 import json
 from typing import TYPE_CHECKING, Any
 
-from .base import EngineAdapter, SidecarSpec, SourceCheck
+from .base import EngineAdapter, QualityCommand, SidecarSpec, SourceCheck
 
 if TYPE_CHECKING:
     from ..core.context import ProjectContext
@@ -37,6 +37,9 @@ class LlamaCppAdapter(EngineAdapter):
 
     def sidecars(self, arm: dict[str, Any], env: dict[str, str], run_dir: Path, binary: Path) -> list[SidecarSpec]:
         return []
+
+    def quality_command(self, kind, arm, env, run_dir, binary, model, quality) -> QualityCommand | None:
+        return None  # no reference-based KL mode is wired for llama.cpp yet
 
     def source_checks(self, context: ProjectContext) -> tuple[SourceCheck, ...]:
         # The strict audit encodes the ggml HIP/CUDA invariants of the llama.cpp tree and its overlay files.

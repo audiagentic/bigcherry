@@ -65,7 +65,7 @@ Best measured (7,306-token prompt plus 256 greedy tokens, balanced A/B):
 | After reconciling onto main (one rad0002, one hook), identical completion hash | 2760 / 2761 | 108.4 / 108.9 | RAD09 acceptance, 2026-10-15 (main #236, 63cc952f) |
 
 So the current figures are prefill ~2,755-2,764 tok/s, decode ~108.5 tok/s. Run IDs for these lab runs are not
-recorded in the plan items (branch feat/rad03-gpu-lanes lab scripts, `fn-r9700-engine.sh`).
+recorded in the plan items (branch feat/rad03-gpu-lanes lab scripts, since retired).
 
 Harness acceptance, MEN11 2026-10-17: `ab-benchmark --server-config tools/lab/radiance/helper-ab.json --pairs 4`,
 Brutus, build c95d49e2, run `men11-fire-10171108`, bench config `mtp-dual`, 8 of 8 cells clean, both helpers ready and
@@ -178,8 +178,9 @@ Why the supporting flags are set (lab log, "Flash-Next: radiance's own prefill s
   ownership from Radiance's own router histograms (shadow mode first).
 - **RWQ01-RWQ06 (patching-radiance-wire-quality):** wire quality between cards; relevant to two-XTX layouts, not the
   helper layout.
-- **MEN11:** KLD through the harness; component-setting promotion path (settings get a state and evidence pointer);
-  retire `fn-r9700-engine.sh`, `fn-bench-once.py`, `fn-helper-gate.sh` in favour of `helper-ab.json`.
+- **MEN11:** KLD runs through the harness (`helper-kld.json`, `quality` block) and component settings have a promotion
+  path (see the radiance README); the lab scripts `fn-r9700-engine.sh`, `fn-bench-once.py`, `fn-helper-gate.sh`,
+  `fn-helper-kld.sh` and `fn-r9700-kld.sh` are retired in favour of `helper-ab.json` and `helper-kld.json`.
 - **Promotion:** none of rad0001-rad0003 is validated; owner policy is lightweight promotion (mechanics tests,
   activation evidence, balanced A/B with identity). The universal-default-on question for helper settings is open.
 - **Decode headroom:** the helper's per-layer round trip bounded decode before RAD05; no current measurement of what

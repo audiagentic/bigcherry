@@ -45,7 +45,7 @@ compute, not storage; lookup-type side work goes to host RAM/CPU.
 | Recipes | `engines/radiance/recipes.toml` | pin, patch sets, sources, experiments, runtime profiles `flashnext-2xtx` and `qwen38-27b-2xtx`, platform `linux-radiance` |
 | Engine patches | `engines/radiance/patches/rad000N_*` | packages against the pinned radiance (see below) |
 | Components | `engines/radiance/components/libr3/` | BigCherry source built against the installed engine; a component, not a patch |
-| Lab scripts, A/B configs | `tools/lab/radiance/` | e.g. `helper-ab.json`, `fn-r9700-engine.sh` |
+| Lab scripts, A/B configs | `tools/lab/radiance/` | `helper-ab.json` (speed A/B, helper sidecars), `helper-kld.json` (KL quality), `fn-profile.sh` (rocprofv3 traces) |
 
 Engine patches (all package state below is from each `SUMMARY.md`):
 
@@ -82,6 +82,24 @@ engine fixes), a build (`stock`) and a platform (`linux-radiance`). `helper-ab.j
 multi-process A/B: it drives the R9700 engine with two XTX helpers, started and stopped by the harness
 (`R3_MOE_HELPER_DEVICES`), arms differing in one component setting, with order-balanced rounds and an activation marker
 for the setting under test (MEN11). Set `RAD_BIN`, `RAD_HOME` and `R9700_BDF` before use.
+
+`helper-kld.json` is the quality counterpart: a `quality` block (`"quality_only": true` skips the serving cells) runs
+radiance's offline KL mode for each arm with that arm's helpers up, gates every arm against the control arm, and records
+the result in `run.json` under `quality`. With `quality.record` it first records the reference
+(`--kld-record <dir> --kld-corpus <jsonl>`), otherwise it scores against an existing one
+(`--kld-ref <dir> --kld-out <json>`).
+
+### Promoting a component setting
+
+A setting in `component.toml` has the patch lifecycle in its lightest form: `experimental` -> `validated` (or
+`evaluated` when it did not pan out). A `validated` setting, and a `production` one whose default is not off/0, names
+`evidence = ["<repo-relative run.json>", ...]`: ab-benchmark captures in which the setting is the only varied variable
+between two arms, the arm at the setting's default shows an `executed` activation record (the setting's `activation`
+marker), and no cell failed or breached the quality gate. The balanced separation and greedy identity or KL quality
+inside noise are read from that same capture; no per-setting campaign is required. `bigcherry patch-lint` enforces it
+(a `validated` setting without valid evidence fails; a `production` setting without evidence, today only
+`R3_ATTN_NATIVE`, is reported as a warning). Changing a default or which profile switches it does not invalidate the
+evidence; a change to the component code behind the setting is re-confirmed with a fresh capture.
 
 Radiance has its own release line (`bc-radiance`, package `engines/radiance`); the release stages are common to every
 engine and described in [../../build/RELEASES.md](../../build/RELEASES.md).
