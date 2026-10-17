@@ -92,10 +92,12 @@ __device__ __forceinline__ void hc8_dot_up(const float* __restrict__ sd, long lr
 @@ find 1
 template <bool F8>
 __global__ __launch_bounds__(kThreads)
+__attribute__((amdgpu_waves_per_eu(F8 ? 9 : 1, F8 ? 9 : 16)))
 void hc_read_a_kernel(const unsigned short* __restrict__ h, const float* __restrict__ w,
 @@ replace
 template <bool F8, bool R3N = false>
 __global__ __launch_bounds__(kThreads)
+__attribute__((amdgpu_waves_per_eu(F8 ? 9 : 1, F8 ? 9 : 16)))
 void hc_read_a_kernel(const unsigned short* __restrict__ h, const float* __restrict__ w,
 @@ end
 
@@ -129,13 +131,14 @@ static inline int hc_up_mix_launch(const RadTensor* up, long uld, bool f8, bool 
 
 @@ find 1
 #define HC_UPMIX_CASE3(RG_, F8_, I8_)                                                            \
-    emit_rc = R4D_EMIT(sk, (hc_up_mix_kernel<RG_, F8_, I8_>), grid, dim3(kThreads), lds, upp, uld,\
-                       dbuf, h, w, scale, x, q, qs, rq, rqs, ctr, (long)rows, (long)n, hc,        \
+    emit_rc = R4D_EMIT(stream, (hc_up_mix_kernel<RG_, F8_, I8_>), grid, dim3(kThreads), lds,     \
+                       upp, uld, dbuf, h, w, scale, x, q, qs, rq, rqs, ctr, (long)rows, (long)n,  \
+                       hc,                                                                        \
                        (long)lr, (long)hrow, (long)xrow, (long)qrow, (long)srow, (long)rqrow,     \
                        (long)rsrow, wadd)
 @@ replace
 #define HC_UPMIX_CASE4(RG_, F8_, I8_, R3N_)                                                      \
-    emit_rc = R4D_EMIT(sk, (hc_up_mix_kernel<RG_, F8_, I8_, R3N_>), grid, dim3(kThreads), lds,    \
+    emit_rc = R4D_EMIT(stream, (hc_up_mix_kernel<RG_, F8_, I8_, R3N_>), grid, dim3(kThreads), lds,    \
                        upp, uld, dbuf, h, w, scale, x, q, qs, rq, rqs, ctr, (long)rows,           \
                        (long)n, hc, (long)lr, (long)hrow, (long)xrow, (long)qrow, (long)srow,      \
                        (long)rqrow, (long)rsrow, wadd)
@@ -157,7 +160,7 @@ static inline int hc_up_mix_launch(const RadTensor* up, long uld, bool f8, bool 
 
 @@ find 1
 #define HC_READ_A(F8_)                                                                           \
-    R4D_EMIT(sk, hc_read_a_kernel<F8_>, dim3((unsigned)((lr + ta - 1) / ta) + 1u, (unsigned)rows), \
+    R4D_EMIT(s, hc_read_a_kernel<F8_>, dim3((unsigned)((lr + ta - 1) / ta) + 1u, (unsigned)rows),  \
              dim3(kThreads), (unsigned)(HN * sizeof(unsigned short)),                             \
              (const unsigned short*)h->data, (const float*)w->data, (const void*)down->data,       \
              (long)dld, injw ? (const unsigned short*)injw->data : nullptr, dbuf,                 \
@@ -169,7 +172,7 @@ static inline int hc_up_mix_launch(const RadTensor* up, long uld, bool f8, bool 
     const char* r3_hc_env = std::getenv("R3_HC_NATIVE");
     const bool r3_hc = f8 && r3_hc_env && std::atoi(r3_hc_env) != 0;
 #define HC_READ_A2(F8_, R3N_)                                                                    \
-    R4D_EMIT(sk, (hc_read_a_kernel<F8_, R3N_>),                                                  \
+    R4D_EMIT(s, (hc_read_a_kernel<F8_, R3N_>),                                                   \
              dim3((unsigned)((lr + ta - 1) / ta) + 1u, (unsigned)rows), dim3(kThreads),           \
              (unsigned)(HN * sizeof(unsigned short)),                                             \
              (const unsigned short*)h->data, (const float*)w->data, (const void*)down->data,       \

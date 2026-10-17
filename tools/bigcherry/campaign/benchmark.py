@@ -514,7 +514,7 @@ def run_server_arm_capture(
     output: Path, pair: int, side: str, position: int,
     env: dict[str, str], settings: dict[str, str], bench_configs: str, runner_root: Path,
     required_metrics: tuple[str, ...], repetitions: int = 1,
-    shutdown_method: str = "http",
+    shutdown_method: str = "http", health_timeout_s: int,
     expected_execution: dict[str, Any] | None = None,
     execution_evidence: str = "required",
 ) -> dict[str, Any]:
@@ -578,7 +578,7 @@ def run_server_arm_capture(
         serve=_engines.load(_paths.REPO_ROOT, engine).serve,
         binary=binary, model=model, extra_args=extra_args,
         env_overrides=env, env_unset=tuple(os.environ),
-        log_path=cell / "server.log", shutdown_method=shutdown_method,
+        log_path=cell / "server.log", shutdown_method=shutdown_method, health_timeout_s=health_timeout_s,
     )
     sidecars = SidecarSet(adapter_.sidecars(
         {"name": side, "model": model, "settings": dict(settings)}, env, cell, binary))
@@ -877,6 +877,10 @@ def run_server_comparison_capture(
     if not quality_only and (not metrics or any(not re.fullmatch(r"\w+_tps", name) for name in metrics)):
         raise ValueError("explicit server-bench throughput metrics required")
     repetitions = config.get("repetitions", 1)
+    # Seconds a server may take to load and answer /health (a large model's load can pass the 180 s default).
+    health_timeout_s = config.get("health_timeout_s", 180)
+    if not isinstance(health_timeout_s, int) or isinstance(health_timeout_s, bool) or health_timeout_s < 1:
+        raise ValueError("health_timeout_s must be a positive integer")
     if not isinstance(repetitions, int) or isinstance(repetitions, bool) or repetitions < 1:
         raise ValueError("repetitions must be a positive integer")
     supplied_env = {key: os.path.expandvars(value) for key, value in config["environment"].items()}
@@ -1035,7 +1039,7 @@ def run_server_comparison_capture(
                 pair=pair, side=name, position=position, env=arm["env"], settings=arm["settings"],
                 bench_configs=config["bench_configs"], runner_root=runner_root,
                 required_metrics=metrics, repetitions=repetitions, shutdown_method=arm["shutdown_method"],
-                expected_execution=expected_execution,
+                health_timeout_s=health_timeout_s, expected_execution=expected_execution,
                 execution_evidence=execution_evidence,
             )
             summary["runs"].append(result)

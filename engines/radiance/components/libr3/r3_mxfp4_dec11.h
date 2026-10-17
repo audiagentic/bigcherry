@@ -71,7 +71,7 @@ template <int MR, bool NT, bool ABLK>
 __global__ __launch_bounds__(R3_D11_WAVES * 32) void r3_gemm_mxfp4a8_dec11_kernel(
         const unsigned char* __restrict__ A, const float* __restrict__ As, const unsigned int* __restrict__ W,
         const unsigned char* __restrict__ Ws, const unsigned char* __restrict__ Wref,
-        __hip_bfloat16* __restrict__ C, int M, int K, int N, int as_rs, int mode) {
+        __hip_bfloat16* __restrict__ C, int M, int K, int N, int ldws, int ldc, int as_rs, int mode) {
     typedef float r3_v8fa __attribute__((ext_vector_type(8), aligned(4)));
     __shared__ unsigned short sA[R3_D11_WAVES * MR * 128];  // a wave's strip: MR rows x 128 of K, bf16
     __shared__ unsigned sT[64];                             // the unpack tables: [d] -> lo0, lo1, hi0, hi1
@@ -120,7 +120,7 @@ __global__ __launch_bounds__(R3_D11_WAVES * 32) void r3_gemm_mxfp4a8_dec11_kerne
 #pragma unroll
         for (int b = 0; b < 4; ++b) {
             const int blk = g * 4 + b < kblocks ? g * 4 + b : kblocks - 1;
-            e8[b] = (unsigned) Ws[(size_t) blk * N + nrow];
+            e8[b] = (unsigned) Ws[(size_t) blk * ldws + nrow];
         }
     };
     unsigned cw[16] = {}, e8[4] = {}, ncw[16] = {}, ne8[4] = {};
@@ -184,14 +184,14 @@ __global__ __launch_bounds__(R3_D11_WAVES * 32) void r3_gemm_mxfp4a8_dec11_kerne
 #pragma unroll
         for (int e = 0; e < 8; ++e) {
             const int n = n0 + 2 * e + half;  // gfx11 accumulator: row 2e + half, column `col`
-            C[(size_t) col * N + n] = (__hip_bfloat16) (sum[e] * __int_as_float((int) Wref[n] << 23) * sc);
+            C[(size_t) col * ldc + n] = (__hip_bfloat16) (sum[e] * __int_as_float((int) Wref[n] << 23) * sc);
         }
     }
 }
 
 // Launch for M <= 16. Operands are r4d_gemm_mxfp4a8_decode's; `ablk` is the (row, 128) activation scale grid.
 static inline void r3_mxfp4_dec11_launch(long a, long ascale, long wq, long ws, long wref, long c, int M, int K,
-                                         int N, bool nt, bool ablk, int as_rs, long stream) {
+                                         int N, int ldws, int ldc, bool nt, bool ablk, int as_rs, long stream) {
     const dim3 grid((N / 16 + R3_D11_WAVES - 1) / R3_D11_WAVES, 1, 1), block(R3_D11_WAVES * 32);
     hipStream_t st = (hipStream_t) stream;
     auto Ap = (const unsigned char*) a;
@@ -204,7 +204,7 @@ static inline void r3_mxfp4_dec11_launch(long a, long ascale, long wq, long ws, 
     // weight loads; add them to combine. For locating the kernel's cost with --profile-ops, nothing else.
     static const int mode = std::getenv("R3_D11_MODE") ? std::atoi(std::getenv("R3_D11_MODE")) : 0;
 #define R3_D11_L(MR_, NT_, AB_) \
-    hipLaunchKernelGGL((r3_gemm_mxfp4a8_dec11_kernel<MR_, NT_, AB_>), grid, block, 0, st, Ap, Sp, Wp, Zp, Rp, Cp, M, K, N, as_rs, mode)
+    hipLaunchKernelGGL((r3_gemm_mxfp4a8_dec11_kernel<MR_, NT_, AB_>), grid, block, 0, st, Ap, Sp, Wp, Zp, Rp, Cp, M, K, N, ldws, ldc, as_rs, mode)
 #define R3_D11_AB(MR_, NT_) { if (ablk) R3_D11_L(MR_, NT_, true); else R3_D11_L(MR_, NT_, false); }
 #define R3_D11_NT(MR_) { if (nt) R3_D11_AB(MR_, true) else R3_D11_AB(MR_, false) }
     if (M == 1) R3_D11_NT(1) else if (M <= 4) R3_D11_NT(4) else R3_D11_NT(16)

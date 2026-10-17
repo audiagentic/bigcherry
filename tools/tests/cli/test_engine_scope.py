@@ -119,7 +119,7 @@ class EngineScopeTests(unittest.TestCase):
 
     def test_rebase_check_selects_from_the_chosen_engines_recipes(self):
         ids = rebase._selection_patch_ids("radiance", source_name="radiance-lab", all_patches=False)
-        self.assertEqual(ids, ("rad0001_drain_mover_before_arena_free",))
+        self.assertEqual(ids, ())  # rad0001 is superseded by radiance 1.7.0; the lab source has no evaluated fix left
         self.assertNotIn("0100_cmake_options", rebase._selection_patch_ids("radiance", all_patches=True))
         with self.assertRaises(rebase.RebaseCheckError):
             rebase._selection_patch_ids("radiance", source_name="bigcherry", all_patches=False)
@@ -139,9 +139,9 @@ class EngineScopeTests(unittest.TestCase):
 
     def test_radiance_release_commands_resolve_its_release_line(self):
         # the release line and the version scheme exist (MEN13): release-notes only stops on the missing release record
-        code, _, err = self._run(["--engine", "radiance", "release-notes", "89cee7ce4144", "--stdout"])
+        code, _, err = self._run(["--engine", "radiance", "release-notes", "48f7b8eb6d70", "--stdout"])
         self.assertEqual(code, 1)
-        self.assertIn("no release record releases/89cee7ce4144.json", err)
+        self.assertIn("no release record releases/48f7b8eb6d70.json", err)
 
     def test_pin_bump_defaults_its_source_only_where_the_recipes_declare_it(self):
         self.assertEqual(pin_bump._resolve_fresh_selector("llamacpp", source_name=None), ("source", "bigcherry"))

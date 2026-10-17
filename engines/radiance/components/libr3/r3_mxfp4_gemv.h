@@ -116,7 +116,7 @@ template <bool NT, bool ABLK>
 __global__ __launch_bounds__(R3_GEMV_WAVES * 32) void r3_gemm_mxfp4a8_gemv1_kernel(
         const unsigned char* __restrict__ A, const float* __restrict__ As, const unsigned int* __restrict__ W,
         const unsigned char* __restrict__ Ws, const unsigned char* __restrict__ Wref,
-        __hip_bfloat16* __restrict__ C, int K, int N) {
+        __hip_bfloat16* __restrict__ C, int K, int N, int ldws) {
     __shared__ unsigned short sA[R3_GEMV_MAX_K];
     __shared__ float sP[R3_GEMV_WAVES * 32];
     const int tid = threadIdx.x, lane = tid & 31, wave = tid >> 5;
@@ -142,7 +142,7 @@ __global__ __launch_bounds__(R3_GEMV_WAVES * 32) void r3_gemm_mxfp4a8_gemv1_kern
     int d = 0;
     for (int ks = ks_lo; ks < ks_hi; ++ks) {
         if ((ks & 1) == 0) {  // one E8M0 exponent per 32 of K
-            d = r4d_mxfp4_fold_d(ref, (int) Ws[(size_t) (ks >> 1) * N + n]);
+            d = r4d_mxfp4_fold_d(ref, (int) Ws[(size_t) (ks >> 1) * ldws + n]);
         }
         const unsigned int codes = NT ? __builtin_nontemporal_load(wp + (size_t) ks * 32) : wp[(size_t) ks * 32];
         const r3_u4 w = r3_mxfp4_unpack8_f16(codes, d);
@@ -183,7 +183,7 @@ __global__ __launch_bounds__(R3_GEMV_WAVES * 32) void r3_gemm_mxfp4a8_gemv1_kern
 
 // Launch for M = 1. Operands are r4d_gemm_mxfp4a8_decode's; `ablk` is the (row, 128) activation scale grid.
 static inline void r3_mxfp4_gemv1_launch(long a, long ascale, long wq, long ws, long wref, long c, int K, int N,
-                                         bool nt, bool ablk, long stream) {
+                                         int ldws, bool nt, bool ablk, long stream) {
     const dim3 grid(N / 16, 1, 1), block(R3_GEMV_WAVES * 32);
     hipStream_t st = (hipStream_t) stream;
     auto Ap = (const unsigned char*) a;
@@ -193,10 +193,10 @@ static inline void r3_mxfp4_gemv1_launch(long a, long ascale, long wq, long ws, 
     auto Rp = (const unsigned char*) wref;
     auto Cp = (__hip_bfloat16*) c;
     if (nt) {
-        if (ablk) hipLaunchKernelGGL((r3_gemm_mxfp4a8_gemv1_kernel<true, true>), grid, block, 0, st, Ap, Sp, Wp, Zp, Rp, Cp, K, N);
-        else      hipLaunchKernelGGL((r3_gemm_mxfp4a8_gemv1_kernel<true, false>), grid, block, 0, st, Ap, Sp, Wp, Zp, Rp, Cp, K, N);
+        if (ablk) hipLaunchKernelGGL((r3_gemm_mxfp4a8_gemv1_kernel<true, true>), grid, block, 0, st, Ap, Sp, Wp, Zp, Rp, Cp, K, N, ldws);
+        else      hipLaunchKernelGGL((r3_gemm_mxfp4a8_gemv1_kernel<true, false>), grid, block, 0, st, Ap, Sp, Wp, Zp, Rp, Cp, K, N, ldws);
     } else {
-        if (ablk) hipLaunchKernelGGL((r3_gemm_mxfp4a8_gemv1_kernel<false, true>), grid, block, 0, st, Ap, Sp, Wp, Zp, Rp, Cp, K, N);
-        else      hipLaunchKernelGGL((r3_gemm_mxfp4a8_gemv1_kernel<false, false>), grid, block, 0, st, Ap, Sp, Wp, Zp, Rp, Cp, K, N);
+        if (ablk) hipLaunchKernelGGL((r3_gemm_mxfp4a8_gemv1_kernel<false, true>), grid, block, 0, st, Ap, Sp, Wp, Zp, Rp, Cp, K, N, ldws);
+        else      hipLaunchKernelGGL((r3_gemm_mxfp4a8_gemv1_kernel<false, false>), grid, block, 0, st, Ap, Sp, Wp, Zp, Rp, Cp, K, N, ldws);
     }
 }

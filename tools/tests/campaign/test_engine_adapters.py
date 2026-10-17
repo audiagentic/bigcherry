@@ -224,7 +224,7 @@ class ArmCaptureSidecarTests(unittest.TestCase):
             "bigcherry.tuning.server_runner.ServerRunner", Server), patch(
             "bigcherry.campaign.bench_runner.run_bench_runner_server_bench", return_value={"tg512_tps": 1.0}):
             result = run_server_arm_capture(
-                engine="radiance", binary=Path("/b/bin/radiance"), model=Path("m.rad"), extra_args=(),
+                engine="radiance", health_timeout_s=180, binary=Path("/b/bin/radiance"), model=Path("m.rad"), extra_args=(),
                 output=Path(tmp), pair=0, side="on", position=0, env={"R3_MOE_HELPER": "1", "R3_MOE_HELPER_DEVICES": "0"},
                 settings={"R3_MOE_HELPER": "1"}, bench_configs="tg512", runner_root=Path("r"),
                 required_metrics=("tg512_tps",), execution_evidence="observe",

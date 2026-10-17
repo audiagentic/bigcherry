@@ -72,22 +72,23 @@ __device__ __forceinline__ void r3_bt_lds_barrier() {
 }
 
 __global__ __launch_bounds__(256) void r3_mxfp4_bt_prepare_kernel(
-        const unsigned char* __restrict__ a,unsigned short* __restrict__ ah,long long n4,int abl) {
+        const unsigned char* __restrict__ a,unsigned short* __restrict__ ah,long long n4,int K,int lda,int abl) {
     const long long i=(long long)blockIdx.x*blockDim.x+threadIdx.x;
     if(i>=n4) return;
+    const long long row=i/(K/4),c4=i%(K/4);  // a row of the activation is `lda` bytes apart, the packed copy K
     unsigned* dst=reinterpret_cast<unsigned*>(ah)+i*2;
     if(abl&R3_BT_ABL_ACT) {
         dst[0]=0x3c003c00u; dst[1]=0x3c003c00u;
     } else {
         unsigned h0,h1;
-        r3_e4m3x4_to_f16(reinterpret_cast<const unsigned*>(a)[i],h0,h1);
+        r3_e4m3x4_to_f16(reinterpret_cast<const unsigned*>(a+(size_t)row*lda)[c4],h0,h1);
         dst[0]=h0; dst[1]=h1;
     }
 }
-static inline void r3_mxfp4_bt_prepare(long a,long ah,int M,int K,long stream) {
+static inline void r3_mxfp4_bt_prepare(long a,long ah,int M,int K,int lda,long stream) {
     const long long n4=(long long)M*K/4;
     hipLaunchKernelGGL(r3_mxfp4_bt_prepare_kernel,dim3((unsigned)((n4+255)/256)),dim3(256),0,
-                       (hipStream_t)stream,(const unsigned char*)a,(unsigned short*)ah,n4,r3_bt_abl());
+                       (hipStream_t)stream,(const unsigned char*)a,(unsigned short*)ah,n4,K,lda,r3_bt_abl());
 }
 
 __device__ __forceinline__ r3_v16h r3_mxfp4_bt_weight16(unsigned c0,unsigned c1,unsigned t0,unsigned t1) {
@@ -107,7 +108,7 @@ __global__ __launch_bounds__(32,2) void r3_gemm_mxfp4a8_bt_gfx11_kernel(
         const unsigned short* __restrict__ A,const float* __restrict__ As,
         const unsigned int* __restrict__ W,const unsigned char* __restrict__ Ws,
         const unsigned char* __restrict__ Wref,__hip_bfloat16* __restrict__ C,
-        int M,int K,int N,int as_rs,int abl) {
+        int M,int K,int N,int as_rs,int ldws,int ldc,int abl) {
     const int lane=threadIdx.x&31,col=lane&15,half=lane>>4;
     const int n0=(int)blockIdx.x*16,nrow=n0+col,m0=(int)blockIdx.y*(16*BT),ksteps=K/16;
     const unsigned int* __restrict__ wp=W+(size_t)(n0>>4)*ksteps*32;
@@ -121,7 +122,7 @@ __global__ __launch_bounds__(32,2) void r3_gemm_mxfp4a8_bt_gfx11_kernel(
         acc[b]=r3_v8f{0.f,0.f,0.f,0.f,0.f,0.f,0.f,0.f};
     }
     for(int k0=0;k0<K;k0+=32){
-        const int d=r4d_mxfp4_fold_d(ref,(int)Ws[(size_t)(k0>>5)*N+nrow]);
+        const int d=r4d_mxfp4_fold_d(ref,(int)Ws[(size_t)(k0>>5)*ldws+nrow]);
 #pragma unroll
         for(int s=0;s<2;++s){
             const unsigned int* __restrict__ slot=wp+(size_t)((k0>>4)+s)*32;
@@ -162,7 +163,7 @@ __global__ __launch_bounds__(32,2) void r3_gemm_mxfp4a8_bt_gfx11_kernel(
         for(int e=0;e<8;++e){
             const int n=n0+2*e+half;
             const float rf=__int_as_float((int)Wref[n]<<23);
-            C[(size_t)m*N+n]=(__hip_bfloat16)(acc[b][e]*r3_fp8_f16_unscale*rf*sc);
+            C[(size_t)m*ldc+n]=(__hip_bfloat16)(acc[b][e]*r3_fp8_f16_unscale*rf*sc);
         }
     }
 }
@@ -174,7 +175,7 @@ __global__ __launch_bounds__(256,1) void r3_gemm_mxfp4a8_bt2_gfx11_kernel(
         const unsigned short* __restrict__ A,const float* __restrict__ As,
         const unsigned int* __restrict__ W,const unsigned char* __restrict__ Ws,
         const unsigned char* __restrict__ Wref,__hip_bfloat16* __restrict__ C,
-        int M,int K,int N,int as_rs,int abl) {
+        int M,int K,int N,int as_rs,int ldws,int ldc,int abl) {
     constexpr int MR=BT*16,KS=128,MAX_STEPS=KS/16;
     __shared__ unsigned short sA[MR*KS];
 
@@ -209,7 +210,7 @@ __global__ __launch_bounds__(256,1) void r3_gemm_mxfp4a8_bt2_gfx11_kernel(
         for(int st=0;st<MAX_STEPS;++st){
             if(st>=steps) break;
             const int k=kb0+st*16;
-            const int d=r4d_mxfp4_fold_d(ref,(int)Ws[(size_t)(k>>5)*N+nrow]);
+            const int d=r4d_mxfp4_fold_d(ref,(int)Ws[(size_t)(k>>5)*ldws+nrow]);
             const unsigned int* __restrict__ slot=wp+(size_t)(k>>4)*32;
             const unsigned c0=NT?__builtin_nontemporal_load(slot+col):slot[col];
             const unsigned c1=NT?__builtin_nontemporal_load(slot+col+16):slot[col+16];
@@ -252,19 +253,19 @@ __global__ __launch_bounds__(256,1) void r3_gemm_mxfp4a8_bt2_gfx11_kernel(
             const int n=nb+2*e+half;
             if(n>=N) continue;
             const float rf=__int_as_float((int)Wref[n]<<23);
-            C[(size_t)m*N+n]=(__hip_bfloat16)(acc[b][e]*r3_fp8_f16_unscale*rf*sc);
+            C[(size_t)m*ldc+n]=(__hip_bfloat16)(acc[b][e]*r3_fp8_f16_unscale*rf*sc);
         }
     }
 }
 
 static inline void r3_mxfp4_bt_launch(long ah,long ascale,long wq,long ws,long wref,long c,
-                                      int M,int K,int N,int as_group,int as_rs,long stream) {
+                                      int M,int K,int N,int as_group,int as_rs,long stream,int ldws,int ldc) {
     const int bt=r3_bt_batch(),abl=r3_bt_abl(); const bool nt=r3_bt_nt(),ablk=as_group==128;
     const dim3 grid((unsigned)(N/16),(unsigned)((M+16*bt-1)/(16*bt)),1),block(32);
     hipStream_t st=(hipStream_t)stream;
     auto Ap=(const unsigned short*)ah; auto Sp=(const float*)ascale; auto Wp=(const unsigned int*)wq;
     auto Zp=(const unsigned char*)ws; auto Rp=(const unsigned char*)wref; auto Cp=(__hip_bfloat16*)c;
-#define R3_BT_L(B_,NT_,AB_) hipLaunchKernelGGL((r3_gemm_mxfp4a8_bt_gfx11_kernel<B_,NT_,AB_>),grid,block,0,st,Ap,Sp,Wp,Zp,Rp,Cp,M,K,N,as_rs,abl)
+#define R3_BT_L(B_,NT_,AB_) hipLaunchKernelGGL((r3_gemm_mxfp4a8_bt_gfx11_kernel<B_,NT_,AB_>),grid,block,0,st,Ap,Sp,Wp,Zp,Rp,Cp,M,K,N,as_rs,ldws,ldc,abl)
 #define R3_BT_AB(B_,NT_) do{if(ablk)R3_BT_L(B_,NT_,true);else R3_BT_L(B_,NT_,false);}while(0)
 #define R3_BT_NT(B_) do{if(nt)R3_BT_AB(B_,true);else R3_BT_AB(B_,false);}while(0)
     if(bt==4)R3_BT_NT(4);else if(bt==6)R3_BT_NT(6);else R3_BT_NT(8);
@@ -274,13 +275,13 @@ static inline void r3_mxfp4_bt_launch(long ah,long ascale,long wq,long ws,long w
 }
 
 static inline void r3_mxfp4_bt2_launch(long ah,long ascale,long wq,long ws,long wref,long c,
-                                       int M,int K,int N,int as_group,int as_rs,long stream) {
+                                       int M,int K,int N,int as_group,int as_rs,long stream,int ldws,int ldc) {
     const int bt=r3_bt_batch(),abl=r3_bt_abl(); const bool nt=r3_bt_nt(),ablk=as_group==128;
     const dim3 grid((unsigned)((N+127)/128),(unsigned)((M+16*bt-1)/(16*bt)),1),block(256);
     hipStream_t st=(hipStream_t)stream;
     auto Ap=(const unsigned short*)ah; auto Sp=(const float*)ascale; auto Wp=(const unsigned int*)wq;
     auto Zp=(const unsigned char*)ws; auto Rp=(const unsigned char*)wref; auto Cp=(__hip_bfloat16*)c;
-#define R3_BT2_L(B_,NT_,AB_) hipLaunchKernelGGL((r3_gemm_mxfp4a8_bt2_gfx11_kernel<B_,NT_,AB_>),grid,block,0,st,Ap,Sp,Wp,Zp,Rp,Cp,M,K,N,as_rs,abl)
+#define R3_BT2_L(B_,NT_,AB_) hipLaunchKernelGGL((r3_gemm_mxfp4a8_bt2_gfx11_kernel<B_,NT_,AB_>),grid,block,0,st,Ap,Sp,Wp,Zp,Rp,Cp,M,K,N,as_rs,ldws,ldc,abl)
 #define R3_BT2_AB(B_,NT_) do{if(ablk)R3_BT2_L(B_,NT_,true);else R3_BT2_L(B_,NT_,false);}while(0)
 #define R3_BT2_NT(B_) do{if(nt)R3_BT2_AB(B_,true);else R3_BT2_AB(B_,false);}while(0)
     if(bt==4)R3_BT2_NT(4);else if(bt==6)R3_BT2_NT(6);else R3_BT2_NT(8);

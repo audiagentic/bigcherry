@@ -1,6 +1,6 @@
 # 1357_moe_router_splitk
 
-Not promoted. Mechanism is in SUMMARY.md: the marked MoE router matmul runs through a split-K F32 GEMM with a
+Validated and profile-promoted on 2026-10-10 at pin b11474 (see `releases/evidence/1357_moe_router_splitk-promotion.md`); flag remains default-off and is enabled only by the Flash-Next runtime profile. Mechanism is in SUMMARY.md: the marked MoE router matmul runs through a split-K F32 GEMM with a
 fixed-order reduction instead of rocBLAS SGEMM. Off by default; `BIGCHERRY_MOE_ROUTER_SPLITK=1` turns it on.
 
 ## Evidence
@@ -11,11 +11,11 @@ fixed-order reduction instead of rocBLAS SGEMM. Off by default; `BIGCHERRY_MOE_R
   followed directly by `topk_moe_cuda`, the rest by the unfused top-k kernels.
 - Weight: `ffn_gate_inp.weight` is F32 `[2560, 512]` in all 48 layers of the UD-IQ4_XS model.
 
-## Still to show
+## Completed qualification and remaining limitations
 
-Offline mechanics and patch-lint, then on hardware: the activation marker, kernel time of the two new kernels against
-SGEMM, an ABBA on one binary with `tools/lab/flash-next/queue-env-ab.sh` (flag on / off), and identical greedy output
-at 8K, 24K and 98K. A changed output rejects the patch: expert selection must not move.
+Historical offline mechanics, patch lint, composition and 24K same-binary four-request ABBA were completed for b11474 on 2026-10-10 (see the promotion record below). The measured +3.2% pooled Flash-Next prefill gain is **against native router SGEMM**, not evidence that the split-K partial and reduce kernels can be fused. The router reduction order changes Flash-Next greedy output; pooled decode measured 69.8 -> 67.2 tok/s with one -20.4% request and changed MTP acceptance. Do not label this as bit-identical, decode-faster, or universally promoted. The historical pin does not establish current-pin or other-model qualification.
+
+QFP36 / patch 1357 owns two ordered launches with pool-owned scratch. The old QFP48 proposal to remove the reduce launch has no proven cross-CTA publication/replay protocol or measured **exposed** reduction-wall benefit; do not treat it as implemented. Keep this separate from the validated, profile-scoped 1357 SGEMM replacement.
 
 ## Promotion record
 

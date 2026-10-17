@@ -52,7 +52,8 @@ Engine patches (all package state below is from each `SUMMARY.md`):
 | Patch | State | What it does |
 |---|---|---|
 | `rad0001_drain_mover_before_arena_free` | evaluated | drains each rank's mover stream before the activation arena is freed; fixes a shutdown hang |
-| `rad0002_moe_remote_handoff` | untested | optional whole-expert MoE hand-off: helper-owned routes are masked from local GEMMs and published to the helper |
+| `rad0002_moe_remote_handoff` | untested | optional whole-expert MoE hand-off as thin hooks into one BigCherry extension point (14 call sites in 4 upstream files): helper-owned routes are masked from local GEMMs and published to the helper |
+| `rad0004_moe_remote_diagnostics` | untested | shadow compare and mask-only for the hand-off; diagnostic build only (`BC_MOE_REMOTE_DIAG`, source `radiance-diag` with build `moe-diag`); never in a production source |
 | `rad0003_mtp_full_head_switch` | untested | `RAD_MTP_FULL_HEAD=1` drafts through the trunk head instead of the container's 2-bit head; off by default |
 
 Components and plugins produced by `libr3` (`components/libr3/component.toml` `outputs`):
@@ -61,7 +62,7 @@ Components and plugins produced by `libr3` (`components/libr3/component.toml` `o
 |---|---|
 | `kernels/libr3.so` (libr3) | gfx1100 kernel plugin: native WMMA forms for the GEMMs, attention, MoE, all-reduce; loaded beside or instead of libr4d (`--kernels`) |
 | `kernels/libr4d.so` (upstream) | radiance's own kernels, gfx12 (R9700); not built by BigCherry's component |
-| `kernels/libr3moe.so` (libr3moe) | small plugin, built for gfx1100 and gfx1201: the mailbox rows and hook that rad0002 calls; used with the R9700 engine as `--kernels libr4d,libr3moe,libref` |
+| `kernels/libr3moe.so` (libr3moe) | small plugin, built for gfx1100 and gfx1201: the mailbox rows and the registration (`bc_moe_remote_register`) with the extension point rad0002 adds; used with the R9700 engine as `--kernels libr4d,libr3moe,libref` |
 | `helpers/r3_moe_helper` (helper) | separate process per XTX that owns whole routed experts and computes them for the engine through a pinned-host mailbox with GPU-side flags |
 | `helpers/libr3_ngram_helper.so` | n-gram gather on a spare card (evaluated, shelved: the R9700 is compute) |
 

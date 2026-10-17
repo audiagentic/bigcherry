@@ -17,4 +17,4 @@ On `feat/rad11-gfx1100-bootstrap`, `engines/radiance/kernels/README.md`, subsect
 
 ## Upstream
 
-Local BigCherry change against Radiance 1.3.0, commit `89cee7ce414486c717aa2085c99e1f522e4c0ea6`; source diff: `engines/radiance/engine-patches/0003-mtp-full-head-switch.patch` on `feat/rad11-gfx1100-bootstrap`.
+Local BigCherry change, authored against Radiance 1.3.0 (`89cee7ce414486c717aa2085c99e1f522e4c0ea6`) and re-anchored on Radiance 1.7.0 (pin `48f7b8eb6d703cd5318346b5a351a292afaf4bf9`, MEN12). The anchor (`if (!head || !lm) return false;` in `mtp_draft_head_q2`) is unchanged and unique on 1.7.0; the patch now also adds the `#include <cstdlib>` that 1.4.0+ removed from the header. 1.7.0 has no equivalent switch. Original source diff: `engines/radiance/engine-patches/0003-mtp-full-head-switch.patch` on `feat/rad11-gfx1100-bootstrap`.

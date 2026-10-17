@@ -25,7 +25,7 @@
  },
  "bench_configs": "mtp-dual",
  "required_metrics": ["pp1024_tps", "tg512_tps"],
- "repetitions": 1,
+ "repetitions": 1, "health_timeout_s": 900,
  "arms": [
   {
    "name": "rows0", "mode": "stock", "shutdown_method": "sigint", "binary": "${RAD_BIN}",

@@ -10,8 +10,8 @@
 #
 # mode bit 7 is libr3-private; upstream uses bit 0, bits 1-2 and bits 8+ only.
 @@ find 1
-    /* `mode`: bit 0 `a_sorted`, bits 1-2 the class shift (1 for two classes, 2 for four), bits
-     * 8 up `parts`. */
+    /* `mode`: bit 0 `a_sorted`, bits 1-2 the class shift (1 for two classes, 2 for four), bits 8+
+     * `parts`. */
     const uint32_t a_sorted = mode & 1u, cshift = (mode >> 1) & 3u, parts = mode >> 8;
 @@ replace
     /* libr3 mode bit 7 selects native gfx11 ownership for w4nl64a8h only. */
@@ -82,7 +82,7 @@
 
 @@ find 1
             {
-                /* THE GRIDS DIFFER IN WHAT THE WEIGHT SCALE VARIES OVER, and that is the only
+                /* The forms differ only in what the weight scale varies over:
 @@ replace
             if (r3n) {
 #pragma unroll
@@ -97,7 +97,7 @@
                         for (uint32_t j = 0; j < WN; ++j) rx[q][i][j] = r3_acc_native_to_gfx12(rx[q][i][j]);
             }
             {
-                /* THE GRIDS DIFFER IN WHAT THE WEIGHT SCALE VARIES OVER, and that is the only
+                /* The forms differ only in what the weight scale varies over:
 @@ end
 
 @@ find 1

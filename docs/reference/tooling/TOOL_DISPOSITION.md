@@ -471,6 +471,7 @@ ownership.
 | `tools/lab/radiance/build.sh` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/radiance/fetch-gcc14.sh` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/radiance/run-radiance.sh` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/radiance/27b-native-kld.json` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/smoke-models/README.md` | **TRANSITIONAL** | `smoke-models` lab topic file (see `tools/lab/smoke-models/README.md`); produces the MEN15 CPU smoke models. |
 | `tools/lab/smoke-models/fetch-tiny.sh` | **TRANSITIONAL** | `smoke-models` lab topic file (see `tools/lab/smoke-models/README.md`); produces the MEN15 CPU smoke models. |
 | `tools/lab/radiance/wire-quality/README.md` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, disposed per that README. |

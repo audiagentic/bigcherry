@@ -20,7 +20,7 @@
 
 @@ find 1
   mxt_u2 v = { 0u, 0u };
-  if (r < M) v = *(const mxt_u2*)(A + (size_t)r * K + k);
+  if (r < M) v = *(const mxt_u2*)(A + (size_t)r * lda + k);
   *(mxt_u2*)(AT + o * 8) = v;
 @@ replace
   // libr3 native: bf16, a fragment (f) is 16 rows of 32 bytes; this thread's 8 values are its row's half
@@ -30,7 +30,7 @@
     d[0]=0x3f803f80u; d[1]=0x3f803f80u; d[2]=0x3f803f80u; d[3]=0x3f803f80u;
   } else {
     mxt_u2 v = { 0u, 0u };
-    if (r < M) v = *(const mxt_u2*)(A + (size_t)r * K + k);
+    if (r < M) v = *(const mxt_u2*)(A + (size_t)r * lda + k);
     r3_store8_e4m3_as_bf16(dst, v[0], v[1]);
   }
 @@ end
@@ -111,14 +111,14 @@
 @@ end
 
 @@ find 1
-  // Epilogue.  A lane holds row m0 + 64*wm + 16i + col of M fragment i and eight consecutive columns of N fragment
+  // Epilogue. A lane holds row m0 + 64*wm + 16i + col of M fragment i and eight consecutive columns
 @@ replace
   if (abl & R3_BT_ABL_EPILOGUE) return;  // timing-only ablation; results intentionally garbage
 #pragma unroll
   for (int i = 0; i < TM; ++i)
 #pragma unroll
     for (int j = 0; j < TN; ++j) acc[i][j] = r3_acc_native_to_gfx12(acc[i][j]);  // libr3 native: once
-  // Epilogue.  A lane holds row m0 + 64*wm + 16i + col of M fragment i and eight consecutive columns of N fragment
+  // Epilogue. A lane holds row m0 + 64*wm + 16i + col of M fragment i and eight consecutive columns
 @@ end
 
 
@@ -132,31 +132,46 @@
 
 # Default off. Both arms use the same upstream row, operands, layout hooks and op scratch.
 @@ find 1
-    R4D_TRY("gemm_mxfp4a8_tiled",
-        r4d_mxfp4a8_tile_a(r4d_addr(g.a), at, (int)g.M, (int)g.K, (long)(uintptr_t)s);
-        r4d_gemm_mxfp4a8_tiled(at, r4d_addr(g.ascale), r4d_addr(g.b), r4d_addr(g.bscale),
-                               r4d_addr(g.bref), r4d_addr(g.y), (int)g.M, (int)g.K, (int)g.N,
-                               t.tn, as_group, as_rs, (long)(uintptr_t)s));
+    for (int p = 0; p < mp.n; ++p) {
+        const long long n0 = mp.n0[p], np = mp.n1[p] - mp.n0[p];
+        R4D_TRY("gemm_mxfp4a8_tiled",
+            r4d_mxfp4a8_tile_a(r4d_addr(g.a) + p * g.K, at, (int)g.M, (int)g.K,
+                               (long)(uintptr_t)s, (int)(mp.lda ? mp.lda : g.K));
+            r4d_gemm_mxfp4a8_tiled(at, r4d_addr(g.ascale) + p * kb * 4, r4d_addr(g.b) + n0 * g.K / 2,
+                                   r4d_addr(g.bscale) + n0, r4d_addr(g.bref) + n0,
+                                   r4d_addr(g.y) + n0 * 2, (int)g.M, (int)g.K, (int)np, t.tn,
+                                   as_group, as_rs, (long)(uintptr_t)s, (int)g.N, (int)g.N));
+    }
 @@ replace
     const int r3_mode=r3_bt_mode();
-    if (r3_mode == 1) {
-        R4D_TRY("gemm_mxfp4a8_bt_gfx11",
-            r3_mxfp4_bt_prepare(r4d_addr(g.a), at, (int)g.M, (int)g.K, (long)(uintptr_t)s);
-            r3_mxfp4_bt_launch(at, r4d_addr(g.ascale), r4d_addr(g.b), r4d_addr(g.bscale),
-                              r4d_addr(g.bref), r4d_addr(g.y), (int)g.M, (int)g.K, (int)g.N,
-                              as_group, as_rs, (long)(uintptr_t)s));
-    } else if (r3_mode == 2) {
-        R4D_TRY("gemm_mxfp4a8_bt2_gfx11",
-            r3_mxfp4_bt_prepare(r4d_addr(g.a), at, (int)g.M, (int)g.K, (long)(uintptr_t)s);
-            r3_mxfp4_bt2_launch(at, r4d_addr(g.ascale), r4d_addr(g.b), r4d_addr(g.bscale),
-                               r4d_addr(g.bref), r4d_addr(g.y), (int)g.M, (int)g.K, (int)g.N,
-                               as_group, as_rs, (long)(uintptr_t)s));
-    } else {
-        R4D_TRY("gemm_mxfp4a8_tiled",
-            r4d_mxfp4a8_tile_a(r4d_addr(g.a), at, (int)g.M, (int)g.K, (long)(uintptr_t)s);
-            r4d_gemm_mxfp4a8_tiled(at, r4d_addr(g.ascale), r4d_addr(g.b), r4d_addr(g.bscale),
-                                   r4d_addr(g.bref), r4d_addr(g.y), (int)g.M, (int)g.K, (int)g.N,
-                                   t.tn, as_group, as_rs, (long)(uintptr_t)s));
+    for (int p = 0; p < mp.n; ++p) {
+        const long long n0 = mp.n0[p], np = mp.n1[p] - mp.n0[p];
+        const int lda = (int)(mp.lda ? mp.lda : g.K);
+        if (r3_mode == 1) {
+            R4D_TRY("gemm_mxfp4a8_bt_gfx11",
+                r3_mxfp4_bt_prepare(r4d_addr(g.a) + p * g.K, at, (int)g.M, (int)g.K, lda,
+                                    (long)(uintptr_t)s);
+                r3_mxfp4_bt_launch(at, r4d_addr(g.ascale) + p * kb * 4, r4d_addr(g.b) + n0 * g.K / 2,
+                                   r4d_addr(g.bscale) + n0, r4d_addr(g.bref) + n0,
+                                   r4d_addr(g.y) + n0 * 2, (int)g.M, (int)g.K, (int)np,
+                                   as_group, as_rs, (long)(uintptr_t)s, (int)g.N, (int)g.N));
+        } else if (r3_mode == 2) {
+            R4D_TRY("gemm_mxfp4a8_bt2_gfx11",
+                r3_mxfp4_bt_prepare(r4d_addr(g.a) + p * g.K, at, (int)g.M, (int)g.K, lda,
+                                    (long)(uintptr_t)s);
+                r3_mxfp4_bt2_launch(at, r4d_addr(g.ascale) + p * kb * 4, r4d_addr(g.b) + n0 * g.K / 2,
+                                    r4d_addr(g.bscale) + n0, r4d_addr(g.bref) + n0,
+                                    r4d_addr(g.y) + n0 * 2, (int)g.M, (int)g.K, (int)np,
+                                    as_group, as_rs, (long)(uintptr_t)s, (int)g.N, (int)g.N));
+        } else {
+            R4D_TRY("gemm_mxfp4a8_tiled",
+                r4d_mxfp4a8_tile_a(r4d_addr(g.a) + p * g.K, at, (int)g.M, (int)g.K,
+                                   (long)(uintptr_t)s, lda);
+                r4d_gemm_mxfp4a8_tiled(at, r4d_addr(g.ascale) + p * kb * 4, r4d_addr(g.b) + n0 * g.K / 2,
+                                       r4d_addr(g.bscale) + n0, r4d_addr(g.bref) + n0,
+                                       r4d_addr(g.y) + n0 * 2, (int)g.M, (int)g.K, (int)np, t.tn,
+                                       as_group, as_rs, (long)(uintptr_t)s, (int)g.N, (int)g.N));
+        }
     }
 @@ end
 
@@ -165,19 +180,19 @@
 @@ find 1
 __global__ __launch_bounds__(256) void r4d_mxfp4a8_tile_a_kernel(
     const unsigned char* __restrict__ A, unsigned char* __restrict__ AT, int M, int K,
-    long long slots) {
+    long long slots, int lda) {
 @@ replace
 __global__ __launch_bounds__(256) void r4d_mxfp4a8_tile_a_kernel(
     const unsigned char* __restrict__ A, unsigned char* __restrict__ AT, int M, int K,
-    long long slots, int abl) {
+    long long slots, int lda, int abl) {
 @@ end
 
 @@ find 1
   hipLaunchKernelGGL(r4d_mxfp4a8_tile_a_kernel, dim3((unsigned)((slots + 255) / 256)), dim3(256), 0,
-                     (hipStream_t)stream, (const unsigned char*)a, (unsigned char*)at, M, K, slots);
+                     (hipStream_t)stream, (const unsigned char*)a, (unsigned char*)at, M, K, slots, lda);
 @@ replace
   hipLaunchKernelGGL(r4d_mxfp4a8_tile_a_kernel, dim3((unsigned)((slots + 255) / 256)), dim3(256), 0,
-                     (hipStream_t)stream, (const unsigned char*)a, (unsigned char*)at, M, K, slots, r3_bt_abl());
+                     (hipStream_t)stream, (const unsigned char*)a, (unsigned char*)at, M, K, slots, lda, r3_bt_abl());
 @@ end
 
 @@ find 1
@@ -186,14 +201,14 @@ __global__ __launch_bounds__(R4D_MXT_NTHR) void r4d_gemm_mxfp4a8_tiled_kernel(
     const unsigned char* __restrict__ AT, const float* __restrict__ As,
     const unsigned char* __restrict__ W, const unsigned char* __restrict__ Ws,
     const unsigned char* __restrict__ Wref, __hip_bfloat16* __restrict__ C,
-    int M, int K, int N, int as_rs) {
+    int M, int K, int N, int as_rs, int ldws, int ldc) {
 @@ replace
 template <int TN, int LBK, bool ABLK>
 __global__ __launch_bounds__(R4D_MXT_NTHR) void r4d_gemm_mxfp4a8_tiled_kernel(
     const unsigned char* __restrict__ AT, const float* __restrict__ As,
     const unsigned char* __restrict__ W, const unsigned char* __restrict__ Ws,
     const unsigned char* __restrict__ Wref, __hip_bfloat16* __restrict__ C,
-    int M, int K, int N, int as_rs, int abl) {
+    int M, int K, int N, int as_rs, int ldws, int ldc, int abl) {
 @@ end
 
 @@ find 1
@@ -206,7 +221,7 @@ __global__ __launch_bounds__(R4D_MXT_NTHR) void r4d_gemm_mxfp4a8_tiled_kernel(
 @@ end
 
 @@ find 1
-                     Wp, Zp, Rp, Cp, M, K, N, as_rs)
+                     Wp, Zp, Rp, Cp, M, K, N, as_rs, ldws, ldc)
 @@ replace
-                     Wp, Zp, Rp, Cp, M, K, N, as_rs, abl)
+                     Wp, Zp, Rp, Cp, M, K, N, as_rs, ldws, ldc, abl)
 @@ end

@@ -21,6 +21,7 @@ class EngineRegistryIsolationTests(unittest.TestCase):
             "rad0001_drain_mover_before_arena_free",
             "rad0002_moe_remote_handoff",
             "rad0003_mtp_full_head_switch",
+            "rad0004_moe_remote_diagnostics",
         }
         self.assertTrue(expected <= set(radiance.by_id))
         self.assertFalse(expected & set(llama.by_id))

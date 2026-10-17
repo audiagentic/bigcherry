@@ -1,10 +1,11 @@
 schema = 1
 id = "rad0001_drain_mover_before_arena_free"
 order = 1
-state = "evaluated"
+state = "superseded"
 kind = "enhancement"
 origin = "local"
 backend = "hip"
 plan-ids = ["RAD01"]
+retirement = "superseded by radiance 1.7.0 (1e968f6): Engine::~Engine drains mover.transfer_stream() before Ctx::shutdown"
 requires = []
 conflicts = []

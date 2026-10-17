@@ -1,3 +1,6 @@
+# SHELVED (state evaluated): not applied by the build. R3_GDN_NATIVE was wrong in serving (KLD 5.52) after three fixes, and
+# 16 of its 19 blocks no longer match radiance 1.7.0 (MEN12). Kept here so it can be revisited; move it back to native/ to
+# re-enable, after re-porting the blocks.
 # Native gfx11 GDN chunk scan for libr3.
 //
 // Radiance's recurrence, shared-memory geometry, masking and state representation are unchanged.

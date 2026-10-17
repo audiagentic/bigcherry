@@ -67,11 +67,12 @@ class RadianceAdapter(EngineAdapter):
                 fixed=(("temperature", 0), ("seed", SMOKE_SEED), ("stream", False)),
                 text_path=("choices", 0, "text"), models_path="/v1/models",
             ),
-            # Unconfirmed: radiance's exact device-init log lines. These catch the HIP/ROCm runtime naming a device.
+            # radiance names its backend once at start-up: "I device: host backend, 1 device(s) [0:host]" on the CPU,
+            # "I device: AQL backend, N device(s) [0:gfx1100 ...]" on GPUs (radiance 1.7.0, Brutus 2026-10-17). Card
+            # names alone are not evidence: 1.7.0 also warns that it serves on the CPU while listing the cards present.
             device=DeviceAssertion((
-                r"(?i)\b(?:hip|rocm) device \d+",
-                r"(?i)\bgfx\d{3,4}\b.*\b(?:device|selected|using)\b",
-                r"(?i)\bkernels?: libr4d\b",
+                r"(?m)^I device: (?!host backend\b)\S+ backend\b",
+                r"(?m)^I device: .*\[0:gfx\d",
             )),
         )
 
