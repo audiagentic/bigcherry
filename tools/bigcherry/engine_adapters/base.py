@@ -3,7 +3,7 @@
 Generic code (``campaign/benchmark.py`` and friends) never branches on an engine name; it asks the engine's adapter.
 An adapter answers: which dispatch modes an arm may run in, what a build's compiled configuration shows, whether the
 engine's server log carries a physical-device execution attestation the harness can parse, and which helper
-processes (sidecars) must run next to the server for an arm.
+processes (sidecars) must run next to the server for an arm, and how it measures quality against a reference.
 """
 
 from __future__ import annotations
@@ -43,6 +43,17 @@ class SidecarSpec:
 
 
 @dataclass(frozen=True)
+class QualityCommand:
+    """One offline quality-measurement process (a KL run) for an arm cell."""
+
+    argv: tuple[str, ...]
+    env: dict[str, str]                 # the complete environment of the process (nothing is inherited)
+    log_path: Path
+    result_path: Path | None            # the JSON document the run writes; None for a reference recording
+    timeout_s: float
+
+
+@dataclass(frozen=True)
 class SourceCheck:
     """One engine-specific invariant ``bigcherry check`` runs for that engine; ``run`` returns None when it holds."""
 
@@ -73,6 +84,15 @@ class EngineAdapter(ABC):
     def sidecars(self, arm: dict[str, Any], env: dict[str, str], run_dir: Path, binary: Path) -> list[SidecarSpec]:
         """Helper processes for one arm cell, in start order. ``arm`` carries ``name``, ``model`` and ``settings``;
         ``env`` is the arm complete server environment."""
+
+    @abstractmethod
+    def quality_command(
+        self, kind: str, arm: dict[str, Any], env: dict[str, str], run_dir: Path, binary: Path, model: Path,
+        quality: dict[str, Any],
+    ) -> QualityCommand | None:
+        """How this engine measures output quality against a recorded reference, or None when it has no such mode.
+        ``kind`` is "record" (write the reference named by ``quality["reference_dir"]`` from ``quality["corpus"]``) or
+        "score" (score the arm against it); ``env`` is the arm complete environment, so its sidecars apply."""
 
     @abstractmethod
     def source_checks(self, context: ProjectContext) -> tuple[SourceCheck, ...]:

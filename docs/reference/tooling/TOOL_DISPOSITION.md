@@ -465,6 +465,7 @@ ownership.
 | `tools/lab/plan-qualification/work-root.sh` | **TRANSITIONAL** | Resolves the campaign work root (env var, else environment.local.toml [env], else work/) for the plan-qualification scripts. |
 | `tools/lab/prbe20-rd26-bisect/bisect_ubatch.py` | **TRANSITIONAL** | `prbe20-rd26-bisect` lab topic file (see `tools/lab/prbe20-rd26-bisect/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/radiance/helper-ab.json` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); ab-benchmark server configuration example for the R9700 engine with two XTX helper sidecars (R3_MOE_HELPER_ROWS 0 vs 1, MEN11). |
+| `tools/lab/radiance/helper-kld.json` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); ab-benchmark server configuration example for KL quality of the R9700 + two-XTX-helper layout (quality_only, records the exact two-XTX reference on first use, MEN11). |
 | `tools/lab/radiance/heat-placement/heat_mock.mjs` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/heat-placement/README.md`); deterministic CPU-only heat/ownership mock for RHP01-RHP06 planning. |
 | `tools/lab/radiance/ab-27b-engine-fix-0001.json` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); ab-benchmark server configuration for the first Radiance A/B (RAD01 PR 8c). |
 | `tools/lab/radiance/build.sh` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, disposed per that README. |
@@ -472,14 +473,9 @@ ownership.
 | `tools/lab/radiance/run-radiance.sh` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/radiance/wire-quality/README.md` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/radiance/wire-quality/codec_mock.py` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/radiance/fn-bench-once.py` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, replaced by bigcherry commands under MEN11/MEN14. |
-| `tools/lab/radiance/fn-helper-gate.sh` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, replaced by bigcherry commands under MEN11/MEN14. |
-| `tools/lab/radiance/fn-helper-kld.sh` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, replaced by bigcherry commands under MEN11/MEN14. |
-| `tools/lab/radiance/fn-helper.sh` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, replaced by bigcherry commands under MEN11/MEN14. |
-| `tools/lab/radiance/fn-profile-compare.py` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, replaced by bigcherry commands under MEN11/MEN14. |
-| `tools/lab/radiance/fn-profile.sh` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, replaced by bigcherry commands under MEN11/MEN14. |
-| `tools/lab/radiance/fn-r9700-engine.sh` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, replaced by bigcherry commands under MEN11/MEN14. |
-| `tools/lab/radiance/fn-r9700-kld.sh` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, replaced by bigcherry commands under MEN11/MEN14. |
+| `tools/lab/radiance/fn-helper.sh` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); the engine launcher `fn-profile.sh` wraps; kept because kernel/copy tracing under rocprofv3 is not a harness capability (MEN11). |
+| `tools/lab/radiance/fn-profile-compare.py` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); rocprofv3 kernel/copy trace and comparison, not covered by ab-benchmark (MEN11); kept. |
+| `tools/lab/radiance/fn-profile.sh` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); rocprofv3 kernel/copy trace and comparison, not covered by ab-benchmark (MEN11); kept. |
 | `tools/lab/radiance/gpu-mailbox/README.md` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, replaced by bigcherry commands under MEN11/MEN14. |
 | `tools/lab/radiance/gpu-mailbox/mailbox_probe.cpp` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, replaced by bigcherry commands under MEN11/MEN14. |
 | `tools/lab/rccl/ar-latency.hip` | **TRANSITIONAL** | `rccl` lab topic file (see `tools/lab/rccl/README.md`); experiment-only, disposed per that README. |

@@ -238,6 +238,43 @@ class ServerComparisonCaptureTests(unittest.TestCase):
         summary = json.loads((self.output / "run.json").read_text())
         self.assertEqual(list(summary["arm_model_sha256"]), [self.arms[0]["name"]])
 
+    def quality_block(self, **updates):
+        ref = self.root / "ref"
+        ref.mkdir(exist_ok=True)
+        (ref / "logits.bin").write_bytes(b"x")
+        return {"reference_dir": str(ref), "args": ["--tp", "1"], "thresholds": {
+            "max_kld_mean_increase": 0.002, "max_kld_median_increase": 0.001, "max_kld_p99_increase": 0.02,
+            "max_kld_p999_increase": 0.1, "max_top1_drop_points": 0.5, "max_ppl_ratio_increase": 0.005}, **updates}
+
+    def test_quality_block_needs_an_engine_with_a_quality_mode(self):
+        self.write_config(quality=self.quality_block())
+        with self.patches_for_preflight(), self.assertRaisesRegex(ValueError, "no quality measurement mode"):
+            benchmark.run_server_comparison_capture(self.config, self.output, rounds=2, seed=0, settle_seconds=0)
+
+    def test_quality_only_comparison_records_gated_arms_without_serving(self):
+        from bigcherry.engine_adapters import _ADAPTERS
+        import sys
+        from bigcherry.engine_adapters.base import QualityCommand
+        from bigcherry.engine_adapters.radiance import RadianceAdapter
+
+        class FakeQualityAdapter(RadianceAdapter):
+            def quality_command(self, kind, arm, env, run_dir, binary, model, quality):
+                result = run_dir / f"{arm['name']}.kld.json"
+                program = ("import json,sys;json.dump({'all':{'kld':{'mean':0.003,'median':0.001,'p99':0.02,'p99_9':0.1},"
+                           "'top1_agreement':0.968,'ppl':{'candidate':8.55,'reference':8.56,'ratio':0.9988}}},open(sys.argv[1],'w'))")
+                return QualityCommand((sys.executable, "-c", program, str(result)), dict(env),
+                                      run_dir / f"{arm['name']}.score.log", result, 60.0)
+        self.write_config(engine="radiance", execution_evidence="observe", quality_only=True, quality=self.quality_block(), server_args=[],
+                          arms=[dict(arm, mode="stock") for arm in self.arms])
+        with self.patches_for_preflight(), patch.dict(_ADAPTERS, {"radiance": FakeQualityAdapter()}), patch(
+            "bigcherry.campaign.benchmark.run_server_arm_capture") as serve:
+            self.assertEqual(benchmark.run_server_comparison_capture(self.config, self.output, rounds=2, seed=0, settle_seconds=0), 0)
+        serve.assert_not_called()
+        summary = json.loads((self.output / "run.json").read_text())
+        self.assertEqual(summary["runs"], [])
+        self.assertTrue(summary["quality"]["passed"])
+        self.assertEqual(sorted(summary["quality"]["arms"]), sorted(item["name"] for item in self.arms))
+
     def test_ambient_patch_and_allreduce_controls_do_not_leak_into_arms(self):
         captured = []
         def fake_capture(**kwargs):

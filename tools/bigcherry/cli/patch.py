@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 from .. import patch_admission
 from ..core import config as campaign_config
-from ..core import engines, paths
+from ..core import components, engines, paths
 from ..core.context import ProjectContext
 from ..patch import apply as patcher
 from ..patch import catalog as patch_catalog
@@ -371,6 +371,11 @@ def cmd_patch_lint(args: Namespace) -> int:
         problems.extend(f"{engine}: {problem}" for problem in lint_report.problems)
         grandfathered.extend(f"{engine}:{patch_id}" for patch_id in lint_report.grandfathered)
         warnings.extend(f"{engine}: {warning}" for warning in lint_report.warnings)
+        # Component settings follow the same lightweight promotion lifecycle as patches (MEN11 step f).
+        for component in components.load_all(paths.REPO_ROOT, engine).values():
+            setting_problems, setting_warnings = components.promotion_problems(component, paths.REPO_ROOT)
+            problems.extend(f"{engine}: {problem}" for problem in setting_problems)
+            warnings.extend(f"{engine}: {warning}" for warning in setting_warnings)
         # An engine that ships runtime profiles keeps them in its overlay; one without the folder has none to check.
         profile_dir = runtime_profiles.profile_dir(ProjectContext.resolve(engine=engine).overlay_root)
         if profile_dir.is_dir():

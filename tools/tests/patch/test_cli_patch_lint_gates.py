@@ -75,6 +75,12 @@ _EMPTY = gates.LintGateReport(results=(), problems=(), grandfathered=())
 
 
 class PatchLintCliTests(unittest.TestCase):
+    def setUp(self) -> None:
+        # Component-setting promotion is judged by its own tests (core/test_components.py); these tests pin the patch gates.
+        patcher = mock.patch("bigcherry.cli.patch.components.promotion_problems", return_value=([], []))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def _args(self, *, json_output: bool) -> SimpleNamespace:
         return SimpleNamespace(json=json_output)
 

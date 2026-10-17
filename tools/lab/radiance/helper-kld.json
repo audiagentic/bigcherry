@@ -1,0 +1,63 @@
+{
+ "_comment": "Example (MEN11): output quality of the production R9700 + two-XTX-helper layout, scored by radiance KL mode through ab-benchmark --server-config (quality_only: no serving cells). Arm 'helper-off' is the control (the R9700 alone, no helper: the layout's own distance to the reference); 'helper-on' is gated against it. The reference is the exact two-XTX helper-off run (tp 2, exact wire) over the 4-document corpus, recorded by the quality.record block on first use (the earlier lab runs kept it only under their output directory, so there is no standing path; KLD ~0.06 was the XTX re-chunking floor on this corpus). Once KLD_REF_DIR holds a reference, delete the 'record' and 'corpus' keys to reuse it. KL mode is prefill-only: --max-num-batched-tokens 64 is the helper lane cap and R3_MOE_HELPER_MAX_ROWS=64 sends every step's owned routes through the helpers. Thresholds are first-use placeholders, not tuned limits. Set RAD_BIN (<lane build>/bin/radiance), RAD_HOME (<lane build>/radiance_home), R9700_BDF and KLD_REF_DIR before use. Not used by tests.",
+ "schema_version": 1,
+ "engine": "radiance",
+ "evidence_role": "diagnostic",
+ "execution_evidence": "observe",
+ "quality_only": true,
+ "model": "/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad",
+ "server_args": [],
+ "environment": {
+  "HIP_VISIBLE_DEVICES": "0",
+  "ROCR_VISIBLE_DEVICES": "2",
+  "RADIANCE_HOME": "${RAD_HOME}"
+ },
+ "expected_execution": {
+  "backend": "ROCm",
+  "architectures": ["gfx1201"],
+  "locators": ["${R9700_BDF}"]
+ },
+ "quality": {
+  "reference_dir": "${KLD_REF_DIR}",
+  "corpus": "/mnt/data/bigcherry-work/corpus/rad-kld-corpus-4.jsonl",
+  "control": "helper-off",
+  "timeout_s": 5400,
+  "args": [
+   "--radiance-home", "${RAD_HOME}", "--kernels", "libr4d,libr3moe,libref",
+   "--placement", "expert_tiered", "--tp", "1", "--host-pool-mib", "30720",
+   "--kv-cache-dtype", "fp8", "--max-model-len", "8192", "--max-num-seqs", "1", "--max-num-batched-tokens", "64"
+  ],
+  "record": {
+   "environment": {"HIP_VISIBLE_DEVICES": "0,1", "ROCR_VISIBLE_DEVICES": "0,1"},
+   "args": [
+    "--radiance-home", "${RAD_HOME}", "--kernels", "libr3,libr3moe,libref",
+    "--placement", "expert_tiered", "--tp", "2", "--tp-wire", "exact", "--host-pool-mib", "14336",
+    "--gpu-headroom-mib", "320", "--kv-cache-dtype", "fp8", "--max-model-len", "8192", "--max-num-seqs", "1",
+    "--max-num-batched-tokens", "64"
+   ]
+  },
+  "thresholds": {
+   "max_kld_mean_increase": 0.02,
+   "max_kld_median_increase": 0.01,
+   "max_kld_p99_increase": 0.2,
+   "max_kld_p999_increase": 0.5,
+   "max_top1_drop_points": 1.0,
+   "max_ppl_ratio_increase": 0.01
+  }
+ },
+ "arms": [
+  {
+   "name": "helper-off", "mode": "stock", "shutdown_method": "sigint", "binary": "${RAD_BIN}",
+   "settings": {}
+  },
+  {
+   "name": "helper-on", "mode": "stock", "shutdown_method": "sigint", "binary": "${RAD_BIN}",
+   "environment": {"R3_MOE_HELPER_SKIP_OWNED": "1"},
+   "settings": {
+    "R3_MOE_HELPER": "1", "R3_MOE_HELPER_DEVICES": "0 1", "R3_MOE_HELPER_ENGINE_RANKS": "1",
+    "R3_MOE_HELPER_MAX_ROWS": "64", "R3_MOE_HELPER_SMALL_ROWS": "8",
+    "R3_MOE_HELPER_MIB": "22528", "R3_MOE_HELPER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0"
+   }
+  }
+ ]
+}

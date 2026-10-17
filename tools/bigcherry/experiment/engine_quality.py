@@ -5,28 +5,21 @@ Two pieces every engine's campaign needs and each engine reports in its own word
 * activation: did the switched mechanism run? A component setting may declare an ``activation`` regular expression
   (component.toml); the server log of the arm that sets it must match, and the control's must not.
 * quality: a full-distribution comparison against a recorded reference. radiance's KL mode
-  (``--kld-record`` / ``--kld-ref``) prints ``I kld: KLD mean ...`` and ``I kld: top-1 agreement ...``; those lines
-  become a :class:`KldResult`, and :func:`quality_gate` decides pass/fail from explicit thresholds.
+  (``--kld-record`` / ``--kld-ref`` / ``--kld-out``) writes a JSON document whose ``all`` section becomes a
+  :class:`KldResult`, and :func:`quality_gate` decides pass/fail from explicit thresholds.
 """
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from typing import Any
 
 from ..core.components import Component
 from ..patch.activation import ActivationEvidence
 
-_KLD = re.compile(
-    r"KLD mean (?P<mean>[0-9.]+)\s+median (?P<median>[0-9.]+)\s+p99 (?P<p99>[0-9.]+)\s+p99\.9 (?P<p999>[0-9.]+)"
-)
-_TOP1 = re.compile(
-    r"top-1 agreement (?P<top1>[0-9.]+)%\s+PPL (?P<ppl>[0-9.]+) vs reference (?P<ppl_ref>[0-9.]+)"
-)
-
-
 class QualityParseError(ValueError):
-    """The log does not carry exactly one complete KL result."""
+    """The KL output is not a complete KL result."""
 
 
 @dataclass(frozen=True)
@@ -44,21 +37,41 @@ class KldResult:
         return self.ppl / self.ppl_reference
 
 
-def parse_radiance_kld(log: str) -> KldResult:
-    """The KL result of one radiance ``--kld-ref`` run. Exactly one KLD line and one top-1 line, or an error."""
-    klds = list(_KLD.finditer(log))
-    tops = list(_TOP1.finditer(log))
-    if len(klds) != 1 or len(tops) != 1:
-        raise QualityParseError(f"expected one KLD and one top-1 line, found {len(klds)} and {len(tops)}")
-    k, t = klds[0], tops[0]
+#: the --kld-out JSON keys of the 'all' section that make a KldResult (radiance 1.3.x: mean/median/p90/p95/p99/p99_9/
+#: p99_99/max, top1_agreement, ppl); the reference perplexity is read from the first of these that is present
+_KLD_REQUIRED = ("mean", "median", "p99", "p99_9")
+_PPL_REQUIRED = ("candidate", "reference")
+
+
+def _number(table: object, key: str) -> bool:
+    return isinstance(table, dict) and isinstance(table.get(key), (int, float)) and not isinstance(table.get(key), bool)
+
+
+def parse_radiance_kld_json(document: dict[str, Any]) -> KldResult:
+    """The overall KL result of one radiance ``--kld-ref ... --kld-out`` run (the document's ``all`` section).
+
+    radiance writes ``all = {positions, kld: {mean, median, p90, p95, p99, p99_9, p99_99, max}, top1_agreement
+    (a fraction), ppl: {candidate, reference, ratio}}`` and the same per corpus source under ``by_source``, which is
+    not gated here and stays in the document the caller records. ``top1_percent`` is returned as a percentage.
+    """
+    section = document.get("all") if isinstance(document, dict) else None
+    if not isinstance(section, dict):
+        raise QualityParseError("KL output has no 'all' section")
+    kld, ppl = section.get("kld"), section.get("ppl")
+    missing = [f"kld.{key}" for key in _KLD_REQUIRED if not _number(kld, key)]
+    missing += [f"ppl.{key}" for key in _PPL_REQUIRED if not _number(ppl, key)]
+    if not _number(section, "top1_agreement"):
+        missing.append("top1_agreement")
+    if missing:
+        raise QualityParseError(f"KL output 'all' section lacks {', '.join(missing)}; has {sorted(section)}")
     return KldResult(
-        kld_mean=float(k["mean"]),
-        kld_median=float(k["median"]),
-        kld_p99=float(k["p99"]),
-        kld_p999=float(k["p999"]),
-        top1_percent=float(t["top1"]),
-        ppl=float(t["ppl"]),
-        ppl_reference=float(t["ppl_ref"]),
+        kld_mean=float(kld["mean"]),
+        kld_median=float(kld["median"]),
+        kld_p99=float(kld["p99"]),
+        kld_p999=float(kld["p99_9"]),
+        top1_percent=100.0 * float(section["top1_agreement"]),
+        ppl=float(ppl["candidate"]),
+        ppl_reference=float(ppl["reference"]),
     )
 
 

@@ -19,6 +19,13 @@ standalone server with a llama-server-compatible API.
   `bigcherry engine-bench --engine radiance` at the reference-lane depths, with the drafter on and off. Each arm
   writes `<arm>.engine-bench.json`, the same record `run-llamacpp-r9700.sh` writes for llama.cpp.
 
+- `helper-ab.json`, `helper-kld.json`: `ab-benchmark --server-config` examples for the R9700 engine with two XTX helper
+  sidecars: speed (R3_MOE_HELPER_ROWS 0 vs 1) and KL quality (MEN11). They replaced the `fn-r9700-engine.sh`,
+  `fn-helper-gate.sh`, `fn-helper-kld.sh` and `fn-r9700-kld.sh` lab scripts.
+
+- `fn-helper.sh`, `fn-profile.sh`, `fn-profile-compare.py`: rocprofv3 kernel/copy traces of one prefill and their
+  comparison; the harness does not trace, so these stay.
+
 ## Build result on Brutus (2026-10-09)
 
 Builds in 104 s for gfx1201 with ROCm 7.2.4 and g++ 14.2 (unpacked by `fetch-gcc14.sh`). 38 of 39 card-free tests
