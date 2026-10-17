@@ -64,6 +64,27 @@ class SourceCheck:
     run: Callable[[], str | None]
 
 
+class BumpCheckError(RuntimeError):
+    """A bump check could not run at all (as opposed to running and finding failures)."""
+
+
+@dataclass(frozen=True)
+class BumpCheck:
+    """One engine-specific gate of ``bigcherry pin-bump``'s compile phase (MEN10 step f).
+
+    ``run`` returns the failures it found (empty when the check holds) and raises :class:`BumpCheckError` when it could not
+    run. ``tools`` are executables that must be on PATH; ``failure_code`` is the structured code a failure STOPs the bump
+    with. ``patch_attributed`` asks the orchestrator to map ``file:line`` failures onto the patch edits that own those lines.
+    """
+
+    id: str
+    failure_code: str
+    tools: tuple[str, ...]
+    install_hint: str
+    run: Callable[[], list[str]]
+    patch_attributed: bool = False
+
+
 #: Variables that choose which GPUs a process sees. A CPU smoke sets every one of them to the empty string.
 GPU_HIDING_ENV = ("HIP_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES", "CUDA_VISIBLE_DEVICES", "GPU_DEVICE_ORDINAL")
 
@@ -177,6 +198,16 @@ class EngineAdapter(ABC):
     def cpu_smoke(self, context: ProjectContext, build_dir: Path, model_root: Path) -> CpuSmokeSpec | None:
         """The RAM-only smoke of this engine's build (tiny model, CPU kernels, no GPU visible), or None when the engine
         declares no ``[smoke.cpu]``. ``model_root`` is the directory the declared model path is relative to."""
+
+    @abstractmethod
+    def compile_checks(self, context: ProjectContext, source_dir: Path, workdir: Path) -> tuple[BumpCheck, ...]:
+        """The checks pin-bump's compile phase runs on the patched tree ``source_dir`` (``workdir`` is scratch space for
+        them), in order; the first failing check STOPs the bump."""
+
+    @abstractmethod
+    def audit_checks(self, context: ProjectContext) -> tuple[Callable[[Any], None], ...]:
+        """Source-audit checks (``bigcherry audit``, pin-bump's audit and reaudit phases) for this engine's tree. Each takes
+        a ``source.audit.AuditContext`` and records results on it."""
 
     @abstractmethod
     def source_checks(self, context: ProjectContext) -> tuple[SourceCheck, ...]:

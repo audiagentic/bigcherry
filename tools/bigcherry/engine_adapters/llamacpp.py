@@ -7,7 +7,7 @@ import json
 from typing import TYPE_CHECKING, Any
 
 from .base import (
-    CompletionApi, CpuSmokeSpec, DeviceAssertion, EngineAdapter, QualityCommand, SidecarSpec, SourceCheck, SMOKE_SEED,
+    BumpCheck, BumpCheckError, CompletionApi, CpuSmokeSpec, DeviceAssertion, EngineAdapter, QualityCommand, SidecarSpec, SourceCheck, SMOKE_SEED,
     build_cpu_smoke,
 )
 
@@ -64,6 +64,27 @@ class LlamaCppAdapter(EngineAdapter):
                 r"offloaded [1-9]\d*/\d+ layers to GPU",
             )),
         )
+
+    def compile_checks(self, context: ProjectContext, source_dir: Path, workdir: Path) -> tuple[BumpCheck, ...]:
+        """The ggml-cuda call-site contracts of the patched tree, compiled with clang++ (PA44-A)."""
+        from ..build import source_compile_check
+
+        clangxx = "clang++"
+
+        def run() -> list[str]:
+            try:
+                return source_compile_check.check_cuda_contracts(source_dir.resolve(), workdir.resolve(), clangxx)
+            except source_compile_check.SourceCompileCheckError as exc:
+                raise BumpCheckError(str(exc)) from exc
+
+        return (BumpCheck(
+            "ggml-cuda-contracts", "SOURCE_COMPILE_FAILED", (clangxx,),
+            f"install {clangxx} (Ubuntu/Debian: sudo apt-get install clang)", run, patch_attributed=True),)
+
+    def audit_checks(self, context: ProjectContext):
+        from ..source import audit as source_audit
+
+        return (source_audit.check_ggml_cuda_tree,)
 
     def source_checks(self, context: ProjectContext) -> tuple[SourceCheck, ...]:
         # The strict audit encodes the ggml HIP/CUDA invariants of the llama.cpp tree and its overlay files.

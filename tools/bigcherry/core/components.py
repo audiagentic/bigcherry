@@ -51,6 +51,8 @@ class Component:
     settings: dict[str, Setting]
     #: CMake cache values for the component's configure; {engine_source} and {targets} are substituted
     configure: tuple[tuple[str, str], ...] = ()
+    #: CMake targets that build the component's offline tests; the bump gate builds them and runs ctest (MEN10 step f)
+    test_targets: tuple[str, ...] = ()
 
     def content_digest(self) -> str:
         """sha256 over every file of the component (path and bytes), the identity a build binds."""
@@ -83,7 +85,7 @@ def load(root: Path, engine: str) -> Component:
         raise ComponentError(f"{path}: name {name!r} must match its directory {root.name!r}")
     if data.get("engine") != engine:
         raise ComponentError(f"{path}: engine {data.get('engine')!r} is not {engine!r}, the engine listing it")
-    unknown = sorted(set(data) - {"schema", "name", "engine", "targets", "built-against", "outputs", "setting", "build"})
+    unknown = sorted(set(data) - {"schema", "name", "engine", "targets", "built-against", "outputs", "setting", "build", "test"})
     if unknown:
         raise ComponentError(f"{path}: unknown key(s): {', '.join(unknown)}")
     built_against = data.get("built-against")
@@ -106,6 +108,10 @@ def load(root: Path, engine: str) -> Component:
         if body["status"] not in STATUSES:
             raise ComponentError(f"{where}: status {body['status']!r} is not one of {', '.join(STATUSES)}")
         settings[key] = Setting(key, body["default"], body["status"], body["summary"], body.get("activation", ""), tuple(evidence))
+    test = data.get("test", {})
+    if not isinstance(test, dict) or set(test) - {"targets"}:
+        raise ComponentError(f"{path}: [test] may only declare targets")
+    test_targets = _strings(test["targets"], f"{path}: test.targets") if "targets" in test else ()
     return Component(
         name=name,
         engine=engine,
@@ -114,6 +120,7 @@ def load(root: Path, engine: str) -> Component:
         built_against=built_against,
         outputs=_strings(data.get("outputs"), f"{path}: outputs"),
         settings=settings,
+        test_targets=test_targets,
         configure=tuple(sorted((str(k), str(v)) for k, v in (data.get("build", {}).get("configure", {}) or {}).items())),
     )
 
