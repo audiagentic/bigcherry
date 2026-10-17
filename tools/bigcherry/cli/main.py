@@ -675,6 +675,13 @@ def build_parser() -> argparse.ArgumentParser:
         "'bigcherry' on a fresh run). A --resume with no selector "
         "reuses the run's original one.",
     )
+    pin_bump_cmd.add_argument(
+        "--platform",
+        default=None,
+        help="recipe [platform.*] the compile gate configures its build with (compilers, options, GPU targets), the same "
+        "platform `bigcherry build --lane` uses. Required by engines whose compile gate builds (radiance); a --resume "
+        "with none reuses the run's saved one.",
+    )
     pin_bump_cmd.add_argument("--resume", action="store_true")
     pin_bump_cmd.add_argument(
         "--skip-compile",
@@ -2037,6 +2044,7 @@ def cmd_pin_bump(args: argparse.Namespace) -> int:
             skip_compile=args.skip_compile,
             cpu_smoke_build=_Path(args.cpu_smoke_build) if args.cpu_smoke_build else None,
             skip_cpu_smoke=args.skip_cpu_smoke,
+            platform_name=args.platform,
         )
     # The `or` coalesces in this handler are legitimate (exc.run_id is None
     # until run() assigns a run_id, and target/tree are None before the first
