@@ -85,7 +85,7 @@ class ServerRunner:
         extra_args: tuple[str, ...] = (), env_overrides: dict[str, str] | None = None,
         env_unset: tuple[str, ...] = (),
         log_path: Path | None = None, command_prefix: tuple[str, ...] = (),
-        shutdown_method: str | None = None,
+        shutdown_method: str | None = None, health_timeout_s: int = 180,
     ):
         # None takes the engine's declared method; "sigint" is also how a build without the engine's shutdown route
         # (a stock upstream llama-server) is stopped.
@@ -97,6 +97,7 @@ class ServerRunner:
         if shutdown_method == "sigint" and (os.name == "nt" or command_prefix):
             raise ValueError("sigint shutdown requires an unwrapped POSIX server")
         self.serve = serve
+        self.health_timeout_s = health_timeout_s
         self.binary = binary
         self.model = model
         self.host = host
@@ -274,7 +275,7 @@ class ServerRunner:
     def __enter__(self) -> "ServerRunner":
         self.launch()
         try:
-            self.wait_healthy()
+            self.wait_healthy(self.health_timeout_s)
         except BaseException:
             # HI143 (gpt review, 2026-08-29): without this, a health-check
             # timeout/failure left the just-launched process (and its real
