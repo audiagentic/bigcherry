@@ -50,13 +50,24 @@ libr3moe, process `r3_moe_helper`):
 - Engine on the R9700, `--tp 1 --kernels libr4d,libr3moe,libref`, radiance's own kernels.
 - One `r3_moe_helper` per XTX (`R3_MOE_HELPER_COUNT=2`, devices "0 1"), `R3_MOE_HELPER_ENGINE_RANKS=1` (full-width
   experts), 22 GiB of experts each (`R3_MOE_HELPER_MIB=22528`), `R3_MOE_HELPER_SKIP_OWNED=1` (helper-owned experts are
-  not placed on the R9700), ownership by route heat (`R3_MOE_HELPER_HEAT=<histogram>`, coldest experts to the
-  helpers), `R3_MOE_HELPER_MAX_ROWS=4096`, `R3_MOE_HELPER_SMALL_ROWS=8`.
+  not placed on the R9700), ownership by route heat (`R3_MOE_HELPER_HEAT=<histogram>`), hottest experts to the
+  helpers (`perf51/heat.rank0.hot-first`, RAD06 2026-10-17: +4% prefill against coldest-first, decode not worse), `R3_MOE_HELPER_MAX_ROWS=4096`, `R3_MOE_HELPER_SMALL_ROWS=8`.
 - `--ngram-placement ram`, `--host-pool-mib 30720` (RAD02 used 30 GiB; `helper-ab.json` 30720), `--max-num-seqs 6`,
   `--max-num-batched-tokens 4096 --checkpoint-interval 4096`, `--kv-cache-dtype fp8`, `--num-speculative-tokens 3`.
 - Harness form of exactly this: `tools/lab/radiance/helper-ab.json` (MEN11).
 
-Best measured (7,306-token prompt plus 256 greedy tokens, balanced A/B):
+Radiance 1.7.0, harness (`helper-ab.json`, 2 balanced rounds, natives on; baselines in
+`docs/reference/engines/radiance/baselines/`):
+
+| Ownership | pp4096 tok/s | pp1024 tok/s | tg512 tok/s | tg2048 tok/s | KLD mean / P99 / top-1 | Runs |
+|---|---|---|---|---|---|---|
+| hottest experts to helpers (current) | 2,134 / 2,140 | 2,144 / 2,143 | 136 / 130 | 143 / 140 | 0.0633 / 0.673 / 88.3% | rad06-heat-10172150, rad06-kld-hot-10172208 |
+| coldest experts to helpers | 2,050 / 2,052 | 2,105 / 2,102 | 126 / 126 | 141 / 141 | 0.0642 / 0.684 / 88.7% | rad06-heat-10172150, port-native-kld-10171827 |
+
+Helper large lane per request (hottest-first): routes 0.36, gate_up 2.10, quant 0.04, down 1.17, reduce 0.36 ms
+(coldest-first: gate_up 2.52, down 1.41) - fuller 16-row tiles.
+
+Earlier, radiance 1.3.0 (7,306-token prompt plus 256 greedy tokens, balanced A/B):
 
 | Result | Prefill tok/s | Decode tok/s | Source |
 |---|---|---|---|
@@ -123,7 +134,7 @@ Component settings (`engines/radiance/components/libr3/component.toml`; default 
 | `R3_MOE_HELPER_MIB` | 28672 | experimental | helper expert budget; 22528 (22 GiB) in the best layout (20 GiB gives decode ~89 and no prefill gain, RAD06 08:10) |
 | `R3_MOE_HELPER_MAX_ROWS` | 64 | experimental | 4096 so no step falls back to the engine path |
 | `R3_MOE_HELPER_SMALL_ROWS` | 64 | experimental | 8: the pre-queued small lane sized for decode and MTP verify steps |
-| `R3_MOE_HELPER_HEAT` | unset | experimental | route-heat file; helpers own the coldest experts (prefill +36%, RAD02 05:10) |
+| `R3_MOE_HELPER_HEAT` | unset | experimental | route-heat file; helpers own the experts it ranks first - production uses `heat.rank0.hot-first` (hottest first, +4% prefill over coldest-first, RAD06 2026-10-17; coldest-first was +36% over unordered, RAD02) |
 | `R3_MOE_HELPER_GEMV` | 1 | experimental | decode MoE GEMV for the small lane; decode 69.6 to 95.7 tok/s (RAD05) |
 | `R3_MOE_HELPER_HISTOGRAM` | unset | diagnostic | produces the heat file (profile run) |
 | `R3_MOE_NATIVE` | 1 | experimental | native bf16 WMMA inner loop; on by default in the helpers (`r3_moe_helper` main sets it unless set, 2bf231e3): decode 91.4/95.6 to 108.2/108.8. The engine process reads an unset variable as off; component.toml declares the helper default. |
