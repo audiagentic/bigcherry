@@ -234,6 +234,7 @@ extern "C" void r4d_moe_gemm_pin_long_rows(int rows) { g_moe_long_rows = rows; }
                                (const int32_t*)off->data, (uint32_t)n_expert, (uint32_t)T,
                                (uint32_t)kPrefillRows, (uint32_t)cap, map);
             if (emit_rc != RAD_OK) return emit_rc;
+            /* Every aligned instantiation uses UW and issues its first pass at the map read (see
 @@ replace
             /* The long-run split is the 8-wave 128-column form only (the helper's); the second map follows the first. */
             const long long cap_l = r4d_blockmap_cap(T, n_expert, 2 * kPrefillRows);
@@ -252,6 +253,18 @@ extern "C" void r4d_moe_gemm_pin_long_rows(int rows) { g_moe_long_rows = rows; }
                                    (uint32_t)g_moe_long_rows, 0xffffffffu, 0u, map_l);
                 if (emit_rc != RAD_OK) return emit_rc;
             }
+            /* Every aligned instantiation uses UW and issues its first pass at the map read (see
+@@ end
+
+# The bf16 launcher builds the same map (one 32-row map, no long-run split).
+@@ find 1
+                               (uint32_t)kPrefillRows, (uint32_t)cap, map);
+            if (emit_rc != RAD_OK) return emit_rc;
+        }
+@@ replace
+                               (uint32_t)kPrefillRows, (uint32_t)cap, 0u, 0xffffffffu, 1u, map);
+            if (emit_rc != RAD_OK) return emit_rc;
+        }
 @@ end
 
 @@ find 1
