@@ -47,7 +47,7 @@ class RadianceSidecarSpecTests(unittest.TestCase):
         home = Path("/b/bin/radiance").parent.parent / "radiance_home"
         for index, (spec, device) in enumerate(zip(specs, ("0", "1"))):
             self.assertEqual(spec.argv, (str(home / "helpers" / "r3_moe_helper"), str(Path("/models/fn.rad"))))
-            self.assertEqual(spec.env["HIP_VISIBLE_DEVICES"], device)
+            self.assertEqual(spec.env["HIP_VISIBLE_DEVICES"], "0")
             self.assertEqual(spec.env["ROCR_VISIBLE_DEVICES"], device)
             self.assertEqual(spec.env["R3_MOE_HELPER_INDEX"], str(index))
             self.assertEqual(spec.env["R3_MOE_HELPER_COUNT"], "2")
