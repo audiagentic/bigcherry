@@ -31,15 +31,15 @@ class _Recorder:
 def test_release_tag_uses_one_scoped_refspec_with_no_tags(monkeypatch, tmp_path):
     """The incident's actual fix. `--no-tags` and an explicit
     refspec::refspec are what keep this to one ref instead of ~2000."""
-    recorder = _Recorder()
+    recorder = _Recorder({("ls-remote", "--tags", "origin", "refs/tags/b10362"): "abc\trefs/tags/b10362"})
     monkeypatch.setattr(upstream, "_git", recorder)
     monkeypatch.setattr(upstream, "_has_ref", lambda root, ref: False)
 
     target = upstream.ensure_ref(tmp_path, "b10362")
 
     assert target == "b10362"
-    assert len(recorder.calls) == 1
-    call = recorder.calls[0]
+    assert len(recorder.calls) == 2  # the tag probe, then the one scoped fetch
+    call = recorder.calls[1]
     assert "--no-tags" in call
     assert "refs/tags/b10362:refs/tags/b10362" in call
     # Must never be the shorthand that hung in the incident.
@@ -58,7 +58,7 @@ def test_non_tag_ref_fetches_plain_and_targets_fetch_head(monkeypatch, tmp_path)
     target = upstream.ensure_ref(tmp_path, "some-branch")
 
     assert target == "FETCH_HEAD"
-    call = recorder.calls[0]
+    call = recorder.calls[-1]  # after the (empty) tag probe
     assert "--no-tags" in call
     assert "some-branch" in call
     assert not any("refs/tags" in a for a in call), \

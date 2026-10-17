@@ -21,7 +21,7 @@
     "files": {}
   },
   "promotion": null,
-  "release_tag": "",
+  "release_tag": "v1.7.0",
   "revision": "1e968f6e1d86e2544455b00e9e57c09690d9ea10",
   "stage": "patched",
   "tree_state": "",

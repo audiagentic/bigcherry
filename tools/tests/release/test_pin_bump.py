@@ -75,6 +75,10 @@ class PinBumpStopResumeE2ETests(unittest.TestCase):
                 stage = "pulled"
                 audit = {}
                 notes = ""
+                revision = "a" * 40
+
+                def slug(self):
+                    return "b10680"
 
                 def advance_to(self, stage):
                     self.stage = stage

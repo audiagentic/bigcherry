@@ -16,7 +16,7 @@ class EngineRecipesTests(unittest.TestCase):
 
     def test_radiance_recipes_carry_its_pin_sources_and_profiles(self):
         cfg = config.load(engines.load(paths.REPO_ROOT, engines.RADIANCE).recipes_path(paths.REPO_ROOT))
-        self.assertEqual(cfg.pinned, "48f7b8eb6d703cd5318346b5a351a292afaf4bf9")
+        self.assertEqual(cfg.pinned, "v1.7.0")
         self.assertEqual(set(cfg.sources), {"radiance-native", "radiance", "radiance-lab", "radiance-diag"})
         self.assertEqual(set(cfg.runtime_profiles), {"flashnext-2xtx", "qwen38-27b-2xtx"})
         flash = cfg.runtime_profiles["flashnext-2xtx"].server_args
