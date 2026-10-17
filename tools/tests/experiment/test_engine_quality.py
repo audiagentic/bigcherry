@@ -7,15 +7,12 @@ import unittest
 from bigcherry.core import components, engines, paths
 from bigcherry.experiment import engine_quality as eq
 
-# Verbatim lines from radiance KL runs on the 27B, two XTX (runs kqa2 and kqg2, 2026-10-12).
-_GOOD = (
-    "I kld: KLD mean 0.003533  median 0.001621  p99 0.02516  p99.9 0.1265  p99.99 0.7817  max 1.3892\n"
-    "I kld: top-1 agreement 96.801%   PPL 8.5583 vs reference 8.5610 (x0.9997)\n"
-)
-_BROKEN = (
-    "I kld: KLD mean 6.499024  median 6.366023  p99 14.04798  p99.9 16.4834  p99.99 18.3643  max 20.6620\n"
-    "I kld: top-1 agreement 7.322%   PPL 4903.6748 vs reference 8.5610 (x572.7913)\n"
-)
+# --kld-out documents ('all' section) shaped after radiance KL runs on the 27B, two XTX (kqa2 and kqg2, 2026-10-12).
+_GOOD = {"all": {"mean": 0.003533, "median": 0.001621, "p90": 0.008, "p95": 0.012, "p99": 0.02516, "p99_9": 0.1265,
+                 "p99_99": 0.7817, "max": 1.3892, "top1_agreement": 96.801, "ppl": 8.5583, "ppl_ref": 8.5610},
+         "by_source": {"docs": {"mean": 0.004}}}
+_BROKEN = {"all": {"mean": 6.499024, "median": 6.366023, "p99": 14.04798, "p99_9": 16.4834, "p99_99": 18.3643,
+                   "max": 20.6620, "top1_agreement": 7.322, "ppl": 4903.6748, "ppl_ref": 8.5610}}
 _LIMITS = eq.QualityThresholds(
     max_kld_mean_increase=0.002, max_kld_median_increase=0.001, max_kld_p99_increase=0.02, max_kld_p999_increase=0.1,
     max_top1_drop_points=0.5, max_ppl_ratio_increase=0.005)
@@ -23,7 +20,7 @@ _LIMITS = eq.QualityThresholds(
 
 class KldTests(unittest.TestCase):
     def test_parses_one_result(self):
-        result = eq.parse_radiance_kld(_GOOD)
+        result = eq.parse_radiance_kld_json(_GOOD)
         self.assertEqual(result.kld_mean, 0.003533)
         self.assertEqual(result.kld_median, 0.001621)
         self.assertEqual(result.kld_p99, 0.02516)
@@ -31,21 +28,21 @@ class KldTests(unittest.TestCase):
         self.assertEqual(result.top1_percent, 96.801)
         self.assertAlmostEqual(result.ppl_ratio, 8.5583 / 8.5610)
 
-    def test_refuses_zero_or_two_results(self):
-        with self.assertRaises(eq.QualityParseError):
-            eq.parse_radiance_kld("no kld here\n")
-        with self.assertRaises(eq.QualityParseError):
-            eq.parse_radiance_kld(_GOOD + _GOOD)
+    def test_refuses_incomplete_documents(self):
+        for document in ({}, {"all": {}}, {"all": {**_GOOD["all"], "p99_9": None}},
+                         {"all": {k: v for k, v in _GOOD["all"].items() if k != "ppl_ref"}}):
+            with self.subTest(document=document), self.assertRaises(eq.QualityParseError):
+                eq.parse_radiance_kld_json(document)
 
     def test_gate_passes_a_neutral_arm_and_fails_the_broken_delta_net(self):
-        control = eq.parse_radiance_kld(_GOOD)
+        control = eq.parse_radiance_kld_json(_GOOD)
         self.assertEqual(eq.quality_gate(control, control, _LIMITS), (True, []))
-        passed, problems = eq.quality_gate(control, eq.parse_radiance_kld(_BROKEN), _LIMITS)
+        passed, problems = eq.quality_gate(control, eq.parse_radiance_kld_json(_BROKEN), _LIMITS)
         self.assertFalse(passed)
         self.assertEqual(len(problems), 6)
 
     def test_gate_names_a_tail_only_regression(self):
-        control = eq.parse_radiance_kld(_GOOD)
+        control = eq.parse_radiance_kld_json(_GOOD)
         tail = dataclasses.replace(control, kld_p999=control.kld_p999 + 0.5)
         passed, problems = eq.quality_gate(control, tail, _LIMITS)
         self.assertFalse(passed)

@@ -47,8 +47,9 @@ One engine patch per experiment (`[experiment.*]`).
 
 A/B through `bigcherry ab-benchmark --server-config <json> --pairs N`. The configuration names `"engine": "radiance"`;
 arms run in mode `stock` with `execution_evidence: "observe"` (device attestation is parsed for llama.cpp only).
-Quality gates: `tools/bigcherry/experiment/engine_quality.py` parses radiance's `--kld-ref` output and gates a
-subject against its control; a component setting with an `activation` marker yields activation evidence from the
+Quality gates: a `quality` block in the same configuration (`tools/lab/radiance/helper-kld.json`) runs radiance's KL
+mode per arm, `tools/bigcherry/experiment/engine_quality.py` parses the `--kld-out` JSON and gates a subject against
+its control; a component setting with an `activation` marker yields activation evidence from the
 two arms' server logs.
 
 ## Profiles
