@@ -83,6 +83,9 @@ multi-process A/B: it drives the R9700 engine with two XTX helpers, started and 
 (`R3_MOE_HELPER_DEVICES`), arms differing in one component setting, with order-balanced rounds and an activation marker
 for the setting under test (MEN11). Set `RAD_BIN`, `RAD_HOME` and `R9700_BDF` before use.
 
+Radiance has its own release line (`bc-radiance`, package `engines/radiance`); the release stages are common to every
+engine and described in [../../build/RELEASES.md](../../build/RELEASES.md).
+
 ## Quality bars
 
 - Layout and kernel changes are judged by KL divergence against a named reference (radiance `--kld-ref`;

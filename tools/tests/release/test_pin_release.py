@@ -20,7 +20,7 @@ _CONFIG = _notes.ReleaseConfig(
     engine="llamacpp", upstream_name="llama.cpp",
     tag_prefix="bc-", notes_dir="docs/releases/notes", ledger="ledger.ndjson", release_records="releases",
     recipes="config/recipes.toml", patches="engines/llamacpp/patches",
-    build_patch_sets=(), fallback_prefixes=(), ledger_sections=(),
+    build_patch_sets=(), fallback_prefixes=(), version_source="build-tag", owned_paths=(), ledger_sections=(),
 )
 
 _RELEASE_CONFIG = """\
@@ -93,6 +93,26 @@ class PinReleaseTests(unittest.TestCase):
                 _pr.make_plan(root, "radiance", "b11474")
             with self.assertRaises(_pr.PinReleaseError):
                 _pr.run(root, "radiance", "b11474", "", dry_run=True, log=lambda _line: None)
+
+    def test_radiance_plans_the_upstream_version_as_major(self):
+        # real repo: the package, the release line and recipes' pinned-version (1.3.0) give major 130
+        with mock.patch.object(_pr, "_git", side_effect=lambda root, *a, check=True: "feat/x" if a[0] == "rev-parse" else ""):
+            plan = _pr.make_plan(paths.REPO_ROOT, "radiance", "89cee7ce4144", allow_existing=True)
+        self.assertEqual((plan.build, plan.version, plan.release_tag), (130, "130.0.0", "bc-radiance-130.0.0"))
+        with mock.patch.object(_pr, "_git", side_effect=lambda root, *a, check=True: "feat/x" if a[0] == "rev-parse" else ""):
+            plan = _pr.make_plan(paths.REPO_ROOT, "radiance", "89cee7ce4144", version="130.1.2")
+        self.assertEqual(plan.release_tag, "bc-radiance-130.1.2")
+        with self.assertRaises(_pr.PinReleaseError):  # a llama.cpp tag is not radiance's pin
+            _pr.make_plan(paths.REPO_ROOT, "radiance", "b11474")
+        with self.assertRaises(_pr.PinReleaseError):  # not the pinned revision
+            _pr.make_plan(paths.REPO_ROOT, "radiance", "0123456789ab")
+
+    def test_pin_version_by_version_source(self):
+        radiance, llama = _notes.load_config(paths.REPO_ROOT, "radiance"), _notes.load_config(paths.REPO_ROOT, "llamacpp")
+        self.assertEqual(_notes.pin_version(paths.REPO_ROOT, radiance, "89cee7ce4144"), _notes.PinVersion(130, "1.3.0"))
+        self.assertEqual(_notes.pin_version(paths.REPO_ROOT, llama, "b11552"), _notes.PinVersion(11552, "b11552"))
+        with self.assertRaises(_notes.ReleaseNotesError):
+            _notes.pin_version(paths.REPO_ROOT, llama, "89cee7ce4144")
 
     def test_record_needs_evidence_then_records_once(self):
         with tempfile.TemporaryDirectory() as td:
@@ -182,10 +202,10 @@ class PinReleaseTests(unittest.TestCase):
             _pr.next_version(["11474.0.0"], 11474, None)
         with self.assertRaises(_pr.PinReleaseError):
             _pr.next_version([], 11474, "minor")
-        self.assertEqual(_notes.release_version("b11474"), "11474.0.0")
-        self.assertEqual(_notes.release_version("b11474", "11474.2.1"), "11474.2.1")
+        self.assertEqual(_notes.release_version(_notes.PinVersion(11474, "b11474")), "11474.0.0")
+        self.assertEqual(_notes.release_version(_notes.PinVersion(11474, "b11474"), "11474.2.1"), "11474.2.1")
         with self.assertRaises(_notes.ReleaseNotesError):
-            _notes.release_version("b11474", "11402.1.0")
+            _notes.release_version(_notes.PinVersion(11474, "b11474"), "11402.1.0")
 
     def test_main_pushes_only_work_branch_and_opens_or_reuses_pr(self):
         plan = SimpleNamespace(repo_root=Path("/repo"), remote="origin", main="main", branch="work",

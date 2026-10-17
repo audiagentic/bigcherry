@@ -24,6 +24,11 @@ binary = "bin/radiance"
 runtime-targets = ["all"]
 runtime-home = "radiance_home"
 
+# How this engine's release versions are numbered (docs/reference/build/RELEASES.md): the pin is a commit, so the major
+# of <major>.<minor>.<patch> is the recipes' pinned-version with its dots removed (1.3.0 -> 130).
+[release]
+version-source = "pinned-version"
+
 [serve]
 binary = "bin/radiance"
 model-flag = "--model"

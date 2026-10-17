@@ -365,6 +365,7 @@ def load(path: str | Path) -> Config:
             "version",
             "engine",
             "pinned",
+            "pinned-version",
             "patch-set",
             "source",
             "build",
@@ -389,6 +390,9 @@ def load(path: str | Path) -> Config:
     pinned = raw.get("pinned")
     if not isinstance(pinned, str) or not pinned:
         raise ConfigError(f"{path}: pinned must be a non-empty string")
+    pinned_version = raw.get("pinned-version", "")
+    if not isinstance(pinned_version, str) or (pinned_version and not re.fullmatch(r"\d+(\.\d+)*", pinned_version)):
+        raise ConfigError(f"{path}: pinned-version must be the upstream release version, digits and dots (1.3.0)")
 
     patch_sets: dict[str, PatchSet] = {}
     for name, body in _table(raw.get("patch-set"), "patch-set").items():

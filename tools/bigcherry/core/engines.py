@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import re
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
 LLAMACPP = "llamacpp"
@@ -92,6 +92,9 @@ class EngineLayout:
     #: repository-relative registry of the external sources (forks, upstream PRs) this engine's patches are ported
     #: from; "" when the engine has none
     external_sources: str = ""
+    #: where the major of a release version comes from: "build-tag" (the pin is a numbered upstream build, b<N>, and N
+    #: is the major) or "pinned-version" (the recipes' pinned-version, 1.3.0, with its dots removed: 130)
+    version_source: str = field(default="", kw_only=True)
 
     @property
     def upstream_name(self) -> str:
@@ -260,7 +263,18 @@ def load(repo_root: Path, name: str) -> EngineLayout:
         external_sources=(
             _relative(layout["external-sources"], "external-sources", name) if "external-sources" in layout else ""
         ),
+        version_source=_version_source(data.get("release"), name),
     )
+
+
+VERSION_SOURCES = ("build-tag", "pinned-version")
+
+
+def _version_source(value: object, name: str) -> str:
+    source = value.get("version-source") if isinstance(value, dict) else None
+    if source not in VERSION_SOURCES:
+        raise EngineError(f"engine {name!r}: [release] version-source must be one of {', '.join(VERSION_SOURCES)}")
+    return source
 
 
 def _patch_id_prefix(value: object, name: str) -> str:

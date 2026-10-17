@@ -30,7 +30,9 @@ vendor checkout and its recipes file (which holds the pin); each engine has its 
 `releases/pin-transition-<engine>.json`, so one engine's bump never reads as another's drift. `pin-release` and
 `release-notes` additionally need a release line for the engine: an `[engine.<name>]` table in
 `config/release.toml` and a package in `release-please-config.json` (`engines/<engine>`); an engine without them
-(radiance, today) is refused with that message. This document describes the llama.cpp bump.
+is refused with that message. The release stages after a bump (ledger, notes, release-please PR, tag, pin-release
+record) are common to every engine and described in [RELEASES.md](RELEASES.md). This document describes the
+llama.cpp bump.
 
 The transition that turns "drift" into "mid-rebase" is **committing the pin
 move and the transition marker together, before moving the checkout**.

@@ -1,7 +1,8 @@
 # BigCherry release configuration (read by `bigcherry release-notes`).
 #
-# This file configures the engines' release lines (run-multi-engine MEN09; llama.cpp today): tags bc-llamacpp-<build>.<minor>.<patch>,
-# each with a readable alias bc-llamacpp-b<build>-r<N> added by the release workflow. release-please on GitHub owns
+# This file configures the engines' release lines (run-multi-engine MEN09, MEN13; llama.cpp and radiance): tags bc-llamacpp-<build>.<minor>.<patch>,
+# each with a readable alias bc-llamacpp-b<build>-r<N> added by the release workflow. Every line is described, engine-generically, in
+# docs/reference/build/RELEASES.md. release-please on GitHub owns
 # the release PR, tag and GitHub release (release-please-config.json, .github/workflows/release-please.yml); this file
 # configures the release text it publishes. The notes are generated from: the change ledger (events since the previous release), the patch registry
 # (patches added, promoted, changed or retired since the previous release, and build-membership changes) and the
@@ -14,12 +15,23 @@ release-records = "releases"
 
 # One table per engine that has a release line: its tag prefix (the component of its release-please package, plus a
 # hyphen), the patch sets whose membership is "in the production build", and an older tag family that may mark the
-# previous release when no tag with the prefix exists yet. The engine's recipes file and patch tree come from its
+# previous release when no tag with the prefix exists yet, and extra repository paths (beyond engines/<name>/ and the
+# engine.toml layout) whose ledger changes belong to that engine's notes. The engine's recipes file and patch tree come from its
 # engine.toml; an engine with no table here has no releases configured and release-notes / pin-release refuse it.
 [engine.llamacpp]
 tag-prefix = "bc-llamacpp-"
 build-patch-sets = ["upstream-fixes", "validated-enhancements"]
 previous-tag-fallback-prefixes = ["supports/"]
+paths = []
+
+# radiance: the production build is the validated serving-core set (source.radiance in its recipes.toml); the
+# evaluated engine-fixes set is lab-only and never part of a release's "production build". paths lists the
+# repository paths, besides engines/radiance/ and the engine's declared layout, whose ledger changes belong to it.
+[engine.radiance]
+tag-prefix = "bc-radiance-"
+build-patch-sets = ["serving-core"]
+previous-tag-fallback-prefixes = []
+paths = ["docs/reference/engines/radiance", "tools/lab/radiance"]
 
 # ledger change-class -> section heading, in output order; classes not listed are omitted from the notes
 [[ledger-section]]

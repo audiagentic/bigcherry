@@ -24,6 +24,11 @@ targets-option = "AMDGPU_TARGETS"
 # llama-bench, because the runtime-smoke stage is llama-bench shaped; a serving build asks for bin/llama-server.
 binary = "bin/llama-bench"
 
+# How this engine's release versions are numbered (docs/reference/build/RELEASES.md): the pin is an upstream build tag
+# (b11474) and its number is the major of <major>.<minor>.<patch>.
+[release]
+version-source = "build-tag"
+
 [serve]
 binary = "bin/llama-server"
 model-flag = "-m"
