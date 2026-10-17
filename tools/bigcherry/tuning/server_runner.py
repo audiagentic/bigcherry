@@ -135,6 +135,11 @@ class ServerRunner:
         self.last_shutdown: ShutdownResult | None = None
         self._proc: subprocess.Popen | None = None
 
+    @property
+    def pid(self) -> int | None:
+        """The launched server process id; None before launch and after shutdown."""
+        return self._proc.pid if self._proc is not None else None
+
     def _base_url(self) -> str:
         return f"http://{self.host}:{self.port}"
 

@@ -433,6 +433,19 @@ comparison: a 27B Q8_0 (29GB) cannot run there at all, which is why
 `tierB-qwen9b-q6k` (7.7GB) exists in `config/models.toml` as the model held
 constant while architecture varies.
 
+## CPU smoke: llama.cpp with no GPU (MEN15)
+
+`python -m bigcherry --engine llamacpp smoke-cpu --build <build dir> [--model-root <dir>] [--out <dir>]` serves a tiny
+GGUF from `llama-server` with `-ngl 0 --device none` and the HIP/ROCR/CUDA device variables empty, so it runs while the
+GPUs are busy. It checks the model's sha256, waits for `/health`, asks `/completion` for three 16-token greedy
+completions twice (temperature 0, fixed seed, `cache_prompt` off), requires non-empty and identical text, stops the
+server through `/shutdown`, fails if the log shows `ggml_cuda_init: found N ROCm devices`, a `Device N:` line or layers
+offloaded to a GPU, and writes `cpu-smoke.json` (wall time, start-up time, peak RSS from `/proc` on Linux) and
+`server.log` under `--out` (default `<work>/cpu-smoke/llamacpp`). The model comes from `[smoke.cpu]` in
+`engines/llamacpp/engine.toml` (path relative to the model root: `--model-root`, then `$BIGCHERRY_MODEL_ROOT`, then the
+host's model-root). Its `sha256` is a PLACEHOLDER until a tiny GGUF (about 15 to 150M parameters) is pinned; the
+runner refuses a non-hex digest. `pin-bump` runs it as its first runtime gate (`PIN_BUMP.md`).
+
 ## Two gaps to know about
 
 These apply to the **manual build cycle** below (standalone `generate` + raw cmake against `$BC`'s one shared checkout) -- `bigcherry build --lane`/`--profile` (the campaign engine) runs its own `generate` stage automatically per lane and does not have this gap.
