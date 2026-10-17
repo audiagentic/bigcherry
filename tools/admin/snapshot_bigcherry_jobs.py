@@ -17,9 +17,10 @@ from bigcherry.tuning.journal import atomic_write
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="snapshot-bigcherry-jobs")
+    parser.add_argument("--engine", required=True)
     parser.add_argument("--output-root", type=Path, default=None)
     args = parser.parse_args(argv)
-    service, registry = build_service()
+    service, registry = build_service(args.engine)
     output = (args.output_root or service.store.root / "status").resolve()
     output.mkdir(parents=True, exist_ok=True)
     snapshot = build_snapshot(service, executors=registry.describe())

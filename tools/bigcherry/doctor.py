@@ -33,14 +33,13 @@ def _resolve_upstream(root: Path, ref: str) -> str | None:
     return _git(root, "rev-parse", f"{ref}^{{commit}}")
 
 
-def build_report(context: ProjectContext | None = None) -> dict[str, object]:
-    context = context or ProjectContext.resolve(engine="llamacpp")
+def build_report(context: ProjectContext) -> dict[str, object]:
     raw = tomllib.loads(context.config_path.read_text(encoding="utf-8"))
     version = raw.get("version", 1)
-    catalog = patchset.catalog(engines.LLAMACPP, directory=context.patches_root)
+    catalog = patchset.catalog(context.engine, directory=context.patches_root)
     kind_by_id = {
         d.patch_id: d.kind
-        for d in patch_registry.load_registry(engines.LLAMACPP, context.patches_root).descriptors
+        for d in patch_registry.load_registry(context.engine, context.patches_root).descriptors
     }
     patch_rows = [
         {
@@ -76,6 +75,7 @@ def build_report(context: ProjectContext | None = None) -> dict[str, object]:
         )
     report: dict[str, object] = {
         "schema_version": 1,
+        "engine": context.engine,
         "project": str(context.project_root),
         "bigcherry_revision": _git(context.project_root, "rev-parse", "HEAD"),
         "bigcherry_dirty": bool(_git(context.project_root, "status", "--porcelain")),
@@ -85,9 +85,9 @@ def build_report(context: ProjectContext | None = None) -> dict[str, object]:
             "pinned": raw.get("pinned"),
         },
         "upstream": {
-            "legacy_checkout": str(paths.llama_root()),
+            "legacy_checkout": str(context.vendor_root),
             "pinned_sha": _resolve_upstream(
-                paths.llama_root(), str(raw.get("pinned", ""))
+                context.vendor_root, str(raw.get("pinned", ""))
             ),
             "host_local_object_repo": str(context.upstream_repo),
         },
@@ -136,7 +136,7 @@ def _pin_status_section(context: ProjectContext) -> dict[str, object]:
     the gate is `pin-status --strict` / `--complete`, not doctor."""
     repo_paths = pin_status.RepoPaths(
         repo_root=context.project_root,
-        vendor_root=paths.llama_root(),
+        vendor_root=context.vendor_root,
         releases_dir=context.project_root / "releases",
         artifacts_dir=context.project_root / "artifacts",
         layout=context.layout,
@@ -152,13 +152,23 @@ def _pin_status_section(context: ProjectContext) -> dict[str, object]:
     }
 
 
-def main(*, as_json: bool = False, context: ProjectContext | None = None) -> int:
-    report = build_report(context)
+def build_reports() -> dict[str, dict[str, object]]:
+    """One report per declared engine, keyed by engine name."""
+    return {
+        name: build_report(ProjectContext.resolve(engine=name))
+        for name in engines.names(paths.REPO_ROOT)
+    }
+
+
+def main(*, as_json: bool = False) -> int:
+    reports = build_reports()
     if as_json:
-        print(json.dumps(report, indent=2, sort_keys=True))
-    else:
+        print(json.dumps({"schema_version": 2, "engines": reports}, indent=2, sort_keys=True))
+        return 0
+    for name, report in reports.items():
         config_report = cast("dict[str, object]", report["config"])
         patch_rows = cast("list[object]", report["patch_catalog"])
+        print(f"[{name}]")
         print(f"BigCherry revision: {report['bigcherry_revision']}")
         print(
             f"Config: v{config_report['version']} pinned={config_report['pinned']}"

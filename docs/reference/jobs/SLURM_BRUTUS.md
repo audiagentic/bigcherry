@@ -255,7 +255,7 @@ python -m bigcherry hardware accept brutus --expected-hash <sha> --allow-materia
 sudo slurmd -G
 sudo systemctl restart slurmd
 sudo scontrol reconfigure
-python -m bigcherry jobs executors doctor
+python -m bigcherry jobs --engine llamacpp executors doctor
 # rerun required hardware acceptance
 sudo scontrol update NodeName=brutus State=RESUME
 ```

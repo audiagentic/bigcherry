@@ -14,9 +14,13 @@ import signal
 import subprocess
 import time
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from ..core.context import ProjectContext
 
 
 class SidecarError(RuntimeError):
@@ -36,6 +40,15 @@ class SidecarSpec:
     stop_signal: int = signal.SIGTERM
     stop_timeout_s: float = 60.0
     pre_start_cleanup: tuple[Path, ...] = ()   # removed before any sidecar of the cell starts
+
+
+@dataclass(frozen=True)
+class SourceCheck:
+    """One engine-specific invariant ``bigcherry check`` runs for that engine; ``run`` returns None when it holds."""
+
+    id: str
+    tier: str                           # "quick", "default" or "full"
+    run: Callable[[], str | None]
 
 
 class EngineAdapter(ABC):
@@ -60,6 +73,11 @@ class EngineAdapter(ABC):
     def sidecars(self, arm: dict[str, Any], env: dict[str, str], run_dir: Path, binary: Path) -> list[SidecarSpec]:
         """Helper processes for one arm cell, in start order. ``arm`` carries ``name``, ``model`` and ``settings``;
         ``env`` is the arm complete server environment."""
+
+    @abstractmethod
+    def source_checks(self, context: ProjectContext) -> tuple[SourceCheck, ...]:
+        """Invariants that hold only for this engine's source tree (``bigcherry check`` runs them under the engine's
+        label); empty when the engine has none."""
 
 
 def _tail(path: Path, lines: int = 40) -> str:

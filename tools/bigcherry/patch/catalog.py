@@ -181,10 +181,10 @@ def resolve_for_context(
     # admission may reject the selection, but must never filter or substitute
     # patches.  Synthetic catalogs remain composition-only so unit fixtures do
     # not accidentally consult the real repository's evidence directory.
-    if catalog_path is None or Path(catalog_path).resolve() == paths.PATCH_CATALOG.resolve():
+    if catalog_path is None or Path(catalog_path).resolve() == (paths.patches_root(engine) / "catalog.toml").resolve():
         from .. import patch_admission
         result = patch_admission.require_admission(
-            patch_ids, mode="build", catalog_path=catalog_path,
+            engine, patch_ids, mode="build", catalog_path=catalog_path,
             patches_dir=effective_patches_dir,
             resolved_base_revision=resolved_base_revision,
         )

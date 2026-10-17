@@ -53,5 +53,5 @@ def cmd_check(args: Namespace) -> int:
         Path(args.json).write_text(encoded, encoding="utf-8")
     else:
         for result in report["checks"]:
-            print(f"[{result['status'].upper():6}] {result['id']}: {result['detail']}")
+            print(check.format_result(result))
     return 0 if report["passed"] else 1

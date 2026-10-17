@@ -129,9 +129,9 @@ status = "diagnostic"
 summary = "override the kernel plugin the helper loads through the rad_plugin ABI (default: libr4d.so on gfx1201, libr3.so on gfx1100)"
 
 [setting.R3_MOE_NATIVE]
-default = "0"
+default = "1"
 status = "experimental"
-summary = "native w4nl64 MoE inner loop; -6% call time, Flash-Next quality neutral (KLD unchanged)"
+summary = "native w4nl64 MoE inner loop; -6% call time, Flash-Next quality neutral (KLD unchanged). On by default in the r3_moe_helper processes (main() sets 1 unless the variable is set, 2bf231e3: prefill 2,518 -> 2,665 tok/s, decode 91.4/95.6 -> 108.2/108.8); the engine process reads an unset variable as off, so an arm or profile that wants the engine's own MoE GEMM native sets it explicitly, and 0 turns it off everywhere"
 
 [setting.R3_HC_NATIVE]
 default = "0"

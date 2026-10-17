@@ -10,6 +10,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from bigcherry import check
+from bigcherry.core import engines, paths
 
 
 class CheckTests(TestCase):
@@ -121,11 +122,11 @@ class CheckTests(TestCase):
             self.assertNotIn("TR14.ARTIFACT_UNTRACEABLE_RUN", codes)
 
     def test_tooling_hygiene_is_registered_in_quick_and_preserves_overlay_failure(self) -> None:
-        ids = [(spec.id, spec.tier) for spec in check.check_specs()]
+        ids = [(spec.id, spec.tier) for spec in check.check_specs(paths.REPO_ROOT)]
         self.assertIn(("tooling-hygiene", "quick"), ids)
         specs = (
-            check.CheckSpec("tooling-hygiene", "quick", lambda root: "TR14.ROOT_FACADE"),
-            check.CheckSpec("source-audit", "default", lambda root: "overlay.vendor_sync: drift"),
+            check.CheckSpec("tooling-hygiene", "quick", lambda root: "TR14.ROOT_FACADE", None),
+            check.CheckSpec("source-audit", "default", lambda root: "overlay.vendor_sync: drift", None),
         )
         with patch.object(check, "check_specs", return_value=specs):
             report = check.run_checks(root=Path("."), tier="default")
@@ -167,10 +168,21 @@ class CheckTests(TestCase):
         ).read_text(encoding="utf-8")
         self.assertNotRegex(source, r"\.parents\[\d+\]")
 
+    def test_engine_checks_run_once_per_declared_engine_and_are_labelled(self) -> None:
+        specs = check.check_specs(paths.REPO_ROOT)
+        declared = engines.names(paths.REPO_ROOT)
+        self.assertEqual([spec.engine for spec in specs if spec.id == "patch-catalog"], list(declared))
+        self.assertEqual([spec.engine for spec in specs if spec.id == "tooling-hygiene"], [None])
+        self.assertEqual([spec.engine for spec in specs if spec.id == "source-audit"], ["llamacpp"])
+        labelled = check.format_result({"status": "passed", "id": "patch-catalog", "engine": "radiance", "detail": "ok"})
+        self.assertEqual(labelled, "[PASSED] radiance/patch-catalog: ok")
+        platform = check.format_result({"status": "passed", "id": "tooling-hygiene", "engine": None, "detail": "ok"})
+        self.assertEqual(platform, "[PASSED] tooling-hygiene: ok")
+
     def test_deterministic_order_and_success(self) -> None:
         specs = (
-            check.CheckSpec("a", "quick", lambda root: None),
-            check.CheckSpec("b", "default", lambda root: None),
+            check.CheckSpec("a", "quick", lambda root: None, None),
+            check.CheckSpec("b", "default", lambda root: None, None),
         )
         with patch.object(check, "check_specs", return_value=specs):
             report = check.run_checks(root=Path("."))
@@ -179,8 +191,8 @@ class CheckTests(TestCase):
 
     def test_multiple_failures_are_aggregated(self) -> None:
         specs = (
-            check.CheckSpec("a", "quick", lambda root: "first"),
-            check.CheckSpec("b", "quick", lambda root: "second"),
+            check.CheckSpec("a", "quick", lambda root: "first", None),
+            check.CheckSpec("b", "quick", lambda root: "second", None),
         )
         with patch.object(check, "check_specs", return_value=specs):
             report = check.run_checks(root=Path("."), tier="quick")
@@ -190,8 +202,8 @@ class CheckTests(TestCase):
     def test_fail_fast_stops_after_first_failure(self) -> None:
         calls: list[str] = []
         specs = (
-            check.CheckSpec("a", "quick", lambda root: calls.append("a") or "bad"),
-            check.CheckSpec("b", "quick", lambda root: calls.append("b") or None),
+            check.CheckSpec("a", "quick", lambda root: calls.append("a") or "bad", None),
+            check.CheckSpec("b", "quick", lambda root: calls.append("b") or None, None),
         )
         with patch.object(check, "check_specs", return_value=specs):
             report = check.run_checks(root=Path("."), tier="quick", fail_fast=True)
@@ -201,15 +213,15 @@ class CheckTests(TestCase):
     def test_exception_is_a_failure(self) -> None:
         def broken(root: Path) -> None:
             raise RuntimeError("boom")
-        with patch.object(check, "check_specs", return_value=(check.CheckSpec("x", "quick", broken),)):
+        with patch.object(check, "check_specs", return_value=(check.CheckSpec("x", "quick", broken, None),)):
             report = check.run_checks(root=Path("."), tier="quick")
         self.assertIn("exception", report["checks"][0]["detail"])
 
     def test_tier_filters(self) -> None:
         specs = (
-            check.CheckSpec("q", "quick", lambda root: None),
-            check.CheckSpec("d", "default", lambda root: None),
-            check.CheckSpec("f", "full", lambda root: None),
+            check.CheckSpec("q", "quick", lambda root: None, None),
+            check.CheckSpec("d", "default", lambda root: None, None),
+            check.CheckSpec("f", "full", lambda root: None, None),
         )
         with patch.object(check, "check_specs", return_value=specs):
             report = check.run_checks(root=Path("."), tier="quick")

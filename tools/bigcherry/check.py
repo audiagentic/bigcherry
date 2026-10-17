@@ -19,8 +19,9 @@ from pathlib import Path
 from typing import cast
 
 from .core import engines, paths
+from .core.context import ProjectContext
+from .engine_adapters import adapter as engine_adapter
 from .patch import catalog as patch_catalog
-from .source import audit as source_audit
 
 TIERS = ("quick", "default", "full")
 
@@ -30,6 +31,8 @@ class CheckSpec:
     id: str
     tier: str
     run: Callable[[Path], str | None]
+    #: the engine whose invariant this is, or None for a platform-wide check
+    engine: str | None
 
 
 @dataclass(frozen=True)
@@ -37,6 +40,7 @@ class CheckResult:
     id: str
     status: str
     detail: str
+    engine: str | None
     duration_ms: int = 0
     skipped: bool = False
 
@@ -138,7 +142,7 @@ _ARTIFACTS_REFERENCE_RE = re.compile(r"artifacts/([A-Za-z0-9][A-Za-z0-9._-]*)")
 
 
 def _referenced_artifact_names(root: Path) -> frozenset[str]:
-    """Names cited as ``artifacts/<name>`` anywhere under docs/ or engines/llamacpp/patches/.
+    """Names cited as ``artifacts/<name>`` anywhere under docs/ or any engine's patches/.
 
     The project's real evidence convention pairs a short ``artifacts/<name>``
     raw-data directory with a date-prefixed ``docs/evidence/YYYY-MM-DD-<name
@@ -150,7 +154,8 @@ def _referenced_artifact_names(root: Path) -> frozenset[str]:
     tracked prose, not only when the two directory names match verbatim.
     """
     names: set[str] = set()
-    for base in (root / "docs", paths.LLAMACPP.patches_root(root)):
+    patch_roots = [layout.patches_root(root) for layout in engines.load_all(root).values()]
+    for base in (root / "docs", *patch_roots):
         if not base.is_dir():
             continue
         for md_path in base.rglob("*.md"):
@@ -905,22 +910,12 @@ def _tooling_hygiene(root: Path) -> str | None:
     )
 
 
-def _source_audit(root: Path) -> str | None:
-    # Use the same checkout authority as patch/build workflows.  The explicit
-    # root argument remains the repository root for check artifacts, while
-    # BIGCHERRY_LLAMA_ROOT may point source auditing at an isolated checkout.
-    checkout = paths.llama_root()
-    report = source_audit.audit(checkout, engine=engines.LLAMACPP)
-    return (
-        None
-        if source_audit.passed(report, strict=True)
-        else json.dumps(report, sort_keys=True)
-    )
+def _catalog(engine: str) -> Callable[[Path], str | None]:
+    def run(root: Path) -> str | None:
+        problems = patch_catalog.cross_check(engine)
+        return None if not problems else "\n".join(problems)
 
-
-def _catalog(root: Path) -> str | None:
-    problems = patch_catalog.cross_check("llamacpp")
-    return None if not problems else "\n".join(problems)
+    return run
 
 
 def _python_compile(root: Path) -> str | None:
@@ -934,13 +929,18 @@ def _python_compile(root: Path) -> str | None:
     return None if result.returncode == 0 else (result.stdout + result.stderr).strip()
 
 
-def check_specs() -> tuple[CheckSpec, ...]:
-    return (
-        CheckSpec("patch-catalog", "quick", _catalog),
-        CheckSpec("tooling-hygiene", "quick", _tooling_hygiene),
-        CheckSpec("source-audit", "default", _source_audit),
-        CheckSpec("python-compile", "full", _python_compile),
-    )
+def check_specs(root: Path) -> tuple[CheckSpec, ...]:
+    """Platform-wide checks, then each declared engine's checks (generic ones plus those its adapter declares)."""
+    specs = [CheckSpec("tooling-hygiene", "quick", _tooling_hygiene, None)]
+    for name in engines.names(root):
+        specs.append(CheckSpec("patch-catalog", "quick", _catalog(name), name))
+        context = ProjectContext.resolve(engine=name)
+        for source_check in engine_adapter(name).source_checks(context):
+            specs.append(
+                CheckSpec(source_check.id, source_check.tier, lambda _root, run=source_check.run: run(), name)
+            )
+    specs.append(CheckSpec("python-compile", "full", _python_compile, None))
+    return tuple(specs)
 
 
 def run_checks(
@@ -950,7 +950,7 @@ def run_checks(
         raise ValueError(f"unknown check tier {tier!r}")
     rank = {name: index for index, name in enumerate(TIERS)}
     results: list[CheckResult] = []
-    for spec in check_specs():
+    for spec in check_specs(root):
         if rank[spec.tier] > rank[tier]:
             continue
         started = time.monotonic()
@@ -960,6 +960,7 @@ def run_checks(
                 spec.id,
                 "passed" if detail is None else "failed",
                 "ok" if detail is None else detail,
+                spec.engine,
                 int((time.monotonic() - started) * 1000),
             )
         except subprocess.TimeoutExpired as exc:
@@ -967,6 +968,7 @@ def run_checks(
                 spec.id,
                 "failed",
                 f"timeout: {exc}",
+                spec.engine,
                 int((time.monotonic() - started) * 1000),
             )
         except Exception as exc:  # a broken check is a failed gate, never green
@@ -974,6 +976,7 @@ def run_checks(
                 spec.id,
                 "failed",
                 f"exception: {type(exc).__name__}: {exc}",
+                spec.engine,
                 int((time.monotonic() - started) * 1000),
             )
         results.append(result)
@@ -985,6 +988,12 @@ def run_checks(
         "passed": all(result.ok for result in results),
         "checks": [asdict(result) for result in results],
     }
+
+
+def format_result(result: dict[str, object]) -> str:
+    """One report line; an engine's check is labelled with the engine, a platform-wide check is not."""
+    label = f"{result['engine']}/{result['id']}" if result["engine"] else str(result["id"])
+    return f"[{str(result['status']).upper():6}] {label}: {result['detail']}"
 
 
 def main(argv: list[str] | None = None, *, root: Path | None = None) -> int:
@@ -1006,7 +1015,5 @@ def main(argv: list[str] | None = None, *, root: Path | None = None) -> int:
     else:
         checks = cast(list[dict[str, object]], report["checks"])
         for result in checks:
-            print(
-                f"[{str(result['status']).upper():6}] {result['id']}: {result['detail']}"
-            )
+            print(format_result(result))
     return 0 if report["passed"] else 1
