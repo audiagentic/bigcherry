@@ -1345,6 +1345,16 @@ private:
             fn(std::atoi(v));
             std::fprintf(stderr, "r3_moe_helper: R3_MOE_HELPER_MOE_DOWN_TILE=%s applied\n", v);
         }
+        /* RAD06: runs of this many rows or more take 64-row slices and the MT=4 tile (libr3 native/r4d_moe.hip.rw). */
+        if (const char* v = std::getenv("R3_MOE_HELPER_MOE_LONG_ROWS"); v && *v && std::strcmp(v, "0") != 0) {
+            auto fn = reinterpret_cast<void (*)(int)>(dlsym(so_, "r4d_moe_gemm_pin_long_rows"));
+            if (!fn) {
+                std::fprintf(stderr, "r3_moe_helper: R3_MOE_HELPER_MOE_LONG_ROWS set but the plugin lacks r4d_moe_gemm_pin_long_rows\n");
+                return false;
+            }
+            fn(std::atoi(v));
+            std::fprintf(stderr, "r3_moe_helper: R3_MOE_HELPER_MOE_LONG_ROWS=%s applied\n", v);
+        }
         return true;
     }
 

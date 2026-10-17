@@ -2,7 +2,7 @@
 id: PNRO18
 order: 0
 plan: patching-nasone-rdna-optimizations
-state: pending
+state: done
 created-at: '2026-09-25T23:16:44.258298+00:00'
 breadth: ''
 skill: intermediate
@@ -11,53 +11,12 @@ priority: P2
 work: S
 ---
 
-# 1252 P2P probe hardening (GPT review)
+# 1252 P2P probe hardening — retired with rejected provider
 
-## Description
+**Terminal disposition (2026-10-18; BCOP292): DONE / SUPERSEDED.** This item proposed expanding `ggml_cuda_ar_p2p_probe` to check every async error and `copy_bytes`/chunk threshold edge on production streams and scratch. The exact production path, expected test matrix, correctness fence and conditional reopening criteria now belong **only to PNRO03**. Patch 1252 was already rejected on 2026-10-08 after the 2026-10-07 Brutus fault; its experiment was removed. Hardening an unselected, rejected transport cannot establish performance and must not be independently queued.
 
-GPT review req_4d131e8b7c1c452d: keep the empirical byte-verified probe (hipDeviceCanAccessPeer establishes capability, not correctness; AMD documents PCIe P2P as platform-dependent), and harden it: check cudaDeviceCanAccessPeer both directions before enabling (already), clear/check errors after every step, synchronize before compare, probe through the exact production copy path (same streams, same dev_tmp ownership), and include sizes straddling every runtime dispatch threshold (copy_threshold, chunk sizes), not only 4 KiB..4 MiB.
+The 1252 probe currently tests 4 KiB, 64 KiB+256, 1 MiB and 4 MiB, both directions, twice. It uses temporary buffers rather than production `dev_tmp` and does not cover threshold±1; these are source-verified coverage gaps, **not** demonstrated causes of the hardware fault. The permanent `hipMemcpyDefault` byte-verification fixture is adjacent coverage, not an async-P2P substitute.
 
-## Steps
+No implementation, patch metadata, hardware queue or other owner's plan is changed. See `PNRO03.md` for conditional reopening, existing test reuse and acceptance/rejection thresholds. Historical steps remain in Git history.
 
-1. Probe uses p->p2p_stream[src] and dev_tmp-sized buffers.
-2. Sizes: each threshold -1, =, +1 element, plus max copy_bytes.
-3. cudaGetLastError check after each call; fail closed.
-
-## Detailed Solution & Technical Design
-
-
-
-## Code Samples & Guidance
-
-
-
-## Files
-
-
-
-## Validation
-
-Static package test; hardware P2P arm on 2x gfx1100 per TESTING.md.
-
-## Effort & Risk
-
-
-
-## Standards
-
-
-
-## Acceptance Criteria
-
-
-
-## Notes
-
-## Change Log
-
-- 2026-09-25T23:16:44.258298+00:00 (created-by): Created by agent
-
-## Ledger-events
-
-- chg_20260925_232233_correctness-checks-for-approxi_1217
-- 2026-09-25T23:22:45.229638+00:00 (updated-by): Updated: section:ledger-events
+**Validation:** host-only seven-case admission/edge model passed; Python compilation passed. No HIP build, repository tests, GPU execution or new measured performance.
