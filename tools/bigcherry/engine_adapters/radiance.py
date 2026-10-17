@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from .base import (
-    CompletionApi, CpuSmokeSpec, DeviceAssertion, EngineAdapter, QualityCommand, SidecarSpec, SourceCheck, SMOKE_SEED,
+    BumpCheck, CompletionApi, CpuSmokeSpec, DeviceAssertion, EngineAdapter, QualityCommand, SidecarSpec, SourceCheck, SMOKE_SEED,
     build_cpu_smoke,
 )
 
@@ -77,6 +77,17 @@ class RadianceAdapter(EngineAdapter):
 
     def source_checks(self, context: ProjectContext) -> tuple[SourceCheck, ...]:
         return ()
+
+    def compile_checks(self, context: ProjectContext, source_dir: Path, workdir: Path) -> tuple[BumpCheck, ...]:
+        """The component gate: build the engine and its components, check every plugin's ABI, run the component tests."""
+        from . import radiance_bump
+
+        return radiance_bump.compile_checks(context, source_dir, workdir)
+
+    def audit_checks(self, context: ProjectContext):
+        from . import radiance_bump
+
+        return radiance_bump.audit_checks(context)
 
     def check_arm_environment(self, controls: dict[str, str]) -> None:
         return None

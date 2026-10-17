@@ -814,6 +814,17 @@ def vulkan_audit(root: Path, *, engine: str) -> dict[str, Any]:
     }
 
 
+def check_ggml_cuda_tree(ctx: AuditContext) -> None:
+    """The llama.cpp engine's audit: the ggml HIP/CUDA invariants, on a ggml-cuda checkout."""
+    if not ctx.cuda.is_dir():
+        ctx.fail("root.is_ggml_cuda_checkout",
+                 f"{ctx.root} does not look like a ggml-cuda checkout "
+                 f"(no ggml/src/ggml-cuda); these invariants are the ggml HIP/CUDA ones")
+        return
+    for check in ALL_CHECKS:
+        check(ctx)
+
+
 def audit(root: Path, *, engine: str) -> dict[str, Any]:
     ctx = AuditContext(
         engine=engine,
@@ -822,13 +833,11 @@ def audit(root: Path, *, engine: str) -> dict[str, Any]:
         instances=paths.template_instances_dir(root),
         overlay_root=engines.load(paths.REPO_ROOT, engine).overlay_root(paths.REPO_ROOT),
     )
-    if not ctx.cuda.is_dir():
-        ctx.fail("root.is_ggml_cuda_checkout",
-                 f"{root} does not look like a ggml-cuda checkout "
-                 f"(no ggml/src/ggml-cuda); these invariants are the ggml HIP/CUDA ones")
-    else:
-        for check in ALL_CHECKS:
-            check(ctx)
+    from ..core.context import ProjectContext
+    from ..engine_adapters import adapter
+
+    for check in adapter(engine).audit_checks(ProjectContext.resolve(engine=engine)):
+        check(ctx)
 
     revision, dirty = git_revision(root)
     errors = [r for r in ctx.results if not r.ok and r.severity == SEVERITY_ERROR]

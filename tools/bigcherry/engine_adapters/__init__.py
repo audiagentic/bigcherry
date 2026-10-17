@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from .base import (
-    CompletionApi, CpuSmokeSpec, DeviceAssertion, EngineAdapter, QualityCommand, SidecarError, SidecarSet, SidecarSpec,
+    BumpCheck, BumpCheckError, CompletionApi, CpuSmokeSpec, DeviceAssertion, EngineAdapter, QualityCommand, SidecarError, SidecarSet, SidecarSpec,
     SourceCheck,
 )
 from .llamacpp import LlamaCppAdapter
@@ -22,4 +22,4 @@ def adapter(engine: str) -> EngineAdapter:
         raise ValueError(f"no engine adapter for {engine!r}; known: {', '.join(sorted(_ADAPTERS))}") from None
 
 
-__all__ = ["CompletionApi", "CpuSmokeSpec", "DeviceAssertion", "EngineAdapter", "QualityCommand", "SidecarError", "SidecarSet", "SidecarSpec", "SourceCheck", "adapter"]
+__all__ = ["BumpCheck", "BumpCheckError", "CompletionApi", "CpuSmokeSpec", "DeviceAssertion", "EngineAdapter", "QualityCommand", "SidecarError", "SidecarSet", "SidecarSpec", "SourceCheck", "adapter"]

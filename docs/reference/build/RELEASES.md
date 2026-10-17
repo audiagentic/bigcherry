@@ -43,6 +43,12 @@ older tag family, and extra repository paths owned by the engine). The package p
    gate output and hardware evidence into the pin's release record. `--dry-run` prints the concrete actions and writes
    nothing. See [PIN_BUMP.md](PIN_BUMP.md) for the bump that precedes it.
 
+## Bump gates per engine
+
+`pin-bump` runs the gates the engine declares through its adapter: llama.cpp the ggml-cuda contract compile and the ggml
+audit; radiance the component gate (build the engine and its components, every plugin's `rad_plugin_abi_version` equals
+the source's `RAD_ABI_VERSION`, component offline tests) and its own audit. Details: [PIN_BUMP.md](PIN_BUMP.md#per-engine-bump-gates).
+
 ## Smoke order for a bump or any change
 
 1. **CPU smoke (RAM-only, no GPU).** `python -m bigcherry --engine <name> smoke-cpu --build <dir>` serves a tiny model on

@@ -39,6 +39,7 @@ from ..build import source_compile_check
 from ..core import paths
 from ..core import tree_activity
 from ..core.context import ProjectContext
+from ..engine_adapters import BumpCheckError, adapter
 from ..patch import apply as patch_apply
 from ..patch import disposition as patch_disposition
 from ..patch import overlay as patch_overlay
@@ -974,62 +975,80 @@ def run_phase_compile(
     workdir: Path,
     recipe_report_path: Path,
     target_ref: str,
-    clangxx: str = "clang++",
 ) -> str:
-    """Run PA44-A source compile checks and return the checked tree OID."""
+    """Run the engine's compile checks (its adapter's ``compile_checks``) and return the checked tree OID.
 
-    if shutil.which(clangxx) is None:
+    The first check that cannot run or finds failures STOPs the bump under the check's own failure code."""
+
+    resume = f"python -m bigcherry --engine {engine} pin-bump {target_ref} --resume"
+    try:
+        checks = adapter(engine).compile_checks(ProjectContext.resolve(engine=engine), vendor_root, workdir)
+    except (ValueError, OSError) as exc:
         raise PinBumpStop(
             "compile",
-            "SOURCE_COMPILE_UNAVAILABLE",
-            f"required source compiler is not available: {clangxx}",
-            evidence={"compiler": clangxx},
-            recommended_actions=[
-                "install clang++ (Ubuntu/Debian: sudo apt-get install clang)",
-                f"rerun python -m bigcherry --engine {engine} pin-bump {target_ref} --resume",
-                "only if intentionally accepting the missing gate, rerun with --resume --skip-compile",
-            ],
-        )
+            "SOURCE_COMPILE_FAILED",
+            f"the compile checks of {engine} could not be set up: {type(exc).__name__}: {exc}",
+            evidence={"error": str(exc)},
+            recommended_actions=[f"fix the engine declaration, then {resume}"],
+        ) from exc
+    for check in checks:
+        absent = [tool for tool in check.tools if shutil.which(tool) is None]
+        if absent:
+            raise PinBumpStop(
+                "compile",
+                "SOURCE_COMPILE_UNAVAILABLE",
+                f"required source compile tool is not available: {', '.join(absent)}",
+                evidence={"check": check.id, "missing": absent, "compiler": absent[0]},
+                recommended_actions=[
+                    check.install_hint or f"install {', '.join(absent)}",
+                    f"rerun {resume}",
+                    "only if intentionally accepting the missing gate, rerun with --resume --skip-compile",
+                ],
+            )
 
     try:
         report = json.loads(recipe_report_path.read_text(encoding="utf-8"))
         patch_ids = tuple(report["selector"]["patch_ids"])
-        failures = source_compile_check.check_cuda_contracts(
-            vendor_root.resolve(), workdir.resolve(), clangxx
-        )
-    except (
-        OSError,
-        KeyError,
-        TypeError,
-        json.JSONDecodeError,
-        source_compile_check.SourceCompileCheckError,
-    ) as exc:
+    except (OSError, KeyError, TypeError, json.JSONDecodeError) as exc:
         raise PinBumpStop(
             "compile",
             "SOURCE_COMPILE_FAILED",
             f"source compile check could not run: {type(exc).__name__}: {exc}",
-            evidence={"compiler": clangxx, "error": str(exc)},
-            recommended_actions=[
-                "fix the source or compile-check failure in the owning production patch",
-                f"rerun python -m bigcherry --engine {engine} pin-bump {target_ref} --resume",
-            ],
+            evidence={"error": str(exc)},
+            recommended_actions=[f"rerun {resume}"],
         ) from exc
 
-    if failures:
-        ownership = _build_patch_line_ownership(engine, vendor_root, patch_ids)
-        errors = _compile_failure_evidence(failures, ownership)
+    for check in checks:
+        try:
+            failures = check.run()
+        except (OSError, BumpCheckError) as exc:
+            raise PinBumpStop(
+                "compile",
+                "SOURCE_COMPILE_FAILED",
+                f"source compile check {check.id} could not run: {type(exc).__name__}: {exc}",
+                evidence={"check": check.id, "error": str(exc)},
+                recommended_actions=[
+                    "fix the source or compile-check failure in the owning production patch",
+                    f"rerun {resume}",
+                ],
+            ) from exc
+        if not failures:
+            continue
+        if check.patch_attributed:
+            evidence: dict[str, Any] = {
+                "check": check.id,
+                "errors": _compile_failure_evidence(failures, _build_patch_line_ownership(engine, vendor_root, patch_ids)),
+            }
+            actions = ["fix each error inside the named owning patch; for an upstream line, start with related_patches"]
+        else:
+            evidence = {"check": check.id, "failures": failures}
+            actions = [f"fix the component or the patch that broke {check.id}, then rerun the bump"]
         raise PinBumpStop(
             "compile",
-            "SOURCE_COMPILE_FAILED",
-            f"{len(failures)} source compile check failure(s) on the patched tree",
-            evidence={
-                "compiler": clangxx,
-                "errors": errors,
-            },
-            recommended_actions=[
-                "fix each error inside the named owning patch; for an upstream line, start with related_patches",
-                f"rerun python -m bigcherry --engine {engine} pin-bump {target_ref} --resume",
-            ],
+            check.failure_code,
+            f"{len(failures)} failure(s) in compile check {check.id} on the patched tree",
+            evidence=evidence,
+            recommended_actions=[*actions, f"rerun {resume}"],
         )
 
     return _compile_tree_oid(engine, vendor_root, patch_ids)

@@ -23,6 +23,11 @@ def _run(argv: list[str], cwd: Path) -> None:
     subprocess.run(argv, cwd=cwd, check=True)
 
 
+def component_build_dir(build_dir: Path, name: str) -> Path:
+    """Where ``build_runtime`` configures and builds component ``name``."""
+    return build_dir / "components" / name
+
+
 class RuntimeBundleError(RuntimeError):
     """A runtime target or component did not build, or did not produce a declared output."""
 
@@ -52,7 +57,7 @@ def build_runtime(
         shutil.rmtree(prefix)
     runner(["cmake", "--install", str(build_dir), "--prefix", str(prefix)], source_root)
     for name, component in sorted(declared.items()):
-        component_build = build_dir / "components" / name
+        component_build = component_build_dir(build_dir, name)
         values = {"engine_source": str(source_root), "targets": ";".join(component.targets)}
         options = {key: value.format(**values) for key, value in component.configure}
         options["CMAKE_PREFIX_PATH"] = str(prefix)
