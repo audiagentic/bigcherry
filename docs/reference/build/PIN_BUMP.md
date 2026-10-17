@@ -193,11 +193,11 @@ window; bump one, record, then bump the other.
    any stop: `gate` (`pin-status --complete --all-remotes`), `record` (gate
    output and evidence into `releases/<tag>.json`, transition marker removed,
    one commit), `notes` (`release-notes` plus package-scoped `release-as` in
-   `release-please-config.json`, one commit), `main` (the work branch takes
-   `origin/main` in if needed, is pushed, then a checked pull request to
-   `main` is opened/reused and merge-committed), `release` (the exact
+   `release-please-config.json`, one commit), `main` (the work branch is pushed, then a checked pull request to
+   `main` is opened/reused, brought up to `main`, and merge-committed once its required checks pass), `release` (the exact
    bc-llamacpp release-please PR is file-validated, merged and the command waits
-   for the tag), `unpin` (branch `chore/release-as-clear-<version>` removes
+   for the tag; a single confirmation comes first: a terminal is asked once, `--yes` confirms without asking, and with
+   neither the command stops before tagging with the finished phases recorded), `unpin` (branch `chore/release-as-clear-<version>` removes
    `release-as` through another checked pull request), `sync` (the work
    branch takes current `main` back). `--through <phase>` stops early;
    `--dry-run` reports the concrete PRs and manifest versions without writes.
@@ -205,6 +205,8 @@ window; bump one, record, then bump the other.
    The version is carried only by `release-as` on the `engines/llamacpp`
    package in `release-please-config.json`; it is removed after the release
    tag exists. Commit-message `Release-As` footers are not used.
+
+   Main's ruleset requires `conventional-title` and `index-line-endings`. A release-please PR created by the Actions bot never triggers workflows, so those checks never run and the base-branch policy blocks the merge (bc-radiance 170.0.0, PR #253). Before any main/release/unpin PR is merged, `pin-release` brings its branch up to current `main` (only the shared release manifest may conflict: the released package keeps the release side's version, every other package main's), waits for the ruleset-required checks, and if none is reported triggers them once as the account (a close and reopen of the PR) and waits again. A failing or missing required check stops the command. Built on #208.
 
    Versions and tags. release-please owns the tags: `bc-llamacpp-<llama build>.<minor>.<patch>` (the llama.cpp engine's release line; the shared platform has its own, `bc-platform-<version>`).
    A pin bump is released as `<build>.0.0` (`bc-11474.0.0`; the workflow also
@@ -290,7 +292,9 @@ verdict engine):
 
 `bigcherry --engine <name> pin-bump` now runs the bump-time source check as its own resumable phase:
 
-`preflight -> declare -> pull -> audit -> patch-lint -> coverage -> apply -> compile -> lane-build -> cpu-smoke -> reaudit -> complete`.
+`preflight -> declare -> pull -> drift -> audit -> patch-lint -> coverage -> apply -> compile -> lane-build -> cpu-smoke -> reaudit -> complete`.
+
+The `drift` phase (MEN19) runs right after the pull, on the pristine bumped upstream tree, before the audit, patch rebase and builds: it asks the engine adapter for `source_drift_checks` (llama.cpp has none) and STOPs with the check's code and the failures per file. For radiance it runs libr3's `r3_rewrite.py --check` (writes nothing) against the bumped `libr4d` sources and STOPs with `NATIVE_REWRITE_DRIFT`, listing every `rewrites.txt` rule and `native/*.rw` block that no longer matches, so one run shows the whole port instead of the first block the build trips on. A check that cannot run STOPs with `SOURCE_DRIFT_UNCHECKED`.
 
 The `compile` phase runs the engine's own compile checks (the engine adapter's `compile_checks`) against the patched vendor tree, and `audit`/`reaudit` run its `audit_checks`; see [Per-engine bump gates](#per-engine-bump-gates). For llama.cpp the compile check is `bigcherry.build.source_compile_check` with `clang++`; it needs neither ROCm nor a GPU. A successful phase records the exact effective source-tree OID. On `--resume` it is skipped when that OID is unchanged and re-run when the checked tree changed.
 

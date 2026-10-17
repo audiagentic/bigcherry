@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from .base import (
-    BumpCheck, CompletionApi, CpuSmokeSpec, DeviceAssertion, EngineAdapter, QualityCommand, SidecarSpec, SourceCheck, SMOKE_SEED,
+    BumpCheck, CompletionApi, CpuSmokeSpec, DeviceAssertion, DriftCheck, EngineAdapter, QualityCommand, SidecarSpec, SourceCheck, SMOKE_SEED,
     build_cpu_smoke,
 )
 
@@ -86,6 +86,12 @@ class RadianceAdapter(EngineAdapter):
         from . import radiance_bump
 
         return radiance_bump.compile_checks(context, source_dir, workdir, platform_name=platform_name)
+
+    def source_drift_checks(self, context: ProjectContext, source_dir: Path) -> tuple[DriftCheck, ...]:
+        """libr3's native rewrites, run against the bumped libr4d sources."""
+        from . import radiance_bump
+
+        return radiance_bump.source_drift_checks(context, source_dir)
 
     def audit_checks(self, context: ProjectContext):
         from . import radiance_bump

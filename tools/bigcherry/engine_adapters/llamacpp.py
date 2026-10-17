@@ -7,7 +7,7 @@ import json
 from typing import TYPE_CHECKING, Any
 
 from .base import (
-    BumpCheck, BumpCheckError, CompletionApi, CpuSmokeSpec, DeviceAssertion, EngineAdapter, QualityCommand, SidecarSpec, SourceCheck, SMOKE_SEED,
+    BumpCheck, BumpCheckError, CompletionApi, CpuSmokeSpec, DeviceAssertion, DriftCheck, EngineAdapter, QualityCommand, SidecarSpec, SourceCheck, SMOKE_SEED,
     build_cpu_smoke,
 )
 
@@ -82,6 +82,9 @@ class LlamaCppAdapter(EngineAdapter):
         return (BumpCheck(
             "ggml-cuda-contracts", "SOURCE_COMPILE_FAILED", (clangxx,),
             f"install {clangxx} (Ubuntu/Debian: sudo apt-get install clang)", run, patch_attributed=True),)
+
+    def source_drift_checks(self, context: ProjectContext, source_dir: Path) -> tuple[DriftCheck, ...]:
+        return ()
 
     def audit_checks(self, context: ProjectContext):
         from ..source import audit as source_audit

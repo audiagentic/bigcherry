@@ -85,6 +85,21 @@ class BumpCheck:
     patch_attributed: bool = False
 
 
+@dataclass(frozen=True)
+class DriftCheck:
+    """One engine-specific upstream-drift check of ``bigcherry pin-bump``'s drift phase (MEN19), run on the freshly pulled,
+    still unpatched upstream tree.
+
+    ``run`` returns the failures by file (empty when nothing drifted) and raises :class:`BumpCheckError` when it could not
+    run. ``failure_code`` is the structured code a drift STOPs the bump with; ``fix_hint`` says what to do about it.
+    """
+
+    id: str
+    failure_code: str
+    fix_hint: str
+    run: Callable[[], dict[str, list[str]]]
+
+
 #: Variables that choose which GPUs a process sees. A CPU smoke sets every one of them to the empty string.
 GPU_HIDING_ENV = ("HIP_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES", "CUDA_VISIBLE_DEVICES", "GPU_DEVICE_ORDINAL")
 
@@ -207,6 +222,12 @@ class EngineAdapter(ABC):
         them), in order; the first failing check STOPs the bump. ``platform_name`` is the recipe ``[platform.*]`` named by
         ``--platform``; a gate that builds configures exactly as ``bigcherry build`` does for that platform and raises
         ValueError when it is missing or unknown, a gate that does not build ignores it."""
+
+    @abstractmethod
+    def source_drift_checks(self, context: ProjectContext, source_dir: Path) -> tuple[DriftCheck, ...]:
+        """Checks of BigCherry's own source against the freshly pulled upstream tree ``source_dir`` (MEN19), run by
+        pin-bump's drift phase before any patch work; empty when the engine has nothing derived from upstream text. Each
+        reports what no longer matches, per file, so one bump shows the whole port."""
 
     @abstractmethod
     def audit_checks(self, context: ProjectContext) -> tuple[Callable[[Any], None], ...]:

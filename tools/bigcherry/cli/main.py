@@ -827,6 +827,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     pin_release_cmd.add_argument("--version", default=None, help="state the version (<llama build>.<minor>.<patch>) instead of deriving it")
     pin_release_cmd.add_argument("--dry-run", action="store_true", help="print concrete read-only actions and release versions")
+    pin_release_cmd.add_argument(
+        "--yes", action="store_true",
+        help="confirm the release (the tag is produced by merging release-please's PR) without asking. Without it a terminal is asked "
+        "once before that phase, and with no terminal the command stops before tagging, finished phases recorded",
+    )
     pin_release_cmd.set_defaults(func=cmd_pin_release)
 
     replay_inspect_cmd = sub.add_parser(
@@ -2084,7 +2089,7 @@ def cmd_pin_release(args: argparse.Namespace) -> int:
             return 2
     try:
         return _pin_release.run(_paths.REPO_ROOT, args.engine, args.llama_tag, evidence, through=args.through, dry_run=args.dry_run,
-                                version=args.version, bump=args.bump)
+                                version=args.version, bump=args.bump, yes=args.yes)
     except _pin_release.PinReleaseError as exc:
         print(f"pin-release: STOPPED at phase {exc.phase!r}: {exc}", file=_sys.stderr)
         print("  fix the cause and run the same command again; finished phases are skipped", file=_sys.stderr)
