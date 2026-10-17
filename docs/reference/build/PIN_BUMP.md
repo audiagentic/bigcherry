@@ -288,11 +288,11 @@ verdict engine):
 
 ## Compile-only admission after composition (PA44-A)
 
-`bigcherry --engine llamacpp pin-bump` now runs the bump-time source check as its own resumable phase:
+`bigcherry --engine <name> pin-bump` now runs the bump-time source check as its own resumable phase:
 
 `preflight -> declare -> pull -> audit -> patch-lint -> coverage -> apply -> compile -> cpu-smoke -> reaudit -> complete`.
 
-The `compile` phase runs `bigcherry.build.source_compile_check` against the patched vendor tree with `clang++`; it needs neither ROCm nor a GPU. A successful phase records the exact effective source-tree OID. On `--resume` it is skipped when that OID is unchanged and re-run when the checked tree changed.
+The `compile` phase runs the engine's own compile checks (the engine adapter's `compile_checks`) against the patched vendor tree, and `audit`/`reaudit` run its `audit_checks`; see [Per-engine bump gates](#per-engine-bump-gates). For llama.cpp the compile check is `bigcherry.build.source_compile_check` with `clang++`; it needs neither ROCm nor a GPU. A successful phase records the exact effective source-tree OID. On `--resume` it is skipped when that OID is unchanged and re-run when the checked tree changed.
 
 A compile failure STOPs with `SOURCE_COMPILE_FAILED`. `failure.evidence.errors[]` names the composed file and line, the production patch/edit that produced that line, the first compiler-message lines, and, when the failing line is upstream text, `owner: upstream` plus the nearest preceding production edit (or the patches that edit that file). Fix the named owning patch and resume the same bump.
 
@@ -319,3 +319,30 @@ Without `--cpu-smoke-build` the phase STOPs with `CPU_SMOKE_BUILD_MISSING`; a fa
 `<report dir>/cpu-smoke/`). `--skip-cpu-smoke` is the only way past the phase; it is saved in `state.json` as
 `cpu_smoke.status = "skipped"` and printed in the final summary. The same smoke runs on its own with
 `bigcherry --engine <engine> smoke-cpu --build <dir>` (see the engine's README or `docs/reference/build/BUILD.md`).
+
+## Per-engine bump gates
+
+The compile and audit gates are invariants of one engine's source, so each engine's adapter
+(`tools/bigcherry/engine_adapters/`) supplies them; pin-bump and `bigcherry audit` only run what the adapter returns and
+stop on the first failing check under that check's own failure code.
+
+| | compile checks (`compile` phase) | audit checks (`audit`, `reaudit`, `bigcherry audit`) |
+|---|---|---|
+| llama.cpp | `ggml-cuda-contracts` (`SOURCE_COMPILE_FAILED`, needs `clang++`) | the ggml HIP/CUDA invariants and overlay sync |
+| radiance | the component gate below | overlay sync (nothing to sync when the engine has no overlay directory), `patches.application_state` (no registered patch half-applied, no patch targeting a file the tree lacks), `components.source_present` and `components.abi_header` (each declared component has its source; `abi/rad_abi.h` declares a numeric `RAD_ABI_VERSION`) |
+
+**radiance component gate.** radiance's BigCherry plugin components (`[components]` in `engine.toml`, e.g. libr3, which
+also produces libr3moe and the helpers) are built against the engine's plugin ABI and internal headers, so a bump can break
+them without any patch anchor failing. The compile phase runs three checks in order, each STOPping the bump:
+
+1. `components-build` (`COMPONENT_BUILD_FAILED`; needs `cmake`, `ninja`, the ROCm toolchain): configure and build the bumped
+   engine for the components' GPU targets in `work/source-compile-check/radiance-build`, then build every component through
+   `campaign.runtime_bundle.build_runtime`, the same function `bigcherry build` uses for the radiance lane.
+2. `component-plugin-abi` (`PLUGIN_ABI_MISMATCH`): every `*.so` in the build's `radiance_home/kernels` (the engine's own and
+   the components') is loaded in a child process and its exported `rad_plugin_abi_version()` must equal `RAD_ABI_VERSION`
+   from the bumped source's `abi/rad_abi.h`. This is the engine's own load handshake; `nm` could show the symbol but not its value.
+3. `component-tests` (`COMPONENT_TEST_FAILED`; needs `ctest`): each component's `[test] targets` in `component.toml` are
+   built and run with `ctest` in the component's build tree.
+
+These need a radiance checkout and a Linux host with the toolchain; on a host without `cmake`/`ninja`/`ctest` the phase STOPs
+with `SOURCE_COMPILE_UNAVAILABLE` (or `--skip-compile`, recorded in the release record).

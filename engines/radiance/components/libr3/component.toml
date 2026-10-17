@@ -15,6 +15,10 @@ outputs = ["kernels/libr3.so", "kernels/libr3moe.so", "helpers/libr3_ngram_helpe
 [build]
 configure = { RADIANCE_SRC = "{engine_source}", R3_TARGETS = "{targets}", R3_NATIVE = "ON" }
 
+# Offline tests the bump gate (bigcherry pin-bump) builds and runs with ctest in the component's build tree.
+[test]
+targets = ["r3_moe_shm_test"]
+
 # Runtime settings: each environment variable the plugin reads, its default, and what it is.
 #   status = production    on (or meaningful) in served configurations, with quality and speed evidence
 #   status = experimental  measured, not adopted; may appear only in an experiment
