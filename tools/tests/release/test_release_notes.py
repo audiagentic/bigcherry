@@ -160,8 +160,10 @@ class ReleasePleaseWiringTests(unittest.TestCase):
 
     def test_manifest_versions(self):
         self.assertEqual(sorted(self.manifest), [".", "engines/llamacpp", "engines/radiance"])
-        # radiance's major is its upstream version's digits (1.3.0 -> 130)
-        self.assertEqual(self.manifest["engines/radiance"], "130.0.0")
+        # radiance's major is its pinned upstream version's digits (1.7.0 -> 170)
+        import tomllib
+        pinned = tomllib.loads((_REPO / "engines" / "radiance" / "recipes.toml").read_text(encoding="utf-8"))["pinned-version"]
+        self.assertRegex(self.manifest["engines/radiance"], rf"^{pinned.replace('.', '')}\.\d+\.\d+$")
         # the llama.cpp line's major is a llama build number; the platform line is a plain semantic version
         self.assertRegex(self.manifest["engines/llamacpp"], r"^\d{4,6}\.\d+\.\d+$")
         self.assertRegex(self.manifest["."], r"^\d{1,3}\.\d+\.\d+$")

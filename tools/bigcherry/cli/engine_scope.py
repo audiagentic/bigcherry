@@ -51,7 +51,8 @@ _LANE_COMMANDS = frozenset({"build", "campaign-build"})
 #: patch-lint checks every engine's patch tree. patch-disposition keeps one repository-wide store keyed by patch ID
 #: (IDs carry their engine's prefix, so they never collide) and bound to an exact revision and digest, so it has no
 #: engine to choose.
-_PLATFORM_COMMANDS = frozenset({"patch-lint", "patch-disposition"})
+#: remote runs a bigcherry command (carrying its own --engine) on a GPU host, so it has no engine of its own.
+_PLATFORM_COMMANDS = frozenset({"patch-lint", "patch-disposition", "remote"})
 _SELF_COMMANDS = frozenset({"engine-bench"})
 
 #: Everything else is today a llama.cpp tool. Each entry is either genuinely llama.cpp-only (tuning, replay,

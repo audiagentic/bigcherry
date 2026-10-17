@@ -54,6 +54,7 @@ from .slice import (
     cmd_slice_start,
     cmd_slice_status,
 )
+from .remote_run import DEFAULT_STALL_MINUTES, cmd_remote
 from .slice_lab import cmd_slice_lab
 from .tuning import (
     cmd_execution_audit,
@@ -149,6 +150,50 @@ def build_parser() -> argparse.ArgumentParser:
     check_cmd.add_argument("--fail-fast", action="store_true")
     check_cmd.add_argument("--json", metavar="PATH", default=None)
     check_cmd.set_defaults(func=cmd_check, tier="default")
+
+    remote_cmd = sub.add_parser(
+        "remote",
+        help="run, track and wait for detached bigcherry runs on a configured GPU host (MEN18)",
+    )
+    remote_sub = remote_cmd.add_subparsers(dest="remote_action", required=True)
+
+    def _remote_common(parser, *, stall=True):
+        parser.add_argument(
+            "--host", default=None,
+            help="configured [host.*] name; defaults to environment.local.toml default-host",
+        )
+        if stall:
+            parser.add_argument(
+                "--stall-minutes", type=float, default=DEFAULT_STALL_MINUTES,
+                help="report 'stalled' when the log has not grown for this long (default %(default)s)",
+            )
+        parser.set_defaults(func=cmd_remote)
+
+    remote_run = remote_sub.add_parser(
+        "run", help="preflight the host tree, check out --ref detached and launch `-- <bigcherry args>` detached"
+    )
+    _remote_common(remote_run, stall=False)
+    remote_run.add_argument("--ref", required=True, help="git ref (branch, tag or sha) to check out detached")
+    remote_run.add_argument(
+        "--allow-busy", action="store_true",
+        help="skip only the busy-GPU process check (the tree lease and clean checkout are still required)",
+    )
+    remote_run.add_argument("argv", nargs=argparse.REMAINDER, help="-- <bigcherry args> (carry their own --engine)")
+
+    remote_status = remote_sub.add_parser("status", help="running / done / failed / stalled for one run")
+    _remote_common(remote_status)
+    remote_status.add_argument("run_id")
+
+    remote_wait = remote_sub.add_parser("wait", help="block until a run is done/failed/stalled, then print its log tail")
+    _remote_common(remote_wait)
+    remote_wait.add_argument("run_id")
+    remote_wait.add_argument("--timeout", type=float, default=None, help="seconds; exit 124 if still running")
+    remote_wait.add_argument("--poll", type=float, default=15.0, help="seconds between status polls")
+    remote_wait.add_argument("--tail", type=int, default=40, help="log lines to print")
+
+    remote_list = remote_sub.add_parser("list", help="recent runs on the host, newest first")
+    _remote_common(remote_list)
+    remote_list.add_argument("--limit", type=int, default=10)
 
     slice_cmd = sub.add_parser(
         "slice", help="manage short-lived branches used by the trunk workflow"
