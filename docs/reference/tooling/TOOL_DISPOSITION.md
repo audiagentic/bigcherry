@@ -471,6 +471,8 @@ ownership.
 | `tools/lab/radiance/build.sh` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/radiance/fetch-gcc14.sh` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/radiance/run-radiance.sh` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/smoke-models/README.md` | **TRANSITIONAL** | `smoke-models` lab topic file (see `tools/lab/smoke-models/README.md`); produces the MEN15 CPU smoke models. |
+| `tools/lab/smoke-models/fetch-tiny.sh` | **TRANSITIONAL** | `smoke-models` lab topic file (see `tools/lab/smoke-models/README.md`); produces the MEN15 CPU smoke models. |
 | `tools/lab/radiance/wire-quality/README.md` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/radiance/wire-quality/codec_mock.py` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/radiance/fn-helper.sh` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); the engine launcher `fn-profile.sh` wraps; kept because kernel/copy tracing under rocprofv3 is not a harness capability (MEN11). |

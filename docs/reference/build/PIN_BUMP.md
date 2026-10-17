@@ -290,7 +290,7 @@ verdict engine):
 
 `bigcherry --engine llamacpp pin-bump` now runs the bump-time source check as its own resumable phase:
 
-`preflight -> declare -> pull -> audit -> patch-lint -> coverage -> apply -> compile -> reaudit -> complete`.
+`preflight -> declare -> pull -> audit -> patch-lint -> coverage -> apply -> compile -> cpu-smoke -> reaudit -> complete`.
 
 The `compile` phase runs `bigcherry.build.source_compile_check` against the patched vendor tree with `clang++`; it needs neither ROCm nor a GPU. A successful phase records the exact effective source-tree OID. On `--resume` it is skipped when that OID is unchanged and re-run when the checked tree changed.
 
@@ -304,3 +304,18 @@ This check is not hardware qualification and does not replace the HIP/ROCm build
 ## Patch promotion releases (PA45)
 
 A patch promotion on the current pin does not repin llama.cpp. Run `bigcherry patch-promote <id>... --evidence @file [--profile-only] [--release]`; its `feat(patch):` squash title drives a minor release and a `fix(patch):` title drives a patch release. Promotion evidence is copied under `releases/evidence/` and normally must name two distinct models; `--profile-only` is the explicit exception for profile-scoped work. The promotion PR must merge through normal checks/review before release-please can create the version PR.
+
+## CPU smoke: the first runtime gate (MEN15)
+
+After `compile` and before `reaudit`, `pin-bump` runs the engine's RAM-only smoke against a build of the bumped tree: a
+tiny model served on the CPU with no GPU visible, three short greedy completions run twice (non-empty and identical),
+a graceful shutdown, and a check that the server log never shows a device being opened. It needs no GPU, so a busy
+host cannot hold up a bump, and it comes before any GPU smoke. Build the bumped tree first and name the build:
+
+    python -m bigcherry --engine <engine> pin-bump <ref> --cpu-smoke-build <build dir>
+
+Without `--cpu-smoke-build` the phase STOPs with `CPU_SMOKE_BUILD_MISSING`; a failing smoke STOPs with
+`CPU_SMOKE_FAILED` (every reason in `failure.evidence.failures`, the result and server log under
+`<report dir>/cpu-smoke/`). `--skip-cpu-smoke` is the only way past the phase; it is saved in `state.json` as
+`cpu_smoke.status = "skipped"` and printed in the final summary. The same smoke runs on its own with
+`bigcherry --engine <engine> smoke-cpu --build <dir>` (see the engine's README or `docs/reference/build/BUILD.md`).

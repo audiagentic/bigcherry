@@ -66,6 +66,20 @@ class ServeSpec:
 
 
 @dataclass(frozen=True)
+class CpuSmokeDecl:
+    """The tiny model and extra server arguments of an engine's RAM-only smoke test ([smoke.cpu], MEN15).
+
+    ``model`` is relative to the model root (``--model-root``, ``BIGCHERRY_MODEL_ROOT`` or the host's model-root);
+    ``sha256`` is the digest of that exact file. Until the owner pins a real model the digest is a PLACEHOLDER value,
+    which the smoke runner refuses.
+    """
+
+    model: str
+    sha256: str
+    args: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class EngineLayout:
     """One engine's declaration. Paths are repository-relative, in POSIX form."""
 
@@ -95,6 +109,8 @@ class EngineLayout:
     #: where the major of a release version comes from: "build-tag" (the pin is a numbered upstream build, b<N>, and N
     #: is the major) or "pinned-version" (the recipes' pinned-version, 1.3.0, with its dots removed: 130)
     version_source: str = field(default="", kw_only=True)
+    #: [smoke.cpu]: the RAM-only smoke test's model; None when the engine declares none
+    smoke_cpu: CpuSmokeDecl | None = field(default=None, kw_only=True)
 
     @property
     def upstream_name(self) -> str:
@@ -203,6 +219,25 @@ def _serve(table: object, name: str) -> ServeSpec:
     )
 
 
+def _smoke_cpu(table: object, name: str) -> CpuSmokeDecl | None:
+    if table is None:
+        return None
+    if not isinstance(table, dict) or set(table) - {"cpu"}:
+        raise EngineError(f"engine {name!r}: [smoke] may only hold a [smoke.cpu] table")
+    cpu = table["cpu"]
+    where = "smoke.cpu"
+    if not isinstance(cpu, dict):
+        raise EngineError(f"engine {name!r}: [{where}] must be a table")
+    unknown = sorted(set(cpu) - {"model", "sha256", "args"})
+    if unknown:
+        raise EngineError(f"engine {name!r}: unknown {where} key(s): {', '.join(unknown)}")
+    model = _relative(_text(cpu, "model", where, name), f"{where}.model", name)
+    args = cpu.get("args", [])
+    if not isinstance(args, list) or not all(isinstance(a, str) for a in args):
+        raise EngineError(f"engine {name!r}: {where}.args must be a list of strings")
+    return CpuSmokeDecl(model=model, sha256=_text(cpu, "sha256", where, name), args=tuple(args))
+
+
 def _build_table(table: object, name: str) -> dict[str, object]:
     if not isinstance(table, dict):
         raise EngineError(f"engine {name!r}: missing [build] table")
@@ -264,6 +299,7 @@ def load(repo_root: Path, name: str) -> EngineLayout:
             _relative(layout["external-sources"], "external-sources", name) if "external-sources" in layout else ""
         ),
         version_source=_version_source(data.get("release"), name),
+        smoke_cpu=_smoke_cpu(data.get("smoke"), name),
     )
 
 

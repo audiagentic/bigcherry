@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from .base import EngineAdapter, QualityCommand, SidecarError, SidecarSet, SidecarSpec, SourceCheck
+from .base import (
+    CompletionApi, CpuSmokeSpec, DeviceAssertion, EngineAdapter, QualityCommand, SidecarError, SidecarSet, SidecarSpec,
+    SourceCheck,
+)
 from .llamacpp import LlamaCppAdapter
 from .radiance import RadianceAdapter
 
@@ -19,4 +22,4 @@ def adapter(engine: str) -> EngineAdapter:
         raise ValueError(f"no engine adapter for {engine!r}; known: {', '.join(sorted(_ADAPTERS))}") from None
 
 
-__all__ = ["EngineAdapter", "QualityCommand", "SidecarError", "SidecarSet", "SidecarSpec", "SourceCheck", "adapter"]
+__all__ = ["CompletionApi", "CpuSmokeSpec", "DeviceAssertion", "EngineAdapter", "QualityCommand", "SidecarError", "SidecarSet", "SidecarSpec", "SourceCheck", "adapter"]

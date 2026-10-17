@@ -19,6 +19,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from ..core.engines import ServeSpec
+
 if TYPE_CHECKING:
     from ..core.context import ProjectContext
 
@@ -62,6 +64,83 @@ class SourceCheck:
     run: Callable[[], str | None]
 
 
+#: Variables that choose which GPUs a process sees. A CPU smoke sets every one of them to the empty string.
+GPU_HIDING_ENV = ("HIP_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES", "CUDA_VISIBLE_DEVICES", "GPU_DEVICE_ORDINAL")
+
+#: Three short fixed prompts; each is run twice at temperature 0 and the two passes must match.
+SMOKE_PROMPTS = (
+    "The capital of France is",
+    "1, 2, 3, 4, 5,",
+    "Once upon a time there was a",
+)
+SMOKE_TOKENS = 16
+SMOKE_SEED = 1234
+
+
+@dataclass(frozen=True)
+class CompletionApi:
+    """How an engine's server is asked for a greedy completion and where the text is in the reply."""
+
+    path: str                              # POST route, e.g. /completion
+    prompt_field: str
+    token_field: str                       # request field holding the number of tokens to generate
+    fixed: tuple[tuple[str, Any], ...]     # remaining request fields (temperature 0, seed, ...)
+    text_path: tuple[str | int, ...]       # keys/indices from the reply document to the generated text
+    models_path: str = ""                  # when set, GET it and send the first served id as "model"
+
+
+@dataclass(frozen=True)
+class DeviceAssertion:
+    """Server-log evidence that a GPU was opened. Any line matching one of these regular expressions fails the smoke."""
+
+    forbidden_log_patterns: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class CpuSmokeSpec:
+    """Everything the generic runner needs to smoke one engine on the CPU with no GPU visible (MEN15)."""
+
+    engine: str
+    binary: Path
+    serve: ServeSpec                       # flags, health route, shutdown method, fixed environment
+    args: tuple[str, ...]                  # server arguments after the model/host/port flags
+    env_overrides: dict[str, str]          # applied over the inherited environment; every GPU_HIDING_ENV name is ""
+    model: Path
+    model_sha256: str
+    completion: CompletionApi
+    device: DeviceAssertion
+    prompts: tuple[str, ...] = SMOKE_PROMPTS
+    n_tokens: int = SMOKE_TOKENS
+    port: int | None = None                # None: the server runner picks a free port
+    health_timeout_s: int = 240
+    request_timeout_s: int = 300
+    command_prefix: tuple[str, ...] = ()
+    #: inherited variables whose name starts with one of these are removed before the server starts, so an ambient
+    #: engine setting (device list, layer count, dispatch controls) cannot reach the smoke
+    env_unset_prefixes: tuple[str, ...] = ()
+
+
+def build_cpu_smoke(
+    context: ProjectContext, build_dir: Path, model_root: Path, *, engine_args: tuple[str, ...],
+    extra_env: dict[str, str], env_unset_prefixes: tuple[str, ...], completion: CompletionApi,
+    device: DeviceAssertion,
+) -> CpuSmokeSpec | None:
+    """The spec common to every engine: the declared tiny model and extra arguments, the engine's CPU-only arguments
+    and environment, and every GPU-selection variable emptied. None when the engine declares no [smoke.cpu]."""
+    layout = context.layout
+    declared = layout.smoke_cpu
+    if declared is None:
+        return None
+    env = {name: "" for name in GPU_HIDING_ENV}
+    env.update(extra_env)
+    return CpuSmokeSpec(
+        engine=layout.name, binary=Path(build_dir) / layout.serve.binary, serve=layout.serve,
+        args=(*engine_args, *declared.args), env_overrides=env,
+        model=Path(model_root) / declared.model, model_sha256=declared.sha256,
+        completion=completion, device=device, env_unset_prefixes=env_unset_prefixes,
+    )
+
+
 class EngineAdapter(ABC):
     """What a campaign needs to know about one engine."""
 
@@ -93,6 +172,11 @@ class EngineAdapter(ABC):
         """How this engine measures output quality against a recorded reference, or None when it has no such mode.
         ``kind`` is "record" (write the reference named by ``quality["reference_dir"]`` from ``quality["corpus"]``) or
         "score" (score the arm against it); ``env`` is the arm complete environment, so its sidecars apply."""
+
+    @abstractmethod
+    def cpu_smoke(self, context: ProjectContext, build_dir: Path, model_root: Path) -> CpuSmokeSpec | None:
+        """The RAM-only smoke of this engine's build (tiny model, CPU kernels, no GPU visible), or None when the engine
+        declares no ``[smoke.cpu]``. ``model_root`` is the directory the declared model path is relative to."""
 
     @abstractmethod
     def source_checks(self, context: ProjectContext) -> tuple[SourceCheck, ...]:
