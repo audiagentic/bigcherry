@@ -50,6 +50,50 @@
         }
       ]
     },
+    "engines/radiance": {
+      "release-type": "simple",
+      "component": "bc-radiance",
+      "changelog-path": "CHANGELOG.md",
+      "bump-minor-pre-major": false,
+      "changelog-sections": [
+        {
+          "type": "feat",
+          "section": "New and changed"
+        },
+        {
+          "type": "fix",
+          "section": "Fixes"
+        },
+        {
+          "type": "perf",
+          "section": "Performance"
+        },
+        {
+          "type": "revert",
+          "section": "Reverts"
+        },
+        {
+          "type": "docs",
+          "section": "Documentation",
+          "hidden": true
+        },
+        {
+          "type": "chore",
+          "section": "Maintenance",
+          "hidden": true
+        },
+        {
+          "type": "test",
+          "section": "Tests",
+          "hidden": true
+        },
+        {
+          "type": "refactor",
+          "section": "Internal changes",
+          "hidden": true
+        }
+      ]
+    },
     ".": {
       "release-type": "simple",
       "component": "bc-platform",

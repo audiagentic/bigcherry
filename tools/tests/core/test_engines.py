@@ -19,7 +19,7 @@ def _declare(root: Path, name: str, body: str) -> None:
     path.write_text(body, encoding="utf-8")
 
 
-_GOOD = 'schema = 1\nname = "{name}"\nupstream = "https://example.invalid/{name}"\n\n[layout]\npatches = "{p}"\npatch-id-prefix = ""\noverlay = "{o}"\nvendor = "{v}"\nrecipes = "{v}.recipes.toml"\n\n[build]\ntargets-option = "AMDGPU_TARGETS"\nbinary = "bin/server"\n\n'
+_GOOD = 'schema = 1\nname = "{name}"\nupstream = "https://example.invalid/{name}"\n\n[layout]\npatches = "{p}"\npatch-id-prefix = ""\noverlay = "{o}"\nvendor = "{v}"\nrecipes = "{v}.recipes.toml"\n\n[release]\nversion-source = "build-tag"\n\n[build]\ntargets-option = "AMDGPU_TARGETS"\nbinary = "bin/server"\n\n'
 _GOOD += '[serve]\nbinary = "bin/server"\nmodel-flag = "--model"\nhost-flag = "--host"\nport-flag = "--port"\nhealth = "/health"\nshutdown = "sigint"\n'
 
 
@@ -71,6 +71,10 @@ class EngineDeclarations(unittest.TestCase):
             "backslash": _GOOD.format(name="backslash", p="a\\\\b", o="b", v="c"),
             "schema": _GOOD.format(name="schema", p="a", o="b", v="c").replace("schema = 1", "schema = 2"),
             "extra-key": _GOOD.format(name="extra-key", p="a", o="b", v="c") + 'tests = "t"\n',
+            "no-release": _GOOD.format(name="no-release", p="a", o="b", v="c").replace(
+                '[release]\nversion-source = "build-tag"\n\n', ""),
+            "bad-version-source": _GOOD.format(name="bad-version-source", p="a", o="b", v="c").replace(
+                "build-tag", "guess"),
             "no-layout": 'schema = 1\nname = "no-layout"\nupstream = "u"\n',
         }
         for name, body in cases.items():

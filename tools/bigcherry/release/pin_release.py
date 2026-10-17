@@ -72,17 +72,17 @@ def _git(root: Path, *args: str, check: bool = True) -> str:
 
 
 def next_version(existing: list[str], build: int, bump: str | None) -> str:
-    """The version to release: <build>.0.0 when the pin has no release yet, else the newest one raised by ``bump``.
+    """The version to release (``build`` is the major): <build>.0.0 when the pin has no release yet, else the newest one raised by ``bump``.
     ``existing`` are the versions (without the tag prefix) already tagged for this build."""
     released = sorted(tuple(int(x) for x in v.split(".")) for v in existing
                       if re.fullmatch(rf"{build}\.\d+\.\d+", v))
     if not released:
         if bump is not None:
-            raise PinReleaseError("gate", f"b{build} has no release yet: its first release is {build}.0.0, without --bump")
+            raise PinReleaseError("gate", f"major {build} has no release yet: its first release is {build}.0.0, without --bump")
         return f"{build}.0.0"
     if bump is None:
         newest = ".".join(str(x) for x in released[-1])
-        raise PinReleaseError("gate", f"b{build} is already released as {newest}: pass --bump minor (features) or --bump patch (fixes) "
+        raise PinReleaseError("gate", f"major {build} is already released as {newest}: pass --bump minor (features) or --bump patch (fixes) "
                                       "for a further release on this pin, or --version")
     _, minor, patch = released[-1]
     return f"{build}.{minor + 1}.0" if bump == "minor" else f"{build}.{minor}.{patch + 1}"
@@ -102,14 +102,12 @@ def make_plan(repo_root: Path, engine: str, llama_tag: str, main: str = "main", 
     if package not in packages:
         raise PinReleaseError("gate", f"{_RELEASE_CONFIG} has no package {package!r}: {engine} has no release line "
                                       "configured yet, so its pin cannot be released")
-    m = re.fullmatch(r"b(\d+)", llama_tag)
-    if not m:
-        raise PinReleaseError("gate", f"{llama_tag!r} is not a {layout.upstream_name} release tag (b<number>)")
-    build = int(m.group(1))
     try:
         config = _notes.load_config(repo_root, engine)
+        pin = _notes.pin_version(repo_root, config, llama_tag)
     except _notes.ReleaseNotesError as exc:
         raise PinReleaseError("gate", str(exc)) from exc
+    build = pin.major
     branch = _git(repo_root, "rev-parse", "--abbrev-ref", "HEAD")
     if branch in (main, "HEAD"):
         raise PinReleaseError("gate", f"run this from the work branch, not from {branch!r}")
@@ -137,7 +135,7 @@ def make_plan(repo_root: Path, engine: str, llama_tag: str, main: str = "main", 
         else:
             version = next_version(existing, build, bump)
     try:
-        version = _notes.release_version(llama_tag, version)
+        version = _notes.release_version(pin, version)
     except _notes.ReleaseNotesError as exc:
         raise PinReleaseError("gate", str(exc)) from exc
     return Plan(repo_root, engine, package, layout.upstream_name, llama_tag, build, f"{config.tag_prefix}{version}",
@@ -290,7 +288,8 @@ def phase_record(plan: Plan, gate_output: str, evidence: str) -> bool:
     if not evidence.strip():
         raise PinReleaseError("record", "--evidence is required: state the hardware build, smoke and A/B result that makes this bump "
                                         "releasable (text, or @file); it is recorded verbatim in the release record")
-    note = (f"{stamp} {time.strftime('%Y-%m-%d')}\n\ncompletion gate (pin-status --complete --all-remotes):\n{gate_output.strip()}\n\n"
+    note = (f"{stamp} {time.strftime('%Y-%m-%d')}\n"
+            f"upstream: {plan.upstream_name} {plan.llama_tag} (revision {record.get('revision', '')})\n\ncompletion gate (pin-status --complete --all-remotes):\n{gate_output.strip()}\n\n"
             f"hardware evidence:\n{evidence.strip()}\n")
     record["notes"] = ((record.get("notes") or "").rstrip() + "\n\n" + note).lstrip()
     record_path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n")

@@ -136,13 +136,11 @@ class EngineScopeTests(unittest.TestCase):
                     self.assertTrue(err.strip())
                     self.assertNotIn("Traceback", err)
 
-    def test_an_engine_with_no_release_line_is_refused_by_the_release_commands(self):
-        code, _, err = self._run(["--engine", "radiance", "release-notes", "b1", "--stdout"])
+    def test_radiance_release_commands_resolve_its_release_line(self):
+        # the release line and the version scheme exist (MEN13): release-notes only stops on the missing release record
+        code, _, err = self._run(["--engine", "radiance", "release-notes", "89cee7ce4144", "--stdout"])
         self.assertEqual(code, 1)
-        self.assertIn("no [engine.radiance] release line", err)
-        code, _, err = self._run(["--engine", "radiance", "pin-release", "b1", "--dry-run"])
-        self.assertEqual(code, 1)
-        self.assertIn("no package 'engines/radiance'", err)
+        self.assertIn("no release record releases/89cee7ce4144.json", err)
 
     def test_pin_bump_defaults_its_source_only_where_the_recipes_declare_it(self):
         self.assertEqual(pin_bump._resolve_fresh_selector("llamacpp", source_name=None), ("source", "bigcherry"))
