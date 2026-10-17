@@ -51,6 +51,7 @@
       ]
     },
     "engines/radiance": {
+      "release-as": "170.0.0",
       "release-type": "simple",
       "component": "bc-radiance",
       "changelog-path": "CHANGELOG.md",
