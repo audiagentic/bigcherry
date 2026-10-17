@@ -1,5 +1,5 @@
 {
- "_comment": "Example (MEN11): output quality of the production R9700 + two-XTX-helper layout, scored by radiance KL mode through ab-benchmark --server-config (quality_only: no serving cells). Arm 'helper-off' is the control (the R9700 alone, no helper: the layout's own distance to the reference); 'helper-on' is gated against it. The reference is the exact two-XTX helper-off run (tp 2, exact wire) over the 4-document corpus, recorded by the quality.record block on first use (the earlier lab runs kept it only under their output directory, so there is no standing path; KLD ~0.06 was the XTX re-chunking floor on this corpus). Once KLD_REF_DIR holds a reference, delete the 'record' and 'corpus' keys to reuse it. KL mode is prefill-only: --max-num-batched-tokens 64 is the helper lane cap and R3_MOE_HELPER_MAX_ROWS=64 sends every step's owned routes through the helpers. Thresholds are first-use placeholders, not tuned limits. Set RAD_BIN (<lane build>/bin/radiance), RAD_HOME (<lane build>/radiance_home), R9700_BDF and KLD_REF_DIR before use. Not used by tests.",
+ "_comment": "Example (MEN11): output quality of the production R9700 + two-XTX-helper layout, scored by radiance KL mode through ab-benchmark --server-config (quality_only: no serving cells). Arm 'helper-off' is the control (the R9700 alone, no helper: the layout's own distance to the reference); 'helper-on' is gated against it. The reference is the exact two-XTX helper-off run (tp 2, exact wire) over the 4-document corpus, recorded by the quality.record block on first use (the earlier lab runs kept it only under their output directory, so there is no standing path; KLD ~0.06 was the XTX re-chunking floor on this corpus). Once KLD_REF_DIR holds a reference, delete the 'record' and 'corpus' keys to reuse it. KL mode is prefill-only: --max-num-batched-tokens 64 is the helper lane cap and R3_MOE_HELPER_MAX_ROWS=64 sends every step's owned routes through the helpers. --host-pool-mib 45056: the control arm (R9700 alone) holds every expert itself and did not fit in 30 GiB (first Brutus run, 2026-10-17). Thresholds are first-use placeholders, not tuned limits. Set RAD_BIN (<lane build>/bin/radiance), RAD_HOME (<lane build>/radiance_home), R9700_BDF and KLD_REF_DIR before use. Not used by tests.",
  "schema_version": 1,
  "engine": "radiance",
  "evidence_role": "diagnostic",
@@ -24,7 +24,7 @@
   "timeout_s": 5400,
   "args": [
    "--radiance-home", "${RAD_HOME}", "--kernels", "libr4d,libr3moe,libref",
-   "--placement", "expert_tiered", "--tp", "1", "--host-pool-mib", "30720",
+   "--placement", "expert_tiered", "--tp", "1", "--host-pool-mib", "45056",
    "--kv-cache-dtype", "fp8", "--max-model-len", "8192", "--max-num-seqs", "1", "--max-num-batched-tokens", "64"
   ],
   "record": {
