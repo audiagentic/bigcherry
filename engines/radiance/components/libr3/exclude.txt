@@ -3,6 +3,12 @@
 # First list: tools/lab/radiance/rdna3-survey.sh, radiance 1.3.0 (89cee7c), 2026-10-09.
 
 # (none at present)
+#
+# radiance 1.7.0 (48f7b8e) added 15 libr4d units: attn_gen, attn_paged_h128_gqa2, attn_paged_h256_gqa2,
+# attn_paged_window, expert_scale_bf16, gelu_mul_quant_i8, gemm_w5a16_nt_m64, gemm_wpa8i8_tiled, gen, givens_dense,
+# givens_rotate, norm_join_bf16, pair_argmax_f32, qkv_norm_rope, rmsnorm_quant_i8. None is excluded yet: whether they
+# compile for gfx1100 through r3_compat.h is unverified (attn_gen, attn_paged_window, gemm_w5a16_nt_m64,
+# gemm_wpa8i8_tiled and givens_dense use gfx12 wmma builtins). Add the ones that fail the first Brutus build here.
 
 # Came off this list:
 # 2026-10-09, s_wait_storecnt rewrite (rewrites.txt): r4d_ar_gather_2rank, r4d_ar_ln_had_quant_i8,

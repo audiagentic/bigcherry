@@ -3,31 +3,33 @@
 # here are engines/radiance/patches/<id>/ packages; they never mix with llama.cpp's.
 version = 2
 engine = "radiance"
-# radiance 1.3.0 (codeberg StillDeadcode/radiance; exact-SHA mirror Quackster/radiance)
-pinned = "89cee7ce414486c717aa2085c99e1f522e4c0ea6"
-pinned-version = "1.3.0"
+# radiance 1.7.0 (codeberg StillDeadcode/radiance; exact-SHA mirror Quackster/radiance). 48f7b8e is the v1.7.0 release
+# commit 1e968f6 plus two NOTICE-only commits (the source tree is otherwise identical).
+pinned = "48f7b8eb6d703cd5318346b5a351a292afaf4bf9"
+pinned-version = "1.7.0"
 
-# Validated engine fixes only. 0001 is evaluated with hardware evidence (3/3 clean exits against 2/3 shutdown hangs);
-# it moves here once promoted, so the set starts empty rather than claiming a validated state 0001 does not have.
+# Validated engine fixes only; the set starts empty rather than claiming a validated state no package has.
 [patch-set.serving-core]
 patches = []
 
+# Empty: rad0001 (shutdown drain) is superseded by radiance 1.7.0 (1e968f6 drains the mover stream in Engine::~Engine).
+# The set stays declared as the home for evaluated engine fixes the lab source needs.
 [patch-set.engine-fixes-evaluated]
-patches = ["rad0001_drain_mover_before_arena_free"]
+patches = []
 required-state = "evaluated"
 
 [source.radiance-native]
-description = "radiance 1.3.0 as released: no overlay, no patches."
+description = "radiance 1.7.0 as released: no overlay, no patches."
 overlay = false
 patch-sets = []
 
 [source.radiance]
-description = "radiance 1.3.0 with BigCherry's validated engine patch sets."
+description = "radiance 1.7.0 with BigCherry's validated engine patch sets."
 overlay = false
 patch-sets = ["serving-core"]
 
 [source.radiance-lab]
-description = "radiance 1.3.0 with the evaluated engine fixes the Flash-Next two-XTX configuration needs (0001)."
+description = "radiance 1.7.0 with the evaluated engine fixes the Flash-Next two-XTX configuration needs (none at present)."
 overlay = false
 patch-sets = ["engine-fixes-evaluated"]
 
@@ -36,7 +38,7 @@ description = "radiance's own release build of the engine binary."
 options = {}
 needs = []
 
-# One focal engine patch per experiment; the 0001-0003 stack is never one indivisible experiment.
+# One focal engine patch per experiment; the 0002-0003 stack is never one indivisible experiment.
 [experiment.moe-remote-handoff]
 patches = ["rad0002_moe_remote_handoff"]
 

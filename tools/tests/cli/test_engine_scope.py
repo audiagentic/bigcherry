@@ -119,7 +119,7 @@ class EngineScopeTests(unittest.TestCase):
 
     def test_rebase_check_selects_from_the_chosen_engines_recipes(self):
         ids = rebase._selection_patch_ids("radiance", source_name="radiance-lab", all_patches=False)
-        self.assertEqual(ids, ("rad0001_drain_mover_before_arena_free",))
+        self.assertEqual(ids, ())  # rad0001 is superseded by radiance 1.7.0; the lab source has no evaluated fix left
         self.assertNotIn("0100_cmake_options", rebase._selection_patch_ids("radiance", all_patches=True))
         with self.assertRaises(rebase.RebaseCheckError):
             rebase._selection_patch_ids("radiance", source_name="bigcherry", all_patches=False)

@@ -6,14 +6,17 @@ schema = 1
 name = "libr3"
 engine = "radiance"
 targets = ["gfx1100"]
-# radiance 1.3.0: the rewrite blocks are written against this revision's libr4d and refuse any other.
-built-against = "89cee7ce414486c717aa2085c99e1f522e4c0ea6"
+# radiance 1.7.0 (plugin ABI 17): the rewrite rules are written against this revision's libr4d and refuse any other.
+built-against = "48f7b8eb6d703cd5318346b5a351a292afaf4bf9"
 outputs = ["kernels/libr3.so", "kernels/libr3moe.so", "helpers/libr3_ngram_helper.so", "helpers/r3_moe_helper"]
 
 # How the build lane builds it: CMake against the engine installed from the lane's own build (CMAKE_PREFIX_PATH) and
 # the lane's materialised source ({engine_source}); outputs are copied into the engine's runtime home.
+# R3_NATIVE is OFF for the radiance 1.7.0 bring-up (MEN12): 22 of the 105 native/*.rw blocks (after shelving gdn) no longer match 1.7.0's
+# libr4d, so every kernel goes through r3_compat.h until each native is re-ported (attention first). R3_NATIVE=ON
+# fails configure on the unported blocks by design.
 [build]
-configure = { RADIANCE_SRC = "{engine_source}", R3_TARGETS = "{targets}", R3_NATIVE = "ON" }
+configure = { RADIANCE_SRC = "{engine_source}", R3_TARGETS = "{targets}", R3_NATIVE = "OFF" }
 
 # Offline tests the bump gate (bigcherry pin-bump) builds and runs with ctest in the component's build tree.
 [test]
@@ -30,12 +33,12 @@ targets = ["r3_moe_shm_test"]
 [setting.R3_ATTN_NATIVE]
 default = "1"
 status = "production"
-summary = "native gfx11 prefill attention; KLD 0.0035 / 96.8% top-1 vs the compatibility form's 0.0037, +5% prefill"
+summary = "native gfx11 prefill attention; KLD 0.0035 / 96.8% top-1 vs the compatibility form's 0.0037, +5% prefill (inert while the build has R3_NATIVE=OFF: its 1.7.0 re-port is pending, MEN12)"
 
 [setting.R3_GDN_NATIVE]
 default = "0"
 status = "evaluated"
-summary = "native delta-net chunk scan; wrong in serving (KLD 5.52) after three fixes, shelved"
+summary = "native delta-net chunk scan; wrong in serving (KLD 5.52) after three fixes, shelved; source kept in native-shelved/ and not built"
 
 [setting.R3_MOE_HELPER]
 default = ""

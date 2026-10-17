@@ -17,7 +17,7 @@ rad_plugin_defaults()
 
 set(R3_TARGETS "gfx1100" CACHE STRING "GPU targets libr3 is compiled for")
 set(RADIANCE_SRC "" CACHE PATH "radiance source tree (libr4d is read from it)")
-option(R3_NATIVE "apply the native gfx11 forms in native/ (OFF = every kernel through the compatibility layer)" ON)
+option(R3_NATIVE "apply the native gfx11 forms in native/ (OFF = every kernel through the compatibility layer; OFF while the natives are re-ported to radiance 1.7.0, MEN12)" OFF)
 set(R3_ONLY "" CACHE STRING "build only these units (for a compile check of one unit); empty = all not excluded")
 if(NOT EXISTS "${RADIANCE_SRC}/libr4d/CMakeLists.txt")
   message(FATAL_ERROR "libr3: -DRADIANCE_SRC must name a radiance source tree (no ${RADIANCE_SRC}/libr4d)")
@@ -52,7 +52,6 @@ foreach(line ${unit_lines})
   string(REGEX MATCH "\"(r4d_[a-z0-9_]+)\\|([^\"]*)\"" _ "${line}")
   set(unit ${CMAKE_MATCH_1})
   set(flags "${CMAKE_MATCH_2}")
-  string(REPLACE "\${RAD_W4_GROUP}" "128" flags "${flags}")
   if(R3_ONLY AND NOT unit IN_LIST R3_ONLY)
     list(APPEND skipped ${unit})
     continue()
@@ -79,7 +78,7 @@ endif()
 set(declaration ${r4d}/r4d_rows.cpp ${r4d}/r4d_layout.cpp ${r4d}/r4d_fp8_layout.cpp ${r4d}/r4d_shapes.cpp ${r4d}/r4d_fuse.cpp)
 # libr4d's registry exports become r4d_up_*; libr3's own (r3_registry.cpp) take their place
 set_source_files_properties(${r4d}/r4d_rows.cpp PROPERTIES COMPILE_DEFINITIONS
-  "rad_plugin_info=r4d_up_plugin_info;rad_kernel_schema_count=r4d_up_kernel_schema_count;rad_kernel_schema_at=r4d_up_kernel_schema_at;rad_kernel_count=r4d_up_kernel_count;rad_kernel_at=r4d_up_kernel_at;rad_kernel_concurrent=r4d_up_kernel_concurrent")
+  "rad_plugin_info=r4d_up_plugin_info;rad_kernel_schema_count=r4d_up_kernel_schema_count;rad_kernel_schema_at=r4d_up_kernel_schema_at;rad_kernel_count=r4d_up_kernel_count;rad_kernel_at=r4d_up_kernel_at;rad_kernel_concurrent=r4d_up_kernel_concurrent;rad_kernel_collective=r4d_up_kernel_collective")
 
 rad_add_plugin(libr3 kernels
   SOURCES     ${declaration} ${CMAKE_CURRENT_SOURCE_DIR}/r3_registry.cpp ${CMAKE_CURRENT_SOURCE_DIR}/r3_ngram_host.cpp

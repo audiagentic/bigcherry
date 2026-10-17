@@ -10,6 +10,7 @@ const RadOpSchema* r4d_up_kernel_schema_at(int i);
 int r4d_up_kernel_count(void);
 const RadKernelInfo* r4d_up_kernel_at(int i);
 int r4d_up_kernel_concurrent(int i);
+int r4d_up_kernel_collective(int i);
 const RadPluginInfo* r4d_up_plugin_info(void);
 extern const char r3_stub_begin[];
 extern const char r3_stub_end[];
@@ -61,6 +62,15 @@ extern "C" int rad_kernel_concurrent(int i) {
     const auto& rows = live();
     if (i < 0 || i >= static_cast<int>(rows.size()) || rows[i].custom) return 0;
     return r4d_up_kernel_concurrent(rows[i].upstream);
+}
+// ABI 17 (rad_abi.h, RadKernelCollectiveFn): the engine indexes this library's live table, so the answer is mapped
+// from the live index to the upstream index like rad_kernel_concurrent. 1 is forwarded as 1; 2 (the row ends the
+// link hold itself through link_gate) is clamped to 1: libr3's gfx11 forms do not decrement the gate, and a wrong 2
+// leaves it odd so every yielding DMA list on that card waits forever. Answering 1 is always safe.
+extern "C" int rad_kernel_collective(int i) {
+    const auto& rows = live();
+    if (i < 0 || i >= static_cast<int>(rows.size()) || rows[i].custom) return 0;
+    return r4d_up_kernel_collective(rows[i].upstream) != 0 ? 1 : 0;
 }
 extern "C" int r3_rows_present(void) { return static_cast<int>(live().size()); }
 extern "C" int r3_rows_upstream(void) { return r4d_up_kernel_count(); }
