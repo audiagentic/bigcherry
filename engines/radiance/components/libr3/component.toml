@@ -122,6 +122,12 @@ default = "16"
 status = "diagnostic"
 summary = "with R3_MOE_HELPER_CAPTURE: at most this many request files"
 
+[setting.R3_MOE_HELPER_GEMV_LARGE_ROWS]
+default = "0"
+status = "experimental"
+summary = "large-lane requests of at most this many rows take the decode GEMV (RAD06): replayed real requests show 9-row steps at ~0.5 ms a grouped-GEMM call for 25-51 routes; the large lane is sized per request, so the small lane is untouched"
+activation = "r3_moe_helper: large-lane requests up to"
+
 [setting.R3_MOE_HELPER_ROWS]
 default = "0"
 status = "experimental"

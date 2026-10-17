@@ -1,5 +1,5 @@
 {
- "_comment": "RAD06 (2026-10-18): helper small-lane size - replayed real requests show 9-row steps (decode / MTP verify just over the 8-row small lane) taking ~0.5 ms a grouped-GEMM call on the large lane for 25-51 routes. 'small8' (production) vs 'small16' (R3_MOE_HELPER_SMALL_ROWS=16: those steps take the small-lane GEMV). Set RAD_BIN, RAD_HOME, R9700_BDF before use.",
+ "_comment": "RAD06 (2026-10-18): helper small-lane size - replayed real requests show 9-row steps (decode / MTP verify just over the 8-row small lane) taking ~0.5 ms a grouped-GEMM call on the large lane for 25-51 routes. 'small8' (production) vs 'small16' (SMALL_ROWS=16) was rejected (decode 50-81 vs 131: the pre-queued small lane pads every step); 'gemv-large32' (R3_MOE_HELPER_GEMV_LARGE_ROWS=32: large-lane requests up to 32 rows take the GEMV). Set RAD_BIN, RAD_HOME, R9700_BDF before use.",
  "schema_version": 1,
  "engine": "radiance",
  "evidence_role": "diagnostic",
@@ -72,7 +72,7 @@
    }
   },
   {
-   "name": "small16",
+   "name": "gemv-large32",
    "mode": "stock",
    "shutdown_method": "sigint",
    "binary": "${RAD_BIN}",
@@ -82,10 +82,11 @@
     "R3_MOE_HELPER_MOE_DOWN_TILE": "1",
     "R3_MOE_HELPER_ENGINE_RANKS": "1",
     "R3_MOE_HELPER_MAX_ROWS": "4096",
-    "R3_MOE_HELPER_SMALL_ROWS": "16",
+    "R3_MOE_HELPER_SMALL_ROWS": "8",
     "R3_MOE_HELPER_MIB": "22528",
     "R3_MOE_HELPER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
-    "R3_MOE_HELPER_ROWS": "0"
+    "R3_MOE_HELPER_ROWS": "0",
+    "R3_MOE_HELPER_GEMV_LARGE_ROWS": "32"
    }
   }
  ]
