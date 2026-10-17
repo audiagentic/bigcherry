@@ -471,6 +471,7 @@ ownership.
 | `tools/lab/radiance/build.sh` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/radiance/fetch-gcc14.sh` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/radiance/run-radiance.sh` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/radiance/helper-small-ab.json` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/radiance/helper-downtile-ab.json` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/radiance/helper-form-ab.json` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/radiance/helper-heat-ab.json` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, disposed per that README. |
