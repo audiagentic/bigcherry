@@ -44,6 +44,21 @@ The R9700 27B reference (prefill 3,104-3,214) is on the MXFP4 container above. T
 reference (~6,500) is carried from the RDNA3 parity assessment and its container is not recorded here, so treat it as
 indicative. llama.cpp comparisons elsewhere in this log are GGUF quantisations and are not like-for-like.
 
+### Reference quality against the full model
+
+Source: owner-supplied, 2026-10-15. Qwen3.8-Flash-Next as radiance's container (`qwen3.8-next-flash-fp8-iq4r-moe.rad`)
+against the full model. "Text+assistant" is the subset of tokens in text and assistant turns. Our KL analysis
+(`tools/bigcherry/experiment/engine_quality.py`) reports mean, median, P99, P99.9 and top-1 agreement over all tokens, so
+layout drift can be set beside this; the text+assistant column needs per-token output from radiance.
+
+| Metric | All tokens | Text+assistant turns |
+|---|---|---|
+| Mean KL | 0.0789 | 0.0239 |
+| Median KL | 0.0037 | 0.0029 |
+| P99 KL | 1.65 | 0.32 |
+| P99.9 KL | 5.33 | 1.03 |
+| Top-1 agreement | 92.85% | 94.57% |
+
 ## Survey, 2026-10-09 (radiance 1.3.0, commit 89cee7c; ROCm 7.2.4; run `rdna3-survey`)
 
 The engine starts on an XTX (`AQL backend, 1 device(s) [0:gfx1100]`) and loads libr4d without its device code:
