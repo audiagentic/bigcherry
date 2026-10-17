@@ -60,6 +60,7 @@ PHASES = (
     "coverage",
     "apply",
     "compile",
+    "cpu-smoke",
     "reaudit",
     "complete",
 )
@@ -134,6 +135,9 @@ class PinBumpState:
     #: re-runs compile when this identity no longer matches the live tree.
     compile_tree_oid: str = ""
     compile_status: str = ""
+    #: MEN15: "passed" (the RAM-only tiny-model smoke ran with no GPU visible) or "skipped" (--skip-cpu-smoke), recorded
+    #: here and so in every resume of the run
+    cpu_smoke_status: str = ""
 
     def as_dict(self) -> dict:
         d = {
@@ -169,6 +173,7 @@ class PinBumpState:
                 "status": self.compile_status,
                 "tree_oid": self.compile_tree_oid,
             }
+            d["cpu_smoke"] = {"status": self.cpu_smoke_status}
         return d
 
     def save(self, state_dir: Path) -> Path:
@@ -242,6 +247,7 @@ class PinBumpState:
         else:
             freeze = {}
         compile_state = data.get("compile") or {}
+        cpu_smoke_state = data.get("cpu_smoke") or {}
         return cls(
             schema_version=raw_version,
             run_id=data["run_id"],
@@ -260,6 +266,7 @@ class PinBumpState:
             coverage_report_sha256=data.get("coverage_report_sha256", ""),
             compile_tree_oid=str(compile_state.get("tree_oid", "")),
             compile_status=str(compile_state.get("status", "")),
+            cpu_smoke_status=str(cpu_smoke_state.get("status", "")),
         )
 
 
@@ -582,6 +589,8 @@ def run(
     resume: bool = False,
     report_dir: Path | None = None,
     skip_compile: bool = False,
+    cpu_smoke_build: Path | None,
+    skip_cpu_smoke: bool,
 ) -> PinBumpResult:
     """The Phase 1 single-tree orchestrator. Raises PinBumpStop (never a
     bare exception) on anything not provably safe to auto-proceed past;
@@ -649,6 +658,8 @@ def run(
             dispositions_dir=dispositions_dir,
             report_dir=report_dir,
             skip_compile=skip_compile,
+            cpu_smoke_build=cpu_smoke_build,
+            skip_cpu_smoke=skip_cpu_smoke,
         )
     except PinBumpStop as exc:
         # gpt-dev-agent review (session ses_5307d9c58ec645cb, second pass):
@@ -1024,6 +1035,36 @@ def run_phase_compile(
     return _compile_tree_oid(engine, vendor_root, patch_ids)
 
 
+def run_phase_cpu_smoke(*, engine: str, build_dir: Path | None, out_dir: Path, target_ref: str) -> None:
+    """MEN15: run the engine's RAM-only tiny-model smoke against a build of the bumped tree."""
+    from ..campaign import cpu_smoke
+
+    resume = f"python -m bigcherry --engine {engine} pin-bump {target_ref} --resume"
+    if build_dir is None:
+        raise PinBumpStop(
+            "cpu-smoke",
+            "CPU_SMOKE_BUILD_MISSING",
+            "the cpu-smoke phase needs a build of the bumped tree and none was given",
+            recommended_actions=[
+                f"build the bumped tree, then {resume} --cpu-smoke-build <build dir>",
+                f"only if intentionally omitting the gate, {resume} --skip-cpu-smoke",
+            ],
+        )
+    try:
+        cpu_smoke.run_for_engine(engine, build_dir, None, out_dir)
+    except cpu_smoke.CpuSmokeError as exc:
+        raise PinBumpStop(
+            "cpu-smoke",
+            "CPU_SMOKE_FAILED",
+            f"CPU smoke failed: {exc.failures[0]}",
+            evidence={"failures": exc.failures, "result": str(out_dir / cpu_smoke.RESULT_NAME), "build": str(build_dir)},
+            recommended_actions=[
+                f"fix the cause (see {out_dir / 'server.log'}), then {resume} --cpu-smoke-build {build_dir}",
+                f"only if intentionally omitting the gate, {resume} --skip-cpu-smoke",
+            ],
+        ) from exc
+
+
 def _record_compile_skip(vendor_root: Path) -> None:
     note = "pin-bump source compile check: SKIPPED explicitly with --skip-compile"
     try:
@@ -1058,11 +1099,12 @@ def _rewind_compile_if_tree_changed(
     state.completed_phases = [
         phase
         for phase in state.completed_phases
-        if phase not in {"compile", "reaudit", "complete"}
+        if phase not in {"compile", "cpu-smoke", "reaudit", "complete"}
     ]
     state.next_phase = "compile"
     state.compile_tree_oid = ""
     state.compile_status = ""
+    state.cpu_smoke_status = ""
     return True
 
 
@@ -1145,6 +1187,7 @@ def _rewind_compile_resume_if_inputs_changed(
         state.coverage_report_sha256 = ""
         state.compile_tree_oid = ""
         state.compile_status = ""
+        state.cpu_smoke_status = ""
         return True
 
 
@@ -1384,6 +1427,8 @@ def _run_phases(
     dispositions_dir: Path,
     report_dir: Path,
     skip_compile: bool = False,
+    cpu_smoke_build: Path | None,
+    skip_cpu_smoke: bool,
 ) -> PinBumpResult:
     from ..patch import catalog as patch_catalog
     from ..source import audit as source_audit
@@ -1669,6 +1714,18 @@ def _run_phases(
                 state.compile_status = "passed"
             state.compile_tree_oid = compile_tree_oid
             state.completed_phases.append("compile")
+            state.next_phase = "cpu-smoke"
+            state.save(report_dir)
+
+        if state.next_phase == "cpu-smoke":
+            # MEN15: the first smoke of the bumped engine, before any GPU smoke. It needs no GPU, so a busy host
+            # cannot hold it up; only an explicit --skip-cpu-smoke omits it, and the skip is saved with the run.
+            if skip_cpu_smoke:
+                state.cpu_smoke_status = "skipped"
+            else:
+                run_phase_cpu_smoke(engine=engine, build_dir=cpu_smoke_build, out_dir=report_dir / "cpu-smoke", target_ref=target_ref)
+                state.cpu_smoke_status = "passed"
+            state.completed_phases.append("cpu-smoke")
             state.next_phase = "reaudit"
             state.save(report_dir)
 

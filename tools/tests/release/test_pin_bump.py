@@ -136,9 +136,12 @@ class PinBumpStopResumeE2ETests(unittest.TestCase):
                 patch.object(
                     pin_bump, "run_phase_compile", return_value="compiled-tree-oid"
                 ) as compile_phase,
+                patch.object(pin_bump, "run_phase_cpu_smoke") as cpu_smoke_phase,
             ):
                 with self.assertRaises(pin_bump.PinBumpStop) as stopped:
                     pin_bump.run(
+                        cpu_smoke_build=None,
+                        skip_cpu_smoke=True,
                         engine="llamacpp",
                         target_ref="b10680",
                         root=root,
@@ -152,6 +155,8 @@ class PinBumpStopResumeE2ETests(unittest.TestCase):
                 self.assertIn("coverage", saved.completed_phases)
 
                 result = pin_bump.run(
+                    cpu_smoke_build=Path("cpu-build"),
+                    skip_cpu_smoke=False,
                     engine="llamacpp",
                     target_ref="b10680",
                     root=root,
@@ -174,6 +179,18 @@ class PinBumpStopResumeE2ETests(unittest.TestCase):
                 result.state.completed_phases.index("reaudit"),
             )
             compile_phase.assert_called_once()
+            cpu_smoke_phase.assert_called_once()
+            self.assertEqual(cpu_smoke_phase.call_args.kwargs["build_dir"], Path("cpu-build"))
+            self.assertEqual(result.state.cpu_smoke_status, "passed")
+            # the RAM-only smoke is the first runtime gate: after the source compile, before the final audit
+            self.assertLess(
+                result.state.completed_phases.index("compile"),
+                result.state.completed_phases.index("cpu-smoke"),
+            )
+            self.assertLess(
+                result.state.completed_phases.index("cpu-smoke"),
+                result.state.completed_phases.index("reaudit"),
+            )
 
 
 class SchemaThreeRoundTripTests(unittest.TestCase):
@@ -645,6 +662,8 @@ class OverlaySelfHealTests(unittest.TestCase):
             ):
                 with self.assertRaises(pin_bump.PinBumpStop) as stopped:
                     pin_bump._run_phases(
+                        cpu_smoke_build=None,
+                        skip_cpu_smoke=True,
                         state=state,
                         engine="llamacpp",
                         target_ref="b2",
@@ -928,7 +947,7 @@ class ContextRecoveryNeverMasksOriginalStopTests(unittest.TestCase):
             # per its unconditional pre-try initialization).
             (report_dir / "state.json").write_text("{not valid json", encoding="utf-8")
             with self.assertRaises(pin_bump.PinBumpStop) as ctx:
-                pin_bump.run(engine="llamacpp", target_ref="b99999", resume=True, report_dir=report_dir)
+                pin_bump.run(cpu_smoke_build=None, skip_cpu_smoke=True, engine="llamacpp", target_ref="b99999", resume=True, report_dir=report_dir)
             # The ORIGINAL failure must survive -- not get replaced by a
             # second failure from the except block's own disk re-read.
             self.assertEqual(ctx.exception.code, "RESUME_STATE_INVALID")
@@ -943,6 +962,8 @@ class RunResumeStateMissingTests(unittest.TestCase):
             report_dir = Path(directory) / "resume-b99999"  # never created
             with self.assertRaises(pin_bump.PinBumpStop) as ctx:
                 pin_bump.run(
+                    cpu_smoke_build=None,
+                    skip_cpu_smoke=True,
                     engine="llamacpp",
                     target_ref="b99999",
                     resume=True,
@@ -987,6 +1008,8 @@ class RunResumeStateMissingTests(unittest.TestCase):
             state.save(report_dir)
             with self.assertRaises(pin_bump.PinBumpStop) as ctx:
                 pin_bump.run(
+                    cpu_smoke_build=None,
+                    skip_cpu_smoke=True,
                     engine="llamacpp",
                     target_ref="b99999-WRONG",  # deliberate mismatch
                     resume=True,

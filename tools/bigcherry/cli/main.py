@@ -46,6 +46,7 @@ from .patch import (
 )
 from .profiling import cmd_profile_campaign
 from .runtime import cmd_reference_ladder, cmd_runtime_matrix
+from .smoke import cmd_smoke_cpu
 from .source import cmd_audit, cmd_pull
 from .slice import (
     cmd_slice_finish,
@@ -680,8 +681,32 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="explicitly skip the source compile phase; the skip is recorded in the release record",
     )
+    pin_bump_cmd.add_argument(
+        "--cpu-smoke-build",
+        default=None,
+        help="build directory of the bumped engine; the cpu-smoke phase (RAM-only tiny-model smoke, MEN15) runs "
+        "its server with no GPU visible. Required unless --skip-cpu-smoke",
+    )
+    pin_bump_cmd.add_argument(
+        "--skip-cpu-smoke",
+        action="store_true",
+        help="explicitly skip the cpu-smoke phase; the skip is recorded in the resume state",
+    )
     pin_bump_cmd.add_argument("--report-dir", default=None)
     pin_bump_cmd.set_defaults(func=cmd_pin_bump)
+
+    smoke_cpu_cmd = sub.add_parser(
+        "smoke-cpu",
+        help="RAM-only engine smoke (MEN15): serve the engine's declared tiny model on the CPU with no GPU visible, "
+        "run 3 greedy completions twice (non-empty, identical), record wall time and peak RSS, shut down gracefully",
+    )
+    smoke_cpu_cmd.add_argument("--build", required=True, help="the engine's build directory (holds bin/ and the runtime)")
+    smoke_cpu_cmd.add_argument(
+        "--model-root", default=None,
+        help="directory the [smoke.cpu] model path is relative to (default: $BIGCHERRY_MODEL_ROOT, then the host's model-root)",
+    )
+    smoke_cpu_cmd.add_argument("--out", default=None, help="result directory (default: <work>/cpu-smoke/<engine>)")
+    smoke_cpu_cmd.set_defaults(func=cmd_smoke_cpu)
 
     release_notes_cmd = sub.add_parser(
         "release-notes",
@@ -2006,6 +2031,8 @@ def cmd_pin_bump(args: argparse.Namespace) -> int:
             resume=args.resume,
             report_dir=report_dir,
             skip_compile=args.skip_compile,
+            cpu_smoke_build=_Path(args.cpu_smoke_build) if args.cpu_smoke_build else None,
+            skip_cpu_smoke=args.skip_cpu_smoke,
         )
     # The `or` coalesces in this handler are legitimate (exc.run_id is None
     # until run() assigns a run_id, and target/tree are None before the first
@@ -2046,6 +2073,10 @@ def cmd_pin_bump(args: argparse.Namespace) -> int:
         print("  compile: SKIPPED explicitly (--skip-compile; recorded in release notes)")
     elif "complete" in result.state.completed_phases:
         print("  compile: not recorded (this bump completed before the compile phase existed)")
+    if result.state.cpu_smoke_status == "passed":
+        print("  cpu-smoke: PASS (RAM-only tiny model, no GPU visible)")
+    elif result.state.cpu_smoke_status == "skipped":
+        print("  cpu-smoke: SKIPPED explicitly (--skip-cpu-smoke; recorded in the run state)")
     outstanding = result.coverage.get("outstanding", [])
     collisions = result.coverage.get("composition_only_patch_ids", [])
     if collisions:

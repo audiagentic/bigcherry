@@ -120,3 +120,16 @@ Patching plan `patching-radiance-rdna3`: RAD02 (inverted expert-parallel layout:
 RAD04 (27B overlap the cross-card sum), RAD05 (decode MoE GEMV; done as helper small lane), RAD06 (prefill hand-off
 pipeline and gfx11 grouped GEMM), RAD08 (full KL metric set). Related: `patching-radiance-heat-placement` (RHP01-RHP06),
 `patching-radiance-wire-quality` (RWQ01-RWQ06), `run-multi-engine` MEN11 (radiance on the evidence tooling).
+
+## CPU smoke (MEN15)
+
+`python -m bigcherry --engine radiance smoke-cpu --build <build dir> [--model-root <dir>] [--out <dir>]` serves a tiny
+`.rad` container with `--kernels libavx,libref --tp 1` (the CPU host backend and the reference kernels, one rank) and the
+HIP/ROCR/CUDA device variables empty, so it runs while the GPUs are busy. The checks are the same as for every engine:
+sha256 of the model, health, three 16-token greedy `/v1/completions` requests run twice (model id taken from
+`/v1/models`), non-empty and identical text, SIGINT shutdown with a clean exit, and no device-initialisation line in the
+log; the result is `cpu-smoke.json` beside `server.log` under `--out`. The container is declared in `[smoke.cpu]` of
+`engines/radiance/engine.toml` (path relative to the model root; `args` are its serve flags), with a PLACEHOLDER sha256
+until a tiny container is converted and pinned. Not yet confirmed on hardware: that `libavx` serves a full model, and the
+exact device-init log lines the assertion looks for (`engines/radiance/engine.toml` and
+`engine_adapters/radiance.py` are the places to adjust).

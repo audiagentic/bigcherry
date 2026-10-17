@@ -5,7 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from .base import EngineAdapter, QualityCommand, SidecarSpec, SourceCheck
+from .base import (
+    CompletionApi, CpuSmokeSpec, DeviceAssertion, EngineAdapter, QualityCommand, SidecarSpec, SourceCheck, SMOKE_SEED,
+    build_cpu_smoke,
+)
 
 if TYPE_CHECKING:
     from ..core.context import ProjectContext
@@ -49,6 +52,27 @@ class RadianceAdapter(EngineAdapter):
         return QualityCommand(
             argv=tuple(argv), env=dict(env), log_path=run_dir / f"{arm['name']}.{kind}.log",
             result_path=result, timeout_s=float(quality.get("timeout_s", KLD_TIMEOUT_S)),
+        )
+
+    def cpu_smoke(self, context: ProjectContext, build_dir: Path, model_root: Path) -> CpuSmokeSpec | None:
+        """radiance on its CPU kernel plugins only: ``--kernels libavx,libref`` (libavx is the CPU host backend, libref
+        the reference implementation; tools/lab/radiance/README.md) and ``--tp 1``, with the emptied GPU variables so
+        no device plugin can open a card. Served through the OpenAI route ``/v1/completions`` (the one engine-bench
+        drives); the served model id comes from ``/v1/models``."""
+        return build_cpu_smoke(
+            context, build_dir, model_root,
+            engine_args=("--kernels", "libavx,libref", "--tp", "1"), extra_env={}, env_unset_prefixes=("RADIANCE_", "R3_", "BIGCHERRY_"),
+            completion=CompletionApi(
+                path="/v1/completions", prompt_field="prompt", token_field="max_tokens",
+                fixed=(("temperature", 0), ("seed", SMOKE_SEED), ("stream", False)),
+                text_path=("choices", 0, "text"), models_path="/v1/models",
+            ),
+            # Unconfirmed: radiance's exact device-init log lines. These catch the HIP/ROCm runtime naming a device.
+            device=DeviceAssertion((
+                r"(?i)\b(?:hip|rocm) device \d+",
+                r"(?i)\bgfx\d{3,4}\b.*\b(?:device|selected|using)\b",
+                r"(?i)\bkernels?: libr4d\b",
+            )),
         )
 
     def source_checks(self, context: ProjectContext) -> tuple[SourceCheck, ...]:

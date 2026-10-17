@@ -43,3 +43,13 @@ LLAMA_SERVER_ENABLE_SHUTDOWN = "1"
 [serve.draft-stats]
 source = "log"
 pattern = 'draft acceptance = [0-9.]+ \(\s*(?P<accepted>\d+) accepted /\s*(?P<drafted>\d+) generated\)'
+
+# RAM-only smoke test (MEN15): `bigcherry --engine llamacpp smoke-cpu --build <dir>` serves this tiny model with no GPU
+# visible (HIP/ROCR/CUDA device variables empty, -ngl 0, --device none). The model is declared here, not hard-coded:
+# `model` is relative to the model root (--model-root, BIGCHERRY_MODEL_ROOT or the host's model-root) and `sha256` is the
+# digest of that exact file. The digest below is a PLACEHOLDER: the runner refuses it until the owner pins a real tiny
+# GGUF (about 15 to 150M parameters, e.g. a stories15M-class llama; docs/reference/build/RELEASES.md "CPU smoke").
+[smoke.cpu]
+model = "smoke/tiny-llama.gguf"
+sha256 = "PLACEHOLDER-pin-the-sha256-of-the-tiny-gguf"
+args = ["-c", "512", "--threads", "4", "--no-webui"]
