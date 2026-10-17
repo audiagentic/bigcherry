@@ -20,7 +20,7 @@ _CONFIG = _notes.ReleaseConfig(
     engine="llamacpp", upstream_name="llama.cpp",
     tag_prefix="bc-", notes_dir="docs/releases/notes", ledger="ledger.ndjson", release_records="releases",
     recipes="config/recipes.toml", patches="engines/llamacpp/patches",
-    build_patch_sets=(), fallback_prefixes=(), ledger_sections=(),
+    build_patch_sets=(), fallback_prefixes=(), owned_paths=(), ledger_sections=(),
 )
 
 _RELEASE_CONFIG = """\
@@ -93,6 +93,17 @@ class PinReleaseTests(unittest.TestCase):
                 _pr.make_plan(root, "radiance", "b11474")
             with self.assertRaises(_pr.PinReleaseError):
                 _pr.run(root, "radiance", "b11474", "", dry_run=True, log=lambda _line: None)
+
+    def test_radiance_resolves_its_package_and_release_line_in_the_real_repo(self):
+        # the gates before the version scheme (package in release-please-config.json, [engine.radiance] line) pass; a
+        # pin that is a commit rather than a numbered build then stops at the open version-scheme decision
+        branch = _git(paths.REPO_ROOT, "rev-parse", "--abbrev-ref", "HEAD")
+        if branch in ("main", "HEAD"):
+            self.skipTest("plan resolution needs a work branch")
+        with self.assertRaisesRegex(_pr.PinReleaseError, "no version scheme yet") as ctx:
+            _pr.make_plan(paths.REPO_ROOT, "radiance", "89cee7ce414e", allow_existing=True)
+        self.assertNotIn("no package", str(ctx.exception))
+        self.assertNotIn("release line", str(ctx.exception))
 
     def test_record_needs_evidence_then_records_once(self):
         with tempfile.TemporaryDirectory() as td:

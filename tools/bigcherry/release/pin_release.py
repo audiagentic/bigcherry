@@ -104,7 +104,9 @@ def make_plan(repo_root: Path, engine: str, llama_tag: str, main: str = "main", 
                                       "configured yet, so its pin cannot be released")
     m = re.fullmatch(r"b(\d+)", llama_tag)
     if not m:
-        raise PinReleaseError("gate", f"{llama_tag!r} is not a {layout.upstream_name} release tag (b<number>)")
+        raise PinReleaseError("gate", f"{llama_tag!r} is not a numbered upstream build (b<number>): releases are versioned "
+                                      f"<build>.<minor>.<patch>, and a {layout.upstream_name} pin that is not a numbered build "
+                                      "has no version scheme yet (run-multi-engine MEN13 open decision)")
     build = int(m.group(1))
     try:
         config = _notes.load_config(repo_root, engine)

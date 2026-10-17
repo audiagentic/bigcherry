@@ -5,7 +5,8 @@ owns the release PR, the tag and the GitHub release (release-please-config.json,
 this module produces the release text it publishes. The notes are assembled from three sources, each bounded by the
 previous release:
 
-- the change ledger: events newer than the previous release tag's commit, grouped by change class;
+- the change ledger: events newer than the previous release tag's commit that touched the engine's files, grouped by
+  change class;
 - the patch registry: patches added, removed, whose state changed, or whose implementation changed between the
   previous release tag and the release commit, and which entered or left the production build;
 - the bump's release record: its notes field (smoke numbers, regressions found and their disposition).
@@ -43,6 +44,9 @@ class ReleaseConfig:
     patches: str
     build_patch_sets: tuple[str, ...]
     fallback_prefixes: tuple[str, ...]
+    #: repository paths (files or directories) whose changes belong to this engine: engines/<name>/, the engine.toml
+    #: layout and the engine's declared extra paths; a ledger event listing a file under any of them is the engine's
+    owned_paths: tuple[str, ...]
     ledger_sections: tuple[tuple[str, str], ...]  # (change-class, heading)
 
 
@@ -72,8 +76,29 @@ def load_config(repo_root: Path, engine: str) -> ReleaseConfig:
         patches=layout.patches,
         build_patch_sets=tuple(line["build-patch-sets"]),
         fallback_prefixes=tuple(line["previous-tag-fallback-prefixes"]),
+        owned_paths=engine_paths(layout, tuple(line["paths"])),
         ledger_sections=tuple((s["class"], s["heading"]) for s in raw["ledger-section"]),
     )
+
+
+def engine_paths(layout: engines.EngineLayout, declared: tuple[str, ...]) -> tuple[str, ...]:
+    """Every repository path an engine owns: its engines/<name>/ directory, the locations its engine.toml declares
+    (patches, overlay, vendor checkout, recipes, components, external sources) and the extra paths of its release line."""
+    owned = [f"{engines.ENGINES_DIR}/{layout.name}", layout.patches, layout.overlay, layout.vendor, layout.recipes,
+             *(path for _, path in layout.components), layout.external_sources, *declared]
+    return tuple(sorted({path.strip("/") for path in owned if path}))
+
+
+def event_belongs(event: dict, config: ReleaseConfig) -> bool:
+    """A ledger event belongs to an engine's release when any file it lists is under one of the engine's owned paths.
+    Events carry no engine field; the files are the record of what a change touched. An event touching no engine's
+    files (platform code, tools, docs, planning) belongs to the platform release line instead."""
+    owned = config.owned_paths
+    for name in event.get("files") or []:
+        path = str(name).replace("\\", "/").removeprefix("./")
+        if any(path == root or path.startswith(root + "/") for root in owned):
+            return True
+    return False
 
 
 def _git(repo_root: Path, *args: str, check: bool = True) -> str:
@@ -164,7 +189,7 @@ def ledger_events(repo_root: Path, config: ReleaseConfig, ref: str, after: datet
         if not line:
             continue
         event = json.loads(line)
-        if after is None or _event_time(event) > after:
+        if event_belongs(event, config) and (after is None or _event_time(event) > after):
             events.append(event)
     return sorted(events, key=_event_time)
 
@@ -194,7 +219,9 @@ def release_version(llama_tag: str, version: str | None = None) -> str:
     <build>.0.0; later releases on the same pin raise minor or patch."""
     build = llama_tag[1:] if llama_tag[:1] == "b" and llama_tag[1:].isdigit() else None
     if build is None:
-        raise ReleaseNotesError(f"{llama_tag!r} is not a llama.cpp release tag (b<number>)")
+        raise ReleaseNotesError(f"{llama_tag!r} is not a numbered upstream build (b<number>): releases are versioned "
+                                f"<build>.<minor>.<patch>, and a pin that is not a numbered build has no version scheme yet "
+                                "(run-multi-engine MEN13 open decision)")
     if version is None:
         return f"{build}.0.0"
     parts = version.split(".")
