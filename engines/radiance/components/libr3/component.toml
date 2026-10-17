@@ -101,6 +101,12 @@ status = "experimental"
 summary = "pin the helper's grouped MoE GEMM form (RAD06): 0 libr4d's choice by row count, 1 the 32-row prefill form, 2 the 16-row decode form (a helper's prefill rows are ~4.5 an owned expert)"
 activation = "r3_moe_helper: grouped MoE GEMM pinned to the"
 
+[setting.R3_MOE_HELPER_MOE_DOWN_TILE]
+default = ""
+status = "experimental"
+summary = "pin libr4d's down-projection tile in the helper (RAD06 gfx1100 sweep): 1 the 64/128-column tile, 2 the 256-column 16-wave tile; unset leaves libr4d's choice"
+activation = "r3_moe_helper: R3_MOE_HELPER_MOE_DOWN_TILE="
+
 [setting.R3_MOE_HELPER_ROWS]
 default = "0"
 status = "experimental"

@@ -1325,6 +1325,17 @@ private:
             std::fprintf(stderr, "r3_moe_helper: grouped MoE GEMM pinned to the %s form\n",
                          form == 2 ? "16-row decode" : "32-row prefill");
         }
+        /* RAD06 tile sweep on gfx1100 (libr4d's tiles were tuned on gfx1201): R3_MOE_HELPER_MOE_DOWN_TILE 1 the
+         * 64/128-column down tile, 2 the 256-column 16-wave one. */
+        if (const char* v = std::getenv("R3_MOE_HELPER_MOE_DOWN_TILE"); v && *v) {
+            auto fn = reinterpret_cast<void (*)(int)>(dlsym(so_, "r4d_moe_gemm_pin_down_tile"));
+            if (!fn) {
+                std::fprintf(stderr, "r3_moe_helper: R3_MOE_HELPER_MOE_DOWN_TILE set but the plugin lacks r4d_moe_gemm_pin_down_tile\n");
+                return false;
+            }
+            fn(std::atoi(v));
+            std::fprintf(stderr, "r3_moe_helper: R3_MOE_HELPER_MOE_DOWN_TILE=%s applied\n", v);
+        }
         return true;
     }
 
