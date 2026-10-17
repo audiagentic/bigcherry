@@ -260,8 +260,8 @@ class ServerComparisonCaptureTests(unittest.TestCase):
         class FakeQualityAdapter(RadianceAdapter):
             def quality_command(self, kind, arm, env, run_dir, binary, model, quality):
                 result = run_dir / f"{arm['name']}.kld.json"
-                program = ("import json,sys;json.dump({'all':{'mean':0.003,'median':0.001,'p99':0.02,'p99_9':0.1,"
-                           "'top1_agreement':96.8,'ppl':8.55,'ppl_ref':8.56}},open(sys.argv[1],'w'))")
+                program = ("import json,sys;json.dump({'all':{'kld':{'mean':0.003,'median':0.001,'p99':0.02,'p99_9':0.1},"
+                           "'top1_agreement':0.968,'ppl':{'candidate':8.55,'reference':8.56,'ratio':0.9988}}},open(sys.argv[1],'w'))")
                 return QualityCommand((sys.executable, "-c", program, str(result)), dict(env),
                                       run_dir / f"{arm['name']}.score.log", result, 60.0)
         self.write_config(engine="radiance", execution_evidence="observe", quality_only=True, quality=self.quality_block(), server_args=[],

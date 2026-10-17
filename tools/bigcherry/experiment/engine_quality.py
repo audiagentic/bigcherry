@@ -39,32 +39,39 @@ class KldResult:
 
 #: the --kld-out JSON keys of the 'all' section that make a KldResult (radiance 1.3.x: mean/median/p90/p95/p99/p99_9/
 #: p99_99/max, top1_agreement, ppl); the reference perplexity is read from the first of these that is present
-_ALL_REQUIRED = ("mean", "median", "p99", "p99_9", "top1_agreement", "ppl")
-_PPL_REFERENCE_KEYS = ("ppl_ref", "ppl_reference", "ref_ppl")
+_KLD_REQUIRED = ("mean", "median", "p99", "p99_9")
+_PPL_REQUIRED = ("candidate", "reference")
+
+
+def _number(table: object, key: str) -> bool:
+    return isinstance(table, dict) and isinstance(table.get(key), (int, float)) and not isinstance(table.get(key), bool)
 
 
 def parse_radiance_kld_json(document: dict[str, Any]) -> KldResult:
     """The overall KL result of one radiance ``--kld-ref ... --kld-out`` run (the document's ``all`` section).
 
-    ``top1_agreement`` is a percentage, as in the summary log line. The per-source section (``by_source``) is not
-    gated; it stays in the document the caller records.
+    radiance writes ``all = {positions, kld: {mean, median, p90, p95, p99, p99_9, p99_99, max}, top1_agreement
+    (a fraction), ppl: {candidate, reference, ratio}}`` and the same per corpus source under ``by_source``, which is
+    not gated here and stays in the document the caller records. ``top1_percent`` is returned as a percentage.
     """
     section = document.get("all") if isinstance(document, dict) else None
     if not isinstance(section, dict):
         raise QualityParseError("KL output has no 'all' section")
-    missing = [key for key in _ALL_REQUIRED if not isinstance(section.get(key), (int, float))]
-    reference_key = next((key for key in _PPL_REFERENCE_KEYS if isinstance(section.get(key), (int, float))), None)
-    if missing or reference_key is None:
-        wanted = [*missing, *([] if reference_key else ["/".join(_PPL_REFERENCE_KEYS)])]
-        raise QualityParseError(f"KL output 'all' section lacks {', '.join(wanted)}; has {sorted(section)}")
+    kld, ppl = section.get("kld"), section.get("ppl")
+    missing = [f"kld.{key}" for key in _KLD_REQUIRED if not _number(kld, key)]
+    missing += [f"ppl.{key}" for key in _PPL_REQUIRED if not _number(ppl, key)]
+    if not _number(section, "top1_agreement"):
+        missing.append("top1_agreement")
+    if missing:
+        raise QualityParseError(f"KL output 'all' section lacks {', '.join(missing)}; has {sorted(section)}")
     return KldResult(
-        kld_mean=float(section["mean"]),
-        kld_median=float(section["median"]),
-        kld_p99=float(section["p99"]),
-        kld_p999=float(section["p99_9"]),
-        top1_percent=float(section["top1_agreement"]),
-        ppl=float(section["ppl"]),
-        ppl_reference=float(section[reference_key]),
+        kld_mean=float(kld["mean"]),
+        kld_median=float(kld["median"]),
+        kld_p99=float(kld["p99"]),
+        kld_p999=float(kld["p99_9"]),
+        top1_percent=100.0 * float(section["top1_agreement"]),
+        ppl=float(ppl["candidate"]),
+        ppl_reference=float(ppl["reference"]),
     )
 
 

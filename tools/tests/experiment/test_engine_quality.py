@@ -8,11 +8,14 @@ from bigcherry.core import components, engines, paths
 from bigcherry.experiment import engine_quality as eq
 
 # --kld-out documents ('all' section) shaped after radiance KL runs on the 27B, two XTX (kqa2 and kqg2, 2026-10-12).
-_GOOD = {"all": {"mean": 0.003533, "median": 0.001621, "p90": 0.008, "p95": 0.012, "p99": 0.02516, "p99_9": 0.1265,
-                 "p99_99": 0.7817, "max": 1.3892, "top1_agreement": 96.801, "ppl": 8.5583, "ppl_ref": 8.5610},
-         "by_source": {"docs": {"mean": 0.004}}}
-_BROKEN = {"all": {"mean": 6.499024, "median": 6.366023, "p99": 14.04798, "p99_9": 16.4834, "p99_99": 18.3643,
-                   "max": 20.6620, "top1_agreement": 7.322, "ppl": 4903.6748, "ppl_ref": 8.5610}}
+_GOOD = {"all": {"positions": 42761,
+                 "kld": {"mean": 0.003533, "median": 0.001621, "p90": 0.008, "p95": 0.012, "p99": 0.02516, "p99_9": 0.1265,
+                         "p99_99": 0.7817, "max": 1.3892},
+                 "top1_agreement": 0.96801, "ppl": {"candidate": 8.5583, "reference": 8.5610, "ratio": 0.99968}},
+         "by_source": {"docs": {"kld": {"mean": 0.004}}}}
+_BROKEN = {"all": {"kld": {"mean": 6.499024, "median": 6.366023, "p99": 14.04798, "p99_9": 16.4834, "p99_99": 18.3643,
+                           "max": 20.6620},
+                   "top1_agreement": 0.07322, "ppl": {"candidate": 4903.6748, "reference": 8.5610, "ratio": 572.8}}}
 _LIMITS = eq.QualityThresholds(
     max_kld_mean_increase=0.002, max_kld_median_increase=0.001, max_kld_p99_increase=0.02, max_kld_p999_increase=0.1,
     max_top1_drop_points=0.5, max_ppl_ratio_increase=0.005)
@@ -29,8 +32,9 @@ class KldTests(unittest.TestCase):
         self.assertAlmostEqual(result.ppl_ratio, 8.5583 / 8.5610)
 
     def test_refuses_incomplete_documents(self):
-        for document in ({}, {"all": {}}, {"all": {**_GOOD["all"], "p99_9": None}},
-                         {"all": {k: v for k, v in _GOOD["all"].items() if k != "ppl_ref"}}):
+        for document in ({}, {"all": {}}, {"all": {**_GOOD["all"], "kld": {**_GOOD["all"]["kld"], "p99_9": None}}},
+                         {"all": {**_GOOD["all"], "ppl": {"candidate": 8.5583}}},
+                         {"all": {k: v for k, v in _GOOD["all"].items() if k != "top1_agreement"}}):
             with self.subTest(document=document), self.assertRaises(eq.QualityParseError):
                 eq.parse_radiance_kld_json(document)
 

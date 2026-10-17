@@ -16,8 +16,8 @@ THRESHOLDS = {
 }
 _PROGRAM = (
     "import json,sys;out=sys.argv[1];mean=float(sys.argv[2]);"
-    "json.dump({'all':{'mean':mean,'median':mean/2,'p99':mean*8,'p99_9':mean*30,'top1_agreement':96.8,"
-    "'ppl':8.55,'ppl_ref':8.56},'by_source':{'docs':{'mean':mean}}},open(out,'w'))"
+    "json.dump({'all':{'kld':{'mean':mean,'median':mean/2,'p99':mean*8,'p99_9':mean*30},'top1_agreement':0.968,"
+    "'ppl':{'candidate':8.55,'reference':8.56,'ratio':0.9988}},'by_source':{'docs':{'kld':{'mean':mean}}}},open(out,'w'))"
 )
 
 
@@ -95,7 +95,7 @@ class RunQualityTests(unittest.TestCase):
         section, cells = self.run_arms(["control", "good"])
         self.assertTrue(section["passed"], section)
         self.assertEqual(section["arms"]["good"]["gate"], {"passed": True, "problems": []})
-        self.assertEqual(section["arms"]["good"]["by_source"], {"docs": {"mean": 0.0036}})
+        self.assertEqual(section["arms"]["good"]["by_source"], {"docs": {"kld": {"mean": 0.0036}}})
         self.assertEqual([c["mode"] for c in cells], ["control", "good"])
 
     def test_degraded_arm_fails_the_gate(self):
