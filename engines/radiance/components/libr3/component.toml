@@ -12,11 +12,10 @@ outputs = ["kernels/libr3.so", "kernels/libr3moe.so", "helpers/libr3_ngram_helpe
 
 # How the build lane builds it: CMake against the engine installed from the lane's own build (CMAKE_PREFIX_PATH) and
 # the lane's materialised source ({engine_source}); outputs are copied into the engine's runtime home.
-# R3_NATIVE is OFF for the radiance 1.7.0 bring-up (MEN12): 22 of the 105 native/*.rw blocks (after shelving gdn) no longer match 1.7.0's
-# libr4d, so every kernel goes through r3_compat.h until each native is re-ported (attention first). R3_NATIVE=ON
-# fails configure on the unported blocks by design.
+# R3_NATIVE is ON: native/*.rw (re-ported to radiance 1.7.0, MEN12) replace the kernels' own lines with native gfx11 forms.
+# A block that no longer matches libr4d fails configure by design; R3_NATIVE=OFF builds every kernel through r3_compat.h only.
 [build]
-configure = { RADIANCE_SRC = "{engine_source}", R3_TARGETS = "{targets}", R3_NATIVE = "OFF" }
+configure = { RADIANCE_SRC = "{engine_source}", R3_TARGETS = "{targets}", R3_NATIVE = "ON" }
 
 # Offline tests the bump gate (bigcherry pin-bump) builds and runs with ctest in the component's build tree.
 [test]
@@ -33,7 +32,7 @@ targets = ["r3_moe_shm_test"]
 [setting.R3_ATTN_NATIVE]
 default = "1"
 status = "production"
-summary = "native gfx11 prefill attention; KLD 0.0035 / 96.8% top-1 vs the compatibility form's 0.0037, +5% prefill (inert while the build has R3_NATIVE=OFF: its 1.7.0 re-port is pending, MEN12)"
+summary = "native gfx11 prefill attention; KLD 0.0035 / 96.8% top-1 vs the compatibility form's 0.0037, +5% prefill"
 
 [setting.R3_GDN_NATIVE]
 default = "0"

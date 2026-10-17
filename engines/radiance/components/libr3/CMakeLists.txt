@@ -17,7 +17,7 @@ rad_plugin_defaults()
 
 set(R3_TARGETS "gfx1100" CACHE STRING "GPU targets libr3 is compiled for")
 set(RADIANCE_SRC "" CACHE PATH "radiance source tree (libr4d is read from it)")
-option(R3_NATIVE "apply the native gfx11 forms in native/ (OFF = every kernel through the compatibility layer; OFF while the natives are re-ported to radiance 1.7.0, MEN12)" OFF)
+option(R3_NATIVE "apply the native gfx11 forms in native/ (OFF = every kernel through the compatibility layer)" ON)
 set(R3_ONLY "" CACHE STRING "build only these units (for a compile check of one unit); empty = all not excluded")
 if(NOT EXISTS "${RADIANCE_SRC}/libr4d/CMakeLists.txt")
   message(FATAL_ERROR "libr3: -DRADIANCE_SRC must name a radiance source tree (no ${RADIANCE_SRC}/libr4d)")

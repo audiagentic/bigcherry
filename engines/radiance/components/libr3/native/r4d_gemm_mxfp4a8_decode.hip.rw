@@ -65,12 +65,12 @@
 
 @@ find 2
   const int kb_end = s_hi > s_lo ? (k_hi - 1) >> 7 : 0;
-  mxd_epilogue<DTM, DKS, ABLK>(acc, As, as_rs, Wref, P, cnt, C, M, N, n0, wave, col, kb8, ks,
+  mxd_epilogue<DTM, DKS, ABLK>(acc, As, as_rs, Wref, P, cnt, C, M, N, ldc, n0, wave, col, kb8, ks,
 @@ replace
   const int kb_end = s_hi > s_lo ? (k_hi - 1) >> 7 : 0;
 #pragma unroll
   for (int i = 0; i < DTM; ++i) acc[i] = r3_acc_native_to_gfx12(acc[i]);  // libr3 native: once, not per WMMA
-  mxd_epilogue<DTM, DKS, ABLK>(acc, As, as_rs, Wref, P, cnt, C, M, N, n0, wave, col, kb8, ks,
+  mxd_epilogue<DTM, DKS, ABLK>(acc, As, as_rs, Wref, P, cnt, C, M, N, ldc, n0, wave, col, kb8, ks,
 @@ end
 
 # One activation row (M = 1, every single-sequence decode step) is a vector product on gfx11, not a matrix one:
@@ -89,7 +89,7 @@
 @@ replace
   const MxdPlan pl = mxd_plan(M, K, N, KS, BK, NT);
   if (M == 1 && K <= R3_GEMV_MAX_K && r3_gemv_on()) {  // libr3 native
-    r3_mxfp4_gemv1_launch(a, ascale, wq, ws, wref, c, K, N, pl.nt, as_group == 128, stream);
+    r3_mxfp4_gemv1_launch(a, ascale, wq, ws, wref, c, K, N, ldws, pl.nt, as_group == 128, stream);
     return;
   }
   const int ks = pl.ks, bk = pl.bk;
@@ -123,7 +123,7 @@
   // One row only for now: with more rows every wave widens the same activations again (run p1: with the drafter
   // on, 71.6 tok/s against 131.7 for the staged form), which wants the activations widened once per launch.
   if (M == 1 && r3_dec11_on()) {  // libr3 native
-    r3_mxfp4_dec11_launch(a, ascale, wq, ws, wref, c, M, K, N, pl.nt, as_group == 128, as_rs, stream);
+    r3_mxfp4_dec11_launch(a, ascale, wq, ws, wref, c, M, K, N, ldws, ldc, pl.nt, as_group == 128, as_rs, stream);
     return;
   }
   float* P = (float*)scratch;

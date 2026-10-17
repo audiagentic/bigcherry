@@ -30,7 +30,7 @@
                            + ((size_t)(qoff + qrow) * a.q_heads + qhead) * HEAD_DIM;
         #pragma unroll
         for (int t = 0; t < NKS; ++t) {
-            // CONTIG reads the same 8 d as ONE run; the split map takes them 4+4.
+            // CONTIG reads the 8 dims as one run; the split map takes them 4+4.
             const uint2 l0 = *(const uint2*)(qp + 16 * t + (CTG ? 8 * h : 4 * h));
             const uint2 h0 = *(const uint2*)(qp + 16 * t + (CTG ? 8 * h + 4 : 8 + 4 * h));
             qf[t] = D::mk(make_uint2(r4d_qcvt<D, FOLDQ, F16>(l0.x, mul),
@@ -57,7 +57,7 @@
                 }
                 qn[t] = __builtin_bit_cast(r3_v16h, qw);
             } else {
-                // CONTIG reads the same 8 d as ONE run; the split map takes them 4+4.
+                // CONTIG reads the 8 dims as one run; the split map takes them 4+4.
                 const uint2 l0 = *(const uint2*)(qp + 16 * t + (CTG ? 8 * h : 4 * h));
                 const uint2 h0 = *(const uint2*)(qp + 16 * t + (CTG ? 8 * h + 4 : 8 + 4 * h));
                 qf[t] = D::mk(make_uint2(r4d_qcvt<D, FOLDQ, F16>(l0.x, mul),
@@ -149,8 +149,8 @@
                     *(uint2*)(dst)     = make_uint2(D::from_bf16w(v.x), D::from_bf16w(v.y));
                     *(uint2*)(dst + 4) = make_uint2(D::from_bf16w(v.z), D::from_bf16w(v.w));
                 } else {
-                    // tr_b128 transposes 16-BIT lanes, so each transposed short is two fp8 from
-                    // ADJACENT d; v_perm_b32 splits them back into two d rows.
+                    // tr_b128 transposes 16-bit lanes, so each short holds two fp8 from adjacent
+                    // dims; v_perm_b32 splits them into two dim rows.
                     const uint32_t lo0 = byte_gather(v.x, v.y, 0), lo1 = byte_gather(v.z, v.w, 0);
                     const uint32_t hi0 = byte_gather(v.x, v.y, 1), hi1 = byte_gather(v.z, v.w, 1);
                     uint32_t wl[4], wh[4];
@@ -207,8 +207,8 @@
                         *(uint2*)(dst)     = make_uint2(D::from_bf16w(v.x), D::from_bf16w(v.y));
                         *(uint2*)(dst + 4) = make_uint2(D::from_bf16w(v.z), D::from_bf16w(v.w));
                     } else {
-                        // tr_b128 transposes 16-BIT lanes, so each transposed short is two fp8 from
-                        // ADJACENT d; v_perm_b32 splits them back into two d rows.
+                        // tr_b128 transposes 16-bit lanes, so each short holds two fp8 from adjacent
+                        // dims; v_perm_b32 splits them into two dim rows.
                         const uint32_t lo0 = byte_gather(v.x, v.y, 0), lo1 = byte_gather(v.z, v.w, 0);
                         const uint32_t hi0 = byte_gather(v.x, v.y, 1), hi1 = byte_gather(v.z, v.w, 1);
                         uint32_t wl[4], wh[4];
@@ -231,8 +231,8 @@
             v8f s = (v8f){0,0,0,0,0,0,0,0};
             {
                 const uint16_t* krow = &sK[(mt * 16 + c) * KSTR] + (CTG ? 8 * h : 0);
-                // PF fragments are LOADED before the matching PF WMMAs are ISSUED, so the wait in
-                // front of each WMMA becomes `s_wait_dscnt PF-1` instead of a full drain.
+                // Load PF fragments before issuing their WMMAs, so each WMMA waits on
+                // s_wait_dscnt PF-1 instead of a full drain.
                 #pragma unroll
                 for (int g = 0; g < NKS; g += PF) {
                     frag16 kb[PF];
@@ -291,17 +291,21 @@
 
 @@ find 1
             const int kbase = k0 + mt * 16 + 8 * h;
-            if (!MSKIP || wave_any(kbase + 7 > klimit)) {
+            // Mask keys past klimit and, with WIN, before wlo. MSKIP skips tiles straddling neither.
+            if (!MSKIP || wave_any(kbase + 7 > klimit) || (WIN && wave_any(kbase < wlo))) {
                 #pragma unroll
-                for (int e = 0; e < 8; ++e) sc[e] = (kbase + e <= klimit) ? sc[e] : -INFINITY;
+                for (int e = 0; e < 8; ++e) sc[e] = ((kbase + e <= klimit) && (!WIN || kbase + e >= wlo))
+                                                    ? sc[e] : -INFINITY;
             }
 @@ replace
             const int kbase = k0 + mt * 16 + (R3N ? h : 8 * h);
-            if (!MSKIP || wave_any(kbase + (R3N ? 14 : 7) > klimit)) {
+            // Native keeps the accumulator layout: lane (c,h) holds keys kbase + 2e, so the lowest
+            // key a lane scores is kbase (the WIN test) and the highest is kbase + 14.
+            if (!MSKIP || wave_any(kbase + (R3N ? 14 : 7) > klimit) || (WIN && wave_any(kbase < wlo))) {
                 #pragma unroll
                 for (int e = 0; e < 8; ++e) {
                     const int key = kbase + (R3N ? 2 * e : e);
-                    sc[e] = (key <= klimit) ? sc[e] : -INFINITY;
+                    sc[e] = ((key <= klimit) && (!WIN || key >= wlo)) ? sc[e] : -INFINITY;
                 }
             }
 @@ end
@@ -309,8 +313,8 @@
 @@ find 1
                 const uint2 lo  = make_uint2(pw[0], pw[1]);
                 const uint2 hi2 = make_uint2(pw[2], pw[3]);
-                // QK leaves lane (c,h) holding keys 8h+e. Under CONTIG that IS the B fragment, so
-                // the cross-half exchange the two-runs-of-four map needed is simply not there.
+                // QK leaves lane (c,h) holding keys 8h+e. Under CONTIG that is already the B
+                // fragment; the split map needs a cross-half exchange.
                 frag16 p16;
                 if (CTG) {
                     p16 = D::mk(lo, hi2);

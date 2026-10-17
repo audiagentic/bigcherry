@@ -103,14 +103,26 @@
 @@ end
 
 @@ find 1
+                        const uint32_t r = m0 + wm + i * 16 + acc_row(lane, t);
+                        asn[i][t] = (Full || r < rows) ? ((const float*)Sa)[(size_t)r * sa_ld + kb]
+                                                       : 0.0f;
+@@ replace
+                        // libr3 native: kAsAhead exists only for the fp8 form, whose accumulator is in the
+                        // gfx11 layout, so the A scale row of a slot is the gfx11 row
+                        const uint32_t r = m0 + wm + i * 16 + r3_acc_row_native(lane, t);
+                        asn[i][t] = (Full || r < rows) ? ((const float*)Sa)[(size_t)r * sa_ld + kb]
+                                                       : 0.0f;
+@@ end
+
+@@ find 1
                             const uint32_t r = m0 + wm + i * 16 + acc_row(lane, t);
-                            as[i][t] = (Full || r < rows)
-                                           ? ws * ((const float*)Sa)[(size_t)r * sa_ld + kb]
+                            if constexpr (kAsAhead)
+                                as[i][t] = (Full || r < rows) ? ws * asn[i][t] : 0.0f;
 @@ replace
                             // libr3 native: the accumulator is in the gfx11 layout here
                             const uint32_t r = m0 + wm + i * 16 + r3_acc_row_native(lane, t);
-                            as[i][t] = (Full || r < rows)
-                                           ? ws * ((const float*)Sa)[(size_t)r * sa_ld + kb]
+                            if constexpr (kAsAhead)
+                                as[i][t] = (Full || r < rows) ? ws * asn[i][t] : 0.0f;
 @@ end
 
 @@ find 1

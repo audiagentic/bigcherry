@@ -246,18 +246,18 @@ __global__ __launch_bounds__(THR) void ar_rmsnorm_quant_fp8_kernel(
 @@ end
 
 @@ find 1
-        /* Pass two reads `x` across the whole row and a wave only wrote its own chunks of it. */
+        /* Pass two reads all of `x`'s row; each wave wrote only its own chunks. */
         __syncthreads();
     }
 
-    /* The peer's rows are now in MY scratch, in the same [M][n] layout as x -- WIRE == 0 only;
+    /* WIRE == 0: the peer's rows are now in this rank's scratch, in x's [M][n] layout. */
 @@ replace
-        /* Pass two reads `x` across the whole row and a wave only wrote its own chunks of it. */
+        /* Pass two reads all of `x`'s row; each wave wrote only its own chunks. */
         __syncthreads();
     }
     }  /* !PIPE && WIRE != 4: legacy exact/wht6 whole-message push, one flag, then read */
 
-    /* The peer's rows are now in MY scratch, in the same [M][n] layout as x -- WIRE == 0 only;
+    /* WIRE == 0: the peer's rows are now in this rank's scratch, in x's [M][n] layout. */
 @@ end
 
 @@ find 1
