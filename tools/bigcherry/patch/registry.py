@@ -118,7 +118,7 @@ _PATCH_TOML_STRING_LIST_KEYS = frozenset({
 })
 _PATCH_TOML_KNOWN_KEYS = _PATCH_TOML_REQUIRED_KEYS | _PATCH_TOML_STRING_LIST_KEYS | frozenset({
     "kind", "origin", "backend", "upstream", "upstream-ref", "retirement",
-    "plan-item", "external-source", "experiment-contract",
+    "plan-item", "external-source", "experiment-contract", "diagnostic-build",
 })
 
 
@@ -337,6 +337,10 @@ class PatchDescriptor:
     plan_item: str | None = None
     backends: tuple[str, ...] = ()
     tags: tuple[str, ...] = ()
+    #: The compile-time macro that enables this patch's code ("BC_MOE_REMOTE_DIAG"); None for an ordinary patch.
+    #: A patch that names one is for a diagnostic build only: its code is compiled out otherwise, and no
+    #: production source, patch set or experiment may include it (patch-lint, gates.diagnostic_build_problems).
+    diagnostic_build: str | None = None
 
     @property
     def experiment_contract(self) -> str | None:
@@ -501,6 +505,12 @@ def _parse_patch_toml(
         value = raw.get(key)
         if value is not None and (not isinstance(value, str) or not value):
             raise PatchRegistryError(f"{where}: {key} must be a non-empty string when present")
+    diagnostic_build = raw.get("diagnostic-build")
+    if diagnostic_build is not None and not re.fullmatch(r"[A-Z][A-Z0-9_]*", str(diagnostic_build)):
+        raise PatchRegistryError(
+            f"{where}: diagnostic-build must be the upper-case preprocessor macro that enables the patch, "
+            f"got {diagnostic_build!r}"
+        )
     upstream = raw.get("upstream")
     if upstream is not None and not re.match(r"^[0-9a-fA-F]{7,40}$", upstream):
         raise PatchRegistryError(f"{where}: upstream {upstream!r} is not a commit SHA")
@@ -713,6 +723,7 @@ def _packaged_descriptor(
         plan_ids=record["plan-ids"],
         backends=record["backends"],
         tags=record["tags"],
+        diagnostic_build=record.get("diagnostic-build"),
         requires=record["requires"],
         conflicts=record["conflicts"],
         requires_options=record["requires-options"],

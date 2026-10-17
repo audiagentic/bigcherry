@@ -95,13 +95,13 @@ class PinReleaseTests(unittest.TestCase):
                 _pr.run(root, "radiance", "b11474", "", dry_run=True, log=lambda _line: None)
 
     def test_radiance_plans_the_upstream_version_as_major(self):
-        # real repo: the package, the release line and recipes' pinned-version (1.3.0) give major 130
+        # real repo: the package, the release line and recipes' pinned-version (1.7.0) give major 170
         with mock.patch.object(_pr, "_git", side_effect=lambda root, *a, check=True: "feat/x" if a[0] == "rev-parse" else ""):
-            plan = _pr.make_plan(paths.REPO_ROOT, "radiance", "89cee7ce4144", allow_existing=True)
-        self.assertEqual((plan.build, plan.version, plan.release_tag), (130, "130.0.0", "bc-radiance-130.0.0"))
+            plan = _pr.make_plan(paths.REPO_ROOT, "radiance", "48f7b8eb6d70", allow_existing=True)
+        self.assertEqual((plan.build, plan.version, plan.release_tag), (170, "170.0.0", "bc-radiance-170.0.0"))
         with mock.patch.object(_pr, "_git", side_effect=lambda root, *a, check=True: "feat/x" if a[0] == "rev-parse" else ""):
-            plan = _pr.make_plan(paths.REPO_ROOT, "radiance", "89cee7ce4144", version="130.1.2")
-        self.assertEqual(plan.release_tag, "bc-radiance-130.1.2")
+            plan = _pr.make_plan(paths.REPO_ROOT, "radiance", "48f7b8eb6d70", version="170.1.2")
+        self.assertEqual(plan.release_tag, "bc-radiance-170.1.2")
         with self.assertRaises(_pr.PinReleaseError):  # a llama.cpp tag is not radiance's pin
             _pr.make_plan(paths.REPO_ROOT, "radiance", "b11474")
         with self.assertRaises(_pr.PinReleaseError):  # not the pinned revision
@@ -109,10 +109,10 @@ class PinReleaseTests(unittest.TestCase):
 
     def test_pin_version_by_version_source(self):
         radiance, llama = _notes.load_config(paths.REPO_ROOT, "radiance"), _notes.load_config(paths.REPO_ROOT, "llamacpp")
-        self.assertEqual(_notes.pin_version(paths.REPO_ROOT, radiance, "89cee7ce4144"), _notes.PinVersion(130, "1.3.0"))
+        self.assertEqual(_notes.pin_version(paths.REPO_ROOT, radiance, "48f7b8eb6d70"), _notes.PinVersion(170, "1.7.0"))
         self.assertEqual(_notes.pin_version(paths.REPO_ROOT, llama, "b11552"), _notes.PinVersion(11552, "b11552"))
         with self.assertRaises(_notes.ReleaseNotesError):
-            _notes.pin_version(paths.REPO_ROOT, llama, "89cee7ce4144")
+            _notes.pin_version(paths.REPO_ROOT, llama, "48f7b8eb6d70")
 
     def test_record_needs_evidence_then_records_once(self):
         with tempfile.TemporaryDirectory() as td:

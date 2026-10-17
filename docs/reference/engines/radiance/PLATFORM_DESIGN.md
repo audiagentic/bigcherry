@@ -31,12 +31,13 @@ engines/radiance/patches/
   rad0001_drain_mover_before_arena_free/
   rad0002_moe_remote_handoff/
   rad0003_mtp_full_head_switch/
+  rad0004_moe_remote_diagnostics/
 ```
 
 Each uses the existing `patch.toml` + `patch.py` + `SUMMARY.md` package contract. Existing-file changes use
 anchored `FilePatch` edits. New files in 0002 use `FilePatch(create=True)` with an `\A` anchor and a unique
 guard. `apply.py` already fails closed if upstream later creates that path, so the two additions
-(`abi/rad_moe_remote.h`, `core/place/moe_remote.cpp`) do not justify an opaque `git apply` representation.
+(rad0002 on 1.7.0 creates four: `abi/bc_moe_remote.h`, `core/place/bc_moe_remote.cpp`, `core/place/bc_moe_remote_place.h`, `arch/common/bc_moe_remote_block.h`) do not justify an opaque `git apply` representation.
 
 Do not preserve `engines/radiance/engine-patches/*.patch` or `engine-patched-build.sh` as compatibility paths.
 Once the packages and standard build lane land, remove them. Package dependency edges are declared only where the

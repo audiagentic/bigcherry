@@ -14,9 +14,11 @@
 
 @@ find 1
     int  host       = 0;
+    long gate_ctr   = 0;      /* the blocks that have seen their peer's bytes land (r4d_ar_seq.h) */
 };
 @@ replace
     int  host       = 0;
+    long gate_ctr   = 0;      /* the blocks that have seen their peer's bytes land (r4d_ar_seq.h) */
     int  timing     = 0;
     int  wire4      = 0;
 };
@@ -196,10 +198,10 @@ void release(ArInst* in) {
 @@ end
 
 @@ find 1
-        (long)(uintptr_t)s, nblocks, nthreads, cfg->drain, cfg->acq, wire,
+        (long)(uintptr_t)s, nblocks, nthreads, cfgv.drain, cfgv.acq, wire,
         in->locpack, in->slot_bytes / 2);
 @@ replace
-        (long)(uintptr_t)s, r3_nblocks, nthreads, cfg->drain, cfg->acq, wire,
+        (long)(uintptr_t)s, r3_nblocks, nthreads, cfgv.drain, cfgv.acq, wire,
         in->locpack, r3_wire4 ? in->slot_bytes / 4 : in->slot_bytes / 2);
 @@ end
 

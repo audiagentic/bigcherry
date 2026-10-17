@@ -49,8 +49,12 @@ Consequences:
 
 1. Standard `IQ4_XS`, `Q4_K` and `Q8_0` weights cannot simply dispatch into this path; their block layouts/scales are different.
 2. W4A4 is intentionally lossy because activation quantization changes from q8_1/int8 to signed 4-bit. Greedy identity is not an applicable promotion gate.
-3. MTP is useful because target verification creates a batch large enough to enter MMQ; single-token generation remains memory-bound/MMVQ and is not the target.
-4. The cheapest discriminator is therefore an **external-fork R9700 A/B on one ROCmI4 file**, not a BigCherry port.
+3. MTP verifies more than one token, but **does not necessarily enter W4A4 MMQ**. The RDNA4 fork's documented ROCmI4 route uses W8A8/MMVQ at <=8 rows, IU4/W4A4 only for larger batches; historical four-token single-request verification produces <=5 target rows. No executed BigCherry IU4 MTP witness exists. Model context size, `-ub` or proposed draft depth is not sufficient route evidence.
+4. First inspect the exact fork selector and already available terminal R9700 traces for actual target operator row counts and executed IU4 symbols. No matching existing evidence -> `NO_ROUTE_EVIDENCE`. Representative target verifies <=8 with no IU4 -> `NO_VERIFY_W4A4_ROUTE`, **close MTP-specific W4A4 port** without another experiment. Prefill is a distinct hypothesis; do not inflate verify work to manufacture an IU4 route.
+
+## 2026-10-17 reconciliation of published BCOP252
+
+The already-published branch `docs/bcop252-rocmi4-route-gate` correctly challenges the unconditional MTP route assumption. This is **fork-documented selector behavior** and a host row-count bound, not a retrieved latest-fork selector diff, BigCherry GPU run, speedup or newly measured correctness issue. QFP29 retains ROCmI4 target-matmul ownership; QFP16/FMTP provides verify-width receipts, QFP17 owns prefill and existing MMQ/quant dispatch remains unchanged. One necessary gate replaces speculative repeat benchmarks: prove actual IU4 execution before pursuing MTP W4A4.
 
 ## Plan
 
@@ -80,12 +84,12 @@ Quality gate on the same ROCmI4 file:
 
 Reject W4A4 if it causes >1 fixed exact-answer regression versus ROCmI4-W4A4-off, top-1 agreement <95%, or a catastrophic tail outlier. Do not weaken the quality gate to recover a throughput result.
 
-### Phase 2 - performance discriminator
+### Phase 2 - performance discriminator (only after a witnessed IU4 MTP route)
 
-Run ABBA/5-repetition lanes on the single R9700:
+Do **not** run MTP W4A4 comparisons or reserve hardware when current target-verification traces show no IU4 execution. Only a sourced exact-fork kernel selector plus actual representative IU4 MTP witness admits same-GGUF off/on ABBA/5-repetition lanes on the single R9700:
 
 - target-only pp512/pp2048 and one long prefill lane;
-- MTP decode at short, ~24K and ~80K context;
+- MTP decode at short, ~24K and ~80K context **only where that exact verification workload executes IU4 W4A4**;
 - draft depth fixed to the current production winner for the model; no adaptive-depth changes in this experiment;
 - f16 KV first, q8_0 only as a capacity control;
 - capture target verify batch-size histogram, accepted tokens/round, target-verify wall time, end-to-end t/s and VRAM.
