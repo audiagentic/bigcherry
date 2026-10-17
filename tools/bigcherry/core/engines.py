@@ -80,6 +80,24 @@ class CpuSmokeDecl:
 
 
 @dataclass(frozen=True)
+class AcceptanceEntry:
+    """One post-bump hardware acceptance run of an engine ([[acceptance]], MEN17).
+
+    ``config`` is the repository path of a server-comparison configuration (``ab-benchmark --server-config``);
+    ``baselines`` are repository paths of baseline files (docs/reference/engines/<engine>/baselines/) holding the
+    stored numbers its arms must hold. ``env`` is set for the run unless the caller already set the variable; the
+    text ``{entry-dir}`` in a value is the entry's own output directory.
+    """
+
+    name: str
+    config: str
+    baselines: tuple[str, ...]
+    rounds: int = 2
+    settle_seconds: float = 20.0
+    env: tuple[tuple[str, str], ...] = ()
+
+
+@dataclass(frozen=True)
 class EngineLayout:
     """One engine's declaration. Paths are repository-relative, in POSIX form."""
 
@@ -111,6 +129,8 @@ class EngineLayout:
     version_source: str = field(default="", kw_only=True)
     #: [smoke.cpu]: the RAM-only smoke test's model; None when the engine declares none
     smoke_cpu: CpuSmokeDecl | None = field(default=None, kw_only=True)
+    #: [[acceptance]]: the post-bump hardware acceptance entries (MEN17); empty when the engine declares none
+    acceptance: tuple[AcceptanceEntry, ...] = field(default=(), kw_only=True)
 
     @property
     def upstream_name(self) -> str:
@@ -238,6 +258,42 @@ def _smoke_cpu(table: object, name: str) -> CpuSmokeDecl | None:
     return CpuSmokeDecl(model=model, sha256=_text(cpu, "sha256", where, name), args=tuple(args))
 
 
+def _acceptance(value: object, name: str) -> tuple[AcceptanceEntry, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list) or not all(isinstance(item, dict) for item in value):
+        raise EngineError(f"engine {name!r}: [[acceptance]] must be an array of tables")
+    entries: list[AcceptanceEntry] = []
+    for item in value:
+        where = "acceptance"
+        unknown = sorted(set(item) - {"name", "config", "baselines", "rounds", "settle-seconds", "env"})
+        if unknown:
+            raise EngineError(f"engine {name!r}: unknown {where} key(s): {', '.join(unknown)}")
+        entry_name = _text(item, "name", where, name)
+        if not re.fullmatch(r"[A-Za-z0-9_-]+", entry_name):
+            raise EngineError(f"engine {name!r}: acceptance name {entry_name!r} must be a simple identifier")
+        baselines = item.get("baselines")
+        if not isinstance(baselines, list) or not baselines or not all(isinstance(b, str) for b in baselines):
+            raise EngineError(f"engine {name!r}: acceptance {entry_name!r}: baselines must be a non-empty list of paths")
+        rounds = item.get("rounds", 2)
+        if not isinstance(rounds, int) or isinstance(rounds, bool) or rounds < 1:
+            raise EngineError(f"engine {name!r}: acceptance {entry_name!r}: rounds must be a positive integer")
+        settle = item.get("settle-seconds", 20.0)
+        if not isinstance(settle, (int, float)) or isinstance(settle, bool) or settle < 0:
+            raise EngineError(f"engine {name!r}: acceptance {entry_name!r}: settle-seconds must be non-negative")
+        entries.append(AcceptanceEntry(
+            name=entry_name,
+            config=_relative(item.get("config"), f"acceptance.{entry_name}.config", name),
+            baselines=tuple(_relative(b, f"acceptance.{entry_name}.baselines", name) for b in baselines),
+            rounds=rounds,
+            settle_seconds=float(settle),
+            env=_pairs(item, "env", f"acceptance.{entry_name}", name),
+        ))
+    if len({e.name for e in entries}) != len(entries):
+        raise EngineError(f"engine {name!r}: acceptance entry names must be unique")
+    return tuple(entries)
+
+
 def _build_table(table: object, name: str) -> dict[str, object]:
     if not isinstance(table, dict):
         raise EngineError(f"engine {name!r}: missing [build] table")
@@ -300,6 +356,7 @@ def load(repo_root: Path, name: str) -> EngineLayout:
         ),
         version_source=_version_source(data.get("release"), name),
         smoke_cpu=_smoke_cpu(data.get("smoke"), name),
+        acceptance=_acceptance(data.get("acceptance"), name),
     )
 
 

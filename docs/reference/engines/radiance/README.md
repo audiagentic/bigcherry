@@ -90,6 +90,39 @@ the result in `run.json` under `quality`. With `quality.record` it first records
 (`--kld-record <dir> --kld-corpus <jsonl>`), otherwise it scores against an existing one
 (`--kld-ref <dir> --kld-out <json>`).
 
+### Acceptance after a bump (MEN17)
+
+    python -m bigcherry --engine radiance accept --output <new dir> [--only helper-ab] [--only helper-kld]
+
+`accept` runs each `[[acceptance]]` entry of `engines/radiance/engine.toml` through the same server-comparison path as
+`ab-benchmark --server-config` (speed cells and the quality block), then compares `run.json` with the stored baselines in
+`baselines/`: a table of metric, baseline, measured, delta and pass/fail, an `acceptance.json` evidence file in
+the output directory, and a non-zero exit on any regression (1: a regression, a failed run or a metric the run did not
+measure; 2: a bad declaration or baseline, before anything runs). It is an ordinary bigcherry command, so it runs on the
+lab host with `bigcherry remote run --host brutus --ref <ref> -- --engine radiance accept --output <dir>`. Set `RAD_BIN`,
+`RAD_HOME` and `R9700_BDF` first; the KLD entry records its reference into its own output directory (`KLD_REF_DIR` is set by
+the entry unless you set it). `pin-bump --accept` runs it after the CPU smoke.
+
+| Baseline file (pin 1.7.0, 2026-10-17) | Arm | Metric | Baseline | Tolerance (one-sided) |
+|---|---|---|---|---|
+| `helper-ab.json` | `rows0` | `pp4096_tps` | 2049.5 | 3% below |
+| | | `pp1024_tps` | 2099 | 3% below |
+| | | `tg512_tps` | 124 | 5% below (runs 122-126) |
+| | | `tg2048_tps` | 140.5 | 2% below |
+| `helper-kld.json` | `helper-on` | `kld_mean` | 0.0642 | 0.01 above |
+| | | `kld_p99` | 0.684 | 0.1 above |
+| | | `top1_percent` | 88.7 | 1.0 below |
+
+Baselines are updated deliberately, by a new measured run with its pin and run id, never by the run being judged. The 27B
+attention-native KLD (0.0040, top-1 96.6%, `27b-native-kld.json`) is not an entry yet: its control reproduces its own
+reference exactly, so it needs a stored reference. Record one once (the config's `record` block), write
+`<reference dir>.meta.json` with its `pin`, `layout` and `recorded_on`, then point the config at it with
+`"reference_metadata"` and `"gate": "baselines"` and add the baseline file.
+
+A `quality` block can name a stored reference (`reference_dir` plus `reference_metadata`, a JSON file giving the pin and
+layout it was recorded on) instead of recording in the same run, and with `"gate": "baselines"` the arms are not gated
+against a control at all (no `thresholds`); the numbers are judged by `accept`. See `tools/bigcherry/campaign/quality_capture.py`.
+
 ### Promoting a component setting
 
 A setting in `component.toml` has the patch lifecycle in its lightest form: `experimental` -> `validated` (or

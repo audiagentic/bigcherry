@@ -44,6 +44,7 @@ _ENGINE_COMMANDS: frozenset[str] = frozenset(
         "release-notes",
         "sources",
         "smoke-cpu",
+        "accept",
     }
 )
 

@@ -44,6 +44,7 @@ from .patch import (
     cmd_patch_verify_evidence,
     cmd_patches,
 )
+from .accept import cmd_accept
 from .profiling import cmd_profile_campaign
 from .runtime import cmd_reference_ladder, cmd_runtime_matrix
 from .smoke import cmd_smoke_cpu
@@ -752,8 +753,27 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="explicitly skip the cpu-smoke phase; the skip is recorded in the resume state",
     )
+    pin_bump_cmd.add_argument(
+        "--accept",
+        action="store_true",
+        help="after cpu-smoke, run the engine's hardware acceptance (`accept`, MEN17) against its stored baselines and "
+        "record the result in the release record. Needs the GPUs and the environment the acceptance configs name; "
+        "not the default",
+    )
     pin_bump_cmd.add_argument("--report-dir", default=None)
     pin_bump_cmd.set_defaults(func=cmd_pin_bump)
+
+    accept_cmd = sub.add_parser(
+        "accept",
+        help="post-bump hardware acceptance (MEN17): run the engine's declared acceptance configs through the server "
+        "comparison, compare against its stored baselines and exit non-zero on any regression",
+    )
+    accept_cmd.add_argument(
+        "--only", action="append", default=None, metavar="ENTRY",
+        help="run only this acceptance entry (engine.toml [[acceptance]] name); may repeat. Default: every entry",
+    )
+    accept_cmd.add_argument("--output", required=True, help="new directory for the runs and the evidence (acceptance.json)")
+    accept_cmd.set_defaults(func=cmd_accept)
 
     smoke_cpu_cmd = sub.add_parser(
         "smoke-cpu",
@@ -2097,6 +2117,7 @@ def cmd_pin_bump(args: argparse.Namespace) -> int:
             skip_compile=args.skip_compile,
             cpu_smoke_build=_Path(args.cpu_smoke_build) if args.cpu_smoke_build else None,
             skip_cpu_smoke=args.skip_cpu_smoke,
+            accept=args.accept,
             platform_name=args.platform,
             build_name=args.build_profile,
         )
@@ -2147,6 +2168,8 @@ def cmd_pin_bump(args: argparse.Namespace) -> int:
         print("  cpu-smoke: PASS (RAM-only tiny model, no GPU visible)")
     elif result.state.cpu_smoke_status == "skipped":
         print("  cpu-smoke: SKIPPED explicitly (--skip-cpu-smoke; recorded in the run state)")
+    if result.state.accept_status == "passed":
+        print("  accept: PASS (hardware acceptance against the stored baselines; recorded in the release record)")
     outstanding = result.coverage.get("outstanding", [])
     collisions = result.coverage.get("composition_only_patch_ids", [])
     if collisions:
