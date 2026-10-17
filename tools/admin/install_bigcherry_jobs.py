@@ -16,7 +16,7 @@ import sys
 from pathlib import Path, PurePosixPath
 
 
-def unit_texts(*, project_root: PurePosixPath, work_root: PurePosixPath, python: PurePosixPath, user: str) -> dict[str, str]:
+def unit_texts(*, project_root: PurePosixPath, work_root: PurePosixPath, python: PurePosixPath, user: str, engine: str) -> dict[str, str]:
     # systemd units are Linux text: build them from POSIX paths whatever OS renders them.
     pending = work_root / "jobs" / "inbox" / "pending"
     service = f"""[Unit]
@@ -28,7 +28,7 @@ Type=oneshot
 User={user}
 WorkingDirectory={project_root}
 EnvironmentFile=-/etc/bigcherry/jobs.env
-ExecStart={python} -m bigcherry jobs ingest --once
+ExecStart={python} -m bigcherry jobs --engine {engine} ingest --once
 """
     path = f"""[Unit]
 Description=Watch BigCherry durable job inbox
@@ -61,7 +61,7 @@ Type=oneshot
 User={user}
 WorkingDirectory={project_root}
 EnvironmentFile=-/etc/bigcherry/jobs.env
-ExecStart={python} {project_root / 'tools' / 'admin' / 'snapshot_bigcherry_jobs.py'}
+ExecStart={python} {project_root / 'tools' / 'admin' / 'snapshot_bigcherry_jobs.py'} --engine {engine}
 """
     observe_timer = """[Unit]
 Description=Refresh BigCherry derived job status and metrics
@@ -118,7 +118,7 @@ def install(args: argparse.Namespace) -> dict[str, object]:
     work = args.work_root.resolve()
     python = args.python.resolve()
     units = unit_texts(project_root=PurePosixPath(project.as_posix()), work_root=PurePosixPath(work.as_posix()),
-                       python=PurePosixPath(python.as_posix()), user=args.user)
+                       python=PurePosixPath(python.as_posix()), user=args.user, engine=args.engine)
     if args.dest_root is not None:
         root = args.dest_root.resolve()
         systemd = root / "etc" / "systemd" / "system"
@@ -161,6 +161,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--project-root", type=Path, required=True)
     parser.add_argument("--work-root", type=Path, required=True)
     parser.add_argument("--python", type=Path, default=Path(sys.executable))
+    parser.add_argument("--engine", required=True, help="the engine whose jobs the units ingest and report")
     parser.add_argument("--user", default=os.environ.get("SUDO_USER") or os.environ.get("USER") or "bigcherry")
     parser.add_argument("--dest-root", type=Path, default=None, help="sandbox root for tests/offline rendering")
     parser.add_argument("--apply", action="store_true")

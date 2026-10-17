@@ -126,7 +126,7 @@ Component settings (`engines/radiance/components/libr3/component.toml`; default 
 | `R3_MOE_HELPER_HEAT` | unset | experimental | route-heat file; helpers own the coldest experts (prefill +36%, RAD02 05:10) |
 | `R3_MOE_HELPER_GEMV` | 1 | experimental | decode MoE GEMV for the small lane; decode 69.6 to 95.7 tok/s (RAD05) |
 | `R3_MOE_HELPER_HISTOGRAM` | unset | diagnostic | produces the heat file (profile run) |
-| `R3_MOE_NATIVE` | 0 | experimental | native bf16 WMMA inner loop in the helpers; RAD06 07:45 records it as the helpers' default (2bf231e3): decode 91.4/95.6 to 108.2/108.8. The declared default in component.toml is still "0": see Gaps. |
+| `R3_MOE_NATIVE` | 1 | experimental | native bf16 WMMA inner loop; on by default in the helpers (`r3_moe_helper` main sets it unless set, 2bf231e3): decode 91.4/95.6 to 108.2/108.8. The engine process reads an unset variable as off; component.toml declares the helper default. |
 | `R3_MOE_HELPER_SKIP_OWNED` | (rad0002 patch variable, not a component setting) | | helper-owned experts are not placed on the R9700; set in the shared environment in `helper-ab.json` |
 
 Flags and profile: the `flashnext-2xtx` profile in `recipes.toml` (`--tp 2 --tp-wire exact`, `expert_tiered`,
@@ -213,6 +213,4 @@ PPL 10.436 against 10.106; wht6 plus native forms 0.0751 / 87.52%.
 - Run IDs for the RAD02/RAD05/RAD06 lab A/Bs (the plan items quote build hashes and completion hashes, not run names).
 - KL for the final 22 GiB + GEMV + native configuration, and the full metric set for any helper layout.
 - MTP acceptance for the helper layout.
-- Whether `R3_MOE_NATIVE` is on by default in the helpers' built code: RAD06 says yes (2bf231e3), `component.toml`
-  still declares default "0".
 - Harness (MEN11) numbers for decode at 7.3K prompt length; harness prompts are pp4096/pp1024/tg512/tg2048.

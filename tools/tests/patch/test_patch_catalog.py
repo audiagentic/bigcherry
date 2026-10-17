@@ -251,7 +251,7 @@ class TestPatchContext(unittest.TestCase):
                 ),
             )
             ctx = patch_catalog.PatchContext(backend="hip")
-            with mock.patch.object(paths, "PATCH_CATALOG", catalog_path), \
+            with mock.patch.object(paths, "patches_root", return_value=catalog_path.parent), \
                  mock.patch("bigcherry.patch_admission.require_admission") as mocked:
                 patch_catalog.resolve_for_context("llamacpp", 
                     ["any"], ctx, catalog_path=catalog_path,

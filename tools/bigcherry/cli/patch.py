@@ -108,6 +108,7 @@ def _apply_exact_selection(
         return False
 
     admission = patch_admission.admit(
+        engine,
         selection.patch_ids,
         mode="apply",
         pinned_ref=selection.source_ref,
@@ -726,6 +727,7 @@ def cmd_patch_gates(args: Namespace) -> int:
         else descriptor.backend or "agnostic"
     )
     context = patch_gates.GateContext(
+        engine=args.engine,
         descriptor=descriptor,
         composition=composition,
         pinned_ref=cfg.pinned,

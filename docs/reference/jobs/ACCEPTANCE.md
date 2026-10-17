@@ -7,7 +7,7 @@ RCD10 retires the lab queue only after software gates are green and the current 
 Create canonical BatchSpecs for every active qualification variation, then run:
 
 ```bash
-python -m bigcherry jobs acceptance specs/*.json
+python -m bigcherry jobs --engine llamacpp acceptance specs/*.json
 ```
 
 The result is `bigcherry.jobs.acceptance-matrix.v1`. Cases are keyed by scientific/resource capability: executor/platform, patch, architecture, model, producer, toolchain path, GPU count/VRAM/peer requirement, production-lane flag and common-patch composition. Physical GPU slot/index is not part of a case.
@@ -20,8 +20,8 @@ Before Brutus cutover:
 
 ```bash
 python -m unittest discover -s tools/tests/jobs -p 'test_*.py' -v
-python -m bigcherry jobs executors doctor
-python -m bigcherry jobs status
+python -m bigcherry jobs --engine llamacpp executors doctor
+python -m bigcherry jobs --engine llamacpp status
 ```
 
 GitHub `Jobs service validation` must be green. Real Noble Slurm CI is a scheduler/service reference only; it does not replace Brutus GPU acceptance.

@@ -7,7 +7,7 @@ Migration creates new canonical job requests. It never imports shell-run success
 For one historical `run_campaign.sh` invocation:
 
 ```bash
-python -m bigcherry jobs migrate-legacy \
+python -m bigcherry jobs --engine llamacpp migrate-legacy \
   --command 'tools/lab/plan-qualification/run_campaign.sh PATCH PATCH/producer gfx1100 0 RUN ...' \
   --planned-sessions 4 \
   --bc-model /models/model.gguf \

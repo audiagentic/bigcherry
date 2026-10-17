@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+import json
+from typing import TYPE_CHECKING, Any
 
-from .base import EngineAdapter, SidecarSpec
+from .base import EngineAdapter, SidecarSpec, SourceCheck
+
+if TYPE_CHECKING:
+    from ..core.context import ProjectContext
 
 
 class LlamaCppAdapter(EngineAdapter):
@@ -33,3 +37,13 @@ class LlamaCppAdapter(EngineAdapter):
 
     def sidecars(self, arm: dict[str, Any], env: dict[str, str], run_dir: Path, binary: Path) -> list[SidecarSpec]:
         return []
+
+    def source_checks(self, context: ProjectContext) -> tuple[SourceCheck, ...]:
+        # The strict audit encodes the ggml HIP/CUDA invariants of the llama.cpp tree and its overlay files.
+        from ..source import audit as source_audit
+
+        def run() -> str | None:
+            report = source_audit.audit(context.vendor_root, engine=context.engine)
+            return None if source_audit.passed(report, strict=True) else json.dumps(report, sort_keys=True)
+
+        return (SourceCheck("source-audit", "default", run),)

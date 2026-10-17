@@ -6,7 +6,7 @@ Normative design: `docs/design/JOBS_ORCHESTRATOR.md`. Brutus: `SLURM_BRUTUS.md`.
 
 ## Authority
 
-`python -m bigcherry jobs ...` is the human/agent entry point. `JobService` is the scheduler-neutral application API. BigCherry owns scientific/run identity, durable events, evidence/harvest/report and retry legality; Slurm owns Brutus execution/resources. Status/metrics are rebuildable projections.
+`python -m bigcherry jobs --engine <name> ...` is the human/agent entry point. `JobService` is the scheduler-neutral application API. BigCherry owns scientific/run identity, durable events, evidence/harvest/report and retry legality; Slurm owns Brutus execution/resources. Status/metrics are rebuildable projections.
 
 Default roots:
 
@@ -20,9 +20,9 @@ Default roots:
 JSON/TOML BatchSpec minimally names patch, architecture(s), model, planned sessions and target. Optional producer/common/input/corpus/toolchain/GPU capability fields are typed; arbitrary shell passthrough is not supported.
 
 ```bash
-python -m bigcherry jobs plan batch.json
-python -m bigcherry jobs validate batch.json
-python -m bigcherry jobs submit batch.json --idempotency-key wave-01 --actor agent:qualification
+python -m bigcherry jobs --engine llamacpp plan batch.json
+python -m bigcherry jobs --engine llamacpp validate batch.json
+python -m bigcherry jobs --engine llamacpp submit batch.json --idempotency-key wave-01 --actor agent:qualification
 ```
 
 Same idempotency key + same canonical request returns the existing batch; changed content is a hard conflict.

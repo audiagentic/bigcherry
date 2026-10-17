@@ -35,7 +35,7 @@ class TestPatchAdmission(unittest.TestCase):
             catalog, patches = self._catalog(root)
             evidence = root / "evidence"
             result = patch_admission.admit(
-                ["0001_test"], catalog_path=catalog, patches_dir=patches,
+                "llamacpp", ["0001_test"], catalog_path=catalog, patches_dir=patches,
                 pinned_ref="pin", evidence_root=evidence,
             )
             self.assertTrue(result.admissible)
@@ -53,7 +53,7 @@ class TestPatchAdmission(unittest.TestCase):
                 encoding="utf-8",
             )
             result = patch_admission.admit(
-                ["0001_test"], mode="build", catalog_path=catalog,
+                "llamacpp", ["0001_test"], mode="build", catalog_path=catalog,
                 patches_dir=patches, pinned_ref="pin", evidence_root=evidence,
             )
             self.assertTrue(result.admissible)
@@ -72,7 +72,7 @@ class TestPatchAdmission(unittest.TestCase):
                 encoding="utf-8",
             )
             result = patch_admission.admit(
-                ["0001_test"], catalog_path=catalog, patches_dir=patches,
+                "llamacpp", ["0001_test"], catalog_path=catalog, patches_dir=patches,
                 pinned_ref="pin", evidence_root=evidence,
             )
             self.assertFalse(result.admissible)
@@ -86,7 +86,7 @@ class TestPatchAdmission(unittest.TestCase):
             evidence = root / "evidence"
             with mock.patch.object(patch_admission, "_has_non_grandfathered_eligible", return_value=True):
                 result = patch_admission.admit(
-                    ["0001_test"], mode="apply", catalog_path=catalog,
+                    "llamacpp", ["0001_test"], mode="apply", catalog_path=catalog,
                     patches_dir=patches, pinned_ref="pin", evidence_root=evidence,
                     allow_stale_validation_evidence=True,
                 )
@@ -101,7 +101,7 @@ class TestPatchAdmission(unittest.TestCase):
         )
         with mock.patch.object(patch_admission, "_has_non_grandfathered_eligible", return_value=True),              mock.patch.object(patch_admission.patch_catalog, "validation_evidence_statuses",
                                return_value={"0001_test": carried}) as statuses:
-            result = patch_admission.admit(["0001_test"], pinned_ref="pin")
+            result = patch_admission.admit("llamacpp", ["0001_test"], pinned_ref="pin")
         self.assertTrue(statuses.call_args.kwargs["carry_forward"])
         self.assertTrue(result.admissible)
         self.assertEqual(result.status, "admitted")
@@ -112,7 +112,7 @@ class TestPatchAdmission(unittest.TestCase):
         stale = patch_evidence.EvidenceCheck("missing-or-stale", ("implementation digest mismatch",))
         with mock.patch.object(patch_admission, "_has_non_grandfathered_eligible", return_value=True),              mock.patch.object(patch_admission.patch_catalog, "validation_evidence_statuses",
                                return_value={"0001_test": stale}):
-            result = patch_admission.admit(["0001_test"], pinned_ref="pin")
+            result = patch_admission.admit("llamacpp", ["0001_test"], pinned_ref="pin")
         self.assertFalse(result.admissible)
 
 

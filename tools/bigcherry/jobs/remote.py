@@ -119,25 +119,32 @@ def request_from_dict(value: dict[str, object]) -> ExecutionRequest:
 
 
 class RemoteExecutor:
-    def __init__(self, name: str, transport: RemoteTransport) -> None:
+    def __init__(self, name: str, transport: RemoteTransport, engine: str) -> None:
         if not name.strip():
             raise ValueError("remote executor name is required")
+        if not engine.strip():
+            raise ValueError("remote executor engine is required")
         self.name = name
         self.transport = transport
+        #: the engine whose jobs this executor runs; every worker call carries it
+        self.engine = engine
+
+    def _call(self, action: str, payload: dict[str, object]) -> dict[str, object]:
+        return self.transport.call(action, {**payload, "engine": self.engine})
 
     def submit(self, request: ExecutionRequest) -> ExecutionHandle:
-        value = self.transport.call("submit", {"request": _request_dict(request)})
+        value = self._call("submit", {"request": _request_dict(request)})
         return ExecutionHandle(self.name, str(value["native_id"]), request.execution_id)
 
     def correlate(self, execution_id: str) -> tuple[ExecutionHandle, ...]:
-        value = self.transport.call("correlate", {"execution_id": execution_id})
+        value = self._call("correlate", {"execution_id": execution_id})
         ids = value.get("native_ids", [])
         return tuple(
             ExecutionHandle(self.name, str(native), execution_id) for native in ids
         )
 
     def status(self, handle: ExecutionHandle) -> ExecutionStatus:
-        value = self.transport.call("status", _handle_payload(handle))
+        value = self._call("status", _handle_payload(handle))
         try:
             state = ExecutionState(str(value["state"]))
         except ValueError:
@@ -149,15 +156,15 @@ class RemoteExecutor:
         )
 
     def cancel(self, handle: ExecutionHandle) -> None:
-        self.transport.call("cancel", _handle_payload(handle))
+        self._call("cancel", _handle_payload(handle))
 
     def control(self, handle: ExecutionHandle, action: ExecutorControl) -> None:
         payload = _handle_payload(handle)
         payload["action"] = action.value
-        self.transport.call("control", payload)
+        self._call("control", payload)
 
     def allocation(self, handle: ExecutionHandle) -> Allocation | None:
-        value = self.transport.call("allocation", _handle_payload(handle))
+        value = self._call("allocation", _handle_payload(handle))
         if value.get("allocation") is None:
             return None
         allocation = value["allocation"]
@@ -179,7 +186,7 @@ class RemoteExecutor:
     ) -> Iterable[ExecutorEvent]:
         payload = _handle_payload(handle)
         payload["after"] = after
-        value = self.transport.call("events", payload)
+        value = self._call("events", payload)
         return tuple(
             ExecutorEvent(
                 int(item["sequence"]),

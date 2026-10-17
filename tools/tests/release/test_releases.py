@@ -606,7 +606,7 @@ class ReleaseLifecycleTests(unittest.TestCase):
 
         self.assertTrue(ok)
         admit.assert_called_once_with(
-            ("0100_x",), mode="apply", pinned_ref="deadbeef" * 5,
+            "llamacpp", ("0100_x",), mode="apply", pinned_ref="deadbeef" * 5,
             resolved_base_revision="deadbeef" * 5,
             allow_stale_validation_evidence=True,
         )
