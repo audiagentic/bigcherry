@@ -336,13 +336,23 @@ also produces libr3moe and the helpers) are built against the engine's plugin AB
 them without any patch anchor failing. The compile phase runs three checks in order, each STOPping the bump:
 
 1. `components-build` (`COMPONENT_BUILD_FAILED`; needs `cmake`, `ninja`, the ROCm toolchain): configure and build the bumped
-   engine for the components' GPU targets in `work/source-compile-check/radiance-build`, then build every component through
-   `campaign.runtime_bundle.build_runtime`, the same function `bigcherry build` uses for the radiance lane.
+   engine in `work/source-compile-check/radiance-build`, then build every component through
+   `campaign.runtime_bundle.build_runtime`, the same function `bigcherry build` uses for the radiance lane. The configure
+   is the one `bigcherry build` makes for the build platform named with `--platform` (its `${VAR}` compilers resolved from
+   the host environment, its options, its GPU targets plus the components'), and the components are built with the same
+   compilers; a default system compiler can fail where the platform's GCC 14 builds. `--platform` is required (the recipes
+   do not link a source to a platform); a missing, unknown or unresolvable platform STOPs at the start of the compile phase
+   with `SOURCE_COMPILE_FAILED`. It is saved in `state.json` (`compile.platform`); a `--resume` with none reuses it and a
+   different one is refused (`RESUME_PLATFORM_MISMATCH`).
 2. `component-plugin-abi` (`PLUGIN_ABI_MISMATCH`): every `*.so` in the build's `radiance_home/kernels` (the engine's own and
    the components') is loaded in a child process and its exported `rad_plugin_abi_version()` must equal `RAD_ABI_VERSION`
    from the bumped source's `abi/rad_abi.h`. This is the engine's own load handshake; `nm` could show the symbol but not its value.
 3. `component-tests` (`COMPONENT_TEST_FAILED`; needs `ctest`): each component's `[test] targets` in `component.toml` are
    built and run with `ctest` in the component's build tree.
+
+The radiance bump command (build the bumped tree first for `--cpu-smoke-build`):
+
+    python -m bigcherry --engine radiance pin-bump <ref> --source radiance --platform linux-radiance --cpu-smoke-build <build dir>
 
 These need a radiance checkout and a Linux host with the toolchain; on a host without `cmake`/`ninja`/`ctest` the phase STOPs
 with `SOURCE_COMPILE_UNAVAILABLE` (or `--skip-compile`, recorded in the release record).

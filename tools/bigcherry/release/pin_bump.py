@@ -139,6 +139,9 @@ class PinBumpState:
     #: MEN15: "passed" (the RAM-only tiny-model smoke ran with no GPU visible) or "skipped" (--skip-cpu-smoke), recorded
     #: here and so in every resume of the run
     cpu_smoke_status: str = ""
+    #: the recipe ``[platform.*]`` the compile gate configures with (``--platform``); "" when the run named none. Saved so
+    #: a resumed run builds the same way.
+    compile_platform: str = ""
 
     def as_dict(self) -> dict:
         d = {
@@ -173,6 +176,7 @@ class PinBumpState:
             d["compile"] = {
                 "status": self.compile_status,
                 "tree_oid": self.compile_tree_oid,
+                "platform": self.compile_platform,
             }
             d["cpu_smoke"] = {"status": self.cpu_smoke_status}
         return d
@@ -267,6 +271,7 @@ class PinBumpState:
             coverage_report_sha256=data.get("coverage_report_sha256", ""),
             compile_tree_oid=str(compile_state.get("tree_oid", "")),
             compile_status=str(compile_state.get("status", "")),
+            compile_platform=str(compile_state.get("platform", "")),
             cpu_smoke_status=str(cpu_smoke_state.get("status", "")),
         )
 
@@ -592,6 +597,7 @@ def run(
     skip_compile: bool = False,
     cpu_smoke_build: Path | None,
     skip_cpu_smoke: bool,
+    platform_name: str | None,
 ) -> PinBumpResult:
     """The Phase 1 single-tree orchestrator. Raises PinBumpStop (never a
     bare exception) on anything not provably safe to auto-proceed past;
@@ -604,6 +610,10 @@ def run(
     with no selector reuses
     whatever the original invocation was started with (``_resume_selector``),
     rather than re-defaulting.
+
+    ``platform_name`` is the recipe ``[platform.*]`` the compile gate configures with (``--platform``), for the engines whose
+    gate builds. It is saved in the resume state; a ``--resume`` with none reuses the saved one and a different one is
+    refused.
     """
     repo_root = paths.REPO_ROOT
     vendor_root = root if root is not None else ProjectContext.resolve(engine=engine).vendor_root
@@ -642,6 +652,7 @@ def run(
                 state,
                 source_name=source_name,
             )
+            platform_name = _resume_platform(state, platform_name=platform_name)
         else:
             state = None
             resolved_kind, resolved_name = _resolve_fresh_selector(
@@ -661,6 +672,7 @@ def run(
             skip_compile=skip_compile,
             cpu_smoke_build=cpu_smoke_build,
             skip_cpu_smoke=skip_cpu_smoke,
+            platform_name=platform_name,
         )
     except PinBumpStop as exc:
         # gpt-dev-agent review (session ses_5307d9c58ec645cb, second pass):
@@ -975,6 +987,7 @@ def run_phase_compile(
     workdir: Path,
     recipe_report_path: Path,
     target_ref: str,
+    platform_name: str | None,
 ) -> str:
     """Run the engine's compile checks (its adapter's ``compile_checks``) and return the checked tree OID.
 
@@ -982,7 +995,8 @@ def run_phase_compile(
 
     resume = f"python -m bigcherry --engine {engine} pin-bump {target_ref} --resume"
     try:
-        checks = adapter(engine).compile_checks(ProjectContext.resolve(engine=engine), vendor_root, workdir)
+        checks = adapter(engine).compile_checks(
+            ProjectContext.resolve(engine=engine), vendor_root, workdir, platform_name=platform_name)
     except (ValueError, OSError) as exc:
         raise PinBumpStop(
             "compile",
@@ -1398,6 +1412,25 @@ def _resume_selector(
     return state.selector_kind, state.selector_name
 
 
+def _resume_platform(state: PinBumpState, *, platform_name: str | None) -> str | None:
+    """The compile platform of a resumed run: the saved one unless the resuming invocation names it; a different name
+    is refused (the saved compile result was produced with the saved platform)."""
+    saved = state.compile_platform or None
+    if platform_name is None or saved is None:
+        return platform_name or saved
+    if platform_name != saved:
+        raise PinBumpStop(
+            "resume",
+            "RESUME_PLATFORM_MISMATCH",
+            f"--resume was given --platform {platform_name!r}, but this run's recorded compile platform is {saved!r}",
+            evidence={"resumed_platform": platform_name, "state_platform": saved},
+            recommended_actions=[
+                "omit --platform on --resume to use the run's original platform, or start a fresh run with the new one",
+            ],
+        )
+    return saved
+
+
 def _require_selector_membership_unchanged(
     state: PinBumpState,
     *,
@@ -1449,6 +1482,7 @@ def _run_phases(
     skip_compile: bool = False,
     cpu_smoke_build: Path | None,
     skip_cpu_smoke: bool,
+    platform_name: str | None,
 ) -> PinBumpResult:
     from ..patch import catalog as patch_catalog
     from ..source import audit as source_audit
@@ -1730,8 +1764,10 @@ def _run_phases(
                     workdir=repo_root / "work" / "source-compile-check",
                     recipe_report_path=recipe_report_path,
                     target_ref=target_ref,
+                    platform_name=platform_name,
                 )
                 state.compile_status = "passed"
+            state.compile_platform = platform_name or ""
             state.compile_tree_oid = compile_tree_oid
             state.completed_phases.append("compile")
             state.next_phase = "cpu-smoke"
