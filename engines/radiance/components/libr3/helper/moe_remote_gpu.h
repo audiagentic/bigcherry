@@ -521,6 +521,8 @@ struct LaneWork {
     static constexpr int kStages = 4;
     hipEvent_t stage[kStages] = {};
     double stage_us[kStages + 1] = {};
+    /* Sampled requests: experts by routed rows - 1, 2, 3-4, 5-8, 9-16, 17-32, 33-64, 65+ (RAD06 tile sizing). */
+    uint64_t run_hist[8] = {};
     uint32_t sample_sequence = 0;
     bool sample_pending = false;
     uint32_t cap_rows = 0;
@@ -1111,6 +1113,17 @@ public:
             if (hipEventElapsedTime(&part, mark[i], mark[i + 1]) == hipSuccess) w.stage_us[i] += (double)part * 1000.0;
         }
         w.sample_pending = false;
+        /* The sampled request's per-expert row counts (d_counts; this lane has synced): the run-length histogram the
+         * grouped GEMM's tile choice depends on. Sampled requests only, so the copy is off the hot path. */
+        uint32_t counts[kExperts];
+        if (hipMemcpy(counts, w.d_counts.p, sizeof(counts), hipMemcpyDeviceToHost) == hipSuccess) {
+            for (uint32_t e = 0; e < kExperts; ++e) {
+                const uint32_t c = counts[e];
+                if (!c) continue;
+                const int b = c == 1 ? 0 : c == 2 ? 1 : c <= 4 ? 2 : c <= 8 ? 3 : c <= 16 ? 4 : c <= 32 ? 5 : c <= 64 ? 6 : 7;
+                ++w.run_hist[b];
+            }
+        }
         return true;
     }
 
@@ -1121,6 +1134,15 @@ public:
         std::fprintf(stderr, "r3_moe_helper: lane %u stages (us/request): routes %.1f gate_up %.1f quant %.1f "
                      "down %.1f reduce %.1f\n", lane, w.stage_us[0] / samples, w.stage_us[1] / samples,
                      w.stage_us[2] / samples, w.stage_us[3] / samples, w.stage_us[4] / samples);
+        uint64_t runs = 0;
+        for (uint64_t h : w.run_hist) runs += h;
+        if (runs)
+            std::fprintf(stderr, "r3_moe_helper: lane %u experts a request by rows: 1 %.1f, 2 %.1f, 3-4 %.1f, 5-8 %.1f, "
+                         "9-16 %.1f, 17-32 %.1f, 33-64 %.1f, 65+ %.1f
+", lane,
+                         (double)w.run_hist[0] / samples, (double)w.run_hist[1] / samples, (double)w.run_hist[2] / samples,
+                         (double)w.run_hist[3] / samples, (double)w.run_hist[4] / samples, (double)w.run_hist[5] / samples,
+                         (double)w.run_hist[6] / samples, (double)w.run_hist[7] / samples);
     }
 
     /* R3_MOE_HELPER_GEMV=2 (--compare): the grouped GEMM's gate/up beside the GEMV's, after the lane synced. */
