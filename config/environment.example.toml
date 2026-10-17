@@ -54,6 +54,12 @@ rocm-shim = "/home/example/rocm-shim"
 production-port = 8080
 bench-port = 18400
 
+# `bigcherry remote run` (docs/reference/tooling/REMOTE_RUNS.md): exact process names (comm) that mean the GPUs are in
+# use, and the host-local environment file a remote run exports as BIGCHERRY_ENVIRONMENT (default: the tree's
+# config/environment.local.toml). A run is refused while a listed process runs, or when this list is empty.
+busy-processes = ["llama-server", "ninja"]
+# environment-file = "/home/example/bigcherry/config/environment.local.toml"
+
 # Device inventory. Index is the HIP/ROCR visible-devices ordinal, which is
 # what --devices and *_VISIBLE_DEVICES take.
 # locator: the real PCI BDF (bus:device.function) from `rocm-smi --showbus`

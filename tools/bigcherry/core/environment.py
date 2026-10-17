@@ -102,6 +102,11 @@ class Host:
     rocm_shim: str
     production_port: int
     bench_port: int
+    #: process names (exact ``comm``) whose presence means the host's GPUs are in use; ``remote run`` refuses to start
+    #: while any is running.
+    busy_processes: tuple[str, ...]
+    #: the host-local environment file a remote run exports as ``BIGCHERRY_ENVIRONMENT`` (a path on the host)
+    environment_file: str
     devices: tuple[Device, ...]
 
     def devices_for_arch(self, arch: str) -> tuple[Device, ...]:
@@ -245,6 +250,11 @@ def load(path: str | Path) -> Environment:
             rocm_shim=str(body.get("rocm-shim", "")),
             production_port=int(body.get("production-port", 0)),
             bench_port=int(body.get("bench-port", 0)),
+            busy_processes=tuple(str(n) for n in body.get("busy-processes", ())),
+            environment_file=str(
+                body.get("environment-file")
+                or (str(body["repo"]).rstrip("/") + "/config/environment.local.toml" if body.get("repo") else "")
+            ),
             devices=tuple(sorted(devices, key=lambda d: d.index)),
         )
 
