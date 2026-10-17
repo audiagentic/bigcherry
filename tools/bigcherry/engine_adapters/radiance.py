@@ -53,7 +53,8 @@ class RadianceAdapter(EngineAdapter):
             helper_env = dict(base)
             helper_env.setdefault("RADIANCE_HOME", str(home))
             helper_env.update({
-                "HIP_VISIBLE_DEVICES": device, "ROCR_VISIBLE_DEVICES": device,
+                # ROCR selects the physical card; HIP then numbers the one visible card 0.
+                "ROCR_VISIBLE_DEVICES": device, "HIP_VISIBLE_DEVICES": "0",
                 "R3_MOE_HELPER_INDEX": str(index), "R3_MOE_HELPER_COUNT": str(len(devices)),
             })
             specs.append(SidecarSpec(
