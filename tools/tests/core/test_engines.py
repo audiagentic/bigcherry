@@ -72,10 +72,7 @@ class EngineDeclarations(unittest.TestCase):
             "schema": _GOOD.format(name="schema", p="a", o="b", v="c").replace("schema = 1", "schema = 2"),
             "extra-key": _GOOD.format(name="extra-key", p="a", o="b", v="c") + 'tests = "t"\n',
             "no-release": _GOOD.format(name="no-release", p="a", o="b", v="c").replace(
-                '[release]
-version-source = "build-tag"
-
-', ""),
+                '[release]\nversion-source = "build-tag"\n\n', ""),
             "bad-version-source": _GOOD.format(name="bad-version-source", p="a", o="b", v="c").replace(
                 "build-tag", "guess"),
             "no-layout": 'schema = 1\nname = "no-layout"\nupstream = "u"\n',
