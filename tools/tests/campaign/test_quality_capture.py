@@ -25,7 +25,7 @@ class FakeAdapter(RadianceAdapter):
     """radiance's sidecars (none here) with a quality command that runs a tiny stand-in for the KL run."""
 
     def quality_command(self, kind, arm, env, run_dir, binary, model, quality):
-        mean = {"control": "0.0035", "good": "0.0036", "bad": "0.5"}[arm["name"]]
+        mean = {"reference": "0", "control": "0.0035", "good": "0.0036", "bad": "0.5"}[arm["name"]]
         result = run_dir / f"{arm['name']}.kld.json"
         return QualityCommand((sys.executable, "-c", _PROGRAM, str(result), mean), dict(env),
                               run_dir / f"{arm['name']}.score.log", result, 60.0)
@@ -90,6 +90,17 @@ class RunQualityTests(unittest.TestCase):
                 adapter=FakeAdapter(), quality=quality, prepared=prepared, names=names, output=out, reference_env={})
             persisted = json.loads(json.dumps(section))
         return persisted, cells
+
+    def test_recording_creates_the_reference_directory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ref = Path(tmp) / "new" / "ref"
+            names = ["control", "good"]
+            quality = qc.validate_quality_block({"reference_dir": str(ref), "args": [], "thresholds": THRESHOLDS,
+                                                 "corpus": "c.jsonl", "record": {"args": [], "environment": {}}}, names)
+            prepared = {n: {"binary": Path("b/bin/radiance"), "model": Path("m"), "env": {}, "settings": {}} for n in names}
+            qc.run_quality_capture(adapter=FakeAdapter(), quality=quality, prepared=prepared, names=names,
+                                   output=Path(tmp) / "out", reference_env={})
+            self.assertTrue(ref.is_dir())
 
     def test_neutral_arm_passes_and_is_recorded(self):
         section, cells = self.run_arms(["control", "good"])
