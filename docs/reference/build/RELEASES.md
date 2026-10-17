@@ -53,7 +53,7 @@ the source's `RAD_ABI_VERSION`, component offline tests) and its own audit. Deta
 
 1. **CPU smoke (RAM-only, no GPU).** `python -m bigcherry --engine <name> smoke-cpu --build <dir>` serves a tiny model on
    the CPU with every GPU hidden and checks three greedy completions twice. `pin-bump` runs it as the `cpu-smoke` phase
-   (`--cpu-smoke-build <dir>`; only `--skip-cpu-smoke` omits it, recorded in the run state). It is also the quickest local
+   on the build its `lane-build` phase made (`--build`/`--platform`; `--cpu-smoke-build <dir>` overrides, only `--skip-cpu-smoke` omits it, both recorded in the run state). It is also the quickest local
    check after any patch or component change. Models and digests are declared in `[smoke.cpu]` of each `engine.toml`.
 2. GPU smoke and the hardware evidence recorded by `pin-release` come after it and only when it passes.
 
