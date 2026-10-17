@@ -53,6 +53,9 @@ Unit test on synthetic logits; re-analysed numbers recorded.
 
 ## Notes
 
+2026-10-17: radiance --kld-out JSON already holds mean/median/p90/p95/p99/p99.9/p99.99/max, top-1 and PPL overall ('all') and per corpus source ('by_source'); the summary log line carries the same. Parser + gate extended in feat/rad08-kld-metrics (4919eb61). Remaining: (1) read the JSON instead of the log line; (2) a chat-format KLD corpus whose sources tag turn roles, so 'by_source' yields the text+assistant column of the owner's reference table; (3) record the helper layout's full set on the Flash-Next model page (RAD07).
+
 ## Change Log
 
 - 2026-10-14T22:16:29.378987+00:00 (created-by): Created by agent
+- 2026-10-17T00:33:31.379569+00:00 (updated-by): Updated: section:notes

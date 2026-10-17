@@ -1,7 +1,7 @@
 """Engine components: BigCherry-owned source built against an engine's pinned source and installed into its runtime.
 
 A component is declared by ``component.toml`` in a directory the engine lists under ``[components]`` in its
-``engine.toml`` (RAD01 PR 5; docs/reference/engines/RADIANCE_PLATFORM_DESIGN.md decision 2). It is not a patch: it
+``engine.toml`` (RAD01 PR 5; docs/reference/engines/radiance/PLATFORM_DESIGN.md decision 2). It is not a patch: it
 never modifies the vendor tree. Its runtime settings (the environment variables it reads) are declared with a
 default and a status, so profiles and experiments can be checked against them instead of free-form strings.
 """

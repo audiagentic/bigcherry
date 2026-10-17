@@ -1,5 +1,11 @@
 # Radiance kernels for RDNA3 (RR01)
 
+> This file is the dated lab log (history, not rewritten). The current state per model lives in
+> [docs/reference/engines/radiance/README.md](../../docs/reference/engines/radiance/README.md), with the model pages
+> [Qwen3.8-Flash-Next](../../docs/reference/engines/radiance/models/qwen3.8-flash-next.md) and
+> [Qwen3.8-27B](../../docs/reference/engines/radiance/models/qwen3.8-27b.md). Every measurement or decision recorded
+> here also updates the model page in the same change.
+
 Goal: standalone [radiance](https://codeberg.org/StillDeadcode/radiance) serving on the RX 7900 XTX cards (gfx1100).
 Radiance's device kernel library, libr4d, is built for gfx12 only. This directory holds the work to supply kernels
 for gfx11. Plan: `docs/planning/active/build-radiance-rdna3/RR01.md`.
