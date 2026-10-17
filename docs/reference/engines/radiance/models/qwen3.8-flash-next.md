@@ -134,6 +134,7 @@ Component settings (`engines/radiance/components/libr3/component.toml`; default 
 | `R3_MOE_HELPER_MIB` | 28672 | experimental | helper expert budget; 22528 (22 GiB) in the best layout (20 GiB gives decode ~89 and no prefill gain, RAD06 08:10) |
 | `R3_MOE_HELPER_MAX_ROWS` | 64 | experimental | 4096 so no step falls back to the engine path |
 | `R3_MOE_HELPER_SMALL_ROWS` | 64 | experimental | 8: the pre-queued small lane sized for decode and MTP verify steps |
+| `R3_MOE_HELPER_MOE_DOWN_TILE` | unset (production configs: 1) | experimental | narrow down tile on gfx1100: +0.6% prefill, bit-identical (RAD06 2026-10-18) |
 | `R3_MOE_HELPER_HEAT` | unset | experimental | route-heat file; helpers own the experts it ranks first - production uses `heat.rank0.hot-first` (hottest first, +4% prefill over coldest-first, RAD06 2026-10-17; coldest-first was +36% over unordered, RAD02) |
 | `R3_MOE_HELPER_GEMV` | 1 | experimental | decode MoE GEMV for the small lane; decode 69.6 to 95.7 tok/s (RAD05) |
 | `R3_MOE_HELPER_HISTOGRAM` | unset | diagnostic | produces the heat file (profile run) |
