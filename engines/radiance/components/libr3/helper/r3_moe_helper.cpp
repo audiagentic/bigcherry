@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cerrno>
 #include <chrono>
 #include <cmath>
@@ -556,9 +557,72 @@ bool parse_u32(const char* s, uint32_t lo, uint32_t hi, uint32_t* out) {
     return true;
 }
 
+/* REQUEST CAPTURE / REPLAY (RAD06). R3_MOE_HELPER_CAPTURE=<dir> writes real large-lane requests (every
+ * R3_MOE_HELPER_CAPTURE_EVERY-th, at most R3_MOE_HELPER_CAPTURE_MAX) as <dir>/req-<lane>-<seq>.bin:
+ * CaptureHeader, the layer's runtime slot map (kExperts int32), the routes, the bf16 activation rows.
+ * `--replay MODEL FILE` runs --compare's machinery on that request instead of synthetic routing. */
+struct CaptureHeader {
+    uint32_t magic, version, layer, rows, route_count, hidden;
+};
+constexpr uint32_t kCaptureMagic = 0x52335243u;  // "CR3R"
+
+void capture_request(void* map, const Request* q, uint32_t lane, uint32_t seq) {
+    static const char* dir = std::getenv("R3_MOE_HELPER_CAPTURE");
+    if (!dir || !*dir) return;
+    static const uint32_t every = [] {
+        const char* v = std::getenv("R3_MOE_HELPER_CAPTURE_EVERY");
+        return v && *v ? std::max(1, std::atoi(v)) : 37;
+    }();
+    static const uint32_t max_n = [] {
+        const char* v = std::getenv("R3_MOE_HELPER_CAPTURE_MAX");
+        return v && *v ? std::max(1, std::atoi(v)) : 16;
+    }();
+    static std::atomic<uint32_t> written{0};
+    if (seq % every != 0 || written.load() >= max_n) return;
+    CaptureHeader hd{kCaptureMagic, 1, load(&q->layer), load(&q->rows), load(&q->route_count), kHidden};
+    if (hd.layer >= kMaxLayers || hd.rows == 0 || hd.rows > kMaxRows) return;
+    const std::string path = std::string(dir) + "/req-" + std::to_string(lane) + "-" + std::to_string(seq) + ".bin";
+    FILE* f = std::fopen(path.c_str(), "wb");
+    if (!f) return;
+    std::fwrite(&hd, sizeof(hd), 1, f);
+    std::fwrite(layer_slots(map, hd.layer), sizeof(int32_t), kExperts, f);
+    std::fwrite(ptr<Route>(map, q->route_offset), sizeof(Route), hd.route_count, f);
+    std::fwrite(ptr<uint16_t>(map, q->activation_offset), sizeof(uint16_t), (size_t)hd.rows * kHidden, f);
+    std::fclose(f);
+    written.fetch_add(1);
+}
+
+struct ReplayInput {
+    CaptureHeader hd{};
+    std::array<int32_t, kExperts> slots{};
+    std::vector<Route> routes;
+    std::vector<uint16_t> activation;
+};
+const ReplayInput* g_replay = nullptr;
+
+bool load_replay(const char* path, ReplayInput* out) {
+    FILE* f = std::fopen(path, "rb");
+    if (!f) return false;
+    bool ok = std::fread(&out->hd, sizeof(out->hd), 1, f) == 1 && out->hd.magic == kCaptureMagic &&
+              out->hd.hidden == kHidden && out->hd.layer < kMaxLayers && out->hd.rows > 0 && out->hd.rows <= kMaxRows;
+    if (ok) ok = std::fread(out->slots.data(), sizeof(int32_t), kExperts, f) == kExperts;
+    if (ok) {
+        out->routes.resize(out->hd.route_count);
+        out->activation.resize((size_t)out->hd.rows * kHidden);
+        ok = std::fread(out->routes.data(), sizeof(Route), out->routes.size(), f) == out->routes.size() &&
+             std::fread(out->activation.data(), sizeof(uint16_t), out->activation.size(), f) == out->activation.size();
+    }
+    std::fclose(f);
+    return ok;
+}
+
 int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& owned,
                  uint32_t layer, uint32_t rows, uint32_t lane_max_rows, uint32_t lane_large_rows,
                  bool synthetic_protect) {
+    if (g_replay) {  // a captured real request replaces the synthetic layer, rows, routes and activations
+        layer = g_replay->hd.layer;
+        rows = g_replay->hd.rows;
+    }
     if (layer >= model.layers || rows == 0 || rows > lane_large_rows) {
         std::fprintf(stderr, "r3_moe_helper: --compare rows %u above R3_MOE_HELPER_MAX_ROWS %u\n",
                      rows, lane_large_rows);
@@ -575,6 +639,7 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
             for (uint32_t p : kSyntheticProtected) protect = protect || e == p;
         if (!protect) runtime_slot[e] = (int32_t)next_slot++;
     }
+    if (g_replay) runtime_slot = g_replay->slots;
 
     std::vector<uint32_t> remote_expert, local_expert;
     std::vector<uint8_t> owned_here(kExperts, 0);
@@ -644,6 +709,10 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
                 ++li;
             }
         }
+    }
+    if (g_replay) {
+        published = g_replay->routes;
+        activation = g_replay->activation;
     }
     const uint32_t nr = (uint32_t)published.size();
 
@@ -811,6 +880,26 @@ int main(int argc, char** argv) {
      * Flash-Next, prefill 2,518 -> 2,665 tok/s and helper gate/up -25%, KLD 0.064 (noise floor). Read by libr3
      * when the plugin is loaded, so set before it; an explicit setting wins. */
     (void)::setenv("R3_MOE_NATIVE", "1", 0);
+    /* --replay MODEL FILE: --compare on a captured real request (layer and rows come from the file). */
+    static ReplayInput replay;
+    static std::string replay_layer, replay_rows;
+    static const char* replay_argv[8];
+    if (argc == 4 && std::strcmp(argv[1], "--replay") == 0) {
+        if (!load_replay(argv[3], &replay)) {
+            std::fprintf(stderr, "r3_moe_helper: --replay %s: not a capture file\n", argv[3]);
+            return 2;
+        }
+        g_replay = &replay;
+        replay_layer = std::to_string(replay.hd.layer);
+        replay_rows = std::to_string(replay.hd.rows);
+        const char* rebuilt[] = {argv[0], "--compare", argv[2], "--layer", replay_layer.c_str(), "--rows",
+                                 replay_rows.c_str(), nullptr};
+        std::copy(std::begin(rebuilt), std::end(rebuilt), replay_argv);
+        argv = const_cast<char**>(replay_argv);
+        argc = 7;
+        std::fprintf(stderr, "r3_moe_helper: replay layer %u rows %u routes %u\n", replay.hd.layer, replay.hd.rows,
+                     replay.hd.route_count);
+    }
     bool compare =argc > 1 && std::strcmp(argv[1], "--compare") == 0;
     bool synthetic_protect = compare && argc > 2 &&
         std::strcmp(argv[argc - 1], "--synthetic-protect") == 0;
@@ -1072,6 +1161,7 @@ int main(int argc, char** argv) {
                         }
                         const Request* q = lane_request(map, lane, next);
                         const uint32_t rows = load(&q->rows);
+                        capture_request(map, q, lane, next);
                         /* Every large request is timed by stage: they are few, and the engine cannot send
                          * the next one until it has merged this one, so waiting here costs nothing. */
                         const int rc = gpu->enqueue_lane(map, dev_map, lane, next, rows, true);
