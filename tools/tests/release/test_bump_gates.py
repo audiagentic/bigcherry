@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import tempfile
@@ -11,12 +12,15 @@ from pathlib import Path
 from unittest.mock import patch
 
 from bigcherry.core import components, engines, paths
+from bigcherry.core import config as campaign_config
 from bigcherry.core.context import ProjectContext
 from bigcherry.engine_adapters import BumpCheck, BumpCheckError, adapter, radiance_bump
 from bigcherry.engine_adapters.radiance import RadianceAdapter
 from bigcherry.release import pin_bump
 from bigcherry.source import audit as source_audit
 
+PLATFORM = "linux-radiance"
+FAKE_HOST = {"RADIANCE_HOST_CC": "/fake/gcc-14", "RADIANCE_HOST_CXX": "/fake/g++-14"}
 HEADER = "#pragma once\n#define RAD_ABI_VERSION 7u\n"
 
 
@@ -29,14 +33,16 @@ def _tmp(case: unittest.TestCase) -> Path:
 class AdapterDispatchTests(unittest.TestCase):
     def test_llamacpp_keeps_the_ggml_cuda_gate_and_audit(self):
         context = ProjectContext.resolve(engine="llamacpp")
-        (check,) = adapter("llamacpp").compile_checks(context, Path("/src"), Path("/work"))
+        (check,) = adapter("llamacpp").compile_checks(
+            context, Path("/src"), Path("/work"), platform_name=None)
         self.assertEqual((check.id, check.failure_code, check.tools, check.patch_attributed),
                          ("ggml-cuda-contracts", "SOURCE_COMPILE_FAILED", ("clang++",), True))
         self.assertEqual(adapter("llamacpp").audit_checks(context), (source_audit.check_ggml_cuda_tree,))
 
     def test_radiance_declares_the_component_gate_and_its_own_audit(self):
         context = ProjectContext.resolve(engine="radiance")
-        checks = adapter("radiance").compile_checks(context, Path("/src"), Path("/work"))
+        with patch.dict(os.environ, FAKE_HOST):
+            checks = adapter("radiance").compile_checks(context, Path("/src"), Path("/work"), platform_name=PLATFORM)
         self.assertEqual([c.id for c in checks], ["components-build", "component-plugin-abi", "component-tests"])
         self.assertEqual([c.failure_code for c in checks],
                          ["COMPONENT_BUILD_FAILED", "PLUGIN_ABI_MISMATCH", "COMPONENT_TEST_FAILED"])
@@ -97,8 +103,9 @@ class ComponentGateTests(unittest.TestCase):
                 (tree / "radiance_home" / "kernels" / "libr4d.so").write_bytes(b"x")
 
     def checks(self, abi: int = 7):
-        return {c.id: c for c in radiance_bump.compile_checks(
-            self.context, self.source, self.work, runner=self.runner, abi_reader=lambda so: abi)}
+        with patch.dict(os.environ, FAKE_HOST):
+            return {c.id: c for c in radiance_bump.compile_checks(
+                self.context, self.source, self.work, platform_name=PLATFORM, runner=self.runner, abi_reader=lambda so: abi)}
 
     def run_phase(self, checks):
         with (
@@ -107,7 +114,7 @@ class ComponentGateTests(unittest.TestCase):
             patch.object(pin_bump, "_compile_tree_oid", return_value="oid"),
         ):
             return pin_bump.run_phase_compile(engine="radiance", vendor_root=self.source, workdir=self.work,
-                                              recipe_report_path=self.report, target_ref="v1.4.0")
+                                              recipe_report_path=self.report, target_ref="v1.4.0", platform_name=PLATFORM)
 
     def test_build_then_abi_then_tests_pass(self):
         checks = self.checks()
@@ -117,8 +124,43 @@ class ComponentGateTests(unittest.TestCase):
         self.assertIn(["cmake", "-S"], [call[:2] for call in self.calls])
         self.assertIn(["ctest", "--test-dir"], [call[:2] for call in self.calls])
         self.assertTrue(any("--target" in call and "r3_moe_shm_test" in call for call in self.calls))
-        self.assertTrue(any("-DRAD_GPU_TARGETS=gfx1100" in call for call in self.calls))
         self.assertEqual(self.run_phase(checks.values()), "oid")
+
+    def test_configure_uses_the_build_platforms_compilers_options_and_targets(self):
+        checks = self.checks()
+        self.assertEqual(checks["components-build"].run(), [])
+        configure = self.calls[0]
+        self.assertEqual(configure[:2], ["cmake", "-S"])
+        # compilers resolved from the (fake) host environment, the platform's options, targets unioned with the components'
+        self.assertIn("-DCMAKE_C_COMPILER=/fake/gcc-14", configure)
+        self.assertIn("-DCMAKE_CXX_COMPILER=/fake/g++-14", configure)
+        self.assertIn("-DRAD_BUILD_TESTS=OFF", configure)
+        self.assertIn("-DRAD_GPU_TARGETS=gfx1100;gfx1201", configure)
+        self.assertIn("-DCMAKE_BUILD_TYPE=Release", configure)
+        # the components are built with the same compilers
+        component_configures = [c for c in self.calls[1:] if c[:2] == ["cmake", "-S"]]
+        self.assertTrue(component_configures)
+        self.assertTrue(all("-DCMAKE_CXX_COMPILER=/fake/g++-14" in c for c in component_configures))
+
+    def test_missing_unknown_or_unresolvable_platform_is_a_clean_setup_stop(self):
+        for platform, env, needle in (
+            (None, FAKE_HOST, "--platform"),
+            ("nope", FAKE_HOST, "unknown --platform 'nope'"),
+            (PLATFORM, {}, "RADIANCE_HOST_CC"),
+        ):
+            with self.subTest(platform=platform):
+                cleared = {k: v for k, v in os.environ.items() if k not in FAKE_HOST}
+                with (
+                    patch.dict(os.environ, {**cleared, **env}, clear=True),
+                    patch.object(pin_bump.shutil, "which", return_value="/usr/bin/tool"),
+                    patch.object(campaign_config, "_local_env_table", return_value={}),
+                    self.assertRaises(pin_bump.PinBumpStop) as stopped,
+                ):
+                    pin_bump.run_phase_compile(engine="radiance", vendor_root=self.source, workdir=self.work,
+                                               recipe_report_path=self.report, target_ref="v1.4.0", platform_name=platform)
+                self.assertEqual((stopped.exception.phase, stopped.exception.code), ("compile", "SOURCE_COMPILE_FAILED"))
+                self.assertIn(needle, stopped.exception.summary)
+                self.assertEqual(self.calls, [])
 
     def test_abi_mismatch_names_each_plugin(self):
         checks = self.checks(abi=6)
@@ -160,8 +202,9 @@ class ComponentGateTests(unittest.TestCase):
     def test_missing_toolchain_stops_offline_with_the_install_hint(self):
         with patch.object(pin_bump.shutil, "which", return_value=None):
             with self.assertRaises(pin_bump.PinBumpStop) as stopped:
-                pin_bump.run_phase_compile(engine="radiance", vendor_root=self.source, workdir=self.work,
-                                           recipe_report_path=self.report, target_ref="v1.4.0")
+                with patch.dict(os.environ, FAKE_HOST):
+                    pin_bump.run_phase_compile(engine="radiance", vendor_root=self.source, workdir=self.work,
+                                               recipe_report_path=self.report, target_ref="v1.4.0", platform_name=PLATFORM)
         self.assertEqual(stopped.exception.code, "SOURCE_COMPILE_UNAVAILABLE")
         self.assertIn("cmake", stopped.exception.evidence["missing"])
         self.assertTrue(any("--skip-compile" in a for a in stopped.exception.recommended_actions))

@@ -200,9 +200,13 @@ class EngineAdapter(ABC):
         declares no ``[smoke.cpu]``. ``model_root`` is the directory the declared model path is relative to."""
 
     @abstractmethod
-    def compile_checks(self, context: ProjectContext, source_dir: Path, workdir: Path) -> tuple[BumpCheck, ...]:
+    def compile_checks(
+        self, context: ProjectContext, source_dir: Path, workdir: Path, *, platform_name: str | None,
+    ) -> tuple[BumpCheck, ...]:
         """The checks pin-bump's compile phase runs on the patched tree ``source_dir`` (``workdir`` is scratch space for
-        them), in order; the first failing check STOPs the bump."""
+        them), in order; the first failing check STOPs the bump. ``platform_name`` is the recipe ``[platform.*]`` named by
+        ``--platform``; a gate that builds configures exactly as ``bigcherry build`` does for that platform and raises
+        ValueError when it is missing or unknown, a gate that does not build ignores it."""
 
     @abstractmethod
     def audit_checks(self, context: ProjectContext) -> tuple[Callable[[Any], None], ...]:

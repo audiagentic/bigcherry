@@ -65,7 +65,9 @@ class LlamaCppAdapter(EngineAdapter):
             )),
         )
 
-    def compile_checks(self, context: ProjectContext, source_dir: Path, workdir: Path) -> tuple[BumpCheck, ...]:
+    def compile_checks(
+        self, context: ProjectContext, source_dir: Path, workdir: Path, *, platform_name: str | None,
+    ) -> tuple[BumpCheck, ...]:
         """The ggml-cuda call-site contracts of the patched tree, compiled with clang++ (PA44-A)."""
         from ..build import source_compile_check
 

@@ -19,8 +19,12 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
+from dataclasses import replace
+
+from ..campaign import build as campaign_build
 from ..campaign import runtime_bundle
-from ..core import components, paths
+from ..core import components, engines, paths
+from ..core import config as campaign_config
 from .base import BumpCheck, BumpCheckError
 
 if TYPE_CHECKING:
@@ -81,10 +85,34 @@ def read_plugin_abi(so: Path) -> int:
         raise BumpCheckError(f"{so}: unexpected rad_plugin_abi_version output {result.stdout.strip()!r}") from exc
 
 
+#: the gate adds nothing to the platform's options: it builds the engine as the platform alone describes it
+_GATE_BUILD = campaign_config.Build(name="bump-compile-gate", options=(), variant_set=None, needs=frozenset())
+
+
+def _build_platform(engine: str, platform_name: str | None) -> campaign_config.Platform:
+    """The recipe ``[platform.*]`` ``bigcherry build`` would configure with, its ``${VAR}`` compilers resolved from the
+    environment. ValueError (a clean pin-bump STOP) when none is named, it is unknown, or a compiler variable is unset."""
+    recipes = engines.load(paths.REPO_ROOT, engine).recipes_path(paths.REPO_ROOT)
+    platforms = campaign_config.load(recipes).platforms
+    if platform_name is None:
+        raise ValueError(
+            f"the {engine} compile gate builds the engine and needs the build platform: pass --platform "
+            f"(one of {', '.join(sorted(platforms)) or 'none declared'} in {recipes.name})")
+    if platform_name not in platforms:
+        raise ValueError(f"unknown --platform {platform_name!r} for {engine}; {recipes.name} declares: {', '.join(sorted(platforms))}")
+    platform = platforms[platform_name]
+    campaign_config.require_resolved(platform.c_compiler, f"platform.{platform_name}.c-compiler")
+    campaign_config.require_resolved(platform.cxx_compiler, f"platform.{platform_name}.cxx-compiler")
+    return platform
+
+
 class ComponentGate:
     """The shared state of the three checks: one build of the bumped engine and its components."""
 
-    def __init__(self, context: ProjectContext, source_dir: Path, workdir: Path, runner: Runner, abi_reader: AbiReader):
+    def __init__(
+        self, context: ProjectContext, source_dir: Path, workdir: Path, runner: Runner, abi_reader: AbiReader,
+        platform_name: str | None,
+    ):
         self.engine = context.engine
         self.layout = context.layout
         self.source_dir = source_dir
@@ -92,6 +120,7 @@ class ComponentGate:
         self.runner = runner
         self.abi_reader = abi_reader
         self.declared = components.load_all(paths.REPO_ROOT, context.engine)
+        self.platform = _build_platform(context.engine, platform_name) if self.declared else None
         self.built = False
 
     @property
@@ -102,13 +131,18 @@ class ComponentGate:
         """Configure and build the engine for the components' GPU targets, then build the components (runtime_bundle)."""
         if not self.declared:
             return []
-        targets = sorted({target for component in self.declared.values() for target in component.targets})
+        platform = self.platform
+        targets = sorted({*platform.targets, *(t for component in self.declared.values() for t in component.targets)})
+        # The configure argv is the one `bigcherry build` makes for this platform (its compilers, options and targets);
+        # the components' own targets are added so every declared component can build.
+        argv = campaign_build.cmake_configure_args(
+            _GATE_BUILD, replace(platform, targets=tuple(targets)), self.source_dir, self.build_dir,
+            c_compiler=platform.c_compiler, cxx_compiler=platform.cxx_compiler, targets_option=self.layout.targets_option)
         try:
-            self.runner(["cmake", "-S", str(self.source_dir), "-B", str(self.build_dir), "-G", "Ninja",
-                         "-DCMAKE_BUILD_TYPE=Release", f"-D{self.layout.targets_option}={';'.join(targets)}"], self.source_dir)
+            self.runner(argv, self.source_dir)
             self.runner(["cmake", "--build", str(self.build_dir), "-j"], self.source_dir)
             runtime_bundle.build_runtime(self.engine, source_root=self.source_dir, build_dir=self.build_dir,
-                                         c_compiler=None, cxx_compiler=None, runner=self.runner)
+                                         c_compiler=platform.c_compiler, cxx_compiler=platform.cxx_compiler, runner=self.runner)
         except subprocess.CalledProcessError as exc:
             return [f"`{' '.join(map(str, exc.cmd))}` exited {exc.returncode} (build tree {self.build_dir})"]
         except (runtime_bundle.RuntimeBundleError, OSError) as exc:
@@ -156,9 +190,10 @@ class ComponentGate:
 
 
 def compile_checks(
-    context: ProjectContext, source_dir: Path, workdir: Path, *, runner: Runner = _run, abi_reader: AbiReader = read_plugin_abi,
+    context: ProjectContext, source_dir: Path, workdir: Path, *, platform_name: str | None, runner: Runner = _run,
+    abi_reader: AbiReader = read_plugin_abi,
 ) -> tuple[BumpCheck, ...]:
-    gate = ComponentGate(context, source_dir, workdir, runner, abi_reader)
+    gate = ComponentGate(context, source_dir, workdir, runner, abi_reader, platform_name)
     cmake_hint = "install cmake and ninja (Ubuntu/Debian: sudo apt-get install cmake ninja-build) on a host with the ROCm toolchain"
     return (
         BumpCheck("components-build", "COMPONENT_BUILD_FAILED", ("cmake", "ninja"), cmake_hint, gate.build),

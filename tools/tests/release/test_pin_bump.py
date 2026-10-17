@@ -142,6 +142,7 @@ class PinBumpStopResumeE2ETests(unittest.TestCase):
                     pin_bump.run(
                         cpu_smoke_build=None,
                         skip_cpu_smoke=True,
+                        platform_name=None,
                         engine="llamacpp",
                         target_ref="b10680",
                         root=root,
@@ -157,6 +158,7 @@ class PinBumpStopResumeE2ETests(unittest.TestCase):
                 result = pin_bump.run(
                     cpu_smoke_build=Path("cpu-build"),
                     skip_cpu_smoke=False,
+                    platform_name="linux-radiance",
                     engine="llamacpp",
                     target_ref="b10680",
                     root=root,
@@ -179,6 +181,9 @@ class PinBumpStopResumeE2ETests(unittest.TestCase):
                 result.state.completed_phases.index("reaudit"),
             )
             compile_phase.assert_called_once()
+            self.assertEqual(compile_phase.call_args.kwargs["platform_name"], "linux-radiance")
+            self.assertEqual(result.state.compile_platform, "linux-radiance")
+            self.assertEqual(pin_bump.PinBumpState.load(report_dir).compile_platform, "linux-radiance")
             cpu_smoke_phase.assert_called_once()
             self.assertEqual(cpu_smoke_phase.call_args.kwargs["build_dir"], Path("cpu-build"))
             self.assertEqual(result.state.cpu_smoke_status, "passed")
@@ -191,6 +196,28 @@ class PinBumpStopResumeE2ETests(unittest.TestCase):
                 result.state.completed_phases.index("cpu-smoke"),
                 result.state.completed_phases.index("reaudit"),
             )
+
+
+class ResumePlatformTests(unittest.TestCase):
+    def state(self, platform: str) -> pin_bump.PinBumpState:
+        return pin_bump.PinBumpState(
+            schema_version=3, run_id="r", from_ref="a", from_sha="", to_ref="b", to_sha="", transition_commit="",
+            tree_name="local", tree_path="/t", compile_platform=platform)
+
+    def test_platform_round_trips_through_save_and_load(self):
+        with tempfile.TemporaryDirectory() as directory:
+            self.state("linux-radiance").save(Path(directory))
+            self.assertEqual(pin_bump.PinBumpState.load(Path(directory)).compile_platform, "linux-radiance")
+
+    def test_resume_reuses_the_saved_platform_and_refuses_a_different_one(self):
+        saved = self.state("linux-radiance")
+        self.assertEqual(pin_bump._resume_platform(saved, platform_name=None), "linux-radiance")
+        self.assertEqual(pin_bump._resume_platform(saved, platform_name="linux-radiance"), "linux-radiance")
+        self.assertEqual(pin_bump._resume_platform(self.state(""), platform_name="p"), "p")
+        self.assertIsNone(pin_bump._resume_platform(self.state(""), platform_name=None))
+        with self.assertRaises(pin_bump.PinBumpStop) as stopped:
+            pin_bump._resume_platform(saved, platform_name="other")
+        self.assertEqual((stopped.exception.phase, stopped.exception.code), ("resume", "RESUME_PLATFORM_MISMATCH"))
 
 
 class SchemaThreeRoundTripTests(unittest.TestCase):
@@ -664,6 +691,7 @@ class OverlaySelfHealTests(unittest.TestCase):
                     pin_bump._run_phases(
                         cpu_smoke_build=None,
                         skip_cpu_smoke=True,
+                        platform_name=None,
                         state=state,
                         engine="llamacpp",
                         target_ref="b2",
@@ -947,7 +975,7 @@ class ContextRecoveryNeverMasksOriginalStopTests(unittest.TestCase):
             # per its unconditional pre-try initialization).
             (report_dir / "state.json").write_text("{not valid json", encoding="utf-8")
             with self.assertRaises(pin_bump.PinBumpStop) as ctx:
-                pin_bump.run(cpu_smoke_build=None, skip_cpu_smoke=True, engine="llamacpp", target_ref="b99999", resume=True, report_dir=report_dir)
+                pin_bump.run(cpu_smoke_build=None, skip_cpu_smoke=True, platform_name=None, engine="llamacpp", target_ref="b99999", resume=True, report_dir=report_dir)
             # The ORIGINAL failure must survive -- not get replaced by a
             # second failure from the except block's own disk re-read.
             self.assertEqual(ctx.exception.code, "RESUME_STATE_INVALID")
@@ -964,6 +992,7 @@ class RunResumeStateMissingTests(unittest.TestCase):
                 pin_bump.run(
                     cpu_smoke_build=None,
                     skip_cpu_smoke=True,
+                    platform_name=None,
                     engine="llamacpp",
                     target_ref="b99999",
                     resume=True,
@@ -1010,6 +1039,7 @@ class RunResumeStateMissingTests(unittest.TestCase):
                 pin_bump.run(
                     cpu_smoke_build=None,
                     skip_cpu_smoke=True,
+                    platform_name=None,
                     engine="llamacpp",
                     target_ref="b99999-WRONG",  # deliberate mismatch
                     resume=True,
@@ -1434,6 +1464,7 @@ class SourceCompilePhaseTests(unittest.TestCase):
                         workdir=root / "work",
                         recipe_report_path=report,
                         target_ref="b11552",
+                        platform_name=None,
                     )
 
             envelope = pin_bump.failure_envelope(
@@ -1476,6 +1507,7 @@ class SourceCompilePhaseTests(unittest.TestCase):
                     workdir=Path("/work"),
                     recipe_report_path=Path("/report"),
                     target_ref="b11552",
+                    platform_name=None,
                 )
         self.assertEqual(stopped.exception.code, "SOURCE_COMPILE_UNAVAILABLE")
         self.assertTrue(

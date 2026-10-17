@@ -79,11 +79,13 @@ class RadianceAdapter(EngineAdapter):
     def source_checks(self, context: ProjectContext) -> tuple[SourceCheck, ...]:
         return ()
 
-    def compile_checks(self, context: ProjectContext, source_dir: Path, workdir: Path) -> tuple[BumpCheck, ...]:
+    def compile_checks(
+        self, context: ProjectContext, source_dir: Path, workdir: Path, *, platform_name: str | None,
+    ) -> tuple[BumpCheck, ...]:
         """The component gate: build the engine and its components, check every plugin's ABI, run the component tests."""
         from . import radiance_bump
 
-        return radiance_bump.compile_checks(context, source_dir, workdir)
+        return radiance_bump.compile_checks(context, source_dir, workdir, platform_name=platform_name)
 
     def audit_checks(self, context: ProjectContext):
         from . import radiance_bump
