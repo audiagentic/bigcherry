@@ -1289,6 +1289,21 @@ private:
             std::fprintf(stderr, "r3_moe_helper: installed libr4d lacks required MoE/quant rows\n");
             return false;
         }
+        /* R3_MOE_HELPER_MOE_FORM (RAD06): pin the grouped GEMM's tile form - 1 the 32-row prefill form, 2 the
+         * 16-row (tile, run) decode form. libr4d picks by T against all 512 experts, but a helper's rows spread over
+         * only the experts it owns (~4.5 rows an expert at prefill), the decode form's regime. */
+        if (const char* f = std::getenv("R3_MOE_HELPER_MOE_FORM"); f && *f && std::strcmp(f, "0") != 0) {
+            auto pin = reinterpret_cast<void (*)(int)>(dlsym(so_, "r4d_moe_gemm_pin_prefill"));
+            const int form = std::atoi(f);
+            if (!pin || (form != 1 && form != 2)) {
+                std::fprintf(stderr, "r3_moe_helper: R3_MOE_HELPER_MOE_FORM=%s not applied (%s)\n", f,
+                             pin ? "want 1 or 2" : "plugin does not export r4d_moe_gemm_pin_prefill");
+                return false;
+            }
+            pin(form);
+            std::fprintf(stderr, "r3_moe_helper: grouped MoE GEMM pinned to the %s form\n",
+                         form == 2 ? "16-row decode" : "32-row prefill");
+        }
         return true;
     }
 

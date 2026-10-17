@@ -95,6 +95,12 @@ default = "1"
 status = "experimental"
 summary = "decode MoE GEMV for the helper's small lane (RAD05): no WMMA, dot products straight off the packed w4nl64 nibbles. R9700 engine + two XTX helpers, Flash-Next: decode 69.6/69.7 -> 95.7/95.5 tok/s, prefill unchanged, KLD 0.0605 (noise floor 0.058-0.062). 0 turns it off; 2 compares it with the grouped GEMM (--compare)"
 
+[setting.R3_MOE_HELPER_MOE_FORM]
+default = "0"
+status = "experimental"
+summary = "pin the helper's grouped MoE GEMM form (RAD06): 0 libr4d's choice by row count, 1 the 32-row prefill form, 2 the 16-row decode form (a helper's prefill rows are ~4.5 an owned expert)"
+activation = "r3_moe_helper: grouped MoE GEMM pinned to the"
+
 [setting.R3_MOE_HELPER_ROWS]
 default = "0"
 status = "experimental"
