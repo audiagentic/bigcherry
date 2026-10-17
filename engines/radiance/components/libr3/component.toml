@@ -7,7 +7,7 @@ name = "libr3"
 engine = "radiance"
 targets = ["gfx1100"]
 # radiance 1.7.0 (plugin ABI 17): the rewrite rules are written against this revision's libr4d and refuse any other.
-built-against = "48f7b8eb6d703cd5318346b5a351a292afaf4bf9"
+built-against = "v1.7.0"
 outputs = ["kernels/libr3.so", "kernels/libr3moe.so", "helpers/libr3_ngram_helper.so", "helpers/r3_moe_helper"]
 
 # How the build lane builds it: CMake against the engine installed from the lane's own build (CMAKE_PREFIX_PATH) and
