@@ -286,8 +286,8 @@ extern "C" void r4d_moe_gemm_pin_long_rows(int rows) { g_moe_long_rows = rows; }
                                (uint32_t)T, (uint32_t)N, (uint32_t)n_expert, (uint32_t)top_k,
                                (uint32_t)a_ld, (uint32_t)as_ld, (uint32_t)y_ld, mode, tabv);
                 if (emit_rc == RAD_OK && long_split)
-                    emit_rc = R4D_EMIT(stream, (moe_gemm_q_kernel<2 * kPrefillRows / 16, kPrefillCols / 16, 2, 4, W4, false, true, true, kFK, true>),
-                               dim3((unsigned)cap_l, nyw), dim3(8 * kWave), 0,
+                    emit_rc = R4D_EMIT(stream, (moe_gemm_q_kernel<2 * kPrefillRows / 16, kPrefillCols / 16, 4, 4, W4, false, true, true, kFK, true>),
+                               dim3((unsigned)cap_l, nyw), dim3(16 * kWave), 0,
                                (const uint8_t*)Aq->data, (const float*)As->data, ce, co, c2, c3,
                                (const int32_t*)sorted->data, (const int32_t*)off->data,
                                (uint16_t*)Y->data, (const uint32_t*)map_l,
@@ -299,6 +299,6 @@ extern "C" void r4d_moe_gemm_pin_long_rows(int rows) { g_moe_long_rows = rows; }
 __global__ __launch_bounds__(WGM * WGN * kWave) R4D_WAVES(moe_waves(NTL, W4, ES, AL, FK, RS))
 void moe_gemm_q_kernel(
 @@ replace
-__global__ __launch_bounds__(WGM * WGN * kWave) R4D_WAVES((AL && MT > 2) ? 6u : moe_waves(NTL, W4, ES, AL, FK, RS))
+__global__ __launch_bounds__(WGM * WGN * kWave) R4D_WAVES((AL && MT > 2) ? 8u : moe_waves(NTL, W4, ES, AL, FK, RS))
 void moe_gemm_q_kernel(
 @@ end
