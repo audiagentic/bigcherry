@@ -36,3 +36,7 @@ RX 6900 XT), ctx 245760, f16 KV, ub512. ABBA on one binary with `tools/lab/flash
 The masked path of arm A is native llama.cpp b11402's Qwen4Exp sparse attention on HIP (upstream's gathered kernel is
 compiled out for HIP), so the ABBAs are native against gathered inside one BigCherry binary. No separate run against a
 fully native binary was made for this patch.
+
+## 2026-10-18 BCOP288: F16 decode gather staging gate
+
+The validated 1295 F16 K/V path currently emits GET_ROWS(F32) then CAST(F16) for each K/V because pinned ggml_get_rows always constructs F32 output. CUDA/HIP getrows.cu already supports F16 destinations, but the graph constructor and CPU/Meta support do not admit a trivial type flip. QFP04 owns the receipt-first, F16-only qualification. Do not alter 1295, selected-index ordering, sentinel masking or the default-on control without the exposed-cost, graph-lifetime, CPU fallback and incremental >=3% decode gates. Q8_0 direct sparse attention is a separate unadmitted route; Vulkan #29639 and vLLM AMD QSA are mechanism references, not BigCherry HIP gains.

@@ -572,6 +572,14 @@ public:
             gemv_debug_ = gv && std::strcmp(gv, "2") == 0;
             gemv_ = !off && !gemv_debug_;
         }
+        /* R3_MOE_HELPER_GEMV_LARGE_ROWS (RAD06): large-lane requests of at most this many rows take the GEMV too.
+         * Replayed real requests show 9-row steps (decode / MTP verify just over the small lane) at ~0.5 ms a
+         * grouped-GEMM call for 25-51 routes; the large lane is sized per request, so this costs the small lane
+         * nothing (raising R3_MOE_HELPER_SMALL_ROWS pads every pre-queued decode step instead). 0 = off. */
+        if (const char* gl = std::getenv("R3_MOE_HELPER_GEMV_LARGE_ROWS"); gl && *gl)
+            gemv_large_rows_ = (uint32_t)std::max(0, std::atoi(gl));
+        if (gemv_large_rows_)
+            std::fprintf(stderr, "r3_moe_helper: large-lane requests up to %u rows take the GEMV\n", gemv_large_rows_);
         poison_ = !poison || !*poison || std::strcmp(poison, "0") == 0 ? 0u
                 : std::strcmp(poison, "zero") == 0 ? 2u : 1u;
         if (!hip_ok(hipSetDevice(0), "hipSetDevice(0)")) return false;
@@ -969,7 +977,7 @@ public:
             const int64_t w0 = slice_w(slice, 0);
             const int64_t w1 = slice_w(slice, 1);
             /* Small lane, decode GEMV (RAD05): the step's routes, one block a (row, 64 outputs). */
-            const bool gemv = gemv_ && lane < kMaxRanks;
+            const bool gemv = gemv_ && (lane < kMaxRanks || rows <= gemv_large_rows_);
             const bool rowk = rows_ && lane >= kMaxRanks;
             const dim3 rows_grid_gu(kExperts, (uint32_t)((2 * std::max(w0, w1) + kRowsTileN - 1) / kRowsTileN));
             const dim3 rows_grid_dn(kExperts, (uint32_t)((kHidden + kRowsTileN - 1) / kRowsTileN));
@@ -1228,6 +1236,7 @@ private:
     uint32_t large_rows_ = 0;   /* large-lane capacity */
     uint32_t poison_ = 0;
     bool gemv_ = true;          /* R3_MOE_HELPER_GEMV: decode GEMV on the small lane (RAD05); 0 = off */
+    uint32_t gemv_large_rows_ = 0; /* R3_MOE_HELPER_GEMV_LARGE_ROWS: GEMV for large-lane requests this small */
     bool rows_ = false;         /* R3_MOE_HELPER_ROWS: few-rows-a-expert kernel on the large lane (RAD06) */
     bool gemv_debug_ = false;   /* R3_MOE_HELPER_GEMV=2: grouped GEMM AND GEMV gate/up, compared (--compare) */
 
