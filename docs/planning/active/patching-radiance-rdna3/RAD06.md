@@ -60,13 +60,14 @@ Follows RAD02/RAD05.
 
 2026-10-15 few-rows-a-expert large-lane kernel (R3_MOE_HELPER_ROWS=1, commits aceef746 + 8cae20dc): correct (--compare layer 20, 1024 rows: rel_l2 0.0011/0.0012, same as the grouped GEMM) but much slower. Balanced A/B, 9700 engine + two XTX helpers, 22 GiB, heat, 7,306-token prompt, order 0 1 1 0 0 1: ROWS=0 prefill 2757.9/2764.0/2761.3, decode 108.1/108.8/108.7; ROWS=1 prefill 1719.8/1682.1/1726.8, decode 96.1/96.2/96.3 (complete separation, -38% prefill, -11% decode: MTP verify batches use the large lane too). Completion hashes differ (69036e14 vs cb7ecba3): bf16 rounding of a different accumulation order, within the compare tolerance. Why slow: scalar FMA against bf16 WMMA, and every N tile of 32 re-dequantises the same activation rows (40 tiles for gate/up), so the routed-row reuse it was meant to win is lost. Kept default off as evaluated/shelved. Remaining prefill levers: (1) multi-buffered chunk pipeline, (2) WMMA-based few-row tiles (16-row WMMA with activations shared across N in LDS), (3) prefill-load ownership rebalance.
 
+2026-10-17 idea source - borrow hipBLASLt/Tensile tuning (radiance links no BLAS; all GEMMs are its own kernels): (1) per-shape solution table: a small set of tile variants per radiance GEMM (macro tile, wave tile, depth-U, split-K) benchmarked per (M,N,K) bucket on gfx1100 and selected at runtime from a table - the pattern of our llama.cpp hip-autotune record/tune/replay, applied to libr3/helper kernels; (2) split-K / stream-K for skinny GEMMs - Tensile's answer to few rows per expert, the case the FMA few-rows kernel lost on; (3) grouped GEMM with per-group tile choice (cold vs hot experts); (4) workgroup-to-tile mapping for Infinity Cache reuse; (5) prefetch/double-buffered LDS and direct-to-LDS loads. Starting points: the gfx1100 Tensile logic YAMLs shipped with hipBLASLt (/opt/rocm/lib/hipblaslt/library) record winning tile configs per shape - mine them for tile sizes near our shapes before writing a tuner.
+
 ## Change Log
 
 - 2026-10-14T20:15:06.353093+00:00 (created-by): Created by agent
 - 2026-10-14T20:41:34.505375+00:00 (updated-by): Updated: section:notes
 
 ## Ledger-events
-
 
 - chg_20261014_204134_flash-next-decode-on-brutus-re_3947
 - 2026-10-14T20:41:42.123589+00:00 (updated-by): Updated: section:ledger-events
@@ -75,3 +76,4 @@ Follows RAD02/RAD05.
 - 2026-10-14T22:19:13.458071+00:00 (updated-by): Updated: section:notes
 - chg_20261014_221932_added-an-experimental-prefill_2342
 - 2026-10-14T22:19:36.581927+00:00 (updated-by): Updated: section:ledger-events
+- 2026-10-16T23:24:29.586576+00:00 (updated-by): Updated: section:notes
