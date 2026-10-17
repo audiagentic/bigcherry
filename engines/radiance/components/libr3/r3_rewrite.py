@@ -9,7 +9,7 @@ rewrites.txt holds one rule per line:   <text to find> ==> <replacement>
 Blank lines and lines starting with '#' are ignored. A rule that matches nowhere is an error: it means libr4d
 changed and the rule has to be looked at again.
 
-A fourth argument names a directory of block rules, one file per libr4d source: <source name>.rw. They replace a
+--native names a directory of block rules, one file per libr4d source: <source name>.rw. They replace a
 kernel's own lines with a native gfx11 form (see native/). A block is
 
     @@ find <count>
@@ -21,11 +21,17 @@ kernel's own lines with a native gfx11 form (see native/). A block is
 and must occur exactly <count> times in that source, or the configure step fails: the kernel changed upstream and
 the native form has to be looked at again. Lines outside blocks are comments.
 
-Usage: r3_rewrite.py <libr4d dir> <out dir> <rewrites.txt> [<native dir>]
+Usage: r3_rewrite.py --source <libr4d dir> --rules <rewrites.txt> [--native <native dir>] (--out <out dir> | --check)
+
+--check writes nothing: it applies every rule and block to each source in memory and prints one JSON document on
+stdout, {"failures": {<file>: [<what failed>, ...]}}, listing every failing block per file (the build stops at the
+first; the check lists them all, so a bump sees the whole port at once). Exit 0 when nothing drifted, 1 when
+something did. bigcherry pin-bump runs it right after pulling a bumped radiance.
 """
 from __future__ import annotations
 
-import shutil
+import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -65,21 +71,22 @@ def blocks(path: Path) -> list[tuple[int, str, str]]:
     return out
 
 
-def main() -> int:
-    source, out, rule_file = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3])
-    native = Path(sys.argv[4]) if len(sys.argv) > 4 else None
+def rewrite(source: Path, rule_file: Path, native: Path | None) -> tuple[dict[str, str], dict[str, list[str]], list[str]]:
+    """Apply the rules and native blocks to every libr4d source in memory.
+
+    Returns (rewritten text by file name, failures by file name, report lines). A failure names the rule file and the
+    block, so one run lists everything that no longer matches."""
     native_rules = {p.name[:-3]: blocks(p) for p in sorted(native.glob("*.rw"))} if native else {}
-    unknown = [name for name in native_rules if not (source / name).is_file()]
-    if unknown:
-        raise SystemExit("r3_rewrite: native rules for source(s) libr4d does not have: " + ", ".join(unknown))
+    failures: dict[str, list[str]] = {}
+    for name in native_rules:
+        if not (source / name).is_file():
+            failures.setdefault(f"native/{name}.rw", []).append(f"libr4d has no source {name}")
     todo = rules(rule_file)
     hits = {find: 0 for find, _ in todo}
-    out.mkdir(parents=True, exist_ok=True)
+    texts: dict[str, str] = {}
+    report: list[str] = []
     for path in sorted(source.iterdir()):
-        if path.is_dir():
-            continue
-        target = out / path.name
-        if path.suffix not in (".hip", ".h", ".cpp"):
+        if path.is_dir() or path.suffix not in (".hip", ".h", ".cpp"):
             continue
         text = path.read_text(encoding="utf-8")
         for find, replace in todo:
@@ -87,25 +94,53 @@ def main() -> int:
             if count:
                 hits[find] += count
                 text = text.replace(find, replace)
-        for count, find, replace in native_rules.get(path.name, []):
-            if text.count(find) != count:
-                raise SystemExit(f"r3_rewrite: native/{path.name}.rw: a block expected {count} time(s) occurs "
-                                 f"{text.count(find)} time(s): {find.splitlines()[0].strip()!r}")
+        for index, (count, find, replace) in enumerate(native_rules.get(path.name, []), 1):
+            found = text.count(find)
+            if found != count:
+                failures.setdefault(f"native/{path.name}.rw", []).append(
+                    f"block {index} expected {count} time(s) occurs {found} time(s): {find.splitlines()[0].strip()!r}")
+                continue
             text = text.replace(find, replace)
         if path.name in native_rules:
-            print(f"r3_rewrite: native form of {path.name}: {len(native_rules[path.name])} block(s)")
+            report.append(f"r3_rewrite: native form of {path.name}: {len(native_rules[path.name])} block(s)")
+        texts[path.name] = text
+    for find, count in hits.items():
+        report.append(f"r3_rewrite: {count} x {find!r}")
+        if count == 0:
+            failures.setdefault(rule_file.name, []).append(f"rule matched nothing: {find!r}")
+    return texts, failures, report
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="libr3's textual and native rewrites of libr4d's sources")
+    parser.add_argument("--source", type=Path, required=True, help="libr4d source directory")
+    parser.add_argument("--rules", type=Path, required=True, help="rewrites.txt")
+    parser.add_argument("--native", type=Path, help="directory of <source>.rw block rules")
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--out", type=Path, help="write the rewritten copy here")
+    mode.add_argument("--check", action="store_true", help="write nothing; print the failing rules and blocks as JSON")
+    args = parser.parse_args()
+    texts, failures, report = rewrite(args.source, args.rules, args.native)
+    if args.check:
+        print(json.dumps({"failures": failures}, indent=2, sort_keys=True))
+        return 1 if failures else 0
+    for line in report:
+        print(line)
+    if failures:
+        for name, problems in sorted(failures.items()):
+            for problem in problems:
+                print(f"r3_rewrite: {name}: {problem}", file=sys.stderr)
+        return 1
+    out = args.out
+    out.mkdir(parents=True, exist_ok=True)
+    for name, text in texts.items():
+        target = out / name
         # leave an unchanged file alone so the build does not recompile it
         if not target.is_file() or target.read_text(encoding="utf-8") != text:
             target.write_text(text, encoding="utf-8", newline="\n")
     for stale in out.iterdir():
-        if stale.is_file() and not (source / stale.name).is_file():
+        if stale.is_file() and not (args.source / stale.name).is_file():
             stale.unlink()
-    missing = [find for find, count in hits.items() if count == 0]
-    for find, count in hits.items():
-        print(f"r3_rewrite: {count} x {find!r}")
-    if missing:
-        print("r3_rewrite: rule(s) matched nothing: " + "; ".join(repr(m) for m in missing), file=sys.stderr)
-        return 1
     return 0
 
 

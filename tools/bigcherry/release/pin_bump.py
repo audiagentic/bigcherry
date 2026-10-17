@@ -56,6 +56,7 @@ PHASES = (
     "preflight",
     "declare",
     "pull",
+    "drift",
     "audit",
     "patch-lint",
     "coverage",
@@ -454,6 +455,45 @@ def run_phase_preflight(
         ) from exc
     current_pinned = recipes_module.pinned(recipes_path(engine))
     return current_pinned, to_sha
+
+
+def run_phase_drift(*, engine: str, vendor_root: Path, target_ref: str) -> None:
+    """Run the engine's source drift checks (its adapter's ``source_drift_checks``) on the freshly pulled upstream tree.
+
+    Every check runs, and the first that finds drift STOPs the bump under its own code with the failures by file, so one run
+    shows the whole port. llama.cpp declares none."""
+
+    resume = f"python -m bigcherry --engine {engine} pin-bump {target_ref} --resume"
+    try:
+        checks = adapter(engine).source_drift_checks(ProjectContext.resolve(engine=engine), vendor_root)
+    except (ValueError, OSError) as exc:
+        raise PinBumpStop(
+            "drift",
+            "SOURCE_DRIFT_UNCHECKED",
+            f"the source drift checks of {engine} could not be set up: {type(exc).__name__}: {exc}",
+            evidence={"error": str(exc)},
+            recommended_actions=[f"fix the engine declaration, then {resume}"],
+        ) from exc
+    for check in checks:
+        try:
+            failures = check.run()
+        except BumpCheckError as exc:
+            raise PinBumpStop(
+                "drift",
+                "SOURCE_DRIFT_UNCHECKED",
+                f"source drift check {check.id} could not run: {exc}",
+                evidence={"check": check.id, "error": str(exc)},
+                recommended_actions=[f"fix the cause, then {resume}"],
+            ) from exc
+        if failures:
+            count = sum(len(problems) for problems in failures.values())
+            raise PinBumpStop(
+                "drift",
+                check.failure_code,
+                f"{check.id}: {count} failing block(s)/rule(s) in {len(failures)} file(s) against {target_ref}",
+                evidence={"check": check.id, "failures": failures},
+                recommended_actions=[check.fix_hint, f"then {resume}"],
+            )
 
 
 def run_phase_declare(*, repo_root: Path, engine: str, vendor_root: Path, target_ref: str) -> str:
@@ -1785,6 +1825,15 @@ def _run_phases(
                 engine=engine, target_ref=target_ref, revision=state.to_sha
             )
             state.completed_phases.append("pull")
+            state.next_phase = "drift"
+            state.save(report_dir)
+
+        if state.next_phase == "drift":
+            # Right after the pull: the tree is the pristine bumped upstream, so what these checks report is the engine's
+            # own change and cannot be a patch, and it is found before the audit, patch rebase and builds spend time on a
+            # tree BigCherry's own derived source (libr3's native rewrites) already no longer fits.
+            run_phase_drift(engine=engine, vendor_root=vendor_root, target_ref=target_ref)
+            state.completed_phases.append("drift")
             state.next_phase = "audit"
             state.save(report_dir)
 
