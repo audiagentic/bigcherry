@@ -45,12 +45,21 @@ older tag family, and extra repository paths owned by the engine). The package p
 
 ## Versions
 
-| Line | Version | Status |
-|---|---|---|
-| llama.cpp | `<llama build>.<minor>.<patch>`; a pin bump is `<build>.0.0`, later releases on the pin raise minor or patch; workflow adds the alias `bc-llamacpp-b<build>-r<N>` | in use |
-| radiance | not decided: radiance's pin is a commit of a project with its own semantic version (1.3.0 at the current pin), not a numbered build, so the llama.cpp scheme does not carry over. The package starts at `0.0.0` in the manifest (nothing released) | owner decision open (MEN13) |
-| platform | plain semantic version from conventional commits | in use |
+A release version is `<major>.<minor>.<patch>`. The major comes from the pin, by the engine's `[release]
+version-source` in `engines/<engine>/engine.toml`; the first release of a pin is `<major>.0.0`, and while the pin stays
+`--bump minor` (features) or `--bump patch` (fixes) raise the rest. A pin bump that changes the major starts over at
+`<new major>.0.0`.
 
-Until radiance's scheme is decided, `pin-release` for radiance passes the package and release-line gates and then stops
-with "no version scheme yet"; `release-notes` for radiance resolves its configuration but its version argument must
-follow the scheme once chosen.
+| Line | version-source | Major | Readable alias (added by the release workflow) |
+|---|---|---|---|
+| llama.cpp | `build-tag` | the upstream build number: b11474 -> 11474 | `bc-llamacpp-b<build>-r<N>` |
+| radiance | `pinned-version` | the upstream version's digits, from `pinned-version` in `engines/radiance/recipes.toml`: 1.3.0 -> 130 (an upstream 1.4.0 starts at 140.0.0) | `bc-radiance-<upstream version>-r<N>`, e.g. `bc-radiance-1.3.0-r1` |
+| platform | - | plain semantic version from conventional commits | none |
+
+`N` counts the releases at that major from 0. The radiance pin is a commit, so its commands take the revision (at least 7
+hex digits of the recipes' `pinned`, e.g. `89cee7ce4144`) where llama.cpp's take the build tag; the release record stays keyed by
+the 12-digit revision (`releases/89cee7ce4144.json`) and the `pin-release` note in it states both the revision and the
+upstream version. `pinned-version` is a declared recipes field, updated with `pinned` by the bump.
+
+Decision (owner, 2026-10-17): "upstream as major" for radiance, as above. The manifest starts the radiance package at
+`130.0.0`; its first release is stated with `release-as` by `pin-release`, as for llama.cpp.

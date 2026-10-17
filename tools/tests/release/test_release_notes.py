@@ -83,7 +83,7 @@ class ReleaseNotesTests(unittest.TestCase):
         config = notes.ReleaseConfig(
             engine="radiance", upstream_name="radiance", tag_prefix="bc-radiance-", notes_dir="notes",
             ledger="ledger", release_records="releases", recipes="engines/radiance/recipes.toml",
-            patches="engines/radiance/patches", build_patch_sets=(), fallback_prefixes=(), owned_paths=(), ledger_sections=(),
+            patches="engines/radiance/patches", build_patch_sets=(), fallback_prefixes=(), version_source="build-tag", owned_paths=(), ledger_sections=(),
         )
         seen = []
 
@@ -114,7 +114,7 @@ class ReleaseNotesTests(unittest.TestCase):
             engine="llamacpp", upstream_name="llama.cpp",
             tag_prefix="bc-llamacpp-", notes_dir="notes", ledger="ledger", release_records="releases",
             recipes="recipes", patches="patches", build_patch_sets=(), fallback_prefixes=("bc-llamacpp-b",),
-            owned_paths=(), ledger_sections=(),
+            version_source="build-tag", owned_paths=(), ledger_sections=(),
         )
         listing = "bc-llamacpp-11552.1.1\nbc-llamacpp-b11474-r9\n"
         with mock.patch.object(notes, "_git", return_value=listing) as git:
@@ -160,8 +160,8 @@ class ReleasePleaseWiringTests(unittest.TestCase):
 
     def test_manifest_versions(self):
         self.assertEqual(sorted(self.manifest), [".", "engines/llamacpp", "engines/radiance"])
-        # radiance has no release yet: its line starts at 0.0.0 and the first release is set by release-as
-        self.assertEqual(self.manifest["engines/radiance"], "0.0.0")
+        # radiance's major is its upstream version's digits (1.3.0 -> 130)
+        self.assertEqual(self.manifest["engines/radiance"], "130.0.0")
         # the llama.cpp line's major is a llama build number; the platform line is a plain semantic version
         self.assertRegex(self.manifest["engines/llamacpp"], r"^\d{4,6}\.\d+\.\d+$")
         self.assertRegex(self.manifest["."], r"^\d{1,3}\.\d+\.\d+$")

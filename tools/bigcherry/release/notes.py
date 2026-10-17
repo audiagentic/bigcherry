@@ -17,6 +17,7 @@ Everything is read from git objects and tracked files, so the same inputs always
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import tomllib
 from dataclasses import dataclass, field
@@ -44,6 +45,8 @@ class ReleaseConfig:
     patches: str
     build_patch_sets: tuple[str, ...]
     fallback_prefixes: tuple[str, ...]
+    #: where the major of a version comes from (the engine's [release] version-source in engine.toml)
+    version_source: str
     #: repository paths (files or directories) whose changes belong to this engine: engines/<name>/, the engine.toml
     #: layout and the engine's declared extra paths; a ledger event listing a file under any of them is the engine's
     owned_paths: tuple[str, ...]
@@ -76,6 +79,7 @@ def load_config(repo_root: Path, engine: str) -> ReleaseConfig:
         patches=layout.patches,
         build_patch_sets=tuple(line["build-patch-sets"]),
         fallback_prefixes=tuple(line["previous-tag-fallback-prefixes"]),
+        version_source=layout.version_source,
         owned_paths=engine_paths(layout, tuple(line["paths"])),
         ledger_sections=tuple((s["class"], s["heading"]) for s in raw["ledger-section"]),
     )
@@ -214,24 +218,48 @@ def _patch_title(repo_root: Path, config: ReleaseConfig, ref: str, patch_id: str
     return first
 
 
-def release_version(llama_tag: str, version: str | None = None) -> str:
-    """The release-please version of a release: <llama build>.<minor>.<patch>. The first release of a pin is
-    <build>.0.0; later releases on the same pin raise minor or patch."""
-    build = llama_tag[1:] if llama_tag[:1] == "b" and llama_tag[1:].isdigit() else None
-    if build is None:
-        raise ReleaseNotesError(f"{llama_tag!r} is not a numbered upstream build (b<number>): releases are versioned "
-                                f"<build>.<minor>.<patch>, and a pin that is not a numbered build has no version scheme yet "
-                                "(run-multi-engine MEN13 open decision)")
+@dataclass(frozen=True)
+class PinVersion:
+    """What a pin contributes to a release version."""
+
+    major: int
+    #: the upstream version as people name it: b11474 (a numbered build) or 1.3.0 (a released version); the label of
+    #: the readable alias tag
+    label: str
+
+
+def pin_version(repo_root: Path, config: ReleaseConfig, pin: str, ref: str = "HEAD") -> PinVersion:
+    """The major and label of a pin, by the engine's version source. ``pin`` is the argument of the release commands:
+    the upstream build tag (build-tag) or the pinned revision, at least 7 hex digits of it (pinned-version)."""
+    if config.version_source == "build-tag":
+        match = re.fullmatch(r"b(\d+)", pin)
+        if match is None:
+            raise ReleaseNotesError(f"{pin!r} is not a numbered {config.upstream_name} build (b<number>)")
+        return PinVersion(int(match.group(1)), pin)
+    if config.version_source == "pinned-version":
+        recipes = tomllib.loads(_show(repo_root, ref, config.recipes) or "")
+        pinned, version = str(recipes.get("pinned", "")), str(recipes.get("pinned-version", ""))
+        if not re.fullmatch(r"[0-9a-f]{7,40}", pin) or not pinned.startswith(pin):
+            raise ReleaseNotesError(f"{pin!r} is not the pinned {config.upstream_name} revision {pinned[:12]!r} ({config.recipes})")
+        if not re.fullmatch(r"\d+(\.\d+)*", version):
+            raise ReleaseNotesError(f"{config.recipes} declares no pinned-version for {config.upstream_name} {pinned[:12]}")
+        return PinVersion(int(version.replace(".", "")), version)
+    raise ReleaseNotesError(f"engine {config.engine}: unknown version-source {config.version_source!r}")
+
+
+def release_version(pin: PinVersion, version: str | None = None) -> str:
+    """The release-please version of a release: <major>.<minor>.<patch>. The first release of a pin is
+    <major>.0.0; later releases on the same pin raise minor or patch."""
     if version is None:
-        return f"{build}.0.0"
+        return f"{pin.major}.0.0"
     parts = version.split(".")
-    if len(parts) != 3 or not all(part.isdigit() for part in parts) or parts[0] != build:
-        raise ReleaseNotesError(f"version {version!r} must be {build}.<minor>.<patch> for llama.cpp {llama_tag}")
+    if len(parts) != 3 or not all(part.isdigit() for part in parts) or parts[0] != str(pin.major):
+        raise ReleaseNotesError(f"version {version!r} must be {pin.major}.<minor>.<patch> for {pin.label}")
     return version
 
 
 def render(repo_root: Path, config: ReleaseConfig, llama_tag: str, ref: str = "HEAD", version: str | None = None) -> str:
-    release_tag = config.tag_prefix + release_version(llama_tag, version)
+    release_tag = config.tag_prefix + release_version(pin_version(repo_root, config, llama_tag, ref), version)
     record_text = _show(repo_root, ref, f"{config.release_records}/{llama_tag}.json")
     if record_text is None:
         raise ReleaseNotesError(f"no release record {config.release_records}/{llama_tag}.json at {ref}")
@@ -284,7 +312,7 @@ def render(repo_root: Path, config: ReleaseConfig, llama_tag: str, ref: str = "H
 
 
 def write_notes(repo_root: Path, config: ReleaseConfig, llama_tag: str, ref: str = "HEAD", version: str | None = None) -> Path:
-    out = repo_root / config.notes_dir / f"{config.tag_prefix}{release_version(llama_tag, version)}.md"
+    out = repo_root / config.notes_dir / f"{config.tag_prefix}{release_version(pin_version(repo_root, config, llama_tag, ref), version)}.md"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(render(repo_root, config, llama_tag, ref, version), encoding="utf-8", newline="\n")
     return out

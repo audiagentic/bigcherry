@@ -137,16 +137,10 @@ class EngineScopeTests(unittest.TestCase):
                     self.assertNotIn("Traceback", err)
 
     def test_radiance_release_commands_resolve_its_release_line(self):
-        # the release line exists (MEN13), so the commands get past the release-line gates and stop on the pin itself:
-        # no release record for the pin, and a commit pin has no <build>.<minor>.<patch> version scheme yet
-        code, _, err = self._run(["--engine", "radiance", "release-notes", "b1", "--stdout"])
+        # the release line and the version scheme exist (MEN13): release-notes only stops on the missing release record
+        code, _, err = self._run(["--engine", "radiance", "release-notes", "89cee7ce4144", "--stdout"])
         self.assertEqual(code, 1)
-        self.assertNotIn("release line", err)
-        self.assertIn("no release record releases/b1.json", err)
-        code, _, err = self._run(["--engine", "radiance", "pin-release", "89cee7ce414e", "--dry-run"])
-        self.assertEqual(code, 1)
-        self.assertNotIn("no package", err)
-        self.assertIn("no version scheme yet", err)
+        self.assertIn("no release record releases/89cee7ce4144.json", err)
 
     def test_pin_bump_defaults_its_source_only_where_the_recipes_declare_it(self):
         self.assertEqual(pin_bump._resolve_fresh_selector("llamacpp", source_name=None), ("source", "bigcherry"))
