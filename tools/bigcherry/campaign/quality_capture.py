@@ -112,6 +112,8 @@ def run_quality_capture(
     control = prepared[quality["control"]]
     if "record" in quality:
         record_quality = {**quality, "args": quality["record"]["args"]}
+        # The engine writes its reference files into this directory; it does not create it.
+        Path(quality["reference_dir"]).mkdir(parents=True, exist_ok=True)
         command = adapter.quality_command(
             "record", {"name": "reference", "model": control["model"], "settings": {}},
             {**reference_env, **quality["record"]["environment"]}, qdir, control["binary"], control["model"],
