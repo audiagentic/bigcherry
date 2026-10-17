@@ -61,6 +61,7 @@ PHASES = (
     "coverage",
     "apply",
     "compile",
+    "lane-build",
     "cpu-smoke",
     "reaudit",
     "complete",
@@ -144,6 +145,20 @@ class PinBumpState:
     #: the recipe ``[platform.*]`` the compile gate configures with (``--platform``); "" when the run named none. Saved so
     #: a resumed run builds the same way.
     compile_platform: str = ""
+    #: MEN16: the recipe ``[build.*]`` profile the lane-build phase builds (``--build``). Saved so a resumed run builds the
+    #: same lane; "" when the run named none.
+    lane_build_name: str = ""
+    #: MEN16: "passed" (the bumped engine was built through its lane), "skipped-by-override" (--cpu-smoke-build named a
+    #: build, so no lane was built) or "skipped" (--skip-cpu-smoke, nothing needs a build).
+    lane_build_status: str = ""
+    #: MEN16: the lane (``<source>:<build>:<platform>``), campaign build plan, build directory and launcher sha256 of the
+    #: lane build; for "skipped-by-override" only ``lane_build_dir`` (the override) is set.
+    lane_build_lane: str = ""
+    lane_build_plan_id: str = ""
+    lane_build_dir: str = ""
+    lane_build_binary_sha256: str = ""
+    #: MEN16: the explicit --cpu-smoke-build override, saved so a resume reuses it and a different one is refused.
+    cpu_smoke_build_override: str = ""
 
     def as_dict(self) -> dict:
         d = {
@@ -180,7 +195,15 @@ class PinBumpState:
                 "tree_oid": self.compile_tree_oid,
                 "platform": self.compile_platform,
             }
-            d["cpu_smoke"] = {"status": self.cpu_smoke_status}
+            d["lane_build"] = {
+                "status": self.lane_build_status,
+                "build": self.lane_build_name,
+                "lane": self.lane_build_lane,
+                "build_plan_id": self.lane_build_plan_id,
+                "build_dir": self.lane_build_dir,
+                "binary_sha256": self.lane_build_binary_sha256,
+            }
+            d["cpu_smoke"] = {"status": self.cpu_smoke_status, "build_override": self.cpu_smoke_build_override}
             d["accept"] = {"status": self.accept_status}
         return d
 
@@ -257,6 +280,7 @@ class PinBumpState:
         compile_state = data.get("compile") or {}
         cpu_smoke_state = data.get("cpu_smoke") or {}
         accept_state = data.get("accept") or {}
+        lane_build_state = data.get("lane_build") or {}
         return cls(
             schema_version=raw_version,
             run_id=data["run_id"],
@@ -278,6 +302,13 @@ class PinBumpState:
             compile_platform=str(compile_state.get("platform", "")),
             cpu_smoke_status=str(cpu_smoke_state.get("status", "")),
             accept_status=str(accept_state.get("status", "")),
+            cpu_smoke_build_override=str(cpu_smoke_state.get("build_override", "")),
+            lane_build_status=str(lane_build_state.get("status", "")),
+            lane_build_name=str(lane_build_state.get("build", "")),
+            lane_build_lane=str(lane_build_state.get("lane", "")),
+            lane_build_plan_id=str(lane_build_state.get("build_plan_id", "")),
+            lane_build_dir=str(lane_build_state.get("build_dir", "")),
+            lane_build_binary_sha256=str(lane_build_state.get("binary_sha256", "")),
         )
 
 
@@ -604,6 +635,7 @@ def run(
     skip_cpu_smoke: bool,
     accept: bool,
     platform_name: str | None,
+    build_name: str | None,
 ) -> PinBumpResult:
     """The Phase 1 single-tree orchestrator. Raises PinBumpStop (never a
     bare exception) on anything not provably safe to auto-proceed past;
@@ -620,6 +652,11 @@ def run(
     ``platform_name`` is the recipe ``[platform.*]`` the compile gate configures with (``--platform``), for the engines whose
     gate builds. It is saved in the resume state; a ``--resume`` with none reuses the saved one and a different one is
     refused.
+
+    ``build_name`` is the recipe ``[build.*]`` profile of the lane-build phase (``--build``): the bumped engine is built
+    through the lane ``<source>:<build_name>:<platform_name>`` and the cpu-smoke phase runs on that build. There is no
+    default; it is required unless ``cpu_smoke_build`` (an explicit override that skips the lane build) or
+    ``skip_cpu_smoke`` is given. A ``--resume`` with none reuses the saved one and a different one is refused.
     """
     repo_root = paths.REPO_ROOT
     vendor_root = root if root is not None else ProjectContext.resolve(engine=engine).vendor_root
@@ -659,11 +696,17 @@ def run(
                 source_name=source_name,
             )
             platform_name = _resume_platform(state, platform_name=platform_name)
+            build_name, cpu_smoke_build = _resume_lane_build_inputs(
+                state, build_name=build_name, cpu_smoke_build=cpu_smoke_build)
         else:
             state = None
             resolved_kind, resolved_name = _resolve_fresh_selector(
                 engine, source_name=source_name,
             )
+        _require_lane_build_inputs(
+            state, build_name=build_name, platform_name=platform_name,
+            cpu_smoke_build=cpu_smoke_build, skip_cpu_smoke=skip_cpu_smoke,
+        )
 
         return _run_phases(
             engine=engine,
@@ -680,6 +723,7 @@ def run(
             skip_cpu_smoke=skip_cpu_smoke,
             accept=accept,
             platform_name=platform_name,
+            build_name=build_name,
         )
     except PinBumpStop as exc:
         # gpt-dev-agent review (session ses_5307d9c58ec645cb, second pass):
@@ -1075,6 +1119,134 @@ def run_phase_compile(
     return _compile_tree_oid(engine, vendor_root, patch_ids)
 
 
+@dataclass(frozen=True)
+class LaneBuildOutcome:
+    """What the lane-build phase learns about the build it made."""
+
+    build_plan_id: str
+    build_dir: Path
+    binary_sha256: str
+
+
+class LaneBuildError(Exception):
+    """``kind`` is "request" (the lane cannot be planned) or "build" (the lane ran and failed)."""
+
+    def __init__(self, kind: str, message: str):
+        super().__init__(message)
+        self.kind = kind
+
+
+def execute_lane_build(*, engine: str, lane: str, run_id: str) -> LaneBuildOutcome:
+    """Build ``lane`` (``<source>:<build>:<platform>``) exactly as `bigcherry build --lane` does: the campaign planner
+    plans it and ``run_campaign`` runs it. The launcher is the engine's serve binary, which is what the cpu smoke starts."""
+    from ..build.builds import build_directory
+    from ..campaign import planner
+    from ..core import config as campaign_config
+    from ..core import engines
+    from ..core.artifacts import ArtifactStore
+
+    parts = lane.split(":")
+    if len(parts) != 3 or not all(parts):
+        raise LaneBuildError("request", f"lane {lane!r} must be SOURCE:BUILD:PLATFORM")
+    context = ProjectContext.resolve(engine=engine)
+    try:
+        cfg = campaign_config.load(context.config_path)
+        request = planner.CampaignRequest(
+            selectors=(campaign_config.CampaignLaneSelector(*parts),),
+            binary_relative_path=engines.load(paths.REPO_ROOT, engine).serve.binary,
+        )
+        lanes = planner.plan(request, cfg)
+    except (campaign_config.ConfigError, planner.CampaignPlannerError) as exc:
+        raise LaneBuildError("request", str(exc)) from exc
+    results = planner.run_campaign(
+        lanes, cfg=cfg, context=context, store=ArtifactStore(context.work_root / "artifacts-store"), run_id=run_id)
+    (result,) = results.values()
+    if isinstance(result, Exception):
+        raise LaneBuildError("build", f"{type(result).__name__}: {result}")
+    return LaneBuildOutcome(
+        build_plan_id=result.build_plan_id,
+        build_dir=build_directory(context, result.source_slice_id, result.build_plan),
+        binary_sha256=result.binary_ref.content_hash,
+    )
+
+
+def run_phase_lane_build(*, engine: str, lane: str, run_id: str, target_ref: str) -> LaneBuildOutcome:
+    """MEN16: build the bumped engine through its canonical lane."""
+    resume = f"python -m bigcherry --engine {engine} pin-bump {target_ref} --resume"
+    try:
+        return execute_lane_build(engine=engine, lane=lane, run_id=run_id)
+    except LaneBuildError as exc:
+        invalid = exc.kind == "request"
+        raise PinBumpStop(
+            "lane-build",
+            "LANE_BUILD_REQUEST_INVALID" if invalid else "LANE_BUILD_FAILED",
+            f"lane {lane} {'cannot be planned' if invalid else 'failed to build'}: {exc}",
+            evidence={"lane": lane, "error": str(exc)},
+            recommended_actions=[
+                f"fix the cause, then {resume} (with a corrected --build for an invalid lane)",
+                f"to smoke a build made by hand, {resume} --cpu-smoke-build <build dir>",
+            ],
+        ) from exc
+
+
+def _resume_lane_build_inputs(
+    state: PinBumpState, *, build_name: str | None, cpu_smoke_build: Path | None,
+) -> tuple[str | None, Path | None]:
+    """The lane-build inputs of a resumed run, like --platform: the saved ones unless the resuming invocation names them,
+    a different one refused. A --cpu-smoke-build override is also refused once the lane build already passed."""
+    saved_build = state.lane_build_name or None
+    if build_name is not None and saved_build is not None and build_name != saved_build:
+        raise PinBumpStop(
+            "resume",
+            "RESUME_BUILD_MISMATCH",
+            f"--resume was given --build {build_name!r}, but this run's recorded lane build profile is {saved_build!r}",
+            evidence={"resumed_build": build_name, "state_build": saved_build},
+            recommended_actions=[
+                "omit --build on --resume to use the run's original profile, or start a fresh run with the new one",
+            ],
+        )
+    saved_override = Path(state.cpu_smoke_build_override) if state.cpu_smoke_build_override else None
+    if cpu_smoke_build is not None and (
+        (saved_override is not None and cpu_smoke_build != saved_override) or state.lane_build_status == "passed"
+    ):
+        raise PinBumpStop(
+            "resume",
+            "RESUME_CPU_SMOKE_BUILD_MISMATCH",
+            f"--resume was given --cpu-smoke-build {str(cpu_smoke_build)!r}, but this run's recorded build is "
+            f"{state.cpu_smoke_build_override or state.lane_build_dir!r}",
+            evidence={"resumed_cpu_smoke_build": str(cpu_smoke_build), "state_build": state.lane_build_dir},
+            recommended_actions=[
+                "omit --cpu-smoke-build on --resume to use the run's original build, or start a fresh run",
+            ],
+        )
+    return build_name or saved_build, cpu_smoke_build or saved_override
+
+
+def _require_lane_build_inputs(
+    state: PinBumpState | None, *, build_name: str | None, platform_name: str | None,
+    cpu_smoke_build: Path | None, skip_cpu_smoke: bool,
+) -> None:
+    """The lane build has no default profile: without --build (and --platform) the run is refused before any phase,
+    unless an override or --skip-cpu-smoke means no build is needed or the saved run already has its build."""
+    if skip_cpu_smoke or cpu_smoke_build is not None:
+        return
+    if state is not None and state.lane_build_status in {"passed", "skipped-by-override", "skipped"}:
+        return
+    missing = [flag for flag, value in (("--build", build_name), ("--platform", platform_name)) if not value]
+    if missing:
+        raise PinBumpStop(
+            "preflight",
+            "LANE_BUILD_INPUT_MISSING",
+            f"pin-bump builds the bumped engine through its lane for the cpu smoke and needs {' and '.join(missing)}",
+            evidence={"missing": missing},
+            recommended_actions=[
+                "pass --build <recipe [build.*] profile> and --platform <recipe [platform.*]>",
+                "or pass --cpu-smoke-build <build dir> to smoke a build made by hand",
+                "or, only if intentionally omitting the gate, pass --skip-cpu-smoke",
+            ],
+        )
+
+
 def run_phase_cpu_smoke(*, engine: str, build_dir: Path | None, out_dir: Path, target_ref: str) -> None:
     """MEN15: run the engine's RAM-only tiny-model smoke against a build of the bumped tree."""
     from ..campaign import cpu_smoke
@@ -1086,7 +1258,8 @@ def run_phase_cpu_smoke(*, engine: str, build_dir: Path | None, out_dir: Path, t
             "CPU_SMOKE_BUILD_MISSING",
             "the cpu-smoke phase needs a build of the bumped tree and none was given",
             recommended_actions=[
-                f"build the bumped tree, then {resume} --cpu-smoke-build <build dir>",
+                f"{resume} --build <build profile> --platform <platform> (builds the bumped tree through its lane), or "
+                f"{resume} --cpu-smoke-build <build dir>",
                 f"only if intentionally omitting the gate, {resume} --skip-cpu-smoke",
             ],
         )
@@ -1100,7 +1273,7 @@ def run_phase_cpu_smoke(*, engine: str, build_dir: Path | None, out_dir: Path, t
             f"CPU smoke failed: {exc.failures[0]}",
             evidence={"failures": exc.failures, "result": str(out_dir / cpu_smoke.RESULT_NAME), "build": str(build_dir)},
             recommended_actions=[
-                f"fix the cause (see {out_dir / 'server.log'}), then {resume} --cpu-smoke-build {build_dir}",
+                f"fix the cause (see {out_dir / 'server.log'}), then {resume} (the saved build is reused)",
                 f"only if intentionally omitting the gate, {resume} --skip-cpu-smoke",
             ],
         ) from exc
@@ -1150,15 +1323,26 @@ def run_phase_accept(*, engine: str, out_dir: Path, target_ref: str, vendor_root
                 "if the baseline itself is outdated, re-measure and update its baselines file deliberately",
             ],
         )
-    _record_note(vendor_root, f"pin-bump hardware acceptance: PASSED against stored baselines (evidence {evidence})")
+    _record_release_note(
+        vendor_root, f"pin-bump hardware acceptance: PASSED against stored baselines (evidence {evidence})", phase="cpu-smoke")
 
 
-def _record_note(vendor_root: Path, note: str) -> None:
-    record = releases.record_for_checkout(vendor_root)
-    existing = record.notes or ""
-    if note not in existing:
-        record.notes = (existing.rstrip() + "\n" + note).lstrip()
-        record.save()
+def _record_release_note(vendor_root: Path, note: str, *, phase: str) -> None:
+    """Append ``note`` to the bump's release record (once)."""
+    try:
+        record = releases.record_for_checkout(vendor_root)
+        existing = record.notes or ""
+        if note not in existing:
+            record.notes = (existing.rstrip() + "\n" + note).lstrip()
+            record.save()
+    except (OSError, ValueError) as exc:
+        raise PinBumpStop(
+            phase,
+            "RELEASE_NOTE_RECORD_FAILED",
+            f"could not record {note!r} in the release record: {exc}",
+            evidence={"error": str(exc)},
+            recommended_actions=["fix the release record write failure", "rerun with --resume"],
+        ) from exc
 
 
 def _record_compile_skip(vendor_root: Path) -> None:
@@ -1195,11 +1379,16 @@ def _rewind_compile_if_tree_changed(
     state.completed_phases = [
         phase
         for phase in state.completed_phases
-        if phase not in {"compile", "cpu-smoke", "reaudit", "complete"}
+        if phase not in {"compile", "lane-build", "cpu-smoke", "reaudit", "complete"}
     ]
     state.next_phase = "compile"
     state.compile_tree_oid = ""
     state.compile_status = ""
+    state.lane_build_status = ""
+    state.lane_build_lane = ""
+    state.lane_build_plan_id = ""
+    state.lane_build_dir = ""
+    state.lane_build_binary_sha256 = ""
     state.cpu_smoke_status = ""
     state.accept_status = ""
     return True
@@ -1548,6 +1737,7 @@ def _run_phases(
     skip_cpu_smoke: bool,
     accept: bool,
     platform_name: str | None,
+    build_name: str | None,
 ) -> PinBumpResult:
     from ..patch import catalog as patch_catalog
     from ..source import audit as source_audit
@@ -1580,6 +1770,8 @@ def _run_phases(
                 selector_kind=selector_kind,
                 selector_name=selector_name,
                 selector_patch_ids=selector_patch_ids,
+                lane_build_name=build_name or "",
+                cpu_smoke_build_override=str(cpu_smoke_build) if cpu_smoke_build is not None else "",
             )
             state.save(report_dir)
 
@@ -1850,6 +2042,37 @@ def _run_phases(
             state.compile_platform = platform_name or ""
             state.compile_tree_oid = compile_tree_oid
             state.completed_phases.append("compile")
+            state.next_phase = "lane-build"
+            state.save(report_dir)
+
+        if state.next_phase == "lane-build":
+            # MEN16: build the bumped engine through its canonical lane so the cpu-smoke phase (and the release record)
+            # speak of one build the bump itself made. An explicit --cpu-smoke-build replaces it and is recorded as such.
+            if skip_cpu_smoke:
+                state.lane_build_status = "skipped"
+            elif cpu_smoke_build is not None:
+                state.cpu_smoke_build_override = str(cpu_smoke_build)
+                state.lane_build_status = "skipped-by-override"
+                state.lane_build_dir = str(cpu_smoke_build)
+                _record_release_note(
+                    vendor_root, f"pin-bump cpu-smoke build: override {cpu_smoke_build} (no lane build)", phase="lane-build")
+            else:
+                state.lane_build_name = build_name or ""
+                lane = f"{selector_name}:{build_name}:{platform_name}"
+                outcome = run_phase_lane_build(
+                    engine=engine, lane=lane, run_id=f"pin-bump-{state.run_id[:12]}", target_ref=target_ref)
+                state.lane_build_status = "passed"
+                state.lane_build_lane = lane
+                state.lane_build_plan_id = outcome.build_plan_id
+                state.lane_build_dir = str(outcome.build_dir)
+                state.lane_build_binary_sha256 = outcome.binary_sha256
+                _record_release_note(
+                    vendor_root,
+                    f"pin-bump lane build: {lane} build_plan_id={outcome.build_plan_id} "
+                    f"binary_sha256={outcome.binary_sha256} build_dir={outcome.build_dir}",
+                    phase="lane-build",
+                )
+            state.completed_phases.append("lane-build")
             state.next_phase = "cpu-smoke"
             state.save(report_dir)
 
@@ -1859,7 +2082,7 @@ def _run_phases(
             if skip_cpu_smoke:
                 state.cpu_smoke_status = "skipped"
             else:
-                run_phase_cpu_smoke(engine=engine, build_dir=cpu_smoke_build, out_dir=report_dir / "cpu-smoke", target_ref=target_ref)
+                run_phase_cpu_smoke(engine=engine, build_dir=Path(state.lane_build_dir) if state.lane_build_dir else None, out_dir=report_dir / "cpu-smoke", target_ref=target_ref)
                 state.cpu_smoke_status = "passed"
             if accept and state.accept_status != "passed":
                 run_phase_accept(engine=engine, out_dir=report_dir / "accept", target_ref=target_ref, vendor_root=vendor_root)

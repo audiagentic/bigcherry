@@ -705,7 +705,7 @@ def build_parser() -> argparse.ArgumentParser:
     pin_bump_cmd = sub.add_parser(
         "pin-bump",
         help="single-tree pin-bump orchestrator (HI153): repin -> pull -> "
-        "audit -> patch-lint -> coverage -> apply -> compile -> reaudit, stopping "
+        "audit -> patch-lint -> coverage -> apply -> compile -> lane-build -> cpu-smoke -> reaudit, stopping "
         "with a structured JSON failure envelope on anything not "
         "provably safe to auto-proceed past. Multi-tree sequencing is "
         "still manual -- run `pin-status --complete --all-remotes` "
@@ -728,6 +728,14 @@ def build_parser() -> argparse.ArgumentParser:
         "platform `bigcherry build --lane` uses. Required by engines whose compile gate builds (radiance); a --resume "
         "with none reuses the run's saved one.",
     )
+    pin_bump_cmd.add_argument(
+        "--build",
+        dest="build_profile",
+        default=None,
+        help="recipe [build.*] profile of the lane-build phase (MEN16): the bumped engine is built through the lane "
+        "<--source>:<--build>:<--platform> and the cpu-smoke phase runs on that build. No default; required (with "
+        "--platform) unless --cpu-smoke-build or --skip-cpu-smoke is given. A --resume with none reuses the saved one.",
+    )
     pin_bump_cmd.add_argument("--resume", action="store_true")
     pin_bump_cmd.add_argument(
         "--skip-compile",
@@ -737,8 +745,8 @@ def build_parser() -> argparse.ArgumentParser:
     pin_bump_cmd.add_argument(
         "--cpu-smoke-build",
         default=None,
-        help="build directory of the bumped engine; the cpu-smoke phase (RAM-only tiny-model smoke, MEN15) runs "
-        "its server with no GPU visible. Required unless --skip-cpu-smoke",
+        help="explicit override: smoke this build directory of the bumped engine instead of building the lane. The "
+        "lane-build phase is skipped and recorded as skipped-by-override in the resume state",
     )
     pin_bump_cmd.add_argument(
         "--skip-cpu-smoke",
@@ -2111,6 +2119,7 @@ def cmd_pin_bump(args: argparse.Namespace) -> int:
             skip_cpu_smoke=args.skip_cpu_smoke,
             accept=args.accept,
             platform_name=args.platform,
+            build_name=args.build_profile,
         )
     # The `or` coalesces in this handler are legitimate (exc.run_id is None
     # until run() assigns a run_id, and target/tree are None before the first
@@ -2151,6 +2160,10 @@ def cmd_pin_bump(args: argparse.Namespace) -> int:
         print("  compile: SKIPPED explicitly (--skip-compile; recorded in release notes)")
     elif "complete" in result.state.completed_phases:
         print("  compile: not recorded (this bump completed before the compile phase existed)")
+    if result.state.lane_build_status == "passed":
+        print(f"  lane-build: PASS ({result.state.lane_build_lane}, build_plan_id={result.state.lane_build_plan_id})")
+    elif result.state.lane_build_status == "skipped-by-override":
+        print(f"  lane-build: SKIPPED by --cpu-smoke-build override ({result.state.lane_build_dir})")
     if result.state.cpu_smoke_status == "passed":
         print("  cpu-smoke: PASS (RAM-only tiny model, no GPU visible)")
     elif result.state.cpu_smoke_status == "skipped":

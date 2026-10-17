@@ -13,7 +13,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from contextlib import nullcontext
+from contextlib import ExitStack, nullcontext
 from pathlib import Path
 from unittest.mock import patch
 
@@ -148,6 +148,7 @@ class PinBumpStopResumeE2ETests(unittest.TestCase):
                         skip_cpu_smoke=True,
                         accept=False,
                         platform_name=None,
+                        build_name=None,
                         engine="llamacpp",
                         target_ref="b10680",
                         root=root,
@@ -165,6 +166,7 @@ class PinBumpStopResumeE2ETests(unittest.TestCase):
                     skip_cpu_smoke=False,
                     accept=False,
                     platform_name="linux-radiance",
+                    build_name=None,
                     engine="llamacpp",
                     target_ref="b10680",
                     root=root,
@@ -699,6 +701,7 @@ class OverlaySelfHealTests(unittest.TestCase):
                         skip_cpu_smoke=True,
                         accept=False,
                         platform_name=None,
+                        build_name=None,
                         state=state,
                         engine="llamacpp",
                         target_ref="b2",
@@ -982,7 +985,7 @@ class ContextRecoveryNeverMasksOriginalStopTests(unittest.TestCase):
             # per its unconditional pre-try initialization).
             (report_dir / "state.json").write_text("{not valid json", encoding="utf-8")
             with self.assertRaises(pin_bump.PinBumpStop) as ctx:
-                pin_bump.run(cpu_smoke_build=None, skip_cpu_smoke=True, accept=False, platform_name=None, engine="llamacpp", target_ref="b99999", resume=True, report_dir=report_dir)
+                pin_bump.run(cpu_smoke_build=None, skip_cpu_smoke=True, accept=False, platform_name=None, build_name=None, engine="llamacpp", target_ref="b99999", resume=True, report_dir=report_dir)
             # The ORIGINAL failure must survive -- not get replaced by a
             # second failure from the except block's own disk re-read.
             self.assertEqual(ctx.exception.code, "RESUME_STATE_INVALID")
@@ -1001,6 +1004,7 @@ class RunResumeStateMissingTests(unittest.TestCase):
                     skip_cpu_smoke=True,
                     accept=False,
                     platform_name=None,
+                    build_name=None,
                     engine="llamacpp",
                     target_ref="b99999",
                     resume=True,
@@ -1049,6 +1053,7 @@ class RunResumeStateMissingTests(unittest.TestCase):
                     skip_cpu_smoke=True,
                     accept=False,
                     platform_name=None,
+                    build_name=None,
                     engine="llamacpp",
                     target_ref="b99999-WRONG",  # deliberate mismatch
                     resume=True,
@@ -1647,6 +1652,234 @@ class SourceCompilePhaseTests(unittest.TestCase):
         self.assertFalse(changed)
         self.assertEqual(state.next_phase, "complete")
         tree_oid.assert_not_called()
+
+
+class _Record:
+    stage = "pulled"
+    audit: dict = {}
+    notes = ""
+    revision = "a" * 40
+
+    def slug(self):
+        return "b10680"
+
+    def advance_to(self, stage):
+        self.stage = stage
+
+    def save(self):
+        return None
+
+
+class LaneBuildPhaseTests(unittest.TestCase):
+    """MEN16: pin-bump builds the bumped engine through its lane (a fake build runner) and smokes that build."""
+
+    def setUp(self):
+        self._dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._dir.cleanup)
+        base = Path(self._dir.name)
+        self.root = base / "vendor"
+        self.report_dir = base / "report"
+        self.dispositions = base / "dispositions"
+        self.root.mkdir()
+        self.dispositions.mkdir()
+        _init_repo(self.root)
+        self.record = _Record()
+        self.record.notes = ""
+        self.lane_calls: list[dict] = []
+        self.fail_lane: Exception | None = None
+        self.order: list[str] = []
+
+    def _fake_lane(self, **kwargs):
+        self.lane_calls.append(kwargs)
+        self.order.append("lane-build")
+        if self.fail_lane is not None:
+            raise self.fail_lane
+        return pin_bump.LaneBuildOutcome(
+            build_plan_id="plan-123", build_dir=Path("/builds/slice/plan-123"), binary_sha256="f" * 64)
+
+    def _run(self, *, cpu_phase=None, **kwargs):
+        clean_report = {"checks": [], "summary": {}, "patches": []}
+        known_good = pin_bump.patch_rebase.ApplyKnownGoodResult(
+            ok=True, selected_patch_ids=(), known_good_patch_ids=(), partial=False)
+
+        def default_cpu_phase(**cpu_kwargs):
+            self.order.append("cpu-smoke")
+
+        arguments = {
+            "cpu_smoke_build": None, "skip_cpu_smoke": False, "accept": False, "platform_name": "linux-radiance",
+            "build_name": "stock", "engine": "llamacpp", "target_ref": "b10680", "root": self.root,
+            "dispositions_dir": self.dispositions, "report_dir": self.report_dir,
+        }
+        arguments.update(kwargs)
+        with ExitStack() as stack:
+            for target in (
+                patch.object(pin_bump, "acquire_maintenance_lock", return_value=nullcontext()),
+                patch.object(pin_bump, "run_phase_preflight", return_value=("b10502", "b" * 40)),
+                patch.object(pin_bump, "run_phase_declare", return_value="c" * 40),
+                patch.object(pin_bump, "_selector_patch_ids", return_value=("0100_x",)),
+                patch.object(pin_bump, "_sync_campaign_mirror_best_effort"),
+                patch("bigcherry.cli.source.cmd_pull", return_value=0),
+                patch("bigcherry.source.audit.audit", return_value=clean_report),
+                patch("bigcherry.source.audit.passed", return_value=True),
+                patch.object(pin_bump.releases, "record_for_checkout", return_value=self.record),
+                patch.object(pin_bump.patch_rebase, "run_rebase_check", return_value=clean_report),
+                patch.object(pin_bump.patch_rebase, "apply_known_good", return_value=known_good),
+                patch.object(
+                    pin_bump, "classify_patch_coverage",
+                    return_value={"complete": True, "outstanding": [], "composition_only_patch_ids": []}),
+                patch.object(pin_bump, "run_patch_tests", return_value=[]),
+                patch.object(pin_bump, "_write_release_doc_best_effort"),
+                patch.object(pin_bump, "_commit_release_records"),
+                patch.object(pin_bump, "run_phase_compile", return_value="compiled-tree-oid"),
+                patch.object(pin_bump, "_compile_tree_oid", return_value="compiled-tree-oid"),
+                patch.object(pin_bump, "execute_lane_build", side_effect=self._fake_lane),
+                patch.object(pin_bump, "run_phase_cpu_smoke", side_effect=cpu_phase or default_cpu_phase),
+            ):
+                self.cpu_mock = stack.enter_context(target)
+            return pin_bump.run(**arguments)
+
+    def _failing_cpu_phase(self, **kwargs):
+        raise pin_bump.PinBumpStop("cpu-smoke", "CPU_SMOKE_FAILED", "synthetic")
+
+    def test_phase_order_puts_lane_build_between_compile_and_cpu_smoke(self):
+        phases = pin_bump.PHASES
+        self.assertEqual(phases.index("lane-build"), phases.index("compile") + 1)
+        self.assertEqual(phases.index("cpu-smoke"), phases.index("lane-build") + 1)
+
+    def test_builds_the_lane_then_smokes_that_build_and_records_it(self):
+        result = self._run()
+        self.assertEqual(self.order, ["lane-build", "cpu-smoke"])
+        self.assertEqual(len(self.lane_calls), 1)
+        self.assertEqual(self.lane_calls[0]["lane"], "bigcherry:stock:linux-radiance")
+        self.assertEqual(self.lane_calls[0]["engine"], "llamacpp")
+        self.assertEqual(self.cpu_mock.call_args.kwargs["build_dir"], Path("/builds/slice/plan-123"))
+        state = pin_bump.PinBumpState.load(self.report_dir)
+        for loaded in (result.state, state):
+            self.assertEqual(loaded.lane_build_status, "passed")
+            self.assertEqual(loaded.lane_build_plan_id, "plan-123")
+            self.assertEqual(loaded.lane_build_binary_sha256, "f" * 64)
+            self.assertEqual(Path(loaded.lane_build_dir), Path("/builds/slice/plan-123"))
+        saved = json.loads((self.report_dir / "state.json").read_text(encoding="utf-8"))
+        self.assertEqual(saved["lane_build"]["build_plan_id"], "plan-123")
+        self.assertEqual(saved["lane_build"]["build"], "stock")
+        self.assertIn("build_plan_id=plan-123", self.record.notes)
+        self.assertIn("binary_sha256=" + "f" * 64, self.record.notes)
+        self.assertIn("bigcherry:stock:linux-radiance", self.record.notes)
+        completed = result.state.completed_phases
+        self.assertLess(completed.index("compile"), completed.index("lane-build"))
+        self.assertLess(completed.index("lane-build"), completed.index("cpu-smoke"))
+
+    def test_cpu_smoke_build_override_skips_the_lane_build_and_is_recorded(self):
+        result = self._run(cpu_smoke_build=Path("/my/build"), build_name=None, platform_name=None)
+        self.assertEqual(self.lane_calls, [])
+        self.assertEqual(result.state.lane_build_status, "skipped-by-override")
+        self.assertEqual(self.cpu_mock.call_args.kwargs["build_dir"], Path("/my/build"))
+        saved = json.loads((self.report_dir / "state.json").read_text(encoding="utf-8"))
+        self.assertEqual(saved["lane_build"]["status"], "skipped-by-override")
+        self.assertEqual(Path(saved["cpu_smoke"]["build_override"]), Path("/my/build"))
+        self.assertIn("override", self.record.notes)
+
+    def test_skip_cpu_smoke_needs_no_build(self):
+        result = self._run(skip_cpu_smoke=True, build_name=None, platform_name=None)
+        self.assertEqual(self.lane_calls, [])
+        self.assertEqual(result.state.lane_build_status, "skipped")
+        self.assertEqual(result.state.cpu_smoke_status, "skipped")
+
+    def test_missing_build_or_platform_is_refused_before_any_phase(self):
+        for kwargs, missing in (
+            ({"build_name": None}, ["--build"]),
+            ({"platform_name": None}, ["--platform"]),
+            ({"build_name": None, "platform_name": None}, ["--build", "--platform"]),
+        ):
+            with self.subTest(missing=missing):
+                with self.assertRaises(pin_bump.PinBumpStop) as stopped:
+                    self._run(**kwargs)
+                self.assertEqual(stopped.exception.code, "LANE_BUILD_INPUT_MISSING")
+                self.assertEqual(stopped.exception.evidence["missing"], missing)
+        self.assertEqual(self.lane_calls, [])
+        self.assertFalse((self.report_dir / "state.json").exists())
+
+    def test_build_failure_stops_with_lane_build_failed_and_resume_retries_it(self):
+        self.fail_lane = pin_bump.LaneBuildError("build", "RuntimeError: ninja: build stopped")
+        with self.assertRaises(pin_bump.PinBumpStop) as stopped:
+            self._run()
+        self.assertEqual(stopped.exception.code, "LANE_BUILD_FAILED")
+        self.assertEqual(stopped.exception.phase, "lane-build")
+        self.assertEqual(stopped.exception.evidence["lane"], "bigcherry:stock:linux-radiance")
+        saved = pin_bump.PinBumpState.load(self.report_dir)
+        self.assertEqual(saved.next_phase, "lane-build")
+        self.assertEqual(saved.lane_build_status, "")
+        self.assertEqual(self.order, ["lane-build"])
+        self.fail_lane = None
+        result = self._run(resume=True, build_name=None, platform_name=None)
+        self.assertEqual(self.lane_calls[-1]["lane"], "bigcherry:stock:linux-radiance")
+        self.assertEqual(result.state.lane_build_status, "passed")
+        self.assertEqual(self.order, ["lane-build", "lane-build", "cpu-smoke"])
+
+    def test_unplannable_lane_stops_with_its_own_code(self):
+        self.fail_lane = pin_bump.LaneBuildError("request", "no [build.nope]")
+        with self.assertRaises(pin_bump.PinBumpStop) as stopped:
+            self._run(build_name="nope")
+        self.assertEqual(stopped.exception.code, "LANE_BUILD_REQUEST_INVALID")
+
+    def test_cpu_smoke_failure_resumes_on_the_saved_build_without_rebuilding(self):
+        with self.assertRaises(pin_bump.PinBumpStop) as stopped:
+            self._run(cpu_phase=self._failing_cpu_phase)
+        self.assertEqual(stopped.exception.code, "CPU_SMOKE_FAILED")
+        self.assertEqual(len(self.lane_calls), 1)
+        result = self._run(resume=True, build_name=None, platform_name=None)
+        self.assertEqual(len(self.lane_calls), 1)
+        self.assertEqual(self.cpu_mock.call_args.kwargs["build_dir"], Path("/builds/slice/plan-123"))
+        self.assertEqual(result.state.cpu_smoke_status, "passed")
+
+    def test_resume_reuses_saved_build_profile_and_refuses_a_different_one(self):
+        self.fail_lane = pin_bump.LaneBuildError("build", "boom")
+        with self.assertRaises(pin_bump.PinBumpStop):
+            self._run()
+        with self.assertRaises(pin_bump.PinBumpStop) as stopped:
+            self._run(resume=True, build_name="control")
+        self.assertEqual(stopped.exception.code, "RESUME_BUILD_MISMATCH")
+        self.assertEqual(stopped.exception.evidence, {"resumed_build": "control", "state_build": "stock"})
+        self.fail_lane = None
+        self._run(resume=True, build_name=None, platform_name=None)
+        self.assertEqual(self.lane_calls[-1]["lane"], "bigcherry:stock:linux-radiance")
+
+    def test_resume_refuses_an_override_after_the_lane_build_passed(self):
+        with self.assertRaises(pin_bump.PinBumpStop):
+            self._run(cpu_phase=self._failing_cpu_phase)
+        with self.assertRaises(pin_bump.PinBumpStop) as stopped:
+            self._run(resume=True, cpu_smoke_build=Path("/other"))
+        self.assertEqual(stopped.exception.code, "RESUME_CPU_SMOKE_BUILD_MISMATCH")
+
+    def test_resume_reuses_a_saved_override_and_refuses_a_different_one(self):
+        with self.assertRaises(pin_bump.PinBumpStop):
+            self._run(cpu_phase=self._failing_cpu_phase, cpu_smoke_build=Path("/my/build"), build_name=None)
+        with self.assertRaises(pin_bump.PinBumpStop) as stopped:
+            self._run(resume=True, cpu_smoke_build=Path("/other"), build_name=None)
+        self.assertEqual(stopped.exception.code, "RESUME_CPU_SMOKE_BUILD_MISMATCH")
+        self._run(resume=True, build_name=None, platform_name=None)
+        self.assertEqual(self.lane_calls, [])
+        self.assertEqual(self.cpu_mock.call_args.kwargs["build_dir"], Path("/my/build"))
+
+    def test_run_phase_lane_build_maps_errors_to_codes(self):
+        for kind, code in (("build", "LANE_BUILD_FAILED"), ("request", "LANE_BUILD_REQUEST_INVALID")):
+            with self.subTest(kind=kind):
+                with patch.object(pin_bump, "execute_lane_build", side_effect=pin_bump.LaneBuildError(kind, "x")):
+                    with self.assertRaises(pin_bump.PinBumpStop) as stopped:
+                        pin_bump.run_phase_lane_build(engine="radiance", lane="a:b:c", run_id="r", target_ref="b1")
+                self.assertEqual(stopped.exception.code, code)
+
+    def test_tree_change_rewinds_lane_build(self):
+        state = pin_bump.PinBumpState(
+            schema_version=3, run_id="r", from_ref="a", from_sha="", to_ref="b", to_sha="", transition_commit="",
+            tree_name="local", tree_path="/t",
+            completed_phases=["compile", "lane-build", "cpu-smoke"], next_phase="reaudit",
+            compile_tree_oid="old", lane_build_status="passed", lane_build_plan_id="p", lane_build_dir="/d")
+        with patch.object(pin_bump, "_compile_tree_oid", return_value="new"):
+            self.assertTrue(pin_bump._rewind_compile_if_tree_changed(state, engine="llamacpp", vendor_root=Path("/v")))
+        self.assertEqual((state.next_phase, state.lane_build_status, state.lane_build_dir), ("compile", "", ""))
+        self.assertNotIn("lane-build", state.completed_phases)
+
 
 if __name__ == "__main__":
     unittest.main()
