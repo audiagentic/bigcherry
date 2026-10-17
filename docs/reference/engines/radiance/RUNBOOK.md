@@ -1,8 +1,8 @@
 # Radiance on BigCherry: runbook
 
 How the radiance engine is built, configured and measured through the same platform as llama.cpp (RAD01; design in
-[RADIANCE_PLATFORM_DESIGN.md](RADIANCE_PLATFORM_DESIGN.md)). The measurement log is
-[engines/radiance/README.md](../../../engines/radiance/README.md).
+[PLATFORM_DESIGN.md](PLATFORM_DESIGN.md)). The measurement log is
+[engines/radiance/README.md](../../../../engines/radiance/README.md).
 
 ## What lives where
 

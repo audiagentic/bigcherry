@@ -1,4 +1,4 @@
-# Radiance engine recipes (RAD01 PR 3; docs/reference/engines/RADIANCE_PLATFORM_DESIGN.md).
+# Radiance engine recipes (RAD01 PR 3; docs/reference/engines/radiance/PLATFORM_DESIGN.md).
 # Patch sets, sources, builds, experiments and runtime profiles for the radiance engine pillar. The patches named
 # here are engines/radiance/patches/<id>/ packages; they never mix with llama.cpp's.
 version = 2
