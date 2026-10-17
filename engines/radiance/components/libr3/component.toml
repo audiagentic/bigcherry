@@ -1,5 +1,5 @@
 # libr3: BigCherry's gfx1100 (RX 7900 XTX) kernel plugin for radiance (RAD01 PR 5;
-# docs/reference/engines/RADIANCE_PLATFORM_DESIGN.md decision 2). Built against the pinned radiance's libr4d sources
+# docs/reference/engines/radiance/PLATFORM_DESIGN.md decision 2). Built against the pinned radiance's libr4d sources
 # (rewrites.txt + native/*.rw applied to a build-tree copy, never to vendor/radiance) and loaded through
 # RADIANCE_HOME; it is BigCherry source, not a patch to the engine.
 schema = 1

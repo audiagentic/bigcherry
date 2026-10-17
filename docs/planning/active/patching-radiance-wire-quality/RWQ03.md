@@ -54,7 +54,7 @@ High: graph declaration/selection can silently skip/add collectives; fused/nonfu
 - Target Radiance 1.3.0 pinned at 89cee7ce414486c717aa2085c99e1f522e4c0ea6; no unpinned edits.
 - Engine edits are explicit Radiance patch packages; gfx1100 kernels and settings belong to the libr3 component. Keep opt-ins OFF unless independently promoted with quality evidence.
 - Use engine-specific recipes, source/build identities, runtime profiles containing only settings different from declared defaults, and existing bigcherry ab-benchmark/engine_quality evidence facilities. No second campaign or loader.
-- Follow docs/reference/tooling/TOOLING.md, docs/reference/engines/RADIANCE_RUNBOOK.md, patch mechanics, relevant device checker, and main-branch code review requirements.
+- Follow docs/reference/tooling/TOOLING.md, docs/reference/engines/radiance/RUNBOOK.md, patch mechanics, relevant device checker, and main-branch code review requirements.
 - Changes must preserve both-rank numerical agreement, graph replay and no-P2P mapped-pinned-host protocol; fail closed on missing kernel support or disagreement.
 
 ## Acceptance Criteria
