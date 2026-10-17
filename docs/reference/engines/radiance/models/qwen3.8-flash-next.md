@@ -168,6 +168,7 @@ Why the supporting flags are set (lab log, "Flash-Next: radiance's own prefill s
 | Stopping the heat engine (`--deterministic`) on the XTX pair | worse: decode 19.9 vs 29.2 | lab log, run `fn7` |
 | Small lane 16 rows (`R3_MOE_HELPER_SMALL_ROWS=16`) | decode 50-81 vs 131 tok/s: the pre-queued small lane pads every step | RAD06 2026-10-18 |
 | Large-lane GEMV up to 32 rows (`R3_MOE_HELPER_GEMV_LARGE_ROWS=32`) | bit-exact on replay; prefill flat (pp4096 2145-2148 vs 2148-2149) but decode 80.4-81.1 vs 130.5-142.4 (-39%); default off, evaluated | run `rad06-gemvl-10180418` (2 pairs) |
+| Long-run tile (`R3_MOE_HELPER_MOE_LONG_ROWS=65`): 64-row slices and an MT=4 tile for runs of 65+ rows | bit-identical (rel_l2 0) but slower on replayed 2048-row requests: layer 29 3.57 ms baseline vs 3.72 ms (8 waves, 240 VGPR, 140 B scratch) and 3.86 ms (16 waves, 176 VGPR, no scratch); layer 11 2.65 vs 3.15 ms (16 waves). Spill-free MT=4 still loses, so re-staging the weight tile across 32-row blocks is not the bottleneck. Default off, evaluated. | RAD06 2026-10-18, `tools/lab/radiance/helper-long-rows.sh` |
 | Helper at 20 GiB with the final kernels | decode 89.2 (vs ~108.5 at 22 GiB), no prefill gain | RAD06 08:10 |
 
 ## Open levers
