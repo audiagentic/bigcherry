@@ -1567,6 +1567,21 @@ def _run_phases(
                         "rerun with --resume",
                     ],
                 )
+            pulled = releases.record_for_checkout(vendor_root)
+            if pulled.slug() != target_ref and not (
+                pulled.slug() == pulled.revision[:12] and pulled.revision.startswith(target_ref)
+            ):
+                raise PinBumpStop(
+                    "pull",
+                    "RELEASE_RECORD_KEY_MISMATCH",
+                    f"release record key {pulled.slug()!r} does not match the pinned ref {target_ref!r}; "
+                    "pin-release and release-notes would not find the record",
+                    evidence={"record_key": pulled.slug(), "target_ref": target_ref},
+                    recommended_actions=[
+                        f"make sure the vendor clone has the tag locally (git fetch origin refs/tags/{target_ref}:refs/tags/{target_ref})",
+                        "rerun with --resume",
+                    ],
+                )
             _sync_campaign_mirror_best_effort(
                 engine=engine, target_ref=target_ref, revision=state.to_sha
             )

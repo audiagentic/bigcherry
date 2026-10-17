@@ -239,7 +239,8 @@ def pin_version(repo_root: Path, config: ReleaseConfig, pin: str, ref: str = "HE
     if config.version_source == "pinned-version":
         recipes = tomllib.loads(_show(repo_root, ref, config.recipes) or "")
         pinned, version = str(recipes.get("pinned", "")), str(recipes.get("pinned-version", ""))
-        if not re.fullmatch(r"[0-9a-f]{7,40}", pin) or not pinned.startswith(pin):
+        # pin-bump pins the upstream tag (e.g. v1.7.0); a hex prefix of a pinned revision is accepted too.
+        if pin != pinned and not (re.fullmatch(r"[0-9a-f]{7,40}", pin) and pinned.startswith(pin)):
             raise ReleaseNotesError(f"{pin!r} is not the pinned {config.upstream_name} revision {pinned[:12]!r} ({config.recipes})")
         if not re.fullmatch(r"\d+(\.\d+)*", version):
             raise ReleaseNotesError(f"{config.recipes} declares no pinned-version for {config.upstream_name} {pinned[:12]}")

@@ -65,11 +65,18 @@ def ensure_ref(root: Path, ref: str, *, deepen: bool = True) -> str:
     if _has_ref(root, ref):
         return ref
     depth = ["--depth", "1"] if deepen else []
-    if _RELEASE_TAG.match(ref):
+    if _remote_has_tag(root, ref):
         _git(root, "fetch", "--no-tags", *depth, "origin", f"refs/tags/{ref}:refs/tags/{ref}")
         return ref
     _git(root, "fetch", "--no-tags", *depth, "origin", ref)
     return "FETCH_HEAD"
+
+
+def _remote_has_tag(root: Path, ref: str) -> bool:
+    """True when ``origin`` carries ``refs/tags/<ref>``. Engine-agnostic: llama.cpp pins ``b<n>`` tags, other
+    engines pin ``v<x.y.z>`` tags, and any pinned tag must land as a local tag so it resolves (pin-status,
+    release-record key) -- not merely in FETCH_HEAD."""
+    return bool(_git(root, "ls-remote", "--tags", "origin", f"refs/tags/{ref}").strip())
 
 
 def _has_ref(root: Path, ref: str) -> bool:
@@ -116,10 +123,11 @@ def sync_mirror_ref(mirror: Path, ref: str, revision: str | None = None) -> str 
         ensure_ref(mirror, ref)
     except UpstreamError as exc:
         errors.append(str(exc))
-    if not _has_ref(mirror, ref) and revision and _RELEASE_TAG.match(ref):
+    if not _has_ref(mirror, ref) and revision:
         try:
-            _git(mirror, "fetch", "--no-tags", "--depth", "1", "origin", revision)
-            _git(mirror, "tag", ref, "FETCH_HEAD")
+            if _remote_has_tag(mirror, ref):
+                _git(mirror, "fetch", "--no-tags", "--depth", "1", "origin", revision)
+                _git(mirror, "tag", ref, "FETCH_HEAD")
         except UpstreamError as exc:
             errors.append(str(exc))
     if _has_ref(mirror, ref):

@@ -55,6 +55,14 @@ def _git_out(root: Path, *args: str) -> str:
     return result.stdout.strip()
 
 
+def release_key(revision: str, release_tag: str) -> str:
+    """The ONE release-record key: the tag the checkout sits exactly on (the pinned ref as written in the
+    engine's recipes -- ``b11552`` for llama.cpp, ``v1.7.0`` for radiance), else the 12-hex commit prefix.
+    Every writer (record path, index slug, ``<key>-patches.md``) and every reader (pin-release, release-notes,
+    pin-status) names a record by this key; ``pull`` fetches the pinned tag so the tag form is always reachable."""
+    return release_tag or revision[:12]
+
+
 def _bigcherry_revision() -> str:
     """Return the BigCherry checkout revision used to make a record."""
     return _git_out(paths.REPO_ROOT, "rev-parse", "HEAD")
@@ -231,7 +239,7 @@ class ReleaseRecord:
         return RELEASES_DIR / f"{self.slug()}.json"
 
     def slug(self) -> str:
-        return self.release_tag or self.revision[:12]
+        return release_key(self.revision, self.release_tag)
 
     def advance_to(self, stage: Stage) -> None:
         """Move the stage forward, never backwards.
@@ -365,7 +373,7 @@ def promote(record: ReleaseRecord, pointer: PromotionPointer) -> None:
 
 def load(revision: str, release_tag: str = "") -> ReleaseRecord:
     """Load the record for a revision, or return a fresh one."""
-    slug = release_tag or revision[:12]
+    slug = release_key(revision, release_tag)
     path = RELEASES_DIR / f"{slug}.json"
     if path.is_file():
         data = json.loads(path.read_text(encoding="utf-8"))
