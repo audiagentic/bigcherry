@@ -107,6 +107,12 @@ status = "experimental"
 summary = "pin libr4d's down-projection tile in the helper (RAD06 gfx1100 sweep): 1 the 64/128-column tile, 2 the 256-column 16-wave tile; unset leaves libr4d's choice"
 activation = "r3_moe_helper: R3_MOE_HELPER_MOE_DOWN_TILE="
 
+[setting.R3_MOE_HELPER_MOE_LONG_ROWS]
+default = ""
+status = "experimental"
+summary = "RAD06: runs of this many rows or more take 64-row slices and an MT=4 tile in the helper's grouped MoE GEMM (fewer weight-tile restages for long runs; bit-identical); unset or 0 keeps the single 32-row map"
+activation = "r3_moe_helper: R3_MOE_HELPER_MOE_LONG_ROWS="
+
 [setting.R3_MOE_HELPER_CAPTURE]
 default = ""
 status = "diagnostic"

@@ -32,3 +32,17 @@ work: S
 **Not imported:** longer BCOP239/241/252 addenda, old 223-238 branch hunks, and speculative 265-274 kernel designs. Do not repeat the already-measured negative RAD06 scalar MoE or neutral 1314 CPU-root fusion as hypothetical free speed. Missing current-pin GPU evidence is a defer/reject gate, not licence to queue duplicate experiments. THA33's historical gfx1201 MMVF crash remains open, and PEF01's exact gfx1100 Q6_K J112 quarantine stays in force; this reconciliation changes neither owner.
 
 **Done criterion:** those four edits plus this ledger are reachable from the *same* live branch; source/bench/patch files were not altered by this cleanup. No new GPU run, HIP build, GGUF copy, mock or numerical benchmark was performed here. Historical performance is explicitly labeled. A merge to protected `main` still needs normal checks and review.
+
+## Follow-up consolidation (2026-10-18; repository-verified)
+
+This section reconciles the latest interrupted scheduled audits **without importing their speculative designs or creating another independent optimisation owner**. The branch selected for the PNRO reconciliation is `feat/rad06-gemm-counters` at independently developed RAD06 `67faa072` (2026-10-17 23:17 UTC). Keep its concurrently developed Radiance kernels, configurations and queued qualification untouched.
+
+| Scheduled audit | Publication check | Consolidated disposition |
+| --- | --- | --- |
+| BCOP283–287 | Drafts / unreferenced objects only; no corresponding item in the checked active BCOP directory | Do not bulk-publish. Q6_K arch qualification, MMID rejected rescan, MMVQ width-two and GDN/FA selectors require their existing owners to verify the executed current-pin route before any revived experiment. BCOP287's one-pass FA tiling is already native and should not become a duplicate port. |
+| BCOP288 | **Published** on the default-branch lineage (in merge `cec1316175b9`); `BCOP288.md` exists on this branch | QFP04/1295 solely owns the typed-F16 gather investigation. Its source-derived byte ceiling is not an incremental GPU benchmark. No second QSA gather owner or BCOP copy. |
+| BCOP289 | Unpublished draft only | PGC12/0840 owns host/RCCL phase provenance; PGC13/PGC09 already own 64 vs 96 KiB scalar qualification. Do not queue a phase-specific dispatcher or duplicate thresholds based on the draft. The 64 KiB hypothesis is unmeasured on the current pin. |
+| BCOP290–291 | Unreferenced commit objects / drafts, not branch changes | PHA08 owns CLIP D72 safety and graph-mode fallback (BCOP290); QFP34/1347 owns MMVF packed cross-wave reduction (BCOP291). Prior QFP34 transpose-store audits are not evidence for reduction speedups. No separate dispatcher/plan item created here. |
+| BCOP292 | **Published on `feat/rad06-gemm-counters`** through normal contents commits | PNRO03 and patch 1252 are rejected after the Brutus fault; PNRO18 is retired as a duplicate, not an active benchmark. BCOP292 is the thin terminal ledger. PGC17 independently owns future peer-topology feasibility; no P2P queue is reopened. |
+
+**Reconciliation rule:** A created blob, tree, commit object, local ZIP or draft is not a published change. Reopen any unreferenced audit only after a fresh eligibility/novelty check and newly verified owner evidence; do not mechanically replay BCOP283–291, or use BCOP292 to claim measured P2P improvement. No second BCOP reconciliation item is needed. This is documentation bookkeeping only, not a host or GPU qualification.
