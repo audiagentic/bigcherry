@@ -338,6 +338,20 @@ llama.cpp:
 
     python -m bigcherry --engine llamacpp pin-bump <ref> --source bigcherry --build control --platform linux-multi
 
+## Hardware acceptance: stored baselines (MEN17)
+
+After the CPU smoke an engine that declares `[[acceptance]]` entries in `engine.toml` can be held to its stored numbers:
+
+    python -m bigcherry --engine <engine> accept --output <new dir> [--only <entry>]
+
+Each entry names a server-comparison config and baseline files (`docs/reference/engines/<engine>/baselines/*.json`: arm,
+metric, value, one-sided tolerance taken from the measured noise, direction, and the run id, pin and date it was measured
+on). The command runs the configs, prints metric / baseline / measured / delta / pass-fail, writes `acceptance.json` and
+exits 1 on any regression. `pin-bump <ref> --accept` does the same inside the bump (after `cpu-smoke`, same phase); it needs
+the GPUs and the configs' environment, so it is never the default. With no GPU it STOPs with `ACCEPT_NO_GPU`; a regression
+STOPs with `ACCEPT_FAILED` (evidence names the failing rows and `acceptance.json`). A pass is saved in `state.json`
+(`accept.status = "passed"`) and noted in the release record. A baseline moves only by a deliberate new measurement.
+
 ## Per-engine bump gates
 
 The compile and audit gates are invariants of one engine's source, so each engine's adapter

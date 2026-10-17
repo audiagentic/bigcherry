@@ -58,6 +58,7 @@ class EngineScopeTests(unittest.TestCase):
                     "release-notes": ["release-notes", "b1"],
                     "sources": ["sources", "status"],
                     "smoke-cpu": ["smoke-cpu", "--build", "b"],
+                    "accept": ["accept", "--output", "o"],
                 }.get(command, [command])
                 with self.assertRaises(SystemExit):
                     _resolve(argv)

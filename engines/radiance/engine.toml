@@ -59,3 +59,21 @@ libr3 = "engines/radiance/components/libr3"
 model = "smoke/tiny.rad"
 sha256 = "b87724a6e9db6036b88f29f1a08d7dda6bf8f7c880c7905a6df4b49eab7c057b"
 args = ["--max-model-len", "512", "--max-num-seqs", "1"]
+
+# Post-bump hardware acceptance (MEN17): `bigcherry --engine radiance accept --output <dir>` runs each entry's
+# server-comparison config on the lab host and gates the numbers against the stored baselines
+# (docs/reference/engines/radiance/baselines/). Set RAD_BIN, RAD_HOME and R9700_BDF as the configs describe. The KLD
+# entry records its own reference inside the run's output directory; the attention-native 27B KLD
+# (tools/lab/radiance/27b-native-kld.json) is not an entry until a stored reference exists (see the engine README).
+[[acceptance]]
+name = "helper-ab"
+config = "tools/lab/radiance/helper-ab.json"
+baselines = ["docs/reference/engines/radiance/baselines/helper-ab.json"]
+rounds = 2
+settle-seconds = 20
+
+[[acceptance]]
+name = "helper-kld"
+config = "tools/lab/radiance/helper-kld.json"
+baselines = ["docs/reference/engines/radiance/baselines/helper-kld.json"]
+env = { KLD_REF_DIR = "{entry-dir}/kld-reference" }

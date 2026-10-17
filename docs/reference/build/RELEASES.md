@@ -55,7 +55,12 @@ the source's `RAD_ABI_VERSION`, component offline tests) and its own audit. Deta
    the CPU with every GPU hidden and checks three greedy completions twice. `pin-bump` runs it as the `cpu-smoke` phase
    on the build its `lane-build` phase made (`--build`/`--platform`; `--cpu-smoke-build <dir>` overrides, only `--skip-cpu-smoke` omits it, both recorded in the run state). It is also the quickest local
    check after any patch or component change. Models and digests are declared in `[smoke.cpu]` of each `engine.toml`.
-2. GPU smoke and the hardware evidence recorded by `pin-release` come after it and only when it passes.
+2. **Hardware acceptance against stored baselines (MEN17).** `python -m bigcherry --engine <name> accept --output <dir>`
+   runs the engine's declared `[[acceptance]]` configs (speed A/B, KLD) through the server comparison and compares the
+   numbers with the baselines in `docs/reference/engines/<name>/baselines/`, exiting non-zero on any regression. It needs
+   the GPUs, so it is not part of the default bump: `pin-bump --accept` runs it after the CPU smoke and writes the result to
+   the release record. Run it on the lab host with `bigcherry remote run`.
+3. GPU smoke and the hardware evidence recorded by `pin-release` come after it and only when it passes.
 
 ## Versions
 
