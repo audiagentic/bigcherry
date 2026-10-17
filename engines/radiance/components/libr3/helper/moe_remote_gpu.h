@@ -558,7 +558,10 @@ public:
     bool open() {
         const char* poison = std::getenv("R3_MOE_HELPER_POISON");
         /* "zero" returns zeros (the same output as dropping the remote routes); anything else non-"0" is 1e3. */
-        if (const char* rv = std::getenv("R3_MOE_HELPER_ROWS"); rv && *rv && std::strcmp(rv, "0") != 0) rows_ = true;
+        if (const char* rv = std::getenv("R3_MOE_HELPER_ROWS"); rv && *rv && std::strcmp(rv, "0") != 0) {
+            rows_ = true;
+            std::fprintf(stderr, "r3_moe_helper: few-rows prefill kernel on the large lane\n");
+        }
         /* The decode GEMV is the default (RAD05: decode +37%, KLD inside the noise floor); 0 turns it off,
          * 2 runs the grouped GEMM and compares the two (--compare). */
         {
