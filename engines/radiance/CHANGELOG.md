@@ -1,5 +1,18 @@
 # Changelog
 
+## [170.1.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-170.0.0...bc-radiance-170.1.0) (2026-10-17)
+
+
+### New and changed
+
+* **campaign:** engine acceptance against stored baselines; stored KLD references (MEN17) ([#269](https://github.com/audiagentic/bigcherry/issues/269)) ([8e3e5ab](https://github.com/audiagentic/bigcherry/commit/8e3e5abbe2710c2d3a1c6bcc1b14b2c4e0f412c0))
+* **release:** native rewrite drift phase; pin-release confirm-then-run and release PR checks (MEN19) ([#271](https://github.com/audiagentic/bigcherry/issues/271)) ([20c2725](https://github.com/audiagentic/bigcherry/commit/20c27259c041372598adc72c7a65a01707e590f3))
+
+
+### Performance
+
+* **radiance:** helper MoE GEMM tuning on gfx1100 - narrow down tile, request histogram, form/tile pins (RAD06) ([#273](https://github.com/audiagentic/bigcherry/issues/273)) ([31ee442](https://github.com/audiagentic/bigcherry/commit/31ee44280d53ff926c612586b5204f3cc7bb1335))
+
 ## [170.0.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-130.0.0...bc-radiance-170.0.0) (2026-10-17)
 
 
