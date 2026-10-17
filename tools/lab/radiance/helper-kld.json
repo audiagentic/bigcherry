@@ -1,5 +1,5 @@
 {
- "_comment": "Example (MEN11): output quality of the production R9700 + two-XTX-helper layout, scored by radiance KL mode through ab-benchmark --server-config (quality_only: no serving cells). Arm 'helper-off' is the control (the R9700 alone, no helper: the layout's own distance to the reference); 'helper-on' is gated against it. The reference is the exact two-XTX helper-off run (tp 2, exact wire) over the 4-document corpus, recorded by the quality.record block on first use (the earlier lab runs kept it only under their output directory, so there is no standing path; KLD ~0.06 was the XTX re-chunking floor on this corpus). Once KLD_REF_DIR holds a reference, delete the 'record' and 'corpus' keys to reuse it. KL mode is prefill-only: --max-num-batched-tokens 64 is the helper lane cap and R3_MOE_HELPER_MAX_ROWS=64 sends every step's owned routes through the helpers. --host-pool-mib 45056: the control arm (R9700 alone) holds every expert itself and did not fit in 30 GiB (first Brutus run, 2026-10-17). Thresholds are first-use placeholders, not tuned limits. Set RAD_BIN (<lane build>/bin/radiance), RAD_HOME (<lane build>/radiance_home), R9700_BDF and KLD_REF_DIR before use. Not used by tests.",
+ "_comment": "Example (MEN11): output quality of the production R9700 + two-XTX-helper layout, scored by radiance KL mode through ab-benchmark --server-config (quality_only: no serving cells). Arm 'helper-off' is the control (the R9700 alone, no helper: the layout's own distance to the reference); 'helper-on' is gated against it. The reference is the exact two-XTX helper-off run (tp 2, exact wire) over the 4-document corpus, recorded by the quality.record block on first use (the earlier lab runs kept it only under their output directory, so there is no standing path; KLD ~0.06 was the XTX re-chunking floor on this corpus). Once KLD_REF_DIR holds a reference, delete the 'record' and 'corpus' keys to reuse it. KL mode is prefill-only: --max-num-batched-tokens 64 is the helper lane cap and R3_MOE_HELPER_MAX_ROWS=64 sends every step's owned routes through the helpers. --host-pool-mib 45056: the control arm (R9700 alone) holds every expert itself and did not fit in 30 GiB (first Brutus run, 2026-10-17). Thresholds from the first two Brutus runs (2026-10-17, men11-kld-10171438 and -10171457): KL limits sit well above the 0.0004 mean and 0.05 P99 spread between the two arms; the PPL ratio limit is 0.05 because on this 4-document corpus PPL moves 3% between arms (8.87 vs 9.15 against a 9.10 reference) while KL shows no change. Set RAD_BIN (<lane build>/bin/radiance), RAD_HOME (<lane build>/radiance_home), R9700_BDF and KLD_REF_DIR before use. Not used by tests.",
  "schema_version": 1,
  "engine": "radiance",
  "evidence_role": "diagnostic",
@@ -42,7 +42,7 @@
    "max_kld_p99_increase": 0.2,
    "max_kld_p999_increase": 0.5,
    "max_top1_drop_points": 1.0,
-   "max_ppl_ratio_increase": 0.01
+   "max_ppl_ratio_increase": 0.05
   }
  },
  "arms": [
