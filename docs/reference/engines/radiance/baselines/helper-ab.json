@@ -1,0 +1,17 @@
+{
+ "schema": 1,
+ "config": "tools/lab/radiance/helper-ab.json",
+ "pin": "1.7.0",
+ "run": "men11-helper-ab-1.7.0 (two Brutus runs; harness run ids not recorded)",
+ "date": "2026-10-17",
+ "note": "Speed of the production Flash-Next layout (R9700 server, two XTX expert helpers) on the harness prompts, arm rows0 (R3_MOE_HELPER_ROWS=0). Tolerances come from the spread of the measured runs; they are one-sided (only a slowdown fails).",
+ "baselines": [
+  {"arm": "rows0", "metric": "pp4096_tps", "value": 2049.5, "direction": "higher-better", "tolerance": {"relative": 0.03},
+   "note": "runs 2049 / 2050"},
+  {"arm": "rows0", "metric": "pp1024_tps", "value": 2099, "direction": "higher-better", "tolerance": {"relative": 0.03},
+   "note": "approximate"},
+  {"arm": "rows0", "metric": "tg512_tps", "value": 124, "direction": "higher-better", "tolerance": {"relative": 0.05},
+   "note": "runs 122-126"},
+  {"arm": "rows0", "metric": "tg2048_tps", "value": 140.5, "direction": "higher-better", "tolerance": {"relative": 0.02}}
+ ]
+}

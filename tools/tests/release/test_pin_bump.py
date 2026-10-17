@@ -146,6 +146,7 @@ class PinBumpStopResumeE2ETests(unittest.TestCase):
                     pin_bump.run(
                         cpu_smoke_build=None,
                         skip_cpu_smoke=True,
+                        accept=False,
                         platform_name=None,
                         engine="llamacpp",
                         target_ref="b10680",
@@ -162,6 +163,7 @@ class PinBumpStopResumeE2ETests(unittest.TestCase):
                 result = pin_bump.run(
                     cpu_smoke_build=Path("cpu-build"),
                     skip_cpu_smoke=False,
+                    accept=False,
                     platform_name="linux-radiance",
                     engine="llamacpp",
                     target_ref="b10680",
@@ -695,6 +697,7 @@ class OverlaySelfHealTests(unittest.TestCase):
                     pin_bump._run_phases(
                         cpu_smoke_build=None,
                         skip_cpu_smoke=True,
+                        accept=False,
                         platform_name=None,
                         state=state,
                         engine="llamacpp",
@@ -979,7 +982,7 @@ class ContextRecoveryNeverMasksOriginalStopTests(unittest.TestCase):
             # per its unconditional pre-try initialization).
             (report_dir / "state.json").write_text("{not valid json", encoding="utf-8")
             with self.assertRaises(pin_bump.PinBumpStop) as ctx:
-                pin_bump.run(cpu_smoke_build=None, skip_cpu_smoke=True, platform_name=None, engine="llamacpp", target_ref="b99999", resume=True, report_dir=report_dir)
+                pin_bump.run(cpu_smoke_build=None, skip_cpu_smoke=True, accept=False, platform_name=None, engine="llamacpp", target_ref="b99999", resume=True, report_dir=report_dir)
             # The ORIGINAL failure must survive -- not get replaced by a
             # second failure from the except block's own disk re-read.
             self.assertEqual(ctx.exception.code, "RESUME_STATE_INVALID")
@@ -996,6 +999,7 @@ class RunResumeStateMissingTests(unittest.TestCase):
                 pin_bump.run(
                     cpu_smoke_build=None,
                     skip_cpu_smoke=True,
+                    accept=False,
                     platform_name=None,
                     engine="llamacpp",
                     target_ref="b99999",
@@ -1043,6 +1047,7 @@ class RunResumeStateMissingTests(unittest.TestCase):
                 pin_bump.run(
                     cpu_smoke_build=None,
                     skip_cpu_smoke=True,
+                    accept=False,
                     platform_name=None,
                     engine="llamacpp",
                     target_ref="b99999-WRONG",  # deliberate mismatch

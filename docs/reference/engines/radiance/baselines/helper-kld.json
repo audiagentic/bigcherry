@@ -1,0 +1,13 @@
+{
+ "schema": 1,
+ "config": "tools/lab/radiance/helper-kld.json",
+ "pin": "1.7.0",
+ "run": "men11-kld-10171438",
+ "date": "2026-10-17",
+ "note": "Output quality of the production R9700 + two-XTX-helper layout (arm helper-on) against the exact two-XTX helper-off reference over the 4-document corpus; about 0.06 is the XTX re-chunking floor on this corpus. Tolerances are one-sided absolute allowances above the measured values.",
+ "baselines": [
+  {"arm": "helper-on", "metric": "kld_mean", "value": 0.0642, "direction": "lower-better", "tolerance": {"absolute": 0.01}},
+  {"arm": "helper-on", "metric": "kld_p99", "value": 0.684, "direction": "lower-better", "tolerance": {"absolute": 0.1}},
+  {"arm": "helper-on", "metric": "top1_percent", "value": 88.7, "direction": "higher-better", "tolerance": {"absolute": 1.0}}
+ ]
+}

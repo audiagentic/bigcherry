@@ -139,6 +139,8 @@ class PinBumpState:
     #: MEN15: "passed" (the RAM-only tiny-model smoke ran with no GPU visible) or "skipped" (--skip-cpu-smoke), recorded
     #: here and so in every resume of the run
     cpu_smoke_status: str = ""
+    #: MEN17: "passed" when `--accept` ran the engine's hardware acceptance against its stored baselines; "" when not asked
+    accept_status: str = ""
     #: the recipe ``[platform.*]`` the compile gate configures with (``--platform``); "" when the run named none. Saved so
     #: a resumed run builds the same way.
     compile_platform: str = ""
@@ -179,6 +181,7 @@ class PinBumpState:
                 "platform": self.compile_platform,
             }
             d["cpu_smoke"] = {"status": self.cpu_smoke_status}
+            d["accept"] = {"status": self.accept_status}
         return d
 
     def save(self, state_dir: Path) -> Path:
@@ -253,6 +256,7 @@ class PinBumpState:
             freeze = {}
         compile_state = data.get("compile") or {}
         cpu_smoke_state = data.get("cpu_smoke") or {}
+        accept_state = data.get("accept") or {}
         return cls(
             schema_version=raw_version,
             run_id=data["run_id"],
@@ -273,6 +277,7 @@ class PinBumpState:
             compile_status=str(compile_state.get("status", "")),
             compile_platform=str(compile_state.get("platform", "")),
             cpu_smoke_status=str(cpu_smoke_state.get("status", "")),
+            accept_status=str(accept_state.get("status", "")),
         )
 
 
@@ -597,6 +602,7 @@ def run(
     skip_compile: bool = False,
     cpu_smoke_build: Path | None,
     skip_cpu_smoke: bool,
+    accept: bool,
     platform_name: str | None,
 ) -> PinBumpResult:
     """The Phase 1 single-tree orchestrator. Raises PinBumpStop (never a
@@ -672,6 +678,7 @@ def run(
             skip_compile=skip_compile,
             cpu_smoke_build=cpu_smoke_build,
             skip_cpu_smoke=skip_cpu_smoke,
+            accept=accept,
             platform_name=platform_name,
         )
     except PinBumpStop as exc:
@@ -1099,6 +1106,61 @@ def run_phase_cpu_smoke(*, engine: str, build_dir: Path | None, out_dir: Path, t
         ) from exc
 
 
+def run_phase_accept(*, engine: str, out_dir: Path, target_ref: str, vendor_root: Path) -> None:
+    """MEN17 (`--accept`): the engine's hardware acceptance against its stored baselines, after the CPU smoke.
+
+    Needs the GPUs; with none visible the bump STOPs rather than recording an acceptance that did not happen. The
+    result is written to the release record's notes.
+    """
+    from ..campaign import acceptance
+    from ..core import engines as _engines
+    from ..core import gpu as _gpu
+    from ..core import paths as _paths
+
+    resume = f"python -m bigcherry --engine {engine} pin-bump {target_ref} --resume"
+    try:
+        _gpu.free_vram_bytes((0,))
+    except _gpu.GpuError as exc:
+        raise PinBumpStop(
+            "cpu-smoke",
+            "ACCEPT_NO_GPU",
+            f"--accept needs the GPUs and none could be queried: {exc}",
+            recommended_actions=[
+                f"run on the GPU host (python -m bigcherry remote run), or leave out --accept: {resume}",
+            ],
+        ) from exc
+    try:
+        layout = _engines.load(_paths.REPO_ROOT, engine)
+        passed, results, evidence = acceptance.accept(_paths.REPO_ROOT, layout, None, out_dir)
+    except (acceptance.AcceptanceError, _engines.EngineError, FileExistsError) as exc:
+        raise PinBumpStop(
+            "cpu-smoke", "ACCEPT_UNRUNNABLE", f"hardware acceptance could not run: {exc}",
+            recommended_actions=[f"fix the acceptance declaration or output directory, then {resume} --accept"],
+        ) from exc
+    if not passed:
+        failed = [f"{r.name}: {row.arm} {row.metric} {row.measured} (baseline {row.baseline})"
+                  for r in results for row in r.rows if not row.passed]
+        raise PinBumpStop(
+            "cpu-smoke",
+            "ACCEPT_FAILED",
+            "hardware acceptance regressed against the stored baselines",
+            evidence={"failed": failed or [f"{r.name}: {r.error}" for r in results if not r.passed], "evidence": str(evidence)},
+            recommended_actions=[
+                f"read {evidence}; fix the regression, then {resume} --accept",
+                "if the baseline itself is outdated, re-measure and update its baselines file deliberately",
+            ],
+        )
+    _record_note(vendor_root, f"pin-bump hardware acceptance: PASSED against stored baselines (evidence {evidence})")
+
+
+def _record_note(vendor_root: Path, note: str) -> None:
+    record = releases.record_for_checkout(vendor_root)
+    existing = record.notes or ""
+    if note not in existing:
+        record.notes = (existing.rstrip() + "\n" + note).lstrip()
+        record.save()
+
+
 def _record_compile_skip(vendor_root: Path) -> None:
     note = "pin-bump source compile check: SKIPPED explicitly with --skip-compile"
     try:
@@ -1139,6 +1201,7 @@ def _rewind_compile_if_tree_changed(
     state.compile_tree_oid = ""
     state.compile_status = ""
     state.cpu_smoke_status = ""
+    state.accept_status = ""
     return True
 
 
@@ -1222,6 +1285,7 @@ def _rewind_compile_resume_if_inputs_changed(
         state.compile_tree_oid = ""
         state.compile_status = ""
         state.cpu_smoke_status = ""
+        state.accept_status = ""
         return True
 
 
@@ -1482,6 +1546,7 @@ def _run_phases(
     skip_compile: bool = False,
     cpu_smoke_build: Path | None,
     skip_cpu_smoke: bool,
+    accept: bool,
     platform_name: str | None,
 ) -> PinBumpResult:
     from ..patch import catalog as patch_catalog
@@ -1796,6 +1861,9 @@ def _run_phases(
             else:
                 run_phase_cpu_smoke(engine=engine, build_dir=cpu_smoke_build, out_dir=report_dir / "cpu-smoke", target_ref=target_ref)
                 state.cpu_smoke_status = "passed"
+            if accept and state.accept_status != "passed":
+                run_phase_accept(engine=engine, out_dir=report_dir / "accept", target_ref=target_ref, vendor_root=vendor_root)
+                state.accept_status = "passed"
             state.completed_phases.append("cpu-smoke")
             state.next_phase = "reaudit"
             state.save(report_dir)
