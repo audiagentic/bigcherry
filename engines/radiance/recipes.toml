@@ -5,7 +5,7 @@ version = 2
 engine = "radiance"
 # radiance 1.7.0 (codeberg StillDeadcode/radiance; exact-SHA mirror Quackster/radiance). 48f7b8e is the v1.7.0 release
 # commit 1e968f6 plus two NOTICE-only commits (the source tree is otherwise identical).
-pinned = "48f7b8eb6d703cd5318346b5a351a292afaf4bf9"
+pinned = "v1.7.0"
 pinned-version = "1.7.0"
 
 # Validated engine fixes only; the set starts empty rather than claiming a validated state no package has.
