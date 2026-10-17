@@ -136,9 +136,10 @@ def _environment_failures(spec: CpuSmokeSpec) -> list[str]:
     ]
 
 
-def run(spec: CpuSmokeSpec, out_dir: Path) -> dict[str, Any]:
+def run(spec: CpuSmokeSpec, out_dir: Path, shutdown_method: str | None) -> dict[str, Any]:
     """Run the smoke, write ``cpu-smoke.json`` under ``out_dir`` and return it. Raises CpuSmokeError, after writing the
-    document, when anything failed."""
+    document, when anything failed. ``shutdown_method`` None stops the server the way the engine declares; "sigint"
+    is for a build without the engine's shutdown route (a stock llama.cpp build has no patch-0800 /shutdown)."""
     out_dir.mkdir(parents=True, exist_ok=True)
     log_path = out_dir / "server.log"
     result: dict[str, Any] = {
@@ -155,7 +156,7 @@ def run(spec: CpuSmokeSpec, out_dir: Path) -> dict[str, Any]:
         if not spec.binary.is_file():
             failures.append(f"server binary not found at {spec.binary}")
             return _finish(result, out_dir, started)
-        _drive(spec, log_path, result, failures)
+        _drive(spec, log_path, result, failures, shutdown_method)
     except CpuSmokeError as exc:
         failures.extend(exc.failures)
     except (ServerError, OSError) as exc:
@@ -163,13 +164,15 @@ def run(spec: CpuSmokeSpec, out_dir: Path) -> dict[str, Any]:
     return _finish(result, out_dir, started)
 
 
-def _drive(spec: CpuSmokeSpec, log_path: Path, result: dict[str, Any], failures: list[str]) -> None:
+def _drive(spec: CpuSmokeSpec, log_path: Path, result: dict[str, Any], failures: list[str],
+           shutdown_method: str | None) -> None:
     unset = tuple(sorted(
         name for name in os.environ if name.startswith(spec.env_unset_prefixes) and name not in spec.env_overrides
     )) if spec.env_unset_prefixes else ()
     runner = ServerRunner(
         serve=spec.serve, binary=spec.binary, model=spec.model, port=spec.port, extra_args=spec.args,
         env_overrides=spec.env_overrides, env_unset=unset, log_path=log_path, command_prefix=spec.command_prefix,
+        shutdown_method=shutdown_method,
     )
     result["port"] = runner.port
     launched = time.monotonic()
@@ -233,10 +236,11 @@ def resolve_model_root(explicit: str | None) -> Path:
     return Path(declared).expanduser()
 
 
-def run_for_engine(engine: str, build: Path, model_root: str | None, out: Path | None) -> dict[str, Any]:
+def run_for_engine(engine: str, build: Path, model_root: str | None, out: Path | None,
+                   shutdown_method: str | None) -> dict[str, Any]:
     """Build the engine's spec and run it. Raises CpuSmokeError on any failure (including 'no smoke declared')."""
     context = ProjectContext.resolve(engine=engine)
     spec = adapter(engine).cpu_smoke(context, build, resolve_model_root(model_root))
     if spec is None:
         raise CpuSmokeError([f"{engine} declares no [smoke.cpu] in its engine.toml"])
-    return run(spec, out if out is not None else context.work_root / "cpu-smoke" / engine)
+    return run(spec, out if out is not None else context.work_root / "cpu-smoke" / engine, shutdown_method)

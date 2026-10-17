@@ -706,6 +706,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="directory the [smoke.cpu] model path is relative to (default: $BIGCHERRY_MODEL_ROOT, then the host's model-root)",
     )
     smoke_cpu_cmd.add_argument("--out", default=None, help="result directory (default: <work>/cpu-smoke/<engine>)")
+    smoke_cpu_cmd.add_argument(
+        "--shutdown", choices=("http", "sigint"), default=None,
+        help="default: as the engine declares; sigint for a build without the engine's shutdown route",
+    )
     smoke_cpu_cmd.set_defaults(func=cmd_smoke_cpu)
 
     release_notes_cmd = sub.add_parser(

@@ -13,6 +13,7 @@ def cmd_smoke_cpu(args: Namespace) -> int:
     try:
         result = cpu_smoke.run_for_engine(
             args.engine, Path(args.build), args.model_root, Path(args.out) if args.out else None,
+            args.shutdown,
         )
     except cpu_smoke.CpuSmokeError as exc:
         print(f"smoke-cpu: FAIL ({args.engine}):", file=sys.stderr)

@@ -92,11 +92,12 @@ class AdapterSpecTests(unittest.TestCase):
         self.assertEqual(args[args.index("--tp") + 1], "1")
         self.assertEqual(self._spec("radiance").completion.models_path, "/v1/models")
 
-    def test_repository_models_are_placeholders_the_runner_refuses(self):
+    def test_repository_models_are_pinned_and_a_missing_file_is_refused(self):
         for engine in engines.names(paths.REPO_ROOT):
             with self.subTest(engine=engine), tempfile.TemporaryDirectory() as td:
                 spec = replace(self._spec(engine), model=Path(td) / "x")
-                with self.assertRaisesRegex(cpu_smoke.CpuSmokeError, "not a 64-digit hex digest"):
+                self.assertRegex(spec.model_sha256, r"^[0-9a-f]{64}$")
+                with self.assertRaisesRegex(cpu_smoke.CpuSmokeError, "not found"):
                     cpu_smoke.verify_model(spec)
 
     def test_engine_without_a_declaration_has_no_smoke(self):
@@ -148,7 +149,7 @@ class DeclarationTests(unittest.TestCase):
 
 class RunnerTests(unittest.TestCase):
     def _run(self, spec: CpuSmokeSpec, out: Path) -> dict:
-        return cpu_smoke.run(spec, out)
+        return cpu_smoke.run(spec, out, None)
 
     def test_deterministic_server_passes_and_the_result_is_written(self):
         with tempfile.TemporaryDirectory() as td:
@@ -260,7 +261,7 @@ class CliTests(unittest.TestCase):
             code = args.func(args)
         self.assertEqual(code, 1)
         self.assertIn("smoke-cpu: FAIL (llamacpp)", err.getvalue())
-        self.assertIn("not a 64-digit hex digest", err.getvalue())
+        self.assertIn("smoke model not found", err.getvalue())
 
     def test_success_exits_zero(self):
         args = self._args(["--engine", "radiance", "smoke-cpu", "--build", "b", "--model-root", "m", "--out", "o"])
@@ -269,7 +270,7 @@ class CliTests(unittest.TestCase):
         with patch.object(cpu_smoke, "run_for_engine", return_value=passed) as run, contextlib.redirect_stdout(out):
             code = args.func(args)
         self.assertEqual(code, 0)
-        run.assert_called_once_with("radiance", Path("b"), "m", Path("o"))
+        run.assert_called_once_with("radiance", Path("b"), "m", Path("o"), None)
         self.assertIn("smoke-cpu: PASS (radiance)", out.getvalue())
 
     def test_pin_bump_takes_the_smoke_flags(self):
@@ -305,7 +306,7 @@ class PinBumpPhaseTests(unittest.TestCase):
     def test_passing_smoke_returns_quietly(self):
         with patch.object(cpu_smoke, "run_for_engine", return_value={"ok": True}) as run:
             pin_bump.run_phase_cpu_smoke(engine="radiance", build_dir=Path("b"), out_dir=Path("o"), target_ref="b1")
-        run.assert_called_once_with("radiance", Path("b"), None, Path("o"))
+        run.assert_called_once_with("radiance", Path("b"), None, Path("o"), None)
 
     def test_skip_is_recorded_in_the_saved_state(self):
         state = pin_bump.PinBumpState(

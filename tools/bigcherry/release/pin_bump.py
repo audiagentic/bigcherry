@@ -1051,7 +1051,8 @@ def run_phase_cpu_smoke(*, engine: str, build_dir: Path | None, out_dir: Path, t
             ],
         )
     try:
-        cpu_smoke.run_for_engine(engine, build_dir, None, out_dir)
+        # pin-bump smokes the bump's own build, which carries the engine's shutdown route.
+        cpu_smoke.run_for_engine(engine, build_dir, None, out_dir, None)
     except cpu_smoke.CpuSmokeError as exc:
         raise PinBumpStop(
             "cpu-smoke",
