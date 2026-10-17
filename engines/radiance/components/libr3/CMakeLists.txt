@@ -145,7 +145,7 @@ target_include_directories(libr3 PRIVATE ${RADIANCE_SRC}/abi)
 
 # Remote-MoE mailbox: its own plugin, for both card families, so the hand-off runs beside libr3 on the XTX ranks
 # and beside libr4d on an R9700 engine (RAD02). Engine patch rad0002 declares the device ops and exports the
-# optional layer-map setter; the hook resolves that setter dynamically so schema/selftest loaders keep no hard
+# extension point bc_moe_remote_register; the hook resolves it dynamically so schema/selftest loaders keep no hard
 # dependency on the engine core.
 set(R3MOE_TARGETS "gfx1100;gfx1201" CACHE STRING "GPU targets the remote-MoE mailbox plugin is compiled for")
 rad_add_plugin(libr3moe kernels

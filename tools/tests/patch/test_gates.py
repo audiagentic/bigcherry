@@ -209,7 +209,7 @@ class GateContractTests(unittest.TestCase):
         self,
     ) -> None:
         descriptors = tuple(
-            SimpleNamespace(patch_id=patch_id)
+            SimpleNamespace(patch_id=patch_id, diagnostic_build=None)
             for patch_id in ("P1", "P2", "P3", "P4", "LEGACY")
         )
         registry = SimpleNamespace(engine="llamacpp", descriptors=descriptors, root=Path("patches"))
@@ -330,7 +330,7 @@ class GateContractTests(unittest.TestCase):
         admission.assert_not_called()
 
     def test_repository_lint_unknown_package_status_is_fail_closed(self) -> None:
-        descriptor = SimpleNamespace(patch_id="P1")
+        descriptor = SimpleNamespace(patch_id="P1", diagnostic_build=None)
         registry = SimpleNamespace(engine="llamacpp", descriptors=(descriptor,), root=Path("patches"))
         package_report = gates.validation_policy.PackagePolicyReport(
             statuses=(gates.validation_policy.PackagePolicyStatus("P1", "future"),),

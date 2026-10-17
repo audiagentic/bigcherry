@@ -53,7 +53,7 @@ The existing event path therefore cannot represent the POSIX-shm sequence words 
 cross-process mailbox. Calling HIP stream operations on the engine stream is not valid: Radiance
 owns that stream as its AQL `Stream`/HSA queue.
 
-**Current path:** patch rad0002 uses libr3 device ops on the rank stream. Publish masks helper-owned
+**Current path:** patch rad0002 (radiance 1.7.0: thin hooks into `bc_moe_remote_*`) uses libr3 device ops on the rank stream. Publish masks helper-owned
 route ids to -1 and re-scatters the remaining local ids. Local expert work then runs unchanged.
 For a remote pass, the engine forces the ordinary MoE gather so the token output is materialized;
 `moe_mailbox_add` waits for the lane completion and adds each helper result using the published

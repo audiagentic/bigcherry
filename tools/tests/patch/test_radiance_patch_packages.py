@@ -24,43 +24,64 @@ PACKAGES = REPO / "engines" / "radiance" / "patches"
 FIXTURE = REPO / "engines" / "radiance" / "tests" / "fixtures" / "48f7b8e"
 
 # rad0001 is superseded by radiance 1.7.0 (Engine::~Engine drains the mover stream itself) and is not applied.
-# rad0002 is pending its 1.7.0 port (MEN12): two of its anchors no longer match, see test_rad0002_*.
+RAD0002 = "rad0002_moe_remote_handoff"
+RAD0003 = "rad0003_mtp_full_head_switch"
+RAD0004 = "rad0004_moe_remote_diagnostics"
+
+#: package -> (file, a line that must be unique in it as applied, its replacement that breaks the anchor)
 CASES = {
-    "rad0002_moe_remote_handoff": (
+    RAD0002: (
         "arch/common/rad_block_moe_fp8.h",
         "rad_op op_ar = 0, op_add = 0;",
         "rad_op op_ar = 0, op_add = 0, int changed_shape;",
     ),
-    "rad0003_mtp_full_head_switch": (
+    RAD0003: (
         "arch/common/rad_block_mtp_fp8.h",
         "if (!head || !lm) return false;",
         "if (!head || !lm) return true;",
     ),
+    RAD0004: (
+        "arch/common/rad_block_moe_fp8.h",
+        "if (shared) sh_down.step(c_, w.sff, w.sout, T, r0, rows);",
+        "if (shared) sh_down.step(c_, w.sff, w.sout, T, r0, rows + 0);",
+    ),
 }
+
+#: packages that must already be applied for a package to apply (patch.toml `requires`)
+PREREQUISITES = {RAD0004: (RAD0002,)}
 
 
 # Git blob prefixes of the exact package outputs against Radiance 1.7.0 (48f7b8e, the release commit 1e968f6 plus two
 # NOTICE-only commits); mismatches detect a port that merely matches guards while silently changes output.
-# The pin side is checked for every package. A patched side of None means the package does not apply on 1.7.0 yet.
+# (before, after): `before` is the file as the package finds it (None: the package creates it; for a package with
+# prerequisites, after they are applied), `after` the file with the package applied.
 PIN_BLOBS = {
-    "rad0002_moe_remote_handoff": {
-        "abi/rad_moe_remote.h": (None, None),
-        "arch/common/rad_block_hc.h": ("44c538f", None),
-        "arch/common/rad_block_moe_fp8.h": ("240b82b", None),
-        "core/place/moe_remote.cpp": (None, None),
-        "core/place/planner.cpp": ("ac68e59", None),
-        "core/engine_bringup.cpp": ("06c100e", None),
+    RAD0002: {
+        "abi/bc_moe_remote.h": (None, "d91eaa8"),
+        "arch/common/bc_moe_remote_block.h": (None, "f56d783"),
+        "arch/common/rad_block_hc.h": ("44c538f", "076f308"),
+        "arch/common/rad_block_moe_fp8.h": ("240b82b", "f0a772d"),
+        "core/place/bc_moe_remote.cpp": (None, "c869a1c"),
+        "core/place/bc_moe_remote_place.h": (None, "e89a83b"),
+        "core/place/planner.cpp": ("ac68e59", "8e7f945"),
+        "core/engine_bringup.cpp": ("06c100e", "5446799"),
     },
-    "rad0003_mtp_full_head_switch": {
+    RAD0003: {
         "arch/common/rad_block_mtp_fp8.h": ("c571d45", "235cebb"),
+    },
+    RAD0004: {
+        "arch/common/bc_moe_remote_diag.h": (None, "bd959b1"),
+        "arch/common/rad_block_moe_fp8.h": ("f0a772d", "e8defe4"),
     },
 }
 
-#: rad0002's edits whose anchors no longer match on 1.7.0 (analysis: docs/reference/engines/radiance/PORT_1.7.md).
-RAD0002_UNPORTED_EDITS = {"add-remote-before-all-reduce", "remote-owned-unit-unplaced"}
-
-#: packages whose full output is asserted on 1.7.0
-APPLIED = tuple(package_id for package_id in CASES if package_id != "rad0002_moe_remote_handoff")
+#: the core files rad0002 edits (everything else it ships is a file of its own)
+RAD0002_CORE_FILES = (
+    "arch/common/rad_block_hc.h",
+    "arch/common/rad_block_moe_fp8.h",
+    "core/engine_bringup.cpp",
+    "core/place/planner.cpp",
+)
 
 
 def _git_blob_prefix(content: bytes) -> str:
@@ -99,10 +120,18 @@ class TestRadiancePatchPackages(unittest.TestCase):
         shutil.copytree(FIXTURE, root, dirs_exist_ok=True)
         return temp, root
 
+    def _prepared(self, package_id):
+        """A fresh fixture tree with the package's prerequisites applied."""
+        temp, root = self._tree()
+        for required in PREREQUISITES.get(package_id, ()):
+            results = apply_all(list(_load(required)), root)
+            self.assertTrue(all(result.ok for result in results), results)
+        return temp, root
+
     def test_apply_output_and_idempotence(self):
-        for package_id in APPLIED:
+        for package_id in CASES:
             with self.subTest(package=package_id):
-                temp, root = self._tree()
+                temp, root = self._prepared(package_id)
                 try:
                     patches = _load(package_id)
                     self.assertEqual({patch.path for patch in patches}, set(PIN_BLOBS[package_id]))
@@ -127,7 +156,7 @@ class TestRadiancePatchPackages(unittest.TestCase):
                                 f"{package_id}:{patch.path}:{edit.id}",
                             )
 
-                    if package_id == "rad0003_mtp_full_head_switch":
+                    if package_id == RAD0003:
                         text = (root / "arch/common/rad_block_mtp_fp8.h").read_text(encoding="utf-8")
                         self.assertIn("std::atoi(e) != 0", text)
                         self.assertNotIn("*e == 1", text)
@@ -136,7 +165,7 @@ class TestRadiancePatchPackages(unittest.TestCase):
                         self.assertEqual(
                             _git_blob_prefix((root / relative).read_bytes()),
                             patched_blob,
-                            f"{package_id}: {relative}: source differs from original Radiance diff",
+                            f"{package_id}: {relative}: package output changed",
                         )
                     after_first = _snapshot(root)
                     second = apply_all(list(patches), root)
@@ -149,98 +178,174 @@ class TestRadiancePatchPackages(unittest.TestCase):
                 finally:
                     temp.cleanup()
 
-    def test_rad0002_pin_blobs_and_unported_edits_on_1_7_0(self):
-        """rad0002 is pending its 1.7.0 port (MEN12): exactly two anchors fail, and nothing is written."""
-        package_id = "rad0002_moe_remote_handoff"
+    def test_rad0004_does_not_apply_without_rad0002(self):
+        """The diagnostics hang off rad0002's extension point; on the bare pin they fail closed and write nothing."""
         temp, root = self._tree()
         try:
-            patches = _load(package_id)
-            self.assertEqual({patch.path for patch in patches}, set(PIN_BLOBS[package_id]))
-            for relative, (pin_blob, _) in PIN_BLOBS[package_id].items():
-                target = root / relative
-                if pin_blob is None:
-                    self.assertFalse(target.exists(), relative)
-                else:
-                    self.assertEqual(_git_blob_prefix(target.read_bytes()), pin_blob, relative)
             before = _snapshot(root)
-            results = apply_all(list(patches), root)
-            failed = {edit.edit_id for result in results for edit in result.failed}
-            self.assertEqual(failed, RAD0002_UNPORTED_EDITS)
+            results = apply_all(list(_load(RAD0004)), root)
+            self.assertTrue(any(not result.ok for result in results), results)
             self.assertEqual(_snapshot(root), before)
         finally:
             temp.cleanup()
 
-    @unittest.expectedFailure
-    def test_rad0002_applies_with_its_handoff_output_on_1_7_0(self):
-        """Pending the rad0002 port (MEN12, docs/reference/engines/radiance/PORT_1.7.md); flips to an unexpected
-        success once it applies, at which point fill the patched blobs into PIN_BLOBS and drop the decorator."""
+    @staticmethod
+    def _added_lines(before: str, after: str) -> list[str]:
+        import difflib
+
+        return [
+            line[1:]
+            for line in difflib.unified_diff(before.splitlines(), after.splitlines(), lineterm="", n=0)
+            if line.startswith("+") and not line.startswith("+++")
+        ]
+
+    def test_rad0002_core_edits_are_thin_calls_into_the_extension_point(self):
+        """Policy lives in rad0002's own files and the plugin: every added code line in an upstream file calls the
+        extension point (the one exception is rank_units' preplaced filter, which cannot move out of the core)."""
         temp, root = self._tree()
         try:
-            results = apply_all(list(_load("rad0002_moe_remote_handoff")), root)
-            self.assertTrue(all(result.ok for result in results), results)
-            self.assertTrue((root / "abi/rad_moe_remote.h").is_file())
-            self.assertTrue((root / "core/place/moe_remote.cpp").is_file())
+            patches = _load(RAD0002)
+            core_edits = {p.path: len(p.edits) for p in patches if not p.create}
+            self.assertEqual(set(core_edits), set(RAD0002_CORE_FILES))
+            self.assertEqual(sum(core_edits.values()), 14)
+            self.assertEqual(sum(1 for p in patches if p.create), 4)
+            self.assertTrue(all(result.ok for result in apply_all(list(patches), root)))
+            for relative in RAD0002_CORE_FILES:
+                added = self._added_lines(
+                    (FIXTURE / relative).read_text(encoding="utf-8"),
+                    (root / relative).read_text(encoding="utf-8"),
+                )
+                code = [line.strip() for line in added if line.strip() and not line.strip().startswith(("/*", "*"))]
+                for line in code:
+                    if "preplaced()" in line or line.startswith("for (int32_t i = 0; i < (int32_t)p->units.size()"):
+                        self.assertEqual(relative, "core/place/planner.cpp")
+                        continue
+                    self.assertRegex(
+                        line, r"bc_moe_remote|bc_remote|BcMoeRemote|&&$|^!gather_taken", f"{relative}: {line}"
+                    )
+                text = (root / relative).read_text(encoding="utf-8")
+                self.assertNotIn("rad_moe_remote", text, relative)
+                self.assertNotIn('getenv("R3_MOE', text, relative)
+                # the shadow compare and mask-only machinery is rad0004's, not rad0002's
+                self.assertNotIn("moe_mailbox_shadow", text, relative)
+                self.assertNotIn("moe_mailbox_mask_ref", text, relative)
+        finally:
+            temp.cleanup()
+
+    def test_rad0002_handoff_output_on_1_7_0(self):
+        temp, root = self._tree()
+        try:
+            self.assertTrue(all(result.ok for result in apply_all(list(_load(RAD0002)), root)))
             moe = (root / "arch/common/rad_block_moe_fp8.h").read_text(encoding="utf-8")
             # Remote hand-off must not globally change the normal router/top-k arithmetic.
-            self.assertIn(
-                "const bool rfused = op_router_fused && rows <= router_fused_rows;", moe
-            )
-            self.assertIn(
-                "} else if (op_topk_scatter && rows <= topk_scatter_rows) {", moe
-            )
-            self.assertNotIn("rfused = !remote_policy", moe)
-            self.assertNotIn("!remote_policy && op_topk_scatter", moe)
-            self.assertIn("{w.h.x}, {w.h.x});", moe)
-            self.assertIn(
-                "rad_moe_remote_layer_map(l, (int)ne, remote_slot.data());", moe
-            )
-            self.assertIn(
-                "remote_slot[(size_t)reg[(size_t)s]] = (int32_t)s;", moe
-            )
-            self.assertNotIn(
-                "n_reg == (int64_t)c.n_expert", moe
-            )
-            abi = (root / "abi/rad_moe_remote.h").read_text(encoding="utf-8")
-            core = (root / "core/place/moe_remote.cpp").read_text(encoding="utf-8")
-            self.assertIn("rad_moe_remote_set_layer_map_hook", abi)
-            self.assertIn("rad_moe_remote_mask_only(void);", abi)
-            self.assertIn("g_layer_map_hook.store(hook, std::memory_order_release);", core)
-            self.assertIn('std::getenv("R3_MOE_HELPER_MASK_ONLY")', core)
-            op_hq = moe.index("if (op_hq)")
-            pub = moe.index("RAD_ISSUE_N(c_, op_remote_publish, rows")
-            routed_gemm = moe.index("const int64_t n4[4]", pub)
-            self.assertLess(op_hq, pub)
-            self.assertLess(pub, routed_gemm)
-            self.assertIn("brow_slice(remote_q, r0, rows, g.n_embd)", moe)
-            self.assertIn("brow_slice(remote_s, r0, rows, g.n_embd / RAD_FP8_BLOCK)", moe)
-            self.assertIn("brows(remote_q, T)", moe)
-            self.assertIn("if (remote_active)", moe)
-            shadow = moe.index("RAD_ISSUE_N(c_, op_remote_shadow, rows")
-            capture = moe.index("RAD_ISSUE_N(c_, op_remote_mask_capture, rows")
-            restore = moe.index("RAD_ISSUE_N(c_, op_remote_mask_restore, rows")
-            add = moe.index("RAD_ISSUE_N(c_, op_remote_add, rows")
+            self.assertIn("const bool rfused = op_router_fused && rows <= router_fused_rows;", moe)
+            self.assertIn("} else if (op_topk_scatter && rows <= topk_scatter_rows) {", moe)
+            self.assertNotIn("rfused = !", moe)
+            # the call sites, in pass order: route -> (grouped GEMMs) -> merge replaces gather -> all-reduce
+            declare = moe.index("RAD_ARCH_TRY(bc_remote.declare(b, *this, reg, l));")
+            self.assertLess(moe.index('op_add = rw(b, RAD_OP(b, "add",'), declare)
+            self.assertLess(declare, moe.index("xp_parts.assign("))
+            after_route = moe.index("bc_remote.after_route(c_, *this, T, r0, rows, ecnt);")
+            n4 = moe.index("const int64_t n4[4]")
+            hq = moe.index("RAD_ISSUE_N(c_, op_hq, rows")
+            self.assertLess(hq, after_route)
+            self.assertLess(after_route, n4)
+            merge = moe.index("if (!bc_remote.merge(c_, *this, T, r0, rows) &&")
             gather = moe.index("RAD_ISSUE_N(c_, op_gather, rows")
-            ar = moe.index("RAD_ISSUE_N(c_, op_ar, rows * g.n_embd", add)
-            self.assertLess(capture, restore)
-            self.assertLess(restore, shadow)
-            self.assertLess(shadow, add)
-            self.assertLess(add, gather)
+            ar = moe.index("if (own_ar && issues_ar(T, rows)) issue_ar(c_, r0, rows, false);")
+            self.assertLess(n4, merge)
+            self.assertLess(merge, gather)
             self.assertLess(gather, ar)
-            self.assertIn(
-                "else if (!gather_taken(g, T, gather_out_rows, gather_out_rows6))",
-                moe,
-            )
-            self.assertIn("if (op_ar && (remote_active ||", moe)
-            self.assertIn("const bool remote_shadow = remote_policy && rad_moe_remote_shadow();", moe)
-            self.assertIn("remote_active && rad_moe_remote_mask_only();", moe)
-            self.assertIn("gfold ? brow_slice(w.sout, r0, rows, g.n_embd) : RAD_NONE", moe)
-            self.assertIn("gfold ? brow_slice(w.sgate, r0, rows, 1) : RAD_NONE", moe)
+            self.assertIn("return op_ar && (bc_remote.active(T) ||", moe)
             hc = (root / "arch/common/rad_block_hc.h").read_text(encoding="utf-8")
-            self.assertIn("const bool remote_active =", hc)
-            self.assertIn("!rad_moe_remote_shadow();", hc)
-            self.assertIn("if (!remote_active && takes_gather(T)) {", hc)
             self.assertIn(
-                "(!remote_active && takes_ar(T)) ? ar_write(T) : op_write", hc
+                "bool takes_ar(int64_t T) const { return ar_write(T) != 0 && !bc_moe_remote_hc_open(gsrc.top_k, T); }",
+                hc,
+            )
+            planner = (root / "core/place/planner.cpp").read_text(encoding="utf-8")
+            self.assertIn("if (bc_moe_remote_pin_unit(mu, in_.config->max_tok)) continue;", planner)
+            self.assertIn("bc_moe_remote_mark_footprint(units);", planner)
+            self.assertIn("if (!p->units[(size_t)i].preplaced()) order->push_back(i);", planner)
+            bringup = (root / "core/engine_bringup.cpp").read_text(encoding="utf-8")
+            placeholder = "if (bc_moe_remote_publish_placeholder(cfg_.max_tok, w, e, *file_, r->mover, (rad_weight)i)) continue;"
+            self.assertIn(placeholder, bringup)
+            self.assertLess(
+                bringup.index(placeholder),
+                bringup.index("if ((w.tier == Tier::Mapped || w.tier == Tier::SSD) && (!direct || !e)) {"),
+            )
+
+            abi = (root / "abi/bc_moe_remote.h").read_text(encoding="utf-8")
+            core = (root / "core/place/bc_moe_remote.cpp").read_text(encoding="utf-8")
+            for symbol in ("bc_moe_remote_register", "bc_moe_remote_wanted", "bc_moe_remote_wanted_upto",
+                           "bc_moe_remote_layer_map", "bc_moe_remote_skip_unit", "bc_moe_remote_shadow",
+                           "bc_moe_remote_mask_only", "bc_moe_remote_diag_build"):
+                self.assertRegex(abi, rf"\b{symbol}\(")
+                self.assertRegex(core, rf'extern "C" \w+ {symbol}\(')
+            # Diagnostics are compiled out of a production build and refused loudly, never silently ignored.
+            self.assertIn("#ifdef BC_MOE_REMOTE_DIAG", core)
+            self.assertIn("static constexpr bool kDiagBuild = false;", core)
+            self.assertIn("need the diagnostic build", core)
+            self.assertIn("plugin->struct_size != sizeof(BcMoeRemotePlugin)", core)
+            self.assertIn('env_on("R3_MOE_HELPER_SKIP_OWNED")', core)
+            block = (root / "arch/common/bc_moe_remote_block.h").read_text(encoding="utf-8")
+            self.assertIn("moe_mailbox_publish", block)
+            self.assertIn("moe_mailbox_add", block)
+            self.assertNotIn("moe_mailbox_shadow", block)
+            self.assertNotIn("moe_mailbox_mask_ref", block)
+            self.assertIn("brows(q, T));", block)
+            self.assertIn("m.gfold ? brow_slice(w.sout, r0, rows, g.n_embd) : RAD_NONE", block)
+            self.assertIn("m.gfold ? brow_slice(w.sgate, r0, rows, 1) : RAD_NONE", block)
+        finally:
+            temp.cleanup()
+
+    def test_rad0004_diagnostics_are_compiled_out_without_the_macro(self):
+        temp, root = self._prepared(RAD0004)
+        try:
+            pre = (root / "arch/common/rad_block_moe_fp8.h").read_text(encoding="utf-8")
+            self.assertTrue(all(result.ok for result in apply_all(list(_load(RAD0004)), root)))
+            post = (root / "arch/common/rad_block_moe_fp8.h").read_text(encoding="utf-8")
+            added = self._added_lines(pre, post)
+            # every line it adds to the upstream header sits inside an #ifdef BC_MOE_REMOTE_DIAG ... #endif
+            depth = 0
+            for line in added:
+                text = line.strip()
+                if text == "#ifdef BC_MOE_REMOTE_DIAG":
+                    depth += 1
+                elif text == "#endif":
+                    depth -= 1
+                else:
+                    self.assertEqual(depth, 1, f"diagnostic line outside the macro guard: {line}")
+            self.assertEqual(depth, 0)
+            self.assertEqual(sum(1 for line in added if line.strip() == "#ifdef BC_MOE_REMOTE_DIAG"), 4)
+            self.assertEqual(
+                {p.path for p in _load(RAD0004)},
+                {"arch/common/bc_moe_remote_diag.h", "arch/common/rad_block_moe_fp8.h"},
+            )
+            diag = (root / "arch/common/bc_moe_remote_diag.h").read_text(encoding="utf-8")
+            self.assertIn("#error", diag)
+            for name in ("moe_mailbox_shadow", "moe_mailbox_mask_ref", "bc_moe_remote_mask_only()",
+                         "bc_moe_remote_shadow()", "bc_moe_remote_diag_build()"):
+                self.assertIn(name, diag)
+            self.assertIn("base.publish", diag)
+        finally:
+            temp.cleanup()
+
+    def test_plugin_registration_struct_matches_the_engine_abi(self):
+        """libr3moe mirrors BcMoeRemotePlugin (it builds against an unpatched tree); the two must not drift."""
+        temp, root = self._tree()
+        try:
+            self.assertTrue(all(result.ok for result in apply_all(list(_load(RAD0002)), root)))
+            abi = (root / "abi/bc_moe_remote.h").read_text(encoding="utf-8")
+            hook = (REPO / "engines/radiance/components/libr3/helper/moe_remote_hook.cpp").read_text(encoding="utf-8")
+
+            def fields(text: str, opener: str) -> list[str]:
+                body = text.split(opener, 1)[1].split("}", 1)[0]
+                body = re.sub(r"/\*.*?\*/", "", body, flags=re.S)
+                return [re.sub(r"\s+", " ", f.strip()) for f in body.split(";") if f.strip()]
+
+            self.assertEqual(
+                fields(abi, "typedef struct BcMoeRemotePlugin {"),
+                fields(hook, "struct EnginePlugin {"),
             )
         finally:
             temp.cleanup()
@@ -276,8 +381,10 @@ class TestRadiancePatchPackages(unittest.TestCase):
         self.assertIn('r.weight_bf16 != ew[flat]', ops)
         self.assertIn('if (mask_only && m && local_index[slot] >= 0) __builtin_trap();', ops)
         self.assertIn('hipMemsetAsync(d->mask_ref, 0', ops)
-        self.assertIn('dlsym(RTLD_DEFAULT, "rad_moe_remote_set_layer_map_hook")', hook)
-        self.assertIn('g.set_layer_map(publish_layer_map)', hook)
+        self.assertIn('dlsym(RTLD_DEFAULT, "bc_moe_remote_register")', hook)
+        self.assertIn('static const EnginePlugin plugin{sizeof(EnginePlugin), publish_layer_map, owner_query};', hook)
+        self.assertIn('g.engine_register(&plugin)', hook)
+        self.assertNotIn('rad_moe_remote', hook)
         self.assertIn('layer_map_consumed', hook)
         self.assertIn('slot_map[(uint32_t)le] < 0', ops)
         self.assertIn('{"aq", RAD_OPD_IN, 0}', ops)
@@ -305,7 +412,7 @@ class TestRadiancePatchPackages(unittest.TestCase):
     def test_missing_anchor_fails_closed_and_is_atomic(self):
         for package_id, (relative, before, after) in CASES.items():
             with self.subTest(package=package_id):
-                temp, root = self._tree()
+                temp, root = self._prepared(package_id)
                 try:
                     target = root / relative
                     text = target.read_text(encoding="utf-8")
@@ -316,9 +423,9 @@ class TestRadiancePatchPackages(unittest.TestCase):
                     results = apply_all(list(_load(package_id)), root)
                     self.assertTrue(any(not result.ok for result in results), results)
                     self.assertEqual(_snapshot(root), before_apply)
-                    if package_id == "rad0002_moe_remote_handoff":
-                        self.assertFalse((root / "abi/rad_moe_remote.h").exists())
-                        self.assertFalse((root / "core/place/moe_remote.cpp").exists())
+                    for patch in _load(package_id):
+                        if patch.create:
+                            self.assertFalse((root / patch.path).exists(), patch.path)
                 finally:
                     temp.cleanup()
 

@@ -34,8 +34,14 @@ struct RankState {
     bool ready = false;
 };
 
-using LayerMapHook = void (*)(int, int, const int32_t*);
-using SetLayerMapHook = void (*)(LayerMapHook);
+/* The engine's remote-MoE extension point (patch rad0002, abi/bc_moe_remote.h), mirrored here so libr3moe builds
+ * against an unpatched radiance tree. The engine accepts the registration only if struct_size matches its own. */
+struct EnginePlugin {
+    uint32_t struct_size;
+    void (*layer_map)(int layer, int n_expert, const int32_t* slot_of_expert);
+    int (*owns_expert)(int layer, int expert);
+};
+using RegisterFn = int (*)(const EnginePlugin*);
 
 struct HookState {
     int fd = -1;
@@ -43,7 +49,7 @@ struct HookState {
     size_t bytes = 0;
     Header* hdr = nullptr;
     bool pinned = false;
-    SetLayerMapHook set_layer_map = nullptr;
+    RegisterFn engine_register = nullptr;
     std::mutex mu;
     RankState rank[kMaxRanks];
 };
@@ -160,24 +166,29 @@ void register_mailbox() {
     }
     g.pinned = true;
     dlerror();
-    g.set_layer_map = reinterpret_cast<SetLayerMapHook>(
-        dlsym(RTLD_DEFAULT, "rad_moe_remote_set_layer_map_hook"));
-    if (const char* e = dlerror(); e || !g.set_layer_map) {
+    g.engine_register = reinterpret_cast<RegisterFn>(dlsym(RTLD_DEFAULT, "bc_moe_remote_register"));
+    if (const char* e = dlerror(); e || !g.engine_register) {
         std::fprintf(stderr,
-            "libr3: R3_MOE_HELPER engine does not export rad_moe_remote_set_layer_map_hook%s%s\n",
+            "libr3: R3_MOE_HELPER engine does not export bc_moe_remote_register (patch rad0002)%s%s\n",
             e ? ": " : "", e ? e : "");
         (void)hipHostUnregister(g.map);
         g.pinned = false;
         g.hdr = nullptr;
         return;
     }
-    g.set_layer_map(publish_layer_map);
-    /* Ownership for placement (R3_MOE_HELPER_SKIP_OWNED): the helper's bitmap as published before the engine
-     * starts. The engine applies the protected-layer and slot tests itself, the same ones the helper uses
-     * when it narrows ownership to the runtime maps, so both sides agree on what is never placed here. */
-    if (auto set_owner = reinterpret_cast<void (*)(int (*)(int, int))>(
-            dlsym(RTLD_DEFAULT, "rad_moe_remote_set_owner_hook")))
-        set_owner(owner_query);
+    /* layer_map: the runtime slot maps (replayed for layers declared before this registration). owns_expert:
+     * ownership for placement (R3_MOE_HELPER_SKIP_OWNED), the helper's bitmap as published before the engine
+     * starts. The engine applies the protected-layer and slot tests itself, the same ones the helper uses when
+     * it narrows ownership to the runtime maps, so both sides agree on what is never placed here. */
+    static const EnginePlugin plugin{sizeof(EnginePlugin), publish_layer_map, owner_query};
+    if (g.engine_register(&plugin) != 0) {
+        std::fprintf(stderr, "libr3: R3_MOE_HELPER engine rejected the plugin registration (struct size)\n");
+        (void)hipHostUnregister(g.map);
+        g.pinned = false;
+        g.hdr = nullptr;
+        g.engine_register = nullptr;
+        return;
+    }
 
     /* The engine policy only decides whether the graph contains/uses the two mailbox ops.
      * All route selection and synchronisation stays on the rank GPU. */
@@ -267,8 +278,8 @@ void close_mailbox() {
         if (s.owner) (void)hipFree(s.owner);
         s = RankState{};
     }
-    if (g.set_layer_map) g.set_layer_map(nullptr);
-    g.set_layer_map = nullptr;
+    if (g.engine_register) (void)g.engine_register(nullptr);
+    g.engine_register = nullptr;
     if (g.pinned) (void)hipHostUnregister(g.map);
     if (g.map != MAP_FAILED) ::munmap(g.map, g.bytes);
     if (g.fd >= 0) ::close(g.fd);

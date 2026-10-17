@@ -6,9 +6,25 @@ Applied by the part-1 change: pin 48f7b8e (the v1.7.0 release commit `1e968f6` p
 tree is identical to the tag), rad0001 superseded, rad0003 re-anchored (+ explicit `<cstdlib>`), libr3 / libr3moe / helper
 prepared for ABI 17 with `R3_NATIVE=OFF` (forwarding `rad_kernel_collective` clamped to 1, dead `RAD_W4_GROUP` replace
 removed, gdn-chunk-scan native shelved to `native-shelved/`), test fixtures regenerated at `tests/fixtures/48f7b8e`.
-Still open: rad0002 (sections 1.3 and 3, an expected-failure test pins the two failing anchors), native re-ports
-(section 2c, attention first), and everything that needs a Brutus build or GPU run. "Verified" below means a text-level
-check; no build was run.
+"Verified" below means a text-level check; no build was run.
+
+## Status (MEN12 part 2, applied)
+
+rad0002 is re-authored on 1.7.0 as thin hooks (section 3, with the deviations below) and the shadow compare / mask-only
+diagnostics are split into `rad0004_moe_remote_diagnostics` (diagnostic build only: macro `BC_MOE_REMOTE_DIAG`, source
+`radiance-diag`, build `moe-diag`; patch-lint fails if it enters any recipe not named `*-diag`). rad0002 targets 1.7.0
+only. The core surface is **14** one-line call sites in 4 upstream files (was 20 edits, about 170 inserted lines; the
+section 3 estimate was 15): moe_fp8.h 6 (include, member, declare, after_route, merge, `issues_ar`), hc.h 2 (include,
+`takes_ar`), planner.cpp 4 (include, `pin_mapped`, `weight_footprint`, `rank_units`), engine_bringup.cpp 2 (include,
+placeholder). rad0004 adds 4 `#ifdef BC_MOE_REMOTE_DIAG` sites (include, member, declare, after_down). Deviations from
+section 3: the planner/bring-up helpers are header-only templates in `core/place/bc_moe_remote_place.h` (the name
+`bc_moe_remote.h` is the C ABI in `abi/`); a production build answers "no remote rows" when shadow or mask-only is
+requested; the libr3moe plugin registers once through `bc_moe_remote_register(BcMoeRemotePlugin{struct_size, layer_map,
+owns_expert})` in place of the two `dlsym` hooks and mirrors the struct locally (a test pins the two copies equal); the
+step gate is decided on `T` everywhere, including `issues_ar()` and HyperConn.
+
+Still open: native re-ports (section 2c, attention first) and everything that needs a Brutus build or GPU run (the
+verification list is in the MEN12 hand-off).
 
 Inputs: BigCherry working tree, upstream partial clone with tags v1.3.0 (89cee7c) .. v1.7.0 (tag resolves to the release
 commit `1e968f6`; pin 48f7b8e, same tree).

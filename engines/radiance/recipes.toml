@@ -18,6 +18,12 @@ patches = []
 patches = []
 required-state = "evaluated"
 
+# The remote-MoE hand-off and its diagnostics (shadow compare, mask-only). Diagnostic builds only: patch-lint fails
+# if a patch declaring `diagnostic-build` (rad0004) enters any recipe not named *-diag.
+[patch-set.moe-remote-diag]
+patches = ["rad0002_moe_remote_handoff", "rad0004_moe_remote_diagnostics"]
+required-state = "untested"
+
 [source.radiance-native]
 description = "radiance 1.7.0 as released: no overlay, no patches."
 overlay = false
@@ -33,9 +39,21 @@ description = "radiance 1.7.0 with the evaluated engine fixes the Flash-Next two
 overlay = false
 patch-sets = ["engine-fixes-evaluated"]
 
+[source.radiance-diag]
+description = "radiance 1.7.0 with the validated engine patch sets plus the remote-MoE hand-off and its diagnostics (rad0004); build it with build.moe-diag."
+overlay = false
+patch-sets = ["serving-core", "moe-remote-diag"]
+
 [build.stock]
 description = "radiance's own release build of the engine binary."
 options = {}
+needs = []
+
+# The diagnostic build: defines BC_MOE_REMOTE_DIAG for the engine core and the arch plugins (rad0004's call sites and
+# the extension point's diagnostic answers are compiled out without it). Pair it with source.radiance-diag.
+[build.moe-diag]
+description = "radiance built with BC_MOE_REMOTE_DIAG: remote-MoE shadow compare and mask-only available."
+options = { CMAKE_CXX_FLAGS = "-DBC_MOE_REMOTE_DIAG" }
 needs = []
 
 # One focal engine patch per experiment; the 0002-0003 stack is never one indivisible experiment.
