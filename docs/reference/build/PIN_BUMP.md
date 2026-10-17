@@ -290,7 +290,7 @@ verdict engine):
 
 `bigcherry --engine <name> pin-bump` now runs the bump-time source check as its own resumable phase:
 
-`preflight -> declare -> pull -> audit -> patch-lint -> coverage -> apply -> compile -> cpu-smoke -> reaudit -> complete`.
+`preflight -> declare -> pull -> audit -> patch-lint -> coverage -> apply -> compile -> lane-build -> cpu-smoke -> reaudit -> complete`.
 
 The `compile` phase runs the engine's own compile checks (the engine adapter's `compile_checks`) against the patched vendor tree, and `audit`/`reaudit` run its `audit_checks`; see [Per-engine bump gates](#per-engine-bump-gates). For llama.cpp the compile check is `bigcherry.build.source_compile_check` with `clang++`; it needs neither ROCm nor a GPU. A successful phase records the exact effective source-tree OID. On `--resume` it is skipped when that OID is unchanged and re-run when the checked tree changed.
 
@@ -305,20 +305,38 @@ This check is not hardware qualification and does not replace the HIP/ROCm build
 
 A patch promotion on the current pin does not repin llama.cpp. Run `bigcherry patch-promote <id>... --evidence @file [--profile-only] [--release]`; its `feat(patch):` squash title drives a minor release and a `fix(patch):` title drives a patch release. Promotion evidence is copied under `releases/evidence/` and normally must name two distinct models; `--profile-only` is the explicit exception for profile-scoped work. The promotion PR must merge through normal checks/review before release-please can create the version PR.
 
-## CPU smoke: the first runtime gate (MEN15)
+## Lane build and CPU smoke: the first runtime gate (MEN15, MEN16)
 
-After `compile` and before `reaudit`, `pin-bump` runs the engine's RAM-only smoke against a build of the bumped tree: a
-tiny model served on the CPU with no GPU visible, three short greedy completions run twice (non-empty and identical),
-a graceful shutdown, and a check that the server log never shows a device being opened. It needs no GPU, so a busy
-host cannot hold up a bump, and it comes before any GPU smoke. Build the bumped tree first and name the build:
+After `compile` and before `reaudit`, `pin-bump` builds the bumped engine itself and runs the engine's RAM-only smoke
+against that build: a tiny model served on the CPU with no GPU visible, three short greedy completions run twice
+(non-empty and identical), a graceful shutdown, and a check that the server log never shows a device being opened. The
+smoke needs no GPU, so a busy host cannot hold up a bump, and it comes before any GPU smoke.
 
-    python -m bigcherry --engine <engine> pin-bump <ref> --cpu-smoke-build <build dir>
+**`lane-build`** builds the lane `<--source>:<--build>:<--platform>` through the campaign build machinery (the same
+planner and runner as `bigcherry build --lane`), with the engine's serve binary as the launcher. `--build` is a recipe
+`[build.*]` profile; there is no default, so a run without `--build` (or without `--platform`) is refused up front with
+`LANE_BUILD_INPUT_MISSING`, before any phase. The phase records the lane, `build_plan_id`, the build directory and the
+launcher's sha256 in `<report dir>/state.json` (`lane_build`) and as a line in the bump's release record notes. A
+failing build STOPs with `LANE_BUILD_FAILED` (a lane the recipes cannot plan: `LANE_BUILD_REQUEST_INVALID`).
 
-Without `--cpu-smoke-build` the phase STOPs with `CPU_SMOKE_BUILD_MISSING`; a failing smoke STOPs with
-`CPU_SMOKE_FAILED` (every reason in `failure.evidence.failures`, the result and server log under
-`<report dir>/cpu-smoke/`). `--skip-cpu-smoke` is the only way past the phase; it is saved in `state.json` as
-`cpu_smoke.status = "skipped"` and printed in the final summary. The same smoke runs on its own with
-`bigcherry --engine <engine> smoke-cpu --build <dir>` (see the engine's README or `docs/reference/build/BUILD.md`).
+**`cpu-smoke`** then runs on that build. A failing smoke STOPs with `CPU_SMOKE_FAILED` (every reason in
+`failure.evidence.failures`, the result and server log under `<report dir>/cpu-smoke/`); `--resume` reuses the saved
+build and does not build again.
+
+- `--cpu-smoke-build <build dir>` is an explicit override: the lane build is skipped, recorded as
+  `lane_build.status = "skipped-by-override"` (and `cpu_smoke.build_override`), and that directory is smoked.
+- `--skip-cpu-smoke` is the only way past the smoke itself and needs no build; it is saved as
+  `cpu_smoke.status = "skipped"` (`lane_build.status = "skipped"`) and printed in the final summary.
+- On `--resume`, `--build` and `--cpu-smoke-build` follow the `--platform` rule: omitted, the saved value is reused; a
+  different `--build` is refused (`RESUME_BUILD_MISMATCH`), as is a different `--cpu-smoke-build`, or any
+  `--cpu-smoke-build` once the lane build passed (`RESUME_CPU_SMOKE_BUILD_MISMATCH`).
+
+The same smoke runs on its own with `bigcherry --engine <engine> smoke-cpu --build <dir>` (see the engine's README or
+`docs/reference/build/BUILD.md`).
+
+llama.cpp:
+
+    python -m bigcherry --engine llamacpp pin-bump <ref> --source bigcherry --build control --platform linux-multi
 
 ## Per-engine bump gates
 
@@ -350,9 +368,9 @@ them without any patch anchor failing. The compile phase runs three checks in or
 3. `component-tests` (`COMPONENT_TEST_FAILED`; needs `ctest`): each component's `[test] targets` in `component.toml` are
    built and run with `ctest` in the component's build tree.
 
-The radiance bump command (build the bumped tree first for `--cpu-smoke-build`):
+The radiance bump command (`--build` names the lane's build profile; pin-bump builds the bumped engine and smokes that build):
 
-    python -m bigcherry --engine radiance pin-bump <ref> --source radiance --platform linux-radiance --cpu-smoke-build <build dir>
+    python -m bigcherry --engine radiance pin-bump <ref> --source radiance --build stock --platform linux-radiance
 
 These need a radiance checkout and a Linux host with the toolchain; on a host without `cmake`/`ninja`/`ctest` the phase STOPs
 with `SOURCE_COMPILE_UNAVAILABLE` (or `--skip-compile`, recorded in the release record).

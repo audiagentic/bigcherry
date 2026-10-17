@@ -277,11 +277,16 @@ class CliTests(unittest.TestCase):
         args = self._args(["--engine", "llamacpp", "pin-bump", "b1", "--cpu-smoke-build", "bd", "--skip-cpu-smoke"])
         self.assertEqual((args.cpu_smoke_build, args.skip_cpu_smoke), ("bd", True))
 
+    def test_pin_bump_takes_the_lane_build_profile(self):
+        args = self._args(["--engine", "radiance", "pin-bump", "b1", "--build", "stock", "--platform", "p"])
+        self.assertEqual((args.build_profile, args.platform, args.cpu_smoke_build), ("stock", "p", None))
+
 
 class PinBumpPhaseTests(unittest.TestCase):
     def test_cpu_smoke_runs_after_compile_and_before_any_later_phase(self):
         phases = pin_bump.PHASES
-        self.assertLess(phases.index("compile"), phases.index("cpu-smoke"))
+        self.assertLess(phases.index("compile"), phases.index("lane-build"))
+        self.assertLess(phases.index("lane-build"), phases.index("cpu-smoke"))
         self.assertLess(phases.index("cpu-smoke"), phases.index("reaudit"))
         self.assertLess(phases.index("cpu-smoke"), phases.index("complete"))
 
@@ -316,7 +321,7 @@ class PinBumpPhaseTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             state.save(Path(td))
             document = json.loads((Path(td) / "state.json").read_text(encoding="utf-8"))
-            self.assertEqual(document["cpu_smoke"], {"status": "skipped"})
+            self.assertEqual(document["cpu_smoke"], {"status": "skipped", "build_override": ""})
             self.assertEqual(pin_bump.PinBumpState.load(Path(td)).cpu_smoke_status, "skipped")
 
 
