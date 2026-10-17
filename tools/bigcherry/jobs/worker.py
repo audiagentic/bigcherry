@@ -11,7 +11,6 @@ from pathlib import Path
 from .executor import ExecutionHandle, ExecutorControl
 from .local import LocalExecutor
 from .remote import request_from_dict
-from ..core import engines
 from ..core.context import ProjectContext
 
 
@@ -21,6 +20,13 @@ def _payload() -> dict[str, object]:
     if not isinstance(value, dict):
         raise ValueError("worker payload must be an object")
     return value
+
+
+def _engine(payload: dict[str, object]) -> str:
+    engine = payload.get("engine")
+    if not isinstance(engine, str) or not engine:
+        raise ValueError("worker payload must name the engine of the job")
+    return engine
 
 
 def _handle(executor: LocalExecutor, value: dict[str, object]) -> ExecutionHandle:
@@ -59,10 +65,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("action", choices=("submit", "correlate", "status", "cancel", "control", "allocation", "events", "capabilities"))
     parser.add_argument("--root", type=Path, default=None)
     args = parser.parse_args(argv)
-    root = args.root or Path(os.environ.get("BIGCHERRY_JOBS_WORK_ROOT") or ProjectContext.resolve(engine=engines.LLAMACPP).work_root / "jobs-worker")
-    executor = LocalExecutor(root / "local-executor")
     try:
-        result = run(args.action, _payload(), executor)
+        payload = _payload()
+        engine = _engine(payload)
+        root = args.root or Path(
+            os.environ.get("BIGCHERRY_JOBS_WORK_ROOT")
+            or ProjectContext.resolve(engine=engine).work_root / "jobs-worker"
+        )
+        executor = LocalExecutor(root / "local-executor")
+        result = run(args.action, payload, executor)
     except Exception as exc:
         print(json.dumps({"error": f"{type(exc).__name__}: {exc}"}, sort_keys=True))
         return 1

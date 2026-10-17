@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from .base import EngineAdapter, SidecarSpec
+from .base import EngineAdapter, SidecarSpec, SourceCheck
+
+if TYPE_CHECKING:
+    from ..core.context import ProjectContext
 
 HELPER_SWITCH = "R3_MOE_HELPER"
 HELPER_DEVICES = "R3_MOE_HELPER_DEVICES"
@@ -27,6 +30,9 @@ class RadianceAdapter(EngineAdapter):
 
     def inspect_build(self, build_dir: Path) -> dict[str, Any] | None:
         return None
+
+    def source_checks(self, context: ProjectContext) -> tuple[SourceCheck, ...]:
+        return ()
 
     def check_arm_environment(self, controls: dict[str, str]) -> None:
         return None

@@ -370,6 +370,7 @@ class GateContractTests(unittest.TestCase):
     def test_admission_gate_passes_full_composition(self) -> None:
         modules = (SimpleNamespace(patch_id="A"), SimpleNamespace(patch_id="B"))
         context = SimpleNamespace(
+            engine="llamacpp",
             composition=SimpleNamespace(modules=modules),
             catalog_path=None,
             patches_dir=Path("patches"),
@@ -390,10 +391,11 @@ class GateContractTests(unittest.TestCase):
         ) as admit:
             outcome = gates.evaluate_admission_gate(context)
         self.assertEqual(outcome.status, GateStatus.PASS)
-        self.assertEqual(admit.call_args.args[0], ("A", "B"))
+        self.assertEqual(admit.call_args.args[1], ("A", "B"))
 
     def test_admission_gate_blocks_inactive_not_ready_result(self) -> None:
         context = SimpleNamespace(
+            engine="llamacpp",
             composition=SimpleNamespace(modules=()),
             catalog_path=None,
             patches_dir=Path("patches"),
@@ -415,6 +417,7 @@ class GateContractTests(unittest.TestCase):
 
     def test_admission_gate_blocks_inactive_rejected_result(self) -> None:
         context = SimpleNamespace(
+            engine="llamacpp",
             composition=SimpleNamespace(modules=()),
             catalog_path=None,
             patches_dir=Path("patches"),
@@ -436,6 +439,7 @@ class GateContractTests(unittest.TestCase):
 
     def test_admission_gate_maps_active_rejection_to_fail(self) -> None:
         context = SimpleNamespace(
+            engine="llamacpp",
             composition=SimpleNamespace(modules=(SimpleNamespace(patch_id="P1"),)),
             catalog_path=None,
             patches_dir=Path("patches"),
@@ -457,7 +461,7 @@ class GateContractTests(unittest.TestCase):
             outcome = gates.evaluate_admission_gate(context)
         self.assertEqual(outcome.status, GateStatus.FAIL)
         self.assertEqual(outcome.detail, ("policy rejected composition",))
-        self.assertEqual(admit.call_args.args[0], ("P1",))
+        self.assertEqual(admit.call_args.args[1], ("P1",))
 
     def test_admission_gate_cross_checks_real_rejected_composition(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -482,6 +486,7 @@ class GateContractTests(unittest.TestCase):
                 encoding="utf-8",
             )
             context = SimpleNamespace(
+                engine="llamacpp",
                 composition=SimpleNamespace(
                     modules=(SimpleNamespace(patch_id="0001_test"),),
                 ),
@@ -501,6 +506,7 @@ class GateContractTests(unittest.TestCase):
 
     def test_admission_gate_blocks_malformed_failure_fields(self) -> None:
         context = SimpleNamespace(
+            engine="llamacpp",
             composition=SimpleNamespace(modules=()),
             catalog_path=None,
             patches_dir=Path("patches"),
@@ -522,6 +528,7 @@ class GateContractTests(unittest.TestCase):
 
     def test_admission_gate_blocks_production_escape_hatch(self) -> None:
         context = SimpleNamespace(
+            engine="llamacpp",
             composition=SimpleNamespace(modules=()),
             catalog_path=None,
             patches_dir=Path("patches"),

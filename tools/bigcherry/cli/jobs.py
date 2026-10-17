@@ -9,7 +9,7 @@ import time
 import tomllib
 from pathlib import Path
 
-from ..core import engines
+from ..core import engines, paths
 from ..core.context import ProjectContext
 from ..hardware.inventory import InventoryCatalog
 from ..jobs.acceptance import acceptance_document, acceptance_matrix
@@ -23,10 +23,6 @@ from ..jobs.service import JobService
 from ..jobs.status import build_snapshot, render_prometheus
 from ..jobs.store import RunStore
 from ..jobs.workspace import GitWorkspaceManager
-
-
-#: The job-control plane drives llama.cpp campaigns today; its entry point takes no engine argument.
-JOBS_ENGINE = engines.LLAMACPP
 
 
 def _json(value: object) -> None:
@@ -46,8 +42,8 @@ def _load_document(path: Path) -> dict[str, object]:
     return value
 
 
-def build_service() -> tuple[JobService, object]:
-    context = ProjectContext.resolve(engine=JOBS_ENGINE)
+def build_service(engine: str) -> tuple[JobService, object]:
+    context = ProjectContext.resolve(engine=engine)
     jobs_root = Path(
         os.environ.get("BIGCHERRY_JOBS_ROOT", context.work_root / "jobs")
     ).resolve()
@@ -60,9 +56,9 @@ def build_service() -> tuple[JobService, object]:
     hardware_root = Path(
         os.environ.get("BIGCHERRY_HARDWARE_ROOT", context.work_root / "hardware")
     ).resolve()
-    registry = load_executor_registry(registry_path, state_root=jobs_root)
+    registry = load_executor_registry(registry_path, state_root=jobs_root, engine=engine)
     catalog = InventoryCatalog(hardware_root)
-    identity = ProjectScientificIdentityResolver(context.project_root, engine=JOBS_ENGINE)
+    identity = ProjectScientificIdentityResolver(context.project_root, engine=engine)
     service = JobService(
         store=RunStore(jobs_root),
         executors=registry.executors,
@@ -72,7 +68,7 @@ def build_service() -> tuple[JobService, object]:
         inventory_loader=catalog.load,
         identity_resolver=identity,
         attempt_identity_resolver_factory=lambda root: ProjectScientificIdentityResolver(
-            root, engine=JOBS_ENGINE
+            root, engine=engine
         ),
         shared_root=context.work_root,
     )
@@ -117,6 +113,7 @@ def _executor_doctor(registry, service: JobService) -> dict[str, object]:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="bigcherry jobs")
+    parser.add_argument("--engine", required=True, choices=engines.names(paths.REPO_ROOT))
     sub = parser.add_subparsers(dest="action", required=True)
 
     for name in ("plan", "validate", "submit"):
@@ -207,8 +204,8 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
     try:
-        service, registry = build_service()
-        context = ProjectContext.resolve(engine=JOBS_ENGINE)
+        service, registry = build_service(args.engine)
+        context = ProjectContext.resolve(engine=args.engine)
         if args.action in {"plan", "validate", "submit"}:
             batch = batch_from_mapping(_load_document(args.spec))
             plan = service.plan_batch(batch)
@@ -357,7 +354,7 @@ def main(argv: list[str] | None = None) -> int:
                     project_root=context.project_root,
                     work_root=context.work_root,
                     commit=args.commit,
-                    engine=JOBS_ENGINE,
+                    engine=args.engine,
                 )
             )
             return 0
@@ -366,7 +363,7 @@ def main(argv: list[str] | None = None) -> int:
                 store=service.store,
                 series_id=args.series_id,
                 project_root=context.project_root,
-                engine=JOBS_ENGINE,
+                engine=args.engine,
             )
             if args.format == "markdown":
                 print(render_report_markdown(value), end="")

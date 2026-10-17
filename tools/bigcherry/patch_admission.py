@@ -18,7 +18,7 @@ Policy decisions:
 * Performance/qualification evidence is re-established on request, not at
   every pin bump: evidence that fully qualifies at an earlier pin it was
   recorded at is admitted as ``carried-forward`` with a warning (shared
-  authority: ``patch.catalog.validation_evidence_statuses("llamacpp", carry_forward=True)``).
+  authority: ``patch.catalog.validation_evidence_statuses(engine, carry_forward=True)``).
   Any non-pin mismatch, or no eligible record, stays a hard failure.  Hard
   mechanical validity (applies without conflict, not absorbed upstream) is
   enforced separately by patch-rebase-check and the apply transaction.
@@ -84,8 +84,8 @@ def verify_live_revision(root: Path, expected_revision: str) -> None:
         )
 
 
-def _has_non_grandfathered_eligible(*, evidence_root: Path | None = None) -> bool:
-    root = Path(evidence_root) if evidence_root is not None else paths.PATCHES
+def _has_non_grandfathered_eligible(engine: str, *, evidence_root: Path | None = None) -> bool:
+    root = Path(evidence_root) if evidence_root is not None else paths.patches_root(engine)
     candidates = root.glob("*.json") if evidence_root is not None else root.glob("**/evidence/*.json")
     for path in candidates:
         if path.name == "legacy-baseline.json":
@@ -101,6 +101,7 @@ def _has_non_grandfathered_eligible(*, evidence_root: Path | None = None) -> boo
 
 
 def admit(
+    engine: str,
     patch_ids: Iterable[str],
     *,
     mode: AdmissionMode = "production",
@@ -112,7 +113,7 @@ def admit(
     allow_stale_validation_evidence: bool = False,
     allow_legacy_grandfather: bool = True,
 ) -> AdmissionResult:
-    """Admit an already-resolved patch composition.
+    """Admit an already-resolved patch composition of ``engine``.
 
     No patch is removed or substituted.  ``not-ready`` is deliberately
     additive bootstrap behavior because the current repository has no real
@@ -120,7 +121,7 @@ def admit(
     """
     ids = tuple(patch_ids)
     statuses = patch_catalog.validation_evidence_statuses(
-        "llamacpp",
+        engine,
         ids, catalog_path=catalog_path, patches_dir=patches_dir,
         pinned_ref=pinned_ref, evidence_root=evidence_root,
         allow_legacy_grandfather=allow_legacy_grandfather,
@@ -138,7 +139,7 @@ def admit(
         for patch_id, check in statuses.items()
         if check.status == "carried-forward"
     )
-    bootstrap_ready = _has_non_grandfathered_eligible(evidence_root=evidence_root)
+    bootstrap_ready = _has_non_grandfathered_eligible(engine, evidence_root=evidence_root)
     if mode == "build":
         return AdmissionResult(
             True, True, "admitted-with-warnings" if failures or carried else "admitted",
@@ -154,8 +155,8 @@ def admit(
     )
 
 
-def require_admission(*args, **kwargs) -> AdmissionResult:
-    result = admit(*args, **kwargs)
+def require_admission(engine: str, patch_ids: Iterable[str], **kwargs) -> AdmissionResult:
+    result = admit(engine, patch_ids, **kwargs)
     if not result.admissible:
         detail = "; ".join(result.failures) or result.status
         raise ValueError(f"patch admission failed: {detail}")

@@ -43,7 +43,7 @@ class ExecutorRegistry:
         return tuple(dataclasses.asdict(self.info[key]) for key in sorted(self.info))
 
 
-def load_executor_registry(path: Path, *, state_root: Path) -> ExecutorRegistry:
+def load_executor_registry(path: Path, *, state_root: Path, engine: str) -> ExecutorRegistry:
     try:
         document = tomllib.loads(path.read_text(encoding="utf-8"))
     except (OSError, tomllib.TOMLDecodeError) as exc:
@@ -78,7 +78,7 @@ def load_executor_registry(path: Path, *, state_root: Path) -> ExecutorRegistry:
                 worker_command=str(value.get("worker_command", "python -m bigcherry.jobs.worker")),
                 ssh_binary=str(value.get("ssh_binary", "ssh")),
             ))
-            executor = RemoteExecutor(executor_id, transport)
+            executor = RemoteExecutor(executor_id, transport, engine)
         else:
             raise RegistryError(f"unknown executor kind {kind!r} for {executor_id}")
         executors[executor_id] = executor

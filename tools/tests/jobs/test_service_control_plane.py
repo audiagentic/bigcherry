@@ -247,7 +247,7 @@ class RunnerTests(unittest.TestCase):
 class RemoteAndInstallTests(unittest.TestCase):
     def test_remote_executor_protocol_against_fake_worker(self):
         fake = FakeExecutor()
-        remote = RemoteExecutor("windows-rdna3", FakeRemoteTransport(fake))
+        remote = RemoteExecutor("windows-rdna3", FakeRemoteTransport(fake), "llamacpp")
         from bigcherry.jobs.executor import ExecutionRequest, ResourceRequest
 
         request = ExecutionRequest(
@@ -266,17 +266,29 @@ class RemoteAndInstallTests(unittest.TestCase):
         fake.complete(fake.correlate("remote-1")[0])
         self.assertEqual(remote.status(handle).state.value, "completed")
 
+    def test_remote_calls_carry_the_engine_and_the_worker_requires_it(self):
+        from bigcherry.jobs import worker
+
+        transport = FakeRemoteTransport(FakeExecutor())
+        remote = RemoteExecutor("windows-rdna3", transport, "radiance")
+        remote.correlate("remote-1")
+        self.assertEqual(transport.requests[-1][1]["engine"], "radiance")
+        self.assertEqual(worker._engine({"engine": "radiance"}), "radiance")
+        with self.assertRaises(ValueError):
+            worker._engine({})
+
     def test_systemd_render_is_host_parameterized(self):
         units = unit_texts(
             project_root=PurePosixPath("/srv/bigcherry"),
             work_root=PurePosixPath("/mnt/data/bc"),
             python=PurePosixPath("/srv/venv/bin/python"),
             user="bigcherry",
+            engine="llamacpp",
         )
         service = units["bigcherry-jobs-ingest.service"]
         path = units["bigcherry-jobs-ingest.path"]
         self.assertIn("User=bigcherry", service)
-        self.assertIn("-m bigcherry jobs ingest --once", service)
+        self.assertIn("-m bigcherry jobs --engine llamacpp ingest --once", service)
         self.assertIn("/mnt/data/bc/jobs/inbox/pending", path)
 
 

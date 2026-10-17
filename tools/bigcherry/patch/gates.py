@@ -81,6 +81,7 @@ class LintGateReport:
 
 @dataclass(frozen=True, slots=True)
 class GateContext:
+    engine: str
     descriptor: patch_registry.PatchDescriptor
     composition: patchset.ResolvedPatchSet
     pinned_ref: str
@@ -635,6 +636,7 @@ def evaluate_admission_gate(context: GateContext) -> GateResult:
         from .. import patch_admission
 
         result = patch_admission.admit(
+            context.engine,
             ids,
             mode="production",
             catalog_path=context.catalog_path,
