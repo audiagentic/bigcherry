@@ -969,7 +969,18 @@ int main(int argc, char** argv) {
     }
     const uint64_t budget = helper_budget_bytes();
     Owned owned;
-    if (!select_owned(model, gpu.get(), budget, helper_index, helper_count, &owned)) return 1;
+    if (g_replay) {
+        /* A replay owns exactly the experts the captured request routes to: the capturing helper's ownership
+         * (one of two, by heat) is not this process's, and an unowned route would never complete. */
+        std::vector<uint8_t> seen(kExperts, 0);
+        for (const Route& r : g_replay->routes)
+            if (r.expert >= 0 && r.expert < (int32_t)kExperts && !seen[r.expert]) {
+                seen[r.expert] = 1;
+                owned.expert.emplace_back(g_replay->hd.layer, (uint32_t)r.expert);
+            }
+    } else if (!select_owned(model, gpu.get(), budget, helper_index, helper_count, &owned)) {
+        return 1;
+    }
     if (gpu && !gpu->allocate(owned.expert)) return 1;
     const uint32_t lane_max_rows = helper_small_rows();
     const uint32_t lane_large_rows = helper_max_rows();
