@@ -61,7 +61,8 @@ Radiance 1.7.0, harness (`helper-ab.json`, 2 balanced rounds, natives on; baseli
 
 | Ownership | pp4096 tok/s | pp1024 tok/s | tg512 tok/s | tg2048 tok/s | KLD mean / P99 / top-1 | Runs |
 |---|---|---|---|---|---|---|
-| hottest experts to helpers (current) | 2,134 / 2,140 | 2,144 / 2,143 | 136 / 130 | 143 / 140 | 0.0633 / 0.673 / 88.3% | rad06-heat-10172150, rad06-kld-hot-10172208 |
+| hottest experts to helpers, f16 WMMA MoE GEMM (current, `R3_MOE_FP16`) | 3,149 / 3,150 | 3,145 / 3,143 | 131 / 136 | 141 / 143 | 0.0633 / 0.673 / 88.3% | rad06-fp16-10181128, rad06-fp16kld-10181239 |
+| hottest experts to helpers, bf16 WMMA | 2,134 / 2,140 | 2,144 / 2,143 | 136 / 130 | 143 / 140 | 0.0633 / 0.673 / 88.3% | rad06-heat-10172150, rad06-kld-hot-10172208 |
 | coldest experts to helpers | 2,050 / 2,052 | 2,105 / 2,102 | 126 / 126 | 141 / 141 | 0.0642 / 0.684 / 88.7% | rad06-heat-10172150, port-native-kld-10171827 |
 
 Helper large lane per request (hottest-first): routes 0.36, gate_up 2.10, quant 0.04, down 1.17, reduce 0.36 ms
@@ -138,6 +139,7 @@ Component settings (`engines/radiance/components/libr3/component.toml`; default 
 | `R3_MOE_HELPER_HEAT` | unset | experimental | route-heat file; helpers own the experts it ranks first - production uses `heat.rank0.hot-first` (hottest first, +4% prefill over coldest-first, RAD06 2026-10-17; coldest-first was +36% over unordered, RAD02) |
 | `R3_MOE_HELPER_GEMV` | 1 | experimental | decode MoE GEMV for the small lane; decode 69.6 to 95.7 tok/s (RAD05) |
 | `R3_MOE_HELPER_HISTOGRAM` | unset | diagnostic | produces the heat file (profile run) |
+| `R3_MOE_FP16` | 1 | experimental | f16 WMMA with E4M3 widened to half in the helper's native MoE GEMM; bit-identical output, grouped GEMM 1.7-3.2x faster on replayed requests, prefill 2,130 -> 3,150 tok/s, decode unchanged (RAD06 2026-10-18). On by default in the helpers (main() sets it unless set); 0 turns it off. |
 | `R3_MOE_NATIVE` | 1 | experimental | native bf16 WMMA inner loop; on by default in the helpers (`r3_moe_helper` main sets it unless set, 2bf231e3): decode 91.4/95.6 to 108.2/108.8. The engine process reads an unset variable as off; component.toml declares the helper default. |
 | `R3_MOE_HELPER_SKIP_OWNED` | (rad0002 patch variable, not a component setting) | | helper-owned experts are not placed on the R9700; set in the shared environment in `helper-ab.json` |
 

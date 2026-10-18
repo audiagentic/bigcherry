@@ -13,7 +13,9 @@
 #include <cstdlib>
 #include <cstring>
 #include <fcntl.h>
+#include <map>
 #include <memory>
+#include <set>
 #include <limits>
 #include <string>
 #include <thread>
@@ -599,6 +601,9 @@ struct ReplayInput {
     std::vector<uint16_t> activation;
 };
 const ReplayInput* g_replay = nullptr;
+/* --replay-sweep with R3_MOE_SWEEP_FAST=1: no CPU reference; each variant's output is compared bit for bit with the
+ * first variant's of the same capture. */
+bool g_sweep_fast = false;
 
 bool load_replay(const char* path, ReplayInput* out) {
     FILE* f = std::fopen(path, "rb");
@@ -817,6 +822,20 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
         /* The helper's per-token rows, taken before the host reference rewrites the same slot. */
         const uint16_t* res = ptr<uint16_t>(map, h->result_offset[rank * kMaxRanks + rank]);
         const std::vector<uint16_t> got(res, res + (size_t)rows * kHidden);
+        if (g_sweep_fast) {
+            static std::map<std::pair<const ReplayInput*, uint32_t>, std::vector<uint16_t>> base;
+            const auto key = std::make_pair(g_replay, rank);
+            const auto it = base.find(key);
+            if (it == base.end()) {
+                base[key] = got;
+                std::printf("sweep_cmp layer %u rank %u baseline mismatches=0\n", layer, rank);
+            } else {
+                size_t mism = 0;
+                for (size_t i = 0; i < got.size(); ++i) mism += got[i] != it->second[i];
+                std::printf("sweep_cmp layer %u rank %u mismatches=%zu of %zu\n", layer, rank, mism, got.size());
+            }
+            continue;
+        }
 
         std::vector<uint16_t> want_route;
         const int hrc = compute_host_engine(model, map, q, &want_route);
@@ -880,11 +899,47 @@ int main(int argc, char** argv) {
      * Flash-Next, prefill 2,518 -> 2,665 tok/s and helper gate/up -25%, KLD 0.064 (noise floor). Read by libr3
      * when the plugin is loaded, so set before it; an explicit setting wins. */
     (void)::setenv("R3_MOE_NATIVE", "1", 0);
+    /* The same MoE GEMM with E4M3 widened to f16 for the f16 WMMA: bit-identical output (replay rel_l2 0 on four
+     * captured requests, KLD unchanged), grouped GEMM 1.7-3.2x faster, prefill 2,130 -> 3,150 tok/s with decode
+     * unchanged (RAD06 2026-10-18). Read by libr3 at launch; 0 turns it off. */
+    (void)::setenv("R3_MOE_FP16", "1", 0);
+    /* --replay-sweep MODEL VARIANTS FILE...: one process, one model load and one expert allocation for every capture,
+     * then each capture is replayed once per variant. VARIANTS is ';'-separated, each "NAME=value,NAME=value" (empty
+     * = the environment as launched); the variant's variables are set (and the previous variant's unset) before the
+     * replay, so anything libr3 reads at launch (R3_MOE_FP16, R3_MOE_PROBE, R3_MOE_PITCH16) can be compared with
+     * no further model load. Each run prints "SWEEP run i capture c layer L variant [..]" and its engine_join line. */
+    static std::vector<ReplayInput> sweep_replays;
+    static std::vector<std::string> sweep_variants;
+    if (argc >= 5 && std::strcmp(argv[1], "--replay-sweep") == 0) {
+        for (const char* q = argv[3];;) {
+            const char* e = std::strchr(q, ';');
+            sweep_variants.emplace_back(q, e ? (size_t)(e - q) : std::strlen(q));
+            if (!e) break;
+            q = e + 1;
+        }
+        sweep_replays.resize((size_t)(argc - 4));
+        for (int i = 4; i < argc; ++i)
+            if (!load_replay(argv[i], &sweep_replays[(size_t)(i - 4)])) {
+                std::fprintf(stderr, "r3_moe_helper: --replay-sweep %s: not a capture file\n", argv[i]);
+                return 2;
+            }
+        { const char* f = std::getenv("R3_MOE_SWEEP_FAST"); g_sweep_fast = f && *f && std::strcmp(f, "0") != 0; }
+        static std::string sweep_layer, sweep_rows;
+        g_replay = &sweep_replays[0];
+        sweep_layer = std::to_string(sweep_replays[0].hd.layer);
+        sweep_rows = std::to_string(sweep_replays[0].hd.rows);
+        static const char* sweep_argv[8];
+        const char* rebuilt[] = {argv[0], "--compare", argv[2], "--layer", sweep_layer.c_str(), "--rows",
+                                 sweep_rows.c_str(), nullptr};
+        std::copy(std::begin(rebuilt), std::end(rebuilt), sweep_argv);
+        argv = const_cast<char**>(sweep_argv);
+        argc = 7;
+    }
     /* --replay MODEL FILE: --compare on a captured real request (layer and rows come from the file). */
     static ReplayInput replay;
     static std::string replay_layer, replay_rows;
     static const char* replay_argv[8];
-    if (argc == 4 && std::strcmp(argv[1], "--replay") == 0) {
+    if (sweep_replays.empty() && argc == 4 && std::strcmp(argv[1], "--replay") == 0) {
         if (!load_replay(argv[3], &replay)) {
             std::fprintf(stderr, "r3_moe_helper: --replay %s: not a capture file\n", argv[3]);
             return 2;
@@ -972,12 +1027,15 @@ int main(int argc, char** argv) {
     if (g_replay) {
         /* A replay owns exactly the experts the captured request routes to: the capturing helper's ownership
          * (one of two, by heat) is not this process's, and an unowned route would never complete. */
-        std::vector<uint8_t> seen(kExperts, 0);
-        for (const Route& r : g_replay->routes)
-            if (r.expert >= 0 && r.expert < (int32_t)kExperts && !seen[r.expert]) {
-                seen[r.expert] = 1;
-                owned.expert.emplace_back(g_replay->hd.layer, (uint32_t)r.expert);
-            }
+        std::set<std::pair<uint32_t, uint32_t>> seen;
+        auto own_routes = [&](const ReplayInput& ri) {
+            for (const Route& r : ri.routes)
+                if (r.expert >= 0 && r.expert < (int32_t)kExperts &&
+                    seen.emplace(ri.hd.layer, (uint32_t)r.expert).second)
+                    owned.expert.emplace_back(ri.hd.layer, (uint32_t)r.expert);
+        };
+        if (sweep_replays.empty()) own_routes(*g_replay);
+        else for (const ReplayInput& ri : sweep_replays) own_routes(ri);
     } else if (!select_owned(model, gpu.get(), budget, helper_index, helper_count, &owned)) {
         return 1;
     }
@@ -994,6 +1052,34 @@ int main(int argc, char** argv) {
     std::fprintf(stderr, "r3_moe_helper: selected %zu expert candidates, %.3f GiB; host RSS %.1f MiB\n",
                  owned.expert.size(), (double)owned.bytes / (1024.0 * 1024.0 * 1024.0), rss_mib);
 
+    if (compare && !sweep_replays.empty()) {
+        std::set<std::string> touched;
+        int rc = 0, run = 0;
+        for (size_t c = 0; c < sweep_replays.size(); ++c) {
+            g_replay = &sweep_replays[c];
+            for (const std::string& v : sweep_variants) {
+                for (const std::string& k : touched) (void)::unsetenv(k.c_str());
+                touched.clear();
+                for (size_t pos = 0; pos < v.size();) {
+                    const size_t comma = v.find(',', pos);
+                    const std::string kv = v.substr(pos, comma == std::string::npos ? std::string::npos : comma - pos);
+                    const size_t eq = kv.find('=');
+                    if (eq != std::string::npos && eq > 0) {
+                        (void)::setenv(kv.substr(0, eq).c_str(), kv.c_str() + eq + 1, 1);
+                        touched.insert(kv.substr(0, eq));
+                    }
+                    if (comma == std::string::npos) break;
+                    pos = comma + 1;
+                }
+                std::printf("SWEEP run %d capture %zu layer %u variant [%s]\n", run++, c, g_replay->hd.layer, v.c_str());
+                std::fflush(stdout);
+                rc |= compare_mode(model, *gpu, owned, g_replay->hd.layer, g_replay->hd.rows, lane_max_rows,
+                                   lane_large_rows, false);
+                std::fflush(stdout);
+            }
+        }
+        return rc;
+    }
     if (compare) {
         if (compare_one_layer)
             return compare_mode(model, *gpu, owned, compare_layer, compare_rows, lane_max_rows,
