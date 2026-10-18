@@ -223,6 +223,33 @@ the four cells is the noise floor.
 - Not measured yet: mixed long-prefill plus decodes, open-loop arrivals, queueing beyond `--max-num-seqs`, engine-side helper
   counters in the same cell. For scale, Paiton reports 565 -> 685 tok/s at eight streams on two P2P R9700 (a different setup).
 
+### Small-lane row limit 8 against 24, with the engine's own counters (RAD10-02, 2026-10-19)
+
+`tools/lab/radiance/helper-smallrows-ab.json`; evidence `docs/evidence/RAD10/smallrows-180/`. Two balanced pairs, 2, 4 and 6 streams,
+`R3_MOE_HELPER_SMALL_ROWS` 8 (production) against 24. Each round also reads the server's `/metrics` before and after (decode steps and
+step time, committed tokens a step, draft acceptance), so the table below is the decode phase alone.
+
+| Streams | Arm | Decode step | Committed tokens a step | Decode throughput (engine) | Client aggregate | Draft acceptance |
+|---|---|---|---|---|---|---|
+| 2 | 8 | 31.7 ms | 5.8 | about 183 tok/s | 129.5 | 0.64 |
+| 2 | 24 | 33.0 ms | 5.8 | about 176 | 123.9 | 0.64 |
+| 4 | 8 | 44.1 ms | 11.3 | about 256 | 167.6 | 0.67 |
+| 4 | 24 | 40.9 ms | 10.8 | about 265 | 173.2 | 0.63 |
+| 6 | 8 | 50.3 ms | 16.3 | about 324 | 194.9 | 0.66 |
+| 6 | 24 | 49.2 ms | 16.6 | about 337 | 200.0 | 0.65 |
+
+- **The decode phase scales much better than the client aggregate showed.** From 2 to 6 streams the step time goes 32 -> 50 ms while
+  the tokens a step triple, so decode throughput rises about 1.8x (183 -> 324 tok/s). The client-side aggregate (129 -> 195) is lower
+  because a short 128-token round also contains every stream's 512-token prefill and the ramp; at 6 streams the first token already
+  takes 1.6 s. The earlier "2.1x" was largely prefill and round length, not decode.
+- **Each stream commits about 2.8 tokens a step** (1 plus 3 drafts at 0.64 acceptance), steady across stream counts, so MTP is not what
+  degrades with concurrency here.
+- **The lane limit is a small lever.** 24 against 8: about -4% at 2 streams (the small lane is padded to 24 rows), about +3.5% at 4 and
+  +4% at 6 streams in decode throughput. Not a free win; the threshold would have to follow the number of active streams. Two pairs
+  only, so treat the percentages as direction.
+- **What was not measured:** how much of the 32 -> 50 ms step growth is the helper path. That needs the helpers' own per-request counters
+  in the same cell (rows, lane, wait), the next RAD10-02 step.
+
 ## Open levers
 
 - **RAD06, prefill (the ranked remaining levers):** (1) multi-buffered chunk pipeline of the hand-off; analysis

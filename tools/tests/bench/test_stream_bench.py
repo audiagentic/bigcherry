@@ -23,10 +23,39 @@ class _Handler(BaseHTTPRequestHandler):
     usage = True            # send a usage block
     truncate = False        # close the stream without [DONE] or a finish reason
     malformed = False       # send an unparsable data line
+    metrics_on = True       # serve /metrics
+    steps = 0               # decode steps taken so far (one per event)
+    tokens = 0
+    running = 0
+    lock = threading.Lock()
     seen_prompts: list = []
 
     def log_message(self, *args):
         pass
+
+    def do_GET(self):
+        cls = type(self)
+        if self.path != "/metrics" or not cls.metrics_on:
+            self.send_response(404)
+            self.end_headers()
+            return
+        with cls.lock:
+            lines = [
+                "# TYPE radiance:engine_steps_decode_total counter",
+                f"radiance:engine_steps_decode_total {cls.steps}",
+                f"radiance:engine_step_seconds_decode_total {cls.steps * cls.delay}",
+                f"radiance:decode_tokens_total {cls.tokens}",
+                f"radiance:draft_tokens_total {cls.tokens * 3}",
+                'radiance:draft_accepted_total{position="0"} ' + str(cls.tokens),
+                f"vllm:num_requests_running {cls.running}",
+                "vllm:num_requests_waiting 0",
+            ]
+            text = chr(10).join(lines) + chr(10)
+        body = text.encode()
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
@@ -37,6 +66,8 @@ class _Handler(BaseHTTPRequestHandler):
             self.end_headers()
             return
         n = int(body["max_tokens"])
+        with cls.lock:
+            cls.running += 1
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
         self.end_headers()
@@ -53,6 +84,11 @@ class _Handler(BaseHTTPRequestHandler):
             self.wfile.write(f"data: {json.dumps(chunk)}\n\n".encode())
             self.wfile.flush()
             sent += take
+            with cls.lock:
+                cls.steps += 1
+                cls.tokens += take
+        with cls.lock:
+            cls.running -= 1
         if cls.truncate:
             return
         self.wfile.write(f"data: {json.dumps({'choices': [{'delta': {}, 'finish_reason': 'length'}]})}\n\n".encode())
@@ -70,6 +106,8 @@ def _reset():
     _Handler.delay = 0.01
     _Handler.tokens_per_event = 1
     _Handler.seen_prompts = []
+    _Handler.metrics_on = True
+    _Handler.steps = _Handler.tokens = _Handler.running = 0
 
 
 class StreamBench(unittest.TestCase):
@@ -189,6 +227,33 @@ class StreamBench(unittest.TestCase):
         bad = sb.run(self.url, "m", [1], 4, 2, 1)
         with self.assertRaises(sb.StreamBenchError):
             sb.flat_metrics(bad)
+
+    def test_engine_counters_are_read_as_per_round_deltas(self):
+        a = self.round(2, max_tokens=10)
+        b = self.round(2, max_tokens=10)
+        for rec in (a, b):
+            eng = rec["engine"]
+            self.assertEqual(eng["decode_tokens_total"], 20)           # this round only, not the running total
+            self.assertEqual(eng["engine_steps_decode_total"], 20)
+            self.assertAlmostEqual(eng["decode_tokens_per_step"], 1.0, places=3)
+            self.assertAlmostEqual(eng["draft_acceptance"], 1.0 / 3.0, places=3)
+            self.assertGreater(eng["decode_ms_per_step"], 5.0)
+            self.assertAlmostEqual(eng["decode_tps_engine"], eng["decode_tokens_per_step"] / eng["decode_ms_per_step"] * 1000.0,
+                                   delta=eng["decode_tps_engine"] * 0.01)
+            self.assertGreaterEqual(eng["requests_running_max"], 1)
+
+    def test_a_server_without_metrics_still_benchmarks(self):
+        _Handler.metrics_on = False
+        rec = self.round(1)
+        self.assertTrue(rec["ok"])
+        self.assertIsNone(rec["engine"])
+
+    def test_engine_figures_reach_the_summary_and_flat_metrics(self):
+        record = sb.run(self.url, "m", [2], 8, 6, 2)
+        self.assertIn("decode_ms_per_step_median", record["summary"]["2"])
+        flat = sb.flat_metrics(record)
+        self.assertIn("s2_decode_ms_per_step", flat)
+        self.assertIn("s2_draft_acceptance", flat)
 
     def test_event_gaps_are_recorded(self):
         _Handler.delay = 0.02
