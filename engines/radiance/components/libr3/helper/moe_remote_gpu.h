@@ -1175,7 +1175,13 @@ public:
             const int64_t w1 = slice_w(slice, 1);
             /* Small lane, decode GEMV (RAD05): the step's routes, one block a (row, 64 outputs). */
             const bool gemv = gemv_ && (lane < kMaxRanks || rows <= gemv_large_rows_);
-            const bool rowk = rows_ && lane >= kMaxRanks;
+            /* R3_MOE_HELPER_ROWS_SMALL (RAD06): the few-rows kernel on the small (decode) lane too. A decode request's 8 rows
+             * send ~2.4 routes to each distinct expert (the hot experts are owned by the helpers), and the per-route GEMV
+             * reads that expert's weights once a route; here they are read once for all the expert's rows. Read each
+             * call so a replay sweep can compare; the rows accumulate in a different order, so it is not bit-exact. */
+            const char* rs_env = std::getenv("R3_MOE_HELPER_ROWS_SMALL");
+            const bool rows_small = rs_env && std::strcmp(rs_env, "0") != 0 && lane < kMaxRanks && rows <= 16u;
+            const bool rowk = (rows_ && lane >= kMaxRanks) || rows_small;
             const dim3 rows_grid_gu(kExperts, (uint32_t)((2 * std::max(w0, w1) + kRowsTileN - 1) / kRowsTileN));
             const dim3 rows_grid_dn(kExperts, (uint32_t)((kHidden + kRowsTileN - 1) / kRowsTileN));
             const dim3 gemv_grid_gu(routes, (uint32_t)((2 * std::max(w0, w1) + kGemvTile - 1) / kGemvTile));
