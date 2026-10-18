@@ -703,10 +703,13 @@ void trace_dump(void* map, uint32_t lane, uint32_t seq) {
     for (int i = 0; i < 5; ++i) t[i] = q->trace[i];
     if (!t[0] || !t[1] || !t[2] || !t[3] || !t[4]) return;
     const double us = 1.0 / 100.0;   /* a tick is 10 ns */
-    std::fprintf(stderr, "TRACE,lane,%u,seq,%u,layer,%u,rows,%u,routes,%u,local_us,%.2f,wait_us,%.2f,helper_gpu_us,%.2f,enter,%llu\n",
+    /* wall_ns: this host's clock when the line is printed, so a benchmark can bucket lines by the round that produced them. */
+    const unsigned long long wall_ns = (unsigned long long)std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    std::fprintf(stderr, "TRACE,lane,%u,seq,%u,layer,%u,rows,%u,routes,%u,local_us,%.2f,wait_us,%.2f,helper_gpu_us,%.2f,enter,%llu,wall_ns,%llu\n",
                  lane, seq, q->layer, q->rows, q->route_count,
                  (double)(int64_t)(t[1] - t[0]) * us, (double)(int64_t)(t[2] - t[1]) * us,
-                 (double)(int64_t)(t[4] - t[3]) * us, (unsigned long long)t[1]);
+                 (double)(int64_t)(t[4] - t[3]) * us, (unsigned long long)t[1], wall_ns);
 }
 
 struct ReplayInput {

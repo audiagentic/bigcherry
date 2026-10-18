@@ -1,0 +1,958 @@
+{
+  "schema_version": 1,
+  "capture_kind": "server-bench-balanced-v1",
+  "evidence_role": "diagnostic",
+  "performance_admitted": false,
+  "admission_blockers": [
+    "full source provenance and work equivalence require verification",
+    "replay activation, if applicable, requires separate admission"
+  ],
+  "configuration": {
+    "_comment": "RAD10-02: does the helper small-lane row limit explain the multi-stream step growth? With MTP depth 3 a stream sends about 4 rows a verify step, so three or more streams exceed 8 rows and fall onto the large lane. Arms: R3_MOE_HELPER_SMALL_ROWS 8 (production) against 24 (covers six streams). Streams 1, 2, 3, 4 and 6; engine counters from /metrics in every cell and the helpers' own per-request TRACE lines (R3_MOE_HELPER_TRACE=1, both arms, with wall_ns) bucketed per round by heat-placement/trace_report.py --windows. Set RAD_BIN, RAD_HOME and R9700_BDF as for helper-ab.json.",
+    "schema_version": 1,
+    "engine": "radiance",
+    "evidence_role": "diagnostic",
+    "execution_evidence": "observe",
+    "model": "/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad",
+    "server_args": [
+      "--radiance-home",
+      "${RAD_HOME}",
+      "--kernels",
+      "libr4d,libr3moe,libref",
+      "--placement",
+      "expert_tiered",
+      "--ngram-placement",
+      "ram",
+      "--max-num-seqs",
+      "6",
+      "--max-num-batched-tokens",
+      "4096",
+      "--checkpoint-interval",
+      "4096",
+      "--kv-cache-dtype",
+      "fp8",
+      "--num-speculative-tokens",
+      "3",
+      "--tp",
+      "1",
+      "--host-pool-mib",
+      "30720",
+      "--max-model-len",
+      "32768"
+    ],
+    "environment": {
+      "HIP_VISIBLE_DEVICES": "0",
+      "ROCR_VISIBLE_DEVICES": "2",
+      "RADIANCE_HOME": "${RAD_HOME}",
+      "R3_MOE_HELPER_SKIP_OWNED": "1"
+    },
+    "expected_execution": {
+      "backend": "ROCm",
+      "architectures": [
+        "gfx1201"
+      ],
+      "locators": [
+        "${R9700_BDF}"
+      ]
+    },
+    "bench_configs": "mtp-dual",
+    "required_metrics": [
+      "s1_agg_tps",
+      "s1_stream_tps",
+      "s2_agg_tps",
+      "s2_stream_tps",
+      "s3_agg_tps",
+      "s3_stream_tps",
+      "s4_agg_tps",
+      "s4_stream_tps",
+      "s6_agg_tps",
+      "s6_stream_tps"
+    ],
+    "repetitions": 1,
+    "health_timeout_s": 900,
+    "arms": [
+      {
+        "name": "rows8",
+        "mode": "stock",
+        "shutdown_method": "sigint",
+        "binary": "${RAD_BIN}",
+        "settings": {
+          "R3_MOE_HELPER": "1",
+          "R3_MOE_HELPER_DEVICES": "0 1",
+          "R3_MOE_HELPER_MOE_DOWN_TILE": "1",
+          "R3_MOE_HELPER_ENGINE_RANKS": "1",
+          "R3_MOE_HELPER_MAX_ROWS": "4096",
+          "R3_MOE_HELPER_SMALL_ROWS": "8",
+          "R3_MOE_HELPER_MIB": "22528",
+          "R3_MOE_HELPER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
+          "R3_MOE_HELPER_ROWS": "0",
+          "R3_MOE_HELPER_TRACE": "1"
+        }
+      },
+      {
+        "name": "rows24",
+        "mode": "stock",
+        "shutdown_method": "sigint",
+        "binary": "${RAD_BIN}",
+        "settings": {
+          "R3_MOE_HELPER": "1",
+          "R3_MOE_HELPER_DEVICES": "0 1",
+          "R3_MOE_HELPER_MOE_DOWN_TILE": "1",
+          "R3_MOE_HELPER_ENGINE_RANKS": "1",
+          "R3_MOE_HELPER_MAX_ROWS": "4096",
+          "R3_MOE_HELPER_SMALL_ROWS": "24",
+          "R3_MOE_HELPER_MIB": "22528",
+          "R3_MOE_HELPER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
+          "R3_MOE_HELPER_ROWS": "0",
+          "R3_MOE_HELPER_TRACE": "1"
+        }
+      }
+    ],
+    "stream_bench": {
+      "streams": [
+        1,
+        2,
+        3,
+        4,
+        6
+      ],
+      "prompt_tokens": 512,
+      "max_tokens": 128,
+      "reps": 2,
+      "seed": 1
+    }
+  },
+  "model_sha256": "0af5e96244e80c21ac8edca1719dae49b8a201b94a2f3994c3e24026ceaa4d20",
+  "arm_model_sha256": {},
+  "arm_provenance": {
+    "rows8": {
+      "campaign_metadata": {
+        "binary_hash": "09b12d215241ec68a10b121c3bc6ffb019b21d2dca190b87ed7b1e074e556551",
+        "build_id": "ad41bb5f3cadd27c7acd6f3288ebb059",
+        "build_plan_id": "8932dce836688cdf1e1328b0b97b843f",
+        "effective_configure": {
+          "CMAKE_BUILD_TYPE": "Release",
+          "CMAKE_CXX_COMPILER": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14",
+          "CMAKE_CXX_COMPILER-ADVANCED": "1",
+          "CMAKE_CXX_COMPILER_AR": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ar-14",
+          "CMAKE_CXX_COMPILER_AR-ADVANCED": "1",
+          "CMAKE_CXX_COMPILER_RANLIB": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ranlib-14",
+          "CMAKE_CXX_COMPILER_RANLIB-ADVANCED": "1",
+          "CMAKE_C_COMPILER": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14",
+          "CMAKE_C_COMPILER-ADVANCED": "1",
+          "CMAKE_C_COMPILER_AR": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ar-14",
+          "CMAKE_C_COMPILER_AR-ADVANCED": "1",
+          "CMAKE_C_COMPILER_RANLIB": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ranlib-14",
+          "CMAKE_C_COMPILER_RANLIB-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS": "",
+          "CMAKE_EXE_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_EXE_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_EXE_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_EXE_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS": "",
+          "CMAKE_MODULE_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_MODULE_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_MODULE_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_MODULE_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS": "",
+          "CMAKE_SHARED_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_SHARED_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_SHARED_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_SHARED_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1"
+        },
+        "generated_compile_inputs_hash": null,
+        "generated_inputs_verification": null,
+        "runtime_artifacts": {
+          "radiance": "09b12d215241ec68a10b121c3bc6ffb019b21d2dca190b87ed7b1e074e556551"
+        },
+        "runtime_bundle_hash": "987a912798713e6b365ced53e5449abc",
+        "source_slice_id": "6c9c2b9a00abd23f31edf2d30d39f38f",
+        "toolchain": [
+          [
+            "CMAKE_CXX_COMPILER",
+            "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14"
+          ],
+          [
+            "CMAKE_C_COMPILER",
+            "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14"
+          ],
+          [
+            "CMAKE_GENERATOR",
+            "Ninja"
+          ],
+          [
+            "c_compiler_realpath",
+            "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14"
+          ],
+          [
+            "c_compiler_version",
+            "x86_64-linux-gnu-gcc-14 (Ubuntu 14.2.0-4ubuntu2~24.04.1) 14.2.0"
+          ],
+          [
+            "cmake_version",
+            "cmake version 3.28.3"
+          ],
+          [
+            "cxx_compiler_realpath",
+            "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14"
+          ],
+          [
+            "cxx_compiler_version",
+            "x86_64-linux-gnu-g++-14 (Ubuntu 14.2.0-4ubuntu2~24.04.1) 14.2.0"
+          ],
+          [
+            "ninja_version",
+            "1.11.1"
+          ]
+        ]
+      },
+      "observed_runtime_artifacts": {
+        "radiance": "09b12d215241ec68a10b121c3bc6ffb019b21d2dca190b87ed7b1e074e556551"
+      },
+      "compiler_observation": null,
+      "source_attestation": {
+        "upstream_revision": "7a7707a95559c0b85277e75b7799fcf2ca8b8bc5",
+        "tree_oid": "5e41a5e2fc50a96427918dc579a17aeef732f425",
+        "object_format": "sha1",
+        "source_slice_id": "6c9c2b9a00abd23f31edf2d30d39f38f",
+        "allowed_untracked": [
+          "abi/bc_moe_remote.h",
+          "arch/common/bc_moe_remote_block.h",
+          "core/place/bc_moe_remote.cpp",
+          "core/place/bc_moe_remote_place.h"
+        ]
+      }
+    },
+    "rows24": {
+      "campaign_metadata": {
+        "binary_hash": "09b12d215241ec68a10b121c3bc6ffb019b21d2dca190b87ed7b1e074e556551",
+        "build_id": "ad41bb5f3cadd27c7acd6f3288ebb059",
+        "build_plan_id": "8932dce836688cdf1e1328b0b97b843f",
+        "effective_configure": {
+          "CMAKE_BUILD_TYPE": "Release",
+          "CMAKE_CXX_COMPILER": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14",
+          "CMAKE_CXX_COMPILER-ADVANCED": "1",
+          "CMAKE_CXX_COMPILER_AR": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ar-14",
+          "CMAKE_CXX_COMPILER_AR-ADVANCED": "1",
+          "CMAKE_CXX_COMPILER_RANLIB": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ranlib-14",
+          "CMAKE_CXX_COMPILER_RANLIB-ADVANCED": "1",
+          "CMAKE_C_COMPILER": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14",
+          "CMAKE_C_COMPILER-ADVANCED": "1",
+          "CMAKE_C_COMPILER_AR": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ar-14",
+          "CMAKE_C_COMPILER_AR-ADVANCED": "1",
+          "CMAKE_C_COMPILER_RANLIB": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ranlib-14",
+          "CMAKE_C_COMPILER_RANLIB-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS": "",
+          "CMAKE_EXE_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_EXE_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_EXE_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_EXE_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS": "",
+          "CMAKE_MODULE_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_MODULE_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_MODULE_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_MODULE_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS": "",
+          "CMAKE_SHARED_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_SHARED_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_SHARED_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_SHARED_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1"
+        },
+        "generated_compile_inputs_hash": null,
+        "generated_inputs_verification": null,
+        "runtime_artifacts": {
+          "radiance": "09b12d215241ec68a10b121c3bc6ffb019b21d2dca190b87ed7b1e074e556551"
+        },
+        "runtime_bundle_hash": "987a912798713e6b365ced53e5449abc",
+        "source_slice_id": "6c9c2b9a00abd23f31edf2d30d39f38f",
+        "toolchain": [
+          [
+            "CMAKE_CXX_COMPILER",
+            "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14"
+          ],
+          [
+            "CMAKE_C_COMPILER",
+            "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14"
+          ],
+          [
+            "CMAKE_GENERATOR",
+            "Ninja"
+          ],
+          [
+            "c_compiler_realpath",
+            "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14"
+          ],
+          [
+            "c_compiler_version",
+            "x86_64-linux-gnu-gcc-14 (Ubuntu 14.2.0-4ubuntu2~24.04.1) 14.2.0"
+          ],
+          [
+            "cmake_version",
+            "cmake version 3.28.3"
+          ],
+          [
+            "cxx_compiler_realpath",
+            "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14"
+          ],
+          [
+            "cxx_compiler_version",
+            "x86_64-linux-gnu-g++-14 (Ubuntu 14.2.0-4ubuntu2~24.04.1) 14.2.0"
+          ],
+          [
+            "ninja_version",
+            "1.11.1"
+          ]
+        ]
+      },
+      "observed_runtime_artifacts": {
+        "radiance": "09b12d215241ec68a10b121c3bc6ffb019b21d2dca190b87ed7b1e074e556551"
+      },
+      "compiler_observation": null,
+      "source_attestation": {
+        "upstream_revision": "7a7707a95559c0b85277e75b7799fcf2ca8b8bc5",
+        "tree_oid": "5e41a5e2fc50a96427918dc579a17aeef732f425",
+        "object_format": "sha1",
+        "source_slice_id": "6c9c2b9a00abd23f31edf2d30d39f38f",
+        "allowed_untracked": [
+          "abi/bc_moe_remote.h",
+          "arch/common/bc_moe_remote_block.h",
+          "core/place/bc_moe_remote.cpp",
+          "core/place/bc_moe_remote_place.h"
+        ]
+      }
+    }
+  },
+  "arm_variables": {
+    "rows8": {
+      "environment": {},
+      "settings": {
+        "R3_MOE_HELPER": "1",
+        "R3_MOE_HELPER_DEVICES": "0 1",
+        "R3_MOE_HELPER_MOE_DOWN_TILE": "1",
+        "R3_MOE_HELPER_ENGINE_RANKS": "1",
+        "R3_MOE_HELPER_MAX_ROWS": "4096",
+        "R3_MOE_HELPER_SMALL_ROWS": "8",
+        "R3_MOE_HELPER_MIB": "22528",
+        "R3_MOE_HELPER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
+        "R3_MOE_HELPER_ROWS": "0",
+        "R3_MOE_HELPER_TRACE": "1"
+      }
+    },
+    "rows24": {
+      "environment": {},
+      "settings": {
+        "R3_MOE_HELPER": "1",
+        "R3_MOE_HELPER_DEVICES": "0 1",
+        "R3_MOE_HELPER_MOE_DOWN_TILE": "1",
+        "R3_MOE_HELPER_ENGINE_RANKS": "1",
+        "R3_MOE_HELPER_MAX_ROWS": "4096",
+        "R3_MOE_HELPER_SMALL_ROWS": "24",
+        "R3_MOE_HELPER_MIB": "22528",
+        "R3_MOE_HELPER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
+        "R3_MOE_HELPER_ROWS": "0",
+        "R3_MOE_HELPER_TRACE": "1"
+      }
+    }
+  },
+  "schedule": [
+    [
+      "rows8",
+      "rows24"
+    ],
+    [
+      "rows24",
+      "rows8"
+    ]
+  ],
+  "schedule_seed": 0,
+  "settle_seconds": 2.0,
+  "runs": [
+    {
+      "pair": 1,
+      "mode": "rows8",
+      "position": 0,
+      "returncode": 0,
+      "performance_admitted": false,
+      "server_log": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/traced-180-101131/pair-001-rows8/server.log",
+      "settings": {
+        "R3_MOE_HELPER": "1",
+        "R3_MOE_HELPER_DEVICES": "0 1",
+        "R3_MOE_HELPER_MOE_DOWN_TILE": "1",
+        "R3_MOE_HELPER_ENGINE_RANKS": "1",
+        "R3_MOE_HELPER_MAX_ROWS": "4096",
+        "R3_MOE_HELPER_SMALL_ROWS": "8",
+        "R3_MOE_HELPER_MIB": "22528",
+        "R3_MOE_HELPER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
+        "R3_MOE_HELPER_ROWS": "0",
+        "R3_MOE_HELPER_TRACE": "1"
+      },
+      "execution_attestation": null,
+      "execution_evidence_status": "missing",
+      "admission_blockers": [
+        "physical-device execution evidence missing"
+      ],
+      "metrics": {
+        "s1_agg_tps": 93.213,
+        "s1_ttft_max_ms": 342.05,
+        "s1_gap_p95_ms": 32.230000000000004,
+        "s1_stream_tps": 122.9865,
+        "s1_decode_ms_per_step": 25.7991,
+        "s1_decode_tokens_per_step": 3.161,
+        "s1_decode_tps_engine": 122.518,
+        "s1_draft_acceptance": 0.7333,
+        "s1_requests_running_mean": 0.571,
+        "s2_agg_tps": 129.6005,
+        "s2_ttft_max_ms": 543.335,
+        "s2_gap_p95_ms": 32.2555,
+        "s2_stream_tps": 88.738,
+        "s2_decode_ms_per_step": 32.3971,
+        "s2_decode_tokens_per_step": 5.7333,
+        "s2_decode_tps_engine": 177.091,
+        "s2_draft_acceptance": 0.6439,
+        "s2_requests_running_mean": 1.1555,
+        "s3_agg_tps": 139.059,
+        "s3_ttft_max_ms": 807.13,
+        "s3_gap_p95_ms": 45.093,
+        "s3_stream_tps": 70.98949999999999,
+        "s3_decode_ms_per_step": 39.5944,
+        "s3_decode_tokens_per_step": 7.68,
+        "s3_decode_tps_engine": 193.9675,
+        "s3_draft_acceptance": 0.6438,
+        "s3_requests_running_mean": 1.641,
+        "s4_agg_tps": 159.0235,
+        "s4_ttft_max_ms": 1050.03,
+        "s4_gap_p95_ms": 49.582,
+        "s4_stream_tps": 57.3585,
+        "s4_decode_ms_per_step": 49.80225,
+        "s4_decode_tokens_per_step": 11.687850000000001,
+        "s4_decode_tps_engine": 236.4545,
+        "s4_draft_acceptance": 0.68355,
+        "s4_requests_running_mean": 2.3785,
+        "s6_agg_tps": 191.543,
+        "s6_ttft_max_ms": 1582.5900000000001,
+        "s6_gap_p95_ms": 59.285,
+        "s6_stream_tps": 49.652,
+        "s6_decode_ms_per_step": 53.060900000000004,
+        "s6_decode_tokens_per_step": 16.737650000000002,
+        "s6_decode_tps_engine": 315.36249999999995,
+        "s6_draft_acceptance": 0.65215,
+        "s6_requests_running_mean": 3.7105
+      },
+      "elapsed_s": 126.8027850841172,
+      "shutdown": {
+        "method": "sigint",
+        "requested": true,
+        "forced": false,
+        "returncode": 0,
+        "error": null
+      },
+      "sidecars": [
+        {
+          "name": "helper0",
+          "argv": [
+            "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/6c9c2b9a00abd23f31edf2d30d39f38f/8932dce836688cdf1e1328b0b97b843f/radiance_home/helpers/r3_moe_helper",
+            "/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
+          ],
+          "log": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/traced-180-101131/pair-001-rows8/helper0.log",
+          "ready_s": 0.3039824611041695,
+          "returncode": 0,
+          "exited_before_stop": false,
+          "killed": false
+        },
+        {
+          "name": "helper1",
+          "argv": [
+            "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/6c9c2b9a00abd23f31edf2d30d39f38f/8932dce836688cdf1e1328b0b97b843f/radiance_home/helpers/r3_moe_helper",
+            "/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
+          ],
+          "log": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/traced-180-101131/pair-001-rows8/helper1.log",
+          "ready_s": 0.2021779699716717,
+          "returncode": 0,
+          "exited_before_stop": false,
+          "killed": false
+        }
+      ]
+    },
+    {
+      "pair": 1,
+      "mode": "rows24",
+      "position": 1,
+      "returncode": 0,
+      "performance_admitted": false,
+      "server_log": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/traced-180-101131/pair-001-rows24/server.log",
+      "settings": {
+        "R3_MOE_HELPER": "1",
+        "R3_MOE_HELPER_DEVICES": "0 1",
+        "R3_MOE_HELPER_MOE_DOWN_TILE": "1",
+        "R3_MOE_HELPER_ENGINE_RANKS": "1",
+        "R3_MOE_HELPER_MAX_ROWS": "4096",
+        "R3_MOE_HELPER_SMALL_ROWS": "24",
+        "R3_MOE_HELPER_MIB": "22528",
+        "R3_MOE_HELPER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
+        "R3_MOE_HELPER_ROWS": "0",
+        "R3_MOE_HELPER_TRACE": "1"
+      },
+      "execution_attestation": null,
+      "execution_evidence_status": "missing",
+      "admission_blockers": [
+        "physical-device execution evidence missing"
+      ],
+      "metrics": {
+        "s1_agg_tps": 86.5,
+        "s1_ttft_max_ms": 346.61,
+        "s1_gap_p95_ms": 34.0495,
+        "s1_stream_tps": 111.749,
+        "s1_decode_ms_per_step": 28.421,
+        "s1_decode_tokens_per_step": 3.161,
+        "s1_decode_tps_engine": 111.34100000000001,
+        "s1_draft_acceptance": 0.7333,
+        "s1_requests_running_mean": 0.598,
+        "s2_agg_tps": 128.171,
+        "s2_ttft_max_ms": 545.585,
+        "s2_gap_p95_ms": 33.4855,
+        "s2_stream_tps": 87.4965,
+        "s2_decode_ms_per_step": 32.855050000000006,
+        "s2_decode_tokens_per_step": 5.7333,
+        "s2_decode_tps_engine": 174.50400000000002,
+        "s2_draft_acceptance": 0.6439,
+        "s2_requests_running_mean": 1.111,
+        "s3_agg_tps": 158.308,
+        "s3_ttft_max_ms": 815.525,
+        "s3_gap_p95_ms": 37.826,
+        "s3_stream_tps": 84.231,
+        "s3_decode_ms_per_step": 36.3879,
+        "s3_decode_tokens_per_step": 8.5556,
+        "s3_decode_tps_engine": 235.1215,
+        "s3_draft_acceptance": 0.71,
+        "s3_requests_running_mean": 1.545,
+        "s4_agg_tps": 172.979,
+        "s4_ttft_max_ms": 1066.255,
+        "s4_gap_p95_ms": 42.4135,
+        "s4_stream_tps": 69.664,
+        "s4_decode_ms_per_step": 40.80285,
+        "s4_decode_tokens_per_step": 10.8298,
+        "s4_decode_tps_engine": 265.41700000000003,
+        "s4_draft_acceptance": 0.6307,
+        "s4_requests_running_mean": 2.154,
+        "s6_agg_tps": 196.2875,
+        "s6_ttft_max_ms": 1595.555,
+        "s6_gap_p95_ms": 51.782,
+        "s6_stream_tps": 53.05,
+        "s6_decode_ms_per_step": 48.76575,
+        "s6_decode_tokens_per_step": 15.9896,
+        "s6_decode_tps_engine": 327.8995,
+        "s6_draft_acceptance": 0.63045,
+        "s6_requests_running_mean": 3.7355
+      },
+      "elapsed_s": 159.22643985692412,
+      "shutdown": {
+        "method": "sigint",
+        "requested": true,
+        "forced": false,
+        "returncode": 0,
+        "error": null
+      },
+      "sidecars": [
+        {
+          "name": "helper0",
+          "argv": [
+            "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/6c9c2b9a00abd23f31edf2d30d39f38f/8932dce836688cdf1e1328b0b97b843f/radiance_home/helpers/r3_moe_helper",
+            "/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
+          ],
+          "log": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/traced-180-101131/pair-001-rows24/helper0.log",
+          "ready_s": 0.3035313650034368,
+          "returncode": 0,
+          "exited_before_stop": false,
+          "killed": false
+        },
+        {
+          "name": "helper1",
+          "argv": [
+            "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/6c9c2b9a00abd23f31edf2d30d39f38f/8932dce836688cdf1e1328b0b97b843f/radiance_home/helpers/r3_moe_helper",
+            "/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
+          ],
+          "log": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/traced-180-101131/pair-001-rows24/helper1.log",
+          "ready_s": 0.20314582902938128,
+          "returncode": 0,
+          "exited_before_stop": false,
+          "killed": false
+        }
+      ]
+    },
+    {
+      "pair": 2,
+      "mode": "rows24",
+      "position": 0,
+      "returncode": 0,
+      "performance_admitted": false,
+      "server_log": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/traced-180-101131/pair-002-rows24/server.log",
+      "settings": {
+        "R3_MOE_HELPER": "1",
+        "R3_MOE_HELPER_DEVICES": "0 1",
+        "R3_MOE_HELPER_MOE_DOWN_TILE": "1",
+        "R3_MOE_HELPER_ENGINE_RANKS": "1",
+        "R3_MOE_HELPER_MAX_ROWS": "4096",
+        "R3_MOE_HELPER_SMALL_ROWS": "24",
+        "R3_MOE_HELPER_MIB": "22528",
+        "R3_MOE_HELPER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
+        "R3_MOE_HELPER_ROWS": "0",
+        "R3_MOE_HELPER_TRACE": "1"
+      },
+      "execution_attestation": null,
+      "execution_evidence_status": "missing",
+      "admission_blockers": [
+        "physical-device execution evidence missing"
+      ],
+      "metrics": {
+        "s1_agg_tps": 86.943,
+        "s1_ttft_max_ms": 323.185,
+        "s1_gap_p95_ms": 28.3585,
+        "s1_stream_tps": 110.436,
+        "s1_decode_ms_per_step": 28.7877,
+        "s1_decode_tokens_per_step": 3.161,
+        "s1_decode_tps_engine": 110.0115,
+        "s1_draft_acceptance": 0.7333,
+        "s1_requests_running_mean": 0.598,
+        "s2_agg_tps": 127.25649999999999,
+        "s2_ttft_max_ms": 548.055,
+        "s2_gap_p95_ms": 33.974000000000004,
+        "s2_stream_tps": 86.7975,
+        "s2_decode_ms_per_step": 33.1272,
+        "s2_decode_tokens_per_step": 5.7333,
+        "s2_decode_tps_engine": 173.07,
+        "s2_draft_acceptance": 0.6439,
+        "s2_requests_running_mean": 1.2,
+        "s3_agg_tps": 158.601,
+        "s3_ttft_max_ms": 813.0,
+        "s3_gap_p95_ms": 37.814499999999995,
+        "s3_stream_tps": 84.3515,
+        "s3_decode_ms_per_step": 36.338899999999995,
+        "s3_decode_tokens_per_step": 8.5556,
+        "s3_decode_tps_engine": 235.4405,
+        "s3_draft_acceptance": 0.71,
+        "s3_requests_running_mean": 1.545,
+        "s4_agg_tps": 172.784,
+        "s4_ttft_max_ms": 1068.475,
+        "s4_gap_p95_ms": 42.4495,
+        "s4_stream_tps": 69.619,
+        "s4_decode_ms_per_step": 40.8262,
+        "s4_decode_tokens_per_step": 10.8298,
+        "s4_decode_tps_engine": 265.2655,
+        "s4_draft_acceptance": 0.6307,
+        "s4_requests_running_mean": 2.154,
+        "s6_agg_tps": 201.56099999999998,
+        "s6_ttft_max_ms": 1593.68,
+        "s6_gap_p95_ms": 52.114000000000004,
+        "s6_stream_tps": 53.826499999999996,
+        "s6_decode_ms_per_step": 49.5353,
+        "s6_decode_tokens_per_step": 17.0519,
+        "s6_decode_tps_engine": 344.20349999999996,
+        "s6_draft_acceptance": 0.67135,
+        "s6_requests_running_mean": 3.5
+      },
+      "elapsed_s": 159.96972994878888,
+      "shutdown": {
+        "method": "sigint",
+        "requested": true,
+        "forced": false,
+        "returncode": 0,
+        "error": null
+      },
+      "sidecars": [
+        {
+          "name": "helper0",
+          "argv": [
+            "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/6c9c2b9a00abd23f31edf2d30d39f38f/8932dce836688cdf1e1328b0b97b843f/radiance_home/helpers/r3_moe_helper",
+            "/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
+          ],
+          "log": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/traced-180-101131/pair-002-rows24/helper0.log",
+          "ready_s": 0.20121351396664977,
+          "returncode": 0,
+          "exited_before_stop": false,
+          "killed": false
+        },
+        {
+          "name": "helper1",
+          "argv": [
+            "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/6c9c2b9a00abd23f31edf2d30d39f38f/8932dce836688cdf1e1328b0b97b843f/radiance_home/helpers/r3_moe_helper",
+            "/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
+          ],
+          "log": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/traced-180-101131/pair-002-rows24/helper1.log",
+          "ready_s": 0.20144901401363313,
+          "returncode": 0,
+          "exited_before_stop": false,
+          "killed": false
+        }
+      ]
+    },
+    {
+      "pair": 2,
+      "mode": "rows8",
+      "position": 1,
+      "returncode": 0,
+      "performance_admitted": false,
+      "server_log": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/traced-180-101131/pair-002-rows8/server.log",
+      "settings": {
+        "R3_MOE_HELPER": "1",
+        "R3_MOE_HELPER_DEVICES": "0 1",
+        "R3_MOE_HELPER_MOE_DOWN_TILE": "1",
+        "R3_MOE_HELPER_ENGINE_RANKS": "1",
+        "R3_MOE_HELPER_MAX_ROWS": "4096",
+        "R3_MOE_HELPER_SMALL_ROWS": "8",
+        "R3_MOE_HELPER_MIB": "22528",
+        "R3_MOE_HELPER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
+        "R3_MOE_HELPER_ROWS": "0",
+        "R3_MOE_HELPER_TRACE": "1"
+      },
+      "execution_attestation": null,
+      "execution_evidence_status": "missing",
+      "admission_blockers": [
+        "physical-device execution evidence missing"
+      ],
+      "metrics": {
+        "s1_agg_tps": 63.826499999999996,
+        "s1_ttft_max_ms": 347.28499999999997,
+        "s1_gap_p95_ms": 44.572,
+        "s1_stream_tps": 76.5975,
+        "s1_decode_ms_per_step": 41.388,
+        "s1_decode_tokens_per_step": 3.161,
+        "s1_decode_tps_engine": 76.4,
+        "s1_draft_acceptance": 0.7333,
+        "s1_requests_running_mean": 0.6835,
+        "s2_agg_tps": 94.07849999999999,
+        "s2_ttft_max_ms": 593.22,
+        "s2_gap_p95_ms": 49.9495,
+        "s2_stream_tps": 59.6905,
+        "s2_decode_ms_per_step": 48.156099999999995,
+        "s2_decode_tokens_per_step": 5.7333,
+        "s2_decode_tps_engine": 119.0575,
+        "s2_draft_acceptance": 0.6439,
+        "s2_requests_running_mean": 1.333,
+        "s3_agg_tps": 106.399,
+        "s3_ttft_max_ms": 867.2950000000001,
+        "s3_gap_p95_ms": 61.6555,
+        "s3_stream_tps": 51.07,
+        "s3_decode_ms_per_step": 55.61465,
+        "s3_decode_tokens_per_step": 7.68,
+        "s3_decode_tps_engine": 138.094,
+        "s3_draft_acceptance": 0.6438,
+        "s3_requests_running_mean": 1.875,
+        "s4_agg_tps": 134.272,
+        "s4_ttft_max_ms": 1103.69,
+        "s4_gap_p95_ms": 65.8965,
+        "s4_stream_tps": 46.5445,
+        "s4_decode_ms_per_step": 62.00255,
+        "s4_decode_tokens_per_step": 11.687850000000001,
+        "s4_decode_tps_engine": 188.48950000000002,
+        "s4_draft_acceptance": 0.68355,
+        "s4_requests_running_mean": 2.5585,
+        "s6_agg_tps": 189.5615,
+        "s6_ttft_max_ms": 1647.49,
+        "s6_gap_p95_ms": 58.482,
+        "s6_stream_tps": 51.043499999999995,
+        "s6_decode_ms_per_step": 52.0094,
+        "s6_decode_tokens_per_step": 16.544449999999998,
+        "s6_decode_tps_engine": 318.07899999999995,
+        "s6_draft_acceptance": 0.6715,
+        "s6_requests_running_mean": 3.7435
+      },
+      "elapsed_s": 165.90936391893774,
+      "shutdown": {
+        "method": "sigint",
+        "requested": true,
+        "forced": false,
+        "returncode": 0,
+        "error": null
+      },
+      "sidecars": [
+        {
+          "name": "helper0",
+          "argv": [
+            "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/6c9c2b9a00abd23f31edf2d30d39f38f/8932dce836688cdf1e1328b0b97b843f/radiance_home/helpers/r3_moe_helper",
+            "/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
+          ],
+          "log": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/traced-180-101131/pair-002-rows8/helper0.log",
+          "ready_s": 0.20170458289794624,
+          "returncode": 0,
+          "exited_before_stop": false,
+          "killed": false
+        },
+        {
+          "name": "helper1",
+          "argv": [
+            "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/6c9c2b9a00abd23f31edf2d30d39f38f/8932dce836688cdf1e1328b0b97b843f/radiance_home/helpers/r3_moe_helper",
+            "/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
+          ],
+          "log": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/traced-180-101131/pair-002-rows8/helper1.log",
+          "ready_s": 0.20294859912246466,
+          "returncode": 0,
+          "exited_before_stop": false,
+          "killed": false
+        }
+      ]
+    }
+  ],
+  "exploratory_comparisons": {
+    "rows24_vs_rows8": {
+      "s1_agg_tps": {
+        "paired_rounds": 2,
+        "geometric_effect_pct": 12.431138042190405,
+        "ci95_low_pct": -7.201785158722485,
+        "ci95_high_pct": 36.21771521233343,
+        "resamples": 10000,
+        "seed": 0,
+        "pair_ratios": [
+          0.9279821484127752,
+          1.3621771521233343
+        ]
+      },
+      "s1_stream_tps": {
+        "paired_rounds": 2,
+        "geometric_effect_pct": 14.45667831468782,
+        "ci95_low_pct": -9.137181723197275,
+        "ci95_high_pct": 44.177029276412426,
+        "resamples": 10000,
+        "seed": 0,
+        "pair_ratios": [
+          0.9086281827680273,
+          1.4417702927641243
+        ]
+      },
+      "s2_agg_tps": {
+        "paired_rounds": 2,
+        "geometric_effect_pct": 15.66084021282017,
+        "ci95_low_pct": -1.1030050038387307,
+        "ci95_high_pct": 35.26629357398343,
+        "resamples": 10000,
+        "seed": 0,
+        "pair_ratios": [
+          0.9889699499616127,
+          1.3526629357398343
+        ]
+      },
+      "s2_stream_tps": {
+        "paired_rounds": 2,
+        "geometric_effect_pct": 19.740625418590806,
+        "ci95_low_pct": -1.399062408438323,
+        "ci95_high_pct": 45.41258659250636,
+        "resamples": 10000,
+        "seed": 0,
+        "pair_ratios": [
+          0.9860093759156168,
+          1.4541258659250635
+        ]
+      },
+      "s3_agg_tps": {
+        "paired_rounds": 2,
+        "geometric_effect_pct": 30.26749672979989,
+        "ci95_low_pct": 13.842325919214149,
+        "ci95_high_pct": 49.062491188826954,
+        "resamples": 10000,
+        "seed": 0,
+        "pair_ratios": [
+          1.1384232591921415,
+          1.4906249118882695
+        ]
+      },
+      "s3_stream_tps": {
+        "paired_rounds": 2,
+        "geometric_effect_pct": 39.99173490361645,
+        "ci95_low_pct": 18.652758506539712,
+        "ci95_high_pct": 65.16839631877815,
+        "resamples": 10000,
+        "seed": 0,
+        "pair_ratios": [
+          1.1865275850653971,
+          1.6516839631877815
+        ]
+      },
+      "s4_agg_tps": {
+        "paired_rounds": 2,
+        "geometric_effect_pct": 18.31098501807944,
+        "ci95_low_pct": 8.775746980792153,
+        "ci95_high_pct": 28.682078169685422,
+        "resamples": 10000,
+        "seed": 0,
+        "pair_ratios": [
+          1.0877574698079215,
+          1.2868207816968542
+        ]
+      },
+      "s4_stream_tps": {
+        "paired_rounds": 2,
+        "geometric_effect_pct": 34.78296836295169,
+        "ci95_low_pct": 21.453664234594694,
+        "ci95_high_pct": 49.57513777138007,
+        "resamples": 10000,
+        "seed": 0,
+        "pair_ratios": [
+          1.214536642345947,
+          1.4957513777138007
+        ]
+      },
+      "s6_agg_tps": {
+        "paired_rounds": 2,
+        "geometric_effect_pct": 4.38578538180201,
+        "ci95_low_pct": 2.476989501051974,
+        "ci95_high_pct": 6.330135602429809,
+        "resamples": 10000,
+        "seed": 0,
+        "pair_ratios": [
+          1.0247698950105197,
+          1.063301356024298
+        ]
+      },
+      "s6_stream_tps": {
+        "paired_rounds": 2,
+        "geometric_effect_pct": 6.145642084432024,
+        "ci95_low_pct": 5.452212328700035,
+        "ci95_high_pct": 6.84363167646822,
+        "resamples": 10000,
+        "seed": 0,
+        "pair_ratios": [
+          1.0684363167646822,
+          1.0545221232870003
+        ]
+      }
+    }
+  },
+  "setting_activation": {
+    "rows24": {
+      "R3_MOE_HELPER_SMALL_ROWS": {
+        "status": "unobservable",
+        "mechanism": "libr3:R3_MOE_HELPER_SMALL_ROWS",
+        "detail": "no activation marker declared"
+      }
+    }
+  }
+}

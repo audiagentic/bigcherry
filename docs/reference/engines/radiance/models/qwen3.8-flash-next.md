@@ -250,6 +250,40 @@ step time, committed tokens a step, draft acceptance), so the table below is the
 - **What was not measured:** how much of the 32 -> 50 ms step growth is the helper path. That needs the helpers' own per-request counters
   in the same cell (rows, lane, wait), the next RAD10-02 step.
 
+### Where the decode step goes: the helpers' own view (RAD10-02, 2026-10-19)
+
+`tools/lab/radiance/helper-smallrows-ab.json` with `R3_MOE_HELPER_TRACE=1` in both arms; evidence `docs/evidence/RAD10/traced-180/`. Streams
+1, 2, 3, 4 and 6 (each stream sends about 4 verify rows a step with MTP depth 3, so rows a helper request are 4, 8, 12, 16 and 24), two
+pairs. `trace_report.py --windows` buckets the helpers' TRACE lines by the stream-bench round that produced them. Clean cells only: one
+cell (`pair-002-rows8`) ran 40-60% slower than its twin for 1 to 4 streams, the intermittent host-side slow mode seen before (and flagged
+there); the 24-row arm's two pairs agree within 2%.
+
+| Streams | Rows a request | Arm | Small-lane share | Exposed helper wait a layer-step (p50) | Decode step | Wait as a share of the step* | Engine decode tok/s |
+|---|---|---|---|---|---|---|---|
+| 1 | 4 | 8 | 96% | 118 us | 25.8 ms | 22% | 123 |
+| 1 | 4 | 24 | 96% | 152 us | 28.6 ms | 26% | 111 |
+| 2 | 8 | 8 | 97% | 189 us | 32.4 ms | 29% | 177 |
+| 2 | 8 | 24 | 97% | 218 us | 33.0 ms | 32% | 174 |
+| 3 | 12 | 8 | **25%** | 370 us | 39.6 ms | 46% | 194 |
+| 3 | 12 | 24 | 95% | 258 us | 36.4 ms | 35% | **235** |
+| 4 | 16 | 8 | **7%** | 446 us | 49.8 ms | 44% | 236 |
+| 4 | 16 | 24 | 95% | 345 us | 40.8 ms | 41% | **265** |
+| 6 | 24 | 8 | 13% | 543 us | 53.1 ms | 50% | 315 |
+| 6 | 24 | 24 | 94% | 481 us | 49.2 ms | 48% | 336 |
+
+*wait p50 x 49 MoE layers / decode step; an estimate, since the median ignores the tail.
+
+- **The helpers are what limits concurrency.** From one stream to six the decode step grows 26 -> 53 ms, and the exposed helper wait (the
+  engine waiting for the helpers after its own work) grows from 5.8 ms to about 26 ms of it, roughly 75% of the growth. As a share of the
+  step it rises from about a quarter to about half. This matches the 23% exposed wait measured at one stream.
+- **The 8-row small lane is the wrong size for concurrency.** At three and four streams the requests (12 and 16 rows) fall onto the
+  large lane (small-lane share 25% and 7%). Raising the limit to 24 keeps them on the small lane and gives +21% (3 streams) and +12%
+  (4 streams) decode throughput, +6% at 6, at the cost of -10% at one stream, because every pre-queued small step is padded to the
+  limit. So the lane should follow the rows: several pre-queued small-lane sizes (4, 8, 16, 24), the engine choosing the smallest that fits.
+- **The two helpers are not balanced:** the median difference between them is 10-27% of the slower one, largest at one stream.
+- **Not tested:** whether faster helper kernels for 12 to 24 rows, or fewer dispatches (aggregation), would cut the wait more than the
+  lane sizing; the wait per layer-step still grows 3 to 4 times with rows even on the small lane.
+
 ## Open levers
 
 - **RAD06, prefill (the ranked remaining levers):** (1) multi-buffered chunk pipeline of the hand-off; analysis

@@ -139,6 +139,7 @@ class StreamBench(unittest.TestCase):
             self.assertTrue(s["text_sha256"])
             self.assertGreater(s["prompt_tokens"], 0)
         self.assertLess(four["start_skew_ms"], 50.0)                     # the controller released them together
+        self.assertLess(four["wall_start_ns"], four["wall_end_ns"])       # the epoch window helper TRACE lines are bucketed by
 
     def test_several_tokens_in_one_event_are_counted_from_usage_not_events(self):
         _Handler.tokens_per_event = 4
