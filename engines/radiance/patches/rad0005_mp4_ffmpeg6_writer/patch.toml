@@ -1,0 +1,11 @@
+schema = 1
+id = "rad0005_mp4_ffmpeg6_writer"
+order = 5
+state = "untested"
+kind = "enhancement"
+origin = "local"
+backend = "agnostic"
+plan-item = "MEN12"
+plan-ids = ["MEN12"]
+requires = []
+conflicts = []

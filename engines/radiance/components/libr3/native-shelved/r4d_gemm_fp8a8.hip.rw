@@ -1,3 +1,7 @@
+# SHELVED (state evaluated): not applied by the build. radiance 1.8.0 rewrote libr4d/r4d_gemm_fp8a8.hip (the weight is now always the
+# A operand, AW and s_a are gone, new 128x128 prefill tile with a register-held weight, BIAS epilogue, narrow tile to M <= 64), so all 8
+# blocks no longer match. The fp8 kernels build through r3_compat.h until this is re-ported. Only the block-fp8 container (the 8-bit
+# Qwen3.8-27B) uses it; the served MXFP4 27B and Flash-Next do not. Move it back to native/ after re-porting to 1.8.0 to re-enable.
 # Native gfx11 form of gemm_fp8a8_kernel, the block-fp8 GEMM (gemm_fp8a8_nt_m16, its gated twin and
 # gemm_fp8a8_tiled): the trunk of an 8-bit Qwen3.8-27B.
 #

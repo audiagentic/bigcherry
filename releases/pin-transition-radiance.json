@@ -1,0 +1,8 @@
+{
+  "declaring_commit": "1cea7a36f09171e79f4b2a92f3429e2a800b2b56",
+  "from_sha": "7a7707a95559c0b85277e75b7799fcf2ca8b8bc5",
+  "schema_version": 1,
+  "set_at": "2026-10-18T13:44:00.825444+00:00",
+  "tag": "v1.8.0",
+  "to_sha": "7a7707a95559c0b85277e75b7799fcf2ca8b8bc5"
+}
