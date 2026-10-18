@@ -48,7 +48,7 @@ print('%d runs, %d grouped-GEMM dispatches a run' % (len(runs), d))
 rows = collections.defaultdict(dict)
 for i, (idx, cap, layer, var, rel) in enumerate(runs):
     ds = [x[1] for x in k[i * d:(i + 1) * d]]
-    rows[(cap, layer)][var or '(default)'] = (sum(ds) / len(ds) / 1e3, rel)
+    rows[(cap, layer)]['%d %s' % (idx % (len(runs) // (max(r[1] for r in runs) + 1)), var or '(default)')] = (sum(ds) / len(ds) / 1e3, rel)
 for key, vs in sorted(rows.items()):
     print('capture %d layer %d' % key)
     for var, (us, rel) in vs.items(): print('   %-44s %8.1f us/call  %s' % (var, us, rel))
