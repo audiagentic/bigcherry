@@ -36,6 +36,8 @@ for line in open(log):
     if m and runs and runs[-1][4] is None: runs[-1][4] = 'rel_l2=' + m[1]
     m = re.search(r'sweep_cmp .*rank (\d+) (?:baseline )?mismatches=(\d+)', line)
     if m and runs and runs[-1][4] is None: runs[-1][4] = 'mismatches=' + m[2]
+    m = re.search(r'sweep_sum .*rank 0 sum_abs=(\S+) nonzero=(\d+)', line)
+    if m and runs: runs[-1].append('sum_abs=%s nonzero=%s' % (m[1], m[2]))
 k = []
 for r in csv.DictReader(open(trace)):
     if 'moe_gemm_q_kernel' in r['Kernel_Name']:
@@ -46,9 +48,9 @@ if not runs or len(k) % len(runs):
 d = len(k) // len(runs)
 print('%d runs, %d grouped-GEMM dispatches a run' % (len(runs), d))
 rows = collections.defaultdict(dict)
-for i, (idx, cap, layer, var, rel) in enumerate(runs):
+for i, (idx, cap, layer, var, rel, *ex) in enumerate(runs):
     ds = [x[1] for x in k[i * d:(i + 1) * d]]
-    rows[(cap, layer)]['%d %s' % (idx % (len(runs) // (max(r[1] for r in runs) + 1)), var or '(default)')] = (sum(ds) / len(ds) / 1e3, rel)
+    rows[(cap, layer)]['%d %s' % (idx % (len(runs) // (max(r[1] for r in runs) + 1)), var or '(default)')] = (sum(ds) / len(ds) / 1e3, str(rel) + ' ' + (ex[0] if ex else ''))
 for key, vs in sorted(rows.items()):
     print('capture %d layer %d' % key)
     for var, (us, rel) in vs.items(): print('   %-44s %8.1f us/call  %s' % (var, us, rel))

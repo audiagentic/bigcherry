@@ -119,11 +119,11 @@ status = "experimental"
 summary = "RAD06: with R3_MOE_NATIVE, the grouped MoE GEMM widens E4M3 operands to f16 and uses the f16 WMMA (a cheaper widening than bf16; the sums carry a 2^-16 scale removed before the scale fold, so output is bit-identical to the bf16 form). On by default in the r3_moe_helper processes (main() sets 1 unless the variable is set); prefill 2,130 -> 3,150 tok/s, decode unchanged, KLD unchanged; the engine process reads an unset variable as off, and 0 turns it off everywhere"
 activation = "R3_MOE_FP16"
 
-[setting.R3_MOE_PITCH16]
-default = ""
+[setting.R3_MOE_AHALF]
+default = "1"
 status = "experimental"
-summary = "RAD06: with R3_MOE_FP16, stage the grouped MoE GEMM's tiles with a 16-byte LDS row pad (pitch FK+16) instead of 8; the f16 fragment reads 16 bytes a lane where the 8-byte pad was tuned for 8 (exact; may remove LDS bank conflicts)"
-activation = "R3_MOE_PITCH16"
+summary = "RAD06: with R3_MOE_FP16, widen the grouped MoE GEMM's activation tile to half once at staging instead of in every wave that reads it (four wave columns share each A fragment); bit-identical, 7-8% off the grouped GEMM on four real captured requests, about 4 KB more LDS. On by default in the r3_moe_helper processes (main() sets 1 unless set); 0 turns it off"
+activation = "R3_MOE_AHALF"
 
 [setting.R3_MOE_PROBE]
 default = ""
