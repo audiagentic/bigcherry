@@ -12,18 +12,22 @@
 namespace r3::moe_shm {
 
 constexpr uint64_t kMagic = 0x31454f4d33485253ull; /* "SRH3MOE1": reject unrelated/stale shm. */
-constexpr uint32_t kVersion = 12;  /* 12: Request carries the R3_MOE_HELPER_TRACE stamps (192 -> 256 bytes); 11: helper_fault; completion is an exact generation */
+constexpr uint32_t kVersion = 13;  /* 13: several pre-queued small-lane sizes (Header::small_class_*), ten lanes; 12: Request carries the R3_MOE_HELPER_TRACE stamps (192 -> 256 bytes); 11: helper_fault; completion is an exact generation */
 constexpr uint32_t kPage = 4096;
 constexpr uint32_t kMaxRanks = 2;       /* Flash-Next configuration of record: TP=2. */
 constexpr uint32_t kMaxLayers = 128;     /* ownership bitmap bound; Flash-Next is below this. */
-constexpr uint32_t kRingSlots = 16;
-/* Two lanes a producer rank: lane `rank` takes steps of at most Header::small_rows rows and the helper
- * pre-queues its GPU work at that fixed size (no host in the loop); lane `rank + kMaxRanks` takes the larger
- * (prefill) steps, which the helper launches sized to the request when it arrives. A rank publishes one
- * request at a time, so both lanes share that rank's route/activation/result slots. */
-constexpr uint32_t kLanes = 2 * kMaxRanks;
-constexpr uint32_t kLaneSlots = kRingSlots / kLanes; /* lane-private metadata ring; bulk slots stay per-rank. */
-constexpr uint32_t lane_of(uint32_t rank, uint32_t large) { return rank + (large ? kMaxRanks : 0u); }
+/* Lanes a producer rank (RAD12): up to kSmallClasses small lanes, each pre-queued by the helper at its own fixed row
+ * count (Header::small_class_rows, ascending; a step goes to the first class that fits its rows), and one large lane
+ * for the larger (prefill) steps, which the helper launches sized to the request when it arrives. A rank publishes one
+ * request at a time, so every lane shares that rank's route/activation/result slots. Lane index = class * kMaxRanks + rank. */
+constexpr uint32_t kSmallClasses = 4;
+constexpr uint32_t kClasses = kSmallClasses + 1;          /* the last class is the large lane */
+constexpr uint32_t kLanes = kMaxRanks * kClasses;
+constexpr uint32_t kLaneSlots = 4;                        /* lane-private metadata ring; bulk slots stay per-rank. */
+constexpr uint32_t kRingSlots = kLanes * kLaneSlots;
+constexpr uint32_t lane_of(uint32_t rank, uint32_t cls) { return cls * kMaxRanks + rank; }
+constexpr uint32_t lane_class(uint32_t lane) { return lane / kMaxRanks; }
+constexpr bool lane_is_small(uint32_t lane) { return lane_class(lane) < kSmallClasses; }
 constexpr uint32_t kHidden = 2560;
 constexpr uint32_t kTopK = 10;
 constexpr uint32_t kExperts = 512;
@@ -106,7 +110,8 @@ struct alignas(kPage) Header {
     uint32_t next_sequence;         /* atomic ticket allocator; sequence 0 is reserved. */
     uint32_t publish_sequence;      /* newest published ticket; helper FUTEX_WAITs here. */
     LaneSignal lane[kLanes];          /* GPU-only request/done words, one cache line per lane (lane_of). */
-    uint32_t small_rows;            /* helper-set: steps above this many rows go to the large lane. */
+    uint32_t small_class_count;     /* helper-set: enabled small-lane sizes, 1..kSmallClasses. */
+    uint32_t small_class_rows[kSmallClasses]; /* helper-set: strictly ascending row limits; a step above the last goes to the large lane. */
     /* Helpers serving this segment (helper 0 sets it). 1: one helper serves every rank's slot. 2: a one-rank
      * engine (the R9700) with two helpers (the XTX cards); helper h owns bitmap h and serves rank slot h, and
      * the engine sends each route to the slot of the helper that owns its expert. */
@@ -173,6 +178,7 @@ inline void init(void* base, uint32_t layers) {
     h->layer_map_slot_bytes = layer_map_slot_bytes(); h->layer_map_offset = l.layer_map;
     std::memset(static_cast<uint8_t*>(base) + l.layer_map, 0xff, layer_map_slot_bytes());
     h->next_sequence = 1; h->ring_offset = l.ring; h->segment_bytes = l.bytes;
+    h->small_class_count = 1; h->small_class_rows[0] = 8;   /* the helper overwrites these before it publishes helper_count */
     for (uint32_t r = 0; r < kMaxRanks; ++r) {
         h->route_slot_bytes[r] = route_slot_bytes();
         h->activation_slot_bytes[r] = activation_slot_bytes();
@@ -189,7 +195,11 @@ inline bool valid(const Header* h, size_t mapped) {
     if (!h || h->magic != kMagic || h->version != kVersion || h->header_bytes != sizeof(Header) ||
         h->rank_count != kMaxRanks || h->ring_slots != kRingSlots || h->max_rows != kMaxRows ||
         h->hidden != kHidden || h->top_k != kTopK || h->expert_count != kExperts ||
-        h->layer_count == 0 || h->layer_count > kMaxLayers) return false;
+        h->layer_count == 0 || h->layer_count > kMaxLayers ||
+        h->small_class_count == 0 || h->small_class_count > kSmallClasses) return false;
+    for (uint32_t c = 0; c < h->small_class_count; ++c)
+        if (h->small_class_rows[c] == 0 || h->small_class_rows[c] > kMaxRows ||
+            (c && h->small_class_rows[c] <= h->small_class_rows[c - 1])) return false;
     const Layout l = layout();
     if (h->ring_offset != l.ring || h->owner_offset != l.owner ||
         h->owner_slot_bytes != owner_slot_bytes() ||
@@ -220,6 +230,13 @@ inline Request* request(void* base, uint32_t seq) {
 inline const Request* request(const void* base, uint32_t seq) {
     auto* h = static_cast<const Header*>(base);
     return ptr<Request>(base, h->ring_offset) + ((seq - 1) % kRingSlots);
+}
+
+/* The lane class a step of `rows` rows takes: the first small class that fits it, else the large lane (kSmallClasses). */
+inline uint32_t step_class(const Header* h, uint32_t rows) {
+    for (uint32_t c = 0; c < h->small_class_count && c < kSmallClasses; ++c)
+        if (rows <= h->small_class_rows[c]) return c;
+    return kSmallClasses;
 }
 
 inline Request* lane_request(void* base, uint32_t lane, uint32_t seq) {
