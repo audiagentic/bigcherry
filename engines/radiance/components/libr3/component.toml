@@ -113,6 +113,12 @@ status = "experimental"
 summary = "RAD06: runs of this many rows or more take 64-row slices and an MT=4 tile in the helper's grouped MoE GEMM (fewer weight-tile restages for long runs; bit-identical); unset or 0 keeps the single 32-row map"
 activation = "r3_moe_helper: R3_MOE_HELPER_MOE_LONG_ROWS="
 
+[setting.R3_MOE_FP16]
+default = ""
+status = "experimental"
+summary = "RAD06: with R3_MOE_NATIVE, the grouped MoE GEMM widens E4M3 operands to f16 and uses the f16 WMMA (a cheaper widening than bf16; the sums carry a 2^-16 scale removed before the scale fold, so output is the bf16 form's)"
+activation = "R3_MOE_FP16"
+
 [setting.R3_MOE_HELPER_CAPTURE]
 default = ""
 status = "diagnostic"
