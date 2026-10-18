@@ -154,6 +154,12 @@ status = "experimental"
 summary = "RAD06: the few-rows-a-expert kernel (R3_MOE_HELPER_ROWS's) on the small (decode) lane: weights read once an expert for all its rows instead of once a route, since a decode request sends ~2.4 routes to each distinct expert; read per request, not bit-exact (different accumulation order)"
 activation = "R3_MOE_HELPER_ROWS_SMALL"
 
+[setting.R3_MOE_HELPER_FUSESTAGE]
+default = "1"
+status = "experimental"
+summary = "RAD06: the engine's activation staging for a step of at most 16 rows (decode) is done by the publish kernel instead of a separate staging kernel in front of it: a launch and its gap off the path before every helper request; same data, same fence; read per launch in the engine process; 0 keeps the separate kernel"
+activation = "r3_moe: R3_MOE_HELPER_FUSESTAGE on"
+
 [setting.R3_MOE_HELPER_TRACE]
 default = ""
 status = "diagnostic"
