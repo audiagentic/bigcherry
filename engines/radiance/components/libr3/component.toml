@@ -148,6 +148,12 @@ status = "experimental"
 summary = "RAD06: the small (decode) lane's routing prologue (four memsets and the route count / prefix / scatter / inverse kernels) runs as one block, lane_route_small; same result, fewer launches and gaps in the request the engine waits for; read per request; 0 keeps the separate kernels"
 activation = "R3_MOE_HELPER_FUSEROUTE"
 
+[setting.R3_MOE_HELPER_ROWS_SMALL]
+default = ""
+status = "experimental"
+summary = "RAD06: the few-rows-a-expert kernel (R3_MOE_HELPER_ROWS's) on the small (decode) lane: weights read once an expert for all its rows instead of once a route, since a decode request sends ~2.4 routes to each distinct expert; read per request, not bit-exact (different accumulation order)"
+activation = "R3_MOE_HELPER_ROWS_SMALL"
+
 [setting.R3_MOE_HELPER_TRACE]
 default = ""
 status = "diagnostic"
