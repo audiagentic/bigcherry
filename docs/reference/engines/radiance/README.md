@@ -167,3 +167,12 @@ log; the result is `cpu-smoke.json` beside `server.log` under `--out`. The conta
 until a tiny container is converted and pinned. Not yet confirmed on hardware: that `libavx` serves a full model, and the
 exact device-init log lines the assertion looks for (`engines/radiance/engine.toml` and
 `engine_adapters/radiance.py` are the places to adjust).
+
+## Concurrent-stream benchmark (RAD10-01)
+
+`bigcherry stream-bench --url http://HOST:PORT --streams 1,2,4,8 --prompt-tokens 512 --max-tokens 256 --reps 3 --output out.json`
+drives N simultaneous streaming chat completions at an already-running OpenAI-compatible server (radiance, llama-server) and
+writes one `bigcherry.stream-benchmark.v1` record: per stream time to first token, decode tokens/s and a hash of the text; per
+round aggregate tokens/s, per-stream mean, TTFT and inter-token percentiles; and a summary per stream count. Prompts differ per
+stream unless `--shared-prefix`. At temperature 0 the text hashes compare helpers on against off. A failed stream fails the run.
+It starts no server: the lifecycle belongs to the build and campaign code.

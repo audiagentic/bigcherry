@@ -1528,6 +1528,24 @@ def build_parser() -> argparse.ArgumentParser:
 
     completion_bench.set_defaults(func=_completion_bench_main)
 
+    from ..bench.stream_bench import build_parser as _stream_bench_parser
+
+    stream_bench = sub.add_parser(
+        "stream-bench",
+        parents=[_stream_bench_parser(add_help=False)],
+        help=(
+            "N concurrent streaming completions against an already-running OpenAI-compatible server: "
+            "aggregate and per-stream tokens/s, TTFT and inter-token latency (see bigcherry/bench/stream_bench.py)"
+        ),
+    )
+
+    def _stream_bench_main(args: argparse.Namespace) -> int:
+        from ..bench import stream_bench as stream_bench_module
+
+        return stream_bench_module.run_from_namespace(args)
+
+    stream_bench.set_defaults(func=_stream_bench_main)
+
     ab.set_defaults(
         func=lambda args: _ab_benchmark_main(
             [

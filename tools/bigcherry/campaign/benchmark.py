@@ -513,7 +513,7 @@ def run_server_arm_capture(
     *, engine: str, binary: Path, model: Path, extra_args: tuple[str, ...],
     output: Path, pair: int, side: str, position: int,
     env: dict[str, str], settings: dict[str, str], bench_configs: str, runner_root: Path,
-    required_metrics: tuple[str, ...], repetitions: int = 1,
+    required_metrics: tuple[str, ...], repetitions: int = 1, stream_bench: dict | None = None,
     shutdown_method: str = "http", health_timeout_s: int,
     expected_execution: dict[str, Any] | None = None,
     execution_evidence: str = "required",
@@ -606,12 +606,26 @@ def run_server_arm_capture(
                 else:
                     require_execution_identity(expected, observed, context=f"server cell {side}")
                     run["execution_evidence_status"] = "verified"
-            run["metrics"] = run_bench_runner_server_bench(
-                server_url=f"http://{server.host}:{server.port}",
-                bench_configs=bench_configs, repetitions=repetitions,
-                runner_root=runner_root, model_label=model.stem,
-                evidence_dir=cell / "bench", required_metrics=required_metrics,
-            )
+            if stream_bench is not None:
+                # RAD10: N concurrent streams instead of the one-request-at-a-time harness; same lifecycle, same arms.
+                from bigcherry.bench import stream_bench as stream_bench_module
+
+                record = stream_bench_module.run(
+                    f"http://{server.host}:{server.port}", model.stem, list(stream_bench["streams"]),
+                    int(stream_bench["prompt_tokens"]), int(stream_bench["max_tokens"]), int(stream_bench["reps"]),
+                    seed=int(stream_bench.get("seed", 1)))
+                (cell / "stream-bench.json").write_text(json.dumps(record, indent=1, sort_keys=True) + chr(10), encoding="utf-8")
+                run["metrics"] = stream_bench_module.flat_metrics(record)
+                missing = [m for m in required_metrics if m not in run["metrics"]]
+                if missing:
+                    raise ValueError(f"stream cell lacks required metrics: {', '.join(missing)}")
+            else:
+                run["metrics"] = run_bench_runner_server_bench(
+                    server_url=f"http://{server.host}:{server.port}",
+                    bench_configs=bench_configs, repetitions=repetitions,
+                    runner_root=runner_root, model_label=model.stem,
+                    evidence_dir=cell / "bench", required_metrics=required_metrics,
+                )
         if server.last_shutdown is None or not server.last_shutdown.clean:
             raise ValueError("server teardown was not clean; cell rejected")
         run["returncode"] = 0
@@ -1038,7 +1052,8 @@ def run_server_comparison_capture(
                 binary=arm["binary"], model=arm["model"], extra_args=arm["extra_args"], output=output,
                 pair=pair, side=name, position=position, env=arm["env"], settings=arm["settings"],
                 bench_configs=config["bench_configs"], runner_root=runner_root,
-                required_metrics=metrics, repetitions=repetitions, shutdown_method=arm["shutdown_method"],
+                required_metrics=metrics, repetitions=repetitions, stream_bench=config.get("stream_bench"),
+                shutdown_method=arm["shutdown_method"],
                 health_timeout_s=health_timeout_s, expected_execution=expected_execution,
                 execution_evidence=execution_evidence,
             )
