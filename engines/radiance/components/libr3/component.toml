@@ -131,6 +131,17 @@ status = "experimental"
 summary = "RAD06: the helper's activation copy (engine's mapped host memory into the lane) and result write (lane to mapped host memory) use 16-byte accesses instead of one byte and two bytes a thread; bit-identical, read per request; 0 keeps the scalar kernels"
 activation = "R3_MOE_HELPER_VECIO"
 
+[setting.R3_MOE_HELPER_BALANCE]
+default = ""
+status = "experimental"
+summary = "RAD06/RHP: with R3_MOE_HELPER_HEAT and two helpers, split the jointly owned experts between the helpers per layer by predicted cost (a layer waits for the slower helper) instead of alternating down the global heat ranking; the owned set is unchanged, only who owns which; deterministic so both helper processes compute the same map; offline prediction 3.5-5.6% of helper time (tools/lab/radiance/heat-placement/balance_score.py)"
+activation = "R3_MOE_HELPER_BALANCE: per-layer cost split"
+
+[setting.R3_MOE_HELPER_BALANCE_SPEED]
+default = ""
+status = "experimental"
+summary = "RAD06/RHP: with R3_MOE_HELPER_BALANCE, relative speeds of the two helpers as 's0,s1' (default 1,1); a helper's expert cost is divided by its speed, so a slower card takes less (helper 1 measured ~8-10% slower)"
+
 [setting.R3_MOE_PROBE]
 default = ""
 status = "diagnostic"
