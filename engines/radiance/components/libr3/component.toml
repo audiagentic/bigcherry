@@ -171,6 +171,12 @@ status = "diagnostic"
 summary = "RAD06: every Nth finished request a helper lane prints its critical-path stamps as a TRACE line on stderr: the engine's local work between publish and wait (local_us), the engine's wait for this helper (wait_us) and the helper GPU's own request time (helper_gpu_us), each within one device's wall clock; the stamps are nine stores to the mapped request slot (five at publish, two in the engine's wait, two on the helper) and are always written, so this only enables the printing (compare an arm with R3_MOE_HELPER_TRACE=0 against the build without stamps for their cost); read with tools/lab/radiance/heat-placement/trace_report.py"
 activation = "TRACE,lane"
 
+[setting.R3_MOE_SWEEP_FAST]
+default = ""
+status = "diagnostic"
+summary = "RAD06 replay-sweep harness only: compare each variant bitwise against the first and print a sum_abs checksum instead of running the CPU reference (r3_moe_helper --replay-sweep); never set while serving"
+activation = "R3_MOE_SWEEP_FAST"
+
 [setting.R3_MOE_PROBE]
 default = ""
 status = "diagnostic"
