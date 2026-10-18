@@ -77,7 +77,7 @@ def one_stream(url: str, model: str, stream: int, prompt: str, max_tokens: int, 
         "temperature": temperature, "seed": seed, "messages": [{"role": "user", "content": prompt}]}).encode()
     req = urllib.request.Request(url.rstrip("/") + "/v1/chat/completions", data=body,
                                  headers={"Content-Type": "application/json"})
-    text, chunks, last = [], 0, None
+    text, chunks, last, raw_head = [], 0, None, []
     res.t_start = time.perf_counter()
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -92,8 +92,12 @@ def one_stream(url: str, model: str, stream: int, prompt: str, max_tokens: int, 
                 if event.get("usage"):
                     res.prompt_tokens = int(event["usage"].get("prompt_tokens", 0))
                     res.tokens = int(event["usage"].get("completion_tokens", 0)) or res.tokens
+                if len(raw_head) < 4:
+                    raw_head.append(data[:300])
                 for choice in event.get("choices", []):
-                    piece = (choice.get("delta") or {}).get("content")
+                    delta = choice.get("delta") or {}
+                    # a thinking model streams its tokens as reasoning_content / reasoning before any content
+                    piece = delta.get("content") or delta.get("reasoning_content") or delta.get("reasoning")
                     if piece:
                         now = time.perf_counter()
                         if not chunks:
@@ -105,7 +109,7 @@ def one_stream(url: str, model: str, stream: int, prompt: str, max_tokens: int, 
                         text.append(piece)
         res.t_end = time.perf_counter()
         if not chunks:
-            raise StreamBenchError("the stream produced no content")
+            raise StreamBenchError("the stream produced no content; first events: " + " | ".join(raw_head))
         if not res.tokens:
             res.tokens = chunks                      # no usage block: count content chunks (one token each)
         res.text_sha256 = hashlib.sha256("".join(text).encode()).hexdigest()

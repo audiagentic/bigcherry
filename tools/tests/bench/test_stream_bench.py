@@ -18,6 +18,7 @@ from bigcherry.bench import stream_bench as sb  # noqa: E402
 class _Handler(BaseHTTPRequestHandler):
     delay = 0.01            # seconds per token
     fail = False
+    reasoning = False
     seen_prompts: list = []
 
     def log_message(self, *args):
@@ -36,7 +37,8 @@ class _Handler(BaseHTTPRequestHandler):
         self.end_headers()
         for i in range(n):
             time.sleep(type(self).delay)
-            chunk = {"choices": [{"delta": {"content": f"t{i} "}}]}
+            field = "reasoning_content" if type(self).reasoning else "content"
+            chunk = {"choices": [{"delta": {field: f"t{i} "}}]}
             self.wfile.write(f"data: {json.dumps(chunk)}\n\n".encode())
             self.wfile.flush()
         usage = {"choices": [], "usage": {"prompt_tokens": len(body["messages"][0]["content"].split()), "completion_tokens": n}}
@@ -109,6 +111,15 @@ class StreamBench(unittest.TestCase):
                                   "--prompt-tokens", "4", "--output", str(out)]), 1)
         out.unlink(missing_ok=True)
         self.assertEqual(sb.main(["--url", self.url, "--streams", "0"]), 2)
+
+    def test_reasoning_tokens_count_as_stream_tokens(self):
+        _Handler.reasoning = True
+        try:
+            rec = sb.run_round(self.url, "m", 1, 8, 6, 0.0, 30.0, 1, False)
+        finally:
+            _Handler.reasoning = False
+        self.assertTrue(rec["ok"])
+        self.assertEqual(rec["per_stream"][0]["tokens"], 6)
 
     def test_flat_metrics_feed_the_ab_harness(self):
         record = sb.run(self.url, "m", [1, 2], 8, 6, 2)
