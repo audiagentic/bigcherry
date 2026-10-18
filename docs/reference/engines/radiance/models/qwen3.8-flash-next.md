@@ -194,6 +194,31 @@ Helper request time is local work plus exposed wait, so the helpers are the crit
 
 Caveats: a layer's exposed wait is the larger of the two helpers' waits (the wait kernel polls them in order); the publish -> wait window is not isolated local-expert time. Comparing decode speed between ownership layouts needs a fixed-text benchmark: a different split changes the summation order and the greedy text (see the balanced-ownership row under Tried and shelved).
 
+## Multi-stream baseline (radiance 1.8.0, RAD10-01, 2026-10-19)
+
+First concurrent-stream measurement: `bigcherry stream-bench` inside the ab-benchmark lifecycle
+(`tools/lab/radiance/helper-streams-ab.json`; evidence `docs/evidence/RAD10/streams-180-baseline/`). R9700 engine plus two XTX
+helpers, the validated helper settings, `--max-num-seqs 6`, 512-token random-word prompts (a different one per stream), 128
+generated tokens, temperature 0, two repetitions a round, two identical arms (A/A) in two balanced pairs, so the spread between
+the four cells is the noise floor.
+
+| Streams | Aggregate tok/s (four cells) | Per-stream decode tok/s | TTFT p95 | Inter-token p95 |
+|---|---|---|---|---|
+| 1 | 85.9 - 95.4 | about 93 | 318 - 415 ms | 26.6 - 32.3 ms |
+| 2 | 131.7 - 132.4 | about 66 | 542 ms | 32.1 - 32.4 ms |
+| 4 | 165.2 - 168.4 | about 64 - 70 | 1,052 - 1,087 ms | 47.9 - 48.8 ms |
+| 6 | 193.1 - 199.3 | about 33 | 1,581 - 1,592 ms | 55.2 - 56.3 ms |
+
+- Aggregate throughput scales 2.1x from one stream to six; each stream slows to about a third. Above one stream the A/A spread
+  is under 1.5%; the single-stream figure is noisy (+-7%).
+- The single-stream decode here (about 90 tok/s) is below the 145 tok/s of the tg512 acceptance cell: these prompts are random
+  words, so speculative-decode acceptance is low. Compare within this table, not with the acceptance numbers.
+- Identity: at one stream the text is identical across arms. At four streams the first repetition matches across arms but a
+  second repetition of the same prompts and seed produced different text, so concurrent decode is not bitwise reproducible
+  from run to run; per-stream correctness gates for RAD10 must use quality (KL, top-1), not exact text.
+- Not measured yet: mixed long-prefill plus decodes, open-loop arrivals, queueing beyond `--max-num-seqs`, engine-side helper
+  counters in the same cell. For scale, Paiton reports 565 -> 685 tok/s at eight streams on two P2P R9700 (a different setup).
+
 ## Open levers
 
 - **RAD06, prefill (the ranked remaining levers):** (1) multi-buffered chunk pipeline of the hand-off; analysis
