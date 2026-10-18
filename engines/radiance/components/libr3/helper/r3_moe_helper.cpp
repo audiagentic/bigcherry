@@ -924,6 +924,9 @@ int main(int argc, char** argv) {
      * captured requests, KLD unchanged), grouped GEMM 1.7-3.2x faster, prefill 2,130 -> 3,150 tok/s with decode
      * unchanged (RAD06 2026-10-18). Read by libr3 at launch; 0 turns it off. */
     (void)::setenv("R3_MOE_FP16", "1", 0);
+    /* And the activation tile widened to half once at staging instead of by every wave that reads it: bit-identical,
+     * a further 7-8% off the grouped GEMM on four real captured requests (RAD06 2026-10-18). 0 turns it off. */
+    (void)::setenv("R3_MOE_AHALF", "1", 0);
     /* --replay-sweep MODEL VARIANTS FILE...: one process, one model load and one expert allocation for every capture,
      * then each capture is replayed once per variant. VARIANTS is ';'-separated, each "NAME=value,NAME=value" (empty
      * = the environment as launched); the variant's variables are set (and the previous variant's unset) before the
