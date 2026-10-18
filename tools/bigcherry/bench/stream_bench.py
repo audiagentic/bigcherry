@@ -182,6 +182,24 @@ def run(url: str, model: str, stream_counts: list, prompt_tokens: int, max_token
             "ok": all(r["ok"] for r in rounds), "rounds": rounds, "summary": summary}
 
 
+def flat_metrics(record: dict) -> dict:
+    """The record as flat named numbers, so a stream cell can feed the A/B harness like any other measurement:
+    agg_tps_sN, stream_tps_sN (mean per-stream decode), ttft_p95_ms_sN, itl_p95_ms_sN for each stream count N
+    (medians over the repetitions). A run with any failed stream has no metrics."""
+    if not record.get("ok"):
+        raise StreamBenchError("a stream failed; no metrics")
+    out = {}
+    for n in record["config"]["streams"]:
+        good = [r["aggregate"] for r in record["rounds"] if r["streams"] == n and r["ok"]]
+        out[f"agg_tps_s{n}"] = statistics.median(g["aggregate_tps"] for g in good)
+        out[f"ttft_p95_ms_s{n}"] = statistics.median(g["ttft_ms_p95"] for g in good)
+        out[f"itl_p95_ms_s{n}"] = statistics.median(g["itl_ms_p95"] for g in good)
+        per = [g["mean_stream_decode_tps"] for g in good if g["mean_stream_decode_tps"] is not None]
+        if per:
+            out[f"stream_tps_s{n}"] = statistics.median(per)
+    return out
+
+
 def build_parser(add_help: bool = True) -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(description=__doc__, add_help=add_help)
     ap.add_argument("--url", required=True, help="server base URL, e.g. http://127.0.0.1:8080")

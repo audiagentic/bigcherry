@@ -110,6 +110,17 @@ class StreamBench(unittest.TestCase):
         out.unlink(missing_ok=True)
         self.assertEqual(sb.main(["--url", self.url, "--streams", "0"]), 2)
 
+    def test_flat_metrics_feed_the_ab_harness(self):
+        record = sb.run(self.url, "m", [1, 2], 8, 6, 2)
+        flat = sb.flat_metrics(record)
+        for n in (1, 2):
+            for key in ("agg_tps", "ttft_p95_ms", "itl_p95_ms", "stream_tps"):
+                self.assertIn(f"{key}_s{n}", flat)
+        _Handler.fail = True
+        bad = sb.run(self.url, "m", [1], 4, 2, 1)
+        with self.assertRaises(sb.StreamBenchError):
+            sb.flat_metrics(bad)
+
     def test_inter_token_gaps_are_recorded(self):
         _Handler.delay = 0.02
         rec = sb.run_round(self.url, "m", 1, 8, 10, 0.0, 30.0, 1, False)

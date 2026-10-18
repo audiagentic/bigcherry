@@ -1,0 +1,114 @@
+{
+  "_comment": "RAD10-01: concurrent-stream baseline on the Brutus layout (R9700 engine, two XTX helpers): 1, 2, 4 and 6 simultaneous streams (--max-num-seqs 6) through bigcherry stream-bench inside the ab-benchmark lifecycle. Both arms are identical, so the pair is an A/A noise floor for every metric. Set RAD_BIN, RAD_HOME and R9700_BDF as for helper-ab.json.",
+  "schema_version": 1,
+  "engine": "radiance",
+  "evidence_role": "diagnostic",
+  "execution_evidence": "observe",
+  "model": "/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad",
+  "server_args": [
+    "--radiance-home",
+    "${RAD_HOME}",
+    "--kernels",
+    "libr4d,libr3moe,libref",
+    "--placement",
+    "expert_tiered",
+    "--ngram-placement",
+    "ram",
+    "--max-num-seqs",
+    "6",
+    "--max-num-batched-tokens",
+    "4096",
+    "--checkpoint-interval",
+    "4096",
+    "--kv-cache-dtype",
+    "fp8",
+    "--num-speculative-tokens",
+    "3",
+    "--tp",
+    "1",
+    "--host-pool-mib",
+    "30720",
+    "--max-model-len",
+    "32768"
+  ],
+  "environment": {
+    "HIP_VISIBLE_DEVICES": "0",
+    "ROCR_VISIBLE_DEVICES": "2",
+    "RADIANCE_HOME": "${RAD_HOME}",
+    "R3_MOE_HELPER_SKIP_OWNED": "1"
+  },
+  "expected_execution": {
+    "backend": "ROCm",
+    "architectures": [
+      "gfx1201"
+    ],
+    "locators": [
+      "${R9700_BDF}"
+    ]
+  },
+  "bench_configs": "mtp-dual",
+  "required_metrics": [
+    "agg_tps_s1",
+    "ttft_p95_ms_s1",
+    "itl_p95_ms_s1",
+    "agg_tps_s2",
+    "ttft_p95_ms_s2",
+    "itl_p95_ms_s2",
+    "agg_tps_s4",
+    "ttft_p95_ms_s4",
+    "itl_p95_ms_s4",
+    "agg_tps_s6",
+    "ttft_p95_ms_s6",
+    "itl_p95_ms_s6"
+  ],
+  "repetitions": 1,
+  "health_timeout_s": 900,
+  "arms": [
+    {
+      "name": "base-a",
+      "mode": "stock",
+      "shutdown_method": "sigint",
+      "binary": "${RAD_BIN}",
+      "settings": {
+        "R3_MOE_HELPER": "1",
+        "R3_MOE_HELPER_DEVICES": "0 1",
+        "R3_MOE_HELPER_MOE_DOWN_TILE": "1",
+        "R3_MOE_HELPER_ENGINE_RANKS": "1",
+        "R3_MOE_HELPER_MAX_ROWS": "4096",
+        "R3_MOE_HELPER_SMALL_ROWS": "8",
+        "R3_MOE_HELPER_MIB": "22528",
+        "R3_MOE_HELPER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
+        "R3_MOE_HELPER_ROWS": "0"
+      }
+    },
+    {
+      "name": "base-b",
+      "mode": "stock",
+      "shutdown_method": "sigint",
+      "binary": "${RAD_BIN}",
+      "settings": {
+        "R3_MOE_HELPER": "1",
+        "R3_MOE_HELPER_DEVICES": "0 1",
+        "R3_MOE_HELPER_MOE_DOWN_TILE": "1",
+        "R3_MOE_HELPER_ENGINE_RANKS": "1",
+        "R3_MOE_HELPER_MAX_ROWS": "4096",
+        "R3_MOE_HELPER_SMALL_ROWS": "8",
+        "R3_MOE_HELPER_MIB": "22528",
+        "R3_MOE_HELPER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
+        "R3_MOE_HELPER_ROWS": "0"
+      }
+    }
+  ],
+  "stream_bench": {
+    "streams": [
+      1,
+      2,
+      4,
+      6
+    ],
+    "prompt_tokens": 512,
+    "max_tokens": 128,
+    "reps": 2,
+    "seed": 1
+  }
+}
