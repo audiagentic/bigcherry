@@ -160,10 +160,13 @@ class ReleasePleaseWiringTests(unittest.TestCase):
 
     def test_manifest_versions(self):
         self.assertEqual(sorted(self.manifest), [".", "engines/llamacpp", "engines/radiance"])
-        # radiance's major is its pinned upstream version's digits (1.7.0 -> 170)
+        # radiance's major is its pinned upstream version's digits (1.8.0 -> 180). The manifest holds the last RELEASED
+        # version, so after a pin bump it stays on the previous line (170.x) until pin-release states the first release
+        # of the new pin with release-as (RELEASES.md); it can never be ahead of the pin.
         import tomllib
         pinned = tomllib.loads((_REPO / "engines" / "radiance" / "recipes.toml").read_text(encoding="utf-8"))["pinned-version"]
-        self.assertRegex(self.manifest["engines/radiance"], rf"^{pinned.replace('.', '')}\.\d+\.\d+$")
+        self.assertRegex(self.manifest["engines/radiance"], r"^\d+\.\d+\.\d+$")
+        self.assertLessEqual(int(self.manifest["engines/radiance"].split(".")[0]), int(pinned.replace(".", "")))
         # the llama.cpp line's major is a llama build number; the platform line is a plain semantic version
         self.assertRegex(self.manifest["engines/llamacpp"], r"^\d{4,6}\.\d+\.\d+$")
         self.assertRegex(self.manifest["."], r"^\d{1,3}\.\d+\.\d+$")
