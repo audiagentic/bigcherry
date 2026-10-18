@@ -1,5 +1,5 @@
 {
-  "_comment": "RAD06/RHP (2026-10-18): the helper layout with R3_MOE_HELPER_TRACE=4: every 4th finished helper request prints its critical-path stamps (TRACE lines in helperN.log); read with tools/lab/radiance/heat-placement/trace_report.py. Two identical arms (the harness needs two). Unprofiled: the stamps are three stores a request. Set RAD_BIN, RAD_HOME and R9700_BDF before use. Not used by tests.",
+  "_comment": "RAD06/RHP (2026-10-18): the helper layout with R3_MOE_HELPER_TRACE=1: every finished helper request prints (a sampling stride > 1 counts each helper by its own sequence and breaks the pairing) its critical-path stamps (TRACE lines in helperN.log); read with tools/lab/radiance/heat-placement/trace_report.py. Two identical arms (the harness needs two). Unprofiled: the stamps are three stores a request. Set RAD_BIN, RAD_HOME and R9700_BDF before use. Not used by tests.",
   "schema_version": 1,
   "engine": "radiance",
   "evidence_role": "diagnostic",
@@ -69,7 +69,7 @@
         "R3_MOE_HELPER_MIB": "22528",
         "R3_MOE_HELPER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
         "R3_MOE_NATIVE": "1",
-        "R3_MOE_HELPER_TRACE": "4"
+        "R3_MOE_HELPER_TRACE": "1"
       }
     },
     {
@@ -87,7 +87,7 @@
         "R3_MOE_HELPER_MIB": "22528",
         "R3_MOE_HELPER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
         "R3_MOE_NATIVE": "1",
-        "R3_MOE_HELPER_TRACE": "4"
+        "R3_MOE_HELPER_TRACE": "1"
       }
     }
   ]
