@@ -225,7 +225,8 @@ __global__ void lane_route_scatter(
     if (sorted_expert) sorted_expert[pos] = (int32_t)e;
 }
 
-/* R3_MOE_HELPER_FUSEROUTE: a small (decode) lane request's whole routing prologue in one block. A request has at most
+/* R3_MOE_HELPER_FUSEROUTE: a small (decode) lane request's whole front end in one block: activation copy, table
+ * selection and the routing prologue. A request has at most
  * 8 rows x top-k routes, so one block of kExperts threads does what four memsets and lane_route_count / _prefix /
  * _scatter / _inverse did across ten launches: clear the sorted order, its inverse and the weights; count the routes
  * of each expert slot; scan the counts into the expert offsets; place every route and its inverse. A route's place in
@@ -233,10 +234,12 @@ __global__ void lane_route_scatter(
  * the sorted order is now deterministic. A route's output does not depend on its place and the reduce reads through the
  * inverse, so the result is the same. */
 constexpr uint32_t kFuseMaxRoutes = 256;
-__global__ __launch_bounds__(r3::moe_shm::kExperts) void lane_route_small(
+__global__ __launch_bounds__(r3::moe_shm::kExperts) void lane_front_small(
     const r3::moe_shm::Route* route, r3::moe_shm::Request* q, const DeviceLayerTables* layers_table,
-    uint32_t rank, uint32_t sequence, uint32_t max_rows, uint32_t layers, uint32_t routes_cap,
-    int32_t* off, int32_t* sorted, int32_t* inv, uint16_t* ew) {
+    const uint4* src_q, const uint4* src_s, uint4* dst_q, uint4* dst_s, uint64_t* stats,
+    uint32_t rank, uint32_t slice, uint32_t sequence, uint32_t max_rows, uint32_t layers, uint32_t routes_cap,
+    int32_t* off, int32_t* sorted, int32_t* inv, uint16_t* ew,
+    void** guc0, void** gus0, void** dnc0, void** dns0, void** guc1, void** gus1, void** dnc1, void** dns1) {
     using namespace r3::moe_shm;
     constexpr uint32_t n = kExperts;
     __shared__ uint32_t s_cnt[n];
@@ -244,6 +247,45 @@ __global__ __launch_bounds__(r3::moe_shm::kExperts) void lane_route_small(
     __shared__ uint16_t r_es[kFuseMaxRoutes];
     __shared__ int32_t r_f[kFuseMaxRoutes];
     const uint32_t t = threadIdx.x;
+    /* What lane_prepare_activation_v and lane_select_tables did, ahead of the routing: the request's own status and
+     * stats, the activation rows copied from the engine's mapped host memory (their PCIe reads in flight together
+     * with the routes' below), and the lane's expert tables. */
+    const bool valid0 = lane_request_valid(q, rank, sequence, max_rows, layers);
+    if (t == 0) {
+        q->status = valid0 ? 0 : -EINVAL;
+        q->trace[3] = wall_clock64();   /* R3_MOE_HELPER_TRACE: this device's clock */
+        if (valid0) {
+            atomicAdd(reinterpret_cast<unsigned long long*>(stats) + 0, 1ull);
+            atomicAdd(reinterpret_cast<unsigned long long*>(stats) + 1, (unsigned long long)q->rows);
+            atomicAdd(reinterpret_cast<unsigned long long*>(stats) + 2, (unsigned long long)q->route_count);
+        }
+    }
+    {
+        constexpr uint32_t q_per_row = kHidden / 16;
+        constexpr uint32_t s_per_row = (kHidden / kActGroup) * 4 / 16;
+        for (uint32_t i = t; i < max_rows * q_per_row; i += n)
+            dst_q[i] = valid0 && i / q_per_row < q->rows ? src_q[i] : make_uint4(0, 0, 0, 0);
+        for (uint32_t i = t; i < max_rows * s_per_row; i += n)
+            dst_s[i] = valid0 && i / s_per_row < q->rows ? src_s[i] : make_uint4(0, 0, 0, 0);
+    }
+    if (t < kExperts / 2) {
+        const uint32_t i = t;
+        if (!valid0) {
+            guc0[i] = gus0[i] = dnc0[i] = dns0[i] = nullptr;
+            guc1[i] = gus1[i] = dnc1[i] = dns1[i] = nullptr;
+        } else {
+            const DeviceLayerTables tl = layers_table[q->layer];
+            guc0[i] = static_cast<void**>(tl.gu_code[slice][0])[i];
+            gus0[i] = static_cast<void**>(tl.gu_scale[slice][0])[i];
+            dnc0[i] = static_cast<void**>(tl.dn_code[slice][0])[i];
+            dns0[i] = static_cast<void**>(tl.dn_scale[slice][0])[i];
+            guc1[i] = static_cast<void**>(tl.gu_code[slice][1])[i];
+            gus1[i] = static_cast<void**>(tl.gu_scale[slice][1])[i];
+            dnc1[i] = static_cast<void**>(tl.dn_code[slice][1])[i];
+            dns1[i] = static_cast<void**>(tl.dn_scale[slice][1])[i];
+        }
+    }
+    __syncthreads();   /* the status above is written before a route error below can overwrite it */
     for (uint32_t i = t; i < routes_cap; i += n) {
         sorted[i] = -1;
         inv[i] = -1;
@@ -1107,12 +1149,14 @@ public:
          * copy and the result write; 0 keeps the scalar kernels. Read each call so a replay sweep can compare. */
         const char* vio_env = std::getenv("R3_MOE_HELPER_VECIO");
         const bool vecio = !vio_env || std::strcmp(vio_env, "0") != 0;
-        if (vecio && ((reinterpret_cast<uintptr_t>(act_q) | reinterpret_cast<uintptr_t>(act_s) |
+        if ((vecio || fuse) && ((reinterpret_cast<uintptr_t>(act_q) | reinterpret_cast<uintptr_t>(act_s) |
                        reinterpret_cast<uintptr_t>(dst)) & 15u) != 0) {
             std::fprintf(stderr, "r3_moe_helper: R3_MOE_HELPER_VECIO needs 16-byte aligned activation and result planes\n");
             return -EINVAL;
         }
-        if (vecio) {
+        if (fuse) {
+            /* the activation copy is folded into lane_front_small below */
+        } else if (vecio) {
             const dim3 vgrid(((uint64_t)rows * (kHidden / 16) + block.x - 1) / block.x);
             hipLaunchKernelGGL(lane_prepare_activation_v, vgrid, block, 0, w.stream,
                                q, reinterpret_cast<const uint4*>(act_q), reinterpret_cast<const uint4*>(act_s),
@@ -1127,11 +1171,18 @@ public:
                                static_cast<uint64_t*>(w.d_stats.p));
         }
         if (fuse) {
-            hipLaunchKernelGGL(lane_route_small, dim3(1), dim3(kExperts), 0, w.stream,
+            hipLaunchKernelGGL(lane_front_small, dim3(1), dim3(kExperts), 0, w.stream,
                                route, q, static_cast<const DeviceLayerTables*>(d_layer_tables_.p),
-                               rank, sequence, rows, model_.layers, routes,
+                               reinterpret_cast<const uint4*>(act_q), reinterpret_cast<const uint4*>(act_s),
+                               reinterpret_cast<uint4*>(w.d_aq.p), reinterpret_cast<uint4*>(w.d_as.p),
+                               static_cast<uint64_t*>(w.d_stats.p),
+                               rank, full_width() ? 0u : rank, sequence, rows, model_.layers, routes,
                                static_cast<int32_t*>(w.d_off.p), static_cast<int32_t*>(w.d_sorted.p),
-                               static_cast<int32_t*>(w.d_inv.p), static_cast<uint16_t*>(w.d_ew.p));
+                               static_cast<int32_t*>(w.d_inv.p), static_cast<uint16_t*>(w.d_ew.p),
+                               static_cast<void**>(w.gu_code[0].p), static_cast<void**>(w.gu_scale[0].p),
+                               static_cast<void**>(w.dn_code[0].p), static_cast<void**>(w.dn_scale[0].p),
+                               static_cast<void**>(w.gu_code[1].p), static_cast<void**>(w.gu_scale[1].p),
+                               static_cast<void**>(w.dn_code[1].p), static_cast<void**>(w.dn_scale[1].p));
         } else {
         hipLaunchKernelGGL(lane_route_count, route_grid, block, 0, w.stream,
                            route, q, static_cast<const DeviceLayerTables*>(d_layer_tables_.p),
@@ -1159,6 +1210,7 @@ public:
         {
             const uint32_t slice = full_width() ? 0u : rank;
             void* out_down = w.d_down.p;
+            if (!fuse)
             hipLaunchKernelGGL(lane_select_tables,
                                dim3((kExperts / 2 + block.x - 1) / block.x), block, 0, w.stream,
                                q, static_cast<const DeviceLayerTables*>(d_layer_tables_.p),
