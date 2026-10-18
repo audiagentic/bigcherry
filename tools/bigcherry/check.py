@@ -895,6 +895,23 @@ def tooling_hygiene(root: Path) -> tuple[HygieneDiagnostic, ...]:
                 )
             )
 
+    from . import source_lint
+
+    for path in source_lint.source_files(root):
+        for kind, line, message in source_lint.lint_file(path):
+            findings.append(
+                _diagnostic(
+                    root,
+                    "TR14.STRING_LITERAL_NEWLINE" if kind == "string" else "TR14.PYTHON_PARSE",
+                    "error",
+                    path,
+                    f"line {line}: {message}",
+                    "write the line break inside a string as an escape (\n), not as a real line break; "
+                    "generated edits are the usual source" if kind == "string"
+                    else "fix the syntax before relying on this source",
+                )
+            )
+
     return tuple(
         sorted(findings, key=lambda item: (item.code, item.path, item.message))
     )
