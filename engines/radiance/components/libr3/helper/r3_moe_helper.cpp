@@ -566,26 +566,36 @@ bool select_owned(const Container& f, r3_moe_gpu::Runner* gpu, uint64_t budget, 
                 joint.push_back(Pick{l, e, bytes, cost_of(*p)});
             }
         }
-        /* Per layer, heaviest first onto the less loaded helper; a helper whose budget cannot take the expert passes it on. */
-        std::stable_sort(joint.begin(), joint.end(), [](const Pick& a, const Pick& b) {
-            if (a.l != b.l) return a.l < b.l;
-            if (a.cost != b.cost) return a.cost > b.cost;
-            return a.e < b.e;
+        /* Per layer, heaviest first onto the less loaded helper; a helper whose budget cannot take the expert passes it on.
+         * The decision is made in layer / cost order, but each helper's list is emitted in the ranking order the
+         * alternation would have used (hottest first): the order is also the order the weights are allocated in. */
+        std::vector<uint32_t> idx(joint.size());
+        for (uint32_t i = 0; i < idx.size(); ++i) idx[i] = i;
+        std::stable_sort(idx.begin(), idx.end(), [&](uint32_t a, uint32_t b) {
+            const Pick& x = joint[a];
+            const Pick& y = joint[b];
+            if (x.l != y.l) return x.l < y.l;
+            if (x.cost != y.cost) return x.cost > y.cost;
+            return x.e < y.e;
         });
+        std::vector<int8_t> assigned(joint.size(), -1);
         uint64_t held[2] = {0, 0};
         double load[2] = {0.0, 0.0};
         uint32_t cur_layer = 0xffffffffu;
-        for (const Pick& pk : joint) {
+        for (uint32_t i : idx) {
+            const Pick& pk = joint[i];
             if (pk.l != cur_layer) { cur_layer = pk.l; load[0] = load[1] = 0.0; }
             uint32_t who = load[0] + pk.cost / speed[0] <= load[1] + pk.cost / speed[1] ? 0u : 1u;
             if ((uint64_t)pk.bytes > budget - held[who]) who ^= 1u;
             if ((uint64_t)pk.bytes > budget - held[who]) continue;
             held[who] += (uint64_t)pk.bytes;
             load[who] += pk.cost / speed[who];
-            if (who == helper) {
-                out->expert.emplace_back(pk.l, pk.e);
-                out->bytes += (uint64_t)pk.bytes;
-            }
+            assigned[i] = (int8_t)who;
+        }
+        for (uint32_t i = 0; i < joint.size(); ++i) {
+            if (assigned[i] != (int8_t)helper) continue;
+            out->expert.emplace_back(joint[i].l, joint[i].e);
+            out->bytes += (uint64_t)joint[i].bytes;
         }
         std::fprintf(stderr, "r3_moe_helper: R3_MOE_HELPER_BALANCE: per-layer cost split of %zu jointly owned experts\n",
                      joint.size());
