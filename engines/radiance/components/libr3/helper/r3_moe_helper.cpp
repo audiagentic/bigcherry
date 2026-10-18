@@ -1242,6 +1242,8 @@ int main(int argc, char** argv) {
     std::string lane_list;                       /* "4,8,16,24", for the log */
     for (uint32_t c = 0; c < lane_classes.count; ++c)
         lane_list += (c ? "," : "") + std::to_string(lane_classes.rows[c]);
+    if (const char* sl = std::getenv("R3_MOE_HELPER_SMALL_LANES"); sl && *sl)
+        std::fprintf(stderr, "r3_moe_helper: R3_MOE_HELPER_SMALL_LANES on - small lanes %s\n", lane_list.c_str());
     long rss_pages = 0;
     if (FILE* sf = std::fopen("/proc/self/statm", "r")) {
         long total_pages = 0;

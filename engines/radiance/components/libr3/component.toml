@@ -220,6 +220,12 @@ default = "64"
 status = "experimental"
 summary = "helper small-lane size: steps up to this many rows run on GPU work the helper pre-queues at this fixed size (no host in the loop)"
 
+[setting.R3_MOE_HELPER_SMALL_LANES]
+default = ""
+status = "experimental"
+summary = "RAD12: up to four ascending pre-queued small-lane sizes, e.g. 4,8,16,24; a step takes the first lane that fits its rows, else the large lane. Replaces the single R3_MOE_HELPER_SMALL_ROWS size when set. At three and four concurrent streams (12 and 16 rows with MTP) the 8-row lane sends the step to the large lane; a lane padded to 24 costs a 4-row step about 25%; the classes avoid both"
+activation = "r3_moe_helper: R3_MOE_HELPER_SMALL_LANES on"
+
 [setting.R3_MOE_HELPER_POISON]
 default = "0"
 status = "diagnostic"
