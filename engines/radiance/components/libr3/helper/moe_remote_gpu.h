@@ -225,6 +225,75 @@ __global__ void lane_route_scatter(
     if (sorted_expert) sorted_expert[pos] = (int32_t)e;
 }
 
+/* R3_MOE_HELPER_FUSEROUTE: a small (decode) lane request's whole routing prologue in one block. A request has at most
+ * 8 rows x top-k routes, so one block of kExperts threads does what four memsets and lane_route_count / _prefix /
+ * _scatter / _inverse did across ten launches: clear the sorted order, its inverse and the weights; count the routes
+ * of each expert slot; scan the counts into the expert offsets; place every route and its inverse. A route's place in
+ * its expert's run is the number of earlier routes with the same slot (the atomic cursor made that order arbitrary), so
+ * the sorted order is now deterministic. A route's output does not depend on its place and the reduce reads through the
+ * inverse, so the result is the same. */
+constexpr uint32_t kFuseMaxRoutes = 256;
+__global__ __launch_bounds__(r3::moe_shm::kExperts) void lane_route_small(
+    const r3::moe_shm::Route* route, r3::moe_shm::Request* q, const DeviceLayerTables* layers_table,
+    uint32_t rank, uint32_t sequence, uint32_t max_rows, uint32_t layers, uint32_t routes_cap,
+    int32_t* off, int32_t* sorted, int32_t* inv, uint16_t* ew) {
+    using namespace r3::moe_shm;
+    constexpr uint32_t n = kExperts;
+    __shared__ uint32_t s_cnt[n];
+    __shared__ uint32_t s_excl[n];
+    __shared__ uint16_t r_es[kFuseMaxRoutes];
+    __shared__ int32_t r_f[kFuseMaxRoutes];
+    const uint32_t t = threadIdx.x;
+    for (uint32_t i = t; i < routes_cap; i += n) {
+        sorted[i] = -1;
+        inv[i] = -1;
+        ew[i] = 0;
+    }
+    s_cnt[t] = 0;
+    const bool valid = lane_request_valid(q, rank, sequence, max_rows, layers) &&
+                       q->route_count <= kFuseMaxRoutes && q->route_count <= routes_cap;
+    const uint32_t nr = valid ? q->route_count : 0u;
+    __syncthreads();
+    if (t < nr) {
+        const Route r = route[t];
+        r_f[t] = -1;
+        r_es[t] = 0;
+        if (!(r.token < 0 || (uint32_t)r.token >= q->rows || r.expert < 0 || r.expert >= (int32_t)kExperts ||
+              r.slot >= kTopK)) {
+            const uint16_t es = layers_table[q->layer].expert_slot[(uint32_t)r.expert];
+            if (es >= kExperts) {
+                atomicExch(&q->status, -EINVAL);
+            } else {
+                const uint32_t f = (uint32_t)r.token * kTopK + r.slot;
+                r_f[t] = (int32_t)f;
+                r_es[t] = es;
+                ew[f] = r.weight_bf16;
+                atomicAdd(&s_cnt[es], 1u);
+            }
+        }
+    }
+    __syncthreads();
+    const uint32_t mine = s_cnt[t];
+    for (uint32_t d = 1; d < n; d <<= 1) {
+        const uint32_t add = t >= d ? s_cnt[t - d] : 0u;
+        __syncthreads();
+        s_cnt[t] += add;
+        __syncthreads();
+    }
+    const uint32_t excl = s_cnt[t] - mine;
+    off[t] = (int32_t)excl;
+    s_excl[t] = excl;
+    if (t == n - 1) off[n] = (int32_t)s_cnt[t];
+    __syncthreads();
+    if (t < nr && r_f[t] >= 0) {
+        uint32_t before = 0;
+        for (uint32_t j = 0; j < t; ++j) before += (r_f[j] >= 0 && r_es[j] == r_es[t]) ? 1u : 0u;
+        const uint32_t pos = s_excl[r_es[t]] + before;
+        sorted[pos] = r_f[t];
+        inv[r_f[t]] = (int32_t)pos;
+    }
+}
+
 /* DECODE-SIZED MoE GEMV for w4nl64a8h (RAD05), the helper's small lane on gfx1100. The grouped GEMM's inner
  * loop is gfx12 fp8 WMMA, which gfx11 runs widened to bf16 -- ~4x off the weight-bandwidth bound at a decode
  * step's handful of rows a expert. Here no WMMA: one block a (routed row, 64 outputs), the row's activation
@@ -1012,16 +1081,22 @@ public:
 
         const uint32_t routes = rows * kTopK;
         const uint32_t slots = routes;
+        /* R3_MOE_HELPER_FUSEROUTE (default on): the small lane's routing prologue in one block (lane_route_small); 0 keeps
+         * the memsets and the four routing kernels. Read each call so a replay sweep can compare. */
+        const char* fuse_env = std::getenv("R3_MOE_HELPER_FUSEROUTE");
+        const bool fuse = lane < kMaxRanks && rows <= 8u && routes <= kFuseMaxRoutes &&
+                          (!fuse_env || std::strcmp(fuse_env, "0") != 0);
         /* No clear of the result slot: it is mapped host memory, and the merge reads only the tokens this
          * request's routes name, each of which the reduction writes. */
-        if (!hip_ok(hipMemsetAsync(w.d_counts.p, 0, kExperts * sizeof(uint32_t), w.stream),
-                    "clear route counts") ||
-            !hip_ok(hipMemsetAsync(w.d_ew.p, 0, routes * sizeof(uint16_t), w.stream),
-                    "clear route weights") ||
-            !hip_ok(hipMemsetAsync(w.d_sorted.p, 0xff, routes * sizeof(int32_t), w.stream),
-                    "clear sorted routes") ||
-            !hip_ok(hipMemsetAsync(w.d_inv.p, 0xff, slots * sizeof(int32_t), w.stream),
-                    "clear slot inverse"))
+        if (!fuse &&
+            (!hip_ok(hipMemsetAsync(w.d_counts.p, 0, kExperts * sizeof(uint32_t), w.stream),
+                     "clear route counts") ||
+             !hip_ok(hipMemsetAsync(w.d_ew.p, 0, routes * sizeof(uint16_t), w.stream),
+                     "clear route weights") ||
+             !hip_ok(hipMemsetAsync(w.d_sorted.p, 0xff, routes * sizeof(int32_t), w.stream),
+                     "clear sorted routes") ||
+             !hip_ok(hipMemsetAsync(w.d_inv.p, 0xff, slots * sizeof(int32_t), w.stream),
+                     "clear slot inverse")))
             return -EIO;
 
         const dim3 block(256);
@@ -1051,6 +1126,13 @@ public:
                                rank, sequence, rows, model_.layers,
                                static_cast<uint64_t*>(w.d_stats.p));
         }
+        if (fuse) {
+            hipLaunchKernelGGL(lane_route_small, dim3(1), dim3(kExperts), 0, w.stream,
+                               route, q, static_cast<const DeviceLayerTables*>(d_layer_tables_.p),
+                               rank, sequence, rows, model_.layers, routes,
+                               static_cast<int32_t*>(w.d_off.p), static_cast<int32_t*>(w.d_sorted.p),
+                               static_cast<int32_t*>(w.d_inv.p), static_cast<uint16_t*>(w.d_ew.p));
+        } else {
         hipLaunchKernelGGL(lane_route_count, route_grid, block, 0, w.stream,
                            route, q, static_cast<const DeviceLayerTables*>(d_layer_tables_.p),
                            rank, sequence, rows, model_.layers,
@@ -1068,6 +1150,7 @@ public:
                            static_cast<uint32_t*>(w.d_cursor.p),
                            static_cast<int32_t*>(w.d_sorted.p),
                            nullptr);
+        }
         if (!hip_ok(hipGetLastError(), "lane request kernels")) return -EIO;
         const bool sampling = sample && w.sample_pending && w.sample_sequence == sequence;
         if (sampling && !hip_ok(hipEventRecord(w.stage[0], w.stream), "lane stage 0")) return -EIO;
@@ -1196,9 +1279,10 @@ public:
         }
 
         if (sampling && !hip_ok(hipEventRecord(w.stage[3], w.stream), "lane stage 3")) return -EIO;
-        hipLaunchKernelGGL(lane_route_inverse, route_grid, block, 0, w.stream,
-                           static_cast<const int32_t*>(w.d_sorted.p),
-                           static_cast<int32_t*>(w.d_inv.p), routes, slots);
+        if (!fuse)
+            hipLaunchKernelGGL(lane_route_inverse, route_grid, block, 0, w.stream,
+                               static_cast<const int32_t*>(w.d_sorted.p),
+                               static_cast<int32_t*>(w.d_inv.p), routes, slots);
         if (vecio)
             hipLaunchKernelGGL(lane_reduce_tokens_v, dim3(rows), block, 0, w.stream,
                                static_cast<const uint16_t*>(w.d_down.p),
