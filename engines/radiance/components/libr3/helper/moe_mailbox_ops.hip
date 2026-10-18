@@ -248,7 +248,9 @@ __global__ void mailbox_add_wait_kernel(
     if (blockIdx.x || threadIdx.x) return;
     Header* h = reinterpret_cast<Header*>(base);
     const uint64_t entered = wall_clock64();   /* R3_MOE_HELPER_TRACE: engine clock */
-    for (uint32_t k = 0; k < helpers; ++k) {
+    Request* traced[kMaxRanks] = {};
+    uint64_t seen_at[kMaxRanks] = {};
+    for (uint32_t k = 0; k < helpers && k < kMaxRanks; ++k) {
         const uint32_t slot = step_slot(k, rank, helpers);
         if (!published[slot]) continue;
         const uint32_t large = published[slot] - 1u;
@@ -262,9 +264,15 @@ __global__ void mailbox_add_wait_kernel(
             __builtin_amdgcn_s_sleep(2);
             if (++spins > 4000000000ULL) __builtin_trap();
         }
-        Request* tq = reinterpret_cast<Request*>(base + h->ring_offset) + lane * kLaneSlots + ((seq - 1u) % kLaneSlots);
-        tq->trace[1] = entered;
-        tq->trace[2] = wall_clock64();
+        /* Keep the completion time in a register: a store to mapped host memory inside the loop would be counted in the
+         * second helper's wait. Both are written once the last wait is over. */
+        seen_at[k] = wall_clock64();
+        traced[k] = reinterpret_cast<Request*>(base + h->ring_offset) + lane * kLaneSlots + ((seq - 1u) % kLaneSlots);
+    }
+    for (uint32_t k = 0; k < helpers && k < kMaxRanks; ++k) {
+        if (!traced[k]) continue;
+        traced[k]->trace[1] = entered;
+        traced[k]->trace[2] = seen_at[k];
     }
 }
 

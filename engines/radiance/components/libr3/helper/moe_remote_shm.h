@@ -12,7 +12,7 @@
 namespace r3::moe_shm {
 
 constexpr uint64_t kMagic = 0x31454f4d33485253ull; /* "SRH3MOE1": reject unrelated/stale shm. */
-constexpr uint32_t kVersion = 11;  /* 11: helper_fault; completion is an exact generation */
+constexpr uint32_t kVersion = 12;  /* 12: Request carries the R3_MOE_HELPER_TRACE stamps (192 -> 256 bytes); 11: helper_fault; completion is an exact generation */
 constexpr uint32_t kPage = 4096;
 constexpr uint32_t kMaxRanks = 2;       /* Flash-Next configuration of record: TP=2. */
 constexpr uint32_t kMaxLayers = 128;     /* ownership bitmap bound; Flash-Next is below this. */
@@ -70,6 +70,9 @@ struct alignas(64) Request {
     uint64_t trace[10];
 };
 static_assert(sizeof(Request) % 64 == 0);
+/* The ring ends on the same page boundary for 192- and 256-byte requests, so the header's size checks cannot tell two
+ * layouts apart: a layout change must bump kVersion, and this fires so it cannot be forgotten. */
+static_assert(sizeof(Request) == 256, "Request layout changed: bump kVersion");
 
 struct alignas(64) LaneSignal {
     uint32_t request_sequence; /* engine GPU writes after route/activation data is visible. */
