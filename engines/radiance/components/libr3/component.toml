@@ -142,6 +142,12 @@ default = ""
 status = "experimental"
 summary = "RAD06/RHP: with R3_MOE_HELPER_BALANCE, relative speeds of the two helpers as 's0,s1' (default 1,1); a helper's expert cost is divided by its speed, so a slower card takes less (helper 1 measured ~8-10% slower)"
 
+[setting.R3_MOE_HELPER_TRACE]
+default = ""
+status = "diagnostic"
+summary = "RAD06: every Nth finished request a helper lane prints its critical-path stamps as a TRACE line on stderr: the engine's local work between publish and wait (local_us), the engine's wait for this helper (wait_us) and the helper GPU's own request time (helper_gpu_us), each within one device's wall clock; the stamps cost three stores a request and are always written, so this only enables the printing; read with tools/lab/radiance/heat-placement/trace_report.py"
+activation = "TRACE,lane"
+
 [setting.R3_MOE_PROBE]
 default = ""
 status = "diagnostic"

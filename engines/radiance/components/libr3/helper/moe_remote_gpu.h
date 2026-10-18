@@ -77,6 +77,7 @@ __global__ void lane_prepare_activation(
     const bool valid = lane_request_valid(q, rank, sequence, max_rows, layers);
     if (blockIdx.x == 0 && threadIdx.x == 0) {
         q->status = valid ? 0 : -EINVAL;
+        q->trace[3] = wall_clock64();   /* R3_MOE_HELPER_TRACE: this device's clock */
         if (valid) {
             atomicAdd(reinterpret_cast<unsigned long long*>(stats) + 0, 1ull);
             atomicAdd(reinterpret_cast<unsigned long long*>(stats) + 1,
@@ -111,6 +112,7 @@ __global__ void lane_prepare_activation_v(
     const bool valid = lane_request_valid(q, rank, sequence, max_rows, layers);
     if (blockIdx.x == 0 && threadIdx.x == 0) {
         q->status = valid ? 0 : -EINVAL;
+        q->trace[3] = wall_clock64();   /* R3_MOE_HELPER_TRACE: this device's clock */
         if (valid) {
             atomicAdd(reinterpret_cast<unsigned long long*>(stats) + 0, 1ull);
             atomicAdd(reinterpret_cast<unsigned long long*>(stats) + 1,
@@ -517,8 +519,9 @@ __global__ void lane_reduce_tokens_v(const uint16_t* down, const int32_t* inv,
 
 /* Every mapped result writer has drained before this kernel can run. Publish completion with a
  * system-scope release; the engine-side join waits with a system-scope acquire. */
-__global__ void lane_publish_done(uint32_t* done_sequence, uint32_t sequence) {
+__global__ void lane_publish_done(r3::moe_shm::Request* q, uint32_t* done_sequence, uint32_t sequence) {
     if (blockIdx.x || threadIdx.x) return;
+    q->trace[4] = wall_clock64();   /* R3_MOE_HELPER_TRACE: this device's clock */
     lane_store_sys_rel(done_sequence, sequence);
 }
 
@@ -1214,7 +1217,7 @@ public:
             !hip_ok(hipEventRecord(w.sample_stop, w.stream), "lane timing stop"))
             return -EIO;
         hipLaunchKernelGGL(lane_publish_done, dim3(1), dim3(1), 0, w.stream,
-                           done_seq, sequence);
+                           q, done_seq, sequence);
         if (!hip_ok(hipGetLastError(), "lane publish done")) return -EIO;
         return 0;
     }

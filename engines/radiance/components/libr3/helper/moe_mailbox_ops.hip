@@ -206,6 +206,11 @@ __global__ void mailbox_publish_kernel(
                 q->result_stride[r] = hidden * (uint32_t)sizeof(uint16_t);
             }
             q->sequence = seq;
+            q->trace[0] = wall_clock64();
+            q->trace[1] = 0;
+            q->trace[2] = 0;
+            q->trace[3] = 0;
+            q->trace[4] = 0;
         }
         __threadfence_system();
         __syncthreads();
@@ -242,6 +247,7 @@ __global__ void mailbox_add_wait_kernel(
     uint8_t* base, const uint32_t* sequence, const uint32_t* published, uint32_t rank, uint32_t helpers) {
     if (blockIdx.x || threadIdx.x) return;
     Header* h = reinterpret_cast<Header*>(base);
+    const uint64_t entered = wall_clock64();   /* R3_MOE_HELPER_TRACE: engine clock */
     for (uint32_t k = 0; k < helpers; ++k) {
         const uint32_t slot = step_slot(k, rank, helpers);
         if (!published[slot]) continue;
@@ -256,6 +262,9 @@ __global__ void mailbox_add_wait_kernel(
             __builtin_amdgcn_s_sleep(2);
             if (++spins > 4000000000ULL) __builtin_trap();
         }
+        Request* tq = reinterpret_cast<Request*>(base + h->ring_offset) + lane * kLaneSlots + ((seq - 1u) % kLaneSlots);
+        tq->trace[1] = entered;
+        tq->trace[2] = wall_clock64();
     }
 }
 

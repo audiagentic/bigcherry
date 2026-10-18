@@ -64,7 +64,10 @@ struct alignas(64) Request {
     uint32_t activation_s_stride;  /* bytes between F32 scale rows. */
     uint32_t result_stride[kMaxRanks]; /* BF16 row stride for each TP rank's result slot. */
     uint64_t result_offset[kMaxRanks * kMaxRanks]; /* partial-output slots; helper writes only req.rank. */
-    uint64_t reserved[2];
+    /* R3_MOE_HELPER_TRACE: wall_clock64() stamps, each from the clock of the device that wrote it (engine GPU for
+     * 0-2, the helper GPU for 3-4; never subtract across devices): 0 publish kernel, 1 wait kernel entered,
+     * 2 this request's completion seen by the wait kernel, 3 helper lane began, 4 helper lane published done. */
+    uint64_t trace[10];
 };
 static_assert(sizeof(Request) % 64 == 0);
 
