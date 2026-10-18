@@ -119,6 +119,12 @@ status = "experimental"
 summary = "RAD06: with R3_MOE_NATIVE, the grouped MoE GEMM widens E4M3 operands to f16 and uses the f16 WMMA (a cheaper widening than bf16; the sums carry a 2^-16 scale removed before the scale fold, so output is the bf16 form's)"
 activation = "R3_MOE_FP16"
 
+[setting.R3_MOE_PITCH16]
+default = ""
+status = "experimental"
+summary = "RAD06: with R3_MOE_FP16, stage the grouped MoE GEMM's tiles with a 16-byte LDS row pad (pitch FK+16) instead of 8; the f16 fragment reads 16 bytes a lane where the 8-byte pad was tuned for 8 (exact; may remove LDS bank conflicts)"
+activation = "R3_MOE_PITCH16"
+
 [setting.R3_MOE_PROBE]
 default = ""
 status = "diagnostic"

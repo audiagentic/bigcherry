@@ -20,9 +20,18 @@
     /* libr3 mode bit 6 (with bit 7): E4M3 operands widened to f16 for the f16 WMMA, the sums unscaled by 2^16 before
      * the scale fold (R3_MOE_FP16). Every sum is the bf16 form's, scaled by a power of two. */
     const bool r3h = r3n && (mode & 0x40u) != 0;
-    /* libr3 mode bits 3-5 (R3_MOE_PROBE, timing-only, outputs invalid, f16 path only): 1 no WMMA (fragments kept live),
-     * 2 no E4M3 widening (the LDS bytes are read as halves). 0 is the kernel. */
-    const uint32_t r3_probe = r3h ? (mode >> 3) & 7u : 0u;
+    /* libr3 mode bits 3-4 (R3_MOE_PROBE, timing-only, outputs invalid, f16 path only): 1 no WMMA (fragments kept live),
+     * 2 no E4M3 widening (the LDS bytes are read as halves). 0 is the kernel. Bit 5 (R3_MOE_PITCH16, f16 path only,
+     * exact): the staged tiles use a 16-byte row pad (FK + 16) instead of FK + 8. lds_pitch was tuned for the gfx12
+     * fragment's 8-byte read; the gfx11 f16 fragment reads 16 bytes per lane. */
+    const uint32_t r3_probe = r3h ? (mode >> 3) & 3u : 0u;
+    const uint32_t r3_pitch = (r3h && (mode & 0x20u) != 0) ? FK + 16u : lds_pitch<FK>();
+    auto st8 = [&](uint8_t* lds, uint32_t row, uint32_t k0, Stage8 sv) {
+        const uint2 gr[4] = { make_uint2(sv.v.x, sv.v.y), make_uint2(sv.v.z, sv.v.w),
+                              make_uint2(sv.w.x, sv.w.y), make_uint2(sv.w.z, sv.w.w) };
+#pragma unroll
+        for (uint32_t q = 0; q < 4; ++q) *(uint2*)(lds + (size_t)row * r3_pitch + k0 + q * 8) = gr[q];
+    };
 @@ end
 
 @@ find 1
@@ -51,11 +60,11 @@
                     auto frag16 = [&](const uint8_t* lds, uint32_t row0) {
                         if (r3_probe == 2u) {
                             const r3_u4u c = *reinterpret_cast<const r3_u4u*>(
-                                lds + (size_t)(row0 + (lane & 15u)) * lds_pitch<FK>() + ks);
+                                lds + (size_t)(row0 + (lane & 15u)) * r3_pitch + ks);
                             r3_u8 o = {c[0], c[1], c[2], c[3], c[0], c[1], c[2], c[3]};
                             return __builtin_bit_cast(r3_v16h, o);
                         }
-                        return r3_fp8_frag_bytes(lds, lds_pitch<FK>(), row0, ks, lane);
+                        return r3_fp8_frag_bytes(lds, r3_pitch, row0, ks, lane);
                     };
 #pragma unroll
                     for (uint32_t i = 0; i < WM; ++i) {
@@ -161,8 +170,10 @@
     const bool r3_f16 = r3_native && r3_h && std::atoi(r3_h) != 0;
     const char* r3_pr = std::getenv("R3_MOE_PROBE");   /* timing-only ablations of the f16 path; outputs invalid */
     const uint32_t probe_n = r3_pr ? (uint32_t)std::atoi(r3_pr) : 0u;
+    const char* r3_p16 = std::getenv("R3_MOE_PITCH16");   /* 16-byte LDS row pad for the f16 path's 16-byte fragment reads */
+    const bool pitch16 = r3_p16 && std::atoi(r3_p16) != 0;
     const uint32_t mode = (a_sorted ? 1u : 0u) | (cshift << 1) | (r3_native ? 0x80u : 0u)
-                        | (r3_f16 ? 0x40u : 0u) | (r3_f16 ? (probe_n & 7u) << 3 : 0u) | ((uint32_t)parts << 8);
+                        | (r3_f16 ? 0x40u : 0u) | (r3_f16 ? (probe_n & 3u) << 3 : 0u) | (r3_f16 && pitch16 ? 0x20u : 0u) | ((uint32_t)parts << 8);
 @@ end
 
 
@@ -261,6 +272,38 @@ __global__ __launch_bounds__(256) void moe_blockmap_kernel(
 @@ replace
     if (tid == 0 && want_tail) {
         uint32_t o = s_cnt[n_expert];
+@@ end
+
+@@ find 1
+                stage8_store<FK>(s_a, r, sk, kUL ? stage8_keep(apre[p], aok[p]) : apre[p]);
+@@ replace
+                st8(s_a, r, sk, kUL ? stage8_keep(apre[p], aok[p]) : apre[p]);
+@@ end
+
+@@ find 1
+                    stage8_store<FK>(s_b, r, sk, w5_expand(b4, live ? spre[p] : 0u, tab.v));
+@@ replace
+                    st8(s_b, r, sk, w5_expand(b4, live ? spre[p] : 0u, tab.v));
+@@ end
+
+@@ find 1
+                    stage8_store<FK>(s_b, r, sk, w4_expand(b4, tab.v));
+@@ replace
+                    st8(s_b, r, sk, w4_expand(b4, tab.v));
+@@ end
+
+@@ find 1
+                    stage8_store<FK>(s_b, r, sk, kUL ? stage8_keep(bpre8[p], live) : bpre8[p]);
+@@ replace
+                    st8(s_b, r, sk, kUL ? stage8_keep(bpre8[p], live) : bpre8[p]);
+@@ end
+
+@@ find 1
+    __shared__ uint8_t s_a[FM * lds_pitch<FK>()];
+    __shared__ uint8_t s_b[FN * lds_pitch<FK>()];
+@@ replace
+    __shared__ uint8_t s_a[FM * (FK + 16u)];   /* libr3: room for the 16-byte pad (R3_MOE_PITCH16) */
+    __shared__ uint8_t s_b[FN * (FK + 16u)];
 @@ end
 
 @@ find 1
