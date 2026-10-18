@@ -109,7 +109,7 @@ activation = "r3_moe_helper: R3_MOE_HELPER_MOE_DOWN_TILE="
 
 [setting.R3_MOE_HELPER_MOE_LONG_ROWS]
 default = ""
-status = "experimental"
+status = "evaluated"
 summary = "RAD06: runs of this many rows or more take 64-row slices and an MT=4 tile in the helper's grouped MoE GEMM (fewer weight-tile restages for long runs; bit-identical); unset or 0 keeps the single 32-row map"
 activation = "r3_moe_helper: R3_MOE_HELPER_MOE_LONG_ROWS="
 
@@ -117,40 +117,40 @@ activation = "r3_moe_helper: R3_MOE_HELPER_MOE_LONG_ROWS="
 default = "1"
 status = "experimental"
 summary = "RAD06: with R3_MOE_NATIVE, the grouped MoE GEMM widens E4M3 operands to f16 and uses the f16 WMMA (a cheaper widening than bf16; the sums carry a 2^-16 scale removed before the scale fold, so output is bit-identical to the bf16 form). On by default in the r3_moe_helper processes (main() sets 1 unless the variable is set); prefill 2,130 -> 3,150 tok/s, decode unchanged, KLD unchanged; the engine process reads an unset variable as off, and 0 turns it off everywhere"
-activation = "R3_MOE_FP16"
+activation = "r3_moe_helper: R3_MOE_FP16 on"
 
 [setting.R3_MOE_AHALF]
 default = "1"
 status = "experimental"
 summary = "RAD06: with R3_MOE_FP16, widen the grouped MoE GEMM's activation tile to half once at staging instead of in every wave that reads it (four wave columns share each A fragment); bit-identical, 7-8% off the grouped GEMM on four real captured requests, about 4 KB more LDS. On by default in the r3_moe_helper processes (main() sets 1 unless set); 0 turns it off"
-activation = "R3_MOE_AHALF"
+activation = "r3_moe_helper: R3_MOE_AHALF on"
 
 [setting.R3_MOE_HELPER_VECIO]
 default = "1"
 status = "experimental"
 summary = "RAD06: the helper's activation copy (engine's mapped host memory into the lane) and result write (lane to mapped host memory) use 16-byte accesses instead of one byte and two bytes a thread; bit-identical, read per request; 0 keeps the scalar kernels"
-activation = "R3_MOE_HELPER_VECIO"
+activation = "r3_moe_helper: R3_MOE_HELPER_VECIO on"
 
 [setting.R3_MOE_HELPER_BALANCE]
 default = ""
-status = "experimental"
+status = "evaluated"
 summary = "RAD06/RHP: with R3_MOE_HELPER_HEAT and two helpers, split the jointly owned experts between the helpers per layer by predicted cost (a layer waits for the slower helper) instead of alternating down the global heat ranking; the owned set is unchanged, only who owns which; deterministic so both helper processes compute the same map; offline prediction 3.5-5.6% of helper time (tools/lab/radiance/heat-placement/balance_score.py)"
 activation = "R3_MOE_HELPER_BALANCE: per-layer cost split"
 
 [setting.R3_MOE_HELPER_BALANCE_SPEED]
 default = ""
-status = "experimental"
+status = "evaluated"
 summary = "RAD06/RHP: with R3_MOE_HELPER_BALANCE, relative speeds of the two helpers as 's0,s1' (default 1,1); a helper's expert cost is divided by its speed, so a slower card takes less (helper 1 measured ~8-10% slower)"
 
 [setting.R3_MOE_HELPER_FUSEROUTE]
 default = "1"
 status = "experimental"
 summary = "RAD06: the small (decode) lane's routing prologue (four memsets and the route count / prefix / scatter / inverse kernels) runs as one block, lane_route_small; same result, fewer launches and gaps in the request the engine waits for; read per request; 0 keeps the separate kernels"
-activation = "R3_MOE_HELPER_FUSEROUTE"
+activation = "r3_moe_helper: R3_MOE_HELPER_FUSEROUTE on"
 
 [setting.R3_MOE_HELPER_ROWS_SMALL]
 default = ""
-status = "experimental"
+status = "evaluated"
 summary = "RAD06: the few-rows-a-expert kernel (R3_MOE_HELPER_ROWS's) on the small (decode) lane: weights read once an expert for all its rows instead of once a route, since a decode request sends ~2.4 routes to each distinct expert; read per request, not bit-exact (different accumulation order)"
 activation = "R3_MOE_HELPER_ROWS_SMALL"
 
@@ -189,7 +189,7 @@ summary = "with R3_MOE_HELPER_CAPTURE: at most this many request files"
 
 [setting.R3_MOE_HELPER_GEMV_LARGE_ROWS]
 default = "0"
-status = "experimental"
+status = "evaluated"
 summary = "large-lane requests of at most this many rows take the decode GEMV (RAD06): replayed real requests show 9-row steps at ~0.5 ms a grouped-GEMM call for 25-51 routes; the large lane is sized per request, so the small lane is untouched"
 activation = "r3_moe_helper: large-lane requests up to"
 
