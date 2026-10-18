@@ -474,12 +474,9 @@ ownership.
 | `tools/lab/radiance/helper-trace-ab.json` | **TRANSITIONAL** | `radiance` lab topic file; the helper layout with R3_MOE_HELPER_TRACE for the unprofiled critical-path trace (RAD06/RHP). |
 | `tools/lab/radiance/heat-placement/trace_report.py` | **TRANSITIONAL** | `radiance` lab topic file; reads the helpers' TRACE lines and reports local work, exposed helper wait and helper time per lane (RAD06/RHP). |
 | `tools/lab/radiance/helper-fuse-ab.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark configuration, the fused small-lane routing prologue off vs on (RAD06). |
-<<<<<<< HEAD
 | `tools/lab/radiance/helper-fusestage-ab.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark configuration, the engine's decode-sized activation staging folded into the publish kernel off vs on (RAD06). |
-=======
 | `tools/lab/radiance/helper-ahalf-ab.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark configuration, R3_MOE_AHALF off vs on with R3_MOE_FP16=1 (RAD06). |
 | `tools/lab/radiance/helper-evidence.sh` | **TRANSITIONAL** | `radiance` lab topic file; runs the single-setting A/Bs that are libr3 settings' promotion evidence and stages their run.json for docs/evidence/RAD06/ (RAD06). |
->>>>>>> 802b0c65d (feat(radiance): activation markers for the libr3 settings, evaluated statuses, helper-evidence.sh (RAD06))
 | `tools/lab/radiance/helper-fp16-e2e.sh` | **TRANSITIONAL** | `radiance` lab topic file; builds the branch and runs the R3_MOE_FP16 off/on ab-benchmark on Brutus (RAD06). |
 | `tools/lab/radiance/helper-capture.sh` | **TRANSITIONAL** | `radiance` lab topic file; records real helper requests (format 2: quantised activations) for the replay sweep, one server cell (RAD06). |
 | `tools/lab/radiance/helper-sweep.sh` | **TRANSITIONAL** | `radiance` lab topic file; one-process replay sweep: builds the branch, loads the model once and replays every captured helper request per env variant (R3_MOE_FP16, R3_MOE_PITCH16, R3_MOE_PROBE ...) with per-call grouped-GEMM times and rel_l2 (RAD06). |
