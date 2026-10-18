@@ -113,6 +113,24 @@ status = "experimental"
 summary = "RAD06: runs of this many rows or more take 64-row slices and an MT=4 tile in the helper's grouped MoE GEMM (fewer weight-tile restages for long runs; bit-identical); unset or 0 keeps the single 32-row map"
 activation = "r3_moe_helper: R3_MOE_HELPER_MOE_LONG_ROWS="
 
+[setting.R3_MOE_FP16]
+default = "1"
+status = "experimental"
+summary = "RAD06: with R3_MOE_NATIVE, the grouped MoE GEMM widens E4M3 operands to f16 and uses the f16 WMMA (a cheaper widening than bf16; the sums carry a 2^-16 scale removed before the scale fold, so output is bit-identical to the bf16 form). On by default in the r3_moe_helper processes (main() sets 1 unless the variable is set); prefill 2,130 -> 3,150 tok/s, decode unchanged, KLD unchanged; the engine process reads an unset variable as off, and 0 turns it off everywhere"
+activation = "R3_MOE_FP16"
+
+[setting.R3_MOE_PITCH16]
+default = ""
+status = "experimental"
+summary = "RAD06: with R3_MOE_FP16, stage the grouped MoE GEMM's tiles with a 16-byte LDS row pad (pitch FK+16) instead of 8; the f16 fragment reads 16 bytes a lane where the 8-byte pad was tuned for 8 (exact; may remove LDS bank conflicts)"
+activation = "R3_MOE_PITCH16"
+
+[setting.R3_MOE_PROBE]
+default = ""
+status = "diagnostic"
+summary = "RAD06 timing-only ablation of the f16 MoE GEMM (needs R3_MOE_FP16=1; OUTPUT IS INVALID): 1 no WMMA, 2 no E4M3 widening; never set in production"
+activation = "R3_MOE_PROBE"
+
 [setting.R3_MOE_HELPER_CAPTURE]
 default = ""
 status = "diagnostic"

@@ -22,3 +22,7 @@ tokens and 22 ms averaged over 100K. Upstream reports the indexer 16.4 -> 6.4 ms
 Result (b11402, Brutus, 2026-10-06; details in README.md): prefill +2.6% at ~99K tokens and +5.6% at ~202K, decode
 time per step unchanged, backend tests equal to CPU on all four GPUs with the kernel proven active, next-token
 fidelity inside the envelope of the other attention-path changes.
+
+## 2026-10-18 BCOP293 — native-only head-pass follow-up
+
+At b11552 native lightning-indexer.cu contains #29901 and #30080. The latter offers a two-head query-staging pass only on MUSA<220; HIP remains four-head. QFP17/BCOP293 owns a new **profile-first native gfx1100/gfx1201 LDS/occupancy discriminator**; it does not reactivate this superseded backport, its BIGCHERRY_INDEXER_TILE switch or its activation marker. Historical b11402 +2.6%/+5.6% tile-vs-vector prefill evidence is not a current-pin two-vs-four-head comparison. No patch, GPU build or benchmark in this update.
