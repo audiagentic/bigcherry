@@ -899,6 +899,10 @@ int main(int argc, char** argv) {
      * Flash-Next, prefill 2,518 -> 2,665 tok/s and helper gate/up -25%, KLD 0.064 (noise floor). Read by libr3
      * when the plugin is loaded, so set before it; an explicit setting wins. */
     (void)::setenv("R3_MOE_NATIVE", "1", 0);
+    /* The same MoE GEMM with E4M3 widened to f16 for the f16 WMMA: bit-identical output (replay rel_l2 0 on four
+     * captured requests, KLD unchanged), grouped GEMM 1.7-3.2x faster, prefill 2,130 -> 3,150 tok/s with decode
+     * unchanged (RAD06 2026-10-18). Read by libr3 at launch; 0 turns it off. */
+    (void)::setenv("R3_MOE_FP16", "1", 0);
     /* --replay-sweep MODEL VARIANTS FILE...: one process, one model load and one expert allocation for every capture,
      * then each capture is replayed once per variant. VARIANTS is ';'-separated, each "NAME=value,NAME=value" (empty
      * = the environment as launched); the variant's variables are set (and the previous variant's unset) before the
