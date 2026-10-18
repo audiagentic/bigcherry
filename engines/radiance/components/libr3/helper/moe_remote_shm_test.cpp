@@ -21,6 +21,16 @@ int main() {
     check(ftruncate(fd, (off_t)l.bytes) == 0, "ftruncate");
     void* m = mmap(nullptr, l.bytes, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     check(m != MAP_FAILED, "mmap"); init(m, 48); check(valid((Header*)m, l.bytes), "header valid");
+    {   // a segment of another protocol version (an engine and a helper from different builds) is rejected
+        Header* hv = (Header*)m;
+        const uint32_t ver = hv->version;
+        hv->version = ver - 1;
+        check(!valid(hv, l.bytes), "an older protocol version is rejected");
+        hv->version = ver + 1;
+        check(!valid(hv, l.bytes), "a newer protocol version is rejected");
+        hv->version = ver;
+        check(valid(hv, l.bytes), "the current protocol version is accepted");
+    }
     auto* h = (Header*)m;
     check(layer_slot(m, 7, 23) == -1, "layer map starts unpublished");
     int32_t* slots = layer_slots(m, 7);
