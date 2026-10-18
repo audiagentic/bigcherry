@@ -2,9 +2,9 @@
 # RAD06: A/B a helper kernel variant on replayed real requests - build the branch, replay the largest captures with
 # the variant env off and on, require rel_l2=0 between the helper and the engine reference, and compare the grouped
 # GEMM kernel times (rocprofv3 kernel trace, gfx1100).
-# Usage: helper-variant-ab.sh <branch> <ENV_NAME> <off-value> <on-value> [captures=4]
+# Usage: helper-variant-ab.sh <branch> <ENV_NAME> <captures> <value>...   (extra env, e.g. R3_MOE_FP16=1, is inherited)
 set -u
-BR=$1; VAR=$2; OFF=$3; ON=$4; N=${5:-4}
+BR=$1; VAR=$2; N=$3; shift 3; VALUES="$*"
 W=/mnt/data/bigcherry-work
 cd $W/wt-pr8 && git fetch -q origin && git checkout -q --detach $BR && git log --oneline -1
 export ROCM_PATH=/opt/rocm-7.2.4 PATH=/opt/rocm-7.2.4/bin:$PATH BIGCHERRY_ENVIRONMENT=/mnt/vault/development/projects/bigcherry/workspaces/main/config/environment.local.toml
@@ -14,7 +14,7 @@ B=$(ls -td /mnt/vault/development/projects/bigcherry/workspaces/main/work/builds
 M=/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad
 for f in $(ls -S $W/captures/*.bin | head -$N); do
   echo "== $(basename $f)"
-  for v in $OFF $ON; do
+  for v in $VALUES; do
     out=$W/variant-$(basename $f .bin)-$v; rm -rf $out
     env HIP_VISIBLE_DEVICES=0 ROCR_VISIBLE_DEVICES=0 R3_MOE_HELPER_MIB=22528 R3_MOE_HELPER_SMALL_ROWS=8 R3_MOE_HELPER_MAX_ROWS=4096 \
       R3_MOE_NATIVE=1 R3_MOE_HELPER_MOE_DOWN_TILE=1 $VAR=$v \
