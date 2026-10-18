@@ -28,6 +28,6 @@ json.dump(d, open(sys.argv[2], "w"), indent=1)
 PY
 export RAD_BIN=$B/bin/radiance RAD_HOME=$B/radiance_home R9700_BDF=0000:09:00.0
 PYTHONPATH=tools timeout 5400 python3 -m bigcherry ab-benchmark --server-config $W/helper-capture.json \
-  --output $W/runs/rad06-capture-$(date +%m%d%H%M) --pairs 1 --settle-seconds 10 2>&1 | tail -2
+  --output $W/runs/rad06-capture-$(date +%m%d%H%M) --pairs 2 --settle-seconds 10 2>&1 | tail -2
 ls -S $CAP | head -8; echo "captured $(ls $CAP | wc -l)"
 echo CAPTURE_DONE
