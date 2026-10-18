@@ -581,7 +581,7 @@ void capture_request(void* map, const Request* q, uint32_t lane, uint32_t seq) {
     }();
     static std::atomic<uint32_t> written{0};
     if (seq % every != 0 || written.load() >= max_n) return;
-    CaptureHeader hd{kCaptureMagic, 1, load(&q->layer), load(&q->rows), load(&q->route_count), kHidden};
+    CaptureHeader hd{kCaptureMagic, 2, load(&q->layer), load(&q->rows), load(&q->route_count), kHidden};
     if (hd.layer >= kMaxLayers || hd.rows == 0 || hd.rows > kMaxRows) return;
     const std::string path = std::string(dir) + "/req-" + std::to_string(lane) + "-" + std::to_string(seq) + ".bin";
     FILE* f = std::fopen(path.c_str(), "wb");
@@ -589,7 +589,10 @@ void capture_request(void* map, const Request* q, uint32_t lane, uint32_t seq) {
     std::fwrite(&hd, sizeof(hd), 1, f);
     std::fwrite(layer_slots(map, hd.layer), sizeof(int32_t), kExperts, f);
     std::fwrite(ptr<Route>(map, q->route_offset), sizeof(Route), hd.route_count, f);
-    std::fwrite(ptr<uint16_t>(map, q->activation_offset), sizeof(uint16_t), (size_t)hd.rows * kHidden, f);
+    /* The engine publishes the quantised activation (E4M3 plus a scale a group), not bf16: the bf16 plane of the map
+     * is empty on the large lane. Version 1 captures stored that empty plane and cannot be replayed. */
+    std::fwrite(ptr<uint8_t>(map, q->activation_q_offset), 1, (size_t)hd.rows * kHidden, f);
+    std::fwrite(ptr<float>(map, q->activation_s_offset), sizeof(float), (size_t)hd.rows * (kHidden / kActGroup), f);
     std::fclose(f);
     written.fetch_add(1);
 }
@@ -598,7 +601,8 @@ struct ReplayInput {
     CaptureHeader hd{};
     std::array<int32_t, kExperts> slots{};
     std::vector<Route> routes;
-    std::vector<uint16_t> activation;
+    std::vector<uint8_t> actq;
+    std::vector<float> acts;
 };
 const ReplayInput* g_replay = nullptr;
 /* --replay-sweep with R3_MOE_SWEEP_FAST=1: no CPU reference; each variant's output is compared bit for bit with the
@@ -608,14 +612,16 @@ bool g_sweep_fast = false;
 bool load_replay(const char* path, ReplayInput* out) {
     FILE* f = std::fopen(path, "rb");
     if (!f) return false;
-    bool ok = std::fread(&out->hd, sizeof(out->hd), 1, f) == 1 && out->hd.magic == kCaptureMagic &&
+    bool ok = std::fread(&out->hd, sizeof(out->hd), 1, f) == 1 && out->hd.magic == kCaptureMagic && out->hd.version == 2 &&
               out->hd.hidden == kHidden && out->hd.layer < kMaxLayers && out->hd.rows > 0 && out->hd.rows <= kMaxRows;
     if (ok) ok = std::fread(out->slots.data(), sizeof(int32_t), kExperts, f) == kExperts;
     if (ok) {
         out->routes.resize(out->hd.route_count);
-        out->activation.resize((size_t)out->hd.rows * kHidden);
+        out->actq.resize((size_t)out->hd.rows * kHidden);
+        out->acts.resize((size_t)out->hd.rows * (kHidden / kActGroup));
         ok = std::fread(out->routes.data(), sizeof(Route), out->routes.size(), f) == out->routes.size() &&
-             std::fread(out->activation.data(), sizeof(uint16_t), out->activation.size(), f) == out->activation.size();
+             std::fread(out->actq.data(), 1, out->actq.size(), f) == out->actq.size() &&
+             std::fread(out->acts.data(), sizeof(float), out->acts.size(), f) == out->acts.size();
     }
     std::fclose(f);
     return ok;
@@ -717,7 +723,14 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
     }
     if (g_replay) {
         published = g_replay->routes;
-        activation = g_replay->activation;
+        /* The bf16 plane (the host reference's input) from the captured quantised planes; the lane itself reads the
+         * captured q and s as they are. */
+        for (size_t i = 0; i < activation.size(); ++i) {
+            const uint32_t c = g_replay->actq[i];
+            const int e = (int)((c >> 3) & 0xfu), m = (int)(c & 7u);
+            const float mag = e ? std::ldexp(1.0f + m / 8.0f, e - 7) : std::ldexp(m / 8.0f, -6);
+            activation[i] = to_bf16(((c & 0x80u) ? -mag : mag) * g_replay->acts[i / kActGroup]);
+        }
     }
     const uint32_t nr = (uint32_t)published.size();
 
@@ -794,7 +807,11 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
                     published.size() * sizeof(Route));
         std::memcpy(ptr<uint16_t>(map, q->activation_offset), activation.data(),
                     activation.size() * sizeof(uint16_t));
-        if (!gpu.stage_compare_activation(map, lane, activation.data(), rows)) {
+        if (g_replay) {
+            std::memcpy(ptr<uint8_t>(map, q->activation_q_offset), g_replay->actq.data(), g_replay->actq.size());
+            std::memcpy(ptr<float>(map, q->activation_s_offset), g_replay->acts.data(),
+                        g_replay->acts.size() * sizeof(float));
+        } else if (!gpu.stage_compare_activation(map, lane, activation.data(), rows)) {
             std::fprintf(stderr,
                          "r3_moe_helper: --compare rank %u could not stage exact q/s\n", rank);
             bad = true;
