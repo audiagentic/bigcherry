@@ -3,6 +3,7 @@
 # replays every captured request once per variant; rocprofv3's kernel trace gives per-call grouped-GEMM times and the
 # helper's engine_join line gives rel_l2 against the CPU engine reference (R3_MOE_SWEEP_FAST=0, ~2 min a run) or, by
 # default, each variant's output is compared bit for bit with the first variant's (sweep_cmp mismatches=N). No server, no per-variant load stage.
+# CAPDIR=<dir> replays another capture set (e.g. small_capture.py output) instead of $W/captures.
 # Usage: helper-sweep.sh <branch|-> "<variant>;<variant>..." [captures=4] [fixed env, e.g. R3_MOE_FP16=1 ...]
 #   variant = "NAME=v,NAME=v" (an empty variant = environment as launched); anything libr3 reads at launch can vary
 #   (R3_MOE_FP16, R3_MOE_PITCH16, R3_MOE_PROBE). `-` as branch reuses the newest build.
@@ -18,7 +19,7 @@ fi
 export ROCM_PATH=/opt/rocm-7.2.4 PATH=/opt/rocm-7.2.4/bin:$PATH
 B=$(ls -td /mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/*/*/ | head -1)
 M=/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad
-FILES=$(ls -S $W/captures/*.bin | head -$N | tr '\n' ' ')
+FILES=$(ls -S ${CAPDIR:-$W/captures}/*.bin | head -$N | tr '\n' ' ')
 out=$W/sweep-out; rm -rf $out
 env HIP_VISIBLE_DEVICES=0 ROCR_VISIBLE_DEVICES=0 R3_MOE_HELPER_MIB=22528 R3_MOE_HELPER_SMALL_ROWS=8 R3_MOE_HELPER_MAX_ROWS=4096 \
   R3_MOE_NATIVE=1 R3_MOE_HELPER_MOE_DOWN_TILE=1 R3_MOE_HELPER_HEAT=$W/runs/perf51/heat.rank0.hot-first RADIANCE_HOME=$B/radiance_home \
