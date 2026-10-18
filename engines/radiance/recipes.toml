@@ -3,10 +3,9 @@
 # here are engines/radiance/patches/<id>/ packages; they never mix with llama.cpp's.
 version = 2
 engine = "radiance"
-# radiance 1.7.0 (codeberg StillDeadcode/radiance; exact-SHA mirror Quackster/radiance). 48f7b8e is the v1.7.0 release
-# commit 1e968f6 plus two NOTICE-only commits (the source tree is otherwise identical).
+# radiance 1.8.0 (codeberg StillDeadcode/radiance; exact-SHA mirror Quackster/radiance). v1.8.0 is commit 7a7707a.
 pinned = "v1.8.0"
-pinned-version = "1.7.0"
+pinned-version = "1.8.0"
 
 # Validated engine fixes only; the set starts empty rather than claiming a validated state no package has.
 [patch-set.serving-core]
@@ -32,22 +31,22 @@ patches = ["rad0002_moe_remote_handoff", "rad0004_moe_remote_diagnostics"]
 required-state = "untested"
 
 [source.radiance-native]
-description = "radiance 1.7.0 as released: no overlay, no patches."
+description = "radiance 1.8.0 as released: no overlay, no patches."
 overlay = false
 patch-sets = []
 
 [source.radiance]
-description = "radiance 1.7.0 with BigCherry's validated engine patch sets."
+description = "radiance 1.8.0 with BigCherry's validated engine patch sets."
 overlay = false
 patch-sets = ["serving-core", "host-compat"]
 
 [source.radiance-lab]
-description = "radiance 1.7.0 with the evaluated engine fixes the Flash-Next two-XTX configuration needs (none at present)."
+description = "radiance 1.8.0 with the evaluated engine fixes the Flash-Next two-XTX configuration needs (none at present)."
 overlay = false
 patch-sets = ["engine-fixes-evaluated"]
 
 [source.radiance-diag]
-description = "radiance 1.7.0 with the validated engine patch sets plus the remote-MoE hand-off and its diagnostics (rad0004); build it with build.moe-diag."
+description = "radiance 1.8.0 with the validated engine patch sets plus the remote-MoE hand-off and its diagnostics (rad0004); build it with build.moe-diag."
 overlay = false
 patch-sets = ["serving-core", "host-compat", "moe-remote-diag"]
 
