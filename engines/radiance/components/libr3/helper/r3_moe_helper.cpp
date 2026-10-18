@@ -515,6 +515,86 @@ bool select_owned(const Container& f, r3_moe_gpu::Runner* gpu, uint64_t budget, 
         if (a->layer != b->layer) return a->layer < b->layer;
         return a->expert < b->expert;
     });
+    /* R3_MOE_HELPER_BALANCE (RAD06, needs R3_MOE_HELPER_HEAT and two helpers): the same jointly owned set the
+     * alternation below would pick, split per layer by predicted cost instead. A layer finishes when both helpers
+     * have, so each layer wants max(helper0, helper1) small; alternating down one global ranking balances the number
+     * of experts, not the work. Each helper runs this on its own, so everything here is a deterministic function of the
+     * heat file and the budget (cost ties break on expert id). Cost of an expert, from its share of its layer's routes:
+     *   lam = prefill_tokens * top_k * share      cost = (1 - exp(-lam)) * c0 + c1 * lam + (1 - exp(-lam_d)) * d0
+     * (a fixed weight-tile part when the expert is active plus a part a routed row, and the same for a decode step).
+     * The heat file holds max + 1 - count (so the hottest sort first); the counts are max - value.
+     * R3_MOE_HELPER_BALANCE_SPEED="s0,s1" scales a helper's cost by 1/s (a slower card takes less). */
+    if (const char* bv = std::getenv("R3_MOE_HELPER_BALANCE"); bv && *bv && std::strcmp(bv, "0") != 0) {
+        if (helpers != 2 || flat.empty()) {
+            std::fprintf(stderr, "r3_moe_helper: R3_MOE_HELPER_BALANCE needs R3_MOE_HELPER_HEAT and two helpers\n");
+            return false;
+        }
+        struct Pick { uint32_t l, e; int64_t bytes; double cost; };
+        float maxv = 0.0f;
+        for (const RadFileProfile& hp : flat) maxv = std::max(maxv, hp.share);
+        std::vector<double> layer_sum(f.layers, 0.0);
+        for (const RadFileProfile& hp : flat) layer_sum[(uint32_t)hp.layer] += (double)(maxv - hp.share);
+        const double tokens = 2048.0, decode = 11.0, c0 = 15.0, c1 = 0.09, d0 = 20.0;
+        auto cost_of = [&](const RadFileProfile& hp) {
+            const double share = layer_sum[(uint32_t)hp.layer] > 0.0 ? (double)(maxv - hp.share) / layer_sum[(uint32_t)hp.layer] : 0.0;
+            const double lam = tokens * (double)kTopK * share, lam_d = decode * (double)kTopK * share;
+            return (1.0 - std::exp(-lam)) * c0 + c1 * lam + (1.0 - std::exp(-lam_d)) * d0;
+        };
+        double speed[2] = {1.0, 1.0};
+        if (const char* sv = std::getenv("R3_MOE_HELPER_BALANCE_SPEED"); sv && *sv) {
+            double a = 0.0, b = 0.0;
+            if (std::sscanf(sv, "%lf,%lf", &a, &b) == 2 && a > 0.0 && b > 0.0) { speed[0] = a; speed[1] = b; }
+        }
+        /* The jointly owned set: exactly the alternation's picks (both helpers' budgets filled in turn). */
+        std::vector<Pick> joint;
+        {
+            std::vector<uint8_t> was_seen((size_t)f.layers * kExperts, 0);
+            uint64_t held[2] = {0, 0}, pos = 0;
+            for (const RadFileProfile* p : order) {
+                const uint32_t l = (uint32_t)p->layer, e = (uint32_t)p->expert;
+                uint8_t& w = was_seen[(size_t)l * kExperts + e];
+                if (w) continue;
+                w = 1;
+                const uint32_t who = (uint32_t)(pos++ % 2);
+                const int64_t bytes = gpu ? gpu->expert_bytes(l, e) : canonical_expert_bytes(f, l, e);
+                if (bytes <= 0) {
+                    std::fprintf(stderr, "r3_moe_helper: expert (%u,%u) cannot be laid out as w4nl64a8h\n", l, e);
+                    return false;
+                }
+                if ((uint64_t)bytes > budget - held[who]) continue;
+                held[who] += (uint64_t)bytes;
+                joint.push_back(Pick{l, e, bytes, cost_of(*p)});
+            }
+        }
+        /* Per layer, heaviest first onto the less loaded helper; a helper whose budget cannot take the expert passes it on. */
+        std::stable_sort(joint.begin(), joint.end(), [](const Pick& a, const Pick& b) {
+            if (a.l != b.l) return a.l < b.l;
+            if (a.cost != b.cost) return a.cost > b.cost;
+            return a.e < b.e;
+        });
+        uint64_t held[2] = {0, 0};
+        double load[2] = {0.0, 0.0};
+        uint32_t cur_layer = 0xffffffffu;
+        for (const Pick& pk : joint) {
+            if (pk.l != cur_layer) { cur_layer = pk.l; load[0] = load[1] = 0.0; }
+            uint32_t who = load[0] + pk.cost / speed[0] <= load[1] + pk.cost / speed[1] ? 0u : 1u;
+            if ((uint64_t)pk.bytes > budget - held[who]) who ^= 1u;
+            if ((uint64_t)pk.bytes > budget - held[who]) continue;
+            held[who] += (uint64_t)pk.bytes;
+            load[who] += pk.cost / speed[who];
+            if (who == helper) {
+                out->expert.emplace_back(pk.l, pk.e);
+                out->bytes += (uint64_t)pk.bytes;
+            }
+        }
+        std::fprintf(stderr, "r3_moe_helper: R3_MOE_HELPER_BALANCE: per-layer cost split of %zu jointly owned experts\n",
+                     joint.size());
+        if (out->expert.empty()) {
+            std::fprintf(stderr, "r3_moe_helper: R3_MOE_HELPER_MIB fits no profiled expert\n");
+            return false;
+        }
+        return true;
+    }
     std::vector<uint8_t> seen((size_t)f.layers * kExperts, 0);
     uint64_t position = 0;
     for (const RadFileProfile* p : order) {
