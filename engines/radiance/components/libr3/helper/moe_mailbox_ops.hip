@@ -206,6 +206,11 @@ __global__ void mailbox_publish_kernel(
                 q->result_stride[r] = hidden * (uint32_t)sizeof(uint16_t);
             }
             q->sequence = seq;
+            q->trace[0] = wall_clock64();
+            q->trace[1] = 0;
+            q->trace[2] = 0;
+            q->trace[3] = 0;
+            q->trace[4] = 0;
         }
         __threadfence_system();
         __syncthreads();
@@ -242,7 +247,10 @@ __global__ void mailbox_add_wait_kernel(
     uint8_t* base, const uint32_t* sequence, const uint32_t* published, uint32_t rank, uint32_t helpers) {
     if (blockIdx.x || threadIdx.x) return;
     Header* h = reinterpret_cast<Header*>(base);
-    for (uint32_t k = 0; k < helpers; ++k) {
+    const uint64_t entered = wall_clock64();   /* R3_MOE_HELPER_TRACE: engine clock */
+    Request* traced[kMaxRanks] = {};
+    uint64_t seen_at[kMaxRanks] = {};
+    for (uint32_t k = 0; k < helpers && k < kMaxRanks; ++k) {
         const uint32_t slot = step_slot(k, rank, helpers);
         if (!published[slot]) continue;
         const uint32_t large = published[slot] - 1u;
@@ -256,6 +264,15 @@ __global__ void mailbox_add_wait_kernel(
             __builtin_amdgcn_s_sleep(2);
             if (++spins > 4000000000ULL) __builtin_trap();
         }
+        /* Keep the completion time in a register: a store to mapped host memory inside the loop would be counted in the
+         * second helper's wait. Both are written once the last wait is over. */
+        seen_at[k] = wall_clock64();
+        traced[k] = reinterpret_cast<Request*>(base + h->ring_offset) + lane * kLaneSlots + ((seq - 1u) % kLaneSlots);
+    }
+    for (uint32_t k = 0; k < helpers && k < kMaxRanks; ++k) {
+        if (!traced[k]) continue;
+        traced[k]->trace[1] = entered;
+        traced[k]->trace[2] = seen_at[k];
     }
 }
 

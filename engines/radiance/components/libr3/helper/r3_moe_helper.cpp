@@ -687,6 +687,28 @@ void capture_request(void* map, const Request* q, uint32_t lane, uint32_t seq) {
     written.fetch_add(1);
 }
 
+/* R3_MOE_HELPER_TRACE=N: print the stamps of every Nth finished request ("TRACE,..." on stderr). The engine writes its
+ * wait stamps right after it sees the helper's done word, so a request is read once the lane has moved on to the next
+ * one. Engine stamps (0-2) and helper stamps (3-4) come from different devices' clocks and are only ever subtracted
+ * within their own group; wall_clock64 runs at hipDeviceAttributeWallClockRate (100 MHz on these cards). */
+void trace_dump(void* map, uint32_t lane, uint32_t seq) {
+    static const uint32_t every = [] {
+        const char* v = std::getenv("R3_MOE_HELPER_TRACE");
+        return v && *v ? (uint32_t)std::max(0, std::atoi(v)) : 0u;
+    }();
+    if (!every || seq == 0 || seq % every != 0) return;
+    const Request* q = lane_request(map, lane, seq);
+    if (!q || load(&q->sequence) != seq) return;
+    uint64_t t[5];
+    for (int i = 0; i < 5; ++i) t[i] = q->trace[i];
+    if (!t[0] || !t[1] || !t[2] || !t[3] || !t[4]) return;
+    const double us = 1.0 / 100.0;   /* a tick is 10 ns */
+    std::fprintf(stderr, "TRACE,lane,%u,seq,%u,layer,%u,rows,%u,routes,%u,local_us,%.2f,wait_us,%.2f,helper_gpu_us,%.2f,enter,%llu\n",
+                 lane, seq, q->layer, q->rows, q->route_count,
+                 (double)(int64_t)(t[1] - t[0]) * us, (double)(int64_t)(t[2] - t[1]) * us,
+                 (double)(int64_t)(t[4] - t[3]) * us, (unsigned long long)t[1]);
+}
+
 struct ReplayInput {
     CaptureHeader hd{};
     std::array<int32_t, kExperts> slots{};
@@ -1373,6 +1395,7 @@ int main(int argc, char** argv) {
                         const Request* q = lane_request(map, lane, next);
                         const uint32_t rows = load(&q->rows);
                         capture_request(map, q, lane, next);
+                        trace_dump(map, lane, next - 1u);
                         /* Every large request is timed by stage: they are few, and the engine cannot send
                          * the next one until it has merged this one, so waiting here costs nothing. */
                         const int rc = gpu->enqueue_lane(map, dev_map, lane, next, rows, true);
@@ -1423,6 +1446,7 @@ int main(int argc, char** argv) {
                             break;
                         }
                         done_seen = done;
+                        trace_dump(map, lane, done - 1u);
                         while (!g_stop &&
                                (uint32_t)(next - done_seen - 1u) < kQueueDepth) {
                             if (!queue_one()) {
