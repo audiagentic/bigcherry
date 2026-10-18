@@ -1,0 +1,51 @@
+name: Core offline validation
+
+# The control-plane, radiance and bench unit suites need no GPU, no network and no vendor checkout. They were not run by any
+# workflow, so a pin bump or a component edit could break them unseen (radiance 1.8.0 did, twice).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tools/bigcherry/**'
+      - 'tools/tests/core/**'
+      - 'tools/tests/radiance/**'
+      - 'tools/tests/bench/**'
+      - 'tools/lab/radiance/**'
+      - 'engines/**'
+      - 'config/**'
+      - 'docs/reference/**'
+      - '.github/workflows/core-offline-validation.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'tools/bigcherry/**'
+      - 'tools/tests/core/**'
+      - 'tools/tests/radiance/**'
+      - 'tools/tests/bench/**'
+      - 'tools/lab/radiance/**'
+      - 'engines/**'
+      - 'config/**'
+      - 'docs/reference/**'
+      - '.github/workflows/core-offline-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  core-offline:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Core, radiance and bench unit suites
+        env:
+          PYTHONPATH: tools
+        run: |
+          python -m unittest discover -s tools/tests/core -p 'test_*.py'
+          python -m unittest discover -s tools/tests/radiance -p 'test_*.py'
+          python -m unittest discover -s tools/tests/bench -p 'test_*.py'
