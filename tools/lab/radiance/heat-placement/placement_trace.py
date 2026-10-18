@@ -31,6 +31,9 @@ def parse(lines):
     """Events from JSONL text lines, validated. Returns (meta, routes)."""
     meta = {"layers": 0, "experts": 0, "top_k": 0, "marks": {}}
     routes = []
+    seen_meta = False
+    seen = set()
+    last_ts = None
     for n, line in enumerate(lines, 1):
         line = line.strip()
         if not line:
@@ -39,14 +42,33 @@ def parse(lines):
             e = json.loads(line)
         except ValueError as exc:
             raise TraceError(f"line {n}: not JSON ({exc})") from exc
-        if e.get("v") != VERSION:
-            raise TraceError(f"line {n}: version {e.get('v')!r}, this reader takes {VERSION}")
+        if not isinstance(e, dict) or e.get("v") != VERSION:
+            raise TraceError(f"line {n}: version {e.get('v') if isinstance(e, dict) else e!r}, this reader takes {VERSION}")
         kind = e.get("type")
         if kind == "meta":
-            meta.update({k: e[k] for k in ("layers", "experts", "top_k") if k in e})
+            if seen_meta or routes:
+                raise TraceError(f"line {n}: a trace has one meta event, and it comes first")
+            seen_meta = True
+            for k in ("layers", "experts", "top_k"):
+                if k in e:
+                    if not isinstance(e[k], int) or isinstance(e[k], bool) or e[k] <= 0:
+                        raise TraceError(f"line {n}: meta {k} must be a positive integer")
+                    meta[k] = e[k]
             meta["marks"] = dict(e.get("marks", {}))
         elif kind == "route":
-            routes.append(_route(n, e, meta))
+            if not seen_meta:
+                raise TraceError(f"line {n}: route before the meta event")
+            r = _route(n, e, meta)
+            ident = (r["session_id"], r["step_id"], r["layer"])
+            if ident in seen:
+                raise TraceError(f"line {n}: a second route for session {ident[0]} step {ident[1]} layer {ident[2]}")
+            seen.add(ident)
+            ts = r.get("ts_ns")
+            if ts is not None:
+                if not isinstance(ts, int) or isinstance(ts, bool) or (last_ts is not None and ts < last_ts):
+                    raise TraceError(f"line {n}: ts_ns must be an integer that does not go backwards")
+                last_ts = ts
+            routes.append(r)
         else:
             raise TraceError(f"line {n}: unknown event type {kind!r}")
     if not meta["layers"] or not meta["experts"]:
@@ -63,6 +85,11 @@ def _route(n, e, meta):
     experts, rows = e["experts"], e["expert_rows"]
     if len(experts) != len(rows) or not experts:
         raise TraceError(f"line {n}: experts and expert_rows differ in length or are empty")
+    if meta["top_k"] and len(experts) > meta["top_k"]:
+        raise TraceError(f"line {n}: {len(experts)} experts in a route, top_k is {meta['top_k']}")
+    if any(not isinstance(x, int) or isinstance(x, bool) for x in experts) or any(
+            not isinstance(r, int) or isinstance(r, bool) for r in rows):
+        raise TraceError(f"line {n}: experts and expert_rows must be integers")
     if len(set(experts)) != len(experts):
         raise TraceError(f"line {n}: an expert appears twice in one route")
     if any(r <= 0 for r in rows):
