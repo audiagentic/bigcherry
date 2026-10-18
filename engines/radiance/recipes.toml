@@ -43,7 +43,7 @@ patch-sets = ["serving-core", "host-compat"]
 [source.radiance-lab]
 description = "radiance 1.8.0 with the evaluated engine fixes the Flash-Next two-XTX configuration needs (none at present)."
 overlay = false
-patch-sets = ["engine-fixes-evaluated"]
+patch-sets = ["engine-fixes-evaluated", "host-compat"]
 
 [source.radiance-diag]
 description = "radiance 1.8.0 with the validated engine patch sets plus the remote-MoE hand-off and its diagnostics (rad0004); build it with build.moe-diag."
