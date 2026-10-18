@@ -47,8 +47,12 @@ class StreamResult:
     error: str = ""
     t_start: float = 0.0
     t_first: float = 0.0
-    t_end: float = 0.0
-    tokens: int = 0
+    t_last: float = 0.0              # last text event
+    t_end: float = 0.0               # response end (the stream closed)
+    tokens: int = 0                  # completion tokens: server usage, or an event-count estimate if allowed
+    usage_source: str = ""           # "server" | "event_count_estimate"
+    finish_reason: str = ""
+    events: int = 0                  # SSE events that carried text (one event may carry several tokens)
     prompt_tokens: int = 0
     text_sha256: str = ""
     gaps_ms: list = field(default_factory=list)
@@ -56,8 +60,10 @@ class StreamResult:
     def ttft_ms(self) -> float:
         return (self.t_first - self.t_start) * 1000.0 if self.ok else float("nan")
 
-    def decode_tps(self) -> float:
-        span = self.t_end - self.t_first
+    def decode_tps_est(self) -> float:
+        """Client-observed decode rate: (completion tokens - 1) over first-to-last text event. An estimate, because the
+        stream's timestamps do not identify when each token was produced (one event can carry several)."""
+        span = self.t_last - self.t_first
         return (self.tokens - 1) / span if self.ok and self.tokens > 1 and span > 0 else float("nan")
 
 
@@ -70,14 +76,15 @@ def make_prompt(stream: int, prompt_tokens: int, seed: int, shared_prefix: bool)
 
 
 def one_stream(url: str, model: str, stream: int, prompt: str, max_tokens: int, temperature: float, timeout: float,
-               seed: int) -> StreamResult:
+               seed: int, allow_estimate: bool = False) -> StreamResult:
     res = StreamResult(stream)
     body = json.dumps({
         "model": model, "stream": True, "stream_options": {"include_usage": True}, "max_tokens": max_tokens,
         "temperature": temperature, "seed": seed, "messages": [{"role": "user", "content": prompt}]}).encode()
     req = urllib.request.Request(url.rstrip("/") + "/v1/chat/completions", data=body,
                                  headers={"Content-Type": "application/json"})
-    text, chunks, last, raw_head = [], 0, None, []
+    text, chunks, last, raw_head, done = [], 0, None, [], False
+    usage_tokens = 0
     res.t_start = time.perf_counter()
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -87,14 +94,17 @@ def one_stream(url: str, model: str, stream: int, prompt: str, max_tokens: int, 
                     continue
                 data = line[5:].strip()
                 if data == "[DONE]":
+                    done = True
                     break
                 event = json.loads(data)
                 if event.get("usage"):
                     res.prompt_tokens = int(event["usage"].get("prompt_tokens", 0))
-                    res.tokens = int(event["usage"].get("completion_tokens", 0)) or res.tokens
+                    usage_tokens = int(event["usage"].get("completion_tokens", 0)) or usage_tokens
                 if len(raw_head) < 4:
                     raw_head.append(data[:300])
                 for choice in event.get("choices", []):
+                    if choice.get("finish_reason"):
+                        res.finish_reason = str(choice["finish_reason"])
                     delta = choice.get("delta") or {}
                     # a thinking model streams its tokens as reasoning_content / reasoning before any content
                     piece = delta.get("content") or delta.get("reasoning_content") or delta.get("reasoning")
@@ -104,14 +114,22 @@ def one_stream(url: str, model: str, stream: int, prompt: str, max_tokens: int, 
                             res.t_first = now
                         else:
                             res.gaps_ms.append((now - last) * 1000.0)
-                        last = now
+                        last = res.t_last = now
                         chunks += 1
                         text.append(piece)
         res.t_end = time.perf_counter()
         if not chunks:
             raise StreamBenchError("the stream produced no content; first events: " + " | ".join(raw_head))
-        if not res.tokens:
-            res.tokens = chunks                      # no usage block: count content chunks (one token each)
+        if not done and not res.finish_reason:
+            raise StreamBenchError("the stream ended without [DONE] or a finish reason (truncated)")
+        res.events = chunks
+        if usage_tokens:
+            res.tokens, res.usage_source = usage_tokens, "server"
+        elif allow_estimate:
+            res.tokens, res.usage_source = chunks, "event_count_estimate"      # one token an event: an estimate only
+        else:
+            raise StreamBenchError("no usage block (the server must honour stream_options.include_usage); "
+                                   "token counts are never inferred from event counts unless --allow-estimate")
         res.text_sha256 = hashlib.sha256("".join(text).encode()).hexdigest()
         res.ok = True
     except (urllib.error.URLError, OSError, ValueError, StreamBenchError) as exc:
@@ -126,49 +144,63 @@ def pct(values, p):
 
 
 def run_round(url: str, model: str, streams: int, prompt_tokens: int, max_tokens: int, temperature: float,
-              timeout: float, seed: int, shared_prefix: bool) -> dict:
-    """N simultaneous streams released together; returns the round's record."""
+              timeout: float, seed: int, shared_prefix: bool, allow_estimate: bool = False) -> dict:
+    """N simultaneous streams released together by a controller; returns the round's record.
+
+    Aggregate throughput here is finite-batch makespan throughput: all tokens over the time from the first request start to
+    the last response end. The last straggler can dominate that denominator, so it is not sustained serving throughput."""
     results: list = [None] * streams
-    gate = threading.Barrier(streams)
+    gate = threading.Barrier(streams + 1)
 
     def work(i):
         gate.wait()
         results[i] = one_stream(url, model, i, make_prompt(i, prompt_tokens, seed, shared_prefix), max_tokens,
-                                temperature, timeout, seed)
+                                temperature, timeout, seed, allow_estimate)
 
     threads = [threading.Thread(target=work, args=(i,), daemon=True) for i in range(streams)]
     for t in threads:
         t.start()
+    release = time.perf_counter()
+    gate.wait()
     for t in threads:
         t.join()
     ok = all(r.ok for r in results)
     wall = max(r.t_end for r in results) - min(r.t_start for r in results)
     record = {"streams": streams, "ok": ok, "wall_s": round(wall, 4),
+              "start_skew_ms": round((max(r.t_start for r in results) - min(r.t_start for r in results)) * 1000.0, 3),
+              "release_to_first_start_ms": round((min(r.t_start for r in results) - release) * 1000.0, 3),
               "per_stream": [{"stream": r.stream, "ok": r.ok, "error": r.error, "tokens": r.tokens,
+                              "usage_source": r.usage_source, "finish_reason": r.finish_reason, "events": r.events,
                               "prompt_tokens": r.prompt_tokens, "ttft_ms": round(r.ttft_ms(), 2),
-                              "decode_tps": round(r.decode_tps(), 3), "text_sha256": r.text_sha256} for r in results]}
+                              "decode_tps_est": round(r.decode_tps_est(), 3),
+                              "response_tail_ms": round((r.t_end - r.t_last) * 1000.0, 2) if r.ok else None,
+                              "text_sha256": r.text_sha256} for r in results]}
     if ok:
         total = sum(r.tokens for r in results)
         gaps = [g for r in results for g in r.gaps_ms]
+        per = [r.decode_tps_est() for r in results if r.tokens > 1]
         record["aggregate"] = {
             "tokens": total, "aggregate_tps": round(total / wall, 3),
-            "mean_stream_decode_tps": round(statistics.fmean(r.decode_tps() for r in results if r.tokens > 1), 3)
-            if any(r.tokens > 1 for r in results) else None,
+            "mean_stream_decode_tps_est": round(statistics.fmean(per), 3) if per else None,
             "ttft_ms_p50": round(pct([r.ttft_ms() for r in results], 0.50), 2),
             "ttft_ms_p95": round(pct([r.ttft_ms() for r in results], 0.95), 2),
-            "itl_ms_p50": round(pct(gaps, 0.50), 3), "itl_ms_p95": round(pct(gaps, 0.95), 3),
-            "itl_ms_p99": round(pct(gaps, 0.99), 3)}
+            "ttft_ms_max": round(max(r.ttft_ms() for r in results), 2),
+            "event_gap_ms_p50": round(pct(gaps, 0.50), 3), "event_gap_ms_p95": round(pct(gaps, 0.95), 3),
+            "event_gap_ms_p99": round(pct(gaps, 0.99), 3), "event_gap_ms_max": round(max(gaps), 3) if gaps else None,
+            "estimated_tokens": any(r.usage_source != "server" for r in results)}
     return record
 
 
 def run(url: str, model: str, stream_counts: list, prompt_tokens: int, max_tokens: int, reps: int,
-        temperature: float = 0.0, timeout: float = 600.0, seed: int = 1, shared_prefix: bool = False) -> dict:
+        temperature: float = 0.0, timeout: float = 600.0, seed: int = 1, shared_prefix: bool = False,
+        allow_estimate: bool = False) -> dict:
     if not stream_counts or any(n < 1 for n in stream_counts) or reps < 1:
         raise StreamBenchError("stream counts and reps must be at least 1")
     rounds = []
     for n in stream_counts:
         for rep in range(reps):
-            rec = run_round(url, model, n, prompt_tokens, max_tokens, temperature, timeout, seed, shared_prefix)
+            rec = run_round(url, model, n, prompt_tokens, max_tokens, temperature, timeout, seed, shared_prefix,
+                            allow_estimate)
             rec["rep"] = rep
             rounds.append(rec)
     summary = {}
@@ -177,28 +209,30 @@ def run(url: str, model: str, stream_counts: list, prompt_tokens: int, max_token
         if good:
             summary[str(n)] = {"reps_ok": len(good),
                                "aggregate_tps_median": statistics.median(g["aggregate_tps"] for g in good),
-                               "ttft_ms_p95_median": statistics.median(g["ttft_ms_p95"] for g in good),
-                               "itl_ms_p95_median": statistics.median(g["itl_ms_p95"] for g in good)}
+                               "ttft_ms_max_median": statistics.median(g["ttft_ms_max"] for g in good),
+                               "event_gap_ms_p95_median": statistics.median(g["event_gap_ms_p95"] for g in good)}
     return {"schema": SCHEMA,
             "config": {"url": url, "model": model, "streams": stream_counts, "prompt_tokens": prompt_tokens,
                        "max_tokens": max_tokens, "reps": reps, "temperature": temperature, "seed": seed,
-                       "shared_prefix": shared_prefix},
+                       "shared_prefix": shared_prefix, "allow_estimate": allow_estimate,
+                       "throughput_definition": "finite-batch makespan: tokens / (first request start to last response end)"},
             "ok": all(r["ok"] for r in rounds), "rounds": rounds, "summary": summary}
 
 
 def flat_metrics(record: dict) -> dict:
     """The record as flat named numbers, so a stream cell can feed the A/B harness like any other measurement:
-    sN_agg_tps, sN_stream_tps (mean per-stream decode), sN_ttft_p95_ms, sN_itl_p95_ms for each stream count N
-    (medians over the repetitions). A run with any failed stream has no metrics."""
+    sN_agg_tps (finite-batch throughput), sN_stream_tps (mean client-observed per-stream decode estimate),
+    sN_ttft_max_ms and sN_gap_p95_ms for each stream count N (medians over the repetitions). With 2 to 6 streams a p95 is
+    just the slowest stream, so the TTFT figure is the explicit maximum. A run with any failed stream has no metrics."""
     if not record.get("ok"):
         raise StreamBenchError("a stream failed; no metrics")
     out = {}
     for n in record["config"]["streams"]:
         good = [r["aggregate"] for r in record["rounds"] if r["streams"] == n and r["ok"]]
         out[f"s{n}_agg_tps"] = statistics.median(g["aggregate_tps"] for g in good)
-        out[f"s{n}_ttft_p95_ms"] = statistics.median(g["ttft_ms_p95"] for g in good)
-        out[f"s{n}_itl_p95_ms"] = statistics.median(g["itl_ms_p95"] for g in good)
-        per = [g["mean_stream_decode_tps"] for g in good if g["mean_stream_decode_tps"] is not None]
+        out[f"s{n}_ttft_max_ms"] = statistics.median(g["ttft_ms_max"] for g in good)
+        out[f"s{n}_gap_p95_ms"] = statistics.median(g["event_gap_ms_p95"] for g in good)
+        per = [g["mean_stream_decode_tps_est"] for g in good if g["mean_stream_decode_tps_est"] is not None]
         if per:
             out[f"s{n}_stream_tps"] = statistics.median(per)
     return out
@@ -216,6 +250,8 @@ def build_parser(add_help: bool = True) -> argparse.ArgumentParser:
     ap.add_argument("--timeout", type=float, default=600.0)
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--shared-prefix", action="store_true", help="give every stream the same prompt (prefix-cache probe)")
+    ap.add_argument("--allow-estimate", action="store_true",
+                    help="count one token per text event when the server sends no usage block (marked as an estimate)")
     ap.add_argument("--output", help="write the JSON record here (default: stdout)")
     return ap
 
@@ -224,7 +260,7 @@ def run_from_namespace(args) -> int:
     try:
         counts = [int(x) for x in str(args.streams).split(",") if x.strip()]
         record = run(args.url, args.model, counts, args.prompt_tokens, args.max_tokens, args.reps, args.temperature,
-                     args.timeout, args.seed, args.shared_prefix)
+                     args.timeout, args.seed, args.shared_prefix, args.allow_estimate)
     except (StreamBenchError, ValueError) as exc:
         print(f"stream-bench: ERROR: {exc}", file=sys.stderr)
         return 2
@@ -235,7 +271,7 @@ def run_from_namespace(args) -> int:
         print(rendered)
     for n, s in record["summary"].items():
         print(f"stream-bench: {n:>2} streams  {s['aggregate_tps_median']:9.2f} tok/s aggregate  "
-              f"ttft p95 {s['ttft_ms_p95_median']:8.1f} ms  itl p95 {s['itl_ms_p95_median']:7.2f} ms", file=sys.stderr)
+              f"ttft max {s['ttft_ms_max_median']:8.1f} ms  event gap p95 {s['event_gap_ms_p95_median']:7.2f} ms", file=sys.stderr)
     if not record["ok"]:
         print("stream-bench: FAIL: at least one stream failed (see per_stream errors)", file=sys.stderr)
         return 1

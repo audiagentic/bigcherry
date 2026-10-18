@@ -202,7 +202,7 @@ helpers, the validated helper settings, `--max-num-seqs 6`, 512-token random-wor
 generated tokens, temperature 0, two repetitions a round, two identical arms (A/A) in two balanced pairs, so the spread between
 the four cells is the noise floor.
 
-| Streams | Aggregate tok/s (four cells) | Per-stream decode tok/s | TTFT p95 | Inter-token p95 |
+| Streams | Aggregate tok/s (four cells) | Per-stream decode tok/s | TTFT p95 (the slowest stream) | Event-gap p95 |
 |---|---|---|---|---|
 | 1 | 85.9 - 95.4 | about 93 | 318 - 415 ms | 26.6 - 32.3 ms |
 | 2 | 131.7 - 132.4 | about 66 | 542 ms | 32.1 - 32.4 ms |
@@ -213,6 +213,10 @@ the four cells is the noise floor.
   is under 1.5%; the single-stream figure is noisy (+-7%).
 - The single-stream decode here (about 90 tok/s) is below the 145 tok/s of the tg512 acceptance cell: these prompts are random
   words, so speculative-decode acceptance is low. Compare within this table, not with the acceptance numbers.
+- These figures came from the first version of `stream-bench`: the gap column is the time between streamed text events (one
+  event can carry several tokens with MTP, so it is not a token latency), the aggregate is finite-batch makespan throughput
+  (all tokens over first request start to last response end), and the per-stream rate is a client-observed estimate. The
+  harness now separates server token counts from text events, fails without a usage block, and reports the maximum TTFT.
 - Identity: at one stream the text is identical across arms. At four streams the first repetition matches across arms but a
   second repetition of the same prompts and seed produced different text, so concurrent decode is not bitwise reproducible
   from run to run; per-stream correctness gates for RAD10 must use quality (KL, top-1), not exact text.
