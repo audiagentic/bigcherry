@@ -1,0 +1,72 @@
+{
+ "1": {
+  "exposed_wait_us_p50": 3.4,
+  "exposed_wait_us_p95": 58.6,
+  "exposed_wait_us_sum_per_round": 137195.26,
+  "helper_gpu_us_p50": 165.05,
+  "helper_imbalance_p50": 0.2708460471567267,
+  "layer_steps": 4043,
+  "rounds": 2,
+  "rows_max": 1815,
+  "rows_p50": 4,
+  "rows_p95": 4,
+  "single_helper_share": 0.0002473410833539451,
+  "small_lane_share": 0.9628988374969082
+ },
+ "2": {
+  "exposed_wait_us_p50": 54.28,
+  "exposed_wait_us_p95": 139.0,
+  "exposed_wait_us_sum_per_round": 281681.62,
+  "helper_gpu_us_p50": 247.88,
+  "helper_imbalance_p50": 0.19110094838250175,
+  "layer_steps": 4455,
+  "rounds": 2,
+  "rows_max": 2048,
+  "rows_p50": 8,
+  "rows_p95": 8,
+  "single_helper_share": 0.0006734006734006734,
+  "small_lane_share": 0.9685746352413019
+ },
+ "3": {
+  "exposed_wait_us_p50": 250.8,
+  "exposed_wait_us_p95": 509.64,
+  "exposed_wait_us_sum_per_round": 736612.16,
+  "helper_gpu_us_p50": 377.53,
+  "helper_imbalance_p50": 0.1103675945753034,
+  "layer_steps": 5010,
+  "rounds": 2,
+  "rows_max": 2048,
+  "rows_p50": 12,
+  "rows_p95": 12,
+  "single_helper_share": 0.0,
+  "small_lane_share": 0.25169660678642714
+ },
+ "4": {
+  "exposed_wait_us_p50": 344.16,
+  "exposed_wait_us_p95": 1367.04,
+  "exposed_wait_us_sum_per_round": 982951.3,
+  "helper_gpu_us_p50": 464.72,
+  "helper_imbalance_p50": 0.10766119743005606,
+  "layer_steps": 4369,
+  "rounds": 2,
+  "rows_max": 2048,
+  "rows_p50": 16,
+  "rows_p95": 1573,
+  "single_helper_share": 0.0,
+  "small_lane_share": 0.0711833371480888
+ },
+ "6": {
+  "exposed_wait_us_p50": 537.92,
+  "exposed_wait_us_p95": 2204.2,
+  "exposed_wait_us_sum_per_round": 1497895.9,
+  "helper_gpu_us_p50": 553.82,
+  "helper_imbalance_p50": 0.1020951004860107,
+  "layer_steps": 4748,
+  "rounds": 2,
+  "rows_max": 2048,
+  "rows_p50": 24,
+  "rows_p95": 1583,
+  "single_helper_share": 0.0,
+  "small_lane_share": 0.15206402695871946
+ }
+}
