@@ -76,6 +76,13 @@ class PinReleaseTests(unittest.TestCase):
             self.assertEqual((plan.build, plan.release_tag, plan.version, plan.branch),
                              (11474, "bc-11474.0.0", "11474.0.0", "work"))
 
+    def test_a_squash_merged_notes_commit_still_names_its_version(self):
+        """GitHub appends ' (#N)' to a squash-merged subject; the release version must not."""
+        with tempfile.TemporaryDirectory() as td:
+            root = self._repo(td)
+            _git(root, "commit", "-q", "--allow-empty", "-m", "chore: release notes bc-11474.0.0 (#296)")
+            self.assertEqual(self._plan(root).version, "11474.0.0")
+
     def test_plan_rejects_other_tags_and_main(self):
         with tempfile.TemporaryDirectory() as td:
             root = self._repo(td)

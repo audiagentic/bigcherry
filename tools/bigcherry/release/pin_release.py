@@ -128,8 +128,8 @@ def make_plan(repo_root: Path, engine: str, llama_tag: str, main: str = "main", 
         # a new version instead of reusing a completed notes commit.
         notes_log = _git(repo_root, "log", "--format=%s", "--fixed-strings",
                          f"--grep=chore: release notes {config.tag_prefix}{build}.", "-20", check=False)
-        note_versions = [line.rsplit(config.tag_prefix, 1)[-1] for line in notes_log.splitlines()
-                         if config.tag_prefix in line]
+        note_versions = [m.group(1) for m in (
+            re.search(rf"{re.escape(config.tag_prefix)}(\d+\.\d+\.\d+)", line) for line in notes_log.splitlines()) if m]
         pending = [candidate for candidate in note_versions if candidate not in existing]
         if pending:
             version = pending[0]

@@ -154,8 +154,10 @@ class ReleasePleaseWiringTests(unittest.TestCase):
         radiance = packages[engines.load(_REPO, "radiance").release_package()]
         self.assertEqual(radiance["component"], "bc-radiance")
         self.assertEqual(notes.load_config(_REPO, "radiance").tag_prefix, radiance["component"] + "-")
-        self.assertEqual({k: v for k, v in radiance.items() if k != "component"},
-                         {k: v for k, v in packages["engines/llamacpp"].items() if k != "component"})
+        # release-as is present only between pin-release's notes and unpin phases (a release in flight)
+        transient = ("component", "release-as")
+        self.assertEqual({k: v for k, v in radiance.items() if k not in transient},
+                         {k: v for k, v in packages["engines/llamacpp"].items() if k not in transient})
         self.assertTrue((_REPO / "engines" / "radiance" / radiance["changelog-path"]).is_file())
 
     def test_manifest_versions(self):
