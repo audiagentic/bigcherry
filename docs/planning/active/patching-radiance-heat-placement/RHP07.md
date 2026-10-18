@@ -58,6 +58,13 @@ Offline: the policy beats static hot-first on a shifting-session trace by a stat
 
 Today there is no heat history: ownership comes from one static histogram file (R3_MOE_HELPER_HISTOGRAM, hot-first via R3_MOE_HELPER_HEAT) taken at startup. Radiance's own mover has an internal runtime tracker (promotions/demotions seen in its end-of-run summary) that is not exported over time. RHP03 deliberately persists a snapshot, not a heat database; this item adds the bounded interval series needed to evaluate policies. Related: RAD10 (multi-stream flattens heat), RCS07 (RDNA2 tier L3).
 
+Added 2026-10-19 (owner): the topology must be configuration, not code. Brutus (R9700 + 2 XTX + 6900 XT behind slow uplinks) is one case; others are two P2P R9700s, a single 12 GB card plus RAM, or a different mix. So:
+1. Topology descriptor: devices (arch, VRAM, usable expert budget after trunk/KV, role), and links as groups with measured bandwidth and latency (host to device, device to device, shared uplinks: devices behind the same hop share its bandwidth). Probed at startup (PCIe link chain from sysfs plus a short H2D/D2H/D2D copy benchmark) with a file override; recorded in the run record. The 6900 XT, for example, sits behind a PCIe 3.0 x4 hop (about 3.5 GB/s to host) while its own link is x16.
+2. Cost model uses these measurements: a move costs bytes / measured bandwidth + fixed latency (+ contention on shared links); a placement is worth it only if expected future saving over a horizon (heat x per-use saving) exceeds the move cost. "Speed of moving experts" and "need to move" are both inputs, so slow-link devices end up holding experts permanently and fast-link devices do the swapping.
+3. Swap cache: reserve a slab of VRAM (swap-reserve per device, configurable) on the device(s) with the best host link and spare memory, to hold L4 (RAM-resident) experts staged for execution. A background copier fills it (LRU/ARC inside the slab, bounded by interval move budget); an L4 expert in the slab executes on that GPU, a miss goes to CPU compute or a direct stream, per the four-tier dispatch cost model. The slab size trades against resident capacity on that device, so the simulator sweeps it (0 to a few GiB) per topology.
+4. The simulator takes a topology file as input and is validated on several (Brutus, 2 x P2P R9700, single 12 GB GPU + RAM), so nothing in the policy assumes Brutus.
+5. Runtime configuration: a [topology] and [expert-cache] section (interval, hysteresis thresholds, move budget, swap-reserve per device) in the engine runtime profile, with measured defaults.
+
 ## Change Log
 
 - 2026-10-18T14:26:48.723847+00:00 (created-by): Created by agent
