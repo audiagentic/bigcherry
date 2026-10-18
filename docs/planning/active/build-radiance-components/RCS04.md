@@ -57,6 +57,8 @@ bigcherry build of the radiance lane produces the same runtime home contents as 
 
 Depends on RCS01-RCS03 and the RAD06 evidence PR. Moving a setting between components is a wiring change and does not invalidate its proof.
 
+Added 2026-10-19: (1) the build profile chooses which components are built (stock = none; a MoE profile = moe-remote plus the backends for the cards present), so engine.toml [components] lists all and the recipes' build profiles select; the pin-bump components-build gate builds the selected set. (2) Rename decision (owner asked why 'helper'): the process is an expert worker; rename binary r3_moe_helper -> r3_moe_worker and R3_MOE_HELPER_* -> R3_MOE_WORKER_* in this same change, migrating every caller, doc and evidence mechanism id at once (no shims). (3) Takes the 1.8.0 pin: built-against v1.8.0, the fp8a8 native rewrite is shelved in native-shelved/.
+
 ## Change Log
 
 - 2026-10-18T12:57:42.399279+00:00 (created-by): Created by agent
