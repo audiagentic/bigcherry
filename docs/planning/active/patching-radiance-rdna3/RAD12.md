@@ -39,3 +39,17 @@ quality gates (KL, top-1) unchanged; no hang across repeated start/stop.
 Depends on RAD10-02 (done). The other half of the finding, that the helper wait per layer-step still grows 3 to 4 times with rows even on the small lane (152 -> 480 us), is the
 kernel and dispatch question tracked in RAD10 (shadow aggregation, GEMV/grouped kernel for 12 to 24 rows). The helpers' median imbalance of 10-27% is a separate lever
 (balanced ownership was neutral at one stream; retest under concurrency).
+
+Replay evidence (2026-10-19, helper-sweep.sh with SMALL_ROWS=8 or 24 over derived 4, 12, 16 and 24-row captures of the same requests, one model load each, no server; span
+is the request's first to last kernel). Layer 16 / layer 10 requests, microseconds:
+
+| Rows | Large lane (SMALL_ROWS=8) | Small lane padded to 24 | Change |
+|---|---|---|---|
+| 24 | 1190 / 1632 | 907 / 1452 | -24% / -11% |
+| 16 | 1039 / 1369 | 810 / 1140 | -22% / -17% |
+| 12 | 1041 / 1262 | 759 / 1010 | -27% / -20% |
+| 4 | 471 / 541 (small lane at 8) | 614 / 666 (small lane at 24) | +30% / +23% |
+
+So: 12 to 24 rows run 11-27% faster on a pre-queued small lane than on the large lane, and padding a 4-row request to 24 costs 23-30% (about 140 us). Output is bitwise identical across
+the settings (mismatches=0). There is also a fixed floor: about 470 us a request even at 4 rows (about 330 us of it kernel time), the chain of roughly 20 small kernels; fusing it (as FUSEROUTE and FUSESTAGE
+did) lowers the floor for every stream count, independent of lane sizing.
