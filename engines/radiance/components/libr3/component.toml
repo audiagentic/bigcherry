@@ -115,21 +115,24 @@ activation = "r3_moe_helper: R3_MOE_HELPER_MOE_LONG_ROWS="
 
 [setting.R3_MOE_FP16]
 default = "1"
-status = "experimental"
+status = "validated"
 summary = "RAD06: with R3_MOE_NATIVE, the grouped MoE GEMM widens E4M3 operands to f16 and uses the f16 WMMA (a cheaper widening than bf16; the sums carry a 2^-16 scale removed before the scale fold, so output is bit-identical to the bf16 form). On by default in the r3_moe_helper processes (main() sets 1 unless the variable is set); prefill 2,130 -> 3,150 tok/s, decode unchanged, KLD unchanged; the engine process reads an unset variable as off, and 0 turns it off everywhere"
 activation = "r3_moe_helper: R3_MOE_FP16 on"
+evidence = ["docs/evidence/RAD06/R3_MOE_FP16.run.json"]
 
 [setting.R3_MOE_AHALF]
 default = "1"
-status = "experimental"
+status = "validated"
 summary = "RAD06: with R3_MOE_FP16, widen the grouped MoE GEMM's activation tile to half once at staging instead of in every wave that reads it (four wave columns share each A fragment); bit-identical, 7-8% off the grouped GEMM on four real captured requests, about 4 KB more LDS. On by default in the r3_moe_helper processes (main() sets 1 unless set); 0 turns it off"
 activation = "r3_moe_helper: R3_MOE_AHALF on"
+evidence = ["docs/evidence/RAD06/R3_MOE_AHALF.run.json"]
 
 [setting.R3_MOE_HELPER_VECIO]
 default = "1"
-status = "experimental"
+status = "validated"
 summary = "RAD06: the helper's activation copy (engine's mapped host memory into the lane) and result write (lane to mapped host memory) use 16-byte accesses instead of one byte and two bytes a thread; bit-identical, read per request; 0 keeps the scalar kernels"
 activation = "r3_moe_helper: R3_MOE_HELPER_VECIO on"
+evidence = ["docs/evidence/RAD06/R3_MOE_HELPER_VECIO.run.json"]
 
 [setting.R3_MOE_HELPER_BALANCE]
 default = ""
@@ -144,9 +147,10 @@ summary = "RAD06/RHP: with R3_MOE_HELPER_BALANCE, relative speeds of the two hel
 
 [setting.R3_MOE_HELPER_FUSEROUTE]
 default = "1"
-status = "experimental"
+status = "validated"
 summary = "RAD06: the small (decode) lane's routing prologue (four memsets and the route count / prefix / scatter / inverse kernels) runs as one block, lane_route_small; same result, fewer launches and gaps in the request the engine waits for; read per request; 0 keeps the separate kernels"
 activation = "r3_moe_helper: R3_MOE_HELPER_FUSEROUTE on"
+evidence = ["docs/evidence/RAD06/R3_MOE_HELPER_FUSEROUTE.run.json"]
 
 [setting.R3_MOE_HELPER_ROWS_SMALL]
 default = ""
@@ -156,9 +160,10 @@ activation = "R3_MOE_HELPER_ROWS_SMALL"
 
 [setting.R3_MOE_HELPER_FUSESTAGE]
 default = "1"
-status = "experimental"
+status = "validated"
 summary = "RAD06: the engine's activation staging for a step of at most 16 rows (decode) is done by the publish kernel instead of a separate staging kernel in front of it: a launch and its gap off the path before every helper request; same data, same fence; read per launch in the engine process; 0 keeps the separate kernel"
 activation = "r3_moe: R3_MOE_HELPER_FUSESTAGE on"
+evidence = ["docs/evidence/RAD06/R3_MOE_HELPER_FUSESTAGE.run.json"]
 
 [setting.R3_MOE_HELPER_TRACE]
 default = ""
