@@ -28,3 +28,7 @@ SGEMM forms them: equal within float tolerance, not bit-identical.
 ## Activation
 
 `BIGCHERRY_PATCH_TRACE=1` prints `BIGCHERRY_PATCH_HIT patch=1347_f32_thin_transposed_mmvf k= rows= cols=` once.
+
+## PRBE28 compatibility fence (2026-10-18; BCOP294)
+
+The validated 1347 role-swapped MMVF route explicitly requires `ggml_is_contiguous(src0)`. Flash-Next HC inject F32 weights are `[10240,4]`: packed row 40960 B, divisible by the 2048-B alias stride proposed by upstream llama.cpp #26621. If that separate **unmerged** float-row-padding proposal is ported and enabled on gfx1100/gfx1201 without excluding 1347-eligible weights, its +128-B row stride makes `src0` noncontiguous and disables 1347, potentially reverting to SGEMM. This is a source-level conditional conflict, not a measured regression; upstream #26621 defaults padding only on gfx1151 and BigCherry has not enabled it. PRBE28 owns the admission and must preserve 1347 activation or reject the padding candidate. Do not broaden 1347's guard or create a second float dispatcher without stride/graph/numerical proof.
