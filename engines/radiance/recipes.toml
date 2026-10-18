@@ -18,6 +18,13 @@ patches = []
 patches = []
 required-state = "evaluated"
 
+# Host build compatibility for the pinned engine (rad0005: MP4 writer against FFmpeg 6). Enablers with no runtime path of
+# their own; promoted to validated by a passing bump (compile, plugin ABI, component tests, cpu-smoke) and then moved to
+# serving-core.
+[patch-set.host-compat]
+patches = ["rad0005_mp4_ffmpeg6_writer"]
+required-state = "untested"
+
 # The remote-MoE hand-off and its diagnostics (shadow compare, mask-only). Diagnostic builds only: patch-lint fails
 # if a patch declaring `diagnostic-build` (rad0004) enters any recipe not named *-diag.
 [patch-set.moe-remote-diag]
@@ -32,7 +39,7 @@ patch-sets = []
 [source.radiance]
 description = "radiance 1.7.0 with BigCherry's validated engine patch sets."
 overlay = false
-patch-sets = ["serving-core"]
+patch-sets = ["serving-core", "host-compat"]
 
 [source.radiance-lab]
 description = "radiance 1.7.0 with the evaluated engine fixes the Flash-Next two-XTX configuration needs (none at present)."
@@ -42,7 +49,7 @@ patch-sets = ["engine-fixes-evaluated"]
 [source.radiance-diag]
 description = "radiance 1.7.0 with the validated engine patch sets plus the remote-MoE hand-off and its diagnostics (rad0004); build it with build.moe-diag."
 overlay = false
-patch-sets = ["serving-core", "moe-remote-diag"]
+patch-sets = ["serving-core", "host-compat", "moe-remote-diag"]
 
 [build.stock]
 description = "radiance's own release build of the engine binary."
