@@ -229,6 +229,7 @@ def run_round(url: str, model: str, streams: int, prompt_tokens: int, max_tokens
     for t in threads:
         t.start()
     release = time.perf_counter()
+    wall_start_ns = time.time_ns()                 # epoch clock, so helper TRACE lines can be bucketed by round
     gate.wait()
     time.sleep(0.03)                       # let the streams get admitted, then read the gauges once more
     mid = scrape_metrics(url, timeout=2.0)
@@ -239,9 +240,11 @@ def run_round(url: str, model: str, streams: int, prompt_tokens: int, max_tokens
     stop.set()
     sampler.join()
     after = scrape_metrics(url)
+    wall_end_ns = time.time_ns()
     ok = all(r.ok for r in results)
     wall = max(r.t_end for r in results) - min(r.t_start for r in results)
     record = {"streams": streams, "ok": ok, "wall_s": round(wall, 4),
+              "wall_start_ns": wall_start_ns, "wall_end_ns": wall_end_ns,
               "start_skew_ms": round((max(r.t_start for r in results) - min(r.t_start for r in results)) * 1000.0, 3),
               "release_to_first_start_ms": round((min(r.t_start for r in results) - release) * 1000.0, 3),
               "per_stream": [{"stream": r.stream, "ok": r.ok, "error": r.error, "tokens": r.tokens,
