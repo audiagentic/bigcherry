@@ -99,6 +99,40 @@ __global__ void lane_prepare_activation(
     }
 }
 
+/* The same copy, 16 bytes a thread. The byte-a-thread form above reads the engine's mapped host memory (uncached,
+ * over PCIe) one byte at a time: 5 MB took ~0.35-0.8 ms. Rows past q->rows or an invalid request zero-fill as before;
+ * the host checks the sources are 16-byte aligned. */
+__global__ void lane_prepare_activation_v(
+    r3::moe_shm::Request* q, const uint4* src_q, const uint4* src_s,
+    uint4* dst_q, uint4* dst_s,
+    uint32_t rank, uint32_t sequence, uint32_t max_rows, uint32_t layers,
+    uint64_t* stats) {
+    using namespace r3::moe_shm;
+    const bool valid = lane_request_valid(q, rank, sequence, max_rows, layers);
+    if (blockIdx.x == 0 && threadIdx.x == 0) {
+        q->status = valid ? 0 : -EINVAL;
+        if (valid) {
+            atomicAdd(reinterpret_cast<unsigned long long*>(stats) + 0, 1ull);
+            atomicAdd(reinterpret_cast<unsigned long long*>(stats) + 1,
+                      (unsigned long long)q->rows);
+            atomicAdd(reinterpret_cast<unsigned long long*>(stats) + 2,
+                      (unsigned long long)q->route_count);
+        }
+    }
+    const uint64_t i = (uint64_t)blockIdx.x * blockDim.x + threadIdx.x;
+    constexpr uint32_t q_per_row = kHidden / 16;                       // 16-byte pieces of a row of codes
+    constexpr uint32_t s_per_row = (kHidden / kActGroup) * 4 / 16;     // and of a row of scales
+    static_assert(kHidden % 16 == 0 && ((kHidden / kActGroup) * 4) % 16 == 0, "rows must be whole 16-byte pieces");
+    if (i < (uint64_t)max_rows * q_per_row) {
+        const uint32_t row = (uint32_t)(i / q_per_row);
+        dst_q[i] = valid && row < q->rows ? src_q[i] : make_uint4(0, 0, 0, 0);
+    }
+    if (i < (uint64_t)max_rows * s_per_row) {
+        const uint32_t row = (uint32_t)(i / s_per_row);
+        dst_s[i] = valid && row < q->rows ? src_s[i] : make_uint4(0, 0, 0, 0);
+    }
+}
+
 __global__ void lane_select_tables(
     const r3::moe_shm::Request* q, const DeviceLayerTables* layers_table,
     uint32_t layers, uint32_t rank, uint32_t slice, uint32_t sequence, uint32_t max_rows,
@@ -417,6 +451,65 @@ __global__ void lane_reduce_tokens(const uint16_t* down, const int32_t* inv,
      * before the later release flag, matching libr4d's no-P2P all-reduce host path. */
 #if defined(__gfx1100__)
     asm volatile("s_waitcnt_vscnt null, 0x0" ::: "memory");   /* gfx11 spelling of the store drain */
+#else
+    asm volatile("s_wait_storecnt 0x0" ::: "memory");
+#endif
+}
+
+/* lane_reduce_tokens, eight columns a thread: 16-byte loads of the expert rows and one 16-byte store to the mapped
+ * result. Per column the arithmetic is the scalar kernel's (slot order, f32 accumulator, one bf16 rounding), so the
+ * output is bit-identical; the 2-byte stores to uncached host memory ran at ~12 GB/s. */
+__global__ void lane_reduce_tokens_v(const uint16_t* down, const int32_t* inv,
+                                     const uint16_t* ew, uint16_t* dst, uint32_t rows, uint32_t hidden,
+                                     uint32_t poison) {
+    using namespace r3::moe_shm;
+    const uint32_t token = blockIdx.x;
+    if (token >= rows) return;
+    __shared__ int32_t row[kTopK];
+    __shared__ float w[kTopK];
+    __shared__ uint32_t any;
+    if (threadIdx.x == 0) {
+        any = 0;
+        for (uint32_t slot = 0; slot < kTopK; ++slot) {
+            const uint32_t flat = token * kTopK + slot;
+            row[slot] = inv[flat];
+            w[slot] = __uint_as_float((uint32_t)ew[flat] << 16);
+            any |= row[slot] >= 0 ? 1u : 0u;
+        }
+    }
+    __syncthreads();
+    if (!any) return;
+    uint4* out = reinterpret_cast<uint4*>(dst + (uint64_t)token * hidden);
+    for (uint32_t c8 = threadIdx.x; c8 < hidden / 8; c8 += blockDim.x) {
+        float acc[8];
+#pragma unroll
+        for (uint32_t k = 0; k < 8; ++k) acc[k] = 0.0f;
+        for (uint32_t slot = 0; slot < kTopK; ++slot) {
+            if (row[slot] < 0) continue;
+            const uint4 d = *reinterpret_cast<const uint4*>(down + (uint64_t)(uint32_t)row[slot] * hidden + (uint64_t)c8 * 8);
+            const uint32_t dw[4] = {d.x, d.y, d.z, d.w};
+#pragma unroll
+            for (uint32_t k = 0; k < 4; ++k) {
+                acc[2 * k] += w[slot] * __uint_as_float(dw[k] << 16);
+                acc[2 * k + 1] += w[slot] * __uint_as_float(dw[k] & 0xffff0000u);
+            }
+        }
+        uint32_t o[4];
+#pragma unroll
+        for (uint32_t k = 0; k < 4; ++k) {
+            uint32_t h[2];
+#pragma unroll
+            for (uint32_t j = 0; j < 2; ++j) {
+                uint32_t u = __float_as_uint(acc[2 * k + j]);
+                u += 0x7fffu + ((u >> 16) & 1u);
+                h[j] = poison == 1u ? 0x447au : poison == 2u ? 0u : (u >> 16);
+            }
+            o[k] = h[0] | (h[1] << 16);
+        }
+        out[c8] = make_uint4(o[0], o[1], o[2], o[3]);
+    }
+#if defined(__gfx1100__)
+    asm volatile("s_waitcnt_vscnt null, 0x0" ::: "memory");
 #else
     asm volatile("s_wait_storecnt 0x0" ::: "memory");
 #endif
@@ -932,11 +1025,29 @@ public:
         const dim3 act_grid(
             ((uint64_t)rows * kHidden + block.x - 1) / block.x);
         const dim3 route_grid((routes + block.x - 1) / block.x);
-        hipLaunchKernelGGL(lane_prepare_activation, act_grid, block, 0, w.stream,
-                           q, act_q, act_s,
-                           static_cast<uint8_t*>(w.d_aq.p), static_cast<float*>(w.d_as.p),
-                           rank, sequence, rows, model_.layers,
-                           static_cast<uint64_t*>(w.d_stats.p));
+        /* R3_MOE_HELPER_VECIO (default on): 16-byte accesses to the engine's mapped host memory for the activation
+         * copy and the result write; 0 keeps the scalar kernels. Read each call so a replay sweep can compare. */
+        const char* vio_env = std::getenv("R3_MOE_HELPER_VECIO");
+        const bool vecio = !vio_env || std::strcmp(vio_env, "0") != 0;
+        if (vecio && ((reinterpret_cast<uintptr_t>(act_q) | reinterpret_cast<uintptr_t>(act_s) |
+                       reinterpret_cast<uintptr_t>(dst)) & 15u) != 0) {
+            std::fprintf(stderr, "r3_moe_helper: R3_MOE_HELPER_VECIO needs 16-byte aligned activation and result planes\n");
+            return -EINVAL;
+        }
+        if (vecio) {
+            const dim3 vgrid(((uint64_t)rows * (kHidden / 16) + block.x - 1) / block.x);
+            hipLaunchKernelGGL(lane_prepare_activation_v, vgrid, block, 0, w.stream,
+                               q, reinterpret_cast<const uint4*>(act_q), reinterpret_cast<const uint4*>(act_s),
+                               reinterpret_cast<uint4*>(w.d_aq.p), reinterpret_cast<uint4*>(w.d_as.p),
+                               rank, sequence, rows, model_.layers,
+                               static_cast<uint64_t*>(w.d_stats.p));
+        } else {
+            hipLaunchKernelGGL(lane_prepare_activation, act_grid, block, 0, w.stream,
+                               q, act_q, act_s,
+                               static_cast<uint8_t*>(w.d_aq.p), static_cast<float*>(w.d_as.p),
+                               rank, sequence, rows, model_.layers,
+                               static_cast<uint64_t*>(w.d_stats.p));
+        }
         hipLaunchKernelGGL(lane_route_count, route_grid, block, 0, w.stream,
                            route, q, static_cast<const DeviceLayerTables*>(d_layer_tables_.p),
                            rank, sequence, rows, model_.layers,
@@ -1085,11 +1196,18 @@ public:
         hipLaunchKernelGGL(lane_route_inverse, route_grid, block, 0, w.stream,
                            static_cast<const int32_t*>(w.d_sorted.p),
                            static_cast<int32_t*>(w.d_inv.p), routes, slots);
-        hipLaunchKernelGGL(lane_reduce_tokens, dim3(rows), block, 0, w.stream,
-                           static_cast<const uint16_t*>(w.d_down.p),
-                           static_cast<const int32_t*>(w.d_inv.p),
-                           static_cast<const uint16_t*>(w.d_ew.p),
-                           dst, rows, kHidden, poison_);
+        if (vecio)
+            hipLaunchKernelGGL(lane_reduce_tokens_v, dim3(rows), block, 0, w.stream,
+                               static_cast<const uint16_t*>(w.d_down.p),
+                               static_cast<const int32_t*>(w.d_inv.p),
+                               static_cast<const uint16_t*>(w.d_ew.p),
+                               dst, rows, kHidden, poison_);
+        else
+            hipLaunchKernelGGL(lane_reduce_tokens, dim3(rows), block, 0, w.stream,
+                               static_cast<const uint16_t*>(w.d_down.p),
+                               static_cast<const int32_t*>(w.d_inv.p),
+                               static_cast<const uint16_t*>(w.d_ew.p),
+                               dst, rows, kHidden, poison_);
         if (!hip_ok(hipGetLastError(), "lane reduce tokens")) return -EIO;
 
         if (sample && w.sample_pending && w.sample_sequence == sequence &&

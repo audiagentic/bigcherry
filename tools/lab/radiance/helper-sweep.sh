@@ -38,19 +38,27 @@ for line in open(log):
     if m and runs and runs[-1][4] is None: runs[-1][4] = 'mismatches=' + m[2]
     m = re.search(r'sweep_sum .*rank 0 sum_abs=(\S+) nonzero=(\d+)', line)
     if m and runs: runs[-1].append('sum_abs=%s nonzero=%s' % (m[1], m[2]))
-k = []
+allk = []
 for r in csv.DictReader(open(trace)):
-    if 'moe_gemm_q_kernel' in r['Kernel_Name']:
-        k.append((int(r['Start_Timestamp']), int(r['End_Timestamp']) - int(r['Start_Timestamp'])))
-k.sort()
-if not runs or len(k) % len(runs):
-    print('could not group', len(k), 'dispatches into', len(runs), 'runs'); sys.exit(1)
+    st, en = int(r['Start_Timestamp']), int(r['End_Timestamp'])
+    allk.append((st, en, r['Kernel_Name']))
+allk.sort()
+# only the request's own kernels: the setup and table kernels around a run differ run to run
+allk = [x for x in allk if 'r3_moe_gpu::lane_' in x[2] or 'moe_gemm_q_kernel' in x[2] or
+        'moe_blockmap_kernel' in x[2] or 'gated_quant_fp8_kernel' in x[2]]
+k = [(st, en - st) for st, en, n in allk if 'moe_gemm_q_kernel' in n]
+if not runs or len(k) % len(runs) or len(allk) % len(runs):
+    print('could not group', len(k), 'GEMM dispatches /', len(allk), 'dispatches into', len(runs), 'runs'); sys.exit(1)
 d = len(k) // len(runs)
-print('%d runs, %d grouped-GEMM dispatches a run' % (len(runs), d))
+da = len(allk) // len(runs)
+print('%d runs, %d grouped-GEMM dispatches and %d kernels a run' % (len(runs), d, da))
 rows = collections.defaultdict(dict)
 for i, (idx, cap, layer, var, rel, *ex) in enumerate(runs):
     ds = [x[1] for x in k[i * d:(i + 1) * d]]
-    rows[(cap, layer)]['%d %s' % (idx % (len(runs) // (max(r[1] for r in runs) + 1)), var or '(default)')] = (sum(ds) / len(ds) / 1e3, str(rel) + ' ' + (ex[0] if ex else ''))
+    chunk = allk[i * da:(i + 1) * da]
+    span = (max(c[1] for c in chunk) - min(c[0] for c in chunk)) / 1e3
+    lane = sum(c[1] - c[0] for c in chunk if 'r3_moe_gpu::lane_' in c[2]) / 1e3
+    rows[(cap, layer)]['%d %s' % (idx % (len(runs) // (max(r[1] for r in runs) + 1)), var or '(default)')] = (sum(ds) / len(ds) / 1e3, str(rel) + ' ' + (ex[0] if ex else '') + ' span=%.0fus lane_kernels=%.0fus' % (span, lane))
 for key, vs in sorted(rows.items()):
     print('capture %d layer %d' % key)
     for var, (us, rel) in vs.items(): print('   %-44s %8.1f us/call  %s' % (var, us, rel))

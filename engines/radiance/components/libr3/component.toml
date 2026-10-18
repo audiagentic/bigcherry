@@ -125,6 +125,12 @@ status = "experimental"
 summary = "RAD06: with R3_MOE_FP16, widen the grouped MoE GEMM's activation tile to half once at staging instead of in every wave that reads it (four wave columns share each A fragment); bit-identical, 7-8% off the grouped GEMM on four real captured requests, about 4 KB more LDS. On by default in the r3_moe_helper processes (main() sets 1 unless set); 0 turns it off"
 activation = "R3_MOE_AHALF"
 
+[setting.R3_MOE_HELPER_VECIO]
+default = "1"
+status = "experimental"
+summary = "RAD06: the helper's activation copy (engine's mapped host memory into the lane) and result write (lane to mapped host memory) use 16-byte accesses instead of one byte and two bytes a thread; bit-identical, read per request; 0 keeps the scalar kernels"
+activation = "R3_MOE_HELPER_VECIO"
+
 [setting.R3_MOE_PROBE]
 default = ""
 status = "diagnostic"
