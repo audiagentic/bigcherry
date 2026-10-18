@@ -134,7 +134,8 @@ __global__ void mailbox_publish_kernel(
     const uint8_t* aq, const uint8_t* aq_base,
     uint32_t layer, uint32_t rows, uint32_t hidden, uint32_t top_k,
     int32_t expert_base, uint32_t n_expert, uint32_t max_rows,
-    uint32_t shadow, uint32_t world) {
+    uint32_t shadow, uint32_t world,
+    const uint8_t* st_aq, const float* st_as, const uint16_t* st_x, uint32_t st_bf16) {
     __shared__ uint32_t seq;
     __shared__ uint32_t nr;
 
@@ -151,6 +152,24 @@ __global__ void mailbox_publish_kernel(
     const uintptr_t qptr = reinterpret_cast<uintptr_t>(aq);
     const uintptr_t qbase = reinterpret_cast<uintptr_t>(aq_base);
     if (qptr < qbase || ((qptr - qbase) % hidden) != 0) __builtin_trap();
+
+    /* R3_MOE_HELPER_FUSESTAGE: a small step's activation staging (what mailbox_stage_kernel does across a grid) done by
+     * this block, ahead of the routes: ~28 KB at a decode step, so a launch and its gap saved in front of every helper
+     * request. The system fence below orders these stores before the release of each request, as it does the routes'. */
+    if (st_aq) {
+        const uint32_t slot0 = step_slot(0, rank, helpers);
+        uint8_t* staged_q = base + h->activation_offset[slot0] + kActivationBf16Bytes;
+        float* staged_s = reinterpret_cast<float*>(
+            base + h->activation_offset[slot0] + kActivationBf16Bytes + kActivationQBytes);
+        for (uint32_t i = threadIdx.x; i < rows * hidden / 16u; i += blockDim.x)
+            reinterpret_cast<uint4*>(staged_q)[i] = reinterpret_cast<const uint4*>(st_aq)[i];
+        for (uint32_t i = threadIdx.x; i < rows * scale_cols; i += blockDim.x) staged_s[i] = st_as[i];
+        if (st_bf16) {
+            uint16_t* staged_x = reinterpret_cast<uint16_t*>(base + h->activation_offset[slot0]);
+            for (uint32_t i = threadIdx.x; i < rows * hidden / 8u; i += blockDim.x)
+                reinterpret_cast<uint4*>(staged_x)[i] = reinterpret_cast<const uint4*>(st_x)[i];
+        }
+    }
 
     for (uint32_t k = 0; k < helpers; ++k) {
         const uint32_t slot = step_slot(k, rank, helpers);
@@ -543,6 +562,10 @@ int publish_launch(const RadArgs* a, RadStream stream) {
 
     /* kHidden is a multiple of 16, so the 16-byte copies cover every row exactly. */
     const uint32_t blocks16 = ((uint32_t)rows * (uint32_t)hidden / 16u + 255u) / 256u;
+    /* R3_MOE_HELPER_FUSESTAGE (default on): a step of at most 16 rows is staged by the publish kernel itself. */
+    const char* fs_env = std::getenv("R3_MOE_HELPER_FUSESTAGE");
+    const bool fuse_stage = rows <= 16 && (!fs_env || std::strcmp(fs_env, "0") != 0);
+    if (!fuse_stage)
     hipLaunchKernelGGL(mailbox_stage_kernel, dim3(blocks16 > 512u ? 512u : blocks16),
                        dim3(256), 0, (hipStream_t)stream, static_cast<uint8_t*>(d->mailbox), d->rank,
                        d->helpers, static_cast<const uint8_t*>(a->t[3].data),
@@ -557,7 +580,10 @@ int publish_launch(const RadArgs* a, RadStream stream) {
                        static_cast<const uint8_t*>(a->t[5].data),
                        (uint32_t)layer, (uint32_t)rows, (uint32_t)hidden, (uint32_t)top_k,
                        (int32_t)expert_base, (uint32_t)n_expert, d->max_rows,
-                       d->shadow, d->world);
+                       d->shadow, d->world,
+                       fuse_stage ? static_cast<const uint8_t*>(a->t[3].data) : nullptr,
+                       static_cast<const float*>(a->t[4].data),
+                       static_cast<const uint16_t*>(a->t[2].data), d->cpu_ref);
     return hipGetLastError() == hipSuccess ? RAD_OK : RAD_E_DEVICE;
 }
 
