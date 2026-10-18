@@ -17,12 +17,13 @@ python3 - tools/lab/radiance/helper-ab.json $W/helper-capture.json $CAP $EVERY $
 import json, sys
 d = json.load(open(sys.argv[1]))
 a = d["arms"][0]
-a["name"] = "capture"
+a["name"] = "capture-a"
 a["settings"]["R3_MOE_HELPER_ROWS"] = "0"
 a.setdefault("environment", {}).update({"R3_MOE_HELPER_CAPTURE": sys.argv[3],
                                         "R3_MOE_HELPER_CAPTURE_EVERY": sys.argv[4],
                                         "R3_MOE_HELPER_CAPTURE_MAX": sys.argv[5]})
-d["arms"] = [a]
+c = json.loads(json.dumps(a)); c["name"] = "capture-b"   # the harness wants two arms; both record
+d["arms"] = [a, c]
 json.dump(d, open(sys.argv[2], "w"), indent=1)
 PY
 export RAD_BIN=$B/bin/radiance RAD_HOME=$B/radiance_home R9700_BDF=0000:09:00.0
