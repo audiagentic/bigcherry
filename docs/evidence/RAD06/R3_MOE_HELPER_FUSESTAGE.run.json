@@ -1,0 +1,685 @@
+{
+  "schema_version": 1,
+  "capture_kind": "server-bench-balanced-v1",
+  "evidence_role": "diagnostic",
+  "performance_admitted": false,
+  "admission_blockers": [
+    "full source provenance and work equivalence require verification",
+    "replay activation, if applicable, requires separate admission"
+  ],
+  "configuration": {
+    "_comment": "RAD06 (2026-10-18): R3_MOE_HELPER_FUSESTAGE off vs on: the engine's activation staging for a decode-sized step done by the publish kernel instead of a separate staging kernel. Bit-identical data; decode tok/s comparable. Four pairs resolve ~1%. Set RAD_BIN, RAD_HOME and R9700_BDF before use. Not used by tests.",
+    "schema_version": 1,
+    "engine": "radiance",
+    "evidence_role": "diagnostic",
+    "execution_evidence": "observe",
+    "model": "/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad",
+    "server_args": [
+      "--radiance-home",
+      "${RAD_HOME}",
+      "--kernels",
+      "libr4d,libr3moe,libref",
+      "--placement",
+      "expert_tiered",
+      "--ngram-placement",
+      "ram",
+      "--max-num-seqs",
+      "6",
+      "--max-num-batched-tokens",
+      "4096",
+      "--checkpoint-interval",
+      "4096",
+      "--kv-cache-dtype",
+      "fp8",
+      "--num-speculative-tokens",
+      "3",
+      "--tp",
+      "1",
+      "--host-pool-mib",
+      "30720",
+      "--max-model-len",
+      "32768"
+    ],
+    "environment": {
+      "HIP_VISIBLE_DEVICES": "0",
+      "ROCR_VISIBLE_DEVICES": "2",
+      "RADIANCE_HOME": "${RAD_HOME}",
+      "R3_MOE_HELPER_SKIP_OWNED": "1"
+    },
+    "expected_execution": {
+      "backend": "ROCm",
+      "architectures": [
+        "gfx1201"
+      ],
+      "locators": [
+        "${R9700_BDF}"
+      ]
+    },
+    "bench_configs": "mtp-dual",
+    "required_metrics": [
+      "pp1024_tps",
+      "tg512_tps"
+    ],
+    "repetitions": 1,
+    "health_timeout_s": 900,
+    "arms": [
+      {
+        "name": "stage-off",
+        "mode": "stock",
+        "shutdown_method": "sigint",
+        "binary": "${RAD_BIN}",
+        "settings": {
+          "R3_MOE_HELPER": "1",
+          "R3_MOE_HELPER_DEVICES": "0 1",
+          "R3_MOE_HELPER_MOE_DOWN_TILE": "1",
+          "R3_MOE_HELPER_ENGINE_RANKS": "1",
+          "R3_MOE_HELPER_MAX_ROWS": "4096",
+          "R3_MOE_HELPER_SMALL_ROWS": "8",
+          "R3_MOE_HELPER_MIB": "22528",
+          "R3_MOE_HELPER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
+          "R3_MOE_NATIVE": "1",
+          "R3_MOE_HELPER_FUSESTAGE": "0"
+        }
+      },
+      {
+        "name": "stage-on",
+        "mode": "stock",
+        "shutdown_method": "sigint",
+        "binary": "${RAD_BIN}",
+        "settings": {
+          "R3_MOE_HELPER": "1",
+          "R3_MOE_HELPER_DEVICES": "0 1",
+          "R3_MOE_HELPER_MOE_DOWN_TILE": "1",
+          "R3_MOE_HELPER_ENGINE_RANKS": "1",
+          "R3_MOE_HELPER_MAX_ROWS": "4096",
+          "R3_MOE_HELPER_SMALL_ROWS": "8",
+          "R3_MOE_HELPER_MIB": "22528",
+          "R3_MOE_HELPER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
+          "R3_MOE_NATIVE": "1",
+          "R3_MOE_HELPER_FUSESTAGE": "1"
+        }
+      }
+    ]
+  },
+  "model_sha256": "0af5e96244e80c21ac8edca1719dae49b8a201b94a2f3994c3e24026ceaa4d20",
+  "arm_model_sha256": {},
+  "arm_provenance": {
+    "stage-off": {
+      "campaign_metadata": {
+        "binary_hash": "13b8c1c6341f47b014b0a014c7e43691a624d42b1e5bd4cf895066f7e15dc04d",
+        "build_id": "ad41bb5f3cadd27c7acd6f3288ebb059",
+        "build_plan_id": "2bf0300543d57c4aaf2cd758fb9500d4",
+        "effective_configure": {
+          "CMAKE_BUILD_TYPE": "Release",
+          "CMAKE_CXX_COMPILER": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14",
+          "CMAKE_CXX_COMPILER-ADVANCED": "1",
+          "CMAKE_CXX_COMPILER_AR": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ar-14",
+          "CMAKE_CXX_COMPILER_AR-ADVANCED": "1",
+          "CMAKE_CXX_COMPILER_RANLIB": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ranlib-14",
+          "CMAKE_CXX_COMPILER_RANLIB-ADVANCED": "1",
+          "CMAKE_C_COMPILER": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14",
+          "CMAKE_C_COMPILER-ADVANCED": "1",
+          "CMAKE_C_COMPILER_AR": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ar-14",
+          "CMAKE_C_COMPILER_AR-ADVANCED": "1",
+          "CMAKE_C_COMPILER_RANLIB": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ranlib-14",
+          "CMAKE_C_COMPILER_RANLIB-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS": "",
+          "CMAKE_EXE_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_EXE_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_EXE_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_EXE_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS": "",
+          "CMAKE_MODULE_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_MODULE_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_MODULE_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_MODULE_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS": "",
+          "CMAKE_SHARED_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_SHARED_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_SHARED_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_SHARED_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1"
+        },
+        "generated_compile_inputs_hash": null,
+        "generated_inputs_verification": null,
+        "runtime_artifacts": {
+          "radiance": "13b8c1c6341f47b014b0a014c7e43691a624d42b1e5bd4cf895066f7e15dc04d"
+        },
+        "runtime_bundle_hash": "0eff31499321695b8f132a6b1a1eb9ee",
+        "source_slice_id": "8746530494caadeea8b16c865c2443fa",
+        "toolchain": [
+          [
+            "CMAKE_CXX_COMPILER",
+            "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14"
+          ],
+          [
+            "CMAKE_C_COMPILER",
+            "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14"
+          ],
+          [
+            "CMAKE_GENERATOR",
+            "Ninja"
+          ],
+          [
+            "c_compiler_realpath",
+            "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14"
+          ],
+          [
+            "c_compiler_version",
+            "x86_64-linux-gnu-gcc-14 (Ubuntu 14.2.0-4ubuntu2~24.04.1) 14.2.0"
+          ],
+          [
+            "cmake_version",
+            "cmake version 3.28.3"
+          ],
+          [
+            "cxx_compiler_realpath",
+            "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14"
+          ],
+          [
+            "cxx_compiler_version",
+            "x86_64-linux-gnu-g++-14 (Ubuntu 14.2.0-4ubuntu2~24.04.1) 14.2.0"
+          ],
+          [
+            "ninja_version",
+            "1.11.1"
+          ]
+        ]
+      },
+      "observed_runtime_artifacts": {
+        "radiance": "13b8c1c6341f47b014b0a014c7e43691a624d42b1e5bd4cf895066f7e15dc04d"
+      },
+      "compiler_observation": null,
+      "source_attestation": {
+        "upstream_revision": "1e968f6e1d86e2544455b00e9e57c09690d9ea10",
+        "tree_oid": "785d019003bcc0e305a3c499643920ca416c4553",
+        "object_format": "sha1",
+        "source_slice_id": "8746530494caadeea8b16c865c2443fa",
+        "allowed_untracked": [
+          "abi/bc_moe_remote.h",
+          "arch/common/bc_moe_remote_block.h",
+          "core/place/bc_moe_remote.cpp",
+          "core/place/bc_moe_remote_place.h"
+        ]
+      }
+    },
+    "stage-on": {
+      "campaign_metadata": {
+        "binary_hash": "13b8c1c6341f47b014b0a014c7e43691a624d42b1e5bd4cf895066f7e15dc04d",
+        "build_id": "ad41bb5f3cadd27c7acd6f3288ebb059",
+        "build_plan_id": "2bf0300543d57c4aaf2cd758fb9500d4",
+        "effective_configure": {
+          "CMAKE_BUILD_TYPE": "Release",
+          "CMAKE_CXX_COMPILER": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14",
+          "CMAKE_CXX_COMPILER-ADVANCED": "1",
+          "CMAKE_CXX_COMPILER_AR": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ar-14",
+          "CMAKE_CXX_COMPILER_AR-ADVANCED": "1",
+          "CMAKE_CXX_COMPILER_RANLIB": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ranlib-14",
+          "CMAKE_CXX_COMPILER_RANLIB-ADVANCED": "1",
+          "CMAKE_C_COMPILER": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14",
+          "CMAKE_C_COMPILER-ADVANCED": "1",
+          "CMAKE_C_COMPILER_AR": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ar-14",
+          "CMAKE_C_COMPILER_AR-ADVANCED": "1",
+          "CMAKE_C_COMPILER_RANLIB": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ranlib-14",
+          "CMAKE_C_COMPILER_RANLIB-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS": "",
+          "CMAKE_EXE_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_EXE_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_EXE_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_EXE_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS": "",
+          "CMAKE_MODULE_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_MODULE_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_MODULE_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_MODULE_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS": "",
+          "CMAKE_SHARED_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_SHARED_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_SHARED_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_SHARED_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1"
+        },
+        "generated_compile_inputs_hash": null,
+        "generated_inputs_verification": null,
+        "runtime_artifacts": {
+          "radiance": "13b8c1c6341f47b014b0a014c7e43691a624d42b1e5bd4cf895066f7e15dc04d"
+        },
+        "runtime_bundle_hash": "0eff31499321695b8f132a6b1a1eb9ee",
+        "source_slice_id": "8746530494caadeea8b16c865c2443fa",
+        "toolchain": [
+          [
+            "CMAKE_CXX_COMPILER",
+            "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14"
+          ],
+          [
+            "CMAKE_C_COMPILER",
+            "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14"
+          ],
+          [
+            "CMAKE_GENERATOR",
+            "Ninja"
+          ],
+          [
+            "c_compiler_realpath",
+            "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14"
+          ],
+          [
+            "c_compiler_version",
+            "x86_64-linux-gnu-gcc-14 (Ubuntu 14.2.0-4ubuntu2~24.04.1) 14.2.0"
+          ],
+          [
+            "cmake_version",
+            "cmake version 3.28.3"
+          ],
+          [
+            "cxx_compiler_realpath",
+            "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14"
+          ],
+          [
+            "cxx_compiler_version",
+            "x86_64-linux-gnu-g++-14 (Ubuntu 14.2.0-4ubuntu2~24.04.1) 14.2.0"
+          ],
+          [
+            "ninja_version",
+            "1.11.1"
+          ]
+        ]
+      },
+      "observed_runtime_artifacts": {
+        "radiance": "13b8c1c6341f47b014b0a014c7e43691a624d42b1e5bd4cf895066f7e15dc04d"
+      },
+      "compiler_observation": null,
+      "source_attestation": {
+        "upstream_revision": "1e968f6e1d86e2544455b00e9e57c09690d9ea10",
+        "tree_oid": "785d019003bcc0e305a3c499643920ca416c4553",
+        "object_format": "sha1",
+        "source_slice_id": "8746530494caadeea8b16c865c2443fa",
+        "allowed_untracked": [
+          "abi/bc_moe_remote.h",
+          "arch/common/bc_moe_remote_block.h",
+          "core/place/bc_moe_remote.cpp",
+          "core/place/bc_moe_remote_place.h"
+        ]
+      }
+    }
+  },
+  "arm_variables": {
+    "stage-off": {
+      "environment": {},
+      "settings": {
+        "R3_MOE_HELPER": "1",
+        "R3_MOE_HELPER_DEVICES": "0 1",
+        "R3_MOE_HELPER_MOE_DOWN_TILE": "1",
+        "R3_MOE_HELPER_ENGINE_RANKS": "1",
+        "R3_MOE_HELPER_MAX_ROWS": "4096",
+        "R3_MOE_HELPER_SMALL_ROWS": "8",
+        "R3_MOE_HELPER_MIB": "22528",
+        "R3_MOE_HELPER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
+        "R3_MOE_NATIVE": "1",
+        "R3_MOE_HELPER_FUSESTAGE": "0"
+      }
+    },
+    "stage-on": {
+      "environment": {},
+      "settings": {
+        "R3_MOE_HELPER": "1",
+        "R3_MOE_HELPER_DEVICES": "0 1",
+        "R3_MOE_HELPER_MOE_DOWN_TILE": "1",
+        "R3_MOE_HELPER_ENGINE_RANKS": "1",
+        "R3_MOE_HELPER_MAX_ROWS": "4096",
+        "R3_MOE_HELPER_SMALL_ROWS": "8",
+        "R3_MOE_HELPER_MIB": "22528",
+        "R3_MOE_HELPER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
+        "R3_MOE_NATIVE": "1",
+        "R3_MOE_HELPER_FUSESTAGE": "1"
+      }
+    }
+  },
+  "schedule": [
+    [
+      "stage-off",
+      "stage-on"
+    ],
+    [
+      "stage-on",
+      "stage-off"
+    ]
+  ],
+  "schedule_seed": 0,
+  "settle_seconds": 20.0,
+  "runs": [
+    {
+      "pair": 1,
+      "mode": "stage-off",
+      "position": 0,
+      "returncode": 0,
+      "performance_admitted": false,
+      "server_log": "/mnt/data/bigcherry-work/runs/rad06-evidence-R3_MOE_HELPER_FUSESTAGE-1019001908/pair-001-stage-off/server.log",
+      "settings": {
+        "R3_MOE_HELPER": "1",
+        "R3_MOE_HELPER_DEVICES": "0 1",
+        "R3_MOE_HELPER_MOE_DOWN_TILE": "1",
+        "R3_MOE_HELPER_ENGINE_RANKS": "1",
+        "R3_MOE_HELPER_MAX_ROWS": "4096",
+        "R3_MOE_HELPER_SMALL_ROWS": "8",
+        "R3_MOE_HELPER_MIB": "22528",
+        "R3_MOE_HELPER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
+        "R3_MOE_NATIVE": "1",
+        "R3_MOE_HELPER_FUSESTAGE": "0"
+      },
+      "execution_attestation": null,
+      "execution_evidence_status": "missing",
+      "admission_blockers": [
+        "physical-device execution evidence missing"
+      ],
+      "metrics": {
+        "pp256_tps": 1506.46,
+        "tg128_tps": 113.97,
+        "pp1024_tps": 3310.59,
+        "pp4096_tps": 3307.23,
+        "tg512_tps": 140.49,
+        "tg2048_tps": 151.79
+      },
+      "elapsed_s": 149.90407106513157,
+      "shutdown": {
+        "method": "sigint",
+        "requested": true,
+        "forced": false,
+        "returncode": 0,
+        "error": null
+      },
+      "sidecars": [
+        {
+          "name": "helper0",
+          "argv": [
+            "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/8746530494caadeea8b16c865c2443fa/2bf0300543d57c4aaf2cd758fb9500d4/radiance_home/helpers/r3_moe_helper",
+            "/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
+          ],
+          "log": "/mnt/data/bigcherry-work/runs/rad06-evidence-R3_MOE_HELPER_FUSESTAGE-1019001908/pair-001-stage-off/helper0.log",
+          "ready_s": 0.300830421037972,
+          "returncode": 0,
+          "exited_before_stop": false,
+          "killed": false
+        },
+        {
+          "name": "helper1",
+          "argv": [
+            "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/8746530494caadeea8b16c865c2443fa/2bf0300543d57c4aaf2cd758fb9500d4/radiance_home/helpers/r3_moe_helper",
+            "/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
+          ],
+          "log": "/mnt/data/bigcherry-work/runs/rad06-evidence-R3_MOE_HELPER_FUSESTAGE-1019001908/pair-001-stage-off/helper1.log",
+          "ready_s": 0.3009561779908836,
+          "returncode": 0,
+          "exited_before_stop": false,
+          "killed": false
+        }
+      ]
+    },
+    {
+      "pair": 1,
+      "mode": "stage-on",
+      "position": 1,
+      "returncode": 0,
+      "performance_admitted": false,
+      "server_log": "/mnt/data/bigcherry-work/runs/rad06-evidence-R3_MOE_HELPER_FUSESTAGE-1019001908/pair-001-stage-on/server.log",
+      "settings": {
+        "R3_MOE_HELPER": "1",
+        "R3_MOE_HELPER_DEVICES": "0 1",
+        "R3_MOE_HELPER_MOE_DOWN_TILE": "1",
+        "R3_MOE_HELPER_ENGINE_RANKS": "1",
+        "R3_MOE_HELPER_MAX_ROWS": "4096",
+        "R3_MOE_HELPER_SMALL_ROWS": "8",
+        "R3_MOE_HELPER_MIB": "22528",
+        "R3_MOE_HELPER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
+        "R3_MOE_NATIVE": "1",
+        "R3_MOE_HELPER_FUSESTAGE": "1"
+      },
+      "execution_attestation": null,
+      "execution_evidence_status": "missing",
+      "admission_blockers": [
+        "physical-device execution evidence missing"
+      ],
+      "metrics": {
+        "pp256_tps": 1532.42,
+        "tg128_tps": 114.61,
+        "pp1024_tps": 3302.85,
+        "pp4096_tps": 3305.89,
+        "tg512_tps": 146.01,
+        "tg2048_tps": 152.73
+      },
+      "elapsed_s": 169.90984825789928,
+      "shutdown": {
+        "method": "sigint",
+        "requested": true,
+        "forced": false,
+        "returncode": 0,
+        "error": null
+      },
+      "sidecars": [
+        {
+          "name": "helper0",
+          "argv": [
+            "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/8746530494caadeea8b16c865c2443fa/2bf0300543d57c4aaf2cd758fb9500d4/radiance_home/helpers/r3_moe_helper",
+            "/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
+          ],
+          "log": "/mnt/data/bigcherry-work/runs/rad06-evidence-R3_MOE_HELPER_FUSESTAGE-1019001908/pair-001-stage-on/helper0.log",
+          "ready_s": 0.20038078492507339,
+          "returncode": 0,
+          "exited_before_stop": false,
+          "killed": false
+        },
+        {
+          "name": "helper1",
+          "argv": [
+            "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/8746530494caadeea8b16c865c2443fa/2bf0300543d57c4aaf2cd758fb9500d4/radiance_home/helpers/r3_moe_helper",
+            "/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
+          ],
+          "log": "/mnt/data/bigcherry-work/runs/rad06-evidence-R3_MOE_HELPER_FUSESTAGE-1019001908/pair-001-stage-on/helper1.log",
+          "ready_s": 0.20050557400099933,
+          "returncode": 0,
+          "exited_before_stop": false,
+          "killed": false
+        }
+      ]
+    },
+    {
+      "pair": 2,
+      "mode": "stage-on",
+      "position": 0,
+      "returncode": 0,
+      "performance_admitted": false,
+      "server_log": "/mnt/data/bigcherry-work/runs/rad06-evidence-R3_MOE_HELPER_FUSESTAGE-1019001908/pair-002-stage-on/server.log",
+      "settings": {
+        "R3_MOE_HELPER": "1",
+        "R3_MOE_HELPER_DEVICES": "0 1",
+        "R3_MOE_HELPER_MOE_DOWN_TILE": "1",
+        "R3_MOE_HELPER_ENGINE_RANKS": "1",
+        "R3_MOE_HELPER_MAX_ROWS": "4096",
+        "R3_MOE_HELPER_SMALL_ROWS": "8",
+        "R3_MOE_HELPER_MIB": "22528",
+        "R3_MOE_HELPER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
+        "R3_MOE_NATIVE": "1",
+        "R3_MOE_HELPER_FUSESTAGE": "1"
+      },
+      "execution_attestation": null,
+      "execution_evidence_status": "missing",
+      "admission_blockers": [
+        "physical-device execution evidence missing"
+      ],
+      "metrics": {
+        "pp256_tps": 1513.32,
+        "tg128_tps": 111.88,
+        "pp1024_tps": 3304.33,
+        "pp4096_tps": 3298.27,
+        "tg512_tps": 139.63,
+        "tg2048_tps": 152.24
+      },
+      "elapsed_s": 158.14190298109315,
+      "shutdown": {
+        "method": "sigint",
+        "requested": true,
+        "forced": false,
+        "returncode": 0,
+        "error": null
+      },
+      "sidecars": [
+        {
+          "name": "helper0",
+          "argv": [
+            "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/8746530494caadeea8b16c865c2443fa/2bf0300543d57c4aaf2cd758fb9500d4/radiance_home/helpers/r3_moe_helper",
+            "/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
+          ],
+          "log": "/mnt/data/bigcherry-work/runs/rad06-evidence-R3_MOE_HELPER_FUSESTAGE-1019001908/pair-002-stage-on/helper0.log",
+          "ready_s": 0.20044335699640214,
+          "returncode": 0,
+          "exited_before_stop": false,
+          "killed": false
+        },
+        {
+          "name": "helper1",
+          "argv": [
+            "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/8746530494caadeea8b16c865c2443fa/2bf0300543d57c4aaf2cd758fb9500d4/radiance_home/helpers/r3_moe_helper",
+            "/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
+          ],
+          "log": "/mnt/data/bigcherry-work/runs/rad06-evidence-R3_MOE_HELPER_FUSESTAGE-1019001908/pair-002-stage-on/helper1.log",
+          "ready_s": 0.2005187110044062,
+          "returncode": 0,
+          "exited_before_stop": false,
+          "killed": false
+        }
+      ]
+    },
+    {
+      "pair": 2,
+      "mode": "stage-off",
+      "position": 1,
+      "returncode": 0,
+      "performance_admitted": false,
+      "server_log": "/mnt/data/bigcherry-work/runs/rad06-evidence-R3_MOE_HELPER_FUSESTAGE-1019001908/pair-002-stage-off/server.log",
+      "settings": {
+        "R3_MOE_HELPER": "1",
+        "R3_MOE_HELPER_DEVICES": "0 1",
+        "R3_MOE_HELPER_MOE_DOWN_TILE": "1",
+        "R3_MOE_HELPER_ENGINE_RANKS": "1",
+        "R3_MOE_HELPER_MAX_ROWS": "4096",
+        "R3_MOE_HELPER_SMALL_ROWS": "8",
+        "R3_MOE_HELPER_MIB": "22528",
+        "R3_MOE_HELPER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
+        "R3_MOE_NATIVE": "1",
+        "R3_MOE_HELPER_FUSESTAGE": "0"
+      },
+      "execution_attestation": null,
+      "execution_evidence_status": "missing",
+      "admission_blockers": [
+        "physical-device execution evidence missing"
+      ],
+      "metrics": {
+        "pp256_tps": 1553.53,
+        "tg128_tps": 111.16,
+        "pp1024_tps": 3298.06,
+        "pp4096_tps": 3300.15,
+        "tg512_tps": 138.46,
+        "tg2048_tps": 149.68
+      },
+      "elapsed_s": 165.39657726092264,
+      "shutdown": {
+        "method": "sigint",
+        "requested": true,
+        "forced": false,
+        "returncode": 0,
+        "error": null
+      },
+      "sidecars": [
+        {
+          "name": "helper0",
+          "argv": [
+            "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/8746530494caadeea8b16c865c2443fa/2bf0300543d57c4aaf2cd758fb9500d4/radiance_home/helpers/r3_moe_helper",
+            "/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
+          ],
+          "log": "/mnt/data/bigcherry-work/runs/rad06-evidence-R3_MOE_HELPER_FUSESTAGE-1019001908/pair-002-stage-off/helper0.log",
+          "ready_s": 0.20043970900587738,
+          "returncode": 0,
+          "exited_before_stop": false,
+          "killed": false
+        },
+        {
+          "name": "helper1",
+          "argv": [
+            "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/8746530494caadeea8b16c865c2443fa/2bf0300543d57c4aaf2cd758fb9500d4/radiance_home/helpers/r3_moe_helper",
+            "/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
+          ],
+          "log": "/mnt/data/bigcherry-work/runs/rad06-evidence-R3_MOE_HELPER_FUSESTAGE-1019001908/pair-002-stage-off/helper1.log",
+          "ready_s": 0.20060989796184003,
+          "returncode": 0,
+          "exited_before_stop": false,
+          "killed": false
+        }
+      ]
+    }
+  ],
+  "exploratory_comparisons": {
+    "stage-on_vs_stage-off": {
+      "pp1024_tps": {
+        "paired_rounds": 2,
+        "geometric_effect_pct": -0.022066381634955334,
+        "ci95_low_pct": -0.23379518454414994,
+        "ci95_high_pct": 0.19011176267260677,
+        "resamples": 10000,
+        "seed": 0,
+        "pair_ratios": [
+          0.9976620481545585,
+          1.001901117626726
+        ]
+      },
+      "tg512_tps": {
+        "paired_rounds": 2,
+        "geometric_effect_pct": 2.3754443076375864,
+        "ci95_low_pct": 0.845009388993212,
+        "ci95_high_pct": 3.929105274396738,
+        "resamples": 10000,
+        "seed": 0,
+        "pair_ratios": [
+          1.0392910527439674,
+          1.0084500938899321
+        ]
+      }
+    }
+  },
+  "setting_activation": {
+    "stage-on": {
+      "R3_MOE_HELPER_FUSESTAGE": {
+        "status": "executed",
+        "mechanism": "libr3:R3_MOE_HELPER_FUSESTAGE",
+        "detail": "marker 'r3_moe: R3_MOE_HELPER_FUSESTAGE on': control False, subject True"
+      }
+    }
+  }
+}

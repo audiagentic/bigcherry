@@ -1039,6 +1039,24 @@ int main(int argc, char** argv) {
     /* And the activation tile widened to half once at staging instead of by every wave that reads it: bit-identical,
      * a further 7-8% off the grouped GEMM on four real captured requests (RAD06 2026-10-18). 0 turns it off. */
     (void)::setenv("R3_MOE_AHALF", "1", 0);
+    /* The activation markers component.toml names: one line a flag that is on, printed here and only when on, so a
+     * capture's evidence check finds it in the arm that sets the flag and not in the control. FP16 and AHALF are read by
+     * libr3's launcher at each launch; VECIO and FUSEROUTE by the lane at each request (default on unless "0"). */
+    {
+        auto is_on = [](const char* name, bool dflt) {
+            const char* v = std::getenv(name);
+            return v && *v ? std::strcmp(v, "0") != 0 : dflt;
+        };
+        const bool native = is_on("R3_MOE_NATIVE", false);
+        if (native && is_on("R3_MOE_FP16", false))
+            std::fprintf(stderr, "r3_moe_helper: R3_MOE_FP16 on - f16 WMMA MoE GEMM\n");
+        if (native && is_on("R3_MOE_FP16", false) && is_on("R3_MOE_AHALF", false))
+            std::fprintf(stderr, "r3_moe_helper: R3_MOE_AHALF on - activation tile widened to half at staging\n");
+        if (is_on("R3_MOE_HELPER_VECIO", true))
+            std::fprintf(stderr, "r3_moe_helper: R3_MOE_HELPER_VECIO on - 16-byte lane I/O\n");
+        if (is_on("R3_MOE_HELPER_FUSEROUTE", true))
+            std::fprintf(stderr, "r3_moe_helper: R3_MOE_HELPER_FUSEROUTE on - fused small-lane front end\n");
+    }
     /* --replay-sweep MODEL VARIANTS FILE...: one process, one model load and one expert allocation for every capture,
      * then each capture is replayed once per variant. VARIANTS is ';'-separated, each "NAME=value,NAME=value" (empty
      * = the environment as launched); the variant's variables are set (and the previous variant's unset) before the
