@@ -1,0 +1,63 @@
+---
+id: RHP07
+order: 7
+plan: patching-radiance-heat-placement
+state: pending
+created-at: '2026-10-18T14:26:48.723847+00:00'
+breadth: ''
+skill: advanced
+created-by: agent
+priority: P1
+work: L
+---
+
+# Tiered expert cache: performance-ranked hosts, decayed heat, hysteresis and interval reallocation
+
+## Description
+
+Owner idea 2026-10-19. Treat expert hosting as a performance-tiered cache. Tiers by measured cost: L1 R9700 engine-resident, L2 the 7900 XTX helpers, L3 the RX 6900 XT (gfx1030, when the RDNA2 backend exists), L4 host RAM (CPU compute or staged copy). Each (layer, expert) lives in the highest tier whose capacity its heat justifies. Reallocation runs at fixed intervals, never per request, with hysteresis so sessions that shift expert use do not thrash experts between tiers, and heat is aged so old demand fades. Builds on RHP02-RHP06 (single heat feed, persisted snapshot, cost-aware ranking, timed reevaluation, versioned migration epochs); this item is the policy layer and its offline evaluation.
+
+## Steps
+
+1. Heat signal: per (layer, expert) decayed counts with the decay constant in requests or tokens, not wall time; separate decode-row and prefill-row weights (decode is latency-critical, prefill is volume); per-session capped contribution so one session cannot dominate; optional critical-path weight from the trace (exposed helper wait by layer). Persist as the RHP03 snapshot, plus a bounded time series of interval snapshots for evaluation (not a database).
+2. Tier cost model: measured cost per expert-row per tier from the replay harness (compute speed, transfer path, queue effect), not a fixed rank; capacity per tier (R9700 after trunk and KV, ~22 GiB a XTX, 16 GB 6900 XT, RAM).
+3. Assignment: heat-per-cost fill from the top tier down, with a headroom slab per tier for background copies.
+4. Stability: dual thresholds (promote above X, demote below Y<X), minimum residency, a move budget per interval, and move only when predicted saving exceeds the move cost (weight bytes over the link). Apply at interval boundaries through the RHP06 epoch flip.
+5. Offline first: record real route traces over time (1/2/4/8 sessions, shifting topics), simulate policies with heat_mock/balance_score-style scorers; score critical-path latency and moves per hour, compare against static hot-first (today's baseline) and the RHP04 shadow ranking.
+6. Only then a live trial behind a default-off flag with identity and stress evidence.
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+Offline: the policy beats static hot-first on a shifting-session trace by a stated margin with bounded moves per hour; no oscillation under a synthetic flip-flop trace. Live: identity of outputs across epoch flips, no hang over repeated flips, throughput not below static ownership.
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+
+
+## Notes
+
+Today there is no heat history: ownership comes from one static histogram file (R3_MOE_HELPER_HISTOGRAM, hot-first via R3_MOE_HELPER_HEAT) taken at startup. Radiance's own mover has an internal runtime tracker (promotions/demotions seen in its end-of-run summary) that is not exported over time. RHP03 deliberately persists a snapshot, not a heat database; this item adds the bounded interval series needed to evaluate policies. Related: RAD10 (multi-stream flattens heat), RCS07 (RDNA2 tier L3).
+
+## Change Log
+
+- 2026-10-18T14:26:48.723847+00:00 (created-by): Created by agent

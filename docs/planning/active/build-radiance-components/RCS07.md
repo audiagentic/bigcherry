@@ -56,6 +56,8 @@ Replay agreement with the CPU reference on real captures; then lightweight-tier 
 
 Blocked on hardware and RCS05. Activation format differs (int8 vs FP8), so captures need a version bump or a per-backend activation plane.
 
+Updated 2026-10-19: hardware exists, the RX 6900 XT (gfx1030, 16 GB) on Brutus, so this is ready once RCS05 lands. Reference data: Strata (Niko1221/Strata, HIP backend for gfx1031/gfx1201) reports an RX 6700 XT 12 GB serving Flash-Next IQ3_XXS hybrid at 35-38 tok/s decode and 640-700 tok/s prefill; its RDNA2 path uses the signed integer dot instruction for quantised kernels and plain packed FP16/SGEMM for prefill (320 -> 690 tok/s); its PR #1897 K-quant MMQ prompt kernels take RDNA2 prefill 633 -> 1,036 tok/s. Kernel prior art, numbers unverified (GPT deep dive requested). The 6900 XT is tier L3 in the tiered expert cache (RHP07). First step stays the isolated feasibility test: capability probe plus replay of captured requests against the CPU reference, before any model load.
+
 ## Change Log
 
 - 2026-10-18T12:57:54.768641+00:00 (created-by): Created by agent
