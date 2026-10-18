@@ -1,7 +1,8 @@
 #!/bin/bash
 # RAD06: replay sweep - build the branch once, then ONE r3_moe_helper process (one model load, one expert allocation)
 # replays every captured request once per variant; rocprofv3's kernel trace gives per-call grouped-GEMM times and the
-# helper's engine_join line gives rel_l2 against the engine reference. No server, no per-variant load stage.
+# helper's engine_join line gives rel_l2 against the CPU engine reference (R3_MOE_SWEEP_FAST=0, ~2 min a run) or, by
+# default, each variant's output is compared bit for bit with the first variant's (sweep_cmp mismatches=N). No server, no per-variant load stage.
 # Usage: helper-sweep.sh <branch|-> "<variant>;<variant>..." [captures=4] [fixed env, e.g. R3_MOE_FP16=1 ...]
 #   variant = "NAME=v,NAME=v" (an empty variant = environment as launched); anything libr3 reads at launch can vary
 #   (R3_MOE_FP16, R3_MOE_PITCH16, R3_MOE_PROBE). `-` as branch reuses the newest build.
@@ -21,7 +22,7 @@ FILES=$(ls -S $W/captures/*.bin | head -$N | tr '\n' ' ')
 out=$W/sweep-out; rm -rf $out
 env HIP_VISIBLE_DEVICES=0 ROCR_VISIBLE_DEVICES=0 R3_MOE_HELPER_MIB=22528 R3_MOE_HELPER_SMALL_ROWS=8 R3_MOE_HELPER_MAX_ROWS=4096 \
   R3_MOE_NATIVE=1 R3_MOE_HELPER_MOE_DOWN_TILE=1 R3_MOE_HELPER_HEAT=$W/runs/perf51/heat.rank0.hot-first RADIANCE_HOME=$B/radiance_home \
-  timeout 1800 rocprofv3 --kernel-trace --output-format csv -d $out -o run -- \
+  R3_MOE_SWEEP_FAST=${R3_MOE_SWEEP_FAST:-1} timeout 3600 rocprofv3 --kernel-trace --output-format csv -d $out -o run -- \
   $B/radiance_home/helpers/r3_moe_helper --replay-sweep $M "$VARIANTS" $FILES > $out.log 2>&1
 echo "rc=$?"
 python3 - $out.log $(find $out -name '*kernel_trace.csv' | head -1) <<'PY'
@@ -32,7 +33,9 @@ for line in open(log):
     m = re.match(r'SWEEP run (\d+) capture (\d+) layer (\d+) variant \[(.*)\]', line)
     if m: runs.append([int(m[1]), int(m[2]), int(m[3]), m[4], None]); continue
     m = re.search(r'engine_join .*rel_l2=(\S+) max_abs=(\S+)', line)
-    if m and runs and runs[-1][4] is None: runs[-1][4] = m[1]
+    if m and runs and runs[-1][4] is None: runs[-1][4] = 'rel_l2=' + m[1]
+    m = re.search(r'sweep_cmp .*rank (\d+) (?:baseline )?mismatches=(\d+)', line)
+    if m and runs and runs[-1][4] is None: runs[-1][4] = 'mismatches=' + m[2]
 k = []
 for r in csv.DictReader(open(trace)):
     if 'moe_gemm_q_kernel' in r['Kernel_Name']:
@@ -48,6 +51,6 @@ for i, (idx, cap, layer, var, rel) in enumerate(runs):
     rows[(cap, layer)][var or '(default)'] = (sum(ds) / len(ds) / 1e3, rel)
 for key, vs in sorted(rows.items()):
     print('capture %d layer %d' % key)
-    for var, (us, rel) in vs.items(): print('   %-44s %8.1f us/call  rel_l2=%s' % (var, us, rel))
+    for var, (us, rel) in vs.items(): print('   %-44s %8.1f us/call  %s' % (var, us, rel))
 print('SWEEP_DONE')
 PY

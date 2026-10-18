@@ -13,6 +13,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <fcntl.h>
+#include <map>
 #include <memory>
 #include <set>
 #include <limits>
@@ -600,6 +601,9 @@ struct ReplayInput {
     std::vector<uint16_t> activation;
 };
 const ReplayInput* g_replay = nullptr;
+/* --replay-sweep with R3_MOE_SWEEP_FAST=1: no CPU reference; each variant's output is compared bit for bit with the
+ * first variant's of the same capture. */
+bool g_sweep_fast = false;
 
 bool load_replay(const char* path, ReplayInput* out) {
     FILE* f = std::fopen(path, "rb");
@@ -818,6 +822,20 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
         /* The helper's per-token rows, taken before the host reference rewrites the same slot. */
         const uint16_t* res = ptr<uint16_t>(map, h->result_offset[rank * kMaxRanks + rank]);
         const std::vector<uint16_t> got(res, res + (size_t)rows * kHidden);
+        if (g_sweep_fast) {
+            static std::map<std::pair<const ReplayInput*, uint32_t>, std::vector<uint16_t>> base;
+            const auto key = std::make_pair(g_replay, rank);
+            const auto it = base.find(key);
+            if (it == base.end()) {
+                base[key] = got;
+                std::printf("sweep_cmp layer %u rank %u baseline mismatches=0\n", layer, rank);
+            } else {
+                size_t mism = 0;
+                for (size_t i = 0; i < got.size(); ++i) mism += got[i] != it->second[i];
+                std::printf("sweep_cmp layer %u rank %u mismatches=%zu of %zu\n", layer, rank, mism, got.size());
+            }
+            continue;
+        }
 
         std::vector<uint16_t> want_route;
         const int hrc = compute_host_engine(model, map, q, &want_route);
@@ -901,6 +919,7 @@ int main(int argc, char** argv) {
                 std::fprintf(stderr, "r3_moe_helper: --replay-sweep %s: not a capture file\n", argv[i]);
                 return 2;
             }
+        { const char* f = std::getenv("R3_MOE_SWEEP_FAST"); g_sweep_fast = f && *f && std::strcmp(f, "0") != 0; }
         static std::string sweep_layer, sweep_rows;
         g_replay = &sweep_replays[0];
         sweep_layer = std::to_string(sweep_replays[0].hd.layer);
