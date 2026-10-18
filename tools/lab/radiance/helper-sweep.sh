@@ -59,7 +59,7 @@ for i, (idx, cap, layer, var, rel, *ex) in enumerate(runs):
     chunk = allk[i * da:(i + 1) * da]
     span = (max(c[1] for c in chunk) - min(c[0] for c in chunk)) / 1e3
     lane = sum(c[1] - c[0] for c in chunk if 'r3_moe_gpu::lane_' in c[2]) / 1e3
-    rows[(cap, layer)]['%d %s' % (idx % (len(runs) // (max(r[1] for r in runs) + 1)), var or '(default)')] = (sum(ds) / len(ds) / 1e3, str(rel) + ' ' + (ex[0] if ex else '') + ' span=%.0fus lane_kernels=%.0fus' % (span, lane))
+    rows[(cap, layer)]['%d %s' % (idx % (len(runs) // (max(r[1] for r in runs) + 1)), var or '(default)')] = ((sum(ds) / len(ds) / 1e3 if ds else 0.0), str(rel) + ' ' + (ex[0] if ex else '') + ' span=%.0fus lane_kernels=%.0fus' % (span, lane))
 for key, vs in sorted(rows.items()):
     print('capture %d layer %d' % key)
     for var, (us, rel) in vs.items(): print('   %-44s %8.1f us/call  %s' % (var, us, rel))
