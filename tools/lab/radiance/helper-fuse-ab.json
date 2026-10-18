@@ -1,0 +1,94 @@
+{
+  "_comment": "RAD06 (2026-10-18): R3_MOE_HELPER_FUSEROUTE off vs on: the small (decode) lane's routing prologue as one block against four memsets and four kernels. Bit-identical, so the generated text matches between arms and decode tok/s is comparable. Set RAD_BIN, RAD_HOME and R9700_BDF before use. Not used by tests.",
+  "schema_version": 1,
+  "engine": "radiance",
+  "evidence_role": "diagnostic",
+  "execution_evidence": "observe",
+  "model": "/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad",
+  "server_args": [
+    "--radiance-home",
+    "${RAD_HOME}",
+    "--kernels",
+    "libr4d,libr3moe,libref",
+    "--placement",
+    "expert_tiered",
+    "--ngram-placement",
+    "ram",
+    "--max-num-seqs",
+    "6",
+    "--max-num-batched-tokens",
+    "4096",
+    "--checkpoint-interval",
+    "4096",
+    "--kv-cache-dtype",
+    "fp8",
+    "--num-speculative-tokens",
+    "3",
+    "--tp",
+    "1",
+    "--host-pool-mib",
+    "30720",
+    "--max-model-len",
+    "32768"
+  ],
+  "environment": {
+    "HIP_VISIBLE_DEVICES": "0",
+    "ROCR_VISIBLE_DEVICES": "2",
+    "RADIANCE_HOME": "${RAD_HOME}",
+    "R3_MOE_HELPER_SKIP_OWNED": "1"
+  },
+  "expected_execution": {
+    "backend": "ROCm",
+    "architectures": [
+      "gfx1201"
+    ],
+    "locators": [
+      "${R9700_BDF}"
+    ]
+  },
+  "bench_configs": "mtp-dual",
+  "required_metrics": [
+    "pp1024_tps",
+    "tg512_tps"
+  ],
+  "repetitions": 1,
+  "health_timeout_s": 900,
+  "arms": [
+    {
+      "name": "fuse-off",
+      "mode": "stock",
+      "shutdown_method": "sigint",
+      "binary": "${RAD_BIN}",
+      "settings": {
+        "R3_MOE_HELPER": "1",
+        "R3_MOE_HELPER_DEVICES": "0 1",
+        "R3_MOE_HELPER_MOE_DOWN_TILE": "1",
+        "R3_MOE_HELPER_ENGINE_RANKS": "1",
+        "R3_MOE_HELPER_MAX_ROWS": "4096",
+        "R3_MOE_HELPER_SMALL_ROWS": "8",
+        "R3_MOE_HELPER_MIB": "22528",
+        "R3_MOE_HELPER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
+        "R3_MOE_NATIVE": "1",
+        "R3_MOE_HELPER_FUSEROUTE": "0"
+      }
+    },
+    {
+      "name": "fuse-on",
+      "mode": "stock",
+      "shutdown_method": "sigint",
+      "binary": "${RAD_BIN}",
+      "settings": {
+        "R3_MOE_HELPER": "1",
+        "R3_MOE_HELPER_DEVICES": "0 1",
+        "R3_MOE_HELPER_MOE_DOWN_TILE": "1",
+        "R3_MOE_HELPER_ENGINE_RANKS": "1",
+        "R3_MOE_HELPER_MAX_ROWS": "4096",
+        "R3_MOE_HELPER_SMALL_ROWS": "8",
+        "R3_MOE_HELPER_MIB": "22528",
+        "R3_MOE_HELPER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
+        "R3_MOE_NATIVE": "1",
+        "R3_MOE_HELPER_FUSEROUTE": "1"
+      }
+    }
+  ]
+}
