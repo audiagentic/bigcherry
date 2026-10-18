@@ -65,6 +65,8 @@ Added 2026-10-19 (owner): the topology must be configuration, not code. Brutus (
 4. The simulator takes a topology file as input and is validated on several (Brutus, 2 x P2P R9700, single 12 GB GPU + RAM), so nothing in the policy assumes Brutus.
 5. Runtime configuration: a [topology] and [expert-cache] section (interval, hysteresis thresholds, move budget, swap-reserve per device) in the engine runtime profile, with measured defaults.
 
+Miss policy (owner question 2026-10-19: CPU, or copy into the VRAM swap cache and keep it until ejected?): both, chosen by cost, with admission control. On a miss with R ready rows: run on CPU now when cpu_time(R) < copy_time + gpu_time(R) (typical for one decode row: an expert pair is about 2.4 MiB from our numbers, 22 GiB over 9,320 pairs, so a copy over a 3.5 GB/s hop is about 0.7 ms against tens of microseconds of CPU compute from RAM); stage into the swap cache and execute there when R is large (prefill) or the expert is hot enough to be reused. Never stall a step on the copy: execute the current request on CPU (or a direct stream) while an async admit runs, so the expert is resident for its next use. Admission is not automatic: a prefill touches many cold experts once, so admit only when the expert's decayed heat beats the would-be victim's (TinyLFU-style doorkeeper), otherwise the slab fills with one-shot experts. Admitted experts stay until ejected by lowest heat-per-cost; in-use experts are pinned for the duration of the request. The simulator compares CPU-only, admit-on-miss, and hybrid-with-admission on the same traces.
+
 ## Change Log
 
 - 2026-10-18T14:26:48.723847+00:00 (created-by): Created by agent
