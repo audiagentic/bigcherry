@@ -1,5 +1,5 @@
 {
-  "_comment": "RAD06/RHP (2026-10-18): helper ownership split. balance-off = the alternation down the global heat ranking; balance-on = the same jointly owned set split per layer by predicted cost (R3_MOE_HELPER_BALANCE); balance-speed also scales helper 1's cost by 1/0.92 (it measured ~8-10% slower). Three arms, so run with --pairs 3. Set RAD_BIN, RAD_HOME and R9700_BDF before use. Not used by tests.",
+  "_comment": "RAD06/RHP (2026-10-18): helper ownership split. balance-off = the alternation down the global heat ranking; balance-speed = the same jointly owned set split per layer by predicted cost (R3_MOE_HELPER_BALANCE) with helper 1's cost scaled by 1/0.92 (it measured ~8-10% slower). Two arms: --pairs 2 (a third arm, plain balance-on without the speed factor, needs --pairs 6 for a complete permutation block). Set RAD_BIN, RAD_HOME and R9700_BDF before use. Not used by tests.",
   "schema_version": 1,
   "engine": "radiance",
   "evidence_role": "diagnostic",
@@ -69,24 +69,6 @@
         "R3_MOE_HELPER_MIB": "22528",
         "R3_MOE_HELPER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
         "R3_MOE_NATIVE": "1"
-      }
-    },
-    {
-      "name": "balance-on",
-      "mode": "stock",
-      "shutdown_method": "sigint",
-      "binary": "${RAD_BIN}",
-      "settings": {
-        "R3_MOE_HELPER": "1",
-        "R3_MOE_HELPER_DEVICES": "0 1",
-        "R3_MOE_HELPER_MOE_DOWN_TILE": "1",
-        "R3_MOE_HELPER_ENGINE_RANKS": "1",
-        "R3_MOE_HELPER_MAX_ROWS": "4096",
-        "R3_MOE_HELPER_SMALL_ROWS": "8",
-        "R3_MOE_HELPER_MIB": "22528",
-        "R3_MOE_HELPER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
-        "R3_MOE_NATIVE": "1",
-        "R3_MOE_HELPER_BALANCE": "1"
       }
     },
     {
