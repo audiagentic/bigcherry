@@ -178,6 +178,10 @@ def engine_delta(before, after, running):
     if steps > 0:
         out["decode_ms_per_step"] = round(d.get("radiance:engine_step_seconds_decode_total", 0.0) / steps * 1000.0, 4)
         out["decode_tokens_per_step"] = round(d.get("radiance:decode_tokens_total", 0.0) / steps, 4)
+        seconds = d.get("radiance:engine_step_seconds_decode_total", 0.0)
+        if seconds > 0:
+            # throughput of the decode phase alone: the client-side aggregate also carries every prefill and the ramp
+            out["decode_tps_engine"] = round(d.get("radiance:decode_tokens_total", 0.0) / seconds, 3)
     drafted = d.get("radiance:draft_tokens_total", 0.0)
     if drafted > 0:
         out["draft_acceptance"] = round(d.get("radiance:draft_accepted_total", 0.0) / drafted, 4)
@@ -284,7 +288,7 @@ def run(url: str, model: str, stream_counts: list, prompt_tokens: int, max_token
                                "ttft_ms_max_median": statistics.median(g["ttft_ms_max"] for g in good),
                                "event_gap_ms_p95_median": statistics.median(g["event_gap_ms_p95"] for g in good)}
             eng = [r["engine"] for r in rounds if r["streams"] == n and r["ok"] and r.get("engine")]
-            for key in ("decode_ms_per_step", "decode_tokens_per_step", "draft_acceptance", "requests_running_mean"):
+            for key in ("decode_ms_per_step", "decode_tokens_per_step", "decode_tps_engine", "draft_acceptance", "requests_running_mean"):
                 vals = [e[key] for e in eng if key in e]
                 if vals:
                     summary[str(n)][key + "_median"] = statistics.median(vals)
@@ -313,7 +317,7 @@ def flat_metrics(record: dict) -> dict:
         if per:
             out[f"s{n}_stream_tps"] = statistics.median(per)
         eng = [r["engine"] for r in record["rounds"] if r["streams"] == n and r["ok"] and r.get("engine")]
-        for key in ("decode_ms_per_step", "decode_tokens_per_step", "draft_acceptance", "requests_running_mean"):
+        for key in ("decode_ms_per_step", "decode_tokens_per_step", "decode_tps_engine", "draft_acceptance", "requests_running_mean"):
             vals = [e[key] for e in eng if key in e]
             if vals:
                 out[f"s{n}_{key}"] = statistics.median(vals)

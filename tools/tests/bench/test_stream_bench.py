@@ -238,6 +238,8 @@ class StreamBench(unittest.TestCase):
             self.assertAlmostEqual(eng["decode_tokens_per_step"], 1.0, places=3)
             self.assertAlmostEqual(eng["draft_acceptance"], 1.0 / 3.0, places=3)
             self.assertGreater(eng["decode_ms_per_step"], 5.0)
+            self.assertAlmostEqual(eng["decode_tps_engine"], eng["decode_tokens_per_step"] / eng["decode_ms_per_step"] * 1000.0,
+                                   delta=eng["decode_tps_engine"] * 0.01)
             self.assertGreaterEqual(eng["requests_running_max"], 1)
 
     def test_a_server_without_metrics_still_benchmarks(self):
