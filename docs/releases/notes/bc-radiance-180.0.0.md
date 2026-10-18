@@ -1,6 +1,6 @@
 # bc-radiance-180.0.0
 
-BigCherry on radiance `v1.8.0` (`7a7707a95559`), BigCherry commit `fc4567a6ef73`.
+BigCherry on radiance `v1.8.0` (`7a7707a95559`), BigCherry commit `74922a4ec454`.
 Previous release: `bc-radiance-1.7.0-r0`.
 
 ## Bump record
