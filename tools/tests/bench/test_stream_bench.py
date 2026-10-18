@@ -115,7 +115,7 @@ class StreamBench(unittest.TestCase):
         flat = sb.flat_metrics(record)
         for n in (1, 2):
             for key in ("agg_tps", "ttft_p95_ms", "itl_p95_ms", "stream_tps"):
-                self.assertIn(f"{key}_s{n}", flat)
+                self.assertIn(f"s{n}_{key}", flat)
         _Handler.fail = True
         bad = sb.run(self.url, "m", [1], 4, 2, 1)
         with self.assertRaises(sb.StreamBenchError):

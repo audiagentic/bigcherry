@@ -184,19 +184,19 @@ def run(url: str, model: str, stream_counts: list, prompt_tokens: int, max_token
 
 def flat_metrics(record: dict) -> dict:
     """The record as flat named numbers, so a stream cell can feed the A/B harness like any other measurement:
-    agg_tps_sN, stream_tps_sN (mean per-stream decode), ttft_p95_ms_sN, itl_p95_ms_sN for each stream count N
+    sN_agg_tps, sN_stream_tps (mean per-stream decode), sN_ttft_p95_ms, sN_itl_p95_ms for each stream count N
     (medians over the repetitions). A run with any failed stream has no metrics."""
     if not record.get("ok"):
         raise StreamBenchError("a stream failed; no metrics")
     out = {}
     for n in record["config"]["streams"]:
         good = [r["aggregate"] for r in record["rounds"] if r["streams"] == n and r["ok"]]
-        out[f"agg_tps_s{n}"] = statistics.median(g["aggregate_tps"] for g in good)
-        out[f"ttft_p95_ms_s{n}"] = statistics.median(g["ttft_ms_p95"] for g in good)
-        out[f"itl_p95_ms_s{n}"] = statistics.median(g["itl_ms_p95"] for g in good)
+        out[f"s{n}_agg_tps"] = statistics.median(g["aggregate_tps"] for g in good)
+        out[f"s{n}_ttft_p95_ms"] = statistics.median(g["ttft_ms_p95"] for g in good)
+        out[f"s{n}_itl_p95_ms"] = statistics.median(g["itl_ms_p95"] for g in good)
         per = [g["mean_stream_decode_tps"] for g in good if g["mean_stream_decode_tps"] is not None]
         if per:
-            out[f"stream_tps_s{n}"] = statistics.median(per)
+            out[f"s{n}_stream_tps"] = statistics.median(per)
     return out
 
 
