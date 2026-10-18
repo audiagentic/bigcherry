@@ -38,3 +38,16 @@ Expected output has `tests: 23`, `failures: 0`. No dependencies besides Node 18+
 The model intentionally simplifies the pinned Radiance source: `core/runtime/ctx.cpp` may aggregate repeated speculative passes into one GPU bank; in the mock, a bank is one `Report` with `reports` multiplicity. Exact production semantics must be confirmed from `route_report_impl`, `route_flush`, `last_histogram_reports` and `Engine::tiering_dispatch`. The mock's stage FIFO is not a proposed drop-in buffer implementation. There is no engine ABI binding, HIP transfer, 32K prefill measurement, KLD test, host GPU memory budget, end-to-end latency, or hardware evidence in this package.
 
 The feature must remain experimental until the per-plan GPU/parity/quality acceptance gates pass. See `docs/planning/active/patching-radiance-heat-placement/README.md` and `docs/evidence/RHP01/mock-results.json`.
+
+## RHP07-01: trace-driven placement simulator
+
+`placement_trace.py` (v1 JSONL route-trace format, reader, seeded synthetic traces) and `placement_sim.py` (static hot-first
+against cost-aware, hysteretic dynamic placement on modelled critical-path latency). Host only: it never touches
+`r3_moe_helper`, the mailbox, radiance's mover or live ownership. The latency model constants are placeholders until RHP07-02
+calibrates them against measured traces, so its results show a policy's behaviour (moves, stability, adapting to a shift),
+not a real speedup.
+
+```bash
+python3 tools/lab/radiance/heat-placement/placement_sim.py --synth shift       # stationary | shift | flipflop | concurrent | prefill_burst
+python3 -m unittest tools.tests.radiance.test_placement_sim
+```
