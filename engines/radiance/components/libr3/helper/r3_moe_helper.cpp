@@ -824,6 +824,10 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
         const std::vector<uint16_t> got(res, res + (size_t)rows * kHidden);
         if (g_sweep_fast) {
             static std::map<std::pair<const ReplayInput*, uint32_t>, std::vector<uint16_t>> base;
+            double sum_abs = 0.0;
+            size_t nonzero = 0;
+            for (uint16_t v : got) { const double x = std::abs((double)bf16(v)); sum_abs += x; nonzero += v != 0; }
+            std::printf("sweep_sum layer %u rank %u sum_abs=%.6g nonzero=%zu of %zu\n", layer, rank, sum_abs, nonzero, got.size());
             const auto key = std::make_pair(g_replay, rank);
             const auto it = base.find(key);
             if (it == base.end()) {
