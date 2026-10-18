@@ -473,6 +473,8 @@ ownership.
 | `tools/lab/radiance/heat-placement/balance_score.py` | **TRANSITIONAL** | `radiance` lab topic file; offline, GPU-free scorer for the predicted helper balance of the alternation against a per-layer cost split (RAD06/RHP). |
 | `tools/lab/radiance/helper-trace-ab.json` | **TRANSITIONAL** | `radiance` lab topic file; the helper layout with R3_MOE_HELPER_TRACE for the unprofiled critical-path trace (RAD06/RHP). |
 | `tools/lab/radiance/heat-placement/trace_report.py` | **TRANSITIONAL** | `radiance` lab topic file; reads the helpers' TRACE lines and reports local work, exposed helper wait and helper time per lane (RAD06/RHP). |
+| `tools/lab/radiance/heat-placement/placement_trace.py` | **TRANSITIONAL** | `radiance` lab topic file; versioned (v1 JSONL) route-trace reader/validator and seeded synthetic traces for the placement simulator (RHP07-01).
+| `tools/lab/radiance/heat-placement/placement_sim.py` | **TRANSITIONAL** | `radiance` lab topic file; host-only, trace-driven simulator comparing static hot-first with cost-aware hysteretic dynamic placement on modelled critical-path latency; placeholder cost model, no GPU, no production code (RHP07-01).
 | `tools/lab/radiance/helper-fuse-ab.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark configuration, the fused small-lane routing prologue off vs on (RAD06). |
 | `tools/lab/radiance/helper-fusestage-ab.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark configuration, the engine's decode-sized activation staging folded into the publish kernel off vs on (RAD06). |
 | `tools/lab/radiance/helper-ahalf-ab.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark configuration, R3_MOE_AHALF off vs on with R3_MOE_FP16=1 (RAD06). |
