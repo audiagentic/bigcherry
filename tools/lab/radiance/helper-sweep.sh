@@ -43,6 +43,9 @@ for r in csv.DictReader(open(trace)):
     st, en = int(r['Start_Timestamp']), int(r['End_Timestamp'])
     allk.append((st, en, r['Kernel_Name']))
 allk.sort()
+# only the request's own kernels: the setup and table kernels around a run differ run to run
+allk = [x for x in allk if 'r3_moe_gpu::lane_' in x[2] or 'moe_gemm_q_kernel' in x[2] or
+        'moe_blockmap_kernel' in x[2] or 'gated_quant_fp8_kernel' in x[2]]
 k = [(st, en - st) for st, en, n in allk if 'moe_gemm_q_kernel' in n]
 if not runs or len(k) % len(runs) or len(allk) % len(runs):
     print('could not group', len(k), 'GEMM dispatches /', len(allk), 'dispatches into', len(runs), 'runs'); sys.exit(1)
