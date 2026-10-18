@@ -565,6 +565,13 @@ int publish_launch(const RadArgs* a, RadStream stream) {
     /* R3_MOE_HELPER_FUSESTAGE (default on): a step of at most 16 rows is staged by the publish kernel itself. */
     const char* fs_env = std::getenv("R3_MOE_HELPER_FUSESTAGE");
     const bool fuse_stage = rows <= 16 && (!fs_env || std::strcmp(fs_env, "0") != 0);
+    if (fuse_stage) {   /* the activation marker component.toml names, printed once */
+        static const bool announced = [] {
+            std::fprintf(stderr, "r3_moe: R3_MOE_HELPER_FUSESTAGE on - decode-sized staging in the publish kernel\n");
+            return true;
+        }();
+        (void)announced;
+    }
     if (!fuse_stage)
     hipLaunchKernelGGL(mailbox_stage_kernel, dim3(blocks16 > 512u ? 512u : blocks16),
                        dim3(256), 0, (hipStream_t)stream, static_cast<uint8_t*>(d->mailbox), d->rank,
