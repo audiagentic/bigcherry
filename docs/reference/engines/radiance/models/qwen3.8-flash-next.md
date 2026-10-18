@@ -140,6 +140,8 @@ Component settings (`engines/radiance/components/libr3/component.toml`; default 
 | `R3_MOE_HELPER_HEAT` | unset | experimental | route-heat file; helpers own the experts it ranks first - production uses `heat.rank0.hot-first` (hottest first, +4% prefill over coldest-first, RAD06 2026-10-17; coldest-first was +36% over unordered, RAD02) |
 | `R3_MOE_HELPER_GEMV` | 1 | experimental | decode MoE GEMV for the small lane; decode 69.6 to 95.7 tok/s (RAD05) |
 | `R3_MOE_HELPER_HISTOGRAM` | unset | diagnostic | produces the heat file (profile run) |
+| `R3_MOE_HELPER_FUSEROUTE` | 1 | experimental | the small (decode) lane's routing prologue (four memsets and four kernels, ten launches) as one block; bit-identical, about -25 us a request on the replay; decode tg512 132 -> 143.5 (+8.5%), tg2048 143 -> 150 (+5.4%), prefill unchanged (RAD06 2026-10-18). Read per request; 0 keeps the separate kernels. |
+| `R3_MOE_HELPER_TRACE` | off | diagnostic | every Nth finished helper request prints its critical-path stamps (engine publish, wait entered, completion seen; helper start and done, each on its own device clock); read with `tools/lab/radiance/heat-placement/trace_report.py`. The stamps are nine stores a request in the mapped slot (protocol version 12). |
 | `R3_MOE_HELPER_VECIO` | 1 | experimental | the helper's activation copy and result write use 16-byte accesses to the engine's mapped host memory instead of 1- and 2-byte ones; bit-identical (4 real captures), lane kernels -31% (3,490 -> 2,410 us), prefill 3,160 -> 3,310 tok/s (+4.7%), decode +1.5-3% (RAD06 2026-10-18). Read per request; 0 keeps the scalar kernels. |
 | `R3_MOE_FP16` | 1 | experimental | f16 WMMA with E4M3 widened to half in the helper's native MoE GEMM; bit-identical output, grouped GEMM 1.6-2.75x faster on four real captured requests (bit-identical output), prefill 2,130 -> 3,150 tok/s, decode unchanged (RAD06 2026-10-18). On by default in the helpers (main() sets it unless set); 0 turns it off. |
 | `R3_MOE_AHALF` | 1 | experimental | activation tile widened to half once at staging (with `R3_MOE_FP16`); bit-identical, a further 7-8% off the grouped GEMM (1,905 -> 1,771 us on the largest real capture), +4 KB LDS (RAD06 2026-10-18). On by default in the helpers; 0 turns it off. |
@@ -176,6 +178,19 @@ Why the supporting flags are set (lab log, "Flash-Next: radiance's own prefill s
 | Long-run tile (`R3_MOE_HELPER_MOE_LONG_ROWS=65`): 64-row slices and an MT=4 tile for runs of 65+ rows | bit-identical (rel_l2 0) but slower on replayed 2048-row requests: layer 29 3.57 ms baseline vs 3.72 ms (8 waves, 240 VGPR, 140 B scratch) and 3.86 ms (16 waves, 176 VGPR, no scratch); layer 11 2.65 vs 3.15 ms (16 waves). Spill-free MT=4 still loses, so re-staging the weight tile across 32-row blocks is not the bottleneck. Default off, evaluated. | RAD06 2026-10-18, `tools/lab/radiance/helper-long-rows.sh` |
 | Per-layer cost-balanced helper ownership (`R3_MOE_HELPER_BALANCE`, `_SPEED`; RAD06/RHP) | the same jointly owned experts split per layer by predicted cost: offline prediction 3.5-5.6% off the helpers' per-layer worst case; measured the slower helper's large request 1,719 -> 1,535 us (level with the other), but prefill unchanged (pp4096 3,314 / 3,314 vs 3,316 / 3,312 tok/s: the helpers no longer limit prefill). Quality unchanged: KLD 0.0644 / p99 0.705 / top-1 88.46% (helper-off 0.0646 / 0.735 / 88.39%). The decode tok/s the A/B showed (88 against 132-144) is a benchmark-content effect, not a slowdown: the new owner split changes the order in which the two helpers' partial sums are added, the greedy continuation diverged and ended after 282 tokens (tg512 and tg2048 both) instead of 512 / 2,048, with fewer speculative tokens accepted a step; per-call cost of every engine op and the time of a step (~31 ms) are the same in both arms (profiled), the run just did half the steps. Any ownership change can do this, so compare decode speed between ownership layouts only on a fixed-text benchmark. Default off, evaluated. | rad06 balance A/B and profile runs, KL run rad06-fp16kld-10181903, `tools/lab/radiance/heat-placement/balance_score.py` |
 | Helper at 20 GiB with the final kernels | decode 89.2 (vs ~108.5 at 22 GiB), no prefill gain | RAD06 08:10 |
+
+## Where the critical path is (RAD06 unprofiled trace, 2026-10-18)
+
+From the helper TRACE lines of a full benchmark cell (`R3_MOE_HELPER_TRACE=1`, 36,643 of 36,729 layer-steps paired, no throughput cost). Exposed wait is the engine's wait for the slower helper, on the R9700 clock.
+
+| lane | publish -> wait (mean) | exposed wait (mean / p95) | slower helper GPU time (mean) | total exposed wait in the cell |
+|---|---|---|---|---|
+| decode (small lane, 36,336 paired steps) | 75 us | 121 / 185 us | 166 us | 4.4 s, about 23% of decode time |
+| prefill (large lane, 307 steps) | 596 us | 1,170 / 3,516 us | 1,676 us | 0.36 s, about 18% of prefill time |
+
+Helper request time is local work plus exposed wait, so the helpers are the critical path and only partly hidden. Each kernel gain converts at about 0.7-1% of prefill per 0.1 ms off the helper request. In decode the request is a few small kernels and gaps; fusing the routing prologue (R3_MOE_HELPER_FUSEROUTE) took about 25 us off it for +5-8% decode.
+
+Caveats: a layer's exposed wait is the larger of the two helpers' waits (the wait kernel polls them in order); the publish -> wait window is not isolated local-expert time. Comparing decode speed between ownership layouts needs a fixed-text benchmark: a different split changes the summation order and the greedy text (see the balanced-ownership row under Tried and shelved).
 
 ## Open levers
 
