@@ -465,6 +465,8 @@ ownership.
 | `tools/lab/plan-qualification/work-root.sh` | **TRANSITIONAL** | Resolves the campaign work root (env var, else environment.local.toml [env], else work/) for the plan-qualification scripts. |
 | `tools/lab/prbe20-rd26-bisect/bisect_ubatch.py` | **TRANSITIONAL** | `prbe20-rd26-bisect` lab topic file (see `tools/lab/prbe20-rd26-bisect/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/radiance/helper-fp16-ab.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark server configuration, R3_MOE_FP16 off vs on on the Brutus layout (RAD06). |
+| `tools/lab/radiance/helper-fp16-kld.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark quality configuration, helper-kld.json with R3_MOE_FP16=1 (RAD06). |
+| `tools/lab/radiance/helper-fp16-kld.sh` | **TRANSITIONAL** | `radiance` lab topic file; builds the branch and runs the R3_MOE_FP16 KL check on Brutus (RAD06). |
 | `tools/lab/radiance/helper-fp16-e2e.sh` | **TRANSITIONAL** | `radiance` lab topic file; builds the branch and runs the R3_MOE_FP16 off/on ab-benchmark on Brutus (RAD06). |
 | `tools/lab/radiance/helper-sweep.sh` | **TRANSITIONAL** | `radiance` lab topic file; one-process replay sweep: builds the branch, loads the model once and replays every captured helper request per env variant (R3_MOE_FP16, R3_MOE_PITCH16, R3_MOE_PROBE ...) with per-call grouped-GEMM times and rel_l2 (RAD06). |
 | `tools/lab/radiance/helper-ab.json` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); ab-benchmark server configuration example for the R9700 engine with two XTX helper sidecars (R3_MOE_HELPER_ROWS 0 vs 1, MEN11). |
