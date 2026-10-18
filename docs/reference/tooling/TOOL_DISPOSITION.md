@@ -482,6 +482,7 @@ ownership.
 | `tools/lab/radiance/helper-long-rows.sh` | **TRANSITIONAL** | `radiance` lab topic file; runs the long-row split comparison on captured requests (RAD06, shelved as evaluated); replaced by the MEN21 moe-harness commands.
 | `tools/lab/radiance/small_capture.py` | **TRANSITIONAL** | `radiance` lab topic file; derives small-lane (decode-sized) helper captures from real large-lane captures for the replay sweep (RAD06); replaced by the MEN21 moe-harness commands.
 | `tools/lab/radiance/helper-streams-ab.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark server configuration, A/A concurrent-stream baseline (1, 2, 4, 6 streams) on the Brutus helper layout through stream-bench (RAD10-01).
+| `tools/lab/radiance/helper-smallrows-ab.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark server configuration, helper small-lane row limit 8 against 24 on concurrent streams 2, 4 and 6 with engine counters (RAD10-02).
 | `tools/lab/radiance/helper-evidence.sh` | **TRANSITIONAL** | `radiance` lab topic file; runs the single-setting A/Bs that are libr3 settings' promotion evidence and stages their run.json for docs/evidence/RAD06/ (RAD06). |
 | `tools/lab/radiance/helper-fp16-e2e.sh` | **TRANSITIONAL** | `radiance` lab topic file; builds the branch and runs the R3_MOE_FP16 off/on ab-benchmark on Brutus (RAD06). |
 | `tools/lab/radiance/helper-capture.sh` | **TRANSITIONAL** | `radiance` lab topic file; records real helper requests (format 2: quantised activations) for the replay sweep, one server cell (RAD06). |

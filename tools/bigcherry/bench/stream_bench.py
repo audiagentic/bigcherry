@@ -138,6 +138,56 @@ def one_stream(url: str, model: str, stream: int, prompt: str, max_tokens: int, 
     return res
 
 
+_COUNTERS = ("radiance:engine_steps_decode_total", "radiance:engine_step_seconds_decode_total",
+             "radiance:decode_tokens_total", "radiance:draft_tokens_total", "radiance:draft_accepted_total",
+             "radiance:engine_steps_prefill_total", "radiance:prefill_tokens_total", "vllm:num_preemptions_total")
+_GAUGES = ("vllm:num_requests_running", "vllm:num_requests_waiting")
+
+
+def scrape_metrics(url: str, timeout: float = 5.0):
+    """The server's Prometheus text as {name: value}, label sets summed; None when the endpoint is not there."""
+    try:
+        with urllib.request.urlopen(url.rstrip("/") + "/metrics", timeout=timeout) as resp:
+            text = resp.read().decode("utf-8", "replace")
+    except (urllib.error.URLError, OSError, ValueError):
+        return None
+    out: dict = {}
+    for line in text.splitlines():
+        if not line or line.startswith("#"):
+            continue
+        name, _, rest = line.partition("{")
+        if not rest:
+            name, _, value = line.partition(" ")
+        else:
+            value = rest.rpartition("}")[2]
+        try:
+            out[name.strip()] = out.get(name.strip(), 0.0) + float(value.split()[0])
+        except (ValueError, IndexError):
+            continue
+    return out
+
+
+def engine_delta(before, after, running):
+    """What the engine did during one round, from two /metrics readings and the sampled gauges. None when the engine
+    does not expose them. Steps are decode steps; acceptance is accepted/drafted tokens over the round."""
+    if not before or not after:
+        return None
+    d = {k: after.get(k, 0.0) - before.get(k, 0.0) for k in _COUNTERS if k in after}
+    steps = d.get("radiance:engine_steps_decode_total", 0.0)
+    out = {k.split(":", 1)[1]: round(v, 6) for k, v in d.items()}
+    if steps > 0:
+        out["decode_ms_per_step"] = round(d.get("radiance:engine_step_seconds_decode_total", 0.0) / steps * 1000.0, 4)
+        out["decode_tokens_per_step"] = round(d.get("radiance:decode_tokens_total", 0.0) / steps, 4)
+    drafted = d.get("radiance:draft_tokens_total", 0.0)
+    if drafted > 0:
+        out["draft_acceptance"] = round(d.get("radiance:draft_accepted_total", 0.0) / drafted, 4)
+    if running:
+        out["requests_running_mean"] = round(statistics.fmean(r for r, _ in running), 3)
+        out["requests_running_max"] = max(r for r, _ in running)
+        out["requests_waiting_max"] = max(w for _, w in running)
+    return out
+
+
 def pct(values, p):
     v = sorted(x for x in values if x == x)
     return v[min(len(v) - 1, int(p * len(v)))] if v else float("nan")
@@ -151,6 +201,20 @@ def run_round(url: str, model: str, streams: int, prompt_tokens: int, max_tokens
     the last response end. The last straggler can dominate that denominator, so it is not sustained serving throughput."""
     results: list = [None] * streams
     gate = threading.Barrier(streams + 1)
+    before = scrape_metrics(url)
+    running: list = []
+    stop = threading.Event()
+
+    def sample():
+        while True:
+            m = scrape_metrics(url, timeout=2.0)
+            if m and "vllm:num_requests_running" in m:
+                running.append((m["vllm:num_requests_running"], m.get("vllm:num_requests_waiting", 0.0)))
+            if stop.wait(0.25):
+                break
+
+    sampler = threading.Thread(target=sample, daemon=True)
+    sampler.start()
 
     def work(i):
         gate.wait()
@@ -162,8 +226,15 @@ def run_round(url: str, model: str, streams: int, prompt_tokens: int, max_tokens
         t.start()
     release = time.perf_counter()
     gate.wait()
+    time.sleep(0.03)                       # let the streams get admitted, then read the gauges once more
+    mid = scrape_metrics(url, timeout=2.0)
+    if mid and "vllm:num_requests_running" in mid:
+        running.append((mid["vllm:num_requests_running"], mid.get("vllm:num_requests_waiting", 0.0)))
     for t in threads:
         t.join()
+    stop.set()
+    sampler.join()
+    after = scrape_metrics(url)
     ok = all(r.ok for r in results)
     wall = max(r.t_end for r in results) - min(r.t_start for r in results)
     record = {"streams": streams, "ok": ok, "wall_s": round(wall, 4),
@@ -175,6 +246,7 @@ def run_round(url: str, model: str, streams: int, prompt_tokens: int, max_tokens
                               "decode_tps_est": round(r.decode_tps_est(), 3),
                               "response_tail_ms": round((r.t_end - r.t_last) * 1000.0, 2) if r.ok else None,
                               "text_sha256": r.text_sha256} for r in results]}
+    record["engine"] = engine_delta(before, after, running)
     if ok:
         total = sum(r.tokens for r in results)
         gaps = [g for r in results for g in r.gaps_ms]
@@ -211,6 +283,11 @@ def run(url: str, model: str, stream_counts: list, prompt_tokens: int, max_token
                                "aggregate_tps_median": statistics.median(g["aggregate_tps"] for g in good),
                                "ttft_ms_max_median": statistics.median(g["ttft_ms_max"] for g in good),
                                "event_gap_ms_p95_median": statistics.median(g["event_gap_ms_p95"] for g in good)}
+            eng = [r["engine"] for r in rounds if r["streams"] == n and r["ok"] and r.get("engine")]
+            for key in ("decode_ms_per_step", "decode_tokens_per_step", "draft_acceptance", "requests_running_mean"):
+                vals = [e[key] for e in eng if key in e]
+                if vals:
+                    summary[str(n)][key + "_median"] = statistics.median(vals)
     return {"schema": SCHEMA,
             "config": {"url": url, "model": model, "streams": stream_counts, "prompt_tokens": prompt_tokens,
                        "max_tokens": max_tokens, "reps": reps, "temperature": temperature, "seed": seed,
@@ -235,6 +312,11 @@ def flat_metrics(record: dict) -> dict:
         per = [g["mean_stream_decode_tps_est"] for g in good if g["mean_stream_decode_tps_est"] is not None]
         if per:
             out[f"s{n}_stream_tps"] = statistics.median(per)
+        eng = [r["engine"] for r in record["rounds"] if r["streams"] == n and r["ok"] and r.get("engine")]
+        for key in ("decode_ms_per_step", "decode_tokens_per_step", "draft_acceptance", "requests_running_mean"):
+            vals = [e[key] for e in eng if key in e]
+            if vals:
+                out[f"s{n}_{key}"] = statistics.median(vals)
     return out
 
 
@@ -271,7 +353,9 @@ def run_from_namespace(args) -> int:
         print(rendered)
     for n, s in record["summary"].items():
         print(f"stream-bench: {n:>2} streams  {s['aggregate_tps_median']:9.2f} tok/s aggregate  "
-              f"ttft max {s['ttft_ms_max_median']:8.1f} ms  event gap p95 {s['event_gap_ms_p95_median']:7.2f} ms", file=sys.stderr)
+              f"ttft max {s['ttft_ms_max_median']:8.1f} ms  event gap p95 {s['event_gap_ms_p95_median']:7.2f} ms"
+              + (f"  step {s['decode_ms_per_step_median']:6.2f} ms  {s['decode_tokens_per_step_median']:5.2f} tok/step"
+                 if "decode_ms_per_step_median" in s else ""), file=sys.stderr)
     if not record["ok"]:
         print("stream-bench: FAIL: at least one stream failed (see per_stream errors)", file=sys.stderr)
         return 1
