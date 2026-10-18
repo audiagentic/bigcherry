@@ -48,16 +48,25 @@ allk.sort()
 allk = [x for x in allk if 'r3_moe_gpu::lane_' in x[2] or 'moe_gemm_q_kernel' in x[2] or
         'moe_blockmap_kernel' in x[2] or 'gated_quant_fp8_kernel' in x[2]]
 k = [(st, en - st) for st, en, n in allk if 'moe_gemm_q_kernel' in n]
-if not runs or len(k) % len(runs) or len(allk) % len(runs):
-    print('could not group', len(k), 'GEMM dispatches /', len(allk), 'dispatches into', len(runs), 'runs'); sys.exit(1)
-d = len(k) // len(runs)
-da = len(allk) // len(runs)
-print('%d runs, %d grouped-GEMM dispatches and %d kernels a run' % (len(runs), d, da))
+# A run is a burst of request kernels; the host work between two runs (building the layer tables, the next request) leaves
+# a gap of many milliseconds. Cut on gaps, not on a fixed kernel count: a variant that fuses kernels has fewer a run.
+GAP_NS = 5000000
+windows = []
+for st, en, n in allk:
+    if windows and st - windows[-1][1] <= GAP_NS:
+        windows[-1][1] = max(windows[-1][1], en)
+        windows[-1][2] += 1
+    else:
+        windows.append([st, en, 1])
+if not runs or len(windows) != len(runs):
+    print('could not group', len(allk), 'request kernels into', len(runs), 'runs: found', len(windows), 'bursts'); sys.exit(1)
+print('%d runs, kernels a run %s' % (len(runs), sorted(set(w[2] for w in windows))))
 rows = collections.defaultdict(dict)
 for i, (idx, cap, layer, var, rel, *ex) in enumerate(runs):
-    ds = [x[1] for x in k[i * d:(i + 1) * d]]
-    chunk = allk[i * da:(i + 1) * da]
-    span = (max(c[1] for c in chunk) - min(c[0] for c in chunk)) / 1e3
+    w0, w1, _ = windows[i]
+    ds = [dur for st, dur in k if w0 <= st <= w1]
+    chunk = [c for c in allk if w0 <= c[0] <= w1]
+    span = (w1 - w0) / 1e3
     lane = sum(c[1] - c[0] for c in chunk if 'r3_moe_gpu::lane_' in c[2]) / 1e3
     rows[(cap, layer)]['%d %s' % (idx % (len(runs) // (max(r[1] for r in runs) + 1)), var or '(default)')] = ((sum(ds) / len(ds) / 1e3 if ds else 0.0), str(rel) + ' ' + (ex[0] if ex else '') + ' span=%.0fus lane_kernels=%.0fus' % (span, lane))
 for key, vs in sorted(rows.items()):
