@@ -11,5 +11,5 @@ B=$(ls -td $WORK/builds/*/*/ 2>/dev/null | head -1)
 export RAD_BIN=${B}bin/radiance RAD_HOME=${B}radiance_home R9700_BDF=0000:09:00.0
 OUT=$WORK/q35-$(date +%m%d-%H%M%S)
 echo "OUT=$OUT BIN=$RAD_BIN"
-PYTHONPATH=tools timeout 7200 python3 -m bigcherry ab-benchmark --server-config tools/lab/radiance/qwen35b-engine-ab.json --output "$OUT" --pairs 1 --settle-seconds 2 2>&1 | grep -v 'warning:'
+PYTHONPATH=tools timeout 7200 python3 -m bigcherry ab-benchmark --server-config tools/lab/radiance/qwen35b-engine-ab.json --output "$OUT" --pairs 2 --settle-seconds 2 2>&1 | grep -v 'warning:'
 echo "Q35_EXIT=${PIPESTATUS[0]}"
