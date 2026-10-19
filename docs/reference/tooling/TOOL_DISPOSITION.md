@@ -498,6 +498,8 @@ ownership.
 | `tools/lab/radiance/qwen35b-helper-ab.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark server configuration, the same model with the XTX helpers; refused by the W4-only helper until RAD11 (RCS09). |
 | `tools/lab/radiance/qwen35b-run.sh` | **TRANSITIONAL** | `radiance` lab topic file; builds the pinned radiance and runs qwen35b-engine-ab.json (RCS09). |
 | `tools/lab/radiance/qwen35b-helper-run.sh` | **TRANSITIONAL** | `radiance` lab topic file; builds the moe-remote-handoff experiment and runs qwen35b-helper-ab.json (RCS09). |
+| `tools/lab/radiance/qwen35b-helper-kld.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark quality configuration, KL of the 35B XTX workers against the engine alone (RAD13). |
+| `tools/lab/radiance/qwen35b-helper-kld-run.sh` | **TRANSITIONAL** | `radiance` lab topic file; builds the moe-remote-handoff experiment and runs qwen35b-helper-kld.json (RAD13). |
 | `tools/lab/radiance/run-radiance.sh` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/radiance/helper-small-ab.json` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/radiance/helper-downtile-ab.json` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, disposed per that README. |
