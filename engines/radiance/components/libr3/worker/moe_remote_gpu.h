@@ -1897,7 +1897,7 @@ private:
         if (l >= model_.layers || !slot_of_expert) return false;
         const size_t nclass = experts() / 2;
         std::vector<uint16_t> slot_map(experts(), 0);
-        slot_map.fill(0xffffu);
+        std::fill(slot_map.begin(), slot_map.end(), (uint16_t)0xffffu);
         for (uint32_t e = 0; e < experts(); ++e) {
             const int32_t es = slot_of_expert[e];
             if (es >= 0) slot_map[e] = (uint16_t)es;
