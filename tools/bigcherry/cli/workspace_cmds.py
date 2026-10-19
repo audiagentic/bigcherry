@@ -71,6 +71,25 @@ def cmd_run_status(args: Namespace) -> int:
     return 0
 
 
+def cmd_run_harvest(args: Namespace) -> int:
+    from ..core import harvest
+
+    root = work_root(args.work_root)
+    hits = _find(root, args.run_id)
+    if len(hits) != 1:
+        print(f"run harvest: {len(hits)} runs match {args.run_id!r}", file=sys.stderr)
+        return 2
+    try:
+        doc = harvest.harvest(root, hits[0])
+    except (harvest.HarvestError, rm.ManifestError) as exc:
+        print(f"run harvest: ERROR: {exc}", file=sys.stderr)
+        return 1
+    flag = " (diagnostic only)" if doc["diagnostic_only"] else ""
+    print(f"harvested {doc['run_id']}{flag}: {len(doc['files'])} file(s) kept, {doc['bulk_bytes']} byte(s) of bulk listed "
+          f"-> {harvest.bundle_dir(root, doc['run_id'])}")
+    return 0
+
+
 def cmd_clean(args: Namespace) -> int:
     if args.apply:
         print("clean: --apply is not available yet: deletion needs harvest (WSL02) and quarantine first; this is a dry run only",
@@ -109,6 +128,10 @@ def register(sub) -> None:
     st.add_argument("run_id", nargs="?")
     st.add_argument("--work-root")
     st.set_defaults(func=cmd_run_status)
+    hv = rsub.add_parser("harvest", help="keep what a finished run proved: write its hash-verified evidence bundle (deletes nothing)")
+    hv.add_argument("run_id", help="run id or unique prefix")
+    hv.add_argument("--work-root")
+    hv.set_defaults(func=cmd_run_harvest)
 
     cl = sub.add_parser("clean", help="dry-run report of what cleanup would reclaim and why everything else is protected")
     cl.add_argument("--work-root")
