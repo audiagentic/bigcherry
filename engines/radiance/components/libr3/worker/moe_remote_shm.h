@@ -362,30 +362,31 @@ inline const uint8_t* owner_bits(const void* base, uint32_t helper) {
 inline int32_t* layer_slots(void* base, uint32_t layer) {
     auto* h = static_cast<Header*>(base);
     if (!h || layer >= h->layer_count) return nullptr;
-    return ptr<int32_t>(base, h->layer_map_offset) + (size_t)layer * kExperts;
+    return ptr<int32_t>(base, h->layer_map_offset) + (size_t)layer * h->expert_count;
 }
 inline const int32_t* layer_slots(const void* base, uint32_t layer) {
     auto* h = static_cast<const Header*>(base);
     if (!h || layer >= h->layer_count) return nullptr;
-    return ptr<int32_t>(base, h->layer_map_offset) + (size_t)layer * kExperts;
+    return ptr<int32_t>(base, h->layer_map_offset) + (size_t)layer * h->expert_count;
 }
 inline int32_t layer_slot(const void* base, uint32_t layer, uint32_t expert) {
     const int32_t* p = layer_slots(base, layer);
-    return p && expert < kExperts ? p[expert] : -1;
+    return p && expert < static_cast<const Header*>(base)->expert_count ? p[expert] : -1;
 }
-inline uint64_t owner_bit(uint32_t layer, uint32_t expert) {
-    return (uint64_t)layer * kExperts + expert;
+/* Bit index of (layer, expert) in an ownership bitmap: the stride is the segment's expert count (Header::expert_count). */
+inline uint64_t owner_bit(uint32_t layer, uint32_t expert, uint32_t experts) {
+    return (uint64_t)layer * experts + expert;
 }
 inline bool owns(const void* base, uint32_t layer, uint32_t expert, uint32_t helper) {
     const auto* h = static_cast<const Header*>(base);
-    if (!h || layer >= h->layer_count || expert >= kExperts || helper >= kMaxRanks) return false;
-    const uint64_t bit = owner_bit(layer, expert);
+    if (!h || layer >= h->layer_count || expert >= h->expert_count || helper >= kMaxRanks) return false;
+    const uint64_t bit = owner_bit(layer, expert, h->expert_count);
     return (owner_bits(base, helper)[bit >> 3] & (uint8_t)(1u << (bit & 7u))) != 0;
 }
 inline bool set_owned(void* base, uint32_t layer, uint32_t expert, uint32_t helper) {
     auto* h = static_cast<Header*>(base);
-    if (!h || layer >= h->layer_count || expert >= kExperts || helper >= kMaxRanks) return false;
-    const uint64_t bit = owner_bit(layer, expert);
+    if (!h || layer >= h->layer_count || expert >= h->expert_count || helper >= kMaxRanks) return false;
+    const uint64_t bit = owner_bit(layer, expert, h->expert_count);
     uint8_t* b = owner_bits(base, helper) + (bit >> 3);
     const uint8_t mask = (uint8_t)(1u << (bit & 7u));
     if (*b & mask) return false;
@@ -395,8 +396,8 @@ inline bool set_owned(void* base, uint32_t layer, uint32_t expert, uint32_t help
 }
 inline bool clear_owned(void* base, uint32_t layer, uint32_t expert, uint32_t helper) {
     auto* h = static_cast<Header*>(base);
-    if (!h || layer >= h->layer_count || expert >= kExperts || helper >= kMaxRanks) return false;
-    const uint64_t bit = owner_bit(layer, expert);
+    if (!h || layer >= h->layer_count || expert >= h->expert_count || helper >= kMaxRanks) return false;
+    const uint64_t bit = owner_bit(layer, expert, h->expert_count);
     uint8_t* b = owner_bits(base, helper) + (bit >> 3);
     const uint8_t mask = (uint8_t)(1u << (bit & 7u));
     if (!(*b & mask)) return false;

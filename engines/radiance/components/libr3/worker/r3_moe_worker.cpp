@@ -82,6 +82,7 @@ struct Container {
     const RadEncoding* encs = nullptr;
     const RadFileProfile* profile = nullptr;
     uint32_t layers = 0;
+    uint32_t experts = 0;      /* routed experts per layer: the highest expert id in the directory + 1 */
     std::vector<std::array<const RadFileEntry*, 2>> expert;
 
     ~Container() { if (fd >= 0) close(fd); }
@@ -127,24 +128,29 @@ struct Container {
         planes = plane_store.data();
         encs = enc_store.data();
         profile = profile_store.empty() ? nullptr : profile_store.data();
-        int32_t max_layer = -1;
+        int32_t max_layer = -1, max_expert = -1;
         for (uint64_t i = 0; i < hdr.dir_count; ++i)
-            if (dir[i].layer >= 0 && dir[i].expert >= 0) max_layer = std::max(max_layer, dir[i].layer);
+            if (dir[i].layer >= 0 && dir[i].expert >= 0) {
+                max_layer = std::max(max_layer, dir[i].layer);
+                max_expert = std::max(max_expert, dir[i].expert);
+            }
         layers = (uint32_t)(max_layer + 1);
-        expert.resize((size_t)layers * kExperts);
+        experts = (uint32_t)(max_expert + 1);
+        if (!layers || !experts || (uint64_t)layers * experts > (1ull << 24)) return false;   /* a directory this large is not a model */
+        expert.resize((size_t)layers * experts);
         for (uint64_t i = 0; i < hdr.dir_count; ++i) {
             const auto& e = dir[i];
-            if (e.layer < 0 || e.expert < 0 || e.expert >= (int)kExperts || e.slot < 0 || e.slot >= 2) continue;
+            if (e.layer < 0 || e.expert < 0 || e.expert >= (int)experts || e.slot < 0 || e.slot >= 2) continue;
             if ((uint32_t)e.layer >= layers || e.enc >= hdr.enc_count || e.plane_first + e.n_planes > hdr.plane_count) return false;
             for (uint32_t p = 0; p < e.n_planes; ++p)
                 if (!range(planes[e.plane_first + p].offset, planes[e.plane_first + p].bytes)) return false;
-            expert[(size_t)e.layer * kExperts + (uint32_t)e.expert][e.slot] = &e;
+            expert[(size_t)e.layer * experts + (uint32_t)e.expert][e.slot] = &e;
         }
         return layers != 0;
     }
     const RadFileEntry* weight(uint32_t layer, uint32_t exp, uint32_t slot) const {
-        if (layer >= layers || exp >= kExperts || slot >= 2) return nullptr;
-        return expert[(size_t)layer * kExperts + exp][slot];
+        if (layer >= layers || exp >= experts || slot >= 2) return nullptr;
+        return expert[(size_t)layer * experts + exp][slot];
     }
     const RadEncoding* encoding(const RadFileEntry* e) const { return e ? &encs[e->enc] : nullptr; }
     const RadFilePlane* plane(const RadFileEntry* e, int p) const { return &planes[e->plane_first + p]; }
@@ -295,12 +301,12 @@ int compute_host_engine(const Container& f, void* map, Request* q,
     for (uint32_t t = 0; t < q->rows; ++t)
         if (!quant_had_engine(aq.data() + (size_t)t * kHidden, kHidden)) return -EINVAL;
 
-    std::array<std::vector<uint32_t>, kExperts> by_exp;
+    std::vector<std::vector<uint32_t>> by_exp(f.experts);
     std::vector<int32_t> slot_route((size_t)q->rows * kTopK, -1);
     for (uint32_t i = 0; i < q->route_count; ++i) {
         const Route& r = routes[i];
         if (r.token < 0 || (uint32_t)r.token >= q->rows || r.expert < 0 ||
-            r.expert >= (int32_t)kExperts || r.slot >= kTopK)
+            r.expert >= (int32_t)f.experts || r.slot >= kTopK)
             return -EINVAL;
         const size_t fslot = (size_t)r.token * kTopK + r.slot;
         if (slot_route[fslot] >= 0) return -EINVAL;
@@ -310,7 +316,7 @@ int compute_host_engine(const Container& f, void* map, Request* q,
 
     std::vector<uint16_t> down((size_t)q->route_count * kHidden, 0);
     std::vector<float> wg, wu, wd;
-    for (uint32_t e = 0; e < kExperts; ++e) {
+    for (uint32_t e = 0; e < f.experts; ++e) {
         const auto& ri = by_exp[e];
         if (ri.empty()) continue;
         const RadFileEntry* gu = f.weight(q->layer, e, 0);
@@ -382,13 +388,13 @@ int compute_host(const Container& f, void* map, Request* q) {
     const uint16_t* act = ptr<uint16_t>(map,q->activation_offset);
     uint16_t* dst = ptr<uint16_t>(map,q->result_offset[q->rank]);
     std::vector<float> out((size_t)q->rows*kHidden,0.f);
-    std::array<std::vector<uint32_t>, kExperts> by_exp;
+    std::vector<std::vector<uint32_t>> by_exp(f.experts);
     for(uint32_t i=0;i<q->route_count;++i) {
-        if(routes[i].token<0 || (uint32_t)routes[i].token>=q->rows || routes[i].expert<0 || routes[i].expert>=(int)kExperts) return -EINVAL;
+        if(routes[i].token<0 || (uint32_t)routes[i].token>=q->rows || routes[i].expert<0 || routes[i].expert>=(int)f.experts) return -EINVAL;
         by_exp[(uint32_t)routes[i].expert].push_back(i);
     }
     std::vector<float> wg, wu, wd;
-    for(uint32_t e=0;e<kExperts;++e) {
+    for(uint32_t e=0;e<f.experts;++e) {
         auto& ri=by_exp[e]; if(ri.empty()) continue;
         const RadFileEntry* gu=f.weight(q->layer,e,0); const RadFileEntry* dn=f.weight(q->layer,e,1); if(!gu||!dn) return -ENOENT;
         int64_t gur=1,guc=1,dnr=1,dnc=1; rad_enc_view(gu->rank,gu->shape,&gur,&guc); rad_enc_view(dn->rank,dn->shape,&dnr,&dnc);
@@ -645,7 +651,7 @@ bool select_owned(const Container& f, r3_moe_gpu::Runner* gpu, uint64_t budget, 
     /* R3_MOE_WORKER_HEAT: route counts a profiling run wrote (R3_MOE_WORKER_HISTOGRAM). Coldest first, so the
      * engine keeps the experts most tokens route to and a decode step hands off as little as possible. */
     if (const char* hp = std::getenv("R3_MOE_WORKER_HEAT"); hp && *hp) {
-        std::vector<uint32_t> heat((size_t)kMaxLayers * kExperts, 0);
+        std::vector<uint32_t> heat((size_t)kMaxLayers * f.experts, 0);
         FILE* hf = std::fopen(hp, "rb");
         const size_t got = hf ? std::fread(heat.data(), sizeof(uint32_t), heat.size(), hf) : 0;
         if (hf) std::fclose(hf);
@@ -655,9 +661,9 @@ bool select_owned(const Container& f, r3_moe_gpu::Runner* gpu, uint64_t budget, 
             return false;
         }
         for (uint32_t l = 0; l < f.layers; ++l)
-            for (uint32_t e = 0; e < kExperts; ++e)
+            for (uint32_t e = 0; e < f.experts; ++e)
                 if (f.weight(l, e, 0))
-                    flat.push_back(RadFileProfile{(int32_t)l, (int32_t)e, (float)heat[(size_t)l * kExperts + e], 0.0f});
+                    flat.push_back(RadFileProfile{(int32_t)l, (int32_t)e, (float)heat[(size_t)l * f.experts + e], 0.0f});
         std::stable_sort(flat.begin(), flat.end(), [](const RadFileProfile& a, const RadFileProfile& b) {
             return a.share < b.share;
         });
@@ -667,7 +673,7 @@ bool select_owned(const Container& f, r3_moe_gpu::Runner* gpu, uint64_t budget, 
         std::fprintf(stderr, "r3_moe_worker: container has no expert profile; owning experts evenly across layers\n");
         /* Highest ids first: the engine's initial placement keeps low ids resident on the XTX and
          * leaves the high ids in its host pool (measured: every host-pool route was expert >= 302). */
-        for (uint32_t e = kExperts; e-- > 0;)
+        for (uint32_t e = f.experts; e-- > 0;)
             for (uint32_t l = 0; l < f.layers; ++l)
                 if (f.weight(l, e, 0)) flat.push_back(RadFileProfile{(int32_t)l, (int32_t)e, 0.0f, 0.0f});
         for (const RadFileProfile& p : flat) order.push_back(&p);
@@ -675,7 +681,7 @@ bool select_owned(const Container& f, r3_moe_gpu::Runner* gpu, uint64_t budget, 
     for (uint64_t i = 0; flat.empty() && f.profile && i < f.h->prof_count; ++i) {
         const RadFileProfile& p = f.profile[i];
         if (p.layer < 0 || p.expert < 0 || (uint32_t)p.layer >= f.layers ||
-            p.expert >= (int32_t)kExperts) continue;
+            p.expert >= (int32_t)f.experts) continue;
         order.push_back(&p);
     }
     if (flat.empty()) std::stable_sort(order.begin(), order.end(), [](const RadFileProfile* a, const RadFileProfile* b) {
@@ -716,11 +722,11 @@ bool select_owned(const Container& f, r3_moe_gpu::Runner* gpu, uint64_t budget, 
         /* The jointly owned set: exactly the alternation's picks (both helpers' budgets filled in turn). */
         std::vector<Pick> joint;
         {
-            std::vector<uint8_t> was_seen((size_t)f.layers * kExperts, 0);
+            std::vector<uint8_t> was_seen((size_t)f.layers * f.experts, 0);
             uint64_t held[2] = {0, 0}, pos = 0;
             for (const RadFileProfile* p : order) {
                 const uint32_t l = (uint32_t)p->layer, e = (uint32_t)p->expert;
-                uint8_t& w = was_seen[(size_t)l * kExperts + e];
+                uint8_t& w = was_seen[(size_t)l * f.experts + e];
                 if (w) continue;
                 w = 1;
                 const uint32_t who = (uint32_t)(pos++ % 2);
@@ -773,11 +779,11 @@ bool select_owned(const Container& f, r3_moe_gpu::Runner* gpu, uint64_t budget, 
         }
         return true;
     }
-    std::vector<uint8_t> seen((size_t)f.layers * kExperts, 0);
+    std::vector<uint8_t> seen((size_t)f.layers * f.experts, 0);
     uint64_t position = 0;
     for (const RadFileProfile* p : order) {
         const uint32_t l = (uint32_t)p->layer, e = (uint32_t)p->expert;
-        uint8_t& was = seen[(size_t)l * kExperts + e];
+        uint8_t& was = seen[(size_t)l * f.experts + e];
         if (was) continue;
         was = 1;
         /* Helper h of n takes every n-th candidate: disjoint sets, each spread over the same order. */
@@ -1371,7 +1377,7 @@ int main(int argc, char** argv) {
         std::set<std::pair<uint32_t, uint32_t>> seen;
         auto own_routes = [&](const ReplayInput& ri) {
             for (const Route& r : ri.routes)
-                if (r.expert >= 0 && r.expert < (int32_t)kExperts &&
+                if (r.expert >= 0 && r.expert < (int32_t)model.experts &&
                     seen.emplace(ri.hd.layer, (uint32_t)r.expert).second)
                     owned.expert.emplace_back(ri.hd.layer, (uint32_t)r.expert);
         };
