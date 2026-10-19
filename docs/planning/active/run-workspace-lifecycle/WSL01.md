@@ -46,3 +46,13 @@ Offline tests for layout, id uniqueness, manifest round trip and schema versioni
 ## Notes
 
 Foundation for WSL02 to WSL06. Existing llama.cpp tuning outputs (artifacts/, tune journals) keep their own schemas but gain a manifest.
+
+## Design review (GPT, 2026-10-19) - adopted
+
+- Layout additions: `work/trash/<deletion-id>/` (quarantine, same filesystem as runs/) and `work/objects/sha256/<xx>/<digest>/` (valuable immutable blobs: captures, KL references; not cache).
+  Builds have one canonical place (`builds/<lane>/<plan-id>/<build-id>/`); a build run carries a manifest but its output is not duplicated under runs/. A plan id alone is not a build identity.
+- Run id = UTC stamp + topic slug + 12 hex of a uuid4; the uuid is the identity, ids are never reused, the directory is created with an exclusive mkdir.
+- Manifest v1: run lifecycle, harvest lifecycle and retention are separate fields (`completed` is not `harvested`; `harvested` is not `deletable`). Written atomically (tmp + fsync + os.replace + fsync dir) with a
+  generation number; a crashed process leaves `running`, which only reconciliation may turn into `interrupted`.
+- First slice (PR #311): core/workspace.py, core/run_manifest.py, core/retention.py (read-only), `bigcherry run new|status`, `bigcherry clean` (dry run only), tests on temporary roots.
+  Producer migration (ab-benchmark first, then accept) is the next step, one at a time.

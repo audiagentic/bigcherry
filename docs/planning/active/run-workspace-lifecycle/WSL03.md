@@ -32,3 +32,17 @@ creation refuses to start below a free-space floor, naming the largest reclaimab
 ## Validation
 
 Fixture tests for every protection; a dry run on Brutus after WSL06 lists the legacy runs without touching them; apply on a harvested test run removes only its bulk.
+
+## Design review (GPT, 2026-10-19) - adopted
+
+- GC roots are typed references (a run naming a run/build/source/object), active runs and leases, release records, administrative holds and the newest K per kind. A plan id in a manifest is metadata and pins
+  nothing; an evidence README is explanatory, not authoritative (a machine-readable `evidence.index.json` naming run ids, bundle ids and hashes is the root).
+- Unmanifested, unreadable, unknown-kind, unknown-owner or foreign directories are protected and reported, never candidates.
+- Order of enabling: report disk pressure first; deletion only through quarantine (rename into trash/, TTL at least 48 h, then a bounded purge) after observed dry-run cycles; automatic deletion at a pressure
+  threshold stays off until ownership and leases are proven on the host. Guards: per-pass byte limit, minimum age (7 days to start), no cross-filesystem moves, never follow symlinks, append-only cleanup journal,
+  global maintenance lock, explicit enablement per host. Quarantine does not reclaim space; purge does.
+- Lease limits to fix before apply: leases are scoped to project_root (need a shared namespace per physical work root), a PID check is vulnerable to reuse, malformed lease files must block cleanup, and every runner must
+  take a lease (an existing one that does not is unsafe).
+- Done in the first slice (PR #311): the read-only inventory and dry-run plan with every protection above that does not need harvest or leases.
+
+Revised order: WSL01 foundation, WSL03 dry-run skeleton, WSL02 harvest, WSL03 quarantine/apply, WSL05 templates and producer migration, WSL04 build/source GC, WSL06 adoption, disk-pressure automation.
