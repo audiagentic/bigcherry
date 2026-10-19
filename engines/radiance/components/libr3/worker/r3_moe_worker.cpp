@@ -550,7 +550,7 @@ bool describe_expert(const Container& f, uint32_t l, uint32_t e, MoeExpertDesc* 
             (void)scale1;
             d.weight = MoeWeightDesc{MOE_FMT_W4NL64, MOE_ACT_FP8_E4M3_GROUP, MOE_SCALE_E4M3, 0, (uint32_t)sp.block[1], 0};
         } else if (cp.dtype == RAD_F8E4M3 && table < 0) {
-            d.weight = MoeWeightDesc{MOE_FMT_FP8_E4M3_BLOCK, MOE_ACT_BF16, scale_dtype_of(sp.dtype),
+            d.weight = MoeWeightDesc{MOE_FMT_FP8_E4M3_BLOCK, MOE_ACT_FP8_E4M3_GROUP, scale_dtype_of(sp.dtype),
                                      (uint32_t)sp.block[0], (uint32_t)sp.block[1], 0};
         }
     }
@@ -1536,6 +1536,15 @@ int main(int argc, char** argv) {
             gpu->engine_ranks_ = (uint32_t)n;
         }
         if (!gpu->open()) return 1;
+        {   // the container's own weight format picks the kernels (RAD13); an unsupported one was refused by name above
+            MoeExpertDesc first{};
+            if (!describe_expert(model, 0, 0, &first)) {
+                for (uint32_t l = 0; l < model.layers && !first.weight.format; ++l)
+                    for (uint32_t e = 0; e < model.experts && !first.weight.format; ++e)
+                        if (model.weight(l, e, 0) && model.weight(l, e, 1)) (void)describe_expert(model, l, e, &first);
+            }
+            if (!gpu->set_weight_format(first.weight.format)) return 1;
+        }
     }
 
     /* R3_MOE_WORKER_COUNT=2 with R3_MOE_WORKER_INDEX=0/1: two helpers (the XTX cards) behind a one-rank engine
