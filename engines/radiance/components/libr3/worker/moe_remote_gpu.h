@@ -969,7 +969,7 @@ public:
                     "upload activations")) return -EIO;
         if (!hip_ok(hipMemcpyAsync(d_sorted_.p, sorted.data(), (size_t)tr * sizeof(int32_t),
                                    hipMemcpyHostToDevice, stream_), "upload sorted routes") ||
-            !hip_ok(hipMemcpyAsync(d_off_.p, off.data(), sizeof(off),
+            !hip_ok(hipMemcpyAsync(d_off_.p, off.data(), off.size() * sizeof(int32_t),
                                    hipMemcpyHostToDevice, stream_), "upload expert offsets") ||
             !hip_ok(hipMemcpyAsync(d_ew_.p, ew.data(), ew.size() * sizeof(uint16_t),
                                    hipMemcpyHostToDevice, stream_), "upload route weights"))
@@ -1453,7 +1453,7 @@ public:
         /* The sampled request's per-expert row counts (d_counts; this lane has synced): the run-length histogram the
          * grouped GEMM's tile choice depends on. Sampled requests only, so the copy is off the hot path. */
         std::vector<uint32_t> counts(experts());
-        if (hipMemcpy(counts, w.d_counts.p, sizeof(counts), hipMemcpyDeviceToHost) == hipSuccess) {
+        if (hipMemcpy(counts.data(), w.d_counts.p, counts.size() * sizeof(uint32_t), hipMemcpyDeviceToHost) == hipSuccess) {
             for (uint32_t e = 0; e < experts(); ++e) {
                 const uint32_t c = counts[e];
                 if (!c) continue;
@@ -1929,7 +1929,7 @@ private:
 
         const size_t slot_off = (size_t)l * experts() * sizeof(uint16_t);
         if (!hip_ok(hipMemcpy(static_cast<uint8_t*>(d_expert_slot_.p) + slot_off,
-                              slot_map.data(), sizeof(slot_map), hipMemcpyHostToDevice),
+                              slot_map.data(), slot_map.size() * sizeof(uint16_t), hipMemcpyHostToDevice),
                     "upload runtime expert slot map"))
             return false;
 
