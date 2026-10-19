@@ -57,11 +57,11 @@ PREREQUISITES = {RAD0004: (RAD0002,)}
 # prerequisites, after they are applied), `after` the file with the package applied.
 PIN_BLOBS = {
     RAD0002: {
-        "abi/bc_moe_remote.h": (None, "d91eaa8"),
+        "abi/bc_moe_remote.h": (None, "a0dd765"),
         "arch/common/bc_moe_remote_block.h": (None, "f56d783"),
         "arch/common/rad_block_hc.h": ("44c538f", "076f308"),
         "arch/common/rad_block_moe_fp8.h": ("240b82b", "f0a772d"),
-        "core/place/bc_moe_remote.cpp": (None, "c869a1c"),
+        "core/place/bc_moe_remote.cpp": (None, "1babb84"),
         "core/place/bc_moe_remote_place.h": (None, "e89a83b"),
         "core/place/planner.cpp": ("ac68e59", "8e7f945"),
         "core/engine_bringup.cpp": ("06c100e", "5446799"),
@@ -70,7 +70,7 @@ PIN_BLOBS = {
         "arch/common/rad_block_mtp_fp8.h": ("c571d45", "235cebb"),
     },
     RAD0004: {
-        "arch/common/bc_moe_remote_diag.h": (None, "bd959b1"),
+        "arch/common/bc_moe_remote_diag.h": (None, "3998d25"),
         "arch/common/rad_block_moe_fp8.h": ("f0a772d", "e8defe4"),
     },
 }
