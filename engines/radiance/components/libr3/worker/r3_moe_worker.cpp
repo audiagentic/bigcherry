@@ -295,6 +295,23 @@ float dot_f32(const float* x, const std::vector<float>& w) {
     return s;
 }
 
+/* The plain activation quantiser of FP8 block-scaled weights (radiance's quant_act_fp8): per row, per 128 columns, E4M3 with an f32 scale
+ * of amax / 448 and no rotation (the Hadamard twin exists for four-bit weights only). Returns the dequantised values. */
+bool quant_plain_engine(float* v, size_t n) {
+    if (!v || n == 0 || n % 128 != 0) return false;
+    for (size_t b = 0; b < n; b += 128) {
+        float m = 0.0f;
+        for (size_t j = 0; j < 128; ++j) m = std::max(m, std::abs(v[b + j]));
+        const float sc = m > 0.0f ? m * (1.0f / 448.0f) : 1.0f;
+        const float inv = 1.0f / sc;
+        for (size_t j = 0; j < 128; ++j) {
+            const float q = std::max(-448.0f, std::min(448.0f, v[b + j] * inv));
+            v[b + j] = e4m3_round(q) * sc;
+        }
+    }
+    return true;
+}
+
 int compute_host_engine(const Container& f, void* map, Request* q,
                         std::vector<uint16_t>* route_down = nullptr) {
     const uint32_t hid = static_cast<const Header*>(map)->hidden, topk = static_cast<const Header*>(map)->top_k;
@@ -369,6 +386,104 @@ int compute_host_engine(const Container& f, void* map, Request* q,
             for (size_t a = 0; a < ri.size(); ++a) {
                 float sum = 0.0f;
                 const float* m = mid.data() + a * 384u;
+                for (int64_t j = 0; j < width; ++j) sum += m[j] * wd[(size_t)(lo + j)];
+                down[(size_t)ri[a] * hid + (size_t)h] = to_bf16(sum);
+            }
+        }
+    }
+
+    if (route_down) *route_down = down;
+
+    /* r4d_moe gather: ascending original top-k slot order, f32 accumulator, one BF16 narrow. */
+    for (uint32_t t = 0; t < q->rows; ++t) {
+        for (uint32_t h = 0; h < hid; ++h) {
+            float acc = 0.0f;
+            for (uint32_t slot = 0; slot < topk; ++slot) {
+                const int32_t ri = slot_route[(size_t)t * topk + slot];
+                if (ri < 0) continue;
+                acc += bf16(routes[(uint32_t)ri].weight_bf16) *
+                       bf16(down[(size_t)(uint32_t)ri * hid + h]);
+            }
+            dst[(size_t)t * hid + h] = to_bf16(acc);
+        }
+    }
+    return 0;
+}
+
+int compute_host_engine_fp8(const Container& f, void* map, Request* q,
+                        std::vector<uint16_t>* route_down = nullptr) {
+    const uint32_t hid = static_cast<const Header*>(map)->hidden, topk = static_cast<const Header*>(map)->top_k;
+    const int64_t hdr_intermediate = static_cast<const Header*>(map)->intermediate;
+    if (q->rank_count != kMaxRanks || q->rank >= kMaxRanks || q->layer >= f.layers ||
+        q->rows == 0 || q->rows > kMaxRows || q->hidden != hid ||
+        q->route_count > kMaxRoutes || q->activation_stride != hid * 2)
+        return -EINVAL;
+
+    const Route* routes = ptr<Route>(map, q->route_offset);
+    const uint16_t* act = ptr<uint16_t>(map, q->activation_offset);
+    uint16_t* dst = ptr<uint16_t>(map, q->result_offset[q->rank]);
+
+    std::vector<float> aq((size_t)q->rows * hid);
+    for (size_t i = 0; i < aq.size(); ++i) aq[i] = bf16(act[i]);
+    for (uint32_t t = 0; t < q->rows; ++t)
+        if (!quant_plain_engine(aq.data() + (size_t)t * hid, hid)) return -EINVAL;
+
+    std::vector<std::vector<uint32_t>> by_exp(f.experts);
+    std::vector<int32_t> slot_route((size_t)q->rows * topk, -1);
+    for (uint32_t i = 0; i < q->route_count; ++i) {
+        const Route& r = routes[i];
+        if (r.token < 0 || (uint32_t)r.token >= q->rows || r.expert < 0 ||
+            r.expert >= (int32_t)f.experts || r.slot >= topk)
+            return -EINVAL;
+        const size_t fslot = (size_t)r.token * topk + r.slot;
+        if (slot_route[fslot] >= 0) return -EINVAL;
+        slot_route[fslot] = (int32_t)i;
+        by_exp[(uint32_t)r.expert].push_back(i);
+    }
+
+    std::vector<uint16_t> down((size_t)q->route_count * hid, 0);
+    std::vector<float> wg, wu, wd;
+    for (uint32_t e = 0; e < f.experts; ++e) {
+        const auto& ri = by_exp[e];
+        if (ri.empty()) continue;
+        const RadFileEntry* gu = f.weight(q->layer, e, 0);
+        const RadFileEntry* dn = f.weight(q->layer, e, 1);
+        if (!gu || !dn) return -ENOENT;
+        int64_t gur = 1, guc = 1, dnr = 1, dnc = 1;
+        rad_enc_view(gu->rank, gu->shape, &gur, &guc);
+        rad_enc_view(dn->rank, dn->shape, &dnr, &dnc);
+        if (guc != hid || dnr != hid || gur != 2 * dnc || dnc != hdr_intermediate)
+            return -EINVAL;
+
+        const int32_t es = layer_slot(map, q->layer, e);
+        if (es < 0) return -ENOTSUP;
+        (void)es;
+        const int64_t lo = 0;                 // FP8 experts are served full width, whole experts
+        const int64_t width = dnc;
+        const size_t mw = (size_t)dnc;
+        std::vector<float> mid(ri.size() * mw, 0.0f);
+
+        for (int64_t j = 0; j < width; ++j) {
+            if (!decode_row(f, gu, lo + j, wg, false) ||
+                !decode_row(f, gu, dnc + lo + j, wu, false))
+                return -ENOTSUP;
+            for (size_t a = 0; a < ri.size(); ++a) {
+                const Route& r = routes[ri[a]];
+                const float* x = aq.data() + (size_t)r.token * hid;
+                const float gate = bf16(to_bf16(dot_f32(x, wg)));
+                const float up = bf16(to_bf16(dot_f32(x, wu)));
+                mid[a * mw + (size_t)j] =
+                    bf16(to_bf16((gate / (1.0f + ::expf(-gate))) * up));
+            }
+        }
+        for (size_t a = 0; a < ri.size(); ++a)
+            if (!quant_plain_engine(mid.data() + a * mw, mw)) return -EINVAL;
+
+        for (int64_t h = 0; h < hid; ++h) {
+            if (!decode_row(f, dn, h, wd, false)) return -ENOTSUP;
+            for (size_t a = 0; a < ri.size(); ++a) {
+                float sum = 0.0f;
+                const float* m = mid.data() + a * mw;
                 for (int64_t j = 0; j < width; ++j) sum += m[j] * wd[(size_t)(lo + j)];
                 down[(size_t)ri[a] * hid + (size_t)h] = to_bf16(sum);
             }
@@ -921,6 +1036,8 @@ bool load_replay(const char* path, ReplayInput* out) {
 int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& owned,
                  uint32_t layer, uint32_t rows, const SmallClasses& classes, uint32_t lane_large_rows,
                  bool synthetic_protect) {
+    /* the request is built for the model's own shape (the lane checks every request against it) */
+    const uint32_t hid = gpu.shape_.hidden, topk = gpu.shape_.top_k;
     if (g_replay) {  // a captured real request replaces the synthetic layer, rows, routes and activations
         layer = g_replay->hd.layer;
         rows = g_replay->hd.rows;
@@ -973,11 +1090,11 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
 
     const uint32_t remote_per_token =
         std::min<uint32_t>(4, (uint32_t)remote_expert.size());
-    const uint32_t total = rows * kTopK;
+    const uint32_t total = rows * topk;
     std::vector<int32_t> full_expert(total, -1);
     std::vector<uint16_t> full_weight(total, 0);
     std::vector<uint8_t> is_remote(total, 0);
-    std::vector<uint16_t> activation((size_t)rows * kHidden);
+    std::vector<uint16_t> activation((size_t)rows * hid);
 
     uint64_t rng = 0x8f3f73b5cf1c9ad1ull ^ ((uint64_t)layer << 32) ^ rows;
     auto rnd = [&]() -> uint32_t {
@@ -993,9 +1110,9 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
     published.reserve((size_t)rows * remote_per_token);
     for (uint32_t t = 0; t < rows; ++t) {
         uint32_t ri = 0, li = 0;
-        for (uint32_t slot = 0; slot < kTopK; ++slot) {
-            const uint32_t flat = t * kTopK + slot;
-            const bool remote = ((slot + 3 * t) % kTopK) < remote_per_token;
+        for (uint32_t slot = 0; slot < topk; ++slot) {
+            const uint32_t flat = t * topk + slot;
+            const bool remote = ((slot + 3 * t) % topk) < remote_per_token;
             const float w = (float)(slot + 1) / 55.0f;
             full_weight[flat] = to_bf16(w);
             if (remote) {
@@ -1081,7 +1198,7 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
         q->rank = rank;
         q->rank_count = kMaxRanks;
         q->rows = rows;
-        q->hidden = kHidden;
+        q->hidden = hid;
         q->route_count = nr;
         q->row_base = 0;
         q->route_offset = h->route_offset[rank];
@@ -1089,12 +1206,12 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
         q->activation_q_offset = h->activation_offset[rank] + kActivationBf16Bytes;
         q->activation_s_offset =
             h->activation_offset[rank] + kActivationBf16Bytes + kActivationQBytes;
-        q->activation_stride = kHidden * sizeof(uint16_t);
-        q->activation_q_stride = kHidden;
-        q->activation_s_stride = (kHidden / kActGroup) * sizeof(float);
+        q->activation_stride = hid * sizeof(uint16_t);
+        q->activation_q_stride = hid;
+        q->activation_s_stride = (hid / kActGroup) * sizeof(float);
         for (uint32_t r = 0; r < kMaxRanks; ++r) {
             q->result_offset[r] = h->result_offset[rank * kMaxRanks + r];
-            q->result_stride[r] = kHidden * sizeof(uint16_t);
+            q->result_stride[r] = hid * sizeof(uint16_t);
         }
         q->sequence = sequence;
         std::memcpy(ptr<Route>(map, q->route_offset), published.data(),
@@ -1132,7 +1249,7 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
         }
         /* The helper's per-token rows, taken before the host reference rewrites the same slot. */
         const uint16_t* res = ptr<uint16_t>(map, h->result_offset[rank * kMaxRanks + rank]);
-        const std::vector<uint16_t> got(res, res + (size_t)rows * kHidden);
+        const std::vector<uint16_t> got(res, res + (size_t)rows * hid);
         if (g_sweep_fast) {
             static std::map<std::pair<const ReplayInput*, uint32_t>, std::vector<uint16_t>> base;
             double sum_abs = 0.0;
@@ -1153,8 +1270,9 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
         }
 
         std::vector<uint16_t> want_route;
-        const int hrc = compute_host_engine(model, map, q, &want_route);
-        if (hrc != 0 || want_route.size() != (size_t)nr * kHidden) {
+        const int hrc = gpu.weight_format() == MOE_FMT_FP8_E4M3_BLOCK ? compute_host_engine_fp8(model, map, q, &want_route)
+                                                                      : compute_host_engine(model, map, q, &want_route);
+        if (hrc != 0 || want_route.size() != (size_t)nr * hid) {
             std::fprintf(stderr,
                          "r3_moe_worker: --compare local-path host rank %u failed rc=%d\n",
                          rank, hrc);
@@ -1162,27 +1280,27 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
             break;
         }
         /* Host reference per token: the same slot-order f32 sum over this request's routes. */
-        std::vector<int32_t> route_of((size_t)rows * kTopK, -1);
+        std::vector<int32_t> route_of((size_t)rows * topk, -1);
         for (uint32_t j = 0; j < nr; ++j)
-            route_of[(size_t)published[j].token * kTopK + published[j].slot] = (int32_t)j;
+            route_of[(size_t)published[j].token * topk + published[j].slot] = (int32_t)j;
         long double num = 0.0L, den = 0.0L;
         double max_abs = 0.0;
         uint32_t tokens = 0;
         for (uint32_t t = 0; t < rows; ++t) {
             bool any = false;
-            for (uint32_t slot = 0; slot < kTopK; ++slot) any = any || route_of[(size_t)t * kTopK + slot] >= 0;
+            for (uint32_t slot = 0; slot < topk; ++slot) any = any || route_of[(size_t)t * topk + slot] >= 0;
             if (!any) continue;
             ++tokens;
-            for (uint32_t col = 0; col < kHidden; ++col) {
+            for (uint32_t col = 0; col < hid; ++col) {
                 float acc = 0.0f;
-                for (uint32_t slot = 0; slot < kTopK; ++slot) {
-                    const int32_t j = route_of[(size_t)t * kTopK + slot];
+                for (uint32_t slot = 0; slot < topk; ++slot) {
+                    const int32_t j = route_of[(size_t)t * topk + slot];
                     if (j < 0) continue;
                     acc += bf16(published[(uint32_t)j].weight_bf16) *
-                           bf16(want_route[(size_t)(uint32_t)j * kHidden + col]);
+                           bf16(want_route[(size_t)(uint32_t)j * hid + col]);
                 }
                 const double b = bf16(to_bf16(acc));
-                const double a = bf16(got[(size_t)t * kHidden + col]);
+                const double a = bf16(got[(size_t)t * hid + col]);
                 const double d = a - b;
                 num += (long double)d * d;
                 den += (long double)b * b;

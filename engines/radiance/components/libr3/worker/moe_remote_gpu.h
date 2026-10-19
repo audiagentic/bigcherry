@@ -767,6 +767,7 @@ public:
     /* Routed experts per layer, from the container; and the thread count of the one-block routing kernels: a power of two, at least
      * kFuseMaxRoutes and the expert count (0 when the count is beyond what one block can scan). */
     uint32_t experts() const { return model_.experts; }
+    uint32_t weight_format() const { return weight_format_; }
     /* The shape the kernels run with: hidden width, routes a token, activation group (RCS09-06). Checked against the capacities the
      * kernels are built for (per-token scratch, the GEMV's LDS row, whole 16-byte activation pieces) and copied to the device. */
     r3::moe_shm::LayoutShape shape_{};
