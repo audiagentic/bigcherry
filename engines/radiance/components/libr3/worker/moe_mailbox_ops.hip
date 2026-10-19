@@ -538,7 +538,7 @@ int publish_launch(const RadArgs* a, RadStream stream) {
     const long long rows = a->t[3].rank > 0 ? a->t[3].shape[0] : 0;
     if (layer < 0 || layer >= (long long)kMaxLayers || rows <= 0 || rows > (long long)kMaxRows ||
         hidden != (long long)d->hidden || top_k != (long long)d->top_k ||
-        expert_base < 0 || n_expert <= 0 || n_expert > (long long)kExperts)
+        expert_base < 0 || n_expert <= 0 || n_expert > (long long)d->experts)
         return RAD_E_SHAPE;
     for (int i = 0; i < 6; ++i) if (!a->t[i].data) return RAD_E_SHAPE;
     if (a->t[0].rank < 2 || a->t[1].rank < 2 || a->t[2].rank < 2 ||

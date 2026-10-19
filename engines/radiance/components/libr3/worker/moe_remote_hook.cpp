@@ -154,7 +154,7 @@ void register_mailbox() {
     if (::fstat(g.fd, &st) != 0 || st.st_size < (off_t)sizeof(Header)) return;
     g.bytes = (size_t)st.st_size;
     g.map = ::mmap(nullptr, g.bytes, PROT_READ | PROT_WRITE, MAP_SHARED, g.fd, 0);
-    if (g.map == MAP_FAILED || !valid(static_cast<Header*>(g.map), g.bytes, legacy_shape())) {
+    if (g.map == MAP_FAILED || !valid_self(static_cast<Header*>(g.map), g.bytes)) {
         std::fprintf(stderr, "libr3: R3_MOE_WORKER shared-memory protocol mismatch\n");
         return;
     }
@@ -411,6 +411,7 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
     s.dev.max_rows = row_cap;
     s.dev.hidden = g.hdr->hidden;
     s.dev.top_k = g.hdr->top_k;
+    s.dev.experts = g.hdr->expert_count;
     s.dev.rank = (uint32_t)rank;
     s.dev.world = (uint32_t)world_size;
     if (const char* hp = std::getenv("R3_MOE_WORKER_HISTOGRAM"); hp && *hp) {
