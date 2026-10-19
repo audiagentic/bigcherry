@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <climits>
 #include <cstring>
+#include <initializer_list>
 #include <linux/futex.h>
 #include <sys/syscall.h>
 #include <unistd.h>
@@ -164,6 +165,73 @@ constexpr Layout layout() {
     }
     x.bytes = align_page(at);
     return x;
+}
+
+/* The same layout from a runtime shape (RCS09-02): every region is sized from the model's hidden width, top-k, expert count, row
+ * capacity and activation quantisation group, with checked 64-bit arithmetic, instead of the Flash-Next constants above. The
+ * protocol bounds (kMaxRanks, kMaxLayers, the lane ring) stay compile-time. Order and page alignment are exactly layout()'s, so
+ * for legacy_shape() the two agree byte for byte (tested). A zero dimension, a zero group, a result that does not fit a 32-bit slot
+ * size, or any overflow returns false and leaves *out untouched. */
+struct LayoutShape {
+    uint32_t hidden, top_k, experts, max_rows, act_group;
+};
+constexpr LayoutShape legacy_shape() { return LayoutShape{kHidden, kTopK, kExperts, kMaxRows, kActGroup}; }
+
+inline bool layout_for(const LayoutShape& s, Layout* out) {
+    auto mul = [](uint64_t a, uint64_t b, uint64_t* r) {
+        if (a && b > UINT64_MAX / a) return false;
+        *r = a * b;
+        return true;
+    };
+    auto add = [](uint64_t a, uint64_t b, uint64_t* r) {
+        if (b > UINT64_MAX - a) return false;
+        *r = a + b;
+        return true;
+    };
+    auto page = [&](uint64_t n, uint64_t* r) {
+        uint64_t t = 0;
+        if (!add(n, kPage - 1, &t)) return false;
+        *r = t & ~(uint64_t(kPage) - 1);
+        return true;
+    };
+    if (!out || !s.hidden || !s.top_k || !s.experts || !s.max_rows || !s.act_group || s.top_k > s.experts) return false;
+    uint64_t routes = 0, rows_hidden = 0, groups = 0, scale_cols = 0, owner_row = 0;
+    uint64_t route_b = 0, bf16_b = 0, q_b = 0, scale_b = 0, act_b = 0, result_b = 0, owner_b = 0, map_b = 0, tmp = 0;
+    if (!mul(s.max_rows, s.top_k, &routes) || !mul(routes, sizeof(Route), &route_b)) return false;
+    if (!mul(s.max_rows, s.hidden, &rows_hidden) || !mul(rows_hidden, sizeof(uint16_t), &bf16_b)) return false;
+    q_b = rows_hidden;
+    groups = (uint64_t)s.hidden / s.act_group;   /* the quantiser works in whole groups: a tail is not defined, so refuse it */
+    if (!groups || groups * s.act_group != s.hidden) return false;
+    scale_cols = groups;
+    if (!mul(s.max_rows, scale_cols, &tmp) || !mul(tmp, sizeof(float), &scale_b)) return false;
+    if (!add(bf16_b, q_b, &tmp) || !add(tmp, scale_b, &act_b)) return false;
+    result_b = bf16_b;
+    owner_row = ((uint64_t)s.experts + 7u) / 8u;
+    if (!mul(kMaxLayers, owner_row, &owner_b)) return false;
+    if (!mul((uint64_t)kMaxLayers * s.experts, sizeof(int32_t), &map_b)) return false;
+    for (uint64_t v : {route_b, act_b, result_b, owner_b, map_b})
+        if (v > UINT32_MAX) return false;   /* the header records each slot size in 32 bits */
+    Layout x{};
+    uint64_t at = kPage;
+    x.ring = at;
+    if (!add(at, (uint64_t)sizeof(Request) * kRingSlots, &tmp) || !page(tmp, &at)) return false;
+    x.owner = at;
+    if (!mul(kMaxRanks, owner_b, &tmp) || !add(at, tmp, &tmp) || !page(tmp, &at)) return false;
+    x.layer_map = at;
+    if (!add(at, map_b, &tmp) || !page(tmp, &at)) return false;
+    for (uint32_t r = 0; r < kMaxRanks; ++r) {
+        x.route[r] = at;
+        if (!add(at, route_b, &tmp) || !page(tmp, &at)) return false;
+        x.activation[r] = at;
+        if (!add(at, act_b, &tmp) || !page(tmp, &at)) return false;
+        for (uint32_t o = 0; o < kMaxRanks; ++o) {
+            x.result[r * kMaxRanks + o] = at;
+            if (!add(at, result_b, &tmp) || !page(tmp, &at)) return false;
+        }
+    }
+    if (!page(at, &x.bytes)) return false;
+    *out = x;
+    return true;
 }
 
 inline void init(void* base, uint32_t layers) {
