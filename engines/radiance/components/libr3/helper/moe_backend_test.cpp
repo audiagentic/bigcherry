@@ -19,16 +19,16 @@ static MoeDeviceCaps caps(const char* arch, bool wmma = true) {
 }
 
 int main() {
-    // Flash-Next: hidden 2560, 512 experts, top-k 10, expert intermediate 512 (gate+up fused to 1024 rows).
-    const MoeShape flash{128, 512, 2560, 10, 512, 1, 64};
+    // Flash-Next: hidden 2560, 512 experts, top-k 10, expert width 640 (gate+up fused to 1280 rows), read from the container 2026-10-19.
+    const MoeShape flash{49, 512, 2560, 10, 640, 1, 64};
     const MoeWeightDesc w4{MOE_FMT_W4NL64, MOE_ACT_FP8_E4M3_GROUP, MOE_SCALE_E4M3, 0, 64, 0};
     const MoeExpertDesc fe = expert_for(flash, w4);
-    check(fe.gu_rows == 1024 && fe.gu_cols == 2560 && fe.dn_rows == 2560 && fe.dn_cols == 512, "expert geometry from shape");
-    // codes rows*cols/2, scales rows*(cols/64) one byte each: gate/up 1310720 + 40960, down 655360 + 20480
-    check(expert_bytes(fe) == 1310720 + 40960 + 655360 + 20480, "W4 expert bytes match the helper's relayout geometry");
+    check(fe.gu_rows == 1280 && fe.gu_cols == 2560 && fe.dn_rows == 2560 && fe.dn_cols == 640, "expert geometry from shape");
+    // codes rows*cols/2, scales rows*(cols/64) one byte each: gate/up 1638400 + 51200, down 819200 + 25600
+    check(expert_bytes(fe) == 1638400 + 51200 + 819200 + 25600, "W4 expert bytes match the helper's relayout geometry");
 
-    // Qwen3.6-35B-A3B FP8: hidden 2048, 256 experts, top-k 8, expert intermediate 512, 128x128 bf16 scales.
-    const MoeShape qwen{40, 256, 2048, 8, 512, 1, 64};
+    // Qwen3.6-35B-A3B FP8 (41 layers with the MTP layer): hidden 2048, 256 experts, top-k 8, expert width 512, 128x128 bf16 scales.
+    const MoeShape qwen{41, 256, 2048, 8, 512, 1, 64};
     const MoeWeightDesc fp8{MOE_FMT_FP8_E4M3_BLOCK, MOE_ACT_BF16, MOE_SCALE_BF16, 128, 128, 0};
     const MoeExpertDesc qe = expert_for(qwen, fp8);
     // gate/up 1024x2048: 2097152 codes + (8*16)*2 scale bytes; down 2048x512: 1048576 codes + (16*4)*2
