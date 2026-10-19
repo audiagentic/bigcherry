@@ -510,6 +510,8 @@ ownership.
 | `tools/lab/radiance/qwen35b-helper-maskonly.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark quality configuration for the exact merge control (mask-only) of the 35B workers (RAD13). |
 | `tools/lab/radiance/qwen35b-gemv-ab.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark server configuration, the 35B FP8 decode GEMV against the grouped GEMM on concurrent streams (RAD14). |
 | `tools/lab/radiance/qwen35b-gemv-large-ab.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark server configuration, the FP8 decode GEMV on large-lane steps (R3_MOE_WORKER_GEMV_LARGE_ROWS) on concurrent streams (RAD14). |
+| `tools/lab/radiance/qwen35b-engine-mtp1.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark server configuration, the 35B engine alone with 1 speculative token(s), A/A, to bisect the MTP acceptance collapse (RAD14). |
+| `tools/lab/radiance/qwen35b-engine-mtp2.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark server configuration, the 35B engine alone with 2 speculative token(s), A/A, to bisect the MTP acceptance collapse (RAD14). |
 | `tools/lab/radiance/run-radiance.sh` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/radiance/helper-small-ab.json` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/radiance/helper-downtile-ab.json` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, disposed per that README. |
