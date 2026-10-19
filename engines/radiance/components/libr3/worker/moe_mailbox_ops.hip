@@ -87,8 +87,8 @@ __device__ __forceinline__ void store_sys_rel(uint32_t* p, uint32_t v) {
 __device__ __forceinline__ uint32_t load_sys_acq(const uint32_t* p) {
     return __hip_atomic_load(p, __ATOMIC_ACQUIRE, __HIP_MEMORY_SCOPE_SYSTEM);
 }
-__device__ __forceinline__ bool owner_has(const uint8_t* bits, uint32_t layer, uint32_t expert) {
-    const uint64_t bit = (uint64_t)layer * kExperts + expert;
+__device__ __forceinline__ bool owner_has(const uint8_t* bits, uint32_t layer, uint32_t expert, uint32_t experts) {
+    const uint64_t bit = (uint64_t)layer * experts + expert;
     return (bits[bit >> 3] & (uint8_t)(1u << (bit & 7u))) != 0;
 }
 
@@ -146,7 +146,7 @@ __global__ void mailbox_publish_kernel(
         layer >= h->layer_count || !load_sys_acq(&h->layer_map_ready[layer])) return;
 
     const int32_t* slot_map = reinterpret_cast<const int32_t*>(
-        base + h->layer_map_offset) + (uint64_t)layer * kExperts;
+        base + h->layer_map_offset) + (uint64_t)layer * h->expert_count;
     uint32_t cls = kSmallClasses;                    /* the large lane unless a small class fits the step */
     for (uint32_t c = 0; c < h->small_class_count && c < kSmallClasses; ++c)
         if (rows <= h->small_class_rows[c]) { cls = c; break; }
@@ -181,10 +181,10 @@ __global__ void mailbox_publish_kernel(
         Route* route = reinterpret_cast<Route*>(base + h->route_offset[slot]);
         for (uint32_t i = threadIdx.x; i < rows * top_k; i += blockDim.x) {
             const int32_t le = ids[i] - expert_base;
-            const bool in_range = le >= 0 && (uint32_t)le < n_expert && (uint32_t)le < kExperts;
+            const bool in_range = le >= 0 && (uint32_t)le < n_expert && (uint32_t)le < h->expert_count;
             /* R3_MOE_WORKER_HISTOGRAM: every route this step makes, owned or not, counted once (first slot). */
-            if (heat && k == 0 && in_range) atomicAdd(heat + (size_t)layer * kExperts + (uint32_t)le, 1u);
-            if (!in_range || slot_map[(uint32_t)le] < 0 || !owner_has(own, layer, (uint32_t)le))
+            if (heat && k == 0 && in_range) atomicAdd(heat + (size_t)layer * h->expert_count + (uint32_t)le, 1u);
+            if (!in_range || slot_map[(uint32_t)le] < 0 || !owner_has(own, layer, (uint32_t)le, h->expert_count))
                 continue;
             const uint32_t p = atomicAdd(&nr, 1u);
             route[p].token = (int32_t)(i / top_k);
