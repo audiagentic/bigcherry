@@ -1,5 +1,5 @@
 {
-  "_comment": "RAD12: pre-queued small-lane sizes 4/8/16/24 (R3_MOE_HELPER_SMALL_LANES) against the single production 8-row small lane, at 1, 2, 3, 4 and 6 streams, engine /metrics and helper TRACE in both arms. Set RAD_BIN, RAD_HOME and R9700_BDF as for helper-ab.json.",
+  "_comment": "RAD12: the single 8-row small lane (production), the single 24-row lane, and two lanes 8 and 24, at 1, 2, 3, 4 and 6 streams, engine /metrics and helper TRACE in all arms. Four lanes (4/8/16/24) cost 5-16% at 1, 2, 4 and 6 streams from the parked lane streams, so the lane count is the variable. Set RAD_BIN, RAD_HOME and R9700_BDF as for helper-ab.json.",
   "schema_version": 1,
   "engine": "radiance",
   "evidence_role": "diagnostic",
@@ -81,7 +81,25 @@
       }
     },
     {
-      "name": "classes",
+      "name": "rows24",
+      "mode": "stock",
+      "shutdown_method": "sigint",
+      "binary": "${RAD_BIN}",
+      "settings": {
+        "R3_MOE_HELPER": "1",
+        "R3_MOE_HELPER_DEVICES": "0 1",
+        "R3_MOE_HELPER_MOE_DOWN_TILE": "1",
+        "R3_MOE_HELPER_ENGINE_RANKS": "1",
+        "R3_MOE_HELPER_MAX_ROWS": "4096",
+        "R3_MOE_HELPER_SMALL_ROWS": "24",
+        "R3_MOE_HELPER_MIB": "22528",
+        "R3_MOE_HELPER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
+        "R3_MOE_HELPER_ROWS": "0",
+        "R3_MOE_HELPER_TRACE": "1"
+      }
+    },
+    {
+      "name": "lanes8-24",
       "mode": "stock",
       "shutdown_method": "sigint",
       "binary": "${RAD_BIN}",
@@ -96,7 +114,7 @@
         "R3_MOE_HELPER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
         "R3_MOE_HELPER_ROWS": "0",
         "R3_MOE_HELPER_TRACE": "1",
-        "R3_MOE_HELPER_SMALL_LANES": "4,8,16,24"
+        "R3_MOE_HELPER_SMALL_LANES": "8,24"
       }
     }
   ],
