@@ -34,7 +34,7 @@ A decode-sized MoE GEMV for gfx1100 (libr3 native unit), registered as a moe_gem
 
 ## Validation
 
-CPU reference vs existing moe_gemm_w4a8 on gfx1100 for 1-8 tokens x top 10 (r3_moe_helper --compare and a libr3 selftest case); KL vs the XTX-pair exact reference within the noise floor (0.058-0.067); helper per-stage timing at decode size; R9700-engine + two-XTX decode A/B (balanced, same prompt, MTP acceptance compared); two-XTX engine decode A/B.
+CPU reference vs existing moe_gemm_w4a8 on gfx1100 for 1-8 tokens x top 10 (r3_moe_worker --compare and a libr3 selftest case); KL vs the XTX-pair exact reference within the noise floor (0.058-0.067); helper per-stage timing at decode size; R9700-engine + two-XTX decode A/B (balanced, same prompt, MTP acceptance compared); two-XTX engine decode A/B.
 
 ## Effort & Risk
 

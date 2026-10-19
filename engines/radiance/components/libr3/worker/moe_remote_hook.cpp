@@ -56,57 +56,57 @@ struct HookState {
 HookState g;
 
 bool enabled_env() {
-    const char* e = std::getenv("R3_MOE_HELPER");
+    const char* e = std::getenv("R3_MOE_WORKER");
     return e && *e && std::strcmp(e, "0") != 0;
 }
 
 bool poison_env() {
-    const char* e = std::getenv("R3_MOE_HELPER_POISON");
+    const char* e = std::getenv("R3_MOE_WORKER_POISON");
     return e && *e && std::strcmp(e, "0") != 0;
 }
 
 bool shadow_env() {
-    const char* e = std::getenv("R3_MOE_HELPER_SHADOW");
+    const char* e = std::getenv("R3_MOE_WORKER_SHADOW");
     return e && *e && std::strcmp(e, "0") != 0;
 }
 
 bool mask_only_env() {
-    const char* e = std::getenv("R3_MOE_HELPER_MASK_ONLY");
+    const char* e = std::getenv("R3_MOE_WORKER_MASK_ONLY");
     return e && *e && std::strcmp(e, "0") != 0;
 }
 
 bool cpu_ref_env() {
-    const char* e = std::getenv("R3_MOE_HELPER_CPU");
+    const char* e = std::getenv("R3_MOE_WORKER_CPU");
     return e && *e && std::strcmp(e, "0") != 0;
 }
 
 const char* shm_name() {
-    const char* e = std::getenv("R3_MOE_HELPER_SHM");
+    const char* e = std::getenv("R3_MOE_WORKER_SHM");
     return e && *e ? e : "/r3-moe-helper";
 }
 
 int64_t max_rows() {
-    const char* e = std::getenv("R3_MOE_HELPER_MAX_ROWS");
+    const char* e = std::getenv("R3_MOE_WORKER_MAX_ROWS");
     const long long n = e && *e ? std::atoll(e) : 64;
     return std::min<int64_t>(n > 0 ? n : 64, kMaxRows);
 }
 
 bool hip_ok(hipError_t e, const char* what) {
     if (e == hipSuccess) return true;
-    std::fprintf(stderr, "libr3: R3_MOE_HELPER %s: %s\n", what, hipGetErrorString(e));
+    std::fprintf(stderr, "libr3: R3_MOE_WORKER %s: %s\n", what, hipGetErrorString(e));
     return false;
 }
 
 void publish_layer_map(int layer, int n_expert, const int32_t* slot_of_expert) {
     static std::atomic<int> seen{0};
     if (seen.fetch_add(1) == 0)
-        std::fprintf(stderr, "libr3: R3_MOE_HELPER first layer map: layer %d n_expert %d\n", layer, n_expert);
+        std::fprintf(stderr, "libr3: R3_MOE_WORKER first layer map: layer %d n_expert %d\n", layer, n_expert);
     if (!g.hdr || !g.pinned || !slot_of_expert || layer < 0 ||
         layer >= (int)g.hdr->layer_count || n_expert <= 0 ||
         n_expert > (int)kExperts) {
         static std::atomic<int> said{0};
         if (said.fetch_add(1) == 0)
-            std::fprintf(stderr, "libr3: R3_MOE_HELPER layer map dropped: hdr %d pinned %d map %d layer %d of %u "
+            std::fprintf(stderr, "libr3: R3_MOE_WORKER layer map dropped: hdr %d pinned %d map %d layer %d of %u "
                          "n_expert %d\n", g.hdr != nullptr, (int)g.pinned, slot_of_expert != nullptr, layer,
                          g.hdr ? g.hdr->layer_count : 0u, n_expert);
         return;
@@ -116,7 +116,7 @@ void publish_layer_map(int layer, int n_expert, const int32_t* slot_of_expert) {
     if (!dst) return;
     if (load(&g.hdr->layer_map_ready[layer])) {
         if (std::memcmp(dst, slot_of_expert, (size_t)n_expert * sizeof(int32_t)) != 0)
-            std::fprintf(stderr, "libr3: R3_MOE_HELPER layer %d runtime slot map changed across ranks\n",
+            std::fprintf(stderr, "libr3: R3_MOE_WORKER layer %d runtime slot map changed across ranks\n",
                          layer);
     } else {
         std::memcpy(dst, slot_of_expert, (size_t)n_expert * sizeof(int32_t));
@@ -128,7 +128,7 @@ void publish_layer_map(int layer, int n_expert, const int32_t* slot_of_expert) {
         for (int e = 0; e < n_expert; ++e) protected_layer |= slot_of_expert[e] < 0;
         if (protected_layer) {
             for (int e = 0; e < (int)kExperts; ++e) dst[e] = -1;
-            std::fprintf(stderr, "libr3: R3_MOE_HELPER layer %d has protected experts; kept local\n", layer);
+            std::fprintf(stderr, "libr3: R3_MOE_WORKER layer %d has protected experts; kept local\n", layer);
         }
         store(&g.hdr->layer_map_ready[layer], 1);
         (void)futex_wake(&g.hdr->layer_map_ready[layer]);
@@ -147,7 +147,7 @@ void register_mailbox() {
     if (!enabled_env()) return;
     g.fd = ::shm_open(shm_name(), O_RDWR | O_CLOEXEC, 0);
     if (g.fd < 0) {
-        std::fprintf(stderr, "libr3: R3_MOE_HELPER shm %s is not ready\n", shm_name());
+        std::fprintf(stderr, "libr3: R3_MOE_WORKER shm %s is not ready\n", shm_name());
         return;
     }
     struct stat st{};
@@ -155,7 +155,7 @@ void register_mailbox() {
     g.bytes = (size_t)st.st_size;
     g.map = ::mmap(nullptr, g.bytes, PROT_READ | PROT_WRITE, MAP_SHARED, g.fd, 0);
     if (g.map == MAP_FAILED || !valid(static_cast<Header*>(g.map), g.bytes, legacy_shape())) {
-        std::fprintf(stderr, "libr3: R3_MOE_HELPER shared-memory protocol mismatch\n");
+        std::fprintf(stderr, "libr3: R3_MOE_WORKER shared-memory protocol mismatch\n");
         return;
     }
     g.hdr = static_cast<Header*>(g.map);
@@ -169,7 +169,7 @@ void register_mailbox() {
     g.engine_register = reinterpret_cast<RegisterFn>(dlsym(RTLD_DEFAULT, "bc_moe_remote_register"));
     if (const char* e = dlerror(); e || !g.engine_register) {
         std::fprintf(stderr,
-            "libr3: R3_MOE_HELPER engine does not export bc_moe_remote_register (patch rad0002)%s%s\n",
+            "libr3: R3_MOE_WORKER engine does not export bc_moe_remote_register (patch rad0002)%s%s\n",
             e ? ": " : "", e ? e : "");
         (void)hipHostUnregister(g.map);
         g.pinned = false;
@@ -177,12 +177,12 @@ void register_mailbox() {
         return;
     }
     /* layer_map: the runtime slot maps (replayed for layers declared before this registration). owns_expert:
-     * ownership for placement (R3_MOE_HELPER_SKIP_OWNED), the helper's bitmap as published before the engine
+     * ownership for placement (R3_MOE_WORKER_SKIP_OWNED), the helper's bitmap as published before the engine
      * starts. The engine applies the protected-layer and slot tests itself, the same ones the helper uses when
      * it narrows ownership to the runtime maps, so both sides agree on what is never placed here. */
     static const EnginePlugin plugin{sizeof(EnginePlugin), publish_layer_map, owner_query};
     if (g.engine_register(&plugin) != 0) {
-        std::fprintf(stderr, "libr3: R3_MOE_HELPER engine rejected the plugin registration (struct size)\n");
+        std::fprintf(stderr, "libr3: R3_MOE_WORKER engine rejected the plugin registration (struct size)\n");
         (void)hipHostUnregister(g.map);
         g.pinned = false;
         g.hdr = nullptr;
@@ -198,11 +198,11 @@ void register_mailbox() {
     const std::string mr = std::to_string((long long)max_rows());
     (void)::setenv("R3_MOE_REMOTE_MAX_ROWS", mr.c_str(), 0);
     std::fprintf(stderr,
-        "libr3: R3_MOE_HELPER GPU mailbox ready, %u owned experts, decode rows <= %lld\n",
+        "libr3: R3_MOE_WORKER GPU mailbox ready, %u owned experts, decode rows <= %lld\n",
         g.hdr->owned_count, (long long)max_rows());
-    if (poison_env()) std::fprintf(stderr, "libr3: R3_MOE_HELPER poison\n");
-    if (shadow_env()) std::fprintf(stderr, "libr3: R3_MOE_HELPER_SHADOW enabled\n");
-    if (mask_only_env()) std::fprintf(stderr, "libr3: R3_MOE_HELPER_MASK_ONLY enabled\n");
+    if (poison_env()) std::fprintf(stderr, "libr3: R3_MOE_WORKER poison\n");
+    if (shadow_env()) std::fprintf(stderr, "libr3: R3_MOE_WORKER_SHADOW enabled\n");
+    if (mask_only_env()) std::fprintf(stderr, "libr3: R3_MOE_WORKER_MASK_ONLY enabled\n");
 }
 
 void report_shadow(uint32_t rank, RankState& s) {
@@ -222,14 +222,14 @@ void report_shadow(uint32_t rank, RankState& s) {
         std::memcpy(&max_abs, &x.max_abs_bits, sizeof(max_abs));
         const double rel = std::sqrt((double)x.diff2 / std::max(1.0e-30, (double)x.ref2));
         std::fprintf(stderr,
-            "libr3: R3_MOE_HELPER_SHADOW layer=%u rank=%u rows=%llu mean_abs=%.8g "
+            "libr3: R3_MOE_WORKER_SHADOW layer=%u rank=%u rows=%llu mean_abs=%.8g "
             "max_abs=%.8g rel_l2=%.8g bad_rows=%u\n",
             l, rank, (unsigned long long)x.rows,
             (double)x.sum_abs / (double)x.elems, (double)max_abs, rel, x.bad_rows);
         const auto& f = first[l];
         if (f.claimed) {
             std::fprintf(stderr,
-                "libr3: R3_MOE_HELPER_SHADOW first_bad layer=%u rank=%u r0=%u token=%d "
+                "libr3: R3_MOE_WORKER_SHADOW first_bad layer=%u rank=%u r0=%u token=%d "
                 "slot=%u expert=%d rel_l2=%.8g max_abs=%.8g "
                 "local=[%.8g %.8g %.8g %.8g] helper=[%.8g %.8g %.8g %.8g]\n",
                 f.layer, f.rank, f.row_base, f.token, (unsigned)f.slot,
@@ -242,10 +242,10 @@ void report_shadow(uint32_t rank, RankState& s) {
     }
 }
 
-/* R3_MOE_HELPER_HISTOGRAM=<path>: this rank's route counts, uint32[kMaxLayers][kExperts], written at shutdown
- * to <path>.rank<r>. A helper given it as R3_MOE_HELPER_HEAT owns the coldest experts first. */
+/* R3_MOE_WORKER_HISTOGRAM=<path>: this rank's route counts, uint32[kMaxLayers][kExperts], written at shutdown
+ * to <path>.rank<r>. A helper given it as R3_MOE_WORKER_HEAT owns the coldest experts first. */
 void write_heat(uint32_t rank, RankState& s) {
-    const char* path = std::getenv("R3_MOE_HELPER_HISTOGRAM");
+    const char* path = std::getenv("R3_MOE_WORKER_HISTOGRAM");
     if (!path || !*path || !s.dev.heat) return;
     std::vector<uint32_t> heat((size_t)kMaxLayers * kExperts);
     if (!hip_ok(hipDeviceSynchronize(), "sync before route histogram") ||
@@ -256,7 +256,7 @@ void write_heat(uint32_t rank, RankState& s) {
     if (FILE* f = std::fopen(out.c_str(), "wb")) {
         const size_t n = std::fwrite(heat.data(), sizeof(uint32_t), heat.size(), f);
         std::fclose(f);
-        std::fprintf(stderr, "libr3: R3_MOE_HELPER route histogram %s (%zu counts)\n", out.c_str(), n);
+        std::fprintf(stderr, "libr3: R3_MOE_WORKER route histogram %s (%zu counts)\n", out.c_str(), n);
     }
 }
 
@@ -320,7 +320,7 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
         return RAD_E_DEVICE;
     const uint32_t helpers = g.hdr->helper_count;
     if (helpers < 1 || helpers > kMaxRanks || (helpers > 1 && world_size != 1)) {
-        std::fprintf(stderr, "libr3: R3_MOE_HELPER %u helpers need a one-rank engine (world %d)\n",
+        std::fprintf(stderr, "libr3: R3_MOE_WORKER %u helpers need a one-rank engine (world %d)\n",
                      helpers, world_size);
         return RAD_E_STATE;
     }
@@ -411,7 +411,7 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
     s.dev.max_rows = row_cap;
     s.dev.rank = (uint32_t)rank;
     s.dev.world = (uint32_t)world_size;
-    if (const char* hp = std::getenv("R3_MOE_HELPER_HISTOGRAM"); hp && *hp) {
+    if (const char* hp = std::getenv("R3_MOE_WORKER_HISTOGRAM"); hp && *hp) {
         const size_t hb = (size_t)kMaxLayers * kExperts * sizeof(uint32_t);
         if (!hip_ok(hipMalloc(reinterpret_cast<void**>(&s.dev.heat), hb), "hipMalloc route histogram") ||
             !hip_ok(hipMemset(s.dev.heat, 0, hb), "zero route histogram"))
@@ -421,7 +421,7 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
     s.dev.shadow = shadow ? 1u : 0u;
     /* 1: add the engine's captured rows; 2: same late publish/mask/rescatter, but add the helper's rows. */
     {
-        const char* e = std::getenv("R3_MOE_HELPER_MASK_ONLY");
+        const char* e = std::getenv("R3_MOE_WORKER_MASK_ONLY");
         s.dev.mask_only = !mask_only ? 0u : (e && std::strcmp(e, "2") == 0 ? 2u : 1u);
     }
     s.dev.cpu_ref = cpu_ref_env() ? 1u : 0u;

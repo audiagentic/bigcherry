@@ -1,6 +1,6 @@
 #!/bin/bash
-# RAD06: record real helper requests for `r3_moe_helper --replay` / `--replay-sweep`. Builds the branch, runs ONE
-# server cell of helper-ab.json with R3_MOE_HELPER_CAPTURE set, and leaves the captures (capture format 2: layer
+# RAD06: record real helper requests for `r3_moe_worker --replay` / `--replay-sweep`. Builds the branch, runs ONE
+# server cell of helper-ab.json with R3_MOE_WORKER_CAPTURE set, and leaves the captures (capture format 2: layer
 # slot map, routes, the engine's own quantised E4M3 activation planes) in the capture directory. The server's
 # load stage is paid here once; every later kernel experiment replays these files without a server.
 # Usage: helper-capture.sh <branch> [capture-dir=/mnt/data/bigcherry-work/captures] [every=11] [max=24]
@@ -18,10 +18,10 @@ import json, sys
 d = json.load(open(sys.argv[1]))
 a = d["arms"][0]
 a["name"] = "capture-a"
-a["settings"]["R3_MOE_HELPER_ROWS"] = "0"
-a.setdefault("environment", {}).update({"R3_MOE_HELPER_CAPTURE": sys.argv[3],
-                                        "R3_MOE_HELPER_CAPTURE_EVERY": sys.argv[4],
-                                        "R3_MOE_HELPER_CAPTURE_MAX": sys.argv[5]})
+a["settings"]["R3_MOE_WORKER_ROWS"] = "0"
+a.setdefault("environment", {}).update({"R3_MOE_WORKER_CAPTURE": sys.argv[3],
+                                        "R3_MOE_WORKER_CAPTURE_EVERY": sys.argv[4],
+                                        "R3_MOE_WORKER_CAPTURE_MAX": sys.argv[5]})
 c = json.loads(json.dumps(a)); c["name"] = "capture-b"   # the harness wants two arms; both record
 d["arms"] = [a, c]
 json.dump(d, open(sys.argv[2], "w"), indent=1)

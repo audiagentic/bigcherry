@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""RAD06: derive small-lane (decode-sized) helper captures from real large-lane captures, for `r3_moe_helper --replay[-sweep]`.
+"""RAD06: derive small-lane (decode-sized) helper captures from real large-lane captures, for `r3_moe_worker --replay[-sweep]`.
 
-A capture (format 2, r3_moe_helper.cpp CaptureHeader) is: header {magic, version, layer, rows, route_count, hidden} as six
+A capture (format 2, r3_moe_worker.cpp CaptureHeader) is: header {magic, version, layer, rows, route_count, hidden} as six
 uint32, the layer's 512-entry slot map (int32), route_count routes of 12 bytes {int32 token, int32 expert, uint16 weight,
 uint16 slot}, then rows x hidden E4M3 activation codes and rows x (hidden/128) float scales. This keeps the first N
 tokens: their routes (token < N) and their activation rows, with the header rewritten. N <= 8 takes the helper's small

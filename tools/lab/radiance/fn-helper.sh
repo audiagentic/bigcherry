@@ -12,12 +12,12 @@ src=${RADIANCE_SRC:-/mnt/data/bigcherry-work/engines/radiance}
 rad=${RAD_BIN:-$src/build/bin/radiance}
 home=${RADIANCE_HOME:-$src/build/radiance_home}
 runtime=${RADIANCE_RUNTIME_HOME:-${home%%:*}}
-helper=${R3_MOE_HELPER_BIN:-$runtime/helpers/r3_moe_helper}
+helper=${R3_MOE_WORKER_BIN:-$runtime/helpers/r3_moe_worker}
 recipes=$repo/engines/radiance/recipes.toml
 port=${PORT:-18437}
 
 [ -x "$rad" ] || { echo "NO_RADIANCE $rad" >&2; exit 1; }
-[ -x "$helper" ] || { echo "NO_R3_MOE_HELPER $helper" >&2; exit 1; }
+[ -x "$helper" ] || { echo "NO_R3_MOE_WORKER $helper" >&2; exit 1; }
 [ -s "$model" ] || { echo "NO_MODEL $model" >&2; exit 1; }
 [ -r "$recipes" ] || { echo "NO_RECIPES $recipes" >&2; exit 1; }
 
@@ -50,7 +50,7 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 # A helper left by an interrupted run keeps its 28 GiB on the R9700 and the next one runs out of memory.
-pgrep -x r3_moe_helper >/dev/null && { pkill -TERM -x r3_moe_helper; sleep 3; pkill -KILL -x r3_moe_helper; }
+pgrep -x r3_moe_worker >/dev/null && { pkill -TERM -x r3_moe_worker; sleep 3; pkill -KILL -x r3_moe_worker; }
 rm -f /dev/shm/r3-moe-helper
 if [ "${HELPER:-1}" != 0 ]; then
 echo "== helper: HIP device 2"
@@ -58,7 +58,7 @@ HIP_VISIBLE_DEVICES=2 RADIANCE_HOME="$home" \
     "$helper" "$model" >"$out/helper.log" 2>&1 &
 helper_pid=$!
 deadline=$((SECONDS + ${HELPER_TIMEOUT:-900}))
-until grep -qE '^r3_moe_helper: (ready |waiting for engine runtime expert maps)' "$out/helper.log"; do
+until grep -qE '^r3_moe_worker: (ready |waiting for engine runtime expert maps)' "$out/helper.log"; do
     if ! kill -0 "$helper_pid" 2>/dev/null; then
         echo "HELPER_EXITED" >&2; tail -40 "$out/helper.log" >&2; exit 1
     fi
@@ -67,11 +67,11 @@ until grep -qE '^r3_moe_helper: (ready |waiting for engine runtime expert maps)'
     fi
     sleep 1
 done
-grep -E "^r3_moe_helper: (owns|selected|ready|waiting)" "$out/helper.log"
+grep -E "^r3_moe_worker: (owns|selected|ready|waiting)" "$out/helper.log"
 fi
 
 echo "== radiance: HIP devices 0,1; runtime-profile flashnext-2xtx"
-HIP_VISIBLE_DEVICES=0,1 R3_MOE_HELPER=${HOOK:-${HELPER:-1}} RADIANCE_HOME="$home" \
+HIP_VISIBLE_DEVICES=0,1 R3_MOE_WORKER=${HOOK:-${HELPER:-1}} RADIANCE_HOME="$home" \
     "$rad" --model "$model" --radiance-home "$home" --kernels libr3,libr3moe,libref \
     "${profile_args[@]}" ${EXTRA_ARGS:-} --max-model-len "$ctx" --host 127.0.0.1 --port "$port" \
     >"$out/server.log" 2>&1 &
@@ -143,7 +143,7 @@ PY
 [ -z "$helper_pid" ] || kill -0 "$helper_pid" 2>/dev/null || { echo "HELPER_DIED" >&2; tail -60 "$out/helper.log" >&2; exit 1; }
 kill -0 "$server_pid" 2>/dev/null || { echo "SERVER_DIED" >&2; tail -60 "$out/server.log" >&2; exit 1; }
 
-grep -E 'MoE remote hook active|R3_MOE_HELPER|error|abort|assert|fault' "$out/server.log" | tail -20 || true
+grep -E 'MoE remote hook active|R3_MOE_WORKER|error|abort|assert|fault' "$out/server.log" | tail -20 || true
 
 kill -INT "$server_pid"
 if ! wait "$server_pid"; then

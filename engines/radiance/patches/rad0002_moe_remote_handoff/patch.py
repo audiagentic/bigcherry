@@ -36,13 +36,13 @@ int bc_moe_remote_register(const BcMoeRemotePlugin* plugin);
 int bc_moe_remote_wanted(int64_t step_rows);
 int bc_moe_remote_wanted_upto(int64_t max_step_rows);
 /* Diagnostics: always 0 unless the engine is built with BC_MOE_REMOTE_DIAG (patch rad0004). A production build
- * that finds R3_MOE_HELPER_SHADOW or R3_MOE_HELPER_MASK_ONLY set answers "no remote rows" and says so once. */
+ * that finds R3_MOE_WORKER_SHADOW or R3_MOE_WORKER_MASK_ONLY set answers "no remote rows" and says so once. */
 int bc_moe_remote_shadow(void);
 int bc_moe_remote_mask_only(void);
 int bc_moe_remote_diag_build(void);
 /* Block declare publishes a layer's map here; it is forwarded to the plugin and kept for replay. */
 void bc_moe_remote_layer_map(int layer, int n_expert, const int32_t* slot_of_expert);
-/* Placement (R3_MOE_HELPER_SKIP_OWNED): whether the engine may leave a routed expert unplaced because the
+/* Placement (R3_MOE_WORKER_SKIP_OWNED): whether the engine may leave a routed expert unplaced because the
  * helper computes it and nothing local ever reads it. */
 int bc_moe_remote_skip_unit(int layer, int expert, int64_t max_step_rows);
 #ifdef __cplusplus
@@ -96,11 +96,11 @@ int64_t max_rows() {
  * expert computes locally, and says so once. */
 bool diag_refused() {
     if (kDiagBuild) return false;
-    static const bool requested = env_on("R3_MOE_HELPER_SHADOW") || env_on("R3_MOE_HELPER_MASK_ONLY");
+    static const bool requested = env_on("R3_MOE_WORKER_SHADOW") || env_on("R3_MOE_WORKER_MASK_ONLY");
     if (!requested) return false;
     static std::atomic<bool> said{false};
     if (!said.exchange(true))
-        std::fprintf(stderr, "radiance: R3_MOE_HELPER_SHADOW / R3_MOE_HELPER_MASK_ONLY need the diagnostic build "
+        std::fprintf(stderr, "radiance: R3_MOE_WORKER_SHADOW / R3_MOE_WORKER_MASK_ONLY need the diagnostic build "
                              "(BC_MOE_REMOTE_DIAG, patch rad0004); remote MoE hand-off is off and every expert "
                              "computes locally\n");
     return true;
@@ -124,12 +124,12 @@ extern "C" int bc_moe_remote_wanted_upto(int64_t max_step_rows) {
 }
 
 extern "C" int bc_moe_remote_shadow(void) {
-    static const bool v = kDiagBuild && env_on("R3_MOE_HELPER_SHADOW");
+    static const bool v = kDiagBuild && env_on("R3_MOE_WORKER_SHADOW");
     return v;
 }
 
 extern "C" int bc_moe_remote_mask_only(void) {
-    static const bool v = kDiagBuild && env_on("R3_MOE_HELPER_MASK_ONLY");
+    static const bool v = kDiagBuild && env_on("R3_MOE_WORKER_MASK_ONLY");
     return v;
 }
 
@@ -160,14 +160,14 @@ extern "C" void bc_moe_remote_layer_map(int layer, int n_expert, const int32_t* 
     if (g_plugin.layer_map) g_plugin.layer_map(layer, n_expert, slot_of_expert);
 }
 
-/* R3_MOE_HELPER_SKIP_OWNED=1: a helper-owned expert is not placed at all -- no VRAM, no host pool -- which is
+/* R3_MOE_WORKER_SKIP_OWNED=1: a helper-owned expert is not placed at all -- no VRAM, no host pool -- which is
  * what lets one engine rank (the R9700) hold a model whose experts it could not hold alone. Only when nothing
  * local will ever read the unit: every step is handed off (the hand-off cap covers the largest step), no
  * diagnostic recomputes owned experts locally, and the layer's runtime map gives the expert a regular slot with
  * no protected expert in the layer (those layers stay local; the helper drops ownership on exactly the same
  * test). */
 extern "C" int bc_moe_remote_skip_unit(int layer, int expert, int64_t max_step_rows) {
-    static const bool on = env_on("R3_MOE_HELPER_SKIP_OWNED");
+    static const bool on = env_on("R3_MOE_WORKER_SKIP_OWNED");
     if (!on || diag_refused() || bc_moe_remote_shadow() || bc_moe_remote_mask_only()) return 0;
     if (min_rows() == (int64_t)LLONG_MAX || min_rows() > 1 || max_rows() < max_step_rows) return 0;
     int (*owns)(int, int) = nullptr;

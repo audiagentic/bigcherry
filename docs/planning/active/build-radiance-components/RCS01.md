@@ -19,7 +19,7 @@ libr3 is one component holding five separable capabilities, and the MoE helper i
 
 Target components (each with its own component.toml, settings, evidence and tests):
 1. libr3 (engine kernel overrides, gfx1100): r3_compat.h, native/*.rw, rewrites.txt, r3_rewrite.py, r3_registry, r3_mxfp4_*.h, r3_selftest, r3_wmma_perf. Settings R3_ATTN_NATIVE, R3_GDN_NATIVE. Output kernels/libr3.so.
-2. moe-remote (arch-neutral): moe_remote_shm.h (+test), moe_remote_hook, moe_mailbox_plugin (libr3moe.so), moe_mailbox_ops.hip, and the helper process (options, ownership/heat/balance, serve loop). Output helpers/r3_moe_helper.
+2. moe-remote (arch-neutral): moe_remote_shm.h (+test), moe_remote_hook, moe_mailbox_plugin (libr3moe.so), moe_mailbox_ops.hip, and the helper process (options, ownership/heat/balance, serve loop). Output helpers/r3_moe_worker.
 3. moe-harness (diagnostic): capture, replay, replay-sweep, trace dump, plus the tools/lab scripts that drive them. Never in a production profile.
 4. moe-backend-gfx1100: lane kernels (front end, small GEMV lane, large grouped WMMA lane, reduce/publish, FP16/AHALF/VECIO/FUSEROUTE/FUSESTAGE). Output helpers/moe_backend_gfx1100.so.
 5. ngram-helper: r3_ngram_* (evaluated, default off; owner decision 2026-10-13: lookup work belongs on host RAM/CPU, not the R9700).
@@ -28,7 +28,7 @@ Interface: a C header moe_backend.h with a small vtable (arch id, capability bit
 
 ## Steps
 
-1. Confirm the five-way map against the code (who includes what; moe_remote_gpu.h and r3_moe_helper.cpp cross-references).
+1. Confirm the five-way map against the code (who includes what; moe_remote_gpu.h and r3_moe_worker.cpp cross-references).
 2. Specify moe_backend.h (entry points, ownership of device buffers and streams, what is per-arch: kernels and tile geometry; what is shared: routing, ownership, protocol).
 3. Decide setting ownership per component and keep env names unchanged (they are runtime identifiers, not legacy shims); evidence mechanism ids move with their setting.
 4. Decide build wiring: engine.toml [components] lists every component; each declares targets and built-against; the pin-bump components-build gate builds all.
@@ -72,11 +72,11 @@ Gate for RCS02-RCS08. Do not start moves until the in-flight RAD06 evidence PR m
 
 ## Design decision (2026-10-19, GPT review after the Qwen3.6-35B-A3B FP8 helper attempt)
 
-Evidence: the helper refuses the 35B model at its first expert ("cannot be laid out as w4nl64a8h"); the sizing in `r3_moe_helper.cpp::select_owned` and `moe_remote_gpu.h::expert_bytes` is W4-specific, so changing GPU kernels alone does not fix loading.
+Evidence: the helper refuses the 35B model at its first expert ("cannot be laid out as w4nl64a8h"); the sizing in `r3_moe_worker.cpp::select_owned` and `moe_remote_gpu.h::expert_bytes` is W4-specific, so changing GPU kernels alone does not fix loading.
 
 Boundary: **moe-remote** is the model-independent expert-worker runtime (shared-memory protocol and mailbox, lanes, scheduling, route mapping, expert ownership, heat and balance, request lifecycle, the worker process, the engine-side adapter). **A backend per architecture** (gfx1100 now, gfx1030 later) owns format-specific expert loading and relayout, device scratch, GEMV/GEMM and quantisation kernels, reductions and launch configuration; one backend may implement several weight formats. **moe-harness** owns synthetic experts, capture/replay, CPU references and differential benchmarks. libr3 keeps only the engine-specific RDNA3 kernel overrides.
 
-Contract: `helper/moe_backend.h` (ABI 1): `MoeShape`, `MoeWeightDesc`, `MoeExpertDesc`, `MoeDeviceCaps`, checked `expert_bytes()` that needs no GPU allocation, and `probe()` that refuses an unsupported (arch, format, activation, scale, geometry) combination before ownership is chosen. A later step adds the C `MoeBackendV1` function table (load_expert, enqueue, synchronize, destroy) once the gfx1100 W4 kernels are adapted behind it.
+Contract: `worker/moe_backend.h` (ABI 1): `MoeShape`, `MoeWeightDesc`, `MoeExpertDesc`, `MoeDeviceCaps`, checked `expert_bytes()` that needs no GPU allocation, and `probe()` that refuses an unsupported (arch, format, activation, scale, geometry) combination before ownership is chosen. A later step adds the C `MoeBackendV1` function table (load_expert, enqueue, synchronize, destroy) once the gfx1100 W4 kernels are adapted behind it.
 
 Order (do not combine rename, ABI change, component move and FP8 in one PR):
 1. Backend contract and format-independent sizing (header and offline test) - this PR.

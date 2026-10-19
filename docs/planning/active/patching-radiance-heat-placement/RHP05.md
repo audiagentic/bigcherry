@@ -28,7 +28,7 @@ Add configurable periodic **evaluation**, not periodic mandatory movement. Use t
 
 ## Detailed Solution & Technical Design
 
-Startup ownership is set by `r3_moe_helper.cpp::select_owned/publish_owned` and `rad0002::rad_moe_remote_skip_unit` influences **initial planner**, so safe restart is the minimal supported activation. The request count is from existing service metrics; the interval clock only requests a decision. Keep phase scores and safe release of the old generation. A 'promote to remote' requires helper weight residency and engine map consistency *before* new routing. A 'promote to local' requires the engine to allocate/load weights before remote ownership ends. Restart satisfies both without runtime two-owner ambiguity.
+Startup ownership is set by `r3_moe_worker.cpp::select_owned/publish_owned` and `rad0002::rad_moe_remote_skip_unit` influences **initial planner**, so safe restart is the minimal supported activation. The request count is from existing service metrics; the interval clock only requests a decision. Keep phase scores and safe release of the old generation. A 'promote to remote' requires helper weight residency and engine map consistency *before* new routing. A 'promote to local' requires the engine to allocate/load weights before remote ownership ends. Restart satisfies both without runtime two-owner ambiguity.
 
 ## Files
 

@@ -27,7 +27,7 @@ Radiance already asynchronously records each MoE router's `expert_count`, but `c
 
 ## Detailed Solution & Technical Design
 
-The GPU already produces per-layer integer `expert_count` and `route_flush()` transfers banked contiguous rows to pinned host storage. Host later calls `Ctx::next_histogram(...)` and `HeatEngine::observe(..., reports)`. A 30-minute ownership policy tolerates stale heat; exact one-time accounting and bounded memory are more important than freshness. Run the old diagnostic `R3_MOE_HELPER_HISTOGRAM` only as a **temporary parity oracle**. Test that a bank cannot be overwritten while logically uncredited without an explicit loss counter; the correct fix may be retirement accounting, a larger ring or a deferred queue, determined from measurement.
+The GPU already produces per-layer integer `expert_count` and `route_flush()` transfers banked contiguous rows to pinned host storage. Host later calls `Ctx::next_histogram(...)` and `HeatEngine::observe(..., reports)`. A 30-minute ownership policy tolerates stale heat; exact one-time accounting and bounded memory are more important than freshness. Run the old diagnostic `R3_MOE_WORKER_HISTOGRAM` only as a **temporary parity oracle**. Test that a bank cannot be overwritten while logically uncredited without an explicit loss counter; the correct fix may be retirement accounting, a larger ring or a deferred queue, determined from measurement.
 
 ## Files
 

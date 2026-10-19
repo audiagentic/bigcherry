@@ -25,7 +25,7 @@ value turns out to be derivable (the 4/8/16/24 lane list is), the derivation rep
 Three layers, cheapest first:
 
 1. DERIVE (no measurement). Settings that follow from the model shape and the serving flags are computed, not configured: small-lane sizes from rows per step = streams x (1 + draft depth)
-   (--max-num-seqs, speculative tokens) as a few classes covering 1 .. max streams; capacities from the shape and free VRAM; helper pool from the device list. RAD12's R3_MOE_HELPER_SMALL_LANES becomes
+   (--max-num-seqs, speculative tokens) as a few classes covering 1 .. max streams; capacities from the shape and free VRAM; helper pool from the device list. RAD12's R3_MOE_WORKER_SMALL_LANES becomes
    an override of a derived default.
 2. CALIBRATE (seconds, once per model x device x build). A built-in `calibrate` phase at first start (or `bigcherry tune-helper`) drives the helper with SYNTHETIC requests built from the model's own
    shape (rows 1..max, routes at the model's top-k, a Zipf-like expert mix, or the heat file when one exists) through the real lanes, times them, and picks: lane sizes that minimise expected cost
@@ -57,7 +57,7 @@ Builds on RAD12 (lane classes), RCS09 (shape from the container), RAD10 (stream-
 Calibration measures the helper side only; the engine-side overlap and scheduler are validated by the stream A/B, not by calibration.
 
 Stream-sensitive settings (owner direction 2026-10-19, after the RAD12 A/B): they derive from the inputs radiance already has, `--max-num-seqs` and the speculative (MTP) draft depth. No new "streams" key.
-Each derived value keeps the name of the setting it replaces (`R3_MOE_HELPER_SMALL_ROWS`, `R3_MOE_HELPER_SMALL_LANES`, ...) as an explicit override that wins; the startup log prints `derived` or `override` per value.
+Each derived value keeps the name of the setting it replaces (`R3_MOE_WORKER_SMALL_ROWS`, `R3_MOE_WORKER_SMALL_LANES`, ...) as an explicit override that wins; the startup log prints `derived` or `override` per value.
 A deployment aimed at 1-2 streams sets `--max-num-seqs` in its model profile; the profile lists only what differs.
 RAD12 A/B (6 pairs, engine decode tps, rows8 / rows24 / four lane classes): 1 stream 122.8 / 111.7 / 109.6; 2: 178.9 / 173.3 / 174.8; 3: 194.1 / 237.8 / 214.0; 4: 245.2 / 266.6 / 242.9; 6: 318.0 / 336.1 / 305.8.
 So one 24-row lane wins at 3+ streams (+7-22%), one 8-row lane at 1-2, and four lane classes lose at every count: the lane size is a function of `max-num-seqs x (1 + draft depth)`.

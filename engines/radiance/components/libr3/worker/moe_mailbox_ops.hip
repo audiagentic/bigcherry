@@ -1,6 +1,6 @@
 #include <cstdio>
-#include "helper/moe_remote_hook.h"
-#include "helper/moe_remote_shm.h"
+#include "worker/moe_remote_hook.h"
+#include "worker/moe_remote_shm.h"
 #include "rad_abi.h"
 
 #include <hip/hip_runtime.h>
@@ -155,7 +155,7 @@ __global__ void mailbox_publish_kernel(
     const uintptr_t qbase = reinterpret_cast<uintptr_t>(aq_base);
     if (qptr < qbase || ((qptr - qbase) % hidden) != 0) __builtin_trap();
 
-    /* R3_MOE_HELPER_FUSESTAGE: a small step's activation staging (what mailbox_stage_kernel does across a grid) done by
+    /* R3_MOE_WORKER_FUSESTAGE: a small step's activation staging (what mailbox_stage_kernel does across a grid) done by
      * this block, ahead of the routes: ~28 KB at a decode step, so a launch and its gap saved in front of every helper
      * request. The system fence below orders these stores before the release of each request, as it does the routes'. */
     if (st_aq) {
@@ -182,7 +182,7 @@ __global__ void mailbox_publish_kernel(
         for (uint32_t i = threadIdx.x; i < rows * top_k; i += blockDim.x) {
             const int32_t le = ids[i] - expert_base;
             const bool in_range = le >= 0 && (uint32_t)le < n_expert && (uint32_t)le < kExperts;
-            /* R3_MOE_HELPER_HISTOGRAM: every route this step makes, owned or not, counted once (first slot). */
+            /* R3_MOE_WORKER_HISTOGRAM: every route this step makes, owned or not, counted once (first slot). */
             if (heat && k == 0 && in_range) atomicAdd(heat + (size_t)layer * kExperts + (uint32_t)le, 1u);
             if (!in_range || slot_map[(uint32_t)le] < 0 || !owner_has(own, layer, (uint32_t)le))
                 continue;
@@ -268,7 +268,7 @@ __global__ void mailbox_add_wait_kernel(
     uint8_t* base, const uint32_t* sequence, const uint32_t* published, uint32_t rank, uint32_t helpers) {
     if (blockIdx.x || threadIdx.x) return;
     Header* h = reinterpret_cast<Header*>(base);
-    const uint64_t entered = wall_clock64();   /* R3_MOE_HELPER_TRACE: engine clock */
+    const uint64_t entered = wall_clock64();   /* R3_MOE_WORKER_TRACE: engine clock */
     Request* traced[kMaxRanks] = {};
     uint64_t seen_at[kMaxRanks] = {};
     for (uint32_t k = 0; k < helpers && k < kMaxRanks; ++k) {
@@ -563,12 +563,12 @@ int publish_launch(const RadArgs* a, RadStream stream) {
 
     /* kHidden is a multiple of 16, so the 16-byte copies cover every row exactly. */
     const uint32_t blocks16 = ((uint32_t)rows * (uint32_t)hidden / 16u + 255u) / 256u;
-    /* R3_MOE_HELPER_FUSESTAGE (default on): a step of at most 16 rows is staged by the publish kernel itself. */
-    const char* fs_env = std::getenv("R3_MOE_HELPER_FUSESTAGE");
+    /* R3_MOE_WORKER_FUSESTAGE (default on): a step of at most 16 rows is staged by the publish kernel itself. */
+    const char* fs_env = std::getenv("R3_MOE_WORKER_FUSESTAGE");
     const bool fuse_stage = rows <= 16 && (!fs_env || std::strcmp(fs_env, "0") != 0);
     if (fuse_stage) {   /* the activation marker component.toml names, printed once */
         static const bool announced = [] {
-            std::fprintf(stderr, "r3_moe: R3_MOE_HELPER_FUSESTAGE on - decode-sized staging in the publish kernel\n");
+            std::fprintf(stderr, "r3_moe: R3_MOE_WORKER_FUSESTAGE on - decode-sized staging in the publish kernel\n");
             return true;
         }();
         (void)announced;

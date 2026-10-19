@@ -403,29 +403,29 @@ class ServerComparisonCaptureTests(unittest.TestCase):
         return rc, captured
 
     def test_arm_settings_become_server_variables_and_are_recorded(self):
-        self.radiance_config({"R3_MOE_HELPER_ROWS": "0"}, {"R3_MOE_HELPER_ROWS": "1"})
+        self.radiance_config({"R3_MOE_WORKER_ROWS": "0"}, {"R3_MOE_WORKER_ROWS": "1"})
         rc, captured = self.run_radiance()
         self.assertEqual(rc, 0)
         by_side = {item["side"]: item for item in captured}
         stock, native = self.arms[0]["name"], self.arms[1]["name"]
-        self.assertEqual(by_side[stock]["env"]["R3_MOE_HELPER_ROWS"], "0")
-        self.assertEqual(by_side[native]["env"]["R3_MOE_HELPER_ROWS"], "1")
-        self.assertEqual(by_side[native]["settings"], {"R3_MOE_HELPER_ROWS": "1"})
+        self.assertEqual(by_side[stock]["env"]["R3_MOE_WORKER_ROWS"], "0")
+        self.assertEqual(by_side[native]["env"]["R3_MOE_WORKER_ROWS"], "1")
+        self.assertEqual(by_side[native]["settings"], {"R3_MOE_WORKER_ROWS": "1"})
         self.assertEqual(by_side[native]["env"]["HIP_VISIBLE_DEVICES"], "0,1")
         summary = json.loads((self.output / "capture" / "run.json").read_text())
-        self.assertEqual(summary["arm_variables"][native], {"environment": {}, "settings": {"R3_MOE_HELPER_ROWS": "1"}})
+        self.assertEqual(summary["arm_variables"][native], {"environment": {}, "settings": {"R3_MOE_WORKER_ROWS": "1"}})
 
     def test_unknown_setting_and_bad_arm_variables_are_refused(self):
         self.radiance_config({}, {"NOT_A_SETTING": "1"})
         with self.patches_for_preflight(), self.assertRaisesRegex(ValueError, "unknown radiance component setting"):
             benchmark.run_server_comparison_capture(self.config, self.output / "a", rounds=2, seed=0, settle_seconds=0)
-        self.radiance_config({}, {"R3_MOE_HELPER_ROWS": "1"})
+        self.radiance_config({}, {"R3_MOE_WORKER_ROWS": "1"})
         config = json.loads(self.config.read_text())
         config["arms"][1]["environment"] = {"ROCR_VISIBLE_DEVICES": "0"}
         self.config.write_text(json.dumps(config), encoding="utf-8")
         with self.patches_for_preflight(), self.assertRaisesRegex(ValueError, "topology belongs"):
             benchmark.run_server_comparison_capture(self.config, self.output / "b", rounds=2, seed=0, settle_seconds=0)
-        config["arms"][1]["environment"] = {"R3_MOE_HELPER_ROWS": "1"}
+        config["arms"][1]["environment"] = {"R3_MOE_WORKER_ROWS": "1"}
         self.config.write_text(json.dumps(config), encoding="utf-8")
         with self.patches_for_preflight(), self.assertRaisesRegex(ValueError, "one place"):
             benchmark.run_server_comparison_capture(self.config, self.output / "c", rounds=2, seed=0, settle_seconds=0)
@@ -455,8 +455,8 @@ class ServerComparisonCaptureTests(unittest.TestCase):
             benchmark.run_server_comparison_capture(self.config, self.output / "e", rounds=2, seed=0, settle_seconds=0)
 
     def test_setting_activation_is_recorded_from_server_and_sidecar_logs(self):
-        self.radiance_config({}, {"R3_MOE_HELPER": "1", "R3_MOE_HELPER_DEVICES": "0"})
-        marker = "r3_moe_helper: runtime map owns 12 experts, 3.500 GiB\n"
+        self.radiance_config({}, {"R3_MOE_WORKER": "1", "R3_MOE_WORKER_DEVICES": "0"})
+        marker = "r3_moe_worker: runtime map owns 12 experts, 3.500 GiB\n"
 
         def fake(**kwargs):
             cell = kwargs["output"] / f"pair-{kwargs['pair'] + 1:03d}-{kwargs['side']}"
@@ -474,8 +474,8 @@ class ServerComparisonCaptureTests(unittest.TestCase):
         self.assertEqual(rc, 0)
         summary = json.loads((self.output / "capture" / "run.json").read_text())
         evidence = summary["setting_activation"][self.arms[1]["name"]]
-        self.assertEqual(evidence["R3_MOE_HELPER"]["status"], "executed")
-        self.assertEqual(evidence["R3_MOE_HELPER_DEVICES"]["status"], "unobservable")
+        self.assertEqual(evidence["R3_MOE_WORKER"]["status"], "executed")
+        self.assertEqual(evidence["R3_MOE_WORKER_DEVICES"]["status"], "unobservable")
 
 
 class ServerExecutionAttestationTests(unittest.TestCase):

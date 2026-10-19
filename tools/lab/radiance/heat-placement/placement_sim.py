@@ -4,7 +4,7 @@
 It replays a route trace (placement_trace.py) against a placement of (layer, expert) pairs on two helpers and scores
 modelled critical-path latency. It compares
 
-  static   hot-first ownership from a training window, never changed (today's behaviour, R3_MOE_HELPER_HEAT)
+  static   hot-first ownership from a training window, never changed (today's behaviour, R3_MOE_WORKER_HEAT)
   dynamic  the same start, re-evaluated every interval from decayed heat, with hysteresis (RHP07)
 
 A candidate move is scored by replaying a recent causal window of routes with and without it (a counterfactual on the
@@ -13,7 +13,7 @@ to a shadow placement as they are accepted, so capacity and interactions stay co
 from inference latency (a zero-stall and a with-stall figure), never mixed into it.
 
 The latency model and its constants are PLACEHOLDERS: RHP07-02 calibrates them against measured traces (static placement
-first), and nothing here is evidence of a real speedup. Nothing touches r3_moe_helper, the mailbox, radiance's mover or
+first), and nothing here is evidence of a real speedup. Nothing touches r3_moe_worker, the mailbox, radiance's mover or
 live ownership.
 
   python3 placement_sim.py TRACE.jsonl [--json]

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """RAD06/RHP04 stepping stone: predicted helper balance, no GPU.
 
-The two r3_moe_helper processes each own whole (layer, expert) pairs and a layer finishes when BOTH are done, so what
+The two r3_moe_worker processes each own whole (layer, expert) pairs and a layer finishes when BOTH are done, so what
 matters per layer is max(helper0 cost, helper1 cost). select_owned() today alternates down one global heat ranking
 (helper h takes positions p with p % 2 == h) until its byte budget fills: that balances the number of experts, not the
 work. This script takes the raw route-count heat file a profiling run wrote (uint32 [128][512]), reproduces today's
