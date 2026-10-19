@@ -85,6 +85,7 @@ struct Container {
     uint32_t layers = 0;
     uint32_t experts = 0;      /* routed experts per layer: the highest expert id in the directory + 1 */
     uint32_t hidden = 0;       /* model hidden width: rows of an expert's down matrix */
+    uint32_t top_k = 0;        /* routed experts per token (metadata n_expert_used); 0 when the container does not say */
     uint32_t intermediate = 0; /* expert width: columns of an expert's down matrix */
     std::vector<std::array<const RadFileEntry*, 2>> expert;
 
@@ -127,6 +128,21 @@ struct Container {
             (hdr.enc_count && !pread_full(hdr.enc_off, enc_store.data(), enc_store.size() * sizeof(RadEncoding))) ||
             (hdr.prof_count && !pread_full(hdr.prof_off, profile_store.data(), profile_store.size() * sizeof(RadFileProfile))))
             return false;
+        {   // the model's routes per token, from the container's metadata
+            std::vector<char> strs;
+            std::vector<RadFileKV> meta;
+            if (hdr.str_bytes && hdr.str_bytes < (1ull << 28) && hdr.meta_count && hdr.meta_count < (1ull << 20) &&
+                range(hdr.str_off, hdr.str_bytes) && range(hdr.meta_off, hdr.meta_count * sizeof(RadFileKV))) {
+                strs.resize((size_t)hdr.str_bytes + 1, 0);
+                meta.resize((size_t)hdr.meta_count);
+                if (pread_full(hdr.str_off, strs.data(), (size_t)hdr.str_bytes) &&
+                    pread_full(hdr.meta_off, meta.data(), meta.size() * sizeof(RadFileKV)))
+                    for (const RadFileKV& kv : meta)
+                        if (kv.type == RAD_P_INT && kv.key < hdr.str_bytes && std::strcmp(&strs[(size_t)kv.key], "n_expert_used") == 0 &&
+                            kv.v.i > 0 && kv.v.i <= 64)
+                            top_k = (uint32_t)kv.v.i;
+            }
+        }
         dir = dir_store.data();
         planes = plane_store.data();
         encs = enc_store.data();
@@ -681,7 +697,7 @@ bool describe_expert(const Container& f, uint32_t l, uint32_t e, MoeExpertDesc* 
 /* The shape the container implies (RCS09): layers, routed experts, hidden, expert intermediate width. top_k is the engine's. */
 bool container_shape(const Container& f, MoeShape* s) {
     if (!f.experts || !f.hidden) return false;
-    *s = MoeShape{f.layers, f.experts, f.hidden, 0, f.intermediate, 0, 0};
+    *s = MoeShape{f.layers, f.experts, f.hidden, f.top_k, f.intermediate, 0, 0};
     return true;
 }
 
@@ -732,7 +748,7 @@ bool segment_shape(const Container& f, r3::moe_shm::LayoutShape* shape, r3::moe_
         std::fprintf(stderr, "r3_moe_worker: the container's shape could not be read\n");
         return false;
     }
-    *shape = r3::moe_shm::LayoutShape{cs.hidden, r3::moe_shm::kTopK, cs.experts, r3::moe_shm::kMaxRows,
+    *shape = r3::moe_shm::LayoutShape{cs.hidden, cs.top_k ? cs.top_k : r3::moe_shm::kTopK, cs.experts, r3::moe_shm::kMaxRows,
                                       r3::moe_shm::kActGroup, cs.intermediate};
     if (!r3::moe_shm::layout_for(*shape, lay)) {
         std::fprintf(stderr, "r3_moe_worker: the shared-memory layout for this shape is invalid\n");

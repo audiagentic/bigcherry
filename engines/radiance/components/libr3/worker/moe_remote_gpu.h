@@ -884,7 +884,7 @@ public:
         experts_.resize((size_t)model_.layers * experts());
         tables_.resize(model_.layers);
         /* hidden width and expert count are the container's; row capacity, top-k and group are the protocol's until negotiated */
-        return set_shape(r3::moe_shm::LayoutShape{model_.hidden, r3::moe_shm::kTopK, model_.experts, r3::moe_shm::kMaxRows,
+        return set_shape(r3::moe_shm::LayoutShape{model_.hidden, model_.top_k ? model_.top_k : r3::moe_shm::kTopK, model_.experts, r3::moe_shm::kMaxRows,
                                                   r3::moe_shm::kActGroup, model_.intermediate});
     }
 
