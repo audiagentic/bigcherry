@@ -1067,9 +1067,12 @@ int main(int argc, char** argv) {
     /* EVERY LANE STREAM ON ITS OWN HARDWARE QUEUE. A small lane pre-queues "wait for the next request" packets;
      * a stream sharing a hardware queue with one sits behind that wait until a small request arrives. With
      * every step large (KL mode's 64-token steps over an 8-row small lane) none ever does, and the large lane's
-     * work never runs. HIP maps streams onto GPU_MAX_HW_QUEUES queues (4 by default) and the helper opens five
-     * streams (four lanes and its own), so it asks for more before HIP initialises; an explicit setting wins. */
-    (void)::setenv("GPU_MAX_HW_QUEUES", "8", 0);
+     * work never runs. HIP maps streams onto GPU_MAX_HW_QUEUES queues (4 by default) and the helper opens one
+     * stream for every lane in the protocol (kLanes: each small-lane class and the large lane, for each rank)
+     * plus its own, so the count is derived from the protocol, with two spare, before HIP initialises (it grew
+     * from five streams to eleven with RAD12's lane classes, which hung every request at the old fixed 8);
+     * an explicit setting wins. */
+    (void)::setenv("GPU_MAX_HW_QUEUES", std::to_string(r3::moe_shm::kLanes + 3).c_str(), 0);
     /* The helper's grouped MoE GEMM (prefill) on gfx11's native bf16 WMMA path: R9700 engine + two XTX helpers,
      * Flash-Next, prefill 2,518 -> 2,665 tok/s and helper gate/up -25%, KLD 0.064 (noise floor). Read by libr3
      * when the plugin is loaded, so set before it; an explicit setting wins. */
