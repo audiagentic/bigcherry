@@ -53,3 +53,15 @@ is the request's first to last kernel). Layer 16 / layer 10 requests, microsecon
 So: 12 to 24 rows run 11-27% faster on a pre-queued small lane than on the large lane, and padding a 4-row request to 24 costs 23-30% (about 140 us). Output is bitwise identical across
 the settings (mismatches=0). There is also a fixed floor: about 470 us a request even at 4 rows (about 330 us of it kernel time), the chain of roughly 20 small kernels; fusing it (as FUSEROUTE and FUSESTAGE
 did) lowers the floor for every stream count, independent of lane sizing.
+
+## Result (2026-10-19, 6 pairs, engine decode tps)
+
+| Streams | rows8 | rows24 | lanes 8+24 |
+|---|---|---|---|
+| 1 | 122.8 | 111.7 | 109.6 |
+| 2 | 178.9 | 173.3 | 174.8 |
+| 3 | 194.1 | 237.8 | 214.0 |
+| 4 | 245.2 | 266.6 | 242.9 |
+| 6 | 318.0 | 336.1 | 305.8 |
+
+Four lane classes lose at every stream count and stay as an experimental, default-off setting (`R3_MOE_HELPER_SMALL_LANES`). One 24-row lane gains 7-22% at 3+ streams and loses ~9% at 1; one 8-row lane is best at 1-2. Next: derive the lane size from `--max-num-seqs x (1 + draft depth)` with `R3_MOE_HELPER_SMALL_ROWS` as the override (RCS10).

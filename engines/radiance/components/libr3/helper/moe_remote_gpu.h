@@ -1008,18 +1008,27 @@ public:
         return hip_ok(hipStreamSynchronize(stream_), "helper stream sync") ? 0 : -EIO;
     }
 
-    /* Small lanes are sized to small_rows and pre-queued; large lanes to large_rows, launched per request. */
-    bool prepare_lanes(uint32_t small_rows, uint32_t large_rows) {
+    /* Small lanes are sized to their class's rows and pre-queued; the large lane to large_rows, launched per request.
+     * `count` small classes are enabled (ascending `sizes`); the other small lanes are left unprepared (cap_rows 0). */
+    bool prepare_lanes(const std::array<uint32_t, r3::moe_shm::kSmallClasses>& sizes, uint32_t count, uint32_t large_rows) {
         using namespace r3::moe_shm;
-        if (small_rows == 0 || small_rows > kMaxRows || large_rows < small_rows || large_rows > kMaxRows ||
-            !d_layer_tables_.p)
+        if (count == 0 || count > kSmallClasses || large_rows == 0 || large_rows > kMaxRows || !d_layer_tables_.p)
             return false;
-        lane_rows_ = small_rows;
+        for (uint32_t c = 0; c < count; ++c)
+            if (sizes[c] == 0 || sizes[c] > kMaxRows || sizes[c] > large_rows || (c && sizes[c] <= sizes[c - 1]))
+                return false;
+        class_count_ = count;
+        class_rows_ = sizes;
         large_rows_ = large_rows;
         constexpr size_t nclass = kExperts / 2;
         for (uint32_t lane = 0; lane < kLanes; ++lane) {
             const uint32_t rank = lane % kMaxRanks;
-            const uint32_t cap = lane < kMaxRanks ? lane_rows_ : large_rows_;
+            const uint32_t cls = lane_class(lane);
+            if (cls < kSmallClasses && cls >= class_count_) {   /* a disabled small class: no buffers, no worker */
+                lane_[lane].cap_rows = 0;
+                continue;
+            }
+            const uint32_t cap = cls < kSmallClasses ? class_rows_[cls] : large_rows_;
             LaneWork& w = lane_[lane];
             w.cap_rows = cap;
             if (!ensure_lane_work(w, cap, cap * kTopK, cap * kTopK) ||
@@ -1126,7 +1135,7 @@ public:
         /* R3_MOE_HELPER_FUSEROUTE (default on): the small lane's routing prologue in one block (lane_route_small); 0 keeps
          * the memsets and the four routing kernels. Read each call so a replay sweep can compare. */
         const char* fuse_env = std::getenv("R3_MOE_HELPER_FUSEROUTE");
-        const bool fuse = lane < kMaxRanks && rows <= 8u && routes <= kFuseMaxRoutes &&
+        const bool fuse = lane_is_small(lane) && rows <= 8u && routes <= kFuseMaxRoutes &&
                           (!fuse_env || std::strcmp(fuse_env, "0") != 0);
         /* No clear of the result slot: it is mapped host memory, and the merge reads only the tokens this
          * request's routes name, each of which the reduction writes. */
@@ -1226,14 +1235,14 @@ public:
             const int64_t w0 = slice_w(slice, 0);
             const int64_t w1 = slice_w(slice, 1);
             /* Small lane, decode GEMV (RAD05): the step's routes, one block a (row, 64 outputs). */
-            const bool gemv = gemv_ && (lane < kMaxRanks || rows <= gemv_large_rows_);
+            const bool gemv = gemv_ && (lane_is_small(lane) || rows <= gemv_large_rows_);
             /* R3_MOE_HELPER_ROWS_SMALL (RAD06): the few-rows kernel on the small (decode) lane too. A decode request's 8 rows
              * send ~2.4 routes to each distinct expert (the hot experts are owned by the helpers), and the per-route GEMV
              * reads that expert's weights once a route; here they are read once for all the expert's rows. Read each
              * call so a replay sweep can compare; the rows accumulate in a different order, so it is not bit-exact. */
             const char* rs_env = std::getenv("R3_MOE_HELPER_ROWS_SMALL");
-            const bool rows_small = rs_env && std::strcmp(rs_env, "0") != 0 && lane < kMaxRanks && rows <= 16u;
-            const bool rowk = (rows_ && lane >= kMaxRanks) || rows_small;
+            const bool rows_small = rs_env && std::strcmp(rs_env, "0") != 0 && lane_is_small(lane) && rows <= 16u;
+            const bool rowk = (rows_ && !lane_is_small(lane)) || rows_small;
             const dim3 rows_grid_gu(kExperts, (uint32_t)((2 * std::max(w0, w1) + kRowsTileN - 1) / kRowsTileN));
             const dim3 rows_grid_dn(kExperts, (uint32_t)((kHidden + kRowsTileN - 1) / kRowsTileN));
             const dim3 gemv_grid_gu(routes, (uint32_t)((2 * std::max(w0, w1) + kGemvTile - 1) / kGemvTile));
@@ -1275,7 +1284,7 @@ public:
                           gp, w.stream, w.scratch) < 0)
                 return -EIO;
 
-            if (gemv_debug_ && lane < kMaxRanks) {
+            if (gemv_debug_ && lane_is_small(lane)) {
                 hipLaunchKernelGGL(lane_moe_gemv<true>, gemv_grid_gu, dim3(256), 0, w.stream,
                                    static_cast<const uint8_t*>(w.d_aq.p), static_cast<const float*>(w.d_as.p),
                                    static_cast<const int32_t*>(w.d_sorted.p), static_cast<const int32_t*>(w.d_off.p),
@@ -1482,7 +1491,8 @@ private:
     Buffer d_act_, d_aq_, d_as_, d_sorted_, d_off_, d_ew_, d_gu_;
     Buffer d_mid_, d_mid_s_, d_down_, d_result_, scratch_;
     Buffer d_layer_tables_, d_expert_slot_;
-    uint32_t lane_rows_ = 0;    /* small-lane (pre-queued) step size */
+    std::array<uint32_t, r3::moe_shm::kSmallClasses> class_rows_{};   /* enabled small-lane (pre-queued) step sizes */
+    uint32_t class_count_ = 0;
 public:
     /* Engine tensor-parallel ranks (R3_MOE_HELPER_ENGINE_RANKS): 2 = two XTX ranks, each asking for its TP
      * slice; 1 = one engine (the R9700, RAD02), asking for the full expert width -- both slices, summed. */

@@ -445,6 +445,44 @@ uint32_t env_rows(const char* e, uint32_t fallback) {
 uint32_t helper_max_rows() { return env_rows(std::getenv("R3_MOE_HELPER_MAX_ROWS"), 64); }
 uint32_t helper_small_rows() { return std::min(env_rows(std::getenv("R3_MOE_HELPER_SMALL_ROWS"), 64), helper_max_rows()); }
 
+/* The pre-queued small-lane sizes (RAD12): R3_MOE_HELPER_SMALL_LANES="4,8,16,24" (up to kSmallClasses, strictly ascending,
+ * each within the large-lane capacity), else the single size R3_MOE_HELPER_SMALL_ROWS gives (the production behaviour). */
+struct SmallClasses {
+    std::array<uint32_t, r3::moe_shm::kSmallClasses> rows{};
+    uint32_t count = 0;
+};
+SmallClasses helper_small_classes() {
+    SmallClasses sc;
+    const char* list = std::getenv("R3_MOE_HELPER_SMALL_LANES");
+    if (!list || !*list) {
+        sc.rows[0] = helper_small_rows();
+        sc.count = 1;
+        return sc;
+    }
+    const uint32_t cap = helper_max_rows();
+    const char* p = list;
+    while (*p && sc.count < r3::moe_shm::kSmallClasses) {
+        char* end = nullptr;
+        const long v = std::strtol(p, &end, 10);
+        if (end == p || v <= 0 || (uint32_t)v > cap || (sc.count && (uint32_t)v <= sc.rows[sc.count - 1])) {
+            std::fprintf(stderr, "r3_moe_helper: R3_MOE_HELPER_SMALL_LANES=%s must be up to %u ascending sizes within %u rows\n",
+                         list, (unsigned)r3::moe_shm::kSmallClasses, cap);
+            return SmallClasses{};
+        }
+        sc.rows[sc.count++] = (uint32_t)v;
+        p = end;
+        if (*p == ',') ++p;
+        else break;
+    }
+    if (*p) {
+        std::fprintf(stderr, "r3_moe_helper: R3_MOE_HELPER_SMALL_LANES=%s has more than %u sizes or trailing text\n", list,
+                     (unsigned)r3::moe_shm::kSmallClasses);
+        return SmallClasses{};
+    }
+    return sc;
+}
+
+
 int64_t canonical_expert_bytes(const Container& f, uint32_t l, uint32_t e) {
     int64_t n = 0;
     for (uint32_t slot = 0; slot < 2; ++slot) {
@@ -743,7 +781,7 @@ bool load_replay(const char* path, ReplayInput* out) {
 }
 
 int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& owned,
-                 uint32_t layer, uint32_t rows, uint32_t lane_max_rows, uint32_t lane_large_rows,
+                 uint32_t layer, uint32_t rows, const SmallClasses& classes, uint32_t lane_large_rows,
                  bool synthetic_protect) {
     if (g_replay) {  // a captured real request replaces the synthetic layer, rows, routes and activations
         layer = g_replay->hd.layer;
@@ -868,8 +906,9 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
         return 1;
     }
     store(&h->layer_map_consumed[layer], 1);
-    h->small_rows = lane_max_rows;
-    if (!gpu.prepare_lanes(lane_max_rows, lane_large_rows)) {
+    h->small_class_count = classes.count;
+    for (uint32_t c = 0; c < classes.count; ++c) h->small_class_rows[c] = classes.rows[c];
+    if (!gpu.prepare_lanes(classes.rows, classes.count, lane_large_rows)) {
         munmap(map, lay.bytes);
         return 1;
     }
@@ -894,7 +933,7 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
     bool bad = false;
     constexpr uint32_t sequence = 1;
     for (uint32_t rank = 0; rank < kMaxRanks; ++rank) {
-        const uint32_t lane = lane_of(rank, rows > lane_max_rows ? 1u : 0u);
+        const uint32_t lane = lane_of(rank, step_class(h, rows));
         Request* q = lane_request(map, lane, sequence);
         q->completion_sequence = 0;
         q->status = 0;
@@ -935,7 +974,7 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
 
         /* Queue the production lane before publishing the sequence, as the service worker does. */
         const int erc = gpu.enqueue_lane(map, dev_map, lane, sequence,
-                                         lane < kMaxRanks ? lane_max_rows : rows, false);
+                                         lane_is_small(lane) ? h->small_class_rows[lane_class(lane)] : rows, false);
         if (erc != 0) {
             std::fprintf(stderr, "r3_moe_helper: --compare lane rank %u enqueue failed rc=%d\n",
                          rank, erc);
@@ -1028,9 +1067,12 @@ int main(int argc, char** argv) {
     /* EVERY LANE STREAM ON ITS OWN HARDWARE QUEUE. A small lane pre-queues "wait for the next request" packets;
      * a stream sharing a hardware queue with one sits behind that wait until a small request arrives. With
      * every step large (KL mode's 64-token steps over an 8-row small lane) none ever does, and the large lane's
-     * work never runs. HIP maps streams onto GPU_MAX_HW_QUEUES queues (4 by default) and the helper opens five
-     * streams (four lanes and its own), so it asks for more before HIP initialises; an explicit setting wins. */
-    (void)::setenv("GPU_MAX_HW_QUEUES", "8", 0);
+     * work never runs. HIP maps streams onto GPU_MAX_HW_QUEUES queues (4 by default) and the helper opens one
+     * stream for every lane in the protocol (kLanes: each small-lane class and the large lane, for each rank)
+     * plus its own, so the count is derived from the protocol, with two spare, before HIP initialises (it grew
+     * from five streams to eleven with RAD12's lane classes, which hung every request at the old fixed 8);
+     * an explicit setting wins. */
+    (void)::setenv("GPU_MAX_HW_QUEUES", std::to_string(r3::moe_shm::kLanes + 3).c_str(), 0);
     /* The helper's grouped MoE GEMM (prefill) on gfx11's native bf16 WMMA path: R9700 engine + two XTX helpers,
      * Flash-Next, prefill 2,518 -> 2,665 tok/s and helper gate/up -25%, KLD 0.064 (noise floor). Read by libr3
      * when the plugin is loaded, so set before it; an explicit setting wins. */
@@ -1197,8 +1239,14 @@ int main(int argc, char** argv) {
         return 1;
     }
     if (gpu && !gpu->allocate(owned.expert)) return 1;
-    const uint32_t lane_max_rows = helper_small_rows();
+    const SmallClasses lane_classes = helper_small_classes();
+    if (!lane_classes.count) return 1;
     const uint32_t lane_large_rows = helper_max_rows();
+    std::string lane_list;                       /* "4,8,16,24", for the log */
+    for (uint32_t c = 0; c < lane_classes.count; ++c)
+        lane_list += (c ? "," : "") + std::to_string(lane_classes.rows[c]);
+    if (const char* sl = std::getenv("R3_MOE_HELPER_SMALL_LANES"); sl && *sl)
+        std::fprintf(stderr, "r3_moe_helper: R3_MOE_HELPER_SMALL_LANES on - small lanes %s\n", lane_list.c_str());
     long rss_pages = 0;
     if (FILE* sf = std::fopen("/proc/self/statm", "r")) {
         long total_pages = 0;
@@ -1230,7 +1278,7 @@ int main(int argc, char** argv) {
                 }
                 std::printf("SWEEP run %d capture %zu layer %u variant [%s]\n", run++, c, g_replay->hd.layer, v.c_str());
                 std::fflush(stdout);
-                rc |= compare_mode(model, *gpu, owned, g_replay->hd.layer, g_replay->hd.rows, lane_max_rows,
+                rc |= compare_mode(model, *gpu, owned, g_replay->hd.layer, g_replay->hd.rows, lane_classes,
                                    lane_large_rows, false);
                 std::fflush(stdout);
             }
@@ -1239,7 +1287,7 @@ int main(int argc, char** argv) {
     }
     if (compare) {
         if (compare_one_layer)
-            return compare_mode(model, *gpu, owned, compare_layer, compare_rows, lane_max_rows,
+            return compare_mode(model, *gpu, owned, compare_layer, compare_rows, lane_classes,
                                 lane_large_rows, synthetic_protect);
         int rc = 0;
         for (uint32_t layer : {0u, 20u, 34u, 47u}) {
@@ -1250,7 +1298,7 @@ int main(int argc, char** argv) {
                 continue;
             }
             std::printf("layer %u\n", layer);
-            rc |= compare_mode(model, *gpu, owned, layer, compare_rows, lane_max_rows,
+            rc |= compare_mode(model, *gpu, owned, layer, compare_rows, lane_classes,
                                lane_large_rows, synthetic_protect);
         }
         return rc;
@@ -1286,15 +1334,19 @@ int main(int argc, char** argv) {
     auto* h = static_cast<Header*>(map);
     if (creator) {
         init(map, model.layers);
-        h->small_rows = lane_max_rows;
+        h->small_class_count = lane_classes.count;
+        for (uint32_t c = 0; c < lane_classes.count; ++c) h->small_class_rows[c] = lane_classes.rows[c];
         /* Every helper reads the same step activations: stage them once, in slot 0. */
         for (uint32_t r = 1; r < helper_count; ++r) h->activation_offset[r] = h->activation_offset[0];
         store(&h->helper_count, helper_count);   /* last: an attaching helper waits for it */
     } else {
         for (int i = 0; i < 1800 && !g_stop && load(&h->helper_count) != helper_count; ++i) ::sleep(1);
-        if (load(&h->helper_count) != helper_count || !valid(h, lay.bytes) || h->small_rows != lane_max_rows) {
-            std::fprintf(stderr, "r3_moe_helper: segment %s is not helper 0's %u-helper segment (small rows %u, ours %u)\n",
-                         name, helper_count, h->small_rows, lane_max_rows);
+        bool same_lanes = load(&h->helper_count) == helper_count && valid(h, lay.bytes) && h->small_class_count == lane_classes.count;
+        for (uint32_t c = 0; same_lanes && c < lane_classes.count; ++c)
+            same_lanes = h->small_class_rows[c] == lane_classes.rows[c];
+        if (!same_lanes) {
+            std::fprintf(stderr, "r3_moe_helper: segment %s is not helper 0's %u-helper segment (small lanes %u, ours %s)\n",
+                         name, helper_count, (unsigned)h->small_class_count, lane_list.c_str());
             munmap(map, lay.bytes); close(fd); return 1;
         }
     }
@@ -1355,7 +1407,7 @@ int main(int argc, char** argv) {
     }
     owned = std::move(runtime_owned);
     h->owned_bytes = owned.bytes;
-    if (gpu && !gpu->prepare_lanes(lane_max_rows, lane_large_rows)) {
+    if (gpu && !gpu->prepare_lanes(lane_classes.rows, lane_classes.count, lane_large_rows)) {
         (void)hipHostUnregister(map);
         munmap(map, lay.bytes); close(fd); drop_name(); return 1;
     }
@@ -1370,9 +1422,9 @@ int main(int argc, char** argv) {
     sa.sa_flags = 0;
     sigaction(SIGINT, &sa, nullptr); sigaction(SIGTERM, &sa, nullptr);
     std::fprintf(stderr,
-                 "r3_moe_helper: ready shm=%s layers=%u bytes=%llu (%s, small lane rows <= %u, large <= %u)\n",
+                 "r3_moe_helper: ready shm=%s layers=%u bytes=%llu (%s, small lane rows <= %s, large <= %u)\n",
                  name, model.layers, (unsigned long long)lay.bytes,
-                 cpu ? "host fp32 reference" : gpu->arch().c_str(), lane_max_rows, lane_large_rows);
+                 cpu ? "host fp32 reference" : gpu->arch().c_str(), lane_list.c_str(), lane_large_rows);
 
     uint64_t stat_req = 0, stat_rows = 0, stat_routes = 0;
     double stat_us = 0.0;
@@ -1400,10 +1452,11 @@ int main(int argc, char** argv) {
         std::array<double, kLanes> lane_sample_us{};
         std::array<std::thread, kLanes> workers;
         for (uint32_t lane = 0; lane < kLanes; ++lane) {
-            /* Two helpers: each serves only its own rank slot's two lanes. */
+            /* Two helpers: each serves only its own rank slot's lanes. */
             if (helper_count > 1 && lane % kMaxRanks != helper_index) continue;
+            if (lane_is_small(lane) && lane_class(lane) >= lane_classes.count) continue;   /* a disabled small class */
             workers[lane] = std::thread([&, lane] {
-                const bool large = lane >= kMaxRanks;
+                const bool large = !lane_is_small(lane);
                 uint32_t next = 1;
                 uint32_t done_seen = 0;
                 if (large) {
@@ -1437,7 +1490,7 @@ int main(int argc, char** argv) {
                     auto queue_one = [&]() -> bool {
                         if (next == 0) return false;
                         const bool sample = (next & 63u) == 0;
-                        const int rc = gpu->enqueue_lane(map, dev_map, lane, next, lane_max_rows, sample);
+                        const int rc = gpu->enqueue_lane(map, dev_map, lane, next, lane_classes.rows[lane_class(lane)], sample);
                         if (rc != 0) {
                             std::fprintf(stderr,
                                          "r3_moe_helper: lane %u enqueue seq %u failed rc=%d\n",
@@ -1511,9 +1564,18 @@ int main(int argc, char** argv) {
             sampled_us += lane_sample_us[lane];
             gpu->stage_report(lane, lane_samples[lane]);
         }
+        for (uint32_t c = 0; c < lane_classes.count; ++c) {
+            uint64_t req = 0, rows = 0;
+            for (uint32_t r = 0; r < kMaxRanks; ++r) {
+                req += lane_req[lane_of(r, c)];
+                rows += lane_rows[lane_of(r, c)];
+            }
+            std::fprintf(stderr, "r3_moe_helper: small lane class %u (rows <= %u): requests %llu (%llu rows)\n", c,
+                         lane_classes.rows[c], (unsigned long long)req, (unsigned long long)rows);
+        }
         std::fprintf(stderr, "r3_moe_helper: large-lane requests %llu (%llu rows)\n",
-                     (unsigned long long)(lane_req[kMaxRanks] + lane_req[kMaxRanks + 1]),
-                     (unsigned long long)(lane_rows[kMaxRanks] + lane_rows[kMaxRanks + 1]));
+                     (unsigned long long)(lane_req[lane_of(0, kSmallClasses)] + lane_req[lane_of(1, kSmallClasses)]),
+                     (unsigned long long)(lane_rows[lane_of(0, kSmallClasses)] + lane_rows[lane_of(1, kSmallClasses)]));
         if (timing_samples && stat_req)
             stat_us = (sampled_us / (double)timing_samples) * (double)stat_req;
         std::fprintf(stderr,
