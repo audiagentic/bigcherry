@@ -23,7 +23,6 @@
  },
  "quality": {
   "reference_dir": "${KLD_REF_DIR}",
-  "corpus": "/mnt/data/bigcherry-work/corpus/rad-kld-corpus-4.jsonl",
   "control": "helper-off",
   "timeout_s": 5400,
   "args": [
