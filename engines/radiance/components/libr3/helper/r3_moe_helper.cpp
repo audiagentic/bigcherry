@@ -1,3 +1,4 @@
+#include "moe_backend.h"
 #include "moe_remote_shm.h"
 #include "rad_format.h"
 #include "rad_encoding.h"
@@ -497,6 +498,91 @@ int64_t canonical_expert_bytes(const Container& f, uint32_t l, uint32_t e) {
     return n;
 }
 
+/* What the container says an expert is (RCS09/RAD11): its weight format, scale type and tile, read from the encoding, never assumed.
+ * W4NL64 = 4-bit codes through a lookup table with scales per 64 columns; FP8_E4M3_BLOCK = E4M3 codes with a scale per tile.
+ * Anything else is MOE_FMT_NONE and is refused by name before any expert is laid out. */
+uint32_t scale_dtype_of(uint32_t dtype) {
+    switch (dtype) {
+        case RAD_F8E4M3: return MOE_SCALE_E4M3;
+        case RAD_F16: return MOE_SCALE_F16;
+        case RAD_BF16: return MOE_SCALE_BF16;
+        case RAD_F32: return MOE_SCALE_F32;
+        default: return MOE_SCALE_NONE;
+    }
+}
+
+bool describe_expert(const Container& f, uint32_t l, uint32_t e, MoeExpertDesc* out) {
+    const RadFileEntry* gu = f.weight(l, e, 0);
+    const RadFileEntry* dn = f.weight(l, e, 1);
+    if (!gu || !dn || !out) return false;
+    const RadEncoding* enc = f.encoding(gu);
+    if (!enc || !rad_enc_valid(enc)) return false;
+    MoeExpertDesc d{};
+    const int codes = rad_enc_find(enc, "codes");
+    const int table = rad_enc_find(enc, "table");
+    const int scale0 = rad_enc_find_level(enc, "scale", 0);
+    const int scale1 = rad_enc_find_level(enc, "scale", 1);
+    if (codes >= 0 && scale0 >= 0) {
+        const RadEncPlane& cp = enc->plane[codes];
+        const RadEncPlane& sp = enc->plane[scale0];
+        if (rad_dtype_bits(cp.dtype) == 4 && table >= 0) {
+            /* the two scale levels relayout to one E4M3 byte per 64 columns (the helper checks this geometry at upload) */
+            (void)scale1;
+            d.weight = MoeWeightDesc{MOE_FMT_W4NL64, MOE_ACT_FP8_E4M3_GROUP, MOE_SCALE_E4M3, 0, (uint32_t)sp.block[1], 0};
+        } else if (cp.dtype == RAD_F8E4M3 && table < 0) {
+            d.weight = MoeWeightDesc{MOE_FMT_FP8_E4M3_BLOCK, MOE_ACT_BF16, scale_dtype_of(sp.dtype),
+                                     (uint32_t)sp.block[0], (uint32_t)sp.block[1], 0};
+        }
+    }
+    int64_t gr = 1, gc = 1, dr = 1, dc = 1;
+    rad_enc_view(gu->rank, gu->shape, &gr, &gc);
+    rad_enc_view(dn->rank, dn->shape, &dr, &dc);
+    d.gu_rows = (uint64_t)gr; d.gu_cols = (uint64_t)gc;
+    d.dn_rows = (uint64_t)dr; d.dn_cols = (uint64_t)dc;
+    *out = d;
+    return true;
+}
+
+/* The shape the container implies (RCS09): layers, routed experts, hidden, expert intermediate width. top_k is the engine's. */
+bool container_shape(const Container& f, MoeShape* s) {
+    uint32_t experts = 0;
+    for (uint64_t i = 0; i < f.hdr.dir_count; ++i)
+        if (f.dir[i].layer >= 0 && f.dir[i].expert >= 0) experts = std::max(experts, (uint32_t)f.dir[i].expert + 1);
+    MoeExpertDesc d{};
+    if (!experts || !describe_expert(f, 0, 0, &d)) return false;
+    *s = MoeShape{f.layers, experts, (uint32_t)d.dn_rows, 0, (uint32_t)d.dn_cols, 0, 0};
+    return true;
+}
+
+const char* format_name(uint32_t fmt) {
+    return fmt == MOE_FMT_W4NL64 ? "w4nl64" : fmt == MOE_FMT_FP8_E4M3_BLOCK ? "fp8_e4m3_block" : "unrecognised";
+}
+
+/* Whether the gfx1100 backend can run this container's experts, and why not when it cannot. */
+bool backend_accepts(const Container& f, const char* arch, bool verbose) {
+    MoeShape shape{};
+    MoeExpertDesc d{};
+    if (!container_shape(f, &shape) || !describe_expert(f, 0, 0, &d)) {
+        std::fprintf(stderr, "r3_moe_helper: the container's first expert could not be described\n");
+        return false;
+    }
+    shape.top_k = 1;      // the container does not carry the engine's top-k; the check here is the format and geometry
+    MoeDeviceCaps caps{};
+    std::strncpy(caps.arch, arch, sizeof(caps.arch) - 1);
+    caps.wave_size = 32;
+    caps.has_wmma_f16 = std::strncmp(arch, "gfx11", 5) == 0;
+    const int rc = r3::moe_backend::probe(r3::moe_backend::gfx1100_backend(), shape, d.weight, caps);
+    if (verbose || rc != MOE_OK)
+        std::fprintf(stderr,
+                     "r3_moe_helper: container: %u layers, %u experts, hidden %u, expert width %u, weight format %s "
+                     "(scale dtype %u, tile %ux%u), gfx1100 backend: %s\n",
+                     shape.layers, shape.experts, shape.hidden, shape.intermediate, format_name(d.weight.format),
+                     d.weight.scale_dtype, d.weight.block_n, d.weight.block_k,
+                     rc == MOE_OK ? "supported" : rc == MOE_UNSUPPORTED_FORMAT ? "weight format not supported"
+                     : rc == MOE_UNSUPPORTED_ARCH ? "architecture not supported" : "geometry not supported");
+    return rc == MOE_OK;
+}
+
 struct Owned {
     std::vector<std::pair<uint32_t,uint32_t>> expert;
     uint64_t bytes = 0;
@@ -508,6 +594,7 @@ bool select_owned(const Container& f, r3_moe_gpu::Runner* gpu, uint64_t budget, 
         std::fprintf(stderr, "r3_moe_helper: no helper budget\n");
         return false;
     }
+    if (!backend_accepts(f, gpu ? gpu->arch().c_str() : "gfx1100", false)) return false;
     std::vector<const RadFileProfile*> order;
     /* A container converted without calibration has no profile: take experts expert-major (unsorted)
      * so the budget spreads over all layers. */
@@ -1107,6 +1194,16 @@ int main(int argc, char** argv) {
      * = the environment as launched); the variant's variables are set (and the previous variant's unset) before the
      * replay, so anything libr3 reads at launch (R3_MOE_FP16, R3_MOE_PROBE, R3_MOE_PITCH16) can be compared with
      * no further model load. Each run prints "SWEEP run i capture c layer L variant [..]" and its engine_join line. */
+    /* --describe MODEL: print what the container's experts are and whether the gfx1100 backend can run them, then exit
+     * (0 supported, 3 refused). No GPU, no allocation, no shared memory. */
+    if (argc >= 3 && std::strcmp(argv[1], "--describe") == 0) {
+        Container model;
+        if (!model.open(argv[2])) {
+            std::fprintf(stderr, "r3_moe_helper: --describe %s: not a container\n", argv[2]);
+            return 2;
+        }
+        return backend_accepts(model, "gfx1100", true) ? 0 : 3;
+    }
     static std::vector<ReplayInput> sweep_replays;
     static std::vector<std::string> sweep_variants;
     if (argc >= 5 && std::strcmp(argv[1], "--replay-sweep") == 0) {
