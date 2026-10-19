@@ -372,7 +372,7 @@ __constant__ float kGemvW4nl[16] = { 1.125f, 3.25f, 5.5f, 8.0f, 11.0f, 14.0f, 18
 constexpr uint32_t kGemvTile = 64;        /* outputs a block */
 constexpr uint32_t kGemvMaxK = 2560;
 
-template <bool TOKEN>
+template <bool TOKEN, bool FP8>
 __global__ __launch_bounds__(256) void lane_moe_gemv(
     const uint8_t* aq, const float* as, const int32_t* sorted, const int32_t* off, uint32_t top_k,
     void* const* code0, void* const* scale0, void* const* code1, void* const* scale1,
@@ -403,6 +403,35 @@ __global__ __launch_bounds__(256) void lane_moe_gemv(
     const uint8_t* scales = static_cast<const uint8_t*>(cls ? scale1[ix] : scale0[ix]);
     if (!codes || !scales) return;
     const uint32_t lane = threadIdx.x % warpSize, wave = threadIdx.x / warpSize, waves = blockDim.x / warpSize;
+    if constexpr (FP8) {
+        /* FP8 block-scaled experts (RAD13/14): row-major E4M3 codes as the checkpoint stores them, one bf16 scale per 128x128 tile
+         * ([ceil(N/128)][ceil(K/128)]). Four codes a dword; a dword never straddles a 128-column tile (4 divides 128), so one
+         * scale covers it. The activation row in LDS is already dequantised (E4M3 times its per-128 scale), so the dot product is
+         * a plain f32 accumulate and the only scale left is the weight tile's. f32 accumulate, one bf16 narrow. */
+        const uint32_t kdw = K / 4u, ktiles = (K + 127u) / 128u;
+        for (uint32_t j = wave; j < kGemvTile; j += waves) {
+            const uint32_t n = n_base + j;
+            if (n >= N) break;
+            const uint32_t* crow = reinterpret_cast<const uint32_t*>(codes + (uint64_t)n * K);
+            const uint16_t* srow = reinterpret_cast<const uint16_t*>(scales) + (uint64_t)(n / 128u) * ktiles;
+            float acc = 0.0f;
+            for (uint32_t d = lane; d < kdw; d += warpSize) {
+                const uint32_t w = crow[d];
+                const float* x = a + 4u * d;
+                const float part = x[0] * gemv_e4m3(w & 0xFFu) + x[1] * gemv_e4m3((w >> 8) & 0xFFu) +
+                                   x[2] * gemv_e4m3((w >> 16) & 0xFFu) + x[3] * gemv_e4m3(w >> 24);
+                acc += part * __uint_as_float(((uint32_t)srow[(4u * d) / 128u]) << 16);
+            }
+            for (uint32_t o = warpSize / 2; o; o >>= 1) acc += __shfl_down(acc, o);
+            if (lane == 0) {
+                uint32_t u = __float_as_uint(acc);
+                u += 0x7fffu + ((u >> 16) & 1u);
+                const uint32_t col = TOKEN && part_pitch && n >= N / 2 ? n - N / 2 + part_pitch : n;
+                out[(uint64_t)r * out_stride + col] = (uint16_t)(u >> 16);
+            }
+        }
+        return;
+    }
     const uint32_t dwords = K / 8u;
     for (uint32_t j = wave; j < kGemvTile; j += waves) {
         const uint32_t n = n_base + j;
@@ -764,6 +793,18 @@ struct WeightPlan {
 class Runner {
 public:
     explicit Runner(const Container& model) : model_(model) {}
+    /* The decode GEMV for the weight format in use (W4 nonlinear nibbles or FP8 block-scaled). */
+    template <bool TOKEN>
+    void launch_gemv(dim3 grid, hipStream_t stream, const uint8_t* aq, const float* as, const int32_t* sorted, const int32_t* off,
+                     uint32_t top_k, void* const* code0, void* const* scale0, void* const* code1, void* const* scale1, uint32_t n0,
+                     uint32_t n1, uint32_t k0, uint32_t k1, uint32_t a_stride, uint32_t out_stride, uint16_t* out, uint32_t part_pitch) {
+        if (weight_format_ == MOE_FMT_FP8_E4M3_BLOCK)
+            hipLaunchKernelGGL((lane_moe_gemv<TOKEN, true>), grid, dim3(256), 0, stream, aq, as, sorted, off, top_k, code0, scale0, code1,
+                               scale1, n0, n1, k0, k1, a_stride, out_stride, out, part_pitch);
+        else
+            hipLaunchKernelGGL((lane_moe_gemv<TOKEN, false>), grid, dim3(256), 0, stream, aq, as, sorted, off, top_k, code0, scale0, code1,
+                               scale1, n0, n1, k0, k1, a_stride, out_stride, out, part_pitch);
+    }
     /* Routed experts per layer, from the container; and the thread count of the one-block routing kernels: a power of two, at least
      * kFuseMaxRoutes and the expert count (0 when the count is beyond what one block can scan). */
     uint32_t experts() const { return model_.experts; }
@@ -789,13 +830,11 @@ public:
             return false;
         }
         weight_format_ = fmt;
-        dtype_ = "fp8a8";
+        dtype_ = "fp8a8";   // the decode GEMV (R3_MOE_WORKER_GEMV, default on) now has an FP8 form
         moe_ = moe_fp8_;
         had_quant_ = quant_plain_;
         gated_quant_ = gated_plain_;
-        gemv_ = false;
-        gemv_debug_ = false;
-        gemv_large_rows_ = 0;
+        gemv_debug_ = false;   // the grouped-GEMM-vs-GEMV debug comparison is W4-only
         rows_ = false;
         return true;
     }
@@ -1348,7 +1387,7 @@ public:
                                    (uint32_t)mid_w());
                 if (!hip_ok(hipGetLastError(), "lane gate/up rows")) return -EIO;
             } else if (gemv) {
-                hipLaunchKernelGGL(lane_moe_gemv<true>, gemv_grid_gu, dim3(256), 0, w.stream,
+                launch_gemv<true>(gemv_grid_gu, w.stream,
                                    static_cast<const uint8_t*>(w.d_aq.p), static_cast<const float*>(w.d_as.p),
                                    static_cast<const int32_t*>(w.d_sorted.p), static_cast<const int32_t*>(w.d_off.p),
                                    (uint32_t)shape_.top_k,
@@ -1372,7 +1411,7 @@ public:
                 return -EIO;
 
             if (gemv_debug_ && weight_format_ == MOE_FMT_W4NL64 && lane_is_small(lane)) {
-                hipLaunchKernelGGL(lane_moe_gemv<true>, gemv_grid_gu, dim3(256), 0, w.stream,
+                hipLaunchKernelGGL((lane_moe_gemv<true, false>), gemv_grid_gu, dim3(256), 0, w.stream,
                                    static_cast<const uint8_t*>(w.d_aq.p), static_cast<const float*>(w.d_as.p),
                                    static_cast<const int32_t*>(w.d_sorted.p), static_cast<const int32_t*>(w.d_off.p),
                                    (uint32_t)shape_.top_k,
@@ -1409,7 +1448,7 @@ public:
                                    (uint32_t)mid_w(), (uint32_t)shape_.hidden, static_cast<uint16_t*>(out_down), 0u);
                 if (!hip_ok(hipGetLastError(), "lane down rows")) return -EIO;
             } else if (gemv) {
-                hipLaunchKernelGGL(lane_moe_gemv<false>, gemv_grid_dn, dim3(256), 0, w.stream,
+                launch_gemv<false>(gemv_grid_dn, w.stream,
                                    static_cast<const uint8_t*>(w.d_mid.p), static_cast<const float*>(w.d_mid_s.p),
                                    static_cast<const int32_t*>(w.d_sorted.p), static_cast<const int32_t*>(w.d_off.p),
                                    (uint32_t)shape_.top_k,
