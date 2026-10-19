@@ -1516,7 +1516,7 @@ int main(int argc, char** argv) {
     for (auto [l, e] : owned.expert) {
         if (!load(&h->layer_map_ready[l]) || layer_slot(map, l, e) < 0) continue;
         runtime_owned.expert.emplace_back(l, e);
-        const int64_t eb = laid_out_bytes(model, gpu, l, e);
+        const int64_t eb = laid_out_bytes(model, gpu.get(), l, e);
         if (eb > 0) runtime_owned.bytes += (uint64_t)eb;
     }
     owned = std::move(runtime_owned);
