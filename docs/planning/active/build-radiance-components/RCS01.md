@@ -69,3 +69,22 @@ Gate for RCS02-RCS08. Do not start moves until the in-flight RAD06 evidence PR m
 ## Change Log
 
 - 2026-10-18T12:57:29.818029+00:00 (created-by): Created by agent
+
+## Design decision (2026-10-19, GPT review after the Qwen3.6-35B-A3B FP8 helper attempt)
+
+Evidence: the helper refuses the 35B model at its first expert ("cannot be laid out as w4nl64a8h"); the sizing in `r3_moe_helper.cpp::select_owned` and `moe_remote_gpu.h::expert_bytes` is W4-specific, so changing GPU kernels alone does not fix loading.
+
+Boundary: **moe-remote** is the model-independent expert-worker runtime (shared-memory protocol and mailbox, lanes, scheduling, route mapping, expert ownership, heat and balance, request lifecycle, the worker process, the engine-side adapter). **A backend per architecture** (gfx1100 now, gfx1030 later) owns format-specific expert loading and relayout, device scratch, GEMV/GEMM and quantisation kernels, reductions and launch configuration; one backend may implement several weight formats. **moe-harness** owns synthetic experts, capture/replay, CPU references and differential benchmarks. libr3 keeps only the engine-specific RDNA3 kernel overrides.
+
+Contract: `helper/moe_backend.h` (ABI 1): `MoeShape`, `MoeWeightDesc`, `MoeExpertDesc`, `MoeDeviceCaps`, checked `expert_bytes()` that needs no GPU allocation, and `probe()` that refuses an unsupported (arch, format, activation, scale, geometry) combination before ownership is chosen. A later step adds the C `MoeBackendV1` function table (load_expert, enqueue, synchronize, destroy) once the gfx1100 W4 kernels are adapted behind it.
+
+Order (do not combine rename, ABI change, component move and FP8 in one PR):
+1. Backend contract and format-independent sizing (header and offline test) - this PR.
+2. Adapt the existing gfx1100 W4 path behind it and make `select_owned` use `expert_bytes()` instead of W4 sizing. Gate: Flash-Next replay bitwise unchanged, benchmarks within noise.
+3. RCS09: shared-memory header v14 and shape from the container (checked 64-bit capacity arithmetic, no `kHidden`/`kTopK`/`kExperts`/`kMaxLayers` model constants; runtime shape arguments to kernels, template instantiations only for tile geometry and formats). Gate: Flash-Next plus a second synthetic shape.
+4. FP8 block-scaled CPU reference and synthetic container (exact E4M3FN decode and 128x128 scale lookup).
+5. gfx1100 FP8 path: E4M3 to FP16 decode with the block scale feeding the existing FP16 WMMA tiles, and a separate bandwidth-oriented GEMV for tiny routed batches. Benchmark A (resident FP8, fused decode+WMMA) against B (load-time FP16 expansion).
+6. RCS04: relocate the components out of libr3 as a mechanical move after backend selection works.
+7. Qwen3.6-35B-A3B end to end, then the gfx1030 backend (RCS07).
+
+Replay capture v3 carries the shape, activation, weight descriptor and backend identity; the v2 reader stays for existing captures. GEMM outputs are compared within recorded tolerances, never bitwise across different numerical implementations; routing, ownership, FP8 decode and scale lookup are compared exactly.
