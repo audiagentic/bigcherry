@@ -598,7 +598,7 @@ int64_t laid_out_bytes(const Container& f, r3_moe_gpu::Runner* gpu, uint32_t l, 
 bool segment_shape(const Container& f, r3::moe_shm::LayoutShape* shape, r3::moe_shm::Layout* lay) {
     MoeShape cs{};
     if (!container_shape(f, &cs)) {
-        std::fprintf(stderr, "r3_moe_helper: the container's shape could not be read"\n");
+        std::fprintf(stderr, "r3_moe_helper: the container's shape could not be read\n");
         return false;
     }
     *shape = r3::moe_shm::LayoutShape{cs.hidden, r3::moe_shm::kTopK, cs.experts, r3::moe_shm::kMaxRows,
