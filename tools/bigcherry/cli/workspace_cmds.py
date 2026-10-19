@@ -79,6 +79,10 @@ def cmd_run_harvest(args: Namespace) -> int:
     if len(hits) != 1:
         print(f"run harvest: {len(hits)} runs match {args.run_id!r}", file=sys.stderr)
         return 2
+    why = _blocked(root)
+    if why:
+        print(f"run harvest: refused: {why}", file=sys.stderr)
+        return 3
     try:
         doc = harvest.harvest(root, hits[0])
     except (harvest.HarvestError, rm.ManifestError) as exc:
