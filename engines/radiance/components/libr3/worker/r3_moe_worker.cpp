@@ -1193,7 +1193,7 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
     publish_owned(map, owned, 0);
     Header* h = static_cast<Header*>(map);
     h->helper_count = 1;
-    std::memcpy(layer_slots(map, layer), runtime_slot.data(), sizeof(runtime_slot));
+    std::memcpy(layer_slots(map, layer), runtime_slot.data(), runtime_slot.size() * sizeof(int32_t));
     store(&h->layer_map_ready[layer], 1);
     if (!gpu.load_layer(layer, owned.expert, runtime_slot.data())) {
         std::fprintf(stderr, "r3_moe_worker: --compare layer %u runtime table build failed\n", layer);
