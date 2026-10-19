@@ -106,6 +106,36 @@ int main() {
     check(q->status == 0 && ptr<uint16_t>(m, q->result_offset[0])[0] == 0x4000, "q->status == 0 && ptr<uint16_t>(m, q->re");
 
     helper.join(); munmap(m, l.bytes); close(fd); shm_unlink(name.c_str());
+
+    {   // RCS09-02: the runtime layout reproduces the compile-time one byte for byte for the legacy shape
+        Layout rt{};
+        check(layout_for(legacy_shape(), &rt), "layout_for(legacy_shape()) succeeds");
+        check(rt.ring == l.ring && rt.owner == l.owner && rt.layer_map == l.layer_map && rt.bytes == l.bytes,
+              "runtime layout matches the compile-time ring, owner, layer map and total");
+        for (uint32_t r = 0; r < kMaxRanks; ++r) {
+            check(rt.route[r] == l.route[r] && rt.activation[r] == l.activation[r], "route and activation offsets match");
+            for (uint32_t o = 0; o < kMaxRanks; ++o) check(rt.result[r * kMaxRanks + o] == l.result[r * kMaxRanks + o], "result offsets match");
+        }
+        // another model's shape (Qwen3.6-35B-A3B: hidden 2048, 256 experts, top-k 8): valid, page aligned, in order
+        Layout q{};
+        check(layout_for(LayoutShape{2048, 8, 256, 4096, 128}, &q), "a second shape lays out");
+        check(q.bytes % kPage == 0 && q.ring == kPage && q.owner > q.ring && q.layer_map > q.owner && q.route[0] > q.layer_map,
+              "regions are page aligned and in order");
+        check(q.route[1] > q.result[kMaxRanks - 1] && q.bytes > q.result[kMaxRanks * kMaxRanks - 1], "per-rank regions follow in order");
+        check(q.bytes < l.bytes, "a smaller hidden width and expert count take less memory");
+        // refusals: nothing is written on failure
+        Layout keep{}; keep.bytes = 77;
+        check(!layout_for(LayoutShape{0, 8, 256, 4096, 128}, &keep) && keep.bytes == 77, "zero hidden is refused");
+        check(!layout_for(LayoutShape{2048, 0, 256, 4096, 128}, &keep), "zero top-k is refused");
+        check(!layout_for(LayoutShape{2048, 8, 256, 0, 128}, &keep), "zero row capacity is refused");
+        check(!layout_for(LayoutShape{2048, 8, 256, 4096, 0}, &keep), "a zero activation group is refused");
+        check(!layout_for(LayoutShape{2048, 300, 256, 4096, 128}, &keep), "top-k above the expert count is refused");
+        check(!layout_for(LayoutShape{2000, 8, 256, 4096, 128}, &keep), "a hidden width that is not whole groups is refused");
+        check(!layout_for(LayoutShape{UINT32_MAX - 127, 8, 256, UINT32_MAX, 128}, &keep) && keep.bytes == 77,
+              "an overflowing shape is refused");
+        check(!layout_for(LayoutShape{65536, 8, 256, 65536, 128}, &keep), "a slot that does not fit 32 bits is refused");
+        check(!layout_for(legacy_shape(), nullptr), "a null output is refused");
+    }
     std::printf("r3_moe_shm_test: PASS\n");
     std::puts("r3_moe_shm_test: ok");
     return 0;
