@@ -583,6 +583,15 @@ bool backend_accepts(const Container& f, const char* arch, bool verbose) {
     return rc == MOE_OK;
 }
 
+/* Bytes one expert takes on the device. With a GPU this is the backend contract's size for the container's own description of the
+ * expert (moe_backend.h), the same number for every weight format; without one it is the container's stored size. */
+int64_t laid_out_bytes(const Container& f, r3_moe_gpu::Runner* gpu, uint32_t l, uint32_t e) {
+    if (!gpu) return canonical_expert_bytes(f, l, e);
+    MoeExpertDesc d{};
+    if (!describe_expert(f, l, e, &d)) return -1;
+    return r3::moe_backend::expert_bytes(d);
+}
+
 struct Owned {
     std::vector<std::pair<uint32_t,uint32_t>> expert;
     uint64_t bytes = 0;
@@ -595,6 +604,14 @@ bool select_owned(const Container& f, r3_moe_gpu::Runner* gpu, uint64_t budget, 
         return false;
     }
     if (!backend_accepts(f, gpu ? gpu->arch().c_str() : "gfx1100", false)) return false;
+    if (gpu) {   // the contract's size must be the size the device layout really takes, or no budget arithmetic can be trusted
+        const int64_t want = laid_out_bytes(f, gpu, 0, 0), got = gpu->expert_bytes(0, 0);
+        if (want != got) {
+            std::fprintf(stderr, "r3_moe_helper: expert size disagrees with the device layout (contract %lld, layout %lld)\n",
+                         (long long)want, (long long)got);
+            return false;
+        }
+    }
     std::vector<const RadFileProfile*> order;
     /* A container converted without calibration has no profile: take experts expert-major (unsorted)
      * so the budget spreads over all layers. */
@@ -681,9 +698,9 @@ bool select_owned(const Container& f, r3_moe_gpu::Runner* gpu, uint64_t budget, 
                 if (w) continue;
                 w = 1;
                 const uint32_t who = (uint32_t)(pos++ % 2);
-                const int64_t bytes = gpu ? gpu->expert_bytes(l, e) : canonical_expert_bytes(f, l, e);
+                const int64_t bytes = laid_out_bytes(f, gpu, l, e);
                 if (bytes <= 0) {
-                    std::fprintf(stderr, "r3_moe_helper: expert (%u,%u) cannot be laid out as w4nl64a8h\n", l, e);
+                    std::fprintf(stderr, "r3_moe_helper: expert (%u,%u) cannot be sized for the device\n", l, e);
                     return false;
                 }
                 if ((uint64_t)bytes > budget - held[who]) continue;
@@ -739,9 +756,9 @@ bool select_owned(const Container& f, r3_moe_gpu::Runner* gpu, uint64_t budget, 
         was = 1;
         /* Helper h of n takes every n-th candidate: disjoint sets, each spread over the same order. */
         if (position++ % helpers != helper) continue;
-        const int64_t bytes = gpu ? gpu->expert_bytes(l, e) : canonical_expert_bytes(f, l, e);
+        const int64_t bytes = laid_out_bytes(f, gpu, l, e);
         if (bytes <= 0) {
-            std::fprintf(stderr, "r3_moe_helper: expert (%u,%u) cannot be laid out as w4nl64a8h\n", l, e);
+            std::fprintf(stderr, "r3_moe_helper: expert (%u,%u) cannot be sized for the device\n", l, e);
             return false;
         }
         if ((uint64_t)bytes > budget - out->bytes) continue;
@@ -1499,7 +1516,7 @@ int main(int argc, char** argv) {
     for (auto [l, e] : owned.expert) {
         if (!load(&h->layer_map_ready[l]) || layer_slot(map, l, e) < 0) continue;
         runtime_owned.expert.emplace_back(l, e);
-        const int64_t eb = gpu ? gpu->expert_bytes(l, e) : canonical_expert_bytes(model, l, e);
+        const int64_t eb = laid_out_bytes(model, gpu, l, e);
         if (eb > 0) runtime_owned.bytes += (uint64_t)eb;
     }
     owned = std::move(runtime_owned);
