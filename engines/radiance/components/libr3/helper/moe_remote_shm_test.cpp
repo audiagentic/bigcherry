@@ -32,6 +32,35 @@ int main() {
         check(valid(hv, l.bytes), "the current protocol version is accepted");
     }
     auto* h = (Header*)m;
+    {   // RAD12: ten lanes (four small sizes and the large lane for each rank), a class table the helper sets and the engine validates
+        check(kLanes == kMaxRanks * (kSmallClasses + 1) && kRingSlots == kLanes * kLaneSlots, "lane count and ring size");
+        check(lane_of(0, 0) == 0 && lane_of(1, 0) == 1 && lane_of(0, 1) == 2 && lane_of(1, kSmallClasses) == 9,
+              "lane index is class * ranks + rank");
+        check(lane_class(lane_of(1, 3)) == 3 && lane_is_small(lane_of(1, 3)) && !lane_is_small(lane_of(0, kSmallClasses)),
+              "lane class and size");
+        check(lane_request(m, kLanes, 1) == nullptr && lane_request(m, 0, 0) == nullptr, "lane bounds");
+        check(lane_request(m, 1, 1) == lane_request(m, 0, 1) + kLaneSlots &&
+              lane_request(m, 1, kLaneSlots + 1) == lane_request(m, 1, 1), "lane rings are private and wrap");
+        h->small_class_count = 4;
+        h->small_class_rows[0] = 4; h->small_class_rows[1] = 8; h->small_class_rows[2] = 16; h->small_class_rows[3] = 24;
+        check(valid(h, l.bytes), "a four-class table is accepted");
+        check(step_class(h, 1) == 0 && step_class(h, 4) == 0 && step_class(h, 5) == 1 && step_class(h, 8) == 1 &&
+              step_class(h, 9) == 2 && step_class(h, 16) == 2 && step_class(h, 17) == 3 && step_class(h, 24) == 3 &&
+              step_class(h, 25) == kSmallClasses && step_class(h, kMaxRows) == kSmallClasses,
+              "a step takes the first class that fits, else the large lane");
+        h->small_class_count = 2;
+        check(step_class(h, 9) == kSmallClasses && step_class(h, 8) == 1, "classes past the count are not used");
+        h->small_class_rows[1] = 4;
+        check(!valid(h, l.bytes), "a non-ascending class table is rejected");
+        h->small_class_rows[1] = 8;
+        h->small_class_count = 0;
+        check(!valid(h, l.bytes), "an empty class table is rejected");
+        h->small_class_count = kSmallClasses + 1;
+        check(!valid(h, l.bytes), "too many classes are rejected");
+        h->small_class_count = 1;
+        h->small_class_rows[0] = 8;
+        check(valid(h, l.bytes), "the one-class table of the production configuration is accepted");
+    }
     check(layer_slot(m, 7, 23) == -1, "layer map starts unpublished");
     int32_t* slots = layer_slots(m, 7);
     check(slots != nullptr, "layer map pointer");

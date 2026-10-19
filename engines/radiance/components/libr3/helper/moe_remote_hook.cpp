@@ -333,9 +333,9 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
         s.owner = nullptr;
         return RAD_E_DEVICE;
     }
-    if (!hip_ok(hipMalloc(reinterpret_cast<void**>(&s.sequence), 2 * kMaxRanks * sizeof(uint32_t)),
+    if (!hip_ok(hipMalloc(reinterpret_cast<void**>(&s.sequence), kLanes * sizeof(uint32_t)),
                 "hipMalloc lane sequence counters") ||
-        !hip_ok(hipMemset(s.sequence, 0, 2 * kMaxRanks * sizeof(uint32_t)), "zero lane sequence counters") ||
+        !hip_ok(hipMemset(s.sequence, 0, kLanes * sizeof(uint32_t)), "zero lane sequence counters") ||
         !hip_ok(hipMalloc(reinterpret_cast<void**>(&s.published), kMaxRanks * sizeof(uint32_t)),
                 "hipMalloc published flags") ||
         !hip_ok(hipMemset(s.published, 0, kMaxRanks * sizeof(uint32_t)), "zero published flags") ||

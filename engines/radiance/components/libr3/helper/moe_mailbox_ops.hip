@@ -147,7 +147,9 @@ __global__ void mailbox_publish_kernel(
 
     const int32_t* slot_map = reinterpret_cast<const int32_t*>(
         base + h->layer_map_offset) + (uint64_t)layer * kExperts;
-    const uint32_t large = rows > h->small_rows ? 1u : 0u;
+    uint32_t cls = kSmallClasses;                    /* the large lane unless a small class fits the step */
+    for (uint32_t c = 0; c < h->small_class_count && c < kSmallClasses; ++c)
+        if (rows <= h->small_class_rows[c]) { cls = c; break; }
     const uint32_t scale_cols = hidden / kActGroup;
     const uintptr_t qptr = reinterpret_cast<uintptr_t>(aq);
     const uintptr_t qbase = reinterpret_cast<uintptr_t>(aq_base);
@@ -194,9 +196,9 @@ __global__ void mailbox_publish_kernel(
         __syncthreads();
         if (nr == 0) continue;
 
-        const uint32_t lane = lane_of(slot, large);
+        const uint32_t lane = lane_of(slot, cls);
         if (threadIdx.x == 0) {
-            seq = atomicAdd(sequence + slot * 2u + large, 1u) + 1u;
+            seq = atomicAdd(sequence + lane, 1u) + 1u;
             if (seq == 0) __builtin_trap();
         }
         __syncthreads();
@@ -235,7 +237,7 @@ __global__ void mailbox_publish_kernel(
         __syncthreads();
         if (threadIdx.x == 0) {
             store_sys_rel(&h->lane[lane].request_sequence, seq);
-            published[slot] = 1u + large;   /* 0: nothing published to this slot; else 1 + the lane class */
+            published[slot] = 1u + cls;   /* 0: nothing published to this slot; else 1 + the lane class */
         }
         __syncthreads();
     }
@@ -256,10 +258,10 @@ __device__ __forceinline__ const Request* slot_request(
     uint8_t* base, const uint32_t* sequence, const uint32_t* published, uint32_t slot) {
     if (!published[slot]) return nullptr;
     Header* h = reinterpret_cast<Header*>(base);
-    const uint32_t large = published[slot] - 1u;
-    const uint32_t seq = sequence[slot * 2u + large];
+    const uint32_t lane = lane_of(slot, published[slot] - 1u);
+    const uint32_t seq = sequence[lane];
     const Request* ring = reinterpret_cast<const Request*>(base + h->ring_offset);
-    return ring + lane_of(slot, large) * kLaneSlots + ((seq - 1u) % kLaneSlots);
+    return ring + lane * kLaneSlots + ((seq - 1u) % kLaneSlots);
 }
 
 __global__ void mailbox_add_wait_kernel(
@@ -272,9 +274,8 @@ __global__ void mailbox_add_wait_kernel(
     for (uint32_t k = 0; k < helpers && k < kMaxRanks; ++k) {
         const uint32_t slot = step_slot(k, rank, helpers);
         if (!published[slot]) continue;
-        const uint32_t large = published[slot] - 1u;
-        const uint32_t seq = sequence[slot * 2u + large];
-        const uint32_t lane = lane_of(slot, large);
+        const uint32_t lane = lane_of(slot, published[slot] - 1u);
+        const uint32_t seq = sequence[lane];
         unsigned long long spins = 0;
         /* Exactly this request's generation: one request is in flight a lane, so the helper's done word
          * reaches seq and no further before the engine's next publish. */
@@ -322,10 +323,10 @@ __global__ void mailbox_route_mark_kernel(
         const uint32_t slot = step_slot(k, rank, helpers);
         const Request* q = slot_request(base, sequence, published, slot);
         if (!q) continue;
-        const uint32_t large = published[slot] - 1u;
-        if (load_sys_acq(&h->lane[lane_of(slot, large)].done_sequence) != sequence[slot * 2u + large])
+        const uint32_t lane = lane_of(slot, published[slot] - 1u);
+        if (load_sys_acq(&h->lane[lane].done_sequence) != sequence[lane])
             __builtin_trap();
-        if (q->sequence != sequence[slot * 2u + large] || q->rank != slot || q->rows != rows ||
+        if (q->sequence != sequence[lane] || q->rank != slot || q->rows != rows ||
             q->hidden != hidden || q->status != 0 || q->route_count == 0 || q->route_count > rows * top_k)
             __builtin_trap();
         const Route* route = reinterpret_cast<const Route*>(base + q->route_offset);
