@@ -592,6 +592,32 @@ int64_t laid_out_bytes(const Container& f, r3_moe_gpu::Runner* gpu, uint32_t l, 
     return r3::moe_backend::expert_bytes(d);
 }
 
+/* The shared-memory shape and layout for this container (RCS09-03): hidden, experts and expert width are the container's own; the
+ * row capacity, top-k and activation group are the protocol's until the engine negotiates them. A shape other than the one the
+ * execution paths take is refused here, before any segment is created, with the reason. */
+bool segment_shape(const Container& f, r3::moe_shm::LayoutShape* shape, r3::moe_shm::Layout* lay) {
+    MoeShape cs{};
+    if (!container_shape(f, &cs)) {
+        std::fprintf(stderr, "r3_moe_helper: the container's shape could not be read\n");
+        return false;
+    }
+    *shape = r3::moe_shm::LayoutShape{cs.hidden, r3::moe_shm::kTopK, cs.experts, r3::moe_shm::kMaxRows,
+                                      r3::moe_shm::kActGroup, cs.intermediate};
+    if (*shape != r3::moe_shm::legacy_shape()) {
+        std::fprintf(stderr,
+                     "r3_moe_helper: this model (hidden %u, %u experts, expert width %u) is not executable yet: the lane kernels "
+                     "still take hidden %u, %u experts and width %u (RCS09-04 to 07)\n",
+                     shape->hidden, shape->experts, shape->intermediate, r3::moe_shm::kHidden, r3::moe_shm::kExperts,
+                     r3::moe_shm::kLegacyIntermediate);
+        return false;
+    }
+    if (!r3::moe_shm::layout_for(*shape, lay)) {
+        std::fprintf(stderr, "r3_moe_helper: the shared-memory layout for this shape is invalid\n");
+        return false;
+    }
+    return true;
+}
+
 struct Owned {
     std::vector<std::pair<uint32_t,uint32_t>> expert;
     uint64_t bytes = 0;
@@ -991,14 +1017,16 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
     }
     const uint32_t nr = (uint32_t)published.size();
 
-    const Layout lay = layout();
+    r3::moe_shm::LayoutShape shape{};
+    Layout lay{};
+    if (!segment_shape(model, &shape, &lay)) return 1;
     void* map = mmap(nullptr, lay.bytes, PROT_READ | PROT_WRITE,
                      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     if (map == MAP_FAILED) {
         std::fprintf(stderr, "r3_moe_helper: --compare mmap: %s\n", std::strerror(errno));
         return 1;
     }
-    init(map, model.layers);
+    if (!init(map, model.layers, shape)) return 1;
     publish_owned(map, owned, 0);
     Header* h = static_cast<Header*>(map);
     h->helper_count = 1;
@@ -1418,7 +1446,9 @@ int main(int argc, char** argv) {
         return rc;
     }
 
-    const Layout lay = layout();
+    r3::moe_shm::LayoutShape shape{};
+    Layout lay{};
+    if (!segment_shape(model, &shape, &lay)) return 1;
     const char* name = shm_name();
     const bool creator = helper_index == 0;
     /* Only the creator removes the segment. */
@@ -1447,7 +1477,7 @@ int main(int argc, char** argv) {
     }
     auto* h = static_cast<Header*>(map);
     if (creator) {
-        init(map, model.layers);
+        if (!init(map, model.layers, shape)) { munmap(map, lay.bytes); close(fd); drop_name(); return 1; }
         h->small_class_count = lane_classes.count;
         for (uint32_t c = 0; c < lane_classes.count; ++c) h->small_class_rows[c] = lane_classes.rows[c];
         /* Every helper reads the same step activations: stage them once, in slot 0. */
@@ -1455,7 +1485,7 @@ int main(int argc, char** argv) {
         store(&h->helper_count, helper_count);   /* last: an attaching helper waits for it */
     } else {
         for (int i = 0; i < 1800 && !g_stop && load(&h->helper_count) != helper_count; ++i) ::sleep(1);
-        bool same_lanes = load(&h->helper_count) == helper_count && valid(h, lay.bytes) && h->small_class_count == lane_classes.count;
+        bool same_lanes = load(&h->helper_count) == helper_count && valid(h, lay.bytes, shape) && h->small_class_count == lane_classes.count;
         for (uint32_t c = 0; same_lanes && c < lane_classes.count; ++c)
             same_lanes = h->small_class_rows[c] == lane_classes.rows[c];
         if (!same_lanes) {
