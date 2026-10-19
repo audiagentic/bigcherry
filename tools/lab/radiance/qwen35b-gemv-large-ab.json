@@ -1,5 +1,5 @@
 {
- "_comment": "RAD14: the FP8 decode GEMV for large-lane steps too (R3_MOE_WORKER_GEMV_LARGE_ROWS 16 and 32) against the small-lane-only default, 1/2/4/6 streams, same build.",
+ "_comment": "RAD14: the FP8 decode GEMV for large-lane steps too (R3_MOE_WORKER_GEMV_LARGE_ROWS 16 vs 32), 1/2/4/6 streams, same build; compare with the small-lane-only default of qwen35b-gemv-ab.json (a complete balanced block of two arms is two pairs).",
  "schema_version": 1,
  "engine": "radiance",
  "evidence_role": "diagnostic",
@@ -60,22 +60,6 @@
  "repetitions": 1,
  "health_timeout_s": 900,
  "arms": [
-  {
-   "name": "q35-gemv",
-   "mode": "stock",
-   "shutdown_method": "sigint",
-   "binary": "${RAD_BIN}",
-   "settings": {
-    "R3_MOE_WORKER": "1",
-    "R3_MOE_WORKER_DEVICES": "0 1",
-    "R3_MOE_WORKER_MOE_DOWN_TILE": "1",
-    "R3_MOE_WORKER_ENGINE_RANKS": "1",
-    "R3_MOE_WORKER_MAX_ROWS": "4096",
-    "R3_MOE_WORKER_SMALL_ROWS": "8",
-    "R3_MOE_WORKER_MIB": "22528",
-    "R3_MOE_WORKER_ROWS": "0"
-   }
-  },
   {
    "name": "q35-gemv-l16",
    "mode": "stock",
