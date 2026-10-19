@@ -1,0 +1,87 @@
+{
+ "_comment": "RAD13: the 35B workers arm with real-request capture on (R3_MOE_WORKER_CAPTURE, version 3 captures with the model's shape), to replay real activations through the worker against the CPU reference (r3_moe_worker --replay).",
+ "schema_version": 1,
+ "engine": "radiance",
+ "evidence_role": "diagnostic",
+ "execution_evidence": "observe",
+ "quality_only": true,
+ "model": "/mnt/data/llm-models/radiance/StillDeadcode/qwen3.6-35b-a3b-fp8/qwen3.6-35b-a3b-fp8.rad",
+ "server_args": [],
+ "environment": {
+  "HIP_VISIBLE_DEVICES": "0",
+  "ROCR_VISIBLE_DEVICES": "2",
+  "RADIANCE_HOME": "${RAD_HOME}"
+ },
+ "expected_execution": {
+  "backend": "ROCm",
+  "architectures": [
+   "gfx1201"
+  ],
+  "locators": [
+   "${R9700_BDF}"
+  ]
+ },
+ "quality": {
+  "reference_dir": "${KLD_REF_DIR}",
+  "control": "helper-off",
+  "timeout_s": 5400,
+  "args": [
+   "--radiance-home",
+   "${RAD_HOME}",
+   "--kernels",
+   "libr4d,libr3moe,libref",
+   "--placement",
+   "expert_tiered",
+   "--tp",
+   "1",
+   "--host-pool-mib",
+   "30720",
+   "--kv-cache-dtype",
+   "fp8",
+   "--max-model-len",
+   "8192",
+   "--max-num-seqs",
+   "1",
+   "--max-num-batched-tokens",
+   "64"
+  ],
+  "thresholds": {
+   "max_kld_mean_increase": 0.02,
+   "max_kld_median_increase": 0.01,
+   "max_kld_p99_increase": 0.2,
+   "max_kld_p999_increase": 0.5,
+   "max_top1_drop_points": 1.0,
+   "max_ppl_ratio_increase": 0.05
+  }
+ },
+ "arms": [
+  {
+   "name": "helper-off",
+   "mode": "stock",
+   "shutdown_method": "sigint",
+   "binary": "${RAD_BIN}",
+   "settings": {}
+  },
+  {
+   "name": "helper-on",
+   "mode": "stock",
+   "shutdown_method": "sigint",
+   "binary": "${RAD_BIN}",
+   "environment": {
+    "R3_MOE_WORKER_SKIP_OWNED": "1"
+   },
+   "settings": {
+    "R3_MOE_WORKER": "1",
+    "R3_MOE_WORKER_DEVICES": "0 1",
+    "R3_MOE_WORKER_MOE_DOWN_TILE": "1",
+    "R3_MOE_WORKER_ENGINE_RANKS": "1",
+    "R3_MOE_WORKER_MAX_ROWS": "64",
+    "R3_MOE_WORKER_SMALL_ROWS": "8",
+    "R3_MOE_WORKER_MIB": "22528",
+    "R3_MOE_WORKER_CAPTURE": "/mnt/data/bigcherry-work/caps-q35",
+    "R3_MOE_WORKER_CAPTURE_EVERY": "23",
+    "R3_MOE_WORKER_CAPTURE_MAX": "24"
+   }
+  }
+ ]
+}

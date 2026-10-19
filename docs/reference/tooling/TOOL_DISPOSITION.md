@@ -500,6 +500,9 @@ ownership.
 | `tools/lab/radiance/qwen35b-helper-run.sh` | **TRANSITIONAL** | `radiance` lab topic file; builds the moe-remote-handoff experiment and runs qwen35b-helper-ab.json (RCS09). |
 | `tools/lab/radiance/qwen35b-helper-kld.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark quality configuration, KL of the 35B XTX workers against the engine alone (RAD13). |
 | `tools/lab/radiance/qwen35b-helper-kld-run.sh` | **TRANSITIONAL** | `radiance` lab topic file; builds the moe-remote-handoff experiment and runs qwen35b-helper-kld.json (RAD13). |
+| `tools/lab/radiance/qwen35b-helper-capture.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark quality configuration that captures real worker requests of the 35B (RAD13). |
+| `tools/lab/radiance/qwen35b-helper-capture-run.sh` | **TRANSITIONAL** | `radiance` lab topic file; builds the experiment and runs qwen35b-helper-capture.json (RAD13). |
+| `tools/lab/radiance/capture_upgrade.py` | **TRANSITIONAL** | `radiance` lab topic file; upgrades Flash-Next worker captures from version 2 to 3 in place (RAD13). |
 | `tools/lab/radiance/run-radiance.sh` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/radiance/helper-small-ab.json` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/radiance/helper-downtile-ab.json` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, disposed per that README. |
