@@ -94,6 +94,37 @@ def cmd_run_harvest(args: Namespace) -> int:
     return 0
 
 
+def _one_run(args: Namespace):
+    root = work_root(args.work_root)
+    hits = _find(root, args.run_id)
+    if len(hits) != 1:
+        print(f"{args.run_action}: {len(hits)} runs match {args.run_id!r}", file=sys.stderr)
+        return root, None
+    return root, hits[0]
+
+
+def _cmd_quarantine_family(args: Namespace) -> int:
+    from ..core import quarantine
+
+    root, run = _one_run(args)
+    if run is None:
+        return 2
+    blocked = _blocked(root)
+    try:
+        if args.run_action == "quarantine":
+            policy = retention.Policy(min_age_days=args.min_age_days, newest_k=args.keep_newest)
+            out = quarantine.quarantine(root, run, policy=policy, blocked=blocked, apply=args.apply)
+        elif args.run_action == "restore":
+            out = quarantine.restore(root, run, blocked=blocked)
+        else:
+            out = quarantine.purge(root, run, grace_days=args.grace_days, blocked=blocked)
+    except (quarantine.QuarantineError, rm.ManifestError) as exc:
+        print(f"run {args.run_action}: refused: {exc}", file=sys.stderr)
+        return 3
+    print(json.dumps(out, sort_keys=True))
+    return 0
+
+
 def cmd_clean(args: Namespace) -> int:
     if args.apply:
         print("clean: --apply is not available yet: deletion needs harvest (WSL02) and quarantine first; this is a dry run only",
@@ -118,7 +149,7 @@ def cmd_clean(args: Namespace) -> int:
 
 
 def register(sub) -> None:
-    run = sub.add_parser("run", help="create and inspect managed runs under the work root (run new | run status)")
+    run = sub.add_parser("run", help="create and inspect managed runs under the work root (run new | status | harvest | quarantine | restore | purge)")
     rsub = run.add_subparsers(dest="run_action", required=True)
     new = rsub.add_parser("new", help="create runs/<kind>/<run-id>/ with its manifest and print the path")
     new.add_argument("kind", choices=sorted(rm.RUN_KINDS))
@@ -136,6 +167,22 @@ def register(sub) -> None:
     hv.add_argument("run_id", help="run id or unique prefix")
     hv.add_argument("--work-root")
     hv.set_defaults(func=cmd_run_harvest)
+    qa = rsub.add_parser("quarantine", help="move a harvested candidate run's bulk into trash/ (dry run unless --apply)")
+    qa.add_argument("run_id")
+    qa.add_argument("--apply", action="store_true")
+    qa.add_argument("--min-age-days", type=float, default=7.0)
+    qa.add_argument("--keep-newest", type=int, default=3)
+    qa.add_argument("--work-root")
+    qa.set_defaults(func=_cmd_quarantine_family)
+    rs = rsub.add_parser("restore", help="move a quarantined run's bulk back")
+    rs.add_argument("run_id")
+    rs.add_argument("--work-root")
+    rs.set_defaults(func=_cmd_quarantine_family)
+    pg = rsub.add_parser("purge", help="delete a quarantined run's journalled bulk after the grace period")
+    pg.add_argument("run_id")
+    pg.add_argument("--grace-days", type=float, default=7.0)
+    pg.add_argument("--work-root")
+    pg.set_defaults(func=_cmd_quarantine_family)
 
     cl = sub.add_parser("clean", help="dry-run report of what cleanup would reclaim and why everything else is protected")
     cl.add_argument("--work-root")
