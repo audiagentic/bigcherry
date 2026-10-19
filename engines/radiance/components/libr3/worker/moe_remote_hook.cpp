@@ -106,12 +106,10 @@ bool layer_enabled(int layer) {
         const char* v = std::getenv("R3_MOE_WORKER_LAYERS");
         int lo = 0, hi = 1 << 30;
         if (v && *v && std::sscanf(v, "%d-%d", &lo, &hi) != 2) {
-            std::fprintf(stderr, "libr3: R3_MOE_WORKER_LAYERS=%s: want MIN-MAX, using every layer
-", v);
+            std::fprintf(stderr, "libr3: R3_MOE_WORKER_LAYERS=%s: want MIN-MAX, using every layer\n", v);
             lo = 0; hi = 1 << 30;
         } else if (v && *v) {
-            std::fprintf(stderr, "libr3: R3_MOE_WORKER_LAYERS on - workers serve layers %d to %d only
-", lo, hi);
+            std::fprintf(stderr, "libr3: R3_MOE_WORKER_LAYERS on - workers serve layers %d to %d only\n", lo, hi);
         }
         return std::make_pair(lo, hi);
     }();
