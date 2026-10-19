@@ -409,6 +409,8 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
     s.dev.shadow_stats = shadow_stats;
     s.dev.shadow_first = shadow_first;
     s.dev.max_rows = row_cap;
+    s.dev.hidden = g.hdr->hidden;
+    s.dev.top_k = g.hdr->top_k;
     s.dev.rank = (uint32_t)rank;
     s.dev.world = (uint32_t)world_size;
     if (const char* hp = std::getenv("R3_MOE_WORKER_HISTOGRAM"); hp && *hp) {

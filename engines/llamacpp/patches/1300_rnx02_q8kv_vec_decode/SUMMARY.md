@@ -22,3 +22,8 @@ unprofiled end-to-end decode before any lifecycle promotion.
 
 Set `BIGCHERRY_PATCH_TRACE=1` alongside the opt-in flag to emit a one-time
 `BIGCHERRY_PATCH_HIT` marker when the dispatch branch is selected.
+
+## 2026-10-19 RNX02/BCOP325 reconciliation
+
+Upstream [llama.cpp #30803](https://github.com/ggml-org/llama.cpp/pull/30803) adds a *different* gfx1201 Q4_0/Q8_0 block-per-lane VEC GQA-sharing kernel. **1300 does not implement it**: 1300 remains a default-off Q8_0/D256/Q=1 selector override only. Do not broaden this package, force Q4_0 into old VEC, or reuse the rejected 1298 multi-query result as a GQA-kernel benchmark. RNX02 owns route-first and upstream-pin admission; no patch or hardware job is authorized before the physical gfx1201 Q4_0 K/V critical-path gate. See BCOP325.
+
