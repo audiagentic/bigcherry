@@ -172,6 +172,14 @@ def plan_cleanup(inv: Inventory, *, now: float | None = None, policy: Policy | N
                 protected[ref["id"]] = f"referenced by {cur}"
                 frontier.append(ref["id"])
 
+    # any run that still names another run keeps it, whether or not the naming run is itself a root
+    for e in managed:
+        if e.manifest["retention"]["state"] == "purged":
+            continue
+        for ref in e.manifest["references"]:
+            if ref["type"] == "run" and ref["id"] in by_id and ref["id"] != e.run_id and ref["id"] not in protected:
+                protected[ref["id"]] = f"referenced by {e.run_id}"
+
     decisions = []
     for e in inv.runs:
         reasons = []
