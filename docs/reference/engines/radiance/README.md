@@ -63,7 +63,7 @@ Components and plugins produced by `libr3` (`components/libr3/component.toml` `o
 | `kernels/libr3.so` (libr3) | gfx1100 kernel plugin: native WMMA forms for the GEMMs, attention, MoE, all-reduce; loaded beside or instead of libr4d (`--kernels`) |
 | `kernels/libr4d.so` (upstream) | radiance's own kernels, gfx12 (R9700); not built by BigCherry's component |
 | `kernels/libr3moe.so` (libr3moe) | small plugin, built for gfx1100 and gfx1201: the mailbox rows and the registration (`bc_moe_remote_register`) with the extension point rad0002 adds; used with the R9700 engine as `--kernels libr4d,libr3moe,libref` |
-| `helpers/r3_moe_helper` (helper) | separate process per XTX that owns whole routed experts and computes them for the engine through a pinned-host mailbox with GPU-side flags |
+| `helpers/r3_moe_worker` (helper) | separate process per XTX that owns whole routed experts and computes them for the engine through a pinned-host mailbox with GPU-side flags |
 | `helpers/libr3_ngram_helper.so` | n-gram gather on a spare card (evaluated, shelved: the R9700 is compute) |
 
 Runtime settings (`R3_*`) are declared in `component.toml` with a default, a status (`production`, `experimental`,
@@ -81,7 +81,7 @@ Everything goes through the engine-aware commands (details in [RUNBOOK.md](RUNBO
 Build lanes name a source (`radiance-native` = the pin, `radiance` = validated patch sets, `radiance-lab` = evaluated
 engine fixes), a build (`stock`) and a platform (`linux-radiance`). `helper-ab.json` is the maintained example of a
 multi-process A/B: it drives the R9700 engine with two XTX helpers, started and stopped by the harness
-(`R3_MOE_HELPER_DEVICES`), arms differing in one component setting, with order-balanced rounds and an activation marker
+(`R3_MOE_WORKER_DEVICES`), arms differing in one component setting, with order-balanced rounds and an activation marker
 for the setting under test (MEN11). Set `RAD_BIN`, `RAD_HOME` and `R9700_BDF` before use.
 
 `helper-kld.json` is the quality counterpart: a `quality` block (`"quality_only": true` skips the serving cells) runs

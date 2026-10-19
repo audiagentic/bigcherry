@@ -57,11 +57,11 @@ PREREQUISITES = {RAD0004: (RAD0002,)}
 # prerequisites, after they are applied), `after` the file with the package applied.
 PIN_BLOBS = {
     RAD0002: {
-        "abi/bc_moe_remote.h": (None, "d91eaa8"),
+        "abi/bc_moe_remote.h": (None, "a0dd765"),
         "arch/common/bc_moe_remote_block.h": (None, "f56d783"),
         "arch/common/rad_block_hc.h": ("44c538f", "076f308"),
         "arch/common/rad_block_moe_fp8.h": ("240b82b", "f0a772d"),
-        "core/place/bc_moe_remote.cpp": (None, "c869a1c"),
+        "core/place/bc_moe_remote.cpp": (None, "1babb84"),
         "core/place/bc_moe_remote_place.h": (None, "e89a83b"),
         "core/place/planner.cpp": ("ac68e59", "8e7f945"),
         "core/engine_bringup.cpp": ("06c100e", "5446799"),
@@ -70,7 +70,7 @@ PIN_BLOBS = {
         "arch/common/rad_block_mtp_fp8.h": ("c571d45", "235cebb"),
     },
     RAD0004: {
-        "arch/common/bc_moe_remote_diag.h": (None, "bd959b1"),
+        "arch/common/bc_moe_remote_diag.h": (None, "3998d25"),
         "arch/common/rad_block_moe_fp8.h": ("f0a772d", "e8defe4"),
     },
 }
@@ -286,7 +286,7 @@ class TestRadiancePatchPackages(unittest.TestCase):
             self.assertIn("static constexpr bool kDiagBuild = false;", core)
             self.assertIn("need the diagnostic build", core)
             self.assertIn("plugin->struct_size != sizeof(BcMoeRemotePlugin)", core)
-            self.assertIn('env_on("R3_MOE_HELPER_SKIP_OWNED")', core)
+            self.assertIn('env_on("R3_MOE_WORKER_SKIP_OWNED")', core)
             block = (root / "arch/common/bc_moe_remote_block.h").read_text(encoding="utf-8")
             self.assertIn("moe_mailbox_publish", block)
             self.assertIn("moe_mailbox_add", block)
@@ -336,7 +336,7 @@ class TestRadiancePatchPackages(unittest.TestCase):
         try:
             self.assertTrue(all(result.ok for result in apply_all(list(_load(RAD0002)), root)))
             abi = (root / "abi/bc_moe_remote.h").read_text(encoding="utf-8")
-            hook = (REPO / "engines/radiance/components/libr3/helper/moe_remote_hook.cpp").read_text(encoding="utf-8")
+            hook = (REPO / "engines/radiance/components/libr3/worker/moe_remote_hook.cpp").read_text(encoding="utf-8")
 
             def fields(text: str, opener: str) -> list[str]:
                 body = text.split(opener, 1)[1].split("}", 1)[0]
@@ -351,7 +351,7 @@ class TestRadiancePatchPackages(unittest.TestCase):
             temp.cleanup()
 
     def test_remote_helper_merges_in_gather_order_and_exposes_diagnostics(self):
-        helper = REPO / "engines" / "radiance" / "components" / "libr3" / "helper"
+        helper = REPO / "engines" / "radiance" / "components" / "libr3" / "worker"
         hook = (helper / "moe_remote_hook.cpp").read_text(encoding="utf-8")
         ops = (helper / "moe_mailbox_ops.hip").read_text(encoding="utf-8")
         self.assertIn('setenv("R3_MOE_REMOTE_MIN_ROWS", "0", 0)', hook)
@@ -371,10 +371,10 @@ class TestRadiancePatchPackages(unittest.TestCase):
             'f32_to_bf16_rn(bf16_to_f32(part) + bf16_to_f32(gathered))', ops
         )
         self.assertNotIn('float acc = bf16_to_f32(dst[col]);', ops)
-        self.assertIn('R3_MOE_HELPER poison', hook)
-        self.assertIn('R3_MOE_HELPER_SHADOW enabled', hook)
-        self.assertIn('R3_MOE_HELPER_MASK_ONLY enabled', hook)
-        self.assertIn('R3_MOE_HELPER_SHADOW layer=', hook)
+        self.assertIn('R3_MOE_WORKER poison', hook)
+        self.assertIn('R3_MOE_WORKER_SHADOW enabled', hook)
+        self.assertIn('R3_MOE_WORKER_MASK_ONLY enabled', hook)
+        self.assertIn('R3_MOE_WORKER_SHADOW layer=', hook)
         self.assertIn('hipMalloc mask-only engine rows', hook)
         self.assertIn('"moe_mailbox_mask_ref"', ops)
         self.assertIn('if (mask_only == 1u) src = mask_ref + (uint64_t)flat * hidden;', ops)
@@ -393,20 +393,20 @@ class TestRadiancePatchPackages(unittest.TestCase):
         self.assertIn('"moe_mailbox_shadow"', ops)
         self.assertIn('q->row_base', ops)
         gpu = (helper / "moe_remote_gpu.h").read_text(encoding="utf-8")
-        self.assertIn('R3_MOE_HELPER_POISON', gpu)
+        self.assertIn('R3_MOE_WORKER_POISON', gpu)
         self.assertIn('poison == 1u ? (uint16_t)0x447au : poison == 2u ? (uint16_t)0 : (uint16_t)(u >> 16)', gpu)
         self.assertIn('build_layer_table', gpu)
         self.assertIn('slot_of_expert', gpu)
         self.assertNotIn('model_.expert_slot', gpu)
         self.assertIn('stage_compare_activation', gpu)
         self.assertIn('q, act_q, act_s', gpu)
-        helper_main = (helper / "r3_moe_helper.cpp").read_text(encoding="utf-8")
+        helper_main = (helper / "r3_moe_worker.cpp").read_text(encoding="utf-8")
         self.assertIn("--synthetic-protect", helper_main)
         self.assertIn("did not shift an owned TP class", helper_main)
         self.assertNotIn("regular_slot", helper_main)
         component = (REPO / "engines" / "radiance" / "components" / "libr3" / "component.toml").read_text(encoding="utf-8")
-        self.assertIn("[setting.R3_MOE_HELPER_SHADOW]", component)
-        self.assertIn("[setting.R3_MOE_HELPER_MASK_ONLY]", component)
+        self.assertIn("[setting.R3_MOE_WORKER_SHADOW]", component)
+        self.assertIn("[setting.R3_MOE_WORKER_MASK_ONLY]", component)
         self.assertIn('status = "diagnostic"', component)
 
     def test_missing_anchor_fails_closed_and_is_atomic(self):

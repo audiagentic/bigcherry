@@ -1,5 +1,5 @@
 {
- "_comment": "RAD06 P1 (2026-10-17): the helper's grouped MoE GEMM form - 'form-auto' (libr4d picks by row count against all 512 experts: ~790-row requests take the 32-row prefill form) vs 'form-decode' (R3_MOE_HELPER_MOE_FORM=2, the 16-row (tile, run) form; a helper's rows are ~4.5 an owned expert). Hot-first ownership, few-rows kernel off. Set RAD_BIN, RAD_HOME, R9700_BDF before use.",
+ "_comment": "RAD06 P1 (2026-10-17): the helper's grouped MoE GEMM form - 'form-auto' (libr4d picks by row count against all 512 experts: ~790-row requests take the 32-row prefill form) vs 'form-decode' (R3_MOE_WORKER_MOE_FORM=2, the 16-row (tile, run) form; a helper's rows are ~4.5 an owned expert). Hot-first ownership, few-rows kernel off. Set RAD_BIN, RAD_HOME, R9700_BDF before use.",
  "schema_version": 1,
  "engine": "radiance",
  "evidence_role": "diagnostic",
@@ -35,7 +35,7 @@
   "HIP_VISIBLE_DEVICES": "0",
   "ROCR_VISIBLE_DEVICES": "2",
   "RADIANCE_HOME": "${RAD_HOME}",
-  "R3_MOE_HELPER_SKIP_OWNED": "1"
+  "R3_MOE_WORKER_SKIP_OWNED": "1"
  },
  "expected_execution": {
   "backend": "ROCm",
@@ -60,14 +60,14 @@
    "shutdown_method": "sigint",
    "binary": "${RAD_BIN}",
    "settings": {
-    "R3_MOE_HELPER": "1",
-    "R3_MOE_HELPER_DEVICES": "0 1",
-    "R3_MOE_HELPER_ENGINE_RANKS": "1",
-    "R3_MOE_HELPER_MAX_ROWS": "4096",
-    "R3_MOE_HELPER_SMALL_ROWS": "8",
-    "R3_MOE_HELPER_MIB": "22528",
-    "R3_MOE_HELPER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
-    "R3_MOE_HELPER_ROWS": "0"
+    "R3_MOE_WORKER": "1",
+    "R3_MOE_WORKER_DEVICES": "0 1",
+    "R3_MOE_WORKER_ENGINE_RANKS": "1",
+    "R3_MOE_WORKER_MAX_ROWS": "4096",
+    "R3_MOE_WORKER_SMALL_ROWS": "8",
+    "R3_MOE_WORKER_MIB": "22528",
+    "R3_MOE_WORKER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
+    "R3_MOE_WORKER_ROWS": "0"
    }
   },
   {
@@ -76,15 +76,15 @@
    "shutdown_method": "sigint",
    "binary": "${RAD_BIN}",
    "settings": {
-    "R3_MOE_HELPER": "1",
-    "R3_MOE_HELPER_DEVICES": "0 1",
-    "R3_MOE_HELPER_ENGINE_RANKS": "1",
-    "R3_MOE_HELPER_MAX_ROWS": "4096",
-    "R3_MOE_HELPER_SMALL_ROWS": "8",
-    "R3_MOE_HELPER_MIB": "22528",
-    "R3_MOE_HELPER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
-    "R3_MOE_HELPER_ROWS": "0",
-    "R3_MOE_HELPER_MOE_FORM": "2"
+    "R3_MOE_WORKER": "1",
+    "R3_MOE_WORKER_DEVICES": "0 1",
+    "R3_MOE_WORKER_ENGINE_RANKS": "1",
+    "R3_MOE_WORKER_MAX_ROWS": "4096",
+    "R3_MOE_WORKER_SMALL_ROWS": "8",
+    "R3_MOE_WORKER_MIB": "22528",
+    "R3_MOE_WORKER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
+    "R3_MOE_WORKER_ROWS": "0",
+    "R3_MOE_WORKER_MOE_FORM": "2"
    }
   }
  ]

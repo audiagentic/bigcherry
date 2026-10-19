@@ -1,5 +1,5 @@
 #!/bin/bash
-# RAD06: replay sweep - build the branch once, then ONE r3_moe_helper process (one model load, one expert allocation)
+# RAD06: replay sweep - build the branch once, then ONE r3_moe_worker process (one model load, one expert allocation)
 # replays every captured request once per variant; rocprofv3's kernel trace gives per-call grouped-GEMM times and the
 # helper's engine_join line gives rel_l2 against the CPU engine reference (R3_MOE_SWEEP_FAST=0, ~2 min a run) or, by
 # default, each variant's output is compared bit for bit with the first variant's (sweep_cmp mismatches=N). No server, no per-variant load stage.
@@ -21,10 +21,10 @@ B=$(ls -td /mnt/vault/development/projects/bigcherry/workspaces/main/work/builds
 M=/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad
 FILES=$(ls -S ${CAPDIR:-$W/captures}/*.bin | head -$N | tr '\n' ' ')
 out=$W/sweep-out; rm -rf $out
-env HIP_VISIBLE_DEVICES=0 ROCR_VISIBLE_DEVICES=0 R3_MOE_HELPER_MIB=22528 R3_MOE_HELPER_SMALL_ROWS=${SMALL_ROWS:-8} R3_MOE_HELPER_SMALL_LANES=${SMALL_LANES:-} R3_MOE_HELPER_MAX_ROWS=4096 \
-  R3_MOE_NATIVE=1 R3_MOE_HELPER_MOE_DOWN_TILE=1 R3_MOE_HELPER_HEAT=$W/runs/perf51/heat.rank0.hot-first RADIANCE_HOME=$B/radiance_home \
+env HIP_VISIBLE_DEVICES=0 ROCR_VISIBLE_DEVICES=0 R3_MOE_WORKER_MIB=22528 R3_MOE_WORKER_SMALL_ROWS=${SMALL_ROWS:-8} R3_MOE_WORKER_SMALL_LANES=${SMALL_LANES:-} R3_MOE_WORKER_MAX_ROWS=4096 \
+  R3_MOE_NATIVE=1 R3_MOE_WORKER_MOE_DOWN_TILE=1 R3_MOE_WORKER_HEAT=$W/runs/perf51/heat.rank0.hot-first RADIANCE_HOME=$B/radiance_home \
   R3_MOE_SWEEP_FAST=${R3_MOE_SWEEP_FAST:-1} timeout 3600 rocprofv3 --kernel-trace --output-format csv -d $out -o run -- \
-  $B/radiance_home/helpers/r3_moe_helper --replay-sweep $M "$VARIANTS" $FILES > $out.log 2>&1
+  $B/radiance_home/helpers/r3_moe_worker --replay-sweep $M "$VARIANTS" $FILES > $out.log 2>&1
 echo "rc=$?"
 python3 - $out.log $(find $out -name '*kernel_trace.csv' | head -1) <<'PY'
 import csv, re, sys, collections

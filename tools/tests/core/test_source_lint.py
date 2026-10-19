@@ -75,16 +75,16 @@ class WholeCheck(unittest.TestCase):
     def test_check_reports_a_bad_file_and_skips_vendor_and_fixtures(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
-            (root / "engines" / "radiance" / "components" / "libr3" / "helper").mkdir(parents=True)
+            (root / "engines" / "radiance" / "components" / "libr3" / "worker").mkdir(parents=True)
             (root / "engines" / "radiance" / "vendor" / "x").mkdir(parents=True)
             (root / "tools").mkdir()
-            bad = root / "engines" / "radiance" / "components" / "libr3" / "helper" / "bad.cpp"
+            bad = root / "engines" / "radiance" / "components" / "libr3" / "worker" / "bad.cpp"
             bad.write_text(cpp('int f() { std::puts("oops', '"); }'))
             (root / "engines" / "radiance" / "vendor" / "x" / "skip.cpp").write_text(cpp('const char* s = "open'))
             found = [(c, p) for c, _, p in ((k, l, str(f.relative_to(root)).replace(chr(92), "/"))
                                            for f in sl.source_files(root) for k, l, _m in sl.lint_file(f))]
             self.assertTrue(found)
-            self.assertEqual({p for _, p in found}, {"engines/radiance/components/libr3/helper/bad.cpp"})
+            self.assertEqual({p for _, p in found}, {"engines/radiance/components/libr3/worker/bad.cpp"})
 
     def test_the_repository_itself_is_clean(self):
         root = Path(__file__).resolve().parents[3]

@@ -20,7 +20,7 @@ Only after RHP05 proves workload drift frequently justifies reallocation, implem
 ## Steps
 
 1. First establish an Amdahl/economics gate: observed stale placement waste, number of changes per hour, bytes per expert, interruption cost of RHP05 restart, expected recoup time and peak auxiliary VRAM. If restart meets objectives, close this item as **not justified**, not partially implement.
-2. Design owner-map epochs across engine + both helpers: `(layer,expert)` global IDs, ownership array, per-GPU residency-ready bit, 64-bit generation, hash and ACK. Mutable topology/capacity only between validated epochs. Map protects layers with BF16/protected slots and MTP; `R3_MOE_HELPER_SKIP_OWNED` currently maps weights away during planner construction, requiring explicit runtime allocation/loading or a bounded local fallback source.
+2. Design owner-map epochs across engine + both helpers: `(layer,expert)` global IDs, ownership array, per-GPU residency-ready bit, 64-bit generation, hash and ACK. Mutable topology/capacity only between validated epochs. Map protects layers with BF16/protected slots and MTP; `R3_MOE_WORKER_SKIP_OWNED` currently maps weights away during planner construction, requiring explicit runtime allocation/loading or a bounded local fallback source.
 3. Stage new owner weights into pre-reserved VRAM/shadow slots; stream asynchronously using helper loader and Radiance mover semantics. Respect GPU budget, host/SSD staging, source availability, no P2P, mapped-host GPU mailbox ordering and helper lane isolation. Preserve old owner weights until last old-epoch operation retires.
 4. At a **global safe step boundary**, quiesce or fence all ranks/helpers, drain old mailbox requests and per-lane sequences, confirm `ready(epoch+1)` from all participants, atomically publish the new map and the corresponding device-side bitmap/table. No mixed epochs inside one forward; use epoch in request/completion and a strict failure path. CPU decides; GPU continues GPU-side execution and waits as required at barrier, never CPU-spin relay of tokens.
 5. Add rollback and fault injection for helper crash, stalled mapped host writes, mismatched checksum, partial stage, memory pressure, old epoch still in flight, generation wrap and quant/output mismatch. Revert to last good owner map only if all old weights still resident; otherwise stop serving safely.
@@ -32,7 +32,7 @@ The RHP05 static ownership maps are built before load and `rad0002` can mark rem
 
 ## Files
 
-`engines/radiance/patches/rad0002_moe_remote_handoff/` (or a new narrowly scoped engine patch), `engines/radiance/components/libr3/helper/{moe_remote_shm.h,moe_remote_hook.cpp,moe_remote_gpu.h,r3_moe_helper.cpp}`; Radiance pinned `core/place/mover.{h,cpp}` ABI adaptation if justified; component settings, patch package tests and GPU stress harness.
+`engines/radiance/patches/rad0002_moe_remote_handoff/` (or a new narrowly scoped engine patch), `engines/radiance/components/libr3/worker/{moe_remote_shm.h,moe_remote_hook.cpp,moe_remote_gpu.h,r3_moe_worker.cpp}`; Radiance pinned `core/place/mover.{h,cpp}` ABI adaptation if justified; component settings, patch package tests and GPU stress harness.
 
 ## Validation
 
@@ -73,7 +73,7 @@ Recommended phases: `ACTIVE(n)` -> `PROPOSED(n+1)` -> `LOADING(n+1)` -> `READY(n
 
 ### Memory and weight lifetime
 
-A remote-owned engine expert may be intentionally absent locally due to `R3_MOE_HELPER_SKIP_OWNED`; consequently switching remote -> local requires **new local weight allocation and verified full weight load**, not just new bitmap bits. Local -> remote requires the helper to preload the correct quantized whole-expert weights and keep engine copy until all prior steps finish. Per-device peak budget must include old + new residency, transfer staging, kernel scratch, KV and host pool; if it does not fit, refuse the migration or use RHP05 restart. Restore pool/slab accounting after abort, including shadow slots and in-flight events. Never repurpose protected or MTP-only weights.
+A remote-owned engine expert may be intentionally absent locally due to `R3_MOE_WORKER_SKIP_OWNED`; consequently switching remote -> local requires **new local weight allocation and verified full weight load**, not just new bitmap bits. Local -> remote requires the helper to preload the correct quantized whole-expert weights and keep engine copy until all prior steps finish. Per-device peak budget must include old + new residency, transfer staging, kernel scratch, KV and host pool; if it does not fit, refuse the migration or use RHP05 restart. Restore pool/slab accounting after abort, including shadow slots and in-flight events. Never repurpose protected or MTP-only weights.
 
 ### Failure matrix
 

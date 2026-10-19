@@ -51,7 +51,7 @@ class AdapterDispatchTests(unittest.TestCase):
 
     def test_libr3_declares_its_offline_tests(self):
         libr3 = components.load_all(paths.REPO_ROOT, engines.RADIANCE)["libr3"]
-        self.assertEqual(libr3.test_targets, ("r3_moe_shm_test",))
+        self.assertEqual(libr3.test_targets, ("r3_moe_shm_test", "r3_moe_backend_test", "r3_moe_fp8_ref_test"))
 
 
 class AbiHeaderTests(unittest.TestCase):

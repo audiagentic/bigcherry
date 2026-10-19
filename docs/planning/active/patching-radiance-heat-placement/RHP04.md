@@ -15,11 +15,11 @@ work: L
 
 ## Description
 
-Use shared Radiance heat observations to recommend GPU ownership for R9700 trunk + two gfx1100 expert helpers, but **do not move weights or alter serving results**. Optimise the *critical path*, not simply counts: one busy remote helper can gate every token in a layer. Compare against existing `R3_MOE_HELPER_HEAT` coldest-first and initial static container profile.
+Use shared Radiance heat observations to recommend GPU ownership for R9700 trunk + two gfx1100 expert helpers, but **do not move weights or alter serving results**. Optimise the *critical path*, not simply counts: one busy remote helper can gate every token in a layer. Compare against existing `R3_MOE_WORKER_HEAT` coldest-first and initial static container profile.
 
 ## Steps
 
-1. Define per-`(layer,expert)` owner candidates and strict eligibility from `rad0002` **runtime slot map** and `R3_MOE_HELPER_SKIP_OWNED`, protected BF16 experts, MTP layers, `min/max_rows`, full-width/TP geometry, input/output precision and exact helper source file availability. Never propose a helper assignment for an unsupported layer, expert encoding, or step-size fallback.
+1. Define per-`(layer,expert)` owner candidates and strict eligibility from `rad0002` **runtime slot map** and `R3_MOE_WORKER_SKIP_OWNED`, protected BF16 experts, MTP layers, `min/max_rows`, full-width/TP geometry, input/output precision and exact helper source file availability. Never propose a helper assignment for an unsupported layer, expert encoding, or step-size fallback.
 2. Consume phase-tagged prefill and decode route counts (RHP02); compute rolling/decayed heat and uncertainty with coverage min/age requirements. Separate active tokens per expert per phase, fraction of steps selecting it and distinct expert reads; raw counts alone do not reflect GEMM/reload cost.
 3. Calibrate per-device curves from existing `--profile-ops` and helper per-stage timings (`RAD02/RAD05/RAD06`): local R9700 GEMM + host-pool miss, gfx1100 small-lane GEMV, large-lane grouped GEMM, publish/stage/add/fence, VRAM pressure. Include overlapping local and remote work, helper skew, p95 layer wait and transfer costs. Freeze curve version/provenance.
 4. Create a deterministic budget-constrained offline optimiser producing a *whole ownership map*: respect helper VRAM limits, engine host+VRAM weights, whole expert bytes, protected/local nonmovable weights; preserve disjoint helper ownership. Compare predicted layer critical path and total request latency; favour low churn and low transfer cost. Explicit `no-change` outcome.
@@ -32,7 +32,7 @@ Radiance's existing decayed-LFU/hysteresis remains owner of **local residency**;
 
 ## Files
 
-`engines/radiance/components/libr3/helper/` or a dedicated adjacent policy source with card-free tests; experiment runner `tools/lab/radiance/`; `engines/radiance/components/libr3/component.toml` for experimental default-off knobs; `docs/evidence/` for reports. Reuse RHP02 hook and RHP03 snapshots.
+`engines/radiance/components/libr3/worker/` or a dedicated adjacent policy source with card-free tests; experiment runner `tools/lab/radiance/`; `engines/radiance/components/libr3/component.toml` for experimental default-off knobs; `docs/evidence/` for reports. Reuse RHP02 hook and RHP03 snapshots.
 
 ## Validation
 
@@ -74,7 +74,7 @@ J(owners) = sum_phase demand_weight[phase]
 
 Do **not** sum concurrent engine+helper work as serial time. Model communication on critical path including helper wait, and count a remote expert only once per layer where applicable. For mixed steps, qualify independent curves rather than interpolating unobserved tensor shapes.
 
-Hard constraints: each `(layer,global_expert)` assigned exactly once; `allowed_owners` derives from runtime protected expert map, output semantics, `RAD_MOE_REMOTE_MIN/MAX_ROWS`, source weight location and GPU ISA; per-device resident byte <= measured safe budget including launch scratch, KV/headroom, helper kernels and shadow-transfer workspace; rank parity and top-k routing identity unchanged. `R3_MOE_HELPER_SKIP_OWNED` means a local candidate may need restart reload; no illusion that a bitmap change is free.
+Hard constraints: each `(layer,global_expert)` assigned exactly once; `allowed_owners` derives from runtime protected expert map, output semantics, `RAD_MOE_REMOTE_MIN/MAX_ROWS`, source weight location and GPU ISA; per-device resident byte <= measured safe budget including launch scratch, KV/headroom, helper kernels and shadow-transfer workspace; rank parity and top-k routing identity unchanged. `R3_MOE_WORKER_SKIP_OWNED` means a local candidate may need restart reload; no illusion that a bitmap change is free.
 
 ### Calibration data and sampling
 

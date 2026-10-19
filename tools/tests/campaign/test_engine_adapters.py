@@ -38,37 +38,37 @@ class RadianceSidecarSpecTests(unittest.TestCase):
 
     def test_one_spec_per_helper_device_in_order(self):
         env = {
-            "HIP_VISIBLE_DEVICES": "2", "ROCR_VISIBLE_DEVICES": "2", "R3_MOE_HELPER": "1",
-            "R3_MOE_HELPER_DEVICES": "0 1", "R3_MOE_HELPER_MIB": "22528", "R3_MOE_HELPER_ENGINE_RANKS": "1", "PATH": "/bin",
+            "HIP_VISIBLE_DEVICES": "2", "ROCR_VISIBLE_DEVICES": "2", "R3_MOE_WORKER": "1",
+            "R3_MOE_WORKER_DEVICES": "0 1", "R3_MOE_WORKER_MIB": "22528", "R3_MOE_WORKER_ENGINE_RANKS": "1", "PATH": "/bin",
         }
         run_dir = Path("run/cell")
         specs = adapter("radiance").sidecars(self.arm(), env, run_dir, Path("/b/bin/radiance"))
         self.assertEqual([s.name for s in specs], ["helper0", "helper1"])
         home = Path("/b/bin/radiance").parent.parent / "radiance_home"
         for index, (spec, device) in enumerate(zip(specs, ("0", "1"))):
-            self.assertEqual(spec.argv, (str(home / "helpers" / "r3_moe_helper"), str(Path("/models/fn.rad"))))
+            self.assertEqual(spec.argv, (str(home / "helpers" / "r3_moe_worker"), str(Path("/models/fn.rad"))))
             self.assertEqual(spec.env["HIP_VISIBLE_DEVICES"], "0")
             self.assertEqual(spec.env["ROCR_VISIBLE_DEVICES"], device)
-            self.assertEqual(spec.env["R3_MOE_HELPER_INDEX"], str(index))
-            self.assertEqual(spec.env["R3_MOE_HELPER_COUNT"], "2")
-            self.assertEqual(spec.env["R3_MOE_HELPER_MIB"], "22528")
-            self.assertEqual(spec.env["R3_MOE_HELPER_ENGINE_RANKS"], "1")
+            self.assertEqual(spec.env["R3_MOE_WORKER_INDEX"], str(index))
+            self.assertEqual(spec.env["R3_MOE_WORKER_COUNT"], "2")
+            self.assertEqual(spec.env["R3_MOE_WORKER_MIB"], "22528")
+            self.assertEqual(spec.env["R3_MOE_WORKER_ENGINE_RANKS"], "1")
             self.assertEqual(spec.env["RADIANCE_HOME"], str(home))
             self.assertEqual(spec.env["PATH"], "/bin")
-            self.assertNotIn("R3_MOE_HELPER", spec.env)
-            self.assertNotIn("R3_MOE_HELPER_DEVICES", spec.env)
+            self.assertNotIn("R3_MOE_WORKER", spec.env)
+            self.assertNotIn("R3_MOE_WORKER_DEVICES", spec.env)
             self.assertEqual(spec.log_path, run_dir / f"helper{index}.log")
             self.assertEqual(spec.pre_start_cleanup, (Path("/dev/shm/r3-moe-helper"),))
-            self.assertRegex("r3_moe_helper: waiting for engine runtime expert maps\n", spec.ready_pattern.replace("^", "(?m)^"))
+            self.assertRegex("r3_moe_worker: waiting for engine runtime expert maps\n", spec.ready_pattern.replace("^", "(?m)^"))
         self.assertEqual(env["HIP_VISIBLE_DEVICES"], "2")  # the server's environment is not touched
 
     def test_custom_shm_cleanup_and_bad_devices(self):
         rad = adapter("radiance")
-        env = {"R3_MOE_HELPER": "1", "R3_MOE_HELPER_DEVICES": "0", "R3_MOE_HELPER_SHM": "/other"}
+        env = {"R3_MOE_WORKER": "1", "R3_MOE_WORKER_DEVICES": "0", "R3_MOE_WORKER_SHM": "/other"}
         self.assertEqual(rad.sidecars(self.arm(), env, Path("r"), Path("/b/bin/radiance"))[0].pre_start_cleanup, (Path("/dev/shm/other"),))
         for devices in ("", "0 0", "x"):
             with self.subTest(devices=devices), self.assertRaises(ValueError):
-                rad.sidecars(self.arm(), {"R3_MOE_HELPER": "1", "R3_MOE_HELPER_DEVICES": devices}, Path("r"), Path("/b/bin/radiance"))
+                rad.sidecars(self.arm(), {"R3_MOE_WORKER": "1", "R3_MOE_WORKER_DEVICES": devices}, Path("r"), Path("/b/bin/radiance"))
 
 
 FAKE = textwrap.dedent('''
@@ -225,8 +225,8 @@ class ArmCaptureSidecarTests(unittest.TestCase):
             "bigcherry.campaign.bench_runner.run_bench_runner_server_bench", return_value={"tg512_tps": 1.0}):
             result = run_server_arm_capture(
                 engine="radiance", health_timeout_s=180, binary=Path("/b/bin/radiance"), model=Path("m.rad"), extra_args=(),
-                output=Path(tmp), pair=0, side="on", position=0, env={"R3_MOE_HELPER": "1", "R3_MOE_HELPER_DEVICES": "0"},
-                settings={"R3_MOE_HELPER": "1"}, bench_configs="tg512", runner_root=Path("r"),
+                output=Path(tmp), pair=0, side="on", position=0, env={"R3_MOE_WORKER": "1", "R3_MOE_WORKER_DEVICES": "0"},
+                settings={"R3_MOE_WORKER": "1"}, bench_configs="tg512", runner_root=Path("r"),
                 required_metrics=("tg512_tps",), execution_evidence="observe",
             )
             persisted = json.loads((Path(tmp) / "pair-001-on" / "cell.json").read_text())
@@ -238,7 +238,7 @@ class ArmCaptureSidecarTests(unittest.TestCase):
         self.assertEqual(order, ["sidecar-start", "server-start", "server-stop", "sidecar-stop"])
         self.assertEqual(result["returncode"], 0)
         self.assertEqual(persisted["sidecars"][0]["name"], "helper0")
-        self.assertEqual(persisted["settings"], {"R3_MOE_HELPER": "1"})
+        self.assertEqual(persisted["settings"], {"R3_MOE_WORKER": "1"})
 
     def test_sidecars_stop_when_the_server_fails(self):
         order = []

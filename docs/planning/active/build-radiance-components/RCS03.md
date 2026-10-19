@@ -11,11 +11,11 @@ priority: P1
 work: M
 ---
 
-# Split r3_moe_helper.cpp (1,513 lines): options, owners, serve loop, harness
+# Split r3_moe_worker.cpp (1,513 lines): options, owners, serve loop, harness
 
 ## Description
 
-Separate the helper process into: options/env (one place that reads and validates R3_MOE_HELPER_*), owners (heat ranking, select_owned, balance), serve loop (mailbox polling, lane launch), and the harness (capture_request, replay, replay-sweep, trace_dump). The harness moves to the moe-harness component so production builds can leave it out.
+Separate the helper process into: options/env (one place that reads and validates R3_MOE_WORKER_*), owners (heat ranking, select_owned, balance), serve loop (mailbox polling, lane launch), and the harness (capture_request, replay, replay-sweep, trace_dump). The harness moves to the moe-harness component so production builds can leave it out.
 
 ## Steps
 

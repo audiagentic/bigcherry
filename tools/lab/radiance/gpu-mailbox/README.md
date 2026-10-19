@@ -63,9 +63,9 @@ write. HyperConn's fused gather+all-reduce and fused all-reduce write are disabl
 
 ## Mandatory remote-result proof
 
-Set `R3_MOE_HELPER_POISON=1` on the helper and engine environment. The helper replaces every
+Set `R3_MOE_WORKER_POISON=1` on the helper and engine environment. The helper replaces every
 remote result element it writes with BF16 1000 and the engine hook prints exactly one
-`libr3: R3_MOE_HELPER poison` marker at mailbox registration. Run the normal helper-on KL workload
+`libr3: R3_MOE_WORKER poison` marker at mailbox registration. Run the normal helper-on KL workload
 against the helper-off reference. The poison run must diverge catastrophically (PPL far above the
 reference); a non-poison helper run must return to the helper-off quality envelope. This proves the
 R9700 result crosses the mailbox, is weighted by the published route weight, and reaches the model

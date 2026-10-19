@@ -10,9 +10,9 @@ from bigcherry.patcher import Edit, FilePatch
 _BC_MOE_REMOTE_DIAG_H = r"""/* bc_moe_remote_diag.h -- remote-MoE diagnostics for the MoE block (patch rad0004). Diagnostic builds only.
  *
  * shadow:    the helper computes the owned routes and compares them with the local result, while the local result
- *            still goes forward (R3_MOE_HELPER_SHADOW); the helper reports the per-layer error at shutdown.
+ *            still goes forward (R3_MOE_WORKER_SHADOW); the helper reports the per-layer error at shutdown.
  * mask-only: the local result is captured, the routes are published and masked late, the local rows are restored
- *            to engine order, and the helper's rows are added to the captured ones (R3_MOE_HELPER_MASK_ONLY). */
+ *            to engine order, and the helper's rows are added to the captured ones (R3_MOE_WORKER_MASK_ONLY). */
 #ifndef BC_MOE_REMOTE_DIAG_H
 #define BC_MOE_REMOTE_DIAG_H
 

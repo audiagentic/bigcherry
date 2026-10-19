@@ -224,7 +224,7 @@
             for (uint32_t t = 0; t < 8; ++t) as[t] = s_as[acc_row(lane, t)];
 @@ end
 
-# RAD06 long-run tile (R3_MOE_HELPER_MOE_LONG_ROWS): the run-aligned prefill form builds one map of 32-row slices, so a
+# RAD06 long-run tile (R3_MOE_WORKER_MOE_LONG_ROWS): the run-aligned prefill form builds one map of 32-row slices, so a
 # run longer than 32 rows spans blocks that each re-stage and re-dequantise the same weight tile. With the pin set the
 # map builder runs twice: runs of fewer than `rows` rows keep 32-row slices (map S, the tail included); runs of `rows`
 # or more get 64-row slices (map L), and an MT=4 instantiation runs on L. The two maps cover disjoint rows and every row
