@@ -183,6 +183,12 @@ status = "diagnostic"
 summary = "RAD06 timing-only ablation of the f16 MoE GEMM (needs R3_MOE_FP16=1; OUTPUT IS INVALID): 1 no WMMA, 2 no E4M3 widening; never set in production"
 activation = "R3_MOE_PROBE"
 
+[setting.R3_MOE_WORKER_LAYERS]
+default = ""
+status = "diagnostic"
+summary = "RAD13 bisection aid: MIN-MAX, the engine hands only layers in the range to the workers and runs every other layer itself (its map is published all-local); never set in production"
+activation = "libr3: R3_MOE_WORKER_LAYERS on"
+
 [setting.R3_MOE_WORKER_CAPTURE]
 default = ""
 status = "diagnostic"

@@ -10,6 +10,7 @@
 #include <atomic>
 #include <cmath>
 #include <cstdio>
+#include <utility>
 #include <cstdlib>
 #include <cstring>
 #include <fcntl.h>
@@ -97,6 +98,24 @@ bool hip_ok(hipError_t e, const char* what) {
     return false;
 }
 
+/* R3_MOE_WORKER_LAYERS=MIN-MAX (diagnostic, RAD13): only layers in the range are served by the workers; every other layer's map is
+ * published all-local (the same state as a layer with protected experts), so the engine runs it itself. Bisects a quality or
+ * correctness difference by layer range without touching the engine's own path. Unset: every layer. */
+bool layer_enabled(int layer) {
+    static const std::pair<int, int> range = [] {
+        const char* v = std::getenv("R3_MOE_WORKER_LAYERS");
+        int lo = 0, hi = 1 << 30;
+        if (v && *v && std::sscanf(v, "%d-%d", &lo, &hi) != 2) {
+            std::fprintf(stderr, "libr3: R3_MOE_WORKER_LAYERS=%s: want MIN-MAX, using every layer\n", v);
+            lo = 0; hi = 1 << 30;
+        } else if (v && *v) {
+            std::fprintf(stderr, "libr3: R3_MOE_WORKER_LAYERS on - workers serve layers %d to %d only\n", lo, hi);
+        }
+        return std::make_pair(lo, hi);
+    }();
+    return layer >= range.first && layer <= range.second;
+}
+
 void publish_layer_map(int layer, int n_expert, const int32_t* slot_of_expert) {
     static std::atomic<int> seen{0};
     if (seen.fetch_add(1) == 0)
@@ -124,7 +143,7 @@ void publish_layer_map(int layer, int n_expert, const int32_t* slot_of_expert) {
         /* Layers with protected experts stay fully local for now: shadow still disagrees on exactly those
          * layers (34/44/46/47 on Flash-Next) after the runtime map. An all-local map means the helper owns
          * nothing there and publish sends nothing. */
-        bool protected_layer = false;
+        bool protected_layer = !layer_enabled(layer);   // outside R3_MOE_WORKER_LAYERS: kept local like a protected layer
         for (int e = 0; e < n_expert; ++e) protected_layer |= slot_of_expert[e] < 0;
         if (protected_layer) {
             for (int e = 0; e < (int)g.hdr->expert_count; ++e) dst[e] = -1;
@@ -154,7 +173,7 @@ void register_mailbox() {
     if (::fstat(g.fd, &st) != 0 || st.st_size < (off_t)sizeof(Header)) return;
     g.bytes = (size_t)st.st_size;
     g.map = ::mmap(nullptr, g.bytes, PROT_READ | PROT_WRITE, MAP_SHARED, g.fd, 0);
-    if (g.map == MAP_FAILED || !valid(static_cast<Header*>(g.map), g.bytes, legacy_shape())) {
+    if (g.map == MAP_FAILED || !valid_self(static_cast<Header*>(g.map), g.bytes)) {
         std::fprintf(stderr, "libr3: R3_MOE_WORKER shared-memory protocol mismatch\n");
         return;
     }
@@ -411,6 +430,7 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
     s.dev.max_rows = row_cap;
     s.dev.hidden = g.hdr->hidden;
     s.dev.top_k = g.hdr->top_k;
+    s.dev.experts = g.hdr->expert_count;
     s.dev.rank = (uint32_t)rank;
     s.dev.world = (uint32_t)world_size;
     if (const char* hp = std::getenv("R3_MOE_WORKER_HISTOGRAM"); hp && *hp) {

@@ -13,6 +13,36 @@ priority: P3
 
 # Fold SSM conv_input concat into qkv mmvq; rpb=2 for small-K MoE
 
+## 2026-10-19 Vulkan GDN transposed-CONCAT kernel audit (BCOP328)
+
+**Decision:** PRBE21 remains the single owner of the GDN conv_input producer. Qualify an upstream Vulkan operator-kernel improvement, distinct from this item's HIP CONCAT->SSM_CONV fusion and its retired MoE rpb2 half. RRVP02's Vulkan implementation pause forbids local shader changes and hardware queues. No new technical plan, dispatcher, allocator, telemetry or configuration.
+
+**Eligibility:** Independently active feat/rad13-fp8-worker at Audumla 45c6edc01e14 (2026-10-19 14:08:39 UTC), newer than main f792f51e. PRBE21 last independent edit Oct 11 13:13 UTC; PRBE18 Oct 11 03:05 UTC. No repository-visible matching 12-hour patch, plan, PR, benchmark or queued experiment. Exclude RAD13 FP8/PR #330, RCS09/RCS05, RAD11/12/10, WSL and release work; off-repository queues unverified. Novelty: transposed GDN CONCAT Vulkan shader, not recently audited PRVP04 Q4 KV transpose, PRVP05 RMSNorm, RNX08 Q8 writes or PRBE41 SSM layout.
+
+### Exact source and dispatch
+
+Pinned llama.cpp b11552 (23b0202a189c44a54625aadcb37a946dd1d6278d) src/models/delta-net-base.cpp::llm_build_delta_net_base::build_conv_state: conv_states = reshape_3d(build_rs(...), k-1, C, n_seqs); qkv_mixed = ggml_transpose(qkv_mixed); conv_input = ggml_concat(conv_states,qkv_mixed,0). For one sequence: A=[k-1,C], B=[T,C] transposed view with nb10=C*type_size, nb11=type_size; D=[k-1+T,C]. D also feeds conv_state_last -> conv_state_update CPY, including MTP rollback. Preserve every output, state update, buffer lifetime, alias and stream dependency.
+
+ggml/src/ggml-vulkan/ggml-vulkan.cpp::ggml_vk_concat passes unit-based ne/nb push constants to ggml_vk_op_f32; ggml_vk_op_get_pipeline selects pipeline_concat_i32 for F32. Pinned vulkan-shaders/concat.comp is a flattened 512-thread shader: contiguous destination stores, but adjacent B columns load from C*type_size-strided addresses. This is a source-level transaction-coalescing hypothesis, not a measured BigCherry bottleneck.
+
+[llama.cpp #30591](https://github.com/ggml-org/llama.cpp/pull/30591/files) adds vulkan-shaders/concat_transpose.comp, three i8/i16/i32 pipelines in ggml-vulkan.cpp, ggml-vulkan-types.h and vulkan-shaders-gen.cpp. Eligibility guard: dim0, nonquantized 1/2/4-byte units, src0/src1 ne[2]=ne[3]=1, matching rows, src0/dst nb[0]==type_size, src1 nb[0]>nb[1]. Multi-sequence n_seqs>1 and other shapes use the original shader. Shader tile 32x32, local_size=(32,8,1) = 256 threads, four 8-row loops, one workgroup barrier, shared tile[32][33] (F32 4224 B; F16 2112 B; i8 1056 B). Grid ceil(C/32) x ceil((k-1+T)/32). B reads coalesced along channels through LDS, D writes coalesced, A read directly. Check maxComputeWorkGroupCount[1] before selecting; overflow must fall back, never truncate. Actual wave32/64, SPIR-V VGPR/spills, LDS bank conflicts, occupancy and physical bandwidth are unverified.
+
+For C=10240,T=2048,k-1=3,F32,n_seqs=1: 80.1172 MiB logical reads and 80.1172 MiB writes, 160.2344 MiB total, 20,800 output tiles. This is not measured HBM traffic and no logical work is eliminated. Faster because SSM or state CPY disappeared is a correctness failure.
+
+### Evidence, alternatives, and bounded admission
+
+#30591 OPEN, updated Oct 19 13:32 UTC. External R9700 Qwen3.6-35B-A3B Q4_K_M pp2048/ub2048 4940.6 -> 5723.6 tok/s (+15.8%); R9700 Qwen3.8-27B 1287.1 -> 1336.7 (+3.9%); gfx1151 Flash-Next 403.9 -> 552.1 (+36.7%). Three-repeat same-quant external data, not BigCherry or CI95. Decode approximately neutral. Competing [#30149](https://github.com/ggml-org/llama.cpp/pull/30149) uses two ggml_vk_cpy launches and existing copy_transpose, no new shader: W7800/gfx1100 35B Q6_K pp2048/ub2048 3518.7 -> 3784.5 (+7.55%). In #30591's same-device R9700 comparison 35B: 5705.05 versus #30149 5591.43; 27B: 1352.02 versus 1349.81. These are alternatives, not additive. [AMD HIP tiled transpose](https://github.com/amd/HPCTrainingExamples/tree/main/HIP/transpose) demonstrates the mechanism; SGLang's [concat_and_cast_mha_k_kernel](https://github.com/sgl-project/sglang/blob/main/python/sglang/kernels/ops/kvcache/cache_ops.py) has a different KV-cache layout, not a direct port.
+
+Host-only oracle executed: 1140 contiguous + 120 padded-stride byte-exact address/coverage cases; 8137 modeled tile barriers; six selector/fallback cases; py_compile passed. Not SPIR-V compilation, GPU testing or benchmark. No matching first-party BigCherry Vulkan CONCAT receipt found in inspected plan/patch/commit evidence.
+
+Gate 0: keep PAUSED until RRVP02 resumes; check #30591/#30149 merge and pin absorption first. Gate 1: prove actual gfx1100/gfx1201 Vulkan route with ICD/driver, n_seqs, T/C, ne/nb, dtype, pipeline, workgroup count and GPU timestamp for pp512/2048/4096, ubatch 128/512/2048/4096, tg128, MTP width 1/3/5, long context and multi-rank. No route -> NO_VK_CONCAT_ROUTE. If eliminating all exposed CONCAT latency could not reach 3% throughput (exposed fraction <2.9126%), close BELOW_CEILING. For op speedup S and exposed fraction f, model throughput factor = 1/(1-f+f/S).
+
+Gate 2: compare pinned flattened, #30591 one-launch tile and #30149 two-launch reuse on identical pin and workload. Direct test-backend-ops -o CONCAT: F32/F16/i8 where supported, A widths 0/1/3/31/32/33, B widths 1/31/32/33, channels 31/32/33/8192/10240, noncontiguous strides, transposed A, n_seqs>1, quantized/dim!=0 controls, workgroup-limit fallback and canaries. Verify complete SSM_CONV/conv_state_update state, multi-request same-process, multi-ubatch, graph replay, long-context, logits/KLD/greedy and MTP accept/reject. Profile actual transactions/L2, wave/LDS/VGPR/spills and launches; no physical-traffic claims from logical bytes.
+
+Gate 3: >=10 paired ABBA rounds per device/model, CI95-low >=3% E2E throughput, <=1% material control regression, full correctness; otherwise NUMERIC_FAIL, REGRESSION, NO_GAIN or UNSUPPORTED_SHAPE. Keep original shader fallback. PRBE18 owns pre-scan, PRBE41 SSM layout, RNX03 recurrence, PRVP02 CM1, PRVP05 RMSNorm, RRVP02 Vulkan pause. No neighbouring plan or implementation changed; BCOP328 is a thin action ledger.
+
+
+
 ## 2026-10-11 b11552 audit — small-K MoE rpb=2 is already native; retire duplicate candidate
 
 **Disposition (small-K MoE half only): close the proposed MoE rpb=2 implementation/candidate addition as redundant.** Do not change the separate SSM conv_input/CONCAT proposal in this run: PRBE18 received independent planning work at 2026-10-11 03:05 UTC and its fusion path is protected by the 12-hour rule. The older two-candidate instructions below are historical, superseded for the MoE rpb=2 half only. No patch, benchmark queue, or GPU gain is claimed.
