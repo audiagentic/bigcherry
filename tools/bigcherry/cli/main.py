@@ -1546,6 +1546,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     stream_bench.set_defaults(func=_stream_bench_main)
 
+    from .workspace_cmds import register as _register_workspace
+
+    _register_workspace(sub)
+
     ab.set_defaults(
         func=lambda args: _ab_benchmark_main(
             [
