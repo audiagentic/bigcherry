@@ -298,6 +298,7 @@ float dot_f32(const float* x, const std::vector<float>& w) {
 int compute_host_engine(const Container& f, void* map, Request* q,
                         std::vector<uint16_t>* route_down = nullptr) {
     const uint32_t hid = static_cast<const Header*>(map)->hidden, topk = static_cast<const Header*>(map)->top_k;
+    const int64_t hdr_intermediate = static_cast<const Header*>(map)->intermediate;
     if (q->rank_count != kMaxRanks || q->rank >= kMaxRanks || q->layer >= f.layers ||
         q->rows == 0 || q->rows > kMaxRows || q->hidden != hid ||
         q->route_count > kMaxRoutes || q->activation_stride != hid * 2)
@@ -336,7 +337,7 @@ int compute_host_engine(const Container& f, void* map, Request* q,
         int64_t gur = 1, guc = 1, dnr = 1, dnc = 1;
         rad_enc_view(gu->rank, gu->shape, &gur, &guc);
         rad_enc_view(dn->rank, dn->shape, &dnr, &dnc);
-        if (guc != hid || dnr != hid || gur != 2 * dnc || dnc != 640 ||
+        if (guc != hid || dnr != hid || gur != 2 * dnc || dnc != hdr_intermediate ||
             rad_enc_fwht(f.encoding(gu)) != 128 || rad_enc_fwht(f.encoding(dn)) != 128)
             return -EINVAL;
 
@@ -394,6 +395,7 @@ int compute_host_engine(const Container& f, void* map, Request* q,
 
 int compute_host(const Container& f, void* map, Request* q) {
     const uint32_t hid = static_cast<const Header*>(map)->hidden, topk = static_cast<const Header*>(map)->top_k;
+    const int64_t hdr_intermediate = static_cast<const Header*>(map)->intermediate;
     if (q->rank_count != kMaxRanks || q->rank >= kMaxRanks || q->layer >= f.layers || q->rows > kMaxRows ||
         q->hidden != hid || q->route_count > kMaxRoutes || q->activation_stride != hid*2) return -EINVAL;
     const Route* routes = ptr<Route>(map,q->route_offset);
@@ -410,7 +412,7 @@ int compute_host(const Container& f, void* map, Request* q) {
         auto& ri=by_exp[e]; if(ri.empty()) continue;
         const RadFileEntry* gu=f.weight(q->layer,e,0); const RadFileEntry* dn=f.weight(q->layer,e,1); if(!gu||!dn) return -ENOENT;
         int64_t gur=1,guc=1,dnr=1,dnc=1; rad_enc_view(gu->rank,gu->shape,&gur,&guc); rad_enc_view(dn->rank,dn->shape,&dnr,&dnc);
-        if(guc!=hid || dnr!=hid || gur!=2*dnc || dnc!=640) return -EINVAL;
+        if(guc!=hid || dnr!=hid || gur!=2*dnc || dnc!=hdr_intermediate) return -EINVAL;
         const int32_t es=layer_slot(map,q->layer,e); if(es<0) return -ENOTSUP;
         const int parity=(int)((uint32_t)es&1u); const bool wide=((int)q->rank==parity); const int64_t lo=wide?0:384, hi=wide?384:640, width=hi-lo;
         std::vector<float> mid(ri.size()*(size_t)width);
@@ -608,7 +610,7 @@ int64_t laid_out_bytes(const Container& f, r3_moe_gpu::Runner* gpu, uint32_t l, 
 
 /* The shared-memory shape and layout for this container (RCS09-03): hidden, experts and expert width are the container's own; the
  * row capacity, top-k and activation group are the protocol's until the engine negotiates them. A shape other than the one the
- * execution paths take is refused here, before any segment is created, with the reason. */
+ * execution paths run is refused by the backend probe before this (moe_backend.h), not here. */
 bool segment_shape(const Container& f, r3::moe_shm::LayoutShape* shape, r3::moe_shm::Layout* lay) {
     MoeShape cs{};
     if (!container_shape(f, &cs)) {
@@ -617,14 +619,6 @@ bool segment_shape(const Container& f, r3::moe_shm::LayoutShape* shape, r3::moe_
     }
     *shape = r3::moe_shm::LayoutShape{cs.hidden, r3::moe_shm::kTopK, cs.experts, r3::moe_shm::kMaxRows,
                                       r3::moe_shm::kActGroup, cs.intermediate};
-    if (*shape != r3::moe_shm::legacy_shape()) {
-        std::fprintf(stderr,
-                     "r3_moe_worker: this model (hidden %u, %u experts, expert width %u) is not executable yet: the lane kernels "
-                     "still take hidden %u, %u experts and width %u (RCS09-04 to 07)\n",
-                     shape->hidden, shape->experts, shape->intermediate, r3::moe_shm::kHidden, r3::moe_shm::kExperts,
-                     r3::moe_shm::kLegacyIntermediate);
-        return false;
-    }
     if (!r3::moe_shm::layout_for(*shape, lay)) {
         std::fprintf(stderr, "r3_moe_worker: the shared-memory layout for this shape is invalid\n");
         return false;

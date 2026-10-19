@@ -537,7 +537,7 @@ int publish_launch(const RadArgs* a, RadStream stream) {
     const long long n_expert = geti(a, "n_expert");
     const long long rows = a->t[3].rank > 0 ? a->t[3].shape[0] : 0;
     if (layer < 0 || layer >= (long long)kMaxLayers || rows <= 0 || rows > (long long)kMaxRows ||
-        hidden != (long long)kHidden || top_k != (long long)kTopK ||
+        hidden != (long long)d->hidden || top_k != (long long)d->top_k ||
         expert_base < 0 || n_expert <= 0 || n_expert > (long long)kExperts)
         return RAD_E_SHAPE;
     for (int i = 0; i < 6; ++i) if (!a->t[i].data) return RAD_E_SHAPE;
@@ -603,7 +603,7 @@ int mask_ref_launch(const RadArgs* a, RadStream stream) {
     const long long top_k = geti(a, "top_k");
     const long long restore = geti(a, "restore");
     const long long slots = a->t[1].rank > 0 ? a->t[1].shape[0] : 0;
-    if (hidden != (long long)kHidden || top_k != (long long)kTopK ||
+    if (hidden != (long long)d->hidden || top_k != (long long)d->top_k ||
         (restore != 0 && restore != 1) || slots <= 0 || slots % top_k != 0 ||
         slots / top_k > (long long)d->max_rows ||
         !a->t[0].data || !a->t[1].data || a->t[0].dtype != RAD_I32 ||
@@ -648,7 +648,7 @@ int add_launch(const RadArgs* a, RadStream stream) {
     const long long rows = a->t[5].rank > 0 ? a->t[5].shape[0] : 0;
     const bool has_shared = a->t[3].data || a->t[4].data;
     const bool ok = rows > 0 && rows <= (long long)d->max_rows &&
-        hidden == (long long)kHidden && top_k == (long long)kTopK &&
+        hidden == (long long)d->hidden && top_k == (long long)d->top_k &&
         a->t[0].data && a->t[1].data && a->t[2].data && a->t[5].data &&
         a->t[0].dtype == RAD_I32 && a->t[1].dtype == RAD_BF16 &&
         a->t[2].dtype == RAD_BF16 && a->t[5].dtype == RAD_BF16 &&
@@ -694,7 +694,7 @@ int shadow_launch(const RadArgs* a, RadStream stream) {
     if (!d->shadow || !d->shadow_stats || !d->shadow_first) return RAD_E_STATE;
     const long long hidden = geti(a, "n");
     const long long top_k = geti(a, "top_k");
-    if (hidden != (long long)kHidden || top_k != (long long)kTopK ||
+    if (hidden != (long long)d->hidden || top_k != (long long)d->top_k ||
         !a->t[0].data || !a->t[1].data || a->t[0].dtype != RAD_I32 ||
         a->t[1].dtype != RAD_BF16 || a->t[1].rank < 2 ||
         a->t[1].shape[1] != hidden || !rad_tensor_is_contiguous(&a->t[0]) ||
