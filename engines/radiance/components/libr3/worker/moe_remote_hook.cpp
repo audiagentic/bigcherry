@@ -10,6 +10,7 @@
 #include <atomic>
 #include <cmath>
 #include <cstdio>
+#include <utility>
 #include <cstdlib>
 #include <cstring>
 #include <fcntl.h>
@@ -97,6 +98,26 @@ bool hip_ok(hipError_t e, const char* what) {
     return false;
 }
 
+/* R3_MOE_WORKER_LAYERS=MIN-MAX (diagnostic, RAD13): only layers in the range are served by the workers; every other layer's map is
+ * published all-local (the same state as a layer with protected experts), so the engine runs it itself. Bisects a quality or
+ * correctness difference by layer range without touching the engine's own path. Unset: every layer. */
+bool layer_enabled(int layer) {
+    static const std::pair<int, int> range = [] {
+        const char* v = std::getenv("R3_MOE_WORKER_LAYERS");
+        int lo = 0, hi = 1 << 30;
+        if (v && *v && std::sscanf(v, "%d-%d", &lo, &hi) != 2) {
+            std::fprintf(stderr, "libr3: R3_MOE_WORKER_LAYERS=%s: want MIN-MAX, using every layer
+", v);
+            lo = 0; hi = 1 << 30;
+        } else if (v && *v) {
+            std::fprintf(stderr, "libr3: R3_MOE_WORKER_LAYERS on - workers serve layers %d to %d only
+", lo, hi);
+        }
+        return std::make_pair(lo, hi);
+    }();
+    return layer >= range.first && layer <= range.second;
+}
+
 void publish_layer_map(int layer, int n_expert, const int32_t* slot_of_expert) {
     static std::atomic<int> seen{0};
     if (seen.fetch_add(1) == 0)
@@ -124,7 +145,7 @@ void publish_layer_map(int layer, int n_expert, const int32_t* slot_of_expert) {
         /* Layers with protected experts stay fully local for now: shadow still disagrees on exactly those
          * layers (34/44/46/47 on Flash-Next) after the runtime map. An all-local map means the helper owns
          * nothing there and publish sends nothing. */
-        bool protected_layer = false;
+        bool protected_layer = !layer_enabled(layer);   // outside R3_MOE_WORKER_LAYERS: kept local like a protected layer
         for (int e = 0; e < n_expert; ++e) protected_layer |= slot_of_expert[e] < 0;
         if (protected_layer) {
             for (int e = 0; e < (int)g.hdr->expert_count; ++e) dst[e] = -1;
