@@ -362,8 +362,8 @@ __global__ void mailbox_add_rows_kernel(
     const uint32_t token = blockIdx.x;
     if (token >= rows) return;
     Header* h = reinterpret_cast<Header*>(base);
-    __shared__ int32_t local_index[kTopK];
-    __shared__ uint8_t remote_slot[kTopK];
+    __shared__ int32_t local_index[kMaxTopK];
+    __shared__ uint8_t remote_slot[kMaxTopK];
     __shared__ uint32_t from[kMaxRanks];
     if (threadIdx.x == 0) {
         bool live = false;
