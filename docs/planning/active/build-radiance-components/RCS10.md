@@ -55,3 +55,10 @@ with no profile beyond its container; cache hit on the second start; results (ou
 
 Builds on RAD12 (lane classes), RCS09 (shape from the container), RAD10 (stream-bench for validation), RHP07 (placement policy is a tuning consumer too: ownership budget and heat from the same cache).
 Calibration measures the helper side only; the engine-side overlap and scheduler are validated by the stream A/B, not by calibration.
+
+Stream-sensitive settings (owner direction 2026-10-19, after the RAD12 A/B): they derive from the inputs radiance already has, `--max-num-seqs` and the speculative (MTP) draft depth. No new "streams" key.
+Each derived value keeps the name of the setting it replaces (`R3_MOE_HELPER_SMALL_ROWS`, `R3_MOE_HELPER_SMALL_LANES`, ...) as an explicit override that wins; the startup log prints `derived` or `override` per value.
+A deployment aimed at 1-2 streams sets `--max-num-seqs` in its model profile; the profile lists only what differs.
+RAD12 A/B (6 pairs, engine decode tps, rows8 / rows24 / four lane classes): 1 stream 122.8 / 111.7 / 109.6; 2: 178.9 / 173.3 / 174.8; 3: 194.1 / 237.8 / 214.0; 4: 245.2 / 266.6 / 242.9; 6: 318.0 / 336.1 / 305.8.
+So one 24-row lane wins at 3+ streams (+7-22%), one 8-row lane at 1-2, and four lane classes lose at every count: the lane size is a function of `max-num-seqs x (1 + draft depth)`.
+First step: inventory the stream-sensitive settings (lane rows and slots, ring slots, hardware queues, MTP depth, GEMV/grouped crossover, placement hot-set size, prefill chunk and ubatch, per-sequence KV and compute reservation) and verify each with stream-bench or replay before deriving it.

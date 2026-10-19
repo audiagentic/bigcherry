@@ -13,7 +13,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -112,14 +114,32 @@ def _sha256(path: Path) -> str:
     return h.hexdigest()
 
 
+def _contained(run_dir: Path, p: Path) -> bool:
+    """True when no component between the run dir and the file (inclusive) is a symlink."""
+    rel = p.relative_to(run_dir)
+    cur = run_dir
+    for part in rel.parts:
+        cur = cur / part
+        if cur.is_symlink():
+            return False
+    return True
+
+
 def _matches(run_dir: Path, patterns) -> list:
     seen, out = set(), []
     for pat in patterns:
         for p in sorted(run_dir.glob(pat)):
-            if p.is_file() and not p.is_symlink() and p not in seen:
+            if p not in seen and p.is_file() and _contained(run_dir, p):
                 seen.add(p)
                 out.append(p)
     return out
+
+
+def _bundle_id(run_id: str, recipe_sha: str, diagnostic: bool, files: list, bulk: list) -> str:
+    payload = {"run_id": run_id, "recipe": recipe_sha, "diagnostic_only": diagnostic,
+               "files": [(f["path"], f["bytes"], f["sha256"], f["producer"]) for f in files],
+               "bulk": [(b["path"], b["bytes"]) for b in bulk]}
+    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 
 
 def bundle_dir(root: Path, run_id: str) -> Path:
@@ -155,10 +175,27 @@ def _build(root: Path, run_dir: Path, m: dict, recipe: Recipe, now: float | None
     for pat in recipe.required:
         if not _matches(run_dir, (pat,)):
             raise HarvestError(f"required evidence {pat!r} is missing from {run_dir.name}")
-    out = bundle_dir(root, m["run_id"])
-    if out.exists():
-        shutil.rmtree(out)                      # a previous incomplete attempt of the same run; the run itself is untouched
-    (out / "files").mkdir(parents=True)
+    final = bundle_dir(root, m["run_id"])
+    hold = final.parent
+    if hold.is_symlink():
+        raise HarvestError(f"{hold} is a symlink; refusing to write the bundle through it")
+    hold.mkdir(parents=True, exist_ok=True)
+    # build in a private staging directory and publish by rename; a bundle that already exists is moved aside, never deleted
+    out = hold / f".staging-{m['run_id']}-{os.getpid()}-{time.monotonic_ns()}"
+    out.mkdir()
+    try:
+        doc = _fill(out, run_dir, m, recipe, now)
+        if final.exists() or final.is_symlink():
+            final.rename(hold / f"{final.name}.prev-{time.time_ns()}")
+        out.rename(final)
+    except BaseException:
+        shutil.rmtree(out, ignore_errors=True)   # only our own staging directory
+        raise
+    return doc
+
+
+def _fill(out: Path, run_dir: Path, m: dict, recipe: Recipe, now: float | None) -> dict:
+    (out / "files").mkdir()
     (out / "derived").mkdir()
     files = []
     for p in _matches(run_dir, recipe.keep):
@@ -182,9 +219,9 @@ def _build(root: Path, run_dir: Path, m: dict, recipe: Recipe, now: float | None
     bulk = [{"path": p.relative_to(run_dir).as_posix(), "bytes": p.stat().st_size} for p in _matches(run_dir, recipe.bulk)]
     files.sort(key=lambda f: f["path"])
     bulk.sort(key=lambda b: b["path"])
-    bundle_id = hashlib.sha256(json.dumps([(f["path"], f["sha256"]) for f in files]).encode()).hexdigest()
     suspect = m.get("suspect")
     diagnostic = bool(suspect) or m["state"] != "completed" or m["execution"].get("exit_code") not in (None, 0)
+    bundle_id = _bundle_id(m["run_id"], recipe.sha256(), diagnostic, files, bulk)
     doc = {"schema_version": BUNDLE_SCHEMA, "bundle_id": bundle_id, "run_id": m["run_id"], "kind": m["kind"],
            "recipe": {"id": recipe.id, "sha256": recipe.sha256()}, "harvested_at": rm.utc_stamp(now),
            "diagnostic_only": diagnostic, "suspect": suspect, "files": files, "extractors": extractors, "bulk": bulk,
@@ -212,7 +249,21 @@ def verify_bundle(out: Path) -> list:
             problems.append(f"{f['path']} is missing")
         elif p.stat().st_size != f["bytes"] or _sha256(p) != f["sha256"]:
             problems.append(f"{f['path']} does not match its recorded hash")
-    expect = hashlib.sha256(json.dumps([(f["path"], f["sha256"]) for f in doc.get("files", [])]).encode()).hexdigest()
+    seen = set()
+    for b in doc.get("bulk", []):
+        parts = Path(b["path"]).parts
+        if Path(b["path"]).is_absolute() or ".." in parts or not parts:
+            problems.append(f"bulk path {b['path']!r} is not a relative path inside the run")
+        if b["path"] in seen:
+            problems.append(f"bulk path {b['path']} is listed twice")
+        seen.add(b["path"])
+    kept = {Path(f["path"]).relative_to(Path(f["path"]).parts[0]).as_posix() for f in doc.get("files", []) if f["path"].startswith("files/")}
+    if seen & kept:
+        problems.append("a file is both kept and listed as bulk")
+    try:
+        expect = _bundle_id(doc["run_id"], doc["recipe"]["sha256"], doc["diagnostic_only"], doc["files"], doc["bulk"])
+    except KeyError as exc:
+        return problems + [f"bundle.json lacks {exc}"]
     if doc.get("bundle_id") != expect:
-        problems.append("bundle_id does not match the file list")
+        problems.append("bundle_id does not match the bundle contents")
     return problems
