@@ -1,3 +1,4 @@
+#include <atomic>
 #include <cstdio>
 #include "worker/moe_remote_hook.h"
 #include "worker/moe_remote_shm.h"
@@ -536,30 +537,37 @@ int publish_launch(const RadArgs* a, RadStream stream) {
     const long long expert_base = geti(a, "expert_base");
     const long long n_expert = geti(a, "n_expert");
     const long long rows = a->t[3].rank > 0 ? a->t[3].shape[0] : 0;
-    if (layer < 0 || layer >= (long long)kMaxLayers || rows <= 0 || rows > (long long)kMaxRows ||
-        hidden != (long long)d->hidden || top_k != (long long)d->top_k ||
-        expert_base < 0 || n_expert <= 0 || n_expert > (long long)d->experts)
+    /* Every refusal says why, once: "this kernel does not serve the shape" alone cost a debugging round (RAD13). */
+    auto reject = [&](const char* why) {
+        static std::atomic<int> said{0};
+        if (said.fetch_add(1) < 6)
+            std::fprintf(stderr, "libr3moe: moe_mailbox_publish refused: %s (layer %lld n %lld top_k %lld n_expert %lld rows %lld; segment hidden %u top_k %u experts %u)\n",
+                         why, layer, hidden, top_k, n_expert, rows, d->hidden, d->top_k, d->experts);
         return RAD_E_SHAPE;
-    for (int i = 0; i < 6; ++i) if (!a->t[i].data) return RAD_E_SHAPE;
-    if (a->t[0].rank < 2 || a->t[1].rank < 2 || a->t[2].rank < 2 ||
-        a->t[3].rank < 2 || a->t[4].rank < 2 || a->t[5].rank < 2 ||
-        a->t[0].shape[0] != rows || a->t[1].shape[0] != rows ||
-        a->t[2].shape[0] != rows || a->t[4].shape[0] != rows ||
-        a->t[0].shape[1] != top_k || a->t[1].shape[1] != top_k ||
-        a->t[2].shape[1] != hidden || a->t[3].shape[1] != hidden ||
-        a->t[4].shape[1] != hidden / kActGroup || a->t[5].shape[1] != hidden ||
-        a->t[0].dtype != RAD_I32 || a->t[1].dtype != RAD_BF16 ||
-        a->t[2].dtype != RAD_BF16 || a->t[3].dtype != RAD_F8E4M3 ||
+    };
+    if (layer < 0 || layer >= (long long)kMaxLayers) return reject("layer outside the protocol bound");
+    if (rows <= 0 || rows > (long long)kMaxRows) return reject("rows outside the protocol bound");
+    if (hidden != (long long)d->hidden) return reject("hidden differs from the segment's");
+    if (top_k != (long long)d->top_k) return reject("top_k differs from the segment's");
+    if (expert_base < 0 || n_expert <= 0 || n_expert > (long long)d->experts) return reject("expert range outside the segment's");
+    for (int i = 0; i < 6; ++i) if (!a->t[i].data) return reject("a null operand");
+    for (int i = 0; i < 6; ++i) if (a->t[i].rank < 2) return reject("an operand of rank below 2");
+    if (a->t[0].shape[0] != rows || a->t[1].shape[0] != rows || a->t[2].shape[0] != rows || a->t[4].shape[0] != rows)
+        return reject("operand row counts differ");
+    if (a->t[0].shape[1] != top_k || a->t[1].shape[1] != top_k) return reject("ids/weights width is not top_k");
+    if (a->t[2].shape[1] != hidden || a->t[3].shape[1] != hidden || a->t[5].shape[1] != hidden) return reject("an activation width is not hidden");
+    if (a->t[4].shape[1] != hidden / kActGroup) return reject("scale plane width is not hidden / group");
+    if (a->t[0].dtype != RAD_I32 || a->t[1].dtype != RAD_BF16 || a->t[2].dtype != RAD_BF16 || a->t[3].dtype != RAD_F8E4M3 ||
         a->t[4].dtype != RAD_F32 || a->t[5].dtype != RAD_F8E4M3)
-        return RAD_E_SHAPE;
+        return reject("operand dtypes");
     for (int i = 0; i < 6; ++i)
-        if (!rad_tensor_is_contiguous(&a->t[i])) return RAD_E_SHAPE;
+        if (!rad_tensor_is_contiguous(&a->t[i])) return reject("a non-contiguous operand");
 
     const uintptr_t q = reinterpret_cast<uintptr_t>(a->t[3].data);
     const uintptr_t qb = reinterpret_cast<uintptr_t>(a->t[5].data);
     if (q < qb || ((q - qb) % (uintptr_t)hidden) != 0 ||
         (long long)((q - qb) / (uintptr_t)hidden) + rows > a->t[5].shape[0])
-        return RAD_E_SHAPE;
+        return reject("the staged rows are not inside the full activation buffer at a whole-row offset");
 
     /* kHidden is a multiple of 16, so the 16-byte copies cover every row exactly. */
     const uint32_t blocks16 = ((uint32_t)rows * (uint32_t)hidden / 16u + 255u) / 256u;
