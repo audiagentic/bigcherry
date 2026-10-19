@@ -1821,11 +1821,25 @@ private:
             rad_enc_plane_dims(&enc->plane[sc], rows, cols, &pr, &pc);
             out->scale_sel = {sc, -1};
             out->scale_planes[0] = tensor(nullptr, enc->plane[sc].dtype, {pr, pc});
+            /* The row-major fp8a8 hook checks the planes (dtype, 128x128 tiles, N/K) and then answers RAD_E_UNSUPPORTED on purpose:
+             * the kernel reads the checkpoint's own bytes, so there is no layout to compute. Any other answer is a refusal. */
             const int f0 = moe_->layout(out->params.data(), (int)out->params.size(), 2, enc, out->code_sel.data(),
                                         out->code_planes.data(), 1, &out->code);
             const int f1 = moe_->layout(out->params.data(), (int)out->params.size(), 3, enc, out->scale_sel.data(),
                                         out->scale_planes.data(), 1, &out->scale);
-            return f0 == RAD_OK && f1 == RAD_OK && out->code.bytes > 0 && out->scale.bytes > 0;
+            if ((f0 != RAD_OK && f0 != RAD_E_UNSUPPORTED) || (f1 != RAD_OK && f1 != RAD_E_UNSUPPORTED)) return false;
+            auto as_stored = [&](RadLayout* l, const RadTensor& pl) {
+                std::memset(l, 0, sizeof *l);
+                l->dtype = pl.dtype;
+                l->rank = 2;
+                l->shape[0] = pl.shape[0];
+                l->shape[1] = pl.shape[1];
+                l->align = 16;
+                l->bytes = pl.shape[0] * rad_enc_row_bytes(pl.dtype, pl.shape[1]);
+            };
+            if (f0 == RAD_E_UNSUPPORTED) as_stored(&out->code, out->code_planes[0]);
+            if (f1 == RAD_E_UNSUPPORTED) as_stored(&out->scale, out->scale_planes[0]);
+            return out->code.bytes > 0 && out->scale.bytes > 0;
         }
         if (!canonical_pair(e, "codes", -1, "table", -1, &out->code_sel, &out->code_planes) ||
             !canonical_pair(e, "scale", 0, "scale", 1, &out->scale_sel, &out->scale_planes))
