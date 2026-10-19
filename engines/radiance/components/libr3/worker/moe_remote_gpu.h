@@ -835,6 +835,9 @@ public:
         had_quant_ = quant_plain_;
         gated_quant_ = gated_plain_;
         gemv_debug_ = false;   // the grouped-GEMM-vs-GEMV debug comparison is W4-only
+        /* Large-lane steps of up to 16 rows take the FP8 GEMV too (35B stream A/B: engine decode +3.5% at 4 streams, +2.7% at 6; 32 rows
+         * is worse at 6); R3_MOE_WORKER_GEMV_LARGE_ROWS still overrides. */
+        if (!std::getenv("R3_MOE_WORKER_GEMV_LARGE_ROWS")) gemv_large_rows_ = 16;
         rows_ = false;
         return true;
     }
