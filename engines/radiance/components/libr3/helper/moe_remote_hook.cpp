@@ -154,7 +154,7 @@ void register_mailbox() {
     if (::fstat(g.fd, &st) != 0 || st.st_size < (off_t)sizeof(Header)) return;
     g.bytes = (size_t)st.st_size;
     g.map = ::mmap(nullptr, g.bytes, PROT_READ | PROT_WRITE, MAP_SHARED, g.fd, 0);
-    if (g.map == MAP_FAILED || !valid(static_cast<Header*>(g.map), g.bytes)) {
+    if (g.map == MAP_FAILED || !valid(static_cast<Header*>(g.map), g.bytes, legacy_shape())) {
         std::fprintf(stderr, "libr3: R3_MOE_HELPER shared-memory protocol mismatch\n");
         return;
     }
