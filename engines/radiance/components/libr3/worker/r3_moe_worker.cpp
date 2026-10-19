@@ -958,11 +958,13 @@ bool parse_u32(const char* s, uint32_t lo, uint32_t hi, uint32_t* out) {
 
 /* REQUEST CAPTURE / REPLAY (RAD06). R3_MOE_WORKER_CAPTURE=<dir> writes real large-lane requests (every
  * R3_MOE_WORKER_CAPTURE_EVERY-th, at most R3_MOE_WORKER_CAPTURE_MAX) as <dir>/req-<lane>-<seq>.bin:
- * CaptureHeader, the layer's runtime slot map (kExperts int32), the routes, the bf16 activation rows.
+ * CaptureHeader (version 3: the model's shape is in it), the layer's runtime slot map (header.experts int32), the routes, the
+ * quantised activation rows (E4M3 codes then an f32 scale a group).
  * `--replay MODEL FILE` runs --compare's machinery on that request instead of synthetic routing. */
 struct CaptureHeader {
-    uint32_t magic, version, layer, rows, route_count, hidden;
+    uint32_t magic, version, layer, rows, route_count, hidden, experts, top_k, act_group;
 };
+constexpr uint32_t kCaptureVersion = 3;
 constexpr uint32_t kCaptureMagic = 0x52335243u;  // "CR3R"
 
 void capture_request(void* map, const Request* q, uint32_t lane, uint32_t seq) {
@@ -978,18 +980,20 @@ void capture_request(void* map, const Request* q, uint32_t lane, uint32_t seq) {
     }();
     static std::atomic<uint32_t> written{0};
     if (seq % every != 0 || written.load() >= max_n) return;
-    CaptureHeader hd{kCaptureMagic, 2, load(&q->layer), load(&q->rows), load(&q->route_count), kHidden};
+    const Header* sh = static_cast<const Header*>(map);
+    CaptureHeader hd{kCaptureMagic, kCaptureVersion, load(&q->layer), load(&q->rows), load(&q->route_count),
+                     sh->hidden, sh->expert_count, sh->top_k, sh->activation_group};
     if (hd.layer >= kMaxLayers || hd.rows == 0 || hd.rows > kMaxRows) return;
     const std::string path = std::string(dir) + "/req-" + std::to_string(lane) + "-" + std::to_string(seq) + ".bin";
     FILE* f = std::fopen(path.c_str(), "wb");
     if (!f) return;
     std::fwrite(&hd, sizeof(hd), 1, f);
-    std::fwrite(layer_slots(map, hd.layer), sizeof(int32_t), kExperts, f);
+    std::fwrite(layer_slots(map, hd.layer), sizeof(int32_t), hd.experts, f);
     std::fwrite(ptr<Route>(map, q->route_offset), sizeof(Route), hd.route_count, f);
     /* The engine publishes the quantised activation (E4M3 plus a scale a group), not bf16: the bf16 plane of the map
      * is empty on the large lane. Version 1 captures stored that empty plane and cannot be replayed. */
-    std::fwrite(ptr<uint8_t>(map, q->activation_q_offset), 1, (size_t)hd.rows * kHidden, f);
-    std::fwrite(ptr<float>(map, q->activation_s_offset), sizeof(float), (size_t)hd.rows * (kHidden / kActGroup), f);
+    std::fwrite(ptr<uint8_t>(map, q->activation_q_offset), 1, (size_t)hd.rows * hd.hidden, f);
+    std::fwrite(ptr<float>(map, q->activation_s_offset), sizeof(float), (size_t)hd.rows * (hd.hidden / hd.act_group), f);
     std::fclose(f);
     written.fetch_add(1);
 }
@@ -1021,7 +1025,7 @@ void trace_dump(void* map, uint32_t lane, uint32_t seq) {
 
 struct ReplayInput {
     CaptureHeader hd{};
-    std::array<int32_t, kExperts> slots{};
+    std::vector<int32_t> slots;
     std::vector<Route> routes;
     std::vector<uint8_t> actq;
     std::vector<float> acts;
@@ -1034,13 +1038,18 @@ bool g_sweep_fast = false;
 bool load_replay(const char* path, ReplayInput* out) {
     FILE* f = std::fopen(path, "rb");
     if (!f) return false;
-    bool ok = std::fread(&out->hd, sizeof(out->hd), 1, f) == 1 && out->hd.magic == kCaptureMagic && out->hd.version == 2 &&
-              out->hd.hidden == kHidden && out->hd.layer < kMaxLayers && out->hd.rows > 0 && out->hd.rows <= kMaxRows;
-    if (ok) ok = std::fread(out->slots.data(), sizeof(int32_t), kExperts, f) == kExperts;
+    bool ok = std::fread(&out->hd, sizeof(out->hd), 1, f) == 1 && out->hd.magic == kCaptureMagic && out->hd.version == kCaptureVersion &&
+              out->hd.hidden > 0 && out->hd.hidden <= 16384 && out->hd.experts > 0 && out->hd.experts <= 4096 && out->hd.top_k > 0 &&
+              out->hd.top_k <= kMaxTopK && out->hd.act_group > 0 && out->hd.hidden % out->hd.act_group == 0 &&
+              out->hd.layer < kMaxLayers && out->hd.rows > 0 && out->hd.rows <= kMaxRows && out->hd.route_count <= kMaxRoutes;
+    if (ok) {
+        out->slots.resize(out->hd.experts);
+        ok = std::fread(out->slots.data(), sizeof(int32_t), out->slots.size(), f) == out->slots.size();
+    }
     if (ok) {
         out->routes.resize(out->hd.route_count);
-        out->actq.resize((size_t)out->hd.rows * kHidden);
-        out->acts.resize((size_t)out->hd.rows * (kHidden / kActGroup));
+        out->actq.resize((size_t)out->hd.rows * out->hd.hidden);
+        out->acts.resize((size_t)out->hd.rows * (out->hd.hidden / out->hd.act_group));
         ok = std::fread(out->routes.data(), sizeof(Route), out->routes.size(), f) == out->routes.size() &&
              std::fread(out->actq.data(), 1, out->actq.size(), f) == out->actq.size() &&
              std::fread(out->acts.data(), sizeof(float), out->acts.size(), f) == out->acts.size();
@@ -1055,6 +1064,12 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
     /* the request is built for the model's own shape (the lane checks every request against it) */
     const uint32_t hid = gpu.shape_.hidden, topk = gpu.shape_.top_k;
     if (g_replay) {  // a captured real request replaces the synthetic layer, rows, routes and activations
+        if (g_replay->hd.hidden != hid || g_replay->hd.experts != model.experts || g_replay->hd.top_k != topk ||
+            g_replay->hd.act_group != kActGroup) {
+            std::fprintf(stderr, "r3_moe_worker: the capture is for hidden %u, %u experts, top-k %u; this model is hidden %u, %u experts, top-k %u\n",
+                         g_replay->hd.hidden, g_replay->hd.experts, g_replay->hd.top_k, hid, model.experts, topk);
+            return 1;
+        }
         layer = g_replay->hd.layer;
         rows = g_replay->hd.rows;
     }
@@ -1063,11 +1078,10 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
                      rows, lane_large_rows);
         return 2;
     }
-    std::array<int32_t, kExperts> runtime_slot{};
-    runtime_slot.fill(-1);
+    std::vector<int32_t> runtime_slot(model.experts, -1);
     static constexpr uint32_t kSyntheticProtected[8] = {1, 17, 63, 127, 191, 255, 319, 511};
     uint32_t next_slot = 0;
-    for (uint32_t e = 0; e < kExperts; ++e) {
+    for (uint32_t e = 0; e < model.experts; ++e) {
         if (!model.weight(layer, e, 0) || !model.weight(layer, e, 1)) continue;
         bool protect = false;
         if (synthetic_protect)
@@ -1077,13 +1091,13 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
     if (g_replay) runtime_slot = g_replay->slots;
 
     std::vector<uint32_t> remote_expert, local_expert;
-    std::vector<uint8_t> owned_here(kExperts, 0);
+    std::vector<uint8_t> owned_here(model.experts, 0);
     for (auto [l, e] : owned.expert) {
         if (l != layer || runtime_slot[e] < 0) continue;
         remote_expert.push_back(e);
         owned_here[e] = 1;
     }
-    for (uint32_t e = 0; e < kExperts; ++e)
+    for (uint32_t e = 0; e < model.experts; ++e)
         if (!owned_here[e] && model.weight(layer, e, 0) && model.weight(layer, e, 1))
             local_expert.push_back(e);
     if (remote_expert.size() < 2 || local_expert.empty()) {
@@ -1153,7 +1167,7 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
             const uint32_t c = g_replay->actq[i];
             const int e = (int)((c >> 3) & 0xfu), m = (int)(c & 7u);
             const float mag = e ? std::ldexp(1.0f + m / 8.0f, e - 7) : std::ldexp(m / 8.0f, -6);
-            activation[i] = to_bf16(((c & 0x80u) ? -mag : mag) * g_replay->acts[i / kActGroup]);
+            activation[i] = to_bf16(((c & 0x80u) ? -mag : mag) * g_replay->acts[i / g_replay->hd.act_group]);
         }
     }
     const uint32_t nr = (uint32_t)published.size();
