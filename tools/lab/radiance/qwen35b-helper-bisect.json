@@ -63,7 +63,7 @@
    "settings": {}
   },
   {
-   "name": "workers-l00-09",
+   "name": "workers-l00-02",
    "mode": "stock",
    "shutdown_method": "sigint",
    "binary": "${RAD_BIN}",
@@ -78,11 +78,11 @@
     "R3_MOE_WORKER_MAX_ROWS": "64",
     "R3_MOE_WORKER_SMALL_ROWS": "8",
     "R3_MOE_WORKER_MIB": "22528",
-    "R3_MOE_WORKER_LAYERS": "0-9"
+    "R3_MOE_WORKER_LAYERS": "0-2"
    }
   },
   {
-   "name": "workers-l10-19",
+   "name": "workers-l03-05",
    "mode": "stock",
    "shutdown_method": "sigint",
    "binary": "${RAD_BIN}",
@@ -97,7 +97,7 @@
     "R3_MOE_WORKER_MAX_ROWS": "64",
     "R3_MOE_WORKER_SMALL_ROWS": "8",
     "R3_MOE_WORKER_MIB": "22528",
-    "R3_MOE_WORKER_LAYERS": "10-19"
+    "R3_MOE_WORKER_LAYERS": "3-5"
    }
   }
  ]
