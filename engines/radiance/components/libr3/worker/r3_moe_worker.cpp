@@ -473,8 +473,7 @@ int compute_host_engine_fp8(const Container& f, void* map, Request* q,
 
         const int32_t es = layer_slot(map, q->layer, e);
         if (es < 0) {
-            std::fprintf(stderr, "r3_moe_worker: fp8 reference: layer %u expert %u has no runtime slot but is routed
-", q->layer, e);
+            std::fprintf(stderr, "r3_moe_worker: fp8 reference: layer %u expert %u has no runtime slot but is routed\n", q->layer, e);
             return -ENOTSUP;
         }
         (void)es;
@@ -486,8 +485,7 @@ int compute_host_engine_fp8(const Container& f, void* map, Request* q,
         for (int64_t j = 0; j < width; ++j) {
             if (!decode_row(f, gu, lo + j, wg, false) ||
                 !decode_row(f, gu, dnc + lo + j, wu, false)) {
-                std::fprintf(stderr, "r3_moe_worker: fp8 reference: gate/up row %lld of expert %u (layer %u) cannot be decoded
-", (long long)j, e, q->layer);
+                std::fprintf(stderr, "r3_moe_worker: fp8 reference: gate/up row %lld of expert %u (layer %u) cannot be decoded\n", (long long)j, e, q->layer);
                 return -ENOTSUP;
             }
             for (size_t a = 0; a < ri.size(); ++a) {
@@ -504,8 +502,7 @@ int compute_host_engine_fp8(const Container& f, void* map, Request* q,
 
         for (int64_t h = 0; h < hid; ++h) {
             if (!decode_row(f, dn, h, wd, false)) {
-                std::fprintf(stderr, "r3_moe_worker: fp8 reference: down row %lld of expert %u (layer %u) cannot be decoded
-", (long long)h, e, q->layer);
+                std::fprintf(stderr, "r3_moe_worker: fp8 reference: down row %lld of expert %u (layer %u) cannot be decoded\n", (long long)h, e, q->layer);
                 return -ENOTSUP;
             }
             for (size_t a = 0; a < ri.size(); ++a) {
