@@ -35,6 +35,20 @@ Consolidates PRBE22 (RDNA MMQ tile width/LDS), PRBE23 (MoE-aware tile selection)
 
 QFP37 owns Stream-K (1350) and I=32 (1351) implementation/qualification. QFP44 owns residual tile/LDS catalog sweeps and formal compact-map regression evidence; no duplicate patch packages. If 1237/1265 + 1350/1351 leave no material under-occupancy, close this item as a measured null.
 
+## 2026-10-20: BCOP332 — gfx1201 MMA k01 spill gate
+
+**Hold; no patch or GPU queue.** [Upstream #29536](https://github.com/ggml-org/llama.cpp/pull/29536) (open, updated 19 Oct) reports stock LLVM 23 RDNA4 MMQ spills: 5/64 IQ4_XS instantiations spilled before its change and none afterward. Its external R9700 Qwen3.8-27B Q4_K_M pp result was ~298→~1250 t/s, but the PR also fixes BF16 builtin types. Neither the gain nor the spill condition is established for BigCherry's compiler. Do not port the whole PR or infer an isolated IQ4_XS benefit.
+
+**One codegen slice:** pinned b11552 \`ggml/src/ggml-cuda/mmq-vec-dot.cuh::ggml_cuda_mmq_vec_dot_q8_0_q8_1_mma\`, k01 loop near line 165. Candidate: gfx1201-only \`#pragma unroll 1\` on that loop, preserving \`MMQ_TILE_NE_K=32\`, \`QI8_0=8\`, four K fragments, all MMA work, LDS loads, reductions, output writes and allocation. This shared template serves IQ4_XS, IQ4_NL, IQ3_XXS and Q8_0: all need no-regression controls. Do not alter the other two loops from #29536. Register live-range/spill reduction is a **hypothesis**; increased loop instructions or vendor-compiler regression is possible.
+
+**Actual dispatch:** \`mmq.cu::ggml_cuda_mul_mat_q\` chooses \`J_best\` from config and shared-memory admission before Q8_1 activation padding and MoE ID scratch allocation. \`mmq-config-rdna4.cuh\` permits IQ4_XS nonfallback J16/32/48/64/80/96/112/128 and fallback J16/32/64/128. \`0300_mmq_forced_j\` owns forced-J safety; preserve it, existing compact-map and graph/stream lifetimes. No new J table, selector, allocator or telemetry.
+
+**Cheap discriminator completed:** host-only modeled 8,192 J-selection cases (widths 1..4096, both fallback sets) matched before/after; 32/32 K elements covered once; Python compilation passed. Model assumes all listed J configs fit shared memory. No HIP compile, code-object inspection, backend-op run or GPU benchmark.
+
+**Gates:** (0) Check last-12h independent work/queues and exact compiler/build/pin, real IQ4_XS MMQ rank, \`ncols_opt\`, J/fallback, physical M/N/K, launch duration and exposed E2E critical path; reject \`NO_ROUTE\`. (1) Compile baseline vs *one-loop* candidate with identical HIP flags; compare ISA, VGPR/SGPR, scratch bytes, LDS, wave32, occupancy, code size and K/MMA counts for J80/96/112/128 and shared-template controls; reject \`NO_SPILL\` or \`NO_CODEGEN_WIN\`. (2) Require optimistically removable exposed wall >=2.9126% of E2E, accounting for per-rank overlap and no P2P; otherwise \`BELOW_CEILING\`. (3) Only if admitted, test-backend-ops MUL_MAT/MUL_MAT_ID, tail and expert counts, graph/reallocation, multi-ubatch/same-process, logits/KLD/greedy/MTP, unchanged physical work and scratch traffic. (4) Paired 4-session >=10-round ABBA gfx1201 R9700 pp512/2048 and routed 8K/24K/98K, tg128 and gfx1100 controls; promote only CI95-low >=3% E2E with <=1% unaffected regression and no correctness failure. Otherwise close \`NUMERIC_FAIL\`, \`REGRESSION\` or \`NO_GAIN\`.
+
+**Ownership:** QFP44 owns this compiler-specific MMQ codegen decision, separate from BCOP300 compact-grid work. \`0300\` owns J selection, \`1237/1265\` block maps, QFP37 Stream-K, PRBE110 Q6_K, PRBE111 IQ MMVQ. The [FireBurn AMD stack](https://github.com/FireBurn/llama.cpp/tree/amd-perf-stack) is not an AMD BigCherry benchmark baseline. Source: [pinned loop](https://github.com/ggml-org/llama.cpp/blob/23b0202a189c44a54625aadcb37a946dd1d6278d/ggml/src/ggml-cuda/mmq-vec-dot.cuh#L143-L196), [PR diff](https://github.com/ggml-org/llama.cpp/pull/29536/files).
+
 ## Change Log
 
 - 2026-10-08 (triage): Created by folding PRBE22/PRBE23/PRBE24; referenced validated 1237/1265/1345 and open PR #22/1350 separately.
