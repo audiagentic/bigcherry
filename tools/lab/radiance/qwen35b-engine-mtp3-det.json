@@ -1,5 +1,5 @@
 {
- "_comment": "RAD14 bisection of the MTP acceptance collapse: the engine ALONE with 3 speculative tokens and --deterministic (placement pinned to the loader's plan, no mover), two identical arms, 1/2/4/6 streams.",
+ "_comment": "RAD14 bisection of the MTP acceptance collapse: the engine ALONE with 3 speculative tokens and --deterministic (placement pinned to the loader's plan, no mover), two identical arms, 1/2/4/6 streams. --host-pool-mib 45056: the pinned plan has to hold every expert the card cannot (a pinned placement did not fit at 30720).",
  "schema_version": 1,
  "engine": "radiance",
  "evidence_role": "diagnostic",
@@ -27,7 +27,7 @@
   "--tp",
   "1",
   "--host-pool-mib",
-  "30720",
+  "45056",
   "--max-model-len",
   "32768",
   "--deterministic"
