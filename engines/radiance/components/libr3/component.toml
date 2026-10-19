@@ -19,7 +19,7 @@ configure = { RADIANCE_SRC = "{engine_source}", R3_TARGETS = "{targets}", R3_NAT
 
 # Offline tests the bump gate (bigcherry pin-bump) builds and runs with ctest in the component's build tree.
 [test]
-targets = ["r3_moe_shm_test", "r3_moe_backend_test"]
+targets = ["r3_moe_shm_test", "r3_moe_backend_test", "r3_moe_fp8_ref_test"]
 
 # Runtime settings: each environment variable the plugin reads, its default, and what it is.
 #   status = production    on (or meaningful) in served configurations, with quality and speed evidence
