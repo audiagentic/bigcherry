@@ -49,3 +49,23 @@ and shm tests; no model name or model constant remains in the helper sources (a 
 
 Part of the component split (RCS04/RCS05): the moe-remote and backend components take their shape from the header, not from compile-time model constants. Related: RAD11 (other
 expert quantisations), RCS07 (other architectures), RCS10 (tuning with the release build).
+
+## Staged conversion plan (GPT review 2026-10-19)
+
+Classify, do not mechanically replace: **protocol capacity bounds** (max rows, layers, routes, ranks) stay as checked maxima; **model shape** (hidden, top-k, experts, activation group, expert width, layers, strides, ownership-map strides, expert flattening) becomes runtime; **kernel tile geometry** (block dimensions, wave geometry, GEMM tiles, vector widths, bounded scan widths) stays compile-time. The literal `512` is three different things (expert count, thread count, launch-grid cap). Occurrence counts of the model constants plus `512`: moe_remote_gpu.h 219, r3_moe_helper.cpp 97, moe_remote_shm.h 39, moe_mailbox_ops.hip 23, moe_remote_hook.cpp 20, moe_remote_shm_test.cpp 4.
+
+Architecture: runtime shape for orchestration and transport, a small set of shape-specialised GPU implementations chosen by dispatch (runtime dimensions with compile-time tiles, as CUTLASS and Composable Kernel do). Keep the Flash-Next 512/10 fast path; add generic paths beside it.
+
+| PR | Scope | Gate |
+|---|---|---|
+| RCS09-01/02 | `LayoutShape`, checked `layout_for(shape)` beside the constexpr `layout()` | legacy shape reproduces v13 byte for byte; overflow and malformed-shape refusals |
+| RCS09-03 | Header v14 (`intermediate`, `activation_group`, shape and capacity hashes), fail-closed attach, request validation | stale v13, wrong shape, wrong capacity, malformed offsets rejected |
+| RCS09-04 | Runtime expert and layer indexing in helper, hook, CPU reference, ownership and heat | Flash-Next replay bitwise; synthetic 256-expert/2048-hidden tests |
+| RCS09-05 | Runtime route counts, top-k, GPU routing; keep the 512/10 specialisation | differential routing and ownership tests; per-row-regime benchmark |
+| RCS09-06 | Runtime hidden, activation group, strides, staging, quantisation, result reduction | BF16/FP8 operand comparison; canary/ASAN; bitwise Flash-Next replay |
+| RCS09-07 | Runtime expert width, GEMV K, backend scratch and GEMM dispatch | widths 512 and 640; backend probe; prefill and decode benchmarks |
+| RCS09-08 | Remove remaining model constants and wrappers; captures v3; docs | full regression matrix |
+
+Hardest sites: the fixed 512-expert block scans and `__launch_bounds__` (moe_remote_gpu.h 189-244), `kGemvMaxK` shared-memory tile capacity (361-383), quantised-row chunk counts (125-127, 264-265), shared arrays sized by `kTopK` (537-600; moe_mailbox_ops.hip 365-366), fixed owner and layer-map capacities and `layer * kExperts` bit-index arithmetic (moe_remote_shm.h), route maps and histograms in the hook (342-415), the 640-wide reference arrays in r3_moe_helper.cpp (298-410), and heat and capture dimensions (605-737).
+
+Traps: a smaller hidden does not reduce LDS use while static arrays stay sized for 2560; the expert-width 512 versus 640 assumption sits inside the GEMM kernel layout and output strides; the activation quantisation group (128) is not the weight tile `block_k`, and a hidden that is not whole groups must be refused, not truncated; one-thread-per-expert routing does not generalise (use a fixed tile with grid-stride); the owner bitmap stride change touches every CPU and GPU consumer; capture format is versioned separately from the shm protocol; accumulation order decides bitwise equality, so preserve it for the legacy specialisation.
