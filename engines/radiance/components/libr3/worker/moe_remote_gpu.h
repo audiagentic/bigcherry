@@ -793,6 +793,7 @@ public:
         had_quant_ = quant_plain_;
         gated_quant_ = gated_plain_;
         gemv_ = false;
+        gemv_debug_ = false;
         gemv_large_rows_ = 0;
         rows_ = false;
         return true;
@@ -1022,11 +1023,11 @@ public:
                        { tensor(d_aq_.p, RAD_F8E4M3, {rows, shape_.hidden}),
                          tensor(d_as_.p, RAD_F32, {rows, shape_.hidden / kGroup}),
                          table_tensor(lt.gu_code[rank][0], lt.gu_code_dtype, 2 * w0, shape_.hidden),
-                         table_tensor(lt.gu_scale[rank][0], lt.gu_scale_dtype, 2 * w0, shape_.hidden / 64),
+                         table_scale_tensor(lt.gu_scale[rank][0], lt.gu_scale_dtype, 2 * w0, shape_.hidden),
                          tensor(d_sorted_.p, RAD_I32, {tr}),
                          tensor(d_off_.p, RAD_I32, {experts() + 1}),
                          table_tensor(lt.gu_code[rank][1], lt.gu_code_dtype, 2 * w1, shape_.hidden),
-                         table_tensor(lt.gu_scale[rank][1], lt.gu_scale_dtype, 2 * w1, shape_.hidden / 64),
+                         table_scale_tensor(lt.gu_scale[rank][1], lt.gu_scale_dtype, 2 * w1, shape_.hidden),
                          tensor(d_gu_.p, RAD_BF16, {tr, kRankGateUpWidth}) }, gp) < 0)
                 return -EIO;
 
@@ -1047,11 +1048,11 @@ public:
                        { tensor(d_mid_.p, RAD_F8E4M3, {tr, kRankWidth}),
                          tensor(d_mid_s_.p, RAD_F32, {tr, kRankWidth / kGroup}),
                          table_tensor(lt.dn_code[rank][0], lt.dn_code_dtype, shape_.hidden, w0),
-                         table_tensor(lt.dn_scale[rank][0], lt.dn_scale_dtype, shape_.hidden, w0 / 64),
+                         table_scale_tensor(lt.dn_scale[rank][0], lt.dn_scale_dtype, shape_.hidden, w0),
                          tensor(d_sorted_.p, RAD_I32, {tr}),
                          tensor(d_off_.p, RAD_I32, {experts() + 1}),
                          table_tensor(lt.dn_code[rank][1], lt.dn_code_dtype, shape_.hidden, w1),
-                         table_tensor(lt.dn_scale[rank][1], lt.dn_scale_dtype, shape_.hidden, w1 / 64),
+                         table_scale_tensor(lt.dn_scale[rank][1], lt.dn_scale_dtype, shape_.hidden, w1),
                          tensor(d_down_.p, RAD_BF16, {tr, shape_.hidden}) }, dp) < 0)
                 return -EIO;
 
@@ -1325,7 +1326,8 @@ public:
              * reads that expert's weights once a route; here they are read once for all the expert's rows. Read each
              * call so a replay sweep can compare; the rows accumulate in a different order, so it is not bit-exact. */
             const char* rs_env = std::getenv("R3_MOE_WORKER_ROWS_SMALL");
-            const bool rows_small = rs_env && std::strcmp(rs_env, "0") != 0 && lane_is_small(lane) && rows <= 16u;
+            const bool rows_small = weight_format_ == MOE_FMT_W4NL64 && rs_env && std::strcmp(rs_env, "0") != 0 &&
+                                    lane_is_small(lane) && rows <= 16u;
             const bool rowk = (rows_ && !lane_is_small(lane)) || rows_small;
             const dim3 rows_grid_gu(experts(), (uint32_t)((2 * std::max(w0, w1) + kRowsTileN - 1) / kRowsTileN));
             const dim3 rows_grid_dn(experts(), (uint32_t)((shape_.hidden + kRowsTileN - 1) / kRowsTileN));
@@ -1359,16 +1361,16 @@ public:
                           { tensor(w.d_aq.p, RAD_F8E4M3, {rows, shape_.hidden}),
                             tensor(w.d_as.p, RAD_F32, {rows, shape_.hidden / kGroup}),
                             table_tensor(w.gu_code[0].p, gu_code_dtype_, 2 * w0, shape_.hidden),
-                            table_tensor(w.gu_scale[0].p, gu_scale_dtype_, 2 * w0, shape_.hidden / 64),
+                            table_scale_tensor(w.gu_scale[0].p, gu_scale_dtype_, 2 * w0, shape_.hidden),
                             tensor(w.d_sorted.p, RAD_I32, {routes}),
                             tensor(w.d_off.p, RAD_I32, {experts() + 1}),
                             table_tensor(w.gu_code[1].p, gu_code_dtype_, 2 * w1, shape_.hidden),
-                            table_tensor(w.gu_scale[1].p, gu_scale_dtype_, 2 * w1, shape_.hidden / 64),
+                            table_scale_tensor(w.gu_scale[1].p, gu_scale_dtype_, 2 * w1, shape_.hidden),
                             tensor(w.d_gu.p, RAD_BF16, {routes, 2 * mid_w()}) },
                           gp, w.stream, w.scratch) < 0)
                 return -EIO;
 
-            if (gemv_debug_ && lane_is_small(lane)) {
+            if (gemv_debug_ && weight_format_ == MOE_FMT_W4NL64 && lane_is_small(lane)) {
                 hipLaunchKernelGGL(lane_moe_gemv<true>, gemv_grid_gu, dim3(256), 0, w.stream,
                                    static_cast<const uint8_t*>(w.d_aq.p), static_cast<const float*>(w.d_as.p),
                                    static_cast<const int32_t*>(w.d_sorted.p), static_cast<const int32_t*>(w.d_off.p),
@@ -1419,11 +1421,11 @@ public:
                           { tensor(w.d_mid.p, RAD_F8E4M3, {routes, mid_w()}),
                             tensor(w.d_mid_s.p, RAD_F32, {routes, mid_w() / kGroup}),
                             table_tensor(w.dn_code[0].p, dn_code_dtype_, shape_.hidden, w0),
-                            table_tensor(w.dn_scale[0].p, dn_scale_dtype_, shape_.hidden, w0 / 64),
+                            table_scale_tensor(w.dn_scale[0].p, dn_scale_dtype_, shape_.hidden, w0),
                             tensor(w.d_sorted.p, RAD_I32, {routes}),
                             tensor(w.d_off.p, RAD_I32, {experts() + 1}),
                             table_tensor(w.dn_code[1].p, dn_code_dtype_, shape_.hidden, w1),
-                            table_tensor(w.dn_scale[1].p, dn_scale_dtype_, shape_.hidden, w1 / 64),
+                            table_scale_tensor(w.dn_scale[1].p, dn_scale_dtype_, shape_.hidden, w1),
                             tensor(out_down, RAD_BF16, {routes, shape_.hidden}) },
                           dp, w.stream, w.scratch) < 0)
                 return -EIO;
@@ -1812,6 +1814,11 @@ private:
         if (weight_format_ == MOE_FMT_FP8_E4M3_BLOCK) {   // E4M3 codes and one bf16 scale plane, in the layout the kernel reads
             const int c = rad_enc_find(enc, "codes"), sc = rad_enc_find_level(enc, "scale", 0);
             if (c < 0 || sc < 0) return false;
+            /* the identity layout is right only if the planes ARE the kernel's: E4M3 codes one byte a weight, a bf16 scale a 128x128 tile,
+             * nothing else (no zero point, table, transform or second scale level) */
+            if (enc->n_planes != 2 || enc->plane[c].dtype != RAD_F8E4M3 || enc->plane[c].block[1] != 1 ||
+                enc->plane[sc].dtype != RAD_BF16 || enc->plane[sc].kind != RAD_PLANE_TILED || enc->plane[sc].block[0] != 128 ||
+                enc->plane[sc].block[1] != 128 || std::strlen(enc->transform) != 0) return false;
             int64_t rows = 1, cols = 1;
             rad_enc_view(e->rank, e->shape, &rows, &cols);
             int64_t pr = 0, pc = 0;
@@ -2067,6 +2074,12 @@ private:
                experts_[(size_t)layer * experts() + expert].live;
     }
 
+    /* The scale table of a weight of logical dims [n, k]: W4 has one E4M3 scale per 64 columns of every row; FP8 block-scaled has one
+     * bf16 scale per 128x128 tile (the checkpoint's own plane), so its scale tensor is [ceil(n/128), ceil(k/128)]. */
+    RadTensor table_scale_tensor(void* table, uint32_t dtype, int64_t n, int64_t k) const {
+        if (weight_format_ == MOE_FMT_FP8_E4M3_BLOCK) return table_tensor(table, dtype, (n + 127) / 128, (k + 127) / 128);
+        return table_tensor(table, dtype, n, k / 64);
+    }
     RadTensor table_tensor(void* table, uint32_t dtype, int64_t n, int64_t k) const {
         RadTensor t = tensor(table, dtype, {experts() / 2, n, k});
         t.stride[0] = 0; /* ABI table form: data points to a device array of per-entry pointers. */
@@ -2121,11 +2134,11 @@ private:
                           { tensor(w.d_aq.p, RAD_F8E4M3, {rows, shape_.hidden}),
                             tensor(w.d_as.p, RAD_F32, {rows, shape_.hidden / kGroup}),
                             table_tensor(w.gu_code[0].p, gu_code_dtype_, 2 * w0, shape_.hidden),
-                            table_tensor(w.gu_scale[0].p, gu_scale_dtype_, 2 * w0, shape_.hidden / 64),
+                            table_scale_tensor(w.gu_scale[0].p, gu_scale_dtype_, 2 * w0, shape_.hidden),
                             tensor(w.d_sorted.p, RAD_I32, {routes}),
                             tensor(w.d_off.p, RAD_I32, {experts() + 1}),
                             table_tensor(w.gu_code[1].p, gu_code_dtype_, 2 * w1, shape_.hidden),
-                            table_tensor(w.gu_scale[1].p, gu_scale_dtype_, 2 * w1, shape_.hidden / 64),
+                            table_scale_tensor(w.gu_scale[1].p, gu_scale_dtype_, 2 * w1, shape_.hidden),
                             tensor(w.d_gu.p, RAD_BF16, {routes, 2 * mid_w()}) },
                           gp, &need))
             return false;
@@ -2148,11 +2161,11 @@ private:
                           { tensor(w.d_mid.p, RAD_F8E4M3, {routes, mid_w()}),
                             tensor(w.d_mid_s.p, RAD_F32, {routes, mid_w() / kGroup}),
                             table_tensor(w.dn_code[0].p, dn_code_dtype_, shape_.hidden, w0),
-                            table_tensor(w.dn_scale[0].p, dn_scale_dtype_, shape_.hidden, w0 / 64),
+                            table_scale_tensor(w.dn_scale[0].p, dn_scale_dtype_, shape_.hidden, w0),
                             tensor(w.d_sorted.p, RAD_I32, {routes}),
                             tensor(w.d_off.p, RAD_I32, {experts() + 1}),
                             table_tensor(w.dn_code[1].p, dn_code_dtype_, shape_.hidden, w1),
-                            table_tensor(w.dn_scale[1].p, dn_scale_dtype_, shape_.hidden, w1 / 64),
+                            table_scale_tensor(w.dn_scale[1].p, dn_scale_dtype_, shape_.hidden, w1),
                             tensor(w.d_down.p, RAD_BF16, {routes, shape_.hidden}) },
                           dp, &need))
             return false;

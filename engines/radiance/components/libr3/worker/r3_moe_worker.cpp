@@ -1538,11 +1538,23 @@ int main(int argc, char** argv) {
         if (!gpu->open()) return 1;
         {   // the container's own weight format picks the kernels (RAD13); an unsupported one was refused by name above
             MoeExpertDesc first{};
-            if (!describe_expert(model, 0, 0, &first)) {
-                for (uint32_t l = 0; l < model.layers && !first.weight.format; ++l)
-                    for (uint32_t e = 0; e < model.experts && !first.weight.format; ++e)
-                        if (model.weight(l, e, 0) && model.weight(l, e, 1)) (void)describe_expert(model, l, e, &first);
+            for (uint32_t l = 0; l < model.layers && !first.weight.format; ++l)
+                for (uint32_t e = 0; e < model.experts && !first.weight.format; ++e)
+                    if (model.weight(l, e, 0) && model.weight(l, e, 1)) (void)describe_expert(model, l, e, &first);
+            if (!first.weight.format) {
+                std::fprintf(stderr, "r3_moe_worker: no expert of this container has a weight format the worker knows\n");
+                return 1;
             }
+            for (uint32_t l = 0; l < model.layers; ++l)   // one table of experts takes one encoding
+                for (uint32_t e = 0; e < model.experts; ++e) {
+                    MoeExpertDesc d{};
+                    if (model.weight(l, e, 0) && model.weight(l, e, 1) && describe_expert(model, l, e, &d) &&
+                        (d.weight.format != first.weight.format || d.weight.block_k != first.weight.block_k ||
+                         d.weight.scale_dtype != first.weight.scale_dtype)) {
+                        std::fprintf(stderr, "r3_moe_worker: experts (%u,%u) and the first differ in weight format\n", l, e);
+                        return 1;
+                    }
+                }
             if (!gpu->set_weight_format(first.weight.format)) return 1;
         }
     }
