@@ -1,5 +1,5 @@
 {
- "_comment": "RAD14 bisection of the MTP acceptance collapse: the engine ALONE with 3 speculative tokens and --deterministic (placement pinned to the loader's plan, no mover), two identical arms, 1/2/4/6 streams. --host-pool-mib 45056: the pinned plan has to hold every expert the card cannot (a pinned placement did not fit at 30720). 6 sequences did not fit the pinned plan (short by 263 MiB), so this uses 4 sequences (the collapse is already there) and 32 MiB headroom; streams 1/2/4 only.",
+ "_comment": "RAD14 bisection of the MTP acceptance collapse: the engine ALONE with 3 speculative tokens and --deterministic (placement pinned to the loader's plan, no mover), two identical arms, 1/2/4/6 streams. --host-pool-mib 45056: the pinned plan has to hold every expert the card cannot (a pinned placement did not fit at 30720). 6 sequences did not fit the pinned plan (short by 263 MiB), so this uses 4 sequences (the collapse is already there) and 32 MiB headroom; streams 1/2/4 only. Batched tokens 1024 / max-model-len 8192 shrink compute buffers so the pinned plan leaves room for the cache.",
  "schema_version": 1,
  "engine": "radiance",
  "evidence_role": "diagnostic",
@@ -17,9 +17,9 @@
   "--max-num-seqs",
   "4",
   "--max-num-batched-tokens",
-  "4096",
+  "1024",
   "--checkpoint-interval",
-  "4096",
+  "1024",
   "--kv-cache-dtype",
   "fp8",
   "--num-speculative-tokens",
@@ -29,7 +29,7 @@
   "--host-pool-mib",
   "45056",
   "--max-model-len",
-  "32768",
+  "8192",
   "--deterministic",
   "--gpu-headroom-mib",
   "32"
