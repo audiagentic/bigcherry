@@ -20,7 +20,7 @@ standalone server with a llama-server-compatible API.
   writes `<arm>.engine-bench.json`, the same record `run-llamacpp-r9700.sh` writes for llama.cpp.
 
 - `helper-ab.json`, `helper-kld.json`: `ab-benchmark --server-config` examples for the R9700 engine with two XTX helper
-  sidecars: speed (R3_MOE_HELPER_ROWS 0 vs 1) and KL quality (MEN11). They replaced the `fn-r9700-engine.sh`,
+  sidecars: speed (R3_MOE_WORKER_ROWS 0 vs 1) and KL quality (MEN11). They replaced the `fn-r9700-engine.sh`,
   `fn-helper-gate.sh`, `fn-helper-kld.sh` and `fn-r9700-kld.sh` lab scripts.
 
 - `fn-helper.sh`, `fn-profile.sh`, `fn-profile-compare.py`: rocprofv3 kernel/copy traces of one prefill and their

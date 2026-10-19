@@ -13,7 +13,7 @@ Existing source seams (pinned upstream):
 - `core/place/mover.h/.cpp`: shadow-slot asynchronous weight transfers and publication; **within a rank**, not a cross-GPU helper mover.
 - `core/engine.cpp` expert-plane report and `core/server/metrics.cpp`: current observability, to be extended rather than cloned.
 
-BigCherry current duplicate: `libr3/helper/moe_remote_hook.cpp` allocates optional `R3_MOE_HELPER_HISTOGRAM` GPU counts and writes `<path>.rankN` at shutdown; `r3_moe_helper.cpp::select_owned` consumes `R3_MOE_HELPER_HEAT` or static container profile. This duplication is **temporary validation only** until shared-path count equivalence and prefill capture coverage are proven. Existing `rad0002_moe_remote_handoff` patch has declare-time owner/map hooks and `R3_MOE_HELPER_SKIP_OWNED` (remote expert not present on engine); it does **not** support live ownership changes.
+BigCherry current duplicate: `libr3/worker/moe_remote_hook.cpp` allocates optional `R3_MOE_WORKER_HISTOGRAM` GPU counts and writes `<path>.rankN` at shutdown; `r3_moe_worker.cpp::select_owned` consumes `R3_MOE_WORKER_HEAT` or static container profile. This duplication is **temporary validation only** until shared-path count equivalence and prefill capture coverage are proven. Existing `rad0002_moe_remote_handoff` patch has declare-time owner/map hooks and `R3_MOE_WORKER_SKIP_OWNED` (remote expert not present on engine); it does **not** support live ownership changes.
 
 ## Dependency-ordered work
 

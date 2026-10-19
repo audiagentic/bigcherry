@@ -8,7 +8,7 @@ engine = "radiance"
 targets = ["gfx1100"]
 # radiance 1.8.0 (plugin ABI 17): the rewrite rules are written against this revision's libr4d and refuse any other.
 built-against = "v1.8.0"
-outputs = ["kernels/libr3.so", "kernels/libr3moe.so", "helpers/libr3_ngram_helper.so", "helpers/r3_moe_helper"]
+outputs = ["kernels/libr3.so", "kernels/libr3moe.so", "helpers/libr3_ngram_helper.so", "helpers/r3_moe_worker"]
 
 # How the build lane builds it: CMake against the engine installed from the lane's own build (CMAKE_PREFIX_PATH) and
 # the lane's materialised source ({engine_source}); outputs are copied into the engine's runtime home.
@@ -39,142 +39,142 @@ default = "0"
 status = "evaluated"
 summary = "native delta-net chunk scan; wrong in serving (KLD 5.52) after three fixes, shelved; source kept in native-shelved/ and not built"
 
-[setting.R3_MOE_HELPER]
+[setting.R3_MOE_WORKER]
 default = ""
 status = "experimental"
 summary = "enable patch rad0002 GPU mailbox ops; helper process must already own the configured POSIX shm segment"
-activation = "r3_moe_helper: runtime map owns [0-9]+ experts, [0-9.]+ GiB"
+activation = "r3_moe_worker: runtime map owns [0-9]+ experts, [0-9.]+ GiB"
 
-[setting.R3_MOE_HELPER_DEVICES]
+[setting.R3_MOE_WORKER_DEVICES]
 default = ""
 status = "experimental"
-summary = "harness-only: space-separated HIP device indices, one r3_moe_helper process each (e.g. \"0 1\"); the campaign adapter starts them before the server, sets R3_MOE_HELPER_INDEX and R3_MOE_HELPER_COUNT per helper, and stops them after it"
+summary = "harness-only: space-separated HIP device indices, one r3_moe_worker process each (e.g. \"0 1\"); the campaign adapter starts them before the server, sets R3_MOE_WORKER_INDEX and R3_MOE_WORKER_COUNT per helper, and stops them after it"
 
-[setting.R3_MOE_HELPER_SHM]
+[setting.R3_MOE_WORKER_SHM]
 default = "/r3-moe-helper"
 status = "diagnostic"
-summary = "POSIX shm segment mapped by libr3 GPU mailbox ops and r3_moe_helper"
+summary = "POSIX shm segment mapped by libr3 GPU mailbox ops and r3_moe_worker"
 
-[setting.R3_MOE_HELPER_CPU]
+[setting.R3_MOE_WORKER_CPU]
 default = "0"
 status = "diagnostic"
 summary = "force the slice-2a fp32 host reference path instead of gfx1201 compute"
 
-[setting.R3_MOE_HELPER_MIB]
+[setting.R3_MOE_WORKER_MIB]
 default = "28672"
 status = "experimental"
 summary = "VRAM budget in MiB for cold full-expert units owned by the gfx1201 helper"
 
-[setting.R3_MOE_HELPER_MAX_ROWS]
+[setting.R3_MOE_WORKER_MAX_ROWS]
 default = "64"
 status = "experimental"
-summary = "largest step (rows) handed to the helper (engine and helper both read it); larger steps keep the engine path. Steps above R3_MOE_HELPER_SMALL_ROWS take the large lane, launched sized to the request"
+summary = "largest step (rows) handed to the helper (engine and helper both read it); larger steps keep the engine path. Steps above R3_MOE_WORKER_SMALL_ROWS take the large lane, launched sized to the request"
 
-[setting.R3_MOE_HELPER_ENGINE_RANKS]
+[setting.R3_MOE_WORKER_ENGINE_RANKS]
 default = "2"
 status = "experimental"
 summary = "engine TP ranks the helper serves: 2 = two XTX ranks, each asking for its TP slice; 1 = one engine (the R9700, RAD02) asking for full expert width (the helper runs both slices and sums them)"
 
-[setting.R3_MOE_HELPER_COUNT]
+[setting.R3_MOE_WORKER_COUNT]
 default = "1"
 status = "experimental"
 summary = "helpers sharing the segment: 2 = two XTX helpers behind a one-rank (R9700) engine, each owning half the candidates and serving its own rank slot"
 
-[setting.R3_MOE_HELPER_HISTOGRAM]
+[setting.R3_MOE_WORKER_HISTOGRAM]
 default = ""
 status = "diagnostic"
 summary = "path prefix: the engine counts every routed (layer, expert) in VRAM and writes uint32[128][512] to <path>.rank<r> at shutdown"
 
-[setting.R3_MOE_HELPER_HEAT]
+[setting.R3_MOE_WORKER_HEAT]
 default = ""
 status = "experimental"
-summary = "a R3_MOE_HELPER_HISTOGRAM file: the helper owns the coldest experts first, so the engine keeps the hot ones and decode hands off less"
+summary = "a R3_MOE_WORKER_HISTOGRAM file: the helper owns the coldest experts first, so the engine keeps the hot ones and decode hands off less"
 
-[setting.R3_MOE_HELPER_GEMV]
+[setting.R3_MOE_WORKER_GEMV]
 default = "1"
 status = "experimental"
 summary = "decode MoE GEMV for the helper's small lane (RAD05): no WMMA, dot products straight off the packed w4nl64 nibbles. R9700 engine + two XTX helpers, Flash-Next: decode 69.6/69.7 -> 95.7/95.5 tok/s, prefill unchanged, KLD 0.0605 (noise floor 0.058-0.062). 0 turns it off; 2 compares it with the grouped GEMM (--compare)"
 
-[setting.R3_MOE_HELPER_MOE_FORM]
+[setting.R3_MOE_WORKER_MOE_FORM]
 default = "0"
 status = "experimental"
 summary = "pin the helper's grouped MoE GEMM form (RAD06): 0 libr4d's choice by row count, 1 the 32-row prefill form, 2 the 16-row decode form (a helper's prefill rows are ~4.5 an owned expert)"
-activation = "r3_moe_helper: grouped MoE GEMM pinned to the"
+activation = "r3_moe_worker: grouped MoE GEMM pinned to the"
 
-[setting.R3_MOE_HELPER_MOE_DOWN_TILE]
+[setting.R3_MOE_WORKER_MOE_DOWN_TILE]
 default = ""
 status = "experimental"
 summary = "pin libr4d's down-projection tile in the helper (RAD06 gfx1100 sweep): 1 the 64/128-column tile, 2 the 256-column 16-wave tile; unset leaves libr4d's choice"
-activation = "r3_moe_helper: R3_MOE_HELPER_MOE_DOWN_TILE="
+activation = "r3_moe_worker: R3_MOE_WORKER_MOE_DOWN_TILE="
 
-[setting.R3_MOE_HELPER_MOE_LONG_ROWS]
+[setting.R3_MOE_WORKER_MOE_LONG_ROWS]
 default = ""
 status = "evaluated"
 summary = "RAD06: runs of this many rows or more take 64-row slices and an MT=4 tile in the helper's grouped MoE GEMM (fewer weight-tile restages for long runs; bit-identical); unset or 0 keeps the single 32-row map"
-activation = "r3_moe_helper: R3_MOE_HELPER_MOE_LONG_ROWS="
+activation = "r3_moe_worker: R3_MOE_WORKER_MOE_LONG_ROWS="
 
 [setting.R3_MOE_FP16]
 default = "1"
 status = "validated"
-summary = "RAD06: with R3_MOE_NATIVE, the grouped MoE GEMM widens E4M3 operands to f16 and uses the f16 WMMA (a cheaper widening than bf16; the sums carry a 2^-16 scale removed before the scale fold, so output is bit-identical to the bf16 form). On by default in the r3_moe_helper processes (main() sets 1 unless the variable is set); prefill 2,130 -> 3,150 tok/s, decode unchanged, KLD unchanged; the engine process reads an unset variable as off, and 0 turns it off everywhere"
-activation = "r3_moe_helper: R3_MOE_FP16 on"
+summary = "RAD06: with R3_MOE_NATIVE, the grouped MoE GEMM widens E4M3 operands to f16 and uses the f16 WMMA (a cheaper widening than bf16; the sums carry a 2^-16 scale removed before the scale fold, so output is bit-identical to the bf16 form). On by default in the r3_moe_worker processes (main() sets 1 unless the variable is set); prefill 2,130 -> 3,150 tok/s, decode unchanged, KLD unchanged; the engine process reads an unset variable as off, and 0 turns it off everywhere"
+activation = "r3_moe_worker: R3_MOE_FP16 on"
 evidence = ["docs/evidence/RAD06/R3_MOE_FP16.run.json"]
 
 [setting.R3_MOE_AHALF]
 default = "1"
 status = "validated"
-summary = "RAD06: with R3_MOE_FP16, widen the grouped MoE GEMM's activation tile to half once at staging instead of in every wave that reads it (four wave columns share each A fragment); bit-identical, 7-8% off the grouped GEMM on four real captured requests, about 4 KB more LDS. On by default in the r3_moe_helper processes (main() sets 1 unless set); 0 turns it off"
-activation = "r3_moe_helper: R3_MOE_AHALF on"
+summary = "RAD06: with R3_MOE_FP16, widen the grouped MoE GEMM's activation tile to half once at staging instead of in every wave that reads it (four wave columns share each A fragment); bit-identical, 7-8% off the grouped GEMM on four real captured requests, about 4 KB more LDS. On by default in the r3_moe_worker processes (main() sets 1 unless set); 0 turns it off"
+activation = "r3_moe_worker: R3_MOE_AHALF on"
 evidence = ["docs/evidence/RAD06/R3_MOE_AHALF.run.json"]
 
-[setting.R3_MOE_HELPER_VECIO]
+[setting.R3_MOE_WORKER_VECIO]
 default = "1"
 status = "validated"
 summary = "RAD06: the helper's activation copy (engine's mapped host memory into the lane) and result write (lane to mapped host memory) use 16-byte accesses instead of one byte and two bytes a thread; bit-identical, read per request; 0 keeps the scalar kernels"
-activation = "r3_moe_helper: R3_MOE_HELPER_VECIO on"
-evidence = ["docs/evidence/RAD06/R3_MOE_HELPER_VECIO.run.json"]
+activation = "r3_moe_worker: R3_MOE_WORKER_VECIO on"
+evidence = ["docs/evidence/RAD06/R3_MOE_WORKER_VECIO.run.json"]
 
-[setting.R3_MOE_HELPER_BALANCE]
+[setting.R3_MOE_WORKER_BALANCE]
 default = ""
 status = "evaluated"
-summary = "RAD06/RHP: with R3_MOE_HELPER_HEAT and two helpers, split the jointly owned experts between the helpers per layer by predicted cost (a layer waits for the slower helper) instead of alternating down the global heat ranking; the owned set is unchanged, only who owns which; deterministic so both helper processes compute the same map; offline prediction 3.5-5.6% of helper time (tools/lab/radiance/heat-placement/balance_score.py)"
-activation = "R3_MOE_HELPER_BALANCE: per-layer cost split"
+summary = "RAD06/RHP: with R3_MOE_WORKER_HEAT and two helpers, split the jointly owned experts between the helpers per layer by predicted cost (a layer waits for the slower helper) instead of alternating down the global heat ranking; the owned set is unchanged, only who owns which; deterministic so both helper processes compute the same map; offline prediction 3.5-5.6% of helper time (tools/lab/radiance/heat-placement/balance_score.py)"
+activation = "R3_MOE_WORKER_BALANCE: per-layer cost split"
 
-[setting.R3_MOE_HELPER_BALANCE_SPEED]
+[setting.R3_MOE_WORKER_BALANCE_SPEED]
 default = ""
 status = "evaluated"
-summary = "RAD06/RHP: with R3_MOE_HELPER_BALANCE, relative speeds of the two helpers as 's0,s1' (default 1,1); a helper's expert cost is divided by its speed, so a slower card takes less (helper 1 measured ~8-10% slower)"
+summary = "RAD06/RHP: with R3_MOE_WORKER_BALANCE, relative speeds of the two helpers as 's0,s1' (default 1,1); a helper's expert cost is divided by its speed, so a slower card takes less (helper 1 measured ~8-10% slower)"
 
-[setting.R3_MOE_HELPER_FUSEROUTE]
+[setting.R3_MOE_WORKER_FUSEROUTE]
 default = "1"
 status = "validated"
 summary = "RAD06: the small (decode) lane's routing prologue (four memsets and the route count / prefix / scatter / inverse kernels) runs as one block, lane_route_small; same result, fewer launches and gaps in the request the engine waits for; read per request; 0 keeps the separate kernels"
-activation = "r3_moe_helper: R3_MOE_HELPER_FUSEROUTE on"
-evidence = ["docs/evidence/RAD06/R3_MOE_HELPER_FUSEROUTE.run.json"]
+activation = "r3_moe_worker: R3_MOE_WORKER_FUSEROUTE on"
+evidence = ["docs/evidence/RAD06/R3_MOE_WORKER_FUSEROUTE.run.json"]
 
-[setting.R3_MOE_HELPER_ROWS_SMALL]
+[setting.R3_MOE_WORKER_ROWS_SMALL]
 default = ""
 status = "evaluated"
-summary = "RAD06: the few-rows-a-expert kernel (R3_MOE_HELPER_ROWS's) on the small (decode) lane: weights read once an expert for all its rows instead of once a route, since a decode request sends ~2.4 routes to each distinct expert; read per request, not bit-exact (different accumulation order)"
-activation = "R3_MOE_HELPER_ROWS_SMALL"
+summary = "RAD06: the few-rows-a-expert kernel (R3_MOE_WORKER_ROWS's) on the small (decode) lane: weights read once an expert for all its rows instead of once a route, since a decode request sends ~2.4 routes to each distinct expert; read per request, not bit-exact (different accumulation order)"
+activation = "R3_MOE_WORKER_ROWS_SMALL"
 
-[setting.R3_MOE_HELPER_FUSESTAGE]
+[setting.R3_MOE_WORKER_FUSESTAGE]
 default = "1"
 status = "validated"
 summary = "RAD06: the engine's activation staging for a step of at most 16 rows (decode) is done by the publish kernel instead of a separate staging kernel in front of it: a launch and its gap off the path before every helper request; same data, same fence; read per launch in the engine process; 0 keeps the separate kernel"
-activation = "r3_moe: R3_MOE_HELPER_FUSESTAGE on"
-evidence = ["docs/evidence/RAD06/R3_MOE_HELPER_FUSESTAGE.run.json"]
+activation = "r3_moe: R3_MOE_WORKER_FUSESTAGE on"
+evidence = ["docs/evidence/RAD06/R3_MOE_WORKER_FUSESTAGE.run.json"]
 
-[setting.R3_MOE_HELPER_TRACE]
+[setting.R3_MOE_WORKER_TRACE]
 default = ""
 status = "diagnostic"
-summary = "RAD06: every Nth finished request a helper lane prints its critical-path stamps as a TRACE line on stderr: the engine's local work between publish and wait (local_us), the engine's wait for this helper (wait_us) and the helper GPU's own request time (helper_gpu_us), each within one device's wall clock; the stamps are nine stores to the mapped request slot (five at publish, two in the engine's wait, two on the helper) and are always written, so this only enables the printing (compare an arm with R3_MOE_HELPER_TRACE=0 against the build without stamps for their cost); read with tools/lab/radiance/heat-placement/trace_report.py"
+summary = "RAD06: every Nth finished request a helper lane prints its critical-path stamps as a TRACE line on stderr: the engine's local work between publish and wait (local_us), the engine's wait for this helper (wait_us) and the helper GPU's own request time (helper_gpu_us), each within one device's wall clock; the stamps are nine stores to the mapped request slot (five at publish, two in the engine's wait, two on the helper) and are always written, so this only enables the printing (compare an arm with R3_MOE_WORKER_TRACE=0 against the build without stamps for their cost); read with tools/lab/radiance/heat-placement/trace_report.py"
 activation = "TRACE,lane"
 
 [setting.R3_MOE_SWEEP_FAST]
 default = ""
 status = "diagnostic"
-summary = "RAD06 replay-sweep harness only: compare each variant bitwise against the first and print a sum_abs checksum instead of running the CPU reference (r3_moe_helper --replay-sweep); never set while serving"
+summary = "RAD06 replay-sweep harness only: compare each variant bitwise against the first and print a sum_abs checksum instead of running the CPU reference (r3_moe_worker --replay-sweep); never set while serving"
 activation = "R3_MOE_SWEEP_FAST"
 
 [setting.R3_MOE_PROBE]
@@ -183,68 +183,68 @@ status = "diagnostic"
 summary = "RAD06 timing-only ablation of the f16 MoE GEMM (needs R3_MOE_FP16=1; OUTPUT IS INVALID): 1 no WMMA, 2 no E4M3 widening; never set in production"
 activation = "R3_MOE_PROBE"
 
-[setting.R3_MOE_HELPER_CAPTURE]
+[setting.R3_MOE_WORKER_CAPTURE]
 default = ""
 status = "diagnostic"
-summary = "directory: the helper writes real large-lane requests (layer slot map, routes, bf16 activations) there for `r3_moe_helper --replay MODEL FILE` (RAD06 kernel tuning on real request shapes)"
+summary = "directory: the helper writes real large-lane requests (layer slot map, routes, bf16 activations) there for `r3_moe_worker --replay MODEL FILE` (RAD06 kernel tuning on real request shapes)"
 
-[setting.R3_MOE_HELPER_CAPTURE_EVERY]
+[setting.R3_MOE_WORKER_CAPTURE_EVERY]
 default = "37"
 status = "diagnostic"
-summary = "with R3_MOE_HELPER_CAPTURE: capture every Nth large-lane request"
+summary = "with R3_MOE_WORKER_CAPTURE: capture every Nth large-lane request"
 
-[setting.R3_MOE_HELPER_CAPTURE_MAX]
+[setting.R3_MOE_WORKER_CAPTURE_MAX]
 default = "16"
 status = "diagnostic"
-summary = "with R3_MOE_HELPER_CAPTURE: at most this many request files"
+summary = "with R3_MOE_WORKER_CAPTURE: at most this many request files"
 
-[setting.R3_MOE_HELPER_GEMV_LARGE_ROWS]
+[setting.R3_MOE_WORKER_GEMV_LARGE_ROWS]
 default = "0"
 status = "evaluated"
 summary = "large-lane requests of at most this many rows take the decode GEMV (RAD06): replayed real requests show 9-row steps at ~0.5 ms a grouped-GEMM call for 25-51 routes; the large lane is sized per request, so the small lane is untouched"
-activation = "r3_moe_helper: large-lane requests up to"
+activation = "r3_moe_worker: large-lane requests up to"
 
-[setting.R3_MOE_HELPER_ROWS]
+[setting.R3_MOE_WORKER_ROWS]
 default = "0"
 status = "experimental"
 summary = "few-rows-a-expert MoE kernel for the helper's large (prefill) lane (RAD06): one block an (expert, 32 outputs), each decoded weight applied to up to 16 of the expert's rows. Shelved: correct but slower - 38% prefill (lab, 2026-10-15); harness A/B 2026-10-17: -76% pp4096, -40% tg512"
-activation = "r3_moe_helper: few-rows prefill kernel on the large lane"
+activation = "r3_moe_worker: few-rows prefill kernel on the large lane"
 
-[setting.R3_MOE_HELPER_INDEX]
+[setting.R3_MOE_WORKER_INDEX]
 default = "0"
 status = "experimental"
-summary = "this helper's index under R3_MOE_HELPER_COUNT: 0 creates the segment, 1 attaches to it"
+summary = "this helper's index under R3_MOE_WORKER_COUNT: 0 creates the segment, 1 attaches to it"
 
-[setting.R3_MOE_HELPER_SMALL_ROWS]
+[setting.R3_MOE_WORKER_SMALL_ROWS]
 default = "64"
 status = "experimental"
 summary = "helper small-lane size: steps up to this many rows run on GPU work the helper pre-queues at this fixed size (no host in the loop)"
 
-[setting.R3_MOE_HELPER_SMALL_LANES]
+[setting.R3_MOE_WORKER_SMALL_LANES]
 default = ""
 status = "experimental"
-summary = "RAD12: up to four ascending pre-queued small-lane sizes, e.g. 4,8,16,24; a step takes the first lane that fits its rows, else the large lane. Replaces the single R3_MOE_HELPER_SMALL_ROWS size when set. At three and four concurrent streams (12 and 16 rows with MTP) the 8-row lane sends the step to the large lane; a lane padded to 24 costs a 4-row step about 25%; the classes avoid both"
-activation = "r3_moe_helper: R3_MOE_HELPER_SMALL_LANES on"
+summary = "RAD12: up to four ascending pre-queued small-lane sizes, e.g. 4,8,16,24; a step takes the first lane that fits its rows, else the large lane. Replaces the single R3_MOE_WORKER_SMALL_ROWS size when set. At three and four concurrent streams (12 and 16 rows with MTP) the 8-row lane sends the step to the large lane; a lane padded to 24 costs a 4-row step about 25%; the classes avoid both"
+activation = "r3_moe_worker: R3_MOE_WORKER_SMALL_LANES on"
 
-[setting.R3_MOE_HELPER_POISON]
+[setting.R3_MOE_WORKER_POISON]
 default = "0"
 status = "diagnostic"
 summary = "1 (any non-zero): every helper result value becomes 1e3 (proves the mailbox merge consumes helper rows); zero: results become 0 (same output as dropping remote routes)"
-activation = "R3_MOE_HELPER poison"
+activation = "R3_MOE_WORKER poison"
 
-[setting.R3_MOE_HELPER_SHADOW]
+[setting.R3_MOE_WORKER_SHADOW]
 default = "0"
 status = "diagnostic"
 summary = "diagnostic build only (patch rad0004, BC_MOE_REMOTE_DIAG): publish owned routes without masking them and compare helper unweighted down rows against the engine rows; a production engine ignores it and computes locally"
-activation = "R3_MOE_HELPER_SHADOW layer="
+activation = "R3_MOE_WORKER_SHADOW layer="
 
-[setting.R3_MOE_HELPER_MASK_ONLY]
+[setting.R3_MOE_WORKER_MASK_ONLY]
 default = "0"
 status = "diagnostic"
 summary = "diagnostic build only (patch rad0004, BC_MOE_REMOTE_DIAG): 1: mask and rescatter after the local GEMMs, merge engine-captured rows; 2: same late publish, merge the helper's per-token rows; a production engine ignores it and computes locally"
-activation = "R3_MOE_HELPER_MASK_ONLY enabled"
+activation = "R3_MOE_WORKER_MASK_ONLY enabled"
 
-[setting.R3_MOE_HELPER_PLUGIN]
+[setting.R3_MOE_WORKER_PLUGIN]
 default = ""
 status = "diagnostic"
 summary = "override the kernel plugin the helper loads through the rad_plugin ABI (default: libr4d.so on gfx1201, libr3.so on gfx1100)"
@@ -252,7 +252,7 @@ summary = "override the kernel plugin the helper loads through the rad_plugin AB
 [setting.R3_MOE_NATIVE]
 default = "1"
 status = "experimental"
-summary = "native w4nl64 MoE inner loop; -6% call time, Flash-Next quality neutral (KLD unchanged). On by default in the r3_moe_helper processes (main() sets 1 unless the variable is set, 2bf231e3: prefill 2,518 -> 2,665 tok/s, decode 91.4/95.6 -> 108.2/108.8); the engine process reads an unset variable as off, so an arm or profile that wants the engine's own MoE GEMM native sets it explicitly, and 0 turns it off everywhere"
+summary = "native w4nl64 MoE inner loop; -6% call time, Flash-Next quality neutral (KLD unchanged). On by default in the r3_moe_worker processes (main() sets 1 unless the variable is set, 2bf231e3: prefill 2,518 -> 2,665 tok/s, decode 91.4/95.6 -> 108.2/108.8); the engine process reads an unset variable as off, so an arm or profile that wants the engine's own MoE GEMM native sets it explicitly, and 0 turns it off everywhere"
 
 [setting.R3_HC_NATIVE]
 default = "0"

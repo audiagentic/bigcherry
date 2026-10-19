@@ -1,5 +1,5 @@
 {
-  "_comment": "RAD10-02: does the helper small-lane row limit explain the multi-stream step growth? With MTP depth 3 a stream sends about 4 rows a verify step, so three or more streams exceed 8 rows and fall onto the large lane. Arms: R3_MOE_HELPER_SMALL_ROWS 8 (production) against 24 (covers six streams). Streams 1, 2, 3, 4 and 6; engine counters from /metrics in every cell and the helpers' own per-request TRACE lines (R3_MOE_HELPER_TRACE=1, both arms, with wall_ns) bucketed per round by heat-placement/trace_report.py --windows. Set RAD_BIN, RAD_HOME and R9700_BDF as for helper-ab.json.",
+  "_comment": "RAD10-02: does the helper small-lane row limit explain the multi-stream step growth? With MTP depth 3 a stream sends about 4 rows a verify step, so three or more streams exceed 8 rows and fall onto the large lane. Arms: R3_MOE_WORKER_SMALL_ROWS 8 (production) against 24 (covers six streams). Streams 1, 2, 3, 4 and 6; engine counters from /metrics in every cell and the helpers' own per-request TRACE lines (R3_MOE_WORKER_TRACE=1, both arms, with wall_ns) bucketed per round by heat-placement/trace_report.py --windows. Set RAD_BIN, RAD_HOME and R9700_BDF as for helper-ab.json.",
   "schema_version": 1,
   "engine": "radiance",
   "evidence_role": "diagnostic",
@@ -35,7 +35,7 @@
     "HIP_VISIBLE_DEVICES": "0",
     "ROCR_VISIBLE_DEVICES": "2",
     "RADIANCE_HOME": "${RAD_HOME}",
-    "R3_MOE_HELPER_SKIP_OWNED": "1"
+    "R3_MOE_WORKER_SKIP_OWNED": "1"
   },
   "expected_execution": {
     "backend": "ROCm",
@@ -68,16 +68,16 @@
       "shutdown_method": "sigint",
       "binary": "${RAD_BIN}",
       "settings": {
-        "R3_MOE_HELPER": "1",
-        "R3_MOE_HELPER_DEVICES": "0 1",
-        "R3_MOE_HELPER_MOE_DOWN_TILE": "1",
-        "R3_MOE_HELPER_ENGINE_RANKS": "1",
-        "R3_MOE_HELPER_MAX_ROWS": "4096",
-        "R3_MOE_HELPER_SMALL_ROWS": "8",
-        "R3_MOE_HELPER_MIB": "22528",
-        "R3_MOE_HELPER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
-        "R3_MOE_HELPER_ROWS": "0",
-        "R3_MOE_HELPER_TRACE": "1"
+        "R3_MOE_WORKER": "1",
+        "R3_MOE_WORKER_DEVICES": "0 1",
+        "R3_MOE_WORKER_MOE_DOWN_TILE": "1",
+        "R3_MOE_WORKER_ENGINE_RANKS": "1",
+        "R3_MOE_WORKER_MAX_ROWS": "4096",
+        "R3_MOE_WORKER_SMALL_ROWS": "8",
+        "R3_MOE_WORKER_MIB": "22528",
+        "R3_MOE_WORKER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
+        "R3_MOE_WORKER_ROWS": "0",
+        "R3_MOE_WORKER_TRACE": "1"
       }
     },
     {
@@ -86,16 +86,16 @@
       "shutdown_method": "sigint",
       "binary": "${RAD_BIN}",
       "settings": {
-        "R3_MOE_HELPER": "1",
-        "R3_MOE_HELPER_DEVICES": "0 1",
-        "R3_MOE_HELPER_MOE_DOWN_TILE": "1",
-        "R3_MOE_HELPER_ENGINE_RANKS": "1",
-        "R3_MOE_HELPER_MAX_ROWS": "4096",
-        "R3_MOE_HELPER_SMALL_ROWS": "24",
-        "R3_MOE_HELPER_MIB": "22528",
-        "R3_MOE_HELPER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
-        "R3_MOE_HELPER_ROWS": "0",
-        "R3_MOE_HELPER_TRACE": "1"
+        "R3_MOE_WORKER": "1",
+        "R3_MOE_WORKER_DEVICES": "0 1",
+        "R3_MOE_WORKER_MOE_DOWN_TILE": "1",
+        "R3_MOE_WORKER_ENGINE_RANKS": "1",
+        "R3_MOE_WORKER_MAX_ROWS": "4096",
+        "R3_MOE_WORKER_SMALL_ROWS": "24",
+        "R3_MOE_WORKER_MIB": "22528",
+        "R3_MOE_WORKER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
+        "R3_MOE_WORKER_ROWS": "0",
+        "R3_MOE_WORKER_TRACE": "1"
       }
     }
   ],

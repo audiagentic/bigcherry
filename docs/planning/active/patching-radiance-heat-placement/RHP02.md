@@ -15,7 +15,7 @@ work: L
 
 ## Description
 
-Expose a **read-only, one-to-many** observation from Radiance's existing histogram consumption, not a parallel GPU-side aggregation. Feed both the current `HeatEngine` and a separate cross-GPU ownership *policy consumer* from the same source events. Remove production dependence on `R3_MOE_HELPER_HISTOGRAM`/`R3_MOE_HELPER_HEAT` only after matching coverage and ranking; avoid compatibility aliases.
+Expose a **read-only, one-to-many** observation from Radiance's existing histogram consumption, not a parallel GPU-side aggregation. Feed both the current `HeatEngine` and a separate cross-GPU ownership *policy consumer* from the same source events. Remove production dependence on `R3_MOE_WORKER_HISTOGRAM`/`R3_MOE_WORKER_HEAT` only after matching coverage and ranking; avoid compatibility aliases.
 
 ## Steps
 
@@ -23,7 +23,7 @@ Expose a **read-only, one-to-many** observation from Radiance's existing histogr
 2. Publish from the existing CPU `tiering_dispatch` completed-bank loop exactly once per credited histogram; do not dispatch callbacks from `rad_route_report`, alter router math, copy counts again from GPU, or wait for future samples. Keep the existing `HeatEngine::observe` order and `last_histogram_reports`.
 3. Make observation work if `HeatEngine::enabled()==false` (all resident or helper-owned units `Tier::Mapped`) without turning **placement** on; `--deterministic` suppresses adaptation but may permit explicit read-only diagnostics. Avoid observing twice if multiple ranks share equivalent global counts; define rank selection/aggregation and MTP protected-layer semantics.
 4. Keep callback constant-time and bounded: queue or accumulate small immutable host snapshots out of the inference dispatch loop; no filesystem I/O, sorting, mutex contention with helpers, RPC, CPU callback on GPU critical stream or extra copy. Document queue full/restart policy and coverage counters. Consumer may use the same score formula or phase-specific window, but must not fork the *collection path*.
-5. Wire `libr3moe` ownership policy to the shared observations, compare its (layer,expert) counts and ordering against current `R3_MOE_HELPER_HISTOGRAM` diagnostic on matched runs; test prefill/decode split and protected slots. Once parity is accepted, remove duplicated GPU allocations, route counting kernel and heat file env vars from production component/settings/tests/docs in one migration, with no deprecated aliases.
+5. Wire `libr3moe` ownership policy to the shared observations, compare its (layer,expert) counts and ordering against current `R3_MOE_WORKER_HISTOGRAM` diagnostic on matched runs; test prefill/decode split and protected slots. Once parity is accepted, remove duplicated GPU allocations, route counting kernel and heat file env vars from production component/settings/tests/docs in one migration, with no deprecated aliases.
 
 ## Detailed Solution & Technical Design
 
@@ -31,7 +31,7 @@ Expose a **read-only, one-to-many** observation from Radiance's existing histogr
 
 ## Files
 
-New/extended package in `engines/radiance/patches/` touching upstream `abi/`, `core/engine.cpp` (and `ctx` only when required); `engines/radiance/components/libr3/helper/{moe_remote_hook.cpp,moe_remote_gpu.h,r3_moe_helper.cpp}`; `component.toml`, patch tests, module parity tests and docs.
+New/extended package in `engines/radiance/patches/` touching upstream `abi/`, `core/engine.cpp` (and `ctx` only when required); `engines/radiance/components/libr3/worker/{moe_remote_hook.cpp,moe_remote_gpu.h,r3_moe_worker.cpp}`; `component.toml`, patch tests, module parity tests and docs.
 
 ## Validation
 
@@ -90,7 +90,7 @@ This is a design sketch; verify ABI and registry/layout conventions in pinned Ra
 
 ### Parity fixture
 
-For every matched tuple `(rank,step,layer,model-global expert)`, compare source count and report multiplicity to the legacy `R3_MOE_HELPER_HISTOGRAM` diagnostic. If the old histogram is cumulative rather than step-scoped, compare exact sums over an identical known-complete window and report the difference in coverage. Count a route only once across mirrored TP ranks; don't erroneously halve partitioned tensors. Protected experts must appear in **routing evidence** even though never remote-eligible.
+For every matched tuple `(rank,step,layer,model-global expert)`, compare source count and report multiplicity to the legacy `R3_MOE_WORKER_HISTOGRAM` diagnostic. If the old histogram is cumulative rather than step-scoped, compare exact sums over an identical known-complete window and report the difference in coverage. Count a route only once across mirrored TP ranks; don't erroneously halve partitioned tensors. Protected experts must appear in **routing evidence** even though never remote-eligible.
 
 ### Patch-engine mechanics and placement
 
@@ -98,4 +98,4 @@ Keep engine package separate from libr3 component modifications. Use exact code-
 
 ### Gate
 
-Offline tests: ABI mismatch, null observer, early unregister, borrowed-pointer lifetime, no histogram after helper init, phase=mixed, MTP reports >1, dropped event and deterministic/all-VRAM. Hardware: parity across full 32K prefill, four-doc KL unchanged, no extra GPU-side counter or D2H copy and no blocking in critical path. Remove `R3_MOE_HELPER_HISTOGRAM` and `R3_MOE_HELPER_HEAT` only when full parity passes.
+Offline tests: ABI mismatch, null observer, early unregister, borrowed-pointer lifetime, no histogram after helper init, phase=mixed, MTP reports >1, dropped event and deterministic/all-VRAM. Hardware: parity across full 32K prefill, four-doc KL unchanged, no extra GPU-side counter or D2H copy and no blocking in critical path. Remove `R3_MOE_WORKER_HISTOGRAM` and `R3_MOE_WORKER_HEAT` only when full parity passes.

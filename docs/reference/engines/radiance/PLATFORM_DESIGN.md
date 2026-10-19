@@ -85,7 +85,7 @@ validate them. Current disposition:
 - `R3_AR_PIPE`: forced off; measured regression.
 - `R3_AR_TIMING`: diagnostic-only, never production profile.
 - `R3_NGRAM_DEV`: optional helper experiment; not part of the current two-XTX configuration of record.
-- `R3_MOE_HELPER`: in-progress; no production profile until mechanics, correctness, KL and A/B evidence exist.
+- `R3_MOE_WORKER`: in-progress; no production profile until mechanics, correctness, KL and A/B evidence exist.
 
 ### 4. Runtime profiles are engine-owned recipe objects
 

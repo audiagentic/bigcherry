@@ -415,7 +415,7 @@ int compute_host(const Container& f, void* map, Request* q) {
     return 0;
 }
 
-const char* shm_name() { const char* e=std::getenv("R3_MOE_HELPER_SHM"); return e&&*e?e:"/r3-moe-helper"; }
+const char* shm_name() { const char* e=std::getenv("R3_MOE_WORKER_SHM"); return e&&*e?e:"/r3-moe-helper"; }
 }
 
 #include "moe_remote_gpu.h"
@@ -424,7 +424,7 @@ namespace {
 
 
 uint64_t helper_budget_bytes() {
-    const char* e = std::getenv("R3_MOE_HELPER_MIB");
+    const char* e = std::getenv("R3_MOE_WORKER_MIB");
     if (!e || !*e) return 28672ull * 1024ull * 1024ull;
     char* end = nullptr;
     errno = 0;
@@ -443,18 +443,18 @@ uint32_t env_rows(const char* e, uint32_t fallback) {
     return (uint32_t)std::min<unsigned long>(v, kMaxRows);
 }
 /* The largest step handed off (the engine reads the same variable) and the small, pre-queued lane size. */
-uint32_t helper_max_rows() { return env_rows(std::getenv("R3_MOE_HELPER_MAX_ROWS"), 64); }
-uint32_t helper_small_rows() { return std::min(env_rows(std::getenv("R3_MOE_HELPER_SMALL_ROWS"), 64), helper_max_rows()); }
+uint32_t helper_max_rows() { return env_rows(std::getenv("R3_MOE_WORKER_MAX_ROWS"), 64); }
+uint32_t helper_small_rows() { return std::min(env_rows(std::getenv("R3_MOE_WORKER_SMALL_ROWS"), 64), helper_max_rows()); }
 
-/* The pre-queued small-lane sizes (RAD12): R3_MOE_HELPER_SMALL_LANES="4,8,16,24" (up to kSmallClasses, strictly ascending,
- * each within the large-lane capacity), else the single size R3_MOE_HELPER_SMALL_ROWS gives (the production behaviour). */
+/* The pre-queued small-lane sizes (RAD12): R3_MOE_WORKER_SMALL_LANES="4,8,16,24" (up to kSmallClasses, strictly ascending,
+ * each within the large-lane capacity), else the single size R3_MOE_WORKER_SMALL_ROWS gives (the production behaviour). */
 struct SmallClasses {
     std::array<uint32_t, r3::moe_shm::kSmallClasses> rows{};
     uint32_t count = 0;
 };
 SmallClasses helper_small_classes() {
     SmallClasses sc;
-    const char* list = std::getenv("R3_MOE_HELPER_SMALL_LANES");
+    const char* list = std::getenv("R3_MOE_WORKER_SMALL_LANES");
     if (!list || !*list) {
         sc.rows[0] = helper_small_rows();
         sc.count = 1;
@@ -466,7 +466,7 @@ SmallClasses helper_small_classes() {
         char* end = nullptr;
         const long v = std::strtol(p, &end, 10);
         if (end == p || v <= 0 || (uint32_t)v > cap || (sc.count && (uint32_t)v <= sc.rows[sc.count - 1])) {
-            std::fprintf(stderr, "r3_moe_helper: R3_MOE_HELPER_SMALL_LANES=%s must be up to %u ascending sizes within %u rows\n",
+            std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_SMALL_LANES=%s must be up to %u ascending sizes within %u rows\n",
                          list, (unsigned)r3::moe_shm::kSmallClasses, cap);
             return SmallClasses{};
         }
@@ -476,7 +476,7 @@ SmallClasses helper_small_classes() {
         else break;
     }
     if (*p) {
-        std::fprintf(stderr, "r3_moe_helper: R3_MOE_HELPER_SMALL_LANES=%s has more than %u sizes or trailing text\n", list,
+        std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_SMALL_LANES=%s has more than %u sizes or trailing text\n", list,
                      (unsigned)r3::moe_shm::kSmallClasses);
         return SmallClasses{};
     }
@@ -563,7 +563,7 @@ bool backend_accepts(const Container& f, const char* arch, bool verbose) {
     MoeShape shape{};
     MoeExpertDesc d{};
     if (!container_shape(f, &shape) || !describe_expert(f, 0, 0, &d)) {
-        std::fprintf(stderr, "r3_moe_helper: the container's first expert could not be described\n");
+        std::fprintf(stderr, "r3_moe_worker: the container's first expert could not be described\n");
         return false;
     }
     shape.top_k = 1;      // the container does not carry the engine's top-k; the check here is the format and geometry
@@ -574,7 +574,7 @@ bool backend_accepts(const Container& f, const char* arch, bool verbose) {
     const int rc = r3::moe_backend::probe(r3::moe_backend::gfx1100_backend(), shape, d.weight, caps);
     if (verbose || rc != MOE_OK)
         std::fprintf(stderr,
-                     "r3_moe_helper: container: %u layers, %u experts, hidden %u, expert width %u, weight format %s "
+                     "r3_moe_worker: container: %u layers, %u experts, hidden %u, expert width %u, weight format %s "
                      "(scale dtype %u, tile %ux%u), gfx1100 backend: %s\n",
                      shape.layers, shape.experts, shape.hidden, shape.intermediate, format_name(d.weight.format),
                      d.weight.scale_dtype, d.weight.block_n, d.weight.block_k,
@@ -598,21 +598,21 @@ int64_t laid_out_bytes(const Container& f, r3_moe_gpu::Runner* gpu, uint32_t l, 
 bool segment_shape(const Container& f, r3::moe_shm::LayoutShape* shape, r3::moe_shm::Layout* lay) {
     MoeShape cs{};
     if (!container_shape(f, &cs)) {
-        std::fprintf(stderr, "r3_moe_helper: the container's shape could not be read\n");
+        std::fprintf(stderr, "r3_moe_worker: the container's shape could not be read\n");
         return false;
     }
     *shape = r3::moe_shm::LayoutShape{cs.hidden, r3::moe_shm::kTopK, cs.experts, r3::moe_shm::kMaxRows,
                                       r3::moe_shm::kActGroup, cs.intermediate};
     if (*shape != r3::moe_shm::legacy_shape()) {
         std::fprintf(stderr,
-                     "r3_moe_helper: this model (hidden %u, %u experts, expert width %u) is not executable yet: the lane kernels "
+                     "r3_moe_worker: this model (hidden %u, %u experts, expert width %u) is not executable yet: the lane kernels "
                      "still take hidden %u, %u experts and width %u (RCS09-04 to 07)\n",
                      shape->hidden, shape->experts, shape->intermediate, r3::moe_shm::kHidden, r3::moe_shm::kExperts,
                      r3::moe_shm::kLegacyIntermediate);
         return false;
     }
     if (!r3::moe_shm::layout_for(*shape, lay)) {
-        std::fprintf(stderr, "r3_moe_helper: the shared-memory layout for this shape is invalid\n");
+        std::fprintf(stderr, "r3_moe_worker: the shared-memory layout for this shape is invalid\n");
         return false;
     }
     return true;
@@ -626,14 +626,14 @@ struct Owned {
 bool select_owned(const Container& f, r3_moe_gpu::Runner* gpu, uint64_t budget, uint32_t helper,
                   uint32_t helpers, Owned* out) {
     if (!out || !budget) {
-        std::fprintf(stderr, "r3_moe_helper: no helper budget\n");
+        std::fprintf(stderr, "r3_moe_worker: no helper budget\n");
         return false;
     }
     if (!backend_accepts(f, gpu ? gpu->arch().c_str() : "gfx1100", false)) return false;
     if (gpu) {   // the contract's size must be the size the device layout really takes, or no budget arithmetic can be trusted
         const int64_t want = laid_out_bytes(f, gpu, 0, 0), got = gpu->expert_bytes(0, 0);
         if (want != got) {
-            std::fprintf(stderr, "r3_moe_helper: expert size disagrees with the device layout (contract %lld, layout %lld)\n",
+            std::fprintf(stderr, "r3_moe_worker: expert size disagrees with the device layout (contract %lld, layout %lld)\n",
                          (long long)want, (long long)got);
             return false;
         }
@@ -642,15 +642,15 @@ bool select_owned(const Container& f, r3_moe_gpu::Runner* gpu, uint64_t budget, 
     /* A container converted without calibration has no profile: take experts expert-major (unsorted)
      * so the budget spreads over all layers. */
     std::vector<RadFileProfile> flat;
-    /* R3_MOE_HELPER_HEAT: route counts a profiling run wrote (R3_MOE_HELPER_HISTOGRAM). Coldest first, so the
+    /* R3_MOE_WORKER_HEAT: route counts a profiling run wrote (R3_MOE_WORKER_HISTOGRAM). Coldest first, so the
      * engine keeps the experts most tokens route to and a decode step hands off as little as possible. */
-    if (const char* hp = std::getenv("R3_MOE_HELPER_HEAT"); hp && *hp) {
+    if (const char* hp = std::getenv("R3_MOE_WORKER_HEAT"); hp && *hp) {
         std::vector<uint32_t> heat((size_t)kMaxLayers * kExperts, 0);
         FILE* hf = std::fopen(hp, "rb");
         const size_t got = hf ? std::fread(heat.data(), sizeof(uint32_t), heat.size(), hf) : 0;
         if (hf) std::fclose(hf);
         if (got != heat.size()) {
-            std::fprintf(stderr, "r3_moe_helper: R3_MOE_HELPER_HEAT %s: want %zu counts, read %zu\n",
+            std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_HEAT %s: want %zu counts, read %zu\n",
                          hp, heat.size(), got);
             return false;
         }
@@ -661,10 +661,10 @@ bool select_owned(const Container& f, r3_moe_gpu::Runner* gpu, uint64_t budget, 
         std::stable_sort(flat.begin(), flat.end(), [](const RadFileProfile& a, const RadFileProfile& b) {
             return a.share < b.share;
         });
-        std::fprintf(stderr, "r3_moe_helper: owning the coldest experts of %s first\n", hp);
+        std::fprintf(stderr, "r3_moe_worker: owning the coldest experts of %s first\n", hp);
         for (const RadFileProfile& p : flat) order.push_back(&p);
     } else if (!f.profile || !f.h->prof_count) {
-        std::fprintf(stderr, "r3_moe_helper: container has no expert profile; owning experts evenly across layers\n");
+        std::fprintf(stderr, "r3_moe_worker: container has no expert profile; owning experts evenly across layers\n");
         /* Highest ids first: the engine's initial placement keeps low ids resident on the XTX and
          * leaves the high ids in its host pool (measured: every host-pool route was expert >= 302). */
         for (uint32_t e = kExperts; e-- > 0;)
@@ -683,7 +683,7 @@ bool select_owned(const Container& f, r3_moe_gpu::Runner* gpu, uint64_t budget, 
         if (a->layer != b->layer) return a->layer < b->layer;
         return a->expert < b->expert;
     });
-    /* R3_MOE_HELPER_BALANCE (RAD06, needs R3_MOE_HELPER_HEAT and two helpers): the same jointly owned set the
+    /* R3_MOE_WORKER_BALANCE (RAD06, needs R3_MOE_WORKER_HEAT and two helpers): the same jointly owned set the
      * alternation below would pick, split per layer by predicted cost instead. A layer finishes when both helpers
      * have, so each layer wants max(helper0, helper1) small; alternating down one global ranking balances the number
      * of experts, not the work. Each helper runs this on its own, so everything here is a deterministic function of the
@@ -691,10 +691,10 @@ bool select_owned(const Container& f, r3_moe_gpu::Runner* gpu, uint64_t budget, 
      *   lam = prefill_tokens * top_k * share      cost = (1 - exp(-lam)) * c0 + c1 * lam + (1 - exp(-lam_d)) * d0
      * (a fixed weight-tile part when the expert is active plus a part a routed row, and the same for a decode step).
      * The heat file holds max + 1 - count (so the hottest sort first); the counts are max - value.
-     * R3_MOE_HELPER_BALANCE_SPEED="s0,s1" scales a helper's cost by 1/s (a slower card takes less). */
-    if (const char* bv = std::getenv("R3_MOE_HELPER_BALANCE"); bv && *bv && std::strcmp(bv, "0") != 0) {
+     * R3_MOE_WORKER_BALANCE_SPEED="s0,s1" scales a helper's cost by 1/s (a slower card takes less). */
+    if (const char* bv = std::getenv("R3_MOE_WORKER_BALANCE"); bv && *bv && std::strcmp(bv, "0") != 0) {
         if (helpers != 2 || flat.empty()) {
-            std::fprintf(stderr, "r3_moe_helper: R3_MOE_HELPER_BALANCE needs R3_MOE_HELPER_HEAT and two helpers\n");
+            std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_BALANCE needs R3_MOE_WORKER_HEAT and two helpers\n");
             return false;
         }
         struct Pick { uint32_t l, e; int64_t bytes; double cost; };
@@ -709,7 +709,7 @@ bool select_owned(const Container& f, r3_moe_gpu::Runner* gpu, uint64_t budget, 
             return (1.0 - std::exp(-lam)) * c0 + c1 * lam + (1.0 - std::exp(-lam_d)) * d0;
         };
         double speed[2] = {1.0, 1.0};
-        if (const char* sv = std::getenv("R3_MOE_HELPER_BALANCE_SPEED"); sv && *sv) {
+        if (const char* sv = std::getenv("R3_MOE_WORKER_BALANCE_SPEED"); sv && *sv) {
             double a = 0.0, b = 0.0;
             if (std::sscanf(sv, "%lf,%lf", &a, &b) == 2 && a > 0.0 && b > 0.0) { speed[0] = a; speed[1] = b; }
         }
@@ -726,7 +726,7 @@ bool select_owned(const Container& f, r3_moe_gpu::Runner* gpu, uint64_t budget, 
                 const uint32_t who = (uint32_t)(pos++ % 2);
                 const int64_t bytes = laid_out_bytes(f, gpu, l, e);
                 if (bytes <= 0) {
-                    std::fprintf(stderr, "r3_moe_helper: expert (%u,%u) cannot be sized for the device\n", l, e);
+                    std::fprintf(stderr, "r3_moe_worker: expert (%u,%u) cannot be sized for the device\n", l, e);
                     return false;
                 }
                 if ((uint64_t)bytes > budget - held[who]) continue;
@@ -765,10 +765,10 @@ bool select_owned(const Container& f, r3_moe_gpu::Runner* gpu, uint64_t budget, 
             out->expert.emplace_back(joint[i].l, joint[i].e);
             out->bytes += (uint64_t)joint[i].bytes;
         }
-        std::fprintf(stderr, "r3_moe_helper: R3_MOE_HELPER_BALANCE: per-layer cost split of %zu jointly owned experts\n",
+        std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_BALANCE: per-layer cost split of %zu jointly owned experts\n",
                      joint.size());
         if (out->expert.empty()) {
-            std::fprintf(stderr, "r3_moe_helper: R3_MOE_HELPER_MIB fits no profiled expert\n");
+            std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_MIB fits no profiled expert\n");
             return false;
         }
         return true;
@@ -784,7 +784,7 @@ bool select_owned(const Container& f, r3_moe_gpu::Runner* gpu, uint64_t budget, 
         if (position++ % helpers != helper) continue;
         const int64_t bytes = laid_out_bytes(f, gpu, l, e);
         if (bytes <= 0) {
-            std::fprintf(stderr, "r3_moe_helper: expert (%u,%u) cannot be sized for the device\n", l, e);
+            std::fprintf(stderr, "r3_moe_worker: expert (%u,%u) cannot be sized for the device\n", l, e);
             return false;
         }
         if ((uint64_t)bytes > budget - out->bytes) continue;
@@ -792,7 +792,7 @@ bool select_owned(const Container& f, r3_moe_gpu::Runner* gpu, uint64_t budget, 
         out->bytes += (uint64_t)bytes;
     }
     if (out->expert.empty()) {
-        std::fprintf(stderr, "r3_moe_helper: R3_MOE_HELPER_MIB fits no profiled expert\n");
+        std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_MIB fits no profiled expert\n");
         return false;
     }
     return true;
@@ -803,7 +803,7 @@ void publish_owned(void* map, const Owned& owned, uint32_t helper) {
     __atomic_fetch_add(&h->owned_bytes, owned.bytes, __ATOMIC_ACQ_REL);
     for (auto [l, e] : owned.expert) {
         if (!set_owned(map, l, e, helper))
-            std::fprintf(stderr, "r3_moe_helper: duplicate/invalid ownership (%u,%u)\n", l, e);
+            std::fprintf(stderr, "r3_moe_worker: duplicate/invalid ownership (%u,%u)\n", l, e);
     }
 }
 
@@ -817,8 +817,8 @@ bool parse_u32(const char* s, uint32_t lo, uint32_t hi, uint32_t* out) {
     return true;
 }
 
-/* REQUEST CAPTURE / REPLAY (RAD06). R3_MOE_HELPER_CAPTURE=<dir> writes real large-lane requests (every
- * R3_MOE_HELPER_CAPTURE_EVERY-th, at most R3_MOE_HELPER_CAPTURE_MAX) as <dir>/req-<lane>-<seq>.bin:
+/* REQUEST CAPTURE / REPLAY (RAD06). R3_MOE_WORKER_CAPTURE=<dir> writes real large-lane requests (every
+ * R3_MOE_WORKER_CAPTURE_EVERY-th, at most R3_MOE_WORKER_CAPTURE_MAX) as <dir>/req-<lane>-<seq>.bin:
  * CaptureHeader, the layer's runtime slot map (kExperts int32), the routes, the bf16 activation rows.
  * `--replay MODEL FILE` runs --compare's machinery on that request instead of synthetic routing. */
 struct CaptureHeader {
@@ -827,14 +827,14 @@ struct CaptureHeader {
 constexpr uint32_t kCaptureMagic = 0x52335243u;  // "CR3R"
 
 void capture_request(void* map, const Request* q, uint32_t lane, uint32_t seq) {
-    static const char* dir = std::getenv("R3_MOE_HELPER_CAPTURE");
+    static const char* dir = std::getenv("R3_MOE_WORKER_CAPTURE");
     if (!dir || !*dir) return;
     static const uint32_t every = [] {
-        const char* v = std::getenv("R3_MOE_HELPER_CAPTURE_EVERY");
+        const char* v = std::getenv("R3_MOE_WORKER_CAPTURE_EVERY");
         return v && *v ? std::max(1, std::atoi(v)) : 37;
     }();
     static const uint32_t max_n = [] {
-        const char* v = std::getenv("R3_MOE_HELPER_CAPTURE_MAX");
+        const char* v = std::getenv("R3_MOE_WORKER_CAPTURE_MAX");
         return v && *v ? std::max(1, std::atoi(v)) : 16;
     }();
     static std::atomic<uint32_t> written{0};
@@ -855,13 +855,13 @@ void capture_request(void* map, const Request* q, uint32_t lane, uint32_t seq) {
     written.fetch_add(1);
 }
 
-/* R3_MOE_HELPER_TRACE=N: print the stamps of every Nth finished request ("TRACE,..." on stderr). The engine writes its
+/* R3_MOE_WORKER_TRACE=N: print the stamps of every Nth finished request ("TRACE,..." on stderr). The engine writes its
  * wait stamps right after it sees the helper's done word, so a request is read once the lane has moved on to the next
  * one. Engine stamps (0-2) and helper stamps (3-4) come from different devices' clocks and are only ever subtracted
  * within their own group; wall_clock64 runs at hipDeviceAttributeWallClockRate (100 MHz on these cards). */
 void trace_dump(void* map, uint32_t lane, uint32_t seq) {
     static const uint32_t every = [] {
-        const char* v = std::getenv("R3_MOE_HELPER_TRACE");
+        const char* v = std::getenv("R3_MOE_WORKER_TRACE");
         return v && *v ? (uint32_t)std::max(0, std::atoi(v)) : 0u;
     }();
     if (!every || seq == 0 || seq % every != 0) return;
@@ -918,7 +918,7 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
         rows = g_replay->hd.rows;
     }
     if (layer >= model.layers || rows == 0 || rows > lane_large_rows) {
-        std::fprintf(stderr, "r3_moe_helper: --compare rows %u above R3_MOE_HELPER_MAX_ROWS %u\n",
+        std::fprintf(stderr, "r3_moe_worker: --compare rows %u above R3_MOE_WORKER_MAX_ROWS %u\n",
                      rows, lane_large_rows);
         return 2;
     }
@@ -947,7 +947,7 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
             local_expert.push_back(e);
     if (remote_expert.size() < 2 || local_expert.empty()) {
         std::fprintf(stderr,
-                     "r3_moe_helper: --compare layer %u needs >=2 owned and >=1 local experts\n",
+                     "r3_moe_worker: --compare layer %u needs >=2 owned and >=1 local experts\n",
                      layer);
         return 1;
     }
@@ -958,7 +958,7 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
                 (((uint32_t)runtime_slot[e] & 1u) != (e & 1u));
         if (!shifted_parity) {
             std::fprintf(stderr,
-                         "r3_moe_helper: --compare synthetic protection did not shift an owned TP class\n");
+                         "r3_moe_worker: --compare synthetic protection did not shift an owned TP class\n");
             return 1;
         }
     }
@@ -1023,7 +1023,7 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
     void* map = mmap(nullptr, lay.bytes, PROT_READ | PROT_WRITE,
                      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     if (map == MAP_FAILED) {
-        std::fprintf(stderr, "r3_moe_helper: --compare mmap: %s\n", std::strerror(errno));
+        std::fprintf(stderr, "r3_moe_worker: --compare mmap: %s\n", std::strerror(errno));
         return 1;
     }
     if (!init(map, model.layers, shape)) return 1;
@@ -1033,7 +1033,7 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
     std::memcpy(layer_slots(map, layer), runtime_slot.data(), sizeof(runtime_slot));
     store(&h->layer_map_ready[layer], 1);
     if (!gpu.load_layer(layer, owned.expert, runtime_slot.data())) {
-        std::fprintf(stderr, "r3_moe_helper: --compare layer %u runtime table build failed\n", layer);
+        std::fprintf(stderr, "r3_moe_worker: --compare layer %u runtime table build failed\n", layer);
         munmap(map, lay.bytes);
         return 1;
     }
@@ -1099,7 +1099,7 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
                         g_replay->acts.size() * sizeof(float));
         } else if (!gpu.stage_compare_activation(map, lane, activation.data(), rows)) {
             std::fprintf(stderr,
-                         "r3_moe_helper: --compare rank %u could not stage exact q/s\n", rank);
+                         "r3_moe_worker: --compare rank %u could not stage exact q/s\n", rank);
             bad = true;
             break;
         }
@@ -1108,7 +1108,7 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
         const int erc = gpu.enqueue_lane(map, dev_map, lane, sequence,
                                          lane_is_small(lane) ? h->small_class_rows[lane_class(lane)] : rows, false);
         if (erc != 0) {
-            std::fprintf(stderr, "r3_moe_helper: --compare lane rank %u enqueue failed rc=%d\n",
+            std::fprintf(stderr, "r3_moe_worker: --compare lane rank %u enqueue failed rc=%d\n",
                          rank, erc);
             bad = true;
             break;
@@ -1117,7 +1117,7 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
         if (gpu.sync_lane(lane)) gpu.gemv_debug_report(lane);
         if (!gpu.sync_lane(lane) || load(&h->lane[lane].done_sequence) != sequence || q->status != 0) {
             std::fprintf(stderr,
-                         "r3_moe_helper: --compare lane rank %u completion failed status=%d done=%u\n",
+                         "r3_moe_worker: --compare lane rank %u completion failed status=%d done=%u\n",
                          rank, q->status, load(&h->lane[lane].done_sequence));
             bad = true;
             break;
@@ -1148,7 +1148,7 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
         const int hrc = compute_host_engine(model, map, q, &want_route);
         if (hrc != 0 || want_route.size() != (size_t)nr * kHidden) {
             std::fprintf(stderr,
-                         "r3_moe_helper: --compare local-path host rank %u failed rc=%d\n",
+                         "r3_moe_worker: --compare local-path host rank %u failed rc=%d\n",
                          rank, hrc);
             bad = true;
             break;
@@ -1226,13 +1226,13 @@ int main(int argc, char** argv) {
         };
         const bool native = is_on("R3_MOE_NATIVE", false);
         if (native && is_on("R3_MOE_FP16", false))
-            std::fprintf(stderr, "r3_moe_helper: R3_MOE_FP16 on - f16 WMMA MoE GEMM\n");
+            std::fprintf(stderr, "r3_moe_worker: R3_MOE_FP16 on - f16 WMMA MoE GEMM\n");
         if (native && is_on("R3_MOE_FP16", false) && is_on("R3_MOE_AHALF", false))
-            std::fprintf(stderr, "r3_moe_helper: R3_MOE_AHALF on - activation tile widened to half at staging\n");
-        if (is_on("R3_MOE_HELPER_VECIO", true))
-            std::fprintf(stderr, "r3_moe_helper: R3_MOE_HELPER_VECIO on - 16-byte lane I/O\n");
-        if (is_on("R3_MOE_HELPER_FUSEROUTE", true))
-            std::fprintf(stderr, "r3_moe_helper: R3_MOE_HELPER_FUSEROUTE on - fused small-lane front end\n");
+            std::fprintf(stderr, "r3_moe_worker: R3_MOE_AHALF on - activation tile widened to half at staging\n");
+        if (is_on("R3_MOE_WORKER_VECIO", true))
+            std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_VECIO on - 16-byte lane I/O\n");
+        if (is_on("R3_MOE_WORKER_FUSEROUTE", true))
+            std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_FUSEROUTE on - fused small-lane front end\n");
     }
     /* --replay-sweep MODEL VARIANTS FILE...: one process, one model load and one expert allocation for every capture,
      * then each capture is replayed once per variant. VARIANTS is ';'-separated, each "NAME=value,NAME=value" (empty
@@ -1244,7 +1244,7 @@ int main(int argc, char** argv) {
     if (argc >= 3 && std::strcmp(argv[1], "--describe") == 0) {
         Container model;
         if (!model.open(argv[2])) {
-            std::fprintf(stderr, "r3_moe_helper: --describe %s: not a container\n", argv[2]);
+            std::fprintf(stderr, "r3_moe_worker: --describe %s: not a container\n", argv[2]);
             return 2;
         }
         return backend_accepts(model, "gfx1100", true) ? 0 : 3;
@@ -1261,7 +1261,7 @@ int main(int argc, char** argv) {
         sweep_replays.resize((size_t)(argc - 4));
         for (int i = 4; i < argc; ++i)
             if (!load_replay(argv[i], &sweep_replays[(size_t)(i - 4)])) {
-                std::fprintf(stderr, "r3_moe_helper: --replay-sweep %s: not a capture file\n", argv[i]);
+                std::fprintf(stderr, "r3_moe_worker: --replay-sweep %s: not a capture file\n", argv[i]);
                 return 2;
             }
         { const char* f = std::getenv("R3_MOE_SWEEP_FAST"); g_sweep_fast = f && *f && std::strcmp(f, "0") != 0; }
@@ -1282,7 +1282,7 @@ int main(int argc, char** argv) {
     static const char* replay_argv[8];
     if (sweep_replays.empty() && argc == 4 && std::strcmp(argv[1], "--replay") == 0) {
         if (!load_replay(argv[3], &replay)) {
-            std::fprintf(stderr, "r3_moe_helper: --replay %s: not a capture file\n", argv[3]);
+            std::fprintf(stderr, "r3_moe_worker: --replay %s: not a capture file\n", argv[3]);
             return 2;
         }
         g_replay = &replay;
@@ -1293,7 +1293,7 @@ int main(int argc, char** argv) {
         std::copy(std::begin(rebuilt), std::end(rebuilt), replay_argv);
         argv = const_cast<char**>(replay_argv);
         argc = 7;
-        std::fprintf(stderr, "r3_moe_helper: replay layer %u rows %u routes %u\n", replay.hd.layer, replay.hd.rows,
+        std::fprintf(stderr, "r3_moe_worker: replay layer %u rows %u routes %u\n", replay.hd.layer, replay.hd.rows,
                      replay.hd.route_count);
     }
     bool compare =argc > 1 && std::strcmp(argv[1], "--compare") == 0;
@@ -1306,7 +1306,7 @@ int main(int argc, char** argv) {
     if (compare) {
         if (carg == 5 && std::strcmp(argv[3], "--rows") == 0) {
             if (!parse_u32(argv[4], 1, kMaxRows, &compare_rows)) {
-                std::fprintf(stderr, "usage: r3_moe_helper --compare MODEL.rad --rows M\n");
+                std::fprintf(stderr, "usage: r3_moe_worker --compare MODEL.rad --rows M\n");
                 return 2;
             }
         } else if (carg == 7 && std::strcmp(argv[3], "--layer") == 0 &&
@@ -1316,13 +1316,13 @@ int main(int argc, char** argv) {
             compare_one_layer = true;
         } else {
             std::fprintf(stderr,
-                "usage: r3_moe_helper --compare MODEL.rad [--layer L] --rows M [--synthetic-protect]\n");
+                "usage: r3_moe_worker --compare MODEL.rad [--layer L] --rows M [--synthetic-protect]\n");
             return 2;
         }
         model_path = argv[2];
     } else {
         if (argc != 2) {
-            std::fprintf(stderr, "usage: r3_moe_helper MODEL.rad\n");
+            std::fprintf(stderr, "usage: r3_moe_worker MODEL.rad\n");
             return 2;
         }
         model_path = argv[1];
@@ -1330,19 +1330,19 @@ int main(int argc, char** argv) {
 
     Container model;
     if (!model.open(model_path) || model.layers > kMaxLayers) {
-        std::fprintf(stderr, "r3_moe_helper: cannot open/validate %s\n", model_path);
+        std::fprintf(stderr, "r3_moe_worker: cannot open/validate %s\n", model_path);
         return 1;
     }
 
-    const char* cpu_env = std::getenv("R3_MOE_HELPER_CPU");
+    const char* cpu_env = std::getenv("R3_MOE_WORKER_CPU");
     const bool cpu = cpu_env && *cpu_env && std::strcmp(cpu_env, "0") != 0 && !compare;
     std::unique_ptr<r3_moe_gpu::Runner> gpu;
     if (!cpu) {
         gpu = std::make_unique<r3_moe_gpu::Runner>(model);
-        if (const char* e = std::getenv("R3_MOE_HELPER_ENGINE_RANKS"); e && *e) {
+        if (const char* e = std::getenv("R3_MOE_WORKER_ENGINE_RANKS"); e && *e) {
             const int n = std::atoi(e);
             if (n < 1 || n > (int)kMaxRanks) {
-                std::fprintf(stderr, "r3_moe_helper: R3_MOE_HELPER_ENGINE_RANKS=%s, want 1..%u\n", e, kMaxRanks);
+                std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_ENGINE_RANKS=%s, want 1..%u\n", e, kMaxRanks);
                 return 2;
             }
             gpu->engine_ranks_ = (uint32_t)n;
@@ -1350,16 +1350,16 @@ int main(int argc, char** argv) {
         if (!gpu->open()) return 1;
     }
 
-    /* R3_MOE_HELPER_COUNT=2 with R3_MOE_HELPER_INDEX=0/1: two helpers (the XTX cards) behind a one-rank engine
+    /* R3_MOE_WORKER_COUNT=2 with R3_MOE_WORKER_INDEX=0/1: two helpers (the XTX cards) behind a one-rank engine
      * (the R9700) share one segment; helper 0 creates it, helper 1 attaches, each owns half the candidates and
      * serves its own rank slot. */
     uint32_t helper_index = 0, helper_count = 1;
-    if (const char* e = std::getenv("R3_MOE_HELPER_COUNT"); e && *e) helper_count = (uint32_t)std::atoi(e);
-    if (const char* e = std::getenv("R3_MOE_HELPER_INDEX"); e && *e) helper_index = (uint32_t)std::atoi(e);
+    if (const char* e = std::getenv("R3_MOE_WORKER_COUNT"); e && *e) helper_count = (uint32_t)std::atoi(e);
+    if (const char* e = std::getenv("R3_MOE_WORKER_INDEX"); e && *e) helper_index = (uint32_t)std::atoi(e);
     if (helper_count < 1 || helper_count > kMaxRanks || helper_index >= helper_count ||
         (helper_count > 1 && (!gpu || gpu->engine_ranks_ != 1 || compare))) {
-        std::fprintf(stderr, "r3_moe_helper: R3_MOE_HELPER_INDEX %u of R3_MOE_HELPER_COUNT %u: want index < count <= %u, "
-                     "and two helpers only on GPU behind a one-rank engine (R3_MOE_HELPER_ENGINE_RANKS=1), not --compare\n",
+        std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_INDEX %u of R3_MOE_WORKER_COUNT %u: want index < count <= %u, "
+                     "and two helpers only on GPU behind a one-rank engine (R3_MOE_WORKER_ENGINE_RANKS=1), not --compare\n",
                      helper_index, helper_count, kMaxRanks);
         return 2;
     }
@@ -1387,8 +1387,8 @@ int main(int argc, char** argv) {
     std::string lane_list;                       /* "4,8,16,24", for the log */
     for (uint32_t c = 0; c < lane_classes.count; ++c)
         lane_list += (c ? "," : "") + std::to_string(lane_classes.rows[c]);
-    if (const char* sl = std::getenv("R3_MOE_HELPER_SMALL_LANES"); sl && *sl)
-        std::fprintf(stderr, "r3_moe_helper: R3_MOE_HELPER_SMALL_LANES on - small lanes %s\n", lane_list.c_str());
+    if (const char* sl = std::getenv("R3_MOE_WORKER_SMALL_LANES"); sl && *sl)
+        std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_SMALL_LANES on - small lanes %s\n", lane_list.c_str());
     long rss_pages = 0;
     if (FILE* sf = std::fopen("/proc/self/statm", "r")) {
         long total_pages = 0;
@@ -1396,7 +1396,7 @@ int main(int argc, char** argv) {
         std::fclose(sf);
     }
     const double rss_mib = rss_pages > 0 ? (double)rss_pages * (double)sysconf(_SC_PAGESIZE) / (1024.0 * 1024.0) : -1.0;
-    std::fprintf(stderr, "r3_moe_helper: selected %zu expert candidates, %.3f GiB; host RSS %.1f MiB\n",
+    std::fprintf(stderr, "r3_moe_worker: selected %zu expert candidates, %.3f GiB; host RSS %.1f MiB\n",
                  owned.expert.size(), (double)owned.bytes / (1024.0 * 1024.0 * 1024.0), rss_mib);
 
     if (compare && !sweep_replays.empty()) {
@@ -1434,7 +1434,7 @@ int main(int argc, char** argv) {
         int rc = 0;
         for (uint32_t layer : {0u, 20u, 34u, 47u}) {
             if (layer >= model.layers) {
-                std::fprintf(stderr, "r3_moe_helper: --compare layer %u unavailable (layers=%u)\n",
+                std::fprintf(stderr, "r3_moe_worker: --compare layer %u unavailable (layers=%u)\n",
                              layer, model.layers);
                 rc = 1;
                 continue;
@@ -1463,16 +1463,16 @@ int main(int argc, char** argv) {
         }
     }
     if (fd < 0) {
-        std::fprintf(stderr, "r3_moe_helper: shm_open %s: %s\n", name, std::strerror(errno));
+        std::fprintf(stderr, "r3_moe_worker: shm_open %s: %s\n", name, std::strerror(errno));
         return 1;
     }
     if (creator && ftruncate(fd, (off_t)lay.bytes) != 0) {
-        std::fprintf(stderr, "r3_moe_helper: ftruncate: %s\n", std::strerror(errno));
+        std::fprintf(stderr, "r3_moe_worker: ftruncate: %s\n", std::strerror(errno));
         drop_name(); close(fd); return 1;
     }
     void* map = mmap(nullptr, lay.bytes, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     if (map == MAP_FAILED) {
-        std::fprintf(stderr, "r3_moe_helper: mmap: %s\n", std::strerror(errno));
+        std::fprintf(stderr, "r3_moe_worker: mmap: %s\n", std::strerror(errno));
         drop_name(); close(fd); return 1;
     }
     auto* h = static_cast<Header*>(map);
@@ -1489,7 +1489,7 @@ int main(int argc, char** argv) {
         for (uint32_t c = 0; same_lanes && c < lane_classes.count; ++c)
             same_lanes = h->small_class_rows[c] == lane_classes.rows[c];
         if (!same_lanes) {
-            std::fprintf(stderr, "r3_moe_helper: segment %s is not helper 0's %u-helper segment (small lanes %u, ours %s)\n",
+            std::fprintf(stderr, "r3_moe_worker: segment %s is not helper 0's %u-helper segment (small lanes %u, ours %s)\n",
                          name, helper_count, (unsigned)h->small_class_count, lane_list.c_str());
             munmap(map, lay.bytes); close(fd); return 1;
         }
@@ -1504,7 +1504,7 @@ int main(int argc, char** argv) {
         }
     }
 
-    std::fprintf(stderr, "r3_moe_helper: waiting for engine runtime expert maps\n");
+    std::fprintf(stderr, "r3_moe_worker: waiting for engine runtime expert maps\n");
     /* The first map waits as long as the engine takes to start. After that the engine declares its
      * layers back to back, so a layer whose map has not come within 10 s is one this engine never
      * declares (the MTP layer in a run without speculation, e.g. KL mode): drop its ownership. */
@@ -1520,7 +1520,7 @@ int main(int argc, char** argv) {
             if (!load(&h->layer_map_ready[layer])) break;
         }
         if (!load(&h->layer_map_ready[layer])) {
-            std::fprintf(stderr, "r3_moe_helper: layer %u has no runtime map (not declared by the engine); not owned\n",
+            std::fprintf(stderr, "r3_moe_worker: layer %u has no runtime map (not declared by the engine); not owned\n",
                          layer);
             for (auto [l, e] : owned.expert)
                 if (l == layer) (void)clear_owned(map, l, e, helper_index);
@@ -1534,7 +1534,7 @@ int main(int argc, char** argv) {
         for (auto [l, e] : owned.expert)
             if (l == layer && slots[e] < 0) (void)clear_owned(map, l, e, helper_index);
         if (gpu && !gpu->load_layer(layer, owned.expert, slots)) {
-            std::fprintf(stderr, "r3_moe_helper: layer %u runtime table build failed\n", layer);
+            std::fprintf(stderr, "r3_moe_worker: layer %u runtime table build failed\n", layer);
             store(&h->layer_map_consumed[layer], 1);
             (void)futex_wake(&h->layer_map_consumed[layer]);
             munmap(map, lay.bytes); close(fd); drop_name(); return 1;
@@ -1556,7 +1556,7 @@ int main(int argc, char** argv) {
         munmap(map, lay.bytes); close(fd); drop_name(); return 1;
     }
     if (gpu) (void)posix_fadvise(model.fd, 0, 0, POSIX_FADV_DONTNEED);
-    std::fprintf(stderr, "r3_moe_helper: runtime map owns %zu experts, %.3f GiB\n",
+    std::fprintf(stderr, "r3_moe_worker: runtime map owns %zu experts, %.3f GiB\n",
                  owned.expert.size(), (double)owned.bytes / (1024.0 * 1024.0 * 1024.0));
 
     /* No SA_RESTART (std::signal sets it): the futex wait must return EINTR so the loop sees g_stop. */
@@ -1566,7 +1566,7 @@ int main(int argc, char** argv) {
     sa.sa_flags = 0;
     sigaction(SIGINT, &sa, nullptr); sigaction(SIGTERM, &sa, nullptr);
     std::fprintf(stderr,
-                 "r3_moe_helper: ready shm=%s layers=%u bytes=%llu (%s, small lane rows <= %s, large <= %u)\n",
+                 "r3_moe_worker: ready shm=%s layers=%u bytes=%llu (%s, small lane rows <= %s, large <= %u)\n",
                  name, model.layers, (unsigned long long)lay.bytes,
                  cpu ? "host fp32 reference" : gpu->arch().c_str(), lane_list.c_str(), lane_large_rows);
 
@@ -1618,7 +1618,7 @@ int main(int argc, char** argv) {
                          * the next one until it has merged this one, so waiting here costs nothing. */
                         const int rc = gpu->enqueue_lane(map, dev_map, lane, next, rows, true);
                         if (rc != 0) {
-                            std::fprintf(stderr, "r3_moe_helper: large lane %u seq %u rows %u failed rc=%d\n",
+                            std::fprintf(stderr, "r3_moe_worker: large lane %u seq %u rows %u failed rc=%d\n",
                                          lane, next, rows, rc);
                             g_stop = 1;
                             break;
@@ -1637,7 +1637,7 @@ int main(int argc, char** argv) {
                         const int rc = gpu->enqueue_lane(map, dev_map, lane, next, lane_classes.rows[lane_class(lane)], sample);
                         if (rc != 0) {
                             std::fprintf(stderr,
-                                         "r3_moe_helper: lane %u enqueue seq %u failed rc=%d\n",
+                                         "r3_moe_worker: lane %u enqueue seq %u failed rc=%d\n",
                                          lane, next, rc);
                             return false;
                         }
@@ -1714,22 +1714,22 @@ int main(int argc, char** argv) {
                 req += lane_req[lane_of(r, c)];
                 rows += lane_rows[lane_of(r, c)];
             }
-            std::fprintf(stderr, "r3_moe_helper: small lane class %u (rows <= %u): requests %llu (%llu rows)\n", c,
+            std::fprintf(stderr, "r3_moe_worker: small lane class %u (rows <= %u): requests %llu (%llu rows)\n", c,
                          lane_classes.rows[c], (unsigned long long)req, (unsigned long long)rows);
         }
-        std::fprintf(stderr, "r3_moe_helper: large-lane requests %llu (%llu rows)\n",
+        std::fprintf(stderr, "r3_moe_worker: large-lane requests %llu (%llu rows)\n",
                      (unsigned long long)(lane_req[lane_of(0, kSmallClasses)] + lane_req[lane_of(1, kSmallClasses)]),
                      (unsigned long long)(lane_rows[lane_of(0, kSmallClasses)] + lane_rows[lane_of(1, kSmallClasses)]));
         if (timing_samples && stat_req)
             stat_us = (sampled_us / (double)timing_samples) * (double)stat_req;
         std::fprintf(stderr,
-                     "r3_moe_helper: GPU timing samples=%llu sampled=%.1f ms avg=%.1f us\n",
+                     "r3_moe_worker: GPU timing samples=%llu sampled=%.1f ms avg=%.1f us\n",
                      (unsigned long long)timing_samples, sampled_us / 1000.0,
                      timing_samples ? sampled_us / (double)timing_samples : 0.0);
 
     }
 
-    std::fprintf(stderr, "r3_moe_helper: served %llu requests, %llu rows, %llu routes, compute %.1f ms (%.1f us a request)\n",
+    std::fprintf(stderr, "r3_moe_worker: served %llu requests, %llu rows, %llu routes, compute %.1f ms (%.1f us a request)\n",
                  (unsigned long long)stat_req, (unsigned long long)stat_rows, (unsigned long long)stat_routes,
                  stat_us / 1000.0, stat_req ? stat_us / (double)stat_req : 0.0);
     if (!cpu) (void)hipHostUnregister(map);

@@ -15,7 +15,7 @@ work: M
 
 ## Description
 
-The helper replay harness (r3_moe_helper --replay-sweep, capture format 2) and its drivers are the fast loop for helper work but run as lab scripts. Wrap them as bigcherry verbs on the radiance engine: `moe-capture` (record real requests during an ab cell), `moe-replay` (one model load, env variants, bitwise compare, optional rocprofv3 kernel trace), `moe-trace-report` (TRACE lines to critical-path report), `moe-balance-score` (offline layout scorer). Each writes a JSON record under the run workspace and reads its builds through the lane, not a hand-built tree. Replay is also the identity gate for RCS02-RCS05.
+The helper replay harness (r3_moe_worker --replay-sweep, capture format 2) and its drivers are the fast loop for helper work but run as lab scripts. Wrap them as bigcherry verbs on the radiance engine: `moe-capture` (record real requests during an ab cell), `moe-replay` (one model load, env variants, bitwise compare, optional rocprofv3 kernel trace), `moe-trace-report` (TRACE lines to critical-path report), `moe-balance-score` (offline layout scorer). Each writes a JSON record under the run workspace and reads its builds through the lane, not a hand-built tree. Replay is also the identity gate for RCS02-RCS05.
 
 ## Steps
 

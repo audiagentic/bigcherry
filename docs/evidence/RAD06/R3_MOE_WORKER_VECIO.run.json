@@ -8,7 +8,7 @@
     "replay activation, if applicable, requires separate admission"
   ],
   "configuration": {
-    "_comment": "RAD06 (2026-10-18): R3_MOE_HELPER_FUSEROUTE off vs on: the small (decode) lane's routing prologue as one block against four memsets and four kernels. Bit-identical, so the generated text matches between arms and decode tok/s is comparable. Set RAD_BIN, RAD_HOME and R9700_BDF before use. Not used by tests.",
+    "_comment": "RAD06 (2026-10-18): R3_MOE_WORKER_VECIO off vs on (the helper's activation copy and result write, 16-byte accesses) on the Brutus layout. Set RAD_BIN, RAD_HOME and R9700_BDF before use. Not used by tests.",
     "schema_version": 1,
     "engine": "radiance",
     "evidence_role": "diagnostic",
@@ -44,7 +44,7 @@
       "HIP_VISIBLE_DEVICES": "0",
       "ROCR_VISIBLE_DEVICES": "2",
       "RADIANCE_HOME": "${RAD_HOME}",
-      "R3_MOE_HELPER_SKIP_OWNED": "1"
+      "R3_MOE_WORKER_SKIP_OWNED": "1"
     },
     "expected_execution": {
       "backend": "ROCm",
@@ -64,39 +64,39 @@
     "health_timeout_s": 900,
     "arms": [
       {
-        "name": "fuse-off",
+        "name": "vecio-off",
         "mode": "stock",
         "shutdown_method": "sigint",
         "binary": "${RAD_BIN}",
         "settings": {
-          "R3_MOE_HELPER": "1",
-          "R3_MOE_HELPER_DEVICES": "0 1",
-          "R3_MOE_HELPER_MOE_DOWN_TILE": "1",
-          "R3_MOE_HELPER_ENGINE_RANKS": "1",
-          "R3_MOE_HELPER_MAX_ROWS": "4096",
-          "R3_MOE_HELPER_SMALL_ROWS": "8",
-          "R3_MOE_HELPER_MIB": "22528",
-          "R3_MOE_HELPER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
+          "R3_MOE_WORKER": "1",
+          "R3_MOE_WORKER_DEVICES": "0 1",
+          "R3_MOE_WORKER_MOE_DOWN_TILE": "1",
+          "R3_MOE_WORKER_ENGINE_RANKS": "1",
+          "R3_MOE_WORKER_MAX_ROWS": "4096",
+          "R3_MOE_WORKER_SMALL_ROWS": "8",
+          "R3_MOE_WORKER_MIB": "22528",
+          "R3_MOE_WORKER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
           "R3_MOE_NATIVE": "1",
-          "R3_MOE_HELPER_FUSEROUTE": "0"
+          "R3_MOE_WORKER_VECIO": "0"
         }
       },
       {
-        "name": "fuse-on",
+        "name": "vecio-on",
         "mode": "stock",
         "shutdown_method": "sigint",
         "binary": "${RAD_BIN}",
         "settings": {
-          "R3_MOE_HELPER": "1",
-          "R3_MOE_HELPER_DEVICES": "0 1",
-          "R3_MOE_HELPER_MOE_DOWN_TILE": "1",
-          "R3_MOE_HELPER_ENGINE_RANKS": "1",
-          "R3_MOE_HELPER_MAX_ROWS": "4096",
-          "R3_MOE_HELPER_SMALL_ROWS": "8",
-          "R3_MOE_HELPER_MIB": "22528",
-          "R3_MOE_HELPER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
+          "R3_MOE_WORKER": "1",
+          "R3_MOE_WORKER_DEVICES": "0 1",
+          "R3_MOE_WORKER_MOE_DOWN_TILE": "1",
+          "R3_MOE_WORKER_ENGINE_RANKS": "1",
+          "R3_MOE_WORKER_MAX_ROWS": "4096",
+          "R3_MOE_WORKER_SMALL_ROWS": "8",
+          "R3_MOE_WORKER_MIB": "22528",
+          "R3_MOE_WORKER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
           "R3_MOE_NATIVE": "1",
-          "R3_MOE_HELPER_FUSEROUTE": "1"
+          "R3_MOE_WORKER_VECIO": "1"
         }
       }
     ]
@@ -104,7 +104,7 @@
   "model_sha256": "0af5e96244e80c21ac8edca1719dae49b8a201b94a2f3994c3e24026ceaa4d20",
   "arm_model_sha256": {},
   "arm_provenance": {
-    "fuse-off": {
+    "vecio-off": {
       "campaign_metadata": {
         "binary_hash": "28873e58b255c700e93c848d98bd1972be64c14bbd9ff51a2b063b5415f9c084",
         "build_id": "ad41bb5f3cadd27c7acd6f3288ebb059",
@@ -217,7 +217,7 @@
         ]
       }
     },
-    "fuse-on": {
+    "vecio-on": {
       "campaign_metadata": {
         "binary_hash": "28873e58b255c700e93c848d98bd1972be64c14bbd9ff51a2b063b5415f9c084",
         "build_id": "ad41bb5f3cadd27c7acd6f3288ebb059",
@@ -332,45 +332,45 @@
     }
   },
   "arm_variables": {
-    "fuse-off": {
+    "vecio-off": {
       "environment": {},
       "settings": {
-        "R3_MOE_HELPER": "1",
-        "R3_MOE_HELPER_DEVICES": "0 1",
-        "R3_MOE_HELPER_MOE_DOWN_TILE": "1",
-        "R3_MOE_HELPER_ENGINE_RANKS": "1",
-        "R3_MOE_HELPER_MAX_ROWS": "4096",
-        "R3_MOE_HELPER_SMALL_ROWS": "8",
-        "R3_MOE_HELPER_MIB": "22528",
-        "R3_MOE_HELPER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
+        "R3_MOE_WORKER": "1",
+        "R3_MOE_WORKER_DEVICES": "0 1",
+        "R3_MOE_WORKER_MOE_DOWN_TILE": "1",
+        "R3_MOE_WORKER_ENGINE_RANKS": "1",
+        "R3_MOE_WORKER_MAX_ROWS": "4096",
+        "R3_MOE_WORKER_SMALL_ROWS": "8",
+        "R3_MOE_WORKER_MIB": "22528",
+        "R3_MOE_WORKER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
         "R3_MOE_NATIVE": "1",
-        "R3_MOE_HELPER_FUSEROUTE": "0"
+        "R3_MOE_WORKER_VECIO": "0"
       }
     },
-    "fuse-on": {
+    "vecio-on": {
       "environment": {},
       "settings": {
-        "R3_MOE_HELPER": "1",
-        "R3_MOE_HELPER_DEVICES": "0 1",
-        "R3_MOE_HELPER_MOE_DOWN_TILE": "1",
-        "R3_MOE_HELPER_ENGINE_RANKS": "1",
-        "R3_MOE_HELPER_MAX_ROWS": "4096",
-        "R3_MOE_HELPER_SMALL_ROWS": "8",
-        "R3_MOE_HELPER_MIB": "22528",
-        "R3_MOE_HELPER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
+        "R3_MOE_WORKER": "1",
+        "R3_MOE_WORKER_DEVICES": "0 1",
+        "R3_MOE_WORKER_MOE_DOWN_TILE": "1",
+        "R3_MOE_WORKER_ENGINE_RANKS": "1",
+        "R3_MOE_WORKER_MAX_ROWS": "4096",
+        "R3_MOE_WORKER_SMALL_ROWS": "8",
+        "R3_MOE_WORKER_MIB": "22528",
+        "R3_MOE_WORKER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
         "R3_MOE_NATIVE": "1",
-        "R3_MOE_HELPER_FUSEROUTE": "1"
+        "R3_MOE_WORKER_VECIO": "1"
       }
     }
   },
   "schedule": [
     [
-      "fuse-off",
-      "fuse-on"
+      "vecio-off",
+      "vecio-on"
     ],
     [
-      "fuse-on",
-      "fuse-off"
+      "vecio-on",
+      "vecio-off"
     ]
   ],
   "schedule_seed": 0,
@@ -378,22 +378,22 @@
   "runs": [
     {
       "pair": 1,
-      "mode": "fuse-off",
+      "mode": "vecio-off",
       "position": 0,
       "returncode": 0,
       "performance_admitted": false,
-      "server_log": "/mnt/data/bigcherry-work/runs/rad06-evidence-R3_MOE_HELPER_FUSEROUTE-1018233941/pair-001-fuse-off/server.log",
+      "server_log": "/mnt/data/bigcherry-work/runs/rad06-evidence-R3_MOE_WORKER_VECIO-1018232256/pair-001-vecio-off/server.log",
       "settings": {
-        "R3_MOE_HELPER": "1",
-        "R3_MOE_HELPER_DEVICES": "0 1",
-        "R3_MOE_HELPER_MOE_DOWN_TILE": "1",
-        "R3_MOE_HELPER_ENGINE_RANKS": "1",
-        "R3_MOE_HELPER_MAX_ROWS": "4096",
-        "R3_MOE_HELPER_SMALL_ROWS": "8",
-        "R3_MOE_HELPER_MIB": "22528",
-        "R3_MOE_HELPER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
+        "R3_MOE_WORKER": "1",
+        "R3_MOE_WORKER_DEVICES": "0 1",
+        "R3_MOE_WORKER_MOE_DOWN_TILE": "1",
+        "R3_MOE_WORKER_ENGINE_RANKS": "1",
+        "R3_MOE_WORKER_MAX_ROWS": "4096",
+        "R3_MOE_WORKER_SMALL_ROWS": "8",
+        "R3_MOE_WORKER_MIB": "22528",
+        "R3_MOE_WORKER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
         "R3_MOE_NATIVE": "1",
-        "R3_MOE_HELPER_FUSEROUTE": "0"
+        "R3_MOE_WORKER_VECIO": "0"
       },
       "execution_attestation": null,
       "execution_evidence_status": "missing",
@@ -401,14 +401,14 @@
         "physical-device execution evidence missing"
       ],
       "metrics": {
-        "pp256_tps": 1013.12,
-        "tg128_tps": 108.5,
-        "pp1024_tps": 3304.69,
-        "pp4096_tps": 3302.16,
-        "tg512_tps": 137.83,
-        "tg2048_tps": 142.75
+        "pp256_tps": 1478.51,
+        "tg128_tps": 110.32,
+        "pp1024_tps": 3148.24,
+        "pp4096_tps": 3156.46,
+        "tg512_tps": 137.53,
+        "tg2048_tps": 148.58
       },
-      "elapsed_s": 133.66184226889163,
+      "elapsed_s": 136.2701578491833,
       "shutdown": {
         "method": "sigint",
         "requested": true,
@@ -420,11 +420,11 @@
         {
           "name": "helper0",
           "argv": [
-            "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/8746530494caadeea8b16c865c2443fa/5aa7a3cbef4a9a15d55505b848642d3f/radiance_home/helpers/r3_moe_helper",
+            "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/8746530494caadeea8b16c865c2443fa/5aa7a3cbef4a9a15d55505b848642d3f/radiance_home/helpers/r3_moe_worker",
             "/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
           ],
-          "log": "/mnt/data/bigcherry-work/runs/rad06-evidence-R3_MOE_HELPER_FUSEROUTE-1018233941/pair-001-fuse-off/helper0.log",
-          "ready_s": 0.3008548538200557,
+          "log": "/mnt/data/bigcherry-work/runs/rad06-evidence-R3_MOE_WORKER_VECIO-1018232256/pair-001-vecio-off/helper0.log",
+          "ready_s": 0.3007348661776632,
           "returncode": 0,
           "exited_before_stop": false,
           "killed": false
@@ -432,11 +432,11 @@
         {
           "name": "helper1",
           "argv": [
-            "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/8746530494caadeea8b16c865c2443fa/5aa7a3cbef4a9a15d55505b848642d3f/radiance_home/helpers/r3_moe_helper",
+            "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/8746530494caadeea8b16c865c2443fa/5aa7a3cbef4a9a15d55505b848642d3f/radiance_home/helpers/r3_moe_worker",
             "/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
           ],
-          "log": "/mnt/data/bigcherry-work/runs/rad06-evidence-R3_MOE_HELPER_FUSEROUTE-1018233941/pair-001-fuse-off/helper1.log",
-          "ready_s": 0.2007810529321432,
+          "log": "/mnt/data/bigcherry-work/runs/rad06-evidence-R3_MOE_WORKER_VECIO-1018232256/pair-001-vecio-off/helper1.log",
+          "ready_s": 0.3005462388973683,
           "returncode": 0,
           "exited_before_stop": false,
           "killed": false
@@ -445,22 +445,22 @@
     },
     {
       "pair": 1,
-      "mode": "fuse-on",
+      "mode": "vecio-on",
       "position": 1,
       "returncode": 0,
       "performance_admitted": false,
-      "server_log": "/mnt/data/bigcherry-work/runs/rad06-evidence-R3_MOE_HELPER_FUSEROUTE-1018233941/pair-001-fuse-on/server.log",
+      "server_log": "/mnt/data/bigcherry-work/runs/rad06-evidence-R3_MOE_WORKER_VECIO-1018232256/pair-001-vecio-on/server.log",
       "settings": {
-        "R3_MOE_HELPER": "1",
-        "R3_MOE_HELPER_DEVICES": "0 1",
-        "R3_MOE_HELPER_MOE_DOWN_TILE": "1",
-        "R3_MOE_HELPER_ENGINE_RANKS": "1",
-        "R3_MOE_HELPER_MAX_ROWS": "4096",
-        "R3_MOE_HELPER_SMALL_ROWS": "8",
-        "R3_MOE_HELPER_MIB": "22528",
-        "R3_MOE_HELPER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
+        "R3_MOE_WORKER": "1",
+        "R3_MOE_WORKER_DEVICES": "0 1",
+        "R3_MOE_WORKER_MOE_DOWN_TILE": "1",
+        "R3_MOE_WORKER_ENGINE_RANKS": "1",
+        "R3_MOE_WORKER_MAX_ROWS": "4096",
+        "R3_MOE_WORKER_SMALL_ROWS": "8",
+        "R3_MOE_WORKER_MIB": "22528",
+        "R3_MOE_WORKER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
         "R3_MOE_NATIVE": "1",
-        "R3_MOE_HELPER_FUSEROUTE": "1"
+        "R3_MOE_WORKER_VECIO": "1"
       },
       "execution_attestation": null,
       "execution_evidence_status": "missing",
@@ -468,14 +468,14 @@
         "physical-device execution evidence missing"
       ],
       "metrics": {
-        "pp256_tps": 1161.08,
-        "tg128_tps": 111.35,
-        "pp1024_tps": 3297.46,
-        "pp4096_tps": 3299.81,
+        "pp256_tps": 1534.55,
+        "tg128_tps": 111.3,
+        "pp1024_tps": 3298.67,
+        "pp4096_tps": 3306.88,
         "tg512_tps": 138.77,
-        "tg2048_tps": 151.24
+        "tg2048_tps": 151.23
       },
-      "elapsed_s": 156.2334323581308,
+      "elapsed_s": 211.31911295908503,
       "shutdown": {
         "method": "sigint",
         "requested": true,
@@ -487,11 +487,11 @@
         {
           "name": "helper0",
           "argv": [
-            "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/8746530494caadeea8b16c865c2443fa/5aa7a3cbef4a9a15d55505b848642d3f/radiance_home/helpers/r3_moe_helper",
+            "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/8746530494caadeea8b16c865c2443fa/5aa7a3cbef4a9a15d55505b848642d3f/radiance_home/helpers/r3_moe_worker",
             "/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
           ],
-          "log": "/mnt/data/bigcherry-work/runs/rad06-evidence-R3_MOE_HELPER_FUSEROUTE-1018233941/pair-001-fuse-on/helper0.log",
-          "ready_s": 0.20058357086963952,
+          "log": "/mnt/data/bigcherry-work/runs/rad06-evidence-R3_MOE_WORKER_VECIO-1018232256/pair-001-vecio-on/helper0.log",
+          "ready_s": 0.2013783510774374,
           "returncode": 0,
           "exited_before_stop": false,
           "killed": false
@@ -499,11 +499,11 @@
         {
           "name": "helper1",
           "argv": [
-            "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/8746530494caadeea8b16c865c2443fa/5aa7a3cbef4a9a15d55505b848642d3f/radiance_home/helpers/r3_moe_helper",
+            "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/8746530494caadeea8b16c865c2443fa/5aa7a3cbef4a9a15d55505b848642d3f/radiance_home/helpers/r3_moe_worker",
             "/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
           ],
-          "log": "/mnt/data/bigcherry-work/runs/rad06-evidence-R3_MOE_HELPER_FUSEROUTE-1018233941/pair-001-fuse-on/helper1.log",
-          "ready_s": 0.2004953941795975,
+          "log": "/mnt/data/bigcherry-work/runs/rad06-evidence-R3_MOE_WORKER_VECIO-1018232256/pair-001-vecio-on/helper1.log",
+          "ready_s": 0.20069709606468678,
           "returncode": 0,
           "exited_before_stop": false,
           "killed": false
@@ -512,22 +512,22 @@
     },
     {
       "pair": 2,
-      "mode": "fuse-on",
+      "mode": "vecio-on",
       "position": 0,
       "returncode": 0,
       "performance_admitted": false,
-      "server_log": "/mnt/data/bigcherry-work/runs/rad06-evidence-R3_MOE_HELPER_FUSEROUTE-1018233941/pair-002-fuse-on/server.log",
+      "server_log": "/mnt/data/bigcherry-work/runs/rad06-evidence-R3_MOE_WORKER_VECIO-1018232256/pair-002-vecio-on/server.log",
       "settings": {
-        "R3_MOE_HELPER": "1",
-        "R3_MOE_HELPER_DEVICES": "0 1",
-        "R3_MOE_HELPER_MOE_DOWN_TILE": "1",
-        "R3_MOE_HELPER_ENGINE_RANKS": "1",
-        "R3_MOE_HELPER_MAX_ROWS": "4096",
-        "R3_MOE_HELPER_SMALL_ROWS": "8",
-        "R3_MOE_HELPER_MIB": "22528",
-        "R3_MOE_HELPER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
+        "R3_MOE_WORKER": "1",
+        "R3_MOE_WORKER_DEVICES": "0 1",
+        "R3_MOE_WORKER_MOE_DOWN_TILE": "1",
+        "R3_MOE_WORKER_ENGINE_RANKS": "1",
+        "R3_MOE_WORKER_MAX_ROWS": "4096",
+        "R3_MOE_WORKER_SMALL_ROWS": "8",
+        "R3_MOE_WORKER_MIB": "22528",
+        "R3_MOE_WORKER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
         "R3_MOE_NATIVE": "1",
-        "R3_MOE_HELPER_FUSEROUTE": "1"
+        "R3_MOE_WORKER_VECIO": "1"
       },
       "execution_attestation": null,
       "execution_evidence_status": "missing",
@@ -535,14 +535,14 @@
         "physical-device execution evidence missing"
       ],
       "metrics": {
-        "pp256_tps": 1538.32,
-        "tg128_tps": 113.91,
-        "pp1024_tps": 3302.01,
-        "pp4096_tps": 3301.74,
-        "tg512_tps": 144.9,
-        "tg2048_tps": 151.69
+        "pp256_tps": 1513.77,
+        "tg128_tps": 111.49,
+        "pp1024_tps": 3297.22,
+        "pp4096_tps": 3301.69,
+        "tg512_tps": 138.72,
+        "tg2048_tps": 151.27
       },
-      "elapsed_s": 161.1596980530303,
+      "elapsed_s": 159.19479634286836,
       "shutdown": {
         "method": "sigint",
         "requested": true,
@@ -554,11 +554,11 @@
         {
           "name": "helper0",
           "argv": [
-            "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/8746530494caadeea8b16c865c2443fa/5aa7a3cbef4a9a15d55505b848642d3f/radiance_home/helpers/r3_moe_helper",
+            "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/8746530494caadeea8b16c865c2443fa/5aa7a3cbef4a9a15d55505b848642d3f/radiance_home/helpers/r3_moe_worker",
             "/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
           ],
-          "log": "/mnt/data/bigcherry-work/runs/rad06-evidence-R3_MOE_HELPER_FUSEROUTE-1018233941/pair-002-fuse-on/helper0.log",
-          "ready_s": 0.20057315798476338,
+          "log": "/mnt/data/bigcherry-work/runs/rad06-evidence-R3_MOE_WORKER_VECIO-1018232256/pair-002-vecio-on/helper0.log",
+          "ready_s": 0.20032089203596115,
           "returncode": 0,
           "exited_before_stop": false,
           "killed": false
@@ -566,11 +566,11 @@
         {
           "name": "helper1",
           "argv": [
-            "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/8746530494caadeea8b16c865c2443fa/5aa7a3cbef4a9a15d55505b848642d3f/radiance_home/helpers/r3_moe_helper",
+            "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/8746530494caadeea8b16c865c2443fa/5aa7a3cbef4a9a15d55505b848642d3f/radiance_home/helpers/r3_moe_worker",
             "/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
           ],
-          "log": "/mnt/data/bigcherry-work/runs/rad06-evidence-R3_MOE_HELPER_FUSEROUTE-1018233941/pair-002-fuse-on/helper1.log",
-          "ready_s": 0.20069005200639367,
+          "log": "/mnt/data/bigcherry-work/runs/rad06-evidence-R3_MOE_WORKER_VECIO-1018232256/pair-002-vecio-on/helper1.log",
+          "ready_s": 0.20046595088206232,
           "returncode": 0,
           "exited_before_stop": false,
           "killed": false
@@ -579,22 +579,22 @@
     },
     {
       "pair": 2,
-      "mode": "fuse-off",
+      "mode": "vecio-off",
       "position": 1,
       "returncode": 0,
       "performance_admitted": false,
-      "server_log": "/mnt/data/bigcherry-work/runs/rad06-evidence-R3_MOE_HELPER_FUSEROUTE-1018233941/pair-002-fuse-off/server.log",
+      "server_log": "/mnt/data/bigcherry-work/runs/rad06-evidence-R3_MOE_WORKER_VECIO-1018232256/pair-002-vecio-off/server.log",
       "settings": {
-        "R3_MOE_HELPER": "1",
-        "R3_MOE_HELPER_DEVICES": "0 1",
-        "R3_MOE_HELPER_MOE_DOWN_TILE": "1",
-        "R3_MOE_HELPER_ENGINE_RANKS": "1",
-        "R3_MOE_HELPER_MAX_ROWS": "4096",
-        "R3_MOE_HELPER_SMALL_ROWS": "8",
-        "R3_MOE_HELPER_MIB": "22528",
-        "R3_MOE_HELPER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
+        "R3_MOE_WORKER": "1",
+        "R3_MOE_WORKER_DEVICES": "0 1",
+        "R3_MOE_WORKER_MOE_DOWN_TILE": "1",
+        "R3_MOE_WORKER_ENGINE_RANKS": "1",
+        "R3_MOE_WORKER_MAX_ROWS": "4096",
+        "R3_MOE_WORKER_SMALL_ROWS": "8",
+        "R3_MOE_WORKER_MIB": "22528",
+        "R3_MOE_WORKER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
         "R3_MOE_NATIVE": "1",
-        "R3_MOE_HELPER_FUSEROUTE": "0"
+        "R3_MOE_WORKER_VECIO": "0"
       },
       "execution_attestation": null,
       "execution_evidence_status": "missing",
@@ -602,14 +602,14 @@
         "physical-device execution evidence missing"
       ],
       "metrics": {
-        "pp256_tps": 1510.49,
-        "tg128_tps": 108.52,
-        "pp1024_tps": 3288.96,
-        "pp4096_tps": 3301.96,
-        "tg512_tps": 137.52,
-        "tg2048_tps": 143.97
+        "pp256_tps": 1348.52,
+        "tg128_tps": 110.31,
+        "pp1024_tps": 3142.29,
+        "pp4096_tps": 3151.73,
+        "tg512_tps": 85.05,
+        "tg2048_tps": 90.01
       },
-      "elapsed_s": 156.76927248295397,
+      "elapsed_s": 189.10966126900166,
       "shutdown": {
         "method": "sigint",
         "requested": true,
@@ -621,11 +621,11 @@
         {
           "name": "helper0",
           "argv": [
-            "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/8746530494caadeea8b16c865c2443fa/5aa7a3cbef4a9a15d55505b848642d3f/radiance_home/helpers/r3_moe_helper",
+            "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/8746530494caadeea8b16c865c2443fa/5aa7a3cbef4a9a15d55505b848642d3f/radiance_home/helpers/r3_moe_worker",
             "/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
           ],
-          "log": "/mnt/data/bigcherry-work/runs/rad06-evidence-R3_MOE_HELPER_FUSEROUTE-1018233941/pair-002-fuse-off/helper0.log",
-          "ready_s": 0.20041122008115053,
+          "log": "/mnt/data/bigcherry-work/runs/rad06-evidence-R3_MOE_WORKER_VECIO-1018232256/pair-002-vecio-off/helper0.log",
+          "ready_s": 0.2004947168752551,
           "returncode": 0,
           "exited_before_stop": false,
           "killed": false
@@ -633,11 +633,11 @@
         {
           "name": "helper1",
           "argv": [
-            "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/8746530494caadeea8b16c865c2443fa/5aa7a3cbef4a9a15d55505b848642d3f/radiance_home/helpers/r3_moe_helper",
+            "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/8746530494caadeea8b16c865c2443fa/5aa7a3cbef4a9a15d55505b848642d3f/radiance_home/helpers/r3_moe_worker",
             "/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
           ],
-          "log": "/mnt/data/bigcherry-work/runs/rad06-evidence-R3_MOE_HELPER_FUSEROUTE-1018233941/pair-002-fuse-off/helper1.log",
-          "ready_s": 0.20059463009238243,
+          "log": "/mnt/data/bigcherry-work/runs/rad06-evidence-R3_MOE_WORKER_VECIO-1018232256/pair-002-vecio-off/helper1.log",
+          "ready_s": 0.20052880910225213,
           "returncode": 0,
           "exited_before_stop": false,
           "killed": false
@@ -646,39 +646,39 @@
     }
   ],
   "exploratory_comparisons": {
-    "fuse-on_vs_fuse-off": {
+    "vecio-on_vs_vecio-off": {
       "pp1024_tps": {
         "paired_rounds": 2,
-        "geometric_effect_pct": 0.08852776699885823,
-        "ci95_low_pct": -0.21877997633665824,
-        "ci95_high_pct": 0.39678196147110434,
+        "geometric_effect_pct": 4.854325329846243,
+        "ci95_low_pct": 4.77822529413261,
+        "ci95_high_pct": 4.93048063673307,
         "resamples": 10000,
         "seed": 0,
         "pair_ratios": [
-          0.9978122002366334,
-          1.003967819614711
+          1.047782252941326,
+          1.0493048063673307
         ]
       },
       "tg512_tps": {
         "paired_rounds": 2,
-        "geometric_effect_pct": 2.99761704251047,
-        "ci95_low_pct": 0.681999564681135,
-        "ci95_high_pct": 5.366492146596857,
+        "geometric_effect_pct": 28.28664685755453,
+        "ci95_low_pct": 0.9016214644077758,
+        "ci95_high_pct": 63.104056437389765,
         "resamples": 10000,
         "seed": 0,
         "pair_ratios": [
-          1.0068199956468113,
-          1.0536649214659686
+          1.0090162146440778,
+          1.6310405643738977
         ]
       }
     }
   },
   "setting_activation": {
-    "fuse-on": {
-      "R3_MOE_HELPER_FUSEROUTE": {
+    "vecio-on": {
+      "R3_MOE_WORKER_VECIO": {
         "status": "executed",
-        "mechanism": "libr3:R3_MOE_HELPER_FUSEROUTE",
-        "detail": "marker 'r3_moe_helper: R3_MOE_HELPER_FUSEROUTE on': control False, subject True"
+        "mechanism": "libr3:R3_MOE_WORKER_VECIO",
+        "detail": "marker 'r3_moe_worker: R3_MOE_WORKER_VECIO on': control False, subject True"
       }
     }
   }

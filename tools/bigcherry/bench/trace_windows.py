@@ -1,6 +1,6 @@
 """Helper TRACE lines bucketed by the rounds of a stream-bench record (RAD10-02), as managed code a harvest recipe can run.
 
-The helpers print one TRACE line per finished request (R3_MOE_HELPER_TRACE=N):
+The helpers print one TRACE line per finished request (R3_MOE_WORKER_TRACE=N):
     TRACE,lane,L,seq,S,layer,Y,rows,R,routes,K,local_us,A,wait_us,B,helper_gpu_us,C,enter,T,wall_ns,W
 Lines are grouped by `enter` (one layer of one step; both helpers' lines of it share the value). A PAIRED group has both
 helpers' lines and its exposed wait is the larger wait_us; a SINGLE group has one. `wall_ns` is the helper host's epoch

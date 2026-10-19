@@ -1,5 +1,5 @@
 // libr3 kernel table: upstream gfx11 rows plus opt-in host helpers. The remote-MoE mailbox rows live in
-// their own plugin, libr3moe (helper/moe_mailbox_plugin.cpp).
+// their own plugin, libr3moe (worker/moe_mailbox_plugin.cpp).
 #include "rad_abi.h"
 
 #include <vector>

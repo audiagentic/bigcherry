@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""RAD06/RHP/RAD10: critical-path report from the helpers' TRACE lines (R3_MOE_HELPER_TRACE=N), no profiler.
+"""RAD06/RHP/RAD10: critical-path report from the helpers' TRACE lines (R3_MOE_WORKER_TRACE=N), no profiler.
 
 Each finished request a helper lane prints
     TRACE,lane,L,seq,S,layer,Y,rows,R,routes,K,local_us,A,wait_us,B,helper_gpu_us,C,enter,T,wall_ns,W
@@ -16,7 +16,7 @@ where, for one layer of one step,
 Lines are grouped by `enter`: one group is one layer of one step. A PAIRED group has both helpers' lines, and its exposed
 wait is the larger wait_us. A SINGLE group has one line: the other helper either had no routes that step (a genuine zero)
 or its line was not printed (a sampling stride above 1 counts each helper by its own sequence). The two are reported
-apart and never mixed; use R3_MOE_HELPER_TRACE=1 so a single group means an idle helper.
+apart and never mixed; use R3_MOE_WORKER_TRACE=1 so a single group means an idle helper.
 
   python3 trace_report.py [--small-rows 8] helper0.log helper1.log [...]      (all the logs of one cell)
   python3 trace_report.py --windows pair-001-x/stream-bench.json helper0.log helper1.log
@@ -133,7 +133,7 @@ def main():
     a = ap.parse_args()
     steps = read_steps(a.logs, a.small_rows)
     if not steps:
-        sys.exit('no TRACE lines (set R3_MOE_HELPER_TRACE=N on the helpers)')
+        sys.exit('no TRACE lines (set R3_MOE_WORKER_TRACE=N on the helpers)')
     if a.windows:
         rounds = json.load(open(a.windows))['rounds']
         if not any(s['wall_ns'] is not None for s in steps):

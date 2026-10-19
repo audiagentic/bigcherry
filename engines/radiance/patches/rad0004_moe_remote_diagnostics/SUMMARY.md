@@ -7,8 +7,8 @@
 
 Adds the remote-MoE diagnostics to the MoE block, for a diagnostic build only. Requires `rad0002_moe_remote_handoff`, whose extension point it hangs off.
 
-- Shadow compare (`R3_MOE_HELPER_SHADOW`): the helper computes the routes it owns and compares them with the local result, which still goes forward unchanged; libr3moe reports the per-layer error at shutdown.
-- Mask-only (`R3_MOE_HELPER_MASK_ONLY`): the local experts run unmasked, their rows are captured, the routes are published and masked late, local rows are restored to engine order, and the helper's rows (1: the engine's captured rows, 2: the helper's per-token rows) are merged.
+- Shadow compare (`R3_MOE_WORKER_SHADOW`): the helper computes the routes it owns and compares them with the local result, which still goes forward unchanged; libr3moe reports the per-layer error at shutdown.
+- Mask-only (`R3_MOE_WORKER_MASK_ONLY`): the local experts run unmasked, their rows are captured, the routes are published and masked late, local rows are restored to engine order, and the helper's rows (1: the engine's captured rows, 2: the helper's per-token rows) are merged.
 
 The package creates `arch/common/bc_moe_remote_diag.h` (it `#error`s without `BC_MOE_REMOTE_DIAG`) and adds four call sites to `rad_block_moe_fp8.h` (include, member, declare, after-down), each wrapped in `#ifdef BC_MOE_REMOTE_DIAG`. Without the macro nothing of it is compiled, and a production engine that finds either variable set answers "no remote rows" (every expert computes locally) and says so once.
 

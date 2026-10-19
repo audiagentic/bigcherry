@@ -4,14 +4,14 @@
  "pin": "1.7.0",
  "run": "arm heat-hot = helper-ab rows0 with hot-first ownership (rad06-heat-10172150, Brutus, radiance 1.7.0 natives on, 2 rounds)",
  "date": "2026-10-17",
- "note": "Speed of the production Flash-Next layout (R9700 server, two XTX expert helpers) on the harness prompts, arm rows0 (R3_MOE_HELPER_ROWS=0). Tolerances come from the spread of the measured runs; they are one-sided (only a slowdown fails).",
+ "note": "Speed of the production Flash-Next layout (R9700 server, two XTX expert helpers) on the harness prompts, arm rows0 (R3_MOE_WORKER_ROWS=0). Tolerances come from the spread of the measured runs; they are one-sided (only a slowdown fails).",
  "baselines": [
   {"arm": "rows0", "metric": "pp4096_tps", "value": 3311, "direction": "higher-better", "tolerance": {"relative": 0.03},
    "note": "runs 3309 / 3314 (vecio-on pairs, R3_MOE_FP16 + AHALF + VECIO, the helper defaults)"},
   {"arm": "rows0", "metric": "pp1024_tps", "value": 3320, "direction": "higher-better", "tolerance": {"relative": 0.03},
    "note": "runs 3314 / 3325 (vecio-on pairs)"},
   {"arm": "rows0", "metric": "tg512_tps", "value": 143, "direction": "higher-better", "tolerance": {"relative": 0.05},
-   "note": "runs 143.3 / 143.7 (fuse-on pairs, R3_MOE_HELPER_FUSEROUTE default)"},
+   "note": "runs 143.3 / 143.7 (fuse-on pairs, R3_MOE_WORKER_FUSEROUTE default)"},
   {"arm": "rows0", "metric": "tg2048_tps", "value": 150, "direction": "higher-better", "tolerance": {"relative": 0.02}}
  ]
 }

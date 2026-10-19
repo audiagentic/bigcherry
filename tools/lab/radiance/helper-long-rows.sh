@@ -1,5 +1,5 @@
 #!/bin/bash
-# RAD06: long-run tile split (R3_MOE_HELPER_MOE_LONG_ROWS) - build, replay captured requests with the split off and on,
+# RAD06: long-run tile split (R3_MOE_WORKER_MOE_LONG_ROWS) - build, replay captured requests with the split off and on,
 # require rel_l2=0 between the two, and compare the grouped GEMM kernel times (gfx1100, rocprofv3 kernel trace).
 # Usage: helper-long-rows.sh <branch> [long_rows=65]
 set -u
@@ -15,11 +15,11 @@ for f in $(ls -S $W/captures/*.bin | head -4); do
   echo "== $(basename $f) $(stat -c %s $f) bytes"
   for lr in 0 $LR; do
     out=$W/longrows-$(basename $f .bin)-$lr; rm -rf $out
-    HIP_VISIBLE_DEVICES=0 ROCR_VISIBLE_DEVICES=0 R3_MOE_HELPER_MIB=22528 R3_MOE_HELPER_SMALL_ROWS=8 R3_MOE_HELPER_MAX_ROWS=4096 \
-      R3_MOE_NATIVE=1 R3_MOE_HELPER_MOE_DOWN_TILE=1 R3_MOE_HELPER_MOE_LONG_ROWS=$lr \
-      R3_MOE_HELPER_HEAT=$W/runs/perf51/heat.rank0.hot-first RADIANCE_HOME=$B/radiance_home timeout 900 \
+    HIP_VISIBLE_DEVICES=0 ROCR_VISIBLE_DEVICES=0 R3_MOE_WORKER_MIB=22528 R3_MOE_WORKER_SMALL_ROWS=8 R3_MOE_WORKER_MAX_ROWS=4096 \
+      R3_MOE_NATIVE=1 R3_MOE_WORKER_MOE_DOWN_TILE=1 R3_MOE_WORKER_MOE_LONG_ROWS=$lr \
+      R3_MOE_WORKER_HEAT=$W/runs/perf51/heat.rank0.hot-first RADIANCE_HOME=$B/radiance_home timeout 900 \
       rocprofv3 --kernel-trace --stats --output-format csv -d $out -o run -- \
-      $B/radiance_home/helpers/r3_moe_helper --replay $M $f > $out.log 2>&1
+      $B/radiance_home/helpers/r3_moe_worker --replay $M $f > $out.log 2>&1
     echo " long_rows=$lr: $(grep -h 'replay layer\|engine_join' $out.log | head -2 | tr '\n' ' ')"
     python3 - $out/run_kernel_stats.csv <<'PY'
 import csv, sys

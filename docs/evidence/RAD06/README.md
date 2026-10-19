@@ -10,9 +10,9 @@ startup marker present in the on-arm's log and absent from the control's (`setti
 |---|---|---|---|---|
 | `R3_MOE_FP16` | `helper-fp16-ab.json` | **+52.4%** (1.522, 1.527) | +2.6% (1.047, 1.007) | grouped MoE GEMM widens E4M3 to f16, f16 WMMA |
 | `R3_MOE_AHALF` | `helper-ahalf-ab.json` | +1.2% (1.017, 1.007) | +2.2% (1.043, 1.003) | activations staged as half precision (with FP16) |
-| `R3_MOE_HELPER_VECIO` | `helper-vecio-ab.json` | +4.9% (1.048, 1.049) | see note (1.009, 1.631) | 16-byte lane activation I/O |
-| `R3_MOE_HELPER_FUSEROUTE` | `helper-fuse-ab.json` | 0.1% (neutral, small lane only) | +3.0% (1.007, 1.054) | fused small-lane front end and routing |
-| `R3_MOE_HELPER_FUSESTAGE` | `helper-fusestage-ab.json` | 0.0% (neutral, decode-sized only) | +2.4% (1.039, 1.008) | decode staging folded into the publish kernel |
+| `R3_MOE_WORKER_VECIO` | `helper-vecio-ab.json` | +4.9% (1.048, 1.049) | see note (1.009, 1.631) | 16-byte lane activation I/O |
+| `R3_MOE_WORKER_FUSEROUTE` | `helper-fuse-ab.json` | 0.1% (neutral, small lane only) | +3.0% (1.007, 1.054) | fused small-lane front end and routing |
+| `R3_MOE_WORKER_FUSESTAGE` | `helper-fusestage-ab.json` | 0.0% (neutral, decode-sized only) | +2.4% (1.039, 1.008) | decode staging folded into the publish kernel |
 
 ## How to read these
 
@@ -32,6 +32,6 @@ startup marker present in the on-arm's log and absent from the control's (`setti
 
 ## Files
 
-`R3_MOE_FP16.run.json`, `R3_MOE_AHALF.run.json`, `R3_MOE_HELPER_VECIO.run.json`, `R3_MOE_HELPER_FUSEROUTE.run.json`,
-`R3_MOE_HELPER_FUSESTAGE.run.json`: the `ab-benchmark` run records, copied unchanged from
+`R3_MOE_FP16.run.json`, `R3_MOE_AHALF.run.json`, `R3_MOE_WORKER_VECIO.run.json`, `R3_MOE_WORKER_FUSEROUTE.run.json`,
+`R3_MOE_WORKER_FUSESTAGE.run.json`: the `ab-benchmark` run records, copied unchanged from
 `/mnt/data/bigcherry-work/evidence-RAD06/` on Brutus (runs `rad06-evidence-<setting>-<time>`).
