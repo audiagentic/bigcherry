@@ -15,6 +15,7 @@
 #include <initializer_list>
 #include <limits>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -137,12 +138,12 @@ __global__ void lane_prepare_activation_v(
 
 __global__ void lane_select_tables(
     const r3::moe_shm::Request* q, const DeviceLayerTables* layers_table,
-    uint32_t layers, uint32_t rank, uint32_t slice, uint32_t sequence, uint32_t max_rows,
+    uint32_t layers, uint32_t rank, uint32_t slice, uint32_t sequence, uint32_t max_rows, uint32_t experts,
     void** guc0, void** gus0, void** dnc0, void** dns0,
     void** guc1, void** gus1, void** dnc1, void** dns1) {
     using namespace r3::moe_shm;
     const uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= kExperts / 2) return;
+    if (i >= experts / 2) return;
     const bool valid = lane_request_valid(q, rank, sequence, max_rows, layers);
     if (!valid) {
         guc0[i] = gus0[i] = dnc0[i] = dns0[i] = nullptr;
@@ -163,19 +164,19 @@ __global__ void lane_select_tables(
 __global__ void lane_route_count(
     const r3::moe_shm::Route* route, r3::moe_shm::Request* q,
     const DeviceLayerTables* layers_table,
-    uint32_t rank, uint32_t sequence, uint32_t max_rows, uint32_t layers,
+    uint32_t rank, uint32_t sequence, uint32_t max_rows, uint32_t layers, uint32_t experts,
     uint32_t* counts, int32_t* flat, uint16_t* ew) {
     using namespace r3::moe_shm;
     const uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
     if (!lane_request_valid(q, rank, sequence, max_rows, layers) || i >= q->route_count) return;
     const Route r = route[i];
     if (r.token < 0 || (uint32_t)r.token >= q->rows || r.expert < 0 ||
-        r.expert >= (int32_t)kExperts || r.slot >= kTopK) {
+        r.expert >= (int32_t)experts || r.slot >= kTopK) {
         flat[i] = -1;
         return;
     }
     const uint16_t es = layers_table[q->layer].expert_slot[(uint32_t)r.expert];
-    if (es >= kExperts) {
+    if (es >= experts) {
         flat[i] = -1;
         atomicExch(&q->status, -EINVAL);
         return;
@@ -186,14 +187,15 @@ __global__ void lane_route_count(
     atomicAdd(counts + (uint32_t)es, 1u);
 }
 
-/* Exclusive prefix over the 512 expert counts in one block of kExperts threads (was one thread walking all 512:
- * ~43 us a request). */
-__global__ void lane_route_prefix(const uint32_t* counts, int32_t* off, uint32_t* cursor) {
-    constexpr uint32_t n = r3::moe_shm::kExperts;
+/* Exclusive prefix over the expert counts in one block of N threads (N a power of two, at least the expert count: threads past it
+ * count zero; was one thread walking all 512: ~43 us a request). off holds experts + 1 entries, the last the total. */
+template <uint32_t N>
+__global__ __launch_bounds__(N) void lane_route_prefix(const uint32_t* counts, int32_t* off, uint32_t* cursor, uint32_t experts) {
+    constexpr uint32_t n = N;
     __shared__ uint32_t s[n];
     const uint32_t e = threadIdx.x;
     if (blockIdx.x || e >= n) return;
-    const uint32_t mine = counts[e];
+    const uint32_t mine = e < experts ? counts[e] : 0u;
     s[e] = mine;
     __syncthreads();
     for (uint32_t d = 1; d < n; d <<= 1) {
@@ -203,15 +205,17 @@ __global__ void lane_route_prefix(const uint32_t* counts, int32_t* off, uint32_t
         __syncthreads();
     }
     const uint32_t excl = s[e] - mine;
-    off[e] = (int32_t)excl;
-    cursor[e] = excl;
-    if (e == n - 1) off[n] = (int32_t)s[e];
+    if (e < experts) {
+        off[e] = (int32_t)excl;
+        cursor[e] = excl;
+    }
+    if (e == n - 1) off[experts] = (int32_t)s[e];
 }
 
 __global__ void lane_route_scatter(
     const r3::moe_shm::Route* route, const r3::moe_shm::Request* q,
     const DeviceLayerTables* layers_table,
-    uint32_t rank, uint32_t sequence, uint32_t max_rows, uint32_t layers,
+    uint32_t rank, uint32_t sequence, uint32_t max_rows, uint32_t layers, uint32_t experts,
     const int32_t* flat, uint32_t* cursor, int32_t* sorted, int32_t* sorted_expert) {
     using namespace r3::moe_shm;
     const uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
@@ -219,7 +223,7 @@ __global__ void lane_route_scatter(
         i >= q->route_count || flat[i] < 0) return;
     const uint32_t e = (uint32_t)route[i].expert;
     const uint32_t es = layers_table[q->layer].expert_slot[e];
-    if (es >= kExperts) return;
+    if (es >= experts) return;
     const uint32_t pos = atomicAdd(cursor + es, 1u);
     sorted[pos] = flat[i];
     if (sorted_expert) sorted_expert[pos] = (int32_t)e;
@@ -227,21 +231,23 @@ __global__ void lane_route_scatter(
 
 /* R3_MOE_WORKER_FUSEROUTE: a small (decode) lane request's whole front end in one block: activation copy, table
  * selection and the routing prologue. A request has at most
- * 8 rows x top-k routes, so one block of kExperts threads does what four memsets and lane_route_count / _prefix /
+ * 8 rows x top-k routes, so one block of N threads (N a power of two, at least 256 and the expert count) does what four memsets and lane_route_count / _prefix /
  * _scatter / _inverse did across ten launches: clear the sorted order, its inverse and the weights; count the routes
  * of each expert slot; scan the counts into the expert offsets; place every route and its inverse. A route's place in
  * its expert's run is the number of earlier routes with the same slot (the atomic cursor made that order arbitrary), so
  * the sorted order is now deterministic. A route's output does not depend on its place and the reduce reads through the
  * inverse, so the result is the same. */
 constexpr uint32_t kFuseMaxRoutes = 256;
-__global__ __launch_bounds__(r3::moe_shm::kExperts) void lane_front_small(
+template <uint32_t N>
+__global__ __launch_bounds__(N) void lane_front_small(
     const r3::moe_shm::Route* route, r3::moe_shm::Request* q, const DeviceLayerTables* layers_table,
     const uint4* src_q, const uint4* src_s, uint4* dst_q, uint4* dst_s, uint64_t* stats,
     uint32_t rank, uint32_t slice, uint32_t sequence, uint32_t max_rows, uint32_t layers, uint32_t routes_cap,
-    int32_t* off, int32_t* sorted, int32_t* inv, uint16_t* ew,
+    uint32_t experts, int32_t* off, int32_t* sorted, int32_t* inv, uint16_t* ew,
     void** guc0, void** gus0, void** dnc0, void** dns0, void** guc1, void** gus1, void** dnc1, void** dns1) {
     using namespace r3::moe_shm;
-    constexpr uint32_t n = kExperts;
+    constexpr uint32_t n = N;
+    static_assert(N >= kFuseMaxRoutes, "one thread a route");
     __shared__ uint32_t s_cnt[n];
     __shared__ uint32_t s_excl[n];
     __shared__ uint16_t r_es[kFuseMaxRoutes];
@@ -268,7 +274,7 @@ __global__ __launch_bounds__(r3::moe_shm::kExperts) void lane_front_small(
         for (uint32_t i = t; i < max_rows * s_per_row; i += n)
             dst_s[i] = valid0 && i / s_per_row < q->rows ? src_s[i] : make_uint4(0, 0, 0, 0);
     }
-    if (t < kExperts / 2) {
+    if (t < experts / 2) {
         const uint32_t i = t;
         if (!valid0) {
             guc0[i] = gus0[i] = dnc0[i] = dns0[i] = nullptr;
@@ -300,10 +306,10 @@ __global__ __launch_bounds__(r3::moe_shm::kExperts) void lane_front_small(
         const Route r = route[t];
         r_f[t] = -1;
         r_es[t] = 0;
-        if (!(r.token < 0 || (uint32_t)r.token >= q->rows || r.expert < 0 || r.expert >= (int32_t)kExperts ||
+        if (!(r.token < 0 || (uint32_t)r.token >= q->rows || r.expert < 0 || r.expert >= (int32_t)experts ||
               r.slot >= kTopK)) {
             const uint16_t es = layers_table[q->layer].expert_slot[(uint32_t)r.expert];
-            if (es >= kExperts) {
+            if (es >= experts) {
                 atomicExch(&q->status, -EINVAL);
             } else {
                 const uint32_t f = (uint32_t)r.token * kTopK + r.slot;
@@ -323,9 +329,9 @@ __global__ __launch_bounds__(r3::moe_shm::kExperts) void lane_front_small(
         __syncthreads();
     }
     const uint32_t excl = s_cnt[t] - mine;
-    off[t] = (int32_t)excl;
+    if (t < experts) off[t] = (int32_t)excl;
     s_excl[t] = excl;
-    if (t == n - 1) off[n] = (int32_t)s_cnt[t];
+    if (t == n - 1) off[experts] = (int32_t)s_cnt[t];
     __syncthreads();
     if (t < nr && r_f[t] >= 0) {
         uint32_t before = 0;
@@ -752,6 +758,14 @@ struct WeightPlan {
 class Runner {
 public:
     explicit Runner(const Container& model) : model_(model) {}
+    /* Routed experts per layer, from the container; and the thread count of the one-block routing kernels: a power of two, at least
+     * kFuseMaxRoutes and the expert count (0 when the count is beyond what one block can scan). */
+    uint32_t experts() const { return model_.experts; }
+    uint32_t route_block() const {
+        uint32_t n = kFuseMaxRoutes;
+        while (n < model_.experts) n <<= 1;
+        return n <= 1024 ? n : 0u;
+    }
     ~Runner() {
         if (stream_) (void)hipStreamDestroy(stream_);
         for (auto& l : lane_) {
@@ -1140,7 +1154,7 @@ public:
         /* No clear of the result slot: it is mapped host memory, and the merge reads only the tokens this
          * request's routes name, each of which the reduction writes. */
         if (!fuse &&
-            (!hip_ok(hipMemsetAsync(w.d_counts.p, 0, kExperts * sizeof(uint32_t), w.stream),
+            (!hip_ok(hipMemsetAsync(w.d_counts.p, 0, experts() * sizeof(uint32_t), w.stream),
                      "clear route counts") ||
              !hip_ok(hipMemsetAsync(w.d_ew.p, 0, routes * sizeof(uint16_t), w.stream),
                      "clear route weights") ||
@@ -1180,32 +1194,50 @@ public:
                                static_cast<uint64_t*>(w.d_stats.p));
         }
         if (fuse) {
-            hipLaunchKernelGGL(lane_front_small, dim3(1), dim3(kExperts), 0, w.stream,
-                               route, q, static_cast<const DeviceLayerTables*>(d_layer_tables_.p),
-                               reinterpret_cast<const uint4*>(act_q), reinterpret_cast<const uint4*>(act_s),
-                               reinterpret_cast<uint4*>(w.d_aq.p), reinterpret_cast<uint4*>(w.d_as.p),
-                               static_cast<uint64_t*>(w.d_stats.p),
-                               rank, full_width() ? 0u : rank, sequence, rows, model_.layers, routes,
-                               static_cast<int32_t*>(w.d_off.p), static_cast<int32_t*>(w.d_sorted.p),
-                               static_cast<int32_t*>(w.d_inv.p), static_cast<uint16_t*>(w.d_ew.p),
-                               static_cast<void**>(w.gu_code[0].p), static_cast<void**>(w.gu_scale[0].p),
-                               static_cast<void**>(w.dn_code[0].p), static_cast<void**>(w.dn_scale[0].p),
-                               static_cast<void**>(w.gu_code[1].p), static_cast<void**>(w.gu_scale[1].p),
-                               static_cast<void**>(w.dn_code[1].p), static_cast<void**>(w.dn_scale[1].p));
+            auto front = [&](auto block_n) {
+                constexpr uint32_t N = decltype(block_n)::value;
+                hipLaunchKernelGGL((lane_front_small<N>), dim3(1), dim3(N), 0, w.stream,
+                                   route, q, static_cast<const DeviceLayerTables*>(d_layer_tables_.p),
+                                   reinterpret_cast<const uint4*>(act_q), reinterpret_cast<const uint4*>(act_s),
+                                   reinterpret_cast<uint4*>(w.d_aq.p), reinterpret_cast<uint4*>(w.d_as.p),
+                                   static_cast<uint64_t*>(w.d_stats.p),
+                                   rank, full_width() ? 0u : rank, sequence, rows, model_.layers, routes,
+                                   experts(), static_cast<int32_t*>(w.d_off.p), static_cast<int32_t*>(w.d_sorted.p),
+                                   static_cast<int32_t*>(w.d_inv.p), static_cast<uint16_t*>(w.d_ew.p),
+                                   static_cast<void**>(w.gu_code[0].p), static_cast<void**>(w.gu_scale[0].p),
+                                   static_cast<void**>(w.dn_code[0].p), static_cast<void**>(w.dn_scale[0].p),
+                                   static_cast<void**>(w.gu_code[1].p), static_cast<void**>(w.gu_scale[1].p),
+                                   static_cast<void**>(w.dn_code[1].p), static_cast<void**>(w.dn_scale[1].p));
+            };
+            switch (route_block()) {
+                case 256: front(std::integral_constant<uint32_t, 256>{}); break;
+                case 512: front(std::integral_constant<uint32_t, 512>{}); break;
+                case 1024: front(std::integral_constant<uint32_t, 1024>{}); break;
+                default: return -EINVAL;
+            }
         } else {
         hipLaunchKernelGGL(lane_route_count, route_grid, block, 0, w.stream,
                            route, q, static_cast<const DeviceLayerTables*>(d_layer_tables_.p),
-                           rank, sequence, rows, model_.layers,
+                           rank, sequence, rows, model_.layers, experts(),
                            static_cast<uint32_t*>(w.d_counts.p),
                            static_cast<int32_t*>(w.d_flat.p),
                            static_cast<uint16_t*>(w.d_ew.p));
-        hipLaunchKernelGGL(lane_route_prefix, dim3(1), dim3(kExperts), 0, w.stream,
-                           static_cast<const uint32_t*>(w.d_counts.p),
-                           static_cast<int32_t*>(w.d_off.p),
-                           static_cast<uint32_t*>(w.d_cursor.p));
+        auto prefix = [&](auto block_n) {
+            constexpr uint32_t N = decltype(block_n)::value;
+            hipLaunchKernelGGL((lane_route_prefix<N>), dim3(1), dim3(N), 0, w.stream,
+                               static_cast<const uint32_t*>(w.d_counts.p),
+                               static_cast<int32_t*>(w.d_off.p),
+                               static_cast<uint32_t*>(w.d_cursor.p), experts());
+        };
+        switch (route_block()) {
+            case 256: prefix(std::integral_constant<uint32_t, 256>{}); break;
+            case 512: prefix(std::integral_constant<uint32_t, 512>{}); break;
+            case 1024: prefix(std::integral_constant<uint32_t, 1024>{}); break;
+            default: return -EINVAL;
+        }
         hipLaunchKernelGGL(lane_route_scatter, route_grid, block, 0, w.stream,
                            route, q, static_cast<const DeviceLayerTables*>(d_layer_tables_.p),
-                           rank, sequence, rows, model_.layers,
+                           rank, sequence, rows, model_.layers, experts(),
                            static_cast<const int32_t*>(w.d_flat.p),
                            static_cast<uint32_t*>(w.d_cursor.p),
                            static_cast<int32_t*>(w.d_sorted.p),
@@ -1221,9 +1253,9 @@ public:
             void* out_down = w.d_down.p;
             if (!fuse)
             hipLaunchKernelGGL(lane_select_tables,
-                               dim3((kExperts / 2 + block.x - 1) / block.x), block, 0, w.stream,
+                               dim3((experts() / 2 + block.x - 1) / block.x), block, 0, w.stream,
                                q, static_cast<const DeviceLayerTables*>(d_layer_tables_.p),
-                               model_.layers, rank, slice, sequence, rows,
+                               model_.layers, rank, slice, sequence, rows, experts(),
                                static_cast<void**>(w.gu_code[0].p),
                                static_cast<void**>(w.gu_scale[0].p),
                                static_cast<void**>(w.dn_code[0].p),
@@ -2023,12 +2055,12 @@ private:
     }
 
     bool ensure_lane_work(LaneWork& w, uint32_t rows, uint32_t routes, uint32_t tr) {
-        return w.d_counts.ensure((size_t)r3::moe_shm::kExperts * 4) &&
-               w.d_cursor.ensure((size_t)r3::moe_shm::kExperts * 4) &&
+        return w.d_counts.ensure((size_t)experts() * 4) &&
+               w.d_cursor.ensure((size_t)experts() * 4) &&
                w.d_act.ensure((size_t)rows * r3::moe_shm::kHidden * 2) &&
                w.d_flat.ensure((size_t)routes * 4) &&
                w.d_sorted.ensure((size_t)tr * 4) &&
-               w.d_off.ensure((r3::moe_shm::kExperts + 1ull) * 4) &&
+               w.d_off.ensure((experts() + 1ull) * 4) &&
                w.d_ew.ensure((size_t)tr * 2) &&
                w.d_inv.ensure((size_t)tr * 4) &&
                w.d_aq.ensure((size_t)rows * r3::moe_shm::kHidden) &&
