@@ -31,6 +31,7 @@ constexpr uint32_t lane_class(uint32_t lane) { return lane / kMaxRanks; }
 constexpr bool lane_is_small(uint32_t lane) { return lane_class(lane) < kSmallClasses; }
 constexpr uint32_t kHidden = 2560;
 constexpr uint32_t kTopK = 10;
+constexpr uint32_t kMaxTopK = 16;     /* capacity bound for per-token scratch (the model's own top-k is checked against it) */
 constexpr uint32_t kExperts = 512;
 constexpr uint32_t kMaxRows = 4096;
 constexpr uint32_t kMaxRoutes = kMaxRows * kTopK;

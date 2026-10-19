@@ -84,6 +84,8 @@ struct Container {
     const RadFileProfile* profile = nullptr;
     uint32_t layers = 0;
     uint32_t experts = 0;      /* routed experts per layer: the highest expert id in the directory + 1 */
+    uint32_t hidden = 0;       /* model hidden width: rows of an expert's down matrix */
+    uint32_t intermediate = 0; /* expert width: columns of an expert's down matrix */
     std::vector<std::array<const RadFileEntry*, 2>> expert;
 
     ~Container() { if (fd >= 0) close(fd); }
@@ -137,6 +139,13 @@ struct Container {
             }
         layers = (uint32_t)(max_layer + 1);
         experts = (uint32_t)(max_expert + 1);
+        for (uint64_t i = 0; i < hdr.dir_count && !hidden; ++i)
+            if (dir[i].layer >= 0 && dir[i].expert >= 0 && dir[i].slot == 1) {
+                int64_t nr = 1, nc = 1;
+                rad_enc_view(dir[i].rank, dir[i].shape, &nr, &nc);
+                if (nr > 0 && nc > 0 && nr < (1ll << 20) && nc < (1ll << 20)) { hidden = (uint32_t)nr; intermediate = (uint32_t)nc; }
+            }
+        if (!hidden) return false;
         if (!layers || !experts || (uint64_t)layers * experts > (1ull << 24)) return false;   /* a directory this large is not a model */
         expert.resize((size_t)layers * experts);
         for (uint64_t i = 0; i < hdr.dir_count; ++i) {
@@ -288,34 +297,35 @@ float dot_f32(const float* x, const std::vector<float>& w) {
 
 int compute_host_engine(const Container& f, void* map, Request* q,
                         std::vector<uint16_t>* route_down = nullptr) {
+    const uint32_t hid = static_cast<const Header*>(map)->hidden, topk = static_cast<const Header*>(map)->top_k;
     if (q->rank_count != kMaxRanks || q->rank >= kMaxRanks || q->layer >= f.layers ||
-        q->rows == 0 || q->rows > kMaxRows || q->hidden != kHidden ||
-        q->route_count > kMaxRoutes || q->activation_stride != kHidden * 2)
+        q->rows == 0 || q->rows > kMaxRows || q->hidden != hid ||
+        q->route_count > kMaxRoutes || q->activation_stride != hid * 2)
         return -EINVAL;
 
     const Route* routes = ptr<Route>(map, q->route_offset);
     const uint16_t* act = ptr<uint16_t>(map, q->activation_offset);
     uint16_t* dst = ptr<uint16_t>(map, q->result_offset[q->rank]);
 
-    std::vector<float> aq((size_t)q->rows * kHidden);
+    std::vector<float> aq((size_t)q->rows * hid);
     for (size_t i = 0; i < aq.size(); ++i) aq[i] = bf16(act[i]);
     for (uint32_t t = 0; t < q->rows; ++t)
-        if (!quant_had_engine(aq.data() + (size_t)t * kHidden, kHidden)) return -EINVAL;
+        if (!quant_had_engine(aq.data() + (size_t)t * hid, hid)) return -EINVAL;
 
     std::vector<std::vector<uint32_t>> by_exp(f.experts);
-    std::vector<int32_t> slot_route((size_t)q->rows * kTopK, -1);
+    std::vector<int32_t> slot_route((size_t)q->rows * topk, -1);
     for (uint32_t i = 0; i < q->route_count; ++i) {
         const Route& r = routes[i];
         if (r.token < 0 || (uint32_t)r.token >= q->rows || r.expert < 0 ||
-            r.expert >= (int32_t)f.experts || r.slot >= kTopK)
+            r.expert >= (int32_t)f.experts || r.slot >= topk)
             return -EINVAL;
-        const size_t fslot = (size_t)r.token * kTopK + r.slot;
+        const size_t fslot = (size_t)r.token * topk + r.slot;
         if (slot_route[fslot] >= 0) return -EINVAL;
         slot_route[fslot] = (int32_t)i;
         by_exp[(uint32_t)r.expert].push_back(i);
     }
 
-    std::vector<uint16_t> down((size_t)q->route_count * kHidden, 0);
+    std::vector<uint16_t> down((size_t)q->route_count * hid, 0);
     std::vector<float> wg, wu, wd;
     for (uint32_t e = 0; e < f.experts; ++e) {
         const auto& ri = by_exp[e];
@@ -326,7 +336,7 @@ int compute_host_engine(const Container& f, void* map, Request* q,
         int64_t gur = 1, guc = 1, dnr = 1, dnc = 1;
         rad_enc_view(gu->rank, gu->shape, &gur, &guc);
         rad_enc_view(dn->rank, dn->shape, &dnr, &dnc);
-        if (guc != kHidden || dnr != kHidden || gur != 2 * dnc || dnc != 640 ||
+        if (guc != hid || dnr != hid || gur != 2 * dnc || dnc != 640 ||
             rad_enc_fwht(f.encoding(gu)) != 128 || rad_enc_fwht(f.encoding(dn)) != 128)
             return -EINVAL;
 
@@ -343,7 +353,7 @@ int compute_host_engine(const Container& f, void* map, Request* q,
                 return -ENOTSUP;
             for (size_t a = 0; a < ri.size(); ++a) {
                 const Route& r = routes[ri[a]];
-                const float* x = aq.data() + (size_t)r.token * kHidden;
+                const float* x = aq.data() + (size_t)r.token * hid;
                 const float gate = bf16(to_bf16(dot_f32(x, wg)));
                 const float up = bf16(to_bf16(dot_f32(x, wu)));
                 mid[a * 384u + (size_t)j] =
@@ -353,13 +363,13 @@ int compute_host_engine(const Container& f, void* map, Request* q,
         for (size_t a = 0; a < ri.size(); ++a)
             if (!quant_had_engine(mid.data() + a * 384u, 384u)) return -EINVAL;
 
-        for (int64_t h = 0; h < kHidden; ++h) {
+        for (int64_t h = 0; h < hid; ++h) {
             if (!decode_row(f, dn, h, wd, false)) return -ENOTSUP;
             for (size_t a = 0; a < ri.size(); ++a) {
                 float sum = 0.0f;
                 const float* m = mid.data() + a * 384u;
                 for (int64_t j = 0; j < width; ++j) sum += m[j] * wd[(size_t)(lo + j)];
-                down[(size_t)ri[a] * kHidden + (size_t)h] = to_bf16(sum);
+                down[(size_t)ri[a] * hid + (size_t)h] = to_bf16(sum);
             }
         }
     }
@@ -368,27 +378,28 @@ int compute_host_engine(const Container& f, void* map, Request* q,
 
     /* r4d_moe gather: ascending original top-k slot order, f32 accumulator, one BF16 narrow. */
     for (uint32_t t = 0; t < q->rows; ++t) {
-        for (uint32_t h = 0; h < kHidden; ++h) {
+        for (uint32_t h = 0; h < hid; ++h) {
             float acc = 0.0f;
-            for (uint32_t slot = 0; slot < kTopK; ++slot) {
-                const int32_t ri = slot_route[(size_t)t * kTopK + slot];
+            for (uint32_t slot = 0; slot < topk; ++slot) {
+                const int32_t ri = slot_route[(size_t)t * topk + slot];
                 if (ri < 0) continue;
                 acc += bf16(routes[(uint32_t)ri].weight_bf16) *
-                       bf16(down[(size_t)(uint32_t)ri * kHidden + h]);
+                       bf16(down[(size_t)(uint32_t)ri * hid + h]);
             }
-            dst[(size_t)t * kHidden + h] = to_bf16(acc);
+            dst[(size_t)t * hid + h] = to_bf16(acc);
         }
     }
     return 0;
 }
 
 int compute_host(const Container& f, void* map, Request* q) {
+    const uint32_t hid = static_cast<const Header*>(map)->hidden, topk = static_cast<const Header*>(map)->top_k;
     if (q->rank_count != kMaxRanks || q->rank >= kMaxRanks || q->layer >= f.layers || q->rows > kMaxRows ||
-        q->hidden != kHidden || q->route_count > kMaxRoutes || q->activation_stride != kHidden*2) return -EINVAL;
+        q->hidden != hid || q->route_count > kMaxRoutes || q->activation_stride != hid*2) return -EINVAL;
     const Route* routes = ptr<Route>(map,q->route_offset);
     const uint16_t* act = ptr<uint16_t>(map,q->activation_offset);
     uint16_t* dst = ptr<uint16_t>(map,q->result_offset[q->rank]);
-    std::vector<float> out((size_t)q->rows*kHidden,0.f);
+    std::vector<float> out((size_t)q->rows*hid,0.f);
     std::vector<std::vector<uint32_t>> by_exp(f.experts);
     for(uint32_t i=0;i<q->route_count;++i) {
         if(routes[i].token<0 || (uint32_t)routes[i].token>=q->rows || routes[i].expert<0 || routes[i].expert>=(int)f.experts) return -EINVAL;
@@ -399,22 +410,22 @@ int compute_host(const Container& f, void* map, Request* q) {
         auto& ri=by_exp[e]; if(ri.empty()) continue;
         const RadFileEntry* gu=f.weight(q->layer,e,0); const RadFileEntry* dn=f.weight(q->layer,e,1); if(!gu||!dn) return -ENOENT;
         int64_t gur=1,guc=1,dnr=1,dnc=1; rad_enc_view(gu->rank,gu->shape,&gur,&guc); rad_enc_view(dn->rank,dn->shape,&dnr,&dnc);
-        if(guc!=kHidden || dnr!=kHidden || gur!=2*dnc || dnc!=640) return -EINVAL;
+        if(guc!=hid || dnr!=hid || gur!=2*dnc || dnc!=640) return -EINVAL;
         const int32_t es=layer_slot(map,q->layer,e); if(es<0) return -ENOTSUP;
         const int parity=(int)((uint32_t)es&1u); const bool wide=((int)q->rank==parity); const int64_t lo=wide?0:384, hi=wide?384:640, width=hi-lo;
         std::vector<float> mid(ri.size()*(size_t)width);
         for(int64_t j=0;j<width;++j) {
             if(!decode_row(f,gu,lo+j,wg) || !decode_row(f,gu,dnc+lo+j,wu)) return -ENOTSUP;
             for(size_t a=0;a<ri.size();++a) {
-                const Route& r=routes[ri[a]]; const uint16_t* x=act+(size_t)r.token*kHidden;
+                const Route& r=routes[ri[a]]; const uint16_t* x=act+(size_t)r.token*hid;
                 mid[a*(size_t)width+(size_t)j]=silu(dot_bf16(x,wg))*dot_bf16(x,wu);
             }
         }
-        for(int64_t h=0;h<kHidden;++h) {
+        for(int64_t h=0;h<hid;++h) {
             if(!decode_row(f,dn,h,wd)) return -ENOTSUP;
             for(size_t a=0;a<ri.size();++a) {
                 float s=0.f; for(int64_t j=0;j<width;++j) s += mid[a*(size_t)width+(size_t)j]*wd[(size_t)(lo+j)];
-                const Route& r=routes[ri[a]]; out[(size_t)r.token*kHidden+(size_t)h] += s*bf16(r.weight_bf16);
+                const Route& r=routes[ri[a]]; out[(size_t)r.token*hid+(size_t)h] += s*bf16(r.weight_bf16);
             }
         }
     }
@@ -552,12 +563,8 @@ bool describe_expert(const Container& f, uint32_t l, uint32_t e, MoeExpertDesc* 
 
 /* The shape the container implies (RCS09): layers, routed experts, hidden, expert intermediate width. top_k is the engine's. */
 bool container_shape(const Container& f, MoeShape* s) {
-    uint32_t experts = 0;
-    for (uint64_t i = 0; i < f.hdr.dir_count; ++i)
-        if (f.dir[i].layer >= 0 && f.dir[i].expert >= 0) experts = std::max(experts, (uint32_t)f.dir[i].expert + 1);
-    MoeExpertDesc d{};
-    if (!experts || !describe_expert(f, 0, 0, &d)) return false;
-    *s = MoeShape{f.layers, experts, (uint32_t)d.dn_rows, 0, (uint32_t)d.dn_cols, 0, 0};
+    if (!f.experts || !f.hidden) return false;
+    *s = MoeShape{f.layers, f.experts, f.hidden, 0, f.intermediate, 0, 0};
     return true;
 }
 

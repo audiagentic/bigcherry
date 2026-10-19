@@ -339,7 +339,7 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
         !hip_ok(hipMalloc(reinterpret_cast<void**>(&s.published), kMaxRanks * sizeof(uint32_t)),
                 "hipMalloc published flags") ||
         !hip_ok(hipMemset(s.published, 0, kMaxRanks * sizeof(uint32_t)), "zero published flags") ||
-        !hip_ok(hipMalloc(&s.maps, (size_t)max_rows() * kTopK * (sizeof(int32_t) + sizeof(uint32_t))),
+        !hip_ok(hipMalloc(&s.maps, (size_t)max_rows() * g.hdr->top_k * (sizeof(int32_t) + sizeof(uint32_t))),
                 "hipMalloc merge slot maps")) {
         if (s.maps) (void)hipFree(s.maps);
         if (s.published) (void)hipFree(s.published);
@@ -356,7 +356,7 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
     const bool mask_only = mask_only_env();
     const uint32_t row_cap = (uint32_t)max_rows();
     if (mask_only) {
-        const size_t bytes = (size_t)row_cap * kTopK * kHidden * sizeof(uint16_t);
+        const size_t bytes = (size_t)row_cap * g.hdr->top_k * g.hdr->hidden * sizeof(uint16_t);
         if (!hip_ok(hipMalloc(reinterpret_cast<void**>(&s.mask_ref), bytes),
                     "hipMalloc mask-only engine rows")) {
             (void)hipFree(s.maps);
@@ -405,7 +405,7 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
     s.dev.published = s.published;
     s.dev.mask_ref = s.mask_ref;
     s.dev.inv = static_cast<int32_t*>(s.maps);
-    s.dev.rmask = reinterpret_cast<uint32_t*>(s.dev.inv + (size_t)row_cap * kTopK);
+    s.dev.rmask = reinterpret_cast<uint32_t*>(s.dev.inv + (size_t)row_cap * g.hdr->top_k);
     s.dev.shadow_stats = shadow_stats;
     s.dev.shadow_first = shadow_first;
     s.dev.max_rows = row_cap;
