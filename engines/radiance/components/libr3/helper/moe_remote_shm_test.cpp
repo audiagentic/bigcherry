@@ -4,6 +4,7 @@
 #include <string>
 #include <sys/mman.h>
 #include <thread>
+#include <vector>
 #include <unistd.h>
 #include <cstdlib>
 
@@ -20,16 +21,16 @@ int main() {
     check(fd >= 0, "shm_open");
     check(ftruncate(fd, (off_t)l.bytes) == 0, "ftruncate");
     void* m = mmap(nullptr, l.bytes, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-    check(m != MAP_FAILED, "mmap"); init(m, 48); check(valid((Header*)m, l.bytes), "header valid");
+    check(m != MAP_FAILED, "mmap"); check(init(m, 48, legacy_shape()), "init"); check(valid((Header*)m, l.bytes, legacy_shape()), "header valid");
     {   // a segment of another protocol version (an engine and a helper from different builds) is rejected
         Header* hv = (Header*)m;
         const uint32_t ver = hv->version;
         hv->version = ver - 1;
-        check(!valid(hv, l.bytes), "an older protocol version is rejected");
+        check(!valid(hv, l.bytes, legacy_shape()), "an older protocol version is rejected");
         hv->version = ver + 1;
-        check(!valid(hv, l.bytes), "a newer protocol version is rejected");
+        check(!valid(hv, l.bytes, legacy_shape()), "a newer protocol version is rejected");
         hv->version = ver;
-        check(valid(hv, l.bytes), "the current protocol version is accepted");
+        check(valid(hv, l.bytes, legacy_shape()), "the current protocol version is accepted");
     }
     auto* h = (Header*)m;
     {   // RAD12: ten lanes (four small sizes and the large lane for each rank), a class table the helper sets and the engine validates
@@ -43,7 +44,7 @@ int main() {
               lane_request(m, 1, kLaneSlots + 1) == lane_request(m, 1, 1), "lane rings are private and wrap");
         h->small_class_count = 4;
         h->small_class_rows[0] = 4; h->small_class_rows[1] = 8; h->small_class_rows[2] = 16; h->small_class_rows[3] = 24;
-        check(valid(h, l.bytes), "a four-class table is accepted");
+        check(valid(h, l.bytes, legacy_shape()), "a four-class table is accepted");
         check(step_class(h, 1) == 0 && step_class(h, 4) == 0 && step_class(h, 5) == 1 && step_class(h, 8) == 1 &&
               step_class(h, 9) == 2 && step_class(h, 16) == 2 && step_class(h, 17) == 3 && step_class(h, 24) == 3 &&
               step_class(h, 25) == kSmallClasses && step_class(h, kMaxRows) == kSmallClasses,
@@ -51,15 +52,15 @@ int main() {
         h->small_class_count = 2;
         check(step_class(h, 9) == kSmallClasses && step_class(h, 8) == 1, "classes past the count are not used");
         h->small_class_rows[1] = 4;
-        check(!valid(h, l.bytes), "a non-ascending class table is rejected");
+        check(!valid(h, l.bytes, legacy_shape()), "a non-ascending class table is rejected");
         h->small_class_rows[1] = 8;
         h->small_class_count = 0;
-        check(!valid(h, l.bytes), "an empty class table is rejected");
+        check(!valid(h, l.bytes, legacy_shape()), "an empty class table is rejected");
         h->small_class_count = kSmallClasses + 1;
-        check(!valid(h, l.bytes), "too many classes are rejected");
+        check(!valid(h, l.bytes, legacy_shape()), "too many classes are rejected");
         h->small_class_count = 1;
         h->small_class_rows[0] = 8;
-        check(valid(h, l.bytes), "the one-class table of the production configuration is accepted");
+        check(valid(h, l.bytes, legacy_shape()), "the one-class table of the production configuration is accepted");
     }
     check(layer_slot(m, 7, 23) == -1, "layer map starts unpublished");
     int32_t* slots = layer_slots(m, 7);
@@ -118,23 +119,54 @@ int main() {
         }
         // another model's shape (Qwen3.6-35B-A3B: hidden 2048, 256 experts, top-k 8): valid, page aligned, in order
         Layout q{};
-        check(layout_for(LayoutShape{2048, 8, 256, 4096, 128}, &q), "a second shape lays out");
+        check(layout_for(LayoutShape{2048, 8, 256, 4096, 128, 512}, &q), "a second shape lays out");
         check(q.bytes % kPage == 0 && q.ring == kPage && q.owner > q.ring && q.layer_map > q.owner && q.route[0] > q.layer_map,
               "regions are page aligned and in order");
         check(q.route[1] > q.result[kMaxRanks - 1] && q.bytes > q.result[kMaxRanks * kMaxRanks - 1], "per-rank regions follow in order");
         check(q.bytes < l.bytes, "a smaller hidden width and expert count take less memory");
         // refusals: nothing is written on failure
         Layout keep{}; keep.bytes = 77;
-        check(!layout_for(LayoutShape{0, 8, 256, 4096, 128}, &keep) && keep.bytes == 77, "zero hidden is refused");
-        check(!layout_for(LayoutShape{2048, 0, 256, 4096, 128}, &keep), "zero top-k is refused");
-        check(!layout_for(LayoutShape{2048, 8, 256, 0, 128}, &keep), "zero row capacity is refused");
-        check(!layout_for(LayoutShape{2048, 8, 256, 4096, 0}, &keep), "a zero activation group is refused");
-        check(!layout_for(LayoutShape{2048, 300, 256, 4096, 128}, &keep), "top-k above the expert count is refused");
-        check(!layout_for(LayoutShape{2000, 8, 256, 4096, 128}, &keep), "a hidden width that is not whole groups is refused");
-        check(!layout_for(LayoutShape{UINT32_MAX - 127, 8, 256, UINT32_MAX, 128}, &keep) && keep.bytes == 77,
+        check(!layout_for(LayoutShape{0, 8, 256, 4096, 128, 512}, &keep) && keep.bytes == 77, "zero hidden is refused");
+        check(!layout_for(LayoutShape{2048, 0, 256, 4096, 128, 512}, &keep), "zero top-k is refused");
+        check(!layout_for(LayoutShape{2048, 8, 256, 0, 128, 512}, &keep), "zero row capacity is refused");
+        check(!layout_for(LayoutShape{2048, 8, 256, 4096, 0, 512}, &keep), "a zero activation group is refused");
+        check(!layout_for(LayoutShape{2048, 300, 256, 4096, 128, 512}, &keep), "top-k above the expert count is refused");
+        check(!layout_for(LayoutShape{2000, 8, 256, 4096, 128, 512}, &keep), "a hidden width that is not whole groups is refused");
+        check(!layout_for(LayoutShape{UINT32_MAX - 127, 8, 256, UINT32_MAX, 128, 512}, &keep) && keep.bytes == 77,
               "an overflowing shape is refused");
-        check(!layout_for(LayoutShape{65536, 8, 256, 65536, 128}, &keep), "a slot that does not fit 32 bits is refused");
+        check(!layout_for(LayoutShape{65536, 8, 256, 65536, 128, 512}, &keep), "a slot that does not fit 32 bits is refused");
         check(!layout_for(legacy_shape(), nullptr), "a null output is refused");
+    }
+    {   // RCS09-03: a v14 segment records its shape and is accepted only by a side that expects the same shape
+        const LayoutShape qs{2048, 8, 256, 4096, 128, 512};
+        Layout ql{};
+        check(layout_for(qs, &ql), "second shape lays out");
+        std::vector<uint8_t> seg((size_t)ql.bytes);
+        check(init(seg.data(), 41, qs), "init for the second shape");
+        auto* h = reinterpret_cast<Header*>(seg.data());
+        check(h->version == 14 && h->hidden == 2048 && h->expert_count == 256 && h->top_k == 8 && h->intermediate == 512 &&
+              h->activation_group == 128 && h->shape_hash == shape_hash(qs), "the header records the shape");
+        check(valid(h, seg.size(), qs), "the same shape is accepted");
+        check(!valid(h, seg.size(), legacy_shape()), "a side expecting another shape refuses the segment");
+        LayoutShape other = qs; other.intermediate = 640;
+        check(!valid(h, seg.size(), other), "a different expert width is refused");
+        other = qs; other.act_group = 64;
+        check(!valid(h, seg.size(), other), "a different activation group is refused");
+        check(!valid(h, seg.size() - 1, qs), "a mapping shorter than the segment is refused");
+        {   // a corrupt header cannot move a region: each field is checked against the layout rebuilt from the shape
+            Header keep = *h;
+            h->route_offset[0] += kPage; check(!valid(h, seg.size(), qs), "a moved route region is refused"); *h = keep;
+            h->result_offset[1] += kPage; check(!valid(h, seg.size(), qs), "a moved result region is refused"); *h = keep;
+            h->owner_offset += kPage; check(!valid(h, seg.size(), qs), "a moved owner region is refused"); *h = keep;
+            h->segment_bytes += kPage; check(!valid(h, seg.size(), qs), "a wrong segment length is refused"); *h = keep;
+            h->shape_hash ^= 1; check(!valid(h, seg.size(), qs), "a wrong shape hash is refused"); *h = keep;
+            h->hidden = 2560; check(!valid(h, seg.size(), qs), "edited shape fields are refused"); *h = keep;
+            h->version = 13; check(!valid(h, seg.size(), qs), "a stale v13 segment is refused"); *h = keep;
+            h->small_class_rows[0] = h->max_rows + 1; check(!valid(h, seg.size(), qs), "a class above the row capacity is refused"); *h = keep;
+            check(valid(h, seg.size(), qs), "and the restored header is accepted again");
+        }
+        check(!init(seg.data(), 41, LayoutShape{2048, 8, 256, 4096, 100, 512}), "init refuses a shape that does not lay out");
+        check(!init(seg.data(), 0, qs) && !init(seg.data(), kMaxLayers + 1, qs), "init refuses a layer count outside the protocol bound");
     }
     std::printf("r3_moe_shm_test: PASS\n");
     std::puts("r3_moe_shm_test: ok");
