@@ -17,7 +17,7 @@ from pathlib import Path
 
 def pct(values, p):
     v = sorted(values)
-    return v[min(len(v) - 1, int(p * len(v)))] if v else float("nan")
+    return v[min(len(v) - 1, int(p * len(v)))] if v else None
 
 
 def read_steps(paths, small_rows: int = 8) -> list:

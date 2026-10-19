@@ -119,11 +119,51 @@ class Harvest(unittest.TestCase):
         self.assertEqual([b["path"] for b in doc["bulk"]], ["a_kernel_trace.csv"])
 
     def test_the_bundle_is_deterministic_and_has_a_stable_id(self):
-        a, b = finished(self.root), finished(self.root)
-        add_cell(a)
-        add_cell(b)
-        da, db = harvest.harvest(self.root, a), harvest.harvest(self.root, b)
-        self.assertEqual(da["bundle_id"], db["bundle_id"])
+        run = finished(self.root)
+        add_cell(run)
+        first = harvest.harvest(self.root, run)
+        m = rm.read_manifest(run)
+        m["harvest"]["state"] = "failed"
+        rm.write_manifest(run, m)
+        self.assertEqual(harvest.harvest(self.root, run)["bundle_id"], first["bundle_id"])
+
+    def test_retry_never_deletes_the_previous_bundle_and_publishes_atomically(self):
+        run = finished(self.root)
+        add_cell(run)
+        doc = harvest.harvest(self.root, run)
+        out = harvest.bundle_dir(self.root, doc["run_id"])
+        (out / "marker").write_text("keep me")
+        m = rm.read_manifest(run)
+        m["harvest"]["state"] = "harvesting"            # a crash left the run mid-harvest
+        rm.write_manifest(run, m)
+        harvest.harvest(self.root, run)
+        prev = [p for p in out.parent.iterdir() if ".prev-" in p.name]
+        self.assertEqual(len(prev), 1)
+        self.assertEqual((prev[0] / "marker").read_text(), "keep me")
+        self.assertFalse([p for p in out.parent.iterdir() if p.name.startswith(".staging-")])
+        self.assertEqual(rm.read_manifest(run)["harvest"]["state"], "verified")
+
+    @unittest.skipIf(sys.platform == "win32", "symlinks need privileges on Windows")
+    def test_symlinked_directories_are_not_followed(self):
+        run = finished(self.root)
+        add_cell(run)
+        outside = self.root / "outside"
+        outside.mkdir()
+        (outside / "stream-bench.json").write_text("{}")
+        (run / "pair-2").symlink_to(outside, target_is_directory=True)
+        doc = harvest.harvest(self.root, run)
+        self.assertFalse([f for f in doc["files"] if "pair-2" in f["path"]])
+
+    def test_bundle_id_covers_the_bulk_inventory_and_verification_rejects_bad_inventories(self):
+        run = finished(self.root)
+        add_cell(run)
+        doc = harvest.harvest(self.root, run)
+        out = harvest.bundle_dir(self.root, doc["run_id"])
+        bundle = json.loads((out / "bundle.json").read_text())
+        for bad in ("../escape.log", "/abs.log", "pair-1/server.log"):
+            tampered = dict(bundle, bulk=bundle["bulk"] + [{"path": bad, "bytes": 1}])
+            (out / "bundle.json").write_text(json.dumps(tampered))
+            self.assertTrue(harvest.verify_bundle(out), bad)
 
     def test_every_run_kind_has_a_recipe(self):
         self.assertEqual(set(harvest.DEFAULT_RECIPE), set(rm.RUN_KINDS))
