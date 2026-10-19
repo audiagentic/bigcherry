@@ -498,6 +498,16 @@ ownership.
 | `tools/lab/radiance/qwen35b-helper-ab.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark server configuration, the same model with the XTX helpers; refused by the W4-only helper until RAD11 (RCS09). |
 | `tools/lab/radiance/qwen35b-run.sh` | **TRANSITIONAL** | `radiance` lab topic file; builds the pinned radiance and runs qwen35b-engine-ab.json (RCS09). |
 | `tools/lab/radiance/qwen35b-helper-run.sh` | **TRANSITIONAL** | `radiance` lab topic file; builds the moe-remote-handoff experiment and runs qwen35b-helper-ab.json (RCS09). |
+| `tools/lab/radiance/qwen35b-helper-kld.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark quality configuration, KL of the 35B XTX workers against the engine alone (RAD13). |
+| `tools/lab/radiance/qwen35b-helper-kld-run.sh` | **TRANSITIONAL** | `radiance` lab topic file; builds the moe-remote-handoff experiment and runs qwen35b-helper-kld.json (RAD13). |
+| `tools/lab/radiance/qwen35b-helper-capture.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark quality configuration that captures real worker requests of the 35B (RAD13). |
+| `tools/lab/radiance/qwen35b-helper-capture-run.sh` | **TRANSITIONAL** | `radiance` lab topic file; builds the experiment and runs qwen35b-helper-capture.json (RAD13). |
+| `tools/lab/radiance/capture_upgrade.py` | **TRANSITIONAL** | `radiance` lab topic file; upgrades Flash-Next worker captures from version 2 to 3 in place (RAD13). |
+| `tools/lab/radiance/fastbuild.sh` | **TRANSITIONAL** | `radiance` lab topic file; incremental rebuild of the moe worker and libr3moe inside an existing lane build for the edit-test loop (seconds instead of a fresh 25-minute lane build). |
+| `tools/lab/radiance/qwen35b-helper-bisect.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark quality configuration bisecting the 35B workers' KL by layer range (R3_MOE_WORKER_LAYERS, RAD13). |
+| `tools/lab/radiance/qwen35b-helper-shadow.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark quality configuration running the 35B workers in shadow-compare mode (RAD13). |
+| `tools/lab/radiance/qwen35b-helper-shadow-run.sh` | **TRANSITIONAL** | `radiance` lab topic file; builds the diagnostic engine and runs qwen35b-helper-shadow.json (RAD13). |
+| `tools/lab/radiance/qwen35b-helper-maskonly.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark quality configuration for the exact merge control (mask-only) of the 35B workers (RAD13). |
 | `tools/lab/radiance/run-radiance.sh` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/radiance/helper-small-ab.json` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/radiance/helper-downtile-ab.json` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, disposed per that README. |

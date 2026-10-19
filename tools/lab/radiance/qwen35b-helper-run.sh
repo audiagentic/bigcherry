@@ -5,8 +5,10 @@ set -u
 export ROCM_PATH=/opt/rocm-7.2.4 PATH=/opt/rocm-7.2.4/bin:$PATH
 export BIGCHERRY_ENVIRONMENT=${BIGCHERRY_ENVIRONMENT:-/mnt/vault/development/projects/bigcherry/workspaces/main/config/environment.local.toml}
 WORK=/mnt/vault/development/projects/bigcherry/workspaces/main/work
-PYTHONPATH=tools timeout 5400 python3 -m bigcherry build --lane radiance-lab:stock:linux-radiance --experiment moe-remote-handoff 2>&1 | grep -v warning | tail -n 4
-B=$(ls -td $WORK/builds/*/*/ 2>/dev/null | head -1)
+LOG=$(PYTHONPATH=tools timeout 5400 python3 -m bigcherry build --lane radiance-lab:stock:linux-radiance --experiment moe-remote-handoff 2>&1 | grep -v warning | tail -n 4)
+echo "$LOG"
+PLAN=$(echo "$LOG" | grep -o 'build_plan_id=[0-9a-f]*' | tail -1 | cut -d= -f2)
+B=$(ls -d $WORK/builds/*/$PLAN/ 2>/dev/null | head -1)   # the build this run made, not the newest directory
 [ -f "${B}bin/radiance" ] || { echo "Q35H_EXIT=99 no build"; exit 99; }
 export RAD_BIN=${B}bin/radiance RAD_HOME=${B}radiance_home R9700_BDF=0000:09:00.0
 OUT=$WORK/q35h-$(date +%m%d-%H%M%S)

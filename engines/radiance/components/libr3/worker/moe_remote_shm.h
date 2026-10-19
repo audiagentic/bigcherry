@@ -319,6 +319,14 @@ inline bool valid(const Header* h, size_t mapped, const LayoutShape& expect) {
     return true;
 }
 
+/* The attaching engine does not know the helper's model: it accepts any segment whose layout is internally consistent (every
+ * offset and size rebuilt from the header's own shape) and then checks each launch's tensors against that shape (hidden, top-k,
+ * expert count), so a segment of another model is still refused before a request is published. */
+inline bool valid_self(const Header* h, size_t mapped) {
+    if (!h) return false;
+    return valid(h, mapped, LayoutShape{h->hidden, h->top_k, h->expert_count, h->max_rows, h->activation_group, h->intermediate});
+}
+
 template <class T> inline T* ptr(void* base, uint64_t off) {
     return reinterpret_cast<T*>(static_cast<uint8_t*>(base) + off);
 }

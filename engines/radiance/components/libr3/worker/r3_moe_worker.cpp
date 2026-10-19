@@ -85,6 +85,7 @@ struct Container {
     uint32_t layers = 0;
     uint32_t experts = 0;      /* routed experts per layer: the highest expert id in the directory + 1 */
     uint32_t hidden = 0;       /* model hidden width: rows of an expert's down matrix */
+    uint32_t top_k = 0;        /* routed experts per token (metadata n_expert_used); 0 when the container does not say */
     uint32_t intermediate = 0; /* expert width: columns of an expert's down matrix */
     std::vector<std::array<const RadFileEntry*, 2>> expert;
 
@@ -127,6 +128,21 @@ struct Container {
             (hdr.enc_count && !pread_full(hdr.enc_off, enc_store.data(), enc_store.size() * sizeof(RadEncoding))) ||
             (hdr.prof_count && !pread_full(hdr.prof_off, profile_store.data(), profile_store.size() * sizeof(RadFileProfile))))
             return false;
+        {   // the model's routes per token, from the container's metadata
+            std::vector<char> strs;
+            std::vector<RadFileKV> meta;
+            if (hdr.str_bytes && hdr.str_bytes < (1ull << 28) && hdr.meta_count && hdr.meta_count < (1ull << 20) &&
+                range(hdr.str_off, hdr.str_bytes) && range(hdr.meta_off, hdr.meta_count * sizeof(RadFileKV))) {
+                strs.resize((size_t)hdr.str_bytes + 1, 0);
+                meta.resize((size_t)hdr.meta_count);
+                if (pread_full(hdr.str_off, strs.data(), (size_t)hdr.str_bytes) &&
+                    pread_full(hdr.meta_off, meta.data(), meta.size() * sizeof(RadFileKV)))
+                    for (const RadFileKV& kv : meta)
+                        if (kv.type == RAD_P_INT && kv.key < hdr.str_bytes && std::strcmp(&strs[(size_t)kv.key], "n_expert_used") == 0 &&
+                            kv.v.i > 0 && kv.v.i <= 64)
+                            top_k = (uint32_t)kv.v.i;
+            }
+        }
         dir = dir_store.data();
         planes = plane_store.data();
         encs = enc_store.data();
@@ -295,6 +311,23 @@ float dot_f32(const float* x, const std::vector<float>& w) {
     return s;
 }
 
+/* The plain activation quantiser of FP8 block-scaled weights (radiance's quant_act_fp8): per row, per 128 columns, E4M3 with an f32 scale
+ * of amax / 448 and no rotation (the Hadamard twin exists for four-bit weights only). Returns the dequantised values. */
+bool quant_plain_engine(float* v, size_t n) {
+    if (!v || n == 0 || n % 128 != 0) return false;
+    for (size_t b = 0; b < n; b += 128) {
+        float m = 0.0f;
+        for (size_t j = 0; j < 128; ++j) m = std::max(m, std::abs(v[b + j]));
+        const float sc = m > 0.0f ? m * (1.0f / 448.0f) : 1.0f;
+        const float inv = 1.0f / sc;
+        for (size_t j = 0; j < 128; ++j) {
+            const float q = std::max(-448.0f, std::min(448.0f, v[b + j] * inv));
+            v[b + j] = e4m3_round(q) * sc;
+        }
+    }
+    return true;
+}
+
 int compute_host_engine(const Container& f, void* map, Request* q,
                         std::vector<uint16_t>* route_down = nullptr) {
     const uint32_t hid = static_cast<const Header*>(map)->hidden, topk = static_cast<const Header*>(map)->top_k;
@@ -369,6 +402,112 @@ int compute_host_engine(const Container& f, void* map, Request* q,
             for (size_t a = 0; a < ri.size(); ++a) {
                 float sum = 0.0f;
                 const float* m = mid.data() + a * 384u;
+                for (int64_t j = 0; j < width; ++j) sum += m[j] * wd[(size_t)(lo + j)];
+                down[(size_t)ri[a] * hid + (size_t)h] = to_bf16(sum);
+            }
+        }
+    }
+
+    if (route_down) *route_down = down;
+
+    /* r4d_moe gather: ascending original top-k slot order, f32 accumulator, one BF16 narrow. */
+    for (uint32_t t = 0; t < q->rows; ++t) {
+        for (uint32_t h = 0; h < hid; ++h) {
+            float acc = 0.0f;
+            for (uint32_t slot = 0; slot < topk; ++slot) {
+                const int32_t ri = slot_route[(size_t)t * topk + slot];
+                if (ri < 0) continue;
+                acc += bf16(routes[(uint32_t)ri].weight_bf16) *
+                       bf16(down[(size_t)(uint32_t)ri * hid + h]);
+            }
+            dst[(size_t)t * hid + h] = to_bf16(acc);
+        }
+    }
+    return 0;
+}
+
+int compute_host_engine_fp8(const Container& f, void* map, Request* q,
+                        std::vector<uint16_t>* route_down = nullptr) {
+    const uint32_t hid = static_cast<const Header*>(map)->hidden, topk = static_cast<const Header*>(map)->top_k;
+    const int64_t hdr_intermediate = static_cast<const Header*>(map)->intermediate;
+    if (q->rank_count != kMaxRanks || q->rank >= kMaxRanks || q->layer >= f.layers ||
+        q->rows == 0 || q->rows > kMaxRows || q->hidden != hid ||
+        q->route_count > kMaxRoutes || q->activation_stride != hid * 2)
+        return -EINVAL;
+
+    const Route* routes = ptr<Route>(map, q->route_offset);
+    const uint16_t* act = ptr<uint16_t>(map, q->activation_offset);
+    uint16_t* dst = ptr<uint16_t>(map, q->result_offset[q->rank]);
+
+    std::vector<float> aq((size_t)q->rows * hid);
+    for (size_t i = 0; i < aq.size(); ++i) aq[i] = bf16(act[i]);
+    for (uint32_t t = 0; t < q->rows; ++t)
+        if (!quant_plain_engine(aq.data() + (size_t)t * hid, hid)) return -EINVAL;
+
+    std::vector<std::vector<uint32_t>> by_exp(f.experts);
+    std::vector<int32_t> slot_route((size_t)q->rows * topk, -1);
+    for (uint32_t i = 0; i < q->route_count; ++i) {
+        const Route& r = routes[i];
+        if (r.token < 0 || (uint32_t)r.token >= q->rows || r.expert < 0 ||
+            r.expert >= (int32_t)f.experts || r.slot >= topk)
+            return -EINVAL;
+        const size_t fslot = (size_t)r.token * topk + r.slot;
+        if (slot_route[fslot] >= 0) return -EINVAL;
+        slot_route[fslot] = (int32_t)i;
+        by_exp[(uint32_t)r.expert].push_back(i);
+    }
+
+    std::vector<uint16_t> down((size_t)q->route_count * hid, 0);
+    std::vector<float> wg, wu, wd;
+    for (uint32_t e = 0; e < f.experts; ++e) {
+        const auto& ri = by_exp[e];
+        if (ri.empty()) continue;
+        const RadFileEntry* gu = f.weight(q->layer, e, 0);
+        const RadFileEntry* dn = f.weight(q->layer, e, 1);
+        if (!gu || !dn) return -ENOENT;
+        int64_t gur = 1, guc = 1, dnr = 1, dnc = 1;
+        rad_enc_view(gu->rank, gu->shape, &gur, &guc);
+        rad_enc_view(dn->rank, dn->shape, &dnr, &dnc);
+        if (guc != hid || dnr != hid || gur != 2 * dnc || dnc != hdr_intermediate)
+            return -EINVAL;
+
+        const int32_t es = layer_slot(map, q->layer, e);
+        if (es < 0) {
+            std::fprintf(stderr, "r3_moe_worker: fp8 reference: layer %u expert %u has no runtime slot but is routed\n", q->layer, e);
+            return -ENOTSUP;
+        }
+        (void)es;
+        const int64_t lo = 0;                 // FP8 experts are served full width, whole experts
+        const int64_t width = dnc;
+        const size_t mw = (size_t)dnc;
+        std::vector<float> mid(ri.size() * mw, 0.0f);
+
+        for (int64_t j = 0; j < width; ++j) {
+            if (!decode_row(f, gu, lo + j, wg, false) ||
+                !decode_row(f, gu, dnc + lo + j, wu, false)) {
+                std::fprintf(stderr, "r3_moe_worker: fp8 reference: gate/up row %lld of expert %u (layer %u) cannot be decoded\n", (long long)j, e, q->layer);
+                return -ENOTSUP;
+            }
+            for (size_t a = 0; a < ri.size(); ++a) {
+                const Route& r = routes[ri[a]];
+                const float* x = aq.data() + (size_t)r.token * hid;
+                const float gate = bf16(to_bf16(dot_f32(x, wg)));
+                const float up = bf16(to_bf16(dot_f32(x, wu)));
+                mid[a * mw + (size_t)j] =
+                    bf16(to_bf16((gate / (1.0f + ::expf(-gate))) * up));
+            }
+        }
+        for (size_t a = 0; a < ri.size(); ++a)
+            if (!quant_plain_engine(mid.data() + a * mw, mw)) return -EINVAL;
+
+        for (int64_t h = 0; h < hid; ++h) {
+            if (!decode_row(f, dn, h, wd, false)) {
+                std::fprintf(stderr, "r3_moe_worker: fp8 reference: down row %lld of expert %u (layer %u) cannot be decoded\n", (long long)h, e, q->layer);
+                return -ENOTSUP;
+            }
+            for (size_t a = 0; a < ri.size(); ++a) {
+                float sum = 0.0f;
+                const float* m = mid.data() + a * mw;
                 for (int64_t j = 0; j < width; ++j) sum += m[j] * wd[(size_t)(lo + j)];
                 down[(size_t)ri[a] * hid + (size_t)h] = to_bf16(sum);
             }
@@ -550,7 +689,7 @@ bool describe_expert(const Container& f, uint32_t l, uint32_t e, MoeExpertDesc* 
             (void)scale1;
             d.weight = MoeWeightDesc{MOE_FMT_W4NL64, MOE_ACT_FP8_E4M3_GROUP, MOE_SCALE_E4M3, 0, (uint32_t)sp.block[1], 0};
         } else if (cp.dtype == RAD_F8E4M3 && table < 0) {
-            d.weight = MoeWeightDesc{MOE_FMT_FP8_E4M3_BLOCK, MOE_ACT_BF16, scale_dtype_of(sp.dtype),
+            d.weight = MoeWeightDesc{MOE_FMT_FP8_E4M3_BLOCK, MOE_ACT_FP8_E4M3_GROUP, scale_dtype_of(sp.dtype),
                                      (uint32_t)sp.block[0], (uint32_t)sp.block[1], 0};
         }
     }
@@ -566,7 +705,7 @@ bool describe_expert(const Container& f, uint32_t l, uint32_t e, MoeExpertDesc* 
 /* The shape the container implies (RCS09): layers, routed experts, hidden, expert intermediate width. top_k is the engine's. */
 bool container_shape(const Container& f, MoeShape* s) {
     if (!f.experts || !f.hidden) return false;
-    *s = MoeShape{f.layers, f.experts, f.hidden, 0, f.intermediate, 0, 0};
+    *s = MoeShape{f.layers, f.experts, f.hidden, f.top_k, f.intermediate, 0, 0};
     return true;
 }
 
@@ -617,7 +756,7 @@ bool segment_shape(const Container& f, r3::moe_shm::LayoutShape* shape, r3::moe_
         std::fprintf(stderr, "r3_moe_worker: the container's shape could not be read\n");
         return false;
     }
-    *shape = r3::moe_shm::LayoutShape{cs.hidden, r3::moe_shm::kTopK, cs.experts, r3::moe_shm::kMaxRows,
+    *shape = r3::moe_shm::LayoutShape{cs.hidden, cs.top_k ? cs.top_k : r3::moe_shm::kTopK, cs.experts, r3::moe_shm::kMaxRows,
                                       r3::moe_shm::kActGroup, cs.intermediate};
     if (!r3::moe_shm::layout_for(*shape, lay)) {
         std::fprintf(stderr, "r3_moe_worker: the shared-memory layout for this shape is invalid\n");
@@ -827,11 +966,13 @@ bool parse_u32(const char* s, uint32_t lo, uint32_t hi, uint32_t* out) {
 
 /* REQUEST CAPTURE / REPLAY (RAD06). R3_MOE_WORKER_CAPTURE=<dir> writes real large-lane requests (every
  * R3_MOE_WORKER_CAPTURE_EVERY-th, at most R3_MOE_WORKER_CAPTURE_MAX) as <dir>/req-<lane>-<seq>.bin:
- * CaptureHeader, the layer's runtime slot map (kExperts int32), the routes, the bf16 activation rows.
+ * CaptureHeader (version 3: the model's shape is in it), the layer's runtime slot map (header.experts int32), the routes, the
+ * quantised activation rows (E4M3 codes then an f32 scale a group).
  * `--replay MODEL FILE` runs --compare's machinery on that request instead of synthetic routing. */
 struct CaptureHeader {
-    uint32_t magic, version, layer, rows, route_count, hidden;
+    uint32_t magic, version, layer, rows, route_count, hidden, experts, top_k, act_group;
 };
+constexpr uint32_t kCaptureVersion = 3;
 constexpr uint32_t kCaptureMagic = 0x52335243u;  // "CR3R"
 
 void capture_request(void* map, const Request* q, uint32_t lane, uint32_t seq) {
@@ -847,18 +988,20 @@ void capture_request(void* map, const Request* q, uint32_t lane, uint32_t seq) {
     }();
     static std::atomic<uint32_t> written{0};
     if (seq % every != 0 || written.load() >= max_n) return;
-    CaptureHeader hd{kCaptureMagic, 2, load(&q->layer), load(&q->rows), load(&q->route_count), kHidden};
+    const Header* sh = static_cast<const Header*>(map);
+    CaptureHeader hd{kCaptureMagic, kCaptureVersion, load(&q->layer), load(&q->rows), load(&q->route_count),
+                     sh->hidden, sh->expert_count, sh->top_k, sh->activation_group};
     if (hd.layer >= kMaxLayers || hd.rows == 0 || hd.rows > kMaxRows) return;
     const std::string path = std::string(dir) + "/req-" + std::to_string(lane) + "-" + std::to_string(seq) + ".bin";
     FILE* f = std::fopen(path.c_str(), "wb");
     if (!f) return;
     std::fwrite(&hd, sizeof(hd), 1, f);
-    std::fwrite(layer_slots(map, hd.layer), sizeof(int32_t), kExperts, f);
+    std::fwrite(layer_slots(map, hd.layer), sizeof(int32_t), hd.experts, f);
     std::fwrite(ptr<Route>(map, q->route_offset), sizeof(Route), hd.route_count, f);
     /* The engine publishes the quantised activation (E4M3 plus a scale a group), not bf16: the bf16 plane of the map
      * is empty on the large lane. Version 1 captures stored that empty plane and cannot be replayed. */
-    std::fwrite(ptr<uint8_t>(map, q->activation_q_offset), 1, (size_t)hd.rows * kHidden, f);
-    std::fwrite(ptr<float>(map, q->activation_s_offset), sizeof(float), (size_t)hd.rows * (kHidden / kActGroup), f);
+    std::fwrite(ptr<uint8_t>(map, q->activation_q_offset), 1, (size_t)hd.rows * hd.hidden, f);
+    std::fwrite(ptr<float>(map, q->activation_s_offset), sizeof(float), (size_t)hd.rows * (hd.hidden / hd.act_group), f);
     std::fclose(f);
     written.fetch_add(1);
 }
@@ -890,7 +1033,7 @@ void trace_dump(void* map, uint32_t lane, uint32_t seq) {
 
 struct ReplayInput {
     CaptureHeader hd{};
-    std::array<int32_t, kExperts> slots{};
+    std::vector<int32_t> slots;
     std::vector<Route> routes;
     std::vector<uint8_t> actq;
     std::vector<float> acts;
@@ -903,13 +1046,18 @@ bool g_sweep_fast = false;
 bool load_replay(const char* path, ReplayInput* out) {
     FILE* f = std::fopen(path, "rb");
     if (!f) return false;
-    bool ok = std::fread(&out->hd, sizeof(out->hd), 1, f) == 1 && out->hd.magic == kCaptureMagic && out->hd.version == 2 &&
-              out->hd.hidden == kHidden && out->hd.layer < kMaxLayers && out->hd.rows > 0 && out->hd.rows <= kMaxRows;
-    if (ok) ok = std::fread(out->slots.data(), sizeof(int32_t), kExperts, f) == kExperts;
+    bool ok = std::fread(&out->hd, sizeof(out->hd), 1, f) == 1 && out->hd.magic == kCaptureMagic && out->hd.version == kCaptureVersion &&
+              out->hd.hidden > 0 && out->hd.hidden <= 16384 && out->hd.experts > 0 && out->hd.experts <= 4096 && out->hd.top_k > 0 &&
+              out->hd.top_k <= kMaxTopK && out->hd.act_group > 0 && out->hd.hidden % out->hd.act_group == 0 &&
+              out->hd.layer < kMaxLayers && out->hd.rows > 0 && out->hd.rows <= kMaxRows && out->hd.route_count <= kMaxRoutes;
+    if (ok) {
+        out->slots.resize(out->hd.experts);
+        ok = std::fread(out->slots.data(), sizeof(int32_t), out->slots.size(), f) == out->slots.size();
+    }
     if (ok) {
         out->routes.resize(out->hd.route_count);
-        out->actq.resize((size_t)out->hd.rows * kHidden);
-        out->acts.resize((size_t)out->hd.rows * (kHidden / kActGroup));
+        out->actq.resize((size_t)out->hd.rows * out->hd.hidden);
+        out->acts.resize((size_t)out->hd.rows * (out->hd.hidden / out->hd.act_group));
         ok = std::fread(out->routes.data(), sizeof(Route), out->routes.size(), f) == out->routes.size() &&
              std::fread(out->actq.data(), 1, out->actq.size(), f) == out->actq.size() &&
              std::fread(out->acts.data(), sizeof(float), out->acts.size(), f) == out->acts.size();
@@ -921,7 +1069,15 @@ bool load_replay(const char* path, ReplayInput* out) {
 int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& owned,
                  uint32_t layer, uint32_t rows, const SmallClasses& classes, uint32_t lane_large_rows,
                  bool synthetic_protect) {
+    /* the request is built for the model's own shape (the lane checks every request against it) */
+    const uint32_t hid = gpu.shape_.hidden, topk = gpu.shape_.top_k;
     if (g_replay) {  // a captured real request replaces the synthetic layer, rows, routes and activations
+        if (g_replay->hd.hidden != hid || g_replay->hd.experts != model.experts || g_replay->hd.top_k != topk ||
+            g_replay->hd.act_group != kActGroup) {
+            std::fprintf(stderr, "r3_moe_worker: the capture is for hidden %u, %u experts, top-k %u; this model is hidden %u, %u experts, top-k %u\n",
+                         g_replay->hd.hidden, g_replay->hd.experts, g_replay->hd.top_k, hid, model.experts, topk);
+            return 1;
+        }
         layer = g_replay->hd.layer;
         rows = g_replay->hd.rows;
     }
@@ -930,11 +1086,10 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
                      rows, lane_large_rows);
         return 2;
     }
-    std::array<int32_t, kExperts> runtime_slot{};
-    runtime_slot.fill(-1);
+    std::vector<int32_t> runtime_slot(model.experts, -1);
     static constexpr uint32_t kSyntheticProtected[8] = {1, 17, 63, 127, 191, 255, 319, 511};
     uint32_t next_slot = 0;
-    for (uint32_t e = 0; e < kExperts; ++e) {
+    for (uint32_t e = 0; e < model.experts; ++e) {
         if (!model.weight(layer, e, 0) || !model.weight(layer, e, 1)) continue;
         bool protect = false;
         if (synthetic_protect)
@@ -944,13 +1099,13 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
     if (g_replay) runtime_slot = g_replay->slots;
 
     std::vector<uint32_t> remote_expert, local_expert;
-    std::vector<uint8_t> owned_here(kExperts, 0);
+    std::vector<uint8_t> owned_here(model.experts, 0);
     for (auto [l, e] : owned.expert) {
         if (l != layer || runtime_slot[e] < 0) continue;
         remote_expert.push_back(e);
         owned_here[e] = 1;
     }
-    for (uint32_t e = 0; e < kExperts; ++e)
+    for (uint32_t e = 0; e < model.experts; ++e)
         if (!owned_here[e] && model.weight(layer, e, 0) && model.weight(layer, e, 1))
             local_expert.push_back(e);
     if (remote_expert.size() < 2 || local_expert.empty()) {
@@ -973,11 +1128,11 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
 
     const uint32_t remote_per_token =
         std::min<uint32_t>(4, (uint32_t)remote_expert.size());
-    const uint32_t total = rows * kTopK;
+    const uint32_t total = rows * topk;
     std::vector<int32_t> full_expert(total, -1);
     std::vector<uint16_t> full_weight(total, 0);
     std::vector<uint8_t> is_remote(total, 0);
-    std::vector<uint16_t> activation((size_t)rows * kHidden);
+    std::vector<uint16_t> activation((size_t)rows * hid);
 
     uint64_t rng = 0x8f3f73b5cf1c9ad1ull ^ ((uint64_t)layer << 32) ^ rows;
     auto rnd = [&]() -> uint32_t {
@@ -993,9 +1148,9 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
     published.reserve((size_t)rows * remote_per_token);
     for (uint32_t t = 0; t < rows; ++t) {
         uint32_t ri = 0, li = 0;
-        for (uint32_t slot = 0; slot < kTopK; ++slot) {
-            const uint32_t flat = t * kTopK + slot;
-            const bool remote = ((slot + 3 * t) % kTopK) < remote_per_token;
+        for (uint32_t slot = 0; slot < topk; ++slot) {
+            const uint32_t flat = t * topk + slot;
+            const bool remote = ((slot + 3 * t) % topk) < remote_per_token;
             const float w = (float)(slot + 1) / 55.0f;
             full_weight[flat] = to_bf16(w);
             if (remote) {
@@ -1020,7 +1175,7 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
             const uint32_t c = g_replay->actq[i];
             const int e = (int)((c >> 3) & 0xfu), m = (int)(c & 7u);
             const float mag = e ? std::ldexp(1.0f + m / 8.0f, e - 7) : std::ldexp(m / 8.0f, -6);
-            activation[i] = to_bf16(((c & 0x80u) ? -mag : mag) * g_replay->acts[i / kActGroup]);
+            activation[i] = to_bf16(((c & 0x80u) ? -mag : mag) * g_replay->acts[i / g_replay->hd.act_group]);
         }
     }
     const uint32_t nr = (uint32_t)published.size();
@@ -1038,7 +1193,7 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
     publish_owned(map, owned, 0);
     Header* h = static_cast<Header*>(map);
     h->helper_count = 1;
-    std::memcpy(layer_slots(map, layer), runtime_slot.data(), sizeof(runtime_slot));
+    std::memcpy(layer_slots(map, layer), runtime_slot.data(), runtime_slot.size() * sizeof(int32_t));
     store(&h->layer_map_ready[layer], 1);
     if (!gpu.load_layer(layer, owned.expert, runtime_slot.data())) {
         std::fprintf(stderr, "r3_moe_worker: --compare layer %u runtime table build failed\n", layer);
@@ -1081,7 +1236,7 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
         q->rank = rank;
         q->rank_count = kMaxRanks;
         q->rows = rows;
-        q->hidden = kHidden;
+        q->hidden = hid;
         q->route_count = nr;
         q->row_base = 0;
         q->route_offset = h->route_offset[rank];
@@ -1089,12 +1244,12 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
         q->activation_q_offset = h->activation_offset[rank] + kActivationBf16Bytes;
         q->activation_s_offset =
             h->activation_offset[rank] + kActivationBf16Bytes + kActivationQBytes;
-        q->activation_stride = kHidden * sizeof(uint16_t);
-        q->activation_q_stride = kHidden;
-        q->activation_s_stride = (kHidden / kActGroup) * sizeof(float);
+        q->activation_stride = hid * sizeof(uint16_t);
+        q->activation_q_stride = hid;
+        q->activation_s_stride = (hid / kActGroup) * sizeof(float);
         for (uint32_t r = 0; r < kMaxRanks; ++r) {
             q->result_offset[r] = h->result_offset[rank * kMaxRanks + r];
-            q->result_stride[r] = kHidden * sizeof(uint16_t);
+            q->result_stride[r] = hid * sizeof(uint16_t);
         }
         q->sequence = sequence;
         std::memcpy(ptr<Route>(map, q->route_offset), published.data(),
@@ -1132,7 +1287,7 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
         }
         /* The helper's per-token rows, taken before the host reference rewrites the same slot. */
         const uint16_t* res = ptr<uint16_t>(map, h->result_offset[rank * kMaxRanks + rank]);
-        const std::vector<uint16_t> got(res, res + (size_t)rows * kHidden);
+        const std::vector<uint16_t> got(res, res + (size_t)rows * hid);
         if (g_sweep_fast) {
             static std::map<std::pair<const ReplayInput*, uint32_t>, std::vector<uint16_t>> base;
             double sum_abs = 0.0;
@@ -1153,8 +1308,9 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
         }
 
         std::vector<uint16_t> want_route;
-        const int hrc = compute_host_engine(model, map, q, &want_route);
-        if (hrc != 0 || want_route.size() != (size_t)nr * kHidden) {
+        const int hrc = gpu.weight_format() == MOE_FMT_FP8_E4M3_BLOCK ? compute_host_engine_fp8(model, map, q, &want_route)
+                                                                      : compute_host_engine(model, map, q, &want_route);
+        if (hrc != 0 || want_route.size() != (size_t)nr * hid) {
             std::fprintf(stderr,
                          "r3_moe_worker: --compare local-path host rank %u failed rc=%d\n",
                          rank, hrc);
@@ -1162,27 +1318,27 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
             break;
         }
         /* Host reference per token: the same slot-order f32 sum over this request's routes. */
-        std::vector<int32_t> route_of((size_t)rows * kTopK, -1);
+        std::vector<int32_t> route_of((size_t)rows * topk, -1);
         for (uint32_t j = 0; j < nr; ++j)
-            route_of[(size_t)published[j].token * kTopK + published[j].slot] = (int32_t)j;
+            route_of[(size_t)published[j].token * topk + published[j].slot] = (int32_t)j;
         long double num = 0.0L, den = 0.0L;
         double max_abs = 0.0;
         uint32_t tokens = 0;
         for (uint32_t t = 0; t < rows; ++t) {
             bool any = false;
-            for (uint32_t slot = 0; slot < kTopK; ++slot) any = any || route_of[(size_t)t * kTopK + slot] >= 0;
+            for (uint32_t slot = 0; slot < topk; ++slot) any = any || route_of[(size_t)t * topk + slot] >= 0;
             if (!any) continue;
             ++tokens;
-            for (uint32_t col = 0; col < kHidden; ++col) {
+            for (uint32_t col = 0; col < hid; ++col) {
                 float acc = 0.0f;
-                for (uint32_t slot = 0; slot < kTopK; ++slot) {
-                    const int32_t j = route_of[(size_t)t * kTopK + slot];
+                for (uint32_t slot = 0; slot < topk; ++slot) {
+                    const int32_t j = route_of[(size_t)t * topk + slot];
                     if (j < 0) continue;
                     acc += bf16(published[(uint32_t)j].weight_bf16) *
-                           bf16(want_route[(size_t)(uint32_t)j * kHidden + col]);
+                           bf16(want_route[(size_t)(uint32_t)j * hid + col]);
                 }
                 const double b = bf16(to_bf16(acc));
-                const double a = bf16(got[(size_t)t * kHidden + col]);
+                const double a = bf16(got[(size_t)t * hid + col]);
                 const double d = a - b;
                 num += (long double)d * d;
                 den += (long double)b * b;
@@ -1536,6 +1692,27 @@ int main(int argc, char** argv) {
             gpu->engine_ranks_ = (uint32_t)n;
         }
         if (!gpu->open()) return 1;
+        {   // the container's own weight format picks the kernels (RAD13); an unsupported one was refused by name above
+            MoeExpertDesc first{};
+            for (uint32_t l = 0; l < model.layers && !first.weight.format; ++l)
+                for (uint32_t e = 0; e < model.experts && !first.weight.format; ++e)
+                    if (model.weight(l, e, 0) && model.weight(l, e, 1)) (void)describe_expert(model, l, e, &first);
+            if (!first.weight.format) {
+                std::fprintf(stderr, "r3_moe_worker: no expert of this container has a weight format the worker knows\n");
+                return 1;
+            }
+            for (uint32_t l = 0; l < model.layers; ++l)   // one table of experts takes one encoding
+                for (uint32_t e = 0; e < model.experts; ++e) {
+                    MoeExpertDesc d{};
+                    if (model.weight(l, e, 0) && model.weight(l, e, 1) && describe_expert(model, l, e, &d) &&
+                        (d.weight.format != first.weight.format || d.weight.block_k != first.weight.block_k ||
+                         d.weight.scale_dtype != first.weight.scale_dtype)) {
+                        std::fprintf(stderr, "r3_moe_worker: experts (%u,%u) and the first differ in weight format\n", l, e);
+                        return 1;
+                    }
+                }
+            if (!gpu->set_weight_format(first.weight.format)) return 1;
+        }
     }
 
     /* R3_MOE_WORKER_COUNT=2 with R3_MOE_WORKER_INDEX=0/1: two helpers (the XTX cards) behind a one-rank engine

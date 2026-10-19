@@ -767,9 +767,38 @@ public:
     /* Routed experts per layer, from the container; and the thread count of the one-block routing kernels: a power of two, at least
      * kFuseMaxRoutes and the expert count (0 when the count is beyond what one block can scan). */
     uint32_t experts() const { return model_.experts; }
+    uint32_t weight_format() const { return weight_format_; }
     /* The shape the kernels run with: hidden width, routes a token, activation group (RCS09-06). Checked against the capacities the
      * kernels are built for (per-token scratch, the GEMV's LDS row, whole 16-byte activation pieces) and copied to the device. */
     r3::moe_shm::LayoutShape shape_{};
+    /* The expert weight format the worker serves (the backend contract's MOE_FMT_*). W4NL64 is what open() prepared; FP8 block-scaled
+     * switches to radiance's fp8a8 grouped GEMM and the plain quantisers, reads the container's planes as they are (that kernel's
+     * layout is the checkpoint's own row-major bytes) and takes the grouped GEMM for decode too (no FP8 GEMV yet). */
+    bool set_weight_format(uint32_t fmt) {
+        if (fmt == MOE_FMT_W4NL64) return true;
+        if (fmt != MOE_FMT_FP8_E4M3_BLOCK) {
+            std::fprintf(stderr, "r3_moe_worker: no kernels for weight format %u\n", fmt);
+            return false;
+        }
+        if (!moe_fp8_ || !moe_fp8_->layout || !quant_plain_ || !gated_plain_) {
+            std::fprintf(stderr, "r3_moe_worker: installed libr4d lacks the fp8a8 grouped GEMM or the plain quantiser rows\n");
+            return false;
+        }
+        if (!full_width()) {
+            std::fprintf(stderr, "r3_moe_worker: FP8 experts are served full width (one engine rank), not sliced across two\n");
+            return false;
+        }
+        weight_format_ = fmt;
+        dtype_ = "fp8a8";
+        moe_ = moe_fp8_;
+        had_quant_ = quant_plain_;
+        gated_quant_ = gated_plain_;
+        gemv_ = false;
+        gemv_debug_ = false;
+        gemv_large_rows_ = 0;
+        rows_ = false;
+        return true;
+    }
     bool set_shape(const r3::moe_shm::LayoutShape& s) {
         if (!s.hidden || !s.top_k || s.top_k > r3::moe_shm::kMaxTopK || !s.act_group || s.hidden % 16 || s.hidden % s.act_group ||
             ((s.hidden / s.act_group) * 4) % 16 || s.hidden > kGemvMaxK) {
@@ -855,7 +884,7 @@ public:
         experts_.resize((size_t)model_.layers * experts());
         tables_.resize(model_.layers);
         /* hidden width and expert count are the container's; row capacity, top-k and group are the protocol's until negotiated */
-        return set_shape(r3::moe_shm::LayoutShape{model_.hidden, r3::moe_shm::kTopK, model_.experts, r3::moe_shm::kMaxRows,
+        return set_shape(r3::moe_shm::LayoutShape{model_.hidden, model_.top_k ? model_.top_k : r3::moe_shm::kTopK, model_.experts, r3::moe_shm::kMaxRows,
                                                   r3::moe_shm::kActGroup, model_.intermediate});
     }
 
@@ -995,11 +1024,11 @@ public:
                        { tensor(d_aq_.p, RAD_F8E4M3, {rows, shape_.hidden}),
                          tensor(d_as_.p, RAD_F32, {rows, shape_.hidden / kGroup}),
                          table_tensor(lt.gu_code[rank][0], lt.gu_code_dtype, 2 * w0, shape_.hidden),
-                         table_tensor(lt.gu_scale[rank][0], lt.gu_scale_dtype, 2 * w0, shape_.hidden / 64),
+                         table_scale_tensor(lt.gu_scale[rank][0], lt.gu_scale_dtype, 2 * w0, shape_.hidden),
                          tensor(d_sorted_.p, RAD_I32, {tr}),
                          tensor(d_off_.p, RAD_I32, {experts() + 1}),
                          table_tensor(lt.gu_code[rank][1], lt.gu_code_dtype, 2 * w1, shape_.hidden),
-                         table_tensor(lt.gu_scale[rank][1], lt.gu_scale_dtype, 2 * w1, shape_.hidden / 64),
+                         table_scale_tensor(lt.gu_scale[rank][1], lt.gu_scale_dtype, 2 * w1, shape_.hidden),
                          tensor(d_gu_.p, RAD_BF16, {tr, kRankGateUpWidth}) }, gp) < 0)
                 return -EIO;
 
@@ -1020,11 +1049,11 @@ public:
                        { tensor(d_mid_.p, RAD_F8E4M3, {tr, kRankWidth}),
                          tensor(d_mid_s_.p, RAD_F32, {tr, kRankWidth / kGroup}),
                          table_tensor(lt.dn_code[rank][0], lt.dn_code_dtype, shape_.hidden, w0),
-                         table_tensor(lt.dn_scale[rank][0], lt.dn_scale_dtype, shape_.hidden, w0 / 64),
+                         table_scale_tensor(lt.dn_scale[rank][0], lt.dn_scale_dtype, shape_.hidden, w0),
                          tensor(d_sorted_.p, RAD_I32, {tr}),
                          tensor(d_off_.p, RAD_I32, {experts() + 1}),
                          table_tensor(lt.dn_code[rank][1], lt.dn_code_dtype, shape_.hidden, w1),
-                         table_tensor(lt.dn_scale[rank][1], lt.dn_scale_dtype, shape_.hidden, w1 / 64),
+                         table_scale_tensor(lt.dn_scale[rank][1], lt.dn_scale_dtype, shape_.hidden, w1),
                          tensor(d_down_.p, RAD_BF16, {tr, shape_.hidden}) }, dp) < 0)
                 return -EIO;
 
@@ -1298,7 +1327,8 @@ public:
              * reads that expert's weights once a route; here they are read once for all the expert's rows. Read each
              * call so a replay sweep can compare; the rows accumulate in a different order, so it is not bit-exact. */
             const char* rs_env = std::getenv("R3_MOE_WORKER_ROWS_SMALL");
-            const bool rows_small = rs_env && std::strcmp(rs_env, "0") != 0 && lane_is_small(lane) && rows <= 16u;
+            const bool rows_small = weight_format_ == MOE_FMT_W4NL64 && rs_env && std::strcmp(rs_env, "0") != 0 &&
+                                    lane_is_small(lane) && rows <= 16u;
             const bool rowk = (rows_ && !lane_is_small(lane)) || rows_small;
             const dim3 rows_grid_gu(experts(), (uint32_t)((2 * std::max(w0, w1) + kRowsTileN - 1) / kRowsTileN));
             const dim3 rows_grid_dn(experts(), (uint32_t)((shape_.hidden + kRowsTileN - 1) / kRowsTileN));
@@ -1332,16 +1362,16 @@ public:
                           { tensor(w.d_aq.p, RAD_F8E4M3, {rows, shape_.hidden}),
                             tensor(w.d_as.p, RAD_F32, {rows, shape_.hidden / kGroup}),
                             table_tensor(w.gu_code[0].p, gu_code_dtype_, 2 * w0, shape_.hidden),
-                            table_tensor(w.gu_scale[0].p, gu_scale_dtype_, 2 * w0, shape_.hidden / 64),
+                            table_scale_tensor(w.gu_scale[0].p, gu_scale_dtype_, 2 * w0, shape_.hidden),
                             tensor(w.d_sorted.p, RAD_I32, {routes}),
                             tensor(w.d_off.p, RAD_I32, {experts() + 1}),
                             table_tensor(w.gu_code[1].p, gu_code_dtype_, 2 * w1, shape_.hidden),
-                            table_tensor(w.gu_scale[1].p, gu_scale_dtype_, 2 * w1, shape_.hidden / 64),
+                            table_scale_tensor(w.gu_scale[1].p, gu_scale_dtype_, 2 * w1, shape_.hidden),
                             tensor(w.d_gu.p, RAD_BF16, {routes, 2 * mid_w()}) },
                           gp, w.stream, w.scratch) < 0)
                 return -EIO;
 
-            if (gemv_debug_ && lane_is_small(lane)) {
+            if (gemv_debug_ && weight_format_ == MOE_FMT_W4NL64 && lane_is_small(lane)) {
                 hipLaunchKernelGGL(lane_moe_gemv<true>, gemv_grid_gu, dim3(256), 0, w.stream,
                                    static_cast<const uint8_t*>(w.d_aq.p), static_cast<const float*>(w.d_as.p),
                                    static_cast<const int32_t*>(w.d_sorted.p), static_cast<const int32_t*>(w.d_off.p),
@@ -1392,11 +1422,11 @@ public:
                           { tensor(w.d_mid.p, RAD_F8E4M3, {routes, mid_w()}),
                             tensor(w.d_mid_s.p, RAD_F32, {routes, mid_w() / kGroup}),
                             table_tensor(w.dn_code[0].p, dn_code_dtype_, shape_.hidden, w0),
-                            table_tensor(w.dn_scale[0].p, dn_scale_dtype_, shape_.hidden, w0 / 64),
+                            table_scale_tensor(w.dn_scale[0].p, dn_scale_dtype_, shape_.hidden, w0),
                             tensor(w.d_sorted.p, RAD_I32, {routes}),
                             tensor(w.d_off.p, RAD_I32, {experts() + 1}),
                             table_tensor(w.dn_code[1].p, dn_code_dtype_, shape_.hidden, w1),
-                            table_tensor(w.dn_scale[1].p, dn_scale_dtype_, shape_.hidden, w1 / 64),
+                            table_scale_tensor(w.dn_scale[1].p, dn_scale_dtype_, shape_.hidden, w1),
                             tensor(out_down, RAD_BF16, {routes, shape_.hidden}) },
                           dp, w.stream, w.scratch) < 0)
                 return -EIO;
@@ -1537,6 +1567,13 @@ private:
     const RadKernelInfo* had_quant_ = nullptr;
     const RadKernelInfo* gated_quant_ = nullptr;
     const RadKernelInfo* gather_ = nullptr;
+    /* The plain-E4M3 weight rows (RAD13): radiance's own fp8a8 grouped GEMM and the quantisers without the Hadamard rotation
+     * (the rotated twins exist for four-bit weights only). Chosen by set_weight_format. */
+    const RadKernelInfo* moe_fp8_ = nullptr;
+    const RadKernelInfo* quant_plain_ = nullptr;
+    const RadKernelInfo* gated_plain_ = nullptr;
+    uint32_t weight_format_ = MOE_FMT_W4NL64;
+    const char* dtype_ = kDtype;
     std::vector<Expert> experts_;
     std::vector<LayerTables> tables_;
     std::vector<uint8_t> layer_loaded_;
@@ -1645,6 +1682,10 @@ private:
         had_quant_ = find("had_quant_act_fp8", "had_quant_act_fp8");
         gated_quant_ = find("gated_had_quant_fp8", "gated_had_quant_fp8");
         gather_ = find("moe_gather", "moe_gather_bf16");
+        if (const RadKernelInfo* r = find("moe_gemm_q", "moe_gemm_fp8a8"); r && r->name && std::strcmp(r->name, "moe_gemm_fp8a8") == 0)
+            moe_fp8_ = r;
+        quant_plain_ = find("quant_act_fp8", "quant_act_fp8");
+        gated_plain_ = find("gated_quant_fp8", "gated_quant_fp8");
         if (!moe_ || !moe_->layout || !moe_->relayout || !had_quant_ || !gated_quant_ || !gather_) {
             std::fprintf(stderr, "r3_moe_worker: installed libr4d lacks required MoE/quant rows\n");
             return false;
@@ -1696,6 +1737,14 @@ private:
         int64_t nr = 1, nc = 1;
         rad_enc_view(e->rank, e->shape, &nr, &nc);
         const int64_t width = slice_w(rank, expert_slot & 1u);
+        if (weight_format_ == MOE_FMT_FP8_E4M3_BLOCK) {   // one byte a weight, one bf16 scale a 128x128 tile
+            const int64_t rows = gate_up ? 2 * width : nr, cols = gate_up ? nc : width;
+            if (gate_up ? (nr != 2 * (int64_t)shape_.intermediate || nc != shape_.hidden)
+                        : (nr != shape_.hidden || nc != (int64_t)shape_.intermediate)) return false;
+            *code = rows * cols;
+            *scale = ((rows + 127) / 128) * ((cols + 127) / 128) * 2;
+            return true;
+        }
         if (gate_up) {
             if (nr != 2 * (int64_t)shape_.intermediate || nc != shape_.hidden) return false;
             *code = (2 * width) * nc / 2;
@@ -1754,7 +1803,7 @@ private:
             pi("M", 1), pi("N", nr), pi("K", nc), pi("N_odd", nr), pi("K_odd", nc),
             pi("parts", gate_up ? 2 : 1), pi("n_expert", experts()),
             pi("top_k", shape_.top_k), pi("group", kGroup),
-            ps("a_order", gate_up ? "token" : "sorted"), ps("dtype", kDtype)
+            ps("a_order", gate_up ? "token" : "sorted"), ps("dtype", dtype_)
         };
     }
 
@@ -1763,6 +1812,43 @@ private:
         const RadEncoding* enc = model_.encoding(e);
         if (!enc || !rad_enc_valid(enc)) return false;
         out->params = layout_params(e, gate_up);
+        if (weight_format_ == MOE_FMT_FP8_E4M3_BLOCK) {   // E4M3 codes and one bf16 scale plane, in the layout the kernel reads
+            const int c = rad_enc_find(enc, "codes"), sc = rad_enc_find_level(enc, "scale", 0);
+            if (c < 0 || sc < 0) return false;
+            /* the identity layout is right only if the planes ARE the kernel's: E4M3 codes one byte a weight, a bf16 scale a 128x128 tile,
+             * nothing else (no zero point, table, transform or second scale level) */
+            if (enc->n_planes != 2 || enc->plane[c].dtype != RAD_F8E4M3 || enc->plane[c].block[1] != 1 ||
+                enc->plane[sc].dtype != RAD_BF16 || enc->plane[sc].kind != RAD_PLANE_TILED || enc->plane[sc].block[0] != 128 ||
+                enc->plane[sc].block[1] != 128 || std::strlen(enc->transform) != 0) return false;
+            int64_t rows = 1, cols = 1;
+            rad_enc_view(e->rank, e->shape, &rows, &cols);
+            int64_t pr = 0, pc = 0;
+            rad_enc_plane_dims(&enc->plane[c], rows, cols, &pr, &pc);
+            out->code_sel = {c, -1};
+            out->code_planes[0] = tensor(nullptr, enc->plane[c].dtype, {pr, pc});
+            rad_enc_plane_dims(&enc->plane[sc], rows, cols, &pr, &pc);
+            out->scale_sel = {sc, -1};
+            out->scale_planes[0] = tensor(nullptr, enc->plane[sc].dtype, {pr, pc});
+            /* The row-major fp8a8 hook checks the planes (dtype, 128x128 tiles, N/K) and then answers RAD_E_UNSUPPORTED on purpose:
+             * the kernel reads the checkpoint's own bytes, so there is no layout to compute. Any other answer is a refusal. */
+            const int f0 = moe_->layout(out->params.data(), (int)out->params.size(), 2, enc, out->code_sel.data(),
+                                        out->code_planes.data(), 1, &out->code);
+            const int f1 = moe_->layout(out->params.data(), (int)out->params.size(), 3, enc, out->scale_sel.data(),
+                                        out->scale_planes.data(), 1, &out->scale);
+            if ((f0 != RAD_OK && f0 != RAD_E_UNSUPPORTED) || (f1 != RAD_OK && f1 != RAD_E_UNSUPPORTED)) return false;
+            auto as_stored = [&](RadLayout* l, const RadTensor& pl) {
+                std::memset(l, 0, sizeof *l);
+                l->dtype = pl.dtype;
+                l->rank = 2;
+                l->shape[0] = pl.shape[0];
+                l->shape[1] = pl.shape[1];
+                l->align = 16;
+                l->bytes = pl.shape[0] * rad_enc_row_bytes(pl.dtype, pl.shape[1]);
+            };
+            if (f0 == RAD_E_UNSUPPORTED) as_stored(&out->code, out->code_planes[0]);
+            if (f1 == RAD_E_UNSUPPORTED) as_stored(&out->scale, out->scale_planes[0]);
+            return out->code.bytes > 0 && out->scale.bytes > 0;
+        }
         if (!canonical_pair(e, "codes", -1, "table", -1, &out->code_sel, &out->code_planes) ||
             !canonical_pair(e, "scale", 0, "scale", 1, &out->scale_sel, &out->scale_planes))
             return false;
@@ -1792,11 +1878,46 @@ private:
                        std::array<StoredWeight, r3::moe_shm::kMaxRanks>* out) {
         WeightPlan p;
         if (!plan_weight(e, gate_up, &p)) {
-            std::fprintf(stderr, "r3_moe_worker: expert weight is not %s-compatible\n", kDtype);
+            std::fprintf(stderr, "r3_moe_worker: expert weight is not %s-compatible\n", dtype_);
             return false;
         }
         int64_t nr = 1, nc = 1;
         rad_enc_view(e->rank, e->shape, &nr, &nc);
+        if (weight_format_ == MOE_FMT_FP8_E4M3_BLOCK) {
+            /* the container's planes ARE the kernel's layout (fp8a8's hook is the checkpoint's own row-major bytes): no relayout */
+            std::vector<uint8_t> code, scale;
+            RadTensor ct = p.code_planes[0], st = p.scale_planes[0];
+            if (!load_plane_data(e, p.code_sel[0], &ct, &code) || !load_plane_data(e, p.scale_sel[0], &st, &scale)) {
+                std::fprintf(stderr, "r3_moe_worker: pread expert plane failed\n");
+                return false;
+            }
+            int64_t cb = 0, sb = 0;
+            if (!slice_bytes(e, gate_up, expert_slot, 0, &cb, &sb) || (int64_t)code.size() != cb || (int64_t)scale.size() != sb ||
+                p.code.bytes != cb || p.scale.bytes != sb) {
+                std::fprintf(stderr, "r3_moe_worker: unexpected fp8a8 plane geometry for %s\n", gate_up ? "gate/up" : "down");
+                return false;
+            }
+            StoredWeight& w = (*out)[0];
+            w.code = arena_take(code.size());
+            w.scale = arena_take(scale.size());
+            if (!w.code || !w.scale ||
+                !hip_ok(hipMemcpy(w.code, code.data(), code.size(), hipMemcpyHostToDevice), "upload expert codes") ||
+                !hip_ok(hipMemcpy(w.scale, scale.data(), scale.size(), hipMemcpyHostToDevice), "upload expert scales"))
+                return false;
+            w.code_dtype = p.code.dtype;
+            w.scale_dtype = p.scale.dtype;
+            w.code_bytes = cb;
+            w.scale_bytes = sb;
+            uint32_t& cd = gate_up ? gu_code_dtype_ : dn_code_dtype_;
+            uint32_t& sd = gate_up ? gu_scale_dtype_ : dn_scale_dtype_;
+            if ((cd && cd != w.code_dtype) || (sd && sd != w.scale_dtype)) {
+                std::fprintf(stderr, "r3_moe_worker: owned expert stored layouts disagree\n");
+                return false;
+            }
+            cd = w.code_dtype;
+            sd = w.scale_dtype;
+            return true;
+        }
         if (p.code.bytes != nr * nc / 2 || p.scale.bytes != nr * (nc / 64)) {
             std::fprintf(stderr, "r3_moe_worker: unexpected %s relayout geometry\n",
                          gate_up ? "gate/up" : "down");
@@ -1954,6 +2075,12 @@ private:
                experts_[(size_t)layer * experts() + expert].live;
     }
 
+    /* The scale table of a weight of logical dims [n, k]: W4 has one E4M3 scale per 64 columns of every row; FP8 block-scaled has one
+     * bf16 scale per 128x128 tile (the checkpoint's own plane), so its scale tensor is [ceil(n/128), ceil(k/128)]. */
+    RadTensor table_scale_tensor(void* table, uint32_t dtype, int64_t n, int64_t k) const {
+        if (weight_format_ == MOE_FMT_FP8_E4M3_BLOCK) return table_tensor(table, dtype, (n + 127) / 128, (k + 127) / 128);
+        return table_tensor(table, dtype, n, k / 64);
+    }
     RadTensor table_tensor(void* table, uint32_t dtype, int64_t n, int64_t k) const {
         RadTensor t = tensor(table, dtype, {experts() / 2, n, k});
         t.stride[0] = 0; /* ABI table form: data points to a device array of per-entry pointers. */
@@ -1969,7 +2096,7 @@ private:
             pi("M", rows), pi("N", n), pi("K", k), pi("N_odd", n_odd), pi("K_odd", k_odd),
             pi("parts", parts), pi("n_expert", experts()),
             pi("top_k", shape_.top_k), pi("group", kGroup),
-            ps("a_order", order), ps("dtype", kDtype)
+            ps("a_order", order), ps("dtype", dtype_)
         };
     }
 
@@ -2008,11 +2135,11 @@ private:
                           { tensor(w.d_aq.p, RAD_F8E4M3, {rows, shape_.hidden}),
                             tensor(w.d_as.p, RAD_F32, {rows, shape_.hidden / kGroup}),
                             table_tensor(w.gu_code[0].p, gu_code_dtype_, 2 * w0, shape_.hidden),
-                            table_tensor(w.gu_scale[0].p, gu_scale_dtype_, 2 * w0, shape_.hidden / 64),
+                            table_scale_tensor(w.gu_scale[0].p, gu_scale_dtype_, 2 * w0, shape_.hidden),
                             tensor(w.d_sorted.p, RAD_I32, {routes}),
                             tensor(w.d_off.p, RAD_I32, {experts() + 1}),
                             table_tensor(w.gu_code[1].p, gu_code_dtype_, 2 * w1, shape_.hidden),
-                            table_tensor(w.gu_scale[1].p, gu_scale_dtype_, 2 * w1, shape_.hidden / 64),
+                            table_scale_tensor(w.gu_scale[1].p, gu_scale_dtype_, 2 * w1, shape_.hidden),
                             tensor(w.d_gu.p, RAD_BF16, {routes, 2 * mid_w()}) },
                           gp, &need))
             return false;
@@ -2035,11 +2162,11 @@ private:
                           { tensor(w.d_mid.p, RAD_F8E4M3, {routes, mid_w()}),
                             tensor(w.d_mid_s.p, RAD_F32, {routes, mid_w() / kGroup}),
                             table_tensor(w.dn_code[0].p, dn_code_dtype_, shape_.hidden, w0),
-                            table_tensor(w.dn_scale[0].p, dn_scale_dtype_, shape_.hidden, w0 / 64),
+                            table_scale_tensor(w.dn_scale[0].p, dn_scale_dtype_, shape_.hidden, w0),
                             tensor(w.d_sorted.p, RAD_I32, {routes}),
                             tensor(w.d_off.p, RAD_I32, {experts() + 1}),
                             table_tensor(w.dn_code[1].p, dn_code_dtype_, shape_.hidden, w1),
-                            table_tensor(w.dn_scale[1].p, dn_scale_dtype_, shape_.hidden, w1 / 64),
+                            table_scale_tensor(w.dn_scale[1].p, dn_scale_dtype_, shape_.hidden, w1),
                             tensor(w.d_down.p, RAD_BF16, {routes, shape_.hidden}) },
                           dp, &need))
             return false;

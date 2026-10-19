@@ -51,7 +51,9 @@ int main() {
     // probe: the gfx1100 backend today runs W4 only, and says so before any expert is touched
     const Backend& b = gfx1100_backend();
     check(probe(b, flash, w4, caps("gfx1100")) == MOE_OK, "gfx1100 accepts Flash-Next W4");
-    check(probe(b, qwen, fp8, caps("gfx1100")) == MOE_UNSUPPORTED_FORMAT, "gfx1100 refuses FP8 until its kernels exist");
+    check(probe(b, qwen, fp8, caps("gfx1100")) == MOE_OK, "gfx1100 accepts FP8 block-scaled (radiance's fp8a8 grouped GEMM)");
+    MoeWeightDesc nolayout{99, 0, 0, 0, 0, 0};
+    check(probe(b, qwen, nolayout, caps("gfx1100")) == MOE_UNSUPPORTED_FORMAT, "an unknown format is still refused");
     check(probe(b, flash, w4, caps("gfx1030", false)) == MOE_UNSUPPORTED_ARCH, "the gfx1100 backend refuses another architecture");
     check(probe(b, flash, w4, caps("gfx1100", false)) == MOE_UNSUPPORTED_ARCH, "and a device without f16 WMMA");
     MoeShape bad = flash; bad.top_k = flash.experts + 1;
@@ -59,10 +61,10 @@ int main() {
     bad = flash; bad.hidden = 0;
     check(probe(b, bad, w4, caps("gfx1100")) == MOE_BAD_GEOMETRY, "a zero dimension is refused");
 
-    // a backend that lists FP8 accepts it, and the expert size is the same function
-    Backend fp8_backend = b;
-    fp8_backend.formats |= 1u << MOE_FMT_FP8_E4M3_BLOCK;
-    check(probe(fp8_backend, qwen, fp8, caps("gfx1100")) == MOE_OK, "a backend that lists FP8 accepts the Qwen3.6 shape");
+    // a backend without FP8 refuses it
+    Backend w4_only = b;
+    w4_only.formats = 1u << MOE_FMT_W4NL64;
+    check(probe(w4_only, qwen, fp8, caps("gfx1100")) == MOE_UNSUPPORTED_FORMAT, "a W4-only backend refuses the Qwen3.6 FP8 experts");
 
     std::puts("r3_moe_backend_test: ok");
     return 0;

@@ -168,9 +168,9 @@ inline int probe(const Backend& b, const MoeShape& s, const MoeWeightDesc& w, co
     return bytes < 0 ? (int)bytes : MOE_OK;
 }
 
-// The gfx1100 backend: W4NL64 today (the existing kernels), FP8 block-scaled to follow (RAD11).
+// The gfx1100 backend: W4NL64 and FP8 block-scaled (radiance's fp8a8 grouped GEMM, RAD13).
 inline const Backend& gfx1100_backend() {
-    static const Backend b{"gfx1100", 7, "gfx1100", (1u << MOE_FMT_W4NL64), 1};
+    static const Backend b{"gfx1100", 7, "gfx1100", (1u << MOE_FMT_W4NL64) | (1u << MOE_FMT_FP8_E4M3_BLOCK), 1};
     return b;
 }
 
