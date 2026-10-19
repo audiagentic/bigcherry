@@ -508,6 +508,7 @@ ownership.
 | `tools/lab/radiance/qwen35b-helper-shadow.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark quality configuration running the 35B workers in shadow-compare mode (RAD13). |
 | `tools/lab/radiance/qwen35b-helper-shadow-run.sh` | **TRANSITIONAL** | `radiance` lab topic file; builds the diagnostic engine and runs qwen35b-helper-shadow.json (RAD13). |
 | `tools/lab/radiance/qwen35b-helper-maskonly.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark quality configuration for the exact merge control (mask-only) of the 35B workers (RAD13). |
+| `tools/lab/radiance/qwen35b-gemv-ab.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark server configuration, the 35B FP8 decode GEMV against the grouped GEMM on concurrent streams (RAD14). |
 | `tools/lab/radiance/run-radiance.sh` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/radiance/helper-small-ab.json` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/radiance/helper-downtile-ab.json` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, disposed per that README. |
