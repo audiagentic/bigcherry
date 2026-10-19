@@ -5,7 +5,7 @@ set -u
 export ROCM_PATH=/opt/rocm-7.2.4 PATH=/opt/rocm-7.2.4/bin:$PATH
 export BIGCHERRY_ENVIRONMENT=${BIGCHERRY_ENVIRONMENT:-/mnt/vault/development/projects/bigcherry/workspaces/main/config/environment.local.toml}
 WORK=/mnt/vault/development/projects/bigcherry/workspaces/main/work
-PYTHONPATH=tools timeout 5400 python3 -m bigcherry build --lane radiance-lab:stock:linux-radiance 2>&1 | grep -v warning | tail -n 4
+PYTHONPATH=tools timeout 5400 python3 -m bigcherry build --lane radiance-lab:stock:linux-radiance --experiment moe-remote-handoff 2>&1 | grep -v warning | tail -n 4
 B=$(ls -td $WORK/builds/*/*/ 2>/dev/null | head -1)
 [ -f "${B}bin/radiance" ] || { echo "Q35H_EXIT=99 no build"; exit 99; }
 export RAD_BIN=${B}bin/radiance RAD_HOME=${B}radiance_home R9700_BDF=0000:09:00.0
