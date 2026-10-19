@@ -103,7 +103,7 @@ void publish_layer_map(int layer, int n_expert, const int32_t* slot_of_expert) {
         std::fprintf(stderr, "libr3: R3_MOE_WORKER first layer map: layer %d n_expert %d\n", layer, n_expert);
     if (!g.hdr || !g.pinned || !slot_of_expert || layer < 0 ||
         layer >= (int)g.hdr->layer_count || n_expert <= 0 ||
-        n_expert > (int)kExperts) {
+        n_expert > (int)g.hdr->expert_count) {
         static std::atomic<int> said{0};
         if (said.fetch_add(1) == 0)
             std::fprintf(stderr, "libr3: R3_MOE_WORKER layer map dropped: hdr %d pinned %d map %d layer %d of %u "
@@ -120,14 +120,14 @@ void publish_layer_map(int layer, int n_expert, const int32_t* slot_of_expert) {
                          layer);
     } else {
         std::memcpy(dst, slot_of_expert, (size_t)n_expert * sizeof(int32_t));
-        for (int e = n_expert; e < (int)kExperts; ++e) dst[e] = -1;
+        for (int e = n_expert; e < (int)g.hdr->expert_count; ++e) dst[e] = -1;
         /* Layers with protected experts stay fully local for now: shadow still disagrees on exactly those
          * layers (34/44/46/47 on Flash-Next) after the runtime map. An all-local map means the helper owns
          * nothing there and publish sends nothing. */
         bool protected_layer = false;
         for (int e = 0; e < n_expert; ++e) protected_layer |= slot_of_expert[e] < 0;
         if (protected_layer) {
-            for (int e = 0; e < (int)kExperts; ++e) dst[e] = -1;
+            for (int e = 0; e < (int)g.hdr->expert_count; ++e) dst[e] = -1;
             std::fprintf(stderr, "libr3: R3_MOE_WORKER layer %d has protected experts; kept local\n", layer);
         }
         store(&g.hdr->layer_map_ready[layer], 1);
@@ -242,12 +242,12 @@ void report_shadow(uint32_t rank, RankState& s) {
     }
 }
 
-/* R3_MOE_WORKER_HISTOGRAM=<path>: this rank's route counts, uint32[kMaxLayers][kExperts], written at shutdown
+/* R3_MOE_WORKER_HISTOGRAM=<path>: this rank's route counts, uint32[kMaxLayers][Header::expert_count], written at shutdown
  * to <path>.rank<r>. A helper given it as R3_MOE_WORKER_HEAT owns the coldest experts first. */
 void write_heat(uint32_t rank, RankState& s) {
     const char* path = std::getenv("R3_MOE_WORKER_HISTOGRAM");
     if (!path || !*path || !s.dev.heat) return;
-    std::vector<uint32_t> heat((size_t)kMaxLayers * kExperts);
+    std::vector<uint32_t> heat((size_t)kMaxLayers * g.hdr->expert_count);
     if (!hip_ok(hipDeviceSynchronize(), "sync before route histogram") ||
         !hip_ok(hipMemcpy(heat.data(), s.dev.heat, heat.size() * sizeof(uint32_t), hipMemcpyDeviceToHost),
                 "read route histogram"))
@@ -412,7 +412,7 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
     s.dev.rank = (uint32_t)rank;
     s.dev.world = (uint32_t)world_size;
     if (const char* hp = std::getenv("R3_MOE_WORKER_HISTOGRAM"); hp && *hp) {
-        const size_t hb = (size_t)kMaxLayers * kExperts * sizeof(uint32_t);
+        const size_t hb = (size_t)kMaxLayers * g.hdr->expert_count * sizeof(uint32_t);
         if (!hip_ok(hipMalloc(reinterpret_cast<void**>(&s.dev.heat), hb), "hipMalloc route histogram") ||
             !hip_ok(hipMemset(s.dev.heat, 0, hb), "zero route histogram"))
             s.dev.heat = nullptr;
