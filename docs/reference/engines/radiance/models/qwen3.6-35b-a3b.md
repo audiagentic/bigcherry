@@ -67,6 +67,29 @@ Brutus (FFmpeg 6, `core/mm/mp4.cpp`, fixed by rad0005) and clang segfaulted once
 Run record dirs `q35h-1020-*` under the work root. Flash-Next's engine-alone start showed one GPU hang (`aql_fill1` never ran,
 host at 86 of 91 GiB) after a forced kill; a clean stop and retry loaded fine.
 
+## Worker decode kernel (RAD14, 2026-10-20)
+
+**Real decode requests.** 120 captured worker requests (4 streams, MTP 3, `R3_MOE_WORKER_CAPTURE`, config `qwen35b-helper-capture-decode.json`,
+captures on Brutus in `/mnt/data/bigcherry-work/caps-q35-decode`): every request is 16 rows (4 streams x 4 verify rows); the worker owns about 36 of
+the 128 routes, on about 12 distinct experts: **5.1 routes per touched expert** (1 route 12%, 2 routes 8%, 3 routes 10%, 4 routes 36%, 8 routes 11%).
+The 4-row groups are the verify positions of one stream, which route alike. Flash-Next decode requests, by contrast, are 1.0 route per touched expert at
+every size (4 to 24 rows), so multi-row reuse matters for this model and not for Flash-Next.
+
+**Kernel time per request** (`tools/lab/radiance/replay-kernel-time.sh`, one worker process replaying the captures under rocprofv3, device kernels only;
+SMALL_ROWS=8, so 16-row requests take the large lane):
+
+| Card | Kernel | gate/up | down |
+|---|---|---|---|
+| RX 7900 XTX (gfx1100) | `lane_moe_gemv<FP8>` (default) | 301 us | 149 us |
+| RX 7900 XTX | `lane_moe_rows<FP8>` (`R3_MOE_WORKER_ROWS=1`, new) | 286 us | 183 us |
+| R9700 (gfx1201, lower bandwidth) | `lane_moe_gemv<FP8>` | 235 us | 131 us |
+
+The other lane kernels total about 50 us a request; live worker compute is 560 us a request (7,273 requests in a 4-stream run), which matches the
+kernel time, so orchestration adds little. About 36 MiB of weights are touched a request: 45 us at 800 GB/s. The kernels are 8 to 10 times off that,
+about 85 GB/s effective, and the R9700 (less bandwidth) is faster than the XTX, so the limit is latency and synchronisation, not bandwidth or
+RDNA3-specific overhead. Porting the W4 few-rows structure to FP8 (decode each weight once, apply to every row of the expert) did not help.
+Redesign question with these numbers sent to GPT (session "Kernel redesign").
+
 ## Worker (FP8 expert helper)
 
 See RAD13 and the worker notes in the lab log: the FP8 worker is accurate, hand-off cost is small with partial ownership,

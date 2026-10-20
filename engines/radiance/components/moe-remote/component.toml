@@ -74,6 +74,18 @@ default = "1"
 status = "experimental"
 summary = "decode MoE GEMV for the helper's small lane (RAD05): no WMMA, dot products straight off the packed w4nl64 nibbles. R9700 engine + two XTX helpers, Flash-Next: decode 69.6/69.7 -> 95.7/95.5 tok/s, prefill unchanged, KLD 0.0605 (noise floor 0.058-0.062). 0 turns it off; 2 compares it with the grouped GEMM (--compare)"
 
+[setting.R3_MOE_WORKER_GEMV_WIDE]
+default = "1"
+status = "experimental"
+summary = "RAD14: on by default for FP8 experts (0 is the off switch). The FP8 decode GEMV with sixteen-byte weight loads (four in flight a lane) and a branch-free E4M3 decode. On real 35B decode captures, per 16-row request on one XTX: gate/up 301 -> 109 us, down 150 -> 82 us (about 2.4x less kernel time); output within f32 rounding of the default kernel (a different K-sum order)."
+activation = "r3_moe_worker: R3_MOE_WORKER_GEMV_WIDE on"
+
+[setting.R3_MOE_WORKER_GEMV_MR]
+default = "0"
+status = "evaluated"
+summary = "RAD14: the wide FP8 GEMV with an expert's rows batched four at a time (weights decoded once a pass). Slower than the single-row wide kernel on real 35B decode requests (gate/up 148 vs 109 us, down 95 vs 82 us): about twelve experts a request is too little parallelism and each block restages its activation rows. Kept for other shapes."
+activation = "r3_moe_worker: R3_MOE_WORKER_GEMV_MR on"
+
 [setting.R3_MOE_WORKER_MOE_FORM]
 default = "0"
 status = "experimental"

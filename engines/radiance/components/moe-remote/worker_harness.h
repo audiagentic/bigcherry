@@ -347,8 +347,17 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
                 std::printf("sweep_cmp layer %u rank %u baseline mismatches=0\n", layer, rank);
             } else {
                 size_t mism = 0;
-                for (size_t i = 0; i < got.size(); ++i) mism += got[i] != it->second[i];
-                std::printf("sweep_cmp layer %u rank %u mismatches=%zu of %zu\n", layer, rank, mism, got.size());
+                long double dn = 0.0L, dd = 0.0L;
+                double dmax = 0.0;
+                for (size_t i = 0; i < got.size(); ++i) {
+                    mism += got[i] != it->second[i];
+                    const double a = bf16(got[i]), b = bf16(it->second[i]);   /* this variant against the first one */
+                    dn += (long double)(a - b) * (a - b);
+                    dd += (long double)b * b;
+                    dmax = std::max(dmax, std::abs(a - b));
+                }
+                std::printf("sweep_cmp layer %u rank %u mismatches=%zu of %zu rel_l2=%.6g max_abs=%.6g\n", layer, rank, mism, got.size(),
+                            std::sqrt((double)(dn / std::max<long double>(dd, 1.0e-30L))), dmax);
             }
             continue;
         }
