@@ -41,6 +41,7 @@
  "expected_execution": {
   "backend": "ROCm",
   "architectures": [
+   "gfx1100",
    "gfx1100"
   ],
   "locators": [
