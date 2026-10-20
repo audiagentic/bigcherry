@@ -37,6 +37,17 @@ Projection from measured kernels and link; if built, matched stream A/B with acc
 
 Related: RAD15 (R9700 rows), RCS07 (gfx1030 backend), RR03 (superseded plan for a drafter on a separate card).
 
+2026-10-21 DECISION. Radiance's drafter "runs as extra passes after the trunk step" (core/engine_draft.cpp, SERIAL mode for
+MTP): a draft depends on the verified step's result, so relocating it to the 6900 cannot overlap verification. Overlap
+would need branch-parallel drafting of every possible acceptance length (4 chains x ~4.5 ms = ~18 ms on the 6900 against a
+~20 ms step): borderline at 1 stream, infeasible as streams grow, an engine patch, for at most ~16% at 1 stream.
+- Current models (Flash-Next, Qwen3.6-35B): the 6900 stays off the decode critical path. Every candidate role is slower
+  than the R9700 (logits, sampling), serially dependent (MTP drafting) or already hidden (expert workers).
+- Its role: overflow expert worker for models whose cold experts do not fit the two XTX (GLM-5.3 from radiance 1.9.0,
+  bf16 or larger containers). Needs a GEMV-only worker mode on gfx1030 (our packed-f16 FP8/W4 GEMVs compile for it; no
+  grouped GEMM; weight relayout from the gfx1100 plugin's host hooks). Built when such a model is deployed.
+- Branch-parallel drafting: shelved with the numbers above; revisit only if a simulation shows >= 10%.
+
 ## Change Log
 
 - 2026-10-21T02:00:00+00:00 (created-by): Created by agent
