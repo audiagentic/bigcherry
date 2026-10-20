@@ -1881,5 +1881,38 @@ class LaneBuildPhaseTests(unittest.TestCase):
         self.assertNotIn("lane-build", state.completed_phases)
 
 
+class PatchTestSelectionTests(unittest.TestCase):
+    """MEN24: a bump runs only the bumped engine's offline patch tests."""
+
+    REPO = Path(__file__).resolve().parents[3]
+
+    def test_radiance_bump_selects_only_radiance_tests(self) -> None:
+        selected = pin_bump.select_patch_test_modules(self.REPO, "radiance")
+        self.assertTrue(selected)
+        self.assertTrue(all(name.startswith("test_radiance_") for name in selected), selected)
+        self.assertIn("test_radiance_patch_packages", selected)
+
+    def test_llamacpp_bump_excludes_radiance_tests(self) -> None:
+        selected = pin_bump.select_patch_test_modules(self.REPO, "llamacpp")
+        self.assertTrue(selected)
+        self.assertFalse([name for name in selected if name.startswith("test_radiance_")])
+
+    def test_selected_modules_exist_and_are_scoped(self) -> None:
+        on_disk = {p.stem for p in (self.REPO / pin_bump.PATCH_TESTS_DIR).glob("test_*.py")}
+        radiance = set(pin_bump.select_patch_test_modules(self.REPO, "radiance"))
+        llamacpp = set(pin_bump.select_patch_test_modules(self.REPO, "llamacpp"))
+        self.assertLessEqual(radiance | llamacpp, on_disk)
+        self.assertFalse(radiance & llamacpp)
+        self.assertEqual(radiance | llamacpp, on_disk)
+
+    def test_run_patch_tests_passes_only_selected_modules(self) -> None:
+        with patch.object(pin_bump.subprocess, "run") as run:
+            run.return_value = subprocess.CompletedProcess([], 0, "", "")
+            pin_bump.run_patch_tests(self.REPO, "radiance")
+        command = run.call_args.args[0]
+        self.assertEqual(command[:3], [sys.executable, "-m", "unittest"])
+        self.assertEqual(command[3:], pin_bump.select_patch_test_modules(self.REPO, "radiance"))
+
+
 if __name__ == "__main__":
     unittest.main()
