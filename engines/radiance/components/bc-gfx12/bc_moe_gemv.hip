@@ -38,15 +38,16 @@ __device__ __forceinline__ const uint8_t* entry(const void* base, uint64_t s0, u
 }
 
 /* TOKEN: the activation row is the routed slot's token (sorted[r] / top_k); otherwise the sorted row itself. Rows past
- * off[n_expert] (dropped slots) are zeroed. */
+ * off[n_expert] (dropped slots) are zeroed. The output is `parts` stacked parts of N / parts columns, as is every weight
+ * (n / parts rows a part); a class's part narrower than the output's fills the part's leading columns and the rest are
+ * zero (libr4d's rule, r4d_moe.hip). */
 template <bool TOKEN>
 __global__ __launch_bounds__(256) void moe_gemv_fp8_h2(
     const uint8_t* aq, const float* as, const int32_t* sorted, const int32_t* off, Cls c0, Cls c1, uint16_t* y,
-    uint32_t T, uint32_t n_expert, uint32_t top_k, uint32_t a_ld, uint32_t as_ld, uint32_t y_ld) {
+    uint32_t N, uint32_t parts, uint32_t n_expert, uint32_t top_k, uint32_t a_ld, uint32_t as_ld, uint32_t y_ld) {
     const uint32_t r = blockIdx.x;
     const uint32_t n_base = blockIdx.y * kTile;
     if (r >= (uint32_t)off[n_expert]) {
-        const uint32_t N = c0.n > c1.n ? c0.n : c1.n;
         for (uint32_t j = threadIdx.x; j < kTile && n_base + j < N; j += blockDim.x) y[(uint64_t)r * y_ld + n_base + j] = 0;
         return;
     }
@@ -64,7 +65,7 @@ __global__ __launch_bounds__(256) void moe_gemv_fp8_h2(
     if ((r - sh_first) % kRows) return;        /* a follower row: its leader computes it */
     const uint32_t nr = (uint32_t)off[e + 1] - r < kRows ? (uint32_t)off[e + 1] - r : kRows;
     const Cls& c = (e & 1u) ? c1 : c0;
-    const uint32_t N = c.n, K = c.k;
+    const uint32_t K = c.k, fy = N / parts, fc = c.n / parts;
     if (n_base >= N) return;
     const uint32_t k16 = K / 16u;
     /* element k = 16 d + 4 q + j sits in plane (j & 1), half2 index (d * 4 + q), lane (j >> 1) */
@@ -90,8 +91,15 @@ __global__ __launch_bounds__(256) void moe_gemv_fp8_h2(
     for (uint32_t j = wave; j < kTile; j += waves) {
         const uint32_t n = n_base + j;
         if (n >= N) break;
-        const uint4* crow = reinterpret_cast<const uint4*>(codes + (uint64_t)n * c.w_ld);
-        const uint16_t* srow = scales + (uint64_t)(n / 128u) * c.s_ld;
+        const uint32_t part = n / fy, jp = n - part * fy;
+        if (jp >= fc) {                               /* past this class's part: zero */
+            if (lane == 0)
+                for (uint32_t m = 0; m < nr; ++m) y[(uint64_t)(r + m) * y_ld + n] = 0;
+            continue;
+        }
+        const uint32_t wn = part * fc + jp;
+        const uint4* crow = reinterpret_cast<const uint4*>(codes + (uint64_t)wn * c.w_ld);
+        const uint16_t* srow = scales + (uint64_t)(wn / 128u) * c.s_ld;
         float acc[kRows];
 #pragma unroll
         for (uint32_t m = 0; m < kRows; ++m) acc[m] = 0.0f;
@@ -181,8 +189,9 @@ extern "C" int bc_moe_gemm_fp8_decode(const RadArgs* a, RadStream stream) {
     const long long n_expert = geti(a, "n_expert", 0), top_k = geti(a, "top_k", 0), parts = geti(a, "parts", 1);
     const long long N0 = geti(a, "N", 0), K0 = geti(a, "K", 0);
     const long long N1 = geti(a, "N_odd", N0), K1 = geti(a, "K_odd", K0);
-    if (n_expert <= 0 || top_k <= 0 || parts != 1) return RAD_E_UNSUPPORTED;
-    if (N0 <= 0 || N1 <= 0 || K0 <= 0 || K1 <= 0 || N0 % 64 || N1 % 64 || K0 % 128 || K1 % 128) return RAD_E_UNSUPPORTED;
+    if (n_expert <= 0 || top_k <= 0 || parts <= 0) return RAD_E_UNSUPPORTED;
+    if (N0 <= 0 || N1 <= 0 || K0 <= 0 || K1 <= 0 || N0 % (64 * parts) || N1 % (64 * parts) || K0 % 128 || K1 % 128)
+        return RAD_E_UNSUPPORTED;
     if (K0 > kMaxK || K1 > kMaxK) return RAD_E_UNSUPPORTED;
     const long long N = N0 > N1 ? N0 : N1, K = K0 > K1 ? K0 : K1;
     if (Aq->dtype != RAD_F8E4M3 || As->dtype != RAD_F32 || Y->dtype != RAD_BF16) return RAD_E_UNSUPPORTED;
@@ -204,12 +213,12 @@ extern "C" int bc_moe_gemm_fp8_decode(const RadArgs* a, RadStream stream) {
     if (a_sorted)
         hipLaunchKernelGGL(moe_gemv_fp8_h2<false>, grid, dim3(256), 0, (hipStream_t)stream, (const uint8_t*)Aq->data,
                            (const float*)As->data, (const int32_t*)sorted->data, (const int32_t*)off->data, c0, c1,
-                           (uint16_t*)Y->data, (uint32_t)T, (uint32_t)n_expert, (uint32_t)top_k, (uint32_t)a_ld,
+                           (uint16_t*)Y->data, (uint32_t)N, (uint32_t)parts, (uint32_t)n_expert, (uint32_t)top_k, (uint32_t)a_ld,
                            (uint32_t)as_ld, (uint32_t)y_ld);
     else
         hipLaunchKernelGGL(moe_gemv_fp8_h2<true>, grid, dim3(256), 0, (hipStream_t)stream, (const uint8_t*)Aq->data,
                            (const float*)As->data, (const int32_t*)sorted->data, (const int32_t*)off->data, c0, c1,
-                           (uint16_t*)Y->data, (uint32_t)T, (uint32_t)n_expert, (uint32_t)top_k, (uint32_t)a_ld,
+                           (uint16_t*)Y->data, (uint32_t)N, (uint32_t)parts, (uint32_t)n_expert, (uint32_t)top_k, (uint32_t)a_ld,
                            (uint32_t)as_ld, (uint32_t)y_ld);
     return hipGetLastError() == hipSuccess ? RAD_OK : RAD_E_UNSUPPORTED;
 }

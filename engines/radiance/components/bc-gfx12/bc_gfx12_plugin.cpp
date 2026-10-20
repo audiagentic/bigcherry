@@ -9,7 +9,9 @@
 #include "rad_abi.h"
 
 #include <dlfcn.h>
+#include <link.h>
 #include <cstdio>
+#include <cstring>
 #include <string>
 
 extern "C" int bc_hc_read_decode(const RadArgs* a, RadStream s);        // bc_hc_read.hip
@@ -17,8 +19,9 @@ extern "C" int bc_moe_gemm_fp8_decode(const RadArgs* a, RadStream s);   // bc_mo
 
 namespace {
 
-/* libr4d's exported entry points, resolved once from the copy the engine already loaded (it sits beside this plugin in
- * the kernels directory). Called only after every plugin is loaded, so libr4d is present. */
+/* libr4d's exported entry points, resolved once from the copy the engine already loaded: found among the loaded objects by
+ * file name (the engine may load plugins through a resolved path, and libr4d carries no soname), else beside this plugin.
+ * Called only after every plugin is loaded, so libr4d is present. */
 struct R4d {
     RadLaunchFn hc_read = nullptr;
     RadScratchFn hc_read_scratch = nullptr;
@@ -34,20 +37,34 @@ struct R4d {
     bool moe_ok = false;
 };
 
+int find_loaded_r4d(struct dl_phdr_info* info, size_t, void* out) {
+    const char* n = info->dlpi_name;
+    if (!n || !*n) return 0;
+    const char* b = std::strrchr(n, '/');
+    if (std::strcmp(b ? b + 1 : n, "libr4d.so")) return 0;
+    *static_cast<std::string*>(out) = n;
+    return 1;
+}
+
 const R4d& r4d() {
     static const R4d r = [] {
         R4d x;
-        Dl_info di{};
-        std::string dir;
-        if (dladdr((const void*)&r4d, &di) && di.dli_fname) {
-            dir = di.dli_fname;
-            const size_t s = dir.rfind('/');
-            dir = s == std::string::npos ? std::string() : dir.substr(0, s + 1);
+        std::string path;
+        dl_iterate_phdr(find_loaded_r4d, &path);
+        if (path.empty()) {
+            Dl_info di{};
+            if (dladdr((const void*)&find_loaded_r4d, &di) && di.dli_fname) {
+                path = di.dli_fname;
+                const size_t s = path.rfind('/');
+                path = s == std::string::npos ? std::string() : path.substr(0, s + 1);
+            }
+            path += "libr4d.so";
         }
-        void* h = dlopen((dir + "libr4d.so").c_str(), RTLD_NOW | RTLD_NOLOAD);
-        if (!h) h = dlopen((dir + "libr4d.so").c_str(), RTLD_NOW | RTLD_LOCAL);
+        void* h = dlopen(path.c_str(), RTLD_NOW | RTLD_NOLOAD);
+        if (!h) h = dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
         if (!h) {
-            std::fprintf(stderr, "libbcgfx12: libr4d.so not found beside the plugin: %s\n", dlerror());
+            std::fprintf(stderr, "libbcgfx12: libr4d.so not loaded and not found beside the plugin: %s
+", dlerror());
             return x;
         }
         x.hc_read = (RadLaunchFn)dlsym(h, "r4d_rad_hc_read");
@@ -131,7 +148,7 @@ const RadKernelInfo kRows[] = {
     { "bc_moe_gemm_fp8a8_decode", "moe_gemm_q", "moe",
       "moe_gemm_q at decode-sized steps (RAD15): one block a (routed row pair, 64 outputs), each wave an output's dot "
       "product on packed f16, instead of libr4d's fp8 WMMA tile masked down to a run's one or two rows",
-      "M <= 16, K <= 2560, one part; otherwise as libr4d's moe_gemm_fp8a8",
+      "M <= 16, K <= 2560; otherwise as libr4d's moe_gemm_fp8a8",
       "E4M3 activation with an f32 scale per 128 of K, E4M3 weight with a bf16 scale per 128x128 tile, bf16 out",
       RAD_DOMAIN_DEVICE, 60,
       kMoeGemmQDecode, (int)(sizeof(kMoeGemmQDecode) / sizeof(kMoeGemmQDecode[0])),
