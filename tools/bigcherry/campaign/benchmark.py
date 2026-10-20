@@ -614,7 +614,8 @@ def run_server_arm_capture(
                 record = stream_isolation.run(
                     f"http://{server.host}:{server.port}", model.stem, int(iso["prompts"]),
                     [int(n) for n in iso["group_sizes"]], int(stream_bench["prompt_tokens"]),
-                    int(stream_bench["max_tokens"]), seed=int(stream_bench.get("seed", 1)))
+                    int(stream_bench["max_tokens"]), seed=int(stream_bench.get("seed", 1)),
+                    stagger_s=float(iso.get("stagger_s", 0.0)))
                 (cell / "stream-isolation.json").write_text(json.dumps(record, indent=1, sort_keys=True) + chr(10), encoding="utf-8")
                 run["metrics"] = stream_isolation.flat_metrics(record)
                 missing = [m for m in required_metrics if m not in run["metrics"]]

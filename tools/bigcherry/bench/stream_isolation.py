@@ -10,6 +10,7 @@ of the round, so a collapse can be tied to the group size that causes it.
 from __future__ import annotations
 
 import threading
+import time
 
 from bigcherry.bench import stream_bench as sb
 
@@ -22,14 +23,17 @@ def _common_prefix(a: str, b: str) -> int:
     return i
 
 
-def _group(url, model, prompts, order, prompt_tokens, max_tokens, seed, timeout):
-    """The prompts `order` (a list of prompt indices) released together; returns (results, engine record)."""
+def _group(url, model, prompts, order, prompt_tokens, max_tokens, seed, timeout, stagger_s=0.0):
+    """The prompts `order` (a list of prompt indices) released together, or `stagger_s` seconds apart; returns (results,
+    engine record)."""
     results: list = [None] * len(order)
     gate = threading.Barrier(len(order) + 1)
     before = sb.scrape_metrics(url)
 
     def work(slot, idx):
         gate.wait()
+        if stagger_s > 0:
+            time.sleep(slot * stagger_s)
         results[slot] = sb.one_stream(url, model, idx, prompts[idx], max_tokens, 0.0, timeout, seed)
 
     threads = [threading.Thread(target=work, args=(slot, idx), daemon=True) for slot, idx in enumerate(order)]
@@ -42,7 +46,7 @@ def _group(url, model, prompts, order, prompt_tokens, max_tokens, seed, timeout)
 
 
 def run(url: str, model: str, n_prompts: int, group_sizes: list, prompt_tokens: int, max_tokens: int,
-        seed: int = 1, timeout: float = 600.0) -> dict:
+        seed: int = 1, timeout: float = 600.0, stagger_s: float = 0.0) -> dict:
     if n_prompts < 2 or not group_sizes or any(n < 2 or n > n_prompts for n in group_sizes):
         raise sb.StreamBenchError("isolation needs at least 2 prompts and group sizes within 2..prompts")
     prompts = [sb.make_prompt(i, prompt_tokens, seed, False) for i in range(n_prompts)]
@@ -54,14 +58,14 @@ def run(url: str, model: str, n_prompts: int, group_sizes: list, prompt_tokens: 
             raise sb.StreamBenchError(f"solo run of prompt {i} failed: {a[0].error or b[0].error}")
         solo[i], solo_repeat[i] = a[0].text, b[0].text
     record = {"schema": 1, "config": {"url": url, "n_prompts": n_prompts, "group_sizes": group_sizes,
-                                       "prompt_tokens": prompt_tokens, "max_tokens": max_tokens, "seed": seed},
+                                       "prompt_tokens": prompt_tokens, "max_tokens": max_tokens, "seed": seed, "stagger_s": stagger_s},
               "solo": [{"prompt": i, "chars": len(solo[i]), "repeat_match": solo[i] == solo_repeat[i],
                         "repeat_prefix": _common_prefix(solo[i], solo_repeat[i]), "head": solo[i][:200]}
                        for i in range(n_prompts)],
               "groups": []}
     for n in group_sizes:
         for label, order in (("forward", list(range(n))), ("reversed", list(reversed(range(n))))):
-            results, engine = _group(url, model, prompts, order, prompt_tokens, max_tokens, seed, timeout)
+            results, engine = _group(url, model, prompts, order, prompt_tokens, max_tokens, seed, timeout, stagger_s)
             streams = []
             for slot, idx in enumerate(order):
                 r = results[slot]
