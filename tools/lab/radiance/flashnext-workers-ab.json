@@ -1,5 +1,5 @@
 {
- "_comment": "RAD06/RAD14: Qwen3.8-Flash-Next production topology (R9700 engine, two XTX workers owning the coldest experts, arm fn-workers) against the R9700 engine alone (arm fn-engine), 1/2/4/6 streams, MTP 3. The baseline for any W4 worker change.",
+ "_comment": "RAD06/RAD14: Qwen3.8-Flash-Next production topology (R9700 engine, two XTX workers owning the coldest experts, arm fn-workers) against the R9700 engine alone (arm fn-engine), 1/2/4/6 streams, MTP 3. The baseline for any W4 worker change. --host-pool-mib 14336 as in the flashnext-2xtx runtime profile: the 47.7 GiB n-gram table is pinned in RAM and 30720 does not fit beside it.",
  "schema_version": 1,
  "engine": "radiance",
  "evidence_role": "diagnostic",
@@ -27,7 +27,7 @@
   "--tp",
   "1",
   "--host-pool-mib",
-  "30720",
+  "14336",
   "--max-model-len",
   "32768"
  ],
