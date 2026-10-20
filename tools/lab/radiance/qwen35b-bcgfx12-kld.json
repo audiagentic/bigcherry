@@ -1,0 +1,77 @@
+{
+ "_comment": "RAD15: output quality of bc-gfx12's moe_gemm_q decode row on the 35B, R9700 engine alone, scored by radiance KL mode against the recorded R9700 reference (KLD_REF_DIR, reused). KL mode is prefill-only, so --max-num-batched-tokens 16 keeps every step inside the row's M <= 16 band; the control arm switches the row off (BC_GFX12_MOE_GEMV=0). Thresholds as helper-kld.json.",
+ "schema_version": 1,
+ "engine": "radiance",
+ "evidence_role": "diagnostic",
+ "execution_evidence": "observe",
+ "quality_only": true,
+ "model": "/mnt/data/llm-models/radiance/StillDeadcode/qwen3.6-35b-a3b-fp8/qwen3.6-35b-a3b-fp8.rad",
+ "server_args": [],
+ "environment": {
+  "HIP_VISIBLE_DEVICES": "0",
+  "ROCR_VISIBLE_DEVICES": "2",
+  "RADIANCE_HOME": "${RAD_HOME}"
+ },
+ "expected_execution": {
+  "backend": "ROCm",
+  "architectures": [
+   "gfx1201"
+  ],
+  "locators": [
+   "${R9700_BDF}"
+  ]
+ },
+ "quality": {
+  "reference_dir": "${KLD_REF_DIR}",
+  "control": "bcg12-off",
+  "timeout_s": 5400,
+  "args": [
+   "--radiance-home",
+   "${RAD_HOME}",
+   "--kernels",
+   "libbcgfx12,libr4d,libref",
+   "--placement",
+   "expert_tiered",
+   "--tp",
+   "1",
+   "--host-pool-mib",
+   "30720",
+   "--kv-cache-dtype",
+   "fp8",
+   "--max-model-len",
+   "8192",
+   "--max-num-seqs",
+   "1",
+   "--max-num-batched-tokens",
+   "16"
+  ],
+  "thresholds": {
+   "max_kld_mean_increase": 0.02,
+   "max_kld_median_increase": 0.01,
+   "max_kld_p99_increase": 0.2,
+   "max_kld_p999_increase": 0.5,
+   "max_top1_drop_points": 1.0,
+   "max_ppl_ratio_increase": 0.05
+  }
+ },
+ "arms": [
+  {
+   "name": "bcg12-off",
+   "mode": "stock",
+   "shutdown_method": "sigint",
+   "binary": "${RAD_BIN}",
+   "settings": {
+    "BC_GFX12_MOE_GEMV": "0"
+   }
+  },
+  {
+   "name": "bcg12-on",
+   "mode": "stock",
+   "shutdown_method": "sigint",
+   "binary": "${RAD_BIN}",
+   "settings": {
+    "BC_GFX12_MOE_GEMV": "1"
+   }
+  }
+ ]
+}
