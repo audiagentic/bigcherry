@@ -903,8 +903,8 @@ def run_server_comparison_capture(
     if any(value.split("=", 1)[0] in ("-m", "--model", "--host", "--port") for value in extra_args):
         raise ValueError("server_args cannot override the managed model or endpoint")
     metrics = () if quality_only else tuple(config["required_metrics"])
-    if not quality_only and (not metrics or any(not re.fullmatch(r"\w+_tps", name) for name in metrics)):
-        raise ValueError("explicit server-bench throughput metrics required")
+    if not quality_only and (not metrics or any(not re.fullmatch(r"\w+_tps|iso_\w+", name) for name in metrics)):
+        raise ValueError("explicit server-bench throughput (or isolation-probe) metrics required")
     repetitions = config.get("repetitions", 1)
     # Seconds a server may take to load and answer /health (a large model's load can pass the 180 s default).
     health_timeout_s = config.get("health_timeout_s", 180)
