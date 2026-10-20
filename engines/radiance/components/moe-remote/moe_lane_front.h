@@ -9,9 +9,9 @@ __global__ void lane_prepare_activation(
     r3::moe_shm::Request* q, const uint8_t* src_q, const float* src_s,
     uint8_t* dst_q, float* dst_s,
     uint32_t rank, uint32_t sequence, uint32_t max_rows, uint32_t layers,
-    uint64_t* stats) {
+    uint64_t* stats, LaneShape shape) {
     using namespace r3::moe_shm;
-    const bool valid = lane_request_valid(q, rank, sequence, max_rows, layers);
+    const bool valid = lane_request_valid(q, rank, sequence, max_rows, layers, shape);
     if (blockIdx.x == 0 && threadIdx.x == 0) {
         q->status = valid ? 0 : -EINVAL;
         q->trace[3] = wall_clock64();   /* R3_MOE_WORKER_TRACE: this device's clock */
@@ -24,12 +24,12 @@ __global__ void lane_prepare_activation(
         }
     }
     const uint64_t i = (uint64_t)blockIdx.x * blockDim.x + threadIdx.x;
-    const uint64_t q_total = (uint64_t)max_rows * g_shape.hidden;
+    const uint64_t q_total = (uint64_t)max_rows * shape.hidden;
     if (i < q_total) {
-        const uint32_t row = (uint32_t)(i / g_shape.hidden);
+        const uint32_t row = (uint32_t)(i / shape.hidden);
         dst_q[i] = valid && row < q->rows ? src_q[i] : 0;
     }
-    const uint32_t scale_cols = g_shape.hidden / g_shape.act_group;
+    const uint32_t scale_cols = shape.hidden / shape.act_group;
     const uint64_t s_total = (uint64_t)max_rows * scale_cols;
     if (i < s_total) {
         const uint32_t row = (uint32_t)(i / scale_cols);
@@ -44,9 +44,9 @@ __global__ void lane_prepare_activation_v(
     r3::moe_shm::Request* q, const uint4* src_q, const uint4* src_s,
     uint4* dst_q, uint4* dst_s,
     uint32_t rank, uint32_t sequence, uint32_t max_rows, uint32_t layers,
-    uint64_t* stats) {
+    uint64_t* stats, LaneShape shape) {
     using namespace r3::moe_shm;
-    const bool valid = lane_request_valid(q, rank, sequence, max_rows, layers);
+    const bool valid = lane_request_valid(q, rank, sequence, max_rows, layers, shape);
     if (blockIdx.x == 0 && threadIdx.x == 0) {
         q->status = valid ? 0 : -EINVAL;
         q->trace[3] = wall_clock64();   /* R3_MOE_WORKER_TRACE: this device's clock */
@@ -59,8 +59,8 @@ __global__ void lane_prepare_activation_v(
         }
     }
     const uint64_t i = (uint64_t)blockIdx.x * blockDim.x + threadIdx.x;
-    const uint32_t q_per_row = g_shape.hidden / 16;                              // 16-byte pieces of a row of codes
-    const uint32_t s_per_row = (g_shape.hidden / g_shape.act_group) * 4 / 16;    // and of a row of scales (set_shape checks whole pieces)
+    const uint32_t q_per_row = shape.hidden / 16;                              // 16-byte pieces of a row of codes
+    const uint32_t s_per_row = (shape.hidden / shape.act_group) * 4 / 16;    // and of a row of scales (set_shape checks whole pieces)
     if (i < (uint64_t)max_rows * q_per_row) {
         const uint32_t row = (uint32_t)(i / q_per_row);
         dst_q[i] = valid && row < q->rows ? src_q[i] : make_uint4(0, 0, 0, 0);
@@ -79,7 +79,7 @@ __global__ void lane_select_tables(
     using namespace r3::moe_shm;
     const uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= experts / 2) return;
-    const bool valid = lane_request_valid(q, rank, sequence, max_rows, layers);
+    const bool valid = lane_request_valid(q, rank, sequence, max_rows, layers, shape);
     if (!valid) {
         guc0[i] = gus0[i] = dnc0[i] = dns0[i] = nullptr;
         guc1[i] = gus1[i] = dnc1[i] = dns1[i] = nullptr;
@@ -100,13 +100,13 @@ __global__ void lane_route_count(
     const r3::moe_shm::Route* route, r3::moe_shm::Request* q,
     const DeviceLayerTables* layers_table,
     uint32_t rank, uint32_t sequence, uint32_t max_rows, uint32_t layers, uint32_t experts,
-    uint32_t* counts, int32_t* flat, uint16_t* ew) {
+    uint32_t* counts, int32_t* flat, uint16_t* ew, LaneShape shape) {
     using namespace r3::moe_shm;
     const uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (!lane_request_valid(q, rank, sequence, max_rows, layers) || i >= q->route_count) return;
+    if (!lane_request_valid(q, rank, sequence, max_rows, layers, shape) || i >= q->route_count) return;
     const Route r = route[i];
     if (r.token < 0 || (uint32_t)r.token >= q->rows || r.expert < 0 ||
-        r.expert >= (int32_t)experts || r.slot >= g_shape.top_k) {
+        r.expert >= (int32_t)experts || r.slot >= shape.top_k) {
         flat[i] = -1;
         return;
     }
@@ -116,7 +116,7 @@ __global__ void lane_route_count(
         atomicExch(&q->status, -EINVAL);
         return;
     }
-    const uint32_t f = (uint32_t)r.token * g_shape.top_k + r.slot;
+    const uint32_t f = (uint32_t)r.token * shape.top_k + r.slot;
     flat[i] = (int32_t)f;
     ew[f] = r.weight_bf16;
     atomicAdd(counts + (uint32_t)es, 1u);
@@ -154,7 +154,7 @@ __global__ void lane_route_scatter(
     const int32_t* flat, uint32_t* cursor, int32_t* sorted, int32_t* sorted_expert) {
     using namespace r3::moe_shm;
     const uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (!lane_request_valid(q, rank, sequence, max_rows, layers) ||
+    if (!lane_request_valid(q, rank, sequence, max_rows, layers, shape) ||
         i >= q->route_count || flat[i] < 0) return;
     const uint32_t e = (uint32_t)route[i].expert;
     const uint32_t es = layers_table[q->layer].expert_slot[e];
@@ -179,7 +179,7 @@ __global__ __launch_bounds__(N) void lane_front_small(
     const uint4* src_q, const uint4* src_s, uint4* dst_q, uint4* dst_s, uint64_t* stats,
     uint32_t rank, uint32_t slice, uint32_t sequence, uint32_t max_rows, uint32_t layers, uint32_t routes_cap,
     uint32_t experts, int32_t* off, int32_t* sorted, int32_t* inv, uint16_t* ew,
-    void** guc0, void** gus0, void** dnc0, void** dns0, void** guc1, void** gus1, void** dnc1, void** dns1) {
+    void** guc0, void** gus0, void** dnc0, void** dns0, void** guc1, void** gus1, void** dnc1, void** dns1, LaneShape shape) {
     using namespace r3::moe_shm;
     constexpr uint32_t n = N;
     static_assert(N >= kFuseMaxRoutes, "one thread a route");
@@ -191,7 +191,7 @@ __global__ __launch_bounds__(N) void lane_front_small(
     /* What lane_prepare_activation_v and lane_select_tables did, ahead of the routing: the request's own status and
      * stats, the activation rows copied from the engine's mapped host memory (their PCIe reads in flight together
      * with the routes' below), and the lane's expert tables. */
-    const bool valid0 = lane_request_valid(q, rank, sequence, max_rows, layers);
+    const bool valid0 = lane_request_valid(q, rank, sequence, max_rows, layers, shape);
     if (t == 0) {
         q->status = valid0 ? 0 : -EINVAL;
         q->trace[3] = wall_clock64();   /* R3_MOE_WORKER_TRACE: this device's clock */
@@ -202,8 +202,8 @@ __global__ __launch_bounds__(N) void lane_front_small(
         }
     }
     {
-        const uint32_t q_per_row = g_shape.hidden / 16;
-        const uint32_t s_per_row = (g_shape.hidden / g_shape.act_group) * 4 / 16;
+        const uint32_t q_per_row = shape.hidden / 16;
+        const uint32_t s_per_row = (shape.hidden / shape.act_group) * 4 / 16;
         for (uint32_t i = t; i < max_rows * q_per_row; i += n)
             dst_q[i] = valid0 && i / q_per_row < q->rows ? src_q[i] : make_uint4(0, 0, 0, 0);
         for (uint32_t i = t; i < max_rows * s_per_row; i += n)
@@ -233,7 +233,7 @@ __global__ __launch_bounds__(N) void lane_front_small(
         ew[i] = 0;
     }
     s_cnt[t] = 0;
-    const bool valid = lane_request_valid(q, rank, sequence, max_rows, layers) &&
+    const bool valid = lane_request_valid(q, rank, sequence, max_rows, layers, shape) &&
                        q->route_count <= kFuseMaxRoutes && q->route_count <= routes_cap;
     const uint32_t nr = valid ? q->route_count : 0u;
     __syncthreads();
@@ -242,12 +242,12 @@ __global__ __launch_bounds__(N) void lane_front_small(
         r_f[t] = -1;
         r_es[t] = 0;
         if (!(r.token < 0 || (uint32_t)r.token >= q->rows || r.expert < 0 || r.expert >= (int32_t)experts ||
-              r.slot >= g_shape.top_k)) {
+              r.slot >= shape.top_k)) {
             const uint16_t es = layers_table[q->layer].expert_slot[(uint32_t)r.expert];
             if (es >= experts) {
                 atomicExch(&q->status, -EINVAL);
             } else {
-                const uint32_t f = (uint32_t)r.token * g_shape.top_k + r.slot;
+                const uint32_t f = (uint32_t)r.token * shape.top_k + r.slot;
                 r_f[t] = (int32_t)f;
                 r_es[t] = es;
                 ew[f] = r.weight_bf16;

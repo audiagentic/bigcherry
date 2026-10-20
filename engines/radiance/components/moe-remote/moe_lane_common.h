@@ -24,12 +24,11 @@
  * Radiance code. The only executable ABI it uses is libr4d's rad_plugin surface. */
 namespace r3_moe_gpu {
 
-/* The model shape the lane kernels run with (RCS09-06): set once per process by Runner::set_shape, read by every kernel, so a kernel
- * takes no shape argument and a second model is a second set_shape, not a recompile. */
+/* The model shape the lane kernels run with (RCS09-06, RCS05): Runner::set_shape stores it and every kernel that reads it takes it as an
+ * argument, so no device-side global is shared between runners or backends and a second model is a second Runner. */
 struct LaneShape {
     uint32_t hidden, top_k, act_group, experts;
 };
-__constant__ LaneShape g_shape;
 
 constexpr int64_t kExpertWidth = 640;
 constexpr int64_t kGateUpWidth = 2 * kExpertWidth;
@@ -62,18 +61,18 @@ __device__ __forceinline__ uint32_t lane_load_sys_acq(const uint32_t* p) {
 
 __device__ __forceinline__ bool lane_request_valid(
     const r3::moe_shm::Request* q, uint32_t rank, uint32_t sequence,
-    uint32_t max_rows, uint32_t layers) {
+    uint32_t max_rows, uint32_t layers, const LaneShape& shape) {
     using namespace r3::moe_shm;
     /* A one-rank engine stamps rank_count 1 and uses the rank slot as the helper index (each slot's
      * request asks for full expert width); a two-rank engine's slot is its rank. */
     return q && q->sequence == sequence && q->rank == rank &&
            q->rank_count >= 1 && q->rank_count <= kMaxRanks && (q->rank_count == 1 || rank < q->rank_count) &&
            q->layer < layers && q->rows > 0 && q->rows <= max_rows &&
-           q->hidden == g_shape.hidden && q->route_count > 0 &&
-           q->route_count <= q->rows * g_shape.top_k &&
-           q->activation_stride == g_shape.hidden * (uint32_t)sizeof(uint16_t) &&
-           q->activation_q_stride == g_shape.hidden &&
-           q->activation_s_stride == (g_shape.hidden / g_shape.act_group) * (uint32_t)sizeof(float);
+           q->hidden == shape.hidden && q->route_count > 0 &&
+           q->route_count <= q->rows * shape.top_k &&
+           q->activation_stride == shape.hidden * (uint32_t)sizeof(uint16_t) &&
+           q->activation_q_stride == shape.hidden &&
+           q->activation_s_stride == (shape.hidden / shape.act_group) * (uint32_t)sizeof(float);
 }
 
 }  // namespace r3_moe_gpu

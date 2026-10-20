@@ -30,8 +30,7 @@ int route_selftest() {
                 for (uint32_t t = 0; t < rows; ++t)
                     for (uint32_t k = 0; k < kTopK; ++k)
                         routes[t * kTopK + k] = Route{(int32_t)t, (int32_t)(next() % experts), (uint16_t)(0x3f80u + k), (uint16_t)k};
-                const LaneShape lane_shape{kHidden, kTopK, kActGroup, experts};   // the kernels read the model shape from a device constant
-                if (!hip(hipMemcpyToSymbol(HIP_SYMBOL(g_shape), &lane_shape, sizeof lane_shape), "set lane shape")) { ++failures; continue; }
+                const LaneShape lane_shape{kHidden, kTopK, kActGroup, experts};   // passed to the kernels as an argument
                 std::vector<uint32_t> counts(experts, 0), excl(experts + 1, 0);
                 std::vector<std::vector<int32_t>> want(experts);
                 for (uint32_t i = 0; i < nr; ++i) {
@@ -101,7 +100,7 @@ int route_selftest() {
                                        static_cast<int32_t*>(d_sorted), static_cast<int32_t*>(d_inv), static_cast<uint16_t*>(d_ew),
                                        static_cast<void**>(tables[0]), static_cast<void**>(tables[1]), static_cast<void**>(tables[2]),
                                        static_cast<void**>(tables[3]), static_cast<void**>(tables[4]), static_cast<void**>(tables[5]),
-                                       static_cast<void**>(tables[6]), static_cast<void**>(tables[7]));
+                                       static_cast<void**>(tables[6]), static_cast<void**>(tables[7]), lane_shape);
                 };
                 std::vector<int32_t> off(experts + 1), sorted(nr), inv(nr);
                 std::vector<uint16_t> ew(nr);
@@ -111,7 +110,7 @@ int route_selftest() {
                 if (good) {   // the unfused path
                     hipLaunchKernelGGL(lane_route_count, dim3(grid), dim3(256), 0, 0, rt, const_cast<Request*>(rq), lt, 0u, 1u,
                                        rows, 1u, experts, static_cast<uint32_t*>(d_counts), static_cast<int32_t*>(d_flat),
-                                       static_cast<uint16_t*>(d_ew));
+                                       static_cast<uint16_t*>(d_ew), lane_shape);
                     switch (blockn) {
                         case 256: run_prefix(std::integral_constant<uint32_t, 256>{}); break;
                         case 512: run_prefix(std::integral_constant<uint32_t, 512>{}); break;
