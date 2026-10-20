@@ -1,7 +1,9 @@
 # 1263_prbe41_ssm_conv_channels_major
 
-**Status:** untested (historical validation records exist; no b11474 promotion)
-**Plan item:** PRBE41; tensor-split split-state dependency PRBE114
+**Status:** untested
+**Plan item:** PRBE41
+
+Historical validation records exist; no b11474 promotion. Tensor-split split-state dependency: PRBE114.
 
 ## Actual implementation
 
