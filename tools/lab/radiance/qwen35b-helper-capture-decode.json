@@ -1,5 +1,5 @@
 {
- "_comment": "RAD14: the 35B with the XTX workers armed to capture decode-sized requests (4 streams, MTP 3, prefix cache off) so the worker's decode path can be replayed and its rows-per-expert and kernel times measured on real FP8 decode shapes.",
+ "_comment": "RAD14: the 35B with the XTX workers armed to capture decode-sized requests (4 streams, MTP 3) so the worker's decode path can be replayed and its rows-per-expert and kernel times measured on real FP8 decode shapes. The prefix cache stays on: with --no-prefix-cache the engine did not fit its host pool beside the workers. Verify-row counts per step do not depend on it, so the captured request shapes are the same.",
  "schema_version": 1,
  "engine": "radiance",
  "evidence_role": "diagnostic",
@@ -29,8 +29,7 @@
   "--host-pool-mib",
   "30720",
   "--max-model-len",
-  "32768",
-  "--no-prefix-cache"
+  "32768"
  ],
  "environment": {
   "HIP_VISIBLE_DEVICES": "0",
