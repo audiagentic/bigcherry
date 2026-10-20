@@ -153,7 +153,7 @@ const RadKernelInfo kRows[] = {
     { "bc_moe_gemm_fp8a8_decode", "moe_gemm_q", "moe",
       "moe_gemm_q at decode-sized steps (RAD15): one block a (routed row pair, 64 outputs), each wave an output's dot "
       "product on packed f16, instead of libr4d's fp8 WMMA tile masked down to a run's one or two rows",
-      "M <= 16, K <= 2560; otherwise as libr4d's moe_gemm_fp8a8",
+      "M <= 16, K <= 2560, token-order activation (gate/up); otherwise as libr4d's moe_gemm_fp8a8",
       "E4M3 activation with an f32 scale per 128 of K, E4M3 weight with a bf16 scale per 128x128 tile, bf16 out",
       RAD_DOMAIN_DEVICE, 60,
       kMoeGemmQDecode, (int)(sizeof(kMoeGemmQDecode) / sizeof(kMoeGemmQDecode[0])),

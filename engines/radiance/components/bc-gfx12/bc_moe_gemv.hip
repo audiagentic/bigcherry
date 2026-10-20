@@ -3,7 +3,8 @@
 // run, most of it masked at one or two rows a run; here one block takes a (routed row pair, 64 outputs) and each wave one
 // output, the dot product on v_dot2_f32_f16. An E4M3 code is exact in f16 and so is the product of two, so nothing rounds
 // before the f32 accumulation; the activation's per-128 scale and the weight's per-128x128 tile scale are applied to each
-// sixteen-element partial sum. Measured on captured 35B requests: 115 us against libr4d's 135 us a gate/up call.
+// sixteen-element partial sum. The 35B's gate/up call (rad-kbench, R9700): 28/56/110/213/389 us against libr4d's
+// 34/80/158/267/455 at M = 1/2/4/8/16. The down call (sorted activation) is declined: libr4d's own down decode kernel wins.
 //
 // The weight is libr4d's own stored form (r4d_rad_layout_moe_fp8: the checkpoint's row-major bytes), two classes by expert
 // parity, each a pointer table (zero leading stride) or a stacked plane. A geometry this kernel does not take is declined
@@ -204,6 +205,9 @@ extern "C" int bc_moe_gemm_fp8_decode(const RadArgs* a, RadStream stream) {
     const bool a_sorted = ord && !std::strcmp(ord, "sorted");
     if (ord && !a_sorted && std::strcmp(ord, "token")) return RAD_E_UNSUPPORTED;
     if (M < (a_sorted ? T : (T + top_k - 1) / top_k)) return RAD_E_UNSUPPORTED;
+    /* The down projection (sorted activation) stays libr4d's: its own decode kernel (moe_down_dec_kernel) times 3-25%
+     * faster than this one at M = 1..16 on the 35B (rad-kbench, R9700); the gate/up call is 15-31% faster here. */
+    if (a_sorted) return RAD_E_UNSUPPORTED;
     /* libr4d's decode band (r4d_moe_decode_band); a larger step is a GEMM, not this kernel's shape */
     if (2 * T > 3 * n_expert) return RAD_E_UNSUPPORTED;
     Cls c0{}, c1{};
