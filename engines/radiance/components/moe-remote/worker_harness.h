@@ -327,6 +327,14 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
         /* The helper's per-token rows, taken before the host reference rewrites the same slot. */
         const uint16_t* res = ptr<uint16_t>(map, h->result_offset[rank * kMaxRanks + rank]);
         const std::vector<uint16_t> got(res, res + (size_t)rows * hid);
+        {   /* FNV-1a over the helper's result bytes: two builds that print the same hash for the same capture and settings produced
+             * bit-identical output (the cross-build identity check of RCS05/RAD14; rel_l2 below only ever bounds the error). */
+            uint64_t fnv = 1469598103934665603ull;
+            for (uint16_t v : got) { fnv = (fnv ^ (v & 0xffu)) * 1099511628211ull; fnv = (fnv ^ (v >> 8)) * 1099511628211ull; }
+            std::printf("replay_hash layer %u rank %u rows %u fnv64=%016llx
+", layer, rank, rows,
+                        (unsigned long long)fnv);
+        }
         if (g_sweep_fast) {
             static std::map<std::pair<const ReplayInput*, uint32_t>, std::vector<uint16_t>> base;
             double sum_abs = 0.0;
