@@ -1,4 +1,4 @@
-// libr3 kernel table: upstream gfx11 rows plus opt-in host helpers. The remote-MoE mailbox rows live in
+// libr3 kernel table: upstream gfx11 rows. The n-gram gather is its own plugin, libr3ngram (components/ngram-helper). The remote-MoE mailbox rows live in
 // their own plugin, libr3moe (worker/moe_mailbox_plugin.cpp).
 #include "rad_abi.h"
 
@@ -14,8 +14,6 @@ int r4d_up_kernel_collective(int i);
 const RadPluginInfo* r4d_up_plugin_info(void);
 extern const char r3_stub_begin[];
 extern const char r3_stub_end[];
-int r3_ngram_enabled(void);
-const RadKernelInfo* r3_ngram_row(void);
 }
 
 namespace {
@@ -32,7 +30,6 @@ const std::vector<LiveRow>& live() {
             const RadKernelInfo* k = r4d_up_kernel_at(i);
             if (k && k->launch && !is_stub(reinterpret_cast<const void*>(k->launch))) out.push_back({i, nullptr});
         }
-        if (r3_ngram_enabled()) out.push_back({-1, r3_ngram_row()});
         return out;
     }();
     return rows;
@@ -42,7 +39,7 @@ const std::vector<LiveRow>& live() {
 extern "C" const RadPluginInfo* rad_plugin_info(void) {
     static const RadPluginInfo info = {
         RAD_PLUGIN_KERNEL, "libr3", "0.0.1",
-        "libr4d gfx11 kernels plus opt-in host helpers", R3_TARGETS,
+        "libr4d gfx11 kernels", R3_TARGETS,
     };
     return &info;
 }
