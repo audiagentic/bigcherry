@@ -74,6 +74,12 @@ const R4d& r4d() {
         x.shape_hc_read = (RadShapeFn)dlsym(h, "r4d_shape_hc_read");
         x.ok = x.hc_read && x.hc_read_scratch && x.layout_hc_e4m3 && x.relayout_hc_e4m3 && x.shape_hc_read;
         if (!x.ok) std::fprintf(stderr, "libbcgfx12: libr4d does not export the hc_read entry points this plugin needs\n");
+        x.moe_gemm_q = (RadLaunchFn)dlsym(h, "r4d_rad_moe_gemm_q");
+        x.moe_gemm_q_scratch = (RadScratchFn)dlsym(h, "r4d_rad_moe_gemm_q_scratch");
+        x.layout_moe_fp8 = (RadLayoutFn)dlsym(h, "r4d_rad_layout_moe_fp8");
+        x.shape_moe_gemm_q = (RadShapeFn)dlsym(h, "r4d_shape_moe_gemm_q");
+        x.moe_ok = x.moe_gemm_q && x.moe_gemm_q_scratch && x.layout_moe_fp8 && x.shape_moe_gemm_q;
+        if (!x.moe_ok) std::fprintf(stderr, "libbcgfx12: libr4d does not export the moe_gemm_q entry points this plugin needs\n");
         return x;
     }();
     return r;
