@@ -1,0 +1,33 @@
+{
+  "artifact_version": 1,
+  "audit": {
+    "failed_checks": [],
+    "passed": true,
+    "strict": true,
+    "summary": {
+      "errors": 0,
+      "passed": 4,
+      "total": 4,
+      "warnings": 0
+    }
+  },
+  "bigcherry_revision": "b5ad2589b091e89756161d8e3b83dcd3764d7794",
+  "first_seen": "2026-10-20T12:51:00.266000+00:00",
+  "manifest_hash": "",
+  "notes": "pin-bump lane build: radiance:stock:linux-radiance build_plan_id=2c3aac68dd15793cb27be0b4cd36aea4 binary_sha256=39ceb97f5297492a8d4b30df5dba29ee7a01603a7261c282e82544ac19339fea build_dir=/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/920bdb7c3895a642da607a1d7115e7fe/2c3aac68dd15793cb27be0b4cd36aea4",
+  "patches": {
+    "applied_cleanly": true,
+    "failed_edits": [],
+    "files": {
+      "core/mm/mp4.cpp": {
+        "mem-write-signature": "applied"
+      }
+    }
+  },
+  "promotion": null,
+  "release_tag": "v1.9.0",
+  "revision": "685ec5bd858a31e90ba0431e844e3353c8c266fc",
+  "stage": "patched",
+  "tree_state": "",
+  "updated_at": "2026-10-20T13:57:03.225043+00:00"
+}

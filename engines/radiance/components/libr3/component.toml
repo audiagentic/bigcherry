@@ -6,8 +6,8 @@ schema = 1
 name = "libr3"
 engine = "radiance"
 targets = ["gfx1100"]
-# radiance 1.8.0 (plugin ABI 17): the rewrite rules are written against this revision's libr4d and refuse any other.
-built-against = "v1.8.0"
+# radiance 1.9.0 (plugin ABI 23): the rewrite rules are written against this revision's libr4d and refuse any other.
+built-against = "v1.9.0"
 outputs = ["kernels/libr3.so"]
 
 # How the build lane builds it: CMake against the engine installed from the lane's own build (CMAKE_PREFIX_PATH) and
