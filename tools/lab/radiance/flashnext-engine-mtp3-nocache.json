@@ -36,7 +36,8 @@
  ],
  "environment": {
   "HIP_VISIBLE_DEVICES": "0,1",
-  "RADIANCE_HOME": "${RAD_HOME}"
+  "RADIANCE_HOME": "${RAD_HOME}",
+  "ROCR_VISIBLE_DEVICES": "0,1"
  },
  "expected_execution": {
   "backend": "ROCm",
