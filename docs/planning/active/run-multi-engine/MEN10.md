@@ -86,6 +86,7 @@ Step c (3cb74f3c): patch read commands engine-scoped. Follow-ups: patch_lifecycl
 
 ## Ledger-events
 
+
 - chg_20261014_233548_radiance-builds-that-apply-pat_7437
 - 2026-10-14T23:35:52.705077+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-15T00:20:08.176517+00:00 (state-transition): State: pending → in_progress
@@ -99,7 +100,9 @@ Step c (3cb74f3c): patch read commands engine-scoped. Follow-ups: patch_lifecycl
 - 2026-10-15T02:30:59.554877+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-15T02:45:47.734006+00:00 (updated-by): Updated: section:notes
 
+- chg_20261017_014810_health-checks-and-the-job-syst_8713
 ## Change Log
 
 - 2026-10-14T22:16:07.786755+00:00 (created-by): Created by agent
 - 2026-10-14T22:29:45.466300+00:00 (updated-by): Updated: section:notes
+- 2026-10-17T01:48:14.114861+00:00 (updated-by): Updated: section:ledger-events

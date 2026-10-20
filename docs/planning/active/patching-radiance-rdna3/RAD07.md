@@ -59,3 +59,8 @@ Recording against model-specific docs is an owner requirement (2026-10-15).
 ## Change Log
 
 - 2026-10-14T22:16:25.441629+00:00 (created-by): Created by agent
+
+## Ledger-events
+
+- chg_20261017_012852_each-radiance-model-now-has-on_1051
+- 2026-10-17T01:28:56.281155+00:00 (updated-by): Updated: section:ledger-events
