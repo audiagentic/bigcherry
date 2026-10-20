@@ -466,7 +466,6 @@ ownership.
 | `tools/lab/prbe20-rd26-bisect/bisect_ubatch.py` | **TRANSITIONAL** | `prbe20-rd26-bisect` lab topic file (see `tools/lab/prbe20-rd26-bisect/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/radiance/helper-fp16-ab.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark server configuration, R3_MOE_FP16 off vs on on the Brutus layout (RAD06). |
 | `tools/lab/radiance/helper-fp16-kld.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark quality configuration, helper-kld.json with R3_MOE_FP16=1 (RAD06). |
-| `tools/lab/radiance/helper-fp16-kld.sh` | **TRANSITIONAL** | `radiance` lab topic file; builds the branch and runs the R3_MOE_FP16 KL check on Brutus (RAD06). |
 | `tools/lab/radiance/helper-vecio-ab.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark server configuration, R3_MOE_WORKER_VECIO off vs on (RAD06). |
 | `tools/lab/radiance/helper-balance-env.json` | **TRANSITIONAL** | `radiance` lab topic file; two-arm bisect for the helper balance decode regression: the speed-factor variable set without the balancing code (RAD06/RHP). |
 | `tools/lab/radiance/helper-balance-ab.json` | **TRANSITIONAL** | `radiance` lab topic file; three-arm ab-benchmark configuration for the helper ownership split (alternation, per-layer cost split, with a helper speed factor) (RAD06/RHP). |

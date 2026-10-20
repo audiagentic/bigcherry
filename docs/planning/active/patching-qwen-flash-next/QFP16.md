@@ -125,3 +125,7 @@ External mechanism references: ROCm HIP host-memory/asynchronous-copy documentat
 ## 2026-10-13 QFP51 scheduler attribution correction
 
 The historical step-3(d) hypothesis is retired: `llama_context::process_ubatch` skips `ggml_backend_sched_alloc_graph` on a reused graph, and `ggml_backend_sched_graph_compute_async` executes already-allocated splits without `ggml_backend_sched_split_graph`. The 1325 `BIGCHERRY_SCHED_SPLIT` lines time **compute-split execution**, not split construction. QFP16 remains authoritative for the measured 2.63 ms Meta input-handling and 2.23 ms submit cost at ~10K, and QFP51 is closed without a template cache. Do not reinterpret 1319's 0.003 ms reused-graph build time or the 24K 11.4 ms combined build/alloc time as a reusable split-plan win.
+
+## 2026-10-16 BCOP236: pageable staging ownership
+
+QFP16/1326 is the **sole implementation owner** of the existing <=4 MiB pageable staging retention risk. Its function-local `thread_local` map retains a vector per distinct `input_cpy` pointer and is not cleared by scheduler free/reset; live RSS growth is **unmeasured**. QFP27 now specifies bounded scheduler-owned POD scratch, the `calloc/free` constructor constraint, Meta all-child host-consumption admission, lifecycle tests and fallback. This is not approval for pinned backing or a new scheduler. QFP24 remains conditional on >=1 ms AND >=3% measured exposed prefill input cost. Preserve validated 1326 decode behaviour and same-process MTP/logits correctness; do not claim a throughput improvement from reduced retained capacity.

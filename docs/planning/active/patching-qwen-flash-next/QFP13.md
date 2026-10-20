@@ -214,3 +214,7 @@ Out of scope for QFP13 implementation ownership:
 - 2026-10-04T04:18:25.310777+00:00 (updated-by): Updated: section:notes
 - 2026-10-04T04:47:25.709859+00:00 (updated-by): Updated: section:notes
 - 2026-10-04T11:26:49.575199+00:00 (updated-by): Updated: section:notes
+
+## 2026-10-18 BCOP299 — literal GEMV→UNARY→MUL launch-count correction
+
+The older ~26/token `MMVF -> unary_op -> k_bin_bcast` count is **only a neighbourhood census**, not 52 removable launches. At b11552, `ggml_cuda_try_fuse` already fuses eligible `UNARY(SILU|SIGMOID|SOFTPLUS) -> MUL` into **one** `unary_gated` launch; canonical paired-GEMV `GGML_OP_GLU` is also fused into the vector epilogue. PRBE38 remains the sole literal vector-producer-to-pointwise backend owner. Before considering an epilogue edit, join exact graph tensor identities/consumers with actual per-rank kernel launches to prove a separate GEMV output materialization and one remaining exposed pointwise launch. An optimistic 26*3.5 us = **0.091 ms/token** launch-only ceiling (assuming all 26 legal and exposed) is not a measured saving and does not automatically satisfy the >=0.10 ms/token serial-gap alternative. See PRBE38's 2026-10-18 gate for alias, numerical, architecture, work-accounting, fallback and termination conditions. Do not duplicate PRBE37/39/40 or touch active RAD06 helper work.

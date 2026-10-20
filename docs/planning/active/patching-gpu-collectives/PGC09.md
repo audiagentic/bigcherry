@@ -13,6 +13,13 @@ work: M
 
 # AllReduce: adaptive provider as production default for dual XTX, gated by wire accuracy
 
+
+## 2026-10-15 BCOP238: PGC12 phase-policy retirement and receipt ownership
+
+PGC12 is terminal as a proposed phase-aware routing implementation: historical 1 MiB BF16 MTP gains are not matched exact-F32 gains, and the validated 96 KiB dual-gfx1100 policy already routes 20 KiB decode internally and 120 KiB MTP verify to RCCL. **PGC09/0840/0860 retains sole runtime provider/threshold ownership** and absorbs the *conditional* provider-completion receipt formerly assigned to PGC12. Do not add a phase flag, second policy table or new telemetry service.
+
+If completed receipts show >=3% E2E exposed bottleneck, extend existing 0830 provider-return evidence and lab-only 1277 (not timed production) with correlated request/chunk/graph UID, authoritative phase, rank UUID/order, nbytes/type/wire, preference, actual attempt/completion, RCCL linkage, preflight decline versus post-submit failure, transition wait and stream/event generation. 1277 currently logs preference before execution with a non-atomic static counter; it cannot certify actual provider success. Keep exact-F32 96 KiB baseline and fail closed on unknown phase/graph or ambiguous collective side effects. PGC13 alone owns offline scalar 64/96/128 KiB comparison; only a newly proven same-size same-wire phase conflict and >=3% E2E headroom can reopen a default-off phase policy under PGC09. See PGC12/BCOP238.
+
 ## Description
 
 Dual-XTX 27B Q8_0 provider A/B (ab-27b-allreduce, 6 balanced rounds, complete separation): RCCL wins prefill (host pp4096 -8.7%), host pipeline wins decode (tg512 +7.5%, tg2048 +2.5%). 0840 adaptive (host below the size threshold, RCCL above) should take both. The host path compresses to bf16 by default (lossy), so no lossy wire may become a default until it passes accuracy gates.

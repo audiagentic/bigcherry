@@ -5,7 +5,7 @@
 
 ## What it does
 
-Adds a prep kernel (mmq_build_moe_block_map) that flattens (expert, expert-local-tile) pairs into one linear grid dimension sized to the real total tile count, instead of upstream's rectangular grid sized from the worst-case expert width times n_expert; falls back to the exact legacy grid whenever the compact map would exceed grid or shared-memory limits. Gated to gfx1100 exactly.
+Adds a prep kernel (mmq_build_moe_block_map) that flattens (expert, expert-local-tile) pairs into one linear grid dimension sized to a host-computable upper bound of the real tile count (padded blocks exit on-device), instead of upstream's rectangular grid sized from the worst-case expert width times n_expert; falls back to the exact legacy grid whenever the compact map would exceed grid or shared-memory limits. Gated to gfx1100 exactly.
 
 ## Why
 
@@ -13,4 +13,4 @@ Upstream's non-stream-K MMQ launch gives every MoE expert the same worst-case ti
 
 ## Upstream / provenance
 
-Concept ported from AMD-Ecosystem/llama.cpp PR #63 (fork-only, https://github.com/AMD-Ecosystem/llama.cpp), redesigned against the real b10502 source rather than ported verbatim. Extensive informal real-hardware evidence gathered, but STATE stays untested pending the project's own formal HI83-governed validation campaign.
+Concept ported from AMD-Ecosystem/llama.cpp PR #63 (fork-only, https://github.com/AMD-Ecosystem/llama.cpp), redesigned against the real b10502 source rather than ported verbatim. Earlier informal hardware evidence preceded the formal b11126 four-session HI83 contract PASS; manifest and validated-enhancements now mark this package validated for gfx1100. The host grid still launches an upper bound, not exactly the device-computed real tile count.
