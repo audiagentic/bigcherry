@@ -28,15 +28,9 @@ Owner idea 2026-10-19. Treat expert hosting as a performance-tiered cache. Tiers
 
 ## Detailed Solution & Technical Design
 
-
-
 ## Code Samples & Guidance
 
-
-
 ## Files
-
-
 
 ## Validation
 
@@ -44,15 +38,9 @@ Offline: the policy beats static hot-first on a shifting-session trace by a stat
 
 ## Effort & Risk
 
-
-
 ## Standards
 
-
-
 ## Acceptance Criteria
-
-
 
 ## Notes
 

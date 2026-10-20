@@ -39,11 +39,7 @@ f. Component settings promotion path: settings in component.toml get state + evi
 
 ## Code Samples & Guidance
 
-
-
 ## Files
-
-
 
 ## Validation
 
@@ -51,15 +47,9 @@ One real A/B (e.g. R3_MOE_WORKER_ROWS 0/1) run through the harness end to end on
 
 ## Effort & Risk
 
-
-
 ## Standards
 
-
-
 ## Acceptance Criteria
-
-
 
 ## Notes
 
@@ -75,3 +65,8 @@ Correction 2026-10-15: main already has an engine-neutral activation and KL qual
 - 2026-10-14T22:21:10.146038+00:00 (updated-by): Updated: section:notes
 - 2026-10-16T17:51:41.625681+00:00 (updated-by): Updated: section:detailed_solution
 - 2026-10-17T00:47:06.344774+00:00 (updated-by): Updated: section:notes
+
+## Ledger-events
+
+- chg_20261017_012844_radiance-experiments-now-run-t_6104
+- 2026-10-17T01:28:48.243292+00:00 (updated-by): Updated: section:ledger-events

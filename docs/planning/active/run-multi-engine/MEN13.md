@@ -60,3 +60,11 @@ Owner, 2026-10-15: 'We should be able to bump and commit any engine. We need to 
 ## Change Log
 
 - 2026-10-14T22:28:01.533375+00:00 (created-by): Created by agent
+
+## Ledger-events
+
+
+- chg_20261017_012856_radiance-has-its-own-release-l_4308
+- 2026-10-17T01:29:00.283464+00:00 (updated-by): Updated: section:ledger-events
+- chg_20261018_201215_radiance-180-is-released-as_1561
+- 2026-10-18T20:12:23.948481+00:00 (updated-by): Updated: section:ledger-events
