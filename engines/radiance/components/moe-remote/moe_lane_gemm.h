@@ -226,6 +226,126 @@ __global__ __launch_bounds__(256) void lane_moe_gemv_wide(
     }
 }
 
+/* PACKED-FP16 FP8 DECODE GEMV (RAD14). Same blocks as lane_moe_gemv_wide (one block a (routed row, 64 outputs), one wave an output, sixteen-byte
+ * weight loads, four in flight a lane), but the dot product runs on v_dot2_f32_f16: two codes a dot instruction, f32 accumulate. An E4M3 code is
+ * exactly an f16 value (the seven magnitude bits placed at bits 13..7 read as 2^(e-15)(1+m/8), times 2^8 for the bias change), and the product
+ * of two E4M3 values is exact in f16, so nothing is rounded before the f32 accumulation; the activation's per-128 scale and the weight's
+ * per-128x128 scale are applied once to each sixteen-element partial sum. The activation is staged as raw E4M3 widened to f16, in two planes of
+ * half2 (plane 0 holds elements 0,2 of each four, plane 1 elements 1,3) so a lane's sixteen-byte LDS read matches the weight dword split
+ * (w & 0x00FF00FF, (w >> 8) & 0x00FF00FF). K must be a multiple of 16. */
+typedef _Float16 h2v __attribute__((ext_vector_type(2)));
+__device__ __forceinline__ h2v e4m3x2_to_h2(uint32_t x) {   /* codes in bits 0..7 and 16..23 */
+    const uint32_t h = ((x & 0x007F007Fu) << 7) | ((x & 0x00800080u) << 8);
+    const h2v v = __builtin_bit_cast(h2v, h);
+    return v * h2v{(_Float16)256.0f, (_Float16)256.0f};
+}
+/* R rows a block: a block whose sorted row is the first of a pair inside its expert (offset from the expert first row a multiple of R) handles that
+ * row and the next one of the same expert, decoding each weight once for both; the follower row block returns at once. R = 1 is the plain kernel. */
+template <bool TOKEN, uint32_t R>
+__global__ __launch_bounds__(256) void lane_moe_gemv_h2(
+    const uint8_t* aq, const float* as, const int32_t* sorted, const int32_t* off, uint32_t top_k,
+    void* const* code0, void* const* scale0, void* const* code1, void* const* scale1,
+    uint32_t n0, uint32_t n1, uint32_t k0, uint32_t k1, uint32_t a_stride, uint32_t out_stride, uint16_t* out,
+    uint32_t part_pitch, LaneShape shape) {
+    using namespace r3::moe_shm;
+    const uint32_t r = blockIdx.x;
+    if (r >= (uint32_t)off[shape.experts]) return;
+    __shared__ uint32_t a[R][kGemvMaxK / 2];        /* K half values as half2 pairs, in two planes, a row */
+    __shared__ float asc[R][kGemvMaxK / 128u];
+    __shared__ uint32_t sh_e, sh_first;
+    if (threadIdx.x == 0) {
+        uint32_t lo = 0, hi = shape.experts;
+        while (hi - lo > 1) { const uint32_t mid = (lo + hi) / 2; if ((uint32_t)off[mid] <= r) lo = mid; else hi = mid; }
+        sh_e = lo;
+        sh_first = (uint32_t)off[lo];
+    }
+    __syncthreads();
+    const uint32_t e = sh_e, cls = e & 1u, ix = e >> 1;
+    if (R > 1 && ((r - sh_first) % R)) return;      /* a follower row: its leader computes it */
+    const uint32_t nr = (uint32_t)off[e + 1] - r < R ? (uint32_t)off[e + 1] - r : R;
+    const uint32_t N = cls ? n1 : n0, K = cls ? k1 : k0;
+    const uint32_t n_base = blockIdx.y * kGemvTile;
+    if (n_base >= N || K > kGemvMaxK || (K & 15u)) return;
+    const uint32_t k16 = K / 16u;
+    /* element k = 16 d + 4 q + j sits in plane (j & 1), half2 index (d * 4 + q), lane (j >> 1) */
+    for (uint32_t m = 0; m < nr; ++m) {
+        const uint32_t arow = TOKEN ? (uint32_t)sorted[r + m] / top_k : r + m;
+        const uint8_t* ar = aq + (uint64_t)arow * a_stride;
+        const float* asr = as + (uint64_t)arow * (a_stride / 128u);
+        uint16_t* ah = reinterpret_cast<uint16_t*>(a[m]);
+        for (uint32_t k = threadIdx.x; k < K; k += blockDim.x) {
+            const uint32_t d = k >> 4, q = (k >> 2) & 3u, j = k & 3u;
+            const uint32_t h = (((uint32_t)ar[k] & 0x7Fu) << 7) | (((uint32_t)ar[k] & 0x80u) << 8);
+            const _Float16 v = __builtin_bit_cast(_Float16, (uint16_t)h) * (_Float16)256.0f;
+            ah[((((j & 1u) * k16 + d) * 4u + q) << 1) + (j >> 1)] = __builtin_bit_cast(uint16_t, v);
+        }
+        for (uint32_t g = threadIdx.x; g < K / 128u; g += blockDim.x) asc[m][g] = asr[g];
+    }
+    __syncthreads();
+
+    const uint8_t* codes = static_cast<const uint8_t*>(cls ? code1[ix] : code0[ix]);
+    const uint8_t* scales = static_cast<const uint8_t*>(cls ? scale1[ix] : scale0[ix]);
+    if (!codes || !scales) return;
+    const uint32_t lane = threadIdx.x % warpSize, wave = threadIdx.x / warpSize, waves = blockDim.x / warpSize;
+    const uint32_t ktiles = (K + 127u) / 128u;
+    constexpr uint32_t U = 4;
+    for (uint32_t j = wave; j < kGemvTile; j += waves) {
+        const uint32_t n = n_base + j;
+        if (n >= N) break;
+        const uint4* crow = reinterpret_cast<const uint4*>(codes + (uint64_t)n * K);
+        const uint16_t* srow = reinterpret_cast<const uint16_t*>(scales) + (uint64_t)(n / 128u) * ktiles;
+        float acc[R];
+#pragma unroll
+        for (uint32_t m = 0; m < R; ++m) acc[m] = 0.0f;
+        for (uint32_t d0 = lane; d0 < k16; d0 += U * warpSize) {
+            uint4 v[U];
+#pragma unroll
+            for (uint32_t u = 0; u < U; ++u) {
+                const uint32_t d = d0 + u * warpSize;
+                v[u] = d < k16 ? crow[d] : make_uint4(0u, 0u, 0u, 0u);
+            }
+#pragma unroll
+            for (uint32_t u = 0; u < U; ++u) {
+                const uint32_t d = d0 + u * warpSize;
+                if (d >= k16) break;
+                const uint32_t ws[4] = {v[u].x, v[u].y, v[u].z, v[u].w};
+                h2v we[4], wo[4];                      /* the sixteen weights as eight half2, decoded once for every row */
+#pragma unroll
+                for (uint32_t q = 0; q < 4; ++q) {
+                    we[q] = e4m3x2_to_h2(ws[q] & 0x00FF00FFu);
+                    wo[q] = e4m3x2_to_h2((ws[q] >> 8) & 0x00FF00FFu);
+                }
+                const float sw = __uint_as_float(((uint32_t)srow[(16u * d) / 128u]) << 16);
+#pragma unroll
+                for (uint32_t m = 0; m < R; ++m) {
+                    if (m >= nr) break;
+                    const uint4 xe = reinterpret_cast<const uint4*>(a[m])[0u * k16 + d], xo = reinterpret_cast<const uint4*>(a[m])[1u * k16 + d];
+                    const uint32_t xes[4] = {xe.x, xe.y, xe.z, xe.w}, xos[4] = {xo.x, xo.y, xo.z, xo.w};
+                    float part = 0.0f;
+#pragma unroll
+                    for (uint32_t q = 0; q < 4; ++q) {
+                        part = __builtin_amdgcn_fdot2(we[q], __builtin_bit_cast(h2v, xes[q]), part, false);
+                        part = __builtin_amdgcn_fdot2(wo[q], __builtin_bit_cast(h2v, xos[q]), part, false);
+                    }
+                    acc[m] += part * (sw * asc[m][(16u * d) / 128u]);
+                }
+            }
+        }
+#pragma unroll
+        for (uint32_t m = 0; m < R; ++m) {
+            if (m >= nr) break;
+            float x = acc[m];
+            for (uint32_t o = warpSize / 2; o; o >>= 1) x += __shfl_down(x, o);
+            if (lane == 0) {
+                uint32_t u = __float_as_uint(x);
+                u += 0x7fffu + ((u >> 16) & 1u);
+                const uint32_t col = TOKEN && part_pitch && n >= N / 2 ? n - N / 2 + part_pitch : n;
+                out[(uint64_t)(r + m) * out_stride + col] = (uint16_t)(u >> 16);
+            }
+        }
+    }
+}
+
 /* MULTI-ROW WIDE FP8 DECODE GEMV (RAD14). lane_moe_gemv_wide with the expert's rows batched: one block an (expert, 64 outputs) handles the
  * expert's routed rows four at a time, so each sixteen-byte weight load is decoded once and applied to every row of the pass instead of
  * once a route (a 35B decode request sends about five routes to each expert it touches). The four activation rows are staged in LDS in the
