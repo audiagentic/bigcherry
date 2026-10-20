@@ -19,6 +19,15 @@ public:
         if (weight_format_ == MOE_FMT_FP8_E4M3_BLOCK && gemv_mr_ && !(k0 & 15u) && !(k1 & 15u))
             hipLaunchKernelGGL((lane_moe_gemv_mr<TOKEN>), dim3(experts(), (std::max(n0, n1) + kMrTile - 1) / kMrTile), dim3(256), 0, stream, aq, as, sorted, off, top_k, code0,
                                scale0, code1, scale1, n0, n1, k0, k1, a_stride, out_stride, out, part_pitch);
+        else if (weight_format_ == MOE_FMT_FP8_E4M3_BLOCK && gemv_h2_ == 4 && !(k0 & 15u) && !(k1 & 15u))
+            hipLaunchKernelGGL((lane_moe_gemv_h2<TOKEN, 4>), grid, dim3(256), 0, stream, aq, as, sorted, off, top_k, code0, scale0, code1,
+                               scale1, n0, n1, k0, k1, a_stride, out_stride, out, part_pitch, lane_shape_);
+        else if (weight_format_ == MOE_FMT_FP8_E4M3_BLOCK && gemv_h2_ == 2 && !(k0 & 15u) && !(k1 & 15u))
+            hipLaunchKernelGGL((lane_moe_gemv_h2<TOKEN, 2>), grid, dim3(256), 0, stream, aq, as, sorted, off, top_k, code0, scale0, code1,
+                               scale1, n0, n1, k0, k1, a_stride, out_stride, out, part_pitch, lane_shape_);
+        else if (weight_format_ == MOE_FMT_FP8_E4M3_BLOCK && gemv_h2_ == 1 && !(k0 & 15u) && !(k1 & 15u))
+            hipLaunchKernelGGL((lane_moe_gemv_h2<TOKEN, 1>), grid, dim3(256), 0, stream, aq, as, sorted, off, top_k, code0, scale0, code1,
+                               scale1, n0, n1, k0, k1, a_stride, out_stride, out, part_pitch, lane_shape_);
         else if (weight_format_ == MOE_FMT_FP8_E4M3_BLOCK && gemv_wide_ && !(k0 & 15u) && !(k1 & 15u))
             hipLaunchKernelGGL((lane_moe_gemv_wide<TOKEN>), grid, dim3(256), 0, stream, aq, as, sorted, off, top_k, code0, scale0, code1,
                                scale1, n0, n1, k0, k1, a_stride, out_stride, out, part_pitch, lane_shape_);
@@ -64,6 +73,8 @@ public:
          * over 16 (35B stream A/B); with the old kernel 32 rows was worse. R3_MOE_WORKER_GEMV_LARGE_ROWS still overrides. */
         if (!std::getenv("R3_MOE_WORKER_GEMV_LARGE_ROWS")) gemv_large_rows_ = 32;
         gemv_wide_ = gemv_wide_env_ < 0 ? true : gemv_wide_env_ > 0;
+        gemv_h2_ = gemv_h2_env_ < 0 ? 2 : gemv_h2_env_;   /* FP8 default: packed f16 dot products, two rows a block */
+        if (gemv_h2_) std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_GEMV_H2 on - packed f16 dot products in the FP8 decode GEMV, %d row(s) a block\n", gemv_h2_);
         return true;
     }
     bool set_shape(const r3::moe_shm::LayoutShape& s) {
@@ -100,6 +111,11 @@ public:
     bool open() {
         const char* poison = std::getenv("R3_MOE_WORKER_POISON");
         /* "zero" returns zeros (the same output as dropping the remote routes); anything else non-"0" is 1e3. */
+        /* R3_MOE_WORKER_GEMV_H2 (RAD14): the FP8 decode GEMV on packed f16 dot products (v_dot2_f32_f16), f32 accumulate. */
+        if (const char* hv = std::getenv("R3_MOE_WORKER_GEMV_H2"); hv && *hv) {
+            const int v = std::atoi(hv);
+            gemv_h2_env_ = v == 4 ? 4 : v == 2 ? 2 : v == 1 ? 1 : 0;
+        }
         /* R3_MOE_WORKER_GEMV_MR (RAD14): the wide FP8 GEMV with the expert's rows batched four at a time (weights decoded once a pass). */
         if (const char* mv = std::getenv("R3_MOE_WORKER_GEMV_MR"); mv && *mv && std::strcmp(mv, "0") != 0) {
             gemv_mr_ = true;
@@ -901,6 +917,8 @@ private:
     uint32_t poison_ = 0;
     bool gemv_ = true;          /* R3_MOE_WORKER_GEMV: decode GEMV on the small lane (RAD05); 0 = off */
     uint32_t gemv_large_rows_ = 0; /* R3_MOE_WORKER_GEMV_LARGE_ROWS: GEMV for large-lane requests this small */
+    int gemv_h2_env_ = -1;      /* R3_MOE_WORKER_GEMV_H2 as set: -1 unset, else 0 (wide kernel), 1, 2 or 4 rows a block */
+    int gemv_h2_ = 0;           /* R3_MOE_WORKER_GEMV_H2: 1 packed f16 dot products in the FP8 decode GEMV, 2 the same with two rows a block (RAD14) */
     bool gemv_mr_ = false;      /* R3_MOE_WORKER_GEMV_MR: the wide FP8 GEMV batching an expert's rows (RAD14) */
     int gemv_wide_env_ = -1;    /* R3_MOE_WORKER_GEMV_WIDE as set: -1 unset, 0 off, 1 on */
     bool gemv_wide_ = false;    /* R3_MOE_WORKER_GEMV_WIDE: sixteen-byte FP8 loads in the decode GEMV (RAD14) */
