@@ -80,6 +80,12 @@ status = "experimental"
 summary = "RAD14: on by default for FP8 experts (0 is the off switch). The FP8 decode GEMV with sixteen-byte weight loads (four in flight a lane) and a branch-free E4M3 decode. On real 35B decode captures, per 16-row request on one XTX: gate/up 301 -> 109 us, down 150 -> 82 us (about 2.4x less kernel time); output within f32 rounding of the default kernel (a different K-sum order)."
 activation = "r3_moe_worker: R3_MOE_WORKER_GEMV_WIDE on"
 
+[setting.R3_MOE_WORKER_GEMV_H2]
+default = "2"
+status = "experimental"
+summary = "RAD14: the FP8 decode GEMV on packed f16 dot products (v_dot2_f32_f16, f32 accumulate); the value is the rows a block handles (1, 2 or 4), 0 falls back to the wide kernel (R3_MOE_WORKER_GEMV_WIDE). On by default for FP8 experts with two rows a block. E4M3 codes and their products are exact in f16 and the activation and weight scales are applied to each sixteen-element partial sum, so only the f32 accumulation order differs from the default. Per 16-row 35B decode request on one XTX: gate/up 106 -> 85 us, down 72 -> 56 us against the wide kernel; engine decode +17-20% at 1 stream, within noise at 4 and 6."
+activation = "r3_moe_worker: R3_MOE_WORKER_GEMV_H2 on"
+
 [setting.R3_MOE_WORKER_GEMV_MR]
 default = "0"
 status = "evaluated"
