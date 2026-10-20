@@ -49,9 +49,9 @@ class AdapterDispatchTests(unittest.TestCase):
         self.assertEqual([c.__name__ for c in adapter("radiance").audit_checks(context)],
                          ["check_overlay_sync", "check_patch_state", "check_components"])
 
-    def test_libr3_declares_its_offline_tests(self):
-        libr3 = components.load_all(paths.REPO_ROOT, engines.RADIANCE)["libr3"]
-        self.assertEqual(libr3.test_targets, ("r3_moe_shm_test", "r3_moe_backend_test", "r3_moe_fp8_ref_test"))
+    def test_moe_remote_declares_its_offline_tests(self):
+        moe_remote = components.load_all(paths.REPO_ROOT, engines.RADIANCE)["moe-remote"]
+        self.assertEqual(moe_remote.test_targets, ("r3_moe_shm_test", "r3_moe_backend_test", "r3_moe_fp8_ref_test"))
 
 
 class AbiHeaderTests(unittest.TestCase):
@@ -186,7 +186,7 @@ class ComponentGateTests(unittest.TestCase):
         stop = stopped.exception
         self.assertEqual((stop.phase, stop.code), ("compile", "COMPONENT_TEST_FAILED"))
         self.assertEqual(stop.evidence["check"], "component-tests")
-        self.assertIn("libr3", stop.evidence["failures"][0])
+        self.assertIn("moe-remote", stop.evidence["failures"][0])
 
     def test_abi_mismatch_stops_the_bump(self):
         with self.assertRaises(pin_bump.PinBumpStop) as stopped:

@@ -336,7 +336,7 @@ class TestRadiancePatchPackages(unittest.TestCase):
         try:
             self.assertTrue(all(result.ok for result in apply_all(list(_load(RAD0002)), root)))
             abi = (root / "abi/bc_moe_remote.h").read_text(encoding="utf-8")
-            hook = (REPO / "engines/radiance/components/libr3/worker/moe_remote_hook.cpp").read_text(encoding="utf-8")
+            hook = (REPO / "engines/radiance/components/moe-remote/moe_remote_hook.cpp").read_text(encoding="utf-8")
 
             def fields(text: str, opener: str) -> list[str]:
                 body = text.split(opener, 1)[1].split("}", 1)[0]
@@ -351,7 +351,7 @@ class TestRadiancePatchPackages(unittest.TestCase):
             temp.cleanup()
 
     def test_remote_helper_merges_in_gather_order_and_exposes_diagnostics(self):
-        helper = REPO / "engines" / "radiance" / "components" / "libr3" / "worker"
+        helper = REPO / "engines" / "radiance" / "components" / "moe-remote"
         hook = (helper / "moe_remote_hook.cpp").read_text(encoding="utf-8")
         ops = (helper / "moe_mailbox_ops.hip").read_text(encoding="utf-8")
         self.assertIn('setenv("R3_MOE_REMOTE_MIN_ROWS", "0", 0)', hook)
@@ -392,7 +392,7 @@ class TestRadiancePatchPackages(unittest.TestCase):
         self.assertIn('{"aq_base", RAD_OPD_IN, 0}', ops)
         self.assertIn('"moe_mailbox_shadow"', ops)
         self.assertIn('q->row_base', ops)
-        gpu = (helper / "moe_remote_gpu.h").read_text(encoding="utf-8")
+        gpu = "".join(f.read_text(encoding="utf-8") for f in [helper / "moe_remote_gpu.h", *sorted(helper.glob("moe_lane_*.h"))])
         self.assertIn('R3_MOE_WORKER_POISON', gpu)
         self.assertIn('poison == 1u ? (uint16_t)0x447au : poison == 2u ? (uint16_t)0 : (uint16_t)(u >> 16)', gpu)
         self.assertIn('build_layer_table', gpu)
@@ -400,11 +400,11 @@ class TestRadiancePatchPackages(unittest.TestCase):
         self.assertNotIn('model_.expert_slot', gpu)
         self.assertIn('stage_compare_activation', gpu)
         self.assertIn('q, act_q, act_s', gpu)
-        helper_main = (helper / "r3_moe_worker.cpp").read_text(encoding="utf-8")
+        helper_main = "".join(f.read_text(encoding="utf-8") for f in [helper / "r3_moe_worker.cpp", *sorted(helper.glob("worker_*.h"))])
         self.assertIn("--synthetic-protect", helper_main)
         self.assertIn("did not shift an owned TP class", helper_main)
         self.assertNotIn("regular_slot", helper_main)
-        component = (REPO / "engines" / "radiance" / "components" / "libr3" / "component.toml").read_text(encoding="utf-8")
+        component = (REPO / "engines" / "radiance" / "components" / "moe-remote" / "component.toml").read_text(encoding="utf-8")
         self.assertIn("[setting.R3_MOE_WORKER_SHADOW]", component)
         self.assertIn("[setting.R3_MOE_WORKER_MASK_ONLY]", component)
         self.assertIn('status = "diagnostic"', component)

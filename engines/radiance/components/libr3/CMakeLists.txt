@@ -134,49 +134,4 @@ set_property(TARGET r3_selftest PROPERTY HIP_ARCHITECTURES ${R3_TARGETS})
 add_executable(r3_ngram_test EXCLUDE_FROM_ALL ${CMAKE_CURRENT_SOURCE_DIR}/r3_ngram_test.cpp)
 target_link_libraries(r3_ngram_test PRIVATE radiance::abi ${CMAKE_DL_LIBS})
 
-# Remote-MoE helper. The executable consumes only the installed container ABI. Its GPU mailbox
-# service owns one HIP stream per producer rank; engine-side publication/join are libr3 kernels.
-find_package(Threads REQUIRED)
-set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/worker/r3_moe_worker.cpp PROPERTIES LANGUAGE HIP)
-add_executable(r3_moe_worker ${CMAKE_CURRENT_SOURCE_DIR}/worker/r3_moe_worker.cpp)
-set_property(TARGET r3_moe_worker PROPERTY HIP_ARCHITECTURES gfx1100 gfx1201)
-target_include_directories(r3_moe_worker PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/worker $ENV{ROCM_PATH}/include)
 target_include_directories(libr3 PRIVATE ${RADIANCE_SRC}/abi)
-
-# Remote-MoE mailbox: its own plugin, for both card families, so the hand-off runs beside libr3 on the XTX ranks
-# and beside libr4d on an R9700 engine (RAD02). Engine patch rad0002 declares the device ops and exports the
-# extension point bc_moe_remote_register; the hook resolves it dynamically so schema/selftest loaders keep no hard
-# dependency on the engine core.
-set(R3MOE_TARGETS "gfx1100;gfx1201" CACHE STRING "GPU targets the remote-MoE mailbox plugin is compiled for")
-rad_add_plugin(libr3moe kernels
-  SOURCES     ${CMAKE_CURRENT_SOURCE_DIR}/worker/moe_mailbox_plugin.cpp ${CMAKE_CURRENT_SOURCE_DIR}/worker/moe_remote_hook.cpp
-  HIP_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/worker/moe_mailbox_ops.hip
-  GPU_TARGETS ${R3MOE_TARGETS}
-  INCLUDES    ${CMAKE_CURRENT_SOURCE_DIR})
-string(REPLACE ";" "," r3moe_targets_csv "${R3MOE_TARGETS}")
-target_compile_definitions(libr3moe PRIVATE R3MOE_TARGETS="${r3moe_targets_csv}")
-target_include_directories(libr3moe PRIVATE ${RADIANCE_SRC}/abi)
-set_target_properties(libr3moe PROPERTIES HIP_STANDARD 17 HIP_STANDARD_REQUIRED ON)
-target_link_libraries(libr3moe PRIVATE ${CMAKE_DL_LIBS})
-add_dependencies(libr3moe r3_moe_worker)
-target_compile_definitions(r3_moe_worker PRIVATE __HIP_PLATFORM_AMD__)
-target_link_libraries(r3_moe_worker PRIVATE radiance::abi ${CMAKE_DL_LIBS} ${RAD_HIP_RUNTIME} Threads::Threads)
-set_target_properties(r3_moe_worker PROPERTIES HIP_STANDARD 17 HIP_STANDARD_REQUIRED ON
-  RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/helpers)
-
-include(CTest)
-if(BUILD_TESTING)
-  add_executable(r3_moe_shm_test EXCLUDE_FROM_ALL ${CMAKE_CURRENT_SOURCE_DIR}/worker/moe_remote_shm_test.cpp)
-  target_include_directories(r3_moe_shm_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/worker)
-  target_link_libraries(r3_moe_shm_test PRIVATE Threads::Threads)
-  set_target_properties(r3_moe_shm_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
-  add_test(NAME r3_moe_shm_test COMMAND r3_moe_shm_test)
-  add_executable(r3_moe_backend_test EXCLUDE_FROM_ALL ${CMAKE_CURRENT_SOURCE_DIR}/worker/moe_backend_test.cpp)
-  target_include_directories(r3_moe_backend_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/worker)
-  set_target_properties(r3_moe_backend_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
-  add_test(NAME r3_moe_backend_test COMMAND r3_moe_backend_test)
-  add_executable(r3_moe_fp8_ref_test EXCLUDE_FROM_ALL ${CMAKE_CURRENT_SOURCE_DIR}/worker/moe_fp8_ref_test.cpp)
-  target_include_directories(r3_moe_fp8_ref_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/worker)
-  set_target_properties(r3_moe_fp8_ref_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
-  add_test(NAME r3_moe_fp8_ref_test COMMAND r3_moe_fp8_ref_test)
-endif()

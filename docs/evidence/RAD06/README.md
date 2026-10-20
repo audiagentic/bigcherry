@@ -1,6 +1,6 @@
 # RAD06 libr3 setting evidence
 
-One `ab-benchmark` capture per promoted libr3 setting (lightweight tier, `engines/radiance/components/libr3/component.toml`
+One `ab-benchmark` capture per promoted libr3 setting (lightweight tier, `engines/radiance/components/moe-remote/component.toml` (R3_MOE_* settings moved there from libr3 in RCS04; the mechanism ids inside the run records still read `libr3:R3_MOE_*` and are history, not edited)
 `evidence = [...]`). Each run is the R9700 engine plus two RX 7900 XTX helpers on Brutus (the `helper-ab.json` layout,
 Flash-Next), two balanced pairs, arms that differ in that one environment variable (the other is on its default), the helper's
 startup marker present in the on-arm's log and absent from the control's (`setting_activation: executed`), no failed cell.

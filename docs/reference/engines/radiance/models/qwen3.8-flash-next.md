@@ -125,7 +125,7 @@ Engine patches (state from each SUMMARY.md; none is `validated` yet):
 | rad0002 MoE remote hand-off | untested | the seam through which helper-owned routes are masked locally and published to the helper; the whole helper layout depends on it. Enabled by `R3_MOE_WORKER`. Reconciled with the libr3moe hook on main (RAD09, #236). |
 | rad0003 MTP full-head switch | untested | not used: `RAD_MTP_FULL_HEAD=1` did not change acceptance (0.63-0.65 vs 0.62-0.64). |
 
-Component settings (`engines/radiance/components/libr3/component.toml`; default and status as declared there):
+Component settings (`engines/radiance/components/moe-remote/component.toml` for R3_MOE_*, `libr3/component.toml` for the rest; default and status as declared there):
 
 | Setting | Default | Status | Role here |
 |---|---|---|---|

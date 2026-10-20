@@ -131,17 +131,19 @@ def load_all(repo_root: Path, engine: str) -> dict[str, Component]:
     return {name: load(repo_root / relative, engine) for name, relative in layout.components}
 
 
-def check_environment(component: Component, environment: dict[str, str], *, production: bool) -> list[str]:
-    """Problems with ``environment`` (variables a profile or experiment sets) against the component's settings:
-    an undeclared variable, a value equal to the default (a profile restates nothing), and - for a production
-    profile - a setting whose status is not production."""
+def check_environment(declared: dict[str, Component], environment: dict[str, str], *, production: bool) -> list[str]:
+    """Problems with ``environment`` (variables a profile or experiment sets) against every component's settings: a
+    variable no component declares, a value equal to its owner's default (a profile restates nothing), and - for a
+    production profile - a setting whose status is not production."""
+    owners = {key: component for component in declared.values() for key in component.settings}
     problems = []
     for key, value in sorted(environment.items()):
-        setting = component.settings.get(key)
-        if setting is None:
+        component = owners.get(key)
+        if component is None:
             if key.startswith("R3_"):
-                problems.append(f"{key} is not a setting {component.name} declares")
+                problems.append(f"{key} is not a setting any component declares")
             continue
+        setting = component.settings[key]
         if value == setting.default:
             problems.append(f"{key}={value} restates {component.name}'s default")
         if production and setting.status not in PROMOTED:
