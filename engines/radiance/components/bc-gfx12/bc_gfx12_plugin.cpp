@@ -5,13 +5,15 @@
 // own. A row's launch may hand a call back to libr4d's kernel.
 //
 // hc_read (hyper-connections read, Qwen3.8-Flash-Next): decode-sized steps only (M <= 16), E4M3 mixing matrices.
+// moe_gemm_q (fp8a8 grouped expert GEMM, the 35B): decode-sized steps only (M <= 16), the packed-f16 GEMV.
 #include "rad_abi.h"
 
 #include <dlfcn.h>
 #include <cstdio>
 #include <string>
 
-extern "C" int bc_hc_read_decode(const RadArgs* a, RadStream s);   // bc_hc_read.hip
+extern "C" int bc_hc_read_decode(const RadArgs* a, RadStream s);        // bc_hc_read.hip
+extern "C" int bc_moe_gemm_fp8_decode(const RadArgs* a, RadStream s);   // bc_moe_gemv.hip
 
 namespace {
 
@@ -24,7 +26,12 @@ struct R4d {
     RadRelayoutFn relayout_hc_e4m3 = nullptr;
     RadUnrelayoutFn unrelayout_hc_e4m3 = nullptr;
     RadShapeFn shape_hc_read = nullptr;
+    RadLaunchFn moe_gemm_q = nullptr;
+    RadScratchFn moe_gemm_q_scratch = nullptr;
+    RadLayoutFn layout_moe_fp8 = nullptr;
+    RadShapeFn shape_moe_gemm_q = nullptr;
     bool ok = false;
+    bool moe_ok = false;
 };
 
 const R4d& r4d() {
@@ -81,6 +88,28 @@ int shape_hc(const RadParam* p, int n_p, int op, RadOpdDesc* out) {
     return r4d().ok ? r4d().shape_hc_read(p, n_p, op, out) : RAD_E_UNSUPPORTED;
 }
 
+int moe_gemm_q_launch(const RadArgs* a, RadStream s) {
+    const int rc = bc_moe_gemm_fp8_decode(a, s);
+    if (rc != RAD_E_UNSUPPORTED) return rc;
+    return r4d().moe_ok ? r4d().moe_gemm_q(a, s) : RAD_E_UNSUPPORTED;
+}
+int64_t moe_gemm_q_scratch(const RadArgs* a) {
+    return r4d().moe_ok ? r4d().moe_gemm_q_scratch(a) : -1;   // libr4d's, for the calls handed back to it
+}
+int layout_moe_fp8(const RadParam* p, int n_p, int op, const RadEncoding* e, const int* sel, const RadTensor* pl,
+                   int n_pl, RadLayout* out) {
+    return r4d().moe_ok ? r4d().layout_moe_fp8(p, n_p, op, e, sel, pl, n_pl, out) : RAD_E_UNSUPPORTED;
+}
+int shape_moe_gemm_q(const RadParam* p, int n_p, int op, RadOpdDesc* out) {
+    return r4d().moe_ok ? r4d().shape_moe_gemm_q(p, n_p, op, out) : RAD_E_UNSUPPORTED;
+}
+
+/* libr4d's moe_gemm_fp8a8 constraints, narrowed to decode-sized steps. */
+const RadConstraint kMoeGemmQDecode[] = {
+    RAD_CGE("M", 1), RAD_CLE("M", 16), RAD_CDIV("N", 64), RAD_CDIV("K", 128), RAD_CGE("n_expert", 1),
+    RAD_CLE("n_expert", 65536), RAD_CGE("top_k", 1), RAD_CEQ("group", 128), RAD_CIN("dtype", "fp8a8"),
+};
+
 /* libr4d's hc_read_e4m3 constraints, narrowed to decode-sized steps. */
 const RadConstraint kHcReadDecode[] = {
     RAD_CGE("M", 1), RAD_CLE("M", 16), RAD_CDIV("n", 512), RAD_CLE("n", 7552), RAD_CGE("hc", 2), RAD_CLE("hc", 4),
@@ -98,6 +127,16 @@ const RadKernelInfo kRows[] = {
       kHcReadDecode, (int)(sizeof(kHcReadDecode) / sizeof(kHcReadDecode[0])),
       nullptr, 0, nullptr,
       nullptr, nullptr, hc_read_launch, hc_read_scratch, layout_hc, relayout_hc, shape_hc, unrelayout_hc,
+      nullptr },
+    { "bc_moe_gemm_fp8a8_decode", "moe_gemm_q", "moe",
+      "moe_gemm_q at decode-sized steps (RAD15): one block a (routed row pair, 64 outputs), each wave an output's dot "
+      "product on packed f16, instead of libr4d's fp8 WMMA tile masked down to a run's one or two rows",
+      "M <= 16, K <= 2560, one part; otherwise as libr4d's moe_gemm_fp8a8",
+      "E4M3 activation with an f32 scale per 128 of K, E4M3 weight with a bf16 scale per 128x128 tile, bf16 out",
+      RAD_DOMAIN_DEVICE, 60,
+      kMoeGemmQDecode, (int)(sizeof(kMoeGemmQDecode) / sizeof(kMoeGemmQDecode[0])),
+      nullptr, 0, nullptr,
+      nullptr, nullptr, moe_gemm_q_launch, moe_gemm_q_scratch, layout_moe_fp8, nullptr, shape_moe_gemm_q, nullptr,
       nullptr },
 };
 
