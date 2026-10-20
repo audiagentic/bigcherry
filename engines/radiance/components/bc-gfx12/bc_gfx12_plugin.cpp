@@ -171,6 +171,16 @@ const RadKernelInfo kRows[] = {
       nullptr, 0, nullptr,
       nullptr, nullptr, moe_gemm_q_launch, moe_gemm_q_scratch, layout_moe_fp8, nullptr, shape_moe_gemm_q, nullptr,
       nullptr },
+    { "bc_hc_read_e4m3_prefill", "hc_read", "norm",
+      "hc_read at prefill-sized steps (RAD15 stage 1): stub that delegates every call to libr4d while the plugin's "
+      "selection and layout plumbing for M > 16 is proven; a WMMA kernel replaces it next",
+      "M >= 17; otherwise as libr4d's hc_read_e4m3",
+      "bf16 stream, E4M3 mixing matrices with f32 scales, f32 gain, bf16 out, E4M3 + f32 scale for the twin",
+      RAD_DOMAIN_DEVICE, 60,
+      kHcReadPrefill, (int)(sizeof(kHcReadPrefill) / sizeof(kHcReadPrefill[0])),
+      nullptr, 0, nullptr,
+      nullptr, nullptr, hc_read_prefill_launch, hc_read_scratch, layout_hc, relayout_hc, shape_hc, unrelayout_hc,
+      nullptr },
 };
 
 }  // namespace
