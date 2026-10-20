@@ -627,14 +627,37 @@ def classify_patch_coverage(
     return coverage
 
 
-def run_patch_tests(repo_root: Path) -> list[str]:
-    """Run the offline patch mechanics suite and return the failing test ids.
+PATCH_TESTS_DIR = Path("tools") / "tests" / "patch"
+
+
+def select_patch_test_modules(repo_root: Path, engine: str) -> list[str]:
+    """The offline patch test modules a bump of ``engine`` can affect (MEN24).
+
+    An engine owns the test files named ``test_<engine>_*.py``. A bump of an engine that owns files runs exactly those;
+    a bump of an engine that owns none (llama.cpp, whose tests predate the convention) runs every file no other engine
+    owns. An engine cannot affect another engine's tests, so neither selection crosses over."""
+    from ..core import engines
+
+    files = sorted(path.stem for path in (repo_root / PATCH_TESTS_DIR).glob("test_*.py"))
+    owned = [stem for stem in files if stem.startswith(f"test_{engine}_")]
+    if owned:
+        selected = owned
+    else:
+        others = tuple(f"test_{other}_" for other in engines.names(repo_root) if other != engine)
+        selected = [stem for stem in files if not stem.startswith(others)]
+    if not selected:
+        raise ValueError(f"no patch test modules select for engine {engine!r} under {PATCH_TESTS_DIR}")
+    return selected
+
+
+def run_patch_tests(repo_root: Path, engine: str) -> list[str]:
+    """Run the bumped engine's offline patch mechanics tests and return the failing test ids.
     Called before apply, while the vendor tree is the pristine new revision:
     the fixtures copy vendor files, so an already-patched tree would turn every
     fail-closed test red for reasons unrelated to upstream."""
     completed = subprocess.run(
-        [sys.executable, "-m", "unittest", "discover", "-s", "tools/tests/patch"],
-        cwd=repo_root,
+        [sys.executable, "-m", "unittest", *select_patch_test_modules(repo_root, engine)],
+        cwd=repo_root / PATCH_TESTS_DIR,
         env={**os.environ, "PYTHONPATH": str(repo_root / "tools")},
         capture_output=True,
         text=True,
@@ -2004,7 +2027,7 @@ def _run_phases(
                 target_revision=state.to_sha,
                 focal_probe=focal_probe,
             )
-            coverage["test_failures"] = run_patch_tests(repo_root)
+            coverage["test_failures"] = run_patch_tests(repo_root, engine)
             (report_dir / "patch-failures.json").write_text(
                 json.dumps(
                     {"patches": coverage["outstanding"], "tests": coverage["test_failures"]},
