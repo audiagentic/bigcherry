@@ -1,7 +1,7 @@
 #include <atomic>
 #include <cstdio>
-#include "worker/moe_remote_hook.h"
-#include "worker/moe_remote_shm.h"
+#include "moe_remote_hook.h"
+#include "moe_remote_shm.h"
 #include "rad_abi.h"
 
 #include <hip/hip_runtime.h>

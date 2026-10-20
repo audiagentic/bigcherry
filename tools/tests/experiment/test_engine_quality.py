@@ -85,14 +85,19 @@ class ActivationTests(unittest.TestCase):
         self.libr3 = components.load_all(paths.REPO_ROOT, engines.RADIANCE)["libr3"]
 
     def test_declared_markers_are_printed_by_the_source(self):
-        source = "\n".join(
+        """A marker is a line in the served process's logs, so it may be printed by any component's source (libr3 declares
+        R3_MOE_FP16, which the moe-remote helper reports)."""
+        declared = components.load_all(paths.REPO_ROOT, engines.RADIANCE)
+        source = chr(10).join(
             p.read_text(encoding="utf-8", errors="replace")
-            for p in self.libr3.root.rglob("*") if p.is_file() and p.suffix in {".cpp", ".hip", ".rw", ".h"}
+            for component in declared.values()
+            for p in component.root.rglob("*") if p.is_file() and p.suffix in {".cpp", ".hip", ".rw", ".h"}
         )
-        for setting in self.libr3.settings.values():
-            if setting.activation:
-                literal = re.sub(r"[\^$]", "", setting.activation).replace("\\", "")
-                self.assertIn(literal.split(" ")[0], source, setting.name)
+        for component in declared.values():
+            for setting in component.settings.values():
+                if setting.activation:
+                    literal = re.sub(r"[\^$]", "", setting.activation).replace(chr(92), "")
+                    self.assertIn(literal.split(" ")[0], source, setting.name)
 
     def test_executed_only_when_the_subject_logs_the_marker_and_the_control_does_not(self):
         log = "libr3: R3_AR_WIRE4 active for M>=512\n"

@@ -21,11 +21,12 @@ class Libr3ComponentTests(unittest.TestCase):
         self.assertEqual(self.libr3.built_against, recipes.pinned)
 
     def test_every_variable_the_source_reads_is_declared_and_nothing_else(self):
-        read = set()
-        for path in self.libr3.root.rglob("*"):
-            if path.is_file() and path.suffix in {".cpp", ".hip", ".h", ".rw"}:
-                read |= set(_GETENV.findall(path.read_text(encoding="utf-8", errors="replace")))
-        self.assertEqual(read, set(self.libr3.settings) - HARNESS_ONLY)
+        for name, component in components.load_all(paths.REPO_ROOT, engines.RADIANCE).items():
+            read = set()
+            for path in component.root.rglob("*"):
+                if path.is_file() and path.suffix in {".cpp", ".hip", ".h", ".rw"}:
+                    read |= set(_GETENV.findall(path.read_text(encoding="utf-8", errors="replace")))
+            self.assertEqual(read, set(component.settings) - HARNESS_ONLY, name)
 
     def test_only_native_attention_is_production(self):
         production = {s.name for s in self.libr3.settings.values() if s.status == "production"}
@@ -35,12 +36,12 @@ class Libr3ComponentTests(unittest.TestCase):
         self.assertEqual(self.libr3.content_digest(), self.libr3.content_digest())
 
     def test_profiles_restate_nothing_and_set_only_production_settings(self):
-        self.assertEqual(components.check_environment(self.libr3, {}, production=True), [])
+        self.assertEqual(components.check_environment({"libr3": self.libr3}, {}, production=True), [])
         problems = components.check_environment(
-            self.libr3, {"R3_ATTN_NATIVE": "1", "R3_GDN_NATIVE": "1", "R3_TYPO": "1"}, production=True)
+            {"libr3": self.libr3}, {"R3_ATTN_NATIVE": "1", "R3_GDN_NATIVE": "1", "R3_TYPO": "1"}, production=True)
         self.assertIn("R3_ATTN_NATIVE=1 restates libr3's default", problems)
         self.assertIn("R3_GDN_NATIVE is evaluated in libr3; a production profile may not set it", problems)
-        self.assertIn("R3_TYPO is not a setting libr3 declares", problems)
+        self.assertIn("R3_TYPO is not a setting any component declares", problems)
 
     def test_a_profile_environment_is_checked_against_the_components(self):
         import tempfile

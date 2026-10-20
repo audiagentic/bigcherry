@@ -13,6 +13,7 @@ How the radiance engine is built, configured and measured through the same platf
 | Engine patches (packages against the pinned radiance) | `engines/radiance/patches/<id>/` |
 | libr3, the gfx1100 kernel plugin (component, not a patch) | `engines/radiance/components/libr3/` |
 | libr3 runtime settings (R3_*: default, status, activation marker) | `engines/radiance/components/libr3/component.toml` |
+| moe-remote (the remote-MoE helper `r3_moe_worker` and the `libr3moe` plugin; R3_MOE_* settings) | `engines/radiance/components/moe-remote/` and its `component.toml` |
 | A/B configurations | `tools/lab/radiance/*.json` |
 
 ## One-time host setup (build host)
