@@ -16,7 +16,10 @@ public:
     void launch_gemv(dim3 grid, hipStream_t stream, const uint8_t* aq, const float* as, const int32_t* sorted, const int32_t* off,
                      uint32_t top_k, void* const* code0, void* const* scale0, void* const* code1, void* const* scale1, uint32_t n0,
                      uint32_t n1, uint32_t k0, uint32_t k1, uint32_t a_stride, uint32_t out_stride, uint16_t* out, uint32_t part_pitch) {
-        if (weight_format_ == MOE_FMT_W4NL64 && gemv_w4h2_ && !(k0 & 63u) && !(k1 & 63u))
+        /* R3_MOE_WORKER_GEMV_W4H2 is read each call (as FUSEROUTE is) so a replay sweep can compare the two W4 kernels in one process. */
+        const char* w4h2_env = weight_format_ == MOE_FMT_W4NL64 ? std::getenv("R3_MOE_WORKER_GEMV_W4H2") : nullptr;
+        const bool w4h2 = w4h2_env ? (*w4h2_env && std::strcmp(w4h2_env, "0") != 0) : gemv_w4h2_;
+        if (weight_format_ == MOE_FMT_W4NL64 && w4h2 && !(k0 & 63u) && !(k1 & 63u))
             hipLaunchKernelGGL((lane_moe_gemv_w4h2<TOKEN>), grid, dim3(256), 0, stream, aq, as, sorted, off, top_k, code0, scale0, code1,
                                scale1, n0, n1, k0, k1, a_stride, out_stride, out, part_pitch, lane_shape_);
         else if (weight_format_ == MOE_FMT_FP8_E4M3_BLOCK && gemv_mr_ && !(k0 & 15u) && !(k1 & 15u))
