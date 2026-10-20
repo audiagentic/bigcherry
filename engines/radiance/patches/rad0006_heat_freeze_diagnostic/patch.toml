@@ -1,0 +1,13 @@
+schema = 1
+id = "rad0006_heat_freeze_diagnostic"
+order = 6
+state = "untested"
+kind = "diagnostic"
+origin = "local"
+backend = "agnostic"
+plan-item = "RAD14"
+plan-ids = ["RAD14"]
+requires = []
+conflicts = []
+diagnostic-build = "BC_MOE_REMOTE_DIAG"
+tags = ["moe-routing"]
