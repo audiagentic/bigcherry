@@ -671,10 +671,10 @@ def load(path: str | Path) -> Config:
             environment=_options(data.get("environment"), f"runtime-profile.{name}.environment"),
         )
     for name, profile in runtime_profiles.items():
-        for component in components.load_all(_REPOSITORY, engine).values():
-            problems = components.check_environment(component, dict(profile.environment), production=False)
-            if problems:
-                raise ConfigError(f"runtime-profile.{name}.environment: {'; '.join(problems)}")
+        problems = components.check_environment(
+            components.load_all(_REPOSITORY, engine), dict(profile.environment), production=False)
+        if problems:
+            raise ConfigError(f"runtime-profile.{name}.environment: {'; '.join(problems)}")
 
     return Config(
         pinned,

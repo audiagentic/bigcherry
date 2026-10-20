@@ -85,14 +85,16 @@ class ActivationTests(unittest.TestCase):
         self.libr3 = components.load_all(paths.REPO_ROOT, engines.RADIANCE)["libr3"]
 
     def test_declared_markers_are_printed_by_the_source(self):
-        source = "\n".join(
-            p.read_text(encoding="utf-8", errors="replace")
-            for p in self.libr3.root.rglob("*") if p.is_file() and p.suffix in {".cpp", ".hip", ".rw", ".h"}
-        )
-        for setting in self.libr3.settings.values():
-            if setting.activation:
-                literal = re.sub(r"[\^$]", "", setting.activation).replace("\\", "")
-                self.assertIn(literal.split(" ")[0], source, setting.name)
+        for component in components.load_all(paths.REPO_ROOT, engines.RADIANCE).values():
+            source = "
+".join(
+                p.read_text(encoding="utf-8", errors="replace")
+                for p in component.root.rglob("*") if p.is_file() and p.suffix in {".cpp", ".hip", ".rw", ".h"}
+            )
+            for setting in component.settings.values():
+                if setting.activation:
+                    literal = re.sub(r"[\^$]", "", setting.activation).replace("\\", "")
+                    self.assertIn(literal.split(" ")[0], source, setting.name)
 
     def test_executed_only_when_the_subject_logs_the_marker_and_the_control_does_not(self):
         log = "libr3: R3_AR_WIRE4 active for M>=512\n"

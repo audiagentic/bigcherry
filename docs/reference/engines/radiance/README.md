@@ -44,7 +44,7 @@ compute, not storage; lookup-type side work goes to host RAM/CPU.
 | Engine declaration | `engines/radiance/engine.toml` | patch id prefix `rad`, build and serve contract |
 | Recipes | `engines/radiance/recipes.toml` | pin, patch sets, sources, experiments, runtime profiles `flashnext-2xtx` and `qwen38-27b-2xtx`, platform `linux-radiance` |
 | Engine patches | `engines/radiance/patches/rad000N_*` | packages against the pinned radiance (see below) |
-| Components | `engines/radiance/components/libr3/` | BigCherry source built against the installed engine; a component, not a patch |
+| Components | `engines/radiance/components/libr3/` (gfx1100 kernels), `engines/radiance/components/moe-remote/` (remote-MoE helper and mailbox plugin) | BigCherry source built against the installed engine; components, not patches |
 | Lab scripts, A/B configs | `tools/lab/radiance/` | `helper-ab.json` (speed A/B, helper sidecars), `helper-kld.json` (KL quality), `fn-profile.sh` (rocprofv3 traces) |
 
 Engine patches (all package state below is from each `SUMMARY.md`):
@@ -56,7 +56,7 @@ Engine patches (all package state below is from each `SUMMARY.md`):
 | `rad0004_moe_remote_diagnostics` | untested | shadow compare and mask-only for the hand-off; diagnostic build only (`BC_MOE_REMOTE_DIAG`, source `radiance-diag` with build `moe-diag`); never in a production source |
 | `rad0003_mtp_full_head_switch` | untested | `RAD_MTP_FULL_HEAD=1` drafts through the trunk head instead of the container's 2-bit head; off by default |
 
-Components and plugins produced by `libr3` (`components/libr3/component.toml` `outputs`):
+Components and plugins produced by `libr3` and `moe-remote` (each `component.toml` `outputs`; `libr3moe.so` and `r3_moe_worker` belong to `moe-remote`, the rest to `libr3`):
 
 | Output | What it is |
 |---|---|
