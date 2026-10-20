@@ -37,6 +37,16 @@ Projection from measured kernels and link; if built, matched stream A/B with acc
 
 Related: RAD15 (R9700 rows), RCS07 (gfx1030 backend), RR03 (superseded plan for a drafter on a separate card).
 
+2026-10-21 measured on the 6900 XT (HIP device 3; harness /tmp/g1030/rt.hip, to move into tools/lab): host round trip
+(H2D + kernel + D2H) 38 us at 5 KB, 51 us at 30 KB, 212 us at 300 KB; device read bandwidth 505 GB/s (R9700: ~630).
+So a drafter on the 6900 that takes the hidden state and returns draft tokens costs ~50 us a step in transfers (negligible
+against a 20-25 ms step). Its draft chain would take ~4.5 ms a step (three MTP passes; the int8 head alone is ~1.2 ms a pass
+at 505 GB/s against 1.06 ms on the R9700), well inside a step, so drafting can hide behind verification in time. Serial
+relocation gains nothing (the head is slower on the 6900); the win needs pipelined speculation: drafts for step t+1 start
+from the state assumed after step t's verification and are discarded on a mismatch. That is the engine change to design
+(scheduler + MTP state + rollback), with acceptance as the risk. Next: a trace-driven simulation of pipelined drafting with
+measured acceptance (Flash-Next 0.63-0.66 at MTP 3) before any engine patch.
+
 ## Change Log
 
 - 2026-10-21T02:00:00+00:00 (created-by): Created by agent
