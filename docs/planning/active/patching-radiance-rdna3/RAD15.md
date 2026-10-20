@@ -49,6 +49,14 @@ No engine patch: plugin rows only (the plugin hierarchy is absolute, first match
 - So for Flash-Next the gfx1201 rows to write are hc_read (one launch, both matrices streamed at bandwidth) and fused small
   GEMMs, not moe_gemm_q. For the 35B, moe_gemm_q stays the target (step 2 baseline still to run).
 
+2026-10-21 hc_read follow-up: the bc-gfx12 plugin skeleton (PR to follow, branch feat/bc-gfx12-hc-read) is selected by
+radiance for decode-sized hc_read and, delegating to libr4d, times identically (27.6 us at M=4, 37.0 at M=16), so the A/B
+harness is rad-kbench --kernels libbcgfx12:libr4d:libref --op hc_read on the real container. Reading libr4d 1.9.0's
+launcher shows the grid work is already done upstream (column tile narrowed to fill the card, 81 blocks at one row, a
+measured "sharp optimum"; a tiled split-K path from kDecMinRows). The remaining gap is mostly the latency-bound norm
+prologue (~6.7 us of kernel A by upstream's own note), so a realistic gain is ~3-5 us a call (~0.4 ms a step, ~2%), not
+the ~1.5 ms first estimated. Deprioritised behind the prefill map and the 35B MoE baseline.
+
 ## Change Log
 
 - 2026-10-20T12:00:00+00:00 (created-by): Created by agent
