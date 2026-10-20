@@ -1,5 +1,18 @@
 # 1001: enable the internal (non-RCCL) AllReduce on HIP
 
+
+## Summary
+
+Upstream backport: enables the internal (non-RCCL) pinned-host-memory AllReduce path on HIP (--allreduce host).
+
+## Outcome
+
+superseded: validated a large decode win (+17.33% TPS) with a severe prefill regression (-32% to -34%); superseded by 0840's size-adaptive dispatch, which uses both providers.
+
+## Detail
+
+See below.
+
 ## Scope
 
 Removes the `GGML_USE_HIP` compile-out guard on `allreduce.cu`'s

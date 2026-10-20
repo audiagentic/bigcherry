@@ -3,6 +3,18 @@
 **Status:** untested
 **Plan item:** RAD01
 
+## Summary
+
+Engine-side hooks (14 call sites, 4 files) for the whole-expert MoE remote hand-off.
+
+## Outcome
+
+untested: package exists, extension point in place, not yet run on hardware as its own qualification.
+
+## Detail
+
+See below.
+
 ## What it does
 
 Adds the engine side of the whole-expert MoE hand-off as thin hooks into one BigCherry-owned extension point (`abi/bc_moe_remote.h`, `core/place/bc_moe_remote.cpp`, `core/place/bc_moe_remote_place.h`, `arch/common/bc_moe_remote_block.h`, all created by this package). When the libr3moe plugin has registered and the row policy admits a step, the routes the helper owns are published to it and masked out of the local grouped GEMMs; `moe_mailbox_add` then sums the local and helper rows in slot order in place of `moe_gather`, and the standalone tensor-parallel all-reduce runs afterward. HyperConn's fused gather and reducing write are skipped, only for a connection fed by a MoE gather source, on those steps. With no plugin or an excluded row count nothing changes.

@@ -3,6 +3,18 @@
 **Status:** untested
 **Plan item:** RAD01
 
+## Summary
+
+RAD_MTP_FULL_HEAD=1 drafts MTP rounds through the trunk LM head instead of the container's 2-bit draft head.
+
+## Outcome
+
+untested: off by default, not yet measured.
+
+## Detail
+
+See below.
+
 ## What it does
 
 Adds `RAD_MTP_FULL_HEAD=1` to make MTP draft rounds use the trunk language-model head instead of the container's two-bit draft-head copy. The switch is off by default.

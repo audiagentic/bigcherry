@@ -1,5 +1,18 @@
 # 0840 (GP03): size-adaptive internal/RCCL AllReduce provider dispatch
 
+
+## Summary
+
+Size-adaptive AllReduce provider dispatch (--allreduce adaptive): routes small decode-sized reductions to the internal pipeline and large prefill-sized ones to RCCL, using the internal pipeline's own copy-engine threshold.
+
+## Outcome
+
+validated (2026-09-11): real MTP completion-bench beats the required native-RCCL baseline by +3.9%, reproduced across 2 RCCL versions and 2/3-GPU topologies; GPT-reviewed APPROVE.
+
+## Detail
+
+See below.
+
 ## Scope
 
 Adds `--allreduce adaptive`: a 4th AllReduce provider that brings up

@@ -1,0 +1,211 @@
+#!/usr/bin/env python3
+"""Regenerate the "enhancements" section of each engine's primary reference doc.
+
+Scans:
+  - engines/llamacpp/patches/<id>/README.md (+ SUMMARY.md for the state header)
+  - engines/<engine>/components/<name>/README.md or SUMMARY.md
+
+for the doc shape defined in docs/reference/DOC_STRUCTURE.md (``## Summary``,
+``## Outcome``, ``## Detail`` headings), and writes a delimited, generated
+list of slug / one-line outcome / link into each engine's primary doc between:
+
+    <!-- BEGIN GENERATED ENHANCEMENTS -->
+    ...
+    <!-- END GENERATED ENHANCEMENTS -->
+
+GitHub's markdown renderer has no live transclusion, so this is a generation
+step that must be re-run and committed, not a render-time include.
+
+Usage:
+    python tools/docs/generate_engine_enhancement_summaries.py [--check]
+
+``--check`` exits nonzero on any missing/broken doc without writing anything
+(for a future CI/release-pipeline hook); without it, the script writes the
+regenerated sections and still prints warnings.
+"""
+from __future__ import annotations
+
+import argparse
+import re
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+BEGIN_MARK = "<!-- BEGIN GENERATED ENHANCEMENTS -->"
+END_MARK = "<!-- END GENERATED ENHANCEMENTS -->"
+
+HEADING_RE = re.compile(r"^##\s+(Summary|Outcome|Detail)\s*$", re.MULTILINE)
+
+
+@dataclass
+class Entry:
+    slug: str
+    outcome: str
+    link: str
+    doc_path: Path
+
+
+def extract_section(text: str, name: str) -> str | None:
+    pattern = re.compile(
+        rf"^##\s+{name}\s*$\n(.*?)(?=^##\s+\w|\Z)", re.MULTILINE | re.DOTALL
+    )
+    m = pattern.search(text)
+    if not m:
+        return None
+    body = m.group(1).strip()
+    # First paragraph (contiguous non-empty lines), joined, for a one-line index entry.
+    para_lines: list[str] = []
+    for line in body.splitlines():
+        line = line.strip()
+        if not line:
+            if para_lines:
+                break
+            continue
+        para_lines.append(line)
+    return " ".join(para_lines)
+
+
+def has_required_headings(text: str) -> bool:
+    found = set(HEADING_RE.findall(text))
+    return {"Summary", "Outcome", "Detail"}.issubset(found)
+
+
+def find_doc(dir_path: Path) -> Path | None:
+    for name in ("README.md", "SUMMARY.md"):
+        candidate = dir_path / name
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def relpath(target: Path, from_dir: Path) -> str:
+    import os
+    return os.path.relpath(target, from_dir).replace("\\", "/")
+
+
+def scan_patches(patches_root: Path, warnings: list[str]) -> list[Entry]:
+    entries: list[Entry] = []
+    if not patches_root.is_dir():
+        return entries
+    for patch_dir in sorted(patches_root.iterdir()):
+        if not patch_dir.is_dir() or patch_dir.name.startswith("_"):
+            continue
+        slug = patch_dir.name
+        doc = find_doc(patch_dir)
+        if doc is None:
+            warnings.append(f"MISSING DOC: {patch_dir.relative_to(REPO_ROOT)} has no README.md/SUMMARY.md")
+            continue
+        text = doc.read_text(encoding="utf-8", errors="replace")
+        if not has_required_headings(text):
+            warnings.append(
+                f"MISSING SECTIONS: {doc.relative_to(REPO_ROOT)} lacks one of "
+                "## Summary / ## Outcome / ## Detail (skeleton-only patches are "
+                "expected to lack these for now; see DOC_STRUCTURE.md scope note)"
+            )
+            continue
+        outcome = extract_section(text, "Outcome") or "TODO: no outcome recorded"
+        link = str(doc.relative_to(REPO_ROOT)).replace("\\", "/")
+        entries.append(Entry(slug=slug, outcome=outcome, link=link, doc_path=doc))
+    return entries
+
+
+def scan_components(engine_root: Path, warnings: list[str]) -> list[Entry]:
+    entries: list[Entry] = []
+    components_root = engine_root / "components"
+    if not components_root.is_dir():
+        return entries
+    for comp_dir in sorted(components_root.iterdir()):
+        if not comp_dir.is_dir():
+            continue
+        slug = comp_dir.name
+        doc = find_doc(comp_dir)
+        if doc is None:
+            warnings.append(f"MISSING DOC: {comp_dir.relative_to(REPO_ROOT)} has no README.md/SUMMARY.md")
+            continue
+        text = doc.read_text(encoding="utf-8", errors="replace")
+        if not has_required_headings(text):
+            warnings.append(
+                f"MISSING SECTIONS: {doc.relative_to(REPO_ROOT)} lacks one of "
+                "## Summary / ## Outcome / ## Detail"
+            )
+            continue
+        outcome = extract_section(text, "Outcome") or "TODO: no outcome recorded"
+        link = str(doc.relative_to(REPO_ROOT)).replace("\\", "/")
+        entries.append(Entry(slug=slug, outcome=outcome, link=link, doc_path=doc))
+    return entries
+
+
+def render_section(entries: list[Entry], target_dir: Path) -> str:
+    lines = [BEGIN_MARK, "", f"_Generated by `tools/docs/generate_engine_enhancement_summaries.py`; do not hand-edit between the markers._", ""]
+    if not entries:
+        lines.append("_No entries with the required doc sections yet._")
+    else:
+        lines.append("| Slug | Outcome | Doc |")
+        lines.append("|---|---|---|")
+        for e in entries:
+            link = relpath(e.doc_path, target_dir)
+            lines.append(f"| `{e.slug}` | {e.outcome} | [{e.doc_path.name}]({link}) |")
+    lines.append("")
+    lines.append(END_MARK)
+    return "\n".join(lines)
+
+
+def write_section(target_doc: Path, entries: list[Entry], warnings: list[str]) -> None:
+    if not target_doc.exists():
+        warnings.append(f"MISSING TARGET: {target_doc.relative_to(REPO_ROOT)} does not exist, cannot write section")
+        return
+    text = target_doc.read_text(encoding="utf-8")
+    new_section = render_section(entries, target_doc.parent)
+    if BEGIN_MARK in text and END_MARK in text:
+        pattern = re.compile(re.escape(BEGIN_MARK) + r".*?" + re.escape(END_MARK), re.DOTALL)
+        new_text = pattern.sub(new_section, text)
+    else:
+        sep = "" if text.endswith("\n") else "\n"
+        new_text = text + sep + "\n## Enhancements (generated)\n\n" + new_section + "\n"
+    if new_text != text:
+        target_doc.write_text(new_text, encoding="utf-8")
+        print(f"updated {target_doc.relative_to(REPO_ROOT)}")
+    else:
+        print(f"unchanged {target_doc.relative_to(REPO_ROOT)}")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--check", action="store_true", help="do not write; exit nonzero on any warning")
+    args = parser.parse_args()
+
+    warnings: list[str] = []
+
+    # llama.cpp: patches are the "enhancement" unit; no components/ dir.
+    llamacpp_patches = scan_patches(REPO_ROOT / "engines" / "llamacpp" / "patches", warnings)
+    llamacpp_doc = REPO_ROOT / "docs" / "reference" / "engines" / "llamacpp" / "README.md"
+    if llamacpp_doc.exists():
+        if not args.check:
+            write_section(llamacpp_doc, llamacpp_patches, warnings)
+    else:
+        warnings.append(
+            f"NOTE: {llamacpp_doc.relative_to(REPO_ROOT)} does not exist yet; "
+            "llama.cpp's enhancement unit is engines/llamacpp/patches/<id>/ directly, "
+            "skipping generated section for it"
+        )
+
+    # radiance: patches dir + components dir.
+    radiance_root = REPO_ROOT / "engines" / "radiance"
+    radiance_patches = scan_patches(radiance_root / "patches", warnings)
+    radiance_components = scan_components(radiance_root, warnings)
+    radiance_doc = REPO_ROOT / "docs" / "reference" / "engines" / "radiance" / "README.md"
+    if not args.check:
+        write_section(radiance_doc, radiance_patches + radiance_components, warnings)
+
+    for w in warnings:
+        print(f"WARNING: {w}", file=sys.stderr)
+
+    if args.check and warnings:
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

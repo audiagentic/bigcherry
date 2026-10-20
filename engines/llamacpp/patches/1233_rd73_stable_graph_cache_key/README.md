@@ -4,6 +4,19 @@ Patch id: `1233_rd73_stable_graph_cache_key`. Plan item: `RD73`. Bound
 Experiment Contract: `RD73-STABLE-GRAPH-CACHE-KEY`
 (`config/experiment-contracts.toml`).
 
+
+## Summary
+
+Stable FNV-1a shape-fingerprint key for the HIP/CUDA graph cache (RD73), replacing the raw first-node pointer.
+
+## Outcome
+
+rejected: mechanism confirmed real (recapture rate -22% relative) but no clean production throughput win is established, and governance rejected it after HI162's better-controlled A/B; kept on main, default off.
+
+## Detail
+
+See below.
+
 ## Scope
 
 Target architecture: gfx1100 (contract `scope.architectures`). Backend:

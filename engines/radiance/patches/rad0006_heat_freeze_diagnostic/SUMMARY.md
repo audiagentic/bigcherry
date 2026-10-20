@@ -3,6 +3,18 @@
 **Status:** untested
 **Plan item:** RAD14
 
+## Summary
+
+RAD_DIAG_FREEZE_PROMOTION_AFTER=N stops HeatEngine expert-set swaps after N steps, diagnostic build only.
+
+## Outcome
+
+untested as a package, but its diagnostic result is in: freezing promotions did not restore Qwen3.6-35B-A3B MTP acceptance, so the mover is ruled out as the cause (see RAD14 model page).
+
+## Detail
+
+See below.
+
 ## What it does
 
 Adds `RAD_DIAG_FREEZE_PROMOTION_AFTER=N` to the heat engine: from its (N+1)th `HeatEngine::step()` call on, no swaps are proposed, so the resident expert set stops changing while the engine keeps serving (unlike `--deterministic`, which pins the loader's plan and did not fit the R9700 for the 35B). Unset or 0 changes nothing. One log line says when the freeze starts.

@@ -4,6 +4,19 @@ Plan item GP11 (superseded by PGC02, `patching-gpu-collectives`). See
 `SUMMARY.md` for the full real-hardware negative result -- do not duplicate
 it here.
 
+
+## Summary
+
+Widens the MMVQ+GLU fusion gate to also fire at ncols_dst==6 for Q8_0, beyond the existing ncols_dst==1 case.
+
+## Outcome
+
+rejected (2026-09-30): measured negative on real hardware (-9.4% ad hoc, -6.4% at MTP n_max=5); cause unknown (not register spilling), kept on main as a recorded negative result.
+
+## Detail
+
+See below.
+
 ## Status
 
 **Negative result, real hardware (2026-09-04).** Widening the MMVQ
