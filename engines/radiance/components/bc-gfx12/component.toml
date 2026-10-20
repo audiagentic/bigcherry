@@ -9,3 +9,9 @@ outputs = ["kernels/libbcgfx12.so"]
 
 [build]
 configure = { RADIANCE_SRC = "{engine_source}" }
+
+[setting.BC_GFX12_MOE_GEMV]
+default = "1"
+status = "experimental"
+summary = "RAD15: moe_gemm_q (fp8a8) gate/up calls at decode-sized steps (M <= 16) on the packed-f16 GEMV (the moe-remote worker's RAD14 kernel on libr4d's operands) instead of libr4d's fp8 WMMA tile; the down call and larger steps stay libr4d's. 35B on the R9700 (rad-kbench): 28/56/110/213/389 us against 34/80/158/267/455 at M = 1/2/4/8/16. 0 hands every call to libr4d."
+activation = "libbcgfx12: BC_GFX12_MOE_GEMV on"

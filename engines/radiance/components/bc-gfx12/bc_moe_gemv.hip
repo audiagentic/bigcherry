@@ -13,6 +13,7 @@
 
 #include <hip/hip_runtime.h>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 
@@ -187,7 +188,12 @@ bool cls_of(const RadTensor* w, const RadTensor* s, long long cnt, long long n, 
 
 extern "C" int bc_moe_gemm_fp8_decode(const RadArgs* a, RadStream stream) {
     /* BC_GFX12_MOE_GEMV=0 hands every call to libr4d: the off switch, and the control arm of an A/B. */
-    static const bool on = [] { const char* v = std::getenv("BC_GFX12_MOE_GEMV"); return !v || std::strcmp(v, "0"); }();
+    static const bool on = [] {
+        const char* v = std::getenv("BC_GFX12_MOE_GEMV");
+        const bool o = !v || std::strcmp(v, "0");
+        if (o) std::fprintf(stderr, "libbcgfx12: BC_GFX12_MOE_GEMV on\n");
+        return o;
+    }();
     if (!on || !a || a->n_t < 9) return RAD_E_UNSUPPORTED;
     const RadTensor *Aq = &a->t[0], *As = &a->t[1], *sorted = &a->t[4], *off = &a->t[5], *Y = &a->t[8];
     const long long n_expert = geti(a, "n_expert", 0), top_k = geti(a, "top_k", 0), parts = geti(a, "parts", 1);
