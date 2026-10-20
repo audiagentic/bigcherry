@@ -1,0 +1,99 @@
+{
+ "_comment": "RAD06/RAD14: Qwen3.8-Flash-Next production topology (R9700 engine, two XTX workers owning the coldest experts, arm fn-workers) against the R9700 engine alone (arm fn-engine), 1/2/4/6 streams, MTP 3. The baseline for any W4 worker change.",
+ "schema_version": 1,
+ "engine": "radiance",
+ "evidence_role": "diagnostic",
+ "execution_evidence": "observe",
+ "model": "/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad",
+ "server_args": [
+  "--radiance-home",
+  "${RAD_HOME}",
+  "--kernels",
+  "libr4d,libr3moe,libref",
+  "--placement",
+  "expert_tiered",
+  "--ngram-placement",
+  "ram",
+  "--max-num-seqs",
+  "6",
+  "--max-num-batched-tokens",
+  "4096",
+  "--checkpoint-interval",
+  "4096",
+  "--kv-cache-dtype",
+  "fp8",
+  "--num-speculative-tokens",
+  "3",
+  "--tp",
+  "1",
+  "--host-pool-mib",
+  "30720",
+  "--max-model-len",
+  "32768"
+ ],
+ "environment": {
+  "HIP_VISIBLE_DEVICES": "0",
+  "ROCR_VISIBLE_DEVICES": "2",
+  "RADIANCE_HOME": "${RAD_HOME}",
+  "R3_MOE_WORKER_SKIP_OWNED": "1"
+ },
+ "expected_execution": {
+  "backend": "ROCm",
+  "architectures": [
+   "gfx1201"
+  ],
+  "locators": [
+   "${R9700_BDF}"
+  ]
+ },
+ "bench_configs": "mtp-dual",
+ "required_metrics": [
+  "s1_agg_tps",
+  "s1_stream_tps",
+  "s2_agg_tps",
+  "s2_stream_tps",
+  "s4_agg_tps",
+  "s4_stream_tps",
+  "s6_agg_tps",
+  "s6_stream_tps"
+ ],
+ "repetitions": 1,
+ "health_timeout_s": 900,
+ "arms": [
+  {
+   "name": "fn-workers",
+   "mode": "stock",
+   "shutdown_method": "sigint",
+   "binary": "${RAD_BIN}",
+   "settings": {
+    "R3_MOE_WORKER": "1",
+    "R3_MOE_WORKER_DEVICES": "0 1",
+    "R3_MOE_WORKER_ENGINE_RANKS": "1",
+    "R3_MOE_WORKER_MAX_ROWS": "4096",
+    "R3_MOE_WORKER_SMALL_ROWS": "8",
+    "R3_MOE_WORKER_MIB": "22528",
+    "R3_MOE_WORKER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0",
+    "R3_MOE_WORKER_ROWS": "0"
+   }
+  },
+  {
+   "name": "fn-engine",
+   "mode": "stock",
+   "shutdown_method": "sigint",
+   "binary": "${RAD_BIN}",
+   "settings": {}
+  }
+ ],
+ "stream_bench": {
+  "streams": [
+   1,
+   2,
+   4,
+   6
+  ],
+  "prompt_tokens": 512,
+  "max_tokens": 128,
+  "reps": 2,
+  "seed": 1
+ }
+}
