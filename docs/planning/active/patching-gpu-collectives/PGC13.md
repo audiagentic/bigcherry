@@ -13,6 +13,11 @@ work: M
 
 # Per-topology AllReduce calibration: offline discriminator, no runtime policy cache
 
+
+## 2026-10-15 BCOP238 ownership correction
+
+PGC12's proposed phase-aware dispatcher is retired as **NO_DEMONSTRATED_SAME_WIRE_PHASE_CONFLICT**; its historical BF16 1 MiB MTP result must not be used as a production exact-F32 crossover proof. PGC09/0830 with optional lab-only 1277 now owns the provider-completion/phase receipt that this plan's Gate 0 previously attributed to PGC12. **PGC13 remains offline scalar-calibration only** and must not independently add a phase hint, provider cache, new trace service or GPU queue. Keep the validated exact-F32 96 KiB dual-gfx1100 control. If no actual same-binary exposed >=3% bottleneck is demonstrated, close PGC13 without hardware sweeps. See PGC12/BCOP238 for the exact route matrix, current source and numerical gates.
+
 ## Audit disposition (2026-10-09)
 
 **Narrow PGC13 to one bounded offline comparison against the validated 96 KiB dual-gfx1100 exact-F32 policy.** The previous startup auto-calibration, phase/size table, per-topology cache and per-card `-ts` weight controller are **not implementation-ready**. Do not add a new scheduler, provider registry, allocator, calibration CLI, cache schema, startup service or runtime flag. No BigCherry calibrated speedup has been measured.

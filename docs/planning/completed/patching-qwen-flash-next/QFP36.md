@@ -487,3 +487,7 @@ Combined QFP36 expectation on this topology if both gates pass: **+0.4% to +1.5%
 - 2026-10-10T11:48:51.010778+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-10T13:52:00.897216+00:00 (updated-by): Updated: section:notes
 - 2026-10-10T13:52:08.256032+00:00 (state-transition): State: pending → completed
+
+## 2026-10-16 BCOP239 ownership note
+
+QFP36/validated 1357 retains sole ownership of the marked F32 split-K router, its backend-pool partial scratch and fixed-order second reduction launch. QFP48's historical suggestion to fuse bc_moe_router_splitk_partial with bc_moe_router_splitk_reduce is **not an admitted implementation**: workgroups cannot synchronize globally with __syncthreads, and the reduce launch's exposed cost has not been measured. See QFP48's BCOP239 section for exact shape/traffic accounting, rejected gfx950-only vLLM analogues and conditional reopening gates. Keep the existing Flash-Next profile, dispatch and correctness limitations unchanged.

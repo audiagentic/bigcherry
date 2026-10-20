@@ -360,3 +360,7 @@ Scheduler-owned lifetime; bounded pinned memory; stable addresses; events record
 
 - 2026-10-05T00:00:00+00:00 (created-by): Created from QFP16/1326 follow-up.
 - 2026-10-05: Added concrete scheduler/Meta/pinned-buffer/event code paths grounded in llama.cpp 0504396 APIs and current 1326 implementation.
+
+## 2026-10-16 BCOP236 clarification
+
+The 1326 `thread_local` pointer-keyed **pageable** stage has a separate potential retained-capacity issue across graph/scheduler lifetimes. QFP16 owns its bounded scheduler-lifetime correction; QFP27 owns the source and Meta lifetime discriminator. Do not treat this as evidence for the **large pinned** ring here or implement the historical independent `bc_async_input_lane`. Pinned work remains blocked until >=1 ms AND >=3% exposed prefill input cost is measured; any subsequent path requires all-child completion and existing hardware gates. Upstream #29963 still does not supply Meta completion for tensor split.

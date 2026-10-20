@@ -75,8 +75,7 @@ this session. `run_rd04_contract_correctness()`
 measurement moved to `validation/producer.py` in PA36 migration #2 --
 derived both checks from
 one real whole-model PPL comparison (control = 1202 absent, subject = 1202
-applied), forcing `-fa on -ctk bf16 -ctv bf16` so the comparison actually
-exercises RD04's native-BF16 flash-attn path.
+applied), forcing `-fa on -ctk bf16 -ctv bf16` so the comparison requests BF16 K/V; actual TILE activation still requires a kernel-route proof.
 
 Real run on Brutus, all three contract architectures, **build-once
 fat-multiarch verified** (see below):
@@ -147,3 +146,11 @@ Runtime artifacts (build logs, raw benchmark output) land under
 `artifacts/patch-validation/1202_rd04_bf16_flash_attn_tile/<campaign-identity>/`,
 outside this tracked patch directory. The compact, tracked record is
 `evidence/validation.json`.
+
+
+## 2026-10-11 route and evidence clarification (PRBE01 / BCOP132)
+
+`-fa on -ctk bf16 -ctv bf16` requests BF16 KV; it does **not** prove 1202's BF16 TILE kernel executed. Pinned b11474 selects VEC, TILE or MMA_F16 from shape/GQA/mask/architecture. On masked, padded GQA=4/8 and head 64/128/256, pp512 selects MMA_F16 on gfx1100/gfx1201; q_rows=1 with GQA=4/8 selects TILE. Unmasked/non-GQA cases can differ. 1202 changes TILE's BF16 staging only; MMA_F16 retains F16 staging and VEC already has native BF16 upstream (#20525). Do not use pp512 GQA performance as positive 1202 activation evidence.
+
+The patch still has **no activation marker**; `validation/producer.toml` sets `trace_probe="skip"`. The producer maps a single PPL comparison to both `backend_reference` and `ppl_equality`; this is not a separate logits reference. All nine tracked validation records remain ineligible; b11126 PPL failures mean an unparseable final PPL line, not demonstrated model-numerics divergence. Preserve the historical measurements, but do not promote until exact TILE routing, per-run activation, real logits/KLD, graph/repeated-request correctness and current-pin paired performance pass. Authoritative gates: `docs/planning/active/patching-rdna-boost-experiments/PRBE01.md`.
+

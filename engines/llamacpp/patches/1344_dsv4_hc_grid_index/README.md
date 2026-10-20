@@ -32,3 +32,10 @@ The flat kernels of arm B are native llama.cpp b11402's `dsv4_hc_pre_f32` / `dsv
 ABBA above is the native kernels against the grid kernels inside one BigCherry binary: +1.3% to +1.6% prefill with
 identical output. No separate run against a fully native binary was made for this patch; BigCherry production's
 standing against native is recorded with the patches that produce it.
+
+
+## Future pin interaction: native CUDA HC_POST gate (BCOP235, 2026-10-15)
+
+Upstream [#30602](https://github.com/ggml-org/llama.cpp/pull/30602) is open/unmerged. Its proposed `dsv4_hc_post_f32<has_comb,gated>` changes the exact flat POST launch anchor `1344/patch.py::_A_POST_LAUNCH`. **Do not blindly re-anchor or retire 1344:** upstream gated HC_POST still computes flat 1-D `ir` division/modulo; validated 1344 uses 3-D coordinates on gfx1100/gfx1201. Historical +1.3–1.6% prefill is pin-bound, not an upstream forecast.
+
+If #30602 reaches a future pin, QFP35/BCOP235 owns one coordinated 1344+1355 rebase. Preserve dimensional PRE and eligible gated/ungated POST, >65535 grid fallback, graph/alias/MTP parity and executed route evidence; compare against the current production control before retirement. No new indexing package or hardware queue now.
