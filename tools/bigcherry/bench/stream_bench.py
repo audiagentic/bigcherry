@@ -55,6 +55,8 @@ class StreamResult:
     events: int = 0                  # SSE events that carried text (one event may carry several tokens)
     prompt_tokens: int = 0
     text_sha256: str = ""
+    text: str = ""                   # the whole reply; kept in memory for the isolation probe, never serialised
+    text_head: str = ""              # the first characters of the reply, so a mixed or mangled stream can be read
     gaps_ms: list = field(default_factory=list)
 
     def ttft_ms(self) -> float:
@@ -131,6 +133,8 @@ def one_stream(url: str, model: str, stream: int, prompt: str, max_tokens: int, 
             raise StreamBenchError("no usage block (the server must honour stream_options.include_usage); "
                                    "token counts are never inferred from event counts unless --allow-estimate")
         res.text_sha256 = hashlib.sha256("".join(text).encode()).hexdigest()
+        res.text = "".join(text)
+        res.text_head = res.text[:400]
         res.ok = True
     except (urllib.error.URLError, OSError, ValueError, StreamBenchError) as exc:
         res.t_end = time.perf_counter()
@@ -252,7 +256,7 @@ def run_round(url: str, model: str, streams: int, prompt_tokens: int, max_tokens
                               "prompt_tokens": r.prompt_tokens, "ttft_ms": round(r.ttft_ms(), 2),
                               "decode_tps_est": round(r.decode_tps_est(), 3),
                               "response_tail_ms": round((r.t_end - r.t_last) * 1000.0, 2) if r.ok else None,
-                              "text_sha256": r.text_sha256} for r in results]}
+                              "text_sha256": r.text_sha256, "text_head": r.text_head} for r in results]}
     record["engine"] = engine_delta(before, after, running)
     if ok:
         total = sum(r.tokens for r in results)

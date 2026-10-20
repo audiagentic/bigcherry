@@ -1,0 +1,91 @@
+{
+ "_comment": "RAD14 bisection of the MTP acceptance collapse: the engine ALONE with 3 speculative tokens and --deterministic (placement pinned to the loader's plan, no mover), two identical arms, 1/2/4/6 streams. --host-pool-mib 45056: the pinned plan has to hold every expert the card cannot (a pinned placement did not fit at 30720). 6 sequences did not fit the pinned plan (short by 263 MiB), so this uses 4 sequences (the collapse is already there) and 32 MiB headroom; streams 1/2/4 only. Batched tokens 1024 / max-model-len 8192 shrink compute buffers so the pinned plan leaves room for the cache.",
+ "schema_version": 1,
+ "engine": "radiance",
+ "evidence_role": "diagnostic",
+ "execution_evidence": "observe",
+ "model": "/mnt/data/llm-models/radiance/StillDeadcode/qwen3.6-35b-a3b-fp8/qwen3.6-35b-a3b-fp8.rad",
+ "server_args": [
+  "--radiance-home",
+  "${RAD_HOME}",
+  "--kernels",
+  "libr4d,libr3moe,libref",
+  "--placement",
+  "expert_tiered",
+  "--ngram-placement",
+  "ram",
+  "--max-num-seqs",
+  "4",
+  "--max-num-batched-tokens",
+  "1024",
+  "--checkpoint-interval",
+  "1024",
+  "--kv-cache-dtype",
+  "fp8",
+  "--num-speculative-tokens",
+  "3",
+  "--tp",
+  "1",
+  "--host-pool-mib",
+  "45056",
+  "--max-model-len",
+  "8192",
+  "--deterministic",
+  "--gpu-headroom-mib",
+  "32"
+ ],
+ "environment": {
+  "HIP_VISIBLE_DEVICES": "0",
+  "ROCR_VISIBLE_DEVICES": "2",
+  "RADIANCE_HOME": "${RAD_HOME}"
+ },
+ "expected_execution": {
+  "backend": "ROCm",
+  "architectures": [
+   "gfx1201"
+  ],
+  "locators": [
+   "${R9700_BDF}"
+  ]
+ },
+ "bench_configs": "mtp-dual",
+ "required_metrics": [
+  "s1_agg_tps",
+  "s1_stream_tps",
+  "s2_agg_tps",
+  "s2_stream_tps",
+  "s4_agg_tps",
+  "s4_stream_tps",
+  "s6_agg_tps",
+  "s6_stream_tps"
+ ],
+ "repetitions": 1,
+ "health_timeout_s": 900,
+ "arms": [
+  {
+   "name": "eng-a",
+   "mode": "stock",
+   "shutdown_method": "sigint",
+   "binary": "${RAD_BIN}",
+   "settings": {}
+  },
+  {
+   "name": "eng-b",
+   "mode": "stock",
+   "shutdown_method": "sigint",
+   "binary": "${RAD_BIN}",
+   "settings": {}
+  }
+ ],
+ "stream_bench": {
+  "streams": [
+   1,
+   2,
+   4
+  ],
+  "prompt_tokens": 512,
+  "max_tokens": 128,
+  "reps": 2,
+  "seed": 1
+ }
+}
