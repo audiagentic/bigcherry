@@ -1,0 +1,17 @@
+# bc-gfx12: BigCherry's gfx1201 (R9700) kernel rows, listed ahead of libr4d in --kernels so a row wins where its constraints
+# hold and libr4d serves everything else (RAD15). Rows reuse libr4d's weight layout hooks, so the stored bytes are libr4d's.
+schema = 1
+name = "bc-gfx12"
+engine = "radiance"
+targets = ["gfx1201"]
+built-against = "v1.9.0"
+outputs = ["kernels/libbcgfx12.so"]
+
+[build]
+configure = { RADIANCE_SRC = "{engine_source}" }
+
+[setting.BC_GFX12_MOE_GEMV]
+default = "0"
+status = "experimental"
+summary = "RAD15: moe_gemm_q (fp8a8) gate/up calls at decode-sized steps (M <= 16) on the packed-f16 GEMV (the moe-remote worker's RAD14 kernel on libr4d's operands) instead of libr4d's fp8 WMMA tile; the down call and larger steps stay libr4d's. 35B on the R9700 (rad-kbench): 28/56/110/213/389 us against 34/80/158/267/455 at M = 1/2/4/8/16. 35B engine A/B (2 pairs): step time -7/-10/-9/-4% at 1/2/4/6 streams. Default off: 1-stream greedy output diverges from libr4d at a near-tie (~45 tokens) and KL mode (prefill, 64-token chunks) cannot reach the row; awaits a decode-time KL check."
+activation = "libbcgfx12: BC_GFX12_MOE_GEMV on"

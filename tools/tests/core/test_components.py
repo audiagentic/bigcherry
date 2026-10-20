@@ -5,7 +5,7 @@ import unittest
 
 from bigcherry.core import components, config, engines, paths
 
-_GETENV = re.compile(r'getenv\("(R3_[A-Z0-9_]+)"\)')
+_GETENV = re.compile(r'getenv\("((?:R3|BC)_[A-Z0-9_]+)"\)')
 #: settings the campaign harness reads (engine_adapters/radiance.py), not the plugin source
 HARNESS_ONLY = {"R3_MOE_WORKER_DEVICES"}
 

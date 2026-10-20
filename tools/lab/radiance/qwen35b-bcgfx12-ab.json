@@ -1,0 +1,94 @@
+{
+ "_comment": "RAD15: Qwen3.6-35B-A3B FP8 on the engine alone on the R9700, bc-gfx12's moe_gemm_q decode row (packed-f16 GEMV for the gate/up call) against libr4d's. Both arms list libbcgfx12 first; the control arm switches the row off (BC_GFX12_MOE_GEMV=0, every call handed to libr4d), so the arms differ only in that kernel. --no-prefix-cache: the 35B's MTP collapses with the prefix cache at 4+ streams (RAD14). Run with qwen35b-bcgfx12-run.sh.",
+ "schema_version": 1,
+ "engine": "radiance",
+ "evidence_role": "diagnostic",
+ "execution_evidence": "observe",
+ "model": "/mnt/data/llm-models/radiance/StillDeadcode/qwen3.6-35b-a3b-fp8/qwen3.6-35b-a3b-fp8.rad",
+ "server_args": [
+  "--radiance-home",
+  "${RAD_HOME}",
+  "--kernels",
+  "libbcgfx12,libr4d,libref",
+  "--placement",
+  "expert_tiered",
+  "--ngram-placement",
+  "ram",
+  "--max-num-seqs",
+  "6",
+  "--max-num-batched-tokens",
+  "4096",
+  "--checkpoint-interval",
+  "4096",
+  "--kv-cache-dtype",
+  "fp8",
+  "--num-speculative-tokens",
+  "3",
+  "--tp",
+  "1",
+  "--host-pool-mib",
+  "30720",
+  "--max-model-len",
+  "32768",
+  "--no-prefix-cache"
+ ],
+ "environment": {
+  "HIP_VISIBLE_DEVICES": "0",
+  "ROCR_VISIBLE_DEVICES": "2",
+  "RADIANCE_HOME": "${RAD_HOME}"
+ },
+ "expected_execution": {
+  "backend": "ROCm",
+  "architectures": [
+   "gfx1201"
+  ],
+  "locators": [
+   "${R9700_BDF}"
+  ]
+ },
+ "bench_configs": "mtp-dual",
+ "required_metrics": [
+  "s1_agg_tps",
+  "s1_stream_tps",
+  "s2_agg_tps",
+  "s2_stream_tps",
+  "s4_agg_tps",
+  "s4_stream_tps",
+  "s6_agg_tps",
+  "s6_stream_tps"
+ ],
+ "repetitions": 1,
+ "health_timeout_s": 900,
+ "arms": [
+  {
+   "name": "q35-libr4d",
+   "mode": "stock",
+   "shutdown_method": "sigint",
+   "binary": "${RAD_BIN}",
+   "settings": {
+    "BC_GFX12_MOE_GEMV": "0"
+   }
+  },
+  {
+   "name": "q35-bcgfx12",
+   "mode": "stock",
+   "shutdown_method": "sigint",
+   "binary": "${RAD_BIN}",
+   "settings": {
+    "BC_GFX12_MOE_GEMV": "1"
+   }
+  }
+ ],
+ "stream_bench": {
+  "streams": [
+   1,
+   2,
+   4,
+   6
+  ],
+  "prompt_tokens": 512,
+  "max_tokens": 128,
+  "reps": 2,
+  "seed": 1
+ }
+}
