@@ -30,6 +30,19 @@ The two qualification runs must reproduce greedy md5s and performance ordering; 
 without hang/crash. Run a host-side ThreadSanitizer build where the HIP toolchain permits it; sanitizer inability is
 recorded, not silently waived.
 
+
+## Summary
+
+Persistent per-simple-backend worker threads for ggml_backend_meta_graph_compute, submitting subgraphs concurrently instead of serially from one host thread.
+
+## Outcome
+
+evaluated (shelved, 2026-10-12): a real race with the MTP drafter produces wrong greedy text on a share of server runs in both fix attempts; default off, not in the production set, kept on main as the shared-state-audit starting point for any return to this.
+
+## Detail
+
+See below.
+
 ## Promotion record
 
 Promotion evidence, profile-evidence tier (QFP18), pin b11474, 2026-10-10.

@@ -3,6 +3,18 @@
 **Status:** superseded
 **Plan item:** RAD01
 
+## Summary
+
+Drains each rank's mover stream before the activation arena is freed at shutdown.
+
+## Outcome
+
+superseded: fixed a real two-XTX teardown hang (3/3 clean exits vs 2/3 hangs unpatched); superseded by later teardown work.
+
+## Detail
+
+See below.
+
 ## What it does
 
 Drains each rank's mover stream before `Ctx::shutdown()` frees the activation arena. No inference-step arithmetic changes. Original source diff: `feat/rad11-gfx1100-bootstrap:engines/radiance/engine-patches/0001-drain-mover-before-arena-free.patch`.

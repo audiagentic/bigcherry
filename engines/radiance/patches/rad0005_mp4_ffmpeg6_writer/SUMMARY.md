@@ -3,6 +3,18 @@
 **Status:** untested
 **Plan item:** MEN12
 
+## Summary
+
+Selects the FFmpeg 6 vs 7 avio_alloc_context write-callback signature so rad_core compiles on Ubuntu 24.04's FFmpeg 6.1.
+
+## Outcome
+
+untested: compile-compatibility fix, read-only callback so behavior is identical on both FFmpeg versions; not yet run through its own qualification.
+
+## Detail
+
+See below.
+
 ## What it does
 
 radiance 1.8.0 adds `core/mm/mp4.cpp`, which gives `avio_alloc_context` a write callback taking `const uint8_t*`
