@@ -187,10 +187,11 @@ bool cls_of(const RadTensor* w, const RadTensor* s, long long cnt, long long n, 
 }  // namespace
 
 extern "C" int bc_moe_gemm_fp8_decode(const RadArgs* a, RadStream stream) {
-    /* BC_GFX12_MOE_GEMV=0 hands every call to libr4d: the off switch, and the control arm of an A/B. */
+    /* Off by default (BC_GFX12_MOE_GEMV=1 turns it on): 1-stream greedy output is not identical to libr4d's (a near-tie flips
+     * ~45 tokens in; f32 accumulation order differs from WMMA's) and KL mode cannot reach a decode-only row. */
     static const bool on = [] {
         const char* v = std::getenv("BC_GFX12_MOE_GEMV");
-        const bool o = !v || std::strcmp(v, "0");
+        const bool o = v && std::strcmp(v, "0");
         if (o) std::fprintf(stderr, "libbcgfx12: BC_GFX12_MOE_GEMV on\n");
         return o;
     }();
