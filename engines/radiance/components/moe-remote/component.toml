@@ -88,8 +88,8 @@ activation = "r3_moe_worker: R3_MOE_WORKER_GEMV_H2 on"
 
 [setting.R3_MOE_WORKER_GEMV_W4H2]
 default = "0"
-status = "experimental"
-summary = "RAD14: the W4 (w4nl64) decode GEMV rebuilt like the FP8 one: sixteen-byte weight loads four in flight a lane, the nonlinear level looked up by byte permutes in registers, v_dot2_f32_f16 with f32 accumulate (levels, E4M3 activations and their products are exact in f16). Off until measured on Flash-Next."
+status = "evaluated"
+summary = "RAD14: the W4 (w4nl64) decode GEMV rebuilt like the FP8 one (sixteen-byte loads, byte-permute level lookup, v_dot2_f32_f16). Kernel time on real 4-row Flash-Next decode requests on one XTX 101 -> 77 us, output within rounding of the default kernel; but the Flash-Next stream A/B (R9700 engine + two XTX workers, MTP 3, two pairs) showed no end-to-end decode change at 2/4/6 streams and +5% at 1 stream confounded by different draft acceptance (0.68 vs 0.64). Kept off; the worker GEMV is not on Flash-Next's decode critical path."
 activation = "r3_moe_worker: R3_MOE_WORKER_GEMV_W4H2 on"
 
 [setting.R3_MOE_WORKER_GEMV_MR]
