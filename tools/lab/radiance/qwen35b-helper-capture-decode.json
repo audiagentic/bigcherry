@@ -1,5 +1,5 @@
 {
- "_comment": "RAD14: the 35B with the XTX workers armed to capture decode-sized requests (4 streams, MTP 3) so the worker's decode path can be replayed and its rows-per-expert and kernel times measured on real FP8 decode shapes. The prefix cache stays on: with --no-prefix-cache the engine did not fit its host pool beside the workers. Verify-row counts per step do not depend on it, so the captured request shapes are the same.",
+ "_comment": "RAD14: the 35B with the XTX workers armed to capture decode-sized requests (4 streams, MTP 3) so the worker's decode path can be replayed and its rows-per-expert and kernel times measured on real FP8 decode shapes. The prefix cache stays on: with --no-prefix-cache the engine did not fit its host pool beside the workers. Verify-row counts per step do not depend on it, so the captured request shapes are the same. R3_MOE_WORKER_SKIP_OWNED=0: with the 64-row step gate and SKIP_OWNED=1 the engine does not fit its weights at startup.",
  "schema_version": 1,
  "engine": "radiance",
  "evidence_role": "diagnostic",
@@ -35,7 +35,7 @@
   "HIP_VISIBLE_DEVICES": "0",
   "ROCR_VISIBLE_DEVICES": "2",
   "RADIANCE_HOME": "${RAD_HOME}",
-  "R3_MOE_WORKER_SKIP_OWNED": "1"
+  "R3_MOE_WORKER_SKIP_OWNED": "0"
  },
  "expected_execution": {
   "backend": "ROCm",
