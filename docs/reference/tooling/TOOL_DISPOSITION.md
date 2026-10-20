@@ -499,6 +499,8 @@ ownership.
 | `tools/lab/radiance/qwen35b-run.sh` | **TRANSITIONAL** | `radiance` lab topic file; builds the pinned radiance and runs qwen35b-engine-ab.json (RCS09). |
 | `tools/lab/radiance/qwen35b-helper-run.sh` | **TRANSITIONAL** | `radiance` lab topic file; builds the moe-remote-handoff experiment and runs qwen35b-helper-ab.json (RCS09). |
 | `tools/lab/radiance/qwen35b-helper-kld.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark quality configuration, KL of the 35B XTX workers against the engine alone (RAD13). |
+| `tools/lab/radiance/qwen35b-helper-kld-wide.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark quality configuration, KL of the 35B XTX workers against the engine alone (RAD13). |
+| `tools/lab/radiance/qwen35b-helper-kld-default.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark quality configuration, KL of the 35B XTX workers against the engine alone (RAD13). |
 | `tools/lab/radiance/qwen35b-helper-kld-run.sh` | **TRANSITIONAL** | `radiance` lab topic file; builds the moe-remote-handoff experiment and runs qwen35b-helper-kld.json (RAD13). |
 | `tools/lab/radiance/qwen35b-helper-capture.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark quality configuration that captures real worker requests of the 35B (RAD13). |
 | `tools/lab/radiance/qwen35b-helper-capture-decode.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark quality configuration that captures real worker requests of the 35B (RAD13). |
@@ -506,11 +508,14 @@ ownership.
 | `tools/lab/radiance/capture_upgrade.py` | **TRANSITIONAL** | `radiance` lab topic file; upgrades Flash-Next worker captures from version 2 to 3 in place (RAD13). |
 | `tools/lab/radiance/fastbuild.sh` | **TRANSITIONAL** | `radiance` lab topic file; incremental rebuild of the moe worker and libr3moe inside an existing lane build for the edit-test loop (seconds instead of a fresh 25-minute lane build). |
 | `tools/lab/radiance/w4-replay-hash.sh` | **TRANSITIONAL** | `radiance` lab topic file; replays real Flash-Next captures in one worker process and prints a hash of the result bytes, so a baseline and a candidate build can be compared for bit identity (RCS05). |
+| `tools/lab/radiance/replay-kernel-time.sh` | **TRANSITIONAL** | `radiance` lab topic file; replays real captured requests in one worker process under rocprofv3 and prints per-kernel call count and mean GPU time, per configuration and per device (RAD14). |
 | `tools/lab/radiance/qwen35b-helper-bisect.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark quality configuration bisecting the 35B workers' KL by layer range (R3_MOE_WORKER_LAYERS, RAD13). |
 | `tools/lab/radiance/qwen35b-helper-shadow.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark quality configuration running the 35B workers in shadow-compare mode (RAD13). |
 | `tools/lab/radiance/qwen35b-helper-shadow-run.sh` | **TRANSITIONAL** | `radiance` lab topic file; builds the diagnostic engine and runs qwen35b-helper-shadow.json (RAD13). |
 | `tools/lab/radiance/qwen35b-helper-maskonly.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark quality configuration for the exact merge control (mask-only) of the 35B workers (RAD13). |
 | `tools/lab/radiance/qwen35b-gemv-ab.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark server configuration, the 35B FP8 decode GEMV against the grouped GEMM on concurrent streams (RAD14). |
+| `tools/lab/radiance/qwen35b-gemv-wide-ab.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark server configuration, the 35B FP8 decode GEMV against the grouped GEMM on concurrent streams (RAD14). |
+| `tools/lab/radiance/qwen35b-gemv-wide-rows-ab.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark server configuration, the 35B FP8 decode GEMV against the grouped GEMM on concurrent streams (RAD14). |
 | `tools/lab/radiance/qwen35b-gemv-large-ab.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark server configuration, the FP8 decode GEMV on large-lane steps (R3_MOE_WORKER_GEMV_LARGE_ROWS) on concurrent streams (RAD14). |
 | `tools/lab/radiance/qwen35b-engine-mtp1.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark server configuration, the 35B engine alone with 1 speculative token(s), A/A, to bisect the MTP acceptance collapse (RAD14). |
 | `tools/lab/radiance/qwen35b-engine-mtp2.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark server configuration, the 35B engine alone with 2 speculative token(s), A/A, to bisect the MTP acceptance collapse (RAD14). |

@@ -16,7 +16,13 @@ public:
     void launch_gemv(dim3 grid, hipStream_t stream, const uint8_t* aq, const float* as, const int32_t* sorted, const int32_t* off,
                      uint32_t top_k, void* const* code0, void* const* scale0, void* const* code1, void* const* scale1, uint32_t n0,
                      uint32_t n1, uint32_t k0, uint32_t k1, uint32_t a_stride, uint32_t out_stride, uint16_t* out, uint32_t part_pitch) {
-        if (weight_format_ == MOE_FMT_FP8_E4M3_BLOCK)
+        if (weight_format_ == MOE_FMT_FP8_E4M3_BLOCK && gemv_mr_ && !(k0 & 15u) && !(k1 & 15u))
+            hipLaunchKernelGGL((lane_moe_gemv_mr<TOKEN>), dim3(experts(), (std::max(n0, n1) + kMrTile - 1) / kMrTile), dim3(256), 0, stream, aq, as, sorted, off, top_k, code0,
+                               scale0, code1, scale1, n0, n1, k0, k1, a_stride, out_stride, out, part_pitch);
+        else if (weight_format_ == MOE_FMT_FP8_E4M3_BLOCK && gemv_wide_ && !(k0 & 15u) && !(k1 & 15u))
+            hipLaunchKernelGGL((lane_moe_gemv_wide<TOKEN>), grid, dim3(256), 0, stream, aq, as, sorted, off, top_k, code0, scale0, code1,
+                               scale1, n0, n1, k0, k1, a_stride, out_stride, out, part_pitch, lane_shape_);
+        else if (weight_format_ == MOE_FMT_FP8_E4M3_BLOCK)
             hipLaunchKernelGGL((lane_moe_gemv<TOKEN, true>), grid, dim3(256), 0, stream, aq, as, sorted, off, top_k, code0, scale0, code1,
                                scale1, n0, n1, k0, k1, a_stride, out_stride, out, part_pitch, lane_shape_);
         else
@@ -54,10 +60,10 @@ public:
         had_quant_ = quant_plain_;
         gated_quant_ = gated_plain_;
         gemv_debug_ = false;   // the grouped-GEMM-vs-GEMV debug comparison is W4-only
-        /* Large-lane steps of up to 16 rows take the FP8 GEMV too (35B stream A/B: engine decode +3.5% at 4 streams, +2.7% at 6; 32 rows
-         * is worse at 6); R3_MOE_WORKER_GEMV_LARGE_ROWS still overrides. */
-        if (!std::getenv("R3_MOE_WORKER_GEMV_LARGE_ROWS")) gemv_large_rows_ = 16;
-        rows_ = false;
+        /* Large-lane steps of up to 32 rows take the FP8 GEMV too: with the wide kernel (below) 32 rows is +60-70% engine decode at 6 streams
+         * over 16 (35B stream A/B); with the old kernel 32 rows was worse. R3_MOE_WORKER_GEMV_LARGE_ROWS still overrides. */
+        if (!std::getenv("R3_MOE_WORKER_GEMV_LARGE_ROWS")) gemv_large_rows_ = 32;
+        gemv_wide_ = gemv_wide_env_ < 0 ? true : gemv_wide_env_ > 0;
         return true;
     }
     bool set_shape(const r3::moe_shm::LayoutShape& s) {
@@ -94,6 +100,15 @@ public:
     bool open() {
         const char* poison = std::getenv("R3_MOE_WORKER_POISON");
         /* "zero" returns zeros (the same output as dropping the remote routes); anything else non-"0" is 1e3. */
+        /* R3_MOE_WORKER_GEMV_MR (RAD14): the wide FP8 GEMV with the expert's rows batched four at a time (weights decoded once a pass). */
+        if (const char* mv = std::getenv("R3_MOE_WORKER_GEMV_MR"); mv && *mv && std::strcmp(mv, "0") != 0) {
+            gemv_mr_ = true;
+            std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_GEMV_MR on - the FP8 decode GEMV batches an expert's rows\n");
+        }
+        /* R3_MOE_WORKER_GEMV_WIDE (RAD14): the FP8 decode GEMV with sixteen-byte weight loads, four in flight a lane, and a branch-free E4M3
+         * decode. On by default for FP8 experts (set_weight_format); 0 turns it off. */
+        if (const char* wv = std::getenv("R3_MOE_WORKER_GEMV_WIDE"); wv && *wv)
+            gemv_wide_env_ = std::strcmp(wv, "0") != 0 ? 1 : 0;
         if (const char* rv = std::getenv("R3_MOE_WORKER_ROWS"); rv && *rv && std::strcmp(rv, "0") != 0) {
             rows_ = true;
             std::fprintf(stderr, "r3_moe_worker: few-rows prefill kernel on the large lane\n");
@@ -588,7 +603,7 @@ public:
              * reads that expert's weights once a route; here they are read once for all the expert's rows. Read each
              * call so a replay sweep can compare; the rows accumulate in a different order, so it is not bit-exact. */
             const char* rs_env = std::getenv("R3_MOE_WORKER_ROWS_SMALL");
-            const bool rows_small = weight_format_ == MOE_FMT_W4NL64 && rs_env && std::strcmp(rs_env, "0") != 0 &&
+            const bool rows_small = rs_env && std::strcmp(rs_env, "0") != 0 &&
                                     lane_is_small(lane) && rows <= 16u;
             const bool rowk = (rows_ && !lane_is_small(lane)) || rows_small;
             const dim3 rows_grid_gu(experts(), (uint32_t)((2 * std::max(w0, w1) + kRowsTileN - 1) / kRowsTileN));
@@ -598,7 +613,18 @@ public:
             std::vector<RadParam> gp =
                 gemm_params(rows, 2 * w0, shape_.hidden, 2, "token", 2 * w1, shape_.hidden);
             if (rowk) {
-                hipLaunchKernelGGL(lane_moe_rows<true>, rows_grid_gu, dim3(256), 0, w.stream,
+                if (weight_format_ == MOE_FMT_FP8_E4M3_BLOCK)
+                    hipLaunchKernelGGL((lane_moe_rows<true, true>), rows_grid_gu, dim3(256), 0, w.stream,
+                                   static_cast<const uint8_t*>(w.d_aq.p), static_cast<const float*>(w.d_as.p),
+                                   static_cast<const int32_t*>(w.d_sorted.p), static_cast<const int32_t*>(w.d_off.p),
+                                   (uint32_t)shape_.top_k,
+                                   static_cast<void* const*>(w.gu_code[0].p), static_cast<void* const*>(w.gu_scale[0].p),
+                                   static_cast<void* const*>(w.gu_code[1].p), static_cast<void* const*>(w.gu_scale[1].p),
+                                   (uint32_t)(2 * w0), (uint32_t)(2 * w1), (uint32_t)shape_.hidden, (uint32_t)shape_.hidden,
+                                   (uint32_t)shape_.hidden, (uint32_t)(2 * mid_w()), static_cast<uint16_t*>(w.d_gu.p),
+                                   (uint32_t)mid_w());
+                else
+                    hipLaunchKernelGGL((lane_moe_rows<true, false>), rows_grid_gu, dim3(256), 0, w.stream,
                                    static_cast<const uint8_t*>(w.d_aq.p), static_cast<const float*>(w.d_as.p),
                                    static_cast<const int32_t*>(w.d_sorted.p), static_cast<const int32_t*>(w.d_off.p),
                                    (uint32_t)shape_.top_k,
@@ -660,7 +686,17 @@ public:
             std::vector<RadParam> dp =
                 gemm_params(rows, shape_.hidden, w0, 1, "sorted", shape_.hidden, w1);
             if (rowk) {
-                hipLaunchKernelGGL(lane_moe_rows<false>, rows_grid_dn, dim3(256), 0, w.stream,
+                if (weight_format_ == MOE_FMT_FP8_E4M3_BLOCK)
+                    hipLaunchKernelGGL((lane_moe_rows<false, true>), rows_grid_dn, dim3(256), 0, w.stream,
+                                   static_cast<const uint8_t*>(w.d_mid.p), static_cast<const float*>(w.d_mid_s.p),
+                                   static_cast<const int32_t*>(w.d_sorted.p), static_cast<const int32_t*>(w.d_off.p),
+                                   (uint32_t)shape_.top_k,
+                                   static_cast<void* const*>(w.dn_code[0].p), static_cast<void* const*>(w.dn_scale[0].p),
+                                   static_cast<void* const*>(w.dn_code[1].p), static_cast<void* const*>(w.dn_scale[1].p),
+                                   (uint32_t)shape_.hidden, (uint32_t)shape_.hidden, (uint32_t)w0, (uint32_t)w1,
+                                   (uint32_t)mid_w(), (uint32_t)shape_.hidden, static_cast<uint16_t*>(out_down), 0u);
+                else
+                    hipLaunchKernelGGL((lane_moe_rows<false, false>), rows_grid_dn, dim3(256), 0, w.stream,
                                    static_cast<const uint8_t*>(w.d_mid.p), static_cast<const float*>(w.d_mid_s.p),
                                    static_cast<const int32_t*>(w.d_sorted.p), static_cast<const int32_t*>(w.d_off.p),
                                    (uint32_t)shape_.top_k,
@@ -865,6 +901,9 @@ private:
     uint32_t poison_ = 0;
     bool gemv_ = true;          /* R3_MOE_WORKER_GEMV: decode GEMV on the small lane (RAD05); 0 = off */
     uint32_t gemv_large_rows_ = 0; /* R3_MOE_WORKER_GEMV_LARGE_ROWS: GEMV for large-lane requests this small */
+    bool gemv_mr_ = false;      /* R3_MOE_WORKER_GEMV_MR: the wide FP8 GEMV batching an expert's rows (RAD14) */
+    int gemv_wide_env_ = -1;    /* R3_MOE_WORKER_GEMV_WIDE as set: -1 unset, 0 off, 1 on */
+    bool gemv_wide_ = false;    /* R3_MOE_WORKER_GEMV_WIDE: sixteen-byte FP8 loads in the decode GEMV (RAD14) */
     bool rows_ = false;         /* R3_MOE_WORKER_ROWS: few-rows-a-expert kernel on the large lane (RAD06) */
     bool gemv_debug_ = false;   /* R3_MOE_WORKER_GEMV=2: grouped GEMM AND GEMV gate/up, compared (--compare) */
 

@@ -1,0 +1,106 @@
+{
+ "_comment": "RAD14: the wide FP8 GEMV with its default 16-row limit for large-lane steps (arm q35-gemv-wide) against a 32-row limit (arm q35-gemv-wide-32, R3_MOE_WORKER_GEMV_LARGE_ROWS=32), 4 and 6 streams (a 6-stream MTP step is 24 rows), prefix cache off.",
+ "schema_version": 1,
+ "engine": "radiance",
+ "evidence_role": "diagnostic",
+ "execution_evidence": "observe",
+ "model": "/mnt/data/llm-models/radiance/StillDeadcode/qwen3.6-35b-a3b-fp8/qwen3.6-35b-a3b-fp8.rad",
+ "server_args": [
+  "--radiance-home",
+  "${RAD_HOME}",
+  "--kernels",
+  "libr4d,libr3moe,libref",
+  "--placement",
+  "expert_tiered",
+  "--ngram-placement",
+  "ram",
+  "--max-num-seqs",
+  "6",
+  "--max-num-batched-tokens",
+  "4096",
+  "--checkpoint-interval",
+  "4096",
+  "--kv-cache-dtype",
+  "fp8",
+  "--num-speculative-tokens",
+  "3",
+  "--tp",
+  "1",
+  "--host-pool-mib",
+  "30720",
+  "--max-model-len",
+  "32768",
+  "--no-prefix-cache"
+ ],
+ "environment": {
+  "HIP_VISIBLE_DEVICES": "0",
+  "ROCR_VISIBLE_DEVICES": "2",
+  "RADIANCE_HOME": "${RAD_HOME}",
+  "R3_MOE_WORKER_SKIP_OWNED": "1"
+ },
+ "expected_execution": {
+  "backend": "ROCm",
+  "architectures": [
+   "gfx1201"
+  ],
+  "locators": [
+   "${R9700_BDF}"
+  ]
+ },
+ "bench_configs": "mtp-dual",
+ "required_metrics": [
+  "s4_agg_tps",
+  "s4_stream_tps",
+  "s6_agg_tps",
+  "s6_stream_tps"
+ ],
+ "repetitions": 1,
+ "health_timeout_s": 900,
+ "arms": [
+  {
+   "name": "q35-gemv-wide",
+   "mode": "stock",
+   "shutdown_method": "sigint",
+   "binary": "${RAD_BIN}",
+   "settings": {
+    "R3_MOE_WORKER": "1",
+    "R3_MOE_WORKER_DEVICES": "0 1",
+    "R3_MOE_WORKER_MOE_DOWN_TILE": "1",
+    "R3_MOE_WORKER_ENGINE_RANKS": "1",
+    "R3_MOE_WORKER_MAX_ROWS": "4096",
+    "R3_MOE_WORKER_SMALL_ROWS": "8",
+    "R3_MOE_WORKER_MIB": "22528",
+    "R3_MOE_WORKER_ROWS": "0",
+    "R3_MOE_WORKER_GEMV_WIDE": "1"
+   }
+  },
+  {
+   "name": "q35-gemv-wide-32",
+   "mode": "stock",
+   "shutdown_method": "sigint",
+   "binary": "${RAD_BIN}",
+   "settings": {
+    "R3_MOE_WORKER": "1",
+    "R3_MOE_WORKER_DEVICES": "0 1",
+    "R3_MOE_WORKER_MOE_DOWN_TILE": "1",
+    "R3_MOE_WORKER_ENGINE_RANKS": "1",
+    "R3_MOE_WORKER_MAX_ROWS": "4096",
+    "R3_MOE_WORKER_SMALL_ROWS": "8",
+    "R3_MOE_WORKER_MIB": "22528",
+    "R3_MOE_WORKER_ROWS": "0",
+    "R3_MOE_WORKER_GEMV_WIDE": "1",
+    "R3_MOE_WORKER_GEMV_LARGE_ROWS": "32"
+   }
+  }
+ ],
+ "stream_bench": {
+  "streams": [
+   4,
+   6
+  ],
+  "prompt_tokens": 512,
+  "max_tokens": 128,
+  "reps": 2,
+  "seed": 1
+ }
+}
