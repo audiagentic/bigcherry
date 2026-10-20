@@ -49,6 +49,12 @@ No engine patch: plugin rows only (the plugin hierarchy is absolute, first match
 - So for Flash-Next the gfx1201 rows to write are hc_read (one launch, both matrices streamed at bandwidth) and fused small
   GEMMs, not moe_gemm_q. For the 35B, moe_gemm_q stays the target (step 2 baseline still to run).
 
+2026-10-21 prefill map (rad-kbench --max-tok 4096 on the R9700, Flash-Next, one 4096-token chunk, libr4d at real shapes):
+hc_read 97 x ~1.28 ms = 124 ms (41-44 TOPS, ~11% of the int8/fp8 matrix peak: two products with a 320-wide inner rank);
+int8 dense GEMMs (gemm_i8a8_tiled) 216 calls, 130 ms at 155-195 TOPS (~half of peak); hc_write 32 ms; gdn_chunk_scan
+29 ms; moe_gather 17 ms. (gdn_conv_update's 5.3 ms a call is the decode kernel timed at 4096 tokens; prefill uses
+gdn_conv_prep, which kbench did not time here, so that row is excluded.) Prefill target: an hc_read row for large step
+sizes on WMMA (the bc-gfx12 plugin, same A/B harness), then the int8 tiled GEMM.
 2026-10-21 hc_read follow-up: the bc-gfx12 plugin skeleton (PR to follow, branch feat/bc-gfx12-hc-read) is selected by
 radiance for decode-sized hc_read and, delegating to libr4d, times identically (27.6 us at M=4, 37.0 at M=16), so the A/B
 harness is rad-kbench --kernels libbcgfx12:libr4d:libref --op hc_read on the real container. Reading libr4d 1.9.0's
