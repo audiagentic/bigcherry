@@ -1,0 +1,91 @@
+{
+ "_comment": "RAD14 other-model check: Qwen3.8-Flash-Next on the two XTX (tp 2, engine alone), 3 speculative tokens, prefix cache ON, 1/2/4/6 streams. Does the MTP acceptance collapse with the prefix cache on happen on Flash-Next?",
+ "schema_version": 1,
+ "engine": "radiance",
+ "evidence_role": "diagnostic",
+ "execution_evidence": "observe",
+ "model": "/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad",
+ "server_args": [
+  "--radiance-home",
+  "${RAD_HOME}",
+  "--kernels",
+  "libr3,libr3moe,libref",
+  "--placement",
+  "expert_tiered",
+  "--ngram-placement",
+  "ram",
+  "--max-num-seqs",
+  "6",
+  "--max-num-batched-tokens",
+  "4096",
+  "--checkpoint-interval",
+  "4096",
+  "--kv-cache-dtype",
+  "fp8",
+  "--num-speculative-tokens",
+  "3",
+  "--tp",
+  "2",
+  "--host-pool-mib",
+  "14336",
+  "--max-model-len",
+  "32768",
+  "--tp-wire",
+  "exact"
+ ],
+ "environment": {
+  "HIP_VISIBLE_DEVICES": "0,1",
+  "RADIANCE_HOME": "${RAD_HOME}"
+ },
+ "expected_execution": {
+  "backend": "ROCm",
+  "architectures": [
+   "gfx1100"
+  ],
+  "locators": [
+   "0000:03:00.0",
+   "0000:06:00.0"
+  ]
+ },
+ "bench_configs": "mtp-dual",
+ "required_metrics": [
+  "s1_agg_tps",
+  "s1_stream_tps",
+  "s2_agg_tps",
+  "s2_stream_tps",
+  "s4_agg_tps",
+  "s4_stream_tps",
+  "s6_agg_tps",
+  "s6_stream_tps"
+ ],
+ "repetitions": 1,
+ "health_timeout_s": 900,
+ "arms": [
+  {
+   "name": "eng-a",
+   "mode": "stock",
+   "shutdown_method": "sigint",
+   "binary": "${RAD_BIN}",
+   "settings": {}
+  },
+  {
+   "name": "eng-b",
+   "mode": "stock",
+   "shutdown_method": "sigint",
+   "binary": "${RAD_BIN}",
+   "settings": {}
+  }
+ ],
+ "stream_bench": {
+  "streams": [
+   1,
+   2,
+   4,
+   6
+  ],
+  "prompt_tokens": 512,
+  "max_tokens": 128,
+  "reps": 2,
+  "seed": 1
+ }
+}
