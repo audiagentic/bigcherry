@@ -39,6 +39,16 @@ Two targets:
 
 No engine patch: plugin rows only (the plugin hierarchy is absolute, first match wins). Risks: the schema must match libr4d's exactly or the plugin is refused at load; the W4 packed layout is libr4d-private (verify byte identity); selection is by host-side geometry only (no device-to-host sync for routing statistics). Related: RAD14 (worker GEMVs), RCS05 (backend seam), RCS10 (calibrated crossovers).
 
+2026-10-21 findings (rad-kbench at real shapes on the R9700, joined per graph instance by kbench_step.py, PR #351):
+- Flash-Next decode, 4 rows (1 stream x MTP 3): the engine's MoE GEMM is NOT a significant cost (the XTX workers own the cold
+  experts). Large int8 dense GEMMs run at 535-588 GB/s (N=16384/12288 at K=2560, N=2560 at K=6144), 85-93% of the measured
+  630 GB/s cold read: no headroom. The LM head (logits_gemm_i8, 248320 x 2560) runs at 572 GB/s: none. Headroom is in
+  hc_read (mHC stream read, hc_read_e4m3: 27.8 us a call x 97 = 2.7 ms a step, 16%; it streams ~6.5 MB of E4M3 mixing
+  matrices in two launches, ~38% of bandwidth, so ~1.5 ms a step is recoverable) and in the small GEMMs (N=512/1280,
+  K=640: 5-10 us, 180-330 GB/s, launch-bound; fusion is the lever).
+- So for Flash-Next the gfx1201 rows to write are hc_read (one launch, both matrices streamed at bandwidth) and fused small
+  GEMMs, not moe_gemm_q. For the 35B, moe_gemm_q stays the target (step 2 baseline still to run).
+
 ## Change Log
 
 - 2026-10-20T12:00:00+00:00 (created-by): Created by agent
