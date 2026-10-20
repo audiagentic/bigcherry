@@ -1,6 +1,7 @@
 # 1357_moe_router_splitk
 
 Validated and profile-promoted on 2026-10-10 at pin b11474 (see `releases/evidence/1357_moe_router_splitk-promotion.md`); flag remains default-off and is enabled only by the Flash-Next runtime profile. Mechanism is in SUMMARY.md: the marked MoE router matmul runs through a split-K F32 GEMM with a
+**Status: validated (2026-10-10), included in validated-enhancements and enabled by the Flash-Next runtime profile.** Mechanism is in SUMMARY.md: the marked MoE router matmul runs through a split-K F32 GEMM with a
 fixed-order reduction instead of rocBLAS SGEMM. Off by default; `BIGCHERRY_MOE_ROUTER_SPLITK=1` turns it on.
 
 ## Evidence
@@ -16,6 +17,8 @@ fixed-order reduction instead of rocBLAS SGEMM. Off by default; `BIGCHERRY_MOE_R
 Historical offline mechanics, patch lint, composition and 24K same-binary four-request ABBA were completed for b11474 on 2026-10-10 (see the promotion record below). The measured +3.2% pooled Flash-Next prefill gain is **against native router SGEMM**, not evidence that the split-K partial and reduce kernels can be fused. The router reduction order changes Flash-Next greedy output; pooled decode measured 69.8 -> 67.2 tok/s with one -20.4% request and changed MTP acceptance. Do not label this as bit-identical, decode-faster, or universally promoted. The historical pin does not establish current-pin or other-model qualification.
 
 QFP36 / patch 1357 owns two ordered launches with pool-owned scratch. The old QFP48 proposal to remove the reduce launch has no proven cross-CTA publication/replay protocol or measured **exposed** reduction-wall benefit; do not treat it as implemented. Keep this separate from the validated, profile-scoped 1357 SGEMM replacement.
+## Historical qualification (completed 2026-10-10)
+The offline mechanics, patch-lint, activation and same-binary ABBA work was recorded in the promotion evidence below. Greedy Flash-Next output differs because the router accumulation order changes; profile-scoped acceptance does **not** establish bit identity or a new reduction-fusion opportunity.
 
 ## Promotion record
 
@@ -63,3 +66,7 @@ The prompt there is about 1,700 tokens, so these are no-regression figures, not 
 With `BIGCHERRY_MOE_ROUTER_SPLITK` unset the router matmul goes to rocBLAS SGEMM exactly as native llama.cpp b11474
 sends it, on the same binary. The off arm is therefore the native behaviour for the code this patch changes; the
 rest of the build is the BigCherry production baseline in both arms.
+
+## 2026-10-16 BCOP239 reduction-fusion disposition
+
+Keep the two ordered HIP launches and backend-pool scratch. QFP48's old partial->reduce fusion suggestion is closed without a new implementation: the partial workgroups have no cross-CTA barrier, and the reduction's exposed wall-time cost is not measured. Any last-CTA/counter alternative must first pass QFP48's epoch, graph replay, numeric and >=3% exposed-cost gates. The 2026-10-10 +3.2% prefill ABBA measures **1357 versus native SGEMM**, not the proposed fusion.

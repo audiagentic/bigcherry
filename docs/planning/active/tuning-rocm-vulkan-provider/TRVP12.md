@@ -112,3 +112,5 @@ Supersedes RO17. Preserve RV104/RV118: do not serialize behind TRVP11, do not du
 5. Promote only with paired ABBA CI95-low >=3% end-to-end prefill versus current native pin, <=1% unaffected TG/MTP regression, no missing work, and resource/traffic plausibility; otherwise NUMERIC_FAIL, RESOURCE_REGRESSION, NO_E2E_GAIN or REJECT.
 
 **Completed:** Pinned source/dispatch and upstream PR/diff/review inspection; host-only Python oracle 3,360 geometry/resource/tail cases passed (168 modeled split decisions changed), Python compilation passed. No Vulkan/SPIR-V build, BigCherry repository test, GPU profiling or hardware benchmark.
+## 2026-10-18 Vulkan Q4 KV shader ownership note
+PRVP04 (BCOP295) owns only the prospective upstream #30738 Q4_0 KV dequant+transpose shader and its prefill route/physical-work gate. TRVP12 remains the shared Vulkan provider/capability adapter, **not** the attention shader owner. RRVP02's implementation pause is unchanged; no candidate, queue, provider, cache or allocator is added here. The n>=64 Vulkan FA scratch admission must not be misreported as a single-query decode speedup.

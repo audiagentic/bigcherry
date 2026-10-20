@@ -1,9 +1,9 @@
-# 1253_nro04_gfx1100_bf16_chunked_gdn
+# 1253 — PNRO04 BF16/WMMA chunked GatedDeltaNet prefill
 
-Plan `NRO04`; state `untested`; requires `1221_rd50_gdn_chunked_recurrence`.
+**Package state:** `validated` in `patch.toml`, based on historical b11126 gfx1100/gfx1201 evidence; not a current b11552 qualification. **Requires:** none. **Conflicts:** `1221_rd50_gdn_chunked_recurrence` (the FP32 chunked implementation is not ported). `1254_nro05_gdn_mtp_prefix_tail` requires 1253 but remains separately `untested`. The older README/TESTING descriptions of an unwired, opt-in, 1221-dependent kernel were stale.
 
-RD50 supplies the earlier chunked-GDN infrastructure; 1253 adds the gfx1100 BF16 chunked path used by 1254. The implementation is live and is a required dependency of `1254_nro05_gdn_mtp_prefix_tail`; this README no longer describes it as predicate-only/incomplete scaffolding.
+Ports nasone `4169fbbf50d24beb6d269a2350e7f780b85369e6`. `patch.py::GDN_DISPATCH` modifies `ggml_cuda_op_gated_delta_net_impl`; gfx1100/RDNA3 uses `gated_delta_net_chunked_bf16_gfx11.cu`, gfx1201/RDNA4 uses `gated_delta_net_chunked_bf16.cu`. For scalar-gate non-KDA, K=1, S_v=128, n_tokens>1 the BF16 path is **default-on**, with opt-outs `GGML_CUDA_GDN_CHUNKED=0` or `GGML_CUDA_GDN_CHUNKED_BF16=0`. Unsupported shapes use the original sequential kernel; no FP32 chunked fallback is installed. A synchronous kernel-launch rejection also falls back, but an asynchronous GPU failure is not recovered.
 
-Runtime chunked-GDN opt-out is `GGML_CUDA_GDN_CHUNKED=0`. Keep BF16 operands with FP32 accumulation/state and preserve fail-closed fallback to the stock sequential path for unsupported shapes.
+**Known conditional guard gap:** the two BF16 KKT launchers abort for unsupported `H/H_k` ratios; supported ratios are 1,2,3,4,6,8. The caller does not prefilter these ratios. Do not expand model admission until an existing-owner pre-launch guard routes other ratios to sequential before allocation/launch. This was demonstrated only by source inspection and host selector fixtures, not by a production GPU crash.
 
-1254's MTP prefix/tail validation is separate: it must prove its own trace marker, full-vocabulary MTP correctness, snapshot/final-state semantics, work equivalence, and paired performance. Nothing here claims 1253 or 1254 is validated or signed off.
+**Upstream reconciliation:** llama.cpp [#29353](https://github.com/ggml-org/llama.cpp/pull/29353) merged 2026-10-14 after b11552, adding a different BF16-high/low MMA GDN path; its HIP selector is RDNA3.5-only and does not select gfx1100/gfx1201. Compare composition before a future pin bump; do not stack two GDN dispatches or assume upstream K>1 snapshot semantics match 1254. Full gate and historical receipts: `docs/planning/active/patching-nasone-rdna-optimizations/PNRO04.md`, `evidence/validation.json` and `TESTING.md`.

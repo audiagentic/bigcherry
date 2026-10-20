@@ -13,6 +13,10 @@ priority: P0
 
 # Chunk GDN MTP prefill prefix while preserving snapshot tail
 
+## 2026-10-15 upstream snapshot/ownership fence (BCOP225)
+
+1253 is validated **only for its K=1 BF16 GDN path** on older b11126 receipts; 1254 remains independently untested and must not inherit its status. Merged llama.cpp [#29353](https://github.com/ggml-org/llama.cpp/pull/29353) adds an MMA GDN path and changes the general GGML contract so that when n_tokens>K only snapshot slot 0 is guaranteed. That does **not** establish 1254's stronger exact K-slot prefix/tail rollback semantics. On future b11552+ rebase/port, compare K=2/4/7 every snapshot, final F32 recurrent state, accepted-draft rollback and graph replay before permitting upstream dispatch. The 1253 BF16 KKT switch admits GQA ratios only {1,2,3,4,6,8}; 1254 must preserve a pre-launch ratio guard or sequential fallback if it reuses that kernel. No new MTP qualification or patch was run here.
+
 ## Description
 
 TODO, NOT-READY (rescoped). Verified via patch.py: 1254 only defines the eligibility predicate `bigcherry_nro05_mtp_prefix_candidate()` -- prefix execution, temporary state ownership, the K-token sequential tail, snapshot publication, and fallback are all unwired (nothing actually runs the prefix/tail split). Qualify the MTP-specific GDN prefix/tail composition independently from PNRO04's raw kernel once wired.

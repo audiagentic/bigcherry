@@ -35,3 +35,7 @@ This also explains why replacing the unsafe direct pinned source with pageable s
 ## 2026-10-13 QFP27 admission correction
 
 Upstream [#29963](https://github.com/ggml-org/llama.cpp/pull/29963) (open, head 273cd26) adds scheduler-copy input events only when layer pipeline parallelism yields `n_copies>1`. BigCherry's production `-sm tensor` Meta path has `n_copies=1`; Meta reports no event capability and mirrors H2D enqueues across child streams. Its `input_events` cannot prove pinned-source lifetime. Keep validated <=4 MiB pageable staging unchanged; a large pinned path is conditional on QFP27's residual-cost gate and all-child completion before slot reuse. No new hardware measurement in this audit.
+
+## 2026-10-16 BCOP236 ownership note
+
+The current <=4 MiB pageable staging uses a thread-local map keyed by graph tensor pointers, retaining capacity beyond scheduler free/reset. This is a source-confirmed retention possibility, not measured RSS growth. QFP16 owns bounded scheduler-lifetime POD staging; QFP27 owns all-child host-consumption qualification. Retain the existing safe path until host/HIP correctness and regression gates pass. Large pinned prefill remains separately gated by QFP24.

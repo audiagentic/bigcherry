@@ -57,6 +57,10 @@ Also the base for MET10 (host tail): the same per-layer table decides which expe
 
 Use B2 (unchanged original router + old-to-new expert ID translation **after** selection) to preserve original-expert selection and paired slot weights. This remains necessary even when b11552's fused `topk_moe_cuda` is used: its existing deterministic equal-score rule selects the lower **physical** ID, which changes meaning when experts are permuted. Ordinary `ggml_argsort_top_k` is a separate `GGML_OP_ARGSORT` path, not patch 1294's QSA `GGML_OP_TOP_K`. Do not add a duplicate router tie kernel. Prove fused/ARGSORT route identity and old-ID/weight correspondence with the MET09 first-divergence fixture before proposing placement implementation. Ensure the B2 lookup tensor remains graph-owned/mirrored with stable lifetime across replay and multi-request use, and translate only expert-dispatch IDs (not router-weight gathering). The previously proposed **1343** patch slot is already occupied by `1343_mtp_nextn_rereserve`; do not reuse it. Allocate a free identifier only after Gate 1 passes and the active PA49 pin work has settled. This is a planning correction, not a new patch or hardware result.
 
+## 2026-10-16 BCOP241 — offline-oracle prerequisite
+
+MET08's existing `expert-place.py` copies/writes derived shards before its per-layer completeness check, and the `gate_up` shortcut accepts a fused-only layer even though 1283 matches separate gate/up/down weights only. MET08 owns a fail-closed, transactional GGUF oracle and complete profile/shard/permutation manifest before MET11 consumes its output. MET11 must not duplicate the writer or implement B2 against an unverified reference. B2 keeps original router scores and selected top-k slot weights; only expert-dispatch IDs are translated via graph-owned mirrored old-to-new mapping. B1 and B2 may differ on physical-ID ties. Hold implementation/hardware until MET08 artifact tests and MET09 first-divergence pass. This is a source-level risk, not a reproduced corrupted GGUF.
+
 ## Change Log
 
 - 2026-10-06T16:42:10.474116+00:00 (created-by): Created by agent

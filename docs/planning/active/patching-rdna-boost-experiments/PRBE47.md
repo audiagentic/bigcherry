@@ -13,6 +13,10 @@ priority: P3
 
 # UP-HIP-002: AMD DPP/native shuffle path
 
+## 2026-10-18 ownership boundary — merged Q6_K integer-dot VDR2
+
+New PRBE117/BCOP298 owns only upstream #30517's **Q6_K Q8_1 MMVQ grouped-integer-dot VDR2** admission, a new source identity after rejected 1204/RD08. It is not this item's wave32 DPP **post-dot reduction** experiment. Preserve PRBE47's dormant, profile-first gate; neither candidate authorizes the other, and neither changes validated gfx1100 dense width-1 1274 raw-F32 dispatch. No new patch or GPU run was made in this audit.
+
 
 ## 2026-10-09 authoritative audit: wave32 DPP reduction, not a blanket shuffle replacement
 

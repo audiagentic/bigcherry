@@ -3,6 +3,11 @@
 **Status:** validated
 **Plan item:** GP03/PGC09
 
+
+## Current-pin correction (2026-10-15, BCOP238)
+
+The historical introduction below describes the earlier copy-engine-derived ~1 MiB threshold and an old exact-F32 helper name. **Current** 0860 uses ADAPTIVE_SWITCH_BYTES_DEFAULT = 96 << 10, snapshots it into comm_ctx->adaptive_switch_bytes and 0840 calls ggml_cuda_ar_pipeline_set_bf16_threshold(ret->ar_pipeline, 0) to keep its internal wire exact F32. Dispatch compares ggml_nbytes(tensors[0]) strictly below 96 KiB. provider_name is set before the attempted sub-provider, so it is not itself a completion witness. Optional 0830 observes the actual bool outcome; lab-only 1277 logs *preference*, not outcome. PGC12's proposed phase-aware routing is retired for lack of matched exact-F32 evidence; PGC09/PGC13 own any future receipts and scalar calibration. Existing validated t-0840e-gfx1100-s1..s4 remains the production control. Do not interpret this correction as a new measured gain.
+
 ## What it does
 
 Adds `--allreduce adaptive`: a fourth provider that brings up both
