@@ -15,6 +15,7 @@
 #include <string>
 
 extern "C" int bc_hc_read_decode(const RadArgs* a, RadStream s);        // bc_hc_read.hip
+extern "C" int bc_hc_read_prefill(const RadArgs* a, RadStream s);       // bc_hc_prefill.hip
 extern "C" int bc_moe_gemm_fp8_decode(const RadArgs* a, RadStream s);   // bc_moe_gemv.hip
 
 namespace {
@@ -90,6 +91,11 @@ int hc_read_launch(const RadArgs* a, RadStream s) {
     if (rc != RAD_E_UNSUPPORTED) return rc;
     return r4d().ok ? r4d().hc_read(a, s) : RAD_E_UNSUPPORTED;   // a geometry the decode kernel declines: libr4d's
 }
+int hc_read_prefill_launch(const RadArgs* a, RadStream s) {
+    const int rc = bc_hc_read_prefill(a, s);
+    if (rc != RAD_E_UNSUPPORTED) return rc;
+    return r4d().ok ? r4d().hc_read(a, s) : RAD_E_UNSUPPORTED;   // a geometry the prefill kernel declines: libr4d's
+}
 int64_t hc_read_scratch(const RadArgs* a) {
     return r4d().ok ? r4d().hc_read_scratch(a) : -1;            // our kernel needs no more scratch than libr4d's
 }
@@ -135,6 +141,11 @@ const RadConstraint kMoeGemmQDecode[] = {
 /* libr4d's hc_read_e4m3 constraints, narrowed to decode-sized steps. */
 const RadConstraint kHcReadDecode[] = {
     RAD_CGE("M", 1), RAD_CLE("M", 16), RAD_CDIV("n", 512), RAD_CLE("n", 7552), RAD_CGE("hc", 2), RAD_CLE("hc", 4),
+    RAD_CDIV("lowrank", 64), RAD_CLE("lowrank", 512), RAD_CLE("group", 128), RAD_CLE("inject", 1),
+    RAD_CIN("dtype", "bf16"), RAD_CIN("mix", "e4m3"),
+};
+const RadConstraint kHcReadPrefill[] = {
+    RAD_CGE("M", 17), RAD_CDIV("n", 512), RAD_CLE("n", 7552), RAD_CGE("hc", 2), RAD_CLE("hc", 4),
     RAD_CDIV("lowrank", 64), RAD_CLE("lowrank", 512), RAD_CLE("group", 128), RAD_CLE("inject", 1),
     RAD_CIN("dtype", "bf16"), RAD_CIN("mix", "e4m3"),
 };
