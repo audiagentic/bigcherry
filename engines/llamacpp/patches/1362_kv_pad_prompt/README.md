@@ -2,6 +2,19 @@
 
 **State: rejected.** QFP53 is superseded; see `docs/planning/completed/patching-qwen-flash-next/QFP53.md` and this package's `SUMMARY.md`. This patch is **not** in production or an active experiment. Do not use the old `--experiment kv-pad-prompt` invocation or queue further 1362 qualification without new independent evidence.
 
+
+## Summary
+
+Opt-in BIGCHERRY_KV_PAD graph padding for KV rows and k-pool rows so the prefill graph can be reused across batches.
+
+## Outcome
+
+rejected (2026-10-12): the mechanism works (graph reuse rate rises) but buys nothing end to end -- reuse and 1359's queue-ahead exclude each other on shared inputs; kept on main as the record of the approach.
+
+## Detail
+
+See below.
+
 ## Historical mechanism (retained for evidence)
 
 `BIGCHERRY_KV_PAD=N` pads both `llama_kv_cache::get_n_kv` and Qwen4Exp/GLM5-Next `kpool_pad` to larger quanta (pool quantum derived from `N/indexer_kpool`). Zero/unset preserves upstream behavior; nonzero N must be a multiple of 256 and no larger than the active KV cache. The patch preserves dead/masked pools and `n_kv` sentinels. It was tested on the b11552 composition.

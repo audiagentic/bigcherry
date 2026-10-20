@@ -3,6 +3,18 @@
 **Status:** untested
 **Plan item:** MEN12
 
+## Summary
+
+Shadow-compare and mask-only diagnostics for the MoE remote hand-off, diagnostic build only (BC_MOE_REMOTE_DIAG).
+
+## Outcome
+
+untested: diagnostic-only, never in a production source.
+
+## Detail
+
+See below.
+
 ## What it does
 
 Adds the remote-MoE diagnostics to the MoE block, for a diagnostic build only. Requires `rad0002_moe_remote_handoff`, whose extension point it hangs off.
