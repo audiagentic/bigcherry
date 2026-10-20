@@ -34,14 +34,14 @@ __global__ __launch_bounds__(256) void lane_moe_gemv(
     const uint8_t* aq, const float* as, const int32_t* sorted, const int32_t* off, uint32_t top_k,
     void* const* code0, void* const* scale0, void* const* code1, void* const* scale1,
     uint32_t n0, uint32_t n1, uint32_t k0, uint32_t k1, uint32_t a_stride, uint32_t out_stride, uint16_t* out,
-    uint32_t part_pitch) {
+    uint32_t part_pitch, LaneShape shape) {
     using namespace r3::moe_shm;
     const uint32_t r = blockIdx.x;
-    if (r >= (uint32_t)off[g_shape.experts]) return;
+    if (r >= (uint32_t)off[shape.experts]) return;
     __shared__ float a[kGemvMaxK];
     __shared__ uint32_t sh_e;
     if (threadIdx.x == 0) {
-        uint32_t lo = 0, hi = g_shape.experts;          /* last e with off[e] <= r */
+        uint32_t lo = 0, hi = shape.experts;          /* last e with off[e] <= r */
         while (hi - lo > 1) { const uint32_t mid = (lo + hi) / 2; if ((uint32_t)off[mid] <= r) lo = mid; else hi = mid; }
         sh_e = lo;
     }
