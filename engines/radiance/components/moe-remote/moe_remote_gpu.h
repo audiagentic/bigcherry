@@ -18,10 +18,10 @@ public:
                      uint32_t n1, uint32_t k0, uint32_t k1, uint32_t a_stride, uint32_t out_stride, uint16_t* out, uint32_t part_pitch) {
         if (weight_format_ == MOE_FMT_FP8_E4M3_BLOCK)
             hipLaunchKernelGGL((lane_moe_gemv<TOKEN, true>), grid, dim3(256), 0, stream, aq, as, sorted, off, top_k, code0, scale0, code1,
-                               scale1, n0, n1, k0, k1, a_stride, out_stride, out, part_pitch);
+                               scale1, n0, n1, k0, k1, a_stride, out_stride, out, part_pitch, lane_shape_);
         else
             hipLaunchKernelGGL((lane_moe_gemv<TOKEN, false>), grid, dim3(256), 0, stream, aq, as, sorted, off, top_k, code0, scale0, code1,
-                               scale1, n0, n1, k0, k1, a_stride, out_stride, out, part_pitch);
+                               scale1, n0, n1, k0, k1, a_stride, out_stride, out, part_pitch, lane_shape_);
     }
     /* Routed experts per layer, from the container; and the thread count of the one-block routing kernels: a power of two, at least
      * kFuseMaxRoutes and the expert count (0 when the count is beyond what one block can scan). */
@@ -30,6 +30,7 @@ public:
     /* The shape the kernels run with: hidden width, routes a token, activation group (RCS09-06). Checked against the capacities the
      * kernels are built for (per-token scratch, the GEMV's LDS row, whole 16-byte activation pieces) and copied to the device. */
     r3::moe_shm::LayoutShape shape_{};
+    LaneShape lane_shape_{};              /* what the lane kernels are launched with (RCS05: an argument, not a device global) */
     /* The expert weight format the worker serves (the backend contract's MOE_FMT_*). W4NL64 is what open() prepared; FP8 block-scaled
      * switches to radiance's fp8a8 grouped GEMM and the plain quantisers, reads the container's planes as they are (that kernel's
      * layout is the checkpoint's own row-major bytes) and takes the grouped GEMM for decode too (no FP8 GEMV yet). */
@@ -70,8 +71,8 @@ public:
             return false;
         }
         shape_ = s;
-        const LaneShape ls{s.hidden, s.top_k, s.act_group, s.experts};
-        return hip_ok(hipMemcpyToSymbol(HIP_SYMBOL(g_shape), &ls, sizeof ls), "set lane shape");
+        lane_shape_ = LaneShape{s.hidden, s.top_k, s.act_group, s.experts};
+        return true;
     }
     uint32_t route_block() const {
         uint32_t n = kFuseMaxRoutes;
@@ -499,13 +500,13 @@ public:
                                q, reinterpret_cast<const uint4*>(act_q), reinterpret_cast<const uint4*>(act_s),
                                reinterpret_cast<uint4*>(w.d_aq.p), reinterpret_cast<uint4*>(w.d_as.p),
                                rank, sequence, rows, model_.layers,
-                               static_cast<uint64_t*>(w.d_stats.p));
+                               static_cast<uint64_t*>(w.d_stats.p), lane_shape_);
         } else {
             hipLaunchKernelGGL(lane_prepare_activation, act_grid, block, 0, w.stream,
                                q, act_q, act_s,
                                static_cast<uint8_t*>(w.d_aq.p), static_cast<float*>(w.d_as.p),
                                rank, sequence, rows, model_.layers,
-                               static_cast<uint64_t*>(w.d_stats.p));
+                               static_cast<uint64_t*>(w.d_stats.p), lane_shape_);
         }
         if (fuse) {
             auto front = [&](auto block_n) {
@@ -521,7 +522,7 @@ public:
                                    static_cast<void**>(w.gu_code[0].p), static_cast<void**>(w.gu_scale[0].p),
                                    static_cast<void**>(w.dn_code[0].p), static_cast<void**>(w.dn_scale[0].p),
                                    static_cast<void**>(w.gu_code[1].p), static_cast<void**>(w.gu_scale[1].p),
-                                   static_cast<void**>(w.dn_code[1].p), static_cast<void**>(w.dn_scale[1].p));
+                                   static_cast<void**>(w.dn_code[1].p), static_cast<void**>(w.dn_scale[1].p), lane_shape_);
             };
             switch (route_block()) {
                 case 256: front(std::integral_constant<uint32_t, 256>{}); break;
@@ -535,7 +536,7 @@ public:
                            rank, sequence, rows, model_.layers, experts(),
                            static_cast<uint32_t*>(w.d_counts.p),
                            static_cast<int32_t*>(w.d_flat.p),
-                           static_cast<uint16_t*>(w.d_ew.p));
+                           static_cast<uint16_t*>(w.d_ew.p), lane_shape_);
         auto prefix = [&](auto block_n) {
             constexpr uint32_t N = decltype(block_n)::value;
             hipLaunchKernelGGL((lane_route_prefix<N>), dim3(1), dim3(N), 0, w.stream,
@@ -555,7 +556,7 @@ public:
                            static_cast<const int32_t*>(w.d_flat.p),
                            static_cast<uint32_t*>(w.d_cursor.p),
                            static_cast<int32_t*>(w.d_sorted.p),
-                           nullptr);
+                           nullptr, lane_shape_);
         }
         if (!hip_ok(hipGetLastError(), "lane request kernels")) return -EIO;
         const bool sampling = sample && w.sample_pending && w.sample_sequence == sequence;
@@ -577,7 +578,7 @@ public:
                                static_cast<void**>(w.gu_code[1].p),
                                static_cast<void**>(w.gu_scale[1].p),
                                static_cast<void**>(w.dn_code[1].p),
-                               static_cast<void**>(w.dn_scale[1].p));
+                               static_cast<void**>(w.dn_scale[1].p), lane_shape_);
             const int64_t w0 = slice_w(slice, 0);
             const int64_t w1 = slice_w(slice, 1);
             /* Small lane, decode GEMV (RAD05): the step's routes, one block a (row, 64 outputs). */
@@ -640,7 +641,7 @@ public:
                                    static_cast<void* const*>(w.gu_code[1].p), static_cast<void* const*>(w.gu_scale[1].p),
                                    (uint32_t)(2 * w0), (uint32_t)(2 * w1), (uint32_t)shape_.hidden, (uint32_t)shape_.hidden,
                                    (uint32_t)shape_.hidden, (uint32_t)(2 * mid_w()), static_cast<uint16_t*>(w.d_dbg.p),
-                                   (uint32_t)mid_w());
+                                   (uint32_t)mid_w(), lane_shape_);
                 w.dbg_routes = routes;
             }
             if (sampling && !hip_ok(hipEventRecord(w.stage[1], w.stream), "lane stage 1")) return -EIO;
@@ -702,13 +703,13 @@ public:
                                static_cast<const uint16_t*>(w.d_down.p),
                                static_cast<const int32_t*>(w.d_inv.p),
                                static_cast<const uint16_t*>(w.d_ew.p),
-                               dst, rows, shape_.hidden, poison_);
+                               dst, rows, shape_.hidden, poison_, lane_shape_);
         else
             hipLaunchKernelGGL(lane_reduce_tokens, dim3(rows), block, 0, w.stream,
                                static_cast<const uint16_t*>(w.d_down.p),
                                static_cast<const int32_t*>(w.d_inv.p),
                                static_cast<const uint16_t*>(w.d_ew.p),
-                               dst, rows, shape_.hidden, poison_);
+                               dst, rows, shape_.hidden, poison_, lane_shape_);
         if (!hip_ok(hipGetLastError(), "lane reduce tokens")) return -EIO;
 
         if (sample && w.sample_pending && w.sample_sequence == sequence &&

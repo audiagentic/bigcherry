@@ -17,7 +17,7 @@ __global__ void lane_route_inverse(const int32_t* sorted, int32_t* inv, uint32_t
  * Tokens without a route are not written; the engine's merge reads only tokens it routed here. */
 __global__ void lane_reduce_tokens(const uint16_t* down, const int32_t* inv,
                                    const uint16_t* ew, uint16_t* dst, uint32_t rows, uint32_t hidden,
-                                   uint32_t poison) {
+                                   uint32_t poison, LaneShape shape) {
     using namespace r3::moe_shm;
     const uint32_t token = blockIdx.x;
     if (token >= rows) return;
@@ -26,8 +26,8 @@ __global__ void lane_reduce_tokens(const uint16_t* down, const int32_t* inv,
     __shared__ uint32_t any;
     if (threadIdx.x == 0) {
         any = 0;
-        for (uint32_t slot = 0; slot < g_shape.top_k; ++slot) {
-            const uint32_t flat = token * g_shape.top_k + slot;
+        for (uint32_t slot = 0; slot < shape.top_k; ++slot) {
+            const uint32_t flat = token * shape.top_k + slot;
             row[slot] = inv[flat];
             w[slot] = __uint_as_float((uint32_t)ew[flat] << 16);
             any |= row[slot] >= 0 ? 1u : 0u;
@@ -38,7 +38,7 @@ __global__ void lane_reduce_tokens(const uint16_t* down, const int32_t* inv,
     uint16_t* out = dst + (uint64_t)token * hidden;
     for (uint32_t col = threadIdx.x; col < hidden; col += blockDim.x) {
         float acc = 0.0f;
-        for (uint32_t slot = 0; slot < g_shape.top_k; ++slot) {
+        for (uint32_t slot = 0; slot < shape.top_k; ++slot) {
             if (row[slot] < 0) continue;
             const uint64_t at = (uint64_t)(uint32_t)row[slot] * hidden + col;
             acc += w[slot] * __uint_as_float((uint32_t)down[at] << 16);
@@ -61,7 +61,7 @@ __global__ void lane_reduce_tokens(const uint16_t* down, const int32_t* inv,
  * output is bit-identical; the 2-byte stores to uncached host memory ran at ~12 GB/s. */
 __global__ void lane_reduce_tokens_v(const uint16_t* down, const int32_t* inv,
                                      const uint16_t* ew, uint16_t* dst, uint32_t rows, uint32_t hidden,
-                                     uint32_t poison) {
+                                     uint32_t poison, LaneShape shape) {
     using namespace r3::moe_shm;
     const uint32_t token = blockIdx.x;
     if (token >= rows) return;
@@ -70,8 +70,8 @@ __global__ void lane_reduce_tokens_v(const uint16_t* down, const int32_t* inv,
     __shared__ uint32_t any;
     if (threadIdx.x == 0) {
         any = 0;
-        for (uint32_t slot = 0; slot < g_shape.top_k; ++slot) {
-            const uint32_t flat = token * g_shape.top_k + slot;
+        for (uint32_t slot = 0; slot < shape.top_k; ++slot) {
+            const uint32_t flat = token * shape.top_k + slot;
             row[slot] = inv[flat];
             w[slot] = __uint_as_float((uint32_t)ew[flat] << 16);
             any |= row[slot] >= 0 ? 1u : 0u;
@@ -84,7 +84,7 @@ __global__ void lane_reduce_tokens_v(const uint16_t* down, const int32_t* inv,
         float acc[8];
 #pragma unroll
         for (uint32_t k = 0; k < 8; ++k) acc[k] = 0.0f;
-        for (uint32_t slot = 0; slot < g_shape.top_k; ++slot) {
+        for (uint32_t slot = 0; slot < shape.top_k; ++slot) {
             if (row[slot] < 0) continue;
             const uint4 d = *reinterpret_cast<const uint4*>(down + (uint64_t)(uint32_t)row[slot] * hidden + (uint64_t)c8 * 8);
             const uint32_t dw[4] = {d.x, d.y, d.z, d.w};
