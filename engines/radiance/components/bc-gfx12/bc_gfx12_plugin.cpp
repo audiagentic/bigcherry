@@ -63,8 +63,7 @@ const R4d& r4d() {
         void* h = dlopen(path.c_str(), RTLD_NOW | RTLD_NOLOAD);
         if (!h) h = dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
         if (!h) {
-            std::fprintf(stderr, "libbcgfx12: libr4d.so not loaded and not found beside the plugin: %s
-", dlerror());
+            std::fprintf(stderr, "libbcgfx12: libr4d.so not loaded and not found beside the plugin: %s\n", dlerror());
             return x;
         }
         x.hc_read = (RadLaunchFn)dlsym(h, "r4d_rad_hc_read");
