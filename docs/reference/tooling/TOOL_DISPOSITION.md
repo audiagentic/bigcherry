@@ -518,6 +518,8 @@ ownership.
 | `tools/lab/radiance/flashnext-w4h2-ab.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark server configuration, the 35B FP8 decode GEMV against the grouped GEMM on concurrent streams (RAD14). |
 | `tools/lab/radiance/qwen35b-gemv-wide-rows-ab.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark server configuration, the 35B FP8 decode GEMV against the grouped GEMM on concurrent streams (RAD14). |
 | `tools/lab/radiance/qwen35b-gemv-h2-ab.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark server configuration, the 35B FP8 decode GEMV against the grouped GEMM on concurrent streams (RAD14). |
+| `tools/lab/radiance/decode_logprobs.py` | **TRANSITIONAL** | `radiance` lab topic file; decode-path quality of two arms from greedy top-20 logprobs: shared-prefix KL, top-1 agreement, margin at the first divergence (RAD15). |
+| `tools/lab/radiance/decode-logprobs-run.sh` | **TRANSITIONAL** | `radiance` lab topic file; serves a model with a setting off then on and runs decode_logprobs.py (RAD15). |
 | `tools/lab/radiance/qwen35b-gemv-large-ab.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark server configuration, the FP8 decode GEMV on large-lane steps (R3_MOE_WORKER_GEMV_LARGE_ROWS) on concurrent streams (RAD14). |
 | `tools/lab/radiance/qwen35b-engine-mtp1.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark server configuration, the 35B engine alone with 1 speculative token(s), A/A, to bisect the MTP acceptance collapse (RAD14). |
 | `tools/lab/radiance/qwen35b-engine-mtp2.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark server configuration, the 35B engine alone with 2 speculative token(s), A/A, to bisect the MTP acceptance collapse (RAD14). |
