@@ -15,14 +15,16 @@
 @@ find 1
     int  host       = 0;
     long gate_ctr   = 0;      /* the blocks that have seen their peer's bytes land (r4d_ar_seq.h) */
-};
 @@ replace
     int  host       = 0;
     long gate_ctr   = 0;      /* the blocks that have seen their peer's bytes land (r4d_ar_seq.h) */
     int  timing     = 0;
     int  wire4      = 0;
-};
+@@ end
 
+@@ find 1
+long align16(long v) { return (v + 15) & ~15L; }
+@@ replace
 /* Wall time of one fused all-reduce call, taken between two stream synchronisations: the engine's HIP layer has no
  * hipEventRecord on its own streams, so a call is timed by draining the stream before it and after it. That makes
  * every timed call synchronous - the run is for the split, not for speed. Reported every kR3ArTimingBatch calls a
@@ -110,6 +112,8 @@ struct R3ArTimingScope {
         if (row->us.size() >= kR3ArTimingBatch) r3_ar_timing_print(*row);
     }
 };
+
+long align16(long v) { return (v + 15) & ~15L; }
 @@ end
 
 @@ find 1
@@ -199,10 +203,10 @@ void release(ArInst* in) {
 
 @@ find 1
         (long)(uintptr_t)s, nblocks, nthreads, cfgv.drain, cfgv.acq, wire,
-        in->locpack, in->slot_bytes / 2);
+        in->locpack, in->slot_bytes / 2, wpo ? r4d_addr(wpo) : 0);
 @@ replace
         (long)(uintptr_t)s, r3_nblocks, nthreads, cfgv.drain, cfgv.acq, wire,
-        in->locpack, r3_wire4 ? in->slot_bytes / 4 : in->slot_bytes / 2);
+        in->locpack, r3_wire4 ? in->slot_bytes / 4 : in->slot_bytes / 2, wpo ? r4d_addr(wpo) : 0);
 @@ end
 
 @@ find 1

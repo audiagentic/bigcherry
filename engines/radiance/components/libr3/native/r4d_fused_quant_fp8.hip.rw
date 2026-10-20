@@ -8,10 +8,10 @@
 @@ end
 
 @@ find 1
-template <bool WF32, bool RES, uint32_t THR, int WIRE>
+template <bool WF32, bool RES, uint32_t THR, int WIRE, bool POST = false>
 __global__ __launch_bounds__(THR) void ar_rmsnorm_quant_fp8_kernel(
 @@ replace
-template <bool WF32, bool RES, uint32_t THR, int WIRE, bool PIPE = false>
+template <bool WF32, bool RES, uint32_t THR, int WIRE, bool POST = false, bool PIPE = false>
 __global__ __launch_bounds__(THR) void ar_rmsnorm_quant_fp8_kernel(
 @@ end
 
@@ -272,22 +272,26 @@ __global__ __launch_bounds__(THR) void ar_rmsnorm_quant_fp8_kernel(
 @@ end
 
 @@ find 1
-#define R4D_ARQ_T(wf, rs, T, W)                                                                  \
-    hipLaunchKernelGGL((ar_rmsnorm_quant_fp8_kernel<wf, rs, T, W>), dim3((uint32_t)nb), dim3(T),  \
+#define R4D_ARQ_P(wf, rs, T, W, PO)                                                              \
+    hipLaunchKernelGGL((ar_rmsnorm_quant_fp8_kernel<wf, rs, T, W, PO>), dim3((uint32_t)nb), dim3(T), \
 @@ replace
-#define R4D_ARQ_T(wf, rs, T, W, P)                                                               \
-    hipLaunchKernelGGL((ar_rmsnorm_quant_fp8_kernel<wf, rs, T, W, P>), dim3((uint32_t)nb),        \
-                       dim3(T),                                                                   \
+#define R4D_ARQ_P(wf, rs, T, W, PO, P)                                                       \
+    hipLaunchKernelGGL((ar_rmsnorm_quant_fp8_kernel<wf, rs, T, W, PO, P>), dim3((uint32_t)nb), dim3(T),\
 @@ end
 
 @@ find 1
+#define R4D_ARQ_T(wf, rs, T, W) R4D_ARQ_P(wf, rs, T, W, false)
 #define R4D_ARQ_W(wf, rs, T)                                                                     \
-    do { if (wire == 6) R4D_ARQ_T(wf, rs, T, 6); else R4D_ARQ_T(wf, rs, T, 0); } while (0)
+    do { if (wire == 6) R4D_ARQ_T(wf, rs, T, 6);                                                 \
+         else if (rs && wp) R4D_ARQ_P(wf, rs, T, 0, true);                                       \
+         else R4D_ARQ_T(wf, rs, T, 0); } while (0)
 @@ replace
-#define R4D_ARQ_W(wf, rs, T)                                                                     \
-    do { if (wire == 6) {                                                                        \
-             if (r3_wire4)  R4D_ARQ_T(wf, rs, T, 4, false);                                      \
-             else if (r3_pipe) R4D_ARQ_T(wf, rs, T, 6, true);                                    \
-             else              R4D_ARQ_T(wf, rs, T, 6, false);                                   \
-         } else R4D_ARQ_T(wf, rs, T, 0, false); } while (0)
+#define R4D_ARQ_T(wf, rs, T, W, P) R4D_ARQ_P(wf, rs, T, W, false, P)
+#define R4D_ARQ_W(wf, rs, T)                                                                 \
+    do { if (wire == 6) {                                                                    \
+             if (r3_wire4)  R4D_ARQ_T(wf, rs, T, 4, false);                                  \
+             else if (r3_pipe) R4D_ARQ_T(wf, rs, T, 6, true);                                \
+             else              R4D_ARQ_T(wf, rs, T, 6, false);                               \
+         } else if (rs && wp) R4D_ARQ_P(wf, rs, T, 0, true, false);                          \
+         else R4D_ARQ_T(wf, rs, T, 0, false); } while (0)
 @@ end
