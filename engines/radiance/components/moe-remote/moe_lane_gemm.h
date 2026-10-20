@@ -346,6 +346,106 @@ __global__ __launch_bounds__(256) void lane_moe_gemv_h2(
     }
 }
 
+/* PACKED-FP16 W4 DECODE GEMV (RAD14, Flash-Next). lane_moe_gemv<TOKEN, false> rebuilt the way the FP8 kernels were: one block a (routed
+ * row, 64 outputs), one wave an output, sixteen-byte weight loads (32 codes) four in flight a lane, and the dot product on v_dot2_f32_f16.
+ * A nonlinear level (1.125 .. 22) and an E4M3 activation are both exact in f16 and so is their product, so nothing rounds before the f32
+ * accumulation; the per-64 E4M3 weight scale (times 2^-13) and the activation's per-128 scale are applied to each 32-element partial sum.
+ * The level lookup is two byte permutes over the f16 table held in registers, not a per-lane load from a constant table.
+ * The weight layout is the relayout's (moew4_permute): in a dword, byte b holds element b in its low nibble and element b+4 in its high
+ * nibble, so a dword is elements 0..7 and the low nibbles are 0..3. The activation row is staged as f16 in element order, so a dword's
+ * eight activations are one sixteen-byte LDS read. K must be a multiple of 64. */
+__device__ __forceinline__ void w4nl_to_h2x2(uint32_t nib, h2v* p01, h2v* p23) {   /* four codes, one a byte (bits 0..3) */
+    /* f16 of the levels 1.125 3.25 5.5 8 11 14 18 22: low bytes 80 80 80 00 80 00 80 80, high bytes 3C 42 45 48 49 4B 4C 4D */
+    const uint32_t idx = nib & 0x07070707u;
+    const uint32_t lo = __builtin_amdgcn_perm(0x80800080u, 0x00808080u, idx);   /* selector s < 4 reads src1, 4..7 src0 */
+    const uint32_t hi = __builtin_amdgcn_perm(0x4D4C4B49u, 0x4845423Cu, idx);
+    const uint32_t sg = __builtin_amdgcn_perm(0u, nib & 0x08080808u, 0x010C000Cu) << 4;   /* sign bits 3 -> 15 and 31 */
+    const uint32_t sg2 = __builtin_amdgcn_perm(0u, nib & 0x08080808u, 0x030C020Cu) << 4;
+    *p01 = __builtin_bit_cast(h2v, __builtin_amdgcn_perm(hi, lo, 0x05010400u) | sg);
+    *p23 = __builtin_bit_cast(h2v, __builtin_amdgcn_perm(hi, lo, 0x07030602u) | sg2);
+}
+template <bool TOKEN>
+__global__ __launch_bounds__(256) void lane_moe_gemv_w4h2(
+    const uint8_t* aq, const float* as, const int32_t* sorted, const int32_t* off, uint32_t top_k,
+    void* const* code0, void* const* scale0, void* const* code1, void* const* scale1,
+    uint32_t n0, uint32_t n1, uint32_t k0, uint32_t k1, uint32_t a_stride, uint32_t out_stride, uint16_t* out,
+    uint32_t part_pitch, LaneShape shape) {
+    using namespace r3::moe_shm;
+    const uint32_t r = blockIdx.x;
+    if (r >= (uint32_t)off[shape.experts]) return;
+    __shared__ uint16_t a[kGemvMaxK];
+    __shared__ float asc[kGemvMaxK / 128u];
+    __shared__ uint32_t sh_e;
+    if (threadIdx.x == 0) {
+        uint32_t lo = 0, hi = shape.experts;
+        while (hi - lo > 1) { const uint32_t mid = (lo + hi) / 2; if ((uint32_t)off[mid] <= r) lo = mid; else hi = mid; }
+        sh_e = lo;
+    }
+    __syncthreads();
+    const uint32_t e = sh_e, cls = e & 1u, ix = e >> 1;
+    const uint32_t N = cls ? n1 : n0, K = cls ? k1 : k0;
+    const uint32_t n_base = blockIdx.y * kGemvTile;
+    if (n_base >= N || K > kGemvMaxK || (K & 63u)) return;
+    const uint32_t arow = TOKEN ? (uint32_t)sorted[r] / top_k : r;
+    const uint8_t* ar = aq + (uint64_t)arow * a_stride;
+    const float* asr = as + (uint64_t)arow * (a_stride / 128u);
+    for (uint32_t k = threadIdx.x; k < K; k += blockDim.x) {
+        const uint32_t h = (((uint32_t)ar[k] & 0x7Fu) << 7) | (((uint32_t)ar[k] & 0x80u) << 8);
+        a[k] = __builtin_bit_cast(uint16_t, (_Float16)(__builtin_bit_cast(_Float16, (uint16_t)h) * (_Float16)256.0f));
+    }
+    for (uint32_t g = threadIdx.x; g < K / 128u; g += blockDim.x) asc[g] = asr[g];
+    __syncthreads();
+
+    const uint8_t* codes = static_cast<const uint8_t*>(cls ? code1[ix] : code0[ix]);
+    const uint8_t* scales = static_cast<const uint8_t*>(cls ? scale1[ix] : scale0[ix]);
+    if (!codes || !scales) return;
+    const uint32_t lane = threadIdx.x % warpSize, wave = threadIdx.x / warpSize, waves = blockDim.x / warpSize;
+    const uint32_t k32 = K / 32u;                 /* sixteen-byte groups of 32 codes in a row */
+    constexpr uint32_t U = 4;
+    const uint4* a4 = reinterpret_cast<const uint4*>(a);   /* eight f16 activations a uint4 */
+    for (uint32_t j = wave; j < kGemvTile; j += waves) {
+        const uint32_t n = n_base + j;
+        if (n >= N) break;
+        const uint4* crow = reinterpret_cast<const uint4*>(codes + (uint64_t)n * (K / 2u));
+        const uint8_t* srow = scales + (uint64_t)n * (K / 64u);
+        float acc = 0.0f;
+        for (uint32_t d0 = lane; d0 < k32; d0 += U * warpSize) {
+            uint4 v[U];
+#pragma unroll
+            for (uint32_t u = 0; u < U; ++u) {
+                const uint32_t d = d0 + u * warpSize;
+                v[u] = d < k32 ? crow[d] : make_uint4(0u, 0u, 0u, 0u);
+            }
+#pragma unroll
+            for (uint32_t u = 0; u < U; ++u) {
+                const uint32_t d = d0 + u * warpSize;
+                if (d >= k32) break;
+                const uint32_t ws[4] = {v[u].x, v[u].y, v[u].z, v[u].w};
+                float part = 0.0f;
+#pragma unroll
+                for (uint32_t q = 0; q < 4; ++q) {        /* dword q: elements 32d + 8q .. +7 */
+                    const uint4 x = a4[4u * d + q];       /* activations e0..e7 as four half2 */
+                    h2v w01, w23, w45, w67;
+                    w4nl_to_h2x2(ws[q] & 0x0F0F0F0Fu, &w01, &w23);
+                    w4nl_to_h2x2((ws[q] >> 4) & 0x0F0F0F0Fu, &w45, &w67);
+                    part = __builtin_amdgcn_fdot2(w01, __builtin_bit_cast(h2v, x.x), part, false);
+                    part = __builtin_amdgcn_fdot2(w23, __builtin_bit_cast(h2v, x.y), part, false);
+                    part = __builtin_amdgcn_fdot2(w45, __builtin_bit_cast(h2v, x.z), part, false);
+                    part = __builtin_amdgcn_fdot2(w67, __builtin_bit_cast(h2v, x.w), part, false);
+                }
+                acc += part * (gemv_e4m3_fast(srow[(32u * d) / 64u]) * asc[(32u * d) / 128u]);
+            }
+        }
+        for (uint32_t o = warpSize / 2; o; o >>= 1) acc += __shfl_down(acc, o);
+        if (lane == 0) {
+            uint32_t u = __float_as_uint(acc * 0x1p-13f);
+            u += 0x7fffu + ((u >> 16) & 1u);
+            const uint32_t col = TOKEN && part_pitch && n >= N / 2 ? n - N / 2 + part_pitch : n;
+            out[(uint64_t)r * out_stride + col] = (uint16_t)(u >> 16);
+        }
+    }
+}
+
 /* MULTI-ROW WIDE FP8 DECODE GEMV (RAD14). lane_moe_gemv_wide with the expert's rows batched: one block an (expert, 64 outputs) handles the
  * expert's routed rows four at a time, so each sixteen-byte weight load is decoded once and applied to every row of the pass instead of
  * once a route (a 35B decode request sends about five routes to each expert it touches). The four activation rows are staged in LDS in the

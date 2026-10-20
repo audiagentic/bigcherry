@@ -16,7 +16,13 @@ public:
     void launch_gemv(dim3 grid, hipStream_t stream, const uint8_t* aq, const float* as, const int32_t* sorted, const int32_t* off,
                      uint32_t top_k, void* const* code0, void* const* scale0, void* const* code1, void* const* scale1, uint32_t n0,
                      uint32_t n1, uint32_t k0, uint32_t k1, uint32_t a_stride, uint32_t out_stride, uint16_t* out, uint32_t part_pitch) {
-        if (weight_format_ == MOE_FMT_FP8_E4M3_BLOCK && gemv_mr_ && !(k0 & 15u) && !(k1 & 15u))
+        /* R3_MOE_WORKER_GEMV_W4H2 is read each call (as FUSEROUTE is) so a replay sweep can compare the two W4 kernels in one process. */
+        const char* w4h2_env = weight_format_ == MOE_FMT_W4NL64 ? std::getenv("R3_MOE_WORKER_GEMV_W4H2") : nullptr;
+        const bool w4h2 = w4h2_env ? (*w4h2_env && std::strcmp(w4h2_env, "0") != 0) : gemv_w4h2_;
+        if (weight_format_ == MOE_FMT_W4NL64 && w4h2 && !(k0 & 63u) && !(k1 & 63u))
+            hipLaunchKernelGGL((lane_moe_gemv_w4h2<TOKEN>), grid, dim3(256), 0, stream, aq, as, sorted, off, top_k, code0, scale0, code1,
+                               scale1, n0, n1, k0, k1, a_stride, out_stride, out, part_pitch, lane_shape_);
+        else if (weight_format_ == MOE_FMT_FP8_E4M3_BLOCK && gemv_mr_ && !(k0 & 15u) && !(k1 & 15u))
             hipLaunchKernelGGL((lane_moe_gemv_mr<TOKEN>), dim3(experts(), (std::max(n0, n1) + kMrTile - 1) / kMrTile), dim3(256), 0, stream, aq, as, sorted, off, top_k, code0,
                                scale0, code1, scale1, n0, n1, k0, k1, a_stride, out_stride, out, part_pitch);
         else if (weight_format_ == MOE_FMT_FP8_E4M3_BLOCK && gemv_h2_ == 4 && !(k0 & 15u) && !(k1 & 15u))
@@ -115,6 +121,11 @@ public:
         if (const char* hv = std::getenv("R3_MOE_WORKER_GEMV_H2"); hv && *hv) {
             const int v = std::atoi(hv);
             gemv_h2_env_ = v == 4 ? 4 : v == 2 ? 2 : v == 1 ? 1 : 0;
+        }
+        /* R3_MOE_WORKER_GEMV_W4H2 (RAD14): the W4 decode GEMV on packed f16 dot products with sixteen-byte loads. */
+        if (const char* wv = std::getenv("R3_MOE_WORKER_GEMV_W4H2"); wv && *wv && std::strcmp(wv, "0") != 0) {
+            gemv_w4h2_ = true;
+            std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_GEMV_W4H2 on - packed f16 W4 decode GEMV\n");
         }
         /* R3_MOE_WORKER_GEMV_MR (RAD14): the wide FP8 GEMV with the expert's rows batched four at a time (weights decoded once a pass). */
         if (const char* mv = std::getenv("R3_MOE_WORKER_GEMV_MR"); mv && *mv && std::strcmp(mv, "0") != 0) {
@@ -919,6 +930,7 @@ private:
     uint32_t gemv_large_rows_ = 0; /* R3_MOE_WORKER_GEMV_LARGE_ROWS: GEMV for large-lane requests this small */
     int gemv_h2_env_ = -1;      /* R3_MOE_WORKER_GEMV_H2 as set: -1 unset, else 0 (wide kernel), 1, 2 or 4 rows a block */
     int gemv_h2_ = 0;           /* R3_MOE_WORKER_GEMV_H2: 1 packed f16 dot products in the FP8 decode GEMV, 2 the same with two rows a block (RAD14) */
+    bool gemv_w4h2_ = false;    /* R3_MOE_WORKER_GEMV_W4H2: packed f16 W4 decode GEMV (RAD14) */
     bool gemv_mr_ = false;      /* R3_MOE_WORKER_GEMV_MR: the wide FP8 GEMV batching an expert's rows (RAD14) */
     int gemv_wide_env_ = -1;    /* R3_MOE_WORKER_GEMV_WIDE as set: -1 unset, 0 off, 1 on */
     bool gemv_wide_ = false;    /* R3_MOE_WORKER_GEMV_WIDE: sixteen-byte FP8 loads in the decode GEMV (RAD14) */
