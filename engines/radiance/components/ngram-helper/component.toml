@@ -1,0 +1,52 @@
+# ngram-helper: the opt-in n-gram embedding gather on a spare GPU (R3_NGRAM_DEV), split out of libr3 (RCS06). Shelved:
+# status evaluated, default off; the owner's call (2026-10-13) is that lookup work belongs on host RAM/CPU and the R9700 is
+# compute. To use it, list libr3ngram in --kernels ahead of the engine's kernel library and set R3_NGRAM_DEV.
+schema = 1
+name = "ngram-helper"
+engine = "radiance"
+# The engine is configured for the union of every component's targets, so only the cards the engine itself serves are
+# listed; the helper's code object also carries gfx1030 (R3NGRAM_TARGETS in CMakeLists.txt), as it did inside libr3.
+targets = ["gfx1100", "gfx1201"]
+built-against = "v1.8.0"
+outputs = ["kernels/libr3ngram.so", "helpers/libr3_ngram_helper.so"]
+
+[build]
+configure = { RADIANCE_SRC = "{engine_source}" }
+
+# Runtime settings: see libr3/component.toml for the status vocabulary. Names are runtime identifiers and did not change.
+
+[setting.R3_NGRAM_DEV]
+default = ""
+status = "evaluated"
+summary = "n-gram rows gathered on a non-rank card; exact, but the R9700 belongs to compute (owner, 2026-10-13)"
+activation = "libr3: R3_NGRAM_DEV rows="
+
+[setting.R3_NGRAM_HELPER_SO]
+default = ""
+status = "evaluated"
+summary = "path of the n-gram helper library (R3_NGRAM_DEV)"
+
+[setting.R3_NGRAM_AVX]
+default = ""
+status = "evaluated"
+summary = "path of libavx for the n-gram host-copy gather (R3_NGRAM_DEV)"
+
+[setting.R3_NGRAM_RAM]
+default = "1"
+status = "evaluated"
+summary = "rows the n-gram device does not hold go to a host copy (R3_NGRAM_DEV)"
+
+[setting.R3_NGRAM_MIB]
+default = ""
+status = "evaluated"
+summary = "cap on the device share of the n-gram table (R3_NGRAM_DEV)"
+
+[setting.R3_NGRAM_RESERVE_MIB]
+default = "2048"
+status = "evaluated"
+summary = "device memory the n-gram helper leaves free (R3_NGRAM_DEV)"
+
+[setting.R3_NGRAM_MAX_M]
+default = "32768"
+status = "evaluated"
+summary = "largest n-gram gather the helper sizes for (R3_NGRAM_DEV)"

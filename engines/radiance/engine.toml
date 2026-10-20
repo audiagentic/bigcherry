@@ -50,6 +50,7 @@ accepted = "radiance:draft_accepted_total"
 [components]
 libr3 = "engines/radiance/components/libr3"
 moe-remote = "engines/radiance/components/moe-remote"
+ngram-helper = "engines/radiance/components/ngram-helper"
 
 # RAM-only smoke test (MEN15): `bigcherry --engine radiance smoke-cpu --build <dir>` serves this tiny container on the
 # CPU kernel plugins (libavx, libref; --tp 1) with no GPU visible. `model` is relative to the model root (--model-root,

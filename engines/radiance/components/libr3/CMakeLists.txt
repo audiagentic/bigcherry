@@ -81,7 +81,7 @@ set_source_files_properties(${r4d}/r4d_rows.cpp PROPERTIES COMPILE_DEFINITIONS
   "rad_plugin_info=r4d_up_plugin_info;rad_kernel_schema_count=r4d_up_kernel_schema_count;rad_kernel_schema_at=r4d_up_kernel_schema_at;rad_kernel_count=r4d_up_kernel_count;rad_kernel_at=r4d_up_kernel_at;rad_kernel_concurrent=r4d_up_kernel_concurrent;rad_kernel_collective=r4d_up_kernel_collective")
 
 rad_add_plugin(libr3 kernels
-  SOURCES     ${declaration} ${CMAKE_CURRENT_SOURCE_DIR}/r3_registry.cpp ${CMAKE_CURRENT_SOURCE_DIR}/r3_ngram_host.cpp
+  SOURCES     ${declaration} ${CMAKE_CURRENT_SOURCE_DIR}/r3_registry.cpp
   HIP_SOURCES ${device}
   GPU_TARGETS ${R3_TARGETS}
   INCLUDES    ${r4d} ${CMAKE_CURRENT_SOURCE_DIR})
@@ -89,22 +89,6 @@ target_compile_definitions(libr3 PRIVATE R3_TARGETS="${R3_TARGETS}")
 # libr4d builds its device code at C++17 (its own build file says why); the same here
 set_target_properties(libr3 PROPERTIES HIP_STANDARD 17 HIP_STANDARD_REQUIRED ON)
 target_link_libraries(libr3 PRIVATE ${CMAKE_DL_LIBS})
-
-# R3_NGRAM_DEV is a HOST kernel in libr3, but its sparse gather runs on a non-rank GPU.
-# Keep that helper in a separate multi-arch code object: libr3 itself remains gfx11-only.
-add_library(r3_ngram_helper MODULE ${CMAKE_CURRENT_SOURCE_DIR}/r3_ngram_helper.hip)
-target_link_libraries(r3_ngram_helper PRIVATE radiance::abi)
-set_target_properties(r3_ngram_helper PROPERTIES HIP_STANDARD 17 HIP_STANDARD_REQUIRED ON)
-set_property(TARGET r3_ngram_helper PROPERTY HIP_ARCHITECTURES gfx1100 gfx1201 gfx1030)
-add_dependencies(libr3 r3_ngram_helper)
-# Beside the kernels directory, not in it: the engine loads every library there as a plugin and refuses one that
-# exports no rad_plugin_abi_version.
-add_custom_command(TARGET libr3 POST_BUILD
-  COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:libr3>/../helpers
-  COMMAND ${CMAKE_COMMAND} -E copy_if_different
-          $<TARGET_FILE:r3_ngram_helper> $<TARGET_FILE_DIR:libr3>/../helpers/libr3_ngram_helper.so
-  COMMAND ${CMAKE_COMMAND} -E rm -f $<TARGET_FILE_DIR:libr3>/libr3_ngram_helper.so
-  VERBATIM)
 
 # Stubs for the entry points of the units left out, made from what the objects leave undefined.
 find_program(R3_NM nm REQUIRED)
@@ -129,9 +113,5 @@ target_link_libraries(r3_selftest PRIVATE radiance::abi ${CMAKE_DL_LIBS} ${RAD_H
 target_include_directories(r3_selftest PRIVATE ${r4d} $ENV{ROCM_PATH}/include)
 target_compile_definitions(r3_selftest PRIVATE __HIP_PLATFORM_AMD__)
 set_property(TARGET r3_selftest PROPERTY HIP_ARCHITECTURES ${R3_TARGETS})
-
-# Direct helper correctness/perf harness. It is separate from r3_selftest because it owns a non-rank HIP device.
-add_executable(r3_ngram_test EXCLUDE_FROM_ALL ${CMAKE_CURRENT_SOURCE_DIR}/r3_ngram_test.cpp)
-target_link_libraries(r3_ngram_test PRIVATE radiance::abi ${CMAKE_DL_LIBS})
 
 target_include_directories(libr3 PRIVATE ${RADIANCE_SRC}/abi)

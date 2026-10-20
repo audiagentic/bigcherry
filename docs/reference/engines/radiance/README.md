@@ -65,7 +65,7 @@ Components and plugins produced by `libr3` and `moe-remote` (each `component.tom
 | `kernels/libr4d.so` (upstream) | radiance's own kernels, gfx12 (R9700); not built by BigCherry's component |
 | `kernels/libr3moe.so` (libr3moe) | small plugin, built for gfx1100 and gfx1201: the mailbox rows and the registration (`bc_moe_remote_register`) with the extension point rad0002 adds; used with the R9700 engine as `--kernels libr4d,libr3moe,libref` |
 | `helpers/r3_moe_worker` (helper) | separate process per XTX that owns whole routed experts and computes them for the engine through a pinned-host mailbox with GPU-side flags |
-| `helpers/libr3_ngram_helper.so` | n-gram gather on a spare card (evaluated, shelved: the R9700 is compute) |
+| `kernels/libr3ngram.so`, `helpers/libr3_ngram_helper.so` (ngram-helper) | n-gram gather (list libr3ngram in `--kernels` to use it) on a spare card (evaluated, shelved: the R9700 is compute) |
 
 Runtime settings (`R3_*`) are declared in `component.toml` with a default, a status (`production`, `experimental`,
 `evaluated`, `diagnostic`, `tuning`) and, where it exists, an activation log marker. Profiles in `recipes.toml` list

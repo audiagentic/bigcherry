@@ -2,7 +2,7 @@
 id: RCS06
 order: 6
 plan: build-radiance-components
-state: pending
+state: completed
 created-at: '2026-10-18T12:57:50.674536+00:00'
 breadth: ''
 skill: basic
@@ -54,6 +54,8 @@ Component builds and r3_ngram_test passes; runtime home unchanged.
 ## Notes
 
 Independent of RCS02-RCS05; can go first as the template for a component move.
+
+2026-10-20 done: engines/radiance/components/ngram-helper (component.toml, CMakeLists.txt, ngram_plugin.cpp). The n-gram row was registered by libr3's own plugin table, so it became its own small kernel plugin, libr3ngram (the libr3moe pattern), not a plain file move; to use the shelved feature, list libr3ngram in --kernels and set R3_NGRAM_DEV. The seven R3_NGRAM_* settings moved with it; libr3 keeps the gfx11 kernels only. The component declares targets gfx1100/gfx1201 because the engine is configured for the union of component targets (the bump-gate test caught gfx1030 widening the engine build); the helper code object still carries gfx1030. Checked on Brutus: formal lane build ok, kernels/libr3ngram.so and helpers/libr3_ngram_helper.so installed, libr3.so no longer carries the row, rad-kbench loads libr3ngram, r3_ngram_test builds.
 
 ## Change Log
 
