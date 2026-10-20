@@ -504,6 +504,7 @@ ownership.
 | `tools/lab/radiance/qwen35b-helper-capture-run.sh` | **TRANSITIONAL** | `radiance` lab topic file; builds the experiment and runs qwen35b-helper-capture.json (RAD13). |
 | `tools/lab/radiance/capture_upgrade.py` | **TRANSITIONAL** | `radiance` lab topic file; upgrades Flash-Next worker captures from version 2 to 3 in place (RAD13). |
 | `tools/lab/radiance/fastbuild.sh` | **TRANSITIONAL** | `radiance` lab topic file; incremental rebuild of the moe worker and libr3moe inside an existing lane build for the edit-test loop (seconds instead of a fresh 25-minute lane build). |
+| `tools/lab/radiance/w4-replay-hash.sh` | **TRANSITIONAL** | `radiance` lab topic file; replays real Flash-Next captures in one worker process and prints a hash of the result bytes, so a baseline and a candidate build can be compared for bit identity (RCS05). |
 | `tools/lab/radiance/qwen35b-helper-bisect.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark quality configuration bisecting the 35B workers' KL by layer range (R3_MOE_WORKER_LAYERS, RAD13). |
 | `tools/lab/radiance/qwen35b-helper-shadow.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark quality configuration running the 35B workers in shadow-compare mode (RAD13). |
 | `tools/lab/radiance/qwen35b-helper-shadow-run.sh` | **TRANSITIONAL** | `radiance` lab topic file; builds the diagnostic engine and runs qwen35b-helper-shadow.json (RAD13). |
