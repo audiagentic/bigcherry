@@ -27,15 +27,9 @@ The helper replay harness (r3_moe_worker --replay-sweep, capture format 2) and i
 
 ## Detailed Solution & Technical Design
 
-
-
 ## Code Samples & Guidance
 
-
-
 ## Files
-
-
 
 ## Validation
 
@@ -43,15 +37,9 @@ A replay sweep through the command is bitwise-identical to the script result on 
 
 ## Effort & Risk
 
-
-
 ## Standards
 
-
-
 ## Acceptance Criteria
-
-
 
 ## Notes
 

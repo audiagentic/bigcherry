@@ -25,15 +25,9 @@ Our KLD runs report a mean only, against the two-XTX run of the same container. 
 
 ## Detailed Solution & Technical Design
 
-
-
 ## Code Samples & Guidance
 
-
-
 ## Files
-
-
 
 ## Validation
 
@@ -41,15 +35,9 @@ Unit test on synthetic logits; re-analysed numbers recorded.
 
 ## Effort & Risk
 
-
-
 ## Standards
 
-
-
 ## Acceptance Criteria
-
-
 
 ## Notes
 
@@ -59,3 +47,8 @@ Unit test on synthetic logits; re-analysed numbers recorded.
 
 - 2026-10-14T22:16:29.378987+00:00 (created-by): Created by agent
 - 2026-10-17T00:33:31.379569+00:00 (updated-by): Updated: section:notes
+
+## Ledger-events
+
+- chg_20261017_012848_radiance-quality-checks-report_4522
+- 2026-10-17T01:28:52.271660+00:00 (updated-by): Updated: section:ledger-events
