@@ -119,7 +119,7 @@ int route_selftest() {
                     }
                     hipLaunchKernelGGL(lane_route_scatter, dim3(grid), dim3(256), 0, 0, rt, rq, lt, 0u, 1u, rows, 1u, experts,
                                        static_cast<const int32_t*>(d_flat), static_cast<uint32_t*>(d_cursor),
-                                       static_cast<int32_t*>(d_sorted), static_cast<int32_t*>(nullptr));
+                                       static_cast<int32_t*>(d_sorted), static_cast<int32_t*>(nullptr), lane_shape);
                     good = hip(hipDeviceSynchronize(), "unfused kernels") &&
                            hip(hipMemcpy(got_counts.data(), d_counts, experts * 4, hipMemcpyDeviceToHost), "read counts") &&
                            hip(hipMemcpy(off.data(), d_off, (experts + 1) * 4, hipMemcpyDeviceToHost), "read offsets") &&

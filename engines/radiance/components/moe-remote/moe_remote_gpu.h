@@ -556,7 +556,7 @@ public:
                            static_cast<const int32_t*>(w.d_flat.p),
                            static_cast<uint32_t*>(w.d_cursor.p),
                            static_cast<int32_t*>(w.d_sorted.p),
-                           nullptr);
+                           nullptr, lane_shape_);
         }
         if (!hip_ok(hipGetLastError(), "lane request kernels")) return -EIO;
         const bool sampling = sample && w.sample_pending && w.sample_sequence == sequence;
@@ -578,7 +578,7 @@ public:
                                static_cast<void**>(w.gu_code[1].p),
                                static_cast<void**>(w.gu_scale[1].p),
                                static_cast<void**>(w.dn_code[1].p),
-                               static_cast<void**>(w.dn_scale[1].p));
+                               static_cast<void**>(w.dn_scale[1].p), lane_shape_);
             const int64_t w0 = slice_w(slice, 0);
             const int64_t w1 = slice_w(slice, 1);
             /* Small lane, decode GEMV (RAD05): the step's routes, one block a (row, 64 outputs). */

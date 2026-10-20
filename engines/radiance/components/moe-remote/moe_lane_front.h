@@ -75,7 +75,7 @@ __global__ void lane_select_tables(
     const r3::moe_shm::Request* q, const DeviceLayerTables* layers_table,
     uint32_t layers, uint32_t rank, uint32_t slice, uint32_t sequence, uint32_t max_rows, uint32_t experts,
     void** guc0, void** gus0, void** dnc0, void** dns0,
-    void** guc1, void** gus1, void** dnc1, void** dns1) {
+    void** guc1, void** gus1, void** dnc1, void** dns1, LaneShape shape) {
     using namespace r3::moe_shm;
     const uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= experts / 2) return;
@@ -151,7 +151,7 @@ __global__ void lane_route_scatter(
     const r3::moe_shm::Route* route, const r3::moe_shm::Request* q,
     const DeviceLayerTables* layers_table,
     uint32_t rank, uint32_t sequence, uint32_t max_rows, uint32_t layers, uint32_t experts,
-    const int32_t* flat, uint32_t* cursor, int32_t* sorted, int32_t* sorted_expert) {
+    const int32_t* flat, uint32_t* cursor, int32_t* sorted, int32_t* sorted_expert, LaneShape shape) {
     using namespace r3::moe_shm;
     const uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
     if (!lane_request_valid(q, rank, sequence, max_rows, layers, shape) ||
