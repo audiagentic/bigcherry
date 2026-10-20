@@ -15,6 +15,7 @@ current statement of state; `engines/radiance/README.md` stays the dated lab log
 |---|---|---|
 | Qwen3.8-Flash-Next (512-expert MoE) | [models/qwen3.8-flash-next.md](models/qwen3.8-flash-next.md) | R9700 engine + two XTX expert helpers: prefill ~2,755-2,764 tok/s, decode ~108.5 tok/s (7,306-token prompt) |
 | Qwen3.8-27B (dense) | [models/qwen3.8-27b.md](models/qwen3.8-27b.md) | two XTX, MXFP4: prefill ~2,250 tok/s (7.2K prompt), decode 46.7-47 tok/s without a drafter |
+| Qwen3.6-35B-A3B FP8 (MoE) | [models/qwen3.6-35b-a3b.md](models/qwen3.6-35b-a3b.md) | R9700 engine alone: MTP acceptance collapses at 4+ streams with the prefix cache on; `--no-prefix-cache` is the workaround |
 
 ## Reference documents
 

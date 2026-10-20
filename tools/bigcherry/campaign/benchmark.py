@@ -606,7 +606,22 @@ def run_server_arm_capture(
                 else:
                     require_execution_identity(expected, observed, context=f"server cell {side}")
                     run["execution_evidence_status"] = "verified"
-            if stream_bench is not None:
+            if stream_bench is not None and "isolation" in stream_bench:
+                # RAD14: the same prompts alone and together; the metrics say how far the batch changed each reply.
+                from bigcherry.bench import stream_isolation
+
+                iso = stream_bench["isolation"]
+                record = stream_isolation.run(
+                    f"http://{server.host}:{server.port}", model.stem, int(iso["prompts"]),
+                    [int(n) for n in iso["group_sizes"]], int(stream_bench["prompt_tokens"]),
+                    int(stream_bench["max_tokens"]), seed=int(stream_bench.get("seed", 1)),
+                    stagger_s=float(iso.get("stagger_s", 0.0)))
+                (cell / "stream-isolation.json").write_text(json.dumps(record, indent=1, sort_keys=True) + chr(10), encoding="utf-8")
+                run["metrics"] = stream_isolation.flat_metrics(record)
+                missing = [m for m in required_metrics if m not in run["metrics"]]
+                if missing:
+                    raise ValueError(f"isolation cell lacks required metrics: {', '.join(missing)}")
+            elif stream_bench is not None:
                 # RAD10: N concurrent streams instead of the one-request-at-a-time harness; same lifecycle, same arms.
                 from bigcherry.bench import stream_bench as stream_bench_module
 
@@ -888,8 +903,8 @@ def run_server_comparison_capture(
     if any(value.split("=", 1)[0] in ("-m", "--model", "--host", "--port") for value in extra_args):
         raise ValueError("server_args cannot override the managed model or endpoint")
     metrics = () if quality_only else tuple(config["required_metrics"])
-    if not quality_only and (not metrics or any(not re.fullmatch(r"\w+_tps", name) for name in metrics)):
-        raise ValueError("explicit server-bench throughput metrics required")
+    if not quality_only and (not metrics or any(not re.fullmatch(r"\w+_tps|iso_\w+", name) for name in metrics)):
+        raise ValueError("explicit server-bench throughput (or isolation-probe) metrics required")
     repetitions = config.get("repetitions", 1)
     # Seconds a server may take to load and answer /health (a large model's load can pass the 180 s default).
     health_timeout_s = config.get("health_timeout_s", 180)

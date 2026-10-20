@@ -27,7 +27,7 @@ required-state = "untested"
 # The remote-MoE hand-off and its diagnostics (shadow compare, mask-only). Diagnostic builds only: patch-lint fails
 # if a patch declaring `diagnostic-build` (rad0004) enters any recipe not named *-diag.
 [patch-set.moe-remote-diag]
-patches = ["rad0002_moe_remote_handoff", "rad0004_moe_remote_diagnostics"]
+patches = ["rad0002_moe_remote_handoff", "rad0004_moe_remote_diagnostics", "rad0006_heat_freeze_diagnostic"]
 required-state = "untested"
 
 [source.radiance-native]

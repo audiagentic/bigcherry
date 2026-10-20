@@ -8,6 +8,8 @@ WORK=/mnt/vault/development/projects/bigcherry/workspaces/main/work
 if [ -n "${FASTBUILD_DIR:-}" ]; then
   bash tools/lab/radiance/fastbuild.sh "$(git rev-parse HEAD)" "$FASTBUILD_DIR" | tail -2
   LOG="x: ok build_plan_id=$(basename $FASTBUILD_DIR)"
+elif [ -n "${BUILD_DIR:-}" ]; then
+  LOG="x: ok build_plan_id=$(basename $BUILD_DIR)"   # an existing build, used as it is (stock radiance has no libr3 to fastbuild)
 else
 LOG=$(PYTHONPATH=tools timeout 5400 python3 -m bigcherry build --lane radiance-lab:stock:linux-radiance --experiment moe-remote-handoff 2>&1 | grep -v warning | tail -n 4)
 fi

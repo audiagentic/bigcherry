@@ -58,6 +58,8 @@ Per layer collect active experts, routes-per-expert histogram, p50/p95/max run l
 
 Expert placement vs tensor slicing: prefer whole experts across GPUs; split an expert only when memory, severe imbalance or measured latency requires it, align FP8 slices to 128-element scale boundaries, and account for GU placement, DN partial reductions, synchronisation, communication and scale-plane slicing; decide placement from measured per-layer/expert activity and latency (RHP07), not geometry alone. Tuning profiles are keyed (weight_format, arch, H, I, projection, row_bucket) and follow the owner's rule: derive, calibrate once per model x device x build and cache (RCS10), not hand config. Depends on RAD13. Related: RCS10, RHP07.
 
+MTP-collapse bisection, closed out 2026-10-20 (owner: enough time spent). Engine-alone Qwen3.6-35B-A3B FP8 on the R9700 loses MTP draft acceptance at 4+ streams (0.02-0.07 vs 0.61 at 1-2) only with the prefix cache on; `--no-prefix-cache` restores 0.55-0.62 and 3-4x engine decode. Reproduces on near-native radiance (rad0005 compile fix only); absent on the dense Qwen3.8-27B MXFP4 and on Flash-Next (2xXTX). Ruled out: the expert mover (rad0006 freeze), our workers, checkpoint slots, speculation depth, visible stream mixing. Untested: the 35B at `--tp 2` on the XTX; staggered starts (config written); a fully stock build (libr3 may still load); no upstream issue filed. Workaround: `--no-prefix-cache` in every 35B MTP profile. Run specifics, configs, builds and numbers: docs/reference/engines/radiance/models/qwen3.6-35b-a3b.md.
+
 ## Change Log
 
 - 2026-10-19T12:49:22.719925+00:00 (created-by): Created by agent
