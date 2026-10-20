@@ -1,0 +1,11 @@
+# bc-gfx12: BigCherry's gfx1201 (R9700) kernel rows, listed ahead of libr4d in --kernels so a row wins where its constraints
+# hold and libr4d serves everything else (RAD15). Rows reuse libr4d's weight layout hooks, so the stored bytes are libr4d's.
+schema = 1
+name = "bc-gfx12"
+engine = "radiance"
+targets = ["gfx1201"]
+built-against = "v1.9.0"
+outputs = ["kernels/libbcgfx12.so"]
+
+[build]
+configure = { RADIANCE_SRC = "{engine_source}" }
