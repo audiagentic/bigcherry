@@ -26,7 +26,7 @@ The seam allows a helper GPU to compute cold routed experts rather than making t
 
 ## Evidence
 
-The motivation is documented on `feat/rad11-gfx1100-bootstrap` in `engines/radiance/kernels/README.md`, section “Flash-Next: radiance's own prefill stager, switched on”, which records cold-expert transfer pressure and the R9700 helper context. The 1.3.0 form reached the RAD09 acceptance (helper vs engine rel_l2 0.0011, prefill 2,760 tok/s, decode ~108.5, identical completion hash, 2026-10-15). This 1.7.0 re-authoring has had no build or GPU run; only application, idempotence and output identity against the 1.7.0 fixtures are checked, so the package remains `untested`.
+The motivation is documented in `docs/research/radiance-history/kernels-README-2026-10-12.md` (the kernels README from the unmerged feat/rad11-gfx1100-bootstrap branch, kept for history), section “Flash-Next: radiance's own prefill stager, switched on”, which records cold-expert transfer pressure and the R9700 helper context. The 1.3.0 form reached the RAD09 acceptance (helper vs engine rel_l2 0.0011, prefill 2,760 tok/s, decode ~108.5, identical completion hash, 2026-10-15). This 1.7.0 re-authoring has had no build or GPU run; only application, idempotence and output identity against the 1.7.0 fixtures are checked, so the package remains `untested`.
 
 ## Upstream
 
