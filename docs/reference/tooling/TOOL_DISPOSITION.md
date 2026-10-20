@@ -501,6 +501,7 @@ ownership.
 | `tools/lab/radiance/qwen35b-helper-kld.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark quality configuration, KL of the 35B XTX workers against the engine alone (RAD13). |
 | `tools/lab/radiance/qwen35b-helper-kld-run.sh` | **TRANSITIONAL** | `radiance` lab topic file; builds the moe-remote-handoff experiment and runs qwen35b-helper-kld.json (RAD13). |
 | `tools/lab/radiance/qwen35b-helper-capture.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark quality configuration that captures real worker requests of the 35B (RAD13). |
+| `tools/lab/radiance/qwen35b-helper-capture-decode.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark quality configuration that captures real worker requests of the 35B (RAD13). |
 | `tools/lab/radiance/qwen35b-helper-capture-run.sh` | **TRANSITIONAL** | `radiance` lab topic file; builds the experiment and runs qwen35b-helper-capture.json (RAD13). |
 | `tools/lab/radiance/capture_upgrade.py` | **TRANSITIONAL** | `radiance` lab topic file; upgrades Flash-Next worker captures from version 2 to 3 in place (RAD13). |
 | `tools/lab/radiance/fastbuild.sh` | **TRANSITIONAL** | `radiance` lab topic file; incremental rebuild of the moe worker and libr3moe inside an existing lane build for the edit-test loop (seconds instead of a fresh 25-minute lane build). |
