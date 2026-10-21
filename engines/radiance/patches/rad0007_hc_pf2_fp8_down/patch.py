@@ -246,6 +246,11 @@ __global__ __launch_bounds__(32) void hc_inj_pf2_bf16_kernel(
     const unsigned char* __restrict__ a8, const float* __restrict__ ascale,
     const unsigned short* __restrict__ injw, unsigned short* __restrict__ inj,
     long rows, long HN, int hc, long irow) {
+    /* RAD17 (GPT dev-agent review req_bigcherry_94835ab0ba2f): TRIED grouping 4 rows into each 128-thread
+     * block (4 waves, cutting block count 2048->512 at M=2048) to address inj's disproportionate 0.192ms
+     * share of the per-kernel breakdown. MEASURED NEUTRAL on real hardware: 1000.1us full-call vs the
+     * ~999.6-1030.6us baseline range -- no reproducible improvement, per GPT's own stated acceptance rule
+     * ("revert if neutral or slower"). Reverted to one wave (32 threads) per block. */
     constexpr int kInjMaxHc = 4;
     const long row = blockIdx.x;
     const int lane = threadIdx.x;
