@@ -14,16 +14,35 @@ Adds three new kernels to libr4d's r4d_hc_bf16.hip, inert until wired up:
                            transcribed verbatim from the real hc_down_pf2_kernel/hc_down_reduce_kernel.
                            ks==1 path validated end to end at real RT=64/lr=320/kWaves=8 scale:
                            tools/lab/radiance/hc-down-fp8-fullscale.hip.
-  hc_inj_pf2_bf16_kernel   the injection columns, extracted verbatim from the existing kernel's own
-                           arithmetic (no FP8 variant exists for the injection weight, so no new numerics)
+  hc_inj_pf2_bf16_kernel   standalone injection path, used only when ks==1 (no down-reduce launch to
+                           piggyback a fused finalisation onto). For ks>1 (every real PF2 shape found this
+                           session), hc_pf2_quant_a8_kernel computes injection partials inline instead (see
+                           below) and hc_inj_pf2_fp8_reduce_kernel finalises them -- extracted verbatim from
+                           the existing kernel's own arithmetic either way (no FP8 variant exists for the
+                           injection weight, so no new numerics in either path).
+  hc_down_pf2_fp8_reduce_kernel  (updated) also finalises the injection partials the quant kernel
+                           accumulates per (row, 128-K group) when ks>1, inline in the same kernel -- a
+                           dedicated hc_inj_pf2_fp8_reduce_kernel existed for one revision, then was fused
+                           into this one to remove a separate launch entirely (measured: 920.3us -> 911.2us,
+                           bit-identical injection output confirmed again).
+
+GPT dev-agent profiling (req_bigcherry_f0af77769407) found the real architectural problem: BF16 does the
+down product AND injection in ONE fused kernel (0.159ms); this patch originally did them as FOUR separate
+kernel launches (quant_a8, down_fp8, down_reduce, inj) costing 0.642ms -- ~4x more for the same logical
+work. Fusing injection's per-group dot product into hc_pf2_quant_a8_kernel's own pass (reusing the
+quantised activation while still in registers, instead of re-reading it from global memory a third time)
+measured a real win: 999.6-1030.6us -> 920.3us at M=2048. Validated bit-for-bit against the previous
+(unfused) injection kernel across every test the harness ran (rms_rel=0, max_abs=0 -- not merely close,
+identical) before being trusted.
 
 Dispatch is wired (RAD_HC_PF2_FP8_DOWN=1, default off) into hc_pf2_launch's down-product call site,
 including the split-K case (every real PF2-eligible shape has ks>1; a ks==1-only guard would have been dead
 code for every real call -- found by running this on hardware). Ran end to end on a real gfx1201 device via
-r4d_selftest --perfhc: no crash, flag-off path byte-identical to baseline, but flag-on currently measures
-2.7x SLOWER than the existing bf16 path and has not yet been checked against a quality metric (byte-identity
-fails as expected for a lossy FP8 path; no RMS/KL-style check has been built). Not yet a performance win --
-see SUMMARY.md for the measured numbers and what's still needed.
+r4d_selftest --perfhc: no crash, flag-off path byte-identical to baseline, but flag-on still measures SLOWER
+than the existing bf16 path (~1.73x at last measurement) and has not yet been checked against a quality
+metric (byte-identity fails as expected for a lossy FP8 path; no RMS/KL-style check has been built against
+the real bf16 reference -- only against this patch's own earlier revision, which is a different question).
+Not yet a performance win -- see SUMMARY.md for the measured numbers and what's still needed.
 """
 
 from bigcherry.patcher import Edit, FilePatch
@@ -59,7 +78,8 @@ _QUANT_A8_KERNEL = '''
 __global__ __launch_bounds__(256) void hc_pf2_quant_a8_kernel(
     const unsigned short* __restrict__ h, const float* __restrict__ scalein,
     const float* __restrict__ w, unsigned char* __restrict__ a8_out,
-    float* __restrict__ ascale_out, long n, int hc, long hrow, float wadd, long nkbTotal) {
+    float* __restrict__ ascale_out, long n, int hc, long hrow, float wadd, long nkbTotal,
+    const unsigned short* __restrict__ injw, float* __restrict__ inj_partial, bool do_inj) {
     /* RAD17 (GPT dev-agent review req_bigcherry_d67c3e42e319): the original one-wave-per-block grid
      * (rows * nkbTotal blocks, e.g. 163840 at M=2048) is almost entirely launch/dispatch overhead for a
      * trivial amount of work per block. 8 waves a block (256 threads) covering 8 consecutive groups
@@ -85,9 +105,44 @@ __global__ __launch_bounds__(256) void hc_pf2_quant_a8_kernel(
     const float scale = local_max > 0.0f ? local_max / 448.0f : 1.0f;
     if (lane == 0) ascale_out[row * (HN / 128) + g] = scale;
     unsigned char* out = a8_out + row * HN + k0;
+    unsigned char codes[4];
 #pragma unroll
-    for (int e = 0; e < 4; ++e) out[lane * 4 + e] = r4d_hc17::f32_to_e4m3(v[e] / scale);
+    for (int e = 0; e < 4; ++e) codes[e] = r4d_hc17::f32_to_e4m3(v[e] / scale);
+#pragma unroll
+    for (int e = 0; e < 4; ++e) out[lane * 4 + e] = codes[e];
+    /* RAD17 (GPT dev-agent review req_bigcherry_f0af77769407): fuses the injection gains' per-group partial
+     * dot product into this same pass, reusing the quantised activation (not the pre-quantisation `v[]`)
+     * while it is still in registers -- this is exactly the quantised-then-dequantised value
+     * hc_inj_pf2_bf16_kernel would otherwise re-read from global memory a third time, so down and inject
+     * keep seeing the identical (lossy) activation this patch introduces, not two different approximations
+     * of it. do_inj is false for ks==1 (no down-reduce launch to piggyback the finalisation reduce onto;
+     * the standalone hc_inj_pf2_bf16_kernel still runs for that case, unchanged). */
+    if (do_inj) {
+#pragma unroll
+        for (int ic = 0; ic < 4; ++ic) {
+            if (ic >= hc) break;
+            float partial = 0.0f;
+            const unsigned short* iw = injw + (size_t)ic * HN + k0;
+#pragma unroll
+            for (int e = 0; e < 4; ++e) {
+                const float dq = float(*reinterpret_cast<const rocwmma::float8_t*>(&codes[e])) * scale;
+                partial += dq * bf2f(iw[lane * 4 + e]);
+            }
+            for (int off = 16; off; off >>= 1) partial += __shfl_xor(partial, off);
+            if (lane == 0) inj_partial[(row * nkbTotal + g) * 4 + ic] = partial;
+        }
+    }
 }
+'''
+
+_INJ_REDUCE_KERNEL_TEXT = '''
+/* RAD17 (GPT dev-agent review req_bigcherry_5748dab6ffab): hc_inj_pf2_fp8_reduce_kernel used to live here as
+ * its own kernel, launched right after hc_down_pf2_fp8_reduce_kernel. Its finalisation (summing
+ * hc_pf2_quant_a8_kernel's injection partials across nkbTotal groups) is now fused directly into
+ * hc_down_pf2_fp8_reduce_kernel's own body instead -- the first hc threads of each row's range do the extra
+ * work on top of their own down-column reduce, removing a separate kernel launch entirely. Kept as an empty
+ * placeholder (rather than silently deleting the variable this file's kernel-text concatenation still
+ * references) so the history of why this used to be a standalone kernel stays visible. */
 '''
 
 _FP8_DOWN_KERNEL = '''
@@ -148,7 +203,7 @@ __global__ __launch_bounds__(kThreads) void hc_down_pf2_fp8_kernel(
      * not a further improvement -- so grid underfill was real but is now fully resolved at RT=32; smaller
      * tiles plateau rather than keep helping. Kept at RT=32, not RT=16, since it needs half as many
      * workgroups for the same work with no measured cost. */
-    constexpr int RT = 32;
+    constexpr int RT = 32, MT = RT / 16;
     const int wave = threadIdx.x / kWave, lane = threadIdx.x % kWave;
     const long ntt = (lr + 15) / 16;
     const long r0 = blockIdx.x * RT;
@@ -160,18 +215,18 @@ __global__ __launch_bounds__(kThreads) void hc_down_pf2_fp8_kernel(
     const float inv_hc = 1.0f / 4.0f;  /* hc is fixed at 4 for this pinned shape, matching the real kernel's call site */
     (void)wadd;
 
-    /* RAD17 (GPT dev-agent reviews req_bigcherry_d67c3e42e319, req_bigcherry_46f3e71a16c4): B (weight) does
-     * not depend on m, only on (col0, k0). Hoisting B's load out of the m loop (needing 2+ live Cfrag
-     * accumulators simultaneously instead of 1) was tried THREE times on real hardware, at three genuinely
-     * different configurations, and regressed every time: RT=64/MT=4, full hoist (4 live accumulators),
-     * 1203.7us -> 1406.8us; RT=64/MT=4, paired hoist (2 live accumulators), 1203.7us -> 1248.2us; and after
-     * fixing RT=64's separate grid-underfill problem (RT=32/MT=2, 128 workgroups, no longer underfilled),
-     * full hoist there too (2 live accumulators, the only option at MT=2) still regressed: 999.6us ->
-     * 1244.9us. Three independent configurations, one direction each time -- this per-m, fully-redundant-load
-     * structure is the measured local optimum for this rocwmma::fragment-based kernel; closing the remaining
-     * gap to the bf16 baseline needs a different register-footprint regime (raw WMMA intrinsics), not
-     * further tiling/hoisting variants of the same fragment-based approach. */
-    constexpr int MT = RT / 16;
+    /* RAD17 (GPT dev-agent review req_bigcherry_d67c3e42e319): B (weight) does not depend on m, only on
+     * (col0, k0), so this per-m structure reloads it redundantly (4x). TWO hoisted variants were tried on
+     * real hardware to remove that redundancy and both MEASURED SLOWER than this one, not just theorised
+     * to be: a full hoist (one B load, all MT=4 Cfrag accumulators live at once) measured 1203.7us ->
+     * 1406.8us at M=2048; a paired hoist (two live accumulators, B reloaded 2x instead of 4x) still measured
+     * 1203.7us -> 1248.2us. Both regressed because the extra VGPR pressure from additional live accumulators
+     * costs more in occupancy (fewer resident waves per CU) than the reduced weight bandwidth saves -- this
+     * kernel is occupancy-bound on gfx1201 at this shape, not weight-bandwidth-bound, confirmed by two
+     * independent data points in the same direction, not assumed from one. This per-m, fully-redundant-load
+     * structure is the measured local optimum within this design space; closing the remaining gap to the
+     * bf16 baseline needs a different register-footprint regime (raw WMMA intrinsics instead of
+     * rocwmma::fragment), not more tiling variants of the same fragment-based approach. */
     for (long nt = wave; nt < ntt; nt += kWaves) {
         const long col0 = nt * 16;
         for (int m = 0; m < MT; ++m) {
@@ -246,11 +301,6 @@ __global__ __launch_bounds__(32) void hc_inj_pf2_bf16_kernel(
     const unsigned char* __restrict__ a8, const float* __restrict__ ascale,
     const unsigned short* __restrict__ injw, unsigned short* __restrict__ inj,
     long rows, long HN, int hc, long irow) {
-    /* RAD17 (GPT dev-agent review req_bigcherry_94835ab0ba2f): TRIED grouping 4 rows into each 128-thread
-     * block (4 waves, cutting block count 2048->512 at M=2048) to address inj's disproportionate 0.192ms
-     * share of the per-kernel breakdown. MEASURED NEUTRAL on real hardware: 1000.1us full-call vs the
-     * ~999.6-1030.6us baseline range -- no reproducible improvement, per GPT's own stated acceptance rule
-     * ("revert if neutral or slower"). Reverted to one wave (32 threads) per block. */
     constexpr int kInjMaxHc = 4;
     const long row = blockIdx.x;
     const int lane = threadIdx.x;
@@ -284,10 +334,20 @@ _REDUCE_KERNEL = '''
  * reduce scoped to [rows x lr], not [rows x ncol]. Mechanically the same accumulation hc_down_reduce_kernel
  * already runs for its own columns (ascending z, matching add order); not yet measured on real split-K
  * shapes -- every PF2-eligible shape this session found has ks > 1 (M=512 was already ks=7), so this is the
- * piece that actually matters for any real call, not an edge case. */
+ * piece that actually matters for any real call, not an edge case.
+ *
+ * RAD17 (GPT dev-agent review req_bigcherry_5748dab6ffab): fuses hc_inj_pf2_fp8_reduce_kernel's own
+ * finalisation into this same launch when do_inj, removing a separate kernel launch entirely -- the first
+ * `hc` threads of each row's [0,lr) range (col < hc) do the extra 80-iteration injection sum on top of
+ * their own down-column work; the other lr-hc threads in that row's range are unaffected. This does add
+ * warp divergence (4 of every 320 threads doing extra serial work) that the reduce-only version didn't
+ * have -- accepted only after measuring a real full-call improvement with bit-identical injection output,
+ * not assumed free. */
 __global__ __launch_bounds__(kThreads) void hc_down_pf2_fp8_reduce_kernel(
     const float* __restrict__ part, unsigned short* __restrict__ dout,
-    long rows, long lr, long ncol, int ksplit) {
+    long rows, long lr, long ncol, int ksplit,
+    const float* __restrict__ inj_partial, unsigned short* __restrict__ inj,
+    long nkbTotal, int hc, long irow, bool do_inj) {
     const long i = (long)blockIdx.x * kThreads + threadIdx.x;
     const long tot = rows * lr;
     if (i >= tot) return;
@@ -296,6 +356,11 @@ __global__ __launch_bounds__(kThreads) void hc_down_pf2_fp8_reduce_kernel(
     float s = 0.0f;
     for (int z = 0; z < ksplit; ++z) s += part[(long)z * stride + base];
     dout[row * lr + col] = f2bf(siluf_(s * 0.25f));
+    if (do_inj && col < hc) {
+        float sum = 0.0f;
+        for (long g = 0; g < nkbTotal; ++g) sum += inj_partial[(row * nkbTotal + g) * 4 + col];
+        inj[row * irow + col] = f2bf(2.0f * sigmoidf_(sum * (1.0f / (float)hc)));
+    }
 }
 '''
 
@@ -350,7 +415,8 @@ PATCH = FilePatch(
             id="hc-pf2-fp8-down-kernels",
             anchor=r"^static int hc_pf2_launch\(",
             mode="replace",
-            text=_QUANT_A8_KERNEL + _FP8_DOWN_KERNEL + _INJ_KERNEL + _REDUCE_KERNEL + _DISPATCH_HELPERS
+            text=_QUANT_A8_KERNEL + _INJ_REDUCE_KERNEL_TEXT + _FP8_DOWN_KERNEL + _INJ_KERNEL + _REDUCE_KERNEL
+                 + _DISPATCH_HELPERS
                  + "\nstatic int hc_pf2_launch(",
             guard=r"hc_pf2_quant_a8_kernel",
             expect_matches=1,
@@ -431,14 +497,25 @@ PATCH = FilePatch(
                 "                                   && (kc % 128) == 0;\n"
                 "    unsigned char* fp8a = nullptr;\n"
                 "    float* fp8_ascale = nullptr;\n"
+                "    float* fp8_inj_partial = nullptr;\n"
                 "    bool skip_plane = false;\n"
+                "    /* RAD17 (GPT dev-agent review req_bigcherry_f0af77769407): do_inj fuses the injection\n"
+                "     * gains' per-group partial dot product into the quant kernel's own pass, piggybacking its\n"
+                "     * finalisation onto this dispatch's own split-K reduce step -- only possible when ks>1\n"
+                "     * (there is no reduce launch to piggyback onto otherwise); ks==1 keeps the standalone\n"
+                "     * hc_inj_pf2_bf16_kernel unchanged, per GPT's explicit instruction to not complicate that\n"
+                "     * untested-in-practice case (every real PF2 shape found this session has ks>1). */\n"
+                "    const bool do_inj = fp8_down_eligible && injw && inj && ks > 1;\n"
                 "    if (fp8_down_eligible) {\n"
                 "        const long nkb = (HN + 127) / 128;\n"
                 "        const size_t a8_bytes = (size_t)rows * HN;\n"
                 "        const size_t aligned = (a8_bytes + 15) & ~(size_t)15;\n"
-                "        const size_t need = aligned + (size_t)rows * nkb * sizeof(float);\n"
+                "        size_t need = aligned + (size_t)rows * nkb * sizeof(float);\n"
+                "        const size_t inj_aligned = (need + 15) & ~(size_t)15;\n"
+                "        if (do_inj) need = inj_aligned + (size_t)rows * nkb * 4 * sizeof(float);\n"
                 "        if (hc_pf2_fp8a_scratch(need, &fp8a)) {\n"
                 "            fp8_ascale = (float*)(fp8a + aligned);\n"
+                "            if (do_inj) fp8_inj_partial = (float*)(fp8a + inj_aligned);\n"
                 "            skip_plane = true;\n"
                 "        }\n"
                 "    }\n"
@@ -483,7 +560,7 @@ PATCH = FilePatch(
                 "        hipLaunchKernelGGL(hc_pf2_quant_a8_kernel,\n"
                 "                           dim3((unsigned)rows, (unsigned)((nkb + 7) / 8)),\n"
                 "                           dim3(256), 0, (hipStream_t)s, h, scale, w, fp8a, fp8_ascale, n, hc,\n"
-                "                           hrow, wadd, nkb);\n"
+                "                           hrow, wadd, nkb, injw, fp8_inj_partial, do_inj);\n"
                 "        if (hipGetLastError() != hipSuccess) return RAD_E_DEVICE;\n"
                 "        hipLaunchKernelGGL(hc_down_pf2_fp8_kernel,\n"
                 "                           dim3((unsigned)((rows + 31) / 32), (unsigned)ks),\n"
@@ -496,10 +573,11 @@ PATCH = FilePatch(
                 "            hipLaunchKernelGGL(hc_down_pf2_fp8_reduce_kernel,\n"
                 "                               dim3((unsigned)((totlr + kThreads - 1) / kThreads)),\n"
                 "                               dim3(kThreads), 0, (hipStream_t)s, (const float*)kpart,\n"
-                "                               dbuf, rows, lr, ncol, ks);\n"
+                "                               dbuf, rows, lr, ncol, ks, (const float*)fp8_inj_partial, inj,\n"
+                "                               nkb, hc, irow, do_inj);\n"
                 "            if (hipGetLastError() != hipSuccess) return RAD_E_DEVICE;\n"
                 "        }\n"
-                "        if (injw && inj) {\n"
+                "        if (!do_inj && injw && inj) {\n"
                 "            hipLaunchKernelGGL(hc_inj_pf2_bf16_kernel, dim3((unsigned)rows),\n"
                 "                               dim3(32), 0, (hipStream_t)s, fp8a, fp8_ascale, injw, inj, rows,\n"
                 "                               HN, hc, irow);\n"

@@ -103,6 +103,36 @@ RAD17 status: ALL correctness-risk pieces are now validated on real data (quanti
 
 Next: finish hc_down_pf2_fp8_kernel's epilogue (the TODO), implement hc_inj_pf2_bf16_kernel (extraction, no new numerics), then wire the dispatch guard (RAD_HC_PF2_FP8_DOWN, kc%128==0, the other eligibility checks from GPT's design) into hc_pf2_launch -- only once that's done does this patch do anything at runtime, and only then can r4d_selftest / the KL harness actually exercise it.
 
+2026-10-21/22 implemented GPT's grid-underfill diagnosis (req_bigcherry_46f3e71a16c4, session ses_0e45b277c600463c -- the session we're reusing for this whole iterative pass). GPT read the actual kernel code and found the real, confirmable cause of the occupancy sensitivity from the previous two reverted attempts: at M=2048/ks=2, RT=64 gave the FP8 down kernel's grid only 64 workgroups -- matching the R9700's CU count exactly, a genuine grid-underfill bottleneck, independent of and untested by the accumulator-hoisting attempts.
+
+Halved RT to 32 for the FP8 kernel only (own constant, not kPf2RT -- bf16 kernel unaffected). Measured: 1203.7us->999.6us at M=2048 on real hardware -- the single largest win this entire session. Also tried RT=16 per GPT's own stopping rule ('if RT32 improves, test RT16 next'): measured 999.2us, statistically identical to RT=32 -- confirms grid underfill is now FULLY resolved, not partially; smaller tiles plateau. Kept at RT=32. PR #373 open.
+
+Session running total: 1457.6us->999.6us (~31.4% faster), now ~1.9x slower than the 530.7us bf16 baseline -- closer, still not a win. Flag off re-verified byte-identical/unaffected at every single step across this whole optimization pass.
+
+Workflow note: per explicit user instruction, continuing this as an iterative implement->test-on-hardware->report-to-GPT-in-the-same-session->repeat loop. Next: report this RT=32/RT=16 result back to GPT in ses_0e45b277c600463c and ask for the next concrete step.
+
+2026-10-21/22 MAJOR FINDING AND WIN: GPT dev-agent profiling (req_bigcherry_f0af77769407), a full paired BF16-vs-FP8 stage comparison using the same instrumented binary (flag off vs flag on, event markers after every kernel including output-quant), found the real architectural problem that all the prior down-kernel tiling/hoisting work was NOT addressing: BF16's hc_down_pf2_kernel does the down product AND injection together in ONE fused kernel, costing 0.159ms total. This patch's equivalent logical work -- hc_pf2_quant_a8_kernel + hc_down_pf2_fp8_kernel + hc_down_pf2_fp8_reduce_kernel + the (then-separate) hc_inj_pf2_bf16_kernel, FOUR kernel launches -- cost 0.642ms, roughly 4x more expensive for the same computation, DESPITE reading less weight data from global memory than BF16's decoded plane. prep/up_mix/output-quant measured nearly identical between both paths, confirming the entire gap was concentrated in down+inject specifically, not spread across the pipeline.
+
+Fix: fused injection's per-group partial dot product into hc_pf2_quant_a8_kernel's own pass, reusing the quantised activation while still in registers instead of re-reading it from global memory a third time (new hc_inj_pf2_fp8_reduce_kernel finalises the accumulated partials, piggybacked on the same dispatch step as the down-product's own split-K reduce; ks==1 keeps the old standalone hc_inj_pf2_bf16_kernel unchanged since there's no reduce launch to piggyback onto in that case -- every real PF2 shape found this session has ks>1 anyway, so this is effectively always the fused path in practice).
+
+Measured on real gfx1201 hardware: 999.6-1030.6us -> 920.3us at M=2048 -- a real, substantial win. CRITICALLY, validated BIT-FOR-BIT against the previous (unfused) injection kernel's own output, same input, same run, across every test case the harness ran: rms_rel=0, max_abs=0 -- every single comparison, not merely close -- confirming the fusion refactor is mathematically identical to the already-reviewed prior kernel, not just plausible-looking, before being trusted. (Built a throwaway host-side bf16 comparison helper since bf2f is device-only -- real bf16 bit-layout conversion via union, not an approximation.)
+
+Also closed out accumulator-hoisting as a dead end for good: retested the B-fragment hoist at the NEW RT=32/MT=2 shape (only 2 live accumulators needed, grid no longer underfilled by the earlier RT fix) per GPT's own suggestion that the earlier RT=64 hoist regressions might not transfer -- it STILL regressed (999.6us -> 1244.9us), a THIRD independent data point in the same direction. This closes the question definitively: more rocwmma::fragment tiling/hoisting variants are not the path forward on this kernel shape.
+
+Session running total: 1457.6us -> 920.3us (~36.9% faster overall this session), now ~1.73x slower than the 530.7us bf16 baseline -- meaningfully closer, still not a win. PR #378 open (branch feat/rad0007-fuse-injection, on top of merged #371-#376).
+
+Still outstanding: a real quality metric (RMS/KL) against the ACTUAL bf16 reference output (not just the bit-for-bit self-consistency check above, which is a narrower, different question -- confirms the refactor didn't introduce a NEW bug, says nothing about how close the lossy FP8 path's inj/down/x outputs are to the real bf16 numbers). GPT's earlier review flagged this as still required before any promotion decision, independent of how much faster the path gets.
+
+Workflow note: continuing the implement->test-on-hardware->report-to-GPT-in-the-same-session (ses_0e45b277c600463c)->repeat loop per explicit user instruction.
+
+2026-10-22 fused the two FP8 reduce kernels (hc_down_pf2_fp8_reduce_kernel now also finalises injection partials inline, removing hc_inj_pf2_fp8_reduce_kernel's separate launch for ks>1). Measured 920.3us->~911-915us at M=2048 across 4 repeated runs -- small (~1%) but real and reproducible. Validated bit-for-bit against the REAL hc_inj_pf2_bf16_kernel reference directly this time (not just the prior patch revision): rms_rel=0, max_abs=0. Pushed as a new commit on PR #378 (same PR as the quant+inj fusion).
+
+Session running total: 1457.6us->~912us (~37.4% faster overall), still ~1.72x slower than the 530.7us bf16 baseline.
+
+Reported back to GPT (req_bigcherry_a3f02be7f186, same reused session ses_0e45b277c600463c) asking: whether launch-count fusion is now exhausted (quant_a8 and down_fp8 are the only two FP8-specific kernels left, and GPT already said quant-into-down fusion needs substantial LDS/loop restructuring, not a cheap win); what the smallest testable first step for a raw-WMMA rewrite of down_fp8 would be, isolated as a single-variable change; and whether a 2x improvement on down_fp8 specifically (needed to make the whole pipeline competitive) is a realistic expectation for raw WMMA on this hardware, or optimistic. Response pending.
+
+Unrelated but valuable finding this round, in response to the user's direct question about CI build times: confirmed via real log inspection that the ~20-30min radiance-build CI job is NOT wasted on repeated apt-get/docker setup (that's only ~40 seconds) -- it's a genuine 147-object-file C++/HIP compile from scratch every time, because ccache has never actually hit (GitHub Actions scopes caches per-branch, and this workflow never ran ON main itself to populate a cache other branches could reach -- PR #377, open, fixes this by also triggering on push to main).
+
 ## Change Log
 
 - 2026-10-21T07:41:01.749670+00:00 (created-by): Created by agent
@@ -113,3 +143,6 @@ Next: finish hc_down_pf2_fp8_kernel's epilogue (the TODO), implement hc_inj_pf2_
 - 2026-10-21T08:02:59.795128+00:00 (updated-by): Updated: section:notes
 - 2026-10-21T08:05:29.531266+00:00 (updated-by): Updated: section:notes
 - 2026-10-21T08:13:09.220715+00:00 (updated-by): Updated: section:notes
+- 2026-10-21T19:39:39.409088+00:00 (updated-by): Updated: section:notes
+- 2026-10-21T21:32:59.492280+00:00 (updated-by): Updated: section:notes
+- 2026-10-21T21:46:55.745667+00:00 (updated-by): Updated: section:notes
