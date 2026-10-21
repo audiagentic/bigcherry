@@ -13,6 +13,22 @@ work: L
 
 # Q8_0 MTP verify widths 2–5: exact Q8_1 admission, not raw-F32 widening
 
+## 2026-10-21: gfx1100 verify-band Q8_1 producer fusion (BCOP354)
+
+**HOLD_EXISTING_PRODUCER_RECEIPT; no patch or GPU queue.** [Fork #192](https://github.com/stew675/llama-cpp-rdna-boosts/pull/192) (last update 2026-10-20 13:22 UTC) opens its existing Q8_1 producer fusions to gfx1100 MTP verify width2-8. Pinned b11552 and current upstream master lack its verify_band predicate, GGML_CUDA_FUSE_Q8_1_VERIFY, ggml_cuda_glu_q8_1_mark and separate ggml-cuda-try-fuse.cu. Direct port of the fork's one-line architecture gate cannot compile. Do not revive rejected 1301 raw-F32 widening.
+
+**Existing implementation:** pinned ggml/src/ggml-cuda/mmvq.cuh:3 sets MMVQ_MAX_BATCH_SIZE=8. mmvq.cu::ggml_cuda_mul_mat_vec_q uses ctx.pool Q8_1 allocation, quantize_row_q8_1_cuda and typed MMVQ. Its ggml-cuda.cu epilogue fusion requires dense width1; producer Q8_1 fusion is separate. Validated 1307 already merges 1235 cache, 1309 RMSNorm+MUL, 1310 unary/gated, 1311 HC pre-mix and 1312 unary*MUL producers. bc_act_q81_try has no width1 predicate: contiguous F32, K divisible by 32, decode graph, matching flatten/key and successful stable-slab reservation suffice. RMSNorm additionally requires K>=1024 and contiguous multiplier. Per-context cache key includes view offset, strides, stream and graph generation; preserve graph capture and native fallback.
+
+**Potential gap, not measured:** 1307 sets ggml_hip_q81_decode_graph only if every quantized MUL_MAT and MUL_MAT_ID in the graph has activation/expert width <=8. An unrelated wide quantized node can disable otherwise eligible width2-5 producers. Never weaken this correctness fence without a real graph witness. For K=2560, width W, standalone quantization logically reads 10 KiB*W F32 and writes 2880*W Q8_1 bytes (36 bytes per 32 values); fused producer still performs quantization and writes F32/Q8_1. No measured HBM or E2E saving follows.
+
+**Evidence:** QFP13 historical first-party per-XTX quantize launches/token fell 183->~30 across 1307 producers; final 45->29.8 reduction was neutral to -1% E2E at 24K/80K. Remaining launches are not attributed by verify width. Fork #192 reports on single gfx1100 Q4_K_M MTP3 Q8_1 launches 42,772->1,694, summed GPU time -2.9%, E2E +1.9-2.0% and identical greedy hashes. External, not BigCherry; below >=3% promotion. vLLM FP8/NVFP4 act_quant_fusion and SGLang CUDA GGUF do not implement GGUF Q8_1 HIP parity.
+
+**Gate 0:** reuse existing terminal PRBE113/QFP13 and BIGCHERRY_Q81_TRACE receipts. Correlate exact model/pin/1307 flags, GPU UUID, rank, MMVQ width1-8, producer ne/nb/view, graph-wide decode gate, cache hit/miss/publish, quantize launches, stream/graph UID, VGPR/LDS/spills, wave32/64, physical work/bytes, fixed-draft MTP acceptance and exposed serialized E2E. No overlapping hardware job. Close ALREADY_COVERED_1307, NO_VERIFY_ROUTE, GRAPH_GLOBAL_INELIGIBLE, NO_MATCHING_PRODUCER or BELOW_CEILING if optimistic removable E2E <2.9126%.
+
+**Conditional implementation:** one existing 1307-owned producer/cache-key correction only after positive receipt; exact same-device/stream/shape/offset/generation, native 36-byte Q8_1 block parity (F16 scale/sum, rounding, padding), alias and multi-consumer safety, stable graph pointers and fallback. Do not add another cache, selector, allocator, telemetry or MMVQ arithmetic. Qualify dual gfx1100 Q8_0 MTP3/4/5 at 8K/32K/80K+, gfx1201 only if independently eligible, gfx1030 negative, multi-request/ubatch, full logits/KLD/greedy/acceptance and work/transfer parity; >=4 sessions x >=10 ABBA pairs, CI95-low >=3% E2E and <=1% controls. Otherwise NO_GAIN/NUMERIC_DRIFT.
+
+**Ownership:** PRBE115 exact-Q8_1 verify, 1307/PRBE05/06 implementation, PRBE113 width receipt, QFP13 launch ranking, 1241 F32 width1, QFP10 Q4_K routed VDR, PRBE111 IQ. RAD15/16 active work untouched. This audit: 8/8 source assertions, 5 host-only unittest groups (4,000 seeded shapes), Python compile; no GPU build/benchmark.
+
 ## 2026-10-14 b11552 implementation audit (BCOP200)
 
 **Disposition: pending, receipt-first.** Retire the generic "hoisted dequant" suggestion and any repeat of rejected 1301. Stock Q8_1 quantization and integer dot are not numerically equivalent to 1241's raw-F32 FMA; a width2–5 verify kernel cannot inherit width1 performance or claim unchanged MTP acceptance. Do not queue hardware while Radiance/helper work is active.
