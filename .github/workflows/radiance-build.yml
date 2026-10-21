@@ -45,15 +45,27 @@ jobs:
           restore-keys: |
             radiance-upstream-
 
+      # Without this the actual compile (not the clone above) runs from scratch every time regardless of how
+      # small the diff is -- recipes.toml wires every compiler CMake invokes here (host C/C++ and the HIP
+      # device-code compiler) through ccache, so this is what makes that actually pay off across CI runs.
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: work/.ccache
+          key: radiance-ccache-${{ github.run_id }}
+          restore-keys: |
+            radiance-ccache-
+
       - name: Build in the ROCm image
         run: |
           docker run --rm -v "$GITHUB_WORKSPACE:/src" -w /src rocm/dev-ubuntu-24.04:7.2.4 bash -euxo pipefail -c '
             apt-get update
-            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git cmake ninja-build python3 python3-pip g++-14 gcc-14 ca-certificates
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git cmake ninja-build python3 python3-pip g++-14 gcc-14 ca-certificates ccache
             git config --global --add safe.directory /src
             git config --global --add safe.directory /src/work/upstream/radiance.git
             export RADIANCE_HOST_CC=gcc-14 RADIANCE_HOST_CXX=g++-14 ROCM_PATH=/opt/rocm PYTHONPATH=tools
-            mkdir -p work/upstream
+            export CCACHE_DIR=/src/work/.ccache
+            mkdir -p work/upstream work/.ccache
             if [ -d work/upstream/radiance.git ]; then
               git -C work/upstream/radiance.git worktree prune
               git -C work/upstream/radiance.git fetch --prune origin "+refs/*:refs/*"

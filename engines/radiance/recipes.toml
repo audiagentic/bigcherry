@@ -99,6 +99,11 @@ min-free-vram-bytes-per-device = 268435456
 [platform.linux-radiance]
 description = "brutus: radiance engine build (GCC 14 host compiler; ROCm from PATH)"
 targets = ["gfx1201"]
-options = { RAD_BUILD_TESTS = "OFF" }
+# ccache wraps every compiler CMake invokes (host C/C++ AND the HIP device-code compiler) so a
+# from-scratch build after a small source change only recompiles the touched translation units --
+# unconditional here since ccache is present on every host this platform builds on (Brutus and the
+# CI image both have it); if a future host lacks it, configure fails loudly rather than silently
+# rebuilding everything, which is the right failure mode to notice and fix.
+options = { RAD_BUILD_TESTS = "OFF", CMAKE_C_COMPILER_LAUNCHER = "ccache", CMAKE_CXX_COMPILER_LAUNCHER = "ccache", CMAKE_HIP_COMPILER_LAUNCHER = "ccache" }
 c-compiler = "${RADIANCE_HOST_CC}"
 cxx-compiler = "${RADIANCE_HOST_CXX}"
