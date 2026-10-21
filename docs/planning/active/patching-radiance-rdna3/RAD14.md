@@ -64,3 +64,19 @@ MTP-collapse bisection, closed out 2026-10-20 (owner: enough time spent). Engine
 
 - 2026-10-19T12:49:22.719925+00:00 (created-by): Created by agent
 - 2026-10-19T12:49:39.590595+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:notes
+
+## Ledger-events
+
+
+
+
+
+
+
+
+
+
+
+
+- chg_20261020_084720_qwen36-35b-a3b-served-with-th_8103
+- 2026-10-21T03:57:21.239912+00:00 (updated-by): Updated: section:ledger-events
