@@ -148,7 +148,7 @@ __global__ __launch_bounds__(kThreads) void hc_down_pf2_fp8_kernel(
      * not a further improvement -- so grid underfill was real but is now fully resolved at RT=32; smaller
      * tiles plateau rather than keep helping. Kept at RT=32, not RT=16, since it needs half as many
      * workgroups for the same work with no measured cost. */
-    constexpr int RT = 32, MT = RT / 16;
+    constexpr int RT = 32;
     const int wave = threadIdx.x / kWave, lane = threadIdx.x % kWave;
     const long ntt = (lr + 15) / 16;
     const long r0 = blockIdx.x * RT;
@@ -160,18 +160,18 @@ __global__ __launch_bounds__(kThreads) void hc_down_pf2_fp8_kernel(
     const float inv_hc = 1.0f / 4.0f;  /* hc is fixed at 4 for this pinned shape, matching the real kernel's call site */
     (void)wadd;
 
-    /* RAD17 (GPT dev-agent review req_bigcherry_d67c3e42e319): B (weight) does not depend on m, only on
-     * (col0, k0), so this per-m structure reloads it redundantly (4x). TWO hoisted variants were tried on
-     * real hardware to remove that redundancy and both MEASURED SLOWER than this one, not just theorised
-     * to be: a full hoist (one B load, all MT=4 Cfrag accumulators live at once) measured 1203.7us ->
-     * 1406.8us at M=2048; a paired hoist (two live accumulators, B reloaded 2x instead of 4x) still measured
-     * 1203.7us -> 1248.2us. Both regressed because the extra VGPR pressure from additional live accumulators
-     * costs more in occupancy (fewer resident waves per CU) than the reduced weight bandwidth saves -- this
-     * kernel is occupancy-bound on gfx1201 at this shape, not weight-bandwidth-bound, confirmed by two
-     * independent data points in the same direction, not assumed from one. This per-m, fully-redundant-load
-     * structure is the measured local optimum within this design space; closing the remaining gap to the
-     * bf16 baseline needs a different register-footprint regime (raw WMMA intrinsics instead of
-     * rocwmma::fragment), not more tiling variants of the same fragment-based approach. */
+    /* RAD17 (GPT dev-agent reviews req_bigcherry_d67c3e42e319, req_bigcherry_46f3e71a16c4): B (weight) does
+     * not depend on m, only on (col0, k0). Hoisting B's load out of the m loop (needing 2+ live Cfrag
+     * accumulators simultaneously instead of 1) was tried THREE times on real hardware, at three genuinely
+     * different configurations, and regressed every time: RT=64/MT=4, full hoist (4 live accumulators),
+     * 1203.7us -> 1406.8us; RT=64/MT=4, paired hoist (2 live accumulators), 1203.7us -> 1248.2us; and after
+     * fixing RT=64's separate grid-underfill problem (RT=32/MT=2, 128 workgroups, no longer underfilled),
+     * full hoist there too (2 live accumulators, the only option at MT=2) still regressed: 999.6us ->
+     * 1244.9us. Three independent configurations, one direction each time -- this per-m, fully-redundant-load
+     * structure is the measured local optimum for this rocwmma::fragment-based kernel; closing the remaining
+     * gap to the bf16 baseline needs a different register-footprint regime (raw WMMA intrinsics), not
+     * further tiling/hoisting variants of the same fragment-based approach. */
+    constexpr int MT = RT / 16;
     for (long nt = wave; nt < ntt; nt += kWaves) {
         const long col0 = nt * 16;
         for (int m = 0; m < MT; ++m) {
