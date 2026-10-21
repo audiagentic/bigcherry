@@ -56,13 +56,20 @@ _QUANT_A8_KERNEL = '''
  * * (w + wadd)) has NOT yet been separately re-measured against a fresh hardware dump of real h/scalein/w --
  * it is proven correct by being the same formula stageA already runs, not by a new standalone harness; that
  * harness is the next thing to build if this kernel's output is doubted beyond code review. */
-__global__ __launch_bounds__(32) void hc_pf2_quant_a8_kernel(
+__global__ __launch_bounds__(256) void hc_pf2_quant_a8_kernel(
     const unsigned short* __restrict__ h, const float* __restrict__ scalein,
     const float* __restrict__ w, unsigned char* __restrict__ a8_out,
-    float* __restrict__ ascale_out, long n, int hc, long hrow, float wadd) {
-    const long row = blockIdx.x, g = blockIdx.y;
-    const int lane = threadIdx.x;
+    float* __restrict__ ascale_out, long n, int hc, long hrow, float wadd, long nkbTotal) {
+    /* RAD17 (GPT dev-agent review req_bigcherry_d67c3e42e319): the original one-wave-per-block grid
+     * (rows * nkbTotal blocks, e.g. 163840 at M=2048) is almost entirely launch/dispatch overhead for a
+     * trivial amount of work per block. 8 waves a block (256 threads) covering 8 consecutive groups
+     * cuts the block count 8x with no change to the per-group math -- same amax reduction, same
+     * quantisation, just more of them in flight per block. */
+    const long row = blockIdx.x;
+    const int wave = threadIdx.x / 32, lane = threadIdx.x % 32;
+    const long g = blockIdx.y * 8 + wave;
     const long HN = (long)hc * n;
+    if (g >= nkbTotal) return;
     const long k0 = g * 128;
     const int c = (int)(k0 / n);
     const float sc = scalein[row * kHcMax + c];
@@ -143,6 +150,18 @@ __global__ __launch_bounds__(kThreads) void hc_down_pf2_fp8_kernel(
     const float inv_hc = 1.0f / 4.0f;  /* hc is fixed at 4 for this pinned shape, matching the real kernel's call site */
     (void)wadd;
 
+    /* RAD17 (GPT dev-agent review req_bigcherry_d67c3e42e319): B (weight) does not depend on m, only on
+     * (col0, k0), so this per-m structure reloads it redundantly (4x). TWO hoisted variants were tried on
+     * real hardware to remove that redundancy and both MEASURED SLOWER than this one, not just theorised
+     * to be: a full hoist (one B load, all MT=4 Cfrag accumulators live at once) measured 1203.7us ->
+     * 1406.8us at M=2048; a paired hoist (two live accumulators, B reloaded 2x instead of 4x) still measured
+     * 1203.7us -> 1248.2us. Both regressed because the extra VGPR pressure from additional live accumulators
+     * costs more in occupancy (fewer resident waves per CU) than the reduced weight bandwidth saves -- this
+     * kernel is occupancy-bound on gfx1201 at this shape, not weight-bandwidth-bound, confirmed by two
+     * independent data points in the same direction, not assumed from one. This per-m, fully-redundant-load
+     * structure is the measured local optimum within this design space; closing the remaining gap to the
+     * bf16 baseline needs a different register-footprint regime (raw WMMA intrinsics instead of
+     * rocwmma::fragment), not more tiling variants of the same fragment-based approach. */
     for (long nt = wave; nt < ntt; nt += kWaves) {
         const long col0 = nt * 16;
         for (int m = 0; m < MT; ++m) {
@@ -165,10 +184,7 @@ __global__ __launch_bounds__(kThreads) void hc_down_pf2_fp8_kernel(
                  * against store_matrix_sync's own (documented, guaranteed) mem_row_major output on real
                  * hardware before being trusted: tools/lab/radiance/hc-down-fp8-regmap.hip, a consistent
                  * bijection across all 32 lanes, found to be the IDENTITY permutation against this exact
-                 * i=idx/16,j=idx%16,idx=lane+e*32 formula (i.e. fc[e] == what store_matrix_sync would have
-                 * placed at tile[i][j]). This was the single largest cost in the kernel: 80 K-groups a call
-                 * each paying a full store+barrier+read+barrier cycle to extract 8 register values that
-                 * were already sitting in registers the whole time. */
+                 * i=idx/16,j=idx%16,idx=lane+e*32 formula. */
 #pragma unroll
                 for (int t = 0; t < 8; ++t) {
                     const int idx = lane + t * kWave;
@@ -327,6 +343,105 @@ PATCH = FilePatch(
                        "exist before it for the call-site edit below to switch between paths",
         ),
         Edit(
+            id="hc-pf2-fp8-prep-skip-plane-sig",
+            anchor=(
+                r"void hc_pf2_prep_kernel\(const unsigned short\* __restrict__ h, float\* __restrict__ scaleout,\n"
+                r"                        long rows, long n, int hc, long hrow, float eps, long nnb,\n"
+                r"                        const void\* __restrict__ downv, long dld, bool f8,\n"
+                r"                        const unsigned short\* __restrict__ injw,\n"
+                r"                        const unsigned char\* __restrict__ up8, long uld,\n"
+                r"                        uint4\* __restrict__ plane, unsigned short\* __restrict__ udec,\n"
+                r"                        long lr, long ncol, long ntt\) \{\n"
+            ),
+            mode="replace",
+            text=(
+                "void hc_pf2_prep_kernel(const unsigned short* __restrict__ h, float* __restrict__ scaleout,\n"
+                "                        long rows, long n, int hc, long hrow, float eps, long nnb,\n"
+                "                        const void* __restrict__ downv, long dld, bool f8,\n"
+                "                        const unsigned short* __restrict__ injw,\n"
+                "                        const unsigned char* __restrict__ up8, long uld,\n"
+                "                        uint4* __restrict__ plane, unsigned short* __restrict__ udec,\n"
+                "                        long lr, long ncol, long ntt,\n"
+                "                        /* RAD17 (GPT dev-agent review req_bigcherry_d67c3e42e319): when the FP8\n"
+                "                         * down path will run, the W_down/injection `plane` this kernel would\n"
+                "                         * otherwise build here is never read -- hc_down_pf2_fp8_kernel reads\n"
+                "                         * W_down's real on-disk bytes directly, not `plane`. Skip building it\n"
+                "                         * (the loop below just starts past that range) while keeping the norm\n"
+                "                         * scale computation and the up-product decode, both still needed. */\n"
+                "                        bool skip_plane) {\n"
+            ),
+            guard=r"skip_plane\) \{",
+            expect_matches=1,
+            rationale="Unique declaration of hc_pf2_prep_kernel; adds the parameter the dispatch edit below "
+                       "needs to skip the now-provably-unused plane construction on the FP8 path",
+        ),
+        Edit(
+            id="hc-pf2-fp8-prep-skip-plane-loop",
+            anchor=(
+                r"    for \(long v = \(\(long\)blockIdx\.x - nnb\) \* kThreads \+ tid; v < nswz \+ nup; v \+= step\) \{\n"
+            ),
+            mode="replace",
+            text=(
+                "    for (long v = (skip_plane ? nswz : 0) + ((long)blockIdx.x - nnb) * kThreads + tid;\n"
+                "         v < nswz + nup; v += step) {\n"
+            ),
+            guard=r"skip_plane \? nswz : 0",
+            expect_matches=1,
+            rationale="Unique plane/up-decode work-stealing loop header inside hc_pf2_prep_kernel; this is "
+                       "the one place that decides which range of v each thread actually covers",
+        ),
+        Edit(
+            id="hc-pf2-fp8-before-prep",
+            anchor=(
+                r"    const long nnb  = \(rows \* hc \+ kWaves - 1\) / kWaves;\n"
+                r"    const long work = ntt \* \(HN / 16\) \* kWave \+ \(udec \? HN \* \(lr / 8\) : 0\);\n"
+                r"    long ndec = \(work \+ kThreads - 1\) / kThreads;\n"
+                r"    if \(ndec > 512\) ndec = 512;\n"
+                r"    hipLaunchKernelGGL\(hc_pf2_prep_kernel, dim3\(\(unsigned\)\(nnb \+ ndec\)\), dim3\(kThreads\), 0,\n"
+                r"                       \(hipStream_t\)s, h, scale, rows, n, hc, hrow, eps, nnb, down, dld, f8, injw,\n"
+                r"                       \(const unsigned char\*\)up, uld, plane, udec, lr, ncol, ntt\);\n"
+                r"    if \(hipGetLastError\(\) != hipSuccess\) return RAD_E_DEVICE;\n"
+            ),
+            mode="replace",
+            text=(
+                "    const long nnb  = (rows * hc + kWaves - 1) / kWaves;\n"
+                "    /* RAD17 (GPT dev-agent review req_bigcherry_d67c3e42e319, the highest-value optimisation\n"
+                "     * the review flagged): decide FP8-down eligibility and allocate its activation scratch\n"
+                "     * BEFORE the prep launch, not after, so prep can skip constructing the BF16 plane it would\n"
+                "     * otherwise build for nothing. If eligible but the allocation fails, skip_plane stays\n"
+                "     * false and prep does its normal full work, so the BF16 fallback below still has a\n"
+                "     * correctly-built plane to read -- this mirrors the allocator-failure safety the dispatch\n"
+                "     * below already had, just decided earlier. */\n"
+                "    const bool fp8_down_eligible = g_hc_pf2_fp8_down && f8 && hc == 4 && (HN % 128) == 0\n"
+                "                                   && (kc % 128) == 0;\n"
+                "    unsigned char* fp8a = nullptr;\n"
+                "    float* fp8_ascale = nullptr;\n"
+                "    bool skip_plane = false;\n"
+                "    if (fp8_down_eligible) {\n"
+                "        const long nkb = (HN + 127) / 128;\n"
+                "        const size_t a8_bytes = (size_t)rows * HN;\n"
+                "        const size_t aligned = (a8_bytes + 15) & ~(size_t)15;\n"
+                "        const size_t need = aligned + (size_t)rows * nkb * sizeof(float);\n"
+                "        if (hc_pf2_fp8a_scratch(need, &fp8a)) {\n"
+                "            fp8_ascale = (float*)(fp8a + aligned);\n"
+                "            skip_plane = true;\n"
+                "        }\n"
+                "    }\n"
+                "    const long work = skip_plane ? (udec ? HN * (lr / 8) : 0)\n"
+                "                                 : ntt * (HN / 16) * kWave + (udec ? HN * (lr / 8) : 0);\n"
+                "    long ndec = (work + kThreads - 1) / kThreads;\n"
+                "    if (ndec > 512) ndec = 512;\n"
+                "    hipLaunchKernelGGL(hc_pf2_prep_kernel, dim3((unsigned)(nnb + ndec)), dim3(kThreads), 0,\n"
+                "                       (hipStream_t)s, h, scale, rows, n, hc, hrow, eps, nnb, down, dld, f8, injw,\n"
+                "                       (const unsigned char*)up, uld, plane, udec, lr, ncol, ntt, skip_plane);\n"
+                "    if (hipGetLastError() != hipSuccess) return RAD_E_DEVICE;\n"
+            ),
+            guard=r"hc_pf2_fp8a_scratch\(need, &fp8a\)",
+            expect_matches=1,
+            rationale="Unique nnb/work/ndec/prep-launch block; this is the only place that can decide "
+                       "whether prep needs to build the BF16 plane before it runs",
+        ),
+        Edit(
             id="hc-pf2-fp8-down-dispatch",
             anchor=(
                 r"    float\* const kpart = ks > 1 \? part : nullptr;\n"
@@ -342,49 +457,40 @@ PATCH = FilePatch(
                 "    float* const kpart = ks > 1 ? part : nullptr;\n"
                 "    /* RAD17: every real PF2-eligible shape found this session has ks > 1 (M=512 already has\n"
                 "     * ks=7), so an eligibility check that required ks==1 would make this path dead code for\n"
-                "     * every real call -- it is not restricted to ks==1. The allocator-failure case still falls\n"
-                "     * through to the original bf16 call below unchanged. */\n"
-                "    /* RAD17 P1 FIX (GPT dev-agent review req_bigcherry_d67c3e42e319): the FP8 kernel's\n"
-                "     * nkb0/nkb1 K-group bounds assume `ka = blockIdx.y*kc` lands on a 128-wide scale-group\n"
-                "     * boundary; hc==4 and HN%128==0 are already guaranteed by pf2_shape above this call, but\n"
-                "     * kc's own alignment is not -- require it explicitly rather than assuming it. */\n"
-                "    const bool fp8_down_eligible = g_hc_pf2_fp8_down && f8 && hc == 4 && (HN % 128) == 0\n"
-                "                                   && (kc % 128) == 0;\n"
-                "    unsigned char* fp8a = nullptr;\n"
+                "     * every real call -- it is not restricted to ks==1. fp8a/fp8_ascale/skip_plane were\n"
+                "     * already decided above, before the prep launch (see hc-pf2-fp8-before-prep) -- skip_plane\n"
+                "     * true means the scratch allocation already succeeded, so this block is unconditionally\n"
+                "     * committed to the FP8 path once reached; no further allocator-failure branch is needed\n"
+                "     * here. */\n"
                 "    bool fp8_down_ok = false;\n"
-                "    if (fp8_down_eligible) {\n"
+                "    if (skip_plane) {\n"
                 "        const long nkb = (HN + 127) / 128;\n"
-                "        const size_t a8_bytes = (size_t)rows * HN;\n"
-                "        const size_t aligned = (a8_bytes + 15) & ~(size_t)15;\n"
-                "        const size_t need = aligned + (size_t)rows * nkb * sizeof(float);\n"
-                "        if (hc_pf2_fp8a_scratch(need, &fp8a)) {\n"
-                "            float* const ascale = (float*)(fp8a + aligned);\n"
-                "            hipLaunchKernelGGL(hc_pf2_quant_a8_kernel, dim3((unsigned)rows, (unsigned)nkb),\n"
-                "                               dim3(32), 0, (hipStream_t)s, h, scale, w, fp8a, ascale, n, hc,\n"
-                "                               hrow, wadd);\n"
+                "        hipLaunchKernelGGL(hc_pf2_quant_a8_kernel,\n"
+                "                           dim3((unsigned)rows, (unsigned)((nkb + 7) / 8)),\n"
+                "                           dim3(256), 0, (hipStream_t)s, h, scale, w, fp8a, fp8_ascale, n, hc,\n"
+                "                           hrow, wadd, nkb);\n"
+                "        if (hipGetLastError() != hipSuccess) return RAD_E_DEVICE;\n"
+                "        hipLaunchKernelGGL(hc_down_pf2_fp8_kernel,\n"
+                "                           dim3((unsigned)((rows + kPf2RT - 1) / kPf2RT), (unsigned)ks),\n"
+                "                           dim3(kThreads), 0, (hipStream_t)s, fp8a, fp8_ascale,\n"
+                "                           (const unsigned char*)down, dld, dbuf, kpart, rows, lr, ncol,\n"
+                "                           kc, HN, wadd);\n"
+                "        if (hipGetLastError() != hipSuccess) return RAD_E_DEVICE;\n"
+                "        if (ks > 1) {\n"
+                "            const long totlr = rows * lr;\n"
+                "            hipLaunchKernelGGL(hc_down_pf2_fp8_reduce_kernel,\n"
+                "                               dim3((unsigned)((totlr + kThreads - 1) / kThreads)),\n"
+                "                               dim3(kThreads), 0, (hipStream_t)s, (const float*)kpart,\n"
+                "                               dbuf, rows, lr, ncol, ks);\n"
                 "            if (hipGetLastError() != hipSuccess) return RAD_E_DEVICE;\n"
-                "            hipLaunchKernelGGL(hc_down_pf2_fp8_kernel,\n"
-                "                               dim3((unsigned)((rows + kPf2RT - 1) / kPf2RT), (unsigned)ks),\n"
-                "                               dim3(kThreads), 0, (hipStream_t)s, fp8a, ascale,\n"
-                "                               (const unsigned char*)down, dld, dbuf, kpart, rows, lr, ncol,\n"
-                "                               kc, HN, wadd);\n"
-                "            if (hipGetLastError() != hipSuccess) return RAD_E_DEVICE;\n"
-                "            if (ks > 1) {\n"
-                "                const long totlr = rows * lr;\n"
-                "                hipLaunchKernelGGL(hc_down_pf2_fp8_reduce_kernel,\n"
-                "                                   dim3((unsigned)((totlr + kThreads - 1) / kThreads)),\n"
-                "                                   dim3(kThreads), 0, (hipStream_t)s, (const float*)kpart,\n"
-                "                                   dbuf, rows, lr, ncol, ks);\n"
-                "                if (hipGetLastError() != hipSuccess) return RAD_E_DEVICE;\n"
-                "            }\n"
-                "            if (injw && inj) {\n"
-                "                hipLaunchKernelGGL(hc_inj_pf2_bf16_kernel, dim3((unsigned)rows),\n"
-                "                                   dim3(32), 0, (hipStream_t)s, fp8a, ascale, injw, inj, rows,\n"
-                "                                   HN, hc, irow);\n"
-                "                if (hipGetLastError() != hipSuccess) return RAD_E_DEVICE;\n"
-                "            }\n"
-                "            fp8_down_ok = true;\n"
                 "        }\n"
+                "        if (injw && inj) {\n"
+                "            hipLaunchKernelGGL(hc_inj_pf2_bf16_kernel, dim3((unsigned)rows),\n"
+                "                               dim3(32), 0, (hipStream_t)s, fp8a, fp8_ascale, injw, inj, rows,\n"
+                "                               HN, hc, irow);\n"
+                "            if (hipGetLastError() != hipSuccess) return RAD_E_DEVICE;\n"
+                "        }\n"
+                "        fp8_down_ok = true;\n"
                 "    }\n"
                 "    if (!fp8_down_ok) {\n"
                 "    hipLaunchKernelGGL(hc_down_pf2_kernel,\n"
@@ -395,7 +501,7 @@ PATCH = FilePatch(
                 "    if (hipGetLastError() != hipSuccess) return RAD_E_DEVICE;\n"
                 "    }\n"
             ),
-            guard=r"fp8_down_eligible",
+            guard=r"fp8_down_ok = true",
             expect_matches=1,
             rationale="Unique down-product launch call site inside hc_pf2_launch; this is the only place "
                        "that decides which down-product kernel actually runs",
