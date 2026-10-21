@@ -51,9 +51,11 @@ jobs:
             apt-get update
             DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git cmake ninja-build python3 python3-pip g++-14 gcc-14 ca-certificates
             git config --global --add safe.directory /src
+            git config --global --add safe.directory /src/work/upstream/radiance.git
             export RADIANCE_HOST_CC=gcc-14 RADIANCE_HOST_CXX=g++-14 ROCM_PATH=/opt/rocm PYTHONPATH=tools
             mkdir -p work/upstream
             if [ -d work/upstream/radiance.git ]; then
+              git -C work/upstream/radiance.git worktree prune
               git -C work/upstream/radiance.git fetch --prune origin "+refs/*:refs/*"
             else
               git clone --bare https://codeberg.org/StillDeadcode/radiance.git work/upstream/radiance.git
