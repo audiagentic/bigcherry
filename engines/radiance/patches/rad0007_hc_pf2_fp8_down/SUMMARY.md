@@ -19,9 +19,16 @@ See below.
 
 ## What it does
 
-- `hc_pf2_quant_a8_kernel`: activation quantisation pre-pass, one wave (32 lanes) per (row, 128-of-K group).
-  Validated standalone against real ground-truth N: `tools/lab/radiance/hc-pf2-quant-a8.hip` (0 mismatches
-  across 80 scales + 10240 codes, 2.53% RMS error).
+- `hc_pf2_quant_a8_kernel`: builds N inline and quantises it to E4M3 in one pass, one wave (32 lanes) per
+  (row, 128-of-K group). Reads the same real inputs `h`, the published per-stream norm scale, and the gamma
+  weight `w` -- and runs the identical formula (`bf2f(h) * scale * (w + wadd)`) the real `hc_down_pf2_kernel`'s
+  `stageA` already runs on hardware -- rather than assuming a materialized bf16 N array exists anywhere (it
+  does not; see "Real gap" below, now closed). Quantisation math validated standalone against real
+  ground-truth N: `tools/lab/radiance/hc-pf2-quant-a8.hip` (0 mismatches across 80 scales + 10240 codes,
+  2.53% RMS error). The N-building half is a direct transcription of already-shipped, already
+  r4d_selftest-checked arithmetic, not new numerics; it has not yet been separately re-measured against a
+  fresh hardware dump of real h/scalein/w -- that is the next thing to build if this specific transcription
+  is doubted beyond code review.
 - `hc_down_pf2_fp8_kernel`: the FP8 WMMA down-product. Reads `W_down` directly from its real on-disk bytes
   (one packed `[K codes][K/128 f32 scales]` blob per row, stride `row_bytes(K,128)`, confirmed against the
   live container -- 10560 for K=10240, not the naive 10240) rather than the bf16-decoded `plane` buffer the
@@ -36,16 +43,20 @@ See below.
   the schema, so this will be a direct extraction of `hc_down_pf2_kernel`'s own existing arithmetic, not new
   numerics.
 
-**Real gap found reading the pinned source for this revision**: `hc_pf2_quant_a8_kernel` assumes a
-materialized bf16 N array already exists to quantise. No such array exists anywhere in the real pipeline --
-`hc_down_pf2_kernel` builds N incrementally, tile by tile, straight from `h` + per-stream norm scale + gamma
-weight `w`, into a small double-buffered LDS window, and never materializes the whole thing. A separate
-kernel (or an extension of `hc_pf2_prep_kernel`) to build and store the full bf16 N array is needed before
-`hc_pf2_quant_a8_kernel` can run for real. **This, not dispatch wiring, is RAD17's next real blocker.**
+**Real gap found reading the pinned source, closed in this same revision**: an earlier draft of
+`hc_pf2_quant_a8_kernel` assumed a materialized bf16 N array already existed to quantise. No such array
+exists anywhere in the real pipeline -- `hc_down_pf2_kernel` builds N incrementally, tile by tile, straight
+from `h` + per-stream norm scale + gamma weight `w`, into a small double-buffered LDS window, and never
+materializes the whole thing. Rather than add a separate materialization kernel, `hc_pf2_quant_a8_kernel`
+was changed to build N inline from those same three real inputs, using the exact formula `stageA` already
+runs, then quantise it in the same pass -- no new buffer, no new numerics for the N-build half.
 
 No dispatch wiring: `hc_pf2_launch` is untouched by this revision, so these kernels compile but are never
 called. `RAD_HC_PF2_FP8_DOWN` and the guard checks (including `kc % 128 == 0` for split-K alignment, per the
-design review) remain for a later revision, after the N-materialization kernel above exists.
+design review) remain for a later revision. That revision is now unblocked on the implementation side; what
+remains before any performance is measurable is: (1) wire the dispatch guard into `hc_pf2_launch`, (2) run
+the real-hardware acceptance sequence (flag off byte-identical, quantiser/WMMA/epilogue checks, end-to-end
+quality vs the measured RMS reference), (3) A/B benchmark prefill with the flag on vs off.
 
 ## Why
 

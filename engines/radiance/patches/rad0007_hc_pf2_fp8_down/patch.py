@@ -1,17 +1,19 @@
 """Radiance 1.9.0: FP8 WMMA down-product for hc_read's PF2 prefill form (RAD15/RAD17).
 
 Adds three new kernels to libr4d's r4d_hc_bf16.hip, inert until wired up:
-  hc_pf2_quant_a8_kernel   activation quantisation pre-pass (one wave per (row, 128-of-K group),
-                           validated against real ground-truth data: tools/lab/radiance/hc-pf2-quant-a8.hip)
+  hc_pf2_quant_a8_kernel   builds N inline AND quantises it to E4M3 in one pass, reading the SAME real
+                           inputs (h, the published per-stream norm scale, the gamma weight w) and running
+                           the IDENTICAL formula the real hc_down_pf2_kernel's stageA already runs on
+                           hardware -- there is no materialized bf16 N array anywhere in the real pipeline to
+                           read from instead (an earlier revision of this kernel wrongly assumed one existed;
+                           found by reading hc_down_pf2_kernel's fetchA/stageA directly). Quantisation math
+                           validated against real ground-truth N: tools/lab/radiance/hc-pf2-quant-a8.hip.
   hc_down_pf2_fp8_kernel   the FP8 WMMA down-product itself, reading W_down's real on-disk layout
                            directly (row_bytes(K,128) stride, inline f32 scale) instead of the bf16-decoded
                            `plane` buffer the existing kernel uses. Output contract (part[]/dout write) is
                            transcribed verbatim from the real hc_down_pf2_kernel/hc_down_reduce_kernel.
                            ks==1 path validated end to end at real RT=64/lr=320/kWaves=8 scale:
-                           tools/lab/radiance/hc-down-fp8-fullscale.hip. Known gap found reading the real
-                           source: no kernel anywhere materializes the full bf16 N array
-                           hc_pf2_quant_a8_kernel assumes as its input -- a separate kernel for that is the
-                           next real blocker, not dispatch wiring.
+                           tools/lab/radiance/hc-down-fp8-fullscale.hip.
   hc_inj_pf2_bf16_kernel   the injection columns, extracted verbatim from the existing kernel's own
                            arithmetic (no FP8 variant exists for the injection weight, so no new numerics)
 
@@ -25,32 +27,53 @@ from bigcherry.patcher import Edit, FilePatch
 _QUANT_A8_KERNEL = '''
 /* ============================================================== RAD17: FP8 down-product, inert for now
  *
- * Quantises N (already decoded to bf16 by the per-stream norm/gate math any prefill call already computes) to
- * E4M3 for the WMMA down-product below. One wave (32 lanes) owns one (row, 128-of-K group): each lane reads 4
- * elements, a full-wave max (order-independent, so a plain butterfly matches r4d_wave_max's result exactly)
- * gives the group's amax, every lane then quantises its own 4 elements at scale = amax / 448.
+ * Builds N inline AND quantises it to E4M3 in the same pass -- there is no materialized bf16 N array
+ * anywhere in the real pipeline to read from (hc_down_pf2_kernel builds it incrementally, tile by tile, into
+ * a tiny double-buffered LDS window, and never stores the whole thing -- confirmed by reading that kernel's
+ * fetchA/stageA directly for this revision; an earlier version of this kernel wrongly assumed such a buffer
+ * existed). So this kernel reads the SAME real inputs stageA does -- `h` (raw bf16), the per-(row,stream)
+ * norm scale hc_pf2_prep_kernel already publishes to `scalein`, and the per-channel gamma `w` -- and applies
+ * the IDENTICAL formula stageA already runs on real hardware every call: v = bf2f(h) * scale * (w + wadd).
+ * This is not new numerics -- it is a transcription of already-shipped, already r4d_selftest-checked
+ * arithmetic (see this file's own doc comment above hc_down_pf2_kernel) -- the only genuinely new piece is
+ * the E4M3 quantisation that follows, which is unchanged from the previous revision and independently
+ * validated against real data.
+ *
+ * One wave (32 lanes) owns one (row, 128-of-K group); 128 divides n (2560) exactly, so a group never
+ * straddles a stream boundary and the stream index c = k0/n is wave-uniform. Each lane computes 4 elements,
+ * a full-wave max (order-independent, so a plain butterfly matches r4d_wave_max's result exactly) gives the
+ * group's amax, every lane then quantises its own 4 elements at scale = amax / 448.
  *
  * Writes a8[rows][HN] uint8 and ascale[rows][HN/128] f32 -- the layout rocwmma::fragment's row_major load
  * wants directly (ldm = HN), matching hc_down_pf2_fp8_kernel below. Grid: (rows, HN/128); block: 32 (one wave).
  *
- * Validated against real ground-truth N: tools/lab/radiance/hc-pf2-quant-a8.hip (0 mismatches, 80 scales +
- * 10240 codes; RMS error 2.53%, matching the measured activation-quantisation cost). */
+ * Quantisation math validated against real ground-truth N: tools/lab/radiance/hc-pf2-quant-a8.hip (0
+ * mismatches, 80 scales + 10240 codes; RMS error 2.53%). The N-building half transcribed here (bf2f * scale
+ * * (w + wadd)) has NOT yet been separately re-measured against a fresh hardware dump of real h/scalein/w --
+ * it is proven correct by being the same formula stageA already runs, not by a new standalone harness; that
+ * harness is the next thing to build if this kernel's output is doubted beyond code review. */
 __global__ __launch_bounds__(32) void hc_pf2_quant_a8_kernel(
-    const unsigned short* __restrict__ n_in, unsigned char* __restrict__ a8_out,
-    float* __restrict__ ascale_out, long HN) {
+    const unsigned short* __restrict__ h, const float* __restrict__ scalein,
+    const float* __restrict__ w, unsigned char* __restrict__ a8_out,
+    float* __restrict__ ascale_out, long n, int hc, long hrow, float wadd) {
     const long row = blockIdx.x, g = blockIdx.y;
     const int lane = threadIdx.x;
-    const unsigned short* n_row = n_in + row * HN + g * 128;
+    const long HN = (long)hc * n;
+    const long k0 = g * 128;
+    const int c = (int)(k0 / n);
+    const float sc = scalein[row * kHcMax + c];
+    const unsigned short* hp = h + row * hrow + k0;
+    const float* wp = w + k0;
     float v[4], local_max = 0.0f;
 #pragma unroll
     for (int e = 0; e < 4; ++e) {
-        v[e] = __builtin_bit_cast(_Float16, n_row[lane * 4 + e]);
+        v[e] = bf2f(hp[lane * 4 + e]) * sc * (wp[lane * 4 + e] + wadd);
         local_max = fmaxf(local_max, fabsf(v[e]));
     }
     for (int off = 16; off; off >>= 1) local_max = fmaxf(local_max, __shfl_xor(local_max, off));
     const float scale = local_max > 0.0f ? local_max / 448.0f : 1.0f;
     if (lane == 0) ascale_out[row * (HN / 128) + g] = scale;
-    unsigned char* out = a8_out + row * HN + g * 128;
+    unsigned char* out = a8_out + row * HN + k0;
 #pragma unroll
     for (int e = 0; e < 4; ++e) out[lane * 4 + e] = r4d_hc17::f32_to_e4m3(v[e] / scale);
 }
