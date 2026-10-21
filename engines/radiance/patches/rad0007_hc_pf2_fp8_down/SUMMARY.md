@@ -18,14 +18,21 @@ launch was never gated on which path ran, so it re-ran on top of the FP8 path's 
 reading uninitialised `part[]` for every inject column (the FP8 path never writes inject columns into
 `part[]`; `hc_inj_pf2_bf16_kernel` computes those directly) and overwriting `inj` with garbage. Fixed by
 gating the original call on `!fp8_down_ok`. Measured at M=2048 on the real gfx1201 device, after the P0 fix
-and two real validated optimisation passes: **1282.5 us**, down from 1457.6 us (inject kernel's
-redundant-read fix, the down kernel's LDS-round-trip elimination, then this P0 fix) -- still **~2.4x
-SLOWER** than the existing bf16 path's 530.7 us. Not correct to a quality metric either yet (byte-identity
-fails as expected for a lossy FP8 path -- `inj` now correctly shows as differing too, the expected result of
-a genuinely lossy computation rather than the earlier bug's corruption; no RMS/KL-style quality check has
-been built). Not a
-win -- the down kernel's inner loop still lacks the real kernel's double-buffered prefetch/fused tiling, and
-a quality metric is still needed before any promotion decision.
+and four real validated optimisation passes: **1203.7 us**, down from 1457.6 us -- inject kernel's
+redundant-read fix, the down kernel's LDS-round-trip elimination, the P0 fix, skipping
+`hc_pf2_prep_kernel`'s now-unused BF16 plane construction (GPT's highest-value flagged optimisation, moved
+FP8 eligibility/scratch allocation before the prep launch so prep can skip it), and widening the quant
+kernel from one wave per block to 8 -- still **~2.3x SLOWER** than the existing bf16 path's 530.7 us. Two
+further restructurings of the down kernel's inner loop (hoisting the redundant 4x weight-fragment reload,
+fully and in pairs) were tried and both MEASURED SLOWER on real hardware (1406.8 us and 1248.2 us
+respectively) -- this kernel is occupancy-bound at this shape, not weight-bandwidth-bound, confirmed by two
+independent negative results, not assumed from one; reverted both. Not correct to a quality metric either
+yet (byte-identity fails as expected for a lossy FP8 path -- `inj` now correctly shows as differing too, the
+expected result of a genuinely lossy computation rather than the earlier bug's corruption; no RMS/KL-style
+quality check has been built). Not a win -- closing the remaining gap needs a different register-footprint
+regime (raw WMMA intrinsics replacing `rocwmma::fragment`, per GPT's review) rather than more tiling
+variants of the same fragment-based approach, and a quality metric is still needed before any promotion
+decision.
 
 ## Detail
 
