@@ -143,7 +143,6 @@ __global__ __launch_bounds__(kThreads) void hc_down_pf2_fp8_kernel(
     const float inv_hc = 1.0f / 4.0f;  /* hc is fixed at 4 for this pinned shape, matching the real kernel's call site */
     (void)wadd;
 
-    __shared__ float part_tile[kWaves][16][16];
     for (long nt = wave; nt < ntt; nt += kWaves) {
         const long col0 = nt * 16;
         for (int m = 0; m < MT; ++m) {
@@ -160,8 +159,16 @@ __global__ __launch_bounds__(kThreads) void hc_down_pf2_fp8_kernel(
                     load_matrix_sync(fb, reinterpret_cast<const float8_t*>(down + (size_t)col0 * dld + k0), dld);
                     mma_sync(fc, fa, fb, fc);
                 }
-                store_matrix_sync(&part_tile[wave][0][0], fc, 16, mem_row_major);
-                __syncwarp();
+                /* Direct per-thread register read of fc, no store_matrix_sync/LDS/__syncwarp() round trip.
+                 * rocWMMA documents operator[] as having "no guaranteed order or locality", so this is NOT
+                 * an assumption -- fc[e]'s mapping to (row,col) was empirically derived and cross-checked
+                 * against store_matrix_sync's own (documented, guaranteed) mem_row_major output on real
+                 * hardware before being trusted: tools/lab/radiance/hc-down-fp8-regmap.hip, a consistent
+                 * bijection across all 32 lanes, found to be the IDENTITY permutation against this exact
+                 * i=idx/16,j=idx%16,idx=lane+e*32 formula (i.e. fc[e] == what store_matrix_sync would have
+                 * placed at tile[i][j]). This was the single largest cost in the kernel: 80 K-groups a call
+                 * each paying a full store+barrier+read+barrier cycle to extract 8 register values that
+                 * were already sitting in registers the whole time. */
 #pragma unroll
                 for (int t = 0; t < 8; ++t) {
                     const int idx = lane + t * kWave;
@@ -170,9 +177,8 @@ __global__ __launch_bounds__(kThreads) void hc_down_pf2_fp8_kernel(
                     if (row >= rows || col >= lr) continue;
                     const float asc = ascale[(size_t)row * nkbTotal + g];
                     const float* wsc = reinterpret_cast<const float*>(down + (size_t)col * dld + HN);
-                    total[t] += part_tile[wave][i][j] * asc * wsc[g];
+                    total[t] += fc[t] * asc * wsc[g];
                 }
-                __syncwarp();
             }
 #pragma unroll
             for (int t = 0; t < 8; ++t) {

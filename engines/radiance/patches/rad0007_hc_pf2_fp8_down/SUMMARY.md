@@ -1,6 +1,7 @@
 # rad0007_hc_pf2_fp8_down
 
-**Status:** untested (runs correctly-shaped on real hardware; measured a 2.7x regression, not yet a win)
+**Status:** untested (runs correctly-shaped on real hardware; two real optimisations landed, 1457.6us ->
+1296.9us at M=2048, still ~2.4x slower than the 530.7us baseline, not yet a win)
 **Plan item:** RAD15/RAD17
 
 ## Summary
@@ -12,13 +13,12 @@ anchors apply and the new code compiles against the real pinned source.
 ## Outcome
 
 Dispatch is wired and the path runs end to end on real hardware (`RAD_HC_PF2_FP8_DOWN=1`, default off).
-Measured at M=2048 on the real gfx1201 device: **~2.7x SLOWER** than the existing bf16 path (1422.0 us vs
-530.7 us after one real optimisation pass on the inject kernel; 1457.6 us before it). Per-kernel timing
-diagnosis (see "Real gap" below) shows the FP8 down kernel itself -- not launch overhead -- is the dominant
-cost at 0.688ms, more than the entire baseline call. Not correct to a quality metric either yet (byte-identity
-fails as expected for a lossy FP8 path; no RMS/KL-style quality check has been built). Not a win -- needs a
-real kernel-performance-engineering pass on the down kernel's inner loop plus a quality metric before being
-a promotion candidate.
+Measured at M=2048 on the real gfx1201 device, after two real validated optimisation passes: **1296.9 us**,
+down from 1457.6 us (inject kernel's redundant-read fix, then the down kernel's LDS-round-trip elimination)
+-- still **~2.4x SLOWER** than the existing bf16 path's 530.7 us. Not correct to a quality metric either yet
+(byte-identity fails as expected for a lossy FP8 path; no RMS/KL-style quality check has been built). Not a
+win -- the down kernel's inner loop still lacks the real kernel's double-buffered prefetch/fused tiling, and
+a quality metric is still needed before any promotion decision.
 
 ## Detail
 
@@ -90,14 +90,23 @@ findings rather than leaving the regression as a guess:
    columns in a single pass, accruing `hc` partial dot products in per-lane registers. Reduced inj's share
    from 0.202ms to about 0.167ms (measured via the ~35us drop in the total, 1457.6us -> 1422.0us at the same
    shape) -- a real, measured improvement, but small next to the total.
-2. `hc_down_pf2_fp8_kernel` itself is the dominant cost at 0.688ms -- **more than the ENTIRE 530.7us
-   baseline PF2 call**. This is not a launch-overhead or redundant-read problem like inj's; it is the kernel
-   body itself: a naive `rocwmma::fragment` load/store-through-LDS/`__syncwarp()` pass per 128-wide K group,
-   with none of the real `hc_down_pf2_kernel`'s double-buffered prefetch (`fetchA`/`stageA` overlapping the
-   next K-slice's global loads with the current slice's WMMAs) or its single fused loop across all `NW`
-   n-tiles and `MT` m-tiles. Closing this gap means re-architecting the FP8 kernel's inner loop to pipeline
-   the way the real kernel does, not a small fix -- a substantially larger piece of kernel engineering than
-   anything completed in this patch so far.
+2. `hc_down_pf2_fp8_kernel` itself was the dominant cost at 0.688ms -- **more than the ENTIRE 530.7us
+   baseline PF2 call**. Root cause, found by reading this project's own production FP8 GEMM kernel
+   (`r4d_gemm_fp8a8.hip`): `rocwmma::fragment`'s accumulator is opaque, so rescaling per 128-wide K group
+   (unavoidable for block-scaled FP8 -- each group has its own scale) required `store_matrix_sync` through
+   LDS plus a `__syncwarp()`, 80 times a call, purely to extract 8 register values per thread that were
+   already sitting in registers. Fixed: `fragment::operator[]` gives direct per-thread register access.
+   rocWMMA documents it as having "no guaranteed order or locality", so this was NOT assumed -- the mapping
+   was empirically derived and cross-checked against `store_matrix_sync`'s own documented `mem_row_major`
+   output on real hardware (`tools/lab/radiance/hc-down-fp8-regmap.hip`): a consistent bijection across all
+   32 lanes, found to be the IDENTITY permutation against the kernel's existing `i=idx/16,j=idx%16,
+   idx=lane+e*32` formula -- i.e. `fc[e]` already equals what `store_matrix_sync` would have placed at
+   `tile[i][j]`. Replacing the LDS round-trip with direct `fc[t]` reads measured **1422.0us -> 1296.9us**
+   at the same shape (flag off still byte-identical, unaffected).
+   Still short of baseline, and the kernel still has none of the real `hc_down_pf2_kernel`'s double-buffered
+   prefetch (`fetchA`/`stageA` overlapping the next K-slice's global loads with the current slice's WMMAs)
+   or its single fused loop across all `NW` n-tiles and `MT` m-tiles -- that remains real follow-up
+   engineering, now on top of a kernel with its one clearly-wrong inefficiency already removed.
 
 **Honest current status**: the full pipeline runs correctly-shaped end to end on real hardware, with no
 crash and no corruption of other outputs, and received one genuine, measured optimisation this session. It
