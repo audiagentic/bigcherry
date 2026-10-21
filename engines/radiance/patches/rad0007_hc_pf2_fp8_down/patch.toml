@@ -1,0 +1,12 @@
+schema = 1
+id = "rad0007_hc_pf2_fp8_down"
+order = 7
+state = "untested"
+kind = "enhancement"
+origin = "local"
+backend = "agnostic"
+plan-item = "RAD17"
+plan-ids = ["RAD15", "RAD17"]
+requires = []
+conflicts = []
+tags = ["wmma", "prefill", "quantization", "gfx1201"]

@@ -99,6 +99,10 @@ RAD17 status: every individual piece of GPT's design is now validated standalone
 
 RAD17 status: ALL correctness-risk pieces are now validated on real data (quantisation pre-pass, WMMA mechanics, real weight layout, their end-to-end composition). The injection piece carries no correctness risk of its own (verbatim existing arithmetic). What remains is pure integration engineering: assembling the validated FP8 kernel, the extracted injection kernel, and the dispatch guard (kc%128==0 etc.) into the real hc_down_pf2_launch flow as an actual radNNNN_* patch package with real anchors, sized for the real grid/scheduling (not the 1-workgroup proof-of-concept harnesses used for validation), then running r4d_selftest and the KL harness.
 
+2026-10-21 first patch package increment, rad0007_hc_pf2_fp8_down (PR #370), compiled and verified on real hardware: adds hc_pf2_quant_a8_kernel (validated) and hc_down_pf2_fp8_kernel (WMMA/layout math validated, rescale-and-accumulate epilogue at the real RT=64/kWaves tiling left as an explicit TODO) to libr4d/r4d_hc_bf16.hip. Deliberately inert -- hc_pf2_launch untouched, no dispatch wiring, zero behaviour change. patch-rebase-check --focal-overlay reports CLEAN against the pinned upstream; applied programmatically (bigcherry.patch.apply.apply_patch, never the shared wt-accept checkout) to a scratch copy and compiled for gfx1201 with zero errors; confirmed both kernels are real compiled device code objects (mangled names + .kd descriptors present via nm/strings).
+
+Next: finish hc_down_pf2_fp8_kernel's epilogue (the TODO), implement hc_inj_pf2_bf16_kernel (extraction, no new numerics), then wire the dispatch guard (RAD_HC_PF2_FP8_DOWN, kc%128==0, the other eligibility checks from GPT's design) into hc_pf2_launch -- only once that's done does this patch do anything at runtime, and only then can r4d_selftest / the KL harness actually exercise it.
+
 ## Change Log
 
 - 2026-10-21T07:41:01.749670+00:00 (created-by): Created by agent
@@ -108,3 +112,4 @@ RAD17 status: ALL correctness-risk pieces are now validated on real data (quanti
 - 2026-10-21T07:59:14.580428+00:00 (updated-by): Updated: section:notes
 - 2026-10-21T08:02:59.795128+00:00 (updated-by): Updated: section:notes
 - 2026-10-21T08:05:29.531266+00:00 (updated-by): Updated: section:notes
+- 2026-10-21T08:13:09.220715+00:00 (updated-by): Updated: section:notes
