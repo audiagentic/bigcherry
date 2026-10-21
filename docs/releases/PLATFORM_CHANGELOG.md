@@ -1,5 +1,101 @@
 # Changelog
 
+## [1.3.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.2.0...bc-platform-1.3.0) (2026-10-21)
+
+
+### New and changed
+
+* **bench:** engine counters per round and the small-lane row limit A/B (RAD10-02) ([#303](https://github.com/audiagentic/bigcherry/issues/303)) ([120f850](https://github.com/audiagentic/bigcherry/commit/120f850c7070e9bb0891de69ed87262fafdc3aee))
+* **bench:** stream-bench, concurrent streaming completions (RAD10-01) ([#300](https://github.com/audiagentic/bigcherry/issues/300)) ([6d450d6](https://github.com/audiagentic/bigcherry/commit/6d450d62e0d323e6bfb2aff0f4e05434baa1876c))
+* **build:** engine-aware build context, GPU-target option and default binary (RAD01 PR 4) ([#220](https://github.com/audiagentic/bigcherry/issues/220)) ([7a88895](https://github.com/audiagentic/bigcherry/commit/7a88895c504fac8d5bebfa1f65d2b2761b4fa46e))
+* **build:** lanes build the engine's runtime and components; build identity binds them (RAD01 PR 8b) ([#225](https://github.com/audiagentic/bigcherry/issues/225)) ([cfdd9cb](https://github.com/audiagentic/bigcherry/commit/cfdd9cb95d41658708ac4b0d3b637d1c56a26114))
+* **campaign:** engine acceptance against stored baselines; stored KLD references (MEN17) ([#269](https://github.com/audiagentic/bigcherry/issues/269)) ([8e3e5ab](https://github.com/audiagentic/bigcherry/commit/8e3e5abbe2710c2d3a1c6bcc1b14b2c4e0f412c0))
+* **campaign:** engine adapters and sidecar processes for server A/B; radiance helper layout (MEN11) ([#247](https://github.com/audiagentic/bigcherry/issues/247)) ([9b99b35](https://github.com/audiagentic/bigcherry/commit/9b99b35293dedf442bcae1f97210f3a40e73e51e))
+* **campaign:** KLD through the server harness, component-setting evidence, radiance lab scripts retired (MEN11) ([#255](https://github.com/audiagentic/bigcherry/issues/255)) ([76279df](https://github.com/audiagentic/bigcherry/commit/76279df854850ee4faac6a858b611eb165257756))
+* **campaign:** RAM-only CPU smoke test per engine, first phase of pin-bump (MEN15) ([#258](https://github.com/audiagentic/bigcherry/issues/258)) ([f8b514b](https://github.com/audiagentic/bigcherry/commit/f8b514b0fd1311748faf18e670f4d905bfec2c77))
+* **campaign:** server A/B names its engine; first Radiance A/B through ab-benchmark (RAD01 PR 8c) ([#226](https://github.com/audiagentic/bigcherry/issues/226)) ([2052122](https://github.com/audiagentic/bigcherry/commit/2052122aed40f2009c971103ec192a65e84810a9))
+* **check:** TR14.STRING_LITERAL_NEWLINE, a string literal containing a real line break ([#304](https://github.com/audiagentic/bigcherry/issues/304)) ([d16f402](https://github.com/audiagentic/bigcherry/commit/d16f402fdad000940d4ab1dec9fc19f3c2909066))
+* **config:** each engine declares its recipes; Radiance recipes (RAD01 PR 3) ([#219](https://github.com/audiagentic/bigcherry/issues/219)) ([e8ee8e5](https://github.com/audiagentic/bigcherry/commit/e8ee8e5f2c8e5fe739f87b792b1bd2dee9f2fb6f))
+* **config:** runtime profiles carry a component-checked environment (RAD01 PR 6) ([#222](https://github.com/audiagentic/bigcherry/issues/222)) ([930b3ae](https://github.com/audiagentic/bigcherry/commit/930b3ae99120219bf500387ecb12acad21d56b0c))
+* **experiment:** engine-neutral activation and KL quality evidence; radiance adapter (RAD01 PR 7) ([#223](https://github.com/audiagentic/bigcherry/issues/223)) ([5d7f649](https://github.com/audiagentic/bigcherry/commit/5d7f649d9217e815e9ea3d289d410ba5c173b615))
+* **experiment:** KLD reports median, P99, P99.9 and top-1 agreement (RAD08) ([#249](https://github.com/audiagentic/bigcherry/issues/249)) ([9c6d9fe](https://github.com/audiagentic/bigcherry/commit/9c6d9fed0e775e1910bc9240ea0fa1acb7c354b7))
+* **libr3:** checked runtime shared-memory layout_for(shape) beside the constexpr layout (RCS09-02) ([#321](https://github.com/audiagentic/bigcherry/issues/321)) ([bd1dd96](https://github.com/audiagentic/bigcherry/commit/bd1dd9669391760a2931268c6759599cebdb7e3d))
+* **libr3:** expert width and every remaining expert-count site are runtime (RCS09-05b, 07) ([#328](https://github.com/audiagentic/bigcherry/issues/328)) ([f792f51](https://github.com/audiagentic/bigcherry/commit/f792f51e183abc63242effa3e07ac870780ee301))
+* **libr3:** expert-backend contract with FP8 and W4 sizing and a capability probe (RCS05, RAD11) ([#317](https://github.com/audiagentic/bigcherry/issues/317)) ([5dc8fdc](https://github.com/audiagentic/bigcherry/commit/5dc8fdc370d47d21c93f0b42dc01c161a5b44450))
+* **libr3:** FP8 decode GEMV for the small lane (RAD14) ([#331](https://github.com/audiagentic/bigcherry/issues/331)) ([09e3be7](https://github.com/audiagentic/bigcherry/commit/09e3be7deacf8c300b392f7da96263a0bbabb4ac))
+* **libr3:** helper small-lane classes, protocol v13, lane A/B harness (RAD12) ([#314](https://github.com/audiagentic/bigcherry/issues/314)) ([7bdd08a](https://github.com/audiagentic/bigcherry/commit/7bdd08ae5abb5006ad34aa2060d91869c21d6cbc))
+* **libr3:** the worker serves FP8 block-scaled experts through radiance's fp8a8 grouped GEMM (RAD13) ([#330](https://github.com/audiagentic/bigcherry/issues/330)) ([73794d0](https://github.com/audiagentic/bigcherry/commit/73794d05bd18b287a08b9a2fca25a0f321d17b6d))
+* **patch:** engine-declared patch ID prefix; radiance patches become rad0001-rad0003 ([#232](https://github.com/audiagentic/bigcherry/issues/232)) ([3527b6a](https://github.com/audiagentic/bigcherry/commit/3527b6afae7e9e60e6f0168a81e6d2eac50590c4))
+* **patch:** engine-explicit patch registry and pinned source (RAD01 PR 2) ([#216](https://github.com/audiagentic/bigcherry/issues/216)) ([b79de13](https://github.com/audiagentic/bigcherry/commit/b79de13f61c3f12fc7c8c7b367c814635dc02e55))
+* **patch:** engine-explicit patch registry and pinned source, every caller migrated (RAD01 PR 2) ([#213](https://github.com/audiagentic/bigcherry/issues/213)) ([a1a557d](https://github.com/audiagentic/bigcherry/commit/a1a557de536815ba9c6a4f2d66b766d30f677f02))
+* **radiance:** 16-byte accesses for the helper's activation copy and result write (R3_MOE_HELPER_VECIO, default on) (RAD06) ([#278](https://github.com/audiagentic/bigcherry/issues/278)) ([c06dd0a](https://github.com/audiagentic/bigcherry/commit/c06dd0a9b1c26ba40866158c663ae1c116947810))
+* **radiance:** bc-gfx12 plugin - moe_gemm_q fp8a8 decode GEMV ahead of libr4d (RAD15) ([#355](https://github.com/audiagentic/bigcherry/issues/355)) ([92f76d9](https://github.com/audiagentic/bigcherry/commit/92f76d97eeb154e157cfd223d71f86e55bfcee4b))
+* **radiance:** bump to radiance 1.8.0 (MEN12) ([#289](https://github.com/audiagentic/bigcherry/issues/289)) ([b3eabe1](https://github.com/audiagentic/bigcherry/commit/b3eabe1f2bad747e6094ba1323fc836520eb8327))
+* **radiance:** decode-path logprob quality check (RAD15) ([#356](https://github.com/audiagentic/bigcherry/issues/356)) ([048551a](https://github.com/audiagentic/bigcherry/commit/048551a3f9311407fa7413831349273b5a5451d0))
+* **radiance:** engine patches 0001-0003 as patch packages (RAD01 PR 1) ([#210](https://github.com/audiagentic/bigcherry/issues/210)) ([dd1fbdf](https://github.com/audiagentic/bigcherry/commit/dd1fbdf290a2b0448f1cb481a38874cf416c9bc1))
+* **radiance:** f16 WMMA MoE GEMM in the helpers (R3_MOE_FP16, default on) + replay sweep harness (RAD06) ([#276](https://github.com/audiagentic/bigcherry/issues/276)) ([5fea8be](https://github.com/audiagentic/bigcherry/commit/5fea8be8b0a5e8ebef13a3fa0a06083ad8bc0440))
+* **radiance:** few-rows kernel on the decode lane (R3_MOE_HELPER_ROWS_SMALL, default off, evaluated) (RAD06) ([#283](https://github.com/audiagentic/bigcherry/issues/283)) ([52457e2](https://github.com/audiagentic/bigcherry/commit/52457e2ea12a23aa3bd1bc775ece5a4ca919b19a))
+* **radiance:** Flash-Next A/B, trace and lane configs (RAD06) ([#347](https://github.com/audiagentic/bigcherry/issues/347)) ([5b2ebfc](https://github.com/audiagentic/bigcherry/commit/5b2ebfc238dc7f3ca108f14b1b68f3d8acf440a1))
+* **radiance:** fold the small lane's activation copy and table selection into the fused routing kernel (RAD06) ([#284](https://github.com/audiagentic/bigcherry/issues/284)) ([7d1d56a](https://github.com/audiagentic/bigcherry/commit/7d1d56a545b696500ca48829fd180c99f400d715))
+* **radiance:** FP8 WMMA hc_read down-product validated correct on gfx1201 (RAD15) ([#359](https://github.com/audiagentic/bigcherry/issues/359)) ([362c382](https://github.com/audiagentic/bigcherry/commit/362c382cb53d2183412a8970880b1db988786cf6))
+* **radiance:** fused small-lane routing (decode +5-8%), unprofiled critical-path trace, protocol version 12 (RAD06/RHP) ([#282](https://github.com/audiagentic/bigcherry/issues/282)) ([6b485c4](https://github.com/audiagentic/bigcherry/commit/6b485c4c8f809abcfd0fa6868211d8c8187d0af6))
+* **radiance:** helper request capture/replay + GEMV_LARGE_ROWS (default off) (RAD06) ([#274](https://github.com/audiagentic/bigcherry/issues/274)) ([cec1316](https://github.com/audiagentic/bigcherry/commit/cec1316175b920fe8b4dc37cc136dc7cab17232e))
+* **radiance:** helper trace wall clock, per-round trace report and the RAD10-02 findings ([#307](https://github.com/audiagentic/bigcherry/issues/307)) ([996ca9c](https://github.com/audiagentic/bigcherry/commit/996ca9cf2f204b6215c6ca9502ce3c2b97be29f7))
+* **radiance:** kbench_step joins each graph instance to its timed geometry, leaves out vision, counts MTP per draft pass (RAD15 step 1) ([#351](https://github.com/audiagentic/bigcherry/issues/351)) ([1106a51](https://github.com/audiagentic/bigcherry/commit/1106a5169be3bffd792248aa5aade834c2a9abdb))
+* **radiance:** libr3 as a declared engine component with typed runtime settings (RAD01 PR 5) ([#221](https://github.com/audiagentic/bigcherry/issues/221)) ([678dc96](https://github.com/audiagentic/bigcherry/commit/678dc96d8088754255fceac8ea3362bee54c953e))
+* **radiance:** long-run tile split (R3_MOE_HELPER_MOE_LONG_ROWS, default off, evaluated) + counter/lab scripts (RAD06) ([#275](https://github.com/audiagentic/bigcherry/issues/275)) ([abaa59f](https://github.com/audiagentic/bigcherry/commit/abaa59fe9d2fea4d875058830ed1c6567f044876))
+* **radiance:** MTP prefix-cache bisection tooling, rad0006 and 35B model page (RAD14) ([#332](https://github.com/audiagentic/bigcherry/issues/332)) ([9f08db6](https://github.com/audiagentic/bigcherry/commit/9f08db69ab48ff427814f7c28ce1aa10d103aeca))
+* **radiance:** packed-f16 two-row FP8 decode GEMV is the FP8 default (RAD14) ([#338](https://github.com/audiagentic/bigcherry/issues/338)) ([f28517c](https://github.com/audiagentic/bigcherry/commit/f28517cdcbd1f25e2785a70bb6a6ee2d34ff4c87))
+* **radiance:** per-layer cost-balanced helper ownership (R3_MOE_HELPER_BALANCE, default off, evaluated) (RAD06/RHP) ([#280](https://github.com/audiagentic/bigcherry/issues/280)) ([7e7caa0](https://github.com/audiagentic/bigcherry/commit/7e7caa0278f0ccef3b0517be59fcfa5ce0e2f0a5))
+* **radiance:** port to radiance 1.7.0 - thin-hook rad0002, diagnostics in rad0004, plugins on ABI 17, natives ported (MEN12) ([#261](https://github.com/audiagentic/bigcherry/issues/261)) ([2d374d1](https://github.com/audiagentic/bigcherry/commit/2d374d183770cee668a240e2138a3b3cda886571))
+* **radiance:** Qwen3.6-35B-A3B engine-alone stream baseline (RCS09 genericity check) ([#316](https://github.com/audiagentic/bigcherry/issues/316)) ([3553e63](https://github.com/audiagentic/bigcherry/commit/3553e63269c4faec7106410598478084f1210b35))
+* **radiance:** R3_MOE_AHALF (default on), real-activation helper capture, replay sweep checksum (RAD06) ([#277](https://github.com/audiagentic/bigcherry/issues/277)) ([9fdbe49](https://github.com/audiagentic/bigcherry/commit/9fdbe495a0a14d0ad3f47da55d4c2767cff6125c))
+* **radiance:** R9700 engine with two XTX expert helpers - GPU mailbox protocol, placement, decode GEMV (RAD02-RAD06, RAD09) ([#236](https://github.com/audiagentic/bigcherry/issues/236)) ([63cc952](https://github.com/audiagentic/bigcherry/commit/63cc952f5df67093a70e038c67a9d6185aac20bb))
+* **radiance:** replay_hash cross-build bit-identity check for the worker (RCS05) ([#335](https://github.com/audiagentic/bigcherry/issues/335)) ([234c762](https://github.com/audiagentic/bigcherry/commit/234c7623f1c1cb6b976ce6588bdc509217f68b53))
+* **radiance:** RHP07-01 host-only placement simulator and trace format ([#293](https://github.com/audiagentic/bigcherry/issues/293)) ([77ae21a](https://github.com/audiagentic/bigcherry/commit/77ae21af245e8b1da7ec7f4e62ea58a93cc41c29))
+* **radiance:** shape harness - kbench_step.py and selection-table config ([#346](https://github.com/audiagentic/bigcherry/issues/346)) ([6485132](https://github.com/audiagentic/bigcherry/commit/64851326aa3691b3e47368927f675a7766c0270f))
+* **radiance:** the engine's decode-sized activation staging joins the publish kernel (R3_MOE_HELPER_FUSESTAGE, default on) (RAD06) ([#285](https://github.com/audiagentic/bigcherry/issues/285)) ([2c7c170](https://github.com/audiagentic/bigcherry/commit/2c7c17080cea3ae16ec1ecaa8cb6c9a8c9e05dc9))
+* **radiance:** validate the five libr3 helper settings with run evidence (RAD06) ([#288](https://github.com/audiagentic/bigcherry/issues/288)) ([8af8e58](https://github.com/audiagentic/bigcherry/commit/8af8e5826913b236d5abe96c8e9ca60894d4b0ff))
+* **radiance:** W4 packed-f16 decode GEMV, parked as evaluated (RAD14) ([#345](https://github.com/audiagentic/bigcherry/issues/345)) ([09b6850](https://github.com/audiagentic/bigcherry/commit/09b6850c4dddfd23e7e34e9f7b249ea9d70b5795))
+* **radiance:** wide FP8 decode GEMV (default for FP8), few-rows FP8 kernel, multi-row GEMV (evaluated), kernel-time replay tooling (RAD14) ([#337](https://github.com/audiagentic/bigcherry/issues/337)) ([a12b39a](https://github.com/audiagentic/bigcherry/commit/a12b39ab7f153e9b66c51d5dfa6dfd31621b2760))
+* **release:** add pin-bump source compile phase ([dfafa45](https://github.com/audiagentic/bigcherry/commit/dfafa45b78d635285b775c0fc6eeddfd6579161d))
+* **release:** native rewrite drift phase; pin-release confirm-then-run and release PR checks (MEN19) ([#271](https://github.com/audiagentic/bigcherry/issues/271)) ([20c2725](https://github.com/audiagentic/bigcherry/commit/20c27259c041372598adc72c7a65a01707e590f3))
+* **release:** per-engine bump and audit gates; radiance component gate (MEN10 step f) ([#260](https://github.com/audiagentic/bigcherry/issues/260)) ([3cef62f](https://github.com/audiagentic/bigcherry/commit/3cef62f94079c9686049d942c1f064a0d063e8f6))
+* **release:** pin-bump builds the bumped engine through its lane and smokes that build (MEN16) ([#268](https://github.com/audiagentic/bigcherry/issues/268)) ([91c4782](https://github.com/audiagentic/bigcherry/commit/91c47829e7a4ef481080bda02174d389ee48fc95))
+* **release:** pin-bump runs only the bumped engine's patch tests (MEN24) ([#349](https://github.com/audiagentic/bigcherry/issues/349)) ([7647042](https://github.com/audiagentic/bigcherry/commit/76470429e25de15e607968f3b253e6090df336d6))
+* **release:** pin-bump runs the source compile check as its own phase ([8ecb3c3](https://github.com/audiagentic/bigcherry/commit/8ecb3c395d7ec23836059c105b250ccbfcfdaaf5))
+* **release:** radiance release line with upstream-as-major versions (MEN13) ([#252](https://github.com/audiagentic/bigcherry/issues/252)) ([1bd9b91](https://github.com/audiagentic/bigcherry/commit/1bd9b914f386ecff3100480b6ca067b689d1a87b))
+* **tooling:** bigcherry remote run/status/wait for GPU-host lab runs (MEN18) ([#267](https://github.com/audiagentic/bigcherry/issues/267)) ([8a88eb3](https://github.com/audiagentic/bigcherry/commit/8a88eb345bded7edff218781cfaaed34917722c2))
+* **workspace:** journalled quarantine, restore and purge of a harvested run's bulk (WSL03) ([#315](https://github.com/audiagentic/bigcherry/issues/315)) ([197a114](https://github.com/audiagentic/bigcherry/commit/197a1144b84661399aaf0b7e4e7dfdd06f6b16ae))
+* **workspace:** managed work root - run manifest, run creation, read-only inventory, bigcherry run and clean (WSL01, WSL03 skeleton) ([#311](https://github.com/audiagentic/bigcherry/issues/311)) ([afe993d](https://github.com/audiagentic/bigcherry/commit/afe993da6026a959879c5b1f9d3aee02b1da9328))
+* **workspace:** run harvest writes a hash-verified evidence bundle (WSL02) ([#312](https://github.com/audiagentic/bigcherry/issues/312)) ([cd2fea0](https://github.com/audiagentic/bigcherry/commit/cd2fea0db2ae2687dacfe46a91bd6a80718c7ff6))
+
+
+### Fixes
+
+* **bench:** stream-bench accounting - token counts from usage, text events apart, finite-batch definition (RAD10) ([#302](https://github.com/audiagentic/bigcherry/issues/302)) ([9187b97](https://github.com/audiagentic/bigcherry/commit/9187b97a176fec6c6fddf7c16da68c7f420c4726))
+* **campaign:** create the KL reference directory before recording (MEN11) ([#256](https://github.com/audiagentic/bigcherry/issues/256)) ([e566184](https://github.com/audiagentic/bigcherry/commit/e566184084443bcda04f3ca73b4fbb98949fdf2a))
+* **campaign:** radiance helpers select their card with ROCR and HIP index 0 (MEN11) ([#248](https://github.com/audiagentic/bigcherry/issues/248)) ([c95d49e](https://github.com/audiagentic/bigcherry/commit/c95d49e28013275ef7f7f4cb2da2dd947b336b85))
+* **lab:** helper-kld control arm gets the 44 GiB host pool the R9700-alone layout needs (MEN11) ([#257](https://github.com/audiagentic/bigcherry/issues/257)) ([ffb3b83](https://github.com/audiagentic/bigcherry/commit/ffb3b835b112354835a47be8eefadfb87e3103d9))
+* **lab:** helper-kld thresholds from the first two Brutus runs (MEN11) ([#259](https://github.com/audiagentic/bigcherry/issues/259)) ([5aedfc1](https://github.com/audiagentic/bigcherry/commit/5aedfc1b7f42c5bff4dc9510e5084f8efa43c53c))
+* **radiance:** core tests after the 1.8.0 bump and a CI job that runs them ([#305](https://github.com/audiagentic/bigcherry/issues/305)) ([df3cfe7](https://github.com/audiagentic/bigcherry/commit/df3cfe743f60ebab3b8ea03647d63ac4c6ddb128))
+* **radiance:** placement simulator review fixes (RHP07-01) ([#294](https://github.com/audiagentic/bigcherry/issues/294)) ([62a0348](https://github.com/audiagentic/bigcherry/commit/62a0348ed8af1acc807b115aa1140ce67a22057a))
+* **release:** pin-release names a release version from a squash-merged notes commit ([#297](https://github.com/audiagentic/bigcherry/issues/297)) ([74922a4](https://github.com/audiagentic/bigcherry/commit/74922a4ec4548b026d0b7577c80ffbc841742477))
+* **release:** radiance compile gate configures with the build platform's compilers and options ([#262](https://github.com/audiagentic/bigcherry/issues/262)) ([ae92195](https://github.com/audiagentic/bigcherry/commit/ae92195a6566da456dee31d29f6f87d592359448))
+* **release:** tag pins in pin-release, one release-record key, pull fetches tags ([#264](https://github.com/audiagentic/bigcherry/issues/264)) ([6dc1788](https://github.com/audiagentic/bigcherry/commit/6dc17887235ae9674c7e05fa39fb81b9230c2c4c))
+* **workspace:** harden harvest per GPT review; RCS10 stream-derived settings note ([#313](https://github.com/audiagentic/bigcherry/issues/313)) ([3a4de33](https://github.com/audiagentic/bigcherry/commit/3a4de33d7c92ffe22b8605f4950a1a15c81d4312))
+
+
+### Performance
+
+* **radiance:** Flash-Next helpers own the hottest experts (RAD06) ([#272](https://github.com/audiagentic/bigcherry/issues/272)) ([7284db3](https://github.com/audiagentic/bigcherry/commit/7284db35920279b7fde4ecc96295090e63ba4e20))
+* **radiance:** helper MoE GEMM tuning on gfx1100 - narrow down tile, request histogram, form/tile pins (RAD06) ([#273](https://github.com/audiagentic/bigcherry/issues/273)) ([31ee442](https://github.com/audiagentic/bigcherry/commit/31ee44280d53ff926c612586b5204f3cc7bb1335))
+
+
+### Reverts
+
+* RAD01 PR 2 engine-explicit registry ([#213](https://github.com/audiagentic/bigcherry/issues/213)) - offline-patch CI failed; merged in error ([#214](https://github.com/audiagentic/bigcherry/issues/214)) ([3eaa178](https://github.com/audiagentic/bigcherry/commit/3eaa1781e21dd0fd2a5ba2f27f7d2ebd4f7b2670))
+
 ## [1.2.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.1.1...bc-platform-1.2.0) (2026-10-12)
 
 
