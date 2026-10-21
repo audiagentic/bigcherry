@@ -10,6 +10,16 @@ on:
     paths:
       - 'engines/radiance/**'
       - '.github/workflows/radiance-build.yml'
+  # GitHub Actions scopes caches per branch (current branch, PR base branch, then the repo's default
+  # branch) -- without this, every PR branch's upstream-clone and ccache caches start cold every time,
+  # since this workflow never otherwise runs ON main itself to populate a cache later PR branches can
+  # restore from. Running on push to main after each merge is what makes `restore-keys` actually find
+  # something for the NEXT PR, not just across pushes to the same branch.
+  push:
+    branches: [main]
+    paths:
+      - 'engines/radiance/**'
+      - '.github/workflows/radiance-build.yml'
   workflow_dispatch:
 
 permissions:
