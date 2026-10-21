@@ -528,6 +528,7 @@ ownership.
 | `tools/lab/radiance/hc-down-fp8-isolate.hip` | **TRANSITIONAL** | `radiance` lab topic file; isolates whether rocwmma's fragment API handles a large matrix stride correctly, independent of the full validation harness (RAD15). |
 | `tools/lab/radiance/ndump-quant-check.hip` | **TRANSITIONAL** | `radiance` lab topic file; real E4M3 round-trip error on ground-truth hc_read activation data (RAD15). |
 | `tools/lab/radiance/rdna2-draft-bench.hip` | **TRANSITIONAL** | `radiance` lab topic file; RAD16 step 1, projects the MTP drafter's GEMM cost on the 6900 XT (gfx1030). |
+| `tools/lab/radiance/hc-wdump-libr4d-patch.py` | **TRANSITIONAL** | `radiance` lab topic file; patches a scratch libr4d copy to dump the real W_down operand, confirming the on-disk row stride against a live container (RAD17). |
 | `tools/lab/radiance/hc-pf2-quant-reduce.hip` | **TRANSITIONAL** | `radiance` lab topic file; isolated test of the cross-thread amax reduction hc_down_pf2_kernel's real FP8 down-product needs, validated against real ground-truth data (RAD15). |
 | `tools/lab/radiance/hc-down-fp8-e2e.hip` | **TRANSITIONAL** | `radiance` lab topic file; end-to-end combination of the proven cross-thread quantiser and the proven WMMA down-product kernel on real ground-truth activation data (RAD15). |
 | `tools/lab/radiance/launch-flashnext-best.sh` | **TRANSITIONAL** | `radiance` lab topic file; launches Qwen3.8-Flash-Next with the current best known layout (R9700 engine + two XTX expert helpers) and prints connection details. |
