@@ -55,6 +55,7 @@ jobs:
             export RADIANCE_HOST_CC=gcc-14 RADIANCE_HOST_CXX=g++-14 ROCM_PATH=/opt/rocm PYTHONPATH=tools
             mkdir -p work/upstream
             if [ -d work/upstream/radiance.git ]; then
+              git -C work/upstream/radiance.git worktree prune
               git -C work/upstream/radiance.git fetch --prune origin "+refs/*:refs/*"
             else
               git clone --bare https://codeberg.org/StillDeadcode/radiance.git work/upstream/radiance.git
