@@ -1,8 +1,6 @@
 # rad0007_hc_pf2_fp8_down
 
-**Status:** untested (runs correctly-shaped on real hardware; a real P0 correctness bug found by GPT
-dev-agent review and fixed; two real perf optimisations landed, 1457.6us -> 1282.5us at M=2048, still
-~2.4x slower than the 530.7us baseline, not yet a win -- not a promotion candidate)
+**Status:** untested
 **Plan item:** RAD15/RAD17
 
 ## Summary
