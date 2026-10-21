@@ -91,6 +91,10 @@ Step 1 of RAD17 (real-weight ground-truth extraction) is now done. Next: step 2,
 
 Status: activation quantisation pre-pass design is now validated end to end (wave-per-group bookkeeping correct; already proven this composes correctly with the WMMA down-product via hc-down-fp8-e2e.hip, and the weight-side row stride is confirmed against the real container via #366). Remaining for RAD17: the FP8 down-product kernel itself (reading the real packed-codes-then-scales weight layout, ldm=row_bytes(K,128)), the injection-columns kernel (GPT's finding -- a separate small kernel reusing existing BF16 injection arithmetic for the 21st n-tile), the dispatch guard (including the kc%128==0 split-K alignment check), and the actual radNNNN_* patch package with its anchors into r4d_hc_bf16.hip per GPT's design (see detailed_solution).
 
+2026-10-21 FP8 down-product validated against the REAL packed weight layout, on real data both sides (tools/lab/radiance/hc-down-fp8-real-layout.hip): real ground-truth N (quantised with the validated wave-per-128-group scheme) against real W_down bytes (dumped #366, 16 rows), using matrix_b's col_major load at ldm=DLD=10560 (not K=10240) and reading each column's group scale as a plain f32 at weight_row_base+K+g*4. Result: max rel diff 3.2e-6 against a quantised-operand reference built the same way -- exact (fp32 noise floor). This closes the last open correctness question on the WMMA mechanics themselves: the real weight layout, the real activation quantiser, and the proven rocwmma::fragment approach all compose correctly together on real data.
+
+RAD17 status: every individual piece of GPT's design is now validated standalone on real data -- the quantisation pre-pass (wave-per-128-group), the WMMA down-product against the real weight layout, and (from RAD15) the activation-side end-to-end composition. What remains is assembly, not more correctness research: (1) the injection-columns kernel (not yet built or validated -- GPT's finding, a separate small kernel reusing existing BF16 injection arithmetic for the 21st n-tile); (2) wiring all pieces into the actual radNNNN_* patch package with real anchors into r4d_hc_bf16.hip, the dispatch guard (including kc%128==0), and the flag; (3) the in-kernel integration itself (porting these validated standalone kernels' logic into properly-scheduled HIP kernels matching the real grid/block dimensions hc_pf2_launch uses, not just 1-workgroup proof-of-concept tests); (4) the full acceptance sequence against r4d_selftest and the KL harness.
+
 ## Change Log
 
 - 2026-10-21T07:41:01.749670+00:00 (created-by): Created by agent
@@ -98,3 +102,4 @@ Status: activation quantisation pre-pass design is now validated end to end (wav
 - 2026-10-21T07:48:10.715264+00:00 (updated-by): Updated: section:notes
 - 2026-10-21T07:56:15.246271+00:00 (updated-by): Updated: section:detailed_solution
 - 2026-10-21T07:59:14.580428+00:00 (updated-by): Updated: section:notes
+- 2026-10-21T08:02:59.795128+00:00 (updated-by): Updated: section:notes
