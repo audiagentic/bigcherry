@@ -1,0 +1,723 @@
+{
+  "schema_version": 1,
+  "capture_kind": "server-bench-balanced-v1",
+  "evidence_role": "diagnostic",
+  "performance_admitted": false,
+  "admission_blockers": [
+    "full source provenance and work equivalence require verification",
+    "replay activation, if applicable, requires separate admission"
+  ],
+  "configuration": {
+    "_comment": "RAD15: Qwen3.6-35B-A3B FP8 on the engine alone on the R9700, bc-gfx12's moe_gemm_q decode row (packed-f16 GEMV for the gate/up call) against libr4d's. Both arms list libbcgfx12 first; the control arm switches the row off (BC_GFX12_MOE_GEMV=0, every call handed to libr4d), so the arms differ only in that kernel. --no-prefix-cache: the 35B's MTP collapses with the prefix cache at 4+ streams (RAD14). Run with qwen35b-bcgfx12-run.sh.",
+    "schema_version": 1,
+    "engine": "radiance",
+    "evidence_role": "diagnostic",
+    "execution_evidence": "observe",
+    "model": "/mnt/data/llm-models/radiance/StillDeadcode/qwen3.6-35b-a3b-fp8/qwen3.6-35b-a3b-fp8.rad",
+    "server_args": [
+      "--radiance-home",
+      "${RAD_HOME}",
+      "--kernels",
+      "libbcgfx12,libr4d,libref",
+      "--placement",
+      "expert_tiered",
+      "--ngram-placement",
+      "ram",
+      "--max-num-seqs",
+      "6",
+      "--max-num-batched-tokens",
+      "4096",
+      "--checkpoint-interval",
+      "4096",
+      "--kv-cache-dtype",
+      "fp8",
+      "--num-speculative-tokens",
+      "3",
+      "--tp",
+      "1",
+      "--host-pool-mib",
+      "30720",
+      "--max-model-len",
+      "32768",
+      "--no-prefix-cache"
+    ],
+    "environment": {
+      "HIP_VISIBLE_DEVICES": "0",
+      "ROCR_VISIBLE_DEVICES": "2",
+      "RADIANCE_HOME": "${RAD_HOME}"
+    },
+    "expected_execution": {
+      "backend": "ROCm",
+      "architectures": [
+        "gfx1201"
+      ],
+      "locators": [
+        "${R9700_BDF}"
+      ]
+    },
+    "bench_configs": "mtp-dual",
+    "required_metrics": [
+      "s1_agg_tps",
+      "s1_stream_tps",
+      "s2_agg_tps",
+      "s2_stream_tps",
+      "s4_agg_tps",
+      "s4_stream_tps",
+      "s6_agg_tps",
+      "s6_stream_tps"
+    ],
+    "repetitions": 1,
+    "health_timeout_s": 900,
+    "arms": [
+      {
+        "name": "q35-libr4d",
+        "mode": "stock",
+        "shutdown_method": "sigint",
+        "binary": "${RAD_BIN}",
+        "settings": {
+          "BC_GFX12_MOE_GEMV": "0"
+        }
+      },
+      {
+        "name": "q35-bcgfx12",
+        "mode": "stock",
+        "shutdown_method": "sigint",
+        "binary": "${RAD_BIN}",
+        "settings": {
+          "BC_GFX12_MOE_GEMV": "1"
+        }
+      }
+    ],
+    "stream_bench": {
+      "streams": [
+        1,
+        2,
+        4,
+        6
+      ],
+      "prompt_tokens": 512,
+      "max_tokens": 128,
+      "reps": 2,
+      "seed": 1
+    }
+  },
+  "model_sha256": "deb3f9844cc5419ca8f546497b09fa7380f933f13e8244aa2af505bdfe593f36",
+  "arm_model_sha256": {},
+  "arm_provenance": {
+    "q35-libr4d": {
+      "campaign_metadata": {
+        "binary_hash": "c62ebb2471b79dfc04837f6b083d7a3ba93be15ce3d8c58f1ad39bbe6b6ff393",
+        "build_id": "ad41bb5f3cadd27c7acd6f3288ebb059",
+        "build_plan_id": "eddbf012ae5e49c655f6c87bc492d018",
+        "effective_configure": {
+          "CMAKE_BUILD_TYPE": "Release",
+          "CMAKE_CXX_COMPILER": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14",
+          "CMAKE_CXX_COMPILER-ADVANCED": "1",
+          "CMAKE_CXX_COMPILER_AR": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ar-14",
+          "CMAKE_CXX_COMPILER_AR-ADVANCED": "1",
+          "CMAKE_CXX_COMPILER_RANLIB": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ranlib-14",
+          "CMAKE_CXX_COMPILER_RANLIB-ADVANCED": "1",
+          "CMAKE_C_COMPILER": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14",
+          "CMAKE_C_COMPILER-ADVANCED": "1",
+          "CMAKE_C_COMPILER_AR": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ar-14",
+          "CMAKE_C_COMPILER_AR-ADVANCED": "1",
+          "CMAKE_C_COMPILER_RANLIB": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ranlib-14",
+          "CMAKE_C_COMPILER_RANLIB-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS": "",
+          "CMAKE_EXE_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_EXE_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_EXE_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_EXE_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS": "",
+          "CMAKE_MODULE_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_MODULE_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_MODULE_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_MODULE_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS": "",
+          "CMAKE_SHARED_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_SHARED_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_SHARED_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_SHARED_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1"
+        },
+        "generated_compile_inputs_hash": null,
+        "generated_inputs_verification": null,
+        "runtime_artifacts": {
+          "radiance": "c62ebb2471b79dfc04837f6b083d7a3ba93be15ce3d8c58f1ad39bbe6b6ff393"
+        },
+        "runtime_bundle_hash": "c350cdfc0d47e7b12884bd9f6ce274fd",
+        "source_slice_id": "2ecefd96ad3c216d0321eb67880e5e7d",
+        "toolchain": [
+          [
+            "CMAKE_CXX_COMPILER",
+            "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14"
+          ],
+          [
+            "CMAKE_C_COMPILER",
+            "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14"
+          ],
+          [
+            "CMAKE_GENERATOR",
+            "Ninja"
+          ],
+          [
+            "c_compiler_realpath",
+            "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14"
+          ],
+          [
+            "c_compiler_version",
+            "x86_64-linux-gnu-gcc-14 (Ubuntu 14.2.0-4ubuntu2~24.04.1) 14.2.0"
+          ],
+          [
+            "cmake_version",
+            "cmake version 3.28.3"
+          ],
+          [
+            "cxx_compiler_realpath",
+            "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14"
+          ],
+          [
+            "cxx_compiler_version",
+            "x86_64-linux-gnu-g++-14 (Ubuntu 14.2.0-4ubuntu2~24.04.1) 14.2.0"
+          ],
+          [
+            "ninja_version",
+            "1.11.1"
+          ]
+        ]
+      },
+      "observed_runtime_artifacts": {
+        "radiance": "c62ebb2471b79dfc04837f6b083d7a3ba93be15ce3d8c58f1ad39bbe6b6ff393"
+      },
+      "compiler_observation": null,
+      "source_attestation": {
+        "upstream_revision": "685ec5bd858a31e90ba0431e844e3353c8c266fc",
+        "tree_oid": "6c2e292f5addb21e1b4691cfa6c4ec384401a81b",
+        "object_format": "sha1",
+        "source_slice_id": "2ecefd96ad3c216d0321eb67880e5e7d",
+        "allowed_untracked": [
+          "abi/bc_moe_remote.h",
+          "arch/common/bc_moe_remote_block.h",
+          "core/place/bc_moe_remote.cpp",
+          "core/place/bc_moe_remote_place.h"
+        ]
+      }
+    },
+    "q35-bcgfx12": {
+      "campaign_metadata": {
+        "binary_hash": "c62ebb2471b79dfc04837f6b083d7a3ba93be15ce3d8c58f1ad39bbe6b6ff393",
+        "build_id": "ad41bb5f3cadd27c7acd6f3288ebb059",
+        "build_plan_id": "eddbf012ae5e49c655f6c87bc492d018",
+        "effective_configure": {
+          "CMAKE_BUILD_TYPE": "Release",
+          "CMAKE_CXX_COMPILER": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14",
+          "CMAKE_CXX_COMPILER-ADVANCED": "1",
+          "CMAKE_CXX_COMPILER_AR": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ar-14",
+          "CMAKE_CXX_COMPILER_AR-ADVANCED": "1",
+          "CMAKE_CXX_COMPILER_RANLIB": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ranlib-14",
+          "CMAKE_CXX_COMPILER_RANLIB-ADVANCED": "1",
+          "CMAKE_C_COMPILER": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14",
+          "CMAKE_C_COMPILER-ADVANCED": "1",
+          "CMAKE_C_COMPILER_AR": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ar-14",
+          "CMAKE_C_COMPILER_AR-ADVANCED": "1",
+          "CMAKE_C_COMPILER_RANLIB": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ranlib-14",
+          "CMAKE_C_COMPILER_RANLIB-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS": "",
+          "CMAKE_EXE_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_EXE_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_EXE_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_EXE_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS": "",
+          "CMAKE_MODULE_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_MODULE_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_MODULE_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_MODULE_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS": "",
+          "CMAKE_SHARED_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_SHARED_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_SHARED_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_SHARED_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1"
+        },
+        "generated_compile_inputs_hash": null,
+        "generated_inputs_verification": null,
+        "runtime_artifacts": {
+          "radiance": "c62ebb2471b79dfc04837f6b083d7a3ba93be15ce3d8c58f1ad39bbe6b6ff393"
+        },
+        "runtime_bundle_hash": "c350cdfc0d47e7b12884bd9f6ce274fd",
+        "source_slice_id": "2ecefd96ad3c216d0321eb67880e5e7d",
+        "toolchain": [
+          [
+            "CMAKE_CXX_COMPILER",
+            "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14"
+          ],
+          [
+            "CMAKE_C_COMPILER",
+            "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14"
+          ],
+          [
+            "CMAKE_GENERATOR",
+            "Ninja"
+          ],
+          [
+            "c_compiler_realpath",
+            "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14"
+          ],
+          [
+            "c_compiler_version",
+            "x86_64-linux-gnu-gcc-14 (Ubuntu 14.2.0-4ubuntu2~24.04.1) 14.2.0"
+          ],
+          [
+            "cmake_version",
+            "cmake version 3.28.3"
+          ],
+          [
+            "cxx_compiler_realpath",
+            "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14"
+          ],
+          [
+            "cxx_compiler_version",
+            "x86_64-linux-gnu-g++-14 (Ubuntu 14.2.0-4ubuntu2~24.04.1) 14.2.0"
+          ],
+          [
+            "ninja_version",
+            "1.11.1"
+          ]
+        ]
+      },
+      "observed_runtime_artifacts": {
+        "radiance": "c62ebb2471b79dfc04837f6b083d7a3ba93be15ce3d8c58f1ad39bbe6b6ff393"
+      },
+      "compiler_observation": null,
+      "source_attestation": {
+        "upstream_revision": "685ec5bd858a31e90ba0431e844e3353c8c266fc",
+        "tree_oid": "6c2e292f5addb21e1b4691cfa6c4ec384401a81b",
+        "object_format": "sha1",
+        "source_slice_id": "2ecefd96ad3c216d0321eb67880e5e7d",
+        "allowed_untracked": [
+          "abi/bc_moe_remote.h",
+          "arch/common/bc_moe_remote_block.h",
+          "core/place/bc_moe_remote.cpp",
+          "core/place/bc_moe_remote_place.h"
+        ]
+      }
+    }
+  },
+  "arm_variables": {
+    "q35-libr4d": {
+      "environment": {},
+      "settings": {
+        "BC_GFX12_MOE_GEMV": "0"
+      }
+    },
+    "q35-bcgfx12": {
+      "environment": {},
+      "settings": {
+        "BC_GFX12_MOE_GEMV": "1"
+      }
+    }
+  },
+  "schedule": [
+    [
+      "q35-libr4d",
+      "q35-bcgfx12"
+    ],
+    [
+      "q35-bcgfx12",
+      "q35-libr4d"
+    ]
+  ],
+  "schedule_seed": 0,
+  "settle_seconds": 2.0,
+  "runs": [
+    {
+      "pair": 1,
+      "mode": "q35-libr4d",
+      "position": 0,
+      "returncode": 0,
+      "performance_admitted": false,
+      "server_log": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/q35-bcg12-1021-075718/pair-001-q35-libr4d/server.log",
+      "settings": {
+        "BC_GFX12_MOE_GEMV": "0"
+      },
+      "execution_attestation": null,
+      "execution_evidence_status": "missing",
+      "admission_blockers": [
+        "physical-device execution evidence missing"
+      ],
+      "metrics": {
+        "s1_agg_tps": 77.4235,
+        "s1_ttft_max_ms": 513.875,
+        "s1_gap_p95_ms": 74.621,
+        "s1_stream_tps": 103.07750000000001,
+        "s1_decode_ms_per_step": 36.5578,
+        "s1_decode_tokens_per_step": 2.8135,
+        "s1_decode_tps_engine": 102.1395,
+        "s1_draft_acceptance": 0.6148,
+        "s1_requests_running_mean": 0.607,
+        "s2_agg_tps": 178.6105,
+        "s2_ttft_max_ms": 338.86,
+        "s2_gap_p95_ms": 31.968,
+        "s2_stream_tps": 116.69399999999999,
+        "s2_decode_ms_per_step": 24.43995,
+        "s2_decode_tokens_per_step": 5.5687999999999995,
+        "s2_decode_tps_engine": 229.3475,
+        "s2_draft_acceptance": 0.6205,
+        "s2_requests_running_mean": 1.1965,
+        "s4_agg_tps": 277.6115,
+        "s4_ttft_max_ms": 647.65,
+        "s4_gap_p95_ms": 30.319499999999998,
+        "s4_stream_tps": 105.656,
+        "s4_decode_ms_per_step": 24.5816,
+        "s4_decode_tokens_per_step": 10.354700000000001,
+        "s4_decode_tps_engine": 427.379,
+        "s4_draft_acceptance": 0.6079000000000001,
+        "s4_requests_running_mean": 2.2625,
+        "s6_agg_tps": 294.5265,
+        "s6_ttft_max_ms": 717.99,
+        "s6_gap_p95_ms": 53.9005,
+        "s6_stream_tps": 69.795,
+        "s6_decode_ms_per_step": 30.972450000000002,
+        "s6_decode_tokens_per_step": 11.61515,
+        "s6_decode_tps_engine": 411.683,
+        "s6_draft_acceptance": 0.38994999999999996,
+        "s6_requests_running_mean": 3.902
+      },
+      "elapsed_s": 44.33154158992693,
+      "shutdown": {
+        "method": "sigint",
+        "requested": true,
+        "forced": false,
+        "returncode": 0,
+        "error": null
+      },
+      "sidecars": []
+    },
+    {
+      "pair": 1,
+      "mode": "q35-bcgfx12",
+      "position": 1,
+      "returncode": 0,
+      "performance_admitted": false,
+      "server_log": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/q35-bcg12-1021-075718/pair-001-q35-bcgfx12/server.log",
+      "settings": {
+        "BC_GFX12_MOE_GEMV": "1"
+      },
+      "execution_attestation": null,
+      "execution_evidence_status": "missing",
+      "admission_blockers": [
+        "physical-device execution evidence missing"
+      ],
+      "metrics": {
+        "s1_agg_tps": 76.54050000000001,
+        "s1_ttft_max_ms": 571.915,
+        "s1_gap_p95_ms": 68.838,
+        "s1_stream_tps": 102.847,
+        "s1_decode_ms_per_step": 34.15805,
+        "s1_decode_tokens_per_step": 2.7022,
+        "s1_decode_tps_engine": 101.9095,
+        "s1_draft_acceptance": 0.5761000000000001,
+        "s1_requests_running_mean": 0.5715,
+        "s2_agg_tps": 198.9225,
+        "s2_ttft_max_ms": 334.195,
+        "s2_gap_p95_ms": 28.96,
+        "s2_stream_tps": 135.073,
+        "s2_decode_ms_per_step": 21.6706,
+        "s2_decode_tokens_per_step": 5.7367,
+        "s2_decode_tps_engine": 265.2895,
+        "s2_draft_acceptance": 0.65535,
+        "s2_requests_running_mean": 1.0715,
+        "s4_agg_tps": 299.142,
+        "s4_ttft_max_ms": 599.76,
+        "s4_gap_p95_ms": 29.854999999999997,
+        "s4_stream_tps": 118.54400000000001,
+        "s4_decode_ms_per_step": 22.0833,
+        "s4_decode_tokens_per_step": 10.08155,
+        "s4_decode_tps_engine": 457.8725,
+        "s4_draft_acceptance": 0.6029,
+        "s4_requests_running_mean": 2.007,
+        "s6_agg_tps": 310.7145,
+        "s6_ttft_max_ms": 673.71,
+        "s6_gap_p95_ms": 50.7015,
+        "s6_stream_tps": 71.778,
+        "s6_decode_ms_per_step": 29.31075,
+        "s6_decode_tokens_per_step": 11.928799999999999,
+        "s6_decode_tps_engine": 433.4465,
+        "s6_draft_acceptance": 0.41285,
+        "s6_requests_running_mean": 3.7605
+      },
+      "elapsed_s": 33.10535383899696,
+      "shutdown": {
+        "method": "sigint",
+        "requested": true,
+        "forced": false,
+        "returncode": 0,
+        "error": null
+      },
+      "sidecars": []
+    },
+    {
+      "pair": 2,
+      "mode": "q35-bcgfx12",
+      "position": 0,
+      "returncode": 0,
+      "performance_admitted": false,
+      "server_log": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/q35-bcg12-1021-075718/pair-002-q35-bcgfx12/server.log",
+      "settings": {
+        "BC_GFX12_MOE_GEMV": "1"
+      },
+      "execution_attestation": null,
+      "execution_evidence_status": "missing",
+      "admission_blockers": [
+        "physical-device execution evidence missing"
+      ],
+      "metrics": {
+        "s1_agg_tps": 76.832,
+        "s1_ttft_max_ms": 484.33500000000004,
+        "s1_gap_p95_ms": 69.065,
+        "s1_stream_tps": 101.3555,
+        "s1_decode_ms_per_step": 34.25325,
+        "s1_decode_tokens_per_step": 2.7022,
+        "s1_decode_tps_engine": 100.34899999999999,
+        "s1_draft_acceptance": 0.5761000000000001,
+        "s1_requests_running_mean": 0.596,
+        "s2_agg_tps": 189.675,
+        "s2_ttft_max_ms": 338.08500000000004,
+        "s2_gap_p95_ms": 32.466,
+        "s2_stream_tps": 126.648,
+        "s2_decode_ms_per_step": 22.69225,
+        "s2_decode_tokens_per_step": 5.6666,
+        "s2_decode_tps_engine": 249.6815,
+        "s2_draft_acceptance": 0.6374500000000001,
+        "s2_requests_running_mean": 1.143,
+        "s4_agg_tps": 286.197,
+        "s4_ttft_max_ms": 640.685,
+        "s4_gap_p95_ms": 28.9155,
+        "s4_stream_tps": 112.783,
+        "s4_decode_ms_per_step": 22.011049999999997,
+        "s4_decode_tokens_per_step": 9.8109,
+        "s4_decode_tps_engine": 445.83799999999997,
+        "s4_draft_acceptance": 0.58865,
+        "s4_requests_running_mean": 2.1734999999999998,
+        "s6_agg_tps": 312.0255,
+        "s6_ttft_max_ms": 697.3499999999999,
+        "s6_gap_p95_ms": 47.236000000000004,
+        "s6_stream_tps": 73.606,
+        "s6_decode_ms_per_step": 29.25185,
+        "s6_decode_tokens_per_step": 12.0486,
+        "s6_decode_tps_engine": 446.49699999999996,
+        "s6_draft_acceptance": 0.41545,
+        "s6_requests_running_mean": 3.8890000000000002
+      },
+      "elapsed_s": 33.21072620502673,
+      "shutdown": {
+        "method": "sigint",
+        "requested": true,
+        "forced": false,
+        "returncode": 0,
+        "error": null
+      },
+      "sidecars": []
+    },
+    {
+      "pair": 2,
+      "mode": "q35-libr4d",
+      "position": 1,
+      "returncode": 0,
+      "performance_admitted": false,
+      "server_log": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/q35-bcg12-1021-075718/pair-002-q35-libr4d/server.log",
+      "settings": {
+        "BC_GFX12_MOE_GEMV": "0"
+      },
+      "execution_attestation": null,
+      "execution_evidence_status": "missing",
+      "admission_blockers": [
+        "physical-device execution evidence missing"
+      ],
+      "metrics": {
+        "s1_agg_tps": 77.361,
+        "s1_ttft_max_ms": 492.32000000000005,
+        "s1_gap_p95_ms": 73.601,
+        "s1_stream_tps": 102.5505,
+        "s1_decode_ms_per_step": 36.87845,
+        "s1_decode_tokens_per_step": 2.8135,
+        "s1_decode_tps_engine": 101.6325,
+        "s1_draft_acceptance": 0.6148,
+        "s1_requests_running_mean": 0.607,
+        "s2_agg_tps": 173.449,
+        "s2_ttft_max_ms": 341.505,
+        "s2_gap_p95_ms": 34.876999999999995,
+        "s2_stream_tps": 113.3785,
+        "s2_decode_ms_per_step": 25.201,
+        "s2_decode_tokens_per_step": 5.59005,
+        "s2_decode_tps_engine": 222.363,
+        "s2_draft_acceptance": 0.6293500000000001,
+        "s2_requests_running_mean": 1.1965,
+        "s4_agg_tps": 280.755,
+        "s4_ttft_max_ms": 617.2750000000001,
+        "s4_gap_p95_ms": 31.189999999999998,
+        "s4_stream_tps": 108.807,
+        "s4_decode_ms_per_step": 24.034399999999998,
+        "s4_decode_tokens_per_step": 10.09345,
+        "s4_decode_tps_engine": 423.5795,
+        "s4_draft_acceptance": 0.5963,
+        "s4_requests_running_mean": 2.1805000000000003,
+        "s6_agg_tps": 318.4565,
+        "s6_ttft_max_ms": 681.105,
+        "s6_gap_p95_ms": 51.3825,
+        "s6_stream_tps": 73.3535,
+        "s6_decode_ms_per_step": 30.048700000000004,
+        "s6_decode_tokens_per_step": 12.2492,
+        "s6_decode_tps_engine": 445.4155,
+        "s6_draft_acceptance": 0.4153,
+        "s6_requests_running_mean": 3.83
+      },
+      "elapsed_s": 32.72057499201037,
+      "shutdown": {
+        "method": "sigint",
+        "requested": true,
+        "forced": false,
+        "returncode": 0,
+        "error": null
+      },
+      "sidecars": []
+    }
+  ],
+  "exploratory_comparisons": {
+    "q35-bcgfx12_vs_q35-libr4d": {
+      "s1_agg_tps": {
+        "paired_rounds": 2,
+        "geometric_effect_pct": -0.9124069333141138,
+        "ci95_low_pct": -1.1404806034343573,
+        "ci95_high_pct": -0.6838070862579482,
+        "resamples": 10000,
+        "seed": 0,
+        "pair_ratios": [
+          0.9885951939656564,
+          0.9931619291374205
+        ]
+      },
+      "s1_stream_tps": {
+        "paired_rounds": 2,
+        "geometric_effect_pct": -0.6955650134462088,
+        "ci95_low_pct": -1.1652795451996711,
+        "ci95_high_pct": -0.22361815139095853,
+        "resamples": 10000,
+        "seed": 0,
+        "pair_ratios": [
+          0.9977638184860904,
+          0.9883472045480033
+        ]
+      },
+      "s2_agg_tps": {
+        "paired_rounds": 2,
+        "geometric_effect_pct": 10.35896211209295,
+        "ci95_low_pct": 9.354911241921249,
+        "ci95_high_pct": 11.372231755691864,
+        "resamples": 10000,
+        "seed": 0,
+        "pair_ratios": [
+          1.1137223175569186,
+          1.0935491124192125
+        ]
+      },
+      "s2_stream_tps": {
+        "paired_rounds": 2,
+        "geometric_effect_pct": 13.708733928913496,
+        "ci95_low_pct": 11.703718077060454,
+        "ci95_high_pct": 15.749738632663224,
+        "resamples": 10000,
+        "seed": 0,
+        "pair_ratios": [
+          1.1574973863266322,
+          1.1170371807706045
+        ]
+      },
+      "s4_agg_tps": {
+        "paired_rounds": 2,
+        "geometric_effect_pct": 4.806630536031542,
+        "ci95_low_pct": 1.9383448202169085,
+        "ci95_high_pct": 7.755622515637861,
+        "resamples": 10000,
+        "seed": 0,
+        "pair_ratios": [
+          1.0775562251563786,
+          1.019383448202169
+        ]
+      },
+      "s4_stream_tps": {
+        "paired_rounds": 2,
+        "geometric_effect_pct": 7.841547055687115,
+        "ci95_low_pct": 3.6541766614280213,
+        "ci95_high_pct": 12.198076777466493,
+        "resamples": 10000,
+        "seed": 0,
+        "pair_ratios": [
+          1.121980767774665,
+          1.0365417666142802
+        ]
+      },
+      "s6_agg_tps": {
+        "paired_rounds": 2,
+        "geometric_effect_pct": 1.6690012354917405,
+        "ci95_low_pct": -2.0194280851544844,
+        "ci95_high_pct": 5.496279621697875,
+        "resamples": 10000,
+        "seed": 0,
+        "pair_ratios": [
+          1.0549627962169787,
+          0.9798057191484552
+        ]
+      },
+      "s6_stream_tps": {
+        "paired_rounds": 2,
+        "geometric_effect_pct": 1.58502904324187,
+        "ci95_low_pct": 0.3442235203500843,
+        "ci95_high_pct": 2.841177734794753,
+        "resamples": 10000,
+        "seed": 0,
+        "pair_ratios": [
+          1.0284117773479475,
+          1.0034422352035008
+        ]
+      }
+    }
+  },
+  "setting_activation": {
+    "q35-bcgfx12": {
+      "BC_GFX12_MOE_GEMV": {
+        "status": "executed",
+        "mechanism": "bc-gfx12:BC_GFX12_MOE_GEMV",
+        "detail": "marker 'libbcgfx12: BC_GFX12_MOE_GEMV on': control False, subject True"
+      }
+    }
+  }
+}
