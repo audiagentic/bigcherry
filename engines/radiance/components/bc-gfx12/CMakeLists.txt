@@ -14,7 +14,7 @@ endif()
 
 rad_add_plugin(libbcgfx12 kernels
   SOURCES     ${CMAKE_CURRENT_SOURCE_DIR}/bc_gfx12_plugin.cpp
-  HIP_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/bc_hc_read.hip ${CMAKE_CURRENT_SOURCE_DIR}/bc_moe_gemv.hip
+  HIP_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/bc_hc_read.hip ${CMAKE_CURRENT_SOURCE_DIR}/bc_hc_prefill.hip ${CMAKE_CURRENT_SOURCE_DIR}/bc_moe_gemv.hip
   GPU_TARGETS gfx1201
   INCLUDES    ${CMAKE_CURRENT_SOURCE_DIR})
 target_include_directories(libbcgfx12 PRIVATE ${RADIANCE_SRC}/abi)

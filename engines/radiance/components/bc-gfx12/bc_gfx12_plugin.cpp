@@ -15,6 +15,7 @@
 #include <string>
 
 extern "C" int bc_hc_read_decode(const RadArgs* a, RadStream s);        // bc_hc_read.hip
+extern "C" int bc_hc_read_prefill(const RadArgs* a, RadStream s);       // bc_hc_prefill.hip
 extern "C" int bc_moe_gemm_fp8_decode(const RadArgs* a, RadStream s);   // bc_moe_gemv.hip
 
 namespace {
@@ -90,6 +91,11 @@ int hc_read_launch(const RadArgs* a, RadStream s) {
     if (rc != RAD_E_UNSUPPORTED) return rc;
     return r4d().ok ? r4d().hc_read(a, s) : RAD_E_UNSUPPORTED;   // a geometry the decode kernel declines: libr4d's
 }
+int hc_read_prefill_launch(const RadArgs* a, RadStream s) {
+    const int rc = bc_hc_read_prefill(a, s);
+    if (rc != RAD_E_UNSUPPORTED) return rc;
+    return r4d().ok ? r4d().hc_read(a, s) : RAD_E_UNSUPPORTED;   // a geometry the prefill kernel declines: libr4d's
+}
 int64_t hc_read_scratch(const RadArgs* a) {
     return r4d().ok ? r4d().hc_read_scratch(a) : -1;            // our kernel needs no more scratch than libr4d's
 }
@@ -138,6 +144,11 @@ const RadConstraint kHcReadDecode[] = {
     RAD_CDIV("lowrank", 64), RAD_CLE("lowrank", 512), RAD_CLE("group", 128), RAD_CLE("inject", 1),
     RAD_CIN("dtype", "bf16"), RAD_CIN("mix", "e4m3"),
 };
+const RadConstraint kHcReadPrefill[] = {
+    RAD_CGE("M", 17), RAD_CDIV("n", 512), RAD_CLE("n", 7552), RAD_CGE("hc", 2), RAD_CLE("hc", 4),
+    RAD_CDIV("lowrank", 64), RAD_CLE("lowrank", 512), RAD_CLE("group", 128), RAD_CLE("inject", 1),
+    RAD_CIN("dtype", "bf16"), RAD_CIN("mix", "e4m3"),
+};
 
 const RadKernelInfo kRows[] = {
     { "bc_hc_read_e4m3_decode", "hc_read", "norm",
@@ -159,6 +170,16 @@ const RadKernelInfo kRows[] = {
       kMoeGemmQDecode, (int)(sizeof(kMoeGemmQDecode) / sizeof(kMoeGemmQDecode[0])),
       nullptr, 0, nullptr,
       nullptr, nullptr, moe_gemm_q_launch, moe_gemm_q_scratch, layout_moe_fp8, nullptr, shape_moe_gemm_q, nullptr,
+      nullptr },
+    { "bc_hc_read_e4m3_prefill", "hc_read", "norm",
+      "hc_read at prefill-sized steps (RAD15 stage 1): stub that delegates every call to libr4d while the plugin's "
+      "selection and layout plumbing for M > 16 is proven; a WMMA kernel replaces it next",
+      "M >= 17; otherwise as libr4d's hc_read_e4m3",
+      "bf16 stream, E4M3 mixing matrices with f32 scales, f32 gain, bf16 out, E4M3 + f32 scale for the twin",
+      RAD_DOMAIN_DEVICE, 60,
+      kHcReadPrefill, (int)(sizeof(kHcReadPrefill) / sizeof(kHcReadPrefill[0])),
+      nullptr, 0, nullptr,
+      nullptr, nullptr, hc_read_prefill_launch, hc_read_scratch, layout_hc, relayout_hc, shape_hc, unrelayout_hc,
       nullptr },
 };
 
