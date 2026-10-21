@@ -20,9 +20,11 @@ Adds three new kernels to libr4d's r4d_hc_bf16.hip, inert until wired up:
                            below) and hc_inj_pf2_fp8_reduce_kernel finalises them -- extracted verbatim from
                            the existing kernel's own arithmetic either way (no FP8 variant exists for the
                            injection weight, so no new numerics in either path).
-  hc_inj_pf2_fp8_reduce_kernel  finalises the injection partials the quant kernel accumulates per
-                           (row, 128-K group) when ks>1, piggybacking on the same dispatch step as the
-                           down-product's own split-K reduce.
+  hc_down_pf2_fp8_reduce_kernel  (updated) also finalises the injection partials the quant kernel
+                           accumulates per (row, 128-K group) when ks>1, inline in the same kernel -- a
+                           dedicated hc_inj_pf2_fp8_reduce_kernel existed for one revision, then was fused
+                           into this one to remove a separate launch entirely (measured: 920.3us -> 911.2us,
+                           bit-identical injection output confirmed again).
 
 GPT dev-agent profiling (req_bigcherry_f0af77769407) found the real architectural problem: BF16 does the
 down product AND injection in ONE fused kernel (0.159ms); this patch originally did them as FOUR separate
@@ -134,22 +136,13 @@ __global__ __launch_bounds__(256) void hc_pf2_quant_a8_kernel(
 '''
 
 _INJ_REDUCE_KERNEL_TEXT = '''
-/* RAD17 (GPT dev-agent review req_bigcherry_f0af77769407): finalises the injection partials
- * hc_pf2_quant_a8_kernel accumulated per (row, 128-K group), one thread per (row, column) summing all
- * nkbTotal groups -- a serial loop, not parallel-reduced, since nkbTotal (80 at this shape) and hc (4) are
- * both small and this is not the expensive part of the pipeline; only launched when ks>1 (do_inj was true),
- * piggybacking on the same dispatch step as hc_down_pf2_fp8_reduce_kernel. For ks==1 the standalone
- * hc_inj_pf2_bf16_kernel still runs instead, unchanged. */
-__global__ __launch_bounds__(32) void hc_inj_pf2_fp8_reduce_kernel(
-    const float* __restrict__ inj_partial, unsigned short* __restrict__ inj,
-    long rows, long nkbTotal, int hc, long irow) {
-    const long row = blockIdx.x;
-    const int ic = threadIdx.x;
-    if (row >= rows || ic >= hc) return;
-    float sum = 0.0f;
-    for (long g = 0; g < nkbTotal; ++g) sum += inj_partial[(row * nkbTotal + g) * 4 + ic];
-    inj[row * irow + ic] = f2bf(2.0f * sigmoidf_(sum * (1.0f / (float)hc)));
-}
+/* RAD17 (GPT dev-agent review req_bigcherry_5748dab6ffab): hc_inj_pf2_fp8_reduce_kernel used to live here as
+ * its own kernel, launched right after hc_down_pf2_fp8_reduce_kernel. Its finalisation (summing
+ * hc_pf2_quant_a8_kernel's injection partials across nkbTotal groups) is now fused directly into
+ * hc_down_pf2_fp8_reduce_kernel's own body instead -- the first hc threads of each row's range do the extra
+ * work on top of their own down-column reduce, removing a separate kernel launch entirely. Kept as an empty
+ * placeholder (rather than silently deleting the variable this file's kernel-text concatenation still
+ * references) so the history of why this used to be a standalone kernel stays visible. */
 '''
 
 _FP8_DOWN_KERNEL = '''
@@ -341,10 +334,20 @@ _REDUCE_KERNEL = '''
  * reduce scoped to [rows x lr], not [rows x ncol]. Mechanically the same accumulation hc_down_reduce_kernel
  * already runs for its own columns (ascending z, matching add order); not yet measured on real split-K
  * shapes -- every PF2-eligible shape this session found has ks > 1 (M=512 was already ks=7), so this is the
- * piece that actually matters for any real call, not an edge case. */
+ * piece that actually matters for any real call, not an edge case.
+ *
+ * RAD17 (GPT dev-agent review req_bigcherry_5748dab6ffab): fuses hc_inj_pf2_fp8_reduce_kernel's own
+ * finalisation into this same launch when do_inj, removing a separate kernel launch entirely -- the first
+ * `hc` threads of each row's [0,lr) range (col < hc) do the extra 80-iteration injection sum on top of
+ * their own down-column work; the other lr-hc threads in that row's range are unaffected. This does add
+ * warp divergence (4 of every 320 threads doing extra serial work) that the reduce-only version didn't
+ * have -- accepted only after measuring a real full-call improvement with bit-identical injection output,
+ * not assumed free. */
 __global__ __launch_bounds__(kThreads) void hc_down_pf2_fp8_reduce_kernel(
     const float* __restrict__ part, unsigned short* __restrict__ dout,
-    long rows, long lr, long ncol, int ksplit) {
+    long rows, long lr, long ncol, int ksplit,
+    const float* __restrict__ inj_partial, unsigned short* __restrict__ inj,
+    long nkbTotal, int hc, long irow, bool do_inj) {
     const long i = (long)blockIdx.x * kThreads + threadIdx.x;
     const long tot = rows * lr;
     if (i >= tot) return;
@@ -353,6 +356,11 @@ __global__ __launch_bounds__(kThreads) void hc_down_pf2_fp8_reduce_kernel(
     float s = 0.0f;
     for (int z = 0; z < ksplit; ++z) s += part[(long)z * stride + base];
     dout[row * lr + col] = f2bf(siluf_(s * 0.25f));
+    if (do_inj && col < hc) {
+        float sum = 0.0f;
+        for (long g = 0; g < nkbTotal; ++g) sum += inj_partial[(row * nkbTotal + g) * 4 + col];
+        inj[row * irow + col] = f2bf(2.0f * sigmoidf_(sum * (1.0f / (float)hc)));
+    }
 }
 '''
 
@@ -565,15 +573,11 @@ PATCH = FilePatch(
                 "            hipLaunchKernelGGL(hc_down_pf2_fp8_reduce_kernel,\n"
                 "                               dim3((unsigned)((totlr + kThreads - 1) / kThreads)),\n"
                 "                               dim3(kThreads), 0, (hipStream_t)s, (const float*)kpart,\n"
-                "                               dbuf, rows, lr, ncol, ks);\n"
+                "                               dbuf, rows, lr, ncol, ks, (const float*)fp8_inj_partial, inj,\n"
+                "                               nkb, hc, irow, do_inj);\n"
                 "            if (hipGetLastError() != hipSuccess) return RAD_E_DEVICE;\n"
                 "        }\n"
-                "        if (do_inj) {\n"
-                "            hipLaunchKernelGGL(hc_inj_pf2_fp8_reduce_kernel, dim3((unsigned)rows), dim3(32), 0,\n"
-                "                               (hipStream_t)s, (const float*)fp8_inj_partial, inj, rows, nkb,\n"
-                "                               hc, irow);\n"
-                "            if (hipGetLastError() != hipSuccess) return RAD_E_DEVICE;\n"
-                "        } else if (injw && inj) {\n"
+                "        if (!do_inj && injw && inj) {\n"
                 "            hipLaunchKernelGGL(hc_inj_pf2_bf16_kernel, dim3((unsigned)rows),\n"
                 "                               dim3(32), 0, (hipStream_t)s, fp8a, fp8_ascale, injw, inj, rows,\n"
                 "                               HN, hc, irow);\n"
