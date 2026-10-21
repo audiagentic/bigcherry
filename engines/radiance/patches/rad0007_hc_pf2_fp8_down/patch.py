@@ -5,8 +5,13 @@ Adds three new kernels to libr4d's r4d_hc_bf16.hip, inert until wired up:
                            validated against real ground-truth data: tools/lab/radiance/hc-pf2-quant-a8.hip)
   hc_down_pf2_fp8_kernel   the FP8 WMMA down-product itself, reading W_down's real on-disk layout
                            directly (row_bytes(K,128) stride, inline f32 scale) instead of the bf16-decoded
-                           `plane` buffer the existing kernel uses -- validated:
-                           tools/lab/radiance/hc-down-fp8-real-layout.hip
+                           `plane` buffer the existing kernel uses. Output contract (part[]/dout write) is
+                           transcribed verbatim from the real hc_down_pf2_kernel/hc_down_reduce_kernel.
+                           ks==1 path validated end to end at real RT=64/lr=320/kWaves=8 scale:
+                           tools/lab/radiance/hc-down-fp8-fullscale.hip. Known gap found reading the real
+                           source: no kernel anywhere materializes the full bf16 N array
+                           hc_pf2_quant_a8_kernel assumes as its input -- a separate kernel for that is the
+                           next real blocker, not dispatch wiring.
   hc_inj_pf2_bf16_kernel   the injection columns, extracted verbatim from the existing kernel's own
                            arithmetic (no FP8 variant exists for the injection weight, so no new numerics)
 
@@ -62,65 +67,96 @@ _FP8_DOWN_KERNEL = '''
  * then rescaled by (activation group scale * weight group scale) before adding into a running per-element
  * total -- the weight's scale and the activation's scale are independent per (row, group) and (col, group)
  * respectively, so neither side's fragment can be pre-scaled; the group's raw WMMA result must be unpacked
- * (store_matrix_sync to a small LDS buffer) before the rescale-and-accumulate.
+ * (store_matrix_sync to a small LDS buffer) before the rescale-and-accumulate. Each wave's part_tile slot is
+ * indexed by wave (8 waves run concurrently): an unindexed shared buffer here lets every wave overwrite the
+ * others' partials -- this exact bug was caught and fixed twice this session in the standalone harnesses.
  *
- * Output contract matches hc_down_pf2_kernel's: part[] when ks > 1 (hc_down_reduce_kernel sums it, unchanged),
- * else dout[] direct with the same silu(v * inv_hc) epilogue. Injection columns are NOT handled here --
- * hc_inj_pf2_bf16_kernel below covers [lr, ncol) separately, since injw has no FP8 variant.
+ * Output contract copied verbatim from the real hc_down_pf2_kernel's epilogue (r4d_hc_bf16.hip): when ks > 1,
+ * write the UNACTIVATED value into part[(blockIdx.y*rows+r)*ncol+col] for hc_down_reduce_kernel to sum (hence
+ * `ncol`, not `lr`, is this kernel's part[] stride, matching that reduce kernel even though this kernel only
+ * ever writes columns < lr itself); else write dout[r*lr+col] = f2bf(siluf_(v*inv_hc)) directly. inv_hc and
+ * wadd: note wadd is NOT applied here -- in the real kernel it is folded into N while building it (stageA's
+ * `(pw[e] + wadd)`), not in the down-product epilogue; this kernel inherits wadd in its signature only to stay
+ * a drop-in alternative at the call site, unused until the N-side of this pipeline needs it (see below).
  *
- * Validated (real N, real W_down bytes, this exact ldm/scale-offset scheme): hc-down-fp8-real-layout.hip,
- * max rel diff 3.2e-6 against a quantised-operand reference (fp32 noise floor). NOT yet validated: this exact
- * kernel at RT=64/kWaves tiling (the standalone harness used a single 16-row, single-wave shape to isolate
- * the layout question) -- that is the next validation step before this kernel is wired into dispatch. */
+ * Validated end to end at REAL production scale (RT=64, lr=320/20 column tiles, kWaves=8, real activation and
+ * real W_down bytes): tools/lab/radiance/hc-down-fp8-fullscale.hip, max rel diff 2.7e-5 (fp32 noise floor)
+ * against a quantised-operand reference, for the ks==1 (kc >= HN, no split-K) direct-to-dout path exercised
+ * there. The ks>1/part[] path below uses the real kernel's own indexing convention (confirmed by reading
+ * hc_down_pf2_kernel and hc_down_reduce_kernel directly) but has NOT been separately exercised by a harness
+ * that drives hc_down_reduce_kernel afterward -- treat it as transcribed-and-reviewed, not measured, until
+ * that harness exists.
+ *
+ * KNOWN GAP, found reading the real source for this revision (not yet addressed by any kernel in this patch):
+ * hc_pf2_quant_a8_kernel above assumes a materialized bf16 N array already exists to quantise. No such array
+ * exists anywhere in the real pipeline -- hc_down_pf2_kernel builds N incrementally, tile by tile, straight
+ * from `h` + per-stream norm scale + gamma weight `w` (`fetchA`/`stageA`), into a small double-buffered LDS
+ * window, and never materializes the whole thing. Before hc_pf2_quant_a8_kernel can run for real, a separate
+ * kernel (or an extension of hc_pf2_prep_kernel) must build and store the FULL bf16 N array first. That
+ * kernel does not exist yet; this is the next real blocker, not the dispatch wiring. */
 __global__ __launch_bounds__(kThreads) void hc_down_pf2_fp8_kernel(
     const unsigned char* __restrict__ a8, const float* __restrict__ ascale,
     const unsigned char* __restrict__ down, long dld,
     unsigned short* __restrict__ dout, float* __restrict__ part,
-    long rows, long lr, long kc, long HN, float wadd) {
+    long rows, long lr, long ncol, long kc, long HN, float wadd) {
     using namespace rocwmma;
     using Afrag = fragment<matrix_a, 16, 16, 16, float8_t, row_major>;
     using Bfrag = fragment<matrix_b, 16, 16, 16, float8_t, col_major>;
     using Cfrag = fragment<accumulator, 16, 16, 16, float>;
 
     constexpr int RT = kPf2RT, MT = RT / 16;
-    const int wave = threadIdx.x / kWave;
+    const int wave = threadIdx.x / kWave, lane = threadIdx.x % kWave;
     const long ntt = (lr + 15) / 16;
     const long r0 = blockIdx.x * RT;
     const long ka = blockIdx.y * kc;
     const long kb = (ka + kc < HN) ? ka + kc : HN;
     if (r0 >= rows || ka >= HN) return;
     const long nkb0 = ka / 128, nkb1 = (kb + 127) / 128;
+    const long nkbTotal = (HN + 127) / 128;
+    const float inv_hc = 1.0f / 4.0f;  /* hc is fixed at 4 for this pinned shape, matching the real kernel's call site */
+    (void)wadd;
 
-    __shared__ float part_tile[16][16];
-    const long nkb = (HN + 127) / 128;
+    __shared__ float part_tile[kWaves][16][16];
     for (long nt = wave; nt < ntt; nt += kWaves) {
         const long col0 = nt * 16;
-        float total[MT][16] = {};
-        for (long g = nkb0; g < nkb1; ++g) {
-            Cfrag fc;
-            fill_fragment(fc, 0.0f);
-            for (int s = 0; s < 128 / 16; ++s) {
-                const long k0 = g * 128 + s * 16;
-                Afrag fa; Bfrag fb;
-                load_matrix_sync(fa, reinterpret_cast<const float8_t*>(a8 + r0 * HN + k0), HN);
-                load_matrix_sync(fb, reinterpret_cast<const float8_t*>(down + col0 * dld + k0), dld);
-                mma_sync(fc, fa, fb, fc);
+        for (int m = 0; m < MT; ++m) {
+            const long row0 = r0 + m * 16;
+            if (row0 >= rows) break;
+            float total[8] = {};
+            for (long g = nkb0; g < nkb1; ++g) {
+                Cfrag fc;
+                fill_fragment(fc, 0.0f);
+                for (int s = 0; s < 128 / 16; ++s) {
+                    const long k0 = g * 128 + s * 16;
+                    Afrag fa; Bfrag fb;
+                    load_matrix_sync(fa, reinterpret_cast<const float8_t*>(a8 + (size_t)row0 * HN + k0), HN);
+                    load_matrix_sync(fb, reinterpret_cast<const float8_t*>(down + (size_t)col0 * dld + k0), dld);
+                    mma_sync(fc, fa, fb, fc);
+                }
+                store_matrix_sync(&part_tile[wave][0][0], fc, 16, mem_row_major);
+                __syncwarp();
+#pragma unroll
+                for (int t = 0; t < 8; ++t) {
+                    const int idx = lane + t * kWave;
+                    const int i = idx / 16, j = idx % 16;
+                    const long row = row0 + i, col = col0 + j;
+                    if (row >= rows || col >= lr) continue;
+                    const float asc = ascale[(size_t)row * nkbTotal + g];
+                    const float* wsc = reinterpret_cast<const float*>(down + (size_t)col * dld + HN);
+                    total[t] += part_tile[wave][i][j] * asc * wsc[g];
+                }
+                __syncwarp();
             }
-            store_matrix_sync(&part_tile[0][0], fc, 16, mem_row_major);
-            __syncthreads();
-            /* TODO(RAD17, next revision): rescale-and-accumulate part_tile[i][j] (output row r0+m*16+i,
-             * column col0+j) into total[m][j] by ascale[row][g] * weight_scale(col0+j, g), using the same
-             * lane-to-(m,i,j) mapping hc_down_pf2_kernel's own epilogue uses (e0=8*(lane>>4), nn=lane&15) so
-             * every thread, not just a serial loop, does its share. Left as a no-op here: this kernel is
-             * inert (uncalled) in this patch revision -- see the file header and RAD17's plan notes. The
-             * per-group WMMA/layout math above (the only part validated so far) is unaffected by finishing
-             * this epilogue. */
-            __syncthreads();
-        }
-        if (threadIdx.x % kWave == 0 && col0 < lr) {
-            /* Silences unused-variable warnings on this deliberately incomplete path without pretending the
-             * epilogue is written; the real write-out lands with the TODO above. */
-            (void)total; (void)rows; (void)wadd; (void)dout; (void)part; (void)nkb;
+#pragma unroll
+            for (int t = 0; t < 8; ++t) {
+                const int idx = lane + t * kWave;
+                const int i = idx / 16, j = idx % 16;
+                const long row = row0 + i, col = col0 + j;
+                if (row >= rows || col >= lr) continue;
+                const float v = total[t];
+                if (part) part[((long)blockIdx.y * rows + row) * ncol + col] = v;
+                else      dout[row * lr + col] = f2bf(siluf_(v * inv_hc));
+            }
         }
     }
 }
