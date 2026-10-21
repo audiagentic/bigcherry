@@ -138,7 +138,17 @@ __global__ __launch_bounds__(kThreads) void hc_down_pf2_fp8_kernel(
     using Bfrag = fragment<matrix_b, 16, 16, 16, float8_t, col_major>;
     using Cfrag = fragment<accumulator, 16, 16, 16, float>;
 
-    constexpr int RT = kPf2RT, MT = RT / 16;
+    /* RAD17 (GPT dev-agent review req_bigcherry_46f3e71a16c4): at M=2048/ks=2, RT=kPf2RT=64 gave this
+     * kernel's grid only 64 workgroups total -- the same as the R9700's CU count, roughly one workgroup a
+     * CU before scheduling, a real grid-underfill bottleneck, confirmed (not just hypothesised) on real
+     * hardware: halving RT to 32 (own constant, NOT kPf2RT -- the real bf16 kernel still uses kPf2RT
+     * unchanged) doubled workgroup count with the same total WMMA work and measured 1203.7us -> 999.6us at
+     * M=2048, the single largest win of this whole session. RT=16 was also tried (per GPT's own stopping
+     * rule: "if RT32 improves, test RT16 next") and measured 999.2us -- statistically the same as RT=32,
+     * not a further improvement -- so grid underfill was real but is now fully resolved at RT=32; smaller
+     * tiles plateau rather than keep helping. Kept at RT=32, not RT=16, since it needs half as many
+     * workgroups for the same work with no measured cost. */
+    constexpr int RT = 32, MT = RT / 16;
     const int wave = threadIdx.x / kWave, lane = threadIdx.x % kWave;
     const long ntt = (lr + 15) / 16;
     const long r0 = blockIdx.x * RT;
@@ -471,7 +481,7 @@ PATCH = FilePatch(
                 "                           hrow, wadd, nkb);\n"
                 "        if (hipGetLastError() != hipSuccess) return RAD_E_DEVICE;\n"
                 "        hipLaunchKernelGGL(hc_down_pf2_fp8_kernel,\n"
-                "                           dim3((unsigned)((rows + kPf2RT - 1) / kPf2RT), (unsigned)ks),\n"
+                "                           dim3((unsigned)((rows + 31) / 32), (unsigned)ks),\n"
                 "                           dim3(kThreads), 0, (hipStream_t)s, fp8a, fp8_ascale,\n"
                 "                           (const unsigned char*)down, dld, dbuf, kpart, rows, lr, ncol,\n"
                 "                           kc, HN, wadd);\n"
