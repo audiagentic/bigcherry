@@ -25,14 +25,23 @@ FP8 eligibility/scratch allocation before the prep launch so prep can skip it), 
 kernel from one wave per block to 8 -- still **~2.3x SLOWER** than the existing bf16 path's 530.7 us. Two
 further restructurings of the down kernel's inner loop (hoisting the redundant 4x weight-fragment reload,
 fully and in pairs) were tried and both MEASURED SLOWER on real hardware (1406.8 us and 1248.2 us
-respectively) -- this kernel is occupancy-bound at this shape, not weight-bandwidth-bound, confirmed by two
-independent negative results, not assumed from one; reverted both. Not correct to a quality metric either
-yet (byte-identity fails as expected for a lossy FP8 path -- `inj` now correctly shows as differing too, the
-expected result of a genuinely lossy computation rather than the earlier bug's corruption; no RMS/KL-style
-quality check has been built). Not a win -- closing the remaining gap needs a different register-footprint
-regime (raw WMMA intrinsics replacing `rocwmma::fragment`, per GPT's review) rather than more tiling
-variants of the same fragment-based approach, and a quality metric is still needed before any promotion
-decision.
+respectively) -- consistent with an occupancy-bound kernel at this shape, not weight-bandwidth-bound.
+A follow-up GPT review (`req_bigcherry_46f3e71a16c4`) read the actual kernel code and identified the real,
+confirmable cause: at M=2048/ks=2, RT=64 gave the FP8 down kernel's grid only 64 workgroups total -- the same
+as the R9700's CU count, a genuine grid-underfill bottleneck, independent of (and not tested by) the
+accumulator-hoisting attempts. Halving RT to 32 (an own constant for the FP8 kernel only; the real bf16
+kernel still uses `kPf2RT`=64 unchanged) doubled workgroup count with identical total WMMA work and measured
+**1203.7 us -> 999.6 us** -- the single largest win this session, confirming the diagnosis. RT=16 was also
+tried (per GPT's own stopping rule) and measured 999.2 us, statistically the same as RT=32 -- grid underfill
+is now fully resolved, not partially; smaller tiles plateau rather than keep helping. Kept at RT=32.
+
+**Session total: 1457.6 us -> 999.6 us (~31.4% faster)**, now **~1.9x SLOWER** than the existing bf16 path's
+530.7 us -- closer, but still not a win. Not correct to a quality metric either yet (byte-identity fails as
+expected for a lossy FP8 path -- `inj` now correctly shows as differing too, the expected result of a
+genuinely lossy computation rather than the earlier bug's corruption; no RMS/KL-style quality check has been
+built). An ongoing GPT dev-agent consultation (session `ses_0e45b277c600463c`) is being used for each next
+step: implement, measure on real hardware, report back, repeat. A quality metric is still needed before any
+promotion decision regardless of further speed gains.
 
 ## Detail
 
