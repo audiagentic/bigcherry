@@ -187,11 +187,14 @@ bool cls_of(const RadTensor* w, const RadTensor* s, long long cnt, long long n, 
 }  // namespace
 
 extern "C" int bc_moe_gemm_fp8_decode(const RadArgs* a, RadStream stream) {
-    /* Off by default (BC_GFX12_MOE_GEMV=1 turns it on): 1-stream greedy output is not identical to libr4d's (a near-tie flips
-     * ~45 tokens in; f32 accumulation order differs from WMMA's) and KL mode cannot reach a decode-only row. */
+    /* On by default (BC_GFX12_MOE_GEMV=0 turns it off): 1-stream greedy output is not identical to libr4d's (a near-tie
+     * flips ~45 tokens in; f32 accumulation order differs from WMMA's), measured at 99.06% top-1 agreement / KL mean
+     * 3.0e-3 / p99 5.7e-2 against libr4d (KL mode is prefill-only and cannot reach a decode-only row). Single-model
+     * (35B) evidence, accepted by the owner 2026-10-21 after two genuine architecture-mismatch dead ends looking for
+     * a second fp8a8-MoE model radiance's architecture plugins actually support (RAD15). */
     static const bool on = [] {
         const char* v = std::getenv("BC_GFX12_MOE_GEMV");
-        const bool o = v && std::strcmp(v, "0");
+        const bool o = !v || std::strcmp(v, "0");
         if (o) std::fprintf(stderr, "libbcgfx12: BC_GFX12_MOE_GEMV on\n");
         return o;
     }();

@@ -27,6 +27,12 @@
 # The repository setting "Allow GitHub Actions to create and approve pull requests" must be on for release-please to
 # open the release PR; with it off the action pushes the release branch and fails, and the PR has to be opened by
 # hand from that branch with the label "autorelease: pending".
+#
+# token: a PR opened or updated with the default GITHUB_TOKEN never triggers pull_request-event workflows (GitHub's
+# anti-recursion rule), so main's required checks (conventional-title, index-line-endings) never run and the release
+# PR sits blocked forever regardless of its content. secrets.RELEASE_PLEASE_TOKEN (a PAT) makes the action act as a
+# real account instead, so its PRs trigger checks normally. Without that secret, unblock a stuck release PR by hand
+# with `gh pr close <n> && gh pr reopen <n>` (closing/reopening as a real account retriggers checks once).
 name: release-please
 
 on:
@@ -44,6 +50,7 @@ jobs:
       - id: release
         uses: googleapis/release-please-action@v4
         with:
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
