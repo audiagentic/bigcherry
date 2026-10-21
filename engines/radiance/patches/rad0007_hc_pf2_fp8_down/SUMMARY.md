@@ -1,7 +1,8 @@
 # rad0007_hc_pf2_fp8_down
 
-**Status:** untested (runs correctly-shaped on real hardware; two real optimisations landed, 1457.6us ->
-1296.9us at M=2048, still ~2.4x slower than the 530.7us baseline, not yet a win)
+**Status:** untested (runs correctly-shaped on real hardware; a real P0 correctness bug found by GPT
+dev-agent review and fixed; two real perf optimisations landed, 1457.6us -> 1282.5us at M=2048, still
+~2.4x slower than the 530.7us baseline, not yet a win -- not a promotion candidate)
 **Plan item:** RAD15/RAD17
 
 ## Summary
@@ -12,11 +13,19 @@ anchors apply and the new code compiles against the real pinned source.
 
 ## Outcome
 
-Dispatch is wired and the path runs end to end on real hardware (`RAD_HC_PF2_FP8_DOWN=1`, default off).
-Measured at M=2048 on the real gfx1201 device, after two real validated optimisation passes: **1296.9 us**,
-down from 1457.6 us (inject kernel's redundant-read fix, then the down kernel's LDS-round-trip elimination)
--- still **~2.4x SLOWER** than the existing bf16 path's 530.7 us. Not correct to a quality metric either yet
-(byte-identity fails as expected for a lossy FP8 path; no RMS/KL-style quality check has been built). Not a
+Dispatch is wired and the path runs end to end on real hardware (`RAD_HC_PF2_FP8_DOWN=1`, default off). A GPT
+dev-agent code review (`req_bigcherry_d67c3e42e319`) found a real P0 correctness bug before it went further:
+the original, unconditional `if (ks > 1) { hc_down_reduce_kernel(...) }` call right after the down-product
+launch was never gated on which path ran, so it re-ran on top of the FP8 path's own already-correct output --
+reading uninitialised `part[]` for every inject column (the FP8 path never writes inject columns into
+`part[]`; `hc_inj_pf2_bf16_kernel` computes those directly) and overwriting `inj` with garbage. Fixed by
+gating the original call on `!fp8_down_ok`. Measured at M=2048 on the real gfx1201 device, after the P0 fix
+and two real validated optimisation passes: **1282.5 us**, down from 1457.6 us (inject kernel's
+redundant-read fix, the down kernel's LDS-round-trip elimination, then this P0 fix) -- still **~2.4x
+SLOWER** than the existing bf16 path's 530.7 us. Not correct to a quality metric either yet (byte-identity
+fails as expected for a lossy FP8 path -- `inj` now correctly shows as differing too, the expected result of
+a genuinely lossy computation rather than the earlier bug's corruption; no RMS/KL-style quality check has
+been built). Not a
 win -- the down kernel's inner loop still lacks the real kernel's double-buffered prefetch/fused tiling, and
 a quality metric is still needed before any promotion decision.
 
@@ -133,3 +142,36 @@ correct; this patch proves the same logic, shaped for the real kernel's actual c
 `kWave`, `kThreads`), applies cleanly to the pinned source and compiles without errors, built once on Brutus
 against a scratch copy of the pinned tree (never the shared checkout). No runtime/hardware evidence yet since
 nothing calls these kernels.
+
+## GPT dev-agent review (req_bigcherry_d67c3e42e319)
+
+Full code review against the pushed branch plus `r4d_gemm_fp8a8.hip`/`r4d_fp8_frag.h`/`r4d_fp8_layout.cpp`
+for the frag64/raw-WMMA architecture question. **Verdict: NOT READY for promotion.** Findings:
+
+- **P0 (fixed in this revision)**: the original unconditional `if (ks>1) hc_down_reduce_kernel(...)` call
+  re-ran after the FP8 path's own down-only reduce, reading uninitialised `part[]` for inject columns and
+  overwriting `inj`. See "Outcome" above.
+- **P1 (fixed in this revision)**: added explicit `hc==4 && HN%128==0 && kc%128==0` guards to
+  `fp8_down_eligible` -- the kernel's K-group bounds assumed `kc`'s 128-alignment without checking it.
+- **P1 (not yet fixed)**: `g_fp8a_scratch` is a single process-global allocation with no stream-safety --
+  concurrent invocations on different streams could race. Needs integration with the engine's real scratch
+  allocation model, not a global static.
+- **P2 (not yet addressed)**: no RMS/max-error numerical-equivalence evidence yet (down preactivation,
+  injection gain, final x, output quantisation) -- required before any promotion decision, per this
+  project's own lifecycle standards.
+- **Confirms the frag64/raw-WMMA architecture is the correct long-term direction**, but flags real
+  load-bearing details the naive port would get wrong: `gemm_fp8a8_kernel`'s production FP8 path scales
+  per 128 output rows x 128 K, while `hc_read`'s W_down scales per OUTPUT ROW x 128 K (finer-grained) --
+  reuse the fragment permutation (`r4d_fp8::frag_src` is directly reusable for this K=10240, N=320 shape
+  with no modification) and raw-WMMA infrastructure, but adapt the scale lookup, and give `hc_read` a
+  distinct layout tag (e.g. `r4d.hc.down.e4m3.frag64.g128`) rather than reusing `r4d.fp8.w.frag64` as if its
+  encoding contract were identical. The BF16 fallback decoder needs to learn the new layout too, or a
+  persistent-layout change breaks the flag-off path.
+- **Highest-value intermediate win identified, not yet attempted**: the FP8 path still pays for
+  `hc_pf2_prep_kernel`'s full BF16 W_down/injection plane construction even though it never reads the
+  decoded `plane` buffer. Selecting the FP8 path before prep and skipping that unused construction (while
+  keeping the norm-scale calculation and W_up decode prep still needs) is flagged as the single most
+  important missed optimisation, ahead of the raw-WMMA rewrite.
+- Full phased plan (correctness -> remove redundant prep work -> rewrite compute on current weight format
+  -> frag64 weight layout -> acceptance) recorded in RAD17's plan notes; not yet executed beyond the P0/P1
+  fixes in this revision.

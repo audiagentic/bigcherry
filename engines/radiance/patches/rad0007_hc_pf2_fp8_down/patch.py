@@ -344,7 +344,12 @@ PATCH = FilePatch(
                 "     * ks=7), so an eligibility check that required ks==1 would make this path dead code for\n"
                 "     * every real call -- it is not restricted to ks==1. The allocator-failure case still falls\n"
                 "     * through to the original bf16 call below unchanged. */\n"
-                "    const bool fp8_down_eligible = g_hc_pf2_fp8_down && f8;\n"
+                "    /* RAD17 P1 FIX (GPT dev-agent review req_bigcherry_d67c3e42e319): the FP8 kernel's\n"
+                "     * nkb0/nkb1 K-group bounds assume `ka = blockIdx.y*kc` lands on a 128-wide scale-group\n"
+                "     * boundary; hc==4 and HN%128==0 are already guaranteed by pf2_shape above this call, but\n"
+                "     * kc's own alignment is not -- require it explicitly rather than assuming it. */\n"
+                "    const bool fp8_down_eligible = g_hc_pf2_fp8_down && f8 && hc == 4 && (HN % 128) == 0\n"
+                "                                   && (kc % 128) == 0;\n"
                 "    unsigned char* fp8a = nullptr;\n"
                 "    bool fp8_down_ok = false;\n"
                 "    if (fp8_down_eligible) {\n"
@@ -394,6 +399,45 @@ PATCH = FilePatch(
             expect_matches=1,
             rationale="Unique down-product launch call site inside hc_pf2_launch; this is the only place "
                        "that decides which down-product kernel actually runs",
+        ),
+        Edit(
+            id="hc-pf2-fp8-down-skip-original-reduce",
+            anchor=(
+                r"    if \(ks > 1\) \{\n"
+                r"        const long tot = rows \* ncol;\n"
+                r"        hipLaunchKernelGGL\(hc_down_reduce_kernel,\n"
+                r"                           dim3\(\(unsigned\)\(\(tot \+ kThreads - 1\) / kThreads\)\), dim3\(kThreads\), 0,\n"
+                r"                           \(hipStream_t\)s, \(const float\*\)part, dbuf, inj, rows, lr, ncol, irow, ks,\n"
+                r"                           1\.0f / \(float\)hc\);\n"
+                r"        if \(hipGetLastError\(\) != hipSuccess\) return RAD_E_DEVICE;\n"
+                r"    \}\n"
+            ),
+            mode="replace",
+            text=(
+                "    /* RAD17 P0 FIX: when the FP8 path already ran (fp8_down_ok), it already produced dbuf (via\n"
+                "     * its own down-only reduce) and inj (via hc_inj_pf2_bf16_kernel) directly -- it never writes\n"
+                "     * inject columns into part[] at all (hc_inj_pf2_bf16_kernel bypasses part[] entirely), so\n"
+                "     * running the ORIGINAL hc_down_reduce_kernel unconditionally here, as the unpatched source\n"
+                "     * does, would read uninitialised part[] for every inject column and overwrite the correct\n"
+                "     * inj values with garbage -- a real, confirmed bug caught by GPT dev-agent code review\n"
+                "     * (req_bigcherry_d67c3e42e319) before being shipped, not by hardware testing: every\n"
+                "     * byte-identity failure measured this session may have been partly this corruption, not\n"
+                "     * purely FP8 quantisation lossiness as assumed at the time. Gated on !fp8_down_ok so the\n"
+                "     * bf16 fallback path (flag off, or allocator failure) keeps the original, unconditional\n"
+                "     * reduce call exactly as before. */\n"
+                "    if (!fp8_down_ok && ks > 1) {\n"
+                "        const long tot = rows * ncol;\n"
+                "        hipLaunchKernelGGL(hc_down_reduce_kernel,\n"
+                "                           dim3((unsigned)((tot + kThreads - 1) / kThreads)), dim3(kThreads), 0,\n"
+                "                           (hipStream_t)s, (const float*)part, dbuf, inj, rows, lr, ncol, irow, ks,\n"
+                "                           1.0f / (float)hc);\n"
+                "        if (hipGetLastError() != hipSuccess) return RAD_E_DEVICE;\n"
+                "    }\n"
+            ),
+            guard=r"RAD17 P0 FIX",
+            expect_matches=1,
+            rationale="Unique original unconditional split-K reduce call; must not re-run when the FP8 path "
+                       "already produced dbuf/inj through its own down-only reduce and direct inj kernel",
         ),
     ),
 )
