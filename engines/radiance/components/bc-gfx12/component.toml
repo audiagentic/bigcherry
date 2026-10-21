@@ -11,7 +11,7 @@ outputs = ["kernels/libbcgfx12.so"]
 configure = { RADIANCE_SRC = "{engine_source}" }
 
 [setting.BC_GFX12_MOE_GEMV]
-default = "0"
-status = "experimental"
-summary = "RAD15: moe_gemm_q (fp8a8) gate/up calls at decode-sized steps (M <= 16) on the packed-f16 GEMV (the moe-remote worker's RAD14 kernel on libr4d's operands) instead of libr4d's fp8 WMMA tile; the down call and larger steps stay libr4d's. 35B on the R9700 (rad-kbench): 28/56/110/213/389 us against 34/80/158/267/455 at M = 1/2/4/8/16. 35B engine A/B (2 pairs): step time -7/-10/-9/-4% at 1/2/4/6 streams. Default off: 1-stream greedy output diverges from libr4d at a near-tie (~45 tokens) and KL mode (prefill, 64-token chunks) cannot reach the row; awaits a decode-time KL check."
+default = "1"
+status = "validated"
+summary = "RAD15: moe_gemm_q (fp8a8) gate/up calls at decode-sized steps (M <= 16) on the packed-f16 GEMV (the moe-remote worker's RAD14 kernel on libr4d's operands) instead of libr4d's fp8 WMMA tile; the down call and larger steps stay libr4d's. 35B on the R9700 (rad-kbench): 28/56/110/213/389 us against 34/80/158/267/455 at M = 1/2/4/8/16. 35B engine A/B (2 pairs): step time -7/-10/-9/-4% at 1/2/4/6 streams. Default on: decode-time check against libr4d shows 99.06% top-1 agreement and KL mean 3.0e-3/p99 5.7e-2 (a near-tie flip ~45 tokens into a 1-stream run; radiance's own KL mode is prefill-only and cannot reach this row). Evidence is single-model (the 35B); owner accepted single-model evidence for this flag, 2026-10-21, after two genuine architecture-mismatch dead ends (Gemma 4 E4B, Qwen3-30B-A3B-FP8) looking for a second fp8a8-MoE model radiance's architecture plugins actually support. Off switch: BC_GFX12_MOE_GEMV=0."
 activation = "libbcgfx12: BC_GFX12_MOE_GEMV on"
