@@ -35,13 +35,37 @@ kernel still uses `kPf2RT`=64 unchanged) doubled workgroup count with identical 
 tried (per GPT's own stopping rule) and measured 999.2 us, statistically the same as RT=32 -- grid underfill
 is now fully resolved, not partially; smaller tiles plateau rather than keep helping. Kept at RT=32.
 
-**Session total: 1457.6 us -> 999.6 us (~31.4% faster)**, now **~1.9x SLOWER** than the existing bf16 path's
-530.7 us -- closer, but still not a win. Not correct to a quality metric either yet (byte-identity fails as
-expected for a lossy FP8 path -- `inj` now correctly shows as differing too, the expected result of a
-genuinely lossy computation rather than the earlier bug's corruption; no RMS/KL-style quality check has been
-built). An ongoing GPT dev-agent consultation (session `ses_0e45b277c600463c`) is being used for each next
-step: implement, measure on real hardware, report back, repeat. A quality metric is still needed before any
-promotion decision regardless of further speed gains.
+Chasing further down-kernel tuning stalled there: an inj-kernel 4-wave grouping measured neutral (reverted),
+and retesting the B-fragment hoist at the new RT=32/MT=2 shape (only 2 live accumulators, grid no longer
+underfilled) STILL regressed (999.6 us -> 1244.9 us) -- a third independent data point in the same direction,
+closing out accumulator-hoisting as a dead end on this `rocwmma::fragment` kernel for good.
+
+**The real finding came from a full paired BF16-vs-FP8 stage comparison** (same instrumented binary, flag
+off vs flag on), not more down-kernel tuning: BF16 does the down product AND injection together in ONE fused
+kernel costing 0.159 ms; this patch's equivalent logical work -- `quant_a8` + `down_fp8` + `down_reduce` +
+the (then-separate) `inj` kernel, four launches -- cost 0.642 ms, ~4x more for the same computation, despite
+reading less weight data than BF16's decoded plane. prep/up_mix/output-quant were nearly identical between
+both paths, confirming the ENTIRE gap was concentrated in down+inject, not spread across the pipeline.
+
+**Fused injection's per-group partial dot product into `hc_pf2_quant_a8_kernel`'s own pass** (reusing the
+quantised activation while still in registers, instead of re-reading it from global memory a third time),
+with `hc_inj_pf2_fp8_reduce_kernel` finalising the partials piggybacked on the same dispatch step as the
+down-product's split-K reduce (ks==1 keeps the old standalone `hc_inj_pf2_bf16_kernel`, unchanged, since
+there is no reduce launch to piggyback onto in that case). Measured: **999.6-1030.6 us -> 920.3 us**.
+Validated BIT-FOR-BIT against the previous (unfused) injection kernel across every test case the harness
+ran, for the same input, in the same run (`rms_rel=0, max_abs=0` -- every single comparison, not "close") --
+confirming the fusion refactor is mathematically identical to the already-reviewed prior kernel, not merely
+plausible-looking, before being trusted.
+
+**Session total: 1457.6 us -> 920.3 us (~36.9% faster)**, now **~1.73x SLOWER** than the existing bf16 path's
+530.7 us -- meaningfully closer, but still not a win. Not correct to a quality metric against the real bf16
+reference either yet (byte-identity fails as expected for a lossy FP8 path -- `inj` now correctly shows as
+differing too, the expected result of a genuinely lossy computation rather than the earlier bug's
+corruption; no RMS/KL-style quality check against the bf16 reference has been built -- the bit-for-bit check
+above is against this patch's OWN prior revision, a different and narrower question). An ongoing GPT
+dev-agent consultation (session `ses_0e45b277c600463c`) is being used for each next step: implement, measure
+on real hardware, report back, repeat. A quality metric against the real bf16 reference is still needed
+before any promotion decision regardless of further speed gains.
 
 ## Detail
 
