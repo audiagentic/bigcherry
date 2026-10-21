@@ -33,6 +33,18 @@ jobs:
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost "$AGENT_TOOLSDIRECTORY"
           df -h /
 
+      # The bare upstream clone is pure network/disk I/O with no computation (MEN24): cache it across runs and
+      # fetch incrementally instead of cloning radiance's whole history from scratch every time. Restores on any
+      # prior cache (restore-keys) since a slightly stale clone still makes the fetch below cheap; always re-saves
+      # (even on build failure) so the cache stays current.
+      - name: Cache the upstream radiance clone
+        uses: actions/cache@v4
+        with:
+          path: work/upstream
+          key: radiance-upstream-${{ github.run_id }}
+          restore-keys: |
+            radiance-upstream-
+
       - name: Build in the ROCm image
         run: |
           docker run --rm -v "$GITHUB_WORKSPACE:/src" -w /src rocm/dev-ubuntu-24.04:7.2.4 bash -euxo pipefail -c '
@@ -41,6 +53,10 @@ jobs:
             git config --global --add safe.directory /src
             export RADIANCE_HOST_CC=gcc-14 RADIANCE_HOST_CXX=g++-14 ROCM_PATH=/opt/rocm PYTHONPATH=tools
             mkdir -p work/upstream
-            git clone --bare https://codeberg.org/StillDeadcode/radiance.git work/upstream/radiance.git
+            if [ -d work/upstream/radiance.git ]; then
+              git -C work/upstream/radiance.git fetch --prune origin "+refs/*:refs/*"
+            else
+              git clone --bare https://codeberg.org/StillDeadcode/radiance.git work/upstream/radiance.git
+            fi
             python3 -m bigcherry build --lane radiance-lab:stock:linux-radiance
           '
