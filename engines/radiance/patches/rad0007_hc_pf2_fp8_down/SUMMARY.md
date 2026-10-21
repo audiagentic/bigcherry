@@ -1,6 +1,6 @@
 # rad0007_hc_pf2_fp8_down
 
-**Status:** untested
+**Status:** untested (runs correctly-shaped on real hardware; measured a 2.7x regression, not yet a win)
 **Plan item:** RAD15/RAD17
 
 ## Summary
@@ -11,7 +11,11 @@ anchors apply and the new code compiles against the real pinned source.
 
 ## Outcome
 
-Not yet measurable: no dispatch path reaches the new kernels in this revision.
+Dispatch is wired and the path runs end to end on real hardware (`RAD_HC_PF2_FP8_DOWN=1`, default off).
+Measured at M=2048 on the real gfx1201 device: **2.7x SLOWER** than the existing bf16 path (1457.6 us vs
+530.7 us), not yet correct to a quality metric either (byte-identity fails as expected for a lossy FP8 path,
+but no RMS/KL-style quality check has been built yet to say how close it actually is). Not a win yet --
+needs a quality metric and a performance-tuning pass before being a promotion candidate.
 
 ## Detail
 
@@ -51,12 +55,34 @@ materializes the whole thing. Rather than add a separate materialization kernel,
 was changed to build N inline from those same three real inputs, using the exact formula `stageA` already
 runs, then quantise it in the same pass -- no new buffer, no new numerics for the N-build half.
 
-No dispatch wiring: `hc_pf2_launch` is untouched by this revision, so these kernels compile but are never
-called. `RAD_HC_PF2_FP8_DOWN` and the guard checks (including `kc % 128 == 0` for split-K alignment, per the
-design review) remain for a later revision. That revision is now unblocked on the implementation side; what
-remains before any performance is measurable is: (1) wire the dispatch guard into `hc_pf2_launch`, (2) run
-the real-hardware acceptance sequence (flag off byte-identical, quantiser/WMMA/epilogue checks, end-to-end
-quality vs the measured RMS reference), (3) A/B benchmark prefill with the flag on vs off.
+**Dispatch is now wired** (`RAD_HC_PF2_FP8_DOWN=1`, default off): `hc_pf2_launch`'s down-product call site
+now branches to the FP8 path when the flag is set and `f8` is true, falling back to the original bf16 call
+unchanged on allocator failure. First real finding from wiring it in: every PF2-eligible shape this session
+found has `ks > 1` (split-K active; M=512 already has `ks=7`), so an eligibility check requiring `ks==1`
+(this patch's earlier revision) would have made the whole path dead code for every real call. Added a
+down-only split-K reduce kernel (`hc_down_pf2_fp8_reduce_kernel`) scoped to `[rows x lr]`, since the real
+`hc_down_reduce_kernel` sums inject columns too and this pipeline never writes inject columns into `part[]`
+(`hc_inj_pf2_bf16_kernel` computes those directly, independent of K-split).
+
+**Real hardware run, via `r4d_selftest --perfhc 2048 3` against a scratch-relinked `libr4d.so`** (device
+confirmed idle first; GPU index found by trial -- device 0 segfaulted immediately as a non-gfx1201 part,
+device 2 is the real gfx1201 R9700):
+
+- Flag off: byte-identical to the decode-tile reference, same timing as the unpatched library (530-535 us,
+  ~50.8 TFLOP/s) -- the dispatch wiring does not disturb the existing path.
+- Flag on at M=2048 (ks=2 real split-K shape): **runs without crashing**, but is NOT byte-identical to the
+  reference (`differs in x q qs rq rs` -- expected, since FP8 quantisation is lossy and byte-identity was
+  only ever a claim for the bf16-equivalent forms; the right comparison is a quality metric like the
+  RMS/KL figures used for this project's other FP8 features, not byte-for-byte, and that comparison has not
+  been built yet) and **measures SLOWER than the bf16 path**: 1457.6 us / 18.5 TFLOP/s vs 530.7 us / 50.8
+  TFLOP/s baseline -- roughly 2.7x worse, not a speedup.
+
+**Honest current status**: the mechanism runs end to end on real hardware for the first time, with no crash
+and no memory corruption of other outputs, but it is currently a measured REGRESSION, not a win. Likely
+causes, not yet investigated: the extra quant-kernel and reduce-kernel launches (2 additional kernel launches
+per call that the bf16 path doesn't pay), and the FP8 down kernel's naive double-`__syncwarp()`-per-K-group
+structure having none of the real kernel's double-buffered prefetch/overlap. A quality check and a
+performance-tuning pass are both still needed before this is a candidate for the production flag.
 
 ## Why
 

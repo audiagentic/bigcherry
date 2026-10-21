@@ -17,9 +17,13 @@ Adds three new kernels to libr4d's r4d_hc_bf16.hip, inert until wired up:
   hc_inj_pf2_bf16_kernel   the injection columns, extracted verbatim from the existing kernel's own
                            arithmetic (no FP8 variant exists for the injection weight, so no new numerics)
 
-This increment is deliberately inert: the new kernels compile but nothing calls them yet (RAD_HC_PF2_FP8_DOWN
-dispatch wiring is a separate, later patch revision). Verifies the anchors apply and the new code compiles
-against the real pinned source before any behaviour changes.
+Dispatch is wired (RAD_HC_PF2_FP8_DOWN=1, default off) into hc_pf2_launch's down-product call site,
+including the split-K case (every real PF2-eligible shape has ks>1; a ks==1-only guard would have been dead
+code for every real call -- found by running this on hardware). Ran end to end on a real gfx1201 device via
+r4d_selftest --perfhc: no crash, flag-off path byte-identical to baseline, but flag-on currently measures
+2.7x SLOWER than the existing bf16 path and has not yet been checked against a quality metric (byte-identity
+fails as expected for a lossy FP8 path; no RMS/KL-style check has been built). Not yet a performance win --
+see SUMMARY.md for the measured numbers and what's still needed.
 """
 
 from bigcherry.patcher import Edit, FilePatch
@@ -186,11 +190,87 @@ __global__ __launch_bounds__(kThreads) void hc_down_pf2_fp8_kernel(
 '''
 
 _INJ_KERNEL = '''
-/* Injection columns [lr, ncol): extracted verbatim from hc_down_pf2_kernel's own arithmetic (same WMMA
- * accumulation shape, same `plane` buffer, same epilogue formula 2*sigmoid(v*inv_hc) -- the injection weight
- * has no FP8 variant in the schema, so this is existing, already-shipped logic with no new numerics, just
- * scoped to run only when W_down's columns are peeled off into hc_down_pf2_fp8_kernel above. Not yet
- * implemented in this patch revision -- RAD17 next step. */
+/* Injection gains [0, hc): hc is 4 for this pinned shape, far too narrow to tile with WMMA (a 16x16 tile
+ * would be 75% padding), so this is a plain per-(row, column) wave reduction instead of hc_down_pf2_kernel's
+ * WMMA shape -- same formula (2*sigmoid(dot(N, injw_c) * inv_hc)), same inputs, just not the same tiling,
+ * since there is no FP8 variant of injw to tile against. Reads N back from the SAME quantised a8/ascale this
+ * patch's down-product reads -- deliberately: both consumers must see the identical (lossy) activation this
+ * patch introduces, or down and inject would drift against two different approximations of N. One wave (32
+ * lanes) per (row, c): each lane strides HN in 32s, dequantising a8*ascale and multiplying by injw (bf2f),
+ * then a full-wave sum closes it out. hc=4 columns per row is a trivial fraction of the down-product's
+ * HN*lr multiply-adds, so a serial per-lane loop (no WMMA, no tiling) is proportionate, not a performance
+ * risk. wadd is NOT re-applied here: it is already baked into a8 by hc_pf2_quant_a8_kernel above.
+ *
+ * NOT yet validated against real ground-truth inject gains on hardware -- mechanically transcribed from the
+ * real epilogue's formula and reviewed, same confidence tier as the N-build half of the quant kernel above. */
+__global__ __launch_bounds__(32) void hc_inj_pf2_bf16_kernel(
+    const unsigned char* __restrict__ a8, const float* __restrict__ ascale,
+    const unsigned short* __restrict__ injw, unsigned short* __restrict__ inj,
+    long rows, long HN, int hc, long irow) {
+    const long row = blockIdx.x;
+    const int c = (int)blockIdx.y, lane = threadIdx.x;
+    if (row >= rows || c >= hc) return;
+    const long nkb = HN / 128;
+    const unsigned char* arow = a8 + (size_t)row * HN;
+    const float* asc = ascale + (size_t)row * nkb;
+    const unsigned short* wr = injw + (size_t)c * HN;
+    float acc = 0.0f;
+    for (long k = lane; k < HN; k += 32) {
+        const float av = float(*reinterpret_cast<const rocwmma::float8_t*>(&arow[k])) * asc[k / 128];
+        acc += av * bf2f(wr[k]);
+    }
+    for (int off = 16; off; off >>= 1) acc += __shfl_xor(acc, off);
+    if (lane == 0) inj[row * irow + c] = f2bf(2.0f * sigmoidf_(acc * (1.0f / (float)hc)));
+}
+'''
+
+_REDUCE_KERNEL = '''
+/* RAD17: the FP8 down-product's own split-K reduce. hc_down_reduce_kernel (the real one) sums BOTH the
+ * down and inject columns of `part[]` in one pass, but this pipeline never writes inject columns into
+ * `part[]` at all -- hc_inj_pf2_bf16_kernel above computes inj directly, in one shot, independent of K-split
+ * (its cost is trivial; splitting it would be pure overhead). Reusing hc_down_reduce_kernel unmodified would
+ * read uninitialised `part[]` for every inject column and corrupt `inj`, so this is a separate, down-only
+ * reduce scoped to [rows x lr], not [rows x ncol]. Mechanically the same accumulation hc_down_reduce_kernel
+ * already runs for its own columns (ascending z, matching add order); not yet measured on real split-K
+ * shapes -- every PF2-eligible shape this session found has ks > 1 (M=512 was already ks=7), so this is the
+ * piece that actually matters for any real call, not an edge case. */
+__global__ __launch_bounds__(kThreads) void hc_down_pf2_fp8_reduce_kernel(
+    const float* __restrict__ part, unsigned short* __restrict__ dout,
+    long rows, long lr, long ncol, int ksplit) {
+    const long i = (long)blockIdx.x * kThreads + threadIdx.x;
+    const long tot = rows * lr;
+    if (i >= tot) return;
+    const long row = i / lr, col = i - row * lr;
+    const long base = row * ncol + col, stride = rows * ncol;
+    float s = 0.0f;
+    for (int z = 0; z < ksplit; ++z) s += part[(long)z * stride + base];
+    dout[row * lr + col] = f2bf(siluf_(s * 0.25f));
+}
+'''
+
+_DISPATCH_HELPERS = '''
+/* RAD17: dispatch for the FP8 PF2 down-product above, default off (RAD_HC_PF2_FP8_DOWN=1 to enable).
+ * Kept on its own lazily-grown scratch allocation, separate from r4d_rad_hc_read_scratch's budgeted `u`/`wsp`
+ * accounting, until this path has real hardware acceptance evidence -- growing a brand-new allocation here
+ * cannot corrupt the existing, already-correct scratch sizing for the bf16 path. Grown, never shrunk; freed
+ * only at process exit, matching this file's other static device buffers' lifetime. */
+static bool g_hc_pf2_fp8_down = [] {
+    const char* v = std::getenv("RAD_HC_PF2_FP8_DOWN");
+    return v && v[0] == '1' && v[1] == '\\0';
+}();
+static unsigned char* g_fp8a_scratch = nullptr;
+static size_t         g_fp8a_scratch_bytes = 0;
+static bool hc_pf2_fp8a_scratch(size_t need, unsigned char** out) {
+    if (need > g_fp8a_scratch_bytes) {
+        if (g_fp8a_scratch) (void)hipFree(g_fp8a_scratch);
+        g_fp8a_scratch = nullptr;
+        g_fp8a_scratch_bytes = 0;
+        if (hipMalloc(&g_fp8a_scratch, need) != hipSuccess) return false;
+        g_fp8a_scratch_bytes = need;
+    }
+    *out = g_fp8a_scratch;
+    return true;
+}
 '''
 
 PATCH = FilePatch(
@@ -219,11 +299,81 @@ PATCH = FilePatch(
             id="hc-pf2-fp8-down-kernels",
             anchor=r"^static int hc_pf2_launch\(",
             mode="replace",
-            text=_QUANT_A8_KERNEL + _FP8_DOWN_KERNEL + _INJ_KERNEL + "\nstatic int hc_pf2_launch(",
+            text=_QUANT_A8_KERNEL + _FP8_DOWN_KERNEL + _INJ_KERNEL + _REDUCE_KERNEL + _DISPATCH_HELPERS
+                 + "\nstatic int hc_pf2_launch(",
             guard=r"hc_pf2_quant_a8_kernel",
             expect_matches=1,
-            rationale="Unique declaration of the PF2 launcher; the new kernels must exist before it for the "
-                       "dispatch wiring a later revision adds inside it",
+            rationale="Unique declaration of the PF2 launcher; the new kernels and dispatch helpers must "
+                       "exist before it for the call-site edit below to switch between paths",
+        ),
+        Edit(
+            id="hc-pf2-fp8-down-dispatch",
+            anchor=(
+                r"    float\* const kpart = ks > 1 \? part : nullptr;\n"
+                r"    hipLaunchKernelGGL\(hc_down_pf2_kernel,\n"
+                r"                       dim3\(\(unsigned\)\(\(rows \+ kPf2RT - 1\) / kPf2RT\), \(unsigned\)ks\),\n"
+                r"                       dim3\(kThreads\), 0, \(hipStream_t\)s, h, w, \(const uint4\*\)plane,\n"
+                r"                       \(const float\*\)scale, dbuf, inj, kpart, rows, n, hc, lr, ncol, ntt, hrow,\n"
+                r"                       irow, kc, wadd\);\n"
+                r"    if \(hipGetLastError\(\) != hipSuccess\) return RAD_E_DEVICE;\n"
+            ),
+            mode="replace",
+            text=(
+                "    float* const kpart = ks > 1 ? part : nullptr;\n"
+                "    /* RAD17: every real PF2-eligible shape found this session has ks > 1 (M=512 already has\n"
+                "     * ks=7), so an eligibility check that required ks==1 would make this path dead code for\n"
+                "     * every real call -- it is not restricted to ks==1. The allocator-failure case still falls\n"
+                "     * through to the original bf16 call below unchanged. */\n"
+                "    const bool fp8_down_eligible = g_hc_pf2_fp8_down && f8;\n"
+                "    unsigned char* fp8a = nullptr;\n"
+                "    bool fp8_down_ok = false;\n"
+                "    if (fp8_down_eligible) {\n"
+                "        const long nkb = (HN + 127) / 128;\n"
+                "        const size_t a8_bytes = (size_t)rows * HN;\n"
+                "        const size_t aligned = (a8_bytes + 15) & ~(size_t)15;\n"
+                "        const size_t need = aligned + (size_t)rows * nkb * sizeof(float);\n"
+                "        if (hc_pf2_fp8a_scratch(need, &fp8a)) {\n"
+                "            float* const ascale = (float*)(fp8a + aligned);\n"
+                "            hipLaunchKernelGGL(hc_pf2_quant_a8_kernel, dim3((unsigned)rows, (unsigned)nkb),\n"
+                "                               dim3(32), 0, (hipStream_t)s, h, scale, w, fp8a, ascale, n, hc,\n"
+                "                               hrow, wadd);\n"
+                "            if (hipGetLastError() != hipSuccess) return RAD_E_DEVICE;\n"
+                "            hipLaunchKernelGGL(hc_down_pf2_fp8_kernel,\n"
+                "                               dim3((unsigned)((rows + kPf2RT - 1) / kPf2RT), (unsigned)ks),\n"
+                "                               dim3(kThreads), 0, (hipStream_t)s, fp8a, ascale,\n"
+                "                               (const unsigned char*)down, dld, dbuf, kpart, rows, lr, ncol,\n"
+                "                               kc, HN, wadd);\n"
+                "            if (hipGetLastError() != hipSuccess) return RAD_E_DEVICE;\n"
+                "            if (ks > 1) {\n"
+                "                const long totlr = rows * lr;\n"
+                "                hipLaunchKernelGGL(hc_down_pf2_fp8_reduce_kernel,\n"
+                "                                   dim3((unsigned)((totlr + kThreads - 1) / kThreads)),\n"
+                "                                   dim3(kThreads), 0, (hipStream_t)s, (const float*)kpart,\n"
+                "                                   dbuf, rows, lr, ncol, ks);\n"
+                "                if (hipGetLastError() != hipSuccess) return RAD_E_DEVICE;\n"
+                "            }\n"
+                "            if (injw && inj) {\n"
+                "                hipLaunchKernelGGL(hc_inj_pf2_bf16_kernel, dim3((unsigned)rows, (unsigned)hc),\n"
+                "                                   dim3(32), 0, (hipStream_t)s, fp8a, ascale, injw, inj, rows,\n"
+                "                                   HN, hc, irow);\n"
+                "                if (hipGetLastError() != hipSuccess) return RAD_E_DEVICE;\n"
+                "            }\n"
+                "            fp8_down_ok = true;\n"
+                "        }\n"
+                "    }\n"
+                "    if (!fp8_down_ok) {\n"
+                "    hipLaunchKernelGGL(hc_down_pf2_kernel,\n"
+                "                       dim3((unsigned)((rows + kPf2RT - 1) / kPf2RT), (unsigned)ks),\n"
+                "                       dim3(kThreads), 0, (hipStream_t)s, h, w, (const uint4*)plane,\n"
+                "                       (const float*)scale, dbuf, inj, kpart, rows, n, hc, lr, ncol, ntt, hrow,\n"
+                "                       irow, kc, wadd);\n"
+                "    if (hipGetLastError() != hipSuccess) return RAD_E_DEVICE;\n"
+                "    }\n"
+            ),
+            guard=r"fp8_down_eligible",
+            expect_matches=1,
+            rationale="Unique down-product launch call site inside hc_pf2_launch; this is the only place "
+                       "that decides which down-product kernel actually runs",
         ),
     ),
 )
