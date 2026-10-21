@@ -1,5 +1,34 @@
 # Changelog
 
+## [180.1.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-180.0.0...bc-radiance-180.1.0) (2026-10-21)
+
+
+### New and changed
+
+* **libr3:** checked runtime shared-memory layout_for(shape) beside the constexpr layout (RCS09-02) ([#321](https://github.com/audiagentic/bigcherry/issues/321)) ([bd1dd96](https://github.com/audiagentic/bigcherry/commit/bd1dd9669391760a2931268c6759599cebdb7e3d))
+* **libr3:** expert width and every remaining expert-count site are runtime (RCS09-05b, 07) ([#328](https://github.com/audiagentic/bigcherry/issues/328)) ([f792f51](https://github.com/audiagentic/bigcherry/commit/f792f51e183abc63242effa3e07ac870780ee301))
+* **libr3:** expert-backend contract with FP8 and W4 sizing and a capability probe (RCS05, RAD11) ([#317](https://github.com/audiagentic/bigcherry/issues/317)) ([5dc8fdc](https://github.com/audiagentic/bigcherry/commit/5dc8fdc370d47d21c93f0b42dc01c161a5b44450))
+* **libr3:** FP8 decode GEMV for the small lane (RAD14) ([#331](https://github.com/audiagentic/bigcherry/issues/331)) ([09e3be7](https://github.com/audiagentic/bigcherry/commit/09e3be7deacf8c300b392f7da96263a0bbabb4ac))
+* **libr3:** helper describes the container and refuses an unsupported format by name (RCS09, RAD11) ([#319](https://github.com/audiagentic/bigcherry/issues/319)) ([9ac5150](https://github.com/audiagentic/bigcherry/commit/9ac51507f7adab34e1e89d297e6ba4848fd60e28))
+* **libr3:** helper small-lane classes, protocol v13, lane A/B harness (RAD12) ([#314](https://github.com/audiagentic/bigcherry/issues/314)) ([7bdd08a](https://github.com/audiagentic/bigcherry/commit/7bdd08ae5abb5006ad34aa2060d91869c21d6cbc))
+* **libr3:** lane kernels and host references take hidden width, top-k and activation group from the model (RCS09-06) ([#327](https://github.com/audiagentic/bigcherry/issues/327)) ([fa17269](https://github.com/audiagentic/bigcherry/commit/fa17269a63c8768a04744390b6315e4e641da383))
+* **libr3:** routing kernels take the expert count at runtime (RCS09-05a) ([#326](https://github.com/audiagentic/bigcherry/issues/326)) ([e912e49](https://github.com/audiagentic/bigcherry/commit/e912e49a8fd42612c6bfbef14fa1177402b8edac))
+* **libr3:** shared-memory protocol v14 records the model shape (RCS09-03) ([#323](https://github.com/audiagentic/bigcherry/issues/323)) ([52b1c0d](https://github.com/audiagentic/bigcherry/commit/52b1c0dc286d9a929f5474fee63d306574fb699f))
+* **libr3:** the worker serves FP8 block-scaled experts through radiance's fp8a8 grouped GEMM (RAD13) ([#330](https://github.com/audiagentic/bigcherry/issues/330)) ([73794d0](https://github.com/audiagentic/bigcherry/commit/73794d05bd18b287a08b9a2fca25a0f321d17b6d))
+* **radiance:** bc-gfx12 hc_read prefill row stage 1 (RAD15) ([#358](https://github.com/audiagentic/bigcherry/issues/358)) ([48e2315](https://github.com/audiagentic/bigcherry/commit/48e2315bc0a95813c4651ac44fbeba4a36ec6f00))
+* **radiance:** bc-gfx12 plugin - moe_gemm_q fp8a8 decode GEMV ahead of libr4d (RAD15) ([#355](https://github.com/audiagentic/bigcherry/issues/355)) ([92f76d9](https://github.com/audiagentic/bigcherry/commit/92f76d97eeb154e157cfd223d71f86e55bfcee4b))
+* **radiance:** helper trace wall clock, per-round trace report and the RAD10-02 findings ([#307](https://github.com/audiagentic/bigcherry/issues/307)) ([996ca9c](https://github.com/audiagentic/bigcherry/commit/996ca9cf2f204b6215c6ca9502ce3c2b97be29f7))
+* **radiance:** MTP prefix-cache bisection tooling, rad0006 and 35B model page (RAD14) ([#332](https://github.com/audiagentic/bigcherry/issues/332)) ([9f08db6](https://github.com/audiagentic/bigcherry/commit/9f08db69ab48ff427814f7c28ce1aa10d103aeca))
+* **radiance:** packed-f16 two-row FP8 decode GEMV is the FP8 default (RAD14) ([#338](https://github.com/audiagentic/bigcherry/issues/338)) ([f28517c](https://github.com/audiagentic/bigcherry/commit/f28517cdcbd1f25e2785a70bb6a6ee2d34ff4c87))
+* **radiance:** replay_hash cross-build bit-identity check for the worker (RCS05) ([#335](https://github.com/audiagentic/bigcherry/issues/335)) ([234c762](https://github.com/audiagentic/bigcherry/commit/234c7623f1c1cb6b976ce6588bdc509217f68b53))
+* **radiance:** W4 packed-f16 decode GEMV, parked as evaluated (RAD14) ([#345](https://github.com/audiagentic/bigcherry/issues/345)) ([09b6850](https://github.com/audiagentic/bigcherry/commit/09b6850c4dddfd23e7e34e9f7b249ea9d70b5795))
+* **radiance:** wide FP8 decode GEMV (default for FP8), few-rows FP8 kernel, multi-row GEMV (evaluated), kernel-time replay tooling (RAD14) ([#337](https://github.com/audiagentic/bigcherry/issues/337)) ([a12b39a](https://github.com/audiagentic/bigcherry/commit/a12b39ab7f153e9b66c51d5dfa6dfd31621b2760))
+
+
+### Fixes
+
+* **radiance:** core tests after the 1.8.0 bump and a CI job that runs them ([#305](https://github.com/audiagentic/bigcherry/issues/305)) ([df3cfe7](https://github.com/audiagentic/bigcherry/commit/df3cfe743f60ebab3b8ea03647d63ac4c6ddb128))
+
 ## [180.0.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-170.0.0...bc-radiance-180.0.0) (2026-10-18)
 
 
