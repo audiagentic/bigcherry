@@ -527,6 +527,7 @@ ownership.
 | `tools/lab/radiance/hc-down-fp8-validate.hip` | **TRANSITIONAL** | `radiance` lab topic file; standalone correctness validation of an FP8 WMMA hc_read down-product kernel (rocwmma::fragment) before any radiance patch (RAD15). |
 | `tools/lab/radiance/hc-down-fp8-isolate.hip` | **TRANSITIONAL** | `radiance` lab topic file; isolates whether rocwmma's fragment API handles a large matrix stride correctly, independent of the full validation harness (RAD15). |
 | `tools/lab/radiance/ndump-quant-check.hip` | **TRANSITIONAL** | `radiance` lab topic file; real E4M3 round-trip error on ground-truth hc_read activation data (RAD15). |
+| `tools/lab/radiance/rdna2-draft-bench.hip` | **TRANSITIONAL** | `radiance` lab topic file; RAD16 step 1, projects the MTP drafter's GEMM cost on the 6900 XT (gfx1030). |
 | `tools/lab/radiance/launch-flashnext-best.sh` | **TRANSITIONAL** | `radiance` lab topic file; launches Qwen3.8-Flash-Next with the current best known layout (R9700 engine + two XTX expert helpers) and prints connection details. |
 | `tools/lab/radiance/qwen35b-gemv-large-ab.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark server configuration, the FP8 decode GEMV on large-lane steps (R3_MOE_WORKER_GEMV_LARGE_ROWS) on concurrent streams (RAD14). |
 | `tools/lab/radiance/qwen35b-engine-mtp1.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark server configuration, the 35B engine alone with 1 speculative token(s), A/A, to bisect the MTP acceptance collapse (RAD14). |
