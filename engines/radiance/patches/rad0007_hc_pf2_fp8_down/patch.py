@@ -191,15 +191,22 @@ __global__ __launch_bounds__(kThreads) void hc_down_pf2_fp8_kernel(
 
 _INJ_KERNEL = '''
 /* Injection gains [0, hc): hc is 4 for this pinned shape, far too narrow to tile with WMMA (a 16x16 tile
- * would be 75% padding), so this is a plain per-(row, column) wave reduction instead of hc_down_pf2_kernel's
- * WMMA shape -- same formula (2*sigmoid(dot(N, injw_c) * inv_hc)), same inputs, just not the same tiling,
- * since there is no FP8 variant of injw to tile against. Reads N back from the SAME quantised a8/ascale this
+ * would be 75% padding), so this is a plain per-row wave reduction instead of hc_down_pf2_kernel's WMMA
+ * shape -- same formula (2*sigmoid(dot(N, injw_c) * inv_hc)), same inputs, just not the same tiling, since
+ * there is no FP8 variant of injw to tile against. Reads N back from the SAME quantised a8/ascale this
  * patch's down-product reads -- deliberately: both consumers must see the identical (lossy) activation this
- * patch introduces, or down and inject would drift against two different approximations of N. One wave (32
- * lanes) per (row, c): each lane strides HN in 32s, dequantising a8*ascale and multiplying by injw (bf2f),
- * then a full-wave sum closes it out. hc=4 columns per row is a trivial fraction of the down-product's
- * HN*lr multiply-adds, so a serial per-lane loop (no WMMA, no tiling) is proportionate, not a performance
- * risk. wadd is NOT re-applied here: it is already baked into a8 by hc_pf2_quant_a8_kernel above.
+ * patch introduces, or down and inject would drift against two different approximations of N.
+ *
+ * One wave (32 lanes) per ROW, covering all hc columns together in a single pass over HN: an earlier
+ * revision used one wave per (row, c) -- grid (rows, hc) -- which re-read all of a8/ascale from scratch
+ * once per column, hc times over, for math that needs it read only once (a8/ascale do not depend on c;
+ * only injw does). Measured on real hardware at M=2048: that redundant-read version cost 0.202ms of a
+ * 1.065ms total RAD17 call, for what is a trivial fraction of the down-product's own arithmetic -- almost
+ * entirely wasted memory traffic, not necessary work. This version reads a8/ascale once per row and accrues
+ * all hc partial dot products together in per-lane registers, reading injw hc times (unavoidable, it is
+ * different data per column) but never re-reading the activation. hc is assumed <= kInjMaxHc (4, the only
+ * value PF2 supports) for the fixed-size accumulator array. wadd is NOT re-applied here: it is already
+ * baked into a8 by hc_pf2_quant_a8_kernel above.
  *
  * NOT yet validated against real ground-truth inject gains on hardware -- mechanically transcribed from the
  * real epilogue's formula and reviewed, same confidence tier as the N-build half of the quant kernel above. */
@@ -207,20 +214,27 @@ __global__ __launch_bounds__(32) void hc_inj_pf2_bf16_kernel(
     const unsigned char* __restrict__ a8, const float* __restrict__ ascale,
     const unsigned short* __restrict__ injw, unsigned short* __restrict__ inj,
     long rows, long HN, int hc, long irow) {
+    constexpr int kInjMaxHc = 4;
     const long row = blockIdx.x;
-    const int c = (int)blockIdx.y, lane = threadIdx.x;
-    if (row >= rows || c >= hc) return;
+    const int lane = threadIdx.x;
+    if (row >= rows) return;
     const long nkb = HN / 128;
     const unsigned char* arow = a8 + (size_t)row * HN;
     const float* asc = ascale + (size_t)row * nkb;
-    const unsigned short* wr = injw + (size_t)c * HN;
-    float acc = 0.0f;
+    float acc[kInjMaxHc] = {};
     for (long k = lane; k < HN; k += 32) {
         const float av = float(*reinterpret_cast<const rocwmma::float8_t*>(&arow[k])) * asc[k / 128];
-        acc += av * bf2f(wr[k]);
+#pragma unroll
+        for (int c = 0; c < kInjMaxHc; ++c)
+            if (c < hc) acc[c] += av * bf2f(injw[(size_t)c * HN + k]);
     }
-    for (int off = 16; off; off >>= 1) acc += __shfl_xor(acc, off);
-    if (lane == 0) inj[row * irow + c] = f2bf(2.0f * sigmoidf_(acc * (1.0f / (float)hc)));
+    for (int off = 16; off; off >>= 1)
+#pragma unroll
+        for (int c = 0; c < kInjMaxHc; ++c) acc[c] += __shfl_xor(acc[c], off);
+    if (lane == 0)
+#pragma unroll
+        for (int c = 0; c < kInjMaxHc; ++c)
+            if (c < hc) inj[row * irow + c] = f2bf(2.0f * sigmoidf_(acc[c] * (1.0f / (float)hc)));
 }
 '''
 
@@ -353,7 +367,7 @@ PATCH = FilePatch(
                 "                if (hipGetLastError() != hipSuccess) return RAD_E_DEVICE;\n"
                 "            }\n"
                 "            if (injw && inj) {\n"
-                "                hipLaunchKernelGGL(hc_inj_pf2_bf16_kernel, dim3((unsigned)rows, (unsigned)hc),\n"
+                "                hipLaunchKernelGGL(hc_inj_pf2_bf16_kernel, dim3((unsigned)rows),\n"
                 "                                   dim3(32), 0, (hipStream_t)s, fp8a, ascale, injw, inj, rows,\n"
                 "                                   HN, hc, irow);\n"
                 "                if (hipGetLastError() != hipSuccess) return RAD_E_DEVICE;\n"

@@ -12,10 +12,13 @@ anchors apply and the new code compiles against the real pinned source.
 ## Outcome
 
 Dispatch is wired and the path runs end to end on real hardware (`RAD_HC_PF2_FP8_DOWN=1`, default off).
-Measured at M=2048 on the real gfx1201 device: **2.7x SLOWER** than the existing bf16 path (1457.6 us vs
-530.7 us), not yet correct to a quality metric either (byte-identity fails as expected for a lossy FP8 path,
-but no RMS/KL-style quality check has been built yet to say how close it actually is). Not a win yet --
-needs a quality metric and a performance-tuning pass before being a promotion candidate.
+Measured at M=2048 on the real gfx1201 device: **~2.7x SLOWER** than the existing bf16 path (1422.0 us vs
+530.7 us after one real optimisation pass on the inject kernel; 1457.6 us before it). Per-kernel timing
+diagnosis (see "Real gap" below) shows the FP8 down kernel itself -- not launch overhead -- is the dominant
+cost at 0.688ms, more than the entire baseline call. Not correct to a quality metric either yet (byte-identity
+fails as expected for a lossy FP8 path; no RMS/KL-style quality check has been built). Not a win -- needs a
+real kernel-performance-engineering pass on the down kernel's inner loop plus a quality metric before being
+a promotion candidate.
 
 ## Detail
 
@@ -77,12 +80,33 @@ device 2 is the real gfx1201 R9700):
   been built yet) and **measures SLOWER than the bf16 path**: 1457.6 us / 18.5 TFLOP/s vs 530.7 us / 50.8
   TFLOP/s baseline -- roughly 2.7x worse, not a speedup.
 
-**Honest current status**: the mechanism runs end to end on real hardware for the first time, with no crash
-and no memory corruption of other outputs, but it is currently a measured REGRESSION, not a win. Likely
-causes, not yet investigated: the extra quant-kernel and reduce-kernel launches (2 additional kernel launches
-per call that the bf16 path doesn't pay), and the FP8 down kernel's naive double-`__syncwarp()`-per-K-group
-structure having none of the real kernel's double-buffered prefetch/overlap. A quality check and a
-performance-tuning pass are both still needed before this is a candidate for the production flag.
+**Per-kernel timing breakdown** (hipEvent-instrumented throwaway diagnostic build, not part of this patch,
+M=2048/ks=2): `quant=0.157ms down=0.688ms reduce=0.017ms inj=0.202ms total=1.065ms`. This pinpointed two real
+findings rather than leaving the regression as a guess:
+
+1. `hc_inj_pf2_bf16_kernel` was re-reading the entire `a8`/`ascale` activation once per `hc` column (grid
+   `(rows, hc)`), for math where only `injw` actually depends on the column -- almost pure redundant memory
+   traffic for a trivial amount of compute. Fixed: one wave per ROW (grid `(rows)`), covering all `hc`
+   columns in a single pass, accruing `hc` partial dot products in per-lane registers. Reduced inj's share
+   from 0.202ms to about 0.167ms (measured via the ~35us drop in the total, 1457.6us -> 1422.0us at the same
+   shape) -- a real, measured improvement, but small next to the total.
+2. `hc_down_pf2_fp8_kernel` itself is the dominant cost at 0.688ms -- **more than the ENTIRE 530.7us
+   baseline PF2 call**. This is not a launch-overhead or redundant-read problem like inj's; it is the kernel
+   body itself: a naive `rocwmma::fragment` load/store-through-LDS/`__syncwarp()` pass per 128-wide K group,
+   with none of the real `hc_down_pf2_kernel`'s double-buffered prefetch (`fetchA`/`stageA` overlapping the
+   next K-slice's global loads with the current slice's WMMAs) or its single fused loop across all `NW`
+   n-tiles and `MT` m-tiles. Closing this gap means re-architecting the FP8 kernel's inner loop to pipeline
+   the way the real kernel does, not a small fix -- a substantially larger piece of kernel engineering than
+   anything completed in this patch so far.
+
+**Honest current status**: the full pipeline runs correctly-shaped end to end on real hardware, with no
+crash and no corruption of other outputs, and received one genuine, measured optimisation this session. It
+is still a measured REGRESSION overall (currently slower than the baseline it is meant to replace), and the
+diagnostic work above identified exactly why: the FP8 down kernel's inner loop, not launch overhead or an
+easily-fixed inefficiency. Matching or beating the baseline needs a real kernel-performance-engineering pass
+(double-buffered prefetch, fused tiling) comparable in scope to the hand-tuned original -- that is RAD17's
+next real step, not a quick follow-up. A quality metric (replacing the byte-identity check, which fails as
+expected for a lossy FP8 path) is also still needed before any promotion decision.
 
 ## Why
 
