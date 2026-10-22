@@ -78,6 +78,20 @@ RT=128 is faster than production at both sizes with complete separation: -1.5% o
 (about 8 us, roughly 3% of the up-mix kernel) and -3.1% at M=4096 (about 40 us). RT=384 is slower at both, in
 line with the LDS-occupancy prediction (26/44/61 KB per workgroup at RT 128/256/384).
 
+## Against the unpatched build, and across row counts
+
+Six rotated rounds against the unpatched `radiance-lab` stock build (build plan `5e758b5e337a361e853b77e0f7beaf4c`),
+all byte-identical: M=2048 stock 515.3 / patched with the original RT 516.5 / RT=128 504.7 us (-2.1%, RT=128 ahead
+in all six paired rounds); M=4096 1293.1 / 1293.4 / 1252.3 us (-3.2%, complete separation). With the original RT
+the patched build matches stock, so the switch itself costs nothing.
+
+Rows sweep, stock vs RT=128 (two runs each, us): 512 169.7 vs 166.8; 768 218.5 vs 213.8; 1000 272.8 vs 268.2;
+1024 276.9 vs 275.8; 1536 415.7 vs 407.4; 2047 523.3 vs 508.0; 2049 574.9 vs 552.5; 3000 833.3 vs 808.1;
+6144 1702.5 vs 1649.7; 8192 2426.4 vs 2325.9. Never slower, byte-identical at every size (256 rows does not take
+the PF2 form). RT=128 is therefore the patch's default; RAD_HC_UPMIX_RT=256 restores the original launch.
+
+Evidence covers one shape (n=2560, hc=4, lr=320: Qwen3.8-Flash-Next), the only one r4d_selftest's PF2 bench runs.
+
 ## Not yet done
 
 - Not wired into the actual `bigcherry patch-rebase-check` / registry flow on a fresh checkout of

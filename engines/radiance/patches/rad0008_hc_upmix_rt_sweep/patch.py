@@ -33,21 +33,17 @@ workgroup LDS limit, confirmed by a real compile failure ("local memory (78336) 
 (65536)") when actually compiling that instantiation standalone. RT=384 is the largest legal value
 (60928 bytes), so it replaces RT=512 as the "larger" sweep point.
 
-RAD_HC_UPMIX_RT unset, or set to anything other than "128"/"256"/"384", falls back to the exact
-original call (RT=kPf2UpRT), so default behaviour is bit-identical to pre-patch. No new kernel body,
-no new scratch allocation, no numerics change at any RT value -- this patch can only change which
-grid/instantiation a single existing kernel template is launched with.
-
-Benchmark: r4d_selftest --perfhc at RAD_HC_UPMIX_RT=128/256/384, comparing kernel latency and
-(where obtainable) occupancy/register metrics, at the production PF2 shape (M=2048, hc=4, n=2560,
-lr=320). Not yet benchmarked on real hardware as of this patch revision -- see SUMMARY.md.
+Default RT=128 (measured win, see SUMMARY.md); RAD_HC_UPMIX_RT=256 is the off switch (the exact
+original launch), 384 is diagnostic only. No new kernel body, no new scratch allocation, no numerics
+change at any RT value -- this patch only changes which instantiation of the existing kernel template
+is launched and with what grid.
 """
 
 from bigcherry.patcher import Edit, FilePatch
 
 PATCH = FilePatch(
     path="libr4d/r4d_hc_bf16.hip",
-    description="Sweep hc_up_mix_wide_kernel's PF2 RT via RAD_HC_UPMIX_RT, default off (RAD17/RAD18)",
+    description="PF2 up-mix at RT=128 rows a workgroup; RAD_HC_UPMIX_RT=256 restores the original (RAD18)",
     edits=(
         Edit(
             id="hc-pf2-upmix-rt-sweep",
@@ -61,18 +57,15 @@ PATCH = FilePatch(
             ),
             mode="replace",
             text=(
-                "    /* RAD18 (GPT dev-agent review req_bigcherry_0641281ad540): sweep RT (rows a workgroup,\n"
-                "     * selects MW waves-per-block) to test whether occupancy/register pressure -- not grid\n"
-                "     * fill, already ample at this shape -- is where this kernel's remaining headroom is.\n"
-                "     * Default off: RAD_HC_UPMIX_RT unset or not one of the three legal values below falls\n"
-                "     * back to the exact original call, bit-identical to pre-patch. The kernel template\n"
-                "     * itself (hc_up_mix_wide_kernel) is completely unchanged; only the instantiation and\n"
-                "     * grid dimension picked here differ. */\n"
+                "    /* RAD18: the up-mix at 128 rows a workgroup (one m-tile a wave). Its LDS falls from 43 to\n"
+                "     * 26 KB, so more workgroups fit a WGP; measured on gfx1201 against the unpatched build at\n"
+                "     * rows 512-8192 it is never slower (-1% to -4% of the whole call) and byte-identical.\n"
+                "     * RAD_HC_UPMIX_RT=256 restores the original launch; 384 is kept for diagnostics. The\n"
+                "     * kernel template is unchanged; only the instantiation and grid differ. */\n"
                 "    static const int rad18_upmix_rt = [] {\n"
                 "        const char* v = std::getenv(\"RAD_HC_UPMIX_RT\");\n"
-                "        if (!v) return kPf2UpRT;\n"
-                "        const int rt = atoi(v);\n"
-                "        return (rt == 128 || rt == 256 || rt == 384) ? rt : kPf2UpRT;\n"
+                "        const int rt = v ? atoi(v) : 128;\n"
+                "        return (rt == 256 || rt == 384) ? rt : 128;\n"
                 "    }();\n"
                 "    switch (rad18_upmix_rt) {\n"
                 "    case 128:\n"
