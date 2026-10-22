@@ -52,8 +52,6 @@ PATCH = FilePatch(
         Edit(
             id="hc-pf2-upmix-rt-sweep",
             anchor=(
-                r"    /\* The up product and mix: the wide kernel at 256 rows over a bf16 mix_up with row pitch lr\n"
-                r"     \* \(the decoded plane, or the stored matrix at bf16\)\. \*/\n"
                 r"    hipLaunchKernelGGL\(\(hc_up_mix_wide_kernel<4, false, kPf2UpRT>\),\n"
                 r"                       dim3\(\(unsigned\)\(n / kWideCH\), \(unsigned\)\(\(rows \+ kPf2UpRT - 1\) / kPf2UpRT\)\),\n"
                 r"                       dim3\(kThreads\), 0, \(hipStream_t\)s, \(const void\*\)ubf, lr,\n"
@@ -63,8 +61,6 @@ PATCH = FilePatch(
             ),
             mode="replace",
             text=(
-                "    /* The up product and mix: the wide kernel at 256 rows over a bf16 mix_up with row pitch lr\n"
-                "     * (the decoded plane, or the stored matrix at bf16). */\n"
                 "    /* RAD18 (GPT dev-agent review req_bigcherry_0641281ad540): sweep RT (rows a workgroup,\n"
                 "     * selects MW waves-per-block) to test whether occupancy/register pressure -- not grid\n"
                 "     * fill, already ample at this shape -- is where this kernel's remaining headroom is.\n"
@@ -72,13 +68,13 @@ PATCH = FilePatch(
                 "     * back to the exact original call, bit-identical to pre-patch. The kernel template\n"
                 "     * itself (hc_up_mix_wide_kernel) is completely unchanged; only the instantiation and\n"
                 "     * grid dimension picked here differ. */\n"
-                "    static const int r17_hc_upmix_rt = [] {\n"
+                "    static const int rad18_upmix_rt = [] {\n"
                 "        const char* v = std::getenv(\"RAD_HC_UPMIX_RT\");\n"
                 "        if (!v) return kPf2UpRT;\n"
                 "        const int rt = atoi(v);\n"
                 "        return (rt == 128 || rt == 256 || rt == 384) ? rt : kPf2UpRT;\n"
                 "    }();\n"
-                "    switch (r17_hc_upmix_rt) {\n"
+                "    switch (rad18_upmix_rt) {\n"
                 "    case 128:\n"
                 "        hipLaunchKernelGGL((hc_up_mix_wide_kernel<4, false, 128>),\n"
                 "                           dim3((unsigned)(n / kWideCH), (unsigned)((rows + 128 - 1) / 128)),\n"
@@ -103,9 +99,10 @@ PATCH = FilePatch(
                 "    }\n"
                 "    if (hipGetLastError() != hipSuccess) return RAD_E_DEVICE;\n"
             ),
-            guard=r"RAD_HC_UPMIX_RT",
+            guard=r"rad18_upmix_rt",
             expect_matches=1,
-            rationale="Unique PF2 up-mix launch call site inside hc_pf2_launch; the only place that "
+            rationale="Unique PF2 up-mix launch call site inside hc_pf2_launch; code only, since the engine "
+                       "strips comments and string literals before matching anchors and guards. The only place that "
                        "selects hc_up_mix_wide_kernel's RT template parameter and grid for this form",
         ),
     ),

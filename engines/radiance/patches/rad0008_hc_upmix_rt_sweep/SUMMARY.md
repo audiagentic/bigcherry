@@ -51,6 +51,15 @@ Verified (this revision):
   (`__device_stub__` symbols too), alongside the pre-existing `<4, false>`/`<4, true>` instantiations
   used elsewhere in the file.
 
+## Anchor fix (first real build)
+
+The first `bigcherry build --experiment hc-upmix-rt-sweep` stopped at patch application: the anchor began on the
+`/* The up product and mix ... */` comment and the guard was the `RAD_HC_UPMIX_RT` string literal, but the patch
+engine strips comments and string literals before matching, so the anchor matched 0 times. The earlier check used
+a plain regex on the raw file and missed this. The anchor now starts at the `hipLaunchKernelGGL` call and the guard
+is the `rad18_upmix_rt` variable; `apply_patch` on the pinned v1.9.0 file applies, and a second apply reports
+`already-applied`.
+
 ## Not yet done
 
 - Not wired into the actual `bigcherry patch-rebase-check` / registry flow on a fresh checkout of
