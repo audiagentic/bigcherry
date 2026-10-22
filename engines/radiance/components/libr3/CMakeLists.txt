@@ -61,7 +61,9 @@ foreach(line ${unit_lines})
     continue()
   endif()
   set(wrapper ${CMAKE_CURRENT_BINARY_DIR}/units/${unit}.hip)
-  file(GENERATE OUTPUT ${wrapper} CONTENT "#include \"r3_compat.h\"\n#include \"${r4d}/${unit}.hip\"\n")
+  # Relative to the wrapper (units/ beside r4d-src/) so its bytes do not depend on where the build tree lives; an
+  # absolute path changes with every new build directory and turns each unit into a compiler-cache miss.
+  file(GENERATE OUTPUT ${wrapper} CONTENT "#include \"r3_compat.h\"\n#include \"../r4d-src/${unit}.hip\"\n")
   if(flags)
     set_source_files_properties(${wrapper} PROPERTIES COMPILE_OPTIONS "${flags}")
   endif()
