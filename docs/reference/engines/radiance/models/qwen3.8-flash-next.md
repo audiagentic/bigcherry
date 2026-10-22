@@ -56,6 +56,32 @@ libr3moe, process `r3_moe_worker`):
   `--max-num-batched-tokens 4096 --checkpoint-interval 4096`, `--kv-cache-dtype fp8`, `--num-speculative-tokens 3`.
 - Harness form of exactly this: `tools/lab/radiance/helper-ab.json` (MEN11).
 
+Running and measuring it (read before any Flash-Next work):
+
+- Build: the engine needs rad0002, which is in no recipe patch set:
+  `bigcherry build --lane radiance-lab:stock:linux-radiance --experiment moe-remote-handoff`. A build without it starts,
+  then the helpers are refused ("engine does not export bc_moe_remote_register (patch rad0002)") and the R9700 runs out
+  of memory holding every expert.
+- Run: `bigcherry ab-benchmark --server-config tools/lab/radiance/helper-ab.json`; the harness starts one
+  `r3_moe_worker` per XTX (`ROCR_VISIBLE_DEVICES=<xtx> HIP_VISIBLE_DEVICES=0`, `R3_MOE_WORKER_INDEX`) before the engine.
+  `R3_MOE_WORKER_DEVICES` is read by the harness, not the engine, so a hand launch must start the helpers first;
+  `tools/lab/radiance/launch-flashnext-best.sh` does not (2026-10-22).
+- The helpers' backend is gfx11 only: they run on the XTX and refuse the R9700. `fn-helper.sh` / `fn-profile.sh` drive
+  the older two-XTX engine (helper on device 2), not this layout.
+- Per-op device time: `radiance --profile-ops` (the table is printed at shutdown; it adds synchronisations, so use the
+  shares, not the absolute times). rocprofv3 `--kernel-trace` breaks the two-XTX engine's IPC all-reduce init.
+  Helper MoE kernels: `tools/lab/radiance/helper-sweep.sh` (replays `/mnt/data/bigcherry-work/captures`, no server).
+  rad-kbench cannot time `moe_gemm_q` at `w4nl64a8h` (it selects `moe_gemm_w4a8`, which refuses the dtype).
+- Host limits seen in the startup report (2026-10-22): the R9700's upstream link is PCIe 4.0 x4
+  (`0000:00:06.0`); RLIMIT_MEMLOCK 11.48 GiB; CPU governor powersave; `--ngram-placement ram` (47.7 GiB pinned) plus
+  `--host-pool-mib 30720` needs about 78 GiB free of the 91 GiB host, otherwise use `--ngram-placement disk` for
+  prefill-only measurement.
+- `hc_read` runs on the R9700 (libr4d) in this layout and through libr3 on the XTX in the two-XTX layout. rad0008
+  (PF2 up-mix at 128 rows a workgroup, byte-identical) measured -2.1% / -3.2% of the `hc_read` call on the R9700 and
+  -5.8% / -2.8% on the XTX (M=2048 / 4096), not yet in a patch set (RAD18). In the two-XTX layout `hc_read` is 6.8% of
+  prefill device time and `moe_gemm_q` 45%, with 27.4 GiB of experts streamed a rank (RAD18); the share in this
+  layout is not yet measured.
+
 Radiance 1.7.0, harness (`helper-ab.json`, 2 balanced rounds, natives on; baselines in
 `docs/reference/engines/radiance/baselines/`):
 
