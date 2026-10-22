@@ -84,6 +84,7 @@ jobs:
             export CCACHE_BASEDIR=/src CCACHE_NOHASHDIR=true
             mkdir -p work/upstream work/.ccache
             ccache -z
+            trap "ccache -s" EXIT
             if [ -d work/upstream/radiance.git ]; then
               git -C work/upstream/radiance.git worktree prune
               git -C work/upstream/radiance.git fetch --prune origin "+refs/*:refs/*"
@@ -91,5 +92,4 @@ jobs:
               git clone --bare https://codeberg.org/StillDeadcode/radiance.git work/upstream/radiance.git
             fi
             python3 -m bigcherry build --lane radiance-lab:stock:linux-radiance
-            ccache -s
           '
