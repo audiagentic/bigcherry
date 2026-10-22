@@ -39,9 +39,18 @@ def build_runtime(
     build_dir: Path,
     c_compiler: str | None,
     cxx_compiler: str | None,
+    launcher_options: tuple[tuple[str, str], ...] = (),
     runner: Runner = _run,
 ) -> dict[str, str]:
-    """Build ``engine``'s runtime targets and components into ``build_dir``. Returns {component: content digest}."""
+    """Build ``engine``'s runtime targets and components into ``build_dir``. Returns {component: content digest}.
+
+    ``launcher_options`` (RAD18): each component is configured through its OWN separate ``cmake -S -B`` invocation,
+    which previously forwarded only ``CMAKE_C_COMPILER``/``CMAKE_CXX_COMPILER`` -- never the platform's
+    ``CMAKE_*_COMPILER_LAUNCHER`` options (e.g. ``ccache``), so every component's compile ran uncached on every
+    build regardless of whether its source actually changed. Found by measuring a real CI build log: radiance's
+    ``libr3`` component (92-99 HIP "units") took the same ~11-14 minutes on two consecutive runs of near-identical
+    source, while the main engine build (which DOES get the launcher via the top-level configure) showed real cache
+    hits. A component's own declared ``configure`` entries still win if they already set the same key."""
     layout = engines.load(paths.REPO_ROOT, engine)
     built: dict[str, str] = {}
     if layout.runtime_targets:
@@ -60,6 +69,8 @@ def build_runtime(
         component_build = component_build_dir(build_dir, name)
         values = {"engine_source": str(source_root), "targets": ";".join(component.targets)}
         options = {key: value.format(**values) for key, value in component.configure}
+        for key, value in launcher_options:
+            options.setdefault(key, value)
         options["CMAKE_PREFIX_PATH"] = str(prefix)
         if c_compiler:
             options["CMAKE_C_COMPILER"] = c_compiler
