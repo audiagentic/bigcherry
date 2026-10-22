@@ -54,6 +54,7 @@ class PrimaryRootTests(unittest.TestCase):
                     os.environ,
                     {"BC_PRIMARY_ROOT": "", "BIGCHERRY_WORK_ROOT": ""},
                 ),
+                patch("bigcherry.core.config._local_env_table", return_value={}),
             ):
                 context = ProjectContext.resolve(engine="llamacpp", project_root=worktree)
             self.assertEqual(context.project_root, worktree)
@@ -64,6 +65,24 @@ class PrimaryRootTests(unittest.TestCase):
                 context.upstream_repo,
                 primary / "work" / "upstream" / "llama.cpp.git",
             )
+
+    def test_host_file_work_root_applies_and_process_environment_wins(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            primary, worktree = self._repo_with_worktree(directory)
+            shared = Path(directory) / "shared-work"
+            env_root = Path(directory) / "env-work"
+            host = {"BIGCHERRY_WORK_ROOT": str(shared)}
+            with (
+                patch.object(paths, "REPO_ROOT", worktree),
+                patch.dict(os.environ, {"BC_PRIMARY_ROOT": "", "BIGCHERRY_WORK_ROOT": ""}),
+                patch("bigcherry.core.config._local_env_table", return_value=host),
+            ):
+                from_host = ProjectContext.resolve(engine="radiance", project_root=worktree)
+                with patch.dict(os.environ, {"BIGCHERRY_WORK_ROOT": str(env_root)}):
+                    from_env = ProjectContext.resolve(engine="radiance", project_root=worktree)
+            self.assertEqual(from_host.work_root, shared.resolve())
+            self.assertEqual(from_host.upstream_repo, shared.resolve() / "upstream" / "radiance.git")
+            self.assertEqual(from_env.work_root, env_root.resolve())
 
     def test_explicit_primary_override_is_validated(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
