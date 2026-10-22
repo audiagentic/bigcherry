@@ -13,7 +13,7 @@
 namespace r3::moe_shm {
 
 constexpr uint64_t kMagic = 0x31454f4d33485253ull; /* "SRH3MOE1": reject unrelated/stale shm. */
-constexpr uint32_t kVersion = 14;  /* 14: the header records the model shape (intermediate, activation_group, shape_hash) and every region is laid out from it (layout_for); 13: several pre-queued small-lane sizes (Header::small_class_*), ten lanes; 12: Request carries the R3_MOE_WORKER_TRACE stamps (192 -> 256 bytes); 11: helper_fault; completion is an exact generation */
+constexpr uint32_t kVersion = 15;  /* 15: Header::combine (R3_MOE_WORKER_COMBINE); 14: the header records the model shape (intermediate, activation_group, shape_hash) and every region is laid out from it (layout_for); 13: several pre-queued small-lane sizes (Header::small_class_*), ten lanes; 12: Request carries the R3_MOE_WORKER_TRACE stamps (192 -> 256 bytes); 11: helper_fault; completion is an exact generation */
 constexpr uint32_t kPage = 4096;
 constexpr uint32_t kMaxRanks = 2;       /* Flash-Next configuration of record: TP=2. */
 constexpr uint32_t kMaxLayers = 128;     /* ownership bitmap bound; Flash-Next is below this. */
@@ -87,6 +87,23 @@ struct alignas(64) LaneSignal {
 };
 static_assert(sizeof(LaneSignal) == 64);
 
+/* R3_MOE_WORKER_COMBINE (two helpers behind a one-rank engine, large lane only): helper 0 adds the two helpers' bf16
+ * rows on the CPU into result plane [0][1], so the engine reads one row a token over its link instead of two. The engine
+ * GPU writes lane/seq/rows, then release-stores `request` (a generation it alone advances); helper 0 waits for both lanes'
+ * done words to reach seq, combines, and release-stores `done`. Not bit-identical to adding the two rows on the engine
+ * (one more bf16 rounding). `enabled` is set by helper 0 once its combiner runs; the engine only asks when it is set. */
+struct alignas(64) CombineSignal {
+    uint32_t enabled;
+    uint32_t min_rows;      /* steps with fewer rows keep the two-row merge */
+    uint32_t request;
+    uint32_t done;
+    uint32_t lane[kMaxRanks];
+    uint32_t seq[kMaxRanks];
+    uint32_t rows;
+    uint32_t reserved[7];
+};
+static_assert(sizeof(CombineSignal) == 64);
+
 struct alignas(kPage) Header {
     uint64_t magic;                 /* segment identity. */
     uint32_t version;               /* protocol compatibility gate. */
@@ -130,6 +147,7 @@ struct alignas(kPage) Header {
     uint32_t activation_group;      /* activation quantisation group width. */
     uint64_t shape_hash;            /* shape_hash() of the shape fields: a fast agreement check, never the only one. */
     uint64_t reserved[14];
+    CombineSignal combine;
 };
 static_assert(sizeof(Header) <= kPage);
 
@@ -287,7 +305,7 @@ inline bool init(void* base, uint32_t layers, const LayoutShape& shape) {
     return true;
 }
 
-/* A mapped segment is acceptable when it is a v14 segment of exactly the shape this side expects, and its layout is the one that
+/* A mapped segment is acceptable when it is a kVersion segment of exactly the shape this side expects, and its layout is the one that
  * shape implies: every offset, slot size and length is reconstructed from the header's own shape fields, so a corrupt or foreign
  * header cannot point a request outside the mapping. A different shape, a stale protocol version or a malformed layout is refused
  * before any request is published or any expert buffer is touched. */

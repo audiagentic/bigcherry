@@ -123,6 +123,22 @@ summary = "RAD06: the helper's activation copy (engine's mapped host memory into
 activation = "r3_moe_worker: R3_MOE_WORKER_VECIO on"
 evidence = ["docs/evidence/RAD06/R3_MOE_WORKER_VECIO.run.json"]
 
+[setting.R3_MOE_WORKER_COMBINE]
+default = ""
+status = "experimental"
+summary = "RAD18: two helpers behind a one-rank engine; on the large lane (steps of R3_MOE_WORKER_COMBINE_MIN_ROWS+ rows, default 256) helper 0 adds both helpers' bf16 rows on the CPU (R3_MOE_WORKER_COMBINE_THREADS, default 8) so the engine reads one row a token over its link instead of two; not bit-identical (one more bf16 rounding); set in both the engine and the helpers' environment; protocol v15"
+activation = "libr3moe: R3_MOE_WORKER_COMBINE on"
+
+[setting.R3_MOE_WORKER_COMBINE_MIN_ROWS]
+default = "256"
+status = "experimental"
+summary = "RAD18: with R3_MOE_WORKER_COMBINE, the smallest large-lane step (rows) the helpers' rows are combined for; smaller steps keep the two-row merge"
+
+[setting.R3_MOE_WORKER_COMBINE_THREADS]
+default = "8"
+status = "experimental"
+summary = "RAD18: with R3_MOE_WORKER_COMBINE, CPU threads in helper 0's combine pool (persistent; the coordinator is one of them)"
+
 [setting.R3_MOE_WORKER_BALANCE]
 default = ""
 status = "evaluated"

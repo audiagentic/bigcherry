@@ -136,12 +136,13 @@ __global__ void mailbox_publish_kernel(
     uint32_t layer, uint32_t rows, uint32_t hidden, uint32_t top_k,
     int32_t expert_base, uint32_t n_expert, uint32_t max_rows,
     uint32_t shadow, uint32_t world,
-    const uint8_t* st_aq, const float* st_as, const uint16_t* st_x, uint32_t st_bf16) {
+    const uint8_t* st_aq, const float* st_as, const uint16_t* st_x, uint32_t st_bf16, uint32_t combine) {
     __shared__ uint32_t seq;
     __shared__ uint32_t nr;
+    __shared__ uint32_t pub_lane[kMaxRanks], pub_seq[kMaxRanks];
 
     Header* h = reinterpret_cast<Header*>(base);
-    if (threadIdx.x < kMaxRanks) published[threadIdx.x] = 0;
+    if (threadIdx.x <= kMaxRanks) published[threadIdx.x] = 0;   /* [kMaxRanks]: the combine generation */
     __syncthreads();
     if (rows == 0 || rows > max_rows || rows > kMaxRows ||
         layer >= h->layer_count || !load_sys_acq(&h->layer_map_ready[layer])) return;
@@ -239,8 +240,24 @@ __global__ void mailbox_publish_kernel(
         if (threadIdx.x == 0) {
             store_sys_rel(&h->lane[lane].request_sequence, seq);
             published[slot] = 1u + cls;   /* 0: nothing published to this slot; else 1 + the lane class */
+            pub_lane[slot] = lane;
+            pub_seq[slot] = seq;
         }
         __syncthreads();
+    }
+
+    /* R3_MOE_WORKER_COMBINE: both helpers took this large-lane step, so helper 0 adds their rows into plane [0][1] and
+     * the merge reads that one row a token. The engine alone advances combine.request; the merge of this step waits for
+     * combine.done before the next publish can reuse any slot. */
+    if (threadIdx.x == 0 && combine && helpers == 2 && cls == kSmallClasses && published[0] && published[1] &&
+        load_sys_acq(&h->combine.enabled) && rows >= h->combine.min_rows) {
+        uint32_t g = h->combine.request + 1u;
+        if (g == 0) g = 1;
+        for (uint32_t k = 0; k < kMaxRanks; ++k) { h->combine.lane[k] = pub_lane[k]; h->combine.seq[k] = pub_seq[k]; }
+        h->combine.rows = rows;
+        __threadfence_system();
+        store_sys_rel(&h->combine.request, g);
+        published[kMaxRanks] = g;
     }
 }
 
@@ -270,6 +287,16 @@ __global__ void mailbox_add_wait_kernel(
     if (blockIdx.x || threadIdx.x) return;
     Header* h = reinterpret_cast<Header*>(base);
     const uint64_t entered = wall_clock64();   /* R3_MOE_WORKER_TRACE: engine clock */
+    /* R3_MOE_WORKER_COMBINE: the combiner publishes done only after both helpers' done words, so the loop below then
+     * finds them already there. */
+    if (const uint32_t g = published[kMaxRanks]) {
+        unsigned long long spins = 0;
+        while (load_sys_acq(&h->combine.done) != g) {
+            if (load_sys_acq(&h->helper_fault)) __builtin_trap();
+            __builtin_amdgcn_s_sleep(2);
+            if (++spins > 4000000000ULL) __builtin_trap();
+        }
+    }
     Request* traced[kMaxRanks] = {};
     uint64_t seen_at[kMaxRanks] = {};
     for (uint32_t k = 0; k < helpers && k < kMaxRanks; ++k) {
@@ -363,6 +390,7 @@ __global__ void mailbox_add_rows_kernel(
     const uint32_t token = blockIdx.x;
     if (token >= rows) return;
     Header* h = reinterpret_cast<Header*>(base);
+    const uint32_t combined = published[kMaxRanks];   /* R3_MOE_WORKER_COMBINE generation, 0 when not combined */
     __shared__ int32_t local_index[kMaxTopK];
     __shared__ uint8_t remote_slot[kMaxTopK];
     __shared__ uint32_t from[kMaxRanks];
@@ -399,7 +427,11 @@ __global__ void mailbox_add_rows_kernel(
             if (src) acc += bf16_to_f32(ew[flat]) * bf16_to_f32(src[col]);
         }
         /* Host-mapped and rewritten every request by the helpers: read past the caches. */
-        if (mask_only != 1u)
+        if (combined) {
+            if (from[0] || from[1])
+                acc += bf16_to_f32(__builtin_nontemporal_load(reinterpret_cast<const uint16_t*>(
+                    base + h->result_offset[0 * kMaxRanks + 1]) + (uint64_t)token * hidden + col));
+        } else if (mask_only != 1u)
             for (uint32_t k = 0; k < helpers; ++k) {
                 if (!from[k]) continue;
                 const uint32_t slot = step_slot(k, rank, helpers);
@@ -511,7 +543,7 @@ __global__ void mailbox_shadow_rows_kernel(
 }
 
 __global__ void mailbox_add_finish_kernel(uint32_t* published) {
-    if (!blockIdx.x && threadIdx.x < kMaxRanks) published[threadIdx.x] = 0;
+    if (!blockIdx.x && threadIdx.x <= kMaxRanks) published[threadIdx.x] = 0;
 }
 
 long long geti(const RadArgs* a, const char* key, long long bad = -1) {
@@ -599,7 +631,7 @@ int publish_launch(const RadArgs* a, RadStream stream) {
                        d->shadow, d->world,
                        fuse_stage ? static_cast<const uint8_t*>(a->t[3].data) : nullptr,
                        static_cast<const float*>(a->t[4].data),
-                       static_cast<const uint16_t*>(a->t[2].data), d->cpu_ref);
+                       static_cast<const uint16_t*>(a->t[2].data), d->cpu_ref, d->combine);
     return hipGetLastError() == hipSuccess ? RAD_OK : RAD_E_DEVICE;
 }
 
@@ -691,7 +723,7 @@ int add_launch(const RadArgs* a, RadStream stream) {
                        static_cast<uint16_t*>(a->t[5].data),
                        d->mask_ref, d->mask_only,
                        (uint32_t)rows, (uint32_t)hidden, (uint32_t)top_k);
-    hipLaunchKernelGGL(mailbox_add_finish_kernel, dim3(1), dim3(kMaxRanks), 0, (hipStream_t)stream,
+    hipLaunchKernelGGL(mailbox_add_finish_kernel, dim3(1), dim3(kMaxRanks + 1), 0, (hipStream_t)stream,
                        d->published);
     return hipGetLastError() == hipSuccess ? RAD_OK : RAD_E_DEVICE;
 }
@@ -725,7 +757,7 @@ int shadow_launch(const RadArgs* a, RadStream stream) {
                        static_cast<const uint16_t*>(a->t[2].data),
                        rows, (uint32_t)hidden, (uint32_t)top_k,
                        d->shadow_stats, d->shadow_first);
-    hipLaunchKernelGGL(mailbox_add_finish_kernel, dim3(1), dim3(kMaxRanks), 0, (hipStream_t)stream,
+    hipLaunchKernelGGL(mailbox_add_finish_kernel, dim3(1), dim3(kMaxRanks + 1), 0, (hipStream_t)stream,
                        d->published);
     return hipGetLastError() == hipSuccess ? RAD_OK : RAD_E_DEVICE;
 }

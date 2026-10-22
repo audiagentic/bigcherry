@@ -36,6 +36,7 @@
 #include "worker_owners.h"
 #include "worker_harness.h"
 #include "worker_selftest.h"
+#include "worker_combine.h"
 
 int main(int argc, char** argv) {
     /* EVERY LANE STREAM ON ITS OWN HARDWARE QUEUE. A small lane pre-queues "wait for the next request" packets;
@@ -459,6 +460,21 @@ int main(int argc, char** argv) {
         std::array<uint64_t, kLanes> lane_req{}, lane_rows{}, lane_routes{}, lane_samples{};
         std::array<double, kLanes> lane_sample_us{};
         std::array<std::thread, kLanes> workers;
+        /* R3_MOE_WORKER_COMBINE=1 (default off): helper 0 of two adds both helpers' rows for the engine's large lane on
+         * the CPU (worker_combine.h). The engine asks only once combine.enabled is set. */
+        std::thread combiner;
+        CombineStats combine_stats;
+        if (const char* e = std::getenv("R3_MOE_WORKER_COMBINE");
+            e && std::strcmp(e, "1") == 0 && helper_index == 0 && helper_count == 2) {
+            uint32_t min_rows = 256, threads = 8;
+            if (const char* v = std::getenv("R3_MOE_WORKER_COMBINE_MIN_ROWS"); v && *v) min_rows = (uint32_t)std::atoi(v);
+            if (const char* v = std::getenv("R3_MOE_WORKER_COMBINE_THREADS"); v && *v) threads = (uint32_t)std::max(1, std::atoi(v));
+            h->combine.min_rows = min_rows;
+            combiner = std::thread([&, threads] { run_combiner(map, threads, &combine_stats); });
+            store(&h->combine.enabled, 1u);
+            std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_COMBINE on - %u CPU thread(s), large-lane steps of %u+ rows\n",
+                         threads, min_rows);
+        }
         for (uint32_t lane = 0; lane < kLanes; ++lane) {
             /* Two helpers: each serves only its own rank slot's lanes. */
             if (helper_count > 1 && lane % kMaxRanks != helper_index) continue;
@@ -562,6 +578,13 @@ int main(int argc, char** argv) {
         for (auto& w : workers) if (w.joinable()) w.join();
         /* The lanes are gone: an engine still waiting on them must fail rather than hang. */
         store(&h->helper_fault, 1u);
+        if (combiner.joinable()) {
+            store(&h->combine.enabled, 0u);
+            combiner.join();
+            std::fprintf(stderr, "r3_moe_worker: combine steps %llu, CPU %.1f ms (%.1f us a step)\n",
+                         (unsigned long long)combine_stats.steps, combine_stats.combine_us / 1000.0,
+                         combine_stats.steps ? combine_stats.combine_us / (double)combine_stats.steps : 0.0);
+        }
         uint64_t timing_samples = 0;
         double sampled_us = 0.0;
         for (uint32_t lane = 0; lane < kLanes; ++lane) {
