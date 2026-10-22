@@ -51,13 +51,54 @@ Verified (this revision):
   (`__device_stub__` symbols too), alongside the pre-existing `<4, false>`/`<4, true>` instantiations
   used elsewhere in the file.
 
+## Anchor fix (first real build)
+
+The first `bigcherry build --experiment hc-upmix-rt-sweep` stopped at patch application: the anchor began on the
+`/* The up product and mix ... */` comment and the guard was the `RAD_HC_UPMIX_RT` string literal, but the patch
+engine strips comments and string literals before matching, so the anchor matched 0 times. The earlier check used
+a plain regex on the raw file and missed this. The anchor now starts at the `hipLaunchKernelGGL` call and the guard
+is the `rad18_upmix_rt` variable; `apply_patch` on the pinned v1.9.0 file applies, and a second apply reports
+`already-applied`.
+
+## Hardware result (2026-10-22, gfx1201 R9700)
+
+Built through the real pipeline (`bigcherry build --lane radiance-lab:stock:linux-radiance --experiment
+hc-upmix-rt-sweep`, build plan `da22861d7c120bb8e078f39e86ca4037`) and measured with `r4d_selftest --perfhc <M> 50`
+(PF2 `hc_read` whole-call time), three rounds per size with the RT order rotated each round. Every run passed the
+selftest's byte-identical check of the PF2 output against the decode-tile kernels, RT=384 included (its last
+workgroup covers 256 padded rows at M=2048).
+
+| RT | M=2048 runs (us) | mean | M=4096 runs (us) | mean |
+|---|---|---|---|---|
+| 128 | 503.6 / 511.4 / 506.8 | 507.3 | 1250.6 / 1252.9 / 1249.9 | 1251.1 |
+| 256 (production) | 515.0 / 513.2 / 517.0 | 515.1 | 1291.5 / 1293.7 / 1289.6 | 1291.6 |
+| 384 | 549.4 / 560.7 / 554.1 | 554.7 | 1440.1 / 1454.6 / 1445.7 | 1446.8 |
+
+RT=128 is faster than production at both sizes with complete separation: -1.5% of the whole call at M=2048
+(about 8 us, roughly 3% of the up-mix kernel) and -3.1% at M=4096 (about 40 us). RT=384 is slower at both, in
+line with the LDS-occupancy prediction (26/44/61 KB per workgroup at RT 128/256/384).
+
+## Against the unpatched build, and across row counts
+
+Six rotated rounds against the unpatched `radiance-lab` stock build (build plan `5e758b5e337a361e853b77e0f7beaf4c`),
+all byte-identical: M=2048 stock 515.3 / patched with the original RT 516.5 / RT=128 504.7 us (-2.1%, RT=128 ahead
+in all six paired rounds); M=4096 1293.1 / 1293.4 / 1252.3 us (-3.2%, complete separation). With the original RT
+the patched build matches stock, so the switch itself costs nothing.
+
+Rows sweep, stock vs RT=128 (two runs each, us): 512 169.7 vs 166.8; 768 218.5 vs 213.8; 1000 272.8 vs 268.2;
+1024 276.9 vs 275.8; 1536 415.7 vs 407.4; 2047 523.3 vs 508.0; 2049 574.9 vs 552.5; 3000 833.3 vs 808.1;
+6144 1702.5 vs 1649.7; 8192 2426.4 vs 2325.9. Never slower, byte-identical at every size (256 rows does not take
+the PF2 form). RT=128 is therefore the patch's default; RAD_HC_UPMIX_RT=256 restores the original launch.
+
+Evidence covers one shape (n=2560, hc=4, lr=320: Qwen3.8-Flash-Next), the only one r4d_selftest's PF2 bench runs.
+
 ## Not yet done
 
 - Not wired into the actual `bigcherry patch-rebase-check` / registry flow on a fresh checkout of
   this exact repo state (verification above used a manual regex+compile check against Brutus's
   vendor tree directly, since Brutus's own `tools/bigcherry` checkout is on a much older commit
   than this repo's current main and its patch schema/tag vocabulary may have drifted).
-- Not yet benchmarked on real hardware: `r4d_selftest --perfhc` at `RAD_HC_UPMIX_RT=128/256/384`,
+- Superseded by the hardware result above: `r4d_selftest --perfhc` at `RAD_HC_UPMIX_RT=128/256/384`,
   comparing kernel latency (GPU-event, not wall clock) and, where obtainable, occupancy/register
   metrics, at the production PF2 shape (M=2048, hc=4, n=2560, lr=320), per GPT's decision criteria
   (>=5% improvement retains the winning RT; no improvement stops RT tuning; spills/occupancy
