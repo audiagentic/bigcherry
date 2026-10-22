@@ -1,0 +1,12 @@
+schema = 1
+id = "rad0008_hc_upmix_rt_sweep"
+order = 8
+state = "untested"
+kind = "enhancement"
+origin = "local"
+backend = "agnostic"
+plan-item = "RAD18"
+plan-ids = ["RAD17", "RAD18"]
+requires = []
+conflicts = []
+tags = ["wmma", "prefill", "tuning", "gfx1201"]
