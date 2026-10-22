@@ -141,6 +141,15 @@ class ComponentGateTests(unittest.TestCase):
         component_configures = [c for c in self.calls[1:] if c[:2] == ["cmake", "-S"]]
         self.assertTrue(component_configures)
         self.assertTrue(all("-DCMAKE_CXX_COMPILER=/fake/g++-14" in c for c in component_configures))
+        # RAD18: each component's own separate cmake configure must also get the platform's compiler-launcher
+        # options (e.g. ccache) -- without this, a declared component never got ccache at all and recompiled
+        # from scratch on every single build regardless of whether its source actually changed.
+        self.assertTrue(all("-DCMAKE_CXX_COMPILER_LAUNCHER=ccache" in c for c in component_configures))
+        self.assertTrue(all("-DCMAKE_C_COMPILER_LAUNCHER=ccache" in c for c in component_configures))
+        self.assertTrue(all("-DCMAKE_HIP_COMPILER_LAUNCHER=ccache" in c for c in component_configures))
+        # RAD_BUILD_TESTS is an engine-build-only option, not a compiler launcher -- it must NOT leak into the
+        # components' own separate configure (they declare their own options, e.g. R3_NATIVE below).
+        self.assertTrue(all("-DRAD_BUILD_TESTS=OFF" not in c for c in component_configures))
 
     def test_missing_unknown_or_unresolvable_platform_is_a_clean_setup_stop(self):
         for platform, env, needle in (

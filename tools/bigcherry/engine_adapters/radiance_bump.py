@@ -142,8 +142,13 @@ class ComponentGate:
         try:
             self.runner(argv, self.source_dir)
             self.runner(["cmake", "--build", str(self.build_dir), "-j"], self.source_dir)
+            # RAD18: forward the platform's compiler-launcher options (e.g. ccache) into each component's own
+            # separate cmake configure -- without this, a declared component (libr3's 92-99 HIP "units" among
+            # them) never got ccache at all and recompiled from scratch on every single build.
+            launcher_options = tuple((k, v) for k, v in platform.options if k.endswith("_COMPILER_LAUNCHER"))
             runtime_bundle.build_runtime(self.engine, source_root=self.source_dir, build_dir=self.build_dir,
-                                         c_compiler=platform.c_compiler, cxx_compiler=platform.cxx_compiler, runner=self.runner)
+                                         c_compiler=platform.c_compiler, cxx_compiler=platform.cxx_compiler,
+                                         launcher_options=launcher_options, runner=self.runner)
         except subprocess.CalledProcessError as exc:
             return [f"`{' '.join(map(str, exc.cmd))}` exited {exc.returncode} (build tree {self.build_dir})"]
         except (runtime_bundle.RuntimeBundleError, OSError) as exc:
