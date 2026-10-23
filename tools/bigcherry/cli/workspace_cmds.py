@@ -141,16 +141,19 @@ def cmd_clean(args: Namespace) -> int:
         if getattr(args, "builds", False):
             print("clean: choose --legacy or --builds", file=sys.stderr)
             return 2
-        from ..core.legacy_inventory import inventory_legacy
-        report = inventory_legacy(root, measure=not args.no_size)
+        from ..core import legacy_inventory
+        try:
+            report = legacy_inventory.inventory_legacy(
+                root, measure=not args.no_size, repo_root=paths.REPO_ROOT,
+                extra_roots=tuple(Path(p).expanduser().resolve() for p in getattr(args, "extra_root", None) or ()))
+        except ValueError as exc:
+            print(f"clean: {exc}", file=sys.stderr)
+            return 2
         if args.json:
             json.dump(report, sys.stdout, indent=1, sort_keys=True)
             print()
         else:
-            for item in report["entries"]:
-                print(f"{item[category]:24} protected {item[path]}")
-            print(f"read-only: {report[totals][entries]} protected items; "
-                  f"{report[totals][unmeasured_entries]} unmeasured or incomplete")
+            print(legacy_inventory.render(report))
         return 0
     if getattr(args, "builds", False):
         entries = retention.inspect_cache_roots(root, measure=not args.no_size)
@@ -221,6 +224,8 @@ def register(sub) -> None:
     cl.add_argument("--min-age-days", type=float, default=7.0)
     cl.add_argument("--keep-newest", type=int, default=3, help="newest K runs of each kind are always kept")
     cl.add_argument("--legacy", action="store_true", help="read-only protected legacy work-root inventory")
+    cl.add_argument("--extra-root", action="append", metavar="PATH",
+                    help="with --legacy: also inventory this legacy root (repeatable; read-only)")
     cl.add_argument("--builds", action="store_true", help="read-only build/source cache inventory (all entries protected)")
     cl.add_argument("--no-size", action="store_true", help="skip measuring directory sizes (fast)")
     cl.add_argument("--verbose", action="store_true")
