@@ -20,7 +20,6 @@ ALLOWLIST: dict[str, str] = {
     "patch/campaign/": "patch campaign tooling is llama.cpp-only by design",
     "patch/validation_campaign.py": "llama.cpp-only patch validation campaign",
     "campaign/qualification_matrix.py": "llama.cpp-only qualification matrix",
-    "release/patch_promote.py": "llama.cpp-only patch promotion tooling",
     "tuning/": "autotune tuning is llama.cpp-only by design",
     "experiment/engine_quality.py": "per-engine quality adapters name their engine",
     "engine_adapters/": "per-engine adapters name their engine (MEN11)",

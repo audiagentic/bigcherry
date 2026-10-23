@@ -10,9 +10,20 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from bigcherry.core import engines  # noqa: E402
 from bigcherry.patch import evidence as patch_evidence  # noqa: E402
 from bigcherry.patch import profile_evidence  # noqa: E402
 from bigcherry.release import patch_promote as pp  # noqa: E402
+
+
+_REPO = Path(__file__).resolve().parents[3]
+
+
+def _declare_engines(root: Path) -> None:
+    for name in ("llamacpp", "radiance"):
+        target = root / "engines" / name / "engine.toml"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(_REPO / "engines" / name / "engine.toml", target)
 
 
 _PATCH_TOML = """\
@@ -73,12 +84,31 @@ overlay = true
 patch-sets = ["validated-enhancements"]
 """
 
+_RAD_RECIPES = """version = 2
+engine = "radiance"
+pinned = "v1.9.0"
+pinned-version = "1.9.0"
+
+[patch-set.serving-core]
+patches = []
+required-state = "validated"
+
+[experiment.rad-demo]
+patches = ["rad0099_demo"]
+
+[source.radiance]
+ref = "pinned"
+patch-sets = ["serving-core"]
+"""
+
 
 class PatchPromoteTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix="patch-promote-")
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
+        _declare_engines(self.root)
+        self.layout = engines.load(self.root, "llamacpp")
         patch = self.root / "engines" / "llamacpp" / "patches" / "1348_demo"
         patch.mkdir(parents=True)
         (self.root / "config").mkdir()
@@ -101,12 +131,12 @@ class PatchPromoteTests(unittest.TestCase):
         )
 
     def test_state_recipe_and_readme_are_promoted_together(self):
-        info = pp._load_patch(self.root, "1348_demo")
+        info = pp._load_patch(self.root, self.layout, "1348_demo")
         pp._set_state(info)
         evidence = self.evidence.read_text(encoding="utf-8")
         pp._write_promotion_record(info, evidence)
         release_evidence = pp._write_release_evidence(self.root, info, evidence)
-        pp._update_recipes(self.root, ("1348_demo",))
+        pp._update_recipes(self.root, self.layout, ("1348_demo",))
 
         patch_toml = tomllib.loads(
             (info.root / "patch.toml").read_text(encoding="utf-8")
@@ -144,7 +174,7 @@ class PatchPromoteTests(unittest.TestCase):
         path.write_text(_RECIPES.replace('patches = ["1000_base"]\n', listed, 1), encoding="utf-8")
         before = path.read_text(encoding="utf-8")
 
-        pp._update_recipes(self.root, ("1348_demo",))
+        pp._update_recipes(self.root, self.layout, ("1348_demo",))
 
         after = path.read_text(encoding="utf-8")
         self.assertIn(
@@ -165,11 +195,11 @@ class PatchPromoteTests(unittest.TestCase):
                          after.split("[experiment.demo]")[0].replace(
                              listed.replace('"1001_other"  #', '"1001_other",  #').replace(']\n', '    "1348_demo",\n]\n'), ""))
 
-        pp._update_recipes(self.root, ("1348_demo",))  # already listed: no second entry
+        pp._update_recipes(self.root, self.layout, ("1348_demo",))  # already listed: no second entry
         self.assertEqual(after, path.read_text(encoding="utf-8"))
 
     def test_state_update_tolerates_patch_without_python_state(self):
-        info = pp._load_patch(self.root, "1348_demo")
+        info = pp._load_patch(self.root, self.layout, "1348_demo")
         (info.root / "patch.py").unlink()
         changed = pp._set_state(info)
         self.assertNotIn(info.root / "patch.py", changed)
@@ -200,6 +230,7 @@ class PatchPromoteTests(unittest.TestCase):
         with self.assertRaisesRegex(pp.PatchPromoteError, "at least two distinct"):
             pp.promote(
                 self.root,
+                "llamacpp",
                 ("1348_demo",),
                 "@" + str(single),
             )
@@ -209,7 +240,7 @@ class PatchPromoteTests(unittest.TestCase):
         self.addCleanup(lambda: shutil.rmtree(worktree, ignore_errors=True))
         seen = {}
 
-        def gate(root, infos):
+        def gate(root, layout, infos):
             # the gates see the candidate still unpromoted, with its evidence record already in the package
             seen["state"] = tomllib.loads((infos[0].root / "patch.toml").read_text(encoding="utf-8"))["state"]
             seen["record"] = profile_evidence.load(infos[0].root)
@@ -223,6 +254,7 @@ class PatchPromoteTests(unittest.TestCase):
             with self.assertRaisesRegex(pp.PatchPromoteError, "stop after gate"):
                 pp.promote(
                     self.root,
+                    "llamacpp",
                     ("1348_demo",),
                     "@" + str(single),
                     profile_only=True,
@@ -247,12 +279,12 @@ class PatchPromoteTests(unittest.TestCase):
         with mock.patch.object(pp, "_git", side_effect=fake_git), \
                 mock.patch("bigcherry.cli.slice.start_slice") as start:
             with self.assertRaisesRegex(pp.PatchPromoteError, "check 'identity' is missing"):
-                pp.promote(self.root, ("1348_demo",), "@" + str(thin))
+                pp.promote(self.root, "llamacpp", ("1348_demo",), "@" + str(thin))
         start.assert_not_called()
 
     def test_profile_record_binds_pin_and_implementation_and_survives_the_state_change(self):
-        info = pp._load_patch(self.root, "1348_demo")
-        record = pp._profile_evidence(self.root, info, self.evidence.read_text(encoding="utf-8"))
+        info = pp._load_patch(self.root, self.layout, "1348_demo")
+        record = pp._profile_evidence(self.root, self.layout, info, self.evidence.read_text(encoding="utf-8"))
         profile_evidence.write(info.root, record)
 
         def verify(pinned="b11474"):
@@ -270,17 +302,17 @@ class PatchPromoteTests(unittest.TestCase):
         self.assertIsNone(profile_evidence.verify(self.root, patch_id="x", pinned_ref="b11474", subject_digest="0"))
 
     def test_default_on_patch_needs_a_second_model_run(self):
-        info = pp._load_patch(self.root, "1348_demo")
+        info = pp._load_patch(self.root, self.layout, "1348_demo")
         pp._promote_default_on(info, self.evidence.read_text(encoding="utf-8"))
         base = "Mechanics: ok\nActivation: ok\nIdentity: ok\nA/B: ok\n"
         with self.assertRaisesRegex(pp.PatchPromoteError, "no-regression"):
-            pp._profile_evidence(self.root, info, "Model: a\nModel: b\n" + base)
+            pp._profile_evidence(self.root, self.layout, info, "Model: a\nModel: b\n" + base)
         with self.assertRaisesRegex(pp.PatchPromoteError, "two distinct named models"):
-            pp._profile_evidence(self.root, info, "Model: a\nNo-regression: ok\n" + base)
-        self.assertTrue(pp._profile_evidence(self.root, info, self.evidence.read_text(encoding="utf-8")).default_on)
+            pp._profile_evidence(self.root, self.layout, info, "Model: a\nNo-regression: ok\n" + base)
+        self.assertTrue(pp._profile_evidence(self.root, self.layout, info, self.evidence.read_text(encoding="utf-8")).default_on)
 
     def test_default_on_requires_two_named_models_and_flips_gate(self):
-        info = pp._load_patch(self.root, "1348_demo")
+        info = pp._load_patch(self.root, self.layout, "1348_demo")
         with self.assertRaises(pp.PatchPromoteError):
             pp._promote_default_on(info, "Model: only-one\n")
 
@@ -295,12 +327,12 @@ class PatchPromoteTests(unittest.TestCase):
         )
 
     def test_check_set_includes_evidence_governance_lint_and_production_rebase(self):
-        info = pp._load_patch(self.root, "1348_demo")
+        info = pp._load_patch(self.root, self.layout, "1348_demo")
         calls = []
         with mock.patch.object(
             pp, "_check_command", side_effect=lambda root, args, label: calls.append((args, label))
         ):
-            pp._run_checks(self.root, (info,))
+            pp._run_checks(self.root, self.layout, (info,))
 
         flat = [" ".join(args) for args, _ in calls]
         self.assertTrue(any("patch-verify-evidence 1348_demo" in x for x in flat))
@@ -343,6 +375,7 @@ class PatchPromoteTests(unittest.TestCase):
             with self.assertRaises(pp.PatchPromoteError):
                 pp.promote(
                     self.root,
+                    "llamacpp",
                     ("1348_demo",),
                     "@" + str(self.evidence),
                 )
@@ -354,6 +387,37 @@ class PatchPromoteTests(unittest.TestCase):
             if path.is_file()
         }
         self.assertEqual(after, originals)
+
+    def test_radiance_promotes_into_its_own_production_set(self):
+        layout = engines.load(self.root, "radiance")
+        patch = layout.patches_root(self.root) / "rad0099_demo"
+        patch.mkdir(parents=True)
+        (patch / "patch.toml").write_text(
+            _PATCH_TOML.replace('"1348_demo"', '"rad0099_demo"').replace("order = 1348", "order = 99"),
+            encoding="utf-8",
+        )
+        (patch / "patch.py").write_text(_PATCH_PY, encoding="utf-8")
+        (patch / "SUMMARY.md").write_text("# demo\n\n**Status:** untested\n", encoding="utf-8")
+        layout.recipes_path(self.root).write_text(_RAD_RECIPES, encoding="utf-8")
+
+        info = pp._load_patch(self.root, layout, "rad0099_demo")
+        pp._update_recipes(self.root, layout, ("rad0099_demo",))
+        recipes = tomllib.loads(layout.recipes_path(self.root).read_text(encoding="utf-8"))
+        self.assertEqual(recipes["patch-set"]["serving-core"]["patches"], ["rad0099_demo"])
+        self.assertEqual(recipes["experiment"]["rad-demo"]["patches"], [])
+        self.assertNotIn("validated-enhancements", recipes["patch-set"])
+        record = pp._profile_evidence(self.root, layout, info, self.evidence.read_text(encoding="utf-8"))
+        self.assertEqual(record.pinned, "v1.9.0")
+        llama = tomllib.loads((self.root / "config" / "recipes.toml").read_text(encoding="utf-8"))
+        self.assertEqual(llama["patch-set"]["validated-enhancements"]["patches"], ["1000_base"])
+
+    def test_engine_without_a_promotion_table_cannot_promote(self):
+        toml = self.root / "engines" / "radiance" / "engine.toml"
+        text = toml.read_text(encoding="utf-8")
+        start = text.index("[promotion]")
+        toml.write_text(text[:start] + text[text.index("[release]"):], encoding="utf-8")
+        with self.assertRaisesRegex(pp.PatchPromoteError, r"declares no \[promotion\]"):
+            pp.promote(self.root, "radiance", ("rad0099_demo",), "@" + str(self.evidence))
 
     def test_release_versions_follow_feature_then_fix_policy(self):
         self.assertEqual(
@@ -368,7 +432,7 @@ class PatchPromoteTests(unittest.TestCase):
         )
 
     def test_ledger_payload_is_machine_readable_and_plan_bound(self):
-        info = pp._load_patch(self.root, "1348_demo")
+        info = pp._load_patch(self.root, self.layout, "1348_demo")
         payload = pp._ledger_payload(
             (info,),
             ["engines/llamacpp/patches/1348_demo/patch.toml", "config/recipes.toml"],
