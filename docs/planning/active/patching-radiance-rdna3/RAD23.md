@@ -21,7 +21,7 @@ Owner rules (2026-10-23, CLAUDE.local.md): code for unknown topologies - no fixe
 
 1. GPT design review (req_bigcherry_97cebda33722 + addendum req_bigcherry_3bb6b763ab97): protocol for N helpers, GPU-through-host combine race-freedom, overflow fallback, auto selection, prior art.
 2. Protocol: helper count and engine ranks as runtime header fields; per-helper arrays sized from them; layout_for derives region sizes; version bump. Remove every hard-coded 2 / kMaxRanks used for helpers.
-3. Combine methods behind one interface: off, cpu (AVX2/F16C, already on feat/combine-fp16), gpu (combiner helper's stream waits device-side on the other helpers' done words, reads their rows from host memory, adds its own in VRAM, writes one fp16 row with the per-row fallback marker). 1 helper resolves to off.
+3. Combine methods behind one interface: off, cpu (AVX2/F16C, already on feat/combine-fp16), gpu (CPU futex readiness, then a GPU reduction on a device-local stream with explicit system-visible publish, presence masks and per-row fallback). 1 helper resolves to off.
 4. auto: measured once per host and cached - P2P availability, per-card host-link bandwidth, CPU features - choosing method and combiner helper (widest link; tree reduce when N-1 planes over one link loses). Per-model profile may override.
 5. Harness first: replay/combine bench for each method with 1, 2 and synthetic N planes before end-to-end.
 6. KLD gate and 4-pair A/B per method on the build server vs the parent build.
@@ -91,9 +91,20 @@ GPT design review req_bigcherry_97cebda33722 (2026-10-23), adopted order:
 Follows RAD18 (combine). fp16 combined row passed KLD (p99 +0.039). CPU scalar fp16 conversion erased the gain (~1 ms/step); F16C version under A/B. Owner: the combine should run on the GPUs where possible.
 
 
-Handoff 2026-10-23: start point is branch feat/combine-fp16 (cpu method with F16C, measured +5-8% prefill). Pending:
+Handoff 2026-10-23 (historical): the feat/combine-fp16 branch subsequently merged as PR #404 (cpu method with F16C, measured +5-8% prefill). Pending:
 GPT addendum req_bigcherry_3bb6b763ab97 on N-helper protocol (read it with agent_task_response before redesigning
 the layout). Owner priority question open: do RAD20 (no polling, frees two cores) before the gpu method?
+
+## Execution gate review (2026-10-23)
+
+**Split RAD23 into sequential implementation PRs; do not ship a monolithic topology change.** Before editing the ABI, retrieve and reconcile the recorded N-helper design addendum `req_bigcherry_3bb6b763ab97`; this planning note does **not** assert that private review was retrieved here.
+
+1. **RAD23-A: ABI/layout only.** Separate runtime helper count H from engine rank count R (two axes). Define alignment-checked, overflow-safe offsets/lengths with `layout_for(H,R,classes,shape)`, process-shared header validation, generation and ownership invariants, protocol version negotiation and deterministic refusal of mismatched versions; keep legacy behavior for current H=2/R=1. Test H=1/2/3 plus R=1/2 on CPU fixtures, boundary allocations, malformed headers, offset overlaps and zero-length optional regions. No performance claim or GPU method in this PR.
+2. **RAD23-B: method negotiation.** Normalize `off|cpu|gpu|auto` in one protocol field with explicit requested/selected method, capability checks and engine acknowledgment. H=1 always off. Explicit unsupported method fails startup with an actionable reason; auto may choose off, never silently substitute on explicit selection. Preserve AVX2/F16C semantics and row-level FP16 overflow/fallback.
+3. **RAD23-C: GPU combine.** Use **CPU futex handoff** for cross-process readiness; do not wait on unproven host-mapped GPU signal words. Validate helper-local VRAM residency, uploaded presence masks, stream ordering, system-visible publication and stale generation rejection. Require exactly-once sum of present helper rows and equivalent overflow markers; no combine consumer may read partially written output. Compare off/cpu/gpu KLD and reproducible per-step latency with N=1/2/3 synthetic planes before hardware A/B.
+4. **RAD23-D: auto topology policy.** Use measured critical-path cost including host-link read/write bandwidth, GPU DMA, row count, helper count, CPU load and method startup cost; cache by topology/PCI identifiers plus ROCm version with invalidation and audit log. Never assume P2P; never assume a wider link is always the fastest combiner. Benchmark real current hardware, then gate defaults on measured wins; retain explicit methods for unknown topologies.
+
+**Dependencies:** RAD18 evidence first; RAD20 CPU-pressure reduction before GPU-combine comparisons; RAD19 model-derived expert metadata contract enters RAD23-A, not a hard-coded default. RAD21 begins only after H/R layout/generation stability. Keep RAD22 after RAD21 simulation. A successful H=2 result does not prove N-helper correctness.
 
 ## Change Log
 
