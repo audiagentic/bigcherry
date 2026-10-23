@@ -1,5 +1,5 @@
 {
- "_comment": "RAD18 combine quality gate: output quality with R3_MOE_WORKER_COMBINE=1 (helper 0 adds both helpers' bf16 rows on the CPU) against the same helper layout with the combine off, scored by radiance KL mode through ab-benchmark --server-config (quality_only). Both arms run the helper layout, so the control is combine0 and the gate is the combine's own change. Arm settings mirror helper-kld.json's helper-on arm; MAX_ROWS=64 with --max-num-batched-tokens 64 sends every step through the helpers' large lane, where the combine runs. Reference: recorded on first use by quality.record (two-XTX tp 2 exact wire), as in helper-kld.json. Set RAD_BIN, RAD_HOME, R9700_BDF, KLD_REF_DIR. Retire with helper-combine-nofire-ab.json once the gate is decided. KL mode runs 64-row steps and the combine fires only at R3_MOE_WORKER_COMBINE_MIN_ROWS (default 256), so the combine1 arm sets it to 1: every step goes through the combine. Check 'combine steps N' > 0 in helper0.log after the run (the first run, 2026-10-23, never fired and its identical result was void).",
+ "_comment": "RAD18 combine quality gate: output quality with R3_MOE_WORKER_COMBINE=1 (helper 0 adds both helpers' bf16 rows on the CPU) against the same helper layout with the combine off, scored by radiance KL mode through ab-benchmark --server-config (quality_only). Both arms run the helper layout, so the control is combine0 and the gate is the combine's own change. Arm settings mirror helper-kld.json's helper-on arm; MAX_ROWS=64 with --max-num-batched-tokens 64 sends every step through the helpers' large lane, where the combine runs. Reference: the two-XTX tp 2 exact-wire run recorded once (2026-10-23) into KLD_REF_DIR=/mnt/data/bigcherry-work/runs/rad18-kld/reference with helper-kld.json's record block; restore that block to re-record into a new directory. Set RAD_BIN, RAD_HOME, R9700_BDF, KLD_REF_DIR. Retire with helper-combine-nofire-ab.json once the gate is decided. KL mode runs 64-row steps and the combine fires only at R3_MOE_WORKER_COMBINE_MIN_ROWS (default 256), so the combine1 arm sets it to 1: every step goes through the combine. Check 'combine steps N' > 0 in helper0.log after the run (the first run, 2026-10-23, never fired and its identical result was void).",
  "schema_version": 1,
  "engine": "radiance",
  "evidence_role": "diagnostic",
@@ -46,36 +46,6 @@
    "--max-num-batched-tokens",
    "64"
   ],
-  "record": {
-   "environment": {
-    "HIP_VISIBLE_DEVICES": "0,1",
-    "ROCR_VISIBLE_DEVICES": "0,1"
-   },
-   "args": [
-    "--radiance-home",
-    "${RAD_HOME}",
-    "--kernels",
-    "libr3,libr3moe,libref",
-    "--placement",
-    "expert_tiered",
-    "--tp",
-    "2",
-    "--tp-wire",
-    "exact",
-    "--host-pool-mib",
-    "14336",
-    "--gpu-headroom-mib",
-    "320",
-    "--kv-cache-dtype",
-    "fp8",
-    "--max-model-len",
-    "8192",
-    "--max-num-seqs",
-    "1",
-    "--max-num-batched-tokens",
-    "64"
-   ]
-  },
   "thresholds": {
    "max_kld_mean_increase": 0.02,
    "max_kld_median_increase": 0.01,
