@@ -2,7 +2,7 @@
 
 - schema: 1
 - plan: HI168
-- observed: 2026-09-07/08 (<gpu-host>, configured build server)
+- observed: 2026-09-07/08 (Brutus, configured build server)
 - runner: maintained `bigcherry ab-benchmark` with `server-bench`
 - roles: stock / BC native / BC replay
 - schedule: six balanced order blocks, 18 cells per run

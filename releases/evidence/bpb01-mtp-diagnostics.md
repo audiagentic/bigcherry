@@ -1,6 +1,6 @@
 # BPB01 MTP diagnostic promotion
 
-Hardware evidence (dev, 2026-10-08, pin b11474).
+Hardware evidence (Brutus, 2026-10-08, pin b11474).
 
 Build `deploy-v4-diag` compiled clean. With
 `BIGCHERRY_DRAFT_TRACE=1 BIGCHERRY_SPEC_TIMING=1 BIGCHERRY_DRAFT_TIMING=1` the log contained:

@@ -525,7 +525,7 @@
         ],
         [
           "GGML_HIP_AUTOTUNE_GENERATED_DIR",
-          "${HOME}/.cache/bigcherry/builds/4da8833b09223861a369c1c133d67d5e/a0aaed3405d709ae507680c74bb87222/generated-inputs"
+          "/home/audumla/.cache/bigcherry/builds/4da8833b09223861a369c1c133d67d5e/a0aaed3405d709ae507680c74bb87222/generated-inputs"
         ],
         [
           "GGML_HIP_AUTOTUNE_RECORD",
@@ -533,7 +533,7 @@
         ],
         [
           "GGML_HIP_AUTOTUNE_SIGNATURE_FILE",
-          "${HOME}/.cache/bigcherry/artifacts-store/inputs/inventory/dee5769b252ccdd3fc35727552dc254202195f46823b3c5050fca4aab4e598fc"
+          "/home/audumla/.cache/bigcherry/artifacts-store/inputs/inventory/dee5769b252ccdd3fc35727552dc254202195f46823b3c5050fca4aab4e598fc"
         ],
         [
           "GGML_HIP_AUTOTUNE_VARIANT_SET",
@@ -997,11 +997,11 @@
         ],
         [
           "GGML_HIP_AUTOTUNE_GENERATED_DIR",
-          "${HOME}/.cache/bigcherry/builds/8cc8049cab1f2ca1509983b1b0892f9a/bde22b7a235d74f83c97c22f34e3643a/generated-inputs"
+          "/home/audumla/.cache/bigcherry/builds/8cc8049cab1f2ca1509983b1b0892f9a/bde22b7a235d74f83c97c22f34e3643a/generated-inputs"
         ],
         [
           "GGML_HIP_AUTOTUNE_SIGNATURE_FILE",
-          "${HOME}/.cache/bigcherry/artifacts-store/inputs/inventory/dee5769b252ccdd3fc35727552dc254202195f46823b3c5050fca4aab4e598fc"
+          "/home/audumla/.cache/bigcherry/artifacts-store/inputs/inventory/dee5769b252ccdd3fc35727552dc254202195f46823b3c5050fca4aab4e598fc"
         ],
         [
           "GGML_HIP_AUTOTUNE_VARIANT_SET",
@@ -1463,7 +1463,7 @@
         ],
         [
           "GGML_HIP_AUTOTUNE_GENERATED_DIR",
-          "${HOME}/.cache/bigcherry/builds/4da8833b09223861a369c1c133d67d5e/b9c311475bde06a38a5b7d13789eb560/generated-inputs"
+          "/home/audumla/.cache/bigcherry/builds/4da8833b09223861a369c1c133d67d5e/b9c311475bde06a38a5b7d13789eb560/generated-inputs"
         ],
         [
           "GGML_HIP_AUTOTUNE_RECORD",
@@ -1471,7 +1471,7 @@
         ],
         [
           "GGML_HIP_AUTOTUNE_SIGNATURE_FILE",
-          "${HOME}/.cache/bigcherry/artifacts-store/inputs/inventory/dee5769b252ccdd3fc35727552dc254202195f46823b3c5050fca4aab4e598fc"
+          "/home/audumla/.cache/bigcherry/artifacts-store/inputs/inventory/dee5769b252ccdd3fc35727552dc254202195f46823b3c5050fca4aab4e598fc"
         ],
         [
           "GGML_HIP_AUTOTUNE_VARIANT_SET",
@@ -1943,11 +1943,11 @@
         ],
         [
           "GGML_HIP_AUTOTUNE_GENERATED_DIR",
-          "${HOME}/.cache/bigcherry/builds/3b7d99284b0f5120f9ccac1a6c76895f/2f8099a99ef0c5b571014dacb133a81f/generated-inputs"
+          "/home/audumla/.cache/bigcherry/builds/3b7d99284b0f5120f9ccac1a6c76895f/2f8099a99ef0c5b571014dacb133a81f/generated-inputs"
         ],
         [
           "GGML_HIP_AUTOTUNE_SIGNATURE_FILE",
-          "${HOME}/.cache/bigcherry/artifacts-store/inputs/inventory/dee5769b252ccdd3fc35727552dc254202195f46823b3c5050fca4aab4e598fc"
+          "/home/audumla/.cache/bigcherry/artifacts-store/inputs/inventory/dee5769b252ccdd3fc35727552dc254202195f46823b3c5050fca4aab4e598fc"
         ],
         [
           "GGML_HIP_AUTOTUNE_VARIANT_SET",

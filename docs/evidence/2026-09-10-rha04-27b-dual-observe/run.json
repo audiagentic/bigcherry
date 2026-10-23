@@ -11,7 +11,7 @@
     "schema_version": 1,
     "evidence_role": "production",
     "execution_evidence": "observe",
-    "model": "${MODELS_ROOT}/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
+    "model": "/mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
     "server_args": [
       "-ngl",
       "99",
@@ -58,21 +58,21 @@
       {
         "name": "stock",
         "mode": "stock",
-        "binary": "${HOME}/.cache/bigcherry/builds/e77c7964e5dc0ba3bf8bddc644b3cd78/9f00effa353dd1adb738081f038e8426/bin/llama-server",
+        "binary": "/home/audumla/.cache/bigcherry/builds/e77c7964e5dc0ba3bf8bddc644b3cd78/9f00effa353dd1adb738081f038e8426/bin/llama-server",
         "shutdown_method": "sigint"
       },
       {
         "name": "native",
         "mode": "native",
-        "binary": "${HOME}/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/b86b1e97d91605ce764e48f59342a962/bin/llama-server",
+        "binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/b86b1e97d91605ce764e48f59342a962/bin/llama-server",
         "shutdown_method": "sigint"
       },
       {
         "name": "replay",
         "mode": "replay",
-        "binary": "${HOME}/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/5ffe0ebb35a044d0397aa986d53da12d/bin/llama-server",
+        "binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/5ffe0ebb35a044d0397aa986d53da12d/bin/llama-server",
         "environment": {
-          "GGML_HIP_DISPATCH_CACHE": "${HOME}/.cache/bigcherry/tune-campaigns/hi171-27b-dual-reexport-20260908/dispatch.cache"
+          "GGML_HIP_DISPATCH_CACHE": "/home/audumla/.cache/bigcherry/tune-campaigns/hi171-27b-dual-reexport-20260908/dispatch.cache"
         },
         "shutdown_method": "sigint"
       }
@@ -219,7 +219,7 @@
         "libmtmd.so.0.3.0": "e8fcfeb4db5398da5d357916916cda420f2a6d7d2c35c472aab533f199572f53"
       },
       "compiler_observation": {
-        "build_dir": "${HOME}/.cache/bigcherry/builds/e77c7964e5dc0ba3bf8bddc644b3cd78/9f00effa353dd1adb738081f038e8426",
+        "build_dir": "/home/audumla/.cache/bigcherry/builds/e77c7964e5dc0ba3bf8bddc644b3cd78/9f00effa353dd1adb738081f038e8426",
         "command_source": "compile_commands.json",
         "hip_compile_command_count": 142,
         "declared_options": {
@@ -310,7 +310,7 @@
           "CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1",
           "GGML_HIP": "ON",
           "GGML_HIP_AUTOTUNE": "OFF",
-          "GGML_HIP_AUTOTUNE_GENERATED_DIR": "${HOME}/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/b86b1e97d91605ce764e48f59342a962/generated-inputs",
+          "GGML_HIP_AUTOTUNE_GENERATED_DIR": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/b86b1e97d91605ce764e48f59342a962/generated-inputs",
           "GGML_HIP_AUTOTUNE_RECORD": "OFF",
           "GGML_HIP_AUTOTUNE_SIGNATURE_FILE": "",
           "GGML_HIP_AUTOTUNE_SQLITE": "ON",
@@ -405,7 +405,7 @@
         "libmtmd.so.0.3.0": "980f33d13abef930dd2c36ba80d050e1b1721e44fe606ac7650ababfd8f471dc"
       },
       "compiler_observation": {
-        "build_dir": "${HOME}/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/b86b1e97d91605ce764e48f59342a962",
+        "build_dir": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/b86b1e97d91605ce764e48f59342a962",
         "command_source": "compile_commands.json",
         "hip_compile_command_count": 148,
         "declared_options": {
@@ -531,9 +531,9 @@
           "CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1",
           "GGML_HIP": "ON",
           "GGML_HIP_AUTOTUNE": "OFF",
-          "GGML_HIP_AUTOTUNE_GENERATED_DIR": "${HOME}/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/5ffe0ebb35a044d0397aa986d53da12d/generated-inputs",
+          "GGML_HIP_AUTOTUNE_GENERATED_DIR": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/5ffe0ebb35a044d0397aa986d53da12d/generated-inputs",
           "GGML_HIP_AUTOTUNE_RECORD": "OFF",
-          "GGML_HIP_AUTOTUNE_SIGNATURE_FILE": "${HOME}/.cache/bigcherry/artifacts-store/inputs/inventory/e36eecfe1c5ccce0358c8e427a10b8b71b7295d56d7f9afea13101dcc315053d",
+          "GGML_HIP_AUTOTUNE_SIGNATURE_FILE": "/home/audumla/.cache/bigcherry/artifacts-store/inputs/inventory/e36eecfe1c5ccce0358c8e427a10b8b71b7295d56d7f9afea13101dcc315053d",
           "GGML_HIP_AUTOTUNE_SQLITE": "ON",
           "GGML_HIP_AUTOTUNE_VARIANT_SET": "replay-full",
           "GGML_HIP_AUTOTUNE_VARIANT_SET-STRINGS": "inventory;workload-max;full-max;replay-full;replay-slim",
@@ -626,7 +626,7 @@
         "libmtmd.so.0.3.0": "dd26d4c09447785553d4f8df83885c49336c5a2860a9be064bd96f199b36b9b0"
       },
       "compiler_observation": {
-        "build_dir": "${HOME}/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/5ffe0ebb35a044d0397aa986d53da12d",
+        "build_dir": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/5ffe0ebb35a044d0397aa986d53da12d",
         "command_source": "compile_commands.json",
         "hip_compile_command_count": 148,
         "declared_options": {

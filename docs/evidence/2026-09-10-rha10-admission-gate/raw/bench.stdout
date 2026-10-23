@@ -43,6 +43,6 @@ Run Summary:
   Context:          ? tokens (fit=None, target=None)
   KV Cache:  K=f16, V=f16
 PPL:     skipped (llama-perplexity not found)
-Log:     ${LLAMACPP_ROOT}/bench/raw_logs/20260910_055620-server-bench-Qwen3.8-27B-Q8_0.log
+Log:     /mnt/vault/development/llmhosts/llamacpp/bench/raw_logs/20260910_055620-server-bench-Qwen3.8-27B-Q8_0.log
 Upload:  [1 skipped (no metrics)]
-Synced 3297 rows from 32 files → ${LLAMACPP_ROOT}/bench/results.db
+Synced 3297 rows from 32 files → /mnt/vault/development/llmhosts/llamacpp/bench/results.db

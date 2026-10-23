@@ -1,17 +1,17 @@
 # PHA02 RCCL heterogeneous dispatch source audit
 
 Date: 2026-09-09  
-Host: <gpu-host> (environment is referenced by host-local paths; no host
+Host: Brutus (environment is referenced by host-local paths; no host
 credentials or server configuration is committed)
 
 ## Scope and provenance
 
 This is a source/runtime audit for PHA02 (successor of HI137). It does not
 change BigCherry's RCCL guard or promote any RCCL patch. The RCCL source used
-for the audit is the isolated <gpu-host> checkout:
+for the audit is the isolated Brutus checkout:
 
 ```text
-${HOME}/rccl-heterogeneous-src/rccl
+/home/audumla/rccl-heterogeneous-src/rccl
 revision: 57e58688f44c77076ad536ef1f6b68741fc6e694
 ```
 
@@ -76,11 +76,11 @@ not promote an RCCL heterogeneous-dispatch patch from this audit alone.
 The historical failing runtime identified by the dev-GPT review is associated
 with RCCL source revision
 `9fb6fbe7bfb4df87c4c9a09b5bb5239670f04ffe` (RCCL 2.27.7-1, build ID
-`168a84…`). That object is not present in the <gpu-host> checkout used above. A
+`168a84…`). That object is not present in the Brutus checkout used above. A
 fresh acquisition was attempted on 2026-09-09:
 
 ```text
-cd ${HOME}/rccl-heterogeneous-src/rccl
+cd /home/audumla/rccl-heterogeneous-src/rccl
 git fetch --no-tags origin 9fb6fbe7bfb4df87c4c9a09b5bb5239670f04ffe
 fatal: remote error: upload-pack: not our ref 9fb6fbe7bfb4df87c4c9a09b5bb5239670f04ffe
 ```
@@ -122,8 +122,8 @@ authoritative source-to-historical-binary provenance, becomes available.
 
 ## Reproduction commands
 
-The authoritative commands and complete logs remain on <gpu-host> under
-`${HOME}/bigcherry/artifacts/rccl-heterogeneous/rq04-01/` and
+The authoritative commands and complete logs remain on Brutus under
+`/home/audumla/bigcherry/artifacts/rccl-heterogeneous/rq04-01/` and
 `rq08-01/`, driven by the checked-in
 `tools/bigcherry/profiling/rccl_qualify_campaign.py` and governed by
 `docs/reference/testing/RCCL_HETEROGENEOUS_RUNBOOK.md`.

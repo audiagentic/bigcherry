@@ -4,7 +4,7 @@
     {
       "date": "2026-09-16",
       "source": "PA35 step 1, tools/lab/patch1000/run_pa35_step1.py",
-      "hardware": "gfx1201 (RDNA4), HIP_VISIBLE_DEVICES=2, single real device confirmed via require_device_visibility, host dev",
+      "hardware": "gfx1201 (RDNA4), HIP_VISIBLE_DEVICES=2, single real device confirmed via require_device_visibility, host Brutus",
       "base_ref": "b10901",
       "base_revision": "28ff0958291ce3465fabd7bd679d4b0edd742bd9",
       "arms": {

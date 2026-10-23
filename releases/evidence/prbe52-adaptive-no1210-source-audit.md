@@ -2,7 +2,7 @@
 
 ## Hardware input
 
-Owner-provided dev Flash-Next IQ4_XS results at 245760 ctx:
+Owner-provided Brutus Flash-Next IQ4_XS results at 245760 ctx:
 - adaptive floor 2: ~-13% at 8K, ~+9% at 98K; output varied between repeats;
 - floor 3: near-neutral at 8K/98K and matched incumbent text;
 - released build without 1210/1255/1268: 85-86 t/s at 8K, 69-70 t/s at 98K, acceptance 343/503;

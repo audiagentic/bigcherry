@@ -79,7 +79,7 @@ running bounded recovery search (budget=24)...
 published: True
 stop_reason: full-corpus validation passed
 evaluations_used: 25
-cache_path: ${VAULT_ROOT}/experiments/hi141-recovery-validation/recovery-candidate.cache
+cache_path: /mnt/vault/experiments/hi141-recovery-validation/recovery-candidate.cache
 final signatures reassigned to an alternative candidate: 20
     0300f5b8d9be... -> mmvq:q8_0:w2:nw6:rpb2:sk0:v1
     0b62c145c1fc... -> mmvq:q8_0:w2:nw6:rpb1:sk0:v1

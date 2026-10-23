@@ -2,9 +2,9 @@
   "schema_version": 1,
   "kind": "server-device-attestation-preflight-v1",
   "correlation_id": "fac3649334344120a0df065376ef0a7b",
-  "binary": "${HOME}/.cache/bigcherry/builds/d0af37458d1ffb9412a7a2ecb18952e6/4bd62c7fba032f095c698730f677cf1a/bin/llama-server",
+  "binary": "/home/audumla/.cache/bigcherry/builds/d0af37458d1ffb9412a7a2ecb18952e6/4bd62c7fba032f095c698730f677cf1a/bin/llama-server",
   "binary_sha256": "249618ad89ba98aa2e8c658022f48b9ff5f17e03194b5fcba54139e5e7908ce6",
-  "model": "${MODELS_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+  "model": "/mnt/vault/llm-models/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
   "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
   "common_server_args": [
     "-sm",

@@ -8,6 +8,6 @@ build deploy-v6-alloc-peak compiled clean; with BIGCHERRY_ALLOC_PEAK=1 BIGCHERRY
 
 ## Verified / not verified
 
-Verified: supplied dev compile, activation-line counts, flag-on/off greedy identity and zero-error smoke result.
+Verified: supplied Brutus compile, activation-line counts, flag-on/off greedy identity and zero-error smoke result.
 
 Not verified here: no new GPU run from this environment; no performance claim is made for these diagnostics.

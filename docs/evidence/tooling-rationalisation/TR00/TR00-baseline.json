@@ -435,7 +435,7 @@
       "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
     },
     {
-      "path": "tmp/<gpu-host>-probe.sh",
+      "path": "tmp/brutus-probe.sh",
       "disposition": "TRANSITIONAL",
       "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
     },
@@ -465,7 +465,7 @@
       "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
     },
     {
-      "path": "tmp/h36-<gpu-host>-pipeline.sh",
+      "path": "tmp/h36-brutus-pipeline.sh",
       "disposition": "TRANSITIONAL",
       "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
     },

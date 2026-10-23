@@ -1,7 +1,7 @@
 {
  "arm_config": [
   {
-   "binary": "${DEV_ROOT}/projects/bigcherry/workspaces/main/work/builds/cf6bcfd6ffe1433dfa32af172aa18674/90cdfc481d3555f1040885e116dac751/bin/llama-server",
+   "binary": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/cf6bcfd6ffe1433dfa32af172aa18674/90cdfc481d3555f1040885e116dac751/bin/llama-server",
    "environment": null,
    "model": null,
    "name": "ccl",
@@ -11,7 +11,7 @@
    ]
   },
   {
-   "binary": "${DEV_ROOT}/projects/bigcherry/workspaces/main/work/builds/cf6bcfd6ffe1433dfa32af172aa18674/90cdfc481d3555f1040885e116dac751/bin/llama-server",
+   "binary": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/cf6bcfd6ffe1433dfa32af172aa18674/90cdfc481d3555f1040885e116dac751/bin/llama-server",
    "environment": null,
    "model": null,
    "name": "adaptive",
@@ -21,7 +21,7 @@
    ]
   },
   {
-   "binary": "${DEV_ROOT}/projects/bigcherry/workspaces/main/work/builds/cf6bcfd6ffe1433dfa32af172aa18674/90cdfc481d3555f1040885e116dac751/bin/llama-server",
+   "binary": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/cf6bcfd6ffe1433dfa32af172aa18674/90cdfc481d3555f1040885e116dac751/bin/llama-server",
    "environment": null,
    "model": null,
    "name": "host",
@@ -132,7 +132,7 @@
   }
  },
  "kind": "ab",
- "model": "${MODELS_ROOT}/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
+ "model": "/mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
  "run": "ab-27b-adaptive",
  "schedule_seed": 0,
  "server_args": [

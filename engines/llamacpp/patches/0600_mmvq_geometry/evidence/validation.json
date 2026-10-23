@@ -47,7 +47,7 @@
       },
       "campaign_identity": "03ec628fcd46357674a870aca1c556fb8ce0d7f997944a55a7a5536c18f65103",
       "campaign_identity_digest": "03ec628fcd46357674a870aca1c556fb8ce0d7f997944a55a7a5536c18f65103",
-      "campaign_workdir": "${HOME}/pa26-evidence-run2/0600_mmvq_geometry/framework/0600_mmvq_geometry",
+      "campaign_workdir": "/home/audumla/pa26-evidence-run2/0600_mmvq_geometry/framework/0600_mmvq_geometry",
       "check_results": {
         "apply": {
           "artifacts": [],
@@ -421,7 +421,7 @@
       },
       "campaign_identity": "539a240248ff8975ad84cff1d5556c929e8ea86b35e96fcf0190092add14e08c",
       "campaign_identity_digest": "539a240248ff8975ad84cff1d5556c929e8ea86b35e96fcf0190092add14e08c",
-      "campaign_workdir": "${HOME}/pa26-evidence-run4/0600_mmvq_geometry/framework/0600_mmvq_geometry",
+      "campaign_workdir": "/home/audumla/pa26-evidence-run4/0600_mmvq_geometry/framework/0600_mmvq_geometry",
       "check_results": {
         "apply": {
           "artifacts": [
@@ -809,7 +809,7 @@
       },
       "campaign_identity": "fd335c0e07f752d7cd38fd54cebb0238ab88ffc463e4c2b5eac25dc4fbc6139d",
       "campaign_identity_digest": "fd335c0e07f752d7cd38fd54cebb0238ab88ffc463e4c2b5eac25dc4fbc6139d",
-      "campaign_workdir": "${HOME}/pa26-evidence-run3/0600_mmvq_geometry/framework/0600_mmvq_geometry",
+      "campaign_workdir": "/home/audumla/pa26-evidence-run3/0600_mmvq_geometry/framework/0600_mmvq_geometry",
       "check_results": {
         "apply": {
           "artifacts": [],

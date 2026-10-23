@@ -1,7 +1,7 @@
 # RHA04 current BC-native smoke disposition
 
 Date: 2026-09-10  
-Execution environment: <gpu-host> role resolved through environment settings; no
+Execution environment: Brutus role resolved through environment settings; no
 host connection details are committed.
 
 This is an invalid/incomplete smoke attempt, retained so it cannot be reused

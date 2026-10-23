@@ -1,6 +1,6 @@
 # Lab run summaries
 
-Compact, tracked summaries harvested from <gpu-host> lab runs. These files were
+Compact, tracked summaries harvested from Brutus lab runs. These files were
 previously stored under `tools/lab/results/runs/`; they are evidence, not
 executable tooling.
 

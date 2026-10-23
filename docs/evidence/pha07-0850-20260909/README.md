@@ -1,7 +1,7 @@
 # PHA07 — ordered speculative trace qualification
 
 Date: 2026-09-09  
-Host: <gpu-host> (`build-server`)  
+Host: Brutus (`build-server`)  
 Patch: `0850_ordered_speculative_trace`  
 Upstream pin: `b10705` (`2578138397d7b422bb0e160efdd429976c55fb55`)  
 Architecture: `gfx1100`, GPU0 (`HIP_VISIBLE_DEVICES=0`, `ROCR_VISIBLE_DEVICES=0`)  
@@ -9,7 +9,7 @@ Role: experimental hardware/schema evidence only
 
 ## Build
 
-The maintained campaign builder was run in the isolated `${HOME}/pha07-work`
+The maintained campaign builder was run in the isolated `/home/audumla/pha07-work`
 clone after restoring the missing host-local `b10705` tag:
 
 ```text

@@ -3,7 +3,7 @@
   "evidence_role": "correctness-isolation",
   "source_revision": "2578138397d7b422bb0e160efdd429976c55fb55",
   "source_slice_id": "cc941b35debd296660cbbc382411a6b7",
-  "model": "${MODELS_ROOT}/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
+  "model": "/mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
   "topology": {
     "hip_visible_devices": "0,1",
     "rocr_visible_devices": "0,1",

@@ -1,6 +1,6 @@
-# TO02 / RD87 hipBLASLt client smoke — <gpu-host> GPU0
+# TO02 / RD87 hipBLASLt client smoke — Brutus GPU0
 
-Observed 2026-09-08 UTC on `<gpu-host>`, GPU0 (`gfx1100`, RX 7900 XTX), using the
+Observed 2026-09-08 UTC on `brutus`, GPU0 (`gfx1100`, RX 7900 XTX), using the
 existing `hipblaslt-bench` build with the matching ROCm 7.2.4 LLVM runtime
 library on `LD_LIBRARY_PATH`.
 

@@ -1,7 +1,7 @@
 # Dual-XTX real tune run, 2026-08-27
 
 Real captured data from a manual (pre-`tune-campaign`, see HI130) run of the
-full record -> tune -> correctness-evidence -> promote pipeline on <gpu-host>,
+full record -> tune -> correctness-evidence -> promote pipeline on Brutus,
 using the production dual-XTX tensor-split profile against a real model.
 
 **Hardware/model**: 2x RX 7900 XTX (gfx1100), tensor-split (`-sm tensor`),

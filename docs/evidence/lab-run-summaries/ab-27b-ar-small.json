@@ -1,7 +1,7 @@
 {
  "arm_config": [
   {
-   "binary": "${DEV_ROOT}/projects/bigcherry/workspaces/main/work/builds/e3c608ec6f9da7c6cdad89701987eca3/5ad64a6d2029b69b2250c6172c331840/bin/llama-server",
+   "binary": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/e3c608ec6f9da7c6cdad89701987eca3/5ad64a6d2029b69b2250c6172c331840/bin/llama-server",
    "environment": {
     "GGML_CUDA_ALLREDUCE": "internal"
    },
@@ -10,7 +10,7 @@
    "server_args": null
   },
   {
-   "binary": "${DEV_ROOT}/projects/bigcherry/workspaces/main/work/builds/e3c608ec6f9da7c6cdad89701987eca3/5ad64a6d2029b69b2250c6172c331840/bin/llama-server",
+   "binary": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/e3c608ec6f9da7c6cdad89701987eca3/5ad64a6d2029b69b2250c6172c331840/bin/llama-server",
    "environment": {
     "BIGCHERRY_AR_SLOT_SYNC": "none",
     "GGML_CUDA_ALLREDUCE": "internal"
@@ -20,7 +20,7 @@
    "server_args": null
   },
   {
-   "binary": "${DEV_ROOT}/projects/bigcherry/workspaces/main/work/builds/e3c608ec6f9da7c6cdad89701987eca3/5ad64a6d2029b69b2250c6172c331840/bin/llama-server",
+   "binary": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/e3c608ec6f9da7c6cdad89701987eca3/5ad64a6d2029b69b2250c6172c331840/bin/llama-server",
    "environment": {
     "BIGCHERRY_AR_SMALL_BLOCKS": "1",
     "GGML_CUDA_ALLREDUCE": "internal"
@@ -131,7 +131,7 @@
   }
  },
  "kind": "ab",
- "model": "${MODELS_ROOT}/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
+ "model": "/mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
  "run": "ab-27b-ar-small",
  "schedule_seed": 0,
  "server_args": [

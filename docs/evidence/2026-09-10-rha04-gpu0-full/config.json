@@ -2,7 +2,7 @@
   "schema_version": 1,
   "evidence_role": "production",
   "execution_evidence": "required",
-  "model": "${MODELS_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+  "model": "/mnt/vault/llm-models/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
   "server_args": [
     "-ngl",
     "99",
@@ -47,21 +47,21 @@
     {
       "name": "stock",
       "mode": "stock",
-      "binary": "${HOME}/.cache/bigcherry/builds/e77c7964e5dc0ba3bf8bddc644b3cd78/9f00effa353dd1adb738081f038e8426/bin/llama-server",
+      "binary": "/home/audumla/.cache/bigcherry/builds/e77c7964e5dc0ba3bf8bddc644b3cd78/9f00effa353dd1adb738081f038e8426/bin/llama-server",
       "shutdown_method": "sigint"
     },
     {
       "name": "native",
       "mode": "native",
-      "binary": "${HOME}/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/b86b1e97d91605ce764e48f59342a962/bin/llama-server",
+      "binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/b86b1e97d91605ce764e48f59342a962/bin/llama-server",
       "shutdown_method": "sigint"
     },
     {
       "name": "replay",
       "mode": "replay",
-      "binary": "${HOME}/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/60f936db36097b7b9360eb7c707808bc/bin/llama-server",
+      "binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/60f936db36097b7b9360eb7c707808bc/bin/llama-server",
       "environment": {
-        "GGML_HIP_DISPATCH_CACHE": "${HOME}/.cache/bigcherry/tune-campaigns/hi171-9b-gpu0-reexport-20260908/dispatch.cache"
+        "GGML_HIP_DISPATCH_CACHE": "/home/audumla/.cache/bigcherry/tune-campaigns/hi171-9b-gpu0-reexport-20260908/dispatch.cache"
       },
       "shutdown_method": "sigint"
     }

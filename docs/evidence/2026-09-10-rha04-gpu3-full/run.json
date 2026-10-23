@@ -11,7 +11,7 @@
     "schema_version": 1,
     "evidence_role": "production",
     "execution_evidence": "required",
-    "model": "${MODELS_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+    "model": "/mnt/vault/llm-models/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
     "server_args": [
       "-ngl",
       "99",
@@ -56,21 +56,21 @@
       {
         "name": "stock",
         "mode": "stock",
-        "binary": "${HOME}/.cache/bigcherry/builds/e77c7964e5dc0ba3bf8bddc644b3cd78/9f00effa353dd1adb738081f038e8426/bin/llama-server",
+        "binary": "/home/audumla/.cache/bigcherry/builds/e77c7964e5dc0ba3bf8bddc644b3cd78/9f00effa353dd1adb738081f038e8426/bin/llama-server",
         "shutdown_method": "sigint"
       },
       {
         "name": "native",
         "mode": "native",
-        "binary": "${HOME}/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/b86b1e97d91605ce764e48f59342a962/bin/llama-server",
+        "binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/b86b1e97d91605ce764e48f59342a962/bin/llama-server",
         "shutdown_method": "sigint"
       },
       {
         "name": "replay",
         "mode": "replay",
-        "binary": "${HOME}/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/60f936db36097b7b9360eb7c707808bc/bin/llama-server",
+        "binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/60f936db36097b7b9360eb7c707808bc/bin/llama-server",
         "environment": {
-          "GGML_HIP_DISPATCH_CACHE": "${HOME}/.cache/bigcherry/tune-campaigns/hi171-9b-gpu3-reexport-retry-20260908/dispatch.cache"
+          "GGML_HIP_DISPATCH_CACHE": "/home/audumla/.cache/bigcherry/tune-campaigns/hi171-9b-gpu3-reexport-retry-20260908/dispatch.cache"
         },
         "shutdown_method": "sigint"
       }
@@ -217,7 +217,7 @@
         "libmtmd.so.0.3.0": "e8fcfeb4db5398da5d357916916cda420f2a6d7d2c35c472aab533f199572f53"
       },
       "compiler_observation": {
-        "build_dir": "${HOME}/.cache/bigcherry/builds/e77c7964e5dc0ba3bf8bddc644b3cd78/9f00effa353dd1adb738081f038e8426",
+        "build_dir": "/home/audumla/.cache/bigcherry/builds/e77c7964e5dc0ba3bf8bddc644b3cd78/9f00effa353dd1adb738081f038e8426",
         "command_source": "compile_commands.json",
         "hip_compile_command_count": 142,
         "declared_options": {
@@ -308,7 +308,7 @@
           "CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1",
           "GGML_HIP": "ON",
           "GGML_HIP_AUTOTUNE": "OFF",
-          "GGML_HIP_AUTOTUNE_GENERATED_DIR": "${HOME}/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/b86b1e97d91605ce764e48f59342a962/generated-inputs",
+          "GGML_HIP_AUTOTUNE_GENERATED_DIR": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/b86b1e97d91605ce764e48f59342a962/generated-inputs",
           "GGML_HIP_AUTOTUNE_RECORD": "OFF",
           "GGML_HIP_AUTOTUNE_SIGNATURE_FILE": "",
           "GGML_HIP_AUTOTUNE_SQLITE": "ON",
@@ -403,7 +403,7 @@
         "libmtmd.so.0.3.0": "980f33d13abef930dd2c36ba80d050e1b1721e44fe606ac7650ababfd8f471dc"
       },
       "compiler_observation": {
-        "build_dir": "${HOME}/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/b86b1e97d91605ce764e48f59342a962",
+        "build_dir": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/b86b1e97d91605ce764e48f59342a962",
         "command_source": "compile_commands.json",
         "hip_compile_command_count": 148,
         "declared_options": {
@@ -529,9 +529,9 @@
           "CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1",
           "GGML_HIP": "ON",
           "GGML_HIP_AUTOTUNE": "OFF",
-          "GGML_HIP_AUTOTUNE_GENERATED_DIR": "${HOME}/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/60f936db36097b7b9360eb7c707808bc/generated-inputs",
+          "GGML_HIP_AUTOTUNE_GENERATED_DIR": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/60f936db36097b7b9360eb7c707808bc/generated-inputs",
           "GGML_HIP_AUTOTUNE_RECORD": "OFF",
-          "GGML_HIP_AUTOTUNE_SIGNATURE_FILE": "${HOME}/.cache/bigcherry/artifacts-store/inputs/inventory/977e9aa581d5166f87fd5ed1fc225697646b41efe86fce50a117b90467234f71",
+          "GGML_HIP_AUTOTUNE_SIGNATURE_FILE": "/home/audumla/.cache/bigcherry/artifacts-store/inputs/inventory/977e9aa581d5166f87fd5ed1fc225697646b41efe86fce50a117b90467234f71",
           "GGML_HIP_AUTOTUNE_SQLITE": "ON",
           "GGML_HIP_AUTOTUNE_VARIANT_SET": "replay-full",
           "GGML_HIP_AUTOTUNE_VARIANT_SET-STRINGS": "inventory;workload-max;full-max;replay-full;replay-slim",
@@ -624,7 +624,7 @@
         "libmtmd.so.0.3.0": "bfd9d4abc604be265e0abd5a338bc757be98868e688b10e4431cce6213b440fa"
       },
       "compiler_observation": {
-        "build_dir": "${HOME}/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/60f936db36097b7b9360eb7c707808bc",
+        "build_dir": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/60f936db36097b7b9360eb7c707808bc",
         "command_source": "compile_commands.json",
         "hip_compile_command_count": 148,
         "declared_options": {
@@ -757,9 +757,9 @@
       "execution_evidence_status": "verified",
       "attestation_binding": {
         "correlation_id": "40b4cacf7b63421097faeec73225f631",
-        "binary": "${HOME}/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/b86b1e97d91605ce764e48f59342a962/bin/llama-server",
+        "binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/b86b1e97d91605ce764e48f59342a962/bin/llama-server",
         "binary_sha256": "9b5b49a5809634ac206992616f2bdd8f1b6a284778eef101bf92038603350e3c",
-        "model": "${MODELS_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+        "model": "/mnt/vault/llm-models/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
         "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
         "common_server_args": [
           "-ngl",
@@ -833,9 +833,9 @@
       "execution_evidence_status": "verified",
       "attestation_binding": {
         "correlation_id": "bee827c4eb0f45dd870d81e62ea9776e",
-        "binary": "${HOME}/.cache/bigcherry/builds/e77c7964e5dc0ba3bf8bddc644b3cd78/9f00effa353dd1adb738081f038e8426/bin/llama-server",
+        "binary": "/home/audumla/.cache/bigcherry/builds/e77c7964e5dc0ba3bf8bddc644b3cd78/9f00effa353dd1adb738081f038e8426/bin/llama-server",
         "binary_sha256": "74cf56624e461cc8a14e081698490eee02cf31bf5d35c64af05632daaf0255c7",
-        "model": "${MODELS_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+        "model": "/mnt/vault/llm-models/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
         "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
         "common_server_args": [
           "-ngl",
@@ -909,9 +909,9 @@
       "execution_evidence_status": "verified",
       "attestation_binding": {
         "correlation_id": "bef8e9b5f18d46ac82db0c7ca58ae0cc",
-        "binary": "${HOME}/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/60f936db36097b7b9360eb7c707808bc/bin/llama-server",
+        "binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/60f936db36097b7b9360eb7c707808bc/bin/llama-server",
         "binary_sha256": "4c996fe32b0f7ffae8c7496b0656f45885cd804d784543ac7cb1cae19c5c1856",
-        "model": "${MODELS_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+        "model": "/mnt/vault/llm-models/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
         "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
         "common_server_args": [
           "-ngl",
@@ -985,9 +985,9 @@
       "execution_evidence_status": "verified",
       "attestation_binding": {
         "correlation_id": "0a78121b2c444fab9f156cc4ad19fb67",
-        "binary": "${HOME}/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/60f936db36097b7b9360eb7c707808bc/bin/llama-server",
+        "binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/60f936db36097b7b9360eb7c707808bc/bin/llama-server",
         "binary_sha256": "4c996fe32b0f7ffae8c7496b0656f45885cd804d784543ac7cb1cae19c5c1856",
-        "model": "${MODELS_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+        "model": "/mnt/vault/llm-models/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
         "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
         "common_server_args": [
           "-ngl",
@@ -1061,9 +1061,9 @@
       "execution_evidence_status": "verified",
       "attestation_binding": {
         "correlation_id": "6f6e43e958fc4a8c821dce586b4325a8",
-        "binary": "${HOME}/.cache/bigcherry/builds/e77c7964e5dc0ba3bf8bddc644b3cd78/9f00effa353dd1adb738081f038e8426/bin/llama-server",
+        "binary": "/home/audumla/.cache/bigcherry/builds/e77c7964e5dc0ba3bf8bddc644b3cd78/9f00effa353dd1adb738081f038e8426/bin/llama-server",
         "binary_sha256": "74cf56624e461cc8a14e081698490eee02cf31bf5d35c64af05632daaf0255c7",
-        "model": "${MODELS_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+        "model": "/mnt/vault/llm-models/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
         "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
         "common_server_args": [
           "-ngl",
@@ -1137,9 +1137,9 @@
       "execution_evidence_status": "verified",
       "attestation_binding": {
         "correlation_id": "aa4faac1aa124fc8bd325ddd61776c3b",
-        "binary": "${HOME}/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/b86b1e97d91605ce764e48f59342a962/bin/llama-server",
+        "binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/b86b1e97d91605ce764e48f59342a962/bin/llama-server",
         "binary_sha256": "9b5b49a5809634ac206992616f2bdd8f1b6a284778eef101bf92038603350e3c",
-        "model": "${MODELS_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+        "model": "/mnt/vault/llm-models/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
         "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
         "common_server_args": [
           "-ngl",
@@ -1213,9 +1213,9 @@
       "execution_evidence_status": "verified",
       "attestation_binding": {
         "correlation_id": "93fde8599ba04bf68004d6b5aa8cbaad",
-        "binary": "${HOME}/.cache/bigcherry/builds/e77c7964e5dc0ba3bf8bddc644b3cd78/9f00effa353dd1adb738081f038e8426/bin/llama-server",
+        "binary": "/home/audumla/.cache/bigcherry/builds/e77c7964e5dc0ba3bf8bddc644b3cd78/9f00effa353dd1adb738081f038e8426/bin/llama-server",
         "binary_sha256": "74cf56624e461cc8a14e081698490eee02cf31bf5d35c64af05632daaf0255c7",
-        "model": "${MODELS_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+        "model": "/mnt/vault/llm-models/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
         "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
         "common_server_args": [
           "-ngl",
@@ -1289,9 +1289,9 @@
       "execution_evidence_status": "verified",
       "attestation_binding": {
         "correlation_id": "003397ac648a4e7890ddfc8bf02d1fe3",
-        "binary": "${HOME}/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/60f936db36097b7b9360eb7c707808bc/bin/llama-server",
+        "binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/60f936db36097b7b9360eb7c707808bc/bin/llama-server",
         "binary_sha256": "4c996fe32b0f7ffae8c7496b0656f45885cd804d784543ac7cb1cae19c5c1856",
-        "model": "${MODELS_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+        "model": "/mnt/vault/llm-models/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
         "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
         "common_server_args": [
           "-ngl",
@@ -1365,9 +1365,9 @@
       "execution_evidence_status": "verified",
       "attestation_binding": {
         "correlation_id": "87b33fd58e0a4e9ba4709de650e2387d",
-        "binary": "${HOME}/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/b86b1e97d91605ce764e48f59342a962/bin/llama-server",
+        "binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/b86b1e97d91605ce764e48f59342a962/bin/llama-server",
         "binary_sha256": "9b5b49a5809634ac206992616f2bdd8f1b6a284778eef101bf92038603350e3c",
-        "model": "${MODELS_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+        "model": "/mnt/vault/llm-models/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
         "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
         "common_server_args": [
           "-ngl",
@@ -1441,9 +1441,9 @@
       "execution_evidence_status": "verified",
       "attestation_binding": {
         "correlation_id": "070e87e618c641a5a26d4b2e1eb041bb",
-        "binary": "${HOME}/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/60f936db36097b7b9360eb7c707808bc/bin/llama-server",
+        "binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/60f936db36097b7b9360eb7c707808bc/bin/llama-server",
         "binary_sha256": "4c996fe32b0f7ffae8c7496b0656f45885cd804d784543ac7cb1cae19c5c1856",
-        "model": "${MODELS_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+        "model": "/mnt/vault/llm-models/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
         "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
         "common_server_args": [
           "-ngl",
@@ -1517,9 +1517,9 @@
       "execution_evidence_status": "verified",
       "attestation_binding": {
         "correlation_id": "492001a7b8b848fabddb17a4e68a2f79",
-        "binary": "${HOME}/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/b86b1e97d91605ce764e48f59342a962/bin/llama-server",
+        "binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/b86b1e97d91605ce764e48f59342a962/bin/llama-server",
         "binary_sha256": "9b5b49a5809634ac206992616f2bdd8f1b6a284778eef101bf92038603350e3c",
-        "model": "${MODELS_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+        "model": "/mnt/vault/llm-models/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
         "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
         "common_server_args": [
           "-ngl",
@@ -1593,9 +1593,9 @@
       "execution_evidence_status": "verified",
       "attestation_binding": {
         "correlation_id": "df34aaecb3b04b0c9566877171847436",
-        "binary": "${HOME}/.cache/bigcherry/builds/e77c7964e5dc0ba3bf8bddc644b3cd78/9f00effa353dd1adb738081f038e8426/bin/llama-server",
+        "binary": "/home/audumla/.cache/bigcherry/builds/e77c7964e5dc0ba3bf8bddc644b3cd78/9f00effa353dd1adb738081f038e8426/bin/llama-server",
         "binary_sha256": "74cf56624e461cc8a14e081698490eee02cf31bf5d35c64af05632daaf0255c7",
-        "model": "${MODELS_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+        "model": "/mnt/vault/llm-models/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
         "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
         "common_server_args": [
           "-ngl",
@@ -1669,9 +1669,9 @@
       "execution_evidence_status": "verified",
       "attestation_binding": {
         "correlation_id": "5ee1dca7f6654e228200682d76953a5c",
-        "binary": "${HOME}/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/b86b1e97d91605ce764e48f59342a962/bin/llama-server",
+        "binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/b86b1e97d91605ce764e48f59342a962/bin/llama-server",
         "binary_sha256": "9b5b49a5809634ac206992616f2bdd8f1b6a284778eef101bf92038603350e3c",
-        "model": "${MODELS_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+        "model": "/mnt/vault/llm-models/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
         "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
         "common_server_args": [
           "-ngl",
@@ -1745,9 +1745,9 @@
       "execution_evidence_status": "verified",
       "attestation_binding": {
         "correlation_id": "d7a36070a9d943ab94f3b9419207b4b2",
-        "binary": "${HOME}/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/60f936db36097b7b9360eb7c707808bc/bin/llama-server",
+        "binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/60f936db36097b7b9360eb7c707808bc/bin/llama-server",
         "binary_sha256": "4c996fe32b0f7ffae8c7496b0656f45885cd804d784543ac7cb1cae19c5c1856",
-        "model": "${MODELS_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+        "model": "/mnt/vault/llm-models/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
         "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
         "common_server_args": [
           "-ngl",
@@ -1821,9 +1821,9 @@
       "execution_evidence_status": "verified",
       "attestation_binding": {
         "correlation_id": "b10fe8580d304e55b2219c0f34770562",
-        "binary": "${HOME}/.cache/bigcherry/builds/e77c7964e5dc0ba3bf8bddc644b3cd78/9f00effa353dd1adb738081f038e8426/bin/llama-server",
+        "binary": "/home/audumla/.cache/bigcherry/builds/e77c7964e5dc0ba3bf8bddc644b3cd78/9f00effa353dd1adb738081f038e8426/bin/llama-server",
         "binary_sha256": "74cf56624e461cc8a14e081698490eee02cf31bf5d35c64af05632daaf0255c7",
-        "model": "${MODELS_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+        "model": "/mnt/vault/llm-models/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
         "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
         "common_server_args": [
           "-ngl",
@@ -1897,9 +1897,9 @@
       "execution_evidence_status": "verified",
       "attestation_binding": {
         "correlation_id": "27cd0f8307674e77b05b2022e6ee7320",
-        "binary": "${HOME}/.cache/bigcherry/builds/e77c7964e5dc0ba3bf8bddc644b3cd78/9f00effa353dd1adb738081f038e8426/bin/llama-server",
+        "binary": "/home/audumla/.cache/bigcherry/builds/e77c7964e5dc0ba3bf8bddc644b3cd78/9f00effa353dd1adb738081f038e8426/bin/llama-server",
         "binary_sha256": "74cf56624e461cc8a14e081698490eee02cf31bf5d35c64af05632daaf0255c7",
-        "model": "${MODELS_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+        "model": "/mnt/vault/llm-models/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
         "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
         "common_server_args": [
           "-ngl",
@@ -1973,9 +1973,9 @@
       "execution_evidence_status": "verified",
       "attestation_binding": {
         "correlation_id": "0df99469bb2f43889101137dc6106e8f",
-        "binary": "${HOME}/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/b86b1e97d91605ce764e48f59342a962/bin/llama-server",
+        "binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/b86b1e97d91605ce764e48f59342a962/bin/llama-server",
         "binary_sha256": "9b5b49a5809634ac206992616f2bdd8f1b6a284778eef101bf92038603350e3c",
-        "model": "${MODELS_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+        "model": "/mnt/vault/llm-models/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
         "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
         "common_server_args": [
           "-ngl",
@@ -2049,9 +2049,9 @@
       "execution_evidence_status": "verified",
       "attestation_binding": {
         "correlation_id": "9427220c341e4dbabf68993c5b54faff",
-        "binary": "${HOME}/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/60f936db36097b7b9360eb7c707808bc/bin/llama-server",
+        "binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/60f936db36097b7b9360eb7c707808bc/bin/llama-server",
         "binary_sha256": "4c996fe32b0f7ffae8c7496b0656f45885cd804d784543ac7cb1cae19c5c1856",
-        "model": "${MODELS_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+        "model": "/mnt/vault/llm-models/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
         "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
         "common_server_args": [
           "-ngl",

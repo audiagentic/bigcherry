@@ -47,7 +47,7 @@
       },
       "campaign_identity": "8c2fb75979451d654041202892e03628da58b635fbb2345f147388fcb5274420",
       "campaign_identity_digest": "8c2fb75979451d654041202892e03628da58b635fbb2345f147388fcb5274420",
-      "campaign_workdir": "${HOME}/pa26-evidence-run3/0900_pool_workspace_metrics/framework/0900_pool_workspace_metrics",
+      "campaign_workdir": "/home/audumla/pa26-evidence-run3/0900_pool_workspace_metrics/framework/0900_pool_workspace_metrics",
       "check_results": {
         "apply": {
           "artifacts": [],
@@ -421,7 +421,7 @@
       },
       "campaign_identity": "aee5d513a8036a062bb1d1254814d2738c600d9f3ff09af9b9b58c2f09db3074",
       "campaign_identity_digest": "aee5d513a8036a062bb1d1254814d2738c600d9f3ff09af9b9b58c2f09db3074",
-      "campaign_workdir": "${HOME}/pa26-evidence-run4/0900_pool_workspace_metrics/framework/0900_pool_workspace_metrics",
+      "campaign_workdir": "/home/audumla/pa26-evidence-run4/0900_pool_workspace_metrics/framework/0900_pool_workspace_metrics",
       "check_results": {
         "apply": {
           "artifacts": [
@@ -809,7 +809,7 @@
       },
       "campaign_identity": "dd7b9cd819fa262fa25aa4376b1227d7b698b8afaedd711cc388fe8b03632fb6",
       "campaign_identity_digest": "dd7b9cd819fa262fa25aa4376b1227d7b698b8afaedd711cc388fe8b03632fb6",
-      "campaign_workdir": "${HOME}/pa26-evidence-run2/0900_pool_workspace_metrics/framework/0900_pool_workspace_metrics",
+      "campaign_workdir": "/home/audumla/pa26-evidence-run2/0900_pool_workspace_metrics/framework/0900_pool_workspace_metrics",
       "check_results": {
         "apply": {
           "artifacts": [],

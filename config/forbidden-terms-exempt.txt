@@ -1,4 +1,10 @@
-# Tracked files the forbidden-term scan skips, one repo-relative path per line. Keep this list short.
+# Tracked files the forbidden-term scan skips: one repo-relative path or glob (fnmatch) per line. Keep it short.
+#
+# Recorded evidence is append-only history and digest-bound (record_digest): rewriting a path inside it breaks
+# verification, so evidence keeps the paths it was recorded with.
+docs/evidence/*
+releases/evidence/*
+engines/*/patches/*/evidence/*
 #
 # Patch implementations whose bytes are the subject of recorded validation evidence: their comments
 # name the build server, and editing them changes the evidence digest, which would drop validated

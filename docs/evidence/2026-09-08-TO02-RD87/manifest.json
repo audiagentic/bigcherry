@@ -3,7 +3,7 @@
   "kind": "non-patch-hardware-verification",
   "plan_item_ids": ["TO02", "RD87"],
   "observed_at_utc": "2026-09-08",
-  "host": {"role": "build-server", "hostname": "<gpu-host>", "gpu": "GPU0 RX 7900 XTX", "arch": "gfx1100"},
+  "host": {"role": "build-server", "hostname": "brutus", "gpu": "GPU0 RX 7900 XTX", "arch": "gfx1100"},
   "source_revision": "52ab88bebc74e800645f0694327f3a8bf4965195",
   "toolchain": "ROCm 7.2.4 runtime libomp",
   "command": "ROCR_VISIBLE_DEVICES=0 HIP_VISIBLE_DEVICES=0 LD_LIBRARY_PATH=/opt/rocm-7.2.4/lib/llvm/lib:$LD_LIBRARY_PATH hipblaslt-bench -m 1024 -n 1024 -k 1024 --precision f16_r",

@@ -1,7 +1,7 @@
 # PHA03 RCCL topology and runtime evidence snapshot
 
 Date: 2026-09-10  
-Execution environment: <gpu-host> role (resolved through the configured
+Execution environment: Brutus role (resolved through the configured
 environment; no host connection details are committed)
 
 This is an evidence snapshot for the fail-closed PHA03 plumbing. It does not
@@ -35,7 +35,7 @@ identity.
 
 ## Raw evidence hashes
 
-The complete host-local snapshot remains in the <gpu-host> evidence directory
+The complete host-local snapshot remains in the Brutus evidence directory
 created for this run. These hashes bind the observation without copying
 machine-local raw output into the repository:
 
@@ -51,7 +51,7 @@ machine-local raw output into the repository:
 
 ## Current HIP AtomicOps capability probe
 
-On 2026-09-10, a temporary HIP probe was compiled and executed on <gpu-host>
+On 2026-09-10, a temporary HIP probe was compiled and executed on Brutus
 using `/opt/rocm-7.2.4/bin/hipcc`. It queried
 `hipDeviceAttributeHostNativeAtomicSupported` for every visible device and
 reported successful HIP calls for all four devices:
@@ -73,7 +73,7 @@ not by itself authorize a topology allowlist.
 
 ## Crash-isolated direct RCCL qualification
 
-A bounded current-code campaign was run on <gpu-host> against the exact observed
+A bounded current-code campaign was run on Brutus against the exact observed
 RCCL library identity, using `all_reduce_perf`, 30,720 float elements, Ring /
 Simple, and three attempts per topology. The campaign recorded 15 cases in
 `cases.jsonl` (SHA-256

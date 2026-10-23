@@ -1,4 +1,4 @@
-Hardware evidence for the b11402 -> b11474 bump (2026-10-08, dev)
+Hardware evidence for the b11402 -> b11474 bump (2026-10-08, Brutus)
 
 Build: b-metamem-b11474b - production set (48 patches) at llama.cpp b11474 (b9acf138), targets gfx1100 / gfx1201 /
 gfx1030, compiled clean. The first build attempt failed on 1347 (ggml_cuda_should_use_mmvf gained a warp_size

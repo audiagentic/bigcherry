@@ -58,7 +58,7 @@
       },
       "campaign_identity": "1eb82bfb5c1868c82b27b021c5ffca7b665e382f3df47bc7b169e7537b99f7fb",
       "campaign_identity_digest": "1eb82bfb5c1868c82b27b021c5ffca7b665e382f3df47bc7b169e7537b99f7fb",
-      "campaign_workdir": "${HOME}/pa26-evidence-run/0300_mmq_forced_j/framework/0300_mmq_forced_j",
+      "campaign_workdir": "/home/audumla/pa26-evidence-run/0300_mmq_forced_j/framework/0300_mmq_forced_j",
       "check_results": {
         "apply": {
           "artifacts": [
@@ -508,7 +508,7 @@
       },
       "campaign_identity": "1eceff7cd377aefc6992249b01d7d4158973e6fcda68bfdc55837a7572926a78",
       "campaign_identity_digest": "1eceff7cd377aefc6992249b01d7d4158973e6fcda68bfdc55837a7572926a78",
-      "campaign_workdir": "${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/work/runs/fwcfg-b11126-r2/0300_mmq_forced_j/framework/0300_mmq_forced_j",
+      "campaign_workdir": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/runs/fwcfg-b11126-r2/0300_mmq_forced_j/framework/0300_mmq_forced_j",
       "check_results": {
         "apply": {
           "artifacts": [
@@ -942,7 +942,7 @@
       },
       "campaign_identity": "88fce6a220f78d6dc63067b2896b3f3e682583b8a982b409c7c6536a41110a55",
       "campaign_identity_digest": "88fce6a220f78d6dc63067b2896b3f3e682583b8a982b409c7c6536a41110a55",
-      "campaign_workdir": "${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/work/runs/pa40-fwcfg/r3-0300_mmq_forced_j/framework/0300_mmq_forced_j",
+      "campaign_workdir": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/runs/pa40-fwcfg/r3-0300_mmq_forced_j/framework/0300_mmq_forced_j",
       "check_results": {
         "apply": {
           "artifacts": [
@@ -1384,7 +1384,7 @@
       },
       "campaign_identity": "f606e91cee33565e6c8912eea647996777419d64eff7f69647b81feb582a03be",
       "campaign_identity_digest": "f606e91cee33565e6c8912eea647996777419d64eff7f69647b81feb582a03be",
-      "campaign_workdir": "${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/work/runs/pa40-fwcfg/r2-0300_mmq_forced_j/framework/0300_mmq_forced_j",
+      "campaign_workdir": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/runs/pa40-fwcfg/r2-0300_mmq_forced_j/framework/0300_mmq_forced_j",
       "check_results": {
         "apply": {
           "artifacts": [

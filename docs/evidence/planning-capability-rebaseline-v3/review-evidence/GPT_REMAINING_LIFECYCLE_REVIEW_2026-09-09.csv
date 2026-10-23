@@ -15,7 +15,7 @@ HI149,CONTINUING,The original RD13-regression theory was corrected to a stale-te
 HI150,TERMINAL-COMPLETE,"The design deliverable is explicitly complete and converged; implementation ownership was split to HI151, HI152, and HI153."
 HI159,CONTINUING,"Diagnostic atomic-removal changes landed, but the frozen item still specifies audit/compile-out/measurement validation and contains no completed acceptance record."
 HI160,CONTINUING,"The source records the required replay instrumentation, but final_tuned_launches/per-winner/fallback-after-exact evidence is not implemented or validated."
-HI161,CONTINUING,<gpu-host> reproduction confirmed standalone AUTO winners diverge from production; root-cause and harness correction remain owned here.
+HI161,CONTINUING,Brutus reproduction confirmed standalone AUTO winners diverge from production; root-cause and harness correction remain owned here.
 HI163,TERMINAL-COMPLETE,"op_variant_id cache-key correction was implemented, tested, merged, and hardware-retested; remaining performance root cause is explicitly assigned to other items."
 HI164,CONTINUING,Typed op_variant_id cleanup plus helper/test refactoring remains explicit post-HI163 work.
 HI165,CONTINUING,Testing-state build/A-B/recovery/promotion lifecycle support and tests remain unimplemented.

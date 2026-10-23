@@ -15,7 +15,7 @@ HI14,CONTINUING,"Offline validator is done; real capture lifecycle and hardware 
 HI142,CONTINUING,"Partial RCCL passes; RQ09/P2.6/P2.7 and production-admission gates remain."
 HI143,TERMINAL-COMPLETE,"Fresh real E2E proves allow/block behavior; core mechanism needs no further validation."
 HI145,TERMINAL-COMPLETE,"Design-only deliverable settled; implementation was delegated to HI146/HI147/HI148."
-HI146,CONTINUING,"Topology gate implementation, tests, and <gpu-host> validation remain."
+HI146,CONTINUING,"Topology gate implementation, tests, and Brutus validation remain."
 HI147,CONTINUING,"Implementation, tests, and hardware validation have not started."
 HI153,CONTINUING,"Live pin-bump works; synthetic STOP/resume E2E regression remains unwritten."
 HI154,TERMINAL-COMPLETE,"Scoped investigation explicitly closed; residual scalability work is a follow-up."

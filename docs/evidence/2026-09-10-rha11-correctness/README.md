@@ -54,5 +54,5 @@ The final diagnostics-on run returned 0 with 21,566/21,566 dispatches, 57
 exact matches, zero misses/unavailable/rerun/incompatible rows, and the final
 diagnostics-off production run returned 0 at pp512 927.62, pp2048 1289.19,
 tg128 33.71, and tg512 34.05 t/s. The complete cache is now the canonical
-<gpu-host> campaign cache; both earlier cache generations remain preserved as
+Brutus campaign cache; both earlier cache generations remain preserved as
 rollback artifacts.

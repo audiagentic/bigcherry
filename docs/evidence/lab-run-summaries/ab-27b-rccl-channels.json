@@ -1,7 +1,7 @@
 {
  "arm_config": [
   {
-   "binary": "${DEV_ROOT}/projects/bigcherry/workspaces/main/work/builds/1a7bddb4d5b3dc6f156f25212fb68790/ecaea379a11f011c9304e75cc0d88410/bin/llama-server",
+   "binary": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/1a7bddb4d5b3dc6f156f25212fb68790/ecaea379a11f011c9304e75cc0d88410/bin/llama-server",
    "environment": {
     "GGML_CUDA_ALLREDUCE": "nccl"
    },
@@ -10,7 +10,7 @@
    "server_args": null
   },
   {
-   "binary": "${DEV_ROOT}/projects/bigcherry/workspaces/main/work/builds/1a7bddb4d5b3dc6f156f25212fb68790/ecaea379a11f011c9304e75cc0d88410/bin/llama-server",
+   "binary": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/1a7bddb4d5b3dc6f156f25212fb68790/ecaea379a11f011c9304e75cc0d88410/bin/llama-server",
    "environment": {
     "GGML_CUDA_ALLREDUCE": "nccl",
     "NCCL_MAX_NCHANNELS": "2",
@@ -21,7 +21,7 @@
    "server_args": null
   },
   {
-   "binary": "${DEV_ROOT}/projects/bigcherry/workspaces/main/work/builds/1a7bddb4d5b3dc6f156f25212fb68790/ecaea379a11f011c9304e75cc0d88410/bin/llama-server",
+   "binary": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/1a7bddb4d5b3dc6f156f25212fb68790/ecaea379a11f011c9304e75cc0d88410/bin/llama-server",
    "environment": {
     "GGML_CUDA_ALLREDUCE": "nccl",
     "NCCL_MIN_NCHANNELS": "8"
@@ -132,7 +132,7 @@
   }
  },
  "kind": "ab",
- "model": "${MODELS_ROOT}/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
+ "model": "/mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
  "run": "ab-27b-rccl-channels",
  "schedule_seed": 0,
  "server_args": [

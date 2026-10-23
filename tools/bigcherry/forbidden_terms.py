@@ -14,6 +14,7 @@ pre-commit hook), ``--all`` for every tracked file, or ``--install-hook`` once p
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import os
 import re
 import subprocess
@@ -126,7 +127,7 @@ def findings(root: Path, *, staged: bool = False, base: str | None = None) -> li
     candidates = _changed_files(root, base) if base else _candidate_files(root, staged)
     exempt = _exempt_files(root)
     for rel in candidates:
-        if rel in exempt:
+        if any(fnmatch.fnmatchcase(rel, pattern) for pattern in exempt):
             continue
         text = _content(root, rel, staged)
         if text is None:

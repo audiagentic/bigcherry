@@ -1,7 +1,7 @@
 # RHA04 GPU0 identity-bound attestation preflight
 
 Date: 2026-09-10  
-Role: <gpu-host> build server, resolved through environment settings  
+Role: Brutus build server, resolved through environment settings  
 Status: **attestation verified; no throughput claim**
 
 This is the untimed diagnostic preflight introduced by the RHA04 capture

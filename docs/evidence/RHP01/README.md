@@ -1,6 +1,6 @@
 # RHP01-RHP06 CPU-only mock evidence
 
-Source: `tools/lab/radiance/heat-placement/heat_mock.mjs`, executed as a pure JavaScript function against the identical committed source by the planning author; 23 assertions passed. Test scope is **synthetic mechanics**, not actual Radiance/<gpu-host> GPU performance or numerical fidelity.
+Source: `tools/lab/radiance/heat-placement/heat_mock.mjs`, executed as a pure JavaScript function against the identical committed source by the planning author; 23 assertions passed. Test scope is **synthetic mechanics**, not actual Radiance/Brutus GPU performance or numerical fidelity.
 
 Replay on an installed Node environment:
 

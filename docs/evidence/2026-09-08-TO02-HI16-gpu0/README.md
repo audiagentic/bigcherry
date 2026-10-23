@@ -1,6 +1,6 @@
-# TO02 / HI16 forced-native parity — <gpu-host> GPU0
+# TO02 / HI16 forced-native parity — Brutus GPU0
 
-Observed 2026-09-08 UTC on `<gpu-host>`, GPU0 (`gfx1100`, RX 7900 XTX), with
+Observed 2026-09-08 UTC on `brutus`, GPU0 (`gfx1100`, RX 7900 XTX), with
 `ROCR_VISIBLE_DEVICES=0`, `HIP_VISIBLE_DEVICES=0`,
 `GGML_HIP_TUNE_DOUBLE_NATIVE=1`, and `HIP_LAUNCH_BLOCKING=1`.
 

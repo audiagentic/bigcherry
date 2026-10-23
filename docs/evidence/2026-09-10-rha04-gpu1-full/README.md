@@ -33,5 +33,5 @@ is still not a universal replay win and remains unadmitted pending the
 work-equivalence/replay-activation gate and the remaining GPUs/topology.
 
 Raw machine-readable artifacts are `run.json` and `config.json`. Per-cell
-logs remain on <gpu-host> under `/tmp/rha04-gpu1-full/` and are not committed as
+logs remain on Brutus under `/tmp/rha04-gpu1-full/` and are not committed as
 release artifacts.

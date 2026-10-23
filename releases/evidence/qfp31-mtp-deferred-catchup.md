@@ -1,6 +1,6 @@
 # QFP31 / 1348 deferred MTP catch-up promotion
 
-## Hardware evidence (dev, 2026-10-08, b11474, Flash-Next IQ4_XS, 245760 ctx, f16 KV, production layout)
+## Hardware evidence (Brutus, 2026-10-08, b11474, Flash-Next IQ4_XS, 245760 ctx, f16 KV, production layout)
 
 Build `b-metamem-qfp31b` of `[experiment.mtp-deferred-catchup]` at f26b820d (anchor span fix: `mtp-deferred-enable` spans 6 lines). Compiled clean; smoke 0 error lines; `BIGCHERRY_PATCH_HIT patch=1348_mtp_deferred_catchup` present.
 

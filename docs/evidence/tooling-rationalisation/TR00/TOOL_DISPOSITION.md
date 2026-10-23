@@ -78,13 +78,13 @@ Every in-scope script has exactly one provisional disposition. No implementation
 | `tmp/b1-reject.sh` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
 | `tmp/b1-spotcheck.py` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
 | `tmp/b1-sweep.sh` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `tmp/<gpu-host>-probe.sh` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
+| `tmp/brutus-probe.sh` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
 | `tmp/dedupe-hi65.py` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
 | `tmp/fix_test.py` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
 | `tmp/h35-s1b-equivalence.py` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
 | `tmp/h36-ab-stability.py` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
 | `tmp/h36-addon.sh` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `tmp/h36-<gpu-host>-pipeline.sh` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
+| `tmp/h36-brutus-pipeline.sh` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
 | `tmp/h36-key-derivation.py` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
 | `tmp/h36-regret-analysis.py` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
 | `tmp/h36-whatif-misslog.py` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |

@@ -6,7 +6,7 @@ cache or correctly falls back to native for the minimum necessary
 signatures, with a mandatory full-corpus validation gating either outcome.
 """
 import sys
-sys.path.insert(0, "${DEV_ROOT}/llmhosts/bigcherry-hi143-e2e-20260829/tools")
+sys.path.insert(0, "/mnt/vault/development/llmhosts/bigcherry-hi143-e2e-20260829/tools")
 
 import json
 from pathlib import Path
@@ -15,17 +15,17 @@ from bigcherry.tuning import behavioral_gate as bg
 from bigcherry.tuning import recovery as rec
 from bigcherry.tuning import workflow as wf
 
-CAMPAIGN_DIR = Path("${VAULT_ROOT}/experiments/hi141-proof/hi141-proof-20260829-2231")
+CAMPAIGN_DIR = Path("/mnt/vault/experiments/hi141-proof/hi141-proof-20260829-2231")
 PROMOTED_PATH = CAMPAIGN_DIR / "promoted.jsonl"
-BINARY_PATH = Path("${HOME}/.cache/bigcherry/artifacts-store/builds/b6048afbd7787b0fc34982c237d81743/69f0be9b60f65f42cf172bb29b183c1e/llama-server")
-MANIFEST_PATH = Path("${HOME}/.cache/bigcherry/artifacts-store/runs/hi141-proof-20260829-2231-replay-b439ea406a0b/generate/hip-autotune-manifest.json")
-SOURCE_ROOT = Path("${HOME}/.cache/bigcherry/sources/38c99c0a48996a2e9c1c717a3d492060")
+BINARY_PATH = Path("/home/audumla/.cache/bigcherry/artifacts-store/builds/b6048afbd7787b0fc34982c237d81743/69f0be9b60f65f42cf172bb29b183c1e/llama-server")
+MANIFEST_PATH = Path("/home/audumla/.cache/bigcherry/artifacts-store/runs/hi141-proof-20260829-2231-replay-b439ea406a0b/generate/hip-autotune-manifest.json")
+SOURCE_ROOT = Path("/home/audumla/.cache/bigcherry/sources/38c99c0a48996a2e9c1c717a3d492060")
 GGML_H = SOURCE_ROOT / "ggml" / "include" / "ggml.h"
-CORRECTNESS_BINARY_PATH = Path("${HOME}/.cache/bigcherry/artifacts-store/builds/f3e14c088e667bfc1c9d533422150c5d/70b7ef2748113d6e9901115952e1f822/test-backend-ops")
-CORRECTNESS_VENDOR_ROOT = Path("${HOME}/.cache/bigcherry/sources/7ed939cded44ad21629d167eeb4613a0")
-MODEL = Path("${MODELS_ROOT}/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf")
+CORRECTNESS_BINARY_PATH = Path("/home/audumla/.cache/bigcherry/artifacts-store/builds/f3e14c088e667bfc1c9d533422150c5d/70b7ef2748113d6e9901115952e1f822/test-backend-ops")
+CORRECTNESS_VENDOR_ROOT = Path("/home/audumla/.cache/bigcherry/sources/7ed939cded44ad21629d167eeb4613a0")
+MODEL = Path("/mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf")
 DEVICES = "0,1"
-WORKDIR = Path("${VAULT_ROOT}/experiments/hi141-recovery-validation")
+WORKDIR = Path("/mnt/vault/experiments/hi141-recovery-validation")
 WORKDIR.mkdir(parents=True, exist_ok=True)
 
 COMMON_ARGS = (

@@ -6,10 +6,10 @@
     "request_id": "req_7120666e900a4535",
     "guidance": "--pairs 2 is the documented minimum and sufficient to close gate 1's performance sub-clause per PA30's own wording (representative balanced/rotated run, not a throughput-equivalence proof -- consistent with PA26 requiring no throughput-equivalence criterion). --decision-grade / --practical-threshold-pct explicitly NOT required. This run used --pairs 6, exceeding GPT's stated minimum."
   },
-  "hardware": "<gpu-host>, devices 0+1, dual gfx1100 (RX 7900 XTX), production-dual-xtx-shaped tensor-split config, qwen3.8-27B Q8_0",
+  "hardware": "Brutus, devices 0+1, dual gfx1100 (RX 7900 XTX), production-dual-xtx-shaped tensor-split config, qwen3.8-27B Q8_0",
   "arms": {
-    "bigcherry-native": "${HOME}/.cache/bigcherry/builds/4da8833b09223861a369c1c133d67d5e/a0aaed3405d709ae507680c74bb87222/bin/llama-server",
-    "bigcherry-serving-base": "${HOME}/.cache/bigcherry/builds/8cc8049cab1f2ca1509983b1b0892f9a/bde22b7a235d74f83c97c22f34e3643a/bin/llama-server"
+    "bigcherry-native": "/home/audumla/.cache/bigcherry/builds/4da8833b09223861a369c1c133d67d5e/a0aaed3405d709ae507680c74bb87222/bin/llama-server",
+    "bigcherry-serving-base": "/home/audumla/.cache/bigcherry/builds/8cc8049cab1f2ca1509983b1b0892f9a/bde22b7a235d74f83c97c22f34e3643a/bin/llama-server"
   },
   "real_defect_found_and_fixed_in_this_pass": "bigcherry-serving-base genuinely omits patch 0800_server_shutdown_endpoint (one of PA30's own documented 7 deliberately-removed modules vs bigcherry-native), so it has no HTTP /shutdown route. The leftover draft config from the interrupted prior pass already had shutdown_method:sigint for that arm; this pass's first two attempts incorrectly removed/misdiagnosed it (thought it was an LLAMA_SERVER_ENABLE_SHUTDOWN env omission) before confirming the real cause via config.recipes.toml resolution and restoring shutdown_method:sigint for bigcherry-serving-base only.",
   "results": {

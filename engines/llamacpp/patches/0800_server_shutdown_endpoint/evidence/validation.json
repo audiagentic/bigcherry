@@ -50,7 +50,7 @@
       },
       "campaign_identity": "00586972f33eda2c68cf595c71dab957362793692fa2a4697dfd075861b8c53b",
       "campaign_identity_digest": "00586972f33eda2c68cf595c71dab957362793692fa2a4697dfd075861b8c53b",
-      "campaign_workdir": "${HOME}/pa26-evidence-run4/0800_server_shutdown_endpoint/framework/0800_server_shutdown_endpoint",
+      "campaign_workdir": "/home/audumla/pa26-evidence-run4/0800_server_shutdown_endpoint/framework/0800_server_shutdown_endpoint",
       "check_results": {
         "apply": {
           "artifacts": [
@@ -438,7 +438,7 @@
       },
       "campaign_identity": "c836b1ddbc66bb8fa46df35d817a1aafc8b1a36008bd8255e0f6b1701d3d7d65",
       "campaign_identity_digest": "c836b1ddbc66bb8fa46df35d817a1aafc8b1a36008bd8255e0f6b1701d3d7d65",
-      "campaign_workdir": "${HOME}/pa26-evidence-run2/0800_server_shutdown_endpoint/framework/0800_server_shutdown_endpoint",
+      "campaign_workdir": "/home/audumla/pa26-evidence-run2/0800_server_shutdown_endpoint/framework/0800_server_shutdown_endpoint",
       "check_results": {
         "apply": {
           "artifacts": [],
@@ -809,7 +809,7 @@
       },
       "campaign_identity": "ec325141ea0ac4cc274d57b0604e4f7d9cd15bb9203c904b26ad565b90b16fec",
       "campaign_identity_digest": "ec325141ea0ac4cc274d57b0604e4f7d9cd15bb9203c904b26ad565b90b16fec",
-      "campaign_workdir": "${HOME}/pa26-evidence-run3/0800_server_shutdown_endpoint/framework/0800_server_shutdown_endpoint",
+      "campaign_workdir": "/home/audumla/pa26-evidence-run3/0800_server_shutdown_endpoint/framework/0800_server_shutdown_endpoint",
       "check_results": {
         "apply": {
           "artifacts": [],

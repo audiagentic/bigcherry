@@ -1,6 +1,6 @@
 # TO03 shared-worktree concurrency exercise
 
-Observed 2026-09-08 UTC on `<gpu-host>` in a fresh temporary detached worktree at
+Observed 2026-09-08 UTC on `brutus` in a fresh temporary detached worktree at
 revision `52ab88bebc74e800645f0694327f3a8bf4965195`; the dirty canonical
 checkout was not modified.
 
