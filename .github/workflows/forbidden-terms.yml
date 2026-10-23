@@ -6,7 +6,9 @@ name: Forbidden terms
 # The same scan runs locally as the pre-commit hook (python3 -m bigcherry.forbidden_terms).
 
 on:
+  # push only for main: a push to a PR branch is already scanned by its pull_request run
   push:
+    branches: [main]
   pull_request:
 
 permissions:

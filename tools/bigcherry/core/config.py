@@ -64,7 +64,8 @@ def _host_default(variable: str) -> str | None:
         value = getattr(environment.load_default().host(None), attr)
     except (OSError, environment.EnvironmentError_):
         return None
-    return value or None
+    # host values may refer to the environment (e.g. ${HOME}); expand them like any other host value
+    return expand_host_value(value) or None
 
 
 def expand_host_value(value: str | None) -> str | None:
