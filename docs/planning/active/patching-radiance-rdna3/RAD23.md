@@ -90,6 +90,11 @@ GPT design review req_bigcherry_97cebda33722 (2026-10-23), adopted order:
 
 Follows RAD18 (combine). fp16 combined row passed KLD (p99 +0.039). CPU scalar fp16 conversion erased the gain (~1 ms/step); F16C version under A/B. Owner: the combine should run on the GPUs where possible.
 
+
+Handoff 2026-10-23: start point is branch feat/combine-fp16 (cpu method with F16C, measured +5-8% prefill). Pending:
+GPT addendum req_bigcherry_3bb6b763ab97 on N-helper protocol (read it with agent_task_response before redesigning
+the layout). Owner priority question open: do RAD20 (no polling, frees two cores) before the gpu method?
+
 ## Change Log
 
 - 2026-10-23T10:48:18.492687+00:00 (created-by): Created by agent

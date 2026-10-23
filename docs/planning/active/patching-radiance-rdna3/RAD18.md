@@ -65,6 +65,17 @@ Context: this is a sibling investigation to RAD17 (FP8 down-product), targeting 
 2026-10-22. rad0008 (PF2 up-mix RT=128 default, RAD_HC_UPMIX_RT=256 restores the original): kernel level vs unpatched build -2.1%/-3.2% of hc_read on the R9700 (M=2048/4096), -5.8%/-2.8% on the XTX, byte-identical. END TO END in the working layout (R9700 engine + 2 XTX helpers, ab-benchmark tools/lab/radiance/helper-upmix-rt-ab.json, one binary built with --experiment helper-layout-upmix-rt, 4 rotated pairs, --host-pool-mib 22528 in both arms because the 30 GiB pool plus the pinned n-gram table no longer fits free host RAM): pp4096 3351 (RT256) vs 3355 (RT128) tok/s (+0.1%), pp1024 3406 vs 3416 excluding one low RT128 run (+0.3%), tg2048 152.3 vs 152.2 -- no measurable end-to-end gain. Matches the share: hc_read is 8.9% of R9700 prefill device time in this layout (--profile-ops, 7306-token prompt, TTFT 3.49 s), so 2-3% off hc_read is ~0.2-0.3% end to end. Prefill device time in this layout: moe_mailbox_add 51.7% (helper wait + merge), gemm_nt_q 11.1%, hc_read 8.9%, moe_mailbox_publish 6.2%, local moe_gemm_q 5.9%. Next: R3_MOE_WORKER_TRACE decomposition of the mailbox wait (GPT req_bigcherry_ceee9968e4b5): exposed helper wait vs helper GPU time vs merge (the merge reads each helper's full-width bf16 result straight from mapped host memory). Hardware layout is fixed (owner).
 Prefill device-time split before these (--profile-ops, 7306 tokens): moe_mailbox_add 51.7%, gemm_nt_q 11.1%, hc_read 8.9%, mailbox_publish 6.2%, local moe_gemm_q 5.9%; TTFT 2.36 s; exposed helper wait 0.65 s. rad0008 in-engine hc_read 216.6 -> 210.0 ms (-3.0%); end-to-end below noise because hc_read is ~9% of prefill. Follow-ups split out: RAD19 (derive helper slice split), RAD20 (replace lane polling), RAD21 (micro-batch pipelining of the helper round trip).
 
+## Notes (handoff)
+
+Status 2026-10-23 (handoff): rad0008 promoted (done). Combine: bf16 row failed KLD (p99 +0.275); rounding-only control
+proved it was the bf16 rounding; fp16 row passes KLD (mean +0.0027, p99 +0.039, top-1 -0.28 pt); scalar fp16 was too
+slow (~1 ms CPU a step, prefill -2..-5%); AVX2/F16C restores prefill (+5-8% pp4096, +6-7% pp1024, CPU ~0.32 ms a step),
+tg512/tg2048 flat, tg128 -21% still to confirm as a content effect. Code: branch feat/combine-fp16 (protocol 16,
+combine_f16.h + r3_combine_f16_test, kCombineFallback marker, engine reads fp16). Runs on the build server:
+${BC_WORK_ROOT}/runs/rad18-kld (reference), rad18-fp16 (KLD + scalar A/B), rad18-f16c (F16C A/B).
+Remaining for RAD18: (a) tg128 check: helper-combine-nofire-ab.json + per-cell MTP acceptance, re-run the excluded
+pair; (b) then retire the never-fire control config. Method selection, GPU method and N helpers continue in RAD23.
+
 ## Change Log
 
 - 2026-10-21T23:17:12.131804+00:00 (created-by): Created by agent

@@ -205,12 +205,14 @@ every 64-row step combined):
 | combine off (control) | 0.0614 / 0.624 / 2.375 | 89.09% | 3,404-3,406 / 3,354-3,360 | 124 / 145 / 152 | baseline |
 | CPU combine, bf16 row | 0.0736 / 0.899 / 2.769 | 88.25% | +7.1-8.1% / +7.3% | -11% / flat / flat | fails KLD (p99 +0.275 vs 0.2) |
 | CPU combine, fp16 row, scalar conversion | 0.0641 / 0.663 / 1.948 | 88.81% | -5% / -2% | -22% / flat / flat | passes KLD; too slow (~1 ms CPU a step vs ~0.31 ms) |
-| CPU combine, fp16 row, F16C | as fp16 above | | (A/B running) | | |
+| CPU combine, fp16 row, F16C (current `cpu` method) | as fp16 above | | 3,610-3,640 (+6-7%) / 3,533-3,537 (+5-8%), complete separation in pairs 1-3 | 97 (-21%) / flat / flat | prefill win back; CPU ~0.31-0.33 ms a step. tg128 drop to confirm (never-fire control + MTP acceptance). Pair 4 combine1 was low on every metric (outside interference, excluded). |
 
 - An engine-side rounding-only control matched the bf16 combine's KLD exactly: the loss was the bf16 rounding of the
   sum, not a fault in the combine. fp16 keeps the same two bytes and rounds 8x finer; a row past fp16 range carries
   a fallback marker and is read from the separate helper planes.
 - tg128 moves with the output text (a never-firing combine control gave tg128 equal to off); check per variant.
+- Run notes: the helpers' lane threads each hold ~100% of a CPU core while waiting (yield polling, RAD20); close the
+  browser on the build server during measurements. Builds and tests must not run on the build server during an A/B.
 - Next (RAD23): selectable methods `off|cpu|gpu|auto` for unknown topologies, helper count as a runtime value; the
   `gpu` method has the combining helper's GPU read the other helpers' rows from host memory and write one fp16 row.
 
