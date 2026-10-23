@@ -55,6 +55,10 @@ libr3moe, process `r3_moe_worker`):
 - `--ngram-placement ram`, `--host-pool-mib 30720` (RAD02 used 30 GiB; `helper-ab.json` 30720), `--max-num-seqs 6`,
   `--max-num-batched-tokens 4096 --checkpoint-interval 4096`, `--kv-cache-dtype fp8`, `--num-speculative-tokens 3`.
 - Harness form of exactly this: `tools/lab/radiance/helper-ab.json` (MEN11).
+- To serve it outside the harness: `bash tools/lab/radiance/launch-flashnext-best.sh [--build DIR]` (starts both helpers, then
+  the engine on port 36080; `... stop` shuts all three down). Verified 2026-10-23 on a main build: tg512 144-146,
+  tg2048 151-152, pp1024 3,384-3,393 (bench client), direct 4-6K prefill 3,320-3,380 tok/s. Host pool 22528 MiB: 30720
+  no longer fits beside the RAM n-gram table.
 
 Running and measuring it (read before any Flash-Next work):
 
