@@ -25,8 +25,8 @@ from bigcherry.patch.validation import (
 CHECK_ID = "mmq-forced-j-transform"
 SCOPE = "host C++ emitted-transform proof; not HIP artifact or hardware qualification"
 
-_HELPERS_EDIT = ("ggml/src/ggml-cuda/mmq.cuh", "mmq-helpers")
-_SOURCE_EDIT = ("ggml/src/ggml-cuda/mmq.cu", "mmq-eligibility-and-entry")
+_HELPERS_EDIT = ("ggml/src/ggml-cuda/bc-mmq-forced-j.cuh", "mmq-helpers-owned")
+_SOURCE_EDIT = ("ggml/src/ggml-cuda/bc-mmq-forced-j-source.cuh", "mmq-source-owned")
 _FORCE_EDIT = ("ggml/src/ggml-cuda/mmq.cu", "mmq-force-before-padding")
 
 PREAMBLE = r'''

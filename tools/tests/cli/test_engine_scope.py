@@ -121,7 +121,11 @@ class EngineScopeTests(unittest.TestCase):
 
     def test_rebase_check_selects_from_the_chosen_engines_recipes(self):
         ids = rebase._selection_patch_ids("radiance", source_name="radiance-lab", all_patches=False)
-        self.assertEqual(ids, ())  # rad0001 is superseded by radiance 1.7.0; the lab source has no evaluated fix left
+        # rad0001 is superseded by radiance 1.7.0, so the lab source carries only its host-compat enablers
+        recipes = tomllib.loads(
+            engines.load(paths.REPO_ROOT, "radiance").recipes_path(paths.REPO_ROOT).read_text(encoding="utf-8")
+        )
+        self.assertEqual(ids, tuple(recipes["patch-set"]["host-compat"]["patches"]))
         self.assertNotIn("0100_cmake_options", rebase._selection_patch_ids("radiance", all_patches=True))
         with self.assertRaises(rebase.RebaseCheckError):
             rebase._selection_patch_ids("radiance", source_name="bigcherry", all_patches=False)
@@ -140,10 +144,13 @@ class EngineScopeTests(unittest.TestCase):
                     self.assertNotIn("Traceback", err)
 
     def test_radiance_release_commands_resolve_its_release_line(self):
-        # the release line, version scheme and pin-bump record (releases/v1.8.0.json) exist: the notes render
-        code, out, err = self._run(["--engine", "radiance", "release-notes", "v1.8.0", "--stdout"])
+        # the release line, version scheme and pin-bump record (releases/<pin>.json) exist: the notes render
+        pinned = tomllib.loads(
+            engines.load(paths.REPO_ROOT, "radiance").recipes_path(paths.REPO_ROOT).read_text(encoding="utf-8")
+        )["pinned"]
+        code, out, err = self._run(["--engine", "radiance", "release-notes", pinned, "--stdout"])
         self.assertEqual(code, 0, err)
-        self.assertIn("v1.8.0", out)
+        self.assertIn(pinned, out)
 
     def test_pin_bump_defaults_its_source_only_where_the_recipes_declare_it(self):
         self.assertEqual(pin_bump._resolve_fresh_selector("llamacpp", source_name=None), ("source", "bigcherry"))

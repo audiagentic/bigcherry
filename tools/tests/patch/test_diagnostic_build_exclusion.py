@@ -12,6 +12,7 @@ from bigcherry.patch import gates, registry
 
 RAD0002 = "rad0002_moe_remote_handoff"
 RAD0004 = "rad0004_moe_remote_diagnostics"
+RAD0006 = "rad0006_heat_freeze_diagnostic"
 
 
 def _recipes(body: str) -> config.Config:
@@ -57,7 +58,7 @@ class DiagnosticBuildExclusionTests(unittest.TestCase):
         self.assertTrue(set(production.patch_sets) <= set(diag.patch_sets))
         extra = set(diag.patch_sets) - set(production.patch_sets)
         self.assertEqual(extra, {"moe-remote-diag"})
-        self.assertEqual(cfg.patch_sets["moe-remote-diag"].patches, (RAD0002, RAD0004))
+        self.assertEqual(cfg.patch_sets["moe-remote-diag"].patches, (RAD0002, RAD0004, RAD0006))
         self.assertIn(("CMAKE_CXX_FLAGS", "-DBC_MOE_REMOTE_DIAG"), cfg.builds["moe-diag"].options)
 
     def test_a_production_patch_set_with_rad0004_fails(self):

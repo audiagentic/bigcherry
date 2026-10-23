@@ -117,6 +117,30 @@ class Patch0840AdaptiveProvider(unittest.TestCase):
         self.assertIn('provider = "ccl";', edit.text)
         self.assertIn('provider = "host";', edit.text)
 
+    def test_provider_validation_header_admits_adaptive_and_is_idempotent(self):
+        # The provider validation lives in 0860's owned header; 0840 removes adaptive from its unavailable list.
+        config = next(p for p in self.patches if p.path == "ggml/src/ggml-cuda/bc-allreduce-provider-cli.cuh")
+        td, root, path = self._tree()
+        with td:
+            header = root / config.path
+            header.write_text(
+                'static bool provider_available(const std::string & p) {\n'
+                '    if (p == "adaptive" || p == "p2p" || p == "root3") {\n'
+                '        return false;\n'
+                '    }\n'
+                '    return true;\n'
+                '}\n',
+                encoding="utf-8",
+            )
+            first = apply_all((config,), root)
+            self.assertTrue(all(r.ok for r in first), [e.detail for r in first for e in r.failed])
+            text = header.read_text(encoding="utf-8")
+            self.assertNotIn('p == "adaptive"', text)
+            self.assertIn('if (p == "p2p" || p == "root3")', text)
+            second = apply_all((config,), root)
+            self.assertTrue(all(r.ok for r in second))
+            self.assertEqual(header.read_text(encoding="utf-8"), text)
+
     def test_apply_registers_adaptive_and_is_idempotent(self):
         source = _CUDA_SOURCE.replace(
             "static void comm_init",
@@ -138,8 +162,6 @@ class Patch0840AdaptiveProvider(unittest.TestCase):
             first = apply_all(self.provider_patches, root)
             self.assertTrue(all(r.ok for r in first), [e.detail for r in first for e in r.failed])
             text = path.read_text(encoding="utf-8")
-            self.assertNotIn('p == "adaptive"', text)
-            self.assertIn('if (p == "p2p" || p == "root3")', text)
             self.assertIn('provider == "adaptive"', text)
             self.assertIn("ggml_backend_cuda_comm_init_hybrid(ret);", text)
             self.assertIn("use_adaptive_default", text)

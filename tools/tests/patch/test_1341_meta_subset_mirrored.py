@@ -116,7 +116,9 @@ class Patch1341Mechanics(unittest.TestCase):
             backend = (root / _BACKEND).read_text(encoding="utf-8")
             self.assertIn("std::vector<arena_plan_t>            arena_plans; // BigCherry 1340 (MSM02)", meta)
             self.assertIn("uint32_t active_mask", (root / _H).read_text(encoding="utf-8"))
-            self.assertIn("BIGCHERRY_META_MEM arena dev=%zu", meta)
+            # 1340 keeps its arena logging in an owned header since its definitions moved to owned files
+            graph = next(fp for fp in _P1340.PATCHES if fp.path == "ggml/src/bc-meta-arena-graph.h")
+            self.assertTrue(any("BIGCHERRY_META_MEM arena dev=%zu" in (e.text or "") for e in graph.edits))
             self.assertIn("BIGCHERRY_META_SUBSET_MIRROR", model)
             self.assertIn("failed to allocate per-device Meta arena", backend)
             self.assertIn("BigCherry 1283: whole-expert MoE block.", meta)
