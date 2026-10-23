@@ -1,8 +1,8 @@
 name: Patch compile validation
 
 on:
-  pull_request:
-    branches: [main]
+  # Pull requests run this through .github/workflows/pr-ci.yml (one required gate: ci-pass).
+  workflow_call:
   push:
     branches: [main]
     paths:
@@ -27,38 +27,7 @@ env:
   BIGCHERRY_ENVIRONMENT: config/environment.example.toml
 
 jobs:
-  changes:
-    # Path filtering lives here, not on the pull_request trigger: every job below is then always created and a
-    # job skipped by its `if:` still reports, which a required status check accepts (.github/scripts/changed_paths.py).
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    outputs:
-      run: ${{ steps.match.outputs.run }}
-    steps:
-      - if: github.event_name == 'pull_request'
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - id: match
-        env:
-          EVENT: ${{ github.event_name }}
-          BASE: ${{ github.event.pull_request.base.sha }}
-          HEAD: ${{ github.event.pull_request.head.sha }}
-        run: |
-          if [ "$EVENT" != pull_request ]; then echo run=true >> "$GITHUB_OUTPUT"; exit 0; fi
-          python3 .github/scripts/changed_paths.py "$BASE" "$HEAD" >> "$GITHUB_OUTPUT" <<'PATTERNS'
-          engines/llamacpp/patches/**
-          engines/llamacpp/overlay/**
-          engines/llamacpp/engine.toml
-          config/recipes.toml
-          tools/bigcherry/build/source_compile_check.py
-          tools/tests/build/test_source_compile_check.py
-          .github/workflows/patch-compile-validation.yml
-          PATTERNS
-
   compile-only:
-    needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.run != 'false' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
