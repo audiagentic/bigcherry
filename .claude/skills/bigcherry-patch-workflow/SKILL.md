@@ -3,6 +3,8 @@ name: bigcherry-patch-workflow
 description: Route BigCherry patch work across authoring, hardware-free verification, qualification, and deliberate lifecycle decisions.
 ---
 
+Branches, worktrees, PRs, merging and waiting follow the `bigcherry-slice-workflow` skill.
+
 # BigCherry Patch Workflow
 
 Purpose

@@ -3,6 +3,8 @@ name: bigcherry-perf-pipeline
 description: Drive workload-targeted BigCherry performance work end to end (triage -> author -> mechanics -> queued build -> firing preflight -> balanced measurement -> lifecycle), including keeping reviewer-agent (GPT gateway) sessions continuously busy. Use when asked to find, develop, test, or ship patches that speed up a specific model/hardware configuration, or to run/maintain the GPT review loop.
 ---
 
+Branches, worktrees, PRs, merging and waiting follow the `bigcherry-slice-workflow` skill.
+
 # BigCherry Performance Pipeline
 
 Purpose
