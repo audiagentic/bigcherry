@@ -1,7 +1,9 @@
 # rad0008_hc_upmix_rt_sweep
 
-**Status:** untested
+**Status:** validated
 **Plan item:** RAD17/RAD18
+
+Promoted 2026-10-23: releases/evidence/rad0008_hc_upmix_rt_sweep-promotion.md.
 
 ## Outcome
 
