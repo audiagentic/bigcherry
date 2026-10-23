@@ -133,6 +133,20 @@ Reported back to GPT (req_bigcherry_a3f02be7f186, same reused session ses_0e45b2
 
 Unrelated but valuable finding this round, in response to the user's direct question about CI build times: confirmed via real log inspection that the ~20-30min radiance-build CI job is NOT wasted on repeated apt-get/docker setup (that's only ~40 seconds) -- it's a genuine 147-object-file C++/HIP compile from scratch every time, because ccache has never actually hit (GitHub Actions scopes caches per-branch, and this workflow never ran ON main itself to populate a cache other branches could reach -- PR #377, open, fixes this by also triggering on push to main).
 
+2026-10-22 STRATEGIC PIVOT (user-relayed GPT assessment): paused incremental FP8 down-product work to investigate whether the BF16 hc_up_mix_wide_kernel (measured 261us of the ~531-540us full BF16 call, roughly half) has real headroom, before continuing to chase the FP8 path's remaining ~1.72x gap.
+
+Step 1 (GEMM-only): built tools/lab/radiance/hc-upmix-gemm-bench.hip -- a tuned hipBLASLt BF16 GEMM at the up-product's real shape (M=2048, K=lr=320, N=HC*n=10240). Measured (gfx1201, device idle-confirmed, 8 candidate algos): best = 148.12us/call, vs the fused kernel's 261us total. A real device-side kernel hang was hit and fixed during this step (hipblasLtMatmul operand order must match the col-major-transpose-trick layouts: pass B then A). Committed on feat/rad0007-fuse-injection (9b4db17bc), merged to main via PR #378.
+
+Step 2 (GEMM + separate epilogue, per GPT's own decision framework, which requires this before concluding anything): built tools/lab/radiance/hc-upmix-epilogue-diag.hip -- hipBLASLt GEMM (fp32 output, matching the production fp32 WMMA accumulator) + a separate HIP kernel reproducing hc_up_mix_wide_kernel's exact mixing formula (sigmoid, narrow to bf16, multiply by N = h*scalein*(w+wadd), sum over HC=4, divide by HC, narrow to bf16), reproduced from r4d_hc_bf16.hip read directly on Brutus (vendor/radiance/libr4d), not re-derived from memory. GPU-event timing (not host wall-clock), real random (non-constant) activation/weight data.
+
+RESULT: gemm=168.81us, epilogue=226.19us, COMBINED=395.01us -- SLOWER than the production fused kernel's measured 261us. The epilogue dominates and is bandwidth-bound: it round-trips the full ~84MB fp32 intermediate U (plus ~42MB of h) through global memory, which the production kernel never materializes (keeps U in WMMA accumulator registers/LDS, applies the epilogue before writeback). This is exactly GPT's own predicted failure mode for this branch of its decision tree.
+
+Correctness: checked against a host double-precision reference of the identical formula (64 rows x 2560 cols x HC=4 sampled). rms_rel=0 (effectively exact); max_abs=0.140625 on a handful of outlier elements, traced to the device's fast __expf() vs host's double-precision exp() diverging at saturated sigmoid inputs -- not a structural bug (same formula, same operand order, same bf16 narrowing points as production). LIMITATION noted explicitly in the harness: this checks the epilogue's own arithmetic against the formula, not bit-identity against the real hc_up_mix_wide_kernel binary (which would need a full radiance build+link -- a separate, heavier harness not yet built).
+
+CONCLUSION per GPT's own decision tree (combined >= 261us -> profile separately -> epilogue bandwidth-bound -> investigate eliminating the full intermediate via a custom fused GEMM, OR fall back to improving the existing kernel's WMMA scheduling in place): the naive hipBLASLt-GEMM-plus-separate-kernel approach is NOT a viable replacement as-is. Reported this result back to GPT (new session ses_c5c9f14085424707 after the prior reused session ses_0e45b277c600463c got permanently wedged on a stuck "running" request and was closed -- req_bigcherry_a3f02be7f186 cancelled, session closed, fresh session opened) asking for a concrete next step: either abandon the hipBLASLt angle and focus on improving hc_up_mix_wide_kernel's existing WMMA tile scheduling in place, or try a custom WMMA-based fused-epilogue kernel that keeps U in registers (skipping hipBLASLt entirely) before giving up on the GEMM-redesign angle. Response pending (req_bigcherry_46bf68059a11).
+
+Both new harnesses are committed to tools/lab/radiance/ and registered in docs/reference/tooling/TOOL_DISPOSITION.md as TRANSITIONAL. Neither touches production code; RAD17's FP8 down-product patch (rad0007_hc_pf2_fp8_down) remains exactly as it was (default off, not promoted) -- this pivot is a separate, parallel investigation into the BF16 path, not a continuation of the FP8 work itself.
+
 ## Change Log
 
 - 2026-10-21T07:41:01.749670+00:00 (created-by): Created by agent
@@ -146,3 +160,4 @@ Unrelated but valuable finding this round, in response to the user's direct ques
 - 2026-10-21T19:39:39.409088+00:00 (updated-by): Updated: section:notes
 - 2026-10-21T21:32:59.492280+00:00 (updated-by): Updated: section:notes
 - 2026-10-21T21:46:55.745667+00:00 (updated-by): Updated: section:notes
+- 2026-10-21T22:44:34.980663+00:00 (updated-by): Updated: section:notes

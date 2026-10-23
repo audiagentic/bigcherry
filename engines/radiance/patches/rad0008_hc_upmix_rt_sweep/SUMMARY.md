@@ -1,7 +1,9 @@
 # rad0008_hc_upmix_rt_sweep
 
-**Status:** untested
+**Status:** validated
 **Plan item:** RAD17/RAD18
+
+Promoted 2026-10-23: releases/evidence/rad0008_hc_upmix_rt_sweep-promotion.md.
 
 ## Outcome
 
@@ -91,6 +93,22 @@ Rows sweep, stock vs RT=128 (two runs each, us): 512 169.7 vs 166.8; 768 218.5 v
 the PF2 form). RT=128 is therefore the patch's default; RAD_HC_UPMIX_RT=256 restores the original launch.
 
 Evidence covers one shape (n=2560, hc=4, lr=320: Qwen3.8-Flash-Next), the only one r4d_selftest's PF2 bench runs.
+
+## RDNA3 (7900 XTX, gfx1100) through libr3
+
+Production Flash-Next runs `--tp 2` on the two XTX, where `hc_read` comes from libr3, which compiles this same libr4d
+source for gfx1100. Measured with `r3_selftest <libr3.so> --perfhc <M> 30` on device 0, four rotated rounds, every
+run byte-identical:
+
+| arm | M=2048 PF2 (us) | mean | M=4096 PF2 (us) | mean |
+|---|---|---|---|---|
+| stock | 1319.0 / 1325.9 / 1324.9 / 1320.3 | 1322.5 | 2611.8 / 2625.2 / 2620.7 / 2618.9 | 2619.2 |
+| rad0008, RT=256 | 1331.7 / 1330.2 / 1341.3 / 1343.6 | 1336.7 | 2622.8 / 2627.1 / 2631.8 / 2634.0 | 2628.9 |
+| rad0008, RT=128 | 1240.9 / 1242.2 / 1249.1 / 1253.3 | 1246.4 | 2529.0 / 2541.2 / 2555.0 / 2560.8 | 2546.5 |
+
+RT=128 is -5.8% (M=2048) and -2.8% (M=4096) against stock, complete separation. On this card stock PF2 is slower
+than the wide form (about 1292 us at M=2048); RT=128 brings it below. Open question: the patched build at RT=256
+runs the original launch yet measures about 1% slower than stock on gfx1100 (not seen on gfx1201).
 
 ## Not yet done
 

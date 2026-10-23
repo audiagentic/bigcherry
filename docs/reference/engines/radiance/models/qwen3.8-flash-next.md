@@ -55,6 +55,36 @@ libr3moe, process `r3_moe_worker`):
 - `--ngram-placement ram`, `--host-pool-mib 30720` (RAD02 used 30 GiB; `helper-ab.json` 30720), `--max-num-seqs 6`,
   `--max-num-batched-tokens 4096 --checkpoint-interval 4096`, `--kv-cache-dtype fp8`, `--num-speculative-tokens 3`.
 - Harness form of exactly this: `tools/lab/radiance/helper-ab.json` (MEN11).
+- To serve it outside the harness: `bash tools/lab/radiance/launch-flashnext-best.sh [--build DIR]` (starts both helpers, then
+  the engine on port 36080; `... stop` shuts all three down). Verified 2026-10-23 on a main build: tg512 144-146,
+  tg2048 151-152, pp1024 3,384-3,393 (bench client), direct 4-6K prefill 3,320-3,380 tok/s. Host pool 22528 MiB: 30720
+  no longer fits beside the RAM n-gram table.
+
+Running and measuring it (read before any Flash-Next work):
+
+- Build: the engine needs rad0002, which is in no recipe patch set:
+  `bigcherry build --lane radiance-lab:stock:linux-radiance --experiment moe-remote-handoff`. A build without it starts,
+  then the helpers are refused ("engine does not export bc_moe_remote_register (patch rad0002)") and the R9700 runs out
+  of memory holding every expert.
+- Run: `bigcherry ab-benchmark --server-config tools/lab/radiance/helper-ab.json`; the harness starts one
+  `r3_moe_worker` per XTX (`ROCR_VISIBLE_DEVICES=<xtx> HIP_VISIBLE_DEVICES=0`, `R3_MOE_WORKER_INDEX`) before the engine.
+  `R3_MOE_WORKER_DEVICES` is read by the harness, not the engine, so a hand launch must start the helpers first;
+  `tools/lab/radiance/launch-flashnext-best.sh` does not (2026-10-22).
+- The helpers' backend is gfx11 only: they run on the XTX and refuse the R9700. `fn-helper.sh` / `fn-profile.sh` drive
+  the older two-XTX engine (helper on device 2), not this layout.
+- Per-op device time: `radiance --profile-ops` (the table is printed at shutdown; it adds synchronisations, so use the
+  shares, not the absolute times). rocprofv3 `--kernel-trace` breaks the two-XTX engine's IPC all-reduce init.
+  Helper MoE kernels: `tools/lab/radiance/helper-sweep.sh` (replays `/mnt/data/bigcherry-work/captures`, no server).
+  rad-kbench cannot time `moe_gemm_q` at `w4nl64a8h` (it selects `moe_gemm_w4a8`, which refuses the dtype).
+- Host limits seen in the startup report (2026-10-22): the R9700's upstream link is PCIe 4.0 x4
+  (`0000:00:06.0`); RLIMIT_MEMLOCK 11.48 GiB; CPU governor powersave; `--ngram-placement ram` (47.7 GiB pinned) plus
+  `--host-pool-mib 30720` needs about 78 GiB free of the 91 GiB host, otherwise use `--ngram-placement disk` for
+  prefill-only measurement.
+- `hc_read` runs on the R9700 (libr4d) in this layout and through libr3 on the XTX in the two-XTX layout. rad0008
+  (PF2 up-mix at 128 rows a workgroup, byte-identical) measured -2.1% / -3.2% of the `hc_read` call on the R9700 and
+  -5.8% / -2.8% on the XTX (M=2048 / 4096), not yet in a patch set (RAD18). In the two-XTX layout `hc_read` is 6.8% of
+  prefill device time and `moe_gemm_q` 45%, with 27.4 GiB of experts streamed a rank (RAD18); the share in this
+  layout is not yet measured.
 
 Radiance 1.7.0, harness (`helper-ab.json`, 2 balanced rounds, natives on; baselines in
 `docs/reference/engines/radiance/baselines/`):
@@ -180,6 +210,7 @@ Why the supporting flags are set (lab log, "Flash-Next: radiance's own prefill s
 | Per-layer cost-balanced helper ownership (`R3_MOE_WORKER_BALANCE`, `_SPEED`; RAD06/RHP) | the same jointly owned experts split per layer by predicted cost: offline prediction 3.5-5.6% off the helpers' per-layer worst case; measured the slower helper's large request 1,719 -> 1,535 us (level with the other), but prefill unchanged (pp4096 3,314 / 3,314 vs 3,316 / 3,312 tok/s: the helpers no longer limit prefill). Quality unchanged: KLD 0.0644 / p99 0.705 / top-1 88.46% (helper-off 0.0646 / 0.735 / 88.39%). The decode tok/s the A/B showed (88 against 132-144) is a benchmark-content effect, not a slowdown: the new owner split changes the order in which the two helpers' partial sums are added, the greedy continuation diverged and ended after 282 tokens (tg512 and tg2048 both) instead of 512 / 2,048, with fewer speculative tokens accepted a step; per-call cost of every engine op and the time of a step (~31 ms) are the same in both arms (profiled), the run just did half the steps. Any ownership change can do this, so compare decode speed between ownership layouts only on a fixed-text benchmark. Default off, evaluated. | rad06 balance A/B and profile runs, KL run rad06-fp16kld-10181903, `tools/lab/radiance/heat-placement/balance_score.py` |
 | Few-rows kernel on the decode lane (`R3_MOE_WORKER_ROWS_SMALL`; RAD06) | an 8-token decode request sends ~2.4 routes to each distinct expert (145 routes over 60 experts in four real small-lane requests), and the per-route GEMV reads an expert's weights once a route, so reading them once for all the expert's rows looked worth up to 2.4x of the weight traffic. Measured on the small-lane replay it is slower: lane kernel time 830-1,392 us against 302-654 us a run (1.7-2.2x), and not exact (1-3 of 20,480 outputs differ). The per-route GEMV evidently gets its repeats from the Infinity Cache, and the kernel's one-block-an-expert grid is mostly empty at 8 rows. Default off, evaluated. | `helper-sweep.sh` with `small_capture.py` captures, 4 captures x 2 repeats |
 | Helper at 20 GiB with the final kernels | decode 89.2 (vs ~108.5 at 22 GiB), no prefill gain | RAD06 08:10 |
+| Tensor-splitting every helper-owned expert across both XTX (each card half the intermediate columns, partials summed; the old `ENGINE_RANKS=2` slice mode) instead of splitting experts between the cards | not built. Trace 2026-10-23 (`helper-trace-ab.json`, 2 runs x 2 arms, combine off): totals are balanced (1.38M vs 1.46M routes) but each step is not: the busier helper gets +16% routes over the mean on the median step, and the slower helper's GPU time exceeds the per-step mean by ~9-10% (prefill 525 vs 480 ms, decode 5,400 vs 4,870 ms over the bench). Removing that skew is the most a split could win, about 2-3% end to end, against narrower 384/256 GEMMs (320/320 does not fit the 128-channel groups), every route sent to both cards, and the same two full-width partials to sum. The helper also refuses two helpers with `ENGINE_RANKS=2` today (`r3_moe_worker.cpp:225`). GPT review agrees (Megatron recommends expert-TP 1 for fine-grained experts). Better levers: round-trip overlap (RAD21), replicating high-variance hot experts on both cards (RAD22) | RAD19 notes, RAD22, GPT req_bigcherry_e3de4a2ecbd9 |
 
 ## Where the critical path is (RAD06 unprofiled trace, 2026-10-18)
 
@@ -286,6 +317,9 @@ there); the 24-row arm's two pairs agree within 2%.
 
 ## Open levers
 
+- **RAD22 (2026-10-23):** per-step helper skew (~10% of helper GPU time) is variance, not a static imbalance; replicate a
+  few high-variance hot experts on both XTX and route each step to the less-loaded replica (DeepSeek EPLB style). Upper
+  bound ~2-3% end to end; after RAD21.
 - **RAD06, prefill (the ranked remaining levers):** (1) multi-buffered chunk pipeline of the hand-off; analysis
   (RAD06 08:20) says a within-layer pipeline cannot go below the helpers' ~4.5 ms a layer, so it may be of limited
   value; (2) WMMA-based few-row tiles (16-row WMMA, activations shared across N in LDS); (3) prefill-load ownership

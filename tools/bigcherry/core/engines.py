@@ -131,6 +131,10 @@ class EngineLayout:
     smoke_cpu: CpuSmokeDecl | None = field(default=None, kw_only=True)
     #: [[acceptance]]: the post-bump hardware acceptance entries (MEN17); empty when the engine declares none
     acceptance: tuple[AcceptanceEntry, ...] = field(default=(), kw_only=True)
+    #: [promotion] patch-set: the production patch set `patch-promote` adds a validated patch to (MEN25)
+    promotion_patch_set: str = field(default="", kw_only=True)
+    #: [promotion] source: the production source the promotion gates and rebase checks compose the patch over
+    promotion_source: str = field(default="", kw_only=True)
 
     @property
     def upstream_name(self) -> str:
@@ -357,7 +361,23 @@ def load(repo_root: Path, name: str) -> EngineLayout:
         version_source=_version_source(data.get("release"), name),
         smoke_cpu=_smoke_cpu(data.get("smoke"), name),
         acceptance=_acceptance(data.get("acceptance"), name),
+        **_promotion(data.get("promotion"), name),
     )
+
+
+def _promotion(table: object, name: str) -> dict[str, str]:
+    """[promotion]: where `patch-promote` puts a validated patch. Optional; an engine without it cannot promote."""
+    if table is None:
+        return {"promotion_patch_set": "", "promotion_source": ""}
+    if not isinstance(table, dict):
+        raise EngineError(f"engine {name!r}: [promotion] must be a table")
+    unknown = sorted(set(table) - {"patch-set", "source"})
+    if unknown:
+        raise EngineError(f"engine {name!r}: unknown promotion key(s): {', '.join(unknown)}")
+    return {
+        "promotion_patch_set": _text(table, "patch-set", "promotion", name),
+        "promotion_source": _text(table, "source", "promotion", name),
+    }
 
 
 VERSION_SOURCES = ("build-tag", "pinned-version")

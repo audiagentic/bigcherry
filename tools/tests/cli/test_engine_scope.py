@@ -51,6 +51,7 @@ class EngineScopeTests(unittest.TestCase):
                 argv = {
                     "patch-explain": ["patch-explain", "x"],
                     "patch-gates": ["patch-gates", "x", "--intent", "validate"],
+                    "patch-promote": ["patch-promote", "x", "--evidence", "@e"],
                     "patch-doc": ["patch-doc", "--all"],
                     "patch-rebase-check": ["patch-rebase-check", "--all"],
                     "pin-bump": ["pin-bump", "b1"],
