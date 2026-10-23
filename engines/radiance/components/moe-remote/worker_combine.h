@@ -15,7 +15,6 @@
 
 namespace {
 
-inline float combine_bf16_f32(uint16_t v) { uint32_t u = (uint32_t)v << 16; float f; std::memcpy(&f, &u, 4); return f; }
 
 /* futex wait on a process-private word with a timeout, so a stop request is seen without polling the word. */
 inline void combine_futex_wait(uint32_t* p, uint32_t expected, long timeout_ms, bool shared) {
@@ -63,13 +62,7 @@ private:
                 const uint8_t m = mask_[t];
                 if (!m) continue;   /* no helper row: the engine does not read it */
                 const uint64_t at = (uint64_t)t * hidden_;
-                bool overflow = false;
-                for (uint32_t c = 0; c < hidden_; ++c) {
-                    const float va = (m & 1u) ? combine_bf16_f32(a_[at + c]) : 0.0f;
-                    const float vb = (m & 2u) ? combine_bf16_f32(b_[at + c]) : 0.0f;
-                    out_[at + c] = combine_f32_f16_rn(va + vb, &overflow);
-                }
-                if (overflow) out_[at] = r3::moe_shm::kCombineFallback;
+                if (combine_row_f16(a_ + at, b_ + at, m, out_ + at, hidden_)) out_[at] = r3::moe_shm::kCombineFallback;
             }
         }
     }
