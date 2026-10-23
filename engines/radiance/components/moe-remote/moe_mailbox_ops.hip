@@ -137,9 +137,8 @@ __global__ void mailbox_publish_kernel(
     int32_t expert_base, uint32_t n_expert, uint32_t max_rows,
     uint32_t shadow, uint32_t world,
     const uint8_t* st_aq, const float* st_as, const uint16_t* st_x, uint32_t st_bf16, uint32_t combine) {
-    __shared__ uint32_t seq;
     __shared__ uint32_t nr;
-    __shared__ uint32_t pub_lane[kMaxRanks], pub_seq[kMaxRanks];
+    __shared__ uint32_t step_nr[kMaxRanks], step_seq[kMaxRanks], gen;
 
     Header* h = reinterpret_cast<Header*>(base);
     if (threadIdx.x <= kMaxRanks) published[threadIdx.x] = 0;   /* [kMaxRanks]: the combine generation */
@@ -196,14 +195,39 @@ __global__ void mailbox_publish_kernel(
             if (!shadow) ids[i] = -1;
         }
         __syncthreads();
-        if (nr == 0) continue;
+        if (threadIdx.x == 0) step_nr[k] = nr;
+        __syncthreads();
+    }
+
+    /* Both helpers' sequences, and R3_MOE_WORKER_COMBINE's decision, before either request is released: helper 0 finds
+     * the generation in its own Request and helper 1's lane/seq in combine, so neither side polls for them. */
+    if (threadIdx.x == 0) {
+        gen = 0;
+        for (uint32_t k = 0; k < helpers; ++k) {
+            step_seq[k] = 0;
+            if (!step_nr[k]) continue;
+            const uint32_t s = atomicAdd(sequence + lane_of(step_slot(k, rank, helpers), cls), 1u) + 1u;
+            if (s == 0) __builtin_trap();
+            step_seq[k] = s;
+        }
+        if (combine && helpers == 2 && cls == kSmallClasses && step_nr[0] && step_nr[1] &&
+            load_sys_acq(&h->combine.enabled) && rows >= h->combine.min_rows) {
+            uint32_t g = h->combine.request + 1u;
+            if (g == 0) g = 1;
+            for (uint32_t k = 0; k < kMaxRanks; ++k) { h->combine.lane[k] = lane_of(k, cls); h->combine.seq[k] = step_seq[k]; }
+            h->combine.rows = rows;
+            h->combine.request = g;
+            gen = g;
+        }
+    }
+    __syncthreads();
+
+    for (uint32_t k = 0; k < helpers; ++k) {
+        if (!step_nr[k]) continue;
+        const uint32_t slot = step_slot(k, rank, helpers);
 
         const uint32_t lane = lane_of(slot, cls);
-        if (threadIdx.x == 0) {
-            seq = atomicAdd(sequence + lane, 1u) + 1u;
-            if (seq == 0) __builtin_trap();
-        }
-        __syncthreads();
+        const uint32_t seq = step_seq[k];
         Request* ring = reinterpret_cast<Request*>(base + h->ring_offset);
         Request* q = ring + lane * kLaneSlots + ((seq - 1u) % kLaneSlots);
         if (threadIdx.x == 0) {
@@ -214,7 +238,7 @@ __global__ void mailbox_publish_kernel(
             q->rank_count = world;
             q->rows = rows;
             q->hidden = hidden;
-            q->route_count = nr;
+            q->route_count = step_nr[k];
             q->row_base = (uint32_t)((qptr - qbase) / hidden);
             q->route_offset = h->route_offset[slot];
             q->activation_offset = h->activation_offset[slot];
@@ -234,31 +258,18 @@ __global__ void mailbox_publish_kernel(
             q->trace[2] = 0;
             q->trace[3] = 0;
             q->trace[4] = 0;
+            q->combine_generation = k == 0 ? gen : 0u;
         }
         __threadfence_system();
         __syncthreads();
         if (threadIdx.x == 0) {
             store_sys_rel(&h->lane[lane].request_sequence, seq);
             published[slot] = 1u + cls;   /* 0: nothing published to this slot; else 1 + the lane class */
-            pub_lane[slot] = lane;
-            pub_seq[slot] = seq;
         }
         __syncthreads();
     }
 
-    /* R3_MOE_WORKER_COMBINE: both helpers took this large-lane step, so helper 0 adds their rows into plane [0][1] and
-     * the merge reads that one row a token. The engine alone advances combine.request; the merge of this step waits for
-     * combine.done before the next publish can reuse any slot. */
-    if (threadIdx.x == 0 && combine && helpers == 2 && cls == kSmallClasses && published[0] && published[1] &&
-        load_sys_acq(&h->combine.enabled) && rows >= h->combine.min_rows) {
-        uint32_t g = h->combine.request + 1u;
-        if (g == 0) g = 1;
-        for (uint32_t k = 0; k < kMaxRanks; ++k) { h->combine.lane[k] = pub_lane[k]; h->combine.seq[k] = pub_seq[k]; }
-        h->combine.rows = rows;
-        __threadfence_system();
-        store_sys_rel(&h->combine.request, g);
-        published[kMaxRanks] = g;
-    }
+    if (threadIdx.x == 0 && gen) published[kMaxRanks] = gen;   /* the merge of this step waits for combine.done */
 }
 
 __device__ __forceinline__ float bf16_to_f32(uint16_t v) {

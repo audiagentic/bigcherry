@@ -460,20 +460,26 @@ int main(int argc, char** argv) {
         std::array<uint64_t, kLanes> lane_req{}, lane_rows{}, lane_routes{}, lane_samples{};
         std::array<double, kLanes> lane_sample_us{};
         std::array<std::thread, kLanes> workers;
-        /* R3_MOE_WORKER_COMBINE=1 (default off): helper 0 of two adds both helpers' rows for the engine's large lane on
-         * the CPU (worker_combine.h). The engine asks only once combine.enabled is set. */
-        std::thread combiner;
+        /* R3_MOE_WORKER_COMBINE=1 (default off), two helpers: helper 0 adds both helpers' rows for the engine's large
+         * lane on its large-lane thread after its stream sync (worker_combine.h); helper 1 wakes it after its own sync.
+         * The engine asks only once combine.enabled is set. */
+        bool combine_on = false;
+        std::unique_ptr<CombinePool> combine_pool;
+        std::vector<uint8_t> combine_mask;
         CombineStats combine_stats;
-        if (const char* e = std::getenv("R3_MOE_WORKER_COMBINE");
-            e && std::strcmp(e, "1") == 0 && helper_index == 0 && helper_count == 2) {
-            uint32_t min_rows = 256, threads = 8;
-            if (const char* v = std::getenv("R3_MOE_WORKER_COMBINE_MIN_ROWS"); v && *v) min_rows = (uint32_t)std::atoi(v);
-            if (const char* v = std::getenv("R3_MOE_WORKER_COMBINE_THREADS"); v && *v) threads = (uint32_t)std::max(1, std::atoi(v));
-            h->combine.min_rows = min_rows;
-            combiner = std::thread([&, threads] { run_combiner(map, threads, &combine_stats); });
-            store(&h->combine.enabled, 1u);
-            std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_COMBINE on - %u CPU thread(s), large-lane steps of %u+ rows\n",
-                         threads, min_rows);
+        if (const char* e = std::getenv("R3_MOE_WORKER_COMBINE"); e && std::strcmp(e, "1") == 0 && helper_count == 2) {
+            combine_on = true;
+            if (helper_index == 0) {
+                uint32_t min_rows = 256, threads = 8;
+                if (const char* v = std::getenv("R3_MOE_WORKER_COMBINE_MIN_ROWS"); v && *v) min_rows = (uint32_t)std::atoi(v);
+                if (const char* v = std::getenv("R3_MOE_WORKER_COMBINE_THREADS"); v && *v) threads = (uint32_t)std::max(1, std::atoi(v));
+                combine_pool = std::make_unique<CombinePool>(threads);
+                combine_mask.resize(h->max_rows);
+                h->combine.min_rows = min_rows;
+                store(&h->combine.enabled, 1u);
+                std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_COMBINE on - %u CPU thread(s), large-lane steps of %u+ rows\n",
+                             threads, min_rows);
+            }
         }
         for (uint32_t lane = 0; lane < kLanes; ++lane) {
             /* Two helpers: each serves only its own rank slot's lanes. */
@@ -505,6 +511,12 @@ int main(int argc, char** argv) {
                         }
                         if (!gpu->sync_lane(lane) ||
                             !gpu->collect_lane_timing(lane, next, &lane_sample_us[lane], &lane_samples[lane])) {
+                            g_stop = 1;
+                            break;
+                        }
+                        if (combine_on && helper_index == 1) combine_helper1_done(map, next);
+                        if (combine_on && helper_index == 0 &&
+                            !combine_step(map, q, combine_pool.get(), &combine_mask, &combine_stats)) {
                             g_stop = 1;
                             break;
                         }
@@ -578,9 +590,9 @@ int main(int argc, char** argv) {
         for (auto& w : workers) if (w.joinable()) w.join();
         /* The lanes are gone: an engine still waiting on them must fail rather than hang. */
         store(&h->helper_fault, 1u);
-        if (combiner.joinable()) {
+        if (combine_pool) {
             store(&h->combine.enabled, 0u);
-            combiner.join();
+            combine_pool.reset();
             std::fprintf(stderr, "r3_moe_worker: combine steps %llu, CPU %.1f ms (%.1f us a step)\n",
                          (unsigned long long)combine_stats.steps, combine_stats.combine_us / 1000.0,
                          combine_stats.steps ? combine_stats.combine_us / (double)combine_stats.steps : 0.0);

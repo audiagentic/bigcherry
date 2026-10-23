@@ -73,7 +73,12 @@ struct alignas(64) Request {
     /* R3_MOE_WORKER_TRACE: wall_clock64() stamps, each from the clock of the device that wrote it (engine GPU for
      * 0-2, the helper GPU for 3-4; never subtract across devices): 0 publish kernel, 1 wait kernel entered,
      * 2 this request's completion seen by the wait kernel, 3 helper lane began, 4 helper lane published done. */
-    uint64_t trace[10];
+    uint64_t trace[5];
+    /* R3_MOE_WORKER_COMBINE: nonzero on helper 0's request of a step whose rows helper 0 combines (the generation it then
+     * stores in Header::combine.done); written before the request is released, so helper 0 never polls for it. */
+    uint32_t combine_generation;
+    uint32_t reserved32;
+    uint64_t reserved[4];
 };
 static_assert(sizeof(Request) % 64 == 0);
 /* The ring ends on the same page boundary for 192- and 256-byte requests, so the header's size checks cannot tell two
@@ -88,19 +93,22 @@ struct alignas(64) LaneSignal {
 static_assert(sizeof(LaneSignal) == 64);
 
 /* R3_MOE_WORKER_COMBINE (two helpers behind a one-rank engine, large lane only): helper 0 adds the two helpers' bf16
- * rows on the CPU into result plane [0][1], so the engine reads one row a token over its link instead of two. The engine
- * GPU writes lane/seq/rows, then release-stores `request` (a generation it alone advances); helper 0 waits for both lanes'
- * done words to reach seq, combines, and release-stores `done`. Not bit-identical to adding the two rows on the engine
- * (one more bf16 rounding). `enabled` is set by helper 0 once its combiner runs; the engine only asks when it is set. */
+ * rows on the CPU into result plane [0][1], so the engine reads one row a token over its link instead of two. Nothing
+ * polls on the CPU side. The engine GPU allocates both helpers' sequences, writes lane/seq/rows here and the generation
+ * into helper 0's Request::combine_generation, then releases the requests. Helper 0 combines on its own large-lane
+ * thread after its stream sync, futex-waiting on helper1_done, which helper 1 stores and wakes after its own stream
+ * sync. Helper 0 release-stores `done` = generation; the engine's wait kernel waits for it. Not bit-identical to adding
+ * the two rows on the engine (one more bf16 rounding). `enabled` is set by helper 0 at start; the engine asks only then. */
 struct alignas(64) CombineSignal {
     uint32_t enabled;
     uint32_t min_rows;      /* steps with fewer rows keep the two-row merge */
-    uint32_t request;
+    uint32_t request;       /* last generation the engine issued (engine-only counter) */
     uint32_t done;
     uint32_t lane[kMaxRanks];
     uint32_t seq[kMaxRanks];
     uint32_t rows;
-    uint32_t reserved[7];
+    uint32_t helper1_done;  /* helper 1's newest completed large-lane sequence, CPU-written, futex word */
+    uint32_t reserved[6];
 };
 static_assert(sizeof(CombineSignal) == 64);
 
