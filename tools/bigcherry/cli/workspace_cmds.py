@@ -134,6 +134,19 @@ def cmd_clean(args: Namespace) -> int:
     if not root.is_dir():
         print(f"clean: {root} does not exist", file=sys.stderr)
         return 2
+    if getattr(args, "builds", False):
+        entries = retention.inspect_cache_roots(root, measure=not args.no_size)
+        if args.json:
+            json.dump({"root": str(root), "read_only": True, "entries": entries},
+                      sys.stdout, indent=1, sort_keys=True)
+            print()
+        else:
+            for entry in entries:
+                size = entry["size_bytes"]
+                display_size = "unknown" if size is None else str(size)
+                print(f'{entry["kind"]:6} protected {display_size:>12} {entry["metadata"]:20} {entry["path"]}')
+            print("read-only: every cache entry is protected; no GC candidates")
+        return 0
     policy = retention.Policy(min_age_days=args.min_age_days, newest_k=args.keep_newest)
     plan = retention.plan_cleanup(retention.inspect_workspace(root, measure=not args.no_size), policy=policy, blocked=_blocked(root))
     if args.json:
@@ -189,6 +202,7 @@ def register(sub) -> None:
     cl.add_argument("--apply", action="store_true", help="not available yet")
     cl.add_argument("--min-age-days", type=float, default=7.0)
     cl.add_argument("--keep-newest", type=int, default=3, help="newest K runs of each kind are always kept")
+    cl.add_argument("--builds", action="store_true", help="read-only build/source cache inventory (all entries protected)")
     cl.add_argument("--no-size", action="store_true", help="skip measuring directory sizes (fast)")
     cl.add_argument("--verbose", action="store_true")
     cl.add_argument("--json", action="store_true")
