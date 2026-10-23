@@ -1,0 +1,129 @@
+{
+ "_comment": "RAD18 combine quality gate: output quality with R3_MOE_WORKER_COMBINE=1 (helper 0 adds both helpers' bf16 rows on the CPU) against the same helper layout with the combine off, scored by radiance KL mode through ab-benchmark --server-config (quality_only). Both arms run the helper layout, so the control is combine0 and the gate is the combine's own change. Arm settings mirror helper-kld.json's helper-on arm; MAX_ROWS=64 with --max-num-batched-tokens 64 sends every step through the helpers' large lane, where the combine runs. Reference: recorded on first use by quality.record (two-XTX tp 2 exact wire), as in helper-kld.json. Set RAD_BIN, RAD_HOME, R9700_BDF, KLD_REF_DIR. Retire with helper-combine-nofire-ab.json once the gate is decided.",
+ "schema_version": 1,
+ "engine": "radiance",
+ "evidence_role": "diagnostic",
+ "execution_evidence": "observe",
+ "quality_only": true,
+ "model": "/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad",
+ "server_args": [],
+ "environment": {
+  "HIP_VISIBLE_DEVICES": "0",
+  "ROCR_VISIBLE_DEVICES": "2",
+  "RADIANCE_HOME": "${RAD_HOME}"
+ },
+ "expected_execution": {
+  "backend": "ROCm",
+  "architectures": [
+   "gfx1201"
+  ],
+  "locators": [
+   "${R9700_BDF}"
+  ]
+ },
+ "quality": {
+  "reference_dir": "${KLD_REF_DIR}",
+  "corpus": "/mnt/data/bigcherry-work/corpus/rad-kld-corpus-4.jsonl",
+  "control": "combine0",
+  "timeout_s": 5400,
+  "args": [
+   "--radiance-home",
+   "${RAD_HOME}",
+   "--kernels",
+   "libr4d,libr3moe,libref",
+   "--placement",
+   "expert_tiered",
+   "--tp",
+   "1",
+   "--host-pool-mib",
+   "22528",
+   "--kv-cache-dtype",
+   "fp8",
+   "--max-model-len",
+   "8192",
+   "--max-num-seqs",
+   "1",
+   "--max-num-batched-tokens",
+   "64"
+  ],
+  "record": {
+   "environment": {
+    "HIP_VISIBLE_DEVICES": "0,1",
+    "ROCR_VISIBLE_DEVICES": "0,1"
+   },
+   "args": [
+    "--radiance-home",
+    "${RAD_HOME}",
+    "--kernels",
+    "libr3,libr3moe,libref",
+    "--placement",
+    "expert_tiered",
+    "--tp",
+    "2",
+    "--tp-wire",
+    "exact",
+    "--host-pool-mib",
+    "14336",
+    "--gpu-headroom-mib",
+    "320",
+    "--kv-cache-dtype",
+    "fp8",
+    "--max-model-len",
+    "8192",
+    "--max-num-seqs",
+    "1",
+    "--max-num-batched-tokens",
+    "64"
+   ]
+  },
+  "thresholds": {
+   "max_kld_mean_increase": 0.02,
+   "max_kld_median_increase": 0.01,
+   "max_kld_p99_increase": 0.2,
+   "max_kld_p999_increase": 0.5,
+   "max_top1_drop_points": 1.0,
+   "max_ppl_ratio_increase": 0.05
+  }
+ },
+ "arms": [
+  {
+   "name": "combine0",
+   "mode": "stock",
+   "shutdown_method": "sigint",
+   "binary": "${RAD_BIN}",
+   "environment": {
+    "R3_MOE_WORKER_SKIP_OWNED": "1"
+   },
+   "settings": {
+    "R3_MOE_WORKER": "1",
+    "R3_MOE_WORKER_DEVICES": "0 1",
+    "R3_MOE_WORKER_MOE_DOWN_TILE": "1",
+    "R3_MOE_WORKER_ENGINE_RANKS": "1",
+    "R3_MOE_WORKER_MAX_ROWS": "64",
+    "R3_MOE_WORKER_SMALL_ROWS": "8",
+    "R3_MOE_WORKER_MIB": "22528",
+    "R3_MOE_WORKER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first"
+   }
+  },
+  {
+   "name": "combine1",
+   "mode": "stock",
+   "shutdown_method": "sigint",
+   "binary": "${RAD_BIN}",
+   "environment": {
+    "R3_MOE_WORKER_SKIP_OWNED": "1"
+   },
+   "settings": {
+    "R3_MOE_WORKER": "1",
+    "R3_MOE_WORKER_DEVICES": "0 1",
+    "R3_MOE_WORKER_MOE_DOWN_TILE": "1",
+    "R3_MOE_WORKER_ENGINE_RANKS": "1",
+    "R3_MOE_WORKER_MAX_ROWS": "64",
+    "R3_MOE_WORKER_SMALL_ROWS": "8",
+    "R3_MOE_WORKER_MIB": "22528",
+    "R3_MOE_WORKER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
+    "R3_MOE_WORKER_COMBINE": "1"
+   }
+  }
+ ]
+}
