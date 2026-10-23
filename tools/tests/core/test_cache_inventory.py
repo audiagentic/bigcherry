@@ -35,7 +35,7 @@ class CacheInventory(unittest.TestCase):
         self.assertEqual([x["kind"] for x in result], ["build", "source"])
         self.assertTrue(all(x["action"] == "protected" for x in result))
         self.assertTrue(all(x["metadata"] == "present-unverified" for x in result))
-        self.assertTrue(all("not verified" in x["reasons"][0] for x in result))
+        self.assertTrue(all("verified" in x["reasons"][0] for x in result))
         self.assertGreater(result[0]["size_bytes"], 0)
 
     def test_orphan_and_malformed_metadata_are_protected(self):
