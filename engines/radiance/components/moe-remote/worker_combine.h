@@ -3,7 +3,7 @@
 // R3_MOE_WORKER_COMBINE (RAD18): helper 0 adds the two helpers' bf16 rows on the CPU so the one-rank engine reads one row
 // a token over its link instead of two. Nothing here spins: helper 0 combines on its large-lane thread right after its
 // own stream sync, futex-waiting on helper 1's host done word; the pool's workers sleep on futex words between jobs.
-// Included only by r3_moe_worker.cpp, after worker_container.h (g_stop).
+// Included only by r3_moe_worker.cpp, after worker_container.h (stopping()).
 
 #include <linux/futex.h>
 #include <sys/syscall.h>
@@ -121,7 +121,7 @@ inline bool combine_step(void* map, const r3::moe_shm::Request* q0, CombinePool*
         return false;
     }
     for (uint32_t d; (int32_t)((d = load(&h->combine.helper1_done)) - seq1) < 0;) {
-        if (g_stop || load(&h->helper_fault)) return false;
+        if (stopping() || load(&h->helper_fault)) return false;
         combine_futex_wait(&h->combine.helper1_done, d, 200, true);
     }
     const Request* q1 = lane_request(map, lane1, seq1);
