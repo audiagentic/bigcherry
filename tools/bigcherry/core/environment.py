@@ -92,7 +92,9 @@ class Host:
     description: str
     hostname: str
     repo_root: str
-    cache_root: str
+    #: the single root of BigCherry's working storage on this host; builds/, runs/, worktrees/, toolchains/,
+    #: remote-runs/ and the upstream mirror are fixed subfolders of it
+    work_root: str
     model_root: str
     bench_harness: str
     #: the default ROCm install (used when a recipe names no SDK version)
@@ -168,7 +170,7 @@ def _require(table: dict, key: str, where: str) -> object:
 
 
 _HOST_SCALAR_KEYS = (
-    "hostname", "repo-root", "cache-root", "model-root",
+    "hostname", "repo-root", "work-root", "model-root",
     "bench-harness", "rocm-root", "production-port", "test-port",
 )
 
@@ -255,7 +257,7 @@ def load(path: str | Path) -> Environment:
             description=str(body.get("description", "")).strip(),
             hostname=str(_require(body, "hostname", where)),
             repo_root=str(body.get("repo-root", "")),
-            cache_root=str(body.get("cache-root", "")),
+            work_root=str(body.get("work-root", "")),
             model_root=str(body.get("model-root", "")),
             bench_harness=str(body.get("bench-harness", "")),
             rocm_root=str(body.get("rocm-root", "")),
@@ -265,7 +267,7 @@ def load(path: str | Path) -> Environment:
             busy_processes=tuple(str(n) for n in body.get("busy-processes", ())),
             environment_file=str(
                 body.get("environment-file")
-                or (str(body["repo"]).rstrip("/") + "/config/environment.local.toml" if body.get("repo") else "")
+                or (str(body["repo-root"]).rstrip("/") + "/config/environment.local.toml" if body.get("repo-root") else "")
             ),
             devices=tuple(sorted(devices, key=lambda d: d.index)),
         )

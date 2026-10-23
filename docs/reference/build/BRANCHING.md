@@ -79,12 +79,12 @@ Changes that cannot alter the build (plans, docs, lab scripts, tests) skip steps
 ## Lab tree
 
 - Give the lab its own host entry in the untracked `config/environment.local.toml` and name it with `--host`:
-  `hostname` (the ssh alias), `repo` (the lab primary checkout) and `cache-root` (the lab work root). On this
-  project that is `[host.dev-lab]` with `repo = ${BC_DEV_ROOT}/projects/bigcherry/workspaces/main`
-  and `cache-root = ${BC_REPO_ROOT}`; `[host.build-server]` describes a different checkout on the
+  `hostname` (the ssh alias), `repo-root` (the lab primary checkout) and `work-root` (the lab work root). On this
+  project that is `[host.dev-lab]` with `repo-root = ${BC_DEV_ROOT}/projects/bigcherry/workspaces/main`
+  and `work-root = ${BC_WORK_ROOT}`; `[host.build-server]` describes a different checkout on the
   same machine and must not be used for lab runs. The lab
-  creates detached worktrees under `cache-root/worktrees/` and stores queued
-  logs under `cache-root/runs/`. Use `--dry-run` to inspect SSH commands.
+  creates detached worktrees under `work-root/worktrees/` and stores queued
+  logs under `work-root/runs/`. Use `--dry-run` to inspect SSH commands.
 - The lab primary checkout **must stay on `main` and clean** before and after
   every run. `bigcherry slice lab <branch> --host dev-lab <script> [args]`
   fetches the branch without checking it out in the primary, runs from a

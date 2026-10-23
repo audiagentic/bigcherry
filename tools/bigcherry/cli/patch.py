@@ -483,11 +483,7 @@ def cmd_patch_verify_evidence(args: Namespace) -> int:
     # fetch); if the configured pin cannot resolve locally, fail closed
     # with a real CLI error rather than silently skipping the check.
     try:
-        import os
-
-        mirror = ProjectContext.resolve(
-            engine=args.engine, work_root=os.environ.get("BC_CACHE_ROOT")
-        ).upstream_repo
+        mirror = ProjectContext.resolve(engine=args.engine).upstream_repo
         upstream = mirror if mirror.exists() else vendor_root(args.engine)
         resolved_base_revision = UpstreamRepository(upstream).resolve_ref(cfg.pinned)
     except WorkspaceError as exc:
