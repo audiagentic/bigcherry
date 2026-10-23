@@ -24,7 +24,7 @@ Owner rules (2026-10-23, CLAUDE.local.md): code for unknown topologies - no fixe
 3. Combine methods behind one interface: off, cpu (AVX2/F16C, already on feat/combine-fp16), gpu (combiner helper's stream waits device-side on the other helpers' done words, reads their rows from host memory, adds its own in VRAM, writes one fp16 row with the per-row fallback marker). 1 helper resolves to off.
 4. auto: measured once per host and cached - P2P availability, per-card host-link bandwidth, CPU features - choosing method and combiner helper (widest link; tree reduce when N-1 planes over one link loses). Per-model profile may override.
 5. Harness first: replay/combine bench for each method with 1, 2 and synthetic N planes before end-to-end.
-6. KLD gate and 4-pair A/B per method on Brutus vs the parent build.
+6. KLD gate and 4-pair A/B per method on the build server vs the parent build.
 
 ## Detailed Solution & Technical Design
 
@@ -65,7 +65,7 @@ Component tests with helper counts 1, 2 and 3 (shm layout, combine correctness p
 
 ## Acceptance Criteria
 
-No fixed helper count in moe-remote code or protocol; off/cpu/gpu/auto selectable and auto derived from measured topology; the chosen method on Brutus beats combine-off on prefill with tg not worse and KLD within the gate.
+No fixed helper count in moe-remote code or protocol; off/cpu/gpu/auto selectable and auto derived from measured topology; the chosen method on the build server beats combine-off on prefill with tg not worse and KLD within the gate.
 
 ## Notes
 
