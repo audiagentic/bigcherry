@@ -34,4 +34,4 @@ startup marker present in the on-arm's log and absent from the control's (`setti
 
 `R3_MOE_FP16.run.json`, `R3_MOE_AHALF.run.json`, `R3_MOE_WORKER_VECIO.run.json`, `R3_MOE_WORKER_FUSEROUTE.run.json`,
 `R3_MOE_WORKER_FUSESTAGE.run.json`: the `ab-benchmark` run records, copied unchanged from
-`${BC_CACHE_ROOT}/evidence-RAD06/` on dev (runs `rad06-evidence-<setting>-<time>`).
+`${BC_WORK_ROOT}/evidence-RAD06/` on dev (runs `rad06-evidence-<setting>-<time>`).

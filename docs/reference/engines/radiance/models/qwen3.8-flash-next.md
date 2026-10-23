@@ -74,7 +74,7 @@ Running and measuring it (read before any Flash-Next work):
   the older two-XTX engine (helper on device 2), not this layout.
 - Per-op device time: `radiance --profile-ops` (the table is printed at shutdown; it adds synchronisations, so use the
   shares, not the absolute times). rocprofv3 `--kernel-trace` breaks the two-XTX engine's IPC all-reduce init.
-  Helper MoE kernels: `tools/lab/radiance/helper-sweep.sh` (replays `${BC_CACHE_ROOT}/captures`, no server).
+  Helper MoE kernels: `tools/lab/radiance/helper-sweep.sh` (replays `${BC_WORK_ROOT}/captures`, no server).
   rad-kbench cannot time `moe_gemm_q` at `w4nl64a8h` (it selects `moe_gemm_w4a8`, which refuses the dtype).
 - Host limits seen in the startup report (2026-10-22): the R9700's upstream link is PCIe 4.0 x4
   (`0000:00:06.0`); RLIMIT_MEMLOCK 11.48 GiB; CPU governor powersave; `--ngram-placement ram` (47.7 GiB pinned) plus
