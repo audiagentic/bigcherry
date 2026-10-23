@@ -105,6 +105,16 @@ class LegacyInventoryTests(unittest.TestCase):
         self.assertEqual(cache["references"], [])
         self.assertEqual(cache["disposition"], "owner-decision")
 
+        # a bare word is not a reference; a path mention through the work-root variable is
+        (repo / "words.md").write_text("the legacy-cache word alone\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(repo), "add", "words.md"], check=True)
+        cache = next(e for e in inventory_legacy(self.root, repo_root=repo)["entries"] if e["path"].endswith("legacy-cache"))
+        self.assertEqual(cache["references"], [])
+        (repo / "paths.md").write_text("see ${BC_WORK_ROOT}/legacy-cache/runs\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(repo), "add", "paths.md"], check=True)
+        cache = next(e for e in inventory_legacy(self.root, repo_root=repo)["entries"] if e["path"].endswith("legacy-cache"))
+        self.assertEqual(cache["references"], ["paths.md"])
+
     def test_worktree_git_state_decides_recreatability(self):
         remote = self.root.parent / (self.root.name + "-remote.git")
         self.addCleanup(lambda: shutil.rmtree(remote, ignore_errors=True))

@@ -18,7 +18,9 @@ from pathlib import Path
 from . import run_manifest as rm
 
 SCHEMA_VERSION = 2
-_TOKEN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]{2,}")
+_PATH = re.compile(r"[A-Za-z0-9._+${}-]+(?:/[A-Za-z0-9._+${}-]+)+")
+# how tracked files name a work root's top level: the work-root variable or the root's own basename
+_ROOT_ALIASES = ("${BC_WORK_ROOT}", "$BC_WORK_ROOT", "BC_WORK_ROOT}")
 _TEXT_LIMIT = 4 << 20   # tracked files larger than this are not searched for references
 
 
@@ -51,14 +53,18 @@ def _measure(path: Path, device: int, seen: set) -> tuple[int, bool, float]:
     return total, complete, newest
 
 
-def reference_index(repo_root: Path) -> dict[str, list[str]]:
-    """Token -> tracked files that mention it (first three). Empty when the repository cannot be listed."""
+def reference_index(repo_root: Path) -> dict[tuple[str, str], list[str]]:
+    """(parent, name) path pairs -> tracked files that mention them (first three); empty when git cannot list the repo.
+
+    A reference is a path mention ("runs/ab/<id>", "${BC_WORK_ROOT}/<name>"), not a bare word, so generic names such as
+    tmp or logs are not taken for references.
+    """
     try:
         listing = subprocess.run(["git", "-C", str(repo_root), "ls-files", "-z"], capture_output=True, check=True,
                                  timeout=120).stdout.decode("utf-8", "replace")
     except (OSError, subprocess.SubprocessError):
         return {}
-    index: dict[str, list[str]] = {}
+    index: dict[tuple[str, str], list[str]] = {}
     for rel in filter(None, listing.split("\0")):
         path = Path(repo_root) / rel
         try:
@@ -69,11 +75,25 @@ def reference_index(repo_root: Path) -> dict[str, list[str]]:
             continue
         if b"\0" in raw:
             continue
-        for token in set(_TOKEN.findall(raw.decode("utf-8", "replace"))):
-            files = index.setdefault(token, [])
+        pairs = set()
+        for mention in _PATH.findall(raw.decode("utf-8", "replace")):
+            parts = mention.split("/")
+            pairs.update(zip(parts, parts[1:]))
+        for pair in pairs:
+            files = index.setdefault(pair, [])
             if len(files) < 3:
                 files.append(rel)
     return index
+
+
+def _references(refs: dict, path: Path, owner_root: Path) -> list[str]:
+    parents = (path.parent.name, *_ROOT_ALIASES) if path.parent == owner_root else (path.parent.name,)
+    found: list[str] = []
+    for parent in parents:
+        for rel in refs.get((parent, path.name), []):
+            if rel not in found:
+                found.append(rel)
+    return found[:3]
 
 
 def _active_cwds() -> list[str] | None:
@@ -175,7 +195,7 @@ def inventory_legacy(root: Path, *, measure: bool = False, extra_roots: tuple[Pa
         entry = {"root": str(owner_root), "path": str(path), "category": category, "evidence": evidence,
                  "device": st.st_dev, "inode": st.st_ino, "is_symlink": symlink,
                  "size_bytes": size, "size_complete": complete, "alias_of": alias, "action": "protected",
-                 "reasons": reasons, "references": refs.get(path.name, []), "active_process": active,
+                 "reasons": reasons, "references": _references(refs, path, owner_root), "active_process": active,
                  "newest_mtime": newest, "git": git}
         entry["rebuildability"] = _rebuildability(category, evidence, git)
         entry["disposition"] = _disposition(entry)
@@ -256,7 +276,7 @@ def inventory_legacy(root: Path, *, measure: bool = False, extra_roots: tuple[Pa
         "notes": [
             "Size is logical file payload, not allocated disk blocks; hard links are counted once.",
             "Inventory covers top-level objects, run leaves, build leaves, source entries and worktree entries of every root.",
-            "References are tracked repository files naming the entry; absence of a reference is not deletion safety.",
+            "References are tracked repository files naming the entry by path; absence of a reference is not deletion safety.",
             "Every entry is protected; a disposition is advice for owner review, not an adoption or deletion candidate.",
         ],
     }
