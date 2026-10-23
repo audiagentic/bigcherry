@@ -113,6 +113,48 @@ def prune_stale_leases(work_root: Path, project_root: Path) -> list[str]:
     return removed
 
 
+def cleanup_activity_blocker(work_root: Path) -> str | None:
+    """Conservative cross-checkout lease admission for workspace cleanup (WSL03).
+
+    Tree-activity leases are keyed by *project* root; cleanup mutates the shared
+    physical work root. Until every producer uses a shared-root generation lease,
+    do not mistake an absent lease in our checkout for an idle host. Any lease,
+    including an apparently stale PID, needs explicit review: PID liveness alone
+    cannot prove ownership (PID reuse). Malformed/foreign records fail closed.
+    This is a read-only *additional* guard, not a substitute for exclusive
+    maintenance admission across all producers.
+    """
+    activity = Path(work_root).resolve() / "tree-activity"
+    try:
+        if activity.is_symlink():
+            return "tree-activity is a symlink; cleanup admission is unsafe"
+        if not activity.exists():
+            return None
+        if not activity.is_dir():
+            return "tree-activity is not a directory"
+        for namespace in sorted(activity.iterdir()):
+            if namespace.is_symlink() or not namespace.is_dir():
+                return f"unrecognised tree-activity namespace: {namespace.name}"
+            maintenance = namespace / "maintenance.lock"
+            if maintenance.is_symlink() or maintenance.exists():
+                return f"maintenance lock exists in namespace {namespace.name}"
+            leases = namespace / "leases"
+            if leases.is_symlink():
+                return f"symlinked runner lease directory in namespace {namespace.name}"
+            if not leases.exists():
+                continue
+            if not leases.is_dir():
+                return f"invalid runner lease directory in namespace {namespace.name}"
+            for entry in leases.iterdir():
+                # Never silently drop a malformed lease, a foreign file or a
+                # stale-PID record: all are protection until independently
+                # verified. A later WSL03 slice will add an auditable retire path.
+                return f"runner lease or unclassified entry exists: {namespace.name}/{entry.name}"
+    except OSError as exc:
+        return f"unable to inspect every work-root activity namespace: {exc}"
+    return None
+
+
 class Lease:
     """Held by a long-running runner for its own duration.
 

@@ -24,6 +24,9 @@ def _blocked(root: Path) -> str | None:
     from ..core import tree_activity
 
     try:
+        across_worktrees = tree_activity.cleanup_activity_blocker(root)
+        if across_worktrees:
+            return across_worktrees
         if tree_activity.maintenance_is_held(root, paths.REPO_ROOT):
             return "a maintenance lock is held"
         live = tree_activity.list_active_leases(root, paths.REPO_ROOT)
