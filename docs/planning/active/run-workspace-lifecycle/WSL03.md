@@ -37,6 +37,12 @@ creation refuses to start below a free-space floor, naming the largest reclaimab
 - **WSL03-C:** offer automated disk-pressure warning/read-only inventory first. Automatic deletion stays disabled until shared locks/leases, producer participation, adoption and at least two dry-run cycles are proven. Quarantine does not reclaim space; purge does.
 - Regression tests: fault injection between each journal and rename step, active/foreign/unknown paths, hard links, changing bundles, stale lock, race between selection and apply, interrupted restore, multiple concurrent checkouts and same filesystem aliases. No destructive test on live unharvested runs.
 
+## Scope (owner, 2026-10-24)
+
+`bigcherry clean` cleans the workspace it runs in (its worktree, runs and builds), not a host-wide sweep. Worktree
+hygiene is `bigcherry slice finish` after merge and `bigcherry slice prune` at session end. Host-wide automatic
+deletion and the WSL06 legacy adoption are out of scope.
+
 ## Validation
 
 Fixture tests for every protection; a dry run on dev after WSL06 lists the legacy runs without touching them; apply on a harvested test run removes only its bulk.
