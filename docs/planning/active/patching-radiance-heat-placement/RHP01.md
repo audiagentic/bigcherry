@@ -23,7 +23,7 @@ Radiance already asynchronously records each MoE router's `expert_count`, but `c
 2. Add **diagnostics to the existing producer/consumer**, not another route collector: reports produced, completed, credited, overwritten, still in flight, weighted pass count, oldest-uncredited age, phase (prefill/decode/mixed), source step. No read of unlanded data or false credit on duplicate/recycled banks.
 3. Reproduce 2K, 4K and 8K prefill / 64-token verification / decode, with host enqueue ahead, asynchronous DMA late, ring wrap and shutdown; bound overrun. Test event/query ordering; do not block compute/host per layer.
 4. If samples are lost, implement a bounded lossless-or-accounted scheme at the existing `route_flush`/drain seam: retired-bank staging queue, later draining, overflow counted and explicit backpressure **only if necessary and measured**. Do not retain every token/route forever. Preserve original order and `reports` weight for HeatEngine decay. Define shutdown drain without indefinite GPU wait.
-5. Validate a synthetic oracle using exact per-layer counts for prefill/decode/MTP against the existing BigCherry diagnostic histogram on Brutus. Record coverage rather than claim always complete if capacity is insufficient.
+5. Validate a synthetic oracle using exact per-layer counts for prefill/decode/MTP against the existing BigCherry diagnostic histogram on dev. Record coverage rather than claim always complete if capacity is insufficient.
 
 ## Detailed Solution & Technical Design
 

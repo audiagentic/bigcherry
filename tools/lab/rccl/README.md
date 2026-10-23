@@ -7,7 +7,7 @@ Question state: open
 
 ## Question
 
-How fast can the dual-XTX (and 3/4-GPU) AllReduce transport go on Brutus, and which RCCL settings are best?
+How fast can the dual-XTX (and 3/4-GPU) AllReduce transport go on dev, and which RCCL settings are best?
 Established 2026-10-02: on the `7.0.13-dirty` P2P-hack kernel, XTX<->XTX direct P2P ran at 0.9 GB/s and
 host<->GPU at 7.5/8.5 GB/s; on stock `7.0.13-070013-generic` P2P is off (RCCL uses SHM) and host<->GPU is
 13.3/14.3 GB/s, giving 27B pp4096 1511 t/s vs 918.
@@ -27,7 +27,7 @@ The former multi-slot coalescing sketch in PGC14 is **not safe to implement** wi
 
 ## Outputs
 
-Run outputs under `/mnt/data/bigcherry-work/runs/<run-name>/` on Brutus; nothing in the repo.
+Run outputs under `${BIGCHERRY_ROOT}/runs/<run-name>/` on dev; nothing in the repo.
 
 ## Runtime
 

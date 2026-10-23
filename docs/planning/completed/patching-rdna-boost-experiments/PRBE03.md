@@ -15,7 +15,7 @@ priority: null
 
 ## Description
 
-OBSOLETE (deprecated). PRBE03 qualified the gfx1201-only expanded WMMA flash-attention config (RD06), which was patch 1203's RD06 slice. Real Brutus hardware measurement (PA39, retry-1, pin 28ff0958/b10901, gfx1201 device 2) already ran this exact contract: activation and backend-reference correctness PASS, but performance FAILED its own threshold -- target_kernel_gain_pct point -0.0154%, CI95 low -0.0745%, required CI95 low >= 0.5%. The head-576 WMMA expansion gives no measurable gain. 1203 (the bundle) is now `rejected`; PA41 explicitly records the RD06 remediation as deferred, not resumed now.
+OBSOLETE (deprecated). PRBE03 qualified the gfx1201-only expanded WMMA flash-attention config (RD06), which was patch 1203's RD06 slice. Real dev hardware measurement (PA39, retry-1, pin 28ff0958/b10901, gfx1201 device 2) already ran this exact contract: activation and backend-reference correctness PASS, but performance FAILED its own threshold -- target_kernel_gain_pct point -0.0154%, CI95 low -0.0745%, required CI95 low >= 0.5%. The head-576 WMMA expansion gives no measurable gain. 1203 (the bundle) is now `rejected`; PA41 explicitly records the RD06 remediation as deferred, not resumed now.
 
 ## Steps
 

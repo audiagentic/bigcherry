@@ -66,7 +66,7 @@ __global__ void quant_reduce(const float* __restrict__ n_row, uint8_t* __restric
 }
 
 int main(int argc, char** argv) {
-    const char* path = argc > 1 ? argv[1] : "/mnt/data/bigcherry-work/ndump.bin";
+    const char* path = argc > 1 ? argv[1] : "ndump.bin";
     FILE* f = fopen(path, "rb");
     if (!f) { printf("cannot open %s\n", path); return 1; }
     const int K = 10240, NKB = K / KB;

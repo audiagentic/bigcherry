@@ -6,12 +6,12 @@
 # Usage: bcop37-swift.sh <bundle>      env: GPU (HIP index, default 2 = R9700)
 set -u
 B=${1:?bundle}
-E=/mnt/data/bigcherry-work/external
-S=/mnt/data/llm-models/strata-swift-iq2xs
+E=${BC_WORK_ROOT}/external
+S=${BC_MODEL_ROOT}/strata-swift-iq2xs
 M=$E/Swift-Qwen3.8-Flash-Next-GSQ-RCO-IQ2_XS-merged.gguf
 P=$E/strata-pack-swift-iq2xs
 here="$(cd "$(dirname "$0")" && pwd)"
-bin=$(dirname "$(find /mnt/vault/development/projects/bigcherry/workspaces/main/work/builds -name llama-gguf-split | head -1)")
+bin=$(dirname "$(find ${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/work/builds -name llama-gguf-split | head -1)")
 mkdir -p "$B"
 if [ ! -f "$M" ]; then
   "$bin/llama-gguf-split" --merge "$S/Swift-Qwen3.8-Flash-Next-GSQ-RCO-IQ2_XS-00001-of-00002.gguf" "$M" > "$B/swift-merge.log" 2>&1

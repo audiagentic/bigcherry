@@ -33,6 +33,10 @@ on:
 permissions:
   contents: read
 
+# Host settings are untracked; CI uses the tracked example host (it declares the rocm-sdks the recipes name).
+env:
+  BIGCHERRY_ENVIRONMENT: config/environment.example.toml
+
 jobs:
   core-offline:
     runs-on: ubuntu-24.04

@@ -10,7 +10,7 @@ from bigcherry.jobs.model import BatchSpec, TargetPolicy
 
 def inventory() -> HardwareInventory:
     return HardwareInventory(
-        host_id="brutus",
+        host_id="dev",
         platform_family="linux-rocm",
         platform_environment_hash="env",
         devices=(
@@ -31,16 +31,16 @@ class AcceptanceMatrixTests(unittest.TestCase):
                 model="/models/a.gguf",
                 gpu_count=2,
                 require_peer_access=True,
-                target=TargetPolicy("brutus", "brutus", "linux-rocm"),
+                target=TargetPolicy("dev", "dev", "linux-rocm"),
             ),
             BatchSpec(
                 patch="q",
                 architectures=("gfx1030",),
                 model="/models/b.gguf",
-                target=TargetPolicy("brutus", "brutus", "linux-rocm"),
+                target=TargetPolicy("dev", "dev", "linux-rocm"),
             ),
         )
-        cases = acceptance_matrix(batches, inventories={"brutus": inventory()})
+        cases = acceptance_matrix(batches, inventories={"dev": inventory()})
         self.assertEqual(len(cases), 2)
         supported = [case for case in cases if case.supported]
         unsupported = [case for case in cases if not case.supported]
@@ -56,9 +56,9 @@ class AcceptanceMatrixTests(unittest.TestCase):
             patch="p",
             architectures=("gfx1201",),
             model="/models/a.gguf",
-            target=TargetPolicy("brutus", "brutus", "linux-rocm"),
+            target=TargetPolicy("dev", "dev", "linux-rocm"),
         )
-        cases = acceptance_matrix((batch, batch), inventories={"brutus": inventory()})
+        cases = acceptance_matrix((batch, batch), inventories={"dev": inventory()})
         self.assertEqual(len(cases), 1)
         self.assertTrue(cases[0].supported)
         self.assertEqual(cases[0].selected_device_ids, ("gpu-c",))
@@ -72,7 +72,7 @@ class LegacyMigrationTests(unittest.TestCase):
             "--producer-corpus /x/text.txt --production-lane",
             environment={"BC_MODEL": "/models/a.gguf", "BC_HIP_PATH": "/opt/rocm"},
             planned_sessions=4,
-            target=TargetPolicy("brutus", "brutus", "linux-rocm"),
+            target=TargetPolicy("dev", "dev", "linux-rocm"),
         )
         self.assertEqual(result.legacy_device, "1")
         self.assertEqual(result.legacy_run_name, "old-run")

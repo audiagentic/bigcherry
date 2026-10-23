@@ -51,9 +51,9 @@ tools/bigcherry/multi_gpu_validate.py\ntools/bigcherry/graph_lifecycle_evidence.
 
 ## Validation
 
-Offline validator/parser and unit tests are complete. Real Brutus dual-XTX graph-on evidence is recorded in HI14/HI90 notes and ledger events: production-shaped tensor split, graphs reused, and capture_begin/capture_end/instantiate/replay markers observed. Completion is not claimed for mixed gfx1100/gfx1201 or long-context rows, and RHA04 performance admission remains independent.
+Offline validator/parser and unit tests are complete. Real dev dual-XTX graph-on evidence is recorded in HI14/HI90 notes and ledger events: production-shaped tensor split, graphs reused, and capture_begin/capture_end/instantiate/replay markers observed. Completion is not claimed for mixed gfx1100/gfx1201 or long-context rows, and RHA04 performance admission remains independent.
 
-Core gate complete: offline validator/parser and unit tests pass; real Brutus dual-XTX graph-on evidence recorded in HI14/HI90 shows production-shaped tensor split, graphs reused, and capture_begin/capture_end/instantiate/replay markers with clean teardown. The current release target is homogeneous dual gfx1100 27B plus single-GPU 9B; mixed gfx1100/gfx1201 and long-context rows are out of scope. Durable raw retention is explicitly pending RHA09. RHA04 performance admission remains independent.
+Core gate complete: offline validator/parser and unit tests pass; real dev dual-XTX graph-on evidence recorded in HI14/HI90 shows production-shaped tensor split, graphs reused, and capture_begin/capture_end/instantiate/replay markers with clean teardown. The current release target is homogeneous dual gfx1100 27B plus single-GPU 9B; mixed gfx1100/gfx1201 and long-context rows are out of scope. Durable raw retention is explicitly pending RHA09. RHA04 performance admission remains independent.
 
 ## Effort & Risk
 

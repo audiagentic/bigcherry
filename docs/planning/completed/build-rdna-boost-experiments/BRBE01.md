@@ -41,7 +41,7 @@ successor-specs/build-rdna-boost-experiments-rd100.md
 
 ## Validation
 
-Inherited historical evidence remains on RD100 and is not reassigned: commits 2a88de9, b54b26a, and 1623637 fixed lock ownership, stage-error visibility, and run-id-dependent generated-input identity; RD100 records real Brutus validation across gfx1100/gfx1201, dense/MoE models, and multiple quantizations. The original instant-success symptom remained non-reproducible after those fixes and is explicitly retained as historical low-priority uncertainty, not an active acceptance gap. Successor acceptance is therefore satisfied by the verified fixes and cross-architecture campaign validation already recorded by its predecessor.
+Inherited historical evidence remains on RD100 and is not reassigned: commits 2a88de9, b54b26a, and 1623637 fixed lock ownership, stage-error visibility, and run-id-dependent generated-input identity; RD100 records real dev validation across gfx1100/gfx1201, dense/MoE models, and multiple quantizations. The original instant-success symptom remained non-reproducible after those fixes and is explicitly retained as historical low-priority uncertainty, not an active acceptance gap. Successor acceptance is therefore satisfied by the verified fixes and cross-architecture campaign validation already recorded by its predecessor.
 
 ## Effort & Risk
 

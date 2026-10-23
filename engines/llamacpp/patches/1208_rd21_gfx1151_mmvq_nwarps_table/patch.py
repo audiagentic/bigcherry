@@ -52,10 +52,10 @@ Porting notes:
     first-sweep policy).
 
 Hardware status (RD21's own acceptance):
-  DEFERRED on hardware: requires gfx1151. Brutus has gfx1100/gfx1201/
+  DEFERRED on hardware: requires gfx1151. dev has gfx1100/gfx1201/
   gfx1030. The patch is behavior-neutral on all three (the RDNA3_5
   branch cannot resolve), so the bench reduces to: no-regression on
-  gfx1100 (primary) + explicit non-selection proof on the Brutus
+  gfx1100 (primary) + explicit non-selection proof on the dev
   devices; the performance claim stays unvalidated until gfx1151
   hardware exists. Per the item's standard: no unsupported extrapolation.
 

@@ -132,7 +132,7 @@ via exact digest equality plus a real activation-marker check (the focal
 patch's own `BIGCHERRY_PATCH_HIT` trace, gating a false-green result if
 the fusion never actually activated).
 
-Real runs on Brutus across all three architectures: **clean PASS on
+Real runs on dev across all three architectures: **clean PASS on
 gfx1100, gfx1201, and gfx1030** -- 6/6 (projection, seed) rows
 byte-identical (both K and V lanes, 3 seeds each) on every architecture,
 with real activation confirmed (subject hit, control miss) in every run.
@@ -163,7 +163,7 @@ activation only, not performance.
 
 **Real apply/build/activation check (2026-09-13, current pin b10901/28ff0958291c).**
 Built real control (baseline) and subject (1205 applied) `llama-bench`
-binaries on Brutus. Apply and build both real, clean PASS (both
+binaries on dev. Apply and build both real, clean PASS (both
 `bigcherry-native` compositions configured and compiled cleanly).
 
 Activation, round 1 (2026-09-13, real, negative -- METHODOLOGY BUG, not
@@ -230,7 +230,7 @@ migration design (dev-gpt-agent req_4c04142630ad45ce: gfx1030
 sufficient to close -- the new path's architecture-specific behavior is
 limited to validating/selecting the one execution architecture, while
 the correctness build remains the same fat
-{gfx1100,gfx1201,gfx1030} pair) ran on Brutus gfx1030 (device 3,
+{gfx1100,gfx1201,gfx1030} pair) ran on dev gfx1030 (device 3,
 6900 XT) against current pin b10901/28ff0958291c: five-build standard
 scaffold, the fat-three `test-backend-ops` correctness pair, 6/6
 (projection, seed) rows **bit-identical** with real activation
@@ -269,6 +269,6 @@ structural regression test.
 Coverage note: the gfx1100 and gfx1201 legs are the 2026-09-13
 accepted historical coverage (not freshly re-validated through the
 migrated path) -- a fresh generic-path gfx1100 run is optional
-strengthening only (at the time of this run the Brutus dual-7900 XTX
+strengthening only (at the time of this run the dev dual-7900 XTX
 was occupied; the local Windows host with ROCm 7.1 is available for it).
 gfx1201 was excluded from fresh runs by session constraint.

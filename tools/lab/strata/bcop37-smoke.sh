@@ -6,8 +6,8 @@
 #        env: IDS (comma-separated prompt ids, overrides the pack tokenizer), GPU (HIP index, default 2 = R9700), MAX_NEW (48), MAX_CONTEXT (4096), ROCM (shim root), PY (venv python)
 set -u
 T=${1:?strata tree}; ARCH=${2:?gfx target}; P=${3:?pack dir}; M=${4:?model gguf}; B=${5:?bundle}; shift 5
-ROCM=${ROCM:-/mnt/data/bigcherry-work/external/strata-rocm-shim}
-PY=${PY:-/mnt/data/bigcherry-work/external/strata-venv/bin/python}
+ROCM=${ROCM:-${BC_WORK_ROOT}/external/strata-rocm-shim}
+PY=${PY:-${BC_WORK_ROOT}/external/strata-venv/bin/python}
 gpu=${GPU:-2}
 export LD_LIBRARY_PATH=$ROCM/lib PATH=$ROCM/bin:$PATH
 mkdir -p "$B"

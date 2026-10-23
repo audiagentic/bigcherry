@@ -1,7 +1,7 @@
 # bigcherry — state of play and what to do next
 
 Written 2026-08-05. Read this first if you are picking the work up, here or on
-`10.10.100.10`.
+`${DEV_IP}`.
 
 ---
 
@@ -41,7 +41,7 @@ and verified against two different upstream revisions (`22dc605` locally,
 
 ## SQLite — resolved, no dependency
 
-`libsqlite3-dev` is absent on both machines and `brutus` has no passwordless
+`libsqlite3-dev` is absent on both machines and `dev` has no passwordless
 sudo, so record mode writes **JSON Lines** from C++ and
 `python -m bigcherry.inventory` builds the SQLite database offline with the
 stdlib `sqlite3` module. `sql/dispatch-db.sql` is unchanged and remains the
@@ -60,7 +60,7 @@ patch rather than left as a phantom requirement.
 ## HI09 routing — built, run and verified on gfx1100 (2026-08-05, later)
 
 **Superseded: the section below said this had never been compiled. It has.**
-Built `workload-max` for gfx1100 on brutus and ran it. It compiles clean, `nm`
+Built `workload-max` for gfx1100 on dev and ran it. It compiles clean, `nm`
 confirms `ggml_hip_mmvq_forced` threaded through the mangled native chain, and
 under `GGML_HIP_DISPATCH_MODE=tune` the whole path executes end to end.
 
@@ -380,7 +380,7 @@ owning plan items as notes. Cross-reference:
 
 ### 5. HI14 — multi-GPU, on the server
 
-`10.10.100.10` (`brutus`) has **2× gfx1100 (RX 7900 XTX), 1× gfx1201,
+`${DEV_IP}` (`dev`) has **2× gfx1100 (RX 7900 XTX), 1× gfx1201,
 1× gfx1030 (RDNA2)**. That covers every row of the validation matrix in one box:
 mixed architecture, two identical GPUs, tensor split, and an RDNA2 target the
 catalog supports but nothing has ever run on.
@@ -396,7 +396,7 @@ yet — every run so far pins a single device.
 This is the workload that matters. Everything else is a proxy for it.
 
 ```text
-model  /mnt/vault/llm-models/qwen3.6-27b/gguf/mtp/Qwopus3.6-27B-v2-MTP-Q8_0.gguf
+model  ${MODELS_ROOT}/qwen3.6-27b/gguf/mtp/Qwopus3.6-27B-v2-MTP-Q8_0.gguf
 
 fit                 off          gpu_layers          99
 cache_ram           0            ctx_size            245760
@@ -467,7 +467,7 @@ GGML_HIP_DISPATCH_MODE=record GGML_HIP_DISPATCH_DB=/tmp/rec.jsonl \
   --spec-draft-type-k q8_0 --spec-draft-type-v q8_0 &
 
 # 2. drive it hard
-python3 /mnt/vault/development/llmhosts/llamacpp/bench/run_bench.py \
+python3 ${LLAMACPP_ROOT}/bench/run_bench.py \
   --bench-type server-bench --server-url http://127.0.0.1:42099 \
   --model <same gguf> --timeout 300 --upload-dry-run
 
@@ -499,13 +499,13 @@ Hot-signature ranking at 200k will not look like this.
 
 ---
 
-## Working on `10.10.100.10`
+## Working on `${DEV_IP}`
 
-**There is no copy and no sync step.** `/mnt/vault` *is* mounted on `brutus`, and
-`J:` on the workstation is `\\10.10.100.10\vault`, so
+**There is no copy and no sync step.** `${VAULT_ROOT}` *is* mounted on `dev`, and
+`J:` on the workstation is `\\${DEV_IP}\vault`, so
 
 ```text
-J:\development\llmhosts\bigcherry  ==  /mnt/vault/development/llmhosts/bigcherry
+<win-root>\bigcherry  ==  ${DEV_ROOT}/llmhosts/bigcherry
 ```
 
 are the same directory over SMB. Edit on either side, build on the server, no
@@ -514,7 +514,7 @@ it on the other.
 
 Two traps this hides:
 
-- **`~/bigcherry` on brutus is a stale copy** left from before the mount (it sits
+- **`~/bigcherry` on dev is a stale copy** left from before the mount (it sits
   at upstream `6ea215d`, pre-HI09-routing) and an earlier version of this
   document told you to `tar` into it. Doing so silently builds the old code.
   Ignore it, or delete it.
@@ -524,7 +524,7 @@ Two traps this hides:
 - **Worse: *any* file created by a server-side command may be invisible from
   `J:`**, not just dotfiles, and not just in directory listings — opening it by
   exact path also fails. Observed 2026-08-05: a report written by `cp` on the
-  server showed `-rw-rw-r-- audumla audumla` and 14,639 bytes there, and did not
+  server showed `-rw-rw-r-- <user> <user>` and 14,639 bytes there, and did not
   exist at all from Windows. Files written from the Windows side (owner `mgs`)
   are visible on both.
 
@@ -532,7 +532,7 @@ Two traps this hides:
   generated it, copy it back rather than writing it into the tree in place:
 
   ```bash
-  scp 10.10.100.10:/tmp/thing.md docs/reference/THING.md   # run from Windows
+  scp ${DEV_IP}:/tmp/thing.md docs/reference/THING.md   # run from Windows
   ```
 
   This is a silent failure: the server-side command reports success, and the
@@ -542,7 +542,7 @@ ROCm at `/opt/rocm` (7.2), cmake 3.28, ninja 1.11, python 3.12. Note the
 workstation also has a gfx1100 (RX 7900 GRE, *not* gfx1101 as earlier notes
 said) and ROCm 7.1 for Windows, but every verified build has been on the server.
 
-Standard cycle (`$BC` = `/mnt/vault/development/llmhosts/bigcherry`):
+Standard cycle (`$BC` = `${DEV_ROOT}/llmhosts/bigcherry`):
 
 ```bash
 cd $BC/tools
@@ -733,7 +733,7 @@ document that equivalence or drop the name.
 ## How to run the tests
 
 Everything below was run on 2026-08-05 and works. `$BC` is
-`/mnt/vault/development/llmhosts/bigcherry`.
+`${DEV_ROOT}/llmhosts/bigcherry`.
 
 ### 1. Offline, no GPU (seconds)
 
@@ -810,7 +810,7 @@ cmake -S 'J:/development/llmhosts/bigcherry/vendor/llama.cpp' -B 'C:/bcw' -G Nin
 cmake --build C:/bcw --target test-backend-ops -j
 ```
 
-- **Use a short build directory (`C:\bcw`).** Anything under the scratchpad path
+- **Use a short build directory (`<short-build-dir>`).** Anything under the scratchpad path
   exceeds the 250-character Windows object-path limit; CMake warns and the build
   may misbehave.
 - **Put ROCm's `bin` on `PATH` when *running*, not only when building.** Without
@@ -827,7 +827,7 @@ HIP_VISIBLE_DEVICES=<n> GGML_HIP_DISPATCH_MODE=tune \
   ./test-backend-ops test -o MUL_MAT
 ```
 
-Device indices on brutus: **0,1 = gfx1100 XTX, 2 = gfx1201, 3 = gfx1030**.
+Device indices on dev: **0,1 = gfx1100 XTX, 2 = gfx1201, 3 = gfx1030**.
 Expect ~1155 signatures tuned and `2/2 backends passed`. A sweep needs a
 measured **568 MiB** of free VRAM; check before running on a shared card.
 
@@ -925,7 +925,7 @@ Gemma E4B cache and model:
 
 ```text
 tune4b.dispatch.cache
-J:\\llm-models\\gemma-4-E4B\\gguf\\gemma-4-E4B-it-UD-Q5_K_XL.gguf
+<win-root>\gemma-4-E4B-it-UD-Q5_K_XL.gguf
 ```
 
 The full nine-configuration server workload produced 21 replay-entry hits and

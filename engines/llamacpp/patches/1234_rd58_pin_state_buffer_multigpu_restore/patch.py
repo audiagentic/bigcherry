@@ -76,7 +76,7 @@ Porting notes (RD58's own agreed delta from the source PR, decided
     upstream, called out explicitly since it is easy to miss when
     reading only the diff).
 
-Hardware status: real-hardware validation pass in progress on Brutus
+Hardware status: real-hardware validation pass in progress on dev
 (2+ HIP devices) -- see this item's plan-item notes for reproduction/
 validation results. STATE stays "untested" pending that evidence.
 
@@ -88,7 +88,7 @@ originally iterated `backends` directly, exactly as the source PR
 does. Under `-sm layer` (row/layer split), `backends` contains the
 real per-device HIP backend directly (e.g. "ROCm0"), and registration
 succeeded (confirmed: reg_fn() returns true, the "pinned state buffer"
-log fires). Under `-sm tensor` (tensor split -- the mode Brutus's
+log fires). Under `-sm tensor` (tensor split -- the mode dev's
 actual production dual-XTX deployment uses), `backends` instead
 contains a single "Meta(ROCm0,ROCm1)" scheduling wrapper
 (ggml/src/ggml-backend-meta.cpp, upstream ggml, not BigCherry code)
@@ -111,7 +111,7 @@ change their linkage, not their logic). The registration/pin logic
 itself is byte-identical to before; only the device list it iterates
 changed, from `backends` directly to a flattened list that unwraps any
 Meta wrapper first. Verified real-hardware: this fix must be
-independently confirmed on Brutus's actual -sm tensor topology before
+independently confirmed on dev's actual -sm tensor topology before
 STATE can move past "untested" -- see this item's plan-item notes for
 the specific evidence.
 
@@ -170,7 +170,7 @@ _ANCHOR_NEW = """size_t llama_context::state_seq_set_data(llama_seq_id seq_id, c
         // has no registry of its own -- ggml_backend_dev_backend_reg()
         // returns null for it -- so the plain loop below would otherwise
         // never find a real HIP backend under tensor-split (confirmed via
-        // real-hardware debug instrumentation on Brutus, 2026-08-24: the
+        // real-hardware debug instrumentation on dev, 2026-08-24: the
         // registration path activated correctly under -sm layer but was
         // structurally unreachable under -sm tensor before this fix).
         // ggml_backend_meta_dev_n_devs()/simple_dev() are upstream ggml

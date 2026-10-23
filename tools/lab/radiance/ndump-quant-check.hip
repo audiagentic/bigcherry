@@ -12,7 +12,7 @@
 using rocwmma::float8_t;
 
 int main(int argc, char** argv) {
-    const char* path = argc > 1 ? argv[1] : "/mnt/data/bigcherry-work/ndump.bin";
+    const char* path = argc > 1 ? argv[1] : "ndump.bin";
     FILE* f = fopen(path, "rb");
     if (!f) { printf("cannot open %s\n", path); return 1; }
     std::vector<float> a(10240);

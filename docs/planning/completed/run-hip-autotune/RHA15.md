@@ -35,7 +35,7 @@ priority: null
 
 ## Validation
 
-Verified on real hardware (Brutus, gfx1100 x4, single-GPU devices=0): re-ran the exact real tune-campaign invocation (source=bigcherry-native, model=tierA-qwen4b-q6k, runtime-profile=production-safe-single) end-to-end with the fix in place (commit c2ee3a99). Confirmed via the full campaign log (`grep -c 'correctness-evidence generation failed|TuneCampaignError|Traceback'` = 0 matches, vs 31/36 rows failing identically before the fix) and the printed WorkflowReceipt: promoted_after_evidence 0 -> 19, verified_winners=62, replay coverage total_dispatched==total_executed (5895/5895) across all families, rerun_required=0, stale=false. Offline: 7 new unit tests (test_workflow.py, test_hi80_generate_correctness_evidence.py, test_recovery.py) covering verifier-receives-canonical, fallback-skipped-when-verifier-supplied, forced-candidate-still-uses-tune-binary, source-mismatch-fails-closed, and recovery-receives-verifier. Full tools/tests/tuning suite: 1238 passed, only the same 1 pre-existing unrelated HI104 failure noted throughout this session (not caused by this change). Artifacts preserved at /home/audumla/bc-pa-artifacts/pa26-rha15-verify2/ before cleanup.
+Verified on real hardware (dev, gfx1100 x4, single-GPU devices=0): re-ran the exact real tune-campaign invocation (source=bigcherry-native, model=tierA-qwen4b-q6k, runtime-profile=production-safe-single) end-to-end with the fix in place (commit c2ee3a99). Confirmed via the full campaign log (`grep -c 'correctness-evidence generation failed|TuneCampaignError|Traceback'` = 0 matches, vs 31/36 rows failing identically before the fix) and the printed WorkflowReceipt: promoted_after_evidence 0 -> 19, verified_winners=62, replay coverage total_dispatched==total_executed (5895/5895) across all families, rerun_required=0, stale=false. Offline: 7 new unit tests (test_workflow.py, test_hi80_generate_correctness_evidence.py, test_recovery.py) covering verifier-receives-canonical, fallback-skipped-when-verifier-supplied, forced-candidate-still-uses-tune-binary, source-mismatch-fails-closed, and recovery-receives-verifier. Full tools/tests/tuning suite: 1238 passed, only the same 1 pre-existing unrelated HI104 failure noted throughout this session (not caused by this change). Artifacts preserved at ${HOME}/bc-pa-artifacts/pa26-rha15-verify2/ before cleanup.
 
 ## Effort & Risk
 
@@ -51,17 +51,17 @@ Every candidate row in a real tune-campaign (tierA-qwen4b-q6k, production-safe-s
 
 ## Notes
 
-Standing user authorization (2026-09-15): "start it - always start hardware test when needed" -- no need to ask before running real hardware repro attempts on Brutus for this investigation, only verify it's actually idle first.
+Standing user authorization (2026-09-15): "start it - always start hardware test when needed" -- no need to ask before running real hardware repro attempts on dev for this investigation, only verify it's actually idle first.
 
-Standing user authorization (2026-09-15): "start it - always start hardware test when needed" -- no need to ask before running real hardware repro attempts on Brutus for this investigation, only verify it's actually idle first.
+Standing user authorization (2026-09-15): "start it - always start hardware test when needed" -- no need to ask before running real hardware repro attempts on dev for this investigation, only verify it's actually idle first.
 
-Investigation chain (chronological): diagnostic hardening (4a1939d0/8ce29dfc) -> cwd ruled out -> orchestration bug found+fixed (3af8ad2f/1ab802be, the whole-stage-abort-on-row-1 bug) -> fresh campaign re-run with both fixes launched on Brutus (pa26-rha15-verify1, artifacts preserved at /home/audumla/bc-pa-artifacts/pa26-rha15-verify1/, 13M) -> real per-row diagnostics obtained (31/36 rows failed with the IDENTICAL EvidenceError) -> root cause confirmed via code inspection + live repro (this update). Full narrative detail from the investigation preserved in this item's change history (the ad-hoc field names from an earlier malformed update are superseded by this consolidated description/steps).
+Investigation chain (chronological): diagnostic hardening (4a1939d0/8ce29dfc) -> cwd ruled out -> orchestration bug found+fixed (3af8ad2f/1ab802be, the whole-stage-abort-on-row-1 bug) -> fresh campaign re-run with both fixes launched on dev (pa26-rha15-verify1, artifacts preserved at ${HOME}/bc-pa-artifacts/pa26-rha15-verify1/, 13M) -> real per-row diagnostics obtained (31/36 rows failed with the IDENTICAL EvidenceError) -> root cause confirmed via code inspection + live repro (this update). Full narrative detail from the investigation preserved in this item's change history (the ad-hoc field names from an earlier malformed update are superseded by this consolidated description/steps).
 
 
 
 ## 2026-09-15 (continued): FIX VERIFIED ON REAL HARDWARE -- RHA15 resolved
 
-Re-ran the real campaign (`pa26-rha15-verify2`) end-to-end on Brutus with the fix (commit `c2ee3a99`) in place, same tierA-qwen4b-q6k / production-safe-single / gfx1100 / devices=0 configuration as every prior attempt. Full log preserved at `/home/audumla/bc-pa-artifacts/pa26-rha15-verify2/campaign.log` (1287 lines) and workdir artifacts at `/home/audumla/bc-pa-artifacts/pa26-rha15-verify2/workdir/` (13M), copied before any cleanup.
+Re-ran the real campaign (`pa26-rha15-verify2`) end-to-end on dev with the fix (commit `c2ee3a99`) in place, same tierA-qwen4b-q6k / production-safe-single / gfx1100 / devices=0 configuration as every prior attempt. Full log preserved at `${HOME}/bc-pa-artifacts/pa26-rha15-verify2/campaign.log` (1287 lines) and workdir artifacts at `${HOME}/bc-pa-artifacts/pa26-rha15-verify2/workdir/` (13M), copied before any cleanup.
 
 **Real result: clean end-to-end success, zero correctness-evidence failures.**
 - `grep -c 'correctness-evidence generation failed\|TuneCampaignError\|Traceback'` on the full log: 0 matches (was 31/36 rows failing identically before the fix).
@@ -86,15 +86,15 @@ GPT design review (req_f7f5a793c0ce4244) confirmed the root-cause analysis and g
 
 7 new offline tests added (verifier receives canonical signature, `_observed_signature_hex` fallback skipped when verifier supplied, forced-candidate execution still uses tune binary, source-mismatch fails closed, recovery receives verifier). Full `tools/tests/tuning` suite: 1238 passed, only the same 1 pre-existing unrelated HI104 failure noted throughout this session.
 
-**Re-verification launched**: fast-forwarded `/home/audumla/bc-pa-work` to `c2ee3a99` and launched a fresh real campaign (`pa26-rha15-verify2`, log at `/home/audumla/bc-pa-work/pa26-rha15-verify2.log`) with the fix in place. Result pending -- will report the real per-row outcome once it completes (expected per GPT: the 31 no-dispatch_db failures should disappear; any remaining per-row failures would be genuine RHA15 correctness/signature/candidate issues, not build-capability artifacts).
+**Re-verification launched**: fast-forwarded `${HOME}/bc-pa-work` to `c2ee3a99` and launched a fresh real campaign (`pa26-rha15-verify2`, log at `${HOME}/bc-pa-work/pa26-rha15-verify2.log`) with the fix in place. Result pending -- will report the real per-row outcome once it completes (expected per GPT: the 31 no-dispatch_db failures should disappear; any remaining per-row failures would be genuine RHA15 correctness/signature/candidate issues, not build-capability artifacts).
 
 ## 2026-09-15 (continued): REAL ROOT CAUSE FOUND AND VERIFIED (not HIP_VISIBLE_DEVICES)
 
-The campaign (pa26-rha15-verify1) ran to completion with both fixes in place: build succeeded (506/506), record+tune succeeded (67 rows, 31 candidates), and correctness-evidence now correctly attempted all 36 rows and reported a real aggregate: `correctness-evidence generation failed for 31/36 row(s)` with full per-row detail (the orchestration fix from 3af8ad2f working exactly as designed -- no more single-row abort). Artifacts preserved at `/home/audumla/bc-pa-artifacts/pa26-rha15-verify1/` (workdir + full campaign log, 13M) before any cleanup.
+The campaign (pa26-rha15-verify1) ran to completion with both fixes in place: build succeeded (506/506), record+tune succeeded (67 rows, 31 candidates), and correctness-evidence now correctly attempted all 36 rows and reported a real aggregate: `correctness-evidence generation failed for 31/36 row(s)` with full per-row detail (the orchestration fix from 3af8ad2f working exactly as designed -- no more single-row abort). Artifacts preserved at `${HOME}/bc-pa-artifacts/pa26-rha15-verify1/` (workdir + full campaign log, 13M) before any cleanup.
 
 Every one of the 31 failing rows hit the IDENTICAL new diagnostic (from the 4a1939d0/8ce29dfc hardening): `EvidenceError: signature-verification record-mode run failed (exit 0) or produced no dispatch_db -- cannot independently observe the real signature hex`.
 
-**Investigated and found the real root cause via code inspection + a live repro on Brutus** (not another blind hardware pass): `tools/bigcherry/tuning/workflow.py::_stage_correctness_evidence()` (line ~488-529) calls `hi80.generate_for_row(conn, row, binary=lane_result.binary_ref.path, ...)` using the **`build_name="tune"`** lane's `test-backend-ops` binary, with NO `runner=` override (defaults to bare `subprocess.run`). That binary internally calls `signature_digest_verification.observed_test_backend_ops_signature_hex()` with `GGML_HIP_DISPATCH_MODE=record` to independently verify the signature hex BEFORE trusting any correctness comparison (HI121/HI125 gate). Ran this exact call directly against the real tune-lane binary and a real row's canonical signature from the campaign's own `promoted.jsonl` (op=29/MUL_MAT, m=2560/n=512/k=4096) via a live Python repro on Brutus -- reproduced the EXACT same EvidenceError, and the binary's own stdout revealed the real cause in plain text:
+**Investigated and found the real root cause via code inspection + a live repro on dev** (not another blind hardware pass): `tools/bigcherry/tuning/workflow.py::_stage_correctness_evidence()` (line ~488-529) calls `hi80.generate_for_row(conn, row, binary=lane_result.binary_ref.path, ...)` using the **`build_name="tune"`** lane's `test-backend-ops` binary, with NO `runner=` override (defaults to bare `subprocess.run`). That binary internally calls `signature_digest_verification.observed_test_backend_ops_signature_hex()` with `GGML_HIP_DISPATCH_MODE=record` to independently verify the signature hex BEFORE trusting any correctness comparison (HI121/HI125 gate). Ran this exact call directly against the real tune-lane binary and a real row's canonical signature from the campaign's own `promoted.jsonl` (op=29/MUL_MAT, m=2560/n=512/k=4096) via a live Python repro on dev -- reproduced the EXACT same EvidenceError, and the binary's own stdout revealed the real cause in plain text:
 ```
 ggml_hip_parse_mode: this build cannot record (configure with GGML_HIP_AUTOTUNE_RECORD=ON); using native
 ```
@@ -108,15 +108,15 @@ Also separately confirmed (via a second repro leg) that `HIP_VISIBLE_DEVICES` sc
 
 ## 2026-09-15 (continued): fresh hardware campaign launched with both fixes in place
 
-Started a fresh session to re-run RHA15 step 1 (real tune-campaign with both the diagnostic-hardening commits 4a1939d0/8ce29dfc AND the orchestration fix 3af8ad2f/1ab802be in place). Verified Brutus idle (0% GPU all 4 devices, no live processes) before touching anything.
+Started a fresh session to re-run RHA15 step 1 (real tune-campaign with both the diagnostic-hardening commits 4a1939d0/8ce29dfc AND the orchestration fix 3af8ad2f/1ab802be in place). Verified dev idle (0% GPU all 4 devices, no live processes) before touching anything.
 
-Found `/home/audumla/bc-pa-work` had leftover untracked debris (`pa26-repro3/`, 528K) from a prior pass, which made the tree dirty and caused `tune-campaign`'s materialize stage to fail closed ("BigCherry repository is dirty; use explicit development override") -- correct fail-closed behavior, not a bug. Preserved it (moved to `/home/audumla/bc-pa-artifacts/pa26-repro3-prior-pass/`, not deleted) rather than removing it, per artifact-preservation discipline. Tree now clean.
+Found `${HOME}/bc-pa-work` had leftover untracked debris (`pa26-repro3/`, 528K) from a prior pass, which made the tree dirty and caused `tune-campaign`'s materialize stage to fail closed ("BigCherry repository is dirty; use explicit development override") -- correct fail-closed behavior, not a bug. Preserved it (moved to `${HOME}/bc-pa-artifacts/pa26-repro3-prior-pass/`, not deleted) rather than removing it, per artifact-preservation discipline. Tree now clean.
 
-Also found the real invocation needs the venv python (`/home/audumla/bc-pytest-venv/bin/python`, not bare `python`/`python3`) with `PYTHONPATH=tools` from within `bc-pa-work`.
+Also found the real invocation needs the venv python (`${HOME}/bc-pytest-venv/bin/python`, not bare `python`/`python3`) with `PYTHONPATH=tools` from within `bc-pa-work`.
 
-Launched (PID 2089964, nohup, log at `/home/audumla/bc-pa-work/pa26-rha15-verify1.log`):
+Launched (PID 2089964, nohup, log at `${HOME}/bc-pa-work/pa26-rha15-verify1.log`):
 ```
-cd /home/audumla/bc-pa-work && PYTHONPATH=tools /home/audumla/bc-pytest-venv/bin/python -m bigcherry tune-campaign --platform linux-multi --model /mnt/vault/llm-models/qwen3.5-4B/gguf/mtp/Qwen3.5-4B-UD-Q6_K_XL.gguf --devices 0 --runtime-profile production-safe-single --source bigcherry-native --run-id pa26-rha15-verify1 --json
+cd ${HOME}/bc-pa-work && PYTHONPATH=tools ${HOME}/bc-pytest-venv/bin/python -m bigcherry tune-campaign --platform linux-multi --model ${MODELS_ROOT}/qwen3.5-4B/gguf/mtp/Qwen3.5-4B-UD-Q6_K_XL.gguf --devices 0 --runtime-profile production-safe-single --source bigcherry-native --run-id pa26-rha15-verify1 --json
 ```
 Build in progress as of this note (HIP object compile, ~125/506). Will let it run to completion (build + record + tune + correctness stages), preserve artifacts before any cleanup, and report real per-row diagnostics once correctness-evidence runs.
 

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Launch Qwen3.8-Flash-Next on Brutus in the current best layout, per
+# Launch Qwen3.8-Flash-Next on dev in the current best layout, per
 # docs/reference/engines/radiance/models/qwen3.8-flash-next.md ("Current best layout and numbers") and the harness config
 # tools/lab/radiance/helper-ab.json, which this mirrors outside the harness.
 #
@@ -18,7 +18,7 @@
 # Without --build, the newest build under $BIGCHERRY_WORK_ROOT/builds that has the helper binary is used.
 set -u
 
-WORK=${BIGCHERRY_WORK_ROOT:-/mnt/data/bigcherry-work}
+WORK=${BIGCHERRY_WORK_ROOT:-${BC_CACHE_ROOT}}
 RUN=$WORK/flashnext
 PIDS=$RUN/pids
 SHM=/r3-moe-helper
@@ -68,7 +68,7 @@ RAD_HOME=$BUILD/radiance_home
 HELPER=$RAD_HOME/helpers/r3_moe_worker
 [ -x "$RAD_BIN" ] && [ -x "$HELPER" ] || { echo "FLASHNEXT_EXIT=99 no build with bin/radiance and the r3_moe_worker helper (--build '$BUILD')"; exit 99; }
 
-MODEL=${MODEL:-/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad}
+MODEL=${MODEL:-${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad}
 [ -f "$MODEL" ] || { echo "FLASHNEXT_EXIT=99 model not found: $MODEL"; exit 99; }
 [ -f "$HEAT" ] || { echo "FLASHNEXT_EXIT=99 route-heat file not found: $HEAT (hottest-first placement is part of the best layout)"; exit 99; }
 

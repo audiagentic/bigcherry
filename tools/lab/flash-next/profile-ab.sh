@@ -7,7 +7,7 @@
 set -u
 base=$1 new=$2 root=$3
 s=$(cd "$(dirname "$0")" && pwd)/long-ctx-profile.sh
-export DRAFT=/mnt/data/llm-models/qwen3.8-flash-next/gguf/unsloth/MTP/mtp-Qwen3.8-Flash-Next-Q5_K_M-qsa4.gguf
+export DRAFT=${BC_MODEL_ROOT}/qwen3.8-flash-next/gguf/unsloth/MTP/mtp-Qwen3.8-Flash-Next-Q5_K_M-qsa4.gguf
 export BIGCHERRY_DRAFT_VOCAB_N=65536 CTKD=f16 CTVD=f16 DECODE_N=512
 for depth in 8192 65536; do
   for arm in base-a new-a new-b base-b; do

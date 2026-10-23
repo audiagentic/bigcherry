@@ -324,7 +324,7 @@ ggml_hip_dispatch_signature_v1 ggml_hip_make_signature(
         // SCALE/GATE_SCALE comment: it only exists on this struct under the
         // experimental, non-default patch RD12 (patches/1205_rd12_paired_
         // mmvq_dual_output), and a build without that patch (confirmed on
-        // real Brutus hardware) fails to compile against it at all.
+        // real dev hardware) fails to compile against it at all.
     }
 
     if (src0->ne[2] != 0 && dst->ne[2] != src0->ne[2]) {

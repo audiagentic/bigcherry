@@ -24,7 +24,7 @@ work: L
 
 ## Description
 
-RCCL source is on Brutus (`~/rccl-heterogeneous-src/rccl`, ROCm/rccl `57e58688`). Two problems:
+RCCL source is on dev (`~/rccl-heterogeneous-src/rccl`, ROCm/rccl `57e58688`). Two problems:
 
 1. chipset-attached RX 6900 XT/gfx1030 has no PCIe atomics; RCCL collective kernels request a hostcall buffer and fail at first launch (`Pcie atomics not enabled, hostcall not supported` / AQL dispatch failed). This is independent of protocol/SHM/P2P/MSCCL in the recorded tests.
 2. with P2P disabled, large 21-42 MiB collectives on dual XTX reach only ~1.1 GB/s versus much higher measured host-DMA ceilings; prefill is collective dominated.

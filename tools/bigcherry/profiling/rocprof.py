@@ -2,7 +2,7 @@
 
 Real subprocess + real ROCm profiler -- there is no mock/simulation mode.
 Column names and the ``<prefix>_kernel_trace.csv`` / ``*_agent_info.csv``
-naming convention were confirmed against a real rocprofv3 run on Brutus
+naming convention were confirmed against a real rocprofv3 run on dev
 this session (RD33's kernel-resource diagnostic): Kind, Agent_Id,
 Queue_Id, Stream_Id, Thread_Id, Dispatch_Id, Kernel_Id, Kernel_Name,
 Correlation_Id, Start_Timestamp, End_Timestamp, LDS_Block_Size,
@@ -131,7 +131,7 @@ def parse_kernel_trace(kernel_trace_csv: Path) -> tuple[KernelStat, ...]:
     return tuple(sorted(stats, key=lambda k: k.total_us, reverse=True))
 
 
-# HI134: real-hardware evidence (2026-08-28, hi134-meta-baseline-01, Brutus
+# HI134: real-hardware evidence (2026-08-28, hi134-meta-baseline-01, dev
 # {0,1,2}) found that ANY row in the RCCL trace is not evidence a real
 # collective ran. ncclGetVersion/ncclGetUniqueId/ncclCommInitAll/
 # ncclCommGetAsyncError/ncclCommDestroy all appear even under

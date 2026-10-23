@@ -177,7 +177,7 @@ correct via single-nonzero-element probes; the real weight stride confirmed agai
 
 Compile-only, this revision: the three standalone harnesses referenced above prove the underlying math is
 correct; this patch proves the same logic, shaped for the real kernel's actual constants (`kPf2RT`, `kWaves`,
-`kWave`, `kThreads`), applies cleanly to the pinned source and compiles without errors, built once on Brutus
+`kWave`, `kThreads`), applies cleanly to the pinned source and compiles without errors, built once on dev
 against a scratch copy of the pinned tree (never the shared checkout). No runtime/hardware evidence yet since
 nothing calls these kernels.
 

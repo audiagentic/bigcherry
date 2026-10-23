@@ -50,7 +50,7 @@ Port design (thin-hook rule):
 
 ## Validation
 
-pin-bump + pin-status --complete on Brutus; ab-benchmark helper-ab and helper-kld; 27b-native-kld; pin-release with recorded evidence.
+pin-bump + pin-status --complete on dev; ab-benchmark helper-ab and helper-kld; 27b-native-kld; pin-release with recorded evidence.
 
 ## Effort & Risk
 

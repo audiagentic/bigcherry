@@ -24,7 +24,7 @@ RD58's real fix depends on the *already-existing* upstream
 `GGML_CUDA_REGISTER_HOST` opt-in gate -- the patch's own contribution is
 fixing a bug where the ported registration loop only found a real
 per-device HIP backend registry under `-sm layer` split; under
-`-sm tensor` (Brutus's actual production dual-XTX topology) the
+`-sm tensor` (dev's actual production dual-XTX topology) the
 registration silently never activated. The fix flattens any
 `Meta`-typed device into its real underlying per-device backends first.
 
@@ -32,7 +32,7 @@ registration silently never activated. The fix flattens any
 
 Fork's own measured data (2x MI210): unpinned faults after 2 restores;
 pinned survives 140 restores/12 rounds/0 faults, temp-0 output
-unchanged. An earlier real-hardware confirmation on Brutus (`-sm
+unchanged. An earlier real-hardware confirmation on dev (`-sm
 tensor`, 2026-08-24): activation fired on all 150 repeated real
 host-path restore cycles, zero faults, all 5 of llama.cpp's own
 upstream save/load-state tests passed; pinning measured ~17% faster
@@ -42,7 +42,7 @@ current-pin evidence obligation (VA08) -- a fresh
 `--run-rd58-state-restore` run is required.
 
 **Explicitly not claimed**: the original ROCm SDMA fault itself was
-never reproduced on Brutus (0 faults in 530+ combined cycles, same
+never reproduced on dev (0 faults in 530+ combined cycles, same
 ROCm major version as the bug reporter). This proves activation + real
 state-restore integrity + no material regression -- it does not
 independently establish "fault happens, pinning eliminates it" on this
@@ -50,7 +50,7 @@ specific host. See RD58's plan-item notes for the full history.
 
 ## Real hardware evidence at current pin (2026-09-13)
 
-Reran `run_rd58_state_restore_evidence()` for real on Brutus against the
+Reran `run_rd58_state_restore_evidence()` for real on dev against the
 current active pin (`b10901`/`28ff0958291c`), fresh control/subject
 `test-save-load-state` builds, `tierA-qwen4b-q6k`, 5 real repetitions per
 arm.
@@ -58,7 +58,7 @@ arm.
 **First attempt crashed (real methodology bug, not a patch defect)**:
 all 5 subject runs exited `-11` (SIGSEGV), log showing `internal
 AllReduce init failed (n_devices != 2?); falling back to meta-backend
-butterfly`. Root cause: Brutus now has 4 heterogeneous GPUs installed
+butterfly`. Root cause: dev now has 4 heterogeneous GPUs installed
 (2x gfx1100 XTX, 1x integrated APU, 1x gfx1030 6900XT), and no
 `HIP_VISIBLE_DEVICES` was set, so all 4 were visible instead of the
 intended 2x XTX pair -- the same heterogeneous-arch crash class already
@@ -109,7 +109,7 @@ Does not execute the generic S1-S7 tune/promote/replay campaign. It
 does **not** attempt contract promotion -- `eligible_for_validated_state`
 stays `False`; `ported-benched` (VA08) is the honest ceiling this
 command can produce, since the original SDMA fault was never
-independently reproduced on Brutus.
+independently reproduced on dev.
 
 ## Control vs. subject
 

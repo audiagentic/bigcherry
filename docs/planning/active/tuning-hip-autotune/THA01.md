@@ -19,7 +19,7 @@ Complete and hardware-validate nested runtime transform provenance emission, the
 
 ## Steps
 
-Verify runtime build descriptor hash matches offline manifest; update hip-autotune-tuner.cu flush to nested runtime schema with schema version, hardware architecture, build descriptor hash and evidence references; add nested fixture ingestion/analyze_gap provenance_complete tests; compile/run real Brutus tuning and ingest artifact; keep flat adapter until real nested artifacts exist, then remove in separate item with fail-closed old-header rejection.
+Verify runtime build descriptor hash matches offline manifest; update hip-autotune-tuner.cu flush to nested runtime schema with schema version, hardware architecture, build descriptor hash and evidence references; add nested fixture ingestion/analyze_gap provenance_complete tests; compile/run real dev tuning and ingest artifact; keep flat adapter until real nested artifacts exist, then remove in separate item with fail-closed old-header rejection.
 
 ## Detailed Solution & Technical Design
 
@@ -31,11 +31,11 @@ Make runtime transform records intrinsically complete so DB identity resolution 
 
 ## Files
 
-vendor/llama.cpp/ggml/src/ggml-cuda/hip-autotune-tuner.cu; transform_records.py; transform_loader.py; tuning tests; Brutus artifact.
+vendor/llama.cpp/ggml/src/ggml-cuda/hip-autotune-tuner.cu; transform_records.py; transform_loader.py; tuning tests; dev artifact.
 
 ## Validation
 
-Hash parity fixture; nested runtime-shaped ingest/analyze with provenance_complete=True; full offline suite; real nested Brutus artifact ingest without DB identity resolution.
+Hash parity fixture; nested runtime-shaped ingest/analyze with provenance_complete=True; full offline suite; real nested dev artifact ingest without DB identity resolution.
 
 ## Effort & Risk
 

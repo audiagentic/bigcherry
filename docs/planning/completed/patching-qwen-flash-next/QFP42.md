@@ -103,7 +103,7 @@ Not run: a context shift (needs a prompt beyond the context); it goes through th
 
 2026-10-11 closure: done as 1359_prefill_pipeline (QFP50 has the measurements). The follow-ups this item had absorbed on 2026-10-08 are not part of that and were moved out on the owner's instruction: PRBE56 (scheduler split plan reuse) is QFP51, PRBE57 (NextN placement) is QFP52, and the one live idea from PRBE07 (kernels for verify widths 2..8) is noted in QFP38.
 
-## Step 0, first data (Brutus 2026-10-08, PR #8 build 31a07866, Flash-Next 24K, 76 chunks of 512 tokens, target context)
+## Step 0, first data (dev 2026-10-08, PR #8 build 31a07866, Flash-Next 24K, 76 chunks of 512 tokens, target context)
 
 | | graph | set_inputs | graph_compute | CPU split compute | Meta split input / compute |
 |---|---|---|---|---|---|
@@ -114,7 +114,7 @@ With deferral the target's own host-side submission is about 25 ms per chunk slo
 
 ## Problem
 
-QFP31 / patch 1348 defers MTP draft catch-up by one target chunk. Brutus b11474 adoption ABBA improved prefill
+QFP31 / patch 1348 defers MTP draft catch-up by one target chunk. dev b11474 adoption ABBA improved prefill
 +5.4% / +6.3% / +9.7% at 8K / 24K / 98K with complete separation and identical greedy target output, but this is
 well below the ~19% whole-gap upper bound measured before implementation.
 
@@ -204,7 +204,7 @@ Activation marker: `BIGCHERRY_PATCH_HIT patch=<new-id> mechanism=async-nextn-sta
 
 ### Hardware
 
-Brutus, Flash-Next IQ4_XS, production layout, ctx 245760, f16 KV. One binary ABBA:
+dev, Flash-Next IQ4_XS, production layout, ctx 245760, f16 KV. One binary ABBA:
 A = async staging on, B = async staging off / promoted 1348 behavior.
 
 At 8K / 24K / 98K record:

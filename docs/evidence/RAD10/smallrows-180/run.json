@@ -13,7 +13,7 @@
     "engine": "radiance",
     "evidence_role": "diagnostic",
     "execution_evidence": "observe",
-    "model": "/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad",
+    "model": "${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad",
     "server_args": [
       "--radiance-home",
       "${RAD_HOME}",
@@ -80,7 +80,7 @@
           "R3_MOE_WORKER_MAX_ROWS": "4096",
           "R3_MOE_WORKER_SMALL_ROWS": "8",
           "R3_MOE_WORKER_MIB": "22528",
-          "R3_MOE_WORKER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
+          "R3_MOE_WORKER_HEAT": "${BC_CACHE_ROOT}/runs/perf51/heat.rank0.hot-first",
           "R3_MOE_WORKER_ROWS": "0"
         }
       },
@@ -97,7 +97,7 @@
           "R3_MOE_WORKER_MAX_ROWS": "4096",
           "R3_MOE_WORKER_SMALL_ROWS": "24",
           "R3_MOE_WORKER_MIB": "22528",
-          "R3_MOE_WORKER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
+          "R3_MOE_WORKER_HEAT": "${BC_CACHE_ROOT}/runs/perf51/heat.rank0.hot-first",
           "R3_MOE_WORKER_ROWS": "0"
         }
       }
@@ -124,17 +124,17 @@
         "build_plan_id": "e8d7ec1a7c2ff9f4cf48986b4e36748f",
         "effective_configure": {
           "CMAKE_BUILD_TYPE": "Release",
-          "CMAKE_CXX_COMPILER": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14",
+          "CMAKE_CXX_COMPILER": "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14",
           "CMAKE_CXX_COMPILER-ADVANCED": "1",
-          "CMAKE_CXX_COMPILER_AR": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ar-14",
+          "CMAKE_CXX_COMPILER_AR": "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ar-14",
           "CMAKE_CXX_COMPILER_AR-ADVANCED": "1",
-          "CMAKE_CXX_COMPILER_RANLIB": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ranlib-14",
+          "CMAKE_CXX_COMPILER_RANLIB": "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ranlib-14",
           "CMAKE_CXX_COMPILER_RANLIB-ADVANCED": "1",
-          "CMAKE_C_COMPILER": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14",
+          "CMAKE_C_COMPILER": "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14",
           "CMAKE_C_COMPILER-ADVANCED": "1",
-          "CMAKE_C_COMPILER_AR": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ar-14",
+          "CMAKE_C_COMPILER_AR": "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ar-14",
           "CMAKE_C_COMPILER_AR-ADVANCED": "1",
-          "CMAKE_C_COMPILER_RANLIB": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ranlib-14",
+          "CMAKE_C_COMPILER_RANLIB": "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ranlib-14",
           "CMAKE_C_COMPILER_RANLIB-ADVANCED": "1",
           "CMAKE_EXE_LINKER_FLAGS": "",
           "CMAKE_EXE_LINKER_FLAGS-ADVANCED": "1",
@@ -177,11 +177,11 @@
         "toolchain": [
           [
             "CMAKE_CXX_COMPILER",
-            "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14"
+            "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14"
           ],
           [
             "CMAKE_C_COMPILER",
-            "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14"
+            "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14"
           ],
           [
             "CMAKE_GENERATOR",
@@ -189,7 +189,7 @@
           ],
           [
             "c_compiler_realpath",
-            "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14"
+            "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14"
           ],
           [
             "c_compiler_version",
@@ -201,7 +201,7 @@
           ],
           [
             "cxx_compiler_realpath",
-            "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14"
+            "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14"
           ],
           [
             "cxx_compiler_version",
@@ -237,17 +237,17 @@
         "build_plan_id": "e8d7ec1a7c2ff9f4cf48986b4e36748f",
         "effective_configure": {
           "CMAKE_BUILD_TYPE": "Release",
-          "CMAKE_CXX_COMPILER": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14",
+          "CMAKE_CXX_COMPILER": "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14",
           "CMAKE_CXX_COMPILER-ADVANCED": "1",
-          "CMAKE_CXX_COMPILER_AR": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ar-14",
+          "CMAKE_CXX_COMPILER_AR": "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ar-14",
           "CMAKE_CXX_COMPILER_AR-ADVANCED": "1",
-          "CMAKE_CXX_COMPILER_RANLIB": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ranlib-14",
+          "CMAKE_CXX_COMPILER_RANLIB": "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ranlib-14",
           "CMAKE_CXX_COMPILER_RANLIB-ADVANCED": "1",
-          "CMAKE_C_COMPILER": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14",
+          "CMAKE_C_COMPILER": "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14",
           "CMAKE_C_COMPILER-ADVANCED": "1",
-          "CMAKE_C_COMPILER_AR": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ar-14",
+          "CMAKE_C_COMPILER_AR": "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ar-14",
           "CMAKE_C_COMPILER_AR-ADVANCED": "1",
-          "CMAKE_C_COMPILER_RANLIB": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ranlib-14",
+          "CMAKE_C_COMPILER_RANLIB": "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ranlib-14",
           "CMAKE_C_COMPILER_RANLIB-ADVANCED": "1",
           "CMAKE_EXE_LINKER_FLAGS": "",
           "CMAKE_EXE_LINKER_FLAGS-ADVANCED": "1",
@@ -290,11 +290,11 @@
         "toolchain": [
           [
             "CMAKE_CXX_COMPILER",
-            "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14"
+            "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14"
           ],
           [
             "CMAKE_C_COMPILER",
-            "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14"
+            "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14"
           ],
           [
             "CMAKE_GENERATOR",
@@ -302,7 +302,7 @@
           ],
           [
             "c_compiler_realpath",
-            "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14"
+            "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14"
           ],
           [
             "c_compiler_version",
@@ -314,7 +314,7 @@
           ],
           [
             "cxx_compiler_realpath",
-            "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14"
+            "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14"
           ],
           [
             "cxx_compiler_version",
@@ -355,7 +355,7 @@
         "R3_MOE_WORKER_MAX_ROWS": "4096",
         "R3_MOE_WORKER_SMALL_ROWS": "8",
         "R3_MOE_WORKER_MIB": "22528",
-        "R3_MOE_WORKER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
+        "R3_MOE_WORKER_HEAT": "${BC_CACHE_ROOT}/runs/perf51/heat.rank0.hot-first",
         "R3_MOE_WORKER_ROWS": "0"
       }
     },
@@ -369,7 +369,7 @@
         "R3_MOE_WORKER_MAX_ROWS": "4096",
         "R3_MOE_WORKER_SMALL_ROWS": "24",
         "R3_MOE_WORKER_MIB": "22528",
-        "R3_MOE_WORKER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
+        "R3_MOE_WORKER_HEAT": "${BC_CACHE_ROOT}/runs/perf51/heat.rank0.hot-first",
         "R3_MOE_WORKER_ROWS": "0"
       }
     }
@@ -393,7 +393,7 @@
       "position": 0,
       "returncode": 0,
       "performance_admitted": false,
-      "server_log": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/smallrows-180-093439/pair-001-rows8/server.log",
+      "server_log": "${BC_REPO_ROOT}/work/smallrows-180-093439/pair-001-rows8/server.log",
       "settings": {
         "R3_MOE_WORKER": "1",
         "R3_MOE_WORKER_DEVICES": "0 1",
@@ -402,7 +402,7 @@
         "R3_MOE_WORKER_MAX_ROWS": "4096",
         "R3_MOE_WORKER_SMALL_ROWS": "8",
         "R3_MOE_WORKER_MIB": "22528",
-        "R3_MOE_WORKER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
+        "R3_MOE_WORKER_HEAT": "${BC_CACHE_ROOT}/runs/perf51/heat.rank0.hot-first",
         "R3_MOE_WORKER_ROWS": "0"
       },
       "execution_attestation": null,
@@ -448,10 +448,10 @@
         {
           "name": "helper0",
           "argv": [
-            "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/6c9c2b9a00abd23f31edf2d30d39f38f/e8d7ec1a7c2ff9f4cf48986b4e36748f/radiance_home/helpers/r3_moe_worker",
-            "/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
+            "${BC_REPO_ROOT}/work/builds/6c9c2b9a00abd23f31edf2d30d39f38f/e8d7ec1a7c2ff9f4cf48986b4e36748f/radiance_home/helpers/r3_moe_worker",
+            "${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
           ],
-          "log": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/smallrows-180-093439/pair-001-rows8/helper0.log",
+          "log": "${BC_REPO_ROOT}/work/smallrows-180-093439/pair-001-rows8/helper0.log",
           "ready_s": 0.30350333801470697,
           "returncode": 0,
           "exited_before_stop": false,
@@ -460,10 +460,10 @@
         {
           "name": "helper1",
           "argv": [
-            "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/6c9c2b9a00abd23f31edf2d30d39f38f/e8d7ec1a7c2ff9f4cf48986b4e36748f/radiance_home/helpers/r3_moe_worker",
-            "/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
+            "${BC_REPO_ROOT}/work/builds/6c9c2b9a00abd23f31edf2d30d39f38f/e8d7ec1a7c2ff9f4cf48986b4e36748f/radiance_home/helpers/r3_moe_worker",
+            "${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
           ],
-          "log": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/smallrows-180-093439/pair-001-rows8/helper1.log",
+          "log": "${BC_REPO_ROOT}/work/smallrows-180-093439/pair-001-rows8/helper1.log",
           "ready_s": 0.2041630179155618,
           "returncode": 0,
           "exited_before_stop": false,
@@ -477,7 +477,7 @@
       "position": 1,
       "returncode": 0,
       "performance_admitted": false,
-      "server_log": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/smallrows-180-093439/pair-001-rows24/server.log",
+      "server_log": "${BC_REPO_ROOT}/work/smallrows-180-093439/pair-001-rows24/server.log",
       "settings": {
         "R3_MOE_WORKER": "1",
         "R3_MOE_WORKER_DEVICES": "0 1",
@@ -486,7 +486,7 @@
         "R3_MOE_WORKER_MAX_ROWS": "4096",
         "R3_MOE_WORKER_SMALL_ROWS": "24",
         "R3_MOE_WORKER_MIB": "22528",
-        "R3_MOE_WORKER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
+        "R3_MOE_WORKER_HEAT": "${BC_CACHE_ROOT}/runs/perf51/heat.rank0.hot-first",
         "R3_MOE_WORKER_ROWS": "0"
       },
       "execution_attestation": null,
@@ -532,10 +532,10 @@
         {
           "name": "helper0",
           "argv": [
-            "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/6c9c2b9a00abd23f31edf2d30d39f38f/e8d7ec1a7c2ff9f4cf48986b4e36748f/radiance_home/helpers/r3_moe_worker",
-            "/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
+            "${BC_REPO_ROOT}/work/builds/6c9c2b9a00abd23f31edf2d30d39f38f/e8d7ec1a7c2ff9f4cf48986b4e36748f/radiance_home/helpers/r3_moe_worker",
+            "${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
           ],
-          "log": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/smallrows-180-093439/pair-001-rows24/helper0.log",
+          "log": "${BC_REPO_ROOT}/work/smallrows-180-093439/pair-001-rows24/helper0.log",
           "ready_s": 0.2016671730671078,
           "returncode": 0,
           "exited_before_stop": false,
@@ -544,10 +544,10 @@
         {
           "name": "helper1",
           "argv": [
-            "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/6c9c2b9a00abd23f31edf2d30d39f38f/e8d7ec1a7c2ff9f4cf48986b4e36748f/radiance_home/helpers/r3_moe_worker",
-            "/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
+            "${BC_REPO_ROOT}/work/builds/6c9c2b9a00abd23f31edf2d30d39f38f/e8d7ec1a7c2ff9f4cf48986b4e36748f/radiance_home/helpers/r3_moe_worker",
+            "${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
           ],
-          "log": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/smallrows-180-093439/pair-001-rows24/helper1.log",
+          "log": "${BC_REPO_ROOT}/work/smallrows-180-093439/pair-001-rows24/helper1.log",
           "ready_s": 0.20305408001877367,
           "returncode": 0,
           "exited_before_stop": false,
@@ -561,7 +561,7 @@
       "position": 0,
       "returncode": 0,
       "performance_admitted": false,
-      "server_log": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/smallrows-180-093439/pair-002-rows24/server.log",
+      "server_log": "${BC_REPO_ROOT}/work/smallrows-180-093439/pair-002-rows24/server.log",
       "settings": {
         "R3_MOE_WORKER": "1",
         "R3_MOE_WORKER_DEVICES": "0 1",
@@ -570,7 +570,7 @@
         "R3_MOE_WORKER_MAX_ROWS": "4096",
         "R3_MOE_WORKER_SMALL_ROWS": "24",
         "R3_MOE_WORKER_MIB": "22528",
-        "R3_MOE_WORKER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
+        "R3_MOE_WORKER_HEAT": "${BC_CACHE_ROOT}/runs/perf51/heat.rank0.hot-first",
         "R3_MOE_WORKER_ROWS": "0"
       },
       "execution_attestation": null,
@@ -616,10 +616,10 @@
         {
           "name": "helper0",
           "argv": [
-            "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/6c9c2b9a00abd23f31edf2d30d39f38f/e8d7ec1a7c2ff9f4cf48986b4e36748f/radiance_home/helpers/r3_moe_worker",
-            "/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
+            "${BC_REPO_ROOT}/work/builds/6c9c2b9a00abd23f31edf2d30d39f38f/e8d7ec1a7c2ff9f4cf48986b4e36748f/radiance_home/helpers/r3_moe_worker",
+            "${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
           ],
-          "log": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/smallrows-180-093439/pair-002-rows24/helper0.log",
+          "log": "${BC_REPO_ROOT}/work/smallrows-180-093439/pair-002-rows24/helper0.log",
           "ready_s": 0.20187975512817502,
           "returncode": 0,
           "exited_before_stop": false,
@@ -628,10 +628,10 @@
         {
           "name": "helper1",
           "argv": [
-            "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/6c9c2b9a00abd23f31edf2d30d39f38f/e8d7ec1a7c2ff9f4cf48986b4e36748f/radiance_home/helpers/r3_moe_worker",
-            "/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
+            "${BC_REPO_ROOT}/work/builds/6c9c2b9a00abd23f31edf2d30d39f38f/e8d7ec1a7c2ff9f4cf48986b4e36748f/radiance_home/helpers/r3_moe_worker",
+            "${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
           ],
-          "log": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/smallrows-180-093439/pair-002-rows24/helper1.log",
+          "log": "${BC_REPO_ROOT}/work/smallrows-180-093439/pair-002-rows24/helper1.log",
           "ready_s": 0.20246742782182992,
           "returncode": 0,
           "exited_before_stop": false,
@@ -645,7 +645,7 @@
       "position": 1,
       "returncode": 0,
       "performance_admitted": false,
-      "server_log": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/smallrows-180-093439/pair-002-rows8/server.log",
+      "server_log": "${BC_REPO_ROOT}/work/smallrows-180-093439/pair-002-rows8/server.log",
       "settings": {
         "R3_MOE_WORKER": "1",
         "R3_MOE_WORKER_DEVICES": "0 1",
@@ -654,7 +654,7 @@
         "R3_MOE_WORKER_MAX_ROWS": "4096",
         "R3_MOE_WORKER_SMALL_ROWS": "8",
         "R3_MOE_WORKER_MIB": "22528",
-        "R3_MOE_WORKER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
+        "R3_MOE_WORKER_HEAT": "${BC_CACHE_ROOT}/runs/perf51/heat.rank0.hot-first",
         "R3_MOE_WORKER_ROWS": "0"
       },
       "execution_attestation": null,
@@ -700,10 +700,10 @@
         {
           "name": "helper0",
           "argv": [
-            "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/6c9c2b9a00abd23f31edf2d30d39f38f/e8d7ec1a7c2ff9f4cf48986b4e36748f/radiance_home/helpers/r3_moe_worker",
-            "/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
+            "${BC_REPO_ROOT}/work/builds/6c9c2b9a00abd23f31edf2d30d39f38f/e8d7ec1a7c2ff9f4cf48986b4e36748f/radiance_home/helpers/r3_moe_worker",
+            "${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
           ],
-          "log": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/smallrows-180-093439/pair-002-rows8/helper0.log",
+          "log": "${BC_REPO_ROOT}/work/smallrows-180-093439/pair-002-rows8/helper0.log",
           "ready_s": 0.2011851309798658,
           "returncode": 0,
           "exited_before_stop": false,
@@ -712,10 +712,10 @@
         {
           "name": "helper1",
           "argv": [
-            "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/6c9c2b9a00abd23f31edf2d30d39f38f/e8d7ec1a7c2ff9f4cf48986b4e36748f/radiance_home/helpers/r3_moe_worker",
-            "/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
+            "${BC_REPO_ROOT}/work/builds/6c9c2b9a00abd23f31edf2d30d39f38f/e8d7ec1a7c2ff9f4cf48986b4e36748f/radiance_home/helpers/r3_moe_worker",
+            "${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
           ],
-          "log": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/smallrows-180-093439/pair-002-rows8/helper1.log",
+          "log": "${BC_REPO_ROOT}/work/smallrows-180-093439/pair-002-rows8/helper1.log",
           "ready_s": 0.2028347689192742,
           "returncode": 0,
           "exited_before_stop": false,

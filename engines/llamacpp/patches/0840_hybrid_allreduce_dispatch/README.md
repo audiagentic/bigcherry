@@ -54,7 +54,7 @@ sole implementation for size-adaptive AllReduce dispatch, per explicit
 operator direction ("let's consolidate our patches so we have one
 implementation").
 
-## Real hardware evidence (2026-09-02, Brutus)
+## Real hardware evidence (2026-09-02, dev)
 
 Built 3 independent binaries from a clean pinned llama.cpp checkout in
 isolated scratch clones (not the shared tree, no risk to concurrent
@@ -109,7 +109,7 @@ real patch source, line ~273). Real hardware re-confirmation: `{0,3}` now
 fails closed cleanly (falls back to the internal pipeline, no crash) and
 `{0,2}`/`{1,2}` remain correctly admitted through RCCL.
 
-Full evidence: `artifacts/gp03-validation/` on Brutus (`bc-native`,
+Full evidence: `artifacts/gp03-validation/` on dev (`bc-native`,
 `bc-hybrid` scratch builds; `mtp-results/*.completion.jsonl` + server/bench
 logs for all 5 arms).
 

@@ -40,7 +40,7 @@ patches/1205_rd12_paired_mmvq_dual_output/{patch.toml,patch.py} (read, not modif
 
 ## Validation
 
-Offline: `PYTHONPATH=tools python -m bigcherry patch-lint`, `patch-rebase-check --focal-overlay 1205_rd12_paired_mmvq_dual_output --source bigcherry-tuning`. Hardware (Brutus, not run here): gfx1100/gfx1201/gfx1030; K/V-pair correctness vs unfused reference; graph capture/replay stability; GLU-precedence fixture; isolated causal performance (balanced repeats); composition recipe validated separately once declared, never implicitly combined with 1207.
+Offline: `PYTHONPATH=tools python -m bigcherry patch-lint`, `patch-rebase-check --focal-overlay 1205_rd12_paired_mmvq_dual_output --source bigcherry-tuning`. Hardware (dev, not run here): gfx1100/gfx1201/gfx1030; K/V-pair correctness vs unfused reference; graph capture/replay stability; GLU-precedence fixture; isolated causal performance (balanced repeats); composition recipe validated separately once declared, never implicitly combined with 1207.
 
 ## Effort & Risk
 

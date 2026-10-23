@@ -20,7 +20,7 @@ from bigcherry.build.builds import (BuildIdentityError, BuildPlan, CommandRequir
 class BuildIdentityTests(unittest.TestCase):
     def _plan(self, **changes):
         values = dict(
-            source_slice_id="s1", phase="record", platform="brutus",
+            source_slice_id="s1", phase="record", platform="dev",
             targets=("gfx1100",), cmake_options=(("GGML_HIP", "ON"),),
             variant_set="inventory", environment=(("CC", "clang"),),
         )

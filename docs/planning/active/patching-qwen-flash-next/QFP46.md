@@ -57,11 +57,11 @@ Emit an opt-in trace whose fields identify: request, phase, context, graph_uid, 
 
 ## Parallel execution map (one slice/branch/PR per production mechanism)
 
-- **Lane A, now:** QFP46 instrumentation contract + pure-Python oracle. Runs without Brutus; does not gate design work in the other lanes.
+- **Lane A, now:** QFP46 instrumentation contract + pure-Python oracle. Runs without dev; does not gate design work in the other lanes.
 - **Lane B, immediate:** QFP42 event-owned NextN staging, after PR #8 fixes the deferred-path 1346 counters. Independent of C/D/E source changes but avoid editing the same 1326/Meta lines concurrently.
 - **Lane C, immediate:** PGC15 range-collective and real producer tiling, after its own RCCL/provider screen. No dependency on QFP42 or QFP41.
 - **Lane D, immediate:** QFP41 per-device dispatch thread/ownership design and single-rank event smoke; integrate only after proof that collective order remains stable.
-- **Lane E, immediate:** QFP17 QSA-bounded ub1024/2048 fit, QFP37/QFP44 MMQ shape sweeps. These are independent of MTP/AR; physical Brutus validation is queue-serialized.
+- **Lane E, immediate:** QFP17 QSA-bounded ub1024/2048 fit, QFP37/QFP44 MMQ shape sweeps. These are independent of MTP/AR; physical dev validation is queue-serialized.
 - **Lane F, conditional:** MET12 over-VRAM expert staging, only if actual H2D critical-path cost is material. Does not alter 1281/1283 expert-range semantics.
 - **Lane G, conditional:** QFP47 prefill-only reclaimable scratch lease, only when the QFP17 allocator census proves reclaimable temporary bytes and safe phase boundaries.
 - **Integration after lanes:** compare individual default-off changes, then pairs and composed stack on the same build, with repeatability, low/high prompt depth and multi-slot stress. Do not merge code changes into this planning PR.
@@ -82,7 +82,7 @@ Hardware: A/B at 8K/24K/98K + deep long-context, per-rank device timeline, expli
 
 1. Every suggested concurrent edge has an owner, producer/consumer lifetime, event/query/fallback and a negative eligibility test.
 2. Trace separates host blockage, device busy, rank arrival skew, actual transfer, and hidden asynchronous work.
-3. Independent owner branches can proceed in parallel; only real source-level conflicts and shared Brutus queue impose serialization.
+3. Independent owner branches can proceed in parallel; only real source-level conflicts and shared dev queue impose serialization.
 4. A real implementation cannot claim success from model-only tests or profiler-summed percentages.
 
 ## Change Log

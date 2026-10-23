@@ -33,7 +33,7 @@ master.
 
 A dedicated correctness producer (`validation/rd26_correctness.py`, a thin
 wrapper over the shared `tools/bigcherry/experiment/perplexity.py`
-PPL-comparison primitive) was run for real on Brutus via
+PPL-comparison primitive) was run for real on dev via
 `validation_campaign.run_rd26_ppl_check()`:
 
 - Model: `tierA-qwen4b-q6k` (Qwen3.5-4B, Q6_K)
@@ -46,7 +46,7 @@ Artifact: `artifacts/rd26-ppl-check.json` (produced by the campaign run).
 ## Real hardware evidence at current pin (2026-09-13)
 
 The 2026-09-11 result above was measured against a since-superseded pin.
-Reran `run_rd26_ppl_check()` for real on Brutus against the **current**
+Reran `run_rd26_ppl_check()` for real on dev against the **current**
 active pin (`b10901` / `28ff0958291ce3465fabd7bd679d4b0edd742bd9`), fresh
 control/subject `llama-perplexity` builds, same model
 (`tierA-qwen4b-q6k`) and corpus (real `wikitext-2-raw/wiki.test.raw`):
@@ -122,7 +122,7 @@ batch (`--ubatch-size n_draft+1=5`), for both control (1210 absent) and
 subject (1210 applied), each repeated twice to confirm same-configuration
 determinism first.
 
-**Real run on Brutus (gfx1100), `tierA-qwen4b-q6k`, `spec_draft_n_max=4`:
+**Real run on dev (gfx1100), `tierA-qwen4b-q6k`, `spec_draft_n_max=4`:
 FAIL.** Both arms are internally deterministic (each configuration
 reproduced byte-identically across 2 repetitions), but **subject's own
 decode and verify outputs diverge from each other**, first byte mismatch

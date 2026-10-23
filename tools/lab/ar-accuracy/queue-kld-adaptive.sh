@@ -5,11 +5,11 @@
 # f32 + 1275 switches (must equal f32: 1275 changes scheduling, not arithmetic).
 set -u
 cd "$(cd "$(dirname "$0")/../../.." && pwd)"
-export BC_HIP_PATH=/mnt/vault/tmp/bc-rocm
-export BC_MODEL=/mnt/data/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf
+export BC_HIP_PATH=${BC_TMP_ROOT}/bc-rocm
+export BC_MODEL=${BC_MODEL_ROOT}/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf
 K=tools/lab/ar-accuracy/kld.sh
-C=/mnt/data/bigcherry-work/corpus/kld-docs.txt
-R=/mnt/data/bigcherry-work/runs/kld-27b-reference.kld
+C=${BC_WORK_ROOT}/corpus/kld-docs.txt
+R=${BC_WORK_ROOT}/runs/kld-27b-reference.kld
 [ -s "$R" ] && [ -s "$C" ] || { echo "reference or corpus missing; run queue-ar-accuracy.sh first"; exit 3; }
 A="-- --allreduce adaptive"
 jobs=$(mktemp)
@@ -23,7 +23,7 @@ JOBS
 status=0
 bash tools/lab/plan-qualification/queue.sh "$jobs" || status=1
 echo "QUEUE_EXIT=$status $(date -Is)"
-python3 tools/lab/ar-accuracy/gates.py kld /mnt/data/bigcherry-work/runs kld-awl-f32 kld-awl-f32-fast kld-awl-bf16 kld-awl-f16 || status=1
+python3 tools/lab/ar-accuracy/gates.py kld ${BC_WORK_ROOT}/runs kld-awl-f32 kld-awl-f32-fast kld-awl-bf16 kld-awl-f16 || status=1
 rm -f "$jobs"
 echo ALL_JOBS_DONE
 exit "$status"

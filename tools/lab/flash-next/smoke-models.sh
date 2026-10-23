@@ -9,7 +9,7 @@ bin=$1 out=$2
 mkdir -p "$out"
 port=18731
 ON="GGML_HIP_Q8_1_CACHE_MODE=on BIGCHERRY_ROLLBACK_NO_CONT=1 BIGCHERRY_RMS_Q81=1 BIGCHERRY_ACT_Q81=1 BIGCHERRY_HC_Q81=1 BIGCHERRY_SCALE_ACT_FUSE=1 BIGCHERRY_SCHED_ASYNC_INPUTS=1"
-M=/mnt/data/llm-models
+M=${BC_MODEL_ROOT}
 PROMPT='Write three short sentences about why the sky is blue.'
 
 run() {  # name devices split extra-args model

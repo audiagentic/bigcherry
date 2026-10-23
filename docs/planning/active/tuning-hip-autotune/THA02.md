@@ -19,7 +19,7 @@ Build and validate a real two-op fused MUL_MAT(_ID)+GLU correctness-evidence har
 
 ## Steps
 
-Use HI118 fusion flags/geometry and real shared activation/ids tensor identities; fix/init deterministic expert-ID seeding; construct real two mul_mat_id outputs plus terminal GLU (no post-GLU scaling); emit existing digest/metric evidence; require observed signature digest/candidate resolution matches requested; cover remaining dense sibling and behavioral flag toggles; run fresh schema-2 Brutus 4-GPU correctness/record validation and genuine HI83 evidence before promotion.
+Use HI118 fusion flags/geometry and real shared activation/ids tensor identities; fix/init deterministic expert-ID seeding; construct real two mul_mat_id outputs plus terminal GLU (no post-GLU scaling); emit existing digest/metric evidence; require observed signature digest/candidate resolution matches requested; cover remaining dense sibling and behavioral flag toggles; run fresh schema-2 dev 4-GPU correctness/record validation and genuine HI83 evidence before promotion.
 
 ## Detailed Solution & Technical Design
 
@@ -57,7 +57,7 @@ Successor key: tuning-hip-autotune-hi119
 
 ### 2026-09-12: real schema-2 hardware correctness pass on gfx1100 -- CONFIRMED (GPT-reviewed across 3 rounds, req_f2d1d0cf12234313 / req_6a56ad440ffa482f / req_5c5b77a770a44a75)
 
-Built test-backend-ops with the exact chain [1222,1223,1236,1238,1239,1240] at current pin b10901 (schema v2). Real Brutus hardware, dual RX 7900 XTX (gfx1100, the actual production/target topology this harness is designed for):
+Built test-backend-ops with the exact chain [1222,1223,1236,1238,1239,1240] at current pin b10901 (schema v2). Real dev hardware, dual RX 7900 XTX (gfx1100, the actual production/target topology this harness is designed for):
 
 - ROCm0: broad correctness net (regex n_mats=, 2162 real op instances including all 4 registered BIGCHERRY_MOE_GLU_FUSION cases) -- 2162/2162 passed, deterministic seed=42.
 - ROCm0 and ROCm1, individually, tightly filtered to the 4 registered fused-GLU instances (136 tests each): 136/136 passed on EACH, reproducibly (reran multiple times, always clean). All 4 instances (SWIGLU/GEGLU x broadcast-Q8_0-k2048/production-shape x non-broadcast-F32-k256) pass with real correctness errors 1e-8 to 1e-14, far under the 5e-3 threshold.
@@ -66,7 +66,7 @@ This satisfies THA02's "fresh schema-2 hardware correctness validation" requirem
 
 ### Separate real finding, NOT attributable to these patches: intermittent build-sensitive SIGSEGV in production mul_mat_vec_f_cuda on gfx1201
 
-While running the same test filter against Brutus's other two GPUs (gfx1201 device ROCm2, gfx1030 device ROCm3 -- NOT this patch chain's target architecture), the build crashed. Deep investigation (3 rounds of GPT deep-analysis per explicit user instruction to always investigate regressions thoroughly):
+While running the same test filter against dev's other two GPUs (gfx1201 device ROCm2, gfx1030 device ROCm3 -- NOT this patch chain's target architecture), the build crashed. Deep investigation (3 rounds of GPT deep-analysis per explicit user instruction to always investigate regressions thoroughly):
 
 1. A stock/patch-free build initially APPEARED to pass on ROCm2/ROCm3 where the patched build crashed -- looked like a real regression from these patches.
 2. Bisected: [1236] alone, [1236+1238] alone, [1236+1238+1239] alone -- ALL individually clean on ROCm2. This already weakened the regression theory.

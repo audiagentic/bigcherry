@@ -1,7 +1,7 @@
 # RHA04 required dual-XTX 27B matrix
 
 This is the completed six-permutation, three-arm server-bench capture for the
-Qwen3.8-27B Q8_0 model on Brutus dual XTX. The run used the maintained test
+Qwen3.8-27B Q8_0 model on <gpu-host> dual XTX. The run used the maintained test
 bench runner (`run_bench.py` via `bigcherry ab-benchmark`), not llamabench.
 
 - Capture: `run.json`, 18 arm cells (six permutations × replay/stock/native)

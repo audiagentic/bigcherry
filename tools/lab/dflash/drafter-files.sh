@@ -11,7 +11,7 @@ set -u
 REPO=${REPO:-$(cd "$(dirname "$0")/../../.." && pwd)}
 bin=$1 out=$2 only=${3:-} reps=${4:-5}
 mkdir -p "$out"
-G=/mnt/data/llm-models/qwen3.8-27b/gguf
+G=${BC_MODEL_ROOT}/qwen3.8-27b/gguf
 model=${PROBE_MODEL:-$G/mtp/Qwen3.8-27B-Q8_0.gguf}
 common=(-m "$model" -ngl 99 --fit off -c 8192 --flash-attn on --parallel 1 --threads 8 -ub 2048 -b 2048 -lv 4)
 # reuse probe() from probe-27b.sh: everything between its definition and its first layout line

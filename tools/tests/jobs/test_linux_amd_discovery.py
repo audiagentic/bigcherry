@@ -54,7 +54,7 @@ class AmdSmiDiscoveryTests(unittest.TestCase):
             inv = inventory_from_amdsmi_json(
                 LIST,
                 STATIC,
-                host_id="brutus",
+                host_id="dev",
                 platform_environment_hash="env",
                 sysfs_root=root,
             )
@@ -90,13 +90,13 @@ class AmdSmiDiscoveryTests(unittest.TestCase):
             inventory_from_amdsmi_json(
                 listed,
                 static,
-                host_id="brutus",
+                host_id="dev",
                 platform_environment_hash="env",
             )
         inv = inventory_from_amdsmi_json(
             listed,
             static,
-            host_id="brutus",
+            host_id="dev",
             platform_environment_hash="env",
             hardware_epoch="epoch-1",
         )
@@ -117,7 +117,7 @@ class AmdSmiDiscoveryTests(unittest.TestCase):
             inventory_from_amdsmi_json(
                 LIST,
                 broken,
-                host_id="brutus",
+                host_id="dev",
                 platform_environment_hash="env",
             )
 

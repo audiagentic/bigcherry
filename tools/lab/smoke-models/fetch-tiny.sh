@@ -3,7 +3,7 @@
 #   tiny-llama.gguf  llama.cpp - llama.cpp's own CI model, stories15M unquantised (ggml-org/models)
 #   tiny.rad         radiance  - Felladrin/Llama-68M-Chat-v1 converted by rad-convert: radiance's llama plugin
 #                    takes fp8 linears in 128x128 blocks (stories15M's 288-wide dims do not divide) and bf16 elsewhere
-# Usage: MODEL_ROOT=/mnt/data/llm-models RAD_BUILD=<radiance lane build> bash fetch-tiny.sh
+# Usage: MODEL_ROOT=${BC_MODEL_ROOT} RAD_BUILD=<radiance lane build> bash fetch-tiny.sh
 set -euo pipefail
 root=${MODEL_ROOT:?model root}
 mkdir -p "$root/smoke"

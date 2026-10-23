@@ -3,7 +3,7 @@ reduction signature, drive it through the native test-hip-reduce probe for
 all three provider arms, evaluate every case, and write the aggregate
 reduce-correctness.jsonl evidence.
 
-This is the orchestration layer that was previously run ad hoc on Brutus;
+This is the orchestration layer that was previously run ad hoc on dev;
 committing it makes the run reproducible and keeps the evidence-generation
 command itself under review, matching HI67's correctness_evidence.py
 precedent of "the evaluation policy lives in the repo, not in someone's

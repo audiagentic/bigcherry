@@ -30,7 +30,7 @@ def inventory(*, models=("7900XTX", "7900XTX")) -> HardwareInventory:
         for index, model in enumerate(models)
     )
     return HardwareInventory(
-        host_id="brutus",
+        host_id="dev",
         platform_family="linux-rocm",
         devices=devices,
         peer_access=(("gpu-0", "gpu-1"),),
@@ -81,7 +81,7 @@ class StoreAndServiceTests(unittest.TestCase):
         self.identity = StaticScientificIdentityResolver()
         self.service = JobService(
             store=self.store,
-            executors={"brutus": self.fake},
+            executors={"dev": self.fake},
             workspace_manager=PassthroughWorkspaceManager(
                 self.project, commit="a" * 40
             ),
@@ -102,8 +102,8 @@ class StoreAndServiceTests(unittest.TestCase):
             planned_sessions=sessions,
             producer="1265_example/producer",
             target=TargetPolicy(
-                executor_id="brutus",
-                host_id="brutus",
+                executor_id="dev",
+                host_id="dev",
                 platform_family="linux-rocm",
             ),
         )
@@ -163,7 +163,7 @@ class StoreAndServiceTests(unittest.TestCase):
         self.assertEqual(self.store.latest_attempt(run_id), 1)
         restarted = JobService(
             store=self.store,
-            executors={"brutus": self.fake},
+            executors={"dev": self.fake},
             workspace_manager=PassthroughWorkspaceManager(
                 self.project, commit="a" * 40
             ),
@@ -199,7 +199,7 @@ class StoreAndServiceTests(unittest.TestCase):
         )
         service = JobService(
             store=self.store,
-            executors={"brutus": self.fake},
+            executors={"dev": self.fake},
             workspace_manager=PassthroughWorkspaceManager(
                 self.project, commit="a" * 40
             ),
@@ -279,8 +279,8 @@ class RemoteAndInstallTests(unittest.TestCase):
 
     def test_systemd_render_is_host_parameterized(self):
         units = unit_texts(
-            project_root=PurePosixPath("/srv/bigcherry"),
-            work_root=PurePosixPath("/mnt/data/bc"),
+            project_root=PurePosixPath("/project/root"),
+            work_root=PurePosixPath("/fixture/bc"),
             python=PurePosixPath("/srv/venv/bin/python"),
             user="bigcherry",
             engine="llamacpp",
@@ -289,7 +289,7 @@ class RemoteAndInstallTests(unittest.TestCase):
         path = units["bigcherry-jobs-ingest.path"]
         self.assertIn("User=bigcherry", service)
         self.assertIn("-m bigcherry jobs --engine llamacpp ingest --once", service)
-        self.assertIn("/mnt/data/bc/jobs/inbox/pending", path)
+        self.assertIn("/fixture/bc/jobs/inbox/pending", path)
 
 
 if __name__ == "__main__":

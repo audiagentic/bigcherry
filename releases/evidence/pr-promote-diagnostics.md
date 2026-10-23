@@ -20,7 +20,7 @@ and compose; catalog, governance and the patches' own tests pass (47 tests); pat
 
 ## Hardware evidence
 
-Brutus, Flash-Next UD-IQ4_XS, production topology (2x RX 7900 XTX + R9700 tensor split, MTP drafter on the RX 6900
+dev, Flash-Next UD-IQ4_XS, production topology (2x RX 7900 XTX + R9700 tensor split, MTP drafter on the RX 6900
 XT), ctx 245760, pin b11474 (b9acf138).
 
 - Builds `b-metamem-mig-diag` (production + 1319 + 1320 + 1325 + 1346) and `b-metamem-mig-fuse` (production + 1342)
@@ -45,7 +45,7 @@ remains.
 
 Hardware evidence above was collected from the timing path at b11474 with the window disabled; the timing values and
 greedy identity therefore exercise the behavior that remains. The reduced post-review patch has not been HIP-compiled
-on Brutus in this session; its mechanics/patch-lint status must be taken from the updated PR checks.
+on dev in this session; its mechanics/patch-lint status must be taken from the updated PR checks.
 
 ## Notes for the reviewer
 

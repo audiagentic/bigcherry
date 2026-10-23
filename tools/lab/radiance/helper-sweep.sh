@@ -9,16 +9,16 @@
 #   (R3_MOE_FP16, R3_MOE_PITCH16, R3_MOE_PROBE). `-` as branch reuses the newest build.
 set -u
 BR=$1; VARIANTS=$2; N=${3:-4}
-W=/mnt/data/bigcherry-work
+W=${BC_WORK_ROOT}
 if [ "$BR" != "-" ]; then
   cd $W/wt-pr8 && git fetch -q origin && git checkout -q --detach $BR && git log --oneline -1
-  export ROCM_PATH=/opt/rocm-7.2.4 PATH=/opt/rocm-7.2.4/bin:$PATH BIGCHERRY_ENVIRONMENT=/mnt/vault/development/projects/bigcherry/workspaces/main/config/environment.local.toml
+  export ROCM_PATH=/opt/rocm-7.2.4 PATH=/opt/rocm-7.2.4/bin:$PATH BIGCHERRY_ENVIRONMENT=${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/config/environment.local.toml
   PYTHONPATH=tools timeout 5400 python3 -m bigcherry build --lane radiance-lab:stock:linux-radiance --experiment moe-remote-handoff > $W/sweep-build.log 2>&1
   grep -E 'ok build|FAILED' $W/sweep-build.log | tail -1; grep -E ' error:|r3_rewrite.py failed' $W/sweep-build.log | sort -u | head
 fi
 export ROCM_PATH=/opt/rocm-7.2.4 PATH=/opt/rocm-7.2.4/bin:$PATH
-B=$(ls -td /mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/*/*/ | head -1)
-M=/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad
+B=$(ls -td ${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/work/builds/*/*/ | head -1)
+M=${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad
 FILES=$(ls -S ${CAPDIR:-$W/captures}/*.bin | head -$N | tr '\n' ' ')
 out=$W/sweep-out; rm -rf $out
 env HIP_VISIBLE_DEVICES=0 ROCR_VISIBLE_DEVICES=0 R3_MOE_WORKER_MIB=22528 R3_MOE_WORKER_SMALL_ROWS=${SMALL_ROWS:-8} R3_MOE_WORKER_SMALL_LANES=${SMALL_LANES:-} R3_MOE_WORKER_MAX_ROWS=4096 \

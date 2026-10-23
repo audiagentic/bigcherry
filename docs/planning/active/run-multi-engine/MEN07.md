@@ -21,7 +21,7 @@ With radiance as the second engine the patch engine needs no new language suppor
 
 1. Pick one concrete change wanted on radiance (for example an activation marker, or a kernel library entry for a card it does not cover) after MEN01 and MEN02.
 2. Author it as patches/radiance/<id>/ with patch.toml, patch.py, tests and SUMMARY.
-3. Take it through patch-lint, the per-engine composition check, a Brutus build, an ABBA with activation evidence (MEN06) and the lightweight promotion tier.
+3. Take it through patch-lint, the per-engine composition check, a dev build, an ABBA with activation evidence (MEN06) and the lightweight promotion tier.
 
 ## Detailed Solution & Technical Design
 

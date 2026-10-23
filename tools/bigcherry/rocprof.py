@@ -92,7 +92,7 @@ def load_kernel_trace(path: Path) -> list[KernelDispatch]:
     """Parse rocprofv3's own kernel_trace.csv schema (Kind, Agent_Id,
     Queue_Id, Stream_Id, Thread_Id, Dispatch_Id, Kernel_Id, Kernel_Name,
     Correlation_Id, Start_Timestamp, End_Timestamp, ...) -- verified against
-    a real trace on Brutus, 2026-08-25."""
+    a real trace on dev, 2026-08-25."""
     dispatches: list[KernelDispatch] = []
     with path.open("r", encoding="utf-8", newline="") as handle:
         reader = csv.DictReader(handle)
@@ -109,7 +109,7 @@ def load_kernel_trace(path: Path) -> list[KernelDispatch]:
 
 
 # Real kernel-name substrings observed in a live BigCherry/llama.cpp HIP
-# trace on Brutus (2026-08-25) -- a small, explicit whitelist rather than a
+# trace on dev (2026-08-25) -- a small, explicit whitelist rather than a
 # clever pattern, so an unrecognised kernel falls into "other" and is
 # visible for triage rather than silently misclassified.
 _FAMILY_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (

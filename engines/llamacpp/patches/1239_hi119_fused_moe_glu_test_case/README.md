@@ -19,7 +19,7 @@ part of THA02's scope, not yet re-verified against a schema-2 build.
 
 Depends on patch `1238`'s deterministic routing.
 
-## Real schema-2 hardware pass (2026-09-12, Brutus dual gfx1100, THA02)
+## Real schema-2 hardware pass (2026-09-12, dev dual gfx1100, THA02)
 
 All 4 registered instances of this patch's `test_bigcherry_moe_glu_fusion`
 class (SWIGLU/GEGLU x the real production broadcast Q8_0 k=2048 shape x a

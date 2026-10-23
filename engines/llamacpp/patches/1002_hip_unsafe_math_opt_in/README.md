@@ -40,7 +40,7 @@ release ledger (2026-08-21):
    and reproduces the PR's own described mechanism on a third architecture
    upstream never tested.
 2. **Build-configuration verification (deterministic, not statistical)**,
-   ledger event `chg_20260821_155302`: confirmed on Linux/Brutus via
+   ledger event `chg_20260821_155302`: confirmed on Linux/dev via
    `ninja -t commands` that `-funsafe-math-optimizations` is genuinely
    absent from the real per-file HIP compile command when
    `GGML_HIP_UNSAFE_MATH` is OFF (default) and genuinely present when

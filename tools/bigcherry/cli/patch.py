@@ -486,7 +486,7 @@ def cmd_patch_verify_evidence(args: Namespace) -> int:
         import os
 
         mirror = ProjectContext.resolve(
-            engine=args.engine, work_root=os.environ.get("BC_CACHE")
+            engine=args.engine, work_root=os.environ.get("BC_CACHE_ROOT")
         ).upstream_repo
         upstream = mirror if mirror.exists() else vendor_root(args.engine)
         resolved_base_revision = UpstreamRepository(upstream).resolve_ref(cfg.pinned)

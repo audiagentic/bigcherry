@@ -1,8 +1,8 @@
 # BigCherry job service — normative design
 
-Status: **software/control-plane implementation complete enough for cutover qualification; offline jobs CI and real Noble Slurm reference are green; Brutus GPU/production and Windows remote hardware acceptance remain pending** (2026-09-27).
+Status: **software/control-plane implementation complete enough for cutover qualification; offline jobs CI and real Noble Slurm reference are green; dev GPU/production and Windows remote hardware acceptance remain pending** (2026-09-27).
 
-Operator reference: `docs/reference/jobs/JOBS_CONTROL_PLANE.md`. Brutus runbook: `docs/reference/jobs/SLURM_BRUTUS.md`. Cutover/migration: `docs/reference/jobs/{ACCEPTANCE,MIGRATION}.md`.
+Operator reference: `docs/reference/jobs/JOBS_CONTROL_PLANE.md`. dev runbook: `docs/reference/jobs/SLURM_SETUP.md`. Cutover/migration: `docs/reference/jobs/{ACCEPTANCE,MIGRATION}.md`.
 
 ## 1. Goal
 
@@ -23,7 +23,7 @@ human / agent / future UI/API
         /    |      \
      Slurm  Local   RemoteWorker
       |      |          |
-   Brutus  direct   Windows/future hosts
+   dev  direct   Windows/future hosts
 ```
 
 Client lifetime never owns execution.
@@ -32,7 +32,7 @@ Client lifetime never owns execution.
 
 **Buy scheduling; keep scientific policy in BigCherry.**
 
-Slurm owns Brutus queue/execution/resource/process lifetime. BigCherry owns BatchSpec/JobSpec, planned-N, series/session/run/attempt identity, exact code/content/contract/composition/model/toolchain/hardware identity, retry legality, production coexistence policy, durable events/log/artifact references, evidence harvest and scientific report/review state.
+Slurm owns dev queue/execution/resource/process lifetime. BigCherry owns BatchSpec/JobSpec, planned-N, series/session/run/attempt identity, exact code/content/contract/composition/model/toolchain/hardware identity, retry legality, production coexistence policy, durable events/log/artifact references, evidence harvest and scientific report/review state.
 
 Rejected as primary authority: a custom scheduler daemon/SQLite queue, mandatory slurmdbd/MariaDB, slurmrestd v1, HTCondor solely for Windows, or another orchestration framework layered above Slurm.
 
@@ -147,7 +147,7 @@ bc-build:   build_slot:1 + host_activity:1
 bc-measure: host_activity:2 + architecture GRES
 ```
 
-Higher measurement `PriorityTier` plus `bf_licenses` was validated on real Noble Slurm. Production cgroup baseline is `ConstrainDevices=no`; enable device fencing only after the full Brutus ROCm matrix proves it.
+Higher measurement `PriorityTier` plus `bf_licenses` was validated on real Noble Slurm. Production cgroup baseline is `ConstrainDevices=no`; enable device fencing only after the full dev ROCm matrix proves it.
 
 **Production monolithic v1 has no `RequeueExit`.** Every retry is BigCherry `attempt+1` / a new Slurm job. `--same-commit` may reuse exact code; `--latest` may resolve a newer commit. Native requeue may only be enabled later for an individually proven restart-idempotent stage.
 
@@ -182,7 +182,7 @@ disjoint -> loaded-idle only after isolation qualification
 
 Until loaded-idle isolation is qualified, timed gating measurement must quiesce production rather than assuming disjoint GPUs eliminate host-level interference.
 
-Still required on Brutus: live llama-swap config/`/running`/argv/env/process/VRAM adapter plus narrow root-owned window admission/recovery service. Production drift during measurement invalidates/discards the sample; it is not scientific regression evidence.
+Still required on dev: live llama-swap config/`/running`/argv/env/process/VRAM adapter plus narrow root-owned window admission/recovery service. Production drift during measurement invalidates/discards the sample; it is not scientific regression evidence.
 
 ## 11. Local/remote/Windows
 
@@ -210,13 +210,13 @@ Durable events use monotonic sequence + severity `record|notify|wake`; clients r
 
 `jobs migrate-legacy` converts only the exact historical `run_campaign.sh` shape plus known JobSpec-equivalent options. It requires original `BC_MODEL`/`BC_HIP_PATH` and explicit planned N. Legacy GPU index/run name are metadata only. Unknown one-off flags fail closed.
 
-Queue retirement requires real Brutus gates, forced incident matrix, one full planned series through committed harvest/report, representative alternate capability soak and rollback readiness. See `docs/reference/jobs/ACCEPTANCE.md`.
+Queue retirement requires real dev gates, forced incident matrix, one full planned series through committed harvest/report, representative alternate capability soak and rollback readiness. See `docs/reference/jobs/ACCEPTANCE.md`.
 
 ## 15. Remaining non-software acceptance boundary
 
 Offline jobs-service code/tests and real Noble scheduler reference are green. The project must not claim production cutover complete until real-host evidence covers:
 
-- Brutus AMD stable-ID persistence and peer topology;
+- dev AMD stable-ID persistence and peer topology;
 - generated real GRES + `slurmd -G` and allocation->stable-ID attestation;
 - ROCm cgroup matrix or explicit `ConstrainDevices=no` fallback;
 - live llama-swap snapshot/exclusive-window admission/recovery;

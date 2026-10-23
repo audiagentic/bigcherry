@@ -2,7 +2,7 @@
 
 **Question.** How fast is the other AMD stack on our hardware, measured our way? A public report (2026-10-08) claims
 Qwen3.8-27B at 125-134 t/s decode and 2,750-2,970 t/s prefill on one Radeon AI PRO R9700 with vLLM + radiance +
-libr4d, AMD's MXFP4 checkpoint and a DFlash2-FP8 drafter. Brutus already carries that stack as the `radiance-vllm`
+libr4d, AMD's MXFP4 checkpoint and a DFlash2-FP8 drafter. dev already carries that stack as the `radiance-vllm`
 container (image `stilldeadcode/vllm-radiance:0.9.3`, libr4d `b9e42ab-rx9`, same tuned settings).
 
 **What this is not.** Not a like-for-like comparison with llama.cpp results: 4-bit MXFP4 weights and FP8 KV against

@@ -27,7 +27,7 @@ Implemented:
 - durable `executor-start.json`, `allocation-attestation.json`, `executor-result.json`;
 - file-backed `experiment.bundle.run_managed()` streaming; Python memory does not scale with child output;
 - process-group TERM -> bounded grace -> KILL support;
-- attempt runner guards **system root, work volume and temp filesystem** with absolute and fractional free-space floors, so a worktree on `/mnt/data` cannot hide a nearly-full `/`;
+- attempt runner guards **system root, work volume and temp filesystem** with absolute and fractional free-space floors, so a worktree on `${DATA_ROOT}` cannot hide a nearly-full `/`;
 - CPU/output liveness stall detector;
 - monitored validation child execution with typed `disk_pressure`, `stalled`, `launch_error`, `hardware_attestation` and configuration incidents;
 - retryable environment incidents return 75; harness/configuration incidents return 76; scientific FAIL remains normal campaign completion.
@@ -48,15 +48,15 @@ BIGCHERRY_STALL_SECONDS=0
 BIGCHERRY_TERM_GRACE_SECONDS=5
 ```
 
-Brutus should add qualified absolute reserves in its service environment (candidate policy: root 50 GiB, work 200 GiB, tmp 20 GiB) rather than making those capacities universal LocalExecutor assumptions.
+dev should add qualified absolute reserves in its service environment (candidate policy: root 50 GiB, work 200 GiB, tmp 20 GiB) rather than making those capacities universal LocalExecutor assumptions.
 
 `BIGCHERRY_STALL_SECONDS=0` intentionally disables automatic stall termination until a host-specific nonzero threshold is qualified; CPU/output progress detection is implemented and tested.
 
 ## Remaining work
 
-- choose/qualify Brutus nonzero stall threshold and absolute disk reserves;
+- choose/qualify dev nonzero stall threshold and absolute disk reserves;
 - implement retention/cleanup policy (never delete active/unharvested evidence; only eligible harvested/failed work roots);
-- Brutus acceptance for real disk pressure, process-tree cancellation, very large server logs and gitignored vendor/environment workspace inputs;
+- dev acceptance for real disk pressure, process-tree cancellation, very large server logs and gitignored vendor/environment workspace inputs;
 - Windows-local process-tree/cancellation acceptance.
 
 ## Invariants

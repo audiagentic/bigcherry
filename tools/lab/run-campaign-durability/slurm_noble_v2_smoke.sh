@@ -230,7 +230,7 @@ log "jobcomp/filetxt completion history ok"
 
 # Restart with the production process/accounting cgroup plugins but no device
 # filtering. This proves the non-GPU fallback stack on Noble; only
-# ConstrainDevices=yes + AMD /dev/kfd/renderD behavior stays Brutus-only.
+# ConstrainDevices=yes + AMD /dev/kfd/renderD behavior stays dev-only.
 stop_slurm || die "failed to stop base Slurm"
 sudo tee /etc/slurm/cgroup.conf >/dev/null <<'EOF'
 CgroupPlugin=autodetect

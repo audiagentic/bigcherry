@@ -31,7 +31,7 @@ The completed provider/counter mechanism is the baseline and is not recreated he
 
 ## Files
 
-Existing HIP native_select/dispatch-resolve provider and counters; experiment-mode guard selection; shadow-validity telemetry; hot-path/graph/correctness tests; diagnostics-off and interleaved Brutus E2E evidence.
+Existing HIP native_select/dispatch-resolve provider and counters; experiment-mode guard selection; shadow-validity telemetry; hot-path/graph/correctness tests; diagnostics-off and interleaved dev E2E evidence.
 
 ## Validation
 

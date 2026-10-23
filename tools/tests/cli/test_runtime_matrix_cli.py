@@ -15,7 +15,7 @@ class RuntimeMatrixCliTests(unittest.TestCase):
             config = root / "matrix.json"
             output = root / "out"
             config.write_text(json.dumps({
-                "host": "build-server",
+                "host": "dev",
                 "cells": [{
                     "cell_id": "gpu0",
                     "model_id": "tierB-qwen9b-q6k",
@@ -31,7 +31,7 @@ class RuntimeMatrixCliTests(unittest.TestCase):
             with patch.dict(os.environ, {"PYTHONPATH": "tools"}, clear=False):
                 self.assertEqual(main(["runtime-matrix", "--config", str(config), "--output", str(output), "--dry-run"]), 0)
             resolved = json.loads((output / "resolved-matrix.json").read_text(encoding="utf-8"))
-            self.assertEqual(resolved["host"], "build-server")
+            self.assertEqual(resolved["host"], "dev")
             self.assertEqual(resolved["cells"][0]["visibility"], {
                 "HIP_VISIBLE_DEVICES": "0", "ROCR_VISIBLE_DEVICES": "0"
             })

@@ -21,13 +21,14 @@ class BuildIdentityHashParityTests(unittest.TestCase):
         plan = BuildPlan(
             source_slice_id="s1",
             phase="record",
-            platform="brutus",
+            platform="test-platform",
             targets=("gfx1100",),
             cmake_options=(("GGML_HIP", "ON"),),
             variant_set="inventory",
             environment=(("CC", "clang"),),
         )
-        self.assertEqual(plan.build_plan_id, "4ddcbdc25d421aa0e688a68dd72c1563")
+        # Re-pinned when the fixture platform was renamed from a machine name to a neutral one.
+        self.assertEqual(plan.build_plan_id, "2b0d91d8a403e9c69cf3c8c280cf036d")
 
     def test_existing_effective_build_id_is_unchanged(self):
         configure = {"source": "s1", "generator": "Ninja", "options": {"A": "B"}}

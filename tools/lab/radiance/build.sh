@@ -5,12 +5,12 @@
 #   VIS=0,1,2,3 SCRIPT radiance-build tools/lab/radiance/build.sh @<any build run> <out-dir>
 # The first argument (a llama-server path from the queue) is ignored.
 # Usage: build.sh <ignored> <out-dir>
-# env: GCC14_BIN (unpacked g++-14, used when g++-14 is not installed); RADIANCE_SRC (/mnt/data/bigcherry-work/engines/radiance), RADIANCE_REF (checkout this commit if set),
+# env: GCC14_BIN (unpacked g++-14, used when g++-14 is not installed); RADIANCE_SRC (${BC_WORK_ROOT}/engines/radiance), RADIANCE_REF (checkout this commit if set),
 #      ROCM_PATH (/opt/rocm-7.2.4), RAD_GPU_TARGETS (gfx1201), TESTS (1 = run the card-free ctest set)
 set -u
 out=$2
 mkdir -p "$out"
-src=${RADIANCE_SRC:-/mnt/data/bigcherry-work/engines/radiance}
+src=${RADIANCE_SRC:-${BC_WORK_ROOT}/engines/radiance}
 export ROCM_PATH=${ROCM_PATH:-/opt/rocm-7.2.4}
 export PATH="$ROCM_PATH/bin:$PATH"
 cd "$src" || { echo "NO_SOURCE $src"; exit 1; }
@@ -22,7 +22,7 @@ echo "toolchain: $(hipcc --version 2> /dev/null | head -1); cmake $(cmake --vers
 # compiler. Where g++-14 is not installed, GCC14_BIN names an unpacked copy: the Ubuntu g++-14 packages fetched with
 # `apt-get download` and extracted with `dpkg -x` into a private directory (no system change; libstdc++6 on
 # Ubuntu 24.04 is already the gcc-14 runtime).
-GCC14_BIN=${GCC14_BIN:-/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin}
+GCC14_BIN=${GCC14_BIN:-${BC_WORK_ROOT}/toolchains/gcc14/root/usr/bin}
 if command -v g++-14 > /dev/null 2>&1; then
     export CC=gcc-14 CXX=g++-14
 elif [ -x "$GCC14_BIN/x86_64-linux-gnu-g++-14" ]; then

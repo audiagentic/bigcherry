@@ -41,4 +41,4 @@ not evidence claimed by this source audit.
 ## Evidence
 
 - Offline mechanics test: pending.
-- Reference test on Brutus (CPU): pending.
+- Reference test on dev (CPU): pending.

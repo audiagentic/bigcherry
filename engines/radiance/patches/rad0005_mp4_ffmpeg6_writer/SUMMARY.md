@@ -18,7 +18,7 @@ See below.
 ## What it does
 
 radiance 1.8.0 adds `core/mm/mp4.cpp`, which gives `avio_alloc_context` a write callback taking `const uint8_t*`
-(the FFmpeg 7 / libavformat 61 signature). FFmpeg 6.1, which Ubuntu 24.04 ships and Brutus uses, declares the
+(the FFmpeg 7 / libavformat 61 signature). FFmpeg 6.1, which Ubuntu 24.04 ships and dev uses, declares the
 parameter `uint8_t*`, so `rad_core` fails to compile (`invalid conversion from int (*)(void*, const uint8_t*, int)`).
 The patch selects the parameter type with `LIBAVFORMAT_VERSION_MAJOR >= 61`. The callback only reads the buffer, so
 behaviour is identical on both versions.
@@ -31,5 +31,5 @@ the 1.7.0 build had. Installing FFmpeg 7 on the host needs the owner's consent a
 ## Evidence needed (lightweight tier)
 
 Enabler with no runtime path of its own: the engine builds and passes the bump gates (components-build, plugin ABI,
-component tests, cpu-smoke) on Brutus with it applied; mechanics test and patch-lint offline. Candidate for upstream
+component tests, cpu-smoke) on dev with it applied; mechanics test and patch-lint offline. Candidate for upstream
 (kept private for now).

@@ -36,6 +36,7 @@
 #include "worker_owners.h"
 #include "worker_harness.h"
 #include "worker_selftest.h"
+#include "worker_combine.h"
 
 int main(int argc, char** argv) {
     /* EVERY LANE STREAM ON ITS OWN HARDWARE QUEUE. A small lane pre-queues "wait for the next request" packets;
@@ -321,7 +322,7 @@ int main(int argc, char** argv) {
     if (creator) {
         fd = shm_open(name, O_CREAT | O_EXCL | O_RDWR | O_CLOEXEC, 0600);
     } else {
-        for (int i = 0; i < 1800 && fd < 0 && !g_stop; ++i) {
+        for (int i = 0; i < 1800 && fd < 0 && !stopping(); ++i) {
             fd = shm_open(name, O_RDWR | O_CLOEXEC, 0);
             if (fd < 0) ::sleep(1);
         }
@@ -348,7 +349,7 @@ int main(int argc, char** argv) {
         for (uint32_t r = 1; r < helper_count; ++r) h->activation_offset[r] = h->activation_offset[0];
         store(&h->helper_count, helper_count);   /* last: an attaching helper waits for it */
     } else {
-        for (int i = 0; i < 1800 && !g_stop && load(&h->helper_count) != helper_count; ++i) ::sleep(1);
+        for (int i = 0; i < 1800 && !stopping() && load(&h->helper_count) != helper_count; ++i) ::sleep(1);
         bool same_lanes = load(&h->helper_count) == helper_count && valid(h, lay.bytes, shape) && h->small_class_count == lane_classes.count;
         for (uint32_t c = 0; same_lanes && c < lane_classes.count; ++c)
             same_lanes = h->small_class_rows[c] == lane_classes.rows[c];
@@ -423,7 +424,7 @@ int main(int argc, char** argv) {
     std::fprintf(stderr, "r3_moe_worker: runtime map owns %zu experts, %.3f GiB\n",
                  owned.expert.size(), (double)owned.bytes / (1024.0 * 1024.0 * 1024.0));
 
-    /* No SA_RESTART (std::signal sets it): the futex wait must return EINTR so the loop sees g_stop. */
+    /* No SA_RESTART (std::signal sets it): the futex wait must return EINTR so the loop sees the stop word. */
     struct sigaction sa{};
     sa.sa_handler = on_signal;
     sigemptyset(&sa.sa_mask);
@@ -438,13 +439,13 @@ int main(int argc, char** argv) {
     double stat_us = 0.0;
     if (cpu) {
         uint32_t seq = 1;
-        while (!g_stop) {
+        while (!stopping()) {
             Request* q = request(map, seq);
-            while (!g_stop && load(&q->sequence) != seq) {
+            while (!stopping() && load(&q->sequence) != seq) {
                 const uint32_t seen = load(&h->publish_sequence);
                 if (load(&q->sequence) != seq) (void)futex_wait(&h->publish_sequence, seen);
             }
-            if (g_stop) break;
+            if (stopping()) break;
             const auto t0 = std::chrono::steady_clock::now();
             q->status = compute_host(model, map, q);
             stat_us += std::chrono::duration<double, std::micro>(
@@ -459,6 +460,28 @@ int main(int argc, char** argv) {
         std::array<uint64_t, kLanes> lane_req{}, lane_rows{}, lane_routes{}, lane_samples{};
         std::array<double, kLanes> lane_sample_us{};
         std::array<std::thread, kLanes> workers;
+        /* R3_MOE_WORKER_COMBINE=1 (default off), two helpers: helper 0 adds both helpers' rows for the engine's large
+         * lane on its large-lane thread after its stream sync (worker_combine.h); helper 1 wakes it after its own sync.
+         * The engine asks only once combine.enabled is set. */
+        bool combine_on = false;
+        std::unique_ptr<CombinePool> combine_pool;
+        std::vector<uint8_t> combine_mask;
+        CombineStats combine_stats;
+        if (const char* e = std::getenv("R3_MOE_WORKER_COMBINE"); e && std::strcmp(e, "1") == 0 && helper_count == 2) {
+            combine_on = true;
+            if (helper_index == 0) {
+                uint32_t min_rows = 256, threads = 8;
+                if (const char* v = std::getenv("R3_MOE_WORKER_COMBINE_MIN_ROWS"); v && *v) min_rows = (uint32_t)std::atoi(v);
+                if (const char* v = std::getenv("R3_MOE_WORKER_COMBINE_THREADS"); v && *v) threads = (uint32_t)std::max(1, std::atoi(v));
+                threads = std::min(threads, std::max(1u, std::thread::hardware_concurrency()));
+                combine_pool = std::make_unique<CombinePool>(threads);
+                combine_mask.resize(h->max_rows);
+                h->combine.min_rows = min_rows;
+                store(&h->combine.enabled, 1u);
+                std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_COMBINE on - %u CPU thread(s), large-lane steps of %u+ rows\n",
+                             threads, min_rows);
+            }
+        }
         for (uint32_t lane = 0; lane < kLanes; ++lane) {
             /* Two helpers: each serves only its own rank slot's lanes. */
             if (helper_count > 1 && lane % kMaxRanks != helper_index) continue;
@@ -469,7 +492,7 @@ int main(int argc, char** argv) {
                 uint32_t done_seen = 0;
                 if (large) {
                     /* Sized on arrival: wait for the engine's request word, read its rows, launch that size. */
-                    while (!g_stop) {
+                    while (!stopping()) {
                         if ((int32_t)(load(&h->lane[lane].request_sequence) - next) < 0) {
                             std::this_thread::yield();
                             continue;
@@ -484,12 +507,19 @@ int main(int argc, char** argv) {
                         if (rc != 0) {
                             std::fprintf(stderr, "r3_moe_worker: large lane %u seq %u rows %u failed rc=%d\n",
                                          lane, next, rows, rc);
-                            g_stop = 1;
+                            request_stop();
                             break;
                         }
                         if (!gpu->sync_lane(lane) ||
                             !gpu->collect_lane_timing(lane, next, &lane_sample_us[lane], &lane_samples[lane])) {
-                            g_stop = 1;
+                            request_stop();
+                            break;
+                        }
+                        if (combine_on && helper_index == 1) combine_helper1_done(map, next);
+                        if (combine_on && helper_index == 0 &&
+                            !combine_step(map, q, combine_pool.get(), &combine_mask, &combine_stats)) {
+                            store(&h->helper_fault, 1u);   /* the engine's wait for combine.done fails now */
+                            request_stop();
                             break;
                         }
                         if (++next == 0) break;
@@ -509,13 +539,13 @@ int main(int argc, char** argv) {
                         return next != 0;
                     };
 
-                    for (uint32_t i = 0; i < kQueueDepth && !g_stop; ++i) {
+                    for (uint32_t i = 0; i < kQueueDepth && !stopping(); ++i) {
                         if (!queue_one()) {
-                            g_stop = 1;
+                            request_stop();
                             break;
                         }
                     }
-                    while (!g_stop) {
+                    while (!stopping()) {
                         const uint32_t done = load(&h->lane[lane].done_sequence);
                         if ((int32_t)(done - done_seen) <= 0) {
                             std::this_thread::yield();
@@ -524,15 +554,15 @@ int main(int argc, char** argv) {
                         if (!gpu->collect_lane_timing(lane, done,
                                                       &lane_sample_us[lane],
                                                       &lane_samples[lane])) {
-                            g_stop = 1;
+                            request_stop();
                             break;
                         }
                         done_seen = done;
                         trace_dump(map, lane, done - 1u);
-                        while (!g_stop &&
+                        while (!stopping() &&
                                (uint32_t)(next - done_seen - 1u) < kQueueDepth) {
                             if (!queue_one()) {
-                                g_stop = 1;
+                                request_stop();
                                 break;
                             }
                         }
@@ -545,12 +575,12 @@ int main(int argc, char** argv) {
                     store(&h->lane[lane].request_sequence, next - 1u);
                 }
                 if (!gpu->sync_lane(lane)) {
-                    g_stop = 1;
+                    request_stop();
                     return;
                 }
                 uint64_t stats[3]{};
                 if (!gpu->lane_stats(lane, stats)) {
-                    g_stop = 1;
+                    request_stop();
                     return;
                 }
                 lane_req[lane] = stats[0];
@@ -558,10 +588,20 @@ int main(int argc, char** argv) {
                 lane_routes[lane] = stats[2];
             });
         }
-        while (!g_stop) ::sleep(1);
-        for (auto& w : workers) if (w.joinable()) w.join();
-        /* The lanes are gone: an engine still waiting on them must fail rather than hang. */
+        for (uint32_t v; (v = g_stop_word.load(std::memory_order_acquire)) == 0;)
+            (void)::syscall(SYS_futex, reinterpret_cast<uint32_t*>(&g_stop_word), FUTEX_WAIT_PRIVATE, v, nullptr, nullptr, 0);
+        /* Stopping (a signal or a failed lane): fail the engine's waits and wake the other helper's combine wait before
+         * joining anything, so no fault path depends on a join completing. */
         store(&h->helper_fault, 1u);
+        combine_futex_wake(&h->combine.helper1_done, true);
+        for (auto& w : workers) if (w.joinable()) w.join();
+        if (combine_pool) {
+            store(&h->combine.enabled, 0u);
+            combine_pool.reset();
+            std::fprintf(stderr, "r3_moe_worker: combine steps %llu, CPU %.1f ms (%.1f us a step)\n",
+                         (unsigned long long)combine_stats.steps, combine_stats.combine_us / 1000.0,
+                         combine_stats.steps ? combine_stats.combine_us / (double)combine_stats.steps : 0.0);
+        }
         uint64_t timing_samples = 0;
         double sampled_us = 0.0;
         for (uint32_t lane = 0; lane < kLanes; ++lane) {

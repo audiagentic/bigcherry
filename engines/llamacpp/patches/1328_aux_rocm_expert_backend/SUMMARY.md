@@ -21,7 +21,7 @@ Off by default. The path fails closed if the auxiliary device is absent, ambiguo
 
 The first hardware sweep after the enum-tag compile fix aborted at load for every aux-offload layout because the marked merge observed `MIRRORED + MIRRORED`, while 1328 only accepted `MIRRORED + PARTIAL`. At b11474, Meta's split-state contract uses `MIRRORED` for a complete replica; its synchronized matmul state can therefore make the shared branch MIRRORED before buffer initialization. In that state an AllReduce would incorrectly sum duplicate complete values. 1328 now accepts both `MIRRORED + PARTIAL` and `MIRRORED + MIRRORED`, returning MIRRORED in either case, and still aborts on every other marked combination.
 
-## Hardware result and decode review (Brutus 2026-10-08)
+## Hardware result and decode review (dev 2026-10-08)
 
 Flash-Next, 245760 ctx, 79722-token fill, auxiliary routed-expert layers on ROCm3 (6900 XT):
 

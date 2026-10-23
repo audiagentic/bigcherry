@@ -67,7 +67,7 @@ tools/lab/vk-aco-wait-audit/capture.sh; tools/lab/vk-aco-wait-audit/isa/*.txt (c
 
 ## Validation
 
-Output parity via existing test-backend-ops MUL_MAT_VEC cases for Q4_K/Q8_0 before/after any shader edit; ISA wait-count and llama-bench decode t/s recorded per driver/shape in tools/lab/vk-aco-wait-audit/results.md. Hardware runs happen on Brutus (RADV is the default driver there); do not run hardware from this planning pass.
+Output parity via existing test-backend-ops MUL_MAT_VEC cases for Q4_K/Q8_0 before/after any shader edit; ISA wait-count and llama-bench decode t/s recorded per driver/shape in tools/lab/vk-aco-wait-audit/results.md. Hardware runs happen on dev (RADV is the default driver there); do not run hardware from this planning pass.
 
 ## Effort & Risk
 

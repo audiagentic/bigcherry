@@ -1,4 +1,4 @@
-# Qwen3.8-27B (dense) on radiance (Brutus)
+# Qwen3.8-27B (dense) on radiance (dev)
 
 Current-state page. Rule: every measurement or decision updates this page in the same change. Dated history and raw
 tables: [engines/radiance/README.md](../../../../../engines/radiance/README.md) (the "lab log"; section names are

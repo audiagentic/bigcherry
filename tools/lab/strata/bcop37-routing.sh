@@ -7,7 +7,7 @@
 # Usage: bcop37-routing.sh <bundle> [depth=4096]      env: GPU (HIP index, default 2), MAX_NEW (256)
 set -u
 B=${1:?bundle}; d=${2:-4096}
-E=/mnt/data/bigcherry-work/external
+E=${BC_WORK_ROOT}/external
 M=$E/Swift-Qwen3.8-Flash-Next-GSQ-RCO-IQ2_XS-merged.gguf
 P=$E/strata-pack-swift-iq2xs
 T=$E/Strata-rocm

@@ -41,7 +41,7 @@ RRVP05's historical 2026-10-02 single-screen dual-XTX 27B Q8_0 RADV results: Vul
 - [llama.cpp #30003](https://github.com/ggml-org/llama.cpp/pull/30003), merged 2026-10-08: inspected actual Vulkan sparse FA shader, 8-byte coopmat2 alignment guard and backend-op tests. Already present at b11552. **Use as native attention correctness baseline**, not a new PKC04 kernel or RDNA performance claim.
 - [llama.cpp #29998](https://github.com/ggml-org/llama.cpp/pull/29998), merged 2026-10-11: compact `MUL_MAT_ID` expert tile prepass. Inspect on a future pin via TRVP12/14; no PKC04 scheduler.
 - [llama.cpp #25051](https://github.com/ggml-org/llama.cpp/pull/25051), open, head `99becee6`, updated 2026-10-08: mapped-host/timeline-FD collective provider; actual diff changes Vulkan context semaphores and communication path. **Wait/compare under PRVP03**, check inactive ranks, driver support and post-submit failure semantics before adoption. External NVIDIA benchmark is not AMD evidence.
-- vLLM ROCm's transport/attention paths are HIP/Triton rather than a Vulkan implementation; portability of identity/negative controls is useful, but no direct Vulkan patch or NVIDIA speed ratio transfers to Brutus.
+- vLLM ROCm's transport/attention paths are HIP/Triton rather than a Vulkan implementation; portability of identity/negative controls is useful, but no direct Vulkan patch or NVIDIA speed ratio transfers to dev.
 
 ## Bounded closure and downstream gates
 
