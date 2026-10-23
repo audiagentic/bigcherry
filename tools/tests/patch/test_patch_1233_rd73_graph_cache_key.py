@@ -9,12 +9,12 @@ different call sites in the same file."""
 
 import importlib.util
 from pathlib import Path
-import shutil
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from bigcherry.core import paths  # noqa: E402
+from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
 from bigcherry.patcher import apply_all
 
 
@@ -39,12 +39,13 @@ def _apply_to_copy(tmp_path: Path) -> Path:
     vendor = paths.llama_root()
     target = tmp_path / "ggml" / "src" / "ggml-cuda" / "ggml-cuda.cu"
     target.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(vendor / "ggml" / "src" / "ggml-cuda" / "ggml-cuda.cu", target)
+    # Take the files from the pinned commit: the vendor working tree is normally already patched.
+    copy_pinned("llamacpp", vendor / "ggml" / "src" / "ggml-cuda" / "ggml-cuda.cu", target)
     # RD73 now carries its VA06 resource-observation edit in common.cuh as
     # well as the graph-key edit.  Keep the fixture complete so the test
     # exercises the packaged patch, not an accidentally partial subset.
     common = tmp_path / "ggml" / "src" / "ggml-cuda" / "common.cuh"
-    shutil.copyfile(vendor / "ggml" / "src" / "ggml-cuda" / "common.cuh", common)
+    copy_pinned("llamacpp", vendor / "ggml" / "src" / "ggml-cuda" / "common.cuh", common)
     return target
 
 
