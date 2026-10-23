@@ -15,7 +15,7 @@ priority: P3
 
 ## Description
 
-Per-step helper imbalance in the Flash-Next helper layout (2026-10-23 trace, combine off, 2 runs x 2 arms): the busier helper gets +16% routes over the mean on the median step, and the slower helper's GPU time exceeds the per-step mean by ~9-10% (prefill 525 vs 480 ms, decode 5,400 vs 4,870 ms over the bench). Totals are balanced (1.38M vs 1.46M routes), so the skew is per-step variance that static ownership (R3_MOE_WORKER_BALANCE, already shelved) cannot fix. Tensor-splitting every expert across both XTX was assessed and shelved (see the model page). This item: copy a small set of high-variance hot experts onto both helpers and send each route to the replica on the less-loaded helper that step, keeping full-width GEMMs.
+Per-step helper imbalance in the Flash-Next helper layout (2026-10-23 trace, combine off, 2 runs x 2 arms): the busier helper gets +16% routes over the mean on the median step, and the slower helper's GPU time exceeds the per-step mean by ~9-10% (prefill 525 vs 480 ms, decode 5,400 vs 4,870 ms over the bench). Totals are balanced (1.38M vs 1.46M routes), so the skew is per-step variance that static ownership (R3_MOE_WORKER_BALANCE, already shelved) cannot fix. Tensor-splitting every expert across both XTX was assessed and shelved (see the model page). The hot experts are already on the XTX cards (hottest-first ownership), but each is owned by exactly one card. This item: give a small set of high-variance hot experts a second copy, so each is resident on both helpers and send each route to the replica on the less-loaded helper that step, keeping full-width GEMMs.
 
 ## Steps
 
