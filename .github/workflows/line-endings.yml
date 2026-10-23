@@ -1,10 +1,11 @@
 name: Repository line endings
 
 on:
+  # Pull requests run this through .github/workflows/pr-ci.yml (one required gate: ci-pass).
+  workflow_call:
   # push only for main: a push to a PR branch is already scanned by its pull_request run
   push:
     branches: [main]
-  pull_request:
 
 permissions:
   contents: read

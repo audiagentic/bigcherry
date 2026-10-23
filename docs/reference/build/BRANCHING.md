@@ -32,13 +32,12 @@ repository at once, and a change is only proven on the lab hardware.
 5. **A pull request merges when** its checks are green, its description is filled in, and, if it changes the
    production build, the hardware evidence is in the description. Merge method: squash. The branch is deleted on
    merge. Queue it with `gh pr merge <n> --auto --squash` as soon as it is opened: GitHub merges it the moment the
-   required checks pass. Do not poll checks in a loop. Every check is required and always reports: the path-filtered
-   workflows decide inside a `changes` job (`.github/scripts/changed_paths.py`), so a check that does not apply to a
-   change reports as skipped, which counts as passing.
-   Repository settings this needs (admin only; pending as of 2026-10-24): "Allow auto-merge" on, and ruleset `main`
-   requiring `conventional-title`, `index-line-endings`, `scan-changed-files`, `core-offline`, `offline-patch`,
-   `compile-only`, `build`, `offline-control-plane`, `Real BigCherry process semantics` and `Real Noble Slurm service
-   semantics` (today only the first two are required, so the others do not block a merge).
+   required checks pass. Do not poll checks in a loop. Pull requests run one workflow, `.github/workflows/pr-ci.yml`:
+   a `changes` job decides which areas a change touches (`.github/scripts/changed_paths.py`), each area's reusable
+   workflow runs only when touched (the same workflows keep their push-to-main and manual runs), and `ci-pass` fails
+   when any job failed or was cancelled and passes when every job succeeded or was skipped.
+   Repository settings this needs (admin only; pending as of 2026-10-24): (1) "Allow auto-merge" on; (2) ruleset
+   `main` requires exactly `conventional-title` and `ci-pass`.
 6. **Releases are cut from `main` by release-please.** Every merged `feat` / `fix` / `perf` updates one open release
    pull request; merging that pull request tags `bc-llamacpp-<llama build>.<minor>.<patch>` (with the readable alias `bc-llamacpp-b<build>-r<N>`) and publishes the notes. Several
    promotions merged before the release pull request is merged ship as one release.
