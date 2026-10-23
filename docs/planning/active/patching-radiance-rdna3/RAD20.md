@@ -83,6 +83,14 @@ existing large-lane device wait (moe_remote_gpu.h:493) and the design's 'arrived
 validation (stress, cross-process visibility, stop/abort) or a different wake path. A stranded device wait would
 deadlock shutdown at hipStreamSynchronize (r3_moe_worker.cpp:516).
 
+## Execution gate review (2026-10-23)
+
+- **Blocking P0:** do not enqueue an *additional* `hipStreamWaitValue32` on host-registered cross-process shared memory until the documented signal-memory contract and cross-process system visibility have been proven. The existing engine-to-helper wait is not evidence that the proposed arrived-event path is safe. Treat cancellation, generation wrap, and device progress independently.
+- **Slice RAD20-A (offline/hardware test first):** isolate a minimal two-process signal-memory probe for the exact HIP/ROCm device and mapping, including idle, prefill, fault, cancel, rerun after stop, and long-run sequence wrap. If unsupported, large-lane arrival must use a supported CPU wake bridge (bounded host wait/futex on a CPU-published notification) or another proven event path; never make an event downstream of an unbounded device wait.
+- **Slice RAD20-B (implementation PR):** replace small-lane done polling with non-timing blocking HIP events for the four outstanding slots; replace large-lane request polling only after the arrival proof; make explicit per-slot generation/retirement so events are not recycled while pending. Startup must not rely on unbounded sleep loops.
+- **Stop/fault invariant:** every queued wait must be satisfiable, cancellable or provably skipped **before** stream synchronization or join. Stale/early `request_sequence` must never release work on a different generation. Simulate killing each helper and engine at idle, decode, prefill, and mid-shutdown; bound exit times and verify no stale writes.
+- **Promotion:** same-source parent-build A/B with the lab queue, four rotated pairs; per-thread user+system CPU usage (not process aggregate), event wake/requeue p50/p99, pp1024/4096, tg128/512/2048 and fixed-token latency. CPU reduction alone does not justify decode latency regression. No permanent polling fallback; retain old build solely as comparison baseline.
+
 ## Change Log
 
 - 2026-10-23T00:50:15.230044+00:00 (created-by): Created by agent
