@@ -38,6 +38,7 @@ repository at once, and a change is only proven on the lab hardware.
    when any job failed or was cancelled and passes when every job succeeded or was skipped.
    Repository settings this needs (admin only; pending as of 2026-10-24): (1) "Allow auto-merge" on; (2) ruleset
    `main` requires exactly `conventional-title` and `ci-pass`.
+   A change that touches none of an area's paths skips that area; `ci-pass` still reports (skipped counts as passing).
 6. **Releases are cut from `main` by release-please.** Every merged `feat` / `fix` / `perf` updates one open release
    pull request; merging that pull request tags `bc-llamacpp-<llama build>.<minor>.<patch>` (with the readable alias `bc-llamacpp-b<build>-r<N>`) and publishes the notes. Several
    promotions merged before the release pull request is merged ship as one release.
