@@ -293,7 +293,7 @@ unchanged greedy text. For scale, radiance on the R9700 runs this model at 37-38
 ## What hipfire does on gfx1100 (read 2026-10-10)
 
 `github.com/Kaden-Schutt/hipfire` (Apache-2.0 from v0.3.0; some files MIT by SPDX), commit 0f999cb, cloned to
-`${BC_CACHE_ROOT}/engines/hipfire` on dev. A Rust engine with its own HIP kernels; the RX 7900 XTX is
+`${BC_WORK_ROOT}/engines/hipfire` on dev. A Rust engine with its own HIP kernels; the RX 7900 XTX is
 its primary target and it has 60-odd kernels written for gfx1100 by name. Its published Qwen3.8-27B (MQ4) numbers,
 self-measured, median of 3:
 

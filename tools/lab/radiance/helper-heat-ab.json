@@ -66,7 +66,7 @@
     "R3_MOE_WORKER_MAX_ROWS": "4096",
     "R3_MOE_WORKER_SMALL_ROWS": "8",
     "R3_MOE_WORKER_MIB": "22528",
-    "R3_MOE_WORKER_HEAT": "${BC_CACHE_ROOT}/runs/perf51/heat.rank0",
+    "R3_MOE_WORKER_HEAT": "${BC_WORK_ROOT}/runs/perf51/heat.rank0",
     "R3_MOE_WORKER_ROWS": "0"
    }
   },
@@ -82,7 +82,7 @@
     "R3_MOE_WORKER_MAX_ROWS": "4096",
     "R3_MOE_WORKER_SMALL_ROWS": "8",
     "R3_MOE_WORKER_MIB": "22528",
-    "R3_MOE_WORKER_HEAT": "${BC_CACHE_ROOT}/runs/perf51/heat.rank0.hot-first",
+    "R3_MOE_WORKER_HEAT": "${BC_WORK_ROOT}/runs/perf51/heat.rank0.hot-first",
     "R3_MOE_WORKER_ROWS": "0"
    }
   }
