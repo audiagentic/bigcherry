@@ -11,7 +11,7 @@ QFP17 dense-QSA memory enabler against llama.cpp b11474.
 
 ## The ub1024 candidate
 
-Brutus 2026-10-09, Flash-Next, 240K context, ~80K fill. 1330 on at ub1024 fits where production does not:
+dev 2026-10-09, Flash-Next, 240K context, ~80K fill. 1330 on at ub1024 fits where production does not:
 
 | arm | prefill t/s | decode t/s |
 |---|---:|---:|

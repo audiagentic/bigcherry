@@ -2,7 +2,7 @@
 replay pipeline as one repeatable, deterministic call, so it can be kicked
 off as a standard bigcherry workflow instead of an operator/agent manually
 chaining ~12 commands and working around gotchas live (validated by hand
-on real Brutus GPU hardware this session -- dual-XTX + single-GPU R9700,
+on real dev GPU hardware this session -- dual-XTX + single-GPU R9700,
 Qwen3.8-27B-Q8_0 MTP, 20/39 candidates genuinely promoted with real
 correctness evidence).
 

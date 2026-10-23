@@ -12,7 +12,7 @@ with the flag set explicitly, before the default changed.
 
 ## Evidence
 
-Brutus, 2x 7900 XTX + R9700 tensor split, 6900 XT MTP drafter, ctx 245760, f16 KV, `flashnext` profile, ub 512.
+dev, 2x 7900 XTX + R9700 tensor split, 6900 XT MTP drafter, ctx 245760, f16 KV, `flashnext` profile, ub 512.
 Each comparison is one binary with the flag off (A) and on (B).
 
 - Mechanics: offline patch test (`tools/tests/patch/test_1334_hip_sparse_flash_attn.py`) and patch-lint pass on pin

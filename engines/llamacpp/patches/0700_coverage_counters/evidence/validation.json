@@ -63,7 +63,7 @@
       },
       "campaign_identity": "0e9ba50075dff75087f1d4c76a847799649cb619753d8f857816584331e1dcaf",
       "campaign_identity_digest": "0e9ba50075dff75087f1d4c76a847799649cb619753d8f857816584331e1dcaf",
-      "campaign_workdir": "/mnt/vault/development/llmhosts/bigcherry/work/framework-config-0700/framework/0700_coverage_counters",
+      "campaign_workdir": "${BC_DEV_ROOT}/llmhosts/bigcherry/work/framework-config-0700/framework/0700_coverage_counters",
       "check_results": {
         "apply": {
           "artifacts": [
@@ -333,7 +333,7 @@
       "patch_implementation_digest": "3a2e8b5b928e8d417f51815335b979b749baaa2c6c5f9fd1cf3bacf48649c6cf",
       "patch_validation_subject_digest": "bfdf70cee484508f7904479dc028824481656e168c5c5afbc58f03ab5b941426",
       "qualification_kind": "framework-configuration-v1",
-      "record_digest": "20236da1970695449ef7d73ca0e8706c31c3a6a2fc27b70d657e61e3301d8920",
+      "record_digest": "bba7d51808b6a1219de9679ea9873b7544b39d9b50872caf6e66f36630465c8c",
       "record_schema_version": 5,
       "runtime_performance_qualified": false,
       "source_composition": [
@@ -535,7 +535,7 @@
       },
       "campaign_identity": "21d19fc1ee2a7bbe038997895b90d5c055877a450d7bfd96ea588eb8b0565bdd",
       "campaign_identity_digest": "21d19fc1ee2a7bbe038997895b90d5c055877a450d7bfd96ea588eb8b0565bdd",
-      "campaign_workdir": "/mnt/vault/development/llmhosts/bigcherry/work/framework-config-0700/framework/0700_coverage_counters",
+      "campaign_workdir": "${BC_DEV_ROOT}/llmhosts/bigcherry/work/framework-config-0700/framework/0700_coverage_counters",
       "check_results": {
         "apply": {
           "artifacts": [
@@ -805,7 +805,7 @@
       "patch_implementation_digest": "3a2e8b5b928e8d417f51815335b979b749baaa2c6c5f9fd1cf3bacf48649c6cf",
       "patch_validation_subject_digest": "bfdf70cee484508f7904479dc028824481656e168c5c5afbc58f03ab5b941426",
       "qualification_kind": "framework-configuration-v1",
-      "record_digest": "8100c149167f5eb8d33bf62be0ee79a83c8473ce1f63f355474c174536ecf7af",
+      "record_digest": "2153fcfb884d26aa9488b0fb8006490b6839ff936fc9b1b55df59ebca8500523",
       "record_schema_version": 5,
       "runtime_performance_qualified": false,
       "source_composition": [
@@ -1343,7 +1343,7 @@
       },
       "campaign_identity": "5977dd179fc212eb7bebf2eea9d4c24e6385e50b347b58f260eb15ddb563b2aa",
       "campaign_identity_digest": "5977dd179fc212eb7bebf2eea9d4c24e6385e50b347b58f260eb15ddb563b2aa",
-      "campaign_workdir": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/framework-validation-b10901/0700-gfx1100/framework/0700_coverage_counters",
+      "campaign_workdir": "${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/work/framework-validation-b10901/0700-gfx1100/framework/0700_coverage_counters",
       "check_results": {
         "apply": {
           "artifacts": [
@@ -1613,7 +1613,7 @@
       "patch_implementation_digest": "3a2e8b5b928e8d417f51815335b979b749baaa2c6c5f9fd1cf3bacf48649c6cf",
       "patch_validation_subject_digest": "bfdf70cee484508f7904479dc028824481656e168c5c5afbc58f03ab5b941426",
       "qualification_kind": "framework-configuration-v1",
-      "record_digest": "051cbc3a618addf5b9fbc0a635191f7bccfcff494974f4300960699a1ab0c9f2",
+      "record_digest": "09eb4e0a626cce9439950f5051b4c50ff1250f36548a44f350f46fe5488013a5",
       "record_schema_version": 5,
       "runtime_performance_qualified": false,
       "source_composition": [
@@ -1815,7 +1815,7 @@
       },
       "campaign_identity": "614cc8559c0f701cd672548efb10a1c10ad3b81cffca1d9456f617dc4250e29c",
       "campaign_identity_digest": "614cc8559c0f701cd672548efb10a1c10ad3b81cffca1d9456f617dc4250e29c",
-      "campaign_workdir": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/runs/pa40-fwcfg/r3-0700_coverage_counters/framework/0700_coverage_counters",
+      "campaign_workdir": "${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/work/runs/pa40-fwcfg/r3-0700_coverage_counters/framework/0700_coverage_counters",
       "check_results": {
         "apply": {
           "artifacts": [
@@ -2085,7 +2085,7 @@
       "patch_implementation_digest": "3a2e8b5b928e8d417f51815335b979b749baaa2c6c5f9fd1cf3bacf48649c6cf",
       "patch_validation_subject_digest": "bfdf70cee484508f7904479dc028824481656e168c5c5afbc58f03ab5b941426",
       "qualification_kind": "framework-configuration-v1",
-      "record_digest": "dcdaa0545c498e7d081f55d087987bceefdcf321c38a9febb4c5ef8ed77fac7e",
+      "record_digest": "8cbede1dfde57e2b52b3e8b7939c893f2f0b26c788385bcdadf35779a47a3bd6",
       "record_schema_version": 5,
       "runtime_performance_qualified": false,
       "source_composition": [
@@ -2759,7 +2759,7 @@
       },
       "campaign_identity": "7f5cc2b5627e67e66be6c1b6539bbd8ba42b1e53b6c75b2d6156be9f7c149d17",
       "campaign_identity_digest": "7f5cc2b5627e67e66be6c1b6539bbd8ba42b1e53b6c75b2d6156be9f7c149d17",
-      "campaign_workdir": "/home/audumla/pa26-evidence-run/0700_coverage_counters/framework/0700_coverage_counters",
+      "campaign_workdir": "${HOME}/pa26-evidence-run/0700_coverage_counters/framework/0700_coverage_counters",
       "check_results": {
         "apply": {
           "artifacts": [
@@ -3029,7 +3029,7 @@
       "patch_implementation_digest": "3a2e8b5b928e8d417f51815335b979b749baaa2c6c5f9fd1cf3bacf48649c6cf",
       "patch_validation_subject_digest": "bfdf70cee484508f7904479dc028824481656e168c5c5afbc58f03ab5b941426",
       "qualification_kind": "framework-configuration-v1",
-      "record_digest": "4353da52a28e4f46b41e547e9fec450cb4820657fcf2ab1613091fc5e012dad8",
+      "record_digest": "6dcb75527fe1789c9128ddd52f852312aa49727f0a07b22d13acc3764545dcb3",
       "record_schema_version": 5,
       "runtime_performance_qualified": false,
       "source_composition": [
@@ -3239,7 +3239,7 @@
       },
       "campaign_identity": "9ba092118d2eeca0f57331925bcf45f37cadd6f42c27f2cee52800393d59d93c",
       "campaign_identity_digest": "9ba092118d2eeca0f57331925bcf45f37cadd6f42c27f2cee52800393d59d93c",
-      "campaign_workdir": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/runs/fwcfg-b11126-r2/0700_coverage_counters/framework/0700_coverage_counters",
+      "campaign_workdir": "${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/work/runs/fwcfg-b11126-r2/0700_coverage_counters/framework/0700_coverage_counters",
       "check_results": {
         "apply": {
           "artifacts": [
@@ -3509,7 +3509,7 @@
       "patch_implementation_digest": "3a2e8b5b928e8d417f51815335b979b749baaa2c6c5f9fd1cf3bacf48649c6cf",
       "patch_validation_subject_digest": "bfdf70cee484508f7904479dc028824481656e168c5c5afbc58f03ab5b941426",
       "qualification_kind": "framework-configuration-v1",
-      "record_digest": "4ad412b918063c7fae58382dede85d8c2121a8cbc41b88536775951d4b268224",
+      "record_digest": "71f94e32ce2ea66eadcc17bdb42c8e03d3dfeb52f814e85f6d12ea27b19c7a05",
       "record_schema_version": 5,
       "runtime_performance_qualified": false,
       "source_composition": [
@@ -3703,7 +3703,7 @@
       },
       "campaign_identity": "ab0345d764c68bd4d0b1fc6dc3748164bf27cbe11100475412c1b16517e8136c",
       "campaign_identity_digest": "ab0345d764c68bd4d0b1fc6dc3748164bf27cbe11100475412c1b16517e8136c",
-      "campaign_workdir": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/framework-validation-b10901/0700-gfx1201/framework/0700_coverage_counters",
+      "campaign_workdir": "${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/work/framework-validation-b10901/0700-gfx1201/framework/0700_coverage_counters",
       "check_results": {
         "apply": {
           "artifacts": [
@@ -3973,7 +3973,7 @@
       "patch_implementation_digest": "3a2e8b5b928e8d417f51815335b979b749baaa2c6c5f9fd1cf3bacf48649c6cf",
       "patch_validation_subject_digest": "bfdf70cee484508f7904479dc028824481656e168c5c5afbc58f03ab5b941426",
       "qualification_kind": "framework-configuration-v1",
-      "record_digest": "3e8bc167684c69bf7d6e0f8c77b8ea7870e28a483814f3336cb3d63da8222eae",
+      "record_digest": "f4c930de12432110babff2482f63b115232b3cc7419587e7c5b0821b4d151a2c",
       "record_schema_version": 5,
       "runtime_performance_qualified": false,
       "source_composition": [
@@ -4175,7 +4175,7 @@
       },
       "campaign_identity": "bdb67a3bf3e28376566ce4c18486b503d560a9518b7d716df51eb2b07a63c8db",
       "campaign_identity_digest": "bdb67a3bf3e28376566ce4c18486b503d560a9518b7d716df51eb2b07a63c8db",
-      "campaign_workdir": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/runs/pa40-fwcfg/r2-0700_coverage_counters/framework/0700_coverage_counters",
+      "campaign_workdir": "${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/work/runs/pa40-fwcfg/r2-0700_coverage_counters/framework/0700_coverage_counters",
       "check_results": {
         "apply": {
           "artifacts": [
@@ -4445,7 +4445,7 @@
       "patch_implementation_digest": "3a2e8b5b928e8d417f51815335b979b749baaa2c6c5f9fd1cf3bacf48649c6cf",
       "patch_validation_subject_digest": "bfdf70cee484508f7904479dc028824481656e168c5c5afbc58f03ab5b941426",
       "qualification_kind": "framework-configuration-v1",
-      "record_digest": "048e6a170d05959e50ac27d9a60c0fb88185b42066702b32f13285c7350f0c9a",
+      "record_digest": "cde2bab912c719508cbb6c942a7b79f2d0b20846b207ba696179311f2491fcdc",
       "record_schema_version": 5,
       "runtime_performance_qualified": false,
       "source_composition": [

@@ -30,6 +30,10 @@ concurrency:
   group: patch-compile-validation-${{ github.ref }}
   cancel-in-progress: true
 
+# Host settings are untracked; CI uses the tracked example host (it declares the rocm-sdks the recipes name).
+env:
+  BIGCHERRY_ENVIRONMENT: config/environment.example.toml
+
 jobs:
   compile-only:
     runs-on: ubuntu-24.04

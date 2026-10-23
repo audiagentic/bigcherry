@@ -63,7 +63,7 @@ its own gate is `ncols_dst == 1`, so it never fired on ~93% of MMVQ work either.
 
 ## RESULT (2026-09-04, real hardware): NEGATIVE
 
-Both arms built and profiled on brutus with an identical workload (same model,
+Both arms built and profiled on dev with an identical workload (same model,
 flags, prompt, seed=42, temp=0, n_predict=200), both under rocprofv3.
 
 Build and instantiation gates all **passed**:

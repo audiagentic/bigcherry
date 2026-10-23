@@ -1,7 +1,7 @@
 # RHA04 GPU0 native timed-cell smoke
 
 Date: 2026-09-10  
-Role: Brutus build server, GPU0 (`gfx1100`, `0000:03:00.0`)  
+Role: <gpu-host> build server, GPU0 (`gfx1100`, `0000:03:00.0`)  
 Runner: maintained `bench/run_bench.py --bench-type server-bench`  
 Status: **cell completed; exploratory single sample**
 
@@ -26,5 +26,5 @@ not evidence for native-vs-BC parity. Full balanced native/replay/stock matrix
 and uncertainty analysis remain required by RHA04.
 
 Raw machine-readable files are retained in this directory. The server log is
-retained on Brutus under `/tmp/rha04-timed-gpu0-native3/pair-001-native/` and
+retained on <gpu-host> under `/tmp/rha04-timed-gpu0-native3/pair-001-native/` and
 is not committed as a release artifact.

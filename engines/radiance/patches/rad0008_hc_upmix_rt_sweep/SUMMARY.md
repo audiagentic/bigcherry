@@ -45,7 +45,7 @@ Verified (this revision):
   no errors).
 - Anchor match count against the real pristine vendor file: exactly 1, via a throwaway script
   (not checked in) performing the same regex substitution patch.py does, run directly against a
-  scratch copy of the real vendor/radiance/libr4d/r4d_hc_bf16.hip on Brutus -- not the shared
+  scratch copy of the real vendor/radiance/libr4d/r4d_hc_bf16.hip on dev -- not the shared
   wt-accept checkout.
 - Standalone `hipcc --offload-arch=gfx1201` compile of the patched file: clean, zero errors.
 - `nm`/`c++filt` on the compiled object: confirms all three new instantiations
@@ -113,8 +113,8 @@ runs the original launch yet measures about 1% slower than stock on gfx1100 (not
 ## Not yet done
 
 - Not wired into the actual `bigcherry patch-rebase-check` / registry flow on a fresh checkout of
-  this exact repo state (verification above used a manual regex+compile check against Brutus's
-  vendor tree directly, since Brutus's own `tools/bigcherry` checkout is on a much older commit
+  this exact repo state (verification above used a manual regex+compile check against dev's
+  vendor tree directly, since dev's own `tools/bigcherry` checkout is on a much older commit
   than this repo's current main and its patch schema/tag vocabulary may have drifted).
 - Superseded by the hardware result above: `r4d_selftest --perfhc` at `RAD_HC_UPMIX_RT=128/256/384`,
   comparing kernel latency (GPU-event, not wall clock) and, where obtainable, occupancy/register

@@ -1,6 +1,6 @@
 # HI35/HI36 GPU campaign — 27B dense + MTP on R9700 (gfx1201), b10502
 
-Campaign artifact set from the 2026-08-21 pipeline on Brutus (R9700 gfx1201
+Campaign artifact set from the 2026-08-21 pipeline on <gpu-host> (R9700 gfx1201
 32GB, GPU2 only). Consumed by HI35 (kernel-fraction ceiling) and HI36 (winner
 generalisation: stability pair + holdout miss log). See HI36.md for the
 GPT-adjudicated ship gates (req_09656b782a5d449a) these artifacts feed.
@@ -9,7 +9,7 @@ GPT-adjudicated ship gates (req_09656b782a5d449a) these artifacts feed.
 
 ## Workload identity
 
-- Model: `/mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf`
+- Model: `${MODELS_ROOT}/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf`
   (27B dense, Q8_0, 29.0 GB)
 - MTP: `--spec-type draft-mtp --spec-draft-n-max 4`, same model as draft
 - Server: `--ctx-size 8192 --batch-size 512 --ubatch-size 256 -ngl 99 -fa on
@@ -45,13 +45,13 @@ GPT-adjudicated ship gates (req_09656b782a5d449a) these artifacts feed.
 | `miss-misslog.jsonl` | S7 miss-log | the 39 uncached calls: 11 mmvq (width-3 decode), 26 blas (tiny native GEMMs), 2 mmvf |
 | `pipeline.sh` | driver | final deployed stage driver S1–S7: stage-skip markers, GPU2 idle guard, atexit-flush poll fixes, ctx parameterisation for the 12k run |
 
-Not in git (too large; on Brutus at
-`/mnt/vault/development/llmhosts/bigcherry/artifacts/h36-pipeline/`):
+Not in git (too large; on <gpu-host> at
+`${DEV_ROOT}/llmhosts/bigcherry/artifacts/h36-pipeline/`):
 
 | path | size | note |
 | --- | --- | --- |
-| `kf-prefill/brutus/*_kernel_trace.csv` | 13 MB | HI35 prefill trace. **Binary: stale 22dc605** — see below. |
-| `kf-decode/brutus/*_kernel_trace.csv` | 508 MB | HI35 decode trace (p0 n256 r3). Stale 22dc605 binary — **validated by S1b** (see below). |
+| `kf-prefill/<gpu-host>/*_kernel_trace.csv` | 13 MB | HI35 prefill trace. **Binary: stale 22dc605** — see below. |
+| `kf-decode/<gpu-host>/*_kernel_trace.csv` | 508 MB | HI35 decode trace (p0 n256 r3). Stale 22dc605 binary — **validated by S1b** (see below). |
 | `kf-decode-b10502/*_kernel_trace.csv` | 512 MB | S1b equivalence trace, b10502 record build, same command (p0 n256 r3). |
 
 | `miss-s7b.jsonl` / `cov-s7b.json` | S7b | parallel-2 holdout: 18,173/18,173 executed, 28 exact, **80 misses** (38 mmq, 10 mmvq, 31 blas, 1 mmvf) — committed small artifacts |
@@ -137,7 +137,7 @@ a **kernel-identity rename, not a behavioural change**. Consequences:
    invalidate name-keyed caches by construction).
 
 Analysis script: `tmp/h35-s1b-equivalence.py` (gitignored; the inputs are
-the two 512 MB CSVs on Brutus — `kf-decode/brutus/*` stale, `kf-decode-b10502/*`
+the two 512 MB CSVs on <gpu-host> — `kf-decode/<gpu-host>/*` stale, `kf-decode-b10502/*`
 b10502 — too large for git, checksums below).
 
 ## HI35 Part 2 — kernel-fraction ceiling bands, PUBLISHED (2026-08-21)
@@ -196,7 +196,7 @@ cebe5d59298e1f6f5525f36169b94a36b77fe9481d1b3c27dd1c98cfc7330d82  cov-s7b.json
 ```
 
 Large traces and the SQLite inventory (too large or machine-local for git) are
-in `artifacts/2026-08-21-hi35-hi36-27b-r9700/raw/`; on Brutus they are also
+in `artifacts/2026-08-21-hi35-hi36-27b-r9700/raw/`; on <gpu-host> they are also
 available at `kf-decode/` (stale 22dc605) and `kf-decode-b10502/`:
 
 ```text

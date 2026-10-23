@@ -19,7 +19,7 @@ Complete C++-authoritative canonical signature digest verification and live work
 
 ## Steps
 
-Retain shared verifier and schema-2 fail-closed behavior; verify canonical content and digest with real C++ for MUL_MAT, MUL_MAT_ID and routed GLU; ensure workflow tune-campaign uses dedicated verifier lane, mandatory strengthened ingest, first-device scoping and transactional winner attestation; run a real Brutus campaign and record winner_verification rows. Track unsupported ADD and other domains through HI136 quarantine work rather than weakening verification.
+Retain shared verifier and schema-2 fail-closed behavior; verify canonical content and digest with real C++ for MUL_MAT, MUL_MAT_ID and routed GLU; ensure workflow tune-campaign uses dedicated verifier lane, mandatory strengthened ingest, first-device scoping and transactional winner attestation; run a real dev campaign and record winner_verification rows. Track unsupported ADD and other domains through HI136 quarantine work rather than weakening verification.
 
 ## Detailed Solution & Technical Design
 
@@ -31,7 +31,7 @@ The verifier must compare the complete observed C++ canonical JSON and digest, n
 
 ## Files
 
-signature_digest_verification.py; inventory.py; signature_capabilities.py; hi80 evidence CLI; workflow.py; schema-2 tests; real Brutus campaign artifacts.
+signature_digest_verification.py; inventory.py; signature_capabilities.py; hi80 evidence CLI; workflow.py; schema-2 tests; real dev campaign artifacts.
 
 ## Validation
 

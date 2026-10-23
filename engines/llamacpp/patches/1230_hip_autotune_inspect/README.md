@@ -23,11 +23,11 @@ Local design, part of this project's own HIP measured-dispatch framework
 
 ## Real hardware evidence gathered so far (2026-08-22)
 
-Two real Brutus/gfx1201 sessions (ledger events `chg_20260822_040544`,
+Two real dev/gfx1201 sessions (ledger events `chg_20260822_040544`,
 `chg_20260822_044637`):
 
 - Compiled clean (0 errors/warnings) in the real HIP device frontend on
-  Brutus at gfx1201.
+  dev at gfx1201.
 - `--selftest`: 10/10 known-answer cross-language digest vectors pass
   (C++ one-shot AND streaming blake2b vs Python hashlib, covering the three
   real runtime person prefixes, empty data, 128/129-byte block boundaries,

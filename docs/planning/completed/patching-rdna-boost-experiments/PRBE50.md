@@ -35,7 +35,7 @@ ggml/src/ggml-vulkan/vulkan-shaders/get_rows_quant.comp, ggml/src/ggml-vulkan/vu
 
 ## Validation
 
-Step 1 verification gate (read generic_binary_head.glsl) must resolve before any code change. Correctness: exact reference rows for offset-zero and non-zero offsets across QUANT_K block boundaries for Q4_0/Q8_0 (and other quant types this shader handles), F16/F32/I32 GET_ROWS controls unaffected, no crash, no CPU fallback. Hardware (Brutus, not run here): GPU-residency confirmation and Qwen VL/TTS view-based gather smoke test if reachable.
+Step 1 verification gate (read generic_binary_head.glsl) must resolve before any code change. Correctness: exact reference rows for offset-zero and non-zero offsets across QUANT_K block boundaries for Q4_0/Q8_0 (and other quant types this shader handles), F16/F32/I32 GET_ROWS controls unaffected, no crash, no CPU fallback. Hardware (dev, not run here): GPU-residency confirmation and Qwen VL/TTS view-based gather smoke test if reachable.
 
 ## Effort & Risk
 

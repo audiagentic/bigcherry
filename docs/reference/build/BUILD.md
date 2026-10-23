@@ -45,20 +45,16 @@ build cache: before building, `git status` must be clean and `git log -1`
 must match what you expect (fetch/pull first if not); after any hands-on
 edit there, commit and push before moving on.
 
-**SMB share — file transfer only, never git/build:**
+**Artifact transfer — copy only, never git or a build target:**
 
 ```text
-J:\development\llmhosts\bigcherry  ==  $BC_SHARE/bigcherry
+<win-root>\bigcherry  ==  <transfer-folder>/bigcherry
 ```
 
 Still useful for copying a build artifact or doc back and forth by hand.
 Do not `git` anything against this path, and do not point cmake at it for
-a build-server build — use `$BC_REPO` for that. (This section previously said
-the reverse — that `$BC_REPO` was the stale copy and the share was
-live. That was wrong and out of date; see BUILD_AND_TEST.md, which already
-had the corrected version. If you're reading this after finding it
-contradicted `~/bigcherry`'s actual state again, trust the live checkout,
-not either doc, and fix whichever doc is behind.)
+a build-server build — use `$BC_REPO_ROOT` for that. The live checkout is the
+source of truth; if a doc disagrees with it, fix the doc.
 
 **Device indices:** 0,1 = gfx1100 (RX 7900 XTX), 2 = gfx1201 (RDNA4), 3 = gfx1030 (RDNA2)
 
@@ -84,7 +80,7 @@ not ad hoc. The queue gives content-addressed, ccache-backed builds (stock, base
 control and subject builds are reused across patches and sessions, never rebuilt per
 run), a host-exclusive activity lock plus per-GPU locks, and restartable runs
 (a job whose log already ends in `CAMPAIGN_EXIT=` or `PREFLIGHT_EXIT=` is skipped).
-Working files live under the work root (`/mnt/data/bigcherry-work` on Brutus,
+Working files live under the work root (`${BIGCHERRY_ROOT}` on dev,
 `runs/<run-name>.log` and `runs/<run-name>/campaign/`).
 
 ### Job file
@@ -119,7 +115,7 @@ PREFLIGHT <run-name> <binary|@build-run> <model> <marker-regex> [server args...]
   `queue-27b-3gpu.sh` (XTX x2 + R9700).
 
 - `MODEL=` and `HIP=` override `BC_MODEL` and `BC_HIP_PATH` for that row. Set
-  `BC_HIP_PATH` (Brutus: `/mnt/vault/tmp/bc-rocm`) and `BC_MODEL` before starting.
+  `BC_HIP_PATH` (dev: `${VAULT_ROOT}/tmp/bc-rocm`) and `BC_MODEL` before starting.
 - Producer arguments: `--producer-input control_model=<gguf>` (the model that must
   NOT fire the patch), `--producer-corpus <jsonl>`, `--common-patches <id>` for
   prerequisite patches.
@@ -131,7 +127,7 @@ PREFLIGHT <run-name> <binary|@build-run> <model> <marker-regex> [server args...]
 Start it detached and read the log:
 
 ```
-cd /mnt/vault/development/projects/bigcherry/workspaces/main
+cd ${DEV_ROOT}/projects/bigcherry/workspaces/main
 nohup bash tools/lab/plan-qualification/queue.sh jobs.txt > ~/bc-runs/batch.log 2>&1 &
 tail -f ~/bc-runs/batch.log        # start/done lines per job; ends "queue completed ..."
 ```
@@ -184,7 +180,7 @@ start builds or extra jobs on a host that is mid-campaign.
 
 ## Sources — the normal way to build
 
-`$BC` = `$BC_REPO` on the build server.
+`$BC` = `$BC_REPO_ROOT` on the build server.
 
 A **source** (`[source.<name>]` in `recipes.toml`) names one complete patch composition: an upstream ref, an overlay flag, and the exact `patch-set`(s) it applies. Builds and platforms are a separate, orthogonal axis, composed per-lane.
 
@@ -456,7 +452,7 @@ These apply to the **manual build cycle** below (standalone `generate` + raw cma
 
 ## Manual build cycle
 
-One-off builds outside a source. `$BC` = `$BC_REPO` on the build server.
+One-off builds outside a source. `$BC` = `$BC_REPO_ROOT` on the build server.
 
 ### Linux — all three GPUs
 
@@ -553,7 +549,7 @@ cmake -S 'J:/development/llmhosts/bigcherry/vendor/llama.cpp' -B 'C:/bcw' -G Nin
 cmake --build C:/bcw --target test-backend-ops -j
 ```
 
-- **Use a short build directory (`C:\bcw`).** Anything under the scratchpad path
+- **Use a short build directory (`<short-build-dir>`).** Anything under the scratchpad path
   exceeds the 250-character Windows object-path limit.
 - **Put ROCm's `bin` on `PATH` when *running*, not only when building.** Without
   it the exe dies with `0xC0000135` (DLL not found), which looks like a crash.

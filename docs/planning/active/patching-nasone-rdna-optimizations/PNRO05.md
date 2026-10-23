@@ -50,7 +50,7 @@ patches/1254_nro05_gdn_mtp_prefix_tail; orchestration/snapshot path; snapshot fi
 
 ## Validation
 
-Patch mechanics: `PYTHONPATH=tools python -m bigcherry patch-lint patches/1254_nro05_gdn_mtp_prefix_tail`; `PYTHONPATH=tools python -m bigcherry patch-rebase-check --focal-overlay 1254_nro05_gdn_mtp_prefix_tail --source bigcherry-tuning --requires 1253_nro04_gfx1100_bf16_chunked_gdn`; package pytest offline. Per-slot/final-state parity, nonqualifying-shape fallback, threshold+/-1, K=2/3/5/8, single/multi-sequence, launch rejection, pool reuse, graph replay fixtures; FP32 chunked-prefix control to separate orchestration vs kernel error. Hardware (Brutus, gfx1100): `python -m bigcherry.patch.validation_campaign --overlay 1254_nro05_gdn_mtp_prefix_tail --requires 1253_nro04_gfx1100_bf16_chunked_gdn --arch gfx1100` measuring prefix savings vs transition/allocation overhead and MTP acceptance.
+Patch mechanics: `PYTHONPATH=tools python -m bigcherry patch-lint patches/1254_nro05_gdn_mtp_prefix_tail`; `PYTHONPATH=tools python -m bigcherry patch-rebase-check --focal-overlay 1254_nro05_gdn_mtp_prefix_tail --source bigcherry-tuning --requires 1253_nro04_gfx1100_bf16_chunked_gdn`; package pytest offline. Per-slot/final-state parity, nonqualifying-shape fallback, threshold+/-1, K=2/3/5/8, single/multi-sequence, launch rejection, pool reuse, graph replay fixtures; FP32 chunked-prefix control to separate orchestration vs kernel error. Hardware (dev, gfx1100): `python -m bigcherry.patch.validation_campaign --overlay 1254_nro05_gdn_mtp_prefix_tail --requires 1253_nro04_gfx1100_bf16_chunked_gdn --arch gfx1100` measuring prefix savings vs transition/allocation overhead and MTP acceptance.
 
 ## Effort & Risk
 

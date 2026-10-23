@@ -20,7 +20,7 @@ Motivation (b11402, production config, rocprofv3 kernel trace of one uncached pr
 23.5 s kernel time per XTX over 31.8K tokens and 18.9 s of 89.5 s over 99.3K tokens (32 -> 97 ms per 512-token
 ubatch); the R9700 holds no attention and spends the equivalent time waiting in the all-reduce.
 
-Results (b11402, Brutus, 2026-10-05/06; details and the promotion rationale in README.md):
+Results (b11402, dev, 2026-10-05/06; details and the promotion rationale in README.md):
 
 - Prefill, ABBA, production config: ~99K tokens 862.4 / 872.1 -> 978.7 / 982.5 t/s (+13%); ~202K tokens
   658.2 / 663.5 -> 846.1 / 847.8 t/s (+28%). 24K MTP decode unchanged (41.5 / 41.6 vs 41.2 - 41.4 ms/step).

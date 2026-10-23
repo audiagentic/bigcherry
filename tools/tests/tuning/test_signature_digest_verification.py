@@ -5,7 +5,7 @@ closed logic with a fake test-backend-ops runner, exactly like
 hi80_generate_correctness_evidence.py's own tests do. Real-hardware
 validation (a real compiled test-backend-ops reproducing the exact stored
 signature hex for MUL_MAT/MUL_MAT_ID/simple routed GLU) is tracked
-separately as this item's Brutus acceptance gate, not reproducible offline.
+separately as this item's dev acceptance gate, not reproducible offline.
 """
 
 from __future__ import annotations

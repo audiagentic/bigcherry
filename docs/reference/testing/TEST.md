@@ -73,9 +73,9 @@ export ROCR_VISIBLE_DEVICES=0,1
 python -m bigcherry.patch.validation_campaign \
   --patch 1233_rd73_stable_graph_cache_key \
   --model $BC_MODEL_ROOT/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf \
-  --hip-path $BC_ROCM_SHIM \
+  --hip-path $BC_ROCM_ROOT \
   --amdgpu-targets gfx1100 \
-  --manifest $BC_REPO/artifacts/2578138397d7/hip-autotune-manifest.json \
+  --manifest $BC_REPO_ROOT/artifacts/2578138397d7/hip-autotune-manifest.json \
   --workdir  ~/rd73-contract-run \
   --build-root ~/rd73-contract-builds \
   --worktree-root ~/rd73-contract-worktrees \
@@ -103,22 +103,12 @@ Three prerequisites that are easy to miss and each cost a failed run:
 
 2. **`--hip-path` must point at a tree whose `bin/` contains `clang`/`clang++`.**
    The campaign builds its compiler paths as `<hip-path>/bin/clang`. This
-   ROCm install exposes `amdclang`/`amdclang++` in `/opt/rocm/bin` and puts
-   real `clang` under `/opt/rocm/llvm/bin`, so `--hip-path /opt/rocm` fails
-   configure with *"is not a full path to an existing compiler tool"*. Build a
-   non-invasive shim rather than modifying `/opt/rocm`:
+   The real `clang` sits under `/opt/rocm/llvm/bin`, and the compile check looks
+   there, so `--hip-path` can name the SDK root directly (for example
+   `$BC_ROCM_ROOT` or a version from the host's `rocm-sdks`). No shim is needed.
 
-   ```bash
-   R=~/rocm-shim; rm -rf $R; mkdir -p $R/bin
-   for e in /opt/rocm/*;     do b=$(basename $e); [ "$b" = bin ] && continue; ln -s $e $R/$b; done
-   for e in /opt/rocm/bin/*; do ln -s $e $R/bin/$(basename $e); done
-   ln -sf /opt/rocm/llvm/bin/clang   $R/bin/clang
-   ln -sf /opt/rocm/llvm/bin/clang++ $R/bin/clang++
-   ```
-
-   `ROCM_PATH`/`HIP_PATH`/`CMAKE_PREFIX_PATH` all resolve correctly through the
-   shim because every other top-level entry is symlinked straight to
-   `/opt/rocm`.
+   `ROCM_PATH`/`HIP_PATH`/`CMAKE_PREFIX_PATH` resolve to the SDK root as configured
+   (`rocm-root` or a `rocm-sdks` entry); no path rewriting is needed.
 
 3. **Never run `cmake --build` by hand inside `~/.cache/bigcherry/builds/...`.**
    Those directories are identity-bound. Adding a target manually (e.g.
@@ -211,7 +201,7 @@ build lanes and spawn mode are not used.
 source tools/env/bigcherry-env.sh
 ssh "$BC_HOST" "cd $BC_BENCH_HARNESS/.. && python3 bench/run_bench.py \
   --bench-type server-bench \
-  --server-url http://127.0.0.1:$BC_BENCH_PORT \
+  --server-url http://127.0.0.1:$BC_TEST_PORT \
   --model <label> \
   [--bench-configs default] \
   [--toggles '{\"repetitions\":1}']"
@@ -328,7 +318,7 @@ and replay cells without a cache before any worker is launched.
 
 ```json
 {
-  "host": "build-server",
+  "host": "dev",
   "cells": [{
     "cell_id": "9b-gpu0-native",
     "model_id": "tierB-qwen9b-q6k",
@@ -438,8 +428,8 @@ expanded at execution. For example:
   "required_metrics": ["pp512_tps", "tg128_tps"],
   "repetitions": 1,
   "arms": [
-    {"name": "stock", "mode": "stock", "binary": "$BC_CACHE/<stock-build>/bin/llama-server"},
-    {"name": "native", "mode": "native", "binary": "$BC_CACHE/<native-build>/bin/llama-server"}
+    {"name": "stock", "mode": "stock", "binary": "$BC_CACHE_ROOT/<stock-build>/bin/llama-server"},
+    {"name": "native", "mode": "native", "binary": "$BC_CACHE_ROOT/<native-build>/bin/llama-server"}
   ]
 }
 ```

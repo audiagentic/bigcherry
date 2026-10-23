@@ -7,7 +7,7 @@ set -u
 bin=$1 out=$2
 mkdir -p "$out"
 port=18751
-model=/mnt/data/llm-models/gemma-4-26B-A4B/gguf/gemma-4-26B-A4B-it-UD-Q5_K_S.gguf
+model=${BC_MODEL_ROOT}/gemma-4-26B-A4B/gguf/gemma-4-26B-A4B-it-UD-Q5_K_S.gguf
 PROMPT='Write three short sentences about why the sky is blue.'
 CLEAR="-u BIGCHERRY_ATTN_TS -u BIGCHERRY_ATTN_ROTATE -u BIGCHERRY_FFN_TS -u GGML_HIP_Q8_1_CACHE_MODE -u BIGCHERRY_ROLLBACK_NO_CONT -u BIGCHERRY_RMS_Q81 -u BIGCHERRY_ACT_Q81 -u BIGCHERRY_HC_Q81"
 for arm in plain attn_ts q81 attn_ts_rot; do

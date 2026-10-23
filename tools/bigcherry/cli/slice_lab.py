@@ -33,9 +33,9 @@ def build_lab_command(
         raise ValueError("script must be a repository-relative tools/lab/ script")
     if any("\n" in arg or "\r" in arg for arg in (script, *arguments)):
         raise ValueError("script and arguments cannot contain newlines")
-    if not host.hostname or not host.repo or not host.cache_root:
-        raise ValueError("lab host needs hostname, repo, cache-root")
-    for value in (host.repo, host.cache_root):
+    if not host.hostname or not host.repo_root or not host.cache_root:
+        raise ValueError("lab host needs hostname, repo-root, cache-root")
+    for value in (host.repo_root, host.cache_root):
         if not PurePosixPath(value).is_absolute() or any(char.isspace() for char in value):
             raise ValueError("lab repo and cache-root must be absolute POSIX paths")
 
@@ -55,7 +55,7 @@ def build_lab_command(
     kind = "QUEUE" if path.name in ("queue.sh", "queue-meta-mem.sh", "queue-env-ab.sh") else "SCRIPT"
     lines = [
         "set -Eeuo pipefail",
-        f"primary={q(host.repo)}",
+        f"primary={q(host.repo_root)}",
         f"work={q(host.cache_root)}",
         f"stage={q(stage)}",
         f"private_ref={q(private_ref)}",

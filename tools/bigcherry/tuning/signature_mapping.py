@@ -211,7 +211,7 @@ def _mul_mat_op_filter(signature: dict[str, object], *, vendor_root: Path) -> tu
     the unreconstructable fields.
 
     This is a hardware-verified requirement, not a convenience: leaving
-    bs/nr/per wildcarded was tried first and found, on real Brutus
+    bs/nr/per wildcarded was tried first and found, on real dev
     hardware, to match 13 DISTINCT registered test-backend-ops cases for a
     single (type_a, type_b, m, n, k) tuple -- all producing a tensor
     literally named "out", so find_digest_for_tensor()/
@@ -286,7 +286,7 @@ def _mul_mat_op_filter(signature: dict[str, object], *, vendor_root: Path) -> tu
 # HI80 (2026-08-23 real-hardware finding): signature_to_op_filter() only ever
 # produces evidence when a real dispatch signature happens to coincide with
 # one of test-backend-ops' own fixed synthetic corpus shapes -- verified on
-# Brutus that a real gpt-oss-20B MUL_MAT (m=32, n=21, k=2880) matches NONE of
+# dev that a real gpt-oss-20B MUL_MAT (m=32, n=21, k=2880) matches NONE of
 # them, so 0 tests run and no evidence is emitted, for a signature that is
 # otherwise perfectly valid. test-backend-ops already has an escape hatch
 # for exactly this: `--test-file <path>`, read by make_test_cases_from_file()
@@ -294,7 +294,7 @@ def _mul_mat_op_filter(signature: dict[str, object], *, vendor_root: Path) -> tu
 # line, which builds a graph directly from the given op/type/ne/sources
 # instead of going through the fixed generator -- so it works for ANY real
 # signature, not just ones lucky enough to already be registered. Verified
-# end to end on real Brutus hardware for the exact blocked m=32/n=21/k=2880
+# end to end on real dev hardware for the exact blocked m=32/n=21/k=2880
 # signature: BIGCHERRY_CORRECTNESS_METRIC fires for tensor "out" exactly as
 # it does for a registered-corpus case (test_generic_op inherits test_case's
 # shared eval() path, which is where patches 1222/1223 hook in -- nothing
@@ -323,7 +323,7 @@ def signature_to_test_file_line(
     data the way a registered test case's is (a side effect of that other
     class's own build_graph(), not something test_case::eval() does
     universally), so it never gets a BIGCHERRY_REF_DIGEST line at all --
-    confirmed on Brutus for this exact function's output line, even though
+    confirmed on dev for this exact function's output line, even though
     its BIGCHERRY_CORRECTNESS_METRIC line fires correctly. "leaf_0" (a
     genuine random-input leaf) always gets digested, and proves the same
     thing the digest check exists for -- that both runs saw identical

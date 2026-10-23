@@ -87,7 +87,7 @@ class S3bCorrectnessEvidenceTests(unittest.TestCase):
 
 
 class S4ExportDispatchDbWiringTests(unittest.TestCase):
-    """HI103 regression: a real end-to-end campaign on Brutus (qwen0.8b,
+    """HI103 regression: a real end-to-end campaign on dev (qwen0.8b,
     2026-08-25) found S4_export never passed --dispatch-db to
     bigcherry.replay_cache, so it hard-failed exporting any promoted row
     whose winner is non-native -- replay_cache.py's own RV49 correctness

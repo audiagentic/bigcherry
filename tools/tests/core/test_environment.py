@@ -31,8 +31,8 @@ class EnvironmentContractTests(unittest.TestCase):
         # Each of these replaced literal occurrences in the reference docs.
         # A blank one would silently produce commands like `cd /run_bench.py`,
         # which is worse than the hardcoded path it replaced.
-        for field in ("hostname", "home", "repo", "cache_root", "share",
-                      "model_root", "bench_harness", "rocm", "rocm_shim"):
+        for field in ("hostname", "repo_root", "cache_root",
+                      "model_root", "bench_harness", "rocm_root"):
             with self.subTest(field=field):
                 self.assertTrue(getattr(self.host, field),
                                 f"{field} is empty; docs reference it as $BC_*")
@@ -42,8 +42,8 @@ class EnvironmentContractTests(unittest.TestCase):
         # that binds it takes production down, and a tuner that assumes it
         # will fail to start -- which has already happened.
         self.assertGreater(self.host.production_port, 0)
-        self.assertGreater(self.host.bench_port, 0)
-        self.assertNotEqual(self.host.production_port, self.host.bench_port)
+        self.assertGreater(self.host.test_port, 0)
+        self.assertNotEqual(self.host.production_port, self.host.test_port)
 
     def test_devices_are_declared_with_arch_and_vram(self):
         self.assertTrue(self.host.devices)

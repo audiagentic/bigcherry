@@ -31,7 +31,7 @@ creation refuses to start below a free-space floor, naming the largest reclaimab
 
 ## Validation
 
-Fixture tests for every protection; a dry run on Brutus after WSL06 lists the legacy runs without touching them; apply on a harvested test run removes only its bulk.
+Fixture tests for every protection; a dry run on dev after WSL06 lists the legacy runs without touching them; apply on a harvested test run removes only its bulk.
 
 ## Design review (GPT, 2026-10-19) - adopted
 

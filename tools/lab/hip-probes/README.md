@@ -16,14 +16,14 @@ design decision does not have to be read out of an engine run (QFP41 threading, 
 | `pipeline` | Batch k+1 queued while batch k runs, into the same card buffer, with the host waiting on an event behind k and not on the whole stream: does the card stop running dry, and is every result still right? |
 | `stagger` | A loop of compute + exchange on every card as today, against two half-batches staggered so one half's exchange runs under the other half's compute. |
 
-Run on Brutus through the queue, on the cards to test:
+Run on dev through the queue, on the cards to test:
 
     VIS=0,1,2 SCRIPT hp1 tools/lab/hip-probes/run.sh @<any build run> <out-dir> [test...]
 
 The compute kernel streams over 256 MiB, so it stands for a memory-bound kernel; its time is not the model's. The
 ratios (what the exchange adds, what staggering recovers) are what carry over, the milliseconds are not.
 
-## Results, 2026-10-11 (Brutus: 2x RX 7900 XTX at PCIe 4.0 x8, R9700 at x4, RX 6900 XT at 3.0 x4; runs hp1, hp2)
+## Results, 2026-10-11 (dev: 2x RX 7900 XTX at PCIe 4.0 x8, R9700 at x4, RX 6900 XT at 3.0 x4; runs hp1, hp2)
 
 **links** (one 5.24 MB message; the production prefill sum travels as bf16, 2.62 MB):
 

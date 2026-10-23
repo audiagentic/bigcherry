@@ -118,7 +118,7 @@ def test_probe_allocates_compute_graph_via_scheduler_not_set_usage_after_the_fac
 
 
 def test_scheduler_requires_a_trailing_cpu_backend():
-    # Discovered against the real toolchain on Brutus: ggml_backend_sched_new()
+    # Discovered against the real toolchain on dev: ggml_backend_sched_new()
     # hard-asserts its LAST backend is CPU-typed, undocumented in the header.
     assert "GGML_BACKEND_DEVICE_TYPE_CPU" in PROBE
     assert "ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU)" in PROBE
@@ -152,7 +152,7 @@ def test_probe_fails_closed_on_missing_participant_output():
 
 def test_probe_d2_to_d4_guard_present_and_mechanics_are_generic():
     # HI84: relaxed from the original HI18 D=2-only guard to 2..4, matching
-    # real Brutus hardware (4 physical GPUs) -- mechanics below were already
+    # real dev hardware (4 physical GPUs) -- mechanics below were already
     # device-count-generic, so the guard was the only change needed.
     assert "this probe qualifies D=2..4" in PROBE
     assert "for (size_t rank = 0; rank < cfg->device_count; ++rank)" in PROBE

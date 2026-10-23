@@ -69,7 +69,7 @@ ggml/src/ggml-cuda/ggml-cuda.cu (buffer alloc, dense MUL_MAT dispatch threshold,
 
 ## Validation
 
-Shadow contents vs dequant reference; model output/PPL parity; load-time overhead; VRAM delta; PP across M/ubatch 64..4096; TG/decode-only neutrality control; selected-vs-all-eligible-tensor arms; VRAM-constrained control. Brutus hardware run not performed here.
+Shadow contents vs dequant reference; model output/PPL parity; load-time overhead; VRAM delta; PP across M/ubatch 64..4096; TG/decode-only neutrality control; selected-vs-all-eligible-tensor arms; VRAM-constrained control. dev hardware run not performed here.
 
 ## Effort & Risk
 

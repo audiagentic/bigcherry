@@ -59,6 +59,24 @@ def _run(args: list[str], log_path: Path) -> None:
         )
 
 
+def _hip_compiler(hip_path: Path, tool: str) -> Path:
+    """The clang driver inside a ROCm install.
+
+    Linux ROCm ships the real driver under ``llvm/bin`` (``/opt/rocm`` has no ``bin/clang``),
+    so that is looked up first. Windows HIP installs keep it under ``bin`` with an ``.exe``
+    suffix, as config/recipes.toml does. No shim is needed on either layout.
+    """
+    suffix = ".exe" if sys.platform == "win32" else ""
+    candidates = (
+        hip_path / "llvm" / "bin" / f"{tool}{suffix}",
+        hip_path / "bin" / f"{tool}{suffix}",
+    )
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    raise CompileCheckError(f"no {tool} under {hip_path} (looked in llvm/bin and bin)")
+
+
 def check_one(
     name: str, extra_cmake_args: list[str], *, hip_path: Path,
     amdgpu_targets: str, workdir: Path, target: str,
@@ -67,12 +85,8 @@ def check_one(
     source = paths.llama_root()
     log_dir = workdir / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
-    clang = hip_path / "bin" / (
-        "clang.exe" if sys.platform == "win32" else "clang"
-    )
-    clangxx = hip_path / "bin" / (
-        "clang++.exe" if sys.platform == "win32" else "clang++"
-    )
+    clang = _hip_compiler(hip_path, "clang")
+    clangxx = _hip_compiler(hip_path, "clang++")
     print(f"[compile-check] configuring {name} ...", flush=True)
     _run(
         [

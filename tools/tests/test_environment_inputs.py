@@ -80,7 +80,7 @@ class EnvironmentInputTests(unittest.TestCase):
         build_only = observation_input(name="compiler", scope="build", values={"v": "1"})
         run_only = observation_input(name="driver", scope="run", values={"v": "1"})
         both = observation_input(name="rocm", scope="both", values={"v": "1"})
-        evidence_only = observation_input(name="hostname", scope="evidence_only", values={"v": "brutus"})
+        evidence_only = observation_input(name="hostname", scope="evidence_only", values={"v": "dev"})
         eset = EnvironmentInputSet(inputs=(build_only, run_only, both, evidence_only))
 
         build_digest = eset.build_digest()

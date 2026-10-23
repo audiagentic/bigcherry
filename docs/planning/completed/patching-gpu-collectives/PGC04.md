@@ -53,7 +53,7 @@ Hardware-free anchor tests; then order-balanced ab-benchmark per provider on GPU
 
 Framework change: no promotion gate. Q8 wire is lossy activation compression, orthogonal to model weight quant.
 
-2026-09-30 AllReduce hardware matrices queued on Brutus (commits 65091e94, aa7a5dcb) ahead of 0860 using the stock GGML_CUDA_ALLREDUCE selector per A/B arm: dual-XTX 27B ccl/host(internal)/none (ab-27b-allreduce), 0840 adaptive vs control (ab-27b-adaptive), and 3-GPU XTX x2 + R9700 (gfx1100,gfx1201 multi-arch build) ccl / 1244 root3 internal / none (ab-3g-allreduce, experiment allreduce-root3). q8 wire (1250) not queued: it requires 1252 p2p provider, which needs working PCIe P2P (off on the stock kernel).
+2026-09-30 AllReduce hardware matrices queued on dev (commits 65091e94, aa7a5dcb) ahead of 0860 using the stock GGML_CUDA_ALLREDUCE selector per A/B arm: dual-XTX 27B ccl/host(internal)/none (ab-27b-allreduce), 0840 adaptive vs control (ab-27b-adaptive), and 3-GPU XTX x2 + R9700 (gfx1100,gfx1201 multi-arch build) ccl / 1244 root3 internal / none (ab-3g-allreduce, experiment allreduce-root3). q8 wire (1250) not queued: it requires 1252 p2p provider, which needs working PCIe P2P (off on the stock kernel).
 
 2026-09-30 superseded by PGC09: 0860 is part of the AllReduce promotion closure (0860 + 1225 + 0840); its evidence and promotion are tracked there. 0860 marker fixed to WARN (86c96eed) so it shows at default server verbosity.
 

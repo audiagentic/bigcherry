@@ -14,7 +14,7 @@ def test_wrap_command_prefixes_rocprofv3(tmp_path):
 
 
 def test_find_kernel_trace_locates_nested_file(tmp_path):
-    nested = tmp_path / "brutus"
+    nested = tmp_path / "dev"
     nested.mkdir()
     target = nested / "12345_kernel_trace.csv"
     target.write_text("Kind\n", encoding="utf-8")
@@ -65,7 +65,7 @@ def test_load_kernel_trace_skips_non_dispatch_rows(tmp_path):
 
 
 def test_classify_kernel_real_names():
-    # Real kernel names observed in a live trace on Brutus, 2026-08-25.
+    # Real kernel names observed in a live trace on dev, 2026-08-25.
     assert rocprof.classify_kernel("void mul_mat_vec_q<(ggml_type)14") == "mmvq"
     assert rocprof.classify_kernel("void mul_mat_q<(ggml_type)8") == "mmq"
     assert rocprof.classify_kernel("quantize_q8_1(float const*") == "quantize"

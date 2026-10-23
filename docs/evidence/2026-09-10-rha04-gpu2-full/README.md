@@ -34,5 +34,5 @@ Replay is modestly faster in tg512 here, but this remains topology-specific
 and unadmitted pending work-equivalence/replay-activation evidence.
 
 Raw machine-readable artifacts are `run.json` and `config.json`. Per-cell
-logs remain on Brutus under `/tmp/rha04-gpu2-full/` and are not committed as
+logs remain on <gpu-host> under `/tmp/rha04-gpu2-full/` and are not committed as
 release artifacts.

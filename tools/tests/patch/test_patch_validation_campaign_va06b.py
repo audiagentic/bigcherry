@@ -265,7 +265,7 @@ class RunRd73MtpServerLaneTests(unittest.TestCase):
         # Regression coverage: an earlier draft invented "--spec-n-max"/
         # "--spec-draft-k"/"--spec-draft-v", none of which are real
         # llama-server flags (verified against vendor/llama.cpp's
-        # common/arg.cpp before the real Brutus hardware run) -- the real
+        # common/arg.cpp before the real dev hardware run) -- the real
         # flag is --spec-draft-n-max, and -sm tensor is required for this
         # 27B model on 2x gfx1100.
         self._run({"control": [10.0] * 4, "subject": [20.0] * 4})

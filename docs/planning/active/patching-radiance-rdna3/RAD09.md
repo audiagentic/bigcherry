@@ -22,7 +22,7 @@ feat/rad03-gpu-lanes (GPU mailbox protocol v11, libr3moe plugin, two helpers, SK
 1. Diff main's rad0002 patch.py against the branch's 0002 edit by edit.
 2. Keep one implementation; fold any needed main-only edit (mover publish changed_shape) into it inside the patch (bug fixes live in the patch).
 3. Merge main into the branch (no rebase: the branch has another session's commit; no force push).
-4. Offline tests, patch-lint, build on Brutus, --compare, one balanced A/B against the 2,760/108.5 baseline.
+4. Offline tests, patch-lint, build on dev, --compare, one balanced A/B against the 2,760/108.5 baseline.
 5. Open the PR.
 
 ## Detailed Solution & Technical Design
@@ -51,7 +51,7 @@ patch tests and patch-lint pass; rad0002 dry-run applies at the pin; helper layo
 
 ## Acceptance Criteria
 
-Met 2026-10-15: one rad0002 and one hook (libr3moe) on main via #236 (63cc952f); patch-lint and patch tests pass; radiance-lab build ok on Brutus; helper vs engine rel_l2 0.0011; prefill 2,760/2,761 tok/s, decode 108.4/108.9, identical completion hash.
+Met 2026-10-15: one rad0002 and one hook (libr3moe) on main via #236 (63cc952f); patch-lint and patch tests pass; radiance-lab build ok on dev; helper vs engine rel_l2 0.0011; prefill 2,760/2,761 tok/s, decode 108.4/108.9, identical completion hash.
 
 
 

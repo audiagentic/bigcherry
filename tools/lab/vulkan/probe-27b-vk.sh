@@ -1,7 +1,7 @@
 #!/bin/bash
-# RRVP05 first Vulkan screening on Brutus: Qwen3.8-27B Q8_0 on the stock Vulkan build (RADV), same
+# RRVP05 first Vulkan screening on dev: Qwen3.8-27B Q8_0 on the stock Vulkan build (RADV), same
 # per-layout measurement as tools/lab/dflash/probe-27b.sh (ubatch 2048, ~1665-token prompt, greedy check
-# against the first layout). Devices are selected with GGML_VK_VISIBLE_DEVICES (Vulkan order on Brutus:
+# against the first layout). Devices are selected with GGML_VK_VISIBLE_DEVICES (Vulkan order on dev:
 # 0,1 = 7900 XTX, 2 = R9700, 3 = 6900 XT, same as HIP); the ICD with VK_DRIVER_FILES (RADV default).
 # Usage: probe-27b-vk.sh <llama-server> <out-dir> [layout-name regex] [timed requests per layout, default 1]
 #        [VAR=value ...]  (extra environment for every server, e.g. BIGCHERRY_VK_ALLREDUCE=host-f32)
@@ -10,7 +10,7 @@ bin=$1 out=$2 only=${3:-} reps=${4:-1}
 shift $(( $# < 4 ? $# : 4 ))
 for kv in "$@"; do export "$kv"; done
 mkdir -p "$out"
-model=/mnt/data/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf
+model=${BC_MODEL_ROOT}/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf
 common=(-m "$model" -ngl 99 --fit off -c 8192 --flash-attn on --parallel 1 --threads 8 -ub 2048 -b 2048 -lv 4)
 probe() {
   local name=$1 vis=$2; shift 2
@@ -34,7 +34,7 @@ reps = int(sys.argv[4])
 def post(body):
     req = urllib.request.Request(f"http://127.0.0.1:{port}/completion", json.dumps(body).encode(), {"Content-Type": "application/json"})
     return json.loads(urllib.request.urlopen(req, timeout=900).read())
-text = open("/mnt/data/bigcherry-work/corpus/kld-docs.txt", errors="replace").read()[:5000]
+text = open("${BC_WORK_ROOT}/corpus/kld-docs.txt", errors="replace").read()[:5000]
 post({"prompt": "Hello", "n_predict": 8, "cache_prompt": False})
 rows = []
 for i in range(reps):

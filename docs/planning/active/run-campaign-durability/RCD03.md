@@ -11,11 +11,11 @@ priority: P1
 work: L
 ---
 
-# Install and qualify the Brutus Slurm execution substrate
+# Install and qualify the dev Slurm execution substrate
 
 ## Objective
 
-Use Noble Slurm as Brutus execution/resource authority while BigCherry remains scientific/domain authority. v1 is MUNGE + slurmctld + slurmd, without MariaDB/slurmdbd/slurmrestd.
+Use Noble Slurm as dev execution/resource authority while BigCherry remains scientific/domain authority. v1 is MUNGE + slurmctld + slurmd, without MariaDB/slurmdbd/slurmrestd.
 
 ## Implementation status — 2026-09-27
 
@@ -25,13 +25,13 @@ Implemented/offline or real-Noble validated:
 - production `slurm.conf`/`cgroup.conf` templates with architecture GRES, license admission and no monolithic native requeue;
 - accepted-inventory GRES renderer and Linux AMD-SMI discovery/observed/accepted inventory flow;
 - `tools/admin/render_bigcherry_slurm.py` exact accepted-inventory rendering;
-- `tools/admin/install_brutus_slurm.py` repeatable dry-run/apply installer: accepted inventory precondition, minimal `slurm-wlm+munge+jq`, MUNGE provisioning/round-trip, rendered `/etc/slurm`, `slurmd -G`, service start and `scontrol ping`;
+- `tools/admin/install_node_slurm.py` repeatable dry-run/apply installer: accepted inventory precondition, minimal `slurm-wlm+munge+jq`, MUNGE provisioning/round-trip, rendered `/etc/slurm`, `slurmd -G`, service start and `scontrol ping`;
 - installer action plan/preflight tests;
 - real Ubuntu 24.04 / Slurm 23.11.4 CI proving controller/daemon startup, no-account execution, JSON queue, dependency, hold/release/cancel, license priority, jobcomp and cgroup fallback.
 
 Retry rule: production v1 does **not** configure `RequeueExit`. Every campaign retry is BigCherry attempt+1/new native job; `--same-commit` may pin identical code. Real Noble CI may continue exercising native requeue only as a scheduler capability reference.
 
-Still Brutus hardware/production acceptance:
+Still dev hardware/production acceptance:
 
 1. capture real AMD-SMI provider output and prove stable identity persistence;
 2. accept real peer topology and render/apply real host GRES;
@@ -73,7 +73,7 @@ ConstrainCores=yes
 ConstrainDevices=no
 ```
 
-Enable `ConstrainDevices=yes` only after the complete Brutus matrix succeeds.
+Enable `ConstrainDevices=yes` only after the complete dev matrix succeeds.
 
 ## GRES and submission rules
 
@@ -85,12 +85,12 @@ Before `sbatch`, BigCherry persists immutable `submission-intent.json` containin
 
 ## Installation/acceptance
 
-Preferred procedure is `docs/reference/jobs/SLURM_BRUTUS.md`. Cutover acceptance is `docs/reference/jobs/ACCEPTANCE.md`.
+Preferred procedure is `docs/reference/jobs/SLURM_SETUP.md`. Cutover acceptance is `docs/reference/jobs/ACCEPTANCE.md`.
 
 Required final gates:
 
 - real Noble scheduler workflow green;
-- Brutus accepted inventory/GRES + `slurmd -G` green;
+- dev accepted inventory/GRES + `slurmd -G` green;
 - exact stable-ID allocation attestation before scientific work;
 - device cgroup qualified or explicit fallback recorded;
 - no database/accounting-service dependency;
@@ -102,4 +102,4 @@ Required final gates:
 - 2026-09-26: initial design and real Noble validation.
 - 2026-09-27: production Slurm adapter/no-account/no-sacct behavior implemented.
 - 2026-09-27: removed production native requeue for monolithic campaigns.
-- 2026-09-27: repeatable Brutus installer plus Linux AMD discovered/accepted inventory path implemented; remaining status is real-host qualification.
+- 2026-09-27: repeatable dev installer plus Linux AMD discovered/accepted inventory path implemented; remaining status is real-host qualification.

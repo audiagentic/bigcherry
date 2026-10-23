@@ -127,7 +127,7 @@ def disk_guards_from_environment(
     The root and temp guards are explicit so a detached worktree on a large
     data volume cannot hide a nearly-full system filesystem (a real compiler
     failure mode). Generic defaults are percentage-only and therefore portable;
-    hosts such as Brutus should set absolute GiB floors in their service env.
+    hosts such as dev should set absolute GiB floors in their service env.
     """
     root_gib = _float_env(environment, "BIGCHERRY_ROOT_MIN_FREE_GIB", 0.0)
     work_gib = _float_env(environment, "BIGCHERRY_WORK_MIN_FREE_GIB", 0.0)

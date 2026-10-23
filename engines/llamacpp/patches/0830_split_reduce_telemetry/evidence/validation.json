@@ -47,7 +47,7 @@
       },
       "campaign_identity": "0b6959b22b7b7cd9db7c7f94091d2cc2106b568a446a40822ef47f28d15943c8",
       "campaign_identity_digest": "0b6959b22b7b7cd9db7c7f94091d2cc2106b568a446a40822ef47f28d15943c8",
-      "campaign_workdir": "/home/audumla/pa26-evidence-run3/0830_split_reduce_telemetry/framework/0830_split_reduce_telemetry",
+      "campaign_workdir": "${HOME}/pa26-evidence-run3/0830_split_reduce_telemetry/framework/0830_split_reduce_telemetry",
       "check_results": {
         "apply": {
           "artifacts": [],
@@ -224,7 +224,7 @@
       "patch_implementation_digest": "a62f64e16168a3bfe276cf01f08e7897c496e59f4339cbc9932700ed0c69d7ba",
       "patch_validation_subject_digest": "d5db80699629f7211f3951c9108b946f2123eccb79ee11d24a1f94945bf9272b",
       "qualification_kind": "framework-configuration-v1",
-      "record_digest": "1d894f14db9d6f37588527dff96f7170d03d8a93b10096b21d9bacf3e07cae9b",
+      "record_digest": "4eafb7b86b6169404f09e8db44a394b64f49e1b5a53045810b5121b5f6eb4bbe",
       "record_schema_version": 5,
       "runtime_performance_qualified": false,
       "source_composition": [
@@ -421,7 +421,7 @@
       },
       "campaign_identity": "14622b956195bc689ae5f28427685aa1976a77dec6708117eea26f4676893c2e",
       "campaign_identity_digest": "14622b956195bc689ae5f28427685aa1976a77dec6708117eea26f4676893c2e",
-      "campaign_workdir": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/runs/fwcfg-b11126-r2/0830_split_reduce_telemetry/framework/0830_split_reduce_telemetry",
+      "campaign_workdir": "${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/work/runs/fwcfg-b11126-r2/0830_split_reduce_telemetry/framework/0830_split_reduce_telemetry",
       "check_results": {
         "apply": {
           "artifacts": [
@@ -615,7 +615,7 @@
       "patch_implementation_digest": "bc11f62bf2950c714a2ba4ac2fa021c0b430e5880d8762770e5590071d6786d3",
       "patch_validation_subject_digest": "1aa45839e8809cef13ce2d481d53cacdde1a5a979a8e3629253c70a001e87e4c",
       "qualification_kind": "framework-configuration-v1",
-      "record_digest": "d3be18c67de060d5af1a20ad229d19c1d3f4a6ad8a6f96a87d4c7816ad81f0d3",
+      "record_digest": "c93d069bf2e7886dfb13ad5f0eca682653b25f28c06b63d13775f6efd8b73434",
       "record_schema_version": 5,
       "runtime_performance_qualified": false,
       "source_composition": [
@@ -793,7 +793,7 @@
       },
       "campaign_identity": "44e4928ed3f87906406be19a03792d4f08e65794fd3d423f6e3fbc5f10b2eeaf",
       "campaign_identity_digest": "44e4928ed3f87906406be19a03792d4f08e65794fd3d423f6e3fbc5f10b2eeaf",
-      "campaign_workdir": "/home/audumla/pa26-evidence-run2/0830_split_reduce_telemetry/framework/0830_split_reduce_telemetry",
+      "campaign_workdir": "${HOME}/pa26-evidence-run2/0830_split_reduce_telemetry/framework/0830_split_reduce_telemetry",
       "check_results": {
         "apply": {
           "artifacts": [],
@@ -970,7 +970,7 @@
       "patch_implementation_digest": "a62f64e16168a3bfe276cf01f08e7897c496e59f4339cbc9932700ed0c69d7ba",
       "patch_validation_subject_digest": "d5db80699629f7211f3951c9108b946f2123eccb79ee11d24a1f94945bf9272b",
       "qualification_kind": "framework-configuration-v1",
-      "record_digest": "ece8333b065498fa04315b0d73901f089bb645831b14dd1e46cdd374bb2e7ceb",
+      "record_digest": "56e0414b1d1e42c70175f8a9b40b59bf9c176db9ffb3e3234e597dbbee60ec37",
       "record_schema_version": 5,
       "runtime_performance_qualified": false,
       "source_composition": [
@@ -1167,7 +1167,7 @@
       },
       "campaign_identity": "5a5622ff44e893069231a1729f55941735e5730d4c24939f2cdf5bbf664b21aa",
       "campaign_identity_digest": "5a5622ff44e893069231a1729f55941735e5730d4c24939f2cdf5bbf664b21aa",
-      "campaign_workdir": "/home/audumla/pa26-evidence-run4/0830_split_reduce_telemetry/framework/0830_split_reduce_telemetry",
+      "campaign_workdir": "${HOME}/pa26-evidence-run4/0830_split_reduce_telemetry/framework/0830_split_reduce_telemetry",
       "check_results": {
         "apply": {
           "artifacts": [
@@ -1361,7 +1361,7 @@
       "patch_implementation_digest": "a62f64e16168a3bfe276cf01f08e7897c496e59f4339cbc9932700ed0c69d7ba",
       "patch_validation_subject_digest": "d5db80699629f7211f3951c9108b946f2123eccb79ee11d24a1f94945bf9272b",
       "qualification_kind": "framework-configuration-v1",
-      "record_digest": "53fb9e2c4ddb67b7e3d83a842432351ff5746d152545ba1a40cbad09a2328a4a",
+      "record_digest": "4b8fdc4c991305af13c0eb11d5bf08ba2725cfb817c4ef33bac2330bbe1ed377",
       "record_schema_version": 5,
       "runtime_performance_qualified": false,
       "source_composition": [
@@ -1558,7 +1558,7 @@
       },
       "campaign_identity": "630167afb8bc158efa8fe1586f2dd23bb9474137775ea852a84581a71a11a018",
       "campaign_identity_digest": "630167afb8bc158efa8fe1586f2dd23bb9474137775ea852a84581a71a11a018",
-      "campaign_workdir": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/runs/pa40-fwcfg/r3-0830_split_reduce_telemetry/framework/0830_split_reduce_telemetry",
+      "campaign_workdir": "${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/work/runs/pa40-fwcfg/r3-0830_split_reduce_telemetry/framework/0830_split_reduce_telemetry",
       "check_results": {
         "apply": {
           "artifacts": [
@@ -1752,7 +1752,7 @@
       "patch_implementation_digest": "bc11f62bf2950c714a2ba4ac2fa021c0b430e5880d8762770e5590071d6786d3",
       "patch_validation_subject_digest": "1aa45839e8809cef13ce2d481d53cacdde1a5a979a8e3629253c70a001e87e4c",
       "qualification_kind": "framework-configuration-v1",
-      "record_digest": "db059a0d52e8833a797e06563551095ffb17514a0c8b2cbc9a703fbbf7b0e4be",
+      "record_digest": "688830d1bf7ee09458d58dc5c33e49773c28899a4818c8c648dc558a227f4a9d",
       "record_schema_version": 5,
       "runtime_performance_qualified": false,
       "source_composition": [

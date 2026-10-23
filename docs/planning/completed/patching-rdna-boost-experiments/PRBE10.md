@@ -45,7 +45,7 @@ ggml/src/ggml-cuda/binbcast.cu (gating-MUL producer seam); PRBE05's hip-q81-cach
 
 ## Validation
 
-Offline: `PYTHONPATH=tools python -m bigcherry patch-lint`, `patch-rebase-check --focal-overlay 12xx_rd11_gating_mul_direct_q81 --source bigcherry-tuning` (declares `requires` on PRBE05's patch id). Hardware (Brutus, not run here): exact Q8 block identity; numerical output; shape/fallback matrix; graph capture; launch/memory counters; causal B+PRBE05 vs B+PRBE05+PRBE10 performance on gfx1100/gfx1201/gfx1030.
+Offline: `PYTHONPATH=tools python -m bigcherry patch-lint`, `patch-rebase-check --focal-overlay 12xx_rd11_gating_mul_direct_q81 --source bigcherry-tuning` (declares `requires` on PRBE05's patch id). Hardware (dev, not run here): exact Q8 block identity; numerical output; shape/fallback matrix; graph capture; launch/memory counters; causal B+PRBE05 vs B+PRBE05+PRBE10 performance on gfx1100/gfx1201/gfx1030.
 
 ## Effort & Risk
 

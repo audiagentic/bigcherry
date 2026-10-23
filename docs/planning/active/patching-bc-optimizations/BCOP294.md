@@ -17,7 +17,7 @@ work: S
 
 **Branch/12-hour/novelty:** Independently active `main` advanced to `c06dd0a9b1c26ba40866158c663ae1c116947810` (2026-10-18 04:08:34 UTC), newer than `feat/rad06-vecio` `cbc6bb9d2e0f29f00562b48b372f13b55e7bf83c` (03:49:56 UTC). Inspected recent main and RAD06 branches/PRs: no independent PRBE28/1347 row-padding change or queued experiment in the preceding 12 hours. **Protected/excluded:** RAD06 MoE FP16 WMMA, AHALF, VECIO, long-row split, helper replay/GEMV, profile and qualification; untouched. Novelty versus 2026-10-09 PRBE28 audit is the newly reconciled **1347 dispatch/loader-flag composition**, not another cache-alias hypothesis.
 
-**Measured boundary:** b11402 Brutus 1347 ON vs OFF prefill +3.1–4.6% (MTP) and +6.8–7.1% (no draft), not a row-pad A/B or current-pin result. No measured row-padding gain, ISA/occupancy or physical traffic. External [AMD #57](https://github.com/AMD-Ecosystem/llama.cpp/pull/57) row-stride helper does not relax 1347's own contiguous guard; vLLM RDNA3 W4A16/GPTQ is a different format.
+**Measured boundary:** b11402 dev 1347 ON vs OFF prefill +3.1–4.6% (MTP) and +6.8–7.1% (no draft), not a row-pad A/B or current-pin result. No measured row-padding gain, ISA/occupancy or physical traffic. External [AMD #57](https://github.com/AMD-Ecosystem/llama.cpp/pull/57) row-stride helper does not relax 1347's own contiguous guard; vLLM RDNA3 W4A16/GPTQ is a different format.
 
 **Cheap check:** 10/10 source-shaped host dispatch cases and 4/4 row-byte/alias checks passed, including packed/padded `[10240,4]`, width boundaries, negative types and flag off. No repository tests, HIP build, GPU profiling or benchmark.
 

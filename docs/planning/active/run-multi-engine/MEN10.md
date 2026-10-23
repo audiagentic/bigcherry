@@ -20,7 +20,7 @@ radiance is pinned (engines/radiance/recipes.toml pinned = 89cee7c, radiance 1.3
 ## Steps
 
 1. Add --engine (default from context, explicit for radiance) to repin, pull, audit, patch-rebase-check, pin-status, patch-disposition and pin-bump; resolve upstream, vendor, patches and recipes from engines/<name>/engine.toml.
-2. Declare radiance's required trees in its recipes ([[trees]]) - Brutus build tree.
+2. Declare radiance's required trees in its recipes ([[trees]]) - dev build tree.
 3. Bump gate for components: rebuild every component against the new revision, check rad_plugin_abi_version and the component offline tests; a component break STOPs like a patch break.
 4. Update the bump-llamacpp skill into an engine-generic bump skill (or add bump-radiance) covering the component gate.
 5. Fire-test: bump radiance to the latest upstream release (MEN12).

@@ -2,7 +2,7 @@
 
 ## Promotion record
 
-Promotion record (QFP18 lightweight tier, pin b11474, Brutus 2026-10-08).
+Promotion record (QFP18 lightweight tier, pin b11474, dev 2026-10-08).
 
 - Build: `deploy-v4-diag`, compiled clean.
 - Activation: `BIGCHERRY_DRAFT_TRACE=1 BIGCHERRY_SPEC_TIMING=1 BIGCHERRY_DRAFT_TIMING=1`; log contained

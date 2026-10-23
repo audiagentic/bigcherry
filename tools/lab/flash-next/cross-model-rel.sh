@@ -10,11 +10,11 @@
 # Usage: cross-model-rel.sh <tag>   (run from the lab tree on main; builds the production set as b-metamem-<tag>)
 set -u
 TAG=${1:?tag}
-R=/mnt/data/bigcherry-work/runs
+R=${BC_WORK_ROOT}/runs
 cd "$(cd "$(dirname "$0")/../../.." && pwd)"
-export BC_HIP_PATH=/mnt/vault/tmp/bc-rocm
-FN=/mnt/data/llm-models/qwen3.8-flash-next/gguf/mtp/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf
-GEMMA=/mnt/data/llm-models/gemma-4-26B-A4B/gguf/gemma-4-26B-A4B-it-UD-Q5_K_S.gguf
+export BC_HIP_PATH=${BC_TMP_ROOT}/bc-rocm
+FN=${BC_MODEL_ROOT}/qwen3.8-flash-next/gguf/mtp/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf
+GEMMA=${BC_MODEL_ROOT}/gemma-4-26B-A4B/gguf/gemma-4-26B-A4B-it-UD-Q5_K_S.gguf
 RUN=b-metamem-$TAG
 export BC_MODEL=$FN   # queue.sh requires it; each job sets its own model
 

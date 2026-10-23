@@ -16,7 +16,7 @@ identity.py    frozen scientific identity
 store.py       durable filesystem/inbox/events
 service.py     shared application API
 executor.py    scheduler-neutral protocol
-slurm.py       Brutus Slurm adapter
+slurm.py       dev Slurm adapter
 local.py       direct LocalExecutor
 remote.py      restricted remote transport
 worker.py      remote target worker
@@ -38,9 +38,9 @@ References:
 ```text
 docs/design/JOBS_ORCHESTRATOR.md
 docs/reference/jobs/JOBS_CONTROL_PLANE.md
-docs/reference/jobs/SLURM_BRUTUS.md
+docs/reference/jobs/SLURM_SETUP.md
 docs/reference/jobs/ACCEPTANCE.md
 docs/reference/jobs/MIGRATION.md
 ```
 
-Production cutover is still gated on the real Brutus GPU/production acceptance matrix and Windows remote hardware/staging acceptance; offline software completeness is not a substitute for those gates.
+Production cutover is still gated on the real dev GPU/production acceptance matrix and Windows remote hardware/staging acceptance; offline software completeness is not a substitute for those gates.

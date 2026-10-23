@@ -11,7 +11,7 @@ for v in $(env | grep -oE "^(BIGCHERRY_[A-Z0-9_]+|GGML_HIP_[A-Z0-9_]+)"); do uns
 A=$1 B=$2 out=$3 benv="${*:4}"
 mkdir -p "$out"
 port=18743
-model=/mnt/data/llm-models/qwen3.8-27b/gguf/unsloth/Qwen3.8-27B-Q8_0.gguf
+model=${BC_MODEL_ROOT}/qwen3.8-27b/gguf/unsloth/Qwen3.8-27B-Q8_0.gguf
 COMMON="-m $model -ngl 99 -c 40960 -ub 512 -b 2048 -fa on --parallel 1 --threads 8 --port $port --host 127.0.0.1 ${AR_FLAG:-} -sm tensor -ts 1,1 --spec-type draft-mtp --spec-draft-n-max 4"
 
 request() {  # depth text-out -> "decode_tps prompt_tps acc gen n"

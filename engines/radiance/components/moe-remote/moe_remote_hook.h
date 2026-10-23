@@ -31,7 +31,8 @@ struct R3MoeMailboxDevice {
     void* mailbox = nullptr;
     const uint8_t* owner = nullptr;
     uint32_t* sequence = nullptr;   /* [kMaxRanks slots][2 lane classes] request counters */
-    uint32_t* published = nullptr;  /* [kMaxRanks slots]: 0, or 1 + the lane class of this step's request */
+    uint32_t* published = nullptr;  /* [kMaxRanks slots]: 0, or 1 + the lane class of this step's request; then [kMaxRanks]:
+                                       the step's R3_MOE_WORKER_COMBINE generation, 0 when the step merges two rows */
     uint16_t* mask_ref = nullptr;
     int32_t* inv = nullptr;     /* [max_rows * top_k] engine sorted row of each locally computed slot, else -1. */
     uint32_t* rmask = nullptr;  /* [max_rows * top_k] 1 where the helper computed the slot. */
@@ -48,6 +49,8 @@ struct R3MoeMailboxDevice {
     uint32_t shadow = 0;
     uint32_t mask_only = 0;
     uint32_t cpu_ref = 0;
+    uint32_t combine = 0;   /* R3_MOE_WORKER_COMBINE: 1 asks helper 0 for one combined row a token on the large lane;
+                               2 (=round, diagnostic) rounds the helpers' fp32 sum to bf16 in the engine instead */
 };
 
 extern "C" int r3_moe_mailbox_enabled(void);

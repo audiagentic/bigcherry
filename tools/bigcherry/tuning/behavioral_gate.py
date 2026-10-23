@@ -80,7 +80,7 @@ def load_hi141_regression_vector() -> BehavioralVector:
 
     gpt code/design review (2026-08-29, session ses_330ae3c055084f38) was
     explicit that this fixture must be a repository-owned file, not a
-    runtime import of the Brutus bench harness's own generate_prompt() --
+    runtime import of the dev bench harness's own generate_prompt() --
     the harness is an external dependency the tuning pipeline should not
     take on just to reproduce one known regression. The text below is the
     exact, verbatim output of that harness's generate_prompt(4096) (fixed

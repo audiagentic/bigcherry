@@ -399,7 +399,7 @@ def _probe_over_ssh(
         # before the newline is \r, not the closing quote, so the remote
         # probe silently returned an empty pin on any tree checked out with
         # CRLF preserved (e.g. a fresh git checkout on the remote host).
-        # Found live during the b10680->b10687 bump's Brutus convergence.
+        # Found live during the b10680->b10687 bump's dev convergence.
         f"printf 'PIN %s\\n' \"$(tr -d '\\r' < {shlex.quote(layout.recipes)} 2>/dev/null | sed -n "
         f"'s/^pinned[[:space:]]*=[[:space:]]*\\\"\\(.*\\)\\\"$/\\1/p' "
         f'| sed -n 1p)" && '

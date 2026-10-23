@@ -50,7 +50,7 @@
       },
       "campaign_identity": "15f4b7e07ebcbbb6013327e67217af2c3dff5f5174bb1f555b4c1d4ae56a6456",
       "campaign_identity_digest": "15f4b7e07ebcbbb6013327e67217af2c3dff5f5174bb1f555b4c1d4ae56a6456",
-      "campaign_workdir": "/home/audumla/pa26-evidence-run4/0810_replay_hit_diagnostics/framework/0810_replay_hit_diagnostics",
+      "campaign_workdir": "${HOME}/pa26-evidence-run4/0810_replay_hit_diagnostics/framework/0810_replay_hit_diagnostics",
       "check_results": {
         "apply": {
           "artifacts": [
@@ -244,7 +244,7 @@
       "patch_implementation_digest": "c8f757610c37c3f9c41a161a6894af268b5d7ae9a2dfabc2b0c9e0c246c8b43e",
       "patch_validation_subject_digest": "ba6f831b5f43625543b7cfd1b542e592138116d058d62d7b330b8c5a08c70178",
       "qualification_kind": "framework-configuration-v1",
-      "record_digest": "1989099e241622cf9cdcd5c83c779f2dd604a2f94270515cf6a2c9620c6c4ca1",
+      "record_digest": "268dce3d9b2999648f4519d2e7a51c6868c17cd9b12a8a7a31603d633ed6bffa",
       "record_schema_version": 5,
       "runtime_performance_qualified": false,
       "source_composition": [
@@ -438,7 +438,7 @@
       },
       "campaign_identity": "f01c51c11e634d195423d8886fb03143ca8834e4b4adb2273e272170e1b48987",
       "campaign_identity_digest": "f01c51c11e634d195423d8886fb03143ca8834e4b4adb2273e272170e1b48987",
-      "campaign_workdir": "/home/audumla/pa26-evidence-run3/0810_replay_hit_diagnostics/framework/0810_replay_hit_diagnostics",
+      "campaign_workdir": "${HOME}/pa26-evidence-run3/0810_replay_hit_diagnostics/framework/0810_replay_hit_diagnostics",
       "check_results": {
         "apply": {
           "artifacts": [],
@@ -615,7 +615,7 @@
       "patch_implementation_digest": "c8f757610c37c3f9c41a161a6894af268b5d7ae9a2dfabc2b0c9e0c246c8b43e",
       "patch_validation_subject_digest": "ba6f831b5f43625543b7cfd1b542e592138116d058d62d7b330b8c5a08c70178",
       "qualification_kind": "framework-configuration-v1",
-      "record_digest": "69915e197e78202845b61bf7caa70b4eb3ee0be1987b9a8b5b63bb733c0d6e36",
+      "record_digest": "6ae119962a0fa95297263862909a0e37916366b5974e29f87761ad657aa7f71f",
       "record_schema_version": 5,
       "runtime_performance_qualified": false,
       "source_composition": [
@@ -809,7 +809,7 @@
       },
       "campaign_identity": "fffdeb372892a3e60ceff77b098d96718d9953590661e209463a2c5bc3552b9b",
       "campaign_identity_digest": "fffdeb372892a3e60ceff77b098d96718d9953590661e209463a2c5bc3552b9b",
-      "campaign_workdir": "/home/audumla/pa26-evidence-run2/0810_replay_hit_diagnostics/framework/0810_replay_hit_diagnostics",
+      "campaign_workdir": "${HOME}/pa26-evidence-run2/0810_replay_hit_diagnostics/framework/0810_replay_hit_diagnostics",
       "check_results": {
         "apply": {
           "artifacts": [],
@@ -986,7 +986,7 @@
       "patch_implementation_digest": "c8f757610c37c3f9c41a161a6894af268b5d7ae9a2dfabc2b0c9e0c246c8b43e",
       "patch_validation_subject_digest": "ba6f831b5f43625543b7cfd1b542e592138116d058d62d7b330b8c5a08c70178",
       "qualification_kind": "framework-configuration-v1",
-      "record_digest": "7184b25157f8d18f8dc8f1ba1f8c323cdf8a1a5c8fe66b6b9a880b66f34f8c04",
+      "record_digest": "9effa404561a3dd0f0149faf00cafe811a690914111bc56b6e87d353b2bb9d41",
       "record_schema_version": 5,
       "runtime_performance_qualified": false,
       "source_composition": [

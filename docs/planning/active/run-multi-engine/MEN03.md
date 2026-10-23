@@ -50,7 +50,7 @@ The same queue row runs the same depths against either engine and writes the sam
 
 ## Acceptance Criteria
 
-One A/B script and the reference lane run through the adapter on Brutus for both engines with identical output schema.
+One A/B script and the reference lane run through the adapter on dev for both engines with identical output schema.
 
 ## Notes
 

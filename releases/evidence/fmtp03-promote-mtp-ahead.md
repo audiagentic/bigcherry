@@ -12,6 +12,6 @@ build deploy-v6-plus-ahead compiled clean, smoke 0 error lines; ABBA A = product
 
 ## Verified / not verified
 
-Verified: supplied Brutus build, smoke, ABBA decode/prefill, acceptance and greedy-md5 evidence at depths 8192, 24576 and 98304.
+Verified: supplied dev build, smoke, ABBA decode/prefill, acceptance and greedy-md5 evidence at depths 8192, 24576 and 98304.
 
 Not verified here: no new GPU run was possible from the GitHub-only environment; no claim for other models/topologies.

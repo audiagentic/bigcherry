@@ -60,7 +60,7 @@ patches/1251_nro02_allreduce_fused_residual; Meta matcher; AllReduce finish API;
 
 ## Validation
 
-Patch mechanics: `PYTHONPATH=tools python -m bigcherry patch-lint patches/1251_nro02_allreduce_fused_residual`; `PYTHONPATH=tools python -m bigcherry patch-rebase-check --focal-overlay 1251_nro02_allreduce_fused_residual --source bigcherry-tuning`; package pytest offline. Positive direct/reshape-ADD fixtures; negative wrong-wiring/extra-consumer/non-mirrored/shape-mismatch/provider-failure/second-apply fixtures. Fused/unfused output equivalence per wire mode. Hardware (Brutus only): `python -m bigcherry.patch.validation_campaign --overlay 1251_nro02_allreduce_fused_residual --requires 1250_nro01_allreduce_q8_wire --arch gfx1100` measuring kernel count/eliminated ADD launch/finish time/graph submission/decode/prefill, with non-target regression gate.
+Patch mechanics: `PYTHONPATH=tools python -m bigcherry patch-lint patches/1251_nro02_allreduce_fused_residual`; `PYTHONPATH=tools python -m bigcherry patch-rebase-check --focal-overlay 1251_nro02_allreduce_fused_residual --source bigcherry-tuning`; package pytest offline. Positive direct/reshape-ADD fixtures; negative wrong-wiring/extra-consumer/non-mirrored/shape-mismatch/provider-failure/second-apply fixtures. Fused/unfused output equivalence per wire mode. Hardware (dev only): `python -m bigcherry.patch.validation_campaign --overlay 1251_nro02_allreduce_fused_residual --requires 1250_nro01_allreduce_q8_wire --arch gfx1100` measuring kernel count/eliminated ADD launch/finish time/graph submission/decode/prefill, with non-target regression gate.
 
 ## Effort & Risk
 

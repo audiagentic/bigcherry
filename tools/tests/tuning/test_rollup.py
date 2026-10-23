@@ -39,10 +39,10 @@ PROMOTED_ROW = {
 
 RECEIPT = {
     "campaign_run_id": "hi168-9b-gpu0-20260906",
-    "model_path": "/mnt/data/llm-models/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+    "model_path": "/fixture/models/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
     "devices": "0",
     "replay": {
-        "source_root": "/home/audumla/.cache/bigcherry/sources/abc",
+        "source_root": "/fixture/cache/sources/abc",
         "source_slice_id": "def",
         "build_plan_id": "a8cbfbb8d40684fbf657b059c0d3d881",
     },

@@ -541,7 +541,7 @@ def run_case(
                 if is_windows:
                     # No process-group SIGKILL on Windows -- terminate the
                     # whole tree via taskkill (production RCCL qualification
-                    # runs on Linux/Brutus; this branch exists so the harness
+                    # runs on Linux/dev; this branch exists so the harness
                     # is testable on a Windows dev machine).
                     subprocess.run(
                         ("taskkill", "/F", "/T", "/PID", str(proc.pid)),

@@ -145,7 +145,7 @@ def main() -> int:
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
     matrix_path = output / "matrix.json"
-    matrix_path.write_text(json.dumps({"schema_version": 1, "host": "build-server", "cells": cells}, indent=2) + "\n")
+    matrix_path.write_text(json.dumps({"schema_version": 1, "host": "dev", "cells": cells}, indent=2) + "\n")
     print(f"bump-validation: wrote {matrix_path}")
 
     # Delegate resolution/execution to the real `bigcherry runtime-matrix`

@@ -2,7 +2,7 @@
 builds.validate_reuse() -- unit-tested with a faked compiler (subprocess.run
 patched) rather than a real one, so the reuse *decision logic* (skip
 configure+build vs fail closed vs run for real and record metadata) is
-covered without needing a compiler or a GPU. Round 9-11's real Brutus runs
+covered without needing a compiler or a GPU. Round 9-11's real dev runs
 already prove the compile/publish machinery this sits on top of works for
 real; this file's job is the branch logic those runs never exercised twice
 with the same build_plan_id in the same process.

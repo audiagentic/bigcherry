@@ -4,7 +4,7 @@
 0.00.027.617 W srv  llama_server: this can be a security risk (cross-origin attacks)
 0.00.027.617 W srv  llama_server: more info: https://github.com/ggml-org/llama.cpp/pull/25655
 0.00.027.617 W srv  llama_server: -----------------
-0.00.028.829 I srv    load_model: loading model '/mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf'
+0.00.028.829 I srv    load_model: loading model '${MODELS_ROOT}/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf'
 0.00.291.817 W model has unused tensor blk.64.attn_norm.weight (size = 20480 bytes) -- ignoring
 0.00.291.825 W model has unused tensor blk.64.post_attention_norm.weight (size = 20480 bytes) -- ignoring
 0.00.291.830 W model has unused tensor blk.64.attn_q.weight (size = 66846720 bytes) -- ignoring

@@ -13,7 +13,7 @@
 namespace r3::moe_shm {
 
 constexpr uint64_t kMagic = 0x31454f4d33485253ull; /* "SRH3MOE1": reject unrelated/stale shm. */
-constexpr uint32_t kVersion = 14;  /* 14: the header records the model shape (intermediate, activation_group, shape_hash) and every region is laid out from it (layout_for); 13: several pre-queued small-lane sizes (Header::small_class_*), ten lanes; 12: Request carries the R3_MOE_WORKER_TRACE stamps (192 -> 256 bytes); 11: helper_fault; completion is an exact generation */
+constexpr uint32_t kVersion = 15;  /* 15: Header::combine (R3_MOE_WORKER_COMBINE); 14: the header records the model shape (intermediate, activation_group, shape_hash) and every region is laid out from it (layout_for); 13: several pre-queued small-lane sizes (Header::small_class_*), ten lanes; 12: Request carries the R3_MOE_WORKER_TRACE stamps (192 -> 256 bytes); 11: helper_fault; completion is an exact generation */
 constexpr uint32_t kPage = 4096;
 constexpr uint32_t kMaxRanks = 2;       /* Flash-Next configuration of record: TP=2. */
 constexpr uint32_t kMaxLayers = 128;     /* ownership bitmap bound; Flash-Next is below this. */
@@ -73,7 +73,12 @@ struct alignas(64) Request {
     /* R3_MOE_WORKER_TRACE: wall_clock64() stamps, each from the clock of the device that wrote it (engine GPU for
      * 0-2, the helper GPU for 3-4; never subtract across devices): 0 publish kernel, 1 wait kernel entered,
      * 2 this request's completion seen by the wait kernel, 3 helper lane began, 4 helper lane published done. */
-    uint64_t trace[10];
+    uint64_t trace[5];
+    /* R3_MOE_WORKER_COMBINE: nonzero on helper 0's request of a step whose rows helper 0 combines (the generation it then
+     * stores in Header::combine.done); written before the request is released, so helper 0 never polls for it. */
+    uint32_t combine_generation;
+    uint32_t reserved32;
+    uint64_t reserved[4];
 };
 static_assert(sizeof(Request) % 64 == 0);
 /* The ring ends on the same page boundary for 192- and 256-byte requests, so the header's size checks cannot tell two
@@ -86,6 +91,26 @@ struct alignas(64) LaneSignal {
     uint32_t reserved[14];
 };
 static_assert(sizeof(LaneSignal) == 64);
+
+/* R3_MOE_WORKER_COMBINE (two helpers behind a one-rank engine, large lane only): helper 0 adds the two helpers' bf16
+ * rows on the CPU into result plane [0][1], so the engine reads one row a token over its link instead of two. Nothing
+ * polls on the CPU side. The engine GPU allocates both helpers' sequences, writes lane/seq/rows here and the generation
+ * into helper 0's Request::combine_generation, then releases the requests. Helper 0 combines on its own large-lane
+ * thread after its stream sync, futex-waiting on helper1_done, which helper 1 stores and wakes after its own stream
+ * sync. Helper 0 release-stores `done` = generation; the engine's wait kernel waits for it. Not bit-identical to adding
+ * the two rows on the engine (one more bf16 rounding). `enabled` is set by helper 0 at start; the engine asks only then. */
+struct alignas(64) CombineSignal {
+    uint32_t enabled;
+    uint32_t min_rows;      /* steps with fewer rows keep the two-row merge */
+    uint32_t request;       /* last generation the engine issued (engine-only counter) */
+    uint32_t done;
+    uint32_t lane[kMaxRanks];
+    uint32_t seq[kMaxRanks];
+    uint32_t rows;
+    uint32_t helper1_done;  /* helper 1's newest completed large-lane sequence, CPU-written, futex word */
+    uint32_t reserved[6];
+};
+static_assert(sizeof(CombineSignal) == 64);
 
 struct alignas(kPage) Header {
     uint64_t magic;                 /* segment identity. */
@@ -130,6 +155,7 @@ struct alignas(kPage) Header {
     uint32_t activation_group;      /* activation quantisation group width. */
     uint64_t shape_hash;            /* shape_hash() of the shape fields: a fast agreement check, never the only one. */
     uint64_t reserved[14];
+    CombineSignal combine;
 };
 static_assert(sizeof(Header) <= kPage);
 
@@ -287,7 +313,7 @@ inline bool init(void* base, uint32_t layers, const LayoutShape& shape) {
     return true;
 }
 
-/* A mapped segment is acceptable when it is a v14 segment of exactly the shape this side expects, and its layout is the one that
+/* A mapped segment is acceptable when it is a kVersion segment of exactly the shape this side expects, and its layout is the one that
  * shape implies: every offset, slot size and length is reconstructed from the header's own shape fields, so a corrupt or foreign
  * header cannot point a request outside the mapping. A different shape, a stale protocol version or a malformed layout is refused
  * before any request is published or any expert buffer is touched. */

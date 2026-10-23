@@ -153,7 +153,7 @@ def _validate_preconditions(
         raise InstallError("v1 monolithic config must not enable RequeueExit")
     if "ConstrainDevices=no" not in files["cgroup.conf"]:
         raise InstallError(
-            "initial Brutus install must use qualified ConstrainDevices=no baseline"
+            "initial dev install must use qualified ConstrainDevices=no baseline"
         )
     return files, inventory.material_hash
 
@@ -221,8 +221,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="install_bigcherry_slurm")
     parser.add_argument("--project-root", type=Path, default=_REPO_ROOT)
     parser.add_argument("--hardware-root", type=Path, required=True)
-    parser.add_argument("--executor-id", default="brutus")
-    parser.add_argument("--node-name", default="brutus")
+    parser.add_argument("--executor-id", default="dev")
+    parser.add_argument("--node-name", default="dev")
     parser.add_argument("--cpus", type=int, required=True)
     parser.add_argument("--real-memory-mib", type=int, required=True)
     parser.add_argument("--apply", action="store_true")

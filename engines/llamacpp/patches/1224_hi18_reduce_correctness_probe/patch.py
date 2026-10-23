@@ -33,7 +33,7 @@ that guard rather than rewriting the probe).
 """
 
 GROUP = "core"
-# Mechanism compiled and hardware-validated on Brutus (63/63 synthetic
+# Mechanism compiled and hardware-validated on dev (63/63 synthetic
 # RCCL/META/AUTO executions across 6 numerical patterns, 3 seeds, and
 # swapped device order -- see docs/planning/active/hip-autotune/HI18.md).
 # GP04 (2026-09-02) closed the remaining gate this comment named: all 10

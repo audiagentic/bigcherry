@@ -2,7 +2,7 @@
   "cells": [
     {
       "arm": "native",
-      "binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/b86b1e97d91605ce764e48f59342a962/bin/llama-server",
+      "binary": "${HOME}/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/b86b1e97d91605ce764e48f59342a962/bin/llama-server",
       "build_id": "cc941b35debd296660cbbc382411a6b7-b86b1e97d91605ce764e48f59342a962",
       "cache_id": null,
       "cell_id": "rha06-27b-dual-xtx-native-smoke",
@@ -24,7 +24,7 @@
           "bench_configs": "tg128",
           "model_label": "Qwen3.8-27B-Q8_0",
           "repetitions": 1,
-          "runner_root": "/mnt/vault/development/llmhosts/llamacpp",
+          "runner_root": "${LLAMACPP_ROOT}",
           "server_url": "http://127.0.0.1:18401",
           "timeout_s": 300
         }

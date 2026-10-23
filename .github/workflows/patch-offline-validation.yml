@@ -85,6 +85,10 @@ concurrency:
   group: patch-offline-validation-${{ github.ref }}
   cancel-in-progress: true
 
+# Host settings are untracked; CI uses the tracked example host (it declares the rocm-sdks the recipes name).
+env:
+  BIGCHERRY_ENVIRONMENT: config/environment.example.toml
+
 jobs:
   offline-patch:
     runs-on: ubuntu-24.04

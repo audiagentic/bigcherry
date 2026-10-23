@@ -21,7 +21,7 @@ NON-PATCH ITEM, reclassified per GPT review as host-ops/tuning documentation, no
 
 ## Steps
 
-1. Record current host ASPM policy: `cat /sys/module/pcie_aspm/parameters/policy` and per-device link state `lspci -vvv -s <bdf> | grep -i aspm` for each GPU on Brutus/target hosts.
+1. Record current host ASPM policy: `cat /sys/module/pcie_aspm/parameters/policy` and per-device link state `lspci -vvv -s <bdf> | grep -i aspm` for each GPU on dev/target hosts.
 2. Capture cold-boot baseline llama-bench PP/TG for a dense (Qwen3 dense Q4) and MoE (Qwen3 MoE Q4) model at default ASPM policy, GPU fully resident (no CPU offload) and a transfer-heavy control (partial CPU offload / large batch prefill).
 3. Set ASPM policy to 'performance' (`echo performance > /sys/module/pcie_aspm/parameters/policy`, requires root; on some kernels needs `pcie_aspm=force` boot param plus a fresh boot), repeat identical benches.
 4. Record PCIe link state (`lspci -vvv | grep -i 'LnkSta'`) and idle power draw (`rocm-smi --showpower` or platform equivalent) for both policies.
@@ -29,7 +29,7 @@ NON-PATCH ITEM, reclassified per GPT review as host-ops/tuning documentation, no
 6. Write findings to docs/ as host tuning guidance (not a patch): state policy recommendation is local-hardware-specific, include exact commands and measured deltas, and explicitly say no llama.cpp runtime change was made.
 7. If no repeatable benefit is found, close this item as informational-only with 'no measurable local benefit' recorded.
 
-1. Record current host ASPM policy: `cat /sys/module/pcie_aspm/parameters/policy` and per-device link state `lspci -vvv -s <bdf> | grep -i aspm` for each GPU on Brutus/target hosts, BEFORE any change.
+1. Record current host ASPM policy: `cat /sys/module/pcie_aspm/parameters/policy` and per-device link state `lspci -vvv -s <bdf> | grep -i aspm` for each GPU on dev/target hosts, BEFORE any change.
 2. Capture cold-boot baseline llama-bench PP/TG for a dense (Qwen3 dense Q4) and MoE (Qwen3 MoE Q4) model at default ASPM policy.
 3. Set ASPM policy to 'performance' via the RUNTIME sysfs knob only (`echo performance > /sys/module/pcie_aspm/parameters/policy`, requires root) -- do NOT add `pcie_aspm=force` to the ordinary procedure; if the sysfs knob has no effect because the kernel/BIOS locked ASPM off entirely, record that as the result ("no measurable local benefit / policy not controllable at runtime on this host") rather than escalating to the boot parameter.
 4. Repeat identical benches under the runtime-only policy change.
@@ -52,7 +52,7 @@ docs/tuning/pcie-aspm-policy.md (new, host tuning notes + measured results); no 
 
 ## Validation
 
-No model-output impact expected (link-power policy does not change compute results) -- confirm with a quick temp-0 identity spot check as a sanity control. Primary validation is the reproducibility of the TG/PP/latency/power deltas across >=3 cold boots per policy on the actual target host (R9700/XTX). Hardware runs happen on Brutus; this agent does not run them.
+No model-output impact expected (link-power policy does not change compute results) -- confirm with a quick temp-0 identity spot check as a sanity control. Primary validation is the reproducibility of the TG/PP/latency/power deltas across >=3 cold boots per policy on the actual target host (R9700/XTX). Hardware runs happen on dev; this agent does not run them.
 
 ## Effort & Risk
 

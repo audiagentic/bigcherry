@@ -33,7 +33,7 @@ Record a ledger event after each substantive stage and keep the plan item curren
   stale; run fresh sessions before adding a patch to the production patch-set.
 - **Scripts and configs live in `tools/lab/<topic>/`**, never `/tmp` on the bench host.
   Don't edit or pull scripts on the bench host while one is executing in place.
-- **Models** for new comparisons go under `/mnt/data/llm-models/<model>/gguf/<vendor>/`.
+- **Models** for new comparisons go under `${MODELS_ROOT}/<model>/gguf/<vendor>/`.
   Quant comparisons use one vendor's full set so only the quant differs.
 - **Multi-arch**: build with an arch list (`gfx1100,gfx1201`) and declare every device's
   architecture and PCI locator in the A/B config's `expected_execution`.

@@ -355,9 +355,9 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
     if (!hip_ok(hipMalloc(reinterpret_cast<void**>(&s.sequence), kLanes * sizeof(uint32_t)),
                 "hipMalloc lane sequence counters") ||
         !hip_ok(hipMemset(s.sequence, 0, kLanes * sizeof(uint32_t)), "zero lane sequence counters") ||
-        !hip_ok(hipMalloc(reinterpret_cast<void**>(&s.published), kMaxRanks * sizeof(uint32_t)),
+        !hip_ok(hipMalloc(reinterpret_cast<void**>(&s.published), (kMaxRanks + 1) * sizeof(uint32_t)),
                 "hipMalloc published flags") ||
-        !hip_ok(hipMemset(s.published, 0, kMaxRanks * sizeof(uint32_t)), "zero published flags") ||
+        !hip_ok(hipMemset(s.published, 0, (kMaxRanks + 1) * sizeof(uint32_t)), "zero published flags") ||
         !hip_ok(hipMalloc(&s.maps, (size_t)max_rows() * g.hdr->top_k * (sizeof(int32_t) + sizeof(uint32_t))),
                 "hipMalloc merge slot maps")) {
         if (s.maps) (void)hipFree(s.maps);
@@ -447,6 +447,18 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
         s.dev.mask_only = !mask_only ? 0u : (e && std::strcmp(e, "2") == 0 ? 2u : 1u);
     }
     s.dev.cpu_ref = cpu_ref_env() ? 1u : 0u;
+    /* R3_MOE_WORKER_COMBINE=1 (default off): two helpers, no shadow/mask-only, and helper 0 started its combiner
+     * (Header::combine.enabled, checked again by the publish kernel each step). */
+    {
+        const char* e = std::getenv("R3_MOE_WORKER_COMBINE");
+        const bool ok = e && helpers == 2 && !shadow && !mask_only;
+        s.dev.combine = ok && std::strcmp(e, "1") == 0 ? 1u : ok && std::strcmp(e, "round") == 0 ? 2u : 0u;
+        if (s.dev.combine == 2u)
+            std::fprintf(stderr, "libr3moe: R3_MOE_WORKER_COMBINE=round (diagnostic) - no combine; the engine rounds the "
+                                 "helpers' fp32 sum to bf16 as the combine would\n");
+        if (s.dev.combine == 1u)
+            std::fprintf(stderr, "libr3moe: R3_MOE_WORKER_COMBINE on - helper 0 combines the two helpers' rows on the large lane\n");
+    }
     s.ready = true;
     *out = &s.dev;
     return RAD_OK;

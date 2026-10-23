@@ -20,7 +20,7 @@ RD58 (patch 1234) now has a real, complete, passing evaluate_promotion_gate() ve
 1. In validation_campaign.py's run() function, after rd58_result is computed (~line 5084) and rd58_contract_correctness_named_results is built (~line 5111), add a real aggregated_effects computation for RD58's decode control lane -- this needs a real LaneEffect built from paired decode benchmark rounds (control vs subject, real llama-bench runs against the contract's bound tierA-qwen4b-q6k model, -sm tensor), analogous to how RD08's lanes are built via run_rd08_validation_lanes(), NOT a scalar percentage.
 2. Call experiment_contract.evaluate_promotion_gate() with the real correctness_gate, aggregated_effects, and trigger_proof (trigger_proof can reuse the existing trace_evidence marker-hit data, converted to TriggerEvidence).
 3. Populate contract_promotions[rd58_contract.id] = <that promotion verdict>, mirroring line 4808's RD08 pattern exactly.
-4. Verify the full offline test suite still passes, and run --run-rd58-state-restore for real on Brutus to confirm eligible_for_validated_state now reports True given the same real evidence already gathered manually this session.
+4. Verify the full offline test suite still passes, and run --run-rd58-state-restore for real on dev to confirm eligible_for_validated_state now reports True given the same real evidence already gathered manually this session.
 
 ## Detailed Solution & Technical Design
 

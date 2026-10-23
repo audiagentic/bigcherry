@@ -35,7 +35,7 @@ Owner-approved (2026-10-17) automation from the first radiance bump: today the b
 
 ## Validation
 
-A radiance pin-bump run with only --source and --platform completes on Brutus; offline tests for phase order and resume.
+A radiance pin-bump run with only --source and --platform completes on dev; offline tests for phase order and resume.
 
 ## Effort & Risk
 

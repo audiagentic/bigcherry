@@ -13,7 +13,7 @@ hidden catch-up).
 
 ## Qualification
 
-QFP18 lightweight promotion on b11474, Brutus 2026-10-08: build `deploy-v4-diag` compiled clean; with
+QFP18 lightweight promotion on b11474, dev 2026-10-08: build `deploy-v4-diag` compiled clean; with
 `BIGCHERRY_DRAFT_TRACE=1 BIGCHERRY_SPEC_TIMING=1 BIGCHERRY_DRAFT_TIMING=1` the log contained 92 DRAFT_TRACE,
 23 SPEC_TIMING and 23 DRAFT_TIMING lines, 0 error lines, and greedy text identical to production
 (md5 `a34a34c1f48d`).

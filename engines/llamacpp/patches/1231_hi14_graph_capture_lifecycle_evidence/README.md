@@ -45,7 +45,7 @@ following the same opt-in-marker convention established by HI85 (patch
   filtered by that mechanism. Full offline suite green (1727 passed)
   afterward.
 
-## Real live-server confirmation (2026-09-12, Brutus, dual gfx1100)
+## Real live-server confirmation (2026-09-12, dev, dual gfx1100)
 
 Closed the previously-open gap: built `llama-server` with this patch alone
 (isolated `bigcherry-native` composition), launched it at **normal
@@ -68,7 +68,7 @@ is now hardware-confirmed, not just reasoned about.
 ## Lifecycle note
 
 The HI90 fix session had explicitly attempted this re-verification on
-Brutus but backed off after a dry-run apply showed the overlay pipeline
+dev but backed off after a dry-run apply showed the overlay pipeline
 failing on an unrelated patch from another concurrent session's
 in-progress work -- deliberately avoided risking a collision rather than
 forcing the run. That gap is now closed by the confirmation above.

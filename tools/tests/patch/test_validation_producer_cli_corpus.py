@@ -77,7 +77,7 @@ class ProducerCorpusCliWiringTests(unittest.TestCase):
             with tempfile.TemporaryDirectory(prefix="pa39-corpus-cli-") as tmp:
                 args = argparse.Namespace(
                     patch=_PATCH_ID,
-                    hip_path=Path(r"C:\hip"),
+                    hip_path=Path("/fixture/hip"),
                     workdir=Path(tmp) / "workdir",
                     amdgpu_targets="gfx1100;gfx1201;gfx1030",
                     device_map=(),
@@ -105,7 +105,7 @@ class ProducerCorpusCliWiringTests(unittest.TestCase):
         return captured["producer_context"]
 
     def test_producer_corpus_flag_reaches_producer_context_corpus(self) -> None:
-        corpus_path = Path(r"C:\corpus\wiki.test.raw")
+        corpus_path = Path("/fixture/corpus/wiki.test.raw")
         ctx = self._run_with_corpus(producer_corpus=corpus_path)
         self.assertEqual(ctx.corpus, corpus_path)
         self.assertEqual(ctx.patch_dir, _PATCH_DIR)

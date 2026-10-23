@@ -47,7 +47,7 @@
       },
       "campaign_identity": "0ce77b7a64c7c6e91890b5b6b685e3ae96300963c5395ffc1238b7daeb084211",
       "campaign_identity_digest": "0ce77b7a64c7c6e91890b5b6b685e3ae96300963c5395ffc1238b7daeb084211",
-      "campaign_workdir": "/home/audumla/pa26-evidence-run2/0400_mmvf_forced_block/framework/0400_mmvf_forced_block",
+      "campaign_workdir": "${HOME}/pa26-evidence-run2/0400_mmvf_forced_block/framework/0400_mmvf_forced_block",
       "check_results": {
         "apply": {
           "artifacts": [],
@@ -224,7 +224,7 @@
       "patch_implementation_digest": "69cee69f4d902f958d06b29b4fd3898c1af2f1a0c6e9d158576169928030afaf",
       "patch_validation_subject_digest": "bf6b35e4b08918bc83f99347a1f68864e9d086501650c5a0aa45bee75cb12ad6",
       "qualification_kind": "framework-configuration-v1",
-      "record_digest": "7aa7e64951231c59b6dc6c273b5f463bd810d9d0c79cd53a7484713f0aa7a447",
+      "record_digest": "6ab4d3db7dff0710ec9639c8470592c81a789e83ffc75add1d3c1c724bd579fc",
       "record_schema_version": 5,
       "runtime_performance_qualified": false,
       "source_composition": [
@@ -418,7 +418,7 @@
       },
       "campaign_identity": "770ff524ffd44f6a28be988a310f3fd93f4d3354d65afecd8a184320c57bf54c",
       "campaign_identity_digest": "770ff524ffd44f6a28be988a310f3fd93f4d3354d65afecd8a184320c57bf54c",
-      "campaign_workdir": "/home/audumla/pa26-evidence-run3/0400_mmvf_forced_block/framework/0400_mmvf_forced_block",
+      "campaign_workdir": "${HOME}/pa26-evidence-run3/0400_mmvf_forced_block/framework/0400_mmvf_forced_block",
       "check_results": {
         "apply": {
           "artifacts": [],
@@ -595,7 +595,7 @@
       "patch_implementation_digest": "69cee69f4d902f958d06b29b4fd3898c1af2f1a0c6e9d158576169928030afaf",
       "patch_validation_subject_digest": "bf6b35e4b08918bc83f99347a1f68864e9d086501650c5a0aa45bee75cb12ad6",
       "qualification_kind": "framework-configuration-v1",
-      "record_digest": "58bfd4adc8d3faf682ad1b15897eb70ae40a97528afb383da35762a0cd608b2b",
+      "record_digest": "ef4552219ceff499030126b25954bd12f762383d9e032a599e41d26296380f1b",
       "record_schema_version": 5,
       "runtime_performance_qualified": false,
       "source_composition": [
@@ -792,7 +792,7 @@
       },
       "campaign_identity": "c4bb9393472ac06a422d5a44cdc87f025f1bade3163096f1d52c13f115a9708c",
       "campaign_identity_digest": "c4bb9393472ac06a422d5a44cdc87f025f1bade3163096f1d52c13f115a9708c",
-      "campaign_workdir": "/home/audumla/pa26-evidence-run4/0400_mmvf_forced_block/framework/0400_mmvf_forced_block",
+      "campaign_workdir": "${HOME}/pa26-evidence-run4/0400_mmvf_forced_block/framework/0400_mmvf_forced_block",
       "check_results": {
         "apply": {
           "artifacts": [
@@ -986,7 +986,7 @@
       "patch_implementation_digest": "69cee69f4d902f958d06b29b4fd3898c1af2f1a0c6e9d158576169928030afaf",
       "patch_validation_subject_digest": "bf6b35e4b08918bc83f99347a1f68864e9d086501650c5a0aa45bee75cb12ad6",
       "qualification_kind": "framework-configuration-v1",
-      "record_digest": "2ef32909d740884dec7110d439dfdc6b909feeb0c64b221f8db4a6802b72b30b",
+      "record_digest": "6395e0b0b748276c101bad68e843de85e7db2572b76175c472b85200cd3fc49a",
       "record_schema_version": 5,
       "runtime_performance_qualified": false,
       "source_composition": [

@@ -47,7 +47,7 @@ dense model never emits. `config/models.toml`'s
 currently-registered MoE-family model and is the right choice for
 activation/performance evidence here.
 
-## Real hardware evidence (2026-09-12, Brutus, dual gfx1100)
+## Real hardware evidence (2026-09-12, dev, dual gfx1100)
 
 Added an activation-trace marker this session (a real authoring gap this
 patch had, unlike RD12/1205) -- `GGML_LOG_WARN` (not `_INFO`, per this

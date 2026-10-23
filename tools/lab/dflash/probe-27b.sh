@@ -13,7 +13,7 @@
 set -u
 bin=$1 out=$2 only=${3:-} reps=${4:-3}
 mkdir -p "$out"
-model=${PROBE_MODEL:-/mnt/data/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf}  # PROBE_MODEL: another model on the same layouts (e.g. a Gemma)
+model=${PROBE_MODEL:-${BC_MODEL_ROOT}/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf}  # PROBE_MODEL: another model on the same layouts (e.g. a Gemma)
 common=(-m "$model" -ngl 99 --fit off -c 8192 --flash-attn on --parallel 1 --threads 8 -ub 2048 -b 2048 -lv 4)
 probe() {
   local name=$1 vis=$2; shift 2
@@ -37,7 +37,7 @@ reps = int(sys.argv[4])
 def post(body):
     req = urllib.request.Request(f"http://127.0.0.1:{port}/completion", json.dumps(body).encode(), {"Content-Type": "application/json"})
     return json.loads(urllib.request.urlopen(req, timeout=900).read())
-text = open("/mnt/data/bigcherry-work/corpus/kld-docs.txt", errors="replace").read()[:5000]
+text = open("${BC_WORK_ROOT}/corpus/kld-docs.txt", errors="replace").read()[:5000]
 post({"prompt": "Hello", "n_predict": 8, "cache_prompt": False})
 rows = []
 for i in range(reps):
@@ -58,48 +58,48 @@ probe plain 0,1,2,3 -dev ROCm0,ROCm1 -sm tensor
 probe mtp5 0,1,2,3 -dev ROCm0,ROCm1 -sm tensor --spec-type draft-mtp --spec-draft-n-max 5 -ctkd q8_0 -ctvd q8_0
 probe mtp4 0,1,2,3 -dev ROCm0,ROCm1 -sm tensor --spec-type draft-mtp --spec-draft-n-max 4 -ctkd q8_0 -ctvd q8_0
 probe mtp3 0,1,2,3 -dev ROCm0,ROCm1 -sm tensor --spec-type draft-mtp --spec-draft-n-max 3 -ctkd q8_0 -ctvd q8_0
-probe mtpside5-d6900 0,1,2,3 -dev ROCm0,ROCm1 -sm tensor -devd ROCm3 -md /mnt/data/llm-models/qwen3.8-27b/gguf/unsloth-mtp/mtp-Qwen3.8-27B-Q4_0.gguf --spec-type draft-mtp --spec-draft-n-max 5 -ctkd q8_0 -ctvd q8_0
+probe mtpside5-d6900 0,1,2,3 -dev ROCm0,ROCm1 -sm tensor -devd ROCm3 -md ${BC_MODEL_ROOT}/qwen3.8-27b/gguf/unsloth-mtp/mtp-Qwen3.8-27B-Q4_0.gguf --spec-type draft-mtp --spec-draft-n-max 5 -ctkd q8_0 -ctvd q8_0
 probe plain-3card 0,1,2,3 -dev ROCm0,ROCm1,ROCm2 -sm tensor -ts 3,3,2
 probe mtp5-3card 0,1,2,3 -dev ROCm0,ROCm1,ROCm2 -sm tensor -ts 3,3,2 --spec-type draft-mtp --spec-draft-n-max 5 -ctkd q8_0 -ctvd q8_0
-probe mtpside5-3card-d6900 0,1,2,3 -dev ROCm0,ROCm1,ROCm2 -sm tensor -ts 3,3,2 -devd ROCm3 -md /mnt/data/llm-models/qwen3.8-27b/gguf/unsloth-mtp/mtp-Qwen3.8-27B-Q4_0.gguf --spec-type draft-mtp --spec-draft-n-max 5 -ctkd q8_0 -ctvd q8_0
+probe mtpside5-3card-d6900 0,1,2,3 -dev ROCm0,ROCm1,ROCm2 -sm tensor -ts 3,3,2 -devd ROCm3 -md ${BC_MODEL_ROOT}/qwen3.8-27b/gguf/unsloth-mtp/mtp-Qwen3.8-27B-Q4_0.gguf --spec-type draft-mtp --spec-draft-n-max 5 -ctkd q8_0 -ctvd q8_0
 probe plain-layer 0,1,2,3 -dev ROCm0,ROCm1 -sm layer
 probe mtp5-layer 0,1,2,3 -dev ROCm0,ROCm1 -sm layer --spec-type draft-mtp --spec-draft-n-max 5 -ctkd q8_0 -ctvd q8_0
-probe dflash-q8-n7-layer 0,1,2,3 -dev ROCm0,ROCm1 -sm layer -devd ROCm0 -md /mnt/data/llm-models/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q8_0.gguf --spec-type draft-dflash --spec-draft-n-max 7
-probe dflash-q8-n7-layer-d6900 0,1,2,3 -dev ROCm0,ROCm1 -sm layer -devd ROCm3 -md /mnt/data/llm-models/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q8_0.gguf --spec-type draft-dflash --spec-draft-n-max 7
-probe dflash-q4-n7-layer-d6900 0,1,2,3 -dev ROCm0,ROCm1 -sm layer -devd ROCm3 -md /mnt/data/llm-models/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q4_K_M.gguf --spec-type draft-dflash --spec-draft-n-max 7
-probe dflash-q8-n4-layer 0,1,2,3 -dev ROCm0,ROCm1 -sm layer -devd ROCm0 -md /mnt/data/llm-models/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q8_0.gguf --spec-type draft-dflash --spec-draft-n-max 4
-probe dspark-q8-n6-layer 0,1,2,3 -dev ROCm0,ROCm1 -sm layer -devd ROCm0 -md /mnt/data/llm-models/qwen3.8-27b/gguf/dspark/Qwen3.8-27B-DSpark-Q8_0.gguf --spec-type draft-dspark --spec-draft-n-max 6
-probe dspark-q8-n6-layer-d6900 0,1,2,3 -dev ROCm0,ROCm1 -sm layer -devd ROCm3 -md /mnt/data/llm-models/qwen3.8-27b/gguf/dspark/Qwen3.8-27B-DSpark-Q8_0.gguf --spec-type draft-dspark --spec-draft-n-max 6
-probe mtpside5-dR9700 0,1,2,3 -dev ROCm0,ROCm1 -sm tensor -devd ROCm2 -md /mnt/data/llm-models/qwen3.8-27b/gguf/unsloth-mtp/mtp-Qwen3.8-27B-Q4_0.gguf --spec-type draft-mtp --spec-draft-n-max 5 -ctkd q8_0 -ctvd q8_0
-probe dflash-q8-n7-layer-dR9700 0,1,2,3 -dev ROCm0,ROCm1 -sm layer -devd ROCm2 -md /mnt/data/llm-models/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q8_0.gguf --spec-type draft-dflash --spec-draft-n-max 7
-probe dspark-q8-n6-layer-dR9700 0,1,2,3 -dev ROCm0,ROCm1 -sm layer -devd ROCm2 -md /mnt/data/llm-models/qwen3.8-27b/gguf/dspark/Qwen3.8-27B-DSpark-Q8_0.gguf --spec-type draft-dspark --spec-draft-n-max 6
-probe p1286-dflash-q8-n7-dR9700 0,1,2,3 -dev ROCm0,ROCm1 -sm tensor -devd ROCm2 -md /mnt/data/llm-models/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q8_0.gguf --spec-type draft-dflash --spec-draft-n-max 7
-probe p1286-dflash-q8-n7-d6900 0,1,2,3 -dev ROCm0,ROCm1 -sm tensor -devd ROCm3 -md /mnt/data/llm-models/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q8_0.gguf --spec-type draft-dflash --spec-draft-n-max 7
-probe p1286-dflash-q8-n7-dx0 0,1,2,3 -dev ROCm0,ROCm1 -sm tensor -devd ROCm0 -md /mnt/data/llm-models/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q8_0.gguf --spec-type draft-dflash --spec-draft-n-max 7
-probe p1286-dspark-q8-n6-dR9700 0,1,2,3 -dev ROCm0,ROCm1 -sm tensor -devd ROCm2 -md /mnt/data/llm-models/qwen3.8-27b/gguf/dspark/Qwen3.8-27B-DSpark-Q8_0.gguf --spec-type draft-dspark --spec-draft-n-max 6
-probe p1286-dspark-q8-n6-d6900 0,1,2,3 -dev ROCm0,ROCm1 -sm tensor -devd ROCm3 -md /mnt/data/llm-models/qwen3.8-27b/gguf/dspark/Qwen3.8-27B-DSpark-Q8_0.gguf --spec-type draft-dspark --spec-draft-n-max 6
+probe dflash-q8-n7-layer 0,1,2,3 -dev ROCm0,ROCm1 -sm layer -devd ROCm0 -md ${BC_MODEL_ROOT}/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q8_0.gguf --spec-type draft-dflash --spec-draft-n-max 7
+probe dflash-q8-n7-layer-d6900 0,1,2,3 -dev ROCm0,ROCm1 -sm layer -devd ROCm3 -md ${BC_MODEL_ROOT}/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q8_0.gguf --spec-type draft-dflash --spec-draft-n-max 7
+probe dflash-q4-n7-layer-d6900 0,1,2,3 -dev ROCm0,ROCm1 -sm layer -devd ROCm3 -md ${BC_MODEL_ROOT}/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q4_K_M.gguf --spec-type draft-dflash --spec-draft-n-max 7
+probe dflash-q8-n4-layer 0,1,2,3 -dev ROCm0,ROCm1 -sm layer -devd ROCm0 -md ${BC_MODEL_ROOT}/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q8_0.gguf --spec-type draft-dflash --spec-draft-n-max 4
+probe dspark-q8-n6-layer 0,1,2,3 -dev ROCm0,ROCm1 -sm layer -devd ROCm0 -md ${BC_MODEL_ROOT}/qwen3.8-27b/gguf/dspark/Qwen3.8-27B-DSpark-Q8_0.gguf --spec-type draft-dspark --spec-draft-n-max 6
+probe dspark-q8-n6-layer-d6900 0,1,2,3 -dev ROCm0,ROCm1 -sm layer -devd ROCm3 -md ${BC_MODEL_ROOT}/qwen3.8-27b/gguf/dspark/Qwen3.8-27B-DSpark-Q8_0.gguf --spec-type draft-dspark --spec-draft-n-max 6
+probe mtpside5-dR9700 0,1,2,3 -dev ROCm0,ROCm1 -sm tensor -devd ROCm2 -md ${BC_MODEL_ROOT}/qwen3.8-27b/gguf/unsloth-mtp/mtp-Qwen3.8-27B-Q4_0.gguf --spec-type draft-mtp --spec-draft-n-max 5 -ctkd q8_0 -ctvd q8_0
+probe dflash-q8-n7-layer-dR9700 0,1,2,3 -dev ROCm0,ROCm1 -sm layer -devd ROCm2 -md ${BC_MODEL_ROOT}/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q8_0.gguf --spec-type draft-dflash --spec-draft-n-max 7
+probe dspark-q8-n6-layer-dR9700 0,1,2,3 -dev ROCm0,ROCm1 -sm layer -devd ROCm2 -md ${BC_MODEL_ROOT}/qwen3.8-27b/gguf/dspark/Qwen3.8-27B-DSpark-Q8_0.gguf --spec-type draft-dspark --spec-draft-n-max 6
+probe p1286-dflash-q8-n7-dR9700 0,1,2,3 -dev ROCm0,ROCm1 -sm tensor -devd ROCm2 -md ${BC_MODEL_ROOT}/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q8_0.gguf --spec-type draft-dflash --spec-draft-n-max 7
+probe p1286-dflash-q8-n7-d6900 0,1,2,3 -dev ROCm0,ROCm1 -sm tensor -devd ROCm3 -md ${BC_MODEL_ROOT}/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q8_0.gguf --spec-type draft-dflash --spec-draft-n-max 7
+probe p1286-dflash-q8-n7-dx0 0,1,2,3 -dev ROCm0,ROCm1 -sm tensor -devd ROCm0 -md ${BC_MODEL_ROOT}/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q8_0.gguf --spec-type draft-dflash --spec-draft-n-max 7
+probe p1286-dspark-q8-n6-dR9700 0,1,2,3 -dev ROCm0,ROCm1 -sm tensor -devd ROCm2 -md ${BC_MODEL_ROOT}/qwen3.8-27b/gguf/dspark/Qwen3.8-27B-DSpark-Q8_0.gguf --spec-type draft-dspark --spec-draft-n-max 6
+probe p1286-dspark-q8-n6-d6900 0,1,2,3 -dev ROCm0,ROCm1 -sm tensor -devd ROCm3 -md ${BC_MODEL_ROOT}/qwen3.8-27b/gguf/dspark/Qwen3.8-27B-DSpark-Q8_0.gguf --spec-type draft-dspark --spec-draft-n-max 6
 probe p1286-mtp5 0,1,2,3 -dev ROCm0,ROCm1 -sm tensor --spec-type draft-mtp --spec-draft-n-max 5 -ctkd q8_0 -ctvd q8_0
 probe dt-mtp5-a 0,1,2,3 -dev ROCm0,ROCm1 -sm tensor --spec-type draft-mtp --spec-draft-n-max 5 -ctkd q8_0 -ctvd q8_0
 probe dt-mtp5-3card-a 0,1,2,3 -dev ROCm0,ROCm1,ROCm2 -sm tensor -ts 3,3,2 --spec-type draft-mtp --spec-draft-n-max 5 -ctkd q8_0 -ctvd q8_0
 probe dt-mtp4-3card 0,1,2,3 -dev ROCm0,ROCm1,ROCm2 -sm tensor -ts 3,3,2 --spec-type draft-mtp --spec-draft-n-max 4 -ctkd q8_0 -ctvd q8_0
 probe dt-mtp6-3card 0,1,2,3 -dev ROCm0,ROCm1,ROCm2 -sm tensor -ts 3,3,2 --spec-type draft-mtp --spec-draft-n-max 6 -ctkd q8_0 -ctvd q8_0
-probe dt-mtpside5-3card-d6900 0,1,2,3 -dev ROCm0,ROCm1,ROCm2 -sm tensor -ts 3,3,2 -devd ROCm3 -md /mnt/data/llm-models/qwen3.8-27b/gguf/unsloth-mtp/mtp-Qwen3.8-27B-Q4_0.gguf --spec-type draft-mtp --spec-draft-n-max 5 -ctkd q8_0 -ctvd q8_0
-probe dt-dflash-q8-n7-3card-d6900 0,1,2,3 -dev ROCm0,ROCm1,ROCm2 -sm tensor -ts 3,3,2 -devd ROCm3 -md /mnt/data/llm-models/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q8_0.gguf --spec-type draft-dflash --spec-draft-n-max 7
-probe dt-dflash-q8-n7-dR9700-a 0,1,2,3 -dev ROCm0,ROCm1 -sm tensor -devd ROCm2 -md /mnt/data/llm-models/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q8_0.gguf --spec-type draft-dflash --spec-draft-n-max 7
-probe dt-dflash-q8-n4-dR9700 0,1,2,3 -dev ROCm0,ROCm1 -sm tensor -devd ROCm2 -md /mnt/data/llm-models/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q8_0.gguf --spec-type draft-dflash --spec-draft-n-max 4
-probe dt-dflash-q8-n10-dR9700 0,1,2,3 -dev ROCm0,ROCm1 -sm tensor -devd ROCm2 -md /mnt/data/llm-models/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q8_0.gguf --spec-type draft-dflash --spec-draft-n-max 10
-probe dt-dflash-q4-n7-dR9700 0,1,2,3 -dev ROCm0,ROCm1 -sm tensor -devd ROCm2 -md /mnt/data/llm-models/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q4_K_M.gguf --spec-type draft-dflash --spec-draft-n-max 7
+probe dt-mtpside5-3card-d6900 0,1,2,3 -dev ROCm0,ROCm1,ROCm2 -sm tensor -ts 3,3,2 -devd ROCm3 -md ${BC_MODEL_ROOT}/qwen3.8-27b/gguf/unsloth-mtp/mtp-Qwen3.8-27B-Q4_0.gguf --spec-type draft-mtp --spec-draft-n-max 5 -ctkd q8_0 -ctvd q8_0
+probe dt-dflash-q8-n7-3card-d6900 0,1,2,3 -dev ROCm0,ROCm1,ROCm2 -sm tensor -ts 3,3,2 -devd ROCm3 -md ${BC_MODEL_ROOT}/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q8_0.gguf --spec-type draft-dflash --spec-draft-n-max 7
+probe dt-dflash-q8-n7-dR9700-a 0,1,2,3 -dev ROCm0,ROCm1 -sm tensor -devd ROCm2 -md ${BC_MODEL_ROOT}/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q8_0.gguf --spec-type draft-dflash --spec-draft-n-max 7
+probe dt-dflash-q8-n4-dR9700 0,1,2,3 -dev ROCm0,ROCm1 -sm tensor -devd ROCm2 -md ${BC_MODEL_ROOT}/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q8_0.gguf --spec-type draft-dflash --spec-draft-n-max 4
+probe dt-dflash-q8-n10-dR9700 0,1,2,3 -dev ROCm0,ROCm1 -sm tensor -devd ROCm2 -md ${BC_MODEL_ROOT}/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q8_0.gguf --spec-type draft-dflash --spec-draft-n-max 10
+probe dt-dflash-q4-n7-dR9700 0,1,2,3 -dev ROCm0,ROCm1 -sm tensor -devd ROCm2 -md ${BC_MODEL_ROOT}/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q4_K_M.gguf --spec-type draft-dflash --spec-draft-n-max 7
 probe dt-mtp5-3card-b 0,1,2,3 -dev ROCm0,ROCm1,ROCm2 -sm tensor -ts 3,3,2 --spec-type draft-mtp --spec-draft-n-max 5 -ctkd q8_0 -ctvd q8_0
 probe dt-mtp5-b 0,1,2,3 -dev ROCm0,ROCm1 -sm tensor --spec-type draft-mtp --spec-draft-n-max 5 -ctkd q8_0 -ctvd q8_0
-probe dt-dflash-q8-n7-dR9700-b 0,1,2,3 -dev ROCm0,ROCm1 -sm tensor -devd ROCm2 -md /mnt/data/llm-models/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q8_0.gguf --spec-type draft-dflash --spec-draft-n-max 7
-probe q4-dflash-n7-dR9700-a 0,1,2,3 -dev ROCm0,ROCm1 -sm tensor -devd ROCm2 -md /mnt/data/llm-models/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q4_K_M.gguf --spec-type draft-dflash --spec-draft-n-max 7
-probe q4-dflash8-n7-dR9700-a 0,1,2,3 -dev ROCm0,ROCm1 -sm tensor -devd ROCm2 -md /mnt/data/llm-models/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q8_0.gguf --spec-type draft-dflash --spec-draft-n-max 7
-probe q4-dflash-n4-dR9700 0,1,2,3 -dev ROCm0,ROCm1 -sm tensor -devd ROCm2 -md /mnt/data/llm-models/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q4_K_M.gguf --spec-type draft-dflash --spec-draft-n-max 4
-probe q4-dflash-n10-dR9700 0,1,2,3 -dev ROCm0,ROCm1 -sm tensor -devd ROCm2 -md /mnt/data/llm-models/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q4_K_M.gguf --spec-type draft-dflash --spec-draft-n-max 10
-probe q4-dflash-n7-d6900 0,1,2,3 -dev ROCm0,ROCm1 -sm tensor -devd ROCm3 -md /mnt/data/llm-models/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q4_K_M.gguf --spec-type draft-dflash --spec-draft-n-max 7
-probe q4-dflash-n7-3card-d6900 0,1,2,3 -dev ROCm0,ROCm1,ROCm2 -sm tensor -ts 3,3,2 -devd ROCm3 -md /mnt/data/llm-models/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q4_K_M.gguf --spec-type draft-dflash --spec-draft-n-max 7
-probe q4-dflash8-n7-dR9700-b 0,1,2,3 -dev ROCm0,ROCm1 -sm tensor -devd ROCm2 -md /mnt/data/llm-models/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q8_0.gguf --spec-type draft-dflash --spec-draft-n-max 7
-probe q4-dflash-n7-dR9700-b 0,1,2,3 -dev ROCm0,ROCm1 -sm tensor -devd ROCm2 -md /mnt/data/llm-models/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q4_K_M.gguf --spec-type draft-dflash --spec-draft-n-max 7
+probe dt-dflash-q8-n7-dR9700-b 0,1,2,3 -dev ROCm0,ROCm1 -sm tensor -devd ROCm2 -md ${BC_MODEL_ROOT}/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q8_0.gguf --spec-type draft-dflash --spec-draft-n-max 7
+probe q4-dflash-n7-dR9700-a 0,1,2,3 -dev ROCm0,ROCm1 -sm tensor -devd ROCm2 -md ${BC_MODEL_ROOT}/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q4_K_M.gguf --spec-type draft-dflash --spec-draft-n-max 7
+probe q4-dflash8-n7-dR9700-a 0,1,2,3 -dev ROCm0,ROCm1 -sm tensor -devd ROCm2 -md ${BC_MODEL_ROOT}/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q8_0.gguf --spec-type draft-dflash --spec-draft-n-max 7
+probe q4-dflash-n4-dR9700 0,1,2,3 -dev ROCm0,ROCm1 -sm tensor -devd ROCm2 -md ${BC_MODEL_ROOT}/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q4_K_M.gguf --spec-type draft-dflash --spec-draft-n-max 4
+probe q4-dflash-n10-dR9700 0,1,2,3 -dev ROCm0,ROCm1 -sm tensor -devd ROCm2 -md ${BC_MODEL_ROOT}/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q4_K_M.gguf --spec-type draft-dflash --spec-draft-n-max 10
+probe q4-dflash-n7-d6900 0,1,2,3 -dev ROCm0,ROCm1 -sm tensor -devd ROCm3 -md ${BC_MODEL_ROOT}/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q4_K_M.gguf --spec-type draft-dflash --spec-draft-n-max 7
+probe q4-dflash-n7-3card-d6900 0,1,2,3 -dev ROCm0,ROCm1,ROCm2 -sm tensor -ts 3,3,2 -devd ROCm3 -md ${BC_MODEL_ROOT}/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q4_K_M.gguf --spec-type draft-dflash --spec-draft-n-max 7
+probe q4-dflash8-n7-dR9700-b 0,1,2,3 -dev ROCm0,ROCm1 -sm tensor -devd ROCm2 -md ${BC_MODEL_ROOT}/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q8_0.gguf --spec-type draft-dflash --spec-draft-n-max 7
+probe q4-dflash-n7-dR9700-b 0,1,2,3 -dev ROCm0,ROCm1 -sm tensor -devd ROCm2 -md ${BC_MODEL_ROOT}/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q4_K_M.gguf --spec-type draft-dflash --spec-draft-n-max 7
 probe single-r9700 0,1,2,3 -dev ROCm2 -sm none
 probe single-r9700-mtp5 0,1,2,3 -dev ROCm2 -sm none --spec-type draft-mtp --spec-draft-n-max 5 -ctkd q8_0 -ctvd q8_0
 probe cr27-plain-auto-a 0,1,2,3 -dev ROCm0,ROCm1 -sm tensor
@@ -116,7 +116,7 @@ for n in mtp5 mtp4 mtp3 mtpside5-d6900 plain-3card mtp5-3card mtpside5-3card-d69
 done
 echo PROBE_DONE
 # QFP21 DFlash tuning on the promoted base + 1286 (tensor-split target, draft on the R9700 or the 6900)
-D=/mnt/data/llm-models/qwen3.8-27b/gguf/dflash
+D=${BC_MODEL_ROOT}/qwen3.8-27b/gguf/dflash
 for q in q8:Qwen3.8-27B-DFlash2-Q8_0 q4:Qwen3.8-27B-DFlash2-Q4_K_M; do
   for n in 4 5 6 7 8 10; do
     probe q21-dflash-${q%%:*}-n$n-dR9700 0,1,2,3 -dev ROCm0,ROCm1 -sm tensor -devd ROCm2 -md $D/${q#*:}.gguf --spec-type draft-dflash --spec-draft-n-max $n

@@ -23,7 +23,7 @@ Promotion remains intentionally pending. It may only consume completed PHA03 lev
 
 ## Steps
 
-1. Require PHA03 completed with a topology identity, fail-closed comm-init admission, qualified/unqualified/unknown tests, and real Brutus controls.
+1. Require PHA03 completed with a topology identity, fail-closed comm-init admission, qualified/unqualified/unknown tests, and real dev controls.
 2. Require PHA04 completed with exact RCCL compatibility/build, reduction signature, topology identity, and algorithm/protocol/channel candidate binding, including unknown and performance-excluded outcomes.
 3. Require independent correctness, crash-freedom, and production-shaped hardware evidence for every candidate admitted.
 4. Wire only the reviewed validated state into the default build; preserve explicit opt-out and fail-closed behavior for stale, missing, or incompatible evidence.

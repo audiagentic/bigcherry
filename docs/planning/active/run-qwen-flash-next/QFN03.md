@@ -15,7 +15,7 @@ work: M
 
 ## Description
 
-Every long-context load failure on Brutus (2x 7900 XTX + R9700 tensor split, MTP draft on the 6900) has been a compute-buffer allocation (1.5-3 GB on one GPU at 256K or ub1024), not weights or KV. Reduce non-weight, non-KV VRAM so the context tiers grow and ub1024 (about +10% prefill) fits at long context.
+Every long-context load failure on dev (2x 7900 XTX + R9700 tensor split, MTP draft on the 6900) has been a compute-buffer allocation (1.5-3 GB on one GPU at 256K or ub1024), not weights or KV. Reduce non-weight, non-KV VRAM so the context tiers grow and ub1024 (about +10% prefill) fits at long context.
 
 ## Steps
 

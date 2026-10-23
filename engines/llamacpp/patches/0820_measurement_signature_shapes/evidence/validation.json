@@ -47,7 +47,7 @@
       },
       "campaign_identity": "ab8aba922f602b867f39c6c52ad4b3162597e75ccdc2ca38ce3833868ee3433a",
       "campaign_identity_digest": "ab8aba922f602b867f39c6c52ad4b3162597e75ccdc2ca38ce3833868ee3433a",
-      "campaign_workdir": "/home/audumla/pa26-evidence-run3/0820_measurement_signature_shapes/framework/0820_measurement_signature_shapes",
+      "campaign_workdir": "${HOME}/pa26-evidence-run3/0820_measurement_signature_shapes/framework/0820_measurement_signature_shapes",
       "check_results": {
         "apply": {
           "artifacts": [],
@@ -224,7 +224,7 @@
       "patch_implementation_digest": "cae6be126c0fe9dce3e580513d3a3a80d70a1b010659487f5e3e3832d2349809",
       "patch_validation_subject_digest": "fc4322307fc2e222d28fc5944d4e73584bf44905d1d62264d448868814c1429b",
       "qualification_kind": "framework-configuration-v1",
-      "record_digest": "ae4a01cf708b5283c9f7a96ee4502616f10ab4cea5a6969e59d4f005ce09ba45",
+      "record_digest": "53cf15aefa39bf488e0eb142381b6e757714e57df36712a4e8747dc84939e50a",
       "record_schema_version": 5,
       "runtime_performance_qualified": false,
       "source_composition": [
@@ -418,7 +418,7 @@
       },
       "campaign_identity": "b908cd7543887bc409b435aa7d1081cafb43dea8def90c809877fc2151f32b86",
       "campaign_identity_digest": "b908cd7543887bc409b435aa7d1081cafb43dea8def90c809877fc2151f32b86",
-      "campaign_workdir": "/home/audumla/pa26-evidence-run2/0820_measurement_signature_shapes/framework/0820_measurement_signature_shapes",
+      "campaign_workdir": "${HOME}/pa26-evidence-run2/0820_measurement_signature_shapes/framework/0820_measurement_signature_shapes",
       "check_results": {
         "apply": {
           "artifacts": [],
@@ -595,7 +595,7 @@
       "patch_implementation_digest": "cae6be126c0fe9dce3e580513d3a3a80d70a1b010659487f5e3e3832d2349809",
       "patch_validation_subject_digest": "fc4322307fc2e222d28fc5944d4e73584bf44905d1d62264d448868814c1429b",
       "qualification_kind": "framework-configuration-v1",
-      "record_digest": "30186491c649e155f3e23047f3bebdc8ca3e67347002df19a53631854c4dbebc",
+      "record_digest": "12cf7440e5c0df71879c23e7109da0184921ff38861242f8b2314b4f623ecbe8",
       "record_schema_version": 5,
       "runtime_performance_qualified": false,
       "source_composition": [
@@ -792,7 +792,7 @@
       },
       "campaign_identity": "dd1948069c661cac7a5036d7da1c99c72e6ff46d92918e195a68ab9c9d4ddb0c",
       "campaign_identity_digest": "dd1948069c661cac7a5036d7da1c99c72e6ff46d92918e195a68ab9c9d4ddb0c",
-      "campaign_workdir": "/home/audumla/pa26-evidence-run4/0820_measurement_signature_shapes/framework/0820_measurement_signature_shapes",
+      "campaign_workdir": "${HOME}/pa26-evidence-run4/0820_measurement_signature_shapes/framework/0820_measurement_signature_shapes",
       "check_results": {
         "apply": {
           "artifacts": [
@@ -986,7 +986,7 @@
       "patch_implementation_digest": "cae6be126c0fe9dce3e580513d3a3a80d70a1b010659487f5e3e3832d2349809",
       "patch_validation_subject_digest": "fc4322307fc2e222d28fc5944d4e73584bf44905d1d62264d448868814c1429b",
       "qualification_kind": "framework-configuration-v1",
-      "record_digest": "922d6055c2ad6f50de86862c4582295309c3b835d38923586ad00f352d728bc2",
+      "record_digest": "951c4b54482552c6f1242bb9f06868bc1e3acf6342481db9448676837a1ed87c",
       "record_schema_version": 5,
       "runtime_performance_qualified": false,
       "source_composition": [

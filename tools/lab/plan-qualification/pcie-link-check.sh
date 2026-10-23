@@ -1,9 +1,9 @@
 #!/bin/bash
 # Check (and optionally retrain) the upstream PCIe links of the AMD GPUs. A root-port link stuck below its
-# max speed (seen on Brutus: XTX0 and R9700 at 2.5 GT/s under load, amdgpu pp_dpm_pcie with no active level)
+# max speed (seen on dev: XTX0 and R9700 at 2.5 GT/s under load, amdgpu pp_dpm_pcie with no active level)
 # roughly halves AllReduce-bound prefill until reboot. For each GPU, compares the root port's
 # current_link_speed with its max_link_speed (the GPU-internal switch hops do not reflect the slot link).
-# Cause seen on Brutus: thermald drives the kernel's PCIe_Port_Link_Speed_<port> cooling devices (bwctrl)
+# Cause seen on dev: thermald drives the kernel's PCIe_Port_Link_Speed_<port> cooling devices (bwctrl)
 # under CPU heat and never releases them, leaving LnkCtl2 target speed at Gen 1.
 # Usage: pcie-link-check.sh            -> report; exit 1 if any root-port link is degraded
 #        pcie-link-check.sh --retrain  -> also reset the degraded ports' PCIe_Port_Link_Speed cooling devices

@@ -26,7 +26,7 @@ Ported (with adaptations for this project's own 1000/HI70 anchors) from
 (https://github.com/stew675/llama.cpp). Not merged into `ggml-org/llama.cpp`
 master.
 
-## Real hardware evidence (2026-09-12, Brutus, gfx1201/R9700, device index 2)
+## Real hardware evidence (2026-09-12, dev, gfx1201/R9700, device index 2)
 
 This patch had never been benched on real hardware before this session
 (plan items PRBE02/PRBE03/PRBE04 were all in `pending` state with zero
@@ -77,7 +77,7 @@ expected to shift numerics at the margin). `run_rd05_contract_correctness()`
 (`tools/bigcherry/experiment/perplexity.py`), the same approach validated
 for RD13 earlier this session.
 
-Real run on Brutus (single gfx1201 R9700), control (1203 absent) vs
+Real run on dev (single gfx1201 R9700), control (1203 absent) vs
 subject (1203 applied), against a real wikitext2 corpus slice:
 **PASS** -- subject PPL=10.5871, control PPL=10.5869, delta=0.00020,
 sigma=0.0010 (well within the 3.0 threshold). This is consistent with,
@@ -98,7 +98,7 @@ be isolated from RD05/RD07 via source composition (one atomic patch.py),
 so `run_rd06_contract_correctness()` reuses the same real PPL-comparison
 technique, scoped to gfx1201 (RD06's contract scope).
 
-Real run on Brutus (single gfx1201 R9700), control (1203 absent) vs
+Real run on dev (single gfx1201 R9700), control (1203 absent) vs
 subject (1203 applied), against the same wikitext2 corpus slice used for
 RD05: **PASS** -- subject PPL=10.5835, control PPL=10.6394, delta=0.0559,
 sigma=0.2709 (well within the 3.0 threshold).
@@ -119,7 +119,7 @@ requiring one real, independent build+run per architecture -- a
 multi-target fat compile is never accepted as per-architecture execution
 evidence.
 
-Real runs on Brutus, control (1203 absent) vs subject (1203 applied),
+Real runs on dev, control (1203 absent) vs subject (1203 applied),
 against the same wikitext2 corpus slice used for RD05/RD06:
 
 | architecture | subject PPL | control PPL | sigma | result |

@@ -46,7 +46,7 @@ for which runners are wired).
 If a configured tree looks even slightly ambiguous, prefer a **separate,
 known-clean checkout** over risking a shared one -- e.g. this project keeps
 `~/bigcherry` (a plain, always-idle clone) alongside the real configured
-campaign path `$BC_SHARE/bigcherry` on the build server for
+campaign path `$BC_REPO_ROOT` on the build server for
 exactly this reason.
 
 ## 1. Check what's redundant or merged upstream FIRST

@@ -259,7 +259,7 @@ directly to main or a branch another agent owns. One agent per slice worktree.
 Use bigcherry slice start/status/lab/finish; prune is read-only until --apply.
 Worktrees share a single vendor/build cache through the resolved primary root.
 Do not stash/reset/rebase another actor's work; never force-remove a dirty
-worktree. The Brutus primary checkout remains clean on main throughout lab runs.
+worktree. The dev primary checkout remains clean on main throughout lab runs.
 
 Handoff rules
 

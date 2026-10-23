@@ -2,11 +2,11 @@
 # 1303 round 2 (KV pinned unrotated: 1,1,0 = both XTX, faster in round 1; 1,0,1 = XTX0 + R9700): f16/q8_0 past 208K to 256K, and f16/f16.
 set -u
 cd "$(cd "$(dirname "$0")/../../.." && pwd)"
-export BC_HIP_PATH=/mnt/vault/tmp/bc-rocm
-export BC_MODEL=/mnt/data/llm-models/qwen3.8-flash-next/gguf/mtp/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf
+export BC_HIP_PATH=${BC_TMP_ROOT}/bc-rocm
+export BC_MODEL=${BC_MODEL_ROOT}/qwen3.8-flash-next/gguf/mtp/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf
 docker stop radiance-vllm >/dev/null 2>&1
 jobs=$(mktemp)
-R=/mnt/data/bigcherry-work/runs
+R=${BC_WORK_ROOT}/runs
 cat > "$jobs" <<JOBS
 VIS=0,1,2,3 BUILD b-deploy-1303 bigcherry:stock:linux-multi deploy-plus-1302-1303 gfx1100,gfx1201,gfx1030
 VIS=0,1,2,3 SCRIPT attn-maxctx-110-hi tools/lab/flash-next/attn-maxctx.sh @b-deploy-1303 $R/flashnext-attn-maxctx-110-hi 1,1,0 0 212992 262144 f16 q8_0

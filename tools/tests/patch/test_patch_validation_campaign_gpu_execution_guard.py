@@ -5,7 +5,7 @@ ROCm/HIP device init fails silently falls back to CPU execution while
 still printing a normal-looking benchmark table under a "backend: ROCm"
 label -- exit code 0 and a plausible metric line are NOT proof the
 process actually touched the GPU. Real-hardware finding (2026-09-01,
-Brutus, gfx1030/device 3): the HIP runtime failed to detect a real,
+dev, gfx1030/device 3): the HIP runtime failed to detect a real,
 rocminfo-visible GPU, and nothing caught it before RD08's trigger check
 quietly "ran" and reported a negative -- confounding a real dispatch-
 routing question (VA21) with an unrelated environment failure.
