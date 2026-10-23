@@ -14,7 +14,7 @@ validating STATE.
 
 Depends on patches `1238` and `1239`.
 
-## Real schema-2 hardware pass (2026-09-12, Brutus dual gfx1100, THA02)
+## Real schema-2 hardware pass (2026-09-12, dev dual gfx1100, THA02)
 
 Built and included in the same real hardware pass as `1236`/`1238`/`1239`
 (full chain compiles and runs cleanly on both real XTX GPUs). The

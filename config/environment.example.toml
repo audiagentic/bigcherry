@@ -14,9 +14,9 @@
 schema_version = 1
 
 # The role docs refer to.
-default-host = "build-server"
+default-host = "dev"
 
-[host.build-server]
+[host.dev]
 description = """
 Multi-GPU AMD build and campaign host. Owns every real GPU measurement in
 this project: builds, tune campaigns, profiling and end-to-end benchmarks.
@@ -24,41 +24,38 @@ this project: builds, tune campaigns, profiling and end-to-end benchmarks.
 # `hostname` is the ssh alias and the name to prefer in prose and commands.
 # `address` exists so a reader can fix their own ssh config; commands should
 # use the alias, never the literal address.
-hostname = "build-server"
-address = "192.0.2.10"
+hostname = "dev"
 
 # Filesystem layout.
-home = "/home/example"
 # The live git checkout. A REAL local clone -- git over a network share is
 # too slow and unreliable, so builds come from here.
-repo = "/home/example/bigcherry"
+repo-root = "${HOME}/bigcherry"
 # Content-addressed build/campaign cache. Identity-bound: never run a manual
 # cmake build inside it, and never hand-edit a generated input there.
-cache-root = "/home/example/bigcherry/work"
-# File transfer only -- never git, never a build target.
-share = "/srv/example-share"
+cache-root = "${HOME}/bigcherry/work"
 model-root = "/srv/example-models"
+work-root = "/srv/example/work"
+tmp-root = "/srv/example/tmp"
+dev-root = "/srv/example/dev"
 # The documented server-bench harness. Not llama-bench: it cannot observe MTP
 # speculative decode at all.
 bench-harness = "/srv/example-share/llamacpp/bench"
 
-# Toolchain. `rocm-shim` is a symlink tree that exposes bin/clang and
-# bin/clang++, which /opt/rocm does not (it ships amdclang/amdclang++ and
-# hides real clang under llvm/bin). Campaigns build compiler paths as
-# <hip-path>/bin/clang, so they need the shim rather than the ROCm root.
-rocm = "/opt/rocm"
-rocm-shim = "/home/example/rocm-shim"
+# Toolchain. rocm-root is the default ROCm install. Named SDKs for recipe stacks
+# are declared in the rocm-sdks table below; a relative root is repo-relative.
+rocm-root = "/opt/rocm"
 
 # Ports. The production port belongs to the production inference service; a
-# benchmark that binds it takes production down. Ad-hoc work takes a free port.
+# benchmark that binds it takes production down. Tests, benchmarks and ad-hoc
+# servers use test-port, which the tools refuse to set equal to production-port.
 production-port = 8080
-bench-port = 18400
+test-port = 18400
 
 # `bigcherry remote run` (docs/reference/tooling/REMOTE_RUNS.md): exact process names (comm) that mean the GPUs are in
 # use, and the host-local environment file a remote run exports as BIGCHERRY_ENVIRONMENT (default: the tree's
 # config/environment.local.toml). A run is refused while a listed process runs, or when this list is empty.
 busy-processes = ["llama-server", "ninja"]
-# environment-file = "/home/example/bigcherry/config/environment.local.toml"
+# environment-file = "${BC_REPO_ROOT}/config/environment.local.toml"
 
 # Device inventory. Index is the HIP/ROCR visible-devices ordinal, which is
 # what --devices and *_VISIBLE_DEVICES take.
@@ -67,38 +64,47 @@ busy-processes = ["llama-server", "ninja"]
 # bigcherry.experiment.attestation.parse_llama_server_attestation() to
 # positively confirm which physical device ran a measurement. Never invent
 # this value; omit it until verified.
-[[host.build-server.devices]]
+[[host.dev.devices]]
 index = 0
 arch = "gfx1100"
 model = "example gfx1100 card"
 vram-mib = 24560
 locator = "0000:01:00.0"
 
-[[host.build-server.devices]]
+[[host.dev.devices]]
 index = 1
 arch = "gfx1201"
 model = "example gfx1201 card"
 vram-mib = 32624
 locator = "0000:02:00.0"
 
+# Named ROCm SDKs for recipe stacks (stack.sdk = "<version>"). A relative root is
+# repo-relative.
+[host.dev.rocm-sdks]
+"7.2" = "/opt/rocm-7.2"
+"10.1" = "vendor/rocm/10.1.0rc2"
+
 # Values for ${VAR} references in tracked config (config/recipes.toml), e.g.
 # the remote campaign checkout and optional ROCm stack roots. A variable set
 # in the process environment takes precedence over this table.
 [env]
-BIGCHERRY_BRUTUS_TREE = "/srv/example/bigcherry/workspaces/main"
 # ROCM_PATH = "/opt/rocm"            # usually set by tools/env/rocm-env.sh
-# BIGCHERRY_ROCM_7_2_ROOT = "/opt/rocm-7.2"
 
 # PA47 slice lab uses the normal [host.*] schema above. When --host is omitted
-# it resolves `default-host`; the current Brutus local config therefore remains:
+# it resolves `default-host`; the current dev local config therefore remains:
 #
-# default-host = "build-server"
-# [host.build-server]
+# default-host = "dev"
+# [host.dev]
 # hostname = "ssh-user@lab-host"
-# repo = "/srv/example/bigcherry/workspaces/main"
+# repo-root = "/srv/example/bigcherry/workspaces/main"
 # cache-root = "/srv/example/bigcherry-work"
 #
 # Those three keys are the fields slice lab itself requires. Other host fields
-# may remain in the same table for other commands. To invoke `--host brutus`
-# instead, define [host.brutus] with the same hostname/repo/cache-root keys.
+# may remain in the same table for other commands. To invoke `--host dev`
+# instead, define [host.dev] with the same hostname/repo/cache-root keys.
 # Runs go to cache-root/runs and detached worktrees to cache-root/worktrees.
+
+# Machine names that must never appear in tracked files (checked by the pre-commit hook).
+# Put the real names in config/environment.local.toml, not here.
+# [forbidden]
+# terms = ["<machine-name>"]

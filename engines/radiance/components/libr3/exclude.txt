@@ -8,7 +8,7 @@
 # attn_paged_window, expert_scale_bf16, gelu_mul_quant_i8, gemm_w5a16_nt_m64, gemm_wpa8i8_tiled, gen, givens_dense,
 # givens_rotate, norm_join_bf16, pair_argmax_f32, qkv_norm_rope, rmsnorm_quant_i8. None is excluded yet: whether they
 # compile for gfx1100 through r3_compat.h is unverified (attn_gen, attn_paged_window, gemm_w5a16_nt_m64,
-# gemm_wpa8i8_tiled and givens_dense use gfx12 wmma builtins). Add the ones that fail the first Brutus build here.
+# gemm_wpa8i8_tiled and givens_dense use gfx12 wmma builtins). Add the ones that fail the first dev build here.
 
 # Came off this list:
 # 2026-10-09, s_wait_storecnt rewrite (rewrites.txt): r4d_ar_gather_2rank, r4d_ar_ln_had_quant_i8,

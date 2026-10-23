@@ -33,7 +33,7 @@ class ResourceLock:
 
         RD100 (gpt-auto-agent review follow-up): this used to be fail-fast --
         a single ``mkdir()`` attempt, immediate ``ResourceError`` on
-        contention. On the documented shared multi-agent Brutus host, two
+        contention. On the documented shared multi-agent dev host, two
         legitimate, non-conflicting build requests contending for the same
         resource (e.g. two lanes both wanting a GPU claim, or the same
         build-plan resource from two processes racing to publish the same

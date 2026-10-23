@@ -20,7 +20,7 @@ pin-status: local
 COMPLETION  PASS
 
 hardware evidence:
-radiance v1.7.0 (1e968f6), BigCherry port MEN12 (#261, #263, #264); Brutus, 2026-10-17.
+radiance v1.7.0 (1e968f6), BigCherry port MEN12 (#261, #263, #264); dev, 2026-10-17.
 Build: lane radiance-lab:stock:linux-radiance (+moe-remote-handoff) ok; pin-bump compile gate ok on platform linux-radiance (GCC 14) - every kernel plugin reports RAD_ABI_VERSION 17, r3_moe_shm_test passed; diagnostic build radiance-diag:moe-diag ok.
 Smoke: CPU smoke PASS (2.0-2.5 s, 146 MiB, no GPU) on stock, +rad0002 and native builds; strict re-audit 4/4; pin-status --complete PASS.
 A/B (ab-benchmark helper-ab.json, Flash-Next, R9700 engine + two XTX helpers, natives on, 2 balanced rounds, R3_MOE_HELPER_ROWS 0 vs 1): ROWS=0 pp4096 2,049-2,050 tok/s, tg512 122-126, tg2048 140-141 (1.3.0: ~1,990 / 128 / 141-143); ROWS=1 slower as expected (pp4096 480-487).
@@ -31,7 +31,7 @@ Quality: helper-kld (vs 1.3.0 two-XTX exact reference) gate PASS - helper-on KLD
 - Each engine now declares how its server is run, so the lab server runner can launch llama.cpp or radiance from the same code. (MEN03)
 - Radiance is now built, patched, configured and A/B-measured through the same BigCherry patch sets, recipes, profiles and campaign harness as llama.cpp. (RAD01)
 - The R9700 expert helper for Flash-Next on two XTX was shown to be numerically sound and raises decode speed by about 78%. (RAD03)
-- Flash-Next can now run with the R9700 as the main engine and both RX 7900 XTX cards computing experts; prefill reaches ~1,880 tok/s, the fastest Flash-Next prefill so far on Brutus. (RAD02, RAD03)
-- Flash-Next prefill on Brutus reaches about 2,640 tok/s with the R9700 running the model and both XTX cards computing the cold experts, more than double the original two-XTX setup. (RAD02)
-- Flash-Next decode on Brutus reaches about 108 tok/s with the R9700 running the model and both XTX cards computing experts, four times the original two-XTX setup. (RAD05, RAD06)
+- Flash-Next can now run with the R9700 as the main engine and both RX 7900 XTX cards computing experts; prefill reaches ~1,880 tok/s, the fastest Flash-Next prefill so far on dev. (RAD02, RAD03)
+- Flash-Next prefill on dev reaches about 2,640 tok/s with the R9700 running the model and both XTX cards computing the cold experts, more than double the original two-XTX setup. (RAD02)
+- Flash-Next decode on dev reaches about 108 tok/s with the R9700 running the model and both XTX cards computing experts, four times the original two-XTX setup. (RAD05, RAD06)
 - Added an experimental prefill kernel for the radiance expert helper; it measured slower and stays off. (RAD06)

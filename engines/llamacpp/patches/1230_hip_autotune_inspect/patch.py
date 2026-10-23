@@ -18,7 +18,7 @@ from bigcherry.patcher import Edit, FilePatch  # noqa: I001
 
 GROUP = "core"
 # Not yet "validated" under the HI83 evidence contract (no HI82 campaign
-# record exists for this patch). Build/tool evidence IS complete, on Brutus
+# record exists for this patch). Build/tool evidence IS complete, on dev
 # production-replay config (REPLAY=ON, ROUTING=OFF) at pin 0adcc3bb:
 #   - full CMake compile + link of the hip-autotune-inspect target
 #   - --selftest: 10/10 cross-language digest vectors (C++ one-shot and

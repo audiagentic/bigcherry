@@ -1,12 +1,12 @@
 # BigCherry jobs control plane
 
-Status: **software/control-plane implementation is present and tested; Brutus GPU/production and Windows remote hardware acceptance remain gated.**
+Status: **software/control-plane implementation is present and tested; dev GPU/production and Windows remote hardware acceptance remain gated.**
 
-Normative design: `docs/design/JOBS_ORCHESTRATOR.md`. Brutus: `SLURM_BRUTUS.md`. Cutover/migration: `ACCEPTANCE.md`, `MIGRATION.md`.
+Normative design: `docs/design/JOBS_ORCHESTRATOR.md`. dev: `SLURM_SETUP.md`. Cutover/migration: `ACCEPTANCE.md`, `MIGRATION.md`.
 
 ## Authority
 
-`python -m bigcherry jobs --engine <name> ...` is the human/agent entry point. `JobService` is the scheduler-neutral application API. BigCherry owns scientific/run identity, durable events, evidence/harvest/report and retry legality; Slurm owns Brutus execution/resources. Status/metrics are rebuildable projections.
+`python -m bigcherry jobs --engine <name> ...` is the human/agent entry point. `JobService` is the scheduler-neutral application API. BigCherry owns scientific/run identity, durable events, evidence/harvest/report and retry legality; Slurm owns dev execution/resources. Status/metrics are rebuildable projections.
 
 Default roots:
 
@@ -57,10 +57,10 @@ Machine output is canonical JSON/JSONL except requested Markdown/Prometheus.
 Linux AMD:
 
 ```bash
-python -m bigcherry hardware discover brutus --record
-python -m bigcherry hardware diff brutus
-python -m bigcherry hardware accept brutus --expected-hash <reviewed-hash>
-python -m bigcherry hardware render-gres brutus
+python -m bigcherry hardware discover dev --record
+python -m bigcherry hardware diff dev
+python -m bigcherry hardware accept dev --expected-hash <reviewed-hash>
+python -m bigcherry hardware render-gres dev
 ```
 
 Stable identity preference is UUID -> confirmed serial -> explicit weak hardware epoch. Architecture/model/VRAM/BDF/render/launch ordinal/driver are observations; BDF/render/ordinal are locators only. Accepted-inventory/cohort drift fails closed.
@@ -93,7 +93,7 @@ BIGCHERRY_STALL_SECONDS=0
 BIGCHERRY_TERM_GRACE_SECONDS=5
 ```
 
-Absolute GiB floors are host policy; Brutus should set qualified reserves (candidate 50 GiB root, 200 GiB work, 20 GiB tmp). Percentage defaults remain portable to smaller LocalExecutor hosts.
+Absolute GiB floors are host policy; dev should set qualified reserves (candidate 50 GiB root, 200 GiB work, 20 GiB tmp). Percentage defaults remain portable to smaller LocalExecutor hosts.
 
 Disk pressure before or during execution is retryable environment failure (75), not scientific FAIL. The liveness detector treats process-tree CPU ticks or output/artifact byte growth as progress. `BIGCHERRY_STALL_SECONDS=0` disables automatic stall termination until a host-specific threshold is qualified. Termination is process-tree TERM -> bounded grace -> KILL; launch/configuration failures are harness errors.
 
@@ -124,7 +124,7 @@ Durable checksummed events reconnect by sequence; logs reconnect by byte offset.
 
 ## Executors
 
-- `slurm`: Brutus Linux production path.
+- `slurm`: dev Linux production path.
 - `local`: direct Linux/Windows/testing/emergency path.
 - `remote`: restricted SSH JSON worker for future non-Slurm/Windows hosts.
 - `fake`: deterministic tests.
@@ -135,16 +135,16 @@ Remote scientific work remains disabled until target-local content staging and W
 
 ```bash
 python tools/admin/install_bigcherry_jobs.py \
-  --project-root /srv/bigcherry \
-  --work-root /mnt/data/bigcherry-jobs \
-  --python /srv/bigcherry-venv/bin/python
+  --project-root ${BIGCHERRY_ROOT} \
+  --work-root ${DATA_ROOT}/bigcherry-jobs \
+  --python ${BIGCHERRY_VENV}/bin/python
 ```
 
-Use `--apply --enable` only after reviewing rendered units. Brutus Slurm has a separate dry-run-first `tools/admin/install_brutus_slurm.py` path requiring accepted inventory and MUNGE/GRES validation.
+Use `--apply --enable` only after reviewing rendered units. dev Slurm has a separate dry-run-first `tools/admin/install_node_slurm.py` path requiring accepted inventory and MUNGE/GRES validation.
 
 ## Remaining real-host gates
 
-- Brutus stable identity persistence/peer topology/real generated GRES + `slurmd -G`;
+- dev stable identity persistence/peer topology/real generated GRES + `slurmd -G`;
 - allocation -> stable-ID and ROCm cgroup/peer/tensor-split matrix;
 - live llama-swap snapshot + root exclusive-window admission/recovery;
 - loaded-idle/noise qualification;

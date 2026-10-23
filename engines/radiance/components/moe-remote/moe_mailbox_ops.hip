@@ -442,9 +442,9 @@ __global__ void mailbox_add_rows_kernel(
             if (from[0] || from[1])
                 acc += bf16_to_f32(__builtin_nontemporal_load(reinterpret_cast<const uint16_t*>(
                     base + h->result_offset[0 * kMaxRanks + 1]) + (uint64_t)token * hidden + col));
-        } else if (mask_only != 1u) {
-            /* round_sum (R3_MOE_WORKER_COMBINE=round, diagnostic): the helpers' rows summed in fp32 and rounded to bf16
-             * once, as helper 0's combine writes them, so the combine's rounding is measured without the combine. */
+        } else if (mask_only != 1u && round_sum) {
+            /* R3_MOE_WORKER_COMBINE=round (diagnostic): the helpers' rows summed in fp32 and rounded to bf16 once, as
+             * helper 0's combine writes them, so the combine's rounding is measured without the combine. */
             float hs = 0.0f;
             for (uint32_t k = 0; k < helpers; ++k) {
                 if (!from[k]) continue;
@@ -453,8 +453,15 @@ __global__ void mailbox_add_rows_kernel(
                     base + h->result_offset[slot * kMaxRanks + slot]) + (uint64_t)token * hidden;
                 hs += bf16_to_f32(__builtin_nontemporal_load(result + col));
             }
-            acc += round_sum && (from[0] || from[1]) ? bf16_to_f32(f32_to_bf16_rn(hs)) : hs;
-        }
+            if (from[0] || from[1]) acc += bf16_to_f32(f32_to_bf16_rn(hs));
+        } else if (mask_only != 1u)
+            for (uint32_t k = 0; k < helpers; ++k) {
+                if (!from[k]) continue;
+                const uint32_t slot = step_slot(k, rank, helpers);
+                const uint16_t* result = reinterpret_cast<const uint16_t*>(
+                    base + h->result_offset[slot * kMaxRanks + slot]) + (uint64_t)token * hidden;
+                acc += bf16_to_f32(__builtin_nontemporal_load(result + col));
+            }
         const uint16_t gathered = f32_to_bf16_rn(acc);
         if (!shared) {
             out[(uint64_t)token * hidden + col] = gathered;

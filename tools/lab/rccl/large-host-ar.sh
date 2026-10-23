@@ -4,7 +4,7 @@
 set -u
 out=$1; mkdir -p "$out"
 here=$(cd "$(dirname "$0")" && pwd)
-rocm=${BC_HIP_PATH:-/mnt/vault/tmp/bc-rocm}
+rocm=${BC_HIP_PATH:-${BC_TMP_ROOT}/bc-rocm}
 "$rocm/bin/hipcc" -O2 -mavx2 --offload-arch=gfx1100,gfx1201 "$here/large-host-ar.hip" -o "$out/large-host-ar" -pthread 2>&1 | grep -E "error"
 [ -x "$out/large-host-ar" ] || exit 1
 for vis in 0,1,2 0,1; do

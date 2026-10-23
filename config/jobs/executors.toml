@@ -1,9 +1,9 @@
 # BigCherry execution targets. Scientific series bind to one target/inventory
-# before submission; adding a remote target does not mix its evidence with Brutus.
+# before submission; adding a remote target does not mix its evidence with dev.
 
-[executor.brutus]
+[executor.dev]
 kind = "slurm"
-host_id = "brutus"
+host_id = "dev"
 platform_family = "linux-rocm"
 default = true
 build_partition = "bc-build"

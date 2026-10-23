@@ -32,7 +32,7 @@ Implemented/offline-tested:
 
 ## Production decision
 
-For each timed Brutus run derive:
+For each timed dev run derive:
 
 ```text
 config_hash
@@ -53,7 +53,7 @@ Until loaded-idle is qualified, timed gating measurement must quiesce production
 
 Any config hash/potential/ambiguity change or production process/VRAM use on a target GPU during measurement is environment contamination; discard/retry the sample, never classify it as scientific regression.
 
-## Remaining Brutus service work
+## Remaining dev service work
 
 1. live adapter for llama-swap config + `/running` + backend argv/env + accepted-stable-ID AMD process/VRAM attribution;
 2. root-owned admission/window helper and minimal sudoers/systemd surface with boot/crash recovery;

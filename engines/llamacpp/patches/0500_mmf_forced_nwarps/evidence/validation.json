@@ -47,7 +47,7 @@
       },
       "campaign_identity": "2652ca7c10c8e3eb6b94a68a9a70904f019770d1842a052ecfc39dec979b4bc0",
       "campaign_identity_digest": "2652ca7c10c8e3eb6b94a68a9a70904f019770d1842a052ecfc39dec979b4bc0",
-      "campaign_workdir": "/home/audumla/pa26-evidence-run3/0500_mmf_forced_nwarps/framework/0500_mmf_forced_nwarps",
+      "campaign_workdir": "${HOME}/pa26-evidence-run3/0500_mmf_forced_nwarps/framework/0500_mmf_forced_nwarps",
       "check_results": {
         "apply": {
           "artifacts": [],
@@ -421,7 +421,7 @@
       },
       "campaign_identity": "27eca26e0184812fcb11083ef933e2d4d3bf40398879bc4e06208bff43aec514",
       "campaign_identity_digest": "27eca26e0184812fcb11083ef933e2d4d3bf40398879bc4e06208bff43aec514",
-      "campaign_workdir": "/home/audumla/pa26-evidence-run4/0500_mmf_forced_nwarps/framework/0500_mmf_forced_nwarps",
+      "campaign_workdir": "${HOME}/pa26-evidence-run4/0500_mmf_forced_nwarps/framework/0500_mmf_forced_nwarps",
       "check_results": {
         "apply": {
           "artifacts": [
@@ -809,7 +809,7 @@
       },
       "campaign_identity": "2cbf354744a5b86aa4bea904c039af4f9590255a7da14f1f0e4660a44725eeb0",
       "campaign_identity_digest": "2cbf354744a5b86aa4bea904c039af4f9590255a7da14f1f0e4660a44725eeb0",
-      "campaign_workdir": "/home/audumla/pa26-evidence-run2/0500_mmf_forced_nwarps/framework/0500_mmf_forced_nwarps",
+      "campaign_workdir": "${HOME}/pa26-evidence-run2/0500_mmf_forced_nwarps/framework/0500_mmf_forced_nwarps",
       "check_results": {
         "apply": {
           "artifacts": [],

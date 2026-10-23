@@ -47,7 +47,7 @@
       },
       "campaign_identity": "0bbc34c9a545ba7c43c1ba6b11eb3d113729bfb3df051c540743a52107120559",
       "campaign_identity_digest": "0bbc34c9a545ba7c43c1ba6b11eb3d113729bfb3df051c540743a52107120559",
-      "campaign_workdir": "/home/audumla/pa26-evidence-run3/1100_hi70_direct_op_evidence/framework/1100_hi70_direct_op_evidence",
+      "campaign_workdir": "${HOME}/pa26-evidence-run3/1100_hi70_direct_op_evidence/framework/1100_hi70_direct_op_evidence",
       "check_results": {
         "apply": {
           "artifacts": [],
@@ -418,7 +418,7 @@
       },
       "campaign_identity": "afe13d0a980dd4116e427bd688c2ea6192d13791471ca75bfd4f39ea6e3014d6",
       "campaign_identity_digest": "afe13d0a980dd4116e427bd688c2ea6192d13791471ca75bfd4f39ea6e3014d6",
-      "campaign_workdir": "/home/audumla/pa26-evidence-run2/1100_hi70_direct_op_evidence/framework/1100_hi70_direct_op_evidence",
+      "campaign_workdir": "${HOME}/pa26-evidence-run2/1100_hi70_direct_op_evidence/framework/1100_hi70_direct_op_evidence",
       "check_results": {
         "apply": {
           "artifacts": [],
@@ -792,7 +792,7 @@
       },
       "campaign_identity": "ef20802973bd0074af48dc89b963e8408fa2d94f9794fdeb7a305b84456e9f08",
       "campaign_identity_digest": "ef20802973bd0074af48dc89b963e8408fa2d94f9794fdeb7a305b84456e9f08",
-      "campaign_workdir": "/home/audumla/pa26-evidence-run4/1100_hi70_direct_op_evidence/framework/1100_hi70_direct_op_evidence",
+      "campaign_workdir": "${HOME}/pa26-evidence-run4/1100_hi70_direct_op_evidence/framework/1100_hi70_direct_op_evidence",
       "check_results": {
         "apply": {
           "artifacts": [

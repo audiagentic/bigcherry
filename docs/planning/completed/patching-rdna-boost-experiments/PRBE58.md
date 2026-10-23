@@ -35,7 +35,7 @@ To be determined after fetching the fork commit; likely Vulkan backend buffer-tr
 
 ## Validation
 
-Fetch prerequisite (step 1) blocks further validation design. Once designed: hidden-state/output bit-identity vs the 4-copy baseline (mandatory, zero tolerance), copy count/bytes/time + effective TG + PP + VRAM across path variants/draft depths/contexts on dual RDNA4 Vulkan (Brutus, not run here), single-GPU controls.
+Fetch prerequisite (step 1) blocks further validation design. Once designed: hidden-state/output bit-identity vs the 4-copy baseline (mandatory, zero tolerance), copy count/bytes/time + effective TG + PP + VRAM across path variants/draft depths/contexts on dual RDNA4 Vulkan (dev, not run here), single-GPU controls.
 
 ## Effort & Risk
 

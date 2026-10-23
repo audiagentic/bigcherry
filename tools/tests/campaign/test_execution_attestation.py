@@ -85,7 +85,7 @@ class ParseRocmAttestationTests(unittest.TestCase):
         self.assertIn("device line", obs.failure_signature)
 
 
-# Real llama-server output, captured on Brutus 2026-09-05. Note it carries the
+# Real llama-server output, captured on dev 2026-09-05. Note it carries the
 # PCI locator, which ggml_cuda_init's line does NOT.
 _REAL_SERVER = """
 0.00.025.981 I cmn  common_param:   - ROCm0   : AMD Radeon RX 7900 XTX (24560 MiB, 24520 MiB free)

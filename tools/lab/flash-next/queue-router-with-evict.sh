@@ -7,9 +7,9 @@
 # Greedy text: 1357 changes it, so A and B differ here by design; the md5 lines show whether each arm is stable.
 # Run from the lab tree with the branch checked out.
 # Usage: queue-router-with-evict.sh [tag]     (default tag rse1; build name b-metamem-<tag>)
-R=/mnt/data/bigcherry-work/runs
+R=${BC_WORK_ROOT}/runs
 tag=${1:-rse1}
-export BC_MODEL=/mnt/data/llm-models/qwen3.8-flash-next/gguf/mtp/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf
+export BC_MODEL=${BC_MODEL_ROOT}/qwen3.8-flash-next/gguf/mtp/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf
 export BIGCHERRY_PATCH_TRACE=1
 rm -rf $R/b-metamem-$tag.log $R/metamem-$tag* $R/$tag-*
 EXPERIMENT=router-splitk-with-cache-evict CTX_LIST=245760 DEPTH=8192 bash tools/lab/flash-next/queue-meta-mem.sh $tag | grep -E "^timing|SERVER_FAILED|QUEUE_EXIT"

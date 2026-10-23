@@ -11,11 +11,11 @@ work: M
 priority: P1
 ---
 
-# Brutus kernel PCIe P2P DMA quirk for dual-XTX: patch, build, and boot on ROCm-validated 7.0.13 line
+# dev kernel PCIe P2P DMA quirk for dual-XTX: patch, build, and boot on ROCm-validated 7.0.13 line
 
 ## Description
 
-Complete production disposition and newer-ROCm validation for the narrowly-scoped Brutus dual-XTX PCIe P2P DMA quirk. The kernel remains diagnostic until promotion criteria are met.
+Complete production disposition and newer-ROCm validation for the narrowly-scoped dev dual-XTX PCIe P2P DMA quirk. The kernel remains diagnostic until promotion criteria are met.
 
 ## Steps
 
@@ -35,7 +35,7 @@ The quirk is a platform/endpoint/topology admission change, not proof that kerne
 
 ## Files
 
-Brutus linux v7.0.13 quirk tree/package; fallback boot entry; P2P pair matrix; correctness-validated push benchmark; RCCL topology logs; GP11 rerun artifacts and rollback record.
+dev linux v7.0.13 quirk tree/package; fallback boot entry; P2P pair matrix; correctness-validated push benchmark; RCCL topology logs; GP11 rerun artifacts and rollback record.
 
 ## Validation
 

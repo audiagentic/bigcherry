@@ -15,7 +15,7 @@ priority: null
 
 ## Description
 
-The current shared PCIe-AtomicOps predicate and stale-test refresh are correct prerequisites, but no admission-enabling allowlist is justified yet. Dev GPT review (req_a569c67f6b3e4312) confirms the real next slice is fail-closed topology/version evidence plumbing; patch 1225 must continue returning false for unknown/unqualified records until exact Brutus whitelist inputs exist.
+The current shared PCIe-AtomicOps predicate and stale-test refresh are correct prerequisites, but no admission-enabling allowlist is justified yet. Dev GPT review (req_a569c67f6b3e4312) confirms the real next slice is fail-closed topology/version evidence plumbing; patch 1225 must continue returning false for unknown/unqualified records until exact dev whitelist inputs exist.
 
 ## Steps
 
@@ -23,7 +23,7 @@ The current shared PCIe-AtomicOps predicate and stale-test refresh are correct p
 2. Extend RcclTopology evidence beyond descriptive ID and architecture: canonical PCI BDF/device placement, PCIe nodes/edges/root-port relations, link/hop/NUMA properties, AtomicOps/transport capabilities, and explicit unknown state.
 3. Persist exact ROCm runtime/driver and RCCL build identity with qualification artifacts; missing or unreadable fields make a record non-admissible.
 4. Add no-GPU tests for canonical identity stability, placement/order differences, missing topology data, version capture, unknown/fail-closed behavior, and shared-predicate coverage.
-5. Run Brutus qualification to freeze exact positive and negative topology/version rows, including managed direct and 0840 secondary communicator paths.
+5. Run dev qualification to freeze exact positive and negative topology/version rows, including managed direct and 0840 secondary communicator paths.
 6. Only after that evidence exists, implement an exact conjunction allowlist; otherwise retain the current fail-closed false outcome and document the external evidence gap.
 
 ## Detailed Solution & Technical Design
@@ -56,7 +56,7 @@ Hardware-free evidence slice implemented and verified. Focused command:
 $env:PYTHONPATH='tools'; uv run --no-sync python -m pytest -q tools/tests/patch/test_hi85_nccl_heterogeneous_arch_guard.py tools/tests/profiling/test_rccl_qualify.py tools/tests/profiling/test_rccl_qualify_campaign.py
 Result: 58 passed, 1 skipped. Ruff check over the changed profiling and test files passes.
 
-Brutus snapshot 2026-09-10 records ROCm/HIP 7.2.53211-97f5574fe2, RCCL 2.27.7, exact librccl SHA/build ID, GPU placement graph, raw evidence hashes, a fresh all-device `hipDeviceAttributeHostNativeAtomicSupported` probe, and a bounded crash-isolated direct RCCL qualification in docs/evidence/pha03-rccl-topology-evidence-20260910/README.md. The probe reports devices 0/1/2 as supported and device 3 as unsupported, matching the shared predicate. Direct RCCL qualification passed the homogeneous control and both CPU-direct XTX+R9700 pairs, while the chipset-routed XTX+6900XT negative control faulted and the control recovered after each fault. This is still provenance only: complete per-component AtomicOps/transport evidence and managed BigCherry direct plus 0840 collective success are still missing, so no positive admission row is claimed.
+dev snapshot 2026-09-10 records ROCm/HIP 7.2.53211-97f5574fe2, RCCL 2.27.7, exact librccl SHA/build ID, GPU placement graph, raw evidence hashes, a fresh all-device `hipDeviceAttributeHostNativeAtomicSupported` probe, and a bounded crash-isolated direct RCCL qualification in docs/evidence/pha03-rccl-topology-evidence-20260910/README.md. The probe reports devices 0/1/2 as supported and device 3 as unsupported, matching the shared predicate. Direct RCCL qualification passed the homogeneous control and both CPU-direct XTX+R9700 pairs, while the chipset-routed XTX+6900XT negative control faulted and the control recovered after each fault. This is still provenance only: complete per-component AtomicOps/transport evidence and managed BigCherry direct plus 0840 collective success are still missing, so no positive admission row is claimed.
 
 ## Effort & Risk
 
@@ -71,7 +71,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 - Topology evidence identity is canonical, ordinal-independent, placement-sensitive, and fail-closed when any required field is missing or unknown.
 - Qualification artifacts retain exact PCIe graph/capability and ROCm/driver/RCCL provenance.
 - Existing direct and 0840 communicator paths continue to use the shared predicate; no silent post-init fallback is added.
-- Positive admission remains disabled until exact Brutus whitelist inputs are captured; no invented allowlist is accepted.
+- Positive admission remains disabled until exact dev whitelist inputs are captured; no invented allowlist is accepted.
 - After evidence capture, only an exact topology plus AtomicOps plus version-window conjunction may be enabled and promoted through PHA04/PHA05.
 
 ## Notes
@@ -107,9 +107,9 @@ Dev GPT gate review req_a569c67f6b3e4312: no admission-enabling change until exa
 - chg_20260909_141436_the-safe-rccl-evidence-plumbin_6883
 - 2026-09-09T14:14:36.246107+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-09T14:17:44.578152+00:00 (updated-by): Updated: section:files, section:validation, section:notes
-- chg_20260909_141754_added-current-brutus-topology_6647
+- chg_20260909_141754_added-current-dev-topology_6647
 - 2026-09-09T14:17:54.082286+00:00 (updated-by): Updated: section:ledger-events
-- chg_20260909_142236_added-current-brutus-atomicops_2526
+- chg_20260909_142236_added-current-dev-atomicops_2526
 - 2026-09-09T14:22:36.242073+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260909_142318_kept-the-planning-rebaseline-t_9396
 - 2026-09-09T14:23:18.204353+00:00 (updated-by): Updated: section:ledger-events

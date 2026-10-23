@@ -7,7 +7,7 @@ signal). Design settled with gpt (session ses_fec603fc33ee4089,
 req_c3ff203a1d4b40c5 + req_8d0cd9d969314e31, 2026-08-27).
 
 CPU call-graph profiling (perf) is NOT implemented here -- perf is
-currently non-functional on Brutus (kernel/package mismatch, see HI133).
+currently non-functional on dev (kernel/package mismatch, see HI133).
 This workflow always reports ``cpu: unavailable`` rather than failing;
 every stage that touches a GPU still runs for real.
 

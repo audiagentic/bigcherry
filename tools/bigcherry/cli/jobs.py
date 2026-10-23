@@ -134,7 +134,7 @@ def main(argv: list[str] | None = None) -> int:
     migrate = sub.add_parser("migrate-legacy")
     migrate.add_argument("--command", required=True)
     migrate.add_argument("--planned-sessions", type=int, required=True)
-    migrate.add_argument("--executor-id", default="brutus")
+    migrate.add_argument("--executor-id", default="dev")
     migrate.add_argument("--host-id", default=None)
     migrate.add_argument("--platform-family", default=None)
     migrate.add_argument("--code-ref", default="patch-refactor")

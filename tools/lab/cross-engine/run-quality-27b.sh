@@ -17,10 +17,10 @@ bin=$1 out=$2; shift 2
 mkdir -p "$out"
 depths=("$@"); [ ${#depths[@]} -eq 0 ] && depths=(2048 8192 24576)
 here=$(cd "$(dirname "$0")" && pwd)
-src=${RADIANCE_SRC:-/mnt/data/bigcherry-work/engines/radiance}
-RAD_MODEL=${RAD_MODEL:-/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-27b-mxfp4/qwen3.8-27b-mxfp4.rad}
-REF_GGUF=${REF_GGUF:-/mnt/data/llm-models/qwen3.8-27b/gguf/unsloth/Qwen3.8-27B-Q8_0.gguf}
-Q4_GGUF=${Q4_GGUF:-/mnt/data/llm-models/qwen3.8-27b/gguf/unsloth/Qwen3.8-27B-UD-Q4_K_M.gguf}
+src=${RADIANCE_SRC:-${BC_WORK_ROOT}/engines/radiance}
+RAD_MODEL=${RAD_MODEL:-${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-27b-mxfp4/qwen3.8-27b-mxfp4.rad}
+REF_GGUF=${REF_GGUF:-${BC_MODEL_ROOT}/qwen3.8-27b/gguf/unsloth/Qwen3.8-27B-Q8_0.gguf}
+Q4_GGUF=${Q4_GGUF:-${BC_MODEL_ROOT}/qwen3.8-27b/gguf/unsloth/Qwen3.8-27B-UD-Q4_K_M.gguf}
 PORT=${PORT:-18746}
 CTX=${CTX:-40960}
 for v in $(env | grep -oE "^(BIGCHERRY_[A-Z0-9_]+|GGML_HIP_[A-Z0-9_]+)"); do unset "$v"; done

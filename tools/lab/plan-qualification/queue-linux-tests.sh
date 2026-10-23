@@ -3,12 +3,12 @@
 set -u
 cd "$(cd "$(dirname "$0")/../../.." && pwd)"
 # queue.sh requires a model and HIP path even for script-only rows; the tests use neither.
-export BC_HIP_PATH=/mnt/vault/tmp/bc-rocm
-export BC_MODEL=/mnt/data/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf
+export BC_HIP_PATH=${BC_TMP_ROOT}/bc-rocm
+export BC_MODEL=${BC_MODEL_ROOT}/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf
 jobs=$(mktemp)
 run=linux-tests-$(date +%Y%m%dT%H%M)
 cat > "$jobs" <<JOBS
-VIS=0 SCRIPT $run tools/lab/plan-qualification/linux-test-suite.sh /mnt/data/bigcherry-work/test-clone patch-refactor
+VIS=0 SCRIPT $run tools/lab/plan-qualification/linux-test-suite.sh ${BC_WORK_ROOT}/test-clone patch-refactor
 JOBS
 bash tools/lab/plan-qualification/queue.sh "$jobs"
 echo "QUEUE_EXIT=$? $(date -Is)"

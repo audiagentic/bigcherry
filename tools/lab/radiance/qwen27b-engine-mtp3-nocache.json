@@ -4,7 +4,7 @@
  "engine": "radiance",
  "evidence_role": "diagnostic",
  "execution_evidence": "observe",
- "model": "/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-27b-mxfp4/qwen3.8-27b-mxfp4.rad",
+ "model": "${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-27b-mxfp4/qwen3.8-27b-mxfp4.rad",
  "server_args": [
   "--radiance-home",
   "${RAD_HOME}",

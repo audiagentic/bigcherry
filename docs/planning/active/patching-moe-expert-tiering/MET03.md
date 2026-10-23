@@ -91,7 +91,7 @@ One placement owner (MET01), one range semantic owner (MET02), one tier-graph/CP
 
 Requires MET01 (profile) and MET02 (range op). Decision gate: if throughput tracks the predicted curve, proceed to MET04/MET05.
 
-2026-10-05, folded in from BCOP16 (audit backfill) - fused CPU cold-tail gate: before any CPU-tail fusion, profile gate/up/down matmul, activation/intermediate traffic, combine, scheduler and CPU service time. Attempt fusion only if non-matmul overhead is >=15%. The current Brutus deployment keeps all experts on GPU, so this only matters if a CPU tail returns.
+2026-10-05, folded in from BCOP16 (audit backfill) - fused CPU cold-tail gate: before any CPU-tail fusion, profile gate/up/down matmul, activation/intermediate traffic, combine, scheduler and CPU service time. Attempt fusion only if non-matmul overhead is >=15%. The current dev deployment keeps all experts on GPU, so this only matters if a CPU tail returns.
 
 External mechanism references: https://github.com/gamozolabs/llama.cpp ; https://github.com/ggml-org/llama.cpp/releases/tag/b11374
 

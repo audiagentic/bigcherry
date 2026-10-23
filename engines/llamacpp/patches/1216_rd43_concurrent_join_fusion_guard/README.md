@@ -29,7 +29,7 @@ patch 1215.
 
 A dedicated correctness producer (`validation/rd43_correctness.py`, a thin
 wrapper over the shared `tools/bigcherry/experiment/perplexity.py`
-PPL-comparison primitive) was run for real on Brutus via
+PPL-comparison primitive) was run for real on dev via
 `validation_campaign.run_rd43_ppl_check()`, uniquely setting
 `GGML_CUDA_GRAPH_OPT=1` (`GRAPH_OPT_ENV`) for both arms -- the real condition
 under which RD42's join/graph-capture interaction actually reproduces:
@@ -59,7 +59,7 @@ PPL-equality evidence does not formally substitute for.
 The contract's own required check is `backend_reference`, not `ppl_equality`
 -- the 2026-09-11 PPL result above is real but does not formally satisfy
 this named check. Ran the correct check per GPT's exact design: real
-Brutus hardware, single gfx1100, control = baseline+1215 (isolating 1216's
+dev hardware, single gfx1100, control = baseline+1215 (isolating 1216's
 own marginal effect, not plain baseline), subject = baseline+1215+1216,
 `GGML_CUDA_GRAPH_OPT=1` both arms, same fixed deterministic prompt
 (temp=0, seed=42, 64 decode steps), comparing generated token IDs plus

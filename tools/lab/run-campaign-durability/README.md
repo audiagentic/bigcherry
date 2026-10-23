@@ -132,7 +132,7 @@ Representative successful result:
 
 Failures discovered during CI development were retained as design findings rather than waived: Noble 23.11 has no `slurmctld -t`; exact pending reason strings are unstable diagnostics; slurmdbd/account associations are not required for the accepted v1 stack.
 
-## Still Brutus/hardware-only
+## Still dev/hardware-only
 
 The validation pack deliberately does **not** claim:
 
@@ -146,4 +146,4 @@ The validation pack deliberately does **not** claim:
 - production-loaded-idle/active measurement-noise equivalence;
 - full GPU `validation_campaign` evidence parity.
 
-Initial Brutus cgroup policy is the already-proven `ConstrainDevices=no` fallback. Device filtering is enabled only after hardware qualification.
+Initial dev cgroup policy is the already-proven `ConstrainDevices=no` fallback. Device filtering is enabled only after hardware qualification.

@@ -52,7 +52,7 @@
       },
       "campaign_identity": "29dc719fc5c64f14b27de9412ac8e26ee3edb710d06ba23a066cdc135197db83",
       "campaign_identity_digest": "29dc719fc5c64f14b27de9412ac8e26ee3edb710d06ba23a066cdc135197db83",
-      "campaign_workdir": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/runs/pa40-fwcfg/r4-0110/framework/0110_campaign_tune_record_build",
+      "campaign_workdir": "${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/work/runs/pa40-fwcfg/r4-0110/framework/0110_campaign_tune_record_build",
       "check_results": {
         "apply": {
           "artifacts": [
@@ -456,7 +456,7 @@
       },
       "campaign_identity": "33e8d9fc130b7d346af51fba541cf84d35ace64b9302ec57e64598324c70c90d",
       "campaign_identity_digest": "33e8d9fc130b7d346af51fba541cf84d35ace64b9302ec57e64598324c70c90d",
-      "campaign_workdir": "/home/audumla/pa26-evidence-run/0110_campaign_tune_record_build/framework/0110_campaign_tune_record_build",
+      "campaign_workdir": "${HOME}/pa26-evidence-run/0110_campaign_tune_record_build/framework/0110_campaign_tune_record_build",
       "check_results": {
         "apply": {
           "artifacts": [
@@ -868,7 +868,7 @@
       },
       "campaign_identity": "efb37952f2e130092f3f3ed6427f42656e073376d22ac1cdf49467b5c1d0999d",
       "campaign_identity_digest": "efb37952f2e130092f3f3ed6427f42656e073376d22ac1cdf49467b5c1d0999d",
-      "campaign_workdir": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/runs/fwcfg-b11126-r2/0110_campaign_tune_record_build/framework/0110_campaign_tune_record_build",
+      "campaign_workdir": "${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/work/runs/fwcfg-b11126-r2/0110_campaign_tune_record_build/framework/0110_campaign_tune_record_build",
       "check_results": {
         "apply": {
           "artifacts": [

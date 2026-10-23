@@ -91,17 +91,17 @@ class Host:
     name: str
     description: str
     hostname: str
-    address: str
-    home: str
-    repo: str
+    repo_root: str
     cache_root: str
-    share: str
     model_root: str
     bench_harness: str
-    rocm: str
-    rocm_shim: str
+    #: the default ROCm install (used when a recipe names no SDK version)
+    rocm_root: str
+    #: named ROCm SDKs for this host, as (version, root) pairs; relative roots are repo-relative
+    rocm_sdks: tuple[tuple[str, str], ...]
     production_port: int
-    bench_port: int
+    #: port for tests, benchmarks and ad-hoc servers; must never equal production_port
+    test_port: int
     #: process names (exact ``comm``) whose presence means the host's GPUs are in use; ``remote run`` refuses to start
     #: while any is running.
     busy_processes: tuple[str, ...]
@@ -168,9 +168,24 @@ def _require(table: dict, key: str, where: str) -> object:
 
 
 _HOST_SCALAR_KEYS = (
-    "hostname", "address", "home", "repo", "cache-root", "share", "model-root",
-    "bench-harness", "rocm", "rocm-shim", "production-port", "bench-port",
+    "hostname", "repo-root", "cache-root", "model-root",
+    "bench-harness", "rocm-root", "production-port", "test-port",
 )
+
+
+def _rocm_sdks(raw: object, where: str, repo_root: str) -> tuple[tuple[str, str], ...]:
+    """The ``[host.<name>.rocm-sdks]`` table: version name -> SDK root."""
+    if raw is None:
+        return ()
+    if not isinstance(raw, dict):
+        raise EnvironmentError_(f"{where}: rocm-sdks must be a table of version = root")
+    out: list[tuple[str, str]] = []
+    for version, root in sorted(raw.items()):
+        if not isinstance(root, str) or not root:
+            raise EnvironmentError_(f"{where}: rocm-sdks.{version} must be a non-empty path")
+        resolved = root if root.startswith("/") else f"{repo_root.rstrip('/')}/{root}"
+        out.append((str(version), resolved))
+    return tuple(out)
 
 
 def _apply_env_overrides(raw: dict) -> None:
@@ -239,17 +254,14 @@ def load(path: str | Path) -> Environment:
             name=name,
             description=str(body.get("description", "")).strip(),
             hostname=str(_require(body, "hostname", where)),
-            address=str(body.get("address", "")),
-            home=str(body.get("home", "")),
-            repo=str(body.get("repo", "")),
+            repo_root=str(body.get("repo-root", "")),
             cache_root=str(body.get("cache-root", "")),
-            share=str(body.get("share", "")),
             model_root=str(body.get("model-root", "")),
             bench_harness=str(body.get("bench-harness", "")),
-            rocm=str(body.get("rocm", "")),
-            rocm_shim=str(body.get("rocm-shim", "")),
+            rocm_root=str(body.get("rocm-root", "")),
+            rocm_sdks=_rocm_sdks(body.get("rocm-sdks"), where, str(body.get("repo-root", ""))),
             production_port=int(body.get("production-port", 0)),
-            bench_port=int(body.get("bench-port", 0)),
+            test_port=int(body.get("test-port", 0)),
             busy_processes=tuple(str(n) for n in body.get("busy-processes", ())),
             environment_file=str(
                 body.get("environment-file")

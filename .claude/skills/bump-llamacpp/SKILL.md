@@ -17,7 +17,7 @@ went looking for it.
 
 Use this when the pin is at most a few days old. Anything that stops here drops you into the matching full section.
 
-1. Orient (about 10 s): `python -m bigcherry --engine llamacpp pin-status --all-remotes`; confirm Brutus is idle
+1. Orient (about 10 s): `python -m bigcherry --engine llamacpp pin-status --all-remotes`; confirm dev is idle
    (`pgrep -af "llama-server|ninja|queue-"`). Latest tag: `gh api repos/ggml-org/llama.cpp/releases --jq '.[0].tag_name'`.
 2. Optional, in the background: `python -m bigcherry --engine llamacpp sources check` (30+ minutes; one fork's `git cherry` times
    out at 600 s). Findings are triage input, not a bump blocker.
@@ -37,7 +37,7 @@ Use this when the pin is at most a few days old. Anything that stops here drops 
    `--skip-compile` is an explicit exception only; it is recorded in the release record notes.
    Check whether upstream caused a listed failure before treating it as bump work:
    `git -C vendor/llama.cpp diff --stat <old-sha> <new-sha> -- <file>`.
-4. Push, then on Brutus `git pull --ff-only` (the build fetches a newly pinned tag itself).
+4. Push, then on dev `git pull --ff-only` (the build fetches a newly pinned tag itself).
 5. Build + smoke: `tools/lab/flash-next/queue-bump-smoke.sh <previous build run> <new build run>` (build about
    10 minutes, a no-MTP run, a 24K MTP decode ABA of previous-pin vs new-pin build).
 6. Regression recheck, always: `tools/lab/flash-next/queue-bump-ab.sh <new build run> <previous build run> <tag>`
@@ -54,11 +54,11 @@ Use this when the pin is at most a few days old. Anything that stops here drops 
    pushes directly to `main`, and no commit-message `Release-As` footer is
    used. Do not create release tags by hand.
 
-Still manual: the Brutus pull/build/smoke, and the completion gate.
+Still manual: the dev pull/build/smoke, and the completion gate.
 
 If a regression needs a bisect: build each upstream point from a separate clone with a local-only branch that sets
 `pinned` to the commit (the queue's `@build-run` names are shared through the work root, so existing scripts compare
-across clones). That clone must have its OWN `vendor/llama.cpp` - `/mnt/data/bigcherry-work/test-clone` symlinks it
+across clones). That clone must have its OWN `vendor/llama.cpp` - `${BIGCHERRY_ROOT}/test-clone` symlinks it
 to the main workspace, so every `bigcherry --engine llamacpp pull` there moves the campaign tree's vendor checkout and the completion
 gate then reports a mismatch. Afterwards put it back (`git -C vendor/llama.cpp checkout <tag>` in the main
 workspace) before running `pin-status --complete`. Compare every bisect point against the SAME reference binary;
@@ -85,7 +85,7 @@ ssh <tree-host> "ps aux | grep -E 'llama-server|llama-bench|ninja|cmake|tail.*ex
 ```
 
 A clean git status is NOT sufficient on its own -- the 2026-08-29 bump found
-Brutus's configured campaign tree looked clean-enough in git but had two
+dev's configured campaign tree looked clean-enough in git but had two
 active experiment log tails from a concurrent session. `tools/bigcherry/core/tree_activity.py`
 (HI151) exists specifically to make this checkable in code
 (`tree_activity.list_live_leases(work_root, project_root)`), but not every
@@ -96,7 +96,7 @@ for which runners are wired).
 If a configured tree looks even slightly ambiguous, prefer a **separate,
 known-clean checkout** over risking a shared one -- e.g. this project keeps
 `~/bigcherry` (a plain, always-idle clone) alongside the real configured
-campaign path `/mnt/vault/development/llmhosts/bigcherry` on Brutus for
+campaign path `${DEV_ROOT}/llmhosts/bigcherry` on dev for
 exactly this reason.
 
 ## 1. Check what's redundant or merged upstream FIRST
@@ -279,7 +279,7 @@ python -m bigcherry build --lane <source>:<build>:<platform> \
 
 - Pick the lane matching the tree you just bumped (e.g.
   `bigcherry-tuning:control:windows-gfx1100` for a local Windows GPU,
-  `bigcherry-tuning:control:linux-multi` for Brutus -- PA29 cutover:
+  `bigcherry-tuning:control:linux-multi` for dev -- PA29 cutover:
   `build.control` needs 0110's campaign plumbing, which only
   `bigcherry-tuning` composes among the semantic sources).
 - `--model` triggers the built-in runtime-smoke validation automatically --

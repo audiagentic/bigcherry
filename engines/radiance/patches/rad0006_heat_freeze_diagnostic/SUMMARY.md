@@ -27,4 +27,4 @@ Rule out the expert mover as the cause of the Qwen3.6-35B-A3B MTP acceptance col
 
 ## Evidence
 
-Built on Brutus (`radiance-diag:moe-diag:linux-radiance`, plan 058e639b747b85e5177bdab8b38f6ba3) and run once (`qwen35b-engine-mtp3-freeze.json`): the server log printed "promotions frozen after 400 steps" and acceptance stayed at 0.02-0.07 at 4 and 6 streams. Kept as `untested`, a lab diagnostic outside the production set.
+Built on dev (`radiance-diag:moe-diag:linux-radiance`, plan 058e639b747b85e5177bdab8b38f6ba3) and run once (`qwen35b-engine-mtp3-freeze.json`): the server log printed "promotions frozen after 400 steps" and acceptance stayed at 0.02-0.07 at 4 and 6 streams. Kept as `untested`, a lab diagnostic outside the production set.

@@ -77,8 +77,8 @@ __global__ __launch_bounds__(kThreads) void hc_down_pf2_fp8_kernel(
 }
 
 int main(int argc, char** argv) {
-    const char* npath = argc > 1 ? argv[1] : "/mnt/data/bigcherry-work/ndump.bin";
-    const char* wpath = argc > 2 ? argv[2] : "/mnt/data/bigcherry-work/wdump.bin";
+    const char* npath = argc > 1 ? argv[1] : "ndump.bin";
+    const char* wpath = argc > 2 ? argv[2] : "wdump.bin";
     FILE* fn = fopen(npath, "rb"), *fw = fopen(wpath, "rb");
     if (!fn || !fw) { printf("cannot open inputs\n"); return 1; }
     std::vector<float> n_row(HN);

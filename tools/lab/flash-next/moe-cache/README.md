@@ -27,7 +27,7 @@ The binary includes 1337+1338; no 1338 profile variable is set in the primary ma
 
 ## Outputs / gates
 
-Generated outputs are under `/mnt/data/bigcherry-work/runs/moe-cache-<tag>/ncmoe-<N>/`.
+Generated outputs are under `${BIGCHERRY_ROOT}/runs/moe-cache-<tag>/ncmoe-<N>/`.
 For each request the runner prints greedy md5, prompt/decode t/s, MTP acceptance and the
 `BIGCHERRY_PATCH_HIT patch=1337_moe_expert_caching ...` hit/miss/upload marker.
 

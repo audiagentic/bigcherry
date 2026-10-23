@@ -17,7 +17,7 @@ pin-status: local
   marker        b9acf138a1e2 -> 23b0202a189c (b11552) [committed-clean]
   VERDICT       consistent  (content-unverified: 56 tracked file(s) modified (expected after patch application; verified by audit, not here))
 
-pin-status: brutus (remote)
+pin-status: dev (remote)
   vendor HEAD   23b0202a189c
   pin           b11552 -> 23b0202a189c
   bigcherry     5b65e5fcb49b
@@ -28,7 +28,7 @@ AGGREGATE  converged
 COMPLETION  PASS
 
 hardware evidence:
-Pin b11474 -> b11552 (23b0202a189c): hardware evidence, Brutus (2x RX 7900 XTX gfx1100, R9700 gfx1201, RX 6900 XT gfx1030 drafter), 2026-10-11/12.
+Pin b11474 -> b11552 (23b0202a189c): hardware evidence, dev (2x RX 7900 XTX gfx1100, R9700 gfx1201, RX 6900 XT gfx1030 drafter), 2026-10-11/12.
 
 Build: b-pq11552 (bigcherry:stock:linux-multi, gfx1100,gfx1201,gfx1030) compiled first time from the reconciled production set (61/61 patches apply; strict audit 34/34). Base for every comparison: b-p11474, same recipe on the previous pin.
 

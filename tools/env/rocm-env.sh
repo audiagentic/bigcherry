@@ -25,7 +25,7 @@ _rocm_env_main() {
         if [[ ! -d "$vendor_root" ]]; then
             echo "No vendored ROCm installs found under $vendor_root"
             echo "Populate one with: rsync -a /opt/rocm-<ver>/ '$vendor_root/<ver>/'  (Linux)"
-            echo "                or: robocopy 'C:\\Program Files\\AMD\\ROCm\\<ver>' '$vendor_root\\<ver>' /E  (Windows)"
+            echo "                or: robocopy '${WIN_ROCM_ROOT}\\<ver>' '$vendor_root\\<ver>' /E  (Windows)"
             return 0
         fi
         echo "Vendored ROCm versions under $vendor_root :"

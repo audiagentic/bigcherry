@@ -40,7 +40,7 @@ ggml/src/ggml-cuda/mmq-config-rdna3.cuh (RDNA3 table, needs direct read to confi
 
 ## Validation
 
-1. Catalog dry-run / patch-lint if a new CASE row is added. 2. test-backend-ops MUL_MAT/MUL_MAT_ID parity + temp-0 determinism for every candidate before timing. 3. pp128/512/1024/4096 kernel median/MAD, call-weighted E2E ranking, LDS/VGPR/waves/occupancy via rocprofv3 (Brutus, not run here). 4. Architecture non-target controls (gfx1201/gfx1030 must show no regression from a gfx1100-gated candidate).
+1. Catalog dry-run / patch-lint if a new CASE row is added. 2. test-backend-ops MUL_MAT/MUL_MAT_ID parity + temp-0 determinism for every candidate before timing. 3. pp128/512/1024/4096 kernel median/MAD, call-weighted E2E ranking, LDS/VGPR/waves/occupancy via rocprofv3 (dev, not run here). 4. Architecture non-target controls (gfx1201/gfx1030 must show no regression from a gfx1100-gated candidate).
 
 ## Effort & Risk
 

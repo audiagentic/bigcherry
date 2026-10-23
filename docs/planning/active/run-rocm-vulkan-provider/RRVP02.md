@@ -15,7 +15,7 @@ priority: P2
 
 ## Description
 
-Resume and prioritise the minimum probe needed for the Brutus comparison: Vulkan loader, selected ICD/driver, API version, physical device/PCI identity, subgroup, integer-dot, fp16/bf16 and cooperative-matrix capability.
+Resume and prioritise the minimum probe needed for the dev comparison: Vulkan loader, selected ICD/driver, API version, physical device/PCI identity, subgroup, integer-dot, fp16/bf16 and cooperative-matrix capability.
 
 ## Steps
 

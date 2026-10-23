@@ -2,10 +2,10 @@
 """PRBE20/RD26: pairwise ubatch-size bisection using the already-built
 subject llama-results binary. See README.md for the question this answers.
 
-Usage (on Brutus, inside the repo root):
-    BC_HIP_PATH=/mnt/vault/tmp/bc-rocm python3 tools/lab/prbe20-rd26-bisect/bisect_ubatch.py \
+Usage (on dev, inside the repo root):
+    BC_HIP_PATH=${BC_TMP_ROOT}/bc-rocm python3 tools/lab/prbe20-rd26-bisect/bisect_ubatch.py \
         --binary work/worktrees/builds/1210_rd26_bitidentical_decode_verify_standalone-subject-gfx1100+gfx1201+gfx1030/bin/llama-results \
-        --model /mnt/data/llm-models/qwen3.6-35B-A3B/gguf/mtp/Qwen3.6-35B-A3B-APEX-MTP-I-Compact.gguf \
+        --model ${BC_MODEL_ROOT}/qwen3.6-35B-A3B/gguf/mtp/Qwen3.6-35B-A3B-APEX-MTP-I-Compact.gguf \
         --device 0
 """
 

@@ -36,7 +36,7 @@ Startup ownership is set by `r3_moe_worker.cpp::select_owned/publish_owned` and 
 
 ## Validation
 
-Offline fake-server tests prove no active-map change while request running; 1,000-request, time-only, simultaneous triggers; stale/untrusted snapshot, map mismatch, helper death, clean and unclean restart, prior-good rollback. Brutus: multi-hour mixed workload + short controlled window, verify all generation transitions, forced rollback, KLD/greedy baseline, p95/p99 latency, completed requests, no stranded GPU slots/SHM.
+Offline fake-server tests prove no active-map change while request running; 1,000-request, time-only, simultaneous triggers; stale/untrusted snapshot, map mismatch, helper death, clean and unclean restart, prior-good rollback. dev: multi-hour mixed workload + short controlled window, verify all generation transitions, forced rollback, KLD/greedy baseline, p95/p99 latency, completed requests, no stranded GPU slots/SHM.
 
 ## Effort & Risk
 

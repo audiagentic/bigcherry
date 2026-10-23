@@ -295,7 +295,7 @@ BIGCHERRY_AR_TILE uid=%llu sg=%zu name=%s t0=%lld nt=%lld off=%zu bytes=%zu slot
 
 Synthetic direct tests: 2/3 ranks, f32 tensors, token counts `{1,63,64,65,255,256,257,1024}`, all tail cases, compare range-tiled result byte-for-byte to whole exact AllReduce. Negative tests: mismatched rank range, non-contiguous tensor, missing range proc, unsupported provider.
 
-Hardware: Brutus 2x XTX and production 2x XTX+R9700. ABBA pp1024/2048/4096 and Flash-Next 10K/80K/200K fills. Record prefill t/s, TTFT, exposed collective wall, producer wall, overlap %, PCIe throughput, rank skew and decode control.
+Hardware: dev 2x XTX and production 2x XTX+R9700. ABBA pp1024/2048/4096 and Flash-Next 10K/80K/200K fills. Record prefill t/s, TTFT, exposed collective wall, producer wall, overlap %, PCIe throughput, rank skew and decode control.
 
 Graph reuse/capture on/off, repeated requests and prompt-cache reuse must not stale-reuse events/slots.
 
@@ -324,9 +324,9 @@ PGC12 identified overlap as the main prefill collective lever. PGC15 is the conc
 - 2026-10-05T00:00:00+00:00 (created-by): Created by agent from prefill plan scan.
 - 2026-10-05: Added source-shaped implementation skeleton grounded in llama.cpp 0504396 Meta/provider ABI and backend event model.
 
-## Phase-1 patch outline - b11402 / Brutus prefill round
+## Phase-1 patch outline - b11402 / dev prefill round
 
-This supersedes only the old-pin implementation details above; the ownership and fail-closed design remain. Current pin is llama.cpp b11402 `d89651a7b205`. Active 3-rank provider is RCCL/NCCL, and its implementation is in `ggml/src/ggml-cuda/ggml-cuda.cu`. **Do not edit `allreduce.cu` in phase 1**: that file implements the upstream internal provider, whose b11402 entry point asserts `n_backends == 2`; Brutus prefill has 3 ranks. Add internal/root3 range support only after RCCL overlap is proven.
+This supersedes only the old-pin implementation details above; the ownership and fail-closed design remain. Current pin is llama.cpp b11402 `d89651a7b205`. Active 3-rank provider is RCCL/NCCL, and its implementation is in `ggml/src/ggml-cuda/ggml-cuda.cu`. **Do not edit `allreduce.cu` in phase 1**: that file implements the upstream internal provider, whose b11402 entry point asserts `n_backends == 2`; dev prefill has 3 ranks. Add internal/root3 range support only after RCCL overlap is proven.
 
 ### Exact b11402 seams / anchors
 
@@ -456,7 +456,7 @@ Trace each rejection once under `BIGCHERRY_AR_TILE_TRACE=1`; never silently run 
 
 ### Smallest proof before the full patch
 
-Add a standalone lab program first, e.g. `tools/lab/rccl/ar-overlap-tiled.hip`, using the **actual three Brutus ranks and two HIP streams per device**:
+Add a standalone lab program first, e.g. `tools/lab/rccl/ar-overlap-tiled.hip`, using the **actual three dev ranks and two HIP streams per device**:
 
 1. allocate F32 `[2560,512]` output per GPU plus persistent BF16 tile scratch;
 2. compute stream launches an adjustable synthetic producer into tile i (or a representative HIP GEMM if convenient), records ready;
@@ -522,7 +522,7 @@ Host-only discriminator `pgc15_range_codec_host_gate.py`: Python compilation and
 
 Next gate: trace one real eligible `attn_output` Meta boundary with `{graph_uid, physical_rank_set, producer_op, whole_ne, tile_ne, codec, range, provider_completed, ready/done}`. Do not mistake 1277's preferred route for a completed provider. Require a static/host test that rejects `[768,512]/tile128` unless the range provider explicitly retains BF16. Reject unsupported layout, partial rank, missing streams or changing graph identities.
 
-Only after that gate passes, use existing `tools/lab/rccl` controls to compare serial versus two-stream pipelined **identical work and codec** on the actual three-rank Brutus topology. Require rocprof evidence of `producer(i+1)` overlapping collective(i) and positive pipeline wall gain; otherwise terminal `NO_OVERLAP`, no patch. Then qualify default-off tile128/256 against the same-pin whole-tensor baseline with four independent order-balanced sessions, pp1024/2048/4096, long-context Flash-Next, multi-request/ubatch, graph replay, full logits/KLD/greedy/MTP acceptance, exact byte/work accounting, memory safety and injected failure after tile0. Require >=3% representative end-to-end prefill gain or >=30% of eligible attention-reduction wall hidden, <=1% decode regression and no correctness regression. Otherwise `REJECT_TILE_OVERLAP`.
+Only after that gate passes, use existing `tools/lab/rccl` controls to compare serial versus two-stream pipelined **identical work and codec** on the actual three-rank dev topology. Require rocprof evidence of `producer(i+1)` overlapping collective(i) and positive pipeline wall gain; otherwise terminal `NO_OVERLAP`, no patch. Then qualify default-off tile128/256 against the same-pin whole-tensor baseline with four independent order-balanced sessions, pp1024/2048/4096, long-context Flash-Next, multi-request/ubatch, graph replay, full logits/KLD/greedy/MTP acceptance, exact byte/work accounting, memory safety and injected failure after tile0. Require >=3% representative end-to-end prefill gain or >=30% of eligible attention-reduction wall hidden, <=1% decode regression and no correctness regression. Otherwise `REJECT_TILE_OVERLAP`.
 
 Historical ~0.93 s compute and ~2.4 s collective service imply a **theoretical** ceiling of `min(0.93,2.4)/(0.93+2.4) ~= 27.9%` reduction of their summed service time if *all* work overlapped without overhead. Only an attention-output subset is eligible in phase 1, so its actual ceiling is lower and unknown; no measured speedup.
 
