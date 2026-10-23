@@ -60,6 +60,13 @@ Exposed helper wait per prefill measurably lower; pp4096 end-to-end gain with co
 
 Next prefill lever after RAD18 (combine). Measurements from RAD18 notes. Ask GPT for design review and prior art (e.g. expert-parallel overlap in DeepSpeed-MoE / Megatron / vLLM / SGLang two-batch overlap).
 
+## Execution gate review (2026-10-23)
+
+- First PR is **harness + isolated scheduling experiment only**. Model per-chunk publish, helper execution, local engine work, engine read/merge, and x4 upstream bus contention using captured M/route distributions. Measure end-to-end *critical path*, not helper idle time in isolation.
+- Gate engine patch work on an actual legal execution seam: row partition must preserve routing, expert token IDs, residual order, masking, per-row activation/outputs, sequence ownership, MTP state and CUDA/HIP event lifetimes. A layer's next chunk cannot read results before the matching generation is committed; stop/fault must retire all in-flight chunks.
+- Use an empirical chunk estimator with a bounded search/adaptation; preserve a single-chunk path for small decode and unsafe shapes. No fixed model- or device-specific chunk constant. Exit early if x4 PCIe copies serialize the purported overlap or helper GEMMs lose too much efficiency.
+- Follow-on production PR requires paired pp1024/4096, tg128/512/2048, KLD/top-1, stable fixed-text latency, exposed wait profile, and no increase in host traffic beyond the measured budget. Any numeric reduction-order change is gated by KLD, not assumed bit-identical.
+
 ## Change Log
 
 - 2026-10-23T02:13:57.784115+00:00 (created-by): Created by agent

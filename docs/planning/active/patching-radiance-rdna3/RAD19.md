@@ -58,6 +58,12 @@ No Flash-Next constants (640/384/w4nl64a8h) left in the helper's selection path;
 
 Raised 2026-10-23 while discussing why the helper exists instead of using the engine as an expert host (RAD02 rationale: radiance has no expert-parallel mode; TP splits every layer and needs every rank on one kernel library). Not urgent: the working layout runs full-width experts. Related: RAD02 (inverted expert-parallel layout), RAD18 (helper transport work, R3_MOE_WORKER_COMBINE).
 
+## Execution gate review (2026-10-23)
+
+- Pull exact per-expert width, quantization/dtype, rank count, and gate/up pairing from authenticated container metadata or radiance's actual exported layout. Reject absent/inconsistent metadata and unsupported alignment; never infer dtype from a model filename.
+- Implement the **metadata extraction/shape validation** as a standalone, hardware-free slice/PR before RAD23-A; consume the same typed shape contract in RAD23-A's H/R layout (avoid two competing shape authorities).
+- Keep full-width H=2/R=1 working unchanged. Only enable sliced R>1 after byte-identical Flash-Next replay, negative-shape tests and a second-model probe where available. Do not broaden kernel shape support without its own performance/quality evidence.
+
 ## Change Log
 
 - 2026-10-23T00:48:25.505935+00:00 (created-by): Created by agent
