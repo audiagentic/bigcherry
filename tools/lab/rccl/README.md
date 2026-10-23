@@ -27,7 +27,7 @@ The former multi-slot coalescing sketch in PGC14 is **not safe to implement** wi
 
 ## Outputs
 
-Run outputs under `${BIGCHERRY_ROOT}/runs/<run-name>/` on dev; nothing in the repo.
+Run outputs under `${BC_REPO_ROOT}/runs/<run-name>/` on dev; nothing in the repo.
 
 ## Runtime
 

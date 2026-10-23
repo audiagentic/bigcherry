@@ -1,7 +1,7 @@
 # bigcherry — state of play and what to do next
 
 Written 2026-08-05. Read this first if you are picking the work up, here or on
-`${DEV_IP}`.
+`${BC_HOST}`.
 
 ---
 
@@ -380,7 +380,7 @@ owning plan items as notes. Cross-reference:
 
 ### 5. HI14 — multi-GPU, on the server
 
-`${DEV_IP}` (`dev`) has **2× gfx1100 (RX 7900 XTX), 1× gfx1201,
+`${BC_HOST}` (`dev`) has **2× gfx1100 (RX 7900 XTX), 1× gfx1201,
 1× gfx1030 (RDNA2)**. That covers every row of the validation matrix in one box:
 mixed architecture, two identical GPUs, tensor split, and an RDNA2 target the
 catalog supports but nothing has ever run on.
@@ -396,7 +396,7 @@ yet — every run so far pins a single device.
 This is the workload that matters. Everything else is a proxy for it.
 
 ```text
-model  ${MODELS_ROOT}/qwen3.6-27b/gguf/mtp/Qwopus3.6-27B-v2-MTP-Q8_0.gguf
+model  ${BC_MODEL_ROOT}/qwen3.6-27b/gguf/mtp/Qwopus3.6-27B-v2-MTP-Q8_0.gguf
 
 fit                 off          gpu_layers          99
 cache_ram           0            ctx_size            245760
@@ -467,7 +467,7 @@ GGML_HIP_DISPATCH_MODE=record GGML_HIP_DISPATCH_DB=/tmp/rec.jsonl \
   --spec-draft-type-k q8_0 --spec-draft-type-v q8_0 &
 
 # 2. drive it hard
-python3 ${LLAMACPP_ROOT}/bench/run_bench.py \
+python3 ${BC_LLAMACPP_ROOT}/bench/run_bench.py \
   --bench-type server-bench --server-url http://127.0.0.1:42099 \
   --model <same gguf> --timeout 300 --upload-dry-run
 
@@ -499,13 +499,13 @@ Hot-signature ranking at 200k will not look like this.
 
 ---
 
-## Working on `${DEV_IP}`
+## Working on `${BC_HOST}`
 
-**There is no copy and no sync step.** `${VAULT_ROOT}` *is* mounted on `dev`, and
-`J:` on the workstation is `\\${DEV_IP}\vault`, so
+**There is no copy and no sync step.** `${BC_VAULT_ROOT}` *is* mounted on `dev`, and
+`J:` on the workstation is `\\${BC_HOST}\vault`, so
 
 ```text
-<win-root>\bigcherry  ==  ${DEV_ROOT}/llmhosts/bigcherry
+<win-root>\bigcherry  ==  ${BC_DEV_ROOT}/llmhosts/bigcherry
 ```
 
 are the same directory over SMB. Edit on either side, build on the server, no
@@ -532,7 +532,7 @@ Two traps this hides:
   generated it, copy it back rather than writing it into the tree in place:
 
   ```bash
-  scp ${DEV_IP}:/tmp/thing.md docs/reference/THING.md   # run from Windows
+  scp ${BC_HOST}:/tmp/thing.md docs/reference/THING.md   # run from Windows
   ```
 
   This is a silent failure: the server-side command reports success, and the
@@ -542,7 +542,7 @@ ROCm at `/opt/rocm` (7.2), cmake 3.28, ninja 1.11, python 3.12. Note the
 workstation also has a gfx1100 (RX 7900 GRE, *not* gfx1101 as earlier notes
 said) and ROCm 7.1 for Windows, but every verified build has been on the server.
 
-Standard cycle (`$BC` = `${DEV_ROOT}/llmhosts/bigcherry`):
+Standard cycle (`$BC` = `${BC_DEV_ROOT}/llmhosts/bigcherry`):
 
 ```bash
 cd $BC/tools
@@ -733,7 +733,7 @@ document that equivalence or drop the name.
 ## How to run the tests
 
 Everything below was run on 2026-08-05 and works. `$BC` is
-`${DEV_ROOT}/llmhosts/bigcherry`.
+`${BC_DEV_ROOT}/llmhosts/bigcherry`.
 
 ### 1. Offline, no GPU (seconds)
 

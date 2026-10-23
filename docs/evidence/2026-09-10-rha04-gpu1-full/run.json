@@ -11,7 +11,7 @@
     "schema_version": 1,
     "evidence_role": "production",
     "execution_evidence": "required",
-    "model": "${MODELS_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+    "model": "${BC_MODEL_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
     "server_args": [
       "-ngl",
       "99",
@@ -759,7 +759,7 @@
         "correlation_id": "e8f61a38402744c8a420b8231b89432c",
         "binary": "${HOME}/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/b86b1e97d91605ce764e48f59342a962/bin/llama-server",
         "binary_sha256": "9b5b49a5809634ac206992616f2bdd8f1b6a284778eef101bf92038603350e3c",
-        "model": "${MODELS_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+        "model": "${BC_MODEL_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
         "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
         "common_server_args": [
           "-ngl",
@@ -835,7 +835,7 @@
         "correlation_id": "be859248230e450caf6aa0ecaafc490a",
         "binary": "${HOME}/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/60f936db36097b7b9360eb7c707808bc/bin/llama-server",
         "binary_sha256": "4c996fe32b0f7ffae8c7496b0656f45885cd804d784543ac7cb1cae19c5c1856",
-        "model": "${MODELS_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+        "model": "${BC_MODEL_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
         "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
         "common_server_args": [
           "-ngl",
@@ -911,7 +911,7 @@
         "correlation_id": "f20233739f7e471dae319e0204c4fe94",
         "binary": "${HOME}/.cache/bigcherry/builds/e77c7964e5dc0ba3bf8bddc644b3cd78/9f00effa353dd1adb738081f038e8426/bin/llama-server",
         "binary_sha256": "74cf56624e461cc8a14e081698490eee02cf31bf5d35c64af05632daaf0255c7",
-        "model": "${MODELS_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+        "model": "${BC_MODEL_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
         "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
         "common_server_args": [
           "-ngl",
@@ -987,7 +987,7 @@
         "correlation_id": "0460c2946e3446f8b1e3f1006b7cef28",
         "binary": "${HOME}/.cache/bigcherry/builds/e77c7964e5dc0ba3bf8bddc644b3cd78/9f00effa353dd1adb738081f038e8426/bin/llama-server",
         "binary_sha256": "74cf56624e461cc8a14e081698490eee02cf31bf5d35c64af05632daaf0255c7",
-        "model": "${MODELS_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+        "model": "${BC_MODEL_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
         "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
         "common_server_args": [
           "-ngl",
@@ -1063,7 +1063,7 @@
         "correlation_id": "543c3fd3928c4218968bfe6b80d998a9",
         "binary": "${HOME}/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/60f936db36097b7b9360eb7c707808bc/bin/llama-server",
         "binary_sha256": "4c996fe32b0f7ffae8c7496b0656f45885cd804d784543ac7cb1cae19c5c1856",
-        "model": "${MODELS_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+        "model": "${BC_MODEL_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
         "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
         "common_server_args": [
           "-ngl",
@@ -1139,7 +1139,7 @@
         "correlation_id": "41487865862448b3bab55f446b52d1f4",
         "binary": "${HOME}/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/b86b1e97d91605ce764e48f59342a962/bin/llama-server",
         "binary_sha256": "9b5b49a5809634ac206992616f2bdd8f1b6a284778eef101bf92038603350e3c",
-        "model": "${MODELS_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+        "model": "${BC_MODEL_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
         "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
         "common_server_args": [
           "-ngl",
@@ -1215,7 +1215,7 @@
         "correlation_id": "9b26620e8dc8470e9e8d65c52214218c",
         "binary": "${HOME}/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/60f936db36097b7b9360eb7c707808bc/bin/llama-server",
         "binary_sha256": "4c996fe32b0f7ffae8c7496b0656f45885cd804d784543ac7cb1cae19c5c1856",
-        "model": "${MODELS_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+        "model": "${BC_MODEL_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
         "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
         "common_server_args": [
           "-ngl",
@@ -1291,7 +1291,7 @@
         "correlation_id": "0929fd75b6ab48aa83a1f75855a4843b",
         "binary": "${HOME}/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/b86b1e97d91605ce764e48f59342a962/bin/llama-server",
         "binary_sha256": "9b5b49a5809634ac206992616f2bdd8f1b6a284778eef101bf92038603350e3c",
-        "model": "${MODELS_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+        "model": "${BC_MODEL_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
         "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
         "common_server_args": [
           "-ngl",
@@ -1367,7 +1367,7 @@
         "correlation_id": "245e3cd49013412b95551aaecaaf2431",
         "binary": "${HOME}/.cache/bigcherry/builds/e77c7964e5dc0ba3bf8bddc644b3cd78/9f00effa353dd1adb738081f038e8426/bin/llama-server",
         "binary_sha256": "74cf56624e461cc8a14e081698490eee02cf31bf5d35c64af05632daaf0255c7",
-        "model": "${MODELS_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+        "model": "${BC_MODEL_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
         "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
         "common_server_args": [
           "-ngl",
@@ -1443,7 +1443,7 @@
         "correlation_id": "38b06822b2f642feb6a00813f6906735",
         "binary": "${HOME}/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/60f936db36097b7b9360eb7c707808bc/bin/llama-server",
         "binary_sha256": "4c996fe32b0f7ffae8c7496b0656f45885cd804d784543ac7cb1cae19c5c1856",
-        "model": "${MODELS_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+        "model": "${BC_MODEL_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
         "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
         "common_server_args": [
           "-ngl",
@@ -1519,7 +1519,7 @@
         "correlation_id": "c824e822239240899c3a339ab7a458aa",
         "binary": "${HOME}/.cache/bigcherry/builds/e77c7964e5dc0ba3bf8bddc644b3cd78/9f00effa353dd1adb738081f038e8426/bin/llama-server",
         "binary_sha256": "74cf56624e461cc8a14e081698490eee02cf31bf5d35c64af05632daaf0255c7",
-        "model": "${MODELS_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+        "model": "${BC_MODEL_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
         "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
         "common_server_args": [
           "-ngl",
@@ -1595,7 +1595,7 @@
         "correlation_id": "7e73305f843440bba52b90fb015b052e",
         "binary": "${HOME}/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/b86b1e97d91605ce764e48f59342a962/bin/llama-server",
         "binary_sha256": "9b5b49a5809634ac206992616f2bdd8f1b6a284778eef101bf92038603350e3c",
-        "model": "${MODELS_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+        "model": "${BC_MODEL_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
         "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
         "common_server_args": [
           "-ngl",
@@ -1671,7 +1671,7 @@
         "correlation_id": "da9814826b5b4957a678eb008845c508",
         "binary": "${HOME}/.cache/bigcherry/builds/e77c7964e5dc0ba3bf8bddc644b3cd78/9f00effa353dd1adb738081f038e8426/bin/llama-server",
         "binary_sha256": "74cf56624e461cc8a14e081698490eee02cf31bf5d35c64af05632daaf0255c7",
-        "model": "${MODELS_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+        "model": "${BC_MODEL_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
         "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
         "common_server_args": [
           "-ngl",
@@ -1747,7 +1747,7 @@
         "correlation_id": "22e6bff1168e4b50aa07b8dd58568656",
         "binary": "${HOME}/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/b86b1e97d91605ce764e48f59342a962/bin/llama-server",
         "binary_sha256": "9b5b49a5809634ac206992616f2bdd8f1b6a284778eef101bf92038603350e3c",
-        "model": "${MODELS_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+        "model": "${BC_MODEL_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
         "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
         "common_server_args": [
           "-ngl",
@@ -1823,7 +1823,7 @@
         "correlation_id": "d88ece1c226b40b890beb76b592c5891",
         "binary": "${HOME}/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/60f936db36097b7b9360eb7c707808bc/bin/llama-server",
         "binary_sha256": "4c996fe32b0f7ffae8c7496b0656f45885cd804d784543ac7cb1cae19c5c1856",
-        "model": "${MODELS_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+        "model": "${BC_MODEL_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
         "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
         "common_server_args": [
           "-ngl",
@@ -1899,7 +1899,7 @@
         "correlation_id": "e57b96cc8c5c49b3bc93c4936d766b36",
         "binary": "${HOME}/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/b86b1e97d91605ce764e48f59342a962/bin/llama-server",
         "binary_sha256": "9b5b49a5809634ac206992616f2bdd8f1b6a284778eef101bf92038603350e3c",
-        "model": "${MODELS_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+        "model": "${BC_MODEL_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
         "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
         "common_server_args": [
           "-ngl",
@@ -1975,7 +1975,7 @@
         "correlation_id": "5eae7ff8d028454ca5d99a1edd29fad4",
         "binary": "${HOME}/.cache/bigcherry/builds/e77c7964e5dc0ba3bf8bddc644b3cd78/9f00effa353dd1adb738081f038e8426/bin/llama-server",
         "binary_sha256": "74cf56624e461cc8a14e081698490eee02cf31bf5d35c64af05632daaf0255c7",
-        "model": "${MODELS_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+        "model": "${BC_MODEL_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
         "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
         "common_server_args": [
           "-ngl",
@@ -2051,7 +2051,7 @@
         "correlation_id": "747b064a38be4b91938ee7c46f046a5c",
         "binary": "${HOME}/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/60f936db36097b7b9360eb7c707808bc/bin/llama-server",
         "binary_sha256": "4c996fe32b0f7ffae8c7496b0656f45885cd804d784543ac7cb1cae19c5c1856",
-        "model": "${MODELS_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+        "model": "${BC_MODEL_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
         "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
         "common_server_args": [
           "-ngl",

@@ -13,8 +13,8 @@ result. Committed code also breaks on any other host if it hardcodes those value
 | Where | Rule | Example |
 |---|---|---|
 | Committed source and config | Repo-relative, or a `${VAR}` reference resolved from the environment | `config/models.toml`, `${ROCM_PATH}/bin/hipcc` |
-| Host facts | Untracked `config/environment.local.toml`; override any key with `BIGCHERRY_HOST_<KEY>` | `BIGCHERRY_HOST_CORPUS=/data/corpus/kld.txt` |
-| Console and log output | Logical name, not the resolved path | `${MODELS_ROOT}/qwen/…`, `<repo>/artifacts/…` |
+| Host facts | Untracked `config/environment.local.toml`; override any key with `BC_<KEY>` | `BC_CORPUS=/data/corpus/kld.txt` |
+| Console and log output | Logical name, not the resolved path | `${BC_MODEL_ROOT}/qwen/…`, `<repo>/artifacts/…` |
 | Evidence and result records | Run identifiers and results only. No host names, addresses or absolute paths | `run_id`, `schedule`, measured values |
 
 ## Rules
@@ -25,14 +25,14 @@ result. Committed code also breaks on any other host if it hardcodes those value
 2. **Find the repository root by marker, not by depth.** Search upward for `AGENTS.md` and
    `tools/bigcherry`. Do not use `Path(__file__).parents[N]`.
 3. **Environment overrides use an explicit prefix.** `BC_PRIMARY_ROOT` is the existing example.
-   Host keys use `BIGCHERRY_HOST_<KEY>`.
+   Host keys use `BC_<KEY>`.
 4. **Output shows the logical location.** Print `${VAR}/…` or a repo-relative path. Use the resolved
    absolute path only where the tool needs it to run, and keep it out of anything that is saved
    or shared.
 5. **Evidence is about results.** Do not record where a run executed. If a reader needs to know the
    machine class, record a label such as `gpu-host-a`, not a name or address.
 6. **Redact existing evidence rather than deleting it.** Replace a value with a placeholder that
-   keeps its meaning (`${BIGCHERRY_ROOT}`, `<gpu-host>`, `<user>`, `<email>`). Keep the result data
+   keeps its meaning (`${BC_REPO_ROOT}`, `<gpu-host>`, `<user>`, `<email>`). Keep the result data
    unchanged. Regenerate `SHA256SUMS` for the redacted files, and note in the commit that the
    checksums now refer to redacted content.
 
@@ -40,15 +40,22 @@ result. Committed code also breaks on any other host if it hardcodes those value
 
 | Placeholder | Stands for |
 |---|---|
-| `${BIGCHERRY_ROOT}` | the repository checkout |
-| `${DEV_ROOT}` | the development tree that holds the checkouts |
-| `${MODELS_ROOT}` | the model store |
-| `${DATA_ROOT}`, `${VAULT_ROOT}` | the mounted data and vault volumes |
-| `${LLAMACPP_ROOT}` | the llama.cpp tree |
+| `${BC_REPO_ROOT}` | the repository checkout |
+| `${BC_DEV_ROOT}` | the development tree that holds the checkouts |
+| `${BC_MODEL_ROOT}` | the model store |
+| `${BC_WORK_ROOT}`, `${BC_CACHE_ROOT}`, `${BC_TMP_ROOT}` | the shared work root, the build/campaign cache, scratch |
+| `${BC_DATA_ROOT}`, `${BC_VAULT_ROOT}` | the mounted data and vault volumes |
+| `${BC_LLAMACPP_ROOT}` | the llama.cpp tree |
 | `${HOME}` | the user's home directory |
-| `${GPU_HOST_IP}` | the GPU host's address |
+| `${BC_HOST}` | the GPU host (its ssh alias, `hostname` in the host config) |
 | `<gpu-host>` | the GPU host's name, in prose |
 | `<user>`, `<email>`, `<win-root>` | a user name, an email address, a Windows drive root |
+
+Every `BC_*` variable maps to the host key of the same name (`BC_MODEL_ROOT` = `model-root`):
+`source tools/env/bigcherry-env.sh` exports them from the host config, the same name overrides the key
+per shell, and `tools/env/substitute_paths.py` writes them when it redacts a path. The names used before
+this scheme (the `BIGCHERRY_HOST_<KEY>` overrides and the unprefixed placeholders) are retired; the
+forbidden-term scan rejects them.
 
 ## Checking
 

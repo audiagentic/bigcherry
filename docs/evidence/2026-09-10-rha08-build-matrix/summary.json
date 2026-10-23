@@ -60,13 +60,13 @@
               "--parallel",
               "1"
             ],
-            "model": "${MODELS_ROOT}/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
+            "model": "${BC_MODEL_ROOT}/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
             "required_metrics": [
               "pp512_tps",
               "pp2048_tps",
               "tg512_tps"
             ],
-            "runner_root": "${LLAMACPP_ROOT}",
+            "runner_root": "${BC_LLAMACPP_ROOT}",
             "shutdown_method": "sigint"
           }
         }
@@ -104,7 +104,7 @@
             "HIP_VISIBLE_DEVICES": "0,1",
             "ROCR_VISIBLE_DEVICES": "0,1"
           },
-          "model": "${MODELS_ROOT}/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
+          "model": "${BC_MODEL_ROOT}/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
           "model_sha256": "a680f44a06920e5d689774823782006aa3acc8db95750323373b24139b67e348"
         },
         "attestation_preflight": "/tmp/rha08-build-matrix/pair-001-control/attestation/preflight.json",
@@ -217,13 +217,13 @@
               "--parallel",
               "1"
             ],
-            "model": "${MODELS_ROOT}/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
+            "model": "${BC_MODEL_ROOT}/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
             "required_metrics": [
               "pp512_tps",
               "pp2048_tps",
               "tg512_tps"
             ],
-            "runner_root": "${LLAMACPP_ROOT}",
+            "runner_root": "${BC_LLAMACPP_ROOT}",
             "shutdown_method": "sigint"
           }
         }
@@ -261,7 +261,7 @@
             "HIP_VISIBLE_DEVICES": "0,1",
             "ROCR_VISIBLE_DEVICES": "0,1"
           },
-          "model": "${MODELS_ROOT}/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
+          "model": "${BC_MODEL_ROOT}/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
           "model_sha256": "a680f44a06920e5d689774823782006aa3acc8db95750323373b24139b67e348"
         },
         "attestation_preflight": "/tmp/rha08-build-matrix/pair-001-record/attestation/preflight.json",
@@ -375,13 +375,13 @@
               "--parallel",
               "1"
             ],
-            "model": "${MODELS_ROOT}/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
+            "model": "${BC_MODEL_ROOT}/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
             "required_metrics": [
               "pp512_tps",
               "pp2048_tps",
               "tg512_tps"
             ],
-            "runner_root": "${LLAMACPP_ROOT}",
+            "runner_root": "${BC_LLAMACPP_ROOT}",
             "shutdown_method": "sigint"
           }
         }
@@ -419,7 +419,7 @@
             "HIP_VISIBLE_DEVICES": "0,1",
             "ROCR_VISIBLE_DEVICES": "0,1"
           },
-          "model": "${MODELS_ROOT}/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
+          "model": "${BC_MODEL_ROOT}/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
           "model_sha256": "a680f44a06920e5d689774823782006aa3acc8db95750323373b24139b67e348"
         },
         "attestation_preflight": "/tmp/rha08-build-matrix/pair-001-tune/attestation/preflight.json",
@@ -532,13 +532,13 @@
               "--parallel",
               "1"
             ],
-            "model": "${MODELS_ROOT}/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
+            "model": "${BC_MODEL_ROOT}/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
             "required_metrics": [
               "pp512_tps",
               "pp2048_tps",
               "tg512_tps"
             ],
-            "runner_root": "${LLAMACPP_ROOT}",
+            "runner_root": "${BC_LLAMACPP_ROOT}",
             "shutdown_method": "sigint"
           }
         }
@@ -576,7 +576,7 @@
             "HIP_VISIBLE_DEVICES": "0,1",
             "ROCR_VISIBLE_DEVICES": "0,1"
           },
-          "model": "${MODELS_ROOT}/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
+          "model": "${BC_MODEL_ROOT}/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
           "model_sha256": "a680f44a06920e5d689774823782006aa3acc8db95750323373b24139b67e348"
         },
         "attestation_preflight": "/tmp/rha08-build-matrix/pair-001-replay/attestation/preflight.json",
@@ -690,13 +690,13 @@
               "--parallel",
               "1"
             ],
-            "model": "${MODELS_ROOT}/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
+            "model": "${BC_MODEL_ROOT}/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
             "required_metrics": [
               "pp512_tps",
               "pp2048_tps",
               "tg512_tps"
             ],
-            "runner_root": "${LLAMACPP_ROOT}",
+            "runner_root": "${BC_LLAMACPP_ROOT}",
             "shutdown_method": "sigint"
           }
         }
@@ -734,7 +734,7 @@
             "HIP_VISIBLE_DEVICES": "0,1",
             "ROCR_VISIBLE_DEVICES": "0,1"
           },
-          "model": "${MODELS_ROOT}/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
+          "model": "${BC_MODEL_ROOT}/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
           "model_sha256": "a680f44a06920e5d689774823782006aa3acc8db95750323373b24139b67e348"
         },
         "attestation_preflight": "/tmp/rha08-build-matrix/pair-001-replay-diagnostic/attestation/preflight.json",

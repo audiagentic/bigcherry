@@ -4,7 +4,7 @@ Host-specific values are never committed. The configured file is
 ``$BIGCHERRY_ENVIRONMENT`` or, by default, the gitignored
 ``config/environment.local.toml`` (template: ``config/environment.example.toml``);
 scalar keys of the default host can be overridden with
-``BIGCHERRY_HOST_<KEY>`` environment variables. The shell side is
+``BC_<KEY>`` environment variables. The shell side is
 ``tools/env/bigcherry-env.sh``; this is the same data for Python callers, so
 tooling can resolve a model root or a bench port without hardcoding one
 person's paths -- which is exactly what the reference docs used to do, in 40
@@ -189,14 +189,14 @@ def _rocm_sdks(raw: object, where: str, repo_root: str) -> tuple[tuple[str, str]
 
 
 def _apply_env_overrides(raw: dict) -> None:
-    """``BIGCHERRY_HOST_<KEY>`` overrides a scalar of the default host."""
+    """``BC_<KEY>`` overrides a scalar of the default host."""
     hosts = raw.get("host") or {}
     name = raw.get("default-host") or next(iter(hosts), None)
     body = hosts.get(name) if name else None
     if not isinstance(body, dict):
         return
     for key in _HOST_SCALAR_KEYS:
-        value = os.environ.get("BIGCHERRY_HOST_" + key.upper().replace("-", "_"))
+        value = os.environ.get("BC_" + key.upper().replace("-", "_"))
         if value is not None:
             body[key] = value
 

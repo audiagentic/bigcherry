@@ -69,7 +69,7 @@ class ServeSpec:
 class CpuSmokeDecl:
     """The tiny model and extra server arguments of an engine's RAM-only smoke test ([smoke.cpu], MEN15).
 
-    ``model`` is relative to the model root (``--model-root``, ``BIGCHERRY_MODEL_ROOT`` or the host's model-root);
+    ``model`` is relative to the model root (``--model-root``, ``BC_MODEL_ROOT`` or the host's model-root);
     ``sha256`` is the digest of that exact file. Until the owner pins a real model the digest is a PLACEHOLDER value,
     which the smoke runner refuses.
     """

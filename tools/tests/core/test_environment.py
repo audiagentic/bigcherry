@@ -135,7 +135,7 @@ class EnvironmentOverrideTests(unittest.TestCase):
     def test_bigcherry_host_env_overrides_scalar(self):
         import os
         from unittest import mock
-        with mock.patch.dict(os.environ, {"BIGCHERRY_HOST_MODEL_ROOT": "/override/models"}):
+        with mock.patch.dict(os.environ, {"BC_MODEL_ROOT": "/override/models"}):
             host = env.load(env.example_path(ROOT)).host()
         self.assertEqual(host.model_root, "/override/models")
 

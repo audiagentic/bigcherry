@@ -13,7 +13,7 @@ This produced two distinct hardware aborts under GGML_HIP_DISPATCH_MODE=tune: th
 
 Fix: ggml_hip_variant_params gains uint8_t src0_type, taking the last reserved byte so the struct size is unchanged (the precedent small_k set). _variant_initialiser emits it as the enumerator rather than its value so an upstream renumbering cannot silently repoint candidates; BLAS stays 0 as it has no per-type identity. All four can_execute predicates reject a type mismatch. Replay caches need no migration as they validate the manifest hash, which this alters.
 
-Also corrected HANDOFF.md, which claimed /vault was not mounted on dev and instructed a tar sync into ~/bigcherry. ${VAULT_ROOT} is mounted and <win-root>\bigcherry is the same directory over SMB; ~/bigcherry is a stale pre-HI09 copy at upstream 6ea215d that the sync instruction would have silently built.
+Also corrected HANDOFF.md, which claimed /vault was not mounted on dev and instructed a tar sync into ~/bigcherry. ${BC_VAULT_ROOT} is mounted and <win-root>\bigcherry is the same directory over SMB; ~/bigcherry is a stale pre-HI09 copy at upstream 6ea215d that the sync instruction would have silently built.
 
 Verified on gfx1100 (ROCm 7.2): builds and links clean; nm confirms ggml_hip_mmvq_forced threaded through the mangled native chain and the geometry instances instantiated; test-backend-ops -o MUL_MAT passes on the native path; under tune mode 198 signatures tune with 0 failures and six forced MMVQ geometries beat native. Audit 32/32, patcher tests 12/12.
 

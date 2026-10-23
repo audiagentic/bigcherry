@@ -61,7 +61,7 @@ bc-gfx12 = "engines/radiance/components/bc-gfx12"
 
 # RAM-only smoke test (MEN15): `bigcherry --engine radiance smoke-cpu --build <dir>` serves this tiny container on the
 # CPU kernel plugins (libavx, libref; --tp 1) with no GPU visible. `model` is relative to the model root (--model-root,
-# BIGCHERRY_MODEL_ROOT or the host's model-root); `sha256` is the digest of that exact file. The digest below is a
+# BC_MODEL_ROOT or the host's model-root); `sha256` is the digest of that exact file. The digest below is a
 # PLACEHOLDER: the runner refuses it until the owner pins a real tiny .rad container (convert a small model with
 # radiance's quantisers once). `args` carry the container-specific serve flags (context length, sequences).
 [smoke.cpu]

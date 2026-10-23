@@ -10,12 +10,12 @@ import subprocess
 import sys
 from pathlib import Path
 
-sys.path.insert(0, "${DEV_ROOT}/llmhosts/bigcherry-hi143-e2e-20260829/tools")
+sys.path.insert(0, "${BC_DEV_ROOT}/llmhosts/bigcherry-hi143-e2e-20260829/tools")
 from bigcherry.tuning import signature_mapping as sm
 
-BINARY = Path("${VAULT_ROOT}/experiments/bigcherry-hi143-e2e-20260829/work/builds/f3e14c088e667bfc1c9d533422150c5d/2ed73c7aabfa96ef55b09e48d748bbfe/bin/test-backend-ops")
-VENDOR_ROOT = Path("${VAULT_ROOT}/experiments/bigcherry-hi143-e2e-20260829/work/sources/7ed939cded44ad21629d167eeb4613a0")
-DUMP_ROOT = Path("${VAULT_ROOT}/experiments/bigcherry-hi143-e2e-20260829/elementwise-dump")
+BINARY = Path("${BC_VAULT_ROOT}/experiments/bigcherry-hi143-e2e-20260829/work/builds/f3e14c088e667bfc1c9d533422150c5d/2ed73c7aabfa96ef55b09e48d748bbfe/bin/test-backend-ops")
+VENDOR_ROOT = Path("${BC_VAULT_ROOT}/experiments/bigcherry-hi143-e2e-20260829/work/sources/7ed939cded44ad21629d167eeb4613a0")
+DUMP_ROOT = Path("${BC_VAULT_ROOT}/experiments/bigcherry-hi143-e2e-20260829/elementwise-dump")
 
 SIGNATURE = {
     "dst_type": 0, "flags": 7, "fusion": 0, "glu_op": 0, "n_expert": 0, "n_expert_used": 0,

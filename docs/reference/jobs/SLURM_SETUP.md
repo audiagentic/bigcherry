@@ -18,8 +18,8 @@ Dry-run/preflight first:
 
 ```bash
 python tools/admin/install_node_slurm.py \
-  --project-root ${BIGCHERRY_ROOT} \
-  --hardware-root ${DATA_ROOT}/bigcherry-jobs/hardware \
+  --project-root ${BC_REPO_ROOT} \
+  --hardware-root ${BC_DATA_ROOT}/bigcherry-jobs/hardware \
   --executor-id dev --node-name dev \
   --cpus <N> --real-memory-mib <MiB>
 ```
@@ -30,8 +30,8 @@ After reviewing the plan/config:
 
 ```bash
 sudo ${BIGCHERRY_VENV}/bin/python tools/admin/install_node_slurm.py \
-  --project-root ${BIGCHERRY_ROOT} \
-  --hardware-root ${DATA_ROOT}/bigcherry-jobs/hardware \
+  --project-root ${BC_REPO_ROOT} \
+  --hardware-root ${BC_DATA_ROOT}/bigcherry-jobs/hardware \
   --executor-id dev --node-name dev \
   --cpus <N> --real-memory-mib <MiB> --apply
 ```
@@ -110,8 +110,8 @@ Render using:
 
 ```bash
 python tools/admin/render_bigcherry_slurm.py \
-  --project-root ${BIGCHERRY_ROOT} \
-  --hardware-root ${DATA_ROOT}/bigcherry-jobs/hardware \
+  --project-root ${BC_REPO_ROOT} \
+  --hardware-root ${BC_DATA_ROOT}/bigcherry-jobs/hardware \
   --executor-id dev --node-name dev \
   --cpus <N> --real-memory-mib <MiB> --dest-root /tmp/slurm-review
 ```

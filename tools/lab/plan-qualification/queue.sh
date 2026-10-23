@@ -131,7 +131,7 @@ build_line() {
     rc=$?
     plan=$(sed -n 's/.*: ok build_plan_id=\([0-9a-f]*\).*/\1/p' "$log" | tail -1)
     bin=""
-    # bigcherry build publishes under its own work root (BIGCHERRY_WORK_ROOT from the process environment, else the
+    # bigcherry build publishes under its own work root (BC_WORK_ROOT from the process environment, else the
     # primary checkout's work/), which is not the queue work root when environment.local.toml names one.
     local builds
     builds=$(PYTHONPATH="$root/tools" python3 -c 'from bigcherry.core.context import ProjectContext; print(ProjectContext.resolve().work_root / "builds")')

@@ -116,7 +116,7 @@ Also found the real invocation needs the venv python (`${HOME}/bc-pytest-venv/bi
 
 Launched (PID 2089964, nohup, log at `${HOME}/bc-pa-work/pa26-rha15-verify1.log`):
 ```
-cd ${HOME}/bc-pa-work && PYTHONPATH=tools ${HOME}/bc-pytest-venv/bin/python -m bigcherry tune-campaign --platform linux-multi --model ${MODELS_ROOT}/qwen3.5-4B/gguf/mtp/Qwen3.5-4B-UD-Q6_K_XL.gguf --devices 0 --runtime-profile production-safe-single --source bigcherry-native --run-id pa26-rha15-verify1 --json
+cd ${HOME}/bc-pa-work && PYTHONPATH=tools ${HOME}/bc-pytest-venv/bin/python -m bigcherry tune-campaign --platform linux-multi --model ${BC_MODEL_ROOT}/qwen3.5-4B/gguf/mtp/Qwen3.5-4B-UD-Q6_K_XL.gguf --devices 0 --runtime-profile production-safe-single --source bigcherry-native --run-id pa26-rha15-verify1 --json
 ```
 Build in progress as of this note (HIP object compile, ~125/506). Will let it run to completion (build + record + tune + correctness stages), preserve artifacts before any cleanup, and report real per-row diagnostics once correctness-evidence runs.
 

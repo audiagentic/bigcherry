@@ -16,7 +16,7 @@ from ..core import paths, retention, run_manifest as rm, workspace
 
 
 def work_root(override: str | None) -> Path:
-    return Path(override or os.environ.get("BIGCHERRY_WORK_ROOT") or paths.primary_root() / "work").expanduser().resolve()
+    return Path(override or os.environ.get("BC_WORK_ROOT") or paths.primary_root() / "work").expanduser().resolve()
 
 
 def _blocked(root: Path) -> str | None:

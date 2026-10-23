@@ -67,7 +67,7 @@ running bounded recovery search (budget=24)...
 published: True
 stop_reason: full-corpus validation passed
 evaluations_used: 15
-cache_path: ${VAULT_ROOT}/experiments/hi141-recovery-validation/recovery-candidate.cache
+cache_path: ${BC_VAULT_ROOT}/experiments/hi141-recovery-validation/recovery-candidate.cache
 final signatures reassigned to an alternative candidate: 0
 final signatures forced to native: 1
     cd3b5f5bd371... -> mmvq:native:v1

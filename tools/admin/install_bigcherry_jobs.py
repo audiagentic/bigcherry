@@ -87,7 +87,7 @@ WantedBy=timers.target
 def env_text(*, project_root: PurePosixPath, work_root: PurePosixPath) -> str:
     return "\n".join((
         f"BIGCHERRY_PROJECT_ROOT={project_root}",
-        f"BIGCHERRY_WORK_ROOT={work_root}",
+        f"BC_WORK_ROOT={work_root}",
         f"BIGCHERRY_JOBS_ROOT={work_root / 'jobs'}",
         f"BIGCHERRY_HARDWARE_ROOT={work_root / 'hardware'}",
         f"BIGCHERRY_EXECUTORS_CONFIG={project_root / 'config' / 'jobs' / 'executors.toml'}",

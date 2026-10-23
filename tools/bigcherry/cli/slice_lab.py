@@ -96,7 +96,7 @@ def build_lab_command(
         f"exec {exec_line}",
         "PA47_WRAPPER",
         f"printf '%s\\n' {q(kind + ' ' + label + ' ' + wrapper)} > \"$jobs\"",
-        'export BC_PRIMARY_ROOT="$primary" BIGCHERRY_WORK_ROOT="$work"',
+        'export BC_PRIMARY_ROOT="$primary" BC_WORK_ROOT="$work"',
         'export BIGCHERRY_PROJECT_ROOT="$stage"',
         f'export BIGCHERRY_ARTIFACT_ROOT="$work/runs/{label}/artifacts"',
         'export PYTHONDONTWRITEBYTECODE=1 BC_QUEUE_STREAM=1',
