@@ -1,115 +1,146 @@
 #!/bin/bash
-# Launch Qwen3.8-Flash-Next on Brutus with the current best known layout (R9700 engine + two XTX expert helpers),
-# per docs/reference/engines/radiance/models/qwen3.8-flash-next.md ("Current best layout and numbers").
+# Launch Qwen3.8-Flash-Next on Brutus in the current best layout, per
+# docs/reference/engines/radiance/models/qwen3.8-flash-next.md ("Current best layout and numbers") and the harness config
+# tools/lab/radiance/helper-ab.json, which this mirrors outside the harness.
 #
-# Layout: engine on the R9700 (libr4d,libr3moe,libref), one r3_moe_worker per XTX (full-width experts, 22 GiB each,
-# helper-owned experts skipped on the R9700, hottest experts routed to the helpers), n-gram table in host RAM,
-# fp8 KV cache, MTP depth 3, 4096-token chunks, up to 6 concurrent sequences.
+# Layout: engine on the R9700 (--tp 1, libr4d,libr3moe,libref); one r3_moe_worker helper per XTX holding full-width
+# experts (22 GiB each, hottest experts by route heat), helper-owned experts skipped on the R9700; n-gram table in host
+# RAM; fp8 KV; MTP depth 3; 4096-token chunks; up to 6 sequences; 32K context.
+# Helper kernels on by default (R3_MOE_FP16, R3_MOE_AHALF, R3_MOE_NATIVE, R3_MOE_WORKER_VECIO, FUSESTAGE, FUSEROUTE) are
+# not repeated here.
+#
+# Needs a radiance build of production source with the helper hand-off:
+#   bigcherry build --lane radiance:stock:linux-radiance --experiment moe-remote-handoff
 #
 # Usage:
-#   RAD_BIN=/path/to/radiance RAD_HOME=/path/to/radiance_home MODEL=/path/to/model.rad \
-#     bash tools/lab/radiance/launch-flashnext-best.sh [--port N] [--heat /path/to/heat/file]
-#
-# If RAD_BIN/RAD_HOME are not set, the script looks for the most recently built radiance under
-# /mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/*/*/bin/radiance (Brutus layout).
-# If MODEL is not set, it defaults to the Flash-Next container at its usual Brutus path.
-# --heat points at a saved route-heat histogram (R3_MOE_WORKER_HEAT) for hottest-first expert placement; without
-# one, the worker falls back to its own default placement (coldest-first measured ~4% slower prefill, RAD06).
+#   bash tools/lab/radiance/launch-flashnext-best.sh [start] [--build DIR] [--port N] [--heat FILE]
+#   bash tools/lab/radiance/launch-flashnext-best.sh stop
+# Without --build, the newest build under $BIGCHERRY_WORK_ROOT/builds that has the helper binary is used.
 set -u
 
-WORK=/mnt/vault/development/projects/bigcherry/workspaces/main/work
+WORK=${BIGCHERRY_WORK_ROOT:-/mnt/data/bigcherry-work}
+RUN=$WORK/flashnext
+PIDS=$RUN/pids
+SHM=/r3-moe-helper
 PORT=36080
-HEAT="${HEAT_DEFAULT:-/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first}"
+HEAT=$WORK/runs/perf51/heat.rank0.hot-first
+BUILD=""
+CMD=start
+[ $# -gt 0 ] && case "$1" in start|stop) CMD=$1; shift ;; esac
 while [ $# -gt 0 ]; do
   case "$1" in
+    --build) BUILD=$2; shift 2 ;;
     --port) PORT=$2; shift 2 ;;
     --heat) HEAT=$2; shift 2 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
 
-if [ -z "${RAD_BIN:-}" ] || [ -z "${RAD_HOME:-}" ]; then
-  B=$(ls -td "$WORK"/builds/*/*/ 2>/dev/null | head -1)
-  [ -n "$B" ] && [ -x "${B}bin/radiance" ] || { echo "FLASHNEXT_EXIT=99 no RAD_BIN/RAD_HOME given and none found under $WORK/builds"; exit 99; }
-  RAD_BIN=${RAD_BIN:-${B}bin/radiance}
-  RAD_HOME=${RAD_HOME:-${B}radiance_home}
+stop_all() {
+  # engine first (SIGINT is its clean shutdown), then the helpers; each gets 60 s before SIGKILL
+  for name in engine helper1 helper0; do
+    [ -f "$PIDS/$name" ] || continue
+    pid=$(cat "$PIDS/$name")
+    if kill -0 "$pid" 2>/dev/null; then
+      kill -INT "$pid"
+      for _ in $(seq 60); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
+      kill -0 "$pid" 2>/dev/null && { echo "$name ($pid) did not stop; killing" >&2; kill -KILL "$pid"; }
+    fi
+    rm -f "$PIDS/$name"
+  done
+}
+
+if [ "$CMD" = stop ]; then stop_all; echo "stopped"; exit 0; fi
+
+for name in engine helper0 helper1; do
+  if [ -f "$PIDS/$name" ] && kill -0 "$(cat "$PIDS/$name")" 2>/dev/null; then
+    echo "FLASHNEXT_EXIT=98 already running ($name pid $(cat "$PIDS/$name")); run '$0 stop' first"; exit 98
+  fi
+done
+
+if [ -z "$BUILD" ]; then
+  for d in $(ls -td "$WORK"/builds/*/*/ 2>/dev/null); do
+    [ -x "${d}radiance_home/helpers/r3_moe_worker" ] && [ -x "${d}bin/radiance" ] && { BUILD=${d%/}; break; }
+  done
 fi
-[ -x "$RAD_BIN" ] || { echo "FLASHNEXT_EXIT=99 RAD_BIN not executable: $RAD_BIN"; exit 99; }
+RAD_BIN=$BUILD/bin/radiance
+RAD_HOME=$BUILD/radiance_home
+HELPER=$RAD_HOME/helpers/r3_moe_worker
+[ -x "$RAD_BIN" ] && [ -x "$HELPER" ] || { echo "FLASHNEXT_EXIT=99 no build with bin/radiance and the r3_moe_worker helper (--build '$BUILD')"; exit 99; }
 
 MODEL=${MODEL:-/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad}
 [ -f "$MODEL" ] || { echo "FLASHNEXT_EXIT=99 model not found: $MODEL"; exit 99; }
+[ -f "$HEAT" ] || { echo "FLASHNEXT_EXIT=99 route-heat file not found: $HEAT (hottest-first placement is part of the best layout)"; exit 99; }
 
-R9700_BDF=${R9700_BDF:-0000:09:00.0}
-XTX0=${XTX0:-0}
-XTX1=${XTX1:-1}
+R9700=${R9700_ROCR:-2}
+XTX=(${XTX_ROCR:-0 1})
 
-HEAT_ENV=()
-if [ -n "$HEAT" ] && [ -f "$HEAT" ]; then
-  HEAT_ENV=(R3_MOE_WORKER_HEAT="$HEAT")
-else
-  [ -n "$HEAT" ] && echo "note: heat file not found at $HEAT (stale perf51 run?); falling back to the worker's default placement." >&2
-  HEAT=""
-  echo "note: no usable --heat histogram; the worker falls back to its own default placement (measured ~4% slower prefill than hottest-first, RAD06)." >&2
-fi
+# shared by the engine and both helpers (helper-ab.json "environment" + arm settings)
+COMMON=(
+  RADIANCE_HOME="$RAD_HOME"
+  R3_MOE_WORKER_SHM="$SHM"
+  R3_MOE_WORKER_COUNT=${#XTX[@]}
+  R3_MOE_WORKER_ENGINE_RANKS=1
+  R3_MOE_WORKER_MIB=22528
+  R3_MOE_WORKER_MAX_ROWS=4096
+  R3_MOE_WORKER_SMALL_ROWS=8
+  R3_MOE_WORKER_MOE_DOWN_TILE=1
+  R3_MOE_WORKER_HEAT="$HEAT"
+  R3_MOE_WORKER_SKIP_OWNED=1
+)
 
-LOG=$WORK/flashnext-$(date +%m%d-%H%M%S).log
+mkdir -p "$PIDS"
+STAMP=$(date +%m%d-%H%M%S)
+rm -f "/dev/shm${SHM}"
+trap 'echo "start failed; stopping what was started" >&2; stop_all; exit 1' ERR
 
-env \
-  ROCR_VISIBLE_DEVICES=2 HIP_VISIBLE_DEVICES=0 \
-  RADIANCE_HOME="$RAD_HOME" \
-  R3_MOE_WORKER=1 \
-  R3_MOE_WORKER_COUNT=2 \
-  R3_MOE_WORKER_DEVICES="$XTX0 $XTX1" \
-  R3_MOE_WORKER_ENGINE_RANKS=1 \
-  R3_MOE_WORKER_MIB=22528 \
-  R3_MOE_WORKER_SKIP_OWNED=1 \
-  R3_MOE_WORKER_MAX_ROWS=4096 \
-  R3_MOE_WORKER_SMALL_ROWS=8 \
-  R3_MOE_FP16=1 \
-  R3_MOE_AHALF=1 \
-  R3_MOE_WORKER_VECIO=1 \
-  "${HEAT_ENV[@]}" \
-  "$RAD_BIN" --model "$MODEL" --radiance-home "$RAD_HOME" --port "$PORT" \
+# helpers in order: helper 0 creates the segment, helper 1 attaches; each must report ready before the next starts
+for i in "${!XTX[@]}"; do
+  log=$RUN/helper$i-$STAMP.log
+  env "${COMMON[@]}" ROCR_VISIBLE_DEVICES="${XTX[$i]}" HIP_VISIBLE_DEVICES=0 R3_MOE_WORKER_INDEX=$i \
+    setsid "$HELPER" "$MODEL" > "$log" 2>&1 &
+  echo $! > "$PIDS/helper$i"
+  echo "helper$i on XTX ${XTX[$i]} (pid $!, log $log): waiting for ready..." >&2
+  ready=0
+  for _ in $(seq 900); do
+    grep -qE '^r3_moe_worker: (ready |waiting for engine runtime expert maps)' "$log" && { ready=1; break; }
+    kill -0 "$(cat "$PIDS/helper$i")" 2>/dev/null || break
+    sleep 1
+  done
+  [ $ready = 1 ] || { echo "FLASHNEXT_EXIT=1 helper$i not ready; see $log"; tail -n 20 "$log"; false; }
+done
+
+LOG=$RUN/engine-$STAMP.log
+env "${COMMON[@]}" R3_MOE_WORKER=1 ROCR_VISIBLE_DEVICES="$R9700" HIP_VISIBLE_DEVICES=0 \
+  setsid "$RAD_BIN" --model "$MODEL" --radiance-home "$RAD_HOME" --port "$PORT" \
     --kernels libr4d,libr3moe,libref \
     --placement expert_tiered \
     --ngram-placement ram \
-    --host-pool-mib 30720 \
+    --host-pool-mib 22528 \
     --tp 1 \
     --max-num-seqs 6 \
     --max-num-batched-tokens 4096 \
     --checkpoint-interval 4096 \
     --kv-cache-dtype fp8 \
     --num-speculative-tokens 3 \
+    --max-model-len 32768 \
   > "$LOG" 2>&1 &
-PID=$!
-
-echo "waiting for server to come up (PID $PID, log $LOG)..." >&2
-UP=0
-for i in $(seq 1 120); do
-  if curl -sf "http://127.0.0.1:$PORT/health" > /dev/null 2>&1; then UP=1; break; fi
-  if ! kill -0 "$PID" 2>/dev/null; then break; fi
+echo $! > "$PIDS/engine"
+echo "engine on R9700 (pid $!, log $LOG): waiting for /health..." >&2
+up=0
+for _ in $(seq 180); do
+  curl -sf "http://127.0.0.1:$PORT/health" > /dev/null 2>&1 && { up=1; break; }
+  kill -0 "$(cat "$PIDS/engine")" 2>/dev/null || break
   sleep 5
 done
-
-if [ "$UP" != 1 ]; then
-  echo "FLASHNEXT_EXIT=1 server did not come up; see $LOG"
-  tail -n 30 "$LOG"
-  exit 1
-fi
+[ $up = 1 ] || { echo "FLASHNEXT_EXIT=1 engine did not come up; see $LOG"; tail -n 30 "$LOG"; false; }
+trap - ERR
 
 cat <<INFO
 FLASHNEXT_EXIT=0
-----------------------------------------------------------------------
-Flash-Next is up.
-  PID:        $PID
-  Log:        $LOG
-  Model:      $MODEL
-  Endpoint:   http://127.0.0.1:$PORT  (OpenAI-compatible: /v1/chat/completions, /v1/completions)
-  Health:     http://127.0.0.1:$PORT/health
-  Engine:     R9700 (ROCR_VISIBLE_DEVICES=2), kernels libr4d,libr3moe,libref
-  Helpers:    2x r3_moe_worker on XTX devices $XTX0,$XTX1 (full-width experts, 22 GiB each, hottest-first$([ -z "$HEAT" ] && echo " -- NOT configured, see note above" || echo ", heat=$HEAT"))
-  KV cache:   fp8, host pool 30720 MiB, n-gram table in RAM
-  Speculative: MTP depth 3, max-num-seqs 6, chunk 4096
-Stop with: kill -INT $PID
-----------------------------------------------------------------------
+Flash-Next is up: http://127.0.0.1:$PORT (OpenAI-compatible /v1/chat/completions, /v1/completions)
+  build    $BUILD
+  engine   R9700 pid $(cat "$PIDS/engine"), log $LOG
+  helpers  XTX ${XTX[*]}, pids $(cat "$PIDS/helper0") $(cat "$PIDS/helper1" 2>/dev/null), logs $RUN/helper*-$STAMP.log
+  stop     bash $0 stop
 INFO
