@@ -95,14 +95,14 @@ class ProjectContext:
         # defaults to the primary checkout so linked worktrees share it.
         # Failure to resolve the primary checkout is fatal; never fall back to
         # a worktree-local cache and silently create a second source/build tree.
-        # The host file's [env] is the documented place for a machine's work root; the process
-        # environment still wins, as for every other ${VAR} it carries.
-        from .config import _local_env_table
+        # The host's work-root is the one place a machine's working storage is configured; the process
+        # environment (BC_WORK_ROOT, as tools/env/bigcherry-env.sh exports it) still wins.
+        from .config import _host_default
 
         work = _absolute(
             work_root
             or os.environ.get("BC_WORK_ROOT")
-            or _local_env_table().get("BC_WORK_ROOT")
+            or _host_default("BC_WORK_ROOT")
             or paths.primary_root() / "work"
         )
         upstream_was_explicit = upstream_repo is not None
