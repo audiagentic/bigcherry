@@ -63,7 +63,7 @@ patch-sets = ["framework"]
 options = { GGML_HIP_AUTOTUNE = "ON" }
 variant-set = "workload-max"
 needs = ["inventory", "promoted-winners"]
-[platform.brutus]
+[platform.dev]
 targets = ["gfx1100", "gfx1201"]
 options = { GGML_HIP = "ON" }
 """
@@ -117,7 +117,7 @@ engine = "llamacpp"
 pinned = "b10362"
 [stack.rocm-10]
 backend = "hip"
-sdk-root = "/opt/rocm-10"
+sdk = "10"
 c-compiler = "/opt/clang/bin/clang"
 runtime-library-dirs = ["/opt/rocm-10/lib"]
 environment = { HIP_VISIBLE_DEVICES = "0,1" }
@@ -127,10 +127,18 @@ targets = ["gfx1100"]
 options = { GGML_HIP = "ON" }
 """
         )
-        loaded = config.load(path)
+        from unittest import mock
+
+        from bigcherry.core import environment as environment_module
+
+        host = mock.Mock(rocm_sdks=(("10", "/opt/rocm-10"),))
+        with mock.patch.object(environment_module, "load_default") as load_default:
+            load_default.return_value.host.return_value = host
+            loaded = config.load(path)
         stack = loaded.stacks["rocm-10"]
         self.assertIsInstance(stack, config.BackendStack)
         self.assertEqual(stack.backend, "hip")
+        self.assertEqual(stack.sdk, "10")
         self.assertEqual(stack.sdk_root, "/opt/rocm-10")
         self.assertEqual(stack.environment, (("HIP_VISIBLE_DEVICES", "0,1"),))
         self.assertEqual(stack.required_providers, ("hip", "rocblas"))

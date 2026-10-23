@@ -1,7 +1,7 @@
 """HI119: engines/llamacpp/patches/1239 (test_bigcherry_moe_glu_fusion) and 1240
 (--moe-glu-file CLI hook) against the real pinned vendor source.
 
-Real-hardware validation (Brutus, 2026-08-25) already confirmed these
+Real-hardware validation (dev, 2026-08-25) already confirmed these
 compile and run correctly, and that a --moe-glu-file-driven instance
 produces the identical recorded dispatch signature (fusion=GATE, op=GLU,
 matching HI108's real blocked dispatch shape exactly) as the statically-

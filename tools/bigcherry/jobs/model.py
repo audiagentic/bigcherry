@@ -65,7 +65,7 @@ class GpuRequirement:
 
 @dataclass(frozen=True)
 class TargetPolicy:
-    executor_id: str = "brutus"
+    executor_id: str = "dev"
     host_id: str | None = None
     platform_family: str | None = None
 
@@ -209,7 +209,7 @@ class BatchSpec:
 def target_from_mapping(value: Mapping[str, Any] | None) -> TargetPolicy:
     value = value or {}
     return TargetPolicy(
-        executor_id=str(value.get("executor_id", "brutus")),
+        executor_id=str(value.get("executor_id", "dev")),
         host_id=None if value.get("host_id") is None else str(value["host_id"]),
         platform_family=(
             None

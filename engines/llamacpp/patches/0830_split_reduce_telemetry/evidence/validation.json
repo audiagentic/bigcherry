@@ -47,7 +47,7 @@
       },
       "campaign_identity": "0b6959b22b7b7cd9db7c7f94091d2cc2106b568a446a40822ef47f28d15943c8",
       "campaign_identity_digest": "0b6959b22b7b7cd9db7c7f94091d2cc2106b568a446a40822ef47f28d15943c8",
-      "campaign_workdir": "/home/audumla/pa26-evidence-run3/0830_split_reduce_telemetry/framework/0830_split_reduce_telemetry",
+      "campaign_workdir": "${HOME}/pa26-evidence-run3/0830_split_reduce_telemetry/framework/0830_split_reduce_telemetry",
       "check_results": {
         "apply": {
           "artifacts": [],
@@ -421,7 +421,7 @@
       },
       "campaign_identity": "14622b956195bc689ae5f28427685aa1976a77dec6708117eea26f4676893c2e",
       "campaign_identity_digest": "14622b956195bc689ae5f28427685aa1976a77dec6708117eea26f4676893c2e",
-      "campaign_workdir": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/runs/fwcfg-b11126-r2/0830_split_reduce_telemetry/framework/0830_split_reduce_telemetry",
+      "campaign_workdir": "${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/work/runs/fwcfg-b11126-r2/0830_split_reduce_telemetry/framework/0830_split_reduce_telemetry",
       "check_results": {
         "apply": {
           "artifacts": [
@@ -793,7 +793,7 @@
       },
       "campaign_identity": "44e4928ed3f87906406be19a03792d4f08e65794fd3d423f6e3fbc5f10b2eeaf",
       "campaign_identity_digest": "44e4928ed3f87906406be19a03792d4f08e65794fd3d423f6e3fbc5f10b2eeaf",
-      "campaign_workdir": "/home/audumla/pa26-evidence-run2/0830_split_reduce_telemetry/framework/0830_split_reduce_telemetry",
+      "campaign_workdir": "${HOME}/pa26-evidence-run2/0830_split_reduce_telemetry/framework/0830_split_reduce_telemetry",
       "check_results": {
         "apply": {
           "artifacts": [],
@@ -1167,7 +1167,7 @@
       },
       "campaign_identity": "5a5622ff44e893069231a1729f55941735e5730d4c24939f2cdf5bbf664b21aa",
       "campaign_identity_digest": "5a5622ff44e893069231a1729f55941735e5730d4c24939f2cdf5bbf664b21aa",
-      "campaign_workdir": "/home/audumla/pa26-evidence-run4/0830_split_reduce_telemetry/framework/0830_split_reduce_telemetry",
+      "campaign_workdir": "${HOME}/pa26-evidence-run4/0830_split_reduce_telemetry/framework/0830_split_reduce_telemetry",
       "check_results": {
         "apply": {
           "artifacts": [
@@ -1558,7 +1558,7 @@
       },
       "campaign_identity": "630167afb8bc158efa8fe1586f2dd23bb9474137775ea852a84581a71a11a018",
       "campaign_identity_digest": "630167afb8bc158efa8fe1586f2dd23bb9474137775ea852a84581a71a11a018",
-      "campaign_workdir": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/runs/pa40-fwcfg/r3-0830_split_reduce_telemetry/framework/0830_split_reduce_telemetry",
+      "campaign_workdir": "${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/work/runs/pa40-fwcfg/r3-0830_split_reduce_telemetry/framework/0830_split_reduce_telemetry",
       "check_results": {
         "apply": {
           "artifacts": [

@@ -1,4 +1,4 @@
-# Brutus Slurm 23.11 install/integration runbook
+# dev Slurm 23.11 install/integration runbook
 
 Normative architecture: `docs/design/JOBS_ORCHESTRATOR.md`. Job-service operator reference: `JOBS_CONTROL_PLANE.md`.
 
@@ -17,10 +17,10 @@ No MariaDB, slurmdbd or slurmrestd. BigCherry owns scientific/domain history; Sl
 Dry-run/preflight first:
 
 ```bash
-python tools/admin/install_brutus_slurm.py \
-  --project-root /srv/bigcherry \
-  --hardware-root /mnt/data/bigcherry-jobs/hardware \
-  --executor-id brutus --node-name brutus \
+python tools/admin/install_node_slurm.py \
+  --project-root ${BIGCHERRY_ROOT} \
+  --hardware-root ${DATA_ROOT}/bigcherry-jobs/hardware \
+  --executor-id dev --node-name dev \
   --cpus <N> --real-memory-mib <MiB>
 ```
 
@@ -29,10 +29,10 @@ Preflight requires an accepted hardware inventory and renders the exact current 
 After reviewing the plan/config:
 
 ```bash
-sudo /srv/bigcherry-venv/bin/python tools/admin/install_brutus_slurm.py \
-  --project-root /srv/bigcherry \
-  --hardware-root /mnt/data/bigcherry-jobs/hardware \
-  --executor-id brutus --node-name brutus \
+sudo ${BIGCHERRY_VENV}/bin/python tools/admin/install_node_slurm.py \
+  --project-root ${BIGCHERRY_ROOT} \
+  --hardware-root ${DATA_ROOT}/bigcherry-jobs/hardware \
+  --executor-id dev --node-name dev \
   --cpus <N> --real-memory-mib <MiB> --apply
 ```
 
@@ -45,8 +45,8 @@ Manual steps below are the auditable equivalent/fallback.
 GPU ordinals are not hardware truth. Discover current Linux AMD state:
 
 ```bash
-python -m bigcherry hardware discover brutus --record
-python -m bigcherry hardware diff brutus
+python -m bigcherry hardware discover dev --record
+python -m bigcherry hardware diff dev
 ```
 
 Review `observed.json`, especially identity source, architecture/model/VRAM, BDF, render node and HIP ordinal. The Linux provider prefers AMD/HIP UUID, then hardware serial, and fails closed unless an explicit weak hardware epoch is supplied when neither exists.
@@ -54,9 +54,9 @@ Review `observed.json`, especially identity source, architecture/model/VRAM, BDF
 Accept only the reviewed hash:
 
 ```bash
-python -m bigcherry hardware accept brutus \
+python -m bigcherry hardware accept dev \
   --expected-hash <observed-material-hash> [--allow-material-change]
-python -m bigcherry hardware render-gres brutus
+python -m bigcherry hardware render-gres dev
 ```
 
 `environment.local.toml` supplies policy/toolchain/model paths, never GPU identity/architecture/VRAM overrides.
@@ -110,9 +110,9 @@ Render using:
 
 ```bash
 python tools/admin/render_bigcherry_slurm.py \
-  --project-root /srv/bigcherry \
-  --hardware-root /mnt/data/bigcherry-jobs/hardware \
-  --executor-id brutus --node-name brutus \
+  --project-root ${BIGCHERRY_ROOT} \
+  --hardware-root ${DATA_ROOT}/bigcherry-jobs/hardware \
+  --executor-id dev --node-name dev \
   --cpus <N> --real-memory-mib <MiB> --dest-root /tmp/slurm-review
 ```
 
@@ -246,18 +246,18 @@ No static production-GPU partition exists.
 Material inventory/GRES change:
 
 ```bash
-sudo scontrol update NodeName=brutus State=DRAIN Reason='BigCherry inventory drift'
-python -m bigcherry hardware discover brutus --record
-python -m bigcherry hardware diff brutus
+sudo scontrol update NodeName=dev State=DRAIN Reason='BigCherry inventory drift'
+python -m bigcherry hardware discover dev --record
+python -m bigcherry hardware diff dev
 # review + accept exact observed hash
-python -m bigcherry hardware accept brutus --expected-hash <sha> --allow-material-change
+python -m bigcherry hardware accept dev --expected-hash <sha> --allow-material-change
 # rerender /etc/slurm, then:
 sudo slurmd -G
 sudo systemctl restart slurmd
 sudo scontrol reconfigure
 python -m bigcherry jobs --engine llamacpp executors doctor
 # rerun required hardware acceptance
-sudo scontrol update NodeName=brutus State=RESUME
+sudo scontrol update NodeName=dev State=RESUME
 ```
 
 Same-model replacement or relevant topology change starts a new scientific cohort. Locator-only changes require scheduler reconciliation but need not change cohort when stable identity/topology are unchanged.

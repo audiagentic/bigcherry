@@ -22,6 +22,6 @@ Prompt-only MTP catch-up is deferred by one target chunk. After target chunk k f
 
 ## Qualification
 
-Qualified on Brutus at b11474 via the QFP18 lightweight promotion tier: mechanics/lint, activation marker, one-binary
+Qualified on dev at b11474 via the QFP18 lightweight promotion tier: mechanics/lint, activation marker, one-binary
 ABBA with complete separation at 8K/24K/98K, and greedy target identity. Full hardware record is in README.md and
 `releases/evidence/qfp31-mtp-deferred-catchup.md`.

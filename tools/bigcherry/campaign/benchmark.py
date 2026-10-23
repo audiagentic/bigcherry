@@ -865,7 +865,19 @@ def run_server_comparison_capture(
     from bigcherry.campaign.bench_runner import _resolve_runner_root
     from bigcherry.campaign.run_advisories import evaluate_ab_result
 
-    config = json.loads(config_path.read_text(encoding="utf-8"))
+    from bigcherry.core.config import expand_host_value, require_resolved
+
+    def _resolve(value):
+        # Host paths in run configurations are ${VAR} references, resolved from the environment.
+        if isinstance(value, str):
+            return require_resolved(expand_host_value(value), f"{config_path}")
+        if isinstance(value, list):
+            return [_resolve(item) for item in value]
+        if isinstance(value, dict):
+            return {key: _resolve(item) for key, item in value.items()}
+        return value
+
+    config = _resolve(json.loads(config_path.read_text(encoding="utf-8")))
     if config.get("schema_version") != 1:
         raise ValueError("server capture configuration requires schema_version 1")
     arms = config.get("arms", [])

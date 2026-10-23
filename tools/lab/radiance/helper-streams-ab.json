@@ -1,10 +1,10 @@
 {
-  "_comment": "RAD10-01: concurrent-stream baseline on the Brutus layout (R9700 engine, two XTX helpers): 1, 2, 4 and 6 simultaneous streams (--max-num-seqs 6) through bigcherry stream-bench inside the ab-benchmark lifecycle. Both arms are identical, so the pair is an A/A noise floor for every metric. Set RAD_BIN, RAD_HOME and R9700_BDF as for helper-ab.json. Required metrics are the throughput ones (the harness takes *_tps); TTFT and inter-token percentiles are in each cell's stream-bench.json.",
+  "_comment": "RAD10-01: concurrent-stream baseline on the dev layout (R9700 engine, two XTX helpers): 1, 2, 4 and 6 simultaneous streams (--max-num-seqs 6) through bigcherry stream-bench inside the ab-benchmark lifecycle. Both arms are identical, so the pair is an A/A noise floor for every metric. Set RAD_BIN, RAD_HOME and R9700_BDF as for helper-ab.json. Required metrics are the throughput ones (the harness takes *_tps); TTFT and inter-token percentiles are in each cell's stream-bench.json.",
   "schema_version": 1,
   "engine": "radiance",
   "evidence_role": "diagnostic",
   "execution_evidence": "observe",
-  "model": "/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad",
+  "model": "${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad",
   "server_args": [
     "--radiance-home",
     "${RAD_HOME}",
@@ -73,7 +73,7 @@
         "R3_MOE_HELPER_MAX_ROWS": "4096",
         "R3_MOE_HELPER_SMALL_ROWS": "8",
         "R3_MOE_HELPER_MIB": "22528",
-        "R3_MOE_HELPER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
+        "R3_MOE_HELPER_HEAT": "${BC_WORK_ROOT}/runs/perf51/heat.rank0.hot-first",
         "R3_MOE_HELPER_ROWS": "0"
       }
     },
@@ -90,7 +90,7 @@
         "R3_MOE_HELPER_MAX_ROWS": "4096",
         "R3_MOE_HELPER_SMALL_ROWS": "8",
         "R3_MOE_HELPER_MIB": "22528",
-        "R3_MOE_HELPER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
+        "R3_MOE_HELPER_HEAT": "${BC_WORK_ROOT}/runs/perf51/heat.rank0.hot-first",
         "R3_MOE_HELPER_ROWS": "0"
       }
     }

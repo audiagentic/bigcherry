@@ -57,7 +57,7 @@ BIGCHERRY_REF_DIGEST/CORRECTNESS_METRIC lines)."""
 
 GROUP = "core"
 # Verified offline: dry-run apply + idempotence against the real vendored
-# checkout (composed with 1222+1236+1238). Compiled cleanly on real Brutus
+# checkout (composed with 1222+1236+1238). Compiled cleanly on real dev
 # hardware (bc-build-hi64hi14) and confirmed the new test case is enumerated
 # by test-backend-ops' own case registry and runs without crashing under a
 # direct `-p` filter (real GPU, gfx1100/gfx1201/gfx1030). NOT yet promoted to

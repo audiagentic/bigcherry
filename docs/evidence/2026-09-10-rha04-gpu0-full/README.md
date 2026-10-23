@@ -36,5 +36,5 @@ current-source engineering evidence and must be followed by the other GPUs
 and the matched dual-XTX 27B run.
 
 Raw machine-readable artifacts are `run.json` and `config.json`. Per-cell
-logs remain on Brutus under `/tmp/rha04-gpu0-full/` and are not committed as
+logs remain on <gpu-host> under `/tmp/rha04-gpu0-full/` and are not committed as
 release artifacts.

@@ -1,0 +1,47 @@
+name: Forbidden terms
+
+# Blocks machine names and host-specific paths, addresses and identities in changed files.
+# The machine names come from the repository secret FORBIDDEN_TERMS (comma-separated), so
+# they are never written into this repository. The workflow fails if the secret is missing.
+# The same scan runs locally as the pre-commit hook (python3 -m bigcherry.forbidden_terms).
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  scan-changed-files:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Require the forbidden-term secret
+        env:
+          FORBIDDEN_TERMS: ${{ secrets.FORBIDDEN_TERMS }}
+        run: |
+          if [ -z "$FORBIDDEN_TERMS" ]; then
+            echo "::error::repository secret FORBIDDEN_TERMS is not set; the scan cannot run" >&2
+            exit 1
+          fi
+
+      - name: Scan files changed by this push or pull request
+        env:
+          FORBIDDEN_TERMS: ${{ secrets.FORBIDDEN_TERMS }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          set -eu
+          base="${PR_BASE:-$PUSH_BEFORE}"
+          case "$base" in
+            ""|0000000000000000000000000000000000000000)
+              base="$(git merge-base origin/main HEAD 2>/dev/null || git rev-list --max-parents=0 HEAD | tail -n1)"
+              ;;
+          esac
+          BIGCHERRY_FORBIDDEN_TERMS="$FORBIDDEN_TERMS" PYTHONPATH=tools \
+            python3 -m bigcherry.forbidden_terms --base "$base"

@@ -5,7 +5,7 @@
 set -u
 srv=$1 out=$2; mkdir -p "$out"
 bench=$(dirname "$srv")/llama-bench
-model=/mnt/data/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf
+model=${BC_MODEL_ROOT}/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf
 declare -A cfg=(
   [default]=""
   [shm-ce]="NCCL_SHM_USE_CUDA_MEMCPY=1 NCCL_SHM_MEMCPY_MODE=3"

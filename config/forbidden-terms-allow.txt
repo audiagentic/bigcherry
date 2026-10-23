@@ -1,0 +1,9 @@
+# Technical phrases that contain a forbidden term by accident. One per line; matched
+# case-insensitively and removed before the forbidden-term scan. Keep this list short.
+integrated_gpu_host_buffer
+integrated-gpu host
+integrated GPU host
+IGPU-HOST
+C:\Program Files\AMD\ROCm
+# Third-party upstream commit author (attribution, not a local identifier)
+stew675@gmail.com

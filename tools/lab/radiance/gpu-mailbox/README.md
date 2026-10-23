@@ -1,6 +1,6 @@
 # RAD03 GPU mailbox
 
-The Brutus feasibility probe in `mailbox_probe.cpp` measured 16.7 us round trip between an
+The dev feasibility probe in `mailbox_probe.cpp` measured 16.7 us round trip between an
 RX 7900 XTX and the R9700 when both processes register the same POSIX shm page with
 `hipHostRegisterPortable | hipHostRegisterMapped` and signal only with
 `hipStreamWriteValue32` / `hipStreamWaitValue32`. P2P is unavailable on this host.

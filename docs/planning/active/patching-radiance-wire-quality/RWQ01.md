@@ -40,7 +40,7 @@ engines/radiance/README.md (append measured outcomes only); tools/lab/radiance/w
 
 ## Validation
 
-Offline: seven deterministic unittest cases for pack/unpack, BF16 ties, Hadamard inverse, rank exchange, zeros, input rejection and sample accuracy (already locally passed; NOT GPU evidence). On Brutus: exact-repeat KLD 0, top-1 100%, effective wire route counts consistent with graph; two rank device kernels checked against reference, no difference between same-mode rank outputs; 42,761-position KL report from existing Radiance scoring machinery; record log hashes and telemetry overhead.
+Offline: seven deterministic unittest cases for pack/unpack, BF16 ties, Hadamard inverse, rank exchange, zeros, input rejection and sample accuracy (already locally passed; NOT GPU evidence). On dev: exact-repeat KLD 0, top-1 100%, effective wire route counts consistent with graph; two rank device kernels checked against reference, no difference between same-mode rank outputs; 42,761-position KL report from existing Radiance scoring machinery; record log hashes and telemetry overhead.
 
 ## Effort & Risk
 

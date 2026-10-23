@@ -1351,7 +1351,7 @@ class TestHi118FusionFieldPresenceFlags(unittest.TestCase):
     mmvq.cu's ggml_are_same_stride() alone only proves stride, not shape;
     biases are F32 sized by dst.ne[0]/n_expert) -- so only presence flags are
     needed, not new ne/type fields, and no schema-version bump. dst_gate is
-    deliberately NOT tracked: real Brutus build confirmed it only exists on
+    deliberately NOT tracked: real dev build confirmed it only exists on
     ggml_cuda_mm_fusion_args_host under the experimental, non-default RD12
     patch (engines/llamacpp/patches/1205_rd12_paired_mmvq_dual_output -- corrected
     2026-08-25, initially misattributed to 1207) -- referencing it

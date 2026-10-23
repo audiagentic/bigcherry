@@ -1,10 +1,10 @@
 {
- "_comment": "Example (MEN11): R3_MOE_HELPER_ROWS 0 vs 1 on the Brutus layout: server on the R9700 (ROCR device 2, HIP index 0; tp 1, libr4d), two XTX expert helpers (devices 0 and 1) started and stopped by the harness. Settings mirror fn-r9700-engine.sh; R3_MOE_HELPER_SKIP_OWNED is a rad0002 patch variable, not a component setting, so it sits in the shared environment. Set RAD_BIN (<lane build>/bin/radiance), RAD_HOME (<lane build>/radiance_home) and R9700_BDF before use. Not used by tests.",
+ "_comment": "Example (MEN11): R3_MOE_HELPER_ROWS 0 vs 1 on the dev layout: server on the R9700 (ROCR device 2, HIP index 0; tp 1, libr4d), two XTX expert helpers (devices 0 and 1) started and stopped by the harness. Settings mirror fn-r9700-engine.sh; R3_MOE_HELPER_SKIP_OWNED is a rad0002 patch variable, not a component setting, so it sits in the shared environment. Set RAD_BIN (<lane build>/bin/radiance), RAD_HOME (<lane build>/radiance_home) and R9700_BDF before use. Not used by tests.",
  "schema_version": 1,
  "engine": "radiance",
  "evidence_role": "diagnostic",
  "execution_evidence": "observe",
- "model": "/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad",
+ "model": "${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad",
  "server_args": [
   "--radiance-home", "${RAD_HOME}", "--kernels", "libr4d,libr3moe,libref",
   "--placement", "expert_tiered", "--ngram-placement", "ram",
@@ -32,7 +32,7 @@
    "settings": {
     "R3_MOE_HELPER": "1", "R3_MOE_HELPER_DEVICES": "0 1", "R3_MOE_HELPER_MOE_DOWN_TILE": "1", "R3_MOE_HELPER_ENGINE_RANKS": "1",
     "R3_MOE_HELPER_MAX_ROWS": "4096", "R3_MOE_HELPER_SMALL_ROWS": "8",
-    "R3_MOE_HELPER_MIB": "22528", "R3_MOE_HELPER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
+    "R3_MOE_HELPER_MIB": "22528", "R3_MOE_HELPER_HEAT": "${BC_WORK_ROOT}/runs/perf51/heat.rank0.hot-first",
     "R3_MOE_HELPER_ROWS": "0"
    }
   },
@@ -41,7 +41,7 @@
    "settings": {
     "R3_MOE_HELPER": "1", "R3_MOE_HELPER_DEVICES": "0 1", "R3_MOE_HELPER_MOE_DOWN_TILE": "1", "R3_MOE_HELPER_ENGINE_RANKS": "1",
     "R3_MOE_HELPER_MAX_ROWS": "4096", "R3_MOE_HELPER_SMALL_ROWS": "8",
-    "R3_MOE_HELPER_MIB": "22528", "R3_MOE_HELPER_HEAT": "/mnt/data/bigcherry-work/runs/perf51/heat.rank0.hot-first",
+    "R3_MOE_HELPER_MIB": "22528", "R3_MOE_HELPER_HEAT": "${BC_WORK_ROOT}/runs/perf51/heat.rank0.hot-first",
     "R3_MOE_HELPER_ROWS": "1"
    }
   }

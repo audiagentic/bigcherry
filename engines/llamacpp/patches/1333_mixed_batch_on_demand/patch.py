@@ -6,7 +6,7 @@ embedding rows. build_inp_embd adds a third select branch for it whenever the ar
 mixed_tokens, mixed_slots and mixed_embd (F32 [n_embd, n_tokens], as large as the embd input), a dup of it, a
 second token-embedding lookup and a set_rows, although the branch is only selected for a mixed ubatch.
 
-Bisect on Brutus (2x gfx1100 + gfx1201 tensor split, gfx1030 MTP drafter), same patch recipe on every build:
+Bisect on dev (2x gfx1100 + gfx1201 tensor split, gfx1030 MTP drafter), same patch recipe on every build:
 upstream 2ca15f540 (the commit before) is fast, 0bb496dbd is slow - Flash-Next 24K MTP decode 41.1 -> 44.6 ms/step,
 Qwen3.8-27B dual-XTX prefill 1290 -> 1267-1276 t/s at 10K and 1247 -> 1228-1230 t/s at 32K. Greedy text and draft
 acceptance are identical on both sides.

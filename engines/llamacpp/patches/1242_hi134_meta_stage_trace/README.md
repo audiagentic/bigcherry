@@ -9,7 +9,7 @@ are authoritative in `patch.toml`.
 ## Real hardware investigation (2026-09-12)
 
 HI134 (this patch's owning plan item, `state = "completed"`) already ran
-real profiling campaigns against META reduction on Brutus's heterogeneous
+real profiling campaigns against META reduction on dev's heterogeneous
 topologies using the proper `bigcherry profile-campaign` pipeline
 (rocprofv3 --sys-trace, multi-GPU agent validation) -- see HI134's own
 notes for that real evidence.

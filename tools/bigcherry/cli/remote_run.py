@@ -84,9 +84,9 @@ class RunStatus:
 
 
 def _check_host(host: environment.Host) -> None:
-    if not host.hostname or not host.repo or not host.cache_root:
-        raise RemoteRunError("remote host needs hostname, repo and cache-root")
-    for name, value in (("repo", host.repo), ("cache-root", host.cache_root), ("environment-file", host.environment_file)):
+    if not host.hostname or not host.repo_root or not host.cache_root:
+        raise RemoteRunError("remote host needs hostname, repo-root and cache-root")
+    for name, value in (("repo-root", host.repo_root), ("cache-root", host.cache_root), ("environment-file", host.environment_file)):
         if not PurePosixPath(value).is_absolute() or any(c.isspace() for c in value):
             raise RemoteRunError(f"host {name} must be an absolute POSIX path without whitespace, got {value!r}")
     if not host.busy_processes:
@@ -126,10 +126,10 @@ def _wrapper(host: environment.Host, run_dir: str, argv: tuple[str, ...]) -> str
     lines = [
         "#!/usr/bin/env bash",
         f'echo $$ > {q(run_dir + "/pid")}',
-        f"cd {q(host.repo)}",
+        f"cd {q(host.repo_root)}",
     ]
-    if host.rocm:
-        lines += [f"export ROCM_PATH={q(host.rocm)}", 'export PATH="$ROCM_PATH/bin:$PATH"']
+    if host.rocm_root:
+        lines += [f"export ROCM_PATH={q(host.rocm_root)}", 'export PATH="$ROCM_PATH/bin:$PATH"']
     lines += [
         f"export BIGCHERRY_ENVIRONMENT={q(host.environment_file)}",
         "export PYTHONPATH=tools",
@@ -159,21 +159,21 @@ def build_launch_script(
     run_dir = f"{runs_dir(host)}/{run_id}"
     meta = json.dumps({
         "id": run_id, "host": host.name, "ref": ref, "sha": "__SHA__", "argv": ["python", "-m", "bigcherry", *argv],
-        "tree": host.repo, "environment-file": host.environment_file, "started-at": started,
+        "repo-root": host.repo_root, "environment-file": host.environment_file, "started-at": started,
         "started": datetime.fromtimestamp(started, timezone.utc).isoformat(), "log": f"{run_dir}/run.log",
         "pid": "__PID__",
     }, sort_keys=True)
     names = " ".join(q(n) for n in host.busy_processes)
     return "\n".join([
         "set -u",
-        f"tree={q(host.repo)}", f"work={q(host.cache_root)}", f"dir={q(run_dir)}", f"ref={q(ref)}",
+        f"repo_root={q(host.repo_root)}", f"work={q(host.cache_root)}", f"dir={q(run_dir)}", f"ref={q(ref)}",
         f"allow_busy={1 if allow_busy else 0}",
         'py="${BIGCHERRY_REMOTE_PYTHON:-python3}"',
         'refuse() { echo "REFUSE $*"; exit 3; }',
-        'git -C "$tree" rev-parse --git-dir >/dev/null 2>&1 </dev/null || refuse "not a git checkout: $tree"',
+        'git -C "$repo_root" rev-parse --git-dir >/dev/null 2>&1 </dev/null || refuse "not a git checkout: $repo_root"',
         'test -d "$work" || refuse "work root missing: $work"',
         f"lease_py={q(_LEASE_PY)}",
-        'out=$(cd "$tree" && PYTHONPATH=tools "$py" -c "$lease_py" "$work" "$tree" </dev/null 2>&1) '
+        'out=$(cd "$repo_root" && PYTHONPATH=tools "$py" -c "$lease_py" "$work" "$repo_root" </dev/null 2>&1) '
         '|| refuse "tree-activity: $(printf %s "$out" | tr "\\n" " ")"',
         'if [ "$allow_busy" != 1 ]; then',
         '  command -v pgrep >/dev/null || refuse "pgrep not available to check for GPU users"',
@@ -184,12 +184,12 @@ def build_launch_script(
         "  done",
         '  [ -z "$busy" ] || refuse "GPU host busy:$busy (use --allow-busy to override)"',
         "fi",
-        'dirty=$(git -C "$tree" status --porcelain --untracked-files=no </dev/null)',
-        '[ -z "$dirty" ] || refuse "tree has uncommitted tracked changes: $(printf %s "$dirty" | head -n 3 | tr "\\n" ";")"',
-        'git -C "$tree" fetch -q origin </dev/null || refuse "git fetch origin failed in $tree"',
-        'sha=$(git -C "$tree" rev-parse --verify -q "origin/$ref^{commit}" </dev/null '
-        '|| git -C "$tree" rev-parse --verify -q "$ref^{commit}" </dev/null) || refuse "ref not found after fetch: $ref"',
-        'git -C "$tree" checkout -q --detach "$sha" </dev/null || refuse "checkout of $sha failed"',
+        'dirty=$(git -C "$repo_root" status --porcelain --untracked-files=no </dev/null)',
+        '[ -z "$dirty" ] || refuse "repo has uncommitted tracked changes: $(printf %s "$dirty" | head -n 3 | tr "\\n" ";")"',
+        'git -C "$repo_root" fetch -q origin </dev/null || refuse "git fetch origin failed in $repo_root"',
+        'sha=$(git -C "$repo_root" rev-parse --verify -q "origin/$ref^{commit}" </dev/null '
+        '|| git -C "$repo_root" rev-parse --verify -q "$ref^{commit}" </dev/null) || refuse "ref not found after fetch: $ref"',
+        'git -C "$repo_root" checkout -q --detach "$sha" </dev/null || refuse "checkout of $sha failed"',
         'mkdir -p "$dir" || refuse "cannot create $dir"',
         "cat > \"$dir/run.sh\" <<'BC_REMOTE_RUN_EOF'",
         _wrapper(host, run_dir, argv).rstrip("\n"),

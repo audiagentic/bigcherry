@@ -33,5 +33,5 @@ universal replay promotion and remains unadmitted pending work-equivalence and
 replay-activation evidence.
 
 Raw machine-readable artifacts are `run.json` and `config.json`. Per-cell
-logs remain on Brutus under `/tmp/rha04-gpu3-full/` and are not committed as
+logs remain on <gpu-host> under `/tmp/rha04-gpu3-full/` and are not committed as
 release artifacts.

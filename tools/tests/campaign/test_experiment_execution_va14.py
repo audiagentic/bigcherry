@@ -268,7 +268,7 @@ class RequireDeviceVisibilityTests(unittest.TestCase):
     original inline guard, unit-tested standalone.
 
     Contract corrected 2026-09-11 (real-hardware finding during PVPS02's
-    merge-gate run on Brutus, see PNRO17 and require_device_visibility()'s
+    merge-gate run on dev, see PNRO17 and require_device_visibility()'s
     own docstring): this used to also require ROCR_VISIBLE_DEVICES set
     identically to HIP_VISIBLE_DEVICES. Confirmed directly on real
     gfx1100/gfx1201/gfx1030 hardware that setting both to the SAME

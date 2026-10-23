@@ -15,7 +15,7 @@ work: M
 
 ## Description
 
-Sources: https://github.com/Shali12/r9700-flash-next-notes and stew675/llama-cpp-rdna-boosts r30 (`f1082619d7b80ea26af6242b9fceecade072d5f5`) / r31 (`76a083ed492756803187c85de9ce4537a787b606`), including issue #85 and `wip/moe-mmq-overread/RESOLUTION.md`. Their main Flash-Next rig is one R9700 with host-resident experts; Brutus is 2x gfx1100 + gfx1201 in the meta tensor split with all target experts device-resident plus a gfx1030 MTP drafter. Host-expert mechanisms are therefore mechanism/correctness evidence, not direct ports.
+Sources: https://github.com/Shali12/r9700-flash-next-notes and stew675/llama-cpp-rdna-boosts r30 (`f1082619d7b80ea26af6242b9fceecade072d5f5`) / r31 (`76a083ed492756803187c85de9ce4537a787b606`), including issue #85 and `wip/moe-mmq-overread/RESOLUTION.md`. Their main Flash-Next rig is one R9700 with host-resident experts; dev is 2x gfx1100 + gfx1201 in the meta tensor split with all target experts device-resident plus a gfx1030 MTP drafter. Host-expert mechanisms are therefore mechanism/correctness evidence, not direct ports.
 
 Current BigCherry pin is `0504396140d1c882f5f6ee34466a42db7ae90114`. QFP22 currently holds 1295 QSA gather, 1332 QSA token chunking and 1007 VSX4 FA pending deterministic identity/correctness work.
 
@@ -28,7 +28,7 @@ Issue #85/r31 found **two independent MMQ legal-tile over-read holes**, both req
 1. **Decode-cache arena:** slots were allocated without zeroing and without a tail/head guard. MMQ can read the next slot head; empty/unfilled heads could contain NaN/stale data. r31 allocates `arena_slots * expert_bytes + min(expert_bytes, 512)` and zeros the full arena once.
 2. **DEVGATHER destination:** r30's one-time zero was keyed to `(input_cpy->data, expert_bytes)`. The graph allocator reuses that region between ubatches, so the zero does not survive a multi-ubatch prefill. MMQ can then over-read stale/uninitialized head bytes. NaN contamination can suppress routed-expert work, explaining the false 2-4x throughput result. r31 disables DEVGATHER by default; the normal staging/host-copy path copies the upstream guard footprint every pass into backend-owned storage. `GGML_SCHED_DEVGATHER=1` remains an explicit A/B override.
 
-The resolution explicitly states device-resident MoE (`-ncmoe 0`) is unaffected: direct model tensors have backend zero padding, and gather/staging/cache-arena machinery requires host weights. This exact bug therefore does **not** execute on Brutus's all-GPU target model.
+The resolution explicitly states device-resident MoE (`-ncmoe 0`) is unaffected: direct model tensors have backend zero padding, and gather/staging/cache-arena machinery requires host weights. This exact bug therefore does **not** execute on dev's all-GPU target model.
 
 BigCherry has no `GGML_SCHED_DEVGATHER` implementation. `1295_qsa_gather_decode` gathers selected KV rows; `1331_alloc_peak_live` is allocator telemetry; `1332_qsa_token_chunk` builds token-chunked QSA masks. None shares the DEVGATHER code. The transferable failure class is narrower: any partial/padded temporary buffer consumed by a kernel whose legal read footprint exceeds the logical payload must initialize/provide the whole read footprint. That class is worth checking in 1295. If 1332 differs from dense on request 1, stale cross-request state is unlikely to be its primary cause; first inspect chunk-boundary/mask/index semantics.
 
@@ -36,16 +36,16 @@ BigCherry has no `GGML_SCHED_DEVGATHER` implementation. `1295_qsa_gather_decode`
 
 The current remote QFP28 has 12 steps; the requested core triage is steps 1-9. Verdicts cover all current steps so the review stays valid after the intervening plan edit.
 
-| Step | Verdict | Brutus assessment |
+| Step | Verdict | dev assessment |
 |---|---|---|
 | 1 multi-request gate | **ADAPT** | Keep one server and one slot alive; explicitly run cache-on and cache-off lanes. Shali's `text-check.py` sends only 3 deterministic requests with `cache_prompt:false`; persistent `rig-model` sequencing, not that helper alone, exposed later-request corruption. Complement greedy-MD5; do not replace it. |
-| 2 prove gate sensitivity | **ADOPT** | Required. Use a known-corrupt external build when available; on Brutus also use a deterministic response-#2 corruption fixture so comparator/wiring is proven even though host DEVGATHER cannot execute. |
+| 2 prove gate sensitivity | **ADOPT** | Required. Use a known-corrupt external build when available; on dev also use a deterministic response-#2 corruption fixture so comparator/wiring is proven even though host DEVGATHER cannot execute. |
 | 3 transport plausibility | **ADOPT** | High-value guard for any future host movement. No current all-GPU speed benefit, but it prevents skipped-work results from being accepted. |
 | 4 gate 1295/1332 first | **ADOPT** | Highest priority. 1295's run-to-run instability is compatible with race/uninitialized-padding/extent defects; 1332's dense mismatch needs first-request chunk/mask diagnosis before any stale-state theory. |
 | 5 DEVGATHER lineage | **ADOPT** | Resolved: mechanism-only/no shared code. No dependency on stew DEVGATHER should be created. |
 | 6 host staging-ring experiment | **REJECT** for current topology | All target experts are GPU-resident. Re-open only if MET01/MET06 deliberately moves experts to host RAM. |
 | 7 Q3 for >300K | **ADAPT** | Conditional memory-fit fallback only. First candidate: Unsloth `UD-Q3_K_XL` (~90.0 GB), which the source header-inspected but did **not** download/test. ISTA GSQ-RCO `IQ3_XXS` (~75.8 GB) was measured but is a more aggressive quality trade. Keep f16 preferred/q8_0 minimum KV. |
-| 8 draft depth | **ADAPT** | Useful only as a Brutus gfx1030 MTP profile experiment; external single-R9700 numbers do not transfer. Run after target correctness, and leave mechanism ownership with QFP05/FMTP. |
+| 8 draft depth | **ADAPT** | Useful only as a dev gfx1030 MTP profile experiment; external single-R9700 numbers do not transfer. Run after target correctness, and leave mechanism ownership with QFP05/FMTP. |
 | 9 sampling/reasoning | **ADAPT** | `min_p=0` is profile/model-card conformance, not a kernel optimisation. Keep sampling fixed while benchmarking; assess reasoning-budget policy separately. |
 | 10 tools + JSON schema | **ADAPT** | Failure is still present at pin `050439614`; isolate as a separate upstream-fix item rather than mixing with Flash-Next kernels. |
 | 11 rollback log check | **ADOPT** | Cheap diagnostic. Any hit belongs to lifecycle/cache ownership after minimization. |
@@ -130,8 +130,8 @@ Safest upstream-fix patch: detect `has_tools && has_response_format` before gram
 
 ### Additional source relevance
 
-- External configs use host expert placement and KV choices that do not match Brutus policy; do not copy them wholesale.
-- Source power-cap results are useful for variance/perf-per-watt only, not as evidence of a Brutus throughput win.
+- External configs use host expert placement and KV choices that do not match dev policy; do not copy them wholesale.
+- Source power-cap results are useful for variance/perf-per-watt only, not as evidence of a dev throughput win.
 - Record build SHA, model hash, placement, KV type, slot/cache settings and MTP state in every gate result so a model/config mismatch cannot masquerade as identity failure.
 
 ## Files
@@ -160,11 +160,11 @@ For 1295/1332, capture whether divergence occurs on request 1 or only after stat
 
 ## Notes
 
-The strongest transferable result from r31 is not a speed patch: **partial buffers must satisfy the consumer kernel's full legal read footprint, and correctness must be tested across ubatches/requests before speed is trusted.** On Brutus the exact host-expert bug is bypassed, but that invariant is directly useful for diagnosing 1295 and for preventing false wins.
+The strongest transferable result from r31 is not a speed patch: **partial buffers must satisfy the consumer kernel's full legal read footprint, and correctness must be tested across ubatches/requests before speed is trusted.** On dev the exact host-expert bug is bypassed, but that invariant is directly useful for diagnosing 1295 and for preventing false wins.
 
 ## Change Log
 
 - 2026-10-05T04:10:44.361443+00:00 (created-by): Created by claude
 - 2026-10-05T04:11:07.895131+00:00 (updated-by): Updated initial external findings
 - 2026-10-05: Deep-scanned r31 gather corruption/root cause; consolidated QFP28 around multi-request correctness + bandwidth-plausibility gates; added conditional staging-ring qualification and ownership boundaries.
-- 2026-10-05: Plan review against Shali12 notes + stew675 r30/r31: corrected DEVGATHER mechanism/root cause, Q3 evidence, snapshot coverage and grammar status; recorded per-step verdicts and prioritized Brutus actions.
+- 2026-10-05: Plan review against Shali12 notes + stew675 r30/r31: corrected DEVGATHER mechanism/root cause, Q3 evidence, snapshot coverage and grammar status; recorded per-step verdicts and prioritized dev actions.

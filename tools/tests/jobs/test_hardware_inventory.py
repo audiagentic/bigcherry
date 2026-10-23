@@ -26,7 +26,7 @@ from bigcherry.jobs.model import GpuRequirement
 
 def inventory(*, moved=False, peer=True, second_id="gpu-b") -> HardwareInventory:
     return HardwareInventory(
-        host_id="brutus",
+        host_id="dev",
         platform_family="linux-rocm",
         platform_environment_hash="env1",
         devices=(
@@ -107,27 +107,27 @@ class InventoryCatalogTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             catalog = InventoryCatalog(Path(temp))
             initial = inventory()
-            catalog.record_observed("brutus", initial)
+            catalog.record_observed("dev", initial)
             accepted = catalog.accept_observed(
-                "brutus", expected_material_hash=initial.material_hash
+                "dev", expected_material_hash=initial.material_hash
             )
             self.assertEqual(accepted.material_hash, initial.material_hash)
-            self.assertEqual(catalog.drift("brutus").kind, "same")
+            self.assertEqual(catalog.drift("dev").kind, "same")
 
             moved = inventory(moved=True)
-            catalog.record_observed("brutus", moved)
+            catalog.record_observed("dev", moved)
             with self.assertRaises(HardwareBindingError):
                 catalog.accept_observed(
-                    "brutus", expected_material_hash=moved.material_hash
+                    "dev", expected_material_hash=moved.material_hash
                 )
             with self.assertRaises(HardwareBindingError):
                 catalog.accept_observed(
-                    "brutus",
+                    "dev",
                     expected_material_hash="not-the-observed-hash",
                     allow_material_change=True,
                 )
             accepted2 = catalog.accept_observed(
-                "brutus",
+                "dev",
                 expected_material_hash=moved.material_hash,
                 allow_material_change=True,
             )
@@ -144,7 +144,7 @@ class InventoryCatalogTests(unittest.TestCase):
             output = io.StringIO()
             with mock.patch.dict(os.environ, env, clear=False), contextlib.redirect_stdout(output):
                 self.assertEqual(
-                    hardware_main(["record-observed", "brutus", str(source)]), 0
+                    hardware_main(["record-observed", "dev", str(source)]), 0
                 )
             record = json.loads(output.getvalue())
             observed_hash = record["material_hash"]
@@ -155,7 +155,7 @@ class InventoryCatalogTests(unittest.TestCase):
                     hardware_main(
                         [
                             "accept",
-                            "brutus",
+                            "dev",
                             "--expected-hash",
                             observed_hash,
                         ]
@@ -166,7 +166,7 @@ class InventoryCatalogTests(unittest.TestCase):
 
             output = io.StringIO()
             with mock.patch.dict(os.environ, env, clear=False), contextlib.redirect_stdout(output):
-                self.assertEqual(hardware_main(["render-gres", "brutus"]), 0)
+                self.assertEqual(hardware_main(["render-gres", "dev"]), 0)
             rendered = json.loads(output.getvalue())
             self.assertEqual(rendered["node_gres"], "gpu:gfx1100:2")
             self.assertIn("Type=gfx1100", rendered["gres_conf"])

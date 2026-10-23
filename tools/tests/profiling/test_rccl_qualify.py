@@ -202,7 +202,7 @@ def test_rccl_internal_test_timeout_classified_timeout_not_init_failure(tmp_path
     result = _run_fake(tmp_path, """
         import sys
         print("NCCL INFO ncclCommInitAll_impl comm rank 0 nranks 2 - Init COMPLETE")
-        print("brutus: Test timeout (20s) common.cu.cpp:558")
+        print("dev: Test timeout (20s) common.cu.cpp:558")
         sys.exit(3)
     """)
     assert result.classification == rq.TIMEOUT
@@ -262,7 +262,7 @@ def test_symmetric_memory_benign_line_does_not_classify_unsupported(tmp_path: Pa
     # PASS as UNSUPPORTED via the bare "not supported" substring marker.
     result = _run_fake(tmp_path, """
         import sys
-        print("brutus:1:1 [0] NCCL INFO Symmetric memory is not supported. "
+        print("dev:1:1 [0] NCCL INFO Symmetric memory is not supported. "
               "cuMemEnable 0, globalGinSupport 0, globalNicFused 0 cuMemGdrSupport 1")
         print('    RING    SIMPLE           2')
         sys.exit(0)
@@ -275,7 +275,7 @@ def test_real_unsupported_line_alongside_benign_line_still_classified_unsupporte
     # happens to share a process with the routine trace line.
     result = _run_fake(tmp_path, """
         import sys
-        print("brutus:1:1 [0] NCCL INFO Symmetric memory is not supported. "
+        print("dev:1:1 [0] NCCL INFO Symmetric memory is not supported. "
               "cuMemEnable 0, globalGinSupport 0, globalNicFused 0 cuMemGdrSupport 1")
         print("RCCL_OVERRIDE_PROTO=LL128 not supported on this topology")
         sys.exit(1)

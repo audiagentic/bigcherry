@@ -39,9 +39,9 @@ Hardware-free: patch-lint, bigcherry check, patch-verify-evidence/patch-rebase-c
 
 Hardware-free initial gate (2026-09-09): `patch-lint` passed; `patch-verify-evidence 0850_ordered_speculative_trace` correctly reported `not-required` because the patch remains untested; current-pin `patch-rebase-check --all` passed 60/60 clean including 0850; focused tests `tools/tests/patch/test_hi166_ordered_speculative_trace.py tools/tests/tuning/test_behavioral_gate.py` passed 35 tests. Real production-composition qualification and lifecycle decision remain open.
 
-Brutus qualification attempt (2026-09-09): fetched missing upstream tag `b10705` into the host-local campaign cache; it resolves to `2578138397d7b422bb0e160efdd429976c55fb55`. The maintained `bigcherry build` successfully produced an isolated upstream+0850 HIP `llama-server` for gfx1100 (`build_plan_id=4bd62c7fba032f095c698730f677cf1a`). A framework-composed `bigcherry:control` + 0850 request was correctly fail-closed because existing 0100/0700 configuration evidence is bound to the base materialization identity and does not cover the additive experimental composition.
+dev qualification attempt (2026-09-09): fetched missing upstream tag `b10705` into the host-local campaign cache; it resolves to `2578138397d7b422bb0e160efdd429976c55fb55`. The maintained `bigcherry build` successfully produced an isolated upstream+0850 HIP `llama-server` for gfx1100 (`build_plan_id=4bd62c7fba032f095c698730f677cf1a`). A framework-composed `bigcherry:control` + 0850 request was correctly fail-closed because existing 0100/0700 configuration evidence is bound to the base materialization identity and does not cover the additive experimental composition.
 
-Real MTP trace check (2026-09-09): the isolated binary ran on Brutus GPU0 with `--spec-type draft-mtp --spec-draft-n-max 5`; maintained `server-bench` completed (tg128 184.22 t/s, five repetitions), and a direct `/completion` response emitted 13 ordered `timings.draft_trace` steps with `draft_n=56`, `draft_n_accepted=18`. Evidence: `docs/evidence/pha07-0850-20260909/README.md`. This is schema/activation evidence only, not promotion or dual-XTX parity evidence.
+Real MTP trace check (2026-09-09): the isolated binary ran on dev GPU0 with `--spec-type draft-mtp --spec-draft-n-max 5`; maintained `server-bench` completed (tg128 184.22 t/s, five repetitions), and a direct `/completion` response emitted 13 ordered `timings.draft_trace` steps with `draft_n=56`, `draft_n_accepted=18`. Evidence: `docs/evidence/pha07-0850-20260909/README.md`. This is schema/activation evidence only, not promotion or dual-XTX parity evidence.
 
 ## Effort & Risk
 
@@ -85,7 +85,7 @@ Current lifecycle decision: retain 0850 as experiment-only and untested. The iso
 - 2026-09-09T13:09:28.377646+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-09T13:15:25.931240+00:00 (updated-by): Updated: section:validation, section:notes
 - 2026-09-09T13:15:49.649338+00:00 (updated-by): Updated: section:notes
-- chg_20260909_131613_recorded-real-brutus-mtp-trace_7545
+- chg_20260909_131613_recorded-real-dev-mtp-trace_7545
 - 2026-09-09T13:16:13.063007+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-09T14:02:52.475983+00:00 (state-transition): State: in_progress → completed
 - chg_20260909_140302_closed-the-0850-lifecycle-item_1192

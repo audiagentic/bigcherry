@@ -764,7 +764,7 @@ options = { GGML_VULKAN = "ON", GGML_HIP = "OFF" }
 needs = []
 
 [platform.linux-multi]
-description = "brutus, all GPUs. RCCL on -- required for anything multi-GPU."
+description = "dev, all GPUs. RCCL on -- required for anything multi-GPU."
 targets = ["gfx1100", "gfx1201", "gfx1030"]
 options = { GGML_HIP = "ON", GGML_HIP_RCCL = "ON", LLAMA_BUILD_TESTS = "ON", LLAMA_BUILD_TOOLS = "ON", LLAMA_BUILD_SERVER = "ON", CMAKE_C_COMPILER_LAUNCHER = "ccache", CMAKE_CXX_COMPILER_LAUNCHER = "ccache", CMAKE_HIP_COMPILER_LAUNCHER = "ccache" }
 # Host-specific install locations are never committed: ${VAR} references
@@ -781,7 +781,7 @@ c-compiler = "${HIP_PATH}/bin/clang.exe"
 cxx-compiler = "${HIP_PATH}/bin/clang++.exe"
 
 [platform.vulkan-linux]
-description = "Linux Vulkan build on brutus; physical GPU architecture and ICD (RADV/AMDVLK) are runtime-qualified (BRVP03/RRVP02)."
+description = "Linux Vulkan build on dev; physical GPU architecture and ICD (RADV/AMDVLK) are runtime-qualified (BRVP03/RRVP02)."
 # "targets" is a HIP/AMDGPU_TARGETS concept and does not apply to Vulkan;
 # core/config.py's v2 parser requires a non-empty list for every platform
 # regardless of backend, so this is a placeholder, not a real GPU target --
@@ -800,17 +800,17 @@ required-providers = ["hip", "rocblas"]
 
 [stack.rocm-7-2]
 backend = "hip"
-sdk-root = "${BIGCHERRY_ROCM_7_2_ROOT}"
+sdk = "7.2"
 required-providers = ["hip", "rocblas"]
 
 [stack.rocm-7-14]
 backend = "hip"
-sdk-root = "${BIGCHERRY_ROCM_7_14_ROOT}"
+sdk = "7.14"
 required-providers = ["hip", "rocblas"]
 
 [stack.rocm-10]
 backend = "hip"
-sdk-root = "${BIGCHERRY_ROCM_10_ROOT}"
+sdk = "10.1"
 required-providers = ["hip", "rocblas"]
 
 [stack.vulkan-radv]
@@ -898,7 +898,7 @@ lanes = [
 # flags at all, and on the real 27B/dual-GPU -sm tensor config it fails
 # outright (OOM under contention; a hard parse error for --fit, which it does
 # not register). The documented measurement path (TEST.md, "Server benchmark
-# (Brutus bench runner)") drives a running llama-server via
+# (dev bench runner)") drives a running llama-server via
 # bench/run_bench.py --bench-type server-bench, with the `mtp-dual` config.
 #
 # ARM 4 AND ALREADY-SHIPPED PATCHES -- PA29 NOTE (GPT design review
@@ -1078,10 +1078,10 @@ role = "local"
 required = false
 
 [[trees]]
-name = "brutus"
-alias = "brutus"
-# Remote checkout location is host-specific: set BIGCHERRY_BRUTUS_TREE.
-path = "${BIGCHERRY_BRUTUS_TREE}"
+name = "dev"
+alias = "dev"
+# Checkout location comes from the host's repo-root (environment.local.toml).
+path = "${BC_REPO_ROOT}"
 role = "campaign"
 required = true
 expected-tooling-revision = ""

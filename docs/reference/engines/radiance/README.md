@@ -3,7 +3,7 @@
 Radiance is the second serving engine in this project (beside llama.cpp): a standalone inference server,
 [radiance 1.3.0](https://codeberg.org/StillDeadcode/radiance), pinned at `89cee7ce414486c717aa2085c99e1f522e4c0ea6`
 (`engines/radiance/recipes.toml`). Upstream ships its device kernels (libr4d) for gfx12 only. BigCherry's work here is
-to serve the Qwen3.8 containers on the RDNA3 cards (gfx1100) and to use all of Brutus's GPUs together, through the same
+to serve the Qwen3.8 containers on the RDNA3 cards (gfx1100) and to use all of dev's GPUs together, through the same
 build, patch, benchmark and evidence platform the llama.cpp engine uses.
 
 **Rule: every measurement or decision updates the model page in the same change.** The per-model pages below are the
@@ -25,7 +25,7 @@ current statement of state; `engines/radiance/README.md` stays the dated lab log
 - [../RADIANCE_WIRE_QUALITY_DESIGN.md](../RADIANCE_WIRE_QUALITY_DESIGN.md): cross-card wire quality plan (RWQ01-RWQ06).
 - Lab log: [engines/radiance/README.md](../../../../engines/radiance/README.md) (dated entries, run IDs, raw tables).
 
-## Hardware (Brutus)
+## Hardware (dev)
 
 | Card | Arch | Role in radiance work |
 |---|---|---|
@@ -99,7 +99,7 @@ the result in `run.json` under `quality`. With `quality.record` it first records
 `baselines/`: a table of metric, baseline, measured, delta and pass/fail, an `acceptance.json` evidence file in
 the output directory, and a non-zero exit on any regression (1: a regression, a failed run or a metric the run did not
 measure; 2: a bad declaration or baseline, before anything runs). It is an ordinary bigcherry command, so it runs on the
-lab host with `bigcherry remote run --host brutus --ref <ref> -- --engine radiance accept --output <dir>`. Set `RAD_BIN`,
+lab host with `bigcherry remote run --host dev --ref <ref> -- --engine radiance accept --output <dir>`. Set `RAD_BIN`,
 `RAD_HOME` and `R9700_BDF` first; the KLD entry records its reference into its own output directory (`KLD_REF_DIR` is set by
 the entry unless you set it). `pin-bump --accept` runs it after the CPU smoke.
 

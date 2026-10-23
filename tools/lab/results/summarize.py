@@ -1,4 +1,4 @@
-"""Summarise finished Brutus lab runs into compact, committable JSON.
+"""Summarise finished dev lab runs into compact, committable JSON.
 
 Run on the bench host:  python3 summarize.py <runs-dir> <out-dir>
 Per run (one file <out-dir>/<run>.json, rewritten each harvest):

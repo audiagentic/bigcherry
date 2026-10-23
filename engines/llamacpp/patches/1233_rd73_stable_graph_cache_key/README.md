@@ -87,15 +87,15 @@ lane over a real llama-server HTTP harness (`_run_mtp_server_lane`),
 activation evidence read from that SAME lane's own control/subject
 server log files (no second server/model load), a dedicated subject-only
 graph-cache resource burst session (`_run_resource_burst`), decode control
-lane over a second real llama-server pair driven via the documented Brutus
+lane over a second real llama-server pair driven via the documented dev
 bench runner (`_run_decode_control_lane` + `run_bench_runner_server_bench()`,
-`docs/reference/testing/TEST.md`'s "Server benchmark (Brutus bench
+`docs/reference/testing/TEST.md`'s "Server benchmark (dev bench
 runner)" section), and bit-identical correctness
 (`_check_bit_identical`, reusing the MTP lane's own retained
 request/response pairs), then composes them into a real
 `evaluate_promotion_gate()` verdict (PASS/FAIL/INVALID). Real
 llama-bench is never used anywhere in this path -- it proved unworkable
-for RD73's real 27B/dual-GPU/-sm-tensor config on real Brutus hardware
+for RD73's real 27B/dual-GPU/-sm-tensor config on real dev hardware
 (repeated crashes: OOM under resource contention with production traffic,
 and a hard argument-parse error for `--fit`, which llama-bench does not
 even register).
@@ -103,7 +103,7 @@ even register).
 **Real hardware constraint (VA06):** control and subject llama-server
 processes can never run concurrently for this 27B model -- each needs
 ~13GB/GPU under `-sm tensor` split, and two copies exceed the 24.5GB/GPU
-Brutus dual-XTX cards (a real `cudaMalloc` out-of-memory abort, confirmed
+dev dual-XTX cards (a real `cudaMalloc` out-of-memory abort, confirmed
 on hardware). The MTP performance lane and decode control lane both
 launch one fresh server per single measured/warmup request, alternating
 control/subject arms sequentially -- this preserves the alternating-order
@@ -137,7 +137,7 @@ verdict and the bound contract promotion to pass; the tracked status stays
   `_run_mtp_server_lane()` (paired control/subject llama-server
   processes, real MTP-verify HTTP requests, client-measured `wall_tps`)
   and `_run_decode_control_lane()` (a second paired real
-  llama-server pair, driven via the documented Brutus bench runner --
+  llama-server pair, driven via the documented dev bench runner --
   never llama-bench, which is unworkable for this real 27B/dual-GPU
   config) produce real evidence, composed via `aggregate_contract_effects()`
   against the contract's own `end_to_end_gain_pct`/

@@ -1,7 +1,7 @@
 # RAD06 libr3 setting evidence
 
 One `ab-benchmark` capture per promoted libr3 setting (lightweight tier, `engines/radiance/components/libr3/component.toml`
-`evidence = [...]`). Each run is the R9700 engine plus two RX 7900 XTX helpers on Brutus (the `helper-ab.json` layout,
+`evidence = [...]`). Each run is the R9700 engine plus two RX 7900 XTX helpers on <gpu-host> (the `helper-ab.json` layout,
 Flash-Next), two balanced pairs, arms that differ in that one environment variable (the other is on its default), the helper's
 startup marker present in the on-arm's log and absent from the control's (`setting_activation: executed`), no failed cell.
 `bigcherry patch-lint` re-checks all of that on every run.
@@ -34,4 +34,4 @@ startup marker present in the on-arm's log and absent from the control's (`setti
 
 `R3_MOE_FP16.run.json`, `R3_MOE_AHALF.run.json`, `R3_MOE_HELPER_VECIO.run.json`, `R3_MOE_HELPER_FUSEROUTE.run.json`,
 `R3_MOE_HELPER_FUSESTAGE.run.json`: the `ab-benchmark` run records, copied unchanged from
-`/mnt/data/bigcherry-work/evidence-RAD06/` on Brutus (runs `rad06-evidence-<setting>-<time>`).
+`${BIGCHERRY_ROOT}/evidence-RAD06/` on <gpu-host> (runs `rad06-evidence-<setting>-<time>`).

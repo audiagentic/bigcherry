@@ -19,7 +19,16 @@ import tomllib
 from pathlib import Path
 from typing import Sequence
 
-_REPO = Path(__file__).resolve().parents[3]
+def _find_repo_root() -> Path:
+    """Nearest ancestor holding the repository markers (no fixed depth)."""
+    here = Path(__file__).resolve()
+    for candidate in here.parents:
+        if (candidate / "AGENTS.md").is_file() and (candidate / "tools" / "bigcherry").is_dir():
+            return candidate
+    raise RuntimeError(f"repository root not found above {here}")
+
+
+_REPO = _find_repo_root()
 from bigcherry.core import paths as bc_paths
 
 _PATCH_PREFIX = bc_paths.LLAMACPP.patch_path_prefix()

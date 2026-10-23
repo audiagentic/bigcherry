@@ -8,7 +8,7 @@
 # Usage: bcop37-build.sh <strata tree> <pinned sha> <gfx target> <bundle dir>
 set -u
 T=${1:?strata tree}; SHA=${2:?sha}; ARCH=${3:?gfx target}; B=${4:?bundle dir}
-ROCM=${ROCM:-/mnt/vault/tmp/bc-rocm}
+ROCM=${ROCM:-${BC_TMP_ROOT}/bc-rocm}
 # the tree compiles its .cu files with "-x hip --offload-arch=<arch>", which needs ROCm's clang as the C++ compiler
 # (the documented Windows build uses clang-cl); the system g++ rejects those flags
 CXX_HIP=$ROCM/lib/llvm/bin/clang++ CC_HIP=$ROCM/lib/llvm/bin/clang

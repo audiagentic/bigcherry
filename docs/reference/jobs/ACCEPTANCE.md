@@ -16,7 +16,7 @@ The result is `bigcherry.jobs.acceptance-matrix.v1`. Cases are keyed by scientif
 
 ## 2. Required software gates
 
-Before Brutus cutover:
+Before dev cutover:
 
 ```bash
 python -m unittest discover -s tools/tests/jobs -p 'test_*.py' -v
@@ -24,18 +24,18 @@ python -m bigcherry jobs --engine llamacpp executors doctor
 python -m bigcherry jobs --engine llamacpp status
 ```
 
-GitHub `Jobs service validation` must be green. Real Noble Slurm CI is a scheduler/service reference only; it does not replace Brutus GPU acceptance.
+GitHub `Jobs service validation` must be green. Real Noble Slurm CI is a scheduler/service reference only; it does not replace dev GPU acceptance.
 
-## 3. Brutus hardware gates
+## 3. dev hardware gates
 
 Record exact accepted inventory hash and run:
 
 ```bash
-python -m bigcherry hardware discover brutus --record
-python -m bigcherry hardware diff brutus
+python -m bigcherry hardware discover dev --record
+python -m bigcherry hardware diff dev
 python tools/admin/render_bigcherry_slurm.py \
-  --hardware-root <work>/hardware --executor-id brutus \
-  --node-name brutus --cpus <N> --real-memory-mib <MiB>
+  --hardware-root <work>/hardware --executor-id dev \
+  --node-name dev --cpus <N> --real-memory-mib <MiB>
 sudo slurmd -G
 ```
 

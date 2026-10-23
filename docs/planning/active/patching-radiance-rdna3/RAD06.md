@@ -52,9 +52,9 @@ Pipelining changes the engine MoE block's step structure (patch) and the protoco
 
 Follows RAD02/RAD05.
 
-2026-10-15 07:45 progress: protocol hardening done (e26c1b94, v11: exact-generation completion, helper_fault word so a stopped helper traps the engine instead of hanging it). R3_MOE_NATIVE=1 in the helpers (gfx11 native bf16 WMMA inner loop) now default (2bf231e3): profiled helper prefill gate/up 3.0 -> 2.25 ms, down 1.59 -> 1.23 ms, engine wait+merge 3.56 -> 2.91 ms; balanced A/B prefill 2518/2519 -> 2324(warm-up)/2665, decode 91.4/95.6 -> 108.2/108.8 (different text); KLD 0.0642 / top-1 88.73%. Best Flash-Next on Brutus now ~2,665 prefill / ~108.8 decode (R9700 engine + two XTX helpers, heat ownership, 22 GiB, GEMV, native). Still open: chunk pipeline (multi-buffered payload), deeper gfx11 grouped GEMM, ownership rebalancing.
+2026-10-15 07:45 progress: protocol hardening done (e26c1b94, v11: exact-generation completion, helper_fault word so a stopped helper traps the engine instead of hanging it). R3_MOE_NATIVE=1 in the helpers (gfx11 native bf16 WMMA inner loop) now default (2bf231e3): profiled helper prefill gate/up 3.0 -> 2.25 ms, down 1.59 -> 1.23 ms, engine wait+merge 3.56 -> 2.91 ms; balanced A/B prefill 2518/2519 -> 2324(warm-up)/2665, decode 91.4/95.6 -> 108.2/108.8 (different text); KLD 0.0642 / top-1 88.73%. Best Flash-Next on dev now ~2,665 prefill / ~108.8 decode (R9700 engine + two XTX helpers, heat ownership, 22 GiB, GEMV, native). Still open: chunk pipeline (multi-buffered payload), deeper gfx11 grouped GEMM, ownership rebalancing.
 
-2026-10-15 08:10 helper budget re-tuned with GEMV + native (balanced 20/22/22/20/20/22 GiB): 22 GiB prefill 2737/2762/2763, decode 108.0/108.8/~108.5 (69036e14); 20 GiB prefill 2744/2716/3011(outlier), decode 89.2/89.1/89.2 (fe17e0de). With decode no longer helper-bound, more helper experts no longer cost prefill: 22 GiB is the configuration. Best Flash-Next on Brutus: ~2,755 prefill / ~108.5 decode (R9700 engine + two XTX helpers). Models/quantisation recorded in engines/radiance/README.md (d6ae81bc).
+2026-10-15 08:10 helper budget re-tuned with GEMV + native (balanced 20/22/22/20/20/22 GiB): 22 GiB prefill 2737/2762/2763, decode 108.0/108.8/~108.5 (69036e14); 20 GiB prefill 2744/2716/3011(outlier), decode 89.2/89.1/89.2 (fe17e0de). With decode no longer helper-bound, more helper experts no longer cost prefill: 22 GiB is the configuration. Best Flash-Next on dev: ~2,755 prefill / ~108.5 decode (R9700 engine + two XTX helpers). Models/quantisation recorded in engines/radiance/README.md (d6ae81bc).
 
 2026-10-15 08:20 analysis: MoeFP8::step already loops prefill in row passes (c.rows = max_tok -> one 4096-row pass). Per layer the R9700's own experts take ~1 ms (already overlapped by early publish) and the helpers ~4.5 ms, so a within-layer chunk pipeline cannot go below the helper time. Heat ownership gives the R9700 most routes (hot experts, ~1 ms) and the XTX helpers the cold experts with few rows each, where the WMMA grouped GEMM's 16-row tiles waste work: helper cost per route is ~an order above the R9700's. Revised priority: (1) helper prefill kernel for few-rows-per-expert -- read each owned expert's weights once a layer (~0.4 GB a helper, ~0.4 ms of bandwidth) and compute all its rows from them (extends RAD05's GEMV); (2) cross-layer row pipelining (earlier tokens start the next layer's attention while later tokens' experts are still remote; RAD04-style engine change; upstream's simpler overlap lost 6%). Expected ceiling after (1): ~3,500-4,000 tok/s prefill; two-R9700 ~6,500 (P2P, 32 GB a card) is unlikely on this hardware.
 
@@ -69,7 +69,7 @@ Follows RAD02/RAD05.
 
 ## Ledger-events
 
-- chg_20261014_204134_flash-next-decode-on-brutus-re_3947
+- chg_20261014_204134_flash-next-decode-on-dev-re_3947
 - 2026-10-14T20:41:42.123589+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-14T21:08:32.689755+00:00 (updated-by): Updated: section:notes
 - 2026-10-14T21:09:38.493597+00:00 (updated-by): Updated: section:notes

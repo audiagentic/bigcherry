@@ -93,11 +93,11 @@ tune-context = 4096
 production-context = 8192
 min-free-vram-bytes-per-device = 268435456
 
-# Brutus: radiance's host code needs GCC 14 (C++23); HIP is found by radiance's own CMake from ROCm on PATH.
+# dev: radiance's host code needs GCC 14 (C++23); HIP is found by radiance's own CMake from ROCm on PATH.
 # RAD_GPU_TARGETS names libr4d's kernel targets (gfx12 only); the gfx1100 kernels come from the libr3 component.
 # ${VAR} values come from the environment or config/environment.local.toml [env].
 [platform.linux-radiance]
-description = "brutus: radiance engine build (GCC 14 host compiler; ROCm from PATH)"
+description = "dev: radiance engine build (GCC 14 host compiler; ROCm from PATH)"
 targets = ["gfx1201"]
 options = { RAD_BUILD_TESTS = "OFF" }
 c-compiler = "${RADIANCE_HOST_CC}"

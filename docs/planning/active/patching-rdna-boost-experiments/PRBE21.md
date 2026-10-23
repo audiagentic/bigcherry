@@ -69,7 +69,7 @@ Sub-candidate 1: ggml/src/ggml-cuda/ssm-conv.cu/.cuh, ssm-scan.cu/.cuh, ggml-cud
 
 ## Validation
 
-Sub-candidate 1: test-backend-ops SSM_CONV correctness, fused-vs-unfused equality, gfx1100 timing. Sub-candidate 2: `PYTHONPATH=tools python -m bigcherry patch-lint`/campaign dry-run on the new candidate rows, test-backend-ops MUL_MAT_ID small-K coverage, then the existing record->tune->promote->replay campaign (tools/bigcherry/patch/validation_campaign.py) on Brutus comparing small_k=2 vs native for the target MoE shapes -- not run here.
+Sub-candidate 1: test-backend-ops SSM_CONV correctness, fused-vs-unfused equality, gfx1100 timing. Sub-candidate 2: `PYTHONPATH=tools python -m bigcherry patch-lint`/campaign dry-run on the new candidate rows, test-backend-ops MUL_MAT_ID small-K coverage, then the existing record->tune->promote->replay campaign (tools/bigcherry/patch/validation_campaign.py) on dev comparing small_k=2 vs native for the target MoE shapes -- not run here.
 
 ## Effort & Risk
 

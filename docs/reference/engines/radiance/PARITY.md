@@ -1,6 +1,6 @@
 # Radiance on two RX 7900 XTX against RDNA4: where it stands and how to close the gap
 
-Assessment of the goal "optimise radiance's RDNA3 path to match or exceed RDNA4 over the two XTX on Brutus,
+Assessment of the goal "optimise radiance's RDNA3 path to match or exceed RDNA4 over the two XTX on dev,
 Qwen3.8-27B and Flash-Next first" (2026-10-12/13). Evidence and run names: [engines/radiance/README.md](../../../../engines/radiance/README.md).
 
 ## Where it stands

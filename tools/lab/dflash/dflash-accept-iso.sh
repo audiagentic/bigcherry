@@ -8,7 +8,7 @@ set -u
 REPO=${REPO:-$(cd "$(dirname "$0")/../../.." && pwd)}
 bin=$1 out=$2 only=${3:-} reps=${4:-3}
 mkdir -p "$out"
-G=/mnt/data/llm-models/qwen3.8-27b/gguf
+G=${BC_MODEL_ROOT}/qwen3.8-27b/gguf
 model=$G/mtp/Qwen3.8-27B-Q4_K_M.gguf
 common=(-m "$model" -ngl 99 --fit off -c 8192 --flash-attn on --parallel 1 --threads 8 -ub 2048 -b 2048 -lv 4)
 eval "$(sed -n '/^probe() {$/,/^}$/p' "$REPO/tools/lab/dflash/probe-27b.sh")"

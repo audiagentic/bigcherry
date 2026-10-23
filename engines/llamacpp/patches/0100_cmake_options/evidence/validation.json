@@ -52,7 +52,7 @@
       },
       "campaign_identity": "143c4fe2dcf02ceeaf8b204baa51e8dbce8212744516c246fcec88464d04231f",
       "campaign_identity_digest": "143c4fe2dcf02ceeaf8b204baa51e8dbce8212744516c246fcec88464d04231f",
-      "campaign_workdir": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/framework-validation-b10901/0100-gfx1201/framework/0100_cmake_options",
+      "campaign_workdir": "${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/work/framework-validation-b10901/0100-gfx1201/framework/0100_cmake_options",
       "check_results": {
         "apply": {
           "artifacts": [
@@ -456,7 +456,7 @@
       },
       "campaign_identity": "1574b9fadd8fd2e04f9fc75706da88116f59c87f1dd3e3e3ff53329c419cf0a2",
       "campaign_identity_digest": "1574b9fadd8fd2e04f9fc75706da88116f59c87f1dd3e3e3ff53329c419cf0a2",
-      "campaign_workdir": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/runs/pa40-fwcfg/r2-0100_cmake_options/framework/0100_cmake_options",
+      "campaign_workdir": "${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/work/runs/pa40-fwcfg/r2-0100_cmake_options/framework/0100_cmake_options",
       "check_results": {
         "apply": {
           "artifacts": [
@@ -1264,7 +1264,7 @@
       },
       "campaign_identity": "442625eaaffdc700258f470a01e6a9f33fa0766365416979daa5262b0ba880a6",
       "campaign_identity_digest": "442625eaaffdc700258f470a01e6a9f33fa0766365416979daa5262b0ba880a6",
-      "campaign_workdir": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/runs/pa40-fwcfg/r3-0100_cmake_options/framework/0100_cmake_options",
+      "campaign_workdir": "${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/work/runs/pa40-fwcfg/r3-0100_cmake_options/framework/0100_cmake_options",
       "check_results": {
         "apply": {
           "artifacts": [
@@ -1668,7 +1668,7 @@
       },
       "campaign_identity": "83a4094b590de15974384c6df8292696cdf37e5db6ee849f6a6a06f7a32cae71",
       "campaign_identity_digest": "83a4094b590de15974384c6df8292696cdf37e5db6ee849f6a6a06f7a32cae71",
-      "campaign_workdir": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/framework-validation-b10901/0100-gfx1100/framework/0100_cmake_options",
+      "campaign_workdir": "${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/work/framework-validation-b10901/0100-gfx1100/framework/0100_cmake_options",
       "check_results": {
         "apply": {
           "artifacts": [
@@ -2072,7 +2072,7 @@
       },
       "campaign_identity": "a28efd41a7be4c8f44bd4bdc73dccb1defc6023d11a94fa21cecfba6dccac974",
       "campaign_identity_digest": "a28efd41a7be4c8f44bd4bdc73dccb1defc6023d11a94fa21cecfba6dccac974",
-      "campaign_workdir": "/mnt/vault/development/llmhosts/bigcherry/work/framework-config-0100/framework/0100_cmake_options",
+      "campaign_workdir": "${BC_DEV_ROOT}/llmhosts/bigcherry/work/framework-config-0100/framework/0100_cmake_options",
       "check_results": {
         "apply": {
           "artifacts": [
@@ -2744,7 +2744,7 @@
       },
       "campaign_identity": "d6ce67afe33ca3ff7725c91fae4a832d8fe6fa9cad95b3e20b99ebd391bd2d6d",
       "campaign_identity_digest": "d6ce67afe33ca3ff7725c91fae4a832d8fe6fa9cad95b3e20b99ebd391bd2d6d",
-      "campaign_workdir": "/mnt/vault/development/llmhosts/bigcherry/work/framework-config-0100/framework/0100_cmake_options",
+      "campaign_workdir": "${BC_DEV_ROOT}/llmhosts/bigcherry/work/framework-config-0100/framework/0100_cmake_options",
       "check_results": {
         "apply": {
           "artifacts": [
@@ -3148,7 +3148,7 @@
       },
       "campaign_identity": "d90c135063c587aaa0405e538a805dc4de57d25dbd43e8755f0179db2111a73d",
       "campaign_identity_digest": "d90c135063c587aaa0405e538a805dc4de57d25dbd43e8755f0179db2111a73d",
-      "campaign_workdir": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/runs/fwcfg-b11126-r2/0100_cmake_options/framework/0100_cmake_options",
+      "campaign_workdir": "${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/work/runs/fwcfg-b11126-r2/0100_cmake_options/framework/0100_cmake_options",
       "check_results": {
         "apply": {
           "artifacts": [
@@ -3948,7 +3948,7 @@
       },
       "campaign_identity": "e84c7a4366fc39250452094a119f841b359bcf5ea9526657731c53fe8fa22921",
       "campaign_identity_digest": "e84c7a4366fc39250452094a119f841b359bcf5ea9526657731c53fe8fa22921",
-      "campaign_workdir": "/home/audumla/pa26-evidence-run/0100_cmake_options/framework/0100_cmake_options",
+      "campaign_workdir": "${HOME}/pa26-evidence-run/0100_cmake_options/framework/0100_cmake_options",
       "check_results": {
         "apply": {
           "artifacts": [

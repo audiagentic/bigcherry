@@ -10,11 +10,11 @@
 # Usage: queue-decode-acceptance.sh [build]     (default b-main3)     env: DEPTH (24576), SWITCHES, DECODE_N (512)
 set -u
 cd "$(cd "$(dirname "$0")/../../.." && pwd)"
-R=/mnt/data/bigcherry-work/runs
+R=${BC_WORK_ROOT}/runs
 build=${1:-b-main3}
 DEPTH=${DEPTH:-24576}
-export BC_HIP_PATH=/mnt/vault/tmp/bc-rocm
-export BC_MODEL=/mnt/data/llm-models/qwen3.8-flash-next/gguf/mtp/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf
+export BC_HIP_PATH=${BC_TMP_ROOT}/bc-rocm
+export BC_MODEL=${BC_MODEL_ROOT}/qwen3.8-flash-next/gguf/mtp/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf
 SWITCHES=${SWITCHES:-"1334:BIGCHERRY_FA_SPARSE=0 1347:BIGCHERRY_F32_THIN_MMVF=0 1350:BIGCHERRY_MMQ_FEW_TILE_STREAMK=0"}
 asks=(
     "Summarise the above in detail:"

@@ -1,23 +1,23 @@
 {
  "arm_config": [
   {
-   "binary": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/1a7bddb4d5b3dc6f156f25212fb68790/cfb91b5fe932f285cb43289b576d3863/bin/llama-server",
+   "binary": "${DEV_ROOT}/projects/bigcherry/workspaces/main/work/builds/1a7bddb4d5b3dc6f156f25212fb68790/cfb91b5fe932f285cb43289b576d3863/bin/llama-server",
    "environment": null,
-   "model": "/mnt/data/llm-models/qwen3.8-27b/gguf/unsloth/Qwen3.8-27B-UD-Q4_K_M.gguf",
+   "model": "${MODELS_ROOT}/qwen3.8-27b/gguf/unsloth/Qwen3.8-27B-UD-Q4_K_M.gguf",
    "name": "q4_k_m",
    "server_args": null
   },
   {
-   "binary": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/1a7bddb4d5b3dc6f156f25212fb68790/cfb91b5fe932f285cb43289b576d3863/bin/llama-server",
+   "binary": "${DEV_ROOT}/projects/bigcherry/workspaces/main/work/builds/1a7bddb4d5b3dc6f156f25212fb68790/cfb91b5fe932f285cb43289b576d3863/bin/llama-server",
    "environment": null,
-   "model": "/mnt/data/llm-models/qwen3.8-27b/gguf/unsloth/Qwen3.8-27B-Q4_0.gguf",
+   "model": "${MODELS_ROOT}/qwen3.8-27b/gguf/unsloth/Qwen3.8-27B-Q4_0.gguf",
    "name": "q4_0",
    "server_args": null
   },
   {
-   "binary": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/1a7bddb4d5b3dc6f156f25212fb68790/cfb91b5fe932f285cb43289b576d3863/bin/llama-server",
+   "binary": "${DEV_ROOT}/projects/bigcherry/workspaces/main/work/builds/1a7bddb4d5b3dc6f156f25212fb68790/cfb91b5fe932f285cb43289b576d3863/bin/llama-server",
    "environment": null,
-   "model": "/mnt/data/llm-models/qwen3.8-27b/gguf/unsloth/Qwen3.8-27B-Q4_1.gguf",
+   "model": "${MODELS_ROOT}/qwen3.8-27b/gguf/unsloth/Qwen3.8-27B-Q4_1.gguf",
    "name": "q4_1",
    "server_args": null
   }
@@ -83,7 +83,7 @@
   }
  },
  "kind": "ab",
- "model": "/mnt/data/llm-models/qwen3.8-27b/gguf/unsloth/Qwen3.8-27B-UD-Q4_K_M.gguf",
+ "model": "${MODELS_ROOT}/qwen3.8-27b/gguf/unsloth/Qwen3.8-27B-UD-Q4_K_M.gguf",
  "run": "qs-xtx1-g2",
  "schedule_seed": 0,
  "server_args": [

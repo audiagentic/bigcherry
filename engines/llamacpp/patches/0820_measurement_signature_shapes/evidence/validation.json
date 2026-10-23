@@ -47,7 +47,7 @@
       },
       "campaign_identity": "ab8aba922f602b867f39c6c52ad4b3162597e75ccdc2ca38ce3833868ee3433a",
       "campaign_identity_digest": "ab8aba922f602b867f39c6c52ad4b3162597e75ccdc2ca38ce3833868ee3433a",
-      "campaign_workdir": "/home/audumla/pa26-evidence-run3/0820_measurement_signature_shapes/framework/0820_measurement_signature_shapes",
+      "campaign_workdir": "${HOME}/pa26-evidence-run3/0820_measurement_signature_shapes/framework/0820_measurement_signature_shapes",
       "check_results": {
         "apply": {
           "artifacts": [],
@@ -418,7 +418,7 @@
       },
       "campaign_identity": "b908cd7543887bc409b435aa7d1081cafb43dea8def90c809877fc2151f32b86",
       "campaign_identity_digest": "b908cd7543887bc409b435aa7d1081cafb43dea8def90c809877fc2151f32b86",
-      "campaign_workdir": "/home/audumla/pa26-evidence-run2/0820_measurement_signature_shapes/framework/0820_measurement_signature_shapes",
+      "campaign_workdir": "${HOME}/pa26-evidence-run2/0820_measurement_signature_shapes/framework/0820_measurement_signature_shapes",
       "check_results": {
         "apply": {
           "artifacts": [],
@@ -792,7 +792,7 @@
       },
       "campaign_identity": "dd1948069c661cac7a5036d7da1c99c72e6ff46d92918e195a68ab9c9d4ddb0c",
       "campaign_identity_digest": "dd1948069c661cac7a5036d7da1c99c72e6ff46d92918e195a68ab9c9d4ddb0c",
-      "campaign_workdir": "/home/audumla/pa26-evidence-run4/0820_measurement_signature_shapes/framework/0820_measurement_signature_shapes",
+      "campaign_workdir": "${HOME}/pa26-evidence-run4/0820_measurement_signature_shapes/framework/0820_measurement_signature_shapes",
       "check_results": {
         "apply": {
           "artifacts": [

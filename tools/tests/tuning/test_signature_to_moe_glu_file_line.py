@@ -4,7 +4,7 @@ MUL_MAT_ID(gate)+MUL_MAT_ID(up)+GLU dispatch signature into a
 class (patches 1239/1240).
 
 The real-shape/real-line correctness case (test_maps_hi108s_real_dispatch_
-exactly) uses the ACTUAL canonical signature captured on real Brutus
+exactly) uses the ACTUAL canonical signature captured on real dev
 hardware (GGML_HIP_DISPATCH_MODE=record against a live instance of the
 registered test case, 2026-08-25) -- not a hand-picked example -- and
 asserts the produced line matches what was independently confirmed on
@@ -54,7 +54,7 @@ def _write_fixture_vendor(tmp_path: Path) -> Path:
     return vendor
 
 
-# The real, complete canonical signature captured on real Brutus hardware
+# The real, complete canonical signature captured on real dev hardware
 # (GGML_HIP_DISPATCH_MODE=record) against a live instance of
 # test_bigcherry_moe_glu_fusion(GGML_TYPE_Q8_0, GGML_GLU_OP_SWIGLU, k=2048,
 # n=256, m=1, n_mats=256, n_used=8, b=true) -- structurally identical to
@@ -73,7 +73,7 @@ _REAL_SIGNATURE = {
 def test_maps_hi108s_real_dispatch_exactly(tmp_path):
     vendor = _write_fixture_vendor(tmp_path)
     line, target, digest = scm.signature_to_moe_glu_file_line(_REAL_SIGNATURE, vendor_root=vendor)
-    # Independently confirmed on real Brutus hardware: this exact line,
+    # Independently confirmed on real dev hardware: this exact line,
     # fed through --moe-glu-file, produces the identical recorded
     # signature as the statically-registered instance (fusion=2, op=100,
     # ne0=[2048,256,256,1], ne1=[2048,1,1,1], ned=[256,8,1,1]).

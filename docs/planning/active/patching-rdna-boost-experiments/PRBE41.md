@@ -35,7 +35,7 @@ ggml/include/ggml.h (ggml_ssm_conv signature), ggml/src/ggml.c (ggml_ssm_conv, o
 
 ## Validation
 
-Offline: patch-lint, patch-rebase-check. Direct op: both layouts x d_conv 3/4/9 x representative d_inner x short/long tokens x single/multi sequence, CPU and HIP, exact numeric parity between the two layouts' logical results (same math, different memory order) and bit-identical time-major output vs pre-patch baseline. Model: qwen35 dense (time-major, must be unaffected), qwen3next/hybrid callers switched to channels-major (deterministic/PPL parity vs a reference run). Composition: standalone with PRBE42 absent; do not assume PRBE42 exists yet. Hardware (Brutus, not run here): ubatch-sensitive prefill timing 256..4096 on the switched callers, decode must stay neutral (no regression) since decode path is unaffected by this API-level change.
+Offline: patch-lint, patch-rebase-check. Direct op: both layouts x d_conv 3/4/9 x representative d_inner x short/long tokens x single/multi sequence, CPU and HIP, exact numeric parity between the two layouts' logical results (same math, different memory order) and bit-identical time-major output vs pre-patch baseline. Model: qwen35 dense (time-major, must be unaffected), qwen3next/hybrid callers switched to channels-major (deterministic/PPL parity vs a reference run). Composition: standalone with PRBE42 absent; do not assume PRBE42 exists yet. Hardware (dev, not run here): ubatch-sensitive prefill timing 256..4096 on the switched callers, decode must stay neutral (no regression) since decode path is unaffected by this API-level change.
 
 ## Effort & Risk
 

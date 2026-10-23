@@ -15,7 +15,7 @@ control (serving-core composition without patch 1000)?
 
 ## Inputs
 
-- `--hip-path /opt/rocm --device 2` (gfx1201) on Brutus.
+- `--hip-path /opt/rocm --device 2` (gfx1201) on dev.
 - `run_patch1000_backend_ops_correctness` / `run_patch1000_backend_ops_perf`
   (already-authored backend-ops helpers, in `patch1000_verification.py`
   next to the driver since PA43 moved them out of `validation_campaign.py`).

@@ -32,7 +32,7 @@ but every prior comparison arm was BigCherry-internal
 (`--allreduce ccl` was still BigCherry's own RCCL path, not
 unmodified upstream llama.cpp). Re-ran a genuine 3-arm sweep same day.
 
-**Real 3-arm sweep (2026-09-11, Brutus, dual gfx1100 `HIP_VISIBLE_DEVICES=0,1`,
+**Real 3-arm sweep (2026-09-11, dev, dual gfx1100 `HIP_VISIBLE_DEVICES=0,1`,
 `-sm tensor`)**: `llama-bench`, `tierB-qwen9b-q6k` (Qwen3.5-9B-Q6_K, this
 family's cross-architecture reference lane), decode only (`-n 128 -p 0`),
 `-r 5`, isolated scratch clone at pin `28ff0958291ce3465fabd7bd679d4b0edd742bd9`

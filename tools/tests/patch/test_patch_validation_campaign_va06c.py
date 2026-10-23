@@ -63,7 +63,7 @@ class RunBenchRunnerServerBenchTests(unittest.TestCase):
         # Real hardware finding: server-bench mode (used by RD73's decode
         # control lane) prints "Extracted Results", not "Aggregated
         # Results" (bench/runners/server_base.py, confirmed against a
-        # real Brutus run) -- an earlier draft only handled the latter.
+        # real dev run) -- an earlier draft only handled the latter.
         def fake_run(command, **kwargs):
             class _Result:
                 returncode = 0

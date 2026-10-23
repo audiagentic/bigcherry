@@ -35,7 +35,7 @@ a compaction bug shows up as missing/misrouted work, not an unexplained
 large timing swing). Design verified against the real materialized source
 via `dev-gpt-agent` review (session `ses_35768076803a4361`).
 
-## Real hardware evidence (2026-08-24/25, dual gfx1100 Brutus)
+## Real hardware evidence (2026-08-24/25, dual gfx1100 dev)
 
 This is the most extensively validated untested patch in the RD-series:
 
@@ -63,7 +63,7 @@ This is the most extensively validated untested patch in the RD-series:
    host-side reference implementation of the same prefix-sum +
    binary-search-scatter algorithm: single-hot, concentrated-8-of-256,
    zipf-skew, uniform, and all-zero-degenerate routing -- 0/5 cases failed,
-   on both this project's Windows dev machine and Brutus (dual gfx1100).
+   on both this project's Windows dev machine and dev (dual gfx1100).
 5. **Real production-model timing** (Qwen3.6-35B-A3B Q4_K_M, dual gfx1100,
    `-sm tensor`, real n_expert=256): sequential A/B showed pp512 +0.94%,
    pp2048 +0.79%, tg128 +0.19% (decode near-noise, unaffected as designed
@@ -108,7 +108,7 @@ control (RD30 absent) vs subject (RD30 applied), both composed with the
 deterministic evidence chain (1222+1223+1236) so two independent process
 invocations see identical full-256-expert routing.
 
-Real run on Brutus (single gfx1100 XTX), 2 quant types (Q4_K, Q8_0) x 3
+Real run on dev (single gfx1100 XTX), 2 quant types (Q4_K, Q8_0) x 3
 seeds = 6 (shape, seed) rows, `n_expert=256`/`n_expert_used=8`, 32 routed
 tokens (deliberately above upstream's `MMVQ_MAX_BATCH_SIZE=8`, so the real
 production dispatcher reaches MoE MMQ rather than decode MMVQ): **all 6

@@ -40,7 +40,7 @@ TBD pending PRBE19 -- expected: real MoE shared-expert graph-construction site i
 
 ## Validation
 
-Offline (once the package exists): `PYTHONPATH=tools python -m bigcherry patch-lint`, `patch-rebase-check --focal-overlay 12xx_rd15_shexp_down_gated_q8_0 --source bigcherry-tuning`. Hardware (Brutus, not run here): six-node pattern positive/negative fixtures; numerical equivalence fused vs unfused; workspace-ownership/graph-capture safety; model-applicability check (only the exact target architecture selects); call-weighted timing.
+Offline (once the package exists): `PYTHONPATH=tools python -m bigcherry patch-lint`, `patch-rebase-check --focal-overlay 12xx_rd15_shexp_down_gated_q8_0 --source bigcherry-tuning`. Hardware (dev, not run here): six-node pattern positive/negative fixtures; numerical equivalence fused vs unfused; workspace-ownership/graph-capture safety; model-applicability check (only the exact target architecture selects); call-weighted timing.
 
 ## Effort & Risk
 

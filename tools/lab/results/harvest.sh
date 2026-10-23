@@ -1,10 +1,10 @@
 #!/bin/bash
-# Pull compact summaries of finished Brutus lab runs into docs/evidence.
+# Pull compact summaries of finished dev lab runs into docs/evidence.
 # Run from the controller checkout after runs land; re-running refreshes summaries.
 set -eu
-host=${BC_BENCH_HOST:-audumla@10.10.100.10}
-runs=${BC_RUNS_DIR:-/mnt/data/bigcherry-work/runs}
-remote_out=/mnt/data/bigcherry-work/results-summary
+host=${BC_BENCH_HOST:?set BC_BENCH_HOST to user@address (see config/environment.local.toml)}
+runs=${BC_RUNS_DIR:-${BC_WORK_ROOT}/runs}
+remote_out=${BC_WORK_ROOT}/results-summary
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/../../.." && pwd)
 dest="$repo/docs/evidence/lab-run-summaries"

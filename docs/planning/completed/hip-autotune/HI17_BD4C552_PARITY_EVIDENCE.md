@@ -4,7 +4,7 @@ state: completed
 
 # HI17 `bd4c552` parity reduction
 
-This is an offline reduction of the three existing Brutus tune artifacts. No
+This is an offline reduction of the three existing dev tune artifacts. No
 new hardware run was used.
 
 Sources:

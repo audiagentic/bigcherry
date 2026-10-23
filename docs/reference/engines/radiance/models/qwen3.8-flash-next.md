@@ -1,4 +1,4 @@
-# Qwen3.8-Flash-Next on radiance (Brutus)
+# Qwen3.8-Flash-Next on radiance (dev)
 
 Current-state page. Rule: every measurement or decision updates this page in the same change. Dated history and raw
 tables: [engines/radiance/README.md](../../../../../engines/radiance/README.md) (the "lab log"). Plan items are in
@@ -12,8 +12,8 @@ the item recorded. Run IDs are quoted where the source gives one; where it does 
 
 Source: lab log, "Models and quantisation behind the measurements" (read with `rad-info`).
 
-- Container `qwen3.8-next-flash-fp8-iq4r-moe.rad`, 113.6 GiB, under `/mnt/data/llm-models/radiance/StillDeadcode/` on
-  Brutus. 512 experts, top 10, 48 layers plus an MTP layer.
+- Container `qwen3.8-next-flash-fp8-iq4r-moe.rad`, 113.6 GiB, under `${MODELS_ROOT}/radiance/StillDeadcode/` on
+  dev. 512 experts, top 10, 48 layers plus an MTP layer.
 - Routed experts `w4nl64a8h`: 4-bit codes into a 16-level nonlinear table, E4M3 scale per (row, 64 of K) x 2^-13,
   Hadamard-rotated with the activation; 49 x 512 x 2.42 MiB, about 58 GiB.
 - N-gram embedding table fp8 E4M3, 47.7 GiB. Dense and attention int8 (group 128, bf16 scale, 3.4 GiB), fp8 E4M3
@@ -81,7 +81,7 @@ So the current figures are prefill ~2,755-2,764 tok/s, decode ~108.5 tok/s. Run 
 recorded in the plan items (branch feat/rad03-gpu-lanes lab scripts, since retired).
 
 Harness acceptance, MEN11 2026-10-17: `ab-benchmark --server-config tools/lab/radiance/helper-ab.json --pairs 4`,
-Brutus, build c95d49e2, run `men11-fire-10171108`, bench config `mtp-dual`, 8 of 8 cells clean, both helpers ready and
+dev, build c95d49e2, run `men11-fire-10171108`, bench config `mtp-dual`, 8 of 8 cells clean, both helpers ready and
 stopped with exit 0 every cell. Arm `rows0` (the layout above): pp4096 1989-1991, pp1024 2035-2037, tg512 128.3-128.6,
 tg2048 141.2-143.4 tok/s. These use the harness's own prompts, so they are not the same workload as the 7,306-token
 lab figures above and are not to be compared to them directly.

@@ -15,7 +15,7 @@ priority: P3
 
 ## Description
 
-TODO, but gate-verified-blocked: gfx1151 hardware is not present on Brutus, so this item cannot progress past eligibility-gate verification until gfx1151 hardware exists in this project's fleet. Patch 1208_rd21_gfx1151_mmvq_nwarps_table already exists (state=untested) and defines the gfx1151 MMVQ nwarps=2 Q8_0 decode eligibility table/guard.
+TODO, but gate-verified-blocked: gfx1151 hardware is not present on dev, so this item cannot progress past eligibility-gate verification until gfx1151 hardware exists in this project's fleet. Patch 1208_rd21_gfx1151_mmvq_nwarps_table already exists (state=untested) and defines the gfx1151 MMVQ nwarps=2 Q8_0 decode eligibility table/guard.
 
 ## Steps
 
@@ -40,7 +40,7 @@ patches/1208_rd21_gfx1151_mmvq_nwarps_table/{patch.toml,patch.py}; gfx1030/gfx11
 
 ## Validation
 
-Offline: `PYTHONPATH=tools python -m bigcherry patch-lint`, `patch-rebase-check --focal-overlay 1208_rd21_gfx1151_mmvq_nwarps_table --source bigcherry-tuning`. Hardware (Brutus, available architectures only): build + activation-trace non-selection check on gfx1030/gfx1100/gfx1201 confirming 1208's table never selects the gfx1151 nwarps=2 Q8_0 path there. No gfx1151 evidence is obtainable until that hardware exists in the fleet -- explicitly leave that gap open rather than closing this item.
+Offline: `PYTHONPATH=tools python -m bigcherry patch-lint`, `patch-rebase-check --focal-overlay 1208_rd21_gfx1151_mmvq_nwarps_table --source bigcherry-tuning`. Hardware (dev, available architectures only): build + activation-trace non-selection check on gfx1030/gfx1100/gfx1201 confirming 1208's table never selects the gfx1151 nwarps=2 Q8_0 path there. No gfx1151 evidence is obtainable until that hardware exists in the fleet -- explicitly leave that gap open rather than closing this item.
 
 ## Effort & Risk
 

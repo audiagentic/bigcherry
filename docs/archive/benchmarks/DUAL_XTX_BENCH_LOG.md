@@ -1,8 +1,8 @@
 # Dual-XTX production-parity bench log
 
-Real-hardware validation runs against Brutus's dual RX 7900 XTX pair
+Real-hardware validation runs against dev's dual RX 7900 XTX pair
 (GPU 0/1, `HIP_VISIBLE_DEVICES=0,1`), compared against the `dual-xtx-27b`
-production profile (`/mnt/vault/development/llmhosts/llamacpp/bench/config/model-profiles.json`,
+production profile (`${LLAMACPP_ROOT}/bench/config/model-profiles.json`,
 model Qwen3.8-27B-Q8_0 with built-in MTP draft).
 
 Production launch flags (see also memory `project-dual-xtx-baseline`):
@@ -15,8 +15,8 @@ Production launch flags (see also memory `project-dual-xtx-baseline`):
 ```
 
 **IMPORTANT — build source**: always build from a clean git checkout
-(`~/bigcherry` on Brutus). Never `git`/`cmake` against
-`/mnt/vault/development/llmhosts/bigcherry` -- `docs/reference/build/BUILD.md`
+(`~/bigcherry` on dev). Never `git`/`cmake` against
+`${DEV_ROOT}/llmhosts/bigcherry` -- `docs/reference/build/BUILD.md`
 documents that path as file-transfer-only (SMB share), and its
 vendor/llama.cpp is a mutable checkout with patches applied in place, not
 one of bigcherry's isolated per-identity worktrees. Use the canonical
@@ -41,7 +41,7 @@ PYTHONPATH=tools python -m bigcherry build \
 
 - Build: `bigcherry:control:linux-multi` at `tuning-code-rebase` HEAD
   (~1ec29ce..4b6e784), pin `b10502`, built via the canonical `bigcherry
-  build` command above on `~/bigcherry` (never the `/mnt/vault` checkout).
+  build` command above on `~/bigcherry` (never the `${VAULT_ROOT}` checkout).
 - Method: direct `llama-bench -sm tensor -fa 1 -ub 512 -b 2048 -ngl 99
   -t 8 -ctk q8_0 -ctv q8_0 -p 4096 -n 128 -r 5` (pp4096 only, 5 reps --
   NOT the full `mtp-dual`/`server-bench` harness run, see "not yet logged"

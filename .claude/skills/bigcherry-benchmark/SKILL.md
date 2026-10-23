@@ -191,7 +191,7 @@ are small and drift is not obviously normal.
 Do NOT treat "all N metrics moved the same way" as significance. The metrics
 are strongly correlated; 6/6 is not p = 1/64.
 
-Between-session drift on Brutus is sd 0.5-0.6%, larger than any single run's
+Between-session drift on dev is sd 0.5-0.6%, larger than any single run's
 standard error. Cross-run comparisons need that margin; within-run balanced
 comparisons do not.
 

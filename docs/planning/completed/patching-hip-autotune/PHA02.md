@@ -15,7 +15,7 @@ priority: null
 
 ## Description
 
-The exact historical RCCL source/build provenance required for a dispatch-level repair is externally unavailable. The Brutus checkout traced RCCL revision 57e58688f44c77076ad536ef1f6b68741fc6e694; exact 9fb6fbe7bfb4df87c4c9a09b5bb5239670f04ffe acquisition returned `not our ref`, additive unshallow completed without the object, and an independent canonical GitHub lookup returned no matching ref. The nearest reachable 593de54e52679b51428571c13271e2ea9f91b1b1 source is a documented non-substitute. Close as external-blocker/no-safe-change; retain patch 1225 unchanged and fail-closed.
+The exact historical RCCL source/build provenance required for a dispatch-level repair is externally unavailable. The dev checkout traced RCCL revision 57e58688f44c77076ad536ef1f6b68741fc6e694; exact 9fb6fbe7bfb4df87c4c9a09b5bb5239670f04ffe acquisition returned `not our ref`, additive unshallow completed without the object, and an independent canonical GitHub lookup returned no matching ref. The nearest reachable 593de54e52679b51428571c13271e2ea9f91b1b1 source is a documented non-substitute. Close as external-blocker/no-safe-change; retain patch 1225 unchanged and fail-closed.
 
 ## Steps
 

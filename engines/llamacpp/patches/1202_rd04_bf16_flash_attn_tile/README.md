@@ -78,7 +78,7 @@ one real whole-model PPL comparison (control = 1202 absent, subject = 1202
 applied), forcing `-fa on -ctk bf16 -ctv bf16` so the comparison actually
 exercises RD04's native-BF16 flash-attn path.
 
-Real run on Brutus, all three contract architectures, **build-once
+Real run on dev, all three contract architectures, **build-once
 fat-multiarch verified** (see below):
 
 | architecture | subject PPL | control PPL | sigma | result |

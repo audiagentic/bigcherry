@@ -37,7 +37,7 @@ Reopen a size-bucket table only on matched source/build/model, physical GPU UUID
 
 ### Upstream and other engines
 
-[llama.cpp #27825](https://github.com/ggml-org/llama.cpp/pull/27825) merged 2026-09-15, enabling HIP two-GPU host-staged AllReduce using mapped host memory and `__builtin_amdgcn_s_sleep`; it does not supply the BigCherry adaptive CLI. [vLLM](https://github.com/vllm-project/vllm/blob/main/vllm/distributed/device_communicators/cuda_communicator.py) and [SGLang](https://github.com/sgl-project/sglang/blob/main/test/manual/test_quick_allreduce.py) gate QuickAllReduce to different ROCm hardware (MI300/gfx94*), not validated on gfx1100/gfx1201 or no-P2P Brutus.
+[llama.cpp #27825](https://github.com/ggml-org/llama.cpp/pull/27825) merged 2026-09-15, enabling HIP two-GPU host-staged AllReduce using mapped host memory and `__builtin_amdgcn_s_sleep`; it does not supply the BigCherry adaptive CLI. [vLLM](https://github.com/vllm-project/vllm/blob/main/vllm/distributed/device_communicators/cuda_communicator.py) and [SGLang](https://github.com/sgl-project/sglang/blob/main/test/manual/test_quick_allreduce.py) gate QuickAllReduce to different ROCm hardware (MI300/gfx94*), not validated on gfx1100/gfx1201 or no-P2P dev.
 
 ### Audit evidence
 

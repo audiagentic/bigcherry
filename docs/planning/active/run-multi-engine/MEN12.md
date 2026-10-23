@@ -15,7 +15,7 @@ work: M
 
 ## Description
 
-Fire-test MEN10: bump radiance from 1.3.0 (89cee7c) to the latest upstream release, rebase rad0001-rad0003, rebuild libr3/libr4d/libr3moe and the helper, and re-run the smoke and a Flash-Next and 27B check on Brutus.
+Fire-test MEN10: bump radiance from 1.3.0 (89cee7c) to the latest upstream release, rebase rad0001-rad0003, rebuild libr3/libr4d/libr3moe and the helper, and re-run the smoke and a Flash-Next and 27B check on dev.
 
 ## Steps
 

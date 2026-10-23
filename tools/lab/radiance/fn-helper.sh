@@ -8,7 +8,7 @@ repo=$(cd "$here/../../.." && pwd)
 out=${1:-/tmp/r3-fn-helper}
 mkdir -p "$out"
 model=${MODEL:?set MODEL to the Flash-Next .rad container}
-src=${RADIANCE_SRC:-/mnt/data/bigcherry-work/engines/radiance}
+src=${RADIANCE_SRC:-${BC_WORK_ROOT}/engines/radiance}
 rad=${RAD_BIN:-$src/build/bin/radiance}
 home=${RADIANCE_HOME:-$src/build/radiance_home}
 runtime=${RADIANCE_RUNTIME_HOME:-${home%%:*}}
@@ -91,7 +91,7 @@ until curl -sf "http://127.0.0.1:$port/health" >/dev/null 2>&1; do
 done
 
 echo "== prefill/decode"
-python3 - "http://127.0.0.1:$port" "${CORPUS:-/mnt/data/bigcherry-work/corpus/kld-docs.txt}" "${N:-256}" "$out" <<'PY'
+python3 - "http://127.0.0.1:$port" "${CORPUS:-${BC_WORK_ROOT}/corpus/kld-docs.txt}" "${N:-256}" "$out" <<'PY'
 import json, sys, time, urllib.request
 base, corpus_path, n, out_dir = sys.argv[1], sys.argv[2], int(sys.argv[3]), sys.argv[4]
 try:

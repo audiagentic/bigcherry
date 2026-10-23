@@ -2,7 +2,7 @@
 # Download the alternative Qwen3.8-27B drafter files compared by drafter-files.sh and verify their published sha256.
 # Usage: fetch-drafters.sh        (idempotent: a file with the right hash is kept)
 set -u
-G=/mnt/data/llm-models/qwen3.8-27b/gguf
+G=${BC_MODEL_ROOT}/qwen3.8-27b/gguf
 get() {  # <repo> <file> <dest dir> <sha256 prefix>
     local d="$G/$3" f="$G/$3/$2"
     mkdir -p "$d"

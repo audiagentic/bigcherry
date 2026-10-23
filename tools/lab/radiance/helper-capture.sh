@@ -3,15 +3,15 @@
 # server cell of helper-ab.json with R3_MOE_HELPER_CAPTURE set, and leaves the captures (capture format 2: layer
 # slot map, routes, the engine's own quantised E4M3 activation planes) in the capture directory. The server's
 # load stage is paid here once; every later kernel experiment replays these files without a server.
-# Usage: helper-capture.sh <branch> [capture-dir=/mnt/data/bigcherry-work/captures] [every=11] [max=24]
+# Usage: helper-capture.sh <branch> [capture-dir=${BC_WORK_ROOT}/captures] [every=11] [max=24]
 set -u
-BR=$1; CAP=${2:-/mnt/data/bigcherry-work/captures}; EVERY=${3:-11}; MAX=${4:-24}
-W=/mnt/data/bigcherry-work
+BR=$1; CAP=${2:-${BC_WORK_ROOT}/captures}; EVERY=${3:-11}; MAX=${4:-24}
+W=${BC_WORK_ROOT}
 cd $W/wt-pr8 && git fetch -q origin && git checkout -q --detach $BR && git log --oneline -1
-export ROCM_PATH=/opt/rocm-7.2.4 PATH=/opt/rocm-7.2.4/bin:$PATH BIGCHERRY_ENVIRONMENT=/mnt/vault/development/projects/bigcherry/workspaces/main/config/environment.local.toml
+export ROCM_PATH=/opt/rocm-7.2.4 PATH=/opt/rocm-7.2.4/bin:$PATH BIGCHERRY_ENVIRONMENT=${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/config/environment.local.toml
 PYTHONPATH=tools timeout 5400 python3 -m bigcherry build --lane radiance-lab:stock:linux-radiance --experiment moe-remote-handoff > $W/capture-build.log 2>&1
 grep -E 'ok build|FAILED' $W/capture-build.log | tail -1; grep -E ' error:|r3_rewrite.py failed' $W/capture-build.log | sort -u | head
-B=$(ls -td /mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/*/*/ | head -1)
+B=$(ls -td ${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/work/builds/*/*/ | head -1)
 mkdir -p $CAP
 python3 - tools/lab/radiance/helper-ab.json $W/helper-capture.json $CAP $EVERY $MAX <<'PY'
 import json, sys

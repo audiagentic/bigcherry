@@ -16,7 +16,7 @@ class SlurmRenderInstallTests(unittest.TestCase):
             hardware_root = root / "hardware"
             catalog = InventoryCatalog(hardware_root)
             inv = HardwareInventory(
-                host_id="brutus",
+                host_id="dev",
                 platform_family="linux-rocm",
                 platform_environment_hash="env",
                 devices=(
@@ -30,16 +30,16 @@ class SlurmRenderInstallTests(unittest.TestCase):
                     ),
                 ),
             )
-            catalog.record_observed("brutus", inv)
+            catalog.record_observed("dev", inv)
             catalog.accept_observed(
-                "brutus", expected_material_hash=inv.material_hash
+                "dev", expected_material_hash=inv.material_hash
             )
             project_root = Path(__file__).resolve().parents[3]
             files = render_files(
                 project_root=project_root,
                 hardware_root=hardware_root,
-                executor_id="brutus",
-                node_name="brutus",
+                executor_id="dev",
+                node_name="dev",
                 cpus=32,
                 real_memory_mib=64000,
             )
@@ -80,14 +80,14 @@ class SlurmRenderInstallTests(unittest.TestCase):
                     ),
                 ),
             )
-            catalog.record_observed("brutus", inv)
-            catalog.accept_observed("brutus", expected_material_hash=inv.material_hash)
+            catalog.record_observed("dev", inv)
+            catalog.accept_observed("dev", expected_material_hash=inv.material_hash)
             with self.assertRaises(ValueError):
                 render_files(
                     project_root=Path(__file__).resolve().parents[3],
                     hardware_root=root / "hardware",
-                    executor_id="brutus",
-                    node_name="brutus",
+                    executor_id="dev",
+                    node_name="dev",
                     cpus=1,
                     real_memory_mib=1024,
                 )

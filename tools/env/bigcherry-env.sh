@@ -2,14 +2,14 @@
 # Export the build host's environment from config/environment.local.toml.
 #
 #   source tools/bigcherry-env.sh              # default host
-#   source tools/bigcherry-env.sh build-server # a named host
+#   source tools/bigcherry-env.sh dev # a named host
 #
 # Exists so commands in docs and scripts can say $BC_MODEL_ROOT rather than
 # hardcoding one person's paths. Everything machine-specific lives in
 # config/environment.local.toml; this only reads it.
 #
-# Sets: BC_HOST BC_ADDRESS BC_HOME BC_REPO BC_CACHE BC_SHARE BC_MODEL_ROOT
-#       BC_BENCH_HARNESS BC_ROCM BC_ROCM_SHIM BC_BENCH_PORT BC_PRODUCTION_PORT
+# Sets: BC_HOST BC_REPO_ROOT BC_CACHE_ROOT BC_MODEL_ROOT
+#       BC_BENCH_HARNESS BC_ROCM_ROOT BC_TEST_PORT BC_PRODUCTION_PORT
 # and, for convenience on the host itself, ROCM_PATH/HIP_PATH/PATH via the
 # shim -- which campaigns require, because /opt/rocm exposes amdclang rather
 # than clang and campaigns build compiler paths as <hip-path>/bin/clang.
@@ -42,16 +42,15 @@ if not h:
     raise SystemExit(0)
 pairs = {
     "BC_HOST": h.get("hostname", host),
-    "BC_ADDRESS": h.get("address", ""),
-    "BC_HOME": h.get("home", ""),
-    "BC_REPO": h.get("repo", ""),
-    "BC_CACHE": h.get("cache-root", ""),
-    "BC_SHARE": h.get("share", ""),
+    "BC_REPO_ROOT": h.get("repo-root", ""),
+    "BC_CACHE_ROOT": h.get("cache-root", ""),
     "BC_MODEL_ROOT": h.get("model-root", ""),
+    "BC_WORK_ROOT": h.get("work-root", ""),
+    "BC_TMP_ROOT": h.get("tmp-root", ""),
+    "BC_DEV_ROOT": h.get("dev-root", ""),
     "BC_BENCH_HARNESS": h.get("bench-harness", ""),
-    "BC_ROCM": h.get("rocm", ""),
-    "BC_ROCM_SHIM": h.get("rocm-shim", ""),
-    "BC_BENCH_PORT": str(h.get("bench-port", "")),
+    "BC_ROCM_ROOT": h.get("rocm-root", ""),
+    "BC_TEST_PORT": str(h.get("test-port", "")),
     "BC_PRODUCTION_PORT": str(h.get("production-port", "")),
 }
 for k, v in pairs.items():
@@ -67,14 +66,6 @@ for d in devs:
 PY
 )" || return 1
 
-    # Only meaningful when running ON the host; harmless elsewhere.
-    if [ -n "${BC_ROCM_SHIM:-}" ] && [ -d "$BC_ROCM_SHIM" ]; then
-        export ROCM_PATH="$BC_ROCM_SHIM" HIP_PATH="$BC_ROCM_SHIM"
-        case ":$PATH:" in
-            *":$BC_ROCM_SHIM/bin:"*) ;;
-            *) export PATH="$BC_ROCM_SHIM/bin:$PATH" ;;
-        esac
-    fi
 }
 
 _bc_env_load "${1:-}"

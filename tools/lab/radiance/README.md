@@ -26,7 +26,7 @@ standalone server with a llama-server-compatible API.
 - `fn-helper.sh`, `fn-profile.sh`, `fn-profile-compare.py`: rocprofv3 kernel/copy traces of one prefill and their
   comparison; the harness does not trace, so these stay.
 
-## Build result on Brutus (2026-10-09)
+## Build result on dev (2026-10-09)
 
 Builds in 104 s for gfx1201 with ROCm 7.2.4 and g++ 14.2 (unpacked by `fetch-gcc14.sh`). 38 of 39 card-free tests
 pass; `plugin_test` fails because it probes device 0, an RX 7900 XTX, and the log states the reason: libr4d has code

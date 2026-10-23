@@ -20,8 +20,8 @@ class HostValueExpansionTests(TestCase):
         return handle.name
 
     def test_process_environment_expands_and_normalizes(self):
-        with mock.patch.dict(os.environ, {"BC_TEST_ROOT": "C:\\Tool\\7.1\\","BIGCHERRY_ENVIRONMENT": self._local("")}):
-            self.assertEqual(config.expand_host_value("${BC_TEST_ROOT}/bin/clang.exe"), "C:/Tool/7.1/bin/clang.exe")
+        with mock.patch.dict(os.environ, {"BC_TEST_ROOT": "Z:\\7.1\\","BIGCHERRY_ENVIRONMENT": self._local("")}):
+            self.assertEqual(config.expand_host_value("${BC_TEST_ROOT}/bin/clang.exe"), "Z:/7.1/bin/clang.exe")
 
     def test_local_env_table_is_fallback_and_process_env_wins(self):
         local = self._local('[env]\nBC_TEST_TREE = "/from/file"\n')

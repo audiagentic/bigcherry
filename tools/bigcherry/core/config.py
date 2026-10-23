@@ -44,6 +44,29 @@ def _local_env_table() -> dict[str, str]:
     return {str(k): str(v) for k, v in table.items()} if isinstance(table, dict) else {}
 
 
+# Standard host-location variables, resolved from the default host when no explicit
+# environment variable or [env] entry sets them. Explicit values still win.
+_HOST_DEFAULT_VARS = {
+    "BC_REPO_ROOT": "repo_root",
+    "BC_ROCM_ROOT": "rocm_root",
+    "BC_CACHE_ROOT": "cache_root",
+    "BC_MODEL_ROOT": "model_root",
+}
+
+
+def _host_default(variable: str) -> str | None:
+    attr = _HOST_DEFAULT_VARS.get(variable)
+    if attr is None:
+        return None
+    from . import environment  # deferred: environment reads the host files at call time
+
+    try:
+        value = getattr(environment.load_default().host(None), attr)
+    except (OSError, environment.EnvironmentError_):
+        return None
+    return value or None
+
+
 def expand_host_value(value: str | None) -> str | None:
     """Expand ``${VAR}`` references from the environment.
 
@@ -58,7 +81,7 @@ def expand_host_value(value: str | None) -> str | None:
     local = _local_env_table()
 
     def substitute(match: re.Match[str]) -> str:
-        found = os.environ.get(match.group(1), local.get(match.group(1)))
+        found = os.environ.get(match.group(1), local.get(match.group(1))) or _host_default(match.group(1))
         if found is None:
             return match.group(0)
         # HIP_PATH ends in a backslash on Windows; keep forward slashes so a
@@ -94,6 +117,19 @@ def _required_string(data: dict[str, object], key: str, where: str) -> str:
     if not isinstance(value, str) or not value:
         raise ConfigError(f"{where}.{key} must be a non-empty string")
     return value
+
+
+def _sdk_root(stack: str, version: str | None) -> str | None:
+    """The root of a named ROCm SDK on the default host (``[host.<name>.rocm-sdks]``)."""
+    if version is None:
+        return None
+    from . import environment  # deferred: environment reads the host files at call time
+
+    roots = dict(environment.load_default().host(None).rocm_sdks)
+    if version not in roots:
+        known = ", ".join(sorted(roots)) or "none declared"
+        raise ConfigError(f"stack.{stack}.sdk={version!r} is not in the host's rocm-sdks ({known})")
+    return expand_host_value(roots[version])
 
 
 def _strings(raw: object, where: str) -> tuple[str, ...]:
@@ -176,6 +212,8 @@ class BackendStack:
 
     name: str
     backend: str
+    #: ROCm SDK version name, resolved through the host's rocm-sdks table
+    sdk: str | None
     sdk_root: str | None
     c_compiler: str | None
     cxx_compiler: str | None
@@ -473,9 +511,14 @@ def load(path: str | Path) -> Config:
                 f"stack.{name}.backend={backend!r} must be one of "
                 f"{', '.join(BACKENDS)}"
             )
-        sdk_root = data.get("sdk-root")
-        if sdk_root is not None and (not isinstance(sdk_root, str) or not sdk_root):
-            raise ConfigError(f"stack.{name}.sdk-root must be a non-empty string")
+        if "sdk-root" in data:
+            raise ConfigError(
+                f"stack.{name}.sdk-root was removed: set sdk = \"<version>\" and declare that "
+                "version under [host.<name>.rocm-sdks]"
+            )
+        sdk = data.get("sdk")
+        if sdk is not None and (not isinstance(sdk, str) or not sdk):
+            raise ConfigError(f"stack.{name}.sdk must be a non-empty version name")
         c_compiler = data.get("c-compiler")
         if c_compiler is not None and (not isinstance(c_compiler, str) or not c_compiler):
             raise ConfigError(f"stack.{name}.c-compiler must be a non-empty string")
@@ -485,7 +528,8 @@ def load(path: str | Path) -> Config:
         stacks[name] = BackendStack(
             name=name,
             backend=backend,
-            sdk_root=expand_host_value(sdk_root),
+            sdk=sdk,
+            sdk_root=_sdk_root(name, sdk),
             c_compiler=expand_host_value(c_compiler),
             cxx_compiler=expand_host_value(cxx_compiler),
             runtime_library_dirs=_strings(

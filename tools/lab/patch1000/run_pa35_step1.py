@@ -23,7 +23,7 @@ Scope, per GPT's confirmed correction of PA35 step 1:
   - Q6_K model-level llama-bench lane: SKIPPED for this minimum pass per
     GPT guidance -- recorded as not executed, not as evidence.
 
-Usage (on Brutus, from repo root):
+Usage (on dev, from repo root):
     PYTHONPATH=tools python tools/lab/patch1000/run_pa35_step1.py \
         --hip-path /opt/rocm --device 2 --out artifacts/patch1000-pa35-step1.json
 """
@@ -107,7 +107,7 @@ def main() -> int:
         "workdir": build_workdir,
         "targets": ["test-backend-ops"],
         # CMAKE_SKIP_INSTALL_RPATH works around a real environment issue hit
-        # on Brutus: CMake's Ninja-generator RPATH-relink step fails to
+        # on dev: CMake's Ninja-generator RPATH-relink step fails to
         # recognize the HIP/Clang-toolchain build as ELF-based for several
         # unrelated llama.cpp install() targets (cvector-generator,
         # export-lora, fit-params, results, app) during the full-project
