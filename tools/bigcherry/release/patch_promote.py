@@ -1,4 +1,7 @@
-"""PA45: promote qualified patches into the production enhancement set."""
+"""PA45 / MEN25: promote qualified patches into an engine's production patch set.
+
+Engine-agnostic: the patch tree, recipes, production patch set and production source all come from the engine's own
+declaration (engines/<name>/engine.toml, [layout] and [promotion]); nothing here names an engine."""
 
 from __future__ import annotations
 
@@ -12,15 +15,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
-from ..core import engines, paths
+from ..core import engines
 from ..patch import evidence as patch_evidence
 from ..patch import profile_evidence
 from . import notes as release_notes
 from . import pin_release
-
-
-#: promotion is a llama.cpp tool (its patch tree, recipes and release line)
-ENGINE = engines.LLAMACPP
 
 
 class PatchPromoteError(RuntimeError):
@@ -70,8 +69,21 @@ def _git(root: Path, *args: str, check: bool = True) -> str:
     return _run(root, "git", *args, check=check).stdout.strip()
 
 
-def _load_patch(root: Path, patch_id: str) -> PatchInfo:
-    patch_root = paths.LLAMACPP.patches_root(root) / patch_id
+def _layout(root: Path, engine: str) -> engines.EngineLayout:
+    try:
+        layout = engines.load(root, engine)
+    except engines.EngineError as exc:
+        raise PatchPromoteError(str(exc)) from exc
+    if not layout.promotion_patch_set or not layout.promotion_source:
+        raise PatchPromoteError(
+            f"engine {engine!r} declares no [promotion] patch-set/source in its engine.toml, so it has no production set "
+            "to promote into"
+        )
+    return layout
+
+
+def _load_patch(root: Path, layout: engines.EngineLayout, patch_id: str) -> PatchInfo:
+    patch_root = layout.patches_root(root) / patch_id
     path = patch_root / "patch.toml"
     if not path.is_file():
         raise PatchPromoteError(f"unknown patch {patch_id!r}: {path} is missing")
@@ -245,13 +257,13 @@ def _write_promotion_record(info: PatchInfo, evidence: str) -> Path:
     return readme
 
 
-def _replace_section_patches(text: str, section: str, patches: Iterable[str]) -> str:
+def _replace_section_patches(text: str, section: str, patches: Iterable[str], recipes: str) -> str:
     section_re = re.compile(
         rf"(?ms)(^\[{re.escape(section)}\]\s*\n)(.*?)(?=^\[|\Z)"
     )
     match = section_re.search(text)
     if not match:
-        raise PatchPromoteError(f"config/recipes.toml: missing [{section}]")
+        raise PatchPromoteError(f"{recipes}: missing [{section}]")
     body = match.group(2)
     rendered_items = list(patches)
     if len(rendered_items) <= 1:
@@ -267,11 +279,12 @@ def _replace_section_patches(text: str, section: str, patches: Iterable[str]) ->
         count=1,
     )
     if count != 1:
-        raise PatchPromoteError(f"config/recipes.toml: [{section}] has no patches array")
+        raise PatchPromoteError(f"{recipes}: [{section}] has no patches array")
     return text[: match.start(2)] + new_body + text[match.end(2) :]
 
 
-def _append_section_patches(text: str, section: str, current: Iterable[str], added: Iterable[str]) -> str:
+def _append_section_patches(text: str, section: str, current: Iterable[str], added: Iterable[str],
+                            recipes: str) -> str:
     """Append ids to a section's patches array in place: every existing line, comment and indent is kept."""
     added = list(added)
     if not added:
@@ -279,11 +292,11 @@ def _append_section_patches(text: str, section: str, current: Iterable[str], add
     section_re = re.compile(rf"(?ms)(^\[{re.escape(section)}\]\s*\n)(.*?)(?=^\[|\Z)")
     match = section_re.search(text)
     if not match:
-        raise PatchPromoteError(f"config/recipes.toml: missing [{section}]")
+        raise PatchPromoteError(f"{recipes}: missing [{section}]")
     array = re.search(r"(?ms)^patches\s*=\s*\[[ \t]*\n(.*?)^\]", match.group(2))
     if not array:
         # a one-line or empty array has no per-entry comments to keep
-        return _replace_section_patches(text, section, [*current, *added])
+        return _replace_section_patches(text, section, [*current, *added], recipes)
     body = array.group(1)
     indents = re.findall(r'(?m)^([ \t]*)"[^"\n]+"', body)
     indent = indents[-1] if indents else "    "
@@ -304,14 +317,15 @@ def _append_section_patches(text: str, section: str, current: Iterable[str], add
     return text[:start] + body + text[end:]
 
 
-def _update_recipes(root: Path, patch_ids: tuple[str, ...]) -> Path:
-    path = root / "config" / "recipes.toml"
+def _update_recipes(root: Path, layout: engines.EngineLayout, patch_ids: tuple[str, ...]) -> Path:
+    path = layout.recipes_path(root)
     text = path.read_text(encoding="utf-8")
     raw = tomllib.loads(text)
     sets = raw.get("patch-set", {})
-    production = list(sets.get("validated-enhancements", {}).get("patches", []))
+    target = layout.promotion_patch_set
+    production = list(sets.get(target, {}).get("patches", []))
     text = _append_section_patches(
-        text, "patch-set.validated-enhancements", production, [p for p in patch_ids if p not in production]
+        text, f"patch-set.{target}", production, [p for p in patch_ids if p not in production], layout.recipes
     )
 
     experiments = raw.get("experiment", {})
@@ -319,7 +333,7 @@ def _update_recipes(root: Path, patch_ids: tuple[str, ...]) -> Path:
         selected = list(config.get("patches", []))
         reduced = [p for p in selected if p not in patch_ids]
         if reduced != selected:
-            text = _replace_section_patches(text, f"experiment.{name}", reduced)
+            text = _replace_section_patches(text, f"experiment.{name}", reduced, layout.recipes)
     path.write_text(text, encoding="utf-8", newline="\n")
     # Parse the emitted TOML so a formatting bug cannot escape to the checks.
     tomllib.loads(text)
@@ -333,7 +347,7 @@ def _check_command(root: Path, args: list[str], label: str) -> None:
         raise PatchPromoteError(f"{label} failed:\n{detail[-1600:]}")
 
 
-def _run_checks(root: Path, infos: tuple[PatchInfo, ...]) -> None:
+def _run_checks(root: Path, layout: engines.EngineLayout, infos: tuple[PatchInfo, ...]) -> None:
     for info in infos:
         package_test = root / "tools" / "tests" / "patch" / f"test_{info.patch_id}.py"
         if package_test.is_file():
@@ -345,7 +359,7 @@ def _run_checks(root: Path, infos: tuple[PatchInfo, ...]) -> None:
                 "-m",
                 "bigcherry",
                 "--engine",
-                ENGINE,
+                layout.name,
                 "patch-verify-evidence",
                 info.patch_id,
                 "--no-legacy-grandfather",
@@ -361,7 +375,8 @@ def _run_checks(root: Path, infos: tuple[PatchInfo, ...]) -> None:
     _check_command(root, [sys.executable, "-m", "bigcherry", "patch-lint"], "patch-lint")
     _check_command(
         root,
-        [sys.executable, "-m", "bigcherry", "--engine", ENGINE, "patch-rebase-check", "--source", "bigcherry"],
+        [sys.executable, "-m", "bigcherry", "--engine", layout.name, "patch-rebase-check", "--source",
+         layout.promotion_source],
         "production composition/rebase check",
     )
 
@@ -402,12 +417,13 @@ def _is_default_on(info: PatchInfo) -> bool:
     return re.search(r'EnvDoc\(\s*"[^"]+"[\s\S]{0,240}?"1 \(on\)"', py_path.read_text(encoding="utf-8")) is not None
 
 
-def _profile_evidence(root: Path, info: PatchInfo, evidence: str) -> profile_evidence.ProfileEvidence:
+def _profile_evidence(root: Path, layout: engines.EngineLayout, info: PatchInfo,
+                      evidence: str) -> profile_evidence.ProfileEvidence:
     """The lightweight promotion record for a patch, bound to the current pin and to its implementation.
 
     Built after any default flip, so the digest is the one of the implementation that is promoted.
     """
-    pinned = str(tomllib.loads((root / "config" / "recipes.toml").read_text(encoding="utf-8"))["pinned"])
+    pinned = str(tomllib.loads(layout.recipes_path(root).read_text(encoding="utf-8"))["pinned"])
     record = profile_evidence.ProfileEvidence(
         patch_id=info.patch_id,
         pinned=pinned,
@@ -426,7 +442,7 @@ def _profile_evidence(root: Path, info: PatchInfo, evidence: str) -> profile_evi
     return record
 
 
-def _preflight(root: Path, infos: tuple[PatchInfo, ...]) -> None:
+def _preflight(root: Path, layout: engines.EngineLayout, infos: tuple[PatchInfo, ...]) -> None:
     """Promotion gates for each patch, against a rebase report made now for exactly that patch over production."""
     for info in infos:
         report = root / "artifacts" / "patch-promote" / f"{info.patch_id}-rebase.json"
@@ -434,8 +450,8 @@ def _preflight(root: Path, infos: tuple[PatchInfo, ...]) -> None:
         _check_command(
             root,
             [
-                sys.executable, "-m", "bigcherry", "--engine", ENGINE, "patch-rebase-check",
-                "--source", "bigcherry", "--focal-overlay", info.patch_id, "--json", str(report),
+                sys.executable, "-m", "bigcherry", "--engine", layout.name, "patch-rebase-check",
+                "--source", layout.promotion_source, "--focal-overlay", info.patch_id, "--json", str(report),
             ],
             f"{info.patch_id} rebase check over production",
         )
@@ -446,13 +462,13 @@ def _preflight(root: Path, infos: tuple[PatchInfo, ...]) -> None:
                 "-m",
                 "bigcherry",
                 "--engine",
-                ENGINE,
+                layout.name,
                 "patch-gates",
                 info.patch_id,
                 "--intent",
                 "promote",
                 "--source",
-                "bigcherry",
+                layout.promotion_source,
                 "--focal-overlay",
                 "--no-legacy-grandfather",
                 "--rebase-report",
@@ -507,33 +523,33 @@ def _ledger_payload(infos: tuple[PatchInfo, ...], changed: Iterable[str], title:
     }
 
 
-def _release_version(root: Path, bump: str) -> tuple[str, str, int]:
-    recipes = tomllib.loads(paths.LLAMACPP.recipes_path(root).read_text(encoding="utf-8"))
-    llama_tag = str(recipes["pinned"])
-    match = re.fullmatch(r"b(\d+)", llama_tag)
-    if not match:
-        raise PatchPromoteError(f"invalid pinned llama.cpp tag {llama_tag!r}")
-    build = int(match.group(1))
-    config = release_notes.load_config(root, ENGINE)
+def _release_version(root: Path, layout: engines.EngineLayout, bump: str) -> tuple[str, str, int]:
+    """The pin, the next release version and its major, by the engine's own version source (build-tag or pinned-version)."""
+    pinned = str(tomllib.loads(layout.recipes_path(root).read_text(encoding="utf-8"))["pinned"])
+    config = release_notes.load_config(root, layout.name)
+    try:
+        build = release_notes.pin_version(root, config, pinned).major
+    except release_notes.ReleaseNotesError as exc:
+        raise PatchPromoteError(str(exc)) from exc
     remote = _git(root, "ls-remote", "--tags", "--refs", "origin", f"refs/tags/{config.tag_prefix}{build}.*", check=False)
     local = _git(root, "tag", "--list", f"{config.tag_prefix}{build}.*", check=False)
     names = {line.split("refs/tags/")[-1] for line in remote.splitlines() if "refs/tags/" in line}
     names.update(local.split())
     existing = [name[len(config.tag_prefix):] for name in names if name.startswith(config.tag_prefix)]
     version = pin_release.next_version(existing, build, bump)
-    return llama_tag, version, build
+    return pinned, version, build
 
 
-def _finish_release_if_ready(root: Path, bump: str) -> bool:
-    llama_tag, version, build = _release_version(root, bump)
-    config = release_notes.load_config(root, ENGINE)
+def _finish_release_if_ready(root: Path, layout: engines.EngineLayout, bump: str) -> bool:
+    pinned, version, build = _release_version(root, layout, bump)
+    config = release_notes.load_config(root, layout.name)
     branch = _git(root, "rev-parse", "--abbrev-ref", "HEAD")
     plan = pin_release.Plan(
         repo_root=root,
-        engine=ENGINE,
-        package=paths.LLAMACPP.release_package(),
+        engine=layout.name,
+        package=layout.release_package(),
         upstream_name=config.upstream_name,
-        llama_tag=llama_tag,
+        llama_tag=pinned,
         build=build,
         release_tag=f"{config.tag_prefix}{version}",
         version=version,
@@ -555,6 +571,7 @@ def _finish_release_if_ready(root: Path, bump: str) -> bool:
 
 def promote(
     root: Path,
+    engine: str,
     patch_ids: tuple[str, ...],
     evidence_spec: str,
     *,
@@ -563,6 +580,7 @@ def promote(
     release: bool = False,
 ) -> PromotionResult:
     root = root.resolve()
+    layout = _layout(root, engine)
     if not patch_ids:
         raise PatchPromoteError("at least one patch id is required")
     _, evidence = _read_evidence(evidence_spec)
@@ -572,12 +590,12 @@ def promote(
             "'Model:' or 'Model-ID:' lines; use --profile-only only for "
             "an explicitly profile-scoped promotion"
         )
-    infos = tuple(_load_patch(root, patch_id) for patch_id in patch_ids)
+    infos = tuple(_load_patch(root, layout, patch_id) for patch_id in patch_ids)
     if all(info.state == "validated" for info in infos):
         if not release:
             raise PatchPromoteError("all requested patches are already validated")
         bump = "minor" if any(i.kind == "enhancement" for i in infos) else "patch"
-        _finish_release_if_ready(root, bump)
+        _finish_release_if_ready(root, layout, bump)
         return PromotionResult("", _title(infos)[1], "", (), release_pending=True)
     if any(info.state == "validated" for info in infos):
         raise PatchPromoteError("cannot batch already-validated and unvalidated patches")
@@ -592,7 +610,7 @@ def promote(
         raise PatchPromoteError("local main must exactly match origin/main")
 
     for info in infos:  # fail on an incomplete evidence file before anything is created
-        _profile_evidence(root, info, evidence)
+        _profile_evidence(root, layout, info, evidence)
     branch = _branch_name(infos)
     from ..cli.slice import start_slice
 
@@ -601,7 +619,7 @@ def promote(
     except RuntimeError as exc:
         raise PatchPromoteError(str(exc)) from exc
 
-    work_infos = tuple(_load_patch(worktree, patch_id) for patch_id in patch_ids)
+    work_infos = tuple(_load_patch(worktree, layout, patch_id) for patch_id in patch_ids)
     try:
         changed: list[Path] = []
         # The record is written and the gates run while the patch is still unpromoted: the gates evaluate it as a
@@ -609,14 +627,14 @@ def promote(
         for info in work_infos:
             if default_on:
                 changed.extend(_promote_default_on(info, evidence))
-            changed.append(profile_evidence.write(info.root, _profile_evidence(worktree, info, evidence)))
-        _preflight(worktree, work_infos)
+            changed.append(profile_evidence.write(info.root, _profile_evidence(worktree, layout, info, evidence)))
+        _preflight(worktree, layout, work_infos)
         for info in work_infos:
             changed.extend(_set_state(info))
             changed.append(_write_promotion_record(info, evidence))
             changed.append(_write_release_evidence(worktree, info, evidence))
-        changed.append(_update_recipes(worktree, patch_ids))
-        _run_checks(worktree, work_infos)
+        changed.append(_update_recipes(worktree, layout, patch_ids))
+        _run_checks(worktree, layout, work_infos)
     except Exception:
         _discard_promotion_slice(root, worktree, branch)
         raise
@@ -630,7 +648,7 @@ def promote(
     _git(worktree, "push", "-u", "origin", branch)
     pr_body = (
         "## What this slice does\n\n"
-        f"Promotes {', '.join(patch_ids)} into `[patch-set.validated-enhancements]` "
+        f"Promotes {', '.join(patch_ids)} into {layout.name}'s `[patch-set.{layout.promotion_patch_set}]` "
         "using the supplied qualification evidence, recorded in both the patch README "
         "and releases/evidence/.\n\n"
         "## Verified\n\n"
@@ -668,7 +686,7 @@ def promote(
     pending = False
     if release:
         bump = "minor" if prefix == "feat" else "patch"
-        pending = not _finish_release_if_ready(root, bump)
+        pending = not _finish_release_if_ready(root, layout, bump)
 
     return PromotionResult(branch, title, pr_url, relative, pending)
 
@@ -679,6 +697,7 @@ def cmd_patch_promote(args) -> int:
     try:
         result = promote(
             core_paths.REPO_ROOT,
+            args.engine,
             tuple(args.patch_ids),
             args.evidence,
             default_on=args.default_on,

@@ -26,6 +26,12 @@ binary = "bin/llama-bench"
 
 # How this engine's release versions are numbered (docs/reference/build/RELEASES.md): the pin is an upstream build tag
 # (b11474) and its number is the major of <major>.<minor>.<patch>.
+# Where `bigcherry patch-promote` puts a validated patch (MEN25): the production patch set it joins, and the production
+# source its promotion gates and rebase checks compose it over.
+[promotion]
+patch-set = "validated-enhancements"
+source = "bigcherry"
+
 [release]
 version-source = "build-tag"
 
