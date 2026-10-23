@@ -23,7 +23,7 @@ Per-step helper imbalance in the Flash-Next helper layout (2026-10-23 trace, com
 2. Choose replicas by load variance, not mean heat (DeepSeek EPLB eplb.py: replicate, then pack by estimated load).
 3. Engine side (rad0002 publish): per step, assign each replicated expert's routes to the helper with fewer routes so far; protocol carries the choice.
 4. Helper: hold the replicas; no other change.
-5. A/B vs the parent build in helper-ab.json; KLD unchanged (same math, bit-identical per route).
+5. A/B vs the parent build in helper-ab.json; KLD gated (same expert math, but owner/accumulation order may alter rounding).
 
 ## Detailed Solution & Technical Design
 
@@ -58,6 +58,12 @@ A measured end-to-end gain (prefill or decode) over the parent build with no reg
 ## Notes
 
 Upper bound from the trace: ~10% of helper GPU time, about 2-3% end to end. Lower priority than RAD21 (round-trip overlap). Prior art: DeepSeek EPLB (github.com/deepseek-ai/EPLB), vLLM/SGLang redundant experts, FasterMoE expert shadowing. GPT review req_bigcherry_e3de4a2ecbd9 (2026-10-23).
+
+## Execution gate review (2026-10-23)
+
+- **Simulation-only first PR** after RAD21 profiling. Use captured per-step per-expert route and duration distributions, paired with available VRAM and R9700 fallback costs. Evaluate replica counts K and explicit eviction costs (not only helper route imbalance). Report median/p95/p99 critical path and the theoretical upper bound as a bound, not a forecast.
+- Avoid an unsupported claim of bit-identical output: changing expert assignment and cross-helper accumulation order may change FP rounding even when expert weights and route sets match. Require KL mean/p99, top-1, accepted MTP rate and fixed-text decode checks against baseline before declaring safe.
+- Only proceed to a separate implementation PR if simulated net saving exceeds transfer/eviction overhead with margin. Dynamic placement must not assume H=2 (depends on RAD23 H/R contract); otherwise record a negative result and stop.
 
 ## Change Log
 

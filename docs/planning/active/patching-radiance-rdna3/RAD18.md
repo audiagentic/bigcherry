@@ -16,7 +16,7 @@ created-by: agent
 Two prefill levers for Qwen3.8-Flash-Next in the working layout (R9700 runs the engine; the two XTX run r3_moe_worker helpers that hold the experts):
 
 1. rad0008_hc_upmix_rt_sweep: launch the PF2 up-mix at 128 rows per workgroup instead of 256. DONE: promoted to validated in serving-core (PR #389).
-2. R3_MOE_WORKER_COMBINE: helper 0 adds both helpers' bf16 rows on the CPU into plane [0][1], so the engine reads one plane instead of two (protocol v15). Not bit-identical (bf16 add order changes). Branch feat/moe-remote-combine, no PR yet.
+2. R3_MOE_WORKER_COMBINE: helper 0 adds both helpers' bf16 rows on the CPU into plane [0][1], so the engine reads one plane instead of two (protocol v15). Not bit-identical (bf16 add order changes). Initial combine merged in #394; FP16/F16C refinement merged in #404 (still opt-in).
 
 ## Steps
 
@@ -24,7 +24,7 @@ Two prefill levers for Qwen3.8-Flash-Next in the working layout (R9700 runs the 
 2. [done] Combine: implemented with blocking waits (futex, combine runs on helper 0's large-lane thread, generation in Request::combine_generation; commit 7902a1ae9); stop/fault paths never wait on a join (41f3cae42).
 3. [done] Combine end-to-end A/B, 4 pairs (helper-ab layout): pp4096 3354 -> 3597 (+7.3%), pp1024 3404 -> 3648 (+7.1..8.1%), tg512/tg2048 flat, tg128 124.2 -> 110.4 (-11%). The tg128 drop is a content effect, not the combine: a control with the combine on but never firing gave tg128 124.3, the same as off. CPU combine cost about 300-340 us a step (176 steps, 53-60 ms a run).
 4. [todo] Quality gate for the combine: paired KLD and top-1 agreement against the uncombined output (tools/lab/radiance/helper-kld.json), plus MTP draft acceptance per cell; tg128 content check on the same prompt both arms.
-5. [todo] If the gate passes: open the PR for feat/moe-remote-combine (carries RAD19/RAD20 plan items too), merge, record results on the model page; retire the never-fire control config (Replace, don't keep).
+5. [todo] Resolve the post-#404 FP16 evidence gate in its own follow-up PR; retire the never-fire diagnostic only after it is measured and archived.
 6. [todo] If the gate fails: keep the code on main as evaluated, default off, reason in SUMMARY (shelved-work rule).
 
 ## Detailed Solution & Technical Design
@@ -75,6 +75,13 @@ combine_f16.h + r3_combine_f16_test, kCombineFallback marker, engine reads fp16)
 ${BC_WORK_ROOT}/runs/rad18-kld (reference), rad18-fp16 (KLD + scalar A/B), rad18-f16c (F16C A/B).
 Remaining for RAD18: (a) tg128 check: helper-combine-nofire-ab.json + per-cell MTP acceptance, re-run the excluded
 pair; (b) then retire the never-fire control config. Method selection, GPU method and N helpers continue in RAD23.
+
+## Execution gate review (2026-10-23, post-merge)
+
+- **Baseline correction:** the initial combine merged in #394; the FP16/F16C improvement merged in #404, default off. Neither should be reimplemented or reopened. This item remains **in progress** solely for the FP16/F16C evidence/acceptance close-out.
+- **RAD18 follow-up slice:** use the already merged binary (fixed SHA/build ID); rerun tg128 off/on and the never-fire control on an identical prompt/seed; capture generated-token counts, accepted MTP draft counts/rates **per cell**, and step/latency measurements. Re-run the previously excluded A/B pair rather than dropping an outlier. Use the existing lab/AB harness and resource queue; do not run ad-hoc concurrent GPU workloads.
+- **Quality/throughput proof:** archive paired KL mean/p99, top-1, continuation hashes, fixed-text decode latency, pp1024/4096, tg128/512/2048 and arm order. Prior FP16 p99 delta +0.039 is supporting evidence, not a substitute for this run. A divergent continuation or draft-acceptance rate may explain tok/s changes but is not a pure performance win.
+- **Finish condition:** if quality and controlled performance hold, update the model evidence, retire the diagnostic never-fire config in the RAD18 follow-up PR, and close RAD18. If any gate fails, leave combine off, record a negative result, and do not promote. Keep one new PR for this evidence/cleanup slice, separate from merged #404 and RAD20/RAD23.
 
 ## Change Log
 
