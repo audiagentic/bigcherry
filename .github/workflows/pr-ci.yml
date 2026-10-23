@@ -176,6 +176,7 @@ jobs:
 
   scan-changed-files:
     uses: ./.github/workflows/forbidden-terms.yml
+    secrets: inherit   # FORBIDDEN_TERMS: a called workflow sees no repository secret unless passed
 
   # Per area: run only when the PR touches its paths (changed_paths.py fails safe to "run").
   core-offline:
