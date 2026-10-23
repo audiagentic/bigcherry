@@ -33,7 +33,10 @@ The moe-remote helper's tensor-parallel slice mode (R3_MOE_WORKER_ENGINE_RANKS=2
 
 ## Files
 
-
+engines/radiance/components/moe-remote/moe_lane_common.h (kExpertWidth, kRankWidth, kDtype, rank_slice_lo/width)
+engines/radiance/components/moe-remote/moe_remote_gpu.h (width-640 refusal, ~line 92)
+engines/radiance/components/moe-remote/r3_moe_worker.cpp (slice selection)
+engines/radiance/components/moe-remote/tests (r3_moe_shm_test, r3_moe_backend_test)
 
 ## Validation
 
@@ -49,7 +52,7 @@ r3_moe_worker --compare / --replay-sweep on Flash-Next captures: sliced-mode out
 
 ## Acceptance Criteria
 
-
+No Flash-Next constants (640/384/w4nl64a8h) left in the helper's selection path; split and dtype come from the container or the engine; sliced mode bit-identical to today on Flash-Next; a shape the kernels cannot serve is refused with the reason.
 
 ## Notes
 

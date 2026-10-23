@@ -47,7 +47,11 @@ Design:
 
 ## Files
 
-
+engines/radiance/components/moe-remote/r3_moe_worker.cpp (lane threads ~497/~551, startup ~327/~352, stop path)
+engines/radiance/components/moe-remote/moe_remote_gpu.h (enqueue_lane, events)
+engines/radiance/components/moe-remote/moe_lane_common.h (Request, generations)
+engines/radiance/components/moe-remote/tests
+tools/lab/radiance/helper-ab.json (A/B vs parent-commit build)
 
 ## Validation
 
@@ -63,7 +67,7 @@ Helper CPU usage idle and during decode near zero (measure with top/pidstat). En
 
 ## Acceptance Criteria
 
-
+No helper thread polls or yields (per-thread CPU near zero at idle and during decode); stop at idle/decode/prefill and helper-kill/engine-kill all exit within a bounded time; A/B vs the parent build: tg and pp not worse, p99 inter-token latency not worse; component tests pass; polling code removed, no fallback flag.
 
 ## Notes
 
