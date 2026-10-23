@@ -82,6 +82,7 @@ locator = "0000:02:00.0"
 # repo-relative.
 [host.dev.rocm-sdks]
 "7.2" = "/opt/rocm-7.2"
+"7.14" = "/opt/rocm-7.14"
 "10.1" = "vendor/rocm/10.1.0rc2"
 
 # Values for ${VAR} references in tracked config (config/recipes.toml), e.g.
