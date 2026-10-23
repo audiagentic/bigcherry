@@ -1,7 +1,7 @@
 """HI85/GP02: fail closed (not crash) when a NCCL/RCCL participant lacks
 PCIe AtomicOps completion capability.
 
-Real dual/multi-GPU hardware testing on dev (4 GPUs: RDNA2 gfx1030,
+Real dual/multi-GPU hardware testing on Brutus (4 GPUs: RDNA2 gfx1030,
 2x RDNA3 gfx1100, RDNA4 gfx1201) found that RCCL's collective kernel
 dispatch hard-crashes when a communicator includes a device whose PCIe
 path cannot complete AtomicOps -- confirmed with NCCL_DEBUG=INFO tracing
@@ -76,7 +76,7 @@ and real hardware evidence.
 
 GROUP = "core"
 # Real hardware validated (2026-09-02): hipDeviceAttributeHostNativeAtomicSupported
-# correctly distinguishes device 3 (=0) from devices 0/1/2 (=1) on dev,
+# correctly distinguishes device 3 (=0) from devices 0/1/2 (=1) on Brutus,
 # confirmed via a standalone HIP probe binary against real hardware, matching
 # HI138's lspci/dmesg-based finding exactly. Promote from the prior
 # architecture-inequality version's "untested" once a build with this guard

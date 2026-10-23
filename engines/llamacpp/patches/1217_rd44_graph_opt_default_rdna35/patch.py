@@ -51,7 +51,7 @@ Porting notes:
     `cuda_ctx` by value. C++ function-local `static` semantics run the
     initializer exactly ONCE per process, on the first call -- capturing
     `cuda_ctx` does not make it re-evaluate per device. On a process that
-    sees more than one GPU architecture (this project's own dev fleet:
+    sees more than one GPU architecture (this project's own Brutus fleet:
     gfx1100/gfx1201/gfx1030 simultaneously), the first device to call this
     function would silently fix the default for every other device too.
     `ggml_backend_cuda_graph_optimize` immediately returns a few lines
@@ -71,9 +71,9 @@ Porting notes:
     regression suite, not just this default flip landing cleanly.
 
 Hardware status (this patch's own acceptance, from the plan item):
-  Needs gfx1151 hardware, which dev does not have (gfx1100/gfx1201/
+  Needs gfx1151 hardware, which Brutus does not have (gfx1100/gfx1201/
   gfx1030 only) -- same hardware gap as RD21/RD22 (patches 1208/1209).
-  The patch is behavior-neutral on all three dev architectures (the
+  The patch is behavior-neutral on all three Brutus architectures (the
   RDNA3_5 branch cannot resolve `GGML_CUDA_CC_IS_RDNA3_5`), so the bench
   reduces to a no-regression check on gfx1100/gfx1201/gfx1030; the
   performance claim stays unvalidated until gfx1151 hardware exists.

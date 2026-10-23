@@ -25,7 +25,7 @@ workaround immediately above it (that workaround uses a plain, non-append
 `PROPERTIES COMPILE_FLAGS "-O2 -g"`, so ordering matters: this edit's
 APPEND_STRING must run after it). On Linux, CXX_IS_HIPCC is false (unless
 CXX is literally hipcc), so this new block is inert there and the existing
-CMAKE_HIP_FLAGS path -- already confirmed working on Linux/dev --
+CMAKE_HIP_FLAGS path -- already confirmed working on Linux/Brutus --
 continues to be the only one that fires.
 """
 

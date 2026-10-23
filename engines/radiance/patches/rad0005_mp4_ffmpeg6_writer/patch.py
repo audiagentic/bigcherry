@@ -1,7 +1,7 @@
 """Let radiance 1.8.0's MP4 writer build against FFmpeg 6.
 
 core/mm/mp4.cpp (new in 1.8.0) hands avio_alloc_context a write callback taking `const uint8_t*`, the FFmpeg 7
-(libavformat 61) signature. FFmpeg 6.1 (Ubuntu 24.04, dev) declares it `uint8_t*` and the file does not compile.
+(libavformat 61) signature. FFmpeg 6.1 (Ubuntu 24.04, Brutus) declares it `uint8_t*` and the file does not compile.
 The patch picks the parameter type by LIBAVFORMAT_VERSION_MAJOR; the body only reads the buffer, so behaviour is
 identical on both.
 """

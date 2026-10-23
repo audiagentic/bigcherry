@@ -65,7 +65,7 @@ candidate timing/promotions are stale under this patch even though
 candidate identity (J) is unchanged -- re-measurement is required before
 any promotion, not just a build-clean patch.
 
-Hardware status (2026-08-25, real dual-gfx1100 dev rig): extensive
+Hardware status (2026-08-25, real dual-gfx1100 Brutus rig): extensive
 informal real-hardware evidence gathered (build clean on gfx1100-only and
 full multi-arch; test-backend-ops MUL_MAT_ID native 869/869 and tune
 q4_K+q8_0 148/148 passing; a dedicated hostile-routing test

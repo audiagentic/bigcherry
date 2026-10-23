@@ -39,7 +39,7 @@ recurrence's rank-1 state updates into dense matmuls over LDS, with the
 state held in registers across a chunk. AMD reports 1.89x GDN-op speedup
 and up to +20% E2E at ubatch>=4096 on the restricted shape this kernel
 targets (source reports gfx1151; RD50 also asks to validate gfx1100/gfx1201
-since dev has no gfx1151).
+since Brutus has no gfx1151).
 
 Eligibility (ggml_cuda_gdn_chunked_supported, unchanged from source): scalar
 gate only (not kda), keep_rs == false, S_v == 128 (GDN_HEAD_DIM), n_tokens >
@@ -77,7 +77,7 @@ rdna-boosts patch):
     before promotion -- this patch only makes the code exist and apply
     cleanly, per RD50's own acceptance criteria ("promote only under exact
     supported shape predicate; fallback untouched").
-  - Hardware: gfx1100/gfx1201 (dev) can exercise the RDNA3_5 gate's
+  - Hardware: gfx1100/gfx1201 (Brutus) can exercise the RDNA3_5 gate's
     *non-selection* path only (neither is RDNA3_5) -- RD50 explicitly asks
     for gfx1100/gfx1201 validation, which here means "prove the fallback
     is untouched", not "prove the chunked kernel wins". The performance

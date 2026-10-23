@@ -52,7 +52,7 @@ Porting notes:
     single-GPU tensor split, so RD20's code path is only reachable with
     2+ devices. They are independent hunks in independent files and can be
     tested in either order; the isolated bench for RD20 needs 2+ GPUs
-    (dev devices 0/1, both gfx1100) to exercise the Meta path at all.
+    (Brutus devices 0/1, both gfx1100) to exercise the Meta path at all.
 
 Isolation and promotion (first-sweep policy, RD review 2026-08-18):
   - GROUP 'rdna-boosts' + STATE 'untested' keeps this OUT of the production

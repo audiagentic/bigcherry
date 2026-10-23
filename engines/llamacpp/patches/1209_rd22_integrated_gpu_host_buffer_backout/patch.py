@@ -54,7 +54,7 @@ Porting notes:
 
 Hardware status (RD22's own acceptance):
   The corruption was observed on a Strix Halo iGPU (gfx1151 RDNA3.5).
-  This machine has no discrete evidence path for it yet; device 2 (gfx1201,
+  Brutus has no discrete evidence path for it yet; device 2 (gfx1201,
   integrated on that board) is the candidate reproduction target.
   Per the item's standard this patch is evidence-only until an
   integrated-GPU PPL/output-integrity run demonstrates the behavior on
