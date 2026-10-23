@@ -61,14 +61,6 @@ class ForbiddenTermsTests(unittest.TestCase):
         self._stage("engines/p/patch.toml", 'id = "1209_integrated_gpu_host_buffer_backout"\n')
         self.assertEqual([], ft.findings(self.root, staged=True))
 
-    def test_exempt_file_is_skipped_and_others_still_scanned(self) -> None:
-        os.environ["BIGCHERRY_FORBIDDEN_TERMS"] = "zeta-box"
-        (self.root / "config" / "forbidden-terms-exempt.txt").write_text(
-            "# evidence-bound\nengines/e/patches/p/patch.py\n", encoding="utf-8")
-        self._stage("engines/e/patches/p/patch.py", "# validated on zeta-box\n")
-        self._stage("engines/e/patches/q/patch.py", "# validated on zeta-box\n")
-        self.assertEqual([("engines/e/patches/q/patch.py", 1, "machine name")], ft.findings(self.root, staged=True))
-
     def test_reserved_example_domains_are_placeholders(self) -> None:
         self._stage("tests/t.py", "address = 'user@example.com'\nother = 'a@b.test'\n")
         self.assertEqual([], ft.findings(self.root, staged=True))

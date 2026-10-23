@@ -52,7 +52,7 @@
       },
       "campaign_identity": "143c4fe2dcf02ceeaf8b204baa51e8dbce8212744516c246fcec88464d04231f",
       "campaign_identity_digest": "143c4fe2dcf02ceeaf8b204baa51e8dbce8212744516c246fcec88464d04231f",
-      "campaign_workdir": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/framework-validation-b10901/0100-gfx1201/framework/0100_cmake_options",
+      "campaign_workdir": "${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/work/framework-validation-b10901/0100-gfx1201/framework/0100_cmake_options",
       "check_results": {
         "apply": {
           "artifacts": [
@@ -265,7 +265,7 @@
       "patch_implementation_digest": "65384606e300cdad59a50f1fdb9c4233a41588524238beb3958440290e940f1d",
       "patch_validation_subject_digest": "19dac4ed0e1116878598661c21d141d112e5dae200c860c5967828c505754f1b",
       "qualification_kind": "framework-configuration-v1",
-      "record_digest": "dd6e523c14754f9cda44467c1b757ee25584c4ea212f22a4b7fc11a1044718dc",
+      "record_digest": "c9d1105b4ac72028b20da867faaa691a624c407a926b5a1c3e65025cb82a8870",
       "record_schema_version": 5,
       "runtime_performance_qualified": false,
       "source_composition": [
@@ -456,7 +456,7 @@
       },
       "campaign_identity": "1574b9fadd8fd2e04f9fc75706da88116f59c87f1dd3e3e3ff53329c419cf0a2",
       "campaign_identity_digest": "1574b9fadd8fd2e04f9fc75706da88116f59c87f1dd3e3e3ff53329c419cf0a2",
-      "campaign_workdir": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/runs/pa40-fwcfg/r2-0100_cmake_options/framework/0100_cmake_options",
+      "campaign_workdir": "${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/work/runs/pa40-fwcfg/r2-0100_cmake_options/framework/0100_cmake_options",
       "check_results": {
         "apply": {
           "artifacts": [
@@ -669,7 +669,7 @@
       "patch_implementation_digest": "cbf35b4a9b53e3f2c62bf4911528e1d32488ca1087cdd56b35b6f8449188ab50",
       "patch_validation_subject_digest": "5162c8337abeee8556bff3c12a0e90e64b42b67d3b627a7644a99ccaa698423f",
       "qualification_kind": "framework-configuration-v1",
-      "record_digest": "145d922d33dc1585169220593132bde62bd53938fb02f3d890be783cf6b4645c",
+      "record_digest": "57453a4158fdc48ac5aeaa0ff98ad4a9da113a46068bc4c9c6c6554b9815c9d0",
       "record_schema_version": 5,
       "runtime_performance_qualified": false,
       "source_composition": [
@@ -1264,7 +1264,7 @@
       },
       "campaign_identity": "442625eaaffdc700258f470a01e6a9f33fa0766365416979daa5262b0ba880a6",
       "campaign_identity_digest": "442625eaaffdc700258f470a01e6a9f33fa0766365416979daa5262b0ba880a6",
-      "campaign_workdir": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/runs/pa40-fwcfg/r3-0100_cmake_options/framework/0100_cmake_options",
+      "campaign_workdir": "${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/work/runs/pa40-fwcfg/r3-0100_cmake_options/framework/0100_cmake_options",
       "check_results": {
         "apply": {
           "artifacts": [
@@ -1477,7 +1477,7 @@
       "patch_implementation_digest": "cbf35b4a9b53e3f2c62bf4911528e1d32488ca1087cdd56b35b6f8449188ab50",
       "patch_validation_subject_digest": "5162c8337abeee8556bff3c12a0e90e64b42b67d3b627a7644a99ccaa698423f",
       "qualification_kind": "framework-configuration-v1",
-      "record_digest": "88efae8a40c87fa8ba7e9466f57faceb022e9e40838b7b76458a9fe770193e5e",
+      "record_digest": "8a400c8509e8679e50664aad0e81f9fe5d4a799d9eefba200b3685af4f98fc7d",
       "record_schema_version": 5,
       "runtime_performance_qualified": false,
       "source_composition": [
@@ -1668,7 +1668,7 @@
       },
       "campaign_identity": "83a4094b590de15974384c6df8292696cdf37e5db6ee849f6a6a06f7a32cae71",
       "campaign_identity_digest": "83a4094b590de15974384c6df8292696cdf37e5db6ee849f6a6a06f7a32cae71",
-      "campaign_workdir": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/framework-validation-b10901/0100-gfx1100/framework/0100_cmake_options",
+      "campaign_workdir": "${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/work/framework-validation-b10901/0100-gfx1100/framework/0100_cmake_options",
       "check_results": {
         "apply": {
           "artifacts": [
@@ -1881,7 +1881,7 @@
       "patch_implementation_digest": "65384606e300cdad59a50f1fdb9c4233a41588524238beb3958440290e940f1d",
       "patch_validation_subject_digest": "19dac4ed0e1116878598661c21d141d112e5dae200c860c5967828c505754f1b",
       "qualification_kind": "framework-configuration-v1",
-      "record_digest": "517e6ef5b0ac3a833e850a9024a2fce852879d7ee348f3f0986622f00713ba20",
+      "record_digest": "69f7468b40f38944e55b8f02465660974f77dd74c3df29e85af65a612cd53430",
       "record_schema_version": 5,
       "runtime_performance_qualified": false,
       "source_composition": [
@@ -2072,7 +2072,7 @@
       },
       "campaign_identity": "a28efd41a7be4c8f44bd4bdc73dccb1defc6023d11a94fa21cecfba6dccac974",
       "campaign_identity_digest": "a28efd41a7be4c8f44bd4bdc73dccb1defc6023d11a94fa21cecfba6dccac974",
-      "campaign_workdir": "/mnt/vault/development/llmhosts/bigcherry/work/framework-config-0100/framework/0100_cmake_options",
+      "campaign_workdir": "${BC_DEV_ROOT}/llmhosts/bigcherry/work/framework-config-0100/framework/0100_cmake_options",
       "check_results": {
         "apply": {
           "artifacts": [
@@ -2285,7 +2285,7 @@
       "patch_implementation_digest": "65384606e300cdad59a50f1fdb9c4233a41588524238beb3958440290e940f1d",
       "patch_validation_subject_digest": "19dac4ed0e1116878598661c21d141d112e5dae200c860c5967828c505754f1b",
       "qualification_kind": "framework-configuration-v1",
-      "record_digest": "2a38b08c7d502f12c67ed007cd0384afa72f7175935feeb585d5cc12569d495f",
+      "record_digest": "b6c70e8a463bca3a3de4423c1a32e616839fa63be57734e69aa0194eddeaf6c8",
       "record_schema_version": 5,
       "runtime_performance_qualified": false,
       "source_composition": [
@@ -2744,7 +2744,7 @@
       },
       "campaign_identity": "d6ce67afe33ca3ff7725c91fae4a832d8fe6fa9cad95b3e20b99ebd391bd2d6d",
       "campaign_identity_digest": "d6ce67afe33ca3ff7725c91fae4a832d8fe6fa9cad95b3e20b99ebd391bd2d6d",
-      "campaign_workdir": "/mnt/vault/development/llmhosts/bigcherry/work/framework-config-0100/framework/0100_cmake_options",
+      "campaign_workdir": "${BC_DEV_ROOT}/llmhosts/bigcherry/work/framework-config-0100/framework/0100_cmake_options",
       "check_results": {
         "apply": {
           "artifacts": [
@@ -2957,7 +2957,7 @@
       "patch_implementation_digest": "65384606e300cdad59a50f1fdb9c4233a41588524238beb3958440290e940f1d",
       "patch_validation_subject_digest": "19dac4ed0e1116878598661c21d141d112e5dae200c860c5967828c505754f1b",
       "qualification_kind": "framework-configuration-v1",
-      "record_digest": "79d225454ce19482617dc9a0576608162fd13772ab6c7997bc8ac583ec2d03cf",
+      "record_digest": "387dd5712427027683c89696a75411c72009ca5acfec13af5d63bd5fc6da94be",
       "record_schema_version": 5,
       "runtime_performance_qualified": false,
       "source_composition": [
@@ -3148,7 +3148,7 @@
       },
       "campaign_identity": "d90c135063c587aaa0405e538a805dc4de57d25dbd43e8755f0179db2111a73d",
       "campaign_identity_digest": "d90c135063c587aaa0405e538a805dc4de57d25dbd43e8755f0179db2111a73d",
-      "campaign_workdir": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/runs/fwcfg-b11126-r2/0100_cmake_options/framework/0100_cmake_options",
+      "campaign_workdir": "${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/work/runs/fwcfg-b11126-r2/0100_cmake_options/framework/0100_cmake_options",
       "check_results": {
         "apply": {
           "artifacts": [
@@ -3361,7 +3361,7 @@
       "patch_implementation_digest": "cbf35b4a9b53e3f2c62bf4911528e1d32488ca1087cdd56b35b6f8449188ab50",
       "patch_validation_subject_digest": "5162c8337abeee8556bff3c12a0e90e64b42b67d3b627a7644a99ccaa698423f",
       "qualification_kind": "framework-configuration-v1",
-      "record_digest": "7f4565ee8a06cae96ffb3df83236a91e73286a602873b0ec9a753d73b5f5f7f3",
+      "record_digest": "5de2757a8a2ac5425b1ce3f80fb7617427a02cfb5d423de3098d98296a7e11e4",
       "record_schema_version": 5,
       "runtime_performance_qualified": false,
       "source_composition": [
@@ -3948,7 +3948,7 @@
       },
       "campaign_identity": "e84c7a4366fc39250452094a119f841b359bcf5ea9526657731c53fe8fa22921",
       "campaign_identity_digest": "e84c7a4366fc39250452094a119f841b359bcf5ea9526657731c53fe8fa22921",
-      "campaign_workdir": "/home/audumla/pa26-evidence-run/0100_cmake_options/framework/0100_cmake_options",
+      "campaign_workdir": "${HOME}/pa26-evidence-run/0100_cmake_options/framework/0100_cmake_options",
       "check_results": {
         "apply": {
           "artifacts": [
@@ -4161,7 +4161,7 @@
       "patch_implementation_digest": "cbf35b4a9b53e3f2c62bf4911528e1d32488ca1087cdd56b35b6f8449188ab50",
       "patch_validation_subject_digest": "5162c8337abeee8556bff3c12a0e90e64b42b67d3b627a7644a99ccaa698423f",
       "qualification_kind": "framework-configuration-v1",
-      "record_digest": "84b7d31ef0d6c9731f8cc89c23c06f0d81558990e59a66544eea23e04f9de7ff",
+      "record_digest": "82ea079872aff5a550e2ce5f5663c15a5bd9264b89c952d8d6444cfeeec6beee",
       "record_schema_version": 5,
       "runtime_performance_qualified": false,
       "source_composition": [

@@ -1,6 +1,6 @@
 # b10901 -> b11126 throughput (post-bump regression check)
 
-**Question.** The single post-bump smoke at b11126 (Brutus RX 7900 XTX) showed
+**Question.** The single post-bump smoke at b11126 (<gpu-host> RX 7900 XTX) showed
 pp512 3428.6 / tg128 85.8 t/s vs 4174.5 / 100.2 at b10901. Is that real, and
 is it upstream or BigCherry?
 

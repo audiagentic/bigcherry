@@ -16,5 +16,5 @@
     "epoch-ACK-and-inflight-fencing",
     "snapshot-identity-and-integrity"
   ],
-  "limitations": "No Radiance/ROCm build or Brutus GPU run. Mock uses noncryptographic checksum; production requires SHA-256."
+  "limitations": "No Radiance/ROCm build or <gpu-host> GPU run. Mock uses noncryptographic checksum; production requires SHA-256."
 }

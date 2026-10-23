@@ -14,7 +14,6 @@ pre-commit hook), ``--all`` for every tracked file, or ``--install-hook`` once p
 from __future__ import annotations
 
 import argparse
-import fnmatch
 import os
 import re
 import subprocess
@@ -23,7 +22,6 @@ import tomllib
 from pathlib import Path
 
 ALLOW_FILE = "config/forbidden-terms-allow.txt"
-EXEMPT_FILE = "config/forbidden-terms-exempt.txt"
 LOCAL_FILE = "config/environment.local.toml"
 HOOKS_DIR = ".githooks"
 
@@ -76,14 +74,6 @@ def scan_line(line: str, term_patterns: list[re.Pattern[str]], allowed: list[str
     return labels
 
 
-def _exempt_files(root: Path) -> set[str]:
-    path = root / EXEMPT_FILE
-    if not path.is_file():
-        return set()
-    return {line.strip() for line in path.read_text(encoding="utf-8").splitlines()
-            if line.strip() and not line.lstrip().startswith("#")}
-
-
 def _candidate_files(root: Path, staged: bool) -> list[str]:
     if staged:
         out = subprocess.run(["git", "-C", str(root), "diff", "--cached", "--name-only",
@@ -125,10 +115,7 @@ def findings(root: Path, *, staged: bool = False, base: str | None = None) -> li
     allowed = _allowed_phrases(root)
     out: list[tuple[str, int, str]] = []
     candidates = _changed_files(root, base) if base else _candidate_files(root, staged)
-    exempt = _exempt_files(root)
     for rel in candidates:
-        if any(fnmatch.fnmatchcase(rel, pattern) for pattern in exempt):
-            continue
         text = _content(root, rel, staged)
         if text is None:
             continue

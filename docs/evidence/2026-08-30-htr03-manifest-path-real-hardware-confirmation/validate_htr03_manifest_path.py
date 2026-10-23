@@ -6,7 +6,7 @@ vector -> requires_mtp) still reproduces the exact original hard_fail,
 with the new provenance fields all present and correct.
 """
 import sys
-sys.path.insert(0, "/mnt/vault/development/llmhosts/bigcherry-hi143-e2e-20260829/tools")
+sys.path.insert(0, "${DEV_ROOT}/llmhosts/bigcherry-hi143-e2e-20260829/tools")
 
 import json
 from pathlib import Path
@@ -16,24 +16,24 @@ from bigcherry.tuning import behavioral_gate as bg
 from bigcherry.tuning import workflow as wf
 from bigcherry.tuning.server_runner import ServerRunner
 
-BINARY_PATH = Path("/home/audumla/.cache/bigcherry/artifacts-store/builds/b6048afbd7787b0fc34982c237d81743/69f0be9b60f65f42cf172bb29b183c1e/llama-server")
+BINARY_PATH = Path("${HOME}/.cache/bigcherry/artifacts-store/builds/b6048afbd7787b0fc34982c237d81743/69f0be9b60f65f42cf172bb29b183c1e/llama-server")
 # The ORIGINAL known-guilty full cache (all 20 signatures at their
 # originally-tuned winners, including the guilty mmvq:q8_0:w4:nw8:rpb1:sk0:v1)
 GUILTY_CACHE = None
 for candidate in [
-    Path("/mnt/vault/experiments/hi141-proof/hi141-proof-20260829-2231/dispatch.cache.provisional"),
+    Path("${VAULT_ROOT}/experiments/hi141-proof/hi141-proof-20260829-2231/dispatch.cache.provisional"),
 ]:
     if candidate.is_file():
         GUILTY_CACHE = candidate
         break
-MODEL = Path("/mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf")
+MODEL = Path("${MODELS_ROOT}/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf")
 DEVICES = "0,1"
 PORT = 44051
 
 
 def main():
     assert GUILTY_CACHE is not None, "could not find the known-guilty cache artifact"
-    cfg = campaign_config.load(Path("/mnt/vault/development/llmhosts/bigcherry-hi143-e2e-20260829/config/recipes.toml"))
+    cfg = campaign_config.load(Path("${DEV_ROOT}/llmhosts/bigcherry-hi143-e2e-20260829/config/recipes.toml"))
     profile = cfg.runtime_profiles["production-dual-xtx"]
     print(f"profile={profile.name} behavioral_classes={profile.behavioral_classes} "
           f"behavioral_corpus_edition={profile.behavioral_corpus_edition} digest={profile.digest[:16]}")
@@ -54,7 +54,7 @@ def main():
             env["GGML_HIP_DISPATCH_CACHE"] = str(cache_path)
         runner = ServerRunner(
             binary=BINARY_PATH, model=MODEL, extra_args=common_args, port=PORT,
-            env_overrides=env, log_path=Path(f"/mnt/vault/experiments/htr03-confirm-{dispatch_mode}.log"),
+            env_overrides=env, log_path=Path(f"${VAULT_ROOT}/experiments/htr03-confirm-{dispatch_mode}.log"),
         )
         with runner:
             return bg.run_vector(runner, vector, require_mtp=vector.requires_mtp)

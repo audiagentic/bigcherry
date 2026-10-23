@@ -39,5 +39,5 @@ increase, but they cannot establish a production result until the dual-device
 physical attestation gap is solved. Do not promote replay from this capture.
 
 Raw machine-readable artifacts are `run.json`, `config.json`, and
-`required-capture-failure.json`. Per-cell logs remain on Brutus under
+`required-capture-failure.json`. Per-cell logs remain on <gpu-host> under
 `/tmp/rha04-27b-observe/` and are not committed as release artifacts.

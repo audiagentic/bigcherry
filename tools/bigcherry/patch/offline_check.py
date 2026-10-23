@@ -8,6 +8,7 @@ network access itself.
 from __future__ import annotations
 
 import argparse
+import ast
 import concurrent.futures
 import json
 import os
@@ -122,15 +123,40 @@ def _renamed_from(base: str, head: str, path: str) -> str | None:
     return None
 
 
-def _only_line_endings_changed(base: str, head: str, path: str) -> bool:
-    """True when the file's text is the same at both ends of the range, also across a move of the file."""
+def _texts(base: str, head: str, path: str) -> tuple[bytes | None, bytes | None]:
+    """The file's LF text at both ends of the range, following a move of the file."""
     before = _blob_text_lf(base, path)
     if before is None:
         source = _renamed_from(base, head, path)
         before = _blob_text_lf(base, source) if source else None
-    after = _blob_text_lf(head, path)
-    return before is not None and before == after
+    return before, _blob_text_lf(head, path)
 
+
+_C_COMMENT_LINE = re.compile(r"(?m)^[ 	]*(//|/\*|\*).*$")
+
+
+def _code_identity(text: bytes) -> str | None:
+    """The patch module with its comments taken out: Python comments and docstrings, and whole-line C
+    comments inside the source text it writes. None when the module does not parse."""
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return None
+    for node in ast.walk(tree):
+        body = getattr(node, "body", None)
+        if (isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)) and body
+                and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant)
+                and isinstance(body[0].value.value, str)):
+            body[0].value.value = ""
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            node.value = _C_COMMENT_LINE.sub("", node.value)
+    return ast.dump(tree)
+
+
+def _only_comments_changed(before: bytes, after: bytes) -> bool:
+    """True when only comments differ (e.g. a redaction of names in comments): the code is unchanged."""
+    identity = _code_identity(before)
+    return identity is not None and identity == _code_identity(after)
 
 def _implementation_patch_ids(
     paths: Sequence[str], base: str | None = None, head: str | None = None
@@ -140,15 +166,18 @@ def _implementation_patch_ids(
     Metadata-only changes are covered by catalog/governance and composition
     checks; they do not invent a requirement for a per-package mechanics test.
     A patch.py whose only difference is its line endings (repository
-    renormalisation) is not an implementation change.
+    renormalisation) or its comments is not an implementation change.
     """
     found: set[str] = set()
     for path in paths:
         package = _package_of(path)
         if package is None or path != f"{_PATCH_PREFIX}{package}/patch.py":
             continue
-        if base and head and _only_line_endings_changed(base, head, path):
-            continue
+        if base and head:
+            before, after = _texts(base, head, path)
+            # same text (a line-ending renormalisation, or a move) or only its comments changed
+            if before is not None and after is not None and (before == after or _only_comments_changed(before, after)):
+                continue
         found.add(package)
     return tuple(sorted(found))
 
