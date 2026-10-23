@@ -18,10 +18,14 @@ The helper's lane threads (engines/radiance/components/moe-remote/r3_moe_worker.
 
 ## Steps
 
-1. Large lane: pre-queue a device wait kernel for request_sequence >= next (with helper_fault and stop checks, bounded) ahead of the sized lane launch; the CPU blocks on an event recorded after it, then reads rows and launches. Or keep a one-deep pre-queued wait so the sized launch follows immediately.
-2. Small lanes: replace the done_sequence yield loop with blocking event syncs on the pre-queued requests (events recorded after each lane request).
-3. Set the helper's device flags to blocking sync (hipSetDeviceFlags(hipDeviceScheduleBlockingSync)) and confirm the wake-up latency is acceptable for decode (small lane, 4 rows).
-4. Stop: request_stop must also release any pre-queued device waits (store the words they wait on, or have them check helper_fault/stop in mapped memory).
+Owner rule (2026-10-23, CLAUDE.local.md 'Replace, don't keep'): the polling is replaced outright -- no default-off flag, no fallback path. The baseline arm of every A/B is the previous build (the parent commit), not a runtime switch.
+
+1. Small lanes: replace the done_sequence yield-poll with per-slot completion events (hipEventBlockingSync | hipEventDisableTiming, per event, not device-wide) recorded after lane_publish_done, separate from the timing events, never reused while outstanding. Keep 4 pre-queued requests.
+2. Shutdown (P0, with step 1): stop -> helper_fault -> combine futex -> release every served lane's outstanding device waits through an explicit device-visible cancel/no-op path (a released hipStreamWaitValue32 runs every command queued behind it, so unpublished requests must be a safe no-op, not uninitialised work) -> lanes wake, see stop, enqueue nothing -> drain -> join -> destroy events/streams -> unregister. No unchecked UINT32_MAX store.
+3. Large lane: 'arrived' event after the existing hipStreamWaitValue32 (validate the request generation with a CPU acquire before reading rows; no duplicate GPU wait), and a blocking completion event after lane_publish_done in place of hipStreamSynchronize.
+4. Startup: helper_count futex wake/wait; drop the shm-file sleep loop.
+5. Check hipDeviceAttributeCanUseStreamWaitValue at start and fail clearly if unsupported (the cross-process host-mapped use is outside HIP's documented hipMallocSignalMemory contract; stress it).
+6. A/B new build vs parent-commit build (helper-ab.json layout, 4 pairs): per-thread CPU time from /proc/<pid>/task/<tid>/stat at idle/decode/prefill, tg128/512/2048 with p50/p99 inter-token latency, pp1024/4096, event-to-requeue host time; stop during idle/decode/prefill exits within a bounded time.
 
 ## Detailed Solution & Technical Design
 
@@ -65,7 +69,10 @@ Helper CPU usage idle and during decode near zero (measure with top/pidstat). En
 
 Split out of RAD18 (CPU combine). The combine path itself is already blocking (helper 0 combines after its stream sync, futex handoff from helper 1, futex-sleeping pool). The stop word is an atomic futex word since commit 41f3cae42.
 
+Split out of RAD18. GPT review req_bigcherry_200e404f8776 (2026-10-23): HIP blocking events first; HSA IPC signals only if measured event wake latency hurts decode; hipLaunchHostFunc and KFD events rejected. GPT suggested keeping the polling path as a fallback until hardware results pass -- overridden by the owner's no-legacy rule: compare against the previous build instead.
+
 ## Change Log
 
 - 2026-10-23T00:50:15.230044+00:00 (created-by): Created by agent
 - 2026-10-23T00:53:16.066938+00:00 (updated-by): Updated: section:detailed_solution
+- 2026-10-23T01:10:23.534143+00:00 (updated-by): Updated: section:steps, section:notes
