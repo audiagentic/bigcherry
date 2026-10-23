@@ -1,7 +1,7 @@
 schema = 1
 id = "rad0008_hc_upmix_rt_sweep"
 order = 8
-state = "untested"
+state = "validated"
 kind = "enhancement"
 origin = "local"
 backend = "agnostic"
