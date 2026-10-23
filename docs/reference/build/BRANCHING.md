@@ -35,6 +35,10 @@ repository at once, and a change is only proven on the lab hardware.
    required checks pass. Do not poll checks in a loop. Every check is required and always reports: the path-filtered
    workflows decide inside a `changes` job (`.github/scripts/changed_paths.py`), so a check that does not apply to a
    change reports as skipped, which counts as passing.
+   Repository settings this needs (admin only; pending as of 2026-10-24): "Allow auto-merge" on, and ruleset `main`
+   requiring `conventional-title`, `index-line-endings`, `scan-changed-files`, `core-offline`, `offline-patch`,
+   `compile-only`, `build`, `offline-control-plane`, `Real BigCherry process semantics` and `Real Noble Slurm service
+   semantics` (today only the first two are required, so the others do not block a merge).
 6. **Releases are cut from `main` by release-please.** Every merged `feat` / `fix` / `perf` updates one open release
    pull request; merging that pull request tags `bc-llamacpp-<llama build>.<minor>.<patch>` (with the readable alias `bc-llamacpp-b<build>-r<N>`) and publishes the notes. Several
    promotions merged before the release pull request is merged ship as one release.
