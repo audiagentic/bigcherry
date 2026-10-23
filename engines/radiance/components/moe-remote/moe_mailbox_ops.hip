@@ -396,7 +396,7 @@ __global__ void mailbox_add_rows_kernel(
     uint8_t* base, const uint32_t* published, uint32_t rank, uint32_t helpers,
     const int32_t* inv, const uint32_t* rmask, const uint16_t* down, const uint16_t* ew,
     const uint16_t* shared, const uint16_t* shared_gate, uint16_t* out,
-    const uint16_t* mask_ref, uint32_t mask_only,
+    const uint16_t* mask_ref, uint32_t mask_only, uint32_t round_sum,
     uint32_t rows, uint32_t hidden, uint32_t top_k) {
     const uint32_t token = blockIdx.x;
     if (token >= rows) return;
@@ -442,14 +442,19 @@ __global__ void mailbox_add_rows_kernel(
             if (from[0] || from[1])
                 acc += bf16_to_f32(__builtin_nontemporal_load(reinterpret_cast<const uint16_t*>(
                     base + h->result_offset[0 * kMaxRanks + 1]) + (uint64_t)token * hidden + col));
-        } else if (mask_only != 1u)
+        } else if (mask_only != 1u) {
+            /* round_sum (R3_MOE_WORKER_COMBINE=round, diagnostic): the helpers' rows summed in fp32 and rounded to bf16
+             * once, as helper 0's combine writes them, so the combine's rounding is measured without the combine. */
+            float hs = 0.0f;
             for (uint32_t k = 0; k < helpers; ++k) {
                 if (!from[k]) continue;
                 const uint32_t slot = step_slot(k, rank, helpers);
                 const uint16_t* result = reinterpret_cast<const uint16_t*>(
                     base + h->result_offset[slot * kMaxRanks + slot]) + (uint64_t)token * hidden;
-                acc += bf16_to_f32(__builtin_nontemporal_load(result + col));
+                hs += bf16_to_f32(__builtin_nontemporal_load(result + col));
             }
+            acc += round_sum && (from[0] || from[1]) ? bf16_to_f32(f32_to_bf16_rn(hs)) : hs;
+        }
         const uint16_t gathered = f32_to_bf16_rn(acc);
         if (!shared) {
             out[(uint64_t)token * hidden + col] = gathered;
@@ -642,7 +647,7 @@ int publish_launch(const RadArgs* a, RadStream stream) {
                        d->shadow, d->world,
                        fuse_stage ? static_cast<const uint8_t*>(a->t[3].data) : nullptr,
                        static_cast<const float*>(a->t[4].data),
-                       static_cast<const uint16_t*>(a->t[2].data), d->cpu_ref, d->combine);
+                       static_cast<const uint16_t*>(a->t[2].data), d->cpu_ref, d->combine == 1u ? 1u : 0u);
     return hipGetLastError() == hipSuccess ? RAD_OK : RAD_E_DEVICE;
 }
 
@@ -732,7 +737,7 @@ int add_launch(const RadArgs* a, RadStream stream) {
                        static_cast<const uint16_t*>(a->t[3].data),
                        static_cast<const uint16_t*>(a->t[4].data),
                        static_cast<uint16_t*>(a->t[5].data),
-                       d->mask_ref, d->mask_only,
+                       d->mask_ref, d->mask_only, d->combine == 2u ? 1u : 0u,
                        (uint32_t)rows, (uint32_t)hidden, (uint32_t)top_k);
     hipLaunchKernelGGL(mailbox_add_finish_kernel, dim3(1), dim3(kMaxRanks + 1), 0, (hipStream_t)stream,
                        d->published);
