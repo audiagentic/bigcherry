@@ -193,6 +193,27 @@ Why the supporting flags are set (lab log, "Flash-Next: radiance's own prefill s
 - Exact wire, not `wht6`, on the two-XTX engine: wht6 gave KLD 0.0746 / top-1 87.18% on this model (run `fnk1`) for
   about 5% prefill (lab log). Not relevant to the R9700 engine layout, which has no cross-card sum.
 
+## Helper-row combine (RAD18, RAD23; in progress)
+
+`R3_MOE_WORKER_COMBINE=1` (default off): the helpers' result rows are added into one row before the engine reads them,
+so the R9700 reads one plane over its x4 link instead of two. Measured on the working layout (helper-ab style, 4
+rotated pairs; KLD with `tools/lab/radiance/helper-combine-kld.json` against the recorded two-XTX exact reference,
+every 64-row step combined):
+
+| Variant (2026-10-23) | KLD mean / p99 / p99.9 | top-1 | pp1024 / pp4096 tok/s | tg128 / tg512 / tg2048 | Verdict |
+|---|---|---|---|---|---|
+| combine off (control) | 0.0614 / 0.624 / 2.375 | 89.09% | 3,404-3,406 / 3,354-3,360 | 124 / 145 / 152 | baseline |
+| CPU combine, bf16 row | 0.0736 / 0.899 / 2.769 | 88.25% | +7.1-8.1% / +7.3% | -11% / flat / flat | fails KLD (p99 +0.275 vs 0.2) |
+| CPU combine, fp16 row, scalar conversion | 0.0641 / 0.663 / 1.948 | 88.81% | -5% / -2% | -22% / flat / flat | passes KLD; too slow (~1 ms CPU a step vs ~0.31 ms) |
+| CPU combine, fp16 row, F16C | as fp16 above | | (A/B running) | | |
+
+- An engine-side rounding-only control matched the bf16 combine's KLD exactly: the loss was the bf16 rounding of the
+  sum, not a fault in the combine. fp16 keeps the same two bytes and rounds 8x finer; a row past fp16 range carries
+  a fallback marker and is read from the separate helper planes.
+- tg128 moves with the output text (a never-firing combine control gave tg128 equal to off); check per variant.
+- Next (RAD23): selectable methods `off|cpu|gpu|auto` for unknown topologies, helper count as a runtime value; the
+  `gpu` method has the combining helper's GPU read the other helpers' rows from host memory and write one fp16 row.
+
 ## Tried and shelved
 
 | Item | Result | Evidence |
