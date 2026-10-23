@@ -83,6 +83,9 @@ pair; (b) then retire the never-fire control config. Method selection, GPU metho
 - **Quality/throughput proof:** archive paired KL mean/p99, top-1, continuation hashes, fixed-text decode latency, pp1024/4096, tg128/512/2048 and arm order. Prior FP16 p99 delta +0.039 is supporting evidence, not a substitute for this run. A divergent continuation or draft-acceptance rate may explain tok/s changes but is not a pure performance win.
 - **Finish condition:** if quality and controlled performance hold, update the model evidence, retire the diagnostic never-fire config in the RAD18 follow-up PR, and close RAD18. If any gate fails, leave combine off, record a negative result, and do not promote. Keep one new PR for this evidence/cleanup slice, separate from merged #404 and RAD20/RAD23.
 
+Handoff 2026-10-24: code merged (#404). Remaining is only step (a)/(b) above: tg128 never-fire control + MTP
+acceptance on the build server (bigcherry slice lab), then retire helper-combine-nofire-ab.json.
+
 ## Change Log
 
 - 2026-10-21T23:17:12.131804+00:00 (created-by): Created by agent
