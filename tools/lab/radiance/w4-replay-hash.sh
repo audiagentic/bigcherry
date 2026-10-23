@@ -5,7 +5,7 @@
 # Usage: BUILD=<lane build dir> [CAPDIR=<dir>] [N=4] tools/lab/radiance/w4-replay-hash.sh   (set MODEL for another container)
 set -u
 B=${BUILD:?set BUILD to the lane build directory}
-W=${WORK:-${BC_CACHE_ROOT}}
+W=${WORK:-${BC_WORK_ROOT}}
 M=${MODEL:-${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad}
 FILES=$(ls -S ${CAPDIR:-$W/captures}/*.bin | head -${N:-4} | tr '\n' ' ')
 export ROCM_PATH=${ROCM_PATH:-/opt/rocm-7.2.4}

@@ -82,7 +82,7 @@
           "R3_MOE_WORKER_MAX_ROWS": "4096",
           "R3_MOE_WORKER_SMALL_ROWS": "8",
           "R3_MOE_WORKER_MIB": "22528",
-          "R3_MOE_WORKER_HEAT": "${BC_CACHE_ROOT}/runs/perf51/heat.rank0.hot-first",
+          "R3_MOE_WORKER_HEAT": "${BC_WORK_ROOT}/runs/perf51/heat.rank0.hot-first",
           "R3_MOE_WORKER_ROWS": "0"
         }
       },
@@ -99,7 +99,7 @@
           "R3_MOE_WORKER_MAX_ROWS": "4096",
           "R3_MOE_WORKER_SMALL_ROWS": "8",
           "R3_MOE_WORKER_MIB": "22528",
-          "R3_MOE_WORKER_HEAT": "${BC_CACHE_ROOT}/runs/perf51/heat.rank0.hot-first",
+          "R3_MOE_WORKER_HEAT": "${BC_WORK_ROOT}/runs/perf51/heat.rank0.hot-first",
           "R3_MOE_WORKER_ROWS": "0"
         }
       }
@@ -127,17 +127,17 @@
         "build_plan_id": "e8d7ec1a7c2ff9f4cf48986b4e36748f",
         "effective_configure": {
           "CMAKE_BUILD_TYPE": "Release",
-          "CMAKE_CXX_COMPILER": "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14",
+          "CMAKE_CXX_COMPILER": "${BC_WORK_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14",
           "CMAKE_CXX_COMPILER-ADVANCED": "1",
-          "CMAKE_CXX_COMPILER_AR": "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ar-14",
+          "CMAKE_CXX_COMPILER_AR": "${BC_WORK_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ar-14",
           "CMAKE_CXX_COMPILER_AR-ADVANCED": "1",
-          "CMAKE_CXX_COMPILER_RANLIB": "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ranlib-14",
+          "CMAKE_CXX_COMPILER_RANLIB": "${BC_WORK_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ranlib-14",
           "CMAKE_CXX_COMPILER_RANLIB-ADVANCED": "1",
-          "CMAKE_C_COMPILER": "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14",
+          "CMAKE_C_COMPILER": "${BC_WORK_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14",
           "CMAKE_C_COMPILER-ADVANCED": "1",
-          "CMAKE_C_COMPILER_AR": "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ar-14",
+          "CMAKE_C_COMPILER_AR": "${BC_WORK_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ar-14",
           "CMAKE_C_COMPILER_AR-ADVANCED": "1",
-          "CMAKE_C_COMPILER_RANLIB": "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ranlib-14",
+          "CMAKE_C_COMPILER_RANLIB": "${BC_WORK_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ranlib-14",
           "CMAKE_C_COMPILER_RANLIB-ADVANCED": "1",
           "CMAKE_EXE_LINKER_FLAGS": "",
           "CMAKE_EXE_LINKER_FLAGS-ADVANCED": "1",
@@ -180,11 +180,11 @@
         "toolchain": [
           [
             "CMAKE_CXX_COMPILER",
-            "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14"
+            "${BC_WORK_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14"
           ],
           [
             "CMAKE_C_COMPILER",
-            "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14"
+            "${BC_WORK_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14"
           ],
           [
             "CMAKE_GENERATOR",
@@ -192,7 +192,7 @@
           ],
           [
             "c_compiler_realpath",
-            "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14"
+            "${BC_WORK_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14"
           ],
           [
             "c_compiler_version",
@@ -204,7 +204,7 @@
           ],
           [
             "cxx_compiler_realpath",
-            "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14"
+            "${BC_WORK_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14"
           ],
           [
             "cxx_compiler_version",
@@ -240,17 +240,17 @@
         "build_plan_id": "e8d7ec1a7c2ff9f4cf48986b4e36748f",
         "effective_configure": {
           "CMAKE_BUILD_TYPE": "Release",
-          "CMAKE_CXX_COMPILER": "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14",
+          "CMAKE_CXX_COMPILER": "${BC_WORK_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14",
           "CMAKE_CXX_COMPILER-ADVANCED": "1",
-          "CMAKE_CXX_COMPILER_AR": "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ar-14",
+          "CMAKE_CXX_COMPILER_AR": "${BC_WORK_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ar-14",
           "CMAKE_CXX_COMPILER_AR-ADVANCED": "1",
-          "CMAKE_CXX_COMPILER_RANLIB": "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ranlib-14",
+          "CMAKE_CXX_COMPILER_RANLIB": "${BC_WORK_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ranlib-14",
           "CMAKE_CXX_COMPILER_RANLIB-ADVANCED": "1",
-          "CMAKE_C_COMPILER": "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14",
+          "CMAKE_C_COMPILER": "${BC_WORK_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14",
           "CMAKE_C_COMPILER-ADVANCED": "1",
-          "CMAKE_C_COMPILER_AR": "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ar-14",
+          "CMAKE_C_COMPILER_AR": "${BC_WORK_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ar-14",
           "CMAKE_C_COMPILER_AR-ADVANCED": "1",
-          "CMAKE_C_COMPILER_RANLIB": "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ranlib-14",
+          "CMAKE_C_COMPILER_RANLIB": "${BC_WORK_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ranlib-14",
           "CMAKE_C_COMPILER_RANLIB-ADVANCED": "1",
           "CMAKE_EXE_LINKER_FLAGS": "",
           "CMAKE_EXE_LINKER_FLAGS-ADVANCED": "1",
@@ -293,11 +293,11 @@
         "toolchain": [
           [
             "CMAKE_CXX_COMPILER",
-            "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14"
+            "${BC_WORK_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14"
           ],
           [
             "CMAKE_C_COMPILER",
-            "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14"
+            "${BC_WORK_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14"
           ],
           [
             "CMAKE_GENERATOR",
@@ -305,7 +305,7 @@
           ],
           [
             "c_compiler_realpath",
-            "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14"
+            "${BC_WORK_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14"
           ],
           [
             "c_compiler_version",
@@ -317,7 +317,7 @@
           ],
           [
             "cxx_compiler_realpath",
-            "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14"
+            "${BC_WORK_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14"
           ],
           [
             "cxx_compiler_version",
@@ -358,7 +358,7 @@
         "R3_MOE_WORKER_MAX_ROWS": "4096",
         "R3_MOE_WORKER_SMALL_ROWS": "8",
         "R3_MOE_WORKER_MIB": "22528",
-        "R3_MOE_WORKER_HEAT": "${BC_CACHE_ROOT}/runs/perf51/heat.rank0.hot-first",
+        "R3_MOE_WORKER_HEAT": "${BC_WORK_ROOT}/runs/perf51/heat.rank0.hot-first",
         "R3_MOE_WORKER_ROWS": "0"
       }
     },
@@ -372,7 +372,7 @@
         "R3_MOE_WORKER_MAX_ROWS": "4096",
         "R3_MOE_WORKER_SMALL_ROWS": "8",
         "R3_MOE_WORKER_MIB": "22528",
-        "R3_MOE_WORKER_HEAT": "${BC_CACHE_ROOT}/runs/perf51/heat.rank0.hot-first",
+        "R3_MOE_WORKER_HEAT": "${BC_WORK_ROOT}/runs/perf51/heat.rank0.hot-first",
         "R3_MOE_WORKER_ROWS": "0"
       }
     }
@@ -405,7 +405,7 @@
         "R3_MOE_WORKER_MAX_ROWS": "4096",
         "R3_MOE_WORKER_SMALL_ROWS": "8",
         "R3_MOE_WORKER_MIB": "22528",
-        "R3_MOE_WORKER_HEAT": "${BC_CACHE_ROOT}/runs/perf51/heat.rank0.hot-first",
+        "R3_MOE_WORKER_HEAT": "${BC_WORK_ROOT}/runs/perf51/heat.rank0.hot-first",
         "R3_MOE_WORKER_ROWS": "0"
       },
       "execution_attestation": null,
@@ -481,7 +481,7 @@
         "R3_MOE_WORKER_MAX_ROWS": "4096",
         "R3_MOE_WORKER_SMALL_ROWS": "8",
         "R3_MOE_WORKER_MIB": "22528",
-        "R3_MOE_WORKER_HEAT": "${BC_CACHE_ROOT}/runs/perf51/heat.rank0.hot-first",
+        "R3_MOE_WORKER_HEAT": "${BC_WORK_ROOT}/runs/perf51/heat.rank0.hot-first",
         "R3_MOE_WORKER_ROWS": "0"
       },
       "execution_attestation": null,
@@ -557,7 +557,7 @@
         "R3_MOE_WORKER_MAX_ROWS": "4096",
         "R3_MOE_WORKER_SMALL_ROWS": "8",
         "R3_MOE_WORKER_MIB": "22528",
-        "R3_MOE_WORKER_HEAT": "${BC_CACHE_ROOT}/runs/perf51/heat.rank0.hot-first",
+        "R3_MOE_WORKER_HEAT": "${BC_WORK_ROOT}/runs/perf51/heat.rank0.hot-first",
         "R3_MOE_WORKER_ROWS": "0"
       },
       "execution_attestation": null,
@@ -633,7 +633,7 @@
         "R3_MOE_WORKER_MAX_ROWS": "4096",
         "R3_MOE_WORKER_SMALL_ROWS": "8",
         "R3_MOE_WORKER_MIB": "22528",
-        "R3_MOE_WORKER_HEAT": "${BC_CACHE_ROOT}/runs/perf51/heat.rank0.hot-first",
+        "R3_MOE_WORKER_HEAT": "${BC_WORK_ROOT}/runs/perf51/heat.rank0.hot-first",
         "R3_MOE_WORKER_ROWS": "0"
       },
       "execution_attestation": null,

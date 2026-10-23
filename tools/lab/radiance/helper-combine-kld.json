@@ -1,5 +1,5 @@
 {
- "_comment": "RAD18 combine quality gate: output quality with R3_MOE_WORKER_COMBINE=1 (helper 0 adds both helpers' bf16 rows on the CPU) against the same helper layout with the combine off, scored by radiance KL mode through ab-benchmark --server-config (quality_only). Both arms run the helper layout, so the control is combine0 and the gate is the combine's own change. Arm settings mirror helper-kld.json's helper-on arm; MAX_ROWS=64 with --max-num-batched-tokens 64 sends every step through the helpers' large lane, where the combine runs. Reference: the two-XTX tp 2 exact-wire run recorded once (2026-10-23) into KLD_REF_DIR=${BC_CACHE_ROOT}/runs/rad18-kld/reference with helper-kld.json's record block; restore that block to re-record into a new directory. Set RAD_BIN, RAD_HOME, R9700_BDF, KLD_REF_DIR. Retire with helper-combine-nofire-ab.json once the gate is decided. KL mode runs 64-row steps and the combine fires only at R3_MOE_WORKER_COMBINE_MIN_ROWS (default 256), so the combine1 arm sets it to 1: every step goes through the combine. Check 'combine steps N' > 0 in helper0.log after the run (the first run, 2026-10-23, never fired and its identical result was void). Arm combine-round (R3_MOE_WORKER_COMBINE=round, diagnostic) does not combine: the engine rounds the helpers' fp32 sum to bf16 once, exactly as the combine writes it, so combine-round vs combine1 separates the rounding from any fault in the combine itself.",
+ "_comment": "RAD18 combine quality gate: output quality with R3_MOE_WORKER_COMBINE=1 (helper 0 adds both helpers' bf16 rows on the CPU) against the same helper layout with the combine off, scored by radiance KL mode through ab-benchmark --server-config (quality_only). Both arms run the helper layout, so the control is combine0 and the gate is the combine's own change. Arm settings mirror helper-kld.json's helper-on arm; MAX_ROWS=64 with --max-num-batched-tokens 64 sends every step through the helpers' large lane, where the combine runs. Reference: the two-XTX tp 2 exact-wire run recorded once (2026-10-23) into KLD_REF_DIR=${BC_WORK_ROOT}/runs/rad18-kld/reference with helper-kld.json's record block; restore that block to re-record into a new directory. Set RAD_BIN, RAD_HOME, R9700_BDF, KLD_REF_DIR. Retire with helper-combine-nofire-ab.json once the gate is decided. KL mode runs 64-row steps and the combine fires only at R3_MOE_WORKER_COMBINE_MIN_ROWS (default 256), so the combine1 arm sets it to 1: every step goes through the combine. Check 'combine steps N' > 0 in helper0.log after the run (the first run, 2026-10-23, never fired and its identical result was void). Arm combine-round (R3_MOE_WORKER_COMBINE=round, diagnostic) does not combine: the engine rounds the helpers' fp32 sum to bf16 once, exactly as the combine writes it, so combine-round vs combine1 separates the rounding from any fault in the combine itself.",
  "schema_version": 1,
  "engine": "radiance",
  "evidence_role": "diagnostic",
@@ -71,7 +71,7 @@
     "R3_MOE_WORKER_MAX_ROWS": "64",
     "R3_MOE_WORKER_SMALL_ROWS": "8",
     "R3_MOE_WORKER_MIB": "22528",
-    "R3_MOE_WORKER_HEAT": "${BC_CACHE_ROOT}/runs/perf51/heat.rank0.hot-first"
+    "R3_MOE_WORKER_HEAT": "${BC_WORK_ROOT}/runs/perf51/heat.rank0.hot-first"
    }
   },
   {
@@ -90,7 +90,7 @@
     "R3_MOE_WORKER_MAX_ROWS": "64",
     "R3_MOE_WORKER_SMALL_ROWS": "8",
     "R3_MOE_WORKER_MIB": "22528",
-    "R3_MOE_WORKER_HEAT": "${BC_CACHE_ROOT}/runs/perf51/heat.rank0.hot-first",
+    "R3_MOE_WORKER_HEAT": "${BC_WORK_ROOT}/runs/perf51/heat.rank0.hot-first",
     "R3_MOE_WORKER_COMBINE": "round"
    }
   },
@@ -110,7 +110,7 @@
     "R3_MOE_WORKER_MAX_ROWS": "64",
     "R3_MOE_WORKER_SMALL_ROWS": "8",
     "R3_MOE_WORKER_MIB": "22528",
-    "R3_MOE_WORKER_HEAT": "${BC_CACHE_ROOT}/runs/perf51/heat.rank0.hot-first",
+    "R3_MOE_WORKER_HEAT": "${BC_WORK_ROOT}/runs/perf51/heat.rank0.hot-first",
     "R3_MOE_WORKER_COMBINE": "1",
     "R3_MOE_WORKER_COMBINE_MIN_ROWS": "1"
    }

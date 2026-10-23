@@ -70,7 +70,7 @@ host at 86 of 91 GiB) after a forced kill; a clean stop and retry loaded fine.
 ## Worker decode kernel (RAD14, 2026-10-20)
 
 **Real decode requests.** 120 captured worker requests (4 streams, MTP 3, `R3_MOE_WORKER_CAPTURE`, config `qwen35b-helper-capture-decode.json`,
-captures on dev in `${BC_CACHE_ROOT}/caps-q35-decode`): every request is 16 rows (4 streams x 4 verify rows); the worker owns about 36 of
+captures on dev in `${BC_WORK_ROOT}/caps-q35-decode`): every request is 16 rows (4 streams x 4 verify rows); the worker owns about 36 of
 the 128 routes, on about 12 distinct experts: **5.1 routes per touched expert** (1 route 12%, 2 routes 8%, 3 routes 10%, 4 routes 36%, 8 routes 11%).
 The 4-row groups are the verify positions of one stream, which route alike. Flash-Next decode requests, by contrast, are 1.0 route per touched expert at
 every size (4 to 24 rows), so multi-row reuse matters for this model and not for Flash-Next.

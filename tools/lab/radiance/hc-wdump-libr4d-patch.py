@@ -22,7 +22,7 @@ new = '''    const long HN  = (long)hc * n;
         const long dump_bytes = nrows * dld;
         std::vector<unsigned char> host(dump_bytes);
         hipMemcpy(host.data(), down, dump_bytes, hipMemcpyDeviceToHost);
-        FILE* f = std::fopen("${BC_CACHE_ROOT}/wdump.bin", "wb");
+        FILE* f = std::fopen("${BC_WORK_ROOT}/wdump.bin", "wb");
         if (f) { std::fwrite(host.data(), 1, dump_bytes, f); std::fclose(f); }
         std::fprintf(stderr, "libr4d: BC_HC_WDUMP_ROWS dumped %ld rows, dld=%ld, f8=%d\\n", nrows, dld, (int)f8);
     }

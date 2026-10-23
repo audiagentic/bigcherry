@@ -18,7 +18,7 @@
 # Without --build, the newest build under $BC_WORK_ROOT/builds that has the helper binary is used.
 set -u
 
-WORK=${BC_WORK_ROOT:-${BC_CACHE_ROOT}}
+WORK=${BC_WORK_ROOT:?set BC_WORK_ROOT (source tools/env/bigcherry-env.sh)}
 RUN=$WORK/flashnext
 PIDS=$RUN/pids
 SHM=/r3-moe-helper

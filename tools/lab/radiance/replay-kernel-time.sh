@@ -9,7 +9,7 @@ B=${BUILD:?set BUILD to the lane build directory}
 CAP=${CAPDIR:?set CAPDIR to a directory of captures}
 M=${MODEL:?set MODEL to the .rad container the captures came from}
 DEV=${DEV:-0}
-OUT=${OUT:-${WORK:-${BC_CACHE_ROOT}}/replay-kt}
+OUT=${OUT:-${WORK:-${BC_WORK_ROOT}}/replay-kt}
 FILES=$(ls ${CAP}/*.bin | head -${N:-12} | tr '\n' ' ')
 export ROCM_PATH=${ROCM_PATH:-/opt/rocm-7.2.4} PATH=${ROCM_PATH:-/opt/rocm-7.2.4}/bin:$PATH
 rm -rf "$OUT"
