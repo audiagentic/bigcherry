@@ -1,7 +1,9 @@
 name: Repository line endings
 
 on:
+  # push only for main: a push to a PR branch is already scanned by its pull_request run
   push:
+    branches: [main]
   pull_request:
 
 permissions:
