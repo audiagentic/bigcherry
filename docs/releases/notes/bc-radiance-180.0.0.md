@@ -5,7 +5,7 @@ Previous release: `bc-radiance-1.7.0-r0`.
 
 ## Bump record
 
-pin-bump lane build: radiance:stock:linux-radiance build_plan_id=a1e0e5abea7fe9cd973f70a1400824ee binary_sha256=1ca6a08bda08ec5fe278fb1fa5d6824f4b7d87ad667766a1e6cefa7311245e9f build_dir=${DEV_ROOT}/projects/bigcherry/workspaces/main/work/builds/2608d4b2f6e47b979d16fffc3b489842/a1e0e5abea7fe9cd973f70a1400824ee
+pin-bump lane build: radiance:stock:linux-radiance build_plan_id=a1e0e5abea7fe9cd973f70a1400824ee binary_sha256=1ca6a08bda08ec5fe278fb1fa5d6824f4b7d87ad667766a1e6cefa7311245e9f build_dir=${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/work/builds/2608d4b2f6e47b979d16fffc3b489842/a1e0e5abea7fe9cd973f70a1400824ee
 
 release 180.0.0 2026-10-19
 upstream: radiance v1.8.0 (revision 7a7707a95559c0b85277e75b7799fcf2ca8b8bc5)
@@ -31,7 +31,7 @@ hardware evidence:
     {
       "name": "helper-ab",
       "config": "tools/lab/radiance/helper-ab.json",
-      "output": "${DEV_ROOT}/projects/bigcherry/workspaces/main/work/accept-180c-031532/helper-ab/run",
+      "output": "${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/work/accept-180c-031532/helper-ab/run",
       "returncode": 0,
       "error": "",
       "passed": true,
@@ -97,7 +97,7 @@ hardware evidence:
     {
       "name": "helper-kld",
       "config": "tools/lab/radiance/helper-kld.json",
-      "output": "${DEV_ROOT}/projects/bigcherry/workspaces/main/work/accept-180c-031532/helper-kld/run",
+      "output": "${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/work/accept-180c-031532/helper-kld/run",
       "returncode": 0,
       "error": "",
       "passed": true,

@@ -27,7 +27,7 @@ Implemented:
 - durable `executor-start.json`, `allocation-attestation.json`, `executor-result.json`;
 - file-backed `experiment.bundle.run_managed()` streaming; Python memory does not scale with child output;
 - process-group TERM -> bounded grace -> KILL support;
-- attempt runner guards **system root, work volume and temp filesystem** with absolute and fractional free-space floors, so a worktree on `${DATA_ROOT}` cannot hide a nearly-full `/`;
+- attempt runner guards **system root, work volume and temp filesystem** with absolute and fractional free-space floors, so a worktree on `${BC_DATA_ROOT}` cannot hide a nearly-full `/`;
 - CPU/output liveness stall detector;
 - monitored validation child execution with typed `disk_pressure`, `stalled`, `launch_error`, `hardware_attestation` and configuration incidents;
 - retryable environment incidents return 75; harness/configuration incidents return 76; scientific FAIL remains normal campaign completion.

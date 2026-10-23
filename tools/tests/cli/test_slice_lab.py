@@ -58,7 +58,7 @@ class LabCommandTests(unittest.TestCase):
         self.assertIn("SCRIPT pa47-", cmd.script)
         self.assertEqual(cmd.ssh[:4], ("ssh", "-o", "BatchMode=yes", "lab-user@lab-host"))
         self.assertIn("BC_PRIMARY_ROOT", cmd.script)
-        self.assertIn("BIGCHERRY_WORK_ROOT", cmd.script)
+        self.assertIn("BC_WORK_ROOT", cmd.script)
         self.assertIn("lab primary must stay on main", cmd.script)
         self.assertIn("trap cleanup EXIT", cmd.script)
         self.assertIn("refs/bigcherry-lab/abcdef012345", cmd.script)

@@ -53,7 +53,7 @@ class PullSourceRefResolutionTests(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory(prefix="bigcherry-pull-source-test-")
         self.addCleanup(self._tmp.cleanup)
         # shared work state defaults to the primary checkout; this test has none, so it names its own
-        work = mock.patch.dict(os.environ, {"BIGCHERRY_WORK_ROOT": str(Path(self._tmp.name) / "work")})
+        work = mock.patch.dict(os.environ, {"BC_WORK_ROOT": str(Path(self._tmp.name) / "work")})
         work.start()
         self.addCleanup(work.stop)
         # the recipes file of the engine, where its declaration puts it

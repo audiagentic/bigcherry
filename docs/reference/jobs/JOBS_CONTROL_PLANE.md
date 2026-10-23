@@ -135,8 +135,8 @@ Remote scientific work remains disabled until target-local content staging and W
 
 ```bash
 python tools/admin/install_bigcherry_jobs.py \
-  --project-root ${BIGCHERRY_ROOT} \
-  --work-root ${DATA_ROOT}/bigcherry-jobs \
+  --project-root ${BC_REPO_ROOT} \
+  --work-root ${BC_DATA_ROOT}/bigcherry-jobs \
   --python ${BIGCHERRY_VENV}/bin/python
 ```
 

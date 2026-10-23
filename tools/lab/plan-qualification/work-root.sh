@@ -5,8 +5,8 @@
 
 work_root_resolve() {
     local root=$1
-    if [ -n "${BIGCHERRY_WORK_ROOT:-}" ]; then
-        printf '%s\n' "$BIGCHERRY_WORK_ROOT"
+    if [ -n "${BC_WORK_ROOT:-}" ]; then
+        printf '%s\n' "$BC_WORK_ROOT"
         return 0
     fi
     PYTHONPATH="$root/tools" python3 - "$root" <<'PY'
@@ -16,7 +16,7 @@ from bigcherry.core.paths import primary_root
 primary = primary_root()
 local = primary / "config" / "environment.local.toml"
 env = tomllib.loads(local.read_text(encoding="utf-8"))["env"] if local.is_file() else {}
-print(env.get("BIGCHERRY_WORK_ROOT") or primary / "work")
+print(env.get("BC_WORK_ROOT") or primary / "work")
 PY
 }
 

@@ -101,8 +101,8 @@ class ProjectContext:
 
         work = _absolute(
             work_root
-            or os.environ.get("BIGCHERRY_WORK_ROOT")
-            or _local_env_table().get("BIGCHERRY_WORK_ROOT")
+            or os.environ.get("BC_WORK_ROOT")
+            or _local_env_table().get("BC_WORK_ROOT")
             or paths.primary_root() / "work"
         )
         upstream_was_explicit = upstream_repo is not None

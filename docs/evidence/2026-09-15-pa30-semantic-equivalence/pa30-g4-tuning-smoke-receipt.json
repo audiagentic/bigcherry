@@ -11,7 +11,7 @@
   "dispatch_cache_path": "${HOME}/pa30-artifacts/pa30-g4/workdir-v2/dispatch.cache",
   "effective_tune_context": 4096,
   "finished_at": "2026-09-15T11:20:50Z",
-  "model_path": "${MODELS_ROOT}/qwen3.5-4B/gguf/mtp/Qwen3.5-4B-UD-Q6_K_XL.gguf",
+  "model_path": "${BC_MODEL_ROOT}/qwen3.5-4B/gguf/mtp/Qwen3.5-4B-UD-Q6_K_XL.gguf",
   "platform_name": "linux-multi",
   "promoted_after_evidence": 19,
   "promoted_before_evidence": 0,

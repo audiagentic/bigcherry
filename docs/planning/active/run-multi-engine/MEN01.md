@@ -20,7 +20,7 @@ Gate for the group. Owner decision 2026-10-09: the second engine is standalone r
 ## Steps
 
 1. Clone at a recorded commit; read LICENSE, NOTICE, spec.md and the abi/ and arch/ directories; record what each kernel library covers and for which architecture.
-2. Build on dev with the lab ROCm (${VAULT_ROOT}/tmp/bc-rocm) for gfx1201; record the exact commands and any change needed.
+2. Build on dev with the lab ROCm (${BC_VAULT_ROOT}/tmp/bc-rocm) for gfx1201; record the exact commands and any change needed.
 3. State per card what can run today: R9700 (libr4d), RX 7900 XTX and RX 6900 XT (libref only, or nothing).
 4. Checkpoint formats it loads (MXFP4 from AMD Quark, FP8, bf16, int8) and which of our models exist in one of them; the container already has /models/Qwen3.8-27B-MXFP4-mtpfp8 and a DFlash2-FP8 drafter.
 5. rocprofv3 kernel census of one 24K prefill, grouped like prefill-kernel-table.py, beside the llama.cpp census.
@@ -58,7 +58,7 @@ Radiance builds from source on dev at a recorded commit, and the inventory state
 
 Read-only on the container: start, measure, stop. No configuration change. Production llama-swap docker stays off.
 
-2026-10-09 source read (no build yet). Clone on dev: ${BIGCHERRY_ROOT}/engines/radiance at 89cee7ce414486c717aa2085c99e1f522e4c0ea6 (radiance 1.3.0, 2026-10-08), Apache-2.0 with a NOTICE file. Findings from README and tree:
+2026-10-09 source read (no build yet). Clone on dev: ${BC_REPO_ROOT}/engines/radiance at 89cee7ce414486c717aa2085c99e1f522e4c0ea6 (radiance 1.3.0, 2026-10-08), Apache-2.0 with a NOTICE file. Findings from README and tree:
 - Kernel libraries: libr4d (103 files of HIP kernels; built for gfx1200 / gfx1201 only), libref (reference implementations: attention, collective, GEMM, GDN, HC, MoE), libavx (CPU host backend; the README says it runs the test suite but does not serve at useful speed). No gfx1100 or gfx1030 kernel library. docs/PLUGIN.md documents writing a kernel library for another AMD card (its example names gfx1100).
 - Architectures (arch/): qwen4exp_fp8 (Flash-Next), qwen35_fp8, qwen35_bf16, qwen35moe_fp8, llama_fp8, llama_dense_fp8, embgemma2.
 - Flash-Next is a shipped model: qwen3.8-next-flash-fp8-iq4r-moe.rad (114 GiB; 4-bit experts, int8 trunk, MTP, vision), served with --tp 2 (also 3 and 4 ranks, docs/TP3.md) --max-model-len 200000 --placement expert_tiered --host-pool-mib 12288 --kv-cache-dtype fp8 --num-speculative-tokens 3. The README's serve flags are for two 32 GB R9700 cards. Qwen3.8-27B ships as FP8 (29 GiB) and MXFP4 (19 GiB) with a DFlash2 drafter.

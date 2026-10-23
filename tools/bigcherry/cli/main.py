@@ -786,7 +786,7 @@ def build_parser() -> argparse.ArgumentParser:
     smoke_cpu_cmd.add_argument("--build", required=True, help="the engine's build directory (holds bin/ and the runtime)")
     smoke_cpu_cmd.add_argument(
         "--model-root", default=None,
-        help="directory the [smoke.cpu] model path is relative to (default: $BIGCHERRY_MODEL_ROOT, then the host's model-root)",
+        help="directory the [smoke.cpu] model path is relative to (default: $BC_MODEL_ROOT, then the host's model-root)",
     )
     smoke_cpu_cmd.add_argument("--out", default=None, help="result directory (default: <work>/cpu-smoke/<engine>)")
     smoke_cpu_cmd.add_argument(

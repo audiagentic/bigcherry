@@ -80,7 +80,7 @@ not ad hoc. The queue gives content-addressed, ccache-backed builds (stock, base
 control and subject builds are reused across patches and sessions, never rebuilt per
 run), a host-exclusive activity lock plus per-GPU locks, and restartable runs
 (a job whose log already ends in `CAMPAIGN_EXIT=` or `PREFLIGHT_EXIT=` is skipped).
-Working files live under the work root (`${BIGCHERRY_ROOT}` on dev,
+Working files live under the work root (`${BC_REPO_ROOT}` on dev,
 `runs/<run-name>.log` and `runs/<run-name>/campaign/`).
 
 ### Job file
@@ -115,7 +115,7 @@ PREFLIGHT <run-name> <binary|@build-run> <model> <marker-regex> [server args...]
   `queue-27b-3gpu.sh` (XTX x2 + R9700).
 
 - `MODEL=` and `HIP=` override `BC_MODEL` and `BC_HIP_PATH` for that row. Set
-  `BC_HIP_PATH` (dev: `${VAULT_ROOT}/tmp/bc-rocm`) and `BC_MODEL` before starting.
+  `BC_HIP_PATH` (dev: `${BC_VAULT_ROOT}/tmp/bc-rocm`) and `BC_MODEL` before starting.
 - Producer arguments: `--producer-input control_model=<gguf>` (the model that must
   NOT fire the patch), `--producer-corpus <jsonl>`, `--common-patches <id>` for
   prerequisite patches.
@@ -127,7 +127,7 @@ PREFLIGHT <run-name> <binary|@build-run> <model> <marker-regex> [server args...]
 Start it detached and read the log:
 
 ```
-cd ${DEV_ROOT}/projects/bigcherry/workspaces/main
+cd ${BC_DEV_ROOT}/projects/bigcherry/workspaces/main
 nohup bash tools/lab/plan-qualification/queue.sh jobs.txt > ~/bc-runs/batch.log 2>&1 &
 tail -f ~/bc-runs/batch.log        # start/done lines per job; ends "queue completed ..."
 ```
@@ -438,7 +438,7 @@ completions twice (temperature 0, fixed seed, `cache_prompt` off), requires non-
 server through `/shutdown`, fails if the log shows `ggml_cuda_init: found N ROCm devices`, a `Device N:` line or layers
 offloaded to a GPU, and writes `cpu-smoke.json` (wall time, start-up time, peak RSS from `/proc` on Linux) and
 `server.log` under `--out` (default `<work>/cpu-smoke/llamacpp`). The model comes from `[smoke.cpu]` in
-`engines/llamacpp/engine.toml` (path relative to the model root: `--model-root`, then `$BIGCHERRY_MODEL_ROOT`, then the
+`engines/llamacpp/engine.toml` (path relative to the model root: `--model-root`, then `$BC_MODEL_ROOT`, then the
 host's model-root). Its `sha256` is a PLACEHOLDER until a tiny GGUF (about 15 to 150M parameters) is pinned; the
 runner refuses a non-hex digest. `pin-bump` runs it as its first runtime gate (`PIN_BUMP.md`).
 

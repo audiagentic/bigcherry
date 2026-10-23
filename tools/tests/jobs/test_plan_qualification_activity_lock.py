@@ -51,7 +51,7 @@ class PlanQualificationActivityLockTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             completed = subprocess.run(
                 ["bash", str(HELPER), str(REPO)],
-                env={**os.environ, "BIGCHERRY_WORK_ROOT": temp},
+                env={**os.environ, "BC_WORK_ROOT": temp},
                 text=True,
                 capture_output=True,
             )

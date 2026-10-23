@@ -14,7 +14,7 @@ work: L
 
 ## Description
 
-Model: ${MODELS_ROOT}/qwen3.8-flash-next/gguf/mtp/Qwen3.8-Flash-Next-UD-IQ4_XS-0000{1..3}-of-00003.gguf, 87.2 GiB, arch qwen4exp (present in the b11233 pin). 48 layers, hidden 2560, 512 experts with 10 active plus a shared expert, expert FFN 640, hybrid SSM/GDN with full attention every 4th layer, sparse-attention indexer, per-layer input embeddings (160 per layer), MTP head.
+Model: ${BC_MODEL_ROOT}/qwen3.8-flash-next/gguf/mtp/Qwen3.8-Flash-Next-UD-IQ4_XS-0000{1..3}-of-00003.gguf, 87.2 GiB, arch qwen4exp (present in the b11233 pin). 48 layers, hidden 2560, 512 experts with 10 active plus a shared expert, expert FFN 640, hybrid SSM/GDN with full attention every 4th layer, sparse-attention indexer, per-layer input embeddings (160 per layer), MTP head.
 
 Size by role: routed experts 55.4 GiB (IQ3_S 31.6, IQ4_NL 18.9, Q8_0 4.2, IQ4_XS 0.8); per_layer_token_embd 26.8 GiB (one lookup table, [160 x 320M rows]); attention/SSM 3.0 GiB; embed/output 1.1 GiB; shared experts 0.2 GiB; router/other ~0.6 GiB.
 

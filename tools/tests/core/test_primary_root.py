@@ -52,7 +52,7 @@ class PrimaryRootTests(unittest.TestCase):
                 patch.object(paths, "REPO_ROOT", worktree),
                 patch.dict(
                     os.environ,
-                    {"BC_PRIMARY_ROOT": "", "BIGCHERRY_WORK_ROOT": ""},
+                    {"BC_PRIMARY_ROOT": "", "BC_WORK_ROOT": ""},
                 ),
                 patch("bigcherry.core.config._local_env_table", return_value={}),
             ):
@@ -71,14 +71,14 @@ class PrimaryRootTests(unittest.TestCase):
             primary, worktree = self._repo_with_worktree(directory)
             shared = Path(directory) / "shared-work"
             env_root = Path(directory) / "env-work"
-            host = {"BIGCHERRY_WORK_ROOT": str(shared)}
+            host = {"BC_WORK_ROOT": str(shared)}
             with (
                 patch.object(paths, "REPO_ROOT", worktree),
-                patch.dict(os.environ, {"BC_PRIMARY_ROOT": "", "BIGCHERRY_WORK_ROOT": ""}),
+                patch.dict(os.environ, {"BC_PRIMARY_ROOT": "", "BC_WORK_ROOT": ""}),
                 patch("bigcherry.core.config._local_env_table", return_value=host),
             ):
                 from_host = ProjectContext.resolve(engine="radiance", project_root=worktree)
-                with patch.dict(os.environ, {"BIGCHERRY_WORK_ROOT": str(env_root)}):
+                with patch.dict(os.environ, {"BC_WORK_ROOT": str(env_root)}):
                     from_env = ProjectContext.resolve(engine="radiance", project_root=worktree)
             self.assertEqual(from_host.work_root, shared.resolve())
             self.assertEqual(from_host.upstream_repo, shared.resolve() / "upstream" / "radiance.git")

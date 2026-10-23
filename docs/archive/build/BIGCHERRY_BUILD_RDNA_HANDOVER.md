@@ -85,9 +85,9 @@ Native server-bench harness runs were also completed, but the harness reported a
 
 ## dev environment and preservation rules
 
-dev: `ssh ${DEV_IP}`
-BigCherry tree: `${DEV_ROOT}/bc-branch`
-Model mapping: `${MODELS_ROOT} = ${MODELS_ROOT}`
+dev: `ssh ${BC_HOST}`
+BigCherry tree: `${BC_DEV_ROOT}/bc-branch`
+Model mapping: `${BC_MODEL_ROOT} = ${BC_MODEL_ROOT}`
 
 GPU inventory observed:
 
@@ -121,7 +121,7 @@ While tracing this, two related runtime gaps were found and fixed in `hip-autotu
 - A single stale `implementation_version` entry previously caused the whole replay cache to be discarded (`g_winners.clear()`), silently losing every other retained build's winners. Now only that one entry is skipped.
 - Cross-build fallback (using a previous build's winner when the current build hasn't been re-tuned yet) did not exist at runtime — lookup required an exact `source_revision`/`manifest_hash` match and fell back straight to native otherwise. Added `GGML_HIP_DISPATCH_REPLAY_REVISION_MATCH=0` to opt into fallback to the newest available entry for a dispatch key across builds, gated by the existing per-entry `implementation_version` check for safety. Default behavior (unset, or `=1`) is unchanged: exact match required, same as before.
 
-Validated on dev (2026-08-15): all three fixes were copied to `${DEV_ROOT}/bc-branch`, the Python replay-cache test suite was extended with a regression test proving the actual bug (`test_manifest_hash_mismatch_alone_is_accepted_when_source_revision_matches`) and rerun (45/45 pass; full suite 447/447 excluding 6 modules that fail to import for an unrelated pre-existing reason — `pytest` is not installed in the dev Python environment). Replay-cache export was then run against the real, previously-failing artifacts:
+Validated on dev (2026-08-15): all three fixes were copied to `${BC_DEV_ROOT}/bc-branch`, the Python replay-cache test suite was extended with a regression test proving the actual bug (`test_manifest_hash_mismatch_alone_is_accepted_when_source_revision_matches`) and rerun (45/45 pass; full suite 447/447 excluding 6 modules that fail to import for an unrelated pre-existing reason — `pytest` is not installed in the dev Python environment). Replay-cache export was then run against the real, previously-failing artifacts:
 
 ```text
 python3 -m bigcherry.replay_cache artifacts/campaign-winners-full.jsonl \
@@ -169,7 +169,7 @@ All 18,672 recorded reduce operations used `effective_provider=rccl` with `fallb
 
 The native llama.cpp server-bench runner needs corrected target and prompt metadata before its numbers can support a causal stock-versus-BigCherry claim.
 
-**Root cause found and worked around (2026-08-15).** In `${LLAMACPP_ROOT}/bench/run_bench.py`, when `--target` is passed without an explicit `--rig`, the harness silently defaults `rig_name = "vulkan"` — regardless of what backend the server actually runs. `"hip"` is a valid, already-configured rig id in that harness's own `harness-definitions.json` (used elsewhere in its config); the CLI just never selects it automatically for a HIP server. This is why the earlier run reported a Vulkan target while the server was HIP.
+**Root cause found and worked around (2026-08-15).** In `${BC_LLAMACPP_ROOT}/bench/run_bench.py`, when `--target` is passed without an explicit `--rig`, the harness silently defaults `rig_name = "vulkan"` — regardless of what backend the server actually runs. `"hip"` is a valid, already-configured rig id in that harness's own `harness-definitions.json` (used elsewhere in its config); the CLI just never selects it automatically for a HIP server. This is why the earlier run reported a Vulkan target while the server was HIP.
 
 This harness lives outside the bigcherry repo (a shared benchmarking tool, not something owned by this campaign), so rather than patching its default-selection logic, the workaround is to always pass `--rig hip` explicitly for BigCherry/HIP server-bench runs. Verified against `upstream-stock` on gfx1100:
 

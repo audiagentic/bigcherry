@@ -39,7 +39,7 @@ repo-wide clutter, not scoped to any one session.
   (`~`, `%LOCALAPPDATA%`, `~/.cache`), not the system temp dir, not a drive
   root. Tool caches, builds, mirrors and isolated worktrees live under the
   gitignored project-local `work/` (the `ProjectContext.work_root` default;
-  override only with `BIGCHERRY_WORK_ROOT`). Agents needing an isolated
+  override only with `BC_WORK_ROOT`). Agents needing an isolated
   checkout create it under `work/worktrees/`, and keep scratch helpers in
   `work/` or `tools/lab/<topic>/` — never in ad hoc hidden directories.
 - Never commit host-specific values (absolute machine paths, user home
@@ -47,7 +47,7 @@ repo-wide clutter, not scoped to any one session.
   project-relative paths belong in git. Host facts live in the untracked
   `config/environment.local.toml` (template: `config/environment.example.toml`,
   file location overridable with `BIGCHERRY_ENVIRONMENT`, any key with
-  `BIGCHERRY_HOST_<KEY>`); tracked config refers to install locations as
+  `BC_<KEY>`); tracked config refers to install locations as
   `${VAR}` (e.g. `${HIP_PATH}`, `${ROCM_PATH}`, `${BC_REPO_ROOT}`).
   `bigcherry check --quick` enforces this (`TR14.HOST_SPECIFIC_VALUE`,
   `TR14.USER_FOLDER_DEFAULT`).

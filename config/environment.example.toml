@@ -5,7 +5,7 @@
 # machine, copy this file to config/environment.local.toml (gitignored) and
 # fill in real values, or point BIGCHERRY_ENVIRONMENT at a file elsewhere.
 # Any scalar key of the default host can also be overridden per shell with
-# BIGCHERRY_HOST_<KEY> (upper-case, '-' -> '_'), e.g. BIGCHERRY_HOST_MODEL_ROOT.
+# BC_<KEY> (upper-case, '-' -> '_'), e.g. BC_MODEL_ROOT.
 #
 # Docs name a ROLE ("the build server") and resolve the specifics from the
 # configured file. This is deliberately NOT config/recipes.toml's [[trees]]:
@@ -37,6 +37,11 @@ model-root = "/srv/example-models"
 work-root = "/srv/example/work"
 tmp-root = "/srv/example/tmp"
 dev-root = "/srv/example/dev"
+# Optional mounted volumes and the llama.cpp tree docs and scripts refer to as
+# ${BC_DATA_ROOT}, ${BC_VAULT_ROOT} and ${BC_LLAMACPP_ROOT}.
+# data-root = "/srv/example/data"
+# vault-root = "/srv/example/vault"
+# llamacpp-root = "/srv/example-share/llamacpp"
 # The documented server-bench harness. Not llama-bench: it cannot observe MTP
 # speculative decode at all.
 bench-harness = "/srv/example-share/llamacpp/bench"

@@ -2,7 +2,7 @@
   "schema_version": 1,
   "evidence_role": "production",
   "execution_evidence": "required",
-  "model": "${MODELS_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+  "model": "${BC_MODEL_ROOT}/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
   "server_args": [
     "-ngl",
     "99",

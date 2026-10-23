@@ -85,7 +85,7 @@ Stop and report instead of proceeding when:
 ## Safety rules
 
 - Never run hardware jobs outside queue.sh locks; never overlap a timed run.
-- Scripts in tools/lab/<topic>/ only; models under ${MODELS_ROOT}/<model>/gguf/<vendor>/.
+- Scripts in tools/lab/<topic>/ only; models under ${BC_MODEL_ROOT}/<model>/gguf/<vendor>/.
 - No git stash; stage explicit paths; commit trailer per repo instructions.
 - Campaigns never mutate lifecycle; decisions are explicit (bigcherry-patch-lifecycle).
 

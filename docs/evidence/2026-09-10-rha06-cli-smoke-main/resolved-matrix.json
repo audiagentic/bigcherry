@@ -23,7 +23,7 @@
           "bench_configs": "tg128",
           "model_label": "Qwen3.5-9B-Q6_K",
           "repetitions": 1,
-          "runner_root": "${LLAMACPP_ROOT}",
+          "runner_root": "${BC_LLAMACPP_ROOT}",
           "server_url": "http://127.0.0.1:18400",
           "timeout_s": 300
         }

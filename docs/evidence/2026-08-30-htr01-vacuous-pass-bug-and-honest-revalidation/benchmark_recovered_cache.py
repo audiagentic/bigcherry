@@ -6,7 +6,7 @@ launch flags already used throughout this session -- not a correctness
 check this time, a real speed measurement.
 """
 import sys
-sys.path.insert(0, "${DEV_ROOT}/llmhosts/bigcherry-hi143-e2e-20260829/tools")
+sys.path.insert(0, "${BC_DEV_ROOT}/llmhosts/bigcherry-hi143-e2e-20260829/tools")
 
 import json
 import time
@@ -15,10 +15,10 @@ import urllib.request
 from pathlib import Path
 
 BINARY_PATH = Path("${HOME}/.cache/bigcherry/artifacts-store/builds/b6048afbd7787b0fc34982c237d81743/69f0be9b60f65f42cf172bb29b183c1e/llama-server")
-RECOVERED_CACHE = Path("${VAULT_ROOT}/experiments/hi141-recovery-validation/recovery-candidate.cache")
-MODEL = "${MODELS_ROOT}/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf"
+RECOVERED_CACHE = Path("${BC_VAULT_ROOT}/experiments/hi141-recovery-validation/recovery-candidate.cache")
+MODEL = "${BC_MODEL_ROOT}/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf"
 DEVICES = "0,1"
-PROMPT_PATH = Path("${DEV_ROOT}/llmhosts/bigcherry-hi143-e2e-20260829/tools/bigcherry/tuning/fixtures/hi141_qwen38_27b_mtp_4096_v1.txt")
+PROMPT_PATH = Path("${BC_DEV_ROOT}/llmhosts/bigcherry-hi143-e2e-20260829/tools/bigcherry/tuning/fixtures/hi141_qwen38_27b_mtp_4096_v1.txt")
 PORT = 44029
 REPS = 5
 
@@ -55,7 +55,7 @@ def run_leg(label, dispatch_mode, cache_path=None):
     else:
         env.pop("GGML_HIP_DISPATCH_CACHE", None)
     cmd = [str(BINARY_PATH), "-m", MODEL, "--port", str(PORT), *COMMON_ARGS]
-    log_path = Path(f"${VAULT_ROOT}/experiments/bench-{label}.log")
+    log_path = Path(f"${BC_VAULT_ROOT}/experiments/bench-{label}.log")
     prompt = PROMPT_PATH.read_text(encoding="utf-8")
     tps_values = []
     with open(log_path, "w") as logf:

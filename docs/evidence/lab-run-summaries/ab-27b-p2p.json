@@ -1,7 +1,7 @@
 {
  "arm_config": [
   {
-   "binary": "${DEV_ROOT}/projects/bigcherry/workspaces/main/work/builds/b30ae4d72b4ee19135a4e72e797d4e9f/4e345d81f6ae2250d353167ae0ea2494/bin/llama-server",
+   "binary": "${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/work/builds/b30ae4d72b4ee19135a4e72e797d4e9f/4e345d81f6ae2250d353167ae0ea2494/bin/llama-server",
    "environment": {
     "GGML_CUDA_ALLREDUCE": "nccl"
    },
@@ -10,7 +10,7 @@
    "server_args": null
   },
   {
-   "binary": "${DEV_ROOT}/projects/bigcherry/workspaces/main/work/builds/b30ae4d72b4ee19135a4e72e797d4e9f/4e345d81f6ae2250d353167ae0ea2494/bin/llama-server",
+   "binary": "${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/work/builds/b30ae4d72b4ee19135a4e72e797d4e9f/4e345d81f6ae2250d353167ae0ea2494/bin/llama-server",
    "environment": {
     "GGML_CUDA_ALLREDUCE": "internal"
    },
@@ -19,7 +19,7 @@
    "server_args": null
   },
   {
-   "binary": "${DEV_ROOT}/projects/bigcherry/workspaces/main/work/builds/b30ae4d72b4ee19135a4e72e797d4e9f/4e345d81f6ae2250d353167ae0ea2494/bin/llama-server",
+   "binary": "${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/work/builds/b30ae4d72b4ee19135a4e72e797d4e9f/4e345d81f6ae2250d353167ae0ea2494/bin/llama-server",
    "environment": {
     "GGML_CUDA_ALLREDUCE": "internal",
     "GGML_CUDA_AR_P2P": "1"
@@ -130,7 +130,7 @@
   }
  },
  "kind": "ab",
- "model": "${MODELS_ROOT}/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
+ "model": "${BC_MODEL_ROOT}/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
  "run": "ab-27b-p2p",
  "schedule_seed": 0,
  "server_args": [
