@@ -18,7 +18,7 @@ Raw SHA-256 hashes:
 - `server.log`: `bb0ffcce0707d4cebda2ab202e81d7ad20de8f2b9308eb8a2c869baa37338d2c`
 - `dispatch-record.jsonl`: `4408219da74d5246a12770950665aaf44c66d72e73417849ad0f8ab48ba926eb`
 
-The raw files were copied from the Brutus artifact directory
-`/home/audumla/bigcherry/artifacts/hardware/20260823-hi14-graph-lifecycle/`.
+The raw files were copied from the <gpu-host> artifact directory
+`${HOME}/bigcherry/artifacts/hardware/20260823-hi14-graph-lifecycle/`.
 The bundle is historical evidence, not a new performance admission; build
 metadata and mixed-topology/long-context coverage remain outside this item.

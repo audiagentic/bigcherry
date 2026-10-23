@@ -11,7 +11,7 @@
 set -u
 RUN=${1:?build run}; TAG=${2:?tag}; DEPTH=${3:-24576}
 here=$(cd "$(dirname "$0")" && pwd)
-R=/mnt/data/bigcherry-work/runs
+R=${BC_WORK_ROOT}/runs
 ( bash "$here/queue-prefill-profile.sh" "$RUN" "$TAG-base" "$DEPTH" )
 ( export EXTRA_ARGS="--ctx-checkpoints 0"; bash "$here/queue-prefill-profile.sh" "$RUN" "$TAG-nockpt" "$DEPTH" )
 ( export EXTRA_ARGS="--checkpoint-min-step 4096"; bash "$here/queue-prefill-profile.sh" "$RUN" "$TAG-every4k" "$DEPTH" )

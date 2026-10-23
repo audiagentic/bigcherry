@@ -63,8 +63,8 @@ __global__ void hc_down_fp8_real_b(const uint8_t* __restrict__ Aq, const float* 
 }
 
 int main(int argc, char** argv) {
-    const char* npath = argc > 1 ? argv[1] : "/mnt/data/bigcherry-work/ndump.bin";
-    const char* wpath = argc > 2 ? argv[2] : "/mnt/data/bigcherry-work/wdump.bin";
+    const char* npath = argc > 1 ? argv[1] : "ndump.bin";
+    const char* wpath = argc > 2 ? argv[2] : "wdump.bin";
     FILE* fn = fopen(npath, "rb");
     FILE* fw = fopen(wpath, "rb");
     if (!fn || !fw) { printf("cannot open inputs\n"); return 1; }

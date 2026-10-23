@@ -22,7 +22,7 @@ unmodified baseline.
 
 ## Real hardware finding (2026-09-12): topology-matrix coverage beyond the proven N=3 point is deferred-hardware
 
-Brutus (this project's only real GPU host) has 4 GPUs across 3 different
+dev (this project's only real GPU host) has 4 GPUs across 3 different
 architectures (2x gfx1100, 1x gfx1201, 1x gfx1030) -- only 2 GPUs share an
 architecture, so no real same-architecture N>=3 topology exists to widen
 this patch's coverage matrix on. Attempting a heterogeneous 3-GPU

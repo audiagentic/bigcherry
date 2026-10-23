@@ -413,7 +413,7 @@ to form a causal CONTROL.
 source tools/env/bigcherry-env.sh
 PYTHONPATH=tools python3 -m bigcherry.patch.validation_campaign \
   --patch <framework-patch-id> --framework-configuration \
-  --hip-path "$BC_ROCM_SHIM" --amdgpu-targets <gfx-target> \
+  --hip-path "$BC_ROCM_ROOT" --amdgpu-targets <gfx-target> \
   --workdir <new-run-directory> --build-root <new-build-directory> \
   --worktree-root <isolated-source-directory>
 ```

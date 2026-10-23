@@ -379,7 +379,7 @@ Real fix: `hipDeviceAttributeHostNativeAtomicSupported` exposes the actual
 fact directly, per device, via the standard HIP API. Verified on real
 hardware (2026-09-02, standalone HIP probe binary): returns `1` for devices
 0/1/2 (all CPU-direct PCIe root ports) and `0` for device 3 (chipset-routed)
-on Brutus -- with no device ordinal hardcoded anywhere in the check itself,
+on dev -- with no device ordinal hardcoded anywhere in the check itself,
 consistent with this project's own topology-identity rules (no persistent
 identity may be bound to a HIP ordinal/PCI BDF/hostname).
 
@@ -540,16 +540,16 @@ matters. Under real MTP serving, this patch beats every baseline including
 layer-split by the largest margin of any arm, and beats native RCCL by
 3.9% -- a genuine, validated improvement, not a wash.
 
-Full evidence: `artifacts/gp03-validation/` on Brutus (bc-native, bc-hybrid
+Full evidence: `artifacts/gp03-validation/` on dev (bc-native, bc-hybrid
 scratch builds; `mtp-results/*.completion.jsonl` + server/bench logs for
 all 5 arms). See GP03's plan notes for the complete writeup.
 
 **2026-09-16 (PA35 step 4) raw-artifact recheck:** `artifacts/gp03-validation/`
-was searched for across Brutus's current checkout (`~/bc-pa-work`) and every
+was searched for across dev's current checkout (`~/bc-pa-work`) and every
 other known BigCherry working directory/scratch clone on the host
 (`~/bc-gp11-fusion`, `~/rd73-*`, `~/hi158-syntax`, `~/hi168-*`,
-`~/pha07-work`, `~/perf-sweep-20260911`, `/mnt/vault/development/bc-branch`,
-plus a broad `find` for `*gp03*` under `/home/audumla` and `/mnt/vault`) and
+`~/pha07-work`, `~/perf-sweep-20260911`, `${DEV_ROOT}/bc-branch`,
+plus a broad `find` for `*gp03*` under `${HOME}` and `${VAULT_ROOT}`) and
 was not found anywhere. The raw per-arm JSONL/log files referenced above are
 therefore currently non-reinspectable -- honestly marked as such here rather
 than silently reconstructed. The recorded aggregate result (the table above,
@@ -698,7 +698,7 @@ phase C (compact dispatch) follow in MET02's order.
 ## Evidence
 
 - Offline mechanics test: pending.
-- Reference test on Brutus (CPU): pending.
+- Reference test on dev (CPU): pending.
 
 ---
 
@@ -986,7 +986,7 @@ first. No behaviour change.
 
 ## Qualification
 
-QFP18 lightweight promotion on b11474, Brutus 2026-10-08: build `deploy-v4-diag` compiled clean; with
+QFP18 lightweight promotion on b11474, dev 2026-10-08: build `deploy-v4-diag` compiled clean; with
 `BIGCHERRY_DRAFT_TRACE=1 BIGCHERRY_SPEC_TIMING=1 BIGCHERRY_DRAFT_TIMING=1` the log contained 92 DRAFT_TRACE,
 23 SPEC_TIMING and 23 DRAFT_TIMING lines, 0 error lines, and greedy text identical to production
 (md5 `a34a34c1f48d`).
@@ -1031,7 +1031,7 @@ hidden catch-up).
 
 ## Qualification
 
-QFP18 lightweight promotion on b11474, Brutus 2026-10-08: build `deploy-v4-diag` compiled clean; with
+QFP18 lightweight promotion on b11474, dev 2026-10-08: build `deploy-v4-diag` compiled clean; with
 `BIGCHERRY_DRAFT_TRACE=1 BIGCHERRY_SPEC_TIMING=1 BIGCHERRY_DRAFT_TIMING=1` the log contained 92 DRAFT_TRACE,
 23 SPEC_TIMING and 23 DRAFT_TIMING lines, 0 error lines, and greedy text identical to production
 (md5 `a34a34c1f48d`).
@@ -1052,7 +1052,7 @@ nextn hidden read, batch rebuild). Splits the 6.4-8.7 ms serial fresh draft into
 
 ## Qualification
 
-QFP18 lightweight promotion on b11474, Brutus 2026-10-08: build `deploy-v4-diag` compiled clean; with
+QFP18 lightweight promotion on b11474, dev 2026-10-08: build `deploy-v4-diag` compiled clean; with
 `BIGCHERRY_DRAFT_TRACE=1 BIGCHERRY_SPEC_TIMING=1 BIGCHERRY_DRAFT_TIMING=1` the log contained 92 DRAFT_TRACE,
 23 SPEC_TIMING and 23 DRAFT_TIMING lines, 0 error lines, and greedy text identical to production
 (md5 `a34a34c1f48d`).
@@ -1273,7 +1273,7 @@ makes the scheduler reallocate once.
 
 ## Evidence
 
-Bisect on Brutus (2x 7900 XTX + R9700 tensor split, 6900 XT MTP drafter), recipe deploy-v6-plus-chunk on every build,
+Bisect on dev (2x 7900 XTX + R9700 tensor split, 6900 XT MTP drafter), recipe deploy-v6-plus-chunk on every build,
 each point compared with b11402 in the same session, greedy text and draft acceptance identical throughout:
 
 | Upstream point | Flash-Next 24K MTP decode (ms/step) | 27B prefill 10K / 32K (t/s) |
@@ -1320,7 +1320,7 @@ Motivation (b11402, production config, rocprofv3 kernel trace of one uncached pr
 23.5 s kernel time per XTX over 31.8K tokens and 18.9 s of 89.5 s over 99.3K tokens (32 -> 97 ms per 512-token
 ubatch); the R9700 holds no attention and spends the equivalent time waiting in the all-reduce.
 
-Results (b11402, Brutus, 2026-10-05/06; details and the promotion rationale in README.md):
+Results (b11402, dev, 2026-10-05/06; details and the promotion rationale in README.md):
 
 - Prefill, ABBA, production config: ~99K tokens 862.4 / 872.1 -> 978.7 / 982.5 t/s (+13%); ~202K tokens
   658.2 / 663.5 -> 846.1 / 847.8 t/s (+28%). 24K MTP decode unchanged (41.5 / 41.6 vs 41.2 - 41.4 ms/step).
@@ -1500,7 +1500,7 @@ Prompt-only MTP catch-up is deferred by one target chunk. After target chunk k f
 
 ## Qualification
 
-Qualified on Brutus at b11474 via the QFP18 lightweight promotion tier: mechanics/lint, activation marker, one-binary
+Qualified on dev at b11474 via the QFP18 lightweight promotion tier: mechanics/lint, activation marker, one-binary
 ABBA with complete separation at 8K/24K/98K, and greedy target identity. Full hardware record is in README.md and
 `releases/evidence/qfp31-mtp-deferred-catchup.md`.
 
@@ -1554,7 +1554,7 @@ The package default stays off. The Flash-Next runtime profile enables it because
 
 ## Promotion
 
-QFP18 lightweight promotion tier, Brutus 2026-10-08, pin b11474. `b-metamem-qfp37c` composed 49/49, compiled cleanly, smoke had 0 error lines, and `PATCH_HIT` was present.
+QFP18 lightweight promotion tier, dev 2026-10-08, pin b11474. `b-metamem-qfp37c` composed 49/49, compiled cleanly, smoke had 0 error lines, and `PATCH_HIT` was present.
 
 Prefill ABBA gain was +1.8% / +1.2% / +1.9% at 8K / 24K / 98K with complete separation at every depth. Decode did not regress. The Stream-K arm is not bit-identical by design; 24 CPU-F32-reference probes were no worse than production (top-1 24/24 vs 23/24, TV mean 0.0738 vs 0.0764). The off arm is the upstream MMQ dispatch.
 
@@ -1588,7 +1588,7 @@ Activation: `BIGCHERRY_PATCH_HIT patch=1355_hc_post_gate_fuse`.
 
 ## Qualification
 
-No performance claim yet. Source evidence is exact at b11474; expected gain is inference until Brutus ABBA.
+No performance claim yet. Source evidence is exact at b11474; expected gain is inference until dev ABBA.
 
 ---
 

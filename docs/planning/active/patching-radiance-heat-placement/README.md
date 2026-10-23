@@ -40,7 +40,7 @@ BigCherry current duplicate: `libr3/worker/moe_remote_hook.cpp` allocates option
 
 1. Offline deterministic traces incl. 1/8/64/1024/4096 rows, mixed prefill+decode, MTP repeated reports, ring wrap, event delayed, dropped banks, protected experts, both helpers and reset/restart. No double-credit or wrong-map publishes.
 2. Control with heat collection/owner planner disabled: exact server output and no meaningful throughput/TTFT regression; no new GPU synchronisation, no CPU critical-path work, no deadlock.
-3. Real Brutus Flash-Next 7,306- and 32K-token prefill plus 256-token decode; 4-document KL (text-only and tail metrics if available), balanced ABBA, `--compare` and graph replay. Treat helper KLD ~0.058–0.067 vs XTX-pair exact as *existing noise-band evidence*, not licence for further unmeasured regressions.
+3. Real dev Flash-Next 7,306- and 32K-token prefill plus 256-token decode; 4-document KL (text-only and tail metrics if available), balanced ABBA, `--compare` and graph replay. Treat helper KLD ~0.058–0.067 vs XTX-pair exact as *existing noise-band evidence*, not licence for further unmeasured regressions.
 4. Report heat coverage, capture lag, percent remote routes, p50/p95/p99 latency, expert transfer bytes, mover readmits, placement churn, helper wait and GPU memory usage; verify no double-counting across ranks.
 5. No automatic promotion to production profiles until independent performance/quality and rollback gates pass.
 
@@ -55,7 +55,7 @@ Each RHP01–RHP06 plan now contains low-level source seams, explicit algorithm/
 - Standalone CPU design simulator: [`tools/lab/radiance/heat-placement/heat_mock.mjs`](../../../../tools/lab/radiance/heat-placement/heat_mock.mjs), invoked with `node tools/lab/radiance/heat-placement/heat_mock.mjs`.
 - Unittest integration: `python3 -m unittest tools/tests/radiance/test_heat_placement_mock.py` (skips without Node).
 - Mock methodology: [`tools/lab/radiance/heat-placement/README.md`](../../../../tools/lab/radiance/heat-placement/README.md).
-- Evidence: [`docs/evidence/RHP01/mock-results.json`](../../../evidence/RHP01/mock-results.json): **23/23 pure CPU simulated assertions**. Not a Brutus GPU or model-quality result.
+- Evidence: [`docs/evidence/RHP01/mock-results.json`](../../../evidence/RHP01/mock-results.json): **23/23 pure CPU simulated assertions**. Not a dev GPU or model-quality result.
 
 ### Implementation handoff sequence
 

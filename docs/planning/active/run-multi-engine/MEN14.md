@@ -34,7 +34,7 @@ Replaced by an existing command, retire the script: build.sh and fetch-gcc14.sh 
 
 No command yet (gaps, tracked): helper-evidence.sh (loop of single-setting A/Bs that stages run.json under docs/evidence/) -> MEN20 component-setting evidence command; helper-capture.sh, helper-sweep.sh, small_capture.py, heat-placement/trace_report.py, heat-placement/balance_score.py -> MEN21 moe-harness commands; fn-helper.sh, fn-profile.sh, fn-profile-compare.py (rocprofv3 traces) -> check `profile-campaign` for radiance, else MEN21; gpu-mailbox/mailbox_probe.cpp, wire-quality/, heat-placement/heat_mock.mjs -> offline design aids, move under the component that owns the idea or retire with its plan item.
 
-No scratch scripts outside tools/lab: untracked .capture.sh and .gemvl.sh (RAD06 one-off launchers) removed; Brutus-side launchers (helper-evidence-b.sh etc.) are copies of the tracked scripts and are not kept.
+No scratch scripts outside tools/lab: untracked .capture.sh and .gemvl.sh (RAD06 one-off launchers) removed; dev-side launchers (helper-evidence-b.sh etc.) are copies of the tracked scripts and are not kept.
 
 ## Code Samples & Guidance
 

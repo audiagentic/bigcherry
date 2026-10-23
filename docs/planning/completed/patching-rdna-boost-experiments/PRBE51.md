@@ -118,7 +118,7 @@ src/llama-model.cpp; src/llama.cpp (reference, IGPU enumeration); tests/ (output
 
 ## Validation
 
-Offline: `PYTHONPATH=tools python -m bigcherry patch-lint`, `patch-rebase-check --focal-overlay <id> --source bigcherry-tuning`. Output-parity temp-0 identity unit test. Hardware (Brutus/Strix-Halo host, not run here): gfx1151 full-offload vs CPU-offload vs discrete XTX/R9700 controls across prefill batches/model sizes, sync count, PP, residency, via `python -m bigcherry.patch.validation_campaign`.
+Offline: `PYTHONPATH=tools python -m bigcherry patch-lint`, `patch-rebase-check --focal-overlay <id> --source bigcherry-tuning`. Output-parity temp-0 identity unit test. Hardware (dev/Strix-Halo host, not run here): gfx1151 full-offload vs CPU-offload vs discrete XTX/R9700 controls across prefill batches/model sizes, sync count, PP, residency, via `python -m bigcherry.patch.validation_campaign`.
 
 ## Effort & Risk
 

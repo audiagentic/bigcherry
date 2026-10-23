@@ -48,7 +48,7 @@ Everything the calibration chooses is recorded in the run record, so a result is
 
 ## Validation
 
-Calibration time within budget on the Brutus helpers; chosen settings within noise of the hand-tuned ones in the clean-cell stream A/B; a model the lab has never seen starts, calibrates, and serves
+Calibration time within budget on the dev helpers; chosen settings within noise of the hand-tuned ones in the clean-cell stream A/B; a model the lab has never seen starts, calibrates, and serves
 with no profile beyond its container; cache hit on the second start; results (outputs) are unchanged by tuning, only timing.
 
 ## Notes

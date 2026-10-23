@@ -38,7 +38,7 @@ as PASS.**
 
 ## What "multi-arch/topology" means (applicability coverage, not blind coverage)
 
-Real hardware available: 2x gfx1100 (Brutus, can run `-sm tensor`
+Real hardware available: 2x gfx1100 (dev, can run `-sm tensor`
 together), 1x gfx1201, 1x gfx1030.
 
 - Generic HIP/runtime patch, not architecture-restricted: single-GPU on
@@ -53,7 +53,7 @@ together), 1x gfx1201, 1x gfx1030.
   or a fail-closed heterogeneity guard. Do not force unrelated patches
   through mixed-GPU runs.
 - If an acceptance criterion genuinely requires N>=3 same-architecture
-  GPUs: record `deferred-hardware`/unavailable. Never substitute Brutus's
+  GPUs: record `deferred-hardware`/unavailable. Never substitute dev's
   heterogeneous 3/4-GPU set to manufacture "N>=3 coverage."
 
 ## Build once (fat multi-arch), run per-device -- never rebuild per architecture

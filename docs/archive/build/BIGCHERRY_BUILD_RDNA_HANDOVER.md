@@ -13,7 +13,7 @@ The work covered two related scopes:
 2. The planning-only RDNA enhancement audit from `BIGCHERRY_RDNA_BOOSTS_PREIMPLEMENTATION_RUN_SHEET.md`.
 
 Governing repository references:
-- `docs/reference/build/BUILD.md` + `docs/reference/testing/TEST.md` — Brutus build/test procedures and GPU indices.
+- `docs/reference/build/BUILD.md` + `docs/reference/testing/TEST.md` — dev build/test procedures and GPU indices.
 - `docs/standards/HIP_AUTOTUNE_STANDARDS.md` — candidate, identity, precision, replay, and evidence rules.
 - `recipes.toml` — current strict v2 campaign configuration.
 - `docs/planning/active/reusable-build-campaign/RE03.md` through `RE15.md` — build campaign work items.
@@ -61,14 +61,14 @@ The implementation deliberately remains fail-closed where producer and consumer 
 
 ## Validation completed
 
-Local and Brutus evidence:
+Local and dev evidence:
 
-- Full Python/Brutus suite: `586 passed, 9 subtests`.
+- Full Python/dev suite: `586 passed, 9 subtests`.
 - Strict patch audit: `33/33` checks passed.
-- Stock, control, record, tune, and replay-slim builds completed on Brutus.
+- Stock, control, record, tune, and replay-slim builds completed on dev.
 - Tune run: 29 result rows, 4,268 measurements, 178 candidates; 18 promoted rows after offline validation.
 - Production replay manifests now reject non-native candidates without successful correctness evidence.
-- Single-GPU record inventory completed on Brutus for gfx1100, producing 29 signatures and one hardware inventory.
+- Single-GPU record inventory completed on dev for gfx1100, producing 29 signatures and one hardware inventory.
 
 Direct native llama.cpp benchmark, Qwen3.5-0.8B Q5 model, short exploratory run:
 
@@ -83,11 +83,11 @@ These are single exploratory runs, not a definitive causal performance claim.
 
 Native server-bench harness runs were also completed, but the harness reported a Vulkan target while the server was HIP and showed prompt metadata inconsistent with the requested `pp512` configuration. Treat those results as exploratory only until the runner metadata/target selection is corrected.
 
-## Brutus environment and preservation rules
+## dev environment and preservation rules
 
-Brutus: `ssh 10.10.100.10`
-BigCherry tree: `/mnt/vault/development/bc-branch`
-Model mapping: `J:\llm-models = /mnt/vault/llm-models`
+dev: `ssh ${DEV_IP}`
+BigCherry tree: `${DEV_ROOT}/bc-branch`
+Model mapping: `${MODELS_ROOT} = ${MODELS_ROOT}`
 
 GPU inventory observed:
 
@@ -95,7 +95,7 @@ GPU inventory observed:
 - device 2: gfx1201 integrated AMD GPU;
 - device 3: gfx1030, RX 6900 XT.
 
-Preserve these unrelated Brutus root changes; do not reset or clean them:
+Preserve these unrelated dev root changes; do not reset or clean them:
 
 ```text
 M  releases/b10362.json
@@ -104,7 +104,7 @@ M  releases/index.json
 ?? releases/unknown.json
 ```
 
-The Brutus vendor overlay is intentionally dirty after the audit/apply/build cycle. Synchronization must preserve the named release/model changes and must not use a destructive reset.
+The dev vendor overlay is intentionally dirty after the audit/apply/build cycle. Synchronization must preserve the named release/model changes and must not use a destructive reset.
 
 ## Remaining build blockers
 
@@ -121,7 +121,7 @@ While tracing this, two related runtime gaps were found and fixed in `hip-autotu
 - A single stale `implementation_version` entry previously caused the whole replay cache to be discarded (`g_winners.clear()`), silently losing every other retained build's winners. Now only that one entry is skipped.
 - Cross-build fallback (using a previous build's winner when the current build hasn't been re-tuned yet) did not exist at runtime — lookup required an exact `source_revision`/`manifest_hash` match and fell back straight to native otherwise. Added `GGML_HIP_DISPATCH_REPLAY_REVISION_MATCH=0` to opt into fallback to the newest available entry for a dispatch key across builds, gated by the existing per-entry `implementation_version` check for safety. Default behavior (unset, or `=1`) is unchanged: exact match required, same as before.
 
-Validated on Brutus (2026-08-15): all three fixes were copied to `/mnt/vault/development/bc-branch`, the Python replay-cache test suite was extended with a regression test proving the actual bug (`test_manifest_hash_mismatch_alone_is_accepted_when_source_revision_matches`) and rerun (45/45 pass; full suite 447/447 excluding 6 modules that fail to import for an unrelated pre-existing reason — `pytest` is not installed in the Brutus Python environment). Replay-cache export was then run against the real, previously-failing artifacts:
+Validated on dev (2026-08-15): all three fixes were copied to `${DEV_ROOT}/bc-branch`, the Python replay-cache test suite was extended with a regression test proving the actual bug (`test_manifest_hash_mismatch_alone_is_accepted_when_source_revision_matches`) and rerun (45/45 pass; full suite 447/447 excluding 6 modules that fail to import for an unrelated pre-existing reason — `pytest` is not installed in the dev Python environment). Replay-cache export was then run against the real, previously-failing artifacts:
 
 ```text
 python3 -m bigcherry.replay_cache artifacts/campaign-winners-full.jsonl \
@@ -134,7 +134,7 @@ python3 -m bigcherry.replay_cache artifacts/campaign-winners-full.jsonl \
 
 The measurements header carries producer `manifest_hash=d5e64aa5e84e51ee290303b562c00818` against a target manifest whose own `manifest_hash=386aec675dac74dc81d10d4b4f043e5a` — the exact mismatch this handover originally reported, now correctly accepted because `source_revision` (`4801e3c567d5131dd41b387df5f2d4b1370d92be`) matches on both sides. `validate_blob`/`read_cache` confirm the output is structurally sound (29 entries, correct manifest binding). **Replay-cache export is proven end to end.**
 
-C++ runtime validated on Brutus (2026-08-15): `python3 -m bigcherry apply` propagated the fixed `hip-autotune-replay.cpp` into `vendor/llama.cpp/...` (the actual compiled tree; `src/...` is the overlay source, not what cmake builds), `build/bigcherry-replay` (`GGML_HIP_DISPATCH_REPLAY=ON`, `variant_set=replay-slim`, same `4801e3c` source revision as the cache) was rebuilt clean, and `llama-bench` was run against `dispatch-slim.cache` with `GGML_HIP_DISPATCH_MODE=replay` and `GGML_HIP_DISPATCH_COVERAGE` enabled:
+C++ runtime validated on dev (2026-08-15): `python3 -m bigcherry apply` propagated the fixed `hip-autotune-replay.cpp` into `vendor/llama.cpp/...` (the actual compiled tree; `src/...` is the overlay source, not what cmake builds), `build/bigcherry-replay` (`GGML_HIP_DISPATCH_REPLAY=ON`, `variant_set=replay-slim`, same `4801e3c` source revision as the cache) was rebuilt clean, and `llama-bench` was run against `dispatch-slim.cache` with `GGML_HIP_DISPATCH_MODE=replay` and `GGML_HIP_DISPATCH_COVERAGE` enabled:
 
 ```json
 "replay": {"entries": 29, "misses": 0, "stale": false}
@@ -149,7 +149,7 @@ Both new/changed C++ behaviors were independently exercised with deliberately co
   - default (`GGML_HIP_DISPATCH_REPLAY_REVISION_MATCH` unset): `{"entries": 29, "misses": 29, "stale": true}` — every dispatch correctly falls back to native, exact-match behavior unchanged.
   - `GGML_HIP_DISPATCH_REPLAY_REVISION_MATCH=0`: `{"entries": 29, "misses": 14, "stale": true}` — roughly half the dispatch keys are now served from the revision-mismatched cache instead of falling to native, proving the opt-in fallback switch works.
 
-RE09's replay-identity blocker (export/load path) is now closed with real evidence: export, load, and both new runtime code paths are proven on Brutus against gfx1100.
+RE09's replay-identity blocker (export/load path) is now closed with real evidence: export, load, and both new runtime code paths are proven on dev against gfx1100.
 
 Replay-full generation was retried against the existing full-tune artifact (`artifacts/campaign-winners-full.jsonl`) and still correctly refuses, on a real and quantified gap rather than a code defect: `python3 -m bigcherry generate --variant-set replay-full --winners artifacts/campaign-winners-full.jsonl --inventory artifacts/campaign-gfx1100-inventory.json --arch gfx1100` wants correctness evidence for **101** non-native candidates; the existing tune artifact only carries evidence for **76** of them. The 25 missing are all in the `mmq` family across various tile/geometry variants (e.g. `mmq:q8_0:j16:fb1:t128:o2:i64:sram-q8_0:k256:sk0:v1`) — plausibly eliminated during tuning's screening phase before reaching the correctness-check stage, so they were never exercised for correctness even though they exist in the candidate universe replay-full wants to ship. This is not fixable by more code changes: it needs a tune run (fresh or extended) whose correctness checking covers the full replay-full candidate set, which is real GPU time — the original full tune took an unknown but non-trivial duration to produce 178 candidates / 4,268 measurements. Not attempted this session; flagging for an explicit decision on whether to spend that GPU time now.
 
@@ -169,7 +169,7 @@ All 18,672 recorded reduce operations used `effective_provider=rccl` with `fallb
 
 The native llama.cpp server-bench runner needs corrected target and prompt metadata before its numbers can support a causal stock-versus-BigCherry claim.
 
-**Root cause found and worked around (2026-08-15).** In `/mnt/vault/development/llmhosts/llamacpp/bench/run_bench.py`, when `--target` is passed without an explicit `--rig`, the harness silently defaults `rig_name = "vulkan"` — regardless of what backend the server actually runs. `"hip"` is a valid, already-configured rig id in that harness's own `harness-definitions.json` (used elsewhere in its config); the CLI just never selects it automatically for a HIP server. This is why the earlier run reported a Vulkan target while the server was HIP.
+**Root cause found and worked around (2026-08-15).** In `${LLAMACPP_ROOT}/bench/run_bench.py`, when `--target` is passed without an explicit `--rig`, the harness silently defaults `rig_name = "vulkan"` — regardless of what backend the server actually runs. `"hip"` is a valid, already-configured rig id in that harness's own `harness-definitions.json` (used elsewhere in its config); the CLI just never selects it automatically for a HIP server. This is why the earlier run reported a Vulkan target while the server was HIP.
 
 This harness lives outside the bigcherry repo (a shared benchmarking tool, not something owned by this campaign), so rather than patching its default-selection logic, the workaround is to always pass `--rig hip` explicitly for BigCherry/HIP server-bench runs. Verified against `upstream-stock` on gfx1100:
 
@@ -207,7 +207,7 @@ Exploratory, not a build-campaign gate. Run on 2026-08-15 to exercise the now-fi
 | Q8_0 | bf16 | 5 | 932.5 | 69.3 |
 | Q8_0 | bf16 | 6 | 960.5 | 75.3 |
 
-Raw results: `artifacts/mtp-matrix-results.jsonl` on Brutus. Observations, held loosely given single-repetition-per-config noise (stddevs in the 6–16 t/s range on tg128 were common):
+Raw results: `artifacts/mtp-matrix-results.jsonl` on dev. Observations, held loosely given single-repetition-per-config noise (stddevs in the 6–16 t/s range on tg128 were common):
 
 - Q8_0 model consistently outperforms Q4_K_M on both pp512 (~955 vs ~875 t/s) and tg128 (~72 vs ~64 t/s) here — MoE-heavy model, likely compute/dispatch-bound rather than memory-bandwidth-bound at this size on dual XTX, so the larger quant's better arithmetic behavior outweighs its bandwidth cost. Not yet root-caused.
 - No clear monotonic trend of tg128 with `spec-draft-n-max` (4 vs 5 vs 6) in either model — deeper MTP speculation neither reliably helped nor hurt at these settings, and no run failed or showed anomalous behavior at depth 6.
@@ -264,7 +264,7 @@ Resume the build campaign before implementing any RDNA item:
 1. Inspect `tools/bigcherry/replay_cache.py`, `tools/bigcherry/autotune_catalog.py`, `tools/bigcherry/pipeline.py`, and the associated tests.
 2. Make the replay manifest/cache export consume the exact tune producer namespace, or explicitly create a new identity-compatible replay artifact; do not weaken the mismatch check.
 3. Run replay-full and replay-cache export/validation from the same producer inputs, then validate the production C++ replay reader.
-4. Reproduce the RCCL failure on controlled same-architecture Brutus device pairs, verify `GGML_HIP_RCCL=ON`, and capture topology/provider/fallback telemetry.
+4. Reproduce the RCCL failure on controlled same-architecture dev device pairs, verify `GGML_HIP_RCCL=ON`, and capture topology/provider/fallback telemetry.
 5. Correct the native llama.cpp server-bench target/prompt metadata and rerun balanced stock/control/native/tuned/replay comparisons.
 6. Update RE09, RE14, and RE15 only with evidence that satisfies their acceptance contracts. Do not close them from build success alone.
 7. After the build gates are genuinely complete, begin RD01–RD03 semantic planning execution. The first implementation candidate should then be selected from the dependency/safety matrix, not from the external commit order.
@@ -273,7 +273,7 @@ Resume the build campaign before implementing any RDNA item:
 
 - Do not cherry-pick the external `rdna-boosts` branch.
 - Do not apply RD04–RD23 yet; the RDNA run sheet was planning-only.
-- Do not reset or clean the dirty Brutus release/model files.
+- Do not reset or clean the dirty dev release/model files.
 - Do not fabricate replay-cache identity compatibility.
 - Do not treat the exploratory benchmark numbers as a confirmed end-to-end improvement.
 - Do not close EX02, EX03, RE09, RE14, or RE15 without their stated evidence.

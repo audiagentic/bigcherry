@@ -11,12 +11,12 @@
 # Usage: queue-patch-ablation.sh [tag]     (default tag main3)     env: BASE, DEPTH, SWITCHES (override the list)
 set -u
 cd "$(cd "$(dirname "$0")/../../.." && pwd)"
-R=/mnt/data/bigcherry-work/runs
+R=${BC_WORK_ROOT}/runs
 tag=${1:-main3}
 BASE=${BASE:-b-main2}
 DEPTH=${DEPTH:-24576}
-export BC_HIP_PATH=/mnt/vault/tmp/bc-rocm
-export BC_MODEL=/mnt/data/llm-models/qwen3.8-flash-next/gguf/mtp/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf
+export BC_HIP_PATH=${BC_TMP_ROOT}/bc-rocm
+export BC_MODEL=${BC_MODEL_ROOT}/qwen3.8-flash-next/gguf/mtp/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf
 # patch -> the switch that turns it off under the flashnext profile
 SWITCHES=${SWITCHES:-"1358:BIGCHERRY_META_SPLIT_CACHE_EVICT=0 1348:BIGCHERRY_MTP_DEFERRED_CATCHUP=0 1322:BIGCHERRY_MTP_AHEAD=0 1350:BIGCHERRY_MMQ_FEW_TILE_STREAMK=0 1347:BIGCHERRY_F32_THIN_MMVF=0 1345:BIGCHERRY_MOE_IDS_MULTIWARP=0 1344:BIGCHERRY_HC_GRID_INDEX=0 1334:BIGCHERRY_FA_SPARSE=0 1326:BIGCHERRY_SCHED_ASYNC_INPUTS=0 1295:BIGCHERRY_QSA_GATHER=0 1302:BIGCHERRY_GRAPH_OOM_EVICT=0 1341:BIGCHERRY_META_SUBSET_MIRROR_INPUTS=0"}
 

@@ -15,7 +15,7 @@ work: L
 
 ## Description
 
-No codec change is good merely because CPU rel-L2 falls. Qualification must directly measure model logits KL, top-1, PPL, decode acceptance and Brutus throughput, with common frozen configurations. The current WHT6 failure is a 0.0746 mean KL / 87.18% top-1 Flash-Next self-reference result over 42,761 positions; expected prefill upside over exact on Flash-Next is only about 5-6%, not 27B's 38%.
+No codec change is good merely because CPU rel-L2 falls. Qualification must directly measure model logits KL, top-1, PPL, decode acceptance and dev throughput, with common frozen configurations. The current WHT6 failure is a 0.0746 mean KL / 87.18% top-1 Flash-Next self-reference result over 42,761 positions; expected prefill upside over exact on Flash-Next is only about 5-6%, not 27B's 38%.
 
 ## Steps
 
@@ -28,7 +28,7 @@ No codec change is good merely because CPU rel-L2 falls. Qualification must dire
 
 ## Detailed Solution & Technical Design
 
-Use existing engine-specific profile and ab-benchmark plus engine_quality.py: quality traces are first-class gate, activation markers prove that candidate is reached. Profiles must describe only changed values; do not create a profile copied verbatim from defaults. For synthetic proxy use RWQ01 only as preparatory evidence. Keep code and environment hashes for all arms, including auxiliary R9700 helper enabled/disabled; cross-rank helper implementation itself has known independent quality sensitivity and must not be changed within a wire experiment. Freeze --tp-wire exact as Flash-Next production control. The existing measurement tools can score KL; the real CLI path must be checked on Brutus before automation. Keep raw logs in artifacts/RWQ05-*, compact receipts in docs/evidence/RWQ05.
+Use existing engine-specific profile and ab-benchmark plus engine_quality.py: quality traces are first-class gate, activation markers prove that candidate is reached. Profiles must describe only changed values; do not create a profile copied verbatim from defaults. For synthetic proxy use RWQ01 only as preparatory evidence. Keep code and environment hashes for all arms, including auxiliary R9700 helper enabled/disabled; cross-rank helper implementation itself has known independent quality sensitivity and must not be changed within a wire experiment. Freeze --tp-wire exact as Flash-Next production control. The existing measurement tools can score KL; the real CLI path must be checked on dev before automation. Keep raw logs in artifacts/RWQ05-*, compact receipts in docs/evidence/RWQ05.
 
 ## Code Samples & Guidance
 

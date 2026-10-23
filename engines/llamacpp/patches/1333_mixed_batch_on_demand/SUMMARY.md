@@ -19,7 +19,7 @@ makes the scheduler reallocate once.
 
 ## Evidence
 
-Bisect on Brutus (2x 7900 XTX + R9700 tensor split, 6900 XT MTP drafter), recipe deploy-v6-plus-chunk on every build,
+Bisect on dev (2x 7900 XTX + R9700 tensor split, 6900 XT MTP drafter), recipe deploy-v6-plus-chunk on every build,
 each point compared with b11402 in the same session, greedy text and draft acceptance identical throughout:
 
 | Upstream point | Flash-Next 24K MTP decode (ms/step) | 27B prefill 10K / 32K (t/s) |

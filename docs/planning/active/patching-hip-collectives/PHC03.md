@@ -28,7 +28,7 @@ RU01's real-hardware D=3 heterogeneous correctness qualification found META (GGM
 
 ## Detailed Solution & Technical Design
 
-Real crash evidence (2026-09-10, Brutus, build_plan_id 0bfc43c12b47fd79b26a80c14b656b72, AMDGPU_TARGETS gfx1100;gfx1201;gfx1030):
+Real crash evidence (2026-09-10, dev, build_plan_id 0bfc43c12b47fd79b26a80c14b656b72, AMDGPU_TARGETS gfx1100;gfx1201;gfx1030):
 
 Thread 1 "test-hip-reduce" received signal SIGSEGV.
 #0 in ?? () from /opt/rocm-7.2.4/lib/libamdhip64.so.7
@@ -71,7 +71,7 @@ Filed from RU01's real-hardware finding (2026-09-10) rather than attempted as pa
 
 ## 2026-10-10 implementation audit (BCOP114)
 
-**Evidence boundary.** RU01's Brutus ROCm 7.2.4 Meta D=3 SIGSEGV on both {0,1,3} and {0,1,2} is a recorded hardware failure; the D=2 control passed. The precise cause is **not established**. Neither the lack of peer access nor the Meta butterfly alone proves the crash mechanism. No new HIP execution was performed in this audit.
+**Evidence boundary.** RU01's dev ROCm 7.2.4 Meta D=3 SIGSEGV on both {0,1,3} and {0,1,2} is a recorded hardware failure; the D=2 control passed. The precise cause is **not established**. Neither the lack of peer access nor the Meta butterfly alone proves the crash mechanism. No new HIP execution was performed in this audit.
 
 **Pinned b11474 source path.** `ggml/src/ggml-backend-meta.cpp::ggml_backend_meta_graph_compute()` calls `allreduce_fallback()`; its `push_data()` copies partials with `ggml_backend_tensor_copy_async()` into destination-owned `set_tmp_data(j_dst, i_buf)` buffers, then queues the ADD. The final copy-back uses the same copy API. `ggml/src/ggml-cuda/ggml-cuda.cu::ggml_backend_cuda_cpy_tensor_async()` and `ggml_backend_cuda_buffer_cpy_tensor()` use `cudaMemcpyPeerAsync` for cross-physical-device transfers unless the build defines `GGML_CUDA_NO_PEER_COPY`. The copy dispatch does not check `cudaDeviceCanAccessPeer`; that query is used separately by optional `GGML_CUDA_P2P` peer-access enabling in `ggml_cuda_init()`. A peer-copy driver/runtime failure is a **testable hypothesis**, not a demonstrated cause. HIP peer copies may sometimes be staged despite no direct P2P.
 

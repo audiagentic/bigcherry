@@ -4,9 +4,9 @@
 # The packages' shared-library links point at relative system paths that do not exist under the private root, so they
 # are re-pointed at the system runtime libraries (Ubuntu 24.04's libstdc++6 / libgomp1 are already the gcc-14 builds);
 # without that the linker falls back to the static libgomp.a and shared objects fail to link.
-# Usage: fetch-gcc14.sh [dest]      default dest: /mnt/data/bigcherry-work/toolchains/gcc14
+# Usage: fetch-gcc14.sh [dest]      default dest: ${BC_WORK_ROOT}/toolchains/gcc14
 set -eu
-T=${1:-/mnt/data/bigcherry-work/toolchains/gcc14}
+T=${1:-${BC_WORK_ROOT}/toolchains/gcc14}
 mkdir -p "$T/debs"
 cd "$T/debs"
 apt-get download g++-14 gcc-14 cpp-14 g++-14-x86-64-linux-gnu gcc-14-x86-64-linux-gnu cpp-14-x86-64-linux-gnu \

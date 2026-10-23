@@ -7,7 +7,7 @@ set -u
 bin=$1 root=$2
 s=$(cd "$(dirname "$0")" && pwd)/long-ctx-profile.sh
 bdir=$(dirname "$(dirname "$bin")")
-mtp=/mnt/data/llm-models/qwen3.8-flash-next/gguf/unsloth/MTP
+mtp=${BC_MODEL_ROOT}/qwen3.8-flash-next/gguf/unsloth/MTP
 src=$mtp/mtp-Qwen3.8-Flash-Next-Q8_0-qsa4.gguf
 cmake --build "$bdir" --target llama-quantize -j 16 > "$root.quantize-build.log" 2>&1 || { echo "llama-quantize build failed"; tail -5 "$root.quantize-build.log"; exit 1; }
 for q in Q5_K_M Q4_K_M; do

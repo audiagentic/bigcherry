@@ -6,7 +6,7 @@
 set -u
 base=$1 new=$2 root=$3
 s=$(cd "$(dirname "$0")" && pwd)/long-ctx-profile.sh
-mtp=/mnt/data/llm-models/qwen3.8-flash-next/gguf/unsloth/MTP
+mtp=${BC_MODEL_ROOT}/qwen3.8-flash-next/gguf/unsloth/MTP
 for depth in 8192 65536; do
   for arm in base-a new-a new-b base-b; do
     if [[ $arm == new-* ]]; then

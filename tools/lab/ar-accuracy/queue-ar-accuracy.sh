@@ -5,16 +5,16 @@
 # host f32 / f16 / q8_0, and 0840 adaptive. Gates: tools/lab/ar-accuracy/gates.py.
 set -u
 cd "$(cd "$(dirname "$0")/../../.." && pwd)"
-export BC_HIP_PATH=/mnt/vault/tmp/bc-rocm
-export BC_MODEL=/mnt/data/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf
+export BC_HIP_PATH=${BC_TMP_ROOT}/bc-rocm
+export BC_MODEL=${BC_MODEL_ROOT}/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf
 K=tools/lab/ar-accuracy/kld.sh
 # Corpus: the repo's own docs at the checked-out commit (English technical prose, >= 32 x 2048
 # tokens; ppl-default.txt was only 2 chunks). Built fresh each run so it is reproducible from git.
-C=/mnt/data/bigcherry-work/corpus/kld-docs.txt
+C=${BC_WORK_ROOT}/corpus/kld-docs.txt
 mkdir -p "$(dirname "$C")"
 # Frozen after first creation: every KLD compare must use the exact corpus its reference used.
 [ -s "$C" ] || find docs -name '*.md' | sort | xargs cat > "$C"
-R=/mnt/data/bigcherry-work/runs/kld-27b-reference.kld
+R=${BC_WORK_ROOT}/runs/kld-27b-reference.kld
 jobs=$(mktemp)
 cat > "$jobs" <<JOBS
 BUILD bp-27b-ar-wire bigcherry:stock:linux-multi ar-wire gfx1100 bin/llama-perplexity
@@ -30,8 +30,8 @@ JOBS
 status=0
 bash tools/lab/plan-qualification/queue.sh "$jobs" || status=1
 echo "QUEUE_EXIT=$status $(date -Is)"
-python3 tools/lab/ar-accuracy/gates.py kld /mnt/data/bigcherry-work/runs kld-27b-ref-repeat kld-27b-host-pristine kld-27b-rccl kld-27b-host-f16 kld-27b-host-q8 kld-27b-adaptive || status=1
-python3 tools/lab/ar-accuracy/gates.py acceptance /mnt/data/bigcherry-work/runs/ab-27b-allreduce/result /mnt/data/bigcherry-work/runs/ab-27b-ar-wire/result /mnt/data/bigcherry-work/runs/ab-27b-ar-wire-q8/result /mnt/data/bigcherry-work/runs/ab-27b-adaptive/result || status=1
+python3 tools/lab/ar-accuracy/gates.py kld ${BC_WORK_ROOT}/runs kld-27b-ref-repeat kld-27b-host-pristine kld-27b-rccl kld-27b-host-f16 kld-27b-host-q8 kld-27b-adaptive || status=1
+python3 tools/lab/ar-accuracy/gates.py acceptance ${BC_WORK_ROOT}/runs/ab-27b-allreduce/result ${BC_WORK_ROOT}/runs/ab-27b-ar-wire/result ${BC_WORK_ROOT}/runs/ab-27b-ar-wire-q8/result ${BC_WORK_ROOT}/runs/ab-27b-adaptive/result || status=1
 rm -f "$jobs"
 echo ALL_JOBS_DONE
 exit "$status"

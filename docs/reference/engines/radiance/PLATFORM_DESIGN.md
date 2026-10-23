@@ -284,7 +284,7 @@ validation framework; those scripts cease to be the evidence authority.
 | 5 | Promote libr3 to declared component and integrate component build/runtime bundle | component schema tests; `r3_rewrite.py` exact-match tests; libr3 selftest build target; runtime-bundle component hash/reuse tests | M | RAD01 component integration; MEN01/RDNA3 build lane |
 | 6 | RuntimeProfile environment + Radiance two-XTX profiles; ServerRunner metrics/log normalization | config RuntimeProfile tests; ServerRunner fake-process/fake-metrics tests; profile digest includes env; GDN/diagnostic production-profile rejection | M | MEN03 + RAD01 profiles |
 | 7 | Engine-neutral activation + Radiance KL adapter in validation evidence | activation log/metric control-vs-subject tests; KL parser fixture tests; evidence schema engine/profile/component binding; failed-KL blocks promotion | M | MEN06 + RAD01 quality gate |
-| 8 | Run one Radiance focal package end-to-end via queue/ABBA; retire `engine-patched-build.sh` and canonical manual A/B scripts | Brutus mechanics/build/activation/KL/greedy/ABBA record; `patch-verify-evidence` | M | MEN07 + MEN06; RAD01 complete |
+| 8 | Run one Radiance focal package end-to-end via queue/ABBA; retire `engine-patched-build.sh` and canonical manual A/B scripts | dev mechanics/build/activation/KL/greedy/ABBA record; `patch-verify-evidence` | M | MEN07 + MEN06; RAD01 complete |
 | 9 | Move remaining Radiance lab evidence/runbooks into engine pillar and update references/release ownership | docs/link/path lint; CI path-filter tests; release dry-run if MEN09 not already complete | S-M | MEN08/MEN09 cleanup |
 
 PRs 2-4 are platform migrations, not Radiance forks of existing logic. They should update all call sites in the same

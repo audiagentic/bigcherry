@@ -1020,7 +1020,7 @@ def smoke_environment_for_backend(
     and ROCR_VISIBLE_DEVICES are NOT aliases -- ROCR_VISIBLE_DEVICES filters
     the ROCm agent list first, and HIP_VISIBLE_DEVICES then indexes into
     whatever that filtered list left. Setting both to the SAME raw device
-    index double-filters: on a real 4-GPU Brutus box, HIP_VISIBLE_DEVICES=2
+    index double-filters: on a real 4-GPU dev box, HIP_VISIBLE_DEVICES=2
     ROCR_VISIBLE_DEVICES=2 selects agent 2 (gfx1201), which becomes the
     sole entry in the ROCR-filtered list, and then HIP_VISIBLE_DEVICES=2
     tries to index into that single-entry list and fails with "no

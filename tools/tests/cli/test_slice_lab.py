@@ -21,9 +21,9 @@ class LabCommandTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.host = replace(
             environment.load(ROOT / "config" / "environment.example.toml").host(),
-            name="brutus",
+            name="dev",
             hostname="lab-user@lab-host",
-            repo="/lab/workspaces/main",
+            repo_root="/lab/workspaces/main",
             cache_root="/lab/cache",
         )
 
@@ -87,10 +87,10 @@ class LabCommandTests(unittest.TestCase):
     def test_cli_parses_requested_host_position(self) -> None:
         parser = cli_main.build_parser()
         args = parser.parse_args([
-            "slice", "lab", "feat/pa47-example", "--host", "brutus",
+            "slice", "lab", "feat/pa47-example", "--host", "dev",
             "--dry-run", "--", "tools/lab/flash-next/queue-env-ab.sh", "a",
         ])
-        self.assertEqual(args.host, "brutus")
+        self.assertEqual(args.host, "dev")
         self.assertTrue(args.dry_run)
         self.assertEqual(args.script[-2:], ["tools/lab/flash-next/queue-env-ab.sh", "a"])
 

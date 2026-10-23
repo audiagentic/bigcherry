@@ -58,7 +58,7 @@ performance claim.
 
 ## Historical b10901 real-graph (D) hardware lane — not b11474
 
-Built the patched (headroom=80) and unpatched (headroom=16) variants on Brutus
+Built the patched (headroom=80) and unpatched (headroom=16) variants on dev
 (gfx1100 7900 XTX devices 0/1) and ran the real recurrent+MTP graph —
 tierA-qwen4b-q6k MTP (`--spec-type draft-mtp --spec-draft-n-max 4`) — on both.
 

@@ -45,7 +45,7 @@ repository at once, and a change is only proven on the lab hardware.
 | 1. Branch | author (an agent or a person) | `git switch -c <type>/<item>-<topic> origin/main` |
 | 2. Build the change | author | Commits on the branch can be small and informal; only the pull request title has to be conventional. Push early: the offline checks run on every push. |
 | 3. Offline checks | CI | Patch mechanics tests, catalog and governance tests, patch-lint, composition of the production set and of every experiment that names a changed patch, compile-only pass when PA44-A lands. |
-| 4. Hardware validation | the validating agent, on Brutus | Check out the slice branch in the lab tree, build it, run the smoke test and the A/B the change calls for. The lab tree returns to `main` afterwards. |
+| 4. Hardware validation | the validating agent, on dev | Check out the slice branch in the lab tree, build it, run the smoke test and the A/B the change calls for. The lab tree returns to `main` afterwards. |
 | 5. Evidence | validator | Paste the result into the pull request: build id, activation marker, the A/B table, identity statement. For a promotion the same text goes into the patch's README. |
 | 6. Review | a second agent or the owner | Reads the diff and the evidence. The author does not approve their own pull request. |
 | 7. Merge | validator or owner | Squash merge with the conventional title. |
@@ -80,13 +80,13 @@ Changes that cannot alter the build (plans, docs, lab scripts, tests) skip steps
 
 - Give the lab its own host entry in the untracked `config/environment.local.toml` and name it with `--host`:
   `hostname` (the ssh alias), `repo` (the lab primary checkout) and `cache-root` (the lab work root). On this
-  project that is `[host.brutus-lab]` with `repo = /mnt/vault/development/projects/bigcherry/workspaces/main`
-  and `cache-root = /mnt/data/bigcherry-work`; `[host.build-server]` describes a different checkout on the
+  project that is `[host.dev-lab]` with `repo = ${DEV_ROOT}/projects/bigcherry/workspaces/main`
+  and `cache-root = ${BIGCHERRY_ROOT}`; `[host.build-server]` describes a different checkout on the
   same machine and must not be used for lab runs. The lab
   creates detached worktrees under `cache-root/worktrees/` and stores queued
   logs under `cache-root/runs/`. Use `--dry-run` to inspect SSH commands.
 - The lab primary checkout **must stay on `main` and clean** before and after
-  every run. `bigcherry slice lab <branch> --host brutus-lab <script> [args]`
+  every run. `bigcherry slice lab <branch> --host dev-lab <script> [args]`
   fetches the branch without checking it out in the primary, runs from a
   detached worktree via the plan-qualification queue, then removes it on exit.
 - Queue wrapper scripts that submit their own jobs must not hold an outer GPU
@@ -113,7 +113,7 @@ Changes that cannot alter the build (plans, docs, lab scripts, tests) skip steps
   branches and orphaned/merged worktrees. Default is read-only. `--apply`
   deletes eligible merged branches and removes clean orphaned worktrees, never
   using `--force`; dirty worktrees are reported and left intact.
-- Merge order stays one PR per slice. `patch-refactor` was retired and deleted on 2026-10-08; the three stale lab-local branches were preserved as `archive/brutus-*` tags and deleted the same day. The owner enables main protection and auto-delete-head-branches in GitHub.
+- Merge order stays one PR per slice. `patch-refactor` was retired and deleted on 2026-10-08; the three stale lab-local branches were preserved as `archive/dev-*` tags and deleted the same day. The owner enables main protection and auto-delete-head-branches in GitHub.
 
 ## Protection on `main`
 

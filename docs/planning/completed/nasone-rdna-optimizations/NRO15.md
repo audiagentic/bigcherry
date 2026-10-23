@@ -17,7 +17,7 @@ work: S
 
 Retain nasone commit `ed11a0d2fc0f79b6a45833f79ffa36e3afe253b9` as a future-hardware candidate. With rocWMMA FA disabled, D=256/ncols=32 uses the tile kernel; the source adds an RDNA3.5-specific row reducing K tile 128->64 and raising occupancy target 3->4, falling back to the shared RDNA table for other cases.
 
-This does not target RX 7900 XTX/gfx1100 and should not consume current Brutus GPU time except non-selection/build checks.
+This does not target RX 7900 XTX/gfx1100 and should not consume current dev GPU time except non-selection/build checks.
 
 ## Steps
 

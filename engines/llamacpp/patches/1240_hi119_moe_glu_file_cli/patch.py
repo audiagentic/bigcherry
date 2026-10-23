@@ -28,7 +28,7 @@ that builds the corpus, not two overloaded meanings on one variable."""
 GROUP = "core"
 # Verified offline: dry-run apply + idempotence against the real vendored
 # checkout, composed with 1222+1236+1238+1239. Real-hardware validated on
-# Brutus: compiled cleanly, and `--moe-glu-file <path>` with a real one-line
+# dev: compiled cleanly, and `--moe-glu-file <path>` with a real one-line
 # param file produced the exact same PASS result and the exact same
 # fusion=GATE/op=GLU recorded signature as the statically-registered
 # instance in patch 1239, confirming the runtime-parameterized path is

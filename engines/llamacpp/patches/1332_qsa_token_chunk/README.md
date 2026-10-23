@@ -8,7 +8,7 @@ deployment sets both.
 
 ## Evidence
 
-Brutus, 2x 7900 XTX + R9700 tensor split, 6900 XT MTP drafter, ctx 245760, f16 KV, `flashnext` profile,
+dev, 2x 7900 XTX + R9700 tensor split, 6900 XT MTP drafter, ctx 245760, f16 KV, `flashnext` profile,
 `BIGCHERRY_FA_SPARSE=1` (1334) in both arms, build `b-chunk-b11402d`, 2026-10-06
 (`tools/lab/flash-next/queue-chunk-ub1024.sh b11402d 1 81920 163840`). One binary; A = `-ub 512`, B = `-ub 1024`
 with `BIGCHERRY_QSA_CHUNK=256`; ABBA.

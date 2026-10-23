@@ -39,7 +39,7 @@ Owner, 2026-10-17: quick, RAM-only smoke tests for both engines so bumps and oth
 
 ## Validation
 
-Both engines pass the CPU smoke on Brutus with all GPUs busy (or devices hidden) in under ~2 minutes each; a deliberately broken patch (e.g. a crash on load) fails it; offline unit tests for the runner and adapters.
+Both engines pass the CPU smoke on dev with all GPUs busy (or devices hidden) in under ~2 minutes each; a deliberately broken patch (e.g. a crash on load) fails it; offline unit tests for the runner and adapters.
 
 ## Effort & Risk
 

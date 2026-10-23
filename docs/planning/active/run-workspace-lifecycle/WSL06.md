@@ -11,7 +11,7 @@ priority: P1
 work: M
 ---
 
-# Adopt and clear the legacy work roots on Brutus
+# Adopt and clear the legacy work roots on dev
 
 ## Description
 

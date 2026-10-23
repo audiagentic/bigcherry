@@ -35,7 +35,7 @@ patches/1206_rd13_mul_mat_add_view_fusion/{patch.py,patch.toml,SUMMARY.md} (exte
 
 ## Validation
 
-Offline: `PYTHONPATH=tools python -m bigcherry patch-lint`, `patch-rebase-check --focal-overlay <id> --source bigcherry-tuning`. Correctness: test-backend-ops MUL_MAT+VIEW+ADD graph-capture-replay parity vs the 3-node baseline for contiguous positive cases; explicit negative-control cases (non-contiguous view, residual reused, ne1>1) must show NO fusion (verify via the activation marker not firing under BIGCHERRY_PATCH_TRACE=1). Hardware (Brutus, not run here): decode-path hybrid/GDN model (e.g. a Mamba/GDN hybrid Qwen variant) launch-count and TG timing vs unfused control, graph-capture replay must not abort.
+Offline: `PYTHONPATH=tools python -m bigcherry patch-lint`, `patch-rebase-check --focal-overlay <id> --source bigcherry-tuning`. Correctness: test-backend-ops MUL_MAT+VIEW+ADD graph-capture-replay parity vs the 3-node baseline for contiguous positive cases; explicit negative-control cases (non-contiguous view, residual reused, ne1>1) must show NO fusion (verify via the activation marker not firing under BIGCHERRY_PATCH_TRACE=1). Hardware (dev, not run here): decode-path hybrid/GDN model (e.g. a Mamba/GDN hybrid Qwen variant) launch-count and TG timing vs unfused control, graph-capture replay must not abort.
 
 ## Effort & Risk
 

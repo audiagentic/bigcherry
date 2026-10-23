@@ -17,8 +17,7 @@ The llama.cpp pin and ROCm version are independent identity axes. A pin does not
 | Host / role | Identity | Evidence status | Use / caveat |
 | --- | --- | --- | --- |
 | Windows workstation | ROCm 7.1 | Observed in the 2026-08-23 TO01/RD87 investigation; `platform.windows-gfx1100` also names ROCm 7.1 compiler paths | Recheck the local install/vendor path before use; this update did not access the workstation |
-| build-server (`brutus`) | `/opt/rocm` | Configured in `config/environment.local.toml` | System/default path; resolve its real target before treating it as a version identity |
-| build-server | `$BC_HOME/rocm-shim` | Configured in `config/environment.local.toml` | Compiler-name compatibility shim; not a distinct ROCm release |
+| build-server (`dev`) | `/opt/rocm` | Configured in `config/environment.local.toml` | System/default path; resolve its real target before treating it as a version identity |
 | build-server | `vendor/rocm/7.2.4` | Directly observed in TO01 on 2026-09-02 | Complete library tree used as the 7.2.4 reference |
 | build-server | `vendor/rocm/7.14` | Directly observed in TO01 on 2026-09-02 | Keep version-qualified; do not replace with an unversioned ad-hoc path |
 | build-server | `vendor/rocm/7.2.4-merged` | Created and verified in TO01 on 2026-09-02 | Combines the compiler-layout convenience of `artifacts/va15-rocm-merged` with the complete 7.2.4 libraries, including RCCL |
@@ -54,8 +53,8 @@ into `vendor/rocm/<version>/` (stream-extract: `curl -sSf <url> | tar -xz -C
 vendor/rocm/<version>`), then build a campaign prefix with
 `tools/env/make-rocm-campaign-prefix.sh vendor/rocm/<version> vendor/rocm/<version>-campaign`
 (the campaign needs `$HIP_PATH/bin/clang`; TheRock keeps clang under
-`llvm/bin`) and point the matching `BIGCHERRY_ROCM_*_ROOT` at the version tree
-in the host's untracked `config/environment.local.toml`. Building HIP alone
+`llvm/bin`) and add the version to the host's `rocm-sdks` table
+in the untracked `config/environment.local.toml`. Building HIP alone
 from source is not a substitute: llama.cpp also needs the matching compiler,
 device libraries, hipcub/rocprim and rocBLAS/hipBLAS.
 
@@ -67,7 +66,7 @@ The ROCm 10.0 runfile installation exposed a shared-host hazard: even with a cus
 
 ### RD87: `hipblaslt-bench`
 
-The prior BUILD note that the hipBLASLt client was simply "not present" is stale. RD87 built and executed a working client on Brutus. The reproducible source is the ROCm `rocm-libraries` monorepo, not a standalone hipBLASLt clone for the tested tree.
+The prior BUILD note that the hipBLASLt client was simply "not present" is stale. RD87 built and executed a working client on dev. The reproducible source is the ROCm `rocm-libraries` monorepo, not a standalone hipBLASLt clone for the tested tree.
 
 Observed rebuild recipe from RD87:
 

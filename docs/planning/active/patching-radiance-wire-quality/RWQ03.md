@@ -43,7 +43,7 @@ New engine patch package under engines/radiance/patches/ (post-inventory ID); en
 
 ## Validation
 
-Offline matrix enumerating all 48 layers and all phase/shape/supported-mode combinations and verifying two simulated rank decisions identical. Engine patch PIN_BLOBS hash, idempotence, missing-anchor atomicity, full pinned tree compile tests. Runtime trace every site once for each width; real Brutus comparison exact-vs-exact and isolated site ablations; ensure full model does not accidentally use WHT6 or WHT8 under an 'exact' policy.
+Offline matrix enumerating all 48 layers and all phase/shape/supported-mode combinations and verifying two simulated rank decisions identical. Engine patch PIN_BLOBS hash, idempotence, missing-anchor atomicity, full pinned tree compile tests. Runtime trace every site once for each width; real dev comparison exact-vs-exact and isolated site ablations; ensure full model does not accidentally use WHT6 or WHT8 under an 'exact' policy.
 
 ## Effort & Risk
 

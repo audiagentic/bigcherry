@@ -78,7 +78,7 @@ EOF
 export SLURM_CONF=/etc/slurm/slurm.conf
 
 # Slurm 23.11 has no slurmctld config-check-only option. Startup is the parse
-# gate; GPU config is separately checked on Brutus with slurmd -G.
+# gate; GPU config is separately checked on dev with slurmd -G.
 sudo slurmctld -Dvv >/tmp/bc-slurmctld.stdout 2>&1 &
 sleep 1
 sudo slurmd -Dvv >/tmp/bc-slurmd.stdout 2>&1 &

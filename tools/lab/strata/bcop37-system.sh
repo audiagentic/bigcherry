@@ -4,7 +4,7 @@
 # Usage: bcop37-system.sh <bundle dir>
 set -u
 B=${1:?bundle dir}; mkdir -p "$B"
-ROCM=${ROCM:-/mnt/vault/tmp/bc-rocm}
+ROCM=${ROCM:-${BC_TMP_ROOT}/bc-rocm}
 {
   echo "date: $(date -Is)"; echo "host: $(hostname)"; echo "kernel: $(uname -r)"; grep PRETTY /etc/os-release
   echo; echo "## CPU / NUMA"; lscpu | grep -E "Model name|Socket|Core|Thread|NUMA|^CPU\(s\)"

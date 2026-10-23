@@ -309,7 +309,7 @@ int main(int argc, char ** argv) {
     }
 
     // HI84: mechanics are device-count-generic; bounded to 2..4 to match
-    // real Brutus hardware (4 physical GPUs) rather than opening this to
+    // real dev hardware (4 physical GPUs) rather than opening this to
     // META's own much wider GGML_BACKEND_META_MAX_DEVICES=16 ceiling.
     if (D < 2 || D > 4) {
         fail("this probe qualifies D=2..4 (got " + std::to_string(D) +
@@ -417,7 +417,7 @@ int main(int argc, char ** argv) {
     // handle_mul_mat()/DUP rules instead.
     // ggml_backend_sched_new() hard-requires its LAST backend to be
     // CPU-typed (ggml-backend.cpp's own GGML_ASSERT) -- discovered against
-    // the real toolchain on Brutus, not documented in the header comment.
+    // the real toolchain on dev, not documented in the header comment.
     // No graph node targets it; it exists only to satisfy the scheduler's
     // own precondition.
     ggml_backend_dev_t cpu_dev = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);

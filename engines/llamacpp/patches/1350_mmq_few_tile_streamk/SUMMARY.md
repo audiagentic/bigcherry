@@ -11,7 +11,7 @@ The package default stays off. The Flash-Next runtime profile enables it because
 
 ## Promotion
 
-QFP18 lightweight promotion tier, Brutus 2026-10-08, pin b11474. `b-metamem-qfp37c` composed 49/49, compiled cleanly, smoke had 0 error lines, and `PATCH_HIT` was present.
+QFP18 lightweight promotion tier, dev 2026-10-08, pin b11474. `b-metamem-qfp37c` composed 49/49, compiled cleanly, smoke had 0 error lines, and `PATCH_HIT` was present.
 
 Prefill ABBA gain was +1.8% / +1.2% / +1.9% at 8K / 24K / 98K with complete separation at every depth. Decode did not regress. The Stream-K arm is not bit-identical by design; 24 CPU-F32-reference probes were no worse than production (top-1 24/24 vs 23/24, TV mean 0.0738 vs 0.0764). The off arm is the upstream MMQ dispatch.
 

@@ -126,7 +126,7 @@ def _materialize_framework_source(args: argparse.Namespace, descriptor, cfg) -> 
     from bigcherry.core.context import ProjectContext
 
     base_repo = ProjectContext.resolve(engine="llamacpp", 
-        work_root=os.environ.get("BC_CACHE")
+        work_root=os.environ.get("BC_CACHE_ROOT")
     ).upstream_repo
     baseline_source = "bigcherry-qualification-tuning"
     base_revision, composition = psi.resolve_source_composition(
@@ -1135,7 +1135,7 @@ def run(args: argparse.Namespace) -> int:
     # the shared vendor/llama.cpp checkout's HEAD happened to be at run
     # time, while the evidence record was later labeled base_ref=cfg.pinned
     # regardless of whether HEAD actually matched the pin. A real RD04
-    # hardware run on Brutus resolved and built against vendor HEAD while
+    # hardware run on dev resolved and built against vendor HEAD while
     # its own evidence claimed pin b10705 -- VA08's stale-detection
     # correctly caught the mismatch and rejected the record. cfg is loaded
     # ONCE here and reused for evidence writing below (no duplicate load).

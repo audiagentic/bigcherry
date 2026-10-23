@@ -1,6 +1,6 @@
-# TO02 / HI24 and HI37 — Brutus artifact verification
+# TO02 / HI24 and HI37 — <gpu-host> artifact verification
 
-Observed 2026-09-08 UTC on `brutus` from the existing BC-native 27B record and
+Observed 2026-09-08 UTC on `<gpu-host>` from the existing BC-native 27B record and
 tuning artifacts. `bigcherry inventory hot-list` produced a 69-signature
 call-weighted hot list, and `bigcherry inventory workload-check` computed the
 workload/tuned-set digest and correctly reported `DIFFERENT` with zero covered

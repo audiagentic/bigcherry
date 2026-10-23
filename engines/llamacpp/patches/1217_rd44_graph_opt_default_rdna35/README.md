@@ -27,7 +27,7 @@ reproduced by this project (no gfx1151 hardware available to do so).
 
 **`deferred-hardware`** (config/external-sources.toml's own tracked
 status) is the correct disposition here, not a gap to route around: this
-project's hardware (Brutus: gfx1100/gfx1201/gfx1030) cannot resolve the
+project's hardware (dev: gfx1100/gfx1201/gfx1030) cannot resolve the
 RDNA3.5-gated branch this patch changes at all, so there is no way to
 measure the real performance claim on hardware this project actually has.
 What IS runnable now: a real no-regression proof on gfx1100/gfx1201/gfx1030

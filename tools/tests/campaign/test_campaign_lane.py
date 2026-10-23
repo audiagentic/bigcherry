@@ -933,7 +933,7 @@ class SmokeEnvironmentHelperTests(unittest.TestCase):
         # RE15 real-hardware finding: HIP_VISIBLE_DEVICES and
         # ROCR_VISIBLE_DEVICES are sequential filters, not aliases -- setting
         # both to the same raw index double-filters and breaks device
-        # selection for any nonzero index (proven on real Brutus hardware,
+        # selection for any nonzero index (proven on real dev hardware,
         # device 2/gfx1201: "no ROCm-capable device is detected").
         env = dict(smoke_environment_for_backend("hip", "2"))
         self.assertNotIn("ROCR_VISIBLE_DEVICES", env)

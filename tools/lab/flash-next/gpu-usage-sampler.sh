@@ -14,7 +14,7 @@ out=${1:?out.csv}; stop=${2:-}; marker=${3:-CHAIN}
 echo "epoch,arm,card,power_w,use_pct,vram_mib" > "$out"
 while :; do
   [ -n "$stop" ] && grep -q "^${marker}.*_DONE" "$stop" 2>/dev/null && break
-  arm=$(pgrep -af "long-ctx-profile.sh|moe-copy-ab.sh" | grep -oE "/mnt/data/bigcherry-work/runs/[^ ]+" | head -1 | awk -F/ '{print $(NF-1) "/" $NF}')
+  arm=$(pgrep -af "long-ctx-profile.sh|moe-copy-ab.sh" | grep -oE "${BC_WORK_ROOT}/runs/[^ ]+" | head -1 | awk -F/ '{print $(NF-1) "/" $NF}')
   now=$(date +%s)
   rocm-smi --showuse --showmeminfo vram --showpower --csv 2>/dev/null | awk -F, -v t="$now" -v arm="${arm:-idle}" \
     '$1 ~ /^card[0-9]/ { printf "%s,%s,%s,%s,%s,%d\n", t, arm, $1, $2, $3, $5 / 1048576 }' >> "$out"

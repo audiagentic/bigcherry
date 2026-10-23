@@ -1,7 +1,7 @@
 # Real three-arm baseline comparison: RD13, 2026-09-13
 
 Per the standardized patch validation criteria's A/B/C baseline
-comparison requirement, run for real on Brutus (single gfx1100, current
+comparison requirement, run for real on dev (single gfx1100, current
 pin `b10901`/`28ff0958291c`, `gpt-oss-20B` Q6_K):
 
 - **A** = `source.llama-native` (genuinely stock upstream llama.cpp, zero

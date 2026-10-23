@@ -74,7 +74,7 @@ class DeviceVisibility:
     benchmark path can share one fail-closed contract instead of
     reimplementing it per patch.
 
-    Real-hardware finding on Brutus (2026-09-11, during PVPS02's merge-
+    Real-hardware finding on dev (2026-09-11, during PVPS02's merge-
     gate run -- see PNRO17): requiring HIP_VISIBLE_DEVICES and
     ROCR_VISIBLE_DEVICES to both be set to the SAME absolute device
     index is actively WRONG, not just redundant -- ROCR_VISIBLE_DEVICES
@@ -88,7 +88,7 @@ class DeviceVisibility:
     hardware: ~8.4 t/s, matching CPU-only speed, vs. ~75 t/s on the same
     binary/model with only HIP_VISIBLE_DEVICES set). HIP_VISIBLE_DEVICES
     alone, with ROCR_VISIBLE_DEVICES left unset, was directly confirmed
-    correct for every architecture on Brutus (gfx1100/gfx1201/gfx1030,
+    correct for every architecture on dev (gfx1100/gfx1201/gfx1030,
     single and multi-device). So this class validates HIP_VISIBLE_DEVICES
     only now -- explicit, sufficient, and the one setting confirmed not
     to conflict with itself.

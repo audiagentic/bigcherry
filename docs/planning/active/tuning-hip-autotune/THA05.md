@@ -35,7 +35,7 @@ tools/bigcherry/tuning/workflow.py; cli/tuning.py/main.py; CampaignLaneResult; r
 
 ## Validation
 
-Single-command real Brutus record/tune/correctness/promote/replay, receipt completeness, 20/39-style promotion baseline where reproducible, bounded context and replay coverage.
+Single-command real dev record/tune/correctness/promote/replay, receipt completeness, 20/39-style promotion baseline where reproducible, bounded context and replay coverage.
 
 ## Effort & Risk
 

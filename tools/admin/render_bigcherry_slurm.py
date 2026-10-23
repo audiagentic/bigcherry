@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render/install Brutus Slurm host config from accepted BigCherry inventory.
+"""Render/install dev Slurm host config from accepted BigCherry inventory.
 
 Safe by default: without --apply/--dest-root it only prints the plan. Tests use
 --dest-root so rendering is executable without root or Slurm installed.
@@ -84,8 +84,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="render_bigcherry_slurm")
     parser.add_argument("--project-root", type=Path, default=_REPO_ROOT)
     parser.add_argument("--hardware-root", type=Path, required=True)
-    parser.add_argument("--executor-id", default="brutus")
-    parser.add_argument("--node-name", default="brutus")
+    parser.add_argument("--executor-id", default="dev")
+    parser.add_argument("--node-name", default="dev")
     parser.add_argument("--cpus", type=int, required=True)
     parser.add_argument("--real-memory-mib", type=int, required=True)
     parser.add_argument("--dest-root", type=Path, default=None)

@@ -35,7 +35,7 @@ patches/1205_rd12_paired_mmvq_dual_output/{patch.toml,patch.py,README.md,SUMMARY
 
 ## Validation
 
-Offline: patch-lint, patch-rebase-check for 1205 standalone and against the production patchset. Correctness: the new ne[0..3]/nb[0..3] equality check plus fusion-memory-range disjointness proof must be added and covered by negative tests (differing ne[3]/nb[], overlapping outputs) before qualification proceeds -- these are currently MISSING gaps, not just untested claims. Hardware (Brutus, not run here): K/V-specific correctness+perf campaign at gfx1151/gfx1201, 0.5B-4B, with activation evidence identifying the specific fused pair.
+Offline: patch-lint, patch-rebase-check for 1205 standalone and against the production patchset. Correctness: the new ne[0..3]/nb[0..3] equality check plus fusion-memory-range disjointness proof must be added and covered by negative tests (differing ne[3]/nb[], overlapping outputs) before qualification proceeds -- these are currently MISSING gaps, not just untested claims. Hardware (dev, not run here): K/V-specific correctness+perf campaign at gfx1151/gfx1201, 0.5B-4B, with activation evidence identifying the specific fused pair.
 
 ## Effort & Risk
 
@@ -67,7 +67,7 @@ Supersedes RD48. Source is AMD PR Set 4/#59 (discussion #26378), with source sta
 
 2026-09-25: steps 2,3,5 implemented in 1205 (cd35b01f): ggml_are_same_shape+ggml_are_same_stride+F32 on both outputs, ggml_cuda_check_fusion_memory_ranges over {i,j}, marker names the fused weights. b11126 gfx1100 run r1: apply/build/activation/bit_identical PASS (6/6 rows, marker a=rd12_k_weight b=rd12_v_weight) but no promotion lanes existed; producer extended with tg128 positive / pp512 control, 10 rounds, ci95 policy (bd6272be). r2 running. gfx1201 run r1 died on a clang bus error from host disk pressure (root 98%), not code. gfx1151 BLOCKED (no card). Step 4 negative test-backend-ops fixtures still to author.
 
-2026-09-25 RESULT: RD12-PAIRED-MMVQ-DUAL gfx1100 PASS under the frozen owner policy (4 independent sessions, session-bootstrap tg128 improvement established; sessions +0.64/+0.69/+0.23/+1.02%; controls within budget; bit-identical K/V outputs; activation proven). gfx1201: 3 sessions (s4 lost to a full disk on Brutus) -- noisy (concurrent lanes), not yet established. gfx1151 BLOCKED (no card). Promotion decision pending gfx1201 and the per-patch test matrix review.
+2026-09-25 RESULT: RD12-PAIRED-MMVQ-DUAL gfx1100 PASS under the frozen owner policy (4 independent sessions, session-bootstrap tg128 improvement established; sessions +0.64/+0.69/+0.23/+1.02%; controls within budget; bit-identical K/V outputs; activation proven). gfx1201: 3 sessions (s4 lost to a full disk on dev) -- noisy (concurrent lanes), not yet established. gfx1151 BLOCKED (no card). Promotion decision pending gfx1201 and the per-patch test matrix review.
 
 ## Change Log
 

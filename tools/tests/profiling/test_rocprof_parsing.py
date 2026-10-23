@@ -1,6 +1,6 @@
 """PROF01/HI132: offline tests for rocprofv3 CSV parsing -- no GPU
 required. Fixture columns match a real rocprofv3 --kernel-trace --stats
-run captured on Brutus this session (RD33's kernel-resource diagnostic)."""
+run captured on dev this session (RD33's kernel-resource diagnostic)."""
 
 from __future__ import annotations
 
@@ -175,7 +175,7 @@ class BuildGpuProfilePassTests(unittest.TestCase):
             self.assertTrue(gp.rccl_activity_seen)
 
     def test_rccl_init_only_trace_is_not_activity(self):
-        # HI134 real-hardware finding (hi134-meta-baseline-01, Brutus {0,1,2},
+        # HI134 real-hardware finding (hi134-meta-baseline-01, dev {0,1,2},
         # GGML_HIP_REDUCE_PLAN=meta): ncclGetVersion/ncclGetUniqueId/
         # ncclCommInitAll/ncclCommGetAsyncError/ncclCommDestroy all appear in
         # the RCCL trace even when META handled every actual reduce and no

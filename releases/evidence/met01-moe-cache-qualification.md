@@ -1,6 +1,6 @@
 # MET01 MoE cache qualification — prior single-point result
 
-Brutus, 2026-10-08, b11474, build `moe-cache-profile`, `queue-moe-cache.sh mig`, NCMOE=41, one R9700 target + MTP sidecar.
+dev, 2026-10-08, b11474, build `moe-cache-profile`, `queue-moe-cache.sh mig`, NCMOE=41, one R9700 target + MTP sidecar.
 
 | arm | short decode t/s (3 requests) | long prefill t/s | long decode t/s | greedy md5 short / long |
 |---|---|---|---|---|
@@ -21,4 +21,4 @@ reopened as untested pending the fusion-off matrix in `queue-moe-cache.sh`.
 
 Verified from owner-supplied hardware results: build/launch, activation of cache/profile arms, repeated controls, throughput table, and greedy md5 divergence.
 
-Not verified here: no local ROCm hardware execution was available in the connector environment; this commit records the supplied Brutus result and lifecycle decision.
+Not verified here: no local ROCm hardware execution was available in the connector environment; this commit records the supplied dev result and lifecycle decision.

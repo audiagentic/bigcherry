@@ -31,7 +31,7 @@ Candidate is vendor algorithm/solution selection, not hand-written kernel. Keep 
 
 ## Files
 
-BLAS selector/schema/runtime seam; rocblas-gemm-tune ingestion; workspace telemetry; candidate tests and Brutus evidence.
+BLAS selector/schema/runtime seam; rocblas-gemm-tune ingestion; workspace telemetry; candidate tests and dev evidence.
 
 ## Validation
 

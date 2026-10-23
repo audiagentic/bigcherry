@@ -13,10 +13,11 @@ token even if they print it differently. Compare files with probes-compare.py.
 Usage: probe-openai.py <base-url> <model> <out.json> <depth-tokens> [--probes N] [--top N]
 """
 import json
+import os
 import sys
 import urllib.request
 
-CORPUS = "/mnt/data/bigcherry-work/corpus/kld-docs.txt"
+CORPUS = os.path.join(os.environ["BC_WORK_ROOT"], "corpus", "kld-docs.txt")
 
 
 def post(base, body):

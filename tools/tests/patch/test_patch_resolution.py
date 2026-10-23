@@ -40,7 +40,7 @@ class PatchResolutionTests(unittest.TestCase):
 
     def test_context_ids_satisfies_requires_without_joining_the_selection(self):
         # HI134: an experiment overlay patch (1242) REQUIRES a base-set
-        # module (0830) it does not itself add. Real bug found via a Brutus
+        # module (0830) it does not itself add. Real bug found via a dev
         # build failure: without context_ids, the overlay's own exact
         # resolution has no way to know 0830 is already selected elsewhere,
         # and re-adding 0830 to the overlay collides with the base/overlay

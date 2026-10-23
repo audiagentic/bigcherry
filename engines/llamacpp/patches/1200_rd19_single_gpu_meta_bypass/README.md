@@ -76,7 +76,7 @@ native llama.cpp. Per this project's new rule
 (`docs/reference/patches/PATCH_AUTHORING.md`'s "`optimization` carries a
 real validation obligation"), re-ran a genuine 3-arm sweep same day:
 
-**Real 3-arm sweep (2026-09-11, Brutus, gfx1100, single GPU
+**Real 3-arm sweep (2026-09-11, dev, gfx1100, single GPU
 `HIP_VISIBLE_DEVICES=0`, `-sm tensor` -- the exact condition this patch's
 mechanism targets, since without it no Meta wrapper is created for a
 single device and the patch has nothing to bypass)**: `llama-bench`,

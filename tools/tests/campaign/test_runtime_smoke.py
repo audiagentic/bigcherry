@@ -13,7 +13,7 @@ from bigcherry.campaign.smoke import (RuntimeSmokeSpec, SmokeError,  # noqa: E40
                                      evaluate_smoke_result, smoke_argv)
 
 # Trimmed but structurally real llama-bench `-o json` output, matching the
-# shape actually observed from this session's Brutus runs (RCCL validation).
+# shape actually observed from this session's dev runs (RCCL validation).
 _REAL_SHAPE_OUTPUT = json.dumps([
     {"build_commit": "4801e3c", "n_prompt": 512, "n_gen": 0, "avg_ts": 18987.616529,
      "samples_ts": [17268.9, 19850.4, 19843.6]},
@@ -57,7 +57,7 @@ class EvaluateSmokeResultTests(unittest.TestCase):
         # own runtime prints "HIP Library Path: ..." to stdout ahead of
         # llama-bench's -o json output on Windows, an upstream quirk this
         # project has no patch for.
-        preamble = "HIP Library Path: C:\\WINDOWS\\SYSTEM32\\amdhip64_7.dll\n"
+        preamble = "HIP Library Path: /fixture/amdhip64_7.dll\n"
         rows = evaluate_smoke_result(preamble + _REAL_SHAPE_OUTPUT)
         self.assertEqual(len(rows), 2)
 

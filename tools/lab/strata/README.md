@@ -1,7 +1,7 @@
 # tools/lab/strata
 
 Scripts for BCOP37 (qualify the Strata execution architecture for Qwen Flash-Next on the local AMD host).
-They run on Brutus, write only into a timestamped result bundle under `/mnt/data/bigcherry-work/runs/bcop37-*`,
+They run on dev, write only into a timestamped result bundle under `${BIGCHERRY_ROOT}/runs/bcop37-*`,
 and never modify the Strata tree.
 
 - `bcop37-system.sh <bundle>` - step 1, host facts into `system.txt`.

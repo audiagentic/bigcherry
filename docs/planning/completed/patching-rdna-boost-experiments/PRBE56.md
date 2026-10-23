@@ -74,7 +74,7 @@ ggml/src/ggml-backend.cpp; common/speculative.cpp (call-site wiring only); 3x pa
 
 ## Validation
 
-Offline: `PYTHONPATH=tools python -m bigcherry patch-lint`, `patch-rebase-check` per subchange. Temp-0 identity + rollback correctness per subchange (single flag). Hardware (Brutus, not run here): dual XTX/R9700, MTP widths 2..8, single-GPU and speculation-off controls, scheduler CPU time/sync count/copies-per-token/effective TG, via `python -m bigcherry.patch.validation_campaign`. Port only subchanges with independent wins; output mirroring additionally requires favorable VRAM/traffic evidence.
+Offline: `PYTHONPATH=tools python -m bigcherry patch-lint`, `patch-rebase-check` per subchange. Temp-0 identity + rollback correctness per subchange (single flag). Hardware (dev, not run here): dual XTX/R9700, MTP widths 2..8, single-GPU and speculation-off controls, scheduler CPU time/sync count/copies-per-token/effective TG, via `python -m bigcherry.patch.validation_campaign`. Port only subchanges with independent wins; output mirroring additionally requires favorable VRAM/traffic evidence.
 
 ## Effort & Risk
 

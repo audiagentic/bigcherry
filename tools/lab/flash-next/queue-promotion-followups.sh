@@ -7,9 +7,9 @@
 # Usage: queue-promotion-followups.sh [step...]     (default: 1 2 3 4)
 set -u
 cd "$(cd "$(dirname "$0")/../../.." && pwd)"
-R=/mnt/data/bigcherry-work/runs
-FLASH=/mnt/data/llm-models/qwen3.8-flash-next/gguf/mtp/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf
-export BC_HIP_PATH=/mnt/vault/tmp/bc-rocm
+R=${BC_WORK_ROOT}/runs
+FLASH=${BC_MODEL_ROOT}/qwen3.8-flash-next/gguf/mtp/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf
+export BC_HIP_PATH=${BC_TMP_ROOT}/bc-rocm
 steps="${*:-1 2 3 4}"
 
 queue_one() {  # <job line>
@@ -44,7 +44,7 @@ for s in $steps; do
         ;;
     3)
         echo "== step 3: Qwen3.8-27B no-regression"
-        export BC_MODEL=/mnt/data/llm-models/qwen3.8-27b/gguf/unsloth/Qwen3.8-27B-Q8_0.gguf
+        export BC_MODEL=${BC_MODEL_ROOT}/qwen3.8-27b/gguf/unsloth/Qwen3.8-27B-Q8_0.gguf
         export AR_FLAG="--allreduce cpu-root"
         rm -rf $R/nr27-*
         queue_one "VIS=0,1 SCRIPT nr27-1355 tools/lab/flash-next/prod27b-ab.sh @b-main2 @b-metamem-hcf1 $R/nr27-1355-out"

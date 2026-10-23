@@ -1,7 +1,7 @@
 {
  "arm_config": [
   {
-   "binary": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/06a02de1ebf7bb55016045b0d8a0b9ee/7eb064a9aed5e97373f261761f3d0597/bin/llama-server",
+   "binary": "${DEV_ROOT}/projects/bigcherry/workspaces/main/work/builds/06a02de1ebf7bb55016045b0d8a0b9ee/7eb064a9aed5e97373f261761f3d0597/bin/llama-server",
    "environment": {
     "GGML_CUDA_AR_WIRE": "f32"
    },
@@ -13,7 +13,7 @@
    ]
   },
   {
-   "binary": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/06a02de1ebf7bb55016045b0d8a0b9ee/7eb064a9aed5e97373f261761f3d0597/bin/llama-server",
+   "binary": "${DEV_ROOT}/projects/bigcherry/workspaces/main/work/builds/06a02de1ebf7bb55016045b0d8a0b9ee/7eb064a9aed5e97373f261761f3d0597/bin/llama-server",
    "environment": {},
    "model": null,
    "name": "bf16",
@@ -68,7 +68,7 @@
   }
  },
  "kind": "ab",
- "model": "/mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
+ "model": "${MODELS_ROOT}/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
  "run": "ab-27b-wire-plain",
  "schedule_seed": 0,
  "server_args": [

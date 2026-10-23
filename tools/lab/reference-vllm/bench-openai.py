@@ -8,12 +8,13 @@ Prompt text is the lab corpus (kld-docs.txt) cut to the requested size, so depth
 long-ctx-profile.sh runs. Usage: bench-openai.py <base-url> <model> <out.json> <depth-tokens>... [--decode N] [--reps N]
 """
 import json
+import os
 import sys
 import time
 import urllib.request
 import uuid
 
-CORPUS = "/mnt/data/bigcherry-work/corpus/kld-docs.txt"
+CORPUS = os.path.join(os.environ["BC_WORK_ROOT"], "corpus", "kld-docs.txt")
 CHARS_PER_TOKEN = 3.6  # corpus average for the Qwen tokenizer; the server reports the real prompt token count
 
 

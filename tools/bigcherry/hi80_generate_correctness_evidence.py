@@ -286,7 +286,7 @@ def generate_for_candidate(
     # HI80 (2026-08-23 real-hardware finding): signature_to_op_filter()'s
     # -p regex only matches a real signature by coincidence, when it
     # happens to equal one of test-backend-ops' own fixed synthetic test
-    # shapes -- confirmed on Brutus that a real production MUL_MAT
+    # shapes -- confirmed on dev that a real production MUL_MAT
     # (m=32/n=21/k=2880) matches none of them. signature_to_test_file_line()
     # drives test-backend-ops' --test-file escape hatch instead, which
     # builds the exact requested shape directly via test_generic_op, so it

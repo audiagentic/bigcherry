@@ -24,7 +24,7 @@ Goal (owner): run larger models / larger variants that need three cards (2x 7900
 1. Extend 0840 adaptive to N=3: small -> 1244 root3 internal path, large -> RCCL (0840 currently assumes n_devices == 2 for its internal side).
 2. Apply the decode-latency fixes from the Patch B review (1275: slot-sync host->stream, size-adaptive small-kernel geometry, later fused residual) to the root3 path as well as N=2.
 3. Uneven split for mixed cards (R9700 32 GB vs XTX 24 GB, different bandwidth): sweep --tensor-split.
-4. Target model: unsloth Qwen3.8-27B BF16 (~55 GB, needs three cards; /mnt/data/llm-models/qwen3.8-27b/gguf/unsloth/BF16/); later a 60-75 GB MoE.
+4. Target model: unsloth Qwen3.8-27B BF16 (~55 GB, needs three cards; ${MODELS_ROOT}/qwen3.8-27b/gguf/unsloth/BF16/); later a 60-75 GB MoE.
 5. Balanced A/Bs: RCCL vs root3 vs adaptive(N=3), then with 1275 switches.
 
 ## Detailed Solution & Technical Design

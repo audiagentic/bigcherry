@@ -33,6 +33,10 @@ concurrency:
   group: radiance-build-${{ github.ref }}
   cancel-in-progress: true
 
+# Host settings are untracked; CI uses the tracked example host (it declares the rocm-sdks the recipes name).
+env:
+  BIGCHERRY_ENVIRONMENT: config/environment.example.toml
+
 jobs:
   build:
     runs-on: ubuntu-24.04
@@ -72,7 +76,7 @@ jobs:
 
       - name: Build in the ROCm image
         run: |
-          docker run --rm -v "$GITHUB_WORKSPACE:/src" -w /src rocm/dev-ubuntu-24.04:7.2.4 bash -euxo pipefail -c '
+          docker run --rm -e BIGCHERRY_ENVIRONMENT -v "$GITHUB_WORKSPACE:/src" -w /src rocm/dev-ubuntu-24.04:7.2.4 bash -euxo pipefail -c '
             apt-get update
             DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git cmake ninja-build python3 python3-pip g++-14 gcc-14 ca-certificates ccache
             git config --global --add safe.directory /src

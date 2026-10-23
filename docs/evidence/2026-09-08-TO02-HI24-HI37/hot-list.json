@@ -1,6 +1,6 @@
 # bigcherry hot list, schema 1
 # basis calls_x_native_median
-# source_measurements /home/audumla/bigcherry/artifacts/gp03-validation/bc-native/docs/evidence/2026-08-27-dual-xtx-tune-run/e2e_dualxtx_tune.measurements.jsonl
+# source_measurements ${HOME}/bigcherry/artifacts/gp03-validation/bc-native/docs/evidence/2026-08-27-dual-xtx-tune-run/e2e_dualxtx_tune.measurements.jsonl
 # signatures 69
 # columns signature share_pct cum_share_pct rank
 395ec8f68a5c31588f66aec0191d6196 34.4058 34.4058 1

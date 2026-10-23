@@ -4,8 +4,16 @@
 
 namespace {
 using namespace r3::moe_shm;
-volatile sig_atomic_t g_stop = 0;
-void on_signal(int) { g_stop = 1; }
+/* The stop word: set by the signal handler and by any failing thread, and futex-woken so the main thread sleeps on it
+ * instead of polling. A lock-free atomic store plus the raw futex syscall are async-signal-safe. */
+std::atomic<uint32_t> g_stop_word{0};
+static_assert(std::atomic<uint32_t>::is_always_lock_free && sizeof(std::atomic<uint32_t>) == sizeof(uint32_t));
+inline bool stopping() { return g_stop_word.load(std::memory_order_acquire) != 0; }
+inline void request_stop() {
+    g_stop_word.store(1, std::memory_order_release);
+    (void)::syscall(SYS_futex, reinterpret_cast<uint32_t*>(&g_stop_word), FUTEX_WAKE_PRIVATE, INT_MAX, nullptr, nullptr, 0);
+}
+void on_signal(int) { request_stop(); }
 
 float bf16(uint16_t v) {
     uint32_t u = (uint32_t)v << 16; float f; std::memcpy(&f, &u, 4); return f;

@@ -48,7 +48,7 @@ repo-wide clutter, not scoped to any one session.
   `config/environment.local.toml` (template: `config/environment.example.toml`,
   file location overridable with `BIGCHERRY_ENVIRONMENT`, any key with
   `BIGCHERRY_HOST_<KEY>`); tracked config refers to install locations as
-  `${VAR}` (e.g. `${HIP_PATH}`, `${ROCM_PATH}`, `${BIGCHERRY_BRUTUS_TREE}`).
+  `${VAR}` (e.g. `${HIP_PATH}`, `${ROCM_PATH}`, `${BC_REPO_ROOT}`).
   `bigcherry check --quick` enforces this (`TR14.HOST_SPECIFIC_VALUE`,
   `TR14.USER_FOLDER_DEFAULT`).
 

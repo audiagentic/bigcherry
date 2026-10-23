@@ -2,7 +2,7 @@
 
 ## Promotion
 
-QFP18 lightweight tier; llama.cpp pin b11474; Brutus 2026-10-08.
+QFP18 lightweight tier; llama.cpp pin b11474; dev 2026-10-08.
 
 Build `b-metamem-qfp37c` of the 1350 experiment at d840d8f0 composed 49/49, compiled cleanly, smoke reported 0 error lines, and emitted `BIGCHERRY_PATCH_HIT patch=1350_mmq_few_tile_streamk cc=16781568 I=128 J=128 tiles=12 cu=48 k=10240 n=512`.
 
@@ -24,4 +24,4 @@ The off arm (`BIGCHERRY_MMQ_FEW_TILE_STREAMK=0`) is the upstream/native MMQ disp
 
 ## Scope
 
-Evidence covers one model/topology: Flash-Next IQ4_XS on the production Brutus layout. A second model was not measured. Therefore the package default remains off and only `src/profile/flashnext.ini` enables it.
+Evidence covers one model/topology: Flash-Next IQ4_XS on the production dev layout. A second model was not measured. Therefore the package default remains off and only `src/profile/flashnext.ini` enables it.

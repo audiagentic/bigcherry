@@ -9,11 +9,11 @@ NATIVE=${2:?native build run, e.g. b-native-b11402}
 TAG=${3:?tag}
 shift 3
 cd "$(cd "$(dirname "$0")/../../.." && pwd)"
-R=/mnt/data/bigcherry-work/runs
+R=${BC_WORK_ROOT}/runs
 for a in "$@"; do case "$a" in wait=*) until grep -q "^ALL_JOBS_DONE" "${a#wait=}" 2>/dev/null; do sleep 20; done ;; esac; done
-export BC_HIP_PATH=/mnt/vault/tmp/bc-rocm
-export BC_MODEL=/mnt/data/llm-models/qwen3.8-flash-next/gguf/mtp/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf
-export DRAFT=/mnt/data/llm-models/qwen3.8-flash-next/gguf/unsloth/MTP/mtp-Qwen3.8-Flash-Next-Q5_K_M-qsa4.gguf
+export BC_HIP_PATH=${BC_TMP_ROOT}/bc-rocm
+export BC_MODEL=${BC_MODEL_ROOT}/qwen3.8-flash-next/gguf/mtp/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf
+export DRAFT=${BC_MODEL_ROOT}/qwen3.8-flash-next/gguf/unsloth/MTP/mtp-Qwen3.8-Flash-Next-Q5_K_M-qsa4.gguf
 export CTK=f16 CTV=f16 CTKD=f16 CTVD=f16 CTX=65536 TS=0.31,0.27,0.42 B=512 DECODE_N=256
 export EXTRA_OT='^token_embd\.weight$=CPU'
 docker stop radiance-vllm >/dev/null 2>&1

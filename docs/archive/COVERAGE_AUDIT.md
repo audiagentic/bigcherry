@@ -120,7 +120,7 @@ assumption.
 
 The question: does measuring candidates back-to-back on the same operands (hot
 L2/Infinity Cache) distort *which* candidate wins, compared to a cold-cache
-measurement? HI34 step 4 ran the locked three-arm experiment on Brutus (7900
+measurement? HI34 step 4 ran the locked three-arm experiment on dev (7900
 XTX, gfx1101, ROCm 7.2.4, unblocked): H1 (flush=0) -> C (flush=1, 256 MB
 eviction between samples, outside the timed window) -> H2 (flush=0), all at
 lps=1, full MUL_MAT matrix, 1156 signatures per arm.

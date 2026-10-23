@@ -4,13 +4,13 @@
 # Usage: helper-long-rows.sh <branch> [long_rows=65]
 set -u
 BR=${1:-origin/feat/rad06-gemm-counters}; LR=${2:-65}
-W=/mnt/data/bigcherry-work
+W=${BC_WORK_ROOT}
 cd $W/wt-pr8 && git fetch -q origin && git checkout -q --detach $BR && git log --oneline -1
-export ROCM_PATH=/opt/rocm-7.2.4 PATH=/opt/rocm-7.2.4/bin:$PATH BIGCHERRY_ENVIRONMENT=/mnt/vault/development/projects/bigcherry/workspaces/main/config/environment.local.toml
+export ROCM_PATH=/opt/rocm-7.2.4 PATH=/opt/rocm-7.2.4/bin:$PATH BIGCHERRY_ENVIRONMENT=${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/config/environment.local.toml
 PYTHONPATH=tools timeout 5400 python3 -m bigcherry build --lane radiance-lab:stock:linux-radiance --experiment moe-remote-handoff > $W/longrows-build.log 2>&1
 grep -E 'ok build|FAILED' $W/longrows-build.log | tail -1; grep -E ' error:|spill|rewrite' $W/longrows-build.log | sort -u | head
-B=$(ls -td /mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/*/*/ | head -1)
-M=/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad
+B=$(ls -td ${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/work/builds/*/*/ | head -1)
+M=${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad
 for f in $(ls -S $W/captures/*.bin | head -4); do
   echo "== $(basename $f) $(stat -c %s $f) bytes"
   for lr in 0 $LR; do

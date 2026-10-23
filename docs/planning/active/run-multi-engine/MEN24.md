@@ -15,7 +15,7 @@ work: M
 
 ## Description
 
-The radiance 1.9.0 bump (2026-10-20) took about an hour, but measured compile time is about 6 minutes on Brutus (20 cores): engine about 75 s wall, libr3 about 4.7 min (one unit, r4d_gemm_mxfp4a8_decode, alone 264 s and the critical path), moe-remote 10 s, ngram-helper 2 s. The rest is pipeline: the engine is built twice (compile gate, then the lane build for the CPU smoke), there is no compiler cache, the patch-test step runs the whole offline patch suite (208 files, 1,444 tests, about 140 s, only 2 files about radiance), and selftest/bench binaries are built in the gates. The bump also stopped on 10 libr3 native rewrite blocks that upstream had moved: in-source text rewrites of libr4d break on every release, while our own components (moe-remote, ngram-helper) needed only the ABI rebuild.
+The radiance 1.9.0 bump (2026-10-20) took about an hour, but measured compile time is about 6 minutes on dev (20 cores): engine about 75 s wall, libr3 about 4.7 min (one unit, r4d_gemm_mxfp4a8_decode, alone 264 s and the critical path), moe-remote 10 s, ngram-helper 2 s. The rest is pipeline: the engine is built twice (compile gate, then the lane build for the CPU smoke), there is no compiler cache, the patch-test step runs the whole offline patch suite (208 files, 1,444 tests, about 140 s, only 2 files about radiance), and selftest/bench binaries are built in the gates. The bump also stopped on 10 libr3 native rewrite blocks that upstream had moved: in-source text rewrites of libr4d break on every release, while our own components (moe-remote, ngram-helper) needed only the ABI rebuild.
 
 ## Steps
 

@@ -7,7 +7,7 @@ set -u
 for v in $(env | grep -oE "^(BIGCHERRY_[A-Z0-9_]+|GGML_HIP_[A-Z0-9_]+)"); do unset "$v"; done
 bin=$1 out=$2
 mkdir -p "$out"
-M=/mnt/data/llm-models/qwen3.8-27b/gguf
+M=${BC_MODEL_ROOT}/qwen3.8-27b/gguf
 port=$((47000 + RANDOM % 1000))
 common=(-m $M/mtp/Qwen3.8-27B-Q8_0.gguf -ngl 99 --fit off -fa on --parallel 1 --threads 8 -ub 2048 -b 2048 -dev ROCm0,ROCm1 -sm tensor)
 arm_args() {

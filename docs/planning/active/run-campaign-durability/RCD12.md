@@ -40,10 +40,10 @@ Implemented/offline-tested:
 
 Still hardware/Windows gated:
 
-1. capture sanitized real Brutus AMD-SMI output and prove the parser/field meanings against the installed version;
+1. capture sanitized real dev AMD-SMI output and prove the parser/field meanings against the installed version;
 2. prove chosen UUID/serial identity persists across reboot/toolchain views; otherwise use a reviewed weak hardware epoch;
 3. discover/verify real peer topology rather than leaving `peer_access` empty in Linux discovery;
-4. generate/apply actual Brutus GRES and pass `slurmd -G`;
+4. generate/apply actual dev GRES and pass `slurmd -G`;
 5. attest real Slurm allocation visibility back to stable IDs and run HIP/llama/tensor-split acceptance;
 6. add boot/runtime drift watcher + automatic node drain/reconcile/resume integration;
 7. add Windows HIP UUID/LUID discovery and ordinal-reorder fixtures/acceptance.
@@ -76,15 +76,15 @@ For a frozen cohort that is a proper subset of all accepted cards of its archite
 Operator flow:
 
 ```bash
-python -m bigcherry hardware discover brutus --record
-python -m bigcherry hardware diff brutus
-python -m bigcherry hardware accept brutus --expected-hash <reviewed-hash> [--allow-material-change]
-python -m bigcherry hardware render-gres brutus
+python -m bigcherry hardware discover dev --record
+python -m bigcherry hardware diff dev
+python -m bigcherry hardware accept dev --expected-hash <reviewed-hash> [--allow-material-change]
+python -m bigcherry hardware render-gres dev
 ```
 
 Material drift blocks/requires review before new scientific binding. `environment.local.toml` may configure host/toolchain/model policy but cannot override discovered GPU identity/architecture/VRAM.
 
-## Brutus acceptance
+## dev acceptance
 
 Before production cutover:
 
@@ -103,10 +103,10 @@ Before production cutover:
 - runtime allocation attestation prevents same-model substitution;
 - GRES remains architecture-only;
 - Linux/Windows share the provider-neutral model;
-- real Brutus and Windows provider acceptance completes the remaining platform-specific gates.
+- real dev and Windows provider acceptance completes the remaining platform-specific gates.
 
 ## Change log
 
 - 2026-09-26: dynamic discovery/cohort design.
 - 2026-09-27: provider-neutral models, binding, allocation verification, GRES renderer and drift classifier implemented.
-- 2026-09-27: observed/accepted hardware CLI and fail-closed AMD-SMI Linux discovery implemented with offline fixtures; real Brutus identity/peer/GRES acceptance and Windows discovery remain pending.
+- 2026-09-27: observed/accepted hardware CLI and fail-closed AMD-SMI Linux discovery implemented with offline fixtures; real dev identity/peer/GRES acceptance and Windows discovery remain pending.

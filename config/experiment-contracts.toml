@@ -195,7 +195,7 @@ atomic_part = "1208_rd21_gfx1151_mmvq_nwarps_table"
 [contract.RD21-GFX1151-MMVQ-NWARPS.hypothesis]
 family = "mmvq"
 expected_effect = "performance"
-rationale = "gfx1151 (Strix Halo iGPU, RDNA3_5) previously fell into the RDNA2 mmvq table; a dedicated table with nwarps=2 for Q8_0 decode matmuls was fork-swept at ~+0.6% decode. HARDWARE-DEFERRED: no gfx1151 device exists on Brutus (gfx1100/gfx1201/gfx1030 only) -- this contract's positive-lane performance claim CANNOT be evaluated until gfx1151 hardware is available; only the no-regression/non-selection proof on existing hardware is currently runnable (RD21's own acceptance standard: no unsupported extrapolation)."
+rationale = "gfx1151 (Strix Halo iGPU, RDNA3_5) previously fell into the RDNA2 mmvq table; a dedicated table with nwarps=2 for Q8_0 decode matmuls was fork-swept at ~+0.6% decode. HARDWARE-DEFERRED: no gfx1151 device exists on dev (gfx1100/gfx1201/gfx1030 only) -- this contract's positive-lane performance claim CANNOT be evaluated until gfx1151 hardware is available; only the no-regression/non-selection proof on existing hardware is currently runnable (RD21's own acceptance standard: no unsupported extrapolation)."
 
 [contract.RD21-GFX1151-MMVQ-NWARPS.scope]
 backend = "hip"
@@ -318,7 +318,7 @@ kind = "tp_topology"
 
 [contract.RD20-ATTN-GATE-TP-SPLIT.hypothesis]
 expected_effect = "correctness"
-rationale = "CORRECTNESS, not performance (EC02 Appendix-B rule for this class): attn_gate.weight previously split at granularity 1 while the attn_q it's multiplied against split head-aligned -- with 3+ GPUs the head-aligned split can round a device's share to zero, aborting on incompatible split states. Fix gives attn_gate the same head-aligned granularity as attn_q. Needs 2+ GPU bench (Brutus 0/1 gfx1100) to prove 1/2/3+ GPU equality; the tuner cannot discover or reproduce this itself."
+rationale = "CORRECTNESS, not performance (EC02 Appendix-B rule for this class): attn_gate.weight previously split at granularity 1 while the attn_q it's multiplied against split head-aligned -- with 3+ GPUs the head-aligned split can round a device's share to zero, aborting on incompatible split states. Fix gives attn_gate the same head-aligned granularity as attn_q. Needs 2+ GPU bench (dev 0/1 gfx1100) to prove 1/2/3+ GPU equality; the tuner cannot discover or reproduce this itself."
 
 [contract.RD20-ATTN-GATE-TP-SPLIT.scope]
 backend = "hip"
@@ -704,7 +704,7 @@ kind = "orchestration"
 
 [contract.RD44-GRAPH-OPT-DEFAULT-RDNA35.hypothesis]
 expected_effect = "performance"
-rationale = "Policy/default flip, last in the AMD-STREAM chain -- defaults the graph-optimization pass (previously opt-in via env var) to enabled on gfx1151 (RDNA3.5) specifically; every other architecture keeps prior behavior. HARDWARE-DEFERRED: needs gfx1151, which Brutus does not have (gfx1100/gfx1201/gfx1030 only) -- behavior-neutral on all three Brutus architectures (the RDNA3.5 branch cannot resolve), so only the no-regression proof is currently runnable. Upstream-fork measured (gfx1151, Qwen3.6-35B-A3B UD-Q4_K_M): tg128 +7.3%, VLM decode +8.7%."
+rationale = "Policy/default flip, last in the AMD-STREAM chain -- defaults the graph-optimization pass (previously opt-in via env var) to enabled on gfx1151 (RDNA3.5) specifically; every other architecture keeps prior behavior. HARDWARE-DEFERRED: needs gfx1151, which dev does not have (gfx1100/gfx1201/gfx1030 only) -- behavior-neutral on all three dev architectures (the RDNA3.5 branch cannot resolve), so only the no-regression proof is currently runnable. Upstream-fork measured (gfx1151, Qwen3.6-35B-A3B UD-Q4_K_M): tg128 +7.3%, VLM decode +8.7%."
 
 [contract.RD44-GRAPH-OPT-DEFAULT-RDNA35.scope]
 backend = "hip"
@@ -780,7 +780,7 @@ kind = "hardware_correctness"
 
 [contract.RD58-PIN-STATE-BUFFER-MULTIGPU-RESTORE.hypothesis]
 expected_effect = "correctness"
-rationale = "ROCm's on-the-fly pageable-memory mapping for an async H2D copy can be torn down mid-transfer with 2+ devices in one process, faulting the SDMA engine inside the copy's source range (rocm/rocm-systems#4817, open, names RX 7900 XTX -- BigCherry's own production GPU). Registers the state-restore buffer as portable pinned host memory for the restore's duration. Fork's own measured data (2x MI210): unpinned faults after 2 restores; pinned survives 140 restores/12 rounds/0 faults, temp-0 output unchanged. Real-hardware confirmation on Brutus (-sm tensor, 2026-08-24): activation fired on all 150 repeated real host-path restore cycles, zero faults, all 5 of llama.cpp's own upstream save/load-state tests pass; pinning measured ~17% FASTER than unpinned (no material latency regression). The original ROCm SDMA fault itself was never reproduced on Brutus (0 faults in 530+ combined cycles) -- this contract proves activation + state-restore integrity + no regression, not that Brutus independently reproduced-then-eliminated the causal fault."
+rationale = "ROCm's on-the-fly pageable-memory mapping for an async H2D copy can be torn down mid-transfer with 2+ devices in one process, faulting the SDMA engine inside the copy's source range (rocm/rocm-systems#4817, open, names RX 7900 XTX -- BigCherry's own production GPU). Registers the state-restore buffer as portable pinned host memory for the restore's duration. Fork's own measured data (2x MI210): unpinned faults after 2 restores; pinned survives 140 restores/12 rounds/0 faults, temp-0 output unchanged. Real-hardware confirmation on dev (-sm tensor, 2026-08-24): activation fired on all 150 repeated real host-path restore cycles, zero faults, all 5 of llama.cpp's own upstream save/load-state tests pass; pinning measured ~17% FASTER than unpinned (no material latency regression). The original ROCm SDMA fault itself was never reproduced on dev (0 faults in 530+ combined cycles) -- this contract proves activation + state-restore integrity + no regression, not that dev independently reproduced-then-eliminated the causal fault."
 
 [contract.RD58-PIN-STATE-BUFFER-MULTIGPU-RESTORE.scope]
 backend = "hip"

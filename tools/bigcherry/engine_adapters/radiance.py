@@ -68,7 +68,7 @@ class RadianceAdapter(EngineAdapter):
                 text_path=("choices", 0, "text"), models_path="/v1/models",
             ),
             # radiance names its backend once at start-up: "I device: host backend, 1 device(s) [0:host]" on the CPU,
-            # "I device: AQL backend, N device(s) [0:gfx1100 ...]" on GPUs (radiance 1.7.0, Brutus 2026-10-17). Card
+            # "I device: AQL backend, N device(s) [0:gfx1100 ...]" on GPUs (radiance 1.7.0, dev 2026-10-17). Card
             # names alone are not evidence: 1.7.0 also warns that it serves on the CPU while listing the cards present.
             device=DeviceAssertion((
                 r"(?m)^I device: (?!host backend\b)\S+ backend\b",

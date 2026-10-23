@@ -504,11 +504,14 @@ def build_parser() -> argparse.ArgumentParser:
     engine_bench_cmd.add_argument("--model", required=True, help="model file, directory or repository id")
     engine_bench_cmd.add_argument("--out", required=True, help="output directory")
     engine_bench_cmd.add_argument("--depth", nargs="+", required=True, help="prompt depths in tokens")
-    engine_bench_cmd.add_argument("--corpus", default="/mnt/data/bigcherry-work/corpus/kld-docs.txt")
+    engine_bench_cmd.add_argument("--corpus", default=None, help="accepted for compatibility; the bench reads its corpus from bench.server_completion --corpus")
     engine_bench_cmd.add_argument("--label", default="run", help="names the log and result files")
     engine_bench_cmd.add_argument("--reps", type=int, default=2)
     engine_bench_cmd.add_argument("--decode", type=int, default=512)
-    engine_bench_cmd.add_argument("--port", type=int, default=None, help="default: a free port")
+    engine_bench_cmd.add_argument(
+        "--port", type=int, default=None,
+        help="server port; default: the host's test-port, or a free port if none is configured",
+    )
     engine_bench_cmd.add_argument("--health-timeout", type=int, default=2400)
     engine_bench_cmd.add_argument(
         "--shutdown", choices=("http", "sigint"), default=None,

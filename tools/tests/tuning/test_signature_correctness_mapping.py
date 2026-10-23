@@ -3,7 +3,7 @@ the enum-table extraction (against both a minimal synthetic fixture and,
 where available, the real vendored source) and the MUL_MAT-only
 op_filter/target_tensor derivation. No HIP hardware needed for this
 module's own correctness; the exact op_filter format was independently
-verified against real Brutus test-backend-ops output before this file
+verified against real dev test-backend-ops output before this file
 was written (see the module's own docstrings for the verification
 transcript)."""
 
@@ -110,7 +110,7 @@ def _mul_mat_signature(tmp_path, *, m=16, n=1, k=256, src0_type=0, src1_type=0, 
 def test_mul_mat_op_filter_matches_the_real_vars_string_shape(tmp_path):
     # This exact vars() string ("type_a=f32,type_b=f32,m=16,n=1,k=256,
     # bs=[1,1],nr=[1,1],per=[0,1,2,3],k_v=0,o=1") was observed on real
-    # Brutus hardware via test-backend-ops -o MUL_MAT -p 'type_a=f32'
+    # dev hardware via test-backend-ops -o MUL_MAT -p 'type_a=f32'
     # before this test was written.
     vendor, signature = _mul_mat_signature(tmp_path)
     op_filter, target_tensor = scm.signature_to_op_filter(signature, vendor_root=vendor)
@@ -142,7 +142,7 @@ def test_test_file_line_matches_real_hardware_transcript(tmp_path):
     # test-backend-ops' own fixed synthetic corpus shapes, so
     # signature_to_op_filter() produces a filter that runs 0 tests.
     # signature_to_test_file_line() instead drives test-backend-ops'
-    # --test-file escape hatch, verified end to end on real Brutus
+    # --test-file escape hatch, verified end to end on real dev
     # hardware to fire BIGCHERRY_CORRECTNESS_METRIC for tensor "out" for
     # this exact line.
     #
@@ -353,7 +353,7 @@ def test_real_vendor_source_parses_cleanly_when_present():
 
 
 # HI105: MUL_MAT_ID mapping tests, using RD54's own two real recorded
-# canonical signatures (Brutus, Qwen3.6-35B-A3B Q8_0, 2026-08-24) rather
+# canonical signatures (dev, Qwen3.6-35B-A3B Q8_0, 2026-08-24) rather
 # than synthetic fixtures -- these are the exact real production shapes
 # HI105 exists to unblock correctness evidence for.
 

@@ -3,7 +3,7 @@
 # and once with SETTING=1 (same binary, home and flags), captures greedy top-20 logprobs from each and compares them.
 #   RAD_BIN, RAD_HOME, MODEL, SETTING (e.g. BC_GFX12_MOE_GEMV); EXTRA: further server flags; ROCR (default 2, the R9700).
 set -u
-W=/mnt/vault/development/projects/bigcherry/workspaces/main/work
+W=${BC_REPO_ROOT}/work
 OUT=$W/decode-lp-$(date +%m%d-%H%M%S); mkdir -p "$OUT"
 HERE=$(cd "$(dirname "$0")" && pwd)
 PORT=$((36000 + RANDOM % 2000))

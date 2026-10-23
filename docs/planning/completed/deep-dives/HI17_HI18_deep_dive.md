@@ -982,7 +982,7 @@ Only if measured remaining BLAS runtime justifies the complexity.
 > - **REDUCE-0 (telemetry):** done — reduction-signature contract + strict
 >   offline loader (37/37 suite), unknown peer access fail-closed for promotion.
 > - **REDUCE-1 (explicit AUTO/RCCL/META per-call seam):** done — implemented
->   without mutating the shared comm context; Brutus tensor-split RCCL and
+>   without mutating the shared comm context; dev tensor-split RCCL and
 >   forced-meta canaries emit strict-loader-clean signature evidence with
 >   requested/effective telemetry.
 > - **REDUCE-2 (valid timer):** in progress, exit gate **not met**. The earlier

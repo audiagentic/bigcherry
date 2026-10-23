@@ -12,7 +12,7 @@ python -m bigcherry jobs --engine llamacpp migrate-legacy \
   --planned-sessions 4 \
   --bc-model /models/model.gguf \
   --bc-hip-path /opt/rocm \
-  --executor-id brutus --host-id brutus --platform-family linux-rocm
+  --executor-id dev --host-id dev --platform-family linux-rocm
 ```
 
 Output schema: `bigcherry.jobs.legacy-migration.v1`.

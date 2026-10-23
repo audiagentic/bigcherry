@@ -15,8 +15,8 @@
 set -u
 bin=$1 out=$2; shift 2
 depths=("$@"); [ ${#depths[@]} -eq 0 ] && depths=(2048 8192 24576 98304)
-MODEL=${MODEL:-/mnt/data/llm-models/qwen3.8-27b/gguf/unsloth/Qwen3.8-27B-UD-Q4_K_M.gguf}
-DFLASH=${DFLASH:-/mnt/data/llm-models/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q8_0.gguf}
+MODEL=${MODEL:-${BC_MODEL_ROOT}/qwen3.8-27b/gguf/unsloth/Qwen3.8-27B-UD-Q4_K_M.gguf}
+DFLASH=${DFLASH:-${BC_MODEL_ROOT}/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q8_0.gguf}
 cd "$(cd "$(dirname "$0")/../../.." && pwd)"
 # single-model reference run: no Flash-Next runtime flags or topology settings from the caller
 for v in $(env | grep -oE "^(BIGCHERRY_[A-Z0-9_]+|GGML_HIP_[A-Z0-9_]+)"); do unset "$v"; done

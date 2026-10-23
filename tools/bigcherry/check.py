@@ -862,6 +862,30 @@ def tooling_hygiene(root: Path) -> tuple[HygieneDiagnostic, ...]:
                     )
                 )
 
+    # Machine names and host-specific values in any tracked text file. The pre-commit hook
+    # blocks new ones; this reports the existing backlog once per file.
+    from bigcherry import forbidden_terms
+
+    by_file: dict[str, list[tuple[int, str]]] = {}
+    try:
+        scan = forbidden_terms.findings(root)
+    except subprocess.CalledProcessError:
+        scan = []  # not a git checkout (e.g. a temporary tree); nothing tracked to scan
+    for rel, number, label in scan:
+        by_file.setdefault(rel, []).append((number, label))
+    for rel, hits in sorted(by_file.items()):
+        first_line, first_label = hits[0]
+        findings.append(
+            HygieneDiagnostic(
+                "TR14.FORBIDDEN_TERM",
+                "warning",
+                rel,
+                f"{len(hits)} host-specific finding(s); first at line {first_line} ({first_label})",
+                "replace with a project-relative path, a ${VAR} reference, or a BIGCHERRY_* "
+                "environment variable; see docs/reference/PATHS_AND_HOST_VALUES.md",
+            )
+        )
+
     artifacts_root = root / "artifacts"
     evidence_root = root / "docs" / "evidence"
     if artifacts_root.is_dir():

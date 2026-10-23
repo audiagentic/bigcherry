@@ -1565,7 +1565,7 @@ def _write_overlay_snapshot(
         # target is correctly seen as needing a rewrite. Found live during
         # the b10502->b10680 bump: two overlay files stayed CRLF across
         # repeated known-good applies for exactly this reason.
-        # (Path.read_text(newline=...) is Python 3.13+ only -- Brutus runs
+        # (Path.read_text(newline=...) is Python 3.13+ only -- dev runs
         # 3.12 -- so this reads bytes and decodes rather than using it.)
         if target.is_file() and target.read_bytes().decode("utf-8") == text:
             continue

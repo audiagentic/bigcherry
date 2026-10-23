@@ -8,7 +8,7 @@
 set -u
 OUT=${1:?out dir}
 shift
-R=/mnt/data/bigcherry-work/runs
+R=${BC_WORK_ROOT}/runs
 ARCHS=${ARCHS:-qwen4exp qwen35 qwen35moe gemma3}
 mkdir -p "$OUT"
 for arg in "$@"; do

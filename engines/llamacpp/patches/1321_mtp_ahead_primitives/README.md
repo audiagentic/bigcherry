@@ -2,7 +2,7 @@
 
 ## Promotion record
 
-Promotion record (FMTP03 lightweight promotion tier, pin b11474, Brutus 2026-10-08). 1321/1322 are promoted together because the overlap patch requires the primitives patch. The runtime profile enables `BIGCHERRY_MTP_AHEAD=1`; the build remains opt-in outside the Flash-Next profile because evidence covers one model/topology.
+Promotion record (FMTP03 lightweight promotion tier, pin b11474, dev 2026-10-08). 1321/1322 are promoted together because the overlap patch requires the primitives patch. The runtime profile enables `BIGCHERRY_MTP_AHEAD=1`; the build remains opt-in outside the Flash-Next profile because evidence covers one model/topology.
 
 build deploy-v6-plus-ahead compiled clean, smoke 0 error lines; ABBA A = production, B = BIGCHERRY_MTP_AHEAD=1, decode t/s (512 tokens):
  depth 8192: A 82.6, 83.8 | B 87.0, 86.5 (+4.3%, complete separation), accepted A 348/487 B 340/511, 339/514
@@ -12,4 +12,4 @@ build deploy-v6-plus-ahead compiled clean, smoke 0 error lines; ABBA A = product
 
 ## Coverage limit
 
-Verified on Flash-Next IQ4_XS with the production Brutus layout only. No claim is made for other models or topologies.
+Verified on Flash-Next IQ4_XS with the production dev layout only. No claim is made for other models or topologies.

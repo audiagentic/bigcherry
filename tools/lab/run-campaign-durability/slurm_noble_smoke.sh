@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Real Ubuntu 24.04 / Slurm 23.11 service smoke for the agreed BigCherry v1
 # execution substrate. This intentionally excludes slurmdbd/MariaDB and GPUs.
-# AMD GRES/cgroup/ROCm qualification remains Brutus-only.
+# AMD GRES/cgroup/ROCm qualification remains dev-only.
 log() { printf '[rcd-slurm-smoke] %s\n' "$*" >&2; }
 die() { log "FAIL: $*"; exit 1; }
 
@@ -81,7 +81,7 @@ export SLURM_CONF=/etc/slurm/slurm.conf
 
 # Slurm 23.11 has no slurmctld config-test flag. Controller startup plus
 # structured config interrogation below are the scheduler-config acceptance
-# checks. GPU GRES has its own Brutus-only `slurmd -G` gate.
+# checks. GPU GRES has its own dev-only `slurmd -G` gate.
 sudo slurmctld -Dvv >/tmp/bc-slurmctld.stdout 2>&1 &
 sleep 1
 sudo slurmd -Dvv >/tmp/bc-slurmd.stdout 2>&1 &

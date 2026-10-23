@@ -47,7 +47,7 @@ __global__ void hc_pf2_quant_a8_kernel(const float* __restrict__ n_in, uint8_t* 
 }
 
 int main(int argc, char** argv) {
-    const char* path = argc > 1 ? argv[1] : "/mnt/data/bigcherry-work/ndump.bin";
+    const char* path = argc > 1 ? argv[1] : "ndump.bin";
     FILE* f = fopen(path, "rb");
     if (!f) { printf("cannot open %s\n", path); return 1; }
     const int HN = 10240, NKB = HN / KB;

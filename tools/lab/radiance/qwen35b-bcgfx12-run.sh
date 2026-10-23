@@ -3,8 +3,8 @@
 # (its bin/ and radiance_home/); AB_CONFIG=tools/lab/radiance/qwen35b-bcgfx12-kld.json for the KL check; BCG12_SO: the built libbcgfx12.so. The plugin is added to a copy of the build's radiance home.
 set -u
 export ROCM_PATH=/opt/rocm-7.2.4 PATH=/opt/rocm-7.2.4/bin:$PATH
-export BIGCHERRY_ENVIRONMENT=${BIGCHERRY_ENVIRONMENT:-/mnt/vault/development/projects/bigcherry/workspaces/main/config/environment.local.toml}
-WORK=/mnt/vault/development/projects/bigcherry/workspaces/main/work
+export BIGCHERRY_ENVIRONMENT=${BIGCHERRY_ENVIRONMENT:-${BC_REPO_ROOT}/config/environment.local.toml}
+WORK=${BC_REPO_ROOT}/work
 B=${BUILD_DIR%/}
 [ -x "$B/bin/radiance" ] && [ -f "$BCG12_SO" ] || { echo "BCG12_EXIT=99 need BUILD_DIR and BCG12_SO"; exit 99; }
 H=$WORK/bcg12-home-$(date +%m%d-%H%M%S)

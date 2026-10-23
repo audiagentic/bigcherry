@@ -2,7 +2,7 @@
 
 Plan item HI105 (completed). See `SUMMARY.md` for the mechanism.
 
-## Real hardware evidence (2026-08-24, Brutus, dual gfx1100)
+## Real hardware evidence (2026-08-24, dev, dual gfx1100)
 
 Built as part of `experiment.hi105-correctness` (patches 1222+1223+1236) and
 exercised directly against RD54's real K=256 MoE down-projection signature
@@ -32,7 +32,7 @@ item (`docs/planning/completed/hip-autotune/HI105.md`).
 
 The dispatch signature schema bumped v1->v2 after the above evidence was
 gathered (see `1238`/THA02). Re-verified as part of the chain
-[1222,1223,1236,1238,1239,1240] on real Brutus dual-gfx1100 hardware:
+[1222,1223,1236,1238,1239,1240] on real dev dual-gfx1100 hardware:
 2162/2162 broad correctness net on ROCm0, plus 136/136 reproducibly clean
 on ROCm0 and ROCm1 individually. Full detail in THA02's plan item.
 

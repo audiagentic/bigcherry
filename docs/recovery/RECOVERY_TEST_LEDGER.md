@@ -56,7 +56,7 @@ sections as the fallback record.
 ## Database schema at recovery time (`sql/dispatch-db.sql`)
 
 Pre-reset surviving database evidence: `campaign.sqlite` and siblings on
-brutus (`artifacts/tuning-runs/hi-campaign-*`), dated 2026-08-10, hours
+dev (`artifacts/tuning-runs/hi-campaign-*`), dated 2026-08-10, hours
 before the reset — real, not reconstructed. Schema there is
 **`schema_version=9`**, 17 tables. Full DDL extracted and saved at
 `docs/recovery/schema9-recovered-ddl.sql`.
@@ -88,7 +88,7 @@ not silently accepted):
 
 ## End-to-end hardware validation
 
-Real (not simulated) runs performed this session, all on brutus (dual
+Real (not simulated) runs performed this session, all on dev (dual
 gfx1100 + gfx1030 + gfx1201 available):
 
 1. **Full P0 pipeline**: record → tune (adaptive LPS, schedule-seeded

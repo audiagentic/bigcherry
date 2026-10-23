@@ -4,4 +4,4 @@ Untested, opt-in AMD Vulkan dispatch experiment. `BIGCHERRY_VK_SMALLN_DMMV=1` ca
 
 ## Validation
 
-Contract `PRBE55-VK-SMALLN-DMMV`. Execution target is Brutus RADV on gfx1100 and gfx1201. Require subject activation, no control activation, greedy token parity, and `improvement_no_regression_v1`; gfx1030 is a non-gating compatibility check unless separately declared.
+Contract `PRBE55-VK-SMALLN-DMMV`. Execution target is dev RADV on gfx1100 and gfx1201. Require subject activation, no control activation, greedy token parity, and `improvement_no_regression_v1`; gfx1030 is a non-gating compatibility check unless separately declared.

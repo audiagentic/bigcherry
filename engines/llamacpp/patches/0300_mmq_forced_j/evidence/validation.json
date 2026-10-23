@@ -58,7 +58,7 @@
       },
       "campaign_identity": "1eb82bfb5c1868c82b27b021c5ffca7b665e382f3df47bc7b169e7537b99f7fb",
       "campaign_identity_digest": "1eb82bfb5c1868c82b27b021c5ffca7b665e382f3df47bc7b169e7537b99f7fb",
-      "campaign_workdir": "/home/audumla/pa26-evidence-run/0300_mmq_forced_j/framework/0300_mmq_forced_j",
+      "campaign_workdir": "${HOME}/pa26-evidence-run/0300_mmq_forced_j/framework/0300_mmq_forced_j",
       "check_results": {
         "apply": {
           "artifacts": [
@@ -303,7 +303,7 @@
       "patch_implementation_digest": "ceeb00a9e9a13fa87129eb8b49bf47588c016ee78c402ecf91bd09ccc0e1f593",
       "patch_validation_subject_digest": "50db0358e9d27d578fad74ee648dd048ca46c1fc7f57f3c0af4426a7dc38fc39",
       "qualification_kind": "framework-configuration-v1",
-      "record_digest": "e931c74ba22557cd81a77d751be3edb9384538ced1f24b3c257c18fd616d030d",
+      "record_digest": "b699455ebe52642073e0fd8a5250ee4d97aff68ba11118f3db01676ca9680f60",
       "record_schema_version": 5,
       "runtime_performance_qualified": false,
       "source_composition": [
@@ -508,7 +508,7 @@
       },
       "campaign_identity": "1eceff7cd377aefc6992249b01d7d4158973e6fcda68bfdc55837a7572926a78",
       "campaign_identity_digest": "1eceff7cd377aefc6992249b01d7d4158973e6fcda68bfdc55837a7572926a78",
-      "campaign_workdir": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/runs/fwcfg-b11126-r2/0300_mmq_forced_j/framework/0300_mmq_forced_j",
+      "campaign_workdir": "${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/work/runs/fwcfg-b11126-r2/0300_mmq_forced_j/framework/0300_mmq_forced_j",
       "check_results": {
         "apply": {
           "artifacts": [
@@ -753,7 +753,7 @@
       "patch_implementation_digest": "ceeb00a9e9a13fa87129eb8b49bf47588c016ee78c402ecf91bd09ccc0e1f593",
       "patch_validation_subject_digest": "50db0358e9d27d578fad74ee648dd048ca46c1fc7f57f3c0af4426a7dc38fc39",
       "qualification_kind": "framework-configuration-v1",
-      "record_digest": "9e854b40ecf0996fbb026ae32d2e30d7ef864bde0f06e5da6f16fa4d87639c19",
+      "record_digest": "a96ae05f24597a1863b375376f97741f44904810b1d0ad8c96a3479639683217",
       "record_schema_version": 5,
       "runtime_performance_qualified": false,
       "source_composition": [
@@ -942,7 +942,7 @@
       },
       "campaign_identity": "88fce6a220f78d6dc63067b2896b3f3e682583b8a982b409c7c6536a41110a55",
       "campaign_identity_digest": "88fce6a220f78d6dc63067b2896b3f3e682583b8a982b409c7c6536a41110a55",
-      "campaign_workdir": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/runs/pa40-fwcfg/r3-0300_mmq_forced_j/framework/0300_mmq_forced_j",
+      "campaign_workdir": "${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/work/runs/pa40-fwcfg/r3-0300_mmq_forced_j/framework/0300_mmq_forced_j",
       "check_results": {
         "apply": {
           "artifacts": [
@@ -1187,7 +1187,7 @@
       "patch_implementation_digest": "ceeb00a9e9a13fa87129eb8b49bf47588c016ee78c402ecf91bd09ccc0e1f593",
       "patch_validation_subject_digest": "50db0358e9d27d578fad74ee648dd048ca46c1fc7f57f3c0af4426a7dc38fc39",
       "qualification_kind": "framework-configuration-v1",
-      "record_digest": "701ab65f9ec105726f4eeca08041ddd8c04648f96c5d624809171be5c4050fa9",
+      "record_digest": "c5fd5302c970218efd169d861cef203c7474298761c70a0d9387280f0119b1b1",
       "record_schema_version": 5,
       "runtime_performance_qualified": false,
       "source_composition": [
@@ -1384,7 +1384,7 @@
       },
       "campaign_identity": "f606e91cee33565e6c8912eea647996777419d64eff7f69647b81feb582a03be",
       "campaign_identity_digest": "f606e91cee33565e6c8912eea647996777419d64eff7f69647b81feb582a03be",
-      "campaign_workdir": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/runs/pa40-fwcfg/r2-0300_mmq_forced_j/framework/0300_mmq_forced_j",
+      "campaign_workdir": "${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/work/runs/pa40-fwcfg/r2-0300_mmq_forced_j/framework/0300_mmq_forced_j",
       "check_results": {
         "apply": {
           "artifacts": [
@@ -1629,7 +1629,7 @@
       "patch_implementation_digest": "ceeb00a9e9a13fa87129eb8b49bf47588c016ee78c402ecf91bd09ccc0e1f593",
       "patch_validation_subject_digest": "50db0358e9d27d578fad74ee648dd048ca46c1fc7f57f3c0af4426a7dc38fc39",
       "qualification_kind": "framework-configuration-v1",
-      "record_digest": "765008d317ff1ff48dae46fcbfd3ac52dcae4510746b951dc2dc4a94976be9fe",
+      "record_digest": "991aff56ebb6a857d3186f9d215ee407dd35167b6a8a37e9ae5f8aa1974b1c31",
       "record_schema_version": 5,
       "runtime_performance_qualified": false,
       "source_composition": [

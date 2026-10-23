@@ -98,7 +98,7 @@ __global__ __launch_bounds__(256) void hc_down_fp8(
 }
 
 int main(int argc, char** argv) {
-    const char* path = argc > 1 ? argv[1] : "/mnt/data/bigcherry-work/ndump.bin";
+    const char* path = argc > 1 ? argv[1] : "ndump.bin";
     FILE* f = fopen(path, "rb");
     if (!f) { printf("cannot open %s\n", path); return 1; }
     std::vector<float> one_row(K);

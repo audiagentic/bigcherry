@@ -32,8 +32,8 @@ Implemented/offline-tested:
 Still real-host gated:
 
 1. generate the matrix from the actual pending qualification BatchSpecs;
-2. complete Brutus RCD03/RCD11/RCD12 GPU/production/cgroup gates;
-3. force the incident/recovery matrix on Brutus;
+2. complete dev RCD03/RCD11/RCD12 GPU/production/cgroup gates;
+3. force the incident/recovery matrix on dev;
 4. complete at least one full predeclared series through submit -> execute -> committed harvest -> report with no shell watcher;
 5. soak alternate required capability classes;
 6. disable then archive old queue/watch/switch entrypoints only after the soak passes.
@@ -57,7 +57,7 @@ For each pending shell-queue item:
 
 Unsupported legacy arguments require an explicit domain-model change or manual JobSpec conversion. JobSpec remains free of arbitrary shell passthrough.
 
-## Required Brutus acceptance
+## Required dev acceptance
 
 At minimum cover every active architecture/toolchain/model class, single/multi-GPU peer shapes in use, producer/input/corpus variations and production-lane behavior. Force harness retry, submission-intent recovery, client disconnect, hold/release/cancel, branch/scientific drift, hardware drift, dirty harvest destination, controller restart, resource/disk preflight failure and production contamination/window recovery.
 
@@ -79,7 +79,7 @@ hand-written watcher/switch scripts
 ## Acceptance criteria
 
 - offline jobs suite and real Noble scheduler reference remain green;
-- every currently required Brutus capability is real-accepted or explicitly unsupported;
+- every currently required dev capability is real-accepted or explicitly unsupported;
 - incident/recovery behavior matches the runbook;
 - one full planned series completes without shell queue/watcher intervention;
 - committed evidence/report parity is confirmed;

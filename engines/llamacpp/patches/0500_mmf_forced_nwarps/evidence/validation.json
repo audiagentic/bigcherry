@@ -47,7 +47,7 @@
       },
       "campaign_identity": "2652ca7c10c8e3eb6b94a68a9a70904f019770d1842a052ecfc39dec979b4bc0",
       "campaign_identity_digest": "2652ca7c10c8e3eb6b94a68a9a70904f019770d1842a052ecfc39dec979b4bc0",
-      "campaign_workdir": "/home/audumla/pa26-evidence-run3/0500_mmf_forced_nwarps/framework/0500_mmf_forced_nwarps",
+      "campaign_workdir": "${HOME}/pa26-evidence-run3/0500_mmf_forced_nwarps/framework/0500_mmf_forced_nwarps",
       "check_results": {
         "apply": {
           "artifacts": [],
@@ -224,7 +224,7 @@
       "patch_implementation_digest": "942d2a28fcb7d504a3cf4995125f05dd7dfcdaf2170edd1f527f6bda85b4343c",
       "patch_validation_subject_digest": "df967684ce4435b9449f54537cb7d2af7e560aea0c78803f752cd0940b6456a3",
       "qualification_kind": "framework-configuration-v1",
-      "record_digest": "be98564c3288094390c446edb9a756cc08eb8d70664509ec79c47792211ff8e2",
+      "record_digest": "eec803b7c872d231d910e37ab46fbd06be5ac3538f52c1db42f092997dddaef8",
       "record_schema_version": 5,
       "runtime_performance_qualified": false,
       "source_composition": [
@@ -421,7 +421,7 @@
       },
       "campaign_identity": "27eca26e0184812fcb11083ef933e2d4d3bf40398879bc4e06208bff43aec514",
       "campaign_identity_digest": "27eca26e0184812fcb11083ef933e2d4d3bf40398879bc4e06208bff43aec514",
-      "campaign_workdir": "/home/audumla/pa26-evidence-run4/0500_mmf_forced_nwarps/framework/0500_mmf_forced_nwarps",
+      "campaign_workdir": "${HOME}/pa26-evidence-run4/0500_mmf_forced_nwarps/framework/0500_mmf_forced_nwarps",
       "check_results": {
         "apply": {
           "artifacts": [
@@ -615,7 +615,7 @@
       "patch_implementation_digest": "942d2a28fcb7d504a3cf4995125f05dd7dfcdaf2170edd1f527f6bda85b4343c",
       "patch_validation_subject_digest": "df967684ce4435b9449f54537cb7d2af7e560aea0c78803f752cd0940b6456a3",
       "qualification_kind": "framework-configuration-v1",
-      "record_digest": "3e5e6e8e0c1041da5d88e96048642a9519e47ff7019efb8b8136c883ea161501",
+      "record_digest": "c57000d890ac01c85c07a6b480285b5380b37f3daea84513027e83ecc6ef44d1",
       "record_schema_version": 5,
       "runtime_performance_qualified": false,
       "source_composition": [
@@ -809,7 +809,7 @@
       },
       "campaign_identity": "2cbf354744a5b86aa4bea904c039af4f9590255a7da14f1f0e4660a44725eeb0",
       "campaign_identity_digest": "2cbf354744a5b86aa4bea904c039af4f9590255a7da14f1f0e4660a44725eeb0",
-      "campaign_workdir": "/home/audumla/pa26-evidence-run2/0500_mmf_forced_nwarps/framework/0500_mmf_forced_nwarps",
+      "campaign_workdir": "${HOME}/pa26-evidence-run2/0500_mmf_forced_nwarps/framework/0500_mmf_forced_nwarps",
       "check_results": {
         "apply": {
           "artifacts": [],
@@ -986,7 +986,7 @@
       "patch_implementation_digest": "942d2a28fcb7d504a3cf4995125f05dd7dfcdaf2170edd1f527f6bda85b4343c",
       "patch_validation_subject_digest": "df967684ce4435b9449f54537cb7d2af7e560aea0c78803f752cd0940b6456a3",
       "qualification_kind": "framework-configuration-v1",
-      "record_digest": "2a31543864b7a4edf27052d69a30f3bc3c3dd7d8b3cc56cc7d52e4112bca12a2",
+      "record_digest": "004029327b2707e5ac6ea31a13859f253d881d21c18b869e7f7df19372cd1a39",
       "record_schema_version": 5,
       "runtime_performance_qualified": false,
       "source_composition": [

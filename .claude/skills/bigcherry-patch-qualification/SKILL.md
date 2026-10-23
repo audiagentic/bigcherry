@@ -393,7 +393,7 @@ python3 -m bigcherry.patch.validation_campaign \
 
 Use only flags present in the current parser.
 
-For multi-GPU paths requiring ambient visibility, set the exact intended visibility explicitly. The current Brutus procedure requires both where applicable:
+For multi-GPU paths requiring ambient visibility, set the exact intended visibility explicitly. The current dev procedure requires both where applicable:
 
 export HIP_VISIBLE_DEVICES=0,1
 export ROCR_VISIBLE_DEVICES=0,1

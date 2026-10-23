@@ -52,7 +52,7 @@ Retries create attempt N+1. Monolithic v1 does not native-requeue.
 - event segmentation/checkpoint/rotation for very long-lived installations;
 - retention/cleanup policy for harvested worktrees and non-evidence logs;
 - target-local source/model/corpus staging before RemoteExecutor is enabled for Windows scientific work;
-- Brutus/Windows hardware acceptance.
+- dev/Windows hardware acceptance.
 
 These do not justify a second scheduler, database, or Slurm leakage into domain DTOs.
 

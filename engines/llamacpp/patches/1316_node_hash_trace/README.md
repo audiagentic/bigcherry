@@ -20,7 +20,7 @@ buffer-type device API and skips `GGML_BACKEND_DEVICE_TYPE_META` before `ggml_ba
 
 ## Promotion record
 
-Promotion record (BPB01 lightweight promotion tier, pin b11474, Brutus 2026-10-08).
+Promotion record (BPB01 lightweight promotion tier, pin b11474, dev 2026-10-08).
 
 On the production tensor-split layout with `BIGCHERRY_NODE_HASH=0:4`, the fixed patch emitted 29367 `NODE_HASH` lines, produced 0 error lines, and did not abort. Greedy output md5 was `2571b60b1505`, identical to the arm without 1316 enabled.
 

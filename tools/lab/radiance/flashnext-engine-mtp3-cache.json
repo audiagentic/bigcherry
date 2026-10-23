@@ -4,7 +4,7 @@
  "engine": "radiance",
  "evidence_role": "diagnostic",
  "execution_evidence": "observe",
- "model": "/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad",
+ "model": "${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad",
  "server_args": [
   "--radiance-home",
   "${RAD_HOME}",

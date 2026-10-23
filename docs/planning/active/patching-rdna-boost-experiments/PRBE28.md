@@ -28,7 +28,7 @@ priority: P2
 
 ### Measured versus hypothetical effect
 
-The original b11402 `1347/README.md` Brutus ABBA measured **+3.1–4.6% prefill with MTP**, **+6.8–7.1% without MTP** from 1347 ON versus OFF, at 8K/24K/98K controls; the F32 SGEMM family was 12.7% of one XTX's kernel time before that optimization (including router work). These are historical **1347** results, not a current-pin row-padding test. Loss of the 1347 route is a plausible performance regression, **not a quantified row-padding loss**. The patch uses two launches (MMVF + transpose) versus SGEMM; launch count alone is not a performance discriminator. No current compiled ISA, LDS/VGPR, spills, cache counters or exposed critical-path share for a padded candidate were measured.
+The original b11402 `1347/README.md` dev ABBA measured **+3.1–4.6% prefill with MTP**, **+6.8–7.1% without MTP** from 1347 ON versus OFF, at 8K/24K/98K controls; the F32 SGEMM family was 12.7% of one XTX's kernel time before that optimization (including router work). These are historical **1347** results, not a current-pin row-padding test. Loss of the 1347 route is a plausible performance regression, **not a quantified row-padding loss**. The patch uses two launches (MMVF + transpose) versus SGEMM; launch count alone is not a performance discriminator. No current compiled ISA, LDS/VGPR, spills, cache counters or exposed critical-path share for a padded candidate were measured.
 
 ### Bounded implementation and test gate (single owner, no new selector)
 
@@ -125,7 +125,7 @@ ggml.c (tensor nb[] assignment -- anchor not yet located, must be found first); 
 
 ### Validation
 
-Float/BF16/F16 alias-shape identification; padding sweep 0/64/128/256; non-alias/quantized controls; tensor/layout/model-output PPL parity; L2 cache-set-conflict rocprofv3 counters (causal evidence, not just timing); memory overhead accounting; per-op and E2E PP on Brutus (not run here).
+Float/BF16/F16 alias-shape identification; padding sweep 0/64/128/256; non-alias/quantized controls; tensor/layout/model-output PPL parity; L2 cache-set-conflict rocprofv3 counters (causal evidence, not just timing); memory overhead accounting; per-op and E2E PP on dev (not run here).
 
 ### Effort & Risk
 

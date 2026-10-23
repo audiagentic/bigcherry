@@ -2,7 +2,7 @@
  "schema": 1,
  "config": "tools/lab/radiance/helper-ab.json",
  "pin": "1.7.0",
- "run": "arm heat-hot = helper-ab rows0 with hot-first ownership (rad06-heat-10172150, Brutus, radiance 1.7.0 natives on, 2 rounds)",
+ "run": "arm heat-hot = helper-ab rows0 with hot-first ownership (rad06-heat-10172150, dev, radiance 1.7.0 natives on, 2 rounds)",
  "date": "2026-10-17",
  "note": "Speed of the production Flash-Next layout (R9700 server, two XTX expert helpers) on the harness prompts, arm rows0 (R3_MOE_WORKER_ROWS=0). Tolerances come from the spread of the measured runs; they are one-sided (only a slowdown fails).",
  "baselines": [

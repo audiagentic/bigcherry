@@ -3,7 +3,7 @@
 Each stage function is exercised end to end against a real ArtifactStore and
 real filesystem, with only the actual runtime-binary launch replaced
 (bigcherry.lifecycle.subprocess.run is patched via _fake_run -- the real
-binary only runs on Brutus/Linux hardware; a published .py bundle member
+binary only runs on dev/Linux hardware; a published .py bundle member
 cannot be exec'd directly on a Windows dev box either way). Everything
 downstream of that launch runs unmodified: inventory.py's real SQLite
 writer, tune_promotion.py's real BH/bootstrap statistics, replay_cache.py's
@@ -229,7 +229,7 @@ def _fake_run(
     """A patched bigcherry.lifecycle.subprocess.run -- the real runtime
     binary invocation is replaced (Windows dev boxes cannot exec a
     published .py bundle member directly; the real binary only runs on
-    Brutus), but every downstream consumer of what it writes (inventory.py,
+    dev), but every downstream consumer of what it writes (inventory.py,
     tune_promotion.py, replay_cache.py, ab_benchmark.py) runs unmodified
     against whatever this writes to the SAME env-var paths lifecycle.py
     itself sets."""

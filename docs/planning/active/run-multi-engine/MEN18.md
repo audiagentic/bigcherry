@@ -11,11 +11,11 @@ priority: P1
 work: S
 ---
 
-# One 'run on Brutus' helper for remote lab runs
+# One 'run on dev' helper for remote lab runs
 
 ## Description
 
-Owner-approved (2026-10-17): every remote run this week was a hand-written script: checkout a ref in a tree that shares the primary work root, export ROCm/env, check GPUs idle and the tree clean, nohup with a log, poll for done/stall. Mistakes repeated (clone without shared work root, stale tree checkout, wrong log path). Provide one command: `bigcherry remote run --host brutus --ref <ref> -- <bigcherry args>` (or a tools/admin helper) that does preflight (tree lease, GPU idle, clean checkout at ref in the configured campaign tree), detached execution with a run id and log, and `remote status/wait <run-id>` reporting done/failed/stalled.
+Owner-approved (2026-10-17): every remote run this week was a hand-written script: checkout a ref in a tree that shares the primary work root, export ROCm/env, check GPUs idle and the tree clean, nohup with a log, poll for done/stall. Mistakes repeated (clone without shared work root, stale tree checkout, wrong log path). Provide one command: `bigcherry remote run --host dev --ref <ref> -- <bigcherry args>` (or a tools/admin helper) that does preflight (tree lease, GPU idle, clean checkout at ref in the configured campaign tree), detached execution with a run id and log, and `remote status/wait <run-id>` reporting done/failed/stalled.
 
 ## Steps
 

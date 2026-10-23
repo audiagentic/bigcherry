@@ -15,7 +15,7 @@ work: M
 
 ## Status
 
-**Core operator/agent observability is implemented and offline-tested; live Brutus hardware telemetry/gateway acceptance remains pending.**
+**Core operator/agent observability is implemented and offline-tested; live dev hardware telemetry/gateway acceptance remains pending.**
 
 Implemented:
 
@@ -135,7 +135,7 @@ Pure production-coexistence logic is implemented under `jobs/production.py` and 
 - config/target-use drift contamination;
 - crash-safe measurement-window state machine.
 
-What remains hardware-gated is the provider that supplies live stable-ID process/VRAM/temperature/power/clock/utilization observations on Brutus and the policy qualification deciding which telemetry may invalidate/retry a measurement. No result-derived performance outlier rule is introduced here; PVPS09 remains authoritative for that decision.
+What remains hardware-gated is the provider that supplies live stable-ID process/VRAM/temperature/power/clock/utilization observations on dev and the policy qualification deciding which telemetry may invalidate/retry a measurement. No result-derived performance outlier rule is introduced here; PVPS09 remains authoritative for that decision.
 
 ## Offline validation already implemented
 
@@ -159,7 +159,7 @@ Earlier durability falsifiers additionally cover concurrent HI151 maintenance/ad
 
 Before RCD09 is complete:
 
-1. map live AMD telemetry/process attribution to accepted stable IDs on Brutus;
+1. map live AMD telemetry/process attribution to accepted stable IDs on dev;
 2. emit/observe inventory drift and production contamination wake events from real incidents;
 3. prove an agent/gateway disconnect + reconnect from event sequence loses no durable notification;
 4. force a harness failure and verify wake delivery while a scientific FAIL stays record/notify only;
@@ -174,7 +174,7 @@ Before RCD09 is complete:
 - status/metrics are rebuildable projections, never authority;
 - wake policy separates operational failure from scientific FAIL;
 - live hardware/process telemetry uses stable IDs and cannot silently trigger result-driven retries;
-- offline suite green and Brutus/gateway acceptance complete.
+- offline suite green and dev/gateway acceptance complete.
 
 ## Change log
 

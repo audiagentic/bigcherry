@@ -1,0 +1,8 @@
+#!/bin/sh
+# Blocks a commit that adds a machine name or a host-specific path, address or identity.
+# Terms come from the untracked config/environment.local.toml ([forbidden] terms) or
+# BIGCHERRY_FORBIDDEN_TERMS. Install once per clone: python3 -m bigcherry.forbidden_terms --install-hook
+set -e
+root="$(git rev-parse --show-toplevel)"
+cd "$root"
+PYTHONPATH=tools exec python3 -m bigcherry.forbidden_terms --staged

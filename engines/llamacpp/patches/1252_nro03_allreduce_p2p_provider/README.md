@@ -1,6 +1,6 @@
 # 1252_nro03_allreduce_p2p_provider
 
-**REJECTED / default off. Do not select or queue on the current Brutus dual-gfx1100 topology.** Hardware fault on 2026-10-07; b11474 non-composition and experiment removal recorded 2026-10-08. `patch.toml` and `SUMMARY.md` are authoritative for rejected status. PNRO03 owns any conditional requalification; PNRO18 is retired as duplicate probe hardening (BCOP292).
+**REJECTED / default off. Do not select or queue on the current dev dual-gfx1100 topology.** Hardware fault on 2026-10-07; b11474 non-composition and experiment removal recorded 2026-10-08. `patch.toml` and `SUMMARY.md` are authoritative for rejected status. PNRO03 owns any conditional requalification; PNRO18 is retired as duplicate probe hardening (BCOP292).
 
 Port of nasone `7c5bb5cb` to the native HIP internal-AllReduce `ggml/src/ggml-cuda/allreduce.cu`. The opt-in `GGML_CUDA_AR_P2P=1` requires bidirectional peer capability/enable and a content-checked startup probe; on failure it retains host staging. Each peer copy is source-current on a source-owned stream and records directional events. `BIGCHERRY_PATCH_TRACE` can emit `BIGCHERRY_PATCH_HIT patch=1252_nro03 path=allreduce_p2p_source_push` only if the path executes.
 

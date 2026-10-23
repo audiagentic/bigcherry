@@ -18,7 +18,7 @@ Ported from stew675-rdna-boosts fork commit 4591cc980 (https://github.com/stew67
 ## DEMOTION (2026-09-23, PA40)
 
 The sections above describe the original claim and are preserved unchanged.
-The isolated RD08 campaign (retry-4, Brutus gfx1201 device 2, revision
+The isolated RD08 campaign (retry-4, dev gfx1201 device 2, revision
 `df1f91e3`, pin `28ff0958`/b10901) completed with full evidence and failed
 its declared promotion threshold:
 

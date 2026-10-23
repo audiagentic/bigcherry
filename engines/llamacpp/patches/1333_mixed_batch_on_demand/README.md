@@ -5,7 +5,7 @@ SUMMARY.md; this file records why the patch is promoted into `[patch-set.validat
 
 ## Evidence
 
-Brutus, 2x 7900 XTX + R9700 tensor split, 6900 XT MTP drafter, 2026-10-05. Every build uses recipe
+dev, 2x 7900 XTX + R9700 tensor split, 6900 XT MTP drafter, 2026-10-05. Every build uses recipe
 deploy-v6-plus-chunk; the patched builds add only this patch. Greedy text and draft acceptance are identical between
 the arms of every comparison below.
 
@@ -40,7 +40,7 @@ config (-sm tensor, built-in MTP4, default all-reduce), ABBA per depth:
 
 Complete separation at both depths (+1.3% at 10K, +0.8% at 32K); greedy text identical between the arms at each
 depth. The regression and the fix therefore reproduce on stock upstream with no other BigCherry patch present.
-Runs: `/mnt/data/bigcherry-work/runs/native1333-b11402-27b`.
+Runs: `${BIGCHERRY_ROOT}/runs/native1333-b11402-27b`.
 
 ## Not covered
 
@@ -49,5 +49,5 @@ Runs: `/mnt/data/bigcherry-work/runs/native1333-b11402-27b`.
 - 27B prefill at 32K remains about 0.4% below the previous pin with this patch; that residual has another cause.
 - The regression has not been reported upstream.
 
-Runs: `/mnt/data/bigcherry-work/runs/` `mixoff-vs-old-*`, `mixoff-vs-new-*`, `b-mixauto-vs-b-chunk8-*`,
+Runs: `${BIGCHERRY_ROOT}/runs/` `mixoff-vs-old-*`, `mixoff-vs-new-*`, `b-mixauto-vs-b-chunk8-*`,
 `b-mixauto-vs-b-mixoff-*`, bisect `bisect3..6-*`.

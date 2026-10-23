@@ -8,14 +8,14 @@ set -u
 bin=$1 out=$2
 mkdir -p "$out"
 port=18741
-M=/mnt/data/llm-models/qwen3.8-27b/gguf
+M=${BC_MODEL_ROOT}/qwen3.8-27b/gguf
 model=$M/unsloth/Qwen3.8-27B-Q8_0.gguf
 side=$M/unsloth-mtp/mtp-Qwen3.8-27B-Q4_0.gguf
 COMMON="-m $model -ngl 99 -c 40960 -ub 512 -b 2048 -fa on --parallel 1 --threads 8 --port $port --host 127.0.0.1 --allreduce cpu-root -sm tensor -ts 1,1 --spec-type draft-mtp --spec-draft-n-max 4"
 
 serve() {  # arm log
     local arm=$1 log=$2
-    local DFL=/mnt/data/llm-models/qwen3.8-27b/gguf
+    local DFL=${BC_MODEL_ROOT}/qwen3.8-27b/gguf
     local NOSPEC=${COMMON/--spec-type draft-mtp --spec-draft-n-max 4/}
     if [ "$arm" = builtin ]; then
         HIP_VISIBLE_DEVICES=0,1 "$bin" $COMMON > "$log" 2>&1 &

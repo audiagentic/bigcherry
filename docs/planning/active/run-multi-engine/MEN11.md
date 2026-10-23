@@ -34,7 +34,7 @@ a. Engine adapters: tools/bigcherry/engine_adapters/{llamacpp,radiance}.py imple
 b. Server comparison config: per-arm `environment` overlay (merged over the shared environment; device selectors stay shared) and per-arm `settings` (component settings) the adapter turns into sidecars/env.
 c. Radiance adapter: when R3_MOE_WORKER is set, launch HELPER_DEVS helpers (r3_moe_worker from the build's radiance_home/helpers, R3_MOE_WORKER_INDEX/COUNT, MIB) as in tools/lab/radiance/fn-r9700-engine.sh; ready on the helper's 'runtime map owns' line; SIGTERM + wait on stop; shm segment removed before start.
 d. Activation: component setting_activation on the server log for each setting under test; quality: radiance KLD via the existing parser when a reference is configured.
-e. Fire test on Brutus: R3_MOE_WORKER_ROWS 0 vs 1 (known result: ROWS=1 is ~38% slower prefill) as the harness acceptance run, then retire fn-r9700-engine.sh / fn-bench-once.py / fn-helper-gate.sh in favour of the config.
+e. Fire test on dev: R3_MOE_WORKER_ROWS 0 vs 1 (known result: ROWS=1 is ~38% slower prefill) as the harness acceptance run, then retire fn-r9700-engine.sh / fn-bench-once.py / fn-helper-gate.sh in favour of the config.
 f. Component settings promotion path: settings in component.toml get state + evidence pointer like patches (separate PR).
 
 ## Code Samples & Guidance
@@ -43,7 +43,7 @@ f. Component settings promotion path: settings in component.toml get state + evi
 
 ## Validation
 
-One real A/B (e.g. R3_MOE_WORKER_ROWS 0/1) run through the harness end to end on Brutus, producing an evidence record that patch-verify-evidence (or the component equivalent) reads; offline tests for the radiance adapter.
+One real A/B (e.g. R3_MOE_WORKER_ROWS 0/1) run through the harness end to end on dev, producing an evidence record that patch-verify-evidence (or the component equivalent) reads; offline tests for the radiance adapter.
 
 ## Effort & Risk
 
@@ -57,7 +57,7 @@ Owner policy: promotion stays lightweight - reuse mechanics tests, activation ev
 
 Correction 2026-10-15: main already has an engine-neutral activation and KL quality evidence path with a radiance adapter (#223, RAD01 PR 7) and build identity binding components (#225). Start from those: the gap is that the helper-layout runs (two processes, R3_MOE_WORKER_*) were done with lab scripts instead of through them, and component settings have no promotion path.
 
-2026-10-17 acceptance (steps a-e): ab-benchmark --server-config tools/lab/radiance/helper-ab.json --pairs 4 on Brutus at c95d49e2 (run men11-fire-10171108): 8/8 cells clean, both helpers started ready and stopped exit 0 every cell, arm_variables record the single varied setting. R3_MOE_WORKER_ROWS=1 vs 0: pp4096 472-485 vs 1989-1991 tok/s, pp1024 459-480 vs 2035-2037, tg512 76.3-77.2 vs 128.3-128.6, tg2048 76.5-77.2 vs 141.2-143.4 - complete separation, same direction as the lab measurement (-38% prefill on the 7.3K prompt). Bugs found and fixed: helper device selection (#248); ROWS had no activation marker (#250). Remaining: retire fn-r9700-engine.sh / fn-bench-once.py / fn-helper-gate.sh in favour of the config (step e cleanup); KLD through the harness; component-setting promotion path (step f).
+2026-10-17 acceptance (steps a-e): ab-benchmark --server-config tools/lab/radiance/helper-ab.json --pairs 4 on dev at c95d49e2 (run men11-fire-10171108): 8/8 cells clean, both helpers started ready and stopped exit 0 every cell, arm_variables record the single varied setting. R3_MOE_WORKER_ROWS=1 vs 0: pp4096 472-485 vs 1989-1991 tok/s, pp1024 459-480 vs 2035-2037, tg512 76.3-77.2 vs 128.3-128.6, tg2048 76.5-77.2 vs 141.2-143.4 - complete separation, same direction as the lab measurement (-38% prefill on the 7.3K prompt). Bugs found and fixed: helper device selection (#248); ROWS had no activation marker (#250). Remaining: retire fn-r9700-engine.sh / fn-bench-once.py / fn-helper-gate.sh in favour of the config (step e cleanup); KLD through the harness; component-setting promotion path (step f).
 
 ## Change Log
 

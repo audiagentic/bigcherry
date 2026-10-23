@@ -15,7 +15,7 @@ work: M
 
 ## Status
 
-**Production implementation complete for the non-hardware path; Brutus end-to-end acceptance remains pending.**
+**Production implementation complete for the non-hardware path; dev end-to-end acceptance remains pending.**
 
 Implemented:
 
@@ -28,7 +28,7 @@ Implemented:
 
 The implementation deliberately does **not** copy arbitrary campaign files. `validation_campaign` already writes append-only patch evidence inside each attempt's detached worktree. Harvest identifies only records added relative to that attempt's frozen BigCherry commit, verifies them, and merges them through the existing `bigcherry.patch.evidence` API.
 
-RCD08 remains `pending` only because a complete real Brutus series still has to be harvested/reported and compared with existing qualification output before queue cutover.
+RCD08 remains `pending` only because a complete real dev series still has to be harvested/reported and compared with existing qualification output before queue cutover.
 
 ## Implemented contract
 
@@ -121,7 +121,7 @@ The jobs-service CI uses temporary real git repositories to prove:
 
 The broader jobs suite also covers retry/session identity, scientific-identity drift, torn event tails, hardware cohort binding and executor recovery so failed/retried attempts do not become extra scientific sessions.
 
-## Remaining Brutus acceptance
+## Remaining dev acceptance
 
 Before marking RCD08 complete:
 
@@ -142,7 +142,7 @@ Before marking RCD08 complete:
 - statistical aggregation reuses existing contract estimator/policy;
 - no stash/add-A/reset or auto-promotion;
 - offline tests green;
-- Brutus real-series parity complete.
+- dev real-series parity complete.
 
 ## Change log
 

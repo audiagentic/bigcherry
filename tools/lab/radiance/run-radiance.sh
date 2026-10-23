@@ -8,14 +8,14 @@
 #   VIS=0,1,2,3 SCRIPT radiance-run tools/lab/radiance/run-radiance.sh @<any build run> <out-dir> [depth...]
 # The first argument (a llama-server path from the queue) is ignored.
 # Usage: run-radiance.sh <ignored> <out-dir> [depth-tokens...]
-# env: RADIANCE_SRC (/mnt/data/bigcherry-work/engines/radiance), MODEL (.rad file, checkpoint dir or HF repo id;
+# env: RADIANCE_SRC (${BC_WORK_ROOT}/engines/radiance), MODEL (.rad file, checkpoint dir or HF repo id;
 #      default StillDeadcode/qwen3.8-27b-mxfp4, fetched once into DOWNLOAD_DIR), DOWNLOAD_DIR
-#      (/mnt/data/llm-models/radiance), GPU (HIP index of the R9700, 2), CTX (180000), ARMS ("spec none"),
+#      (${BC_MODEL_ROOT}/radiance), GPU (HIP index of the R9700, 2), CTX (180000), ARMS ("spec none"),
 #      EXTRA (further serve flags), DECODE (512)
 set -u
 out=$2; shift 2
 depths=("$@"); [ ${#depths[@]} -eq 0 ] && depths=(2048 8192 24576 98304)
-src=${RADIANCE_SRC:-/mnt/data/bigcherry-work/engines/radiance}
+src=${RADIANCE_SRC:-${BC_WORK_ROOT}/engines/radiance}
 MODEL=${MODEL:-StillDeadcode/qwen3.8-27b-mxfp4}
 cd "$(cd "$(dirname "$0")/../../.." && pwd)"
 for v in $(env | grep -oE "^(BIGCHERRY_[A-Z0-9_]+|GGML_HIP_[A-Z0-9_]+)"); do unset "$v"; done
@@ -28,7 +28,7 @@ for arm in ${ARMS:-spec none}; do
         none) spec=0 ;;
         *) echo "$arm: unknown arm"; continue ;;
     esac
-    serve=(--download-dir "${DOWNLOAD_DIR:-/mnt/data/llm-models/radiance}" --tp 1 --max-num-seqs 8
+    serve=(--download-dir "${DOWNLOAD_DIR:-${BC_MODEL_ROOT}/radiance}" --tp 1 --max-num-seqs 8
            --max-model-len "${CTX:-180000}" --kv-cache-dtype fp8 --num-speculative-tokens "$spec")
     # shellcheck disable=SC2206
     serve+=(${EXTRA:-})

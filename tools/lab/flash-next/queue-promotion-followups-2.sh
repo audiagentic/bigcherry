@@ -11,11 +11,11 @@
 # Usage: queue-promotion-followups-2.sh [step...]     (default: 5 6 7)
 set -u
 cd "$(cd "$(dirname "$0")/../../.." && pwd)"
-R=/mnt/data/bigcherry-work/runs
-FLASH=/mnt/data/llm-models/qwen3.8-flash-next/gguf/mtp/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf
-GEMMA=/mnt/data/llm-models/gemma-4-26B-A4B/gguf/gemma-4-26B-A4B-it-UD-Q5_K_S.gguf
-Q36=/mnt/data/llm-models/qwen3.6-35B-A3B/gguf/Qwen3.6-35B-A3B-UD-IQ3_S.gguf
-export BC_HIP_PATH=/mnt/vault/tmp/bc-rocm
+R=${BC_WORK_ROOT}/runs
+FLASH=${BC_MODEL_ROOT}/qwen3.8-flash-next/gguf/mtp/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf
+GEMMA=${BC_MODEL_ROOT}/gemma-4-26B-A4B/gguf/gemma-4-26B-A4B-it-UD-Q5_K_S.gguf
+Q36=${BC_MODEL_ROOT}/qwen3.6-35B-A3B/gguf/Qwen3.6-35B-A3B-UD-IQ3_S.gguf
+export BC_HIP_PATH=${BC_TMP_ROOT}/bc-rocm
 steps="${*:-5 6 7}"
 [ -n "${WAIT_LOG:-}" ] && until grep -q FOLLOWUPS_DONE "$WAIT_LOG"; do sleep 60; done
 

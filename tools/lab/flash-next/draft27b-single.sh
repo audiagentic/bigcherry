@@ -9,7 +9,7 @@ set -u
 bin=$1 out=$2
 mkdir -p "$out"
 port=18761
-G=/mnt/data/llm-models/qwen3.8-27b/gguf
+G=${BC_MODEL_ROOT}/qwen3.8-27b/gguf
 COMMON="-m $G/unsloth/Qwen3.8-27B-UD-IQ4_XS.gguf -ngl 99 -c 40960 -ub 512 -b 2048 -fa on --parallel 1 --threads 8 --port $port --host 127.0.0.1"
 
 serve() {

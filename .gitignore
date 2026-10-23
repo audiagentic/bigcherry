@@ -123,7 +123,7 @@ prodtest_loop.sh
 # to config/environment.local.toml (or point BIGCHERRY_ENVIRONMENT at a file).
 /config/environment.local.toml
 
-# FUSE mount artifacts (/mnt/vault): open-but-replaced files; never tracked, must not mark the tree dirty
+# FUSE mount artifacts (the vault mount): open-but-replaced files; never tracked, must not mark the tree dirty
 .fuse_hidden*
 .rocprofv3/
 

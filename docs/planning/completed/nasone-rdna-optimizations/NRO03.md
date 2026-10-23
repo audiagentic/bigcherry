@@ -17,7 +17,7 @@ work: L
 
 Evaluate nasone commit `7c5bb5cb991670676b89cddc5077c9456c5cf70e` (`ggml: enable internal HIP all-reduce and P2P`) as an optional two-GPU transport provider on top of validated `1001_hip_internal_allreduce`, but do **not** mechanically port its fixed-issuer peer-copy design.
 
-BigCherry has stronger hardware evidence than the source fork for the target dual-RX-7900-XTX topology: on Brutus/gfx1100, peer-copy/read direction matters. Destination-current/pull operations have produced silent success with zero/garbage data, while source-current/push copies are correct; kernel-side direct peer reads and cache visibility have separately failed. Corrected push-copy measurements show only a modest sub-256MB advantage and near parity at 1GB, while GP11 found host staging faster for its corrected direct-P2P AllReduce prototypes. Therefore this item is P0 because communication is important and the source provides a concrete provider design, but **rejection is an expected valid outcome**. Correctness precedes bandwidth.
+BigCherry has stronger hardware evidence than the source fork for the target dual-RX-7900-XTX topology: on dev/gfx1100, peer-copy/read direction matters. Destination-current/pull operations have produced silent success with zero/garbage data, while source-current/push copies are correct; kernel-side direct peer reads and cache visibility have separately failed. Corrected push-copy measurements show only a modest sub-256MB advantage and near parity at 1GB, while GP11 found host staging faster for its corrected direct-P2P AllReduce prototypes. Therefore this item is P0 because communication is important and the source provides a concrete provider design, but **rejection is an expected valid outcome**. Correctness precedes bandwidth.
 
 ## Steps
 
@@ -69,11 +69,11 @@ Performance: microbench 1KB through largest actual collective sizes, then real m
 
 ## Effort & Risk
 
-High. ROCm may return success while data is wrong on exactly the path this optimizes. The source's fixed issuer is unsafe for known Brutus behavior. P2P can also be slower despite correct raw transfers because the CPU root complex/topology favors concurrent host staging.
+High. ROCm may return success while data is wrong on exactly the path this optimizes. The source's fixed issuer is unsafe for known dev behavior. P2P can also be slower despite correct raw transfers because the CPU root complex/topology favors concurrent host staging.
 
 ## Standards
 
-PGC02/GP13 corrected evidence is authoritative for Brutus. Never treat `hipDeviceCanAccessPeer==1` or API success as correctness. Fail closed to validated host staging.
+PGC02/GP13 corrected evidence is authoritative for dev. Never treat `hipDeviceCanAccessPeer==1` or API success as correctness. Fail closed to validated host staging.
 
 ## Acceptance Criteria
 

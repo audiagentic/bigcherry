@@ -43,7 +43,7 @@ New: tools/lab/hrx-eval/ (bench harness, maturity-matrix runner, comparison repo
 
 ## Validation
 
-Backend-op correctness tests (once ggml-hrx builds), PPL/temp-0 identity, server protocol compatibility smoke test where applicable. Performance: PP/TG/MTP TPS, VRAM, load-time, op-coverage % vs matched HIP/Vulkan on Brutus (not run by this agent).
+Backend-op correctness tests (once ggml-hrx builds), PPL/temp-0 identity, server protocol compatibility smoke test where applicable. Performance: PP/TG/MTP TPS, VRAM, load-time, op-coverage % vs matched HIP/Vulkan on dev (not run by this agent).
 
 ## Effort & Risk
 

@@ -77,7 +77,7 @@ derived both checks from
 one real whole-model PPL comparison (control = 1202 absent, subject = 1202
 applied), forcing `-fa on -ctk bf16 -ctv bf16` so the comparison requests BF16 K/V; actual TILE activation still requires a kernel-route proof.
 
-Real run on Brutus, all three contract architectures, **build-once
+Real run on dev, all three contract architectures, **build-once
 fat-multiarch verified** (see below):
 
 | architecture | subject PPL | control PPL | sigma | result |

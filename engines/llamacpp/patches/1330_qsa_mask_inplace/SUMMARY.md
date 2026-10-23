@@ -34,7 +34,7 @@ identity. Mode 2 remains available only to isolate a strided-mask read if mode 1
 
 ## b11474 promotion candidate (2026-10-09)
 
-Current-main Brutus recheck, Flash-Next, 240K context, ~80K fill: with
+Current-main dev recheck, Flash-Next, 240K context, ~80K fill: with
 `BIGCHERRY_QSA_MASK_INPLACE=1`, ub1024 fits where production does not. Prefill was 1376.9 / 1371.6 t/s at
 ub1024 versus production ub512 1206.9 / 1228.9 t/s (~+13%); decode was 66.1 / 66.3 versus 64.4 / 64.5 t/s.
 At ub512/24K, one env A/B showed 75.7 / 76.3 t/s off versus 73.4 on, motivating the >8-token gate above.

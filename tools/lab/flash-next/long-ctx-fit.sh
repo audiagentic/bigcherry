@@ -6,8 +6,8 @@
 set -u
 bin=$1 out=$2
 mkdir -p "$out"
-model=/mnt/data/llm-models/qwen3.8-flash-next/gguf/mtp/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf
-draft=/mnt/data/llm-models/qwen3.8-flash-next/gguf/unsloth/MTP/mtp-Qwen3.8-Flash-Next-Q8_0-qsa4.gguf
+model=${BC_MODEL_ROOT}/qwen3.8-flash-next/gguf/mtp/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf
+draft=${BC_MODEL_ROOT}/qwen3.8-flash-next/gguf/unsloth/MTP/mtp-Qwen3.8-Flash-Next-Q8_0-qsa4.gguf
 export HIP_VISIBLE_DEVICES=0,1,2,3 ROCR_VISIBLE_DEVICES=0,1,2,3
 fit() {  # <name> <ctx> <ts> <ub> [target KV type]
   local name=$1 ctx=$2 ts=$3 ub=$4 kv=${5:-q8_0}
@@ -31,7 +31,7 @@ port, name = sys.argv[1:3]
 def post(body):
     req = urllib.request.Request(f"http://127.0.0.1:{port}/completion", json.dumps(body).encode(), {"Content-Type": "application/json"})
     return json.loads(urllib.request.urlopen(req, timeout=1800).read())
-corpus = open("/mnt/data/bigcherry-work/corpus/kld-docs.txt", errors="replace").read()
+corpus = open("${BC_WORK_ROOT}/corpus/kld-docs.txt", errors="replace").read()
 text = (corpus * (1 + 32768 // max(1, len(corpus))))[:32768]
 post({"prompt": "Hello", "n_predict": 8, "cache_prompt": False})
 t = post({"prompt": text + "\n\nSummarise the above in detail:", "n_predict": 128, "cache_prompt": False, "temperature": 0, "ignore_eos": True})["timings"]

@@ -39,7 +39,7 @@ Logits against a full-resident reference inside the stack's envelope; prefill an
 
 ## Effort & Risk
 
-High: a second MoE branch in the graph, device-ownership rules in the meta backend, and range awareness in the copy callback. Needs a higher-quant file to be meaningful (none downloaded; /mnt/data has ~41 GB free).
+High: a second MoE branch in the graph, device-ownership rules in the meta backend, and range awareness in the copy callback. Needs a higher-quant file to be meaningful (none downloaded; ${DATA_ROOT} has ~41 GB free).
 
 ## Standards
 

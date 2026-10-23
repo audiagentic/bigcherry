@@ -25,7 +25,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Callable, Iterable, Sequence
 
-from ..core import engines, paths
+from ..core import engines, environment, paths
 from .server_runner import ServerError, ServerRunner
 
 SCHEMA = 1
@@ -215,6 +215,14 @@ def _draft(runner: ServerRunner) -> dict | None:
 
 
 def cmd_engine_bench(args) -> int:
+    if not args.corpus:
+        raise SystemExit("--corpus is required")
+    # The server port comes from the host's test-port unless --port is given; it must never be
+    # the production service port (the reason it is declared separately in the host config).
+    host = environment.load_default().host(None)
+    port = args.port if args.port is not None else (host.test_port or None)
+    if port is not None and port == host.production_port:
+        raise SystemExit(f"port {port} is the production service port; set test-port or pass --port")
     env: dict[str, str] = {}
     for item in args.env or ():
         name, sep, value = item.partition("=")
@@ -225,7 +233,7 @@ def cmd_engine_bench(args) -> int:
         engine=args.engine, binary=Path(args.binary), model=args.model, out_dir=Path(args.out),
         depths=[int(d) for d in args.depth], corpus_path=Path(args.corpus), reps=args.reps, decode=args.decode,
         extra_args=tuple(args.server_args or ()), env=env, env_unset=tuple(args.unset or ()), label=args.label,
-        health_timeout_s=args.health_timeout, port=args.port, shutdown_method=args.shutdown,
+        health_timeout_s=args.health_timeout, port=port, shutdown_method=args.shutdown,
     )
     failed = (
         record["server_error"] is not None or any(row.get("error") for row in record["rows"])

@@ -19,13 +19,13 @@
 set -u
 bin=$1 out=$2
 mkdir -p "$out"
-model=${BC_MODEL:-/mnt/data/llm-models/qwen3.8-flash-next/gguf/mtp/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf}
+model=${BC_MODEL:-${BC_MODEL_ROOT}/qwen3.8-flash-next/gguf/mtp/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf}
 gpu=${GPU:-2}
 base=(-m "$model" -ngl 99 --fit off -c ${CTX:-16384} -ub 512 -b 2048 --flash-attn on --parallel 1
       --threads 16 -lv 4 -ot '^(per_layer_token_embd|token_embd)\.weight$=CPU' -ctk f16 -ctv f16)
 args=("${base[@]}" --n-cpu-moe ${NCMOE:-41})
 # MTP sidecar on its own card (the 6900 XT), as in production: MTP=1 adds it to every arm
-draft=${DRAFT:-/mnt/data/llm-models/qwen3.8-flash-next/gguf/unsloth/MTP/mtp-Qwen3.8-Flash-Next-Q5_K_M-qsa4.gguf}
+draft=${DRAFT:-${BC_MODEL_ROOT}/qwen3.8-flash-next/gguf/unsloth/MTP/mtp-Qwen3.8-Flash-Next-Q5_K_M-qsa4.gguf}
 mtp=()
 if [ "${MTP:-0}" = 1 ]; then
   # single-card arms: the target card and the 6900 XT are visible as ROCm0 and ROCm1; hop arms see all four
@@ -58,7 +58,7 @@ run() {  # <arm> [VAR=value...] [-- server args...]
   python3 - "$port" "$out" "$arm" "${LONG_TOKENS:-4096}" "${N_PREDICT:-128}" "$request_set" <<'PY'
 import hashlib, json, sys, urllib.request
 port, out, arm, long_tokens, n_predict, request_set = sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4]), int(sys.argv[5]), sys.argv[6]
-corpus = open("/mnt/data/bigcherry-work/corpus/kld-docs.txt", errors="replace").read()
+corpus = open("${BC_WORK_ROOT}/corpus/kld-docs.txt", errors="replace").read()
 def post(body):
     req = urllib.request.Request(f"http://127.0.0.1:{port}/completion", json.dumps(body).encode(), {"Content-Type": "application/json"})
     return json.loads(urllib.request.urlopen(req, timeout=3600).read())

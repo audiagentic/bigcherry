@@ -70,7 +70,7 @@ patches/1253_nro04_gfx1100_bf16_chunked_gdn; GDN translation unit/helpers; share
 
 ## Validation
 
-Patch mechanics: `PYTHONPATH=tools python -m bigcherry patch-lint patches/1253_nro04_gfx1100_bf16_chunked_gdn`; `PYTHONPATH=tools python -m bigcherry patch-rebase-check --focal-overlay 1253_nro04_gfx1100_bf16_chunked_gdn --source bigcherry-tuning`; package pytest offline (static arch-guard/non-gfx11 compile-exclusion checks). Deterministic WMMA fragment matrix probe (identity/structured/random/adversarial). Hardware (Brutus, gfx1100 required): `python -m bigcherry.patch.validation_campaign --overlay 1253_nro04_gfx1100_bf16_chunked_gdn --arch gfx1100` comparing one/multi-chunk recurrence vs CPU/reference, long-sequence PPL/KL/greedy quality, graph/non-graph execution, KKT/scan profiling; gfx1201/gfx1030 must remain non-selecting controls.
+Patch mechanics: `PYTHONPATH=tools python -m bigcherry patch-lint patches/1253_nro04_gfx1100_bf16_chunked_gdn`; `PYTHONPATH=tools python -m bigcherry patch-rebase-check --focal-overlay 1253_nro04_gfx1100_bf16_chunked_gdn --source bigcherry-tuning`; package pytest offline (static arch-guard/non-gfx11 compile-exclusion checks). Deterministic WMMA fragment matrix probe (identity/structured/random/adversarial). Hardware (dev, gfx1100 required): `python -m bigcherry.patch.validation_campaign --overlay 1253_nro04_gfx1100_bf16_chunked_gdn --arch gfx1100` comparing one/multi-chunk recurrence vs CPU/reference, long-sequence PPL/KL/greedy quality, graph/non-graph execution, KKT/scan profiling; gfx1201/gfx1030 must remain non-selecting controls.
 
 ## Effort & Risk
 

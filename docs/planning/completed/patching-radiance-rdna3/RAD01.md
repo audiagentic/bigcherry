@@ -53,12 +53,12 @@ Patch-lint and mechanics tests pass for every Radiance package; the recipe build
 
 - Radiance engine patches are packages under engines/radiance/patches and pass patch-lint (met: #210, #216).
 - Each engine declares its recipes; radiance has sources, patch sets, experiments and runtime profiles (met: #219).
-- bigcherry build builds a radiance lane on Brutus from the pin plus patch sets, including radiance's runtime and the libr3 component, with the runtime bound into build identity (met: #220, #221, #224, #225; verified build b4aeaa56).
+- bigcherry build builds a radiance lane on dev from the pin plus patch sets, including radiance's runtime and the libr3 component, with the runtime bound into build identity (met: #220, #221, #224, #225; verified build b4aeaa56).
 - Profiles carry an environment checked against the component's declared settings (met: #222).
 - Activation and KL quality evidence are engine-neutral with a radiance adapter (met: #223).
 - A radiance A/B runs through ab-benchmark (met: #226; runs/rad-ab2, engine fix 0001 speed-neutral).
 - Runbook (met: #227).
-- Every PR merged with all checks green and the full suite on Brutus matching main's pre-existing failures.
+- Every PR merged with all checks green and the full suite on dev matching main's pre-existing failures.
 
 ## Notes
 

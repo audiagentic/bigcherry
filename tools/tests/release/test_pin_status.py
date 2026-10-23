@@ -307,7 +307,7 @@ class RemoteAndAggregateTests(unittest.TestCase):
     def test_aggregate_converged(self):
         from bigcherry.core.config import Tree
         b = _fake_tree(self.tmp, "b", self.upstream, "b2", "b2")
-        trees = (Tree(name="brutus", alias="brutus", path=str(b),
+        trees = (Tree(name="dev", alias="dev", path=str(b),
                       required=True, role="campaign",
                       expected_tooling_revision=""),)
         report = self._report_with(trees)
@@ -317,7 +317,7 @@ class RemoteAndAggregateTests(unittest.TestCase):
     def test_aggregate_diverges(self):
         from bigcherry.core.config import Tree
         b = _fake_tree(self.tmp, "b", self.upstream, "b1", "b1")
-        trees = (Tree(name="brutus", alias="brutus", path=str(b),
+        trees = (Tree(name="dev", alias="dev", path=str(b),
                       required=True, role="campaign",
                       expected_tooling_revision=""),)
         report = self._report_with(trees)
@@ -326,7 +326,7 @@ class RemoteAndAggregateTests(unittest.TestCase):
     def test_complete_pass(self):
         from bigcherry.core.config import Tree
         b = _fake_tree(self.tmp, "b", self.upstream, "b2", "b2")
-        trees = (Tree(name="brutus", alias="brutus", path=str(b),
+        trees = (Tree(name="dev", alias="dev", path=str(b),
                       required=True, role="campaign",
                       expected_tooling_revision=""),)
         report = self._report_with(trees)
@@ -338,7 +338,7 @@ class RemoteAndAggregateTests(unittest.TestCase):
         def probe(alias, path):
             raise pin_status.PinStatusError("refused")
 
-        trees = (Tree(name="brutus", alias="brutus", path="/nowhere",
+        trees = (Tree(name="dev", alias="dev", path="/nowhere",
                       required=True, role="campaign",
                       expected_tooling_revision=""),)
         report = pin_status.build_report(

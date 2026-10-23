@@ -20,7 +20,7 @@ static int cc_for_gfx(unsigned gfx_hex) {
 int main() {
     struct { const char *name; unsigned gfx_hex; } archs[] = {
         {"gfx1100", 0x1100}, // local RX 7900 GRE -- this session's validation GPU
-        {"gfx1201", 0x1201}, // Brutus R9700 (device 2)
+        {"gfx1201", 0x1201}, // dev R9700 (device 2)
         {"gfx1151", 0x1151}, // AMD AI Max 395 / Strix Halo -- RD50's actual target
     };
     for (auto &a : archs) {

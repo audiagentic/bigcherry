@@ -13,14 +13,14 @@
       "headroom": 16,
       "source": "vendor/llama.cpp/ggml/src/ggml-backend-meta.cpp (pinned, unpatched)",
       "source_sha256": "d79fb0da6c694d3a8892acd25e381368c762fade2b1dc8858168e1f5e009e2eb",
-      "build_dir": "/mnt/h/development/projects/bc-nro09-build",
+      "build_dir": "${BC_DEV_ROOT}/projects/bc-nro09-build",
       "cmake": "Release, GPU off (METAL/CUDA/HIP/VULKAN/SYCL=OFF), tools/examples/server/common/tests/app=OFF, static libs"
     },
     "B_patched": {
       "headroom": 80,
       "source": "1260 patch applied (compute_headroom 16 -> 80)",
       "source_sha256": "b7995c58cd125b0e3deffd912dbe7ecaefa6b37bc13b4302350f59a99551aaea",
-      "build_dir": "/mnt/h/development/projects/bc-nro09-buildB",
+      "build_dir": "${BC_DEV_ROOT}/projects/bc-nro09-buildB",
       "cmake": "same as A (identical config)"
     }
   },

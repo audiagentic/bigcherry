@@ -5,10 +5,10 @@
 arguments carry their own `--engine`.
 
 ```
-python -m bigcherry remote run --host brutus --ref feat/some-branch [--allow-busy] -- --engine radiance <command> ...
-python -m bigcherry remote status <run-id> --host brutus
-python -m bigcherry remote wait <run-id> --host brutus [--timeout 7200] [--tail 40]
-python -m bigcherry remote list --host brutus [--limit 10]
+python -m bigcherry remote run --host dev --ref feat/some-branch [--allow-busy] -- --engine radiance <command> ...
+python -m bigcherry remote status <run-id> --host dev
+python -m bigcherry remote wait <run-id> --host dev [--timeout 7200] [--tail 40]
+python -m bigcherry remote list --host dev [--limit 10]
 ```
 
 ## What the host config supplies

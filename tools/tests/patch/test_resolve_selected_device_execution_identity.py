@@ -112,7 +112,7 @@ class ResolveSelectedDeviceExecutionIdentityTests(unittest.TestCase):
     def test_uses_real_host_inventory_by_default(self) -> None:
         # Without an explicit host_devices override, this must resolve
         # against the REAL config/environment.local.toml -- index 0 is really
-        # gfx1100 with a real verified locator on Brutus.
+        # gfx1100 with a real verified locator on dev.
         os.environ["HIP_VISIBLE_DEVICES"] = "0"
         identity, _ = campaign_build.resolve_selected_device_execution_identity(
             expected_arch="gfx1100",

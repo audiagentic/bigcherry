@@ -19,7 +19,7 @@ class SlurmInstallerTests(unittest.TestCase):
             root = Path(temp)
             catalog = InventoryCatalog(root / "hardware")
             inventory = HardwareInventory(
-                host_id="brutus",
+                host_id="dev",
                 platform_family="linux-rocm",
                 platform_environment_hash="env",
                 devices=(
@@ -33,16 +33,16 @@ class SlurmInstallerTests(unittest.TestCase):
                     ),
                 ),
             )
-            catalog.record_observed("brutus", inventory)
+            catalog.record_observed("dev", inventory)
             catalog.accept_observed(
-                "brutus", expected_material_hash=inventory.material_hash
+                "dev", expected_material_hash=inventory.material_hash
             )
             project_root = Path(__file__).resolve().parents[3]
             files, accepted_hash = _validate_preconditions(
                 project_root=project_root,
                 hardware_root=root / "hardware",
-                executor_id="brutus",
-                node_name="brutus",
+                executor_id="dev",
+                node_name="dev",
                 cpus=16,
                 real_memory_mib=32768,
             )
@@ -58,7 +58,7 @@ class SlurmInstallerTests(unittest.TestCase):
             self.assertIn("Name=gpu Type=gfx1100", files["gres.conf"])
 
     def test_action_plan_is_minimal_no_db_stack(self):
-        argv = [action.argv for action in action_plan(node_name="brutus")]
+        argv = [action.argv for action in action_plan(node_name="dev")]
         flattened = "\n".join(" ".join(row) for row in argv)
         self.assertIn("apt-get install -y slurm-wlm munge jq", flattened)
         self.assertIn("slurmd -G", flattened)

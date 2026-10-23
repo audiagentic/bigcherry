@@ -23,7 +23,7 @@ The `adaptive-mtp` and `adaptive-mtp-no1210` experiment sets were removed with t
 
 ## Result at b11474: rejected (2026-10-09)
 
-Measured on Brutus, pin b11474 (b9acf138), one binary (production + 1255 + 1268, build `b-metamem-ad5`), A = adaptive
+Measured on dev, pin b11474 (b9acf138), one binary (production + 1255 + 1268, build `b-metamem-ad5`), A = adaptive
 off (fixed depth), B = the setting shown, ABBA per depth. The activation marker
 (`BIGCHERRY_PATCH_HIT patch=1268_prbe52_adaptive_mtp_wiring`, including `event=depth_change` lines) is present in the
 adaptive arms and absent from the fixed arms. With adaptive off the build equals production (same greedy text, decode

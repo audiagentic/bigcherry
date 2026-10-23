@@ -5,7 +5,7 @@
  "evidence_role": "diagnostic",
  "execution_evidence": "observe",
  "quality_only": true,
- "model": "/mnt/data/llm-models/radiance/StillDeadcode/qwen3.8-27b-mxfp4/qwen3.8-27b-mxfp4.rad",
+ "model": "${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-27b-mxfp4/qwen3.8-27b-mxfp4.rad",
  "server_args": [],
  "environment": {
   "HIP_VISIBLE_DEVICES": "0,1",
@@ -19,7 +19,7 @@
  },
  "quality": {
   "reference_dir": "${KLD_REF_DIR}",
-  "corpus": "/mnt/data/bigcherry-work/corpus/rad-kld-corpus-4.jsonl",
+  "corpus": "${BC_WORK_ROOT}/corpus/rad-kld-corpus-4.jsonl",
   "control": "compat",
   "timeout_s": 5400,
   "args": [

@@ -61,5 +61,5 @@ Follows RAD02 (R9700 engine + two XTX helpers, heat ownership: prefill 2,767 tok
 
 ## Ledger-events
 
-- chg_20261014_204134_flash-next-decode-on-brutus-re_3947
+- chg_20261014_204134_flash-next-decode-on-dev-re_3947
 - 2026-10-14T20:41:38.358166+00:00 (updated-by): Updated: section:ledger-events

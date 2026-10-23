@@ -23,7 +23,7 @@ model. RD43's technique was used rather than RD08's test-backend-ops
 approach, since RD13's claim is about a graph rewrite only the real
 model graph exercises, not an isolated operator.
 
-Real run on Brutus, single gfx1100 XTX (`HIP_VISIBLE_DEVICES=0`,
+Real run on dev, single gfx1100 XTX (`HIP_VISIBLE_DEVICES=0`,
 `ROCR_VISIBLE_DEVICES=0`), 64 decode steps, real greedy decoding
 (`temperature=0`, `seed=42`): control and subject generated the
 IDENTICAL token sequence and produced BYTE-IDENTICAL full-vocabulary
@@ -38,8 +38,8 @@ real correctness producer satisfying its `correctness.backend_reference
 
 Two real infrastructure bugs were found and fixed while getting this
 run clean (neither is a correctness finding about RD13 itself):
-(1) the driver's `hip_path` must point at the ROCm compiler shim
-(`docs/reference/ENVIRONMENT.md`'s `rocm-shim`), not `/opt/rocm` --
+(1) the driver's `hip_path` must be an SDK root whose `llvm/bin` holds `clang`
+(see `docs/reference/ENVIRONMENT.md`, ROCm section), not a compiler-name shim --
 `/opt/rocm` ships `amdclang`/`amdclang++` with real `clang` hidden
 under `llvm/bin`, and campaigns build compiler paths as
 `<hip-path>/bin/clang`; (2) `run_rd13_backend_reference_check()` never
@@ -79,7 +79,7 @@ Ported from `stew675-rdna-boosts` fork commit `0153d580d`
 
 A dedicated correctness producer (`validation/rd13_correctness.py`, a thin
 wrapper over the shared `tools/bigcherry/experiment/perplexity.py` PPL-comparison
-primitive) was run for real on Brutus via
+primitive) was run for real on dev via
 `validation_campaign.run_rd13_ppl_check()`:
 
 - Model: `tierM-gptoss20b-q6k` (gpt-oss-20B, Q6_K)
@@ -93,7 +93,7 @@ Artifact: `artifacts/rd13-ppl-check.json` (produced by the campaign run).
 ## Real hardware evidence at current pin (2026-09-13)
 
 The 2026-09-11 result above was measured against a since-superseded pin.
-Re-ran `run_rd13_ppl_check()` for real on Brutus against the **current**
+Re-ran `run_rd13_ppl_check()` for real on dev against the **current**
 active pin (`b10901` / `28ff0958291ce3465fabd7bd679d4b0edd742bd9`), fresh
 control/subject `llama-perplexity` builds, same model
 (`tierM-gptoss20b-q6k`) and corpus (real `wikitext-2-raw/wiki.test.raw`):

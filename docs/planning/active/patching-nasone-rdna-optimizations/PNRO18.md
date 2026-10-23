@@ -13,7 +13,7 @@ work: S
 
 # 1252 P2P probe hardening — retired with rejected provider
 
-**Terminal disposition (2026-10-18; BCOP292): DONE / SUPERSEDED.** This item proposed expanding `ggml_cuda_ar_p2p_probe` to check every async error and `copy_bytes`/chunk threshold edge on production streams and scratch. The exact production path, expected test matrix, correctness fence and conditional reopening criteria now belong **only to PNRO03**. Patch 1252 was already rejected on 2026-10-08 after the 2026-10-07 Brutus fault; its experiment was removed. Hardening an unselected, rejected transport cannot establish performance and must not be independently queued.
+**Terminal disposition (2026-10-18; BCOP292): DONE / SUPERSEDED.** This item proposed expanding `ggml_cuda_ar_p2p_probe` to check every async error and `copy_bytes`/chunk threshold edge on production streams and scratch. The exact production path, expected test matrix, correctness fence and conditional reopening criteria now belong **only to PNRO03**. Patch 1252 was already rejected on 2026-10-08 after the 2026-10-07 dev fault; its experiment was removed. Hardening an unselected, rejected transport cannot establish performance and must not be independently queued.
 
 The 1252 probe currently tests 4 KiB, 64 KiB+256, 1 MiB and 4 MiB, both directions, twice. It uses temporary buffers rather than production `dev_tmp` and does not cover threshold±1; these are source-verified coverage gaps, **not** demonstrated causes of the hardware fault. The permanent `hipMemcpyDefault` byte-verification fixture is adjacent coverage, not an async-P2P substitute.
 

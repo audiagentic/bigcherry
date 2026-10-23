@@ -1,7 +1,7 @@
 # RHA04 GPU0 required-attestation capture
 
 Date: 2026-09-10  
-Role: Brutus environment, resolved through environment settings  
+Role: <gpu-host> environment, resolved through environment settings  
 Status: **invalid before measurement**
 
 ## Purpose
@@ -49,7 +49,7 @@ device locator evidence.
 
 ## Raw artifact hashes
 
-Artifacts remain on the Brutus temporary run directory:
+Artifacts remain on the <gpu-host> temporary run directory:
 
 | Artifact | SHA-256 |
 |---|---|

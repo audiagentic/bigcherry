@@ -15,7 +15,7 @@ priority: null
 
 ## Description
 
-Qualify RCCL for Brutus multi-GPU subsets excluding device 3 using topology and operation identities, correctness-first staged search, and fail-closed runtime selection.
+Qualify RCCL for dev multi-GPU subsets excluding device 3 using topology and operation identities, correctness-first staged search, and fail-closed runtime selection.
 
 ## Steps
 

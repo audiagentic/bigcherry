@@ -197,7 +197,7 @@ enum ggml_hip_signature_flag {
     // struct slot, it does not add the field itself, corrected 2026-08-25
     // after initially misattributing this to 1207), not in the
     // upstream/pristine struct every other build compiles against --
-    // confirmed the hard way (a real Brutus build without 1205 failed with
+    // confirmed the hard way (a real dev build without 1205 failed with
     // "no member named 'dst_gate'"). RD12's own fused dispatch (gate set,
     // dst_gate set, glu_op == NONE) DOES reach this tuner's family collection
     // point and gets signed today -- it is not silently aliased with a real

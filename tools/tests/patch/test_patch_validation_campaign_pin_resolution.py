@@ -5,7 +5,7 @@ materialized control/subject source composition against base_ref="HEAD"
 configured pin -- while the evidence record written at the end of the
 same run labeled that resolved SHA as base_ref=cfg.pinned regardless of
 whether HEAD actually matched the pin. A real RD04 hardware run on
-Brutus resolved and built against vendor HEAD while its own evidence
+dev resolved and built against vendor HEAD while its own evidence
 claimed pin b10705; VA08's stale-detection correctly caught the mismatch
 against the real currently-resolved pin and rejected the record.
 

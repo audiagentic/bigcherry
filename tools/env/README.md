@@ -10,7 +10,7 @@ the build host's facts as `BC_*`, so docs and scripts can say
 
 ```bash
 source tools/env/bigcherry-env.sh              # default host
-source tools/env/bigcherry-env.sh build-server # a named host
+source tools/env/bigcherry-env.sh dev # a named host
 ```
 
 The Python equivalent is `bigcherry.core.environment`, reading the SAME
@@ -20,7 +20,7 @@ asserts they agree:
 ```python
 from bigcherry.core import environment as env
 host = env.load_default().host()
-host.model_root, host.bench_port, host.visible_devices(0, 1)
+host.model_root, host.test_port, host.visible_devices(0, 1)
 ```
 
 See [ENVIRONMENT.md](../../docs/reference/ENVIRONMENT.md) for the convention:

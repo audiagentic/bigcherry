@@ -847,7 +847,7 @@ CREATE TABLE IF NOT EXISTS correctness_evidence_seed (
     -- CORRECTION (HI80, 2026-08-23): this comment originally claimed "added
     -- before this feature ever ran against a real database... so no
     -- migration is needed" -- that assumption was proven false by a real
-    -- Brutus campaign dispatch_db (built 2026-08-21/22, before this column
+    -- dev campaign dispatch_db (built 2026-08-21/22, before this column
     -- was added to this CREATE TABLE statement) that still lacked it.
     -- CREATE TABLE IF NOT EXISTS leaves an existing table's shape
     -- untouched regardless of schema_version, so that one pre-existing

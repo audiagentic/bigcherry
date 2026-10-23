@@ -2,7 +2,7 @@
 
 `summarize.py` and `harvest.sh` produce compact summaries of A/B, KLD and
 patch-campaign runs executed on the bench host. Raw logs and per-round server
-output stay on the host under `/mnt/data/bigcherry-work/runs/<run>/`.
+output stay on the host under `${BIGCHERRY_ROOT}/runs/<run>/`.
 
 Tracked summaries are evidence, not tooling, and live under
 `docs/evidence/lab-run-summaries/`.

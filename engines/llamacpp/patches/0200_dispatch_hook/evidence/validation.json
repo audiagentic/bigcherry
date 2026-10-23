@@ -47,7 +47,7 @@
       },
       "campaign_identity": "4adb3cafbb74abf6a638b08a57dc3a577c5b2e90e572ec5496f1a8db08222ffc",
       "campaign_identity_digest": "4adb3cafbb74abf6a638b08a57dc3a577c5b2e90e572ec5496f1a8db08222ffc",
-      "campaign_workdir": "/home/audumla/pa26-evidence-run3/0200_dispatch_hook/framework/0200_dispatch_hook",
+      "campaign_workdir": "${HOME}/pa26-evidence-run3/0200_dispatch_hook/framework/0200_dispatch_hook",
       "check_results": {
         "apply": {
           "artifacts": [],
@@ -224,7 +224,7 @@
       "patch_implementation_digest": "c153f61fbd60a5dae3a30f8f4ad1874114d61ba62e9d8728461be661027f4540",
       "patch_validation_subject_digest": "5458f32cac2da74aaa14d7fb0fdd0699d196301892e9bed4204905d2cad962fa",
       "qualification_kind": "framework-configuration-v1",
-      "record_digest": "641b48cda1c61a44ba9438762f95313f2ce7ba4f05f94a702fb8aa98c4f4f848",
+      "record_digest": "1a9ac87c6bcfa32e409f82ec6316dae4eebdc2057a39962790a46187e1a6d7e9",
       "record_schema_version": 5,
       "runtime_performance_qualified": false,
       "source_composition": [
@@ -418,7 +418,7 @@
       },
       "campaign_identity": "575985b3b716c67c08445ac204e98396683cb39c6ccfc88194b0434f46b23875",
       "campaign_identity_digest": "575985b3b716c67c08445ac204e98396683cb39c6ccfc88194b0434f46b23875",
-      "campaign_workdir": "/home/audumla/pa26-evidence-run2/0200_dispatch_hook/framework/0200_dispatch_hook",
+      "campaign_workdir": "${HOME}/pa26-evidence-run2/0200_dispatch_hook/framework/0200_dispatch_hook",
       "check_results": {
         "apply": {
           "artifacts": [],
@@ -595,7 +595,7 @@
       "patch_implementation_digest": "c153f61fbd60a5dae3a30f8f4ad1874114d61ba62e9d8728461be661027f4540",
       "patch_validation_subject_digest": "5458f32cac2da74aaa14d7fb0fdd0699d196301892e9bed4204905d2cad962fa",
       "qualification_kind": "framework-configuration-v1",
-      "record_digest": "f518c53bf59378201b6c1ca092e173acb640cae06ab4cdc9fb165c99bc0040c5",
+      "record_digest": "846bf324e0481a00f21c8c032ca245c87b9fd492b9de470cf6ff41f559f0ed8e",
       "record_schema_version": 5,
       "runtime_performance_qualified": false,
       "source_composition": [
@@ -792,7 +792,7 @@
       },
       "campaign_identity": "9285913844efa38f8aeba752a656278d2a637bb9bf493ef5932a83acb448510c",
       "campaign_identity_digest": "9285913844efa38f8aeba752a656278d2a637bb9bf493ef5932a83acb448510c",
-      "campaign_workdir": "/home/audumla/pa26-evidence-run4/0200_dispatch_hook/framework/0200_dispatch_hook",
+      "campaign_workdir": "${HOME}/pa26-evidence-run4/0200_dispatch_hook/framework/0200_dispatch_hook",
       "check_results": {
         "apply": {
           "artifacts": [
@@ -986,7 +986,7 @@
       "patch_implementation_digest": "c153f61fbd60a5dae3a30f8f4ad1874114d61ba62e9d8728461be661027f4540",
       "patch_validation_subject_digest": "5458f32cac2da74aaa14d7fb0fdd0699d196301892e9bed4204905d2cad962fa",
       "qualification_kind": "framework-configuration-v1",
-      "record_digest": "1b8590492b8418db833f27cda331edb4d2c92a263a503e8b226dc051e4eb48d3",
+      "record_digest": "c7ae6451ca61b32f76dbcfffb0ed301496f0ea22dfdd1de388068e4e47353534",
       "record_schema_version": 5,
       "runtime_performance_qualified": false,
       "source_composition": [

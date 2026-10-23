@@ -35,7 +35,7 @@ To be determined after fetching the fork commits; likely src/llama-context.cpp o
 
 ## Validation
 
-Step 1 (fetch fork source) is a hard prerequisite -- cannot be validated further without it. Once designed: temp-0 identity, MTP acceptance-rate parity, copies/token + TG + PP cost across owner alternatives and device orders vs single-GPU/MTP-off controls, on dual XTX/R9700 hardware (Brutus, not run here).
+Step 1 (fetch fork source) is a hard prerequisite -- cannot be validated further without it. Once designed: temp-0 identity, MTP acceptance-rate parity, copies/token + TG + PP cost across owner alternatives and device orders vs single-GPU/MTP-off controls, on dual XTX/R9700 hardware (dev, not run here).
 
 ## Effort & Risk
 

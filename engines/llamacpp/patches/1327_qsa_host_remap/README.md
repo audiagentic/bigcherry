@@ -28,7 +28,7 @@ R9700, MTP draft on the 6900 XT, 64K context, f16 KV, ub512, 256 greedy tokens, 
 Draft acceptance is comparable (172-175 accepted of 239-249 drafted), so the arms did the same work. v6 arms are
 greedy-identical to each other; native differs in text (Q8_1 activation paths and deterministic top-k ties change
 low-order bits). Native cannot load the 240K f16 deployment at all (its largest load was 192K with q8_0 KV), which
-1302/1303 enable. Runs: `/mnt/data/bigcherry-work/runs/flashnext-native-d8k`, `flashnext-native-d48k`.
+1302/1303 enable. Runs: `${BIGCHERRY_ROOT}/runs/flashnext-native-d8k`, `flashnext-native-d48k`.
 
 ## Cross-model no-regression (one release build)
 

@@ -23,7 +23,7 @@ requested; the libr3moe plugin registers once through `bc_moe_remote_register(Bc
 owns_expert})` in place of the two `dlsym` hooks and mirrors the struct locally (a test pins the two copies equal); the
 step gate is decided on `T` everywhere, including `issues_ar()` and HyperConn.
 
-Still open: native re-ports (section 2c, attention first) and everything that needs a Brutus build or GPU run (the
+Still open: native re-ports (section 2c, attention first) and everything that needs a dev build or GPU run (the
 verification list is in the MEN12 hand-off).
 
 Inputs: BigCherry working tree, upstream partial clone with tags v1.3.0 (89cee7c) .. v1.7.0 (tag resolves to the release
@@ -233,7 +233,7 @@ Other libr3 build-surface changes:
   By the repo's no-legacy rule it should be removed in the same change.
 - `r4d_rows.cpp` also gets compiled with `rad_hip_repeatable` (`cmake/RadAddPlugin.cmake`, 1.4.0): when the compiler is LLVM >= 24 (ROCm 10.1)
   `rad_add_plugin` adds `-mllvm=-amdgpu-enable-vopd=false` to our plugins. v1.7.0 README: source builds take ROCm 10.1 or 7.2
-  (v1.3.0: 7.2); a 7.2 toolchain remains valid. Which ROCm Brutus has: not found in the repo files I read.
+  (v1.3.0: 7.2); a 7.2 toolchain remains valid. Which ROCm dev has: not found in the repo files I read.
 - `component.toml:12` `built-against` and the "radiance 1.3.0" comment need the new SHA; `engine.toml`/serve/metrics names
   (`radiance:draft_tokens_total`, `radiance:draft_accepted_total`) still exist at `core/server/metrics.cpp:372-374`.
   The `--tp-wire` and other flags used in the `flashnext-2xtx` runtime profile still exist in `core/config.cpp`. Removed upstream
@@ -425,7 +425,7 @@ with `R3_MOE_HELPER_SKIP_OWNED=1` on Flash-Next. The same applies to `core/place
    not confirmed for the stager).
 5. **Baseline drift**: 1.4.0 itself reports +16-20% throughput on Flash-Next at TP1. MEN12's acceptance ("within drift or explained") needs those notes cited, and the
    "previous pin" numbers must be measured with the same driver/ROCm.
-6. **Toolchain**: 1.7.0 accepts ROCm 10.1 or 7.2; LLVM 24 turns VOPD pairing off for repeatable code. If Brutus changes toolchain with the bump, kernel timing changes
+6. **Toolchain**: 1.7.0 accepts ROCm 10.1 or 7.2; LLVM 24 turns VOPD pairing off for repeatable code. If dev changes toolchain with the bump, kernel timing changes
    are confounded with the engine bump.
 7. **Test fixtures**: `engines/radiance/tests/fixtures/89cee7c/` hold 1.3.0 copies of 11 core/arch files for `tools/tests/patch/test_radiance_patch_packages.py` and
    `tools/tests/core/test_engine_recipes.py`; they must be regenerated at 48f7b8e (same file list minus `core/engine.cpp` if rad0001 retires; `core/place/planner.cpp`,
@@ -456,6 +456,6 @@ runs correctly without them (just slower); 7 closes MEN12. Total roughly 10-16 w
 - gfx1100 kernels or an RDNA3 build path for libr4d: not found.
 - Per-feature upstream commit hashes for 1.4.0-1.7.0 features: only squashed release commits exist (1.5.0 includes merged feature commits for Gemma 4/ParoQuant).
 - Any compile or runtime result: none produced.
-- Which ROCm version is installed on Brutus: not found.
+- Which ROCm version is installed on dev: not found.
 - Whether `xprefetch`/`stager` skip Mapped placeholders at runtime: prefetch filter found statically; stager not read in detail.
 - Whether new libr4d units compile under `r3_compat.h`: untested.

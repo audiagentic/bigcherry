@@ -131,7 +131,7 @@ ggml/src/ggml-vulkan/ggml-vulkan.cpp; tests/test-backend-ops.cpp; patches/<order
 
 ## Validation
 
-Offline: `PYTHONPATH=tools python -m bigcherry patch-lint`, `patch-rebase-check --focal-overlay <id> --source bigcherry-tuning`. Unit: MUL_MAT_VEC backend-op parity for Q2_K..Q6_K/TQ1_0 at baseline and overridden rm_kq. Hardware (Brutus, not run here): R9700 RADV vs AMD proprietary/AMDVLK, gfx1100 control, VGPR/register + kernel-time + PP/TG per (driver,arch,type), via `python -m bigcherry.patch.validation_campaign`.
+Offline: `PYTHONPATH=tools python -m bigcherry patch-lint`, `patch-rebase-check --focal-overlay <id> --source bigcherry-tuning`. Unit: MUL_MAT_VEC backend-op parity for Q2_K..Q6_K/TQ1_0 at baseline and overridden rm_kq. Hardware (dev, not run here): R9700 RADV vs AMD proprietary/AMDVLK, gfx1100 control, VGPR/register + kernel-time + PP/TG per (driver,arch,type), via `python -m bigcherry.patch.validation_campaign`.
 
 ## Effort & Risk
 

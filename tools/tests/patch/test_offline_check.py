@@ -193,6 +193,26 @@ class LineEndingOnlyPatchChangeTests(unittest.TestCase):
             )
 
 
+class CommentOnlyPatchChangeTests(unittest.TestCase):
+    PATH = "engines/llamacpp/patches/1202_rd04_bf16_flash_attn_tile/patch.py"
+    BASE = (b'"""Validated on host-a."""\n# measured on host-a\n'
+            b'X = r"""\n    // instrumented on host-a\n    int a = 1;\n"""\n')
+
+    def _ids(self, after: bytes) -> tuple[str, ...]:
+        with mock.patch.object(offline_check, "_blob_text_lf", side_effect=[self.BASE, after]):
+            return offline_check._implementation_patch_ids([self.PATH], "base", "head")
+
+    def test_docstring_python_and_c_comment_edits_are_not_an_implementation_change(self) -> None:
+        self.assertEqual(self._ids(self.BASE.replace(b"host-a", b"dev")), ())
+
+    def test_a_change_to_the_written_code_still_counts(self) -> None:
+        self.assertEqual(self._ids(self.BASE.replace(b"int a = 1;", b"int a = 2;")),
+                         ("1202_rd04_bf16_flash_attn_tile",))
+
+    def test_a_change_to_python_code_still_counts(self) -> None:
+        self.assertEqual(self._ids(self.BASE + b"Y = 1\n"), ("1202_rd04_bf16_flash_attn_tile",))
+
+
 class CompositionPatchIdTests(unittest.TestCase):
     def test_test_only_and_doc_changes_do_not_trigger_the_experiment_audit(self) -> None:
         paths = [

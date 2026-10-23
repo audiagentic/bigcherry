@@ -74,7 +74,7 @@ CORRECTNESS_CHECKS: tuple[str, ...] = (
     "ppl_equality",
     # VA10: RD58's claim needs an affirmative "state correctly restored"
     # check, not an absence-of-fault claim -- "zero observed faults" is not
-    # proof (Brutus's own 530+ cycles never reproduced the originating SDMA
+    # proof (dev's own 530+ cycles never reproduced the originating SDMA
     # fault, so failing to observe it again would prove nothing). This
     # token names what IS checked: saved state -> repeated multi-GPU
     # restore -> restored state/continuation agrees with reference.

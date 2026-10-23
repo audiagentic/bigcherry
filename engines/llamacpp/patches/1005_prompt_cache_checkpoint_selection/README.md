@@ -5,7 +5,7 @@ the hybrid/recurrent checkpoint-selection backport. The C++ fixture and its
 recorded unit-test result are under `validation/fixtures/` (6/6 pass --
 validates the reusable-token arithmetic only, not live server behavior).
 
-## Live multi-turn server validation (2026-09-12, Brutus, gfx1100)
+## Live multi-turn server validation (2026-09-12, dev, gfx1100)
 
 Ran the live test this README previously said was still needed: real
 `llama-server`, `lfm2.5-8B` (a real recurrent-state architecture per
@@ -96,7 +96,7 @@ literal text, same shape) -- clean on all 4 conditions (baseline/patched
 x cold/warm), no garbling. Round 2 recovered the ORIGINAL exact request
 `prompt` fields from the earlier investigation's saved response JSONs
 (`turnA_1_fixed.json`/`turnB_fixed.json`/`turnC_cached_fixed.json` on the
-Brutus scratch tree each carry a `prompt` field, not just `content`) and
+dev scratch tree each carry a `prompt` field, not just `content`) and
 reran those exact prompts -- still clean on all 4 conditions. Round 3 ran
 GPT's own designed discriminator (baseline/patched x cold-cacheram0 /
 warm-cacheram0 / warm-cacheram512, the exact original prompts): all 6

@@ -16,7 +16,7 @@ deliberately flipped back to `untested` for exactly this reason -- not a
 regression, a genuine "the evidence is for a build that no longer exists"
 situation.
 
-## Real schema-2 hardware pass (2026-09-12, Brutus dual gfx1100, THA02)
+## Real schema-2 hardware pass (2026-09-12, dev dual gfx1100, THA02)
 
 Built the full chain [1222,1223,1236,1238,1239,1240] at current pin b10901
 (schema v2). Real correctness net on ROCm0: 2162/2162 passed (deterministic

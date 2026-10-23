@@ -52,7 +52,7 @@ patches/1241_rd33_mmvq_q8_0_f32_decode/patch.py (widen dispatch); ggml/src/ggml-
 
 ## Validation
 
-1. patch-lint + rebase-check on the widened package. 2. test-backend-ops tolerance correctness for ncols 1..8, forced-candidate, ncols>8 fallback, fused-gate/GLU, non-target (MoE/non-Q8_0/non-gfx1100) controls. 3. rocprof/resource checks. 4. Interleaved paired A/B on production Qwen3.8-27B MTP (Brutus, not run here) where ncols=5/6 dominates -- explicitly NOT the noisy first sequential round. 5. Quality/non-inferiority guard alongside any throughput claim.
+1. patch-lint + rebase-check on the widened package. 2. test-backend-ops tolerance correctness for ncols 1..8, forced-candidate, ncols>8 fallback, fused-gate/GLU, non-target (MoE/non-Q8_0/non-gfx1100) controls. 3. rocprof/resource checks. 4. Interleaved paired A/B on production Qwen3.8-27B MTP (dev, not run here) where ncols=5/6 dominates -- explicitly NOT the noisy first sequential round. 5. Quality/non-inferiority guard alongside any throughput claim.
 
 ## Effort & Risk
 

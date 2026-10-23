@@ -35,8 +35,8 @@ both sides, so an out-of-bounds write fails the case.
 
 ## Models and quantisation behind the measurements
 
-Every radiance number in this log is on one of these containers (read with `rad-info`), on Brutus under
-`/mnt/data/llm-models/radiance/StillDeadcode/`. Activations are E4M3 with an f32 scale a 128 of K wherever an fp8 or
+Every radiance number in this log is on one of these containers (read with `rad-info`), on dev under
+`${MODELS_ROOT}/radiance/StillDeadcode/`. Activations are E4M3 with an f32 scale a 128 of K wherever an fp8 or
 four-bit GEMM consumes them; the KV cache is `--kv-cache-dtype fp8` (8-bit, the floor the owner allows; f16 preferred
 and not yet measured here).
 
@@ -331,7 +331,7 @@ unchanged greedy text. For scale, radiance on the R9700 runs this model at 37-38
 ## What hipfire does on gfx1100 (read 2026-10-10)
 
 `github.com/Kaden-Schutt/hipfire` (Apache-2.0 from v0.3.0; some files MIT by SPDX), commit 0f999cb, cloned to
-`/mnt/data/bigcherry-work/engines/hipfire` on Brutus. A Rust engine with its own HIP kernels; the RX 7900 XTX is
+`${BIGCHERRY_ROOT}/engines/hipfire` on dev. A Rust engine with its own HIP kernels; the RX 7900 XTX is
 its primary target and it has 60-odd kernels written for gfx1100 by name. Its published Qwen3.8-27B (MQ4) numbers,
 self-measured, median of 3:
 
@@ -889,7 +889,7 @@ Loading radiance's host library changes nothing (`KERNELS=libr3,libavx,libref`, 
 lookup is 6,566 us a call averaged either way (about 4.2 to 4.4 ms on decode steps), decode 28.1 tok/s against 28.3.
 The cost is the design's own: libavx keeps 2^19 rows and reads a miss from the container with O_DIRECT, and about half
 of a decode step's rows are new. A random 4 KiB direct read on this drive is about 200 us at one thread
-(`tools/lab/radiance/direct-read-latency.py`), the same on `/mnt/vault` (NTFS through FUSE) and on ext4 `/mnt/data`,
+(`tools/lab/radiance/direct-read-latency.py`), the same on `${VAULT_ROOT}` (NTFS through FUSE) and on ext4 `${DATA_ROOT}`,
 so the filesystem is not the cause. Removing it means holding the table somewhere other than the disk: on the cards
 outside the rank group (the R9700 takes about 30 of the 47.68 GiB), which is asked of the plugin as its own item.
 

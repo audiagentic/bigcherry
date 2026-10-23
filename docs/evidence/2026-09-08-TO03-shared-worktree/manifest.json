@@ -3,7 +3,7 @@
   "kind": "non-patch-shared-worktree-verification",
   "plan_item_ids": ["TO03"],
   "observed_at_utc": "2026-09-08",
-  "host": {"role": "build-server", "hostname": "brutus"},
+  "host": {"role": "build-server", "hostname": "<gpu-host>"},
   "source_revision": "52ab88bebc74e800645f0694327f3a8bf4965195",
   "result": "PASS",
   "limitations": ["The exercise validates repository ownership/staging protocol, not a scheduler or lock service."],

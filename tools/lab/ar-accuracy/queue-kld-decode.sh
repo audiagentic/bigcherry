@@ -5,11 +5,11 @@
 # actually use. Own reference: exact f32 host wire in the same decode mode (8 chunks x 2048 tokens).
 set -u
 cd "$(cd "$(dirname "$0")/../../.." && pwd)"
-export BC_HIP_PATH=/mnt/vault/tmp/bc-rocm
-export BC_MODEL=/mnt/data/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf
+export BC_HIP_PATH=${BC_TMP_ROOT}/bc-rocm
+export BC_MODEL=${BC_MODEL_ROOT}/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf
 K=tools/lab/ar-accuracy/kld.sh
-C=/mnt/data/bigcherry-work/corpus/kld-docs.txt
-R=/mnt/data/bigcherry-work/runs/kld-decode-reference.kld
+C=${BC_WORK_ROOT}/corpus/kld-docs.txt
+R=${BC_WORK_ROOT}/runs/kld-decode-reference.kld
 [ -s "$C" ] || { echo "corpus missing; run queue-ar-accuracy.sh first"; exit 3; }
 D="--chunks 8 --ubatch-size 1"
 jobs=$(mktemp)
@@ -26,7 +26,7 @@ JOBS
 status=0
 bash tools/lab/plan-qualification/queue.sh "$jobs" || status=1
 echo "QUEUE_EXIT=$status $(date -Is)"
-python3 tools/lab/ar-accuracy/gates.py kld /mnt/data/bigcherry-work/runs kldd-ref-repeat kldd-rccl kldd-host-bf16 kldd-host-f16 kldd-adaptive-f32 kldd-adaptive-bf16 || status=1
+python3 tools/lab/ar-accuracy/gates.py kld ${BC_WORK_ROOT}/runs kldd-ref-repeat kldd-rccl kldd-host-bf16 kldd-host-f16 kldd-adaptive-f32 kldd-adaptive-bf16 || status=1
 rm -f "$jobs"
 echo ALL_JOBS_DONE
 exit "$status"

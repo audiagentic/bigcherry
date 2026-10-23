@@ -21,7 +21,7 @@ PGC14 owns SHM CE admission and transport tuning; PGC15 owns token-tiled AR, PGC
 
 ## Gate / terminal outcome
 
-With Brutus host/GPU lane idle, test direct SHM and CE modes 1/2/3 in separate processes, `NCCL_PROTO=Simple`, forced RCCL, actual SHM/provider/protocol receipts, finite timeout and exact collective correctness. Reject any hanging/incorrect mode, retain direct fallback; close CE tuning if no matched pp2048/4096 or collective-wall improvement. Coalescing requires proven safe CE plus host FIFO extent, ring and tail tests. ROCm/rccl #2187 is a gfx12 correctness consideration, not a measured gain.
+With dev host/GPU lane idle, test direct SHM and CE modes 1/2/3 in separate processes, `NCCL_PROTO=Simple`, forced RCCL, actual SHM/provider/protocol receipts, finite timeout and exact collective correctness. Reject any hanging/incorrect mode, retain direct fallback; close CE tuning if no matched pp2048/4096 or collective-wall improvement. Coalescing requires proven safe CE plus host FIFO extent, ring and tail tests. ROCm/rccl #2187 is a gfx12 correctness consideration, not a measured gain.
 
 ## Evidence
 

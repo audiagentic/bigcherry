@@ -85,7 +85,7 @@ GPT design pass (req_83e7cdc000be4b9e): do not create a new WHT or third codec/p
 
 ## Goal
 
-Extract WHT+low-bit compression ideas into BigCherry's existing HIP AllReduce provider framework. Do **not** port r9700-stack's P2P/IPC transport directly onto Brutus-style systems where useful GPU P2P is absent. The first candidate is a compressed **wire representation** layered over an existing transport, especially CPU-root/SHM for large prefill payloads.
+Extract WHT+low-bit compression ideas into BigCherry's existing HIP AllReduce provider framework. Do **not** port r9700-stack's P2P/IPC transport directly onto dev-style systems where useful GPU P2P is absent. The first candidate is a compressed **wire representation** layered over an existing transport, especially CPU-root/SHM for large prefill payloads.
 
 ## Exact source-to-target mapping
 

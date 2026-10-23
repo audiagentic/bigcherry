@@ -2,7 +2,7 @@
 
 Pin: llama.cpp `b11474` (`b9acf138a1e2`). Production reference: Flash-Next IQ4_XS, f16 KV, ub512, 2x gfx1100 + gfx1201 tensor split, gfx1030 draft.
 
-Notation: **V** = verified from current BigCherry/main or pinned upstream source/evidence. **I** = inference to qualify on Brutus.
+Notation: **V** = verified from current BigCherry/main or pinned upstream source/evidence. **I** = inference to qualify on dev.
 
 ## Ranked remaining work
 

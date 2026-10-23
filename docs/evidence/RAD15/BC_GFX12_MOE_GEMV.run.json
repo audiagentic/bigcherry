@@ -13,7 +13,7 @@
     "engine": "radiance",
     "evidence_role": "diagnostic",
     "execution_evidence": "observe",
-    "model": "/mnt/data/llm-models/radiance/StillDeadcode/qwen3.6-35b-a3b-fp8/qwen3.6-35b-a3b-fp8.rad",
+    "model": "${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.6-35b-a3b-fp8/qwen3.6-35b-a3b-fp8.rad",
     "server_args": [
       "--radiance-home",
       "${RAD_HOME}",
@@ -111,17 +111,17 @@
         "build_plan_id": "eddbf012ae5e49c655f6c87bc492d018",
         "effective_configure": {
           "CMAKE_BUILD_TYPE": "Release",
-          "CMAKE_CXX_COMPILER": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14",
+          "CMAKE_CXX_COMPILER": "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14",
           "CMAKE_CXX_COMPILER-ADVANCED": "1",
-          "CMAKE_CXX_COMPILER_AR": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ar-14",
+          "CMAKE_CXX_COMPILER_AR": "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ar-14",
           "CMAKE_CXX_COMPILER_AR-ADVANCED": "1",
-          "CMAKE_CXX_COMPILER_RANLIB": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ranlib-14",
+          "CMAKE_CXX_COMPILER_RANLIB": "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ranlib-14",
           "CMAKE_CXX_COMPILER_RANLIB-ADVANCED": "1",
-          "CMAKE_C_COMPILER": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14",
+          "CMAKE_C_COMPILER": "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14",
           "CMAKE_C_COMPILER-ADVANCED": "1",
-          "CMAKE_C_COMPILER_AR": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ar-14",
+          "CMAKE_C_COMPILER_AR": "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ar-14",
           "CMAKE_C_COMPILER_AR-ADVANCED": "1",
-          "CMAKE_C_COMPILER_RANLIB": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ranlib-14",
+          "CMAKE_C_COMPILER_RANLIB": "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ranlib-14",
           "CMAKE_C_COMPILER_RANLIB-ADVANCED": "1",
           "CMAKE_EXE_LINKER_FLAGS": "",
           "CMAKE_EXE_LINKER_FLAGS-ADVANCED": "1",
@@ -164,11 +164,11 @@
         "toolchain": [
           [
             "CMAKE_CXX_COMPILER",
-            "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14"
+            "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14"
           ],
           [
             "CMAKE_C_COMPILER",
-            "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14"
+            "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14"
           ],
           [
             "CMAKE_GENERATOR",
@@ -176,7 +176,7 @@
           ],
           [
             "c_compiler_realpath",
-            "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14"
+            "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14"
           ],
           [
             "c_compiler_version",
@@ -188,7 +188,7 @@
           ],
           [
             "cxx_compiler_realpath",
-            "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14"
+            "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14"
           ],
           [
             "cxx_compiler_version",
@@ -224,17 +224,17 @@
         "build_plan_id": "eddbf012ae5e49c655f6c87bc492d018",
         "effective_configure": {
           "CMAKE_BUILD_TYPE": "Release",
-          "CMAKE_CXX_COMPILER": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14",
+          "CMAKE_CXX_COMPILER": "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14",
           "CMAKE_CXX_COMPILER-ADVANCED": "1",
-          "CMAKE_CXX_COMPILER_AR": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ar-14",
+          "CMAKE_CXX_COMPILER_AR": "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ar-14",
           "CMAKE_CXX_COMPILER_AR-ADVANCED": "1",
-          "CMAKE_CXX_COMPILER_RANLIB": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ranlib-14",
+          "CMAKE_CXX_COMPILER_RANLIB": "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ranlib-14",
           "CMAKE_CXX_COMPILER_RANLIB-ADVANCED": "1",
-          "CMAKE_C_COMPILER": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14",
+          "CMAKE_C_COMPILER": "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14",
           "CMAKE_C_COMPILER-ADVANCED": "1",
-          "CMAKE_C_COMPILER_AR": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ar-14",
+          "CMAKE_C_COMPILER_AR": "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ar-14",
           "CMAKE_C_COMPILER_AR-ADVANCED": "1",
-          "CMAKE_C_COMPILER_RANLIB": "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ranlib-14",
+          "CMAKE_C_COMPILER_RANLIB": "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ranlib-14",
           "CMAKE_C_COMPILER_RANLIB-ADVANCED": "1",
           "CMAKE_EXE_LINKER_FLAGS": "",
           "CMAKE_EXE_LINKER_FLAGS-ADVANCED": "1",
@@ -277,11 +277,11 @@
         "toolchain": [
           [
             "CMAKE_CXX_COMPILER",
-            "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14"
+            "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14"
           ],
           [
             "CMAKE_C_COMPILER",
-            "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14"
+            "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14"
           ],
           [
             "CMAKE_GENERATOR",
@@ -289,7 +289,7 @@
           ],
           [
             "c_compiler_realpath",
-            "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14"
+            "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14"
           ],
           [
             "c_compiler_version",
@@ -301,7 +301,7 @@
           ],
           [
             "cxx_compiler_realpath",
-            "/mnt/data/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14"
+            "${BC_CACHE_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14"
           ],
           [
             "cxx_compiler_version",
@@ -364,7 +364,7 @@
       "position": 0,
       "returncode": 0,
       "performance_admitted": false,
-      "server_log": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/q35-bcg12-1021-075718/pair-001-q35-libr4d/server.log",
+      "server_log": "${BC_REPO_ROOT}/work/q35-bcg12-1021-075718/pair-001-q35-libr4d/server.log",
       "settings": {
         "BC_GFX12_MOE_GEMV": "0"
       },
@@ -427,7 +427,7 @@
       "position": 1,
       "returncode": 0,
       "performance_admitted": false,
-      "server_log": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/q35-bcg12-1021-075718/pair-001-q35-bcgfx12/server.log",
+      "server_log": "${BC_REPO_ROOT}/work/q35-bcg12-1021-075718/pair-001-q35-bcgfx12/server.log",
       "settings": {
         "BC_GFX12_MOE_GEMV": "1"
       },
@@ -490,7 +490,7 @@
       "position": 0,
       "returncode": 0,
       "performance_admitted": false,
-      "server_log": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/q35-bcg12-1021-075718/pair-002-q35-bcgfx12/server.log",
+      "server_log": "${BC_REPO_ROOT}/work/q35-bcg12-1021-075718/pair-002-q35-bcgfx12/server.log",
       "settings": {
         "BC_GFX12_MOE_GEMV": "1"
       },
@@ -553,7 +553,7 @@
       "position": 1,
       "returncode": 0,
       "performance_admitted": false,
-      "server_log": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/q35-bcg12-1021-075718/pair-002-q35-libr4d/server.log",
+      "server_log": "${BC_REPO_ROOT}/work/q35-bcg12-1021-075718/pair-002-q35-libr4d/server.log",
       "settings": {
         "BC_GFX12_MOE_GEMV": "0"
       },

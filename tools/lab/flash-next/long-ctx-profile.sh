@@ -14,9 +14,9 @@
 set -u
 bin=$1 out=$2
 mkdir -p "$out"
-model=${BC_MODEL:-/mnt/data/llm-models/qwen3.8-flash-next/gguf/mtp/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf}
+model=${BC_MODEL:-${BC_MODEL_ROOT}/qwen3.8-flash-next/gguf/mtp/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf}
 AR_ARG=(--allreduce "${AR:-cpu-root}"); [ "${AR:-}" = none ] && AR_ARG=()  # AR=none: binaries without --allreduce (native llama.cpp)
-draft=${DRAFT:-/mnt/data/llm-models/qwen3.8-flash-next/gguf/unsloth/MTP/mtp-Qwen3.8-Flash-Next-Q8_0-qsa4.gguf}
+draft=${DRAFT:-${BC_MODEL_ROOT}/qwen3.8-flash-next/gguf/unsloth/MTP/mtp-Qwen3.8-Flash-Next-Q8_0-qsa4.gguf}
 spec=(--no-spec-draft-backend-sampling --spec-type draft-mtp)
 [ -n "${SPEC_TYPE:-}" ] && spec=(--spec-type "$SPEC_TYPE")           # e.g. draft-dspark, draft-dflash
 [ -n "${SPEC_PMIN:-}" ] && spec+=(--spec-draft-p-min "$SPEC_PMIN")  # 0 for a DSpark draft without a confidence head
@@ -91,7 +91,7 @@ def chat_prompt(user):
                                  json.dumps({"messages": [{"role": "user", "content": user}]}).encode(),
                                  {"Content-Type": "application/json"})
     return json.loads(urllib.request.urlopen(req, timeout=600).read())["prompt"]
-corpus = open("/mnt/data/bigcherry-work/corpus/kld-docs.txt", errors="replace").read()
+corpus = open("${BC_WORK_ROOT}/corpus/kld-docs.txt", errors="replace").read()
 ASK = "\n\n" + __import__("os").environ.get("ASK", "Summarise the above in detail:")  # the request after the filled context
 post({"prompt": "Hello", "n_predict": 8, "cache_prompt": False})
 if __import__("os").environ.get("CANCEL_AFTER"):  # QFP42: abandon a long prompt in mid-prefill, then carry on as usual

@@ -10,7 +10,7 @@
 set -u
 RUN=${1:?build run}; TAG=${2:?tag}; DEPTH=${3:-8192}
 here=$(cd "$(dirname "$0")" && pwd)
-R=/mnt/data/bigcherry-work/runs
+R=${BC_WORK_ROOT}/runs
 ( bash "$here/queue-prefill-profile.sh" "$RUN" "$TAG-base" "$DEPTH" )
 ( export BIGCHERRY_PREFILL_PIPELINE=0; bash "$here/queue-prefill-profile.sh" "$RUN" "$TAG-nopipe" "$DEPTH" )
 ( export BIGCHERRY_MTP_DEFERRED_CATCHUP=0; bash "$here/queue-prefill-profile.sh" "$RUN" "$TAG-nocatchup" "$DEPTH" )

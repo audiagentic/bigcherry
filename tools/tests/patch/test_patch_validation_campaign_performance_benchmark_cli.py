@@ -2,13 +2,13 @@
 argument contract is directly testable (no hardware needed, main() exits
 via parser.error() before touching a build). Real end-to-end behavior
 (actual cmake builds, actual llama-bench execution) is covered by
-PVPS02's real-hardware merge gate on Brutus, consistent with the
+PVPS02's real-hardware merge gate on dev, consistent with the
 project's established convention for this class of function (see
 Rd04CliWiringTests in test_patch_validation_campaign_va04.py).
 
 OrchestrationLogicTests below is a real, deliberate exception to that
 "don't mock the whole pipeline" convention: a first real-hardware smoke
-run of this exact CLI on Brutus (2026-09-11) hit a plain NameError
+run of this exact CLI on dev (2026-09-11) hit a plain NameError
 (require_device_visibility used without being imported) that every
 test in this file at the time -- all either parser-only or source-
 inspection-only -- was structurally incapable of catching, because none

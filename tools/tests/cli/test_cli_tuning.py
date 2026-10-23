@@ -120,7 +120,7 @@ class TuningCliRecordLookupTests(unittest.TestCase):
     def test_out_of_tree_generation_never_touches_the_release_record(self) -> None:
         # Validation campaigns generate into isolated worktrees that share the
         # checkout's revision; recording that would rewrite the canonical
-        # releases/<rev>.json (observed on Brutus: stage and manifest hash).
+        # releases/<rev>.json (observed on dev: stage and manifest hash).
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             record = mock.Mock(stage="patched", revision="abc123")

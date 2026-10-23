@@ -1,5 +1,5 @@
 #!/bin/bash
-# PGC14: build RCCL (ROCm/rccl checkout on Brutus) without hostcall-dependent kernels so it runs on GPUs
+# PGC14: build RCCL (ROCm/rccl checkout on dev) without hostcall-dependent kernels so it runs on GPUs
 # without PCIe atomics (RX 6900 XT on a chipset port). Stock ROCm 7.2.4 RCCL's ncclDevKernel_Generic_{1,2,4}
 # (and Debug variants) declare hidden_hostcall_buffer for gfx1030; ROCr refuses to dispatch them there.
 # Then verify no kernel in the new library requests hostcall, and run rccl-tests on R9700 + 6900 XT.

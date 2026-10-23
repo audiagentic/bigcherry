@@ -21,7 +21,7 @@ from bigcherry.jobs.runner import campaign_argv
 
 def inventory() -> HardwareInventory:
     return HardwareInventory(
-        host_id="brutus",
+        host_id="dev",
         platform_family="linux-rocm",
         platform_environment_hash="env",
         devices=(

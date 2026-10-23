@@ -39,7 +39,7 @@ config/recipes.toml, tools/bigcherry/core/paths.py, tools/bigcherry/core/context
 
 ## Validation
 
-pin-status lists both engines; existing llama.cpp lanes produce the same build plan ids as before; a radiance lane builds on Brutus.
+pin-status lists both engines; existing llama.cpp lanes produce the same build plan ids as before; a radiance lane builds on dev.
 
 ## Effort & Risk
 

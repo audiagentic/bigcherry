@@ -4,7 +4,7 @@
 set -u
 out=$1; mkdir -p "$out"
 here=$(cd "$(dirname "$0")" && pwd)
-rocm=${BC_HIP_PATH:-/mnt/vault/tmp/bc-rocm}
+rocm=${BC_HIP_PATH:-${BC_TMP_ROOT}/bc-rocm}
 "$rocm/bin/hipcc" -O2 --offload-arch=gfx1100,gfx1201 -I"$rocm/include" "$here/ar-latency.hip" -L"$rocm/lib" -lrccl -o "$out/ar-latency" || exit 1
 for vis in 0,1 0,1,2; do
   echo "== devices $vis"

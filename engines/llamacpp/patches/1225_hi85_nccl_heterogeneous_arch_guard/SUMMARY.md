@@ -30,7 +30,7 @@ Real fix: `hipDeviceAttributeHostNativeAtomicSupported` exposes the actual
 fact directly, per device, via the standard HIP API. Verified on real
 hardware (2026-09-02, standalone HIP probe binary): returns `1` for devices
 0/1/2 (all CPU-direct PCIe root ports) and `0` for device 3 (chipset-routed)
-on Brutus -- with no device ordinal hardcoded anywhere in the check itself,
+on dev -- with no device ordinal hardcoded anywhere in the check itself,
 consistent with this project's own topology-identity rules (no persistent
 identity may be bound to a HIP ordinal/PCI BDF/hostname).
 

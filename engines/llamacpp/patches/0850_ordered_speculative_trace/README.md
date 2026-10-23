@@ -20,7 +20,7 @@ gate couldn't see.
 
 ## Real hardware evidence
 
-Per HI166's own plan item (state `completed`): real Brutus MTP trace
+Per HI166's own plan item (state `completed`): real dev MTP trace
 verified ordered `draft_trace` emission and reconciliation; the HI141
 hard-fail witness remains intact under the new gate; focused
 behavioral/patch offline suites pass. Design reviewed by `dev-gpt-agent`

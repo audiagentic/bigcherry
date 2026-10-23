@@ -1,5 +1,5 @@
 #!/bin/bash
-# Reference lane: the owner's existing `radiance-vllm` container on Brutus (vLLM + radiance + libr4d, Qwen3.8-27B MXFP4,
+# Reference lane: the owner's existing `radiance-vllm` container on dev (vLLM + radiance + libr4d, Qwen3.8-27B MXFP4,
 # DFlash2-FP8 drafter, one R9700), measured with the lab's own prompt corpus and depths. The container is started,
 # measured and stopped again; nothing in its configuration is changed.
 # Run it as a queue SCRIPT job so the GPU lock covers it:

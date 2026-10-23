@@ -5,8 +5,8 @@
 # Usage: fastbuild.sh <commit> [BUILD_DIR]   (BUILD_DIR defaults to $FASTBUILD_DIR, then the newest build with a moe-remote sub-build)
 set -euo pipefail
 SHA=$1
-CHECKOUT=${FASTBUILD_CHECKOUT:-/mnt/data/bigcherry-work/wt-accept}
-WORK=${WORK:-/mnt/vault/development/projects/bigcherry/workspaces/main/work}
+CHECKOUT=${FASTBUILD_CHECKOUT:-${BC_CACHE_ROOT}/wt-accept}
+WORK=${WORK:-${BC_REPO_ROOT}/work}
 B=${2:-${FASTBUILD_DIR:-$(ls -td $WORK/builds/*/*/ | while read d; do [ -f "${d}components/moe-remote/build.ninja" ] && { echo "${d%/}"; break; }; done)}}
 export ROCM_PATH=${ROCM_PATH:-/opt/rocm-7.2.4} PATH=${ROCM_PATH:-/opt/rocm-7.2.4}/bin:$PATH
 git -C "$CHECKOUT" fetch -q origin 2>/dev/null || true

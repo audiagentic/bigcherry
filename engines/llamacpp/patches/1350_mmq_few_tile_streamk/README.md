@@ -14,7 +14,7 @@ The default remains off because qualification covers one model/topology.
 
 ## Promotion record
 
-QFP18 lightweight tier; pin b11474; Brutus 2026-10-08. Build `b-metamem-qfp37c` composed 49/49 patches, compiled cleanly, smoke reported 0 error lines, and emitted:
+QFP18 lightweight tier; pin b11474; dev 2026-10-08. Build `b-metamem-qfp37c` composed 49/49 patches, compiled cleanly, smoke reported 0 error lines, and emitted:
 
 `BIGCHERRY_PATCH_HIT patch=1350_mmq_few_tile_streamk cc=16781568 I=128 J=128 tiles=12 cu=48 k=10240 n=512`
 
@@ -36,4 +36,4 @@ No separate native build was required for this mechanism: the off arm (`BIGCHERR
 
 ## Coverage limit
 
-Verified on Flash-Next IQ4_XS with the production Brutus layout only. A second model was not measured; keep the build/runtime default off outside the Flash-Next profile.
+Verified on Flash-Next IQ4_XS with the production dev layout only. A second model was not measured; keep the build/runtime default off outside the Flash-Next profile.

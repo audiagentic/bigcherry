@@ -12,7 +12,7 @@ dev-gpt-agent deep design review (2026-08-25) found this gap while
 reviewing HI119's design: init_mul_mat_id_tensors() is a THIRD, separate
 std::random_device site, distinct from what patches 1222 (float init only)
 and 1236 (test_generic_op's own internal branch only, per its own
-docstring) already cover -- real-hardware confirmed on Brutus that two
+docstring) already cover -- real-hardware confirmed on dev that two
 independent process invocations of the same seed now emit byte-identical
 BIGCHERRY_REF_DIGEST lines for the ids tensor."""
 

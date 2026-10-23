@@ -144,7 +144,7 @@ int main() {
         std::vector<uint8_t> seg((size_t)ql.bytes);
         check(init(seg.data(), 41, qs), "init for the second shape");
         auto* h = reinterpret_cast<Header*>(seg.data());
-        check(h->version == 14 && h->hidden == 2048 && h->expert_count == 256 && h->top_k == 8 && h->intermediate == 512 &&
+        check(h->version == kVersion && h->hidden == 2048 && h->expert_count == 256 && h->top_k == 8 && h->intermediate == 512 &&
               h->activation_group == 128 && h->shape_hash == shape_hash(qs), "the header records the shape");
         check(valid(h, seg.size(), qs), "the same shape is accepted");
         check(!valid(h, seg.size(), legacy_shape()), "a side expecting another shape refuses the segment");
@@ -161,8 +161,10 @@ int main() {
             h->segment_bytes += kPage; check(!valid(h, seg.size(), qs), "a wrong segment length is refused"); *h = keep;
             h->shape_hash ^= 1; check(!valid(h, seg.size(), qs), "a wrong shape hash is refused"); *h = keep;
             h->hidden = 2560; check(!valid(h, seg.size(), qs), "edited shape fields are refused"); *h = keep;
-            h->version = 13; check(!valid(h, seg.size(), qs), "a stale v13 segment is refused"); *h = keep;
+            h->version = 14; check(!valid(h, seg.size(), qs), "a stale v14 segment is refused"); *h = keep;
             h->small_class_rows[0] = h->max_rows + 1; check(!valid(h, seg.size(), qs), "a class above the row capacity is refused"); *h = keep;
+            check(h->combine.enabled == 0 && h->combine.request == 0 && h->combine.done == 0,
+                  "a new segment starts with R3_MOE_WORKER_COMBINE off and no generation");
             check(valid(h, seg.size(), qs), "and the restored header is accepted again");
         }
         check(!init(seg.data(), 41, LayoutShape{2048, 8, 256, 4096, 100, 512}), "init refuses a shape that does not lay out");

@@ -8,7 +8,7 @@ Question state: open
 ## Question
 
 How does the stock Vulkan backend (RADV; AMDVLK once installed) compare with the HIP production build on
-Brutus for Qwen3.8-27B and Flash-Next, and what does a Vulkan AllReduce provider buy under -sm tensor?
+dev for Qwen3.8-27B and Flash-Next, and what does a Vulkan AllReduce provider buy under -sm tensor?
 
 ## Inputs
 
@@ -17,7 +17,7 @@ Brutus for Qwen3.8-27B and Flash-Next, and what does a Vulkan AllReduce provider
 
 ## Outputs
 
-Run outputs under `/mnt/data/bigcherry-work/runs/<run>/` on Brutus.
+Run outputs under `${BIGCHERRY_ROOT}/runs/<run>/` on dev.
 
 ## Runtime
 

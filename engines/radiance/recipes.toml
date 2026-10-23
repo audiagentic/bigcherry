@@ -94,15 +94,15 @@ tune-context = 4096
 production-context = 8192
 min-free-vram-bytes-per-device = 268435456
 
-# Brutus: radiance's host code needs GCC 14 (C++23); HIP is found by radiance's own CMake from ROCm on PATH.
+# dev: radiance's host code needs GCC 14 (C++23); HIP is found by radiance's own CMake from ROCm on PATH.
 # RAD_GPU_TARGETS names libr4d's kernel targets (gfx12 only); the gfx1100 kernels come from the libr3 component.
 # ${VAR} values come from the environment or config/environment.local.toml [env].
 [platform.linux-radiance]
-description = "brutus: radiance engine build (GCC 14 host compiler; ROCm from PATH)"
+description = "dev: radiance engine build (GCC 14 host compiler; ROCm from PATH)"
 targets = ["gfx1201"]
 # ccache wraps every compiler CMake invokes (host C/C++ AND the HIP device-code compiler) so a
 # from-scratch build after a small source change only recompiles the touched translation units --
-# unconditional here since ccache is present on every host this platform builds on (Brutus and the
+# unconditional here since ccache is present on every host this platform builds on (dev and the
 # CI image both have it); if a future host lacks it, configure fails loudly rather than silently
 # rebuilding everything, which is the right failure mode to notice and fix.
 options = { RAD_BUILD_TESTS = "OFF", CMAKE_C_COMPILER_LAUNCHER = "ccache", CMAKE_CXX_COMPILER_LAUNCHER = "ccache", CMAKE_HIP_COMPILER_LAUNCHER = "ccache" }

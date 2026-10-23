@@ -71,7 +71,7 @@ patch's other edits but reverts only the two VDR routing lines.
 
 ## Real full contract-qualification run at current pin (2026-09-13) -- real correctness-gate FAIL, investigated
 
-Ran `run_rd08_contract_qualification()` directly for real on Brutus
+Ran `run_rd08_contract_qualification()` directly for real on dev
 against the current active pin (`b10901`/`28ff0958291c`), single gfx1100,
 `tierM-gptoss20b-q6k`, 6 paired decode/prefill rounds, real trigger probe.
 

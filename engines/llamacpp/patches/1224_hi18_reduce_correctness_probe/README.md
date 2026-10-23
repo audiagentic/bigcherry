@@ -20,7 +20,7 @@ update assigned as the missing piece.
 
 Local design, part of this project's own correctness-evidence work (HI18).
 
-## Real hardware evidence (2026-09-02, Brutus, {0,1} pair)
+## Real hardware evidence (2026-09-02, dev, {0,1} pair)
 
 1. **Mechanism validation**: 63/63 synthetic RCCL/META/AUTO executions
    across 6 numerical patterns, 3 seeds, and swapped device order.
@@ -46,7 +46,7 @@ Local design, part of this project's own correctness-evidence work (HI18).
    incomplete first-draft bound caught by GPT review before being
    trusted) -- kept on disk for the record, not counted as evidence.
 
-Full evidence: `artifacts/gp04-full-corpus/` on Brutus (per-signature logs
+Full evidence: `artifacts/gp04-full-corpus/` on dev (per-signature logs
 + `reduce-correctness.jsonl` for all 10 signatures).
 
 ## Lifecycle: promoted to `validated` (2026-09-11, D=2 scope)

@@ -20,7 +20,7 @@ single-token decode path RD26 targets)?
 Reuses the SUBJECT `llama-results` binary already built by campaign
 session t-1210diag-gfx1100-s1 (patch-refactor commit 00688dee), cached at
 `work/worktrees/builds/1210_rd26_bitidentical_decode_verify_standalone-subject-gfx1100+gfx1201+gfx1030/bin/llama-results`
-on Brutus. No new build required -- this reruns the existing binary with
+on dev. No new build required -- this reruns the existing binary with
 different `--ubatch-size` values and diffs the raw GGUF outputs directly,
 the same mechanism 1210's own producer.py uses internally.
 

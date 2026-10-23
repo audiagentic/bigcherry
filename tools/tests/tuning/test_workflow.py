@@ -1,6 +1,6 @@
 """HI130: pure-Python helpers in tuning/workflow.py -- the parts testable
 without a real GPU/build (the full run_tune_campaign() orchestration needs
-real hardware and is validated live on Brutus, not here).
+real hardware and is validated live on dev, not here).
 """
 
 from __future__ import annotations

@@ -555,7 +555,7 @@ WINDOW v1 is deliberately conservative outside the fresh-prompt path:
 - chg_20261008_015330_faster-prompt-processing-6-10_3634
 ## Completion (2026-10-08)
 
-1348_mtp_deferred_catchup qualified and promoted at b11474. Brutus adoption ABBA measured +5.4% / +6.3% / +9.7%
+1348_mtp_deferred_catchup qualified and promoted at b11474. dev adoption ABBA measured +5.4% / +6.3% / +9.7%
 prefill at 8K / 24K / 98K with complete separation, PATCH_HIT activation, unchanged decode/acceptance within noise,
 and greedy target identity at all depths. The original 1346 prompt-window mechanism did not qualify and is removed
 from that diagnostic package separately.

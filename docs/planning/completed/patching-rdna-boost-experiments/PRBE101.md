@@ -35,7 +35,7 @@ ggml/src/ggml-cuda/ggml-cuda.cu (ggml_backend_cuda_graph_compute activation site
 
 ## Validation
 
-rocprofv3 profiling (step 4) is a genuine prerequisite to finalizing the guard condition, not just to validating it -- same pattern as PRBE49's reproduction-first gate. Offline: patch-lint, patch-rebase-check with 1215+1216 present. Hardware (Brutus, not run here): full 2x2 matrix (OFF/ON x layer-split/tensor-split/single-GPU) re-run after the guard change, confirming the -4.4% layer-split regression is gone while the +2.47% single-GPU win and tensor-split neutrality are preserved.
+rocprofv3 profiling (step 4) is a genuine prerequisite to finalizing the guard condition, not just to validating it -- same pattern as PRBE49's reproduction-first gate. Offline: patch-lint, patch-rebase-check with 1215+1216 present. Hardware (dev, not run here): full 2x2 matrix (OFF/ON x layer-split/tensor-split/single-GPU) re-run after the guard change, confirming the -4.4% layer-split regression is gone while the +2.47% single-GPU win and tensor-split neutrality are preserved.
 
 ## Effort & Risk
 

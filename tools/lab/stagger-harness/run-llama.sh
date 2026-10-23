@@ -13,7 +13,7 @@ mkdir -p "$out"
 here=$(cd "$(dirname "$0")" && pwd)
 bin=$(dirname "$server")
 [ -d "${SRC:-/nonexistent}/include" ] || { echo "NO_SOURCE_TREE (set SRC)"; exit 1; }
-model=${BC_MODEL:-/mnt/data/llm-models/qwen3.8-flash-next/gguf/mtp/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf}
+model=${BC_MODEL:-${BC_MODEL_ROOT}/qwen3.8-flash-next/gguf/mtp/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf}
 export LD_LIBRARY_PATH="$bin:${LD_LIBRARY_PATH:-}"
 export HIP_VISIBLE_DEVICES=${CARDS:-0,1,2} ROCR_VISIBLE_DEVICES=${CARDS:-0,1,2}
 export GGML_CUDA_ALLREDUCE=${GGML_CUDA_ALLREDUCE:-cpu-root} BIGCHERRY_FEATURES=${BIGCHERRY_FEATURES:-flashnext}

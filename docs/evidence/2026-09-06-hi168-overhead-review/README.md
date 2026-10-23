@@ -7,7 +7,7 @@ small effects must not be dismissed through an invented materiality threshold.
 
 ## Production artifact inspected
 
-Brutus, dual gfx1100, Qwen3.8-27B-Q8_0, build plan
+<gpu-host>, dual gfx1100, Qwen3.8-27B-Q8_0, build plan
 `6f1226a6bdbfa5750b567f3747410b4a`, source slice
 `0f753581db8cc7d4bbc54553960c3c90`. CMakeCache.txt and build metadata confirm
 AUTOTUNE=OFF, DISPATCH_DIAGNOSTICS=OFF, DISPATCH_REPLAY=ON.
@@ -67,9 +67,9 @@ changing each storage byte individually.
 
 The upgrade was applied to isolated local copies of the five family files and
 HIP CMakeLists.txt from the running source directory
-`/home/audumla/.cache/bigcherry/sources/1ad3df0e2664faf5c46f6d4ea748cb76`.
+`${HOME}/.cache/bigcherry/sources/1ad3df0e2664faf5c46f6d4ea748cb76`.
 All six files changed successfully; a second application changed none. Neither
-the executing Brutus script nor the shared vendor checkout was edited.
+the executing <gpu-host> script nor the shared vendor checkout was edited.
 
 ## Review and remaining work
 
@@ -95,7 +95,7 @@ replay-without-cache versus replay-with-cache effects; retain build identities,
 per-cell graceful-exit and activation evidence, fixed workload, balanced order,
 and session-aware uncertainty. MTP additionally requires work equivalence.
 
-The already-running `/home/audumla/tuned-nospec.log` eight-round comparison
+The already-running `${HOME}/tuned-nospec.log` eight-round comparison
 does not retain per-cell activation or exit evidence. Preserve it as diagnostic
 timing history, not an admitted winner-effect result. No new GPU run or build
 was started alongside it.
@@ -142,6 +142,6 @@ not a claim about observed compiler state. Broader checks passed 687 tests and
 
 Owner reported a competing XTX run during the old eight-round comparison;
 that adds contention to its existing evidence defects. No performance result
-is admitted from it. After the owner released Brutus, read-only ROCm inspection
+is admitted from it. After the owner released <gpu-host>, read-only ROCm inspection
 at 2026-09-06 04:33 UTC showed all GPUs idle, zero allocated VRAM and no KFD
 processes. This is a point-in-time check, not a reservation or proof for a future run.

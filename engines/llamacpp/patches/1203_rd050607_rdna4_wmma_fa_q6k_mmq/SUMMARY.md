@@ -19,7 +19,7 @@ Ported (with adaptations for this project's own 1000/HI70 anchors) from stew675-
 
 The sections above describe the original claim and are preserved unchanged.
 This patch is `rejected` as a bundle: its declared real-hardware acceptance
-(PA39 retry-1, Brutus, revision `a4d373fa`, pin `28ff0958`/b10901,
+(PA39 retry-1, dev, revision `a4d373fa`, pin `28ff0958`/b10901,
 gfx1100 devices 0/1, gfx1201 device 2, gfx1030 device 3) completed and
 failed one of its three contracts.
 

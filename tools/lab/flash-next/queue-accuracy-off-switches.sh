@@ -9,9 +9,9 @@
 # Usage: queue-accuracy-off-switches.sh <build tag, e.g. b-main3> [ID:VAR=value ...]
 set -u
 cd "$(cd "$(dirname "$0")/../../.." && pwd)"
-R=/mnt/data/bigcherry-work/runs
-export BC_MODEL=/mnt/data/llm-models/qwen3.8-flash-next/gguf/mtp/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf
-export BC_HIP_PATH=/mnt/vault/tmp/bc-rocm
+R=${BC_WORK_ROOT}/runs
+export BC_MODEL=${BC_MODEL_ROOT}/qwen3.8-flash-next/gguf/mtp/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf
+export BC_HIP_PATH=${BC_TMP_ROOT}/bc-rocm
 build=$1; shift
 [ $# -eq 0 ] && set -- 1334:BIGCHERRY_FA_SPARSE=0 1347:BIGCHERRY_F32_THIN_MMVF=0 1350:BIGCHERRY_MMQ_FEW_TILE_STREAMK=0
 for item in "$@"; do

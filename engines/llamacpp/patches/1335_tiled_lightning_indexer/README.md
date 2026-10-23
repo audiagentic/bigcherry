@@ -7,7 +7,7 @@ batch, which today means Qwen4Exp prompt batches, so other models and single-tok
 
 ## Evidence
 
-Brutus, 2x 7900 XTX + R9700 tensor split, 6900 XT MTP drafter, ctx 245760, f16 KV, `flashnext` profile, ub 512,
+dev, 2x 7900 XTX + R9700 tensor split, 6900 XT MTP drafter, ctx 245760, f16 KV, `flashnext` profile, ub 512,
 sparse flash attention (1334) on in both arms. Build `b-ixtile-b11402f` (production set + this patch), run
 `tools/lab/flash-next/queue-indexer-tile.sh b11402f 81920 163840`. One binary; A = default (tile on),
 B = `BIGCHERRY_INDEXER_TILE=0`; ABBA.

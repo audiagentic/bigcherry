@@ -433,7 +433,7 @@ Overall QFP37 on the production three-card Flash-Next topology: **go only after 
 
 ## Completion (2026-10-08)
 
-1350_mmq_few_tile_streamk promoted under the QFP18 lightweight tier at pin b11474. Brutus ABBA showed +1.8% / +1.2% / +1.9% prefill at 8K / 24K / 98K with complete separation, PATCH_HIT present, no decode regression, and CPU-F32-reference probes no worse than production. The package remains default-off; the qualified Flash-Next profile enables it. The separate IQ4_XS I=32 hypothesis was not required for this completed slice.
+1350_mmq_few_tile_streamk promoted under the QFP18 lightweight tier at pin b11474. dev ABBA showed +1.8% / +1.2% / +1.9% prefill at 8K / 24K / 98K with complete separation, PATCH_HIT present, no decode regression, and CPU-F32-reference probes no worse than production. The package remains default-off; the qualified Flash-Next profile enables it. The separate IQ4_XS I=32 hypothesis was not required for this completed slice.
 
 ## Ledger-events
 

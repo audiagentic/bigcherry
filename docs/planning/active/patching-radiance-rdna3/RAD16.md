@@ -11,7 +11,7 @@ priority: P2
 work: M
 ---
 
-# The RX 6900 XT (gfx1030) on Brutus: what it can usefully do
+# The RX 6900 XT (gfx1030) on dev: what it can usefully do
 
 ## Description
 

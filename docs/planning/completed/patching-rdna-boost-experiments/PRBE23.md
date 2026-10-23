@@ -40,11 +40,11 @@ patches/1237_rd30_moe_mmq_compact_grid/ (existing, unchanged); tools/bigcherry/p
 
 ## Validation
 
-Full campaign run via `tools/bigcherry/patch/validation_campaign.py` on Brutus (CORRECTED runner path; not run here): record->tune->promote->export->replay->bench->report, dual-gfx1100, Qwen3.6-35B-A3B, hostile routing matrix, native/tune correctness, non-target architecture controls. Only after this formally-recorded run may patch 1237's STATE move from untested toward validated.
+Full campaign run via `tools/bigcherry/patch/validation_campaign.py` on dev (CORRECTED runner path; not run here): record->tune->promote->export->replay->bench->report, dual-gfx1100, Qwen3.6-35B-A3B, hostile routing matrix, native/tune correctness, non-target architecture controls. Only after this formally-recorded run may patch 1237's STATE move from untested toward validated.
 
 ## Effort & Risk
 
-S (qualification/process only, no new code) but gated on real hardware time on Brutus which is outside this batch's scope.
+S (qualification/process only, no new code) but gated on real hardware time on dev which is outside this batch's scope.
 
 ## Standards
 

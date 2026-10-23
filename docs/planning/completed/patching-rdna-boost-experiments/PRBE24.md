@@ -40,7 +40,7 @@ patches/1237_rd30_moe_mmq_compact_grid/patch.py (read-only reference, the prep k
 
 ## Validation
 
-GPU map exactly matches CPU reference for tokens 1..4096 across uniform/all-one/skew/Zipf/tiny/n_expert=256 distributions; map-build microtiming, zero host readback in steady state, temp-bytes and grid-limit accounting; overflow fixture proves the legacy-grid fallback actually engages. This is a narrower, faster check than PRBE23's full campaign and should be runnable as an isolated hardware step on Brutus.
+GPU map exactly matches CPU reference for tokens 1..4096 across uniform/all-one/skew/Zipf/tiny/n_expert=256 distributions; map-build microtiming, zero host readback in steady state, temp-bytes and grid-limit accounting; overflow fixture proves the legacy-grid fallback actually engages. This is a narrower, faster check than PRBE23's full campaign and should be runnable as an isolated hardware step on dev.
 
 ## Effort & Risk
 

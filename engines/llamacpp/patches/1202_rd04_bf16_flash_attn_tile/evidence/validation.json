@@ -1002,11 +1002,11 @@
           ],
           "results": {
             "backend_reference": {
-              "detail": "could not produce a real BF16 flash-attn perplexity comparison: llama-perplexity (/mnt/vault/development/projects/bigcherry/workspaces/main/work/worktrees/builds/1202_rd04_bf16_flash_attn_tile-subject-gfx1100+gfx1201+gfx1030/bin/llama-perplexity) produced no parseable 'Final estimate: PPL = ...' line -- cannot treat this as evidence",
+              "detail": "could not produce a real BF16 flash-attn perplexity comparison: llama-perplexity (${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/work/worktrees/builds/1202_rd04_bf16_flash_attn_tile-subject-gfx1100+gfx1201+gfx1030/bin/llama-perplexity) produced no parseable 'Final estimate: PPL = ...' line -- cannot treat this as evidence",
               "passed": false
             },
             "ppl_equality": {
-              "detail": "could not produce a real BF16 flash-attn perplexity comparison: llama-perplexity (/mnt/vault/development/projects/bigcherry/workspaces/main/work/worktrees/builds/1202_rd04_bf16_flash_attn_tile-subject-gfx1100+gfx1201+gfx1030/bin/llama-perplexity) produced no parseable 'Final estimate: PPL = ...' line -- cannot treat this as evidence",
+              "detail": "could not produce a real BF16 flash-attn perplexity comparison: llama-perplexity (${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/work/worktrees/builds/1202_rd04_bf16_flash_attn_tile-subject-gfx1100+gfx1201+gfx1030/bin/llama-perplexity) produced no parseable 'Final estimate: PPL = ...' line -- cannot treat this as evidence",
               "passed": false
             }
           }
@@ -1154,7 +1154,7 @@
       "correctness": {
         "base_revision": "b1ff4ca23630ac7c5a275405353ddb5c486332c9",
         "campaign_identity_digest": "3698849f084f5150d01ce5b1c37066832d445c5b6a8dce9f7fc842690da5c814",
-        "detail": "backend_reference=FAIL (could not produce a real BF16 flash-attn perplexity comparison: llama-perplexity (/mnt/vault/development/projects/bigcherry/workspaces/main/work/worktrees/builds/1202_rd04_bf16_flash_attn_tile-subject-gfx1100+gfx1201+gfx1030/bin/llama-perplexity) produced no parseable 'Final estimate: PPL = ...' line -- cannot treat this as evidence); ppl_equality=FAIL (could not produce a real BF16 flash-attn perplexity comparison: llama-perplexity (/mnt/vault/development/projects/bigcherry/workspaces/main/work/worktrees/builds/1202_rd04_bf16_flash_attn_tile-subject-gfx1100+gfx1201+gfx1030/bin/llama-perplexity) produced no parseable 'Final estimate: PPL = ...' line -- cannot treat this as evidence)",
+        "detail": "backend_reference=FAIL (could not produce a real BF16 flash-attn perplexity comparison: llama-perplexity (${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/work/worktrees/builds/1202_rd04_bf16_flash_attn_tile-subject-gfx1100+gfx1201+gfx1030/bin/llama-perplexity) produced no parseable 'Final estimate: PPL = ...' line -- cannot treat this as evidence); ppl_equality=FAIL (could not produce a real BF16 flash-attn perplexity comparison: llama-perplexity (${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/work/worktrees/builds/1202_rd04_bf16_flash_attn_tile-subject-gfx1100+gfx1201+gfx1030/bin/llama-perplexity) produced no parseable 'Final estimate: PPL = ...' line -- cannot treat this as evidence)",
         "disposition": "failed",
         "gpu_architectures": [
           "gfx1201"
@@ -1181,7 +1181,7 @@
       "patch_implementation_digest": "2b70970f3b058fae9bb3c333e8cff78f080e0d302814d2746cb96c4d685f3492",
       "patch_validation_subject_digest": "4abdc0f2ebb6c6f74bab7742eeb6f87ee08f4d744e2fbc7dbcb791dbf9d7fc6a",
       "patched_source_tree": "366e6d2d8ba7b26ef833d5057c20f3acc04c17bb",
-      "record_digest": "7713de44549c0ddac6c7389587beb4a198cee14548b8132f04155c7d68a86fac",
+      "record_digest": "7854df013505940e6492a5b7f9f2a4ff8a177aa9ba9a3d363fb939d765f2f7db",
       "record_schema_version": 4,
       "representation": "packaged",
       "stock_tree": "69dd7b26d5ccd0e3e6ba9220847c040722757cb4",
@@ -1901,11 +1901,11 @@
           ],
           "results": {
             "backend_reference": {
-              "detail": "could not produce a real BF16 flash-attn perplexity comparison: llama-perplexity (/mnt/vault/development/projects/bigcherry/workspaces/main/work/worktrees/builds/1202_rd04_bf16_flash_attn_tile-subject-gfx1100+gfx1201+gfx1030/bin/llama-perplexity) produced no parseable 'Final estimate: PPL = ...' line -- cannot treat this as evidence",
+              "detail": "could not produce a real BF16 flash-attn perplexity comparison: llama-perplexity (${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/work/worktrees/builds/1202_rd04_bf16_flash_attn_tile-subject-gfx1100+gfx1201+gfx1030/bin/llama-perplexity) produced no parseable 'Final estimate: PPL = ...' line -- cannot treat this as evidence",
               "passed": false
             },
             "ppl_equality": {
-              "detail": "could not produce a real BF16 flash-attn perplexity comparison: llama-perplexity (/mnt/vault/development/projects/bigcherry/workspaces/main/work/worktrees/builds/1202_rd04_bf16_flash_attn_tile-subject-gfx1100+gfx1201+gfx1030/bin/llama-perplexity) produced no parseable 'Final estimate: PPL = ...' line -- cannot treat this as evidence",
+              "detail": "could not produce a real BF16 flash-attn perplexity comparison: llama-perplexity (${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/work/worktrees/builds/1202_rd04_bf16_flash_attn_tile-subject-gfx1100+gfx1201+gfx1030/bin/llama-perplexity) produced no parseable 'Final estimate: PPL = ...' line -- cannot treat this as evidence",
               "passed": false
             }
           }
@@ -2053,7 +2053,7 @@
       "correctness": {
         "base_revision": "b1ff4ca23630ac7c5a275405353ddb5c486332c9",
         "campaign_identity_digest": "9dff22902a9ed4eb8e1e8b895c58d427bc44836a4335731e4fd188520f894684",
-        "detail": "backend_reference=FAIL (could not produce a real BF16 flash-attn perplexity comparison: llama-perplexity (/mnt/vault/development/projects/bigcherry/workspaces/main/work/worktrees/builds/1202_rd04_bf16_flash_attn_tile-subject-gfx1100+gfx1201+gfx1030/bin/llama-perplexity) produced no parseable 'Final estimate: PPL = ...' line -- cannot treat this as evidence); ppl_equality=FAIL (could not produce a real BF16 flash-attn perplexity comparison: llama-perplexity (/mnt/vault/development/projects/bigcherry/workspaces/main/work/worktrees/builds/1202_rd04_bf16_flash_attn_tile-subject-gfx1100+gfx1201+gfx1030/bin/llama-perplexity) produced no parseable 'Final estimate: PPL = ...' line -- cannot treat this as evidence)",
+        "detail": "backend_reference=FAIL (could not produce a real BF16 flash-attn perplexity comparison: llama-perplexity (${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/work/worktrees/builds/1202_rd04_bf16_flash_attn_tile-subject-gfx1100+gfx1201+gfx1030/bin/llama-perplexity) produced no parseable 'Final estimate: PPL = ...' line -- cannot treat this as evidence); ppl_equality=FAIL (could not produce a real BF16 flash-attn perplexity comparison: llama-perplexity (${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/work/worktrees/builds/1202_rd04_bf16_flash_attn_tile-subject-gfx1100+gfx1201+gfx1030/bin/llama-perplexity) produced no parseable 'Final estimate: PPL = ...' line -- cannot treat this as evidence)",
         "disposition": "failed",
         "gpu_architectures": [
           "gfx1030"
@@ -2080,7 +2080,7 @@
       "patch_implementation_digest": "2b70970f3b058fae9bb3c333e8cff78f080e0d302814d2746cb96c4d685f3492",
       "patch_validation_subject_digest": "4abdc0f2ebb6c6f74bab7742eeb6f87ee08f4d744e2fbc7dbcb791dbf9d7fc6a",
       "patched_source_tree": "366e6d2d8ba7b26ef833d5057c20f3acc04c17bb",
-      "record_digest": "197e59f4ae08791be34cfd65419ec174ee85d5c0aec9088f2e304ba659d37b10",
+      "record_digest": "f7c89a2e1f5dd54c1729d39bfffd8f5c108554a86af8b6e5f30f460fc5b31071",
       "record_schema_version": 4,
       "representation": "packaged",
       "stock_tree": "69dd7b26d5ccd0e3e6ba9220847c040722757cb4",
@@ -3192,11 +3192,11 @@
           ],
           "results": {
             "backend_reference": {
-              "detail": "could not produce a real BF16 flash-attn perplexity comparison: llama-perplexity (/mnt/vault/development/projects/bigcherry/workspaces/main/work/worktrees/builds/1202_rd04_bf16_flash_attn_tile-subject-gfx1100+gfx1201+gfx1030/bin/llama-perplexity) produced no parseable 'Final estimate: PPL = ...' line -- cannot treat this as evidence",
+              "detail": "could not produce a real BF16 flash-attn perplexity comparison: llama-perplexity (${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/work/worktrees/builds/1202_rd04_bf16_flash_attn_tile-subject-gfx1100+gfx1201+gfx1030/bin/llama-perplexity) produced no parseable 'Final estimate: PPL = ...' line -- cannot treat this as evidence",
               "passed": false
             },
             "ppl_equality": {
-              "detail": "could not produce a real BF16 flash-attn perplexity comparison: llama-perplexity (/mnt/vault/development/projects/bigcherry/workspaces/main/work/worktrees/builds/1202_rd04_bf16_flash_attn_tile-subject-gfx1100+gfx1201+gfx1030/bin/llama-perplexity) produced no parseable 'Final estimate: PPL = ...' line -- cannot treat this as evidence",
+              "detail": "could not produce a real BF16 flash-attn perplexity comparison: llama-perplexity (${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/work/worktrees/builds/1202_rd04_bf16_flash_attn_tile-subject-gfx1100+gfx1201+gfx1030/bin/llama-perplexity) produced no parseable 'Final estimate: PPL = ...' line -- cannot treat this as evidence",
               "passed": false
             }
           }
@@ -3344,7 +3344,7 @@
       "correctness": {
         "base_revision": "b1ff4ca23630ac7c5a275405353ddb5c486332c9",
         "campaign_identity_digest": "d72641002fe76bbac8ce32629221e260cc663fc68779ad3f327a572b6dae8e41",
-        "detail": "backend_reference=FAIL (could not produce a real BF16 flash-attn perplexity comparison: llama-perplexity (/mnt/vault/development/projects/bigcherry/workspaces/main/work/worktrees/builds/1202_rd04_bf16_flash_attn_tile-subject-gfx1100+gfx1201+gfx1030/bin/llama-perplexity) produced no parseable 'Final estimate: PPL = ...' line -- cannot treat this as evidence); ppl_equality=FAIL (could not produce a real BF16 flash-attn perplexity comparison: llama-perplexity (/mnt/vault/development/projects/bigcherry/workspaces/main/work/worktrees/builds/1202_rd04_bf16_flash_attn_tile-subject-gfx1100+gfx1201+gfx1030/bin/llama-perplexity) produced no parseable 'Final estimate: PPL = ...' line -- cannot treat this as evidence)",
+        "detail": "backend_reference=FAIL (could not produce a real BF16 flash-attn perplexity comparison: llama-perplexity (${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/work/worktrees/builds/1202_rd04_bf16_flash_attn_tile-subject-gfx1100+gfx1201+gfx1030/bin/llama-perplexity) produced no parseable 'Final estimate: PPL = ...' line -- cannot treat this as evidence); ppl_equality=FAIL (could not produce a real BF16 flash-attn perplexity comparison: llama-perplexity (${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/work/worktrees/builds/1202_rd04_bf16_flash_attn_tile-subject-gfx1100+gfx1201+gfx1030/bin/llama-perplexity) produced no parseable 'Final estimate: PPL = ...' line -- cannot treat this as evidence)",
         "disposition": "failed",
         "gpu_architectures": [
           "gfx1100"
@@ -3371,7 +3371,7 @@
       "patch_implementation_digest": "2b70970f3b058fae9bb3c333e8cff78f080e0d302814d2746cb96c4d685f3492",
       "patch_validation_subject_digest": "4abdc0f2ebb6c6f74bab7742eeb6f87ee08f4d744e2fbc7dbcb791dbf9d7fc6a",
       "patched_source_tree": "366e6d2d8ba7b26ef833d5057c20f3acc04c17bb",
-      "record_digest": "ea2b5096ba5b890b3e5183df8a48137d0129bde9d4e8c435fd698ebc8e5f5a99",
+      "record_digest": "bd85669d3636454448964884b664006275581196b955bcd105ec1467f7a3eabd",
       "record_schema_version": 4,
       "representation": "packaged",
       "stock_tree": "69dd7b26d5ccd0e3e6ba9220847c040722757cb4",
