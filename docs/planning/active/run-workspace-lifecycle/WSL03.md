@@ -29,6 +29,14 @@ creation refuses to start below a free-space floor, naming the largest reclaimab
 2. `--apply` with the cleanup record and the lease check; tests with fixture work roots (protected, unharvested, expired, referenced, in use).
 3. Disk-pressure hook in run creation and a scheduled invocation.
 
+## Execution gate review (2026-10-23)
+
+- The current `core/quarantine.py` implements verified-harvest file inventory, same-filesystem journaled rename, restore and purge. This is not evidence that host-wide automatic cleanup is safe.
+- **WSL03-A:** fail-closed active-work and lease coordination per physical work root, shared across checkouts; identify process start time and namespace to avoid PID reuse. Handle corrupt/missing lease data as protected. Establish all active producer coverage before apply.
+- **WSL03-B:** enforce host opt-in, typed GC roots, minimum age 7 days, >=48-hour quarantine grace, per-pass byte cap, no symlink traversal/cross-device moves, append-only cleanup journal and resumable restore. Recheck exact evidence bundle and candidate identity at mutation time; never broaden from verified bulk to entire runs.
+- **WSL03-C:** offer automated disk-pressure warning/read-only inventory first. Automatic deletion stays disabled until shared locks/leases, producer participation, adoption and at least two dry-run cycles are proven. Quarantine does not reclaim space; purge does.
+- Regression tests: fault injection between each journal and rename step, active/foreign/unknown paths, hard links, changing bundles, stale lock, race between selection and apply, interrupted restore, multiple concurrent checkouts and same filesystem aliases. No destructive test on live unharvested runs.
+
 ## Validation
 
 Fixture tests for every protection; a dry run on dev after WSL06 lists the legacy runs without touching them; apply on a harvested test run removes only its bulk.
