@@ -2,7 +2,7 @@
 id: WSL06
 order: 6
 plan: run-workspace-lifecycle
-state: pending
+state: deprecated
 created-at: '2026-10-19T00:00:00+00:00'
 breadth: ''
 skill: intermediate
@@ -29,3 +29,4 @@ rd04-*, rd08-*, runs-kl, framework-validation-*) are listed for the owner and no
 ## Validation
 
 After adoption `bigcherry clean` in dry-run mode accounts for every byte under the work root (no unexplained directories); the owner signs off the list of items that are not ours before any is removed.
+- 2026-10-24: deprecated by owner decision (host-wide legacy inventory is not the way).
