@@ -276,6 +276,11 @@ __device__ __forceinline__ float bf16_to_f32(uint16_t v) {
     return __uint_as_float((uint32_t)v << 16);
 }
 
+__device__ __forceinline__ float f16_to_f32(uint16_t v) {
+    _Float16 h;
+    __builtin_memcpy(&h, &v, 2);
+    return (float)h;
+}
 __device__ __forceinline__ uint16_t f32_to_bf16_rn(float v) {
     uint32_t u = __float_as_uint(v);
     u += 0x7fffu + ((u >> 16) & 1u);
@@ -396,7 +401,7 @@ __global__ void mailbox_add_rows_kernel(
     uint8_t* base, const uint32_t* published, uint32_t rank, uint32_t helpers,
     const int32_t* inv, const uint32_t* rmask, const uint16_t* down, const uint16_t* ew,
     const uint16_t* shared, const uint16_t* shared_gate, uint16_t* out,
-    const uint16_t* mask_ref, uint32_t mask_only, uint32_t round_sum,
+    const uint16_t* mask_ref, uint32_t mask_only,
     uint32_t rows, uint32_t hidden, uint32_t top_k) {
     const uint32_t token = blockIdx.x;
     if (token >= rows) return;
@@ -405,6 +410,9 @@ __global__ void mailbox_add_rows_kernel(
     __shared__ int32_t local_index[kMaxTopK];
     __shared__ uint8_t remote_slot[kMaxTopK];
     __shared__ uint32_t from[kMaxRanks];
+    __shared__ uint32_t use_combined;
+    const uint16_t* combined_row = reinterpret_cast<const uint16_t*>(base + h->result_offset[0 * kMaxRanks + 1]) +
+                                   (uint64_t)token * hidden;
     if (threadIdx.x == 0) {
         bool live = false;
         for (uint32_t k = 0; k < helpers; ++k) live |= published[step_slot(k, rank, helpers)] != 0u;
@@ -417,6 +425,10 @@ __global__ void mailbox_add_rows_kernel(
             if (m) from[m - 1u] = 1;
             if (mask_only && m && local_index[slot] >= 0) __builtin_trap();
         }
+        /* R3_MOE_WORKER_COMBINE: the combined row is fp16; a row the combiner could not hold in fp16 range carries
+         * kCombineFallback in its first element and is read from the two helper planes instead (worker_combine.h). */
+        use_combined = combined && (from[0] || from[1]) &&
+                       __builtin_nontemporal_load(combined_row) != kCombineFallback;
     }
     __syncthreads();
 
@@ -438,22 +450,8 @@ __global__ void mailbox_add_rows_kernel(
             if (src) acc += bf16_to_f32(ew[flat]) * bf16_to_f32(src[col]);
         }
         /* Host-mapped and rewritten every request by the helpers: read past the caches. */
-        if (combined) {
-            if (from[0] || from[1])
-                acc += bf16_to_f32(__builtin_nontemporal_load(reinterpret_cast<const uint16_t*>(
-                    base + h->result_offset[0 * kMaxRanks + 1]) + (uint64_t)token * hidden + col));
-        } else if (mask_only != 1u && round_sum) {
-            /* R3_MOE_WORKER_COMBINE=round (diagnostic): the helpers' rows summed in fp32 and rounded to bf16 once, as
-             * helper 0's combine writes them, so the combine's rounding is measured without the combine. */
-            float hs = 0.0f;
-            for (uint32_t k = 0; k < helpers; ++k) {
-                if (!from[k]) continue;
-                const uint32_t slot = step_slot(k, rank, helpers);
-                const uint16_t* result = reinterpret_cast<const uint16_t*>(
-                    base + h->result_offset[slot * kMaxRanks + slot]) + (uint64_t)token * hidden;
-                hs += bf16_to_f32(__builtin_nontemporal_load(result + col));
-            }
-            if (from[0] || from[1]) acc += bf16_to_f32(f32_to_bf16_rn(hs));
+        if (use_combined) {
+            acc += f16_to_f32(__builtin_nontemporal_load(combined_row + col));
         } else if (mask_only != 1u)
             for (uint32_t k = 0; k < helpers; ++k) {
                 if (!from[k]) continue;
@@ -654,7 +652,7 @@ int publish_launch(const RadArgs* a, RadStream stream) {
                        d->shadow, d->world,
                        fuse_stage ? static_cast<const uint8_t*>(a->t[3].data) : nullptr,
                        static_cast<const float*>(a->t[4].data),
-                       static_cast<const uint16_t*>(a->t[2].data), d->cpu_ref, d->combine == 1u ? 1u : 0u);
+                       static_cast<const uint16_t*>(a->t[2].data), d->cpu_ref, d->combine);
     return hipGetLastError() == hipSuccess ? RAD_OK : RAD_E_DEVICE;
 }
 
@@ -744,7 +742,7 @@ int add_launch(const RadArgs* a, RadStream stream) {
                        static_cast<const uint16_t*>(a->t[3].data),
                        static_cast<const uint16_t*>(a->t[4].data),
                        static_cast<uint16_t*>(a->t[5].data),
-                       d->mask_ref, d->mask_only, d->combine == 2u ? 1u : 0u,
+                       d->mask_ref, d->mask_only,
                        (uint32_t)rows, (uint32_t)hidden, (uint32_t)top_k);
     hipLaunchKernelGGL(mailbox_add_finish_kernel, dim3(1), dim3(kMaxRanks + 1), 0, (hipStream_t)stream,
                        d->published);

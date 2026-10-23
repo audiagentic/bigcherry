@@ -468,6 +468,10 @@ int main(int argc, char** argv) {
         std::vector<uint8_t> combine_mask;
         CombineStats combine_stats;
         if (const char* e = std::getenv("R3_MOE_WORKER_COMBINE"); e && std::strcmp(e, "1") == 0 && helper_count == 2) {
+            if (!combine_cpu_supported()) {
+                std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_COMBINE needs a CPU with AVX2 and F16C\n");
+                munmap(map, lay.bytes); close(fd); drop_name(); return 1;
+            }
             combine_on = true;
             if (helper_index == 0) {
                 uint32_t min_rows = 256, threads = 8;
