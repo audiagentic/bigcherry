@@ -8,7 +8,7 @@
 # hardcoding one person's paths. Everything machine-specific lives in
 # config/environment.local.toml; this only reads it.
 #
-# Sets: BC_HOST BC_REPO_ROOT BC_CACHE_ROOT BC_MODEL_ROOT BC_WORK_ROOT BC_TMP_ROOT
+# Sets: BC_HOST BC_REPO_ROOT BC_MODEL_ROOT BC_WORK_ROOT BC_TMP_ROOT
 #       BC_DEV_ROOT BC_DATA_ROOT BC_VAULT_ROOT BC_LLAMACPP_ROOT
 #       BC_BENCH_HARNESS BC_ROCM_ROOT BC_TEST_PORT BC_PRODUCTION_PORT
 # and, for convenience on the host itself, ROCM_PATH/HIP_PATH/PATH via the
@@ -44,7 +44,6 @@ if not h:
 pairs = {
     "BC_HOST": h.get("hostname", host),
     "BC_REPO_ROOT": h.get("repo-root", ""),
-    "BC_CACHE_ROOT": h.get("cache-root", ""),
     "BC_MODEL_ROOT": h.get("model-root", ""),
     "BC_WORK_ROOT": h.get("work-root", ""),
     "BC_TMP_ROOT": h.get("tmp-root", ""),

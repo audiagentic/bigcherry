@@ -35,7 +35,7 @@ Exports:
 |---|---|
 | `BC_HOST` | ssh alias (prefer the alias to any address) |
 | `BC_REPO_ROOT` | the live git checkout builds run from; also the default base for relative SDK roots |
-| `BC_CACHE_ROOT` | content-addressed build and campaign cache |
+| `BC_WORK_ROOT` | the single root of BigCherry's working storage; `builds/` (content-addressed), `runs/`, `worktrees/`, `toolchains/`, `remote-runs/` and `upstream/` are fixed subfolders |
 | `BC_MODEL_ROOT` | gguf model root |
 | `BC_BENCH_HARNESS` | the documented `run_bench.py` server-bench harness |
 | `BC_ROCM_ROOT` | the default ROCm install (`rocm-root`) |

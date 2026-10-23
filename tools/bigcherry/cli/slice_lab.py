@@ -33,22 +33,22 @@ def build_lab_command(
         raise ValueError("script must be a repository-relative tools/lab/ script")
     if any("\n" in arg or "\r" in arg for arg in (script, *arguments)):
         raise ValueError("script and arguments cannot contain newlines")
-    if not host.hostname or not host.repo_root or not host.cache_root:
-        raise ValueError("lab host needs hostname, repo-root, cache-root")
-    for value in (host.repo_root, host.cache_root):
+    if not host.hostname or not host.repo_root or not host.work_root:
+        raise ValueError("lab host needs hostname, repo-root, work-root")
+    for value in (host.repo_root, host.work_root):
         if not PurePosixPath(value).is_absolute() or any(char.isspace() for char in value):
-            raise ValueError("lab repo and cache-root must be absolute POSIX paths")
+            raise ValueError("lab repo-root and work-root must be absolute POSIX paths")
 
     token = run_id if run_id is not None else uuid.uuid4().hex[:12]
     if not re.fullmatch(r"[a-f0-9]{12}", token):
         raise ValueError("invalid lab run identifier")
     label = f"pa47-{branch.replace('/', '-')}-{token}"
     q = shlex.quote
-    stage = f"{host.cache_root}/worktrees/{label}"
+    stage = f"{host.work_root}/worktrees/{label}"
     private_ref = f"refs/bigcherry-lab/{token}"
     source_ref = q("refs/heads/" + branch)
-    wrapper = f"{host.cache_root}/runs/{label}.sh"
-    jobs = f"{host.cache_root}/runs/{label}.jobs"
+    wrapper = f"{host.work_root}/runs/{label}.sh"
+    jobs = f"{host.work_root}/runs/{label}.jobs"
     exec_line = shlex.join(["bash", script, *arguments])
     # These two scripts submit their own queue jobs. An outer SCRIPT lock
     # would deadlock when their child queue acquires the same GPU lock.
@@ -56,7 +56,7 @@ def build_lab_command(
     lines = [
         "set -Eeuo pipefail",
         f"primary={q(host.repo_root)}",
-        f"work={q(host.cache_root)}",
+        f"work={q(host.work_root)}",
         f"stage={q(stage)}",
         f"private_ref={q(private_ref)}",
         f"wrapper={q(wrapper)}",

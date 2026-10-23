@@ -103,7 +103,7 @@ class RemoteRunTests(unittest.TestCase):
         self.transport = LocalBashTransport(shim)
         self.host = replace(
             environment.load(ROOT / "config" / "environment.example.toml").host(),
-            name="lab", hostname="lab", repo_root=posix(self.tree), cache_root=posix(self.work), rocm_root="/opt/fakerocm",
+            name="lab", hostname="lab", repo_root=posix(self.tree), work_root=posix(self.work), rocm_root="/opt/fakerocm",
             environment_file=posix(tmp / "env.toml"), busy_processes=("llama-server", "ninja"),
         )
         self.launched: list[str] = []

@@ -125,9 +125,7 @@ def _materialize_framework_source(args: argparse.Namespace, descriptor, cfg) -> 
 
     from bigcherry.core.context import ProjectContext
 
-    base_repo = ProjectContext.resolve(engine="llamacpp", 
-        work_root=os.environ.get("BC_CACHE_ROOT")
-    ).upstream_repo
+    base_repo = ProjectContext.resolve(engine="llamacpp").upstream_repo
     baseline_source = "bigcherry-qualification-tuning"
     base_revision, composition = psi.resolve_source_composition(
         baseline_source,

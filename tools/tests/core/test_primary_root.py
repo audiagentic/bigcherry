@@ -71,11 +71,12 @@ class PrimaryRootTests(unittest.TestCase):
             primary, worktree = self._repo_with_worktree(directory)
             shared = Path(directory) / "shared-work"
             env_root = Path(directory) / "env-work"
-            host = {"BC_WORK_ROOT": str(shared)}
+            # the host's work-root is the single entry for working storage (no [env] duplicate)
             with (
                 patch.object(paths, "REPO_ROOT", worktree),
                 patch.dict(os.environ, {"BC_PRIMARY_ROOT": "", "BC_WORK_ROOT": ""}),
-                patch("bigcherry.core.config._local_env_table", return_value=host),
+                patch("bigcherry.core.config._host_default",
+                      side_effect=lambda name: str(shared) if name == "BC_WORK_ROOT" else None),
             ):
                 from_host = ProjectContext.resolve(engine="radiance", project_root=worktree)
                 with patch.dict(os.environ, {"BC_WORK_ROOT": str(env_root)}):

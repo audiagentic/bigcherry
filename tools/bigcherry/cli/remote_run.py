@@ -5,7 +5,7 @@ free, host GPUs idle, tracked files clean), fetch and check out a ref detached, 
 under ``nohup`` with a run id, a log and an exit-code file. The host, tree, work root and environment file all come from
 the environment config (``[host.*]``); nothing here names an engine, the inner arguments carry their own ``--engine``.
 
-Host-side layout, under ``<cache-root>/remote-runs/<run-id>/``: ``meta.json`` (id, ref, sha, argv, start time, log path,
+Host-side layout, under ``<work-root>/remote-runs/<run-id>/``: ``meta.json`` (id, ref, sha, argv, start time, log path,
 pid), ``run.sh`` (the launched wrapper), ``run.log``, ``pid`` and ``rc`` (written last, atomically, when the command
 exits -- its presence is the done marker).
 """
@@ -84,9 +84,9 @@ class RunStatus:
 
 
 def _check_host(host: environment.Host) -> None:
-    if not host.hostname or not host.repo_root or not host.cache_root:
-        raise RemoteRunError("remote host needs hostname, repo-root and cache-root")
-    for name, value in (("repo-root", host.repo_root), ("cache-root", host.cache_root), ("environment-file", host.environment_file)):
+    if not host.hostname or not host.repo_root or not host.work_root:
+        raise RemoteRunError("remote host needs hostname, repo-root and work-root")
+    for name, value in (("repo-root", host.repo_root), ("work-root", host.work_root), ("environment-file", host.environment_file)):
         if not PurePosixPath(value).is_absolute() or any(c.isspace() for c in value):
             raise RemoteRunError(f"host {name} must be an absolute POSIX path without whitespace, got {value!r}")
     if not host.busy_processes:
@@ -100,7 +100,7 @@ def _check_host(host: environment.Host) -> None:
 
 
 def runs_dir(host: environment.Host) -> str:
-    return f"{host.cache_root.rstrip('/')}/remote-runs"
+    return f"{host.work_root.rstrip('/')}/remote-runs"
 
 
 def new_run_id(now: datetime | None = None) -> str:
@@ -166,7 +166,7 @@ def build_launch_script(
     names = " ".join(q(n) for n in host.busy_processes)
     return "\n".join([
         "set -u",
-        f"repo_root={q(host.repo_root)}", f"work={q(host.cache_root)}", f"dir={q(run_dir)}", f"ref={q(ref)}",
+        f"repo_root={q(host.repo_root)}", f"work={q(host.work_root)}", f"dir={q(run_dir)}", f"ref={q(ref)}",
         f"allow_busy={1 if allow_busy else 0}",
         'py="${BIGCHERRY_REMOTE_PYTHON:-python3}"',
         'refuse() { echo "REFUSE $*"; exit 3; }',

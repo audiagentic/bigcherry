@@ -23,7 +23,6 @@ from pathlib import Path
 # rocm-root is deliberately absent: /opt/rocm is the standard system location, not a local folder.
 HOST_SETTINGS = (
     ("repo-root", "BC_REPO_ROOT"),
-    ("cache-root", "BC_CACHE_ROOT"),
     ("model-root", "BC_MODEL_ROOT"),
     ("work-root", "BC_WORK_ROOT"),
     ("tmp-root", "BC_TMP_ROOT"),

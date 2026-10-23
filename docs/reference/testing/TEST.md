@@ -428,8 +428,8 @@ expanded at execution. For example:
   "required_metrics": ["pp512_tps", "tg128_tps"],
   "repetitions": 1,
   "arms": [
-    {"name": "stock", "mode": "stock", "binary": "$BC_CACHE_ROOT/<stock-build>/bin/llama-server"},
-    {"name": "native", "mode": "native", "binary": "$BC_CACHE_ROOT/<native-build>/bin/llama-server"}
+    {"name": "stock", "mode": "stock", "binary": "$BC_WORK_ROOT/builds/<stock-build>/bin/llama-server"},
+    {"name": "native", "mode": "native", "binary": "$BC_WORK_ROOT/builds/<native-build>/bin/llama-server"}
   ]
 }
 ```

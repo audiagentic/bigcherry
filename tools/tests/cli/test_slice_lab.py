@@ -24,7 +24,7 @@ class LabCommandTests(unittest.TestCase):
             name="dev",
             hostname="lab-user@lab-host",
             repo_root="/lab/workspaces/main",
-            cache_root="/lab/cache",
+            work_root="/lab/work",
         )
 
     def command(self, script: str = "tools/lab/flash-next/flash-prefill-env-ab.sh", *args: str):

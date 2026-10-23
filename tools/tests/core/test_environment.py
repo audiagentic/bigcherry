@@ -31,7 +31,7 @@ class EnvironmentContractTests(unittest.TestCase):
         # Each of these replaced literal occurrences in the reference docs.
         # A blank one would silently produce commands like `cd /run_bench.py`,
         # which is worse than the hardcoded path it replaced.
-        for field in ("hostname", "repo_root", "cache_root",
+        for field in ("hostname", "repo_root", "work_root",
                       "model_root", "bench_harness", "rocm_root"):
             with self.subTest(field=field):
                 self.assertTrue(getattr(self.host, field),

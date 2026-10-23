@@ -30,11 +30,11 @@ hostname = "dev"
 # The live git checkout. A REAL local clone -- git over a network share is
 # too slow and unreliable, so builds come from here.
 repo-root = "${HOME}/bigcherry"
-# Content-addressed build/campaign cache. Identity-bound: never run a manual
-# cmake build inside it, and never hand-edit a generated input there.
-cache-root = "${HOME}/bigcherry/work"
 model-root = "/srv/example-models"
-work-root = "/srv/example/work"
+# The single root of BigCherry's working storage. Builds (content-addressed, identity-bound: never run a manual
+# cmake build inside it, never hand-edit a generated input there), runs, worktrees, toolchains, remote-runs and
+# the upstream mirror are fixed subfolders of it; nothing else configures them.
+work-root = "${HOME}/bigcherry/work"
 tmp-root = "/srv/example/tmp"
 dev-root = "/srv/example/dev"
 # Optional mounted volumes and the llama.cpp tree docs and scripts refer to as
@@ -103,12 +103,12 @@ locator = "0000:02:00.0"
 # [host.dev]
 # hostname = "ssh-user@lab-host"
 # repo-root = "/srv/example/bigcherry/workspaces/main"
-# cache-root = "/srv/example/bigcherry-work"
+# work-root = "/srv/example/bigcherry-work"
 #
 # Those three keys are the fields slice lab itself requires. Other host fields
 # may remain in the same table for other commands. To invoke `--host dev`
-# instead, define [host.dev] with the same hostname/repo/cache-root keys.
-# Runs go to cache-root/runs and detached worktrees to cache-root/worktrees.
+# instead, define [host.dev] with the same hostname/repo-root/work-root keys.
+# Runs go to work-root/runs and detached worktrees to work-root/worktrees.
 
 # Machine names that must never appear in tracked files (checked by the pre-commit hook).
 # Put the real names in config/environment.local.toml, not here.

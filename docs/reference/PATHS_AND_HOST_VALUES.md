@@ -43,7 +43,7 @@ result. Committed code also breaks on any other host if it hardcodes those value
 | `${BC_REPO_ROOT}` | the repository checkout |
 | `${BC_DEV_ROOT}` | the development tree that holds the checkouts |
 | `${BC_MODEL_ROOT}` | the model store |
-| `${BC_WORK_ROOT}`, `${BC_CACHE_ROOT}`, `${BC_TMP_ROOT}` | the shared work root, the build/campaign cache, scratch |
+| `${BC_WORK_ROOT}`, `${BC_TMP_ROOT}` | the single work root (builds, runs, worktrees, toolchains are fixed subfolders of it), host scratch |
 | `${BC_DATA_ROOT}`, `${BC_VAULT_ROOT}` | the mounted data and vault volumes |
 | `${BC_LLAMACPP_ROOT}` | the llama.cpp tree |
 | `${HOME}` | the user's home directory |

@@ -20,7 +20,7 @@ Everything comes from the `[host.<name>]` table of the environment file (`config
 |---|---|
 | `hostname` | ssh alias the commands go to |
 | `repo` | the campaign tree: a checkout (or worktree) that shares the primary work root. A fresh clone does not. |
-| `cache-root` | the work root; runs live in `<cache-root>/remote-runs/<run-id>/` |
+| `work-root` | the work root; runs live in `<work-root>/remote-runs/<run-id>/` |
 | `rocm` | exported as `ROCM_PATH`, with `$ROCM_PATH/bin` first on `PATH` |
 | `environment-file` | exported as `BIGCHERRY_ENVIRONMENT` (default `<repo>/config/environment.local.toml`) |
 | `busy-processes` | exact process names that mean the GPUs are in use (for example the server, a helper, `ninja`). Required: with none listed, `run` refuses. |
