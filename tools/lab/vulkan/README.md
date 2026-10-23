@@ -17,7 +17,7 @@ dev for Qwen3.8-27B and Flash-Next, and what does a Vulkan AllReduce provider bu
 
 ## Outputs
 
-Run outputs under `${BIGCHERRY_ROOT}/runs/<run>/` on dev.
+Run outputs under `${BC_REPO_ROOT}/runs/<run>/` on dev.
 
 ## Runtime
 

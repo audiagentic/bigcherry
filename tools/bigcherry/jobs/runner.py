@@ -226,7 +226,7 @@ def run_attempt(attempt_root: Path) -> int:
         os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else ""
     )
     env["BIGCHERRY_PROJECT_ROOT"] = str(project_root)
-    env["BIGCHERRY_WORK_ROOT"] = str(shared_root)
+    env["BC_WORK_ROOT"] = str(shared_root)
     if attempt["job"].get("hip_path"):
         hip = str(attempt["job"]["hip_path"])
         env["HIP_PATH"] = hip

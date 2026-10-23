@@ -4,7 +4,7 @@
   "correlation_id": "5b1d544357104593a06ecd20b2e0a92f",
   "binary": "${HOME}/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/5ffe0ebb35a044d0397aa986d53da12d/bin/llama-server",
   "binary_sha256": "9e8fbf18a45606168a66794d4a51d33fb8ce6f1d927ba251ae5245cd9a32fbfa",
-  "model": "${MODELS_ROOT}/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
+  "model": "${BC_MODEL_ROOT}/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
   "model_sha256": "a680f44a06920e5d689774823782006aa3acc8db95750323373b24139b67e348",
   "common_server_args": [
     "-ngl",

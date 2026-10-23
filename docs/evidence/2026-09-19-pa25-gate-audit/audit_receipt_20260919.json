@@ -3,7 +3,7 @@
   "bigcherry_revision": "434ddbbc0e30522e897670681e503b797c12b7c1",
   "evidence_root": "None",
   "llama_cpp_revision": "28ff0958291ce3465fabd7bd679d4b0edd742bd9",
-  "patch_catalog_snapshot": "${BIGCHERRY_ROOT}/patches/catalog.toml",
+  "patch_catalog_snapshot": "${BC_REPO_ROOT}/patches/catalog.toml",
   "patches": {
     "0840_hybrid_allreduce_dispatch": {
       "artifact_hashes": {},

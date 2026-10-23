@@ -34,6 +34,15 @@ GENERIC = (
         r"|\b192\.168(?:\.\d{1,3}){2}\b"
         r"|\b172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2}\b")),
     # Reserved example and test domains are placeholders, not real identities.
+    # Host locations are named BC_<KEY> (BC_MODEL_ROOT, BC_WORK_ROOT, ...); the older names are retired. They are
+    # assembled from parts so this file does not itself contain them.
+    ("retired variable name", re.compile(
+        r"(?<![A-Za-z0-9_])(?:"
+        + "|".join(stem + "_ROOT" for stem in ("MODELS", "DEV", "VAULT", "DATA", "BIGCHERRY", "LLAMACPP", "WIN_ROCM",
+                                               "BIGCHERRY_WORK", "BIGCHERRY_MODEL"))
+        + "|" + "|".join(stem + "_IP" for stem in ("DEV", "GPU_HOST"))
+        + "|BIGCHERRY_HOST" + "_[A-Z_]+"
+        + r")(?![A-Za-z0-9_])")),
     ("email address", re.compile(
         r"[A-Za-z0-9._%+-]+@(?!example\.(?:com|org|net)\b|[A-Za-z0-9.-]*\.?(?:invalid|test)\b)"
         r"[A-Za-z0-9-]+\.[A-Za-z]{2,}")),

@@ -58,7 +58,7 @@ Still manual: the dev pull/build/smoke, and the completion gate.
 
 If a regression needs a bisect: build each upstream point from a separate clone with a local-only branch that sets
 `pinned` to the commit (the queue's `@build-run` names are shared through the work root, so existing scripts compare
-across clones). That clone must have its OWN `vendor/llama.cpp` - `${BIGCHERRY_ROOT}/test-clone` symlinks it
+across clones). That clone must have its OWN `vendor/llama.cpp` - `${BC_REPO_ROOT}/test-clone` symlinks it
 to the main workspace, so every `bigcherry --engine llamacpp pull` there moves the campaign tree's vendor checkout and the completion
 gate then reports a mismatch. Afterwards put it back (`git -C vendor/llama.cpp checkout <tag>` in the main
 workspace) before running `pin-status --complete`. Compare every bisect point against the SAME reference binary;
@@ -96,7 +96,7 @@ for which runners are wired).
 If a configured tree looks even slightly ambiguous, prefer a **separate,
 known-clean checkout** over risking a shared one -- e.g. this project keeps
 `~/bigcherry` (a plain, always-idle clone) alongside the real configured
-campaign path `${DEV_ROOT}/llmhosts/bigcherry` on dev for
+campaign path `${BC_DEV_ROOT}/llmhosts/bigcherry` on dev for
 exactly this reason.
 
 ## 1. Check what's redundant or merged upstream FIRST

@@ -15,10 +15,10 @@
 # Usage:
 #   bash tools/lab/radiance/launch-flashnext-best.sh [start] [--build DIR] [--port N] [--heat FILE]
 #   bash tools/lab/radiance/launch-flashnext-best.sh stop
-# Without --build, the newest build under $BIGCHERRY_WORK_ROOT/builds that has the helper binary is used.
+# Without --build, the newest build under $BC_WORK_ROOT/builds that has the helper binary is used.
 set -u
 
-WORK=${BIGCHERRY_WORK_ROOT:-${BC_CACHE_ROOT}}
+WORK=${BC_WORK_ROOT:-${BC_CACHE_ROOT}}
 RUN=$WORK/flashnext
 PIDS=$RUN/pids
 SHM=/r3-moe-helper

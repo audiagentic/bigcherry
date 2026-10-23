@@ -9,7 +9,7 @@ GPT-adjudicated ship gates (req_09656b782a5d449a) these artifacts feed.
 
 ## Workload identity
 
-- Model: `${MODELS_ROOT}/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf`
+- Model: `${BC_MODEL_ROOT}/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf`
   (27B dense, Q8_0, 29.0 GB)
 - MTP: `--spec-type draft-mtp --spec-draft-n-max 4`, same model as draft
 - Server: `--ctx-size 8192 --batch-size 512 --ubatch-size 256 -ngl 99 -fa on
@@ -46,7 +46,7 @@ GPT-adjudicated ship gates (req_09656b782a5d449a) these artifacts feed.
 | `pipeline.sh` | driver | final deployed stage driver S1–S7: stage-skip markers, GPU2 idle guard, atexit-flush poll fixes, ctx parameterisation for the 12k run |
 
 Not in git (too large; on <gpu-host> at
-`${DEV_ROOT}/llmhosts/bigcherry/artifacts/h36-pipeline/`):
+`${BC_DEV_ROOT}/llmhosts/bigcherry/artifacts/h36-pipeline/`):
 
 | path | size | note |
 | --- | --- | --- |

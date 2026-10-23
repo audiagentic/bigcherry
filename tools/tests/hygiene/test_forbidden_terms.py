@@ -61,6 +61,14 @@ class ForbiddenTermsTests(unittest.TestCase):
         self._stage("engines/p/patch.toml", 'id = "1209_integrated_gpu_host_buffer_backout"\n')
         self.assertEqual([], ft.findings(self.root, staged=True))
 
+    def test_retired_variable_names_are_reported_and_bc_names_are_not(self) -> None:
+        # Built from parts so this file holds none of the retired names itself.
+        retired = ["MODELS" + "_ROOT", "BIGCHERRY_WORK" + "_ROOT", "BIGCHERRY_HOST" + "_CORPUS", "DEV" + "_IP"]
+        self._stage("docs/old.md", "".join(f"see ${{{name}}}/x\n" for name in retired))
+        self._stage("docs/new.md", "see ${BC_MODEL_ROOT}/x and $BC_WORK_ROOT and ${BC_DEV_ROOT} and ${BC_HOST}\n")
+        hits = ft.findings(self.root, staged=True)
+        self.assertEqual([("docs/old.md", n, "retired variable name") for n in range(1, 5)], hits)
+
     def test_reserved_example_domains_are_placeholders(self) -> None:
         self._stage("tests/t.py", "address = 'user@example.com'\nother = 'a@b.test'\n")
         self.assertEqual([], ft.findings(self.root, staged=True))

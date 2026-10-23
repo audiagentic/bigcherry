@@ -40,7 +40,7 @@ config (-sm tensor, built-in MTP4, default all-reduce), ABBA per depth:
 
 Complete separation at both depths (+1.3% at 10K, +0.8% at 32K); greedy text identical between the arms at each
 depth. The regression and the fix therefore reproduce on stock upstream with no other BigCherry patch present.
-Runs: `${BIGCHERRY_ROOT}/runs/native1333-b11402-27b`.
+Runs: `${BC_REPO_ROOT}/runs/native1333-b11402-27b`.
 
 ## Not covered
 
@@ -49,5 +49,5 @@ Runs: `${BIGCHERRY_ROOT}/runs/native1333-b11402-27b`.
 - 27B prefill at 32K remains about 0.4% below the previous pin with this patch; that residual has another cause.
 - The regression has not been reported upstream.
 
-Runs: `${BIGCHERRY_ROOT}/runs/` `mixoff-vs-old-*`, `mixoff-vs-new-*`, `b-mixauto-vs-b-chunk8-*`,
+Runs: `${BC_REPO_ROOT}/runs/` `mixoff-vs-old-*`, `mixoff-vs-new-*`, `b-mixauto-vs-b-chunk8-*`,
 `b-mixauto-vs-b-mixoff-*`, bisect `bisect3..6-*`.

@@ -1,14 +1,14 @@
 {
  "arm_config": [
   {
-   "binary": "${DEV_ROOT}/projects/bigcherry/workspaces/main/work/builds/1a7bddb4d5b3dc6f156f25212fb68790/ecaea379a11f011c9304e75cc0d88410/bin/llama-server",
+   "binary": "${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/work/builds/1a7bddb4d5b3dc6f156f25212fb68790/ecaea379a11f011c9304e75cc0d88410/bin/llama-server",
    "environment": null,
    "model": null,
    "name": "control",
    "server_args": null
   },
   {
-   "binary": "${DEV_ROOT}/projects/bigcherry/workspaces/main/work/builds/e428fc49f5dd0bdf1a142a105df3888d/4b0860deb1863bbb62a6071c83f4ffe0/bin/llama-server",
+   "binary": "${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/work/builds/e428fc49f5dd0bdf1a142a105df3888d/4b0860deb1863bbb62a6071c83f4ffe0/bin/llama-server",
    "environment": null,
    "model": null,
    "name": "kquant_f32",
@@ -52,7 +52,7 @@
   }
  },
  "kind": "ab",
- "model": "${MODELS_ROOT}/qwen3.8-27b/gguf/unsloth/Qwen3.8-27B-UD-Q4_K_M.gguf",
+ "model": "${BC_MODEL_ROOT}/qwen3.8-27b/gguf/unsloth/Qwen3.8-27B-UD-Q4_K_M.gguf",
  "run": "ab-kquant-xtx2-q4",
  "schedule_seed": 0,
  "server_args": [

@@ -30,7 +30,7 @@ from ..engine_adapters import adapter
 from ..engine_adapters.base import GPU_HIDING_ENV, CpuSmokeSpec
 from ..tuning.server_runner import ServerError, ServerRunner
 
-MODEL_ROOT_ENV = "BIGCHERRY_MODEL_ROOT"
+MODEL_ROOT_ENV = "BC_MODEL_ROOT"
 RESULT_NAME = "cpu-smoke.json"
 SCHEMA = 1
 
@@ -221,7 +221,7 @@ def _finish(result: dict[str, Any], out_dir: Path, started: float) -> dict[str, 
 
 
 def resolve_model_root(explicit: str | None) -> Path:
-    """--model-root, else BIGCHERRY_MODEL_ROOT, else the default host's model-root."""
+    """--model-root, else BC_MODEL_ROOT, else the default host's model-root."""
     if explicit:
         return Path(explicit).expanduser()
     from_env = os.environ.get(MODEL_ROOT_ENV)

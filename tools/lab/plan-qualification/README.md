@@ -66,8 +66,8 @@ build/functional stages while retaining host-exclusive timed measurement only.
 
 ## Outputs
 
-`$BIGCHERRY_WORK_ROOT/runs/<run-name>/` campaign workdir (resolved by
-`work-root.sh`: the environment variable, else `BIGCHERRY_WORK_ROOT` in the
+`$BC_WORK_ROOT/runs/<run-name>/` campaign workdir (resolved by
+`work-root.sh`: the environment variable, else `BC_WORK_ROOT` in the
 untracked `config/environment.local.toml` `[env]` table, else `work/`; on the
 build server point it at a large scratch volume). Campaign evidence is appended
 to `engines/llamacpp/patches/<id>/evidence/validation.json`.

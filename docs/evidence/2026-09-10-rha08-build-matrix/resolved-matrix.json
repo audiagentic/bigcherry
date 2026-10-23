@@ -58,13 +58,13 @@
             "--parallel",
             "1"
           ],
-          "model": "${MODELS_ROOT}/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
+          "model": "${BC_MODEL_ROOT}/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
           "required_metrics": [
             "pp512_tps",
             "pp2048_tps",
             "tg512_tps"
           ],
-          "runner_root": "${LLAMACPP_ROOT}",
+          "runner_root": "${BC_LLAMACPP_ROOT}",
           "shutdown_method": "sigint"
         }
       }
@@ -128,13 +128,13 @@
             "--parallel",
             "1"
           ],
-          "model": "${MODELS_ROOT}/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
+          "model": "${BC_MODEL_ROOT}/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
           "required_metrics": [
             "pp512_tps",
             "pp2048_tps",
             "tg512_tps"
           ],
-          "runner_root": "${LLAMACPP_ROOT}",
+          "runner_root": "${BC_LLAMACPP_ROOT}",
           "shutdown_method": "sigint"
         }
       }
@@ -199,13 +199,13 @@
             "--parallel",
             "1"
           ],
-          "model": "${MODELS_ROOT}/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
+          "model": "${BC_MODEL_ROOT}/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
           "required_metrics": [
             "pp512_tps",
             "pp2048_tps",
             "tg512_tps"
           ],
-          "runner_root": "${LLAMACPP_ROOT}",
+          "runner_root": "${BC_LLAMACPP_ROOT}",
           "shutdown_method": "sigint"
         }
       }
@@ -269,13 +269,13 @@
             "--parallel",
             "1"
           ],
-          "model": "${MODELS_ROOT}/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
+          "model": "${BC_MODEL_ROOT}/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
           "required_metrics": [
             "pp512_tps",
             "pp2048_tps",
             "tg512_tps"
           ],
-          "runner_root": "${LLAMACPP_ROOT}",
+          "runner_root": "${BC_LLAMACPP_ROOT}",
           "shutdown_method": "sigint"
         }
       }
@@ -340,13 +340,13 @@
             "--parallel",
             "1"
           ],
-          "model": "${MODELS_ROOT}/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
+          "model": "${BC_MODEL_ROOT}/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
           "required_metrics": [
             "pp512_tps",
             "pp2048_tps",
             "tg512_tps"
           ],
-          "runner_root": "${LLAMACPP_ROOT}",
+          "runner_root": "${BC_LLAMACPP_ROOT}",
           "shutdown_method": "sigint"
         }
       }

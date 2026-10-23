@@ -12,7 +12,7 @@ the item recorded. Run IDs are quoted where the source gives one; where it does 
 
 Source: lab log, "Models and quantisation behind the measurements" (read with `rad-info`).
 
-- Container `qwen3.8-next-flash-fp8-iq4r-moe.rad`, 113.6 GiB, under `${MODELS_ROOT}/radiance/StillDeadcode/` on
+- Container `qwen3.8-next-flash-fp8-iq4r-moe.rad`, 113.6 GiB, under `${BC_MODEL_ROOT}/radiance/StillDeadcode/` on
   dev. 512 experts, top 10, 48 layers plus an MTP layer.
 - Routed experts `w4nl64a8h`: 4-bit codes into a 16-level nonlinear table, E4M3 scale per (row, 64 of K) x 2^-13,
   Hadamard-rotated with the activation; 49 x 512 x 2.42 MiB, about 58 GiB.
