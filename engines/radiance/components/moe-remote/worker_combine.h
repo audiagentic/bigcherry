@@ -1,22 +1,21 @@
 #pragma once
 
 // R3_MOE_WORKER_COMBINE (RAD18): helper 0 adds the two helpers' bf16 rows on the CPU so the one-rank engine reads one row
-// a token over its link instead of two. Nothing here spins: helper 0 combines on its large-lane thread right after its
-// own stream sync, futex-waiting on helper 1's host done word; the pool's workers sleep on futex words between jobs.
+// a token over its link instead of two. The sum is written as fp16: the same two bytes as one bf16 row, but rounded 8x
+// finer, since a bf16 sum measurably worsened KLD (RAD18 2026-10-23: p99 +0.275). A row with a value outside fp16 range
+// is marked kCombineFallback in its first element and the engine reads that row from the two helper planes instead.
+// Nothing here spins: helper 0 combines on its large-lane thread right after its own stream sync, futex-waiting on helper
+// 1's host done word; the pool's workers sleep on futex words between jobs.
 // Included only by r3_moe_worker.cpp, after worker_container.h (stopping()).
 
 #include <linux/futex.h>
 #include <sys/syscall.h>
 #include <ctime>
+#include "combine_f16.h"
 
 namespace {
 
 inline float combine_bf16_f32(uint16_t v) { uint32_t u = (uint32_t)v << 16; float f; std::memcpy(&f, &u, 4); return f; }
-inline uint16_t combine_f32_bf16_rn(float f) {
-    uint32_t u; std::memcpy(&u, &f, 4);
-    u += 0x7fffu + ((u >> 16) & 1u);
-    return (uint16_t)(u >> 16);
-}
 
 /* futex wait on a process-private word with a timeout, so a stop request is seen without polling the word. */
 inline void combine_futex_wait(uint32_t* p, uint32_t expected, long timeout_ms, bool shared) {
@@ -62,15 +61,15 @@ private:
             const uint32_t t1 = std::min(rows_, t0 + kChunk);
             for (uint32_t t = t0; t < t1; ++t) {
                 const uint8_t m = mask_[t];
+                if (!m) continue;   /* no helper row: the engine does not read it */
                 const uint64_t at = (uint64_t)t * hidden_;
-                if (m == 3u) {
-                    for (uint32_t c = 0; c < hidden_; ++c)
-                        out_[at + c] = combine_f32_bf16_rn(combine_bf16_f32(a_[at + c]) + combine_bf16_f32(b_[at + c]));
-                } else if (m == 1u) {
-                    std::memcpy(out_ + at, a_ + at, (size_t)hidden_ * 2u);
-                } else if (m == 2u) {
-                    std::memcpy(out_ + at, b_ + at, (size_t)hidden_ * 2u);
+                bool overflow = false;
+                for (uint32_t c = 0; c < hidden_; ++c) {
+                    const float va = (m & 1u) ? combine_bf16_f32(a_[at + c]) : 0.0f;
+                    const float vb = (m & 2u) ? combine_bf16_f32(b_[at + c]) : 0.0f;
+                    out_[at + c] = combine_f32_f16_rn(va + vb, &overflow);
                 }
+                if (overflow) out_[at] = r3::moe_shm::kCombineFallback;
             }
         }
     }

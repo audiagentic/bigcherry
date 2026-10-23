@@ -451,12 +451,8 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
      * (Header::combine.enabled, checked again by the publish kernel each step). */
     {
         const char* e = std::getenv("R3_MOE_WORKER_COMBINE");
-        const bool ok = e && helpers == 2 && !shadow && !mask_only;
-        s.dev.combine = ok && std::strcmp(e, "1") == 0 ? 1u : ok && std::strcmp(e, "round") == 0 ? 2u : 0u;
-        if (s.dev.combine == 2u)
-            std::fprintf(stderr, "libr3moe: R3_MOE_WORKER_COMBINE=round (diagnostic) - no combine; the engine rounds the "
-                                 "helpers' fp32 sum to bf16 as the combine would\n");
-        if (s.dev.combine == 1u)
+        s.dev.combine = (e && std::strcmp(e, "1") == 0 && helpers == 2 && !shadow && !mask_only) ? 1u : 0u;
+        if (s.dev.combine)
             std::fprintf(stderr, "libr3moe: R3_MOE_WORKER_COMBINE on - helper 0 combines the two helpers' rows on the large lane\n");
     }
     s.ready = true;
