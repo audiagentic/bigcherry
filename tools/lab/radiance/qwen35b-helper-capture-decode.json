@@ -68,7 +68,7 @@
     "R3_MOE_WORKER_SMALL_ROWS": "8",
     "R3_MOE_WORKER_MIB": "22528",
     "R3_MOE_WORKER_ROWS": "0",
-    "R3_MOE_WORKER_CAPTURE": "${BC_CACHE_ROOT}/caps-q35-decode",
+    "R3_MOE_WORKER_CAPTURE": "${BC_WORK_ROOT}/caps-q35-decode",
     "R3_MOE_WORKER_CAPTURE_EVERY": "5",
     "R3_MOE_WORKER_CAPTURE_MAX": "60"
    }
