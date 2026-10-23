@@ -49,8 +49,7 @@ struct R3MoeMailboxDevice {
     uint32_t shadow = 0;
     uint32_t mask_only = 0;
     uint32_t cpu_ref = 0;
-    uint32_t combine = 0;   /* R3_MOE_WORKER_COMBINE: 1 asks helper 0 for one combined row a token on the large lane;
-                               2 (=round, diagnostic) rounds the helpers' fp32 sum to bf16 in the engine instead */
+    uint32_t combine = 0;   /* R3_MOE_WORKER_COMBINE=1: ask helper 0 for one combined fp16 row a token on the large lane */
 };
 
 extern "C" int r3_moe_mailbox_enabled(void);

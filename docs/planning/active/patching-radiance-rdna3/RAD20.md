@@ -75,6 +75,14 @@ Split out of RAD18 (CPU combine). The combine path itself is already blocking (h
 
 Split out of RAD18. GPT review req_bigcherry_200e404f8776 (2026-10-23): HIP blocking events first; HSA IPC signals only if measured event wake latency hurts decode; hipLaunchHostFunc and KFD events rejected. GPT suggested keeping the polling path as a fallback until hardware results pass -- overridden by the owner's no-legacy rule: compare against the previous build instead.
 
+
+2026-10-23 observations: during the combine A/B each r3_moe_worker held ~102% CPU (yield polling) - two cores busy that
+the CPU combine method also needs; fixing this helps the `cpu` combine. GPT review req_bigcherry_97cebda33722 caution:
+ROCm documents hipStreamWaitValue32 for hipMallocSignalMemory only; the shared segment is host-registered, so the
+existing large-lane device wait (moe_remote_gpu.h:493) and the design's 'arrived' event behind it need explicit
+validation (stress, cross-process visibility, stop/abort) or a different wake path. A stranded device wait would
+deadlock shutdown at hipStreamSynchronize (r3_moe_worker.cpp:516).
+
 ## Change Log
 
 - 2026-10-23T00:50:15.230044+00:00 (created-by): Created by agent
