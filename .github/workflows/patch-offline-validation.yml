@@ -41,36 +41,6 @@ on:
       - '.github/workflows/patch-offline-validation.yml'
   pull_request:
     branches: [main]
-    paths:
-      - 'engines/llamacpp/patches/**'
-      - 'engines/radiance/patches/**'
-      - 'engines/radiance/tests/**'
-      - 'engines/*/engine.toml'
-      - 'tools/tests/patch/**'
-      - 'tools/tests/cli/test_slice_lab.py'
-      - 'tools/bigcherry/cli/slice_lab.py'
-      - 'tools/lab/plan-qualification/**'
-      - 'tools/lab/flash-next/queue-meta-mem.sh'
-      - 'tools/lab/flash-next/queue-env-ab.sh'
-      - 'tools/bigcherry/patch/**'
-      - 'tools/bigcherry/pin_transition.py'
-      - 'tools/bigcherry/campaign/resolution.py'
-      - 'tools/bigcherry/core/config.py'
-      - 'tools/bigcherry/core/paths.py'
-      - 'tools/bigcherry/cli/main.py'
-      - 'tools/bigcherry/cli/patch.py'
-      - 'tools/bigcherry/cli/source.py'
-      - 'tools/bigcherry/cli/slice.py'
-      - 'tools/bigcherry/release/records.py'
-      - 'tools/bigcherry/release/**'
-      - 'tools/tests/release/**'
-      - 'tools/bigcherry/build/source_compile_check.py'
-      - 'tools/tests/build/test_source_compile_check.py'
-      - 'tools/bigcherry/source/upstream.py'
-      - 'tools/bigcherry/source/workspace.py'
-      - 'dispositions/**'
-      - 'config/recipes.toml'
-      - '.github/workflows/patch-offline-validation.yml'
   workflow_dispatch:
     inputs:
       base:
@@ -90,7 +60,60 @@ env:
   BIGCHERRY_ENVIRONMENT: config/environment.example.toml
 
 jobs:
+  changes:
+    # Path filtering lives here, not on the pull_request trigger: every job below is then always created and a
+    # job skipped by its `if:` still reports, which a required status check accepts (.github/scripts/changed_paths.py).
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.match.outputs.run }}
+    steps:
+      - if: github.event_name == 'pull_request'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: match
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ "$EVENT" != pull_request ]; then echo run=true >> "$GITHUB_OUTPUT"; exit 0; fi
+          python3 .github/scripts/changed_paths.py "$BASE" "$HEAD" >> "$GITHUB_OUTPUT" <<'PATTERNS'
+          engines/llamacpp/patches/**
+          engines/radiance/patches/**
+          engines/radiance/tests/**
+          engines/*/engine.toml
+          tools/tests/patch/**
+          tools/tests/cli/test_slice_lab.py
+          tools/bigcherry/cli/slice_lab.py
+          tools/lab/plan-qualification/**
+          tools/lab/flash-next/queue-meta-mem.sh
+          tools/lab/flash-next/queue-env-ab.sh
+          tools/bigcherry/patch/**
+          tools/bigcherry/pin_transition.py
+          tools/bigcherry/campaign/resolution.py
+          tools/bigcherry/core/config.py
+          tools/bigcherry/core/paths.py
+          tools/bigcherry/cli/main.py
+          tools/bigcherry/cli/patch.py
+          tools/bigcherry/cli/source.py
+          tools/bigcherry/cli/slice.py
+          tools/bigcherry/release/records.py
+          tools/bigcherry/release/**
+          tools/tests/release/**
+          tools/bigcherry/build/source_compile_check.py
+          tools/tests/build/test_source_compile_check.py
+          tools/bigcherry/source/upstream.py
+          tools/bigcherry/source/workspace.py
+          dispositions/**
+          config/recipes.toml
+          .github/workflows/patch-offline-validation.yml
+          PATTERNS
+
   offline-patch:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.run != 'false' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60  # a full 77-selection audit takes 25 to 40 minutes
     steps:

@@ -20,28 +20,55 @@ on:
       - '.github/workflows/jobs-service-validation.yml'
   pull_request:
     branches: [main]
-    paths:
-      - 'tools/bigcherry/jobs/**'
-      - 'tools/bigcherry/hardware/**'
-      - 'tools/bigcherry/core/host_lock.py'
-      - 'tools/bigcherry/experiment/bundle.py'
-      - 'tools/bigcherry/patch/campaign/profile.py'
-      - 'tools/bigcherry/cli/jobs.py'
-      - 'tools/bigcherry/cli/hardware.py'
-      - 'tools/bigcherry/__main__.py'
-      - 'tools/lab/plan-qualification/**'
-      - 'tools/admin/**'
-      - 'tools/tests/jobs/**'
-      - 'config/jobs/**'
-      - 'config/slurm/**'
-      - '.github/workflows/jobs-service-validation.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: jobs-service-validation-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  changes:
+    # Path filtering lives here, not on the pull_request trigger: every job below is then always created and a
+    # job skipped by its `if:` still reports, which a required status check accepts (.github/scripts/changed_paths.py).
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.match.outputs.run }}
+    steps:
+      - if: github.event_name == 'pull_request'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: match
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ "$EVENT" != pull_request ]; then echo run=true >> "$GITHUB_OUTPUT"; exit 0; fi
+          python3 .github/scripts/changed_paths.py "$BASE" "$HEAD" >> "$GITHUB_OUTPUT" <<'PATTERNS'
+          tools/bigcherry/jobs/**
+          tools/bigcherry/hardware/**
+          tools/bigcherry/core/host_lock.py
+          tools/bigcherry/experiment/bundle.py
+          tools/bigcherry/patch/campaign/profile.py
+          tools/bigcherry/cli/jobs.py
+          tools/bigcherry/cli/hardware.py
+          tools/bigcherry/__main__.py
+          tools/lab/plan-qualification/**
+          tools/admin/**
+          tools/tests/jobs/**
+          config/jobs/**
+          config/slurm/**
+          .github/workflows/jobs-service-validation.yml
+          PATTERNS
+
   offline-control-plane:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.run != 'false' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:

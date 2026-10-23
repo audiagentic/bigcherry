@@ -31,7 +31,10 @@ repository at once, and a change is only proven on the lab hardware.
    after the release tag exists. Commit-message `Release-As` footers are not used.
 5. **A pull request merges when** its checks are green, its description is filled in, and, if it changes the
    production build, the hardware evidence is in the description. Merge method: squash. The branch is deleted on
-   merge.
+   merge. Queue it with `gh pr merge <n> --auto --squash` as soon as it is opened: GitHub merges it the moment the
+   required checks pass. Do not poll checks in a loop. Every check is required and always reports: the path-filtered
+   workflows decide inside a `changes` job (`.github/scripts/changed_paths.py`), so a check that does not apply to a
+   change reports as skipped, which counts as passing.
 6. **Releases are cut from `main` by release-please.** Every merged `feat` / `fix` / `perf` updates one open release
    pull request; merging that pull request tags `bc-llamacpp-<llama build>.<minor>.<patch>` (with the readable alias `bc-llamacpp-b<build>-r<N>`) and publishes the notes. Several
    promotions merged before the release pull request is merged ship as one release.
