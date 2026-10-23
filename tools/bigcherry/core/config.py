@@ -49,7 +49,7 @@ def _local_env_table() -> dict[str, str]:
 _HOST_DEFAULT_VARS = {
     "BC_REPO_ROOT": "repo_root",
     "BC_ROCM_ROOT": "rocm_root",
-    "BC_CACHE_ROOT": "cache_root",
+    "BC_WORK_ROOT": "work_root",
     "BC_MODEL_ROOT": "model_root",
 }
 
