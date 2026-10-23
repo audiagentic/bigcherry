@@ -2,7 +2,7 @@
 id: MET13
 order: 0
 plan: patching-moe-expert-tiering
-state: done
+state: superseded
 created-at: '2026-10-12T12:21:43.616815+00:00'
 breadth: ''
 skill: advanced
@@ -12,6 +12,8 @@ work: M
 ---
 
 # MET13 — superseded duplicate of MET12 host-expert prefetch
+
+## Description
 
 **Disposition (2026-10-15): `SUPERSEDED_DUPLICATE`.** The requested Strata-style layer-ahead host-expert staging, dedicated copy stream and event-protected ring are the same capability already owned by [MET12](../../active/patching-moe-expert-tiering/MET12.md), created 2026-10-08. No MET13 implementation, independent scheduler, ring, allocator, cache or hardware experiment is authorised. The earlier proposed MET13 steps are superseded; their text remains in Git history.
 
@@ -24,3 +26,34 @@ work: M
 ## History
 - 2026-10-12: Created with overlapping prefetch/ring proposal.
 - 2026-10-15: Retired as duplicate; technical work consolidated in MET12.
+
+## Steps
+
+
+## Detailed Solution & Technical Design
+
+
+## Code Samples & Guidance
+
+
+## Files
+
+
+## Validation
+
+
+## Effort & Risk
+
+
+## Standards
+
+
+## Acceptance Criteria
+
+
+## Notes
+
+
+## Change Log
+
+- 2026-10-23: state 'done' (invalid) corrected to superseded
