@@ -31,7 +31,8 @@ permissions:
   packages: write
 
 concurrency:
-  group: radiance-build-${{ github.ref }}
+  # called from pr-ci.yml for pull requests: that caller already serializes per PR, so key on the caller run
+  group: radiance-build-${{ github.event_name == 'pull_request' && github.run_id || github.ref }}
   cancel-in-progress: true
 
 # Host settings are untracked; CI uses the tracked example host (it declares the rocm-sdks the recipes name).

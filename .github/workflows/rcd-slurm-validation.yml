@@ -28,7 +28,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: rcd-slurm-validation-${{ github.event.pull_request.number || github.ref }}
+  # called from pr-ci.yml for pull requests: that caller already serializes per PR, so key on the caller run
+  group: rcd-slurm-validation-${{ github.event_name == 'pull_request' && github.run_id || github.ref }}
   cancel-in-progress: true
 
 jobs:
