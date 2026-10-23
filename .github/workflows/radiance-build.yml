@@ -10,6 +10,9 @@ on:
     paths:
       - 'engines/radiance/**'
       - 'tools/bigcherry/campaign/**'
+      - 'tools/bigcherry/core/**'
+      - 'tools/bigcherry/build/**'
+      - 'config/environment.example.toml'
       - 'tools/bigcherry/engine_adapters/radiance*.py'
       - '.github/workflows/radiance-build.yml'
       - '.github/workflows/radiance-build-image.yml'
@@ -24,6 +27,9 @@ on:
     paths:
       - 'engines/radiance/**'
       - 'tools/bigcherry/campaign/**'
+      - 'tools/bigcherry/core/**'
+      - 'tools/bigcherry/build/**'
+      - 'config/environment.example.toml'
       - 'tools/bigcherry/engine_adapters/radiance*.py'
       - '.github/workflows/radiance-build.yml'
       - '.github/workflows/radiance-build-image.yml'
@@ -87,7 +93,7 @@ jobs:
 
       - name: Build in the ROCm image
         run: |
-          docker run --rm -e BIGCHERRY_ENVIRONMENT -v "$GITHUB_WORKSPACE:/src" -w /src '${{ needs.image.outputs.image }}' bash -euxo pipefail -c '
+          docker run --rm -e BIGCHERRY_ENVIRONMENT -e BC_WORK_ROOT=/src/work -v "$GITHUB_WORKSPACE:/src" -w /src '${{ needs.image.outputs.image }}' bash -euxo pipefail -c '
             git config --global --add safe.directory /src
             git config --global --add safe.directory /src/work/upstream/radiance.git
             export RADIANCE_HOST_CC=gcc-14 RADIANCE_HOST_CXX=g++-14 ROCM_PATH=/opt/rocm PYTHONPATH=tools
