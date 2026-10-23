@@ -69,6 +69,25 @@ No fixed helper count in moe-remote code or protocol; off/cpu/gpu/auto selectabl
 
 ## Notes
 
+
+GPT design review req_bigcherry_97cebda33722 (2026-10-23), adopted order:
+1. Finish the AVX2/F16C CPU A/B (actual combine cost).
+2. GPU method = GPU arithmetic with the existing CPU futex handoff (sleeping wait, no polling): helper 0 keeps its
+   local result in a device buffer (today lane_reduce_tokens_v writes straight to host-mapped memory,
+   moe_remote_gpu.h:480-491,761-775), waits on helper 1's done futex, uploads a per-token presence mask, then one
+   block a token: bf16->fp32 add of present rows, fp16 RNE, overflow -> marker, and helper 0's bf16 row written only
+   for overflow rows (sparse fallback); completion published after system-visible writes.
+3. Device-side cross-process waits (hipStreamWaitValue32 on host-registered shared memory) are NOT used: ROCm
+   documents the API for hipMallocSignalMemory only, and a stranded device wait would deadlock shutdown
+   (hipStreamSynchronize at r3_moe_worker.cpp:516). Revisit only if measurements justify it, with explicit
+   generation-tagged success/abort signals.
+4. Method negotiated in Header::combine (requested vs selected, logged once); the engine follows the selected method.
+   Explicit unavailable method fails init; auto falls back. auto predicts critical-path latency per method from
+   cached one-time microbenchmarks (mapped GPU read/write, GPU reduce, AVX2/F16C reduce, engine read) keyed by PCI IDs,
+   ROCm version and topology; profile may override method / min rows.
+5. Protocol v17. Consider a per-row fallback bitmap instead of the column-0 marker.
+6. Remaining yield() polling in the large-lane loop (r3_moe_worker.cpp:499-503) belongs to RAD20.
+
 Follows RAD18 (combine). fp16 combined row passed KLD (p99 +0.039). CPU scalar fp16 conversion erased the gain (~1 ms/step); F16C version under A/B. Owner: the combine should run on the GPUs where possible.
 
 ## Change Log
