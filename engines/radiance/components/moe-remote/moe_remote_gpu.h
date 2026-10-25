@@ -107,6 +107,9 @@ public:
         for (auto& l : lane_) {
             if (l.sample_start) (void)hipEventDestroy(l.sample_start);
             if (l.sample_stop) (void)hipEventDestroy(l.sample_stop);
+            for (hipEvent_t& e : l.stage) if (e) (void)hipEventDestroy(e);
+            for (hipEvent_t& e : l.done) if (e) (void)hipEventDestroy(e);
+            if (l.arrived) (void)hipEventDestroy(l.arrived);
             if (l.stream) (void)hipStreamDestroy(l.stream);
         }
         for (void* p : persistent_) if (p) (void)hipFree(p);
@@ -159,6 +162,19 @@ public:
         poison_ = !poison || !*poison || std::strcmp(poison, "0") == 0 ? 0u
                 : std::strcmp(poison, "zero") == 0 ? 2u : 1u;
         if (!hip_ok(hipSetDevice(0), "hipSetDevice(0)")) return false;
+        /* RAD20: host waits on this device sleep until it signals (hipStreamSynchronize / hipEventSynchronize) rather
+         * than spin. Set before anything creates the context. */
+        if (!hip_ok(hipSetDeviceFlags(hipDeviceScheduleBlockingSync), "hipSetDeviceFlags(BlockingSync)")) return false;
+        {   // every lane waits on the mailbox word with hipStreamWaitValue32; refuse clearly where that is unsupported
+            int wait_value = 0;
+            if (!hip_ok(hipDeviceGetAttribute(&wait_value, hipDeviceAttributeCanUseStreamWaitValue, 0),
+                        "hipDeviceGetAttribute(CanUseStreamWaitValue)"))
+                return false;
+            if (!wait_value) {
+                std::fprintf(stderr, "r3_moe_worker: device 0 cannot use hipStreamWaitValue32; the lanes need it\n");
+                return false;
+            }
+        }
         hipDeviceProp_t prop{};
         if (!hip_ok(hipGetDeviceProperties(&prop, 0), "hipGetDeviceProperties")) return false;
         arch_ = prop.gcnArchName;
@@ -181,8 +197,13 @@ public:
                 !hip_ok(hipEventCreate(&lane_[r].stage[0]), "hipEventCreate lane stage") ||
                 !hip_ok(hipEventCreate(&lane_[r].stage[1]), "hipEventCreate lane stage") ||
                 !hip_ok(hipEventCreate(&lane_[r].stage[2]), "hipEventCreate lane stage") ||
-                !hip_ok(hipEventCreate(&lane_[r].stage[3]), "hipEventCreate lane stage"))
+                !hip_ok(hipEventCreate(&lane_[r].stage[3]), "hipEventCreate lane stage") ||
+                !hip_ok(hipEventCreateWithFlags(&lane_[r].arrived, hipEventBlockingSync | hipEventDisableTiming),
+                        "hipEventCreate lane arrived"))
                 return false;
+            for (hipEvent_t& e : lane_[r].done)
+                if (!hip_ok(hipEventCreateWithFlags(&e, hipEventBlockingSync | hipEventDisableTiming), "hipEventCreate lane done"))
+                    return false;
         }
         experts_.resize((size_t)model_.layers * experts());
         tables_.resize(model_.layers);
@@ -781,7 +802,30 @@ public:
         hipLaunchKernelGGL(lane_publish_done, dim3(1), dim3(1), 0, w.stream,
                            q, done_seq, sequence);
         if (!hip_ok(hipGetLastError(), "lane publish done")) return -EIO;
+        if (!hip_ok(hipEventRecord(w.done[sequence % LaneWork::kDoneSlots], w.stream), "lane done event")) return -EIO;
         return 0;
+    }
+
+    /* RAD20: sleep until request `sequence` on this lane has published done (its completion event fired). */
+    bool wait_done(uint32_t lane, uint32_t sequence) {
+        return lane < r3::moe_shm::kLanes &&
+               hip_ok(hipEventSynchronize(lane_[lane].done[sequence % LaneWork::kDoneSlots]), "lane done wait");
+    }
+
+    /* RAD20, large lane: queue the device wait for request word >= sequence and an event behind it, then sleep in the
+     * event until the engine's GPU writes the word (or the stop path releases it). The CPU re-reads the word after. */
+    bool wait_arrival(void* host_map, void* device_map, uint32_t lane, uint32_t sequence) {
+        using namespace r3::moe_shm;
+        if (!host_map || !device_map || lane >= kLanes || sequence == 0) return false;
+        LaneWork& w = lane_[lane];
+        auto* hhost = static_cast<Header*>(host_map);
+        auto* request_seq = reinterpret_cast<uint32_t*>(
+            static_cast<uint8_t*>(device_map) +
+            (reinterpret_cast<const uint8_t*>(&hhost->lane[lane].request_sequence) - static_cast<const uint8_t*>(host_map)));
+        return hip_ok(hipStreamWaitValue32(w.stream, request_seq, sequence, hipStreamWaitValueGte, 0xffffffffu),
+                      "lane wait arrival") &&
+               hip_ok(hipEventRecord(w.arrived, w.stream), "lane arrived event") &&
+               hip_ok(hipEventSynchronize(w.arrived), "lane arrived wait");
     }
 
     bool collect_lane_timing(uint32_t lane, uint32_t done_sequence,

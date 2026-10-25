@@ -22,6 +22,8 @@
 #include <string>
 #include <thread>
 #include <utility>
+#include <poll.h>
+#include <sys/inotify.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -322,10 +324,24 @@ int main(int argc, char** argv) {
     if (creator) {
         fd = shm_open(name, O_CREAT | O_EXCL | O_RDWR | O_CLOEXEC, 0600);
     } else {
-        for (int i = 0; i < 1800 && fd < 0 && !stopping(); ++i) {
-            fd = shm_open(name, O_RDWR | O_CLOEXEC, 0);
-            if (fd < 0) ::sleep(1);
+        /* Helper 0 creates the segment; sleep on the shm directory until a file appears there (inotify), re-trying
+         * the open on each event, for at most 30 minutes. A timeout of 1 s only bounds how late a stop is seen. */
+        const int in = inotify_init1(IN_CLOEXEC | IN_NONBLOCK);
+        if (in < 0 || inotify_add_watch(in, "/dev/shm", IN_CREATE | IN_MOVED_TO) < 0) {
+            std::fprintf(stderr, "r3_moe_worker: cannot watch /dev/shm for helper 0's segment: %s\n", std::strerror(errno));
+            if (in >= 0) close(in);
+            return 1;
         }
+        const auto give_up = std::chrono::steady_clock::now() + std::chrono::minutes(30);
+        while ((fd = shm_open(name, O_RDWR | O_CLOEXEC, 0)) < 0 && errno == ENOENT && !stopping() &&
+               std::chrono::steady_clock::now() < give_up) {
+            struct pollfd pf{in, POLLIN, 0};
+            if (::poll(&pf, 1, 1000) > 0) {
+                alignas(struct inotify_event) char buf[4096];
+                while (::read(in, buf, sizeof buf) > 0) {}
+            }
+        }
+        close(in);
     }
     if (fd < 0) {
         std::fprintf(stderr, "r3_moe_worker: shm_open %s: %s\n", name, std::strerror(errno));
@@ -348,8 +364,15 @@ int main(int argc, char** argv) {
         /* Every helper reads the same step activations: stage them once, in slot 0. */
         for (uint32_t r = 1; r < helper_count; ++r) h->activation_offset[r] = h->activation_offset[0];
         store(&h->helper_count, helper_count);   /* last: an attaching helper waits for it */
+        (void)futex_wake(&h->helper_count);
     } else {
-        for (int i = 0; i < 1800 && !stopping() && load(&h->helper_count) != helper_count; ++i) ::sleep(1);
+        /* Sleep on the word helper 0 stores last (it futex-wakes it); 1 s waits bound how late a stop is seen. */
+        for (int i = 0; i < 1800 && !stopping(); ++i) {
+            const uint32_t seen = load(&h->helper_count);
+            if (seen == helper_count) break;
+            struct timespec ts{1, 0};
+            (void)::syscall(SYS_futex, &h->helper_count, FUTEX_WAIT, seen, &ts, nullptr, 0);
+        }
         bool same_lanes = load(&h->helper_count) == helper_count && valid(h, lay.bytes, shape) && h->small_class_count == lane_classes.count;
         for (uint32_t c = 0; same_lanes && c < lane_classes.count; ++c)
             same_lanes = h->small_class_rows[c] == lane_classes.rows[c];
@@ -456,7 +479,19 @@ int main(int argc, char** argv) {
             if (++seq == 0) break;
         }
     } else {
-        constexpr uint32_t kQueueDepth = 4;
+        constexpr uint32_t kQueueDepth = r3_moe_gpu::LaneWork::kDoneSlots;   /* one completion event a queued request */
+        /* RAD20: each lane thread sleeps in a GPU completion event, never polls. A sleeping thread is woken by its device
+         * work completing, so the stop path releases every served lane's queued request-word waits (release_lane). The
+         * highest sequence a lane has queued is published here for it. */
+        std::array<std::atomic<uint32_t>, kLanes> lane_queued{};
+        auto release_lane = [&](uint32_t lane, uint32_t upto) {
+            /* Raise the request word to `upto` (never lower it): the device waits up to there pass and the queued work
+             * runs on the slots' last contents, as at every shutdown before RAD20; the engine has helper_fault by now. */
+            uint32_t cur = load(&h->lane[lane].request_sequence);
+            while ((int32_t)(upto - cur) > 0 &&
+                   !__atomic_compare_exchange_n(&h->lane[lane].request_sequence, &cur, upto, false,
+                                                __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)) {}
+        };
         std::array<uint64_t, kLanes> lane_req{}, lane_rows{}, lane_routes{}, lane_samples{};
         std::array<double, kLanes> lane_sample_us{};
         std::array<std::thread, kLanes> workers;
@@ -495,11 +530,19 @@ int main(int argc, char** argv) {
                 uint32_t next = 1;
                 uint32_t done_seen = 0;
                 if (large) {
-                    /* Sized on arrival: wait for the engine's request word, read its rows, launch that size. */
+                    /* Sized on arrival: sleep until the engine's request word reaches `next` (a device wait and an event
+                     * behind it), confirm it on the CPU, read its rows, launch that size. */
                     while (!stopping()) {
+                        lane_queued[lane].store(next, std::memory_order_release);
+                        if (!gpu->wait_arrival(map, dev_map, lane, next)) {
+                            request_stop();
+                            break;
+                        }
+                        if (stopping()) break;   /* released by the stop path, not by a request */
                         if ((int32_t)(load(&h->lane[lane].request_sequence) - next) < 0) {
-                            std::this_thread::yield();
-                            continue;
+                            std::fprintf(stderr, "r3_moe_worker: large lane %u woke for seq %u without its request\n", lane, next);
+                            request_stop();
+                            break;
                         }
                         const Request* q = lane_request(map, lane, next);
                         const uint32_t rows = load(&q->rows);
@@ -539,6 +582,7 @@ int main(int argc, char** argv) {
                                          lane, next, rc);
                             return false;
                         }
+                        lane_queued[lane].store(next, std::memory_order_release);
                         ++next;
                         return next != 0;
                     };
@@ -549,11 +593,18 @@ int main(int argc, char** argv) {
                             break;
                         }
                     }
-                    while (!stopping()) {
+                    while (!stopping() && next != done_seen + 1u) {
+                        /* Sleep until the oldest queued request has published done. */
+                        if (!gpu->wait_done(lane, done_seen + 1u)) {
+                            request_stop();
+                            break;
+                        }
                         const uint32_t done = load(&h->lane[lane].done_sequence);
                         if ((int32_t)(done - done_seen) <= 0) {
-                            std::this_thread::yield();
-                            continue;
+                            std::fprintf(stderr, "r3_moe_worker: lane %u event for seq %u fired before its done word\n",
+                                         lane, done_seen + 1u);
+                            request_stop();
+                            break;
                         }
                         if (!gpu->collect_lane_timing(lane, done,
                                                       &lane_sample_us[lane],
@@ -575,8 +626,8 @@ int main(int argc, char** argv) {
                     (void)gpu->collect_lane_timing(lane, final_done,
                                                    &lane_sample_us[lane],
                                                    &lane_samples[lane]);
-                    /* Release the pre-queued waits so the stream drains. */
-                    store(&h->lane[lane].request_sequence, next - 1u);
+                    /* Release the pre-queued waits so the stream drains (the stop path may have already). */
+                    release_lane(lane, next - 1u);
                 }
                 if (!gpu->sync_lane(lane)) {
                     request_stop();
@@ -598,6 +649,13 @@ int main(int argc, char** argv) {
          * joining anything, so no fault path depends on a join completing. */
         store(&h->helper_fault, 1u);
         combine_futex_wake(&h->combine.helper1_done, true);
+        /* Wake every lane thread sleeping in a device event: release its queued request-word waits. A lane that queues
+         * once more after this read sees the stop word before it sleeps again and releases its own. */
+        for (uint32_t lane = 0; lane < kLanes; ++lane)
+            if (workers[lane].joinable()) {
+                const uint32_t upto = lane_queued[lane].load(std::memory_order_acquire);
+                if (upto) release_lane(lane, upto);
+            }
         for (auto& w : workers) if (w.joinable()) w.join();
         if (combine_pool) {
             store(&h->combine.enabled, 0u);

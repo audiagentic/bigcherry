@@ -96,6 +96,13 @@ struct LaneWork {
     /* Stage marks inside a sampled request: routes, gate/up GEMM, gated quant, down GEMM (then reduce = stop). */
     static constexpr int kStages = 4;
     hipEvent_t stage[kStages] = {};
+    /* Blocking-sync completion events (RAD20): done[seq % kDoneSlots] is recorded after a request's lane_publish_done,
+     * so the lane thread sleeps in hipEventSynchronize instead of polling done_sequence. A slot is re-recorded only for
+     * seq + kDoneSlots, which the lane queues after seq has completed, so no event is reused while outstanding. arrived
+     * is the large lane's: recorded after its wait for the next request word. */
+    static constexpr uint32_t kDoneSlots = 4;
+    hipEvent_t done[kDoneSlots] = {};
+    hipEvent_t arrived = nullptr;
     double stage_us[kStages + 1] = {};
     /* Sampled requests: experts by routed rows - 1, 2, 3-4, 5-8, 9-16, 17-32, 33-64, 65+ (RAD06 tile sizing). */
     uint64_t run_hist[8] = {};
