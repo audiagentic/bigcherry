@@ -595,7 +595,12 @@ int main(int argc, char** argv) {
                     }
                     while (!stopping() && next != done_seen + 1u) {
                         /* Sleep until the oldest queued request has published done. */
-                        if (!gpu->wait_done(lane, done_seen + 1u)) {
+                        if (gpu->lane_diag_poll()) {   /* LAB ONLY: see R3_MOE_WORKER_LANE_DIAG */
+                            if ((int32_t)(load(&h->lane[lane].done_sequence) - done_seen) <= 0) {
+                                std::this_thread::yield();
+                                continue;
+                            }
+                        } else if (!gpu->wait_done(lane, done_seen + 1u)) {
                             request_stop();
                             break;
                         }

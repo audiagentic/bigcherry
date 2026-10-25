@@ -1,0 +1,111 @@
+{
+ "_comment": "RAD20 decode diagnosis (LAB ONLY, removed with R3_MOE_WORKER_LANE_DIAG before merge): the RAD20 build, arms differ only in R3_MOE_WORKER_LANE_DIAG - blocking (unset) vs spin vs noflag. Set RAD_BIN_NEW, RAD_HOME, R9700_BDF (rad20-diag.sh does).",
+ "schema_version": 1,
+ "engine": "radiance",
+ "evidence_role": "diagnostic",
+ "execution_evidence": "observe",
+ "model": "${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad",
+ "server_args": [
+  "--radiance-home",
+  "${RAD_HOME}",
+  "--kernels",
+  "libr4d,libr3moe,libref",
+  "--placement",
+  "expert_tiered",
+  "--ngram-placement",
+  "ram",
+  "--max-num-seqs",
+  "6",
+  "--max-num-batched-tokens",
+  "4096",
+  "--checkpoint-interval",
+  "4096",
+  "--kv-cache-dtype",
+  "fp8",
+  "--num-speculative-tokens",
+  "3",
+  "--tp",
+  "1",
+  "--host-pool-mib",
+  "22528",
+  "--max-model-len",
+  "32768"
+ ],
+ "environment": {
+  "HIP_VISIBLE_DEVICES": "0",
+  "ROCR_VISIBLE_DEVICES": "2",
+  "RADIANCE_HOME": "${RAD_HOME}",
+  "R3_MOE_WORKER_SKIP_OWNED": "1"
+ },
+ "expected_execution": {
+  "backend": "ROCm",
+  "architectures": [
+   "gfx1201"
+  ],
+  "locators": [
+   "${R9700_BDF}"
+  ]
+ },
+ "bench_configs": "mtp-dual",
+ "required_metrics": [
+  "pp1024_tps",
+  "tg512_tps"
+ ],
+ "repetitions": 1,
+ "health_timeout_s": 900,
+ "arms": [
+  {
+   "name": "blocking",
+   "mode": "stock",
+   "shutdown_method": "sigint",
+   "binary": "${RAD_BIN_NEW}",
+   "settings": {
+    "R3_MOE_WORKER": "1",
+    "R3_MOE_WORKER_DEVICES": "0 1",
+    "R3_MOE_WORKER_MOE_DOWN_TILE": "1",
+    "R3_MOE_WORKER_ENGINE_RANKS": "1",
+    "R3_MOE_WORKER_MAX_ROWS": "4096",
+    "R3_MOE_WORKER_SMALL_ROWS": "8",
+    "R3_MOE_WORKER_MIB": "22528",
+    "R3_MOE_WORKER_HEAT": "${BC_WORK_ROOT}/runs/perf51/heat.rank0.hot-first",
+    "R3_MOE_WORKER_COMBINE": "0"
+   }
+  },
+  {
+   "name": "spin",
+   "mode": "stock",
+   "shutdown_method": "sigint",
+   "binary": "${RAD_BIN_NEW}",
+   "settings": {
+    "R3_MOE_WORKER": "1",
+    "R3_MOE_WORKER_DEVICES": "0 1",
+    "R3_MOE_WORKER_MOE_DOWN_TILE": "1",
+    "R3_MOE_WORKER_ENGINE_RANKS": "1",
+    "R3_MOE_WORKER_MAX_ROWS": "4096",
+    "R3_MOE_WORKER_SMALL_ROWS": "8",
+    "R3_MOE_WORKER_MIB": "22528",
+    "R3_MOE_WORKER_HEAT": "${BC_WORK_ROOT}/runs/perf51/heat.rank0.hot-first",
+    "R3_MOE_WORKER_COMBINE": "0",
+    "R3_MOE_WORKER_LANE_DIAG": "spin"
+   }
+  },
+  {
+   "name": "noflag",
+   "mode": "stock",
+   "shutdown_method": "sigint",
+   "binary": "${RAD_BIN_NEW}",
+   "settings": {
+    "R3_MOE_WORKER": "1",
+    "R3_MOE_WORKER_DEVICES": "0 1",
+    "R3_MOE_WORKER_MOE_DOWN_TILE": "1",
+    "R3_MOE_WORKER_ENGINE_RANKS": "1",
+    "R3_MOE_WORKER_MAX_ROWS": "4096",
+    "R3_MOE_WORKER_SMALL_ROWS": "8",
+    "R3_MOE_WORKER_MIB": "22528",
+    "R3_MOE_WORKER_HEAT": "${BC_WORK_ROOT}/runs/perf51/heat.rank0.hot-first",
+    "R3_MOE_WORKER_COMBINE": "0",
+    "R3_MOE_WORKER_LANE_DIAG": "noflag"
+   }
+  }
+ ]
+}

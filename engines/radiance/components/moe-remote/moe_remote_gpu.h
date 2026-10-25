@@ -164,7 +164,19 @@ public:
         if (!hip_ok(hipSetDevice(0), "hipSetDevice(0)")) return false;
         /* RAD20: host waits on this device sleep until it signals (hipStreamSynchronize / hipEventSynchronize) rather
          * than spin. Set before anything creates the context. */
-        if (!hip_ok(hipSetDeviceFlags(hipDeviceScheduleBlockingSync), "hipSetDeviceFlags(BlockingSync)")) return false;
+        /* LAB ONLY (RAD20 decode diagnosis, removed before merge): R3_MOE_WORKER_LANE_DIAG = poll (lanes poll done_sequence,
+         * events still recorded) | spin (events without BlockingSync) | noflag (no device BlockingSync flag) | nofence
+         * (events also hipEventDisableSystemFence). */
+        if (const char* d = std::getenv("R3_MOE_WORKER_LANE_DIAG"); d && *d) {
+            lane_diag_ = d;
+            std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_LANE_DIAG=%s (lab diagnosis)
+", d);
+        }
+        unsigned event_flags = hipEventBlockingSync | hipEventDisableTiming;
+        if (lane_diag_ == "spin") event_flags = hipEventDisableTiming;
+        if (lane_diag_ == "nofence") event_flags |= hipEventDisableSystemFence;
+        if (lane_diag_ != "noflag" &&
+            !hip_ok(hipSetDeviceFlags(hipDeviceScheduleBlockingSync), "hipSetDeviceFlags(BlockingSync)")) return false;
         {   // every lane waits on the mailbox word with hipStreamWaitValue32; refuse clearly where that is unsupported
             int wait_value = 0;
             if (!hip_ok(hipDeviceGetAttribute(&wait_value, hipDeviceAttributeCanUseStreamWaitValue, 0),
@@ -198,11 +210,11 @@ public:
                 !hip_ok(hipEventCreate(&lane_[r].stage[1]), "hipEventCreate lane stage") ||
                 !hip_ok(hipEventCreate(&lane_[r].stage[2]), "hipEventCreate lane stage") ||
                 !hip_ok(hipEventCreate(&lane_[r].stage[3]), "hipEventCreate lane stage") ||
-                !hip_ok(hipEventCreateWithFlags(&lane_[r].arrived, hipEventBlockingSync | hipEventDisableTiming),
+                !hip_ok(hipEventCreateWithFlags(&lane_[r].arrived, event_flags),
                         "hipEventCreate lane arrived"))
                 return false;
             for (hipEvent_t& e : lane_[r].done)
-                if (!hip_ok(hipEventCreateWithFlags(&e, hipEventBlockingSync | hipEventDisableTiming), "hipEventCreate lane done"))
+                if (!hip_ok(hipEventCreateWithFlags(&e, event_flags), "hipEventCreate lane done"))
                     return false;
         }
         experts_.resize((size_t)model_.layers * experts());
@@ -213,6 +225,7 @@ public:
     }
 
     const std::string& arch() const { return arch_; }
+    bool lane_diag_poll() const { return lane_diag_ == "poll"; }
 
     int64_t expert_bytes(uint32_t layer, uint32_t expert) {
         const RadFileEntry* gu = model_.weight(layer, expert, 0);
@@ -924,6 +937,7 @@ public:
 private:
     const Container& model_;
     std::string arch_;
+    std::string lane_diag_;
     void* so_ = nullptr;
     void (*plugin_close_)() = nullptr;
     bool plugin_opened_ = false;
