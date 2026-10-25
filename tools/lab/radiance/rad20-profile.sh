@@ -5,14 +5,14 @@
 # Usage: rad20-profile.sh <polling build plan id> <blocking build plan id> [label]   (directories under $BC_WORK_ROOT/builds)
 #   ARMS="name=<build id|head>[,VAR=value...] ..." replaces the two arms; 'head' builds this checkout first.
 set -u
-POLL=$1 BLOCK=$2 LABEL=${3:-auto}
+POLL=$1 BLOCK=$2 LABEL=${3:-auto} ARMS=${4:-${ARMS:-}}
 set --
 source tools/env/bigcherry-env.sh
 W=${BC_WORK_ROOT}; OUT=$W/runs/rad20-profile-$LABEL-$(date +%m%d%H%M); mkdir -p $OUT
 export ROCM_PATH=/opt/rocm-7.2.4 PATH=/opt/rocm-7.2.4/bin:$PATH
 L=tools/lab/radiance/launch-flashnext-best.sh
 PROMPT='Write a long, detailed story about a lighthouse keeper who discovers a hidden room. Keep going.'
-ARMS=${ARMS:-polling=$POLL blocking=$BLOCK}
+[ -n "$ARMS" ] || ARMS="polling=$POLL blocking=$BLOCK"
 if [[ " $ARMS" == *"=head"* ]]; then
     PYTHONPATH=tools timeout 5400 python3 -m bigcherry build --lane radiance-lab:stock:linux-radiance         --experiment moe-remote-handoff > $OUT/build.log 2>&1
     HEADID=$(grep -oE 'ok build_plan_id=[0-9a-f]+' $OUT/build.log | tail -1 | cut -d= -f2)
