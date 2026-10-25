@@ -166,16 +166,6 @@ public:
          * than spin. Set before anything creates the context. */
         if (!hip_ok(hipSetDeviceFlags(hipDeviceScheduleBlockingSync), "hipSetDeviceFlags(BlockingSync)")) return false;
         const unsigned event_flags = hipEventBlockingSync | hipEventDisableTiming;
-        {   // every lane waits on the mailbox word with hipStreamWaitValue32; refuse clearly where that is unsupported
-            int wait_value = 0;
-            if (!hip_ok(hipDeviceGetAttribute(&wait_value, hipDeviceAttributeCanUseStreamWaitValue, 0),
-                        "hipDeviceGetAttribute(CanUseStreamWaitValue)"))
-                return false;
-            if (!wait_value) {
-                std::fprintf(stderr, "r3_moe_worker: device 0 cannot use hipStreamWaitValue32; the lanes need it\n");
-                return false;
-            }
-        }
         hipDeviceProp_t prop{};
         if (!hip_ok(hipGetDeviceProperties(&prop, 0), "hipGetDeviceProperties")) return false;
         arch_ = prop.gcnArchName;
@@ -512,10 +502,8 @@ public:
             dev_at(ptr<uint16_t>(
                 host_map, hhost->result_offset[rank * kMaxRanks + rank])));
 
-        if (!hip_ok(hipStreamWaitValue32(w.stream, request_seq, sequence,
-                                         hipStreamWaitValueGte, 0xffffffffu),
-                    "lane wait request"))
-            return -EIO;
+        hipLaunchKernelGGL(lane_wait_request, dim3(1), dim3(64), 0, w.stream, request_seq, sequence);
+        if (!hip_ok(hipGetLastError(), "lane wait request")) return -EIO;
         if (sample && !w.sample_pending) {
             if (!hip_ok(hipEventRecord(w.sample_start, w.stream), "lane timing start"))
                 return -EIO;
@@ -813,9 +801,9 @@ public:
                hip_ok(hipEventSynchronize(lane_[lane].done[sequence % LaneWork::kDoneSlots]), "lane done wait");
     }
 
-    /* RAD20, large lane: queue the device wait for request word >= sequence and the 'arrived' event behind it. Armed only
-     * once the engine host has hinted that a large step is coming (Header::large_hint), so no wait sits on the GPU while
-     * the decode runs on the small lanes. */
+    /* RAD20, large lane: queue the device wait for request word >= sequence (lane_wait_request) and the 'arrived'
+     * blocking-sync event behind it; the lane thread sleeps in wait_arrived until the engine GPU publishes. The request
+     * is sized on arrival, so its kernels are enqueued after (their own wait then passes at once). */
     bool arm_arrival(void* host_map, void* device_map, uint32_t lane, uint32_t sequence) {
         using namespace r3::moe_shm;
         if (!host_map || !device_map || lane >= kLanes || sequence == 0) return false;
@@ -824,9 +812,8 @@ public:
         auto* request_seq = reinterpret_cast<uint32_t*>(
             static_cast<uint8_t*>(device_map) +
             (reinterpret_cast<const uint8_t*>(&hhost->lane[lane].request_sequence) - static_cast<const uint8_t*>(host_map)));
-        return hip_ok(hipStreamWaitValue32(w.stream, request_seq, sequence, hipStreamWaitValueGte, 0xffffffffu),
-                      "lane wait arrival") &&
-               hip_ok(hipEventRecord(w.arrived, w.stream), "lane arrived event");
+        hipLaunchKernelGGL(lane_wait_request, dim3(1), dim3(64), 0, w.stream, request_seq, sequence);
+        return hip_ok(hipGetLastError(), "lane wait arrival") && hip_ok(hipEventRecord(w.arrived, w.stream), "lane arrived event");
     }
     /* Sleep until the armed arrival wait has passed (the request came, or the stop path released it). */
     bool wait_arrived(uint32_t lane) {

@@ -127,4 +127,15 @@ __global__ void lane_publish_done(r3::moe_shm::Request* q, uint32_t* done_sequen
     lane_store_sys_rel(done_sequence, sequence);
 }
 
+/* The lane's wait for the engine's request word, queued ahead of a request's kernels: one wave sleeps between system-scope
+ * acquire loads until the word reaches `sequence` (or the helper's stop path raises it), then exits so the stream runs on.
+ * It replaces hipStreamWaitValue32, whose default ROCm implementation (the __amd_rocclr_streamOpsWait blit wait), while
+ * armed on one lane's stream, made another lane's decode GEMV 2.2x slower (64 -> 140 us; rad20-profile 2026-10-25). This
+ * kernel armed the same way costs nothing measurable. kLaneWaitSleep: s_sleep units of 64 clocks between loads. */
+constexpr int kLaneWaitSleep = 8;
+__global__ void lane_wait_request(const uint32_t* request_sequence, uint32_t sequence) {
+    if (threadIdx.x) return;
+    while ((int32_t)(lane_load_sys_acq(request_sequence) - sequence) < 0) __builtin_amdgcn_s_sleep(kLaneWaitSleep);
+}
+
 }  // namespace r3_moe_gpu

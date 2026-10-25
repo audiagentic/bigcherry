@@ -13,7 +13,7 @@
 namespace r3::moe_shm {
 
 constexpr uint64_t kMagic = 0x31454f4d33485253ull; /* "SRH3MOE1": reject unrelated/stale shm. */
-constexpr uint32_t kVersion = 17;  /* 17: Header::large_hint, the engine host's futex hint that a large-lane step is coming (RAD20); 16: the combined row is fp16 with a per-row fallback marker (kCombineFallback); 15: Header::combine (R3_MOE_WORKER_COMBINE); 14: the header records the model shape (intermediate, activation_group, shape_hash) and every region is laid out from it (layout_for); 13: several pre-queued small-lane sizes (Header::small_class_*), ten lanes; 12: Request carries the R3_MOE_WORKER_TRACE stamps (192 -> 256 bytes); 11: helper_fault; completion is an exact generation */
+constexpr uint32_t kVersion = 16;  /* 16: the combined row is fp16 with a per-row fallback marker (kCombineFallback); 15: Header::combine (R3_MOE_WORKER_COMBINE); 14: the header records the model shape (intermediate, activation_group, shape_hash) and every region is laid out from it (layout_for); 13: several pre-queued small-lane sizes (Header::small_class_*), ten lanes; 12: Request carries the R3_MOE_WORKER_TRACE stamps (192 -> 256 bytes); 11: helper_fault; completion is an exact generation */
 constexpr uint32_t kPage = 4096;
 /* R3_MOE_WORKER_COMBINE: first element of a combined fp16 row the combiner could not hold in fp16 range (a NaN payload
  * no arithmetic produces; a real NaN converts to 0x7E00); the engine then reads that row from the two helper planes. */
@@ -157,13 +157,7 @@ struct alignas(kPage) Header {
     uint32_t intermediate;          /* expert intermediate width (RCS09-03): part of the shape both sides must agree on. */
     uint32_t activation_group;      /* activation quantisation group width. */
     uint64_t shape_hash;            /* shape_hash() of the shape fields: a fast agreement check, never the only one. */
-    /* RAD20: the engine host adds one and futex-wakes this before it enqueues a step for the large lane, so a helper's
-     * large-lane thread sleeps on the CPU until a large step is coming and only then arms its GPU wait for the request
-     * word. A GPU wait armed for the whole decode slowed the small lanes' GEMV 2.3x (rad20-profile, 2026-10-25). A hint,
-     * never the protocol: the request word stays authoritative. */
-    uint32_t large_hint;
-    uint32_t large_hint_reserved;
-    uint64_t reserved[13];
+    uint64_t reserved[14];
     CombineSignal combine;
 };
 static_assert(sizeof(Header) <= kPage);
