@@ -534,7 +534,10 @@ int main(int argc, char** argv) {
                      * behind it), confirm it on the CPU, read its rows, launch that size. */
                     while (!stopping()) {
                         lane_queued[lane].store(next, std::memory_order_release);
-                        if (!gpu->wait_arrival(map, dev_map, lane, next)) {
+                        if (gpu->lane_diag_is("nolargewait")) {   /* LAB ONLY: main's CPU poll, no armed GPU wait */
+                            while (!stopping() && (int32_t)(load(&h->lane[lane].request_sequence) - next) < 0)
+                                std::this_thread::yield();
+                        } else if (!gpu->wait_arrival(map, dev_map, lane, next)) {
                             request_stop();
                             break;
                         }

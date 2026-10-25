@@ -224,6 +224,7 @@ public:
     }
 
     const std::string& arch() const { return arch_; }
+    bool lane_diag_is(const char* v) const { return lane_diag_ == v; }
     bool lane_diag_poll() const { return lane_diag_ == "poll" || lane_diag_ == "noevent"; }
 
     int64_t expert_bytes(uint32_t layer, uint32_t expert) {
