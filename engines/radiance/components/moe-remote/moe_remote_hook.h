@@ -29,6 +29,7 @@ struct R3MoeShadowFirst {
 
 struct R3MoeMailboxDevice {
     void* mailbox = nullptr;
+    void* host_mailbox = nullptr;   /* the same segment, host mapped: the engine host's large-lane hint (Header::large_hint) */
     const uint8_t* owner = nullptr;
     uint32_t* sequence = nullptr;   /* [kMaxRanks slots][2 lane classes] request counters */
     uint32_t* published = nullptr;  /* [kMaxRanks slots]: 0, or 1 + the lane class of this step's request; then [kMaxRanks]:

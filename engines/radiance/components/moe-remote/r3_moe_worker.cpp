@@ -17,6 +17,7 @@
 #include <fcntl.h>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <set>
 #include <limits>
 #include <string>
@@ -480,10 +481,13 @@ int main(int argc, char** argv) {
         }
     } else {
         constexpr uint32_t kQueueDepth = r3_moe_gpu::LaneWork::kDoneSlots;   /* one completion event a queued request */
-        /* RAD20: each lane thread sleeps in a GPU completion event, never polls. A sleeping thread is woken by its device
-         * work completing, so the stop path releases every served lane's queued request-word waits (release_lane). The
-         * highest sequence a lane has queued is published here for it. */
+        /* RAD20: each lane thread sleeps (a GPU completion event, or the large lane's futex hint), never polls. A thread
+         * sleeping on a GPU event is woken by its device work completing, so the stop path releases every served lane's
+         * armed request-word waits (release_lane). A lane arms a wait and publishes its sequence in lane_queued only under
+         * its arm lock with the stop word clear; the stop path takes the same lock to release, so no wait can be armed
+         * after the release that should have covered it. */
         std::array<std::atomic<uint32_t>, kLanes> lane_queued{};
+        std::array<std::mutex, kLanes> arm_lock;
         auto release_lane = [&](uint32_t lane, uint32_t upto) {
             /* Raise the request word to `upto` (never lower it): the device waits up to there pass and the queued work
              * runs on the slots' last contents, as at every shutdown before RAD20; the engine has helper_fault by now. */
@@ -530,14 +534,28 @@ int main(int argc, char** argv) {
                 uint32_t next = 1;
                 uint32_t done_seen = 0;
                 if (large) {
-                    /* Sized on arrival: sleep until the engine's request word reaches `next` (a device wait and an event
-                     * behind it), confirm it on the CPU, read its rows, launch that size. */
+                    /* Sized on arrival. Sleep on the engine host's large-step hint (a futex on Header::large_hint) until a
+                     * large step is coming, then arm the device wait for the request word with an event behind it and sleep
+                     * in that until the engine GPU publishes; confirm the word on the CPU, read its rows, launch that size.
+                     * No GPU wait is armed while the decode runs on the small lanes. */
+                    uint32_t hint_seen = load(&h->large_hint);
                     while (!stopping()) {
-                        lane_queued[lane].store(next, std::memory_order_release);
-                        if (gpu->lane_diag_is("nolargewait")) {   /* LAB ONLY: main's CPU poll, no armed GPU wait */
-                            while (!stopping() && (int32_t)(load(&h->lane[lane].request_sequence) - next) < 0)
-                                std::this_thread::yield();
-                        } else if (!gpu->wait_arrival(map, dev_map, lane, next)) {
+                        for (;;) {   /* until a hint, the request itself, or stop */
+                            if (stopping() || (int32_t)(load(&h->lane[lane].request_sequence) - next) >= 0) break;
+                            const uint32_t hint = load(&h->large_hint);
+                            if (hint != hint_seen) { hint_seen = hint; break; }
+                            (void)futex_wait(&h->large_hint, hint);
+                        }
+                        {
+                            std::lock_guard<std::mutex> armed(arm_lock[lane]);
+                            if (stopping()) break;
+                            lane_queued[lane].store(next, std::memory_order_release);
+                            if (!gpu->arm_arrival(map, dev_map, lane, next)) {
+                                request_stop();
+                                break;
+                            }
+                        }
+                        if (!gpu->wait_arrived(lane)) {
                             request_stop();
                             break;
                         }
@@ -577,6 +595,8 @@ int main(int argc, char** argv) {
                 } else {
                     auto queue_one = [&]() -> bool {
                         if (next == 0) return false;
+                        std::lock_guard<std::mutex> armed(arm_lock[lane]);
+                        if (stopping()) return true;   /* nothing armed after the stop path's release */
                         const bool sample = (next & 63u) == 0;
                         const int rc = gpu->enqueue_lane(map, dev_map, lane, next, lane_classes.rows[lane_class(lane)], sample);
                         if (rc != 0) {
@@ -598,15 +618,11 @@ int main(int argc, char** argv) {
                     }
                     while (!stopping() && next != done_seen + 1u) {
                         /* Sleep until the oldest queued request has published done. */
-                        if (gpu->lane_diag_poll()) {   /* LAB ONLY: see R3_MOE_WORKER_LANE_DIAG */
-                            if ((int32_t)(load(&h->lane[lane].done_sequence) - done_seen) <= 0) {
-                                std::this_thread::yield();
-                                continue;
-                            }
-                        } else if (!gpu->wait_done(lane, done_seen + 1u)) {
+                        if (!gpu->wait_done(lane, done_seen + 1u)) {
                             request_stop();
                             break;
                         }
+                        if (stopping()) break;   /* released by the stop path: no done word was published */
                         const uint32_t done = load(&h->lane[lane].done_sequence);
                         if ((int32_t)(done - done_seen) <= 0) {
                             std::fprintf(stderr, "r3_moe_worker: lane %u event for seq %u fired before its done word\n",
@@ -659,8 +675,10 @@ int main(int argc, char** argv) {
         combine_futex_wake(&h->combine.helper1_done, true);
         /* Wake every lane thread sleeping in a device event: release its queued request-word waits. A lane that queues
          * once more after this read sees the stop word before it sleeps again and releases its own. */
+        (void)futex_wake(&h->large_hint);   /* a large lane sleeping on the hint sees the stop word */
         for (uint32_t lane = 0; lane < kLanes; ++lane)
             if (workers[lane].joinable()) {
+                std::lock_guard<std::mutex> armed(arm_lock[lane]);
                 const uint32_t upto = lane_queued[lane].load(std::memory_order_acquire);
                 if (upto) release_lane(lane, upto);
             }

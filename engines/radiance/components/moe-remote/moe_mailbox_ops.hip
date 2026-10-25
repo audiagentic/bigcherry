@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <atomic>
 #include <cstdio>
 #include "moe_remote_hook.h"
@@ -641,6 +642,17 @@ int publish_launch(const RadArgs* a, RadStream stream) {
                        static_cast<const float*>(a->t[4].data),
                        static_cast<const uint16_t*>(a->t[2].data), (uint32_t)rows, (uint32_t)hidden,
                        d->cpu_ref);
+    {   /* RAD20: a step no small class fits goes to the large lane; wake the helpers' large-lane threads first */
+        auto* hh = static_cast<Header*>(d->host_mailbox);
+        if (!hh) return reject("no host mapping of the segment");
+        uint32_t largest_small = 0;
+        for (uint32_t c = 0; c < hh->small_class_count && c < kSmallClasses; ++c)
+            largest_small = std::max(largest_small, hh->small_class_rows[c]);
+        if ((uint32_t)rows > largest_small) {
+            (void)fetch_add(&hh->large_hint, 1u);
+            (void)futex_wake(&hh->large_hint);
+        }
+    }
     hipLaunchKernelGGL(mailbox_publish_kernel, dim3(1), dim3(256), 0, (hipStream_t)stream,
                        static_cast<uint8_t*>(d->mailbox), d->owner, d->sequence, d->published, d->rank,
                        d->helpers, static_cast<int32_t*>(a->t[0].data),

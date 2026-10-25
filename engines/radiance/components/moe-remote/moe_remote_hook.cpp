@@ -419,6 +419,7 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
 
     s.device = device;
     s.dev.mailbox = dev_map;
+    s.dev.host_mailbox = g.map;
     s.dev.owner = s.owner;
     s.dev.sequence = s.sequence;
     s.dev.published = s.published;

@@ -119,6 +119,10 @@ __global__ void lane_reduce_tokens_v(const uint16_t* down, const int32_t* inv,
  * system-scope release; the engine-side join waits with a system-scope acquire. */
 __global__ void lane_publish_done(r3::moe_shm::Request* q, uint32_t* done_sequence, uint32_t sequence) {
     if (blockIdx.x || threadIdx.x) return;
+    /* A request the engine never published (a pre-queued wait released by the helper's stop path: the slot still holds
+     * an older generation, so the front end marked it invalid and nothing was routed) completes on the stream, for the
+     * lane's completion event, but never publishes done: no false completion reaches the engine (RAD20). */
+    if (q->sequence != sequence) return;
     q->trace[4] = wall_clock64();   /* R3_MOE_WORKER_TRACE: this device's clock */
     lane_store_sys_rel(done_sequence, sequence);
 }
