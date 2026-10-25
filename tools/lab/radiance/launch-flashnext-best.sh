@@ -15,6 +15,7 @@
 # Usage:
 #   bash tools/lab/radiance/launch-flashnext-best.sh [start] [--build DIR] [--port N] [--heat FILE]
 #   bash tools/lab/radiance/launch-flashnext-best.sh stop
+# HELPER0_WRAP="<command> [args] --" runs helper 0 under a profiler (e.g. rocprofv3); unset, helpers run as they are.
 # Without --build, the newest build under $BC_WORK_ROOT/builds that has the helper binary is used.
 set -u
 
@@ -98,7 +99,7 @@ trap 'echo "start failed; stopping what was started" >&2; stop_all; exit 1' ERR
 for i in "${!XTX[@]}"; do
   log=$RUN/helper$i-$STAMP.log
   env "${COMMON[@]}" ROCR_VISIBLE_DEVICES="${XTX[$i]}" HIP_VISIBLE_DEVICES=0 R3_MOE_WORKER_INDEX=$i \
-    setsid "$HELPER" "$MODEL" > "$log" 2>&1 &
+    setsid ${HELPER0_WRAP:+$([ $i = 0 ] && echo "$HELPER0_WRAP")} "$HELPER" "$MODEL" > "$log" 2>&1 &
   echo $! > "$PIDS/helper$i"
   echo "helper$i on XTX ${XTX[$i]} (pid $!, log $log): waiting for ready..." >&2
   ready=0
