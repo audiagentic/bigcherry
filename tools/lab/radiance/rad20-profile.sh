@@ -5,7 +5,7 @@
 # Usage: rad20-profile.sh <polling build plan id> <blocking build plan id> [label]   (directories under $BC_WORK_ROOT/builds)
 #   ARMS="name=<build id|head>[,VAR=value...] ..." replaces the two arms; 'head' builds this checkout first.
 set -u
-POLL=$1 BLOCK=$2 LABEL=${3:-auto} ARMS=${4:-${ARMS:-}}
+POLL=$1 BLOCK=$2 LABEL=${3:-auto} ARMS=${4:-${ARMS:-}} PROF=${5:---kernel-trace --stats}
 set --
 source tools/env/bigcherry-env.sh
 W=${BC_WORK_ROOT}; OUT=$W/runs/rad20-profile-$LABEL-$(date +%m%d%H%M); mkdir -p $OUT
@@ -24,7 +24,7 @@ for spec in $ARMS; do
     vars=""; [[ "$rest" == *,* ]] && vars=$(echo ${rest#*,} | tr , ' ')
     NAMES="$NAMES $name"; build=$(ls -d $W/builds/*/$id | head -1)
     echo "$name: build $id env [$vars]" | tee -a $OUT/summary.txt
-    env $vars HELPER0_WRAP="rocprofv3 --kernel-trace --stats --output-format csv -d $OUT/$name-prof --" \
+    env $vars HELPER0_WRAP="rocprofv3 $PROF --output-format csv -d $OUT/$name-prof --" \
         bash $L start --build $build > $OUT/$name-launch.log 2>&1 || { tail $OUT/$name-launch.log; bash $L stop; continue; }
     # one warm-up, then the measured decode with clocks sampled (1 s) on XTX 0
     curl -s http://127.0.0.1:36080/v1/completions -d "{\"prompt\":\"$PROMPT\",\"max_tokens\":64}" > /dev/null
