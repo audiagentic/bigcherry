@@ -169,8 +169,7 @@ public:
          * (events also hipEventDisableSystemFence). */
         if (const char* d = std::getenv("R3_MOE_WORKER_LANE_DIAG"); d && *d) {
             lane_diag_ = d;
-            std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_LANE_DIAG=%s (lab diagnosis)
-", d);
+            std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_LANE_DIAG=%s (lab diagnosis)\n", d);
         }
         unsigned event_flags = hipEventBlockingSync | hipEventDisableTiming;
         if (lane_diag_ == "spin") event_flags = hipEventDisableTiming;
