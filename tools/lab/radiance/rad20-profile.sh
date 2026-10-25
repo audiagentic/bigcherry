@@ -2,14 +2,15 @@
 # RAD20 decode diagnosis: why do the helper's small-lane kernels run ~2x slower with blocking lanes? For each build
 # (polling baseline, RAD20 blocking): start the best layout with helper 0 under rocprofv3 --kernel-trace, sample XTX 0's
 # clocks, send one 512-token decode request, stop. Compares per-kernel device time and clocks between the two.
-# Usage: rad20-profile.sh <polling build dir> <blocking build dir>
+# Usage: rad20-profile.sh <polling build plan id> <blocking build plan id>   (directories under $BC_WORK_ROOT/builds)
 set -u
+source tools/env/bigcherry-env.sh
 W=${BC_WORK_ROOT}; OUT=$W/runs/rad20-profile-$(date +%m%d%H%M); mkdir -p $OUT
 export ROCM_PATH=/opt/rocm-7.2.4 PATH=/opt/rocm-7.2.4/bin:$PATH
 L=tools/lab/radiance/launch-flashnext-best.sh
 PROMPT='Write a long, detailed story about a lighthouse keeper who discovers a hidden room. Keep going.'
 for arm in polling:$1 blocking:$2; do
-    name=${arm%%:*}; build=${arm#*:}
+    name=${arm%%:*}; build=$(ls -d $W/builds/*/${arm#*:} | head -1)
     HELPER0_WRAP="rocprofv3 --kernel-trace --stats --output-format csv -d $OUT/$name-prof --" \
         bash $L start --build $build > $OUT/$name-launch.log 2>&1 || { tail $OUT/$name-launch.log; bash $L stop; continue; }
     # one warm-up, then the measured decode with clocks sampled (1 s) on XTX 0
