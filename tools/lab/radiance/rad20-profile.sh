@@ -4,10 +4,10 @@
 # clocks, send one 512-token decode request, stop. Compares per-kernel device time and clocks between the two.
 # Usage: rad20-profile.sh <polling build plan id> <blocking build plan id>   (directories under $BC_WORK_ROOT/builds)
 set -u
-POLL=$1 BLOCK=$2
+POLL=$1 BLOCK=$2 LABEL=${3:-auto}
 set --
 source tools/env/bigcherry-env.sh
-W=${BC_WORK_ROOT}; OUT=$W/runs/rad20-profile-$(date +%m%d%H%M); mkdir -p $OUT
+W=${BC_WORK_ROOT}; OUT=$W/runs/rad20-profile-$LABEL-$(date +%m%d%H%M); mkdir -p $OUT
 export ROCM_PATH=/opt/rocm-7.2.4 PATH=/opt/rocm-7.2.4/bin:$PATH
 L=tools/lab/radiance/launch-flashnext-best.sh
 PROMPT='Write a long, detailed story about a lighthouse keeper who discovers a hidden room. Keep going.'
@@ -17,7 +17,9 @@ for arm in polling:$POLL blocking:$BLOCK; do
         bash $L start --build $build > $OUT/$name-launch.log 2>&1 || { tail $OUT/$name-launch.log; bash $L stop; continue; }
     # one warm-up, then the measured decode with clocks sampled (1 s) on XTX 0
     curl -s http://127.0.0.1:36080/v1/completions -d "{\"prompt\":\"$PROMPT\",\"max_tokens\":64}" > /dev/null
-    ( for _ in $(seq 40); do date +%s.%N; rocm-smi -d 0 --showclocks --showuse --showpower 2>/dev/null | grep -E 'sclk|mclk|fclk|GPU use|Power'; sleep 1; done ) > $OUT/$name-clocks.txt &
+    # XTX 0's current sclk/mclk levels from sysfs every 10 ms (the first card whose pp_dpm_mclk tops out at 1249 MHz)
+    CARD=$(grep -l '1249Mhz' /sys/class/drm/card*/device/pp_dpm_mclk | head -1 | xargs dirname)
+    ( while :; do echo "mclk $(grep '\*' $CARD/pp_dpm_mclk) sclk $(grep '\*' $CARD/pp_dpm_sclk)"; sleep 0.01; done ) > $OUT/$name-clocks.txt &
     CL=$!
     t0=$(date +%s.%N)
     curl -s http://127.0.0.1:36080/v1/completions -d "{\"prompt\":\"$PROMPT\",\"max_tokens\":512,\"temperature\":0}" > $OUT/$name-reply.json
@@ -37,7 +39,7 @@ rows.sort(key=lambda r: -float(r["TotalDurationNs"]))
 for r in rows[:10]:
     print(f'{r["Calls"]:>8} {float(r["TotalDurationNs"])/1e6:9.1f} ms {float(r["AverageNs"])/1e3:8.1f} us  {r["Name"][:90]}')
 PY
-    echo "-- clocks (median of samples)" | tee -a $OUT/summary.txt
-    grep -oE '(sclk|mclk|fclk) clock level: [0-9]+: \([0-9]+Mhz\)' $OUT/$name-clocks.txt | sed -E 's/ clock level: [0-9]+: \(/ /; s/Mhz\)//' | sort | awk '{a[$1]=a[$1]" "$2} END{for(k in a){n=split(a[k],v," "); asort(v); print k, "median", v[int((n+1)/2)], "MHz, samples", n}}' | tee -a $OUT/summary.txt
+    echo "-- XTX 0 clock levels during the decode (10 ms samples: count, mclk, sclk)" | tee -a $OUT/summary.txt
+    sed -E 's/ +/ /g' $OUT/$name-clocks.txt | sort | uniq -c | sort -rn | head -8 | tee -a $OUT/summary.txt
 done
 echo "OUT $OUT"; echo RAD20_PROFILE_DONE
