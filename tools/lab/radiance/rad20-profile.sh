@@ -4,12 +4,14 @@
 # clocks, send one 512-token decode request, stop. Compares per-kernel device time and clocks between the two.
 # Usage: rad20-profile.sh <polling build plan id> <blocking build plan id>   (directories under $BC_WORK_ROOT/builds)
 set -u
+POLL=$1 BLOCK=$2
+set --
 source tools/env/bigcherry-env.sh
 W=${BC_WORK_ROOT}; OUT=$W/runs/rad20-profile-$(date +%m%d%H%M); mkdir -p $OUT
 export ROCM_PATH=/opt/rocm-7.2.4 PATH=/opt/rocm-7.2.4/bin:$PATH
 L=tools/lab/radiance/launch-flashnext-best.sh
 PROMPT='Write a long, detailed story about a lighthouse keeper who discovers a hidden room. Keep going.'
-for arm in polling:$1 blocking:$2; do
+for arm in polling:$POLL blocking:$BLOCK; do
     name=${arm%%:*}; build=$(ls -d $W/builds/*/${arm#*:} | head -1)
     HELPER0_WRAP="rocprofv3 --kernel-trace --stats --output-format csv -d $OUT/$name-prof --" \
         bash $L start --build $build > $OUT/$name-launch.log 2>&1 || { tail $OUT/$name-launch.log; bash $L stop; continue; }
