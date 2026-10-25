@@ -41,6 +41,12 @@
 #include "worker_selftest.h"
 #include "worker_combine.h"
 
+/* LAB ONLY (RAD20 discriminator): one wave waits for the word to reach `want`, sleeping between system-scope loads. */
+__global__ void lab_sleep_wait(const uint32_t* word, uint32_t want) {
+    if (threadIdx.x) return;
+    while (__hip_atomic_load(word, __ATOMIC_ACQUIRE, __HIP_MEMORY_SCOPE_SYSTEM) < want) __builtin_amdgcn_s_sleep(127);
+}
+
 int main(int argc, char** argv) {
     /* EVERY LANE STREAM ON ITS OWN HARDWARE QUEUE. A small lane pre-queues "wait for the next request" packets;
      * a stream sharing a hardware queue with one sits behind that wait until a small request arrives. With
@@ -534,32 +540,13 @@ int main(int argc, char** argv) {
                 uint32_t next = 1;
                 uint32_t done_seen = 0;
                 if (large) {
-                    /* Sized on arrival. Sleep on the engine host's large-step hint (a futex on Header::large_hint) until a
-                     * large step is coming, then arm the device wait for the request word with an event behind it and sleep
-                     * in that until the engine GPU publishes; confirm the word on the CPU, read its rows, launch that size.
-                     * No GPU wait is armed while the decode runs on the small lanes. */
-                    uint32_t hint_seen = load(&h->large_hint);
+                    /* LAB INTERIM (RAD20 discriminator, replaced by the decode design): sized on arrival by a CPU poll of
+                     * the request word, as main does, so no GPU wait is armed on this lane during the decode. The engine-host
+                     * hint cannot work: radiance replays recorded passes without running plugin host code. */
                     while (!stopping()) {
-                        for (;;) {   /* until a hint, the request itself, or stop */
-                            if (stopping() || (int32_t)(load(&h->lane[lane].request_sequence) - next) >= 0) break;
-                            const uint32_t hint = load(&h->large_hint);
-                            if (hint != hint_seen) { hint_seen = hint; break; }
-                            (void)futex_wait(&h->large_hint, hint);
-                        }
-                        {
-                            std::lock_guard<std::mutex> armed(arm_lock[lane]);
-                            if (stopping()) break;
-                            lane_queued[lane].store(next, std::memory_order_release);
-                            if (!gpu->arm_arrival(map, dev_map, lane, next)) {
-                                request_stop();
-                                break;
-                            }
-                        }
-                        if (!gpu->wait_arrived(lane)) {
-                            request_stop();
-                            break;
-                        }
-                        if (stopping()) break;   /* released by the stop path, not by a request */
+                        while (!stopping() && (int32_t)(load(&h->lane[lane].request_sequence) - next) < 0)
+                            std::this_thread::yield();
+                        if (stopping()) break;
                         if ((int32_t)(load(&h->lane[lane].request_sequence) - next) < 0) {
                             std::fprintf(stderr, "r3_moe_worker: large lane %u woke for seq %u without its request\n", lane, next);
                             request_stop();
@@ -667,8 +654,40 @@ int main(int argc, char** argv) {
                 lane_routes[lane] = stats[2];
             });
         }
+        /* LAB ONLY (RAD20 discriminator): R3_MOE_WORKER_IDLE_WAIT arms one wait that never fires during the run on an extra
+         * idle stream, to find which kind of outstanding GPU wait slows the active lane's GEMV: "value" (hipStreamWaitValue32
+         * on a host-mapped word), "sleep" (one wave s_sleep-polling the word), "event" (a cross-stream event wait, an AQL
+         * barrier, on an event recorded behind a sleep kernel on a third stream), "sleep2" (that third stream alone). */
+        hipStream_t idle_b = nullptr, idle_c = nullptr;
+        uint32_t* idle_word = nullptr;
+        uint32_t* idle_word_dev = nullptr;
+        if (const char* iw = std::getenv("R3_MOE_WORKER_IDLE_WAIT"); iw && *iw && std::strcmp(iw, "none") != 0) {
+            const std::string mode = iw;
+            bool ok = r3_moe_gpu::hip_ok(hipHostMalloc(&idle_word, 64, hipHostMallocMapped | hipHostMallocPortable), "idle word") &&
+                      r3_moe_gpu::hip_ok(hipHostGetDevicePointer((void**)&idle_word_dev, idle_word, 0), "idle word ptr") &&
+                      r3_moe_gpu::hip_ok(hipStreamCreateWithFlags(&idle_b, hipStreamNonBlocking), "idle stream");
+            if (ok) *idle_word = 0;
+            if (ok && mode == "value")
+                ok = r3_moe_gpu::hip_ok(hipStreamWaitValue32(idle_b, idle_word_dev, 1, hipStreamWaitValueGte, 0xffffffffu), "idle wait");
+            if (ok && mode == "sleep") hipLaunchKernelGGL(lab_sleep_wait, dim3(1), dim3(64), 0, idle_b, idle_word_dev, 1u);
+            if (ok && (mode == "event" || mode == "sleep2")) {
+                hipEvent_t ev = nullptr;
+                ok = r3_moe_gpu::hip_ok(hipStreamCreateWithFlags(&idle_c, hipStreamNonBlocking), "idle stream c") &&
+                     r3_moe_gpu::hip_ok(hipEventCreateWithFlags(&ev, hipEventDisableTiming), "idle event");
+                if (ok) hipLaunchKernelGGL(lab_sleep_wait, dim3(1), dim3(64), 0, idle_c, idle_word_dev, 1u);
+                if (ok && mode == "event")
+                    ok = r3_moe_gpu::hip_ok(hipEventRecord(ev, idle_c), "idle record") &&
+                         r3_moe_gpu::hip_ok(hipStreamWaitEvent(idle_b, ev, 0), "idle event wait");
+            }
+            std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_IDLE_WAIT=%s armed%s (lab)\n", iw, ok ? "" : " FAILED");
+        }
         for (uint32_t v; (v = g_stop_word.load(std::memory_order_acquire)) == 0;)
             (void)::syscall(SYS_futex, reinterpret_cast<uint32_t*>(&g_stop_word), FUTEX_WAIT_PRIVATE, v, nullptr, nullptr, 0);
+        if (idle_word) {   /* release the lab wait and drain its streams */
+            __atomic_store_n(idle_word, 8u, __ATOMIC_RELEASE);
+            if (idle_c) (void)hipStreamSynchronize(idle_c);
+            if (idle_b) (void)hipStreamSynchronize(idle_b);
+        }
         /* Stopping (a signal or a failed lane): fail the engine's waits and wake the other helper's combine wait before
          * joining anything, so no fault path depends on a join completing. */
         store(&h->helper_fault, 1u);
