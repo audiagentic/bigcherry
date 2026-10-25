@@ -641,6 +641,10 @@ def run_server_arm_capture(
                     runner_root=runner_root, model_label=model.stem,
                     evidence_dir=cell / "bench", required_metrics=required_metrics,
                 )
+            # Speculative draft totals for the whole cell (the engine's declared source), so arms that did different
+            # amounts of draft work show up as such; None when the engine declares none.
+            draft = server.draft_stats()
+            run["draft"] = None if draft is None else {"drafted": draft[0], "accepted": draft[1]}
         if server.last_shutdown is None or not server.last_shutdown.clean:
             raise ValueError("server teardown was not clean; cell rejected")
         run["returncode"] = 0
