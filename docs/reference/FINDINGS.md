@@ -53,6 +53,36 @@ Update **Status** in place as it moves — don't duplicate the entry.
 
 ## Kernel / upstream bugs
 
+### Default `hipStreamWaitValue32` armed on an idle stream makes kernels on another stream ~2.2x slower (gfx1100) — 2026-10-25
+
+**Status:** internal-only (candidate to add to ROCm/TheRock#9297)
+
+**Summary:** With ROCm's default implementation of `hipStreamWaitValue32` (the `__amd_rocclr_streamOpsWait` blit
+kernel, `GPU_STREAMOPS_CP_WAIT=0`), a single unsatisfied wait armed on one otherwise idle stream makes a
+latency-sensitive kernel on a different stream of the same GPU run about 2.2x longer (64 -> 140 us), with identical
+ISA, identical clocks (also with `power_dpm_force_performance_level=high`) and no overlapping kernel in the trace.
+Replacing that wait with any of: nothing, a cross-stream `hipStreamWaitEvent` (an AQL BARRIER_AND), or a one-wave
+`s_sleep` wait kernel leaves the kernel at 65-67 us. It does not depend on the HW queue count
+(`GPU_MAX_HW_QUEUES` 13/16/24/32 all slow). A plain bandwidth-bound streaming kernel does not show it; the affected
+kernel is a decode GEMV doing scattered expert-weight reads. The default wait also keeps a kernel resident while
+armed, so the GPU reads busy and polls host memory for as long as the wait is outstanding.
+
+**Environment:** Linux 7.0.13 (amdgpu in-tree), ROCm 7.2.4 (HIP/ROCclr/ROCr 7.2.4), MES firmware 0x80 on the XTX. Helper GPUs: 2x Radeon RX 7900 XTX (gfx1100, PCIe 4.0 x8 each); engine GPU: Radeon AI PRO R9700 (gfx1201, PCIe 4.0 x4); no P2P between them; processes share a POSIX shm segment registered with hipHostRegister(Portable|Mapped).
+
+**Evidence:** rocprofv3 `--kernel-trace --stats` on the helper process, one 512-token greedy decode, same binary,
+only the idle extra stream's armed wait differs (`R3_MOE_WORKER_IDLE_WAIT` lab switch):
+none 65.1 us / `hipStreamWaitValue32` 140.3 us / `s_sleep` wait kernel 67.3 us / sleep kernel on a third stream 66.1 us /
+`hipStreamWaitEvent` barrier 67.4 us (gate/up GEMV p50); the down GEMV 35 -> 48 us; decode 96.6 -> 84.4 tok/s. The
+same 2.2x appears when a second pre-queued lane class sits idle with its waits armed (8-row class alone 64 us,
+8+16 134 us, 8+16+32 138 us). Related public reports: ROCm/TheRock#9297 (gfx1201, pending `hipStreamWaitEvent` on
+other streams adds ~17 us a small kernel, no AMD root cause yet), vllm-project/vllm#58639 (side streams in pending
+waits double the R9700 forward pass). No public report found for gfx11 with `hipStreamWaitValue32`; ROCm 10.0 release
+notes mention no change to the stream-wait implementation.
+
+**Internal context:** RAD20 (docs/planning/active/patching-radiance-rdna3/RAD20.md); runs
+`${BC_WORK_ROOT}/runs/rad20-profile-{idlewait-10252147,classes-10252111,queues-10252039,largewait-10251824,noevent-10251753}`;
+harness `tools/lab/radiance/rad20-profile.sh`; branch feat/rad20-blocking-lanes.
+
 ### Historical illegal-memory-access report for generated MMQ candidate (q6_K, gfx1100) — 2026-08-11
 
 **Status:** internal-only
@@ -182,6 +212,34 @@ _(none logged yet)_
 ---
 
 ## Notable interactions
+
+### ROCm stream and signal waits that cannot be used to block (ROCm 7.2.4) — 2026-10-25
+
+**Status:** internal-only
+
+**Summary:** Three ROCm behaviours that matter when one process must sleep until another process's GPU work is done:
+(1) `GPU_STREAMOPS_CP_WAIT=1` switches `hipStreamWaitValue32` to a command-processor barrier-value packet, but that path
+waits on a ROCclr memory-object signal and fails outright on a `hipHostRegister`ed POSIX shared-memory word
+(`hipStreamWaitValue32` returns an error), so it cannot replace the blit wait for cross-process mailboxes.
+(2) HSA IPC signals (`hsa_amd_signal_create(HSA_AMD_SIGNAL_IPC)` + `hsa_amd_ipc_signal_create` / `_attach`) carry no
+driver event (`amd_signal_t.event_mailbox_ptr == 0`, `event_id == 0`) in either process, so
+`hsa_signal_wait_scacquire(..., HSA_WAIT_STATE_BLOCKED)` on them spins a full core; they work only for GPU-side waits and
+value checks. (3) On an ordinary (interrupt) signal, ROCr's `HSA_WAIT_STATE_BLOCKED` wait spins before it blocks: a waiter
+woken every 150 us used 81% of a core, every 1 ms 19%. Waiting in the driver directly (as radiance's AQL backend does)
+avoids the spin; a true interrupt wake then costs ~80 us end to end from another GPU's completion (p50; 30 us while
+the waiter is still spinning).
+
+**Environment:** Linux 7.0.13 (amdgpu in-tree), ROCm 7.2.4 (HIP/ROCclr/ROCr 7.2.4), MES firmware 0x80 on the XTX. Helper GPUs: 2x Radeon RX 7900 XTX (gfx1100, PCIe 4.0 x8 each); engine GPU: Radeon AI PRO R9700 (gfx1201, PCIe 4.0 x4); no P2P between them; processes share a POSIX shm segment registered with hipHostRegister(Portable|Mapped).
+
+**Evidence:** standalone `tools/lab/radiance/ipc-signal-bench.cpp`: producer process on the R9700 submits BARRIER_AND
+packets whose completion signal counts down from 2^40; consumer process on an XTX waits for the value to drop.
+IPC signal, direct blocked wait: 5000/5000 delivered, no lost wakes, p50 25 us, p99 29 us, max 268 us, consumer CPU 100%.
+Relay (ordinary interrupt signal waited in the producer process, futex to the consumer): consumer CPU 0.6-1.3%,
+e2e p50 30 us (150 us interval) / 82 us (1 ms interval), max 425-517 us, relay thread CPU 81% / 19%.
+`GPU_STREAMOPS_CP_WAIT=1` on the live helper: `lane 0 enqueue seq 1 failed rc=-5` at the first `hipStreamWaitValue32`.
+
+**Internal context:** RAD20; run `${BC_WORK_ROOT}/runs/rad20-profile-cpwait-10252212`; GPT design reviews
+req_bigcherry_3e23e104d8c3 (search), req_bigcherry_288a2ccd0399 (triage).
 
 ### `--split-mode row` fails outright on consumer RDNA3 (gfx1100) ROCm/HIP — 2026-08-12
 
