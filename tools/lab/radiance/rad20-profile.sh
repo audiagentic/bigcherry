@@ -21,7 +21,7 @@ fi
 NAMES=""
 for spec in $ARMS; do
     name=${spec%%=*}; rest=${spec#*=}; id=${rest%%,*}; [ "$id" = head ] && id=$HEADID
-    vars=""; [[ "$rest" == *,* ]] && vars=$(echo ${rest#*,} | tr , ' ')
+    vars=""; [[ "$rest" == *,* ]] && vars=$(echo ${rest#*,} | tr , ' ' | tr + ,)
     NAMES="$NAMES $name"; build=$(ls -d $W/builds/*/$id | head -1)
     echo "$name: build $id env [$vars]" | tee -a $OUT/summary.txt
     env $vars HELPER0_WRAP="rocprofv3 $PROF --output-format csv -d $OUT/$name-prof --" \
