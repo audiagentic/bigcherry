@@ -193,7 +193,7 @@ Why the supporting flags are set (lab log, "Flash-Next: radiance's own prefill s
 - Exact wire, not `wht6`, on the two-XTX engine: wht6 gave KLD 0.0746 / top-1 87.18% on this model (run `fnk1`) for
   about 5% prefill (lab log). Not relevant to the R9700 engine layout, which has no cross-card sum.
 
-## Helper-row combine (RAD18, RAD23; in progress)
+## Helper-row combine (RAD18 done, RAD23 in progress)
 
 `R3_MOE_WORKER_COMBINE=1` (default off): the helpers' result rows are added into one row before the engine reads them,
 so the R9700 reads one plane over its x4 link instead of two. Measured on the working layout (helper-ab style, 4
@@ -205,12 +205,12 @@ every 64-row step combined):
 | combine off (control) | 0.0614 / 0.624 / 2.375 | 89.09% | 3,404-3,406 / 3,354-3,360 | 124 / 145 / 152 | baseline |
 | CPU combine, bf16 row | 0.0736 / 0.899 / 2.769 | 88.25% | +7.1-8.1% / +7.3% | -11% / flat / flat | fails KLD (p99 +0.275 vs 0.2) |
 | CPU combine, fp16 row, scalar conversion | 0.0641 / 0.663 / 1.948 | 88.81% | -5% / -2% | -22% / flat / flat | passes KLD; too slow (~1 ms CPU a step vs ~0.31 ms) |
-| CPU combine, fp16 row, F16C (current `cpu` method) | as fp16 above | | 3,610-3,640 (+6-7%) / 3,533-3,537 (+5-8%), complete separation in pairs 1-3 | 97 (-21%) / flat / flat | prefill win back; CPU ~0.31-0.33 ms a step. tg128 drop to confirm (never-fire control + MTP acceptance). Pair 4 combine1 was low on every metric (outside interference, excluded). |
+| CPU combine, fp16 row, F16C (current `cpu` method) | as fp16 above | | 3,610-3,640 (+6-7%) / 3,533-3,537 (+5-8%), complete separation in pairs 1-3 | 97 (-21%) / flat / flat | prefill win back; CPU ~0.31-0.33 ms a step. Pair 4 combine1 was low on every metric (outside interference, excluded). Re-run 2026-10-25 (`rad20-rad18-10251306`, main 81d756d7, 4 rotated pairs, no exclusions): pp1024 3,511-3,644 vs 3,417-3,424, pp4096 3,504-3,553 vs 3,372-3,375, tg512/tg2048 flat, tg128 97.3-97.8 vs 123.7-124.4. |
 
 - An engine-side rounding-only control matched the bf16 combine's KLD exactly: the loss was the bf16 rounding of the
   sum, not a fault in the combine. fp16 keeps the same two bytes and rounds 8x finer; a row past fp16 range carries
   a fallback marker and is read from the separate helper planes.
-- tg128 moves with the output text (a never-firing combine control gave tg128 equal to off); check per variant.
+- tg128 moves with the output text, not combine overhead (closed 2026-10-25, `rad20-rad18-10251306`): with the combine on but never firing (`R3_MOE_WORKER_COMBINE_MIN_ROWS=100000`), 4 rotated pairs give tg128 121.4-124.1 vs 123.8-124.2 off and identical MTP draft totals (2135 of 2286 accepted in every cell). With the combine firing, the draft totals change (2079 of 2280): the fp16 rows change the generated text, and tg128, the shortest run, moves with it. The never-fire control config is retired.
 - Run notes: the helpers' lane threads each hold ~100% of a CPU core while waiting (yield polling, RAD20); close the
   browser on the build server during measurements. Builds and tests must not run on the build server during an A/B.
 - Next (RAD23): selectable methods `off|cpu|gpu|auto` for unknown topologies, helper count as a runtime value; the
