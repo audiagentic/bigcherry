@@ -21,7 +21,7 @@ build() {   # $1 label: builds the checked-out tree, prints its runtime prefix
         --experiment moe-remote-handoff > $OUT/build-$1.log 2>&1
     local plan; plan=$(grep -oE 'ok build_plan_id=[0-9a-f]+' $OUT/build-$1.log | tail -1 | cut -d= -f2)
     [ -n "$plan" ] || { grep -E ' error:|FAILED' $OUT/build-$1.log | sort -u | head >&2; return 1; }
-    ls -d $W/builds/*/$plan/runtime-prefix
+    ls -d $W/builds/*/$plan
 }
 NEW=$(build new) || { echo "RAD20 build failed"; exit 1; }
 git checkout -q --detach $BASE
