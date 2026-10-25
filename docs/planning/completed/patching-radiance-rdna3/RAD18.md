@@ -2,7 +2,7 @@
 id: RAD18
 order: 0
 plan: patching-radiance-rdna3
-state: in_progress
+state: completed
 created-at: '2026-10-21T23:17:12.131804+00:00'
 breadth: ''
 skill: ''
@@ -65,6 +65,8 @@ Context: this is a sibling investigation to RAD17 (FP8 down-product), targeting 
 2026-10-22. rad0008 (PF2 up-mix RT=128 default, RAD_HC_UPMIX_RT=256 restores the original): kernel level vs unpatched build -2.1%/-3.2% of hc_read on the R9700 (M=2048/4096), -5.8%/-2.8% on the XTX, byte-identical. END TO END in the working layout (R9700 engine + 2 XTX helpers, ab-benchmark tools/lab/radiance/helper-upmix-rt-ab.json, one binary built with --experiment helper-layout-upmix-rt, 4 rotated pairs, --host-pool-mib 22528 in both arms because the 30 GiB pool plus the pinned n-gram table no longer fits free host RAM): pp4096 3351 (RT256) vs 3355 (RT128) tok/s (+0.1%), pp1024 3406 vs 3416 excluding one low RT128 run (+0.3%), tg2048 152.3 vs 152.2 -- no measurable end-to-end gain. Matches the share: hc_read is 8.9% of R9700 prefill device time in this layout (--profile-ops, 7306-token prompt, TTFT 3.49 s), so 2-3% off hc_read is ~0.2-0.3% end to end. Prefill device time in this layout: moe_mailbox_add 51.7% (helper wait + merge), gemm_nt_q 11.1%, hc_read 8.9%, moe_mailbox_publish 6.2%, local moe_gemm_q 5.9%. Next: R3_MOE_WORKER_TRACE decomposition of the mailbox wait (GPT req_bigcherry_ceee9968e4b5): exposed helper wait vs helper GPU time vs merge (the merge reads each helper's full-width bf16 result straight from mapped host memory). Hardware layout is fixed (owner).
 Prefill device-time split before these (--profile-ops, 7306 tokens): moe_mailbox_add 51.7%, gemm_nt_q 11.1%, hc_read 8.9%, mailbox_publish 6.2%, local moe_gemm_q 5.9%; TTFT 2.36 s; exposed helper wait 0.65 s. rad0008 in-engine hc_read 216.6 -> 210.0 ms (-3.0%); end-to-end below noise because hc_read is ~9% of prefill. Follow-ups split out: RAD19 (derive helper slice split), RAD20 (replace lane polling), RAD21 (micro-batch pipelining of the helper round trip).
 
+Closed 2026-10-25 (run rad20-rad18-10251306 on the build server, main 81d756d7, 4 rotated pairs each, no exclusions, per-cell MTP draft totals now recorded by ab-benchmark). Combine off vs on (F16C cpu method): pp1024 3417-3424 vs 3511-3644, pp4096 3372-3375 vs 3504-3553 (+4-5%), tg512/tg2048 flat, tg128 123.7-124.4 vs 97.3-97.8. Never-fire control (combine on, MIN_ROWS=100000): tg128 equal to off, draft totals identical (2135/2286 in every cell); combine firing changes the draft totals (2079/2280), so the tg128 drop is the fp16 rows changing the generated text, not combine overhead. KLD gate passed earlier (fp16 mean +0.0027, p99 +0.039). Combine stays default off (#404); method selection, GPU method and N helpers continue in RAD23. Never-fire config retired.
+
 ## Notes (handoff)
 
 Status 2026-10-23 (handoff): rad0008 promoted (done). Combine: bf16 row failed KLD (p99 +0.275); rounding-only control
@@ -93,3 +95,5 @@ acceptance on the build server (bigcherry slice lab), then retire helper-combine
 - 2026-10-23T02:13:51.871271+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:notes
 - 2026-10-23T02:14:52.569644+00:00 (state-transition): State: pending → in_progress
 - 2026-10-23T02:15:07.427515+00:00 (updated-by): Updated: section:acceptance_criteria
+- 2026-10-25T05:49:06.177969+00:00 (updated-by): Updated: section:notes
+- 2026-10-25T05:49:10.677631+00:00 (state-transition): State: in_progress → completed
