@@ -224,7 +224,7 @@ public:
     }
 
     const std::string& arch() const { return arch_; }
-    bool lane_diag_poll() const { return lane_diag_ == "poll"; }
+    bool lane_diag_poll() const { return lane_diag_ == "poll" || lane_diag_ == "noevent"; }
 
     int64_t expert_bytes(uint32_t layer, uint32_t expert) {
         const RadFileEntry* gu = model_.weight(layer, expert, 0);
@@ -814,7 +814,7 @@ public:
         hipLaunchKernelGGL(lane_publish_done, dim3(1), dim3(1), 0, w.stream,
                            q, done_seq, sequence);
         if (!hip_ok(hipGetLastError(), "lane publish done")) return -EIO;
-        if (!hip_ok(hipEventRecord(w.done[sequence % LaneWork::kDoneSlots], w.stream), "lane done event")) return -EIO;
+        if (lane_diag_ != "noevent" && !hip_ok(hipEventRecord(w.done[sequence % LaneWork::kDoneSlots], w.stream), "lane done event")) return -EIO;
         return 0;
     }
 
