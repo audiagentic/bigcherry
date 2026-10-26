@@ -3,9 +3,10 @@
 # checkout's worktrees/) and from this branch, then runs rad20-burst-ab.json through ab-benchmark (paired, order-balanced).
 # Devices come from the environment: R9700_BDF (engine GPU PCI address) and XTX_BDFS (helper GPU PCI addresses); the
 # ROCr indices are looked up from them.
-# Usage: R9700_BDF=... XTX_BDFS="... ..." rad20-burst-ab.sh [pairs=4]
+# Usage: R9700_BDF=... XTX_BDFS="... ..." rad20-burst-ab.sh [pairs=4] [server config=rad20-burst-ab.json; rad20-burst-streams-ab.json for concurrency]
 set -u
 PAIRS=${1:-4}
+CONFIG=${2:-tools/lab/radiance/rad20-burst-ab.json}
 : "${R9700_BDF:?set R9700_BDF}" "${XTX_BDFS:?set XTX_BDFS}"
 set --   # the env script reads its own arguments
 source tools/env/bigcherry-env.sh >/dev/null
@@ -34,6 +35,6 @@ B_BURST=$(build burst "$PWD") || exit 1
 export RAD_MAIN_BIN=$B_MAIN/bin/radiance RAD_MAIN_HOME=$B_MAIN/radiance_home
 export RAD_BURST_BIN=$B_BURST/bin/radiance RAD_BURST_HOME=$B_BURST/radiance_home
 export R9700_BDF
-PYTHONPATH=tools python3 -m bigcherry ab-benchmark --server-config tools/lab/radiance/rad20-burst-ab.json \
+PYTHONPATH=tools python3 -m bigcherry ab-benchmark --server-config "$CONFIG" \
     --pairs "$PAIRS" --output $OUT/ab 2>&1 | tee $OUT/ab.log | tail -40
 echo "OUT $OUT"; echo BURST_AB_DONE

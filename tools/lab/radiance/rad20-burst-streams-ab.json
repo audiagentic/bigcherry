@@ -1,0 +1,120 @@
+{
+ "_comment": "RAD20 concurrency A/B: main vs the burst-armed helper build (power save + queue warm-up), production Flash-Next layout plus the RAD18 CPU combine in both arms; 1, 2, 4 and 6 concurrent streams (stream_bench, the RAD10 shape: 512-token prompts, 128 tokens), engine /metrics per round. Same environment as rad20-burst-ab.json (rad20-burst-ab.sh sets it). Not used by tests.",
+ "schema_version": 1,
+ "engine": "radiance",
+ "evidence_role": "diagnostic",
+ "execution_evidence": "observe",
+ "model": "${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad",
+ "server_args": [
+  "--kernels",
+  "libr4d,libr3moe,libref",
+  "--placement",
+  "expert_tiered",
+  "--ngram-placement",
+  "ram",
+  "--max-num-seqs",
+  "6",
+  "--max-num-batched-tokens",
+  "4096",
+  "--checkpoint-interval",
+  "4096",
+  "--kv-cache-dtype",
+  "fp8",
+  "--num-speculative-tokens",
+  "3",
+  "--tp",
+  "1",
+  "--host-pool-mib",
+  "22528",
+  "--max-model-len",
+  "32768"
+ ],
+ "environment": {
+  "HIP_VISIBLE_DEVICES": "0",
+  "ROCR_VISIBLE_DEVICES": "${R9700_ROCR}",
+  "R3_MOE_WORKER_SKIP_OWNED": "1"
+ },
+ "expected_execution": {
+  "backend": "ROCm",
+  "architectures": [
+   "gfx1201"
+  ],
+  "locators": [
+   "${R9700_BDF}"
+  ]
+ },
+ "required_metrics": [
+  "s1_agg_tps",
+  "s1_stream_tps",
+  "s2_agg_tps",
+  "s2_stream_tps",
+  "s4_agg_tps",
+  "s4_stream_tps",
+  "s6_agg_tps",
+  "s6_stream_tps"
+ ],
+ "repetitions": 1,
+ "health_timeout_s": 900,
+ "arms": [
+  {
+   "name": "main",
+   "mode": "stock",
+   "shutdown_method": "sigint",
+   "binary": "${RAD_MAIN_BIN}",
+   "server_args": [
+    "--radiance-home",
+    "${RAD_MAIN_HOME}"
+   ],
+   "environment": {
+    "RADIANCE_HOME": "${RAD_MAIN_HOME}"
+   },
+   "settings": {
+    "R3_MOE_WORKER": "1",
+    "R3_MOE_WORKER_DEVICES": "${XTX_DEVICES}",
+    "R3_MOE_WORKER_MOE_DOWN_TILE": "1",
+    "R3_MOE_WORKER_ENGINE_RANKS": "1",
+    "R3_MOE_WORKER_MAX_ROWS": "4096",
+    "R3_MOE_WORKER_SMALL_ROWS": "8",
+    "R3_MOE_WORKER_MIB": "22528",
+    "R3_MOE_WORKER_HEAT": "${BC_WORK_ROOT}/runs/perf51/heat.rank0.hot-first",
+    "R3_MOE_WORKER_COMBINE": "1"
+   }
+  },
+  {
+   "name": "burst",
+   "mode": "stock",
+   "shutdown_method": "sigint",
+   "binary": "${RAD_BURST_BIN}",
+   "server_args": [
+    "--radiance-home",
+    "${RAD_BURST_HOME}"
+   ],
+   "environment": {
+    "RADIANCE_HOME": "${RAD_BURST_HOME}"
+   },
+   "settings": {
+    "R3_MOE_WORKER": "1",
+    "R3_MOE_WORKER_DEVICES": "${XTX_DEVICES}",
+    "R3_MOE_WORKER_MOE_DOWN_TILE": "1",
+    "R3_MOE_WORKER_ENGINE_RANKS": "1",
+    "R3_MOE_WORKER_MAX_ROWS": "4096",
+    "R3_MOE_WORKER_SMALL_ROWS": "8",
+    "R3_MOE_WORKER_MIB": "22528",
+    "R3_MOE_WORKER_HEAT": "${BC_WORK_ROOT}/runs/perf51/heat.rank0.hot-first",
+    "R3_MOE_WORKER_COMBINE": "1"
+   }
+  }
+ ],
+ "stream_bench": {
+  "streams": [
+   1,
+   2,
+   4,
+   6
+  ],
+  "prompt_tokens": 512,
+  "max_tokens": 128,
+  "reps": 2,
+  "seed": 1
+ }
+}
