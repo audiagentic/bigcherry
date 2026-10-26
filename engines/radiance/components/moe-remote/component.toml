@@ -189,9 +189,9 @@ summary = "RAD20: helper GPU power save between inference bursts (default on). O
 activation = "r3_moe_worker: R3_MOE_WORKER_POWER_SAVE"
 
 [setting.R3_MOE_WORKER_QUEUE_WARM]
-default = "1"
-status = "experimental"
-summary = "RAD20, with power save on: during an inference burst the helper activates just enough idle placeholder queues to oversubscribe its GPU's compute slots (KFD num_cp_queues minus the queues it owns, plus one), which keeps gfx11 MES busy and recovers main's dispatch latency; between bursts it parks them (AMDKFD_IOC_UPDATE_QUEUE 0%) so the GPU idles. Its own thread follows the burst word; 0 turns it off"
+default = ""
+status = "evaluated"
+summary = "RAD20, with power save on: during an inference burst the helper activates just enough idle placeholder queues to oversubscribe its GPU's compute slots (KFD num_cp_queues minus the queues it owns, plus one), meant to keep gfx11 MES busy and recover main's dispatch latency; between bursts it parks them (AMDKFD_IOC_UPDATE_QUEUE 0%). SHELVED, default off: in the Flash-Next layout (run rad20-burst-profile-10262303) switching the placeholders during a live burst gave a CPF page fault (permission, read) on both XTX within the first request, MES then failed REMOVE_QUEUE and both GPUs mode-1 reset; the standalone harness (rad20-queue-warm.cpp), which never switches while other queues run kernels, did not show it. 1 turns it on for investigation only"
 activation = "r3_moe_worker: queue warm-up"
 
 [setting.R3_MOE_SWEEP_FAST]

@@ -11,7 +11,11 @@
 // (rad20-queue-warm.cpp), done on this class's own thread so the engine never waits for it.
 //
 // The count is derived, not configured: the GPU's compute slots (KFD topology num_cp_queues) minus the queues this
-// process already owns on it (/sys/class/kfd/kfd/proc/<pid>/queues), plus one. R3_MOE_WORKER_QUEUE_WARM=0 turns it off.
+// process already owns on it (/sys/class/kfd/kfd/proc/<pid>/queues), plus one.
+//
+// SHELVED, default off (R3_MOE_WORKER_QUEUE_WARM=1 turns it on for investigation only): in the Flash-Next layout,
+// switching the placeholders during a live burst gave a CPF page fault (permission, read) on both XTX within the first
+// request; MES then failed REMOVE_QUEUE and both GPUs mode-1 reset (run rad20-burst-profile-10262303, 2026-10-26).
 #include <hsa/hsa.h>
 #include <hsa/hsa_ext_amd.h>
 #include <linux/kfd_ioctl.h>

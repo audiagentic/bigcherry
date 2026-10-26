@@ -13,7 +13,7 @@ struct WorkerConfig {
     uint32_t engine_ranks = 0;      /* R3_MOE_WORKER_ENGINE_RANKS: 0 = the runner's default */
     bool cpu = false;               /* R3_MOE_WORKER_CPU: host fp32 reference instead of the GPU */
     bool power_save = true;         /* R3_MOE_WORKER_POWER_SAVE (RAD20): waits armed only inside bursts */
-    bool queue_warm = true;         /* R3_MOE_WORKER_QUEUE_WARM (RAD20): oversubscribe only inside bursts */
+    bool queue_warm = false;        /* R3_MOE_WORKER_QUEUE_WARM (RAD20, shelved: GPU fault, worker_queue_warm.h) */
     bool combine = false;           /* R3_MOE_WORKER_COMBINE (RAD18): helper 0 adds both helpers' rows on the CPU */
     uint32_t combine_min_rows = 256;   /* R3_MOE_WORKER_COMBINE_MIN_ROWS */
     uint32_t combine_threads = 8;      /* R3_MOE_WORKER_COMBINE_THREADS, capped at the CPU count */
