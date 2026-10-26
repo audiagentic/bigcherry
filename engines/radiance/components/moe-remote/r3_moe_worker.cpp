@@ -37,6 +37,7 @@
 #include "worker_harness.h"
 #include "worker_selftest.h"
 #include "worker_combine.h"
+#include "worker_queue_warm.h"
 
 /* RAD20: block until the engine is inside an inference burst (Header::burst odd). False once this helper is stopping. */
 bool wait_burst(r3::moe_shm::Header* h) {
@@ -523,6 +524,12 @@ int main(int argc, char** argv) {
             }
         }
         auto serves = [&](uint32_t lane) { return lanes_served[lane]; };
+        /* Power save: oversubscribe the GPU only inside bursts, for fast dispatch (worker_queue_warm.h). Started after
+         * the lane streams exist, so it counts their queues. Power save off is oversubscribed already. */
+        QueueWarm warm;
+        if (save && !warm.start(h)) {
+            munmap(map, lay.bytes); close(fd); drop_name(); return 1;
+        }
         for (uint32_t lane = 0; lane < kLanes; ++lane) {
             if (!serves(lane)) continue;
             workers[lane] = std::thread([&, lane] {
@@ -686,6 +693,7 @@ int main(int argc, char** argv) {
         for (uint32_t lane = 0; lane < kLanes; ++lane)
             if (lanes_served[lane]) { store(&h->lane[lane].park, 0u); (void)futex_wake(&h->lane[lane].park); }
         for (auto& w : workers) if (w.joinable()) w.join();
+        warm.stop();
         if (combine_pool) {
             store(&h->combine.enabled, 0u);
             combine_pool.reset();

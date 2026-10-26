@@ -188,6 +188,12 @@ status = "experimental"
 summary = "RAD20: helper GPU power save between inference bursts (default on). On: each small lane releases and drains its pre-queued GPU waits when a burst ends and the helper opens hardware queues only for the lanes it serves, so the helper GPU idles (~10 W on an XTX instead of ~95 W). 0: waits stay armed between bursts and a queue is opened for every protocol lane, keeping MES and the command processor awake for ~0.3% faster decode dispatch at ~85 W more per helper GPU at idle. Lane threads sleep on the burst futex either way"
 activation = "r3_moe_worker: R3_MOE_WORKER_POWER_SAVE"
 
+[setting.R3_MOE_WORKER_QUEUE_WARM]
+default = "1"
+status = "experimental"
+summary = "RAD20, with power save on: during an inference burst the helper activates just enough idle placeholder queues to oversubscribe its GPU's compute slots (KFD num_cp_queues minus the queues it owns, plus one), which keeps gfx11 MES busy and recovers main's dispatch latency; between bursts it parks them (AMDKFD_IOC_UPDATE_QUEUE 0%) so the GPU idles. Its own thread follows the burst word; 0 turns it off"
+activation = "r3_moe_worker: queue warm-up"
+
 [setting.R3_MOE_SWEEP_FAST]
 default = ""
 status = "diagnostic"
