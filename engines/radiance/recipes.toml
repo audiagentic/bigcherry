@@ -105,8 +105,6 @@ targets = ["gfx1201"]
 # unconditional here since ccache is present on every host this platform builds on (dev and the
 # CI image both have it); if a future host lacks it, configure fails loudly rather than silently
 # rebuilding everything, which is the right failure mode to notice and fix.
-# RAD_HIPCC: radiance's CMake looks for hipcc with HINTS /opt/rocm/bin ahead of $ROCM_PATH, and takes its HIP headers from
-# the hipcc it found, so a build for another ROCm silently compiled against /opt/rocm's headers. Point it at the selected ROCm.
-options = { RAD_BUILD_TESTS = "OFF", CMAKE_C_COMPILER_LAUNCHER = "ccache", CMAKE_CXX_COMPILER_LAUNCHER = "ccache", CMAKE_HIP_COMPILER_LAUNCHER = "ccache", RAD_HIPCC = "${ROCM_PATH}/bin/hipcc" }
+options = { RAD_BUILD_TESTS = "OFF", CMAKE_C_COMPILER_LAUNCHER = "ccache", CMAKE_CXX_COMPILER_LAUNCHER = "ccache", CMAKE_HIP_COMPILER_LAUNCHER = "ccache" }
 c-compiler = "${RADIANCE_HOST_CC}"
 cxx-compiler = "${RADIANCE_HOST_CXX}"
