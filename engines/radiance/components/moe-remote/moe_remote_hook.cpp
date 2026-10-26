@@ -13,6 +13,7 @@
 #include <utility>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <fcntl.h>
 #include <mutex>
 #include <string>
@@ -41,8 +42,27 @@ struct EnginePlugin {
     uint32_t struct_size;
     void (*layer_map)(int layer, int n_expert, const int32_t* slot_of_expert);
     int (*owns_expert)(int layer, int expert);
+    void (*burst)(int active);
 };
 using RegisterFn = int (*)(const EnginePlugin*);
+
+/* An inference burst begins or ends (RAD20: the helpers arm GPU waits only inside a burst, so their queues are
+ * empty and the GPUs idle between bursts). R3_MOE_WORKER_BURST_TRACE=1 logs each transition with a monotonic
+ * timestamp, for checking begin/end pairing across single-stream, multi-stream and MTP runs. */
+void burst_transition(int active) {
+    static const bool trace = [] {
+        const char* e = std::getenv("R3_MOE_WORKER_BURST_TRACE");
+        return e && *e && std::strcmp(e, "0") != 0;
+    }();
+    static std::atomic<uint64_t> begins{0}, ends{0};
+    const uint64_t n = active ? begins.fetch_add(1) + 1 : ends.fetch_add(1) + 1;
+    if (trace) {
+        timespec ts{};
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        std::fprintf(stderr, "libr3moe: burst %s #%llu t=%lld.%06ld\n", active ? "begin" : "end",
+                     (unsigned long long)n, (long long)ts.tv_sec, ts.tv_nsec / 1000);
+    }
+}
 
 struct HookState {
     int fd = -1;
@@ -199,7 +219,7 @@ void register_mailbox() {
      * ownership for placement (R3_MOE_WORKER_SKIP_OWNED), the helper's bitmap as published before the engine
      * starts. The engine applies the protected-layer and slot tests itself, the same ones the helper uses when
      * it narrows ownership to the runtime maps, so both sides agree on what is never placed here. */
-    static const EnginePlugin plugin{sizeof(EnginePlugin), publish_layer_map, owner_query};
+    static const EnginePlugin plugin{sizeof(EnginePlugin), publish_layer_map, owner_query, burst_transition};
     if (g.engine_register(&plugin) != 0) {
         std::fprintf(stderr, "libr3: R3_MOE_WORKER engine rejected the plugin registration (struct size)\n");
         (void)hipHostUnregister(g.map);

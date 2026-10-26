@@ -27,6 +27,10 @@ typedef struct BcMoeRemotePlugin {
     void (*layer_map)(int layer, int n_expert, const int32_t* slot_of_expert);
     /* Whether a helper owns routed expert (layer, expert). */
     int (*owns_expert)(int layer, int expert);
+    /* An inference burst begins (1: the engine loop has a step after being idle) or ends (0: the loop found no
+     * step). Called from the engine's host scheduler loop, so it fires whether a pass is recorded or replayed;
+     * a helper arms its GPU waits only inside a burst, and its queues drain to empty between bursts. */
+    void (*burst)(int active);
 } BcMoeRemotePlugin;
 /* Register the plugin (NULL unregisters). Layer maps published before registration are replayed to it.
  * Returns 0, or -1 when struct_size does not match. */
@@ -40,6 +44,10 @@ int bc_moe_remote_wanted_upto(int64_t max_step_rows);
 int bc_moe_remote_shadow(void);
 int bc_moe_remote_mask_only(void);
 int bc_moe_remote_diag_build(void);
+/* The engine loop calls engine_step for every step it runs and engine_idle when it finds no step; the
+ * transitions between the two are forwarded to the plugin's burst callback, once each. */
+void bc_moe_remote_engine_step(void);
+void bc_moe_remote_engine_idle(void);
 /* Block declare publishes a layer's map here; it is forwarded to the plugin and kept for replay. */
 void bc_moe_remote_layer_map(int layer, int n_expert, const int32_t* slot_of_expert);
 /* Placement (R3_MOE_WORKER_SKIP_OWNED): whether the engine may leave a routed expert unplaced because the
@@ -151,6 +159,27 @@ extern "C" int bc_moe_remote_register(const BcMoeRemotePlugin* plugin) {
         for (const auto& [layer, slots] : g_layer_maps)
             g_plugin.layer_map(layer, (int)slots.size(), slots.data());
     return 0;
+}
+
+namespace {
+std::atomic<bool> g_burst_active{false};
+void forward_burst(int active) {
+    void (*burst)(int) = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(g_mu);
+        burst = g_plugin.burst;
+    }
+    if (burst) burst(active);
+}
+}
+
+/* Per-step cost is one atomic exchange; the plugin hears only the transitions. */
+extern "C" void bc_moe_remote_engine_step(void) {
+    if (!g_burst_active.exchange(true, std::memory_order_acq_rel)) forward_burst(1);
+}
+
+extern "C" void bc_moe_remote_engine_idle(void) {
+    if (g_burst_active.exchange(false, std::memory_order_acq_rel)) forward_burst(0);
 }
 
 extern "C" void bc_moe_remote_layer_map(int layer, int n_expert, const int32_t* slot_of_expert) {
@@ -564,6 +593,37 @@ PATCHES = (
                 guard=r"if \(bc_moe_remote_publish_placeholder\(cfg_\.max_tok, w, e, \*file_, r->mover, \(rad_weight\)i\)\) continue;",
                 expect_matches=1,
                 rationale="The single tier / stored-form check in the weight publish loop; a helper-owned placeholder is published before it, since nothing reads its bytes and its relayouted form would fail the check.",
+            ),
+        ),
+    ),
+    FilePatch(
+        path="core/engine.cpp",
+        description="Tell the extension point where an inference burst begins and ends (host scheduler loop, replay-safe).",
+        edits=(
+            Edit(
+                id="include-bc-moe-remote-engine",
+                anchor=r'^#include "engine_priv\.h"$',
+                text='\n#include "bc_moe_remote.h"',
+                guard=r'^#include "bc_moe_remote\.h"$',
+                expect_matches=1,
+                rationale="engine_priv.h is engine.cpp's unique first include line.",
+            ),
+            Edit(
+                id="bc-remote-engine-idle",
+                anchor=r"^            step_batch_\.store\(nullptr, std::memory_order_release\);$",
+                text="\n            bc_moe_remote_engine_idle();",
+                guard=r"bc_moe_remote_engine_idle\(\);",
+                expect_matches=1,
+                rationale="The engine loop's idle branch clears the step batch here when the scheduler has no step: every earlier step has joined, so a burst ends.",
+            ),
+            Edit(
+                id="bc-remote-engine-step",
+                anchor=r"^        idle = 0;$",
+                mode="insert_before",
+                text="        bc_moe_remote_engine_step();\n",
+                guard=r"bc_moe_remote_engine_step\(\);",
+                expect_matches=1,
+                rationale="The loop resets its idle backoff exactly when the scheduler returned a step, before the ranks are released or any recorded pass is replayed.",
             ),
         ),
     ),
