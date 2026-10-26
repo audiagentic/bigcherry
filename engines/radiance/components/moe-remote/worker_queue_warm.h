@@ -30,11 +30,37 @@
 
 class QueueWarm {
 public:
+    QueueWarm() = default;
+    QueueWarm(const QueueWarm&) = delete;
+    QueueWarm& operator=(const QueueWarm&) = delete;
+    ~QueueWarm() { stop(); }
+
     /* Create the placeholders (parked) and start the thread that follows the engine's bursts. False only on an error
-     * that leaves the helper unable to run; a disabled or unneeded warm-up returns true with no queues. */
-    bool start(r3::moe_shm::Header* h) {
-        if (const char* e = std::getenv("R3_MOE_WORKER_QUEUE_WARM"); e && std::strcmp(e, "0") == 0) return true;
+     * that leaves the helper unable to run, with everything already created released; a disabled or unneeded warm-up
+     * returns true with no queues. */
+    bool start(r3::moe_shm::Header* h, bool enabled) {
+        if (!enabled) return true;
+        if (init(h)) return true;
+        stop();
+        return false;
+    }
+
+    /* After the helper's stop path has set kBurstStop and woken Header::burst. Safe on a partial start. */
+    void stop() {
+        if (thread_.joinable()) thread_.join();
+        if (kfd_ >= 0 && !queues_.empty()) (void)set_all(100);   /* hand ROCr back queues in the state it made them */
+        for (auto* q : queues_) if (q) (void)hsa_queue_destroy(q);
+        queues_.clear();
+        if (kfd_ >= 0) close(kfd_);
+        kfd_ = -1;
+        if (hsa_open_) (void)hsa_shut_down();   /* reference counted: HIP's own use of HSA is unaffected */
+        hsa_open_ = false;
+    }
+
+private:
+    bool init(r3::moe_shm::Header* h) {
         if (hsa_init() != HSA_STATUS_SUCCESS) return fail("hsa_init");
+        hsa_open_ = true;
         hsa_agent_t gpu{};
         const hsa_status_t it = hsa_iterate_agents(first_gpu, &gpu);
         if ((it != HSA_STATUS_SUCCESS && it != HSA_STATUS_INFO_BREAK) || !gpu.handle) return fail("no GPU agent");
@@ -51,28 +77,23 @@ public:
         if (need <= 0) return true;   /* already oversubscribed at all times (e.g. power save off) */
         kfd_ = open("/dev/kfd", O_RDWR | O_CLOEXEC);
         if (kfd_ < 0) return fail("open /dev/kfd");
-        queues_.resize(need, nullptr);
-        for (auto& q : queues_)
+        for (int i = 0; i < need; ++i) {
+            hsa_queue_t* q = nullptr;
             if (hsa_queue_create(gpu, 64, HSA_QUEUE_TYPE_MULTI, nullptr, nullptr, UINT32_MAX, UINT32_MAX, &q) !=
                 HSA_STATUS_SUCCESS)
                 return fail("hsa_queue_create");
+            queues_.push_back(q);
+        }
         if (!set_all(0)) return false;
         h_ = h;
-        thread_ = std::thread([this] { follow(); });
+        try {
+            thread_ = std::thread([this] { follow(); });
+        } catch (const std::exception&) {
+            return fail("thread");
+        }
         return true;
     }
 
-    /* After the helper's stop path has set kBurstStop and woken Header::burst. */
-    void stop() {
-        if (thread_.joinable()) thread_.join();
-        if (!queues_.empty()) (void)set_all(100);   /* hand ROCr back queues in the state it created them */
-        for (auto* q : queues_) if (q) (void)hsa_queue_destroy(q);
-        queues_.clear();
-        if (kfd_ >= 0) close(kfd_);
-        kfd_ = -1;
-    }
-
-private:
     static hsa_status_t first_gpu(hsa_agent_t a, void* out) {
         hsa_device_type_t t{};
         if (hsa_agent_get_info(a, HSA_AGENT_INFO_DEVICE, &t) == HSA_STATUS_SUCCESS && t == HSA_DEVICE_TYPE_GPU) {
@@ -158,5 +179,6 @@ private:
     r3::moe_shm::Header* h_ = nullptr;
     std::vector<hsa_queue_t*> queues_;
     int kfd_ = -1;
+    bool hsa_open_ = false;
     std::thread thread_;
 };
