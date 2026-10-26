@@ -19,6 +19,8 @@
 //   --mode single   both roles as threads in one process, plain HSA signal
 //   --mode helper   helper process: creates the shm segment (--shm) and an IPC signal (HSA_AMD_SIGNAL_IPC)
 //   --mode engine   engine process: opens the segment and attaches the IPC signal
+// --dump FILE (single or helper) writes one CSV row per iteration: arm, iteration, latency, and the host-clock
+// times of arming, release and XTX kernel start.
 // Schedule: per iteration the helper idles --idle-us with nothing queued, arms the wait, and the release comes
 // --gap-us after arming. Every wait has a deadline (--deadline-ms); a timed-out wait is cancelled and drained.
 //
@@ -141,6 +143,7 @@ struct Options {
     int64_t idle_us = 0;
     int64_t deadline_ms = 2000;
     int calib = 200;
+    std::string dump;
 };
 
 static Options parse_options(int argc, char** argv) {
@@ -157,6 +160,7 @@ static Options parse_options(int argc, char** argv) {
         else if (k == "--idle-us") o.idle_us = std::atoll(v);
         else if (k == "--deadline-ms") o.deadline_ms = std::atoll(v);
         else if (k == "--calib") o.calib = std::atoi(v);
+        else if (k == "--dump") o.dump = v;
         else { std::fprintf(stderr, "FAIL unknown option %s\n", k.c_str()); std::exit(2); }
     }
     if (o.mode != "single" && o.mode != "helper" && o.mode != "engine") fail("--mode must be single, helper or engine");
@@ -390,6 +394,7 @@ struct alignas(4096) Ctl {
     alignas(64) uint64_t start_ticks[kMaxArms][kMaxIter];
     uint64_t rel_ticks[kMaxArms][kMaxIter];
     int64_t rel_host_ns[kMaxArms][kMaxIter];
+    int64_t armed_host_ns[kMaxArms][kMaxIter];
     uint8_t timed_out[kMaxArms][kMaxIter];
 };
 constexpr size_t kCtlBytes = (sizeof(Ctl) + 4095) & ~size_t(4095);
@@ -619,6 +624,7 @@ struct Helper {
                 sleep_us(o.idle_us);
                 const int64_t deadline = now_ns() + (o.gap_us + o.deadline_ms * 1000) * 1000;
                 arm(a, seq, &c->start_ticks[ai][i], deadline);
+                c->armed_host_ns[ai][i] = now_ns();
                 c->armed.store(seq, std::memory_order_release);
                 if (a.release == Release::Self) {
                     sleep_us(o.gap_us);
@@ -794,10 +800,18 @@ static bool report(const Options& o, const std::vector<Arm>& arms, Ctl* c, const
     std::printf("clock r9700: err=+-%.2f us min_rtt=%.2f us drift=%+.1f ppm samples=%d\n", er.err_ns / 1e3,
                 er.min_rtt_ns / 1e3, er.ppm, er.used);
     bool all = true;
+    FILE* dump = nullptr;
+    if (!o.dump.empty()) {
+        dump = std::fopen(o.dump.c_str(), "w");
+        if (!dump) { std::perror(o.dump.c_str()); std::exit(2); }
+        std::fprintf(dump, "arm,iter,latency_us,armed_ns,release_ns,start_ns\n");
+    }
     for (size_t ai = 0; ai < arms.size(); ++ai) {
         const Arm& a = arms[ai];
         std::vector<double> lat;
         int timeouts = 0;
+        int max_iter = -1;
+        double max_lat = -1e30;
         for (int i = 0; i < o.n; ++i) {
             timeouts += c->timed_out[ai][i];
             if (c->timed_out[ai][i] || !c->start_ticks[ai][i]) continue;
@@ -808,15 +822,20 @@ static bool report(const Options& o, const std::vector<Arm>& arms, Ctl* c, const
             } else {
                 rel = double(c->rel_host_ns[ai][i]);
             }
-            lat.push_back((hx.to_ns(c->start_ticks[ai][i]) - rel) / 1e3);
+            const double start = hx.to_ns(c->start_ticks[ai][i]);
+            lat.push_back((start - rel) / 1e3);
+            if (lat.back() > max_lat) { max_lat = lat.back(); max_iter = i; }
+            if (dump)
+                std::fprintf(dump, "%s,%d,%.3f,%lld,%.0f,%.0f\n", a.name.c_str(), i, lat.back(),
+                             (long long)c->armed_host_ns[ai][i], rel, start);
         }
         std::sort(lat.begin(), lat.end());
         const double err_us = (a.release == Release::Gpu ? hx.err_ns + er.err_ns : hx.err_ns) / 1e3;
         std::printf("arm=%-6s wait=%s release=%s n=%d ok=%zu timeouts=%d p50=%.2f p95=%.2f p99=%.2f min=%.2f "
-                    "max=%.2f us err=+-%.2f us\n",
+                    "max=%.2f us max_iter=%d err=+-%.2f us\n",
                     a.name.c_str(), wait_name(a.wait), release_name(a.release), o.n, lat.size(), timeouts,
                     percentile(lat, 0.50), percentile(lat, 0.95), percentile(lat, 0.99),
-                    lat.empty() ? NAN : lat.front(), lat.empty() ? NAN : lat.back(), err_us);
+                    lat.empty() ? NAN : lat.front(), lat.empty() ? NAN : lat.back(), max_iter, err_us);
         std::string why;
         if (int(lat.size()) != o.n)
             why = "only " + std::to_string(lat.size()) + "/" + std::to_string(o.n) + " completed";
@@ -827,6 +846,7 @@ static bool report(const Options& o, const std::vector<Arm>& arms, Ctl* c, const
                     o.mode.c_str(), a.name.c_str(), (long long)o.gap_us, (long long)o.idle_us, o.n,
                     pass ? "" : ": ", why.c_str());
     }
+    if (dump) std::fclose(dump);
     return all;
 }
 
