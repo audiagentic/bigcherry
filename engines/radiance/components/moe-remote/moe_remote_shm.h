@@ -161,8 +161,8 @@ struct alignas(kPage) Header {
     uint32_t activation_group;      /* activation quantisation group width. */
     uint64_t shape_hash;            /* shape_hash() of the shape fields: a fast agreement check, never the only one. */
     /* RAD20 inference bursts. The engine adds 1 at each burst begin and end (odd = in a burst) and FUTEX_WAKEs; a helper
-     * arms its small lanes' pre-queued GPU waits when it turns odd. In power-save mode (R3_MOE_WORKER_POWER) no wait is
-     * pending between bursts, so the helper GPUs idle (a pending AQL wait keeps a gfx1100 MEC busy at ~95 W, FINDINGS):
+     * arms its small lanes' pre-queued GPU waits when it turns odd. With power save (R3_MOE_WORKER_POWER_SAVE, default
+     * on) no wait is pending between bursts, so the helper GPUs idle (a pending AQL wait keeps a gfx1100 MEC busy at ~95 W, FINDINGS):
      * after a burst ends, a lane sets LaneSignal::park to kParkDraining, re-checks the
      * burst (both sequentially consistent, so the engine's opening add and this flag cannot miss each other), releases
      * and drains its waits, and clears the flag. The engine opens a burst at once and then waits only for lanes still

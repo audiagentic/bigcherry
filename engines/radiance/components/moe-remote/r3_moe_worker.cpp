@@ -39,17 +39,6 @@
 #include "worker_combine.h"
 
 /* RAD20: block until the engine is inside an inference burst (Header::burst odd). False once this helper is stopping. */
-/* RAD20 R3_MOE_WORKER_POWER: "save" (default) releases a small lane's pre-queued waits when a burst ends, so the helper
- * GPU idles (~10 W on an XTX); "perf" keeps them armed between bursts, so the GPU stays awake (~95 W) and dispatches
- * without waking. Either way the lane thread sleeps on the burst futex between bursts. */
-bool park_between_bursts() {
-    const char* e = std::getenv("R3_MOE_WORKER_POWER");
-    if (!e || !*e || std::strcmp(e, "save") == 0) return true;
-    if (std::strcmp(e, "perf") == 0) return false;
-    std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_POWER=%s, want save or perf; using save\n", e);
-    return true;
-}
-
 bool wait_burst(r3::moe_shm::Header* h) {
     using namespace r3::moe_shm;
     for (;;) {
@@ -60,6 +49,15 @@ bool wait_burst(r3::moe_shm::Header* h) {
     }
 }
 
+/* RAD20 R3_MOE_WORKER_POWER_SAVE (default on). On: a small lane releases its pre-queued waits when a burst ends, and the
+ * helper opens hardware queues only for the lanes it serves, so its GPU idles (~10 W on an XTX). Off: the waits stay
+ * armed between bursts and the helper opens a queue for every protocol lane; the extra queues keep the gfx11 MES
+ * (oversubscribed) and command processor awake, which dispatches ~0.3% faster in decode at ~95 W per GPU at idle. */
+bool power_save() {
+    const char* e = std::getenv("R3_MOE_WORKER_POWER_SAVE");
+    return !e || !*e || std::strcmp(e, "0") != 0;
+}
+
 int main(int argc, char** argv) {
     /* EVERY LANE STREAM ON ITS OWN HARDWARE QUEUE. A small lane pre-queues "wait for the next request" packets;
      * a stream sharing a hardware queue with one sits behind that wait until a small request arrives. With
@@ -68,11 +66,16 @@ int main(int argc, char** argv) {
      * stream for each lane it serves (served_lanes: its rank slot's enabled classes and large lane) plus its own,
      * so the count is derived before HIP initialises, with two spare; an explicit setting wins. No more: every
      * extra queue is one more the gfx11 MES schedules, and past its hardware slots it oversubscribes and keeps
-     * MES busy (~95 W) with nothing to run (RAD20). The environment is only read here; it is validated below. */
+     * MES busy (~95 W) with nothing to run (RAD20). With power save off, every protocol lane gets one (lanes_open).
+     * The environment is only read here; it is validated below. */
+    const bool save = power_save();
+    auto lanes_open = [save](uint32_t count, uint32_t index, uint32_t classes) {
+        return save ? served_lanes(count, index, classes) : served_lanes(1, 0, classes);
+    };
     {
         auto env_u = [](const char* n, uint32_t d) { const char* e = std::getenv(n); return e && *e ? (uint32_t)std::atoi(e) : d; };
         uint32_t lanes = 0;
-        for (bool s : served_lanes(env_u("R3_MOE_WORKER_COUNT", 1), env_u("R3_MOE_WORKER_INDEX", 0), helper_small_classes().count))
+        for (bool s : lanes_open(env_u("R3_MOE_WORKER_COUNT", 1), env_u("R3_MOE_WORKER_INDEX", 0), helper_small_classes().count))
             lanes += s;
         (void)::setenv("GPU_MAX_HW_QUEUES", std::to_string(lanes + 3).c_str(), 0);
     }
@@ -445,7 +448,9 @@ int main(int argc, char** argv) {
     owned = std::move(runtime_owned);
     h->owned_bytes = owned.bytes;
     const auto lanes_served = served_lanes(helper_count, helper_index, lane_classes.count);
-    if (gpu && !gpu->prepare_lanes(lane_classes.rows, lane_classes.count, lane_large_rows, lanes_served)) {
+    std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_POWER_SAVE %s\n", save ? "on" : "off");
+    if (gpu && !gpu->prepare_lanes(lane_classes.rows, lane_classes.count, lane_large_rows,
+                                   lanes_open(helper_count, helper_index, lane_classes.count))) {
         (void)hipHostUnregister(map);
         munmap(map, lay.bytes); close(fd); drop_name(); return 1;
     }
@@ -516,8 +521,6 @@ int main(int argc, char** argv) {
             }
         }
         auto serves = [&](uint32_t lane) { return lanes_served[lane]; };
-        const bool park_idle = park_between_bursts();
-        std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_POWER %s\n", park_idle ? "save" : "perf");
         for (uint32_t lane = 0; lane < kLanes; ++lane) {
             if (!serves(lane)) continue;
             workers[lane] = std::thread([&, lane] {
@@ -574,8 +577,8 @@ int main(int argc, char** argv) {
                         return next != 0;
                     };
 
-                    /* RAD20: in power-save mode the waits are pre-queued only inside an inference burst. Between bursts
-                     * none is pending, so this GPU idles: a pending wait keeps its MEC busy at ~95 W (FINDINGS). */
+                    /* RAD20: with power save the waits are pre-queued only inside an inference burst. Between bursts none
+                     * is pending, so this GPU idles: a pending wait keeps its MEC busy at ~95 W (FINDINGS). */
                     uint32_t* park = &h->lane[lane].park;
                     bool armed = false;
                     while (wait_burst(h)) {
@@ -613,7 +616,7 @@ int main(int argc, char** argv) {
                             }
                         }
                         if (stopping()) break;
-                        if (!park_idle) continue;   /* perf: stay armed; wait_burst sleeps until the next burst */
+                        if (!save) continue;   /* power save off: stay armed; wait_burst sleeps until the next burst */
                         /* Park. Flag the drain, then re-check: the engine opens a burst before it reads the flag, so either
                          * it waits for the drain or we see its burst and stay armed. The engine is idle and has every
                          * result, so each request it published is done. Release the unconsumed waits (their ring slots
