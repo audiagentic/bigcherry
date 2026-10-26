@@ -70,7 +70,9 @@ int main(int argc, char** argv) {
      * The environment is only read here; it is validated below. */
     const bool save = power_save();
     auto lanes_open = [save](uint32_t count, uint32_t index, uint32_t classes) {
-        return save ? served_lanes(count, index, classes) : served_lanes(1, 0, classes);
+        std::array<bool, kLanes> all;
+        all.fill(true);
+        return save ? served_lanes(count, index, classes) : all;
     };
     {
         auto env_u = [](const char* n, uint32_t d) { const char* e = std::getenv(n); return e && *e ? (uint32_t)std::atoi(e) : d; };
