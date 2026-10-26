@@ -39,14 +39,15 @@
 #include "worker_combine.h"
 
 /* RAD20: block until the engine is inside an inference burst (Header::burst odd). False once this helper is stopping. */
-/* RAD20: how long a small lane stays armed after a burst ends before it releases its waits. Requests arriving within it
- * (back-to-back, multi-turn) find the lane armed; past it the GPU idles. Costs ~95 W for this long after each burst. */
-constexpr uint32_t kParkHoldMs = 1000;
-
-/* One blocking wait on a futex word, at most `ms` (woken early by a FUTEX_WAKE or a signal). */
-int futex_wait_for(uint32_t* p, uint32_t expected, uint32_t ms) {
-    timespec ts{(time_t)(ms / 1000u), (long)(ms % 1000u) * 1000000L};
-    return (int)::syscall(SYS_futex, p, FUTEX_WAIT, expected, &ts, nullptr, 0);
+/* RAD20 R3_MOE_WORKER_POWER: "save" (default) releases a small lane's pre-queued waits when a burst ends, so the helper
+ * GPU idles (~10 W on an XTX); "perf" keeps them armed between bursts, so the GPU stays awake (~95 W) and dispatches
+ * without waking. Either way the lane thread sleeps on the burst futex between bursts. */
+bool park_between_bursts() {
+    const char* e = std::getenv("R3_MOE_WORKER_POWER");
+    if (!e || !*e || std::strcmp(e, "save") == 0) return true;
+    if (std::strcmp(e, "perf") == 0) return false;
+    std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_POWER=%s, want save or perf; using save\n", e);
+    return true;
 }
 
 bool wait_burst(r3::moe_shm::Header* h) {
@@ -515,6 +516,8 @@ int main(int argc, char** argv) {
             }
         }
         auto serves = [&](uint32_t lane) { return lanes_served[lane]; };
+        const bool park_idle = park_between_bursts();
+        std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_POWER %s\n", park_idle ? "save" : "perf");
         for (uint32_t lane = 0; lane < kLanes; ++lane) {
             if (!serves(lane)) continue;
             workers[lane] = std::thread([&, lane] {
@@ -571,8 +574,8 @@ int main(int argc, char** argv) {
                         return next != 0;
                     };
 
-                    /* RAD20: the waits are pre-queued only inside an inference burst (and a short hold after it). Between
-                     * bursts none is pending, so this GPU idles: a pending wait keeps its MEC busy at ~95 W (FINDINGS). */
+                    /* RAD20: in power-save mode the waits are pre-queued only inside an inference burst. Between bursts
+                     * none is pending, so this GPU idles: a pending wait keeps its MEC busy at ~95 W (FINDINGS). */
                     uint32_t* park = &h->lane[lane].park;
                     bool armed = false;
                     while (wait_burst(h)) {
@@ -610,9 +613,7 @@ int main(int argc, char** argv) {
                             }
                         }
                         if (stopping()) break;
-                        /* Hold: stay armed while the engine may open the next burst soon (one blocking wait, woken by it). */
-                        if (const uint32_t b = load(&h->burst); !(b & 1u)) (void)futex_wait_for(&h->burst, b, kParkHoldMs);
-                        if (load(&h->burst) & 1u) continue;
+                        if (!park_idle) continue;   /* perf: stay armed; wait_burst sleeps until the next burst */
                         /* Park. Flag the drain, then re-check: the engine opens a burst before it reads the flag, so either
                          * it waits for the drain or we see its burst and stay armed. The engine is idle and has every
                          * result, so each request it published is done. Release the unconsumed waits (their ring slots

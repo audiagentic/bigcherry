@@ -182,6 +182,12 @@ status = "diagnostic"
 summary = "RAD20: the engine-side plugin (libr3moe) logs each inference-burst transition the engine reports through rad0002's burst callback (begin when the engine loop gets a step after being idle, end when it finds none) with a monotonic timestamp; read by tools/lab/radiance/burst-trace.sh, which checks begin/end pairing across single, concurrent, back-to-back and prefill requests"
 activation = "burst,begin"
 
+[setting.R3_MOE_WORKER_POWER]
+default = "save"
+status = "experimental"
+summary = "RAD20: helper idle policy between inference bursts. save (default): each small lane releases and drains its pre-queued GPU waits when a burst ends, so the helper GPU idles (~10 W on an XTX instead of ~95 W) and re-arms at the next burst; perf: the waits stay armed between bursts, keeping the GPU awake for lower dispatch latency at idle power cost. Lane threads sleep on the burst futex in both"
+activation = "r3_moe_worker: R3_MOE_WORKER_POWER"
+
 [setting.R3_MOE_SWEEP_FAST]
 default = ""
 status = "diagnostic"
