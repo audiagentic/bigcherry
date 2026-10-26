@@ -616,8 +616,8 @@ int main(int argc, char** argv) {
                         /* Park. Flag the drain, then re-check: the engine opens a burst before it reads the flag, so either
                          * it waits for the drain or we see its burst and stay armed. The engine is idle and has every
                          * result, so each request it published is done. Release the unconsumed waits (their ring slots
-                         * hold older sequences: the kernels see an invalid request and publish nothing), drain and
-                         * restore the engine's last sequence before clearing the flag. */
+                         * hold older sequences, so the kernels see an invalid request, and the publish limit stops them
+                         * publishing), drain, restore the engine's last sequence and the limit, then clear the flag. */
                         __atomic_store_n(park, kParkDraining, __ATOMIC_SEQ_CST);
                         if (__atomic_load_n(&h->burst, __ATOMIC_SEQ_CST) & 1u) {
                             store(park, 0u);
@@ -631,8 +631,12 @@ int main(int argc, char** argv) {
                             request_stop();
                             break;
                         }
+                        if (!gpu->set_publish_limit(lane, last)) {
+                            request_stop();
+                            break;
+                        }
                         store(&h->lane[lane].request_sequence, next - 1u);
-                        if (!gpu->sync_lane(lane)) {
+                        if (!gpu->sync_lane(lane) || !gpu->set_publish_limit(lane, UINT32_MAX)) {
                             request_stop();
                             break;
                         }

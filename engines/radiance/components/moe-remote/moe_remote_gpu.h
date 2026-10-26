@@ -403,7 +403,8 @@ public:
                 return false;
             w.cap_rows = cap;
             if (!ensure_lane_work(w, cap, cap * shape_.top_k, cap * shape_.top_k) ||
-                !w.d_stats.ensure(3 * sizeof(uint64_t)))
+                !w.d_stats.ensure(3 * sizeof(uint64_t)) || !w.d_publish_limit.ensure(sizeof(uint32_t)) ||
+                !hip_ok(hipMemset(w.d_publish_limit.p, 0xff, sizeof(uint32_t)), "lane publish limit"))
                 return false;
             for (uint32_t parity = 0; parity < 2; ++parity) {
                 if (!w.gu_code[parity].ensure(nclass * sizeof(void*)) ||
@@ -779,7 +780,7 @@ public:
             !hip_ok(hipEventRecord(w.sample_stop, w.stream), "lane timing stop"))
             return -EIO;
         hipLaunchKernelGGL(lane_publish_done, dim3(1), dim3(1), 0, w.stream,
-                           q, done_seq, sequence);
+                           q, done_seq, sequence, static_cast<const uint32_t*>(w.d_publish_limit.p));
         if (!hip_ok(hipGetLastError(), "lane publish done")) return -EIO;
         return 0;
     }
@@ -874,6 +875,14 @@ public:
     /* RAD20: a sample recorded on a pre-queued wait released at burst end timed no request; forget it. */
     void drop_lane_sample(uint32_t lane) {
         if (lane < r3::moe_shm::kLanes) lane_[lane].sample_pending = false;
+    }
+
+    /* RAD20 park: lane_publish_done publishes no sequence above `limit` (the engine's last request) while the lane's
+     * unconsumed waits are released; UINT32_MAX again once drained. Device memory, so the check costs no PCIe read. */
+    bool set_publish_limit(uint32_t lane, uint32_t limit) {
+        return lane < r3::moe_shm::kLanes && lane_[lane].d_publish_limit.p &&
+               hip_ok(hipMemcpy(lane_[lane].d_publish_limit.p, &limit, sizeof(limit), hipMemcpyHostToDevice),
+                      "lane publish limit");
     }
 
     bool lane_stats(uint32_t lane, uint64_t out[3]) {
