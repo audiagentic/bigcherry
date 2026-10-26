@@ -6,7 +6,7 @@
 #   pending  release 20 ms after arming: the wait sits armed on an otherwise idle XTX
 #   cold     200 ms with nothing queued on the XTX before arming, release 100 us after arming
 # Needs R9700_BDF and XTX_BDF (PCI addresses, e.g. 0000:09:00.0 and 0000:03:00.0). Hold the gpu lease around it:
-#   agent-lease acquire gpu --ttl 30m --purpose "RAD20 barrier wake" -- tools/lab/radiance/rad20-barrier-wake.sh
+#   agent-lease acquire gpu --ttl 30m --purpose "RAD20 barrier wake" -- bash tools/lab/radiance/rad20-barrier-wake.sh
 # Iteration counts: N_B2B (300), N_PENDING (50), N_COLD (30). Output: $RAD20_OUT (default
 # ./rad20-barrier-wake-<UTC time>) with one log per case and summary.txt; exit status 1 if any arm FAILs.
 set -euo pipefail
