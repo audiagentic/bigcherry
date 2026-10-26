@@ -1,12 +1,12 @@
 #!/bin/bash
-# ROCm 10.1 vs 7.2.4 on the Flash-Next production layout: build origin/main with each ROCm (the radiance lane takes ROCm
+# ROCm 10.1 vs 7.2.4 on the Flash-Next production layout: build this checkout with each ROCm (the radiance lane takes ROCm
 # from PATH), then profile one decode per build (rad20-profile.sh: rocprofv3 on helper 0, tok/s, clocks) with each build's
 # own runtime libraries. Usage: rocm10-compare.sh [rocm10 install=${BC_WORK_ROOT}/toolchains/rocm-10.1.0/install]
 set -u
 source tools/env/bigcherry-env.sh >/dev/null
 R10=${1:-$BC_WORK_ROOT/toolchains/rocm-10.1.0/install}
 OUT=$BC_WORK_ROOT/runs/rocm10-compare-$(date +%m%d%H%M); mkdir -p $OUT
-git fetch -q origin main && git checkout -q --detach FETCH_HEAD && git log -1 --oneline | tee $OUT/builds.txt
+git log -1 --oneline | tee $OUT/builds.txt   # this checkout (main + the RAD_HIPCC build fix)
 build() {   # $1 label, $2 ROCm root
     ROCM_PATH=$2 HIP_PATH=$2 PATH=$2/bin:$2/llvm/bin:$PATH LD_LIBRARY_PATH=$2/lib \
         PYTHONPATH=tools timeout 7200 python3 -m bigcherry build --lane radiance-lab:stock:linux-radiance \
