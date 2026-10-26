@@ -177,8 +177,7 @@ void burst_transition(int active) {
             for (uint32_t i = 0; i < h->helper_count && i < kMaxRanks; ++i)
                 for (uint32_t v; (v = load(&h->burst_parked[i])) != b;) {
                     if (v == kBurstParkedStop || load(&h->helper_fault)) {
-                        std::fprintf(stderr, "libr3moe: helper %u stopped; burst not opened
-", i);
+                        std::fprintf(stderr, "libr3moe: helper %u stopped; burst not opened\n", i);
                         return;
                     }
                     (void)futex_wait(&h->burst_parked[i], v);

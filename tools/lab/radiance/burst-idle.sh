@@ -9,6 +9,7 @@ set -u
 IDLE=${1:-30}
 BDFS=${RAD20_HELPER_BDFS:?set RAD20_HELPER_BDFS to the helper GPUs PCI addresses}
 LIMIT=${RAD20_IDLE_WATTS:-15}
+set --   # the env script reads its own arguments
 source tools/env/bigcherry-env.sh >/dev/null
 export ROCM_PATH=${ROCM_PATH:-/opt/rocm-7.2.4}
 OUT=$BC_WORK_ROOT/runs/rad20-burst-idle-$(date +%m%d%H%M); mkdir -p $OUT
