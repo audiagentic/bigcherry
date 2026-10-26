@@ -871,6 +871,11 @@ public:
                hip_ok(hipStreamSynchronize(lane_[lane].stream), "lane stream sync");
     }
 
+    /* RAD20: a sample recorded on a pre-queued wait released at burst end timed no request; forget it. */
+    void drop_lane_sample(uint32_t lane) {
+        if (lane < r3::moe_shm::kLanes) lane_[lane].sample_pending = false;
+    }
+
     bool lane_stats(uint32_t lane, uint64_t out[3]) {
         if (lane >= r3::moe_shm::kLanes || !out) return false;
         return hip_ok(hipMemcpy(out, lane_[lane].d_stats.p, 3 * sizeof(uint64_t),

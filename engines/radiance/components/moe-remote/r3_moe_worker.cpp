@@ -38,6 +38,17 @@
 #include "worker_selftest.h"
 #include "worker_combine.h"
 
+/* RAD20: block until the engine is inside an inference burst (Header::burst odd). False once this helper is stopping. */
+bool wait_burst(r3::moe_shm::Header* h) {
+    using namespace r3::moe_shm;
+    for (;;) {
+        const uint32_t b = load(&h->burst);
+        if ((b & kBurstStop) || stopping()) return false;
+        if (b & 1u) return true;
+        (void)futex_wait(&h->burst, b);
+    }
+}
+
 int main(int argc, char** argv) {
     /* EVERY LANE STREAM ON ITS OWN HARDWARE QUEUE. A small lane pre-queues "wait for the next request" packets;
      * a stream sharing a hardware queue with one sits behind that wait until a small request arrives. With
@@ -486,10 +497,16 @@ int main(int argc, char** argv) {
                              threads, min_rows);
             }
         }
-        for (uint32_t lane = 0; lane < kLanes; ++lane) {
+        auto serves = [&](uint32_t lane) {
             /* Two helpers: each serves only its own rank slot's lanes. */
-            if (helper_count > 1 && lane % kMaxRanks != helper_index) continue;
-            if (lane_is_small(lane) && lane_class(lane) >= lane_classes.count) continue;   /* a disabled small class */
+            if (helper_count > 1 && lane % kMaxRanks != helper_index) return false;
+            return !(lane_is_small(lane) && lane_class(lane) >= lane_classes.count);   /* a disabled small class */
+        };
+        uint32_t small_lanes = 0;
+        for (uint32_t lane = 0; lane < kLanes; ++lane) small_lanes += serves(lane) && lane_is_small(lane);
+        std::atomic<uint32_t> parked_lanes{0};
+        for (uint32_t lane = 0; lane < kLanes; ++lane) {
+            if (!serves(lane)) continue;
             workers[lane] = std::thread([&, lane] {
                 const bool large = !lane_is_small(lane);
                 uint32_t next = 1;
@@ -498,6 +515,7 @@ int main(int argc, char** argv) {
                     /* Sized on arrival: wait for the engine's request word, read its rows, launch that size. */
                     while (!stopping()) {
                         if ((int32_t)(load(&h->lane[lane].request_sequence) - next) < 0) {
+                            if (!(load(&h->burst) & 1u) && !wait_burst(h)) break;   /* between bursts: block */
                             std::this_thread::yield();
                             continue;
                         }
@@ -543,32 +561,64 @@ int main(int argc, char** argv) {
                         return next != 0;
                     };
 
-                    for (uint32_t i = 0; i < kQueueDepth && !stopping(); ++i) {
-                        if (!queue_one()) {
-                            request_stop();
-                            break;
-                        }
-                    }
-                    while (!stopping()) {
-                        const uint32_t done = load(&h->lane[lane].done_sequence);
-                        if ((int32_t)(done - done_seen) <= 0) {
-                            std::this_thread::yield();
-                            continue;
-                        }
-                        if (!gpu->collect_lane_timing(lane, done,
-                                                      &lane_sample_us[lane],
-                                                      &lane_samples[lane])) {
-                            request_stop();
-                            break;
-                        }
-                        done_seen = done;
-                        trace_dump(map, lane, done - 1u);
-                        while (!stopping() &&
-                               (uint32_t)(next - done_seen - 1u) < kQueueDepth) {
+                    /* RAD20: the waits are pre-queued only inside an inference burst. Between bursts none is pending, so this
+                     * GPU idles: a pending wait keeps its MEC busy at ~95 W (FINDINGS). */
+                    while (wait_burst(h)) {
+                        next = done_seen + 1u;
+                        for (uint32_t i = 0; i < kQueueDepth && !stopping(); ++i) {
                             if (!queue_one()) {
                                 request_stop();
                                 break;
                             }
+                        }
+                        while (!stopping()) {
+                            const uint32_t done = load(&h->lane[lane].done_sequence);
+                            if ((int32_t)(done - done_seen) <= 0) {
+                                if (!(load(&h->burst) & 1u)) break;   /* the burst ended */
+                                std::this_thread::yield();
+                                continue;
+                            }
+                            if (!gpu->collect_lane_timing(lane, done,
+                                                          &lane_sample_us[lane],
+                                                          &lane_samples[lane])) {
+                                request_stop();
+                                break;
+                            }
+                            done_seen = done;
+                            trace_dump(map, lane, done - 1u);
+                            while (!stopping() &&
+                                   (uint32_t)(next - done_seen - 1u) < kQueueDepth) {
+                                if (!queue_one()) {
+                                    request_stop();
+                                    break;
+                                }
+                            }
+                        }
+                        if (stopping()) break;
+                        /* Park. The engine is idle and has every result, so each request it published is done. Release the
+                         * unconsumed waits (their ring slots hold older sequences: the kernels see an invalid request and
+                         * publish nothing), drain, restore the engine's last sequence, then ack. The engine publishes
+                         * nothing until every helper has acked, so the request word cannot move under us. */
+                        const uint32_t parked_burst = load(&h->burst);
+                        const uint32_t last = load(&h->lane[lane].request_sequence);
+                        while (!stopping() && load(&h->lane[lane].done_sequence) != last) std::this_thread::yield();
+                        if (stopping()) break;
+                        if (!gpu->collect_lane_timing(lane, last, &lane_sample_us[lane], &lane_samples[lane])) {
+                            request_stop();
+                            break;
+                        }
+                        store(&h->lane[lane].request_sequence, next - 1u);
+                        if (!gpu->sync_lane(lane)) {
+                            request_stop();
+                            break;
+                        }
+                        store(&h->lane[lane].request_sequence, last);
+                        gpu->drop_lane_sample(lane);
+                        done_seen = last;
+                        if (parked_lanes.fetch_add(1) + 1 == small_lanes) {
+                            parked_lanes.store(0);
+                            store(&h->burst_parked[helper_index], parked_burst & ~1u);
+                            (void)futex_wake(&h->burst_parked[helper_index]);
                         }
                     }
                     const uint32_t final_done = load(&h->lane[lane].done_sequence);
@@ -598,6 +648,11 @@ int main(int argc, char** argv) {
          * joining anything, so no fault path depends on a join completing. */
         store(&h->helper_fault, 1u);
         combine_futex_wake(&h->combine.helper1_done, true);
+        /* Wake this helper's lane threads blocked between bursts, and an engine waiting for this helper's park ack. */
+        (void)__atomic_fetch_or(&h->burst, kBurstStop, __ATOMIC_ACQ_REL);
+        (void)futex_wake(&h->burst);
+        store(&h->burst_parked[helper_index], kBurstParkedStop);
+        (void)futex_wake(&h->burst_parked[helper_index]);
         for (auto& w : workers) if (w.joinable()) w.join();
         if (combine_pool) {
             store(&h->combine.enabled, 0u);
