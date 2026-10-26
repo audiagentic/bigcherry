@@ -4,10 +4,13 @@
 # each process owns; kfd/hqds: which hardware queue slots hold a queue) and UMR CP/MES status on each helper GPU; then
 # the same idle after the request. Shows whether the helpers oversubscribe the GPU's compute slots and whether MES stays
 # busy. Reads debugfs and registers only (sudo); changes nothing.
-# Needs: RAD20_BUILD (a moe-remote-handoff build), XTX_BDFS (helper GPU PCI addresses), UMR (umr binary), sudo.
-# Usage: RAD20_BUILD=... XTX_BDFS="..." UMR=... rad20-queue-probe.sh
+# Needs: RAD20_BUILD (a moe-remote-handoff build), XTX_BDFS (helper GPU PCI addresses), UMR (umr binary), sudo. The sudo
+# password is read once from stdin (so a detached run can use it; it is never written anywhere).
+# Usage: RAD20_BUILD=... XTX_BDFS="..." UMR=... rad20-queue-probe.sh < <password on stdin>
 set -u
 : "${RAD20_BUILD:?set RAD20_BUILD}" "${XTX_BDFS:?set XTX_BDFS}" "${UMR:?set UMR}"
+IFS= read -r PW || PW=""
+sudo() { command sudo -S -p "" "$@" <<< "$PW"; }
 set --   # the env script reads its own arguments
 source tools/env/bigcherry-env.sh >/dev/null
 export ROCM_PATH=${ROCM_PATH:-/opt/rocm-7.2.4}
