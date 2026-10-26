@@ -39,6 +39,16 @@
 #include "worker_combine.h"
 
 /* RAD20: block until the engine is inside an inference burst (Header::burst odd). False once this helper is stopping. */
+/* RAD20: how long a small lane stays armed after a burst ends before it releases its waits. Requests arriving within it
+ * (back-to-back, multi-turn) find the lane armed; past it the GPU idles. Costs ~95 W for this long after each burst. */
+constexpr uint32_t kParkHoldMs = 1000;
+
+/* One blocking wait on a futex word, at most `ms` (woken early by a FUTEX_WAKE or a signal). */
+int futex_wait_for(uint32_t* p, uint32_t expected, uint32_t ms) {
+    timespec ts{(time_t)(ms / 1000u), (long)(ms % 1000u) * 1000000L};
+    return (int)::syscall(SYS_futex, p, FUTEX_WAIT, expected, &ts, nullptr, 0);
+}
+
 bool wait_burst(r3::moe_shm::Header* h) {
     using namespace r3::moe_shm;
     for (;;) {
@@ -505,9 +515,6 @@ int main(int argc, char** argv) {
             }
         }
         auto serves = [&](uint32_t lane) { return lanes_served[lane]; };
-        uint32_t small_lanes = 0;
-        for (uint32_t lane = 0; lane < kLanes; ++lane) small_lanes += serves(lane) && lane_is_small(lane);
-        std::atomic<uint32_t> parked_lanes{0};
         for (uint32_t lane = 0; lane < kLanes; ++lane) {
             if (!serves(lane)) continue;
             workers[lane] = std::thread([&, lane] {
@@ -564,15 +571,20 @@ int main(int argc, char** argv) {
                         return next != 0;
                     };
 
-                    /* RAD20: the waits are pre-queued only inside an inference burst. Between bursts none is pending, so this
-                     * GPU idles: a pending wait keeps its MEC busy at ~95 W (FINDINGS). */
+                    /* RAD20: the waits are pre-queued only inside an inference burst (and a short hold after it). Between
+                     * bursts none is pending, so this GPU idles: a pending wait keeps its MEC busy at ~95 W (FINDINGS). */
+                    uint32_t* park = &h->lane[lane].park;
+                    bool armed = false;
                     while (wait_burst(h)) {
-                        next = done_seen + 1u;
-                        for (uint32_t i = 0; i < kQueueDepth && !stopping(); ++i) {
-                            if (!queue_one()) {
-                                request_stop();
-                                break;
+                        if (!armed) {
+                            next = done_seen + 1u;
+                            for (uint32_t i = 0; i < kQueueDepth && !stopping(); ++i) {
+                                if (!queue_one()) {
+                                    request_stop();
+                                    break;
+                                }
                             }
+                            armed = true;
                         }
                         while (!stopping()) {
                             const uint32_t done = load(&h->lane[lane].done_sequence);
@@ -598,11 +610,20 @@ int main(int argc, char** argv) {
                             }
                         }
                         if (stopping()) break;
-                        /* Park. The engine is idle and has every result, so each request it published is done. Release the
-                         * unconsumed waits (their ring slots hold older sequences: the kernels see an invalid request and
-                         * publish nothing), drain, restore the engine's last sequence, then ack. The engine publishes
-                         * nothing until every helper has acked, so the request word cannot move under us. */
-                        const uint32_t parked_burst = load(&h->burst);
+                        /* Hold: stay armed while the engine may open the next burst soon (one blocking wait, woken by it). */
+                        if (const uint32_t b = load(&h->burst); !(b & 1u)) (void)futex_wait_for(&h->burst, b, kParkHoldMs);
+                        if (load(&h->burst) & 1u) continue;
+                        /* Park. Flag the drain, then re-check: the engine opens a burst before it reads the flag, so either
+                         * it waits for the drain or we see its burst and stay armed. The engine is idle and has every
+                         * result, so each request it published is done. Release the unconsumed waits (their ring slots
+                         * hold older sequences: the kernels see an invalid request and publish nothing), drain and
+                         * restore the engine's last sequence before clearing the flag. */
+                        __atomic_store_n(park, kParkDraining, __ATOMIC_SEQ_CST);
+                        if (__atomic_load_n(&h->burst, __ATOMIC_SEQ_CST) & 1u) {
+                            store(park, 0u);
+                            (void)futex_wake(park);
+                            continue;
+                        }
                         const uint32_t last = load(&h->lane[lane].request_sequence);
                         while (!stopping() && load(&h->lane[lane].done_sequence) != last) std::this_thread::yield();
                         if (stopping()) break;
@@ -618,11 +639,9 @@ int main(int argc, char** argv) {
                         store(&h->lane[lane].request_sequence, last);
                         gpu->drop_lane_sample(lane);
                         done_seen = last;
-                        if (parked_lanes.fetch_add(1) + 1 == small_lanes) {
-                            parked_lanes.store(0);
-                            store(&h->burst_parked[helper_index], parked_burst & ~1u);
-                            (void)futex_wake(&h->burst_parked[helper_index]);
-                        }
+                        armed = false;
+                        store(park, 0u);
+                        (void)futex_wake(park);
                     }
                     const uint32_t final_done = load(&h->lane[lane].done_sequence);
                     (void)gpu->collect_lane_timing(lane, final_done,
@@ -651,11 +670,11 @@ int main(int argc, char** argv) {
          * joining anything, so no fault path depends on a join completing. */
         store(&h->helper_fault, 1u);
         combine_futex_wake(&h->combine.helper1_done, true);
-        /* Wake this helper's lane threads blocked between bursts, and an engine waiting for this helper's park ack. */
+        /* Wake this helper's lane threads blocked between bursts, and an engine waiting on one of its lanes' drains. */
         (void)__atomic_fetch_or(&h->burst, kBurstStop, __ATOMIC_ACQ_REL);
         (void)futex_wake(&h->burst);
-        store(&h->burst_parked[helper_index], kBurstParkedStop);
-        (void)futex_wake(&h->burst_parked[helper_index]);
+        for (uint32_t lane = 0; lane < kLanes; ++lane)
+            if (lanes_served[lane]) { store(&h->lane[lane].park, 0u); (void)futex_wake(&h->lane[lane].park); }
         for (auto& w : workers) if (w.joinable()) w.join();
         if (combine_pool) {
             store(&h->combine.enabled, 0u);

@@ -167,25 +167,21 @@ void burst_transition(int active) {
     }();
     static std::atomic<uint64_t> begins{0}, ends{0};
     const uint64_t n = active ? begins.fetch_add(1) + 1 : ends.fetch_add(1) + 1;
-    /* One engine process drives the segment's burst word. Begin: wait for every helper's ack that its released waits
-     * have drained (normally already given, so no sleep), then open the burst; the helpers arm their waits. End:
-     * close it; the helpers drain and ack. A helper that stops acks kBurstParkedStop and sets helper_fault. */
+    /* One engine process drives the segment's burst word. Begin: open the burst, then wait only for lanes a helper is
+     * still draining (Header::burst; normally none, so no sleep), so nothing is published into released waits. End:
+     * close it. A helper that stops clears its drain flags and sets helper_fault. */
     if (g.hdr) {
         Header* h = g.hdr;
         const uint32_t b = load(&h->burst) & ~kBurstStop;
-        if (active && !(b & 1u)) {
-            for (uint32_t i = 0; i < h->helper_count && i < kMaxRanks; ++i)
-                for (uint32_t v; (v = load(&h->burst_parked[i])) != b;) {
-                    if (v == kBurstParkedStop || load(&h->helper_fault)) {
-                        std::fprintf(stderr, "libr3moe: helper %u stopped; burst not opened\n", i);
-                        return;
-                    }
-                    (void)futex_wait(&h->burst_parked[i], v);
-                }
-        }
         if (active == (int)(b & 1u)) return;
-        (void)__atomic_fetch_add(&h->burst, 1u, __ATOMIC_ACQ_REL);
+        (void)__atomic_fetch_add(&h->burst, 1u, __ATOMIC_SEQ_CST);
         (void)futex_wake(&h->burst);
+        if (active)
+            for (uint32_t lane = 0; lane < kLanes; ++lane)
+                for (uint32_t v; (v = __atomic_load_n(&h->lane[lane].park, __ATOMIC_SEQ_CST)) == kParkDraining;) {
+                    if (load(&h->helper_fault)) break;
+                    (void)futex_wait(&h->lane[lane].park, v);
+                }
     }
     if (trace) {
         timespec ts{};
