@@ -54,11 +54,17 @@ int main(int argc, char** argv) {
      * a stream sharing a hardware queue with one sits behind that wait until a small request arrives. With
      * every step large (KL mode's 64-token steps over an 8-row small lane) none ever does, and the large lane's
      * work never runs. HIP maps streams onto GPU_MAX_HW_QUEUES queues (4 by default) and the helper opens one
-     * stream for every lane in the protocol (kLanes: each small-lane class and the large lane, for each rank)
-     * plus its own, so the count is derived from the protocol, with two spare, before HIP initialises (it grew
-     * from five streams to eleven with RAD12's lane classes, which hung every request at the old fixed 8);
-     * an explicit setting wins. */
-    (void)::setenv("GPU_MAX_HW_QUEUES", std::to_string(r3::moe_shm::kLanes + 3).c_str(), 0);
+     * stream for each lane it serves (served_lanes: its rank slot's enabled classes and large lane) plus its own,
+     * so the count is derived before HIP initialises, with two spare; an explicit setting wins. No more: every
+     * extra queue is one more the gfx11 MES schedules, and past its hardware slots it oversubscribes and keeps
+     * MES busy (~95 W) with nothing to run (RAD20). The environment is only read here; it is validated below. */
+    {
+        auto env_u = [](const char* n, uint32_t d) { const char* e = std::getenv(n); return e && *e ? (uint32_t)std::atoi(e) : d; };
+        uint32_t lanes = 0;
+        for (bool s : served_lanes(env_u("R3_MOE_WORKER_COUNT", 1), env_u("R3_MOE_WORKER_INDEX", 0), helper_small_classes().count))
+            lanes += s;
+        (void)::setenv("GPU_MAX_HW_QUEUES", std::to_string(lanes + 3).c_str(), 0);
+    }
     /* The helper's grouped MoE GEMM (prefill) on gfx11's native bf16 WMMA path: R9700 engine + two XTX helpers,
      * Flash-Next, prefill 2,518 -> 2,665 tok/s and helper gate/up -25%, KLD 0.064 (noise floor). Read by libr3
      * when the plugin is loaded, so set before it; an explicit setting wins. */
@@ -427,7 +433,8 @@ int main(int argc, char** argv) {
     }
     owned = std::move(runtime_owned);
     h->owned_bytes = owned.bytes;
-    if (gpu && !gpu->prepare_lanes(lane_classes.rows, lane_classes.count, lane_large_rows)) {
+    const auto lanes_served = served_lanes(helper_count, helper_index, lane_classes.count);
+    if (gpu && !gpu->prepare_lanes(lane_classes.rows, lane_classes.count, lane_large_rows, lanes_served)) {
         (void)hipHostUnregister(map);
         munmap(map, lay.bytes); close(fd); drop_name(); return 1;
     }
@@ -497,11 +504,7 @@ int main(int argc, char** argv) {
                              threads, min_rows);
             }
         }
-        auto serves = [&](uint32_t lane) {
-            /* Two helpers: each serves only its own rank slot's lanes. */
-            if (helper_count > 1 && lane % kMaxRanks != helper_index) return false;
-            return !(lane_is_small(lane) && lane_class(lane) >= lane_classes.count);   /* a disabled small class */
-        };
+        auto serves = [&](uint32_t lane) { return lanes_served[lane]; };
         uint32_t small_lanes = 0;
         for (uint32_t lane = 0; lane < kLanes; ++lane) small_lanes += serves(lane) && lane_is_small(lane);
         std::atomic<uint32_t> parked_lanes{0};

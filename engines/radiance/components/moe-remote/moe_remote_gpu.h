@@ -174,16 +174,6 @@ public:
         }
         if (!load_plugin()) return false;
         if (!hip_ok(hipStreamCreateWithFlags(&stream_, hipStreamNonBlocking), "hipStreamCreate")) return false;
-        for (uint32_t r = 0; r < r3::moe_shm::kLanes; ++r) {
-            if (!hip_ok(hipStreamCreateWithFlags(&lane_[r].stream, hipStreamNonBlocking), "hipStreamCreate lane") ||
-                !hip_ok(hipEventCreate(&lane_[r].sample_start), "hipEventCreate lane start") ||
-                !hip_ok(hipEventCreate(&lane_[r].sample_stop), "hipEventCreate lane stop") ||
-                !hip_ok(hipEventCreate(&lane_[r].stage[0]), "hipEventCreate lane stage") ||
-                !hip_ok(hipEventCreate(&lane_[r].stage[1]), "hipEventCreate lane stage") ||
-                !hip_ok(hipEventCreate(&lane_[r].stage[2]), "hipEventCreate lane stage") ||
-                !hip_ok(hipEventCreate(&lane_[r].stage[3]), "hipEventCreate lane stage"))
-                return false;
-        }
         experts_.resize((size_t)model_.layers * experts());
         tables_.resize(model_.layers);
         /* hidden width and expert count are the container's; row capacity, top-k and group are the protocol's until negotiated */
@@ -381,7 +371,8 @@ public:
 
     /* Small lanes are sized to their class's rows and pre-queued; the large lane to large_rows, launched per request.
      * `count` small classes are enabled (ascending `sizes`); the other small lanes are left unprepared (cap_rows 0). */
-    bool prepare_lanes(const std::array<uint32_t, r3::moe_shm::kSmallClasses>& sizes, uint32_t count, uint32_t large_rows) {
+    bool prepare_lanes(const std::array<uint32_t, r3::moe_shm::kSmallClasses>& sizes, uint32_t count, uint32_t large_rows,
+                       const std::array<bool, r3::moe_shm::kLanes>& served) {
         using namespace r3::moe_shm;
         if (count == 0 || count > kSmallClasses || large_rows == 0 || large_rows > kMaxRows || !d_layer_tables_.p)
             return false;
@@ -395,12 +386,21 @@ public:
         for (uint32_t lane = 0; lane < kLanes; ++lane) {
             const uint32_t rank = lane % kMaxRanks;
             const uint32_t cls = lane_class(lane);
-            if (cls < kSmallClasses && cls >= class_count_) {   /* a disabled small class: no buffers, no worker */
+            if (!served[lane] || (cls < kSmallClasses && cls >= class_count_)) {   /* not ours: no stream, buffers or worker */
                 lane_[lane].cap_rows = 0;
                 continue;
             }
             const uint32_t cap = cls < kSmallClasses ? class_rows_[cls] : large_rows_;
             LaneWork& w = lane_[lane];
+            if (!w.stream &&
+                (!hip_ok(hipStreamCreateWithFlags(&w.stream, hipStreamNonBlocking), "hipStreamCreate lane") ||
+                 !hip_ok(hipEventCreate(&w.sample_start), "hipEventCreate lane start") ||
+                 !hip_ok(hipEventCreate(&w.sample_stop), "hipEventCreate lane stop") ||
+                 !hip_ok(hipEventCreate(&w.stage[0]), "hipEventCreate lane stage") ||
+                 !hip_ok(hipEventCreate(&w.stage[1]), "hipEventCreate lane stage") ||
+                 !hip_ok(hipEventCreate(&w.stage[2]), "hipEventCreate lane stage") ||
+                 !hip_ok(hipEventCreate(&w.stage[3]), "hipEventCreate lane stage")))
+                return false;
             w.cap_rows = cap;
             if (!ensure_lane_work(w, cap, cap * shape_.top_k, cap * shape_.top_k) ||
                 !w.d_stats.ensure(3 * sizeof(uint64_t)))
