@@ -4,6 +4,8 @@
 # helper GPU time and engine wait), and samples every helper GPU's shader clock and busy % from sysfs at 20 Hz while a
 # fixed decode workload runs. rad20-profile-analyse.py then compares per-kernel durations, per-request times and clocks.
 # Devices from the environment: XTX_BDFS (helper GPU PCI addresses). Builds: RAD20_MAIN_BUILD and RAD20_BURST_BUILD.
+# Optional helper-only environment per arm (e.g. GPU_MAX_HW_QUEUES=13): RAD20_HELPER_ENV_MAIN / RAD20_HELPER_ENV_BURST;
+# the two "arms" may then be the same build. Each arm's build and helper environment is recorded in arms.txt.
 # Usage: XTX_BDFS=... RAD20_MAIN_BUILD=... RAD20_BURST_BUILD=... rad20-burst-profile.sh [requests=6]
 set -u
 N=${1:-6}
@@ -30,8 +32,11 @@ sampler() {   # $1 csv; one row per GPU per tick: t, bdf, sclk_mhz, busy_pct, mc
 for arm in main burst; do
     B=$RAD20_MAIN_BUILD; [ $arm = burst ] && B=$RAD20_BURST_BUILD
     D=$OUT/$arm; mkdir -p $D
+    HENV=${RAD20_HELPER_ENV_MAIN:-}; [ $arm = burst ] && HENV=${RAD20_HELPER_ENV_BURST:-}
+    echo "$arm build=$B helper_env=$HENV" >> $OUT/arms.txt
     wrap=$D/helper-rocprof; cat > $wrap <<EOF
 #!/bin/bash
+${HENV:+export $HENV}
 exec rocprofv3 --kernel-trace --output-format csv -d $D/trace\$R3_MOE_WORKER_INDEX -o run -- "\$@"
 EOF
     chmod +x $wrap
