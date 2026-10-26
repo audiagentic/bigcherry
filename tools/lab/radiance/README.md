@@ -26,6 +26,13 @@ standalone server with a llama-server-compatible API.
 - `fn-helper.sh`, `fn-profile.sh`, `fn-profile-compare.py`: rocprofv3 kernel/copy traces of one prefill and their
   comparison; the harness does not trace, so these stay.
 
+- `rad20-barrier-wake.cpp`, `rad20-barrier-wake.sh`: RAD20 option B measurement. How long after the R9700 (or a host
+  thread) releases a wait on an XTX queue does the next XTX kernel start? Arm A waits with an AQL `BARRIER_AND` on an
+  HSA signal (raw HSA queue), arm B with `hipStreamWaitValue32` on host-registered shared memory; single process and
+  the production two-process split (helper creates an IPC signal, engine attaches it). Needs `R9700_BDF` and
+  `XTX_BDF`; hold the `gpu` lease. In two processes `hsa_amd_ipc_signal_attach` maps the signal for the host only,
+  so the engine attaches the signal's page again with `hsa_amd_ipc_memory_attach` for its R9700 kernel's store.
+
 ## Build result on dev (2026-10-09)
 
 Builds in 104 s for gfx1201 with ROCm 7.2.4 and g++ 14.2 (unpacked by `fetch-gcc14.sh`). 38 of 39 card-free tests
