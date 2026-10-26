@@ -15,13 +15,14 @@ OUT=$BC_WORK_ROOT/runs/rad20-burst-profile-$(date +%m%d%H%M); mkdir -p $OUT
 HERE=$(cd "$(dirname "$0")" && pwd)
 L=$HERE/launch-flashnext-best.sh
 URL=http://127.0.0.1:36080/v1/completions
-sampler() {   # $1 csv; one row per GPU per tick: t, bdf, sclk_mhz, busy_pct
-    echo "t,bdf,sclk_mhz,busy_pct" > "$1"
+sampler() {   # $1 csv; one row per GPU per tick: t, bdf, sclk_mhz, busy_pct, mclk_mhz
+    echo "t,bdf,sclk_mhz,busy_pct,mclk_mhz" > "$1"
     while :; do
-        local t=$(date +%s.%N) b f
+        local t=$(date +%s.%N) b f m
         for b in $XTX_BDFS; do
             f=$(cat /sys/bus/pci/devices/$b/hwmon/hwmon*/freq1_input 2>/dev/null)
-            echo "$t,$b,$(( ${f:-0} / 1000000 )),$(cat /sys/bus/pci/devices/$b/gpu_busy_percent 2>/dev/null)" >> "$1"
+            m=$(cat /sys/bus/pci/devices/$b/hwmon/hwmon*/freq2_input 2>/dev/null)
+            echo "$t,$b,$(( ${f:-0} / 1000000 )),$(cat /sys/bus/pci/devices/$b/gpu_busy_percent 2>/dev/null),$(( ${m:-0} / 1000000 ))" >> "$1"
         done
         sleep 0.05
     done

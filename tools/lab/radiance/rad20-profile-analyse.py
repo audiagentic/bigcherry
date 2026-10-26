@@ -56,7 +56,9 @@ def clocks(arm_dir, t0, t1):
     res = {}
     for r in csv.DictReader(open(arm_dir / "clocks.csv")):
         if t0 <= float(r["t"]) <= t1 and r["busy_pct"] and int(r["busy_pct"]) > 0:
-            res.setdefault(r["bdf"], []).append(float(r["sclk_mhz"]))
+            res.setdefault(r["bdf"] + " sclk", []).append(float(r["sclk_mhz"]))
+            if r.get("mclk_mhz"):
+                res.setdefault(r["bdf"] + " mclk", []).append(float(r["mclk_mhz"]))
     return res
 
 
@@ -73,7 +75,7 @@ def main():
     for k in ("helper_gpu_us", "wait_us", "local_us"):
         for arm in arms:
             print(f"{k:14s} {arm:5s} {summary(arms[arm][1][k])}")
-    print("\n== helper shader clock while busy (MHz) ==")
+    print("\n== helper shader / memory clock while busy (MHz) ==")
     for arm in arms:
         for bdf, v in sorted(arms[arm][2].items()):
             print(f"{arm:5s} {bdf}  {summary(v)}")
