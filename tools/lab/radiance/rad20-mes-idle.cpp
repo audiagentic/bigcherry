@@ -43,7 +43,12 @@ void queue_error(hsa_status_t s, hsa_queue_t*, void*) {
     std::_Exit(3);
 }
 
-/* One BARRIER_AND: the body is written first, the header last with release order, then the doorbell. */
+/* Packet variants for the pending wait (one variable each): the packet type and the fence scopes on its header. */
+uint16_t g_type = HSA_PACKET_TYPE_BARRIER_AND;
+uint16_t g_scope = HSA_FENCE_SCOPE_SYSTEM;
+
+/* One barrier packet (BARRIER_AND / BARRIER_OR share the layout): the body is written first, the header last with
+ * release order, then the doorbell. */
 void barrier_and(hsa_queue_t* q, hsa_signal_t dep, hsa_signal_t completion) {
     const uint64_t idx = hsa_queue_add_write_index_relaxed(q, 1);
     if (idx - hsa_queue_load_read_index_scacquire(q) >= q->size) { std::fprintf(stderr, "FAIL queue full\n"); std::exit(2); }
@@ -51,9 +56,9 @@ void barrier_and(hsa_queue_t* q, hsa_signal_t dep, hsa_signal_t completion) {
     std::memset(reinterpret_cast<uint8_t*>(p) + sizeof(uint16_t) * 2, 0, sizeof(*p) - sizeof(uint16_t) * 2);
     p->dep_signal[0] = dep;
     p->completion_signal = completion;
-    const uint16_t header = (HSA_PACKET_TYPE_BARRIER_AND << HSA_PACKET_HEADER_TYPE) | (1u << HSA_PACKET_HEADER_BARRIER) |
-                            (HSA_FENCE_SCOPE_SYSTEM << HSA_PACKET_HEADER_SCACQUIRE_FENCE_SCOPE) |
-                            (HSA_FENCE_SCOPE_SYSTEM << HSA_PACKET_HEADER_SCRELEASE_FENCE_SCOPE);
+    const uint16_t header = (uint16_t)((g_type << HSA_PACKET_HEADER_TYPE) | (1u << HSA_PACKET_HEADER_BARRIER) |
+                                       (g_scope << HSA_PACKET_HEADER_SCACQUIRE_FENCE_SCOPE) |
+                                       (g_scope << HSA_PACKET_HEADER_SCRELEASE_FENCE_SCOPE));
     __atomic_store_n(&p->header, header, __ATOMIC_RELEASE);
     hsa_signal_store_screlease(q->doorbell_signal, (hsa_signal_value_t)idx);
 }
@@ -67,9 +72,18 @@ bool wait_zero(hsa_signal_t s, double seconds) {
 }  // namespace
 
 int main(int argc, char** argv) {
-    if (argc != 3) { std::fprintf(stderr, "usage: %s {empty|drained|pending} <hold seconds>\n", argv[0]); return 2; }
-    const char* mode = argv[1];
+    if (argc != 3) {
+        std::fprintf(stderr, "usage: %s {empty|drained|pending|pending-or|pending-agent|pending-nofence} <hold seconds>\n", argv[0]);
+        return 2;
+    }
+    const char* arg = argv[1];
     const int hold = std::atoi(argv[2]);
+    /* pending-or: BARRIER_OR on the same dependency; pending-agent / pending-nofence: the same BARRIER_AND with agent
+     * scope or no fences (diagnostic only: cross-process production waits need system scope). */
+    const char* mode = arg;
+    if (!std::strcmp(arg, "pending-or")) { g_type = HSA_PACKET_TYPE_BARRIER_OR; mode = "pending"; }
+    else if (!std::strcmp(arg, "pending-agent")) { g_scope = HSA_FENCE_SCOPE_AGENT; mode = "pending"; }
+    else if (!std::strcmp(arg, "pending-nofence")) { g_scope = HSA_FENCE_SCOPE_NONE; mode = "pending"; }
     if (hold < 1 || (std::strcmp(mode, "empty") && std::strcmp(mode, "drained") && std::strcmp(mode, "pending"))) return 2;
 
     CK(hsa_init());
@@ -108,6 +122,6 @@ int main(int argc, char** argv) {
     CK(hsa_signal_destroy(done));
     CK(hsa_signal_destroy(dep));
     CK(hsa_shut_down());
-    std::printf("PASS %s\n", mode);
+    std::printf("PASS %s\n", arg);
     return 0;
 }
