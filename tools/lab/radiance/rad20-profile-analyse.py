@@ -7,6 +7,7 @@ and the helper GPUs' shader clock while busy.  Usage: rad20-profile-analyse.py <
 """
 import csv
 import glob
+import json
 import statistics as st
 import sys
 from pathlib import Path
@@ -62,6 +63,27 @@ def clocks(arm_dir, t0, t1):
     return res
 
 
+def requests(arm_dir):
+    f = arm_dir / "requests.jsonl"
+    return [json.loads(l) for l in open(f)] if f.exists() else []
+
+
+def thread_cpu(arm_dir):
+    """Mean %CPU per helper thread (top -H batch output), by thread id, over the samples it appears in."""
+    f = arm_dir / "helper-threads.top"
+    if not f.exists():
+        return {}
+    acc = {}
+    for line in open(f, errors="replace"):
+        p = line.split()
+        if len(p) >= 12 and p[0].isdigit():
+            try:
+                acc.setdefault(p[0] + " " + p[11], []).append(float(p[8]))
+            except ValueError:
+                pass
+    return {k: st.mean(v) for k, v in acc.items()}
+
+
 def main():
     run = Path(sys.argv[1])
     arms = {}
@@ -82,6 +104,24 @@ def main():
     print("\n== kernel launch gaps on one queue (us, < 50 us) ==")
     for arm in arms:
         print(f"{arm:5s} {summary(arms[arm][0][1])}")
+    rq = {arm: requests(run / arm) for arm in arms}
+    if rq["main"] and rq["burst"]:
+        print("\n== per prompt (server timings): prefill tok/s, decode tok/s, draft accepted/proposed, same text ==")
+        for a, b in zip(rq["main"], rq["burst"]):
+            acc = lambda r: f"{r['draft_n_accepted']}/{r['draft_n']}" if r.get("draft_n") else "-"
+            print(f"prompt {a['prompt']}: prefill {a['prompt_per_second']:.0f} -> {b['prompt_per_second']:.0f}  "
+                  f"decode {a['predicted_per_second']:.1f} -> {b['predicted_per_second']:.1f}  "
+                  f"drafts {acc(a)} -> {acc(b)}  same_text {a['text_sha'] == b['text_sha']}")
+        for arm in arms:
+            d = [r["predicted_per_second"] for r in rq[arm]]
+            same = [r["predicted_per_second"] for r, o in zip(rq[arm], rq["burst" if arm == "main" else "main"])
+                    if r["text_sha"] == o["text_sha"]]
+            print(f"{arm:5s} decode mean {st.mean(d):.2f}  (same-text prompts only: "
+                  f"{st.mean(same):.2f} over {len(same)})" if same else f"{arm:5s} decode mean {st.mean(d):.2f}")
+    print("\n== helper threads, mean %CPU while sampled (top -H), busiest 8 per arm ==")
+    for arm in arms:
+        for k, v in sorted(thread_cpu(run / arm).items(), key=lambda kv: -kv[1])[:8]:
+            print(f"{arm:5s} {k:30s} {v:6.1f}")
     print("\n== kernels by total time (us): main vs burst ==")
     km, kb = arms["main"][0][0], arms["burst"][0][0]
     for name in sorted(km, key=lambda n: -sum(km[n]))[:20]:
