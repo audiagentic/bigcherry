@@ -32,6 +32,9 @@ standalone server with a llama-server-compatible API.
   the production two-process split (helper creates an IPC signal, engine attaches it). Needs `R9700_BDF` and
   `XTX_BDF`; hold the `gpu` lease. In two processes `hsa_amd_ipc_signal_attach` maps the signal for the host only,
   so the engine attaches the signal's page again with `hsa_amd_ipc_memory_attach` for its R9700 kernel's store.
+  `--dump FILE` writes one CSV row per iteration. In two processes the first arm released by an R9700 kernel,
+  whichever wait it uses, pays a one-time warm-up: about 350-530 us on its first iteration and 11-39 us for the next
+  ~15 ms; a single process does not show it. Compare arms after that warm-up, or put a throwaway arm first.
   Run it with `bash` (lab scripts are not executable in the repo):
   `R9700_BDF=0000:09:00.0 XTX_BDF=0000:03:00.0 agent-lease acquire gpu --ttl 30m --purpose "RAD20 barrier wake" -- bash tools/lab/radiance/rad20-barrier-wake.sh`.
   Result (2026-10-26): the barrier wakes about 0.8 us slower than `hipStreamWaitValue32` at p50 (two processes, R9700
