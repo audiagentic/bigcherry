@@ -10,6 +10,9 @@
 // stop_and_join() publishes the stop (fault word, burst stop bit, park flags, wakes) before joining, so no thread can
 // stay blocked on a futex or a drain.
 #include <array>
+#include <cerrno>
+#include <cstdio>
+#include <cstring>
 #include <memory>
 #include <thread>
 #include <vector>
@@ -21,7 +24,11 @@ inline bool wait_burst(r3::moe_shm::Header* h) {
         const uint32_t b = load(&h->burst);
         if ((b & kBurstStop) || stopping()) return false;
         if (b & 1u) return true;
-        (void)futex_wait(&h->burst, b);
+        if (futex_wait(&h->burst, b) < 0 && errno != EINTR && errno != EAGAIN) {
+            std::fprintf(stderr, "r3_moe_worker: futex_wait(burst): %s\n", std::strerror(errno));
+            request_stop();
+            return false;
+        }
     }
 }
 
@@ -43,14 +50,17 @@ public:
           combine_(combine) {}
     Lanes(const Lanes&) = delete;
     Lanes& operator=(const Lanes&) = delete;
-    ~Lanes() { join(); }
+    /* Any path out of the serving scope stops the lanes first: a plain join could wait on a lane still serving. */
+    ~Lanes() {
+        for (const auto& t : threads_)
+            if (t.joinable()) { stop_and_join(); break; }
+    }
 
     /* One thread per served lane. A thread that cannot start stops and joins the ones that did. */
     bool start() {
         try {
             for (uint32_t lane = 0; lane < r3::moe_shm::kLanes; ++lane)
-                if (served_[lane])
-                    threads_[lane] = std::thread([this, lane] { r3::moe_shm::lane_is_small(lane) ? run_small(lane) : run_large(lane); });
+                if (served_[lane]) threads_[lane] = std::thread([this, lane] { run(lane); });
         } catch (const std::exception& e) {
             std::fprintf(stderr, "r3_moe_worker: lane thread: %s\n", e.what());
             stop_and_join();
@@ -106,6 +116,18 @@ private:
 
     void join() {
         for (auto& t : threads_) if (t.joinable()) t.join();
+    }
+    /* A lane thread's entry: nothing escapes it; any failure stops the helper. */
+    void run(uint32_t lane) noexcept {
+        try {
+            r3::moe_shm::lane_is_small(lane) ? run_small(lane) : run_large(lane);
+        } catch (const std::exception& e) {
+            std::fprintf(stderr, "r3_moe_worker: lane %u: %s\n", lane, e.what());
+            request_stop();
+        } catch (...) {
+            std::fprintf(stderr, "r3_moe_worker: lane %u: unknown exception\n", lane);
+            request_stop();
+        }
     }
     bool collect(uint32_t lane, uint32_t done) {
         return gpu_.collect_lane_timing(lane, done, &stats_[lane].sample_us, &stats_[lane].samples);
@@ -171,6 +193,10 @@ private:
                 return false;
             }
             ++next;
+            if (next == 0) {   /* the last sequence is queued; fail now rather than on the next call */
+                std::fprintf(stderr, "r3_moe_worker: lane %u sequence space exhausted\n", lane);
+                return false;
+            }
             return true;
         };
         auto fill = [&]() -> bool {
