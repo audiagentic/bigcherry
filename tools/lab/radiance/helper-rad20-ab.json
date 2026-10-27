@@ -1,0 +1,92 @@
+{
+ "_comment": "RAD20: end-to-end A/B of the helper lane threads sleeping in GPU completion events (RAD20 build) against the parent commit's yield-polling lanes (baseline build), working Flash-Next layout (R9700 engine + two XTX helpers). The arms differ only in the build their r3_moe_worker comes from (the harness takes the helper from <binary>/../radiance_home); the engine kernels come from the baseline build's RAD_HOME in both. Combine off in both. Needs the feat/rad20-blocking-lanes helper build; kept as the RAD20 record. Set RAD_BIN_BASE, RAD_BIN_NEW, RAD_HOME and R9700_BDF before use (tools/lab/radiance/rad20-rad18-e2e.sh does).",
+ "schema_version": 1,
+ "engine": "radiance",
+ "evidence_role": "diagnostic",
+ "execution_evidence": "observe",
+ "model": "${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad",
+ "server_args": [
+  "--radiance-home",
+  "${RAD_HOME}",
+  "--kernels",
+  "libr4d,libr3moe,libref",
+  "--placement",
+  "expert_tiered",
+  "--ngram-placement",
+  "ram",
+  "--max-num-seqs",
+  "6",
+  "--max-num-batched-tokens",
+  "4096",
+  "--checkpoint-interval",
+  "4096",
+  "--kv-cache-dtype",
+  "fp8",
+  "--num-speculative-tokens",
+  "3",
+  "--tp",
+  "1",
+  "--host-pool-mib",
+  "22528",
+  "--max-model-len",
+  "32768"
+ ],
+ "environment": {
+  "HIP_VISIBLE_DEVICES": "0",
+  "ROCR_VISIBLE_DEVICES": "2",
+  "RADIANCE_HOME": "${RAD_HOME}",
+  "R3_MOE_WORKER_SKIP_OWNED": "1"
+ },
+ "expected_execution": {
+  "backend": "ROCm",
+  "architectures": [
+   "gfx1201"
+  ],
+  "locators": [
+   "${R9700_BDF}"
+  ]
+ },
+ "bench_configs": "mtp-dual",
+ "required_metrics": [
+  "pp1024_tps",
+  "tg512_tps"
+ ],
+ "repetitions": 1,
+ "health_timeout_s": 900,
+ "arms": [
+  {
+   "name": "polling",
+   "mode": "stock",
+   "shutdown_method": "sigint",
+   "binary": "${RAD_BIN_BASE}",
+   "settings": {
+    "R3_MOE_WORKER": "1",
+    "R3_MOE_WORKER_DEVICES": "0 1",
+    "R3_MOE_WORKER_MOE_DOWN_TILE": "1",
+    "R3_MOE_WORKER_ENGINE_RANKS": "1",
+    "R3_MOE_WORKER_MAX_ROWS": "4096",
+    "R3_MOE_WORKER_SMALL_ROWS": "8",
+    "R3_MOE_WORKER_MIB": "22528",
+    "R3_MOE_WORKER_HEAT": "${BC_WORK_ROOT}/runs/perf51/heat.rank0.hot-first",
+    "R3_MOE_WORKER_COMBINE": "0"
+   }
+  },
+  {
+   "name": "blocking",
+   "mode": "stock",
+   "shutdown_method": "sigint",
+   "binary": "${RAD_BIN_NEW}",
+   "settings": {
+    "R3_MOE_WORKER": "1",
+    "R3_MOE_WORKER_DEVICES": "0 1",
+    "R3_MOE_WORKER_MOE_DOWN_TILE": "1",
+    "R3_MOE_WORKER_ENGINE_RANKS": "1",
+    "R3_MOE_WORKER_MAX_ROWS": "4096",
+    "R3_MOE_WORKER_SMALL_ROWS": "8",
+    "R3_MOE_WORKER_MIB": "22528",
+    "R3_MOE_WORKER_HEAT": "${BC_WORK_ROOT}/runs/perf51/heat.rank0.hot-first",
+    "R3_MOE_WORKER_COMBINE": "0"
+   }
+  }
+ ]
+}
