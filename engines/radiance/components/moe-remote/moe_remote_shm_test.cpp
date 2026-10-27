@@ -103,7 +103,7 @@ int main() {
     q->route_count = 1; q->route_offset = h->route_offset[0]; q->activation_offset = h->activation_offset[0];
     q->activation_stride = kHidden * 2; q->result_offset[0] = h->result_offset[0]; q->result_stride[0] = kHidden * 2;
     store(&q->sequence, seq); store(&h->publish_sequence, seq); futex_wake(&h->publish_sequence);
-    wait_until(&q->completion_sequence, seq);
+    check(wait_until(&q->completion_sequence, seq, &h->helper_fault), "completion arrives without a fault");
     check(q->status == 0 && ptr<uint16_t>(m, q->result_offset[0])[0] == 0x4000, "q->status == 0 && ptr<uint16_t>(m, q->re");
 
     helper.join(); munmap(m, l.bytes); close(fd); shm_unlink(name.c_str());
