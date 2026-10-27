@@ -57,6 +57,7 @@ from .slice import (
 )
 from .remote_run import DEFAULT_STALL_MINUTES, cmd_remote
 from .slice_lab import cmd_slice_lab
+from .slice_lab_worktrees import cmd_lab_prune, cmd_lab_status
 from .tuning import (
     cmd_execution_audit,
     cmd_tuning_rollup,
@@ -226,7 +227,19 @@ def build_parser() -> argparse.ArgumentParser:
     )
     slice_status_cmd.add_argument("--remote", default="origin")
     slice_status_cmd.add_argument("--base", default="main")
-    slice_status_cmd.set_defaults(func=cmd_slice_status)
+    slice_status_cmd.add_argument(
+        "--lab",
+        action="store_true",
+        help="show the configured lab host's worktrees instead of the local checkout",
+    )
+    slice_status_cmd.add_argument(
+        "--host",
+        default=None,
+        help="with --lab: configured [host.*] name; defaults to environment.local.toml default-host",
+    )
+    slice_status_cmd.set_defaults(
+        func=lambda a: cmd_lab_status(a) if a.lab else cmd_slice_status(a)
+    )
 
     slice_lab = slice_sub.add_parser(
         "lab", help="run a detached slice worktree on a configured lab host"
@@ -253,7 +266,19 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="delete eligible merged branches and clean orphaned worktrees",
     )
-    slice_prune.set_defaults(func=cmd_slice_prune)
+    slice_prune.add_argument(
+        "--lab",
+        action="store_true",
+        help="prune the configured lab host's removable worktrees instead of the local checkout",
+    )
+    slice_prune.add_argument(
+        "--host",
+        default=None,
+        help="with --lab: configured [host.*] name; defaults to environment.local.toml default-host",
+    )
+    slice_prune.set_defaults(
+        func=lambda a: cmd_lab_prune(a) if a.lab else cmd_slice_prune(a)
+    )
 
     apply_cmd = sub.add_parser("apply", help="apply the overlay and patches")
     apply_cmd.add_argument(
