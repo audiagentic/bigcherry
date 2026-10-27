@@ -235,6 +235,32 @@ every 64-row step combined):
 | Helper at 20 GiB with the final kernels | decode 89.2 (vs ~108.5 at 22 GiB), no prefill gain | RAD06 08:10 |
 | Tensor-splitting every helper-owned expert across both XTX (each card half the intermediate columns, partials summed; the old `ENGINE_RANKS=2` slice mode) instead of splitting experts between the cards | not built. Trace 2026-10-23 (`helper-trace-ab.json`, 2 runs x 2 arms, combine off): totals are balanced (1.38M vs 1.46M routes) but each step is not: the busier helper gets +16% routes over the mean on the median step, and the slower helper's GPU time exceeds the per-step mean by ~9-10% (prefill 525 vs 480 ms, decode 5,400 vs 4,870 ms over the bench). Removing that skew is the most a split could win, about 2-3% end to end, against narrower 384/256 GEMMs (320/320 does not fit the 128-channel groups), every route sent to both cards, and the same two full-width partials to sum. The helper also refuses two helpers with `ENGINE_RANKS=2` today (`r3_moe_worker.cpp:225`). GPT review agrees (Megatron recommends expert-TP 1 for fine-grained experts). Better levers: round-trip overlap (RAD21), replicating high-variance hot experts on both cards (RAD22) | RAD19 notes, RAD22, GPT req_bigcherry_e3de4a2ecbd9 |
 
+## Helper waiting, queues and idle power (RAD20, 2026-10-23 to 10-27)
+
+The XTX helpers drew ~95 W each with no requests. Two causes, both confirmed on Brutus: (1) any pending AQL wait
+(`hipStreamWaitValue32` or a barrier packet) makes the MEC busy-poll it; (2) more than 8 compute queues per XTX
+(KFD `num_cp_queues` = 8) keeps MES oversubscribed and permanently busy. Cause 2 also dispatches faster (launch gap
+p95 3.6 vs 7.6 us), which is where power save's decode cost comes from. Not fixed by ROCm version (7.x and TheRock
+10.1 identical) or the stock kernel's MES timer.
+
+| Attempt | Result | Why | Evidence |
+|---|---|---|---|
+| Burst gating (Option A, PR #422): small-lane waits armed only inside engine bursts, parked between them (protocol v17 `burst`/`park` handshake) | idle still ~95 W at first | 13 queues per XTX: cause 2 | `burst-idle.sh` |
+| + open queues only for the lanes a helper serves (13 -> 5) | idle 6-12 W, PASS; decode -0.5%, pp1024 -1.1%, 2-6 streams -1 to -2% | fewer queues = MES not oversubscribed = slower dispatch | `rad20-burst-ab-10270752`, `-10270937` |
+| Stale-publish guard reading `q->sequence` over PCIe | +1 us a request | host read from GPU | replaced by device publish limit |
+| `perf` mode (armed always, gated only on park) | no gain | the cost is the queue count, not arming | removed |
+| Power save as a toggle (`R3_MOE_WORKER_POWER_SAVE`, default 1); off opens all 10 lanes | off = main (gap p95 3.56 vs 3.60 us) | | queue probe |
+| Queue warm-up: placeholder HSA queues switched active/parked per burst (`AMDKFD_IOC_UPDATE_QUEUE`) to oversubscribe only during bursts | harness: parked 9 W / active 91 W, 140-260 us a switch; live: CPF page fault on both XTX, MES REMOVE_QUEUE failure, mode-1 reset, engine hung 8.7 h | switching queues while other queues run kernels; the harness never did that | `rad20-burst-profile-10262303`; shelved, evaluated, default off |
+| Option B: barrier-packet wake instead of stream wait (bc2) | no faster (0.3-0.9 us slower p50), no power saving (96-98 W pending) | any pending wait is cause 1 | PRs #423-#425 |
+| GPU wait kernel with `s_sleep` polling | not approved | resident wave keeps the GPU busy and polls host memory | owner rule 2026-10-25 |
+| `hipDeviceScheduleBlockingSync` / blocking events | not yet tried for the lanes | planned next (small lane, completion side) | RAD20 |
+| `hipLaunchHostFunc` / graph host node -> futex/eventfd wake | not tried; rejected at design (GPT, 10-23), unmeasured | callback stalls the engine stream; only viable for the large lane | RAD20 notes |
+| Two-stream helper halves (threading inside one card) | hung | libr3 MoE GEMM not safe concurrently on one card | RAD02, reverted 563455f8 |
+
+Still polling: small-lane completion and large-lane request waits yield-spin inside bursts (~100% of a core per lane
+thread, 6 threads per helper); they sleep on the burst futex between bursts. Engine does not detect a dead helper
+mid-request (the 8.7 h hang).
+
 ## Where the critical path is (RAD06 unprofiled trace, 2026-10-18)
 
 From the helper TRACE lines of a full benchmark cell (`R3_MOE_WORKER_TRACE=1`, 36,643 of 36,729 layer-steps paired, no throughput cost). Exposed wait is the engine's wait for the slower helper, on the R9700 clock.
