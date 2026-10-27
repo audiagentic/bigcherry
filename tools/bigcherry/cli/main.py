@@ -1578,6 +1578,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     _register_workspace(sub)
 
+    from .power_cmds import register as _register_power
+
+    _register_power(sub)
+
     ab.set_defaults(
         func=lambda args: _ab_benchmark_main(
             [
