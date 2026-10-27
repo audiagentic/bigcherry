@@ -581,6 +581,9 @@ int mailbox_init(const RadParam*, int, int rank, int world_size, void** out) {
     return RAD_OK;
 }
 
+/* Host callback (no HIP calls): the publish before it has run, so the request word is set; wake the large lane. */
+void wake_large_lane(void* header) { notify(static_cast<Header*>(header)); }
+
 int publish_launch(const RadArgs* a, RadStream stream) {
     if (!a || !a->instance || !stream || a->n_t != 6) return RAD_E_INVAL;
     auto* d = static_cast<R3MoeMailboxDevice*>(a->instance);
@@ -653,7 +656,29 @@ int publish_launch(const RadArgs* a, RadStream stream) {
                        fuse_stage ? static_cast<const uint8_t*>(a->t[3].data) : nullptr,
                        static_cast<const float*>(a->t[4].data),
                        static_cast<const uint16_t*>(a->t[2].data), d->cpu_ref, d->combine);
-    return hipGetLastError() == hipSuccess ? RAD_OK : RAD_E_DEVICE;
+    if (hipGetLastError() != hipSuccess) return RAD_E_DEVICE;
+    /* RAD26: a large-lane step wakes the helper's sleeping large lane once the publish has run. The callback goes on
+     * the wake stream behind an event, so the engine stream is not held while it runs. Under stream capture the side
+     * stream would have to rejoin, so the callback is captured on the engine stream itself instead. */
+    if ((uint32_t)rows > d->small_rows_max) {
+        hipStreamCaptureStatus cap = hipStreamCaptureStatusNone;
+        if (hipStreamIsCapturing((hipStream_t)stream, &cap) != hipSuccess) return RAD_E_DEVICE;
+        hipError_t e;
+        if (cap == hipStreamCaptureStatusNone) {
+            auto* ws = static_cast<hipStream_t>(d->wake_stream);
+            auto* we = static_cast<hipEvent_t>(d->wake_event);
+            e = hipEventRecord(we, (hipStream_t)stream);
+            if (e == hipSuccess) e = hipStreamWaitEvent(ws, we, 0);
+            if (e == hipSuccess) e = hipLaunchHostFunc(ws, wake_large_lane, d->host_header);
+        } else {
+            static std::atomic<bool> said{false};
+            if (!said.exchange(true))
+                std::fprintf(stderr, "libr3moe: large-lane wake captured on the engine stream (stream capture)\n");
+            e = hipLaunchHostFunc((hipStream_t)stream, wake_large_lane, d->host_header);
+        }
+        if (e != hipSuccess) return RAD_E_DEVICE;
+    }
+    return RAD_OK;
 }
 
 int mask_ref_launch(const RadArgs* a, RadStream stream) {

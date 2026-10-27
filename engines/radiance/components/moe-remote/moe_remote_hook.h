@@ -50,6 +50,13 @@ struct R3MoeMailboxDevice {
     uint32_t mask_only = 0;
     uint32_t cpu_ref = 0;
     uint32_t combine = 0;   /* R3_MOE_WORKER_COMBINE=1: ask helper 0 for one combined fp16 row a token on the large lane */
+    /* RAD26: a large-lane request wakes the helper's sleeping large lane from the host. After the publish kernel the
+     * launch records wake_event, wake_stream waits on it and a host callback bumps Header::notify, so the engine's own
+     * stream is not held by the callback (~4.5 us instead of ~107 us, rad26-wake-bench). */
+    void* host_header = nullptr;      /* this process's CPU mapping of the segment header */
+    void* wake_stream = nullptr;      /* hipStream_t */
+    void* wake_event = nullptr;       /* hipEvent_t */
+    uint32_t small_rows_max = 0;      /* steps above this go to the large lane (Header::small_class_rows) */
 };
 
 extern "C" int r3_moe_mailbox_enabled(void);

@@ -142,13 +142,22 @@ private:
     }
 
     /* Large lane: wait for the engine's request word, read its rows, launch that size. The engine publishes from GPU
-     * code, which cannot wake a futex, so inside a burst this thread spins on the word; between bursts it sleeps. */
+     * code, and a host callback queued behind that publish bumps Header::notify (RAD26), so inside a burst this
+     * thread sleeps on the notify generation; between bursts it sleeps on the burst word. */
     void run_large(uint32_t lane) {
         using namespace r3::moe_shm;
+        uint32_t* const req = &h_->lane[lane].request_sequence;
         for (uint32_t next = 1; !stopping();) {
-            if (seq_after(next, load(&h_->lane[lane].request_sequence))) {
-                if (!(load(&h_->burst) & 1u) && !wait_burst(h_)) break;
-                std::this_thread::yield();
+            if (seq_after(next, load(req))) {
+                if (!(load(&h_->burst) & 1u)) {
+                    if (!wait_burst(h_)) break;
+                    continue;
+                }
+                /* Woken by the engine's publish callback, the burst ending, or a stop/fault (raise_fault). */
+                const WaitResult r = wait_for(h_, nullptr, [&] {
+                    return !seq_after(next, load(req)) || !(load(&h_->burst) & 1u) || stopping();
+                });
+                if (r != WaitResult::Ready) { request_stop(); break; }   /* a helper failed, or the wait itself did */
                 continue;
             }
             const Request* q = lane_request(map_, lane, next);

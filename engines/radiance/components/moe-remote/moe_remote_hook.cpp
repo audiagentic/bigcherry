@@ -186,6 +186,7 @@ void burst_transition(int active) {
         if (active) g.watch.notice();
         (void)__atomic_fetch_add(&h->burst, 1u, __ATOMIC_SEQ_CST);
         (void)futex_wake(&h->burst);
+        notify(h);   /* a large lane sleeping on Header::notify inside the burst sees it end */
         if (active)
             for (uint32_t lane = 0; lane < kLanes; ++lane) {
                 uint32_t* park = &h->lane[lane].park;
@@ -368,6 +369,10 @@ void close_mailbox() {
         RankState& s = g.rank[r];
         if (!s.ready) continue;
         if (s.device >= 0) (void)hipSetDevice(s.device);
+        /* Pending wake callbacks touch the header: let them finish before anything is unmapped. */
+        if (s.dev.wake_stream) (void)hipStreamSynchronize(static_cast<hipStream_t>(s.dev.wake_stream));
+        if (s.dev.wake_event) (void)hipEventDestroy(static_cast<hipEvent_t>(s.dev.wake_event));
+        if (s.dev.wake_stream) (void)hipStreamDestroy(static_cast<hipStream_t>(s.dev.wake_stream));
         report_shadow(r, s);
         write_heat(r, s);
         if (s.dev.heat) (void)hipFree(s.dev.heat);
@@ -523,6 +528,21 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
             s.dev.heat = nullptr;
     }
     s.dev.helpers = helpers;
+    /* RAD26: the large lane sleeps until a host callback after the publish wakes it (moe_remote_hook.h). */
+    s.dev.host_header = g.hdr;
+    for (uint32_t c = 0; c < g.hdr->small_class_count && c < kSmallClasses; ++c)
+        s.dev.small_rows_max = std::max(s.dev.small_rows_max, g.hdr->small_class_rows[c]);
+    {
+        hipStream_t ws = nullptr;
+        hipEvent_t we = nullptr;
+        if (!hip_ok(hipStreamCreateWithFlags(&ws, hipStreamNonBlocking), "create large-lane wake stream") ||
+            !hip_ok(hipEventCreateWithFlags(&we, hipEventDisableTiming), "create large-lane wake event")) {
+            if (ws) (void)hipStreamDestroy(ws);
+            return RAD_E_DEVICE;
+        }
+        s.dev.wake_stream = ws;
+        s.dev.wake_event = we;
+    }
     s.dev.shadow = shadow ? 1u : 0u;
     /* 1: add the engine's captured rows; 2: same late publish/mask/rescatter, but add the helper's rows. */
     {
