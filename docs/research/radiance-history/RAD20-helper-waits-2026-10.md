@@ -18,6 +18,8 @@ KFD `add_queue_mes`/`remove_queue_mes`; `update_queue` with `queue_percent = 0` 
 
 ## Attempts
 
+The original blocking-lanes component change (per-slot blocking events + GPU-side arrival waits; ~-14% decode, see FINDINGS) is superseded and kept only on branch feat/rad20-blocking-lanes (commits up to 642a5a241); its lab harnesses are on main.
+
 | Attempt | Result | Why | Evidence |
 |---|---|---|---|
 | Burst gating (Option A, PR #422): small-lane waits armed only inside engine bursts, released and drained at park (protocol v17 `Header::burst`, `LaneSignal::park`, Dekker seq_cst handshake) | idle still ~95 W | 13 queues per XTX (cause 2) | `burst-idle.sh` |
