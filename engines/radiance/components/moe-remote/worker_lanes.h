@@ -248,6 +248,7 @@ private:
     Park park_lane(uint32_t lane, uint32_t* park, uint32_t next, uint32_t* done_seen) {
         using namespace r3::moe_shm;
         __atomic_store_n(park, kParkDraining, __ATOMIC_SEQ_CST);
+        test_stop_at("park_drain", cfg_.helper_index);
         if (__atomic_load_n(&h_->burst, __ATOMIC_SEQ_CST) & 1u) {
             store(park, 0u);
             notify(h_);   /* Header::notify: the engine sleeps on the generation word */
