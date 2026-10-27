@@ -790,8 +790,7 @@ public:
                              double* sampled_us, uint64_t* samples) {
         if (lane >= r3::moe_shm::kLanes || !sampled_us || !samples) return false;
         LaneWork& w = lane_[lane];
-        if (!w.sample_pending ||
-            (int32_t)(done_sequence - w.sample_sequence) < 0)
+        if (!w.sample_pending || r3::moe_shm::seq_after(w.sample_sequence, done_sequence))
             return true;
         float ms = 0.0f;
         if (!hip_ok(hipEventElapsedTime(&ms, w.sample_start, w.sample_stop),

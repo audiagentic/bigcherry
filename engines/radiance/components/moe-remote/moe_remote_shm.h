@@ -456,6 +456,10 @@ inline bool clear_owned(void* base, uint32_t layer, uint32_t expert, uint32_t he
     return true;
 }
 
+/* Sequence order modulo 2^32: a is after b when it is less than half the space ahead (defined unsigned arithmetic, no
+ * signed cast). Holds while fewer than 2^31 sequences are in flight between the two, which the protocol keeps. */
+constexpr bool seq_after(uint32_t a, uint32_t b) { return a != b && (uint32_t)(a - b) < 0x80000000u; }
+
 inline uint32_t load(const uint32_t* p) { return __atomic_load_n(p, __ATOMIC_ACQUIRE); }
 inline void store(uint32_t* p, uint32_t v) { __atomic_store_n(p, v, __ATOMIC_RELEASE); }
 inline uint32_t fetch_add(uint32_t* p, uint32_t v) { return __atomic_fetch_add(p, v, __ATOMIC_ACQ_REL); }
