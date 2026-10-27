@@ -180,19 +180,34 @@ __global__ void mailbox_publish_kernel(
         if (threadIdx.x == 0) nr = 0;
         __syncthreads();
         Route* route = reinterpret_cast<Route*>(base + h->route_offset[slot]);
-        for (uint32_t i = threadIdx.x; i < rows * top_k; i += blockDim.x) {
-            const int32_t le = ids[i] - expert_base;
-            const bool in_range = le >= 0 && (uint32_t)le < n_expert && (uint32_t)le < h->expert_count;
-            /* R3_MOE_WORKER_HISTOGRAM: every route this step makes, owned or not, counted once (first slot). */
-            if (heat && k == 0 && in_range) atomicAdd(heat + (size_t)layer * h->expert_count + (uint32_t)le, 1u);
-            if (!in_range || slot_map[(uint32_t)le] < 0 || !owner_has(own, layer, (uint32_t)le, h->expert_count))
-                continue;
-            const uint32_t p = atomicAdd(&nr, 1u);
-            route[p].token = (int32_t)(i / top_k);
-            route[p].expert = le;
-            route[p].weight_bf16 = ew[i];
-            route[p].slot = (uint16_t)(i % top_k);
-            if (!shadow) ids[i] = -1;
+        /* RAD29: one shared-memory reservation a wave, not one a route. Every lane of the block runs every iteration
+         * (the bound is uniform), so the ballot and the shuffle always see the whole wave; an out-of-range lane just
+         * votes no. A wave's accepted routes take one contiguous span, in lane order. */
+        const uint32_t n_cand = rows * top_k;
+        for (uint32_t base_i = 0; base_i < n_cand; base_i += blockDim.x) {
+            const uint32_t i = base_i + threadIdx.x;
+            int32_t le = -1;
+            bool take = false;
+            if (i < n_cand) {
+                le = ids[i] - expert_base;
+                const bool in_range = le >= 0 && (uint32_t)le < n_expert && (uint32_t)le < h->expert_count;
+                /* R3_MOE_WORKER_HISTOGRAM: every route this step makes, owned or not, counted once (first slot). */
+                if (heat && k == 0 && in_range) atomicAdd(heat + (size_t)layer * h->expert_count + (uint32_t)le, 1u);
+                take = in_range && slot_map[(uint32_t)le] >= 0 && owner_has(own, layer, (uint32_t)le, h->expert_count);
+            }
+            const uint64_t mask = __ballot(take);
+            const uint32_t lane = __lane_id();
+            uint32_t span = 0;
+            if (lane == 0 && mask) span = atomicAdd(&nr, (uint32_t)__popcll(mask));
+            span = __shfl(span, 0);
+            if (take) {
+                const uint32_t p = span + (uint32_t)__popcll(mask & ((1ull << lane) - 1ull));
+                route[p].token = (int32_t)(i / top_k);
+                route[p].expert = le;
+                route[p].weight_bf16 = ew[i];
+                route[p].slot = (uint16_t)(i % top_k);
+                if (!shadow) ids[i] = -1;
+            }
         }
         __syncthreads();
         if (threadIdx.x == 0) step_nr[k] = nr;
