@@ -3,8 +3,9 @@
 # host's device inventory, from the environment settings), alternating the two modes over several decode cadences.
 # Prints one RESULT line per run and a per-cadence summary (starvation, lane CPU).
 # Usage (from a checkout, e.g. through `bigcherry slice lab`): rad25-event-wake.sh [repeats=3] [requests=20000]
+#   [periods="100 150 300"] [variants=all, or a space-separated subset of the names below]
 set -u
-REPEATS=${1:-3}; N=${2:-20000}
+REPEATS=${1:-3}; N=${2:-20000}; PERIODS=${3:-100 150 300}; ONLY=${4:-}
 set --   # the env script reads its own arguments
 source tools/env/bigcherry-env.sh >/dev/null
 export ROCM_PATH=${ROCM_PATH:-/opt/rocm-7.2.4}
@@ -28,7 +29,8 @@ VARIANTS=(
   "blockdev-mwaitx|blockdev|HSA_ENABLE_MWAITX=1"
   "blockdev-noactive-mwaitx|blockdev|ROC_ACTIVE_WAIT_TIMEOUT=0 HSA_ENABLE_MWAITX=1"
 )
-for period in 100 150 300; do
+[ -n "$ONLY" ] && { keep=(); for v in "${VARIANTS[@]}"; do [[ " $ONLY " == *" ${v%%|*} "* ]] && keep+=("$v"); done; VARIANTS=("${keep[@]}"); }
+for period in $PERIODS; do
     for r in $(seq $REPEATS); do
         n=${#VARIANTS[@]}
         for k in $(seq 0 $((n - 1))); do   # rotate the starting variant each repeat
