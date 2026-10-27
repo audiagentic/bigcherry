@@ -101,8 +101,8 @@ class ClassifierTests(unittest.TestCase):
 
     def test_inspection_joins_flags(self):
         out = (
-            "STATE\t/lab/main\t0\t1\nSTATE\t/lab/work/worktrees/clean\t0\t1\n"
-            "STATE\t/lab/work/worktrees/dirty\t1\t1\nSTATE\t/lab/work/worktrees/unique\t0\t0\n"
+            "STATE\t/lab/main\t0\t1\t0\nSTATE\t/lab/work/worktrees/clean\t0\t1\t0\n"
+            "STATE\t/lab/work/worktrees/dirty\t1\t1\t0\nSTATE\t/lab/work/worktrees/unique\t0\t0\t0\n"
             "LIST-BEGIN\n" + PORCELAIN
         )
         states = [state for _tree, state in lab.parse_inspection(out)]
