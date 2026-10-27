@@ -160,7 +160,9 @@ void publish_layer_map(int layer, int n_expert, const int32_t* slot_of_expert) {
     /* The plugin ABI gives this callback no error return. A failed helper leaves helper_fault raised (sticky), so the
      * engine's first remote MoE wait traps; the map wait just must not hang. */
     uint32_t* consumed = &g.hdr->layer_map_consumed[layer];
-    if (wait_for(g.hdr, [&] { return load(consumed) == 1; }) != WaitResult::Ready)
+    const WaitResult r = wait_for(g.hdr, [&] { return load(consumed) == 1; });
+    if (r == WaitResult::Error) raise_fault(g.hdr);   /* a wait that cannot complete is terminal too */
+    if (r != WaitResult::Ready)
         std::fprintf(stderr, "libr3: R3_MOE_WORKER layer %d: helper failed before consuming its map\n", layer);
 }
 
@@ -188,7 +190,9 @@ void burst_transition(int active) {
             for (uint32_t lane = 0; lane < kLanes; ++lane) {
                 uint32_t* park = &h->lane[lane].park;
                 /* Fault: the engine's GPU wait traps on the next remote step; nothing to wait for here. */
-                (void)wait_for(h, [&] { return __atomic_load_n(park, __ATOMIC_SEQ_CST) != kParkDraining; });
+                if (wait_for(h, [&] { return __atomic_load_n(park, __ATOMIC_SEQ_CST) != kParkDraining; }) ==
+                    WaitResult::Error)
+                    raise_fault(h);   /* the drain was not seen to finish: never publish into released waits */
             }
     }
     if (trace) {

@@ -44,7 +44,7 @@ for sc in $SCENARIOS; do
         decode)
             curl -sN -m $((BOUND + 120)) $URL -d "$(body 'Write a long story about a lighthouse keeper.' 2048 1)" > $log/response.txt 2>&1 & C=$!
             for i in $(seq 600); do grep -q '"text"' $log/response.txt 2>/dev/null && break; sleep 0.2; done
-            grep -q '"text"' $log/response.txt || echo "  h$victim $sc: no tokens before the kill" | tee -a $OUT/summary.txt
+            grep -q '"text"' $log/response.txt || { echo "FAIL h$victim $sc: no tokens before the kill (decode not confirmed)" | tee -a $OUT/summary.txt; FAILED=1; }
             kill -9 $H && T0=$(now) || { echo "FAIL h$victim $sc: kill" | tee -a $OUT/summary.txt; FAILED=1; } ;;
         prefill)
             curl -s -m $((BOUND + 120)) $URL -d "$(body "$LONG Summarise." 32 0)" > $log/response.txt 2>&1 & C=$!
