@@ -42,7 +42,7 @@ static double self_cpu_ms() {
 }
 
 int main(int argc, char** argv) {
-    if (argc < 2 || (std::strcmp(argv[1], "yield") && std::strcmp(argv[1], "block") && std::strcmp(argv[1], "blockdev"))) {
+    if (argc < 2 || (std::strcmp(argv[1], "yield") && std::strcmp(argv[1], "block") && std::strcmp(argv[1], "blockdev") && std::strcmp(argv[1], "blockonly"))) {
         std::fprintf(stderr, "usage: %s yield|block|blockdev [requests] [period_us] [work_us] [depth]\n", argv[0]);
         return 2;
     }
@@ -69,7 +69,10 @@ int main(int argc, char** argv) {
     CHECK(hipHostGetDevicePointer((void**)&d_req, req, 0));
     CHECK(hipHostGetDevicePointer((void**)&d_done, done, 0));
     std::vector<hipEvent_t> ev(depth);
-    for (auto& e : ev) CHECK(hipEventCreateWithFlags(&e, hipEventBlockingSync | hipEventDisableTiming));
+    /* ROCm selects the blocking policy only when the flags are exactly hipEventBlockingSync (hip_event.cpp):
+     * blockonly uses that alone; block/blockdev keep the combined flags, as production would. */
+    const unsigned evflags = std::strcmp(argv[1], "blockonly") ? (hipEventBlockingSync | hipEventDisableTiming) : hipEventBlockingSync;
+    for (auto& e : ev) CHECK(hipEventCreateWithFlags(&e, evflags));
 
     std::atomic<uint32_t> queued{0};
     auto enqueue = [&](uint32_t i) {

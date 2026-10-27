@@ -5,13 +5,15 @@
 #   idle     kill, then send a request
 #   decode   stream a long generation; kill once tokens are arriving (decode confirmed in flight)
 #   prefill  a ~16k-token prompt (several seconds of prefill); kill 0.5 s after it is sent
+#   park     the victim stops itself (SIGSTOP, R3_MOE_WORKER_TEST_STOP_AT=park_drain:<i>) while draining a lane after a
+#            burst; kill it there, then send a request (the engine finds the lane still flagged draining)
 # A scenario passes only when: the kill succeeded, the engine logged the watcher's fault for that pid, and the request
 # ended with an error (not text) within RAD20_KILL_BOUND_S (default 60) of the kill. Whether the engine process then
 # exits is recorded separately (by design it stays up, refusing requests, until stopped).
-# Usage (from a checkout): rad20-helper-kill.sh [victim helper indexes="1 0"] [scenarios="idle decode prefill"]
+# Usage (from a checkout): rad20-helper-kill.sh [victim helper indexes="1 0"] [scenarios="idle decode prefill park"]
 set -u
 VICTIMS=${1:-1 0}
-SCENARIOS=${2:-idle decode prefill}
+SCENARIOS=${2:-idle decode prefill park}
 BOUND=${RAD20_KILL_BOUND_S:-60}
 set --   # the env script reads its own arguments
 source tools/env/bigcherry-env.sh >/dev/null
@@ -31,7 +33,8 @@ FAILED=0
 for victim in $VICTIMS; do
 for sc in $SCENARIOS; do
     log=$OUT/h$victim-$sc; mkdir -p $log
-    bash $L start --build $B > $log/launch.log 2>&1 || { echo "FAIL h$victim $sc: start" | tee -a $OUT/summary.txt; FAILED=1; bash $L stop >/dev/null 2>&1; continue; }
+    stop_at=""; [ $sc = park ] && stop_at="R3_MOE_WORKER_TEST_STOP_AT=park_drain:$victim"
+    env $stop_at bash $L start --build $B > $log/launch.log 2>&1 || { echo "FAIL h$victim $sc: start" | tee -a $OUT/summary.txt; FAILED=1; bash $L stop >/dev/null 2>&1; continue; }
     E=$(cat $RUN/pids/engine); H=$(cat $RUN/pids/helper$victim)
     elog=$(ls -t $RUN/engine-*.log | head -1)
     case $sc in
@@ -47,6 +50,12 @@ for sc in $SCENARIOS; do
             curl -s -m $((BOUND + 120)) $URL -d "$(body "$LONG Summarise." 32 0)" > $log/response.txt 2>&1 & C=$!
             sleep 0.5
             kill -9 $H && T0=$(now) || { echo "FAIL h$victim $sc: kill" | tee -a $OUT/summary.txt; FAILED=1; } ;;
+        park)
+            curl -s -m 120 $URL -d "$(body 'One short burst.' 16 0)" > $log/first.txt 2>&1   # the burst ends -> park
+            for i in $(seq 300); do [ "$(ps -o stat= -p $H 2>/dev/null | cut -c1)" = T ] && break; sleep 0.2; done
+            [ "$(ps -o stat= -p $H 2>/dev/null | cut -c1)" = T ] || { echo "FAIL h$victim $sc: helper never stopped at park_drain" | tee -a $OUT/summary.txt; FAILED=1; }
+            kill -9 $H && T0=$(now) || { echo "FAIL h$victim $sc: kill" | tee -a $OUT/summary.txt; FAILED=1; }
+            curl -s -m $BOUND $URL -d "$(body 'After the kill.' 64 0)" > $log/response.txt 2>&1 & C=$! ;;
     esac
     ended=""
     while :; do
