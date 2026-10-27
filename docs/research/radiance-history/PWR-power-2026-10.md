@@ -34,9 +34,15 @@ Decode 93.5 tok/s (6.6 J/token), prefill 3,312 tok/s (0.21 J/token). Sums of med
 Prior art agrees (szafranski/rx7900xtx-qwen3.8-27b-tuning: -125 mV raises XTX tok/s at a fixed cap; a clock cap pins
 the voltage so an offset stops working under it; per-card stable offsets differ).
 
+## -125 mV soak (run pwr01-baseline-10272216)
+
+40 minutes at -125 mV on both XTX, 10-minute idle/decode/prefill/idle phases: XTX 133/177 W per card in decode/prefill
+(stock 158/200), decode 90.5 tok/s and prefill 3,344 tok/s (stock 89-91 and 3,304), 53 decode responses with the same two
+texts as at stock, no amdgpu faults or resets. CPU package read 89/86 W (stock 77-82) in this single run - check against
+a matched stock soak before reading anything into it. Both cards restored to 0 mV afterwards.
+
 ## Open
 
-- -125 mV soak (40 min, sustained decode/prefill) - result recorded in PWR02.
 - R9700: 210 W cap and its own voltage-offset sweep (each card calibrated separately).
 - PWR03: helper processes on the four E-cores vs default placement, by package watts.
 - PWR04: settings live per card in the environment config (`[host.*.devices.power]`, with the validating run as
