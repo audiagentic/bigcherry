@@ -93,8 +93,7 @@ private:
             pidfd[i] = (int)::syscall(SYS_pidfd_open, pid, 0);
             if (pidfd[i] < 0 && errno == ESRCH) return fault(i, pid);
             if (pidfd[i] < 0)
-                std::fprintf(stderr, "libr3: R3_MOE_WORKER helper watch: pidfd_open(%d) failed (%s)
-", pid,
+                std::fprintf(stderr, "libr3: R3_MOE_WORKER helper watch: pidfd_open(%d) failed (%s)\n", pid,
                              std::strerror(errno));
             __atomic_store_n(&watched_[i], 1u, __ATOMIC_RELEASE);
         }
@@ -107,8 +106,7 @@ private:
             if (pidfd[i] >= 0) { fds[n] = {pidfd[i], POLLIN, 0}; who[n++] = i; }
         if (::poll(fds, n, -1) < 0) {
             if (errno == EINTR) return true;
-            std::fprintf(stderr, "libr3: R3_MOE_WORKER helper watch: poll failed (%s)
-", std::strerror(errno));
+            std::fprintf(stderr, "libr3: R3_MOE_WORKER helper watch: poll failed (%s)\n", std::strerror(errno));
             return false;
         }
         if (fds[0].revents) {

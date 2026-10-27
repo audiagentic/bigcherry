@@ -158,8 +158,7 @@ void publish_layer_map(int layer, int n_expert, const int32_t* slot_of_expert) {
     }
     g.watch.notice();
     if (!wait_until(&g.hdr->layer_map_consumed[layer], 1, &g.hdr->helper_fault))
-        std::fprintf(stderr, "libr3: R3_MOE_WORKER layer %d: helper failed before consuming its map
-", layer);
+        std::fprintf(stderr, "libr3: R3_MOE_WORKER layer %d: helper failed before consuming its map\n", layer);
 }
 
 /* An inference burst begins or ends (RAD20: the helpers arm GPU waits only inside a burst, so their queues are
