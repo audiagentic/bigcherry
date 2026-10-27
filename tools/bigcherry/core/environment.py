@@ -84,6 +84,43 @@ class Device:
     model: str
     vram_mib: int
     locator: str | None = None
+    #: PWR04: this card's calibrated power settings (``[host.*.devices.power]``); ``None`` leaves the driver defaults
+    power: "DevicePower | None" = None
+
+
+@dataclass(frozen=True)
+class DevicePower:
+    """Power settings calibrated for one physical card (PWR02/PWR04). Every field is optional and per card: two cards
+    of the same model can need different values, so nothing here is derived from the model name. ``evidence`` names the
+    run that validated the setting (offset, soak, output identity, measured watts and tok/s)."""
+
+    vddgfx_offset_mv: int | None = None   #: OverDrive graphics voltage offset; negative undervolts
+    sclk_max_mhz: int | None = None       #: OverDrive maximum shader clock
+    power_cap_w: int | None = None        #: board power cap
+    evidence: str = ""
+
+
+_POWER_LIMITS = {"vddgfx-offset-mv": (-500, 0), "sclk-max-mhz": (500, 5000), "power-cap-w": (1, 1000)}
+
+
+def _device_power(raw: object, where: str) -> DevicePower | None:
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise EnvironmentError_(f"{where}.power must be a table")
+    unknown = set(raw) - set(_POWER_LIMITS) - {"evidence"}
+    if unknown:
+        raise EnvironmentError_(f"{where}.power: unknown key(s) {sorted(unknown)}")
+    values: dict[str, int | None] = {}
+    for key, (lo, hi) in _POWER_LIMITS.items():
+        v = raw.get(key)
+        if v is not None and (not isinstance(v, int) or isinstance(v, bool) or not lo <= v <= hi):
+            raise EnvironmentError_(f"{where}.power: {key} = {v!r} is not an integer in {lo}..{hi}")
+        values[key] = v
+    if not str(raw.get("evidence", "")).strip():
+        raise EnvironmentError_(f"{where}.power: evidence (the run that validated these settings) is required")
+    return DevicePower(vddgfx_offset_mv=values["vddgfx-offset-mv"], sclk_max_mhz=values["sclk-max-mhz"],
+                       power_cap_w=values["power-cap-w"], evidence=str(raw["evidence"]).strip())
 
 
 @dataclass(frozen=True)
@@ -240,6 +277,7 @@ def load(path: str | Path) -> Environment:
                 model=str(entry.get("model", "")),
                 vram_mib=int(entry.get("vram-mib", 0)),
                 locator=locator,
+                power=_device_power(entry.get("power"), dwhere),
             ))
         # Device ordinals are how every caller addresses a GPU, so a duplicate
         # would silently make one of them unreachable.

@@ -75,6 +75,16 @@ arch = "gfx1100"
 model = "example gfx1100 card"
 vram-mib = 24560
 locator = "0000:01:00.0"
+# PWR04 (optional): power settings calibrated for this physical card, applied by the power helper and restored to the
+# driver defaults when it stops. Each card is calibrated on its own -- two cards of the same model can need different
+# values. evidence names the run that validated them (speed, watts, output identity, stability soak). Omit the table
+# to keep the driver defaults.
+#   vddgfx-offset-mv: OverDrive graphics voltage offset, -500..0 (negative undervolts)
+#   sclk-max-mhz:     OverDrive maximum shader clock, 500..5000
+#   power-cap-w:      board power cap, watts
+[host.dev.devices.power]
+vddgfx-offset-mv = -75
+evidence = "example only: replace with the validating run"
 
 [[host.dev.devices]]
 index = 1
