@@ -1,0 +1,25 @@
+{
+  "artifact_version": 1,
+  "audit": {
+    "failed_checks": [],
+    "passed": true,
+    "strict": true,
+    "summary": {
+      "errors": 0,
+      "passed": 4,
+      "total": 4,
+      "warnings": 0
+    }
+  },
+  "bigcherry_revision": "971a622e5f25cbeddde085b6b74dbe85664096fb",
+  "first_seen": "2026-10-27T23:06:41.038891+00:00",
+  "manifest_hash": "",
+  "notes": "",
+  "patches": {},
+  "promotion": null,
+  "release_tag": "v1.13.0",
+  "revision": "6645337f695a96c913b3def0d35b35caeb26a718",
+  "stage": "audited",
+  "tree_state": "",
+  "updated_at": "2026-10-27T23:06:49.726030+00:00"
+}
