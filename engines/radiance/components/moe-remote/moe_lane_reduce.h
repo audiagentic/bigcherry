@@ -116,9 +116,11 @@ __global__ void lane_reduce_tokens_v(const uint16_t* down, const int32_t* inv,
 }
 
 /* Every mapped result writer has drained before this kernel can run. Publish completion with a
- * system-scope release; the engine-side join waits with a system-scope acquire. */
-__global__ void lane_publish_done(r3::moe_shm::Request* q, uint32_t* done_sequence, uint32_t sequence) {
-    if (blockIdx.x || threadIdx.x) return;
+ * system-scope release; the engine-side join waits with a system-scope acquire. A pre-queued wait released at burst end
+ * (RAD20) is above the lane's publish limit (device memory, set by the helper while it parks): it publishes nothing. */
+__global__ void lane_publish_done(r3::moe_shm::Request* q, uint32_t* done_sequence, uint32_t sequence,
+                                  const uint32_t* publish_limit) {
+    if (blockIdx.x || threadIdx.x || sequence > __atomic_load_n(publish_limit, __ATOMIC_RELAXED)) return;
     q->trace[4] = wall_clock64();   /* R3_MOE_WORKER_TRACE: this device's clock */
     lane_store_sys_rel(done_sequence, sequence);
 }

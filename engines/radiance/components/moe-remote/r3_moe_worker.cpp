@@ -37,17 +37,51 @@
 #include "worker_harness.h"
 #include "worker_selftest.h"
 #include "worker_combine.h"
+#include "worker_queue_warm.h"
+
+/* RAD20: block until the engine is inside an inference burst (Header::burst odd). False once this helper is stopping. */
+bool wait_burst(r3::moe_shm::Header* h) {
+    using namespace r3::moe_shm;
+    for (;;) {
+        const uint32_t b = load(&h->burst);
+        if ((b & kBurstStop) || stopping()) return false;
+        if (b & 1u) return true;
+        (void)futex_wait(&h->burst, b);
+    }
+}
+
+/* RAD20 R3_MOE_WORKER_POWER_SAVE (default on). On: a small lane releases its pre-queued waits when a burst ends, and the
+ * helper opens hardware queues only for the lanes it serves, so its GPU idles (~10 W on an XTX). Off: the waits stay
+ * armed between bursts and the helper opens a queue for every protocol lane; the extra queues keep the gfx11 MES
+ * (oversubscribed) and command processor awake, which dispatches ~0.3% faster in decode at ~95 W per GPU at idle. */
+bool power_save() {
+    const char* e = std::getenv("R3_MOE_WORKER_POWER_SAVE");
+    return !e || !*e || std::strcmp(e, "0") != 0;
+}
 
 int main(int argc, char** argv) {
     /* EVERY LANE STREAM ON ITS OWN HARDWARE QUEUE. A small lane pre-queues "wait for the next request" packets;
      * a stream sharing a hardware queue with one sits behind that wait until a small request arrives. With
      * every step large (KL mode's 64-token steps over an 8-row small lane) none ever does, and the large lane's
      * work never runs. HIP maps streams onto GPU_MAX_HW_QUEUES queues (4 by default) and the helper opens one
-     * stream for every lane in the protocol (kLanes: each small-lane class and the large lane, for each rank)
-     * plus its own, so the count is derived from the protocol, with two spare, before HIP initialises (it grew
-     * from five streams to eleven with RAD12's lane classes, which hung every request at the old fixed 8);
-     * an explicit setting wins. */
-    (void)::setenv("GPU_MAX_HW_QUEUES", std::to_string(r3::moe_shm::kLanes + 3).c_str(), 0);
+     * stream for each lane it serves (served_lanes: its rank slot's enabled classes and large lane) plus its own,
+     * so the count is derived before HIP initialises, with two spare; an explicit setting wins. No more: every
+     * extra queue is one more the gfx11 MES schedules, and past its hardware slots it oversubscribes and keeps
+     * MES busy (~95 W) with nothing to run (RAD20). With power save off, every protocol lane gets one (lanes_open).
+     * The environment is only read here; it is validated below. */
+    const bool save = power_save();
+    auto lanes_open = [save](uint32_t count, uint32_t index, uint32_t classes) {
+        std::array<bool, kLanes> all;
+        all.fill(true);
+        return save ? served_lanes(count, index, classes) : all;
+    };
+    {
+        auto env_u = [](const char* n, uint32_t d) { const char* e = std::getenv(n); return e && *e ? (uint32_t)std::atoi(e) : d; };
+        uint32_t lanes = 0;
+        for (bool s : lanes_open(env_u("R3_MOE_WORKER_COUNT", 1), env_u("R3_MOE_WORKER_INDEX", 0), helper_small_classes().count))
+            lanes += s;
+        (void)::setenv("GPU_MAX_HW_QUEUES", std::to_string(lanes + 3).c_str(), 0);
+    }
     /* The helper's grouped MoE GEMM (prefill) on gfx11's native bf16 WMMA path: R9700 engine + two XTX helpers,
      * Flash-Next, prefill 2,518 -> 2,665 tok/s and helper gate/up -25%, KLD 0.064 (noise floor). Read by libr3
      * when the plugin is loaded, so set before it; an explicit setting wins. */
@@ -416,7 +450,10 @@ int main(int argc, char** argv) {
     }
     owned = std::move(runtime_owned);
     h->owned_bytes = owned.bytes;
-    if (gpu && !gpu->prepare_lanes(lane_classes.rows, lane_classes.count, lane_large_rows)) {
+    const auto lanes_served = served_lanes(helper_count, helper_index, lane_classes.count);
+    std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_POWER_SAVE %s\n", save ? "on" : "off");
+    if (gpu && !gpu->prepare_lanes(lane_classes.rows, lane_classes.count, lane_large_rows,
+                                   lanes_open(helper_count, helper_index, lane_classes.count))) {
         (void)hipHostUnregister(map);
         munmap(map, lay.bytes); close(fd); drop_name(); return 1;
     }
@@ -486,10 +523,15 @@ int main(int argc, char** argv) {
                              threads, min_rows);
             }
         }
+        auto serves = [&](uint32_t lane) { return lanes_served[lane]; };
+        /* Power save: oversubscribe the GPU only inside bursts, for fast dispatch (worker_queue_warm.h). Started after
+         * the lane streams exist, so it counts their queues. Power save off is oversubscribed already. */
+        QueueWarm warm;
+        if (save && !warm.start(h)) {
+            munmap(map, lay.bytes); close(fd); drop_name(); return 1;
+        }
         for (uint32_t lane = 0; lane < kLanes; ++lane) {
-            /* Two helpers: each serves only its own rank slot's lanes. */
-            if (helper_count > 1 && lane % kMaxRanks != helper_index) continue;
-            if (lane_is_small(lane) && lane_class(lane) >= lane_classes.count) continue;   /* a disabled small class */
+            if (!serves(lane)) continue;
             workers[lane] = std::thread([&, lane] {
                 const bool large = !lane_is_small(lane);
                 uint32_t next = 1;
@@ -498,6 +540,7 @@ int main(int argc, char** argv) {
                     /* Sized on arrival: wait for the engine's request word, read its rows, launch that size. */
                     while (!stopping()) {
                         if ((int32_t)(load(&h->lane[lane].request_sequence) - next) < 0) {
+                            if (!(load(&h->burst) & 1u) && !wait_burst(h)) break;   /* between bursts: block */
                             std::this_thread::yield();
                             continue;
                         }
@@ -543,33 +586,79 @@ int main(int argc, char** argv) {
                         return next != 0;
                     };
 
-                    for (uint32_t i = 0; i < kQueueDepth && !stopping(); ++i) {
-                        if (!queue_one()) {
-                            request_stop();
-                            break;
+                    /* RAD20: with power save the waits are pre-queued only inside an inference burst. Between bursts none
+                     * is pending, so this GPU idles: a pending wait keeps its MEC busy at ~95 W (FINDINGS). */
+                    uint32_t* park = &h->lane[lane].park;
+                    bool armed = false;
+                    while (wait_burst(h)) {
+                        if (!armed) {
+                            next = done_seen + 1u;
+                            for (uint32_t i = 0; i < kQueueDepth && !stopping(); ++i) {
+                                if (!queue_one()) {
+                                    request_stop();
+                                    break;
+                                }
+                            }
+                            armed = true;
                         }
-                    }
-                    while (!stopping()) {
-                        const uint32_t done = load(&h->lane[lane].done_sequence);
-                        if ((int32_t)(done - done_seen) <= 0) {
-                            std::this_thread::yield();
-                            continue;
-                        }
-                        if (!gpu->collect_lane_timing(lane, done,
-                                                      &lane_sample_us[lane],
-                                                      &lane_samples[lane])) {
-                            request_stop();
-                            break;
-                        }
-                        done_seen = done;
-                        trace_dump(map, lane, done - 1u);
-                        while (!stopping() &&
-                               (uint32_t)(next - done_seen - 1u) < kQueueDepth) {
-                            if (!queue_one()) {
+                        while (!stopping()) {
+                            const uint32_t done = load(&h->lane[lane].done_sequence);
+                            if ((int32_t)(done - done_seen) <= 0) {
+                                if (!(load(&h->burst) & 1u)) break;   /* the burst ended */
+                                std::this_thread::yield();
+                                continue;
+                            }
+                            if (!gpu->collect_lane_timing(lane, done,
+                                                          &lane_sample_us[lane],
+                                                          &lane_samples[lane])) {
                                 request_stop();
                                 break;
                             }
+                            done_seen = done;
+                            trace_dump(map, lane, done - 1u);
+                            while (!stopping() &&
+                                   (uint32_t)(next - done_seen - 1u) < kQueueDepth) {
+                                if (!queue_one()) {
+                                    request_stop();
+                                    break;
+                                }
+                            }
                         }
+                        if (stopping()) break;
+                        if (!save) continue;   /* power save off: stay armed; wait_burst sleeps until the next burst */
+                        /* Park. Flag the drain, then re-check: the engine opens a burst before it reads the flag, so either
+                         * it waits for the drain or we see its burst and stay armed. The engine is idle and has every
+                         * result, so each request it published is done. Release the unconsumed waits (their ring slots
+                         * hold older sequences, so the kernels see an invalid request, and the publish limit stops them
+                         * publishing), drain, restore the engine's last sequence and the limit, then clear the flag. */
+                        __atomic_store_n(park, kParkDraining, __ATOMIC_SEQ_CST);
+                        if (__atomic_load_n(&h->burst, __ATOMIC_SEQ_CST) & 1u) {
+                            store(park, 0u);
+                            (void)futex_wake(park);
+                            continue;
+                        }
+                        const uint32_t last = load(&h->lane[lane].request_sequence);
+                        while (!stopping() && load(&h->lane[lane].done_sequence) != last) std::this_thread::yield();
+                        if (stopping()) break;
+                        if (!gpu->collect_lane_timing(lane, last, &lane_sample_us[lane], &lane_samples[lane])) {
+                            request_stop();
+                            break;
+                        }
+                        if (!gpu->set_publish_limit(lane, last)) {
+                            request_stop();
+                            break;
+                        }
+                        store(&h->lane[lane].request_sequence, next - 1u);
+                        if (!gpu->sync_lane(lane) || !gpu->set_publish_limit(lane, UINT32_MAX)) {
+                            request_stop();
+                            break;
+                        }
+                        store(&h->lane[lane].request_sequence, last);
+                        gpu->drop_lane_sample(lane);
+                        done_seen = last;
+                        armed = false;
+                        store(park, 0u);
+                        (void)futex_wake(park);
                     }
                     const uint32_t final_done = load(&h->lane[lane].done_sequence);
                     (void)gpu->collect_lane_timing(lane, final_done,
@@ -598,7 +687,13 @@ int main(int argc, char** argv) {
          * joining anything, so no fault path depends on a join completing. */
         store(&h->helper_fault, 1u);
         combine_futex_wake(&h->combine.helper1_done, true);
+        /* Wake this helper's lane threads blocked between bursts, and an engine waiting on one of its lanes' drains. */
+        (void)__atomic_fetch_or(&h->burst, kBurstStop, __ATOMIC_ACQ_REL);
+        (void)futex_wake(&h->burst);
+        for (uint32_t lane = 0; lane < kLanes; ++lane)
+            if (lanes_served[lane]) { store(&h->lane[lane].park, 0u); (void)futex_wake(&h->lane[lane].park); }
         for (auto& w : workers) if (w.joinable()) w.join();
+        warm.stop();
         if (combine_pool) {
             store(&h->combine.enabled, 0u);
             combine_pool.reset();
