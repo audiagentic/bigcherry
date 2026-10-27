@@ -55,6 +55,9 @@ Per-device, per-phase table recorded on the model page and in the research recor
 
 Measurement only, no speed risk. RX 6900 XT runs an unrelated service; record it but out of scope for tuning.
 
+2026-10-27: host change on the build/bench host (owner-approved, test machine): udev rule /etc/udev/rules.d/99-rapl-energy-read.rules makes /sys/class/powercap/intel-rapl*/energy_uj readable by the video group (read-only), so CPU package power is measured without root. The start-up host check should warn when it is missing (owner rule: check the host and warn). Harness tools/lab/radiance/pwr01-baseline.sh (branch feat/pwr01-power-baseline): every inventory GPU via amd-smi + RAPL package power per phase, J/token for decode/prefill.
+
 ## Change Log
 
 - 2026-10-27T02:15:39.545328+00:00 (created-by): Created by agent
+- 2026-10-27T06:03:16.386794+00:00 (updated-by): Updated: section:notes
