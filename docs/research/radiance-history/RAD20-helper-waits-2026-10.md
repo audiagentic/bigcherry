@@ -31,6 +31,7 @@ The original blocking-lanes component change (per-slot blocking events + GPU-sid
 | Option B: barrier-packet wake instead of stream wait (bc2 harness) | 0.3-0.9 us slower p50; 96-98 W with either kind of wait pending | any pending wait is cause 1; earlier tail was arm-order warm-up (first R9700 stores slow ~15 ms) | PRs #423-#425 |
 | GPU wait kernel with `s_sleep` polling | not approved | resident wave keeps the GPU busy and polls host memory over PCIe | owner rule 2026-10-25 |
 | Two streams per helper card | hung | libr3 MoE GEMM not safe concurrently on one card | RAD02, reverted 563455f8 |
+| Blocking completion events for the small lane (RAD25) | no CPU saving at decode cadence: lane thread ~100% at 100/150/300 us between completions, same as the yield loop; no starvation | per-event hipEventBlockingSync is ignored; device-wide hipDeviceScheduleBlockingSync sleeps only after a fixed ~0.3-0.4 ms ROCr spin per wait (lane CPU 61/33/18/10% at 0.5/1/2/4 ms); ROC_ACTIVE_WAIT_TIMEOUT=0 changes nothing; MWAITX still counts as CPU time (power unmeasured) | rad25-event-wake.cpp, runs rad25-event-wake-1027*; not adopted |
 
 ## Measurements on the final Option A (a2a7630b9 / refactor 8029cb75d)
 
