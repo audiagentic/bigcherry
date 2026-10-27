@@ -584,7 +584,8 @@ int mailbox_init(const RadParam*, int, int rank, int world_size, void** out) {
 /* Host callback (no HIP calls): the publish before it has run, so the request word is set; wake the large lane. */
 std::atomic<unsigned long long> g_wake_queued{0}, g_wake_captured{0}, g_wake_fired{0};   /* RAD26 diagnostics */
 void wake_large_lane(void* header) {
-    g_wake_fired.fetch_add(1, std::memory_order_relaxed);
+    if (g_wake_fired.fetch_add(1, std::memory_order_relaxed) == 0)
+        std::fprintf(stderr, "libr3moe: first large-lane wake fired\n");   /* visible even if the run later hangs */
     notify(static_cast<Header*>(header));
 }
 
