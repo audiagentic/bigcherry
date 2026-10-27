@@ -13,7 +13,7 @@
 namespace r3::moe_shm {
 
 constexpr uint64_t kMagic = 0x31454f4d33485253ull; /* "SRH3MOE1": reject unrelated/stale shm. */
-constexpr uint32_t kVersion = 16;  /* 16: the combined row is fp16 with a per-row fallback marker (kCombineFallback); 15: Header::combine (R3_MOE_WORKER_COMBINE); 14: the header records the model shape (intermediate, activation_group, shape_hash) and every region is laid out from it (layout_for); 13: several pre-queued small-lane sizes (Header::small_class_*), ten lanes; 12: Request carries the R3_MOE_WORKER_TRACE stamps (192 -> 256 bytes); 11: helper_fault; completion is an exact generation */
+constexpr uint32_t kVersion = 17;  /* 17: Header::burst, LaneSignal::park (RAD20: small-lane waits armed only inside an inference burst); 16: the combined row is fp16 with a per-row fallback marker (kCombineFallback); 15: Header::combine (R3_MOE_WORKER_COMBINE); 14: the header records the model shape (intermediate, activation_group, shape_hash) and every region is laid out from it (layout_for); 13: several pre-queued small-lane sizes (Header::small_class_*), ten lanes; 12: Request carries the R3_MOE_WORKER_TRACE stamps (192 -> 256 bytes); 11: helper_fault; completion is an exact generation */
 constexpr uint32_t kPage = 4096;
 /* R3_MOE_WORKER_COMBINE: first element of a combined fp16 row the combiner could not hold in fp16 range (a NaN payload
  * no arithmetic produces; a real NaN converts to 0x7E00); the engine then reads that row from the two helper planes. */
@@ -29,6 +29,8 @@ constexpr uint32_t kClasses = kSmallClasses + 1;          /* the last class is t
 constexpr uint32_t kLanes = kMaxRanks * kClasses;
 constexpr uint32_t kLaneSlots = 4;                        /* lane-private metadata ring; bulk slots stay per-rank. */
 constexpr uint32_t kRingSlots = kLanes * kLaneSlots;
+constexpr uint32_t kBurstStop = 0x80000000u;        /* Header::burst: a helper stopped */
+constexpr uint32_t kParkDraining = 1u;               /* LaneSignal::park: the helper is releasing this lane's waits */
 constexpr uint32_t lane_of(uint32_t rank, uint32_t cls) { return cls * kMaxRanks + rank; }
 constexpr uint32_t lane_class(uint32_t lane) { return lane / kMaxRanks; }
 constexpr bool lane_is_small(uint32_t lane) { return lane_class(lane) < kSmallClasses; }
@@ -91,7 +93,8 @@ static_assert(sizeof(Request) == 256, "Request layout changed: bump kVersion");
 struct alignas(64) LaneSignal {
     uint32_t request_sequence; /* engine GPU writes after route/activation data is visible. */
     uint32_t done_sequence;    /* helper GPU writes after the result is visible. */
-    uint32_t reserved[14];
+    uint32_t park;             /* helper CPU: kParkDraining while it releases this lane's waits (RAD20, Header::burst). */
+    uint32_t reserved[13];
 };
 static_assert(sizeof(LaneSignal) == 64);
 
@@ -157,7 +160,16 @@ struct alignas(kPage) Header {
     uint32_t intermediate;          /* expert intermediate width (RCS09-03): part of the shape both sides must agree on. */
     uint32_t activation_group;      /* activation quantisation group width. */
     uint64_t shape_hash;            /* shape_hash() of the shape fields: a fast agreement check, never the only one. */
-    uint64_t reserved[14];
+    /* RAD20 inference bursts. The engine adds 1 at each burst begin and end (odd = in a burst) and FUTEX_WAKEs; a helper
+     * arms its small lanes' pre-queued GPU waits when it turns odd. With power save (R3_MOE_WORKER_POWER_SAVE, default
+     * on) no wait is pending between bursts, so the helper GPUs idle (a pending AQL wait keeps a gfx1100 MEC busy at ~95 W, FINDINGS):
+     * after a burst ends, a lane sets LaneSignal::park to kParkDraining, re-checks the
+     * burst (both sequentially consistent, so the engine's opening add and this flag cannot miss each other), releases
+     * and drains its waits, and clears the flag. The engine opens a burst at once and then waits only for lanes still
+     * draining, so it never publishes into released waits and never waits for a re-arm. A stopping helper sets
+     * kBurstStop and clears its lanes' flags, so no waiter sleeps past the fault. */
+    uint32_t burst;
+    uint32_t reserved32[27];
     CombineSignal combine;
 };
 static_assert(sizeof(Header) <= kPage);

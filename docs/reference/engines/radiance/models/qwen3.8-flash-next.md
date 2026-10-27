@@ -235,6 +235,14 @@ every 64-row step combined):
 | Helper at 20 GiB with the final kernels | decode 89.2 (vs ~108.5 at 22 GiB), no prefill gain | RAD06 08:10 |
 | Tensor-splitting every helper-owned expert across both XTX (each card half the intermediate columns, partials summed; the old `ENGINE_RANKS=2` slice mode) instead of splitting experts between the cards | not built. Trace 2026-10-23 (`helper-trace-ab.json`, 2 runs x 2 arms, combine off): totals are balanced (1.38M vs 1.46M routes) but each step is not: the busier helper gets +16% routes over the mean on the median step, and the slower helper's GPU time exceeds the per-step mean by ~9-10% (prefill 525 vs 480 ms, decode 5,400 vs 4,870 ms over the bench). Removing that skew is the most a split could win, about 2-3% end to end, against narrower 384/256 GEMMs (320/320 does not fit the 128-channel groups), every route sent to both cards, and the same two full-width partials to sum. The helper also refuses two helpers with `ENGINE_RANKS=2` today (`r3_moe_worker.cpp:225`). GPT review agrees (Megatron recommends expert-TP 1 for fine-grained experts). Better levers: round-trip overlap (RAD21), replicating high-variance hot experts on both cards (RAD22) | RAD19 notes, RAD22, GPT req_bigcherry_e3de4a2ecbd9 |
 
+## Helper waiting, queues and idle power (RAD20)
+
+Power save (`R3_MOE_WORKER_POWER_SAVE`, default on): helper idle 6-12 W instead of ~95 W, for about -0.5% decode,
+-1.1% pp1024 and -1 to -2% at 2-6 streams. The two idle-power causes (a pending AQL wait; more than 8 compute queues
+per XTX), every attempt with its result and run, the shelved queue warm-up (GPU fault) and the assessed alternatives
+(blocking events, host callbacks, HSA signals, direct AQL) are in
+[RAD20-helper-waits-2026-10.md](../../../../research/radiance-history/RAD20-helper-waits-2026-10.md).
+
 ## Where the critical path is (RAD06 unprofiled trace, 2026-10-18)
 
 From the helper TRACE lines of a full benchmark cell (`R3_MOE_WORKER_TRACE=1`, 36,643 of 36,729 layer-steps paired, no throughput cost). Exposed wait is the engine's wait for the slower helper, on the R9700 clock.

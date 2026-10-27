@@ -242,7 +242,7 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
     store(&h->layer_map_consumed[layer], 1);
     h->small_class_count = classes.count;
     for (uint32_t c = 0; c < classes.count; ++c) h->small_class_rows[c] = classes.rows[c];
-    if (!gpu.prepare_lanes(classes.rows, classes.count, lane_large_rows)) {
+    if (!gpu.prepare_lanes(classes.rows, classes.count, lane_large_rows, served_lanes(1, 0, classes.count))) {
         munmap(map, lay.bytes);
         return 1;
     }

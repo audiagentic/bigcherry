@@ -25,7 +25,11 @@ add_executable(r3_moe_worker ${CMAKE_CURRENT_SOURCE_DIR}/r3_moe_worker.cpp)
 set_property(TARGET r3_moe_worker PROPERTY HIP_ARCHITECTURES gfx1100 gfx1201)
 target_include_directories(r3_moe_worker PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} $ENV{ROCM_PATH}/include)
 target_compile_definitions(r3_moe_worker PRIVATE __HIP_PLATFORM_AMD__)
-target_link_libraries(r3_moe_worker PRIVATE radiance::abi ${CMAKE_DL_LIBS} ${RAD_HIP_RUNTIME} Threads::Threads)
+# The helper's queue warm-up (worker_queue_warm.h) creates its placeholder queues through the HSA runtime.
+if(NOT RAD_HSA_RUNTIME)
+  find_library(RAD_HSA_RUNTIME hsa-runtime64 HINTS /opt/rocm/lib ENV ROCM_PATH PATH_SUFFIXES lib REQUIRED)
+endif()
+target_link_libraries(r3_moe_worker PRIVATE radiance::abi ${CMAKE_DL_LIBS} ${RAD_HIP_RUNTIME} ${RAD_HSA_RUNTIME} Threads::Threads)
 set_target_properties(r3_moe_worker PROPERTIES HIP_STANDARD 17 HIP_STANDARD_REQUIRED ON
   RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/helpers)
 

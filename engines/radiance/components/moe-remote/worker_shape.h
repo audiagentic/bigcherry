@@ -65,6 +65,16 @@ SmallClasses helper_small_classes() {
     return sc;
 }
 
+/* The lanes this helper serves: with several helpers each serves only its own rank slot's lanes, and a disabled small
+ * class (beyond `classes`) has none. Only these get a stream, a hardware queue, buffers and a worker thread. */
+std::array<bool, r3::moe_shm::kLanes> served_lanes(uint32_t helper_count, uint32_t helper_index, uint32_t classes) {
+    using namespace r3::moe_shm;
+    std::array<bool, kLanes> s{};
+    for (uint32_t lane = 0; lane < kLanes; ++lane)
+        s[lane] = (helper_count <= 1 || lane % kMaxRanks == helper_index) &&
+                  !(lane_is_small(lane) && lane_class(lane) >= classes);
+    return s;
+}
 
 int64_t canonical_expert_bytes(const Container& f, uint32_t l, uint32_t e) {
     int64_t n = 0;

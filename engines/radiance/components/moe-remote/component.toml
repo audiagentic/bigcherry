@@ -182,6 +182,18 @@ status = "diagnostic"
 summary = "RAD20: the engine-side plugin (libr3moe) logs each inference-burst transition the engine reports through rad0002's burst callback (begin when the engine loop gets a step after being idle, end when it finds none) with a monotonic timestamp; read by tools/lab/radiance/burst-trace.sh, which checks begin/end pairing across single, concurrent, back-to-back and prefill requests"
 activation = "burst,begin"
 
+[setting.R3_MOE_WORKER_POWER_SAVE]
+default = "1"
+status = "experimental"
+summary = "RAD20: helper GPU power save between inference bursts (default on). On: each small lane releases and drains its pre-queued GPU waits when a burst ends and the helper opens hardware queues only for the lanes it serves, so the helper GPU idles (~10 W on an XTX instead of ~95 W). 0: waits stay armed between bursts and a queue is opened for every protocol lane, keeping MES and the command processor awake for ~0.3% faster decode dispatch at ~85 W more per helper GPU at idle. Lane threads sleep on the burst futex either way"
+activation = "r3_moe_worker: R3_MOE_WORKER_POWER_SAVE"
+
+[setting.R3_MOE_WORKER_QUEUE_WARM]
+default = ""
+status = "evaluated"
+summary = "RAD20, with power save on: during an inference burst the helper activates just enough idle placeholder queues to oversubscribe its GPU's compute slots (KFD num_cp_queues minus the queues it owns, plus one), meant to keep gfx11 MES busy and recover main's dispatch latency; between bursts it parks them (AMDKFD_IOC_UPDATE_QUEUE 0%). SHELVED, default off: in the Flash-Next layout (run rad20-burst-profile-10262303) switching the placeholders during a live burst gave a CPF page fault (permission, read) on both XTX within the first request, MES then failed REMOVE_QUEUE and both GPUs mode-1 reset; the standalone harness (rad20-queue-warm.cpp), which never switches while other queues run kernels, did not show it. 1 turns it on for investigation only"
+activation = "r3_moe_worker: queue warm-up"
+
 [setting.R3_MOE_SWEEP_FAST]
 default = ""
 status = "diagnostic"
