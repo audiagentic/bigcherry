@@ -60,6 +60,8 @@ Exposed helper wait per prefill measurably lower; pp4096 end-to-end gain with co
 
 Next prefill lever after RAD18 (combine). Measurements from RAD18 notes. Ask GPT for design review and prior art (e.g. expert-parallel overlap in DeepSpeed-MoE / Megatron / vLLM / SGLang two-batch overlap).
 
+2026-10-27, DeepEP/MORI-EP adaptation brief (verified against the code): kLaneSlots = 4 is a metadata ring only; activation and result planes are per rank (moe_remote_shm.h activation_offset[kMaxRanks], result_offset[kMaxRanks*kMaxRanks]). Several chunks in flight therefore need explicitly owned bulk slots with credits (FREE -> STAGING -> PUBLISHED -> HELPER_RUNNING -> HELPER_DONE -> MERGING -> RETIRED), released only after the last consumer has read them; the helper's done sequence alone does not prove the engine consumed a result. Order: (C1) replay cost model on captured requests and real helper timings, chunk counts derived from rows and route distribution; (C2) standalone multi-slot mailbox probe (generation, wrap, stop/fault, SIGKILL); (C3) trace the rad0002 after_route/merge seam (patch.py ~350-392) before choosing where to chunk; production only if C1 and C2 win. No extra helper GEMM streams (two-stream helper hung, RAD02); no per-layer CPU round trip; no resident GPU waits. Liveness (RAD24) must be merged first: the chunk protocol builds on helper_fault/notify.
+
 ## Execution gate review (2026-10-23)
 
 - First PR is **harness + isolated scheduling experiment only**. Model per-chunk publish, helper execution, local engine work, engine read/merge, and x4 upstream bus contention using captured M/route distributions. Measure end-to-end *critical path*, not helper idle time in isolation.
@@ -72,3 +74,4 @@ Next prefill lever after RAD18 (combine). Measurements from RAD18 notes. Ask GPT
 - 2026-10-23T02:13:57.784115+00:00 (created-by): Created by agent
 - 2026-10-23T02:14:14.836645+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:effort_risk, section:notes
 - 2026-10-23T02:15:13.650842+00:00 (updated-by): Updated: section:acceptance_criteria
+- 2026-10-27T02:35:22.779320+00:00 (updated-by): Updated: section:notes
