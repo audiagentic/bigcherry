@@ -3,6 +3,7 @@
 # offset (knob vo, mV, negative = undervolt). For each level (in an order that rotates with the default) it sets it on every gfx1100 card of the lab host through sudo (password read once from stdin, passed to
 # the remote sudo over ssh stdin, never stored), runs pwr01-baseline.sh there through `bigcherry slice lab`, and restores
 # the default clock afterwards (also on exit). Hosts and devices come from the environment settings.
+# PWR02_RUN_SCRIPT picks the lab script run at each level (default pwr01-baseline.sh; pwr01-soak.sh for a soak).
 # Usage: <password on stdin> | BIGCHERRY_LAB_HOST=<lab host entry> pwr02-xtx-sclk-sweep.sh <branch with pwr01-baseline.sh> ["levels, 0 = default"] [sclk|vo]
 set -u
 BRANCH=${1:?branch}; LEVELS=${2:-0 2500 2000 0 2000 2500}; KNOB=${3:-sclk}
@@ -34,7 +35,7 @@ trap 'set_sclk 0 >/dev/null' EXIT
 for lv in $LEVELS; do
     echo "== $KNOB level ${lv} ($( [ $lv = 0 ] && echo default ))"
     set_sclk $lv || { echo "set failed"; exit 1; }
-    PYTHONPATH=tools python -m bigcherry slice lab --host "$LAB" "$BRANCH" tools/lab/radiance/pwr01-baseline.sh </dev/null 2>&1 | grep -E "^OUT|PWR01_DONE|error" | tail -2
+    PYTHONPATH=tools python -m bigcherry slice lab --host "$LAB" "$BRANCH" "${PWR02_RUN_SCRIPT:-tools/lab/radiance/pwr01-baseline.sh}" </dev/null 2>&1 | grep -E "^OUT|PWR01_DONE|error" | tail -2
     echo "LEVEL $lv done"
 done
 set_sclk 0
