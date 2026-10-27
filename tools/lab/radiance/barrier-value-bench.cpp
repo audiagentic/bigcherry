@@ -185,7 +185,7 @@ int consumer_latency(int count, int depth) {
     return 0;
 }
 
-int idle(int queues, int seconds, bool use_and) {   // use_and: BARRIER_AND on a signal at 1 (gfx1100 rejects BARRIER_VALUE)
+int idle(int queues, int seconds, bool use_and, char idle_kind) {   // idle_kind: b(arrier) e(mpty queue) d(rained queue);   // use_and: BARRIER_AND on a signal at 1 (gfx1100 rejects BARRIER_VALUE)
     CK(hsa_init());
     hsa_agent_t gpu{};
     hsa_iterate_agents(pick_gpu, &gpu);
@@ -195,12 +195,15 @@ int idle(int queues, int seconds, bool use_and) {   // use_and: BARRIER_AND on a
     std::vector<hsa_queue_t*> qs((size_t)queues);
     for (auto& q : qs) {
         CK(hsa_queue_create(gpu, 64, HSA_QUEUE_TYPE_SINGLE, nullptr, nullptr, UINT32_MAX, UINT32_MAX, &q));
+        if (idle_kind == 'e') continue;                         // empty: live queue, no packets
+        if (idle_kind == 'd') { barrier_and(q, marker); continue; }   // drained: one packet ran to completion
         if (use_and) barrier_and(q, marker, sig);   // held until the signal reaches 0
         else { barrier_value_lt(q, sig, 1); barrier_and(q, marker); }
     }
     std::printf("idle: %d queue(s) holding a %s from %lld\n", queues, use_and ? "BARRIER_AND" : "BARRIER_VALUE", (long long)(now_ns() / 1000000000ll));
     std::fflush(stdout);
     sleep((unsigned)seconds);
+    if (idle_kind != 'b') { std::printf("idle: %d %s queue(s) held %d s (no waits to release)\n", queues, idle_kind == 'e' ? "empty" : "drained", seconds); for (auto* q : qs) hsa_queue_destroy(q); hsa_shut_down(); return 0; }
     const bool held = hsa_signal_load_scacquire(marker) == queues;
     hsa_signal_store_screlease(sig, 0);   // the shutdown release: the holder satisfies every outstanding wait
     const hsa_signal_value_t v = hsa_signal_wait_scacquire(marker, HSA_SIGNAL_CONDITION_EQ, 0, 2000000000ull,
@@ -220,6 +223,6 @@ int main(int argc, char** argv) {
     const int a2 = argc > 2 ? std::atoi(argv[2]) : 0, a3 = argc > 3 ? std::atoi(argv[3]) : 0;
     if (!std::strcmp(argv[1], "producer")) return producer(std::min(a2 ? a2 : 2000, kMax), a3 ? a3 : 150);
     if (!std::strcmp(argv[1], "consumer-latency")) return consumer_latency(std::min(a2 ? a2 : 2000, kMax), a3 ? a3 : 4);
-    if (!std::strcmp(argv[1], "idle")) return idle(a2 ? a2 : 1, a3 ? a3 : 30, argc > 4 && !std::strcmp(argv[4], "and"));
+    if (!std::strcmp(argv[1], "idle")) { const char* k = argc > 4 ? argv[4] : "and"; return idle(a2 ? a2 : 1, a3 ? a3 : 30, true, !std::strcmp(k, "empty") ? 'e' : !std::strcmp(k, "drained") ? 'd' : 'b'); }
     return 2;
 }
