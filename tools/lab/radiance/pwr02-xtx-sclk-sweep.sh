@@ -27,7 +27,8 @@ set_sclk() {   # $1 MHz, 0 = restore the default
     local cmd=""
     for b in $BDFS; do
         f=/sys/bus/pci/devices/$b/pp_od_clk_voltage
-        h=/sys/bus/pci/devices/$b/hwmon/hwmon*
+        # The card's hwmon directory, resolved first: sh does not expand a wildcard in a redirection target.
+        h=$(ssh "$HOST" "ls -d /sys/bus/pci/devices/$b/hwmon/hwmon* | head -1" </dev/null)
         if [ "$1" = 0 ]; then cmd="$cmd echo r > $f && echo c > $f && cat $h/power1_cap_default > $h/power1_cap &&"
         elif [ $KNOB = vo ]; then cmd="$cmd echo 'vo $1' > $f && echo c > $f &&"
         elif [ $KNOB = cap ]; then cmd="$cmd echo $(( $1 * 1000000 )) > $h/power1_cap &&"
