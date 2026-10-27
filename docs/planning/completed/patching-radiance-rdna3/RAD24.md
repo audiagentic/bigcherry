@@ -2,7 +2,7 @@
 id: RAD24
 order: 0
 plan: patching-radiance-rdna3
-state: pending
+state: completed
 created-at: '2026-10-27T02:15:14.508402+00:00'
 breadth: ''
 skill: advanced
@@ -50,12 +50,16 @@ rad20-helper-kill.sh PASS for both helpers in all scenarios; rad20-liveness-chec
 
 ## Acceptance Criteria
 
-
+SIGKILL of either helper at idle, in decode (tokens streaming), in prefill and during a park drain makes the engine fail the request with an error within 60 s (never hangs); the watcher logs the exact pid; idle power and decode/prefill speed unchanged vs the parent build; a helper that dies before publishing its pid cannot strand the engine (launcher ready-line wait + 120 s registration barrier).
 
 ## Notes
 
 Split out of RAD20. GPT reviews req_bigcherry_866c58b8ea99 (its parser P0 was incorrect: the loop increments p). Record: docs/research/radiance-history/RAD20-helper-waits-2026-10.md.
 
+2026-10-27: park-drain case added (test-only R3_MOE_WORKER_TEST_STOP_AT=park_drain:<i>); full kill test 8/8 PASS on 63412e63a (idle 0.2 s, decode 5.2 s, prefill 0.2 s, park 5.2-5.6 s, both helpers). Pre-pid death not gated: launcher waits for each helper's ready line (after pid publish) before starting the engine; the 120 s barrier covers a concurrent start. Remaining error-label work is RAD27.
+
 ## Change Log
 
 - 2026-10-27T02:15:14.508402+00:00 (created-by): Created by agent
+- 2026-10-27T08:22:36.648684+00:00 (updated-by): Updated: section:acceptance_criteria, section:notes
+- 2026-10-27T08:22:45.518416+00:00 (state-transition): State: pending → completed
