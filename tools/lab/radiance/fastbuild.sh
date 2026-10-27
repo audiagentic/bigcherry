@@ -8,7 +8,7 @@ SHA=$1
 CHECKOUT=${FASTBUILD_CHECKOUT:-${BC_WORK_ROOT}/wt-accept}
 WORK=${WORK:-${BC_REPO_ROOT}/work}
 B=${2:-${FASTBUILD_DIR:-$(ls -td $WORK/builds/*/*/ | while read d; do [ -f "${d}components/moe-remote/build.ninja" ] && { echo "${d%/}"; break; }; done)}}
-export ROCM_PATH=${ROCM_PATH:-/opt/rocm-7.2.4} PATH=${ROCM_PATH:-/opt/rocm-7.2.4}/bin:$PATH
+source "$(dirname "${BASH_SOURCE[0]}")/lab-env.sh"; export PATH=$ROCM_PATH/bin:$PATH
 git -C "$CHECKOUT" fetch -q origin 2>/dev/null || true
 git -C "$CHECKOUT" checkout -q --detach "$SHA"
 git -C "$CHECKOUT" log --oneline -1

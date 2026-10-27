@@ -2,7 +2,7 @@
 # RCS09/RCS10 genericity check on dev: build the pinned radiance (stock), then serve Qwen3.6-35B-A3B FP8 on the engine alone
 # and score output quality (KL) of the XTX workers against the engine alone (qwen35b-helper-capture.json). Run from a checkout of this branch.
 set -u
-export ROCM_PATH=/opt/rocm-7.2.4 PATH=/opt/rocm-7.2.4/bin:$PATH
+source "$(dirname "${BASH_SOURCE[0]}")/lab-env.sh"; export PATH=$ROCM_PATH/bin:$PATH
 export BIGCHERRY_ENVIRONMENT=${BIGCHERRY_ENVIRONMENT:-${BC_REPO_ROOT}/config/environment.local.toml}
 WORK=${BC_REPO_ROOT}/work
 LOG=$(PYTHONPATH=tools timeout 5400 python3 -m bigcherry build --lane radiance-lab:stock:linux-radiance --experiment moe-remote-handoff 2>&1 | grep -v warning | tail -n 4)

@@ -13,7 +13,7 @@ IFS= read -r PW || PW=""
 sudo() { command sudo -S -p "" "$@" <<< "$PW"; }
 set --   # the env script reads its own arguments
 source tools/env/bigcherry-env.sh >/dev/null
-export ROCM_PATH=${ROCM_PATH:-/opt/rocm-7.2.4}
+source "$(dirname "${BASH_SOURCE[0]}")/lab-env.sh"
 OUT=$BC_WORK_ROOT/runs/rad20-queue-probe-$(date +%m%d%H%M); mkdir -p $OUT
 HERE=$(cd "$(dirname "$0")" && pwd)
 L=$HERE/launch-flashnext-best.sh

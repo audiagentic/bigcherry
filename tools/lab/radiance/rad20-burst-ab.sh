@@ -10,7 +10,7 @@ CONFIG=${2:-tools/lab/radiance/rad20-burst-ab.json}
 : "${R9700_BDF:?set R9700_BDF}" "${XTX_BDFS:?set XTX_BDFS}"
 set --   # the env script reads its own arguments
 source tools/env/bigcherry-env.sh >/dev/null
-export ROCM_PATH=${ROCM_PATH:-/opt/rocm-7.2.4}
+source "$(dirname "${BASH_SOURCE[0]}")/lab-env.sh"
 OUT=$BC_WORK_ROOT/runs/rad20-burst-ab-$(date +%m%d%H%M); mkdir -p $OUT
 rocr() { rocm-smi --showbus 2>/dev/null | grep -i "PCI Bus: *$1" | grep -oE '^GPU\[[0-9]+\]' | grep -oE '[0-9]+' | head -1; }
 export R9700_ROCR=$(rocr "$R9700_BDF")

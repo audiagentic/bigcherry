@@ -2,7 +2,7 @@
 # RAD15: engine-alone 35B A/B of bc-gfx12's moe_gemm_q decode row (qwen35b-bcgfx12-ab.json). BUILD_DIR: a stock radiance build
 # (its bin/ and radiance_home/); AB_CONFIG=tools/lab/radiance/qwen35b-bcgfx12-kld.json for the KL check; BCG12_SO: the built libbcgfx12.so. The plugin is added to a copy of the build's radiance home.
 set -u
-export ROCM_PATH=/opt/rocm-7.2.4 PATH=/opt/rocm-7.2.4/bin:$PATH
+source "$(dirname "${BASH_SOURCE[0]}")/lab-env.sh"; export PATH=$ROCM_PATH/bin:$PATH
 export BIGCHERRY_ENVIRONMENT=${BIGCHERRY_ENVIRONMENT:-${BC_REPO_ROOT}/config/environment.local.toml}
 WORK=${BC_REPO_ROOT}/work
 B=${BUILD_DIR%/}

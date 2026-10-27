@@ -26,7 +26,7 @@ D=/sys/bus/pci/devices/$BDF
     for f in mes_fw_version mes_kiq_fw_version mec_fw_version me_fw_version pfp_fw_version rlc_fw_version; do
         echo "$f: $(cat $D/fw_version/$f 2>/dev/null)"
     done
-    echo "rocm: $(cat ${ROCM_PATH:-/opt/rocm}/.info/version 2>/dev/null)"
+    echo "rocm: $(cat ${ROCM_PATH:-unset}/.info/version 2>/dev/null)"
     echo "amdgpu module params: sched_policy=$(cat /sys/module/amdgpu/parameters/sched_policy 2>/dev/null) mes=$(cat /sys/module/amdgpu/parameters/mes 2>/dev/null)"
     echo "linux-firmware: $(dpkg-query -W -f='${Version}' linux-firmware 2>/dev/null || rpm -q linux-firmware 2>/dev/null)"
 } | tee "$OUT/environment.txt"

@@ -10,7 +10,7 @@ POLL=$1 BLOCK=$2 LABEL=${3:-auto} ARMS=${4:-${ARMS:-}} PROF=${5:---kernel-trace 
 set --
 source tools/env/bigcherry-env.sh
 W=${BC_WORK_ROOT}; OUT=$W/runs/rad20-profile-$LABEL-$(date +%m%d%H%M); mkdir -p $OUT
-export ROCM_PATH=/opt/rocm-7.2.4 PATH=/opt/rocm-7.2.4/bin:$PATH
+source "$(dirname "${BASH_SOURCE[0]}")/lab-env.sh"; export PATH=$ROCM_PATH/bin:$PATH
 L=tools/lab/radiance/launch-flashnext-best.sh
 PROMPT='Write a long, detailed story about a lighthouse keeper who discovers a hidden room. Keep going.'
 [ -n "$ARMS" ] || ARMS="polling=$POLL blocking=$BLOCK"

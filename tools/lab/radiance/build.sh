@@ -6,12 +6,12 @@
 # The first argument (a llama-server path from the queue) is ignored.
 # Usage: build.sh <ignored> <out-dir>
 # env: GCC14_BIN (unpacked g++-14, used when g++-14 is not installed); RADIANCE_SRC (${BC_WORK_ROOT}/engines/radiance), RADIANCE_REF (checkout this commit if set),
-#      ROCM_PATH (/opt/rocm-7.2.4), RAD_GPU_TARGETS (gfx1201), TESTS (1 = run the card-free ctest set)
+#      ROCM_PATH (default: the host rocm-root), RAD_GPU_TARGETS (gfx1201), TESTS (1 = run the card-free ctest set)
 set -u
 out=$2
 mkdir -p "$out"
 src=${RADIANCE_SRC:-${BC_WORK_ROOT}/engines/radiance}
-export ROCM_PATH=${ROCM_PATH:-/opt/rocm-7.2.4}
+source "$(dirname "${BASH_SOURCE[0]}")/lab-env.sh"
 export PATH="$ROCM_PATH/bin:$PATH"
 cd "$src" || { echo "NO_SOURCE $src"; exit 1; }
 [ -n "${RADIANCE_REF:-}" ] && { git fetch -q origin && git checkout -q "$RADIANCE_REF" || { echo "CHECKOUT_FAILED $RADIANCE_REF"; exit 1; }; }

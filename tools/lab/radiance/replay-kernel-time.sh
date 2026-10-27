@@ -11,7 +11,7 @@ M=${MODEL:?set MODEL to the .rad container the captures came from}
 DEV=${DEV:-0}
 OUT=${OUT:-${WORK:-${BC_WORK_ROOT}}/replay-kt}
 FILES=$(ls ${CAP}/*.bin | head -${N:-12} | tr '\n' ' ')
-export ROCM_PATH=${ROCM_PATH:-/opt/rocm-7.2.4} PATH=${ROCM_PATH:-/opt/rocm-7.2.4}/bin:$PATH
+source "$(dirname "${BASH_SOURCE[0]}")/lab-env.sh"; export PATH=$ROCM_PATH/bin:$PATH
 rm -rf "$OUT"
 env HIP_VISIBLE_DEVICES=$DEV R3_MOE_WORKER_MIB=${MIB:-22528} R3_MOE_WORKER_MAX_ROWS=4096 R3_MOE_WORKER_SMALL_ROWS=${SMALL_ROWS:-8} R3_MOE_WORKER_ENGINE_RANKS=${ENGINE_RANKS:-1} R3_MOE_WORKER_MOE_DOWN_TILE=1 R3_MOE_SWEEP_FAST=1 RADIANCE_HOME=$B/radiance_home ${ENVV:-} \
   timeout 3600 rocprofv3 --kernel-trace --output-format csv -d "$OUT" -o run -- \

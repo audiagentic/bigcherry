@@ -12,7 +12,7 @@ PAIRS=${1:-4}
 W=${BC_WORK_ROOT}
 OUT=$W/runs/rad20-rad18-$(date +%m%d%H%M)
 mkdir -p $OUT
-export ROCM_PATH=/opt/rocm-7.2.4 PATH=/opt/rocm-7.2.4/bin:$PATH
+source "$(dirname "${BASH_SOURCE[0]}")/lab-env.sh"; export PATH=$ROCM_PATH/bin:$PATH
 git fetch -q origin main
 HEAD=$(git rev-parse HEAD); BASE=$(git merge-base HEAD FETCH_HEAD)
 echo "slice $HEAD baseline $BASE" | tee $OUT/builds.txt
