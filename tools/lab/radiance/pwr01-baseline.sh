@@ -44,7 +44,7 @@ sampler() {   # one sample a second: every GPU's board power and the CPU package
                 '/SOCKET_POWER/{print t "," p "," g "," $2}' >> $OUT/samples.csv
         done
         e1=$(cat $RAPL); t1=$(date +%s.%N)
-        python3 -c "import sys; e0,e1,t0,t1,m=map(float,sys.argv[1:]); d=e1-e0 if e1>=e0 else e1+m-e0; print(f'{t1},{sys.argv[6]},cpu_pkg,{d/1e6/(t1-t0):.1f}')" \
+        python3 -c "import sys; e0,e1,t0,t1,m=map(float,sys.argv[1:6]); d=e1-e0 if e1>=e0 else e1+m-e0; print(f'{t1},{sys.argv[6]},cpu_pkg,{d/1e6/(t1-t0):.1f}')" \
             $e0 $e1 $t0 $t1 $max "$ph" >> $OUT/samples.csv
         e0=$e1; t0=$t1
     done
@@ -61,7 +61,8 @@ run_phase() {   # $1 name, $2 prompt, $3 max_tokens, $4 which count (1 completio
     phase $1
     local end=$(( $(date +%s) + PHASE_S )) n=0 t0=$(date +%s.%N)
     while [ $(date +%s) -lt $end ]; do
-        read -r c p < <(tokens "$2" $3)
+        # A different first sentence each request, so the prefix cache cannot skip the prefill.
+        read -r c p < <(tokens "Request $RANDOM-$n-$(date +%N). $2" $3)
         [ "$4" = 1 ] && n=$((n + c)) || n=$((n + p))
     done
     echo "$1 tokens $n seconds $(python3 -c "import sys; print(round(float(sys.argv[2])-float(sys.argv[1]),1))" $t0 $(date +%s.%N))" >> $OUT/tokens.txt
