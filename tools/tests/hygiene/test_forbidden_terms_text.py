@@ -42,6 +42,12 @@ class ForbiddenTermsTextTests(unittest.TestCase):
     def test_clean_text_has_no_findings(self) -> None:
         self.assertEqual(ft.text_findings(self.root, "pr", "Results on the bench host\n"), [])
 
+    def test_attribution_trailer_is_allowed(self) -> None:
+        (self.root / "config").mkdir()
+        (self.root / "config" / "forbidden-terms-allow.txt").write_text("noreply@anthropic.com\n", encoding="utf-8")
+        msg = "fix: thing\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n"
+        self.assertEqual(ft.text_findings(self.root, "commit", msg), [])
+
     def test_commit_messages_since_base_are_scanned(self) -> None:
         self._commit("base")
         base = subprocess.run(["git", "-C", str(self.root), "rev-parse", "HEAD"], capture_output=True, text=True,
