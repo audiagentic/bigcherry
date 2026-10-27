@@ -6,6 +6,8 @@
 // below the largest (any asymmetric CPU that reports it), else the hybrid "atom" PMU's CPU list. None found: unchanged.
 #include <sched.h>
 
+#include <algorithm>
+
 #include <cstdio>
 #include <fstream>
 #include <map>
