@@ -24,6 +24,7 @@ for r in $(seq $REPEATS); do
         done
     done
     ROCR_VISIBLE_DEVICES=$IDX timeout 300 $OUT/rad26-wake-bench stall 5000 0 50 | tee -a $OUT/results.txt
+    ROCR_VISIBLE_DEVICES=$IDX timeout 300 $OUT/rad26-wake-bench graph 2000 300 50 | tee -a $OUT/results.txt
 done
 python3 - $OUT/results.txt <<'PY' | tee -a $OUT/summary.txt
 import re, statistics, sys
@@ -34,6 +35,8 @@ for gap in sorted({r["gap_us"] for r in rows if r["mode"] != "stall"}, key=int):
         g = [r for r in rows if r["mode"] == m and r["gap_us"] == gap]
         if g: print(f"gap {gap:>5} us {m:8s}: round trip p50 {med(g,'rt_p50_us'):7.1f} p90 {med(g,'rt_p90_us'):7.1f} "
                     f"p99 {med(g,'rt_p99_us'):7.1f} us  helper CPU {med(g,'helper_cpu_pct'):5.1f} %")
+for r in (r for r in rows if r["mode"] == "graph"):
+    print(f"graph replay: woken {r['woken']}/{r['iterations']}, stuck at {r['stuck_at']}, launch->ack p50 {r['launch_to_ack_p50_us']} us p99 {r['p99_us']} us")
 g = [r for r in rows if r["mode"] == "stall"]
 if g: print(f"engine stream: {med(g,'stall_us_per_callback'):.2f} us per host callback, {med(g,'side_stall_us_per_callback'):.2f} us on a side stream "
             f"(work {med(g,'base_us_per_iter'):.1f} us/iter alone, {med(g,'hostfunc_us_per_iter'):.1f} with a callback)")

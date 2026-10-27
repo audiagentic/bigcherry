@@ -9,7 +9,8 @@
 //             so the engine stream itself is never held by the callback.
 // stall mode measures what a host callback costs the engine stream itself: N x (work kernel) against N x (work kernel +
 // a no-op host callback), with the callback on the engine stream and on a side stream.
-// Usage: rad26-wake-bench spin|hostfunc|sidefunc|stall [iterations=2000] [gap_us=500] [work_us=50]
+// graph mode captures a publish + wake callback into a HIP graph and replays it, checking every replay wakes the waiter.
+// Usage: rad26-wake-bench spin|hostfunc|sidefunc|graph|stall [iterations=2000] [gap_us=500] [work_us=50]
 #include <hip/hip_runtime.h>
 #include <linux/futex.h>
 #include <sys/syscall.h>
@@ -17,6 +18,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cerrno>
 #include <climits>
 #include <cstdio>
 #include <cstdlib>
@@ -36,6 +38,10 @@ __global__ void publish(uint32_t* req, uint32_t i, uint64_t* t_pub) {
     *t_pub = wall_clock64();
     __hip_atomic_store(req, i, __ATOMIC_RELEASE, __HIP_MEMORY_SCOPE_SYSTEM);
 }
+/* graph mode: a replayable publish (no per-launch argument) */
+__global__ void publish_next(uint32_t* req) {
+    __hip_atomic_fetch_add(req, 1u, __ATOMIC_RELEASE, __HIP_MEMORY_SCOPE_SYSTEM);
+}
 /* Lab only: a resident wait for the ack, to time the round trip on the GPU clock. */
 __global__ void wait_ack(const uint32_t* ack, uint32_t i, uint64_t* t_ack) {
     while (__hip_atomic_load(ack, __ATOMIC_ACQUIRE, __HIP_MEMORY_SCOPE_SYSTEM) != i) __builtin_amdgcn_s_sleep(1);
@@ -50,9 +56,9 @@ static double self_cpu_ms() { timespec t{}; clock_gettime(CLOCK_THREAD_CPUTIME_I
 
 int main(int argc, char** argv) {
     const char* mode = argc > 1 ? argv[1] : "";
-    if (std::strcmp(mode, "spin") && std::strcmp(mode, "hostfunc") && std::strcmp(mode, "sidefunc") &&
+    if (std::strcmp(mode, "spin") && std::strcmp(mode, "hostfunc") && std::strcmp(mode, "sidefunc") && std::strcmp(mode, "graph") &&
         std::strcmp(mode, "stall")) {
-        std::fprintf(stderr, "usage: %s spin|hostfunc|sidefunc|stall [iterations] [gap_us] [work_us]\n", argv[0]);
+        std::fprintf(stderr, "usage: %s spin|hostfunc|sidefunc|graph|stall [iterations] [gap_us] [work_us]\n", argv[0]);
         return 2;
     }
     const uint32_t n = argc > 2 ? std::atoi(argv[2]) : 2000;
@@ -110,6 +116,51 @@ int main(int argc, char** argv) {
     CHECK(hipHostGetDevicePointer((void**)&d_ack, ack, 0));
     uint64_t* d_t;
     CHECK(hipMalloc(&d_t, sizeof(uint64_t) * 2 * (n + 1)));
+    if (!std::strcmp(mode, "graph")) {
+        /* Does a host callback captured into a HIP graph run (and wake a futex waiter) on every replay? The graph holds
+         * an increment of the request word and the wake callback; the helper acks each increment. A replay whose wake
+         * never arrives within 2 s is reported as STUCK (what hung the engine in the RAD26 hardware run). */
+        hipGraph_t g;
+        hipGraphExec_t gx;
+        CHECK(hipStreamBeginCapture(s, hipStreamCaptureModeGlobal));
+        publish_next<<<1, 1, 0, s>>>(d_req);
+        CHECK(hipLaunchHostFunc(s, on_published, req));
+        CHECK(hipStreamEndCapture(s, &g));
+        CHECK(hipGraphInstantiate(&gx, g, nullptr, nullptr, 0));
+        std::atomic<uint32_t> acked{0};
+        std::thread helper([&] {
+            for (uint32_t i = 1; i <= n; ++i) {
+                uint32_t seen;
+                while ((seen = __atomic_load_n(req, __ATOMIC_ACQUIRE)) < i) {
+                    timespec ts{2, 0};
+                    if (::syscall(SYS_futex, req, FUTEX_WAIT, seen, &ts, nullptr, 0) < 0 && errno == ETIMEDOUT) return;
+                }
+                acked.store(i, std::memory_order_release);
+            }
+        });
+        std::vector<double> lat;
+        uint32_t stuck = 0;
+        for (uint32_t i = 1; i <= n && !stuck; ++i) {
+            const double t = now_us();
+            CHECK(hipGraphLaunch(gx, s));
+            while (acked.load(std::memory_order_acquire) < i) {
+                if (now_us() - t > 2e6) { stuck = i; break; }
+                std::this_thread::yield();
+            }
+            if (!stuck) lat.push_back(now_us() - t);
+            CHECK(hipStreamSynchronize(s));
+            std::this_thread::sleep_for(std::chrono::microseconds(gap_us));
+        }
+        if (stuck) __atomic_store_n(req, UINT32_MAX, __ATOMIC_RELEASE);   /* release the helper */
+        (void)::syscall(SYS_futex, req, FUTEX_WAKE, INT_MAX, nullptr, nullptr, 0);
+        helper.join();
+        std::sort(lat.begin(), lat.end());
+        std::printf("RESULT mode=graph iterations=%u gap_us=%u woken=%zu stuck_at=%u launch_to_ack_p50_us=%.1f "
+                    "p99_us=%.1f\n", n, gap_us, lat.size(), stuck, lat.empty() ? 0.0 : lat[lat.size() / 2],
+                    lat.empty() ? 0.0 : lat[std::min(lat.size() - 1, lat.size() * 99 / 100)]);
+        return stuck ? 1 : 0;
+    }
+
     const bool side = !std::strcmp(mode, "sidefunc");
     const bool hostfunc = side || !std::strcmp(mode, "hostfunc");
 
