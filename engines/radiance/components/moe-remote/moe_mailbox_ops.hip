@@ -582,7 +582,11 @@ int mailbox_init(const RadParam*, int, int rank, int world_size, void** out) {
 }
 
 /* Host callback (no HIP calls): the publish before it has run, so the request word is set; wake the large lane. */
-void wake_large_lane(void* header) { notify(static_cast<Header*>(header)); }
+std::atomic<unsigned long long> g_wake_queued{0}, g_wake_captured{0}, g_wake_fired{0};   /* RAD26 diagnostics */
+void wake_large_lane(void* header) {
+    g_wake_fired.fetch_add(1, std::memory_order_relaxed);
+    notify(static_cast<Header*>(header));
+}
 
 int publish_launch(const RadArgs* a, RadStream stream) {
     if (!a || !a->instance || !stream || a->n_t != 6) return RAD_E_INVAL;
@@ -670,11 +674,13 @@ int publish_launch(const RadArgs* a, RadStream stream) {
             e = hipEventRecord(we, (hipStream_t)stream);
             if (e == hipSuccess) e = hipStreamWaitEvent(ws, we, 0);
             if (e == hipSuccess) e = hipLaunchHostFunc(ws, wake_large_lane, d->host_header);
+            g_wake_queued.fetch_add(1, std::memory_order_relaxed);
         } else {
             static std::atomic<bool> said{false};
             if (!said.exchange(true))
                 std::fprintf(stderr, "libr3moe: large-lane wake captured on the engine stream (stream capture)\n");
             e = hipLaunchHostFunc((hipStream_t)stream, wake_large_lane, d->host_header);
+            g_wake_captured.fetch_add(1, std::memory_order_relaxed);
         }
         if (e != hipSuccess) return RAD_E_DEVICE;
     }
@@ -873,6 +879,12 @@ const RadKernelInfo kShadow = [] {
 extern "C" int r3_moe_mailbox_schema_count(void) { return NELEM(kSchemas); }
 extern "C" const RadOpSchema* r3_moe_mailbox_schema_at(int i) {
     return (i < 0 || i >= NELEM(kSchemas)) ? nullptr : &kSchemas[i];
+}
+/* RAD26 diagnostics, printed by close_mailbox: wakes queued on the side stream, captured into graphs, and fired. */
+extern "C" void r3_moe_wake_report(void) {
+    std::fprintf(stderr, "libr3moe: large-lane wakes queued %llu captured %llu fired %llu\n",
+                 (unsigned long long)g_wake_queued.load(), (unsigned long long)g_wake_captured.load(),
+                 (unsigned long long)g_wake_fired.load());
 }
 extern "C" const RadKernelInfo* r3_moe_mailbox_row(int i) {
     if (i == 0) return &kPublish;

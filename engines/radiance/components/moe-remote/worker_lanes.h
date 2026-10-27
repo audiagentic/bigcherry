@@ -104,8 +104,9 @@ public:
         }
         uint64_t lr = 0, ln = 0;
         for (uint32_t k = 0; k < kMaxRanks; ++k) { lr += stats_[lane_of(k, kSmallClasses)].req; ln += stats_[lane_of(k, kSmallClasses)].rows; }
-        std::fprintf(stderr, "r3_moe_worker: large-lane requests %llu (%llu rows)\n", (unsigned long long)lr,
-                     (unsigned long long)ln);
+        std::fprintf(stderr, "r3_moe_worker: large-lane requests %llu (%llu rows), notify wakes %llu\n",
+                     (unsigned long long)lr, (unsigned long long)ln,
+                     (unsigned long long)large_wakes_.load(std::memory_order_relaxed));
         if (samples && *req) *us = (sampled_us / (double)samples) * (double)*req;
         std::fprintf(stderr, "r3_moe_worker: GPU timing samples=%llu sampled=%.1f ms avg=%.1f us\n",
                      (unsigned long long)samples, sampled_us / 1000.0, samples ? sampled_us / (double)samples : 0.0);
@@ -158,6 +159,7 @@ private:
                     return !seq_after(next, load(req)) || !(load(&h_->burst) & 1u) || stopping();
                 });
                 if (r != WaitResult::Ready) { request_stop(); break; }   /* a helper failed, or the wait itself did */
+                large_wakes_.fetch_add(1, std::memory_order_relaxed);
                 continue;
             }
             const Request* q = lane_request(map_, lane, next);
@@ -287,4 +289,5 @@ private:
     Combine& combine_;
     std::array<std::thread, r3::moe_shm::kLanes> threads_;
     std::array<Stats, r3::moe_shm::kLanes> stats_{};
+    std::atomic<uint64_t> large_wakes_{0};   /* RAD26 diagnostics: large-lane notify wakes inside bursts */
 };

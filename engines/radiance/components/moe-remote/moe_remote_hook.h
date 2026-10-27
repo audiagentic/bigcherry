@@ -62,3 +62,4 @@ struct R3MoeMailboxDevice {
 extern "C" int r3_moe_mailbox_enabled(void);
 extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevice** out);
 extern "C" int r3_moe_mailbox_schema_count(void);
+extern "C" void r3_moe_wake_report(void);   /* RAD26 diagnostics (moe_mailbox_ops.hip) */

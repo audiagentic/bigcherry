@@ -373,6 +373,7 @@ void write_heat(uint32_t rank, RankState& s) {
 void close_mailbox() {
     std::lock_guard<std::mutex> lock(g.mu);
     g.watch.stop();   /* first: helpers may exit while the engine tears down, and that is not a fault */
+    r3_moe_wake_report();
     for (uint32_t r = 0; r < kMaxRanks; ++r) {
         RankState& s = g.rank[r];
         if (!s.ready) continue;
