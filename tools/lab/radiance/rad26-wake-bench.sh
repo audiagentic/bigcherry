@@ -6,7 +6,7 @@ set -u
 REPEATS=${1:-3}
 set --   # the env script reads its own arguments
 source tools/env/bigcherry-env.sh >/dev/null
-export ROCM_PATH=${ROCM_PATH:-/opt/rocm-7.2.4}
+source "$(dirname "${BASH_SOURCE[0]}")/lab-env.sh"
 OUT=$BC_WORK_ROOT/runs/rad26-wake-bench-$(date +%m%d%H%M); mkdir -p $OUT
 git log -1 --format='commit %H %s' > $OUT/summary.txt
 IDX=$(PYTHONPATH=tools python3 -c '

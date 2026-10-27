@@ -6,7 +6,7 @@
 # Usage: burst-trace.sh
 set -u
 source tools/env/bigcherry-env.sh >/dev/null
-export ROCM_PATH=${ROCM_PATH:-/opt/rocm-7.2.4}
+source "$(dirname "${BASH_SOURCE[0]}")/lab-env.sh"
 OUT=$BC_WORK_ROOT/runs/rad20-burst-trace-$(date +%m%d%H%M); mkdir -p $OUT
 PYTHONPATH=tools timeout 5400 python3 -m bigcherry build --lane radiance-lab:stock:linux-radiance \
     --experiment moe-remote-handoff > $OUT/build.log 2>&1

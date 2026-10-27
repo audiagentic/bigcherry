@@ -2,7 +2,7 @@
 # RCS09/RCS10 genericity check on dev: build the pinned radiance (stock), then serve Qwen3.6-35B-A3B FP8 on the engine alone
 # and run the 1/2/4/6-stream baseline (${AB_CONFIG:-tools/lab/radiance/qwen35b-helper-ab.json}). Run from a checkout of this branch.
 set -u
-export ROCM_PATH=/opt/rocm-7.2.4 PATH=/opt/rocm-7.2.4/bin:$PATH
+source "$(dirname "${BASH_SOURCE[0]}")/lab-env.sh"; export PATH=$ROCM_PATH/bin:$PATH
 export BIGCHERRY_ENVIRONMENT=${BIGCHERRY_ENVIRONMENT:-${BC_REPO_ROOT}/config/environment.local.toml}
 WORK=${BC_REPO_ROOT}/work
 if [ -n "${FASTBUILD_DIR:-}" ]; then

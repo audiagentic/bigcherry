@@ -77,8 +77,12 @@ MODEL=${MODEL:-${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq
 [ -f "$MODEL" ] || { echo "FLASHNEXT_EXIT=99 model not found: $MODEL"; exit 99; }
 [ -f "$HEAT" ] || { echo "FLASHNEXT_EXIT=99 route-heat file not found: $HEAT (hottest-first placement is part of the best layout)"; exit 99; }
 
-R9700=${R9700_ROCR:-2}
-XTX=(${XTX_ROCR:-0 1})
+source "$(dirname "${BASH_SOURCE[0]}")/lab-env.sh"
+if [ -z "${R9700_ROCR:-}" ] || [ -z "${XTX_ROCR:-}" ]; then   # engine = the gfx1201 device, helpers = the gfx1100 devices
+  read -r _ENGINE _HELPERS <<<"$(lab_device_ordinals)" || { echo "FLASHNEXT_EXIT=99 device inventory: no engine/helper GPUs"; exit 99; }
+fi
+R9700=${R9700_ROCR:-$_ENGINE}
+XTX=(${XTX_ROCR:-$_HELPERS})
 
 # shared by the engine and both helpers (helper-ab.json "environment" + arm settings)
 COMMON=(

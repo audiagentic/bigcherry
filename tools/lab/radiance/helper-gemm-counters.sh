@@ -3,7 +3,7 @@
 # Usage: helper-gemm-counters.sh <build-dir> <model.rad> <capture.bin> <out-dir>
 set -u
 B=$1; M=$2; F=$3; OUT=$4
-export ROCM_PATH=/opt/rocm-7.2.4 PATH=/opt/rocm-7.2.4/bin:$PATH
+source "$(dirname "${BASH_SOURCE[0]}")/lab-env.sh"; export PATH=$ROCM_PATH/bin:$PATH
 rm -rf "$OUT"
 for set in "SQ_WAVES SQ_INSTS_VALU SQ_INSTS_SALU SQ_INSTS_LDS" "SQ_WAIT_INST_LDS SQ_WAIT_ANY SQ_BUSY_CYCLES GRBM_GUI_ACTIVE" "SQ_INSTS_VMEM SQ_INSTS_WMMA SQ_LDS_BANK_CONFLICT SQ_LDS_IDX_ACTIVE"; do
   tag=$(echo "$set" | awk '{print $1}')

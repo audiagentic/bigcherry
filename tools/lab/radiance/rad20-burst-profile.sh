@@ -17,7 +17,7 @@ N=${1:-6}
 : "${XTX_BDFS:?set XTX_BDFS}" "${RAD20_MAIN_BUILD:?set RAD20_MAIN_BUILD}" "${RAD20_BURST_BUILD:?set RAD20_BURST_BUILD}"
 set --   # the env script reads its own arguments
 source tools/env/bigcherry-env.sh >/dev/null
-export ROCM_PATH=${ROCM_PATH:-/opt/rocm-7.2.4}
+source "$(dirname "${BASH_SOURCE[0]}")/lab-env.sh"
 OUT=$BC_WORK_ROOT/runs/rad20-burst-profile-$(date +%m%d%H%M); mkdir -p $OUT
 HERE=$(cd "$(dirname "$0")" && pwd)
 L=$HERE/launch-flashnext-best.sh
