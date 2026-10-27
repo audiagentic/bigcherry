@@ -1,6 +1,6 @@
 # RAD20: helper waiting, queues and idle power (2026-10-23 to 10-27)
 
-Layout: radiance engine on the R9700 (gfx1201), one `r3_moe_worker` helper per RX 7900 XTX (gfx1100), Brutus,
+Layout: radiance engine on the R9700 (gfx1201), one `r3_moe_worker` helper per RX 7900 XTX (gfx1100), the build server,
 ROCm 7.2.x, kernel 7.0.13. Plan item: RAD20. Summary on the model page
 (`docs/reference/engines/radiance/models/qwen3.8-flash-next.md`, "Helper waiting, queues and idle power").
 
