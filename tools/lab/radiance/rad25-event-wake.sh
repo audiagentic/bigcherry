@@ -40,7 +40,7 @@ for period in 100 150 300; do
 done
 python3 - $OUT/results.txt <<'PY' | tee -a $OUT/summary.txt
 import re, statistics, sys
-rows = [dict(re.findall(r"(\w+)=([\w.]+)", l)) for l in open(sys.argv[1]) if l.startswith("RESULT")]
+rows = [dict(re.findall(r"(\w+)=([\w.-]+)", l)) for l in open(sys.argv[1]) if l.startswith("RESULT")]
 variants = list(dict.fromkeys(r["variant"] for r in rows))
 for period in sorted({r["period_us"] for r in rows}, key=int):
     for mode in variants:
