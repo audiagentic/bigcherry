@@ -81,6 +81,18 @@ class ClassifierTests(unittest.TestCase):
         self.assertEqual(lab.classify(dirty=False, on_origin=False), lab.UNIQUE)
         self.assertEqual(lab.classify(dirty=True, on_origin=False), lab.DIRTY)
 
+    def test_in_use_beats_removable(self):
+        self.assertEqual(lab.classify(dirty=False, on_origin=True, in_use=True), lab.IN_USE)
+        self.assertEqual(lab.classify(dirty=True, on_origin=False, in_use=True), lab.IN_USE)
+
+    def test_inspection_marks_in_use(self):
+        out = (
+            "STATE\t/lab/main\t0\t1\t0\nSTATE\t/lab/work/worktrees/clean\t0\t1\t1\n"
+            "LIST-BEGIN\n" + PORCELAIN
+        )
+        states = [state for _tree, state in lab.parse_inspection(out)]
+        self.assertEqual(states[:2], [lab.REMOVABLE, lab.IN_USE])
+
     def test_parse_porcelain(self):
         trees = lab.parse_porcelain(PORCELAIN)
         self.assertEqual([t.primary for t in trees], [True, False, False, False])
@@ -98,7 +110,7 @@ class ClassifierTests(unittest.TestCase):
 
     def test_missing_state_is_kept(self):
         states = [state for _tree, state in lab.parse_inspection("LIST-BEGIN\n" + PORCELAIN)]
-        self.assertEqual(set(states), {lab.DIRTY})
+        self.assertEqual(set(states), {lab.IN_USE})
 
     def test_failed_fetch_refuses(self):
         with self.assertRaises(ValueError):
