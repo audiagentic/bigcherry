@@ -1582,6 +1582,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     _register_power(sub)
 
+    from .host_check import register as _register_host_check
+
+    _register_host_check(sub)
+
     ab.set_defaults(
         func=lambda args: _ab_benchmark_main(
             [
