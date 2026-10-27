@@ -1,4 +1,5 @@
 #include "moe_remote_hook.h"
+#include "moe_helper_watch.h"
 #include "moe_remote_shm.h"
 #include "rad_abi.h"
 
@@ -55,6 +56,7 @@ struct HookState {
     RegisterFn engine_register = nullptr;
     std::mutex mu;
     RankState rank[kMaxRanks];
+    HelperWatch watch;   /* RAD20: fails the engine's helper waits when a helper process dies */
 };
 HookState g;
 
@@ -154,7 +156,10 @@ void publish_layer_map(int layer, int n_expert, const int32_t* slot_of_expert) {
         store(&g.hdr->layer_map_ready[layer], 1);
         (void)futex_wake(&g.hdr->layer_map_ready[layer]);
     }
-    wait_until(&g.hdr->layer_map_consumed[layer], 1);
+    g.watch.notice();
+    if (!wait_until(&g.hdr->layer_map_consumed[layer], 1, &g.hdr->helper_fault))
+        std::fprintf(stderr, "libr3: R3_MOE_WORKER layer %d: helper failed before consuming its map
+", layer);
 }
 
 /* An inference burst begins or ends (RAD20: the helpers arm GPU waits only inside a burst, so their queues are
@@ -174,6 +179,7 @@ void burst_transition(int active) {
         Header* h = g.hdr;
         const uint32_t b = load(&h->burst) & ~kBurstStop;
         if (active == (int)(b & 1u)) return;
+        if (active) g.watch.notice();
         (void)__atomic_fetch_add(&h->burst, 1u, __ATOMIC_SEQ_CST);
         (void)futex_wake(&h->burst);
         if (active)
@@ -244,6 +250,8 @@ void register_mailbox() {
         g.engine_register = nullptr;
         return;
     }
+
+    (void)g.watch.start(g.hdr);
 
     /* The engine policy only decides whether the graph contains/uses the two mailbox ops.
      * All route selection and synchronisation stays on the rank GPU. */
@@ -335,6 +343,7 @@ void close_mailbox() {
     }
     if (g.engine_register) (void)g.engine_register(nullptr);
     g.engine_register = nullptr;
+    g.watch.stop();
     if (g.pinned) (void)hipHostUnregister(g.map);
     if (g.map != MAP_FAILED) ::munmap(g.map, g.bytes);
     if (g.fd >= 0) ::close(g.fd);

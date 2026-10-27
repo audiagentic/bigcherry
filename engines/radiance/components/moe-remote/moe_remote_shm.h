@@ -13,7 +13,7 @@
 namespace r3::moe_shm {
 
 constexpr uint64_t kMagic = 0x31454f4d33485253ull; /* "SRH3MOE1": reject unrelated/stale shm. */
-constexpr uint32_t kVersion = 17;  /* 17: Header::burst, LaneSignal::park (RAD20: small-lane waits armed only inside an inference burst); 16: the combined row is fp16 with a per-row fallback marker (kCombineFallback); 15: Header::combine (R3_MOE_WORKER_COMBINE); 14: the header records the model shape (intermediate, activation_group, shape_hash) and every region is laid out from it (layout_for); 13: several pre-queued small-lane sizes (Header::small_class_*), ten lanes; 12: Request carries the R3_MOE_WORKER_TRACE stamps (192 -> 256 bytes); 11: helper_fault; completion is an exact generation */
+constexpr uint32_t kVersion = 18;  /* 18: Header::helper_pid (the engine watches each helper process and raises helper_fault when one exits); 17: Header::burst, LaneSignal::park (RAD20: small-lane waits armed only inside an inference burst); 16: the combined row is fp16 with a per-row fallback marker (kCombineFallback); 15: Header::combine (R3_MOE_WORKER_COMBINE); 14: the header records the model shape (intermediate, activation_group, shape_hash) and every region is laid out from it (layout_for); 13: several pre-queued small-lane sizes (Header::small_class_*), ten lanes; 12: Request carries the R3_MOE_WORKER_TRACE stamps (192 -> 256 bytes); 11: helper_fault; completion is an exact generation */
 constexpr uint32_t kPage = 4096;
 /* R3_MOE_WORKER_COMBINE: first element of a combined fp16 row the combiner could not hold in fp16 range (a NaN payload
  * no arithmetic produces; a real NaN converts to 0x7E00); the engine then reads that row from the two helper planes. */
@@ -169,7 +169,11 @@ struct alignas(kPage) Header {
      * draining, so it never publishes into released waits and never waits for a re-arm. A stopping helper sets
      * kBurstStop and clears its lanes' flags, so no waiter sleeps past the fault. */
     uint32_t burst;
-    uint32_t reserved32[27];
+    /* Each helper's process id, written once it has attached (0 before). The engine watches these processes (pidfd)
+     * and sets helper_fault when one exits, so a helper killed before it could set helper_fault itself cannot leave
+     * the engine's GPU wait spinning (RAD20: an 8.7 h hang after both helper GPUs reset). */
+    int32_t helper_pid[kMaxRanks];
+    uint32_t reserved32[27 - kMaxRanks];
     CombineSignal combine;
 };
 static_assert(sizeof(Header) <= kPage);
@@ -470,11 +474,14 @@ inline int futex_wait(uint32_t* p, uint32_t expected) {
 inline int futex_wake(uint32_t* p) {
     return static_cast<int>(::syscall(SYS_futex, p, FUTEX_WAKE, INT_MAX, nullptr, nullptr, 0));
 }
-inline void wait_until(uint32_t* p, uint32_t value) {
+/* Sleep until *p == value: true then; false when *fault becomes non-zero (whoever sets it wakes p) or the futex
+ * fails, so a failed wait is never taken for the value having arrived. */
+inline bool wait_until(uint32_t* p, uint32_t value, const uint32_t* fault) {
     for (;;) {
         const uint32_t seen = load(p);
-        if (seen == value) return;
-        if (futex_wait(p, seen) < 0 && errno != EAGAIN && errno != EINTR) return;
+        if (seen == value) return true;
+        if (load(fault)) return false;
+        if (futex_wait(p, seen) < 0 && errno != EAGAIN && errno != EINTR) return false;
     }
 }
 

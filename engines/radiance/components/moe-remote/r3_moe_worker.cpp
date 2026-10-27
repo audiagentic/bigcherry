@@ -329,6 +329,13 @@ int main(int argc, char** argv) {
     if (!segment_shape(model, &shape, &lay)) return 1;
     /* The mailbox segment: helper 0 creates it, the others attach (up to 30 minutes while the first loads). Owned by
      * `seg` from here on; every return below releases it, and only helper 0 unlinks the name. */
+    /* Before the first wait (segment attach, the engine's maps): a stop signal must end every one of them. No
+     * SA_RESTART (std::signal sets it): futex waits return EINTR and their loops see the stop word. */
+    struct sigaction sa{};
+    sa.sa_handler = on_signal;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    sigaction(SIGINT, &sa, nullptr); sigaction(SIGTERM, &sa, nullptr);
     Segment seg;
     if (!seg.open(shm_name(), lay.bytes, helper_index == 0, 1800)) return 1;
     void* const map = seg.host();
@@ -359,6 +366,9 @@ int main(int argc, char** argv) {
             return 1;
         }
     }
+    /* The engine watches this process from here on (Header::helper_pid): if it dies before it can set helper_fault,
+     * the engine sets it. */
+    __atomic_store_n(&h->helper_pid[helper_index], (int32_t)::getpid(), __ATOMIC_RELEASE);
     publish_owned(map, owned, helper_index);
     if (!cpu && !seg.register_gpu()) return 1;
     void* const dev_map = seg.device();
@@ -370,6 +380,7 @@ int main(int argc, char** argv) {
     bool any_map = false;
     for (uint32_t layer = 0; layer < model.layers; ++layer) {
         while (!load(&h->layer_map_ready[layer])) {
+            if (stopping()) return 1;
             if (!any_map) {
                 (void)futex_wait(&h->layer_map_ready[layer], 0);
                 continue;
@@ -417,12 +428,6 @@ int main(int argc, char** argv) {
     std::fprintf(stderr, "r3_moe_worker: runtime map owns %zu experts, %.3f GiB\n",
                  owned.expert.size(), (double)owned.bytes / (1024.0 * 1024.0 * 1024.0));
 
-    /* No SA_RESTART (std::signal sets it): the futex wait must return EINTR so the loop sees the stop word. */
-    struct sigaction sa{};
-    sa.sa_handler = on_signal;
-    sigemptyset(&sa.sa_mask);
-    sa.sa_flags = 0;
-    sigaction(SIGINT, &sa, nullptr); sigaction(SIGTERM, &sa, nullptr);
     std::fprintf(stderr,
                  "r3_moe_worker: ready shm=%s layers=%u bytes=%llu (%s, small lane rows <= %s, large <= %u)\n",
                  name, model.layers, (unsigned long long)lay.bytes,
