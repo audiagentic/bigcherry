@@ -26,6 +26,21 @@ standalone server with a llama-server-compatible API.
 - `fn-helper.sh`, `fn-profile.sh`, `fn-profile-compare.py`: rocprofv3 kernel/copy traces of one prefill and their
   comparison; the harness does not trace, so these stay.
 
+- `rad20-barrier-wake.cpp`, `rad20-barrier-wake.sh`: RAD20 option B measurement. How long after the R9700 (or a host
+  thread) releases a wait on an XTX queue does the next XTX kernel start? Arm A waits with an AQL `BARRIER_AND` on an
+  HSA signal (raw HSA queue), arm B with `hipStreamWaitValue32` on host-registered shared memory; single process and
+  the production two-process split (helper creates an IPC signal, engine attaches it). Needs `R9700_BDF` and
+  `XTX_BDF`; hold the `gpu` lease. In two processes `hsa_amd_ipc_signal_attach` maps the signal for the host only,
+  so the engine attaches the signal's page again with `hsa_amd_ipc_memory_attach` for its R9700 kernel's store.
+  `--dump FILE` writes one CSV row per iteration. In two processes the first arm released by an R9700 kernel,
+  whichever wait it uses, pays a one-time warm-up: about 350-530 us on its first iteration and 11-39 us for the next
+  ~15 ms; a single process does not show it. Compare arms after that warm-up, or put a throwaway arm first.
+  Run it with `bash` (lab scripts are not executable in the repo):
+  `R9700_BDF=0000:09:00.0 XTX_BDF=0000:03:00.0 agent-lease acquire gpu --ttl 30m --purpose "RAD20 barrier wake" -- bash tools/lab/radiance/rad20-barrier-wake.sh`.
+  Result (2026-10-26): the barrier wakes about 0.8 us slower than `hipStreamWaitValue32` at p50 (two processes, R9700
+  release, n=2000: 7.55 vs 6.77 us), and a pending wait of either kind holds the XTX at about 96-98 W against 12 W
+  idle, so option B saves no power while a wait is armed.
+
 ## Build result on dev (2026-10-09)
 
 Builds in 104 s for gfx1201 with ROCm 7.2.4 and g++ 14.2 (unpacked by `fetch-gcc14.sh`). 38 of 39 card-free tests

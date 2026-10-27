@@ -46,24 +46,6 @@ struct EnginePlugin {
 };
 using RegisterFn = int (*)(const EnginePlugin*);
 
-/* An inference burst begins or ends (RAD20: the helpers arm GPU waits only inside a burst, so their queues are
- * empty and the GPUs idle between bursts). R3_MOE_WORKER_BURST_TRACE=1 logs each transition with a monotonic
- * timestamp, for checking begin/end pairing across single-stream, multi-stream and MTP runs. */
-void burst_transition(int active) {
-    static const bool trace = [] {
-        const char* e = std::getenv("R3_MOE_WORKER_BURST_TRACE");
-        return e && *e && std::strcmp(e, "0") != 0;
-    }();
-    static std::atomic<uint64_t> begins{0}, ends{0};
-    const uint64_t n = active ? begins.fetch_add(1) + 1 : ends.fetch_add(1) + 1;
-    if (trace) {
-        timespec ts{};
-        clock_gettime(CLOCK_MONOTONIC, &ts);
-        std::fprintf(stderr, "libr3moe: burst %s #%llu t=%lld.%06ld\n", active ? "begin" : "end",
-                     (unsigned long long)n, (long long)ts.tv_sec, ts.tv_nsec / 1000);
-    }
-}
-
 struct HookState {
     int fd = -1;
     void* map = MAP_FAILED;
@@ -173,6 +155,40 @@ void publish_layer_map(int layer, int n_expert, const int32_t* slot_of_expert) {
         (void)futex_wake(&g.hdr->layer_map_ready[layer]);
     }
     wait_until(&g.hdr->layer_map_consumed[layer], 1);
+}
+
+/* An inference burst begins or ends (RAD20: the helpers arm GPU waits only inside a burst, so their queues are
+ * empty and the GPUs idle between bursts). R3_MOE_WORKER_BURST_TRACE=1 logs each transition with a monotonic
+ * timestamp, for checking begin/end pairing across single-stream, multi-stream and MTP runs. */
+void burst_transition(int active) {
+    static const bool trace = [] {
+        const char* e = std::getenv("R3_MOE_WORKER_BURST_TRACE");
+        return e && *e && std::strcmp(e, "0") != 0;
+    }();
+    static std::atomic<uint64_t> begins{0}, ends{0};
+    const uint64_t n = active ? begins.fetch_add(1) + 1 : ends.fetch_add(1) + 1;
+    /* One engine process drives the segment's burst word. Begin: open the burst, then wait only for lanes a helper is
+     * still draining (Header::burst; normally none, so no sleep), so nothing is published into released waits. End:
+     * close it. A helper that stops clears its drain flags and sets helper_fault. */
+    if (g.hdr) {
+        Header* h = g.hdr;
+        const uint32_t b = load(&h->burst) & ~kBurstStop;
+        if (active == (int)(b & 1u)) return;
+        (void)__atomic_fetch_add(&h->burst, 1u, __ATOMIC_SEQ_CST);
+        (void)futex_wake(&h->burst);
+        if (active)
+            for (uint32_t lane = 0; lane < kLanes; ++lane)
+                for (uint32_t v; (v = __atomic_load_n(&h->lane[lane].park, __ATOMIC_SEQ_CST)) == kParkDraining;) {
+                    if (load(&h->helper_fault)) break;
+                    (void)futex_wait(&h->lane[lane].park, v);
+                }
+    }
+    if (trace) {
+        timespec ts{};
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        std::fprintf(stderr, "libr3moe: burst %s #%llu t=%lld.%06ld\n", active ? "begin" : "end",
+                     (unsigned long long)n, (long long)ts.tv_sec, ts.tv_nsec / 1000);
+    }
 }
 
 int owner_query(int layer, int expert) {

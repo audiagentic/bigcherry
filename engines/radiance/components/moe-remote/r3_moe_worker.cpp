@@ -37,17 +37,35 @@
 #include "worker_harness.h"
 #include "worker_selftest.h"
 #include "worker_combine.h"
+#include "worker_config.h"
+#include "worker_segment.h"
+#include "worker_lanes.h"
+#include "worker_queue_warm.h"
 
 int main(int argc, char** argv) {
     /* EVERY LANE STREAM ON ITS OWN HARDWARE QUEUE. A small lane pre-queues "wait for the next request" packets;
      * a stream sharing a hardware queue with one sits behind that wait until a small request arrives. With
      * every step large (KL mode's 64-token steps over an 8-row small lane) none ever does, and the large lane's
      * work never runs. HIP maps streams onto GPU_MAX_HW_QUEUES queues (4 by default) and the helper opens one
-     * stream for every lane in the protocol (kLanes: each small-lane class and the large lane, for each rank)
-     * plus its own, so the count is derived from the protocol, with two spare, before HIP initialises (it grew
-     * from five streams to eleven with RAD12's lane classes, which hung every request at the old fixed 8);
-     * an explicit setting wins. */
-    (void)::setenv("GPU_MAX_HW_QUEUES", std::to_string(r3::moe_shm::kLanes + 3).c_str(), 0);
+     * stream for each lane it serves (served_lanes: its rank slot's enabled classes and large lane) plus its own,
+     * so the count is derived before HIP initialises, with two spare; an explicit setting wins. No more: every
+     * extra queue is one more the gfx11 MES schedules, and past its hardware slots it oversubscribes and keeps
+     * MES busy (~95 W) with nothing to run (RAD20). With power save off (R3_MOE_WORKER_POWER_SAVE=0), every protocol
+     * lane gets one (lanes_open): the extra queues keep MES and the command processor awake, which dispatches ~0.3%
+     * faster in decode at ~95 W per GPU at idle. The environment is only peeked here; it is validated below. */
+    auto lanes_open = [](bool save, uint32_t count, uint32_t index, uint32_t classes) {
+        std::array<bool, kLanes> all;
+        all.fill(true);
+        return save ? served_lanes(count, index, classes) : all;
+    };
+    {
+        uint32_t lanes = 0;
+        for (bool s : lanes_open(WorkerConfig::peek_flag("R3_MOE_WORKER_POWER_SAVE", true),
+                                 WorkerConfig::peek_u32("R3_MOE_WORKER_COUNT", 1),
+                                 WorkerConfig::peek_u32("R3_MOE_WORKER_INDEX", 0), helper_small_classes().count))
+            lanes += s;
+        (void)::setenv("GPU_MAX_HW_QUEUES", std::to_string(lanes + 3).c_str(), 0);
+    }
     /* The helper's grouped MoE GEMM (prefill) on gfx11's native bf16 WMMA path: R9700 engine + two XTX helpers,
      * Flash-Next, prefill 2,518 -> 2,665 tok/s and helper gate/up -25%, KLD 0.064 (noise floor). Read by libr3
      * when the plugin is loaded, so set before it; an explicit setting wins. */
@@ -172,25 +190,23 @@ int main(int argc, char** argv) {
         model_path = argv[1];
     }
 
+    WorkerConfig cfg;
+    if (std::string err; !cfg.from_environment(kMaxRanks, &err)) {
+        std::fprintf(stderr, "r3_moe_worker: %s\n", err.c_str());
+        return 2;
+    }
+
     Container model;
     if (!model.open(model_path) || model.layers > kMaxLayers) {
         std::fprintf(stderr, "r3_moe_worker: cannot open/validate %s\n", model_path);
         return 1;
     }
 
-    const char* cpu_env = std::getenv("R3_MOE_WORKER_CPU");
-    const bool cpu = cpu_env && *cpu_env && std::strcmp(cpu_env, "0") != 0 && !compare;
+    const bool cpu = cfg.cpu && !compare;
     std::unique_ptr<r3_moe_gpu::Runner> gpu;
     if (!cpu) {
         gpu = std::make_unique<r3_moe_gpu::Runner>(model);
-        if (const char* e = std::getenv("R3_MOE_WORKER_ENGINE_RANKS"); e && *e) {
-            const int n = std::atoi(e);
-            if (n < 1 || n > (int)kMaxRanks) {
-                std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_ENGINE_RANKS=%s, want 1..%u\n", e, kMaxRanks);
-                return 2;
-            }
-            gpu->engine_ranks_ = (uint32_t)n;
-        }
+        if (cfg.engine_ranks) gpu->engine_ranks_ = cfg.engine_ranks;
         if (!gpu->open()) return 1;
         {   // the container's own weight format picks the kernels (RAD13); an unsupported one was refused by name above
             MoeExpertDesc first{};
@@ -218,11 +234,8 @@ int main(int argc, char** argv) {
     /* R3_MOE_WORKER_COUNT=2 with R3_MOE_WORKER_INDEX=0/1: two helpers (the XTX cards) behind a one-rank engine
      * (the R9700) share one segment; helper 0 creates it, helper 1 attaches, each owns half the candidates and
      * serves its own rank slot. */
-    uint32_t helper_index = 0, helper_count = 1;
-    if (const char* e = std::getenv("R3_MOE_WORKER_COUNT"); e && *e) helper_count = (uint32_t)std::atoi(e);
-    if (const char* e = std::getenv("R3_MOE_WORKER_INDEX"); e && *e) helper_index = (uint32_t)std::atoi(e);
-    if (helper_count < 1 || helper_count > kMaxRanks || helper_index >= helper_count ||
-        (helper_count > 1 && (!gpu || gpu->engine_ranks_ != 1 || compare))) {
+    const uint32_t helper_index = cfg.helper_index, helper_count = cfg.helper_count;
+    if (helper_count > 1 && (!gpu || gpu->engine_ranks_ != 1 || compare)) {
         std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_INDEX %u of R3_MOE_WORKER_COUNT %u: want index < count <= %u, "
                      "and two helpers only on GPU behind a one-rank engine (R3_MOE_WORKER_ENGINE_RANKS=1), not --compare\n",
                      helper_index, helper_count, kMaxRanks);
@@ -314,60 +327,41 @@ int main(int argc, char** argv) {
     r3::moe_shm::LayoutShape shape{};
     Layout lay{};
     if (!segment_shape(model, &shape, &lay)) return 1;
-    const char* name = shm_name();
-    const bool creator = helper_index == 0;
-    /* Only the creator removes the segment. */
-    auto drop_name = [&] { if (creator) shm_unlink(name); };
-    int fd = -1;
-    if (creator) {
-        fd = shm_open(name, O_CREAT | O_EXCL | O_RDWR | O_CLOEXEC, 0600);
-    } else {
-        for (int i = 0; i < 1800 && fd < 0 && !stopping(); ++i) {
-            fd = shm_open(name, O_RDWR | O_CLOEXEC, 0);
-            if (fd < 0) ::sleep(1);
-        }
-    }
-    if (fd < 0) {
-        std::fprintf(stderr, "r3_moe_worker: shm_open %s: %s\n", name, std::strerror(errno));
-        return 1;
-    }
-    if (creator && ftruncate(fd, (off_t)lay.bytes) != 0) {
-        std::fprintf(stderr, "r3_moe_worker: ftruncate: %s\n", std::strerror(errno));
-        drop_name(); close(fd); return 1;
-    }
-    void* map = mmap(nullptr, lay.bytes, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-    if (map == MAP_FAILED) {
-        std::fprintf(stderr, "r3_moe_worker: mmap: %s\n", std::strerror(errno));
-        drop_name(); close(fd); return 1;
-    }
-    auto* h = static_cast<Header*>(map);
-    if (creator) {
-        if (!init(map, model.layers, shape)) { munmap(map, lay.bytes); close(fd); drop_name(); return 1; }
+    /* The mailbox segment: helper 0 creates it, the others attach (up to 30 minutes while the first loads). Owned by
+     * `seg` from here on; every return below releases it, and only helper 0 unlinks the name. */
+    Segment seg;
+    if (!seg.open(shm_name(), lay.bytes, helper_index == 0, 1800)) return 1;
+    void* const map = seg.host();
+    Header* const h = seg.header();
+    const char* const name = seg.name();
+    if (helper_index == 0) {
+        if (!init(map, model.layers, shape)) return 1;
         h->small_class_count = lane_classes.count;
         for (uint32_t c = 0; c < lane_classes.count; ++c) h->small_class_rows[c] = lane_classes.rows[c];
         /* Every helper reads the same step activations: stage them once, in slot 0. */
         for (uint32_t r = 1; r < helper_count; ++r) h->activation_offset[r] = h->activation_offset[0];
         store(&h->helper_count, helper_count);   /* last: an attaching helper waits for it */
+        (void)futex_wake(&h->helper_count);
     } else {
-        for (int i = 0; i < 1800 && !stopping() && load(&h->helper_count) != helper_count; ++i) ::sleep(1);
+        /* Woken by helper 0's publication; the one-second bound keeps a signal-driven stop prompt. */
+        for (int i = 0; i < 1800 && !stopping(); ++i) {
+            const uint32_t seen = load(&h->helper_count);
+            if (seen == helper_count) break;
+            struct timespec ts{1, 0};
+            (void)::syscall(SYS_futex, &h->helper_count, FUTEX_WAIT, seen, &ts, nullptr, 0);
+        }
         bool same_lanes = load(&h->helper_count) == helper_count && valid(h, lay.bytes, shape) && h->small_class_count == lane_classes.count;
         for (uint32_t c = 0; same_lanes && c < lane_classes.count; ++c)
             same_lanes = h->small_class_rows[c] == lane_classes.rows[c];
         if (!same_lanes) {
             std::fprintf(stderr, "r3_moe_worker: segment %s is not helper 0's %u-helper segment (small lanes %u, ours %s)\n",
                          name, helper_count, (unsigned)h->small_class_count, lane_list.c_str());
-            munmap(map, lay.bytes); close(fd); return 1;
+            return 1;
         }
     }
     publish_owned(map, owned, helper_index);
-    void* dev_map = nullptr;
-    if (!cpu) {
-        if (!r3_moe_gpu::hip_ok(hipHostRegister(map, lay.bytes, hipHostRegisterPortable | hipHostRegisterMapped),
-                                "hipHostRegister mailbox") ||
-            !r3_moe_gpu::hip_ok(hipHostGetDevicePointer(&dev_map, map, 0), "hipHostGetDevicePointer mailbox")) {
-            munmap(map, lay.bytes); close(fd); drop_name(); return 1;
-        }
-    }
+    if (!cpu && !seg.register_gpu()) return 1;
+    void* const dev_map = seg.device();
 
     std::fprintf(stderr, "r3_moe_worker: waiting for engine runtime expert maps\n");
     /* The first map waits as long as the engine takes to start. After that the engine declares its
@@ -393,16 +387,14 @@ int main(int argc, char** argv) {
         }
         any_map = true;
         const int32_t* slots = layer_slots(map, layer);
-        if (!slots) {
-            munmap(map, lay.bytes); close(fd); drop_name(); return 1;
-        }
+        if (!slots) return 1;
         for (auto [l, e] : owned.expert)
             if (l == layer && slots[e] < 0) (void)clear_owned(map, l, e, helper_index);
         if (gpu && !gpu->load_layer(layer, owned.expert, slots)) {
             std::fprintf(stderr, "r3_moe_worker: layer %u runtime table build failed\n", layer);
             store(&h->layer_map_consumed[layer], 1);
             (void)futex_wake(&h->layer_map_consumed[layer]);
-            munmap(map, lay.bytes); close(fd); drop_name(); return 1;
+            return 1;
         }
         store(&h->layer_map_consumed[layer], 1);
         (void)futex_wake(&h->layer_map_consumed[layer]);
@@ -416,10 +408,11 @@ int main(int argc, char** argv) {
     }
     owned = std::move(runtime_owned);
     h->owned_bytes = owned.bytes;
-    if (gpu && !gpu->prepare_lanes(lane_classes.rows, lane_classes.count, lane_large_rows)) {
-        (void)hipHostUnregister(map);
-        munmap(map, lay.bytes); close(fd); drop_name(); return 1;
-    }
+    const auto lanes_served = served_lanes(helper_count, helper_index, lane_classes.count);
+    std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_POWER_SAVE %s\n", cfg.power_save ? "on" : "off");
+    if (gpu && !gpu->prepare_lanes(lane_classes.rows, lane_classes.count, lane_large_rows,
+                                   lanes_open(cfg.power_save, helper_count, helper_index, lane_classes.count)))
+        return 1;
     if (gpu) (void)posix_fadvise(model.fd, 0, 0, POSIX_FADV_DONTNEED);
     std::fprintf(stderr, "r3_moe_worker: runtime map owns %zu experts, %.3f GiB\n",
                  owned.expert.size(), (double)owned.bytes / (1024.0 * 1024.0 * 1024.0));
@@ -456,193 +449,49 @@ int main(int argc, char** argv) {
             if (++seq == 0) break;
         }
     } else {
-        constexpr uint32_t kQueueDepth = 4;
-        std::array<uint64_t, kLanes> lane_req{}, lane_rows{}, lane_routes{}, lane_samples{};
-        std::array<double, kLanes> lane_sample_us{};
-        std::array<std::thread, kLanes> workers;
         /* R3_MOE_WORKER_COMBINE=1 (default off), two helpers: helper 0 adds both helpers' rows for the engine's large
          * lane on its large-lane thread after its stream sync (worker_combine.h); helper 1 wakes it after its own sync.
          * The engine asks only once combine.enabled is set. */
-        bool combine_on = false;
-        std::unique_ptr<CombinePool> combine_pool;
-        std::vector<uint8_t> combine_mask;
-        CombineStats combine_stats;
-        if (const char* e = std::getenv("R3_MOE_WORKER_COMBINE"); e && std::strcmp(e, "1") == 0 && helper_count == 2) {
+        Combine combine;
+        if (cfg.combine && helper_count == 2) {
             if (!combine_cpu_supported()) {
                 std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_COMBINE needs a CPU with AVX2 and F16C\n");
-                munmap(map, lay.bytes); close(fd); drop_name(); return 1;
+                return 1;
             }
-            combine_on = true;
+            combine.on = true;
             if (helper_index == 0) {
-                uint32_t min_rows = 256, threads = 8;
-                if (const char* v = std::getenv("R3_MOE_WORKER_COMBINE_MIN_ROWS"); v && *v) min_rows = (uint32_t)std::atoi(v);
-                if (const char* v = std::getenv("R3_MOE_WORKER_COMBINE_THREADS"); v && *v) threads = (uint32_t)std::max(1, std::atoi(v));
-                threads = std::min(threads, std::max(1u, std::thread::hardware_concurrency()));
-                combine_pool = std::make_unique<CombinePool>(threads);
-                combine_mask.resize(h->max_rows);
-                h->combine.min_rows = min_rows;
+                const uint32_t threads = std::min(cfg.combine_threads, std::max(1u, std::thread::hardware_concurrency()));
+                combine.pool = std::make_unique<CombinePool>(threads);
+                combine.mask.resize(h->max_rows);
+                h->combine.min_rows = cfg.combine_min_rows;
                 store(&h->combine.enabled, 1u);
                 std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_COMBINE on - %u CPU thread(s), large-lane steps of %u+ rows\n",
-                             threads, min_rows);
+                             threads, cfg.combine_min_rows);
             }
         }
-        for (uint32_t lane = 0; lane < kLanes; ++lane) {
-            /* Two helpers: each serves only its own rank slot's lanes. */
-            if (helper_count > 1 && lane % kMaxRanks != helper_index) continue;
-            if (lane_is_small(lane) && lane_class(lane) >= lane_classes.count) continue;   /* a disabled small class */
-            workers[lane] = std::thread([&, lane] {
-                const bool large = !lane_is_small(lane);
-                uint32_t next = 1;
-                uint32_t done_seen = 0;
-                if (large) {
-                    /* Sized on arrival: wait for the engine's request word, read its rows, launch that size. */
-                    while (!stopping()) {
-                        if ((int32_t)(load(&h->lane[lane].request_sequence) - next) < 0) {
-                            std::this_thread::yield();
-                            continue;
-                        }
-                        const Request* q = lane_request(map, lane, next);
-                        const uint32_t rows = load(&q->rows);
-                        capture_request(map, q, lane, next);
-                        trace_dump(map, lane, next - 1u);
-                        /* Every large request is timed by stage: they are few, and the engine cannot send
-                         * the next one until it has merged this one, so waiting here costs nothing. */
-                        const int rc = gpu->enqueue_lane(map, dev_map, lane, next, rows, true);
-                        if (rc != 0) {
-                            std::fprintf(stderr, "r3_moe_worker: large lane %u seq %u rows %u failed rc=%d\n",
-                                         lane, next, rows, rc);
-                            request_stop();
-                            break;
-                        }
-                        if (!gpu->sync_lane(lane) ||
-                            !gpu->collect_lane_timing(lane, next, &lane_sample_us[lane], &lane_samples[lane])) {
-                            request_stop();
-                            break;
-                        }
-                        if (combine_on && helper_index == 1) combine_helper1_done(map, next);
-                        if (combine_on && helper_index == 0 &&
-                            !combine_step(map, q, combine_pool.get(), &combine_mask, &combine_stats)) {
-                            store(&h->helper_fault, 1u);   /* the engine's wait for combine.done fails now */
-                            request_stop();
-                            break;
-                        }
-                        if (++next == 0) break;
-                    }
-                } else {
-                    auto queue_one = [&]() -> bool {
-                        if (next == 0) return false;
-                        const bool sample = (next & 63u) == 0;
-                        const int rc = gpu->enqueue_lane(map, dev_map, lane, next, lane_classes.rows[lane_class(lane)], sample);
-                        if (rc != 0) {
-                            std::fprintf(stderr,
-                                         "r3_moe_worker: lane %u enqueue seq %u failed rc=%d\n",
-                                         lane, next, rc);
-                            return false;
-                        }
-                        ++next;
-                        return next != 0;
-                    };
-
-                    for (uint32_t i = 0; i < kQueueDepth && !stopping(); ++i) {
-                        if (!queue_one()) {
-                            request_stop();
-                            break;
-                        }
-                    }
-                    while (!stopping()) {
-                        const uint32_t done = load(&h->lane[lane].done_sequence);
-                        if ((int32_t)(done - done_seen) <= 0) {
-                            std::this_thread::yield();
-                            continue;
-                        }
-                        if (!gpu->collect_lane_timing(lane, done,
-                                                      &lane_sample_us[lane],
-                                                      &lane_samples[lane])) {
-                            request_stop();
-                            break;
-                        }
-                        done_seen = done;
-                        trace_dump(map, lane, done - 1u);
-                        while (!stopping() &&
-                               (uint32_t)(next - done_seen - 1u) < kQueueDepth) {
-                            if (!queue_one()) {
-                                request_stop();
-                                break;
-                            }
-                        }
-                    }
-                    const uint32_t final_done = load(&h->lane[lane].done_sequence);
-                    (void)gpu->collect_lane_timing(lane, final_done,
-                                                   &lane_sample_us[lane],
-                                                   &lane_samples[lane]);
-                    /* Release the pre-queued waits so the stream drains. */
-                    store(&h->lane[lane].request_sequence, next - 1u);
-                }
-                if (!gpu->sync_lane(lane)) {
-                    request_stop();
-                    return;
-                }
-                uint64_t stats[3]{};
-                if (!gpu->lane_stats(lane, stats)) {
-                    request_stop();
-                    return;
-                }
-                lane_req[lane] = stats[0];
-                lane_rows[lane] = stats[1];
-                lane_routes[lane] = stats[2];
-            });
-        }
+        /* Power save: oversubscribe the GPU only inside bursts, for fast dispatch (worker_queue_warm.h). Started after
+         * the lane streams exist, so it counts their queues. Power save off is oversubscribed already. Declared before
+         * the lanes, so it is destroyed after they have published the stop. */
+        QueueWarm warm;
+        if (!warm.start(h, cfg.power_save && cfg.queue_warm)) return 1;
+        Lanes lanes(h, map, dev_map, *gpu, lane_classes, cfg, lanes_served, combine);
+        if (!lanes.start()) return 1;
         for (uint32_t v; (v = g_stop_word.load(std::memory_order_acquire)) == 0;)
             (void)::syscall(SYS_futex, reinterpret_cast<uint32_t*>(&g_stop_word), FUTEX_WAIT_PRIVATE, v, nullptr, nullptr, 0);
-        /* Stopping (a signal or a failed lane): fail the engine's waits and wake the other helper's combine wait before
-         * joining anything, so no fault path depends on a join completing. */
-        store(&h->helper_fault, 1u);
-        combine_futex_wake(&h->combine.helper1_done, true);
-        for (auto& w : workers) if (w.joinable()) w.join();
-        if (combine_pool) {
+        lanes.stop_and_join();
+        warm.stop();
+        if (combine.pool) {
             store(&h->combine.enabled, 0u);
-            combine_pool.reset();
+            combine.pool.reset();
             std::fprintf(stderr, "r3_moe_worker: combine steps %llu, CPU %.1f ms (%.1f us a step)\n",
-                         (unsigned long long)combine_stats.steps, combine_stats.combine_us / 1000.0,
-                         combine_stats.steps ? combine_stats.combine_us / (double)combine_stats.steps : 0.0);
+                         (unsigned long long)combine.stats.steps, combine.stats.combine_us / 1000.0,
+                         combine.stats.steps ? combine.stats.combine_us / (double)combine.stats.steps : 0.0);
         }
-        uint64_t timing_samples = 0;
-        double sampled_us = 0.0;
-        for (uint32_t lane = 0; lane < kLanes; ++lane) {
-            stat_req += lane_req[lane];
-            stat_rows += lane_rows[lane];
-            stat_routes += lane_routes[lane];
-            timing_samples += lane_samples[lane];
-            sampled_us += lane_sample_us[lane];
-            gpu->stage_report(lane, lane_samples[lane]);
-        }
-        for (uint32_t c = 0; c < lane_classes.count; ++c) {
-            uint64_t req = 0, rows = 0;
-            for (uint32_t r = 0; r < kMaxRanks; ++r) {
-                req += lane_req[lane_of(r, c)];
-                rows += lane_rows[lane_of(r, c)];
-            }
-            std::fprintf(stderr, "r3_moe_worker: small lane class %u (rows <= %u): requests %llu (%llu rows)\n", c,
-                         lane_classes.rows[c], (unsigned long long)req, (unsigned long long)rows);
-        }
-        std::fprintf(stderr, "r3_moe_worker: large-lane requests %llu (%llu rows)\n",
-                     (unsigned long long)(lane_req[lane_of(0, kSmallClasses)] + lane_req[lane_of(1, kSmallClasses)]),
-                     (unsigned long long)(lane_rows[lane_of(0, kSmallClasses)] + lane_rows[lane_of(1, kSmallClasses)]));
-        if (timing_samples && stat_req)
-            stat_us = (sampled_us / (double)timing_samples) * (double)stat_req;
-        std::fprintf(stderr,
-                     "r3_moe_worker: GPU timing samples=%llu sampled=%.1f ms avg=%.1f us\n",
-                     (unsigned long long)timing_samples, sampled_us / 1000.0,
-                     timing_samples ? sampled_us / (double)timing_samples : 0.0);
-
+        lanes.report(&stat_req, &stat_rows, &stat_routes, &stat_us);
     }
 
     std::fprintf(stderr, "r3_moe_worker: served %llu requests, %llu rows, %llu routes, compute %.1f ms (%.1f us a request)\n",
                  (unsigned long long)stat_req, (unsigned long long)stat_rows, (unsigned long long)stat_routes,
                  stat_us / 1000.0, stat_req ? stat_us / (double)stat_req : 0.0);
-    if (!cpu) (void)hipHostUnregister(map);
-    munmap(map, lay.bytes);
-    close(fd);
-    drop_name();
-    return 0;
+    return 0;   /* seg releases the segment */
 }
