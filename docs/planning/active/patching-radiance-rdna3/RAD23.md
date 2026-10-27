@@ -41,8 +41,6 @@ Root cause: kMaxRanks = 2 (moe_remote_shm.h:21) is both the engine-rank (TP) axi
 Design direction: separate axes - engine ranks R and helpers H as header fields; every per-rank / per-helper region and
 array sized from them in layout_for; result planes [H][R]; combine over H planes into one fp16 plane per R.
 
-
-
 ## Code Samples & Guidance
 
 
@@ -69,7 +67,6 @@ No fixed helper count in moe-remote code or protocol; off/cpu/gpu/auto selectabl
 
 ## Notes
 
-
 GPT design review req_bigcherry_97cebda33722 (2026-10-23), adopted order:
 1. Finish the AVX2/F16C CPU A/B (actual combine cost).
 2. GPU method = GPU arithmetic with the existing CPU futex handoff (sleeping wait, no polling): helper 0 keeps its
@@ -95,6 +92,8 @@ Handoff 2026-10-23 (historical): the feat/combine-fp16 branch subsequently merge
 GPT addendum on the N-helper protocol (req_bigcherry_3bb6b763ab97) FAILED to run - resubmit it to dev-gpt-agent
 (new session) before redesigning the layout. #404 (fp16 combine, F16C cpu method) is merged; start a new slice. Owner priority question open: do RAD20 (no polling, frees two cores) before the gpu method?
 
+2026-10-27, DeepEP/MORI-EP brief: GPU combine variants to measure against the CPU F16C method (0.31-0.33 ms a large step, +5-8% prefill): F1 GPU reads both mapped helper rows; F2 helper 0 keeps its reduced row in VRAM and adds helper 1's mapped row (avoids round-tripping its own result; most promising); F3 F2 + staged DMA output (see the result-output item). Helper 0 launches only after the existing futex handoff from helper 1: no pending GPU wait. Same FP32 accumulation order and FP16 overflow fallback; KLD gate. CPU stays selectable; auto from measured topology.
+
 ## Execution gate review (2026-10-23)
 
 **Split RAD23 into sequential implementation PRs; do not ship a monolithic topology change.** Before editing the ABI, retrieve and reconcile the recorded N-helper design addendum `req_bigcherry_3bb6b763ab97`; this planning note does **not** assert that private review was retrieved here.
@@ -110,3 +109,4 @@ GPT addendum on the N-helper protocol (req_bigcherry_3bb6b763ab97) FAILED to run
 
 - 2026-10-23T10:48:18.492687+00:00 (created-by): Created by agent
 - 2026-10-23T10:48:36.867246+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:acceptance_criteria, section:notes
+- 2026-10-27T02:35:27.322130+00:00 (updated-by): Updated: section:notes
