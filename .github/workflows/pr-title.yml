@@ -12,6 +12,24 @@ jobs:
   conventional-title:
     runs-on: ubuntu-24.04
     steps:
+      - uses: actions/checkout@v4
+
+      # A squash merge puts the title and description on main as the commit message; runs on every edit.
+      - name: No machine names or host-specific values in the title and description
+        env:
+          FORBIDDEN_TERMS: ${{ secrets.FORBIDDEN_TERMS }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -eu
+          if [ -z "$FORBIDDEN_TERMS" ]; then
+            echo "::error::repository secret FORBIDDEN_TERMS is not set; the scan cannot run" >&2
+            exit 1
+          fi
+          printf '%s\n\n%s\n' "$PR_TITLE" "$PR_BODY" > "$RUNNER_TEMP/pull-request.txt"
+          BIGCHERRY_FORBIDDEN_TERMS="$FORBIDDEN_TERMS" PYTHONPATH=tools \
+            python3 -m bigcherry.forbidden_terms --text "$RUNNER_TEMP/pull-request.txt"
+
       - name: Validate conventional commit title
         env:
           PR_TITLE: ${{ github.event.pull_request.title }}
