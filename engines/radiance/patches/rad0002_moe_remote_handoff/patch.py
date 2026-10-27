@@ -372,7 +372,8 @@ struct BcMoeRemote {
     }
 
     /* In place of the gather: one slot-order merge of the local rows and the helper's rows (and the shared arm
-     * when folded) into the block's output. Returns whether it ran; false leaves the normal gather. */
+     * when folded) into the gather's output (`moe` when a separate FP32 combine follows). Returns whether it ran;
+     * false leaves the normal gather. */
     template <class Moe>
     bool merge(RadCtx* c_, const Moe& m, int64_t T, int64_t r0, int64_t rows) const {
         if (!active(T)) return false;
@@ -385,7 +386,7 @@ struct BcMoeRemote {
                     brow_slice(w.ew, r0, rows, k),
                     m.gfold ? brow_slice(w.sout, r0, rows, g.n_embd) : RAD_NONE,
                     m.gfold ? brow_slice(w.sgate, r0, rows, 1) : RAD_NONE,
-                    brow_slice(w.h.x, r0, rows, g.n_embd));
+                    brow_slice(m.op_combine ? w.moe : w.h.x, r0, rows, g.n_embd));
         return true;
     }
 };
@@ -488,10 +489,10 @@ PATCHES = (
             ),
             Edit(
                 id="bc-remote-merge",
-                anchor=r"^[ \t]*if \(!gather_taken\(g, T, gather_out_rows, gather_out_rows6\)\)$",
+                anchor=r"^[ \t]*if \(op_combine \|\| !gather_taken\(g, T, gather_out_rows, gather_out_rows6\)\)$",
                 mode="replace",
                 text="""    if (!bc_remote.merge(c_, *this, T, r0, rows) &&
-        !gather_taken(g, T, gather_out_rows, gather_out_rows6))""",
+        (op_combine || !gather_taken(g, T, gather_out_rows, gather_out_rows6)))""",
                 guard=r"if \(!bc_remote\.merge\(c_, \*this, T, r0, rows\) &&",
                 expect_matches=1,
                 rationale="The pass's single gather guard: a handed-off step merges instead of gathering.",
