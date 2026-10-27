@@ -8,7 +8,7 @@ set -u
 PHASE_S=${1:-40}
 set --   # the env script reads its own arguments
 source tools/env/bigcherry-env.sh >/dev/null
-export ROCM_PATH=${ROCM_PATH:-/opt/rocm-7.2.4}
+source "$(dirname "${BASH_SOURCE[0]}")/lab-env.sh"
 OUT=$BC_WORK_ROOT/runs/pwr01-baseline-$(date +%m%d%H%M); mkdir -p $OUT
 git log -1 --format='commit %H %s' > $OUT/summary.txt
 RAPL=/sys/class/powercap/intel-rapl:0/energy_uj
