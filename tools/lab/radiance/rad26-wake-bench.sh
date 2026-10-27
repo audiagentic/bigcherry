@@ -19,7 +19,7 @@ print(d[0].index if d else "")
     > $OUT/build.log 2>&1 || { tail $OUT/build.log; exit 1; }
 for r in $(seq $REPEATS); do
     for gap in 300 1000 3000; do
-        for m in spin hostfunc; do
+        for m in spin hostfunc sidefunc; do
             ROCR_VISIBLE_DEVICES=$IDX timeout 300 $OUT/rad26-wake-bench $m 2000 $gap 50 | tee -a $OUT/results.txt
         done
     done
@@ -30,12 +30,12 @@ import re, statistics, sys
 rows = [dict(re.findall(r"(\w+)=([\w.-]+)", l)) for l in open(sys.argv[1]) if l.startswith("RESULT")]
 med = lambda g, k: statistics.median(float(r[k]) for r in g)
 for gap in sorted({r["gap_us"] for r in rows if r["mode"] != "stall"}, key=int):
-    for m in ("spin", "hostfunc"):
+    for m in ("spin", "hostfunc", "sidefunc"):
         g = [r for r in rows if r["mode"] == m and r["gap_us"] == gap]
         if g: print(f"gap {gap:>5} us {m:8s}: round trip p50 {med(g,'rt_p50_us'):7.1f} p90 {med(g,'rt_p90_us'):7.1f} "
                     f"p99 {med(g,'rt_p99_us'):7.1f} us  helper CPU {med(g,'helper_cpu_pct'):5.1f} %")
 g = [r for r in rows if r["mode"] == "stall"]
-if g: print(f"engine stream: {med(g,'stall_us_per_callback'):.2f} us per host callback "
+if g: print(f"engine stream: {med(g,'stall_us_per_callback'):.2f} us per host callback, {med(g,'side_stall_us_per_callback'):.2f} us on a side stream "
             f"(work {med(g,'base_us_per_iter'):.1f} us/iter alone, {med(g,'hostfunc_us_per_iter'):.1f} with a callback)")
 PY
 echo "OUT $OUT"; echo RAD26_WAKE_DONE

@@ -5,9 +5,11 @@
 //   spin      yield-spinning on the word (the large lane today), or
 //   hostfunc  sleeping in FUTEX_WAIT on the word, woken by hipLaunchHostFunc queued after the publish (the callback
 //             only does a futex wake; no HIP calls).
+//   sidefunc  as hostfunc, but the callback runs on a side stream that waits on an event recorded after the publish,
+//             so the engine stream itself is never held by the callback.
 // stall mode measures what a host callback costs the engine stream itself: N x (work kernel) against N x (work kernel +
-// a no-op host callback).
-// Usage: rad26-wake-bench spin|hostfunc|stall [iterations=2000] [gap_us=500] [work_us=50]
+// a no-op host callback), with the callback on the engine stream and on a side stream.
+// Usage: rad26-wake-bench spin|hostfunc|sidefunc|stall [iterations=2000] [gap_us=500] [work_us=50]
 #include <hip/hip_runtime.h>
 #include <linux/futex.h>
 #include <sys/syscall.h>
@@ -48,8 +50,9 @@ static double self_cpu_ms() { timespec t{}; clock_gettime(CLOCK_THREAD_CPUTIME_I
 
 int main(int argc, char** argv) {
     const char* mode = argc > 1 ? argv[1] : "";
-    if (std::strcmp(mode, "spin") && std::strcmp(mode, "hostfunc") && std::strcmp(mode, "stall")) {
-        std::fprintf(stderr, "usage: %s spin|hostfunc|stall [iterations] [gap_us] [work_us]\n", argv[0]);
+    if (std::strcmp(mode, "spin") && std::strcmp(mode, "hostfunc") && std::strcmp(mode, "sidefunc") &&
+        std::strcmp(mode, "stall")) {
+        std::fprintf(stderr, "usage: %s spin|hostfunc|sidefunc|stall [iterations] [gap_us] [work_us]\n", argv[0]);
         return 2;
     }
     const uint32_t n = argc > 2 ? std::atoi(argv[2]) : 2000;
@@ -59,24 +62,41 @@ int main(int argc, char** argv) {
     int khz = 0;
     CHECK(hipDeviceGetAttribute(&khz, hipDeviceAttributeWallClockRate, 0));
     const uint64_t work_ticks = (uint64_t)work_us * khz / 1000;
-    hipStream_t s;
+    hipStream_t s, s2;   // engine stream, side stream for sidefunc
     CHECK(hipStreamCreateWithFlags(&s, hipStreamNonBlocking));
+    CHECK(hipStreamCreateWithFlags(&s2, hipStreamNonBlocking));
+    hipEvent_t published;
+    CHECK(hipEventCreateWithFlags(&published, hipEventDisableTiming));
+    /* Queue the wake after the publish: on the engine stream (it holds that stream until the callback returns), or on
+     * the side stream behind an event, which leaves the engine stream running. */
+    auto queue_wake = [&](bool side, hipHostFn_t fn, void* arg) {
+        if (side) {
+            CHECK(hipEventRecord(published, s));
+            CHECK(hipStreamWaitEvent(s2, published, 0));
+            CHECK(hipLaunchHostFunc(s2, fn, arg));
+        } else {
+            CHECK(hipLaunchHostFunc(s, fn, arg));
+        }
+    };
 
     if (!std::strcmp(mode, "stall")) {   // engine-stream cost of a host callback
-        auto run = [&](bool cb) {
+        auto run = [&](int cb) {   // 0 none, 1 on the engine stream, 2 on the side stream
             CHECK(hipStreamSynchronize(s));
             const double t0 = now_us();
             for (uint32_t i = 0; i < n; ++i) {
                 work<<<1, 64, 0, s>>>(work_ticks);
-                if (cb) CHECK(hipLaunchHostFunc(s, no_op, nullptr));
+                if (cb) queue_wake(cb == 2, no_op, nullptr);
             }
             CHECK(hipStreamSynchronize(s));
-            return now_us() - t0;
+            const double t = now_us() - t0;
+            CHECK(hipStreamSynchronize(s2));
+            return t;
         };
-        run(false);   // warm-up
-        const double base = run(false), with = run(true);
+        run(0);   // warm-up
+        const double base = run(0), with = run(1), side = run(2);
         std::printf("RESULT mode=stall iterations=%u work_us=%u base_us_per_iter=%.2f hostfunc_us_per_iter=%.2f "
-                    "stall_us_per_callback=%.2f\n", n, work_us, base / n, with / n, (with - base) / n);
+                    "stall_us_per_callback=%.2f side_stall_us_per_callback=%.2f\n", n, work_us, base / n, with / n,
+                    (with - base) / n, (side - base) / n);
         return 0;
     }
 
@@ -90,7 +110,8 @@ int main(int argc, char** argv) {
     CHECK(hipHostGetDevicePointer((void**)&d_ack, ack, 0));
     uint64_t* d_t;
     CHECK(hipMalloc(&d_t, sizeof(uint64_t) * 2 * (n + 1)));
-    const bool hostfunc = !std::strcmp(mode, "hostfunc");
+    const bool side = !std::strcmp(mode, "sidefunc");
+    const bool hostfunc = side || !std::strcmp(mode, "hostfunc");
 
     double helper_cpu = 0;
     std::thread helper([&] {
@@ -108,7 +129,7 @@ int main(int argc, char** argv) {
     const double t0 = now_us();
     for (uint32_t i = 1; i <= n; ++i) {
         publish<<<1, 1, 0, s>>>(d_req, i, d_t + 2 * i);
-        if (hostfunc) CHECK(hipLaunchHostFunc(s, on_published, req));
+        if (hostfunc) queue_wake(side, on_published, req);
         wait_ack<<<1, 1, 0, s>>>(d_ack, i, d_t + 2 * i + 1);
         CHECK(hipStreamSynchronize(s));
         const double due = t0 + (double)i * gap_us;   // decode-like spacing between requests
