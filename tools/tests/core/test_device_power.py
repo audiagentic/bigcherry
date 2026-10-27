@@ -67,24 +67,29 @@ class GpuPowerWritesTests(unittest.TestCase):
 
     def test_offset_and_clock_are_staged_then_committed(self):
         w = gpu_power.apply_writes(self.dev, env.DevicePower(vddgfx_offset_mv=-125, sclk_max_mhz=2700, evidence="x"),
-                                   None)
+                                   "amdgpu", None)
         self.assertEqual(w, [(self.od, "s 1 2700"), (self.od, "vo -125"), (self.od, "c")])
 
     def test_power_cap_in_microwatts_needs_hwmon(self):
         p = env.DevicePower(power_cap_w=250, evidence="x")
-        self.assertEqual(gpu_power.apply_writes(self.dev, p, "/sys/x/hwmon/hwmon3"),
+        self.assertEqual(gpu_power.apply_writes(self.dev, p, "amdgpu", "/sys/x/hwmon/hwmon3"),
                          [("/sys/x/hwmon/hwmon3/power1_cap", "250000000")])
         with self.assertRaises(ValueError):
-            gpu_power.apply_writes(self.dev, p, None)
+            gpu_power.apply_writes(self.dev, p, "amdgpu", None)
 
     def test_restore_resets_and_commits_and_puts_back_the_cap(self):
-        self.assertEqual(gpu_power.restore_writes(self.dev, "/h", 303000000),
+        self.assertEqual(gpu_power.restore_writes(self.dev, "amdgpu", "/h", 303000000),
                          [(self.od, "r"), (self.od, "c"), ("/h/power1_cap", "303000000")])
+
+    def test_card_without_a_backend_is_refused(self):
+        for driver in ("nvidia", "i915", None):
+            with self.assertRaisesRegex(ValueError, "no power backend"):
+                gpu_power.apply_writes(self.dev, env.DevicePower(vddgfx_offset_mv=-50, evidence="x"), driver, None)
 
     def test_no_locator_is_refused(self):
         bare = env.Device(index=1, arch="gfx1100", model="", vram_mib=0)
         with self.assertRaises(ValueError):
-            gpu_power.restore_writes(bare, None, None)
+            gpu_power.restore_writes(bare, "amdgpu", None, None)
 
 
 if __name__ == "__main__":

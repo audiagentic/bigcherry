@@ -32,7 +32,7 @@ def _read(path: str) -> str | None:
 
 
 def read_state(locator: str) -> dict[str, int | None]:
-    """What the card runs now: vddgfx_offset_mv, sclk_max_mhz, power_cap_w, power_cap_default_w (None if unreadable)."""
+    """What an amdgpu card runs now (the only power backend so far, hardware/gpu_power.py): vddgfx_offset_mv, sclk_max_mhz, power_cap_w, power_cap_default_w (None if unreadable)."""
     od = _read(f"/sys/bus/pci/devices/{locator}/pp_od_clk_voltage") or ""
     sclk = re.search(r"OD_SCLK:\s*\n\s*0:\s*\d+Mhz\s*\n\s*1:\s*(\d+)Mhz", od)
     off = re.search(r"OD_VDDGFX_OFFSET:\s*\n\s*(-?\d+)mV", od)
@@ -64,6 +64,12 @@ def _devices(args: Namespace) -> list[environment.Device]:
 def cmd_status(args: Namespace) -> int:
     differs = 0
     for d in _devices(args):
+        driver = gpu_power.driver_of(d.locator)
+        if driver not in gpu_power.BACKENDS:
+            print(f"{d.index} {d.arch} {d.locator}: no power backend for driver {driver!r}"
+                  + ("; configured settings cannot be applied" if d.power else ""))
+            differs += bool(d.power)
+            continue
         have = read_state(d.locator)
         line = (f"{d.index} {d.arch} {d.locator}: offset {have['vddgfx_offset_mv']} mV, sclk max "
                 f"{have['sclk_max_mhz']} MHz, cap {have['power_cap_w']} W (default {have['power_cap_default_w']} W)")
@@ -96,7 +102,7 @@ def cmd_apply(args: Namespace) -> int:
     for d in _devices(args):
         if not d.power:
             continue
-        for path, value in gpu_power.apply_writes(d, d.power, _hwmon(d.locator)):
+        for path, value in gpu_power.apply_writes(d, d.power, gpu_power.driver_of(d.locator), _hwmon(d.locator)):
             _write(path, value)
         bad = _mismatches(d.power, read_state(d.locator))
         print(f"{d.index} {d.locator}: " + ("applied" if not bad else "NOT APPLIED: " + "; ".join(bad)))
@@ -112,7 +118,8 @@ def cmd_restore(args: Namespace) -> int:
             continue
         hw = _hwmon(d.locator)
         default = _read(f"{hw}/power1_cap_default") if hw else None
-        for path, value in gpu_power.restore_writes(d, hw, int(default) if default and d.power.power_cap_w else None):
+        for path, value in gpu_power.restore_writes(d, gpu_power.driver_of(d.locator), hw,
+                                                    int(default) if default and d.power.power_cap_w else None):
             _write(path, value)
         print(f"{d.index} {d.locator}: restored to driver defaults")
     return 0
