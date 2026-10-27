@@ -20,10 +20,11 @@ export XTX_DEVICES=${XTX_DEVICES# }
 build() {   # $1 label, $2 checkout (built, or reused when its radiance source tree matches: lab-build.sh)
     (cd "$2" && source "$OLDPWD/tools/lab/radiance/lab-build.sh" && rad_build $OUT/build-$1.log)
 }
-MAIN_WT=$(git rev-parse --path-format=absolute --git-common-dir)/../worktrees/main-baseline
+# The baseline arm: a detached origin/main worktree under the work root for this run only, removed on exit.
+MAIN_WT=$BC_WORK_ROOT/worktrees/rad20-ab-main-$(basename $OUT)
 git fetch -q origin
-[ -d "$MAIN_WT" ] || git worktree add -q --detach "$MAIN_WT" origin/main
-git -C "$MAIN_WT" checkout -q --detach origin/main
+git worktree add -q --detach "$MAIN_WT" origin/main || exit 1
+trap 'git worktree remove --force "$MAIN_WT" 2>/dev/null' EXIT
 echo "main $(git -C "$MAIN_WT" log --oneline -1)" | tee $OUT/arms.txt
 echo "burst $(git log --oneline -1)" | tee -a $OUT/arms.txt
 B_MAIN=$(build main "$MAIN_WT") || exit 1
