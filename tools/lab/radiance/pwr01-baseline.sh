@@ -55,14 +55,22 @@ phase idle_loaded; touch $OUT/.sampling; sampler & SP=$!
 sleep 5; sleep $PHASE_S
 tokens() {   # $1 prompt, $2 max_tokens: prints completion and prompt token counts
     curl -s -m 600 $URL -d "$(python3 -c 'import json,sys; print(json.dumps({"prompt":sys.argv[1],"max_tokens":int(sys.argv[2]),"temperature":0}))' "$1" "$2")" |
-        python3 -c 'import json,sys; u=json.load(sys.stdin).get("usage",{}); print(u.get("completion_tokens",0), u.get("prompt_tokens",0))'
+        python3 -c '
+import hashlib, json, sys
+d = json.load(sys.stdin); u = d.get("usage", {})
+# Greedy output must not change with a power setting: every completion text is hashed into texts.txt.
+text = (d.get("choices") or [{}])[0].get("text", "")
+open(sys.argv[1], "a").write(hashlib.sha256(text.encode()).hexdigest()[:16] + "\n")
+print(u.get("completion_tokens", 0), u.get("prompt_tokens", 0))' $OUT/texts-$(cat $OUT/.phase).txt
 }
 run_phase() {   # $1 name, $2 prompt, $3 max_tokens, $4 which count (1 completion, 2 prompt)
     phase $1
     local end=$(( $(date +%s) + PHASE_S )) n=0 t0=$(date +%s.%N)
     while [ $(date +%s) -lt $end ]; do
-        # A different first sentence each request, so the prefix cache cannot skip the prefill.
-        read -r c p < <(tokens "Request $RANDOM-$n-$(date +%N). $2" $3)
+        # Prefill: a different first sentence each request, so the prefix cache cannot skip the work. Decode: the same
+        # prompt every time, so its greedy text is a fixed reference across power settings.
+        local prompt="$2"; [ $1 = prefill ] && prompt="Request $RANDOM-$n-$(date +%N). $2"
+        read -r c p < <(tokens "$prompt" $3)
         [ "$4" = 1 ] && n=$((n + c)) || n=$((n + p))
     done
     echo "$1 tokens $n seconds $(python3 -c "import sys; print(round(float(sys.argv[2])-float(sys.argv[1]),1))" $t0 $(date +%s.%N))" >> $OUT/tokens.txt
@@ -96,5 +104,9 @@ for p in ("decode", "prefill"):
     if p in tok and tok[p][0]:
         n, s = tok[p]
         print(f"{p}: {n} tokens in {s} s = {n/s:.1f} tok/s, {total[p]*s/n:.3f} J/token (all devices + CPU package)")
+t = out / "texts-decode.txt"
+if t.exists():
+    h = [l.strip() for l in open(t) if l.strip()]
+    print(f"decode text: {len(set(h))} distinct of {len(h)} responses, reference {h[0] if h else '-'}")
 PY
 echo "OUT $OUT"; echo PWR01_DONE
