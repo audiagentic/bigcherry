@@ -21,6 +21,7 @@ from typing import cast
 from .core import engines, paths
 from .core.context import ProjectContext
 from .engine_adapters import adapter as engine_adapter
+from . import lab_worktree_lint
 from .patch import catalog as patch_catalog
 
 TIERS = ("quick", "default", "full")
@@ -951,6 +952,11 @@ def _tooling_hygiene(root: Path) -> str | None:
     )
 
 
+def _lab_worktrees(root: Path) -> str | None:
+    findings = lab_worktree_lint.lint_tree(root)
+    return "\n".join(findings) if findings else None
+
+
 def _catalog(engine: str) -> Callable[[Path], str | None]:
     def run(root: Path) -> str | None:
         problems = patch_catalog.cross_check(engine)
@@ -972,7 +978,10 @@ def _python_compile(root: Path) -> str | None:
 
 def check_specs(root: Path) -> tuple[CheckSpec, ...]:
     """Platform-wide checks, then each declared engine's checks (generic ones plus those its adapter declares)."""
-    specs = [CheckSpec("tooling-hygiene", "quick", _tooling_hygiene, None)]
+    specs = [
+        CheckSpec("tooling-hygiene", "quick", _tooling_hygiene, None),
+        CheckSpec("lab-worktrees", "quick", _lab_worktrees, None),
+    ]
     for name in engines.names(root):
         specs.append(CheckSpec("patch-catalog", "quick", _catalog(name), name))
         context = ProjectContext.resolve(engine=name)

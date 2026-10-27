@@ -64,6 +64,15 @@ GitHub deletes merged PR branches automatically; local branches and worktrees ar
 - Do not run builds, test suites or scans on the build server while a GPU A/B or KLD run is in progress; close the
   browser there during measurements. The helpers' lane threads each hold a CPU core while polling (RAD20).
 
+## Lab worktrees (WSL07)
+
+A lab script that needs a second tree (e.g. a main baseline arm) makes a per-run worktree under
+`$BC_WORK_ROOT/worktrees/<name>-$(basename $OUT)` with `git worktree add -q --detach "$WT" origin/main || exit 1` and
+removes it with `trap 'git worktree remove --force "$WT" 2>/dev/null' EXIT`; `bigcherry check` (lab-worktrees) fails any
+other `git worktree add` in tools/lab. `slice status --lab` lists the lab host's worktrees as dirty / unique /
+removable (clean and contained in an origin branch after a fetch); `slice prune --lab [--apply]` removes only the
+removable ones. Run it before ending a session that used the lab.
+
 ## 6. Clean is local
 
 `bigcherry clean` cleans the workspace it runs in. Do not run host-wide inventories or scans of legacy trees (owner,
