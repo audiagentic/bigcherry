@@ -38,6 +38,7 @@
 #include "worker_selftest.h"
 #include "worker_combine.h"
 #include "worker_config.h"
+#include "worker_cpu.h"
 #include "worker_segment.h"
 #include "worker_lanes.h"
 #include "worker_queue_warm.h"
