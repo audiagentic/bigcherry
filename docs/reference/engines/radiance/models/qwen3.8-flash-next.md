@@ -243,6 +243,14 @@ per XTX), every attempt with its result and run, the shelved queue warm-up (GPU 
 (blocking events, host callbacks, HSA signals, direct AQL) are in
 [RAD20-helper-waits-2026-10.md](../../../../research/radiance-history/RAD20-helper-waits-2026-10.md).
 
+## Power under load (PWR01-PWR04)
+
+Decode draws about 613 W (XTX 155 W each, R9700 216 W, CPU package 78 W) and prefill about 706 W. A -125 mV XTX
+voltage offset at stock clocks saves about 24 W per card with no speed cost and identical output; clock limits save
+more but cost about 2% at every level tried; XTX power caps cannot go low enough to matter. Settings are per card in
+the environment config (`bigcherry gpu-power`). Details, runs and prior art:
+[PWR-power-2026-10.md](../../../../research/radiance-history/PWR-power-2026-10.md).
+
 ## Where the critical path is (RAD06 unprofiled trace, 2026-10-18)
 
 From the helper TRACE lines of a full benchmark cell (`R3_MOE_WORKER_TRACE=1`, 36,643 of 36,729 layer-steps paired, no throughput cost). Exposed wait is the engine's wait for the slower helper, on the R9700 clock.
