@@ -41,8 +41,8 @@ __global__ void wait_ack(const uint32_t* ack, uint32_t i, uint64_t* t_ack) {
 }
 
 static void futex_wake_all(uint32_t* p) { (void)::syscall(SYS_futex, p, FUTEX_WAKE, INT_MAX, nullptr, nullptr, 0); }
-static void HIPRT_CB on_published(void* word) { futex_wake_all(static_cast<uint32_t*>(word)); }
-static void HIPRT_CB no_op(void*) {}
+static void on_published(void* word) { futex_wake_all(static_cast<uint32_t*>(word)); }
+static void no_op(void*) {}
 static double now_us() { timespec t{}; clock_gettime(CLOCK_MONOTONIC, &t); return t.tv_sec * 1e6 + t.tv_nsec / 1e3; }
 static double self_cpu_ms() { timespec t{}; clock_gettime(CLOCK_THREAD_CPUTIME_ID, &t); return t.tv_sec * 1e3 + t.tv_nsec / 1e6; }
 
