@@ -281,5 +281,5 @@ activation = "r3_moe_worker: test stop at"
 [setting.R3_MOE_WORKER_CPU_SET]
 default = "auto"
 status = "production"
-summary = "PWR03: auto pins the helper process to the CPU's efficiency cores when the kernel reports them (cpu_capacity asymmetry, else the hybrid PMU's list) and changes nothing on a CPU without them; all leaves it on every CPU. On the bench host (4 E-cores) CPU package power fell 77 -> 42 W in decode and 83 -> 52 W in prefill with unchanged speed (pwr03-ecore-ab.sh)"
-activation = "r3_moe_worker: R3_MOE_WORKER_CPU_SET auto"
+summary = "PWR03: auto pins the helper's small-lane threads (they wait on the GPU through every decode step) to the CPU's efficiency cores when the kernel reports them (cpu_capacity asymmetry, else the hybrid PMU's list) and changes nothing on a CPU without them; the large lane and the CPU combine pool stay on every core (pinning the whole process slowed prefill ~9% with combine on). all leaves every thread on every CPU. On the bench host (4 E-cores) CPU package power fell 77 -> 42 W in decode and 83 -> 52 W in prefill with unchanged speed (pwr03-ecore-ab.sh)"
+activation = "r3_moe_worker: R3_MOE_WORKER_CPU_SET auto - small lanes"

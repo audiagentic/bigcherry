@@ -180,6 +180,7 @@ private:
     }
 
     void run_small(uint32_t lane) {
+        worker_cpu::place_this_thread(cfg_.cpu_set_auto);   /* PWR03: small lanes only (worker_cpu.h) */
         using namespace r3::moe_shm;
         const uint32_t rows = classes_.rows[lane_class(lane)];
         uint32_t next = 1, done_seen = 0;

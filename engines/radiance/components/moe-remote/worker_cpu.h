@@ -1,5 +1,6 @@
 #pragma once
-// Included only by r3_moe_worker.cpp. PWR03: the helper's CPU placement. Its lane threads spend bursts waiting on the GPU
+// Included only by r3_moe_worker.cpp (via worker_lanes.h). PWR03: the helper's CPU placement. Its small-lane threads
+// spend every decode step waiting on the GPU
 // (the runtime spins before it blocks, RAD25), so on a CPU with efficiency cores they cost far less power there: helpers
 // on the four E-cores of the bench host cut CPU package power 77 -> 42 W in decode, 83 -> 52 W in prefill, with decode
 // and prefill speed unchanged (pwr03-ecore-ab.sh). Efficiency cores are found generically: CPUs whose cpu_capacity is
@@ -65,20 +66,26 @@ inline std::vector<int> efficiency_cpus() {
     return {};
 }
 
-/* R3_MOE_WORKER_CPU_SET=auto: pin this process (and every thread it starts later) to the efficiency cores when the CPU
- * has them. Called before any thread is created. */
-inline void place(bool auto_set) {
+/* R3_MOE_WORKER_CPU_SET=auto: pin the calling thread to the efficiency cores when the CPU has them. Only the small
+ * lanes call it: they wait on the GPU through every decode step. The large lane and the CPU combine pool stay on every
+ * core - with the whole process on the 4 E-cores the CPU combine slowed prefill ~9% (rad20-burst-ab-10280027). */
+inline void place_this_thread(bool auto_set) {
     if (!auto_set) return;
-    const std::vector<int> cpus = efficiency_cpus();
+    static const std::vector<int> cpus = efficiency_cpus();
     if (cpus.empty()) return;
     cpu_set_t set;
     CPU_ZERO(&set);
     for (int c : cpus) CPU_SET(c, &set);
-    if (sched_setaffinity(0, sizeof(set), &set) != 0) {
+    if (sched_setaffinity(0, sizeof(set), &set) != 0) {   /* 0 = the calling thread */
         std::perror("r3_moe_worker: sched_setaffinity (efficiency cores)");
         return;
     }
-    std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_CPU_SET auto - on %zu efficiency core(s)\n", cpus.size());
+    static bool said = false;
+    if (!said) {
+        said = true;
+        std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_CPU_SET auto - small lanes on %zu efficiency core(s)\n",
+                     cpus.size());
+    }
 }
 
 }  // namespace worker_cpu
