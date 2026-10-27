@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <climits>
 #include <cstring>
+#include <ctime>
 #include <initializer_list>
 #include <linux/futex.h>
 #include <sys/syscall.h>
@@ -494,17 +495,28 @@ inline void raise_fault(Header* h) {
     notify(h);
 }
 
-enum class WaitResult { Ready, Fault, Error };
-/* Sleep until done() holds. helper_fault wins over done(): once a helper has failed, nothing it published since counts.
- * The generation is read before both checks, so a notify() between the checks and the sleep makes the futex return
- * EAGAIN instead of sleeping (no lost wake-up). */
+enum class WaitResult { Ready, Fault, Error, Timeout };
+/* Sleep until done() holds, or until `deadline` (CLOCK_MONOTONIC; nullptr: none) passes. helper_fault wins over done():
+ * once a helper has failed, nothing it published since counts. The generation is read before both checks, so a notify()
+ * between the checks and the sleep makes the futex return EAGAIN instead of sleeping (no lost wake-up). */
 template <class Done>
-inline WaitResult wait_for(Header* h, Done done) {
+inline WaitResult wait_for(Header* h, const timespec* deadline, Done done) {
     for (;;) {
         const uint32_t gen = __atomic_load_n(&h->notify, __ATOMIC_SEQ_CST);
         if (__atomic_load_n(&h->helper_fault, __ATOMIC_SEQ_CST)) return WaitResult::Fault;
         if (done()) return WaitResult::Ready;
-        if (futex_wait(&h->notify, gen) < 0 && errno != EAGAIN && errno != EINTR) return WaitResult::Error;
+        timespec left{}, *rel = nullptr;
+        if (deadline) {
+            timespec now{};
+            clock_gettime(CLOCK_MONOTONIC, &now);
+            int64_t ns = (int64_t)(deadline->tv_sec - now.tv_sec) * 1000000000 + (deadline->tv_nsec - now.tv_nsec);
+            if (ns <= 0) return WaitResult::Timeout;
+            left = {(time_t)(ns / 1000000000), (long)(ns % 1000000000)};
+            rel = &left;
+        }
+        if (::syscall(SYS_futex, &h->notify, FUTEX_WAIT, gen, rel, nullptr, 0) < 0 && errno != EAGAIN &&
+            errno != EINTR && errno != ETIMEDOUT)
+            return WaitResult::Error;
     }
 }
 

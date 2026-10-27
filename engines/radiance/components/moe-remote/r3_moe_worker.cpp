@@ -370,6 +370,7 @@ int main(int argc, char** argv) {
      * the engine sets it. */
     h->helper_start[helper_index] = process_start_ticks((int)::getpid());
     __atomic_store_n(&h->helper_pid[helper_index], (int32_t)::getpid(), __ATOMIC_RELEASE);
+    notify(h);   /* the engine's registration barrier waits for every helper's identity */
     publish_owned(map, owned, helper_index);
     if (!cpu && !seg.register_gpu()) return 1;
     void* const dev_map = seg.device();

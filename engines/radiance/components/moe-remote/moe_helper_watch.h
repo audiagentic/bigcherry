@@ -52,6 +52,9 @@ public:
         wake_ = -1;
     }
 
+    /* True once helper i's process is held by a validated pidfd. */
+    bool watching(uint32_t i) const { return __atomic_load_n(&watched_[i], __ATOMIC_ACQUIRE) != 0; }
+
     /* A helper has published a pid the thread is not watching yet: wake it to open a pidfd. */
     void notice() {
         if (wake_ < 0) return;
@@ -98,6 +101,7 @@ private:
             const uint64_t start = process_start_ticks(pid);
             if (!start || start != h_->helper_start[i]) return fault(i, pid, "exited (pid reused)");
             __atomic_store_n(&watched_[i], 1u, __ATOMIC_RELEASE);
+            notify(h_);   /* the engine's registration barrier waits for every helper to be watched */
         }
         pollfd fds[kMaxRanks + 1];
         uint32_t who[kMaxRanks + 1];
