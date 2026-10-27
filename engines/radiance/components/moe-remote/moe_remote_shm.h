@@ -3,6 +3,8 @@
 #include <cerrno>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <climits>
 #include <cstring>
 #include <initializer_list>
@@ -13,7 +15,7 @@
 namespace r3::moe_shm {
 
 constexpr uint64_t kMagic = 0x31454f4d33485253ull; /* "SRH3MOE1": reject unrelated/stale shm. */
-constexpr uint32_t kVersion = 18;  /* 18: Header::helper_pid (the engine watches each helper process and raises helper_fault when one exits); 17: Header::burst, LaneSignal::park (RAD20: small-lane waits armed only inside an inference burst); 16: the combined row is fp16 with a per-row fallback marker (kCombineFallback); 15: Header::combine (R3_MOE_WORKER_COMBINE); 14: the header records the model shape (intermediate, activation_group, shape_hash) and every region is laid out from it (layout_for); 13: several pre-queued small-lane sizes (Header::small_class_*), ten lanes; 12: Request carries the R3_MOE_WORKER_TRACE stamps (192 -> 256 bytes); 11: helper_fault; completion is an exact generation */
+constexpr uint32_t kVersion = 18;  /* 18: Header::helper_pid/helper_start (the engine watches each helper process and raises helper_fault when one exits), Header::notify (CPU waits sleep on one generation word); 17: Header::burst, LaneSignal::park (RAD20: small-lane waits armed only inside an inference burst); 16: the combined row is fp16 with a per-row fallback marker (kCombineFallback); 15: Header::combine (R3_MOE_WORKER_COMBINE); 14: the header records the model shape (intermediate, activation_group, shape_hash) and every region is laid out from it (layout_for); 13: several pre-queued small-lane sizes (Header::small_class_*), ten lanes; 12: Request carries the R3_MOE_WORKER_TRACE stamps (192 -> 256 bytes); 11: helper_fault; completion is an exact generation */
 constexpr uint32_t kPage = 4096;
 /* R3_MOE_WORKER_COMBINE: first element of a combined fp16 row the combiner could not hold in fp16 range (a NaN payload
  * no arithmetic produces; a real NaN converts to 0x7E00); the engine then reads that row from the two helper planes. */
@@ -173,7 +175,14 @@ struct alignas(kPage) Header {
      * and sets helper_fault when one exits, so a helper killed before it could set helper_fault itself cannot leave
      * the engine's GPU wait spinning (RAD20: an 8.7 h hang after both helper GPUs reset). */
     int32_t helper_pid[kMaxRanks];
-    uint32_t reserved32[27 - kMaxRanks];
+    /* Each helper's process start time (/proc/<pid>/stat field 22), written with helper_pid: the engine checks it after
+     * pidfd_open, so a pid reused by another process after the helper died is never watched in its place. */
+    uint64_t helper_start[kMaxRanks];
+    /* CPU notification generation: incremented and FUTEX_WAKEd after every change a CPU waiter on this segment waits
+     * for (a layer map consumed, a lane park cleared, helper_fault raised). Waiters snapshot it before checking their
+     * condition and sleep on it (wait_for), so a change between the check and the sleep is never missed. */
+    uint32_t notify;
+    uint32_t reserved32[24 - 3 * kMaxRanks];
     CombineSignal combine;
 };
 static_assert(sizeof(Header) <= kPage);
@@ -474,6 +483,48 @@ inline int futex_wait(uint32_t* p, uint32_t expected) {
 inline int futex_wake(uint32_t* p) {
     return static_cast<int>(::syscall(SYS_futex, p, FUTEX_WAKE, INT_MAX, nullptr, nullptr, 0));
 }
+/* Header::notify: publish a change CPU waiters wait for (after the change itself is stored). */
+inline void notify(Header* h) {
+    (void)__atomic_fetch_add(&h->notify, 1u, __ATOMIC_SEQ_CST);
+    (void)futex_wake(&h->notify);
+}
+/* Raise helper_fault (sticky) and wake every CPU waiter. */
+inline void raise_fault(Header* h) {
+    __atomic_store_n(&h->helper_fault, 1u, __ATOMIC_SEQ_CST);
+    notify(h);
+}
+
+enum class WaitResult { Ready, Fault, Error };
+/* Sleep until done() holds. helper_fault wins over done(): once a helper has failed, nothing it published since counts.
+ * The generation is read before both checks, so a notify() between the checks and the sleep makes the futex return
+ * EAGAIN instead of sleeping (no lost wake-up). */
+template <class Done>
+inline WaitResult wait_for(Header* h, Done done) {
+    for (;;) {
+        const uint32_t gen = __atomic_load_n(&h->notify, __ATOMIC_SEQ_CST);
+        if (__atomic_load_n(&h->helper_fault, __ATOMIC_SEQ_CST)) return WaitResult::Fault;
+        if (done()) return WaitResult::Ready;
+        if (futex_wait(&h->notify, gen) < 0 && errno != EAGAIN && errno != EINTR) return WaitResult::Error;
+    }
+}
+
+/* A process's start time in clock ticks (/proc/<pid>/stat field 22), 0 when it cannot be read. With the pid it names
+ * one process for the life of the system. */
+inline uint64_t process_start_ticks(int pid) {
+    char path[64], buf[1024];
+    std::snprintf(path, sizeof(path), "/proc/%d/stat", pid);
+    FILE* f = std::fopen(path, "r");
+    if (!f) return 0;
+    const size_t n = std::fread(buf, 1, sizeof(buf) - 1, f);
+    std::fclose(f);
+    buf[n] = '\0';
+    const char* p = std::strrchr(buf, ')');   /* comm may contain spaces; the fields after it do not */
+    if (!p) return 0;
+    for (int field = 2; field < 22 && *p; ++p)
+        if (*p == ' ') ++field;
+    return std::strtoull(p, nullptr, 10);
+}
+
 /* Sleep until *p == value: true then; false when *fault becomes non-zero (whoever sets it wakes p) or the futex
  * fails, so a failed wait is never taken for the value having arrived. */
 inline bool wait_until(uint32_t* p, uint32_t value, const uint32_t* fault) {

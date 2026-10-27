@@ -26,7 +26,7 @@ public:
     HelperWatch& operator=(const HelperWatch&) = delete;
     ~HelperWatch() { stop(); }
 
-    /* False (logged) when the watch cannot run; the engine then has no liveness check, as before. */
+    /* False (logged) when the watch cannot run: the caller must not use the helpers then. */
     bool start(r3::moe_shm::Header* h) {
         h_ = h;
         wake_ = ::eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
@@ -82,19 +82,21 @@ private:
             if (f >= 0) ::close(f);
     }
 
-    /* One wait. False when the watch ends: stop(), a helper exited (helper_fault raised), or poll failed. */
+    /* One wait. False when the watch ends: stop(), or a helper is gone or cannot be watched (helper_fault raised).
+     * Fails closed: the engine never keeps serving with a helper it cannot watch. */
     bool watch_once(int* pidfd) {
         using namespace r3::moe_shm;
-        /* Pick up helpers that have published since the last pass. A pid already gone fails pidfd_open with ESRCH:
-         * that helper died before we saw it. */
+        /* Pick up helpers that have published since the last pass. The pidfd names the process only if its start
+         * time still matches the helper's own record: a helper that died before we opened it (ESRCH, or its pid
+         * already reused by another process) is a dead helper. */
         for (uint32_t i = 0; i < kMaxRanks; ++i) {
             const int32_t pid = __atomic_load_n(&h_->helper_pid[i], __ATOMIC_ACQUIRE);
             if (pid <= 0 || pidfd[i] >= 0) continue;
             pidfd[i] = (int)::syscall(SYS_pidfd_open, pid, 0);
-            if (pidfd[i] < 0 && errno == ESRCH) return fault(i, pid);
             if (pidfd[i] < 0)
-                std::fprintf(stderr, "libr3: R3_MOE_WORKER helper watch: pidfd_open(%d) failed (%s)\n", pid,
-                             std::strerror(errno));
+                return fault(i, pid, errno == ESRCH ? "exited" : std::strerror(errno));
+            const uint64_t start = process_start_ticks(pid);
+            if (!start || start != h_->helper_start[i]) return fault(i, pid, "exited (pid reused)");
             __atomic_store_n(&watched_[i], 1u, __ATOMIC_RELEASE);
         }
         pollfd fds[kMaxRanks + 1];
@@ -106,8 +108,7 @@ private:
             if (pidfd[i] >= 0) { fds[n] = {pidfd[i], POLLIN, 0}; who[n++] = i; }
         if (::poll(fds, n, -1) < 0) {
             if (errno == EINTR) return true;
-            std::fprintf(stderr, "libr3: R3_MOE_WORKER helper watch: poll failed (%s)\n", std::strerror(errno));
-            return false;
+            return fault(UINT32_MAX, 0, std::strerror(errno));
         }
         if (fds[0].revents) {
             uint64_t v;
@@ -115,21 +116,23 @@ private:
             if (__atomic_load_n(&quit_, __ATOMIC_ACQUIRE)) return false;
         }
         for (nfds_t k = 1; k < n; ++k)
-            if (fds[k].revents) return fault(who[k], __atomic_load_n(&h_->helper_pid[who[k]], __ATOMIC_ACQUIRE));
+            if (fds[k].revents)
+                return fault(who[k], __atomic_load_n(&h_->helper_pid[who[k]], __ATOMIC_ACQUIRE), "exited");
         return true;
     }
 
-    /* A helper process is gone. A helper that stopped cleanly has already set helper_fault; this covers the rest.
-     * Returns false: the watch ends (the engine is failing; there is nothing left to watch for). */
-    bool fault(uint32_t helper, int32_t pid) {
+    /* A helper is gone, or the watch itself failed (helper UINT32_MAX). A helper that stopped cleanly has already set
+     * helper_fault; this covers the rest. Raising the fault wakes every engine CPU wait (Header::notify) and makes the
+     * engine's next GPU wait trap. Returns false: the watch ends. */
+    bool fault(uint32_t helper, int32_t pid, const char* why) {
         using namespace r3::moe_shm;
         if (__atomic_load_n(&quit_, __ATOMIC_ACQUIRE)) return false;   /* engine shutting down: helpers may exit first */
-        std::fprintf(stderr, "libr3: R3_MOE_WORKER helper %u (pid %d) exited; failing the engine's helper waits\n",
-                     helper, pid);
-        store(&h_->helper_fault, 1u);
-        (void)futex_wake(&h_->burst);
-        for (uint32_t lane = 0; lane < kLanes; ++lane) (void)futex_wake(&h_->lane[lane].park);
-        for (uint32_t layer = 0; layer < kMaxLayers; ++layer) (void)futex_wake(&h_->layer_map_consumed[layer]);
+        if (helper == UINT32_MAX)
+            std::fprintf(stderr, "libr3: R3_MOE_WORKER helper watch failed (%s); failing the engine's helper waits\n", why);
+        else
+            std::fprintf(stderr, "libr3: R3_MOE_WORKER helper %u (pid %d) %s; failing the engine's helper waits\n",
+                         helper, pid, why);
+        raise_fault(h_);
         return false;
     }
 

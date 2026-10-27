@@ -368,6 +368,7 @@ int main(int argc, char** argv) {
     }
     /* The engine watches this process from here on (Header::helper_pid): if it dies before it can set helper_fault,
      * the engine sets it. */
+    h->helper_start[helper_index] = process_start_ticks((int)::getpid());
     __atomic_store_n(&h->helper_pid[helper_index], (int32_t)::getpid(), __ATOMIC_RELEASE);
     publish_owned(map, owned, helper_index);
     if (!cpu && !seg.register_gpu()) return 1;
@@ -379,15 +380,12 @@ int main(int argc, char** argv) {
      * declares (the MTP layer in a run without speculation, e.g. KL mode): drop its ownership. */
     bool any_map = false;
     for (uint32_t layer = 0; layer < model.layers; ++layer) {
-        while (!load(&h->layer_map_ready[layer])) {
+        /* One-second sleeps: a stop signal may land on another thread (HIP's), so EINTR alone cannot be relied on. */
+        for (uint32_t waited = 0; !load(&h->layer_map_ready[layer]);) {
             if (stopping()) return 1;
-            if (!any_map) {
-                (void)futex_wait(&h->layer_map_ready[layer], 0);
-                continue;
-            }
-            struct timespec ts{10, 0};
+            if (any_map && waited++ == 10) break;
+            struct timespec ts{1, 0};
             (void)::syscall(SYS_futex, &h->layer_map_ready[layer], FUTEX_WAIT, 0, &ts, nullptr, 0);
-            if (!load(&h->layer_map_ready[layer])) break;
         }
         if (!load(&h->layer_map_ready[layer])) {
             std::fprintf(stderr, "r3_moe_worker: layer %u has no runtime map (not declared by the engine); not owned\n",
@@ -403,12 +401,11 @@ int main(int argc, char** argv) {
             if (l == layer && slots[e] < 0) (void)clear_owned(map, l, e, helper_index);
         if (gpu && !gpu->load_layer(layer, owned.expert, slots)) {
             std::fprintf(stderr, "r3_moe_worker: layer %u runtime table build failed\n", layer);
-            store(&h->layer_map_consumed[layer], 1);
-            (void)futex_wake(&h->layer_map_consumed[layer]);
+            raise_fault(h);   /* not consumed: the engine's map wait fails instead of using a map this helper lacks */
             return 1;
         }
         store(&h->layer_map_consumed[layer], 1);
-        (void)futex_wake(&h->layer_map_consumed[layer]);
+        notify(h);
     }
     Owned runtime_owned;
     for (auto [l, e] : owned.expert) {

@@ -157,7 +157,10 @@ void publish_layer_map(int layer, int n_expert, const int32_t* slot_of_expert) {
         (void)futex_wake(&g.hdr->layer_map_ready[layer]);
     }
     g.watch.notice();
-    if (!wait_until(&g.hdr->layer_map_consumed[layer], 1, &g.hdr->helper_fault))
+    /* The plugin ABI gives this callback no error return. A failed helper leaves helper_fault raised (sticky), so the
+     * engine's first remote MoE wait traps; the map wait just must not hang. */
+    uint32_t* consumed = &g.hdr->layer_map_consumed[layer];
+    if (wait_for(g.hdr, [&] { return load(consumed) == 1; }) != WaitResult::Ready)
         std::fprintf(stderr, "libr3: R3_MOE_WORKER layer %d: helper failed before consuming its map\n", layer);
 }
 
@@ -182,11 +185,11 @@ void burst_transition(int active) {
         (void)__atomic_fetch_add(&h->burst, 1u, __ATOMIC_SEQ_CST);
         (void)futex_wake(&h->burst);
         if (active)
-            for (uint32_t lane = 0; lane < kLanes; ++lane)
-                for (uint32_t v; (v = __atomic_load_n(&h->lane[lane].park, __ATOMIC_SEQ_CST)) == kParkDraining;) {
-                    if (load(&h->helper_fault)) break;
-                    (void)futex_wait(&h->lane[lane].park, v);
-                }
+            for (uint32_t lane = 0; lane < kLanes; ++lane) {
+                uint32_t* park = &h->lane[lane].park;
+                /* Fault: the engine's GPU wait traps on the next remote step; nothing to wait for here. */
+                (void)wait_for(h, [&] { return __atomic_load_n(park, __ATOMIC_SEQ_CST) != kParkDraining; });
+            }
     }
     if (trace) {
         timespec ts{};
@@ -240,17 +243,25 @@ void register_mailbox() {
      * ownership for placement (R3_MOE_WORKER_SKIP_OWNED), the helper's bitmap as published before the engine
      * starts. The engine applies the protected-layer and slot tests itself, the same ones the helper uses when
      * it narrows ownership to the runtime maps, so both sides agree on what is never placed here. */
-    static const EnginePlugin plugin{sizeof(EnginePlugin), publish_layer_map, owner_query, burst_transition};
-    if (g.engine_register(&plugin) != 0) {
-        std::fprintf(stderr, "libr3: R3_MOE_WORKER engine rejected the plugin registration (struct size)\n");
+    /* Watch the helpers before registering: registration replays the layer maps and waits for the helpers to consume
+     * them, and a helper that dies there must fail that wait. No watch, no helpers (fail closed). */
+    if (!g.watch.start(g.hdr)) {
         (void)hipHostUnregister(g.map);
         g.pinned = false;
         g.hdr = nullptr;
         g.engine_register = nullptr;
         return;
     }
-
-    (void)g.watch.start(g.hdr);
+    static const EnginePlugin plugin{sizeof(EnginePlugin), publish_layer_map, owner_query, burst_transition};
+    if (g.engine_register(&plugin) != 0) {
+        std::fprintf(stderr, "libr3: R3_MOE_WORKER engine rejected the plugin registration (struct size)\n");
+        g.watch.stop();
+        (void)hipHostUnregister(g.map);
+        g.pinned = false;
+        g.hdr = nullptr;
+        g.engine_register = nullptr;
+        return;
+    }
 
     /* The engine policy only decides whether the graph contains/uses the two mailbox ops.
      * All route selection and synchronisation stays on the rank GPU. */
@@ -324,6 +335,7 @@ void write_heat(uint32_t rank, RankState& s) {
 
 void close_mailbox() {
     std::lock_guard<std::mutex> lock(g.mu);
+    g.watch.stop();   /* first: helpers may exit while the engine tears down, and that is not a fault */
     for (uint32_t r = 0; r < kMaxRanks; ++r) {
         RankState& s = g.rank[r];
         if (!s.ready) continue;
@@ -342,7 +354,6 @@ void close_mailbox() {
     }
     if (g.engine_register) (void)g.engine_register(nullptr);
     g.engine_register = nullptr;
-    g.watch.stop();
     if (g.pinned) (void)hipHostUnregister(g.map);
     if (g.map != MAP_FAILED) ::munmap(g.map, g.bytes);
     if (g.fd >= 0) ::close(g.fd);
