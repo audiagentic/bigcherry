@@ -57,16 +57,10 @@ Depends on PWR01 for the baseline; most useful after RAD25.
 
 2026-10-27 correction: the serving host's CPU is an Intel Core i7-12700KF (intel_pstate, governor powersave, EPP balance_performance), not AMD: amd_pstate does not apply and HSA_ENABLE_MWAITX (AMD MWAITX instruction) cannot help. Test EPP (balance_performance vs balance_power/performance) and C-state residency (/sys/devices/system/cpu/cpu*/cpuidle) with package RAPL power (PWR01 harness) at idle/decode/prefill.
 
-<<<<<<< HEAD
-=======
 2026-10-27 owner rule: nothing CPU-vendor specific without a hardware switch. Use the generic cpufreq energy_performance_preference (present for intel_pstate and amd-pstate) and cpuidle residency; efficiency cores are found generically (cpu_capacity asymmetry, else the hybrid PMU) and the E-core A/B skips hosts without them (pwr03-ecore-ab.sh).
 
->>>>>>> origin/main
 ## Change Log
 
 - 2026-10-27T02:15:48.543469+00:00 (created-by): Created by agent
 - 2026-10-27T08:23:38.621255+00:00 (updated-by): Updated: section:title, section:notes
-<<<<<<< HEAD
-=======
 - 2026-10-27T11:53:12.335444+00:00 (updated-by): Updated: section:notes
->>>>>>> origin/main
