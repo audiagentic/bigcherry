@@ -135,6 +135,26 @@ def findings(root: Path, *, staged: bool = False, base: str | None = None) -> li
     return out
 
 
+def text_findings(root: Path, label: str, text: str) -> list[tuple[str, int, str]]:
+    """(label, line number, finding) for free text: a commit message, a pull request title and description."""
+    terms = [_term_pattern(t) for t in configured_terms(root)]
+    allowed = _allowed_phrases(root)
+    return [(label, number, hit) for number, line in enumerate(text.splitlines(), start=1)
+            for hit in scan_line(line, terms, allowed)]
+
+
+def message_findings(root: Path, base: str) -> list[tuple[str, int, str]]:
+    """Every commit message between ``base`` and HEAD: a squash merge carries them (and the PR text) onto main."""
+    revs = subprocess.run(["git", "-C", str(root), "rev-list", f"{base}..HEAD"], capture_output=True, text=True,
+                          check=True).stdout.split()
+    out: list[tuple[str, int, str]] = []
+    for rev in revs:
+        msg = subprocess.run(["git", "-C", str(root), "show", "-s", "--format=%B", rev], capture_output=True,
+                             text=True, check=True).stdout
+        out += text_findings(root, f"commit {rev[:10]} message", msg)
+    return out
+
+
 def install_hook(root: Path) -> None:
     subprocess.run(["git", "-C", str(root), "config", "core.hooksPath", HOOKS_DIR], check=True)
     print(f"core.hooksPath set to {HOOKS_DIR}; pre-commit now runs the forbidden-term scan")
@@ -145,7 +165,8 @@ def main(argv: list[str] | None = None) -> int:
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--staged", action="store_true", help="scan the staged index (pre-commit)")
     mode.add_argument("--all", action="store_true", help="scan every tracked file")
-    mode.add_argument("--base", metavar="REV", help="scan files changed between REV and HEAD (CI)")
+    mode.add_argument("--base", metavar="REV", help="scan files changed and commit messages between REV and HEAD (CI)")
+    mode.add_argument("--text", metavar="FILE", help="scan a text file: a commit message (commit-msg hook) or a PR's title and description (CI)")
     mode.add_argument("--install-hook", action="store_true", help="point core.hooksPath at .githooks")
     args = parser.parse_args(argv)
     root = Path(subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True,
@@ -153,7 +174,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.install_hook:
         install_hook(root)
         return 0
-    hits = findings(root, staged=args.staged, base=args.base)
+    if args.text:
+        hits = text_findings(root, Path(args.text).name, Path(args.text).read_text(encoding="utf-8", errors="replace"))
+    else:
+        hits = findings(root, staged=args.staged, base=args.base)
+        if args.base:
+            hits += message_findings(root, args.base)
     for rel, number, label in hits:
         print(f"{rel}:{number}: {label}")
     if hits:

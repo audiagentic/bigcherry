@@ -1,6 +1,7 @@
 name: Forbidden terms
 
-# Blocks machine names and host-specific paths, addresses and identities in changed files.
+# Blocks machine names and host-specific paths, addresses and identities in changed files and commit messages
+# (pr-title.yml scans the pull request title and description).
 # The machine names come from the repository secret FORBIDDEN_TERMS (comma-separated), so
 # they are never written into this repository. The workflow fails if the secret is missing.
 # The same scan runs locally as the pre-commit hook (python3 -m bigcherry.forbidden_terms).
