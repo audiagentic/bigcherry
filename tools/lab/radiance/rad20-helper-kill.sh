@@ -18,12 +18,9 @@ source tools/env/bigcherry-env.sh >/dev/null
 export ROCM_PATH=${ROCM_PATH:-/opt/rocm-7.2.4}
 OUT=$BC_WORK_ROOT/runs/rad20-helper-kill-$(date +%m%d%H%M); mkdir -p $OUT
 git log -1 --format='commit %H %s' > $OUT/summary.txt
-PYTHONPATH=tools timeout 5400 python3 -m bigcherry build --lane radiance-lab:stock:linux-radiance \
-    --experiment moe-remote-handoff > $OUT/build.log 2>&1
-plan=$(grep -oE 'ok build_plan_id=[0-9a-f]+' $OUT/build.log | tail -1 | cut -d= -f2)
-[ -n "$plan" ] || { grep -E ' error:|FAILED' $OUT/build.log | sort -u | head; exit 1; }
-B=$(ls -d $BC_WORK_ROOT/builds/*/$plan)
-echo "build $plan" >> $OUT/summary.txt
+source tools/lab/radiance/lab-build.sh
+B=$(rad_build $OUT/build.log) || exit 1
+echo "build $B" >> $OUT/summary.txt
 L=tools/lab/radiance/launch-flashnext-best.sh
 RUN=$BC_WORK_ROOT/flashnext   # the launcher's pid files and logs
 URL=http://127.0.0.1:36080/v1/completions   # the launcher's default port
