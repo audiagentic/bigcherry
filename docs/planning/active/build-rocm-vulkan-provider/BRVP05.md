@@ -15,7 +15,7 @@ priority: P1
 
 ## Description
 
-Owner 2026-10-26: hosts are addressed by role (build server, test/bench server, lab, workstation) resolved from environment settings; roles may be one machine today and separate machines later. Today the same machine appears as build-server / brutus-lab (this PC) and dev (Brutus); the three environment.local.toml copies have drifted (old key names, stale mount paths, legacy keys, wrong rocm-sdks); slice worktrees do not find the primary checkout's config; ~60 hard-coded host values in ~25 tracked files (mostly tools/lab: ROCm install paths, work-root mount paths, literal PCI addresses, ROCR_VISIBLE_DEVICES=N).
+Owner 2026-10-26: hosts are addressed by role (build server, test/bench server, lab, workstation) resolved from environment settings; roles may be one machine today and separate machines later. Today the same machine appears as build-server / the lab host entry (this PC) and dev (the build server); the three environment.local.toml copies have drifted (old key names, stale mount paths, legacy keys, wrong rocm-sdks); slice worktrees do not find the primary checkout's config; ~60 hard-coded host values in ~25 tracked files (mostly tools/lab: ROCm install paths, work-root mount paths, literal PCI addresses, ROCR_VISIBLE_DEVICES=N).
 
 ## Steps
 
@@ -40,7 +40,7 @@ tools/bigcherry/core/environment.py, core/config.py, cli/slice*.py, tools/env/bi
 
 ## Validation
 
-Unit tests for role resolution, hostname self-selection, worktree config discovery, device-role selection; lint fails on a planted host name/BDF; lab scripts run on Brutus via roles only; changing a role mapping to another host changes only the env file.
+Unit tests for role resolution, hostname self-selection, worktree config discovery, device-role selection; lint fails on a planted host name/BDF; lab scripts run on the build server via roles only; changing a role mapping to another host changes only the env file.
 
 ## Effort & Risk
 
