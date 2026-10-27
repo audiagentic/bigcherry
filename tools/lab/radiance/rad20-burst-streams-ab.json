@@ -1,5 +1,5 @@
 {
- "_comment": "RAD20 concurrency A/B: main vs the burst-armed helper build (power save + queue warm-up), production Flash-Next layout plus the RAD18 CPU combine in both arms; 1, 2, 4 and 6 concurrent streams (stream_bench, the RAD10 shape: 512-token prompts, 128 tokens), engine /metrics per round. Same environment as rad20-burst-ab.json (rad20-burst-ab.sh sets it). Not used by tests.",
+ "_comment": "RAD20 concurrency A/B: main vs the burst-armed helper build (power save; queue warm-up is shelved, default off), production Flash-Next layout plus the RAD18 CPU combine in both arms; 1, 2, 4 and 6 concurrent streams (stream_bench, the RAD10 shape: 512-token prompts, 128 tokens), engine /metrics per round. Same environment as rad20-burst-ab.json (rad20-burst-ab.sh sets it). Not used by tests.",
  "schema_version": 1,
  "engine": "radiance",
  "evidence_role": "diagnostic",
@@ -43,6 +43,7 @@
    "${R9700_BDF}"
   ]
  },
+ "bench_configs": "mtp-dual",
  "required_metrics": [
   "s1_agg_tps",
   "s1_stream_tps",
