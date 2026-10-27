@@ -1,4 +1,5 @@
 #include "moe_remote_hook.h"
+#include "moe_helper_watch.h"
 #include "moe_remote_shm.h"
 #include "rad_abi.h"
 
@@ -55,6 +56,7 @@ struct HookState {
     RegisterFn engine_register = nullptr;
     std::mutex mu;
     RankState rank[kMaxRanks];
+    HelperWatch watch;   /* RAD20: fails the engine's helper waits when a helper process dies */
 };
 HookState g;
 
@@ -154,7 +156,14 @@ void publish_layer_map(int layer, int n_expert, const int32_t* slot_of_expert) {
         store(&g.hdr->layer_map_ready[layer], 1);
         (void)futex_wake(&g.hdr->layer_map_ready[layer]);
     }
-    wait_until(&g.hdr->layer_map_consumed[layer], 1);
+    g.watch.notice();
+    /* The plugin ABI gives this callback no error return. A failed helper leaves helper_fault raised (sticky), so the
+     * engine's first remote MoE wait traps; the map wait just must not hang. */
+    uint32_t* consumed = &g.hdr->layer_map_consumed[layer];
+    const WaitResult r = wait_for(g.hdr, nullptr, [&] { return load(consumed) == 1; });
+    if (r == WaitResult::Error) raise_fault(g.hdr);   /* a wait that cannot complete is terminal too */
+    if (r != WaitResult::Ready)
+        std::fprintf(stderr, "libr3: R3_MOE_WORKER layer %d: helper failed before consuming its map\n", layer);
 }
 
 /* An inference burst begins or ends (RAD20: the helpers arm GPU waits only inside a burst, so their queues are
@@ -174,14 +183,17 @@ void burst_transition(int active) {
         Header* h = g.hdr;
         const uint32_t b = load(&h->burst) & ~kBurstStop;
         if (active == (int)(b & 1u)) return;
+        if (active) g.watch.notice();
         (void)__atomic_fetch_add(&h->burst, 1u, __ATOMIC_SEQ_CST);
         (void)futex_wake(&h->burst);
         if (active)
-            for (uint32_t lane = 0; lane < kLanes; ++lane)
-                for (uint32_t v; (v = __atomic_load_n(&h->lane[lane].park, __ATOMIC_SEQ_CST)) == kParkDraining;) {
-                    if (load(&h->helper_fault)) break;
-                    (void)futex_wait(&h->lane[lane].park, v);
-                }
+            for (uint32_t lane = 0; lane < kLanes; ++lane) {
+                uint32_t* park = &h->lane[lane].park;
+                /* Fault: the engine's GPU wait traps on the next remote step; nothing to wait for here. */
+                if (wait_for(h, nullptr, [&] { return __atomic_load_n(park, __ATOMIC_SEQ_CST) != kParkDraining; }) ==
+                    WaitResult::Error)
+                    raise_fault(h);   /* the drain was not seen to finish: never publish into released waits */
+            }
     }
     if (trace) {
         timespec ts{};
@@ -235,9 +247,43 @@ void register_mailbox() {
      * ownership for placement (R3_MOE_WORKER_SKIP_OWNED), the helper's bitmap as published before the engine
      * starts. The engine applies the protected-layer and slot tests itself, the same ones the helper uses when
      * it narrows ownership to the runtime maps, so both sides agree on what is never placed here. */
+    /* Watch the helpers before registering: registration replays the layer maps and waits for the helpers to consume
+     * them, and a helper that dies there must fail that wait. No watch, no helpers (fail closed). */
+    if (!g.watch.start(g.hdr)) {
+        (void)hipHostUnregister(g.map);
+        g.pinned = false;
+        g.hdr = nullptr;
+        g.engine_register = nullptr;
+        return;
+    }
+    /* Registration barrier: every helper has published its identity and the watcher holds a validated pidfd for it,
+     * before anything waits on the helpers. A helper that died before publishing its pid has no process to watch, so
+     * this bounded startup wait (blocking, not polled) is what catches it. On timeout or fault the helpers are failed
+     * (sticky helper_fault): the engine still registers, its map waits return at once and its first remote step
+     * fails, rather than serving with experts it was told the helpers hold. */
+    {
+        constexpr int kRegisterTimeoutS = 120;   /* helpers attach before the engine starts; this only bounds a failure */
+        timespec deadline{};
+        clock_gettime(CLOCK_MONOTONIC, &deadline);
+        deadline.tv_sec += kRegisterTimeoutS;
+        const WaitResult r = wait_for(g.hdr, &deadline, [] {
+            g.watch.notice();
+            const uint32_t n = load(&g.hdr->helper_count);
+            for (uint32_t i = 0; i < n && i < kMaxRanks; ++i)
+                if (!g.watch.watching(i)) return false;
+            return n > 0;
+        });
+        if (r != WaitResult::Ready) {
+            std::fprintf(stderr, "libr3: R3_MOE_WORKER helpers not all registered and watched within %d s (%s); "
+                         "failing the helper path\n", kRegisterTimeoutS,
+                         r == WaitResult::Timeout ? "timeout" : r == WaitResult::Fault ? "helper fault" : "wait error");
+            raise_fault(g.hdr);
+        }
+    }
     static const EnginePlugin plugin{sizeof(EnginePlugin), publish_layer_map, owner_query, burst_transition};
     if (g.engine_register(&plugin) != 0) {
         std::fprintf(stderr, "libr3: R3_MOE_WORKER engine rejected the plugin registration (struct size)\n");
+        g.watch.stop();
         (void)hipHostUnregister(g.map);
         g.pinned = false;
         g.hdr = nullptr;
@@ -317,6 +363,7 @@ void write_heat(uint32_t rank, RankState& s) {
 
 void close_mailbox() {
     std::lock_guard<std::mutex> lock(g.mu);
+    g.watch.stop();   /* first: helpers may exit while the engine tears down, and that is not a fault */
     for (uint32_t r = 0; r < kMaxRanks; ++r) {
         RankState& s = g.rank[r];
         if (!s.ready) continue;
