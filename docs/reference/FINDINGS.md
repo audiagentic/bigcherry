@@ -53,6 +53,36 @@ Update **Status** in place as it moves — don't duplicate the entry.
 
 ## Kernel / upstream bugs
 
+### A pending AQL barrier keeps gfx1100 at ~95 W / 100% GFX: the MEC busy-polls the dependency signal — 2026-10-26
+
+**Status:** reported-upstream (https://github.com/ROCm/TheRock/issues/9484)
+
+**Summary:** On an RX 7900 XTX (gfx1100), one HSA queue holding a single unsatisfied BARRIER_AND packet (no kernels,
+no shader work) keeps the GPU at 100% GFX activity and ~95 W board power; an empty queue, or the same queue after the
+dependency is released, idles at ~10 W. Register snapshots show the compute command processor's MEC pipe and its memory
+read path busy for the whole wait while every shader block is idle, i.e. the dependency wait is a busy poll that keeps
+GUI_ACTIVE set and power management at full clocks. Any GPU-side wait shows it: a BARRIER_AND on an ordinary or an IPC
+signal, ROCclr's hipStreamWaitValue32 (whose default form is also a resident blit kernel), or a resident wait kernel.
+Not changed by HSA queue priority, ROCm 7.2.4 / 7.14 / 10.1, amdgpu.sched_policy=2, AMD's gfx11 MES
+oversubscription-timer fix, or the newer upstream GC 11.0.0 firmware (MES 0x88).
+
+**Environment:** RX 7900 XTX x2 (gfx1100), MES 0x80, KIQ 0x104, MEC 0xa5a, ME 0x974, PFP 0xa14 (Ubuntu linux-firmware
+20240318); Linux 7.0.13 (in-tree amdgpu); ROCm 7.2.4; amd-smi for power; AMD UMR (freedesktop tomstdenis/umr ac8a7ce)
+for registers.
+
+**Evidence:** tools/lab/radiance/rad20-mes-idle.{cpp,sh} (60 s holds, both cards): empty 9-10 W, drained 12-13 W,
+pending 95 W / GFX 100%, released 12-12.5 W. tools/lab/radiance/rad20-cp-snapshot.sh, while pending:
+CP_CPC_STATUS=0xa0200401 (MEC1_BUSY, TCIU_BUSY, MEC_DATA_CACHE_BUSY, CPG_CPC_BUSY, CPC_BUSY), CP_CPC_BUSY_STAT=0x880
+(MEC1_TC_BUSY, MEC1_PIPE1_BUSY), CP_CPC_STALLED_STAT1=0x04000800, GRBM_STATUS=0xa800302c (GUI_ACTIVE, ANY_ACTIVE,
+CP_BUSY; SPI/TA/SC/PA/DB/GE idle), GRBM_STATUS2=0x3000000c (CPF_BUSY, CPC_BUSY), GRBM_STATUS3=0x32004000 (CH_BUSY,
+GUS_BUSY, GUS_LINK_BUSY, SEDC_BUSY). All zero with an empty queue and after release; CP_STAT, CP_BUSY_STAT, RLC_STAT and
+MES_BUSY stay 0. amdgpu_gfxoff reads 0 in every phase (GFXOFF not engaged even at idle); amdgpu_gfxoff_status is not
+supported on gfx1100 (EINVAL).
+
+**Internal context:** RAD20 (patching-radiance-rdna3); runs rad20-mes-idle-1026130105, -1026130959; firmware trial
+backup fw-backup-rad20-10261236 (rolled back). Consequence for BigCherry: helpers must not leave GPU waits pending while
+idle (RAD20 arm-while-busy design); production main idles the two helper XTX at ~200 W today.
+
 ### Default `hipStreamWaitValue32` armed on an idle stream makes kernels on another stream ~2.2x slower (gfx1100) — 2026-10-25
 
 **Status:** internal-only (candidate to add to ROCm/TheRock#9297)
