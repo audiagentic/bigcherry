@@ -495,7 +495,14 @@ ownership.
 | `tools/lab/radiance/rad25-event-wake.sh` | **TRANSITIONAL** | `radiance` lab topic file; runner for rad25-event-wake.cpp on the first gfx1100 in the device inventory, alternating modes over several cadences. |
 | `tools/lab/radiance/rad25-spin-window.sh` | **TRANSITIONAL** | `radiance` lab topic file; RAD25: runs rad25-event-wake.sh at long periods to find where a blocking HIP event wait stops spinning. |
 | `tools/lab/radiance/pwr01-baseline.sh` | **TRANSITIONAL** | `radiance` lab topic file; PWR01 whole-system power baseline: every inventory GPU's board power and CPU package power (RAPL) at idle, decode and prefill in the production Flash-Next layout, with joules per token. |
+<<<<<<< HEAD
 | `tools/lab/radiance/pwr03-ecore-ab.sh` | **TRANSITIONAL** | `radiance` lab topic file; PWR03: helper processes on the CPU's efficiency cores (taskset through HELPER_WRAP, efficiency cores read from the kernel generically (cpu_capacity, else the hybrid PMU)) against default placement, by package power and tok/s. |
+| `tools/lab/radiance/pwr03-idle-diag.sh` | **TRANSITIONAL** | `radiance` lab topic file; PWR03: per-thread CPU (top -H) and package power for 60 s of idle with the helpers on the efficiency cores, to find what stays busy. |
+=======
+| `tools/lab/radiance/rad25-spin-window-sdks.sh` | **TRANSITIONAL** | `radiance` lab topic file; RAD25: the blocked-wait spin-window sweep once per ROCm SDK declared for the host (rocm-sdks), to see whether any runtime sleeps sooner. |
+| `tools/lab/radiance/pwr01-soak.sh` | **TRANSITIONAL** | `radiance` lab topic file; PWR02 stability soak: pwr01-baseline.sh with 10-minute phases for sustained load at a power setting. |
+| `tools/lab/radiance/pwr02-xtx-sclk-sweep.sh` | **TRANSITIONAL** | `radiance` lab topic file; PWR02: from the workstation, sets the XTX helpers' max shader clock (OD_SCLK) level by level through sudo on the lab host and runs pwr01-baseline.sh at each, restoring the default afterwards. |
+>>>>>>> origin/main
 | `tools/lab/radiance/rad26-wake-bench.cpp` | **TRANSITIONAL** | `radiance` lab topic file; RAD26 harness: GPU-published request waking a CPU thread by yield spin vs hipLaunchHostFunc + futex, round trip on the GPU clock, and the engine-stream cost of a host callback. |
 | `tools/lab/radiance/rad26-wake-bench.sh` | **TRANSITIONAL** | `radiance` lab topic file; runner for rad26-wake-bench.cpp on the gfx1201 card from the device inventory. |
 | `tools/lab/radiance/rad20-helper-kill.sh` | **TRANSITIONAL** | `radiance` lab topic file; RAD20 helper liveness test: SIGKILLs one helper of the production Flash-Next layout at idle, in decode and in prefill, and requires the engine to fail within a bound instead of hanging. |
