@@ -11,7 +11,7 @@ priority: P3
 work: S
 ---
 
-# CPU power: amd_pstate mode/EPP and C-state residency on the serving host
+# CPU power: intel_pstate EPP and C-state residency on the serving host
 
 ## Description
 
@@ -55,6 +55,9 @@ C-state residency and package power recorded; any setting change has an A/B with
 
 Depends on PWR01 for the baseline; most useful after RAD25.
 
+2026-10-27 correction: the serving host's CPU is an Intel Core i7-12700KF (intel_pstate, governor powersave, EPP balance_performance), not AMD: amd_pstate does not apply and HSA_ENABLE_MWAITX (AMD MWAITX instruction) cannot help. Test EPP (balance_performance vs balance_power/performance) and C-state residency (/sys/devices/system/cpu/cpu*/cpuidle) with package RAPL power (PWR01 harness) at idle/decode/prefill.
+
 ## Change Log
 
 - 2026-10-27T02:15:48.543469+00:00 (created-by): Created by agent
+- 2026-10-27T08:23:38.621255+00:00 (updated-by): Updated: section:title, section:notes
