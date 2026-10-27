@@ -277,3 +277,9 @@ default = ""
 status = "diagnostic"
 summary = "Test only (RAD24 kill test): <point>:<helper index> makes that helper stop itself with SIGSTOP at <point> so a test can SIGKILL it there. Points: park_drain (a small lane has flagged kParkDraining, before re-checking the burst). Never set in a real run"
 activation = "r3_moe_worker: test stop at"
+
+[setting.R3_MOE_WORKER_CPU_SET]
+default = "auto"
+status = "production"
+summary = "PWR03: auto pins the helper process to the CPU's efficiency cores when the kernel reports them (cpu_capacity asymmetry, else the hybrid PMU's list) and changes nothing on a CPU without them; all leaves it on every CPU. On the bench host (4 E-cores) CPU package power fell 77 -> 42 W in decode and 83 -> 52 W in prefill with unchanged speed (pwr03-ecore-ab.sh)"
+activation = "r3_moe_worker: R3_MOE_WORKER_CPU_SET auto"

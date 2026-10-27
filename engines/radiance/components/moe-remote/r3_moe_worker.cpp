@@ -38,6 +38,7 @@
 #include "worker_selftest.h"
 #include "worker_combine.h"
 #include "worker_config.h"
+#include "worker_cpu.h"
 #include "worker_segment.h"
 #include "worker_lanes.h"
 #include "worker_queue_warm.h"
@@ -195,6 +196,7 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "r3_moe_worker: %s\n", err.c_str());
         return 2;
     }
+    worker_cpu::place(cfg.cpu_set_auto);   /* before any thread (HIP's included) is created */
 
     Container model;
     if (!model.open(model_path) || model.layers > kMaxLayers) {

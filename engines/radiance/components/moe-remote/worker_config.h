@@ -17,6 +17,8 @@ struct WorkerConfig {
     bool combine = false;           /* R3_MOE_WORKER_COMBINE (RAD18): helper 0 adds both helpers' rows on the CPU */
     uint32_t combine_min_rows = 256;   /* R3_MOE_WORKER_COMBINE_MIN_ROWS */
     uint32_t combine_threads = 8;      /* R3_MOE_WORKER_COMBINE_THREADS, capped at the CPU count */
+    bool cpu_set_auto = true;          /* R3_MOE_WORKER_CPU_SET (PWR03): auto = on the efficiency cores when the CPU has
+                                          them (worker_cpu.h), all = no pinning */
 
     /* False with *err naming the variable on a malformed or out-of-range value. */
     bool from_environment(uint32_t max_helpers, std::string* err) {
@@ -29,6 +31,7 @@ struct WorkerConfig {
                flag("R3_MOE_WORKER_COMBINE", &combine, err) &&
                u32("R3_MOE_WORKER_COMBINE_MIN_ROWS", 1, UINT32_MAX, &combine_min_rows, err) &&
                u32("R3_MOE_WORKER_COMBINE_THREADS", 1, 1024, &combine_threads, err) &&
+               choice("R3_MOE_WORKER_CPU_SET", "auto", "all", &cpu_set_auto, err) &&
                check(helper_index < helper_count, "R3_MOE_WORKER_INDEX must be below R3_MOE_WORKER_COUNT", err);
     }
 
@@ -69,6 +72,17 @@ private:
             return true;
         }
         *err = std::string(name) + "=" + s + ": want 0 or 1";
+        return false;
+    }
+    /* One of two words; *out = (value == yes). Unset or empty keeps *out. */
+    static bool choice(const char* name, const char* yes, const char* no, bool* out, std::string* err) {
+        const char* s = std::getenv(name);
+        if (!s || !*s) return true;
+        if (!std::strcmp(s, yes) || !std::strcmp(s, no)) {
+            *out = !std::strcmp(s, yes);
+            return true;
+        }
+        *err = std::string(name) + "=" + s + ": want " + yes + " or " + no;
         return false;
     }
     static bool check(bool ok, const char* what, std::string* err) {
