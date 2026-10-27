@@ -56,6 +56,9 @@ No yield loop in the small lane; per-thread CPU near zero in decode; tg/pp withi
 
 Split out of RAD20. Reject if decode regresses materially even if CPU drops.
 
+2026-10-27 RESULT (harness tools/lab/radiance/rad25-event-wake.cpp, runs rad25-event-wake-10271530 and later, branch feat/rad25-blocking-completion): at decode cadence (100/150/300 us between completions) every blocking variant keeps the lane thread at ~100% CPU, same as the yield loop; no variant starves the queue. Per-event hipEventBlockingSync is ignored (block = 100% at every period); only device-wide hipDeviceScheduleBlockingSync sleeps, and only after a fixed ~0.3-0.4 ms spin per wait in ROCr (lane CPU 61/33/18/10% at 0.5/1/2/4 ms periods). ROC_ACTIVE_WAIT_TIMEOUT=0 changes nothing (the spin is ROCr's, not ROCclr's); HSA_ENABLE_MWAITX keeps CPU time at 100% (cannot judge its power from CPU time; needs package power, PWR01). Conclusion: blocking completion events save no CPU in decode on ROCm 7.2; not adopted. Revisit only with a ROCr whose blocked-wait spin is configurable/shorter, or measure MWAITX package power under PWR01.
+
 ## Change Log
 
 - 2026-10-27T02:15:19.709939+00:00 (created-by): Created by agent
+- 2026-10-27T04:44:03.072985+00:00 (updated-by): Updated: section:notes
