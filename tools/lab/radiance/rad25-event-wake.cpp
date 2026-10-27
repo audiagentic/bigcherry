@@ -5,7 +5,9 @@
 // and, on each completion, queues the next. The lane observes completion either by yield-spinning on the done word
 // (production today) or by hipEventSynchronize on a per-slot hipEventBlockingSync|hipEventDisableTiming event (RAD25).
 // A slow observation shows up as starvation: the engine releases a request that is not queued yet.
-// Usage: rad25-event-wake yield|block [requests=20000] [period_us=150] [work_us=60] [depth=4]
+// blockdev also sets hipDeviceScheduleBlockingSync for the device. Runtime wait knobs (ROC_ACTIVE_WAIT_TIMEOUT,
+// HSA_ENABLE_MWAITX, ...) come from the environment; the runner sweeps them.
+// Usage: rad25-event-wake yield|block|blockdev [requests=20000] [period_us=150] [work_us=60] [depth=4]
 #include <hip/hip_runtime.h>
 
 #include <algorithm>
@@ -40,11 +42,12 @@ static double self_cpu_ms() {
 }
 
 int main(int argc, char** argv) {
-    if (argc < 2 || (std::strcmp(argv[1], "yield") && std::strcmp(argv[1], "block"))) {
-        std::fprintf(stderr, "usage: %s yield|block [requests] [period_us] [work_us] [depth]\n", argv[0]);
+    if (argc < 2 || (std::strcmp(argv[1], "yield") && std::strcmp(argv[1], "block") && std::strcmp(argv[1], "blockdev"))) {
+        std::fprintf(stderr, "usage: %s yield|block|blockdev [requests] [period_us] [work_us] [depth]\n", argv[0]);
         return 2;
     }
-    const bool block = !std::strcmp(argv[1], "block");
+    const bool block = std::strcmp(argv[1], "yield") != 0;
+    if (!std::strcmp(argv[1], "blockdev")) CHECK(hipSetDeviceFlags(hipDeviceScheduleBlockingSync));
     const uint32_t n = argc > 2 ? std::atoi(argv[2]) : 20000;
     const uint32_t period_us = argc > 3 ? std::atoi(argv[3]) : 150;
     const uint32_t work_us = argc > 4 ? std::atoi(argv[4]) : 60;
@@ -130,7 +133,7 @@ int main(int argc, char** argv) {
     const double wall_ms = (t_end - t0) / 1e6;
     std::printf("RESULT mode=%s requests=%u period_us=%u work_us=%u depth=%u wall_ms=%.1f ideal_ms=%.1f "
                 "starved=%zu starve_total_us=%.0f starve_p99_us=%.1f starve_max_us=%.1f lane_cpu_ms=%.1f lane_cpu_pct=%.1f\n",
-                block ? "block" : "yield", n, period_us, work_us, depth, wall_ms, n * period_us / 1e3,
+                argv[1], n, period_us, work_us, depth, wall_ms, n * period_us / 1e3,
                 starve_ns.size(), starve_total,
                 starve_ns.empty() ? 0.0 : starve_ns[std::min(starve_ns.size() - 1, starve_ns.size() * 99 / 100)] / 1e3,
                 starve_ns.empty() ? 0.0 : starve_ns.back() / 1e3, lane_cpu, 100.0 * lane_cpu / wall_ms);

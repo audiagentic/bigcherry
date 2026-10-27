@@ -18,23 +18,36 @@ print(d[0].index if d else "")
 [ -n "$IDX" ] || { echo "device inventory: no gfx1100 GPU"; exit 1; }
 "$ROCM_PATH/bin/hipcc" -O2 --offload-arch=gfx1100 tools/lab/radiance/rad25-event-wake.cpp -o $OUT/rad25-event-wake \
     > $OUT/build.log 2>&1 || { tail $OUT/build.log; exit 1; }
+# Variants: name|mode|environment. The runtime spins before it blocks a wait; these probe that spin.
+VARIANTS=(
+  "yield|yield|"
+  "block|block|"
+  "blockdev|blockdev|"
+  "block-noactive|block|ROC_ACTIVE_WAIT_TIMEOUT=0"
+  "blockdev-noactive|blockdev|ROC_ACTIVE_WAIT_TIMEOUT=0"
+  "blockdev-mwaitx|blockdev|HSA_ENABLE_MWAITX=1"
+  "blockdev-noactive-mwaitx|blockdev|ROC_ACTIVE_WAIT_TIMEOUT=0 HSA_ENABLE_MWAITX=1"
+)
 for period in 100 150 300; do
     for r in $(seq $REPEATS); do
-        order="yield block"; [ $((r % 2)) = 0 ] && order="block yield"   # alternate which mode runs first
-        for m in $order; do
-            ROCR_VISIBLE_DEVICES=$IDX timeout 600 $OUT/rad25-event-wake $m $N $period 60 4 | tee -a $OUT/results.txt
+        n=${#VARIANTS[@]}
+        for k in $(seq 0 $((n - 1))); do   # rotate the starting variant each repeat
+            IFS='|' read -r name mode envs <<<"${VARIANTS[$(( (k + r) % n ))]}"
+            line=$(env $envs ROCR_VISIBLE_DEVICES=$IDX timeout 600 $OUT/rad25-event-wake $mode $N $period 60 4 | grep RESULT)
+            echo "${line/RESULT/RESULT variant=$name}" | tee -a $OUT/results.txt
         done
     done
 done
 python3 - $OUT/results.txt <<'PY' | tee -a $OUT/summary.txt
 import re, statistics, sys
 rows = [dict(re.findall(r"(\w+)=([\w.]+)", l)) for l in open(sys.argv[1]) if l.startswith("RESULT")]
+variants = list(dict.fromkeys(r["variant"] for r in rows))
 for period in sorted({r["period_us"] for r in rows}, key=int):
-    for mode in ("yield", "block"):
-        g = [r for r in rows if r["period_us"] == period and r["mode"] == mode]
+    for mode in variants:
+        g = [r for r in rows if r["period_us"] == period and r["variant"] == mode]
         if not g: continue
         f = lambda k: statistics.median(float(r[k]) for r in g)
-        print(f"period {period:>4} us {mode:5s}: starved {f('starved'):7.0f}  starve_total {f('starve_total_us'):9.0f} us  "
+        print(f"period {period:>4} us {mode:24s}: starved {f('starved'):7.0f}  starve_total {f('starve_total_us'):9.0f} us  "
               f"p99 {f('starve_p99_us'):7.1f} us  wall/ideal {f('wall_ms')/f('ideal_ms'):.4f}  lane CPU {f('lane_cpu_pct'):5.1f} %")
 PY
 echo "OUT $OUT"; echo RAD25_WAKE_DONE
