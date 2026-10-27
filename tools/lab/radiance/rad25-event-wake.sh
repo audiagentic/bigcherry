@@ -24,6 +24,7 @@ VARIANTS=(
   "yield|yield|"
   "block|block|"
   "blockdev|blockdev|"
+  "blockonly|blockonly|"
   "block-noactive|block|ROC_ACTIVE_WAIT_TIMEOUT=0"
   "blockdev-noactive|blockdev|ROC_ACTIVE_WAIT_TIMEOUT=0"
   "blockdev-mwaitx|blockdev|HSA_ENABLE_MWAITX=1"
