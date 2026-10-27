@@ -1,0 +1,7 @@
+#!/bin/sh
+# Blocks a commit whose message names a machine or carries a host-specific path, address or identity (the message
+# reaches main through squash merges). Same terms as the pre-commit hook; installed with it (--install-hook).
+set -e
+root="$(git rev-parse --show-toplevel)"
+cd "$root"
+PYTHONPATH=tools exec python3 -m bigcherry.forbidden_terms --text "$1"

@@ -271,3 +271,9 @@ activation = "R3_MOE_WORKER_MASK_ONLY enabled"
 default = ""
 status = "diagnostic"
 summary = "override the kernel plugin the helper loads through the rad_plugin ABI (default: libr4d.so on gfx1201, libr3.so on gfx1100)"
+
+[setting.R3_MOE_WORKER_TEST_STOP_AT]
+default = ""
+status = "diagnostic"
+summary = "Test only (RAD24 kill test): <point>:<helper index> makes that helper stop itself with SIGSTOP at <point> so a test can SIGKILL it there. Points: park_drain (a small lane has flagged kParkDraining, before re-checking the burst). Never set in a real run"
+activation = "r3_moe_worker: test stop at"

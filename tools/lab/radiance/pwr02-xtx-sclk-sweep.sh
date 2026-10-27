@@ -7,6 +7,9 @@
 # Usage: <password on stdin> | BIGCHERRY_LAB_HOST=<lab host entry> pwr02-xtx-sclk-sweep.sh <branch with pwr01-baseline.sh> ["levels, 0 = default"] [sclk|vo]
 set -u
 BRANCH=${1:?branch}; LEVELS=${2:-0 2500 2000 0 2000 2500}; KNOB=${3:-sclk}
+# PWR02_ARCH picks the cards by architecture (default the gfx1100 helpers; gfx1201 for the engine card). Knob cap sets
+# the board power cap in watts (restored from power1_cap_default).
+ARCH=${PWR02_ARCH:-gfx1100}
 IFS= read -r PW
 # The lab host is the configured [host.*] entry named by BIGCHERRY_LAB_HOST (as for `bigcherry slice lab --host`); its
 # gfx1100 devices come from whichever configured host entry for the same machine carries the device inventory.
@@ -16,16 +19,18 @@ import sys
 from bigcherry.core import environment as e
 env = e.load_default()
 lab = env.host(sys.argv[1])
-devs = [d for h in env.hosts.values() if h.hostname == lab.hostname for d in h.devices_for_arch("gfx1100")]
+devs = [d for h in env.hosts.values() if h.hostname == lab.hostname for d in h.devices_for_arch(sys.argv[2])]
 print(lab.hostname, " ".join(sorted({d.locator for d in devs})))
-' "$LAB")"
-[ -n "$HOST" ] && [ -n "$BDFS" ] || { echo "environment: lab host or gfx1100 devices missing"; exit 1; }
+' "$LAB" "$ARCH")"
+[ -n "$HOST" ] && [ -n "$BDFS" ] || { echo "environment: lab host or $ARCH devices missing"; exit 1; }
 set_sclk() {   # $1 MHz, 0 = restore the default
     local cmd=""
     for b in $BDFS; do
         f=/sys/bus/pci/devices/$b/pp_od_clk_voltage
-        if [ "$1" = 0 ]; then cmd="$cmd echo r > $f && echo c > $f &&"
+        h=/sys/bus/pci/devices/$b/hwmon/hwmon*
+        if [ "$1" = 0 ]; then cmd="$cmd echo r > $f && echo c > $f && cat $h/power1_cap_default > $h/power1_cap &&"
         elif [ $KNOB = vo ]; then cmd="$cmd echo 'vo $1' > $f && echo c > $f &&"
+        elif [ $KNOB = cap ]; then cmd="$cmd echo $(( $1 * 1000000 )) > $h/power1_cap &&"
         else cmd="$cmd echo 's 1 $1' > $f && echo c > $f &&"; fi
     done
     printf '%s\n' "$PW" | ssh "$HOST" "sudo -S -p '' sh -c \"$cmd true\"" && \

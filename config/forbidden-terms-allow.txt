@@ -7,3 +7,5 @@ IGPU-HOST
 C:\Program Files\AMD\ROCm
 # Third-party upstream commit author (attribution, not a local identifier)
 stew675@gmail.com
+# Commit attribution trailers (Co-Authored-By) carry this public no-reply address
+noreply@anthropic.com
