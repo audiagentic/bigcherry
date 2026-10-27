@@ -277,3 +277,9 @@ default = ""
 status = "diagnostic"
 summary = "Test only (RAD24 kill test): <point>:<helper index> makes that helper stop itself with SIGSTOP at <point> so a test can SIGKILL it there. Points: park_drain (a small lane has flagged kParkDraining, before re-checking the burst). Never set in a real run"
 activation = "r3_moe_worker: test stop at"
+
+[setting.R3_MOE_WORKER_REGISTER_TIMEOUT_S]
+default = "120"
+status = "production"
+summary = "RAD24: seconds the engine waits, at plugin registration, for every helper to publish its identity and be watched (pidfd) before it fails the helper path. Helpers attach before the engine starts, so this only bounds a failure (a helper that died before publishing its pid)"
+activation = "libr3: R3_MOE_WORKER helpers not all registered"

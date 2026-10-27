@@ -263,10 +263,18 @@ void register_mailbox() {
      * (sticky helper_fault): the engine still registers, its map waits return at once and its first remote step
      * fails, rather than serving with experts it was told the helpers hold. */
     {
-        constexpr int kRegisterTimeoutS = 120;   /* helpers attach before the engine starts; this only bounds a failure */
+        /* R3_MOE_WORKER_REGISTER_TIMEOUT_S (default 120): helpers attach before the engine starts, so this only bounds a
+         * failure; a malformed value is reported and the default kept. */
+        int timeout_s = 120;
+        if (const char* e = std::getenv("R3_MOE_WORKER_REGISTER_TIMEOUT_S"); e && *e) {
+            char* end = nullptr;
+            const long v = std::strtol(e, &end, 10);
+            if (end && !*end && v > 0 && v <= 86400) timeout_s = (int)v;
+            else std::fprintf(stderr, "libr3: R3_MOE_WORKER_REGISTER_TIMEOUT_S=%s is not 1..86400 s; using %d\n", e, timeout_s);
+        }
         timespec deadline{};
         clock_gettime(CLOCK_MONOTONIC, &deadline);
-        deadline.tv_sec += kRegisterTimeoutS;
+        deadline.tv_sec += timeout_s;
         const WaitResult r = wait_for(g.hdr, &deadline, [] {
             g.watch.notice();
             const uint32_t n = load(&g.hdr->helper_count);
@@ -276,7 +284,7 @@ void register_mailbox() {
         });
         if (r != WaitResult::Ready) {
             std::fprintf(stderr, "libr3: R3_MOE_WORKER helpers not all registered and watched within %d s (%s); "
-                         "failing the helper path\n", kRegisterTimeoutS,
+                         "failing the helper path\n", timeout_s,
                          r == WaitResult::Timeout ? "timeout" : r == WaitResult::Fault ? "helper fault" : "wait error");
             raise_fault(g.hdr);
         }
