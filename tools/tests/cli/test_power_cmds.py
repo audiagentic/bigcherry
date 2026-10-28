@@ -87,7 +87,7 @@ class ApplyRestoreTests(unittest.TestCase):
     def test_blocked_apply_writes_nothing_and_prints_the_setup(self):
         with mock.patch.object(power_cmds, "_configured", lambda a: _cards()), \
                 mock.patch.object(power_cmds.os, "access", lambda p, m: False), \
-                mock.patch.object(power_cmds, "_explain", lambda a, b: "SETUP STEPS"), \
+                mock.patch.object(power_cmds, "_explain", lambda a: "SETUP STEPS"), \
                 mock.patch.object(power_cmds, "_write") as write, \
                 mock.patch("sys.stderr", new_callable=io.StringIO) as err:
             self.assertEqual(power_cmds.cmd_apply(Namespace(host=None)), 2)
@@ -96,14 +96,13 @@ class ApplyRestoreTests(unittest.TestCase):
 
 
 class GrantTests(unittest.TestCase):
-    def _grant(self, group, gid, cards=(("0000:03:00.0", "amdgpu"), ("0000:09:00.0", "amdgpu"), ("0000:17:00.0", "nouveau")),
-               euid=0, print_=False):
-        args = Namespace(group=group, user="alice", print=print_)
+    def _grant(self, gid, euid=0, print_=False):
+        args = Namespace(group=power_cmds.GROUP, print=print_)
+        cards = [("0000:03:00.0", "amdgpu"), ("0000:09:00.0", "amdgpu"), ("0000:17:00.0", "nouveau")]
         with tempfile.TemporaryDirectory() as d, \
                 mock.patch.object(power_cmds, "RULES", Path(d) / "r.rules"), \
                 mock.patch.object(power_cmds.sys, "platform", "linux"), \
-                mock.patch.object(power_cmds.gpu_power, "display_cards", lambda: list(cards)), \
-                mock.patch.object(power_cmds.gpu_power, "hwmon_of", lambda loc: None), \
+                mock.patch.object(power_cmds.gpu_power, "display_cards", lambda: cards), \
                 mock.patch.object(power_cmds.os, "geteuid", lambda: euid, create=True), \
                 mock.patch.object(power_cmds, "_gid", lambda g: gid), \
                 mock.patch.object(power_cmds.subprocess, "run") as run, \
@@ -113,39 +112,32 @@ class GrantTests(unittest.TestCase):
             rules = (Path(d) / "r.rules").read_text(encoding="utf-8") if (Path(d) / "r.rules").exists() else ""
         return rc, [c.args[0] for c in run.call_args_list], rules, out.getvalue()
 
-    def test_covers_every_supported_card_not_only_configured_ones(self):
-        rc, cmds, rules, out = self._grant(power_cmds.GROUP, 990)
-        self.assertEqual(rc, 0)
-        self.assertIn('KERNEL=="0000:03:00.0"', rules)
-        self.assertIn('KERNEL=="0000:09:00.0"', rules)
-        self.assertNotIn("0000:17:00.0", rules)
-        self.assertIn("not covered: 0000:17:00.0 (nouveau)", out)
-        self.assertIn(["usermod", "-aG", power_cmds.GROUP, "alice"], cmds)
-        self.assertIn(["udevadm", "control", "--reload"], cmds)
-
-    def test_the_dedicated_group_is_created_when_missing(self):
-        rc, cmds, _, _ = self._grant(power_cmds.GROUP, None)
+    def test_creates_the_group_and_a_rule_per_driver(self):
+        rc, cmds, rules, out = self._grant(None)
         self.assertEqual(rc, 0)
         self.assertEqual(cmds[0], ["groupadd", "--system", power_cmds.GROUP])
+        self.assertIn('DRIVER=="amdgpu"', rules)
+        self.assertNotIn("KERNEL==", rules)          # not tied to card addresses
+        self.assertNotIn("nouveau", rules)
+        self.assertIn(["udevadm", "trigger"], cmds)
+        self.assertIn(f"sudo usermod -aG {power_cmds.GROUP} <user>", out)
 
-    def test_another_missing_group_is_refused_not_created(self):
-        rc, cmds, _, _ = self._grant("gpuusers", None)
-        self.assertEqual((rc, cmds), (1, []))
+    def test_an_existing_group_is_kept(self):
+        _, cmds, _, _ = self._grant(990)
+        self.assertNotIn(["groupadd", "--system", power_cmds.GROUP], cmds)
 
     def test_needs_root_unless_printing(self):
-        self.assertEqual(self._grant(power_cmds.GROUP, 990, euid=1000)[0], 2)
-        rc, cmds, _, out = self._grant(power_cmds.GROUP, 990, euid=1000, print_=True)
+        self.assertEqual(self._grant(990, euid=1000)[0], 2)
+        rc, cmds, _, out = self._grant(990, euid=1000, print_=True)
         self.assertEqual((rc, cmds), (0, []))
-        self.assertIn('KERNEL=="0000:03:00.0"', out)
+        self.assertIn('DRIVER=="amdgpu"', out)
 
 
 def _probe(**kw):
-    base = dict(linux=True, container=None, container_udev=False, sys_read_only=False,
-                cards=(power_setup.Card("0000:03:00.0", "amdgpu", True, True),
-                       power_setup.Card("0000:09:00.0", "amdgpu", True, True)),
-                group="bigcherry-gpu", group_exists=True, gid=990, rule_installed=True,
-                rule_cards=frozenset({"0000:03:00.0", "0000:09:00.0"}), user="alice", user_in_group=True,
-                session_in_group=True, blocked=())
+    base = dict(linux=True, container=None,
+                cards=(power_setup.Card("0000:03:00.0", "amdgpu", True), power_setup.Card("0000:09:00.0", "amdgpu", True)),
+                group="bigcherry-gpu", group_exists=True, rule_installed=True, user="alice", user_in_group=True,
+                session_in_group=True)
     base.update(kw)
     return power_setup.Probe(**base)
 
@@ -155,73 +147,64 @@ def _cmd(*words):
 
 
 class SetupStepsTests(unittest.TestCase):
-    """The steps list only what is missing, in order, for wherever this runs."""
+    def test_fresh_host_creates_the_group_then_adds_the_user(self):
+        s = power_setup.steps(_probe(group_exists=False, rule_installed=False, user_in_group=False,
+                                     session_in_group=False), _cmd)
+        self.assertEqual(s[0].code, ("sudo HERE gpu-power grant",))
+        self.assertEqual(s[1].code, ("sudo usermod -aG bigcherry-gpu alice",))
+        self.assertIn("log out and back in", s[1].text)
+        self.assertEqual(s[2].text, "Run the launch again.")
+        self.assertEqual(len(s), 3)
 
-    def test_fresh_host_gets_the_whole_setup(self):
-        p = _probe(group_exists=False, gid=None, rule_installed=False, rule_cards=frozenset(), user_in_group=False,
-                   session_in_group=False,
-                   cards=(power_setup.Card("0000:03:00.0", "amdgpu", True, False),))
-        s = power_setup.steps(p, _cmd)
-        self.assertIn("amdgpu.ppfeaturemask", s[0])
-        self.assertIn("reboot", s[0])
-        self.assertIn("sudo HERE gpu-power grant --user alice", s[1])
-        self.assertIn("creates the bigcherry-gpu group", s[1])
-        self.assertIn("adds alice", s[1])
-        self.assertIn("udev rule: 0000:03:00.0", s[1])
-        self.assertIn("newgrp bigcherry-gpu", s[2])
-        self.assertEqual(s[3], "Run the launch again.")
+    def test_group_exists_user_not_in_it(self):
+        s = power_setup.steps(_probe(user_in_group=False, session_in_group=False), _cmd)
+        self.assertEqual(s[0].code, ("sudo usermod -aG bigcherry-gpu alice",))
 
-    def test_member_but_not_yet_in_this_session_only_needs_a_new_login(self):
+    def test_member_but_not_in_this_session(self):
         s = power_setup.steps(_probe(session_in_group=False), _cmd)
-        self.assertEqual(len(s), 2)
-        self.assertIn("Log out and back in", s[0])
+        self.assertIn("Log out and back in", s[0].text)
+        self.assertEqual(s[0].code, ("newgrp bigcherry-gpu",))
 
-    def test_a_card_added_since_the_grant_needs_a_new_grant(self):
-        s = power_setup.steps(_probe(rule_cards=frozenset({"0000:03:00.0"})), _cmd)
-        self.assertIn("gpu-power grant", s[0])
-        self.assertNotIn("creates the", s[0])
-
-    def test_complete_setup_needs_no_steps(self):
+    def test_complete_setup_has_no_steps(self):
         self.assertEqual(power_setup.steps(_probe(), _cmd), [])
 
-    def test_container_message_names_the_engine(self):
-        text = power_setup.render(_probe(container="docker", sys_read_only=True, session_in_group=False), _cmd)
-        self.assertIn("inside a docker container; udev runs on the host", text)
+    def test_overdrive_off_comes_first(self):
+        s = power_setup.steps(_probe(cards=(power_setup.Card("0000:03:00.0", "amdgpu", False),)), _cmd)
+        self.assertEqual(s[0].code, ("amdgpu.ppfeaturemask=0xfff7ffff",))
 
-    def test_container_host_step_is_plain_shell_needing_no_checkout(self):
-        p = _probe(container="docker", sys_read_only=True, session_in_group=False)
+    def test_container_creates_the_group_on_the_host_then_maps_group_and_gpus(self):
+        p = _probe(container="docker", group_exists=False, rule_installed=False, user_in_group=False,
+                   session_in_group=False)
         with mock.patch.object(power_setup.os.path, "realpath", lambda p: "/sys/devices/x/" + p.rsplit("/", 1)[1]):
             s = power_setup.steps(p, _cmd)
-        self.assertTrue(s[0].startswith("On the host, run (needs nothing from bigcherry"))
-        self.assertNotIn("-m bigcherry", s[0])
-        self.assertNotIn("PYTHONPATH", s[0])
-        self.assertIn("sudo groupadd --system bigcherry-gpu", s[0])
-        self.assertIn(f"sudo tee {power_setup.RULES}", s[0])
-        self.assertIn('KERNEL=="0000:03:00.0"', s[0])
-        self.assertIn("\nEOF\n", s[0])   # pasteable: the heredoc terminator starts its line
-        self.assertIn("getent group bigcherry-gpu | cut -d: -f3", s[0])
-        self.assertIn("group_add:", s[1])
-        self.assertIn("- /sys/devices/x/0000:03:00.0:/sys/devices/x/0000:03:00.0:rw", s[1])
-        self.assertIn("every container", s[1])
-        self.assertEqual(s[2], "Run the launch again.")
+        self.assertTrue(s[0].text.startswith("On the host, create the group bigcherry-gpu"))
+        self.assertEqual(s[0].code[0], "sudo groupadd --system bigcherry-gpu")
+        self.assertNotIn("HERE", "\n".join(s[0].code))     # nothing from bigcherry needed on the host
+        self.assertNotIn("KERNEL==", "\n".join(s[0].code))
+        self.assertIn("  - /sys/devices/x/0000:03:00.0:/sys/devices/x/0000:03:00.0:rw", s[1].code)
+        self.assertEqual(s[1].code[0], "group_add:")
+        self.assertEqual(s[2].text, "Run the launch again.")
 
-    def test_container_lines_fill_in_the_gid_and_paths(self):
-        text = power_setup.container_lines(987, ["/sys/devices/a/0000:03:00.0"])
-        self.assertIn('        - "987"', text)
-        self.assertIn("        - /sys/devices/a/0000:03:00.0:/sys/devices/a/0000:03:00.0:rw", text)
-        self.assertIn("--group-add 987 -v /sys/devices/a/0000:03:00.0:/sys/devices/a/0000:03:00.0:rw", text)
+    def test_container_host_commands_are_valid_shell(self):
+        import shutil
+        import subprocess
+        bash = shutil.which("bash")
+        if not bash:
+            self.skipTest("no bash")
+        s = power_setup.steps(_probe(container="docker"), _cmd)
+        done = subprocess.run([bash, "-n"], input="\n".join(s[0].code), text=True, capture_output=True)
+        self.assertEqual(done.returncode, 0, done.stderr)
 
-    def test_unsupported_cards_are_named_not_covered(self):
-        p = _probe(cards=(power_setup.Card("0000:03:00.0", "amdgpu", True, True),
-                          power_setup.Card("0000:17:00.0", "nouveau", False, False)))
-        self.assertIn("0000:17:00.0 [nouveau]", power_setup.steps(p, _cmd)[-1])
+    def test_render_spaces_the_steps_and_indents_the_code(self):
+        text = power_setup.render(_probe(user_in_group=False, session_in_group=False), _cmd)
+        self.assertTrue(text.startswith("gpu-power: cannot write the GPU power settings as alice.\n\nTo set it up (once):\n\n"))
+        self.assertIn("  1. Add alice to the group, then log out and back in:\n\n       sudo usermod -aG bigcherry-gpu alice\n\n",
+                      text)
+        self.assertIn("  2. Run the launch again.", text)
 
-    def test_no_supported_card_says_so(self):
-        p = _probe(cards=(power_setup.Card("0000:17:00.0", "nouveau", False, False),))
-        self.assertIn("No GPU here has a supported power driver", power_setup.steps(p, _cmd)[0])
-
-    def test_not_linux_says_so(self):
-        self.assertIn("not Linux", power_setup.steps(_probe(linux=False), _cmd)[0])
+    def test_not_linux_and_no_gpu(self):
+        self.assertIn("not Linux", power_setup.steps(_probe(linux=False), _cmd)[0].text)
+        self.assertIn("No GPU", power_setup.steps(_probe(cards=()), _cmd)[0].text)
 
 
 if __name__ == "__main__":

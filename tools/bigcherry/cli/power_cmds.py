@@ -127,20 +127,15 @@ def _blocked(cards) -> list[str]:
             if not os.access(path, os.W_OK)]
 
 
-def _explain(args: Namespace, blocked: list[str]) -> str:
-    p = power_setup.probe(args_group(args), str(RULES), blocked)
-    return power_setup.render(p, lambda *w: _command(args, *w))
-
-
-def args_group(args: Namespace) -> str:
-    return getattr(args, "group", None) or GROUP
+def _explain(args: Namespace) -> str:
+    return power_setup.render(power_setup.probe(GROUP), lambda *w: _command(args, *w))
 
 
 def cmd_apply(args: Namespace) -> int:
     cards = _configured(args)
     blocked = _blocked(cards)
     if blocked:
-        print(_explain(args, blocked), file=sys.stderr)
+        print(_explain(args), file=sys.stderr)
         return 2
     saved = _load_saved()
     failed = 0
@@ -168,7 +163,7 @@ def cmd_restore(args: Namespace) -> int:
                for p in gpu_power.targets(loc, driver, hw, gpu_power.Setting(**saved[loc]["setting"]))
                if not os.access(p, os.W_OK)]
     if blocked:
-        print(_explain(args, blocked), file=sys.stderr)
+        print(_explain(args), file=sys.stderr)
         return 2
     failed = 0
     for loc, driver, hw in cards:
@@ -191,13 +186,9 @@ def _run(cmd: list[str]) -> None:
     subprocess.run(cmd, check=True)
 
 
-def _trigger(cards: list[tuple[str, str | None]]) -> None:
+def _trigger() -> None:
     _run(["udevadm", "control", "--reload"])
-    for locator, _ in cards:
-        _run(["udevadm", "trigger", "--action=change", f"{gpu_power.SYSFS_PCI}/{locator}"])
-        hw = gpu_power.hwmon_of(locator)
-        if hw:
-            _run(["udevadm", "trigger", "--action=change", hw])
+    _run(["udevadm", "trigger"])
     _run(["udevadm", "settle"])
 
 
@@ -210,59 +201,28 @@ def _gid(group: str) -> int | None:
 
 
 def cmd_grant(args: Namespace) -> int:
+    """Create the group with write access to the GPUs' power files (a udev rule per supported driver present)."""
     if not sys.platform.startswith("linux"):
-        print("gpu-power grant: GPU power settings use Linux sysfs; nothing to grant on this system", file=sys.stderr)
+        print("gpu-power grant: GPU power settings use Linux sysfs; this system is not Linux", file=sys.stderr)
         return 1
-    # Every card with a power backend, configured or not: configuring a card later needs no second grant.
-    found = gpu_power.display_cards()
-    cards = [(loc, drv) for loc, drv in found if drv in gpu_power.BACKENDS]
-    skipped = [(loc, drv) for loc, drv in found if drv not in gpu_power.BACKENDS]
-    if not cards:
-        print(f"gpu-power grant: no GPU here has a supported power driver (found: "
-              f"{', '.join(f'{loc} {drv}' for loc, drv in found) or 'none'})", file=sys.stderr)
+    drivers = sorted({drv for _, drv in gpu_power.display_cards() if drv in gpu_power.BACKENDS})
+    if not drivers:
+        print("gpu-power grant: no GPU here has a supported power driver", file=sys.stderr)
         return 1
-    rules = gpu_power.udev_rules(cards, args.group)
+    rules = gpu_power.udev_rules(drivers, args.group)
     if args.print:
         print(rules, end="")
         return 0
     if os.geteuid() != 0:
-        print("gpu-power grant: run it with sudo (it writes a udev rule" + (" and adds the user to the group" if args.user
-              else "") + "); --print shows the rule without installing it", file=sys.stderr)
+        print("gpu-power grant: run it with sudo (--print shows the rule without installing it)", file=sys.stderr)
         return 2
     if _gid(args.group) is None:
-        if args.group != GROUP:
-            print(f"gpu-power grant: group {args.group!r} does not exist (only the default {GROUP} is created)",
-                  file=sys.stderr)
-            return 1
-        _run(["groupadd", "--system", GROUP])
+        _run(["groupadd", "--system", args.group])
     RULES.write_text(rules, encoding="utf-8")
-    print(f"wrote {RULES}: group {args.group} may write the power files of {', '.join(loc for loc, _ in cards)}")
-    for loc, drv in skipped:
-        print(f"  not covered: {loc} ({drv}): no power backend for that driver")
-    if args.user:
-        _run(["usermod", "-aG", args.group, args.user])
-    _trigger(cards)
-    print(f"done; {args.user or 'members of ' + args.group} can apply the settings after logging in again "
-          f"(or `newgrp {args.group}`)")
-    print()
-    _print_container_lines(args.group, cards)
+    _trigger()
+    print(f"group {args.group} can write the GPUs' power settings. Add a user with: "
+          f"sudo usermod -aG {args.group} <user> (then log in again)")
     return 0
-
-
-def _print_container_lines(group: str, cards: list[tuple[str, str | None]]) -> int:
-    gid = _gid(group)
-    if gid is None:
-        print(f"gpu-power: group {group} does not exist on this host yet; run `sudo ... gpu-power grant` first",
-              file=sys.stderr)
-        return 1
-    print(power_setup.container_lines(gid, [os.path.realpath(f"{gpu_power.SYSFS_PCI}/{loc}") for loc, _ in cards]))
-    return 0
-
-
-def cmd_container_lines(args: Namespace) -> int:
-    """On the host: the lines any container adds to apply the settings (no privileges; group and rule from grant)."""
-    return _print_container_lines(args.group, [(loc, drv) for loc, drv in gpu_power.display_cards()
-                                               if drv in gpu_power.BACKENDS])
 
 
 def cmd_revoke(args: Namespace) -> int:
@@ -291,13 +251,9 @@ def register(sub) -> None:
     rs = psub.add_parser("restore", help="put back what ran before apply (root, or after grant)")
     rs.add_argument("--host")
     rs.set_defaults(func=cmd_restore)
-    gr = psub.add_parser("grant", help="let a group write every supported card's power files, via a udev rule (sudo)")
-    gr.add_argument("--group", default=GROUP, help=f"group given write access (default {GROUP}, created when missing)")
-    gr.add_argument("--user", help="also add this user to the group")
-    gr.add_argument("--print", action="store_true", help="print the udev rule instead of installing it (no privileges)")
+    gr = psub.add_parser("grant", help="create the group with write access to the GPUs' power settings (sudo)")
+    gr.add_argument("--group", default=GROUP, help=f"default {GROUP}")
+    gr.add_argument("--print", action="store_true", help="print the udev rule instead of installing it")
     gr.set_defaults(func=cmd_grant)
-    cl = psub.add_parser("container-lines", help="on the host: the lines any container adds to apply the settings")
-    cl.add_argument("--group", default=GROUP)
-    cl.set_defaults(func=cmd_container_lines)
     rv = psub.add_parser("revoke", help="remove the rule grant installed (sudo)")
     rv.set_defaults(func=cmd_revoke)

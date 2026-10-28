@@ -137,11 +137,11 @@ class _Amdgpu:
         return out
 
     @staticmethod
-    def udev(locator: str, group: str) -> list[str]:
+    def udev(group: str) -> list[str]:
+        """Group write on every amdgpu card's power files: the OverDrive table and the hwmon power cap."""
         return [
-            _udev_chgrp(f'ACTION=="add|bind|change", SUBSYSTEM=="pci", KERNEL=="{locator}", DRIVER=="amdgpu"',
-                        "pp_od_clk_voltage", group),
-            _udev_chgrp(f'ACTION=="add|change", SUBSYSTEM=="hwmon", KERNELS=="{locator}"', "power1_cap", group),
+            _udev_chgrp('ACTION=="add|bind|change", SUBSYSTEM=="pci", DRIVER=="amdgpu"', "pp_od_clk_voltage", group),
+            _udev_chgrp('ACTION=="add|change", SUBSYSTEM=="hwmon", ATTR{name}=="amdgpu"', "power1_cap", group),
         ]
 
 
@@ -188,18 +188,18 @@ def power_files(locator: str, driver: str | None, hwmon: str | None) -> list[str
     return backend(locator, driver).files(locator, hwmon)
 
 
-def udev_rules(cards: list[tuple[str, str | None]], group: str) -> str:
-    """A udev rules file that lets ``group`` write the power files of exactly these (locator, driver) cards.
-
-    The rules match each card by its PCI address, so other devices are untouched; they run when the driver binds, so
-    the permission survives reboots and driver reloads."""
+def udev_rules(drivers: list[str], group: str) -> str:
+    """The udev rules that give ``group`` write access to the power files of every GPU bound to these drivers."""
     if not re.fullmatch(r"[a-z_][a-z0-9_-]{0,31}", group):
         raise ValueError(f"not a group name: {group!r}")
-    lines = ["# bigcherry gpu-power: group write on the power settings of the listed cards only (bigcherry gpu-power grant)"]
-    for locator, driver in cards:
-        lines += backend(locator, driver).udev(locator, group)
+    lines = [f"# bigcherry gpu-power: group {group} may write GPU power settings"]
+    for driver in sorted(set(drivers)):
+        if driver not in BACKENDS:
+            raise ValueError(f"no power backend for driver {driver!r} (supported: {', '.join(sorted(BACKENDS))})")
+        lines += BACKENDS[driver].udev(group)
     return "\n".join(lines) + "\n"
 
 
 def _udev_chgrp(match: str, path: str, group: str) -> str:
-    return f'{match}, RUN+="/bin/sh -c \'chgrp {group} /sys%p/{path} && chmod g+w /sys%p/{path}\'"'
+    # Two plain commands, no shell and no inner quotes, so the rule reads (and pastes) cleanly.
+    return f'{match}, RUN+="/bin/chgrp {group} /sys%p/{path}", RUN+="/bin/chmod g+w /sys%p/{path}"'
