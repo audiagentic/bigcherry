@@ -140,7 +140,7 @@ class GrantTests(unittest.TestCase):
 
 
 def _probe(**kw):
-    base = dict(linux=True, container=None, container_udev=False, container_id=None, sys_read_only=False,
+    base = dict(linux=True, container=None, container_udev=False, sys_read_only=False,
                 cards=(power_setup.Card("0000:03:00.0", "amdgpu", True, True),
                        power_setup.Card("0000:09:00.0", "amdgpu", True, True)),
                 group="bigcherry-gpu", group_exists=True, gid=990, rule_installed=True,
@@ -184,49 +184,31 @@ class SetupStepsTests(unittest.TestCase):
     def test_complete_setup_needs_no_steps(self):
         self.assertEqual(power_setup.steps(_probe(), _cmd), [])
 
-    def test_container_without_its_own_udev_sends_the_grant_to_the_host_and_gives_the_mounts(self):
-        p = _probe(container="docker", sys_read_only=True, session_in_group=False, rule_installed=False,
-                   rule_cards=frozenset(), gid=None, group_exists=False)
-        with mock.patch.object(power_setup.os.path, "realpath", lambda p: "/sys/devices/x/" + p.rsplit("/", 1)[1]):
-            s = power_setup.steps(p, _cmd)
-        self.assertTrue(s[0].startswith("On the host: sudo HOST gpu-power grant"))
-        self.assertNotIn("--user", s[0])
-        self.assertIn("docker run ... --group-add <gid of bigcherry-gpu on the host", s[1])
-        self.assertIn(" \\\n         -v /sys/devices/x/0000:03:00.0:/sys/devices/x/0000:03:00.0:rw", s[1])
-        self.assertIn("recreate", s[1])
+    def test_container_message_names_the_engine_and_the_host_alternative(self):
+        p = _probe(container="docker", sys_read_only=True, session_in_group=False)
         text = power_setup.render(p, _cmd)
         self.assertIn("inside a docker container; udev runs on the host", text)
         self.assertIn("Or, without changing the container", text)
 
-    def test_container_with_a_known_id_gets_the_grant_that_prints_its_exact_lines(self):
-        cid = "059e4849265182133d897ad36e90b612d98b1094f73d2d63f778874c8b6ee223"
-        p = _probe(container="docker", container_id=cid, sys_read_only=True, session_in_group=False,
-                   rule_installed=False, rule_cards=frozenset(), gid=None, group_exists=False)
+    def test_container_grant_is_for_the_group_and_prints_lines_for_any_container(self):
+        p = _probe(container="docker", sys_read_only=True, session_in_group=False, rule_installed=False,
+                   rule_cards=frozenset(), gid=None, group_exists=False)
         s = power_setup.steps(p, _cmd)
-        self.assertIn("On the host: sudo HOST gpu-power grant --container 059e48492651", s[0])
-        self.assertIn("exact lines", s[0])
-        self.assertIn("Add the printed lines", s[1])
-        self.assertNotIn("<gid of", "\n".join(s))
+        self.assertEqual(s[0].split("   ")[0], "On the host: sudo HOST gpu-power grant")
+        self.assertIn("prints the lines a container needs", s[0])
+        self.assertIn("this container's compose service", s[1])
+        self.assertIn("every container", s[1])
 
-    def test_container_after_the_grant_gets_container_setup(self):
-        p = _probe(container="docker", container_id="ab" * 32, sys_read_only=True, session_in_group=False)
-        s = power_setup.steps(p, _cmd)
-        self.assertIn("HOST gpu-power container-setup abababababab", s[0])
+    def test_container_after_the_grant_gets_container_lines(self):
+        s = power_setup.steps(_probe(container="docker", sys_read_only=True, session_in_group=False), _cmd)
+        self.assertIn("HOST gpu-power container-lines", s[0])
         self.assertNotIn("sudo", s[0])
 
-    def test_container_lines_fill_in_the_compose_file_service_gid_and_paths(self):
-        labels = {"com.docker.compose.project.config_files": "/srv/agentic/compose.yaml",
-                  "com.docker.compose.service": "agent-dev", "com.docker.compose.project.working_dir": "/srv/agentic"}
-        text = power_setup.container_lines("docker", "agent-dev", labels, 987, ["/sys/devices/a/0000:03:00.0"])
-        self.assertIn("in /srv/agentic/compose.yaml, under services: -> agent-dev:", text)
+    def test_container_lines_fill_in_the_gid_and_paths(self):
+        text = power_setup.container_lines(987, ["/sys/devices/a/0000:03:00.0"])
         self.assertIn('        - "987"', text)
         self.assertIn("        - /sys/devices/a/0000:03:00.0:/sys/devices/a/0000:03:00.0:rw", text)
-        self.assertIn("cd /srv/agentic && docker compose up -d agent-dev", text)
-
-    def test_container_lines_without_compose_give_run_flags(self):
-        text = power_setup.container_lines("podman", "box", {}, 987, ["/sys/devices/a/0000:03:00.0"])
         self.assertIn("--group-add 987 -v /sys/devices/a/0000:03:00.0:/sys/devices/a/0000:03:00.0:rw", text)
-        self.assertIn("podman inspect box", text)
 
     def test_unsupported_cards_are_named_not_covered(self):
         p = _probe(cards=(power_setup.Card("0000:03:00.0", "amdgpu", True, True),
