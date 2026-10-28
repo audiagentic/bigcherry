@@ -1,18 +1,24 @@
-"""`bigcherry gpu-power status|apply|restore` (PWR04): a host's configured per-card power settings, on the host itself.
+"""`bigcherry gpu-power status|apply|restore|grant|revoke` (PWR04): a host's configured per-card power settings.
 
 The settings come from the environment's device inventory (``[host.*.devices.power]``, environment.py). ``status`` reads
 what each card is actually running (OverDrive voltage offset and maximum shader clock, board power cap) and compares it
-with the configuration; it needs no privileges. ``apply`` and ``restore`` write sysfs and must run as root (a later
-slice moves them behind a privileged helper); each write is read back and a mismatch is an error.
+with the configuration; it needs no privileges. ``apply`` and ``restore`` write sysfs as whoever runs them: root, or a
+user whose group ``grant`` gave write access to exactly those files (a udev rule, installed once with sudo). When the
+files are not writable they change nothing and print the command that allows it. Each write is read back and a mismatch
+is an error.
 """
 
 from __future__ import annotations
 
+import getpass
 import glob
 import os
 import re
+import shlex
+import subprocess
 import sys
 from argparse import Namespace
+from pathlib import Path
 
 from ..core import environment
 from ..hardware import gpu_power
@@ -88,21 +94,58 @@ def _write(path: str, value: str) -> None:
         f.write(value + "\n")
 
 
-def _require_root() -> bool:
-    if os.geteuid() != 0:
-        print("bigcherry gpu-power: apply/restore write sysfs and must run as root", file=sys.stderr)
-        return False
-    return True
+#: where grant writes its rules (udev reads /etc/udev/rules.d)
+RULES = Path("/etc/udev/rules.d/70-bigcherry-gpu-power.rules")
+
+
+def _configured(args: Namespace) -> list[tuple[environment.Device, str | None, str | None]]:
+    """The cards with power settings: (device, driver, hwmon dir)."""
+    return [(d, gpu_power.driver_of(d.locator), _hwmon(d.locator)) for d in _devices(args) if d.power]
+
+
+def _blocked(cards) -> list[str]:
+    """The files the settings write that this process cannot write."""
+    return [path for d, driver, hw in cards for path in gpu_power.targets(d, d.power, driver, hw)
+            if not os.access(path, os.W_OK)]
+
+
+def grant_command(args: Namespace, user: str) -> str:
+    """The exact command that grants ``user`` the write access, from this checkout and environment file."""
+    env = os.environ.get("BIGCHERRY_ENVIRONMENT")
+    tools = Path(__file__).resolve().parents[2]
+    host = ["--host", args.host] if getattr(args, "host", None) else []
+    cmd = ["sudo", *(["BIGCHERRY_ENVIRONMENT=" + env] if env else []), f"PYTHONPATH={tools}", sys.executable or "python3",
+           "-m", "bigcherry", "gpu-power", "grant", *host, "--user", user, "--group", "video"]
+    return " ".join(shlex.quote(c) for c in cmd)
+
+
+def explain_blocked(blocked: list[str], args: Namespace) -> str:
+    """What to tell someone whose launch cannot write the power settings, and exactly how to allow it."""
+    user = os.environ.get("SUDO_USER") or getpass.getuser()
+    lines = [f"gpu-power: cannot write {len(blocked)} power setting file(s) as {user}:"]
+    for path in blocked:
+        lines.append(f"  {path}" + ("" if os.path.exists(path) else " (missing)"))
+    if any(p.endswith("pp_od_clk_voltage") and not os.path.exists(p) for p in blocked):
+        lines.append("  a missing pp_od_clk_voltage means the driver's OverDrive is off: add "
+                     "amdgpu.ppfeaturemask=0xfff7ffff to the kernel command line and reboot")
+    lines += [
+        "To let this user apply them (once; a udev rule giving one group write access to these cards' power files only):",
+        f"  {grant_command(args, user)}",
+        "then log out and in (or run `newgrp video`) so the group takes effect. Any group the user is in can replace "
+        "video; `gpu-power grant --print` shows the rule, `gpu-power revoke` removes it.",
+    ]
+    return "\n".join(lines)
 
 
 def cmd_apply(args: Namespace) -> int:
-    if not _require_root():
+    cards = _configured(args)
+    blocked = _blocked(cards)
+    if blocked:
+        print(explain_blocked(blocked, args), file=sys.stderr)
         return 2
     failed = 0
-    for d in _devices(args):
-        if not d.power:
-            continue
-        for path, value in gpu_power.apply_writes(d, d.power, gpu_power.driver_of(d.locator), _hwmon(d.locator)):
+    for d, driver, hw in cards:
+        for path, value in gpu_power.apply_writes(d, d.power, driver, hw):
             _write(path, value)
         bad = _mismatches(d.power, read_state(d.locator))
         print(f"{d.index} {d.locator}: " + ("applied" if not bad else "NOT APPLIED: " + "; ".join(bad)))
@@ -111,17 +154,66 @@ def cmd_apply(args: Namespace) -> int:
 
 
 def cmd_restore(args: Namespace) -> int:
-    if not _require_root():
+    cards = _configured(args)
+    blocked = _blocked(cards)
+    if blocked:
+        print(explain_blocked(blocked, args), file=sys.stderr)
         return 2
-    for d in _devices(args):
-        if not d.power:
-            continue
-        hw = _hwmon(d.locator)
+    for d, driver, hw in cards:
         default = _read(f"{hw}/power1_cap_default") if hw else None
-        for path, value in gpu_power.restore_writes(d, gpu_power.driver_of(d.locator), hw,
+        for path, value in gpu_power.restore_writes(d, driver, hw,
                                                     int(default) if default and d.power.power_cap_w else None):
             _write(path, value)
         print(f"{d.index} {d.locator}: restored to driver defaults")
+    return 0
+
+
+def _run(cmd: list[str]) -> None:
+    print("+ " + " ".join(shlex.quote(c) for c in cmd))
+    subprocess.run(cmd, check=True)
+
+
+def _trigger(cards) -> None:
+    _run(["udevadm", "control", "--reload"])
+    for d, _, _ in cards:
+        _run(["udevadm", "trigger", "--action=change", f"/sys/bus/pci/devices/{d.locator}"])
+        for hw in sorted(glob.glob(f"/sys/bus/pci/devices/{d.locator}/hwmon/hwmon*")):
+            _run(["udevadm", "trigger", "--action=change", hw])
+    _run(["udevadm", "settle"])
+
+
+def cmd_grant(args: Namespace) -> int:
+    cards = _configured(args)
+    if not cards:
+        print("gpu-power grant: no card on this host has power settings configured; nothing to grant", file=sys.stderr)
+        return 1
+    rules = gpu_power.udev_rules([(d, driver) for d, driver, _ in cards], args.group)
+    if args.print:
+        print(rules, end="")
+        return 0
+    if os.geteuid() != 0:
+        print("gpu-power grant: run it with sudo (it writes a udev rule" + (" and adds the user to the group" if args.user
+              else "") + "); --print shows the rule without installing it", file=sys.stderr)
+        return 2
+    RULES.write_text(rules, encoding="utf-8")
+    print(f"wrote {RULES} ({len(cards)} card(s), group {args.group})")
+    if args.user:
+        _run(["usermod", "-aG", args.group, args.user])
+    _trigger(cards)
+    print(f"done; {args.user or 'members of ' + args.group} can apply the settings after logging in again "
+          f"(or `newgrp {args.group}`)")
+    return 0
+
+
+def cmd_revoke(args: Namespace) -> int:
+    if os.geteuid() != 0:
+        print("gpu-power revoke: run it with sudo", file=sys.stderr)
+        return 2
+    if RULES.exists():
+        RULES.unlink()
+        print(f"removed {RULES}; the files return to root-only at the next driver bind or reboot")
+    else:
+        print(f"{RULES} is not installed")
     return 0
 
 
@@ -132,9 +224,17 @@ def register(sub) -> None:
     st.add_argument("--host", help="configured [host.*] entry (default: default-host)")
     st.add_argument("--strict", action="store_true", help="exit 1 when a configured setting is not applied")
     st.set_defaults(func=cmd_status)
-    ap = psub.add_parser("apply", help="apply the configured settings and read them back (root)")
+    ap = psub.add_parser("apply", help="apply the configured settings and read them back (root, or after grant)")
     ap.add_argument("--host")
     ap.set_defaults(func=cmd_apply)
-    rs = psub.add_parser("restore", help="return configured cards to the driver defaults (root)")
+    rs = psub.add_parser("restore", help="return configured cards to the driver defaults (root, or after grant)")
     rs.add_argument("--host")
     rs.set_defaults(func=cmd_restore)
+    gr = psub.add_parser("grant", help="let a group write the configured cards' power files, via a udev rule (sudo)")
+    gr.add_argument("--host")
+    gr.add_argument("--group", default="video", help="group given write access (default video)")
+    gr.add_argument("--user", help="also add this user to the group")
+    gr.add_argument("--print", action="store_true", help="print the udev rule instead of installing it (no privileges)")
+    gr.set_defaults(func=cmd_grant)
+    rv = psub.add_parser("revoke", help="remove the rule grant installed (sudo)")
+    rv.set_defaults(func=cmd_revoke)

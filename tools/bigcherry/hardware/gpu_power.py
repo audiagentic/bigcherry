@@ -5,12 +5,14 @@ bound to (``/sys/bus/pci/devices/<locator>/driver``); a card whose driver has no
 Backends: ``amdgpu`` (OverDrive table ``pp_od_clk_voltage``, staged and committed with "c", reset with "r"; board
 power cap ``power1_cap`` in microwatts under the card's hwmon directory, which the caller resolves).
 
-Pure: these functions only build (path, value) writes; the caller performs them and reads them back.
+Pure: these functions only build (path, value) writes, the files they touch, and the udev rules that let a group write
+those files (so an unprivileged launch can apply them); the caller performs the writes and reads them back.
 """
 
 from __future__ import annotations
 
 import os
+import re
 
 from bigcherry.core.environment import Device, DevicePower
 
@@ -46,6 +48,10 @@ class _Amdgpu:
             writes.append((f"{hwmon_dir}/power1_cap", str(default_cap_uw)))
         return writes
 
+    @staticmethod
+    def udev(device: Device, group: str) -> list[str]:
+        return _amdgpu_udev(device, group)
+
 
 BACKENDS = {"amdgpu": _Amdgpu}
 
@@ -69,3 +75,34 @@ def restore_writes(device: Device, driver: str | None, hwmon_dir: str | None,
                    default_cap_uw: int | None) -> list[tuple[str, str]]:
     """The writes that return ``device`` to its driver defaults (and the default power cap when one was changed)."""
     return _backend(device, driver).restore(device, hwmon_dir, default_cap_uw)
+
+
+def targets(device: Device, power: DevicePower, driver: str | None, hwmon_dir: str | None) -> list[str]:
+    """The files that applying (and restoring) ``power`` on ``device`` writes, once each, in write order."""
+    return list(dict.fromkeys(path for path, _ in apply_writes(device, power, driver, hwmon_dir)))
+
+
+def udev_rules(cards: list[tuple[Device, str | None]], group: str) -> str:
+    """A udev rules file that lets ``group`` write the power files of exactly these (device, driver) cards.
+
+    The rules match each card by its PCI address, so other cards on the host are untouched; they run when the driver
+    binds, so the permission survives reboots and driver reloads."""
+    if not re.fullmatch(r"[a-z_][a-z0-9_-]{0,31}", group):
+        raise ValueError(f"not a group name: {group!r}")
+    lines = ["# bigcherry gpu-power: group write on the power settings of the listed cards only (bigcherry gpu-power grant)"]
+    for device, driver in cards:
+        lines += _backend(device, driver).udev(device, group)
+    return "\n".join(lines) + "\n"
+
+
+def _udev_chgrp(match: str, path: str, group: str) -> str:
+    return (f'{match}, RUN+="/bin/sh -c \'chgrp {group} /sys%p/{path} && chmod g+w /sys%p/{path}\'"')
+
+
+def _amdgpu_udev(device: Device, group: str) -> list[str]:
+    return [
+        _udev_chgrp(f'ACTION=="add|bind|change", SUBSYSTEM=="pci", KERNEL=="{device.locator}", DRIVER=="amdgpu"',
+                    "pp_od_clk_voltage", group),
+        _udev_chgrp(f'ACTION=="add|change", SUBSYSTEM=="hwmon", KERNELS=="{device.locator}"', "power1_cap", group),
+    ]
+
