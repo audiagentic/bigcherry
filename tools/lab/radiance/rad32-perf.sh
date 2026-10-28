@@ -5,9 +5,9 @@
 #         prefill 2,251-2,256 tok/s (no drafter; SERVE_EXTRA adds serve flags, e.g. --profile-ops).
 #   fn    Flash-Next in the production layout (pwr01-baseline.sh): decode and prefill rates and the decode text
 #         identity. Baseline: runs pwr01-baseline-10280942..10281145, decode 88.3-89.8 tok/s, prefill 3,265-3,345 tok/s.
-# Usage (from a checkout, e.g. through `bigcherry slice lab`): rad32-perf.sh [27b|fn|all=all] [repeats=3]
+# Usage (from a checkout, e.g. through `bigcherry slice lab`): rad32-perf.sh [27b|fn|all=all] [repeats=3] ["extra serve flags"]
 set -u
-WHAT=${1:-all}; REPS=${2:-3}
+WHAT=${1:-all}; REPS=${2:-3}; SERVE_EXTRA=${3:-${SERVE_EXTRA:-}}   # SERVE_EXTRA: more serve flags, e.g. "--profile-ops"
 set --   # the env script reads its own arguments
 source tools/env/bigcherry-env.sh >/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/lab-build.sh"
