@@ -136,10 +136,11 @@ static void mxfp4_prefill_perf(const Plugin& pl, int64_t N, int64_t K, int64_t M
 static void fp8_perf(const Plugin& pl, int64_t N, int64_t K, int64_t M, int iters) {
 @@ end
 
+# perf_mxp (not perf_mx: upstream's perf_mx is its own --perfmxd decode mode)
 @@ find 1
-    int perf_it = 50, perf_w2 = 0, perf_bf = 0, perf_w8 = 0, perf_f32 = 0, perf_q = 0;
+    int perf_it = 50, perf_w2 = 0, perf_bf = 0, perf_w8 = 0, perf_f32 = 0, perf_q = 0, perf_mx = 0, perf_wpa = 0;
 @@ replace
-    int perf_it = 50, perf_w2 = 0, perf_bf = 0, perf_w8 = 0, perf_f32 = 0, perf_q = 0, perf_mx = 0;
+    int perf_it = 50, perf_w2 = 0, perf_bf = 0, perf_w8 = 0, perf_f32 = 0, perf_q = 0, perf_mx = 0, perf_wpa = 0, perf_mxp = 0;
 @@ end
 
 @@ find 1
@@ -147,7 +148,7 @@ static void fp8_perf(const Plugin& pl, int64_t N, int64_t K, int64_t M, int iter
 @@ replace
         } else if (!std::strcmp(argv[i], "--perfmxfp4")) {
             if (i + 3 >= argc) { usage(); return 2; }
-            perf_mx = 1;
+            perf_mxp = 1;
             perf_n = std::strtoll(argv[++i], nullptr, 0);
             perf_k = std::strtoll(argv[++i], nullptr, 0);
             perf_m = std::strtoll(argv[++i], nullptr, 0);
@@ -160,7 +161,7 @@ static void fp8_perf(const Plugin& pl, int64_t N, int64_t K, int64_t M, int iter
         else if (perf_w8) w8_perf(pl, perf_n, perf_k, perf_m, perf_it);
 @@ replace
         else if (perf_bf) bf16_perf(pl, perf_n, perf_k, perf_m, perf_it);
-        else if (perf_mx) mxfp4_prefill_perf(pl, perf_n, perf_k, perf_m, perf_it);
+        else if (perf_mxp) mxfp4_prefill_perf(pl, perf_n, perf_k, perf_m, perf_it);
         else if (perf_w8) w8_perf(pl, perf_n, perf_k, perf_m, perf_it);
 @@ end
 
@@ -183,9 +184,9 @@ static void mxfp4_prefill_perf(const Plugin& pl, int64_t N, int64_t K, int64_t M
 @@ end
 
 @@ find 1
-    int perf_it = 50, perf_w2 = 0, perf_bf = 0, perf_w8 = 0, perf_f32 = 0, perf_q = 0, perf_mx = 0;
+    int perf_it = 50, perf_w2 = 0, perf_bf = 0, perf_w8 = 0, perf_f32 = 0, perf_q = 0, perf_mx = 0, perf_wpa = 0, perf_mxp = 0;
 @@ replace
-    int perf_it = 50, perf_w2 = 0, perf_bf = 0, perf_w8 = 0, perf_f32 = 0, perf_q = 0, perf_mx = 0, perf_wmma = 0;
+    int perf_it = 50, perf_w2 = 0, perf_bf = 0, perf_w8 = 0, perf_f32 = 0, perf_q = 0, perf_mx = 0, perf_wpa = 0, perf_mxp = 0, perf_wmma = 0;
 @@ end
 
 @@ find 1

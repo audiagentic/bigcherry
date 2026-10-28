@@ -9,7 +9,9 @@
 # layout through the K loop; the boundary rescale multiplies a lane by its column's ratio, which is the same in
 # both layouts. It is moved to the gfx12 layout once, in front of the epilogue, which is unchanged.
 
-@@ find 2
+# v1.13.0: only the one-fragment form still stages W in shared memory; the DTM form now unpacks W into
+# registers and double-buffers A, and runs through r3_compat.h (native re-port: RAD32 follow-up).
+@@ find 1
       const int kk = step * 16 + kb8;
       mxd_v2i af[DTM], wf;
 #pragma unroll
