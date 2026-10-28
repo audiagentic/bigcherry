@@ -27,7 +27,7 @@ def findings(host: environment.Host) -> list[str]:
         bad = power_cmds._mismatches(d.power, power_cmds.read_state(d.locator))
         if bad:
             out.append(f"GPU {d.index} ({d.locator}) runs without its configured power settings ({'; '.join(bad)}): "
-                       "it draws more power than calibrated; run `bigcherry gpu-power apply` as root")
+                       "it draws more power than calibrated; `bigcherry gpu-power apply` applies them (it says what to grant if it cannot)")
     return out
 
 

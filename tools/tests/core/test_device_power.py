@@ -91,6 +91,35 @@ class GpuPowerWritesTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             gpu_power.restore_writes(bare, "amdgpu", None, None)
 
+    def test_targets_are_the_written_files_once_each(self):
+        p = env.DevicePower(vddgfx_offset_mv=-125, sclk_max_mhz=2800, power_cap_w=250, evidence="x")
+        self.assertEqual(gpu_power.targets(self.dev, p, "amdgpu", "/h"), [self.od, "/h/power1_cap"])
+
+
+class GpuPowerUdevTests(unittest.TestCase):
+    dev = GpuPowerWritesTests.dev
+
+    def test_rules_name_only_the_listed_cards_and_the_group(self):
+        other = env.Device(index=1, arch="gfx1201", model="", vram_mib=0, locator="0000:09:00.0")
+        rules = gpu_power.udev_rules([(self.dev, "amdgpu"), (other, "amdgpu")], "video")
+        lines = [line for line in rules.splitlines() if not line.startswith("#")]
+        self.assertEqual(len(lines), 4)
+        self.assertIn('SUBSYSTEM=="pci", KERNEL=="0000:03:00.0", DRIVER=="amdgpu"', lines[0])
+        self.assertIn("chgrp video /sys%p/pp_od_clk_voltage && chmod g+w /sys%p/pp_od_clk_voltage", lines[0])
+        self.assertIn('SUBSYSTEM=="hwmon", KERNELS=="0000:03:00.0"', lines[1])
+        self.assertIn("/sys%p/power1_cap", lines[1])
+        self.assertIn('KERNEL=="0000:09:00.0"', lines[2])
+        self.assertNotIn("0000:06:00.0", rules)
+
+    def test_group_names_are_checked(self):
+        for bad in ("video; rm -rf /", "Video", "", "a b"):
+            with self.assertRaisesRegex(ValueError, "group"):
+                gpu_power.udev_rules([(self.dev, "amdgpu")], bad)
+
+    def test_a_card_without_a_backend_gets_no_rule(self):
+        with self.assertRaisesRegex(ValueError, "no power backend"):
+            gpu_power.udev_rules([(self.dev, "nvidia")], "video")
+
 
 if __name__ == "__main__":
     unittest.main()
