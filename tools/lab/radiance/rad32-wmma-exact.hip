@@ -1,8 +1,12 @@
-/* RAD32: is a gfx11 bf16 WMMA sum of small exact E4M3-by-E2M1 products exactly equal to the host's? radiance 1.13.0's
- * MXFP4 MoE test pairs a 2^125 E8M0 scale with a 32-wide group whose products cancel exactly; any residue in the matrix
- * sum becomes ~1e29 after the scale. This runs 16x16x16 products (two chained, as the kernels do) of random E4M3
- * activations and E2M1 weights with the gfx11 bf16 WMMA and compares each element with a double-precision sum, counting
- * results that are not bit-equal to the exact value and the largest absolute difference. Usage: rad32-wmma-exact [trials] */
+/* RAD32: does a gfx11 WMMA sum small exact products exactly? radiance 1.13.0's MXFP4 MoE self-test pairs a 2^125 E8M0 scale
+ * with a 32-wide group whose products cancel exactly; a residue in the matrix sum becomes ~1e30 after the scale.
+ * Inputs: activations A/4 with A in [-16,16] and weights W/2 with W in {0,+-1,+-2,+-3,+-4,+-6,+-8,+-12} (E4M3 and E2M1
+ * values, exact in bf16 and f16); every product is a multiple of 1/8 and every 32-term sum fits f32 exactly, so the oracle is
+ * an int64 sum of A*W divided by 8. Modes (a 16x16x16 product per 16 of K, row m of A against row n of B, diagonal checked):
+ *   0 bf16 chained over K=32   1 bf16 one product (K=16)   2 bf16 two products from zero, added in f32
+ *   3 f16  chained over K=32   4 f16  one product (K=16)   5 f16  two products from zero, added in f32
+ * Prints, per mode: sums not equal to the exact value, exact-zero sums that came back non-zero, the mean signed error and
+ * the worst absolute error. Usage: rad32-wmma-exact [trials] */
 #include <hip/hip_runtime.h>
 #include <cstdio>
 #include <cstdlib>
@@ -12,48 +16,76 @@
 #include <vector>
 
 typedef __bf16 v16bf __attribute__((ext_vector_type(16)));
+typedef _Float16 v16h __attribute__((ext_vector_type(16)));
 typedef float v8f __attribute__((ext_vector_type(8)));
 
-__global__ void k(const __bf16* A, const __bf16* B, float* D) {   // A: 16x32, B: 16x32 (rows of K), D: 16x16
-    const int lane = threadIdx.x & 31, row = lane & 15;
-    v8f acc = {0, 0, 0, 0, 0, 0, 0, 0};
-    for (int s = 0; s < 2; ++s) {
-        v16bf a, b;
+template <class V, class T, int MODE>
+__device__ static v8f run(const T* A, const T* B, int lane, int row) {
+    v8f acc = {0, 0, 0, 0, 0, 0, 0, 0}, part = acc;
+    const int steps = (MODE == 1 || MODE == 4) ? 1 : 2;
+    for (int s = 0; s < steps; ++s) {
+        V a, b;
         for (int i = 0; i < 16; ++i) { a[i] = A[row * 32 + s * 16 + i]; b[i] = B[row * 32 + s * 16 + i]; }
-        acc = __builtin_amdgcn_wmma_f32_16x16x16_bf16_w32(a, b, acc);
+        v8f zero = {0, 0, 0, 0, 0, 0, 0, 0};
+        if constexpr (MODE == 2 || MODE == 5) {
+            v8f p;
+            if constexpr (sizeof(T) == 2 && MODE == 2) p = __builtin_amdgcn_wmma_f32_16x16x16_bf16_w32((v16bf)a, (v16bf)b, zero);
+            else p = __builtin_amdgcn_wmma_f32_16x16x16_f16_w32((v16h)a, (v16h)b, zero);
+            for (int j = 0; j < 8; ++j) part[j] += p[j];
+        } else if constexpr (MODE <= 2) {
+            acc = __builtin_amdgcn_wmma_f32_16x16x16_bf16_w32((v16bf)a, (v16bf)b, acc);
+        } else {
+            acc = __builtin_amdgcn_wmma_f32_16x16x16_f16_w32((v16h)a, (v16h)b, acc);
+        }
     }
-    for (int j = 0; j < 8; ++j) D[(2 * j + (lane >> 4)) * 16 + (lane & 15)] = acc[j];   // gfx11: row 2j + (lane >> 4)
+    return (MODE == 2 || MODE == 5) ? part : acc;
 }
 
-static float bf(float x) { uint32_t u; memcpy(&u, &x, 4); u &= 0xffff0000u; memcpy(&x, &u, 4); return x; }
+template <int MODE>
+__global__ void k(const __bf16* Ab, const __bf16* Bb, const _Float16* Ah, const _Float16* Bh, float* D) {
+    const int lane = threadIdx.x & 31, row = lane & 15;
+    v8f r;
+    if constexpr (MODE <= 2) r = run<v16bf, __bf16, MODE>(Ab, Bb, lane, row);
+    else r = run<v16h, _Float16, MODE>(Ah, Bh, lane, row);
+    for (int j = 0; j < 8; ++j) D[(2 * j + (lane >> 4)) * 16 + (lane & 15)] = r[j];   // gfx11 C layout: row 2j + (lane >> 4)
+}
 
 int main(int argc, char** argv) {
     const int trials = argc > 1 ? atoi(argv[1]) : 2000;
-    static const double mag[8] = {0, .5, 1, 1.5, 2, 3, 4, 6};
+    static const int wmag[8] = {0, 1, 2, 3, 4, 6, 8, 12};
     srand(7);
-    __bf16 *dA, *dB; float* dD;
-    hipMalloc(&dA, 16 * 32 * 2); hipMalloc(&dB, 16 * 32 * 2); hipMalloc(&dD, 256 * 4);
-    long bad = 0, cancel_bad = 0, cancel = 0; double worst = 0;
+    __bf16 *dAb, *dBb; _Float16 *dAh, *dBh; float* dD;
+    hipMalloc(&dAb, 1024); hipMalloc(&dBb, 1024); hipMalloc(&dAh, 1024); hipMalloc(&dBh, 1024); hipMalloc(&dD, 1024);
+    const char* names[6] = {"bf16 chained K32", "bf16 one K16", "bf16 2x K16 + f32 add", "f16 chained K32", "f16 one K16", "f16 2x K16 + f32 add"};
+    long bad[6] = {0}, zbad[6] = {0}, zeros[6] = {0}, total = 0; double sgn[6] = {0}, worst[6] = {0};
     for (int t = 0; t < trials; ++t) {
-        std::vector<__bf16> A(512), B(512); std::vector<double> a(512), b(512);
+        std::vector<__bf16> Ab(512), Bb(512); std::vector<_Float16> Ah(512), Bh(512); std::vector<int> ai(512), wi(512);
         for (int i = 0; i < 512; ++i) {
-            // activations: multiples of 1/4 in [-4, 4] (E4M3-exact), weights: signed E2M1 magnitudes
-            const double av = ((rand() % 33) - 16) / 4.0, bv = ((rand() & 8) ? -1 : 1) * mag[rand() & 7];
-            a[i] = av; b[i] = bv; A[i] = (__bf16)(float)av; B[i] = (__bf16)(float)bv;
+            ai[i] = (rand() % 33) - 16; wi[i] = ((rand() & 8) ? -1 : 1) * wmag[rand() & 7];
+            Ab[i] = (__bf16)(ai[i] / 4.0f); Bb[i] = (__bf16)(wi[i] / 2.0f); Ah[i] = (_Float16)(ai[i] / 4.0f); Bh[i] = (_Float16)(wi[i] / 2.0f);
         }
-        hipMemcpy(dA, A.data(), 1024, hipMemcpyHostToDevice); hipMemcpy(dB, B.data(), 1024, hipMemcpyHostToDevice);
-        k<<<1, 32>>>(dA, dB, dD);
-        float D[256]; hipMemcpy(D, dD, 1024, hipMemcpyDeviceToHost);
-        // The kernel multiplies row m of A with row m of B (lane row for both), so the check is the diagonal
-        for (int m = 0; m < 16; ++m) {
-            double want = 0;
-            for (int kk = 0; kk < 32; ++kk) want += a[m * 32 + kk] * b[m * 32 + kk];
-            const float got = D[m * 16 + m];
-            cancel += want == 0;
-            if ((double)got != want) { ++bad; cancel_bad += want == 0; worst = fmax(worst, fabs(got - want)); }
+        hipMemcpy(dAb, Ab.data(), 1024, hipMemcpyHostToDevice); hipMemcpy(dBb, Bb.data(), 1024, hipMemcpyHostToDevice);
+        hipMemcpy(dAh, Ah.data(), 1024, hipMemcpyHostToDevice); hipMemcpy(dBh, Bh.data(), 1024, hipMemcpyHostToDevice);
+        for (int mode = 0; mode < 6; ++mode) {
+            switch (mode) {
+                case 0: k<0><<<1, 32>>>(dAb, dBb, dAh, dBh, dD); break; case 1: k<1><<<1, 32>>>(dAb, dBb, dAh, dBh, dD); break;
+                case 2: k<2><<<1, 32>>>(dAb, dBb, dAh, dBh, dD); break; case 3: k<3><<<1, 32>>>(dAb, dBb, dAh, dBh, dD); break;
+                case 4: k<4><<<1, 32>>>(dAb, dBb, dAh, dBh, dD); break; default: k<5><<<1, 32>>>(dAb, dBb, dAh, dBh, dD); break;
+            }
+            float D[256]; hipMemcpy(D, dD, 1024, hipMemcpyDeviceToHost);
+            const int kmax = (mode == 1 || mode == 4) ? 16 : 32;
+            for (int m = 0; m < 16; ++m) {
+                int64_t sum = 0;
+                for (int kk = 0; kk < kmax; ++kk) sum += (int64_t)ai[m * 32 + kk] * wi[m * 32 + kk];
+                const double want = sum / 8.0, got = D[m * 16 + m];
+                zeros[mode] += sum == 0;
+                if (got != want) { ++bad[mode]; zbad[mode] += sum == 0; sgn[mode] += got - want; worst[mode] = fmax(worst[mode], fabs(got - want)); }
+            }
         }
+        total += 16;
     }
-    printf("trials %d x 16 sums: %ld not bit-equal to the exact sum (%ld of the %ld exactly-zero sums), worst abs diff %g\n",
-           trials, bad, cancel_bad, cancel, worst);
+    for (int mode = 0; mode < 6; ++mode)
+        printf("%-24s %6ld of %ld sums not exact, %ld of %ld exact-zero sums non-zero, mean signed err %+.3g, worst %.3g\n",
+               names[mode], bad[mode], total, zbad[mode], zeros[mode], sgn[mode] / total, worst[mode]);
     return 0;
 }
