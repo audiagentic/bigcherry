@@ -646,6 +646,28 @@ static void attn_split_scratch_case(const Plugin& pl, const SplitGeo& g, const c
                     std::printf("    mismatch M=%d row %d col %d: want %s %08x (%g), got %s %08x (%g)\n", M, r, c,
                                 cls(want), (unsigned)expected[(size_t)r * yp + c] << 16, want, cls(value),
                                 (unsigned)values[r * yp + c] << 16, value);
+                    if (shown == 0) {   // the element's per-32 group sums and scales, recomputed on the host
+                        int e = 0;
+                        while (e + 1 < NE && offsets[(size_t)e + 1] <= r) ++e;
+                        const int q = e & 1, flat = sorted[(size_t)r];
+                        const int ar = std::string(order) == "sorted" ? r : flat / top;
+                        const int Kq = K[q], n = c % N[q];
+                        static const double mag[8] = { 0, 0.5, 1, 1.5, 2, 3, 4, 6 };
+                        std::printf("      expert %d class %d a-row %d, n %d, K %d, asc[0] %g\n", e, q, ar, n, Kq,
+                                    asc[(size_t)ar * asp]);
+                        for (int g = 0; g < Kq / 32; ++g) {
+                            double raw = 0;
+                            for (int k = g * 32; k < g * 32 + 32; ++k) {
+                                const size_t wi = (size_t)n * Kq + k;
+                                const uint8_t byte = weights[(size_t)e][wi / 2];
+                                const int code = (wi & 1) ? byte >> 4 : byte & 15;
+                                const double w = (code & 8 ? -1 : 1) * mag[code & 7];
+                                raw += w * rad_fp8e4m3_to_f32(av[(size_t)ar * ap + k]);
+                            }
+                            std::printf("      group %d raw %g, e8m0 %d\n", g, raw,
+                                        (int)scales[(size_t)e][(size_t)n * (Kq / 32) + g]);
+                        }
+                    }
                     ++shown;
                 }
             }
