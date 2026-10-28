@@ -4,8 +4,8 @@
 # libr4d: the WEIGHT is the matrix instruction's A operand (a lane holds its column's 8 codes of a k-half, unpacked to
 # e4m3 in registers) and the activation rows its B operand; D's row 8h + e (slot e of lane half h) is output column
 # 8h + e, its column the activation row (lane & 15). Native: the gfx11 instruction takes whole 16-code rows, so a lane
-# loads its weight column's codes for BOTH k halves (two dwords of the fragment-order weight, lanes ac and ac + 16),
-# unpacks both, and widens the 16 codes to bf16; the activation row is 16 contiguous bytes widened the same way.
+# loads ONE dword of its column's codes (its own k half; the fragment-order weight is read once, not once a half),
+# unpacks it, swaps the 8 e4m3 codes with the partner lane (lane ^ 16, same column, other half) and widens the 16 to bf16; the activation row is 16 contiguous bytes widened the same way.
 # gfx11 puts D row 2e + h in slot e of half h, so the lane that supplies A row m' supplies output column
 # ac = r3_arow(m') = 8 * (m' & 1) + (m' >> 1) (r3_compat.h): then slot e of half h holds output column 8h + e again, and
 # the epilogues, sP stores and the activation-scale fold stay as written. The chain of eight products per 128 of K starts
@@ -35,14 +35,12 @@
       for (int s = 0; s < 8; ++s)
         wv[t][s] = __builtin_nontemporal_load(&Wp[((size_t)(nt0 + t) * ksteps + ch * 8 + s) * 32 + lane]);
 @@ replace
-    unsigned wv[TN][8][2];
+    unsigned wv[TN][8];
 #pragma unroll
     for (int t = 0; t < TN; ++t)
 #pragma unroll
-      for (int s = 0; s < 8; ++s) {
-        wv[t][s][0] = __builtin_nontemporal_load(&Wp[((size_t)(nt0 + t) * ksteps + ch * 8 + s) * 32 + ac]);
-        wv[t][s][1] = __builtin_nontemporal_load(&Wp[((size_t)(nt0 + t) * ksteps + ch * 8 + s) * 32 + ac + 16]);
-      }
+      for (int s = 0; s < 8; ++s)
+        wv[t][s] = __builtin_nontemporal_load(&Wp[((size_t)(nt0 + t) * ksteps + ch * 8 + s) * 32 + (lane & 16) + ac]);
 @@ end
 
 @@ find 1
@@ -67,11 +65,9 @@
     for (int t = 0; t < TN; ++t)
 #pragma unroll
       for (int s = 0; s < 8; ++s) {
-        const int d = r4d_mxfp4_fold_d(ref[t], e8[t][s >> 1]);
-        unsigned lo0, hi0, lo1, hi1;
-        r4d_mxfp4_unpack8(wv[t][s][0], d, &lo0, &hi0);
-        r4d_mxfp4_unpack8(wv[t][s][1], d, &lo1, &hi1);
-        wf[t][s] = r3_e4m3x16_to_bf16(r3_u4{ lo0, hi0, lo1, hi1 });
+        unsigned lo, hi;
+        r4d_mxfp4_unpack8(wv[t][s], r4d_mxfp4_fold_d(ref[t], e8[t][s >> 1]), &lo, &hi);
+        wf[t][s] = r3_row16_e4m3_regs_to_bf16(lo, hi, (unsigned)lane);
       }
 @@ end
 
@@ -122,12 +118,10 @@
     for (int s = 0; s < 8; ++s)
       wv[s] = __builtin_nontemporal_load(&Wp[((size_t)nt * ksteps + ch * 8 + s) * 32 + lane]);
 @@ replace
-    unsigned wv[8][2];
+    unsigned wv[8];
 #pragma unroll
-    for (int s = 0; s < 8; ++s) {
-      wv[s][0] = __builtin_nontemporal_load(&Wp[((size_t)nt * ksteps + ch * 8 + s) * 32 + ac]);
-      wv[s][1] = __builtin_nontemporal_load(&Wp[((size_t)nt * ksteps + ch * 8 + s) * 32 + ac + 16]);
-    }
+    for (int s = 0; s < 8; ++s)
+      wv[s] = __builtin_nontemporal_load(&Wp[((size_t)nt * ksteps + ch * 8 + s) * 32 + (lane & 16) + ac]);
 @@ end
 
 @@ find 1
@@ -162,11 +156,9 @@
       wf[0] = (int)lo; wf[1] = (int)hi;
       acc = __builtin_amdgcn_wmma_f32_16x16x16_fp8_fp8_w32_gfx12(wf, af[s], acc);
 @@ replace
-      const int d = r4d_mxfp4_fold_d(ref, e8[s >> 1]);
-      unsigned lo0, hi0, lo1, hi1;
-      r4d_mxfp4_unpack8(wv[s][0], d, &lo0, &hi0);
-      r4d_mxfp4_unpack8(wv[s][1], d, &lo1, &hi1);
-      acc = r3_wmma_bf16_native(r3_e4m3x16_to_bf16(r3_u4{ lo0, hi0, lo1, hi1 }), af[s], acc);
+      unsigned lo, hi;
+      r4d_mxfp4_unpack8(wv[s], r4d_mxfp4_fold_d(ref, e8[s >> 1]), &lo, &hi);
+      acc = r3_wmma_bf16_native(r3_row16_e4m3_regs_to_bf16(lo, hi, (unsigned)lane), af[s], acc);
 @@ end
 
 # the wide gated form (r4d_gemm_mxfp4a8_gatedw_kernel): RT row tiles, gate and up tiles
@@ -184,14 +176,12 @@
       for (int s = 0; s < 8; ++s)
         wv[t][s] = __builtin_nontemporal_load(&Wp[((size_t)nt[t] * ksteps + ch * 8 + s) * 32 + lane]);
 @@ replace
-    unsigned wv[2][8][2];
+    unsigned wv[2][8];
 #pragma unroll
     for (int t = 0; t < 2; ++t)
 #pragma unroll
-      for (int s = 0; s < 8; ++s) {
-        wv[t][s][0] = __builtin_nontemporal_load(&Wp[((size_t)nt[t] * ksteps + ch * 8 + s) * 32 + ac]);
-        wv[t][s][1] = __builtin_nontemporal_load(&Wp[((size_t)nt[t] * ksteps + ch * 8 + s) * 32 + ac + 16]);
-      }
+      for (int s = 0; s < 8; ++s)
+        wv[t][s] = __builtin_nontemporal_load(&Wp[((size_t)nt[t] * ksteps + ch * 8 + s) * 32 + (lane & 16) + ac]);
 @@ end
 
 @@ find 1
@@ -216,10 +206,8 @@
     for (int t = 0; t < 2; ++t)
 #pragma unroll
       for (int s = 0; s < 8; ++s) {
-        const int d = r4d_mxfp4_fold_d(ref[t], e8[t][s >> 1]);
-        unsigned lo0, hi0, lo1, hi1;
-        r4d_mxfp4_unpack8(wv[t][s][0], d, &lo0, &hi0);
-        r4d_mxfp4_unpack8(wv[t][s][1], d, &lo1, &hi1);
-        wf[t][s] = r3_e4m3x16_to_bf16(r3_u4{ lo0, hi0, lo1, hi1 });
+        unsigned lo, hi;
+        r4d_mxfp4_unpack8(wv[t][s], r4d_mxfp4_fold_d(ref[t], e8[t][s >> 1]), &lo, &hi);
+        wf[t][s] = r3_row16_e4m3_regs_to_bf16(lo, hi, (unsigned)lane);
       }
 @@ end
