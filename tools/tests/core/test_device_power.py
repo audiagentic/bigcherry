@@ -114,24 +114,22 @@ class GpuPowerWritesTests(unittest.TestCase):
 
 
 class GpuPowerUdevTests(unittest.TestCase):
-    def test_rules_name_only_the_listed_cards_and_the_group(self):
-        rules = gpu_power.udev_rules([("0000:03:00.0", "amdgpu"), ("0000:09:00.0", "amdgpu")], "bigcherry-gpu")
+    def test_rules_are_per_driver_and_name_the_group(self):
+        rules = gpu_power.udev_rules(["amdgpu", "amdgpu"], "bigcherry-gpu")
         lines = [line for line in rules.splitlines() if not line.startswith("#")]
-        self.assertEqual(len(lines), 4)
-        self.assertIn('SUBSYSTEM=="pci", KERNEL=="0000:03:00.0", DRIVER=="amdgpu"', lines[0])
-        self.assertIn("chgrp bigcherry-gpu /sys%p/pp_od_clk_voltage && chmod g+w /sys%p/pp_od_clk_voltage", lines[0])
-        self.assertIn('SUBSYSTEM=="hwmon", KERNELS=="0000:03:00.0"', lines[1])
-        self.assertIn('KERNEL=="0000:09:00.0"', lines[2])
-        self.assertNotIn("0000:06:00.0", rules)
+        self.assertEqual(len(lines), 2)
+        self.assertIn('SUBSYSTEM=="pci", DRIVER=="amdgpu"', lines[0])
+        self.assertIn("chgrp bigcherry-gpu /sys%p/pp_od_clk_voltage; chmod g+w /sys%p/pp_od_clk_voltage", lines[0])
+        self.assertIn('SUBSYSTEM=="hwmon", ATTR{name}=="amdgpu"', lines[1])
 
     def test_group_names_are_checked(self):
         for bad in ("video; rm -rf /", "Video", "", "a b"):
             with self.assertRaisesRegex(ValueError, "group"):
-                gpu_power.udev_rules([("0000:03:00.0", "amdgpu")], bad)
+                gpu_power.udev_rules(["amdgpu"], bad)
 
-    def test_a_card_without_a_backend_gets_no_rule(self):
+    def test_a_driver_without_a_backend_gets_no_rule(self):
         with self.assertRaisesRegex(ValueError, "no power backend"):
-            gpu_power.udev_rules([("0000:03:00.0", "nvidia")], "bigcherry-gpu")
+            gpu_power.udev_rules(["nvidia"], "bigcherry-gpu")
 
     def test_display_cards_are_found_by_pci_class(self):
         with tempfile.TemporaryDirectory() as d:
