@@ -55,6 +55,27 @@ class PowerStateTests(unittest.TestCase):
         self.assertEqual(len(power_cmds._mismatches(DevicePower(sclk_max_mhz=2700, evidence="x"), have)), 1)
 
 
+class GroupTests(unittest.TestCase):
+    def _grant(self, group, gid):
+        from bigcherry.core.environment import Device
+        cards = [(Device(index=0, arch="gfx1100", model="", vram_mib=0, locator="0000:03:00.0",
+                         power=DevicePower(vddgfx_offset_mv=-125, evidence="x")), "amdgpu", "/h")]
+        args = Namespace(host=None, group=group, user="alice", print=False)
+        with tempfile.TemporaryDirectory() as d,                 mock.patch.object(power_cmds, "RULES", Path(d) / "r.rules"),                 mock.patch.object(power_cmds, "_configured", lambda a: cards),                 mock.patch.object(power_cmds.os, "geteuid", lambda: 0, create=True),                 mock.patch.object(power_cmds, "_gid", lambda g: gid),                 mock.patch.object(power_cmds.subprocess, "run") as run,                 mock.patch("sys.stdout", new_callable=io.StringIO),                 mock.patch("sys.stderr", new_callable=io.StringIO):
+            rc = power_cmds.cmd_grant(args)
+        return rc, [c.args[0] for c in run.call_args_list]
+
+    def test_the_dedicated_group_is_created_when_missing(self):
+        rc, cmds = self._grant(power_cmds.GROUP, None)
+        self.assertEqual(rc, 0)
+        self.assertEqual(cmds[0], ["groupadd", "--system", "bigcherry-gpu"])
+
+    def test_another_missing_group_is_refused_not_created(self):
+        rc, cmds = self._grant("gpuusers", None)
+        self.assertEqual(rc, 1)
+        self.assertEqual(cmds, [])
+
+
 class BlockedTests(unittest.TestCase):
     """An unprivileged launch that cannot write the settings changes nothing and says exactly what to grant."""
 
@@ -81,16 +102,31 @@ class BlockedTests(unittest.TestCase):
         self.assertIn(self.od, text)
         self.assertIn("as alice", text)
         self.assertIn("sudo ", text)
-        self.assertIn("gpu-power grant --user alice --group video", text)
-        self.assertIn("newgrp video", text)
+        self.assertIn("gpu-power grant --user alice --group bigcherry-gpu", text)
+        self.assertIn("newgrp bigcherry-gpu", text)
 
     def test_missing_overdrive_file_says_to_enable_overdrive(self):
         with mock.patch.object(power_cmds.os.path, "exists", lambda p: False):
             text = power_cmds.explain_blocked([self.od], Namespace(host=None))
         self.assertIn("ppfeaturemask", text)
 
+    def test_read_only_sys_explains_the_container_bind_mount(self):
+        dev_dir = "/sys/devices/pci0000:00/0000:00:01.0/0000:03:00.0"
+        with mock.patch.object(power_cmds.os.path, "exists", lambda p: True), \
+                mock.patch.object(power_cmds, "_read_only_mount", lambda p: True), \
+                mock.patch.object(power_cmds.os.path, "realpath", lambda p, **k: dev_dir + "/pp_od_clk_voltage"):
+            text = power_cmds.explain_blocked([self.od], Namespace(host=None))
+        self.assertIn("read-only", text)
+        self.assertIn(f"-v {dev_dir}:{dev_dir}:rw", text)
+        self.assertIn("--group-add", text)
+
+    def test_writable_mount_gives_no_container_advice(self):
+        with mock.patch.object(power_cmds.os.path, "exists", lambda p: True), \
+                mock.patch.object(power_cmds, "_read_only_mount", lambda p: False):
+            self.assertNotIn("read-only", power_cmds.explain_blocked([self.od], Namespace(host=None)))
+
     def test_grant_needs_root_unless_printing(self):
-        args = Namespace(host=None, group="video", user="alice", print=False)
+        args = Namespace(host=None, group="bigcherry-gpu", user="alice", print=False)
         with mock.patch.object(power_cmds, "_configured", lambda a: self._cards()), \
                 mock.patch.object(power_cmds.os, "geteuid", lambda: 1000, create=True), \
                 mock.patch("sys.stderr", new_callable=io.StringIO):
@@ -107,11 +143,13 @@ class BlockedTests(unittest.TestCase):
                 mock.patch.object(power_cmds, "RULES", Path(d) / "70-bigcherry-gpu-power.rules"), \
                 mock.patch.object(power_cmds, "_configured", lambda a: self._cards()), \
                 mock.patch.object(power_cmds.os, "geteuid", lambda: 0, create=True), \
+                mock.patch.object(power_cmds, "_gid", lambda g: 993), \
                 mock.patch.object(power_cmds.subprocess, "run") as run, \
                 mock.patch("sys.stdout", new_callable=io.StringIO):
             self.assertEqual(power_cmds.cmd_grant(args), 0)
             self.assertIn("chgrp render", (Path(d) / "70-bigcherry-gpu-power.rules").read_text(encoding="utf-8"))
         cmds = [c.args[0] for c in run.call_args_list]
+        self.assertNotIn(["groupadd", "--system", "bigcherry-gpu"], cmds)
         self.assertIn(["usermod", "-aG", "render", "alice"], cmds)
         self.assertIn(["udevadm", "control", "--reload"], cmds)
 
