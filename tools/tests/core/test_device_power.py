@@ -146,7 +146,7 @@ class GpuPowerSelfContainedTests(unittest.TestCase):
     def test_the_power_modules_import_nothing_from_bigcherry(self):
         for name in ("gpu_power.py", "power_setup.py"):
             text = (ROOT / "tools" / "bigcherry" / "hardware" / name).read_text(encoding="utf-8")
-            self.assertNotIn("bigcherry.", text.replace("bigcherry gpu-power", "").replace("bigcherry-gpu", ""), name)
+            self.assertNotRegex(text, r"(?m)^\s*(from|import) bigcherry", name)
             self.assertNotRegex(text, r"from \.\.", name)
 
 

@@ -18,12 +18,20 @@ from dataclasses import dataclass, field
 from . import gpu_power
 
 
+#: where the udev rule goes (udev reads /etc/udev/rules.d)
+RULES = "/etc/udev/rules.d/70-bigcherry-gpu-power.rules"
+
+
 @dataclass(frozen=True)
 class Card:
     locator: str
     driver: str | None
     supported: bool          # the driver has a power backend
     overdrive_on: bool       # its voltage/clock controls exist (backends that need a kernel option to expose them)
+    name: str = ""           # model, for people (lspci when present, else the PCI vendor:device id)
+
+    def label(self) -> str:
+        return f"{self.locator} {self.name}".strip()
 
 
 @dataclass(frozen=True)
@@ -55,6 +63,27 @@ def container_engine() -> str | None:
     except OSError:
         return None
     return "container" if any(k in text for k in ("docker", "containerd", "kubepods", "libpod", "lxc")) else None
+
+
+def _card_name(locator: str) -> str:
+    """The card's model as lspci names it (when pciutils is installed), else its PCI vendor:device id."""
+    import shutil  # noqa: PLC0415
+    import subprocess  # noqa: PLC0415
+    if shutil.which("lspci"):
+        done = subprocess.run(["lspci", "-s", locator], capture_output=True, text=True)
+        text = done.stdout.strip()
+        if done.returncode == 0 and ": " in text:
+            return "(" + text.split(": ", 1)[1].split(" (rev")[0] + ")"
+    ids = [(_read_text(f"{gpu_power.SYSFS_PCI}/{locator}/{k}") or "?").replace("0x", "") for k in ("vendor", "device")]
+    return f"({ids[0]}:{ids[1]})"
+
+
+def _read_text(path: str) -> str | None:
+    try:
+        with open(path, encoding="ascii") as f:
+            return f.read().strip()
+    except OSError:
+        return None
 
 
 def _own_udevd() -> bool:
@@ -95,7 +124,7 @@ def probe(group: str, rules_path: str, blocked: list[str]) -> Probe:
     for locator, driver in (gpu_power.display_cards() if linux else []):
         backend = gpu_power.BACKENDS.get(driver)
         cards.append(Card(locator, driver, backend is not None,
-                          bool(backend) and backend.overdrive_on(locator)))
+                          bool(backend) and backend.overdrive_on(locator), _card_name(locator)))
     gid = None
     members: list[str] = []
     try:
@@ -127,8 +156,8 @@ def _bootloader_line(option: str) -> str:
 
 
 def steps(p: Probe, cmd) -> list[str]:
-    """The numbered steps still needed, as lines. ``cmd(*words, host_side)`` renders a bigcherry command: with this
-    checkout's paths when it runs here, or as run from a checkout on the host when the step happens on the host."""
+    """The numbered steps still needed, as lines. ``cmd(*words)`` renders a bigcherry command as this session runs it
+    (its checkout and environment); host steps for a container are plain shell, so the host needs no bigcherry."""
     if not p.linux:
         return ["GPU power settings are applied through Linux sysfs; this system is not Linux, so they cannot be applied."]
     out: list[str] = []
@@ -145,51 +174,79 @@ def steps(p: Probe, cmd) -> list[str]:
         for driver in sorted({c.driver for c in od_off}):
             option = gpu_power.BACKENDS[driver].kernel_option
             out.append(f"{where}{_bootloader_line(option)} (turns on the voltage/clock controls of "
-                       f"{', '.join(c.locator for c in od_off if c.driver == driver)}), then reboot.")
+                       f"{', '.join(c.label() for c in od_off if c.driver == driver)}), then reboot.")
     missing_rule = {c.locator for c in supported} - p.rule_cards
-    need_grant = not p.group_exists or not p.rule_installed or bool(missing_rule) or (on_host and not p.user_in_group)
-    if need_grant:
+    if not on_host:
+        # From inside a container: the host needs no bigcherry, only these commands; the container already knows the rule
+        # and the cards' paths, and the group's id is the one thing only the host can print.
+        rules = gpu_power.udev_rules([(c.locator, c.driver) for c in supported], p.group)
+        out.append("\n".join([
+            "On the host, run (needs nothing from bigcherry; it gives one group write access to the power files of "
+            f"{', '.join(c.label() for c in supported)}, and prints that group's id):",
+            # unindented, so it pastes into a shell as is (a heredoc's EOF must start its line)
+            f"sudo groupadd --system {p.group} 2>/dev/null || true",
+            f"sudo tee {RULES} >/dev/null <<'EOF'",
+            *rules.splitlines(),
+            "EOF",
+            "sudo udevadm control --reload && sudo udevadm trigger --action=change "
+            "--subsystem-match=pci --subsystem-match=hwmon && sudo udevadm settle",
+            f"getent group {p.group} | cut -d: -f3",
+        ]))
+        dirs = [os.path.realpath(f"{gpu_power.SYSFS_PCI}/{c.locator}") for c in supported]
+        out.append("\n".join([
+            "Add to this container's compose service (merge with any existing lists), with the id the last command "
+            "printed, then recreate it (compose up -d <service>; a restart keeps the old mounts and groups). The same "
+            "lines serve every container on that host:",
+            "       group_add:",
+            '         - "<that id>"',
+            "       volumes:",
+            *[f"         - {d}:{d}:rw" for d in dirs],
+        ]))
+    elif not p.group_exists or not p.rule_installed or missing_rule or not p.user_in_group:
         what = []
         if not p.group_exists:
             what.append(f"creates the {p.group} group")
         if not p.rule_installed or missing_rule:
-            what.append(f"lets it write the power files of {len(supported)} card(s) through a udev rule")
-        if on_host and not p.user_in_group:
+            what.append("lets it write the power files of these cards through a udev rule: "
+                        + ", ".join(c.label() for c in supported))
+        if not p.user_in_group:
             what.append(f"adds {p.user} to it")
-        user = ["--user", p.user] if on_host else []
-        out.append(f"{where}sudo {cmd('gpu-power', 'grant', *user, host_side=not on_host)}   ({'; '.join(what)})")
-    if p.container and not on_host:
-        engine = p.container if p.container in ("docker", "podman") else "docker/podman"
-        gid = str(p.gid) if p.gid is not None else f"<gid of {p.group} on the host: getent group {p.group}>"
-        dirs = [os.path.realpath(f"/sys/bus/pci/devices/{c.locator}") for c in supported]
-        if p.sys_read_only or not p.session_in_group:
-            out.append(f"Give this {engine} container the group and the cards' sysfs directories read-write, then "
-                       "recreate it (mounts and groups are fixed at creation; a restart keeps the old ones):\n"
-                       f"       {engine} run ... --group-add {gid} " + " ".join(f"-v {d}:{d}:rw" for d in dirs) + "\n"
-                       "     or in its compose service:\n"
-                       f"       group_add: [\"{gid}\"]\n"
-                       "       volumes:\n" + "\n".join(f"         - {d}:{d}:rw" for d in dirs))
+        out.append(f"sudo {cmd('gpu-power', 'grant', '--user', p.user)}   ({'; '.join(what)})")
+        if not p.session_in_group:
+            out.append(f"Log out and back in (or run: newgrp {p.group}) so this session has the {p.group} group.")
     elif not p.session_in_group:
         out.append(f"Log out and back in (or run: newgrp {p.group}) so this session has the {p.group} group.")
     if out:
         out.append("Run the launch again.")
     if unsupported:
-        out.append(f"(Not covered: {', '.join(f'{c.locator} ({c.driver})' for c in unsupported)} — no power backend "
+        out.append(f"(Not covered: {', '.join(f'{c.label()} [{c.driver}]' for c in unsupported)} — no power backend "
                    "for that driver.)")
     return out
 
 
 def render(p: Probe, cmd) -> str:
     """The message for a launch that cannot apply its power settings."""
-    where = (f"in a {p.container} container" + ("" if p.container_udev else ", host udev") if p.container
+    where = (f"inside a {p.container} container" + ("" if p.container_udev else "; udev runs on the host") if p.container
              else "on the host")
     head = f"gpu-power: {p.user} cannot apply the GPU power settings ({where})."
     todo = steps(p, cmd)
     if not todo:
         return head + " Setup is complete, yet these files are not writable:\n" + "\n".join(f"  {b}" for b in p.blocked)
     numbered = [f"  {i}. {s}" if not s.startswith("(") else f"  {s}" for i, s in enumerate(todo, 1)]
-    if p.container and not (p.container_udev):
-        alt = cmd("gpu-power", "apply", host_side=True)
-        numbered.append(f"  Or, without changing the container: run `{alt}` on the host before each run "
-                        "(and `... gpu-power restore` after).")
     return "\n".join([head, "To set it up:", *numbered])
+
+
+def container_lines(gid: int, dirs: list[str]) -> str:
+    """What any container on this host adds so it can write the cards' power files: the group's id here, and each card's
+    sysfs directory read-write (a container's /sys is read-only). The same for every container."""
+    mounts = [f"{d}:{d}:rw" for d in dirs]
+    return "\n".join([
+        "For a container to apply the power settings, add to its compose service (merge with any existing lists):",
+        "      group_add:",
+        f"        - \"{gid}\"",
+        "      volumes:",
+        *[f"        - {m}" for m in mounts],
+        "or to its run options:",
+        f"  --group-add {gid} " + " ".join(f"-v {m}" for m in mounts),
+        "then recreate the container (docker/podman compose up -d <service>; a restart keeps the old mounts and groups).",
+    ])
