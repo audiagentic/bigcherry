@@ -18,6 +18,11 @@ from dataclasses import dataclass, field
 from . import gpu_power
 
 
+#: where a host-side command runs: its PYTHONPATH=tools is relative to a checkout's root, and the checkout must have
+#: this tooling (a container cannot know where the host's checkout is)
+ON_HOST = "On the host, from the root of a bigcherry checkout there (git pull first if it is old)"
+
+
 @dataclass(frozen=True)
 class Card:
     locator: str
@@ -164,7 +169,7 @@ def steps(p: Probe, cmd) -> list[str]:
                 f"{', '.join(f'{c.locator} {c.driver}' for c in p.cards) or 'none'}; supported: "
                 f"{', '.join(sorted(gpu_power.BACKENDS))})."]
     on_host = p.container is None or p.container_udev
-    where = "" if on_host else "On the host: "
+    where = "" if on_host else f"{ON_HOST}: "
     od_off = [c for c in supported if not c.overdrive_on]
     if od_off:
         for driver in sorted({c.driver for c in od_off}):
@@ -189,7 +194,7 @@ def steps(p: Probe, cmd) -> list[str]:
     if p.container and not on_host and (p.sys_read_only or not p.session_in_group):
         # A container's /sys is read-only and its groups are fixed at creation; the host knows the group's id.
         if not need_grant:
-            out.append(f"On the host: {cmd('gpu-power', 'container-lines', host_side=True)}   "
+            out.append(f"{ON_HOST}: {cmd('gpu-power', 'container-lines', host_side=True)}   "
                        "(prints the lines a container needs, with the group id and the cards' paths filled in)")
         out.append("Add those lines to this container's compose service (or its run options) and recreate it "
                    f"({p.container} compose up -d <service>; a restart keeps the old mounts and groups). The same lines "
@@ -215,7 +220,7 @@ def render(p: Probe, cmd) -> str:
     numbered = [f"  {i}. {s}" if not s.startswith("(") else f"  {s}" for i, s in enumerate(todo, 1)]
     if p.container and not (p.container_udev):
         alt = cmd("gpu-power", "apply", host_side=True)
-        numbered.append(f"  Or, without changing the container: run `{alt}` on the host before each run "
+        numbered.append(f"  Or, without changing the container: {ON_HOST[0].lower() + ON_HOST[1:]}, run `{alt}` before each run "
                         "(and `... gpu-power restore` after).")
     return "\n".join([head, "To set it up:", *numbered])
 

@@ -194,7 +194,7 @@ class SetupStepsTests(unittest.TestCase):
         p = _probe(container="docker", sys_read_only=True, session_in_group=False, rule_installed=False,
                    rule_cards=frozenset(), gid=None, group_exists=False)
         s = power_setup.steps(p, _cmd)
-        self.assertEqual(s[0].split("   ")[0], "On the host: sudo HOST gpu-power grant")
+        self.assertEqual(s[0].split("   ")[0], power_setup.ON_HOST + ": sudo HOST gpu-power grant")
         self.assertIn("prints the lines a container needs", s[0])
         self.assertIn("this container's compose service", s[1])
         self.assertIn("every container", s[1])
