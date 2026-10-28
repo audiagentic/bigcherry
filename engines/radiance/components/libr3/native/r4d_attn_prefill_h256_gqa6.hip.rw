@@ -11,8 +11,9 @@
 @@ replace
 #define O_LDSB  2097152
 // libr3 only: keep gfx11 fragments/accumulators native across QK/PV. The host launch only
-// instantiates this bit unless R3_ATTN_NATIVE=0; libr4d is unchanged.
-#define O_R3NATIVE 4194304
+// instantiates this bit unless R3_ATTN_NATIVE=0; libr4d is unchanged. (8388608: 1.13.0 took
+// 4194304 for O_KLATE.)
+#define O_R3NATIVE 8388608
 @@ end
 
 @@ find 1
@@ -21,34 +22,23 @@
     constexpr int KWIDE = (OPT & O_KWIDE) ? 1 : 0;
     constexpr int R3N   = (OPT & O_R3NATIVE) ? 1 : 0;
     static_assert(!R3N || F16, "gfx11 native attention uses the f16 operand form");
+    static_assert(!R3N || !(OPT & (O_QK8 | O_PV8)), "gfx11 native attention has no e4m3 legs");
 @@ end
 
 @@ find 1
     frag16 qf[NKS];
-    {
-        const uint16_t* qp = (const uint16_t*)a.q
-                           + ((size_t)(qoff + qrow) * a.q_heads + qhead) * HEAD_DIM;
-        #pragma unroll
-        for (int t = 0; t < NKS; ++t) {
-            // CONTIG reads the 8 dims as one run; the split map takes them 4+4.
-            const uint2 l0 = *(const uint2*)(qp + 16 * t + (CTG ? 8 * h : 4 * h));
-            const uint2 h0 = *(const uint2*)(qp + 16 * t + (CTG ? 8 * h + 4 : 8 + 4 * h));
-            qf[t] = D::mk(make_uint2(r4d_qcvt<D, FOLDQ, F16>(l0.x, mul),
-                                     r4d_qcvt<D, FOLDQ, F16>(l0.y, mul)),
-                          make_uint2(r4d_qcvt<D, FOLDQ, F16>(h0.x, mul),
-                                     r4d_qcvt<D, FOLDQ, F16>(h0.y, mul)));
-        }
-    }
-
+    v2i32_r4d qf8[QK8 ? NKS : 1];
 @@ replace
     frag16 qf[NKS];
+    v2i32_r4d qf8[QK8 ? NKS : 1];
     r3_v16h qn[NKS];
-    {
-        const uint16_t* qp = (const uint16_t*)a.q
-                           + ((size_t)(qoff + qrow) * a.q_heads + qhead) * HEAD_DIM;
-        #pragma unroll
-        for (int t = 0; t < NKS; ++t) {
-            if constexpr (R3N) {
+@@ end
+
+@@ find 1
+            } else {
+                qf[t] = D::mk(make_uint2(r4d_qcvt<D, FOLDQ, F16>(l0.x, mul),
+@@ replace
+            } else if constexpr (R3N) {
                 r3_u8 qw;
                 #pragma unroll
                 for (int d = 0; d < 8; ++d) {
@@ -57,16 +47,7 @@
                 }
                 qn[t] = __builtin_bit_cast(r3_v16h, qw);
             } else {
-                // CONTIG reads the 8 dims as one run; the split map takes them 4+4.
-                const uint2 l0 = *(const uint2*)(qp + 16 * t + (CTG ? 8 * h : 4 * h));
-                const uint2 h0 = *(const uint2*)(qp + 16 * t + (CTG ? 8 * h + 4 : 8 + 4 * h));
                 qf[t] = D::mk(make_uint2(r4d_qcvt<D, FOLDQ, F16>(l0.x, mul),
-                                         r4d_qcvt<D, FOLDQ, F16>(l0.y, mul)),
-                              make_uint2(r4d_qcvt<D, FOLDQ, F16>(h0.x, mul),
-                                         r4d_qcvt<D, FOLDQ, F16>(h0.y, mul)));
-            }
-        }
-    }
 @@ end
 
 @@ find 1
@@ -139,33 +120,6 @@
         #pragma unroll
         for (int r = 0; r < VREGS; ++r) {
             const int idx = warp + r * NWARPS;
-            if (NTR % NWARPS == 0 || idx < NTR) {
-                constexpr int DG = HEAD_DIM / (KVP ? 32 : 64);
-                const int kg = idx / DG, dg = idx - kg * DG;
-                const int d0 = dg * (KVP ? 32 : 64) + vg * (KVP ? 8 : 16);
-                const uint4 v = vreg[r];
-                if (KVP) {
-                    uint16_t* dst = &sV16[(d0 + vj) * VSTR + kg * 8];
-                    *(uint2*)(dst)     = make_uint2(D::from_bf16w(v.x), D::from_bf16w(v.y));
-                    *(uint2*)(dst + 4) = make_uint2(D::from_bf16w(v.z), D::from_bf16w(v.w));
-                } else {
-                    // tr_b128 transposes 16-bit lanes, so each short holds two fp8 from adjacent
-                    // dims; v_perm_b32 splits them into two dim rows.
-                    const uint32_t lo0 = byte_gather(v.x, v.y, 0), lo1 = byte_gather(v.z, v.w, 0);
-                    const uint32_t hi0 = byte_gather(v.x, v.y, 1), hi1 = byte_gather(v.z, v.w, 1);
-                    uint32_t wl[4], wh[4];
-                    fp8x8_to_16x4w<D>(make_uint2(lo0, lo1), wl);
-                    fp8x8_to_16x4w<D>(make_uint2(hi0, hi1), wh);
-                    uint16_t* a0 = &sV16[(d0 + 2 * vj)     * VSTR + kg * 8];
-                    uint16_t* a1 = &sV16[(d0 + 2 * vj + 1) * VSTR + kg * 8];
-                    *(uint2*)(a0)     = make_uint2(wl[0], wl[1]);
-                    *(uint2*)(a0 + 4) = make_uint2(wl[2], wl[3]);
-                    *(uint2*)(a1)     = make_uint2(wh[0], wh[1]);
-                    *(uint2*)(a1 + 4) = make_uint2(wh[2], wh[3]);
-                }
-            }
-        }
-    };
 @@ replace
     auto storeV = [&]() {
         if constexpr (R3N) {
@@ -194,99 +148,32 @@
                     }
                 }
             }
-        } else {
-            for (int r = 0; r < VREGS; ++r) {
-                const int idx = warp + r * NWARPS;
-                if (NTR % NWARPS == 0 || idx < NTR) {
-                    constexpr int DG = HEAD_DIM / (KVP ? 32 : 64);
-                    const int kg = idx / DG, dg = idx - kg * DG;
-                    const int d0 = dg * (KVP ? 32 : 64) + vg * (KVP ? 8 : 16);
-                    const uint4 v = vreg[r];
-                    if (KVP) {
-                        uint16_t* dst = &sV16[(d0 + vj) * VSTR + kg * 8];
-                        *(uint2*)(dst)     = make_uint2(D::from_bf16w(v.x), D::from_bf16w(v.y));
-                        *(uint2*)(dst + 4) = make_uint2(D::from_bf16w(v.z), D::from_bf16w(v.w));
-                    } else {
-                        // tr_b128 transposes 16-bit lanes, so each short holds two fp8 from adjacent
-                        // dims; v_perm_b32 splits them into two dim rows.
-                        const uint32_t lo0 = byte_gather(v.x, v.y, 0), lo1 = byte_gather(v.z, v.w, 0);
-                        const uint32_t hi0 = byte_gather(v.x, v.y, 1), hi1 = byte_gather(v.z, v.w, 1);
-                        uint32_t wl[4], wh[4];
-                        fp8x8_to_16x4w<D>(make_uint2(lo0, lo1), wl);
-                        fp8x8_to_16x4w<D>(make_uint2(hi0, hi1), wh);
-                        uint16_t* a0 = &sV16[(d0 + 2 * vj)     * VSTR + kg * 8];
-                        uint16_t* a1 = &sV16[(d0 + 2 * vj + 1) * VSTR + kg * 8];
-                        *(uint2*)(a0)     = make_uint2(wl[0], wl[1]);
-                        *(uint2*)(a0 + 4) = make_uint2(wl[2], wl[3]);
-                        *(uint2*)(a1)     = make_uint2(wh[0], wh[1]);
-                        *(uint2*)(a1 + 4) = make_uint2(wh[2], wh[3]);
-                    }
-                }
-            }
+            return;
         }
-    };
+        #pragma unroll
+        for (int r = 0; r < VREGS; ++r) {
+            const int idx = warp + r * NWARPS;
 @@ end
 
 @@ find 1
-            v8f s = (v8f){0,0,0,0,0,0,0,0};
-            {
+            } else {
                 const uint16_t* krow = &sK[(mt * 16 + c) * KSTR] + (CTG ? 8 * h : 0);
-                // Load PF fragments before issuing their WMMAs, so each WMMA waits on
-                // s_wait_dscnt PF-1 instead of a full drain.
+@@ replace
+            } else if constexpr (R3N) {
+                const uint16_t* krow = &sK[(mt * 16 + c) * KSTR];
                 #pragma unroll
                 for (int g = 0; g < NKS; g += PF) {
-                    frag16 kb[PF];
+                    r3_v16h kb[PF];
                     #pragma unroll
-                    for (int j = 0; j < PF; ++j) {
-                        const uint16_t* kp = krow + 16 * (g + j);
-                        if (CTG) {
-                            const uint4 u = *(const uint4*)kp;
-                            kb[j] = D::mk(make_uint2(u.x, u.y), make_uint2(u.z, u.w));
-                        } else {
-                            kb[j] = D::mk(*(const uint2*)(kp + 4 * h),
-                                          *(const uint2*)(kp + 8 + 4 * h));
-                        }
-                    }
+                    for (int j = 0; j < PF; ++j)
+                        kb[j] = r3_ld16_f16(krow + 16 * (g + j));
                     if (SGB) sched_barrier();
                     #pragma unroll
-                    for (int j = 0; j < PF; ++j) s = D::wmma(kb[j], qf[g + j], s);
+                    for (int j = 0; j < PF; ++j)
+                        s = r3_wmma_f16_native(kb[j], qn[g + j], s);
                 }
-            }
-@@ replace
-            v8f s = (v8f){0,0,0,0,0,0,0,0};
-            {
-                const uint16_t* krow = &sK[(mt * 16 + c) * KSTR]
-                                     + (R3N ? 0 : (CTG ? 8 * h : 0));
-                #pragma unroll
-                for (int g = 0; g < NKS; g += PF) {
-                    if constexpr (R3N) {
-                        r3_v16h kb[PF];
-                        #pragma unroll
-                        for (int j = 0; j < PF; ++j)
-                            kb[j] = r3_ld16_f16(krow + 16 * (g + j));
-                        if (SGB) sched_barrier();
-                        #pragma unroll
-                        for (int j = 0; j < PF; ++j)
-                            s = r3_wmma_f16_native(kb[j], qn[g + j], s);
-                    } else {
-                        frag16 kb[PF];
-                        #pragma unroll
-                        for (int j = 0; j < PF; ++j) {
-                            const uint16_t* kp = krow + 16 * (g + j);
-                            if (CTG) {
-                                const uint4 u = *(const uint4*)kp;
-                                kb[j] = D::mk(make_uint2(u.x, u.y), make_uint2(u.z, u.w));
-                            } else {
-                                kb[j] = D::mk(*(const uint2*)(kp + 4 * h),
-                                              *(const uint2*)(kp + 8 + 4 * h));
-                            }
-                        }
-                        if (SGB) sched_barrier();
-                        #pragma unroll
-                        for (int j = 0; j < PF; ++j) s = D::wmma(kb[j], qf[g + j], s);
-                    }
-                }
-            }
+            } else {
+                const uint16_t* krow = &sK[(mt * 16 + c) * KSTR] + (CTG ? 8 * h : 0);
 @@ end
 
 @@ find 1
