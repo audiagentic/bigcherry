@@ -2,12 +2,12 @@
 # RAD32: performance of this checkout's radiance pin against the recorded v1.9.0 numbers, on the host's own cards.
 #   27b   Qwen3.8-27B MXFP4, tensor parallel over the gfx1100 cards (libr3): decode and a 7.2K prefill, 3 repeats.
 #         Baseline (docs/reference/engines/radiance/models/qwen3.8-27b.md, 2026-10-10/12): decode 46.7-47.2 tok/s,
-#         prefill 2,251-2,256 tok/s (no drafter; SERVE_EXTRA adds serve flags, e.g. --profile-ops).
+#         prefill 2,251-2,256 tok/s (no drafter; the third argument "profile" adds --profile-ops).
 #   fn    Flash-Next in the production layout (pwr01-baseline.sh): decode and prefill rates and the decode text
 #         identity. Baseline: runs pwr01-baseline-10280942..10281145, decode 88.3-89.8 tok/s, prefill 3,265-3,345 tok/s.
-# Usage (from a checkout, e.g. through `bigcherry slice lab`): rad32-perf.sh [27b|fn|all=all] [repeats=3] ["extra serve flags"]
+# Usage (from a checkout, e.g. through `bigcherry slice lab`): rad32-perf.sh [27b|fn|all=all] [repeats=3] [profile]
 set -u
-WHAT=${1:-all}; REPS=${2:-3}; SERVE_EXTRA=${3:-${SERVE_EXTRA:-}}   # SERVE_EXTRA: more serve flags, e.g. "--profile-ops"
+WHAT=${1:-all}; REPS=${2:-3}; [ "${3:-}" = profile ] && SERVE_EXTRA="--profile-ops" || SERVE_EXTRA=""   # "profile": per-op device timing in the server log
 set --   # the env script reads its own arguments
 source tools/env/bigcherry-env.sh >/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/lab-build.sh"
