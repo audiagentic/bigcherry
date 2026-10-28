@@ -445,6 +445,17 @@ __device__ __forceinline__ r3_u4 r3_mxfp4_unpack8_bf16(unsigned wv, int d) {
     return out;
 }
 
+// A row held in registers as bf16 the gfx12 way (this lane has 8 of its row's 16 values, k 0-7 in lanes 0-15 and k 8-15 in
+// lanes 16-31): four dword exchanges with the partner lane (lane ^ 16, same row, other half) give every lane the row.
+__device__ __forceinline__ r3_v16bf r3_row16_bf16_regs(r3_u4 own, unsigned lane) {
+    r3_u4 other;
+#pragma unroll
+    for (int i = 0; i < 4; ++i) other[i] = r3_from_lane(lane ^ 16u, own[i]);
+    const r3_u8 out = (lane & 16u) ? r3_u8{ other[0], other[1], other[2], other[3], own[0], own[1], own[2], own[3] }
+                                   : r3_u8{ own[0], own[1], own[2], own[3], other[0], other[1], other[2], other[3] };
+    return __builtin_bit_cast(r3_v16bf, out);
+}
+
 __device__ __forceinline__ void r3_mxfp4_store8_bf16(unsigned short* dst, unsigned wv, int d) {
     typedef unsigned r3_u4h __attribute__((ext_vector_type(4), aligned(2)));
     *reinterpret_cast<r3_u4h*>(dst) = r3_mxfp4_unpack8_bf16(wv, d);

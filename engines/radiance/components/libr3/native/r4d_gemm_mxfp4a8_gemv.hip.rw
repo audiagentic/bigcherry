@@ -19,6 +19,17 @@
 @@ replace
   const int col = lane & 15, khalf = lane >> 4;  // B fragment: this lane's column and k half
   const int ac = (int)r3_arow((unsigned)lane);   // libr3 native: the weight column this lane supplies as an A row
+  // libr3 native: the activation rows widened to bf16 ONCE a block into shared memory (not 16 codes a lane a step, a quarter of
+  // the kernel's vector work); a block falls back to widening in the step when M * K does not fit.
+  __shared__ __attribute__((aligned(32))) unsigned short r3_sAct[RT == 1 ? 24576 : 1];
+  const bool r3_stage = RT == 1 && M * K <= 24576;
+  if (r3_stage) {
+    for (int i = threadIdx.x; i < M * K; i += KW * 32) {
+      const int m = i / K;
+      r3_sAct[i] = (unsigned short)r3_e4m3_to_bf16_bits(A[(size_t)m * lda + (i - m * K)]);
+    }
+    __syncthreads();
+  }
 @@ end
 
 @@ find 1
@@ -65,14 +76,12 @@
     for (int t = 0; t < TN; ++t)
 #pragma unroll
       for (int s = 0; s < 8; ++s) {
-        unsigned lo, hi;
-        r4d_mxfp4_unpack8(wv[t][s], r4d_mxfp4_fold_d(ref[t], e8[t][s >> 1]), &lo, &hi);
-        wf[t][s] = r3_row16_e4m3_regs_to_bf16(lo, hi, (unsigned)lane);
+        wf[t][s] = r3_row16_bf16_regs(r3_mxfp4_unpack8_bf16(wv[t][s], r4d_mxfp4_fold_d(ref[t], e8[t][s >> 1])), (unsigned)lane);
       }
 @@ end
 
 # the activation rows: shared by the plain and the gated-wide forms
-@@ find 2
+@@ find 1
       mxg_v2i af[8];
 #pragma unroll
       for (int s = 0; s < 8; ++s) {
@@ -83,12 +92,44 @@
           af[s][0] = 0; af[s][1] = 0;
         }
       }
+      const float sc = ABLK ? (live ? As[(size_t)row * as_rs + ch] : 0.f) : 1.f;
+#pragma unroll
+      for (int t = 0; t < TN; ++t) {
+@@ replace
+      r3_v16bf af[8];
+#pragma unroll
+      for (int s = 0; s < 8; ++s)
+        af[s] = !live ? r3_v16bf{}
+              : r3_stage ? *reinterpret_cast<const r3_v16bf*>(&r3_sAct[(size_t)row * K + (ch * 8 + s) * 16])
+                         : r3_e4m3x16_to_bf16(*reinterpret_cast<const r3_u4u*>(A + (size_t)row * lda + (ch * 8 + s) * 16));
+      const float sc = ABLK ? (live ? As[(size_t)row * as_rs + ch] : 0.f) : 1.f;
+#pragma unroll
+      for (int t = 0; t < TN; ++t) {
+@@ end
+
+@@ find 1
+      mxg_v2i af[8];
+#pragma unroll
+      for (int s = 0; s < 8; ++s) {
+        if (live) {
+          const unsigned* pa = (const unsigned*)(A + (size_t)row * lda + (ch * 8 + s) * 16 + khalf * 8);
+          af[s][0] = (int)pa[0]; af[s][1] = (int)pa[1];
+        } else {
+          af[s][0] = 0; af[s][1] = 0;
+        }
+      }
+      const float sc = ABLK ? (live ? As[(size_t)row * as_rs + ch] : 0.f) : 1.f;
+#pragma unroll
+      for (int t = 0; t < 2; ++t) {
 @@ replace
       r3_v16bf af[8];
 #pragma unroll
       for (int s = 0; s < 8; ++s)
         af[s] = live ? r3_e4m3x16_to_bf16(*reinterpret_cast<const r3_u4u*>(A + (size_t)row * lda + (ch * 8 + s) * 16))
                      : r3_v16bf{};
+      const float sc = ABLK ? (live ? As[(size_t)row * as_rs + ch] : 0.f) : 1.f;
+#pragma unroll
+      for (int t = 0; t < 2; ++t) {
 @@ end
 
 @@ find 2
@@ -109,6 +150,17 @@
 @@ find 1
   const int ref = (int)Wref[nt * 16 + col];
 @@ replace
+  // libr3 native: the activation rows widened to bf16 ONCE a block into shared memory (not 16 codes a lane a step, a quarter of
+  // the kernel's vector work); a block falls back to widening in the step when M * K does not fit.
+  __shared__ __attribute__((aligned(32))) unsigned short r3_sAct[1 == 1 ? 24576 : 1];
+  const bool r3_stage = 1 == 1 && M * K <= 24576;
+  if (r3_stage) {
+    for (int i = threadIdx.x; i < M * K; i += KW * 32) {
+      const int m = i / K;
+      r3_sAct[i] = (unsigned short)r3_e4m3_to_bf16_bits(A[(size_t)m * lda + (i - m * K)]);
+    }
+    __syncthreads();
+  }
   const int ref = (int)Wref[nt * 16 + ac];
 @@ end
 
@@ -145,8 +197,9 @@
     r3_v16bf af[8];
 #pragma unroll
     for (int s = 0; s < 8; ++s)
-      af[s] = live ? r3_e4m3x16_to_bf16(*reinterpret_cast<const r3_u4u*>(A + (size_t)row * lda + (ch * 8 + s) * 16))
-                   : r3_v16bf{};
+      af[s] = !live ? r3_v16bf{}
+            : r3_stage ? *reinterpret_cast<const r3_v16bf*>(&r3_sAct[(size_t)row * K + (ch * 8 + s) * 16])
+                       : r3_e4m3x16_to_bf16(*reinterpret_cast<const r3_u4u*>(A + (size_t)row * lda + (ch * 8 + s) * 16));
 @@ end
 
 @@ find 1
@@ -156,9 +209,8 @@
       wf[0] = (int)lo; wf[1] = (int)hi;
       acc = __builtin_amdgcn_wmma_f32_16x16x16_fp8_fp8_w32_gfx12(wf, af[s], acc);
 @@ replace
-      unsigned lo, hi;
-      r4d_mxfp4_unpack8(wv[s], r4d_mxfp4_fold_d(ref, e8[s >> 1]), &lo, &hi);
-      acc = r3_wmma_bf16_native(r3_row16_e4m3_regs_to_bf16(lo, hi, (unsigned)lane), af[s], acc);
+      acc = r3_wmma_bf16_native(
+          r3_row16_bf16_regs(r3_mxfp4_unpack8_bf16(wv[s], r4d_mxfp4_fold_d(ref, e8[s >> 1])), (unsigned)lane), af[s], acc);
 @@ end
 
 # the wide gated form (r4d_gemm_mxfp4a8_gatedw_kernel): RT row tiles, gate and up tiles
@@ -206,8 +258,6 @@
     for (int t = 0; t < 2; ++t)
 #pragma unroll
       for (int s = 0; s < 8; ++s) {
-        unsigned lo, hi;
-        r4d_mxfp4_unpack8(wv[t][s], r4d_mxfp4_fold_d(ref[t], e8[t][s >> 1]), &lo, &hi);
-        wf[t][s] = r3_row16_e4m3_regs_to_bf16(lo, hi, (unsigned)lane);
+        wf[t][s] = r3_row16_bf16_regs(r3_mxfp4_unpack8_bf16(wv[t][s], r4d_mxfp4_fold_d(ref[t], e8[t][s >> 1])), (unsigned)lane);
       }
 @@ end
