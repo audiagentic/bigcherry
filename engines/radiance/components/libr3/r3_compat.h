@@ -324,9 +324,8 @@ __device__ __forceinline__ unsigned r3_e4m3_to_bf16_bits(unsigned code) {
     return ((code & 0x80u) << 8) | (mag < 8u ? subnormal : normal);
 }
 
-// 16 E4M3 codes at p (one fragment row, K ascending) as a gfx11 bf16 fragment.
-__device__ __forceinline__ r3_v16bf r3_row16_e4m3_to_bf16(const unsigned char* p) {
-    const r3_u4u codes = *reinterpret_cast<const r3_u4u*>(p);
+// 16 E4M3 codes (four dwords, K ascending) as a gfx11 bf16 fragment.
+__device__ __forceinline__ r3_v16bf r3_e4m3x16_to_bf16(r3_u4 codes) {
     r3_u8 out;
 #pragma unroll
     for (int d = 0; d < 4; ++d) {
@@ -335,6 +334,25 @@ __device__ __forceinline__ r3_v16bf r3_row16_e4m3_to_bf16(const unsigned char* p
         out[2 * d + 1] = r3_e4m3_to_bf16_bits((w >> 16) & 0xffu) | (r3_e4m3_to_bf16_bits(w >> 24) << 16);
     }
     return __builtin_bit_cast(r3_v16bf, out);
+}
+
+// 16 E4M3 codes at p (one fragment row, K ascending) as a gfx11 bf16 fragment.
+__device__ __forceinline__ r3_v16bf r3_row16_e4m3_to_bf16(const unsigned char* p) {
+    return r3_e4m3x16_to_bf16(r3_u4(*reinterpret_cast<const r3_u4u*>(p)));
+}
+
+// Operands of a 16x16x16 product whose A rows and B columns are E4M3 rows in shared memory (`pitch` bytes a row, K
+// ascending), for kernels written against gfx12's accumulator: D row 8h + j sits in slot j of lane half h. gfx11's C
+// layout puts row 2j + h there, so the lane that supplies A row m' (lane & 15) loads the row that belongs in slot
+// m' >> 1 of half m' & 1, i.e. row 8 * (m' & 1) + (m' >> 1). Nothing downstream changes; no accumulator conversion.
+__device__ __forceinline__ unsigned r3_arow(unsigned lane) { return ((lane & 1u) << 3) | ((lane & 15u) >> 1); }
+__device__ __forceinline__ r3_v16bf r3_frag_a_e4m3(const unsigned char* lds, unsigned pitch, unsigned row0, unsigned k,
+                                                   unsigned lane) {
+    return r3_row16_e4m3_to_bf16(lds + (size_t)(row0 + r3_arow(lane)) * pitch + k);
+}
+__device__ __forceinline__ r3_v16bf r3_frag_b_e4m3(const unsigned char* lds, unsigned pitch, unsigned row0, unsigned k,
+                                                   unsigned lane) {
+    return r3_row16_e4m3_to_bf16(lds + (size_t)(row0 + (lane & 15u)) * pitch + k);
 }
 
 // A row held in registers the gfx12 way: this lane has 8 of its row's 16 E4M3 codes (k 0-7 in lanes 0-15, k 8-15 in
