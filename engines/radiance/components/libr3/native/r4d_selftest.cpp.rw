@@ -625,3 +625,29 @@ static void attn_split_scratch_case(const Plugin& pl, const SplitGeo& g, const c
 @@ replace
                r3_split_bound()));
 @@ end
+
+# Diagnostic (RAD32): the grouped MXFP4 case reports its first mismatches, with the wanted and actual bf16 bits and
+# their classes, so a failure on a gfx11 card says what differs (finite/inf/NaN) and where.
+@@ find 1
+    const auto* values = (const uint16_t*)(got.data() + 128);
+@@ replace
+    const auto* values = (const uint16_t*)(got.data() + 128);
+    {
+        int shown = 0;
+        auto cls = [](float x) { return std::isnan(x) ? "nan" : std::isinf(x) ? (x > 0 ? "+inf" : "-inf") : "fin"; };
+        for (int r = 0; r < T0 && shown < 8; ++r)
+            for (int c = 0; c < OUT && shown < 8; ++c) {
+                const float want = h_bf16(expected[(size_t)r * yp + c]), value = h_bf16(values[r * yp + c]);
+                const bool same = std::isnan(want) ? std::isnan(value)
+                                  : std::isinf(want) ? value == want
+                                                     : std::isfinite(value) &&
+                                                           std::fabs(value - want) <= 0.004f + 0.008f * std::fabs(want);
+                if (!same) {
+                    std::printf("    mismatch M=%d row %d col %d: want %s %08x (%g), got %s %08x (%g)\n", M, r, c,
+                                cls(want), (unsigned)expected[(size_t)r * yp + c] << 16, want, cls(value),
+                                (unsigned)values[r * yp + c] << 16, value);
+                    ++shown;
+                }
+            }
+    }
+@@ end

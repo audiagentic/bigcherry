@@ -3,6 +3,7 @@
 # radiance pin (rad_build reuses it): builds the r3_selftest target in that build's libr3 tree and runs the catalogue
 # (every row against its host reference). Usage (from a checkout, e.g. through `bigcherry slice lab`): rad32-r3-selftest.sh
 set -u
+CASE=${1:-}; CARD=${2:-0}
 set --   # the env script reads its own arguments
 source tools/env/bigcherry-env.sh >/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/lab-build.sh"
@@ -24,10 +25,10 @@ SELF=$(find "$OUT/libr3" -maxdepth 2 -name r3_selftest -type f | head -1)
 idx=$(PYTHONPATH=tools python3 -c "
 from bigcherry.core import environment as e
 d = e.load_default().host(None).devices_for_arch('gfx1100')
-print(d[0].index if d else '')")
+print(d[$CARD].index if len(d) > $CARD else '')")
 [ -n "$idx" ] || { echo "no gfx1100 card in the device inventory"; exit 1; }
 echo "build $B, selftest $SELF, device $idx" | tee -a "$OUT/summary.txt"
-ROCR_VISIBLE_DEVICES=$idx timeout 3600 "$SELF" "$B/radiance_home/kernels/libr3.so" > "$OUT/selftest.txt" 2>&1
+ROCR_VISIBLE_DEVICES=$idx timeout 3600 "$SELF" "$B/radiance_home/kernels/libr3.so" ${CASE:+--case "$CASE"} > "$OUT/selftest.txt" 2>&1
 rc=$?
 grep -iE "fail|mismatch|error" "$OUT/selftest.txt" | head -30 | tee -a "$OUT/summary.txt"
 tail -5 "$OUT/selftest.txt" | tee -a "$OUT/summary.txt"
