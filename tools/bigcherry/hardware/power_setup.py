@@ -165,7 +165,8 @@ def steps(p: Probe, cmd) -> list[str]:
         if p.sys_read_only or not p.session_in_group:
             out.append(f"Give this {engine} container the group and the cards' sysfs directories read-write, then "
                        "recreate it (mounts and groups are fixed at creation; a restart keeps the old ones):\n"
-                       f"       {engine} run ... --group-add {gid} " + " ".join(f"-v {d}:{d}:rw" for d in dirs) + "\n"
+                       f"       {engine} run ... --group-add {gid} \\\n"
+                       + " \\\n".join(f"         -v {d}:{d}:rw" for d in dirs) + "\n"
                        "     or in its compose service:\n"
                        f"       group_add: [\"{gid}\"]\n"
                        "       volumes:\n" + "\n".join(f"         - {d}:{d}:rw" for d in dirs))
@@ -181,7 +182,7 @@ def steps(p: Probe, cmd) -> list[str]:
 
 def render(p: Probe, cmd) -> str:
     """The message for a launch that cannot apply its power settings."""
-    where = (f"in a {p.container} container" + ("" if p.container_udev else ", host udev") if p.container
+    where = (f"inside a {p.container} container" + ("" if p.container_udev else "; udev runs on the host") if p.container
              else "on the host")
     head = f"gpu-power: {p.user} cannot apply the GPU power settings ({where})."
     todo = steps(p, cmd)

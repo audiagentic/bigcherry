@@ -191,10 +191,10 @@ class SetupStepsTests(unittest.TestCase):
         self.assertTrue(s[0].startswith("On the host: sudo HOST gpu-power grant"))
         self.assertNotIn("--user", s[0])
         self.assertIn("docker run ... --group-add <gid of bigcherry-gpu on the host", s[1])
-        self.assertIn("-v /sys/devices/x/0000:03:00.0:/sys/devices/x/0000:03:00.0:rw", s[1])
+        self.assertIn(" \\\n         -v /sys/devices/x/0000:03:00.0:/sys/devices/x/0000:03:00.0:rw", s[1])
         self.assertIn("recreate", s[1])
         text = power_setup.render(p, _cmd)
-        self.assertIn("in a docker container", text)
+        self.assertIn("inside a docker container; udev runs on the host", text)
         self.assertIn("Or, without changing the container", text)
 
     def test_unsupported_cards_are_named_not_covered(self):
