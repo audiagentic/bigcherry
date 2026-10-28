@@ -247,7 +247,45 @@ def cmd_grant(args: Namespace) -> int:
     _trigger(cards)
     print(f"done; {args.user or 'members of ' + args.group} can apply the settings after logging in again "
           f"(or `newgrp {args.group}`)")
+    if getattr(args, "container", None):
+        return _container_setup(args.container, args.group, cards)
     return 0
+
+
+def _inspect(container: str) -> tuple[str, str, dict] | None:
+    """(engine, name, labels) of a container on this host, from whichever engine knows it."""
+    import shutil  # noqa: PLC0415
+    for engine in ("docker", "podman"):
+        if not shutil.which(engine):
+            continue
+        done = subprocess.run([engine, "inspect", "-f", "{{.Name}}\t{{json .Config.Labels}}", container],
+                              capture_output=True, text=True)
+        if done.returncode == 0 and "\t" in done.stdout:
+            name, labels = done.stdout.strip().split("\t", 1)
+            return engine, name.lstrip("/"), json.loads(labels) or {}
+    return None
+
+
+def _container_setup(container: str, group: str, cards: list[tuple[str, str | None]]) -> int:
+    gid = _gid(group)
+    if gid is None:
+        print(f"gpu-power: group {group} does not exist on this host yet; run `sudo ... gpu-power grant` first",
+              file=sys.stderr)
+        return 1
+    found = _inspect(container)
+    if not found:
+        print(f"gpu-power: no docker or podman container {container!r} on this host", file=sys.stderr)
+        return 1
+    engine, name, labels = found
+    dirs = [os.path.realpath(f"{gpu_power.SYSFS_PCI}/{loc}") for loc, _ in cards]
+    print(power_setup.container_lines(engine, name, labels, gid, dirs))
+    return 0
+
+
+def cmd_container_setup(args: Namespace) -> int:
+    """On the host: the exact lines a container needs (no privileges; the group and rule come from grant)."""
+    cards = [(loc, drv) for loc, drv in gpu_power.display_cards() if drv in gpu_power.BACKENDS]
+    return _container_setup(args.container, args.group, cards)
 
 
 def cmd_revoke(args: Namespace) -> int:
@@ -280,6 +318,11 @@ def register(sub) -> None:
     gr.add_argument("--group", default=GROUP, help=f"group given write access (default {GROUP}, created when missing)")
     gr.add_argument("--user", help="also add this user to the group")
     gr.add_argument("--print", action="store_true", help="print the udev rule instead of installing it (no privileges)")
+    gr.add_argument("--container", help="also print the exact lines this container (id or name) needs")
     gr.set_defaults(func=cmd_grant)
+    cs = psub.add_parser("container-setup", help="on the host: the exact lines a container needs to apply the settings")
+    cs.add_argument("container", help="container id or name")
+    cs.add_argument("--group", default=GROUP)
+    cs.set_defaults(func=cmd_container_setup)
     rv = psub.add_parser("revoke", help="remove the rule grant installed (sudo)")
     rv.set_defaults(func=cmd_revoke)

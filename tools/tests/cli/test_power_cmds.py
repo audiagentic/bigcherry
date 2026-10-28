@@ -140,7 +140,7 @@ class GrantTests(unittest.TestCase):
 
 
 def _probe(**kw):
-    base = dict(linux=True, container=None, container_udev=False, sys_read_only=False,
+    base = dict(linux=True, container=None, container_udev=False, container_id=None, sys_read_only=False,
                 cards=(power_setup.Card("0000:03:00.0", "amdgpu", True, True),
                        power_setup.Card("0000:09:00.0", "amdgpu", True, True)),
                 group="bigcherry-gpu", group_exists=True, gid=990, rule_installed=True,
@@ -196,6 +196,36 @@ class SetupStepsTests(unittest.TestCase):
         text = power_setup.render(p, _cmd)
         self.assertIn("inside a docker container; udev runs on the host", text)
         self.assertIn("Or, without changing the container", text)
+
+    def test_container_with_a_known_id_gets_the_grant_that_prints_its_exact_lines(self):
+        cid = "059e4849265182133d897ad36e90b612d98b1094f73d2d63f778874c8b6ee223"
+        p = _probe(container="docker", container_id=cid, sys_read_only=True, session_in_group=False,
+                   rule_installed=False, rule_cards=frozenset(), gid=None, group_exists=False)
+        s = power_setup.steps(p, _cmd)
+        self.assertIn("On the host: sudo HOST gpu-power grant --container 059e48492651", s[0])
+        self.assertIn("exact lines", s[0])
+        self.assertIn("Add the printed lines", s[1])
+        self.assertNotIn("<gid of", "\n".join(s))
+
+    def test_container_after_the_grant_gets_container_setup(self):
+        p = _probe(container="docker", container_id="ab" * 32, sys_read_only=True, session_in_group=False)
+        s = power_setup.steps(p, _cmd)
+        self.assertIn("HOST gpu-power container-setup abababababab", s[0])
+        self.assertNotIn("sudo", s[0])
+
+    def test_container_lines_fill_in_the_compose_file_service_gid_and_paths(self):
+        labels = {"com.docker.compose.project.config_files": "/srv/agentic/compose.yaml",
+                  "com.docker.compose.service": "agent-dev", "com.docker.compose.project.working_dir": "/srv/agentic"}
+        text = power_setup.container_lines("docker", "agent-dev", labels, 987, ["/sys/devices/a/0000:03:00.0"])
+        self.assertIn("in /srv/agentic/compose.yaml, under services: -> agent-dev:", text)
+        self.assertIn('        - "987"', text)
+        self.assertIn("        - /sys/devices/a/0000:03:00.0:/sys/devices/a/0000:03:00.0:rw", text)
+        self.assertIn("cd /srv/agentic && docker compose up -d agent-dev", text)
+
+    def test_container_lines_without_compose_give_run_flags(self):
+        text = power_setup.container_lines("podman", "box", {}, 987, ["/sys/devices/a/0000:03:00.0"])
+        self.assertIn("--group-add 987 -v /sys/devices/a/0000:03:00.0:/sys/devices/a/0000:03:00.0:rw", text)
+        self.assertIn("podman inspect box", text)
 
     def test_unsupported_cards_are_named_not_covered(self):
         p = _probe(cards=(power_setup.Card("0000:03:00.0", "amdgpu", True, True),

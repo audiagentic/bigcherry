@@ -31,6 +31,7 @@ class Probe:
     linux: bool
     container: str | None    # "docker", "podman", "container" (some other engine), None on the host itself
     container_udev: bool     # the container runs its own udevd (then a grant inside it takes effect)
+    container_id: str | None  # the engine's id for this container (the host inspects it), when it can be read
     sys_read_only: bool
     cards: tuple[Card, ...]
     group: str
@@ -55,6 +56,18 @@ def container_engine() -> str | None:
     except OSError:
         return None
     return "container" if any(k in text for k in ("docker", "containerd", "kubepods", "libpod", "lxc")) else None
+
+
+def container_id() -> str | None:
+    """This container's id, from the engine's per-container files mounted into it (hostname, resolv.conf): Docker
+    .../containers/<id>/..., Podman .../overlay-containers/<id>/... The hostname is not used: it can be set to anything."""
+    import re  # noqa: PLC0415
+    try:
+        with open("/proc/self/mountinfo", encoding="utf-8") as f:
+            m = re.search(r"/(?:overlay-)?containers/([0-9a-f]{64})/", f.read())
+    except OSError:
+        return None
+    return m.group(1) if m else None
 
 
 def _own_udevd() -> bool:
@@ -113,6 +126,7 @@ def probe(group: str, rules_path: str, blocked: list[str]) -> Probe:
         pass
     return Probe(
         linux=linux, container=engine, container_udev=bool(engine) and _own_udevd(),
+        container_id=container_id() if engine else None,
         sys_read_only=sys_ro, cards=tuple(cards), group=group, group_exists=gid is not None, gid=gid,
         rule_installed=os.path.exists(rules_path), rule_cards=_rule_locators(rules_path), user=user,
         user_in_group=user in members, session_in_group=session, blocked=tuple(blocked),
@@ -157,8 +171,19 @@ def steps(p: Probe, cmd) -> list[str]:
         if on_host and not p.user_in_group:
             what.append(f"adds {p.user} to it")
         user = ["--user", p.user] if on_host else []
-        out.append(f"{where}sudo {cmd('gpu-power', 'grant', *user, host_side=not on_host)}   ({'; '.join(what)})")
-    if p.container and not on_host:
+        known = ["--container", p.container_id[:12]] if not on_host and p.container_id else []
+        if known:
+            what.append("prints the exact lines to add to this container, with the group id, paths, compose file and "
+                        "service filled in")
+        out.append(f"{where}sudo {cmd('gpu-power', 'grant', *user, *known, host_side=not on_host)}   ({'; '.join(what)})")
+    if p.container and not on_host and p.container_id and (p.sys_read_only or not p.session_in_group):
+        # The host knows what the container cannot: the group's id there, and how the container was defined.
+        if not need_grant:
+            out.append(f"On the host: {cmd('gpu-power', 'container-setup', p.container_id[:12], host_side=True)}   "
+                       "(prints the exact lines to add to this container)")
+        out.append("Add the printed lines to the container's definition and recreate it with the printed command "
+                   "(mounts and groups are fixed at creation; a restart keeps the old ones).")
+    elif p.container and not on_host:
         engine = p.container if p.container in ("docker", "podman") else "docker/podman"
         gid = str(p.gid) if p.gid is not None else f"<gid of {p.group} on the host: getent group {p.group}>"
         dirs = [os.path.realpath(f"/sys/bus/pci/devices/{c.locator}") for c in supported]
@@ -194,3 +219,29 @@ def render(p: Probe, cmd) -> str:
         numbered.append(f"  Or, without changing the container: run `{alt}` on the host before each run "
                         "(and `... gpu-power restore` after).")
     return "\n".join([head, "To set it up:", *numbered])
+
+
+def container_lines(engine: str, name: str, labels: dict, gid: int, dirs: list[str]) -> str:
+    """The exact change a container needs so it can write the cards' power files: its group id on this host and each
+    card's sysfs directory read-write, as compose lines (with the file and service) when compose made it, else as run
+    flags; and the command that recreates it."""
+    mounts = [f"{d}:{d}:rw" for d in dirs]
+    files = labels.get("com.docker.compose.project.config_files")   # podman-compose sets the same labels
+    service = labels.get("com.docker.compose.service")
+    project_dir = labels.get("com.docker.compose.project.working_dir")
+    if files and service:
+        first = files.split(",")[0]
+        return "\n".join([
+            f"Container {name}: in {first}, under services: -> {service}:, add (merge with any existing lists):",
+            "      group_add:",
+            f"        - \"{gid}\"",
+            "      volumes:",
+            *[f"        - {m}" for m in mounts],
+            "then recreate it:",
+            f"  cd {project_dir or os.path.dirname(first)} && {engine} compose up -d {service}",
+        ])
+    return "\n".join([
+        f"Container {name} was not made by compose: recreate it with its current options plus:",
+        f"  --group-add {gid} " + " ".join(f"-v {m}" for m in mounts),
+        f"  ({engine} inspect {name} shows its current options)",
+    ])
