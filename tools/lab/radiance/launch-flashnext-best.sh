@@ -17,7 +17,8 @@
 #   bash tools/lab/radiance/launch-flashnext-best.sh stop
 # Without --build, the newest build under $BC_WORK_ROOT/builds that has the helper binary is used.
 # --gpu-power (or GPU_POWER=1): apply the cards' configured power settings ([host.*.devices.power]) for this run and
-# restore the driver defaults at stop. Without write access it says exactly what to grant and runs at the defaults.
+# put back what the cards ran before at stop. Without write access it lists the setup steps still missing and runs
+# with the cards as they are.
 # HELPER_WRAP=<command>: run each helper under it (e.g. a profiler wrapper; R3_MOE_WORKER_INDEX tells it which helper).
 set -u
 
@@ -53,7 +54,7 @@ stop_all() {
     fi
     rm -f "$PIDS/$name"
   done
-  # power settings this launcher applied go back to the driver defaults once the processes are gone
+  # power settings this launcher applied go back to what the cards ran before, once the processes are gone
   if [ -f "$RUN/gpu-power" ]; then
     PYTHONPATH=tools python3 -m bigcherry gpu-power restore >&2 && rm -f "$RUN/gpu-power"
   fi
@@ -81,14 +82,14 @@ HELPER=$RAD_HOME/helpers/r3_moe_worker
 # CPU energy counters unreadable (`bigcherry host-check`, PWR04).
 PYTHONPATH=tools python3 -m bigcherry host-check 2>/dev/null | grep '^WARN' >&2 || true
 
-# Optional per-run power settings (PWR04); when they cannot be written, gpu-power prints what to grant and the run goes
-# ahead at the driver defaults.
+# Optional per-run power settings (PWR04); when they cannot be written, gpu-power lists the missing setup steps and the run goes
+# ahead with the cards as they are.
 if [ "$GPU_POWER" = 1 ]; then
   mkdir -p "$RUN"
   if PYTHONPATH=tools python3 -m bigcherry gpu-power apply >&2; then
     touch "$RUN/gpu-power"
   else
-    echo "gpu-power: running at the driver defaults" >&2
+    echo "gpu-power: running with the cards as they are" >&2
   fi
 fi
 
