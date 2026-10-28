@@ -5,7 +5,7 @@
 #         prefill 2,251-2,256 tok/s (no drafter; the third argument "profile" adds --profile-ops).
 #   fn    Flash-Next in the production layout (pwr01-baseline.sh): decode and prefill rates and the decode text
 #         identity. Baseline: runs pwr01-baseline-10280942..10281145, decode 88.3-89.8 tok/s, prefill 3,265-3,345 tok/s.
-# Usage (from a checkout, e.g. through `bigcherry slice lab`): rad32-perf.sh [27b|fn|all=all] [repeats=3] [profile]
+# Usage (from a checkout, e.g. through `bigcherry slice lab`): rad32-perf.sh [27b|fn|all=all] [repeats=3] [profile|-] [build dir]
 set -u
 WHAT=${1:-all}; REPS=${2:-3}; [ "${3:-}" = profile ] && SERVE_EXTRA="--profile-ops" || SERVE_EXTRA=""   # "profile": per-op device timing in the server log
 set --   # the env script reads its own arguments
@@ -14,7 +14,8 @@ source "$(dirname "${BASH_SOURCE[0]}")/lab-build.sh"
 source "$(dirname "${BASH_SOURCE[0]}")/lab-env.sh"
 OUT=$BC_WORK_ROOT/runs/rad32-perf-$(date +%m%d%H%M); mkdir -p "$OUT"
 git log -1 --format='commit %H %s' | tee "$OUT/summary.txt"
-B=$(rad_build "$OUT/build.log") || { echo "BUILD_FAILED"; exit 1; }
+# a fourth argument names a finished build to measure instead of this checkout's (the v1.9.0 arm of an A/B)
+if [ -n "${4:-}" ]; then B=$4; else B=$(rad_build "$OUT/build.log") || { echo "BUILD_FAILED"; exit 1; }; fi
 echo "build $B" | tee -a "$OUT/summary.txt"
 
 if [ "$WHAT" = 27b ] || [ "$WHAT" = all ]; then
