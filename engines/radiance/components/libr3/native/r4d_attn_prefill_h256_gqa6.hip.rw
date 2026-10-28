@@ -23,6 +23,9 @@
     constexpr int R3N   = (OPT & O_R3NATIVE) ? 1 : 0;
     static_assert(!R3N || F16, "gfx11 native attention uses the f16 operand form");
     static_assert(!R3N || !(OPT & (O_QK8 | O_PV8)), "gfx11 native attention has no e4m3 legs");
+    // The KV split stores the accumulator in the decode partial layout as it stands (gfx12); the native accumulator
+    // would need converting first, so the split launch stays upstream's form (r4d_attn_paged_h256_gqa6.hip.rw).
+    static_assert(!R3N || !(OPT & O_PSPLIT), "the KV-split store expects the gfx12 accumulator layout");
 @@ end
 
 @@ find 1
