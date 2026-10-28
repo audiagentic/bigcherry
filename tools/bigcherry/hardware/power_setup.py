@@ -24,6 +24,10 @@ class Card:
     driver: str | None
     supported: bool          # the driver has a power backend
     overdrive_on: bool       # its voltage/clock controls exist (backends that need a kernel option to expose them)
+    name: str = ""           # model, for people (lspci when present, else the PCI vendor:device id)
+
+    def label(self) -> str:
+        return f"{self.locator} {self.name}".strip()
 
 
 @dataclass(frozen=True)
@@ -70,6 +74,27 @@ def container_id() -> str | None:
     return m.group(1) if m else None
 
 
+def _card_name(locator: str) -> str:
+    """The card's model as lspci names it (when pciutils is installed), else its PCI vendor:device id."""
+    import shutil  # noqa: PLC0415
+    import subprocess  # noqa: PLC0415
+    if shutil.which("lspci"):
+        done = subprocess.run(["lspci", "-s", locator], capture_output=True, text=True)
+        text = done.stdout.strip()
+        if done.returncode == 0 and ": " in text:
+            return "(" + text.split(": ", 1)[1].split(" (rev")[0] + ")"
+    ids = [(_read_text(f"{gpu_power.SYSFS_PCI}/{locator}/{k}") or "?").replace("0x", "") for k in ("vendor", "device")]
+    return f"({ids[0]}:{ids[1]})"
+
+
+def _read_text(path: str) -> str | None:
+    try:
+        with open(path, encoding="ascii") as f:
+            return f.read().strip()
+    except OSError:
+        return None
+
+
 def _own_udevd() -> bool:
     """A udevd in this process's mount namespace (one that would act on a rule written here). A container sharing the
     host's PID namespace sees the host's udevd, which is in another mount namespace and does not count."""
@@ -108,7 +133,7 @@ def probe(group: str, rules_path: str, blocked: list[str]) -> Probe:
     for locator, driver in (gpu_power.display_cards() if linux else []):
         backend = gpu_power.BACKENDS.get(driver)
         cards.append(Card(locator, driver, backend is not None,
-                          bool(backend) and backend.overdrive_on(locator)))
+                          bool(backend) and backend.overdrive_on(locator), _card_name(locator)))
     gid = None
     members: list[str] = []
     try:
@@ -159,7 +184,7 @@ def steps(p: Probe, cmd) -> list[str]:
         for driver in sorted({c.driver for c in od_off}):
             option = gpu_power.BACKENDS[driver].kernel_option
             out.append(f"{where}{_bootloader_line(option)} (turns on the voltage/clock controls of "
-                       f"{', '.join(c.locator for c in od_off if c.driver == driver)}), then reboot.")
+                       f"{', '.join(c.label() for c in od_off if c.driver == driver)}), then reboot.")
     missing_rule = {c.locator for c in supported} - p.rule_cards
     need_grant = not p.group_exists or not p.rule_installed or bool(missing_rule) or (on_host and not p.user_in_group)
     if need_grant:
@@ -167,7 +192,8 @@ def steps(p: Probe, cmd) -> list[str]:
         if not p.group_exists:
             what.append(f"creates the {p.group} group")
         if not p.rule_installed or missing_rule:
-            what.append(f"lets it write the power files of {len(supported)} card(s) through a udev rule")
+            what.append("lets it write the power files of these cards through a udev rule: "
+                        + ", ".join(c.label() for c in supported))
         if on_host and not p.user_in_group:
             what.append(f"adds {p.user} to it")
         user = ["--user", p.user] if on_host else []
@@ -200,7 +226,7 @@ def steps(p: Probe, cmd) -> list[str]:
     if out:
         out.append("Run the launch again.")
     if unsupported:
-        out.append(f"(Not covered: {', '.join(f'{c.locator} ({c.driver})' for c in unsupported)} — no power backend "
+        out.append(f"(Not covered: {', '.join(f'{c.label()} [{c.driver}]' for c in unsupported)} — no power backend "
                    "for that driver.)")
     return out
 

@@ -167,6 +167,7 @@ class SetupStepsTests(unittest.TestCase):
         self.assertIn("sudo HERE gpu-power grant --user alice", s[1])
         self.assertIn("creates the bigcherry-gpu group", s[1])
         self.assertIn("adds alice", s[1])
+        self.assertIn("udev rule: 0000:03:00.0", s[1])
         self.assertIn("newgrp bigcherry-gpu", s[2])
         self.assertEqual(s[3], "Run the launch again.")
 
@@ -230,7 +231,7 @@ class SetupStepsTests(unittest.TestCase):
     def test_unsupported_cards_are_named_not_covered(self):
         p = _probe(cards=(power_setup.Card("0000:03:00.0", "amdgpu", True, True),
                           power_setup.Card("0000:17:00.0", "nouveau", False, False)))
-        self.assertIn("0000:17:00.0 (nouveau)", power_setup.steps(p, _cmd)[-1])
+        self.assertIn("0000:17:00.0 [nouveau]", power_setup.steps(p, _cmd)[-1])
 
     def test_no_supported_card_says_so(self):
         p = _probe(cards=(power_setup.Card("0000:17:00.0", "nouveau", False, False),))
