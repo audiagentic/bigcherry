@@ -99,10 +99,10 @@ class BlockedTests(unittest.TestCase):
             self.assertEqual(power_cmds.cmd_apply(args), 2)
         write.assert_not_called()
         text = err.getvalue()
-        self.assertIn(self.od, text)
-        self.assertIn("as alice", text)
+        self.assertIn("alice cannot change the GPU power settings of 0000:03:00.0", text)
+        self.assertIn("  1. sudo ", text)
         self.assertIn("sudo ", text)
-        self.assertIn("gpu-power grant --user alice --group bigcherry-gpu", text)
+        self.assertIn("gpu-power grant --user alice", text)
         self.assertIn("newgrp bigcherry-gpu", text)
 
     def test_missing_overdrive_file_says_to_enable_overdrive(self):
@@ -114,11 +114,12 @@ class BlockedTests(unittest.TestCase):
         dev_dir = "/sys/devices/pci0000:00/0000:00:01.0/0000:03:00.0"
         with mock.patch.object(power_cmds.os.path, "exists", lambda p: True), \
                 mock.patch.object(power_cmds, "_read_only_mount", lambda p: True), \
-                mock.patch.object(power_cmds.os.path, "realpath", lambda p, **k: dev_dir + "/pp_od_clk_voltage"):
+                mock.patch.object(power_cmds.os.path, "realpath", lambda p, **k: dev_dir):
             text = power_cmds.explain_blocked([self.od], Namespace(host=None))
         self.assertIn("read-only", text)
-        self.assertIn(f"-v {dev_dir}:{dev_dir}:rw", text)
-        self.assertIn("--group-add", text)
+        self.assertIn(f"- {dev_dir}:{dev_dir}:rw", text)
+        self.assertIn("group_add:", text)
+        self.assertIn("docker compose up -d", text)
 
     def test_writable_mount_gives_no_container_advice(self):
         with mock.patch.object(power_cmds.os.path, "exists", lambda p: True), \
