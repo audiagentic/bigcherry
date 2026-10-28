@@ -16,6 +16,8 @@
 
 #include "route_compact.h"
 
+using r3::moe_shm::Route;
+
 #define CK(x) do { hipError_t e_ = (x); if (e_ != hipSuccess) { \
     std::fprintf(stderr, "%s:%d %s\n", __FILE__, __LINE__, hipGetErrorString(e_)); std::exit(2); } } while (0)
 

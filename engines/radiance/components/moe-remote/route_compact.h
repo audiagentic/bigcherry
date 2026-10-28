@@ -14,7 +14,7 @@
 #include "moe_remote_shm.h"
 
 template <class Take>
-__device__ inline void compact_routes(uint32_t n_cand, uint32_t top_k, uint32_t* nr, Route* route, const uint16_t* ew,
+__device__ inline void compact_routes(uint32_t n_cand, uint32_t top_k, uint32_t* nr, r3::moe_shm::Route* route, const uint16_t* ew,
                                       int32_t* ids, bool clear, Take take) {
     for (uint32_t base_i = 0; base_i < n_cand; base_i += blockDim.x) {
         const uint32_t i = base_i + threadIdx.x;
