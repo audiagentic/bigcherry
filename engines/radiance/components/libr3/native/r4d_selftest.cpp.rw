@@ -596,3 +596,32 @@ static void ar_two_rank(const Plugin& pl, const std::vector<int>& devs, const ch
                     run_case(r, t2, p2);
                 }
 @@ end
+
+# radiance 1.13.0's split-scratch check bounds the declared scratch by 24576 (row, head) pairs of 1032 bytes, the figure
+# r4d_attn_prefill_split.h derives for 32 WGPs (gfx1201). The split law counts the card's own WGPs
+# (multiProcessorCount), so on a 48-WGP RX 7900 XTX the law's worst case, and the hook's correct declaration, is 48/32
+# of it (38.04 MB). The bound scales with the WGPs here; the check that the hook covers the worst case is unchanged.
+@@ find 1
+static void attn_split_scratch_case(const Plugin& pl, const SplitGeo& g, const char* name,
+@@ replace
+static long long r3_split_bound() {
+    int dev = 0;
+    hipDeviceProp_t p;
+    if (hipGetDevice(&dev) != hipSuccess || hipGetDeviceProperties(&p, dev) != hipSuccess || p.multiProcessorCount <= 0)
+        return 24576LL * 1032;
+    return 24576LL * 1032 * p.multiProcessorCount / 32;
+}
+static void attn_split_scratch_case(const Plugin& pl, const SplitGeo& g, const char* name,
+@@ end
+
+@@ find 1
+           worst > 0 && need >= worst && need <= 24576LL * 1032,
+@@ replace
+           worst > 0 && need >= worst && need <= r3_split_bound(),
+@@ end
+
+@@ find 1
+               24576LL * 1032));
+@@ replace
+               r3_split_bound()));
+@@ end
