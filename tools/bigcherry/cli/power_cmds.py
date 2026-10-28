@@ -24,7 +24,7 @@ from ..core import environment
 from ..hardware import gpu_power, power_setup
 
 #: where grant writes its rules (udev reads /etc/udev/rules.d)
-RULES = Path("/etc/udev/rules.d/70-bigcherry-gpu-power.rules")
+RULES = Path(power_setup.RULES)
 #: the group grant gives the write access to by default: its own, so only users added to it can change voltage and power
 #: (video holds every GPU user on most hosts); grant creates it when it is missing
 GROUP = "bigcherry-gpu"
@@ -113,12 +113,9 @@ def _write(path: str, value: str) -> None:
         f.write(value + "\n")
 
 
-def _command(args: Namespace, *words: str, host_side: bool) -> str:
-    """A bigcherry command line: as run from a checkout's root on the host when ``host_side`` (this process may be in a
-    container whose paths mean nothing there), else with this checkout's paths and environment file."""
+def _command(args: Namespace, *words: str) -> str:
+    """A bigcherry command line as this session runs it: this checkout's tools and environment file."""
     host = ["--host", args.host] if getattr(args, "host", None) else []
-    if host_side:
-        return " ".join(["PYTHONPATH=tools python3 -m bigcherry", *words, *host])
     env = os.environ.get("BIGCHERRY_ENVIRONMENT")
     cmd = [*(["BIGCHERRY_ENVIRONMENT=" + env] if env else []), f"PYTHONPATH={Path(__file__).resolve().parents[2]}",
            sys.executable or "python3", "-m", "bigcherry", *words, *host]
@@ -132,7 +129,7 @@ def _blocked(cards) -> list[str]:
 
 def _explain(args: Namespace, blocked: list[str]) -> str:
     p = power_setup.probe(args_group(args), str(RULES), blocked)
-    return power_setup.render(p, lambda *w, host_side: _command(args, *w, host_side=host_side))
+    return power_setup.render(p, lambda *w: _command(args, *w))
 
 
 def args_group(args: Namespace) -> str:
@@ -247,7 +244,25 @@ def cmd_grant(args: Namespace) -> int:
     _trigger(cards)
     print(f"done; {args.user or 'members of ' + args.group} can apply the settings after logging in again "
           f"(or `newgrp {args.group}`)")
+    print()
+    _print_container_lines(args.group, cards)
     return 0
+
+
+def _print_container_lines(group: str, cards: list[tuple[str, str | None]]) -> int:
+    gid = _gid(group)
+    if gid is None:
+        print(f"gpu-power: group {group} does not exist on this host yet; run `sudo ... gpu-power grant` first",
+              file=sys.stderr)
+        return 1
+    print(power_setup.container_lines(gid, [os.path.realpath(f"{gpu_power.SYSFS_PCI}/{loc}") for loc, _ in cards]))
+    return 0
+
+
+def cmd_container_lines(args: Namespace) -> int:
+    """On the host: the lines any container adds to apply the settings (no privileges; group and rule from grant)."""
+    return _print_container_lines(args.group, [(loc, drv) for loc, drv in gpu_power.display_cards()
+                                               if drv in gpu_power.BACKENDS])
 
 
 def cmd_revoke(args: Namespace) -> int:
@@ -281,5 +296,8 @@ def register(sub) -> None:
     gr.add_argument("--user", help="also add this user to the group")
     gr.add_argument("--print", action="store_true", help="print the udev rule instead of installing it (no privileges)")
     gr.set_defaults(func=cmd_grant)
+    cl = psub.add_parser("container-lines", help="on the host: the lines any container adds to apply the settings")
+    cl.add_argument("--group", default=GROUP)
+    cl.set_defaults(func=cmd_container_lines)
     rv = psub.add_parser("revoke", help="remove the rule grant installed (sudo)")
     rv.set_defaults(func=cmd_revoke)

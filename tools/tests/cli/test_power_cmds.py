@@ -150,8 +150,8 @@ def _probe(**kw):
     return power_setup.Probe(**base)
 
 
-def _cmd(*words, host_side):
-    return ("HOST " if host_side else "HERE ") + " ".join(words)
+def _cmd(*words):
+    return "HERE " + " ".join(words)
 
 
 class SetupStepsTests(unittest.TestCase):
@@ -167,6 +167,7 @@ class SetupStepsTests(unittest.TestCase):
         self.assertIn("sudo HERE gpu-power grant --user alice", s[1])
         self.assertIn("creates the bigcherry-gpu group", s[1])
         self.assertIn("adds alice", s[1])
+        self.assertIn("udev rule: 0000:03:00.0", s[1])
         self.assertIn("newgrp bigcherry-gpu", s[2])
         self.assertEqual(s[3], "Run the launch again.")
 
@@ -183,24 +184,37 @@ class SetupStepsTests(unittest.TestCase):
     def test_complete_setup_needs_no_steps(self):
         self.assertEqual(power_setup.steps(_probe(), _cmd), [])
 
-    def test_container_without_its_own_udev_sends_the_grant_to_the_host_and_gives_the_mounts(self):
-        p = _probe(container="docker", sys_read_only=True, session_in_group=False, rule_installed=False,
-                   rule_cards=frozenset(), gid=None, group_exists=False)
+    def test_container_message_names_the_engine(self):
+        text = power_setup.render(_probe(container="docker", sys_read_only=True, session_in_group=False), _cmd)
+        self.assertIn("inside a docker container; udev runs on the host", text)
+
+    def test_container_host_step_is_plain_shell_needing_no_checkout(self):
+        p = _probe(container="docker", sys_read_only=True, session_in_group=False)
         with mock.patch.object(power_setup.os.path, "realpath", lambda p: "/sys/devices/x/" + p.rsplit("/", 1)[1]):
             s = power_setup.steps(p, _cmd)
-        self.assertTrue(s[0].startswith("On the host: sudo HOST gpu-power grant"))
-        self.assertNotIn("--user", s[0])
-        self.assertIn("docker run ... --group-add <gid of bigcherry-gpu on the host", s[1])
-        self.assertIn("-v /sys/devices/x/0000:03:00.0:/sys/devices/x/0000:03:00.0:rw", s[1])
-        self.assertIn("recreate", s[1])
-        text = power_setup.render(p, _cmd)
-        self.assertIn("in a docker container", text)
-        self.assertIn("Or, without changing the container", text)
+        self.assertTrue(s[0].startswith("On the host, run (needs nothing from bigcherry"))
+        self.assertNotIn("-m bigcherry", s[0])
+        self.assertNotIn("PYTHONPATH", s[0])
+        self.assertIn("sudo groupadd --system bigcherry-gpu", s[0])
+        self.assertIn(f"sudo tee {power_setup.RULES}", s[0])
+        self.assertIn('KERNEL=="0000:03:00.0"', s[0])
+        self.assertIn("\nEOF\n", s[0])   # pasteable: the heredoc terminator starts its line
+        self.assertIn("getent group bigcherry-gpu | cut -d: -f3", s[0])
+        self.assertIn("group_add:", s[1])
+        self.assertIn("- /sys/devices/x/0000:03:00.0:/sys/devices/x/0000:03:00.0:rw", s[1])
+        self.assertIn("every container", s[1])
+        self.assertEqual(s[2], "Run the launch again.")
+
+    def test_container_lines_fill_in_the_gid_and_paths(self):
+        text = power_setup.container_lines(987, ["/sys/devices/a/0000:03:00.0"])
+        self.assertIn('        - "987"', text)
+        self.assertIn("        - /sys/devices/a/0000:03:00.0:/sys/devices/a/0000:03:00.0:rw", text)
+        self.assertIn("--group-add 987 -v /sys/devices/a/0000:03:00.0:/sys/devices/a/0000:03:00.0:rw", text)
 
     def test_unsupported_cards_are_named_not_covered(self):
         p = _probe(cards=(power_setup.Card("0000:03:00.0", "amdgpu", True, True),
                           power_setup.Card("0000:17:00.0", "nouveau", False, False)))
-        self.assertIn("0000:17:00.0 (nouveau)", power_setup.steps(p, _cmd)[-1])
+        self.assertIn("0000:17:00.0 [nouveau]", power_setup.steps(p, _cmd)[-1])
 
     def test_no_supported_card_says_so(self):
         p = _probe(cards=(power_setup.Card("0000:17:00.0", "nouveau", False, False),))
