@@ -89,6 +89,21 @@ class BlockedTests(unittest.TestCase):
             text = power_cmds.explain_blocked([self.od], Namespace(host=None))
         self.assertIn("ppfeaturemask", text)
 
+    def test_read_only_sys_explains_the_container_bind_mount(self):
+        dev_dir = "/sys/devices/pci0000:00/0000:00:01.0/0000:03:00.0"
+        with mock.patch.object(power_cmds.os.path, "exists", lambda p: True), \
+                mock.patch.object(power_cmds, "_read_only_mount", lambda p: True), \
+                mock.patch.object(power_cmds.os.path, "realpath", lambda p, **k: dev_dir + "/pp_od_clk_voltage"):
+            text = power_cmds.explain_blocked([self.od], Namespace(host=None))
+        self.assertIn("read-only", text)
+        self.assertIn(f"-v {dev_dir}:{dev_dir}:rw", text)
+        self.assertIn("--group-add", text)
+
+    def test_writable_mount_gives_no_container_advice(self):
+        with mock.patch.object(power_cmds.os.path, "exists", lambda p: True), \
+                mock.patch.object(power_cmds, "_read_only_mount", lambda p: False):
+            self.assertNotIn("read-only", power_cmds.explain_blocked([self.od], Namespace(host=None)))
+
     def test_grant_needs_root_unless_printing(self):
         args = Namespace(host=None, group="video", user="alice", print=False)
         with mock.patch.object(power_cmds, "_configured", lambda a: self._cards()), \

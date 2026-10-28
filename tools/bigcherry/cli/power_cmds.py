@@ -109,6 +109,15 @@ def _blocked(cards) -> list[str]:
             if not os.access(path, os.W_OK)]
 
 
+def _read_only_mount(path: str) -> bool:
+    """Whether ``path`` (or, when it is missing, its directory) lies on a read-only mount."""
+    probe = path if os.path.exists(path) else os.path.dirname(path)
+    try:
+        return bool(os.statvfs(probe).f_flag & os.ST_RDONLY)
+    except (OSError, AttributeError):   # no statvfs on Windows
+        return False
+
+
 def grant_command(args: Namespace, user: str) -> str:
     """The exact command that grants ``user`` the write access, from this checkout and environment file."""
     env = os.environ.get("BIGCHERRY_ENVIRONMENT")
@@ -128,6 +137,18 @@ def explain_blocked(blocked: list[str], args: Namespace) -> str:
     if any(p.endswith("pp_od_clk_voltage") and not os.path.exists(p) for p in blocked):
         lines.append("  a missing pp_od_clk_voltage means the driver's OverDrive is off: add "
                      "amdgpu.ppfeaturemask=0xfff7ffff to the kernel command line and reboot")
+    readonly = [p for p in blocked if _read_only_mount(p)]
+    if readonly:
+        # A container's /sys is mounted read-only (Docker/Podman default): no permission change reaches it.
+        devices = sorted({os.path.realpath(p).split("/hwmon/")[0].rsplit("/pp_od_clk_voltage", 1)[0] for p in readonly})
+        lines += [
+            "/sys is mounted read-only here (a container): group write access cannot reach these files. Either run "
+            "`bigcherry gpu-power apply` on the host, or give the container the cards' sysfs directories read-write "
+            "and restart it:",
+            *[f"  docker run ... -v {d}:{d}:rw   (compose: - {d}:{d}:rw)" for d in devices],
+            "and, on the host, the grant below; the container user needs the host's group by number "
+            "(docker run --group-add <host gid of the group>).",
+        ]
     lines += [
         "To let this user apply them (once; a udev rule giving one group write access to these cards' power files only):",
         f"  {grant_command(args, user)}",
