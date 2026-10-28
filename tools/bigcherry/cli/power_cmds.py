@@ -24,7 +24,7 @@ from ..core import environment
 from ..hardware import gpu_power, power_setup
 
 #: where grant writes its rules (udev reads /etc/udev/rules.d)
-RULES = Path("/etc/udev/rules.d/70-bigcherry-gpu-power.rules")
+RULES = Path(power_setup.RULES)
 #: the group grant gives the write access to by default: its own, so only users added to it can change voltage and power
 #: (video holds every GPU user on most hosts); grant creates it when it is missing
 GROUP = "bigcherry-gpu"
@@ -113,12 +113,9 @@ def _write(path: str, value: str) -> None:
         f.write(value + "\n")
 
 
-def _command(args: Namespace, *words: str, host_side: bool) -> str:
-    """A bigcherry command line: as run from a checkout's root on the host when ``host_side`` (this process may be in a
-    container whose paths mean nothing there), else with this checkout's paths and environment file."""
+def _command(args: Namespace, *words: str) -> str:
+    """A bigcherry command line as this session runs it: this checkout's tools and environment file."""
     host = ["--host", args.host] if getattr(args, "host", None) else []
-    if host_side:
-        return " ".join(["PYTHONPATH=tools python3 -m bigcherry", *words, *host])
     env = os.environ.get("BIGCHERRY_ENVIRONMENT")
     cmd = [*(["BIGCHERRY_ENVIRONMENT=" + env] if env else []), f"PYTHONPATH={Path(__file__).resolve().parents[2]}",
            sys.executable or "python3", "-m", "bigcherry", *words, *host]
@@ -132,7 +129,7 @@ def _blocked(cards) -> list[str]:
 
 def _explain(args: Namespace, blocked: list[str]) -> str:
     p = power_setup.probe(args_group(args), str(RULES), blocked)
-    return power_setup.render(p, lambda *w, host_side: _command(args, *w, host_side=host_side))
+    return power_setup.render(p, lambda *w: _command(args, *w))
 
 
 def args_group(args: Namespace) -> str:

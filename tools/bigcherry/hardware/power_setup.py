@@ -18,9 +18,8 @@ from dataclasses import dataclass, field
 from . import gpu_power
 
 
-#: where a host-side command runs: its PYTHONPATH=tools is relative to a checkout's root, and the checkout must have
-#: this tooling (a container cannot know where the host's checkout is)
-ON_HOST = "On the host, from the root of a bigcherry checkout there (git pull first if it is old)"
+#: where the udev rule goes (udev reads /etc/udev/rules.d)
+RULES = "/etc/udev/rules.d/70-bigcherry-gpu-power.rules"
 
 
 @dataclass(frozen=True)
@@ -157,8 +156,8 @@ def _bootloader_line(option: str) -> str:
 
 
 def steps(p: Probe, cmd) -> list[str]:
-    """The numbered steps still needed, as lines. ``cmd(*words, host_side)`` renders a bigcherry command: with this
-    checkout's paths when it runs here, or as run from a checkout on the host when the step happens on the host."""
+    """The numbered steps still needed, as lines. ``cmd(*words)`` renders a bigcherry command as this session runs it
+    (its checkout and environment); host steps for a container are plain shell, so the host needs no bigcherry."""
     if not p.linux:
         return ["GPU power settings are applied through Linux sysfs; this system is not Linux, so they cannot be applied."]
     out: list[str] = []
@@ -169,7 +168,7 @@ def steps(p: Probe, cmd) -> list[str]:
                 f"{', '.join(f'{c.locator} {c.driver}' for c in p.cards) or 'none'}; supported: "
                 f"{', '.join(sorted(gpu_power.BACKENDS))})."]
     on_host = p.container is None or p.container_udev
-    where = "" if on_host else f"{ON_HOST}: "
+    where = "" if on_host else "On the host: "
     od_off = [c for c in supported if not c.overdrive_on]
     if od_off:
         for driver in sorted({c.driver for c in od_off}):
@@ -177,28 +176,44 @@ def steps(p: Probe, cmd) -> list[str]:
             out.append(f"{where}{_bootloader_line(option)} (turns on the voltage/clock controls of "
                        f"{', '.join(c.label() for c in od_off if c.driver == driver)}), then reboot.")
     missing_rule = {c.locator for c in supported} - p.rule_cards
-    need_grant = not p.group_exists or not p.rule_installed or bool(missing_rule) or (on_host and not p.user_in_group)
-    if need_grant:
+    if not on_host:
+        # From inside a container: the host needs no bigcherry, only these commands; the container already knows the rule
+        # and the cards' paths, and the group's id is the one thing only the host can print.
+        rules = gpu_power.udev_rules([(c.locator, c.driver) for c in supported], p.group)
+        out.append("\n".join([
+            "On the host, run (needs nothing from bigcherry; it gives one group write access to the power files of "
+            f"{', '.join(c.label() for c in supported)}, and prints that group's id):",
+            # unindented, so it pastes into a shell as is (a heredoc's EOF must start its line)
+            f"sudo groupadd --system {p.group} 2>/dev/null || true",
+            f"sudo tee {RULES} >/dev/null <<'EOF'",
+            *rules.splitlines(),
+            "EOF",
+            "sudo udevadm control --reload && sudo udevadm trigger --action=change "
+            "--subsystem-match=pci --subsystem-match=hwmon && sudo udevadm settle",
+            f"getent group {p.group} | cut -d: -f3",
+        ]))
+        dirs = [os.path.realpath(f"{gpu_power.SYSFS_PCI}/{c.locator}") for c in supported]
+        out.append("\n".join([
+            "Add to this container's compose service (merge with any existing lists), with the id the last command "
+            "printed, then recreate it (compose up -d <service>; a restart keeps the old mounts and groups). The same "
+            "lines serve every container on that host:",
+            "       group_add:",
+            '         - "<that id>"',
+            "       volumes:",
+            *[f"         - {d}:{d}:rw" for d in dirs],
+        ]))
+    elif not p.group_exists or not p.rule_installed or missing_rule or not p.user_in_group:
         what = []
         if not p.group_exists:
             what.append(f"creates the {p.group} group")
         if not p.rule_installed or missing_rule:
             what.append("lets it write the power files of these cards through a udev rule: "
                         + ", ".join(c.label() for c in supported))
-        if on_host and not p.user_in_group:
+        if not p.user_in_group:
             what.append(f"adds {p.user} to it")
-        user = ["--user", p.user] if on_host else []
-        if not on_host:
-            what.append("prints the lines a container needs, with the group id and the cards' paths filled in")
-        out.append(f"{where}sudo {cmd('gpu-power', 'grant', *user, host_side=not on_host)}   ({'; '.join(what)})")
-    if p.container and not on_host and (p.sys_read_only or not p.session_in_group):
-        # A container's /sys is read-only and its groups are fixed at creation; the host knows the group's id.
-        if not need_grant:
-            out.append(f"{ON_HOST}: {cmd('gpu-power', 'container-lines', host_side=True)}   "
-                       "(prints the lines a container needs, with the group id and the cards' paths filled in)")
-        out.append("Add those lines to this container's compose service (or its run options) and recreate it "
-                   f"({p.container} compose up -d <service>; a restart keeps the old mounts and groups). The same lines "
-                   "serve every container on that host.")
+        out.append(f"sudo {cmd('gpu-power', 'grant', '--user', p.user)}   ({'; '.join(what)})")
+        if not p.session_in_group:
+            out.append(f"Log out and back in (or run: newgrp {p.group}) so this session has the {p.group} group.")
     elif not p.session_in_group:
         out.append(f"Log out and back in (or run: newgrp {p.group}) so this session has the {p.group} group.")
     if out:
@@ -218,10 +233,6 @@ def render(p: Probe, cmd) -> str:
     if not todo:
         return head + " Setup is complete, yet these files are not writable:\n" + "\n".join(f"  {b}" for b in p.blocked)
     numbered = [f"  {i}. {s}" if not s.startswith("(") else f"  {s}" for i, s in enumerate(todo, 1)]
-    if p.container and not (p.container_udev):
-        alt = cmd("gpu-power", "apply", host_side=True)
-        numbered.append(f"  Or, without changing the container: {ON_HOST[0].lower() + ON_HOST[1:]}, run `{alt}` before each run "
-                        "(and `... gpu-power restore` after).")
     return "\n".join([head, "To set it up:", *numbered])
 
 
