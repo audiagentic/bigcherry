@@ -6,8 +6,8 @@
 # each operand and calls the gfx12 fp8 WMMA.
 #
 # Native:
-#   - the re-tile widens to bf16 and writes gfx11 fragment rows: per fragment and K step, 16 rows of 16 bf16 (32
-#     bytes a row), so an activation fragment is one 32-byte load. The scratch is twice the size, from the same hook.
+#   - the activation re-tile stays libr4d's (gfx12 fragment order, E4M3): gemm_wpa8i8_tiled reads the same scratch.
+#     A lane's row is two 8-byte slots of it, widened to bf16 in the step that uses it.
 #   - the weight slab is staged as bf16, straight from the 4-bit codes by table lookup (r3_mxfp4_store8_bf16), in
 #     both LDS arrays (the body's own and the two-body kernel's).
 #   - the gfx11 bf16 WMMA takes the accumulator as its C operand; the accumulator stays in the gfx11 layout through
@@ -17,21 +17,9 @@
 #     dwords, and TM x NS of them at once would not fit a wave's registers.
 
 @@ find 1
-  mxt_u2 v = { 0u, 0u };
-  if (r < M) v = *(const mxt_u2*)(A + (size_t)r * lda + k);
-  *(mxt_u2*)(AT + o * 8) = v;
-@@ replace
-  // libr3 native: bf16, a fragment (f) is 16 rows of 32 bytes; this thread's 8 values are its row's half
-  unsigned short* dst = (unsigned short*)(AT + f * 512 + (long long)(lane & 15) * 32 + (lane >> 4) * 16);
-  mxt_u2 v = { 0u, 0u };
-  if (r < M) v = *(const mxt_u2*)(A + (size_t)r * lda + k);
-  r3_store8_e4m3_as_bf16(dst, v[0], v[1]);
-@@ end
-
-@@ find 1
   return M < 1 || K < 16 ? 0 : (long)((M + 15) / 16) * 16 * K;
 @@ replace
-  return M < 1 || K < 16 ? 0 : (long)((M + 15) / 16) * 16 * K * 2;  // libr3 native: the re-tile is bf16
+  return M < 1 || K < 16 ? 0 : (long)((M + 15) / 16) * 16 * K * (r3_bt_on() ? 2 : 1);  // R3_BT: its re-tile is bf16
 @@ end
 
 @@ find 1
@@ -60,16 +48,6 @@
   __shared__ unsigned short sW[BNF * STR];  // libr3 native: bf16
   __shared__ unsigned int sMag[32];
   __shared__ float sR[ABLK ? R4D_MXT_BMF : 1];
-@@ end
-
-@@ find 1
-    abase[i] = AT + (size_t)__builtin_amdgcn_readfirstlane(mt * ksteps * 256);
-  }
-  const unsigned int aoff = (unsigned int)lane * 8;
-@@ replace
-    abase[i] = AT + (size_t)__builtin_amdgcn_readfirstlane(mt * ksteps * 512);
-  }
-  const unsigned int aoff = (unsigned int)col * 32;  // libr3 native: this lane's row of the fragment
 @@ end
 
 @@ find 1
@@ -116,7 +94,10 @@
                                                                           acc[i][j]);
 @@ replace
         if (PART && i >= live) break;   // wave-uniform: padding fragments past M
-        const r3_v16bf af = r3_ld16_bf16(abase[i] + (aoff + (unsigned int)(k0 * 32) + (unsigned int)(step * 512)));
+        // the shared E4M3 re-tile (also read by gemm_wpa8i8_tiled): this lane's row is slot col (k 0-7) and col + 16 (k 8-15)
+        const unsigned char* ap = abase[i] + (size_t)(k0 * 16 + step * 256);
+        const mxt_u2 a_lo = *(const mxt_u2*)(ap + col * 8), a_hi = *(const mxt_u2*)(ap + (col + 16) * 8);
+        const r3_v16bf af = r3_e4m3x16_to_bf16(r3_u4{ a_lo[0], a_lo[1], a_hi[0], a_hi[1] });
 #pragma unroll
         for (int j = 0; j < TN; ++j) acc[i][j] = r3_wmma_bf16_native(wf[j], af, acc[i][j]);
 @@ end

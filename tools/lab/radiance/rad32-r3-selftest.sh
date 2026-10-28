@@ -28,8 +28,15 @@ d = e.load_default().host(None).devices_for_arch('gfx1100')
 print(d[$CARD].index if len(d) > $CARD else '')")
 [ -n "$idx" ] || { echo "no gfx1100 card in the device inventory"; exit 1; }
 echo "build $B, selftest $SELF, device $idx" | tee -a "$OUT/summary.txt"
-ROCR_VISIBLE_DEVICES=$idx timeout 3600 "$SELF" "$B/radiance_home/kernels/libr3.so" ${CASE:+--case "$CASE"} > "$OUT/selftest.txt" 2>&1
-rc=$?
+rc=0
+if [ -z "$CASE" ]; then
+    ROCR_VISIBLE_DEVICES=$idx timeout 3600 "$SELF" "$B/radiance_home/kernels/libr3.so" > "$OUT/selftest.txt" 2>&1 || rc=$?
+else
+    : > "$OUT/selftest.txt"
+    for c in ${CASE//,/ }; do
+        ROCR_VISIBLE_DEVICES=$idx timeout 3600 "$SELF" "$B/radiance_home/kernels/libr3.so" --case "$c" >> "$OUT/selftest.txt" 2>&1 || rc=$?
+    done
+fi
 grep -iE "fail|mismatch|error" "$OUT/selftest.txt" | head -30 | tee -a "$OUT/summary.txt"
 tail -5 "$OUT/selftest.txt" | tee -a "$OUT/summary.txt"
 echo "OUT $OUT rc=$rc"
