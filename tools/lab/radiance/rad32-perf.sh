@@ -26,7 +26,7 @@ print(",".join(str(d.index) for d in e.load_default().host(None).devices_for_arc
     echo "== 27b on gfx1100 cards $XTX" | tee -a "$OUT/summary.txt"
     HIP_VISIBLE_DEVICES=$XTX ROCR_VISIBLE_DEVICES=$XTX RADIANCE_HOME=$B/radiance_home \
         PYTHONPATH=tools timeout 3000 python3 -m bigcherry engine-bench --engine radiance --binary "$B/bin/radiance" \
-        --model "$MODEL" --out "$OUT/27b" --depth 7200 --decode 128 --reps "$REPS" --label rad32-27b --shutdown sigint \
+        --model "$MODEL" --corpus "${CORPUS:-$BC_WORK_ROOT/corpus/kld-docs.txt}" --out "$OUT/27b" --depth 7200 --decode 128 --reps "$REPS" --label rad32-27b --shutdown sigint \
         -- --radiance-home "$B/radiance_home" --tp "$(echo "$XTX" | tr ',' '\n' | wc -l)" --tp-wire wht6 \
            --kv-cache-dtype fp8 --max-model-len 8192 --max-num-seqs 1 > "$OUT/27b.log" 2>&1
     echo "27b rc=$?" | tee -a "$OUT/summary.txt"
