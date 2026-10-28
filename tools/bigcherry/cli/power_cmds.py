@@ -129,44 +129,66 @@ def _read_only_mount(path: str) -> bool:
         return False
 
 
-def grant_command(args: Namespace, user: str) -> str:
-    """The exact command that grants ``user`` the write access, from this checkout and environment file."""
-    env = os.environ.get("BIGCHERRY_ENVIRONMENT")
-    tools = Path(__file__).resolve().parents[2]
+def _bigcherry(args: Namespace, *words: str, here: bool) -> str:
+    """A bigcherry command line: with this checkout's paths when it runs ``here``, else as run from a checkout's root."""
     host = ["--host", args.host] if getattr(args, "host", None) else []
-    cmd = ["sudo", *(["BIGCHERRY_ENVIRONMENT=" + env] if env else []), f"PYTHONPATH={tools}", sys.executable or "python3",
-           "-m", "bigcherry", "gpu-power", "grant", *host, "--user", user, "--group", GROUP]
+    if not here:
+        return " ".join(["PYTHONPATH=tools python3 -m bigcherry", *words, *host])
+    env = os.environ.get("BIGCHERRY_ENVIRONMENT")
+    cmd = [*(["BIGCHERRY_ENVIRONMENT=" + env] if env else []), f"PYTHONPATH={Path(__file__).resolve().parents[2]}",
+           sys.executable or "python3", "-m", "bigcherry", *words, *host]
     return " ".join(shlex.quote(c) for c in cmd)
 
 
+def grant_command(args: Namespace, user: str) -> str:
+    """The exact command, run here, that grants ``user`` the write access."""
+    return "sudo " + _bigcherry(args, "gpu-power", "grant", "--user", user, here=True)
+
+
+def _locators(paths: list[str]) -> list[str]:
+    return sorted({m.group(1) for p in paths if (m := re.search(r"/devices/([0-9a-fA-F:.]+)/", p))})
+
+
 def explain_blocked(blocked: list[str], args: Namespace) -> str:
-    """What to tell someone whose launch cannot write the power settings, and exactly how to allow it."""
+    """What to tell someone whose launch cannot write the power settings: numbered steps, exact commands."""
     user = os.environ.get("SUDO_USER") or getpass.getuser()
-    lines = [f"gpu-power: cannot write {len(blocked)} power setting file(s) as {user}:"]
-    for path in blocked:
-        lines.append(f"  {path}" + ("" if os.path.exists(path) else " (missing)"))
+    cards = ", ".join(_locators(blocked))
     if any(p.endswith("pp_od_clk_voltage") and not os.path.exists(p) for p in blocked):
-        lines.append("  a missing pp_od_clk_voltage means the driver's OverDrive is off: add "
-                     "amdgpu.ppfeaturemask=0xfff7ffff to the kernel command line and reboot")
-    readonly = [p for p in blocked if _read_only_mount(p)]
-    if readonly:
-        # A container's /sys is mounted read-only (Docker/Podman default): no permission change reaches it.
-        devices = sorted({os.path.realpath(p).split("/hwmon/")[0].rsplit("/pp_od_clk_voltage", 1)[0] for p in readonly})
-        lines += [
-            "/sys is mounted read-only here (a container): group write access cannot reach these files. Either run "
-            "`bigcherry gpu-power apply` on the host, or give the container the cards' sysfs directories read-write "
-            "and restart it:",
-            *[f"  docker run ... -v {d}:{d}:rw   (compose: - {d}:{d}:rw)" for d in devices],
-            "and, on the host, the grant below; the container user needs the host's group by number "
-            f"(docker run --group-add {_gid(GROUP) or '<host gid of ' + GROUP + '>'}).",
-        ]
-    lines += [
-        "To let this user apply them (once; a udev rule giving one group write access to these cards' power files only):",
-        f"  {grant_command(args, user)}",
-        f"then log out and in (or run `newgrp {GROUP}`) so the group takes effect. grant creates {GROUP} when it is "
-        "missing (--group names another); `gpu-power grant --print` shows the rule, `gpu-power revoke` removes it.",
-    ]
-    return "\n".join(lines)
+        return "\n".join([
+            f"gpu-power: the GPU driver's OverDrive controls are off on {cards}, so these settings cannot be applied.",
+            "To turn them on (once, on the host):",
+            "  1. Add amdgpu.ppfeaturemask=0xfff7ffff to the kernel command line (e.g. GRUB_CMDLINE_LINUX in "
+            "/etc/default/grub, then update-grub).",
+            "  2. Reboot, then run the launch again.",
+        ])
+    if any(_read_only_mount(p) for p in blocked):
+        # A container's /sys is mounted read-only (Docker/Podman default): no permission change reaches it, and mounts
+        # and groups are fixed when the container is created.
+        gid = _gid(GROUP)
+        dirs = [os.path.realpath(f"/sys/bus/pci/devices/{loc}") for loc in _locators(blocked)]
+        return "\n".join([
+            f"gpu-power: cannot change the GPU power settings of {cards}: /sys is read-only in this container.",
+            "Either A, apply them from the host for each run (no container change), from a bigcherry checkout there:",
+            f"  {_bigcherry(args, 'gpu-power', 'apply', here=False)}      (and after the run: ... gpu-power restore)",
+            "Or B, let this container apply them itself (once):",
+            "  1. On the host, from a bigcherry checkout:",
+            f"       sudo {_bigcherry(args, 'gpu-power', 'grant', here=False)}",
+            "  2. In the container's compose service add the lines below, then recreate it "
+            "(docker compose up -d <service>; a plain restart keeps the old mounts):",
+            "       group_add:",
+            f"         - \"{gid if gid is not None else '<gid of ' + GROUP + ' on the host: getent group ' + GROUP + '>'}\"",
+            "       volumes:",
+            *[f"         - {d}:{d}:rw" for d in dirs],
+            "  3. Run the launch again.",
+        ])
+    return "\n".join([
+        f"gpu-power: {user} cannot change the GPU power settings of {cards}.",
+        f"To allow it (once; adds {user} to the {GROUP} group, which may write only these cards' power files):",
+        f"  1. {grant_command(args, user)}",
+        f"  2. Log out and back in (or run: newgrp {GROUP}).",
+        "  3. Run the launch again.",
+        f"To see the rule first add --print to step 1; to undo: sudo {_bigcherry(args, 'gpu-power', 'revoke', here=True)}",
+    ])
 
 
 def cmd_apply(args: Namespace) -> int:
