@@ -150,48 +150,61 @@ class SetupStepsTests(unittest.TestCase):
     def test_fresh_host_creates_the_group_then_adds_the_user(self):
         s = power_setup.steps(_probe(group_exists=False, rule_installed=False, user_in_group=False,
                                      session_in_group=False), _cmd)
-        self.assertEqual(s[0].split("    ")[0], "sudo HERE gpu-power grant")
-        self.assertEqual(s[1], "sudo usermod -aG bigcherry-gpu alice    then log out and back in")
-        self.assertEqual(s[2], "Run the launch again.")
+        self.assertEqual(s[0].code, ("sudo HERE gpu-power grant",))
+        self.assertEqual(s[1].code, ("sudo usermod -aG bigcherry-gpu alice",))
+        self.assertIn("log out and back in", s[1].text)
+        self.assertEqual(s[2].text, "Run the launch again.")
         self.assertEqual(len(s), 3)
 
     def test_group_exists_user_not_in_it(self):
         s = power_setup.steps(_probe(user_in_group=False, session_in_group=False), _cmd)
-        self.assertEqual(s[0], "sudo usermod -aG bigcherry-gpu alice    then log out and back in")
+        self.assertEqual(s[0].code, ("sudo usermod -aG bigcherry-gpu alice",))
 
     def test_member_but_not_in_this_session(self):
-        self.assertIn("Log out and back in", power_setup.steps(_probe(session_in_group=False), _cmd)[0])
+        s = power_setup.steps(_probe(session_in_group=False), _cmd)
+        self.assertIn("Log out and back in", s[0].text)
+        self.assertEqual(s[0].code, ("newgrp bigcherry-gpu",))
 
     def test_complete_setup_has_no_steps(self):
         self.assertEqual(power_setup.steps(_probe(), _cmd), [])
 
     def test_overdrive_off_comes_first(self):
         s = power_setup.steps(_probe(cards=(power_setup.Card("0000:03:00.0", "amdgpu", False),)), _cmd)
-        self.assertIn("amdgpu.ppfeaturemask", s[0])
+        self.assertEqual(s[0].code, ("amdgpu.ppfeaturemask=0xfff7ffff",))
 
     def test_container_creates_the_group_on_the_host_then_maps_group_and_gpus(self):
         p = _probe(container="docker", group_exists=False, rule_installed=False, user_in_group=False,
                    session_in_group=False)
         with mock.patch.object(power_setup.os.path, "realpath", lambda p: "/sys/devices/x/" + p.rsplit("/", 1)[1]):
             s = power_setup.steps(p, _cmd)
-        self.assertTrue(s[0].startswith("On the host, create the group bigcherry-gpu"))
-        self.assertIn("sudo groupadd --system bigcherry-gpu", s[0])
-        self.assertIn("\nEOF\n", s[0])               # pasteable heredoc
-        self.assertNotIn("HERE", s[0])               # nothing from bigcherry needed on the host
-        self.assertNotIn("KERNEL==", s[0])
-        self.assertIn("group_add:", s[1])
-        self.assertIn("    - /sys/devices/x/0000:03:00.0:/sys/devices/x/0000:03:00.0:rw", s[1])
-        self.assertEqual(s[2], "Run the launch again.")
-        self.assertNotIn("usermod", "\n".join(s))
+        self.assertTrue(s[0].text.startswith("On the host, create the group bigcherry-gpu"))
+        self.assertEqual(s[0].code[0], "sudo groupadd --system bigcherry-gpu")
+        self.assertNotIn("HERE", "\n".join(s[0].code))     # nothing from bigcherry needed on the host
+        self.assertNotIn("KERNEL==", "\n".join(s[0].code))
+        self.assertIn("  - /sys/devices/x/0000:03:00.0:/sys/devices/x/0000:03:00.0:rw", s[1].code)
+        self.assertEqual(s[1].code[0], "group_add:")
+        self.assertEqual(s[2].text, "Run the launch again.")
 
-    def test_render_numbers_the_steps(self):
+    def test_container_host_commands_are_valid_shell(self):
+        import shutil
+        import subprocess
+        bash = shutil.which("bash")
+        if not bash:
+            self.skipTest("no bash")
+        s = power_setup.steps(_probe(container="docker"), _cmd)
+        done = subprocess.run([bash, "-n"], input="\n".join(s[0].code), text=True, capture_output=True)
+        self.assertEqual(done.returncode, 0, done.stderr)
+
+    def test_render_spaces_the_steps_and_indents_the_code(self):
         text = power_setup.render(_probe(user_in_group=False, session_in_group=False), _cmd)
-        self.assertTrue(text.startswith("gpu-power: cannot write the GPU power settings as alice. To set it up once:"))
-        self.assertIn("\n1. sudo usermod", text)
+        self.assertTrue(text.startswith("gpu-power: cannot write the GPU power settings as alice.\n\nTo set it up (once):\n\n"))
+        self.assertIn("  1. Add alice to the group, then log out and back in:\n\n       sudo usermod -aG bigcherry-gpu alice\n\n",
+                      text)
+        self.assertIn("  2. Run the launch again.", text)
 
     def test_not_linux_and_no_gpu(self):
-        self.assertIn("not Linux", power_setup.steps(_probe(linux=False), _cmd)[0])
-        self.assertIn("No GPU", power_setup.steps(_probe(cards=()), _cmd)[0])
+        self.assertIn("not Linux", power_setup.steps(_probe(linux=False), _cmd)[0].text)
+        self.assertIn("No GPU", power_setup.steps(_probe(cards=()), _cmd)[0].text)
 
 
 if __name__ == "__main__":

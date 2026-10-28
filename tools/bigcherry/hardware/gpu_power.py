@@ -201,4 +201,5 @@ def udev_rules(drivers: list[str], group: str) -> str:
 
 
 def _udev_chgrp(match: str, path: str, group: str) -> str:
-    return f'{match}, RUN+="/bin/sh -c \'chgrp {group} /sys%p/{path}; chmod g+w /sys%p/{path}\'"'
+    # Two plain commands, no shell and no inner quotes, so the rule reads (and pastes) cleanly.
+    return f'{match}, RUN+="/bin/chgrp {group} /sys%p/{path}", RUN+="/bin/chmod g+w /sys%p/{path}"'

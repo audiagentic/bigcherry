@@ -119,7 +119,7 @@ class GpuPowerUdevTests(unittest.TestCase):
         lines = [line for line in rules.splitlines() if not line.startswith("#")]
         self.assertEqual(len(lines), 2)
         self.assertIn('SUBSYSTEM=="pci", DRIVER=="amdgpu"', lines[0])
-        self.assertIn("chgrp bigcherry-gpu /sys%p/pp_od_clk_voltage; chmod g+w /sys%p/pp_od_clk_voltage", lines[0])
+        self.assertIn('RUN+="/bin/chgrp bigcherry-gpu /sys%p/pp_od_clk_voltage", RUN+="/bin/chmod g+w /sys%p/pp_od_clk_voltage"', lines[0])
         self.assertIn('SUBSYSTEM=="hwmon", ATTR{name}=="amdgpu"', lines[1])
 
     def test_group_names_are_checked(self):

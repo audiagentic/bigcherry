@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import getpass
 import os
+import shlex
 import sys
 from dataclasses import dataclass
 
@@ -72,53 +73,66 @@ def probe(group: str) -> Probe:
     )
 
 
-def steps(p: Probe, cmd) -> list[str]:
+@dataclass(frozen=True)
+class Step:
+    text: str                       # what to do, one sentence
+    code: tuple[str, ...] = ()      # lines to paste (commands or config), shown as an indented block
+
+
+def steps(p: Probe, cmd) -> list[Step]:
     """The steps still needed. ``cmd(*words)`` renders a bigcherry command as this session runs it."""
     if not p.linux:
-        return ["GPU power settings use Linux sysfs; this system is not Linux."]
+        return [Step("GPU power settings use Linux sysfs; this system is not Linux.")]
     if not p.cards:
-        return [f"No GPU here has a supported power driver ({', '.join(sorted(gpu_power.BACKENDS))})."]
-    out: list[str] = []
+        return [Step(f"No GPU here has a supported power driver ({', '.join(sorted(gpu_power.BACKENDS))}).")]
+    out: list[Step] = []
     for driver in sorted({c.driver for c in p.cards if not c.overdrive_on}):
-        out.append(f"{'On the host: ' if p.container else ''}add {gpu_power.BACKENDS[driver].kernel_option} to the "
-                   "kernel command line (your bootloader's config), then reboot.")
+        out.append(Step(f"{'On the host, turn' if p.container else 'Turn'} on the GPU driver's voltage/clock controls: "
+                        "add this to the kernel command line (your bootloader's config), then reboot.",
+                        (gpu_power.BACKENDS[driver].kernel_option,)))
     if p.container:
         rules = gpu_power.udev_rules([c.driver for c in p.cards], p.group)
         dirs = [os.path.realpath(f"{gpu_power.SYSFS_PCI}/{c.locator}") for c in p.cards]
-        out.append("\n".join([
+        out.append(Step(
             f"On the host, create the group {p.group} with write access to the GPUs' power settings:",
-            f"sudo groupadd --system {p.group}",
-            f"sudo tee {RULES} >/dev/null <<'EOF'",
-            *rules.splitlines(),
-            "EOF",
-            "sudo udevadm control --reload && sudo udevadm trigger",
-            f"getent group {p.group}    # the number after the second colon is its id",
-        ]))
-        out.append("\n".join([
-            "In this container's compose service, add the group and map the GPUs, then recreate the container "
-            "(compose up -d; a restart keeps the old settings):",
-            "  group_add:",
-            f'    - "<id of {p.group}>"',
-            "  volumes:",
-            *[f"    - {d}:{d}:rw" for d in dirs],
-        ]))
+            (f"sudo groupadd --system {p.group}",
+             "printf '%s\\n' \\",
+             *[f"  {shlex.quote(line)} \\" for line in rules.splitlines()],
+             f"  | sudo tee {RULES} >/dev/null",
+             "sudo udevadm control --reload && sudo udevadm trigger",
+             f"getent group {p.group} | cut -d: -f3      # prints the group's id, used in the next step")))
+        out.append(Step(
+            "Add the group and the GPUs to this container's compose service, then recreate the container "
+            "(docker compose up -d <service>; a plain restart keeps the old settings):",
+            ("group_add:",
+             f'  - "<id of {p.group}>"',
+             "volumes:",
+             *[f"  - {d}:{d}:rw" for d in dirs])))
     else:
         if not p.group_exists or not p.rule_installed:
-            out.append(f"sudo {cmd('gpu-power', 'grant')}    (creates the group {p.group} with write access to the "
-                       "GPUs' power settings)")
+            out.append(Step(f"Create the group {p.group} with write access to the GPUs' power settings:",
+                            (f"sudo {cmd('gpu-power', 'grant')}",)))
         if not p.user_in_group:
-            out.append(f"sudo usermod -aG {p.group} {p.user}    then log out and back in")
+            out.append(Step(f"Add {p.user} to the group, then log out and back in:",
+                            (f"sudo usermod -aG {p.group} {p.user}",)))
         elif not p.session_in_group:
-            out.append(f"Log out and back in (or run: newgrp {p.group}).")
+            out.append(Step(f"Log out and back in so this session has the group (or run it in this shell):",
+                            (f"newgrp {p.group}",)))
     if out:
-        out.append("Run the launch again.")
+        out.append(Step("Run the launch again."))
     return out
 
 
 def render(p: Probe, cmd) -> str:
-    where = f"in this {p.container} container" if p.container else f"as {p.user}"
+    where = f"inside this {p.container} container" if p.container else f"as {p.user}"
     todo = steps(p, cmd)
     if not todo:
         return f"gpu-power: cannot write the GPU power settings {where}, although the setup looks complete."
-    return "\n".join([f"gpu-power: cannot write the GPU power settings {where}. To set it up once:",
-                      *[f"{i}. {s}" for i, s in enumerate(todo, 1)]])
+    lines = [f"gpu-power: cannot write the GPU power settings {where}.", "", "To set it up (once):", ""]
+    for i, step in enumerate(todo, 1):
+        lines.append(f"  {i}. {step.text}")
+        if step.code:
+            lines.append("")
+            lines += [f"       {line}" for line in step.code]
+        lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
