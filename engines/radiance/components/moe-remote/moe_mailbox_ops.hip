@@ -3,7 +3,6 @@
 #include "moe_remote_hook.h"
 #include "moe_remote_shm.h"
 #include "rad_abi.h"
-#include "route_compact.h"
 
 #include <hip/hip_runtime.h>
 
@@ -181,14 +180,20 @@ __global__ void mailbox_publish_kernel(
         if (threadIdx.x == 0) nr = 0;
         __syncthreads();
         Route* route = reinterpret_cast<Route*>(base + h->route_offset[slot]);
-        compact_routes(rows * top_k, top_k, &nr, route, ew, ids, !shadow, [&](uint32_t i) -> int32_t {
+        for (uint32_t i = threadIdx.x; i < rows * top_k; i += blockDim.x) {
             const int32_t le = ids[i] - expert_base;
             const bool in_range = le >= 0 && (uint32_t)le < n_expert && (uint32_t)le < h->expert_count;
             /* R3_MOE_WORKER_HISTOGRAM: every route this step makes, owned or not, counted once (first slot). */
             if (heat && k == 0 && in_range) atomicAdd(heat + (size_t)layer * h->expert_count + (uint32_t)le, 1u);
-            return in_range && slot_map[(uint32_t)le] >= 0 && owner_has(own, layer, (uint32_t)le, h->expert_count)
-                       ? le : -1;
-        });
+            if (!in_range || slot_map[(uint32_t)le] < 0 || !owner_has(own, layer, (uint32_t)le, h->expert_count))
+                continue;
+            const uint32_t p = atomicAdd(&nr, 1u);
+            route[p].token = (int32_t)(i / top_k);
+            route[p].expert = le;
+            route[p].weight_bf16 = ew[i];
+            route[p].slot = (uint16_t)(i % top_k);
+            if (!shadow) ids[i] = -1;
+        }
         __syncthreads();
         if (threadIdx.x == 0) step_nr[k] = nr;
         __syncthreads();

@@ -1,4 +1,7 @@
-/* RAD29: route compaction for the mailbox publish, one shared-memory reservation a wave rather than one a route.
+/* RAD29 (shelved, evaluated 2026-10-28): wave-aggregated route compaction, one shared-memory reservation a wave rather
+ * than one a route. Correct on gfx1100/gfx1201 but 0-7% slower than the per-route atomic loop the mailbox publish kernel
+ * keeps (the loop is bound by reading ids/ownership, not by LDS atomics); kept with route_compact_test, which times it
+ * against that loop, so the idea can be revisited (see RAD29).
  *
  * Every thread of the block calls this with the same arguments; the loop bound is uniform, so the ballot and the
  * shuffle always see the whole wave and an out-of-range lane just votes no. A wave's accepted routes take one contiguous
