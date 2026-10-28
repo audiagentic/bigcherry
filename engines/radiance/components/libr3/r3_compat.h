@@ -337,6 +337,15 @@ __device__ __forceinline__ r3_v16bf r3_row16_e4m3_to_bf16(const unsigned char* p
     return __builtin_bit_cast(r3_v16bf, out);
 }
 
+// A row held in registers the gfx12 way: this lane has 8 of its row's 16 E4M3 codes (k 0-7 in lanes 0-15, k 8-15 in
+// lanes 16-31, two dwords each); the partner lane (lane ^ 16) has the other 8. One exchange of two dwords gives every
+// lane the whole row, widened to the gfx11 bf16 fragment.
+__device__ __forceinline__ r3_v16bf r3_row16_e4m3_regs_to_bf16(unsigned w0, unsigned w1, unsigned lane) {
+    const unsigned p0 = r3_from_lane(lane ^ 16u, w0), p1 = r3_from_lane(lane ^ 16u, w1);
+    const r3_u4 row = (lane & 16u) ? r3_u4{p0, p1, w0, w1} : r3_u4{w0, w1, p0, p1};
+    return r3_row16_e4m3_to_bf16(reinterpret_cast<const unsigned char*>(&row));
+}
+
 // The same row when the kernel has staged it as bf16 already (r3_store*_e4m3_as_bf16 below): a plain 32-byte load.
 __device__ __forceinline__ r3_v16bf r3_row16_e4m3_to_bf16(const unsigned short* p) {
     typedef unsigned r3_u8u __attribute__((ext_vector_type(8), aligned(2)));
