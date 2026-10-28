@@ -96,6 +96,17 @@ def _write(path: str, value: str) -> None:
 
 #: where grant writes its rules (udev reads /etc/udev/rules.d)
 RULES = Path("/etc/udev/rules.d/70-bigcherry-gpu-power.rules")
+#: the group grant gives the write access to by default: its own, so only users added to it can change voltage and power
+#: (video holds every GPU user on most hosts); grant creates it when it is missing
+GROUP = "bigcherry-gpu"
+
+
+def _gid(group: str) -> int | None:
+    try:
+        import grp  # noqa: PLC0415 -- POSIX only
+        return grp.getgrnam(group).gr_gid
+    except (ImportError, KeyError):
+        return None
 
 
 def _configured(args: Namespace) -> list[tuple[environment.Device, str | None, str | None]]:
@@ -109,13 +120,22 @@ def _blocked(cards) -> list[str]:
             if not os.access(path, os.W_OK)]
 
 
+def _read_only_mount(path: str) -> bool:
+    """Whether ``path`` (or, when it is missing, its directory) lies on a read-only mount."""
+    probe = path if os.path.exists(path) else os.path.dirname(path)
+    try:
+        return bool(os.statvfs(probe).f_flag & os.ST_RDONLY)
+    except (OSError, AttributeError):   # no statvfs on Windows
+        return False
+
+
 def grant_command(args: Namespace, user: str) -> str:
     """The exact command that grants ``user`` the write access, from this checkout and environment file."""
     env = os.environ.get("BIGCHERRY_ENVIRONMENT")
     tools = Path(__file__).resolve().parents[2]
     host = ["--host", args.host] if getattr(args, "host", None) else []
     cmd = ["sudo", *(["BIGCHERRY_ENVIRONMENT=" + env] if env else []), f"PYTHONPATH={tools}", sys.executable or "python3",
-           "-m", "bigcherry", "gpu-power", "grant", *host, "--user", user, "--group", "video"]
+           "-m", "bigcherry", "gpu-power", "grant", *host, "--user", user, "--group", GROUP]
     return " ".join(shlex.quote(c) for c in cmd)
 
 
@@ -128,11 +148,23 @@ def explain_blocked(blocked: list[str], args: Namespace) -> str:
     if any(p.endswith("pp_od_clk_voltage") and not os.path.exists(p) for p in blocked):
         lines.append("  a missing pp_od_clk_voltage means the driver's OverDrive is off: add "
                      "amdgpu.ppfeaturemask=0xfff7ffff to the kernel command line and reboot")
+    readonly = [p for p in blocked if _read_only_mount(p)]
+    if readonly:
+        # A container's /sys is mounted read-only (Docker/Podman default): no permission change reaches it.
+        devices = sorted({os.path.realpath(p).split("/hwmon/")[0].rsplit("/pp_od_clk_voltage", 1)[0] for p in readonly})
+        lines += [
+            "/sys is mounted read-only here (a container): group write access cannot reach these files. Either run "
+            "`bigcherry gpu-power apply` on the host, or give the container the cards' sysfs directories read-write "
+            "and restart it:",
+            *[f"  docker run ... -v {d}:{d}:rw   (compose: - {d}:{d}:rw)" for d in devices],
+            "and, on the host, the grant below; the container user needs the host's group by number "
+            f"(docker run --group-add {_gid(GROUP) or '<host gid of ' + GROUP + '>'}).",
+        ]
     lines += [
         "To let this user apply them (once; a udev rule giving one group write access to these cards' power files only):",
         f"  {grant_command(args, user)}",
-        "then log out and in (or run `newgrp video`) so the group takes effect. Any group the user is in can replace "
-        "video; `gpu-power grant --print` shows the rule, `gpu-power revoke` removes it.",
+        f"then log out and in (or run `newgrp {GROUP}`) so the group takes effect. grant creates {GROUP} when it is "
+        "missing (--group names another); `gpu-power grant --print` shows the rule, `gpu-power revoke` removes it.",
     ]
     return "\n".join(lines)
 
@@ -195,6 +227,12 @@ def cmd_grant(args: Namespace) -> int:
         print("gpu-power grant: run it with sudo (it writes a udev rule" + (" and adds the user to the group" if args.user
               else "") + "); --print shows the rule without installing it", file=sys.stderr)
         return 2
+    if _gid(args.group) is None:
+        if args.group != GROUP:
+            print(f"gpu-power grant: group {args.group!r} does not exist (only the default {GROUP} is created)",
+                  file=sys.stderr)
+            return 1
+        _run(["groupadd", "--system", GROUP])
     RULES.write_text(rules, encoding="utf-8")
     print(f"wrote {RULES} ({len(cards)} card(s), group {args.group})")
     if args.user:
@@ -232,7 +270,7 @@ def register(sub) -> None:
     rs.set_defaults(func=cmd_restore)
     gr = psub.add_parser("grant", help="let a group write the configured cards' power files, via a udev rule (sudo)")
     gr.add_argument("--host")
-    gr.add_argument("--group", default="video", help="group given write access (default video)")
+    gr.add_argument("--group", default=GROUP, help=f"group given write access (default {GROUP}, created when missing)")
     gr.add_argument("--user", help="also add this user to the group")
     gr.add_argument("--print", action="store_true", help="print the udev rule instead of installing it (no privileges)")
     gr.set_defaults(func=cmd_grant)
