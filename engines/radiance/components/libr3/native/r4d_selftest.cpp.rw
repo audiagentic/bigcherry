@@ -626,50 +626,67 @@ static void attn_split_scratch_case(const Plugin& pl, const SplitGeo& g, const c
                r3_split_bound()));
 @@ end
 
-# Diagnostic (RAD32): the grouped MXFP4 case reports its first mismatches, with the wanted and actual bf16 bits and
-# their classes, so a failure on a gfx11 card says what differs (finite/inf/NaN) and where.
+# The grouped MXFP4 case on a gfx11 card (RAD32). The gfx11 matrix instruction (bf16 and f16 alike; probe
+# tools/lab/radiance/rad32-wmma-exact.hip, run rad32-wmma-exact on an RX 7900 XTX) does not add exactly: even one 16-term
+# product from a zero accumulator misses the exact sum in about a third of cases, by up to 2^-17 (about 1e-8 of the sum of
+# the absolute products), and returns a non-zero value for sums that cancel exactly. The self-test's `exceptional` rows pair
+# E8M0 scales up to 2^125 with groups whose sums cancel exactly, so that error scales to 1e30. A card whose matrix
+# instruction adds in f32 exactly (gfx1201) must still match exactly; here each output element is held to the instruction's
+# own error: its tolerance grows by 2^-20 of the sum, over the K groups, of |activation scale| * |E8M0 scale| * the sum of
+# the absolute products of the group. Rows without extreme scales are unaffected (the bound is far below their 0.004
+# absolute floor), and a first mismatch still prints its group sums.
 @@ find 1
     const auto* values = (const uint16_t*)(got.data() + 128);
 @@ replace
     const auto* values = (const uint16_t*)(got.data() + 128);
+    static const double r3_mag[8] = { 0, 0.5, 1, 1.5, 2, 3, 4, 6 };
+    auto r3_element = [&](int r, int c, bool print) {   // the matrix instruction's own error bound for element (r, c)
+        int e = 0;
+        while (e + 1 < NE && offsets[(size_t)e + 1] <= r) ++e;
+        const int q = e & 1, flat = sorted[(size_t)r];
+        const int ar = std::string(order) == "sorted" ? r : flat / top;
+        const int Kq = K[q], n = c % N[q];
+        double bound = 0;
+        if (print)
+            std::printf("      expert %d class %d a-row %d, n %d, K %d, asc[0] %g\n", e, q, ar, n, Kq, asc[(size_t)ar * asp]);
+        for (int g = 0; g < Kq / 32; ++g) {
+            double raw = 0, absum = 0;
+            for (int k = g * 32; k < g * 32 + 32; ++k) {
+                const size_t wi = (size_t)n * Kq + k;
+                const uint8_t byte = weights[(size_t)e][wi / 2];
+                const int code = (wi & 1) ? byte >> 4 : byte & 15;
+                const double term = (code & 8 ? -1 : 1) * r3_mag[code & 7] * rad_fp8e4m3_to_f32(av[(size_t)ar * ap + k]);
+                raw += term;
+                absum += std::fabs(term);
+            }
+            const int e8 = (int)scales[(size_t)e][(size_t)n * (Kq / 32) + g];
+            if (e8 != 255)
+                bound += std::ldexp(1.0, e8 - 127) * (double)asc[(size_t)ar * asp + g / 4] * absum;
+            if (print) std::printf("      group %d raw %g, e8m0 %d\n", g, raw, e8);
+        }
+        return (float)(bound * std::ldexp(1.0, -20));
+    };
     {
         int shown = 0;
         auto cls = [](float x) { return std::isnan(x) ? "nan" : std::isinf(x) ? (x > 0 ? "+inf" : "-inf") : "fin"; };
         for (int r = 0; r < T0 && shown < 8; ++r)
             for (int c = 0; c < OUT && shown < 8; ++c) {
                 const float want = h_bf16(expected[(size_t)r * yp + c]), value = h_bf16(values[r * yp + c]);
-                const bool same = std::isnan(want) ? std::isnan(value)
-                                  : std::isinf(want) ? value == want
-                                                     : std::isfinite(value) &&
-                                                           std::fabs(value - want) <= 0.004f + 0.008f * std::fabs(want);
-                if (!same) {
-                    std::printf("    mismatch M=%d row %d col %d: want %s %08x (%g), got %s %08x (%g)\n", M, r, c,
-                                cls(want), (unsigned)expected[(size_t)r * yp + c] << 16, want, cls(value),
-                                (unsigned)values[r * yp + c] << 16, value);
-                    if (shown == 0) {   // the element's per-32 group sums and scales, recomputed on the host
-                        int e = 0;
-                        while (e + 1 < NE && offsets[(size_t)e + 1] <= r) ++e;
-                        const int q = e & 1, flat = sorted[(size_t)r];
-                        const int ar = std::string(order) == "sorted" ? r : flat / top;
-                        const int Kq = K[q], n = c % N[q];
-                        static const double mag[8] = { 0, 0.5, 1, 1.5, 2, 3, 4, 6 };
-                        std::printf("      expert %d class %d a-row %d, n %d, K %d, asc[0] %g\n", e, q, ar, n, Kq,
-                                    asc[(size_t)ar * asp]);
-                        for (int g = 0; g < Kq / 32; ++g) {
-                            double raw = 0;
-                            for (int k = g * 32; k < g * 32 + 32; ++k) {
-                                const size_t wi = (size_t)n * Kq + k;
-                                const uint8_t byte = weights[(size_t)e][wi / 2];
-                                const int code = (wi & 1) ? byte >> 4 : byte & 15;
-                                const double w = (code & 8 ? -1 : 1) * mag[code & 7];
-                                raw += w * rad_fp8e4m3_to_f32(av[(size_t)ar * ap + k]);
-                            }
-                            std::printf("      group %d raw %g, e8m0 %d\n", g, raw,
-                                        (int)scales[(size_t)e][(size_t)n * (Kq / 32) + g]);
-                        }
-                    }
-                    ++shown;
-                }
+                if (std::isnan(want) ? std::isnan(value)
+                    : std::isinf(want) ? value == want
+                                       : std::isfinite(value) && std::fabs(value - want) <= 0.004f + 0.008f * std::fabs(want) +
+                                                                                                r3_element(r, c, false))
+                    continue;
+                std::printf("    mismatch M=%d row %d col %d: want %s %08x (%g), got %s %08x (%g), tolerance +%g\n", M, r, c,
+                            cls(want), (unsigned)expected[(size_t)r * yp + c] << 16, want, cls(value),
+                            (unsigned)values[r * yp + c] << 16, value, r3_element(r, c, shown == 0));
+                ++shown;
             }
     }
+@@ end
+
+@@ find 1
+                                                               0.004f + 0.008f * std::fabs(want));
+@@ replace
+                                                               0.004f + 0.008f * std::fabs(want) + r3_element(r, c, false));
 @@ end
