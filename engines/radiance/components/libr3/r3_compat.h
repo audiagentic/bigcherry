@@ -91,6 +91,17 @@ __device__ __forceinline__ r3_v2f r3_cvt_pk_f32_fp8(int src, bool hi) {
 #define __builtin_amdgcn_cvt_pk_fp8_f32 r3_cvt_pk_fp8_f32
 #define __builtin_amdgcn_cvt_pk_f32_fp8 r3_cvt_pk_f32_fp8
 
+// v_dot4_f32_fp8_fp8 (gfx12, radiance 1.13.0's MXFP4 GEMV): the four E4M3 products of a and b, byte by byte, added to
+// c. Each product is exact in f32 (two 4-bit significands); they are summed in byte order onto c, so a result can
+// differ from the hardware's single fused sum in the last bit.
+__device__ __forceinline__ float r3_dot4_f32_fp8_fp8(int a, int b, float c) {
+#pragma unroll
+    for (int i = 0; i < 4; ++i)
+        c = fmaf(r3_e4m3_to_f32(((uint32_t)a >> (8 * i)) & 0xffu), r3_e4m3_to_f32(((uint32_t)b >> (8 * i)) & 0xffu), c);
+    return c;
+}
+#define __builtin_amdgcn_dot4_f32_fp8_fp8 r3_dot4_f32_fp8_fp8
+
 // ------------------------------------------------------------------ the workgroup barrier
 //
 // gfx12 splits the barrier into s_barrier_signal and s_barrier_wait. libr4d issues them as a pair on the workgroup
