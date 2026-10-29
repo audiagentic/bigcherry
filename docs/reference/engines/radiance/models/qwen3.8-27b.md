@@ -48,6 +48,25 @@ measured the all-reduce at 27.8% of prefill on 2026-10-14. The tiled GEMM runs a
 measured 142 TFLOP/s roof (run `rr09c`). The all-reduce is link time for its bytes: 7.17 MB per large call, p50
 2.0-2.15 ms on wht6, about 3.4-3.6 MB/ms (run `art3`).
 
+### radiance 1.13.0 (RAD32, PR #451, 2026-10-29)
+
+Same harness as the v1.9.0 baseline (`tools/lab/radiance/rad32-perf.sh 27b 3`: engine-bench, 7.2K prompt, 128 decode
+tokens, no drafter, `--tp 2 --tp-wire wht6`, fp8 KV) unless stated.
+
+| Measure | v1.13.0 | v1.9.0, same harness | Source |
+|---|---|---|---|
+| Prefill, 7.2K | 2,580 / 2,598 / 2,792 tok/s | 2,155-2,287 | `rad32-perf-10291310` (14616743f); baseline build 67a435be.../1cb6feb8... |
+| Decode, no drafter | 46.2 / 46.2 / 46.1 tok/s | 42.6-42.7 | `rad32-perf-10291310` |
+| Decode, dflash2 drafter (depth 7), 2.3K and 6.5K context, 256 tokens, greedy | 58-91 tok/s, typically ~80; 30-36% of drafts accepted | not recorded in this harness | `rad32-drafter-10290405` (038fdb2af: 66-87), GEMV runs under `/work/development/tmp/bigcherry/rad32-gemv/` (f6ce657d4) |
+
+The drafter is short of radiance 1.3.0's 102.8 / 109.1 tok/s after a 2.3K / 6.5K prefill (`p4-tp2spec`, exact wire,
+same dflash2 depth 7). The wire is not the cause (exact and wht6 measure the same, 2026-10-29); acceptance is not either
+(~3.4 tokens a step). The verify step is: about 48 ms against 22 ms for a plain step (profiles
+`rad32-drafter-prof-10290408` / `rad32-nodraft-prof-10290409`), almost all in the target's MXFP4 GEMMs at eight rows.
+#451 stages the GEMV activation in K slabs (1-row K=25600 207 -> 417-553 GB/s), pads staged rows and takes two column
+tiles a block at 2-16 rows (8 rows: plain 188-204 -> 198-242 GB/s, gated 185-220 -> 242-288), bit-identical; an
+8-row GEMV is still about half the 1-row bandwidth. Follow-up: RAD36.
+
 ## What is on and why
 
 No engine patch is part of the 27B configuration in any record read for this page (rad0001 concerns the Flash-Next prefill

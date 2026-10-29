@@ -9,7 +9,31 @@
 # layout through the K loop; the boundary rescale multiplies a lane by its column's ratio, which is the same in
 # both layouts. It is moved to the gfx12 layout once, in front of the epilogue, which is unchanged.
 
-@@ find 2
+# radiance 1.13.0's DTM form unpacks W into registers (wf[step]: 8 codes a lane, the gfx12 fragment) and
+# double-buffers A as E4M3 in shared memory. Native: one two-dword exchange with the partner lane gives every lane
+# its column's 16 codes (r3_row16_e4m3_regs_to_bf16), A's row is widened from shared memory, and the gfx11 bf16
+# WMMA accumulates in the gfx11 layout, which the epilogue rule below moves to the gfx12 layout once.
+@@ find 1
+      const int kk = step * 16 + kb8;
+      mxd_v2i af[DTM];
+#pragma unroll
+      for (int i = 0; i < DTM; ++i) {
+        const unsigned char* pa = &sA[buf][(i * 16 + col) * STR + kk];
+        af[i][0] = *(const int*)pa; af[i][1] = *(const int*)(pa + 4);
+      }
+#pragma unroll
+      for (int i = 0; i < DTM; ++i)
+        acc[i] = __builtin_amdgcn_wmma_f32_16x16x16_fp8_fp8_w32_gfx12(wf[step], af[i], acc[i]);
+@@ replace
+      const int kk = step * 16;  // libr3 native: the row's 16 codes, in every lane
+      const r3_v16bf wn = r3_row16_e4m3_regs_to_bf16((unsigned)wf[step][0], (unsigned)wf[step][1], (unsigned)lane);
+#pragma unroll
+      for (int i = 0; i < DTM; ++i)
+        acc[i] = r3_wmma_bf16_native(wn, r3_row16_e4m3_to_bf16(&sA[buf][(i * 16 + col) * STR + kk]), acc[i]);
+@@ end
+
+# The one-fragment form still stages W in shared memory.
+@@ find 1
       const int kk = step * 16 + kb8;
       mxd_v2i af[DTM], wf;
 #pragma unroll

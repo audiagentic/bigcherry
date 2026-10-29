@@ -1,0 +1,97 @@
+# Native gfx11 matrix products for r4d_moe_mxfp4 (radiance 1.13.0's canonical-MXFP4 MoE, five kernel forms).
+#
+# libr4d stages E4M3 bytes in shared memory and calls the gfx12 fp8 WMMA: each 32-wide group's two 16x16x16 products
+# chain from a zero accumulator, then fold as raw * activation scale * E8M0 scale in f32. Native: the same bytes are read
+# as whole 16-code rows (a gfx11 fragment holds the row in every lane), widened exactly to bf16 (E4M3 is exact in bf16),
+# and the gfx11 bf16 WMMA runs the same chain on the same zero accumulator, f32 inside. The folding, the scales, the
+# staging and every index stay as they are: r3_frag_a_e4m3 feeds A's rows in the order that puts D row 8h + j in
+# slot j of lane half h, the layout the kernels already index (r3_compat.h).
+
+# Row-group form (a one-wave block).
+@@ find 1
+                    raw = r4d_fp8::mma(r4d_fp8::frag<128>(aa, 0, k, lane),
+                                       r4d_fp8::frag<128>(bb, 0, k, lane), raw);
+@@ replace
+                    raw = r3_wmma_bf16_native(r3_frag_a_e4m3(aa, 136, 0, k, lane),
+                                              r3_frag_b_e4m3(bb, 136, 0, k, lane), raw);
+@@ end
+
+# GLM prefill form (eight waves).
+@@ find 1
+                    raw = r4d_fp8::mma(r4d_fp8::frag<128>(aa, wave_row * 16, k, lane),
+                                       r4d_fp8::frag<128>(bb, wave_col * 16, k, lane), raw);
+@@ replace
+                    raw = r3_wmma_bf16_native(r3_frag_a_e4m3(aa, 136, wave_row * 16, k, lane),
+                                              r3_frag_b_e4m3(bb, 136, wave_col * 16, k, lane), raw);
+@@ end
+
+# Wide prefill form (P64): A's pitch is AK + 8, B's StageK + 8.
+@@ find 1
+                const auto fa0 = r4d_fp8::frag<AK>(aa, wave_row * 16, ka + group * 32, lane);
+                const auto fa1 = r4d_fp8::frag<AK>(aa, wave_row * 16, ka + group * 32 + 16, lane);
+@@ replace
+                const auto fa0 = r3_frag_a_e4m3(aa, AK + 8, wave_row * 16, ka + group * 32, lane);
+                const auto fa1 = r3_frag_a_e4m3(aa, AK + 8, wave_row * 16, ka + group * 32 + 16, lane);
+@@ end
+
+@@ find 1
+                    auto raw = r4d_fp8::mma(
+                        fa0, r4d_fp8::frag<StageK>(bb, colw + t * 16, kb * 128 + group * 32, lane),
+                        r4d_fp8::acc_zero());
+                    raw = r4d_fp8::mma(
+                        fa1,
+                        r4d_fp8::frag<StageK>(bb, colw + t * 16, kb * 128 + group * 32 + 16, lane),
+                        raw);
+@@ replace
+                    auto raw = r3_wmma_bf16_native(
+                        fa0, r3_frag_b_e4m3(bb, StageK + 8, colw + t * 16, kb * 128 + group * 32, lane),
+                        r4d_fp8::acc_zero());
+                    raw = r3_wmma_bf16_native(
+                        fa1, r3_frag_b_e4m3(bb, StageK + 8, colw + t * 16, kb * 128 + group * 32 + 16, lane),
+                        raw);
+@@ end
+
+# Expert-major form and its staged (short-K) variant: the same lines in both kernels.
+@@ find 2
+                        raw = r4d_fp8::mma(r4d_fp8::frag<StageK>(aa, 0, k, lane),
+                                           r4d_fp8::frag<StageK>(bb, wave * 16, k, lane), raw);
+@@ replace
+                        raw = r3_wmma_bf16_native(r3_frag_a_e4m3(aa, StageK + 8, 0, k, lane),
+                                                  r3_frag_b_e4m3(bb, StageK + 8, wave * 16, k, lane), raw);
+@@ end
+
+# Small-M form: the weight codes stay packed in shared memory and are decoded at the fragment read. A lane decodes its
+# column's 16 codes (two packed dwords) instead of 8.
+@@ find 1
+                r4d_fp8::i2v fa[8], fb[8];
+#pragma unroll
+                for (int t = 0; t < 8; ++t) {
+                    const int k = kb * 128 + 16 * t;
+                    fa[t] = r4d_fp8::frag<StageK>(aa, 0, k, lane);
+                    const uint2 v = mx_codes8(
+                        *reinterpret_cast<const uint32_t*>(bb + mycol * PB + (k + rowbase) / 2));
+                    fb[t] = r4d_fp8::i2v{ (int)v.x, (int)v.y };
+                }
+@@ replace
+                r3_v16bf fa[8], fb[8];
+#pragma unroll
+                for (int t = 0; t < 8; ++t) {
+                    const int k = kb * 128 + 16 * t;
+                    fa[t] = r3_frag_a_e4m3(aa, PA, 0, k, lane);
+                    const uint2 v0 = mx_codes8(*reinterpret_cast<const uint32_t*>(bb + mycol * PB + k / 2));
+                    const uint2 v1 = mx_codes8(*reinterpret_cast<const uint32_t*>(bb + mycol * PB + k / 2 + 4));
+                    fb[t] = r3_e4m3x16_to_bf16(r3_u4{ v0.x, v0.y, v1.x, v1.y });
+                }
+@@ end
+
+@@ find 1
+                    raw[g] = r4d_fp8::mma(fa[2 * g], fb[2 * g], r4d_fp8::acc_zero());
+@@ replace
+                    raw[g] = r3_wmma_bf16_native(fa[2 * g], fb[2 * g], r4d_fp8::acc_zero());
+@@ end
+
+@@ find 1
+                for (int g = 0; g < 4; ++g) raw[g] = r4d_fp8::mma(fa[2 * g + 1], fb[2 * g + 1], raw[g]);
+@@ replace
+                for (int g = 0; g < 4; ++g) raw[g] = r3_wmma_bf16_native(fa[2 * g + 1], fb[2 * g + 1], raw[g]);
+@@ end

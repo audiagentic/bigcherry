@@ -21,7 +21,7 @@ sys.path.insert(0, str(REPO / "tools"))
 from bigcherry.patcher import apply_all  # noqa: E402
 
 PACKAGES = REPO / "engines" / "radiance" / "patches"
-FIXTURE = REPO / "engines" / "radiance" / "tests" / "fixtures" / "48f7b8e"
+FIXTURE = REPO / "engines" / "radiance" / "tests" / "fixtures" / "6645337"
 
 # rad0001 is superseded by radiance 1.7.0 (Engine::~Engine drains the mover stream itself) and is not applied.
 RAD0002 = "rad0002_moe_remote_handoff"
@@ -51,28 +51,28 @@ CASES = {
 PREREQUISITES = {RAD0004: (RAD0002,)}
 
 
-# Git blob prefixes of the exact package outputs against Radiance 1.7.0 (48f7b8e, the release commit 1e968f6 plus two
-# NOTICE-only commits); mismatches detect a port that merely matches guards while silently changes output.
+# Git blob prefixes of the exact package outputs against Radiance 1.13.0 (the release commit 6645337);
+# mismatches detect a port that merely matches guards while silently changes output.
 # (before, after): `before` is the file as the package finds it (None: the package creates it; for a package with
 # prerequisites, after they are applied), `after` the file with the package applied.
 PIN_BLOBS = {
     RAD0002: {
         "abi/bc_moe_remote.h": (None, "c11d4f2"),
-        "arch/common/bc_moe_remote_block.h": (None, "f56d783"),
-        "arch/common/rad_block_hc.h": ("44c538f", "076f308"),
-        "arch/common/rad_block_moe_fp8.h": ("240b82b", "f0a772d"),
+        "arch/common/bc_moe_remote_block.h": (None, "c0dd419"),
+        "arch/common/rad_block_hc.h": ("3a602e5", "d1124d5"),
+        "arch/common/rad_block_moe_fp8.h": ("1c82f10", "f0dffeb"),
         "core/place/bc_moe_remote.cpp": (None, "edb79b7"),
         "core/place/bc_moe_remote_place.h": (None, "e89a83b"),
         "core/place/planner.cpp": ("ac68e59", "8e7f945"),
-        "core/engine_bringup.cpp": ("06c100e", "5446799"),
-        "core/engine.cpp": ("9544e08", "8db53fd"),
+        "core/engine_bringup.cpp": ("6cc4500", "34fafd3"),
+        "core/engine.cpp": ("4dd616e", "e40222b"),
     },
     RAD0003: {
         "arch/common/rad_block_mtp_fp8.h": ("c571d45", "235cebb"),
     },
     RAD0004: {
         "arch/common/bc_moe_remote_diag.h": (None, "3998d25"),
-        "arch/common/rad_block_moe_fp8.h": ("f0a772d", "e8defe4"),
+        "arch/common/rad_block_moe_fp8.h": ("f0dffeb", "2a8c8e0"),
     },
 }
 
@@ -223,7 +223,7 @@ class TestRadiancePatchPackages(unittest.TestCase):
                         self.assertEqual(relative, "core/place/planner.cpp")
                         continue
                     self.assertRegex(
-                        line, r"bc_moe_remote|bc_remote|BcMoeRemote|&&$|^!gather_taken", f"{relative}: {line}"
+                        line, r"bc_moe_remote|bc_remote|BcMoeRemote|&&$|^\(c\.shared_fp32_combine \|\| !gather_taken", f"{relative}: {line}"
                     )
                 text = (root / relative).read_text(encoding="utf-8")
                 self.assertNotIn("rad_moe_remote", text, relative)
@@ -234,7 +234,7 @@ class TestRadiancePatchPackages(unittest.TestCase):
         finally:
             temp.cleanup()
 
-    def test_rad0002_handoff_output_on_1_7_0(self):
+    def test_rad0002_handoff_output_on_the_pin(self):
         temp, root = self._tree()
         try:
             self.assertTrue(all(result.ok for result in apply_all(list(_load(RAD0002)), root)))

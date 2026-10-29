@@ -6,8 +6,8 @@ schema = 1
 name = "libr3"
 engine = "radiance"
 targets = ["gfx1100"]
-# radiance 1.9.0 (plugin ABI 23): the rewrite rules are written against this revision's libr4d and refuse any other.
-built-against = "v1.9.0"
+# radiance 1.13.0 (plugin ABI 31): the rewrite rules are written against this revision's libr4d and refuse any other.
+built-against = "v1.13.0"
 outputs = ["kernels/libr3.so"]
 
 # How the build lane builds it: CMake against the engine installed from the lane's own build (CMAKE_PREFIX_PATH) and
@@ -43,13 +43,13 @@ summary = "native E4M3 decode for hc_read; 58 -> 51 us a call"
 [setting.R3_AR_WIRE4]
 default = "0"
 status = "experimental"
-summary = "4-bit cross-card wire at M >= 512; +5.6% 27B prefill at KLD 0.0044 -> 0.0126 (owner's call)"
+summary = "4-bit cross-card wire at M >= 512; +5.6% 27B prefill at KLD 0.0044 -> 0.0126 (owner's call). Off on radiance 1.13.0 until the fused kernel's native form is re-ported (RAD32)"
 activation = "R3_AR_WIRE4 active"
 
 [setting.R3_AR_PIPE]
 default = "0"
 status = "evaluated"
-summary = "sliced all-reduce in one kernel; byte-identical but 6% slower, shelved"
+summary = "sliced all-reduce in one kernel; byte-identical but 6% slower, shelved (its native form is under native-shelved/ for 1.13.0)"
 
 [setting.R3_AR_TIMING]
 default = "0"

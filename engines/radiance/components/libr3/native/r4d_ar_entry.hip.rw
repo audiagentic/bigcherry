@@ -171,27 +171,28 @@ void release(ArInst* in) {
     if (nblocks > in->max_blocks) nblocks = in->max_blocks;
     if (nblocks < 1) nblocks = 1;
 
-    const int e = r4d_ar_rmsnorm_quant_fp8(
+    const int e = hi8
 @@ replace
     if (nblocks > in->max_blocks) nblocks = in->max_blocks;
     if (nblocks < 1) nblocks = 1;
 
     /* The host twin latches the opt-in at instance init. This is the served path: the large
      * two-XTX reduction is ar_rmsnorm_quant_fp8_host, not the standalone all_reduce row. */
-    const bool r3_wire4 = in->wire4 && wire == 6 && M >= 512;
-    const char* const r3_pipe_env = std::getenv("R3_AR_PIPE");
-    const bool r3_pipe = !r3_wire4 && in->host && wire == 6 && M >= 512 &&
-                         r3_pipe_env && std::strcmp(r3_pipe_env, "1") == 0;
+    /* 1.13.0: R3_AR_WIRE4 (experimental) and R3_AR_PIPE (evaluated) live in the fused kernel's native form, which is
+     * shelved until it is re-ported to 1.13.0's kernel (int8 form, push check): both stay off, so no mode bit reaches
+     * the kernel (native-shelved/r4d_fused_quant_fp8.v1.9.0.hip.rw, RAD32 follow-up). */
+    const bool r3_wire4 = false;
+    const bool r3_pipe = false;
     const int r3_nblocks = nblocks | (r3_wire4 ? 0x20000000 : 0) |
                            (r3_pipe ? 0x40000000 : 0);
     R3ArTimingScope r3_timing(
-        in, "ar_rmsnorm_quant_fp8",
+        in, hi8 ? "ar_rmsnorm_had_quant_i8g" : "ar_rmsnorm_quant_fp8",
         r3_wire4 ? "wht4_push_wait_read_reduce_rmsnorm_quant_kernel"
                   : (r3_pipe ? "wht6_pipe8_push_read_overlap_rmsnorm_quant_kernel"
                              : (wire == 6 ? "wht6_push_wait_read_reduce_rmsnorm_quant_kernel"
                                           : "exact_push_wait_read_reduce_rmsnorm_quant_kernel")),
         r3_wire4 ? 4 : wire, M, K, s);
-    const int e = r4d_ar_rmsnorm_quant_fp8(
+    const int e = hi8
 @@ end
 
 @@ find 1
@@ -202,11 +203,11 @@ void release(ArInst* in) {
 @@ end
 
 @@ find 1
-        (long)(uintptr_t)s, nblocks, nthreads, cfgv.drain, cfgv.acq, wire,
-        in->locpack, in->slot_bytes / 2, wpo ? r4d_addr(wpo) : 0);
+              (long)(uintptr_t)s, nblocks, nthreads, cfgv.drain, cfgv.acq, wire,
+              in->locpack, in->slot_bytes / 2, wpo ? r4d_addr(wpo) : 0);
 @@ replace
-        (long)(uintptr_t)s, r3_nblocks, nthreads, cfgv.drain, cfgv.acq, wire,
-        in->locpack, r3_wire4 ? in->slot_bytes / 4 : in->slot_bytes / 2, wpo ? r4d_addr(wpo) : 0);
+              (long)(uintptr_t)s, r3_nblocks, nthreads, cfgv.drain, cfgv.acq, wire,
+              in->locpack, r3_wire4 ? in->slot_bytes / 4 : in->slot_bytes / 2, wpo ? r4d_addr(wpo) : 0);
 @@ end
 
 @@ find 1

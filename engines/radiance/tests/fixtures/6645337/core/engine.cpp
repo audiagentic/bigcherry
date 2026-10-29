@@ -4,14 +4,18 @@
  */
 #include "engine_priv.h"
 #include "gen/driver.h"
+#include "gen/audio_driver.h"
+#include "gen/video_driver.h"
 #include "kld.h"
 #include "mm/processor.h"
+#include "mm/media.h"
 
 #include "build/startup.h"
 #include "build/rad_build.h"
 #include "device/device.h"
 #include "format/radfile.h"
 #include "gen_config.h"
+#include "kvstream/stage.h"
 #include "sample/accept.h"
 #include "sched/scheduler.h"
 #include "server/adapters.h"
@@ -55,9 +59,22 @@ Engine::Readback::~Readback() {
 }
 
 Engine::~Engine() {
+    /* The control vector's per-rank direction copies. Uploaded at declare, outside any arena, so
+     * nothing else frees them; each rank's copy is freed with that rank's device bound, since the
+     * allocator is per device. */
+    for (const auto& r : ranks_) {
+        if (!r || (size_t) r->index >= cvec_views_.size()) continue;
+        const float* d = cvec_views_[(size_t) r->index].dir;
+        if (!d) continue;
+        if (rad_dev_set(r->device) < 0) continue;
+        rad_dev_free((void*) d, RAD_MEM_DEVICE);
+        cvec_views_[(size_t) r->index].dir = nullptr;
+    }
+    cvec_views_.clear();
     /* --profile-ops prints its final table here, the last point where the program still holds
      * the op table the rows name. */
     if (cfg_.profile_ops) for (auto& r : ranks_) r->ctx.dump_profile();
+    if (stream_ctl_p_) rad_dev_free(stream_ctl_p_, RAD_MEM_HOST_PINNED);
     for (float* p : kld_host_) if (p) rad_dev_free(p, RAD_MEM_HOST_PINNED);
     if (pooled_host_) rad_dev_free(pooled_host_, RAD_MEM_HOST_PINNED);
     for (auto& r : ranks_) if (r->score_host) rad_dev_free(r->score_host, RAD_MEM_HOST_PINNED);
@@ -81,6 +98,9 @@ Engine::~Engine() {
     for (auto& r : ranks_)
         if (RadStream s = r->mover.transfer_stream()) (void)rad_stream_sync(s);
     for (auto& r : ranks_) r->ctx.shutdown();
+    /* The streamed groups' host mirrors are pinned outside every pool; freed after the contexts,
+     * since a pass reads them. Safe after a failed bring-up. */
+    for (auto& r : ranks_) r->kv.free_stream(rad_device_allocator());
     step_state_fini();
     ranks_.clear();
     for (TableCopy& c : table_copies_) table_copy_free(&c);
@@ -141,6 +161,7 @@ int Engine::declare_sampler(int rank, RadBuilder* b, int64_t logits_width, bool 
     sc.max_spec      = cfg_.n_spec;
     sc.rank          = rank;
     sc.world_size    = cfg_.tp;
+    sc.draft_coupling = cfg_.draft_coupling;
     RAD_TRY(smp.declare(b, sc));
 
     /* Where the chain writes the sampled ids. The engine declares it because rad-kbench drives the
@@ -330,6 +351,9 @@ int Engine::prepare_release(const RadBatch* b) {
             step_status_.store(RAD_E_NOMEM, std::memory_order_release);
     }
     if (ranks_.size() > 1) (void)rad_dev_set(ranks_[0]->device);
+    /* The stage bound for every rank (kvstream/stage.h, "Volume"). Rank 0's allocator hands out the
+     * block ids every rank uses, and the ranks are parked, so no allocation races the read. */
+    for (auto& rk : ranks_) kvstream_bound_live(&rk->ctx, ranks_[0]->kv);
     return RAD_OK;
 }
 
@@ -338,6 +362,8 @@ int Engine::issue_ahead(const RadBatch** out) {
     if (!pipelining_) return RAD_OK;
     for (int i = 0; i < serial_rows_ && serial_done_ > 0; ++i)
         sched_.expect_draft(serial_row_[(size_t)i].seq, serial_done_);
+    for (int i = 0; i < block_rows_; ++i)
+        sched_.expect_draft(block_row_[(size_t)i].seq, block_steps_);
     const RadBatch* nb = sched_.step_next();
     if (!nb) return RAD_OK;
     /* Its rows' tokens, positions and slots, advanced on the card behind this step's acceptance
@@ -389,13 +415,19 @@ int Engine::step_loop() {
     std::vector<uint64_t> cancel;
     /* Not in KL mode: its scored rows are copied out of the logits buffer after collection, and a
      * pass issued ahead would overwrite them. */
-    pipelining_ = !cfg_.kld() && !embedding_ && drafter_.kind != RAD_DRAFT_BLOCK &&
-                  (serial_drafting() || cfg_.n_spec <= 0);
+    pipelining_ = !cfg_.kld() && !embedding_ &&
+                  (serial_drafting() || block_drafting() || cfg_.n_spec <= 0);
+    early_ids_ = !cfg_.kld() && !embedding_;
     const bool t_on = (int)log_level() >= (int)Log::Debug;
     /* The next step's forward pass when already issued behind the previous step, before its
      * readback (Scheduler::step_next). */
     const RadBatch* ahead = nullptr;
+    /* A step that runs for 20 s reports where the step loop waits: its syscall and its stack.
+     * Every iteration, idle or not, marks progress, so only a stuck step is reported. */
+    rad::StallWatch step_watch("step", 20000);
     while (!stopping_.load(std::memory_order_acquire)) {
+        step_watch.progress();
+        lora_epoch_.fetch_add(1, std::memory_order_acq_rel);
         phase_t_ = std::chrono::steady_clock::now();
         /* Encode media for waiting requests while nothing is in flight. The scheduler issues no
          * step ahead while a request waits, and a request with unencoded media waits. */
@@ -434,22 +466,7 @@ int Engine::step_loop() {
         idle = 0;
         if (t_on) phase_mark(PH_PLAN);
 
-        /* Zero freshly assigned recurrent slots before the step that reads them. The manager
-         * records the grab but cannot write (StateClear in core/mem/kv.h); the list is empty except
-         * on a sequence's first step. Each rank clears by its own plan: the slot number is the
-         * scheduler's, but the state size depends on the heads this rank holds, which can differ
-         * per rank (rad_arch.h remainder_place). */
-        for (const StateClear& c : ranks_[0]->kv.state_clears()) {
-            for (auto& rk : ranks_) {
-                const KVGroupPlan* gp = rk->kv.plan(c.group);
-                if (!gp || !gp->stateful()) continue;
-                const int64_t bytes = gp->layer_bytes_per_state();
-                for (int64_t l = 0; l < gp->n_layers; ++l)
-                    if (void* p = rk->kv.state_ptr(c.group, (int32_t)l, c.slot))
-                        rad_memset_async(p, 0, bytes, rk->ctx.stream());
-            }
-        }
-        ranks_[0]->kv.clear_state_clears();
+        clear_fresh_states();
 
         /* Entries that want logits rows, in BatchBuilder's out_ids order: those with
          * produces_token, 1 + n_spec rows each. Row and sequence indices differ (a mid-prompt
@@ -508,7 +525,7 @@ int Engine::step_loop() {
             }
             if (t_on) phase_mark(PH_BEGIN);
             for (auto& rk : ranks_) {
-                const int s = rk->sampler.build_step(so.reqs);
+                const int s = rk->sampler.build_step(so.reqs, b->step);
                 if (s < 0) { RAD_ERR("sampler build_step: %s", rad_strerror(s)); return s; }
                 /* A request the sampler could not serve is cancelled; the step goes on. */
                 for (uint64_t id : rk->sampler.take_failed()) cancel.push_back(id);
@@ -680,10 +697,14 @@ int Engine::step_loop() {
         }
 
         if (t_on) phase_mark(PH_SAVE);
-        /* Queue the serial drafter's passes behind the step before waiting: the card computes
-         * acceptance itself and every pass reads it there (sched/advance.h), so one wait covers
-         * the whole step. */
-        st = issue_serial_drafter(b->step, so);
+        /* Queue the drafter's passes behind the step before waiting: the card computes acceptance
+         * itself and every pass reads it there (sched/advance.h), so one wait covers the whole
+         * step. */
+        st = block_drafting() ? issue_block_drafter(b->step, so)
+                              : issue_serial_drafter(b->step, so);
+        if (st < 0) return fail_loop(st);
+        /* Behind the step's last resolve and before its end event, so collect_step's wait covers it. */
+        st = stream_probe_issue(b);
         if (st < 0) return fail_loop(st);
         st = mark_step_end(b, so);
         if (st < 0) return fail_loop(st);
@@ -695,6 +716,9 @@ int Engine::step_loop() {
         st = embedding_ ? collect_pooled(b, so) : collect_step(b, so);
         if (t_on) phase_mark(PH_COLLECT);
         if (st < 0) return fail_loop(st);
+        /* The step's sampler chain, verify op included, has returned: one line at the first
+         * coupled verify that actually completed. */
+        couple_verify_evidence(b->step);
         if (cfg_.kld()) {
             st = score_rows(b, so);
             if (st < 0) return fail_loop(st);
@@ -746,13 +770,28 @@ int Engine::step_loop() {
         st = sched_.commit(res);
         if (t_on) phase_mark(PH_COMMIT);
         if (st < 0) { RAD_ERR("commit: %s", rad_strerror(st)); return fail_loop(st); }
+        /* The step has drained, so its counters are readable. A chunk that produced no row did not
+         * wait, so its copy is read on a later step; a finished prompt or request always produced
+         * a row. */
+        if (so.n_rows > 0) {
+            st = stream_probe_take(b, res.n_prefill_done > 0, res.n_finished > 0);
+            if (st < 0) return fail_loop(st);
+        }
 
-        /* The drafter for the next step. A block drafter runs here, since its passes are staged
-         * from the committed sequence. A serial one already ran on the card; what remains is to
-         * check its acceptance against the host's and publish its proposals. Both drivers return
-         * immediately for a kind that is not theirs. */
-        st = drafter_.kind == RAD_DRAFT_BLOCK ? run_block_drafter(b->step)
-                                              : finish_serial_drafter(so);
+        /* With the ids read ahead of the drafter's passes, the commit streamed the tokens while
+         * the card ran them. Wait for the passes now, before the slots below are read and before
+         * anything reuses what the commit released. */
+        if (so.early) {
+            st = rad_event_sync(step_end_);
+            if (st < 0) { RAD_ERR("step %d: waiting for its draft passes: %s", b->step,
+                                  rad_strerror(st)); return fail_loop(st); }
+            so.early = false;
+        }
+
+        /* The drafter for the next step already ran on the card; what remains is to check its
+         * acceptance against the host's and publish its proposals. Each driver returns
+         * immediately for a kind that is not its own. */
+        st = block_drafting() ? finish_block_drafter(so) : finish_serial_drafter(so);
         if (st < 0) return fail_loop(st);
         /* The step ends here, after its draft rounds, so step timing includes them
          * (Scheduler::step_finished). */
@@ -789,11 +828,16 @@ int Engine::step_loop() {
 }
 
 /* Issue the copy of the sampled ids into pinned memory behind the sampler, without waiting.
- * Issued by the serial drafter before its passes (a head sampling through the sampler's buffer
- * overwrites the ids), otherwise just before the wait. */
-int Engine::collect_issue(StepOut& so) {
+ * Issued by a drafter before its passes (a head sampling through the sampler's buffer overwrites
+ * the ids), otherwise just before the wait.
+ *
+ * With `fence` (a drafter queueing its passes behind the step) the copy records tok_end_, so
+ * collect_step waits for the ids alone (StepOut::early). Not at -vv, whose logits row is a
+ * pageable copy read in collect_step. */
+int Engine::collect_issue(StepOut& so, bool fence) {
     so.rb = nullptr;
     so.lg.clear();
+    so.early = false;
     if (so.n_rows <= 0) return RAD_OK;
     Rank& r0 = *ranks_[0];
     void* src = r0.ctx.buf_ptr(r0.tok_buf);
@@ -814,8 +858,126 @@ int Engine::collect_issue(StepOut& so) {
             so.lg.resize((size_t)nv);
             rad_memcpy_async(so.lg.data(), lp, nv * 4, r0.ctx.stream());
         }
+        return RAD_OK;
+    }
+    if (fence && early_ids_) {
+        RAD_TRY(rad_event_record(tok_end_, r0.ctx.stream()));
+        so.early = true;
     }
     return RAD_OK;
+}
+
+/* ================================================================== KV streaming's counters
+ *
+ * Each streamed group's device control block holds the resolve's cumulative counters, the largest
+ * union, misses and claims of one launch, and the overflow latch (libref/ref_kvstream.cpp, "The
+ * control block"). They show at run time whether the ring's depth holds; a launch that overflowed
+ * is failed, not served (docs/KV-STREAMING.md §3.4).
+ *
+ * The step path never waits on the card: the 64-byte copy per group is enqueued on rank 0's compute
+ * stream behind the step's last resolve and before its end event, and the commit that already
+ * waits for that event reads it. One rank's counters stand for all, since every rank resolves the
+ * same block ids through identically built maps. The counters are cumulative, so the metrics are
+ * charged the deltas. */
+int Engine::stream_probe_issue(const RadBatch* b) {
+    if (!b || b->n_kv_groups <= 0 || ranks_.empty()) return RAD_OK;
+    const size_t n = (size_t)b->n_kv_groups;
+    if (stream_ctl_n_ < n) {
+        if (stream_ctl_p_) rad_dev_free(stream_ctl_p_, RAD_MEM_HOST_PINNED);
+        stream_ctl_p_ = static_cast<int32_t*>(
+            rad_dev_alloc((int64_t)n * 16 * (int64_t)sizeof(int32_t), RAD_MEM_HOST_PINNED));
+        stream_ctl_n_ = stream_ctl_p_ ? n : 0;
+        if (!stream_ctl_p_) {
+            RAD_ERR("kv streaming: no pinned host memory for the resolve's counters");
+            return RAD_E_NOMEM;
+        }
+        /* Zeroed, so a group whose first copy has not landed reads as no calls yet. */
+        std::memset(stream_ctl_p_, 0, n * 16 * sizeof(int32_t));
+    }
+    RadStream st = ranks_[0]->ctx.stream();
+    for (size_t i = 0; i < n; ++i) {
+        const RadKVStream* sv = b->kv[i].stream;
+        if (!sv || !sv->ctl) continue;
+        if (rad_memcpy_async(stream_ctl_p_ + i * 16, sv->ctl, 16 * 4, st) < 0) {
+            RAD_ERR("kv streaming: the resolve's counters could not be copied to the host: %s",
+                    rad_dev_last_error());
+            return RAD_E_STATE;
+        }
+    }
+    return RAD_OK;
+}
+
+/* Read what stream_probe_issue() enqueued, charge the metrics and, at a prompt's or request's
+ * end, log the group's line. A newly latched overflow fails every request prefilling in the step
+ * just committed and clears the latch on the card, so the next request is measured on its own;
+ * the map stays consistent, because the resolve reverts a claim it could not place. */
+int Engine::stream_probe_take(const RadBatch* b, bool prefill_done, bool request_end) {
+    if (!b || !stream_ctl_p_ || b->n_kv_groups <= 0) return RAD_OK;
+    const size_t n = (size_t)b->n_kv_groups;
+    if (stream_prev_.size() < n) stream_prev_.assign(n, StreamRead{});
+    RadStream st = ranks_[0]->ctx.stream();
+    bool       overflowed = false;
+    std::string overflow_why;
+    for (size_t i = 0; i < n; ++i) {
+        const RadKVStream* sv = b->kv[i].stream;
+        if (!sv) continue;
+        const int32_t* c = stream_ctl_p_ + i * 16;
+        /* The counters are three u64s from ctl[4], hence the 8-byte alignment. */
+        const uint64_t* ctr = (const uint64_t*)(c + 4);
+        StreamRead r;
+        r.group       = (int32_t)b->kv[i].group;
+        r.misses      = (int64_t)ctr[0];
+        r.lookups     = (int64_t)ctr[1];
+        r.resolves    = (int64_t)ctr[2];
+        r.overflow    = c[3] != 0;
+        r.max_union   = c[10];
+        r.max_misses  = c[11];
+        r.max_claims  = c[12];
+        r.slots       = sv->slots;
+        r.block_bytes = sv->block_bytes;
+        const StreamRead& p = stream_prev_[i];
+        const int64_t dm = r.misses - p.misses;
+        ranks_[0]->kv.note_stream_traffic(dm, dm * r.block_bytes);
+        if (request_end || prefill_done) stream_report(request_end ? "request end" : "prefill complete", r, p);
+        if (r.overflow && !p.overflow && !overflowed) {
+            overflowed = true;
+            const KVGroupPlan* gp = ranks_[0]->kv.plan(r.group);
+            const int64_t bs = gp && gp->block_size > 0 ? gp->block_size : 1;
+            /* The largest union since bring-up, which for the failing request is the launch that
+             * overflowed. */
+            overflow_why = fmt(
+                "kv streaming overflow: group '%s' ring holds %lld blocks (%lld tokens) and one "
+                "resolve launch selected %lld distinct blocks, %lld of them not resident, so the "
+                "request is failed; raise --kv-resident above %lld tokens",
+                gp ? gp->name.c_str() : "?", (long long)r.slots, (long long)(r.slots * bs),
+                (long long)r.max_union, (long long)r.max_misses,
+                (long long)(r.max_union * bs));
+            RAD_ERR("%s", overflow_why.c_str());
+        }
+        stream_prev_[i] = r;
+    }
+    if (overflowed) {
+        (void)sched_.fail_prefilling(overflow_why.c_str());
+        for (size_t i = 0; i < n; ++i) {
+            const RadKVStream* sv = b->kv[i].stream;
+            if (sv && sv->ctl) (void)rad_memset_async(sv->ctl + 3, 0, 4, st);
+        }
+    }
+    return RAD_OK;
+}
+
+/* One line per group: the cumulative counters, the misses since the previous report and the three
+ * largest-launch figures a ring and a claim list are sized from. A launch claims at most
+ * `max_seqs * sel_pitch` blocks; a larger `largest launch claims` means that derivation is wrong. */
+void Engine::stream_report(const char* when, const StreamRead& r, const StreamRead& prev) {
+    const KVGroupPlan* gp = ranks_.empty() ? nullptr : ranks_[0]->kv.plan(r.group);
+    RAD_INFO("kv streaming: group '%s' %s: %lld resolves, %lld lookups, %lld misses (+%lld this "
+             "interval); ring %lld blocks, largest launch union %lld distinct blocks, largest "
+             "launch misses %lld, largest launch claims %lld, overflow %s",
+             gp ? gp->name.c_str() : "?", when, (long long)r.resolves, (long long)r.lookups,
+             (long long)r.misses, (long long)(r.misses - prev.misses), (long long)r.slots,
+             (long long)r.max_union, (long long)r.max_misses, (long long)r.max_claims,
+             r.overflow ? "LATCHED" : "no");
 }
 
 int Engine::mark_step_end(const RadBatch* b, StepOut& so) {
@@ -912,7 +1074,7 @@ int Engine::issue_scored_rows(Rank& r) {
 
 int Engine::collect_scored_rows() {
     if (score_rows_.empty()) return RAD_OK;
-    /* step_end_ fences rank 0's stream; every other rank's copies are fenced here. */
+    /* collect_step's wait fences rank 0's stream; every other rank's copies are fenced here. */
     for (size_t i = 1; i < ranks_.size(); ++i) {
         RAD_TRY(rad_dev_set(ranks_[i]->device));
         RAD_TRY(rad_stream_sync(ranks_[i]->ctx.stream()));
@@ -958,8 +1120,9 @@ int Engine::collect_step(const RadBatch* b, StepOut& so) {
     if (so.n_rows <= 0) return RAD_OK;
 
     so.rows.resize((size_t)so.n_rows);
-    /* Wait on the step-end event, not the stream: a step issued ahead is queued behind it. */
-    RAD_TRY(rad_event_sync(step_end_));
+    /* Wait on an event, not the stream: a step issued ahead is queued behind it. With early ids
+     * that is the ids' own copy; the step loop waits for the rest after the commit. */
+    RAD_TRY(rad_event_sync(so.early ? tok_end_ : step_end_));
     std::memcpy(so.rows.data(), so.rb, (size_t)so.n_rows * sizeof(int32_t));
     so.rb = nullptr;
     RAD_TRY(collect_scored_rows());
@@ -1223,6 +1386,18 @@ void Engine::tier_tick() {
         }
         if (ranks_.size() > 1) (void)rad_dev_set(lead.device);
         if (all) {
+            /* RADIANCE_DEBUG_TIER_VERIFY: now that every rank's window has landed, each
+             * follower's hash of the replicated groups it gathered is held against the window
+             * the leader wrote (rad_kv_group_replicated's claim). The sums are taken either way,
+             * so a failed batch leaves none behind. */
+            if (lead.tierx.verifying_replicated()) {
+                for (size_t i = 1; i < ranks_.size(); ++i)
+                    for (const TierJob& j : P.copy) {
+                        uint64_t sum = 0;
+                        if (ranks_[i]->tierx.take_replicated_sum(j.key, &sum) && good)
+                            (void)lead.tierx.verify_replicated(j, (int)i, sum);
+                    }
+            }
             /* A copy is good only if every rank's shard landed; otherwise the host copy is
              * partly stale, so the whole batch fails and every slot goes back. */
             const std::vector<char> ok(P.copy.size(), good ? 1 : 0);
@@ -1335,6 +1510,25 @@ void Engine::drain_completed() {
     for (uint64_t id : done_) for (auto& rk : ranks_) rk->sampler.end_request(id);
 }
 
+/* Zero freshly assigned recurrent slots before the step that reads them. The manager records the
+ * grab but cannot write (StateClear in core/mem/kv.h); the list is empty except on a sequence's
+ * first step. Each rank clears by its own plan: the slot number is the scheduler's, but the state
+ * size depends on the heads this rank holds, which can differ per rank (rad_arch.h
+ * remainder_place). */
+void Engine::clear_fresh_states() {
+    for (const StateClear& c : ranks_[0]->kv.state_clears()) {
+        for (auto& rk : ranks_) {
+            const KVGroupPlan* gp = rk->kv.plan(c.group);
+            if (!gp || !gp->stateful()) continue;
+            const int64_t bytes = gp->layer_bytes_per_state();
+            for (int64_t l = 0; l < gp->n_layers; ++l)
+                if (void* p = rk->kv.state_ptr(c.group, (int32_t)l, c.slot))
+                    rad_memset_async(p, 0, bytes, rk->ctx.stream());
+        }
+    }
+    ranks_[0]->kv.clear_state_clears();
+}
+
 int Engine::serve(std::unique_ptr<StallWatch> watch) {
     startup_watch_ = std::move(watch);
     if (ranks_.empty() || !ranks_[0]->ctx.program()) {
@@ -1342,28 +1536,39 @@ int Engine::serve(std::unique_ptr<StallWatch> watch) {
         return RAD_E_STATE;
     }
     embedding_ = ranks_[0]->program.pooled_buf != RAD_NULL_HANDLE;
-    const bool generator = ranks_[0]->program.is_generator();
+    const bool audio_gen = ranks_[0]->program.is_audio_generator();
+    const bool video_gen = ranks_[0]->program.is_video_generator();
+    const bool generator = ranks_[0]->program.is_pass_driven();
     if (ranks_[0]->program.logits_buf == RAD_NULL_HANDLE && !embedding_ && !generator) {
         RAD_ERR("the '%s' plugin declared no logits buffer (rad_declare_logits), no pooled output "
-                "(rad_declare_pooled) and no image generator (rad_declare_generator), so a step "
-                "produces nothing anyone can read. An encoder-only plugin cannot serve.",
+                "(rad_declare_pooled) and no generator (rad_declare_generator, "
+                "rad_declare_audio_generator, rad_declare_video_generator), so a step produces "
+                "nothing anyone can read. An encoder-only plugin cannot serve.",
                 plugins_.arch_plugin.c_str());
         return RAD_E_UNSUPPORTED;
     }
     if (generator) {
+        const char* const what = audio_gen ? "audio" : video_gen ? "video" : "images";
         if (cfg_.kld() || cfg_.n_spec > 0) {
-            RAD_ERR("the '%s' plugin makes images: --kld and speculative decoding have no tokens to "
-                    "work on", plugins_.arch_plugin.c_str());
+            RAD_ERR("the '%s' plugin makes %s: --kld and speculative decoding have no tokens to "
+                    "work on", plugins_.arch_plugin.c_str(), what);
             return RAD_E_UNSUPPORTED;
         }
         for (size_t i = 1; i < ranks_.size(); ++i)
-            if (!ranks_[i]->program.is_generator()) {
-                RAD_ERR("rank %zu declared no image generator and rank 0 did", i);
+            if (ranks_[i]->program.is_audio_generator() != audio_gen ||
+                ranks_[i]->program.is_video_generator() != video_gen ||
+                !ranks_[i]->program.is_pass_driven()) {
+                RAD_ERR("rank %zu declared a different generator from rank 0's", i);
                 return RAD_E_STATE;
             }
         cfg_.prefix_cache = false;
-        prefix_off_why_ = "an image generator: a conditioning is read by its own request's images "
-                          "and by nothing after them";
+        prefix_off_why_ = audio_gen
+            ? "an audio generator: a prompt is read by its own request's frames and by nothing "
+              "after them"
+            : video_gen
+            ? "a video generator: a prompt is read by its own request's steps and keeps no KV"
+            : "an image generator: a conditioning is read by its own request's images and by "
+              "nothing after them";
         decide("--no-prefix-cache", "prefix caching off", prefix_off_why_);
     }
     if (embedding_) {
@@ -1429,6 +1634,11 @@ int Engine::serve(std::unique_ptr<StallWatch> watch) {
 
     kv_iface_ = std::make_unique<KVBinding<KVManager>>(&ranks_[0]->kv);
     pc_iface_ = std::make_unique<PCBinding<PrefixCache>>(&ranks_[0]->prefix);
+    /* The control vector's identity partitions the block cache (PCBinding::salt_id): a request
+     * that runs with the projection on never adopts a block or a linear-state snapshot produced
+     * without it, or the other way round. Zero with no vector loaded, and then every chain hashes
+     * exactly as it did before the feature existed. */
+    static_cast<PCBinding<PrefixCache>*>(pc_iface_.get())->salt_id = cvec_salt_;
     /* The restore path, installed only when the tiers are on. The scheduler calls it before the
      * admission lookup without knowing about tiers, so it is a callable rather than an include in
      * core/sched.
@@ -1440,13 +1650,16 @@ int Engine::serve(std::unique_ptr<StallWatch> watch) {
         auto* b = static_cast<PCBinding<PrefixCache>*>(pc_iface_.get());
         /* Called inside Scheduler::step() under its lock, which makes touching the cache and rank
          * 0's manager safe; nothing here may call back into the scheduler. */
-        b->restore_fn = [this](const Request& req) {
+        b->restore_fn = [this, b](const Request& req, bool whole_only) -> RestoreResult {
             const uint64_t t0 = rad_mono_ns();
             PrefixCache& pc = ranks_[0]->prefix;
-            std::vector<MMContentKey> mk;
-            media_keys(req, &mk);
-            const std::vector<BlockHash> want = pc.restorable_from(req.prompt, mk);
-            if (want.empty()) return;
+            /* Room is made before anything is planned (PCBinding::restore_plan): a chain the free
+             * list cannot hold would otherwise come back only as far as it reaches. One block
+             * table serves every rank, so what rank 0's cache gives up is room on every rank. */
+            RestoreResult res = RestoreResult::Whole;
+            const std::vector<BlockHash> want = b->restore_plan(
+                req, cvec_salt_for(req.sp.use_control_vector), whole_only, &res);
+            if (want.empty()) return res;
             /* The whole chain in one restore. With 4-token blocks a long conversation is tens of
              * thousands of entries; batched, it is one launch per (group, layer) per staging batch
              * and one copy per run of arena slots instead of a round trip per entry. */
@@ -1457,7 +1670,9 @@ int Engine::serve(std::unique_ptr<StallWatch> watch) {
                 if (!ranks_[0]->tierx.plan_promote(h, &j)) break;
                 jobs.push_back(std::move(j));
             }
-            if (jobs.empty()) return;
+            /* A record still in flight ends the chain here, as a short reservation does below. */
+            if (jobs.size() < want.size()) res = RestoreResult::Cut;
+            if (jobs.empty()) return res;
             std::vector<char> ok(jobs.size(), 1);
             for (auto& r : ranks_) {
                 std::vector<char> mine;
@@ -1472,7 +1687,7 @@ int Engine::serve(std::unique_ptr<StallWatch> watch) {
             const std::vector<int32_t>& cg = pc.cached_groups();
             for (size_t i = 0; i < jobs.size(); ++i) {
                 TierJob& j = jobs[i];
-                if (!ok[i]) continue;
+                if (!ok[i]) { res = RestoreResult::Cut; continue; }
                 const int rb = pc.rebind(j.key, j.blocks);
                 if (rb != RAD_OK) {
                     /* No entry to land in: release the reserved blocks and forget the tier record,
@@ -1484,6 +1699,7 @@ int Engine::serve(std::unique_ptr<StallWatch> watch) {
                 }
             }
             ranks_[0]->tiers.note_restore((int64_t)(rad_mono_ns() - t0));
+            return res;
         };
         /* An eviction that would lose an entry waits for its copy instead. Called by the prefix
          * cache binding under the scheduler's lock when dropping already-copied entries did not
@@ -1495,15 +1711,46 @@ int Engine::serve(std::unique_ptr<StallWatch> watch) {
      * PCIe read and unordered against the copies that fill it (see Set in batch.h). */
     std::vector<BatchBuilder::RankIO> rio;
     rio.reserve(ranks_.size());
-    for (auto& rk : ranks_)
-        rio.push_back({ rk->device, rk->ctx.stream(), &rk->program });
-    if (generator) {
+    rank_stream_views_.assign(ranks_.size(), {});
+    for (size_t r = 0; r < ranks_.size(); ++r) {
+        const size_t ng = ranks_[r]->program.kv_groups.size();
+        rank_stream_views_[r].resize(ng, nullptr);
+        for (size_t g = 0; g < ng; ++g)
+            rank_stream_views_[r][g] = ranks_[r]->kv.stream_view((int32_t)g);
+    }
+    for (size_t r = 0; r < ranks_.size(); ++r) {
+        auto& rk = ranks_[r];
+        rio.push_back({ rk->device, rk->ctx.stream(), &rk->program, rk->pools.kv().base(),
+                        rank_stream_views_[r].data() });
+    }
+    if (video_gen) {
+        /* As for the image generator below; the plugin lays out each request's rows. */
+        std::vector<gen::VideoDriver::RankIO> gio;
+        for (auto& rk : ranks_) gio.push_back({ rk->device, rk->ctx.stream() });
+        auto d = std::make_unique<gen::VideoDriver>();
+        RAD_TRY(d->init(ranks_[0]->program, rad_tools_video_positions(plugins_), gio,
+                        rad_tools_video_pack(plugins_), rad_tools_encode_geom(plugins_)));
+        vid_gen_ = d.get();
+        gen_ = std::move(d);
+        RAD_TRY(rad_dev_set(ranks_[0]->device));
+    } else if (audio_gen) {
+        /* As for the image generator below. */
+        std::vector<gen::AudioDriver::RankIO> gio;
+        for (auto& rk : ranks_) gio.push_back({ rk->device, rk->ctx.stream() });
+        auto d = std::make_unique<gen::AudioDriver>();
+        RAD_TRY(d->init(ranks_[0]->program, kv_iface_.get(), gio));
+        aud_gen_ = d.get();
+        gen_ = std::move(d);
+        RAD_TRY(rad_dev_set(ranks_[0]->device));
+    } else if (generator) {
         /* The generator's driver replaces the scheduler, which is never initialised, so its
          * token-step staging is never allocated. */
         std::vector<gen::Driver::RankIO> gio;
         for (auto& rk : ranks_) gio.push_back({ rk->device, rk->ctx.stream() });
-        gen_ = std::make_unique<gen::Driver>();
-        RAD_TRY(gen_->init(ranks_[0]->program, kv_iface_.get(), gio));
+        auto d = std::make_unique<gen::Driver>();
+        RAD_TRY(d->init(ranks_[0]->program, kv_iface_.get(), gio));
+        img_gen_ = d.get();
+        gen_ = std::move(d);
         RAD_TRY(rad_dev_set(ranks_[0]->device));
     } else
     RAD_TRY(sched_.init(ranks_[0]->program, cfg_, kv_iface_.get(), pc_iface_.get(), rio, &geo_));
@@ -1577,6 +1824,28 @@ bool Engine::state_slots_of(uint64_t seq, std::vector<int32_t>* out) const {
 }
 
 /* ------------------------------------------------------------------ the HTTP frontend */
+/* The control vector, for /stats and /server_info. `available` is
+ * what a client should test before sending the field: without a loaded vector a request that asks
+ * for it is refused, so a UI can hide the control rather than offer a switch that fails. */
+std::string Engine::cvec_json() const {
+    nlohmann::ordered_json o;
+    o["available"] = cvec_.loaded();
+    o["default"]   = cvec_default_.load();
+    if (cvec_.loaded()) {
+        /* The family the file was validated against, not a label the UI supplies: this is the same
+         * `meta_.arch_id` the loader compared against the file's own model_hint. */
+        o["arch"]    = meta_.arch_id ? meta_.arch_id : "";
+        o["first"]   = cvec_.first;
+        o["last"]    = cvec_.last;
+        o["n_embd"]  = cvec_.n_embd;
+        o["n_layers"] = cvec_.n_layers;
+        o["scale"]   = cvec_.user_scale;
+        o["file"]    = cvec_.path;
+        o["mode"]    = "project";
+    }
+    return o.dump();
+}
+
 /* The engine's part of /server_info: model, cards, KV, drafting and wire, for a running process.
  * The server holds only interfaces, so the engine renders this object and the server splices it in
  * verbatim. */
@@ -1593,6 +1862,9 @@ std::string Engine::engine_info() const {
     e["tensor_parallel"]        = cfg_.tp;
     e["tp_wire"]                = cfg_.tp > 1 ? (cfg_.tp_wire_exact ? "exact" : "wht6") : "n/a";
     e["tp_wire_min_kb"]         = cfg_.tp_wire_exact ? 0 : cfg_.tp_wire_min_kb;
+    e["attn_prefill_fp8"]       = attn_prefill_fp8_name(cfg_.attn_prefill_fp8);
+    e["tp_attn_split"]          = cfg_.tp_attn_rows ? "rows" : "heads";
+    e["weight_prefetch"]        = cfg_.weight_prefetch;
     e["max_num_batched_tokens"] = cfg_.max_tok;
     e["placement"]              = cfg_.placement;
     /* Each lookup table's requested and resolved placement. */
@@ -1603,6 +1875,7 @@ std::string Engine::engine_info() const {
     e["vision_tower_placement"] = { { "asked", table_placement_name(cfg_.tower_placement) },
                                     { "resolved", table_placement_name(cfg_.tower_resolved) } };
     e["prefix_cache"]           = cfg_.prefix_cache;
+    e["control_vector"]         = nlohmann::ordered_json::parse(cvec_json());
     e["checkpoint_slots"]       = cfg_.checkpoint_slots;
     e["deterministic"]          = cfg_.deterministic;
 
@@ -1957,6 +2230,15 @@ int Engine::run_server() {
     d.tok   = &tok_bridge;
     d.grammar = &grammar_bridge;
     d.live  = snap;
+    /* The control vector, when one was found. The admin endpoint flips the
+     * default through this; nothing rebuilds a graph, so a toggle takes effect on the next request
+     * and leaves the running ones alone. */
+    if (cvec_.loaded()) {
+        d.control_vector.available  = [this] { return cvec_loaded(); };
+        d.control_vector.get_default = [this] { return cvec_default_on(); };
+        d.control_vector.set_default = [this](bool on) { set_cvec_default(on); };
+        d.control_vector.json        = [this] { return cvec_json(); };
+    }
 
     /* An embedding model serves /v1/embeddings and no chat. Its named prompts are the checkpoint's
      * sentence-transformers configuration (`sentence_transformers.prompts.*`); a `messages` input
@@ -2005,7 +2287,9 @@ int Engine::run_server() {
 
     server::ServerOptions o{};
     o.embedding_model = embedding_;
-    o.image_model = gen_ != nullptr;
+    o.image_model = img_gen_ != nullptr;
+    o.audio_model = aud_gen_ != nullptr;
+    o.video_model = vid_gen_ != nullptr;
     o.decision_type = rad_meta_gets(&meta_, "decision.type", "");
     o.model_id = !cfg_.served_model_name.empty() ? cfg_.served_model_name
                : meta_.name && *meta_.name       ? meta_.name : "radiance";
@@ -2023,9 +2307,9 @@ int Engine::run_server() {
     o.default_reasoning_effort = cfg_.reasoning_effort;
     o.reasoning_effort_map = cfg_.reasoning_effort_map;
     o.default_thinking_budget = cfg_.thinking_token_budget;
-    {
+    if (!gen_) {
         /* The four sampler defaults a file can state: the served value and, per field, its
-         * source. */
+         * source. A generator samples by its own rules and serves no text requests. */
         GenSampling stated;
         std::string src;
         o.default_sampling =
@@ -2076,6 +2360,43 @@ int Engine::run_server() {
     o.graph_json  = [this] { return dump_graph_json(ranks_[0]->program); };
     /* Per request, from a reading at most a second old (Engine::diagnostics_json). */
     o.diagnostics_json = [this] { return diagnostics_json(); };
+    if (cfg_.lora.enabled() && ranks_[0]->program.is_pass_driven()) {
+        /* A generator's request names its adapters in `loras`; `model` stays the model. */
+        o.gen_lora_acquire = [this](const std::vector<std::pair<std::string, double>>& u,
+                                    int32_t* slot, std::shared_ptr<void>* hold, std::string* note,
+                                    std::string* e) {
+            std::vector<LoraUse> uses;
+            for (const auto& [n, w] : u) uses.push_back({ n, w });
+            return gen_lora_acquire(uses, slot, hold, note, e);
+        };
+        o.gen_lora_names = [this] { return gen_lora_names(); };
+        o.lora_load = [this](const std::string& n, const std::string& d, std::string* e) {
+            return lora_load(n, d, e);
+        };
+        o.lora_unload = [this](const std::string& n, std::string* e, int* in_flight) {
+            return lora_unload(n, e, in_flight);
+        };
+    } else if (cfg_.lora.enabled()) {
+        /* `model` picks the adapter, and the served model's own name picks the base. */
+        for (const auto& [name, dir] : cfg_.lora.adapters)
+            if (name == o.model_id) {
+                RAD_ERR("lora: the adapter '%s' has the served model's own name, so a request "
+                        "naming it would run the base; rename it or give --served-model-name",
+                        name.c_str());
+                return RAD_E_INVAL;
+            }
+        o.lora_acquire = [this](const std::string& m, int32_t* slot, uint64_t* uid,
+                                std::shared_ptr<void>* hold) {
+            return lora_acquire(m, slot, uid, hold);
+        };
+        o.lora_names = [this] { return lora_names(); };
+        o.lora_load = [this](const std::string& n, const std::string& d, std::string* e) {
+            return lora_load(n, d, e);
+        };
+        o.lora_unload = [this](const std::string& n, std::string* e, int* in_flight) {
+            return lora_unload(n, e, in_flight);
+        };
+    }
 
     /* Media, when the program declared an encoder. The processor's geometry comes from the
      * container and the encoder states its own; patch width and merge must agree, checked here
@@ -2099,7 +2420,7 @@ int Engine::run_server() {
          * are refused by name: LFM2-VL takes pictures only, and a token-budget processor (Gemma
          * 4's) sizes by soft tokens (--image-tokens, --video-max-frame-tokens), not pixel
          * bands. */
-        if (vc.family == mm::Family::Lfm2 &&
+        if ((vc.family == mm::Family::Lfm2 || vc.family == mm::Family::Glm5Next) &&
             (cfg_.video_min_pixels || cfg_.video_max_pixels || cfg_.video_min_frames ||
              cfg_.video_max_frames || cfg_.video_fps || cfg_.video_max_frame_tokens)) {
             RAD_ERR("media: this model's processor takes pictures, not video, so the --video-* "
@@ -2117,6 +2438,16 @@ int Engine::run_server() {
             }
             if (cfg_.image_tokens)           vc.image_soft_tokens = *cfg_.image_tokens;
             if (cfg_.video_max_frame_tokens) vc.video_soft_tokens = *cfg_.video_max_frame_tokens;
+        } else if (vc.family == mm::Family::Glm5Next) {
+            /* GLM-5.3 budgets an image in tokens (max_image_tokens), so --image-tokens is its
+             * ceiling and the pixel bands do not apply. */
+            if (cfg_.image_min_pixels || cfg_.image_max_pixels) {
+                RAD_ERR("media: this model's processor sizes images by a token budget, so "
+                        "--image-min-pixels and --image-max-pixels do nothing; use "
+                        "--image-tokens");
+                return RAD_E_INVAL;
+            }
+            if (cfg_.image_tokens) vc.max_image_tokens = *cfg_.image_tokens;
         } else {
             if (cfg_.image_tokens) {
                 RAD_ERR("media: --image-tokens is a token budget, and this model's processor "
@@ -2150,6 +2481,16 @@ int Engine::run_server() {
                     "'%s' encoder takes %lld-element patches merged %lld", (long long)vc.patch_dim(),
                     (long long)vc.merge * vc.merge, ranks_[0]->program.encoder_name.c_str(),
                     (long long)encd.patch_dim, (long long)encd.merge);
+            return RAD_E_INVAL;
+        }
+        /* An explicit budget past one pass is refused; the container's is lowered to fit
+         * (Processor::init), as a pixel band is. */
+        if (vc.family == mm::Family::Glm5Next && cfg_.image_tokens &&
+            (int64_t)*cfg_.image_tokens * vc.merge * vc.merge > encd.max_patches) {
+            RAD_ERR("media: --image-tokens %d is more patches than one encoder pass holds "
+                    "(--mm-max-patches %lld, %lld tokens)", *cfg_.image_tokens,
+                    (long long)encd.max_patches,
+                    (long long)(encd.max_patches / ((int64_t)vc.merge * vc.merge)));
             return RAD_E_INVAL;
         }
         if (vc.family == mm::Family::Gemma4 &&
@@ -2188,6 +2529,17 @@ int Engine::run_server() {
                      mm_proc->config().max_pixels_tolerance, mm_proc->config().min_tiles,
                      mm_proc->config().max_tiles, mm_proc->config().tile,
                      (long long)encd.max_patches);
+        else if (mm_proc->config().family == mm::Family::Glm5Next) {
+            RAD_INFO("media: images through '%s'; an image becomes %d..%d tokens, padded to its "
+                     "canvas rather than stretched; %lld patches a pass",
+                     ranks_[0]->program.encoder_name.c_str(), mm_proc->config().min_image_tokens,
+                     mm_proc->config().max_image_tokens, (long long)encd.max_patches);
+            if (mm_proc->config().max_image_tokens < vc.max_image_tokens)
+                RAD_INFO("media: the budget of %d tokens an image is lowered to %d, what one "
+                         "encoder pass holds; --mm-max-patches %lld serves it whole",
+                         vc.max_image_tokens, mm_proc->config().max_image_tokens,
+                         (long long)vc.max_image_tokens * vc.merge * vc.merge);
+        }
         else if (mm_proc->config().family == mm::Family::Gemma4)
             RAD_INFO("media: %s%s through '%s'; an image becomes at most %d soft tokens (a "
                      "request's image_tokens may ask for 70..1120), a video %d a frame at %.3g "
@@ -2289,7 +2641,14 @@ int Engine::run_server() {
         gen::Driver*         drv = nullptr;
         const mm::Processor* proc = nullptr;
         server::ImageGenInfo inf;
+        Tokenizer            aux;
+        bool                 has_aux = false;
         const server::ImageGenInfo& info() const override { return inf; }
+        int encode_aux(const std::string& text, std::vector<int32_t>* out) const override {
+            if (!has_aux) return RAD_E_UNSUPPORTED;
+            out->clear();
+            return aux.encode(text, *out, /*add_special=*/true, /*parse_special=*/true);
+        }
         int submit(std::unique_ptr<gen::Request> r, std::string* why) override {
             return drv->submit(std::move(r), why);
         }
@@ -2303,7 +2662,7 @@ int Engine::run_server() {
         int64_t queued() const override { return drv->queued(); }
         int64_t running() const override { return drv->running(); }
     } image_bridge;
-    if (gen_) {
+    if (img_gen_) {
         const Program& pg = ranks_[0]->program;
         const RadGeneratorDecl& gd = pg.generator;
         server::ImageGenInfo& in = image_bridge.inf;
@@ -2318,18 +2677,46 @@ int Engine::run_server() {
         in.size_multiple = gd.size_multiple;
         in.pixel_channels = gd.pixel_channels;
         in.max_tokens = gd.max_tokens;
-        /* Edits need the conditioning network to read pictures. */
-        in.max_refs = mm_proc ? gd.max_refs : 0;
+        /* Edits need the conditioning network to read pictures, unless only the generator's
+         * own encoder reads them. */
+        in.refs_encoder_only = gd.layout == RAD_GEN_LAYOUT_JOINT_STEP;
+        in.max_refs = mm_proc || in.refs_encoder_only ? gd.max_refs : 0;
+        in.ref_shrink_only = gd.ref_shrink_only != 0;
         in.ref_area = gd.ref_area;
         in.default_width = gd.default_width;
         in.default_height = gd.default_height;
         in.default_steps = gd.default_steps;
         in.max_lanes = gd.max_lanes;
-        in.max_cond_tokens = gen_->max_cond_tokens();
+        in.max_cond_tokens = img_gen_->max_cond_tokens();
         in.fixed_schedule = !pg.gen_str.sigmas.empty();
         in.fixed_steps = (int64_t)pg.gen_str.sigmas.size();
         in.default_cfg = gd.default_cfg;
-        image_bridge.drv = gen_.get();
+        in.cfg_original = gd.cfg_original != 0;
+        in.has_default_negative = pg.gen_str.has_default_negative;
+        in.default_negative = pg.gen_str.default_negative;
+        in.min_tokens = gd.min_tokens;
+        in.pad_token = gd.pad_token;
+        in.aux_tokens = gd.aux_tokens != 0;
+        in.aux_max_tokens = gd.aux_max_tokens;
+        if (in.aux_tokens) {
+            if (!aux_vocab_) {
+                RAD_ERR("images: '%s' reads its prompt through a second tokenizer and %s carries "
+                        "none; convert it with rad-convert --tokenizer2", in.name.c_str(),
+                        cfg_.model.c_str());
+                return RAD_E_FORMAT;
+            }
+            RAD_TRY(image_bridge.aux.init(aux_vocab_));
+            image_bridge.has_aux = true;
+        }
+        in.samplers = gd.train_steps > 0 ? gd.samplers : 0;
+        in.default_sampler = gd.default_sampler;
+        in.default_scheduler = gd.default_scheduler;
+        in.chunk_tokens = gd.chunk_tokens;
+        in.chunk_bos = gd.chunk_bos;
+        in.chunk_eos = gd.chunk_eos;
+        in.chunk_pad = gd.pad_token;
+        in.cond_opts = gd.cond_opts;
+        image_bridge.drv = img_gen_;
         image_bridge.proc = mm_proc.get();
         d.images = &image_bridge;
         /* The served model id is the generator's own name (qwen-image-2.1), not the container's
@@ -2343,6 +2730,155 @@ int Engine::run_server() {
                  (long long)in.default_height, (long long)in.max_tokens, (long long)in.max_refs,
                  in.fixed_schedule ? (std::to_string(in.fixed_steps) + " fixed steps").c_str()
                                    : (std::to_string(in.default_steps) + " steps by default").c_str());
+        if (in.samplers)
+            RAD_INFO("images: sampler %s, scheduler %s by default", gen::sampler_name(in.default_sampler),
+                     gen::scheduler_name(in.default_scheduler));
+    }
+
+    /* An audio generator's endpoint: the driver's queue, the declared prompt and limits, and the
+     * plugin's rewrite of a request's texts. */
+    struct AudioBridge final : server::IAudioGen {
+        gen::AudioDriver*      drv = nullptr;
+        const LoadedPlugins*   plugins = nullptr;
+        server::AudioGenInfo   inf;
+        const server::AudioGenInfo& info() const override { return inf; }
+        int prepare(int field, const std::string& in, std::string* out,
+                    std::string* why) const override {
+            const int s = rad_tools_text_prepare(*plugins, field, in, out);
+            if (s < 0 && why)
+                *why = !out->empty()       ? *out
+                       : s == RAD_E_INVAL ? "the model cannot take this text"
+                                          : std::string(rad_strerror(s));
+            return s;
+        }
+        int submit(std::unique_ptr<gen::AudioRequest> r, std::string* why) override {
+            return drv->submit(std::move(r), why);
+        }
+        int64_t queued() const override { return drv->queued(); }
+        int64_t running() const override { return drv->running(); }
+    } audio_bridge;
+    if (aud_gen_) {
+        const Program& pg = ranks_[0]->program;
+        const RadAudioGenDecl& ad = pg.audio_gen;
+        server::AudioGenInfo& in = audio_bridge.inf;
+        in.name = pg.agen_str.name;
+        in.tmpl = pg.agen_str.tmpl;
+        in.tmpl_plain = pg.agen_str.tmpl_plain;
+        in.neg_tmpl = pg.agen_str.neg_tmpl;
+        in.max_prompt = ad.max_prompt;
+        in.max_frames = ad.max_frames;
+        in.frame_rate_num = ad.frame_rate_num;
+        in.frame_rate_den = ad.frame_rate_den;
+        in.sample_rate = ad.sample_rate;
+        in.channels = ad.channels;
+        in.default_steps = ad.voc_chunk > 0 ? 0 : ad.default_steps;
+        in.default_cfg = ad.default_cfg;
+        in.max_lanes = ad.max_lanes;
+        in.branches = ad.branches == 1 ? 1 : 2;
+        in.input_special = ad.input_special != 0;
+        in.tmpl_ref = pg.agen_str.tmpl_ref;
+        in.ref_item = pg.agen_str.ref_item;
+        in.ref_rate = ad.ref_rate;
+        in.ref_hop = ad.ref_hop;
+        in.ref_max_samples = ad.ref_max_samples;
+        in.ref_max = ad.ref_max;
+        audio_bridge.drv = aud_gen_;
+        audio_bridge.plugins = &plugins_;
+        d.audio = &audio_bridge;
+        if (cfg_.served_model_name.empty() && !in.name.empty()) {
+            o.model_id = in.name;
+            decide("--served-model-name", o.model_id, "an audio generator: its own name");
+        }
+        RAD_INFO("audio: '%s', %lld Hz x %lld, up to %lld frames (%lld s), %lld at once, %s",
+                 in.name.c_str(), (long long)in.sample_rate, (long long)in.channels,
+                 (long long)in.max_frames,
+                 (long long)(in.max_frames * in.frame_rate_den / in.frame_rate_num),
+                 (long long)in.max_lanes,
+                 ad.voc_chunk > 0
+                     ? fmt("played %lld frames at a time as they are made",
+                           (long long)ad.voc_chunk).c_str()
+                     : fmt("%lld steps a window by default", (long long)in.default_steps).c_str());
+    }
+
+    /* A video generator's endpoints: the driver's queue and the declared prompt, sizes and
+     * lengths. */
+    struct VideoBridge final : server::IVideoGen {
+        gen::VideoDriver*    drv = nullptr;
+        server::VideoGenInfo inf;
+        const server::VideoGenInfo& info() const override { return inf; }
+        int submit(std::unique_ptr<gen::VideoRequest> r, std::string* why) override {
+            return drv->submit(std::move(r), why);
+        }
+        int64_t queued() const override { return drv->queued(); }
+        int64_t running() const override { return drv->running(); }
+    } video_bridge;
+    if (vid_gen_) {
+        const Program& pg = ranks_[0]->program;
+        const RadVideoGenDecl& vd = pg.video_gen;
+        server::VideoGenInfo& in = video_bridge.inf;
+        in.name = pg.vgen_str.name;
+        in.tmpl = pg.vgen_str.tmpl;
+        in.max_text = vd.max_text;
+        in.fps_num = vd.fps_num;
+        in.fps_den = vd.fps_den;
+        in.frames_per_chunk = vd.frames_per_chunk;
+        in.frames_tail = vd.frames_tail;
+        in.min_chunks = vd.min_chunks;
+        in.max_chunks = vd.max_chunks;
+        in.size_multiple = vd.size_multiple;
+        in.min_side = vd.min_side;
+        in.max_area = vd.max_area;
+        in.max_aspect = vd.max_aspect;
+        in.default_width = vd.default_width;
+        in.default_height = vd.default_height;
+        in.default_chunks = vd.default_chunks;
+        in.sample_rate = vd.sample_rate;
+        in.channels = vd.audio_channels;
+        in.default_steps = vd.default_steps;
+        in.max_steps = vd.max_steps;
+        in.fixed_steps = vd.n_rungs > 0;
+        in.shift_video = vd.shift_video;
+        in.shift_audio = vd.shift_audio;
+        in.upscale_max = vd.upscale_max;
+        in.upscale_refine = vd.upscale_refine;
+        in.step_evals = vd.sched_kind == 1;
+        in.guidance = vd.guidance != 0;
+        for (int i = 0; i < 8; ++i) in.guidance_default[i] = vd.guidance_default[i];
+        in.default_negative = pg.vgen_str.default_negative;
+        in.image_cond = vd.image_cond != 0;
+        in.image_crf = vd.image_crf;
+        in.length_head = vd.duration_out != RAD_NULL_HANDLE;
+        in.decoders = pg.vgen_str.decoders;
+        in.decoder_max_area = pg.vgen_str.decoder_max_area;
+        if (in.image_cond && in.image_crf > 0 && !mm::h264_roundtrip_available())
+            RAD_WARN("video: '%s' prepares a first frame with an H.264 round trip at crf %d, which "
+                     "needs libx264; this build's libavcodec has none, so input_reference is "
+                     "refused", in.name.c_str(), (int)in.image_crf);
+        in.max_lanes = vd.max_lanes;
+        in.max_ref_images = vd.max_ref_images;
+        in.max_ref_videos = vd.max_ref_videos;
+        in.max_ref_audios = vd.max_ref_audios;
+        in.max_enc_frames = vd.max_enc_frames;
+        in.max_enc_side = vd.max_enc_side;
+        in.max_enc_samples = vd.max_enc_samples;
+        in.enc_ratio = vd.enc_ratio;
+        video_bridge.drv = vid_gen_;
+        d.videos = &video_bridge;
+        if (cfg_.served_model_name.empty() && !in.name.empty()) {
+            o.model_id = in.name;
+            decide("--served-model-name", o.model_id, "a video generator: its own name");
+        }
+        const double fps = (double)in.fps_num / (double)in.fps_den;
+        RAD_INFO("video: '%s', %lldx%lld by default (up to %lld pixels), %.2f to %.2f s at %g fps "
+                 "with %lld Hz x %lld sound, %lld steps by default",
+                 in.name.c_str(), (long long)in.default_width, (long long)in.default_height,
+                 (long long)in.max_area,
+                 (double)(in.frames_per_chunk * in.min_chunks + in.frames_tail) / fps,
+                 (double)(in.frames_per_chunk * in.max_chunks + in.frames_tail) / fps, fps,
+                 (long long)in.sample_rate, (long long)in.channels, (long long)in.default_steps);
+        if (in.upscale_max > 0.0)
+            RAD_INFO("video: latent upscaling up to %gx, the last %lld evaluations at the full size "
+                     "by default", in.upscale_max, (long long)in.upscale_refine);
     }
 
     if (encd.modalities == 0 && aend.modalities == 0 && cfg_.media_flags_set())
@@ -2383,6 +2919,12 @@ int Engine::run_server() {
             RAD_INFO("chat: the template takes reasoning_effort %s, and none or minimal turn "
                      "thinking off%s%s", list.c_str(), mapped.empty() ? "" : "; mapped: ",
                      mapped.c_str());
+            /* What a request naming no effort gets, which a client cannot see: a template may
+             * render a level into a system prompt (Qwen3.8's renders xhigh). */
+            const std::string& dflt = srv.template_default_effort();
+            if (cfg_.reasoning_effort.empty() && !dflt.empty())
+                RAD_INFO("chat: a request naming no reasoning_effort renders as '%s', the "
+                         "template's own default (--reasoning-effort sets another)", dflt.c_str());
         } else if (!mapped.empty()) {
             RAD_INFO("chat: reasoning_effort mapped: %s", mapped.c_str());
         }
@@ -2402,6 +2944,12 @@ int Engine::run_server() {
     const char* const keyed = o.api_key.empty() ? "" : "; a bearer key is required";
     if (embedding_)
         RAD_INFO("serving on http://%s:%d  (/v1/embeddings; completions and chat are 501%s)",
+                 o.host.c_str(), o.port, keyed);
+    else if (aud_gen_)
+        RAD_INFO("serving on http://%s:%d  (/v1/audio/speech; completions and chat are 501%s)",
+                 o.host.c_str(), o.port, keyed);
+    else if (vid_gen_)
+        RAD_INFO("serving on http://%s:%d  (/v1/videos; completions and chat are 501%s)",
                  o.host.c_str(), o.port, keyed);
     else if (gen_)
         RAD_INFO("serving on http://%s:%d  (/v1/images/generations%s; completions and chat are "
@@ -2451,6 +2999,7 @@ int Engine::run_server() {
 
     /* Startup ends here; a quiet server from now on is an idle one. */
     startup_watch_.reset();
+    srv.note_ready(startup_begin_ns_);
     const int rc = srv.run();
     /* The watcher tests `watching` first, so clearing it ends the thread without a second stop;
      * run() has already torn the transport down. Joining costs up to one sleep interval. */

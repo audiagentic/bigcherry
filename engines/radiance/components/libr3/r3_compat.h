@@ -91,6 +91,18 @@ __device__ __forceinline__ r3_v2f r3_cvt_pk_f32_fp8(int src, bool hi) {
 #define __builtin_amdgcn_cvt_pk_fp8_f32 r3_cvt_pk_fp8_f32
 #define __builtin_amdgcn_cvt_pk_f32_fp8 r3_cvt_pk_f32_fp8
 
+// v_dot4_f32_fp8_fp8 (gfx12, radiance 1.13.0's MXFP4 GEMV; LLVM has it for gfx11.7/gfx12, not gfx1100): the four
+// E4M3 products of a and b, byte by byte, accumulated in f32 onto c in byte order, as the RDNA4 ISA's pseudocode
+// describes. Finite E4M3 values and their products are exact in f32. Bit identity with the instruction (NaN and
+// exceptional values included) is not yet measured against gfx1201.
+__device__ __forceinline__ float r3_dot4_f32_fp8_fp8(int a, int b, float c) {
+#pragma unroll
+    for (int i = 0; i < 4; ++i)
+        c = fmaf(r3_e4m3_to_f32(((uint32_t)a >> (8 * i)) & 0xffu), r3_e4m3_to_f32(((uint32_t)b >> (8 * i)) & 0xffu), c);
+    return c;
+}
+#define __builtin_amdgcn_dot4_f32_fp8_fp8 r3_dot4_f32_fp8_fp8
+
 // ------------------------------------------------------------------ the workgroup barrier
 //
 // gfx12 splits the barrier into s_barrier_signal and s_barrier_wait. libr4d issues them as a pair on the workgroup
@@ -312,9 +324,8 @@ __device__ __forceinline__ unsigned r3_e4m3_to_bf16_bits(unsigned code) {
     return ((code & 0x80u) << 8) | (mag < 8u ? subnormal : normal);
 }
 
-// 16 E4M3 codes at p (one fragment row, K ascending) as a gfx11 bf16 fragment.
-__device__ __forceinline__ r3_v16bf r3_row16_e4m3_to_bf16(const unsigned char* p) {
-    const r3_u4u codes = *reinterpret_cast<const r3_u4u*>(p);
+// 16 E4M3 codes (four dwords, K ascending) as a gfx11 bf16 fragment.
+__device__ __forceinline__ r3_v16bf r3_e4m3x16_to_bf16(r3_u4 codes) {
     r3_u8 out;
 #pragma unroll
     for (int d = 0; d < 4; ++d) {
@@ -323,6 +334,34 @@ __device__ __forceinline__ r3_v16bf r3_row16_e4m3_to_bf16(const unsigned char* p
         out[2 * d + 1] = r3_e4m3_to_bf16_bits((w >> 16) & 0xffu) | (r3_e4m3_to_bf16_bits(w >> 24) << 16);
     }
     return __builtin_bit_cast(r3_v16bf, out);
+}
+
+// 16 E4M3 codes at p (one fragment row, K ascending) as a gfx11 bf16 fragment.
+__device__ __forceinline__ r3_v16bf r3_row16_e4m3_to_bf16(const unsigned char* p) {
+    return r3_e4m3x16_to_bf16(r3_u4(*reinterpret_cast<const r3_u4u*>(p)));
+}
+
+// Operands of a 16x16x16 product whose A rows and B columns are E4M3 rows in shared memory (`pitch` bytes a row, K
+// ascending), for kernels written against gfx12's accumulator: D row 8h + j sits in slot j of lane half h. gfx11's C
+// layout puts row 2j + h there, so the lane that supplies A row m' (lane & 15) loads the row that belongs in slot
+// m' >> 1 of half m' & 1, i.e. row 8 * (m' & 1) + (m' >> 1). Nothing downstream changes; no accumulator conversion.
+__device__ __forceinline__ unsigned r3_arow(unsigned lane) { return ((lane & 1u) << 3) | ((lane & 15u) >> 1); }
+__device__ __forceinline__ r3_v16bf r3_frag_a_e4m3(const unsigned char* lds, unsigned pitch, unsigned row0, unsigned k,
+                                                   unsigned lane) {
+    return r3_row16_e4m3_to_bf16(lds + (size_t)(row0 + r3_arow(lane)) * pitch + k);
+}
+__device__ __forceinline__ r3_v16bf r3_frag_b_e4m3(const unsigned char* lds, unsigned pitch, unsigned row0, unsigned k,
+                                                   unsigned lane) {
+    return r3_row16_e4m3_to_bf16(lds + (size_t)(row0 + (lane & 15u)) * pitch + k);
+}
+
+// A row held in registers the gfx12 way: this lane has 8 of its row's 16 E4M3 codes (k 0-7 in lanes 0-15, k 8-15 in
+// lanes 16-31, two dwords each); the partner lane (lane ^ 16) has the other 8. One exchange of two dwords gives every
+// lane the whole row, widened to the gfx11 bf16 fragment.
+__device__ __forceinline__ r3_v16bf r3_row16_e4m3_regs_to_bf16(unsigned w0, unsigned w1, unsigned lane) {
+    const unsigned p0 = r3_from_lane(lane ^ 16u, w0), p1 = r3_from_lane(lane ^ 16u, w1);
+    const r3_u4 row = (lane & 16u) ? r3_u4{p0, p1, w0, w1} : r3_u4{w0, w1, p0, p1};
+    return r3_row16_e4m3_to_bf16(reinterpret_cast<const unsigned char*>(&row));
 }
 
 // The same row when the kernel has staged it as bf16 already (r3_store*_e4m3_as_bf16 below): a plain 32-byte load.
@@ -404,6 +443,17 @@ __device__ __forceinline__ r3_u4 r3_mxfp4_unpack8_bf16(unsigned wv, int d) {
     out[2] = __builtin_amdgcn_perm(o23, e23, 0x05040100u);  // k 4, 5
     out[3] = __builtin_amdgcn_perm(o23, e23, 0x07060302u);  // k 6, 7
     return out;
+}
+
+// A row held in registers as bf16 the gfx12 way (this lane has 8 of its row's 16 values, k 0-7 in lanes 0-15 and k 8-15 in
+// lanes 16-31): four dword exchanges with the partner lane (lane ^ 16, same row, other half) give every lane the row.
+__device__ __forceinline__ r3_v16bf r3_row16_bf16_regs(r3_u4 own, unsigned lane) {
+    r3_u4 other;
+#pragma unroll
+    for (int i = 0; i < 4; ++i) other[i] = r3_from_lane(lane ^ 16u, own[i]);
+    const r3_u8 out = (lane & 16u) ? r3_u8{ other[0], other[1], other[2], other[3], own[0], own[1], own[2], own[3] }
+                                   : r3_u8{ own[0], own[1], own[2], own[3], other[0], other[1], other[2], other[3] };
+    return __builtin_bit_cast(r3_v16bf, out);
 }
 
 __device__ __forceinline__ void r3_mxfp4_store8_bf16(unsigned short* dst, unsigned wv, int d) {
