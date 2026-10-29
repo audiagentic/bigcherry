@@ -13,10 +13,13 @@ using std::max;
                                                 KVP, P_OPT | XOPT>),
                        grid, dim3(P_NWARPS * 32), 0, s, *a);
 @@ replace
+    /* 1.13.0: the e4m3 legs (QK8/PV8) are gfx12 fp8 fragment maps, so those launches stay upstream's form; the
+     * KV-split launch above is a separate call and keeps upstream's form too. */
+    constexpr int R3X = (XOPT & (O_QK8 | O_PV8)) ? 0 : O_R3NATIVE;
     const char* r3n = std::getenv("R3_ATTN_NATIVE");
     if (!(r3n && *r3n == '0'))
         hipLaunchKernelGGL((r4d_attn_prefill_kernel<P_NWARPS, P_TILE, A_HEAD_DIM, A_GQA, A_BLOCK_SIZE,
-                                                    KVP, P_OPT | XOPT | O_R3NATIVE>),
+                                                    KVP, P_OPT | XOPT | R3X>),
                            grid, dim3(P_NWARPS * 32), 0, s, *a);
     else
         hipLaunchKernelGGL((r4d_attn_prefill_kernel<P_NWARPS, P_TILE, A_HEAD_DIM, A_GQA, A_BLOCK_SIZE,

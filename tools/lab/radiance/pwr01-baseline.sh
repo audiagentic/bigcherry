@@ -12,7 +12,9 @@ source "$(dirname "${BASH_SOURCE[0]}")/lab-env.sh"
 OUT=$BC_WORK_ROOT/runs/pwr01-baseline-$(date +%m%d%H%M); mkdir -p $OUT
 git log -1 --format='commit %H %s' > $OUT/summary.txt
 RAPL=/sys/class/powercap/intel-rapl:0/energy_uj
-[ -r $RAPL ] || { echo "CPU package energy not readable ($RAPL): install the PWR01 udev rule"; exit 1; }
+# Without the counter (no PWR01 udev rule, or a container that masks powercap) the CPU package is left out: GPU power
+# and the decode/prefill rates are still measured.
+[ -r $RAPL ] || { echo "CPU package energy not readable ($RAPL): CPU package power left out" | tee -a $OUT/summary.txt; RAPL=""; }
 # Every GPU in the inventory: "index:locator:arch" -> amd-smi ids.
 GPUS=$(PYTHONPATH=tools python3 -c '
 from bigcherry.core import environment as e
@@ -34,8 +36,7 @@ URL=http://127.0.0.1:36080/v1/completions   # the launcher's default port
 echo "t,phase,device,watts" > $OUT/samples.csv
 sampler() {   # one sample a second: every GPU's board power and the CPU package power over the last second
     local e0 e1 t0 t1 max
-    max=$(cat /sys/class/powercap/intel-rapl:0/max_energy_range_uj)
-    e0=$(cat $RAPL); t0=$(date +%s.%N)
+    [ -n "$RAPL" ] && { max=$(cat /sys/class/powercap/intel-rapl:0/max_energy_range_uj); e0=$(cat $RAPL); t0=$(date +%s.%N); }
     while [ -f $OUT/.sampling ]; do
         sleep 1
         local ph; ph=$(cat $OUT/.phase)
@@ -43,6 +44,7 @@ sampler() {   # one sample a second: every GPU's board power and the CPU package
             amd-smi metric -g $g -p 2>/dev/null | awk -v t="$(date +%s.%N)" -v p="$ph" -v g="gpu$g" \
                 '/SOCKET_POWER/{print t "," p "," g "," $2}' >> $OUT/samples.csv
         done
+        [ -n "$RAPL" ] || continue
         e1=$(cat $RAPL); t1=$(date +%s.%N)
         python3 -c "import sys; e0,e1,t0,t1,m=map(float,sys.argv[1:6]); d=e1-e0 if e1>=e0 else e1+m-e0; print(f'{t1},{sys.argv[6]},cpu_pkg,{d/1e6/(t1-t0):.1f}')" \
             $e0 $e1 $t0 $t1 $max "$ph" >> $OUT/samples.csv
@@ -103,7 +105,7 @@ print(f"{'total':10s}" + "".join(f"{total[p]:13.1f}" for p in phases))
 for p in ("decode", "prefill"):
     if p in tok and tok[p][0]:
         n, s = tok[p]
-        print(f"{p}: {n} tokens in {s} s = {n/s:.1f} tok/s, {total[p]*s/n:.3f} J/token (all devices + CPU package)")
+        print(f"{p}: {n} tokens in {s} s = {n/s:.1f} tok/s, {total[p]*s/n:.3f} J/token (all devices{' + CPU package' if 'cpu_pkg' in devices else ''})")
 t = out / "texts-decode.txt"
 if t.exists():
     h = [l.strip() for l in open(t) if l.strip()]

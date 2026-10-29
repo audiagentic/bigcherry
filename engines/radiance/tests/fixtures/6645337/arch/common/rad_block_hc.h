@@ -365,6 +365,97 @@ inline void HyperConn::read(RadCtx* c_, int64_t T, int64_t r0, int64_t rows) con
                 c.rotate ? brow_slice(w.rs, r0, rows, fp8_blocks(g.n_embd)) : RAD_NONE);
 }
 
+/* ================================================================== the control-vector projection
+ *
+ * A control vector is one unit direction per layer (a `controlvector` GGUF, core/cvec.h). For a
+ * request that takes it, a steered layer's wide stream loses its component along that layer's
+ * direction right after the feed-forward's write:
+ *
+ *     h[s] -= scale * (h[s] . v) * v        for each of the hc streams s
+ *
+ * This is llama.cpp's `--cvec-mode project`. The dot is per stream, not on the stream mean, as
+ * llama.cpp's `mul_mat(v, cur)` over the [n_embd, hc, tokens] view reduces dim 0 alone.
+ *
+ * The switch is per request: `on` is a derived buffer of one int32 per row
+ * (core/sched/derive.cpp, `projection_on_rows`), so a step that mixes a projected conversation
+ * with a stock one projects only the rows that asked. The kernel neither reads nor writes a zero
+ * row, and a pass with no row on issues nothing (RadBatch::control_vector). `scale` is the norm
+ * the file stored for the layer times the package's own scale.
+ *
+ * One instance per layer; `declare` emits an op only where the vector steers, so a deployment
+ * without a vector declares no op and no buffer. */
+struct HcProject {
+    rad_op       op = 0;          /* 0: this layer is not steered (or there is no vector) */
+    const float* dir = nullptr;    /* this layer's row of the device direction table */
+    rad_buf      on = 0;           /* [rows] int32: 1 = project this row */
+    rad_buf      h = 0;            /* the model's wide stream */
+    int64_t      n = 0, hc = 0;
+
+    bool steered() const { return op != 0; }
+
+    /* The per-token switch, declared once per model as a derived buffer. 0 when the deployment has
+     * no vector (or one of another width), which leaves every layer unsteered. */
+    static rad_buf declare_mask(RadBuilder* b, const char* name, const Geom& g,
+                                const RadControlVector* cv) {
+        if (!b || g.n_embd <= 0 || g.max_tok <= 0) return 0;
+        if (!cv || !cv->dir || cv->n_layers <= 0) return 0;
+        if (cv->n_embd != g.n_embd) {
+            fprintf(stderr, "radiance: %s: the control vector is %lld wide and this model's "
+                            "residual streams are %lld; not steering it\n",
+                    name, (long long) cv->n_embd, (long long) g.n_embd);
+            return 0;
+        }
+        RadBufDecl d{};
+        d.dtype    = RAD_I32;
+        d.rank     = 1;
+        d.shape[0] = g.max_tok;
+        d.kind     = RAD_BUF_DERIVED;
+        d.domain   = RAD_DOMAIN_DEVICE;
+        d.derive   = "projection_on_rows";
+        return rad_decl_buffer(b, name, &d);
+    }
+
+    /* `layer`'s projection, when the vector steers it. Called for every layer; the unsteered ones
+     * (outside the file, outside the range, or no vector at all) declare nothing. */
+    int declare(RadBuilder* b, const char* name, const Geom& g, int64_t layer,
+                const RadControlVector* cv, rad_buf mask, rad_buf stream, int64_t hc_streams) {
+        if (!b || !mask || !stream || !cv || !cv->dir || hc_streams <= 1) return RAD_OK;
+        if (layer <= 0 || layer >= cv->n_layers || layer >= g.n_layer) return RAD_OK;
+        const float scale = cv->scales ? cv->scales[(size_t) layer] : 0.0f;
+        if (scale == 0.0f) return RAD_OK;
+
+        n   = g.n_embd;
+        hc  = hc_streams;
+        on  = mask;
+        h   = stream;
+        dir = cv->dir + (size_t) layer * (size_t) n;
+
+        op = rw(b, RAD_OP(b, "hc_project",
+                   RAD_PARAMS(RAD_RANGE("M", 1, g.max_tok), RAD_INT("n", n), RAD_INT("hc", hc),
+                              RAD_F64("scale", (double) scale), RAD_STR("dtype", g.dtype)),
+                   RAD_NOWEIGHTS),
+               {h, mask}, {h});
+        if (!op) {
+            fprintf(stderr, "radiance: %s: hc_project resolves to no kernel at n %lld, hc %lld -- "
+                            "this rank cannot serve the control vector\n",
+                    name, (long long) n, (long long) hc);
+            return RAD_E_INVAL;
+        }
+        return RAD_OK;
+    }
+
+    /* Rows [r0, r0 + rows) of the stream. The whole step is r0 = 0; the pipelined step issues one
+     * call per piece, in the same place in the graph. Nothing is issued on a pass where no row
+     * takes the vector (RadBatch::control_vector): every row would be skipped. */
+    void step(RadCtx* c_, const RadBatch* batch, int64_t r0, int64_t rows) const {
+        if (!op || !batch || !batch->control_vector) return;
+        RAD_ISSUE_N(c_, op, rows,
+                    brow_slice(h, r0, rows, hc * n),
+                    praw(dir, RAD_F32, n),
+                    praw((const int32_t*) rad_buf_ptr(c_, on) + r0, RAD_I32, rows));
+    }
+};
+
 /* The block's output `y` is read from `w.x.x`, the buffer the read wrote the block's input to:
  * every block leaves its delta in the activation its norm produced, and the input is dead by
  * then. */

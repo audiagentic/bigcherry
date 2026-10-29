@@ -1,0 +1,330 @@
+# Native gfx11 matrix products for r4d_gemm_mxfp4a8_gemv (radiance 1.13.0: the MXFP4 GEMM for one to eight rows, 64 with K
+# a multiple of 128; the plain WMMA form and the two gated forms), the row that serves every decode step.
+#
+# libr4d: the WEIGHT is the matrix instruction's A operand (a lane holds its column's 8 codes of a k-half, unpacked to
+# e4m3 in registers) and the activation rows its B operand; D's row 8h + e (slot e of lane half h) is output column
+# 8h + e, its column the activation row (lane & 15). Native: the gfx11 instruction takes whole 16-code rows, so a lane
+# loads ONE dword of its column's codes (its own k half; the fragment-order weight is read once, not once a half),
+# unpacks it, swaps the 8 e4m3 codes with the partner lane (lane ^ 16, same column, other half) and widens the 16 to bf16; the activation row is 16 contiguous bytes widened the same way.
+# gfx11 puts D row 2e + h in slot e of half h, so the lane that supplies A row m' supplies output column
+# ac = r3_arow(m') = 8 * (m' & 1) + (m' >> 1) (r3_compat.h): then slot e of half h holds output column 8h + e again, and
+# the epilogues, sP stores and the activation-scale fold stay as written. The chain of eight products per 128 of K starts
+# from a zero accumulator exactly as before; nothing leaves the gfx11 layout.
+#
+# The dot form (K % 128 == 64) still multiplies with the dot4 shim; no Qwen projection takes it (K is 5120 or 17408).
+#
+# Activation staging in K slabs: the bf16 rows go through shared memory a slab of K at a time (24576 values, 48 KiB), so
+# every M (1 to 16 in these forms) and every K is staged; staging the whole M x K at once fitted one row only, and two to
+# eight rows (a drafter's verify step) fell back to widening in the step at half the bandwidth. A staged row is padded by
+# 16 values (32 bytes): K is a multiple of 64, so unpadded rows start on the same LDS bank. A slab is a whole number
+# of KW chunks of 128 (1024 of K), so each wave keeps its chunks (ch = wave mod KW) in the same order: the sums and the
+# result are unchanged.
+
+# ---- the plain form (r4d_gemm_mxfp4a8_gemvw_kernel)
+@@ find 1
+  const int col = lane & 15, khalf = lane >> 4;  // B fragment: this lane's column and k half
+@@ replace
+  const int col = lane & 15, khalf = lane >> 4;  // B fragment: this lane's column and k half
+  const int ac = (int)r3_arow((unsigned)lane);   // libr3 native: the weight column this lane supplies as an A row
+  // libr3 native: the activation rows widened to bf16 ONCE a block into shared memory, a K slab at a time (not 16 codes a lane a
+  // step, a quarter of the kernel's vector work). RT == 1 is M <= 16, so a slab is at least 1024 of K.
+  __shared__ __attribute__((aligned(32))) unsigned short r3_sAct[RT == 1 ? 24576 : 1];
+  const bool r3_stage = RT == 1;
+  const int r3_slab = r3_stage ? (24576 / M - 16) / 1024 * 1024 : K;
+@@ end
+
+@@ find 1
+  for (int t = 0; t < TN; ++t) ref[t] = (int)Wref[(nt0 + t) * 16 + col];
+@@ replace
+  for (int t = 0; t < TN; ++t) ref[t] = (int)Wref[(nt0 + t) * 16 + ac];
+@@ end
+
+@@ find 1
+    unsigned wv[TN][8];
+#pragma unroll
+    for (int t = 0; t < TN; ++t)
+#pragma unroll
+      for (int s = 0; s < 8; ++s)
+        wv[t][s] = __builtin_nontemporal_load(&Wp[((size_t)(nt0 + t) * ksteps + ch * 8 + s) * 32 + lane]);
+@@ replace
+    unsigned wv[TN][8];
+#pragma unroll
+    for (int t = 0; t < TN; ++t)
+#pragma unroll
+      for (int s = 0; s < 8; ++s)
+        wv[t][s] = __builtin_nontemporal_load(&Wp[((size_t)(nt0 + t) * ksteps + ch * 8 + s) * 32 + (lane & 16) + ac]);
+@@ end
+
+@@ find 1
+#pragma unroll
+    for (int t = 0; t < TN; ++t) tot[r][t] = (mxg_v8f)(0.f);
+  for (int ch = wave; ch < chunks; ch += KW) {
+@@ replace
+#pragma unroll
+    for (int t = 0; t < TN; ++t) tot[r][t] = (mxg_v8f)(0.f);
+  for (int r3_k0 = 0; r3_k0 < K; r3_k0 += r3_slab) {   // libr3 native: one K slab
+  const int r3_kn = K - r3_k0 < r3_slab ? K - r3_k0 : r3_slab;
+  if (r3_stage) {
+    __syncthreads();   // the previous slab's reads are done
+    for (int i = threadIdx.x; i < M * r3_kn; i += blockDim.x) {
+      const int m = i / r3_kn;
+      r3_sAct[m * (r3_kn + 16) + (i - m * r3_kn)] = (unsigned short)r3_e4m3_to_bf16_bits(A[(size_t)m * lda + r3_k0 + (i - m * r3_kn)]);
+    }
+    __syncthreads();
+  }
+  for (int ch = (r3_k0 >> 7) + wave; ch < ((r3_k0 + r3_kn) >> 7); ch += KW) {
+@@ end
+
+@@ find 1
+  }
+  // One column tile at a time through sP (TN of them would not fit in LDS at four row tiles).
+@@ replace
+  }
+  }   // libr3 native: K slab
+  // One column tile at a time through sP (TN of them would not fit in LDS at four row tiles).
+@@ end
+
+@@ find 1
+      for (int q = 0; q < 4; ++q) e8[t][q] = (int)Ws[(size_t)(ch * 4 + q) * ldws + (nt0 + t) * 16 + col];
+@@ replace
+      for (int q = 0; q < 4; ++q) e8[t][q] = (int)Ws[(size_t)(ch * 4 + q) * ldws + (nt0 + t) * 16 + ac];
+@@ end
+
+@@ find 1
+    mxg_v2i wf[TN][8];
+#pragma unroll
+    for (int t = 0; t < TN; ++t)
+#pragma unroll
+      for (int s = 0; s < 8; ++s) {
+        unsigned lo, hi;
+        r4d_mxfp4_unpack8(wv[t][s], r4d_mxfp4_fold_d(ref[t], e8[t][s >> 1]), &lo, &hi);
+        wf[t][s][0] = (int)lo; wf[t][s][1] = (int)hi;
+      }
+@@ replace
+    r3_v16bf wf[TN][8];
+#pragma unroll
+    for (int t = 0; t < TN; ++t)
+#pragma unroll
+      for (int s = 0; s < 8; ++s) {
+        wf[t][s] = r3_row16_bf16_regs(r3_mxfp4_unpack8_bf16(wv[t][s], r4d_mxfp4_fold_d(ref[t], e8[t][s >> 1])), (unsigned)lane);
+      }
+@@ end
+
+# the activation rows: shared by the plain and the gated-wide forms
+@@ find 1
+      mxg_v2i af[8];
+#pragma unroll
+      for (int s = 0; s < 8; ++s) {
+        if (live) {
+          const unsigned* pa = (const unsigned*)(A + (size_t)row * lda + (ch * 8 + s) * 16 + khalf * 8);
+          af[s][0] = (int)pa[0]; af[s][1] = (int)pa[1];
+        } else {
+          af[s][0] = 0; af[s][1] = 0;
+        }
+      }
+      const float sc = ABLK ? (live ? As[(size_t)row * as_rs + ch] : 0.f) : 1.f;
+#pragma unroll
+      for (int t = 0; t < TN; ++t) {
+@@ replace
+      r3_v16bf af[8];
+#pragma unroll
+      for (int s = 0; s < 8; ++s)
+        af[s] = !live ? r3_v16bf{}
+              : r3_stage ? *reinterpret_cast<const r3_v16bf*>(&r3_sAct[(size_t)row * (r3_kn + 16) + (ch * 8 + s) * 16 - r3_k0])
+                         : r3_e4m3x16_to_bf16(*reinterpret_cast<const r3_u4u*>(A + (size_t)row * lda + (ch * 8 + s) * 16));
+      const float sc = ABLK ? (live ? As[(size_t)row * as_rs + ch] : 0.f) : 1.f;
+#pragma unroll
+      for (int t = 0; t < TN; ++t) {
+@@ end
+
+@@ find 1
+      mxg_v2i af[8];
+#pragma unroll
+      for (int s = 0; s < 8; ++s) {
+        if (live) {
+          const unsigned* pa = (const unsigned*)(A + (size_t)row * lda + (ch * 8 + s) * 16 + khalf * 8);
+          af[s][0] = (int)pa[0]; af[s][1] = (int)pa[1];
+        } else {
+          af[s][0] = 0; af[s][1] = 0;
+        }
+      }
+      const float sc = ABLK ? (live ? As[(size_t)row * as_rs + ch] : 0.f) : 1.f;
+#pragma unroll
+      for (int t = 0; t < 2; ++t) {
+@@ replace
+      r3_v16bf af[8];
+#pragma unroll
+      for (int s = 0; s < 8; ++s)
+        af[s] = live ? r3_e4m3x16_to_bf16(*reinterpret_cast<const r3_u4u*>(A + (size_t)row * lda + (ch * 8 + s) * 16))
+                     : r3_v16bf{};
+      const float sc = ABLK ? (live ? As[(size_t)row * as_rs + ch] : 0.f) : 1.f;
+#pragma unroll
+      for (int t = 0; t < 2; ++t) {
+@@ end
+
+@@ find 2
+          acc = __builtin_amdgcn_wmma_f32_16x16x16_fp8_fp8_w32_gfx12(wf[t][s], af[s], acc);
+@@ replace
+          acc = r3_wmma_bf16_native(wf[t][s], af[s], acc);
+@@ end
+
+# ---- the gated forms: the column line is shared by the narrow and the wide one
+@@ find 2
+  const int col = lane & 15, khalf = lane >> 4;
+@@ replace
+  const int col = lane & 15, khalf = lane >> 4;
+  const int ac = (int)r3_arow((unsigned)lane);   // libr3 native: the weight column this lane supplies as an A row
+@@ end
+
+# the narrow gated form (r4d_gemm_mxfp4a8_gated_kernel): one row tile, a K wave each
+@@ find 1
+  const int ref = (int)Wref[nt * 16 + col];
+@@ replace
+  // libr3 native: the activation rows widened to bf16 ONCE a block into shared memory, a K slab at a time (not 16 codes a lane a
+  // step, a quarter of the kernel's vector work). One row tile: M <= 16, so a slab is at least 1024 of K.
+  __shared__ __attribute__((aligned(32))) unsigned short r3_sAct[24576];
+  const bool r3_stage = true;
+  const int r3_slab = (24576 / M - 16) / 1024 * 1024;
+  const int ref = (int)Wref[nt * 16 + ac];
+@@ end
+
+@@ find 1
+  mxg_v8f tot = (mxg_v8f)(0.f);
+  for (int ch = kv; ch < chunks; ch += KW) {
+@@ replace
+  mxg_v8f tot = (mxg_v8f)(0.f);
+  for (int r3_k0 = 0; r3_k0 < K; r3_k0 += r3_slab) {   // libr3 native: one K slab
+  const int r3_kn = K - r3_k0 < r3_slab ? K - r3_k0 : r3_slab;
+  if (r3_stage) {
+    __syncthreads();   // the previous slab's reads are done
+    for (int i = threadIdx.x; i < M * r3_kn; i += blockDim.x) {
+      const int m = i / r3_kn;
+      r3_sAct[m * (r3_kn + 16) + (i - m * r3_kn)] = (unsigned short)r3_e4m3_to_bf16_bits(A[(size_t)m * lda + r3_k0 + (i - m * r3_kn)]);
+    }
+    __syncthreads();
+  }
+  for (int ch = (r3_k0 >> 7) + kv; ch < ((r3_k0 + r3_kn) >> 7); ch += KW) {
+@@ end
+
+@@ find 1
+  }
+  // tot[e]: row (lane & 15), column khalf * 8 + e of the tile.
+@@ replace
+  }
+  }   // libr3 native: K slab
+  // tot[e]: row (lane & 15), column khalf * 8 + e of the tile.
+@@ end
+
+@@ find 1
+    unsigned wv[8];
+#pragma unroll
+    for (int s = 0; s < 8; ++s)
+      wv[s] = __builtin_nontemporal_load(&Wp[((size_t)nt * ksteps + ch * 8 + s) * 32 + lane]);
+@@ replace
+    unsigned wv[8];
+#pragma unroll
+    for (int s = 0; s < 8; ++s)
+      wv[s] = __builtin_nontemporal_load(&Wp[((size_t)nt * ksteps + ch * 8 + s) * 32 + (lane & 16) + ac]);
+@@ end
+
+@@ find 1
+    for (int q = 0; q < 4; ++q) e8[q] = (int)Ws[(size_t)(ch * 4 + q) * ldws + nt * 16 + col];
+@@ replace
+    for (int q = 0; q < 4; ++q) e8[q] = (int)Ws[(size_t)(ch * 4 + q) * ldws + nt * 16 + ac];
+@@ end
+
+@@ find 1
+    mxg_v2i af[8];
+#pragma unroll
+    for (int s = 0; s < 8; ++s) {
+      if (live) {
+        const unsigned* pa = (const unsigned*)(A + (size_t)row * lda + (ch * 8 + s) * 16 + khalf * 8);
+        af[s][0] = (int)pa[0]; af[s][1] = (int)pa[1];
+      } else {
+        af[s][0] = 0; af[s][1] = 0;
+      }
+    }
+@@ replace
+    r3_v16bf af[8];
+#pragma unroll
+    for (int s = 0; s < 8; ++s)
+      af[s] = !live ? r3_v16bf{}
+            : r3_stage ? *reinterpret_cast<const r3_v16bf*>(&r3_sAct[(size_t)row * (r3_kn + 16) + (ch * 8 + s) * 16 - r3_k0])
+                       : r3_e4m3x16_to_bf16(*reinterpret_cast<const r3_u4u*>(A + (size_t)row * lda + (ch * 8 + s) * 16));
+@@ end
+
+@@ find 1
+      unsigned lo, hi;
+      r4d_mxfp4_unpack8(wv[s], r4d_mxfp4_fold_d(ref, e8[s >> 1]), &lo, &hi);
+      mxg_v2i wf;
+      wf[0] = (int)lo; wf[1] = (int)hi;
+      acc = __builtin_amdgcn_wmma_f32_16x16x16_fp8_fp8_w32_gfx12(wf, af[s], acc);
+@@ replace
+      acc = r3_wmma_bf16_native(
+          r3_row16_bf16_regs(r3_mxfp4_unpack8_bf16(wv[s], r4d_mxfp4_fold_d(ref, e8[s >> 1])), (unsigned)lane), af[s], acc);
+@@ end
+
+# the wide gated form (r4d_gemm_mxfp4a8_gatedw_kernel): RT row tiles, gate and up tiles
+@@ find 1
+  for (int t = 0; t < 2; ++t) ref[t] = (int)Wref[nt[t] * 16 + col];
+@@ replace
+  for (int t = 0; t < 2; ++t) ref[t] = (int)Wref[nt[t] * 16 + ac];
+@@ end
+
+@@ find 1
+    unsigned wv[2][8];
+#pragma unroll
+    for (int t = 0; t < 2; ++t)
+#pragma unroll
+      for (int s = 0; s < 8; ++s)
+        wv[t][s] = __builtin_nontemporal_load(&Wp[((size_t)nt[t] * ksteps + ch * 8 + s) * 32 + lane]);
+@@ replace
+    unsigned wv[2][8];
+#pragma unroll
+    for (int t = 0; t < 2; ++t)
+#pragma unroll
+      for (int s = 0; s < 8; ++s)
+        wv[t][s] = __builtin_nontemporal_load(&Wp[((size_t)nt[t] * ksteps + ch * 8 + s) * 32 + (lane & 16) + ac]);
+@@ end
+
+@@ find 1
+      for (int q = 0; q < 4; ++q) e8[t][q] = (int)Ws[(size_t)(ch * 4 + q) * ldws + nt[t] * 16 + col];
+@@ replace
+      for (int q = 0; q < 4; ++q) e8[t][q] = (int)Ws[(size_t)(ch * 4 + q) * ldws + nt[t] * 16 + ac];
+@@ end
+
+@@ find 1
+    mxg_v2i wf[2][8];
+#pragma unroll
+    for (int t = 0; t < 2; ++t)
+#pragma unroll
+      for (int s = 0; s < 8; ++s) {
+        unsigned lo, hi;
+        r4d_mxfp4_unpack8(wv[t][s], r4d_mxfp4_fold_d(ref[t], e8[t][s >> 1]), &lo, &hi);
+        wf[t][s][0] = (int)lo; wf[t][s][1] = (int)hi;
+      }
+@@ replace
+    r3_v16bf wf[2][8];
+#pragma unroll
+    for (int t = 0; t < 2; ++t)
+#pragma unroll
+      for (int s = 0; s < 8; ++s) {
+        wf[t][s] = r3_row16_bf16_regs(r3_mxfp4_unpack8_bf16(wv[t][s], r4d_mxfp4_fold_d(ref[t], e8[t][s >> 1])), (unsigned)lane);
+      }
+@@ end
+
+# ---- the WMMA launcher: two column tiles a block from two rows. A block stages the whole activation (M rows, K slabs)
+# once, so at two to sixteen rows one 16-column tile a block re-read and re-widened about as many activation bytes as
+# weight bytes; two tiles halve that. TN only widens a block (a column's sum order is KW's), so no bits change.
+@@ find 1
+  const bool tn2 = M > 24 && tiles % 2 == 0 && N >= 4096 && K >= 3072;
+@@ replace
+  const bool tn2 = tiles % 2 == 0 && ((M > 24 && N >= 4096 && K >= 3072) || (M > 1 && M <= 16));
+@@ end
+
+# ... and the one-row-tile launch takes that TN too (it was fixed at one tile).
+@@ find 1
+    if (rt <= 1) { if (ablk) MXW_L(true, 1, 1); else MXW_L(false, 1, 1); }
+@@ replace
+    if (rt <= 1) MXW_AB(1)
+@@ end

@@ -145,6 +145,14 @@ recorded, treat as indicative). Prefill of the best layout is about 40% of that 
 MTP draft acceptance of the current best layout has not been compared (RAD02 notes: "different text; acceptance not
 compared"); generated text differs from the XTX-pair run, as the noise-floor finding predicts.
 
+### radiance 1.13.0 (RAD32, PR #451, 2026-10-29)
+
+Production layout through `tools/lab/radiance/pwr01-baseline.sh` (decode 4,096 tokens, back-to-back long prefills),
+three runs on 038fdb2af: decode 93.5 / 93.5 / 92.5 tok/s, prefill 3,353 / 3,345 / 3,345 tok/s (`pwr01-baseline-10290344`,
+`-10290349`, `-10290353`), against v1.9.0's 88.3-89.8 and 3,265-3,345 (`pwr01-baseline-10280942`..`10281145`). One decode
+text across all 12 responses (hash a9a6205772e23387); it differs from both v1.9.0 variants, and the KLD below shows that
+is not a quality loss. The container masks the RAPL counter, so these runs left the CPU package out of the energy split.
+
 ## What is on and why
 
 Engine patches (state from each SUMMARY.md; none is `validated` yet):
@@ -388,6 +396,16 @@ there); the 24-row arm's two pairs agree within 2%.
   bounds it now (gap).
 
 ## Quality measurements
+
+radiance 1.13.0 against 1.9.0 (RAD32, 2026-10-29), production helper layout with the combine off (the `combine0` arm of
+`tools/lab/radiance/helper-combine-kld.json`), against the two-XTX exact reference recorded 2026-10-23
+(`runs/rad18-kld/reference`, reference PPL 9.1114 -- not the reference of the table below):
+
+| Pin | KLD mean / median / p99 / p99.9 | Top-1 | PPL ratio | Source |
+|---|---|---|---|---|
+| 1.9.0 | 0.0614 / 0.0148 / 0.624 / 2.375 | 89.09% | 0.990 | `rad18-kld` run2 and run3 (identical) |
+| 1.13.0 | 0.0552 / 0.0142 / 0.556 / 1.642 | 89.75% | 0.995 | `rad32-fn-kld-10290334`, two identical arms |
+
 
 Corpus: 4 documents, 64-token steps; reference: the radiance XTX-pair exact run of the same container (reference PPL
 9.1034). Noise floor: re-chunking the stock XTX path alone gives KLD 0.0624 / 0.0582 at 128 / 256 tokens (top-1

@@ -5,8 +5,11 @@
  * Separate from engine.cpp (the hot step loop), with which it shares only the Engine's fields.
  */
 #include "engine_priv.h"
+#include "rad_internal.h"
 #include "engine_hostmem.h"
 #include "gen/driver.h"
+#include "gen/audio_driver.h"
+#include "gen/video_driver.h"
 
 #include "build/startup.h"
 #include "build/rad_build.h"
@@ -18,6 +21,8 @@
 #include "format/table_copy.h"
 #include "rad_plugin.h"
 #include "mem/vram_budget.h"
+#include "kvstream/bringup.h"
+#include "kvstream/plan.h"
 #include "runtime/arena.h"
 #include "runtime/kvbind.h"
 #include "runtime/xprefetch.h"
@@ -80,6 +85,25 @@ struct MissReport {
                lossy_wire == o.lossy_wire;
     }
 };
+
+/* The kernels --attn-prefill-fp8 reached: the resolved rows, in any band and domain, that
+ * constrain `prefill_fp8`. An exact kernel ignores the parameter and states no constraint on it. */
+static std::vector<std::string> prefill_fp8_rows(const Program& p) {
+    std::vector<std::string> names;
+    for (const OpInfo& op : p.ops)
+        for (const Band& band : op.bands)
+            for (const Resolved& r : band.dom) {
+                if (!r || !r.row->info) continue;
+                const RadKernelInfo* k = r.row->info;
+                bool takes = false;
+                for (int c = 0; c < k->n_constraints; ++c)
+                    if (k->constraints[c].key && !std::strcmp(k->constraints[c].key, "prefill_fp8"))
+                        takes = true;
+                if (takes && std::find(names.begin(), names.end(), k->name) == names.end())
+                    names.push_back(k->name);
+            }
+    return names;
+}
 
 static MissReport miss_report(const Program& p, bool host_backend) {
     MissReport r;
@@ -205,12 +229,27 @@ static int64_t meminfo_bytes(const char* key) {
     return -1;
 }
 
+/* The amdgpu driver's cap on the memory every process together pins: RAM less 1/64 and 1.5 GiB
+ * (half of RAM less 1/64 below 3 GiB), unless amdgpu.no_system_mem_limit lifts it;
+ * ttm.pages_limit does not apply. -1 when lifted (`*lifted` set) or MemTotal is unreadable. */
+static int64_t amdgpu_pin_cap(bool* lifted) {
+    {
+        std::ifstream f("/sys/module/amdgpu/parameters/no_system_mem_limit");
+        std::string v;
+        *lifted = (f >> v) && (v == "Y" || v == "1");
+    }
+    const int64_t total = meminfo_bytes("MemTotal");
+    if (*lifted || total <= 0) return -1;
+    const int64_t reserve = (int64_t)3 << 29;
+    const int64_t cap = total - (total >> 6);
+    return cap < 2 * reserve ? cap >> 1 : cap - reserve;
+}
+
 /* Explain a refused pool allocation from the machine's current state.
  *
  * A card pool refused after the budget was measured (once, before any rank allocates) usually
- * lost the memory to another process. A host pool is pinned, once per rank. Pinned memory counts
- * against amdgpu's system-wide cap: RAM less 1/64 and 1.5 GiB (half of RAM less 1/64 below
- * 3 GiB), unless amdgpu.no_system_mem_limit lifts it; ttm.pages_limit does not apply. */
+ * lost the memory to another process. A host pool is pinned, once per rank, and counts against
+ * amdgpu_pin_cap. */
 static void report_pool_refusal(int rank, int device, const Pools& pools, const Config& cfg) {
     bool card = false, host = false;
     for (const Shortfall& f : pools.shortfalls()) (f.pool == "host_pool" ? host : card) = true;
@@ -226,19 +265,9 @@ static void report_pool_refusal(int rank, int device, const Pools& pools, const 
         int64_t pinned = 0, mapped = 0;
         rad_dev_alloc_totals(RAD_MEM_HOST_PINNED, &pinned, nullptr);
         rad_dev_alloc_totals(RAD_MEM_HOST_MAPPED, &mapped, nullptr);
-        const int64_t total = meminfo_bytes("MemTotal"), avail = meminfo_bytes("MemAvailable");
+        const int64_t avail = meminfo_bytes("MemAvailable");
         bool lifted = false;
-        {
-            std::ifstream f("/sys/module/amdgpu/parameters/no_system_mem_limit");
-            std::string v;
-            lifted = (f >> v) && (v == "Y" || v == "1");
-        }
-        const int64_t reserve = (int64_t)3 << 29;
-        int64_t cap = -1;
-        if (total > 0 && !lifted) {
-            cap = total - (total >> 6);
-            cap = cap < 2 * reserve ? cap >> 1 : cap - reserve;
-        }
+        const int64_t cap = amdgpu_pin_cap(&lifted);
         /* With room under both limits the refusal is not about size; do not advise shrinking. */
         const int64_t pool = cfg.host_pool_total_mib() * 1024 * 1024;
         std::string tables, advice = "Lower --host-pool-mib";
@@ -268,18 +297,43 @@ static void report_pool_refusal(int rank, int device, const Pools& pools, const 
 }
 
 /* ------------------------------------------------------------------ locked host memory */
-/* Host memory left free beside a table locked whole: the process's unpooled allocations, the
- * load's staging windows, and the page cache holding the container's hot pages. Without it the
- * kernel reclaims the files the engine reads, then the OOM killer runs. */
-static const int64_t kLockMargin = (int64_t)4 << 30;
+/* The margin (--host-headroom-mib, Engine::host_headroom_bytes): host memory left free beside a
+ * table locked whole -- the process's unpooled allocations, the load's staging windows, and the
+ * page cache holding the container's hot pages. Without it the kernel reclaims the files the
+ * engine reads, then the OOM killer runs. It is dead RAM by design; a host that can reclaim
+ * cheaply trades it for pool, cache or slots. */
 
-/* Whether `need` more bytes fit in host memory after `still` more this process will allocate
- * first, or why not. Checks MemAvailable; every memory cgroup from the process's own up to the
- * visible root (Docker's --memory, enforced by the OOM killer); and, for an mlock()ed copy
- * (`mlocks`), RLIMIT_MEMLOCK unless the process has CAP_IPC_LOCK. Pinned memory a card reads is a
- * driver userptr mapping, which RLIMIT_MEMLOCK does not count. An unreadable limit is ignored,
- * never guessed. */
-static bool lockable_room(int64_t need, int64_t still, bool mlocks, std::string* why) {
+/* Every level of every memory cgroup the process is in, leaf first: `visit(dir, room)` until it
+ * returns false (cgroup_levels). /proc/self/cgroup reads "0::/path" on v2 and "N:memory:/path"
+ * (or a comma list naming memory) on v1; each level up to the visible root is a limit of its
+ * own. */
+static void memory_cgroups(const std::function<bool(const std::string&, int64_t)>& visit) {
+    std::ifstream f("/proc/self/cgroup");
+    std::string line;
+    bool go = true;
+    while (go && std::getline(f, line)) {
+        const size_t a = line.find(':'), b = a == std::string::npos ? a : line.find(':', a + 1);
+        if (b == std::string::npos) continue;
+        const std::string ctrl = line.substr(a + 1, b - a - 1);
+        std::string path = line.substr(b + 1);
+        const bool v2 = ctrl.empty();
+        bool memory = v2;
+        for (size_t i = 0; !memory && i < ctrl.size();) {
+            const size_t j = std::min(ctrl.find(',', i), ctrl.size());
+            memory = ctrl.compare(i, j - i, "memory") == 0;
+            i = j + 1;
+        }
+        if (!memory) continue;
+        const std::string root = v2 ? "/sys/fs/cgroup" : "/sys/fs/cgroup/memory";
+        cgroup_levels(root, path, v2, [&](const std::string& dir, int64_t room) {
+            return go = visit(dir, room);
+        });
+    }
+}
+
+/* See engine_hostmem.h. */
+bool lockable_room(int64_t need, int64_t still, int64_t margin, bool mlocks,
+                   std::string* why) {
     long long locked_kb = 0;
     unsigned long long caps = 0;
     {
@@ -299,45 +353,48 @@ static bool lockable_room(int64_t need, int64_t still, bool mlocks, std::string*
         return false;
     }
     if (const int64_t avail = meminfo_bytes("MemAvailable");
-        avail >= 0 && avail - still - kLockMargin < need) {
+        avail >= 0 && avail - still - margin < need) {
         *why = fmt("%s of memory is available, %s more is still to be allocated (the pinned host "
                    "pools, the prefix cache's host tier, the checkpoint slots and the host "
-                   "activation arenas), and this wants %s with %s to spare",
+                   "activation arenas), and this wants %s with %s to spare "
+                   "(--host-headroom-mib)",
                    humanb(avail).c_str(), humanb(still).c_str(), humanb(need).c_str(),
-                   humanb(kLockMargin).c_str());
+                   humanb(margin).c_str());
         return false;
     }
-    /* /proc/self/cgroup: "0::/path" on v2, "N:memory:/path" (or a comma list naming memory) on v1.
-     * Each level up to the visible root is a separate limit. */
-    std::ifstream f("/proc/self/cgroup");
-    std::string line;
-    while (std::getline(f, line)) {
-        const size_t a = line.find(':'), b = a == std::string::npos ? a : line.find(':', a + 1);
-        if (b == std::string::npos) continue;
-        const std::string ctrl = line.substr(a + 1, b - a - 1);
-        std::string path = line.substr(b + 1);
-        const bool v2 = ctrl.empty();
-        bool memory = v2;
-        for (size_t i = 0; !memory && i < ctrl.size();) {
-            const size_t j = std::min(ctrl.find(',', i), ctrl.size());
-            memory = ctrl.compare(i, j - i, "memory") == 0;
-            i = j + 1;
-        }
-        if (!memory) continue;
-        const std::string root = v2 ? "/sys/fs/cgroup" : "/sys/fs/cgroup/memory";
-        bool fits = true;
-        cgroup_levels(root, path, v2, [&](const std::string& dir, int64_t room) {
-            if (room - still - kLockMargin >= need) return true;
-            *why = fmt("the memory cgroup at %s leaves %s, %s more is still to be allocated, "
-                       "and this wants %s with %s to spare", dir.c_str(),
-                       humanb(room).c_str(), humanb(still).c_str(), humanb(need).c_str(),
-                       humanb(kLockMargin).c_str());
-            fits = false;
-            return false;
-        });
-        if (!fits) return false;
+    bool fits = true;
+    memory_cgroups([&](const std::string& dir, int64_t room) {
+        if (room - still - margin >= need) return true;
+        *why = fmt("the memory cgroup at %s leaves %s, %s more is still to be allocated, "
+                   "and this wants %s with %s to spare (--host-headroom-mib)", dir.c_str(),
+                   humanb(room).c_str(), humanb(still).c_str(), humanb(need).c_str(),
+                   humanb(margin).c_str());
+        fits = false;
+        return false;
+    });
+    return fits;
+}
+
+/* The most lockable_room(need, still, margin, false) admits, and in `limit` the bound that
+ * decides it. INT64_MAX when no limit can be read. */
+static int64_t lockable_bytes(int64_t still, int64_t margin, std::string* limit) {
+    int64_t most = INT64_MAX;
+    *limit = "no readable memory limit";
+    if (const int64_t avail = meminfo_bytes("MemAvailable"); avail >= 0) {
+        most = avail - still - margin;
+        *limit = fmt("%s of memory available, less %s still to be allocated and %s to spare",
+                     humanb(avail).c_str(), humanb(still).c_str(), humanb(margin).c_str());
     }
-    return true;
+    memory_cgroups([&](const std::string& dir, int64_t room) {
+        if (room - still - margin < most) {
+            most = room - still - margin;
+            *limit = fmt("the memory cgroup at %s, which leaves %s, less %s still to be allocated "
+                         "and %s to spare", dir.c_str(), humanb(room).c_str(),
+                         humanb(still).c_str(), humanb(margin).c_str());
+        }
+        return true;
+    });
+    return std::max<int64_t>(most, 0);
 }
 
 /* The copy is table_copy_make's (core/format/table_copy.h), or for a card, table_copy_fill into
@@ -433,7 +490,9 @@ int Engine::resolve_table_placement(const std::vector<VramFacts>& facts,
     const int64_t pools_still = (int64_t)cfg_.tp * cfg_.host_pool_mib * MiB +
                                 cfg_.prefix_cache_mib * MiB + host_late;
     std::string emb_room_why;
-    auto emb_room = [&]() { return lockable_room(emb_pin, pools_still, false, &emb_room_why); };
+    auto emb_room = [&]() {
+        return lockable_room(emb_pin, pools_still, host_headroom_bytes(), false, &emb_room_why);
+    };
     if (emb_max == 0) {
         if (emb == TablePlacement::Ram && emb_asked) {
             RAD_ERR("--embedding-placement ram: this model has no token embedding table that only "
@@ -488,7 +547,7 @@ int Engine::resolve_table_placement(const std::vector<VramFacts>& facts,
         std::string why;
         const int64_t pin = (int64_t)cfg_.tp * align_up(tower_max, (int64_t)MiB);
         if (!lockable_room(pin, pools_still + (int64_t)cfg_.tp * cfg_.embedding_host_mib * MiB,
-                           false, &why)) {
+                           host_headroom_bytes(), false, &why)) {
             RAD_ERR("--vision-tower-placement ram: the encoder towers (%s a rank, pinned on every "
                     "rank) cannot be held in host memory: %s. Use vram.", humanb(tower_max).c_str(),
                     why.c_str());
@@ -572,7 +631,8 @@ int Engine::resolve_table_placement(const std::vector<VramFacts>& facts,
     } else {
         std::string card_why, ram_why;
         const bool card = ng == TablePlacement::Auto && ngram_device && card_holds(&card_why);
-        const bool room = !card && lockable_room(need, still, !ngram_device, &ram_why);
+        const bool room =
+            !card && lockable_room(need, still, host_headroom_bytes(), !ngram_device, &ram_why);
         if (ng == TablePlacement::Ram) {
             if (!room) {
                 RAD_ERR("--ngram-placement ram: the n-gram table (%s) cannot be held in memory as "
@@ -838,7 +898,14 @@ RadBuildCtx Engine::build_ctx(int rank, int64_t max_tok) const {
     bc.tp_wire_lossy = cfg_.tp_wire_exact ? 0 : 1;
     /* The engine always states the KV dtype. RAD_DT_INVALID (zero) remains valid in the ABI for
      * other callers and means the plugin's default. */
-    bc.kv_dtype = cfg_.kv_cache_dtype == "fp8" ? RAD_F8E4M3 : RAD_BF16;
+    bc.kv_dtype = cfg_.kv_cache_dtype == "bf16" ? RAD_BF16 : RAD_F8E4M3;
+    bc.kv_quant = cfg_.kv_cache_dtype == "fp8_v4" ? RAD_KVQ_V4
+                : cfg_.kv_cache_dtype == "k6_v4"  ? RAD_KVQ_K6V4 : RAD_KVQ_NONE;
+    bc.attn_prefill_fp8 = cfg_.attn_prefill_fp8;
+    bc.tp_attn_rows = cfg_.tp_attn_rows;
+    bc.weight_prefetch_off = cfg_.weight_prefetch ? 0 : 1;
+    bc.state_dtype = cfg_.state_cache_dtype == "f16" ? RAD_F16 : 0;
+    bc.draft_coupling = cfg_.draft_coupling ? 1 : 0;
     bc.tp_wire_min_bytes = cfg_.tp_wire_min_kb * 1024;
     bc.scope      = "";
     bc.max_enc_patches = cfg_.mm_max_patches > 0 ? cfg_.mm_max_patches : 0;
@@ -849,10 +916,35 @@ RadBuildCtx Engine::build_ctx(int rank, int64_t max_tok) const {
     /* Under --prefill-span every step but a lone prefill is planned at the shared budget
      * (Scheduler::step), so a wider step is one sequence; 0 without a span. */
     bc.max_mixed_tok = cfg_.prefill_span > 1 ? std::min(max_tok, prefill_shared_tok(cfg_)) : 0;
+    /* --kv-resident in tokens, raised to kStreamFloorTokens as kvstream_ring_shape raises it: the
+     * arch declares kv_resolve's ring depth from this, and the kernel refuses a carve deeper than
+     * the declared table. */
+    bc.kv_resident_blocks = cfg_.kv_resident > 0 && cfg_.kv_resident < kStreamFloorTokens
+                                ? kStreamFloorTokens
+                                : cfg_.kv_resident;
+    /* A streamed-only op is declared only when the architecture streams and the flag asks
+     * (kvstream_op_gated). */
+    bc.kv_stream_ok = arch_probe_.kv_stream_ok;
+    /* The control vector, when one is loaded: this rank's view, or null. A plugin reads it at
+     * declare only (the direction table never changes); the per-request switch rides the derived
+     * mask, not this struct. */
+    if (cvec_.loaded() && rank >= 0 && rank < (int) cvec_views_.size() &&
+        cvec_views_[(size_t) rank].dir)
+        bc.cvec = &cvec_views_[(size_t) rank];
     return bc;
 }
 
 int Engine::declare() {
+    /* An architecture that declares no streamed ops cannot stream, so with --kv-resident set on one
+     * the flag is turned off here, with the decision named, before anything is planned for it. */
+    (void)rad_tools_probe(plugins_, meta_, &arch_probe_);
+    if (cfg_.kv_resident > 0 && arch_probe_.kv_stream_ok == 0) {
+        cfg_.kv_resident = 0;
+        decide("--kv-resident", "0",
+               std::string("architecture '") + (meta_.arch_id ? meta_.arch_id : "?") +
+                   "' has no streamed KV path");
+    }
+    RAD_TRY(lora_targets());
     /* KL mode measures the trunk (core/kld.h): a drafter writes no scored rows and a prefix hit
      * would skip positions the reference holds, so both are off, and an explicit depth is refused
      * rather than ignored. The tower stays off the card; the corpus is text. */
@@ -877,7 +969,54 @@ int Engine::declare() {
     {
         RadArchProbe pb{};
         (void)rad_tools_probe(plugins_, meta_, &pb);
-        if (pb.gen_rows > 0) {
+        if (pb.gen_rows > 0 && pb.gen_audio) {
+            if (!cfg_.given.count("--max-num-batched-tokens")) {
+                cfg_.max_tok = pb.gen_rows;
+                decide("--max-num-batched-tokens", std::to_string(cfg_.max_tok),
+                       "an audio generator: a window's denoising step, both branches, and a "
+                       "prompt chunk of half as many rows a branch");
+            }
+            if (!cfg_.given.count("--max-num-seqs")) {
+                cfg_.max_seqs = 8;
+                decide("--max-num-seqs", "8", "an audio generator: four requests at once, two "
+                       "branches each");
+            }
+            if (!cfg_.given.count("--max-model-len") && cfg_.max_ctx == 0) {
+                cfg_.max_ctx = pb.gen_ctx > 0 ? pb.gen_ctx : pb.gen_rows;
+                decide("--max-model-len", std::to_string(cfg_.max_ctx),
+                       "an audio generator: the longest prompt and every frame of the longest "
+                       "piece");
+            }
+            if (cfg_.mm_max_patches < 0) cfg_.mm_max_patches = 0;
+            if (cfg_.n_spec < 0) cfg_.n_spec = 0;
+            cfg_.prefix_cache = false;
+        } else if (pb.gen_rows > 0 && pb.gen_video) {
+            if (!cfg_.given.count("--max-num-batched-tokens")) {
+                cfg_.max_tok = pb.gen_rows;
+                decide("--max-num-batched-tokens", std::to_string(cfg_.max_tok),
+                       "a video generator: a denoising step carries the prompt, the soundtrack "
+                       "and every patch of the largest, longest video");
+            }
+            if (!cfg_.given.count("--max-num-seqs")) {
+                cfg_.max_seqs = 1;
+                decide("--max-num-seqs", "1", "a video generator: a pass is one request's");
+            }
+            if (!cfg_.given.count("--max-model-len") && cfg_.max_ctx == 0) {
+                cfg_.max_ctx = pb.gen_rows;
+                decide("--max-model-len", std::to_string(cfg_.max_ctx),
+                       "a video generator: a step's rows");
+            }
+            /* A video generator with a vision tower takes a pass of its patches, the size its
+             * plugin states. */
+            if (cfg_.mm_max_patches < 0 && pb.gen_patches > 0) {
+                cfg_.mm_max_patches = pb.gen_patches;
+                decide("--mm-max-patches", std::to_string(cfg_.mm_max_patches),
+                       "a video generator: every reference media patch of one conditioning, "
+                       "the pass size the plugin states");
+            }
+            if (cfg_.n_spec < 0) cfg_.n_spec = 0;
+            cfg_.prefix_cache = false;
+        } else if (pb.gen_rows > 0) {
             if (!cfg_.given.count("--max-num-batched-tokens")) {
                 cfg_.max_tok = pb.gen_rows;
                 decide("--max-num-batched-tokens", std::to_string(cfg_.max_tok),
@@ -903,6 +1042,53 @@ int Engine::declare() {
             cfg_.prefix_cache = false;
         }
     }
+    /* fp8_v4 and k6_v4 are layouts only the plugin and libr4d's rows for them know. A plugin that
+     * does not say it serves one (RadArchProbe::kv_quant_ok) would store plain E4M3 under a name
+     * that promised a smaller cache, so the flag is refused rather than ignored. */
+    if (cfg_.kv_cache_dtype == "fp8_v4" || cfg_.kv_cache_dtype == "k6_v4") {
+        const int q = cfg_.kv_cache_dtype == "fp8_v4" ? RAD_KVQ_V4 : RAD_KVQ_K6V4;
+        RadArchProbe pb{};
+        (void)rad_tools_probe(plugins_, meta_, &pb);
+        if (!(pb.kv_quant_ok & (1 << q))) {
+            RAD_ERR("--kv-cache-dtype %s: the '%s' plugin does not serve it for this model "
+                    "(fp8 does)", cfg_.kv_cache_dtype.c_str(), plugins_.arch_plugin.c_str());
+            return RAD_E_UNSUPPORTED;
+        }
+    }
+    /* The row split is a graph only the plugin can declare, and it splits over ranks. A plugin
+     * that does not say it serves it (RadArchProbe::tp_attn_rows_ok), or a single rank, would
+     * serve the head split under a name that promised the other, so the flag is refused rather
+     * than ignored. */
+    if (cfg_.tp_attn_rows) {
+        RadArchProbe pb{};
+        (void)rad_tools_probe(plugins_, meta_, &pb);
+        if (!pb.tp_attn_rows_ok) {
+            RAD_ERR("--tp-attn-split rows: the '%s' plugin does not split attention by rows for "
+                    "this model (heads does)", plugins_.arch_plugin.c_str());
+            return RAD_E_UNSUPPORTED;
+        }
+        if (cfg_.tp < 2) {
+            RAD_ERR("--tp-attn-split rows splits a prefill's attention over tensor-parallel ranks, "
+                    "and --tp %d has none to split over (heads does)", cfg_.tp);
+            return RAD_E_INVAL;
+        }
+        RAD_WARN("attention: a prefill-sized step splits by rows over the %d ranks "
+                 "(--tp-attn-split rows): every card holds the attention's projections at full "
+                 "width, and the result is not bit-identical to the head split", cfg_.tp);
+    }
+    /* Likewise an f16 recurrent state: a plugin that does not say it declares one would keep f32
+     * under a flag that promised half the state memory. */
+    if (cfg_.state_cache_dtype == "f16") {
+        RadArchProbe pb{};
+        (void)rad_tools_probe(plugins_, meta_, &pb);
+        if (!pb.state_f16_ok) {
+            RAD_ERR("--state-cache-dtype f16: the '%s' plugin does not declare its recurrent state "
+                    "at f16 for this model (f32 does)", plugins_.arch_plugin.c_str());
+            return RAD_E_UNSUPPORTED;
+        }
+        RAD_INFO("recurrent state cache: f16 (--state-cache-dtype), half the state memory; lossy, "
+                 "the generated text differs from f32");
+    }
     /* Resolved here, not at argument parsing: the plugin states its drafter's depth, and it is
      * selected only once the container is open. Every consumer of `n_spec` (buffer sizing, kernel
      * bands, the scheduler's window) runs after this. rad_arch_probe is the core's only source of
@@ -919,6 +1105,24 @@ int Engine::declare() {
         decide("--num-speculative-tokens", std::to_string(cfg_.n_spec),
                cfg_.n_spec > 0 ? "the depth the drafter in this container states as its operating point"
                                : "this container carries no draft head");
+    }
+    /* Chained launches pay on some speculative steps and cost plain decode (on 4x R9700 the 31B
+     * with DFlash2 gained 13%, the 26B-A4B with DFlash 1%, Qwen3.8-27B with DFlash2 nothing, and
+     * the 31B without a drafter lost 6.5%), so they are on only where the model's plugin measured a
+     * gain with its speculative drafter (RadArchProbe::chain_pays) and that drafter decodes
+     * speculatively. */
+    {
+        RadArchProbe pb{};
+        (void)rad_tools_probe(plugins_, meta_, &pb);
+        const bool pays = cfg_.n_spec > 0 && pb.chain_pays;
+        rad_dev_chain_infer(pays);
+        const bool on = rad_dev_chain_enabled() != 0;
+        const char* why = on     ? "the model's plugin measured a gain with its speculative drafter"
+                          : pays ? "the device backend does not chain"
+                                 : "no drafter whose plugin measured a gain with them decodes "
+                                   "speculatively";
+        RAD_INFO("chained launches: %s -- %s", on ? "on" : "off", why);
+        decide("chained launches", on ? "on" : "off", why);
     }
     /* The audio encoder's pass: the plugin's longest clip, when the model file carries an audio
      * encoder (`radiance.encoder` names one) and the deployment is not text-only. */
@@ -937,7 +1141,10 @@ int Engine::declare() {
      * area, which would need 16x the activation memory on every card. */
     if (cfg_.mm_max_patches < 0) {
         const char* enc = rad_meta_gets(&meta_, "radiance.encoder", "");
-        const bool tower = rad_meta_geti(&meta_, "vision_config.patch_size", 0) > 0;
+        /* A checkpoint's vision_config states a tower as a flat patch_size, or (Unlimited-OCR's
+         * DeepEncoder) only the per-width tables under a `vision_config.image_size`. */
+        const bool tower = rad_meta_geti(&meta_, "vision_config.patch_size", 0) > 0 ||
+                           rad_meta_geti(&meta_, "vision_config.image_size", 0) > 0;
         cfg_.mm_max_patches = (enc && *enc) || (!file_ && tower) ? 16384 : 0;
         /* Whole output rows a pass: the plugin's merge, when it states one. */
         RadArchProbe pb{};
@@ -954,6 +1161,61 @@ int Engine::declare() {
                : tower ? "the checkpoint has a vision tower but this container was converted "
                          "without its weights"
                        : "the model carries no vision tower");
+    }
+
+    /* Control vectors are resolved before any rank declares, because the plugin reads the
+     * direction table from RadBuildCtx. Only `--control-vector off|on` loads one; without it
+     * nothing is looked for and the graph declares no projection op. With it, a plugin that does
+     * not apply control vectors (RadArchProbe::control_vector_ok), no file found, or a file that
+     * does not fit this model is refused: the operator asked for the feature. The operation's
+     * parameters come from the package's own JSON. The flag's value is the request default. */
+    if (cfg_.control_vector == "disabled") {
+        RAD_INFO("control vectors: not loaded (no --control-vector); a request that asks for one is "
+                 "refused");
+    } else {
+        RadArchProbe pb{};
+        (void)rad_tools_probe(plugins_, meta_, &pb);
+        if (!pb.control_vector_ok) {
+            RAD_ERR("--control-vector %s: the '%s' plugin does not apply control vectors for this "
+                    "model", cfg_.control_vector.c_str(), plugins_.arch_plugin.c_str());
+            return RAD_E_UNSUPPORTED;
+        }
+        const std::string arch = meta_.arch_id ? meta_.arch_id : "";
+        std::string proj_path, tried;
+        (void) control_vector_discover(cfg_.model, arch, cfg_.radiance_home, &proj_path, &tried);
+        if (proj_path.empty()) {
+            RAD_ERR("--control-vector %s: no control vector found for this model (looked at %s)",
+                    cfg_.control_vector.c_str(), tried.c_str());
+            return RAD_E_NOTFOUND;
+        }
+        std::string why;
+        if (control_vector_load(proj_path, arch, meta_.n_embd, meta_.n_layers, &cvec_, &why) !=
+            RAD_OK) {
+            RAD_ERR("--control-vector %s: %s", cfg_.control_vector.c_str(), why.c_str());
+            cvec_ = ControlVector{};
+            return RAD_E_INVAL;
+        }
+    }
+    if (cvec_.loaded()) {
+        cvec_views_.assign(ranks_.size(), RadControlVector{});
+        cvec_salt_ = control_vector_salt(cvec_);
+        /* The request default; --kld-record / --kld-ref score documents with it, as they serve no
+         * request that could carry the field. */
+        const bool default_on = cfg_.control_vector == "on";
+        cvec_default_.store(default_on);
+        RAD_INFO("control vectors: %s: %lld directions of %lld, layers %d..%d, scale %.3f -- "
+                 "default %s%s",
+                 cvec_.path.c_str(), (long long) cvec_.n_dirs,
+                 (long long) cvec_.n_embd, cvec_.first, cvec_.last, (double) cvec_.user_scale,
+                 default_on ? "ON" : "off",
+                 default_on ? " (--control-vector on; a request can still say false)"
+                            : " until a request asks for it (the dashboard's switch, or a request's "
+                              "`control_vector` field)");
+        decide("control vectors", cvec_.path,
+               "found beside the container, in its directory, or in $RADIANCE_HOME/vectors; "
+               "requests opt in");
+    } else {
+        cvec_default_.store(false);
     }
 
     /* Declare once per rank (rank and world_size in RadBuildCtx; the plugin declares dimensions
@@ -976,12 +1238,28 @@ int Engine::declare() {
                 st[(size_t)ri] = RAD_E_DEVICE;
                 return;
             }
+            /* This rank's copy of the control vector's directions, on the device the thread has
+             * just bound. Uploaded outside the program's arena: it is not a weight (it is not in
+             * the container) and not an activation (it lives for the deployment). */
+            if (cvec_.loaded()) {
+                const float* d = control_vector_upload(cvec_, ri);
+                if (!d) {
+                    st[(size_t)ri] = RAD_E_DEVICE;
+                    return;
+                }
+                cvec_views_[(size_t)ri] = control_vector_view(cvec_, d);
+            }
             const RadBuildCtx bc = build_ctx(ri, cfg_.max_tok);
+            LoraDeclare ld;
+            ld.cfg = &cfg_.lora;
+            ld.targets = lora_targets_;
+            ld.sites_out = &r->lora_sites;
             st[(size_t)ri] = rad_tools_declare(plugins_, meta_, bc, &r->program,
                                                [this, ri](RadBuilder* bb, int64_t lw) {
                                                    return declare_sampler(ri, bb, lw);
                                                },
-                                               nullptr, sources());
+                                               nullptr, sources(), true,
+                                               cfg_.lora.enabled() ? &ld : nullptr);
         });
     }
     /* A message is a step's bf16 residual rows, so the floor is a row count: a decode step has
@@ -1037,6 +1315,28 @@ int Engine::declare() {
                 return RAD_E_UNSUPPORTED;
             }
     }
+    /* --attn-prefill-fp8 is a permission an exact kernel also satisfies, so whether it acts is
+     * read off the resolution: a kernel that implements a lossy leg constrains `prefill_fp8`. A
+     * flag nothing takes stops the start rather than serving the exact form under its name. */
+    if (cfg_.attn_prefill_fp8 != 0) {
+        const std::vector<std::string> rows = prefill_fp8_rows(ranks_[0]->program);
+        const char* mode = attn_prefill_fp8_name(cfg_.attn_prefill_fp8);
+        if (rows.empty() && !cfg_.debug_graph) {
+            RAD_ERR("not starting: --attn-prefill-fp8 %s, but no attention kernel resolved for "
+                    "this model takes e4m3 products at its geometry, cache (--kv-cache-dtype %s) "
+                    "and kernel libraries; --attn-prefill-fp8 off serves it exactly", mode,
+                    cfg_.kv_cache_dtype.c_str());
+            return RAD_E_UNSUPPORTED;
+        }
+        std::string names;
+        for (const std::string& r : rows) names += (names.empty() ? "" : ", ") + r;
+        RAD_WARN("attention: LOSSY prefill (--attn-prefill-fp8 %s). %s rounded to e4m3 for fp8 "
+                 "WMMA in %s, so this process does not compute the same function the exact "
+                 "attention does; bands those kernels do not serve stay exact", mode,
+                 cfg_.attn_prefill_fp8 == RAD_ATTN_FP8_QK ? "Q.K^T's query is"
+                 : cfg_.attn_prefill_fp8 == RAD_ATTN_FP8_PV ? "P.V's probabilities are"
+                 : "Q.K^T's query and P.V's probabilities are", names.c_str());
+    }
     /* Checkpoint weights that cannot be served as stored cannot be loaded; name them all with the
      * remedy. */
     if (ckpt_src_) {
@@ -1063,6 +1363,24 @@ int Engine::declare() {
     drafter_name_  = p0.drafter_name;
     drafter_.name  = drafter_name_.c_str();
     if (cfg_.n_spec <= 0) drafter_ = RadDrafterDecl{};
+    drafter_short_ = drafter_.kind == RAD_DRAFT_BLOCK && cfg_.draft_short_from > 0
+                   ? p0.drafter_short_block : 0;
+    if (cfg_.draft_short_from > 0 && drafter_.kind == RAD_DRAFT_NONE)
+        RAD_WARN("--draft-short-from %lld: this deployment runs no drafter, so there is no block "
+                 "to shorten", (long long)cfg_.draft_short_from);
+    else if (cfg_.draft_short_from > 0 && !drafter_short_)
+        RAD_WARN("--draft-short-from %lld: '%s' %s", (long long)cfg_.draft_short_from,
+                 drafter_name_.c_str(),
+                 drafter_.kind == RAD_DRAFT_BLOCK ? "declares no shorter block, so it keeps its own"
+                                                  : "is a serial head, which proposes no block");
+    if (drafter_short_)
+        RAD_INFO("speculation: from %lld decoding sequences on, '%s' runs its short block of %lld "
+                 "row(s), %lld token(s)", (long long)cfg_.draft_short_from,
+                 drafter_name_.c_str(),
+                 (long long)drafter_short_,
+                 (long long)(drafter_short_ - ((drafter_.block > 0 ? drafter_.block
+                                                                   : drafter_.depth + 1) -
+                                               drafter_.depth)));
     if (drafter_.kind != RAD_DRAFT_NONE) {
         /* A zero proposal handle means the sampler's token buffer: the head's logits go through
          * the ordinary sampler chain. */
@@ -1149,12 +1467,16 @@ void Engine::probe_arena_levels() {
                     RadBuildCtx bc = build_ctx(r.index, want[l]);
                     bc.shape_probe = 1;
                     Program probe;
+                    LoraDeclare ld;
+                    ld.cfg = &cfg_.lora;
+                    ld.targets = lora_targets_;
                     const int st = rad_tools_declare(plugins_, meta_, bc, &probe,
                                                      [this, &r](RadBuilder* bb, int64_t lw) {
                                                          return declare_sampler(r.index, bb, lw,
                                                                                 true);
                                                      },
-                                                     &r.program, sources());
+                                                     &r.program, sources(), true,
+                                                     cfg_.lora.enabled() ? &ld : nullptr);
                     if (st < 0) why[k] = fmt("the sizing declare failed: %s", rad_strerror(st));
                     else if (plan_level(r.program, probe, want[l], &got[k], &why[k]) >= 0)
                         ok[k] = 1;
@@ -1186,6 +1508,21 @@ void Engine::probe_arena_levels() {
 }
 
 /* ================================================================== 5. plan */
+
+/* R-SWA: a RAD_KV_RING group names its ring's W in the declaration (`window`). Tell the manager
+ * before it plans, so the group is planned for per-sequence windows: sized for the whole context
+ * plus one ring a sequence (the ring in the fixed costs), never capped at the declare-time
+ * window, never snapshotted. Every plan (each sizing probe and the real manager) goes through
+ * here, so they all plan the same bytes. */
+static int declare_ring_windows(KVManager& kv, const Program& prog) {
+    for (size_t g = 1; g < prog.kv_groups.size(); ++g) {
+        const RadKVGroupDecl& d = prog.kv_groups[g].decl;
+        if (d.kind != RAD_KV_RING) continue;
+        RAD_TRY(kv.declare_runtime_window((int32_t)g, d.window));
+    }
+    return RAD_OK;
+}
+
 int Engine::plan() {
     /* The budget is resolved once, for every rank, before any rank allocates. vram_budget_resolve
      * folds the smallest capacity with the largest program so one split fits every card, and
@@ -1264,18 +1601,6 @@ int Engine::plan() {
             ngram_bytes = std::max(ngram_bytes, wf.ngram);
             ngram_device = ngram_device || wf.ngram_device;
             ngram_host = ngram_host || wf.ngram_host;
-            /* One --max-model-len sequence's cache: the least a KV pool can hold and still serve
-             * every acceptable request (configure_kv warns below it). --ngram-placement auto puts
-             * the table on the card only if the pool stays above it. */
-            {
-                Config one = cfg_;
-                one.max_seqs = 1;
-                KVManager single;
-                if (single.plan_groups(r->program.kv_groups, one) == RAD_OK) {
-                    kv_floor = std::max(kv_floor, single.ceiling(ctx));
-                    f.kv_one = single.ceiling(ctx);
-                }
-            }
             /* The staging region is sized only where the arena lends its top: without smaller
              * levels nothing returns it to the slab at decode, and a deterministic plan moves
              * nothing. */
@@ -1284,10 +1609,30 @@ int Engine::plan() {
              * memory, and the real pool does not exist yet. */
             KVManager probe;
             host_arenas += arena_host_bytes(r->program);
-            if (probe.plan_groups(r->program.kv_groups, cfg_) == RAD_OK) {
+            if (declare_ring_windows(probe, r->program) == RAD_OK &&
+                probe.plan_groups(r->program.kv_groups, cfg_) == RAD_OK) {
                 ck_slot += probe.checkpoint_bytes();
+                /* The budget must see the streamed plan before it sizes the pool: a streamed group's
+                 * ceiling is max(ring, one layer of its context), not its whole cache
+                 * (docs/KV-STREAMING.md §4.1). */
+                RAD_TRY(kvstream_cap_probe(probe, cfg_, r->program, ctx));
+                /* No prefix-cache entry holding a streamed group can be demoted (its mirror is its only
+                 * cold copy), so the host tier would be pinned and never used: turned off before
+                 * the tables and the checkpoint store are sized. */
+                if (const int64_t off = kvstream_prefix_host_off(cfg_)) {
+                    RAD_INFO("a streamed KV group has no host cache: --prefix-cache-mib %lld is off, "
+                             "since no entry holding the group could be demoted",
+                             (long long)off);
+                }
                 f.kv_ceiling = probe.ceiling(ctx);
                 f.kv_fixed   = probe.fixed_bytes();
+                /* One --max-model-len sequence's pool, as the inverse of the real plan: its
+                 * recurrent and conv slots stay allocated with one request active, which a
+                 * separate one-sequence plan would leave out. */
+                const int64_t MiB = 1ll << 20;
+                const int64_t need = probe.pool_mib_for_tokens(ctx, (f.kv_ceiling + MiB - 1) / MiB);
+                if (need >= 0) f.kv_one = need * MiB;
+                kv_floor = std::max(kv_floor, f.kv_one);
             }
             /* The step batch's device staging, reserved by the scheduler after this split: block
              * tables for max_seqs sequences at max_ctx, media staging for max_tok encoder rows.
@@ -1298,8 +1643,10 @@ int Engine::plan() {
                 const int64_t w = probe.state_index_width((int32_t)i);
                 if (w > 0) kg.g[i].sidx_width = w;
             }
-            f.staging = r->program.is_generator() ? gen::Driver::device_bytes(r->program)
-                                                  : BatchBuilder::device_bytes(r->program, cfg_, kg);
+            f.staging = r->program.is_generator()       ? gen::Driver::device_bytes(r->program)
+                      : r->program.is_audio_generator() ? gen::AudioDriver::device_bytes(r->program)
+                      : r->program.is_video_generator() ? gen::VideoDriver::device_bytes(r->program)
+                                                        : BatchBuilder::device_bytes(r->program, cfg_, kg);
             if (f.staging < 0) return RAD_E_INVAL;
             late_step_bytes_ = std::max(late_step_bytes_, f.staging);
             int64_t lazy = r->program.scratch_regions > 1 ? f.queue_bytes : 0;
@@ -1333,10 +1680,19 @@ int Engine::plan() {
             facts[i].expert_floor = expert_vram_floor(wfs[i], std::max<int64_t>(room, 0));
         }
         /* Capped well below overflow, so the sums it joins stay defined: a store that large is
-         * refused by name in configure_kv. */
-        const int64_t ck_n = std::max<int64_t>(cfg_.checkpoint_slots, 0), ck_cap = INT64_MAX / 8;
+         * refused by name in configure_kv. Under --checkpoint-slots auto the store is sized in
+         * configure_kv from the memory the tables leave, and the tables leave room for the fewest
+         * slots auto resolves to. */
+        const int64_t ck_n =
+            cfg_.checkpoint_slots < 0 ? kCheckpointSlotsFloor : cfg_.checkpoint_slots;
+        const int64_t ck_cap = INT64_MAX / 8;
         const int64_t ck_store = !cfg_.prefix_cache || ck_slot <= 0 ? 0
                                  : ck_n > ck_cap / ck_slot ? ck_cap : ck_slot * ck_n;
+        /* The direction table was allocated in declare(); it is not part of the program, and
+         * claiming its bytes back keeps a deployment that offers a vector planning against the
+         * same card as one that does not (VramFacts::held_out). */
+        const int64_t cvec_bytes = cvec_.loaded() ? (int64_t) cvec_.dir.size() * 4 : 0;
+        for (VramFacts& f : facts) f.held_out = cvec_bytes;
         RAD_TRY(resolve_table_placement(facts, emb_bytes, wfs, kv_floor, ngram_bytes,
                                         ngram_device, ngram_host, ck_store + host_arenas));
         /* The n-gram table was counted off the card; on it, every rank holds the whole table. */
@@ -1402,7 +1758,8 @@ int Engine::plan() {
              * its carve). */
             for (size_t i = 0; i < ranks_.size(); ++i) {
                 probes[i] = std::make_unique<KVManager>();
-                if (probes[i]->plan_groups(ranks_[i]->program.kv_groups, cfg_) != RAD_OK) {
+                if (declare_ring_windows(*probes[i], ranks_[i]->program) != RAD_OK ||
+                    probes[i]->plan_groups(ranks_[i]->program.kv_groups, cfg_) != RAD_OK) {
                     kept = fmt("rank %d's KV groups did not plan", ranks_[i]->index);
                     break;
                 }
@@ -2648,6 +3005,79 @@ int Engine::load_weights() {
  *
  * Runs after load, since it takes what the weight pool left, and before Ctx::init, which would
  * otherwise resolve every RAD_OPK_KV operand to null. */
+/* --checkpoint-slots auto, resolved into cfg_.checkpoint_slots once a slot's size is known
+ * (checkpoint_slots_auto in core/mem/prefix.h). The store is pinned for the life of the process,
+ * so it takes at most an eighth of host memory, leaving the rest to the page cache a model's
+ * mapped tables read through and to the host's other work. It is pinned before the host
+ * activation arenas and the prefix cache's host tier, so their bytes count as still to come;
+ * on a card the amdgpu pin cap bounds it too. */
+int Engine::size_checkpoint_store(int64_t slot, const char* what) {
+    if (slot <= 0 || !cfg_.prefix_cache) {
+        cfg_.checkpoint_slots = 0;
+        decide("--checkpoint-slots", "0",
+               slot <= 0 ? "the model keeps no linear or sliding-window state to snapshot"
+                         : "prefix caching is off (--no-prefix-cache)");
+        return RAD_OK;
+    }
+    const int64_t ctx = cfg_.max_ctx ? cfg_.max_ctx : meta_.n_ctx_train;
+    const int64_t interval = geo_.checkpoint_interval;
+    const std::unique_ptr<CheckpointPolicy> pol =
+        make_checkpoint_policy(cfg_.checkpoint_policy, interval);
+
+    int64_t still = cfg_.prefix_cache_mib * ((int64_t)1 << 20);
+    for (const auto& r : ranks_) still += arena_host_bytes(r->program);
+    std::string limit;
+    int64_t room = lockable_bytes(still, host_headroom_bytes(), &limit);
+    if (!device_is_host()) {
+        bool lifted = false;
+        if (const int64_t cap = amdgpu_pin_cap(&lifted); cap > 0) {
+            int64_t pinned = 0, mapped = 0;
+            rad_dev_alloc_totals(RAD_MEM_HOST_PINNED, &pinned, nullptr);
+            rad_dev_alloc_totals(RAD_MEM_HOST_MAPPED, &mapped, nullptr);
+            const int64_t left = std::max<int64_t>(cap - pinned - mapped - still, 0);
+            if (left < room) {
+                room = left;
+                limit = fmt("the amdgpu driver's pin cap of %s, of which this process holds %s "
+                            "and still pins %s", humanb(cap).c_str(),
+                            humanb(pinned + mapped).c_str(), humanb(still).c_str());
+            }
+        }
+    }
+    const int64_t total = meminfo_bytes("MemTotal");
+    const int64_t share = total > 0 ? total / 8 : room;
+    const CheckpointSlots c = checkpoint_slots_auto(*pol, cfg_.max_seqs, ctx, interval, slot,
+                                                    share, room);
+    cfg_.checkpoint_slots = c.slots;
+
+    const std::string need =
+        fmt("%lld a sequence for --max-num-seqs %lld: %s keeps %lld for a %lld-token session at "
+            "a %lld-token interval, and one more for a running turn", (long long)c.per_seq,
+            (long long)cfg_.max_seqs, pol->name(), (long long)(c.per_seq - 1), (long long)ctx,
+            (long long)interval);
+    std::string bound;
+    if (c.bound == CheckpointSlots::Bound::Share)
+        bound = fmt("; %lld wanted, held to an eighth of host memory (%s); --checkpoint-slots N "
+                    "sets more", (long long)c.want, humanb(share).c_str());
+    else if (c.bound == CheckpointSlots::Bound::Room)
+        bound = fmt("; %lld wanted, held to what the host can pin: %s", (long long)c.want,
+                    limit.c_str());
+    decide("--checkpoint-slots", std::to_string(c.slots), need + bound);
+    if (c.slots == 0) {
+        RAD_WARN("checkpoint slots: auto finds no room for one %s snapshot of %s (%s), so every "
+                 "prefix hit on this model prefills from the start. Free host memory, or lower "
+                 "--host-pool-mib or --prefix-cache-mib", what, humanb(slot).c_str(),
+                 limit.c_str());
+        return RAD_OK;
+    }
+    const std::string line =
+        fmt("checkpoint slots: auto: %lld %s snapshot(s) of %s in pinned host memory (%s), none of "
+            "it on the card; %s%s", (long long)c.slots, what, humanb(slot).c_str(),
+            humanb(slot * c.slots).c_str(), need.c_str(), bound.c_str());
+    if (c.bound == CheckpointSlots::Bound::Room) RAD_WARN("%s", line.c_str());
+    else RAD_INFO("%s", line.c_str());
+    return RAD_OK;
+}
+
 int Engine::configure_kv() {
     /* Resolved once, for the cache below and Scheduler::init later (see Engine::geo_). */
     RAD_TRY(chunk_geometry_resolve(ranks_[0]->program, cfg_, &geo_));
@@ -2659,6 +3089,14 @@ int Engine::configure_kv() {
                          "block and the linear-state chunk), so a checkpoint is a legal chunk split",
                          (long long)geo_.quantum)
                    : std::string("the model keeps no linear state to checkpoint"));
+    /* KV streaming's policy, refusals and ring (kvstream/bringup.h), decided once from rank 0's
+     * declarations: a streamed group must be the same group on every rank. */
+    KVStreamSetup stream;
+    if (!ranks_.empty())
+        RAD_TRY(kvstream_configure(cfg_, cfg_.max_ctx ? cfg_.max_ctx : meta_.n_ctx_train,
+                                   ranks_[0]->program.kv_groups, ranks_[0]->program, &stream));
+    if (stream.group >= 0)
+        for (auto& r : ranks_) r->kv.cap_resident_tokens(stream.group, stream.ring_tokens);
     /* One block table serves every rank (serve() checks it), so every rank carves the same number
      * of paged blocks. Under an uneven split the pools differ (more delta-net heads, or zero
      * attention weights), so each rank is planned first and all are capped at the least before
@@ -2667,6 +3105,7 @@ int Engine::configure_kv() {
     for (size_t i = 0; i < ranks_.size(); ++i) {
         auto& r = ranks_[i];
         LogRank lr(r->index);
+        RAD_TRY(declare_ring_windows(r->kv, r->program));
         RAD_TRY(r->kv.plan_groups(r->program.kv_groups, cfg_));
         const int64_t t = r->kv.paged_tokens(r->pools.kv().avail());
         /* A rank plan() re-sized for the common token count must page at least that count (same
@@ -2681,6 +3120,22 @@ int Engine::configure_kv() {
         if (t == KVManager::kUnboundedTokens) continue;   /* holds no cache; limits nobody */
         if (least < 0 || t < least) least = t;
     }
+    /* The mirrors are checked once, before any rank pins one, against the host tiers still to be
+     * pinned after them: the prefix cache's, the activation arenas and, when sized already, the
+     * checkpoint store. */
+    KVStreamHostUse stream_host;
+    for (auto& r : ranks_) kvstream_host_add(&stream_host, r->kv);
+    if (stream_host.sum.host_bytes > 0) {
+        const int64_t MiB = (int64_t)1 << 20;
+        int64_t still = cfg_.prefix_cache_mib * MiB;
+        for (auto& r : ranks_) still += arena_host_bytes(r->program);
+        if (cfg_.checkpoint_slots > 0) {
+            int64_t slot = 0;
+            for (auto& r : ranks_) slot += r->kv.checkpoint_bytes();
+            still += slot * cfg_.checkpoint_slots;
+        }
+        RAD_TRY(kvstream_host_gate(stream_host, (int)ranks_.size(), still, host_headroom_bytes()));
+    }
     for (auto& r : ranks_) {
         LogRank lr(r->index);
         RAD_TRY(rad_dev_set(r->device));   /* allocates on the current device; see plan() */
@@ -2692,7 +3147,13 @@ int Engine::configure_kv() {
                          (long long)least);
             r->kv.cap_paged_tokens(least);
         }
+        /* Before the carve, which refuses a streamed plan with no mirror and maps. The maps come out
+         * of this rank's KV pool, so the paged split sees them taken. */
+        const KVManager::StreamCost sc = r->kv.stream_cost();
+        if (sc.groups > 0)
+            RAD_TRY(r->kv.alloc_stream(rad_device_allocator(), r->pools.kv()));
         RAD_TRY(r->kv.carve(r->pools.kv()));
+        if (sc.groups > 0) RAD_TRY(kvstream_fill(r->kv));   /* the maps, after the elastic pool */
         /* Without virtual memory management the cache cannot lend: everything still works, but
          * the expert slab never grows, which no counter shows, so log it once. */
         if (r->index == 0 && !r->pools.kv().elastic())
@@ -2716,9 +3177,11 @@ int Engine::configure_kv() {
             shard_off[i] = slot;
             slot += ranks_[i]->kv.checkpoint_bytes();
         }
-        const int64_t n = cfg_.checkpoint_slots > 0 ? cfg_.checkpoint_slots : 0;
         /* A slot holds linear state or a trunk's window, never both (KVGroupPlan::win_snap). */
         const char* what = ranks_[0]->kv.has_window_snapshot() ? "sliding-window" : "linear-state";
+        const bool sized_auto = cfg_.checkpoint_slots < 0;
+        if (sized_auto) RAD_TRY(size_checkpoint_store(slot, what));
+        const int64_t n = cfg_.checkpoint_slots > 0 ? cfg_.checkpoint_slots : 0;
         if (slot > 0 && n > 0 && cfg_.prefix_cache) {
             /* Pinned all at once and outside every pool. A store larger than the memory left would
              * push the process into reclaim, which stalls it without a word; one that cannot be had
@@ -2726,24 +3189,27 @@ int Engine::configure_kv() {
              * makes visible. Either stops startup. */
             const bool sized = n <= INT64_MAX / slot;
             auto refuse = [&](const std::string& reason) {
-                RAD_ERR("checkpoint slots: %lld %s snapshot(s) of %s are %s of pinned host memory, "
-                        "which %s. Lower --checkpoint-slots (a larger --checkpoint-interval needs "
-                        "fewer for the same context), or pass --checkpoint-slots 0 to serve with "
-                        "no %s snapshot, every prefix hit on this model then prefilling from the "
-                        "start", (long long)n, what, humanb(slot).c_str(),
-                        sized ? humanb(slot * n).c_str() : "more than 8 EiB", reason.c_str(),
-                        what);
+                RAD_ERR("checkpoint slots: %lld %s snapshot(s)%s of %s are %s of pinned host "
+                        "memory, which %s. Lower --checkpoint-slots (a larger "
+                        "--checkpoint-interval needs fewer for the same context), or pass "
+                        "--checkpoint-slots 0 to serve with no %s snapshot, every prefix hit on "
+                        "this model then prefilling from the start", (long long)n, what,
+                        sized_auto ? " (auto)" : "",
+                        humanb(slot).c_str(), sized ? humanb(slot * n).c_str() : "more than 8 EiB",
+                        reason.c_str(), what);
                 return RAD_E_NOMEM;
             };
             if (!sized) return refuse("no host has");
             std::string why;
-            if (!lockable_room(slot * n, 0, false, &why)) return refuse("does not fit: " + why);
+            if (!lockable_room(slot * n, 0, host_headroom_bytes(), false, &why))
+                return refuse("does not fit: " + why);
             if (ck_store_.open(slot, slot * n) != RAD_OK)
                 return refuse(std::string("the host did not pin: ") + rad_dev_last_error());
-            RAD_INFO("checkpoint slots: %lld %s snapshot(s) of %s in pinned host memory (%s), "
-                     "none of it on the card", (long long)n, what, humanb(slot).c_str(),
-                     humanb(ck_store_.cap_bytes()).c_str());
-        } else if (slot > 0 && cfg_.prefix_cache) {
+            if (!sized_auto)
+                RAD_INFO("checkpoint slots: %lld %s snapshot(s) of %s in pinned host memory (%s), "
+                         "none of it on the card", (long long)n, what, humanb(slot).c_str(),
+                         humanb(ck_store_.cap_bytes()).c_str());
+        } else if (slot > 0 && cfg_.prefix_cache && !sized_auto) {
             RAD_INFO("checkpoint slots: --checkpoint-slots 0 keeps no %s snapshot, so every "
                      "prefix hit on this model prefills from the start", what);
         }
@@ -2763,21 +3229,17 @@ int Engine::configure_kv() {
     {
         const bool tier_asked = cfg_.prefix_cache_mib > 0;
         const std::vector<int32_t>& cg = ranks_[0]->prefix.cached_groups();
-        /* One slot holds every rank's shard of an entry; each rank writes only its window. Shards
-         * can differ or be empty (uneven heads, rad_kv_group_zero), so a slot is the sum and each
-         * window starts where the previous ends. TierExec::sizes uses the largest rank's entry,
-         * since the staging ring is per rank. */
-        std::vector<int64_t> rank_entry(ranks_.size(), 0), entry_off(ranks_.size(), 0);
-        int64_t entry_bytes = 0, slot_bytes = 0;
-        for (size_t i = 0; i < ranks_.size(); ++i) {
-            for (int32_t g : cg) {
-                const KVGroupPlan* p = ranks_[i]->kv.plan(g);
-                if (p && p->paged()) rank_entry[i] += p->bytes_per_block;
-            }
-            entry_off[i] = slot_bytes;
-            slot_bytes += rank_entry[i];
-            entry_bytes = std::max(entry_bytes, rank_entry[i]);
-        }
+        /* One slot holds the whole engine's entry: the groups every rank holds alike
+         * (rad_kv_group_replicated) once, at the front, then every rank's own shard in its own
+         * window. Shards can differ or be empty (uneven heads, rad_kv_group_zero). The layout is
+         * TierExec's, so the arithmetic here and the copies agree; TierExec::sizes takes the
+         * largest rank's entry, since the staging ring is per rank. */
+        std::vector<const KVManager*> rank_kv;
+        for (auto& r : ranks_) rank_kv.push_back(&r->kv);
+        TierExec::SlotLayout layout;
+        RAD_TRY(TierExec::slot_layout(rank_kv, cg, &layout));
+        const std::vector<int64_t>& entry_off = layout.own_off;
+        const int64_t entry_bytes = layout.entry_bytes, slot_bytes = layout.slot_bytes;
 
         /* Snapshots live in the checkpoint store (--checkpoint-slots); --prefix-cache-mib is for
          * blocks only. */
@@ -2805,6 +3267,20 @@ int Engine::configure_kv() {
                  * fit is right after the turn. */
                 const int64_t held = T.arena().capacity() * tc.block_tokens;
                 const int64_t ctx = cfg_.max_ctx > 0 ? cfg_.max_ctx : meta_.n_ctx_train;
+                if (layout.rep_bytes > 0 && ranks_.size() > 1) {
+                    /* What the slot would be with every rank's copy of the replicated groups. */
+                    const int64_t each = slot_bytes + layout.rep_bytes * (int64_t)(ranks_.size() - 1);
+                    std::string names;
+                    for (const std::string& n : layout.replicated)
+                        names += (names.empty() ? "" : ", ") + n;
+                    RAD_INFO("kv tiers: %s (%s of each entry) is the same on every rank and held "
+                             "once a slot: %s a slot rather than %s, so --prefix-cache-mib %lld "
+                             "holds %lld tokens rather than %lld",
+                             names.c_str(), humanb(layout.rep_bytes).c_str(),
+                             humanb(slot_bytes).c_str(), humanb(each).c_str(),
+                             (long long)cfg_.prefix_cache_mib, (long long)held,
+                             (long long)(tc.host_cap_bytes / each * tc.block_tokens));
+                }
                 if (held < ctx)
                     RAD_WARN("kv tiers: --prefix-cache-mib %lld holds %lld tokens of context (%s "
                              "per %lld-token block), less than one --max-model-len %lld "
@@ -2878,6 +3354,7 @@ int Engine::configure_kv() {
     }
 
     RAD_INFO("kv: %s", ranks_[0]->kv.report().c_str());
+    kvstream_report(stream, stream_host, (int)ranks_.size());
     /* The prefix cache's report: on or off, groups covered and skipped. It names the two things
      * that silently disable caching on a hybrid model: a windowed group cannot be served a prefix,
      * and a linear model with no checkpoint interval replays from zero. */
@@ -2886,13 +3363,16 @@ int Engine::configure_kv() {
     /* Can the pool hold one max-length sequence? The context limit and KV pool come from unrelated
      * flags; otherwise such a request is accepted and then refused at admission with a message
      * about blocks. Only full paged groups apply: a window group costs the window, and a linear
-     * group is O(1) in context. */
+     * group is O(1) in context. A runtime-window (RAD_KV_RING) group is not checked here either:
+     * it is sized for the whole context plus one ring a sequence and its tokens are a per-sequence
+     * reference rather than the pool's capacity, so the comparison would be about the wrong
+     * number. */
     {
         const int64_t want = cfg_.max_ctx ? cfg_.max_ctx : meta_.n_ctx_train;
         const KVManager& kv = ranks_[0]->kv;
         for (int32_t g = 0; g < kv.n_groups(); ++g) {
             const KVGroupPlan* p = kv.plan(g);
-            if (!p || !p->paged() || p->window_blocks > 0) continue;
+            if (!p || !p->paged() || p->window_blocks > 0 || p->runtime_win) continue;
             const int64_t cap = p->n_blocks * p->block_size;
             if (cap >= want) continue;
             /* A hard limit, unlike the backing ratio (how much of every-sequence-at-max_ctx the
@@ -2901,6 +3381,14 @@ int Engine::configure_kv() {
              *
              * For an image generator the sequence is a conditioning, which its driver refuses at
              * admission; warn in those terms. */
+            if (ranks_[0]->program.is_audio_generator()) {
+                RAD_WARN("kv group '%s' holds %lld rows: a request needs its prompt and every "
+                         "frame it may make, both branches, up to %lld rows a branch, so a long "
+                         "piece is refused at once rather than cut short. Ask for shorter "
+                         "pieces, use --kv-cache-dtype fp8, or add ranks.",
+                         p->name.c_str(), (long long)cap, (long long)want);
+                continue;
+            }
             if (ranks_[0]->program.is_generator()) {
                 RAD_WARN("kv group '%s' holds %lld rows: a conditioning longer than that -- a "
                          "prompt with its pictures, up to %lld rows -- is refused. A picture "
@@ -2924,6 +3412,7 @@ int Engine::configure_kv() {
 
 /* ================================================================== start */
 int Engine::start() {
+    startup_begin_ns_ = rad_mono_ns();
     std::vector<int> devs;
     std::string inventory;
     std::string devnote;
@@ -3129,6 +3618,10 @@ int Engine::start() {
         }
 
     }
+    /* Runtime LoRA: the startup adapters, copied into their slots now that every rank's pools
+     * have an address and before any step can read them. */
+    RAD_TRY(lora_start());
+
     /* ---- the loan: the cache's idle blocks, lent to the expert slab in place -----------------
      *
      * Here because it needs the cache's carve (the addresses) and the mover's compute stream
@@ -3144,8 +3637,8 @@ int Engine::start() {
             const int64_t lbpb = p.layer_bytes_per_block(), stripe = p.layer_stride();
             for (int64_t L = 0; L < p.n_layers; ++L) {
                 LoanStrip st;
-                st.top = (char*)p.base + L * stripe + p.n_blocks * lbpb;
-                st.bytes = p.n_blocks * lbpb;
+                st.top = (char*)p.base + L * stripe + p.pool_blocks() * lbpb;
+                st.bytes = p.pool_blocks() * lbpb;
                 st.unit_bytes = lbpb;
                 st.unit_tokens = p.block_size;
                 strips.push_back(st);
@@ -3167,16 +3660,18 @@ int Engine::start() {
     (void)rad_dev_set(ranks_[0]->device);
 
     /* The most the cache can hold: the whole carve, including lent blocks (a request reclaims them
-     * in the same step). Tokens are the smallest over the full paged groups; a windowed group
-     * bounds history, not capacity. /stats and /metrics report the same numbers (kv_tokens_max,
-     * radiance:kv_cache_max_tokens). */
+     * in the same step). Tokens are the smallest over the full paged groups; a fixed-window group
+     * bounds history, not capacity. A runtime-window (RAD_KV_RING) group does hold its sequences'
+     * references, so it counts like a full group. /stats and /metrics report the same numbers
+     * (kv_tokens_max, radiance:kv_cache_max_tokens). */
     {
         const KVManager& kv = ranks_[0]->kv;
         int64_t bytes = 0, state = 0, tokens = 0;
         for (const KVGroupPlan& p : kv.plans()) {
             bytes += kv.pool_bytes_carved(p.index);
             if (p.stateful()) state += kv.pool_bytes_carved(p.index);
-            if (!p.paged() || p.kind == RAD_KV_WINDOW || p.block_size <= 0) continue;
+            if (!p.paged() || (p.kind == RAD_KV_WINDOW && !p.runtime_win) || p.block_size <= 0)
+                continue;
             const int64_t t = p.n_blocks * p.block_size;
             if (tokens == 0 || t < tokens) tokens = t;
         }
@@ -3462,6 +3957,14 @@ int Engine::load_vocab() {
     auto v = std::make_shared<Vocab>();
     RAD_TRY(v->load(std::move(vb)));
     vocab_ = v;
+    if (file_ && file_->aux_vocab()) {
+        VocabBuild ab;
+        RAD_TRY(vocab_deserialize(file_->base(), (uint64_t)file_->size(), file_->aux_vocab().h, ab));
+        auto av = std::make_shared<Vocab>();
+        RAD_TRY(av->load(std::move(ab)));
+        aux_vocab_ = av;
+        RAD_INFO("vocab: a second vocabulary of %d tokens", aux_vocab_->n_tokens());
+    }
 
     auto view = std::make_unique<TokenView>();
     RAD_TRY(view->init(vocab_));
