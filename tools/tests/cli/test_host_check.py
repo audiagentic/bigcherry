@@ -17,19 +17,25 @@ def _host(power):
 
 
 class HostCheckTests(unittest.TestCase):
-    def test_unapplied_power_setting_warns(self):
-        state = {"vddgfx_offset_mv": 0, "sclk_max_mhz": 3010, "power_cap_w": 303, "power_cap_default_w": 303}
-        with mock.patch.object(host_check.power_cmds, "read_state", lambda loc: state), \
-                mock.patch.object(host_check.glob, "glob", lambda pat: []):
-            out = host_check.findings(_host(env.DevicePower(vddgfx_offset_mv=-125, evidence="x")))
+    def _findings(self, power, writable, driver="amdgpu"):
+        with mock.patch.object(host_check.gpu_power, "driver_of", lambda loc: driver), \
+                mock.patch.object(host_check.gpu_power, "hwmon_of", lambda loc: "/h"), \
+                mock.patch.object(host_check.glob, "glob", lambda pat: []), \
+                mock.patch.object(host_check.os, "access", lambda p, m: writable):
+            return host_check.findings(_host(power))
+
+    def test_settings_this_user_cannot_apply_warn(self):
+        out = self._findings(env.DevicePower(vddgfx_offset_mv=-125, evidence="x"), writable=False)
         self.assertEqual(len(out), 1)
         self.assertIn("gpu-power apply", out[0])
 
-    def test_applied_setting_and_no_rapl_is_clean(self):
-        state = {"vddgfx_offset_mv": -125, "sclk_max_mhz": 3010, "power_cap_w": 303, "power_cap_default_w": 303}
-        with mock.patch.object(host_check.power_cmds, "read_state", lambda loc: state), \
-                mock.patch.object(host_check.glob, "glob", lambda pat: []):
-            self.assertEqual(host_check.findings(_host(env.DevicePower(vddgfx_offset_mv=-125, evidence="x"))), [])
+    def test_settings_this_user_can_apply_are_clean(self):
+        # applied per run, so a card at its own values is not a finding
+        self.assertEqual(self._findings(env.DevicePower(vddgfx_offset_mv=-125, evidence="x"), writable=True), [])
+
+    def test_unsupported_driver_warns(self):
+        out = self._findings(env.DevicePower(vddgfx_offset_mv=-125, evidence="x"), writable=True, driver="nvidia")
+        self.assertIn("no power backend", out[0])
 
     def test_unreadable_rapl_warns(self):
         with mock.patch.object(host_check.glob, "glob", lambda pat: ["/sys/class/powercap/intel-rapl:0/energy_uj"]), \
