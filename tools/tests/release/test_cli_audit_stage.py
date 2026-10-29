@@ -49,8 +49,12 @@ class PullStageTests(unittest.TestCase):
         args.ref = None
         args.source = None
         args.full = False
+        # With no ref and no source, pull takes the pin; making that ref available and syncing the campaign mirror
+        # need a remote, which this checkout has none of. Both are git plumbing, not the stage rule under test.
         with mock.patch.object(cli_source, "_run"), \
              mock.patch.object(cli_source.upstream, "clear_stale_locks", return_value=[]), \
+             mock.patch.object(cli_source.upstream, "ensure_ref", side_effect=lambda root, ref, deepen=True: ref), \
+             mock.patch.object(cli_source.upstream, "sync_mirror_ref", return_value=None), \
              mock.patch.object(cli_source.releases, "record_for_checkout", return_value=record), \
              mock.patch.object(record, "save"):
             self.assertEqual(cli_source.cmd_pull(args), 0)

@@ -114,3 +114,25 @@ def test_parse_filter(arg, expected):
 
 def test_upstream_landed_is_unknown_outside_a_checkout(tmp_path):
     assert patchset.upstream_landed("abc1234", tmp_path) is None
+
+
+def test_set_pinned_version_rewrites_only_that_line(tmp_path):
+    path = write(tmp_path, '# radiance\npinned = "v1.13.0"\npinned-version = "1.9.0"\n')
+    assert recipes.set_pinned_version("1.13.0", path) == "1.9.0"
+    assert path.read_text(encoding="utf-8") == '# radiance\npinned = "v1.13.0"\npinned-version = "1.13.0"\n'
+
+
+def test_set_pinned_version_refuses_a_file_without_it(tmp_path):
+    with pytest.raises(recipes.RecipeError):
+        recipes.set_pinned_version("1.13.0", write(tmp_path, 'pinned = "v1.13.0"\n'))
+
+
+@pytest.mark.parametrize(("tag", "version"), [("v1.13.0", "1.13.0"), ("2.0", "2.0")])
+def test_version_of_tag(tag, version):
+    assert recipes.version_of_tag(tag) == version
+
+
+@pytest.mark.parametrize("tag", ["b11552", "v1.13.0-rc1", "main"])
+def test_version_of_tag_refuses_non_release_tags(tag):
+    with pytest.raises(recipes.RecipeError):
+        recipes.version_of_tag(tag)
