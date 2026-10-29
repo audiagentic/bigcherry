@@ -312,3 +312,12 @@
         wf[t][s] = r3_row16_bf16_regs(r3_mxfp4_unpack8_bf16(wv[t][s], r4d_mxfp4_fold_d(ref[t], e8[t][s >> 1])), (unsigned)lane);
       }
 @@ end
+
+# ---- the WMMA launcher: two column tiles a block from two rows. A block stages the whole activation (M rows, K slabs)
+# once, so at two to sixteen rows one 16-column tile a block re-read and re-widened about as many activation bytes as
+# weight bytes; two tiles halve that. TN only widens a block (a column's sum order is KW's), so no bits change.
+@@ find 1
+  const bool tn2 = M > 24 && tiles % 2 == 0 && N >= 4096 && K >= 3072;
+@@ replace
+  const bool tn2 = tiles % 2 == 0 && ((M > 24 && N >= 4096 && K >= 3072) || (M > 1 && M <= 16));
+@@ end
