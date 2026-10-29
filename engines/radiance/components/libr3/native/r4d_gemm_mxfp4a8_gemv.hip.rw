@@ -322,13 +322,9 @@
   const bool tn2 = tiles % 2 == 0 && ((M > 24 && N >= 4096 && K >= 3072) || (M > 1 && M <= 16));
 @@ end
 
-# ... and the one-row-tile launch takes a wider TN too (it was fixed at one tile): four tiles from three rows, as the
-# dot form's launcher does, else the two-tile choice above.
+# ... and the one-row-tile launch takes that TN too (it was fixed at one tile).
 @@ find 1
     if (rt <= 1) { if (ablk) MXW_L(true, 1, 1); else MXW_L(false, 1, 1); }
 @@ replace
-    if (rt <= 1) {
-      if (M > 2 && tiles % 4 == 0) { if (ablk) MXW_L(true, 1, 4); else MXW_L(false, 1, 4); }
-      else MXW_AB(1)
-    }
+    if (rt <= 1) MXW_AB(1)
 @@ end
