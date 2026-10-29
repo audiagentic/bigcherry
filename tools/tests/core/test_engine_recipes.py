@@ -1,6 +1,7 @@
 """RAD01 PR 3: every engine declares its recipes document, and a document names the engine it belongs to."""
 
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -16,7 +17,9 @@ class EngineRecipesTests(unittest.TestCase):
 
     def test_radiance_recipes_carry_its_pin_sources_and_profiles(self):
         cfg = config.load(engines.load(paths.REPO_ROOT, engines.RADIANCE).recipes_path(paths.REPO_ROOT))
-        self.assertEqual(cfg.pinned, "v1.9.0")
+        # the pin moves with every bump; what holds is that the release version beside it names the same release
+        recipes = engines.load(paths.REPO_ROOT, engines.RADIANCE).recipes_path(paths.REPO_ROOT)
+        self.assertEqual(cfg.pinned.lstrip("v"), tomllib.loads(recipes.read_text(encoding="utf-8"))["pinned-version"])
         self.assertEqual(set(cfg.sources), {"radiance-native", "radiance", "radiance-lab", "radiance-diag"})
         self.assertEqual(set(cfg.runtime_profiles), {"flashnext-2xtx", "qwen38-27b-2xtx"})
         flash = cfg.runtime_profiles["flashnext-2xtx"].server_args

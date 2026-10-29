@@ -57,3 +57,25 @@ def repin(new_ref: str, path) -> str:
 
     path.write_text(new_content, encoding='utf-8')
     return old_ref
+
+
+def set_pinned_version(version: str, path) -> str:
+    """Rewrites ONLY the `pinned-version = "..."` line, as repin does for `pinned`. Returns the old value."""
+    path = Path(path)
+    content = path.read_text(encoding='utf-8')
+    match = re.search(r'^pinned-version\s*=\s*"([^"]*)"', content, re.MULTILINE)
+    if not match:
+        raise RecipeError(f"could not find pinned-version = \"...\" in {path}")
+    path.write_text(
+        re.sub(r'^(pinned-version\s*=\s*)"[^"]*"', rf'\g<1>"{version}"', content, count=1, flags=re.MULTILINE),
+        encoding='utf-8',
+    )
+    return match.group(1)
+
+
+def version_of_tag(tag: str) -> str:
+    """The upstream release version a tag names (v1.13.0 -> 1.13.0)."""
+    match = re.fullmatch(r"v?(\d+(?:\.\d+)*)", tag)
+    if not match:
+        raise RecipeError(f"tag {tag!r} does not name a release version (v1.13.0)")
+    return match.group(1)
