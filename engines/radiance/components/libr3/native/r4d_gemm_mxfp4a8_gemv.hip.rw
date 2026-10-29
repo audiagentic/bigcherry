@@ -12,6 +12,12 @@
 # from a zero accumulator exactly as before; nothing leaves the gfx11 layout.
 #
 # The dot form (K % 128 == 64) still multiplies with the dot4 shim; no Qwen projection takes it (K is 5120 or 17408).
+#
+# Activation staging in K slabs: the bf16 rows go through shared memory a slab of K at a time (24576 values, 48 KiB), so
+# every M (1 to 16 in these forms) and every K is staged; staging the whole M x K at once fitted one row only, and two to
+# eight rows (a drafter's verify step) fell back to widening in the step at half the bandwidth. A slab is a whole number
+# of KW chunks of 128 (1024 of K), so each wave keeps its chunks (ch = wave mod KW) in the same order: the sums and the
+# result are unchanged.
 
 # ---- the plain form (r4d_gemm_mxfp4a8_gemvw_kernel)
 @@ find 1
@@ -19,17 +25,11 @@
 @@ replace
   const int col = lane & 15, khalf = lane >> 4;  // B fragment: this lane's column and k half
   const int ac = (int)r3_arow((unsigned)lane);   // libr3 native: the weight column this lane supplies as an A row
-  // libr3 native: the activation rows widened to bf16 ONCE a block into shared memory (not 16 codes a lane a step, a quarter of
-  // the kernel's vector work); a block falls back to widening in the step when M * K does not fit.
+  // libr3 native: the activation rows widened to bf16 ONCE a block into shared memory, a K slab at a time (not 16 codes a lane a
+  // step, a quarter of the kernel's vector work). RT == 1 is M <= 16, so a slab is at least 1024 of K.
   __shared__ __attribute__((aligned(32))) unsigned short r3_sAct[RT == 1 ? 24576 : 1];
-  const bool r3_stage = RT == 1 && M * K <= 24576;
-  if (r3_stage) {
-    for (int i = threadIdx.x; i < M * K; i += KW * 32) {
-      const int m = i / K;
-      r3_sAct[i] = (unsigned short)r3_e4m3_to_bf16_bits(A[(size_t)m * lda + (i - m * K)]);
-    }
-    __syncthreads();
-  }
+  const bool r3_stage = RT == 1;
+  const int r3_slab = r3_stage ? (24576 / M) / 1024 * 1024 : K;
 @@ end
 
 @@ find 1
@@ -52,6 +52,35 @@
 #pragma unroll
       for (int s = 0; s < 8; ++s)
         wv[t][s] = __builtin_nontemporal_load(&Wp[((size_t)(nt0 + t) * ksteps + ch * 8 + s) * 32 + (lane & 16) + ac]);
+@@ end
+
+@@ find 1
+#pragma unroll
+    for (int t = 0; t < TN; ++t) tot[r][t] = (mxg_v8f)(0.f);
+  for (int ch = wave; ch < chunks; ch += KW) {
+@@ replace
+#pragma unroll
+    for (int t = 0; t < TN; ++t) tot[r][t] = (mxg_v8f)(0.f);
+  for (int r3_k0 = 0; r3_k0 < K; r3_k0 += r3_slab) {   // libr3 native: one K slab
+  const int r3_kn = K - r3_k0 < r3_slab ? K - r3_k0 : r3_slab;
+  if (r3_stage) {
+    __syncthreads();   // the previous slab's reads are done
+    for (int i = threadIdx.x; i < M * r3_kn; i += blockDim.x) {
+      const int m = i / r3_kn;
+      r3_sAct[i] = (unsigned short)r3_e4m3_to_bf16_bits(A[(size_t)m * lda + r3_k0 + (i - m * r3_kn)]);
+    }
+    __syncthreads();
+  }
+  for (int ch = (r3_k0 >> 7) + wave; ch < ((r3_k0 + r3_kn) >> 7); ch += KW) {
+@@ end
+
+@@ find 1
+  }
+  // One column tile at a time through sP (TN of them would not fit in LDS at four row tiles).
+@@ replace
+  }
+  }   // libr3 native: K slab
+  // One column tile at a time through sP (TN of them would not fit in LDS at four row tiles).
 @@ end
 
 @@ find 1
@@ -100,7 +129,7 @@
 #pragma unroll
       for (int s = 0; s < 8; ++s)
         af[s] = !live ? r3_v16bf{}
-              : r3_stage ? *reinterpret_cast<const r3_v16bf*>(&r3_sAct[(size_t)row * K + (ch * 8 + s) * 16])
+              : r3_stage ? *reinterpret_cast<const r3_v16bf*>(&r3_sAct[(size_t)row * r3_kn + (ch * 8 + s) * 16 - r3_k0])
                          : r3_e4m3x16_to_bf16(*reinterpret_cast<const r3_u4u*>(A + (size_t)row * lda + (ch * 8 + s) * 16));
       const float sc = ABLK ? (live ? As[(size_t)row * as_rs + ch] : 0.f) : 1.f;
 #pragma unroll
@@ -150,18 +179,39 @@
 @@ find 1
   const int ref = (int)Wref[nt * 16 + col];
 @@ replace
-  // libr3 native: the activation rows widened to bf16 ONCE a block into shared memory (not 16 codes a lane a step, a quarter of
-  // the kernel's vector work); a block falls back to widening in the step when M * K does not fit.
-  __shared__ __attribute__((aligned(32))) unsigned short r3_sAct[1 == 1 ? 24576 : 1];
-  const bool r3_stage = 1 == 1 && M * K <= 24576;
+  // libr3 native: the activation rows widened to bf16 ONCE a block into shared memory, a K slab at a time (not 16 codes a lane a
+  // step, a quarter of the kernel's vector work). One row tile: M <= 16, so a slab is at least 1024 of K.
+  __shared__ __attribute__((aligned(32))) unsigned short r3_sAct[24576];
+  const bool r3_stage = true;
+  const int r3_slab = (24576 / M) / 1024 * 1024;
+  const int ref = (int)Wref[nt * 16 + ac];
+@@ end
+
+@@ find 1
+  mxg_v8f tot = (mxg_v8f)(0.f);
+  for (int ch = kv; ch < chunks; ch += KW) {
+@@ replace
+  mxg_v8f tot = (mxg_v8f)(0.f);
+  for (int r3_k0 = 0; r3_k0 < K; r3_k0 += r3_slab) {   // libr3 native: one K slab
+  const int r3_kn = K - r3_k0 < r3_slab ? K - r3_k0 : r3_slab;
   if (r3_stage) {
-    for (int i = threadIdx.x; i < M * K; i += KW * 32) {
-      const int m = i / K;
-      r3_sAct[i] = (unsigned short)r3_e4m3_to_bf16_bits(A[(size_t)m * lda + (i - m * K)]);
+    __syncthreads();   // the previous slab's reads are done
+    for (int i = threadIdx.x; i < M * r3_kn; i += blockDim.x) {
+      const int m = i / r3_kn;
+      r3_sAct[i] = (unsigned short)r3_e4m3_to_bf16_bits(A[(size_t)m * lda + r3_k0 + (i - m * r3_kn)]);
     }
     __syncthreads();
   }
-  const int ref = (int)Wref[nt * 16 + ac];
+  for (int ch = (r3_k0 >> 7) + kv; ch < ((r3_k0 + r3_kn) >> 7); ch += KW) {
+@@ end
+
+@@ find 1
+  }
+  // tot[e]: row (lane & 15), column khalf * 8 + e of the tile.
+@@ replace
+  }
+  }   // libr3 native: K slab
+  // tot[e]: row (lane & 15), column khalf * 8 + e of the tile.
 @@ end
 
 @@ find 1
@@ -198,7 +248,7 @@
 #pragma unroll
     for (int s = 0; s < 8; ++s)
       af[s] = !live ? r3_v16bf{}
-            : r3_stage ? *reinterpret_cast<const r3_v16bf*>(&r3_sAct[(size_t)row * K + (ch * 8 + s) * 16])
+            : r3_stage ? *reinterpret_cast<const r3_v16bf*>(&r3_sAct[(size_t)row * r3_kn + (ch * 8 + s) * 16 - r3_k0])
                        : r3_e4m3x16_to_bf16(*reinterpret_cast<const r3_u4u*>(A + (size_t)row * lda + (ch * 8 + s) * 16));
 @@ end
 
