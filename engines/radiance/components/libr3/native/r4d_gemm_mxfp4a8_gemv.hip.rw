@@ -15,7 +15,8 @@
 #
 # Activation staging in K slabs: the bf16 rows go through shared memory a slab of K at a time (24576 values, 48 KiB), so
 # every M (1 to 16 in these forms) and every K is staged; staging the whole M x K at once fitted one row only, and two to
-# eight rows (a drafter's verify step) fell back to widening in the step at half the bandwidth. A slab is a whole number
+# eight rows (a drafter's verify step) fell back to widening in the step at half the bandwidth. A staged row is padded by
+# 16 values (32 bytes): K is a multiple of 64, so unpadded rows start on the same LDS bank. A slab is a whole number
 # of KW chunks of 128 (1024 of K), so each wave keeps its chunks (ch = wave mod KW) in the same order: the sums and the
 # result are unchanged.
 
@@ -29,7 +30,7 @@
   // step, a quarter of the kernel's vector work). RT == 1 is M <= 16, so a slab is at least 1024 of K.
   __shared__ __attribute__((aligned(32))) unsigned short r3_sAct[RT == 1 ? 24576 : 1];
   const bool r3_stage = RT == 1;
-  const int r3_slab = r3_stage ? (24576 / M) / 1024 * 1024 : K;
+  const int r3_slab = r3_stage ? (24576 / M - 16) / 1024 * 1024 : K;
 @@ end
 
 @@ find 1
@@ -67,7 +68,7 @@
     __syncthreads();   // the previous slab's reads are done
     for (int i = threadIdx.x; i < M * r3_kn; i += blockDim.x) {
       const int m = i / r3_kn;
-      r3_sAct[i] = (unsigned short)r3_e4m3_to_bf16_bits(A[(size_t)m * lda + r3_k0 + (i - m * r3_kn)]);
+      r3_sAct[m * (r3_kn + 16) + (i - m * r3_kn)] = (unsigned short)r3_e4m3_to_bf16_bits(A[(size_t)m * lda + r3_k0 + (i - m * r3_kn)]);
     }
     __syncthreads();
   }
@@ -129,7 +130,7 @@
 #pragma unroll
       for (int s = 0; s < 8; ++s)
         af[s] = !live ? r3_v16bf{}
-              : r3_stage ? *reinterpret_cast<const r3_v16bf*>(&r3_sAct[(size_t)row * r3_kn + (ch * 8 + s) * 16 - r3_k0])
+              : r3_stage ? *reinterpret_cast<const r3_v16bf*>(&r3_sAct[(size_t)row * (r3_kn + 16) + (ch * 8 + s) * 16 - r3_k0])
                          : r3_e4m3x16_to_bf16(*reinterpret_cast<const r3_u4u*>(A + (size_t)row * lda + (ch * 8 + s) * 16));
       const float sc = ABLK ? (live ? As[(size_t)row * as_rs + ch] : 0.f) : 1.f;
 #pragma unroll
@@ -183,7 +184,7 @@
   // step, a quarter of the kernel's vector work). One row tile: M <= 16, so a slab is at least 1024 of K.
   __shared__ __attribute__((aligned(32))) unsigned short r3_sAct[24576];
   const bool r3_stage = true;
-  const int r3_slab = (24576 / M) / 1024 * 1024;
+  const int r3_slab = (24576 / M - 16) / 1024 * 1024;
   const int ref = (int)Wref[nt * 16 + ac];
 @@ end
 
@@ -198,7 +199,7 @@
     __syncthreads();   // the previous slab's reads are done
     for (int i = threadIdx.x; i < M * r3_kn; i += blockDim.x) {
       const int m = i / r3_kn;
-      r3_sAct[i] = (unsigned short)r3_e4m3_to_bf16_bits(A[(size_t)m * lda + r3_k0 + (i - m * r3_kn)]);
+      r3_sAct[m * (r3_kn + 16) + (i - m * r3_kn)] = (unsigned short)r3_e4m3_to_bf16_bits(A[(size_t)m * lda + r3_k0 + (i - m * r3_kn)]);
     }
     __syncthreads();
   }
@@ -248,7 +249,7 @@
 #pragma unroll
     for (int s = 0; s < 8; ++s)
       af[s] = !live ? r3_v16bf{}
-            : r3_stage ? *reinterpret_cast<const r3_v16bf*>(&r3_sAct[(size_t)row * r3_kn + (ch * 8 + s) * 16 - r3_k0])
+            : r3_stage ? *reinterpret_cast<const r3_v16bf*>(&r3_sAct[(size_t)row * (r3_kn + 16) + (ch * 8 + s) * 16 - r3_k0])
                        : r3_e4m3x16_to_bf16(*reinterpret_cast<const r3_u4u*>(A + (size_t)row * lda + (ch * 8 + s) * 16));
 @@ end
 
