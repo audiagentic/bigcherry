@@ -9,6 +9,14 @@ Current-state page. Rule: every measurement or decision updates this page in the
 bf16 128x128 scales), E4M3 activations with an f32 scale per 128 of K. 256 experts, top-8 (read from the container's
 `n_expert_used`). Hybrid: gated delta-net (linear state) plus full attention; an MTP head is in the checkpoint.
 
+## radiance 1.13.0 sanity (RAD32, PR #451, 2026-10-29)
+
+R9700 alone, `--kernels libr4d,libr3moe,libref --placement expert_tiered --host-pool-mib 30720 --tp 1`, fp8 KV, one
+stream, no drafter, engine-bench 7.2K prompt + 128 decode tokens, three repeats: loads, serves and stops cleanly; prefill
+3,571 / 5,162 / 6,674 tok/s, decode 54.3 / 79.1 / 84.8 tok/s, rising over the repeats (warm-up, and a prefix-cache share
+of the repeated prompt is likely). No v1.9.0 run of this setup exists, so it is a sanity check, not a comparison
+(`rad32-sanity-10290400`). Without `--host-pool-mib` the 34.6 GiB container does not fit the R9700's 32 GiB.
+
 ## MTP acceptance collapse with the prefix cache on (open radiance bug, 2026-10-20)
 
 **Symptom.** Engine alone, `--num-speculative-tokens 3`, one R9700 (`--tp 1`), prefix cache at its default (on): draft
