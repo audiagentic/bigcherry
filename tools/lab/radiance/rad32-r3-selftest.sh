@@ -3,6 +3,7 @@
 # radiance pin (rad_build reuses it): builds the r3_selftest target in that build's libr3 tree and runs the catalogue
 # (every row against its host reference). Usage (from a checkout, e.g. through `bigcherry slice lab`): rad32-r3-selftest.sh
 set -u
+SELFTEST_TIMEOUT=${SELFTEST_TIMEOUT:-7200}   # seconds per selftest invocation; the full catalogue outran 3600 s (run 10281822)
 CASE=${1:-}; CARD=${2:-0}
 set --   # the env script reads its own arguments
 source tools/env/bigcherry-env.sh >/dev/null
@@ -30,11 +31,11 @@ print(d[$CARD].index if len(d) > $CARD else '')")
 echo "build $B, selftest $SELF, device $idx" | tee -a "$OUT/summary.txt"
 rc=0
 if [ -z "$CASE" ]; then
-    ROCR_VISIBLE_DEVICES=$idx timeout 3600 "$SELF" "$B/radiance_home/kernels/libr3.so" > "$OUT/selftest.txt" 2>&1 || rc=$?
+    ROCR_VISIBLE_DEVICES=$idx timeout "$SELFTEST_TIMEOUT" "$SELF" "$B/radiance_home/kernels/libr3.so" > "$OUT/selftest.txt" 2>&1 || rc=$?
 else
     : > "$OUT/selftest.txt"
     for c in ${CASE//,/ }; do
-        ROCR_VISIBLE_DEVICES=$idx timeout 3600 "$SELF" "$B/radiance_home/kernels/libr3.so" --case "$c" >> "$OUT/selftest.txt" 2>&1 || rc=$?
+        ROCR_VISIBLE_DEVICES=$idx timeout "$SELFTEST_TIMEOUT" "$SELF" "$B/radiance_home/kernels/libr3.so" --case "$c" >> "$OUT/selftest.txt" 2>&1 || rc=$?
     done
 fi
 grep -iE "fail|mismatch|error" "$OUT/selftest.txt" | head -30 | tee -a "$OUT/summary.txt"
