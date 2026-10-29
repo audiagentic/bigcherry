@@ -37,11 +37,15 @@ jobs:
       - name: Scan files changed by this push or pull request
         env:
           FORBIDDEN_TERMS: ${{ secrets.FORBIDDEN_TERMS }}
-          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          IS_PR: ${{ github.event_name == 'pull_request' }}
           PUSH_BEFORE: ${{ github.event.before }}
         run: |
           set -eu
-          base="${PR_BASE:-$PUSH_BEFORE}"
+          # A pull request is checked out as its merge ref, whose first parent is main as it is now: scan from there,
+          # so only this PR's files and commit messages are scanned. The PR's recorded base sha is where it branched;
+          # from there the range also holds every commit main gained since, so one bad message on main failed every
+          # older open PR.
+          if [ "$IS_PR" = true ]; then base="$(git rev-parse HEAD^1)"; else base="$PUSH_BEFORE"; fi
           case "$base" in
             ""|0000000000000000000000000000000000000000)
               base="$(git merge-base origin/main HEAD 2>/dev/null || git rev-list --max-parents=0 HEAD | tail -n1)"

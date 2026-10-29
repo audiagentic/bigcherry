@@ -11,7 +11,7 @@ from ..core import paths
 from ..core.context import ProjectContext
 from ..release import records as releases
 from ..release import pin as pin_release
-from .. import pin_transition
+from .. import pin_transition, recipes
 from ..source import audit as source_audit
 from ..source import upstream
 from .engine_scope import checkout_root
@@ -116,6 +116,10 @@ def cmd_pull(args: Namespace) -> int:
             print(f"pull: unknown source {source_name!r}: {exc}", file=sys.stderr)
             return 2
         ref = cfg.pinned if source.ref == "pinned" else source.ref
+    elif ref is None:
+        # No ref and no source: the pin, never the upstream branch head (a release record for an unpinned revision
+        # is noise the bump then has to clean up).
+        ref = recipes.pinned(context.layout.recipes_path(paths.REPO_ROOT))
     try:
         if ref:
             resolved = upstream.resolve_ref(ref, context.upstream_url)

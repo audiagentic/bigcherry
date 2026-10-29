@@ -6,13 +6,14 @@ import json
 import subprocess
 import sys
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from bigcherry.core import paths  # noqa: E402
+from bigcherry.core import engines, paths  # noqa: E402
 from bigcherry.release import notes as _notes  # noqa: E402
 from bigcherry.release import pin_release as _pr  # noqa: E402
 
@@ -43,6 +44,13 @@ _RELEASE_CONFIG = """\
 
 def _git(root: Path, *args: str) -> str:
     return subprocess.run(["git", *args], cwd=root, capture_output=True, text=True, check=True).stdout.strip()
+
+
+
+def _radiance_pin() -> tuple[str, str]:
+    """radiance's pin and its release version, as the recipes declare them (they move with every bump)."""
+    raw = tomllib.loads(engines.load(paths.REPO_ROOT, "radiance").recipes_path(paths.REPO_ROOT).read_text(encoding="utf-8"))
+    return raw["pinned"], raw["pinned-version"]
 
 
 class PinReleaseTests(unittest.TestCase):
@@ -102,13 +110,15 @@ class PinReleaseTests(unittest.TestCase):
                 _pr.run(root, "radiance", "b11474", "", dry_run=True, log=lambda _line: None)
 
     def test_radiance_plans_the_upstream_version_as_major(self):
-        # real repo: the package, the release line and recipes' pinned-version (1.13.0) give major 1130
+        # real repo: the package, the release line and recipes' pinned-version give the major (1.13.0 -> 1130)
+        pin, version = _radiance_pin()
+        major = int(version.replace(".", ""))
         with mock.patch.object(_pr, "_git", side_effect=lambda root, *a, check=True: "feat/x" if a[0] == "rev-parse" else ""):
-            plan = _pr.make_plan(paths.REPO_ROOT, "radiance", "v1.13.0", allow_existing=True)
-        self.assertEqual((plan.build, plan.version, plan.release_tag), (1130, "1130.0.0", "bc-radiance-1130.0.0"))
+            plan = _pr.make_plan(paths.REPO_ROOT, "radiance", pin, allow_existing=True)
+        self.assertEqual((plan.build, plan.version, plan.release_tag), (major, f"{major}.0.0", f"bc-radiance-{major}.0.0"))
         with mock.patch.object(_pr, "_git", side_effect=lambda root, *a, check=True: "feat/x" if a[0] == "rev-parse" else ""):
-            plan = _pr.make_plan(paths.REPO_ROOT, "radiance", "v1.13.0", version="1130.1.2")
-        self.assertEqual(plan.release_tag, "bc-radiance-1130.1.2")
+            plan = _pr.make_plan(paths.REPO_ROOT, "radiance", pin, version=f"{major}.1.2")
+        self.assertEqual(plan.release_tag, f"bc-radiance-{major}.1.2")
         with self.assertRaises(_pr.PinReleaseError):  # a llama.cpp tag is not radiance's pin
             _pr.make_plan(paths.REPO_ROOT, "radiance", "b11474")
         with self.assertRaises(_pr.PinReleaseError):  # not the pinned revision
@@ -116,7 +126,8 @@ class PinReleaseTests(unittest.TestCase):
 
     def test_pin_version_by_version_source(self):
         radiance, llama = _notes.load_config(paths.REPO_ROOT, "radiance"), _notes.load_config(paths.REPO_ROOT, "llamacpp")
-        self.assertEqual(_notes.pin_version(paths.REPO_ROOT, radiance, "v1.13.0"), _notes.PinVersion(1130, "1.13.0"))
+        pin, version = _radiance_pin()
+        self.assertEqual(_notes.pin_version(paths.REPO_ROOT, radiance, pin), _notes.PinVersion(int(version.replace(".", "")), version))
         self.assertEqual(_notes.pin_version(paths.REPO_ROOT, llama, "b11552"), _notes.PinVersion(11552, "b11552"))
         with self.assertRaises(_notes.ReleaseNotesError):
             _notes.pin_version(paths.REPO_ROOT, llama, "48f7b8eb6d70")

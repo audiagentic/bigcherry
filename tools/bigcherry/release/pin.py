@@ -77,7 +77,11 @@ def cmd_repin(args: argparse.Namespace) -> int:
         print(str(exc), file=sys.stderr)
         return 1
     try:
+        # An engine whose release line follows the upstream version carries it beside the pin; it moves with the pin.
+        version = recipes.version_of_tag(target) if engines.load(paths.REPO_ROOT, engine).version_source == "pinned-version" else None
         old = recipes.repin(target, recipes_path(engine))
+        if version is not None:
+            recipes.set_pinned_version(version, recipes_path(engine))
     except recipes.RecipeError as exc:
         print(str(exc), file=sys.stderr)
         return 1
@@ -89,7 +93,7 @@ def cmd_repin(args: argparse.Namespace) -> int:
     try:
         from_sha = resolve_pin_sha(engine, old)
         to_sha = resolve_pin_sha(engine, target)
-        declaring = upstream._git(paths.REPO_ROOT, "rev-parse", "HEAD")
+        declaring = upstream._git(paths.REPO_ROOT, "rev-parse", "HEAD").strip()
     except upstream.UpstreamError as exc:
         print(
             f"pin moved ({old} -> {target}) but the transition marker "
