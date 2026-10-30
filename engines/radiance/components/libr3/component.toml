@@ -35,11 +35,6 @@ default = "0"
 status = "evaluated"
 summary = "native delta-net chunk scan; wrong in serving (KLD 5.52) after three fixes, shelved; source kept in native-shelved/ and not built"
 
-[setting.R3_HC_NATIVE]
-default = "0"
-status = "experimental"
-summary = "native E4M3 decode for hc_read; 58 -> 51 us a call"
-
 [setting.R3_AR_WIRE4]
 default = "0"
 status = "experimental"
@@ -61,11 +56,6 @@ activation = "^R3_AR_TIMING "
 default = "0"
 status = "diagnostic"
 summary = "run compatibility and native delta-net scan side by side and report the first mismatch"
-
-[setting.R3_HC_COMPARE]
-default = "0"
-status = "diagnostic"
-summary = "selftest: compare compatibility and native hc_read byte for byte"
 
 [setting.R3_BT]
 default = "0"
