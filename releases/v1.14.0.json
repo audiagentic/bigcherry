@@ -1,0 +1,36 @@
+{
+  "artifact_version": 1,
+  "audit": {
+    "failed_checks": [],
+    "passed": true,
+    "strict": true,
+    "summary": {
+      "errors": 0,
+      "passed": 4,
+      "total": 4,
+      "warnings": 0
+    }
+  },
+  "bigcherry_revision": "0164e51a190d9a8a3dea9895a5719a88ec6f69bc",
+  "first_seen": "2026-10-30T08:58:59.098365+00:00",
+  "manifest_hash": "",
+  "notes": "",
+  "patches": {
+    "applied_cleanly": true,
+    "failed_edits": [],
+    "files": {
+      "core/mm/mp4.cpp": {
+        "mem-write-signature": "applied"
+      },
+      "libr4d/r4d_hc_bf16.hip": {
+        "hc-pf2-upmix-rt-sweep": "applied"
+      }
+    }
+  },
+  "promotion": null,
+  "release_tag": "v1.14.0",
+  "revision": "4a61d7296bc5b4fec5932949dac4a2fadf9b61ca",
+  "stage": "patched",
+  "tree_state": "",
+  "updated_at": "2026-10-30T08:59:01.771781+00:00"
+}

@@ -7,7 +7,7 @@ name = "libr3"
 engine = "radiance"
 targets = ["gfx1100"]
 # radiance 1.13.0 (plugin ABI 31): the rewrite rules are written against this revision's libr4d and refuse any other.
-built-against = "v1.13.0"
+built-against = "v1.14.0"
 outputs = ["kernels/libr3.so"]
 
 # How the build lane builds it: CMake against the engine installed from the lane's own build (CMAKE_PREFIX_PATH) and
