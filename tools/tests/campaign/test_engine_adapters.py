@@ -216,6 +216,9 @@ class ArmCaptureSidecarTests(unittest.TestCase):
                     raise RuntimeError("server refused")
                 return self
 
+            def draft_stats(self):
+                return None
+
             def __exit__(self, *args):
                 order.append("server-stop")
                 self.last_shutdown = ShutdownResult("sigint", True, False, 0)

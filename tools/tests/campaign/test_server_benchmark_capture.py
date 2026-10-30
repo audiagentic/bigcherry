@@ -45,6 +45,9 @@ class ServerCaptureTests(unittest.TestCase):
                     def __enter__(self):
                         return self
 
+                    def draft_stats(self):
+                        return None
+
                     def __exit__(self, *args):
                         self.last_shutdown = ShutdownResult("http", True, forced, -9 if forced else 0)
 
@@ -500,6 +503,9 @@ class ServerExecutionAttestationTests(unittest.TestCase):
             def __enter__(self):
                 self.log_path.write_text(startup, encoding="utf-8")
                 return self
+
+            def draft_stats(self):
+                return None
 
             def __exit__(self, *args):
                 self.last_shutdown = ShutdownResult("http", True, False, 0)
