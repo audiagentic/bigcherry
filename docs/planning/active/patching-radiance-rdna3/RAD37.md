@@ -2,7 +2,7 @@
 id: RAD37
 order: 0
 plan: patching-radiance-rdna3
-state: pending
+state: completed
 created-at: '2026-10-30T10:23:47.000000+00:00'
 breadth: ''
 skill: advanced
@@ -53,3 +53,22 @@ library (claims ^gfx11), to be A/B'd against libr3 as a separate item; RDNA2 exp
 ## Change Log
 
 - 2026-10-30T10:23:47.000000+00:00 (created-by): Created by agent
+
+## Result 2026-10-31
+
+Gates passed: Flash-Next KLD identical to 1.13.0; libr3 selftest 11,095 ok, 0 failures, 191 skipped (tests needing more gfx1201 cards);
+27B stream bench equal to 1.13.0 at 1, 2, 4 and 6 streams; 35B-A3B with MTP depth 3 serves on 1.14.0 and returned HTTP 500 on 1.13.0
+(decode attention scratch). Launcher default is 1,048,576 tokens, 2 sequences, `--prefix-resume nearest`; Flash-Next decode holds its
+92-122 tok/s on natural text to about 290K of used context and falls to 74 at 580K and 50 at 1M. Not measured: the 27B dflash2
+drafter (RAD36).
+
+## Validation
+
+Flash-Next KLD (`rad37-fn-kld-10301013`), libr3 selftest (`rad32-r3-selftest-10301021`), A/B decode and prefill (ordered A/B/B/A),
+27B stream bench (`rad37-g27-10310140`), 35B-A3B direct decode on both builds.
+
+## Acceptance Criteria
+
+v1.14.0 pinned with its release record; every gate above passed or its gap is stated here; no regression against 1.13.0 on any model
+measured.
+

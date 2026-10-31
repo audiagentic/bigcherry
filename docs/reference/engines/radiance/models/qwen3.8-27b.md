@@ -67,6 +67,22 @@ same dflash2 depth 7). The wire is not the cause (exact and wht6 measure the sam
 tiles a block at 2-16 rows (8 rows: plain 188-204 -> 198-242 GB/s, gated 185-220 -> 242-288), bit-identical; an
 8-row GEMV is still about half the 1-row bandwidth. Follow-up: RAD36.
 
+### radiance 1.14.0 (RAD37, 2026-10-31)
+
+Not the `--tp 2` harness above: the RAD14 stream configuration (`qwen27b-engine-mtp3-cache.json`: R9700 alone, `--tp 1`, MXFP4,
+3 speculative tokens, prefix cache on, fp8 KV, 32K context, 512-token prompts, 128 tokens), 1.13.0 and 1.14.0 in the order
+1.13.0, 1.14.0, 1.14.0, 1.13.0 (`rad37-g27-10310140`). Aggregate tok/s, two pairs:
+
+| Streams | 1.13.0 | 1.14.0 | Engine decode tok/s (1.13.0 / 1.14.0) | Draft acceptance |
+|---|---|---|---|---|
+| 1 | 79.9 / 79.7 | 79.7 / 79.5 | 96.6 / 96.8 | 0.64 |
+| 2 | 139.1 / 139.2 | 138.6 / 137.9 | 198.7 / 198.2 | 0.71 |
+| 4 | 202.6 / 201.6 | 205.7 / 206.0 | 358.7 / 358.2 | 0.71-0.72 |
+| 6 | 247.8 / 249.2 | 245.1 / 248.2 | 506.4 / 490.0 | 0.73-0.74 |
+
+No change between the builds. Six streams give about 3.1 times one stream's aggregate throughput while each stream slows from 97
+to 85 tok/s. Not measured: the dflash2 drafter at depth 7 on the `--tp 2` harness (RAD36), whose verify step 1.14.0 changes.
+
 ## What is on and why
 
 No engine patch is part of the 27B configuration in any record read for this page (rad0001 concerns the Flash-Next prefill
