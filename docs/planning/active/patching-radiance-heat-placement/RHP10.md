@@ -85,3 +85,16 @@ The mean rises with the XTX budget (about +0.0035 for the extra 2 GiB, about 850
 Speed on the held-out code corpus (675,534 tokens used, fresh server per arm): XTX 22,528 with the live heat gives prefill 1883 tok/s (+30% on the plain 1450) and decode 68.5 (inside the spread of the 77.5 baseline), host-to-GPU 1068 GiB (-2%). So the prefill gain is the heat file and not the budget (budget alone: +3%), and the variant that carries it, live heat at the normal budget, is the one that passes the quality gate. The larger budget buys traffic (-12 to 14%) at a measurable quality cost and no further speed; it is not adopted.
 
 Open: why the helper's path costs KLD per expert moved (the loss scales with the experts held by helpers, which says the helper arithmetic differs from the engine's in a way that matters), and whether a heat file recorded on a different workload from the one served keeps its gain (held-out prefill says yes, once).
+
+## Two concurrent streams, 2026-10-31 (`rad23-streams2`)
+
+The launcher's two sequences, both busy: two requests at once, each a different slice of the corpus (about 65,000 or 8,000 prompt tokens, 400 new tokens each, `ignore_eos`), three repetitions per cell on one server, the overall tokens a second counting prompt plus new tokens. XTX 22,528 MiB and the 4 GiB tail in both arms; heat the static profile or the snapshot recorded on the documentation text. The rate falls with the repetition because the cache fills (rep 0 / 1 / 2 below).
+
+| Corpus, prompt per stream | Static heat | Recorded heat |
+|---|---|---|
+| documentation, 65K | 2622 / 2241 / 1892 | 2625 / 2228 / 1934 |
+| documentation, 8K | 1265 / 1166 / 1251 | 1287 / 1187 / 1257 |
+| C++/HIP source, 65K | 1412 / 1232 / 1076 | 1544 / 1323 / 1128 |
+| C++/HIP source, 8K | 772 / 833 / 798 | 768 / 791 / 779 |
+
+Recorded heat is level on the corpus it was recorded on and at 8K, and +5 to 9% on the other corpus at 65K a stream (about 130K tokens used in all). So the +30% of the single 675K request belongs to the regime where the cache thrashes; at two streams of 65K the heat file is worth a few percent at most. Aggregate rate with two streams of 65K prompts is 1.9K to 2.6K tok/s on documentation text.
