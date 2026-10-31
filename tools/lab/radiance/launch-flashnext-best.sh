@@ -22,9 +22,13 @@
 #   bigcherry build --lane radiance:stock:linux-radiance --experiment moe-remote-handoff
 #
 # Usage:
-#   bash tools/lab/radiance/launch-flashnext-best.sh [start] [--build DIR] [--port N] [--heat FILE] [--gpu-power] [--layout NAME] [--budget ARCH=MIB]
+#   bash tools/lab/radiance/launch-flashnext-best.sh [start] [--build DIR] [--port N] [--heat FILE] [--record-heat PREFIX [--record-period S]] [--gpu-power] [--layout NAME] [--budget ARCH=MIB]
 #   bash tools/lab/radiance/launch-flashnext-best.sh stop
 # Without --build, the newest build under $BC_WORK_ROOT/builds that has the helper binary is used.
+# --heat FILE: the route-heat file that ranks the experts, hottest first (uint32[128][512] = max - count of a recorded histogram; heat-placement/heat-invert.py
+# makes one). --record-heat PREFIX: the engine counts every routed expert in VRAM and rewrites PREFIX.rank0 every --record-period seconds (default 30)
+# while serving: a recording run (the counting costs speed; do not serve production with it). Invert the file, restart with --heat and a larger
+# --budget (RHP10: workload-recorded heat plus gfx1100=23500 gave +34% prefill at 675K used context on a corpus it had not seen).
 # --gpu-power (or GPU_POWER=1): apply the cards' configured power settings ([host.*.devices.power]) for this run and
 # put back what the cards ran before at stop. Without write access it lists the setup steps still missing and runs
 # with the cards as they are.
@@ -41,6 +45,8 @@ BUILD=""
 GPU_POWER=${GPU_POWER:-0}
 LAYOUT=${FLASHNEXT_LAYOUT:-flashnext-2xtx}
 BUDGETS=()
+RECORD=""
+RECORD_PERIOD=30
 CMD=start
 [ $# -gt 0 ] && case "$1" in start|stop) CMD=$1; shift ;; esac
 while [ $# -gt 0 ]; do
@@ -51,6 +57,8 @@ while [ $# -gt 0 ]; do
     --gpu-power) GPU_POWER=1; shift ;;
     --layout) LAYOUT=$2; shift 2 ;;
     --budget) BUDGETS+=("$2"); shift 2 ;;
+    --record-heat) RECORD=$2; shift 2 ;;
+    --record-period) RECORD_PERIOD=$2; shift 2 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -137,6 +145,10 @@ COMMON=(
   R3_MOE_WORKER_SKIP_OWNED=1
   "${LAYOUT_COMMON[@]}"
 )
+if [ -n "$RECORD" ]; then
+  COMMON+=(R3_MOE_WORKER_HISTOGRAM="$RECORD" R3_MOE_WORKER_HISTOGRAM_PERIOD_S="$RECORD_PERIOD")
+  echo "recording the route histogram to $RECORD.rank0 every ${RECORD_PERIOD}s (costs speed; invert it with tools/lab/radiance/heat-placement/heat-invert.py for --heat)" >&2
+fi
 
 mkdir -p "$PIDS"
 STAMP=$(date +%m%d-%H%M%S)
