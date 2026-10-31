@@ -102,15 +102,15 @@ int main(int argc, char** argv) {
      * replay, so anything libr3 reads at launch (R3_MOE_FP16, R3_MOE_PROBE, R3_MOE_PITCH16) can be compared with
      * no further model load. Each run prints "SWEEP run i capture c layer L variant [..]" and its engine_join line. */
     if (argc >= 2 && std::strcmp(argv[1], "--route-selftest") == 0) return route_selftest();
-    /* --describe MODEL: print what the container's experts are and whether the gfx1100 backend can run them, then exit
-     * (0 supported, 3 refused). No GPU, no allocation, no shared memory. */
-    if (argc >= 3 && std::strcmp(argv[1], "--describe") == 0) {
+    /* --describe MODEL ARCH: print what the container's experts are and whether the backend for ARCH (gfx1100, gfx1030) can run
+     * them, then exit (0 supported, 3 refused). No GPU, no allocation, no shared memory. */
+    if (argc >= 4 && std::strcmp(argv[1], "--describe") == 0) {
         Container model;
         if (!model.open(argv[2])) {
             std::fprintf(stderr, "r3_moe_worker: --describe %s: not a container\n", argv[2]);
             return 2;
         }
-        return backend_accepts(model, "gfx1100", true) ? 0 : 3;
+        return backend_accepts(model, argv[3], true) ? 0 : 3;
     }
     static std::vector<ReplayInput> sweep_replays;
     static std::vector<std::string> sweep_variants;
