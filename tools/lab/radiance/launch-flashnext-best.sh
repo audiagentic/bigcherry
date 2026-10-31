@@ -40,6 +40,7 @@
 # the rows past its VRAM stay in a host copy. The card then sits in the engine process beside the engine card.
 # --max-model-len TOKENS: the longest context a sequence may have (default 1048576).
 # --rope-scaling S: default yarn:4 (the 1M stretch); use none for contexts within the trained 262144.
+# --max-num-seqs N: sessions served at once (default 2; each costs per-sequence state in VRAM and checkpoint slots in pinned RAM).
 # --gpu-power (or GPU_POWER=1): apply the cards' configured power settings ([host.*.devices.power]) for this run and
 # put back what the cards ran before at stop. Without write access it lists the setup steps still missing and runs
 # with the cards as they are.
@@ -65,6 +66,7 @@ ENGINE_ARGS=()
 NGRAM_DEV=""
 MAX_LEN=1048576
 ROPE=yarn:4
+SEQS=2
 RECORD_PERIOD=30
 CMD=start
 [ $# -gt 0 ] && case "$1" in start|stop) CMD=$1; shift ;; esac
@@ -83,6 +85,7 @@ while [ $# -gt 0 ]; do
     --ngram-device) NGRAM_DEV=$2; shift 2 ;;
     --max-model-len) MAX_LEN=$2; shift 2 ;;
     --rope-scaling) ROPE=$2; shift 2 ;;
+    --max-num-seqs) SEQS=$2; shift 2 ;;
     --ngram-placement) NGRAM=$2; shift 2 ;;
     --record-heat) RECORD=$2; shift 2 ;;
     --record-period) RECORD_PERIOD=$2; shift 2 ;;
@@ -219,7 +222,7 @@ env "${COMMON[@]}" "${NGRAM_ENV[@]}" R3_MOE_WORKER=1 ROCR_VISIBLE_DEVICES="$ENGI
     --ngram-placement "$NGRAM" \
     --host-pool-mib "$HOST_POOL_MIB" \
     --tp 1 \
-    --max-num-seqs 2 \
+    --max-num-seqs "$SEQS" \
     --max-num-batched-tokens "$CHUNK" \
     --checkpoint-interval 4096 \
     --kv-cache-dtype "$KV_DTYPE" \
