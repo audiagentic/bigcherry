@@ -7,7 +7,7 @@ engine = "radiance"
 # The engine is configured for the union of every component's targets, so only the cards the engine itself serves are
 # listed; the helper's code object also carries gfx1030 (R3NGRAM_TARGETS in CMakeLists.txt), as it did inside libr3.
 targets = ["gfx1100", "gfx1201"]
-built-against = "v1.13.0"
+built-against = "v1.14.0"
 outputs = ["kernels/libr3ngram.so", "helpers/libr3_ngram_helper.so"]
 
 [build]

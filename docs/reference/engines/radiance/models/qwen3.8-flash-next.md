@@ -54,6 +54,8 @@ libr3moe, process `r3_moe_worker`):
   helpers (`perf51/heat.rank0.hot-first`, RAD06 2026-10-17: +4% prefill against coldest-first, decode not worse), `R3_MOE_WORKER_MAX_ROWS=4096`, `R3_MOE_WORKER_SMALL_ROWS=8`.
 - `--ngram-placement ram`, `--host-pool-mib 30720` (RAD02 used 30 GiB; `helper-ab.json` 30720), `--max-num-seqs 6`,
   `--max-num-batched-tokens 4096 --checkpoint-interval 4096`, `--kv-cache-dtype fp8`, `--num-speculative-tokens 3`.
+  `launch-flashnext-best.sh` serves it for long context instead (RAD37, below): `--max-model-len 1048576 --rope-scaling yarn:4
+  --max-num-seqs 2 --max-num-batched-tokens 2048 --prefix-resume nearest`.
 - Harness form of exactly this: `tools/lab/radiance/helper-ab.json` (MEN11).
 - To serve it outside the harness: `bash tools/lab/radiance/launch-flashnext-best.sh [--build DIR]` (starts both helpers, then
   the engine on port 36080; `... stop` shuts all three down). Verified 2026-10-23 on a main build: tg512 144-146,
@@ -152,6 +154,60 @@ three runs on 038fdb2af: decode 93.5 / 93.5 / 92.5 tok/s, prefill 3,353 / 3,345 
 `-10290349`, `-10290353`), against v1.9.0's 88.3-89.8 and 3,265-3,345 (`pwr01-baseline-10280942`..`10281145`). One decode
 text across all 12 responses (hash a9a6205772e23387); it differs from both v1.9.0 variants, and the KLD below shows that
 is not a quality loss. The container masks the RAPL counter, so these runs left the CPU package out of the energy split.
+
+### radiance 1.14.0 (RAD37, 2026-10-30)
+
+Helper layout (R9700 engine, two XTX helpers, `radiance-lab` + `moe-remote-handoff`) at 1,048,576 tokens of context (`--rope-scaling
+yarn:4`, the trained 262,144 stretched 4x), 2 sequences, 2,048-token chunks, both builds in the order 1.13.0, 1.14.0, 1.14.0,
+1.13.0; each decode figure is the median of 3 requests of 512 tokens at temperature 0 (`ignore_eos`), prefill is the median of
+6 unique 3,995-token prompts (no cached tokens):
+
+| Prompt | 1.13.0 | 1.14.0 |
+|---|---|---|
+| count 1 to 1000, tok/s | 148.0 / 147.6 | 150.2 / 150.4 |
+| code, tok/s | 148.2 / 148.0 | 150.6 / 150.7 |
+| repeated sentence, tok/s | 107.2 / 107.1 | 108.7 / 108.9 |
+| story, tok/s | 96.7 / 96.6 | 98.2 / 98.3 |
+| essay, tok/s | 102.8 / 102.8 | 104.5 / 104.6 |
+| 4K prefill, tok/s | 3,509 / 3,501 | 3,502 / 3,490 |
+| 20K cold prefill | 5.84 s | 5.92 s |
+| 100K cold prefill | 32.7 s | 33.1 s |
+
+Decode is 1.5% faster on every prompt; prefill is the same. Per-op device time on eight 4K prefills (`--profile-ops`, so only the
+comparison counts) is 8,842 ms against 8,904 ms; no op moved by more than 58 ms (`moe_mailbox_add` -57.6). A first prefill
+comparison that re-sent one prompt read 3,410 against 3,595 tok/s: it was measuring the prefix cache, not prefill.
+
+Prefix hits are where 1.14.0 differs. `--prefix-resume exact` (the default, upstream 662b772) resumes only on the cold run's
+chunk grid so a hit answers exactly as a cold run would, and re-prefills up to one chunk: a 20K prompt re-sent with 60 new
+tokens took 0.58 s (18,432 tokens cached) against 0.22 s (19,904) on 1.13.0, and 100K took 0.78 s against 0.31 s.
+`--prefix-resume nearest` is the 1.13.0 rule and gives 0.22 s and 0.31 s on 1.14.0, the same as 1.13.0; the launcher sets it.
+
+Context: the cache takes the VRAM the experts leave (20.5 GiB at 1M x 2, 5.4 GiB of experts on the card) and that costs no
+decode and no 4K prefill. `--max-num-seqs 1` is what costs decode (67-75 against 98-110 tok/s on free text at any context).
+Two 100K prompts together took 114 s (about 1,800 tok/s combined); two 347K prompts 579 s (about 1,200 tok/s combined) and
+both answered a first-word question correctly past the trained length. 1M needs `--max-num-batched-tokens 2048`: the QSA
+score plane is chunk x context / 4 and 4,096 x 1,048,576 would be 4 GiB.
+
+Retired: `R3_HC_NATIVE` (experimental, default off, decode inside the noise) and its `R3_HC_COMPARE` selftest check, because 1.14.0
+splits hc_read into fused, two-grid and two-kernel decode forms and the flag would have to be carried through all of them.
+
+Decode against used context, 1.14.0 at the 1,048,576-token setting, natural text (repository documents, a different slice for each
+length so nothing is served from the prefix cache), decode from a 33-token against a 417-token generation, two runs each:
+
+| Used context | Prefill | Decode, tok/s |
+|---|---|---|
+| 9K | 3,252 tok/s | 118.8 |
+| 19K | 3,197 | 100.4 |
+| 32K | 3,233 | 92.1 |
+| 69K | 3,090 | 105.7 |
+| 147K | 2,527 | 122.2 |
+| 288K | 1,854 (155 s) | 106.2 (114.8, 97.5) |
+| 580K | 1,121 (8.6 min) | 74.4 |
+| 1.0M | 708 (23.5 min) | 50.2 |
+
+Decode holds its 92-122 range to about 290K of used context and then falls: 74 at 580K, 50 at 1M. Prefill falls from about 3,200
+tok/s at 32K to 1,850 at 288K. The spread inside the first rows is the text (how often the drafter is right), not the context.
+Random-word prompts decode slower (39 tok/s at 347K) because the drafter has nothing to predict.
 
 ## What is on and why
 
@@ -405,6 +461,7 @@ radiance 1.13.0 against 1.9.0 (RAD32, 2026-10-29), production helper layout with
 |---|---|---|---|---|
 | 1.9.0 | 0.0614 / 0.0148 / 0.624 / 2.375 | 89.09% | 0.990 | `rad18-kld` run2 and run3 (identical) |
 | 1.13.0 | 0.0552 / 0.0142 / 0.556 / 1.642 | 89.75% | 0.995 | `rad32-fn-kld-10290334`, two identical arms |
+| 1.14.0 | 0.0552 / 0.0142 / 0.556 / 1.642 | 89.75% | 0.995 | `rad37-fn-kld-10301013`, two identical arms |
 
 
 Corpus: 4 documents, 64-token steps; reference: the radiance XTX-pair exact run of the same container (reference PPL

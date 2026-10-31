@@ -5,7 +5,11 @@
 #
 # Layout: engine on the R9700 (--tp 1, libr4d,libr3moe,libref); one r3_moe_worker helper per XTX holding full-width
 # experts (22 GiB each, hottest experts by route heat), helper-owned experts skipped on the R9700; n-gram table in host
-# RAM; fp8 KV; MTP depth 3; 4096-token chunks; up to 6 sequences; 32K context.
+# RAM; fp8 KV; MTP depth 3; 2048-token chunks; up to 2 sequences; 1,048,576-token context (the 262,144 the model was trained
+# on, stretched 4x by --rope-scaling yarn:4). A prefix hit resumes at the nearest cached token (--prefix-resume nearest) rather
+# than on the cold run's chunk grid: re-sent prefixes cost 0.2-0.3 s a turn instead of 0.6-0.8 s, at the price of greedy text
+# that can differ from a cold run's near ties. The cache takes the VRAM the experts leave, which costs no decode or
+# 4K-prefill speed (RAD37 measurements, qwen3.8-flash-next.md); one sequence is 30% slower at decode, so keep two.
 # Helper kernels on by default (R3_MOE_FP16, R3_MOE_AHALF, R3_MOE_NATIVE, R3_MOE_WORKER_VECIO, FUSESTAGE, FUSEROUTE) are
 # not repeated here.
 #
@@ -147,12 +151,14 @@ env "${COMMON[@]}" R3_MOE_WORKER=1 ROCR_VISIBLE_DEVICES="$R9700" HIP_VISIBLE_DEV
     --ngram-placement ram \
     --host-pool-mib 22528 \
     --tp 1 \
-    --max-num-seqs 6 \
-    --max-num-batched-tokens 4096 \
+    --max-num-seqs 2 \
+    --max-num-batched-tokens 2048 \
     --checkpoint-interval 4096 \
     --kv-cache-dtype fp8 \
     --num-speculative-tokens 3 \
-    --max-model-len 32768 \
+    --max-model-len 1048576 \
+    --rope-scaling yarn:4 \
+    --prefix-resume nearest \
   > "$LOG" 2>&1 &
 echo $! > "$PIDS/engine"
 echo "engine on R9700 (pid $!, log $LOG): waiting for /health..." >&2

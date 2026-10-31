@@ -1,0 +1,36 @@
+{
+  "artifact_version": 1,
+  "audit": {
+    "failed_checks": [],
+    "passed": true,
+    "strict": true,
+    "summary": {
+      "errors": 0,
+      "passed": 4,
+      "total": 4,
+      "warnings": 0
+    }
+  },
+  "bigcherry_revision": "be4d1604be4cbfc4ea4d26340bf2095da4c17bfd",
+  "first_seen": "2026-10-30T08:58:59.098365+00:00",
+  "manifest_hash": "",
+  "notes": "pin-bump lane build: radiance:stock:linux-radiance build_plan_id=459d86718e56e15a3aea8860aa5a9ebc binary_sha256=b9233dc8cd1987a4db4f9f736061396717559bc1fe8d8e5a2dd2cab94194fcb0 build_dir=/work/bigcherry/builds/4b1757e6f6c2003ad8e4b351cbdc37b2/459d86718e56e15a3aea8860aa5a9ebc",
+  "patches": {
+    "applied_cleanly": true,
+    "failed_edits": [],
+    "files": {
+      "core/mm/mp4.cpp": {
+        "mem-write-signature": "applied"
+      },
+      "libr4d/r4d_hc_bf16.hip": {
+        "hc-pf2-upmix-rt-sweep": "applied"
+      }
+    }
+  },
+  "promotion": null,
+  "release_tag": "v1.14.0",
+  "revision": "4a61d7296bc5b4fec5932949dac4a2fadf9b61ca",
+  "stage": "patched",
+  "tree_state": "",
+  "updated_at": "2026-10-30T09:23:05.650593+00:00"
+}

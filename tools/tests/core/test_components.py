@@ -64,8 +64,8 @@ class Libr3ComponentTests(unittest.TestCase):
             path.write_text(text, encoding="utf-8")
             with self.assertRaisesRegex(config.ConfigError, "restates libr3's default"):
                 config.load(path)
-            path.write_text(text.replace('R3_ATTN_NATIVE = "1"', 'R3_HC_NATIVE = "1"'), encoding="utf-8")
-            self.assertEqual(dict(config.load(path).runtime_profiles["x"].environment), {"R3_HC_NATIVE": "1"})
+            path.write_text(text.replace('R3_ATTN_NATIVE = "1"', 'R3_AR_WIRE4 = "1"'), encoding="utf-8")
+            self.assertEqual(dict(config.load(path).runtime_profiles["x"].environment), {"R3_AR_WIRE4": "1"})
 
     def test_llamacpp_declares_no_components(self):
         self.assertEqual(components.load_all(paths.REPO_ROOT, engines.LLAMACPP), {})
