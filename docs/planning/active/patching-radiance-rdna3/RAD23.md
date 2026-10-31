@@ -308,3 +308,37 @@ Next: the prefill cost is the emulated grouped GEMM; a GEMV-style path for the f
 fdot2 kernel) or a native dot2 tile would remove it, and is what makes a large tail affordable. The run script is a scratch copy; the
 launcher change (a third helper, per-helper budgets, tail placement) goes in after #465 so the two do not conflict.
 
+## The few-rows kernel as the 6900 XT's large-lane kernel, 2026-10-31
+
+No new kernel was needed: the helper already has `lane_moe_rows` (RAD06, `R3_MOE_WORKER_ROWS`), dot products with no WMMA, one block an
+(expert, 32 outputs), the expert's weights read once for all its rows. gfx1030 now takes it by default (`R3_MOE_WORKER_ROWS=0` turns it
+off), because the plugin's grouped GEMM there is the emulated tile, which costs per expert tile and not per row.
+
+Same sweep as above (`sweep4.sh`; 6900 XT helper only, tail placement, natural-text prefill, one run a row):
+
+| Tail budget | Prefill 25K / 14K / 72K, emulated tile | Prefill, few-rows kernel | Two helpers | Large-lane call on the 6900 XT, median (p90) |
+|---|---|---|---|---|
+| 6,144 MiB (2,542 experts) | 2,084 / 2,845 / 2,804 | 1,828 / 3,038 / 2,942 | 3,297 / 3,053 / 2,998 | 2.6 ms (4.1) with 46 routes; an XTX: 3.5 ms with ~7,700 |
+| 14,336 MiB (5,931 experts) | 1,282 / 2,168 / 2,051 | 1,233 / 2,679 / 2,550 | same | 5.4 ms (19.7) with 253 routes; was 12.5 ms |
+
+Decode with the kernel on: story / code / count 97.2 / 131.1 / 150.5 (14 GiB) and 95.9 / 136.5 / 153.6 (6 GiB), against 90.2 / 142.8 / 156.2
+for two helpers - inside the +-5% run noise except code, which is 3-8% lower. The first request after a start is the slow one in
+every configuration with the third helper (25K: 1,233 and 1,828), the card's code objects loading; steady state is the 14K and 72K figures.
+The 6900 XT's call is faster than an XTX's only because it carries a handful of routes (46 against ~7,700); per route it is far slower.
+
+Correctness evidence, and what is not shown:
+- `--compare` against the host reference with the grouped GEMM is unchanged on both cards (rel_l2 1.75e-3 / 1.15e-3 at 64 rows).
+- `--compare` with the few-rows kernel on gfx1030 did NOT finish: no result at 64 or 256 rows, the card at 99% until the 250 s timeout.
+  The same kernel serves live requests (hundreds of large-lane calls at 2-5 ms each), so this is a compare-mode problem or a
+  rare-input hang; it is not explained yet and the kernel is not verified against the host reference on gfx1030.
+- End to end at temperature 0, same prompts, `text.py`: the two-helper text and the three-helper texts (emulated tile, few-rows kernel)
+  diverge from each other at the same place (116 characters of the story, 76 of the code prompt; the count prompt is identical), while the two
+  three-helper runs agree with each other for 257 and 220 characters. So the early divergence comes from three helpers (the merge adds
+  three planes in a different order), not from the kernel. Text agreement is not a numerical gate: Flash-Next KLD with three helpers is
+  the gate and has not been run.
+- Bug found by the compare run, fixed here: `worker_harness.h` looped over `kMaxSlots` (4 after stage 2) in a segment laid out for 2;
+  `--compare` and `--replay` crashed. It now loops over the segment's `slot_count`.
+
+Next: explain the compare-mode hang with the few-rows kernel (rows 16/32 to see where it starts, rocprofv3), then the KLD gate for the
+three-helper layout, then the launcher change.
+

@@ -172,6 +172,16 @@ public:
                 arch_.c_str());
             return false;
         }
+        /* gfx1030 has no matrix instructions: libr3's grouped GEMM runs through an emulated tile that costs per expert tile, not per row (a
+         * 343-route call took 12.5 ms against 3.5 ms on an XTX, RAD23). The few-rows kernel - dot products, the expert's weights read once
+         * for all its rows - is the large lane's kernel there; R3_MOE_WORKER_ROWS=0 turns it off. */
+        if (arch_ == "gfx1030" && !rows_) {
+            const char* rv = std::getenv("R3_MOE_WORKER_ROWS");
+            if (!rv || !*rv || std::strcmp(rv, "0") != 0) {
+                rows_ = true;
+                std::fprintf(stderr, "r3_moe_worker: few-rows prefill kernel on the large lane (gfx1030 has no matrix instructions)\n");
+            }
+        }
         if (!load_plugin()) return false;
         if (!hip_ok(hipStreamCreateWithFlags(&stream_, hipStreamNonBlocking), "hipStreamCreate")) return false;
         experts_.resize((size_t)model_.layers * experts());

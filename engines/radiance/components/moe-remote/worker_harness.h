@@ -266,7 +266,7 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
 
     bool bad = false;
     constexpr uint32_t sequence = 1;
-    for (uint32_t rank = 0; rank < kMaxSlots; ++rank) {
+    for (uint32_t rank = 0; rank < h->slot_count; ++rank) {
         const uint32_t lane = lane_of(rank, step_class(h, rows));
         Request* q = lane_request(map, lane, sequence);
         q->completion_sequence = 0;
