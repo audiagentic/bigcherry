@@ -13,6 +13,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <vector>
 
 namespace r3::heat {
@@ -48,6 +49,10 @@ struct Heat {
 struct Device {
     uint64_t budget = 0;   // bytes
     double cost = 1.0;     // per routed row, in one consistent unit across the devices
+    // Most heat (the unit of Input::heat) the device may carry in any ONE layer; 0 = no limit. A layer waits for its slowest helper, so a
+    // slow card pays for its busiest layer, not for its total: the byte budget alone lets a hot-heavy layer stall prefill (RAD23: a 6900 XT
+    // holding the hottest leftovers took 11% of a layer's routes against the ~0.7% it can finish in time).
+    double layer_cap = 0.0;
 };
 
 struct Move { uint32_t expert = 0; int32_t from = -1, to = -1; double saving = 0.0; };
@@ -63,6 +68,7 @@ struct Input {
     std::vector<uint64_t> bytes;                  // exact laid-out size of each expert (> 0)
     std::vector<int32_t> current;                 // owner now: -1 or a device index
     std::vector<double> heat;                     // decayed demand
+    std::vector<uint32_t> layer;                  // the layer each expert belongs to (the per-layer cap is counted per value)
     std::vector<Device> devices;
     std::vector<std::vector<uint8_t>> allowed;    // allowed[expert][device]: eligibility (protected / unsupported experts are all 0 and stay)
     double margin = 0.10;                         // least fractional cost improvement that justifies a move (hysteresis)
@@ -73,10 +79,10 @@ struct Input {
 inline bool validate(const Input& in, std::vector<uint64_t>* used) {
     const size_t n = in.bytes.size(), h = in.devices.size();
     if (!used || h == 0 || h > worker_share::kMaxHelperShares || in.current.size() != n || in.heat.size() != n || in.allowed.size() != n ||
-        !std::isfinite(in.margin) || in.margin < 0.0) return false;
+        in.layer.size() != n || !std::isfinite(in.margin) || in.margin < 0.0) return false;
     used->assign(h, 0);
     for (const Device& d : in.devices)
-        if (!std::isfinite(d.cost) || d.cost <= 0.0) return false;
+        if (!std::isfinite(d.cost) || d.cost <= 0.0 || !std::isfinite(d.layer_cap) || d.layer_cap < 0.0) return false;
     for (size_t i = 0; i < n; ++i) {
         const int32_t o = in.current[i];
         if (in.bytes[i] == 0 || !std::isfinite(in.heat[i]) || in.heat[i] < 0.0 || in.allowed[i].size() != h || o < -1 || o >= int32_t(h)) return false;
@@ -94,6 +100,10 @@ inline Plan propose(const Input& in) {
     if (!validate(in, &p.used)) return p;
     p.valid = true;
     p.owner = in.current;
+    // heat each device already carries per layer; a move may not take a capped device past its cap (an owner already over it is left alone)
+    std::vector<std::map<uint32_t, double>> load(in.devices.size());
+    for (size_t i = 0; i < in.bytes.size(); ++i)
+        if (in.current[i] >= 0) load[size_t(in.current[i])][in.layer[i]] += in.heat[i];
     struct Candidate { uint32_t expert; int32_t from, to; double saving; };
     std::vector<Candidate> candidates;
     const size_t h = in.devices.size();
@@ -121,6 +131,11 @@ inline Plan propose(const Input& in) {
         const uint64_t b = in.bytes[c.expert];
         const size_t dst = size_t(c.to);
         if (b > in.devices[dst].budget - p.used[dst]) continue;
+        const uint32_t ly = in.layer[c.expert];
+        const double cap = in.devices[dst].layer_cap;
+        if (cap > 0.0 && load[dst][ly] + in.heat[c.expert] > cap) continue;
+        load[dst][ly] += in.heat[c.expert];
+        load[size_t(c.from)][ly] -= in.heat[c.expert];
         p.used[size_t(c.from)] -= b;
         p.used[dst] += b;
         p.owner[c.expert] = c.to;

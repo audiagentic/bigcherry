@@ -16,6 +16,7 @@ static Input fixture() {
     in.bytes = {10, 10, 10, 10, 10, 10};
     in.current = {0, 0, 0, 1, 1, 1};
     in.heat = {100, 90, 80, 70, 60, 50};
+    in.layer = {0, 0, 0, 1, 1, 1};
     in.devices = {{40, 2.0}, {40, 1.0}, {20, 0.5}};
     in.allowed.assign(6, {1, 1, 1});
     in.margin = 0.1;
@@ -72,6 +73,33 @@ static void test_budgets_and_limits() {
     check(!propose(in).valid, "an overfull active map is refused, not repaired");
 }
 
+static void test_layer_cap() {
+    Input in = fixture();
+    in.max_moves = 6;
+    in.devices = {{40, 2.0}, {40, 1.0}, {30, 0.5}};   // device 2 is fastest and has room for three experts
+    Plan open = propose(in);
+    int on2 = 0;
+    for (int32_t o : open.owner) on2 += o == 2;
+    check(open.valid && on2 == 3, "without a cap the fast device takes the three hottest experts it has room for");
+    in.devices[2].layer_cap = 100.0;   // layer 0 holds heat 100, 90, 80: only one of them (or the 80 and nothing else) fits under 100
+    Plan capped = propose(in);
+    double l0 = 0.0, l1 = 0.0;
+    for (size_t i = 0; i < capped.owner.size(); ++i)
+        if (capped.owner[i] == 2) (in.layer[i] == 0 ? l0 : l1) += in.heat[i];
+    check(capped.valid && l0 <= 100.0 && l1 <= 100.0, "no layer of the capped device passes its cap");
+    check(l0 > 0.0 || l1 > 0.0, "the capped device still takes what fits");
+    in.devices[2].layer_cap = 1.0;     // smaller than any expert's heat: nothing may move there
+    Plan none = propose(in);
+    bool any2 = false;
+    for (int32_t o : none.owner) any2 |= o == 2;
+    check(none.valid && !any2, "a cap below every expert's heat keeps the device empty");
+    in.devices[2].layer_cap = -1.0;
+    check(!propose(in).valid, "a negative cap is refused");
+    in.devices[2].layer_cap = 0.0;
+    in.layer.pop_back();
+    check(!propose(in).valid, "a layer vector of the wrong size is refused");
+}
+
 static void test_determinism() {
     Input in = fixture();
     in.max_moves = 6;
@@ -115,6 +143,7 @@ static void test_static_tail_identity() {
     in.bytes.assign(bytes.begin(), bytes.end());
     in.current = expected;
     in.heat.assign(bytes.size(), 100.0);
+    in.layer.assign(bytes.size(), 0);
     in.devices = {{30, 3.0}, {20, 2.0}, {20, 1.0}};
     in.allowed.assign(bytes.size(), {1, 1, 1});
     in.max_moves = 0;
@@ -142,6 +171,7 @@ int main() {
     test_decay();
     test_hysteresis();
     test_budgets_and_limits();
+    test_layer_cap();
     test_determinism();
     test_zero_share();
     test_static_tail_identity();
