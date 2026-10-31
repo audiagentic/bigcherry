@@ -13,11 +13,16 @@
 # Helper kernels on by default (R3_MOE_FP16, R3_MOE_AHALF, R3_MOE_NATIVE, R3_MOE_WORKER_VECIO, FUSESTAGE, FUSEROUTE) are
 # not repeated here.
 #
+# A third helper on the RX 6900 XT (RDNA2, gfx1030): --tail-mib N (or FLASHNEXT_TAIL_MIB=N) adds it with an N MiB budget. It takes the
+# COLDEST experts that fit (R3_MOE_WORKER_PLACEMENT=tail: the two XTXs keep the ranking as before) and frees that much of the engine's pinned
+# host expert pool. Off by default: 2 GiB passes the KLD gate cleanly and costs no speed; larger tails cost prefill speed and moved KLD by up
+# to 0.01 (RAD23, qwen3.8-flash-next.md). Needs libr2.so in the build (the radiance-lab lane builds it).
+#
 # Needs a radiance build of production source with the helper hand-off:
 #   bigcherry build --lane radiance:stock:linux-radiance --experiment moe-remote-handoff
 #
 # Usage:
-#   bash tools/lab/radiance/launch-flashnext-best.sh [start] [--build DIR] [--port N] [--heat FILE] [--gpu-power]
+#   bash tools/lab/radiance/launch-flashnext-best.sh [start] [--build DIR] [--port N] [--heat FILE] [--gpu-power] [--tail-mib N]
 #   bash tools/lab/radiance/launch-flashnext-best.sh stop
 # Without --build, the newest build under $BC_WORK_ROOT/builds that has the helper binary is used.
 # --gpu-power (or GPU_POWER=1): apply the cards' configured power settings ([host.*.devices.power]) for this run and
@@ -34,6 +39,7 @@ PORT=36080
 HEAT=$WORK/runs/perf51/heat.rank0.hot-first
 BUILD=""
 GPU_POWER=${GPU_POWER:-0}
+TAIL_MIB=${FLASHNEXT_TAIL_MIB:-0}
 CMD=start
 [ $# -gt 0 ] && case "$1" in start|stop) CMD=$1; shift ;; esac
 while [ $# -gt 0 ]; do
@@ -42,13 +48,14 @@ while [ $# -gt 0 ]; do
     --port) PORT=$2; shift 2 ;;
     --heat) HEAT=$2; shift 2 ;;
     --gpu-power) GPU_POWER=1; shift ;;
+    --tail-mib) TAIL_MIB=$2; shift 2 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
 
 stop_all() {
   # engine first (SIGINT is its clean shutdown), then the helpers; each gets 60 s before SIGKILL
-  for name in engine helper1 helper0; do
+  for name in engine $(cd "$PIDS" 2>/dev/null && ls -r helper* 2>/dev/null); do
     [ -f "$PIDS/$name" ] || continue
     pid=$(cat "$PIDS/$name")
     if kill -0 "$pid" 2>/dev/null; then
@@ -66,7 +73,7 @@ stop_all() {
 
 if [ "$CMD" = stop ]; then stop_all; echo "stopped"; exit 0; fi
 
-for name in engine helper0 helper1; do
+for name in engine $(cd "$PIDS" 2>/dev/null && ls helper* 2>/dev/null); do
   if [ -f "$PIDS/$name" ] && kill -0 "$(cat "$PIDS/$name")" 2>/dev/null; then
     echo "FLASHNEXT_EXIT=98 already running ($name pid $(cat "$PIDS/$name")); run '$0 stop' first"; exit 98
   fi
@@ -107,12 +114,20 @@ if [ -z "${R9700_ROCR:-}" ] || [ -z "${XTX_ROCR:-}" ]; then   # engine = the gfx
 fi
 R9700=${R9700_ROCR:-$_ENGINE}
 XTX=(${XTX_ROCR:-$_HELPERS})
+HELPERS=("${XTX[@]}")   # the cards that take experts, in helper order; the RDNA2 tail card, if any, is last
+case "$TAIL_MIB" in ''|*[!0-9]*) echo "FLASHNEXT_EXIT=2 --tail-mib wants a number of MiB, not '$TAIL_MIB'"; exit 2 ;; esac
+if [ "$TAIL_MIB" -gt 0 ]; then
+  RDNA2=${RDNA2_ROCR:-$(lab_device_ordinals_for gfx1030 | awk '{print $1}')}
+  [ -n "$RDNA2" ] || { echo "FLASHNEXT_EXIT=99 --tail-mib needs a gfx1030 device (RX 6900 XT); none in the device inventory"; exit 99; }
+  [ -f "$RAD_HOME/kernels/libr2.so" ] || { echo "FLASHNEXT_EXIT=99 --tail-mib needs kernels/libr2.so in the build ($RAD_HOME); rebuild with the radiance-lab lane"; exit 99; }
+  HELPERS+=("$RDNA2")
+fi
 
 # shared by the engine and both helpers (helper-ab.json "environment" + arm settings)
 COMMON=(
   RADIANCE_HOME="$RAD_HOME"
   R3_MOE_WORKER_SHM="$SHM"
-  R3_MOE_WORKER_COUNT=${#XTX[@]}
+  R3_MOE_WORKER_COUNT=${#HELPERS[@]}
   R3_MOE_WORKER_ENGINE_RANKS=1
   R3_MOE_WORKER_MIB=22528
   R3_MOE_WORKER_MAX_ROWS=4096
@@ -122,18 +137,23 @@ COMMON=(
   R3_MOE_WORKER_SKIP_OWNED=1
 )
 
+if [ "$TAIL_MIB" -gt 0 ]; then   # one budget a helper (the XTXs as before) and the last helper takes the coldest leftovers that fit
+  MIBS=""; for _ in "${XTX[@]}"; do MIBS="${MIBS}22528,"; done
+  COMMON+=(R3_MOE_WORKER_MIBS="${MIBS}${TAIL_MIB}" R3_MOE_WORKER_PLACEMENT=tail)
+fi
+
 mkdir -p "$PIDS"
 STAMP=$(date +%m%d-%H%M%S)
 rm -f "/dev/shm${SHM}"
 trap 'echo "start failed; stopping what was started" >&2; stop_all; exit 1' ERR
 
 # helpers in order: helper 0 creates the segment, helper 1 attaches; each must report ready before the next starts
-for i in "${!XTX[@]}"; do
+for i in "${!HELPERS[@]}"; do
   log=$RUN/helper$i-$STAMP.log
-  env "${COMMON[@]}" ROCR_VISIBLE_DEVICES="${XTX[$i]}" HIP_VISIBLE_DEVICES=0 R3_MOE_WORKER_INDEX=$i \
+  env "${COMMON[@]}" ROCR_VISIBLE_DEVICES="${HELPERS[$i]}" HIP_VISIBLE_DEVICES=0 R3_MOE_WORKER_INDEX=$i \
     setsid ${HELPER_WRAP:-} "$HELPER" "$MODEL" > "$log" 2>&1 &
   echo $! > "$PIDS/helper$i"
-  echo "helper$i on XTX ${XTX[$i]} (pid $!, log $log): waiting for ready..." >&2
+  echo "helper$i on card ${HELPERS[$i]} (pid $!, log $log): waiting for ready..." >&2
   ready=0
   for _ in $(seq 900); do
     grep -qE '^r3_moe_worker: (ready |waiting for engine runtime expert maps)' "$log" && { ready=1; break; }
@@ -176,6 +196,6 @@ FLASHNEXT_EXIT=0
 Flash-Next is up: http://127.0.0.1:$PORT (OpenAI-compatible /v1/chat/completions, /v1/completions)
   build    $BUILD
   engine   R9700 pid $(cat "$PIDS/engine"), log $LOG
-  helpers  XTX ${XTX[*]}, pids $(cat "$PIDS/helper0") $(cat "$PIDS/helper1" 2>/dev/null), logs $RUN/helper*-$STAMP.log
+  helpers  cards ${HELPERS[*]}$([ "$TAIL_MIB" -gt 0 ] && echo " (last: RDNA2 tail, $TAIL_MIB MiB)"), pids $(for p in "$PIDS"/helper*; do printf "%s " "$(cat "$p")"; done), logs $RUN/helper*-$STAMP.log
   stop     bash $0 stop
 INFO
