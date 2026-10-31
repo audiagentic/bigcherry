@@ -52,3 +52,15 @@ So the profile under-predicts the leftover traffic five-fold for this mix, and t
 
 Whether the recovered 2.5% of routes shows as speed is open: the tail runs moved host-to-R9700 traffic from 51 to 32 GiB with no change in speed at short context, so the test belongs to RHP10 (long context, where the engine's expert pool shrinks).
 
+
+## Re-seeding the helpers, and more XTX budget, 2026-10-31 (`rad23-heatab`)
+
+Flash-Next, `flashnext-2xtx-rdna2-tail` (4 GiB tail), the documentation-text sweep at 37K and 147K used context. The live histogram above, inverted the way the launcher's `--heat` file is (hot-first = max - count), against the static profile:
+
+| Arm | Prefill 37K / 147K tok/s | Decode 37K / 147K tok/s | Promotions | Host-to-GPU |
+|---|---|---|---|---|
+| static heat, XTX 22,528 MiB | 2973 / 2853 | 121 / 126 | 8057 | 84.4 GiB |
+| live heat, XTX 22,528 MiB | 3217 / 2887 | 127 / 116 | 8154 | 82.1 GiB |
+| live heat, XTX 23,500 MiB | 3221 / 2925 | 113 / 131 | 7261 | 74.4 GiB |
+
+Re-seeding the helpers' ownership from live heat changes nothing measurable: the engine's own heat engine already promotes to the R9700 pool, and what the two XTX sets hold moves little traffic. Raising the XTX budget to 23,500 MiB (the layout's validated limit is VRAM minus the 1,024 MiB reserve, 23,536) cuts host-to-GPU traffic and promotions by about 10% and starts and runs cleanly; the speed differences are inside the run-to-run spread (decode +-5%, prefill a few percent). One run each, self-fitted heat for the live arms: a lead, not a result. The step that would show it in speed is the long-context test (RHP10), where the R9700 pool shrinks as the KV cache fills.
