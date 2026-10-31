@@ -17,6 +17,17 @@ stream, no drafter, engine-bench 7.2K prompt + 128 decode tokens, three repeats:
 of the repeated prompt is likely). No v1.9.0 run of this setup exists, so it is a sanity check, not a comparison
 (`rad32-sanity-10290400`). Without `--host-pool-mib` the 34.6 GiB container does not fit the R9700's 32 GiB.
 
+## radiance 1.14.0 (RAD37, 2026-10-31): 1.13.0 cannot serve MTP depth 3 on this model, 1.14.0 can
+
+R9700 alone, `--kernels libr4d,libr3moe,libref --placement expert_tiered --ngram-placement ram --host-pool-mib 30720 --tp 1`, fp8 KV,
+`--max-num-seqs 6 --max-num-batched-tokens 4096 --num-speculative-tokens 3 --max-model-len 32768` (the `qwen35b-engine-ab.json`
+settings). On 1.13.0 the first request fails with HTTP 500: a decode attention kernel (`attn_decode_h256_gqa8_fp8kv`) refuses the
+step at 4 query tokens with "scratch buffer absent or too small" and the engine stops serving, so the benchmark harness reported a
+stream that "produced no content". On 1.14.0 the same flags serve: decode, median of 3 requests of 384 tokens at temperature 0
+(`ignore_eos`), two runs: count 218.3 / 218.5 tok/s, story 170.9 / 170.8, code 212.1 / 212.2 (`/work/bigcherry/runs/rad37-g35-*`,
+direct script in the RAD37 notes). The cause on 1.13.0 was not isolated (the 1.13.0 sanity above ran without a drafter, so it never
+reached this path); the 1.14.0 release changed the decode attention scratch handling.
+
 ## MTP acceptance collapse with the prefix cache on (open radiance bug, 2026-10-20)
 
 **Symptom.** Engine alone, `--num-speculative-tokens 3`, one R9700 (`--tp 1`), prefix cache at its default (on): draft
