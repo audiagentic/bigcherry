@@ -110,3 +110,38 @@ GPT addendum on the N-helper protocol (req_bigcherry_3bb6b763ab97) FAILED to run
 - 2026-10-23T10:48:18.492687+00:00 (created-by): Created by agent
 - 2026-10-23T10:48:36.867246+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:acceptance_criteria, section:notes
 - 2026-10-27T02:35:27.322130+00:00 (updated-by): Updated: section:notes
+
+## Plan 2026-10-31 (first consumer: the RX 6900 XT as a third helper, RCS07)
+
+Read of moe_remote_shm.h (551 lines) and the 129 kMaxRanks sites. In the shipped configuration (a one-rank engine, two helpers) the
+per-"rank" slots are really per-helper slots: Header says "helper h owns bitmap h and serves rank slot h". So three things share one
+constant: engine ranks R (TP), helpers H, and the slot index the two are aliased onto. Memory is the constraint that makes a bigger
+constant wrong: a result plane is max_rows x hidden x 2 bytes (about 20 MiB at 4096 x 2560) and the layout holds R x H of them in
+pinned host memory, so a compile-time 4 x 4 would cost 320 MiB against 80 MiB today on a host that runs at 74 GiB pinned already.
+
+1. Layout from counts. `LayoutShape` gains `ranks` (R) and `helpers` (H); `layout_for` sizes owner bitsets [H], route and activation
+   slots [S] with S = the slot count the producer side uses (max(R, H) while helpers alias onto slots; see step 4), result planes
+   [R][H]. `valid` rebuilds every offset from the header's own R, H (it already rebuilds from the shape; today it also pins
+   `rank_count == kMaxRanks`). kMaxRanks stays only as a protocol bound (kMaxEngineRanks = 2, kMaxHelpers = 8) with static_asserts,
+   like kMaxLayers.
+2. Header arrays that are per helper (`helper_pid`, `helper_start`, `CombineSignal::lane/seq`) move to [kMaxHelpers]; the 24-word
+   reserved block is recomputed; kVersion 18 -> 19. `LaneSignal` lanes stay per (class, slot).
+3. Ownership. `select_owned` alternates two helpers (`who ^= 1u`, `held[who]`): generalise to H helpers by assigning each expert to
+   the helper with the lowest (held bytes / budget) that can take it, heaviest first, ties by helper index. With H = 2 this must give
+   the same ownership as today (golden test over the Flash-Next heat file), so existing runs do not move.
+4. Engine side (`moe_remote_hook.cpp`, `moe_mailbox_ops.hip`, patch rad0002): `RankState rank[kMaxRanks]` and `published[]`, `from[]`
+   become runtime-sized from the header; routes go to the slot of the helper that owns the expert (already the rule for H = 2).
+5. Combine stays a two-helper feature: `R3_MOE_WORKER_COMBINE` requires H == 2 and says so by name; with H > 2 the engine reads the
+   H planes and adds them (as it does with combine off). The N-plane combine, the method interface and `auto` (RAD23 steps 3-4) are a
+   separate slice.
+6. Heterogeneous helpers: the backend (moe_backend.h `backend_for`) is already per architecture; each helper loads its own plugin
+   (libr3 for gfx1100, a gfx1030 build for RDNA2). Launcher: one worker per card, `R3_MOE_WORKER_COUNT=H`, per-card budget from
+   `R3_MOE_WORKER_MIB`.
+
+Tests first (no hardware): moe_remote_shm_test with (R, H) in {(1,1), (1,2), (1,3), (2,2)}: layout sizes, `valid` accepting each and
+refusing a segment whose header disagrees, ownership golden for H = 2 and balance for H = 3; a CPU model of the engine's slot choice.
+Then hardware: helper-ab at H = 2 against the parent build (must not move), then H = 3 with the 6900 XT.
+
+GPT design review: the earlier requests (req_bigcherry_97cebda33722, req_bigcherry_3bb6b763ab97) are recorded in Steps; a new review
+of this plan could not be submitted from this session (no ag-* gateway tools after the restart on 2026-10-30).
+
