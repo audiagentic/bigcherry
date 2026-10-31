@@ -1,0 +1,7 @@
+# libr4d units libr2 builds for gfx10.3, one per line. These are the kernels the remote-MoE helper (r3_moe_worker on a gfx1030 card)
+# asks its plugin for: the grouped expert GEMM, the Hadamard / plain FP8 activation quantisers and the gated quantiser. Verified to
+# compile for gfx1030 on radiance 1.13.0 and 1.14.0 (RAD23). The units that use integer WMMA (the w4a8 / w8a8 / fp8a8 GEMMs, attention)
+# do not compile for gfx10.3 yet and are not listed. A unit comes onto this list when it builds and passes the selftest on a gfx1030 card.
+r4d_moe
+r4d_fused_quant_fp8
+r4d_quant_act_fp8

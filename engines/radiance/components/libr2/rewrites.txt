@@ -1,0 +1,7 @@
+# Textual rewrites applied to a build-tree copy of libr4d's sources (libr3/r3_rewrite.py). One rule per line:
+#   <text to find> ==> <replacement>
+# Only for what r3_compat.h cannot supply as a function.
+
+# gfx12 splits the wait counters and names the store one s_wait_storecnt; gfx10.3 waits on the same counter with s_waitcnt_vscnt,
+# as gfx11 does.
+asm volatile("s_wait_storecnt 0x0" ::: "memory") ==> asm volatile("s_waitcnt_vscnt null, 0x0" ::: "memory")

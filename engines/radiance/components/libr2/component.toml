@@ -1,0 +1,18 @@
+# libr2: BigCherry's gfx1030 (RX 6900 XT, RDNA2) kernel plugin for radiance (RAD23, RCS07). The same method as libr3, which is its
+# model: built against the pinned radiance's libr4d sources (rewrites.txt applied to a build-tree copy, never to vendor/radiance), loaded
+# through RADIANCE_HOME as kernels/libr2.so, BigCherry source and not a patch to the engine. What is its own: the 16x16x16 tile
+# (r3_mma16.h: gfx10.3 has no WMMA) and the list of units it builds (units.txt: the remote-MoE helper's).
+schema = 1
+name = "libr2"
+engine = "radiance"
+targets = ["gfx1030"]
+# the rewrite rules and units.txt are written against this revision's libr4d and refuse any other.
+built-against = "v1.14.0"
+outputs = ["kernels/libr2.so"]
+
+# How the build lane builds it: CMake against the engine installed from the lane's own build (CMAKE_PREFIX_PATH) and the lane's
+# materialised source ({engine_source}); outputs are copied into the engine's runtime home.
+[build]
+configure = { RADIANCE_SRC = "{engine_source}", R2_TARGETS = "{targets}" }
+
+# libr2 reads no environment variable of its own (libr3's R3_* settings are read by libr3's native forms, which libr2 does not use).
