@@ -51,3 +51,19 @@ Flash-Next, `flashnext-2xtx-rdna2-tail` (4 GiB tail), `ctxsweep.py` over the doc
 (Prefill/decode pairs in the first two rows are 330K / 688K.) The extra XTX budget alone cuts host-to-GPU traffic by 12% and does not move decode; adding the live heat on top gives +26% decode at 688K in both settings (87.7 against 69.8, 98.5 against 77.9) and +4 to 7% prefill. Prefill at 688K is 1392 to 1944 tok/s depending on what is already cached, so only runs set up the same way compare. Decode pairs spread widely inside a run (69 to 86), so the second fact to keep is one run per arm in the second table.
 
 Caveat that blocks a conclusion: the live heat was recorded on the same documentation text the sweep reads, so it is fitted to the test. The held-out test is heat from one corpus against a sweep over another.
+
+## Held-out corpus, 2026-10-31 (`rad23-holdout`)
+
+The same server and tail as above, a sweep over C++/HIP source (the radiance source tree, 29 M characters, one request of 675,534 tokens, fresh server per arm). Heat from the documentation text of the arms above is held out; heat from this corpus is fitted to it. The first baseline run recorded the route histogram (the engine counts every route in VRAM), which slows it, so the control is the plain `base2` run; its traffic figures are identical to the histogram run's.
+
+| Arm | Prefill tok/s | Decode tok/s | Promotions | Host-to-GPU GiB |
+|---|---|---|---|---|
+| baseline: XTX 22,528, static heat (`base2`) | 1450 | 77.5 | 8908 | 1088 |
+| baseline recording the histogram | 1412 | 71.2 | 8908 | 1088 |
+| XTX 23,500, static heat | 1497 | 80.2 | 7980 | 959 |
+| XTX 23,500, heat from the documentation text (held out) | 1946 | 77.4 | 8374 | 938 |
+| XTX 23,500, heat from this corpus (fitted) | 1963 | 81.2 | 8078 | 983 |
+
+Prefill is +34% with heat the sweep never saw and +35% with fitted heat, against +3% for the larger budget alone; decode is level here (the spread inside a run is 70 to 93), where on the documentation corpus the same change gave decode +26% and prefill +4 to 7%. So the larger XTX budget cuts host-to-GPU traffic by 12 to 14% on both corpora and the workload-recorded heat moves speed at long context, by prefill on one corpus and decode on the other. Not yet separated: how much comes from the XTX sets and how much from which experts end up in the 6900 XT's tail (the heat file decides both). One run per arm; the direction repeats on two corpora and across two orderings, the size does not.
+
+Method to adopt: record with `R3_MOE_WORKER_HISTOGRAM` and `R3_MOE_WORKER_HISTOGRAM_PERIOD_S` on the real workload (the counting has a cost, so record, do not serve with it), invert (`max - count`), restart with `--heat` and `--budget gfx1100=23500`.
