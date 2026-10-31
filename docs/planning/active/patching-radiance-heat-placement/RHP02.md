@@ -99,3 +99,15 @@ Keep engine package separate from libr3 component modifications. Use exact code-
 ### Gate
 
 Offline tests: ABI mismatch, null observer, early unregister, borrowed-pointer lifetime, no histogram after helper init, phase=mixed, MTP reports >1, dropped event and deterministic/all-VRAM. Hardware: parity across full 32K prefill, four-doc KL unchanged, no extra GPU-side counter or D2H copy and no blocking in critical path. Remove `R3_MOE_WORKER_HISTOGRAM` and `R3_MOE_WORKER_HEAT` only when full parity passes.
+
+## Revised 2026-10-31 (GPT review of the plan against radiance 1.14.0 and RAD23; source claims checked)
+
+Export immutable, credited histograms to the remote ownership policy through a versioned, optional CPU observer. HeatEngine keeps local residency; HeatEngine::enabled() is not permission to collect remote heat. HeatParams::decay (0.95) is per credited step: do not decay again per callback.
+
+Steps:
+1. Verify the 1.14.0 engine ABI and the remote hook registration (bc_moe_remote.h, rad0002).
+2. Add a versioned borrowed-row callback with global layer/expert ids, rank, step, multiplicity, phase and coverage status, published from the completed-bank path with no extra GPU transfer.
+3. Accumulate into bounded per-rank CPU state (r3::heat::Heat in worker_heat.h is the accumulator seed); report overflow and incomplete observations.
+4. Compare with the static diagnostic on matched steps before retiring R3_MOE_WORKER_HISTOGRAM and R3_MOE_WORKER_HEAT in production.
+
+Validation: Callback lifetime, ABI mismatch, disabled heat, deterministic mode, rank duplication, MTP, mixed phases, histogram parity; no new GPU synchronisation.

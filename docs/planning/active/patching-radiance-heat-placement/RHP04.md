@@ -87,3 +87,16 @@ The included `heat_mock.mjs::Planner` enumerates single moves and 2-way swaps on
 ### Replay and acceptance matrix
 
 Cold startup profile vs hot-ranked static ownership vs RHP04 recommended; compare same model prompts and routing windows in prefill-only, decode-only, mixed, MTP verify, protected layers and decode helper-disabled. Replay phase-shift mid-run: prefill-heavy to decode-heavy, alternated and uniform. Report predicted/actual total and p95 layer waits, operator estimate error, bytes loaded, churn, source heat coverage, KLD/top-1 and speed ABBA. Proposed 5% predicted threshold is a search parameter; production gate is independent measured benefit with a confidence interval and no material quality regression.
+
+## Revised 2026-10-31 (GPT review of the plan against radiance 1.14.0 and RAD23; source claims checked)
+
+Produce a deterministic whole-map ownership proposal for the current R9700 + gfx1100 + gfx1030 topology in shadow mode, compared with weighted round robin (R3_MOE_WORKER_SHARES) and plan_tail. Seed: worker_heat.h (decayed Heat, greedy hysteresis planner, delta) in this slice; the full optimiser is the per-layer critical path (max over helpers, not sum), not per-route cost.
+
+Steps:
+1. Reuse worker_owners.h::select_owned eligibility and exact laid-out sizes; protected and unsupported experts are fixed.
+2. Consume decayed heat with explicit coverage and confidence.
+3. Calibrate per-helper compute, transfer, queue and synchronisation costs, including the gfx1030 few-rows and grouped-GEMM regimes (RHP09).
+4. Minimise predicted per-layer completion subject to budgets and disjoint ownership; add a bounded swap search (a full faster device cannot take an expert without giving one up), movement cost, minimum predicted gain, hysteresis, move cap.
+5. Shadow runs against static layouts with ABBA replay and matched MTP work.
+
+Validation: Exact static-tail reproduction (static_tail is plan_tail), deterministic ties, zero-budget helpers, mixed expert sizes, per-layer max-not-sum objective, insufficient-coverage rejection, calibration error, quality comparison.
