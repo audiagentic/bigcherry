@@ -7,7 +7,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/lab-env.sh"; export PATH=$ROCM_PATH/bin:$
 rm -rf "$OUT"
 for set in "SQ_WAVES SQ_INSTS_VALU SQ_INSTS_SALU SQ_INSTS_LDS" "SQ_WAIT_INST_LDS SQ_WAIT_ANY SQ_BUSY_CYCLES GRBM_GUI_ACTIVE" "SQ_INSTS_VMEM SQ_INSTS_WMMA SQ_LDS_BANK_CONFLICT SQ_LDS_IDX_ACTIVE"; do
   tag=$(echo "$set" | awk '{print $1}')
-  HIP_VISIBLE_DEVICES=0 ROCR_VISIBLE_DEVICES=0 R3_MOE_WORKER_MIB=22528 R3_MOE_WORKER_SMALL_ROWS=8 R3_MOE_WORKER_MAX_ROWS=4096 \
+  HIP_VISIBLE_DEVICES=0 ROCR_VISIBLE_DEVICES=0 $(PYTHONPATH=tools python3 -m bigcherry layout card-env 0) R3_MOE_WORKER_MIB=22528 R3_MOE_WORKER_SMALL_ROWS=8 R3_MOE_WORKER_MAX_ROWS=4096 \
     R3_MOE_NATIVE=1 R3_MOE_WORKER_MOE_DOWN_TILE=1 RADIANCE_HOME=$B/radiance_home timeout 900 \
     rocprofv3 --pmc $set --output-format csv -d "$OUT/$tag" -o run -- \
     $B/radiance_home/helpers/r3_moe_worker --replay "$M" "$F" > "$OUT-$tag.log" 2>&1

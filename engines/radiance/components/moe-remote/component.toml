@@ -1,16 +1,18 @@
 # moe-remote: the remote-MoE hand-off (RAD02, RCS04). The helper process r3_moe_worker computes routed experts for an engine
 # on another card family; libr3moe is the engine-side mailbox plugin (engine patch rad0002 declares the ops it fills). The
-# lane kernels the helper runs are gfx1100 today and move behind moe_backend.h in RCS05. Split from libr3, which keeps the
+# card types it runs on are engines/radiance/archs.toml. Split from libr3, which keeps the
 # engine kernel overrides. Setting names are runtime identifiers and did not change in the move.
 schema = 1
 name = "moe-remote"
 engine = "radiance"
+# the cards the ENGINE itself serves (the build configures the engine for the union of the components targets); the helper and the mailbox plugin are built for
+# every card type in engines/radiance/archs.toml (CMakeLists.txt)
 targets = ["gfx1100", "gfx1201"]
 built-against = "v1.14.0"
 outputs = ["kernels/libr3moe.so", "helpers/r3_moe_worker"]
 
 [build]
-configure = { RADIANCE_SRC = "{engine_source}", R3MOE_TARGETS = "gfx1100;gfx1201" }
+configure = { RADIANCE_SRC = "{engine_source}" }   # the helper builds for every card type in engines/radiance/archs.toml (CMakeLists.txt)
 
 # Offline tests the bump gate builds and runs with ctest in the component's build tree.
 [test]
@@ -29,6 +31,11 @@ default = ""
 status = "experimental"
 summary = "harness-only: space-separated HIP device indices, one r3_moe_worker process each (e.g. \"0 1\"); the campaign adapter starts them before the server, sets R3_MOE_WORKER_INDEX and R3_MOE_WORKER_COUNT per helper, and stops them after it"
 
+[setting.R3_MOE_WORKER_LAYOUT]
+default = ""
+status = "experimental"
+summary = "harness-only: a named layout from engines/radiance/layouts.toml (the engine card, the helper cards by architecture, their budgets and placement), resolved against the host's device inventory, instead of R3_MOE_WORKER_DEVICES. Settings the arm names itself win over what the layout and the card types imply (RAD23)"
+
 [setting.R3_MOE_WORKER_SHM]
 default = "/r3-moe-helper"
 status = "diagnostic"
@@ -43,6 +50,16 @@ summary = "force the slice-2a fp32 host reference path instead of gfx1201 comput
 default = "28672"
 status = "experimental"
 summary = "VRAM budget in MiB for cold full-expert units owned by the gfx1201 helper"
+
+[setting.R3_MOE_WORKER_PLUGIN_FILE]
+default = ""
+status = "experimental"
+summary = "the kernel plugin file (under RADIANCE_HOME/kernels) this helper's card loads, e.g. libr3.so; required unless R3_MOE_WORKER_PLUGIN names a full path. Which file belongs to which card type is engines/radiance/archs.toml, set by the launcher and the harness (RAD23)"
+
+[setting.R3_MOE_WORKER_FORMATS]
+default = ""
+status = "experimental"
+summary = "the expert weight formats this helper's card runs, comma separated (w4nl64, fp8_e4m3_block); required. Set from engines/radiance/archs.toml by the launcher and the harness; a container whose format is not listed is refused before any expert is touched (RAD23)"
 
 [setting.R3_MOE_WORKER_MIBS]
 default = ""
@@ -246,7 +263,7 @@ activation = "r3_moe_worker: large-lane requests up to"
 [setting.R3_MOE_WORKER_ROWS]
 default = "0"
 status = "experimental"
-summary = "few-rows-a-expert MoE kernel for the helper's large (prefill) lane (RAD06): one block an (expert, 32 outputs), each decoded weight applied to up to 16 of the expert's rows. Default on for a gfx1030 helper (no matrix instructions; RAD23), off elsewhere. Shelved on gfx1100: correct but slower - 38% prefill (lab, 2026-10-15); harness A/B 2026-10-17: -76% pp4096, -40% tg512"
+summary = "few-rows-a-expert MoE kernel for the helper's large (prefill) lane (RAD06): one block an (expert, 32 outputs), each decoded weight applied to up to 16 of the expert's rows. Set for a card whose archs.toml entry has rows-kernel = true (no matrix instructions; RAD23). Shelved on gfx1100: correct but slower - 38% prefill (lab, 2026-10-15); harness A/B 2026-10-17: -76% pp4096, -40% tg512"
 activation = "r3_moe_worker: few-rows prefill kernel on the large lane"
 
 [setting.R3_MOE_WORKER_INDEX]

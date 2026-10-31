@@ -49,10 +49,10 @@ __global__ void lane_reduce_tokens(const uint16_t* down, const int32_t* inv,
     }
     /* Mapped host memory is fine-grained/uncached. Drain every writer wave's posted stores
      * before the later release flag, matching libr4d's no-P2P all-reduce host path. */
-#if defined(__gfx1100__) || defined(__gfx1030__)
-    asm volatile("s_waitcnt_vscnt null, 0x0" ::: "memory");   /* gfx11 spelling of the store drain */
+#if defined(__GFX12__)
+    asm volatile("s_wait_storecnt 0x0" ::: "memory");   /* gfx12 splits the wait counters */
 #else
-    asm volatile("s_wait_storecnt 0x0" ::: "memory");
+    asm volatile("s_waitcnt_vscnt null, 0x0" ::: "memory");   /* the gfx10 / gfx11 spelling of the store drain */
 #endif
 }
 
@@ -108,10 +108,10 @@ __global__ void lane_reduce_tokens_v(const uint16_t* down, const int32_t* inv,
         }
         out[c8] = make_uint4(o[0], o[1], o[2], o[3]);
     }
-#if defined(__gfx1100__) || defined(__gfx1030__)
-    asm volatile("s_waitcnt_vscnt null, 0x0" ::: "memory");
-#else
+#if defined(__GFX12__)
     asm volatile("s_wait_storecnt 0x0" ::: "memory");
+#else
+    asm volatile("s_waitcnt_vscnt null, 0x0" ::: "memory");
 #endif
 }
 

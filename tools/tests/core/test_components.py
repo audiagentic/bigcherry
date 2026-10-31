@@ -8,7 +8,7 @@ from bigcherry.core import components, config, engines, paths
 #: getenv, and the moe-remote helper's validated readers (worker_config.h: u32/flag, peek_u32/peek_flag)
 _GETENV = re.compile(r'(?:getenv|\bu32|\bflag|\bchoice|\bpeek_u32|\bpeek_flag)\("((?:R3|BC)_[A-Z0-9_]+)"')
 #: settings the campaign harness reads (engine_adapters/radiance.py), not the plugin source
-HARNESS_ONLY = {"R3_MOE_WORKER_DEVICES"}
+HARNESS_ONLY = {"R3_MOE_WORKER_DEVICES", "R3_MOE_WORKER_LAYOUT"}
 
 
 class Libr3ComponentTests(unittest.TestCase):

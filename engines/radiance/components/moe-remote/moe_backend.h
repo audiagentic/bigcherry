@@ -10,6 +10,7 @@
 #pragma once
 
 #include <cstdint>
+#include <cstring>
 
 #define MOE_BACKEND_ABI 1
 
@@ -58,18 +59,9 @@ struct MoeExpertDesc {
     uint64_t dn_rows, dn_cols; // down: rows = hidden, cols = intermediate
 };
 
-struct MoeDeviceCaps {
-    char arch[32];             // gcnArchName prefix, e.g. "gfx1100"
-    uint64_t lds_bytes;
-    uint32_t wave_size;
-    uint32_t has_wmma_f16;     // 1 when the device has f16 WMMA
-    uint32_t has_fp8_matrix;   // 1 when it has native FP8 matrix instructions (RDNA4, not RDNA3)
-};
-
 enum MoeStatus : int {
     MOE_OK = 0,
     MOE_UNSUPPORTED_FORMAT = -1,
-    MOE_UNSUPPORTED_ARCH = -2,
     MOE_BAD_GEOMETRY = -3,
     MOE_OVERFLOW = -4,
 };
@@ -146,49 +138,47 @@ inline MoeExpertDesc expert_for(const MoeShape& s, const MoeWeightDesc& w) {
     return e;
 }
 
-// Whether a backend with the given capabilities can run this combination. Called before ownership is chosen, so an unsupported model
-// is refused with a reason instead of failing at its first expert.
+// A card type's backend, as data (RAD23): the weight formats its kernels run. Which card types exist, and which formats each runs, is
+// engines/radiance/archs.toml; the launcher and the harness pass the list to the helper (R3_MOE_WORKER_FORMATS). Nothing here names an
+// architecture - the plugin the helper loads for its card is checked against that card when it is opened.
 struct Backend {
-    const char* name;
-    uint32_t arch_prefix_len;  // compares the first n characters of caps.arch, 0 = any
-    const char* arch_prefix;
+    char name[32];             // the card's architecture, for messages
     uint32_t formats;          // bit per MoeWeightFormat
-    uint32_t requires_wmma_f16;
 };
 
-inline int probe(const Backend& b, const MoeShape& s, const MoeWeightDesc& w, const MoeDeviceCaps& caps) {
-    if (!s.layers || !s.experts || !s.hidden || !s.top_k || !s.intermediate || s.top_k > s.experts) return MOE_BAD_GEOMETRY;
-    if (b.arch_prefix_len) {
-        for (uint32_t i = 0; i < b.arch_prefix_len; ++i)
-            if (caps.arch[i] != b.arch_prefix[i]) return MOE_UNSUPPORTED_ARCH;
+inline const char* format_name(uint32_t fmt) {
+    return fmt == MOE_FMT_W4NL64 ? "w4nl64" : fmt == MOE_FMT_FP8_E4M3_BLOCK ? "fp8_e4m3_block" : "unrecognised";
+}
+
+// "w4nl64,fp8_e4m3_block" -> a format mask. False (mask untouched) on an empty list, an unknown name or a repeat.
+inline bool parse_formats(const char* text, uint32_t* mask) {
+    if (!text || !*text || !mask) return false;
+    uint32_t m = 0;
+    for (const char* p = text;;) {
+        const char* e = p;
+        while (*e && *e != ',') ++e;
+        uint32_t bit = 0;
+        static const uint32_t kKnown[2] = {MOE_FMT_W4NL64, MOE_FMT_FP8_E4M3_BLOCK};
+        for (uint32_t f : kKnown) {
+            const char* n = format_name(f);
+            if ((size_t)(e - p) == std::strlen(n) && std::strncmp(p, n, (size_t)(e - p)) == 0) bit = 1u << f;
+        }
+        if (!bit || (m & bit)) return false;
+        m |= bit;
+        if (!*e) break;
+        p = e + 1;
     }
-    if (b.requires_wmma_f16 && !caps.has_wmma_f16) return MOE_UNSUPPORTED_ARCH;
+    *mask = m;
+    return true;
+}
+
+// Whether the backend can run this combination. Called before ownership is chosen, so an unsupported model is refused with a reason
+// instead of failing at its first expert.
+inline int probe(const Backend& b, const MoeShape& s, const MoeWeightDesc& w) {
+    if (!s.layers || !s.experts || !s.hidden || !s.top_k || !s.intermediate || s.top_k > s.experts) return MOE_BAD_GEOMETRY;
     if (w.format == MOE_FMT_NONE || w.format >= 32 || !((b.formats >> w.format) & 1u)) return MOE_UNSUPPORTED_FORMAT;
     const int64_t bytes = expert_bytes(expert_for(s, w));
     return bytes < 0 ? (int)bytes : MOE_OK;
-}
-
-// The gfx1100 backend: W4NL64 and FP8 block-scaled (radiance's fp8a8 grouped GEMM, RAD13).
-inline const Backend& gfx1100_backend() {
-    static const Backend b{"gfx1100", 7, "gfx1100", (1u << MOE_FMT_W4NL64) | (1u << MOE_FMT_FP8_E4M3_BLOCK), 1};
-    return b;
-}
-
-// The gfx1030 backend (RDNA2, RX 6900 XT): W4NL64 only, no WMMA and no fp8 matrix instructions; the grouped GEMM runs on the dot and FMA path.
-inline const Backend& gfx1030_backend() {
-    static const Backend b{"gfx1030", 7, "gfx1030", (1u << MOE_FMT_W4NL64), 0};
-    return b;
-}
-
-// The backend for a device's architecture, or null when none is written for it.
-inline const Backend* backend_for(const char* arch) {
-    const Backend* const all[2] = {&gfx1100_backend(), &gfx1030_backend()};
-    for (const Backend* b : all) {
-        uint32_t i = 0;
-        while (i < b->arch_prefix_len && arch[i] == b->arch_prefix[i]) ++i;
-        if (i == b->arch_prefix_len) return b;
-    }
-    return nullptr;
 }
 
 }  // namespace r3::moe_backend
