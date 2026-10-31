@@ -549,9 +549,9 @@ __global__ __launch_bounds__(256) void lane_moe_gemv_mr(
  * streamed once per 256-wide K chunk and each decoded weight is applied to up to 16 of the expert's rows,
  * whose activations sit dequantised in LDS. Same weight form, table, scales, sorted/off and part-pitch rule as
  * lane_moe_gemv; f32 accumulate, one bf16 narrow. */
-constexpr uint32_t kRowsTileN = 64;       /* outputs a block: 8 waves x 8 */
-constexpr uint32_t kRowsOut = 8;          /* outputs a wave */
-constexpr uint32_t kRowsRB = 8;           /* rows a pass (16 spilled the 4 x 16 accumulators to scratch on gfx1030: 272 B a thread, 1.2 ms a gate/up call at ~8 experts) */
+constexpr uint32_t kRowsTileN = 32;       /* outputs a block: 8 waves x 4 */
+constexpr uint32_t kRowsOut = 4;          /* outputs a wave */
+constexpr uint32_t kRowsRB = 12;          /* rows a pass: 9 rows an expert fits one pass (8 forced a second K traversal for the ninth); 16 spilled the 4 x 16 accumulators on gfx1030 */
 constexpr uint32_t kRowsKC = 256;         /* K a chunk */
 
 template <bool TOKEN, bool FP8>
