@@ -343,3 +343,22 @@ Correctness evidence, and what is not shown:
 
 Next: the KLD gate for the three-helper layout, then the launcher change.
 
+## KLD gate for three helpers, 2026-10-31 (`rad23-kld-h3-10310518`, `rad23-kld-h3emu-10310527`)
+
+Flash-Next, the existing quality harness (`ab-benchmark`, quality-only, 8,240 positions) against the 2026-10-23 exact reference, a
+control arm of two helpers (`h2`) beside the arm under test; settings as in `kld-h3.json` (`R3_MOE_WORKER_DEVICES="0 1 3"`,
+`R3_MOE_WORKER_MIBS=22528,22528,14336`, `R3_MOE_WORKER_PLACEMENT=tail`). The helpers are started by the harness; the logs confirm the 6900 XT
+helper owned 5,931 experts and (arm 1) used the few-rows kernel. The harness thresholds are the repository's own.
+
+| Arm | KLD mean | median | p99 | p99.9 | top-1 | PPL (ref 9.111) |
+|---|---|---|---|---|---|---|
+| two helpers (control; identical in both runs and to the v1.14.0 bump run) | 0.05518 | 0.01419 | 0.5557 | 1.6424 | 89.745% | 9.0651 |
+| three helpers, 14 GiB tail, few-rows kernel | 0.06343 | 0.01613 | 0.6655 | 2.0756 | 88.883% | 9.2974 |
+| three helpers, 14 GiB tail, emulated tile (`R3_MOE_WORKER_ROWS=0`) | 0.06150 | 0.01554 | 0.6548 | 2.0553 | 88.762% | 9.1151 |
+
+Both three-helper arms pass the gate (limits: mean +0.02, median +0.01, p99 +0.2, p99.9 +0.5, top-1 -1.0 point, PPL ratio +0.05) and both
+are clearly worse than the control: mean KLD +15% / +11%, p99.9 +0.43 / +0.41 (limit 0.5), top-1 -0.86 / -0.98 points (limit 1.0). It is not
+the few-rows kernel (the emulated tile is nearly as far from the control), and per-layer `--compare` agreed with the XTX. Candidate
+cause under test: the 5,931 tail experts were computed by the engine's own kernels from its host pool and now run through the helper's
+path (E4M3 widened to f16), so the loss would scale with the number of experts moved. A run with 2 and 6 GiB tails checks that.
+
