@@ -325,7 +325,7 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
             break;
         }
         /* The helper's per-token rows, taken before the host reference rewrites the same slot. */
-        const uint16_t* res = ptr<uint16_t>(map, h->result_offset[result_index(rank, rank)]);
+        const uint16_t* res = ptr<uint16_t>(map, h->result_offset[result_index(rank, out_rank_of(rank, q->rank_count))]);
         const std::vector<uint16_t> got(res, res + (size_t)rows * hid);
         {   /* FNV-1a over the helper's result bytes: two builds that print the same hash for the same capture and settings produced
              * bit-identical output (the cross-build identity check of RCS05/RAD14; rel_l2 below only ever bounds the error). */

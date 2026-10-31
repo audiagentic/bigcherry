@@ -361,7 +361,7 @@ public:
                          tensor(d_result_.p, RAD_BF16, {rows, shape_.hidden}) }, mp) < 0)
                 return -EIO;
 
-            void* dst = ptr<void>(map, q->result_offset[rank]);
+            void* dst = ptr<void>(map, q->result_offset[out_rank_of(rank, q->rank_count)]);
             if (!hip_ok(hipMemcpyAsync(dst, d_result_.p, act_bytes,
                                        hipMemcpyDeviceToHost, stream_), "download TP partial"))
                 return -EIO;
@@ -490,7 +490,7 @@ public:
                 hhost->activation_offset[rank] + kActivationBf16Bytes + kActivationQBytes)));
         auto* dst = static_cast<uint16_t*>(
             dev_at(ptr<uint16_t>(
-                host_map, hhost->result_offset[result_index(rank, rank)])));
+                host_map, hhost->result_offset[result_index(rank, out_rank_of(rank, qhost->rank_count))])));
 
         if (!hip_ok(hipStreamWaitValue32(w.stream, request_seq, sequence,
                                          hipStreamWaitValueGte, 0xffffffffu),

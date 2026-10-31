@@ -137,7 +137,7 @@ inline bool combine_step(void* map, const r3::moe_shm::Request* q0, CombinePool*
         }
     }
     pool->combine(ptr<uint16_t>(map, h->result_offset[result_index(0, 0)]),
-                  ptr<uint16_t>(map, h->result_offset[result_index(1, 1)]),
+                  ptr<uint16_t>(map, h->result_offset[result_index(1, 0)]),
                   ptr<uint16_t>(map, h->result_offset[result_index(0, 1)]), mask->data(), rows, h->hidden);
     std::atomic_thread_fence(std::memory_order_release);
     store(&h->combine.done, g);

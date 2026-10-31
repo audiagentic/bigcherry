@@ -273,3 +273,38 @@ sets it per process). This is RHP07 (heat-tiered placement) made concrete. Cavea
 long-document workload can make some of the 5,936 hot, and a route to the tail must then still be correct (it is: the helper serves
 it) and only the speed changes.
 
+## First run with the 6900 XT as the third helper, 2026-10-31
+
+Flash-Next, R9700 engine, two XTX helpers (22 GiB each) and the RX 6900 XT as helper 2 on the existing kernels (a gfx1030 libr3 built
+with R3_ONLY and the emulated 16x16x16 tile, RCS07), `R3_MOE_WORKER_PLACEMENT=tail`, `R3_MOE_WORKER_MIBS=22528,22528,<tail MiB>`. The
+tail helper takes the COLDEST leftovers that fit its budget (from the end of the heat ranking backwards). Run through
+`/work/development/tmp/bigcherry/rad23/sweep3.sh`: decode is the mean of two 384-token rates (416 minus 32 tokens), prefill is one request
+each on three slices of the repository docs (natural text), one run a configuration, so decode is good to about +-5% (story 90.2 to 103.0 between runs).
+
+| Tail budget (experts held) | Decode story / code / count, tok/s | Natural prefill 25K / 14K / 72K, tok/s | Pool slots freed on the engine |
+|---|---|---|---|
+| none (two helpers) | 90.2 / 142.8 / 156.2 | 3,297 / 3,053 / 2,998 | 0 |
+| 2,048 MiB (847) | 103.0 / 139.8 / 154.7 | 3,094 / 2,819 / 2,941 | 687 (1.7 GiB) |
+| 3,000 MiB (1,241) | 92.8 / 138.8 / 155.2 | 2,736 / 2,943 / 2,919 | 1,081 (2.6 GiB) |
+| 6,144 MiB (2,542) | 96.8 / 131.2 / 153.8 | 2,084 / 2,845 / 2,804 | 2,307 (5.6 GiB) |
+| 14,336 MiB (5,931, all the leftover; an earlier run, hottest-leftover order, prompts from a second script) | 92.8 / 129.0 / 143.6 | 1,282 / 2,168 / 2,051 | 5,465 (12.9 GiB) |
+
+What the runs show:
+- It works end to end on the engine: three helpers, a 5,931-expert tail on a gfx1030 card, no errors in any log.
+- The heat file understates the tail's traffic on this model. With natural text the 14 GiB tail got 343 routes in a 2,048-token chunk
+  (1.7%, against 0.68% in the profile); with random-word prompts it got 2,919 (14%), and 9 of the 38 routes of a 4-row decode step. The
+  profile (2026-10-17) does not include layer 48 (the nextn / MTP layer, all zero, so ranked coldest and therefore in every tail),
+  which every draft pass uses; to be checked.
+- The cost is the 6900 XT's call, not its traffic: a large-lane call with 343 routes took 12.5 ms against 3.5 ms for an XTX (the emulated
+  tile costs per expert tile, not per row), so with a big tail the card is the slowest in every layer and prefill falls 30-60%. A
+  small tail keeps it off the critical path: up to about 3 GiB prefill loses 2-17% (the 17% is the first request after start, which
+  also loads the card's code), decode is within the run noise.
+- The gain is host memory and nothing else: 0.7 to 5.5 thousand pool slots (1.7 to 12.9 GiB of the engine's pinned host pool).
+- Found and fixed on the way: the result plane a helper writes was `[slot][slot]`, which does not exist for slot 2 (offset 0, a write over
+  the segment header). `out_rank_of(slot, world)` now gives the output rank (the slot when the engine has several ranks, 0 when one
+  rank is served by several helpers); every reader and writer uses it. The launcher's stop only knew two helpers.
+
+Next: the prefill cost is the emulated grouped GEMM; a GEMV-style path for the few rows an expert gets on a tail card (the helper's own
+fdot2 kernel) or a native dot2 tile would remove it, and is what makes a large tail affordable. The run script is a scratch copy; the
+launcher change (a third helper, per-helper budgets, tail placement) goes in after #465 so the two do not conflict.
+

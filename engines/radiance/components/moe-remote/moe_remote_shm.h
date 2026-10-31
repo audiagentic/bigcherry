@@ -37,6 +37,9 @@ constexpr uint32_t slots_for(uint32_t helpers) { return helpers > kMaxEngineRank
 /* The plane a slot writes for an output rank. Every reader and writer takes the index from here (the host layout, the device kernels
  * and the helper), so the convention lives in one place. */
 constexpr uint32_t result_index(uint32_t slot, uint32_t out_rank) { return slot * kMaxEngineRanks + out_rank; }
+/* The engine rank whose output a request of this slot is for: its own slot when the engine has several ranks (each rank is its own slot), rank 0
+ * when one engine rank is served by several helpers (the slots are then the helpers and every one writes rank 0's output, in its own plane). */
+constexpr uint32_t out_rank_of(uint32_t slot, uint32_t world) { return world > 1 ? slot : 0; }
 constexpr uint32_t kMaxLayers = 128;     /* ownership bitmap bound; Flash-Next is below this. */
 /* Lanes a producer rank (RAD12): up to kSmallClasses small lanes, each pre-queued by the helper at its own fixed row
  * count (Header::small_class_rows, ascending; a step goes to the first class that fits its rows), and one large lane

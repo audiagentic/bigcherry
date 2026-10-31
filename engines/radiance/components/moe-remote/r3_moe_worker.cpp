@@ -243,7 +243,11 @@ int main(int argc, char** argv) {
                      helper_index, helper_count, kMaxHelpers);
         return 2;
     }
-    const uint64_t budget = helper_budget_bytes();
+    uint64_t budgets[r3::worker_share::kMaxHelperShares] = {};
+    if (!r3::worker_share::parse_budgets(std::getenv("R3_MOE_WORKER_MIBS"), cfg.helper_count, helper_budget_bytes(), budgets)) {
+        std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_MIBS must list one budget in MiB for each of the %u helpers\n", cfg.helper_count);
+        return 2;
+    }
     Owned owned;
     if (g_replay) {
         /* A replay owns exactly the experts the captured request routes to: the capturing helper's ownership
@@ -257,7 +261,7 @@ int main(int argc, char** argv) {
         };
         if (sweep_replays.empty()) own_routes(*g_replay);
         else for (const ReplayInput& ri : sweep_replays) own_routes(ri);
-    } else if (!select_owned(model, gpu.get(), budget, helper_index, helper_count, &owned)) {
+    } else if (!select_owned(model, gpu.get(), budgets, helper_index, helper_count, &owned)) {
         return 1;
     }
     if (gpu && !gpu->allocate(owned.expert)) return 1;
