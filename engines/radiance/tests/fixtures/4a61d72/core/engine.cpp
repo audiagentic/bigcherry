@@ -31,8 +31,10 @@
 #include <cstring>
 #include <cstdint>
 #include <cstdlib>
+#include <climits>
 #include <cmath>
 #include <algorithm>
+#include <map>
 #include <fstream>
 #include <functional>
 #include <utility>
@@ -107,6 +109,8 @@ Engine::~Engine() {
     table_copies_.clear();
     for (void* p : card_copies_) rad_dev_free(p, RAD_MEM_HOST_MAPPED);
     card_copies_.clear();
+    for (TableShare& t : table_shares_) table_share_close(&t);
+    table_shares_.clear();
     rad_tools_registry().close();
 }
 
@@ -203,11 +207,9 @@ int Engine::declare_sampler(int rank, RadBuilder* b, int64_t logits_width, bool 
  * `heat_seen` prevents crediting a bank twice: a bank keeps its counts until the next report, so a
  * step where a layer did not route (a drafter pass) would re-credit the stale plane.
  */
-void Engine::tiering_dispatch(Rank& r, int step) {
-    if (!r.heat.enabled()) return;
-
-    r.mover.begin_dispatch(step, &r.heat);
-
+/* Every landed histogram of a step before `before_step`, oldest first per layer, into
+ * `r.heat_rows`; nothing is credited yet. */
+void Engine::find_histograms(Rank& r, int before_step) {
     const int n_layer = r.ctx.n_route_layers();
     if ((int)r.heat_seen.size() != n_layer) r.heat_seen.assign((size_t)n_layer, -1);
     /* Find all histograms first, then credit them in order. Each is a card-written row in host
@@ -224,7 +226,7 @@ void Engine::tiering_dispatch(Rank& r, int step) {
         int seen = r.heat_seen[(size_t)l];
         bool any = false;
         for (;;) {
-            const int bank = r.ctx.next_histogram(l, seen, step, landed);
+            const int bank = r.ctx.next_histogram(l, seen, before_step, landed);
             if (bank < 0) break;
             const int32_t* h = r.ctx.last_histogram(l, bank);
             if (!h) break;
@@ -234,8 +236,46 @@ void Engine::tiering_dispatch(Rank& r, int step) {
         }
         if (!any) ++r.heat_idle;
     }
+}
+
+/* --expert-stats: one found histogram into the rank's tally (place/xstats.h), from the same row
+ * the heat engine reads. The caller holds the tally. */
+static void xstats_credit(XsTally* xs, Ctx& ctx, int layer, int bank, const int32_t* h) {
+    const RadRouting* rt = ctx.last_routing(layer);
+    const int64_t n = rt ? std::min<int64_t>(rt->n_expert, ctx.route_n_expert()) : 0;
+    xs->credit(layer, ctx.last_histogram_step(layer, bank), h, n,
+               ctx.last_histogram_reports(layer, bank), rt ? rt->top_k : 0);
+}
+
+/* The drain alone, for the tally, where the heat engine is off or the engine is stopping
+ * (`before_step` INT_MAX once the streams are drained). */
+void Engine::xstats_drain(Rank& r, XsTally* xs, int before_step) {
+    find_histograms(r, before_step);
+    std::lock_guard<std::mutex> lk(xs->mutex());
+    for (const Rank::HeatRow& hr : r.heat_rows) {
+        xstats_credit(xs, r.ctx, hr.layer, hr.bank, hr.h);
+        r.heat_seen[(size_t)hr.layer] = r.ctx.last_histogram_step(hr.layer, hr.bank);
+        r.ctx.mark_credited(hr.layer, hr.bank);
+        ++r.heat_credited;
+    }
+    xs->note_dropped(r.ctx.route_dropped());
+}
+
+void Engine::tiering_dispatch(Rank& r, int step) {
+    XsTally* const xs = xstats_ ? xstats_->tally(r.index) : nullptr;
+    if (!r.heat.enabled()) {
+        if (xs) xstats_drain(r, xs, step);
+        return;
+    }
+
+    r.mover.begin_dispatch(step, &r.heat);
+
+    find_histograms(r, step);
+    std::vector<Rank::HeatRow>& rows = r.heat_rows;
     const int32_t n_ex = (int32_t)r.ctx.route_n_expert();
     constexpr size_t kAhead = 2;
+    std::unique_lock<std::mutex> xl;
+    if (xs) xl = std::unique_lock<std::mutex>(xs->mutex());
     for (size_t i = 0; i < rows.size() && i < kAhead; ++i) r.heat.prefetch(rows[i].h, n_ex);
     for (size_t i = 0; i < rows.size(); ++i) {
         if (i + kAhead < rows.size()) r.heat.prefetch(rows[i + kAhead].h, n_ex);
@@ -244,9 +284,15 @@ void Engine::tiering_dispatch(Rank& r, int step) {
          * weight it by the report count, or the layer's experts are underpriced and drained. */
         const int reps = r.ctx.last_histogram_reports(hr.layer, hr.bank);
         r.heat.observe(hr.layer, hr.h, n_ex, reps > 1 ? (float)reps : 1.0f);
+        /* The row is in cache now. */
+        if (xs) xstats_credit(xs, r.ctx, hr.layer, hr.bank, hr.h);
         r.heat_seen[(size_t)hr.layer] = r.ctx.last_histogram_step(hr.layer, hr.bank);
         r.ctx.mark_credited(hr.layer, hr.bank);
         ++r.heat_credited;
+    }
+    if (xs) {
+        xs->note_dropped(r.ctx.route_dropped());
+        xl.unlock();
     }
 
     /* No swaps behind a pass the stager armed: that step is bound by its own copies on the same
@@ -278,6 +324,93 @@ void Engine::tiering_dispatch(Rank& r, int step) {
     r.mover.hold_turnover(hold);
     (void)r.mover.balance(&r.heat, !hold);
 }
+
+/* ------------------------------------------------------------------ --expert-stats
+ *
+ * Which model-wide expert each index of each rank's histogram is (place/xstats.h, XsMap): index e
+ * is the rank's unit with group expert e, and the container's directory entry for that unit's
+ * weight names the expert in the model's numbering. A checkpoint served directly has no such entry
+ * and the map falls back to rank order. */
+int Engine::xstats_open() {
+    if (cfg_.expert_stats.empty()) return RAD_OK;
+    const int n_layer = ranks_[0]->ctx.n_route_layers();
+    if (n_layer <= 0) {
+        RAD_WARN("--expert-stats: '%s' routes no experts; there is nothing to count and %s is not "
+                 "written", meta_.name ? meta_.name : "the model", cfg_.expert_stats.c_str());
+        return RAD_OK;
+    }
+    constexpr int32_t kUnset = INT32_MIN, kClash = -3;
+    std::vector<std::vector<std::vector<int32_t>>> ids(ranks_.size());
+    for (size_t ri = 0; ri < ranks_.size(); ++ri) {
+        const Program& P = ranks_[ri]->program;
+        auto& layers = ids[ri];
+        layers.assign((size_t)n_layer, {});
+        for (size_t w = 1; w < P.weights.size(); ++w) {
+            const WeightInfo& wi = P.weights[w];
+            const int32_t l = wi.decl.group.layer, e = wi.decl.group.expert;
+            if (l < 0 || l >= n_layer || e < 0) continue;
+            std::vector<int32_t>& row = layers[(size_t)l];
+            if ((size_t)e >= row.size()) row.resize((size_t)e + 1, kUnset);
+            const RadFileEntry* fe = file_ ? file_->find(wi.source) : nullptr;
+            const int32_t g = fe && fe->layer == l && fe->expert >= 0 ? fe->expert : -1;
+            int32_t& at = row[(size_t)e];
+            /* Every weight of one unit must name the same expert. */
+            at = at == kUnset ? g : at == g ? at : kClash;
+        }
+        for (auto& row : layers)
+            for (int32_t& v : row) if (v == kUnset || v < 0) v = -1;
+    }
+    std::vector<int32_t> n_model((size_t)n_layer, 0);
+    for (int l = 0; l < n_layer && l < meta_.n_layers; ++l) n_model[(size_t)l] = (int32_t)meta_.n_expert;
+    XsMap map;
+    RAD_TRY(xs_map_build(ids, n_model, (int32_t)meta_.n_layers, &map));
+
+    XsSnapshot info;
+    info.model = meta_.name ? meta_.name : "";
+    info.arch = meta_.arch_id ? meta_.arch_id : "";
+    info.container = cfg_.model;
+    xstats_ = std::make_unique<ExpertStats>();
+    if (const int st = xstats_->init(cfg_.expert_stats, map, std::move(info)); st < 0) {
+        RAD_ERR("--expert-stats: cannot write %s", cfg_.expert_stats.c_str());
+        xstats_.reset();
+        return st;
+    }
+    std::map<std::string, int> how;
+    int32_t mx = 0;
+    for (int l = 0; l < n_layer; ++l) {
+        if (map.n_expert[(size_t)l] <= 0) continue;
+        ++how[map.how[(size_t)l]];
+        mx = std::max(mx, map.n_expert[(size_t)l]);
+    }
+    std::string hs;
+    for (const auto& [k, v] : how) hs += fmt("%s%d by %s", hs.empty() ? "" : ", ", v, k.c_str());
+    int counting = 0;
+    for (size_t ri = 0; ri < ranks_.size(); ++ri) counting += xstats_->tally((int)ri) != nullptr;
+    RAD_INFO("expert stats: %d routed layers (up to %d experts; ids %s), counted on %d of %d "
+             "rank%s, written to %s every 30 s and at shutdown",
+             n_layer, (int)mx, hs.c_str(), counting, cfg_.tp, cfg_.tp == 1 ? "" : "s",
+             cfg_.expert_stats.c_str());
+    xstats_->start();
+    return RAD_OK;
+}
+
+void Engine::xstats_close() {
+    if (!xstats_) return;
+    xstats_->stop();
+    /* The banks of the last steps are still in the ring: drain each counting rank's stream, then
+     * credit them. Not after a step-loop error, where a stream may never drain. */
+    if (loop_status_.load(std::memory_order_acquire) >= 0) {
+        for (auto& r : ranks_) {
+            XsTally* xs = xstats_->tally(r->index);
+            if (!xs) continue;
+            if (rad_dev_set(r->device) < 0 || rad_stream_sync(r->ctx.stream()) < 0) continue;
+            xstats_drain(*r, xs, INT_MAX);
+        }
+        if (ranks_.size() > 1) (void)rad_dev_set(ranks_[0]->device);
+    }
+    (void)xstats_->write(true);
+}
+
 /* ------------------------------------------------------------------ the rank thread */
 void Engine::rank_loop(int index) {
     Rank& r = *ranks_[(size_t)index];
@@ -303,6 +436,10 @@ void Engine::rank_loop(int index) {
             }
             b = mine;
             const int what = issue_what_.load(std::memory_order_acquire);
+            /* --expert-stats files each pass's step kind for the drain, which reads it a step or
+             * more later. An encoder pass is not a step of the token stream. */
+            if (xstats_ && what != kIssueSampler && b->enc == 0)
+                if (XsTally* xs = xstats_->tally(index)) xs->issued(*b);
             int s = what == kIssueSampler ? RAD_OK : r.ctx.run_step(b);
             if (s < 0) {
                 RAD_ERR("rank %d step %d: %s", index, b->step, r.ctx.step_error());
@@ -418,6 +555,14 @@ int Engine::step_loop() {
     pipelining_ = !cfg_.kld() && !embedding_ &&
                   (serial_drafting() || block_drafting() || cfg_.n_spec <= 0);
     early_ids_ = !cfg_.kld() && !embedding_;
+    /* A tree's acceptance moves K and V on the card behind the step issued ahead. The KL mode
+     * drafts nothing and an embedding model declares no drafter, so no server reaches this today;
+     * it keeps a tree from running unverified should another path turn pipelining off. */
+    if (tree_ && !pipelining_) {
+        RAD_ERR("speculation: drafter '%s' proposes trees, which are verified only on steps issued "
+                "ahead, and this server issues none; ask the plugin for a chain", drafter_.name);
+        return fail_loop(RAD_E_UNSUPPORTED);
+    }
     const bool t_on = (int)log_level() >= (int)Log::Debug;
     /* The next step's forward pass when already issued behind the previous step, before its
      * readback (Scheduler::step_next). */
@@ -653,46 +798,11 @@ int Engine::step_loop() {
             return fail_loop(st);
         }
 
-        /* Snapshot after the step that produced the state: the chunker ended this chunk at the
-         * checkpoint position, so copy 0 holds exactly that state. The copy to the host slot is
-         * issued before collect_step's readback and before any step issued ahead, which orders the
-         * next write of the state after it. Under the scheduler's lock, as the restore. */
-        bool any_save = false;
-        for (const StepEntry& e : plan.e)
-            if (e.ckpt_slot >= 0 && e.ckpt_tok >= 0) { any_save = true; break; }
-        if (any_save) {
-            const int ss = sched_.locked([&]() -> int {
-                for (const StepEntry& e : plan.e) {
-                    if (e.ckpt_slot < 0 || e.ckpt_tok < 0) continue;
-                    if (!state_slots_of(e.seq, &ckpt_slots_)) continue;
-                    /* The window behind the checkpoint position. The chunk ending there still
-                     * holds it, so a miss is a broken invariant; skipping would commit a slot
-                     * holding another sequence's pages. */
-                    if (ranks_[0]->kv.has_window_snapshot() &&
-                        !ranks_[0]->kv.window_rows(e.seq, e.ctx_len + e.ckpt_tok + 1,
-                                                   &ckpt_win_)) {
-                        RAD_ERR("sequence %llu: the window behind checkpoint %d is not held",
-                                (unsigned long long)e.seq, (int)(e.ctx_len + e.ckpt_tok + 1));
-                        return RAD_E_STATE;
-                    }
-                    for (auto& rk : ranks_) {
-                        if (ranks_.size() > 1) (void)rad_dev_set(rk->device);
-                        const int s = rk->kv.checkpoint_save(ckpt_slots_.data(),
-                                                             (int)ckpt_slots_.size(),
-                                                             e.ckpt_slot, rk->ctx.stream(),
-                                                             &ckpt_win_);
-                        if (s < 0) {
-                            RAD_ERR("rank %d could not snapshot sequence %llu into checkpoint slot "
-                                    "%d: %s", rk->index, (unsigned long long)e.seq,
-                                    (int)e.ckpt_slot, rad_strerror(s));
-                            if (ranks_.size() > 1) (void)rad_dev_set(ranks_[0]->device);
-                            return s;
-                        }
-                    }
-                    if (ranks_.size() > 1) (void)rad_dev_set(ranks_[0]->device);
-                }
-                return RAD_OK;
-            });
+        /* Snapshot after the step that produced the state (save_checkpoints). Where a block
+         * drafter's window rides in the snapshot, its context pass must store the step's rows
+         * first, so the card's driver saves right behind that pass instead. */
+        if (!(block_drafting() && drafter_snap_)) {
+            const int ss = save_checkpoints();
             if (ss < 0) return fail_loop(ss);
         }
 
@@ -767,6 +877,7 @@ int Engine::step_loop() {
             res.lp        = so.lp.data();
             res.first_row = so.first_row.data();
         }
+        res.path = so.path.empty() ? nullptr : so.path.data();
         st = sched_.commit(res);
         if (t_on) phase_mark(PH_COMMIT);
         if (st < 0) { RAD_ERR("commit: %s", rad_strerror(st)); return fail_loop(st); }
@@ -1029,6 +1140,57 @@ int Engine::collect_pooled(const RadBatch* b, StepOut& so) {
     return RAD_OK;
 }
 
+/* Snapshot after the step that produced the state. Linear state is what the chunk's last token
+ * leaves, so the chunker ended the chunk at the checkpoint and copy 0 holds exactly that state; a
+ * window snapshot is the window's rows behind the checkpoint, which may lie inside the chunk
+ * (plan_chunk) and are still held when it ends. The copy to the host slot is issued before
+ * collect_step's readback and before any step issued ahead, which orders the next write of the
+ * state after it. Under the scheduler's lock, as the restore. A block drafter's window in the
+ * snapshot (drafter_snap_) is saved behind the drafter's context pass (issue_block_drafter),
+ * which writes only the drafter's groups. */
+int Engine::save_checkpoints() {
+    const StepPlan& plan = sched_.plan();
+    bool any_save = false;
+    for (const StepEntry& e : plan.e)
+        if (e.ckpt_slot >= 0 && e.ckpt_tok >= 0) { any_save = true; break; }
+    if (any_save) {
+        const int ss = sched_.locked([&]() -> int {
+            for (const StepEntry& e : plan.e) {
+                if (e.ckpt_slot < 0 || e.ckpt_tok < 0) continue;
+                if (!state_slots_of(e.seq, &ckpt_slots_)) continue;
+                /* The window behind the checkpoint position. This step's chunk reaches it, and
+                 * a window slides only from a step's first query, so a miss is a broken
+                 * invariant; skipping would commit a slot holding another sequence's pages. */
+                if (ranks_[0]->kv.has_window_snapshot() &&
+                    !ranks_[0]->kv.window_rows(e.seq, e.ctx_len + e.ckpt_tok + 1,
+                                               &ckpt_win_)) {
+                    RAD_ERR("sequence %llu: the window behind checkpoint %d is not held",
+                            (unsigned long long)e.seq, (int)(e.ctx_len + e.ckpt_tok + 1));
+                    return RAD_E_STATE;
+                }
+                for (auto& rk : ranks_) {
+                    if (ranks_.size() > 1) (void)rad_dev_set(rk->device);
+                    const int s = rk->kv.checkpoint_save(ckpt_slots_.data(),
+                                                         (int)ckpt_slots_.size(),
+                                                         e.ckpt_slot, rk->ctx.stream(),
+                                                         &ckpt_win_);
+                    if (s < 0) {
+                        RAD_ERR("rank %d could not snapshot sequence %llu into checkpoint slot "
+                                "%d: %s", rk->index, (unsigned long long)e.seq,
+                                (int)e.ckpt_slot, rad_strerror(s));
+                        if (ranks_.size() > 1) (void)rad_dev_set(ranks_[0]->device);
+                        return s;
+                    }
+                }
+                if (ranks_.size() > 1) (void)rad_dev_set(ranks_[0]->device);
+            }
+            return RAD_OK;
+        });
+        if (ss < 0) return ss;
+    }
+    return RAD_OK;
+}
+
 /* Scored rows (Request::token_scores): the logits row at a scored prompt's last position, copied
  * to the host before the sampler can rewrite it in place. stage_scored_rows picks the rows while
  * every rank is parked; issue_scored_rows copies one row per rank stream ahead of its sampler;
@@ -1100,10 +1262,11 @@ int Engine::collect_scored_rows() {
 /* One sampled row's logprobs into the step's table, sized on first use. A non-finite row
  * (RAD_E_INVAL) is left at token -1, and the scheduler fails only that request. A row outside the
  * step, or never staged for logprobs, is an engine error. */
-int Engine::row_logprobs(StepOut& so, int32_t row, int32_t token) {
+int Engine::row_logprobs(StepOut& so, int32_t row, int32_t token, int32_t at) {
     if (so.lp.empty()) so.lp.resize((size_t)so.n_rows);
-    if (row < 0 || row >= so.n_rows) return RAD_E_STATE;
-    TokenLogprobs& lp = so.lp[(size_t)row];
+    if (at < 0) at = row;
+    if (row < 0 || row >= so.n_rows || at >= so.n_rows) return RAD_E_STATE;
+    TokenLogprobs& lp = so.lp[(size_t)at];
     const int s = ranks_[0]->sampler.logprobs_for(row, token, &lp);
     if (s == RAD_E_INVAL) { lp = TokenLogprobs{}; return RAD_OK; }
     return s;
@@ -1117,6 +1280,7 @@ int Engine::collect_step(const RadBatch* b, StepOut& so) {
     so.accepted.assign(plan.e.size(), 0);
     so.eos.assign(plan.e.size(), 0);
     so.lp.clear();
+    so.path.clear();
     if (so.n_rows <= 0) return RAD_OK;
 
     so.rows.resize((size_t)so.n_rows);
@@ -1167,7 +1331,16 @@ int Engine::collect_step(const RadBatch* b, StepOut& so) {
             if (!e.req) continue;
             int32_t out[RAD_SCHED_MAX_SPEC + 1] = { 0 };
             int32_t acc = 0;
-            RAD_TRY(accept_greedy(e.draft, e.n_spec, &so.rows[(size_t)so.first_row[i]], out, &acc));
+            /* A tree step verifies every proposal as a tree (a chain one as the chain-shaped
+             * tree), as the card's acceptance does; `path` names the accepted nodes. */
+            int32_t path[RAD_SCHED_MAX_SPEC] = { 0 };
+            const bool tree = plan.spec_is_tree;
+            if (tree)
+                RAD_TRY(accept_tree(e.draft, e.draft_parent, e.n_spec,
+                                    &so.rows[(size_t)so.first_row[i]], out, path, &acc));
+            else
+                RAD_TRY(accept_greedy(e.draft, e.n_spec, &so.rows[(size_t)so.first_row[i]], out,
+                                      &acc));
 
             /* Truncated at the first end-of-generation token, so `accepted` and `token` (which
              * drive the KV rollback, the conv cursor and the emitted text) say how far the step
@@ -1178,11 +1351,19 @@ int Engine::collect_step(const RadBatch* b, StepOut& so) {
             so.accepted[i] = acc;
             so.token[i]    = out[acc];
             so.eos[i]      = vocab_ && vocab_->is_eog(so.token[i]) ? 1 : 0;
+            if (tree) {
+                if (so.path.empty()) so.path.assign(plan.e.size() * RAD_SCHED_MAX_SPEC, 0);
+                for (int32_t t = 0; t < acc; ++t) so.path[i * RAD_SCHED_MAX_SPEC + t] = path[t];
+            }
             /* Each emitted token's logprobs come from its own row, the distribution it was drawn
-             * from. */
+             * from: on a tree, the row of the node it follows. They are filed as the entry's j-th
+             * emitted token (StepResult::lp), whichever row they came from. */
             if (e.req && e.req->sp.n_probs >= 0)
-                for (int32_t j = 0; j <= acc; ++j)
-                    RAD_TRY(row_logprobs(so, so.first_row[i] + j, out[j]));
+                for (int32_t j = 0; j <= acc; ++j) {
+                    const int32_t from = tree && j > 0 ? path[j - 1] : j;
+                    RAD_TRY(row_logprobs(so, so.first_row[i] + from, out[j],
+                                         so.first_row[i] + j));
+                }
             /* Advance the grammar over every emitted token, accepted drafts included, up to the
              * truncated `acc`, so it sees exactly what the client sees. */
             if (e.req)
@@ -1683,8 +1864,8 @@ int Engine::serve(std::unique_ptr<StallWatch> watch) {
             if (ranks_.size() > 1) (void)rad_dev_set(ranks_[0]->device);
             ranks_[0]->tierx.report_pass(jobs, ok, rad_mono_ns());
             /* Rebind every entry that came back, not only the leading run: the tiers already
-             * marked each resident at its new blocks. */
-            const std::vector<int32_t>& cg = pc.cached_groups();
+             * marked each resident at its new blocks. A job's blocks are one per entry slot. */
+            const std::vector<int32_t>& cg = pc.entry_groups();
             for (size_t i = 0; i < jobs.size(); ++i) {
                 TierJob& j = jobs[i];
                 if (!ok[i]) { res = RestoreResult::Cut; continue; }
@@ -1775,6 +1956,8 @@ int Engine::serve(std::unique_ptr<StallWatch> watch) {
 
     for (auto& r : ranks_) r->sampler.attach_vocab(vocab_view_.get());
 
+    if (const int xs = xstats_open(); xs < 0) return xs;
+
     barrier_ = std::make_unique<RankBarrier>(cfg_.tp + 1);
     stopping_.store(false, std::memory_order_release);
     step_status_.store(RAD_OK, std::memory_order_release);
@@ -1799,6 +1982,7 @@ int Engine::serve(std::unique_ptr<StallWatch> watch) {
     if (stepper.joinable()) stepper.join();
     for (auto& t : rank_threads_) if (t.joinable()) t.join();
     rank_threads_.clear();
+    xstats_close();
     /* A step-loop error takes precedence over the transport's status. */
     const int ls = loop_status_.load(std::memory_order_acquire);
     return ls < 0 ? ls : s;
@@ -1932,6 +2116,8 @@ std::string Engine::engine_info() const {
         sp["depth"]   = drafter_.depth;
     }
     e["speculation"] = std::move(sp);
+    /* --expert-stats: where the counts are, for a client that reads them. */
+    if (xstats_) e["expert_stats"] = { { "file", xstats_->path() }, { "interval_s", 30 } };
     return e.dump();
 }
 
@@ -2211,6 +2397,12 @@ int Engine::run_server() {
             s.link.h2d_bytes = s.link.d2h_bytes = s.link.ssd_reads = 0;
             s.link.ssd_bytes = s.link.prefetched = s.link.prefetch_bytes = 0;
             s.link.stream_bytes = s.link.staged_bytes = 0;
+            s.link.kv_stream_bytes = 0;
+            s.link.kv_streaming = cfg_.kv_resident > 0;   /* zeroed here if the arch refused it */
+            /* The ring's depth, not the flag: KVStreamStats::resident_blocks sums the device pool
+             * of every group that really runs a window under its context, so this is zero when
+             * --kv-resident was asked for and nothing streams anyway. */
+            s.link.kv_stream_active = ranks_[0]->kv.stream_stats().resident_blocks > 0;
             for (const auto& rk : ranks_) {
                 const MoverStats rms = rk->mover.stats();
                 s.link.h2d_bytes      += (int64_t)rms.h2d_bytes;
@@ -2222,6 +2414,13 @@ int Engine::run_server() {
                 s.link.staged_bytes   += (int64_t)rms.staged_bytes;
                 if (rk->heat.enabled()) s.link.stream_bytes += (int64_t)rk->heat.stats().stream_bytes;
             }
+            /* KV streaming: only rank 0's resolve counters are read -- every rank sees the same
+             * misses by design -- so the figure takes the world factor to reach all cards, the
+             * way the summed move rows sit there. The counters ride the step's ctl read; nothing
+             * here costs a step. */
+            if (s.link.kv_streaming)
+                s.link.kv_stream_bytes =
+                    (int64_t)ranks_[0]->kv.stream_stats().bytes_in * (int64_t)ranks_.size();
         }
     };
 
