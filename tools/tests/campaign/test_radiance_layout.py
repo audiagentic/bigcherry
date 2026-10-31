@@ -156,11 +156,23 @@ roles = ["helper"]
             "no head helper with a share": '[layout.t]\nengine = { arch = "gfx1201" }\n[[layout.t.helper]]\narch = "gfx1100"\nbudget-mib = 100\nshare = 0\n',
             "devices lists a card twice": '[layout.t]\nengine = { arch = "gfx1201" }\n[[layout.t.helper]]\ndevices = [0, 0]\nbudget-mib = 100\n',
             "devices alone": '[layout.t]\nengine = { arch = "gfx1201" }\n[[layout.t.helper]]\ndevices = [0]\ncount = 1\nbudget-mib = 100\n',
+            "decided by the cards": self.HEAD + '[layout.t.env]\nR3_MOE_WORKER_MIBS = "1"\n',
+            "must be an R3_MOE_WORKER": self.HEAD + '[layout.t.env]\nHOME = "/x"\n',
+            "silently off": '[layout.t]\nengine = { arch = "gfx1201" }\n[[layout.t.helper]]\ndevices = [0]\nbudget-mib = 1000\n[layout.t.env]\nR3_MOE_WORKER_COMBINE = "1"\n',
             "device 9 is not": '[layout.t]\nengine = { arch = "gfx1201" }\n[[layout.t.helper]]\ndevices = [9]\nbudget-mib = 100\n',
         }
         for why, text in bad.items():
             with self.subTest(why=why), self.assertRaisesRegex(rl.LayoutError, why if why != "the protocol bound" else "exceed"):
                 self.resolve(text)
+
+    def test_layout_env_reaches_the_common_settings_for_two_helpers(self):
+        r = self.resolve(self.HEAD + '[layout.t.env]\nR3_MOE_WORKER_COMBINE = "1"\n')
+        self.assertEqual(r.common_env["R3_MOE_WORKER_COMBINE"], "1")
+        self.assertEqual(len(r.helpers), 2)
+
+    def test_the_combine_bound_is_the_headers(self):
+        text = (rl._root(None) / "engines/radiance/components/moe-remote/moe_remote_shm.h").read_text(encoding="utf-8")
+        self.assertIn(f"kCombineHelpers = {rl._COMBINE_HELPERS};", text)
 
     def test_shares_are_emitted_only_when_a_head_differs(self):
         r = self.resolve(self.HEAD.replace("budget-mib = 1000\n", "budget-mib = 1000\nshare = 2\n"))
