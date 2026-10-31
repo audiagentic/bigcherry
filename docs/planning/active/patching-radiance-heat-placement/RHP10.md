@@ -99,9 +99,9 @@ The launcher's two sequences, both busy: two requests at once, each a different 
 
 Recorded heat is level on the corpus it was recorded on and at 8K, and +5 to 9% on the other corpus at 65K a stream (about 130K tokens used in all). So the +30% of the single 675K request belongs to the regime where the cache thrashes; at two streams of 65K the heat file is worth a few percent at most. Aggregate rate with two streams of 65K prompts is 1.9K to 2.6K tok/s on documentation text.
 
-## Correction: the four-way cell on the held-out corpus, and the spread that was not measured, 2026-10-31
+## The four-way cell on the held-out corpus, and the repeat spread, 2026-10-31 (`rad23-holdout`)
 
-The earlier sections read the single-request 675K runs as "recorded heat gives +30% prefill". The no-tail pair run afterwards does not support that. Same corpus, same request (675,534 tokens used), one fresh server per arm, XTX 22,528 MiB:
+One request (675,534 tokens used), one fresh server per arm, XTX 22,528 MiB:
 
 | Tail | Heat | Prefill tok/s | Decode tok/s | Promotions | Host-to-GPU GiB |
 |---|---|---|---|---|---|
@@ -110,6 +110,8 @@ The earlier sections read the single-request 675K runs as "recorded heat gives +
 | none | static | 1792 | 57.1 | 11214 | 1373 |
 | none | recorded | 1843 | 83.2 | 10798 | 1241 |
 
-Prefill spans 1450 to 1883 and decode 57 to 83 across four arms with no consistent order, and the no-tail static arm (1792) is as fast as the best tailed one. The first baseline (1450) was probably a low draw, so the "+30%" and the "+26% decode" read against single baselines are not established: one run per arm at this length carries a spread of the size of every difference reported in this document (prefill about 20%, decode about 30%). What the four cells do agree on is the traffic, which is read off a counter and moves the same way every time: host-to-GPU traffic falls with the 6900 XT tail (1373 to 1088 static, 1241 to 1068 recorded) and with recorded heat (1373 to 1241 without the tail, 1088 to 1068 with it).
+Spread, measured: the tail + static arm run three times (1450, 1448, 1468 prefill; 77.5, 77.4, 77.6 decode; promotions and traffic identical to the byte). For a fixed request the system is deterministic to about 1.4% in prefill and 0.3% in decode, so the differences in the table are real for this request. They are not monotone, which is the finding: the 6900 XT tail costs 19% of prefill with the static heat (1450 against 1792) and costs none with the recorded heat (1883 against 1843); it adds 36% decode with the static heat (77.5 against 57.1) and loses 18% with the recorded one (68.5 against 83.2); recorded heat is +3% prefill and +46% decode without the tail, +30% prefill and -12% decode with it. The best decode cell is no tail with recorded heat (83.2) and the best prefill cell is the tail with recorded heat (1883); no cell wins both. Host-to-GPU traffic falls with both the tail and the recorded heat in every pairing.
 
-Standing claims, then: the tail and recorded heat each reduce host-to-GPU traffic; neither is shown to change speed at 675K used context. The quality results above (mean KLD rising with the XTX budget) are a separate measurement and stand. Next: repeats of one arm to put a number on the spread before reading any speed difference at this length.
+Two caveats that keep this from a recommendation. It is one request on one corpus (a different prompt will not repeat these numbers; the earlier documentation-corpus run and the two-stream runs gave smaller and differently ordered effects), and the interaction means the sign of the tail's effect depends on which experts the heat file puts where, which is why single-factor claims (the tail helps, the heat helps) fail. The earlier "+30% prefill from recorded heat" holds only with the tail and costs decode there; without the tail the heat file's gain is decode.
+
+Next: the same four cells on a second request and corpus, and a per-layer trace of the helper waits in the two cells that differ most (tail + static, no tail + static) to see which helper the engine waits for.
