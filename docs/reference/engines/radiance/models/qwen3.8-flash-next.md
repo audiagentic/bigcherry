@@ -209,6 +209,26 @@ Decode holds its 92-122 range to about 290K of used context and then falls: 74 a
 tok/s at 32K to 1,850 at 288K. The spread inside the first rows is the text (how often the drafter is right), not the context.
 Random-word prompts decode slower (39 tok/s at 347K) because the drafter has nothing to predict.
 
+### A third helper on the RX 6900 XT (RAD23, 2026-10-31)
+
+`launch-flashnext-best.sh --tail-mib N` (or `FLASHNEXT_TAIL_MIB=N`) adds the RX 6900 XT (gfx1030, `libr2.so`) as a third helper with an N MiB
+budget. The two XTXs keep the hottest 18,640 experts as before; the 6900 XT takes the COLDEST experts that fit
+(`R3_MOE_WORKER_PLACEMENT=tail`), and that much of the engine's pinned host expert pool is freed (2 GiB: 687 slots; 6 GiB: 2,307; 14 GiB, all
+5,931 leftover experts: 5,465). Off by default. Measured on this layout (natural-text prefill, decode good to about +-5%; KLD against the
+2026-10-23 reference, 8,240 positions):
+
+| Tail | Decode story / code / count, tok/s | Prefill 25K / 14K / 72K, tok/s | KLD mean / p99.9 / top-1 | KLD gate |
+|---|---|---|---|---|
+| none (two helpers) | 90 / 143 / 156 | 3,297 / 3,053 / 2,998 | 0.0552 / 1.64 / 89.75% | - |
+| 2 GiB (847 experts) | 103 / 140 / 155 | 3,094 / 2,819 / 2,941 | 0.0556 / 1.75 / 89.50% | pass |
+| 6 GiB (2,542) | 97 / 131 / 154 (few-rows kernel) | 1,828 / 3,038 / 2,942 | 0.0644 / 2.41 / 89.32% | fail (p99.9 +0.77, limit +0.5) |
+| 14 GiB (5,931) | 97 / 131 / 151 (few-rows kernel) | 1,233 / 2,679 / 2,550 | 0.0634 / 2.08 / 88.88% | pass (p99.9 +0.43) |
+
+The 25K figure is the first request after a start (the card loads its code). The 6900 XT's large-lane call is faster than an XTX's only
+because it carries a handful of routes; per route it is far slower. A 2 GiB tail is clean on quality and speed but frees 1.7 GiB; larger
+tails cost prefill, and KLD moves by up to 0.01 in either direction with the layout alone (one XTX helper, no 6900 XT, is +0.007 over two).
+Details, controls and the open question of why the engine's and the helper's paths differ: `docs/planning/active/patching-radiance-rdna3/RAD23.md`.
+
 ## What is on and why
 
 Engine patches (state from each SUMMARY.md; none is `validated` yet):

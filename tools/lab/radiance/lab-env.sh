@@ -20,3 +20,11 @@ helpers = [d.index for d in h.devices_for_arch("gfx1100")]
 assert len(engine) == 1 and helpers, (engine, helpers)
 print(engine[0], *helpers)'
 }
+#   lab_device_ordinals_for ARCH   prints the indexes of the host's devices of that architecture (empty when there are none)
+lab_device_ordinals_for() {
+  PYTHONPATH="$_LAB_TOOLS" python3 -c '
+import sys
+from bigcherry.core import environment as e
+h = e.load_default().host(None)
+print(*[d.index for d in h.devices_for_arch(sys.argv[1])])' "$1"
+}
