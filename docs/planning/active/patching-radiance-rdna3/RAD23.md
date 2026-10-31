@@ -234,3 +234,131 @@ against both headers) and are now asserted in `moe_remote_shm_test.cpp`; the who
 `--compare` on an XTX gives the same rel_l2 as before (8 rows 6.7e-4 / 6.2e-4, 64 rows 1.75e-3 / 1.15e-3). Next: stage 2 raises the
 helper and slot bounds and makes the layout runtime-sized from (R, H, S).
 
+## Stage 2 done 2026-10-31: segments laid out for their slot count, up to four helpers, weighted shares
+
+Protocol 19. `Header::slot_count` is set at init (`slots_for(helpers)`: never fewer than the 2 engine ranks); route and activation
+staging, owner bitsets and result planes exist only for the slots in use, `layout_for`/`init` take the slot count, and `valid` also
+refuses a header whose unused slots are not all zero or whose slot count disagrees with its layout. `kMaxHelpers` and `kMaxSlots` are 4;
+engine ranks stay 2; the combine remains a two-helper feature (`kCombineHelpers`, off with more helpers). Cost per extra slot:
+74,227,712 bytes (70.8 MiB: route + activation + two 20 MiB result planes) - three helpers 212.6 MiB of pinned host memory against 141.9
+for two; the lane ring grew by 8 KiB for the four-slot bound (lane numbering is `class * 4 + slot`). `R3_MOE_WORKER_SHARES="w0,w1,.."`
+weights the helpers' parts of the expert ranking (default equal = the round robin it always was); a part of 0 owns nothing.
+
+Evidence: `r3_moe_shm_test` (segments for 1-4 slots, tampered headers, unused-slot offsets, short mappings), `r3_worker_share_test`,
+`r3_moe_backend_test` pass; the component builds for gfx1030 / gfx1100 / gfx1201. Hardware at H = 2 against the baseline above, same
+prompts: decode 512 tokens 5.436 s (5.440), prefill 16.8K 4.89 / 5.06 s (5.14 / 5.41), 66.5K 21.78 s (22.05); helper GPU span medians
+127.4 us (127.3) on the small lane and 3,489 us (3,482) / 3,674 us (3,672) on the large lane. Not yet: H = 3 on hardware (needs the
+6900 XT helper to start with an empty or small share - see the share-0 path, untested with a GPU), the engine-side per-layer wait
+stamps, and the budgeted experiments (step 4).
+
+## Correction and the real workload for the third helper, 2026-10-31 (from the route-heat file)
+
+Earlier notes in this item called the third helper's experts "cold" while the XTX helpers' were left unnamed; the launcher owns the
+HOTTEST experts on the XTXs (`heat.rank0.hot-first`, ranking order = hottest first, each helper takes its share of the top). From that
+file (`/work/bigcherry/runs/perf51/heat.rank0.hot-first`, 48 routed layers x 512 experts, 4,421,376 recorded routes; recorded
+2026-10-17, the workload that profile run used):
+
+- Two XTX helpers at 22 GiB each own 18,640 experts (9,320 each, 2.417 MiB an expert) = 99.3% of routes.
+- The other 5,936 experts (14.0 GiB) carry 0.68% of routes (0.2-1.0% a layer; 54-206 experts a layer). They stay in the engine's pinned
+  host pool today and are copied to the R9700 when a chunk uses them (the log's "prefill staging ... up to 3 layers ahead").
+- In a 2,048-token chunk (20,480 routes) about 140 routes, roughly 3 a layer, land on them; in a decode step well under one a layer.
+- A 6900 XT with a 16 GiB card holds all 5,936 (14.0 GiB). So its job is the tail of the ranking, not a share of the hot experts, and the
+  slow emulated grouped GEMM (4.5x an XTX at 256 rows) runs at about 3 rows a layer: launch time, not matrix time. What it buys is not
+  speed but the engine's host expert pool (about 14 GiB of pinned host RAM, and the staging copies).
+
+What this changes: `R3_MOE_WORKER_SHARES` (weighted round robin) would hand the 6900 XT hot experts, which is the wrong placement. The
+third helper needs a TAIL placement: helpers 0..H-2 take the ranking as now, up to their budgets, and the last helper takes the
+experts that remain, with a budget of its own for each helper (R3_MOE_WORKER_MIB is one value for every process today, the launcher
+sets it per process). This is RHP07 (heat-tiered placement) made concrete. Caveat: one profile of one workload; a coding or
+long-document workload can make some of the 5,936 hot, and a route to the tail must then still be correct (it is: the helper serves
+it) and only the speed changes.
+
+## First run with the 6900 XT as the third helper, 2026-10-31
+
+Flash-Next, R9700 engine, two XTX helpers (22 GiB each) and the RX 6900 XT as helper 2 on the existing kernels (a gfx1030 libr3 built
+with R3_ONLY and the emulated 16x16x16 tile, RCS07), `R3_MOE_WORKER_PLACEMENT=tail`, `R3_MOE_WORKER_MIBS=22528,22528,<tail MiB>`. The
+tail helper takes the COLDEST leftovers that fit its budget (from the end of the heat ranking backwards). Run through
+`/work/development/tmp/bigcherry/rad23/sweep3.sh`: decode is the mean of two 384-token rates (416 minus 32 tokens), prefill is one request
+each on three slices of the repository docs (natural text), one run a configuration, so decode is good to about +-5% (story 90.2 to 103.0 between runs).
+
+| Tail budget (experts held) | Decode story / code / count, tok/s | Natural prefill 25K / 14K / 72K, tok/s | Pool slots freed on the engine |
+|---|---|---|---|
+| none (two helpers) | 90.2 / 142.8 / 156.2 | 3,297 / 3,053 / 2,998 | 0 |
+| 2,048 MiB (847) | 103.0 / 139.8 / 154.7 | 3,094 / 2,819 / 2,941 | 687 (1.7 GiB) |
+| 3,000 MiB (1,241) | 92.8 / 138.8 / 155.2 | 2,736 / 2,943 / 2,919 | 1,081 (2.6 GiB) |
+| 6,144 MiB (2,542) | 96.8 / 131.2 / 153.8 | 2,084 / 2,845 / 2,804 | 2,307 (5.6 GiB) |
+| 14,336 MiB (5,931, all the leftover; an earlier run, hottest-leftover order, prompts from a second script) | 92.8 / 129.0 / 143.6 | 1,282 / 2,168 / 2,051 | 5,465 (12.9 GiB) |
+
+What the runs show:
+- It works end to end on the engine: three helpers, a 5,931-expert tail on a gfx1030 card, no errors in any log.
+- The heat file understates the tail's traffic on this model. With natural text the 14 GiB tail got 343 routes in a 2,048-token chunk
+  (1.7%, against 0.68% in the profile); with random-word prompts it got 2,919 (14%), and 9 of the 38 routes of a 4-row decode step. The
+  profile (2026-10-17) does not include layer 48 (the nextn / MTP layer, all zero, so ranked coldest and therefore in every tail),
+  which every draft pass uses; to be checked.
+- The cost is the 6900 XT's call, not its traffic: a large-lane call with 343 routes took 12.5 ms against 3.5 ms for an XTX (the emulated
+  tile costs per expert tile, not per row), so with a big tail the card is the slowest in every layer and prefill falls 30-60%. A
+  small tail keeps it off the critical path: up to about 3 GiB prefill loses 2-17% (the 17% is the first request after start, which
+  also loads the card's code), decode is within the run noise.
+- The gain is host memory and nothing else: 0.7 to 5.5 thousand pool slots (1.7 to 12.9 GiB of the engine's pinned host pool).
+- Found and fixed on the way: the result plane a helper writes was `[slot][slot]`, which does not exist for slot 2 (offset 0, a write over
+  the segment header). `out_rank_of(slot, world)` now gives the output rank (the slot when the engine has several ranks, 0 when one
+  rank is served by several helpers); every reader and writer uses it. The launcher's stop only knew two helpers.
+
+Next: the prefill cost is the emulated grouped GEMM; a GEMV-style path for the few rows an expert gets on a tail card (the helper's own
+fdot2 kernel) or a native dot2 tile would remove it, and is what makes a large tail affordable. The run script is a scratch copy; the
+launcher change (a third helper, per-helper budgets, tail placement) goes in after #465 so the two do not conflict.
+
+## The few-rows kernel as the 6900 XT's large-lane kernel, 2026-10-31
+
+No new kernel was needed: the helper already has `lane_moe_rows` (RAD06, `R3_MOE_WORKER_ROWS`), dot products with no WMMA, one block an
+(expert, 32 outputs), the expert's weights read once for all its rows. gfx1030 now takes it by default (`R3_MOE_WORKER_ROWS=0` turns it
+off), because the plugin's grouped GEMM there is the emulated tile, which costs per expert tile and not per row.
+
+Same sweep as above (`sweep4.sh`; 6900 XT helper only, tail placement, natural-text prefill, one run a row):
+
+| Tail budget | Prefill 25K / 14K / 72K, emulated tile | Prefill, few-rows kernel | Two helpers | Large-lane call on the 6900 XT, median (p90) |
+|---|---|---|---|---|
+| 6,144 MiB (2,542 experts) | 2,084 / 2,845 / 2,804 | 1,828 / 3,038 / 2,942 | 3,297 / 3,053 / 2,998 | 2.6 ms (4.1) with 46 routes; an XTX: 3.5 ms with ~7,700 |
+| 14,336 MiB (5,931 experts) | 1,282 / 2,168 / 2,051 | 1,233 / 2,679 / 2,550 | same | 5.4 ms (19.7) with 253 routes; was 12.5 ms |
+
+Decode with the kernel on: story / code / count 97.2 / 131.1 / 150.5 (14 GiB) and 95.9 / 136.5 / 153.6 (6 GiB), against 90.2 / 142.8 / 156.2
+for two helpers - inside the +-5% run noise except code, which is 3-8% lower. The first request after a start is the slow one in
+every configuration with the third helper (25K: 1,233 and 1,828), the card's code objects loading; steady state is the 14K and 72K figures.
+The 6900 XT's call is faster than an XTX's only because it carries a handful of routes (46 against ~7,700); per route it is far slower.
+
+Correctness evidence, and what is not shown:
+- `--compare` against the host reference with the grouped GEMM is unchanged on both cards (rel_l2 1.75e-3 / 1.15e-3 at 64 rows).
+- `--compare` with the few-rows kernel on gfx1030, 256 rows (the large lane, lanes 16 / 17; at 64 rows and below compare uses the small
+  lanes and the GEMV, so only 256 rows reaches the kernel): rel_l2 1.24e-3 and 1.14e-3 against the host reference (the emulated
+  tile: 1.15e-3 and 1.02e-3); rocprofv3 shows `lane_moe_rows` for both projections (9.4 ms and 3.5 ms for the two requests at 1,024
+  routes, against 13.3 and 5.0 ms for the emulated tile). An earlier note here said the run hung: it was my 250 s timeout; a compare
+  run takes 80 s (9 rows) to 240 s (256 rows), almost all CPU reference time, with 17-26 ms of GPU time in total.
+- End to end at temperature 0, same prompts, `text.py`: the two-helper text and the three-helper texts (emulated tile, few-rows kernel)
+  diverge from each other at the same place (116 characters of the story, 76 of the code prompt; the count prompt is identical), while the two
+  three-helper runs agree with each other for 257 and 220 characters. So the early divergence comes from three helpers (the merge adds
+  three planes in a different order), not from the kernel. Text agreement is not a numerical gate: Flash-Next KLD with three helpers is
+  the gate and has not been run.
+- Bug found by the compare run, fixed here: `worker_harness.h` looped over `kMaxSlots` (4 after stage 2) in a segment laid out for 2;
+  `--compare` and `--replay` crashed. It now loops over the segment's `slot_count`.
+
+Next: the KLD gate for the three-helper layout, then the launcher change.
+
+## KLD gate for three helpers, 2026-10-31 (`rad23-kld-h3-10310518`, `rad23-kld-h3emu-10310527`)
+
+Flash-Next, the existing quality harness (`ab-benchmark`, quality-only, 8,240 positions) against the 2026-10-23 exact reference, a
+control arm of two helpers (`h2`) beside the arm under test; settings as in `kld-h3.json` (`R3_MOE_WORKER_DEVICES="0 1 3"`,
+`R3_MOE_WORKER_MIBS=22528,22528,14336`, `R3_MOE_WORKER_PLACEMENT=tail`). The helpers are started by the harness; the logs confirm the 6900 XT
+helper owned 5,931 experts and (arm 1) used the few-rows kernel. The harness thresholds are the repository's own.
+
+| Arm | KLD mean | median | p99 | p99.9 | top-1 | PPL (ref 9.111) |
+|---|---|---|---|---|---|---|
+| two helpers (control; identical in both runs and to the v1.14.0 bump run) | 0.05518 | 0.01419 | 0.5557 | 1.6424 | 89.745% | 9.0651 |
+| three helpers, 14 GiB tail, few-rows kernel | 0.06343 | 0.01613 | 0.6655 | 2.0756 | 88.883% | 9.2974 |
+| three helpers, 14 GiB tail, emulated tile (`R3_MOE_WORKER_ROWS=0`) | 0.06150 | 0.01554 | 0.6548 | 2.0553 | 88.762% | 9.1151 |
+
+Both three-helper arms pass the gate (limits: mean +0.02, median +0.01, p99 +0.2, p99.9 +0.5, top-1 -1.0 point, PPL ratio +0.05) and both
+are clearly worse than the control: mean KLD +15% / +11%, p99.9 +0.43 / +0.41 (limit 0.5), top-1 -0.86 / -0.98 points (limit 1.0). It is not
+the few-rows kernel (the emulated tile is nearly as far from the control), and per-layer `--compare` agreed with the XTX. Candidate
+cause under test: the 5,931 tail experts were computed by the engine's own kernels from its host pool and now run through the helper's
+path (E4M3 widened to f16), so the loss would scale with the number of experts moved. A run with 2 and 6 GiB tails checks that.
+

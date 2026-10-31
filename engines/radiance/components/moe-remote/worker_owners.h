@@ -8,8 +8,9 @@ struct Owned {
     uint64_t bytes = 0;
 };
 
-bool select_owned(const Container& f, r3_moe_gpu::Runner* gpu, uint64_t budget, uint32_t helper,
+bool select_owned(const Container& f, r3_moe_gpu::Runner* gpu, const uint64_t* budgets, uint32_t helper,
                   uint32_t helpers, Owned* out) {
+    const uint64_t budget = budgets && helper < helpers ? budgets[helper] : 0;   /* this helper's; the others' matter to the tail placement */
     if (!out || !budget) {
         std::fprintf(stderr, "r3_moe_worker: no helper budget\n");
         return false;
@@ -78,8 +79,12 @@ bool select_owned(const Container& f, r3_moe_gpu::Runner* gpu, uint64_t budget, 
      * The heat file holds max + 1 - count (so the hottest sort first); the counts are max - value.
      * R3_MOE_WORKER_BALANCE_SPEED="s0,s1" scales a helper's cost by 1/s (a slower card takes less). */
     if (const char* bv = std::getenv("R3_MOE_WORKER_BALANCE"); bv && *bv && std::strcmp(bv, "0") != 0) {
-        if (helpers != 2 || flat.empty()) {
-            std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_BALANCE needs R3_MOE_WORKER_HEAT and two helpers\n");
+        if (helpers != 2 || flat.empty() || budgets[0] != budgets[1]) {
+            std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_BALANCE needs R3_MOE_WORKER_HEAT, two helpers and one budget for both\n");
+            return false;
+        }
+        if (const char* pv = std::getenv("R3_MOE_WORKER_PLACEMENT"); pv && *pv && std::strcmp(pv, "roundrobin") != 0) {
+            std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_BALANCE splits the experts of two equal helpers; it does not combine with R3_MOE_WORKER_PLACEMENT=%s\n", pv);
             return false;
         }
         struct Pick { uint32_t l, e; int64_t bytes; double cost; };
@@ -158,6 +163,58 @@ bool select_owned(const Container& f, r3_moe_gpu::Runner* gpu, uint64_t budget, 
         }
         return true;
     }
+    /* R3_MOE_WORKER_SHARES="w0,w1,..": the helpers' parts of the ranking (default equal). A slower card takes a smaller part; a part of 0
+     * is a helper that owns nothing. Every helper reads the same list and takes the same decision (worker_share.h). */
+    uint32_t shares[r3::worker_share::kMaxHelperShares] = {};
+    if (!r3::worker_share::parse_shares(std::getenv("R3_MOE_WORKER_SHARES"), helpers, shares)) {
+        std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_SHARES must list one non-negative weight for each of the %u helpers, not all 0\n", helpers);
+        return false;
+    }
+    /* R3_MOE_WORKER_PLACEMENT: "roundrobin" (default) deals the ranking out by the shares; "tail" deals it to the head helpers 0..H-2 by their
+     * shares, each up to its own budget, and gives the LAST helper what no head helper had room for (RAD23: the cold tail on a small card). */
+    bool tail = false;
+    if (const char* pv = std::getenv("R3_MOE_WORKER_PLACEMENT"); pv && *pv) {
+        if (std::strcmp(pv, "tail") == 0) tail = true;
+        else if (std::strcmp(pv, "roundrobin") != 0) {
+            std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_PLACEMENT is roundrobin or tail, not %s\n", pv);
+            return false;
+        }
+        if (tail && helpers < 2) {
+            std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_PLACEMENT=tail needs at least two helpers\n");
+            return false;
+        }
+    }
+    if (!tail && shares[helper] == 0) {
+        std::fprintf(stderr, "r3_moe_worker: helper %u has share 0 and owns no experts\n", helper);
+        return true;
+    }
+    if (tail) {
+        std::vector<std::pair<uint32_t, uint32_t>> ranked;
+        std::vector<int64_t> sizes;
+        std::vector<uint8_t> once((size_t)f.layers * f.experts, 0);
+        for (const RadFileProfile* p : order) {
+            const uint32_t l = (uint32_t)p->layer, e = (uint32_t)p->expert;
+            uint8_t& w = once[(size_t)l * f.experts + e];
+            if (w) continue;
+            w = 1;
+            const int64_t bytes = laid_out_bytes(f, gpu, l, e);
+            if (bytes <= 0) {
+                std::fprintf(stderr, "r3_moe_worker: expert (%u,%u) cannot be sized for the device\n", l, e);
+                return false;
+            }
+            ranked.emplace_back(l, e);
+            sizes.push_back(bytes);
+        }
+        const std::vector<int32_t> plan = r3::worker_share::plan_tail(sizes, helpers, shares, budgets);
+        for (size_t i = 0; i < ranked.size(); ++i)
+            if (plan[i] == (int32_t)helper) {
+                out->expert.push_back(ranked[i]);
+                out->bytes += (uint64_t)sizes[i];
+            }
+        std::fprintf(stderr, "r3_moe_worker: tail placement: helper %u of %u owns %zu of %zu ranked experts, %.2f GiB of its %.2f GiB\n",
+                     helper, helpers, out->expert.size(), ranked.size(), (double)out->bytes / (1u << 30), (double)budget / (1u << 30));
+        return true;
+    }
     std::vector<uint8_t> seen((size_t)f.layers * f.experts, 0);
     uint64_t position = 0;
     for (const RadFileProfile* p : order) {
@@ -165,8 +222,8 @@ bool select_owned(const Container& f, r3_moe_gpu::Runner* gpu, uint64_t budget, 
         uint8_t& was = seen[(size_t)l * f.experts + e];
         if (was) continue;
         was = 1;
-        /* Helper h of n takes every n-th candidate: disjoint sets, each spread over the same order. */
-        if (position++ % helpers != helper) continue;
+        /* Helper h takes its share of the candidates: disjoint sets, each spread over the same order. */
+        if (r3::worker_share::owner_of(position++, shares, helpers) != helper) continue;
         const int64_t bytes = laid_out_bytes(f, gpu, l, e);
         if (bytes <= 0) {
             std::fprintf(stderr, "r3_moe_worker: expert (%u,%u) cannot be sized for the device\n", l, e);

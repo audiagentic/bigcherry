@@ -214,7 +214,7 @@ __global__ void mailbox_publish_kernel(
             load_sys_acq(&h->combine.enabled) && rows >= h->combine.min_rows) {
             uint32_t g = h->combine.request + 1u;
             if (g == 0) g = 1;
-            for (uint32_t k = 0; k < kMaxHelpers; ++k) { h->combine.lane[k] = lane_of(k, cls); h->combine.seq[k] = step_seq[k]; }
+            for (uint32_t k = 0; k < kCombineHelpers; ++k) { h->combine.lane[k] = lane_of(k, cls); h->combine.seq[k] = step_seq[k]; }
             h->combine.rows = rows;
             h->combine.request = g;
             gen = g;
@@ -457,7 +457,7 @@ __global__ void mailbox_add_rows_kernel(
                 if (!from[k]) continue;
                 const uint32_t slot = step_slot(k, rank, helpers);
                 const uint16_t* result = reinterpret_cast<const uint16_t*>(
-                    base + h->result_offset[result_index(slot, slot)]) + (uint64_t)token * hidden;
+                    base + h->result_offset[result_index(slot, rank)]) + (uint64_t)token * hidden;
                 acc += bf16_to_f32(__builtin_nontemporal_load(result + col));
             }
         const uint16_t gathered = f32_to_bf16_rn(acc);
@@ -525,7 +525,7 @@ __global__ void mailbox_shadow_rows_kernel(
             if (!from[k]) continue;
             const uint32_t slot = step_slot(k, rank, helpers);
             hv += bf16_to_f32(reinterpret_cast<const uint16_t*>(
-                base + h->result_offset[result_index(slot, slot)])[(uint64_t)token * hidden + col]);
+                base + h->result_offset[result_index(slot, rank)])[(uint64_t)token * hidden + col]);
         }
         if (col < 4) { lref[col] = ref; lhelp[col] = hv; }
         const float d = ref - hv;
