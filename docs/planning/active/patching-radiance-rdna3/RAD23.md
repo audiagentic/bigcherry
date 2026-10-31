@@ -328,9 +328,11 @@ The 6900 XT's call is faster than an XTX's only because it carries a handful of 
 
 Correctness evidence, and what is not shown:
 - `--compare` against the host reference with the grouped GEMM is unchanged on both cards (rel_l2 1.75e-3 / 1.15e-3 at 64 rows).
-- `--compare` with the few-rows kernel on gfx1030 did NOT finish: no result at 64 or 256 rows, the card at 99% until the 250 s timeout.
-  The same kernel serves live requests (hundreds of large-lane calls at 2-5 ms each), so this is a compare-mode problem or a
-  rare-input hang; it is not explained yet and the kernel is not verified against the host reference on gfx1030.
+- `--compare` with the few-rows kernel on gfx1030, 256 rows (the large lane, lanes 16 / 17; at 64 rows and below compare uses the small
+  lanes and the GEMV, so only 256 rows reaches the kernel): rel_l2 1.24e-3 and 1.14e-3 against the host reference (the emulated
+  tile: 1.15e-3 and 1.02e-3); rocprofv3 shows `lane_moe_rows` for both projections (9.4 ms and 3.5 ms for the two requests at 1,024
+  routes, against 13.3 and 5.0 ms for the emulated tile). An earlier note here said the run hung: it was my 250 s timeout; a compare
+  run takes 80 s (9 rows) to 240 s (256 rows), almost all CPU reference time, with 17-26 ms of GPU time in total.
 - End to end at temperature 0, same prompts, `text.py`: the two-helper text and the three-helper texts (emulated tile, few-rows kernel)
   diverge from each other at the same place (116 characters of the story, 76 of the code prompt; the count prompt is identical), while the two
   three-helper runs agree with each other for 257 and 220 characters. So the early divergence comes from three helpers (the merge adds
@@ -339,6 +341,5 @@ Correctness evidence, and what is not shown:
 - Bug found by the compare run, fixed here: `worker_harness.h` looped over `kMaxSlots` (4 after stage 2) in a segment laid out for 2;
   `--compare` and `--replay` crashed. It now loops over the segment's `slot_count`.
 
-Next: explain the compare-mode hang with the few-rows kernel (rows 16/32 to see where it starts, rocprofv3), then the KLD gate for the
-three-helper layout, then the launcher change.
+Next: the KLD gate for the three-helper layout, then the launcher change.
 
