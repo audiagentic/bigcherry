@@ -7,11 +7,15 @@ architecture, a device index or a VRAM budget.
 |---|---|---|
 | The host's cards | `config/environment.local.toml` `[[host.*.devices]]` | index, `arch`, `vram-mib`, PCI locator (untracked, per host) |
 | Card types | `engines/radiance/archs.toml` | per architecture: kernel `plugin` file, weight `formats` its backend runs, `rows-kernel`, `reserve-mib`, `roles` |
-| Layouts | `engines/radiance/layouts.toml` | per name: the engine card and ordered helper groups (`arch` or `devices`, `count`, `budget-mib`, `placement`, `share`) |
+| Layouts | `engines/radiance/layouts.toml` | per name: the engine card and ordered helper groups (`arch` or `devices`, `count`, `budget-mib`, `placement`, `share`), and an optional `[layout.NAME.env]` of `R3_MOE_WORKER_*` settings for the engine and every helper |
 
 `bigcherry layout list | show NAME | env NAME | card-env DEVICE` resolves a layout against this host and prints what each process gets. A layout that
 needs a card the host does not have, a role the card type does not allow (`roles`), a budget above `vram-mib - reserve-mib`, more helpers than the
 protocol's `kMaxHelpers`, or a tail group that is not a single last card after a head group, is refused with the reason before any GPU is touched.
+
+A layout's `env` table carries settings that belong to the whole arrangement rather than to a card: `flashnext-2xtx-combine` sets
+`R3_MOE_WORKER_COMBINE = "1"` (the helper-row combine, which adds two helpers' rows and so is refused for any other helper count: the protocol would
+run it silently off). Names must be `R3_MOE_WORKER_*` and may not be one the cards decide (`COUNT`, `MIBS`, `SHARES`, `PLACEMENT`, `LAYOUT`, `DEVICES`).
 
 ## Using one
 

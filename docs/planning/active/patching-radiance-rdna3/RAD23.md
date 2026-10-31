@@ -414,3 +414,63 @@ Measured on the lane build of #472 (all four GPUs through `--layout`), natural t
 
 **Next lever.** An integer path on gfx1030: int8 activations, weights dequantised once to int8, `v_dot4_i32_i8` (22 T MAC/s measured, 5x the tile roof). That is a new expert kernel for libr2, to be confirmed first by a counter profile that shows the dequantisation dominating.
 
+
+## Where the 3,600 tok/s prefill went, and what the third helper does to it, 2026-10-31 (`rad23-shortpp`, `rad23-combine`)
+
+The model page's 3,610-3,640 tok/s prefill is the helper-row combine (`R3_MOE_WORKER_COMBINE=1`, RAD18) on two XTX helpers; its control is 3,404. The launcher does not enable the combine, so launcher runs are the control. Natural documentation text through the launcher (one request per row, `ctxsweep.py`, fresh server per column, heat the static profile, tail 4 GiB where present), prefill tok/s:
+
+| Prompt tokens | 2 XTX, combine off | 2 XTX, combine on | + 6900 XT tail, combine off | + tail, combine on |
+|---|---|---|---|---|
+| 1,126 | 3185 | 3427 | 3102 | 3089 |
+| 5,629 | 3197 | 3397 | 3160 | 3159 |
+| 8,796 | 3221 | 3269 | 3217 | 3057 |
+| 22,183 | 3162 | 3145 | 3035 | 2848 |
+
+With two helpers the combine gives +7.6 / +6.3 / +1.5 / -0.5% (the model page's +6-7% at 1K to 4K, fading with length); with the third helper it gives nothing or loses (the combine covers two helpers, `kCombineHelpers`, and the tail's result plane is read separately), so the best short-prompt configuration is two XTX helpers with the combine on, and the 6900 XT tail is 7 to 10% behind it. Decode with the combine on and the tail off: 127 / 82 / 114 / 122 tok/s at the four lengths (the second row is a short continuation of an 8K-token doc, not comparable across columns). The combine changes the generated text slightly (fp16 rows) and the model page records its KLD pass and its tg128 cost.
+
+Standing consequences: (1) for prefill-heavy serving the launcher should offer the combine (a layout setting, RAD23's selectable `off|cpu|gpu|auto`), and the tail layout is not the one to pair with it; (2) a combine over three helpers (the 6900 XT's rows added into the same plane) is the way to get both, and is bounded by the 6900 XT's rows arriving no later than the XTXs'.
+
+## Why a tail of the "coldest" experts slowed prefill, and what fixes it, 2026-10-31 (`rad23-trace3`, `rad23-trace3live`)
+
+Three helpers (two XTX and the 6900 XT with a 4 GiB tail), `R3_MOE_WORKER_TRACE=1`, one 22K-token documentation prompt and 400 new tokens, 461 to 473 large-lane layer-steps (rows 256 and up), each with all three helpers' stamps. The engine's wait for the third helper includes the first two (the wait kernel reads them in order), so the number that matters is how much longer the 6900 XT's own GPU time (`helper_gpu_us`) is than the slower XTX's.
+
+| Heat | XTX critical path (us) | 6900 XT adds (us) | share | routes on the 6900 XT, mean | steps with >110 routes | prefill tok/s |
+|---|---|---|---|---|---|---|
+| static profile | 4220 | 678 | 16.1% | 66 | 15.6% | 2952 |
+| recorded on documentation text | 4255 | 68 | 1.6% | 32 | 3.8% | 3249 |
+
+With the static ranking the 6900 XT's time is flat near 2.1 ms with 0 to 20 routes, 2.7 ms with 20 to 60, 3.7 ms with 60 to 110, 5.1 ms with 110 to 300 and 19 ms above 300; 95% of its exposed time comes from the 15.6% of steps above 110 routes, concentrated on layers 7, 39, 8, 12 and 9 (mean 340, 337, 228, 159, 113 routes per step). Those experts are cold in the profile (`perf51/heat.rank0`, taken on other text) and hot in this text, so "the coldest experts" by a static ranking are not cold for the served text. With the heat recorded on this text (self-fitted here; the held-out corpus run gave 1883 against 1792-1843 without the tail) the same 4 GiB tail costs 1.6% of the critical path and prefill returns to the no-tail level.
+
+So the planner has the right shape and the cap was the missing piece: the placement must be chosen from live heat, and any one layer's load on the 6900 XT should be capped (`Device::layer_cap`, about 110 routes per layer per 2048-token chunk at its measured 2 ms + 0.0135 ms a route), since a few hot layers cost the whole step.
+
+## The prefill "regression" and the decode "regression" of the 1.14.0 bump: neither is one, 2026-10-31 (`rad23-bisect`, `rad23-pwr`, `rad23-accept`, `rad23-oldbuild`)
+
+**Method.** The model page's own benchmark (`helper-combine-ab.json`, bench set `mtp-dual`, combine off and on, 2 rotated pairs) on a v1.13.0 build from 2026-10-25 and on the current v1.14.0 build, same machine and same layout.
+
+| | pp1024 | pp4096 | tg512 | tg2048 | MTP accepted/drafted |
+|---|---|---|---|---|---|
+| v1.13.0, combine on | 3,665-3,696 | 3,590 | 146 | 153 | 2135/2286 (93%) |
+| v1.14.0, combine on | 3,712-3,734 | 3,620-3,624 | 86 | 86 | 311/717 (43%) |
+| v1.13.0, combine off | 3,460-3,472 | 3,414-3,422 | 146 | 153 | |
+| v1.14.0, combine off | 3,506-3,510 | 3,423-3,426 | 86 | 86 | |
+
+**Prefill.** The 3,600 tok/s is the helper-row combine (default off, not enabled by the launcher); on 1.14.0 it reproduces (3,712-3,734) and is 1% above 1.13.0. The 3,2xx seen through the launcher on natural text is the combine-off figure on a different client.
+
+**Decode.** tg512/tg2048 differ 146 against 86 and the MTP acceptance 93% against 43%. It is not the helper: `R3_MOE_WORKER_CPU_SET=all` changes nothing (85.7), `POWER_SAVE=0` makes it much worse (29), and the draft counts are identical across every arm of one build. It is not the engine's drafting either: with `temperature: 0` on five prompts both builds accept alike (hello 65/64%, story 49/49, code 91/90, list 96/97, digits 89/96). The benchmark client sends no temperature, so the text is sampled, and acceptance then depends on the sample (the same prompt: 59% on 1.13.0 and 24% on 1.14.0, "random digits" 86% and 62%); each build repeats its own sampled text, so the figure is reproducible within a build and not comparable across them.
+
+**Conclusion.** Nothing in the bump regressed prefill or decode. The tg figures of the model page and of any harness config that does not pin `temperature: 0` compare acceptance of whatever was sampled, not decode speed; the benchmark client should pin temperature 0 (or a seed) before tg across builds is read. Launcher decode on pinned text is 100-140 tok/s on both builds.
+
+**Where speed does remain to gain:** the combine for three helpers; long-context decode (attention over the KV cache, 127 at 34K to 70 at 663K whatever the placement); the n-gram table in RAM against a disk/6900 XT variant (prefill 3,294 with the 6900 XT holding 29% of the rows, decode 77-84, against 110-140 with the table fully in RAM).
+
+## Where long-context decode goes: the decode attention kernel, 2026-10-31 (`rad23-profops`)
+
+`--profile-ops` on the current build (two XTX helpers, fp8 KV, 2048 chunks, n-gram in RAM), one prefill to 36,895 and one to 329,545 tokens, then decode; per-op device event pairs, `q_len=1` rows of `attn_paged_gate_quant` (the 13 full-attention layers; the profile adds synchronisation, so only the per-call times are used):
+
+| Used context | Decode attention per call | Per step, 13 layers | Decode tok/s (unprofiled run) |
+|---|---|---|---|
+| 36,895 | 210 us | 2.7 ms | 127 |
+| 329,545 | 1,165 us | 15.1 ms | 72 |
+
+The call time grows 5.5x for 8.9x the context, so attention costs about 15 ms of a step that is roughly 35 ms at 330K (the step is about 20 ms at 37K). At 330K the K and V it reads are about 300 MB a layer (2 KV heads x 256 x 2 bytes x 330K tokens), i.e. about 260 GB/s against the R9700's roughly 640 GB/s: the kernel is at about 40% of the card's bandwidth. So long-context decode is attention over the KV cache, as suspected, and the engine's decode kernel (`attn_decode_gq_h256_gqa12_fp8kv`, libr4d) has roughly 2x of headroom at this length; bf16 KV doubles the bytes and the time. The helper wait (`moe_mailbox_add`) is the other large op in the unfiltered totals (38% at 37K, 47% at 330K) but its rows mix prefill and decode steps and need a decode-only split before they mean anything.
+
+Not placement, not the 6900 XT, not the host pool. The lever is the split-K decode attention kernel: more blocks per head for long contexts, so more of the card's memory system is busy. That is a libr4d change (a patch series like RAD38's), to be measured against a CPU reference at head_dim 256 and gqa 12.
