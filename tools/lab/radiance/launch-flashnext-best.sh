@@ -22,7 +22,7 @@
 #   bigcherry build --lane radiance:stock:linux-radiance --experiment moe-remote-handoff
 #
 # Usage:
-#   bash tools/lab/radiance/launch-flashnext-best.sh [start] [--build DIR] [--port N] [--heat FILE] [--host-pool-mib N] [--record-heat PREFIX [--record-period S]] [--gpu-power] [--layout NAME] [--budget ARCH=MIB]
+#   bash tools/lab/radiance/launch-flashnext-best.sh [start] [--build DIR] [--port N] [--heat FILE] [--host-pool-mib N] [--chunk TOKENS] [--ngram-placement ram|disk|vram] [--kv-dtype fp8|fp8_v4|k6_v4] [--engine-arg ARG ...] [--ngram-device INDEX] [--max-model-len TOKENS] [--record-heat PREFIX [--record-period S]] [--gpu-power] [--layout NAME] [--budget ARCH=MIB]
 #   bash tools/lab/radiance/launch-flashnext-best.sh stop
 # Without --build, the newest build under $BC_WORK_ROOT/builds that has the helper binary is used.
 # --heat FILE: the route-heat file that ranks the experts, hottest first (uint32[128][512] = max - count of a recorded histogram; heat-placement/heat-invert.py
@@ -31,6 +31,14 @@
 # --budget (RHP10: workload-recorded heat plus gfx1100=23500 gave +34% prefill at 675K used context on a corpus it had not seen).
 # --host-pool-mib N: pinned host memory the expert and KV tiers share (default 22528; more gives the cache more of a long context: the engine log
 # reports how much of the worst case it backs).
+# --chunk TOKENS: the largest step (default 2048): the activation arena and the prefill staging are sized from it, so a smaller chunk leaves the KV cache more VRAM.
+# --ngram-placement ram|disk|vram: where the 47.7 GiB n-gram table lives (default ram: pinned host memory the cards read). disk reads its rows from the
+# container and frees that RAM for --host-pool-mib.
+# --kv-dtype T: the KV cache type (default fp8; fp8_v4 costs 0.78 of it per token and k6_v4 0.69, both lossy). --engine-arg ARG: one more engine argument,
+# repeatable (an option and its value are two --engine-arg, e.g. --engine-arg --kv-resident --engine-arg 65536).
+# --ngram-device INDEX: an inventory card (not the engine, not a helper) that holds as much of the n-gram table as fits and gathers its rows (libr3ngram, R3_NGRAM_DEV);
+# the rows past its VRAM stay in a host copy. The card then sits in the engine process beside the engine card.
+# --max-model-len TOKENS: the longest context a sequence may have (default 1048576).
 # --gpu-power (or GPU_POWER=1): apply the cards' configured power settings ([host.*.devices.power]) for this run and
 # put back what the cards ran before at stop. Without write access it lists the setup steps still missing and runs
 # with the cards as they are.
@@ -49,6 +57,12 @@ LAYOUT=${FLASHNEXT_LAYOUT:-flashnext-2xtx}
 BUDGETS=()
 RECORD=""
 HOST_POOL_MIB=22528
+CHUNK=2048
+NGRAM=ram
+KV_DTYPE=fp8
+ENGINE_ARGS=()
+NGRAM_DEV=""
+MAX_LEN=1048576
 RECORD_PERIOD=30
 CMD=start
 [ $# -gt 0 ] && case "$1" in start|stop) CMD=$1; shift ;; esac
@@ -61,6 +75,12 @@ while [ $# -gt 0 ]; do
     --layout) LAYOUT=$2; shift 2 ;;
     --budget) BUDGETS+=("$2"); shift 2 ;;
     --host-pool-mib) HOST_POOL_MIB=$2; shift 2 ;;
+    --chunk) CHUNK=$2; shift 2 ;;
+    --kv-dtype) KV_DTYPE=$2; shift 2 ;;
+    --engine-arg) ENGINE_ARGS+=("$2"); shift 2 ;;
+    --ngram-device) NGRAM_DEV=$2; shift 2 ;;
+    --max-model-len) MAX_LEN=$2; shift 2 ;;
+    --ngram-placement) NGRAM=$2; shift 2 ;;
     --record-heat) RECORD=$2; shift 2 ;;
     --record-period) RECORD_PERIOD=$2; shift 2 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
@@ -178,21 +198,33 @@ for i in "${!HELPERS[@]}"; do
 done
 
 LOG=$RUN/engine-$STAMP.log
-env "${COMMON[@]}" R3_MOE_WORKER=1 ROCR_VISIBLE_DEVICES="$R9700" HIP_VISIBLE_DEVICES=0 \
+ENGINE_KERNELS="$LAYOUT_ENGINE_PLUGIN,libr3moe,libref"
+ENGINE_VISIBLE="$R9700"
+ENGINE_HIP=0
+NGRAM_ENV=()
+if [ -n "$NGRAM_DEV" ]; then
+  # the n-gram card is visible to the engine process as HIP device 1 (the engine card is 0); the plugin goes ahead of the engine's library
+  ENGINE_KERNELS="libr3ngram,$ENGINE_KERNELS"
+  ENGINE_VISIBLE="$R9700,$NGRAM_DEV"
+  ENGINE_HIP="0,1"
+  NGRAM_ENV=(R3_NGRAM_DEV=1 R3_NGRAM_HELPER_SO="$RAD_HOME/helpers/libr3_ngram_helper.so" R3_NGRAM_AVX="$RAD_HOME/kernels/libavx.so")
+fi
+env "${COMMON[@]}" "${NGRAM_ENV[@]}" R3_MOE_WORKER=1 ROCR_VISIBLE_DEVICES="$ENGINE_VISIBLE" HIP_VISIBLE_DEVICES="$ENGINE_HIP" \
   setsid "$RAD_BIN" --model "$MODEL" --radiance-home "$RAD_HOME" --port "$PORT" \
-    --kernels "$LAYOUT_ENGINE_PLUGIN,libr3moe,libref" \
+    --kernels "$ENGINE_KERNELS" \
     --placement expert_tiered \
-    --ngram-placement ram \
+    --ngram-placement "$NGRAM" \
     --host-pool-mib "$HOST_POOL_MIB" \
     --tp 1 \
     --max-num-seqs 2 \
-    --max-num-batched-tokens 2048 \
+    --max-num-batched-tokens "$CHUNK" \
     --checkpoint-interval 4096 \
-    --kv-cache-dtype fp8 \
+    --kv-cache-dtype "$KV_DTYPE" \
     --num-speculative-tokens 3 \
-    --max-model-len 1048576 \
+    --max-model-len "$MAX_LEN" \
     --rope-scaling yarn:4 \
     --prefix-resume nearest \
+    "${ENGINE_ARGS[@]}" \
   > "$LOG" 2>&1 &
 echo $! > "$PIDS/engine"
 echo "engine on R9700 (pid $!, log $LOG): waiting for /health..." >&2
