@@ -174,4 +174,21 @@ inline const Backend& gfx1100_backend() {
     return b;
 }
 
+// The gfx1030 backend (RDNA2, RX 6900 XT): W4NL64 only, no WMMA and no fp8 matrix instructions; the grouped GEMM runs on the dot and FMA path.
+inline const Backend& gfx1030_backend() {
+    static const Backend b{"gfx1030", 7, "gfx1030", (1u << MOE_FMT_W4NL64), 0};
+    return b;
+}
+
+// The backend for a device's architecture, or null when none is written for it.
+inline const Backend* backend_for(const char* arch) {
+    const Backend* const all[2] = {&gfx1100_backend(), &gfx1030_backend()};
+    for (const Backend* b : all) {
+        uint32_t i = 0;
+        while (i < b->arch_prefix_len && arch[i] == b->arch_prefix[i]) ++i;
+        if (i == b->arch_prefix_len) return b;
+    }
+    return nullptr;
+}
+
 }  // namespace r3::moe_backend
