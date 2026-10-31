@@ -442,3 +442,22 @@ Three helpers (two XTX and the 6900 XT with a 4 GiB tail), `R3_MOE_WORKER_TRACE=
 With the static ranking the 6900 XT's time is flat near 2.1 ms with 0 to 20 routes, 2.7 ms with 20 to 60, 3.7 ms with 60 to 110, 5.1 ms with 110 to 300 and 19 ms above 300; 95% of its exposed time comes from the 15.6% of steps above 110 routes, concentrated on layers 7, 39, 8, 12 and 9 (mean 340, 337, 228, 159, 113 routes per step). Those experts are cold in the profile (`perf51/heat.rank0`, taken on other text) and hot in this text, so "the coldest experts" by a static ranking are not cold for the served text. With the heat recorded on this text (self-fitted here; the held-out corpus run gave 1883 against 1792-1843 without the tail) the same 4 GiB tail costs 1.6% of the critical path and prefill returns to the no-tail level.
 
 So the planner has the right shape and the cap was the missing piece: the placement must be chosen from live heat, and any one layer's load on the 6900 XT should be capped (`Device::layer_cap`, about 110 routes per layer per 2048-token chunk at its measured 2 ms + 0.0135 ms a route), since a few hot layers cost the whole step.
+
+## The prefill "regression" and the decode "regression" of the 1.14.0 bump: neither is one, 2026-10-31 (`rad23-bisect`, `rad23-pwr`, `rad23-accept`, `rad23-oldbuild`)
+
+**Method.** The model page's own benchmark (`helper-combine-ab.json`, bench set `mtp-dual`, combine off and on, 2 rotated pairs) on a v1.13.0 build from 2026-10-25 and on the current v1.14.0 build, same machine and same layout.
+
+| | pp1024 | pp4096 | tg512 | tg2048 | MTP accepted/drafted |
+|---|---|---|---|---|---|
+| v1.13.0, combine on | 3,665-3,696 | 3,590 | 146 | 153 | 2135/2286 (93%) |
+| v1.14.0, combine on | 3,712-3,734 | 3,620-3,624 | 86 | 86 | 311/717 (43%) |
+| v1.13.0, combine off | 3,460-3,472 | 3,414-3,422 | 146 | 153 | |
+| v1.14.0, combine off | 3,506-3,510 | 3,423-3,426 | 86 | 86 | |
+
+**Prefill.** The 3,600 tok/s is the helper-row combine (default off, not enabled by the launcher); on 1.14.0 it reproduces (3,712-3,734) and is 1% above 1.13.0. The 3,2xx seen through the launcher on natural text is the combine-off figure on a different client.
+
+**Decode.** tg512/tg2048 differ 146 against 86 and the MTP acceptance 93% against 43%. It is not the helper: `R3_MOE_WORKER_CPU_SET=all` changes nothing (85.7), `POWER_SAVE=0` makes it much worse (29), and the draft counts are identical across every arm of one build. It is not the engine's drafting either: with `temperature: 0` on five prompts both builds accept alike (hello 65/64%, story 49/49, code 91/90, list 96/97, digits 89/96). The benchmark client sends no temperature, so the text is sampled, and acceptance then depends on the sample (the same prompt: 59% on 1.13.0 and 24% on 1.14.0, "random digits" 86% and 62%); each build repeats its own sampled text, so the figure is reproducible within a build and not comparable across them.
+
+**Conclusion.** Nothing in the bump regressed prefill or decode. The tg figures of the model page and of any harness config that does not pin `temperature: 0` compare acceptance of whatever was sampled, not decode speed; the benchmark client should pin temperature 0 (or a seed) before tg across builds is read. Launcher decode on pinned text is 100-140 tok/s on both builds.
+
+**Where speed does remain to gain:** the combine for three helpers; long-context decode (attention over the KV cache, 127 at 34K to 70 at 663K whatever the placement); the n-gram table in RAM against a disk/6900 XT variant (prefill 3,294 with the 6900 XT holding 29% of the rows, decode 77-84, against 110-140 with the table fully in RAM).

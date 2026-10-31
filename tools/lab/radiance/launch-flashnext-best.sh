@@ -41,6 +41,7 @@
 # --max-model-len TOKENS: the longest context a sequence may have (default 1048576).
 # --rope-scaling S: default yarn:4 (the 1M stretch); use none for contexts within the trained 262144.
 # --max-num-seqs N: sessions served at once (default 2; each costs per-sequence state in VRAM and checkpoint slots in pinned RAM).
+# --prefix-resume MODE: default nearest; off leaves the flag out (engines before 1.14.0 do not have it).
 # --gpu-power (or GPU_POWER=1): apply the cards' configured power settings ([host.*.devices.power]) for this run and
 # put back what the cards ran before at stop. Without write access it lists the setup steps still missing and runs
 # with the cards as they are.
@@ -67,6 +68,7 @@ NGRAM_DEV=""
 MAX_LEN=1048576
 ROPE=yarn:4
 SEQS=2
+PREFIX_RESUME=nearest
 RECORD_PERIOD=30
 CMD=start
 [ $# -gt 0 ] && case "$1" in start|stop) CMD=$1; shift ;; esac
@@ -86,6 +88,7 @@ while [ $# -gt 0 ]; do
     --max-model-len) MAX_LEN=$2; shift 2 ;;
     --rope-scaling) ROPE=$2; shift 2 ;;
     --max-num-seqs) SEQS=$2; shift 2 ;;
+    --prefix-resume) PREFIX_RESUME=$2; shift 2 ;;
     --ngram-placement) NGRAM=$2; shift 2 ;;
     --record-heat) RECORD=$2; shift 2 ;;
     --record-period) RECORD_PERIOD=$2; shift 2 ;;
@@ -204,6 +207,7 @@ for i in "${!HELPERS[@]}"; do
 done
 
 LOG=$RUN/engine-$STAMP.log
+RESUME_ARGS=(); [ "$PREFIX_RESUME" = off ] || RESUME_ARGS=(--prefix-resume "$PREFIX_RESUME")
 ENGINE_KERNELS="$LAYOUT_ENGINE_PLUGIN,libr3moe,libref"
 ENGINE_VISIBLE="$R9700"
 ENGINE_HIP=0
@@ -229,7 +233,7 @@ env "${COMMON[@]}" "${NGRAM_ENV[@]}" R3_MOE_WORKER=1 ROCR_VISIBLE_DEVICES="$ENGI
     --num-speculative-tokens 3 \
     --max-model-len "$MAX_LEN" \
     --rope-scaling "$ROPE" \
-    --prefix-resume nearest \
+    "${RESUME_ARGS[@]}" \
     "${ENGINE_ARGS[@]}" \
   > "$LOG" 2>&1 &
 echo $! > "$PIDS/engine"
