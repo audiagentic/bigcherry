@@ -400,3 +400,17 @@ the store-drain asm selects on the compiler's family macro `__GFX12__`). Replace
 `lab_device_ordinals*`, `backend_for`, `gfx1100_backend`, `gfx1030_backend`, the helper's gfx1030 rows default. Not run on hardware yet: the launcher and a helper
 start with the new settings (the GPU lease is held by the libr3 selftest); everything else is covered by unit tests and a three-architecture build.
 
+## Why the 6900 XT does not speed things up, and where the lever is, 2026-10-31
+
+Measured on the lane build of #472 (all four GPUs through `--layout`), natural text, 2048-token chunks.
+
+**Share, not placement.** `flashnext-2xtx-rdna2-head` gives the 6900 XT one eleventh of the hottest experts (about 9% of routes) as a head helper. Prefill falls from 2951 to 1370 tok/s at 34K and from 2870 to 1269 at 147K; decode is level (127 to 119, 95 to 93). A chunk sends thousands of routes per layer to each helper, the 6900 XT takes about 0.0135 ms per route against the XTX's far lower cost, and every layer waits for the slowest helper. The share at which the 6900 XT finishes with the XTXs is below 1% of routes, which is what the cold tail already gives it. So tuning shares or placement cannot make the card pay; its cost per route has to fall.
+
+**Tail at 4 GiB, context sweep** (`rad23-tail4g-ctx`): prefill 2951 / 2870 / 1950 / 1259 tok/s and decode 127 / 95 / 97 / 70 tok/s at 34K / 147K / 332K / 663K used context. The no-tail sweep of the same build line gave 3200 at 32K, 1854 at 288K, 1121 at 580K and 74 decode at 580K: the tail neither costs nor buys speed, at any context.
+
+**The tile is not the bottleneck.** The libr2 f16 tile was an emulation (64 `ds_bpermute` and 128 FMAs). A standalone benchmark on the 6900 XT (`tile.hip`, CPU-checked): the emulation 4.2 T MAC/s; the same exchange with `v_dot2_f32_f16` 4.3 (LDS-exchange bound); a DPP form (neighbour swap for the upper row, `row_share` broadcast, dot2, no LDS) 5.45. The DPP form is now `libr2/r3_mma16.h`. In the real kernel it is bit-identical (same replay hashes) and 4% faster: the grouped GEMM takes 29.9 ms a call against 31.1 ms. The kernel runs at about 0.57 T MAC/s, about 10x below the tile, so the time is elsewhere, most likely dequantising the iq4 weights (each weight is used by about 32 routes). `__builtin_amdgcn_fdot2` gave wrong sums on gfx1030 in the benchmark; the instruction by inline asm is correct.
+
+**GEMM against few-rows kernel at large lanes.** Replaying two 2048-row captures on the 6900 XT, the rows kernel took about 115 ms a request and the GEMM path 93 ms, so the GEMM path is already faster for large lanes. `R3_MOE_WORKER_ROWS` is a card-wide setting; the helper should pick by row count.
+
+**Next lever.** An integer path on gfx1030: int8 activations, weights dequantised once to int8, `v_dot4_i32_i8` (22 T MAC/s measured, 5x the tile roof). That is a new expert kernel for libr2, to be confirmed first by a counter profile that shows the dequantisation dominating.
+
