@@ -251,3 +251,25 @@ prompts: decode 512 tokens 5.436 s (5.440), prefill 16.8K 4.89 / 5.06 s (5.14 / 
 6900 XT helper to start with an empty or small share - see the share-0 path, untested with a GPU), the engine-side per-layer wait
 stamps, and the budgeted experiments (step 4).
 
+## Correction and the real workload for the third helper, 2026-10-31 (from the route-heat file)
+
+Earlier notes in this item called the third helper's experts "cold" while the XTX helpers' were left unnamed; the launcher owns the
+HOTTEST experts on the XTXs (`heat.rank0.hot-first`, ranking order = hottest first, each helper takes its share of the top). From that
+file (`/work/bigcherry/runs/perf51/heat.rank0.hot-first`, 48 routed layers x 512 experts, 4,421,376 recorded routes; recorded
+2026-10-17, the workload that profile run used):
+
+- Two XTX helpers at 22 GiB each own 18,640 experts (9,320 each, 2.417 MiB an expert) = 99.3% of routes.
+- The other 5,936 experts (14.0 GiB) carry 0.68% of routes (0.2-1.0% a layer; 54-206 experts a layer). They stay in the engine's pinned
+  host pool today and are copied to the R9700 when a chunk uses them (the log's "prefill staging ... up to 3 layers ahead").
+- In a 2,048-token chunk (20,480 routes) about 140 routes, roughly 3 a layer, land on them; in a decode step well under one a layer.
+- A 6900 XT with a 16 GiB card holds all 5,936 (14.0 GiB). So its job is the tail of the ranking, not a share of the hot experts, and the
+  slow emulated grouped GEMM (4.5x an XTX at 256 rows) runs at about 3 rows a layer: launch time, not matrix time. What it buys is not
+  speed but the engine's host expert pool (about 14 GiB of pinned host RAM, and the staging copies).
+
+What this changes: `R3_MOE_WORKER_SHARES` (weighted round robin) would hand the 6900 XT hot experts, which is the wrong placement. The
+third helper needs a TAIL placement: helpers 0..H-2 take the ranking as now, up to their budgets, and the last helper takes the
+experts that remain, with a budget of its own for each helper (R3_MOE_WORKER_MIB is one value for every process today, the launcher
+sets it per process). This is RHP07 (heat-tiered placement) made concrete. Caveat: one profile of one workload; a coding or
+long-document workload can make some of the 5,936 hot, and a route to the tail must then still be correct (it is: the helper serves
+it) and only the speed changes.
+
