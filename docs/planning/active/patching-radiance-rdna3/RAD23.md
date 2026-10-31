@@ -362,3 +362,31 @@ the few-rows kernel (the emulated tile is nearly as far from the control), and p
 cause under test: the 5,931 tail experts were computed by the engine's own kernels from its host pool and now run through the helper's
 path (E4M3 widened to f16), so the loss would scale with the number of experts moved. A run with 2 and 6 GiB tails checks that.
 
+## KLD against tail size, and what the numbers do and do not say, 2026-10-31
+
+More KLD runs (same harness, 8,240 positions, exact reference; `rad23-kld-h3sizes-10310535`, `rad23-kld-x2-*`):
+
+| Layout (all from the same helper and plugin build) | Experts on helpers | KLD mean | median | p99 | p99.9 | top-1 | PPL | Gate against its own control |
+|---|---|---|---|---|---|---|---|---|
+| two XTX helpers (control) | 18,640 | 0.05518 | 0.01419 | 0.556 | 1.642 | 89.745% | 9.065 | - |
+| + 6900 XT tail 2 GiB | +847 | 0.05555 | 0.01444 | 0.538 | 1.752 | 89.502% | 9.019 | pass |
+| + 6900 XT tail 6 GiB | +2,542 | 0.06444 | 0.01539 | 0.706 | 2.414 | 89.320% | 9.056 | **fail** (p99.9 +0.77, limit +0.5) |
+| + 6900 XT tail 14 GiB | +5,931 | 0.06343 | 0.01613 | 0.666 | 2.076 | 88.883% | 9.297 | pass (p99.9 +0.43, top-1 -0.86) |
+| one XTX helper only (control 2) | 9,320 | 0.06213 | 0.01545 | 0.637 | 2.514 | 88.847% | 8.894 | - |
+| + XTX tail 6 GiB (helper 1 on an XTX) | +2,542 | 0.06529 | 0.01590 | 0.793 | 2.360 | 88.859% | 8.893 | pass |
+
+- A 2 GiB tail on the 6900 XT is indistinguishable from the control. 6 GiB fails the harness on p99.9, 14 GiB passes by 0.07.
+- It is not proportional to the experts moved (6 GiB is worse than 14 GiB), and it is not the few-rows kernel (14 GiB with the
+  emulated tile: mean 0.0615, top-1 88.76%).
+- The control itself moves with the layout: one XTX helper (the engine computes the other 15,700 experts) is 0.0069 above two XTX
+  helpers, with no 6900 XT anywhere, and a 6 GiB tail on an XTX moves that by +0.0032. Moving experts between the engine's own
+  kernels and the helper path changes KLD by about +-0.005 to 0.01 whichever way, so the 6900 XT arms are inside that spread; they are not
+  shown to be worse than an XTX tail, and not shown to be equal (the baselines differ, and p99.9 rests on about eight positions).
+- Why the paths differ by that much is open: the helper widens E4M3 to f16 (R3_MOE_FP16, R3_MOE_AHALF) where the engine uses native FP8,
+  and the layouts differ in which experts take which route. A per-layer diff of the two paths on the same inputs would find it.
+
+Decision for now: the third helper's tail default stays off. 2 GiB passes cleanly but frees only 1.7 GiB of host pool; larger tails need
+the path difference understood first. What the freed host pool buys: the KV cache is backed by the same pinned host pool ("the pool
+backs 69% of the worst case ... a larger --host-pool-mib gives the cache more"), so host RAM freed from experts is context at full speed
+once the engine hands it to the cache.
+
