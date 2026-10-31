@@ -158,6 +158,17 @@ bool select_owned(const Container& f, r3_moe_gpu::Runner* gpu, uint64_t budget, 
         }
         return true;
     }
+    /* R3_MOE_WORKER_SHARES="w0,w1,..": the helpers' parts of the ranking (default equal). A slower card takes a smaller part; a part of 0
+     * is a helper that owns nothing. Every helper reads the same list and takes the same decision (worker_share.h). */
+    uint32_t shares[r3::worker_share::kMaxHelperShares] = {};
+    if (!r3::worker_share::parse_shares(std::getenv("R3_MOE_WORKER_SHARES"), helpers, shares)) {
+        std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_SHARES must list one non-negative weight for each of the %u helpers, not all 0\n", helpers);
+        return false;
+    }
+    if (shares[helper] == 0) {
+        std::fprintf(stderr, "r3_moe_worker: helper %u has share 0 and owns no experts\n", helper);
+        return true;
+    }
     std::vector<uint8_t> seen((size_t)f.layers * f.experts, 0);
     uint64_t position = 0;
     for (const RadFileProfile* p : order) {
@@ -165,8 +176,8 @@ bool select_owned(const Container& f, r3_moe_gpu::Runner* gpu, uint64_t budget, 
         uint8_t& was = seen[(size_t)l * f.experts + e];
         if (was) continue;
         was = 1;
-        /* Helper h of n takes every n-th candidate: disjoint sets, each spread over the same order. */
-        if (position++ % helpers != helper) continue;
+        /* Helper h takes its share of the candidates: disjoint sets, each spread over the same order. */
+        if (r3::worker_share::owner_of(position++, shares, helpers) != helper) continue;
         const int64_t bytes = laid_out_bytes(f, gpu, l, e);
         if (bytes <= 0) {
             std::fprintf(stderr, "r3_moe_worker: expert (%u,%u) cannot be sized for the device\n", l, e);

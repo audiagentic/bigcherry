@@ -184,7 +184,7 @@ int64_t laid_out_bytes(const Container& f, r3_moe_gpu::Runner* gpu, uint32_t l, 
 /* The shared-memory shape and layout for this container (RCS09-03): hidden, experts and expert width are the container's own; the
  * row capacity, top-k and activation group are the protocol's until the engine negotiates them. A shape other than the one the
  * execution paths run is refused by the backend probe before this (moe_backend.h), not here. */
-bool segment_shape(const Container& f, r3::moe_shm::LayoutShape* shape, r3::moe_shm::Layout* lay) {
+bool segment_shape(const Container& f, uint32_t slots, r3::moe_shm::LayoutShape* shape, r3::moe_shm::Layout* lay) {
     MoeShape cs{};
     if (!container_shape(f, &cs)) {
         std::fprintf(stderr, "r3_moe_worker: the container's shape could not be read\n");
@@ -192,7 +192,7 @@ bool segment_shape(const Container& f, r3::moe_shm::LayoutShape* shape, r3::moe_
     }
     *shape = r3::moe_shm::LayoutShape{cs.hidden, cs.top_k ? cs.top_k : r3::moe_shm::kTopK, cs.experts, r3::moe_shm::kMaxRows,
                                       r3::moe_shm::kActGroup, cs.intermediate};
-    if (!r3::moe_shm::layout_for(*shape, lay)) {
+    if (!r3::moe_shm::layout_for(*shape, slots, lay)) {
         std::fprintf(stderr, "r3_moe_worker: the shared-memory layout for this shape is invalid\n");
         return false;
     }

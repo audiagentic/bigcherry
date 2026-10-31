@@ -214,7 +214,7 @@ __global__ void mailbox_publish_kernel(
             load_sys_acq(&h->combine.enabled) && rows >= h->combine.min_rows) {
             uint32_t g = h->combine.request + 1u;
             if (g == 0) g = 1;
-            for (uint32_t k = 0; k < kMaxHelpers; ++k) { h->combine.lane[k] = lane_of(k, cls); h->combine.seq[k] = step_seq[k]; }
+            for (uint32_t k = 0; k < kCombineHelpers; ++k) { h->combine.lane[k] = lane_of(k, cls); h->combine.seq[k] = step_seq[k]; }
             h->combine.rows = rows;
             h->combine.request = g;
             gen = g;

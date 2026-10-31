@@ -52,7 +52,7 @@ add_dependencies(libr3moe r3_moe_worker)
 
 include(CTest)
 if(BUILD_TESTING)
-  foreach(t moe_remote_shm_test:r3_moe_shm_test moe_backend_test:r3_moe_backend_test moe_fp8_ref_test:r3_moe_fp8_ref_test combine_f16_test:r3_combine_f16_test)
+  foreach(t moe_remote_shm_test:r3_moe_shm_test moe_backend_test:r3_moe_backend_test worker_share_test:r3_worker_share_test moe_fp8_ref_test:r3_moe_fp8_ref_test combine_f16_test:r3_combine_f16_test)
     string(REPLACE ":" ";" parts ${t})
     list(GET parts 0 src)
     list(GET parts 1 name)

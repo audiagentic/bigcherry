@@ -16,19 +16,24 @@
 namespace r3::moe_shm {
 
 constexpr uint64_t kMagic = 0x31454f4d33485253ull; /* "SRH3MOE1": reject unrelated/stale shm. */
-constexpr uint32_t kVersion = 18;  /* 18: Header::helper_pid/helper_start (the engine watches each helper process and raises helper_fault when one exits), Header::notify (CPU waits sleep on one generation word); 17: Header::burst, LaneSignal::park (RAD20: small-lane waits armed only inside an inference burst); 16: the combined row is fp16 with a per-row fallback marker (kCombineFallback); 15: Header::combine (R3_MOE_WORKER_COMBINE); 14: the header records the model shape (intermediate, activation_group, shape_hash) and every region is laid out from it (layout_for); 13: several pre-queued small-lane sizes (Header::small_class_*), ten lanes; 12: Request carries the R3_MOE_WORKER_TRACE stamps (192 -> 256 bytes); 11: helper_fault; completion is an exact generation */
+constexpr uint32_t kVersion = 19;  /* 19: Header::slot_count (the request slots, route / activation staging and result planes, are sized from it; kMaxHelpers and kMaxSlots are 4; RAD23). 18: Header::helper_pid/helper_start (the engine watches each helper process and raises helper_fault when one exits), Header::notify (CPU waits sleep on one generation word); 17: Header::burst, LaneSignal::park (RAD20: small-lane waits armed only inside an inference burst); 16: the combined row is fp16 with a per-row fallback marker (kCombineFallback); 15: Header::combine (R3_MOE_WORKER_COMBINE); 14: the header records the model shape (intermediate, activation_group, shape_hash) and every region is laid out from it (layout_for); 13: several pre-queued small-lane sizes (Header::small_class_*), ten lanes; 12: Request carries the R3_MOE_WORKER_TRACE stamps (192 -> 256 bytes); 11: helper_fault; completion is an exact generation */
 constexpr uint32_t kPage = 4096;
 /* R3_MOE_WORKER_COMBINE: first element of a combined fp16 row the combiner could not hold in fp16 range (a NaN payload
  * no arithmetic produces; a real NaN converts to 0x7E00); the engine then reads that row from the two helper planes. */
 constexpr uint16_t kCombineFallback = 0x7E01;
 /* kMaxRanks used to be one constant for three different things (RAD23): the engine's TP ranks, the helpers, and the request slots the
  * two are aliased onto (a one-rank engine with two helpers serves helper h from slot h). They are named apart so each can move on its own;
- * all three are 2 today (Flash-Next: TP=2, or one rank and two helpers), and layout() is byte for byte what it was. */
+ * the engine ranks stay 2 (Flash-Next: TP=2, or one rank and two helpers); helpers and slots are bounds, and a segment is laid out for the
+ * number it was made with (Header::slot_count): a segment for two slots is the layout it was before, plus the larger lane ring. */
 constexpr uint32_t kMaxEngineRanks = 2;  /* engine TP ranks: Request::rank_count, RankState, the stored weight slices */
-constexpr uint32_t kMaxHelpers = 2;      /* helper processes: owner bitsets, helper_pid / helper_start, helper_count */
-constexpr uint32_t kMaxSlots = 2;        /* request slots: route / activation staging, lanes, published flags; max(engine ranks, helpers) */
+constexpr uint32_t kMaxHelpers = 4;      /* helper processes: owner bitsets, helper_pid / helper_start, helper_count */
+constexpr uint32_t kMaxSlots = 4;        /* request slots: route / activation staging, lanes, published flags; max(engine ranks, helpers) */
 static_assert(kMaxSlots >= kMaxEngineRanks && kMaxSlots >= kMaxHelpers, "a slot is needed for every engine rank and every helper");
-constexpr uint32_t kResultPlanes = kMaxSlots * kMaxEngineRanks;  /* result planes: [producing slot][output rank] */
+constexpr uint32_t kResultPlanes = kMaxSlots * kMaxEngineRanks;  /* result planes at the bound: [producing slot][output rank] */
+constexpr uint32_t kLegacySlots = 2;     /* the slots of every segment made before RAD23, and the least a segment has: one a TP rank, or one a helper */
+/* Request slots a segment needs for this many helpers: a helper is served from the slot of its index, and a single helper serves every
+ * engine rank's slot, so never fewer than the engine ranks. */
+constexpr uint32_t slots_for(uint32_t helpers) { return helpers > kMaxEngineRanks ? helpers : kMaxEngineRanks; }
 /* The plane a slot writes for an output rank. Every reader and writer takes the index from here (the host layout, the device kernels
  * and the helper), so the convention lives in one place. */
 constexpr uint32_t result_index(uint32_t slot, uint32_t out_rank) { return slot * kMaxEngineRanks + out_rank; }
@@ -118,13 +123,14 @@ static_assert(sizeof(LaneSignal) == 64);
  * thread after its stream sync, futex-waiting on helper1_done, which helper 1 stores and wakes after its own stream
  * sync. Helper 0 release-stores `done` = generation; the engine's wait kernel waits for it. Not bit-identical to adding
  * the two rows on the engine (one more bf16 rounding). `enabled` is set by helper 0 at start; the engine asks only then. */
+constexpr uint32_t kCombineHelpers = 2;   /* the combine adds exactly two helpers' rows; a segment with more helpers runs with it off */
 struct alignas(64) CombineSignal {
     uint32_t enabled;
     uint32_t min_rows;      /* steps with fewer rows keep the two-row merge */
     uint32_t request;       /* last generation the engine issued (engine-only counter) */
     uint32_t done;
-    uint32_t lane[kMaxHelpers];
-    uint32_t seq[kMaxHelpers];
+    uint32_t lane[kCombineHelpers];
+    uint32_t seq[kCombineHelpers];
     uint32_t rows;
     uint32_t helper1_done;  /* helper 1's newest completed large-lane sequence, CPU-written, futex word */
     uint32_t reserved[6];
@@ -162,6 +168,7 @@ struct alignas(kPage) Header {
      * engine (the R9700) with two helpers (the XTX cards); helper h owns bitmap h and serves rank slot h, and
      * the engine sends each route to the slot of the helper that owns its expert. */
     uint32_t helper_count;
+    uint32_t slot_count;            /* request slots this segment was laid out for (slots_for(helpers)); fixed at init, 1..kMaxSlots. */
     /* Set by a helper whose lanes stopped (error or shutdown): an engine still waiting traps at once
      * instead of spinning on a done word that will never move. */
     uint32_t helper_fault;
@@ -193,7 +200,7 @@ struct alignas(kPage) Header {
      * for (a layer map consumed, a lane park cleared, helper_fault raised). Waiters snapshot it before checking their
      * condition and sleep on it (wait_for), so a change between the check and the sleep is never missed. */
     uint32_t notify;
-    uint32_t reserved32[24 - 3 * kMaxHelpers];
+    uint32_t reserved32[24 - 3 * kMaxHelpers - 1];
     CombineSignal combine;
 };
 static_assert(sizeof(Header) <= kPage);
@@ -216,16 +223,16 @@ struct Layout {
     uint32_t route_bytes, activation_bytes, result_bytes, owner_bytes, layer_map_bytes;   /* per-slot sizes the header records */
 };
 
-constexpr Layout layout() {
+constexpr Layout layout(uint32_t slots) {
     Layout x{};
     uint64_t at = kPage;
     x.ring = at;
     at = align_page(at + sizeof(Request) * kRingSlots);
     x.owner = at;
-    at = align_page(at + (uint64_t)kMaxHelpers * owner_slot_bytes());
+    at = align_page(at + (uint64_t)slots * owner_slot_bytes());
     x.layer_map = at;
     at = align_page(at + layer_map_slot_bytes());
-    for (uint32_t r = 0; r < kMaxSlots; ++r) {
+    for (uint32_t r = 0; r < slots; ++r) {
         x.route[r] = at; at = align_page(at + route_slot_bytes());
         x.activation[r] = at; at = align_page(at + activation_slot_bytes());
         for (uint32_t o = 0; o < kMaxEngineRanks; ++o) {
@@ -263,7 +270,7 @@ constexpr uint64_t shape_hash(const LayoutShape& s) {
     return h;
 }
 
-inline bool layout_for(const LayoutShape& s, Layout* out) {
+inline bool layout_for(const LayoutShape& s, uint32_t slots, Layout* out) {
     auto mul = [](uint64_t a, uint64_t b, uint64_t* r) {
         if (a && b > UINT64_MAX / a) return false;
         *r = a * b;
@@ -280,7 +287,7 @@ inline bool layout_for(const LayoutShape& s, Layout* out) {
         *r = t & ~(uint64_t(kPage) - 1);
         return true;
     };
-    if (!out || !s.hidden || !s.top_k || !s.experts || !s.max_rows || !s.act_group || !s.intermediate || s.top_k > s.experts) return false;
+    if (!out || !slots || slots > kMaxSlots || !s.hidden || !s.top_k || !s.experts || !s.max_rows || !s.act_group || !s.intermediate || s.top_k > s.experts) return false;
     uint64_t routes = 0, rows_hidden = 0, groups = 0, scale_cols = 0, owner_row = 0;
     uint64_t route_b = 0, bf16_b = 0, q_b = 0, scale_b = 0, act_b = 0, result_b = 0, owner_b = 0, map_b = 0, tmp = 0;
     if (!mul(s.max_rows, s.top_k, &routes) || !mul(routes, sizeof(Route), &route_b)) return false;
@@ -302,10 +309,10 @@ inline bool layout_for(const LayoutShape& s, Layout* out) {
     x.ring = at;
     if (!add(at, (uint64_t)sizeof(Request) * kRingSlots, &tmp) || !page(tmp, &at)) return false;
     x.owner = at;
-    if (!mul(kMaxHelpers, owner_b, &tmp) || !add(at, tmp, &tmp) || !page(tmp, &at)) return false;
+    if (!mul(slots, owner_b, &tmp) || !add(at, tmp, &tmp) || !page(tmp, &at)) return false;
     x.layer_map = at;
     if (!add(at, map_b, &tmp) || !page(tmp, &at)) return false;
-    for (uint32_t r = 0; r < kMaxSlots; ++r) {
+    for (uint32_t r = 0; r < slots; ++r) {
         x.route[r] = at;
         if (!add(at, route_b, &tmp) || !page(tmp, &at)) return false;
         x.activation[r] = at;
@@ -324,13 +331,13 @@ inline bool layout_for(const LayoutShape& s, Layout* out) {
 
 /* Lay out and stamp a segment for this shape. The caller has mapped at least layout_for(shape).bytes. False (and nothing written)
  * when the shape does not lay out. */
-inline bool init(void* base, uint32_t layers, const LayoutShape& shape) {
+inline bool init(void* base, uint32_t layers, const LayoutShape& shape, uint32_t slots) {
     Layout l{};
-    if (!base || !layers || layers > kMaxLayers || !layout_for(shape, &l)) return false;
+    if (!base || !layers || layers > kMaxLayers || !layout_for(shape, slots, &l)) return false;
     std::memset(base, 0, static_cast<size_t>(l.bytes));
     auto* h = static_cast<Header*>(base);
     h->magic = kMagic; h->version = kVersion; h->header_bytes = sizeof(Header);
-    h->layer_count = layers; h->rank_count = kMaxEngineRanks; h->ring_slots = kRingSlots;
+    h->layer_count = layers; h->rank_count = kMaxEngineRanks; h->slot_count = slots; h->ring_slots = kRingSlots;
     h->max_rows = shape.max_rows; h->hidden = shape.hidden; h->top_k = shape.top_k; h->expert_count = shape.experts;
     h->intermediate = shape.intermediate; h->activation_group = shape.act_group; h->shape_hash = shape_hash(shape);
     h->owned_count = 0; h->owner_slot_bytes = l.owner_bytes; h->owned_bytes = 0;
@@ -339,7 +346,7 @@ inline bool init(void* base, uint32_t layers, const LayoutShape& shape) {
     std::memset(static_cast<uint8_t*>(base) + l.layer_map, 0xff, l.layer_map_bytes);
     h->next_sequence = 1; h->ring_offset = l.ring; h->segment_bytes = l.bytes;
     h->small_class_count = 1; h->small_class_rows[0] = 8;   /* the helper overwrites these before it publishes helper_count */
-    for (uint32_t r = 0; r < kMaxSlots; ++r) {
+    for (uint32_t r = 0; r < slots; ++r) {
         h->route_slot_bytes[r] = l.route_bytes;
         h->activation_slot_bytes[r] = l.activation_bytes;
         h->route_offset[r] = l.route[r]; h->activation_offset[r] = l.activation[r];
@@ -358,13 +365,13 @@ inline bool init(void* base, uint32_t layers, const LayoutShape& shape) {
  * before any request is published or any expert buffer is touched. */
 inline bool valid(const Header* h, size_t mapped, const LayoutShape& expect) {
     if (!h || h->magic != kMagic || h->version != kVersion || h->header_bytes != sizeof(Header) ||
-        h->rank_count != kMaxEngineRanks || h->ring_slots != kRingSlots ||
+        h->rank_count != kMaxEngineRanks || h->slot_count == 0 || h->slot_count > kMaxSlots || h->ring_slots != kRingSlots ||
         h->layer_count == 0 || h->layer_count > kMaxLayers ||
         h->small_class_count == 0 || h->small_class_count > kSmallClasses) return false;
     const LayoutShape got{h->hidden, h->top_k, h->expert_count, h->max_rows, h->activation_group, h->intermediate};
     if (got != expect || h->shape_hash != shape_hash(got)) return false;
     Layout l{};
-    if (!layout_for(got, &l)) return false;
+    if (!layout_for(got, h->slot_count, &l)) return false;
     for (uint32_t c = 0; c < h->small_class_count; ++c)
         if (h->small_class_rows[c] == 0 || h->small_class_rows[c] > h->max_rows ||
             (c && h->small_class_rows[c] <= h->small_class_rows[c - 1])) return false;
@@ -372,15 +379,20 @@ inline bool valid(const Header* h, size_t mapped, const LayoutShape& expect) {
         h->owner_slot_bytes != l.owner_bytes ||
         h->layer_map_offset != l.layer_map || h->layer_map_slot_bytes != l.layer_map_bytes ||
         h->segment_bytes != l.bytes || mapped < l.bytes) return false;
-    for (uint32_t r = 0; r < kMaxSlots; ++r)
-        /* Two helpers share slot 0's activation staging (helper 0 aliases the others to it). */
-        if (h->route_offset[r] != l.route[r] ||
-            (h->activation_offset[r] != l.activation[r] && h->activation_offset[r] != l.activation[0]) ||
-            h->route_slot_bytes[r] != l.route_bytes ||
-            h->activation_slot_bytes[r] != l.activation_bytes) return false;
-    for (uint32_t i = 0; i < kResultPlanes; ++i)
-        if (h->result_offset[i] != l.result[i] ||
-            h->result_slot_bytes[i] != l.result_bytes) return false;
+    /* Every slot past slot_count is unused and must be all zero: a header cannot hand out an offset the layout did not make. */
+    for (uint32_t r = 0; r < kMaxSlots; ++r) {
+        const bool used = r < h->slot_count;
+        /* Several helpers share slot 0's activation staging (helper 0 aliases the others to it). */
+        if (h->route_offset[r] != (used ? l.route[r] : 0) ||
+            (h->activation_offset[r] != (used ? l.activation[r] : 0) && !(used && h->activation_offset[r] == l.activation[0])) ||
+            h->route_slot_bytes[r] != (used ? l.route_bytes : 0) ||
+            h->activation_slot_bytes[r] != (used ? l.activation_bytes : 0)) return false;
+        for (uint32_t o = 0; o < kMaxEngineRanks; ++o) {
+            const uint32_t i = result_index(r, o);
+            if (h->result_offset[i] != (used ? l.result[i] : 0) ||
+                h->result_slot_bytes[i] != (used ? l.result_bytes : 0)) return false;
+        }
+    }
     return true;
 }
 
@@ -453,13 +465,13 @@ inline uint64_t owner_bit(uint32_t layer, uint32_t expert, uint32_t experts) {
 }
 inline bool owns(const void* base, uint32_t layer, uint32_t expert, uint32_t helper) {
     const auto* h = static_cast<const Header*>(base);
-    if (!h || layer >= h->layer_count || expert >= h->expert_count || helper >= kMaxHelpers) return false;
+    if (!h || layer >= h->layer_count || expert >= h->expert_count || helper >= h->slot_count) return false;
     const uint64_t bit = owner_bit(layer, expert, h->expert_count);
     return (owner_bits(base, helper)[bit >> 3] & (uint8_t)(1u << (bit & 7u))) != 0;
 }
 inline bool set_owned(void* base, uint32_t layer, uint32_t expert, uint32_t helper) {
     auto* h = static_cast<Header*>(base);
-    if (!h || layer >= h->layer_count || expert >= h->expert_count || helper >= kMaxHelpers) return false;
+    if (!h || layer >= h->layer_count || expert >= h->expert_count || helper >= h->slot_count) return false;
     const uint64_t bit = owner_bit(layer, expert, h->expert_count);
     uint8_t* b = owner_bits(base, helper) + (bit >> 3);
     const uint8_t mask = (uint8_t)(1u << (bit & 7u));
@@ -470,7 +482,7 @@ inline bool set_owned(void* base, uint32_t layer, uint32_t expert, uint32_t help
 }
 inline bool clear_owned(void* base, uint32_t layer, uint32_t expert, uint32_t helper) {
     auto* h = static_cast<Header*>(base);
-    if (!h || layer >= h->layer_count || expert >= h->expert_count || helper >= kMaxHelpers) return false;
+    if (!h || layer >= h->layer_count || expert >= h->expert_count || helper >= h->slot_count) return false;
     const uint64_t bit = owner_bit(layer, expert, h->expert_count);
     uint8_t* b = owner_bits(base, helper) + (bit >> 3);
     const uint8_t mask = (uint8_t)(1u << (bit & 7u));
