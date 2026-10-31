@@ -45,10 +45,10 @@ inline int64_t rank_slice_width(uint32_t rank, uint32_t parity) {
 }
 
 struct DeviceLayerTables {
-    void* gu_code[r3::moe_shm::kMaxRanks][2]{};
-    void* gu_scale[r3::moe_shm::kMaxRanks][2]{};
-    void* dn_code[r3::moe_shm::kMaxRanks][2]{};
-    void* dn_scale[r3::moe_shm::kMaxRanks][2]{};
+    void* gu_code[r3::moe_shm::kMaxEngineRanks][2]{};
+    void* gu_scale[r3::moe_shm::kMaxEngineRanks][2]{};
+    void* dn_code[r3::moe_shm::kMaxEngineRanks][2]{};
+    void* dn_scale[r3::moe_shm::kMaxEngineRanks][2]{};
     const uint16_t* expert_slot = nullptr;
 };
 
@@ -66,7 +66,7 @@ __device__ __forceinline__ bool lane_request_valid(
     /* A one-rank engine stamps rank_count 1 and uses the rank slot as the helper index (each slot's
      * request asks for full expert width); a two-rank engine's slot is its rank. */
     return q && q->sequence == sequence && q->rank == rank &&
-           q->rank_count >= 1 && q->rank_count <= kMaxRanks && (q->rank_count == 1 || rank < q->rank_count) &&
+           q->rank_count >= 1 && q->rank_count <= kMaxEngineRanks && (q->rank_count == 1 || rank < q->rank_count) &&
            q->layer < layers && q->rows > 0 && q->rows <= max_rows &&
            q->hidden == shape.hidden && q->route_count > 0 &&
            q->route_count <= q->rows * shape.top_k &&

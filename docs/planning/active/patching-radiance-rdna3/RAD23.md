@@ -224,3 +224,13 @@ A the alias helper == request slot == apparent rank. Findings that change the pl
 - Shared definitions to add: one `LayoutShape{R, H, S}`, `lane_of(slot, cls)`, `result_index(producer, helper)`,
   `published_generation_index(S)`; combine remains an explicit H = 2 special case.
 
+## Stage 1 done 2026-10-31: kMaxRanks split into three named axes (no layout change)
+
+`kMaxRanks` is gone. `kMaxEngineRanks`, `kMaxHelpers` and `kMaxSlots` (all 2) replace it, each of the 129 uses taking the axis GPT's
+classification gave it; `kResultPlanes` and `result_index(slot, out_rank)` replace the open-coded `slot * kMaxRanks + r`, and
+`lane_of` is `cls * kMaxSlots + slot`. Proof that nothing moved: header and request sizes, header field offsets, the legacy layout's
+byte count and plane offsets and the lane numbering are identical between origin/main and this branch (compared by a program built
+against both headers) and are now asserted in `moe_remote_shm_test.cpp`; the whole component builds (worker, libr3moe, tests);
+`--compare` on an XTX gives the same rel_l2 as before (8 rows 6.7e-4 / 6.2e-4, 64 rows 1.75e-3 / 1.15e-3). Next: stage 2 raises the
+helper and slot bounds and makes the layout runtime-sized from (R, H, S).
+
