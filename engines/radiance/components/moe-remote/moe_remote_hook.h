@@ -30,8 +30,8 @@ struct R3MoeShadowFirst {
 struct R3MoeMailboxDevice {
     void* mailbox = nullptr;
     const uint8_t* owner = nullptr;
-    uint32_t* sequence = nullptr;   /* [kMaxRanks slots][2 lane classes] request counters */
-    uint32_t* published = nullptr;  /* [kMaxRanks slots]: 0, or 1 + the lane class of this step's request; then [kMaxRanks]:
+    uint32_t* sequence = nullptr;   /* [kMaxSlots slots][2 lane classes] request counters */
+    uint32_t* published = nullptr;  /* [kMaxSlots slots]: 0, or 1 + the lane class of this step's request; then [kMaxSlots]:
                                        the step's R3_MOE_WORKER_COMBINE generation, 0 when the step merges two rows */
     uint16_t* mask_ref = nullptr;
     int32_t* inv = nullptr;     /* [max_rows * top_k] engine sorted row of each locally computed slot, else -1. */

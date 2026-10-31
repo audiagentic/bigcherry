@@ -266,14 +266,14 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
 
     bool bad = false;
     constexpr uint32_t sequence = 1;
-    for (uint32_t rank = 0; rank < kMaxRanks; ++rank) {
+    for (uint32_t rank = 0; rank < kMaxSlots; ++rank) {
         const uint32_t lane = lane_of(rank, step_class(h, rows));
         Request* q = lane_request(map, lane, sequence);
         q->completion_sequence = 0;
         q->status = 0;
         q->layer = layer;
         q->rank = rank;
-        q->rank_count = kMaxRanks;
+        q->rank_count = kMaxEngineRanks;
         q->rows = rows;
         q->hidden = hid;
         q->route_count = nr;
@@ -286,8 +286,8 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
         q->activation_stride = hid * sizeof(uint16_t);
         q->activation_q_stride = hid;
         q->activation_s_stride = (hid / kActGroup) * sizeof(float);
-        for (uint32_t r = 0; r < kMaxRanks; ++r) {
-            q->result_offset[r] = h->result_offset[rank * kMaxRanks + r];
+        for (uint32_t r = 0; r < kMaxEngineRanks; ++r) {
+            q->result_offset[r] = h->result_offset[result_index(rank, r)];
             q->result_stride[r] = hid * sizeof(uint16_t);
         }
         q->sequence = sequence;
@@ -325,7 +325,7 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
             break;
         }
         /* The helper's per-token rows, taken before the host reference rewrites the same slot. */
-        const uint16_t* res = ptr<uint16_t>(map, h->result_offset[rank * kMaxRanks + rank]);
+        const uint16_t* res = ptr<uint16_t>(map, h->result_offset[result_index(rank, rank)]);
         const std::vector<uint16_t> got(res, res + (size_t)rows * hid);
         {   /* FNV-1a over the helper's result bytes: two builds that print the same hash for the same capture and settings produced
              * bit-identical output (the cross-build identity check of RCS05/RAD14; rel_l2 below only ever bounds the error). */

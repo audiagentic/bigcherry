@@ -153,7 +153,7 @@ int compute_host_engine(const Container& f, void* map, Request* q,
                         std::vector<uint16_t>* route_down = nullptr) {
     const uint32_t hid = static_cast<const Header*>(map)->hidden, topk = static_cast<const Header*>(map)->top_k;
     const int64_t hdr_intermediate = static_cast<const Header*>(map)->intermediate;
-    if (q->rank_count != kMaxRanks || q->rank >= kMaxRanks || q->layer >= f.layers ||
+    if (q->rank_count != kMaxEngineRanks || q->rank >= kMaxSlots || q->layer >= f.layers ||
         q->rows == 0 || q->rows > kMaxRows || q->hidden != hid ||
         q->route_count > kMaxRoutes || q->activation_stride != hid * 2)
         return -EINVAL;
@@ -251,7 +251,7 @@ int compute_host_engine_fp8(const Container& f, void* map, Request* q,
                         std::vector<uint16_t>* route_down = nullptr) {
     const uint32_t hid = static_cast<const Header*>(map)->hidden, topk = static_cast<const Header*>(map)->top_k;
     const int64_t hdr_intermediate = static_cast<const Header*>(map)->intermediate;
-    if (q->rank_count != kMaxRanks || q->rank >= kMaxRanks || q->layer >= f.layers ||
+    if (q->rank_count != kMaxEngineRanks || q->rank >= kMaxSlots || q->layer >= f.layers ||
         q->rows == 0 || q->rows > kMaxRows || q->hidden != hid ||
         q->route_count > kMaxRoutes || q->activation_stride != hid * 2)
         return -EINVAL;
@@ -356,7 +356,7 @@ int compute_host_engine_fp8(const Container& f, void* map, Request* q,
 int compute_host(const Container& f, void* map, Request* q) {
     const uint32_t hid = static_cast<const Header*>(map)->hidden, topk = static_cast<const Header*>(map)->top_k;
     const int64_t hdr_intermediate = static_cast<const Header*>(map)->intermediate;
-    if (q->rank_count != kMaxRanks || q->rank >= kMaxRanks || q->layer >= f.layers || q->rows > kMaxRows ||
+    if (q->rank_count != kMaxEngineRanks || q->rank >= kMaxSlots || q->layer >= f.layers || q->rows > kMaxRows ||
         q->hidden != hid || q->route_count > kMaxRoutes || q->activation_stride != hid*2) return -EINVAL;
     const Route* routes = ptr<Route>(map,q->route_offset);
     const uint16_t* act = ptr<uint16_t>(map,q->activation_offset);

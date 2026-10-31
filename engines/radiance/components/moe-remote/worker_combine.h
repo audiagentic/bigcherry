@@ -108,7 +108,7 @@ inline bool combine_step(void* map, const r3::moe_shm::Request* q0, CombinePool*
     if (!g) return true;
     const uint32_t rows = h->combine.rows, lane1 = h->combine.lane[1], seq1 = h->combine.seq[1];
     if (rows == 0 || rows > h->max_rows || q0->rows != rows || h->combine.seq[0] != q0->sequence ||
-        lane1 >= kLanes || lane1 % kMaxRanks != 1u || !seq1) {
+        lane1 >= kLanes || lane1 % kMaxSlots != 1u || !seq1) {
         std::fprintf(stderr, "r3_moe_worker: combine stopped: the combine request does not match helper 0's request\n");
         return false;
     }
@@ -124,8 +124,8 @@ inline bool combine_step(void* map, const r3::moe_shm::Request* q0, CombinePool*
     }
     const auto t0 = std::chrono::steady_clock::now();
     std::memset(mask->data(), 0, rows);
-    const Request* q[kMaxRanks] = {q0, q1};
-    for (uint32_t k = 0; k < kMaxRanks; ++k) {
+    const Request* q[kMaxHelpers] = {q0, q1};
+    for (uint32_t k = 0; k < kMaxHelpers; ++k) {
         const Route* r = ptr<Route>(map, q[k]->route_offset);
         for (uint32_t j = 0; j < q[k]->route_count; ++j) {
             const int32_t t = r[j].token;
@@ -136,9 +136,9 @@ inline bool combine_step(void* map, const r3::moe_shm::Request* q0, CombinePool*
             (*mask)[(uint32_t)t] |= (uint8_t)(1u << k);
         }
     }
-    pool->combine(ptr<uint16_t>(map, h->result_offset[0 * kMaxRanks + 0]),
-                  ptr<uint16_t>(map, h->result_offset[1 * kMaxRanks + 1]),
-                  ptr<uint16_t>(map, h->result_offset[0 * kMaxRanks + 1]), mask->data(), rows, h->hidden);
+    pool->combine(ptr<uint16_t>(map, h->result_offset[result_index(0, 0)]),
+                  ptr<uint16_t>(map, h->result_offset[result_index(1, 1)]),
+                  ptr<uint16_t>(map, h->result_offset[result_index(0, 1)]), mask->data(), rows, h->hidden);
     std::atomic_thread_fence(std::memory_order_release);
     store(&h->combine.done, g);
     st->combine_us += std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - t0).count();
