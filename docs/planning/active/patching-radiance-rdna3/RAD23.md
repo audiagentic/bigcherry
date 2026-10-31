@@ -234,3 +234,20 @@ against both headers) and are now asserted in `moe_remote_shm_test.cpp`; the who
 `--compare` on an XTX gives the same rel_l2 as before (8 rows 6.7e-4 / 6.2e-4, 64 rows 1.75e-3 / 1.15e-3). Next: stage 2 raises the
 helper and slot bounds and makes the layout runtime-sized from (R, H, S).
 
+## Stage 2 done 2026-10-31: segments laid out for their slot count, up to four helpers, weighted shares
+
+Protocol 19. `Header::slot_count` is set at init (`slots_for(helpers)`: never fewer than the 2 engine ranks); route and activation
+staging, owner bitsets and result planes exist only for the slots in use, `layout_for`/`init` take the slot count, and `valid` also
+refuses a header whose unused slots are not all zero or whose slot count disagrees with its layout. `kMaxHelpers` and `kMaxSlots` are 4;
+engine ranks stay 2; the combine remains a two-helper feature (`kCombineHelpers`, off with more helpers). Cost per extra slot:
+74,227,712 bytes (70.8 MiB: route + activation + two 20 MiB result planes) - three helpers 212.6 MiB of pinned host memory against 141.9
+for two; the lane ring grew by 8 KiB for the four-slot bound (lane numbering is `class * 4 + slot`). `R3_MOE_WORKER_SHARES="w0,w1,.."`
+weights the helpers' parts of the expert ranking (default equal = the round robin it always was); a part of 0 owns nothing.
+
+Evidence: `r3_moe_shm_test` (segments for 1-4 slots, tampered headers, unused-slot offsets, short mappings), `r3_worker_share_test`,
+`r3_moe_backend_test` pass; the component builds for gfx1030 / gfx1100 / gfx1201. Hardware at H = 2 against the baseline above, same
+prompts: decode 512 tokens 5.436 s (5.440), prefill 16.8K 4.89 / 5.06 s (5.14 / 5.41), 66.5K 21.78 s (22.05); helper GPU span medians
+127.4 us (127.3) on the small lane and 3,489 us (3,482) / 3,674 us (3,672) on the large lane. Not yet: H = 3 on hardware (needs the
+6900 XT helper to start with an empty or small share - see the share-0 path, untested with a GPU), the engine-side per-layer wait
+stamps, and the budgeted experiments (step 4).
+
