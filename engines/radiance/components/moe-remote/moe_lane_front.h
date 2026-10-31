@@ -71,6 +71,51 @@ __global__ void lane_prepare_activation_v(
     }
 }
 
+/* Sparse activation copy (RAD23). A helper behind a narrow link (a card on PCIe 3.0 x4 reads the engine's mapped memory at ~3.5 GB/s) that
+ * owns few routes needs few of the request's rows, yet the copy above moves them all: 2048 rows of hidden 2560 are ~5.5 MB, ~1.5 ms.
+ * lane_mark_rows flags the rows the routes name (the mask is zeroed first); lane_prepare_activation_sparse then copies only flagged rows.
+ * A row no route names is never read by the GEMMs, so it is left as it was (an invalid request still zero-fills). */
+__global__ void lane_mark_rows(
+    const r3::moe_shm::Route* route, const r3::moe_shm::Request* q, uint8_t* mask,
+    uint32_t rank, uint32_t sequence, uint32_t max_rows, uint32_t layers, LaneShape shape) {
+    using namespace r3::moe_shm;
+    const uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (!lane_request_valid(q, rank, sequence, max_rows, layers, shape) || i >= q->route_count) return;
+    const int32_t t = route[i].token;
+    if (t >= 0 && (uint32_t)t < q->rows) mask[t] = 1;
+}
+
+__global__ void lane_prepare_activation_sparse(
+    r3::moe_shm::Request* q, const uint8_t* mask, const uint4* src_q, const uint4* src_s,
+    uint4* dst_q, uint4* dst_s,
+    uint32_t rank, uint32_t sequence, uint32_t max_rows, uint32_t layers,
+    uint64_t* stats, LaneShape shape) {
+    using namespace r3::moe_shm;
+    const bool valid = lane_request_valid(q, rank, sequence, max_rows, layers, shape);
+    if (blockIdx.x == 0 && threadIdx.x == 0) {
+        q->status = valid ? 0 : -EINVAL;
+        q->trace[3] = wall_clock64();
+        if (valid) {
+            atomicAdd(reinterpret_cast<unsigned long long*>(stats) + 0, 1ull);
+            atomicAdd(reinterpret_cast<unsigned long long*>(stats) + 1, (unsigned long long)q->rows);
+            atomicAdd(reinterpret_cast<unsigned long long*>(stats) + 2, (unsigned long long)q->route_count);
+        }
+    }
+    const uint64_t i = (uint64_t)blockIdx.x * blockDim.x + threadIdx.x;
+    const uint32_t q_per_row = shape.hidden / 16;
+    const uint32_t s_per_row = (shape.hidden / shape.act_group) * 4 / 16;
+    if (i < (uint64_t)max_rows * q_per_row) {
+        const uint32_t row = (uint32_t)(i / q_per_row);
+        if (!valid) dst_q[i] = make_uint4(0, 0, 0, 0);
+        else if (row < q->rows && mask[row]) dst_q[i] = src_q[i];
+    }
+    if (i < (uint64_t)max_rows * s_per_row) {
+        const uint32_t row = (uint32_t)(i / s_per_row);
+        if (!valid) dst_s[i] = make_uint4(0, 0, 0, 0);
+        else if (row < q->rows && mask[row]) dst_s[i] = src_s[i];
+    }
+}
+
 __global__ void lane_select_tables(
     const r3::moe_shm::Request* q, const DeviceLayerTables* layers_table,
     uint32_t layers, uint32_t rank, uint32_t slice, uint32_t sequence, uint32_t max_rows, uint32_t experts,

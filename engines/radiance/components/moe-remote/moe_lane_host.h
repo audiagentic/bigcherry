@@ -103,6 +103,7 @@ struct LaneWork {
     bool sample_pending = false;
     uint32_t cap_rows = 0;
     Buffer d_counts, d_cursor, d_flat, d_sorted, d_off, d_ew, d_inv, d_dbg;
+    Buffer d_rowmask;   // one byte a row: the rows this request's routes name (sparse activation copy, RAD23)
     uint32_t dbg_routes = 0;
     Buffer d_act, d_aq, d_as, d_gu, d_mid, d_mid_s, d_down, d_stats, scratch;
     Buffer d_publish_limit;   /* uint32: newest sequence lane_publish_done may publish (RAD20 park); UINT32_MAX otherwise */
