@@ -8,7 +8,7 @@
 #include <string>
 
 struct WorkerConfig {
-    uint32_t helper_count = 1;      /* R3_MOE_WORKER_COUNT: helpers sharing the segment, 1..kMaxRanks */
+    uint32_t helper_count = 1;      /* R3_MOE_WORKER_COUNT: helpers sharing the segment, 1..kMaxHelpers */
     uint32_t helper_index = 0;      /* R3_MOE_WORKER_INDEX: this helper, < helper_count; 0 creates the segment */
     uint32_t engine_ranks = 0;      /* R3_MOE_WORKER_ENGINE_RANKS: 0 = the runner's default */
     bool cpu = false;               /* R3_MOE_WORKER_CPU: host fp32 reference instead of the GPU */

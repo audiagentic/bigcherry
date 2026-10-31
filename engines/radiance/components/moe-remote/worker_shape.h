@@ -71,7 +71,7 @@ std::array<bool, r3::moe_shm::kLanes> served_lanes(uint32_t helper_count, uint32
     using namespace r3::moe_shm;
     std::array<bool, kLanes> s{};
     for (uint32_t lane = 0; lane < kLanes; ++lane)
-        s[lane] = (helper_count <= 1 || lane % kMaxRanks == helper_index) &&
+        s[lane] = (helper_count <= 1 || lane % kMaxSlots == helper_index) &&
                   !(lane_is_small(lane) && lane_class(lane) >= classes);
     return s;
 }

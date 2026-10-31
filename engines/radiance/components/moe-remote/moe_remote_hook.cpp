@@ -55,7 +55,7 @@ struct HookState {
     bool pinned = false;
     RegisterFn engine_register = nullptr;
     std::mutex mu;
-    RankState rank[kMaxRanks];
+    RankState rank[kMaxEngineRanks];
     HelperWatch watch;   /* RAD20: fails the engine's helper waits when a helper process dies */
 };
 HookState g;
@@ -205,7 +205,7 @@ void burst_transition(int active) {
 
 int owner_query(int layer, int expert) {
     if (!g.hdr || layer < 0 || expert < 0) return 0;
-    for (uint32_t h = 0; h < g.hdr->helper_count && h < kMaxRanks; ++h)
+    for (uint32_t h = 0; h < g.hdr->helper_count && h < kMaxHelpers; ++h)
         if (owns(g.map, (uint32_t)layer, (uint32_t)expert, h)) return 1;
     return 0;
 }
@@ -269,7 +269,7 @@ void register_mailbox() {
         const WaitResult r = wait_for(g.hdr, &deadline, [] {
             g.watch.notice();
             const uint32_t n = load(&g.hdr->helper_count);
-            for (uint32_t i = 0; i < n && i < kMaxRanks; ++i)
+            for (uint32_t i = 0; i < n && i < kMaxHelpers; ++i)
                 if (!g.watch.watching(i)) return false;
             return n > 0;
         });
@@ -364,7 +364,7 @@ void write_heat(uint32_t rank, RankState& s) {
 void close_mailbox() {
     std::lock_guard<std::mutex> lock(g.mu);
     g.watch.stop();   /* first: helpers may exit while the engine tears down, and that is not a fault */
-    for (uint32_t r = 0; r < kMaxRanks; ++r) {
+    for (uint32_t r = 0; r < kMaxEngineRanks; ++r) {
         RankState& s = g.rank[r];
         if (!s.ready) continue;
         if (s.device >= 0) (void)hipSetDevice(s.device);
@@ -403,7 +403,7 @@ extern "C" int r3_moe_mailbox_enabled(void) {
 }
 
 extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevice** out) {
-    if (!out || !g.hdr || !g.pinned || world_size < 1 || world_size > (int)kMaxRanks ||
+    if (!out || !g.hdr || !g.pinned || world_size < 1 || world_size > (int)kMaxEngineRanks ||
         rank < 0 || rank >= world_size)
         return RAD_E_INVAL;
 
@@ -421,15 +421,15 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
     if (!hip_ok(hipHostGetDevicePointer(&dev_map, g.map, 0), "hipHostGetDevicePointer"))
         return RAD_E_DEVICE;
     const uint32_t helpers = g.hdr->helper_count;
-    if (helpers < 1 || helpers > kMaxRanks || (helpers > 1 && world_size != 1)) {
+    if (helpers < 1 || helpers > kMaxHelpers || (helpers > 1 && world_size != 1)) {
         std::fprintf(stderr, "libr3: R3_MOE_WORKER %u helpers need a one-rank engine (world %d)\n",
                      helpers, world_size);
         return RAD_E_STATE;
     }
-    if (!hip_ok(hipMalloc(reinterpret_cast<void**>(&s.owner), (size_t)kMaxRanks * g.hdr->owner_slot_bytes),
+    if (!hip_ok(hipMalloc(reinterpret_cast<void**>(&s.owner), (size_t)kMaxHelpers * g.hdr->owner_slot_bytes),
                 "hipMalloc ownership bitmap"))
         return RAD_E_NOMEM;
-    if (!hip_ok(hipMemcpy(s.owner, owner_bits(g.map, 0), (size_t)kMaxRanks * g.hdr->owner_slot_bytes,
+    if (!hip_ok(hipMemcpy(s.owner, owner_bits(g.map, 0), (size_t)kMaxHelpers * g.hdr->owner_slot_bytes,
                           hipMemcpyHostToDevice), "upload ownership bitmap")) {
         (void)hipFree(s.owner);
         s.owner = nullptr;
@@ -438,9 +438,9 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
     if (!hip_ok(hipMalloc(reinterpret_cast<void**>(&s.sequence), kLanes * sizeof(uint32_t)),
                 "hipMalloc lane sequence counters") ||
         !hip_ok(hipMemset(s.sequence, 0, kLanes * sizeof(uint32_t)), "zero lane sequence counters") ||
-        !hip_ok(hipMalloc(reinterpret_cast<void**>(&s.published), (kMaxRanks + 1) * sizeof(uint32_t)),
+        !hip_ok(hipMalloc(reinterpret_cast<void**>(&s.published), (kMaxSlots + 1) * sizeof(uint32_t)),
                 "hipMalloc published flags") ||
-        !hip_ok(hipMemset(s.published, 0, (kMaxRanks + 1) * sizeof(uint32_t)), "zero published flags") ||
+        !hip_ok(hipMemset(s.published, 0, (kMaxSlots + 1) * sizeof(uint32_t)), "zero published flags") ||
         !hip_ok(hipMalloc(&s.maps, (size_t)max_rows() * g.hdr->top_k * (sizeof(int32_t) + sizeof(uint32_t))),
                 "hipMalloc merge slot maps")) {
         if (s.maps) (void)hipFree(s.maps);

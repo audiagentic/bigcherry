@@ -98,12 +98,12 @@ public:
         }
         for (uint32_t c = 0; c < classes_.count; ++c) {
             uint64_t r = 0, n = 0;
-            for (uint32_t k = 0; k < kMaxRanks; ++k) { r += stats_[lane_of(k, c)].req; n += stats_[lane_of(k, c)].rows; }
+            for (uint32_t k = 0; k < kMaxSlots; ++k) { r += stats_[lane_of(k, c)].req; n += stats_[lane_of(k, c)].rows; }
             std::fprintf(stderr, "r3_moe_worker: small lane class %u (rows <= %u): requests %llu (%llu rows)\n", c,
                          classes_.rows[c], (unsigned long long)r, (unsigned long long)n);
         }
         uint64_t lr = 0, ln = 0;
-        for (uint32_t k = 0; k < kMaxRanks; ++k) { lr += stats_[lane_of(k, kSmallClasses)].req; ln += stats_[lane_of(k, kSmallClasses)].rows; }
+        for (uint32_t k = 0; k < kMaxSlots; ++k) { lr += stats_[lane_of(k, kSmallClasses)].req; ln += stats_[lane_of(k, kSmallClasses)].rows; }
         std::fprintf(stderr, "r3_moe_worker: large-lane requests %llu (%llu rows)\n", (unsigned long long)lr,
                      (unsigned long long)ln);
         if (samples && *req) *us = (sampled_us / (double)samples) * (double)*req;
