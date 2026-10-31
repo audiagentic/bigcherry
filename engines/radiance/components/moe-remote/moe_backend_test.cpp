@@ -61,6 +61,14 @@ int main() {
     bad = flash; bad.hidden = 0;
     check(probe(b, bad, w4, caps("gfx1100")) == MOE_BAD_GEOMETRY, "a zero dimension is refused");
 
+    // the gfx1030 backend (RDNA2): W4 on the dot path, no WMMA needed, FP8 block-scaled not yet
+    const Backend& r = gfx1030_backend();
+    check(probe(r, flash, w4, caps("gfx1030", false)) == MOE_OK, "gfx1030 accepts Flash-Next W4 without WMMA");
+    check(probe(r, qwen, fp8, caps("gfx1030", false)) == MOE_UNSUPPORTED_FORMAT, "gfx1030 refuses FP8 block-scaled for now");
+    check(probe(r, flash, w4, caps("gfx1100")) == MOE_UNSUPPORTED_ARCH, "the gfx1030 backend refuses another architecture");
+    check(backend_for("gfx1030") == &r && backend_for("gfx1100") == &b, "backend_for picks the backend by architecture");
+    check(backend_for("gfx1201") == nullptr && backend_for("gfx90a") == nullptr, "and returns none for an architecture without one");
+
     // a backend without FP8 refuses it
     Backend w4_only = b;
     w4_only.formats = 1u << MOE_FMT_W4NL64;

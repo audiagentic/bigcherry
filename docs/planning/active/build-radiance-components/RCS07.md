@@ -63,3 +63,15 @@ Link note (2026-10-19): the 6900 XT is behind a PCIe 3.0 x4 hop (about 3.5 GB/s 
 ## Change Log
 
 - 2026-10-18T12:57:54.768641+00:00 (created-by): Created by agent
+
+## Progress 2026-10-31 (RCS07 step 1-3 first cut)
+
+- A device is available: GPU3, RX 6900 XT (gfx1030, 16 GiB, PCIe 3.0 x4). Measured with ROCm 7.2.4: v_dot2c_f32_f16 21 T MAC/s, v_dot4c_i32_i8 22 T MAC/s (no throughput reason to requantise activations to int8), device copy 421 GB/s.
+- moe_backend.h: gfx1030_backend (W4NL64 only, no WMMA required) and backend_for(arch); the helper admits gfx1030 and loads libr3 on it; --describe takes an ARCH.
+- r3_compat.h: r3_mma16_f16 / r3_mma16_bf16 emulate the 16x16x16 tile on gfx1030 (8 dwords of each row by ds_bpermute, f32 FMA); on gfx11 they are the WMMA builtins. Taking halves from a v16h fragment with a vector bit_cast gave wrong tiles on gfx1030; the dword form is checked.
+- moe_lane_reduce.h: the store drain takes the gfx11 spelling on gfx1030.
+- libr3 for gfx1030 builds with R3_NATIVE=OFF and R3_ONLY="r4d_moe;r4d_fused_quant_fp8;r4d_quant_act_fp8"; the integer-WMMA GEMM and attention units do not build and the helper does not need them.
+- Checked against the host reference with r3_moe_worker --compare (Flash-Next, layer 0, 12 GiB budget): 8 and 64 rows bit-identical to a 7900 XTX; 256 rows rel_l2 1.1e-3.
+- Kernel time (rocprofv3, layer 0): decode-sized lane at 64 rows gate-up 3.83 ms vs 3.03 ms, down 1.30 vs 1.31 ms (6900 XT vs XTX); grouped GEMM at 256 rows 18.3 ms vs 4.1 ms (emulated tile, about 4.5x slower).
+- Not done: a whole-model run, FP8 block-scaled experts, a faster prefill tile (the emulation uses 64 cross-lane exchanges a tile), and a third helper in the engine, which needs RAD23 (kMaxRanks = 2 is both the engine-rank axis and the helper bound).
+

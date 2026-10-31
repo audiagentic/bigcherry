@@ -166,9 +166,9 @@ public:
         if (colon != std::string::npos) arch_.resize(colon);
         /* The expert kernels come from the plugin built for this card: libr4d on gfx1201 (the R9700 helping two
          * XTX ranks), libr3 on gfx1100 (an XTX helping an R9700 engine, RAD02). Both export the same rows. */
-        if (arch_ != "gfx1201" && arch_ != "gfx1100") {
+        if (arch_ != "gfx1201" && arch_ != "gfx1100" && arch_ != "gfx1030") {
             std::fprintf(stderr,
-                "r3_moe_worker: visible GPU is %s, want gfx1201 or gfx1100 (set R3_MOE_WORKER_CPU=1 for host path)\n",
+                "r3_moe_worker: visible GPU is %s, want gfx1201, gfx1100 or gfx1030 (set R3_MOE_WORKER_CPU=1 for host path)\n",
                 arch_.c_str());
             return false;
         }
@@ -966,7 +966,7 @@ private:
 
     std::string plugin_path() const {
         if (const char* e = std::getenv("R3_MOE_WORKER_PLUGIN"); e && *e) return e;
-        const std::string so = arch_ == "gfx1100" ? "libr3.so" : "libr4d.so";
+        const std::string so = arch_ == "gfx1100" || arch_ == "gfx1030" ? "libr3.so" : "libr4d.so";
         if (const char* e = std::getenv("RADIANCE_HOME"); e && *e) {
             std::string h(e);
             const size_t colon = h.find(':');

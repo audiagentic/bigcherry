@@ -3,7 +3,7 @@
 # protocol; the lane kernels it runs are gfx1100 today (RCS05 moves them behind moe_backend.h).
 #
 #   cmake -S engines/radiance/components/moe-remote -B <build> -G Ninja -DCMAKE_PREFIX_PATH=<installed radiance> \
-#         -DRADIANCE_SRC=<radiance source tree> [-DR3MOE_TARGETS="gfx1100;gfx1201"]
+#         -DRADIANCE_SRC=<radiance source tree> [-DR3MOE_TARGETS="gfx1030;gfx1100;gfx1201"]
 cmake_minimum_required(VERSION 3.21)
 project(moe_remote LANGUAGES CXX HIP)
 find_package(radiance REQUIRED)
@@ -22,7 +22,7 @@ endif()
 # producer rank; engine-side publication/join are the plugin's kernels.
 set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/r3_moe_worker.cpp PROPERTIES LANGUAGE HIP)
 add_executable(r3_moe_worker ${CMAKE_CURRENT_SOURCE_DIR}/r3_moe_worker.cpp)
-set_property(TARGET r3_moe_worker PROPERTY HIP_ARCHITECTURES gfx1100 gfx1201)
+set_property(TARGET r3_moe_worker PROPERTY HIP_ARCHITECTURES gfx1030 gfx1100 gfx1201)
 target_include_directories(r3_moe_worker PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} $ENV{ROCM_PATH}/include)
 target_compile_definitions(r3_moe_worker PRIVATE __HIP_PLATFORM_AMD__)
 # The helper's queue warm-up (worker_queue_warm.h) creates its placeholder queues through the HSA runtime.
@@ -37,7 +37,7 @@ set_target_properties(r3_moe_worker PROPERTIES HIP_STANDARD 17 HIP_STANDARD_REQU
 # and beside libr4d on an R9700 engine. Engine patch rad0002 declares the device ops and exports the extension point
 # bc_moe_remote_register; the hook resolves it dynamically so schema/selftest loaders keep no hard dependency on the
 # engine core.
-set(R3MOE_TARGETS "gfx1100;gfx1201" CACHE STRING "GPU targets the remote-MoE mailbox plugin is compiled for")
+set(R3MOE_TARGETS "gfx1030;gfx1100;gfx1201" CACHE STRING "GPU targets the remote-MoE mailbox plugin is compiled for")
 rad_add_plugin(libr3moe kernels
   SOURCES     ${CMAKE_CURRENT_SOURCE_DIR}/moe_mailbox_plugin.cpp ${CMAKE_CURRENT_SOURCE_DIR}/moe_remote_hook.cpp
   HIP_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/moe_mailbox_ops.hip
