@@ -97,6 +97,11 @@ default = ""
 status = "diagnostic"
 summary = "path prefix: the engine counts every routed (layer, expert) in VRAM and writes uint32[128][512] to <path>.rank<r> at shutdown"
 
+[setting.R3_MOE_WORKER_HISTOGRAM_PERIOD_S]
+default = "0"
+status = "diagnostic"
+summary = "RHP02: with R3_MOE_WORKER_HISTOGRAM, also rewrite the cumulative route histogram <path>.rank<r> every this many seconds (at least 1) while the engine runs, by rename, so a reader sees complete files and differences two snapshots for the routes between them; 0 writes only at shutdown"
+
 [setting.R3_MOE_WORKER_HEAT]
 default = ""
 status = "experimental"
