@@ -67,3 +67,21 @@ The same server and tail as above, a sweep over C++/HIP source (the radiance sou
 Prefill is +34% with heat the sweep never saw and +35% with fitted heat, against +3% for the larger budget alone; decode is level here (the spread inside a run is 70 to 93), where on the documentation corpus the same change gave decode +26% and prefill +4 to 7%. So the larger XTX budget cuts host-to-GPU traffic by 12 to 14% on both corpora and the workload-recorded heat moves speed at long context, by prefill on one corpus and decode on the other. Not yet separated: how much comes from the XTX sets and how much from which experts end up in the 6900 XT's tail (the heat file decides both). One run per arm; the direction repeats on two corpora and across two orderings, the size does not.
 
 Method to adopt: record with `R3_MOE_WORKER_HISTOGRAM` and `R3_MOE_WORKER_HISTOGRAM_PERIOD_S` on the real workload (the counting has a cost, so record, do not serve with it), invert (`max - count`), restart with `--heat` and `--budget gfx1100=23500`.
+
+## Quality of the recorded-heat restart, and which part pays, 2026-10-31 (`rad23-kld-heat-10311458`, `rad23-kld-heat2-*`, `rad23-holdout`)
+
+The quality harness of RAD23 (8,240 positions against the 2026-10-23 exact reference), a two-helper control beside the arms, every arm with the 6900 XT as a 4 GiB tail. Heat is the static profile or the snapshot recorded on the documentation text (the quality positions are documentation text too, so the live-heat arms are fitted to them).
+
+| XTX budget MiB | Heat | KLD mean | median | p99 | p99.9 | top-1 % | PPL | Gate |
+|---|---|---|---|---|---|---|---|---|
+| 22,528, two helpers (control) | static | 0.05518 | 0.01419 | 0.5557 | 1.6424 | 89.745 | 9.0651 | |
+| 22,528 | static | 0.06205 | 0.01629 | 0.6704 | 2.2477 | 89.029 | 9.1025 | fails p99.9 (+0.61, limit +0.5) |
+| 22,528 | live | 0.06264 | 0.01564 | 0.6382 | 1.9263 | 88.920 | 9.0628 | passes (p99.9 +0.28) |
+| 23,500 | static | 0.06573 | 0.01602 | 0.7223 | 2.0600 | 88.701 | 9.0381 | fails top-1 (-1.04 points, limit 1.0) |
+| 23,500 | live | 0.06602 | 0.01581 | 0.6886 | 2.7905 | 89.090 | 9.1164 | fails p99.9 (+1.15) |
+
+The mean rises with the XTX budget (about +0.0035 for the extra 2 GiB, about 850 experts that now take the helper's path instead of the engine's own) and not with the heat file. The tail of the distribution is noisy: p99.9 rests on about eight positions and swings between 1.93 and 2.79 across arms that differ only in placement, so one run of it decides nothing; the mean and top-1 move less. The 4 GiB tail with static heat already breaches p99.9 at the normal budget, as the 6 GiB tail did in the earlier sizes run.
+
+Speed on the held-out code corpus (675,534 tokens used, fresh server per arm): XTX 22,528 with the live heat gives prefill 1883 tok/s (+30% on the plain 1450) and decode 68.5 (inside the spread of the 77.5 baseline), host-to-GPU 1068 GiB (-2%). So the prefill gain is the heat file and not the budget (budget alone: +3%), and the variant that carries it, live heat at the normal budget, is the one that passes the quality gate. The larger budget buys traffic (-12 to 14%) at a measurable quality cost and no further speed; it is not adopted.
+
+Open: why the helper's path costs KLD per expert moved (the loss scales with the experts held by helpers, which says the helper arithmetic differs from the engine's in a way that matters), and whether a heat file recorded on a different workload from the one served keeps its gain (held-out prefill says yes, once).
