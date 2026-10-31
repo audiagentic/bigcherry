@@ -44,6 +44,22 @@ default = "28672"
 status = "experimental"
 summary = "VRAM budget in MiB for cold full-expert units owned by the gfx1201 helper"
 
+[setting.R3_MOE_WORKER_MIBS]
+default = ""
+status = "experimental"
+summary = "VRAM budget in MiB of each helper, comma separated, one a helper (R3_MOE_WORKER_COUNT of them); empty gives every helper R3_MOE_WORKER_MIB. For helpers on cards of different sizes (RAD23)"
+
+[setting.R3_MOE_WORKER_PLACEMENT]
+default = "roundrobin"
+status = "experimental"
+summary = "how the heat ranking is dealt to the helpers: roundrobin (each takes its share, the default) or tail (helpers 0..N-2 take the ranking by R3_MOE_WORKER_SHARES up to their budgets and the last helper takes the coldest leftovers that fit its own budget) (RAD23)"
+activation = "r3_moe_worker: tail placement:"
+
+[setting.R3_MOE_WORKER_SHARES]
+default = ""
+status = "experimental"
+summary = "each helper's part of the expert ranking, comma separated non-negative weights one a helper (empty = equal); a weight of 0 gives a helper no experts (RAD23)"
+
 [setting.R3_MOE_WORKER_MAX_ROWS]
 default = "64"
 status = "experimental"
@@ -230,7 +246,7 @@ activation = "r3_moe_worker: large-lane requests up to"
 [setting.R3_MOE_WORKER_ROWS]
 default = "0"
 status = "experimental"
-summary = "few-rows-a-expert MoE kernel for the helper's large (prefill) lane (RAD06): one block an (expert, 32 outputs), each decoded weight applied to up to 16 of the expert's rows. Shelved: correct but slower - 38% prefill (lab, 2026-10-15); harness A/B 2026-10-17: -76% pp4096, -40% tg512"
+summary = "few-rows-a-expert MoE kernel for the helper's large (prefill) lane (RAD06): one block an (expert, 32 outputs), each decoded weight applied to up to 16 of the expert's rows. Default on for a gfx1030 helper (no matrix instructions; RAD23), off elsewhere. Shelved on gfx1100: correct but slower - 38% prefill (lab, 2026-10-15); harness A/B 2026-10-17: -76% pp4096, -40% tg512"
 activation = "r3_moe_worker: few-rows prefill kernel on the large lane"
 
 [setting.R3_MOE_WORKER_INDEX]

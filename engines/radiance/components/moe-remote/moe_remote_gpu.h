@@ -976,7 +976,9 @@ private:
 
     std::string plugin_path() const {
         if (const char* e = std::getenv("R3_MOE_WORKER_PLUGIN"); e && *e) return e;
-        const std::string so = arch_ == "gfx1100" || arch_ == "gfx1030" ? "libr3.so" : "libr4d.so";
+        /* One plugin file a family of cards: libr4d on gfx1201, libr3 on gfx1100, and libr3 built for gfx1030 beside it as libr3-gfx1030.so
+         * (the two share a name in a build tree that makes one of them, and a helper must not load the other's code). */
+        const std::string so = arch_ == "gfx1100" ? "libr3.so" : arch_ == "gfx1030" ? "libr3-gfx1030.so" : "libr4d.so";
         if (const char* e = std::getenv("RADIANCE_HOME"); e && *e) {
             std::string h(e);
             const size_t colon = h.find(':');
