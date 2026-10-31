@@ -39,6 +39,7 @@
 # --ngram-device INDEX: an inventory card (not the engine, not a helper) that holds as much of the n-gram table as fits and gathers its rows (libr3ngram, R3_NGRAM_DEV);
 # the rows past its VRAM stay in a host copy. The card then sits in the engine process beside the engine card.
 # --max-model-len TOKENS: the longest context a sequence may have (default 1048576).
+# --rope-scaling S: default yarn:4 (the 1M stretch); use none for contexts within the trained 262144.
 # --gpu-power (or GPU_POWER=1): apply the cards' configured power settings ([host.*.devices.power]) for this run and
 # put back what the cards ran before at stop. Without write access it lists the setup steps still missing and runs
 # with the cards as they are.
@@ -63,6 +64,7 @@ KV_DTYPE=fp8
 ENGINE_ARGS=()
 NGRAM_DEV=""
 MAX_LEN=1048576
+ROPE=yarn:4
 RECORD_PERIOD=30
 CMD=start
 [ $# -gt 0 ] && case "$1" in start|stop) CMD=$1; shift ;; esac
@@ -80,6 +82,7 @@ while [ $# -gt 0 ]; do
     --engine-arg) ENGINE_ARGS+=("$2"); shift 2 ;;
     --ngram-device) NGRAM_DEV=$2; shift 2 ;;
     --max-model-len) MAX_LEN=$2; shift 2 ;;
+    --rope-scaling) ROPE=$2; shift 2 ;;
     --ngram-placement) NGRAM=$2; shift 2 ;;
     --record-heat) RECORD=$2; shift 2 ;;
     --record-period) RECORD_PERIOD=$2; shift 2 ;;
@@ -222,7 +225,7 @@ env "${COMMON[@]}" "${NGRAM_ENV[@]}" R3_MOE_WORKER=1 ROCR_VISIBLE_DEVICES="$ENGI
     --kv-cache-dtype "$KV_DTYPE" \
     --num-speculative-tokens 3 \
     --max-model-len "$MAX_LEN" \
-    --rope-scaling yarn:4 \
+    --rope-scaling "$ROPE" \
     --prefix-resume nearest \
     "${ENGINE_ARGS[@]}" \
   > "$LOG" 2>&1 &
