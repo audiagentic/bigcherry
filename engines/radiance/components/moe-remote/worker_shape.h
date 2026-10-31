@@ -142,11 +142,24 @@ bool container_shape(const Container& f, MoeShape* s) {
     return true;
 }
 
-const char* format_name(uint32_t fmt) {
-    return fmt == MOE_FMT_W4NL64 ? "w4nl64" : fmt == MOE_FMT_FP8_E4M3_BLOCK ? "fp8_e4m3_block" : "unrecognised";
+
+/* The backend of the card this process runs on, from R3_MOE_WORKER_FORMATS (the weight formats its kernels run; engines/radiance/archs.toml,
+ * set by the launcher and the harness). A card type is data: nothing here knows which architectures exist. */
+bool helper_backend(const char* arch, r3::moe_backend::Backend* out) {
+    uint32_t mask = 0;
+    const char* env = std::getenv("R3_MOE_WORKER_FORMATS");
+    if (!r3::moe_backend::parse_formats(env, &mask)) {
+        std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_FORMATS must list the weight formats this card runs (w4nl64, fp8_e4m3_block), got '%s'; "
+                             "the card types are engines/radiance/archs.toml\n", env ? env : "");
+        return false;
+    }
+    *out = r3::moe_backend::Backend{};
+    std::strncpy(out->name, arch, sizeof(out->name) - 1);
+    out->formats = mask;
+    return true;
 }
 
-/* Whether the backend for this architecture can run this container's experts, and why not when it cannot. */
+/* Whether this card's backend can run the container's experts, and why not when it cannot. */
 bool backend_accepts(const Container& f, const char* arch, bool verbose) {
     MoeShape shape{};
     MoeExpertDesc d{};
@@ -155,20 +168,16 @@ bool backend_accepts(const Container& f, const char* arch, bool verbose) {
         return false;
     }
     shape.top_k = 1;      // the container does not carry the engine's top-k; the check here is the format and geometry
-    MoeDeviceCaps caps{};
-    std::strncpy(caps.arch, arch, sizeof(caps.arch) - 1);
-    caps.wave_size = 32;
-    caps.has_wmma_f16 = std::strncmp(arch, "gfx11", 5) == 0;
-    const r3::moe_backend::Backend* backend = r3::moe_backend::backend_for(arch);
-    const int rc = backend ? r3::moe_backend::probe(*backend, shape, d.weight, caps) : (int)MOE_UNSUPPORTED_ARCH;
+    r3::moe_backend::Backend backend{};
+    if (!helper_backend(arch, &backend)) return false;
+    const int rc = r3::moe_backend::probe(backend, shape, d.weight);
     if (verbose || rc != MOE_OK)
         std::fprintf(stderr,
                      "r3_moe_worker: container: %u layers, %u experts, hidden %u, expert width %u, weight format %s "
                      "(scale dtype %u, tile %ux%u), %s backend: %s\n",
-                     shape.layers, shape.experts, shape.hidden, shape.intermediate, format_name(d.weight.format),
-                     d.weight.scale_dtype, d.weight.block_n, d.weight.block_k, backend ? backend->name : arch,
-                     rc == MOE_OK ? "supported" : rc == MOE_UNSUPPORTED_FORMAT ? "weight format not supported"
-                     : rc == MOE_UNSUPPORTED_ARCH ? "architecture not supported" : "geometry not supported");
+                     shape.layers, shape.experts, shape.hidden, shape.intermediate, r3::moe_backend::format_name(d.weight.format),
+                     d.weight.scale_dtype, d.weight.block_n, d.weight.block_k, backend.name,
+                     rc == MOE_OK ? "supported" : rc == MOE_UNSUPPORTED_FORMAT ? "weight format not supported" : "geometry not supported");
     return rc == MOE_OK;
 }
 

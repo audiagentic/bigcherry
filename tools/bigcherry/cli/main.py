@@ -1582,6 +1582,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     _register_power(sub)
 
+    from .layout_cmds import register as _register_layout
+
+    _register_layout(sub)
+
     from .host_check import register as _register_host_check
 
     _register_host_check(sub)

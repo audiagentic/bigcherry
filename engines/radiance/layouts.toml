@@ -1,0 +1,36 @@
+# How the cards of a host are used by the remote-MoE offload (RAD23): named layouts, no device indices and no host facts. A layout picks
+# cards from the host's inventory (config/environment.local.toml [[host.*.devices]]) by architecture, or by index with `devices`, and says what each
+# does. The card types themselves are engines/radiance/archs.toml. `bigcherry layout show NAME` resolves one against this host.
+#
+#   [layout.NAME]                  description, engine
+#   engine = { arch = "gfx1201" }  the card that runs the model (exactly one); `devices = [2]` pins an index
+#   [[layout.NAME.helper]]         a group of helper cards, in order (helper 0 first; helper 0 creates the shared segment)
+#     arch      architecture to take from the inventory         devices  explicit indices instead of arch
+#     count     how many of that arch ("all" or a number)       budget-mib  VRAM for experts on each card
+#     placement "head": the group takes the heat ranking by `share` (round robin)  "tail": takes the coldest experts that fit what the heads
+#               left; only the last group may be tail, and only after a head group
+#     share     weight of each card in a head group (default 1; 0 owns nothing)
+schema = 1
+
+[layout.flashnext-2xtx]
+description = "Flash-Next as it has run since RAD02: the R9700 runs the model, both 7900 XTX cards hold the hottest experts (22 GiB each)"
+engine = { arch = "gfx1201" }
+[[layout.flashnext-2xtx.helper]]
+arch = "gfx1100"
+count = "all"
+budget-mib = 22528
+placement = "head"
+
+[layout.flashnext-2xtx-rdna2-tail]
+description = "flashnext-2xtx plus the RX 6900 XT as a third helper holding a small tail of the coldest experts (RAD23: 2 GiB passes the KLD gate cleanly)"
+engine = { arch = "gfx1201" }
+[[layout.flashnext-2xtx-rdna2-tail.helper]]
+arch = "gfx1100"
+count = "all"
+budget-mib = 22528
+placement = "head"
+[[layout.flashnext-2xtx-rdna2-tail.helper]]
+arch = "gfx1030"
+count = 1
+budget-mib = 2048
+placement = "tail"

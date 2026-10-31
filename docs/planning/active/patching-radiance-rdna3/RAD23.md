@@ -390,3 +390,13 @@ the path difference understood first. What the freed host pool buys: the KV cach
 backs 69% of the worst case ... a larger --host-pool-mib gives the cache more"), so host RAM freed from experts is context at full speed
 once the engine hands it to the cache.
 
+## Topology and card types as configuration, 2026-10-31
+
+Owner requirement: card types are specified externally and their use configured, not hard coded. Done (details: `docs/reference/engines/radiance/LAYOUTS.md`):
+`engines/radiance/archs.toml` (card types: plugin, formats, rows kernel, reserve, roles), `engines/radiance/layouts.toml` (named layouts over the host inventory),
+`bigcherry layout list|show|env|card-env`, the launcher (`--layout`, `--budget ARCH=MIB`), the harness adapter (`R3_MOE_WORKER_LAYOUT`, or `R3_MOE_WORKER_DEVICES` with the card type taken
+from the inventory), and the helper (no architecture whitelist, no backend table, no plugin map: `R3_MOE_WORKER_PLUGIN_FILE` and `R3_MOE_WORKER_FORMATS` are required;
+the store-drain asm selects on the compiler's family macro `__GFX12__`). Replaced, not kept: `--tail-mib`, `FLASHNEXT_TAIL_MIB`, `XTX_ROCR`, `R9700_ROCR`, `RDNA2_ROCR`,
+`lab_device_ordinals*`, `backend_for`, `gfx1100_backend`, `gfx1030_backend`, the helper's gfx1030 rows default. Not run on hardware yet: the launcher and a helper
+start with the new settings (the GPU lease is held by the libr3 selftest); everything else is covered by unit tests and a three-architecture build.
+

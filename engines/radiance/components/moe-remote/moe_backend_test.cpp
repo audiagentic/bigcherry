@@ -11,11 +11,12 @@ static void check(bool ok, const char* what) {
 
 using namespace r3::moe_backend;
 
-static MoeDeviceCaps caps(const char* arch, bool wmma = true) {
-    MoeDeviceCaps c{};
-    std::strncpy(c.arch, arch, sizeof(c.arch) - 1);
-    c.wave_size = 32; c.lds_bytes = 65536; c.has_wmma_f16 = wmma;
-    return c;
+// A card type's backend is data (engines/radiance/archs.toml -> R3_MOE_WORKER_FORMATS), parsed, never looked up by architecture.
+static Backend backend(const char* name, const char* formats) {
+    Backend b{};
+    std::strncpy(b.name, name, sizeof(b.name) - 1);
+    check(parse_formats(formats, &b.formats), "formats parse");
+    return b;
 }
 
 int main() {
@@ -48,31 +49,30 @@ int main() {
     check(matrix_bytes(MoeWeightDesc{99, 0, 0, 0, 0, 0}, 8, 8) == MOE_UNSUPPORTED_FORMAT, "an unknown format is refused");
     check(matrix_bytes(fp8, UINT64_MAX / 2, 4) == MOE_OVERFLOW, "an oversized matrix is an overflow, not a wrapped size");
 
-    // probe: the gfx1100 backend today runs W4 only, and says so before any expert is touched
-    const Backend& b = gfx1100_backend();
-    check(probe(b, flash, w4, caps("gfx1100")) == MOE_OK, "gfx1100 accepts Flash-Next W4");
-    check(probe(b, qwen, fp8, caps("gfx1100")) == MOE_OK, "gfx1100 accepts FP8 block-scaled (radiance's fp8a8 grouped GEMM)");
+    // formats are a list of names; a backend is whatever the list says
+    uint32_t mask = 0;
+    check(parse_formats("w4nl64", &mask) && mask == (1u << MOE_FMT_W4NL64), "one format");
+    check(parse_formats("w4nl64,fp8_e4m3_block", &mask) && mask == ((1u << MOE_FMT_W4NL64) | (1u << MOE_FMT_FP8_E4M3_BLOCK)), "two formats");
+    mask = 7;
+    check(!parse_formats("", &mask) && !parse_formats(nullptr, &mask) && !parse_formats("w4nl64,", &mask) && !parse_formats("w4", &mask) &&
+          !parse_formats("w4nl64,w4nl64", &mask) && !parse_formats("fp8_e4m3_block;w4nl64", &mask) && mask == 7,
+          "empty, unknown, truncated, repeated and malformed lists are refused and leave the mask alone");
+    check(std::strcmp(format_name(MOE_FMT_W4NL64), "w4nl64") == 0 && std::strcmp(format_name(MOE_FMT_FP8_E4M3_BLOCK), "fp8_e4m3_block") == 0, "format names");
+
+    // probe: a backend that runs W4 and FP8, one that runs W4 only; the answer comes before any expert is touched
+    const Backend both = backend("card-a", "w4nl64,fp8_e4m3_block");
+    check(probe(both, flash, w4) == MOE_OK, "a W4 backend accepts Flash-Next W4");
+    check(probe(both, qwen, fp8) == MOE_OK, "a W4+FP8 backend accepts FP8 block-scaled (radiance's fp8a8 grouped GEMM)");
     MoeWeightDesc nolayout{99, 0, 0, 0, 0, 0};
-    check(probe(b, qwen, nolayout, caps("gfx1100")) == MOE_UNSUPPORTED_FORMAT, "an unknown format is still refused");
-    check(probe(b, flash, w4, caps("gfx1030", false)) == MOE_UNSUPPORTED_ARCH, "the gfx1100 backend refuses another architecture");
-    check(probe(b, flash, w4, caps("gfx1100", false)) == MOE_UNSUPPORTED_ARCH, "and a device without f16 WMMA");
+    check(probe(both, qwen, nolayout) == MOE_UNSUPPORTED_FORMAT, "an unknown format is refused");
     MoeShape bad = flash; bad.top_k = flash.experts + 1;
-    check(probe(b, bad, w4, caps("gfx1100")) == MOE_BAD_GEOMETRY, "top-k above the expert count is refused");
+    check(probe(both, bad, w4) == MOE_BAD_GEOMETRY, "top-k above the expert count is refused");
     bad = flash; bad.hidden = 0;
-    check(probe(b, bad, w4, caps("gfx1100")) == MOE_BAD_GEOMETRY, "a zero dimension is refused");
-
-    // the gfx1030 backend (RDNA2): W4 on the dot path, no WMMA needed, FP8 block-scaled not yet
-    const Backend& r = gfx1030_backend();
-    check(probe(r, flash, w4, caps("gfx1030", false)) == MOE_OK, "gfx1030 accepts Flash-Next W4 without WMMA");
-    check(probe(r, qwen, fp8, caps("gfx1030", false)) == MOE_UNSUPPORTED_FORMAT, "gfx1030 refuses FP8 block-scaled for now");
-    check(probe(r, flash, w4, caps("gfx1100")) == MOE_UNSUPPORTED_ARCH, "the gfx1030 backend refuses another architecture");
-    check(backend_for("gfx1030") == &r && backend_for("gfx1100") == &b, "backend_for picks the backend by architecture");
-    check(backend_for("gfx1201") == nullptr && backend_for("gfx90a") == nullptr, "and returns none for an architecture without one");
-
-    // a backend without FP8 refuses it
-    Backend w4_only = b;
-    w4_only.formats = 1u << MOE_FMT_W4NL64;
-    check(probe(w4_only, qwen, fp8, caps("gfx1100")) == MOE_UNSUPPORTED_FORMAT, "a W4-only backend refuses the Qwen3.6 FP8 experts");
+    check(probe(both, bad, w4) == MOE_BAD_GEOMETRY, "a zero dimension is refused");
+    const Backend w4_only = backend("card-b", "w4nl64");
+    check(probe(w4_only, flash, w4) == MOE_OK, "a W4-only backend accepts Flash-Next W4");
+    check(probe(w4_only, qwen, fp8) == MOE_UNSUPPORTED_FORMAT, "a W4-only backend refuses the Qwen3.6 FP8 experts");
+    check(std::strcmp(w4_only.name, "card-b") == 0, "the backend keeps its card's name");
 
     std::puts("r3_moe_backend_test: ok");
     return 0;

@@ -211,8 +211,8 @@ Random-word prompts decode slower (39 tok/s at 347K) because the drafter has not
 
 ### A third helper on the RX 6900 XT (RAD23, 2026-10-31)
 
-`launch-flashnext-best.sh --tail-mib N` (or `FLASHNEXT_TAIL_MIB=N`) adds the RX 6900 XT (gfx1030, `libr2.so`) as a third helper with an N MiB
-budget. The two XTXs keep the hottest 18,640 experts as before; the 6900 XT takes the COLDEST experts that fit
+The layout `flashnext-2xtx-rdna2-tail` (`launch-flashnext-best.sh --layout flashnext-2xtx-rdna2-tail`, size with `--budget gfx1030=N`) adds the
+RX 6900 XT (gfx1030, `libr2.so`) as a third helper with a 2 GiB budget. The two XTXs keep the hottest 18,640 experts as before; the 6900 XT takes the COLDEST experts that fit
 (`R3_MOE_WORKER_PLACEMENT=tail`), and that much of the engine's pinned host expert pool is freed (2 GiB: 687 slots; 6 GiB: 2,307; 14 GiB, all
 5,931 leftover experts: 5,465). Off by default. Measured on this layout (natural-text prefill, decode good to about +-5%; KLD against the
 2026-10-23 reference, 8,240 positions):

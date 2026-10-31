@@ -135,7 +135,7 @@ class ComponentGateTests(unittest.TestCase):
         self.assertIn("-DCMAKE_C_COMPILER=/fake/gcc-14", configure)
         self.assertIn("-DCMAKE_CXX_COMPILER=/fake/g++-14", configure)
         self.assertIn("-DRAD_BUILD_TESTS=OFF", configure)
-        self.assertIn("-DRAD_GPU_TARGETS=gfx1100;gfx1201", configure)
+        self.assertIn("-DRAD_GPU_TARGETS=gfx1030;gfx1100;gfx1201", configure)
         self.assertIn("-DCMAKE_BUILD_TYPE=Release", configure)
         # the components are built with the same compilers
         component_configures = [c for c in self.calls[1:] if c[:2] == ["cmake", "-S"]]

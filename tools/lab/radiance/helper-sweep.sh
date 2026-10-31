@@ -21,7 +21,7 @@ B=$(ls -td ${BC_DEV_ROOT}/projects/bigcherry/workspaces/main/work/builds/*/*/ | 
 M=${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad
 FILES=$(ls -S ${CAPDIR:-$W/captures}/*.bin | head -$N | tr '\n' ' ')
 out=$W/sweep-out; rm -rf $out
-env HIP_VISIBLE_DEVICES=0 ROCR_VISIBLE_DEVICES=0 R3_MOE_WORKER_MIB=22528 R3_MOE_WORKER_SMALL_ROWS=${SMALL_ROWS:-8} R3_MOE_WORKER_SMALL_LANES=${SMALL_LANES:-} R3_MOE_WORKER_MAX_ROWS=4096 \
+env HIP_VISIBLE_DEVICES=0 ROCR_VISIBLE_DEVICES=0 $(PYTHONPATH=tools python3 -m bigcherry layout card-env 0) R3_MOE_WORKER_MIB=22528 R3_MOE_WORKER_SMALL_ROWS=${SMALL_ROWS:-8} R3_MOE_WORKER_SMALL_LANES=${SMALL_LANES:-} R3_MOE_WORKER_MAX_ROWS=4096 \
   R3_MOE_NATIVE=1 R3_MOE_WORKER_MOE_DOWN_TILE=1 R3_MOE_WORKER_HEAT=$W/runs/perf51/heat.rank0.hot-first RADIANCE_HOME=$B/radiance_home \
   R3_MOE_SWEEP_FAST=${R3_MOE_SWEEP_FAST:-1} timeout 3600 rocprofv3 --kernel-trace --output-format csv -d $out -o run -- \
   $B/radiance_home/helpers/r3_moe_worker --replay-sweep $M "$VARIANTS" $FILES > $out.log 2>&1

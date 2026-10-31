@@ -55,6 +55,7 @@ accepted = "radiance:draft_accepted_total"
 # BigCherry-owned source built against the pinned engine and installed into its runtime (RAD01 PR 5).
 [components]
 libr3 = "engines/radiance/components/libr3"
+libr2 = "engines/radiance/components/libr2"
 moe-remote = "engines/radiance/components/moe-remote"
 ngram-helper = "engines/radiance/components/ngram-helper"
 bc-gfx12 = "engines/radiance/components/bc-gfx12"
