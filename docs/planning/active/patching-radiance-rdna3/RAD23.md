@@ -145,3 +145,43 @@ Then hardware: helper-ab at H = 2 against the parent build (must not move), then
 GPT design review: the earlier requests (req_bigcherry_97cebda33722, req_bigcherry_3bb6b763ab97) are recorded in Steps; a new review
 of this plan could not be submitted from this session (no ag-* gateway tools after the restart on 2026-10-30).
 
+## GPT review of the plan, 2026-10-31 (req_main_a51e4069b049) and what changes
+
+Verdict: approve the R/H separation with corrections; approve the fdot2 kernel conditionally; prove a third helper helps end to end
+before investing in a new gfx1030 GEMM.
+
+Accepted and now part of the plan:
+- A synchronous MoE layer waits for its slowest helper (T_layer ~ max(T0,T1,T2) + T_combine), so a slow helper can lengthen the
+  layer. Assignment must be latency-aware, with a work budget for the gfx1030 helper and a legal zero-work mode; cold experts can
+  still receive large batches when selected.
+- A cold expert that lives only on the slow helper cannot be dropped when the helper is over budget: the first experiments use
+  replicated experts (a second copy on an XTX) so the budget can shed work; migration is a later item.
+- Classify each of the 129 kMaxRanks sites by semantic axis (engine rank, helper index, result producer, lane index, storage
+  capacity) before changing it; do not replace them mechanically. Named hazards: moe_lane_host.h StoredWeight arrays and
+  worker_lanes.h lane statistics are engine-rank axes; worker_harness.h addresses results as rank * kMaxRanks + r (take an explicit
+  stride from the validated layout).
+- Slot lifetime: activation staging shared by H helpers needs a generation and a participant mask (or count); an old completion must
+  not release a recycled slot. Keep result-completion as the release point unless an earlier activation_consumed ack measures as a gain.
+- Preserve the H = 2 path exactly at first (ownership, route offsets, dispatched rows, results, speed), not just the ownership map.
+- valid() validates R, H, S bounds, alignment, overflow, monotonic non-overlapping offsets and the mapped length before it derives
+  any pointer from header fields.
+- Tests to add: (R,H) = (2,3) and (2,8), maximum sizes, invalid and half-initialised headers, overflow, helper crash, late
+  completion, ring wraparound, repeated start/stop, and a deliberately slow helper that finishes several requests late.
+- Quality: helpers finishing in different orders change fp16 rounding, so the gate is KLD, not per-layer relative error.
+
+Order of work (replaces the earlier list):
+1. Instrument the H = 2 run: T_engine_publish, T_helper_start/done per helper, T_engine_all_done, T_combine, bytes and expert rows per
+   helper. This is the baseline critical path.
+2. Layout and protocol split, H = 2 behaviour unchanged.
+3. H = 3 with the third helper owning nothing (startup, shutdown, idle, no regression).
+4. H = 3 with a bounded gfx1030 budget (0, 5, 10, 20 percent of routed work, replicated cold experts), existing kernels, 128/512/2048-token
+   decode and 1024/4096-token prefill, identical routing. Useful only if total time falls consistently with no decode regression.
+5. Only then the native fdot2 grouped GEMM (RCS07) - justified if gfx1030 is on the critical path and 18.3 ms -> 4.1 ms would change it.
+6. dot4 requantisation, compact result planes, adaptive placement only where profiling justifies them.
+
+Not accepted as stated: the review calls the E4M3-to-f16 expression (code & 0x7f) << 7 | (code & 0x80) << 8 invalid. It is
+r3_e4m3x4_to_f16 in libr3/r3_compat.h, used by the fp8 GEMMs that pass rad-kbench (2083 checks): E4M3 (bias 7) and half (bias 15) share
+the subnormal rule, so every finite code maps to value x 2^-8 exactly; only the E4M3 NaN encoding differs (it maps to a finite
+half), and the kernel's callers do not feed NaN codes. The PCIe figure is the same order as the review's own per-layer arithmetic
+(about 4.5 ms of ideal link time a layer for 2048 rows, times the layer count).
+
