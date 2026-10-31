@@ -1,16 +1,18 @@
 # moe-remote: the remote-MoE hand-off (RAD02, RCS04). The helper process r3_moe_worker computes routed experts for an engine
 # on another card family; libr3moe is the engine-side mailbox plugin (engine patch rad0002 declares the ops it fills). The
-# lane kernels the helper runs are gfx1100 today and move behind moe_backend.h in RCS05. Split from libr3, which keeps the
+# card types it runs on are engines/radiance/archs.toml. Split from libr3, which keeps the
 # engine kernel overrides. Setting names are runtime identifiers and did not change in the move.
 schema = 1
 name = "moe-remote"
 engine = "radiance"
+# the cards the ENGINE itself serves (the build configures the engine for the union of the components targets); the helper and the mailbox plugin are built for
+# every card type in engines/radiance/archs.toml (CMakeLists.txt)
 targets = ["gfx1100", "gfx1201"]
 built-against = "v1.14.0"
 outputs = ["kernels/libr3moe.so", "helpers/r3_moe_worker"]
 
 [build]
-configure = { RADIANCE_SRC = "{engine_source}", R3MOE_TARGETS = "gfx1100;gfx1201" }
+configure = { RADIANCE_SRC = "{engine_source}" }   # the helper builds for every card type in engines/radiance/archs.toml (CMakeLists.txt)
 
 # Offline tests the bump gate builds and runs with ctest in the component's build tree.
 [test]

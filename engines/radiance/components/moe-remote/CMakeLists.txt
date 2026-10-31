@@ -1,14 +1,28 @@
 # moe-remote: the remote-MoE hand-off. The helper process (r3_moe_worker) computes routed experts for an engine on
 # another card family, and the libr3moe plugin is the engine-side mailbox (RAD02, RCS04). Arch-neutral in its
-# protocol; the lane kernels it runs are gfx1100 today (RCS05 moves them behind moe_backend.h).
+# protocol; the cards it runs on are the card types in engines/radiance/archs.toml (RAD23): the helper and the mailbox plugin are
+# built for every one of them, so a new card type is a stanza there and not an edit here.
 #
 #   cmake -S engines/radiance/components/moe-remote -B <build> -G Ninja -DCMAKE_PREFIX_PATH=<installed radiance> \
-#         -DRADIANCE_SRC=<radiance source tree> [-DR3MOE_TARGETS="gfx1030;gfx1100;gfx1201"]
+#         -DRADIANCE_SRC=<radiance source tree> [-DR3MOE_TARGETS="gfx1100;gfx1201"]
 cmake_minimum_required(VERSION 3.21)
 project(moe_remote LANGUAGES CXX HIP)
 find_package(radiance REQUIRED)
 rad_plugin_defaults()
 find_package(Threads REQUIRED)
+
+# GPU targets: the card types of archs.toml, unless -DR3MOE_TARGETS narrows them (a quick build for one card).
+file(STRINGS ${CMAKE_CURRENT_SOURCE_DIR}/../../archs.toml arch_lines REGEX "^\\[arch\\.gfx[0-9a-f]+\\]")
+set(arch_targets "")
+foreach(line ${arch_lines})
+  string(REGEX MATCH "arch\\.(gfx[0-9a-f]+)" _ "${line}")
+  list(APPEND arch_targets ${CMAKE_MATCH_1})
+endforeach()
+if(NOT arch_targets)
+  message(FATAL_ERROR "moe-remote: no [arch.gfx...] table in engines/radiance/archs.toml")
+endif()
+set(R3MOE_TARGETS "${arch_targets}" CACHE STRING "GPU targets the remote-MoE helper and mailbox plugin are compiled for (default: every card type in archs.toml)")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/../../archs.toml)
 
 set(RADIANCE_SRC "" CACHE PATH "radiance source tree (the plugin ABI headers are read from it)")
 if(NOT EXISTS "${RADIANCE_SRC}/abi")
@@ -22,7 +36,7 @@ endif()
 # producer rank; engine-side publication/join are the plugin's kernels.
 set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/r3_moe_worker.cpp PROPERTIES LANGUAGE HIP)
 add_executable(r3_moe_worker ${CMAKE_CURRENT_SOURCE_DIR}/r3_moe_worker.cpp)
-set_property(TARGET r3_moe_worker PROPERTY HIP_ARCHITECTURES gfx1030 gfx1100 gfx1201)
+set_property(TARGET r3_moe_worker PROPERTY HIP_ARCHITECTURES ${R3MOE_TARGETS})
 target_include_directories(r3_moe_worker PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} $ENV{ROCM_PATH}/include)
 target_compile_definitions(r3_moe_worker PRIVATE __HIP_PLATFORM_AMD__)
 # The helper's queue warm-up (worker_queue_warm.h) creates its placeholder queues through the HSA runtime.
@@ -37,7 +51,6 @@ set_target_properties(r3_moe_worker PROPERTIES HIP_STANDARD 17 HIP_STANDARD_REQU
 # and beside libr4d on an R9700 engine. Engine patch rad0002 declares the device ops and exports the extension point
 # bc_moe_remote_register; the hook resolves it dynamically so schema/selftest loaders keep no hard dependency on the
 # engine core.
-set(R3MOE_TARGETS "gfx1030;gfx1100;gfx1201" CACHE STRING "GPU targets the remote-MoE mailbox plugin is compiled for")
 rad_add_plugin(libr3moe kernels
   SOURCES     ${CMAKE_CURRENT_SOURCE_DIR}/moe_mailbox_plugin.cpp ${CMAKE_CURRENT_SOURCE_DIR}/moe_remote_hook.cpp
   HIP_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/moe_mailbox_ops.hip
@@ -65,7 +78,7 @@ if(BUILD_TESTING)
   # RAD29: route compaction vs the per-route-atomic loop it replaced (equivalence; --bench for timing). Needs a GPU.
   add_executable(r3_route_compact_test EXCLUDE_FROM_ALL ${CMAKE_CURRENT_SOURCE_DIR}/route_compact_test.hip)
   set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/route_compact_test.hip PROPERTIES LANGUAGE HIP)
-  set_property(TARGET r3_route_compact_test PROPERTY HIP_ARCHITECTURES gfx1100 gfx1201)
+  set_property(TARGET r3_route_compact_test PROPERTY HIP_ARCHITECTURES ${R3MOE_TARGETS})
   target_include_directories(r3_route_compact_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
   target_link_libraries(r3_route_compact_test PRIVATE radiance::abi ${RAD_HIP_RUNTIME})
   set_target_properties(r3_route_compact_test PROPERTIES HIP_STANDARD 17 HIP_STANDARD_REQUIRED ON)

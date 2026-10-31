@@ -40,6 +40,23 @@ class RepoDataTests(unittest.TestCase):
             self.assertIn(a.plugin, built, name)
 
 
+class BuildTargetsTests(unittest.TestCase):
+    """A card type in archs.toml must be a card the helper is built for: the component must not pin its own list of architectures."""
+
+    def test_the_helper_builds_for_every_card_type_in_archs_toml(self):
+        moe = paths.REPO_ROOT / "engines/radiance/components/moe-remote"
+        cmake = (moe / "CMakeLists.txt").read_text(encoding="utf-8")
+        self.assertIn("archs.toml", cmake)
+        self.assertIn("HIP_ARCHITECTURES ${R3MOE_TARGETS}", cmake)
+        toml = (moe / "component.toml").read_text(encoding="utf-8")
+        configure = re.search(r"^configure\s*=\s*\{([^}]*)\}", toml, re.M).group(1)
+        self.assertNotIn("R3MOE_TARGETS", configure, "the lane build must not pin the helper's architectures; archs.toml decides")
+        # no architecture named as a build target in the helper's CMake (comments aside)
+        for line in cmake.splitlines():
+            if not line.lstrip().startswith("#"):
+                self.assertNotRegex(line, r"HIP_ARCHITECTURES\s+gfx|GPU_TARGETS\s+gfx|R3MOE_TARGETS\s+\"gfx", line)
+
+
 class ResolveTests(unittest.TestCase):
     def test_two_xtx(self):
         r = rl.resolve("flashnext-2xtx", host(*XTX2))
