@@ -75,3 +75,15 @@ Link note (2026-10-19): the 6900 XT is behind a PCIe 3.0 x4 hop (about 3.5 GB/s 
 - Kernel time (rocprofv3, layer 0): decode-sized lane at 64 rows gate-up 3.83 ms vs 3.03 ms, down 1.30 vs 1.31 ms (6900 XT vs XTX); grouped GEMM at 256 rows 18.3 ms vs 4.1 ms (emulated tile, about 4.5x slower).
 - Not done: a whole-model run, FP8 block-scaled experts, a faster prefill tile (the emulation uses 64 cross-lane exchanges a tile), and a third helper in the engine, which needs RAD23 (kMaxRanks = 2 is both the engine-rank axis and the helper bound).
 
+## libr2, 2026-10-31
+
+The gfx1030 kernels are their own component, `engines/radiance/components/libr2` (outputs `kernels/libr2.so`), built from libr4d the way libr3
+builds it for gfx11 and sharing libr3's rewriter, stub generator and `r3_compat.h`. What is libr2's own: `r3_mma16.h` (the 16x16x16 tile as
+ds_bpermute plus f32 FMAs; libr3 has the WMMA one under the same name, selected by include-path order because `r3_compat.h` includes it with
+`<>`), `units.txt` (the three units the remote-MoE helper needs; the integer-WMMA GEMMs and attention do not compile for gfx10.3),
+`rewrites.txt` and `r2_registry.cpp`. `r3_compat.h` no longer has a gfx1030 branch. A gfx1030 helper loads `libr2.so` (it was
+`libr3-gfx1030.so`, a side file of a libr3 build with `R3_NATIVE=OFF` and a hand-picked unit list). Checked on the 6900 XT against the host
+reference through the normal `RADIANCE_HOME` lookup: 256 rows, grouped GEMM tile, rel_l2 1.1482703e-3 / 1.0208481e-3 (the same digits as before
+the move); few-rows kernel 1.2413583e-3 / 1.1385957e-3. libr3 still builds for gfx1100 (4 units checked); the libr3 selftest was not re-run on
+hardware for this change.
+
