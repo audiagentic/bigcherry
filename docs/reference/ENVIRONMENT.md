@@ -83,6 +83,17 @@ and `*_VISIBLE_DEVICES` take. Two `gfx1100` cards at index 0 and 1, one
 cross-architecture comparison, because changing model or KV quantisation per
 card changes the work being measured.
 
+## Running the unit tests in the agent container
+
+The container mounts `/tmp` with `noexec`. Fifteen tests in `tools/tests/patch` (`test_0910_feature_sets`, `test_coverage_*`,
+`test_mmq_forced_j_validation_adapter`) compile and run a small program from the temporary directory and fail there with
+`PermissionError: [Errno 13]` on `main` as well as on a branch. They pass (1,460 passed, 2 skipped) with a temporary directory that
+allows execution:
+
+    mkdir -p "$BC_WORK_ROOT/tmp" && TMPDIR="$BC_WORK_ROOT/tmp" PYTHONPATH=tools python3 -m pytest tools/tests/patch
+
+CI runners do not have the restriction.
+
 ## Not the same as `[[trees]]`
 
 `config/recipes.toml`'s `[[trees]]` models repo **checkouts** — name, path,
