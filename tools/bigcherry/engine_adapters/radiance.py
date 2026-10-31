@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from ..core import environment
+from . import radiance_layout
 from .base import (
     BumpCheck, CompletionApi, CpuSmokeSpec, DeviceAssertion, DriftCheck, EngineAdapter, QualityCommand, SidecarSpec, SourceCheck, SMOKE_SEED,
     build_cpu_smoke,
@@ -15,6 +17,8 @@ if TYPE_CHECKING:
 
 HELPER_SWITCH = "R3_MOE_WORKER"
 HELPER_DEVICES = "R3_MOE_WORKER_DEVICES"
+#: harness-only: a named layout (engines/radiance/layouts.toml) in place of an explicit device list; it fixes the helper cards, their budgets and placement
+HELPER_LAYOUT = "R3_MOE_WORKER_LAYOUT"
 HELPER_SHM = "R3_MOE_WORKER_SHM"
 DEFAULT_SHM = "/r3-moe-helper"
 #: what the retired fn-r9700-engine.sh waited for: the helper is up (helper 0 has created the segment) or waits for the engine
@@ -24,6 +28,11 @@ READY_PATTERN = r"^r3_moe_worker: (ready |waiting for engine runtime expert maps
 READY_TIMEOUT_S = 900.0
 STOP_TIMEOUT_S = 60.0
 KLD_TIMEOUT_S = 5400.0
+
+
+def _host() -> environment.Host:
+    """The host whose device inventory says which architecture each card is (a seam for tests)."""
+    return environment.load_default().host(None)
 
 
 class RadianceAdapter(EngineAdapter):
@@ -104,11 +113,31 @@ class RadianceAdapter(EngineAdapter):
     def sidecars(self, arm: dict[str, Any], env: dict[str, str], run_dir: Path, binary: Path) -> list[SidecarSpec]:
         if not env.get(HELPER_SWITCH):
             return []
-        devices = env.get(HELPER_DEVICES, "").split()
-        if not devices:
-            raise ValueError(f"{arm['name']}: {HELPER_SWITCH} is set; {HELPER_DEVICES} must list the helper device indices")
-        if len(set(devices)) != len(devices) or not all(d.isdigit() for d in devices):
-            raise ValueError(f"{arm['name']}: {HELPER_DEVICES} must be distinct device indices, got {devices}")
+        layout, listed = env.get(HELPER_LAYOUT, ""), env.get(HELPER_DEVICES, "")
+        if layout and listed:
+            raise ValueError(f"{arm['name']}: give {HELPER_LAYOUT} or {HELPER_DEVICES}, not both")
+        host = _host()
+        try:
+            if layout:
+                resolved = radiance_layout.resolve(layout, host)
+                devices = [str(h.index) for h in resolved.helpers]
+                derived = [{**resolved.common_env, **resolved.helper_env(i)} for i in range(len(devices))]
+            else:
+                devices = listed.split()
+                if not devices:
+                    raise ValueError(f"{arm['name']}: {HELPER_SWITCH} is set; {HELPER_DEVICES} must list the helper device indices (or {HELPER_LAYOUT} name a layout)")
+                if len(set(devices)) != len(devices) or not all(d.isdigit() for d in devices):
+                    raise ValueError(f"{arm['name']}: {HELPER_DEVICES} must be distinct device indices, got {devices}")
+                archs, by_index = radiance_layout.load_archs(), {d.index: d for d in host.devices}
+                derived = []
+                for d in devices:
+                    card = by_index.get(int(d))
+                    if card is None or card.arch not in archs:
+                        raise ValueError(f"{arm['name']}: device {d} is "
+                                         f"{'not in the host inventory' if card is None else card.arch + ', which engines/radiance/archs.toml does not describe'}")
+                    derived.append(radiance_layout.card_env(archs[card.arch]))
+        except radiance_layout.LayoutError as exc:
+            raise ValueError(f"{arm['name']}: {exc}") from exc
         home = binary.parent.parent / "radiance_home"
         helper = home / "helpers" / "r3_moe_worker"
         shm = env.get(HELPER_SHM, DEFAULT_SHM)
@@ -117,10 +146,13 @@ class RadianceAdapter(EngineAdapter):
         cleanup = (Path("/dev/shm") / shm.lstrip("/"),)
         # The helper environment is the arm environment without the engine-side switch (the helpers never set
         # R3_MOE_WORKER) and without the harness-only device list.
-        base = {k: v for k, v in env.items() if k not in (HELPER_SWITCH, HELPER_DEVICES)}
+        base = {k: v for k, v in env.items() if k not in (HELPER_SWITCH, HELPER_DEVICES, HELPER_LAYOUT)}
         specs = []
         for index, device in enumerate(devices):
             helper_env = dict(base)
+            # what the card type or layout implies is a default: a setting the arm names itself wins
+            for key, value in derived[index].items():
+                helper_env.setdefault(key, value)
             helper_env.setdefault("RADIANCE_HOME", str(home))
             helper_env.update({
                 # ROCR selects the physical card; HIP then numbers the one visible card 0.

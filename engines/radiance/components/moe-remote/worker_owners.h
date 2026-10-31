@@ -15,7 +15,7 @@ bool select_owned(const Container& f, r3_moe_gpu::Runner* gpu, const uint64_t* b
         std::fprintf(stderr, "r3_moe_worker: no helper budget\n");
         return false;
     }
-    if (!backend_accepts(f, gpu ? gpu->arch().c_str() : "gfx1100", false)) return false;
+    if (!backend_accepts(f, gpu ? gpu->arch().c_str() : "host", false)) return false;
     if (gpu) {   // the contract's size must be the size the device layout really takes, or no budget arithmetic can be trusted
         const int64_t want = laid_out_bytes(f, gpu, 0, 0), got = gpu->expert_bytes(0, 0);
         if (want != got) {

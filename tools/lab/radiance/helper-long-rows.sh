@@ -15,7 +15,7 @@ for f in $(ls -S $W/captures/*.bin | head -4); do
   echo "== $(basename $f) $(stat -c %s $f) bytes"
   for lr in 0 $LR; do
     out=$W/longrows-$(basename $f .bin)-$lr; rm -rf $out
-    HIP_VISIBLE_DEVICES=0 ROCR_VISIBLE_DEVICES=0 R3_MOE_WORKER_MIB=22528 R3_MOE_WORKER_SMALL_ROWS=8 R3_MOE_WORKER_MAX_ROWS=4096 \
+    HIP_VISIBLE_DEVICES=0 ROCR_VISIBLE_DEVICES=0 $(PYTHONPATH=tools python3 -m bigcherry layout card-env 0) R3_MOE_WORKER_MIB=22528 R3_MOE_WORKER_SMALL_ROWS=8 R3_MOE_WORKER_MAX_ROWS=4096 \
       R3_MOE_NATIVE=1 R3_MOE_WORKER_MOE_DOWN_TILE=1 R3_MOE_WORKER_MOE_LONG_ROWS=$lr \
       R3_MOE_WORKER_HEAT=$W/runs/perf51/heat.rank0.hot-first RADIANCE_HOME=$B/radiance_home timeout 900 \
       rocprofv3 --kernel-trace --stats --output-format csv -d $out -o run -- \

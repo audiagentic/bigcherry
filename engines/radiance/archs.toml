@@ -1,0 +1,37 @@
+# Card types for the remote-MoE helper, as data (RAD23). A GPU architecture is keyed by the gcnArchName the host inventory
+# (config/environment.local.toml [[host.*.devices]] `arch`) and the runtime report. Adding a card type is a stanza here and a kernel
+# plugin that builds for it; nothing in the helper, the harness adapter or the launcher names an architecture.
+#
+#   description   what it is, for the person reading a layout
+#   plugin        the kernel plugin file under radiance_home/kernels/ the helper loads on this card
+#   formats       the expert weight formats its backend runs: w4nl64, fp8_e4m3_block
+#   rows-kernel   run the large lane's few-rows kernel (R3_MOE_WORKER_ROWS=1) instead of the plugin's grouped GEMM: true where the grouped
+#                 GEMM is an emulated tile (no matrix instructions)
+#   reserve-mib   VRAM left unused when a layout gives this card a budget (working buffers, code objects); a budget above
+#                 vram-mib - reserve-mib is refused
+#   roles         what a layout may use it for: "engine" (runs the model), "helper" (owns experts)
+schema = 1
+
+[arch.gfx1201]
+description = "RDNA4 (Radeon AI PRO R9700)"
+plugin = "libr4d.so"
+formats = ["w4nl64", "fp8_e4m3_block"]
+rows-kernel = false
+reserve-mib = 2048
+roles = ["engine", "helper"]
+
+[arch.gfx1100]
+description = "RDNA3 (Radeon RX 7900 XTX)"
+plugin = "libr3.so"
+formats = ["w4nl64", "fp8_e4m3_block"]
+rows-kernel = false
+reserve-mib = 1024
+roles = ["helper"]
+
+[arch.gfx1030]
+description = "RDNA2 (Radeon RX 6900 XT): no matrix instructions; PCIe 3.0 x4 on this host"
+plugin = "libr2.so"
+formats = ["w4nl64"]
+rows-kernel = true
+reserve-mib = 1024
+roles = ["helper"]

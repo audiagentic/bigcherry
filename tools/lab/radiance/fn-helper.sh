@@ -54,7 +54,7 @@ pgrep -x r3_moe_worker >/dev/null && { pkill -TERM -x r3_moe_worker; sleep 3; pk
 rm -f /dev/shm/r3-moe-helper
 if [ "${HELPER:-1}" != 0 ]; then
 echo "== helper: HIP device 2"
-HIP_VISIBLE_DEVICES=2 RADIANCE_HOME="$home" \
+HIP_VISIBLE_DEVICES=2 $(PYTHONPATH=tools python3 -m bigcherry layout card-env 2) RADIANCE_HOME="$home" \
     "$helper" "$model" >"$out/helper.log" 2>&1 &
 helper_pid=$!
 deadline=$((SECONDS + ${HELPER_TIMEOUT:-900}))
