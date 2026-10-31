@@ -76,6 +76,9 @@ def _root(repo_root: Path | None) -> Path:
     return Path(repo_root) if repo_root else paths.REPO_ROOT
 
 
+_COMBINE_HELPERS = 2   # moe_remote_shm.h kCombineHelpers (a test keeps the two equal)
+
+
 def max_helpers(repo_root: Path | None = None) -> int:
     """The protocol's helper bound, read from the header that defines it (kMaxHelpers), so the two cannot drift."""
     text = (_root(repo_root) / _HEADER).read_text(encoding="utf-8")
@@ -188,7 +191,7 @@ def resolve(name: str, host: environment.Host, *, budgets: dict[str, int] | None
         raise LayoutError(f"unknown layout {name!r}; known: {sorted(layouts)}")
     lay = layouts[name]
     where = f"layout.{name}"
-    _allow(lay, {"description", "engine", "helper"}, where)
+    _allow(lay, {"description", "engine", "helper", "env"}, where)
     budgets = dict(budgets or {})
     taken: set[int] = set()
     engine_spec = lay.get("engine")
@@ -245,4 +248,16 @@ def resolve(name: str, host: environment.Host, *, budgets: dict[str, int] | None
     }
     if any(h.placement == "tail" for h in helpers):
         common["R3_MOE_WORKER_PLACEMENT"] = "tail"
+    # the layout's own settings for the engine and every helper (the helper-row combine, for one); never a name the cards above decide
+    env = lay.get("env", {})
+    if not isinstance(env, dict):
+        raise LayoutError(f"{where}.env must be a table of R3_MOE_WORKER_* settings")
+    for key, value in env.items():
+        if not re.fullmatch(r"R3_MOE_WORKER_[A-Z0-9_]+", key) or not isinstance(value, str):
+            raise LayoutError(f"{where}.env: {key!r} must be an R3_MOE_WORKER_* setting with a string value")
+        if key in common or key in {"R3_MOE_WORKER_LAYOUT", "R3_MOE_WORKER_DEVICES"}:
+            raise LayoutError(f"{where}.env: {key} is decided by the cards of the layout")
+        common[key] = value
+    if common.get("R3_MOE_WORKER_COMBINE") == "1" and len(helpers) != _COMBINE_HELPERS:
+        raise LayoutError(f"{where}: the helper-row combine adds exactly {_COMBINE_HELPERS} helpers' rows; {len(helpers)} helpers would run with it silently off")
     return Resolved(name, engine[0].index, engine[0].arch, archs[engine[0].arch].plugin, tuple(helpers), {k: v for k, v in common.items() if v != ""})

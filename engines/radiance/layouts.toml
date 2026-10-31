@@ -10,6 +10,7 @@
 #     placement "head": the group takes the heat ranking by `share` (round robin)  "tail": takes the coldest experts that fit what the heads
 #               left; only the last group may be tail, and only after a head group
 #     share     weight of each card in a head group (default 1; 0 owns nothing)
+#   [layout.NAME.env]              R3_MOE_WORKER_* settings for the engine and every helper (strings); not the ones the cards decide
 schema = 1
 
 [layout.flashnext-2xtx]
@@ -50,3 +51,14 @@ count = 1
 budget-mib = 4096
 placement = "head"
 share = 1
+
+[layout.flashnext-2xtx-combine]
+description = "flashnext-2xtx with the helper-row combine (RAD18): the two XTX helpers' result rows are added on the CPU so the R9700 reads one plane; the 3,600 tok/s prefill of the model page against ~3,200 without. Two helpers only: a third would run with the combine silently off"
+engine = { arch = "gfx1201" }
+[[layout.flashnext-2xtx-combine.helper]]
+arch = "gfx1100"
+count = "all"
+budget-mib = 22528
+placement = "head"
+[layout.flashnext-2xtx-combine.env]
+R3_MOE_WORKER_COMBINE = "1"
