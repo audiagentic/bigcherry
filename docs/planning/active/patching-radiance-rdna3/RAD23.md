@@ -429,3 +429,16 @@ The model page's 3,610-3,640 tok/s prefill is the helper-row combine (`R3_MOE_WO
 With two helpers the combine gives +7.6 / +6.3 / +1.5 / -0.5% (the model page's +6-7% at 1K to 4K, fading with length); with the third helper it gives nothing or loses (the combine covers two helpers, `kCombineHelpers`, and the tail's result plane is read separately), so the best short-prompt configuration is two XTX helpers with the combine on, and the 6900 XT tail is 7 to 10% behind it. Decode with the combine on and the tail off: 127 / 82 / 114 / 122 tok/s at the four lengths (the second row is a short continuation of an 8K-token doc, not comparable across columns). The combine changes the generated text slightly (fp16 rows) and the model page records its KLD pass and its tg128 cost.
 
 Standing consequences: (1) for prefill-heavy serving the launcher should offer the combine (a layout setting, RAD23's selectable `off|cpu|gpu|auto`), and the tail layout is not the one to pair with it; (2) a combine over three helpers (the 6900 XT's rows added into the same plane) is the way to get both, and is bounded by the 6900 XT's rows arriving no later than the XTXs'.
+
+## Why a tail of the "coldest" experts slowed prefill, and what fixes it, 2026-10-31 (`rad23-trace3`, `rad23-trace3live`)
+
+Three helpers (two XTX and the 6900 XT with a 4 GiB tail), `R3_MOE_WORKER_TRACE=1`, one 22K-token documentation prompt and 400 new tokens, 461 to 473 large-lane layer-steps (rows 256 and up), each with all three helpers' stamps. The engine's wait for the third helper includes the first two (the wait kernel reads them in order), so the number that matters is how much longer the 6900 XT's own GPU time (`helper_gpu_us`) is than the slower XTX's.
+
+| Heat | XTX critical path (us) | 6900 XT adds (us) | share | routes on the 6900 XT, mean | steps with >110 routes | prefill tok/s |
+|---|---|---|---|---|---|---|
+| static profile | 4220 | 678 | 16.1% | 66 | 15.6% | 2952 |
+| recorded on documentation text | 4255 | 68 | 1.6% | 32 | 3.8% | 3249 |
+
+With the static ranking the 6900 XT's time is flat near 2.1 ms with 0 to 20 routes, 2.7 ms with 20 to 60, 3.7 ms with 60 to 110, 5.1 ms with 110 to 300 and 19 ms above 300; 95% of its exposed time comes from the 15.6% of steps above 110 routes, concentrated on layers 7, 39, 8, 12 and 9 (mean 340, 337, 228, 159, 113 routes per step). Those experts are cold in the profile (`perf51/heat.rank0`, taken on other text) and hot in this text, so "the coldest experts" by a static ranking are not cold for the served text. With the heat recorded on this text (self-fitted here; the held-out corpus run gave 1883 against 1792-1843 without the tail) the same 4 GiB tail costs 1.6% of the critical path and prefill returns to the no-tail level.
+
+So the planner has the right shape and the cap was the missing piece: the placement must be chosen from live heat, and any one layer's load on the 6900 XT should be capped (`Device::layer_cap`, about 110 routes per layer per 2048-token chunk at its measured 2 ms + 0.0135 ms a route), since a few hot layers cost the whole step.
