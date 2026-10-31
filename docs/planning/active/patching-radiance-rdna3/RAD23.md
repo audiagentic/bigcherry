@@ -478,3 +478,32 @@ Not placement, not the 6900 XT, not the host pool. The lever is the split-K deco
 **Correction to the headroom claim above.** The decode attention is already split-KV, with a split law (`r4d_decode_splits` in `libr4d/r4d_attn_decode_h256_gqa6.hip`) that upstream tuned against served decode steps at 90K and 180K context (comments there: 22.07 to 22.03 ms at 90K, 25.35 to 24.88 ms at 180K for one stream). For this model (2 KV heads, 2 sequences) it picks 64 splits for plain decode (256 workgroups) and 128 for the MTP verify shape (q_len x gqa above 32), capped at half the tile count. So "more split-K" is not an untried lever, and the 2x figure rested on a peak-bandwidth ratio (260 of about 640 GB/s, the peak taken from the card's specification and not measured) that a kernel doing dequantisation and a softmax merge may not be able to reach. What is established: attention is about 15 of 35 ms per step at 330K and grows with context. What is not: how much of it can be recovered. The measurement that decides it is the engine's own attention selftest at 330K context on the R9700 (achieved GB/s against a plain copy kernel on the same card), before any kernel work.
 
 **Measured peak (`tools/lab/radiance/gpu-read-bw.hip`, R9700, plain 16-byte read kernel):** 1312 GB/s at 64 MB (cache-resident), 616 GB/s at 300 MB and 639 GB/s at 1.2 GB. One layer's K and V at 330K tokens is 2 heads x 256 x 2 bytes x 330K = about 338 MB, a floor of about 530 us a call against the measured 1165 us: the decode attention runs at about 45% of what the card reads. A real kernel will not reach the floor (dequantisation, the softmax merge, the gate), so the recoverable part is somewhere between nothing and about half of the 15 ms; a kernel microbenchmark at gqa 12, fp8 KV, 330K context with its own achieved GB/s is the next step before any patch. KV bytes set the floor, which is also why bf16 KV roughly doubles the long-context step and K8/V8 is the dtype that holds decode.
+
+## The 6900 XT's fixed floor was the activation read; the sparse copy, and the tail still not paying, 2026-10-31 (`rad23-trace4`, `rad23-trace5`, `rad23-bigtail`, `rad23-kld-sparse-10312237`)
+
+**Cause of the ~2 ms floor.** The large lane copies every row of the chunk's activation (fp8 codes plus scales; hidden 2560, so ~5.5 MB at 2048 rows) from the engine's mapped host memory. The 6900 XT reads host memory at 3.57 GB/s (kernel reading pinned memory, 64 KiB to 17 MiB, `pcie.hip`), so the copy is ~1.5 ms; the replay's kernel trace shows `lane_prepare_activation_v` at 1.54 ms. The helper behind it owns few routes (mean 66 a step with the tail), so almost all of those rows are never read.
+
+**Change.** `R3_MOE_WORKER_SPARSE_ACT` (default on): `lane_mark_rows` flags the rows the request's routes name and `lane_prepare_activation_sparse` copies only those. The decision is on the device: the lane's kernels are queued before the request arrives, so the host knows only the row capacity (the first version, which tested the host's `rows * top_k`, never took the path and measured as the control). Exactness: three-helper KLD with it on and off, identical to every digit (mean 0.062045, median 0.016294, p99 0.67036, p99.9 2.24769, top-1 89.0291%, PPL 9.10248); the control of two helpers 0.055185.
+
+**Effect on the 6900 XT's request time** (helper_gpu_us, large-lane steps, 3 helpers, static heat, 22K prompt; before / after):
+
+| Routes on the 6900 XT | Before | After |
+|---|---|---|
+| 0-20 | 2073 us | 632 us |
+| 20-60 | 2701 | 1184 |
+| 60-110 | 3693 | 2216 |
+| 110-300 | 5155 | 4383 |
+| 300+ | 19.2 ms | 23.3 ms (16 steps; the GEMM, not the copy) |
+
+22K prefill in the same pair of runs: 2950 to 3116 tok/s (+5.6%).
+
+**Tail sizes with recorded heat and the sparse copy** (prefill tok/s at 8.8K / 37K / 169K used context; decode varies +-10% between arms with no order):
+
+| Tail | 8.8K | 37K | 169K |
+|---|---|---|---|
+| none | 3281 | 3178 | 2809 |
+| 4 GiB | 2938 | 3172 | 2755 |
+| 8 GiB | 3107 | 3008 | 2526 |
+| 14 GiB | 3203 | 3160 | 2385 |
+
+So the cheaper floor makes the 6900 XT cheap at low route counts, but no tail size beats having no tail: neutral at 4 GiB, worse as it grows. What remains is the per-route GEMM cost (0.0135 ms a route, the 110-300 bucket still 4.4 ms against an XTX's ~4.2 ms critical path) and the few steps above 300 routes. The fixed cost is no longer the limit; the grouped GEMM is, as GPT's review also ranked.

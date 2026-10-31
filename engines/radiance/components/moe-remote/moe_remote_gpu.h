@@ -523,6 +523,10 @@ public:
          * copy and the result write; 0 keeps the scalar kernels. Read each call so a replay sweep can compare. */
         const char* vio_env = std::getenv("R3_MOE_WORKER_VECIO");
         const bool vecio = !vio_env || std::strcmp(vio_env, "0") != 0;
+        /* R3_MOE_WORKER_SPARSE_ACT (default on): the large lane copies only the rows the request's routes name. The kernels are queued before the request
+         * arrives, so the route count is a device-side fact: the mask is built on the device and the copy skips unflagged rows. */
+        const char* sp_env = std::getenv("R3_MOE_WORKER_SPARSE_ACT");
+        const bool sparse_act = !sp_env || std::strcmp(sp_env, "0") != 0;
         if ((vecio || fuse) && ((reinterpret_cast<uintptr_t>(act_q) | reinterpret_cast<uintptr_t>(act_s) |
                        reinterpret_cast<uintptr_t>(dst)) & 15u) != 0) {
             std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_VECIO needs 16-byte aligned activation and result planes\n");
@@ -530,6 +534,18 @@ public:
         }
         if (fuse) {
             /* the activation copy is folded into lane_front_small below */
+        } else if (vecio && sparse_act && !lane_is_small(lane)) {
+            if (!hip_ok(hipMemsetAsync(w.d_rowmask.p, 0, rows, w.stream), "clear row mask")) return -EIO;
+            hipLaunchKernelGGL(lane_mark_rows, route_grid, block, 0, w.stream,
+                               route, q, static_cast<uint8_t*>(w.d_rowmask.p),
+                               rank, sequence, rows, model_.layers, lane_shape_);
+            const dim3 vgrid(((uint64_t)rows * (shape_.hidden / 16) + block.x - 1) / block.x);
+            hipLaunchKernelGGL(lane_prepare_activation_sparse, vgrid, block, 0, w.stream,
+                               q, static_cast<const uint8_t*>(w.d_rowmask.p),
+                               reinterpret_cast<const uint4*>(act_q), reinterpret_cast<const uint4*>(act_s),
+                               reinterpret_cast<uint4*>(w.d_aq.p), reinterpret_cast<uint4*>(w.d_as.p),
+                               rank, sequence, rows, model_.layers,
+                               static_cast<uint64_t*>(w.d_stats.p), lane_shape_);
         } else if (vecio) {
             const dim3 vgrid(((uint64_t)rows * (shape_.hidden / 16) + block.x - 1) / block.x);
             hipLaunchKernelGGL(lane_prepare_activation_v, vgrid, block, 0, w.stream,
@@ -1552,6 +1568,7 @@ private:
 
     bool ensure_lane_work(LaneWork& w, uint32_t rows, uint32_t routes, uint32_t tr) {
         return w.d_counts.ensure((size_t)experts() * 4) &&
+               w.d_rowmask.ensure((size_t)rows) &&
                w.d_cursor.ensure((size_t)experts() * 4) &&
                w.d_act.ensure((size_t)rows * shape_.hidden * 2) &&
                w.d_flat.ensure((size_t)routes * 4) &&

@@ -154,6 +154,12 @@ status = "evaluated"
 summary = "RAD06: runs of this many rows or more take 64-row slices and an MT=4 tile in the helper's grouped MoE GEMM (fewer weight-tile restages for long runs; bit-identical); unset or 0 keeps the single 32-row map"
 activation = "r3_moe_worker: R3_MOE_WORKER_MOE_LONG_ROWS="
 
+[setting.R3_MOE_WORKER_SPARSE_ACT]
+default = "1"
+status = "experimental"
+summary = "RAD23: on the large lane, a request copies only the activation rows the routes name (a row mask from the route list, then a masked copy) instead of every row; the activation read over the engine's mapped memory is ~1.5 ms of a 2048-row chunk on a card behind a PCIe 3.0 x4 link (3.57 GB/s measured), nearly all of the RX 6900 XT's fixed per-request floor. Exact: a row no route names is never read. 0 copies all rows"
+activation = "r3_moe_worker: R3_MOE_WORKER_SPARSE_ACT"
+
 [setting.R3_MOE_WORKER_VECIO]
 default = "1"
 status = "validated"
