@@ -221,14 +221,14 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
 
     r3::moe_shm::LayoutShape shape{};
     Layout lay{};
-    if (!segment_shape(model, &shape, &lay)) return 1;
+    if (!segment_shape(model, r3::moe_shm::kLegacySlots, &shape, &lay)) return 1;
     void* map = mmap(nullptr, lay.bytes, PROT_READ | PROT_WRITE,
                      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     if (map == MAP_FAILED) {
         std::fprintf(stderr, "r3_moe_worker: --compare mmap: %s\n", std::strerror(errno));
         return 1;
     }
-    if (!init(map, model.layers, shape)) return 1;
+    if (!init(map, model.layers, shape, r3::moe_shm::kLegacySlots)) return 1;
     publish_owned(map, owned, 0);
     Header* h = static_cast<Header*>(map);
     h->helper_count = 1;
@@ -266,7 +266,7 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
 
     bool bad = false;
     constexpr uint32_t sequence = 1;
-    for (uint32_t rank = 0; rank < kMaxSlots; ++rank) {
+    for (uint32_t rank = 0; rank < h->slot_count; ++rank) {
         const uint32_t lane = lane_of(rank, step_class(h, rows));
         Request* q = lane_request(map, lane, sequence);
         q->completion_sequence = 0;
@@ -325,7 +325,7 @@ int compare_mode(const Container& model, r3_moe_gpu::Runner& gpu, const Owned& o
             break;
         }
         /* The helper's per-token rows, taken before the host reference rewrites the same slot. */
-        const uint16_t* res = ptr<uint16_t>(map, h->result_offset[result_index(rank, rank)]);
+        const uint16_t* res = ptr<uint16_t>(map, h->result_offset[result_index(rank, out_rank_of(rank, q->rank_count))]);
         const std::vector<uint16_t> got(res, res + (size_t)rows * hid);
         {   /* FNV-1a over the helper's result bytes: two builds that print the same hash for the same capture and settings produced
              * bit-identical output (the cross-build identity check of RCS05/RAD14; rel_l2 below only ever bounds the error). */

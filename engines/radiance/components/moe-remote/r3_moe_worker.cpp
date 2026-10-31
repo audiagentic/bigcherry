@@ -33,6 +33,7 @@
 #include "moe_remote_gpu.h"
 
 #include "worker_shape.h"
+#include "worker_share.h"
 #include "worker_owners.h"
 #include "worker_harness.h"
 #include "worker_selftest.h"
@@ -242,7 +243,11 @@ int main(int argc, char** argv) {
                      helper_index, helper_count, kMaxHelpers);
         return 2;
     }
-    const uint64_t budget = helper_budget_bytes();
+    uint64_t budgets[r3::worker_share::kMaxHelperShares] = {};
+    if (!r3::worker_share::parse_budgets(std::getenv("R3_MOE_WORKER_MIBS"), cfg.helper_count, helper_budget_bytes(), budgets)) {
+        std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_MIBS must list one budget in MiB for each of the %u helpers\n", cfg.helper_count);
+        return 2;
+    }
     Owned owned;
     if (g_replay) {
         /* A replay owns exactly the experts the captured request routes to: the capturing helper's ownership
@@ -256,7 +261,7 @@ int main(int argc, char** argv) {
         };
         if (sweep_replays.empty()) own_routes(*g_replay);
         else for (const ReplayInput& ri : sweep_replays) own_routes(ri);
-    } else if (!select_owned(model, gpu.get(), budget, helper_index, helper_count, &owned)) {
+    } else if (!select_owned(model, gpu.get(), budgets, helper_index, helper_count, &owned)) {
         return 1;
     }
     if (gpu && !gpu->allocate(owned.expert)) return 1;
@@ -327,7 +332,7 @@ int main(int argc, char** argv) {
 
     r3::moe_shm::LayoutShape shape{};
     Layout lay{};
-    if (!segment_shape(model, &shape, &lay)) return 1;
+    if (!segment_shape(model, slots_for(helper_count), &shape, &lay)) return 1;
     /* The mailbox segment: helper 0 creates it, the others attach (up to 30 minutes while the first loads). Owned by
      * `seg` from here on; every return below releases it, and only helper 0 unlinks the name. */
     /* Before the first wait (segment attach, the engine's maps): a stop signal must end every one of them. No
@@ -343,7 +348,7 @@ int main(int argc, char** argv) {
     Header* const h = seg.header();
     const char* const name = seg.name();
     if (helper_index == 0) {
-        if (!init(map, model.layers, shape)) return 1;
+        if (!init(map, model.layers, shape, slots_for(helper_count))) return 1;
         h->small_class_count = lane_classes.count;
         for (uint32_t c = 0; c < lane_classes.count; ++c) h->small_class_rows[c] = lane_classes.rows[c];
         /* Every helper reads the same step activations: stage them once, in slot 0. */

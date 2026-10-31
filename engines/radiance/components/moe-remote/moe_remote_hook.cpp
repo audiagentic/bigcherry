@@ -426,10 +426,10 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
                      helpers, world_size);
         return RAD_E_STATE;
     }
-    if (!hip_ok(hipMalloc(reinterpret_cast<void**>(&s.owner), (size_t)kMaxHelpers * g.hdr->owner_slot_bytes),
+    if (!hip_ok(hipMalloc(reinterpret_cast<void**>(&s.owner), (size_t)g.hdr->slot_count * g.hdr->owner_slot_bytes),
                 "hipMalloc ownership bitmap"))
         return RAD_E_NOMEM;
-    if (!hip_ok(hipMemcpy(s.owner, owner_bits(g.map, 0), (size_t)kMaxHelpers * g.hdr->owner_slot_bytes,
+    if (!hip_ok(hipMemcpy(s.owner, owner_bits(g.map, 0), (size_t)g.hdr->slot_count * g.hdr->owner_slot_bytes,
                           hipMemcpyHostToDevice), "upload ownership bitmap")) {
         (void)hipFree(s.owner);
         s.owner = nullptr;

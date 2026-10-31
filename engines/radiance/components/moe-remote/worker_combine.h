@@ -124,8 +124,8 @@ inline bool combine_step(void* map, const r3::moe_shm::Request* q0, CombinePool*
     }
     const auto t0 = std::chrono::steady_clock::now();
     std::memset(mask->data(), 0, rows);
-    const Request* q[kMaxHelpers] = {q0, q1};
-    for (uint32_t k = 0; k < kMaxHelpers; ++k) {
+    const Request* q[kCombineHelpers] = {q0, q1};
+    for (uint32_t k = 0; k < kCombineHelpers; ++k) {
         const Route* r = ptr<Route>(map, q[k]->route_offset);
         for (uint32_t j = 0; j < q[k]->route_count; ++j) {
             const int32_t t = r[j].token;
@@ -137,7 +137,7 @@ inline bool combine_step(void* map, const r3::moe_shm::Request* q0, CombinePool*
         }
     }
     pool->combine(ptr<uint16_t>(map, h->result_offset[result_index(0, 0)]),
-                  ptr<uint16_t>(map, h->result_offset[result_index(1, 1)]),
+                  ptr<uint16_t>(map, h->result_offset[result_index(1, 0)]),
                   ptr<uint16_t>(map, h->result_offset[result_index(0, 1)]), mask->data(), rows, h->hidden);
     std::atomic_thread_fence(std::memory_order_release);
     store(&h->combine.done, g);

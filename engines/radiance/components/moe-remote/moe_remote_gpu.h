@@ -172,6 +172,16 @@ public:
                 arch_.c_str());
             return false;
         }
+        /* gfx1030 has no matrix instructions: libr3's grouped GEMM runs through an emulated tile that costs per expert tile, not per row (a
+         * 343-route call took 12.5 ms against 3.5 ms on an XTX, RAD23). The few-rows kernel - dot products, the expert's weights read once
+         * for all its rows - is the large lane's kernel there; R3_MOE_WORKER_ROWS=0 turns it off. */
+        if (arch_ == "gfx1030" && !rows_) {
+            const char* rv = std::getenv("R3_MOE_WORKER_ROWS");
+            if (!rv || !*rv || std::strcmp(rv, "0") != 0) {
+                rows_ = true;
+                std::fprintf(stderr, "r3_moe_worker: few-rows prefill kernel on the large lane (gfx1030 has no matrix instructions)\n");
+            }
+        }
         if (!load_plugin()) return false;
         if (!hip_ok(hipStreamCreateWithFlags(&stream_, hipStreamNonBlocking), "hipStreamCreate")) return false;
         experts_.resize((size_t)model_.layers * experts());
@@ -361,7 +371,7 @@ public:
                          tensor(d_result_.p, RAD_BF16, {rows, shape_.hidden}) }, mp) < 0)
                 return -EIO;
 
-            void* dst = ptr<void>(map, q->result_offset[rank]);
+            void* dst = ptr<void>(map, q->result_offset[out_rank_of(rank, q->rank_count)]);
             if (!hip_ok(hipMemcpyAsync(dst, d_result_.p, act_bytes,
                                        hipMemcpyDeviceToHost, stream_), "download TP partial"))
                 return -EIO;
@@ -490,7 +500,7 @@ public:
                 hhost->activation_offset[rank] + kActivationBf16Bytes + kActivationQBytes)));
         auto* dst = static_cast<uint16_t*>(
             dev_at(ptr<uint16_t>(
-                host_map, hhost->result_offset[result_index(rank, rank)])));
+                host_map, hhost->result_offset[result_index(rank, out_rank_of(rank, qhost->rank_count))])));
 
         if (!hip_ok(hipStreamWaitValue32(w.stream, request_seq, sequence,
                                          hipStreamWaitValueGte, 0xffffffffu),
@@ -966,7 +976,9 @@ private:
 
     std::string plugin_path() const {
         if (const char* e = std::getenv("R3_MOE_WORKER_PLUGIN"); e && *e) return e;
-        const std::string so = arch_ == "gfx1100" || arch_ == "gfx1030" ? "libr3.so" : "libr4d.so";
+        /* One plugin file a family of cards: libr4d on gfx1201, libr3 on gfx1100, and libr3 built for gfx1030 beside it as libr3-gfx1030.so
+         * (the two share a name in a build tree that makes one of them, and a helper must not load the other's code). */
+        const std::string so = arch_ == "gfx1100" ? "libr3.so" : arch_ == "gfx1030" ? "libr3-gfx1030.so" : "libr4d.so";
         if (const char* e = std::getenv("RADIANCE_HOME"); e && *e) {
             std::string h(e);
             const size_t colon = h.find(':');

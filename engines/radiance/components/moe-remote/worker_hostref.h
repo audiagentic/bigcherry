@@ -160,7 +160,7 @@ int compute_host_engine(const Container& f, void* map, Request* q,
 
     const Route* routes = ptr<Route>(map, q->route_offset);
     const uint16_t* act = ptr<uint16_t>(map, q->activation_offset);
-    uint16_t* dst = ptr<uint16_t>(map, q->result_offset[q->rank]);
+    uint16_t* dst = ptr<uint16_t>(map, q->result_offset[out_rank_of(q->rank, q->rank_count)]);
 
     std::vector<float> aq((size_t)q->rows * hid);
     for (size_t i = 0; i < aq.size(); ++i) aq[i] = bf16(act[i]);
@@ -258,7 +258,7 @@ int compute_host_engine_fp8(const Container& f, void* map, Request* q,
 
     const Route* routes = ptr<Route>(map, q->route_offset);
     const uint16_t* act = ptr<uint16_t>(map, q->activation_offset);
-    uint16_t* dst = ptr<uint16_t>(map, q->result_offset[q->rank]);
+    uint16_t* dst = ptr<uint16_t>(map, q->result_offset[out_rank_of(q->rank, q->rank_count)]);
 
     std::vector<float> aq((size_t)q->rows * hid);
     for (size_t i = 0; i < aq.size(); ++i) aq[i] = bf16(act[i]);
@@ -360,7 +360,7 @@ int compute_host(const Container& f, void* map, Request* q) {
         q->hidden != hid || q->route_count > kMaxRoutes || q->activation_stride != hid*2) return -EINVAL;
     const Route* routes = ptr<Route>(map,q->route_offset);
     const uint16_t* act = ptr<uint16_t>(map,q->activation_offset);
-    uint16_t* dst = ptr<uint16_t>(map,q->result_offset[q->rank]);
+    uint16_t* dst = ptr<uint16_t>(map,q->result_offset[out_rank_of(q->rank, q->rank_count)]);
     std::vector<float> out((size_t)q->rows*hid,0.f);
     std::vector<std::vector<uint32_t>> by_exp(f.experts);
     for(uint32_t i=0;i<q->route_count;++i) {
