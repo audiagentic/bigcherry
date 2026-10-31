@@ -20,17 +20,12 @@ __device__ __forceinline__ r3_v8f r3_mma16_f16(r3_v16h a, r3_v16h b, r3_v8f acc)
         av[j] = upper ? swapped : av0[j];
     }
     r3_v8f out = acc;
-#pragma unroll
-    for (int t = 0; t < 8; ++t) {
-        float s = acc[t];
-#pragma unroll
-        for (int j = 0; j < 8; ++j) {
-            // row_share:n is DPP control 0x150 + n; the source lane is 2t, a compile-time constant after unrolling
-            const unsigned x = (unsigned)__builtin_amdgcn_update_dpp(0, (int)av[j], 0x150 + 2 * t, 0xF, 0xF, false);
-            asm("v_dot2_f32_f16 %0, %1, %2, %0" : "+v"(s) : "v"(x), "v"(bv[j]));
-        }
-        out[t] = s;
-    }
+    // row_share:n is DPP control 0x150 + n and must be a literal, so the 8 row steps are a macro; the source lane is 2t
+#define R3_TILE_ROW(t) { float s = acc[t]; _Pragma("unroll") for (int j = 0; j < 8; ++j) { \
+        const unsigned x = (unsigned)__builtin_amdgcn_update_dpp(0, (int)av[j], 0x150 + 2 * (t), 0xF, 0xF, false); \
+        asm("v_dot2_f32_f16 %0, %1, %2, %0" : "+v"(s) : "v"(x), "v"(bv[j])); } out[t] = s; }
+    R3_TILE_ROW(0) R3_TILE_ROW(1) R3_TILE_ROW(2) R3_TILE_ROW(3) R3_TILE_ROW(4) R3_TILE_ROW(5) R3_TILE_ROW(6) R3_TILE_ROW(7)
+#undef R3_TILE_ROW
     return out;
 }
 __device__ __forceinline__ r3_v8f r3_mma16_bf16(r3_v16bf a, r3_v16bf b, r3_v8f acc) {
