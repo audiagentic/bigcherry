@@ -461,3 +461,16 @@ So the planner has the right shape and the cap was the missing piece: the placem
 **Conclusion.** Nothing in the bump regressed prefill or decode. The tg figures of the model page and of any harness config that does not pin `temperature: 0` compare acceptance of whatever was sampled, not decode speed; the benchmark client should pin temperature 0 (or a seed) before tg across builds is read. Launcher decode on pinned text is 100-140 tok/s on both builds.
 
 **Where speed does remain to gain:** the combine for three helpers; long-context decode (attention over the KV cache, 127 at 34K to 70 at 663K whatever the placement); the n-gram table in RAM against a disk/6900 XT variant (prefill 3,294 with the 6900 XT holding 29% of the rows, decode 77-84, against 110-140 with the table fully in RAM).
+
+## Where long-context decode goes: the decode attention kernel, 2026-10-31 (`rad23-profops`)
+
+`--profile-ops` on the current build (two XTX helpers, fp8 KV, 2048 chunks, n-gram in RAM), one prefill to 36,895 and one to 329,545 tokens, then decode; per-op device event pairs, `q_len=1` rows of `attn_paged_gate_quant` (the 13 full-attention layers; the profile adds synchronisation, so only the per-call times are used):
+
+| Used context | Decode attention per call | Per step, 13 layers | Decode tok/s (unprofiled run) |
+|---|---|---|---|
+| 36,895 | 210 us | 2.7 ms | 127 |
+| 329,545 | 1,165 us | 15.1 ms | 72 |
+
+The call time grows 5.5x for 8.9x the context, so attention costs about 15 ms of a step that is roughly 35 ms at 330K (the step is about 20 ms at 37K). At 330K the K and V it reads are about 300 MB a layer (2 KV heads x 256 x 2 bytes x 330K tokens), i.e. about 260 GB/s against the R9700's roughly 640 GB/s: the kernel is at about 40% of the card's bandwidth. So long-context decode is attention over the KV cache, as suspected, and the engine's decode kernel (`attn_decode_gq_h256_gqa12_fp8kv`, libr4d) has roughly 2x of headroom at this length; bf16 KV doubles the bytes and the time. The helper wait (`moe_mailbox_add`) is the other large op in the unfiltered totals (38% at 37K, 47% at 330K) but its rows mix prefill and decode steps and need a decode-only split before they mean anything.
+
+Not placement, not the 6900 XT, not the host pool. The lever is the split-K decode attention kernel: more blocks per head for long contexts, so more of the card's memory system is busy. That is a libr4d change (a patch series like RAD38's), to be measured against a CPU reference at head_dim 256 and gqa 12.
