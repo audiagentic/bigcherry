@@ -549,8 +549,8 @@ __global__ __launch_bounds__(256) void lane_moe_gemv_mr(
  * streamed once per 256-wide K chunk and each decoded weight is applied to up to 16 of the expert's rows,
  * whose activations sit dequantised in LDS. Same weight form, table, scales, sorted/off and part-pitch rule as
  * lane_moe_gemv; f32 accumulate, one bf16 narrow. */
-constexpr uint32_t kRowsTileN = 32;       /* outputs a block: 8 waves x 4 */
-constexpr uint32_t kRowsOut = 4;          /* outputs a wave */
+constexpr uint32_t kRowsTileN = 64;       /* outputs a block: 8 waves x 8 */
+constexpr uint32_t kRowsOut = 8;          /* outputs a wave */
 constexpr uint32_t kRowsRB = 8;           /* rows a pass (16 spilled the 4 x 16 accumulators to scratch on gfx1030: 272 B a thread, 1.2 ms a gate/up call at ~8 experts) */
 constexpr uint32_t kRowsKC = 256;         /* K a chunk */
 
@@ -589,12 +589,27 @@ __global__ __launch_bounds__(256) void lane_moe_rows(
         for (uint32_t kc = 0; kc < K; kc += kRowsKC) {
             const uint32_t kl = K - kc < kRowsKC ? K - kc : kRowsKC;   /* the last chunk may be short */
             __syncthreads();
-            for (uint32_t i = threadIdx.x; i < nr * kRowsKC; i += blockDim.x) {
-                if (i % kRowsKC >= kl) continue;
-                const uint32_t r = i / kRowsKC, k = kc + i % kRowsKC;
-                const uint32_t ar = arow[r];
-                a[r][i % kRowsKC] = gemv_e4m3(aq[(uint64_t)ar * a_stride + k]) *
-                                    as[(uint64_t)ar * (a_stride / 128u) + k / 128u];
+            {
+                /* every load of the chunk's activations in flight before any is used (the old loop took them one at a time) */
+                constexpr uint32_t kPer = kRowsRB * kRowsKC / 256u;
+                uint8_t qv[kPer]; float sv[kPer];
+#pragma unroll
+                for (uint32_t it = 0; it < kPer; ++it) {
+                    const uint32_t i = threadIdx.x + it * 256u;
+                    const uint32_t r = i / kRowsKC, k = kc + i % kRowsKC;
+                    qv[it] = 0; sv[it] = 0.0f;
+                    if (r < nr && i % kRowsKC < kl) {
+                        const uint32_t ar = arow[r];
+                        qv[it] = aq[(uint64_t)ar * a_stride + k];
+                        sv[it] = as[(uint64_t)ar * (a_stride / 128u) + k / 128u];
+                    }
+                }
+#pragma unroll
+                for (uint32_t it = 0; it < kPer; ++it) {
+                    const uint32_t i = threadIdx.x + it * 256u;
+                    const uint32_t r = i / kRowsKC;
+                    if (r < nr && i % kRowsKC < kl) a[r][i % kRowsKC] = gemv_e4m3(qv[it]) * sv[it];
+                }
             }
             __syncthreads();
             if constexpr (FP8) {
@@ -623,26 +638,34 @@ __global__ __launch_bounds__(256) void lane_moe_rows(
                 }
             } else
             for (uint32_t d = lane; d < kl / 8u; d += warpSize) {
+                /* decode the four outputs' weights once, then walk the rows with one LDS read of the row's 8 activations shared by all four */
+                float wv[kRowsOut][8];
 #pragma unroll
                 for (uint32_t j = 0; j < kRowsOut; ++j) {
                     const uint32_t n = n_first + j;
-                    if (n >= N) break;
+                    if (n >= N) {
+#pragma unroll
+                        for (uint32_t b = 0; b < 8; ++b) wv[j][b] = 0.0f;
+                        continue;
+                    }
                     const uint32_t w = reinterpret_cast<const uint32_t*>(codes + (uint64_t)n * (K / 2u))[kc / 8u + d];
                     const float s = gemv_e4m3(scales[(uint64_t)n * (K / 64u) + (kc + 8u * d) / 64u]);
-                    float wv[8];
 #pragma unroll
                     for (uint32_t b = 0; b < 4; ++b) {
                         const uint32_t byte = (w >> (8u * b)) & 0xFFu;
-                        wv[b] = kGemvW4nl[byte & 15u] * s;
-                        wv[b + 4] = kGemvW4nl[byte >> 4] * s;
+                        wv[j][b] = kGemvW4nl[byte & 15u] * s;
+                        wv[j][b + 4] = kGemvW4nl[byte >> 4] * s;
                     }
+                }
 #pragma unroll
-                    for (uint32_t r = 0; r < kRowsRB; ++r) {
-                        if (r >= nr) break;
-                        const float* x = &a[r][8u * d];
-                        acc[j][r] += x[0] * wv[0] + x[1] * wv[1] + x[2] * wv[2] + x[3] * wv[3] +
-                                     x[4] * wv[4] + x[5] * wv[5] + x[6] * wv[6] + x[7] * wv[7];
-                    }
+                for (uint32_t r = 0; r < kRowsRB; ++r) {
+                    if (r >= nr) break;
+                    const float4 xa = *reinterpret_cast<const float4*>(&a[r][8u * d]);
+                    const float4 xb = *reinterpret_cast<const float4*>(&a[r][8u * d + 4u]);
+#pragma unroll
+                    for (uint32_t j = 0; j < kRowsOut; ++j)
+                        acc[j][r] += xa.x * wv[j][0] + xa.y * wv[j][1] + xa.z * wv[j][2] + xa.w * wv[j][3] +
+                                     xb.x * wv[j][4] + xb.y * wv[j][5] + xb.z * wv[j][6] + xb.w * wv[j][7];
                 }
             }
         }
