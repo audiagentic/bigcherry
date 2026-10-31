@@ -414,3 +414,18 @@ Measured on the lane build of #472 (all four GPUs through `--layout`), natural t
 
 **Next lever.** An integer path on gfx1030: int8 activations, weights dequantised once to int8, `v_dot4_i32_i8` (22 T MAC/s measured, 5x the tile roof). That is a new expert kernel for libr2, to be confirmed first by a counter profile that shows the dequantisation dominating.
 
+
+## Where the 3,600 tok/s prefill went, and what the third helper does to it, 2026-10-31 (`rad23-shortpp`, `rad23-combine`)
+
+The model page's 3,610-3,640 tok/s prefill is the helper-row combine (`R3_MOE_WORKER_COMBINE=1`, RAD18) on two XTX helpers; its control is 3,404. The launcher does not enable the combine, so launcher runs are the control. Natural documentation text through the launcher (one request per row, `ctxsweep.py`, fresh server per column, heat the static profile, tail 4 GiB where present), prefill tok/s:
+
+| Prompt tokens | 2 XTX, combine off | 2 XTX, combine on | + 6900 XT tail, combine off | + tail, combine on |
+|---|---|---|---|---|
+| 1,126 | 3185 | 3427 | 3102 | 3089 |
+| 5,629 | 3197 | 3397 | 3160 | 3159 |
+| 8,796 | 3221 | 3269 | 3217 | 3057 |
+| 22,183 | 3162 | 3145 | 3035 | 2848 |
+
+With two helpers the combine gives +7.6 / +6.3 / +1.5 / -0.5% (the model page's +6-7% at 1K to 4K, fading with length); with the third helper it gives nothing or loses (the combine covers two helpers, `kCombineHelpers`, and the tail's result plane is read separately), so the best short-prompt configuration is two XTX helpers with the combine on, and the 6900 XT tail is 7 to 10% behind it. Decode with the combine on and the tail off: 127 / 82 / 114 / 122 tok/s at the four lengths (the second row is a short continuation of an 8K-token doc, not comparable across columns). The combine changes the generated text slightly (fp16 rows) and the model page records its KLD pass and its tg128 cost.
+
+Standing consequences: (1) for prefill-heavy serving the launcher should offer the combine (a layout setting, RAD23's selectable `off|cpu|gpu|auto`), and the tail layout is not the one to pair with it; (2) a combine over three helpers (the 6900 XT's rows added into the same plane) is the way to get both, and is bounded by the 6900 XT's rows arriving no later than the XTXs'.
