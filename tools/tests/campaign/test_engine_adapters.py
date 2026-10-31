@@ -111,6 +111,16 @@ class RadianceSidecarSpecTests(unittest.TestCase):
             with self.subTest(env=env), self.assertRaises(ValueError):
                 adapter("radiance").sidecars(self.arm(), env, Path("r"), Path("/b/bin/radiance"))
 
+    def test_an_arm_setting_may_not_contradict_a_named_layout(self):
+        for key, value in (("R3_MOE_WORKER_MIBS", "1,1,1"), ("R3_MOE_WORKER_PLUGIN_FILE", "libr4d.so"), ("R3_MOE_WORKER_PLACEMENT", "")):
+            env = {"R3_MOE_WORKER": "1", "R3_MOE_WORKER_LAYOUT": "flashnext-2xtx-rdna2-tail", key: value}
+            with self.subTest(key=key), self.assertRaisesRegex(ValueError, "contradicts layout"):
+                adapter("radiance").sidecars(self.arm(), env, Path("r"), Path("/b/bin/radiance"))
+
+    def test_explicit_devices_are_held_to_the_card_roles_and_the_protocol_bound(self):
+        with self.assertRaisesRegex(ValueError, "exceed the protocol"):
+            adapter("radiance").sidecars(self.arm(), {"R3_MOE_WORKER": "1", "R3_MOE_WORKER_DEVICES": "0 1 2 3 4"}, Path("r"), Path("/b/bin/radiance"))
+
 
 FAKE = textwrap.dedent('''
     import signal, sys, time, os

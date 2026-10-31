@@ -128,6 +128,8 @@ class RadianceAdapter(EngineAdapter):
                     raise ValueError(f"{arm['name']}: {HELPER_SWITCH} is set; {HELPER_DEVICES} must list the helper device indices (or {HELPER_LAYOUT} name a layout)")
                 if len(set(devices)) != len(devices) or not all(d.isdigit() for d in devices):
                     raise ValueError(f"{arm['name']}: {HELPER_DEVICES} must be distinct device indices, got {devices}")
+                if len(devices) > radiance_layout.max_helpers():
+                    raise ValueError(f"{arm['name']}: {len(devices)} helpers exceed the protocol's {radiance_layout.max_helpers()}")
                 archs, by_index = radiance_layout.load_archs(), {d.index: d for d in host.devices}
                 derived = []
                 for d in devices:
@@ -135,6 +137,8 @@ class RadianceAdapter(EngineAdapter):
                     if card is None or card.arch not in archs:
                         raise ValueError(f"{arm['name']}: device {d} is "
                                          f"{'not in the host inventory' if card is None else card.arch + ', which engines/radiance/archs.toml does not describe'}")
+                    if "helper" not in archs[card.arch].roles:
+                        raise ValueError(f"{arm['name']}: device {d} is {card.arch}, which archs.toml does not allow as a helper")
                     derived.append(radiance_layout.card_env(archs[card.arch]))
         except radiance_layout.LayoutError as exc:
             raise ValueError(f"{arm['name']}: {exc}") from exc
@@ -150,8 +154,11 @@ class RadianceAdapter(EngineAdapter):
         specs = []
         for index, device in enumerate(devices):
             helper_env = dict(base)
-            # what the card type or layout implies is a default: a setting the arm names itself wins
             for key, value in derived[index].items():
+                if layout and key in helper_env and helper_env[key] != value:
+                    # a named layout was validated as a whole; an arm setting that differs would run something else
+                    raise ValueError(f"{arm['name']}: {key}={helper_env[key]} contradicts layout {layout} ({value}); drop it or change the layout")
+                # card types alone (explicit devices) only imply defaults: a setting the arm names itself wins
                 helper_env.setdefault(key, value)
             helper_env.setdefault("RADIANCE_HOME", str(home))
             helper_env.update({

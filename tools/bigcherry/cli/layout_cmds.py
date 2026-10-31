@@ -53,7 +53,9 @@ def _run(args: Namespace) -> int:
             card = {d.index: d for d in host.devices}.get(args.device)
             if card is None or card.arch not in archs:
                 raise radiance_layout.LayoutError(f"device {args.device} is " + ("not in the host inventory" if card is None else f"{card.arch}, which archs.toml does not describe"))
-            print(" ".join(f"{k}={v}" for k, v in radiance_layout.card_env(archs[card.arch]).items()))
+            if "helper" not in archs[card.arch].roles:
+                raise radiance_layout.LayoutError(f"device {args.device} is {card.arch}, which archs.toml does not allow as a helper")
+            print(" ".join(shlex.quote(f"{k}={v}") for k, v in radiance_layout.card_env(archs[card.arch]).items()))
             return 0
         r = _resolve(args)
         if args.layout_cmd == "env":

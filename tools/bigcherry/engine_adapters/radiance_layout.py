@@ -144,8 +144,10 @@ def _pick(inventory, spec: dict, role: str, archs: dict[str, Arch], where: str, 
     """The inventory devices a group selects: by explicit index, or by architecture (all of them, or the first `count`)."""
     by_index = {d.index: d for d in inventory}
     if "devices" in spec:
-        if "arch" in spec:
-            raise LayoutError(f"{where}: give arch or devices, not both")
+        if "arch" in spec or "count" in spec:
+            raise LayoutError(f"{where}: give devices alone, or arch (with count), not both")
+        if len(set(spec["devices"])) != len(spec["devices"]):
+            raise LayoutError(f"{where}: devices lists a card twice: {spec['devices']}")
         picked = []
         for i in spec["devices"]:
             if i not in by_index:

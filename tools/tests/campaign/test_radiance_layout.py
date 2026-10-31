@@ -154,6 +154,8 @@ roles = ["helper"]
             "positive integer": '[layout.t]\nengine = { arch = "gfx1201" }\n[[layout.t.helper]]\narch = "gfx1100"\n',
             "unknown key": '[layout.t]\nengine = { arch = "gfx1201" }\n[[layout.t.helper]]\narch = "gfx1100"\nbudget-mib = 100\nflavour = "x"\n',
             "no head helper with a share": '[layout.t]\nengine = { arch = "gfx1201" }\n[[layout.t.helper]]\narch = "gfx1100"\nbudget-mib = 100\nshare = 0\n',
+            "devices lists a card twice": '[layout.t]\nengine = { arch = "gfx1201" }\n[[layout.t.helper]]\ndevices = [0, 0]\nbudget-mib = 100\n',
+            "devices alone": '[layout.t]\nengine = { arch = "gfx1201" }\n[[layout.t.helper]]\ndevices = [0]\ncount = 1\nbudget-mib = 100\n',
             "device 9 is not": '[layout.t]\nengine = { arch = "gfx1201" }\n[[layout.t.helper]]\ndevices = [9]\nbudget-mib = 100\n',
         }
         for why, text in bad.items():
