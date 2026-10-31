@@ -551,7 +551,7 @@ __global__ __launch_bounds__(256) void lane_moe_gemv_mr(
  * lane_moe_gemv; f32 accumulate, one bf16 narrow. */
 constexpr uint32_t kRowsTileN = 32;       /* outputs a block: 8 waves x 4 */
 constexpr uint32_t kRowsOut = 4;          /* outputs a wave */
-constexpr uint32_t kRowsRB = 16;          /* rows a pass */
+constexpr uint32_t kRowsRB = 8;           /* rows a pass (16 spilled the 4 x 16 accumulators to scratch on gfx1030: 272 B a thread, 1.2 ms a gate/up call at ~8 experts) */
 constexpr uint32_t kRowsKC = 256;         /* K a chunk */
 
 template <bool TOKEN, bool FP8>
