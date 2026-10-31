@@ -58,7 +58,7 @@ public:
     /* A helper has published a pid the thread is not watching yet: wake it to open a pidfd. */
     void notice() {
         if (wake_ < 0) return;
-        for (uint32_t i = 0; i < r3::moe_shm::kMaxRanks; ++i)
+        for (uint32_t i = 0; i < r3::moe_shm::kMaxHelpers; ++i)
             if (__atomic_load_n(&h_->helper_pid[i], __ATOMIC_ACQUIRE) > 0 &&
                 __atomic_load_n(&watched_[i], __ATOMIC_ACQUIRE) == 0) {
                 signal();
@@ -78,7 +78,7 @@ private:
     }
 
     void run() {
-        int pidfd[r3::moe_shm::kMaxRanks];
+        int pidfd[r3::moe_shm::kMaxHelpers];
         for (auto& f : pidfd) f = -1;
         while (watch_once(pidfd)) {}
         for (int f : pidfd)
@@ -92,7 +92,7 @@ private:
         /* Pick up helpers that have published since the last pass. The pidfd names the process only if its start
          * time still matches the helper's own record: a helper that died before we opened it (ESRCH, or its pid
          * already reused by another process) is a dead helper. */
-        for (uint32_t i = 0; i < kMaxRanks; ++i) {
+        for (uint32_t i = 0; i < kMaxHelpers; ++i) {
             const int32_t pid = __atomic_load_n(&h_->helper_pid[i], __ATOMIC_ACQUIRE);
             if (pid <= 0 || pidfd[i] >= 0) continue;
             pidfd[i] = (int)::syscall(SYS_pidfd_open, pid, 0);
@@ -103,12 +103,12 @@ private:
             __atomic_store_n(&watched_[i], 1u, __ATOMIC_RELEASE);
             notify(h_);   /* the engine's registration barrier waits for every helper to be watched */
         }
-        pollfd fds[kMaxRanks + 1];
-        uint32_t who[kMaxRanks + 1];
+        pollfd fds[kMaxHelpers + 1];
+        uint32_t who[kMaxHelpers + 1];
         nfds_t n = 0;
         fds[n] = {wake_, POLLIN, 0};
         who[n++] = UINT32_MAX;
-        for (uint32_t i = 0; i < kMaxRanks; ++i)
+        for (uint32_t i = 0; i < kMaxHelpers; ++i)
             if (pidfd[i] >= 0) { fds[n] = {pidfd[i], POLLIN, 0}; who[n++] = i; }
         if (::poll(fds, n, -1) < 0) {
             if (errno == EINTR) return true;
@@ -143,6 +143,6 @@ private:
     r3::moe_shm::Header* h_ = nullptr;
     int wake_ = -1;
     uint32_t quit_ = 0;
-    uint32_t watched_[r3::moe_shm::kMaxRanks] = {};
+    uint32_t watched_[r3::moe_shm::kMaxHelpers] = {};
     std::thread thread_;
 };

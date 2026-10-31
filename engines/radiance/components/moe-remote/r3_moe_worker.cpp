@@ -192,7 +192,7 @@ int main(int argc, char** argv) {
     }
 
     WorkerConfig cfg;
-    if (std::string err; !cfg.from_environment(kMaxRanks, &err)) {
+    if (std::string err; !cfg.from_environment(kMaxHelpers, &err)) {
         std::fprintf(stderr, "r3_moe_worker: %s\n", err.c_str());
         return 2;
     }
@@ -239,7 +239,7 @@ int main(int argc, char** argv) {
     if (helper_count > 1 && (!gpu || gpu->engine_ranks_ != 1 || compare)) {
         std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_INDEX %u of R3_MOE_WORKER_COUNT %u: want index < count <= %u, "
                      "and two helpers only on GPU behind a one-rank engine (R3_MOE_WORKER_ENGINE_RANKS=1), not --compare\n",
-                     helper_index, helper_count, kMaxRanks);
+                     helper_index, helper_count, kMaxHelpers);
         return 2;
     }
     const uint64_t budget = helper_budget_bytes();

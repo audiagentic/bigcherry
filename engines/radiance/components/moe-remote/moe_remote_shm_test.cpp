@@ -34,7 +34,14 @@ int main() {
     }
     auto* h = (Header*)m;
     {   // RAD12: ten lanes (four small sizes and the large lane for each rank), a class table the helper sets and the engine validates
-        check(kLanes == kMaxRanks * (kSmallClasses + 1) && kRingSlots == kLanes * kLaneSlots, "lane count and ring size");
+        /* RAD23 stage 1: the three axes kMaxRanks used to be are named apart and still 2; the layout is what it was. */
+        check(kMaxEngineRanks == 2 && kMaxHelpers == 2 && kMaxSlots == 2 && kResultPlanes == 4, "the three axes are 2 and 2 and 2");
+        check(sizeof(Header) == 4096 && sizeof(Request) == 256 && sizeof(CombineSignal) == 64, "header, request and combine signal sizes are unchanged");
+        check(offsetof(Header, helper_pid) == 1924 && offsetof(Header, helper_start) == 1936 && offsetof(Header, combine) == 2048 &&
+              offsetof(Header, result_offset) == 1864 && offsetof(Header, owner_offset) == 96, "header field offsets are unchanged");
+        check(layout().bytes == 148733952 && layout().result[0] == 32571392 && layout().result[result_index(1, 1)] == 127762432, "the legacy layout is byte for byte what it was");
+        check(lane_of(0, 0) == 0 && lane_of(1, 0) == 1 && lane_of(0, 1) == 2 && lane_of(1, kSmallClasses) == 9, "lane numbering is unchanged");
+        check(kLanes == kMaxSlots * (kSmallClasses + 1) && kRingSlots == kLanes * kLaneSlots, "lane count and ring size");
         check(lane_of(0, 0) == 0 && lane_of(1, 0) == 1 && lane_of(0, 1) == 2 && lane_of(1, kSmallClasses) == 9,
               "lane index is class * ranks + rank");
         check(lane_class(lane_of(1, 3)) == 3 && lane_is_small(lane_of(1, 3)) && !lane_is_small(lane_of(0, kSmallClasses)),
@@ -78,8 +85,8 @@ int main() {
     check(clear_owned(m, 7, 23, 0) && !owns(m, 7, 23, 0) && h->owned_count == 0,
           "runtime protection clears candidate ownership");
     check(set_owned(m, 7, 23, 0) && h->owned_count == 1, "ownership can be restored");
-    check(h->result_offset[0] != h->result_offset[kMaxRanks] &&
-          h->result_offset[1] != h->result_offset[kMaxRanks + 1],
+    check(h->result_offset[0] != h->result_offset[result_index(1, 0)] &&
+          h->result_offset[1] != h->result_offset[result_index(1, 1)],
           "producer ranks have isolated result slots");
 
     std::thread helper([&] {
@@ -113,16 +120,16 @@ int main() {
         check(layout_for(legacy_shape(), &rt), "layout_for(legacy_shape()) succeeds");
         check(rt.ring == l.ring && rt.owner == l.owner && rt.layer_map == l.layer_map && rt.bytes == l.bytes,
               "runtime layout matches the compile-time ring, owner, layer map and total");
-        for (uint32_t r = 0; r < kMaxRanks; ++r) {
+        for (uint32_t r = 0; r < kMaxSlots; ++r) {
             check(rt.route[r] == l.route[r] && rt.activation[r] == l.activation[r], "route and activation offsets match");
-            for (uint32_t o = 0; o < kMaxRanks; ++o) check(rt.result[r * kMaxRanks + o] == l.result[r * kMaxRanks + o], "result offsets match");
+            for (uint32_t o = 0; o < kMaxEngineRanks; ++o) check(rt.result[result_index(r, o)] == l.result[result_index(r, o)], "result offsets match");
         }
         // another model's shape (Qwen3.6-35B-A3B: hidden 2048, 256 experts, top-k 8): valid, page aligned, in order
         Layout q{};
         check(layout_for(LayoutShape{2048, 8, 256, 4096, 128, 512}, &q), "a second shape lays out");
         check(q.bytes % kPage == 0 && q.ring == kPage && q.owner > q.ring && q.layer_map > q.owner && q.route[0] > q.layer_map,
               "regions are page aligned and in order");
-        check(q.route[1] > q.result[kMaxRanks - 1] && q.bytes > q.result[kMaxRanks * kMaxRanks - 1], "per-rank regions follow in order");
+        check(q.route[1] > q.result[kMaxEngineRanks - 1] && q.bytes > q.result[kResultPlanes - 1], "per-rank regions follow in order");
         check(q.bytes < l.bytes, "a smaller hidden width and expert count take less memory");
         // refusals: nothing is written on failure
         Layout keep{}; keep.bytes = 77;

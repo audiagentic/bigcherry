@@ -251,7 +251,7 @@ public:
 
     int compute(void* map, r3::moe_shm::Request* q) {
         using namespace r3::moe_shm;
-        if (!map || !q || q->rank >= kMaxRanks || q->rank_count != kMaxRanks || q->layer >= model_.layers ||
+        if (!map || !q || q->rank >= kMaxSlots || q->rank_count != kMaxEngineRanks || q->layer >= model_.layers ||
             q->rows == 0 || q->rows > kMaxRows || q->hidden != shape_.hidden ||
             q->route_count == 0 || q->route_count > kMaxRoutes ||
             q->activation_stride != shape_.hidden * (uint32_t)sizeof(uint16_t)) return -EINVAL;
@@ -306,7 +306,7 @@ public:
                      tensor(d_as_.p, RAD_F32, {rows, shape_.hidden / kGroup}) }, aqp) < 0)
             return -EIO;
 
-        for (uint32_t rank = 0; rank < kMaxRanks; ++rank) {
+        for (uint32_t rank = 0; rank < kMaxEngineRanks; ++rank) {
             LayerTables& lt = tables_[q->layer];
             const int64_t w0 = rank_slice_width(rank, 0);
             const int64_t w1 = rank_slice_width(rank, 1);
@@ -384,7 +384,7 @@ public:
         large_rows_ = large_rows;
         const size_t nclass = experts() / 2;
         for (uint32_t lane = 0; lane < kLanes; ++lane) {
-            const uint32_t rank = lane % kMaxRanks;
+            const uint32_t rank = lane % kMaxSlots;
             const uint32_t cls = lane_class(lane);
             LaneWork& w = lane_[lane];
             /* `open`: lanes that get a stream (a hardware queue); buffers only for an open lane of an enabled class. */
@@ -426,7 +426,7 @@ public:
         using namespace r3::moe_shm;
         if (!host_map || !activation || lane >= kLanes || rows == 0 || rows > lane_[lane].cap_rows)
             return false;
-        const uint32_t rank = lane % kMaxRanks;
+        const uint32_t rank = lane % kMaxSlots;
         LaneWork& w = lane_[lane];
         const size_t xbytes = (size_t)rows * shape_.hidden * sizeof(uint16_t);
         if (!hip_ok(hipMemcpyAsync(w.d_act.p, activation, xbytes,
@@ -464,7 +464,7 @@ public:
         if (!host_map || !device_map || lane >= kLanes || sequence == 0 || rows == 0 ||
             rows > lane_[lane].cap_rows)
             return -EINVAL;
-        const uint32_t rank = lane % kMaxRanks;
+        const uint32_t rank = lane % kMaxSlots;
         LaneWork& w = lane_[lane];
         auto* hhost = static_cast<Header*>(host_map);
         auto* dbase = static_cast<uint8_t*>(device_map);
@@ -490,7 +490,7 @@ public:
                 hhost->activation_offset[rank] + kActivationBf16Bytes + kActivationQBytes)));
         auto* dst = static_cast<uint16_t*>(
             dev_at(ptr<uint16_t>(
-                host_map, hhost->result_offset[rank * kMaxRanks + rank])));
+                host_map, hhost->result_offset[result_index(rank, rank)])));
 
         if (!hip_ok(hipStreamWaitValue32(w.stream, request_seq, sequence,
                                          hipStreamWaitValueGte, 0xffffffffu),
@@ -928,13 +928,13 @@ private:
 public:
     /* Engine tensor-parallel ranks (R3_MOE_WORKER_ENGINE_RANKS): 2 = two XTX ranks, each asking for its TP
      * slice; 1 = one engine (the R9700, RAD02), asking for the full expert width -- both slices, summed. */
-    uint32_t engine_ranks_ = r3::moe_shm::kMaxRanks;
+    uint32_t engine_ranks_ = r3::moe_shm::kMaxEngineRanks;
 private:
     /* FULL WIDTH: a one-rank engine wants each expert whole, so the helper stores it whole (one copy, the
      * relayout's own form) and runs one GEMM chain at the full 640 intermediate width -- instead of two TP
      * halves run one after the other and summed. A two-rank engine keeps one stored slice per rank. */
     bool full_width() const { return engine_ranks_ == 1; }
-    uint32_t stored_slices() const { return full_width() ? 1u : r3::moe_shm::kMaxRanks; }
+    uint32_t stored_slices() const { return full_width() ? 1u : r3::moe_shm::kMaxEngineRanks; }
     int64_t slice_lo(uint32_t s, uint32_t parity) const { return full_width() ? 0 : rank_slice_lo(s, parity); }
     int64_t slice_w(uint32_t s, uint32_t parity) const { return full_width() ? (int64_t)shape_.intermediate : rank_slice_width(s, parity); }
     int64_t mid_w() const { return full_width() ? (int64_t)shape_.intermediate : kRankWidth; }
@@ -1077,7 +1077,7 @@ private:
 
     bool slice_bytes(const RadFileEntry* e, bool gate_up, uint32_t expert_slot, uint32_t rank,
                      int64_t* code, int64_t* scale) const {
-        if (!e || !code || !scale || rank >= r3::moe_shm::kMaxRanks) return false;
+        if (!e || !code || !scale || rank >= r3::moe_shm::kMaxEngineRanks) return false;
         int64_t nr = 1, nc = 1;
         rad_enc_view(e->rank, e->shape, &nr, &nc);
         const int64_t width = slice_w(rank, expert_slot & 1u);
@@ -1219,7 +1219,7 @@ private:
     }
 
     bool upload_weight(const RadFileEntry* e, bool gate_up, uint32_t expert_slot,
-                       std::array<StoredWeight, r3::moe_shm::kMaxRanks>* out) {
+                       std::array<StoredWeight, r3::moe_shm::kMaxEngineRanks>* out) {
         WeightPlan p;
         if (!plan_weight(e, gate_up, &p)) {
             std::fprintf(stderr, "r3_moe_worker: expert weight is not %s-compatible\n", dtype_);
