@@ -82,3 +82,14 @@ Wrong generation, same-generation checksum mismatch, helper crash before ACK, he
 ### Test design
 
 CPU protocol mock proves ACK/quiescence/generation fencing; GPU stress requires 0,1,2 helpers, 1/8/64/1024/4096 rows, protected-slot perturbations, long prefill/MTP decode, fault injection on every transition, poison freed buffers, host-mapped visibility and TSAN/ASAN where practical. Verify `KL/top-1` vs current helper-off/control, no extra numerical divergence due to ownership and no repeat expert contributions. Record transfer bytes, overlapping work, p95/p99 service latency and negative-case recovery.
+
+## Revised 2026-10-31 (GPT review of the plan against radiance 1.14.0 and RAD23; source claims checked)
+
+Only if measured drift and restart interruption justify it. Not an update of the owner bitsets: a placement epoch (64-bit, distinct from the mailbox request sequence) must cover every operation of a model step including MTP passes and already-enqueued GPU work. See RHP11.
+
+Steps:
+1. Quantify restart cost, placement changes per hour, staging bytes, shadow VRAM, payback time.
+2. Extend protocol v19 with a negotiated version and the epoch; stage and validate destination weights and keep the old residency until old-epoch operations retire.
+3. Bind each forward/MTP step to one immutable map; quiesce all ranks and helpers at a global safe boundary; publish after (epoch, map digest, residency-ready) acknowledgements.
+
+Validation: State-machine fault injection, epoch overlap, GPU stream and graph replay, helper death, incomplete staging, generation mismatch, memory pressure, repeated flips; compare pause time and p99 with RHP05.

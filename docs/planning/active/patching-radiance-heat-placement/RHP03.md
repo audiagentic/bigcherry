@@ -113,3 +113,14 @@ Operational snapshot: `<work>/state/radiance/<model-digest>/<stable-cohort>/plac
 ### Negative tests
 
 Invalid checksum, unknown source, two experts with same identity, missing protected expert, missing helper ACK, mismatched model slotmap, GPU ordinal reorder, half-write, disk-full and read during rename. Metrics scrape while helper unavailable returns unknown/disabled status, not fabricated zero traffic.
+
+## Revised 2026-10-31 (GPT review of the plan against radiance 1.14.0 and RAD23; source claims checked)
+
+Extend existing status/metrics with ownership generation, heat coverage, candidate gain, capacity, measured performance and rollback state; persist one compact ownership snapshot, not a heat database.
+
+Steps:
+1. Recheck the 1.14.0 expert-plane, HeatStats, MoverStats and server metrics APIs; add bounded metrics without per-expert labels.
+2. Versioned snapshot: model digest, helper cohort, slot geometry (Header::slot_count), ordered expert ids, complete owner map, budgets, heat provenance, epoch, checksum; written atomically; the running processes stay authoritative.
+3. Include KV occupancy and engine expert-residency pressure in the evidence.
+
+Validation: Corrupt or truncated snapshot, wrong model, changed device order, stale generation, concurrent status reads, deterministic/off mode, restart recovery.
