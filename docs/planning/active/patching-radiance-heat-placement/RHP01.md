@@ -93,3 +93,15 @@ Use `tools/lab/radiance/heat-placement/heat_mock.mjs::Collector`: delayed comple
 ### Hardware scripts, measurement and exit gate
 
 Capture pinned SHA, patchset, model digest, run ID and exact `--max-num-batched-tokens`. A/B disabled/instrumented, then long prefill 2,048/4,096 chunks, 32K prompt, mixed and MTP 64-row verification. Report per-phase `issued/credited/dropped/pending` and coverage **after settling**, not during run-ahead; compare old temporary diagnostic GPU histogram using same rank/step window. Exit only after no correctness regression and measured scheduling overhead within noise. If coverage still falls below 99%, RHP02 may land a hook but RHP04 automatic proposals must remain disabled.
+
+## Revised 2026-10-31 (GPT review of the plan against radiance 1.14.0 and RAD23; source claims checked)
+
+Validate Radiance 1.14.0 (4a61d72) histogram lifecycle under long prefill, decode and MTP; distinguish completed, credited, pending and overwritten observations (uncredited is not lost). Reuse the existing path: Ctx::route_report_impl / route_flush / next_histogram -> Engine::tiering_dispatch (core/engine.cpp:265) -> HeatEngine::observe (:287, passes the report multiplicity as weight).
+
+Steps:
+1. Trace the bank lifecycle and the credited/pending/overwritten counters in 1.14.0; record coverage separately for layers, ranks, phases and draft passes.
+2. Reproduce 2K-32K prefill, MTP verification, bank wrap, host run-ahead and shutdown.
+3. Implement bounded deferred retirement only where measured loss requires it; no additional GPU histogram producer.
+4. Classify missing observations explicitly; never substitute zero demand (layer 48, the MTP layer, is all zero in the 2026-10-17 profile and every draft pass uses it).
+
+Validation: Exact-count synthetic oracle, bank-generation reuse, delayed events, duplicate rejection, overflow accounting, finite shutdown drain; at least 99% completed-report coverage or the loss documented; no mandatory GPU synchronisation or material throughput change.

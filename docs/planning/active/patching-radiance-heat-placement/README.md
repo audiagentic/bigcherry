@@ -68,3 +68,20 @@ Each RHP01–RHP06 plan now contains low-level source seams, explicit algorithm/
 ### Design caveats requiring confirmation
 
 The pinned engine's route bank may aggregate multiple MTP passes and its histogram phase might be mixed/unknown; do not create fake per-phase counts. Initial all-VRAM / remote-only plans can disable the HeatEngine: the shared reader must not unintentionally activate weight movement. A helper-owned expert marked unplaced in the engine cannot be moved local without weight reallocation and loading. Rank 0-only deduplication is valid **only** for confirmed mirrored TP routing; never discard genuine partitioned routing data. Placement snapshots and the mock's checksum are not production crypto/storage code. GPU parity, real histogram retention and throughput remain unverified.
+
+## Review 2026-10-31 (GPT, against radiance 1.14.0 4a61d72 and the code after RAD23 / RCS07 / libr2)
+
+Pinned Radiance is now 1.14.0 (the pin above is stale). What changed under the plan: the remote-MoE protocol is v19 with up to four helpers
+(`kMaxHelpers = kMaxSlots = 4`, engine ranks 2, `Header::slot_count`, `result_index`, `out_rank_of`); placement today is static
+(`R3_MOE_WORKER_HEAT` recorded 2026-10-17, `R3_MOE_WORKER_SHARES`, `R3_MOE_WORKER_PLACEMENT=tail` with `R3_MOE_WORKER_MIBS`; `worker_share::plan_tail` is a pure
+deterministic planner and the static reference); the RX 6900 XT (libr2) runs as a third helper. Findings that bind the plan:
+- Heat is not placement benefit: a 14 GiB tail cut engine transfers and cost 12-15% prefill. The objective is per-layer critical-path completion (max over helpers), decode and prefill separately, with link and movement cost.
+- The static heat file has a coverage bias (0.68% / 1.7% / 14% tail traffic by workload; layer 48 absent). Missing observations are not zero demand; a coverage gate precedes any ownership change.
+- plan_tail / select_owned run once at start in each helper process from the same environment; a dynamic system needs one canonical proposal, immutable global expert ids, a map digest and acknowledgement. A mailbox request sequence is not a placement epoch (RHP11).
+- Restart stays the first mutation boundary. Deterministic mode freezes ownership. A helper that held uniquely owned experts disappearing fails closed and restarts from a verified complete map.
+- Collect with the existing HeatEngine feed (Engine::tiering_dispatch, `observe` weight = report multiplicity, decay per credited step): no second GPU collector, no per-callback decay.
+
+Order: RHP10 and RHP09 first (is thrash real; what does the 6900 XT cost), then RHP01, RHP02, RHP08 (reliable heat), then RHP04 offline, RHP03, RHP05, RHP07. RHP06 and RHP11 only if
+measurements justify live migration. Seed in this slice: `engines/radiance/components/moe-remote/worker_heat.h` and its test (decayed heat, greedy hysteresis planner with budgets, move cap, delta; not
+connected to any live ownership). Not verified by the reviewer: the full RCS07 / RCS10 / RAD23 text, every libr2 call path, the remote hook and worker execution paths.
+

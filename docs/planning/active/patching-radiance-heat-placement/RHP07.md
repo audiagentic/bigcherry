@@ -58,3 +58,16 @@ Miss policy (owner question 2026-10-19: CPU, or copy into the VRAM swap cache an
 ## Change Log
 
 - 2026-10-18T14:26:48.723847+00:00 (created-by): Created by agent
+
+## Revised 2026-10-31 (GPT review of the plan against radiance 1.14.0 and RAD23; source claims checked)
+
+Expert placement as a cost- and capacity-constrained cache across engine VRAM, heterogeneous helper VRAM and host memory. The RX 6900 XT (libr2, 16 GiB, PCIe 3.0 x4) is an implemented tier with measured limits, not a hypothesis: grouped GEMM ~4.5x an XTX, a large-lane call costs ~2 ms fixed + ~0.0135 ms per route, so it stays off the critical path below ~110 routes per layer per 2,048-token chunk (about a 3-6 GiB coldest-leftover tail by the 2026-10-17 profile scaled x2.5).
+
+Steps:
+1. Decayed per-expert demand separated by prefill/decode and MTP, with coverage and session-skew controls.
+2. Discover topology, capabilities, link bandwidth, shared uplinks, usable memory, weight availability.
+3. Per-device execution cost by routed-row count and kernel shape (RHP09).
+4. Simulate fixed residency, tail placement, periodic reassignment and optional host-backed admission; hysteresis, minimum residency, transfer-cost payback, bounded movement.
+5. Keep swap-cache admission and CPU fallback experimental.
+
+Validation: Shifting-workload traces, cold-tail misprediction, gfx1030 prefill penalty, KV pressure, no oscillation, bounded moves, stable numerical output, no regression against the best static layout.

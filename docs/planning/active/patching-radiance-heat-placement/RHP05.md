@@ -104,3 +104,15 @@ Request and clock windows must share a single last-evaluation checkpoint. Propos
 | Snapshot checksum/cohort mismatch | Refuse apply and serve verified fallback only |
 
 Mock `Trigger`, `Epoch`, `snapshot/read_snapshot` exercise the core guards; they do not implement a server control plane or prove restart ordering.
+
+## Revised 2026-10-31 (GPT review of the plan against radiance 1.14.0 and RAD23; source claims checked)
+
+Evaluate occasionally (completed requests or monotonic time) and activate only an approved whole-map proposal through a controlled restart. Never mutate ownership in running engine/helper processes. Deterministic mode freezes ownership.
+
+Steps:
+1. Default off. Experimental thresholds 1,000 completed requests or 1,800 s, cooldown 30 min, gain >= 5% (starting guesses).
+2. Evaluate in a bounded CPU task with coverage, gain, cooldown, capacity and quality gates.
+3. Persist the canonical proposal and the previous-good generation; stop admission, drain ranks and lanes, restart, reload all weights, verify every participant.
+4. Canary with numerical and performance evidence; roll back by restart; fail closed when a complete map cannot be restored. A helper that held uniquely owned experts disappearing is a restart, not a silent reassignment.
+
+Validation: Trigger deduplication, crash during load, map mismatch, partial restart, rejected proposal, forced rollback, deterministic mode, MTP drain, no ownership change during an active request.
