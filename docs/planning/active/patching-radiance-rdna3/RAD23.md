@@ -185,3 +185,42 @@ the subnormal rule, so every finite code maps to value x 2^-8 exactly; only the 
 half), and the kernel's callers do not feed NaN codes. The PCIe figure is the same order as the review's own per-layer arithmetic
 (about 4.5 ms of ideal link time a layer for 2048 rows, times the layer count).
 
+## Baseline: helper timing at H = 2, 2026-10-31 (RAD23 step 1)
+
+Flash-Next, v1.14.0 lab build, R9700 engine + two XTX helpers, `launch-flashnext-best.sh` at the new defaults (1M context, 2 sequences),
+`R3_MOE_WORKER_TRACE=10` (every 10th finished request; stamps from worker_harness.h: engine clock for publish / wait entered, helper
+clock for the helper's own span). Random-word prompts tokenise to about 5.8 tokens a word, so the prompts were 16.8K and 66.5K tokens.
+Run output: `/work/development/tmp/bigcherry/rad23/trace.out`, helper logs `/work/bigcherry/flashnext/helper*-1031-020842.log`.
+
+| Lane | Rows a request (median) | Helper GPU span (median / p90) | Requests traced |
+|---|---|---|---|
+| Small (decode), helper 0 / helper 1 | 4 | 127 / 187 us and 126 / 189 us | 1,034 / 1,033 |
+| Large (prefill), helper 0 / helper 1 | 2,048 | 3,482 / 3,860 us and 3,672 / 4,197 us | 228 / 228 |
+
+Prefill ran at 3,263 tok/s (16.8K) and 3,017 tok/s (66.5K), decode 94 tok/s for 512 tokens. A 2,048-token chunk takes about 630 ms, so
+a 3.5 ms helper span in each of the 48 routed layers is about 170 ms: the two XTX helpers are busy roughly a quarter of a prefill
+chunk and a fifth of a decode step. The engine, not the helpers, is the critical path in this layout. That is room for a slower
+third helper, if its share is small: a gfx1030 helper measured 4.5x slower on the grouped GEMM would take about 16 ms a layer for an
+XTX-sized share, which is over the roughly 13 ms a layer a chunk allows, but about 4 ms for a quarter of that share. Caveat: this is
+the helpers' own time, not a measured critical path; the engine-side wait stamps still need reading per layer before the budget is set.
+
+## Site classification by GPT, 2026-10-31 (req_rad23-n-helpers_abc3ee290b59, read-only on this worktree)
+
+Axes: R engine rank, H helper, S request slot (max(R, H) while helpers alias onto slots), P result plane, L lane arithmetic, C capacity,
+A the alias helper == request slot == apparent rank. Findings that change the plan:
+- The dangerous sites are the A sites: worker_shape.h:74 (`lane % kMaxRanks == helper_index`), moe_remote_hook.cpp:441-443 (published
+  flags), moe_mailbox_ops.hip:141,144,272,308,409,567 (slot and generation indexing), moe_remote_gpu.h:254,387,429,467 (request
+  validation and lane decode), moe_remote_shm.h:135-136,159-160,202-203,218,298,332,365.
+- Result planes are today the diagonal [slot][slot] (`result_offset[slot * kMaxRanks + slot]`, moe_mailbox_ops.hip:460,528 and
+  worker_harness.h:328). [producer rank][helper] is NOT the same convention: the migration must translate explicitly, and every reader
+  and writer (host layout, the device kernels, the helper) takes the index from one shared helper, `result_index(producer, helper)`.
+- GPU-visible: Header, Request and CombineSignal change their member offsets, so the engine and the helper must share the version bump;
+  moe_mailbox_ops.hip step_nr / step_seq / published / traced / seen_at / from capacities and the published[S+1] launch dimensions
+  change with them. Changing only the host layout builder is not enough.
+- R stays a compile-time bound (RankState, StoredWeight arrays in moe_lane_host.h / moe_lane_common.h, worker_lanes stats).
+- H = 3 with kMaxRanks left at 2 would overflow helper_pid[2], helper_start[2], combine lane[2] / seq[2] and the device arrays
+  traced[2], seen_at[2], from[2], step_nr[2], step_seq[2]; `%2` lane decode would map slot 2 onto slot 0; moe_mailbox_ops.hip:318,336
+  stop at two helpers.
+- Shared definitions to add: one `LayoutShape{R, H, S}`, `lane_of(slot, cls)`, `result_index(producer, helper)`,
+  `published_generation_index(S)`; combine remains an explicit H = 2 special case.
+
