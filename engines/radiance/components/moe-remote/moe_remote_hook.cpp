@@ -570,13 +570,13 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
         s.dev.mask_only = !mask_only ? 0u : (e && std::strcmp(e, "2") == 0 ? 2u : 1u);
     }
     s.dev.cpu_ref = cpu_ref_env() ? 1u : 0u;
-    /* R3_MOE_WORKER_COMBINE=1 (default off): two helpers, no shadow/mask-only, and helper 0 started its combiner
+    /* R3_MOE_WORKER_COMBINE=1 (default off): two to kCombineHelpers helpers, no shadow/mask-only, and helper 0 started its combiner
      * (Header::combine.enabled, checked again by the publish kernel each step). */
     {
         const char* e = std::getenv("R3_MOE_WORKER_COMBINE");
-        s.dev.combine = (e && std::strcmp(e, "1") == 0 && helpers == 2 && !shadow && !mask_only) ? 1u : 0u;
+        s.dev.combine = (e && std::strcmp(e, "1") == 0 && helpers >= 2 && helpers <= kCombineHelpers && !shadow && !mask_only) ? 1u : 0u;
         if (s.dev.combine)
-            std::fprintf(stderr, "libr3moe: R3_MOE_WORKER_COMBINE on - helper 0 combines the two helpers' rows on the large lane\n");
+            std::fprintf(stderr, "libr3moe: R3_MOE_WORKER_COMBINE on - helper 0 combines the helpers' rows on the large lane\n");
     }
     s.ready = true;
     *out = &s.dev;
