@@ -116,3 +116,15 @@ Steps:
 4. Canary with numerical and performance evidence; roll back by restart; fail closed when a complete map cannot be restored. A helper that held uniquely owned experts disappearing is a restart, not a silent reassignment.
 
 Validation: Trigger deduplication, crash during load, map mismatch, partial restart, rejected proposal, forced rollback, deterministic mode, MTP drain, no ownership change during an active request.
+
+## Stage A by hand, first result (2026-11-01)
+
+`tools/lab/radiance/heat-placement/heat-drift.py` (#489) checks the active `--heat` file against a recorded histogram: the share
+of live routes the heads and the RX 6900 XT tail take under it, against a file re-ranked from the live counts. On the recorded
+histograms the tail takes 1.4-1.6% of routes with matched heat, 1.9-2.4% with the mixed default, 4.3-8.3% mismatched and up
+to 12.2% with the old static file; it costs ~10x a head a route. One loop on flashnext-4gpu: record during the 42K probe ->
+heat-drift (tail 6.85% against 1.72% re-ranked, advise) -> restart with the written file -> the same probe 14.31 -> 12.72 s
+(-11%), the cached 14K follow-up 1.01 -> 0.75 s, the engine's wait on the helpers 6.06 -> 4.22 s and its p95 a layer 13.7 ->
+4.6 ms (the tail 4.2 -> 1.6 ms a request). In-sample (recorded and replayed on the same text): the held-out case is the next
+measurement before any automatic trigger.
+
