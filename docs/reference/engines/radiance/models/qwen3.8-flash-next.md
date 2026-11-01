@@ -54,8 +54,10 @@ libr3moe, process `r3_moe_worker`):
   helpers (`perf51/heat.rank0.hot-first`, RAD06 2026-10-17: +4% prefill against coldest-first, decode not worse), `R3_MOE_WORKER_MAX_ROWS=4096`, `R3_MOE_WORKER_SMALL_ROWS=8`.
 - `--ngram-placement ram`, `--host-pool-mib 30720` (RAD02 used 30 GiB; `helper-ab.json` 30720), `--max-num-seqs 6`,
   `--max-num-batched-tokens 4096 --checkpoint-interval 4096`, `--kv-cache-dtype fp8`, `--num-speculative-tokens 3`.
-  `launch-flashnext-best.sh` serves it for long context instead (RAD37, below): `--max-model-len 1048576 --rope-scaling yarn:4
-  --max-num-seqs 2 --max-num-batched-tokens 2048 --prefix-resume nearest`.
+  `launch-flashnext-best.sh` serves it for many sessions at the trained context (2026-11-01): `--max-model-len 262144
+  --rope-scaling none --max-num-seqs 8 --max-num-batched-tokens 2048 --prefix-resume nearest`; the fp8 cache on the R9700 holds about
+  1.48M tokens shared by the sessions (5.7 full-length). Seven sessions resumed at once (one ~224K, six ~26K) decoded 229 tok/s in all
+  (`rad23-mixed`). `--max-model-len 1048576 --rope-scaling yarn:4 --max-num-seqs 2` gives the stretched 1M context (RAD37).
 - Harness form of exactly this: `tools/lab/radiance/helper-ab.json` (MEN11).
 - To serve it outside the harness: `bash tools/lab/radiance/launch-flashnext-best.sh [--build DIR]` (starts both helpers, then
   the engine on port 36080; `... stop` shuts all three down). Verified 2026-10-23 on a main build: tg512 144-146,
