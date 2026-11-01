@@ -52,6 +52,7 @@ def read_steps(paths, small_rows):
         rows = int(ds[0]['rows'])
         steps.append({
             'large': rows > small_rows,
+            'records': ds,
             'rows': rows,
             'paired': len(ds) > 1,
             'layer': int(ds[0]['layer']),
@@ -93,6 +94,42 @@ def lane_report(steps, small_rows):
         rank = sorted(by_layer.items(), key=lambda kv: -sum(kv[1]))[:8]
         print('  layers by TOTAL exposed wait (paired): ' + '; '.join(
             'L%d sum %.0f us (n %d, p50 %.0f, p95 %.0f)' % (k, sum(v), len(v), pct(v, .5), pct(v, .95)) for k, v in rank))
+
+
+def stage_report(steps):
+    """RAD40: per helper lane on the large lane, where its request time goes (act_us activations and routes ready, gemm_us
+    gate/up + quant + down, write_us rows written and done published; helper clock), helper 0's per-step combine wait and
+    time, and which helper finished last (the longest helper_gpu_us of the step; the lanes start within microseconds)."""
+    per = collections.defaultdict(lambda: collections.defaultdict(list))
+    last = collections.Counter()
+    comb_wait, comb = [], []
+    n = 0
+    for s in steps:
+        if not s['large'] or not s['paired']:
+            continue
+        recs = [d for d in s['records'] if 'act_us' in d]
+        if not recs:
+            continue
+        n += 1
+        for d in recs:
+            for k in ('act_us', 'gemm_us', 'write_us', 'helper_gpu_us'):
+                if float(d['act_us']) > 0 or k == 'helper_gpu_us':
+                    per[d['lane']][k].append(float(d[k]))
+            if int(d.get('combine_us', 0)):
+                comb_wait.append(float(d['combine_wait_us'])); comb.append(float(d['combine_us']))
+        last[max(recs, key=lambda d: float(d['helper_gpu_us']))['lane']] += 1
+    if not n:
+        return
+    print('stage split, large lane (%d layer-steps), p50 / p95 us:' % n)
+    for lane in sorted(per, key=int):
+        v = per[lane]
+        print('  lane %-3s act %7.1f / %7.1f  gemm %7.1f / %7.1f  write %7.1f / %7.1f  total %7.1f / %7.1f  last on %4.1f%% of steps' % (
+            lane, pct(v['act_us'], 0.50), pct(v['act_us'], 0.95), pct(v['gemm_us'], 0.50), pct(v['gemm_us'], 0.95),
+            pct(v['write_us'], 0.50), pct(v['write_us'], 0.95), pct(v['helper_gpu_us'], 0.50), pct(v['helper_gpu_us'], 0.95),
+            100.0 * last[lane] / n))
+    if comb:
+        print('  combine (helper 0, %d steps): wait for the other helpers %7.1f / %7.1f, combine %7.1f / %7.1f' % (
+            len(comb), pct(comb_wait, 0.50), pct(comb_wait, 0.95), pct(comb, 0.50), pct(comb, 0.95)))
 
 
 def window_summary(steps, rounds, slack_ns):
@@ -152,6 +189,7 @@ def main():
         print("Note: wait/round is the exposed helper wait summed over the round (prefill and decode together); compare it with the round's wall time.")
         return
     lane_report(steps, a.small_rows)
+    stage_report(steps)
     print("Note: sum(exposed wait) is time on the critical path, not a share of the run; divide it by the run's wall time for that.")
 
 
