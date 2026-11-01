@@ -70,7 +70,10 @@ private:
         }
     }
     void run() {
-        uint32_t seen = __atomic_load_n(&gen_, __ATOMIC_ACQUIRE);
+        /* Start from the generation before any job (0, set before the workers exist), not from a load here: a worker that
+         * starts after the first combine() has already bumped gen_ would otherwise take that job as seen and sleep, and
+         * the caller would wait on busy_ forever (combine_pool_test). */
+        uint32_t seen = 0;
         for (;;) {
             uint32_t g;
             while ((g = __atomic_load_n(&gen_, __ATOMIC_ACQUIRE)) == seen) combine_futex_wait(&gen_, seen, 0, false);
