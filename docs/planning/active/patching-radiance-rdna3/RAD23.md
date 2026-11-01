@@ -525,3 +525,11 @@ So the cheaper floor makes the 6900 XT cheap at low route counts, but no tail si
 | 8 GiB (re-run) | 3265 (107) | 3190 (113) | |
 
 The 4 GiB 8.8K row is the first request on a fresh server (2.7 to 3.4 s; the other arms' first requests are 2.7 s), so not read. One 8 GiB run gave decode 36 tok/s with the 6900 XT at 10 ms a request; the re-run is normal and the cause is not known. The tail is now level with no tail at 8 GiB; it is not yet a gain. What it saves is the engine card's swap traffic, which these context lengths do not need.
+
+## The few-rows kernel kept its accumulators in scratch; fixed, 2026-11-01 (`rad23-nospill`, `rad23-cap14`)
+
+rocprofv3 counters on the kernel (microbenchmark, 9 rows, 8 experts): VALU at about 12% of the card's issue rate, waves waiting 83% of their cycles (SQ_WAIT_ANY / SQ_WAVE_CYCLES), 163,840 waves a call of which ~98% belong to empty experts. The resource report showed 208 B a lane of scratch in every variant of the 32 x 4 x 12 kernel: the unrolled row loops exited with `if (r >= nr) break;`, a runtime exit that made the compiler keep the 4 x 12 accumulators in private memory. `continue` keeps them in registers (151 VGPRs, no scratch). With it: activation staging takes 16 codes a thread in one 16-byte load (one scale load each) instead of a byte load and a scale load per code, and the next chunk's weight dwords are loaded before the current chunk is staged (each lane holds one dword an output a chunk). The tile sweep was repeated on the no-spill base: 32 x 4 x 12 stays best; 64-output tiles spill again.
+
+Microbenchmark (random codes, 8 experts) at 1 / 4 / 9 / 16 / 32 rows: 223 / 293 / 433 / 745 / 1339 us before, 207 / 253 / 342 / 609 / 1043 us after. Replay of the 6900 XT's own captured requests, exact (fnv64 hashes identical): 14 GiB tail (60 captures, 120 replays) gate/up 1446 to 710 us, down 1204 to 777 us; 4 GiB tail (118 replays) gate/up 770 to 561 us, down 483 to 501 us.
+
+Remaining per large-lane request on the 14 GiB captures: gate/up ~710, down ~777, gated quantise ~519, reduce ~219, sparse activation copy ~208, routing ~37 us.
