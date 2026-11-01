@@ -64,10 +64,18 @@ void trace_dump(void* map, uint32_t lane, uint32_t seq) {
     /* wall_ns: this host's clock when the line is printed, so a benchmark can bucket lines by the round that produced them. */
     const unsigned long long wall_ns = (unsigned long long)std::chrono::duration_cast<std::chrono::nanoseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
-    std::fprintf(stderr, "TRACE,lane,%u,seq,%u,layer,%u,rows,%u,routes,%u,local_us,%.2f,wait_us,%.2f,helper_gpu_us,%.2f,enter,%llu,wall_ns,%llu\n",
+    /* RAD40 stage split on the helper's clock (0 when the stamp is missing): act_us lane start -> activations ready,
+     * gemm_us -> gate/up, quant and down done, write_us -> rows written and done published; helper 0's combine wait and
+     * time on the step it combined. */
+    const uint64_t s0 = q->stage_trace[0], s1 = q->stage_trace[1], cb = q->stage_trace[2];
+    const bool st_ok = s0 >= t[3] && s1 >= s0 && t[4] >= s1 && s0;
+    std::fprintf(stderr, "TRACE,lane,%u,seq,%u,layer,%u,rows,%u,routes,%u,local_us,%.2f,wait_us,%.2f,helper_gpu_us,%.2f,enter,%llu,wall_ns,%llu,"
+                 "act_us,%.2f,gemm_us,%.2f,write_us,%.2f,combine_wait_us,%u,combine_us,%u\n",
                  lane, seq, q->layer, q->rows, q->route_count,
                  (double)(int64_t)(t[1] - t[0]) * us, (double)(int64_t)(t[2] - t[1]) * us,
-                 (double)(int64_t)(t[4] - t[3]) * us, (unsigned long long)t[1], wall_ns);
+                 (double)(int64_t)(t[4] - t[3]) * us, (unsigned long long)t[1], wall_ns,
+                 st_ok ? (double)(s0 - t[3]) * us : 0.0, st_ok ? (double)(s1 - s0) * us : 0.0, st_ok ? (double)(t[4] - s1) * us : 0.0,
+                 (unsigned)(cb & 0xffffffffu), (unsigned)(cb >> 32));
 }
 
 struct ReplayInput {

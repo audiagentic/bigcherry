@@ -614,6 +614,7 @@ public:
         if (!hip_ok(hipGetLastError(), "lane request kernels")) return -EIO;
         const bool sampling = sample && w.sample_pending && w.sample_sequence == sequence;
         if (sampling && !hip_ok(hipEventRecord(w.stage[0], w.stream), "lane stage 0")) return -EIO;
+        if (trace_) hipLaunchKernelGGL(lane_stage_stamp, dim3(1), dim3(1), 0, w.stream, q, 0u);   /* activations ready */
 
         /* A two-rank engine asks for its own TP slice; a one-rank engine for the whole expert (full width). */
         {
@@ -792,6 +793,7 @@ public:
         }
 
         if (sampling && !hip_ok(hipEventRecord(w.stage[3], w.stream), "lane stage 3")) return -EIO;
+        if (trace_) hipLaunchKernelGGL(lane_stage_stamp, dim3(1), dim3(1), 0, w.stream, q, 1u);   /* GEMMs done */
         if (!fuse)
             hipLaunchKernelGGL(lane_route_inverse, route_grid, block, 0, w.stream,
                                static_cast<const int32_t*>(w.d_sorted.p),
@@ -983,6 +985,7 @@ private:
     int gemv_wide_env_ = -1;    /* R3_MOE_WORKER_GEMV_WIDE as set: -1 unset, 0 off, 1 on */
     bool gemv_wide_ = false;    /* R3_MOE_WORKER_GEMV_WIDE: sixteen-byte FP8 loads in the decode GEMV (RAD14) */
     bool rows_ = false;         /* R3_MOE_WORKER_ROWS: few-rows-a-expert kernel on the large lane (RAD06) */
+    bool trace_ = [] { const char* v = std::getenv("R3_MOE_WORKER_TRACE"); return v && *v && std::atoi(v) > 0; }();   /* RAD40 stage stamps */
     bool gemv_debug_ = false;   /* R3_MOE_WORKER_GEMV=2: grouped GEMM AND GEMV gate/up, compared (--compare) */
 
     template <class T> bool symbol(const char* name, T* out, bool required = true) {

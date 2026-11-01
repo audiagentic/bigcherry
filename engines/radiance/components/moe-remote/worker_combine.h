@@ -121,6 +121,7 @@ inline bool combine_step(void* map, const r3::moe_shm::Request* q0, uint32_t hel
         return false;
     }
     const Request* q[kCombineHelpers] = {q0};
+    const auto tw = std::chrono::steady_clock::now();   /* RAD40: the wait for the other helpers starts here */
     for (uint32_t k = 1; k < helpers; ++k) {
         const uint32_t lanek = h->combine.lane[k], seqk = h->combine.seq[k];
         if (!seqk) continue;   /* no request from helper k this step: it contributes no rows */
@@ -159,7 +160,12 @@ inline bool combine_step(void* map, const r3::moe_shm::Request* q0, uint32_t hel
     pool->combine(planes, helpers, ptr<uint16_t>(map, h->result_offset[result_index(0, 1)]), mask->data(), rows, h->hidden);
     std::atomic_thread_fence(std::memory_order_release);
     store(&h->combine.done, g);
-    st->combine_us += std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - t0).count();
+    const auto t1 = std::chrono::steady_clock::now();
+    st->combine_us += std::chrono::duration<double, std::micro>(t1 - t0).count();
+    {   /* R3_MOE_WORKER_TRACE (RAD40): this step's wait for the other helpers and its combine time, on helper 0's request */
+        const auto us = [](auto d) { return (uint64_t)std::min<int64_t>(UINT32_MAX, std::chrono::duration_cast<std::chrono::microseconds>(d).count()); };
+        const_cast<Request*>(q0)->stage_trace[2] = us(t0 - tw) | (us(t1 - t0) << 32);
+    }
     ++st->steps;
     return true;
 }

@@ -52,5 +52,25 @@ class TraceWindows(unittest.TestCase):
             self.assertEqual(tr.window_summary(steps, [{"streams": 2, "wall_start_ns": 0, "wall_end_ns": 10**18}], 0)[2]["layer_steps"], 0)
 
 
+class StageSplit(unittest.TestCase):
+    def test_stage_split_and_last_helper(self):
+        """RAD40: act / gemm / write per lane, the combine on helper 0's line, and which lane finished last."""
+        import contextlib, io
+        def st(lane, enter, gpu, act, gemm, write, cw=0, cb=0):
+            return (f"TRACE,lane,{lane},seq,1,layer,3,rows,2048,routes,9000,local_us,600.00,wait_us,4000.00,helper_gpu_us,{gpu:.2f},"
+                    f"enter,{enter},wall_ns,1,act_us,{act:.2f},gemm_us,{gemm:.2f},write_us,{write:.2f},combine_wait_us,{cw},combine_us,{cb}")
+        with tempfile.TemporaryDirectory() as td:
+            h0, h1 = Path(td, "h0.log"), Path(td, "h1.log")
+            h0.write_text("\n".join(st(16, 1000 + i, 3400, 400, 2200, 800, cw=200, cb=480) for i in range(10)) + "\n")
+            h1.write_text("\n".join(st(17, 1000 + i, 3600, 600, 2200, 800) for i in range(10)) + "\n")
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                tr.stage_report(tr.read_steps([str(h0), str(h1)], 8))
+            text = out.getvalue()
+        self.assertIn("stage split, large lane (10 layer-steps)", text)
+        self.assertRegex(text, r"lane 17 .*act +600\.0 .*last on 100\.0% of steps")
+        self.assertIn("combine (helper 0, 10 steps): wait for the other helpers   200.0", text)
+
+
 if __name__ == "__main__":
     unittest.main()
