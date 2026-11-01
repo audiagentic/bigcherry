@@ -103,5 +103,8 @@ Validation: State-machine fault injection, epoch overlap, GPU stream and graph r
 
 ## Ledger-events
 
+
 - chg_20261101_225732_planning-a-staged-roadmap-for_4092
 - 2026-11-01T22:57:39.628248+00:00 (updated-by): Updated: section:ledger-events
+- chg_20261101_233905_design-spec-for-moving-experts_5737
+- 2026-11-01T23:39:13.660857+00:00 (updated-by): Updated: section:ledger-events
