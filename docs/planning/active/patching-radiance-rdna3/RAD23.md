@@ -538,3 +538,23 @@ Remaining per large-lane request on the 14 GiB captures: gate/up ~710, down ~777
 
 - chg_20261101_090829_flash-next-prefill-with-the-rx_2169
 - 2026-11-01T09:08:33.034449+00:00 (updated-by): Updated: section:ledger-events
+
+## Status at the end of 2026-11-01
+
+flashnext-4gpu is the launcher default: the R9700 engine, both XTX heads at 22,528 MiB, the RX 6900 XT as a 14 GiB tail,
+the helper-row combine (chunked, protocol 22), mixed code+docs heat, live heat recording on.
+
+| | 8 sessions, ~1.04M prompt tokens | 42K prefill + decode | ~690K prefill |
+|---|---|---|---|
+| flashnext-2xtx (the default before) | 1,353 tok/s | - | - |
+| four cards, 14 GiB tail, morning | 2,064 tok/s | 16.7 s | 1,833-1,944 tok/s |
+| + gfx1030 dot2 kernel (#486), combine default (#488) | 2,369 tok/s | 14.3 s | 2,663 tok/s (641K) |
+| + chunked combine (#497) | **2,513 tok/s** | **13.1-13.7 s** | **2,796 tok/s** |
+
+KLD of the default: inside the model's noise band (RAD39); the combine arm passes the gate against h2. Measured and not
+taken: f32 partials (-14% at 8 sessions), fp16 row-exponent partials (neutral), 10 GiB tail (faster single request, slower
+8 sessions), XTX GEMM tile knobs (default is best), few-row experts to the few-rows kernel on XTX (slower). Open: the R9700
+in an x8 slot (its Gen4 x4 link carries every result row), the XTX grouped GEMM at ~1/3 of its matrix-core rate (the heads
+finish last on 62% of prefill layers), XTX 0's priority over other cards' host reads (needs root to read the config space),
+the R9700's 16-20 W idle (ASPM, root). Stage A of hot placement is in place recommend-only (#489, #500-#502).
+
