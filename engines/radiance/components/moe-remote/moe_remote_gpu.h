@@ -717,7 +717,8 @@ public:
              * plugin's form quantises every row of the lane's capacity. Read each call so a replay can compare. */
             const char* lq_env = std::getenv("R3_MOE_WORKER_LANE_QUANT");
             const bool lane_quant = (!lq_env || std::strcmp(lq_env, "0") != 0) &&
-                                    (gated_quant_ == gated_had_ || gated_quant_ == gated_plain_) && mid_w() % 4u == 0;
+                                    (gated_quant_ == gated_had_ || gated_quant_ == gated_plain_) && mid_w() % 4u == 0 &&
+                                    (gated_quant_ != gated_had_ || mid_w() % kGroup == 0);   /* the plugin refuses a rotated ragged width too */
             if (lane_quant) {
                 const uint32_t nkb = (uint32_t)((mid_w() + kGroup - 1) / kGroup);
                 const dim3 qb(std::min<uint32_t>(nkb, 32u) * 32u);
