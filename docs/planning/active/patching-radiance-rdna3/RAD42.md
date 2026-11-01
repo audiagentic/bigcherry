@@ -80,3 +80,7 @@ every add block polling host memory flooded the x4 link (15.5 s instead of 14.3)
 2,513 tok/s against 2,369 (+6.1%), 42K probe 13.1-13.7 s against 14.3-14.5, KLD identical to the unchunked combine.
 Design b (pushing the combined plane into engine VRAM through the BAR) is not done: re-assess after the R9700 moves to x8.
 
+## Ledger-events
+
+- chg_20261101_141636_flash-next-on-four-gpus-serves_8287
+- 2026-11-01T14:16:40.613683+00:00 (updated-by): Updated: section:ledger-events
