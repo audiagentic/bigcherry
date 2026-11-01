@@ -26,8 +26,8 @@
 #   bash tools/lab/radiance/launch-flashnext-best.sh [start] [--build DIR] [--port N] [--heat FILE] [--host-pool-mib N] [--chunk TOKENS] [--ngram-placement ram|disk|vram] [--kv-dtype fp8|fp8_v4|k6_v4] [--engine-arg ARG ...] [--ngram-device INDEX] [--max-model-len TOKENS] [--record-heat PREFIX [--record-period S]] [--gpu-power] [--layout NAME] [--budget ARCH=MIB]
 #   bash tools/lab/radiance/launch-flashnext-best.sh stop
 # Without --build, the newest build under $BC_WORK_ROOT/builds that has the helper binary is used.
-# --heat FILE: the route-heat file that ranks the experts, hottest first (default $WORK/heat/flashnext-recorded.hot-first, recorded on C++/HIP
-# source in RAD23; the RX 6900 XT tail only pays when it matches the workload, so record your own with --record-heat) (uint32[128][512] = max - count of a recorded histogram; heat-placement/heat-invert.py
+# --heat FILE: the route-heat file that ranks the experts, hottest first (default $WORK/heat/flashnext-mixed.hot-first, C++/HIP source and
+# documentation recorded in RAD23 at equal weight; the RX 6900 XT tail only pays when it matches the workload, so record your own with --record-heat) (uint32[128][512] = max - count of a recorded histogram; heat-placement/heat-invert.py
 # makes one). --record-heat PREFIX: the engine counts every routed expert in VRAM and rewrites PREFIX.rank0 every --record-period seconds (default 30)
 # while serving: a recording run (the counting costs speed; do not serve production with it). Invert the file, restart with --heat and a larger
 # --budget (RHP10: workload-recorded heat plus gfx1100=23500 gave +34% prefill at 675K used context on a corpus it had not seen).
@@ -58,7 +58,7 @@ RUN=$WORK/flashnext
 PIDS=$RUN/pids
 SHM=/r3-moe-helper
 PORT=36080
-HEAT=$WORK/heat/flashnext-recorded.hot-first
+HEAT=$WORK/heat/flashnext-mixed.hot-first
 BUILD=""
 GPU_POWER=${GPU_POWER:-0}
 LAYOUT=${FLASHNEXT_LAYOUT:-flashnext-4gpu}
