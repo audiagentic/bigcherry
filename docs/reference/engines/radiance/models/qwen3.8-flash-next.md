@@ -259,7 +259,9 @@ and +7% at 1 (padding), the RAD12 result. Replaying 12 real 6-stream decode requ
 request): old W4 GEMV 310 + 206 = 516 us, W4H2 185 + 155 = 340 us, the grouped GEMM ~343 us, and a multi-row W4H2 variant
 (one block an expert, four rows a pass; #506, closed) 267 + 162 = 429 us - a head helper's rows average ~1.5 an expert, so
 batching them loses more to restaging than it saves in weight reads. The worker harness's W4 CPU reference reports rel_l2
-~1.0 even for the default kernel (RAD15), so W4 GEMV correctness is judged by KLD. Judge these A/Bs on step time: at temperature 0 the engine is not batch-invariant
+~1.0 even for the default kernel (RAD15), so W4 GEMV correctness is judged by KLD. KLD (flashnext-4gpu with the combine, 64-token steps - the chunk minimum - with W4H2 on every step up to 64 rows,
+against the same at default kernels, rad18 reference): mean 0.0598 against 0.0660, median 0.0157 / 0.0161, p99 0.607 / 0.709,
+top-1 88.77% / 88.93%, perplexity ratio 1.000 / 0.995 - inside the run-to-run band (0.055-0.070), gate passed. Judge these A/Bs on step time: at temperature 0 the engine is not batch-invariant
 (multi-stream text differs run to run) and a kernel change alters the 1-stream text, so tok/s moves with draft acceptance.
 
 Also measured the same day: the decode attention split count (`RADIANCE_TUNE=attn_paged_gate_quant:splits=8..64`) changes the
