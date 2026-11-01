@@ -236,6 +236,15 @@ On this host GPU reads of host memory also contend: while XTX 0 pulls, the other
 rate (writes and CPU pushes into a card's VRAM through its resizable BAR do not), so helper 1 is about 0.2 ms slower a
 request than helper 0.
 
+### The chunked combine (RAD42, 2026-11-01)
+
+The per-helper stage trace (RAD40) showed that after the helpers' GEMMs the rows went write -> combine -> engine read
+strictly in sequence: 0.76 + 0.5 + ~1.6 ms a 2048-row prefill layer, longer than the heads' 2.6 ms of GEMMs. Protocol 22
+moves them in 256-row chunks: each helper publishes a chunk once its rows are written, helper 0 combines each chunk as every
+helper's lands, and the engine adds each combined chunk as it arrives (one block a chunk polls host memory and mirrors the
+flag into VRAM). flashnext-4gpu, same heat: 8 sessions 2,369 -> 2,513 tok/s (+6.1%), the 42K probe 14.3-14.5 -> 13.1-13.7 s,
+the cached 14K follow-up 1.01 -> 0.93 s; KLD bit-identical to the unchunked combine (the arithmetic is unchanged).
+
 ### A third helper on the RX 6900 XT (RAD23, 2026-10-31)
 
 The layout `flashnext-2xtx-rdna2-tail` (`launch-flashnext-best.sh --layout flashnext-2xtx-rdna2-tail`, size with `--budget gfx1030=N`) adds the
