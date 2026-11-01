@@ -111,3 +111,12 @@ Steps:
 4. Compare with the static diagnostic on matched steps before retiring R3_MOE_WORKER_HISTOGRAM and R3_MOE_WORKER_HEAT in production.
 
 Validation: Callback lifetime, ABI mismatch, disabled heat, deterministic mode, rank duplication, MTP, mixed phases, histogram parity; no new GPU synchronisation.
+
+## What --record-heat costs today (2026-11-01, flashnext-4gpu, the 42K flashnext-probe)
+
+Without recording 14.28 / 14.31 / 14.35 s (three runs); with `--record-heat` 15.09, 17.69, 15.0, 15.1 s (period 30 s) and 16.06 s
+with the snapshot thread off (`--record-period 0`): 5-24%, irregular. Not the per-route global atomics: counting the step in
+an LDS histogram and adding once an expert (at most 512 atomics a step instead of 20,480) gave the bit-identical histogram
+(21,532,920 routes, 0 cells differing) and the same 15.0 s. Not the snapshots either. The cause is open; until it is found,
+record heat in a window (minutes of real traffic) and serve without it, which is what RHP05 stage A needs anyway.
+
