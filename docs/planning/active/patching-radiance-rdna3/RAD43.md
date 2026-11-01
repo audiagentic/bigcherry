@@ -76,3 +76,14 @@ Tile knobs on the same 20 head captures (rocprof total of the grouped GEMMs, all
 (libr4d moe_gemm_w4a8 launch rc=-18, the replay then waits forever). The default is already the best of the plugin's knobs:
 a head gain needs new kernel work (few-row experts to the few-rows kernel in the same request; the grouped GEMM itself).
 
+## Where the XTX grouped GEMM's time goes (2026-11-01, scoping, `runs/rad43-capx/pr-*`)
+
+The kernel is libr4d's `moe_gemm_q_kernel` (radiance 1.14.0 `libr4d/r4d_moe.hip`, ~1,100 of its 3,800 lines; templated on
+MT/NTL/WGM/WGN, the w4nl path decodes weights to f16 and multiplies with f16 WMMA). Its timing probe (R3_MOE_PROBE, outputs
+invalid) on the same 20 head captures: normal 93.6 ms; without the WMMA instructions 76.7 ms (-18%); without widening the
+E4M3 activations 77.8 ms (-17%). So about two thirds of the kernel is neither the matrix math nor the activation widening:
+weight decode, LDS staging, global loads and barriers. A rewrite would target the weight/staging path (e.g. decoding w4nl
+straight into WMMA fragments, double-buffered weight tiles, fewer barriers), not the arithmetic. Size: L (one large kernel
+family, five template axes, two weight formats); expected gain if the non-math part halves: ~1/3 of the head GEMM, ~0.8
+ms a head request, the heads being last on 62% of prefill layers.
+
