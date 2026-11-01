@@ -74,7 +74,6 @@ public:
     void stop_and_join() {
         using namespace r3::moe_shm;
         request_stop();
-        for (uint32_t k = 1; k < kCombineHelpers; ++k) combine_futex_wake(&h_->combine.helper_done[k], true);
         (void)__atomic_fetch_or(&h_->burst, kBurstStop, __ATOMIC_ACQ_REL);
         (void)futex_wake(&h_->burst);
         for (uint32_t lane = 0; lane < kLanes; ++lane)
@@ -162,14 +161,14 @@ private:
                 request_stop();
                 break;
             }
-            if (!gpu_.sync_lane(lane) || !collect(lane, next)) { request_stop(); break; }
-            if (combine_.on && cfg_.helper_index >= 1) combine_helper_done(map_, cfg_.helper_index, next);
+            /* R3_MOE_WORKER_COMBINE (RAD42): helper 0 combines chunk by chunk while its own GPU and the others still write. */
             if (combine_.on && cfg_.helper_index == 0 &&
                 !combine_step(map_, q, cfg_.helper_count, combine_.pool.get(), &combine_.mask, &combine_.stats)) {
-                raise_fault(h_);   /* the engine's wait for combine.done fails now */
+                raise_fault(h_);   /* the engine's waits for the chunks and combine.done fail now */
                 request_stop();
                 break;
             }
+            if (!gpu_.sync_lane(lane) || !collect(lane, next)) { request_stop(); break; }
             if (++next == 0) {
                 std::fprintf(stderr, "r3_moe_worker: large lane %u sequence space exhausted\n", lane);
                 request_stop();

@@ -4,8 +4,8 @@
 // a token over its link instead of two. The sum is written as fp16: the same two bytes as one bf16 row, but rounded 8x
 // finer, since a bf16 sum measurably worsened KLD (RAD18 2026-10-23: p99 +0.275). A row with a value outside fp16 range
 // is marked kCombineFallback in its first element and the engine reads that row from the two helper planes instead.
-// Nothing here spins: helper 0 combines on its large-lane thread right after its own stream sync, futex-waiting on helper
-// 1's host done word; the pool's workers sleep on futex words between jobs.
+// Helper 0 combines on its large-lane thread chunk by chunk while the helpers' GPUs still write (RAD42), spinning with a
+// yield on the chunk words only inside a combined step; the pool's workers sleep on futex words between jobs.
 // Included only by r3_moe_worker.cpp, after worker_container.h (stopping()).
 
 #include <linux/futex.h>
@@ -97,17 +97,13 @@ struct CombineStats {
     double combine_us = 0.0;
 };
 
-/* Helper k >= 1, after its large-lane request seq has synced: tell helper 0. */
-inline void combine_helper_done(void* map, uint32_t helper, uint32_t seq) {
-    auto* h = static_cast<r3::moe_shm::Header*>(map);
-    if (helper == 0 || helper >= r3::moe_shm::kCombineHelpers) return;
-    r3::moe_shm::store(&h->combine.helper_done[helper], seq);
-    combine_futex_wake(&h->combine.helper_done[helper], true);
-}
-
-/* Helper 0, after its large-lane request q0 has synced: if the engine asked for a combine on this step, wait for each other
- * helper that has a request this step (futex), combine into plane [0][1] and publish done. False on a protocol mismatch or
- * a stop. */
+/* Helper 0, right after queueing its own large-lane request q0 (before its stream sync): if the engine asked for a combine
+ * on this step, combine chunk by chunk (RAD42). For each chunk of kCombineChunkRows rows it waits until every helper with a
+ * request this step, helper 0 included, has published the chunk (Header::chunks.seq, stored by their reduce kernels), sums
+ * it into plane [0][1] and publishes chunks.done[c]; the engine's add kernel takes each chunk as it lands. Once every chunk
+ * is out it checks the other helpers' requests completed and publishes combine.done. The waits spin with a yield: they last
+ * only while this step's helpers run (helper 0's own GPU is busy then too), never between bursts. False on a protocol
+ * mismatch, a helper fault or a stop. */
 inline bool combine_step(void* map, const r3::moe_shm::Request* q0, uint32_t helpers, CombinePool* pool,
                          std::vector<uint8_t>* mask, CombineStats* st) {
     using namespace r3::moe_shm;
@@ -121,27 +117,29 @@ inline bool combine_step(void* map, const r3::moe_shm::Request* q0, uint32_t hel
         return false;
     }
     const Request* q[kCombineHelpers] = {q0};
-    const auto tw = std::chrono::steady_clock::now();   /* RAD40: the wait for the other helpers starts here */
+    uint32_t seq[kCombineHelpers] = {q0->sequence};
     for (uint32_t k = 1; k < helpers; ++k) {
         const uint32_t lanek = h->combine.lane[k], seqk = h->combine.seq[k];
         if (!seqk) continue;   /* no request from helper k this step: it contributes no rows */
-        if (lanek >= kLanes || lanek % kMaxSlots != k) {
+        const Request* qk = lane_request(map, lanek, seqk);
+        if (lanek >= kLanes || lanek % kMaxSlots != k || !qk) {
             std::fprintf(stderr, "r3_moe_worker: combine stopped: helper %u's lane does not match\n", k);
             return false;
         }
-        for (uint32_t d; (int32_t)((d = load(&h->combine.helper_done[k])) - seqk) < 0;) {
+        /* This step's requests were all written before any was released, but helper 0 reads helper k's from another
+         * card's writes: wait until they are visible here, then check them. */
+        while (load(&qk->sequence) != seqk) {
             if (stopping() || load(&h->helper_fault)) return false;
-            combine_futex_wait(&h->combine.helper_done[k], d, 200, true);
+            std::this_thread::yield();
         }
-        const Request* qk = lane_request(map, lanek, seqk);
-        if (load(&h->lane[lanek].done_sequence) != seqk || !qk || load(&qk->sequence) != seqk || qk->rows != rows ||
-            qk->status != 0) {
+        if (qk->rows != rows) {
             std::fprintf(stderr, "r3_moe_worker: combine stopped: helper %u's request does not match\n", k);
             return false;
         }
         q[k] = qk;
+        seq[k] = seqk;
     }
-    const auto t0 = std::chrono::steady_clock::now();
+    /* Which helpers wrote which rows: from the route lists, which the engine wrote before releasing the requests. */
     std::memset(mask->data(), 0, rows);
     const uint16_t* planes[kCombineHelpers] = {};
     for (uint32_t k = 0; k < helpers; ++k) {
@@ -157,14 +155,47 @@ inline bool combine_step(void* map, const r3::moe_shm::Request* q0, uint32_t hel
             (*mask)[(uint32_t)t] |= (uint8_t)(1u << k);
         }
     }
-    pool->combine(planes, helpers, ptr<uint16_t>(map, h->result_offset[result_index(0, 1)]), mask->data(), rows, h->hidden);
-    std::atomic_thread_fence(std::memory_order_release);
+    uint16_t* out = ptr<uint16_t>(map, h->result_offset[result_index(0, 1)]);
+    const uint32_t hid = h->hidden;
+    std::chrono::steady_clock::duration waited{}, combined{};
+    for (uint32_t c = 0, r0 = 0; r0 < rows; ++c, r0 += kCombineChunkRows) {
+        const uint32_t n = std::min(kCombineChunkRows, rows - r0);
+        const auto tw = std::chrono::steady_clock::now();
+        for (uint32_t k = 0; k < helpers; ++k) {
+            if (!q[k]) continue;
+            while (load(&h->chunks.seq[k][c]) != seq[k]) {
+                if (stopping() || load(&h->helper_fault)) return false;
+                std::this_thread::yield();
+            }
+        }
+        const auto t0 = std::chrono::steady_clock::now();
+        const uint16_t* src[kCombineHelpers] = {};
+        for (uint32_t k = 0; k < helpers; ++k) src[k] = planes[k] + (uint64_t)r0 * hid;
+        pool->combine(src, helpers, out + (uint64_t)r0 * hid, mask->data() + r0, n, hid);
+        std::atomic_thread_fence(std::memory_order_release);
+        store(&h->chunks.done[c], g);
+        const auto t1 = std::chrono::steady_clock::now();
+        waited += t0 - tw;
+        combined += t1 - t0;
+    }
+    /* every other helper's request finished cleanly (its rows are all in; its done word follows its last chunk) */
+    for (uint32_t k = 1; k < helpers; ++k) {
+        if (!q[k]) continue;
+        const uint32_t lanek = h->combine.lane[k];
+        while (load(&h->lane[lanek].done_sequence) != seq[k]) {
+            if (stopping() || load(&h->helper_fault)) return false;
+            std::this_thread::yield();
+        }
+        if (q[k]->status != 0) {
+            std::fprintf(stderr, "r3_moe_worker: combine stopped: helper %u's request failed (%d)\n", k, q[k]->status);
+            return false;
+        }
+    }
     store(&h->combine.done, g);
-    const auto t1 = std::chrono::steady_clock::now();
-    st->combine_us += std::chrono::duration<double, std::micro>(t1 - t0).count();
-    {   /* R3_MOE_WORKER_TRACE (RAD40): this step's wait for the other helpers and its combine time, on helper 0's request */
+    st->combine_us += std::chrono::duration<double, std::micro>(combined).count();
+    {   /* R3_MOE_WORKER_TRACE (RAD40): this step's waits for chunks and its combine time, on helper 0's request */
         const auto us = [](auto d) { return (uint64_t)std::min<int64_t>(UINT32_MAX, std::chrono::duration_cast<std::chrono::microseconds>(d).count()); };
-        const_cast<Request*>(q0)->stage_trace[2] = us(t0 - tw) | (us(t1 - t0) << 32);
+        const_cast<Request*>(q0)->stage_trace[2] = us(waited) | (us(combined) << 32);
     }
     ++st->steps;
     return true;

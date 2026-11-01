@@ -473,9 +473,9 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
     if (!hip_ok(hipMalloc(reinterpret_cast<void**>(&s.sequence), kLanes * sizeof(uint32_t)),
                 "hipMalloc lane sequence counters") ||
         !hip_ok(hipMemset(s.sequence, 0, kLanes * sizeof(uint32_t)), "zero lane sequence counters") ||
-        !hip_ok(hipMalloc(reinterpret_cast<void**>(&s.published), (kMaxSlots + 1) * sizeof(uint32_t)),
+        !hip_ok(hipMalloc(reinterpret_cast<void**>(&s.published), (kMaxSlots + 1 + kCombineChunks) * sizeof(uint32_t)),
                 "hipMalloc published flags") ||
-        !hip_ok(hipMemset(s.published, 0, (kMaxSlots + 1) * sizeof(uint32_t)), "zero published flags") ||
+        !hip_ok(hipMemset(s.published, 0, (kMaxSlots + 1 + kCombineChunks) * sizeof(uint32_t)), "zero published flags") ||
         !hip_ok(hipMalloc(&s.maps, (size_t)max_rows() * g.hdr->top_k * (sizeof(int32_t) + sizeof(uint32_t))),
                 "hipMalloc merge slot maps")) {
         if (s.maps) (void)hipFree(s.maps);

@@ -39,7 +39,8 @@ int main() {
         check(slots_for(1) == 2 && slots_for(2) == 2 && slots_for(3) == 3 && slots_for(4) == 4, "slots follow the helpers, never fewer than the engine ranks");
         check(sizeof(Header) == 4096 && sizeof(Request) == 256 && sizeof(CombineSignal) == 128, "header, request and combine signal sizes");
         check(offsetof(Header, slot_count) == 2520 && offsetof(Header, helper_pid) == 2692 && offsetof(Header, combine) == 2816 &&
-              offsetof(Header, result_offset) == 2600 && offsetof(Header, owner_offset) == 128, "header field offsets (protocol 21; the combine signal is the last field)");
+              offsetof(Header, chunks) == 2944 && offsetof(Header, chunks) + sizeof(CombineChunks) == 3264 &&
+              offsetof(Header, result_offset) == 2600 && offsetof(Header, owner_offset) == 128, "header field offsets (protocol 22; the combine chunks are the last field)");
         check(layout(2).bytes == 148742144 && layout(2).result[0] == 32579584 && layout(2).result[result_index(1, 1)] == 127770624,
               "the two-slot layout: what it was, plus the lane ring grown for four slots (8 KiB)");
         check(layout(3).bytes == 222969856 && layout(4).bytes == 297197568 && layout(1).bytes == 74514432, "one, three and four slots");

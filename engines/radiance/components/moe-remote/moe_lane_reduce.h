@@ -12,12 +12,39 @@ __global__ void lane_route_inverse(const int32_t* sorted, int32_t* inv, uint32_t
     if (flat >= 0 && (uint32_t)flat < slots) inv[flat] = (int32_t)i;
 }
 
+/* R3_MOE_WORKER_COMBINE, chunked (RAD42): where a large-lane reduce publishes its chunks. cnt: kCombineChunks counters in
+ * this card's memory, zeroed before the kernel; seq_out: this helper's Header::chunks.seq[k] row (mapped host memory), or
+ * null when the step is not chunked; seq: this request's sequence. */
+struct LaneChunks {
+    uint32_t* cnt;
+    uint32_t* seq_out;
+    uint32_t seq;
+};
+
+/* Every token block of the reduce, written row or not, counts itself into its chunk; the block that completes a chunk
+ * publishes the request sequence for it with a system-scope release. Each thread has drained its own mapped-host stores
+ * (s_waitcnt) before the barrier, so the chunk's rows are in host memory before its word is. */
+__device__ inline void lane_chunk_publish(const LaneChunks& c, uint32_t token, uint32_t rows) {
+    using namespace r3::moe_shm;
+    if (!c.seq_out) return;
+    __syncthreads();
+    if (threadIdx.x != 0) return;
+    __threadfence_system();
+    const uint32_t chunk = token / kCombineChunkRows;
+    const uint32_t in_chunk = min(rows - chunk * kCombineChunkRows, kCombineChunkRows);
+    const uint32_t prev = __hip_atomic_fetch_add(&c.cnt[chunk], 1u, __ATOMIC_ACQ_REL, __HIP_MEMORY_SCOPE_AGENT);
+    if (prev + 1u == in_chunk) {
+        __threadfence_system();
+        __hip_atomic_store(&c.seq_out[chunk], c.seq, __ATOMIC_RELEASE, __HIP_MEMORY_SCOPE_SYSTEM);
+    }
+}
+
 /* One row a token with any helper route: the router-weighted sum of its helper-computed experts, slot
  * order, f32 accumulator, narrowed once to bf16 (moe_gather arithmetic over the slots this helper owns).
  * Tokens without a route are not written; the engine's merge reads only tokens it routed here. */
 __global__ void lane_reduce_tokens(const uint16_t* down, const int32_t* inv,
                                    const uint16_t* ew, uint16_t* dst, uint32_t rows, uint32_t hidden,
-                                   uint32_t poison, LaneShape shape) {
+                                   uint32_t poison, LaneShape shape, LaneChunks chunks) {
     using namespace r3::moe_shm;
     const uint32_t token = blockIdx.x;
     if (token >= rows) return;
@@ -34,7 +61,7 @@ __global__ void lane_reduce_tokens(const uint16_t* down, const int32_t* inv,
         }
     }
     __syncthreads();
-    if (!any) return;
+    if (any) {   /* a block without a route writes nothing but still counts into its chunk */
     uint16_t* out = dst + (uint64_t)token * hidden;
     for (uint32_t col = threadIdx.x; col < hidden; col += blockDim.x) {
         float acc = 0.0f;
@@ -54,6 +81,8 @@ __global__ void lane_reduce_tokens(const uint16_t* down, const int32_t* inv,
 #else
     asm volatile("s_waitcnt_vscnt null, 0x0" ::: "memory");   /* the gfx10 / gfx11 spelling of the store drain */
 #endif
+    }
+    lane_chunk_publish(chunks, token, rows);
 }
 
 /* lane_reduce_tokens, eight columns a thread: 16-byte loads of the expert rows and one 16-byte store to the mapped
@@ -61,7 +90,7 @@ __global__ void lane_reduce_tokens(const uint16_t* down, const int32_t* inv,
  * output is bit-identical; the 2-byte stores to uncached host memory ran at ~12 GB/s. */
 __global__ void lane_reduce_tokens_v(const uint16_t* down, const int32_t* inv,
                                      const uint16_t* ew, uint16_t* dst, uint32_t rows, uint32_t hidden,
-                                     uint32_t poison, LaneShape shape) {
+                                     uint32_t poison, LaneShape shape, LaneChunks chunks) {
     using namespace r3::moe_shm;
     const uint32_t token = blockIdx.x;
     if (token >= rows) return;
@@ -78,7 +107,7 @@ __global__ void lane_reduce_tokens_v(const uint16_t* down, const int32_t* inv,
         }
     }
     __syncthreads();
-    if (!any) return;
+    if (any) {   /* a block without a route writes nothing but still counts into its chunk */
     uint4* out = reinterpret_cast<uint4*>(dst + (uint64_t)token * hidden);
     for (uint32_t c8 = threadIdx.x; c8 < hidden / 8; c8 += blockDim.x) {
         float acc[8];
@@ -113,6 +142,8 @@ __global__ void lane_reduce_tokens_v(const uint16_t* down, const int32_t* inv,
 #else
     asm volatile("s_waitcnt_vscnt null, 0x0" ::: "memory");
 #endif
+    }
+    lane_chunk_publish(chunks, token, rows);
 }
 
 /* Every mapped result writer has drained before this kernel can run. Publish completion with a
