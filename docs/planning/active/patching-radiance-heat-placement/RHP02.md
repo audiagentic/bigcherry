@@ -120,3 +120,11 @@ an LDS histogram and adding once an expert (at most 512 atomics a step instead o
 (21,532,920 routes, 0 cells differing) and the same 15.0 s. Not the snapshots either. The cause is open; until it is found,
 record heat in a window (minutes of real traffic) and serve without it, which is what RHP05 stage A needs anyway.
 
+Clue (2026-11-01, engine logs of the same probes): the mover is identical with and without recording (2,669 promotions,
+8.43 GiB host-to-card in every run), so it is not extra swapping; but the engine card settles with 173-174 MiB free
+without recording, 153.6 MiB with recording and no snapshots, 141-145 MiB with 30 s snapshots: 20-33 MiB more than the
+256 KiB histogram. Hypothesis to test: recording brings extra HIP runtime objects onto the R9700 (the snapshot thread's
+own stream, the runtime's default stream for the zeroing hipMemset), i.e. extra hardware queues, which RDNA time-slices
+(RAD20 found the same on the XTX helpers). Test: count the engine process's KFD queues (/sys/class/kfd/kfd/proc/<pid>/queues)
+with and without --record-heat; if they differ, zero and copy the histogram on the engine's own stream instead.
+
