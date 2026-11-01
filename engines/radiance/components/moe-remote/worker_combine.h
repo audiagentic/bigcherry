@@ -1,6 +1,6 @@
 #pragma once
 
-// R3_MOE_WORKER_COMBINE (RAD18): helper 0 adds the two helpers' bf16 rows on the CPU so the one-rank engine reads one row
+// R3_MOE_WORKER_COMBINE (RAD18, RAD23): helper 0 adds the helpers' bf16 rows on the CPU so the one-rank engine reads one row
 // a token over its link instead of two. The sum is written as fp16: the same two bytes as one bf16 row, but rounded 8x
 // finer, since a bf16 sum measurably worsened KLD (RAD18 2026-10-23: p99 +0.275). A row with a value outside fp16 range
 // is marked kCombineFallback in its first element and the engine reads that row from the two helper planes instead.
@@ -39,9 +39,10 @@ public:
         combine_futex_wake(&gen_, false);
         for (auto& t : workers_) t.join();
     }
-    /* mask[t]: bit 0 helper 0 wrote row t, bit 1 helper 1 did. Rows with neither are not read by the engine. */
-    void combine(const uint16_t* a, const uint16_t* b, uint16_t* out, const uint8_t* mask, uint32_t rows, uint32_t hidden) {
-        a_ = a; b_ = b; out_ = out; mask_ = mask; rows_ = rows; hidden_ = hidden;
+    /* mask[t]: bit k set when helper k wrote row t. Rows with no bit are not read by the engine. */
+    void combine(const uint16_t* const* src, uint32_t nsrc, uint16_t* out, const uint8_t* mask, uint32_t rows, uint32_t hidden) {
+        nsrc_ = nsrc; for (uint32_t k = 0; k < nsrc; ++k) src_[k] = src[k];
+        out_ = out; mask_ = mask; rows_ = rows; hidden_ = hidden;
         __atomic_store_n(&next_, 0u, __ATOMIC_RELAXED);
         __atomic_store_n(&busy_, (uint32_t)workers_.size(), __ATOMIC_RELAXED);
         __atomic_fetch_add(&gen_, 1u, __ATOMIC_RELEASE);
@@ -62,7 +63,9 @@ private:
                 const uint8_t m = mask_[t];
                 if (!m) continue;   /* no helper row: the engine does not read it */
                 const uint64_t at = (uint64_t)t * hidden_;
-                if (combine_row_f16(a_ + at, b_ + at, m, out_ + at, hidden_)) out_[at] = r3::moe_shm::kCombineFallback;
+                const uint16_t* rowp[r3::moe_shm::kCombineHelpers];
+                for (uint32_t k = 0; k < nsrc_; ++k) rowp[k] = src_[k] + at;
+                if (combine_row_f16(rowp, nsrc_, m, out_ + at, hidden_)) out_[at] = r3::moe_shm::kCombineFallback;
             }
         }
     }
@@ -79,8 +82,8 @@ private:
     }
     std::vector<std::thread> workers_;
     uint32_t gen_ = 0, next_ = 0, busy_ = 0, quit_ = 0;
-    const uint16_t* a_ = nullptr;
-    const uint16_t* b_ = nullptr;
+    const uint16_t* src_[r3::moe_shm::kCombineHelpers] = {};
+    uint32_t nsrc_ = 0;
     uint16_t* out_ = nullptr;
     const uint8_t* mask_ = nullptr;
     uint32_t rows_ = 0, hidden_ = 0;
@@ -91,41 +94,55 @@ struct CombineStats {
     double combine_us = 0.0;
 };
 
-/* Helper 1, after its large-lane request seq has synced: tell helper 0. */
-inline void combine_helper1_done(void* map, uint32_t seq) {
+/* Helper k >= 1, after its large-lane request seq has synced: tell helper 0. */
+inline void combine_helper_done(void* map, uint32_t helper, uint32_t seq) {
     auto* h = static_cast<r3::moe_shm::Header*>(map);
-    r3::moe_shm::store(&h->combine.helper1_done, seq);
-    combine_futex_wake(&h->combine.helper1_done, true);
+    if (helper == 0 || helper >= r3::moe_shm::kCombineHelpers) return;
+    r3::moe_shm::store(&h->combine.helper_done[helper], seq);
+    combine_futex_wake(&h->combine.helper_done[helper], true);
 }
 
-/* Helper 0, after its large-lane request q has synced: if the engine asked for a combine on this step, wait for helper 1
- * (futex), combine into plane [0][1] and publish done. False on a protocol mismatch or a stop. */
-inline bool combine_step(void* map, const r3::moe_shm::Request* q0, CombinePool* pool, std::vector<uint8_t>* mask,
-                         CombineStats* st) {
+/* Helper 0, after its large-lane request q0 has synced: if the engine asked for a combine on this step, wait for each other
+ * helper that has a request this step (futex), combine into plane [0][1] and publish done. False on a protocol mismatch or
+ * a stop. */
+inline bool combine_step(void* map, const r3::moe_shm::Request* q0, uint32_t helpers, CombinePool* pool,
+                         std::vector<uint8_t>* mask, CombineStats* st) {
     using namespace r3::moe_shm;
     auto* h = static_cast<Header*>(map);
     const uint32_t g = q0->combine_generation;
     if (!g) return true;
-    const uint32_t rows = h->combine.rows, lane1 = h->combine.lane[1], seq1 = h->combine.seq[1];
-    if (rows == 0 || rows > h->max_rows || q0->rows != rows || h->combine.seq[0] != q0->sequence ||
-        lane1 >= kLanes || lane1 % kMaxSlots != 1u || !seq1) {
+    const uint32_t rows = h->combine.rows;
+    if (helpers < 2 || helpers > kCombineHelpers || rows == 0 || rows > h->max_rows || q0->rows != rows ||
+        h->combine.seq[0] != q0->sequence) {
         std::fprintf(stderr, "r3_moe_worker: combine stopped: the combine request does not match helper 0's request\n");
         return false;
     }
-    for (uint32_t d; (int32_t)((d = load(&h->combine.helper1_done)) - seq1) < 0;) {
-        if (stopping() || load(&h->helper_fault)) return false;
-        combine_futex_wait(&h->combine.helper1_done, d, 200, true);
-    }
-    const Request* q1 = lane_request(map, lane1, seq1);
-    if (load(&h->lane[lane1].done_sequence) != seq1 || !q1 || load(&q1->sequence) != seq1 || q1->rows != rows ||
-        q1->status != 0) {
-        std::fprintf(stderr, "r3_moe_worker: combine stopped: helper 1's request does not match\n");
-        return false;
+    const Request* q[kCombineHelpers] = {q0};
+    for (uint32_t k = 1; k < helpers; ++k) {
+        const uint32_t lanek = h->combine.lane[k], seqk = h->combine.seq[k];
+        if (!seqk) continue;   /* no request from helper k this step: it contributes no rows */
+        if (lanek >= kLanes || lanek % kMaxSlots != k) {
+            std::fprintf(stderr, "r3_moe_worker: combine stopped: helper %u's lane does not match\n", k);
+            return false;
+        }
+        for (uint32_t d; (int32_t)((d = load(&h->combine.helper_done[k])) - seqk) < 0;) {
+            if (stopping() || load(&h->helper_fault)) return false;
+            combine_futex_wait(&h->combine.helper_done[k], d, 200, true);
+        }
+        const Request* qk = lane_request(map, lanek, seqk);
+        if (load(&h->lane[lanek].done_sequence) != seqk || !qk || load(&qk->sequence) != seqk || qk->rows != rows ||
+            qk->status != 0) {
+            std::fprintf(stderr, "r3_moe_worker: combine stopped: helper %u's request does not match\n", k);
+            return false;
+        }
+        q[k] = qk;
     }
     const auto t0 = std::chrono::steady_clock::now();
     std::memset(mask->data(), 0, rows);
-    const Request* q[kCombineHelpers] = {q0, q1};
-    for (uint32_t k = 0; k < kCombineHelpers; ++k) {
+    const uint16_t* planes[kCombineHelpers] = {};
+    for (uint32_t k = 0; k < helpers; ++k) {
+        planes[k] = ptr<uint16_t>(map, h->result_offset[result_index(k, 0)]);
+        if (!q[k]) continue;
         const Route* r = ptr<Route>(map, q[k]->route_offset);
         for (uint32_t j = 0; j < q[k]->route_count; ++j) {
             const int32_t t = r[j].token;
@@ -136,9 +153,7 @@ inline bool combine_step(void* map, const r3::moe_shm::Request* q0, CombinePool*
             (*mask)[(uint32_t)t] |= (uint8_t)(1u << k);
         }
     }
-    pool->combine(ptr<uint16_t>(map, h->result_offset[result_index(0, 0)]),
-                  ptr<uint16_t>(map, h->result_offset[result_index(1, 0)]),
-                  ptr<uint16_t>(map, h->result_offset[result_index(0, 1)]), mask->data(), rows, h->hidden);
+    pool->combine(planes, helpers, ptr<uint16_t>(map, h->result_offset[result_index(0, 1)]), mask->data(), rows, h->hidden);
     std::atomic_thread_fence(std::memory_order_release);
     store(&h->combine.done, g);
     st->combine_us += std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - t0).count();

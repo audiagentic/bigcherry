@@ -41,21 +41,28 @@ int main() {
     // helper mask, a row length that is not a multiple of 8, and rows with and without a value past fp16 range
     if (combine_cpu_supported()) {
         const uint32_t n = 2048 + 5;
-        uint16_t a[n], b[n], out[n];
-        for (int trial = 0; trial < 200; ++trial) {
+        uint16_t a[n], b[n], c3[n], out[n];
+        const uint16_t* src[3] = {a, b, c3};
+        for (int trial = 0; trial < 300; ++trial) {
             for (uint32_t c = 0; c < n; ++c) {
                 s = s * 1664525u + 1013904223u;
                 a[c] = (uint16_t)(0x3800u + (s >> 20) % 0x0c00u) | (uint16_t)((s & 1u) << 15);  // |v| in ~[2^-15, 2^9)
                 s = s * 1664525u + 1013904223u;
                 b[c] = (uint16_t)(0x3800u + (s >> 20) % 0x0c00u) | (uint16_t)((s & 1u) << 15);
+                s = s * 1664525u + 1013904223u;
+                c3[c] = (uint16_t)(0x3800u + (s >> 20) % 0x0c00u) | (uint16_t)((s & 1u) << 15);
             }
             const bool big = trial % 4 == 3;
             if (big) a[trial % n] = 0x4780u;  // 65536: past fp16 range
-            const uint8_t mask = (uint8_t)(1 + trial % 3);
-            const bool over = combine_row_f16(a, b, mask, out, n);
+            // two helpers (masks 1..3) as the two-row form had them, then three helpers (masks 1..7)
+            const uint32_t nsrc = trial < 150 ? 2u : 3u;
+            const uint8_t mask = (uint8_t)(1 + trial % (nsrc == 2 ? 3 : 7));
+            const bool over = combine_row_f16(src, nsrc, mask, out, n);
             bool want_over = false;
             for (uint32_t c = 0; c < n; ++c) {
-                const float v = ((mask & 1u) ? combine_bf16_to_f32(a[c]) : 0.0f) + ((mask & 2u) ? combine_bf16_to_f32(b[c]) : 0.0f);
+                float v = (mask & 1u) ? combine_bf16_to_f32(a[c]) : 0.0f;   // helper 0 first, the others added in order
+                if (mask & 2u) v += combine_bf16_to_f32(b[c]);
+                if (nsrc > 2 && (mask & 4u)) v += combine_bf16_to_f32(c3[c]);
                 bool o = false;
                 check(out[c] == combine_f32_f16_rn(v, &o), "row path matches the scalar conversion");
                 want_over |= std::fabs(v) >= 65520.0f;

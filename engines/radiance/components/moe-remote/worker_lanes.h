@@ -32,7 +32,7 @@ inline bool wait_burst(r3::moe_shm::Header* h) {
     }
 }
 
-/* The engine's large-lane rows added on the CPU by helper 0 (RAD18, worker_combine.h); helper 1 signals its sync. */
+/* The engine's large-lane rows added on the CPU by helper 0 (RAD18, worker_combine.h); the other helpers signal their syncs. */
 struct Combine {
     bool on = false;
     std::unique_ptr<CombinePool> pool;   /* helper 0 only */
@@ -74,7 +74,7 @@ public:
     void stop_and_join() {
         using namespace r3::moe_shm;
         request_stop();
-        combine_futex_wake(&h_->combine.helper1_done, true);
+        for (uint32_t k = 1; k < kCombineHelpers; ++k) combine_futex_wake(&h_->combine.helper_done[k], true);
         (void)__atomic_fetch_or(&h_->burst, kBurstStop, __ATOMIC_ACQ_REL);
         (void)futex_wake(&h_->burst);
         for (uint32_t lane = 0; lane < kLanes; ++lane)
@@ -163,9 +163,9 @@ private:
                 break;
             }
             if (!gpu_.sync_lane(lane) || !collect(lane, next)) { request_stop(); break; }
-            if (combine_.on && cfg_.helper_index == 1) combine_helper1_done(map_, next);
+            if (combine_.on && cfg_.helper_index >= 1) combine_helper_done(map_, cfg_.helper_index, next);
             if (combine_.on && cfg_.helper_index == 0 &&
-                !combine_step(map_, q, combine_.pool.get(), &combine_.mask, &combine_.stats)) {
+                !combine_step(map_, q, cfg_.helper_count, combine_.pool.get(), &combine_.mask, &combine_.stats)) {
                 raise_fault(h_);   /* the engine's wait for combine.done fails now */
                 request_stop();
                 break;

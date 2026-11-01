@@ -14,8 +14,8 @@ needs a card the host does not have, a role the card type does not allow (`roles
 protocol's `kMaxHelpers`, or a tail group that is not a single last card after a head group, is refused with the reason before any GPU is touched.
 
 A layout's `env` table carries settings that belong to the whole arrangement rather than to a card: `flashnext-2xtx-combine` sets
-`R3_MOE_WORKER_COMBINE = "1"` (the helper-row combine, which adds two helpers' rows and so is refused for any other helper count: the protocol would
-run it silently off). Names must be `R3_MOE_WORKER_*` and may not be one the cards decide (`COUNT`, `MIBS`, `SHARES`, `PLACEMENT`, `LAYOUT`, `DEVICES`).
+`R3_MOE_WORKER_COMBINE = "1"` (the helper-row combine, which adds the rows of two to four helpers and so is refused for a single helper:
+there is nothing to add). Names must be `R3_MOE_WORKER_*` and may not be one the cards decide (`COUNT`, `MIBS`, `SHARES`, `PLACEMENT`, `LAYOUT`, `DEVICES`).
 
 ## Using one
 
