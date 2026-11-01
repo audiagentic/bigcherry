@@ -37,7 +37,7 @@ endif()
 set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/r3_moe_worker.cpp PROPERTIES LANGUAGE HIP)
 add_executable(r3_moe_worker ${CMAKE_CURRENT_SOURCE_DIR}/r3_moe_worker.cpp)
 set_property(TARGET r3_moe_worker PROPERTY HIP_ARCHITECTURES ${R3MOE_TARGETS})
-target_include_directories(r3_moe_worker PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} $ENV{ROCM_PATH}/include)
+target_include_directories(r3_moe_worker PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} $ENV{ROCM_PATH}/include ${RADIANCE_SRC}/libr4d)   # libr4d r4d_q8.h, r4d_fwht.h for moe_lane_quant.h
 target_compile_definitions(r3_moe_worker PRIVATE __HIP_PLATFORM_AMD__)
 # The helper's queue warm-up (worker_queue_warm.h) creates its placeholder queues through the HSA runtime.
 if(NOT RAD_HSA_RUNTIME)
