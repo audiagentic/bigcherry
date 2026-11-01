@@ -47,6 +47,9 @@
 # put back what the cards ran before at stop. Without write access it lists the setup steps still missing and runs
 # with the cards as they are.
 # HELPER_WRAP=<command>: run each helper under it (e.g. a profiler wrapper; R3_MOE_WORKER_INDEX tells it which helper).
+# ENGINE_WRAP=<command>: run the engine under it (a debugger, numactl, strace; the stop command signals the engine through the
+#   wrapper, so it must forward SIGINT/SIGTERM). Not rocprofv3: radiance drives the card through its own AQL backend and fails
+#   at start under rocprof's interception (2026-11-01); for the engine's per-op device times use --engine-arg --profile-ops.
 set -u
 
 WORK=${BC_WORK_ROOT:?set BC_WORK_ROOT (source tools/env/bigcherry-env.sh)}
@@ -221,7 +224,7 @@ if [ -n "$NGRAM_DEV" ]; then
   NGRAM_ENV=(R3_NGRAM_DEV=1 R3_NGRAM_HELPER_SO="$RAD_HOME/helpers/libr3_ngram_helper.so" R3_NGRAM_AVX="$RAD_HOME/kernels/libavx.so")
 fi
 env "${COMMON[@]}" "${NGRAM_ENV[@]}" R3_MOE_WORKER=1 ROCR_VISIBLE_DEVICES="$ENGINE_VISIBLE" HIP_VISIBLE_DEVICES="$ENGINE_HIP" \
-  setsid "$RAD_BIN" --model "$MODEL" --radiance-home "$RAD_HOME" --port "$PORT" \
+  setsid ${ENGINE_WRAP:-} "$RAD_BIN" --model "$MODEL" --radiance-home "$RAD_HOME" --port "$PORT" \
     --kernels "$ENGINE_KERNELS" \
     --placement expert_tiered \
     --ngram-placement "$NGRAM" \
