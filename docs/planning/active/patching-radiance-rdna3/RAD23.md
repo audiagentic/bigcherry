@@ -507,3 +507,21 @@ Not placement, not the 6900 XT, not the host pool. The lever is the split-K deco
 | 14 GiB | 3203 | 3160 | 2385 |
 
 So the cheaper floor makes the 6900 XT cheap at low route counts, but no tail size beats having no tail: neutral at 4 GiB, worse as it grows. What remains is the per-route GEMM cost (0.0135 ms a route, the 110-300 bucket still 4.4 ms against an XTX's ~4.2 ms critical path) and the few steps above 300 routes. The fixed cost is no longer the limit; the grouped GEMM is, as GPT's review also ranked.
+
+## The few-rows kernel on gfx1030: 2x on the 6900 XT's real requests, and the tail now level with no tail, 2026-11-01 (`rad23-ktrace*`, `rad23-cap6900`, `rad23-bigtail3`, `rad23-t8192rerun`)
+
+**Diagnosis.** rocprofv3 on the 6900 XT helper in a live prefill: `lane_moe_rows` gate/up 1177 us and down 580 us a request, with 272 B a thread of scratch (the 4 x 16 accumulators spilled). Not the cause: the clocks (2655 MHz core, 1000 MHz memory during prefill), the launch of the 512 x 40 grid (38 us measured for an empty one), the grouped-GEMM alternative (slower, 2151 us), the register-decoded W4NL table GPT's review ranked first (no change, 732 against 738 us). A standalone microbenchmark that includes the kernel header (8 active experts, K 2560, N 1280, random codes) reproduces the live time and scales with rows a expert, so the cost was per row: each output re-read the row's activations from LDS, the staging loop issued one global load at a time, and 8 rows a pass forced a second full K traversal for a ninth row.
+
+**Change** (`moe_lane_gemm.h`): activations read once a row and shared by a wave's outputs; staging loads all in flight before use; 32 outputs a block, 4 a wave, 12 rows a pass (swept 8-64 outputs, 8-16 rows). Microbenchmark at 1 / 4 / 9 / 16 rows: 275 / 565 / 1169 / 1790 us before, 231 / 291 / 425 / 742 us after; 32 to 128 rows also better than the intermediate setting. Exact: replay hashes identical on the XTX captures (4 replays) and on 78 replays of requests captured from the 6900 XT helper itself; on those, gate/up 1167 to 733 us, down 1147 to 730 us.
+
+**Replay harness for the 6900 XT.** `R3_MOE_WORKER_CAPTURE` set through `HELPER_WRAP` for helper 2 only records its own large-lane requests (80 files); they replay standalone with `R3_MOE_WORKER_HEAT=perf51/heat.rank0` (coldest first, the tail's set) and `MIB=4096` in about a minute. The replay mode accepts one helper only.
+
+**Live, recorded heat, same build** (prefill tok/s, decode in brackets):
+
+| Tail | 8.8K | 37K | 169K |
+|---|---|---|---|
+| none | 3271 (128) | 3181 (116) | 2807 (107) |
+| 4 GiB | 2563 (131) | 3168 (127) | 2787 (117) |
+| 8 GiB (re-run) | 3265 (107) | 3190 (113) | |
+
+The 4 GiB 8.8K row is the first request on a fresh server (2.7 to 3.4 s; the other arms' first requests are 2.7 s), so not read. One 8 GiB run gave decode 36 tok/s with the 6900 XT at 10 ms a request; the re-run is normal and the cause is not known. The tail is now level with no tail at 8 GiB; it is not yet a gain. What it saves is the engine card's swap traffic, which these context lengths do not need.
