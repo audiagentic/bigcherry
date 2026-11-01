@@ -16,7 +16,7 @@
 namespace r3::moe_shm {
 
 constexpr uint64_t kMagic = 0x31454f4d33485253ull; /* "SRH3MOE1": reject unrelated/stale shm. */
-constexpr uint32_t kVersion = 21;  /* 21: Request::stage_trace (the reserved words: the helper's activation-ready and GEMMs-done stamps, helper 0's per-step combine wait and time, RAD40); 20: CombineSignal for up to kMaxHelpers helpers (128 bytes, helper_done[] per helper); 19: Header::slot_count (the request slots, route / activation staging and result planes, are sized from it; kMaxHelpers and kMaxSlots are 4; RAD23). 18: Header::helper_pid/helper_start (the engine watches each helper process and raises helper_fault when one exits), Header::notify (CPU waits sleep on one generation word); 17: Header::burst, LaneSignal::park (RAD20: small-lane waits armed only inside an inference burst); 16: the combined row is fp16 with a per-row fallback marker (kCombineFallback); 15: Header::combine (R3_MOE_WORKER_COMBINE); 14: the header records the model shape (intermediate, activation_group, shape_hash) and every region is laid out from it (layout_for); 13: several pre-queued small-lane sizes (Header::small_class_*), ten lanes; 12: Request carries the R3_MOE_WORKER_TRACE stamps (192 -> 256 bytes); 11: helper_fault; completion is an exact generation */
+constexpr uint32_t kVersion = 22;  /* 22: the combine is chunked (RAD42): Header::chunks (each helper publishes its large-lane rows in kCombineChunkRows chunks, helper 0 combines and publishes each chunk, the engine adds each as it lands); CombineSignal::helper_done is gone; 21: Request::stage_trace (the reserved words: the helper's activation-ready and GEMMs-done stamps, helper 0's per-step combine wait and time, RAD40); 20: CombineSignal for up to kMaxHelpers helpers (128 bytes, helper_done[] per helper); 19: Header::slot_count (the request slots, route / activation staging and result planes, are sized from it; kMaxHelpers and kMaxSlots are 4; RAD23). 18: Header::helper_pid/helper_start (the engine watches each helper process and raises helper_fault when one exits), Header::notify (CPU waits sleep on one generation word); 17: Header::burst, LaneSignal::park (RAD20: small-lane waits armed only inside an inference burst); 16: the combined row is fp16 with a per-row fallback marker (kCombineFallback); 15: Header::combine (R3_MOE_WORKER_COMBINE); 14: the header records the model shape (intermediate, activation_group, shape_hash) and every region is laid out from it (layout_for); 13: several pre-queued small-lane sizes (Header::small_class_*), ten lanes; 12: Request carries the R3_MOE_WORKER_TRACE stamps (192 -> 256 bytes); 11: helper_fault; completion is an exact generation */
 constexpr uint32_t kPage = 4096;
 /* R3_MOE_WORKER_COMBINE: first element of a combined fp16 row the combiner could not hold in fp16 range (a NaN payload
  * no arithmetic produces; a real NaN converts to 0x7E00); the engine then reads that row from the two helper planes. */
@@ -98,7 +98,8 @@ struct alignas(64) Request {
     uint64_t result_offset[kResultPlanes]; /* partial-output slots; helper writes only req.rank. */
     /* R3_MOE_WORKER_TRACE: wall_clock64() stamps, each from the clock of the device that wrote it (engine GPU for
      * 0-2, the helper GPU for 3-4; never subtract across devices): 0 publish kernel, 1 wait kernel entered,
-     * 2 this request's completion seen by the wait kernel, 3 helper lane began, 4 helper lane published done. */
+     * 2 this request's completion seen by the wait kernel, 3 helper lane began, 4 helper lane published done. On a
+     * combined step the engine's full wait runs after the chunked add (RAD42), so 1-2 then measure only the tail. */
     uint64_t trace[5];
     /* R3_MOE_WORKER_COMBINE: nonzero on helper 0's request of a step whose rows helper 0 combines (the generation it then
      * stores in Header::combine.done); written before the request is released, so helper 0 never polls for it. */
@@ -124,12 +125,12 @@ struct alignas(64) LaneSignal {
 static_assert(sizeof(LaneSignal) == 64);
 
 /* R3_MOE_WORKER_COMBINE (two to kMaxHelpers helpers behind a one-rank engine, large lane only): helper 0 adds every helper's
- * bf16 rows on the CPU into result plane [0][1], so the engine reads one row a token over its link instead of one a helper.
- * Nothing polls on the CPU side. The engine GPU allocates the helpers' sequences, writes lane/seq/rows here (seq 0: that
- * helper has no request this step) and the generation into helper 0's Request::combine_generation, then releases the
- * requests. Helper 0 combines on its own large-lane thread after its stream sync, futex-waiting on helper_done[k], which
- * helper k stores and wakes after its own stream sync. Helper 0 release-stores `done` = generation; the engine's wait kernel
- * waits for it. Not bit-identical to adding the rows on the engine (one more rounding). `enabled` is set by helper 0 at
+ * bf16 rows on the CPU into result plane [0][1] as fp16, so the engine reads one row a token over its link instead of one a
+ * helper. The engine GPU allocates the helpers' sequences, writes lane/seq/rows here (seq 0: that helper has no request this
+ * step) and the generation into helper 0's Request::combine_generation, then releases the requests. The rows go chunk by
+ * chunk (CombineChunks, RAD42): helper 0 combines each chunk once every helper has published it and stores chunks.done[c];
+ * the engine adds each chunk as it lands and finally waits for `done` = generation and every helper's done word. Not
+ * bit-identical to adding the rows on the engine (the sum is rounded to fp16, not bf16). `enabled` is set by helper 0 at
  * start; the engine asks only then. */
 constexpr uint32_t kCombineHelpers = kMaxHelpers;   /* the combine adds the rows of up to this many helpers */
 struct alignas(64) CombineSignal {
@@ -140,10 +141,23 @@ struct alignas(64) CombineSignal {
     uint32_t lane[kCombineHelpers];
     uint32_t seq[kCombineHelpers];   /* 0: no request from that helper this step */
     uint32_t rows;
-    uint32_t helper_done[kCombineHelpers];  /* helper k's newest completed large-lane sequence (k >= 1), CPU-written futex words */
-    uint32_t reserved[15];
+    uint32_t reserved[19];
 };
 static_assert(sizeof(CombineSignal) == 128);
+
+/* R3_MOE_WORKER_COMBINE, chunked (RAD42): a large-lane step's rows in chunks of kCombineChunkRows. Helper k's reduce kernel
+ * stores its request sequence in seq[k][c] once every row of chunk c is written (system-scope release from its GPU);
+ * helper 0's combine waits for seq[k][c] of every helper with a request, sums the chunk and stores the step's
+ * generation in done[c]; the engine's add kernel waits for done[c] of a row's chunk before reading it. So the rows
+ * written, combined and read overlap chunk by chunk instead of following each other for the whole step (the
+ * hand-off measured 1.27x at 256-row chunks, RAD40). */
+constexpr uint32_t kCombineChunkRows = 256;
+constexpr uint32_t kCombineChunks = kMaxRows / kCombineChunkRows;
+struct alignas(64) CombineChunks {
+    uint32_t seq[kCombineHelpers][kCombineChunks];   /* helper k's large-lane sequence whose chunk c is written */
+    uint32_t done[kCombineChunks];                    /* the combine generation whose chunk c is combined */
+};
+static_assert(sizeof(CombineChunks) == 320);
 
 struct alignas(kPage) Header {
     uint64_t magic;                 /* segment identity. */
@@ -210,6 +224,7 @@ struct alignas(kPage) Header {
     uint32_t notify;
     uint32_t reserved32[24 - 3 * kMaxHelpers - 1];
     CombineSignal combine;
+    CombineChunks chunks;
 };
 static_assert(sizeof(Header) <= kPage);
 

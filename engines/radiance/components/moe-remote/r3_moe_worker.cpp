@@ -473,6 +473,7 @@ int main(int argc, char** argv) {
                 return 1;
             }
             combine.on = true;
+            gpu->set_chunk_helper(helper_index);   /* every helper publishes its large-lane rows chunk by chunk (RAD42) */
             if (helper_index == 0) {
                 const uint32_t threads = std::min(cfg.combine_threads, std::max(1u, std::thread::hardware_concurrency()));
                 combine.pool = std::make_unique<CombinePool>(threads);
