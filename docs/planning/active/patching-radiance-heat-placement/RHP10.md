@@ -115,3 +115,31 @@ Spread, measured: the tail + static arm run three times (1450, 1448, 1468 prefil
 Two caveats that keep this from a recommendation. It is one request on one corpus (a different prompt will not repeat these numbers; the earlier documentation-corpus run and the two-stream runs gave smaller and differently ordered effects), and the interaction means the sign of the tail's effect depends on which experts the heat file puts where, which is why single-factor claims (the tail helps, the heat helps) fail. The earlier "+30% prefill from recorded heat" holds only with the tail and costs decode there; without the tail the heat file's gain is decode.
 
 Next: the same four cells on a second request and corpus, and a per-layer trace of the helper waits in the two cells that differ most (tail + static, no tail + static) to see which helper the engine waits for.
+
+## The 6900 XT tail at 675K with the faster kernel: prefill +15%, decode unchanged per step, 2026-11-01 (`rad23-long3`, `rad23-decacc`)
+
+Build with the sparse activation copy (#478) and the 2x few-rows kernel (#479); recorded heat (documentation text); one request on the C++/HIP corpus, 675,534 tokens used; fresh server per arm; XTX 22,528 MiB.
+
+| Tail | Prefill tok/s | Decode tok/s | Promotions | Host-to-GPU GiB |
+|---|---|---|---|---|
+| none | 1834 | 82.9 | 10798 | 1241 |
+| 4 GiB | 1895 (+3.3%) | 68.4 | 9203 | 1068 |
+| 8 GiB | 1978 (+7.9%) | 80.3 | 7453 | 864 |
+| 8 GiB, repeat | 1980 | 80.6 | 7538 | 864 |
+| 14 GiB | 2113 (+15.2%) | 71.7 | 4131 | 438 |
+
+Prefill rises with the tail and the engine card's swap traffic falls (to about a third at 14 GiB); the 8 GiB repeat agrees to 0.1%. This is the first configuration in which the RX 6900 XT speeds Flash-Next up.
+
+**Decode is not slowed by the tail; it follows the text.** At 41K used context, same three layouts, `temperature: 0`, 511 new tokens, MTP acceptance from `/metrics`:
+
+| Tail | Decode tok/s | Accepted | Text (sha1) | Steps | Per step |
+|---|---|---|---|---|---|
+| none | 96.5 | 54.7% | 58f0556 | 196 | 27.0 ms |
+| 14 GiB | 103.3 | 60.4% | 2ea3c2c | 183 | 27.0 ms |
+| 8 GiB | 79.4 | 39.0% | 34b0e75 | 236 | 27.3 ms |
+
+Moving experts between cards changes their arithmetic slightly (the helper path against the engine's own), so the greedy text differs, and with it how many draft tokens are accepted. The time of a step is the same in all three. The decode differences at 675K are of the same kind: they rank 83 / 68 / 80 / 72 with no order in tail size. Decode tok/s compared across layouts measures acceptance of different text, not speed; the comparable figure is the time per step, or decode with drafting off.
+
+Helper traces agree (4 GiB tail, 22K context): the 6900 XT takes part in 5-7% of decode layer-steps, at 122-128 us of GPU time against an XTX's ~155 us, and the engine's wait is no longer when it does.
+
+Next: quality (KLD) of the 14 GiB tail on this build, and the per-step decode time at 675K to confirm the long-context case.
