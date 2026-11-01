@@ -533,3 +533,8 @@ rocprofv3 counters on the kernel (microbenchmark, 9 rows, 8 experts): VALU at ab
 Microbenchmark (random codes, 8 experts) at 1 / 4 / 9 / 16 / 32 rows: 223 / 293 / 433 / 745 / 1339 us before, 207 / 253 / 342 / 609 / 1043 us after. Replay of the 6900 XT's own captured requests, exact (fnv64 hashes identical): 14 GiB tail (60 captures, 120 replays) gate/up 1446 to 710 us, down 1204 to 777 us; 4 GiB tail (118 replays) gate/up 770 to 561 us, down 483 to 501 us.
 
 Remaining per large-lane request on the 14 GiB captures: gate/up ~710, down ~777, gated quantise ~519, reduce ~219, sparse activation copy ~208, routing ~37 us.
+
+## Ledger-events
+
+- chg_20261101_090829_flash-next-prefill-with-the-rx_2169
+- 2026-11-01T09:08:33.034449+00:00 (updated-by): Updated: section:ledger-events
