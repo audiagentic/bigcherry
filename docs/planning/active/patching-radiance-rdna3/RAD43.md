@@ -71,3 +71,8 @@ activation copy 383 us; live stage times 1,495 + 867 = 2.36 ms, 669, 429. So the
 of the tile work (send them to the few-rows kernel within the same request: ~0.25 ms); the grouped GEMM's own efficiency
 (the larger prize, radiance's gfx1100 MoE GEMM). Heads are the last helper on 62% of prefill layers.
 
+Tile knobs on the same 20 head captures (rocprof total of the grouped GEMMs, all bit-identical): default 93.7 ms; MOE_FORM=1
+93.6; MOE_FORM=2 103.6 (+11%); MOE_LONG_ROWS=32/64/128 108.0/108.0/103.1 (+10-15%); MOE_DOWN_TILE=2 fails on this model
+(libr4d moe_gemm_w4a8 launch rc=-18, the replay then waits forever). The default is already the best of the plugin's knobs:
+a head gain needs new kernel work (few-row experts to the few-rows kernel in the same request; the grouped GEMM itself).
+
