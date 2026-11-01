@@ -130,6 +130,12 @@ status = "evaluated"
 summary = "RAD14: the W4 (w4nl64) decode GEMV rebuilt like the FP8 one (sixteen-byte loads, byte-permute level lookup, v_dot2_f32_f16). Kernel time on real 4-row Flash-Next decode requests on one XTX 101 -> 77 us, output within rounding of the default kernel; but the Flash-Next stream A/B (R9700 engine + two XTX workers, MTP 3, two pairs) showed no end-to-end decode change at 2/4/6 streams and +5% at 1 stream confounded by different draft acceptance (0.68 vs 0.64). Kept off; the worker GEMV is not on Flash-Next's decode critical path."
 activation = "r3_moe_worker: R3_MOE_WORKER_GEMV_W4H2 on"
 
+[setting.R3_MOE_WORKER_GEMV_W4MR]
+default = "0"
+status = "experimental"
+summary = "The W4 (w4nl64) packed-f16 decode GEMV with an expert's rows batched four at a time, so each weight load is decoded once for every row of the expert in the step. For Flash-Next multi-stream decode, where 24-row steps (6 streams x MTP 3) reach the GEMV through R3_MOE_WORKER_GEMV_LARGE_ROWS and a head helper's ~105 routes land on ~60-70 experts. Takes precedence over GEMV_W4H2."
+activation = "r3_moe_worker: R3_MOE_WORKER_GEMV_W4MR on"
+
 [setting.R3_MOE_WORKER_GEMV_MR]
 default = "0"
 status = "evaluated"

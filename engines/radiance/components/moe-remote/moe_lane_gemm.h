@@ -543,6 +543,112 @@ __global__ __launch_bounds__(256) void lane_moe_gemv_mr(
     }
 }
 
+/* MULTI-ROW PACKED-FP16 W4 DECODE GEMV (Flash-Next multi-stream decode). lane_moe_gemv_w4h2's arithmetic with lane_moe_gemv_mr's block
+ * structure: one block an (expert, 64 outputs) walks the expert's routed rows kW4MrRows at a time, so each sixteen-byte weight load (32
+ * codes) is decoded to packed f16 once and applied to every row of the pass instead of once a route. A 6-stream MTP-3 step is 24 rows,
+ * about 105 routes on a head helper over ~60-70 distinct experts, so the per-route kernel reads each touched expert ~1.5 times. Rows are
+ * staged as f16 in element order (as w4h2 stages its one row) with their per-128 activation scales. Sorted row r keeps its own output
+ * slot and its token's activation row; a row's result equals w4h2's up to the order of the K sum. K must be a multiple of 64. */
+constexpr uint32_t kW4MrRows = 4;
+constexpr uint32_t kW4MrTile = 64;
+template <bool TOKEN>
+__global__ __launch_bounds__(256) void lane_moe_gemv_w4mr(
+    const uint8_t* aq, const float* as, const int32_t* sorted, const int32_t* off, uint32_t top_k,
+    void* const* code0, void* const* scale0, void* const* code1, void* const* scale1,
+    uint32_t n0, uint32_t n1, uint32_t k0, uint32_t k1, uint32_t a_stride, uint32_t out_stride, uint16_t* out,
+    uint32_t part_pitch) {
+    using namespace r3::moe_shm;
+    const uint32_t e = blockIdx.x;
+    const uint32_t rs = (uint32_t)off[e], re = (uint32_t)off[e + 1];
+    if (rs >= re) return;
+    const uint32_t cls = e & 1u, ix = e >> 1;
+    const uint32_t N = cls ? n1 : n0, K = cls ? k1 : k0;
+    const uint32_t n_base = blockIdx.y * kW4MrTile;
+    if (n_base >= N || K > kGemvMaxK || (K & 63u)) return;
+    const uint8_t* codes = static_cast<const uint8_t*>(cls ? code1[ix] : code0[ix]);
+    const uint8_t* scales = static_cast<const uint8_t*>(cls ? scale1[ix] : scale0[ix]);
+    if (!codes || !scales) return;
+    __shared__ uint16_t a[kW4MrRows][kGemvMaxK];
+    __shared__ float asc[kW4MrRows][kGemvMaxK / 128u];
+    const uint32_t lane = threadIdx.x % warpSize, wave = threadIdx.x / warpSize, waves = blockDim.x / warpSize;
+    const uint32_t k32 = K / 32u, kg = K / 128u;
+    constexpr uint32_t U = 4;
+    for (uint32_t r0 = rs; r0 < re; r0 += kW4MrRows) {
+        const uint32_t nr = re - r0 < kW4MrRows ? re - r0 : kW4MrRows;
+        __syncthreads();
+        for (uint32_t i = threadIdx.x; i < nr * K; i += blockDim.x) {
+            const uint32_t rr = i / K, k = i - rr * K;
+            const uint32_t arow = TOKEN ? (uint32_t)sorted[r0 + rr] / top_k : r0 + rr;
+            const uint32_t b = aq[(uint64_t)arow * a_stride + k];
+            const uint32_t h = ((b & 0x7Fu) << 7) | ((b & 0x80u) << 8);
+            a[rr][k] = __builtin_bit_cast(uint16_t, (_Float16)(__builtin_bit_cast(_Float16, (uint16_t)h) * (_Float16)256.0f));
+        }
+        for (uint32_t i = threadIdx.x; i < nr * kg; i += blockDim.x) {
+            const uint32_t rr = i / kg, g = i - rr * kg;
+            const uint32_t arow = TOKEN ? (uint32_t)sorted[r0 + rr] / top_k : r0 + rr;
+            asc[rr][g] = as[(uint64_t)arow * (a_stride / 128u) + g];
+        }
+        __syncthreads();
+        for (uint32_t j = wave; j < kW4MrTile; j += waves) {
+            const uint32_t n = n_base + j;
+            if (n >= N) break;
+            const uint4* crow = reinterpret_cast<const uint4*>(codes + (uint64_t)n * (K / 2u));
+            const uint8_t* srow = scales + (uint64_t)n * (K / 64u);
+            float acc[kW4MrRows];
+#pragma unroll
+            for (uint32_t m = 0; m < kW4MrRows; ++m) acc[m] = 0.0f;
+            for (uint32_t d0 = lane; d0 < k32; d0 += U * warpSize) {
+                uint4 v[U];
+#pragma unroll
+                for (uint32_t u = 0; u < U; ++u) {
+                    const uint32_t d = d0 + u * warpSize;
+                    v[u] = d < k32 ? crow[d] : make_uint4(0u, 0u, 0u, 0u);
+                }
+#pragma unroll
+                for (uint32_t u = 0; u < U; ++u) {
+                    const uint32_t d = d0 + u * warpSize;
+                    if (d >= k32) break;
+                    const uint32_t ws[4] = {v[u].x, v[u].y, v[u].z, v[u].w};
+                    h2v w[16];                              /* dword q: w[4q..4q+3] = elements 32d+8q .. +7 as four half2 */
+#pragma unroll
+                    for (uint32_t q = 0; q < 4; ++q) {
+                        w4nl_to_h2x2(ws[q] & 0x0F0F0F0Fu, &w[4 * q], &w[4 * q + 1]);
+                        w4nl_to_h2x2((ws[q] >> 4) & 0x0F0F0F0Fu, &w[4 * q + 2], &w[4 * q + 3]);
+                    }
+                    const float wsc = gemv_e4m3_fast(srow[(32u * d) / 64u]);
+#pragma unroll
+                    for (uint32_t m = 0; m < kW4MrRows; ++m) {
+                        if (m >= nr) break;
+                        const uint4* a4 = reinterpret_cast<const uint4*>(a[m]);
+                        float part = 0.0f;
+#pragma unroll
+                        for (uint32_t q = 0; q < 4; ++q) {
+                            const uint4 x = a4[4u * d + q];
+                            part = __builtin_amdgcn_fdot2(w[4 * q], __builtin_bit_cast(h2v, x.x), part, false);
+                            part = __builtin_amdgcn_fdot2(w[4 * q + 1], __builtin_bit_cast(h2v, x.y), part, false);
+                            part = __builtin_amdgcn_fdot2(w[4 * q + 2], __builtin_bit_cast(h2v, x.z), part, false);
+                            part = __builtin_amdgcn_fdot2(w[4 * q + 3], __builtin_bit_cast(h2v, x.w), part, false);
+                        }
+                        acc[m] += part * (wsc * asc[m][(32u * d) / 128u]);
+                    }
+                }
+            }
+#pragma unroll
+            for (uint32_t m = 0; m < kW4MrRows; ++m) {
+                if (m >= nr) break;
+                float x = acc[m];
+                for (uint32_t o = warpSize / 2; o; o >>= 1) x += __shfl_down(x, o);
+                if (lane == 0) {
+                    uint32_t u = __float_as_uint(x * 0x1p-13f);
+                    u += 0x7fffu + ((u >> 16) & 1u);
+                    const uint32_t col = TOKEN && part_pitch && n >= N / 2 ? n - N / 2 + part_pitch : n;
+                    out[(uint64_t)(r0 + m) * out_stride + col] = (uint16_t)(u >> 16);
+                }
+            }
+        }
+    }
+}
+
 /* PREFILL MoE GEMM FOR FEW ROWS A EXPERT (RAD06), the helper's large lane. With the hot experts on the engine, a
  * helper's experts are cold: a handful of routed rows each per prefill step, where the grouped GEMM's 16-row
  * WMMA tiles are mostly padding. Here one block an (expert, 32 outputs): the expert's packed weight rows are
