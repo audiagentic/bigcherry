@@ -2,7 +2,7 @@
 id: RHP05
 order: 5
 plan: patching-radiance-heat-placement
-state: pending
+state: superseded
 created-at: '2026-10-15T01:35:00+00:00'
 breadth: ''
 skill: advanced
@@ -29,6 +29,10 @@ Add configurable periodic **evaluation**, not periodic mandatory movement. Use t
 ## Detailed Solution & Technical Design
 
 Startup ownership is set by `r3_moe_worker.cpp::select_owned/publish_owned` and `rad0002::rad_moe_remote_skip_unit` influences **initial planner**, so safe restart is the minimal supported activation. The request count is from existing service metrics; the interval clock only requests a decision. Keep phase scores and safe release of the old generation. A 'promote to remote' requires helper weight residency and engine map consistency *before* new routing. A 'promote to local' requires the engine to allocate/load weights before remote ownership ends. Restart satisfies both without runtime two-owner ambiguity.
+
+## Code Samples & Guidance
+
+
 
 ## Files
 
@@ -59,6 +63,8 @@ High: controlled restart entails a maintenance interruption; don't label it seam
 ## Notes
 
 Depends on RHP04. This phase deliberately avoids live migration; request-count and timer schedules do NOT require a ChatGPT task or an external scheduler.
+
+SUPERSEDED 2026-11-01 (owner direction: no restarts for placement). Stage A (recommend-only drift watch: heat-drift.py, heat-watch.py, launcher --record-heat; #489, #500-#502) is done and stays in use. Restart-based activation is dropped: placement changes go live through RHP11 (epoch protocol) + RHP06 (migration). The evaluation triggers, reporting, canary and candidate-acceptance ideas move to RHP04 stage 1 (policy loop), RHP07 (controls, stage 5 adaptation) and RHP12 (gate and rollback through a new epoch).
 
 ## Implementation-grade notes (2026-10-15)
 
@@ -128,7 +134,7 @@ heat-drift (tail 6.85% against 1.72% re-ranked, advise) -> restart with the writ
 4.6 ms (the tail 4.2 -> 1.6 ms a request). In-sample (recorded and replayed on the same text): the held-out case is the next
 measurement before any automatic trigger.
 
-## Held-out (2026-11-01, `runs/rhp05-holdout`)
+## Held-out (2026-11-01, )
 
 The same 42K probe on the other half of the documentation (set B: the doc list read from the end), flashnext-4gpu:
 
@@ -143,3 +149,7 @@ finished before the heads (1.6 against 3.7 ms a request) and a restart had nothi
 while the tail's share is under --min-share (2.5%, #489); it still advises the in-sample case (6.85%). The trigger for stage
 A is therefore sustained drift of the served workload's own heat past that floor, not a single recording.
 
+## Change Log
+
+- 2026-11-01T22:52:22.924222+00:00 (updated-by): Updated: section:notes
+- 2026-11-01T22:52:34.390617+00:00 (state-transition): State: pending → superseded

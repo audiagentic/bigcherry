@@ -1,21 +1,21 @@
 ---
 id: RHP06
-order: 6
+order: 11
 plan: patching-radiance-heat-placement
 state: pending
 created-at: '2026-10-15T01:35:00+00:00'
 breadth: ''
 skill: advanced
 created-by: agent
-priority: P2
+priority: P0
 work: L
 ---
 
-# Optional live cross-GPU expert migration with versioned ownership epochs
+# Stage 1: live helper expert migration - slot manager, async host->VRAM upload, retirement
 
 ## Description
 
-Only after RHP05 proves workload drift frequently justifies reallocation, implement a GPU-safe live ownership change while requests continue. Radiance's local `Mover` already knows asynchronous transfers and quarantine; adapt its **invariants** to cross-process helper weights, without pretending a helper is a normal same-process `Tier`. No hot-swap without complete staged weights and generation fencing.
+Stage 1 with RHP11 (no longer optional - owner direction 2026-11-01). Each helper manages its own physical expert slots and moves an expert in by uploading it from the immutable host weight source (no P2P on this host), never from the old owner's GPU. Applies the RHP04 stage 1 policy through RHP11's epochs. Within stage 1 the engine-local / remote split stays fixed; any helper-owned expert may move to any eligible helper (including one that owns none today) if it fits.
 
 ## Steps
 
@@ -28,7 +28,11 @@ Only after RHP05 proves workload drift frequently justifies reallocation, implem
 
 ## Detailed Solution & Technical Design
 
-The RHP05 static ownership maps are built before load and `rad0002` can mark remote-owned experts as `Tier::Mapped` never-read placeholders. Live migration requires new resident weights / reversible host sources at the destination as well as a versioned **execution site** selection. Reuse `Mover`'s shadow slot, quarantine, event and publication rules where possible; do not call its local `HeatEngine::set_tier` for a remote owner assignment. The `moe_remote_shm.h` protocol v11 currently has exact generation request completion but no **placement epoch**; extend protocol with explicit negotiation/version bump and plugin tests if gated into implementation. Enforce old/new map lifetimes across batch+MTP speculative passes and graph replay.
+New helper units (e.g. worker_residency.h, worker_migration.h, worker_epoch.h). Fixed-stride or size-classed slots derived from the backend layout, each holding a whole executable expert (gate/up codes and scales, down codes and scales, metadata). Slot states FREE -> RESERVED -> COPYING -> READY -> ACTIVE -> RETIRING -> FREE with ready and retire events and last_epoch. Refactor moe_remote_gpu.h's startup upload_weight() into a reusable weight-source/layout step plus an async destination-slot upload; no pointer is published until every plane is complete. Hard budget: active + pending + retiring + scratch <= hard budget, a slot charged until reclaimed; reserve at least one incoming expert per helper; a 2-way exchange between full helpers needs staging space or a validated multi-epoch transaction, else DEFERRED_CAPACITY. Bounded pinned bounce buffers; start with one in-flight upload per destination helper and a small global byte budget; record transfer times for stage 2. A forced-move test mode uses the production path and bypasses only the economic threshold.
+
+## Code Samples & Guidance
+
+
 
 ## Files
 
@@ -36,7 +40,7 @@ The RHP05 static ownership maps are built before load and `rad0002` can mark rem
 
 ## Validation
 
-Deterministic simulation of every state transition and crash point; GPU poison/guards, memory-safety and handshake fuzz; 1/8/64/4096-token graph replay, two-helper races, long prefill under enqueue run-ahead, mixed MTP. No missing or duplicate expert contribution, incorrect TP slice or stale pointer; KLD/greedy within established floor; workload-shift A/B with detailed pause/wait and memory counters.
+Replay: --replay-sweep with an ownership-transition schedule - replay a captured request under owner A, move the expert to B, commit, replay under B; byte-identical loaded weights; correct pointers; no uninitialised planes; every route exactly once; no stale references; old slot poisoned after retirement shows no use-after-free; no slot leak. Same-architecture moves: bit-identical per-expert contributions. XTX <-> gfx1030 moves: CPU reference / KLD (different kernels). Forced churn: >=1,000 transitions including XTX<->XTX hot experts, moves to and from the tail, 2-way exchanges near capacity, commits with pre-queued lanes, after large-lane prefill, with the CPU combine, MTP traffic, concurrent uploads, mid-copy faults and delayed retirement; zero invalid owners, missing or duplicate contributions, stale references, hangs or leaked slots; no unbounded VRAM growth. End-to-end: the RHP12 gate.
 
 ## Effort & Risk
 
@@ -50,14 +54,13 @@ Very high: correctness, deadlocks and missing mapped weights. Implement as a sep
 
 ## Acceptance Criteria
 
-- Documented measured economics justify live over restart; otherwise shelve.
-- Complete epoch fencing, stable retirement of old owner weights, safe rollback and no in-flight mixed owner maps.
-- Live A/B beats RHP05 on representative phase-shifted service after accounting for transfers/extra VRAM and p95/p99 latency; no quality regression or helper deadlock.
-- No new route counter, external worker service or redundant observability; same RHP02 heat and RHP03 snapshots/metrics.
+Experts move between helpers while serving with no restart; forced-churn, replay and protocol tests pass; RHP12's 8-session, 6-stream and 42K probes show idle-framework median step-time regression <=1% (p95 <=2%) and during migration <=2% median / <=5% p95; quality gates pass for heterogeneous moves.
 
 ## Notes
 
 Depends on RHP05; strictly optional. Does not change the model router or numerical method.
+
+Plan source: GPT staged plan 2026-11-01 (req_main_8f893e8abe79). Prior art in radiance core/place/mover.* (within-rank shadow-slot transfers). Stage 4 extends this to engine<->helper moves.
 
 ## Implementation-grade notes (2026-10-15)
 
@@ -93,3 +96,12 @@ Steps:
 3. Bind each forward/MTP step to one immutable map; quiesce all ranks and helpers at a global safe boundary; publish after (epoch, map digest, residency-ready) acknowledgements.
 
 Validation: State-machine fault injection, epoch overlap, GPU stream and graph replay, helper death, incomplete staging, generation mismatch, memory pressure, repeated flips; compare pause time and p99 with RHP05.
+
+## Change Log
+
+- 2026-11-01T22:51:18.702471+00:00 (updated-by): Updated: section:title, order=11, priority='P0', section:description, section:detailed_solution, section:validation, section:acceptance_criteria, section:notes
+
+## Ledger-events
+
+- chg_20261101_225732_planning-a-staged-roadmap-for_4092
+- 2026-11-01T22:57:39.628248+00:00 (updated-by): Updated: section:ledger-events

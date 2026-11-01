@@ -54,6 +54,8 @@ So: 12 to 24 rows run 11-27% faster on a pre-queued small lane than on the large
 the settings (mismatches=0). There is also a fixed floor: about 470 us a request even at 4 rows (about 330 us of it kernel time), the chain of roughly 20 small kernels; fusing it (as FUSEROUTE and FUSESTAGE
 did) lowers the floor for every stream count, independent of lane sizing.
 
+Lane sizing continues in RCS10 (stage 2 of the live-placement roadmap); the 2026-11-01 flashnext-4gpu measurement reproduced it: a 24-row lane is -10% decode step time at 4-6 streams and +7% at 1 stream.
+
 ## Result (2026-10-19, 6 pairs, engine decode tps)
 
 | Streams | rows8 | rows24 | lanes 8+24 |

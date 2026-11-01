@@ -1,21 +1,21 @@
 ---
 id: RHP04
-order: 4
+order: 12
 plan: patching-radiance-heat-placement
 state: pending
 created-at: '2026-10-15T01:35:00+00:00'
 breadth: ''
 skill: advanced
 created-by: agent
-priority: P1
+priority: P0
 work: L
 ---
 
-# Cost-aware cross-GPU expert ownership ranking in shadow mode
+# Placement policy: stage 1 heat/bottleneck balancing, stage 3 calibrated critical-path solver
 
 ## Description
 
-Use shared Radiance heat observations to recommend GPU ownership for R9700 trunk + two gfx1100 expert helpers, but **do not move weights or alter serving results**. Optimise the *critical path*, not simply counts: one busy remote helper can gate every token in a layer. Compare against existing `R3_MOE_WORKER_HEAT` coldest-first and initial static container profile.
+One placement policy in two milestones, both producing complete validated owner maps applied only through RHP11/RHP06 epochs. Stage 1 (with RHP06/RHP11): make worker_heat.h's propose() produce useful live moves from RHP02 heat with today's inputs. Today it only moves when the destination's scalar cost is strictly lower, so with equal costs it never moves, and it has single moves only. Stage 3 (after RHP09): replace the scalar Device::cost with calibrated cost curves and minimise each layer's predicted critical path for a weighted decode/prefill mix under global VRAM budgets.
 
 ## Steps
 
@@ -28,7 +28,11 @@ Use shared Radiance heat observations to recommend GPU ownership for R9700 trunk
 
 ## Detailed Solution & Technical Design
 
-Radiance's existing decayed-LFU/hysteresis remains owner of **local residency**; RHP04 extends the policy decisions, not the route data. The objective should approximate `sum_over_layers max(T_local_compute, T_helper0_compute+transfer0, T_helper1_compute+transfer1)` with serial dependencies and MTP verify-specific costs; do not sum time of overlapped work. Use a penalty for placement churn; reject candidates with insufficient observed route coverage. No speculative reweighting of the model's router outputs.
+Stage 1: per-(helper, layer) heat load L_h,l = sum of heat of owned experts; score a candidate by the reduction in the per-layer maximum weighted load beyond a deterministic margin; add bounded 2-way swaps as one atomic transaction; respect eligibility, protected experts, budgets, per-layer caps, minimum residency and the move budget; no_change is a normal outcome; static relative-cost factors only as initial weights. One controller fed by interval deltas of coherent RHP02 snapshots. Initial controls (RHP07): evaluate every 5 min, >=1,000 requests or equivalent observation, >=10% heuristic improvement, <=8 experts and <=256 MiB a transaction, one transaction at a time, 30 min minimum residency and failure cooldown; automatic activation off until stage 1 validation passes, then on. Stage 3: deterministic greedy construction from the active map, critical-path relief on the worst weighted layer/phase scenarios, bounded local search (single moves, pair swaps, small bundles) with per-layer aggregates and a global capacity ledger; objective sum over scenarios of predicted layer critical path + movement and uncertainty penalties; scenarios 1/3/6-stream decode, 128-256-row short prefill, 2048-row long prefill; guards e.g. <=2% predicted decode and <=5% TTFT regression for a mixed workload; the tail may own zero experts if that is best; solve budget 1-3 s, cap 10 s; exact oracle on small synthetic models to check the heuristic.
+
+## Code Samples & Guidance
+
+
 
 ## Files
 
@@ -36,7 +40,7 @@ Radiance's existing decayed-LFU/hysteresis remains owner of **local residency**;
 
 ## Validation
 
-Synthetic oracle for max-not-sum, identical scores, empty/zero routes, competing helper, protected expert, VRAM full, phase mix, unsupported format, varying step buckets; stable reproducible mapping. Hardware: no serving code path mutation in shadow; paired ABBA, full logits KL vs reference noise band, counters for model/version/cohort, no more than 2% control overhead.
+Stage 1: card-free determinism, zero/stale heat, equal-cost balancing, per-layer caps, full devices, move and swap, protected experts, hard overflow, tie-breaking, move budget, no duplicate/incomplete owners; exhaustive oracle on a small synthetic model. Stage 3: held-out layer critical-path prediction within 10% p50 / 20% p95 (RHP09), offline gain over static placement on replayed traces, then RHP12 A/Bs.
 
 ## Effort & Risk
 
@@ -50,14 +54,13 @@ High: cold experts may incur disproportionately expensive gfx11 prefill kernels;
 
 ## Acceptance Criteria
 
-- Shadow candidate fits budgets and runtime maps exactly; deterministic with same evidence.
-- Distinguishes prefill/decode and balances **per-layer** slowest GPU, not global share only.
-- Rejects insufficient/stale heat and predicts measurable speed gain with explicit uncertainty; no change when unsupported.
-- Default-off engine quality and runtime behaviour unchanged; baseline and candidate reported with matching prompts/config, KL and variability.
+Stage 1: valid non-trivial moves when heat drifts, no_change when stable, never an invalid map. Stage 3: applied only when the predicted gain's lower bound is above zero; measured gain beyond paired noise on RHP12 probes with no gate regression.
 
 ## Notes
 
 Depends on RHP02–03; no automatic activation before RHP05.
+
+Plan source: GPT staged plan 2026-11-01. The worker_heat.h header ("nothing here changes a live ownership map") is what stage 1 changes.
 
 ## Implementation-grade notes (2026-10-15)
 
@@ -100,3 +103,12 @@ Steps:
 5. Shadow runs against static layouts with ABBA replay and matched MTP work.
 
 Validation: Exact static-tail reproduction (static_tail is plan_tail), deterministic ties, zero-budget helpers, mixed expert sizes, per-layer max-not-sum objective, insufficient-coverage rejection, calibration error, quality comparison.
+
+## Change Log
+
+- 2026-11-01T22:51:22.513641+00:00 (updated-by): Updated: section:title, order=12, priority='P0', section:description, section:detailed_solution, section:validation, section:acceptance_criteria, section:notes
+
+## Ledger-events
+
+- chg_20261101_225732_planning-a-staged-roadmap-for_4092
+- 2026-11-01T22:57:35.857193+00:00 (updated-by): Updated: section:ledger-events

@@ -1,6 +1,6 @@
 ---
 id: RHP07
-order: 7
+order: 13
 plan: patching-radiance-heat-placement
 state: pending
 created-at: '2026-10-18T14:26:48.723847+00:00'
@@ -11,11 +11,11 @@ priority: P1
 work: L
 ---
 
-# Tiered expert cache: performance-ranked hosts, decayed heat, hysteresis and interval reallocation
+# Placement controls: decay, hysteresis and change budgets (stage 1), then adaptive refinement (stage 5)
 
 ## Description
 
-Owner idea 2026-10-19. Treat expert hosting as a performance-tiered cache. Tiers by measured cost: L1 R9700 engine-resident, L2 the 7900 XTX helpers, L3 the RX 6900 XT (gfx1030, when the RDNA2 backend exists), L4 host RAM (CPU compute or staged copy). Each (layer, expert) lives in the highest tier whose capacity its heat justifies. Reallocation runs at fixed intervals, never per request, with hysteresis so sessions that shift expert use do not thrash experts between tiers, and heat is aged so old demand fades. Builds on RHP02-RHP06 (single heat feed, persisted snapshot, cost-aware ranking, timed reevaluation, versioned migration epochs); this item is the policy layer and its offline evaluation.
+One set of placement controls shared by the stage 1 policy and later the unified allocator - not a second implementation beside worker_heat.h. Stage 1: decayed heat, hysteresis, minimum residency, move and byte budgets, cooldowns (values in RHP04). Correction: a fixed 0.95 decay per policy tick changes meaning when the interval changes - express decay as a half-life in completed requests, routed tokens or active time and derive the per-snapshot multiplier. Stage 5 (with RHP05's triggers): distinguish heat drift (re-solve), execution-shape drift (re-tune kernels/lanes), topology change (recalibrate) and residual drift (stale predictions), committing only when expected savings beat movement cost, hysteresis, uncertainty and the change budget. A tiered host-backed swap cache, if still wanted, is a separate later item.
 
 ## Steps
 
@@ -28,19 +28,31 @@ Owner idea 2026-10-19. Treat expert hosting as a performance-tiered cache. Tiers
 
 ## Detailed Solution & Technical Design
 
+
+
 ## Code Samples & Guidance
+
+
 
 ## Files
 
+
+
 ## Validation
 
-Offline: the policy beats static hot-first on a shifting-session trace by a stated margin with bounded moves per hour; no oscillation under a synthetic flip-flop trace. Live: identity of outputs across epoch flips, no hang over repeated flips, throughput not below static ownership.
+Synthetic workload shifts and oscillation tests (no ping-pong under alternating heat); multi-hour trace replay with bounded changes; RHP12 gates.
 
 ## Effort & Risk
 
+
+
 ## Standards
 
+
+
 ## Acceptance Criteria
+
+Stage 1 controls in place and exercised by the RHP06 forced-churn and drift tests; stage 5 shows improvement after a drift scenario with bounded changes and no oscillation.
 
 ## Notes
 
@@ -71,3 +83,9 @@ Steps:
 5. Keep swap-cache admission and CPU fallback experimental.
 
 Validation: Shifting-workload traces, cold-tail misprediction, gfx1030 prefill penalty, KV pressure, no oscillation, bounded moves, stable numerical output, no regression against the best static layout.
+- 2026-11-01T22:51:26.358103+00:00 (updated-by): Updated: section:title, order=13, section:description, section:validation, section:acceptance_criteria
+
+## Ledger-events
+
+- chg_20261101_225732_planning-a-staged-roadmap-for_4092
+- 2026-11-01T22:57:43.412382+00:00 (updated-by): Updated: section:ledger-events
