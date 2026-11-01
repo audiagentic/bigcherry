@@ -128,3 +128,18 @@ heat-drift (tail 6.85% against 1.72% re-ranked, advise) -> restart with the writ
 4.6 ms (the tail 4.2 -> 1.6 ms a request). In-sample (recorded and replayed on the same text): the held-out case is the next
 measurement before any automatic trigger.
 
+## Held-out (2026-11-01, `runs/rhp05-holdout`)
+
+The same 42K probe on the other half of the documentation (set B: the doc list read from the end), flashnext-4gpu:
+
+| heat file | 42K request | engine wait | tail a request |
+|---|---|---|---|
+| mixed default | 12.75 s | 3.92 s | 1.63 ms |
+| recorded on set A (the in-sample file above) | 13.35 s | 3.91 s | 1.81 ms |
+
+Heat recorded on one text did not carry to another of the same kind: the set-A file is 5% slower on set B than the mixed
+default, which already puts only 1.46% of set B's routes on the tail (re-ranked on set B's own heat: 0.34%), so the tail
+finished before the heads (1.6 against 3.7 ms a request) and a restart had nothing to win. heat-drift.py now keeps the file
+while the tail's share is under --min-share (2.5%, #489); it still advises the in-sample case (6.85%). The trigger for stage
+A is therefore sustained drift of the served workload's own heat past that floor, not a single recording.
+
