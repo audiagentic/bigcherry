@@ -139,6 +139,9 @@ __global__ void mailbox_publish_kernel(
     const uint8_t* st_aq, const float* st_as, const uint16_t* st_x, uint32_t st_bf16, uint32_t combine) {
     __shared__ uint32_t nr;
     __shared__ uint32_t step_nr[kMaxSlots], step_seq[kMaxSlots], gen;
+    /* R3_MOE_WORKER_HISTOGRAM (RHP02): this step's routes are counted in LDS and added to the histogram (pinned host memory)
+     * once an expert. This kernel is one block and a rank's steps run in order, so the adds are plain loads and stores. */
+    __shared__ uint32_t step_heat[kExperts];
 
     Header* h = reinterpret_cast<Header*>(base);
     if (threadIdx.x <= kMaxSlots) published[threadIdx.x] = 0;   /* [kMaxSlots]: the combine generation */
@@ -174,6 +177,10 @@ __global__ void mailbox_publish_kernel(
         }
     }
 
+    if (heat) {
+        for (uint32_t e = threadIdx.x; e < kExperts; e += blockDim.x) step_heat[e] = 0;
+        __syncthreads();
+    }
     for (uint32_t k = 0; k < helpers; ++k) {
         const uint32_t slot = step_slot(k, rank, helpers);
         const uint8_t* own = owner + (size_t)k * h->owner_slot_bytes;
@@ -183,8 +190,8 @@ __global__ void mailbox_publish_kernel(
         for (uint32_t i = threadIdx.x; i < rows * top_k; i += blockDim.x) {
             const int32_t le = ids[i] - expert_base;
             const bool in_range = le >= 0 && (uint32_t)le < n_expert && (uint32_t)le < h->expert_count;
-            /* R3_MOE_WORKER_HISTOGRAM: every route this step makes, owned or not, counted once (first slot). */
-            if (heat && k == 0 && in_range) atomicAdd(heat + (size_t)layer * h->expert_count + (uint32_t)le, 1u);
+            /* R3_MOE_WORKER_HISTOGRAM: every route this step makes, owned or not, counted once (first slot), in LDS. */
+            if (heat && k == 0 && in_range && (uint32_t)le < kExperts) atomicAdd(&step_heat[(uint32_t)le], 1u);
             if (!in_range || slot_map[(uint32_t)le] < 0 || !owner_has(own, layer, (uint32_t)le, h->expert_count))
                 continue;
             const uint32_t p = atomicAdd(&nr, 1u);
@@ -198,6 +205,13 @@ __global__ void mailbox_publish_kernel(
         if (threadIdx.x == 0) step_nr[k] = nr;
         __syncthreads();
     }
+    if (heat)   /* the loop's last barrier ordered every LDS count before this */
+        for (uint32_t e = threadIdx.x; e < h->expert_count && e < kExperts; e += blockDim.x)
+            if (const uint32_t c = step_heat[e]) {
+                uint32_t* p = heat + (size_t)layer * h->expert_count + e;
+                __hip_atomic_store(p, __hip_atomic_load(p, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_SYSTEM) + c,
+                                   __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_SYSTEM);
+            }
 
     /* Every helper's sequence, and R3_MOE_WORKER_COMBINE's decision, before any request is released: helper 0 finds the
      * generation in its own Request and the other helpers' lane/seq in combine, so no side polls for them. */

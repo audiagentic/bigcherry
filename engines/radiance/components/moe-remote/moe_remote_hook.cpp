@@ -36,6 +36,7 @@ struct RankState {
     uint32_t* published = nullptr;
     uint16_t* mask_ref = nullptr;
     void* maps = nullptr;   /* inv + rmask, one allocation */
+    uint32_t* heat_host = nullptr;   /* R3_MOE_WORKER_HISTOGRAM: the counts in pinned host memory (dev.heat maps it) */
     bool ready = false;
 };
 
@@ -350,20 +351,16 @@ void report_shadow(uint32_t rank, RankState& s) {
 /* R3_MOE_WORKER_HISTOGRAM=<path>: this rank's route counts, uint32[kMaxLayers][Header::expert_count], written at shutdown
  * to <path>.rank<r>. A helper given it as R3_MOE_WORKER_HEAT owns the coldest experts first. With R3_MOE_WORKER_HISTOGRAM_PERIOD_S
  * the same cumulative file is also rewritten while the engine runs (RHP02): a reader differences two snapshots to get the routes in
- * between. The file is replaced by rename, so a reader never sees a half-written one. `stream` is the caller's private non-blocking
- * stream for a live snapshot (the copy must not queue behind or in front of the engine's work), or null for the final one. */
-void write_heat(uint32_t rank, RankState& s, hipStream_t stream) {
+ * between. The file is replaced by rename, so a reader never sees a half-written one. `final`: the engine is shutting down
+ * (sync first, report the file). */
+void write_heat(uint32_t rank, RankState& s, bool final) {
     const char* path = std::getenv("R3_MOE_WORKER_HISTOGRAM");
-    if (!path || !*path || !s.dev.heat) return;
+    if (!path || !*path || !s.heat_host) return;
+    /* The counts live in pinned host memory (RHP02): a snapshot is a CPU copy, with no HIP stream or queue of its own. */
+    if (final) (void)hip_ok(hipDeviceSynchronize(), "sync before route histogram");
     std::vector<uint32_t> heat((size_t)kMaxLayers * g.hdr->expert_count);
-    if (stream) {
-        if (!hip_ok(hipMemcpyAsync(heat.data(), s.dev.heat, heat.size() * sizeof(uint32_t), hipMemcpyDeviceToHost, stream), "read live route histogram") ||
-            !hip_ok(hipStreamSynchronize(stream), "sync live route histogram"))
-            return;
-    } else if (!hip_ok(hipDeviceSynchronize(), "sync before route histogram") ||
-               !hip_ok(hipMemcpy(heat.data(), s.dev.heat, heat.size() * sizeof(uint32_t), hipMemcpyDeviceToHost), "read route histogram")) {
-        return;
-    }
+    for (size_t i = 0; i < heat.size(); ++i) heat[i] = __atomic_load_n(&s.heat_host[i], __ATOMIC_RELAXED);
+    const bool stream = !final;
     const std::string out = std::string(path) + ".rank" + std::to_string(rank);
     const std::string tmp = out + ".tmp";
     if (FILE* f = std::fopen(tmp.c_str(), "wb")) {
@@ -376,7 +373,6 @@ void write_heat(uint32_t rank, RankState& s, hipStream_t stream) {
 /* The live snapshot thread: every R3_MOE_WORKER_HISTOGRAM_PERIOD_S seconds, each ready rank's histogram. It takes g.mu per snapshot, so
  * it never reads a rank that close_mailbox is tearing down (close_mailbox stops and joins it first, without holding g.mu). */
 void snapshot_loop(double period_s) {
-    std::vector<hipStream_t> streams(kMaxEngineRanks, nullptr);
     auto next = std::chrono::steady_clock::now() + std::chrono::duration<double>(period_s);
     while (!g.snapshot_stop.load()) {
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
@@ -385,13 +381,10 @@ void snapshot_loop(double period_s) {
         std::lock_guard<std::mutex> lock(g.mu);
         for (uint32_t r = 0; r < kMaxEngineRanks; ++r) {
             RankState& s = g.rank[r];
-            if (!s.ready || !s.dev.heat) continue;
-            if (hipSetDevice(s.device) != hipSuccess) continue;
-            if (!streams[r] && hipStreamCreateWithFlags(&streams[r], hipStreamNonBlocking) != hipSuccess) { streams[r] = nullptr; continue; }
-            write_heat(r, s, streams[r]);
+            if (!s.ready || !s.heat_host) continue;
+            write_heat(r, s, false);
         }
     }
-    for (hipStream_t st : streams) if (st) (void)hipStreamDestroy(st);
 }
 
 void close_mailbox() {
@@ -404,8 +397,9 @@ void close_mailbox() {
         if (!s.ready) continue;
         if (s.device >= 0) (void)hipSetDevice(s.device);
         report_shadow(r, s);
-        write_heat(r, s, nullptr);
-        if (s.dev.heat) (void)hipFree(s.dev.heat);
+        write_heat(r, s, true);
+        if (s.heat_host) (void)hipHostFree(s.heat_host);
+        s.heat_host = nullptr;
         if (s.dev.shadow_first) (void)hipFree(s.dev.shadow_first);
         if (s.dev.shadow_stats) (void)hipFree(s.dev.shadow_stats);
         if (s.mask_ref) (void)hipFree(s.mask_ref);
@@ -553,10 +547,17 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
     s.dev.world = (uint32_t)world_size;
     if (const char* hp = std::getenv("R3_MOE_WORKER_HISTOGRAM"); hp && *hp) {
         const size_t hb = (size_t)kMaxLayers * g.hdr->expert_count * sizeof(uint32_t);
-        if (!hip_ok(hipMalloc(reinterpret_cast<void**>(&s.dev.heat), hb), "hipMalloc route histogram") ||
-            !hip_ok(hipMemset(s.dev.heat, 0, hb), "zero route histogram"))
+        /* RHP02: pinned, mapped host memory -- no engine VRAM and no copy stream; the publish kernel adds a step's counts
+         * once an expert (it is one block and the steps run in order, so the adds need no atomics over the link). */
+        if (!hip_ok(hipHostMalloc(reinterpret_cast<void**>(&s.heat_host), hb, hipHostMallocMapped | hipHostMallocCoherent), "host route histogram") ||
+            !hip_ok(hipHostGetDevicePointer(reinterpret_cast<void**>(&s.dev.heat), s.heat_host, 0), "map route histogram")) {
+            if (s.heat_host) (void)hipHostFree(s.heat_host);
+            s.heat_host = nullptr;
             s.dev.heat = nullptr;
-        if (s.dev.heat && !g.snapshotter.joinable()) {
+        } else {
+            std::memset(s.heat_host, 0, hb);
+        }
+        if (s.heat_host && !g.snapshotter.joinable()) {
             const char* ps = std::getenv("R3_MOE_WORKER_HISTOGRAM_PERIOD_S");
             const double period = ps && *ps ? std::atof(ps) : 0.0;
             if (period >= 1.0) g.snapshotter = std::thread(snapshot_loop, period);

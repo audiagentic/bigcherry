@@ -29,7 +29,8 @@
 # --heat FILE: the route-heat file that ranks the experts, hottest first (default $WORK/heat/flashnext-mixed.hot-first, C++/HIP source and
 # documentation recorded in RAD23 at equal weight; the RX 6900 XT tail only pays when it matches the workload, so record your own with --record-heat) (uint32[128][512] = max - count of a recorded histogram; heat-placement/heat-invert.py
 # makes one). --record-heat PREFIX: the engine counts every routed expert in VRAM and rewrites PREFIX.rank0 every --record-period seconds (default 30)
-# while serving: a recording run (the counting costs speed; do not serve production with it). Invert the file, restart with --heat and a larger
+# while serving. The counts sit in pinned host memory and cost no measurable speed (RHP02), so a server can record all the time
+# and tools/lab/radiance/heat-placement/heat-drift.py can check the active --heat file against them. Invert the file, restart with --heat and a larger
 # --budget (RHP10: workload-recorded heat plus gfx1100=23500 gave +34% prefill at 675K used context on a corpus it had not seen).
 # --host-pool-mib N: pinned host memory the expert and KV tiers share (default 22528; more gives the cache more of a long context: the engine log
 # reports how much of the worst case it backs).
@@ -185,7 +186,7 @@ COMMON=(
 )
 if [ -n "$RECORD" ]; then
   COMMON+=(R3_MOE_WORKER_HISTOGRAM="$RECORD" R3_MOE_WORKER_HISTOGRAM_PERIOD_S="$RECORD_PERIOD")
-  echo "recording the route histogram to $RECORD.rank0 every ${RECORD_PERIOD}s (costs speed; invert it with tools/lab/radiance/heat-placement/heat-invert.py for --heat)" >&2
+  echo "recording the route histogram to $RECORD.rank0 every ${RECORD_PERIOD}s (invert it with tools/lab/radiance/heat-placement/heat-invert.py for --heat)" >&2
 fi
 
 mkdir -p "$PIDS"
