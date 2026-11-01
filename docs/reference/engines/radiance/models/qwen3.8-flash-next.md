@@ -231,6 +231,18 @@ because it carries a handful of routes; per route it is far slower. A 2 GiB tail
 tails cost prefill, and KLD moves by up to 0.01 in either direction with the layout alone (one XTX helper, no 6900 XT, is +0.007 over two).
 Details, controls and the open question of why the engine's and the helper's paths differ: `docs/planning/active/patching-radiance-rdna3/RAD23.md`.
 
+**Where the 14 GiB tail's time goes, and the dot2 kernel (2026-11-01).** A 42K-token prefill with `R3_MOE_WORKER_TRACE=1`
+(engine wait per layer, per-helper stage times): the engine waits on the helpers for 6.9 s of a 16.7 s request, and the tail
+is the slowest helper on average, 5.7 ms a 2048-row request against 3.4-3.6 ms on the XTX heads, for under 5% of the routes.
+Its stages: routes (activation copy in) 0.54 ms, gate/up 2.50, down 1.83, reduce (result write out) 0.84; the copies are its
+Gen3 x4 chipset link (3.6 GB/s measured), the rest the few-rows kernel at 0.9-1.4 TFMA/s on a card that does 6.6.
+`lane_moe_rows_w4` (fp16 operands with `v_dot2_f32_f16`, per-stage tile shapes, a double-buffered activation tile;
+microbenchmark `tools/lab/radiance/gfx1030/rowsk.hip`, which reproduces the live stage times) cuts gate/up to 1.53 ms and
+down to 1.25 ms: the tail to 4.2 ms a request, the engine's wait to 5.5 s and the 42K request to 15.6 s (-6.6%). KLD of the 14 GiB
+mixed-heat arm with it: 0.0660 / p99.9 2.28 / top-1 88.93% (the f32 kernel: 0.0587 / 2.22 / 89.39%); the gate's p99.9 limit
+against h2 (+0.5) fails as it did for the f32 kernel on this arm (+0.63, was +0.57), inside the band rounding-level changes span
+on this model (RAD39).
+
 ## What is on and why
 
 Engine patches (state from each SUMMARY.md; none is `validated` yet):
