@@ -5,8 +5,9 @@
 #
 # Offload: the engine card runs the model (--tp 1); one r3_moe_worker helper per helper card holds full-width experts (the hottest by route
 # heat, up to the layout's budget), helper-owned experts skipped on the engine card; n-gram table in host
-# RAM; fp8 KV; MTP depth 3; 2048-token chunks; up to 2 sequences; 1,048,576-token context (the 262,144 the model was trained
-# on, stretched 4x by --rope-scaling yarn:4). A prefix hit resumes at the nearest cached token (--prefix-resume nearest) rather
+# RAM; fp8 KV; MTP depth 3; 2048-token chunks; up to 8 sessions of up to 262,144 tokens each (the context the model was
+# trained on, so no rope stretch). The fp8 cache on the R9700 holds about 1.48M tokens, shared by the sessions (5.7 full-length ones);
+# --max-model-len 1048576 --rope-scaling yarn:4 --max-num-seqs 2 serves the stretched 1M context instead. A prefix hit resumes at the nearest cached token (--prefix-resume nearest) rather
 # than on the cold run's chunk grid: re-sent prefixes cost 0.2-0.3 s a turn instead of 0.6-0.8 s, at the price of greedy text
 # that can differ from a cold run's near ties. The cache takes the VRAM the experts leave, which costs no decode or
 # 4K-prefill speed (RAD37 measurements, qwen3.8-flash-next.md); one sequence is 30% slower at decode, so keep two.
@@ -38,9 +39,9 @@
 # repeatable (an option and its value are two --engine-arg, e.g. --engine-arg --kv-resident --engine-arg 65536).
 # --ngram-device INDEX: an inventory card (not the engine, not a helper) that holds as much of the n-gram table as fits and gathers its rows (libr3ngram, R3_NGRAM_DEV);
 # the rows past its VRAM stay in a host copy. The card then sits in the engine process beside the engine card.
-# --max-model-len TOKENS: the longest context a sequence may have (default 1048576).
-# --rope-scaling S: default yarn:4 (the 1M stretch); use none for contexts within the trained 262144.
-# --max-num-seqs N: sessions served at once (default 2; each costs per-sequence state in VRAM and checkpoint slots in pinned RAM).
+# --max-model-len TOKENS: the longest context a sequence may have (default 262144, the trained context).
+# --rope-scaling S: default none (contexts within the trained 262144); yarn:4 for the 1M stretch.
+# --max-num-seqs N: sessions served at once (default 8; each costs per-sequence state in VRAM and checkpoint slots in pinned RAM).
 # --prefix-resume MODE: default nearest; off leaves the flag out (engines before 1.14.0 do not have it).
 # --gpu-power (or GPU_POWER=1): apply the cards' configured power settings ([host.*.devices.power]) for this run and
 # put back what the cards ran before at stop. Without write access it lists the setup steps still missing and runs
@@ -65,9 +66,9 @@ NGRAM=ram
 KV_DTYPE=fp8
 ENGINE_ARGS=()
 NGRAM_DEV=""
-MAX_LEN=1048576
-ROPE=yarn:4
-SEQS=2
+MAX_LEN=262144
+ROPE=none
+SEQS=8
 PREFIX_RESUME=nearest
 RECORD_PERIOD=30
 CMD=start
