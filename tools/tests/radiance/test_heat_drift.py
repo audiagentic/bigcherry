@@ -48,6 +48,14 @@ class HeatDrift(unittest.TestCase):
         rc2, out2, _ = run(live, live)
         self.assertEqual(rc2, 0, out2)   # the live heat itself is a good file
 
+    def test_a_small_tail_share_is_kept_even_if_a_rerank_would_shrink_it(self):
+        # hot set moved by a little: the tail's share grows but stays under --min-share
+        active, live = hist(range(0, 400)), hist(range(4, 404))
+        rc, out, _ = run(active, live, "--min-share", "60")
+        self.assertEqual(rc, 0, out)
+        rc, out, _ = run(active, live, "--min-share", "0")
+        self.assertEqual(rc, 3, out)
+
     def test_empty_live_histogram_is_refused(self):
         rc, out, _ = run(hist(range(0, 400)), np.zeros(L * E, np.uint32))
         self.assertEqual(rc, 1)
