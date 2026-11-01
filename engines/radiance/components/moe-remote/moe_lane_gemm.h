@@ -665,7 +665,9 @@ __global__ __launch_bounds__(256) void lane_moe_rows_fp8(
  * is written as asm: __builtin_amdgcn_fdot2 gives wrong sums on gfx1030 (libr2 r3_mma16.h). RB rows a pass, OUTW outputs a
  * wave (a block 8 x OUTW outputs): gate/up 16 x 4, down 12 x 2 measured best on a 6900 XT with the live tail's rows-an-expert
  * mix (tools/lab/radiance/gfx1030/rowsk.hip: gate/up 2563 -> 1911 us, down 1994 -> 1568 us a request; output against the
- * f32 kernel rel_l2 8.7e-4, the bf16 narrow). Not bit-exact with the f32 form. */
+ * f32 kernel rel_l2 8.7e-4, the bf16 narrow). The activation tile is double-buffered: the next chunk is staged while this one
+ * is computed, one barrier a chunk instead of two (gate/up 1924 -> 1765 us, down 1568 -> 1406 us; bit-identical). Not
+ * bit-exact with the f32 form. */
 constexpr uint32_t kRowsGuRB = 16, kRowsGuOut = 4;   /* gate/up */
 constexpr uint32_t kRowsDnRB = 12, kRowsDnOut = 2;   /* down */
 template <bool TOKEN, uint32_t RB, uint32_t OUTW>
@@ -684,7 +686,7 @@ __global__ __launch_bounds__(256) void lane_moe_rows_w4(
     const uint8_t* codes = static_cast<const uint8_t*>(cls ? code1[ix] : code0[ix]);
     const uint8_t* scales = static_cast<const uint8_t*>(cls ? scale1[ix] : scale0[ix]);
     if (!codes || !scales) return;
-    __shared__ uint4 a[RB][kRowsKC / 8];   /* 8 fp16 activations a uint4 */
+    __shared__ uint4 a[2][RB][kRowsKC / 8];   /* 8 fp16 activations a uint4 */
     __shared__ uint32_t arow[RB];
     __shared__ float lut[16];
     if (threadIdx.x < 16) lut[threadIdx.x] = kGemvW4nl[threadIdx.x];
@@ -710,19 +712,14 @@ __global__ __launch_bounds__(256) void lane_moe_rows_w4(
             }
         };
         fetch(0);
-        for (uint32_t kc = 0; kc < K; kc += kRowsKC) {
-            const uint32_t kl = K - kc < kRowsKC ? K - kc : kRowsKC;
-            uint32_t cw[OUTW]; uint8_t cs[OUTW];
-#pragma unroll
-            for (uint32_t j = 0; j < OUTW; ++j) { cw[j] = pw[j]; cs[j] = ps[j]; }
-            if (kc + kRowsKC < K) fetch(kc + kRowsKC);
-            __syncthreads();
+        auto stage = [&](uint32_t kcs, uint32_t buf) {
+            const uint32_t kls = K - kcs < kRowsKC ? K - kcs : kRowsKC;
             {
                 const uint32_t pieces = kRowsKC / 16u;
                 for (uint32_t idx = threadIdx.x; idx < RB * pieces; idx += blockDim.x) {
                 const uint32_t r = idx / pieces, p16 = idx % pieces;
-                if (r < nr && 16u * p16 < kl) {
-                    const uint32_t ar = arow[r], k = kc + 16u * p16;
+                if (r < nr && 16u * p16 < kls) {
+                    const uint32_t ar = arow[r], k = kcs + 16u * p16;
                     const uint4 q = *reinterpret_cast<const uint4*>(aq + (uint64_t)ar * a_stride + k);
                     const float sc = as[(uint64_t)ar * (a_stride / 128u) + k / 128u];
                     const uint32_t qw[4] = {q.x, q.y, q.z, q.w};
@@ -734,12 +731,22 @@ __global__ __launch_bounds__(256) void lane_moe_rows_w4(
                         hw[2 * w] = (uint32_t)__builtin_bit_cast(uint16_t, h0) | ((uint32_t)__builtin_bit_cast(uint16_t, h1) << 16);
                         hw[2 * w + 1] = (uint32_t)__builtin_bit_cast(uint16_t, h2) | ((uint32_t)__builtin_bit_cast(uint16_t, h3) << 16);
                     }
-                    a[r][2 * p16] = make_uint4(hw[0], hw[1], hw[2], hw[3]);
-                    a[r][2 * p16 + 1] = make_uint4(hw[4], hw[5], hw[6], hw[7]);
+                    a[buf][r][2 * p16] = make_uint4(hw[0], hw[1], hw[2], hw[3]);
+                    a[buf][r][2 * p16 + 1] = make_uint4(hw[4], hw[5], hw[6], hw[7]);
                 }
                 }
             }
-            __syncthreads();
+        };
+        __syncthreads();   /* the previous pass's reads of a[] are done */
+        stage(0, 0);
+        __syncthreads();
+        uint32_t cur = 0;
+        for (uint32_t kc = 0; kc < K; kc += kRowsKC, cur ^= 1u) {
+            const uint32_t kl = K - kc < kRowsKC ? K - kc : kRowsKC;
+            uint32_t cw[OUTW]; uint8_t cs[OUTW];
+#pragma unroll
+            for (uint32_t j = 0; j < OUTW; ++j) { cw[j] = pw[j]; cs[j] = ps[j]; }
+            if (kc + kRowsKC < K) fetch(kc + kRowsKC);
             if (const uint32_t d = lane; d < kl / 8u) {
                 uint32_t wv[OUTW][4];   /* the 8 decoded weights of each output as fp16 pairs, in K order */
 #pragma unroll
@@ -758,7 +765,7 @@ __global__ __launch_bounds__(256) void lane_moe_rows_w4(
 #pragma unroll
                 for (uint32_t r = 0; r < RB; ++r) {
                     if (r >= nr) continue;
-                    const uint4 x = a[r][d];
+                    const uint4 x = a[cur][r][d];
 #pragma unroll
                     for (uint32_t j = 0; j < OUTW; ++j) {
                         float s = acc[j][r];
@@ -770,6 +777,8 @@ __global__ __launch_bounds__(256) void lane_moe_rows_w4(
                     }
                 }
             }
+            if (kc + kRowsKC < K) stage(kc + kRowsKC, cur ^ 1u);
+            __syncthreads();
         }
 #pragma unroll
         for (uint32_t j = 0; j < OUTW; ++j) {
