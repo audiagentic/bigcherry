@@ -255,7 +255,11 @@ steps up to 32 rows take it). flashnext-4gpu, 512-token prompts, 512 out, decode
 The XTX expert step went 470 -> 262 us a layer; the RX 6900 XT tail (its own kernel, 255 us, plus ~45 us each way on its x4
 link) is now last on 52% of steps, so balancing by measured cost (RHP09, RHP04) is the next lever. The old W4 GEMV on the
 32-row path alone gains nothing (it re-reads the expert's weights per route); a pre-queued 24-row lane is -10% at 4-6 streams
-and +7% at 1 (padding), the RAD12 result. Judge these A/Bs on step time: at temperature 0 the engine is not batch-invariant
+and +7% at 1 (padding), the RAD12 result. Replaying 12 real 6-stream decode requests on one XTX (`replay-kernel-time.sh`, gate/up + down a
+request): old W4 GEMV 310 + 206 = 516 us, W4H2 185 + 155 = 340 us, the grouped GEMM ~343 us, and a multi-row W4H2 variant
+(one block an expert, four rows a pass; #506, closed) 267 + 162 = 429 us - a head helper's rows average ~1.5 an expert, so
+batching them loses more to restaging than it saves in weight reads. The worker harness's W4 CPU reference reports rel_l2
+~1.0 even for the default kernel (RAD15), so W4 GEMV correctness is judged by KLD. Judge these A/Bs on step time: at temperature 0 the engine is not batch-invariant
 (multi-stream text differs run to run) and a kernel change alters the 1-stream text, so tok/s moves with draft acceptance.
 
 Also measured the same day: the decode attention split count (`RADIANCE_TUNE=attn_paged_gate_quant:splits=8..64`) changes the
