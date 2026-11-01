@@ -32,7 +32,9 @@ struct R3MoeMailboxDevice {
     const uint8_t* owner = nullptr;
     uint32_t* sequence = nullptr;   /* [kMaxSlots slots][2 lane classes] request counters */
     uint32_t* published = nullptr;  /* [kMaxSlots slots]: 0, or 1 + the lane class of this step's request; then [kMaxSlots]:
-                                       the step's R3_MOE_WORKER_COMBINE generation, 0 when the step merges two rows */
+                                       the step's R3_MOE_WORKER_COMBINE generation, 0 when the step merges two rows; then
+                                       [kCombineChunks]: the generation whose chunk c the engine has seen combined (RAD42, device
+                                       mirror of Header::chunks.done, so only one block a chunk polls host memory) */
     uint16_t* mask_ref = nullptr;
     int32_t* inv = nullptr;     /* [max_rows * top_k] engine sorted row of each locally computed slot, else -1. */
     uint32_t* rmask = nullptr;  /* [max_rows * top_k] 1 where the helper computed the slot. */

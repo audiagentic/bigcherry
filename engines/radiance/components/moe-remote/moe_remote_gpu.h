@@ -398,6 +398,7 @@ public:
             w.cap_rows = cap;
             if (!ensure_lane_work(w, cap, cap * shape_.top_k, cap * shape_.top_k) ||
                 !w.d_stats.ensure(3 * sizeof(uint64_t)) || !w.d_publish_limit.ensure(sizeof(uint32_t)) ||
+                (cls == kSmallClasses && !w.d_chunk_cnt.ensure(kCombineChunks * sizeof(uint32_t))) ||
                 !hip_ok(hipMemset(w.d_publish_limit.p, 0xff, sizeof(uint32_t)), "lane publish limit"))
                 return false;
             for (uint32_t parity = 0; parity < 2; ++parity) {
@@ -798,18 +799,26 @@ public:
             hipLaunchKernelGGL(lane_route_inverse, route_grid, block, 0, w.stream,
                                static_cast<const int32_t*>(w.d_sorted.p),
                                static_cast<int32_t*>(w.d_inv.p), routes, slots);
+        /* R3_MOE_WORKER_COMBINE, chunked (RAD42): the large lane publishes its rows chunk by chunk for helper 0's combine. */
+        LaneChunks chunks{nullptr, nullptr, 0u};
+        if (chunk_helper_ < kCombineHelpers && !lane_is_small(lane)) {
+            if (!hip_ok(hipMemsetAsync(w.d_chunk_cnt.p, 0, kCombineChunks * sizeof(uint32_t), w.stream), "lane chunk counters"))
+                return -EIO;
+            chunks = LaneChunks{static_cast<uint32_t*>(w.d_chunk_cnt.p),
+                                static_cast<uint32_t*>(dev_at(&hhost->chunks.seq[chunk_helper_][0])), sequence};
+        }
         if (vecio)
             hipLaunchKernelGGL(lane_reduce_tokens_v, dim3(rows), block, 0, w.stream,
                                static_cast<const uint16_t*>(w.d_down.p),
                                static_cast<const int32_t*>(w.d_inv.p),
                                static_cast<const uint16_t*>(w.d_ew.p),
-                               dst, rows, shape_.hidden, poison_, lane_shape_);
+                               dst, rows, shape_.hidden, poison_, lane_shape_, chunks);
         else
             hipLaunchKernelGGL(lane_reduce_tokens, dim3(rows), block, 0, w.stream,
                                static_cast<const uint16_t*>(w.d_down.p),
                                static_cast<const int32_t*>(w.d_inv.p),
                                static_cast<const uint16_t*>(w.d_ew.p),
-                               dst, rows, shape_.hidden, poison_, lane_shape_);
+                               dst, rows, shape_.hidden, poison_, lane_shape_, chunks);
         if (!hip_ok(hipGetLastError(), "lane reduce tokens")) return -EIO;
 
         if (sample && w.sample_pending && w.sample_sequence == sequence &&
@@ -914,6 +923,8 @@ public:
 
     /* RAD20 park: lane_publish_done publishes no sequence above `limit` (the engine's last request) while the lane's
      * unconsumed waits are released; UINT32_MAX again once drained. Device memory, so the check costs no PCIe read. */
+    /* R3_MOE_WORKER_COMBINE (RAD42): this helper's index; its large lane then publishes Header::chunks.seq[k]. */
+    void set_chunk_helper(uint32_t k) { chunk_helper_ = k; }
     bool set_publish_limit(uint32_t lane, uint32_t limit) {
         return lane < r3::moe_shm::kLanes && lane_[lane].d_publish_limit.p &&
                hip_ok(hipMemcpy(lane_[lane].d_publish_limit.p, &limit, sizeof(limit), hipMemcpyHostToDevice),
@@ -985,6 +996,7 @@ private:
     int gemv_wide_env_ = -1;    /* R3_MOE_WORKER_GEMV_WIDE as set: -1 unset, 0 off, 1 on */
     bool gemv_wide_ = false;    /* R3_MOE_WORKER_GEMV_WIDE: sixteen-byte FP8 loads in the decode GEMV (RAD14) */
     bool rows_ = false;         /* R3_MOE_WORKER_ROWS: few-rows-a-expert kernel on the large lane (RAD06) */
+    uint32_t chunk_helper_ = UINT32_MAX;   /* R3_MOE_WORKER_COMBINE: this helper's index for the chunk words (RAD42) */
     bool trace_ = [] { const char* v = std::getenv("R3_MOE_WORKER_TRACE"); return v && *v && std::atoi(v) > 0; }();   /* RAD40 stage stamps */
     bool gemv_debug_ = false;   /* R3_MOE_WORKER_GEMV=2: grouped GEMM AND GEMV gate/up, compared (--compare) */
 

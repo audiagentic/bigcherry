@@ -106,6 +106,7 @@ struct LaneWork {
     Buffer d_rowmask;   // one byte a row: the rows this request's routes name (sparse activation copy, RAD23)
     uint32_t dbg_routes = 0;
     Buffer d_act, d_aq, d_as, d_gu, d_mid, d_mid_s, d_down, d_stats, scratch;
+    Buffer d_chunk_cnt;       /* uint32[kCombineChunks]: the large-lane reduce's per-chunk row counts (RAD42) */
     Buffer d_publish_limit;   /* uint32: newest sequence lane_publish_done may publish (RAD20 park); UINT32_MAX otherwise */
     Buffer gu_code[2], gu_scale[2], dn_code[2], dn_scale[2];
 };

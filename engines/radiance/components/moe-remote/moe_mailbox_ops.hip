@@ -305,9 +305,10 @@ __device__ __forceinline__ const Request* slot_request(
     return ring + lane * kLaneSlots + ((seq - 1u) % kLaneSlots);
 }
 
-__global__ void mailbox_add_wait_kernel(
-    uint8_t* base, const uint32_t* sequence, const uint32_t* published, uint32_t rank, uint32_t helpers) {
-    if (blockIdx.x || threadIdx.x) return;
+/* Wait for this step's helpers (exactly their published sequences) and, on a combined step, for combine.done; stamp the
+ * R3_MOE_WORKER_TRACE completion times. One thread. */
+__device__ void mailbox_wait_helpers(uint8_t* base, const uint32_t* sequence, const uint32_t* published, uint32_t rank,
+                                     uint32_t helpers) {
     Header* h = reinterpret_cast<Header*>(base);
     const uint64_t entered = wall_clock64();   /* R3_MOE_WORKER_TRACE: engine clock */
     /* R3_MOE_WORKER_COMBINE: the combiner publishes done only after every combined helper's done word, so the loop below then
@@ -339,12 +340,29 @@ __global__ void mailbox_add_wait_kernel(
          * second helper's wait. Both are written once the last wait is over. */
         seen_at[k] = wall_clock64();
         traced[k] = reinterpret_cast<Request*>(base + h->ring_offset) + lane * kLaneSlots + ((seq - 1u) % kLaneSlots);
+        if (traced[k]->status != 0) __builtin_trap();   /* a failed helper request: fail now (the route check skips it on a chunked step) */
     }
     for (uint32_t k = 0; k < helpers && k < kMaxHelpers; ++k) {
         if (!traced[k]) continue;
         traced[k]->trace[1] = entered;
         traced[k]->trace[2] = seen_at[k];
     }
+}
+
+/* Before the add: wait for the helpers -- except on a combined step, whose add kernel waits chunk by chunk (RAD42) and whose
+ * full wait follows the add (mailbox_add_tail_wait_kernel). */
+__global__ void mailbox_add_wait_kernel(
+    uint8_t* base, const uint32_t* sequence, const uint32_t* published, uint32_t rank, uint32_t helpers) {
+    if (blockIdx.x || threadIdx.x || published[kMaxSlots]) return;
+    mailbox_wait_helpers(base, sequence, published, rank, helpers);
+}
+
+/* A combined step's full wait: combine.done and every helper's done word, after the add (so no request slot is reused
+ * early) or before the shadow comparison (which reads every helper's own plane). */
+__global__ void mailbox_add_tail_wait_kernel(
+    uint8_t* base, const uint32_t* sequence, const uint32_t* published, uint32_t rank, uint32_t helpers) {
+    if (blockIdx.x || threadIdx.x || !published[kMaxSlots]) return;
+    mailbox_wait_helpers(base, sequence, published, rank, helpers);
 }
 
 __global__ void mailbox_mask_ref_kernel(
@@ -375,10 +393,14 @@ __global__ void mailbox_route_mark_kernel(
         const Request* q = slot_request(base, sequence, published, slot);
         if (!q) continue;
         const uint32_t lane = lane_of(slot, published[slot] - 1u);
-        if (load_sys_acq(&h->lane[lane].done_sequence) != sequence[lane])
+        /* The routes are the engine's own, so marking them needs no helper to be done. Outside a combined step the wait
+         * kernel has seen every helper finish, which is checked here; a combined step's helpers may still be writing
+         * (RAD42), and its tail wait checks them after the add. */
+        const bool chunked = published[kMaxSlots] != 0u;
+        if (!chunked && (load_sys_acq(&h->lane[lane].done_sequence) != sequence[lane] || q->status != 0))
             __builtin_trap();
         if (q->sequence != sequence[lane] || q->rank != slot || q->rows != rows ||
-            q->hidden != hidden || q->status != 0 || q->route_count == 0 || q->route_count > rows * top_k)
+            q->hidden != hidden || q->route_count == 0 || q->route_count > rows * top_k)
             __builtin_trap();
         const Route* route = reinterpret_cast<const Route*>(base + q->route_offset);
         for (uint32_t j = blockIdx.x * blockDim.x + threadIdx.x; j < q->route_count;
@@ -436,6 +458,27 @@ __global__ void mailbox_add_rows_kernel(
          * kCombineFallback in its first element and is read from the helpers' own planes instead (worker_combine.h). */
         bool any = false;
         for (uint32_t k = 0; k < helpers && k < kMaxHelpers; ++k) any |= from[k] != 0u;
+        if (combined && any) {   /* RAD42: this token's chunk is combined (so every helper's rows of it are written too) */
+            /* Only a chunk's first block polls the host word (over the engine's link, gently); it mirrors it into device
+             * memory, where the chunk's other blocks wait. A chunk's first block has the lowest index of the chunk, so it
+             * is dispatched before any of them. */
+            const uint32_t c = token / kCombineChunkRows;
+            uint32_t* mirror = const_cast<uint32_t*>(published) + kMaxSlots + 1u + c;
+            unsigned long long spins = 0;
+            if (token % kCombineChunkRows == 0u) {
+                while (load_sys_acq(&h->chunks.done[c]) != combined) {
+                    if (load_sys_acq(&h->helper_fault)) __builtin_trap();
+                    __builtin_amdgcn_s_sleep(8);
+                    if (++spins > 4000000000ULL) __builtin_trap();
+                }
+                __hip_atomic_store(mirror, combined, __ATOMIC_RELEASE, __HIP_MEMORY_SCOPE_AGENT);
+            } else {
+                while (__hip_atomic_load(mirror, __ATOMIC_ACQUIRE, __HIP_MEMORY_SCOPE_AGENT) != combined) {
+                    __builtin_amdgcn_s_sleep(8);
+                    if (++spins > 4000000000ULL) __builtin_trap();
+                }
+            }
+        }
         use_combined = combined && any &&
                        __builtin_nontemporal_load(combined_row) != kCombineFallback;
     }
@@ -753,6 +796,8 @@ int add_launch(const RadArgs* a, RadStream stream) {
                        static_cast<uint16_t*>(a->t[5].data),
                        d->mask_ref, d->mask_only,
                        (uint32_t)rows, (uint32_t)hidden, (uint32_t)top_k);
+    hipLaunchKernelGGL(mailbox_add_tail_wait_kernel, dim3(1), dim3(1), 0, (hipStream_t)stream,
+                       static_cast<uint8_t*>(d->mailbox), d->sequence, d->published, d->rank, d->helpers);
     hipLaunchKernelGGL(mailbox_add_finish_kernel, dim3(1), dim3(kMaxSlots + 1), 0, (hipStream_t)stream,
                        d->published);
     return hipGetLastError() == hipSuccess ? RAD_OK : RAD_E_DEVICE;
@@ -780,6 +825,8 @@ int shadow_launch(const RadArgs* a, RadStream stream) {
                     static_cast<const uint16_t*>(a->t[2].data), rows, (uint32_t)hidden,
                     (uint32_t)top_k) != RAD_OK)
         return RAD_E_DEVICE;
+    hipLaunchKernelGGL(mailbox_add_tail_wait_kernel, dim3(1), dim3(1), 0, (hipStream_t)stream,
+                       static_cast<uint8_t*>(d->mailbox), d->sequence, d->published, d->rank, d->helpers);
     hipLaunchKernelGGL(mailbox_shadow_rows_kernel, dim3(rows), dim3(256), 0,
                        (hipStream_t)stream, static_cast<uint8_t*>(d->mailbox),
                        d->sequence, d->published, d->rank, d->helpers, d->inv, d->rmask,
