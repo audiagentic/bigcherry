@@ -243,7 +243,11 @@ strictly in sequence: 0.76 + 0.5 + ~1.6 ms a 2048-row prefill layer, longer than
 moves them in 256-row chunks: each helper publishes a chunk once its rows are written, helper 0 combines each chunk as every
 helper's lands, and the engine adds each combined chunk as it arrives (one block a chunk polls host memory and mirrors the
 flag into VRAM). flashnext-4gpu, same heat: 8 sessions 2,369 -> 2,513 tok/s (+6.1%), the 42K probe 14.3-14.5 -> 13.1-13.7 s,
-the cached 14K follow-up 1.01 -> 0.93 s; KLD bit-identical to the unchunked combine (the arithmetic is unchanged).
+the cached 14K follow-up 1.01 -> 0.93 s; KLD bit-identical to the unchunked combine (the arithmetic is unchanged). Long context
+(1M stretch, `--max-model-len 1048576 --rope-scaling yarn:4 --max-num-seqs 2`, the documentation sweep): ~340K tokens
+3,089 -> 3,397 tok/s prefill, ~650-690K 2,663 -> 2,796 tok/s (the chunked run's request was 8% longer); decode unchanged at
+70-95 tok/s (attention-bound). Against the morning's two-XTX + 4 GiB tail layout (688K: 1,833-1,944 tok/s) long-context
+prefill is ~45-50% faster.
 
 ### A third helper on the RX 6900 XT (RAD23, 2026-10-31)
 
