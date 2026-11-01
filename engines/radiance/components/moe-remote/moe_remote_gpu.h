@@ -646,13 +646,15 @@ public:
             const bool rowk = (rows_ && !lane_is_small(lane)) || rows_small;
             const dim3 rows_grid_gu(experts(), (uint32_t)((2 * std::max(w0, w1) + kRowsTileN - 1) / kRowsTileN));
             const dim3 rows_grid_dn(experts(), (uint32_t)((shape_.hidden + kRowsTileN - 1) / kRowsTileN));
+            const dim3 w4_grid_gu(experts(), (uint32_t)((2 * std::max(w0, w1) + 8 * kRowsGuOut - 1) / (8 * kRowsGuOut)));
+            const dim3 w4_grid_dn(experts(), (uint32_t)((shape_.hidden + 8 * kRowsDnOut - 1) / (8 * kRowsDnOut)));
             const dim3 gemv_grid_gu(routes, (uint32_t)((2 * std::max(w0, w1) + kGemvTile - 1) / kGemvTile));
             const dim3 gemv_grid_dn(routes, (uint32_t)((shape_.hidden + kGemvTile - 1) / kGemvTile));
             std::vector<RadParam> gp =
                 gemm_params(rows, 2 * w0, shape_.hidden, 2, "token", 2 * w1, shape_.hidden);
             if (rowk) {
                 if (weight_format_ == MOE_FMT_FP8_E4M3_BLOCK)
-                    hipLaunchKernelGGL((lane_moe_rows<true, true>), rows_grid_gu, dim3(256), 0, w.stream,
+                    hipLaunchKernelGGL((lane_moe_rows_fp8<true>), rows_grid_gu, dim3(256), 0, w.stream,
                                    static_cast<const uint8_t*>(w.d_aq.p), static_cast<const float*>(w.d_as.p),
                                    static_cast<const int32_t*>(w.d_sorted.p), static_cast<const int32_t*>(w.d_off.p),
                                    (uint32_t)shape_.top_k,
@@ -662,7 +664,7 @@ public:
                                    (uint32_t)shape_.hidden, (uint32_t)(2 * mid_w()), static_cast<uint16_t*>(w.d_gu.p),
                                    (uint32_t)mid_w());
                 else
-                    hipLaunchKernelGGL((lane_moe_rows<true, false>), rows_grid_gu, dim3(256), 0, w.stream,
+                    hipLaunchKernelGGL((lane_moe_rows_w4<true, kRowsGuRB, kRowsGuOut>), w4_grid_gu, dim3(256), 0, w.stream,
                                    static_cast<const uint8_t*>(w.d_aq.p), static_cast<const float*>(w.d_as.p),
                                    static_cast<const int32_t*>(w.d_sorted.p), static_cast<const int32_t*>(w.d_off.p),
                                    (uint32_t)shape_.top_k,
@@ -747,7 +749,7 @@ public:
                 gemm_params(rows, shape_.hidden, w0, 1, "sorted", shape_.hidden, w1);
             if (rowk) {
                 if (weight_format_ == MOE_FMT_FP8_E4M3_BLOCK)
-                    hipLaunchKernelGGL((lane_moe_rows<false, true>), rows_grid_dn, dim3(256), 0, w.stream,
+                    hipLaunchKernelGGL((lane_moe_rows_fp8<false>), rows_grid_dn, dim3(256), 0, w.stream,
                                    static_cast<const uint8_t*>(w.d_mid.p), static_cast<const float*>(w.d_mid_s.p),
                                    static_cast<const int32_t*>(w.d_sorted.p), static_cast<const int32_t*>(w.d_off.p),
                                    (uint32_t)shape_.top_k,
@@ -756,7 +758,7 @@ public:
                                    (uint32_t)shape_.hidden, (uint32_t)shape_.hidden, (uint32_t)w0, (uint32_t)w1,
                                    (uint32_t)mid_w(), (uint32_t)shape_.hidden, static_cast<uint16_t*>(out_down), 0u);
                 else
-                    hipLaunchKernelGGL((lane_moe_rows<false, false>), rows_grid_dn, dim3(256), 0, w.stream,
+                    hipLaunchKernelGGL((lane_moe_rows_w4<false, kRowsDnRB, kRowsDnOut>), w4_grid_dn, dim3(256), 0, w.stream,
                                    static_cast<const uint8_t*>(w.d_mid.p), static_cast<const float*>(w.d_mid_s.p),
                                    static_cast<const int32_t*>(w.d_sorted.p), static_cast<const int32_t*>(w.d_off.p),
                                    (uint32_t)shape_.top_k,
