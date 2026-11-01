@@ -9,7 +9,7 @@ re-rank is advised writes the re-ranked hot-first file to --out and prints the r
 server itself: a restart drains every session, so applying it stays an operator decision.
 
   heat-watch.py --heat ACTIVE.hot-first --live PREFIX.rank0 --out NEW.hot-first [--every 300] [--window 1800]
-                [--min-share 2.5] [--ratio 1.5] [--once]
+                [--tail 5931] [--heads 18640] [--min-share 2.5] [--ratio 1.5] [--once]
 """
 import argparse
 import array
@@ -41,6 +41,8 @@ def main() -> int:
     ap.add_argument("--out", required=True, help="where a recommended re-ranked hot-first file goes")
     ap.add_argument("--every", type=float, default=300.0, help="seconds between checks")
     ap.add_argument("--window", type=float, default=1800.0, help="seconds of traffic a check judges")
+    ap.add_argument("--tail", type=int, default=5931, help="experts the tail owns (flashnext-4gpu's 14 GiB tail)")
+    ap.add_argument("--heads", type=int, default=18640, help="experts the heads own together")
     ap.add_argument("--min-share", type=float, default=2.5)
     ap.add_argument("--ratio", type=float, default=1.5)
     ap.add_argument("--once", action="store_true", help="one check over the whole histogram, then exit with heat-drift's code")
@@ -59,7 +61,8 @@ def main() -> int:
             if any(window):
                 with tempfile.NamedTemporaryFile(suffix=".rank0", delete=False) as t:
                     t.write(window.tobytes())
-                r = subprocess.run([sys.executable, DRIFT, a.heat, t.name, "--min-share", str(a.min_share),
+                r = subprocess.run([sys.executable, DRIFT, a.heat, t.name, "--tail", str(a.tail), "--heads", str(a.heads),
+                                    "--min-share", str(a.min_share),
                                     "--ratio", str(a.ratio), "--write", a.out], capture_output=True, text=True)
                 os.unlink(t.name)
                 stamp = time.strftime("%Y-%m-%d %H:%M:%S")

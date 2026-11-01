@@ -30,7 +30,8 @@ class HeatWatch(unittest.TestCase):
         write(td / "active", [top - v for v in active])
         write(td / "live.rank0", live)
         r = subprocess.run([sys.executable, str(TOOL), "--heat", str(td / "active"), "--live", str(td / "live.rank0"),
-                            "--out", str(td / "new"), "--once", "--min-share", "1"], capture_output=True, text=True)
+                            "--out", str(td / "new"), "--once", "--min-share", "1",
+                            "--tail", "400", "--heads", "1600"], capture_output=True, text=True)
         return r.returncode, r.stdout + r.stderr, td
 
     def test_moved_heat_is_advised_with_the_restart_command(self):
