@@ -264,6 +264,7 @@ __global__ void mailbox_publish_kernel(
             q->trace[2] = 0;
             q->trace[3] = 0;
             q->trace[4] = 0;
+            q->stage_trace[0] = 0; q->stage_trace[1] = 0; q->stage_trace[2] = 0;   /* RAD40 */
             q->combine_generation = k == 0 ? gen : 0u;
         }
         __threadfence_system();
