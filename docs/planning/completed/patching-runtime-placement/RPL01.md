@@ -2,7 +2,7 @@
 id: RPL01
 order: 1
 plan: patching-runtime-placement
-state: pending
+state: superseded
 created-at: '2026-10-06T00:00:00+00:00'
 breadth: ''
 skill: advanced
@@ -18,6 +18,63 @@ work: L
 Create one read-only decision layer that combines existing BigCherry topology, profiling, residency and workload evidence before any new runtime scheduler is introduced. BigCherry already has strong local owners (MET01 expert residency, MET05 auxiliary transport, PHA03 topology/RCCL admission, HIP-autotune kernel crossover, llama.cpp split/fit/scheduler machinery), but no authoritative cross-capability model answers the system-level question: for this workload phase and this asymmetric no-P2P topology, where should bytes and work live?
 
 RPL01 owns the cost/evidence model and placement recommendation only. It MUST NOT initially own execution, a second scheduler, a second expert solver, a second collective admission table, or backend-specific transport. Existing owners remain authoritative and consume or constrain RPL01 recommendations.
+
+## Steps
+
+
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+Expected initial implementation only:
+
+- `tools/bigcherry/profiling/placement_schema.py` - normalized observation/candidate schema.
+- `tools/bigcherry/profiling/placement_cost.py` - deterministic decomposed scorer.
+- `tools/tests/profiling/test_placement_schema.py`.
+- `tools/tests/profiling/test_placement_cost.py`.
+- adapter functions that read existing PHA/MET/QFP evidence; do not fork their schemas.
+
+Do not patch llama.cpp or HIP kernels in Phase A-C.
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+- One normalized placement observation schema consumes existing topology/perf/residency evidence without replacing its authoritative owners.
+- Candidate scorer is deterministic, decomposed, capacity-aware and fail-closed for unknown transport capabilities.
+- Historical hold-out validation predicts >=80% of qualified pairwise winners before advisory promotion.
+- Advisory output maps recommendations to existing flags/placement mechanisms and never mutates runtime state.
+- No new scheduler, allocator, transport, expert solver, kernel dispatch table or telemetry collector is introduced in Phase A-C.
+- Dynamic actuation remains blocked until >=5% end-to-end benefit is demonstrated in at least two workload regimes and existing configuration cannot express the winning transition.
+- Any future runtime implementation extends an established owner seam and passes a fresh duplication/ownership review.
+
+## Notes
+
+This item is intentionally architectural but bounded. The first deliverable is not a scheduler; it is a falsifiable offline model that should make BigCherry's existing optimisations cooperate and choose higher-value experiments. If the simple model cannot predict already-measured winners, close or narrow the effort rather than escalating to a more complex runtime planner.
+
+External references checked 2026-10-06:
+- llama.cpp multi-GPU documentation: layer split minimizes communication; tensor split is experimental/interconnect-sensitive; RCCL is not universally beneficial on ROCm.
+- llama.cpp `ggml-backend.h`: backend scheduler owns multi-backend allocation/assignment/copies.
+- AMD llama.cpp tooling discussion #26333: per-op profiling and roofline accounting intended for HIP/ROCm optimisation.
+
+SUPERSEDED 2026-11-01 by the live-placement roadmap in patching-radiance-heat-placement: topology discovery, calibration and the execution cost model are RHP09 (with RCS10 for default-on start-up integration and the tune cache); the cost-aware placement solver is RHP04 stage 3; the cross-tier allocator is RHP13.
 
 ## Repository evidence and motivation
 
@@ -181,47 +238,15 @@ Hardware-free first:
 
 Hardware qualification later uses existing benchmark harnesses; RPL01 does not create another benchmark runner. Require ABBA >=5 repetitions, median/dispersion, multi-request same-process where relevant, long-context lanes, MTP acceptance/effective throughput, and existing logits/greedy correctness contracts.
 
-## Files
-
-Expected initial implementation only:
-
-- `tools/bigcherry/profiling/placement_schema.py` - normalized observation/candidate schema.
-- `tools/bigcherry/profiling/placement_cost.py` - deterministic decomposed scorer.
-- `tools/tests/profiling/test_placement_schema.py`.
-- `tools/tests/profiling/test_placement_cost.py`.
-- adapter functions that read existing PHA/MET/QFP evidence; do not fork their schemas.
-
-Do not patch llama.cpp or HIP kernels in Phase A-C.
-
 ## External alignment
 
 - llama.cpp's backend scheduler already owns backend assignment, buffer allocation and inter-backend copies; RPL01 should remain an evidence/advisory layer until a measured gap requires extending that owner.
 - Current llama.cpp multi-GPU documentation distinguishes low-communication layer split from interconnect-sensitive tensor split and notes RCCL is disabled by default because it was not universally beneficial in testing. This supports a topology-specific admission/cost model rather than a universal multi-GPU policy.
 - AMD's upstream tooling work includes per-op profiling/roofline accounting. Reuse/export those measurements where available rather than inventing parallel kernel telemetry.
 
-## Acceptance Criteria
-
-- One normalized placement observation schema consumes existing topology/perf/residency evidence without replacing its authoritative owners.
-- Candidate scorer is deterministic, decomposed, capacity-aware and fail-closed for unknown transport capabilities.
-- Historical hold-out validation predicts >=80% of qualified pairwise winners before advisory promotion.
-- Advisory output maps recommendations to existing flags/placement mechanisms and never mutates runtime state.
-- No new scheduler, allocator, transport, expert solver, kernel dispatch table or telemetry collector is introduced in Phase A-C.
-- Dynamic actuation remains blocked until >=5% end-to-end benefit is demonstrated in at least two workload regimes and existing configuration cannot express the winning transition.
-- Any future runtime implementation extends an established owner seam and passes a fresh duplication/ownership review.
-
-## Notes
-
-This item is intentionally architectural but bounded. The first deliverable is not a scheduler; it is a falsifiable offline model that should make BigCherry's existing optimisations cooperate and choose higher-value experiments. If the simple model cannot predict already-measured winners, close or narrow the effort rather than escalating to a more complex runtime planner.
-
-External references checked 2026-10-06:
-- llama.cpp multi-GPU documentation: layer split minimizes communication; tensor split is experimental/interconnect-sensitive; RCCL is not universally beneficial on ROCm.
-- llama.cpp `ggml-backend.h`: backend scheduler owns multi-backend allocation/assignment/copies.
-- AMD llama.cpp tooling discussion #26333: per-op profiling and roofline accounting intended for HIP/ROCm optimisation.
-
 ## Change Log
 
 - 2026-10-06: created after cross-plan audit found no existing system-level placement/cost-model owner; deliberately bounded to observation + offline scoring before any runtime scheduling.
-
 
 ## 2026-10-06 R9700 PCIe-x4 calibration case
 
@@ -275,3 +300,5 @@ The old score picks B even though A completes 1.5 ms sooner. Identical per-kerne
 **Upstream/fork mechanism decisions:** llama.cpp's scheduler synchronizes on blocking-copy fallback, so it is the **correctness/causal baseline**, not a new optimizer to port. SGLang `python/sglang/srt/disaggregation/prefill.py` records a forward-stream completion event before overlapping an early KV transfer; vLLM `vllm/v1/core/sched/scheduler.py` defers KV block freeing when overlapping batches can still write. These illustrate event-owned lifetime and non-additive overlap; neither offers a qualified no-P2P RDNA placement speedup or a drop-in BigCherry scorer. Do not transplant their disaggregated serving architectures.
 
 References: https://github.com/ggml-org/llama.cpp/blob/b11474/ggml/src/ggml-backend.cpp ; https://github.com/ggml-org/llama.cpp/blob/master/ggml/src/ggml-backend.cpp ; https://github.com/sgl-project/sglang/blob/main/python/sglang/srt/disaggregation/prefill.py ; https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/sched/scheduler.py ; `QFP46`, `BCOP30`, `BCOP118`.
+- 2026-11-01T22:52:26.753747+00:00 (updated-by): Updated: section:notes
+- 2026-11-01T22:52:38.209863+00:00 (state-transition): State: pending → superseded
