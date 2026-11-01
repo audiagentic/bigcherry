@@ -76,7 +76,6 @@ def _root(repo_root: Path | None) -> Path:
     return Path(repo_root) if repo_root else paths.REPO_ROOT
 
 
-_COMBINE_HELPERS = 2   # moe_remote_shm.h kCombineHelpers (a test keeps the two equal)
 
 
 def max_helpers(repo_root: Path | None = None) -> int:
@@ -258,6 +257,7 @@ def resolve(name: str, host: environment.Host, *, budgets: dict[str, int] | None
         if key in common or key in {"R3_MOE_WORKER_LAYOUT", "R3_MOE_WORKER_DEVICES"}:
             raise LayoutError(f"{where}.env: {key} is decided by the cards of the layout")
         common[key] = value
-    if common.get("R3_MOE_WORKER_COMBINE") == "1" and len(helpers) != _COMBINE_HELPERS:
-        raise LayoutError(f"{where}: the helper-row combine adds exactly {_COMBINE_HELPERS} helpers' rows; {len(helpers)} helpers would run with it silently off")
+    if common.get("R3_MOE_WORKER_COMBINE") == "1" and len(helpers) < 2:
+        # the combine adds the rows of two to kCombineHelpers (= kMaxHelpers, the bound checked above) helpers; one has nothing to add
+        raise LayoutError(f"{where}: the helper-row combine needs at least two helpers; {len(helpers)} would run with it silently off")
     return Resolved(name, engine[0].index, engine[0].arch, archs[engine[0].arch].plugin, tuple(helpers), {k: v for k, v in common.items() if v != ""})

@@ -172,7 +172,7 @@ roles = ["helper"]
 
     def test_the_combine_bound_is_the_headers(self):
         text = (rl._root(None) / "engines/radiance/components/moe-remote/moe_remote_shm.h").read_text(encoding="utf-8")
-        self.assertIn(f"kCombineHelpers = {rl._COMBINE_HELPERS};", text)
+        self.assertIn("kCombineHelpers = kMaxHelpers;", text)   # the combine is bounded by the helper bound the resolver checks
 
     def test_shares_are_emitted_only_when_a_head_differs(self):
         r = self.resolve(self.HEAD.replace("budget-mib = 1000\n", "budget-mib = 1000\nshare = 2\n"))

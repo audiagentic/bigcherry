@@ -16,7 +16,7 @@
 namespace r3::moe_shm {
 
 constexpr uint64_t kMagic = 0x31454f4d33485253ull; /* "SRH3MOE1": reject unrelated/stale shm. */
-constexpr uint32_t kVersion = 19;  /* 19: Header::slot_count (the request slots, route / activation staging and result planes, are sized from it; kMaxHelpers and kMaxSlots are 4; RAD23). 18: Header::helper_pid/helper_start (the engine watches each helper process and raises helper_fault when one exits), Header::notify (CPU waits sleep on one generation word); 17: Header::burst, LaneSignal::park (RAD20: small-lane waits armed only inside an inference burst); 16: the combined row is fp16 with a per-row fallback marker (kCombineFallback); 15: Header::combine (R3_MOE_WORKER_COMBINE); 14: the header records the model shape (intermediate, activation_group, shape_hash) and every region is laid out from it (layout_for); 13: several pre-queued small-lane sizes (Header::small_class_*), ten lanes; 12: Request carries the R3_MOE_WORKER_TRACE stamps (192 -> 256 bytes); 11: helper_fault; completion is an exact generation */
+constexpr uint32_t kVersion = 20;  /* 20: CombineSignal for up to kMaxHelpers helpers (128 bytes, helper_done[] per helper); 19: Header::slot_count (the request slots, route / activation staging and result planes, are sized from it; kMaxHelpers and kMaxSlots are 4; RAD23). 18: Header::helper_pid/helper_start (the engine watches each helper process and raises helper_fault when one exits), Header::notify (CPU waits sleep on one generation word); 17: Header::burst, LaneSignal::park (RAD20: small-lane waits armed only inside an inference burst); 16: the combined row is fp16 with a per-row fallback marker (kCombineFallback); 15: Header::combine (R3_MOE_WORKER_COMBINE); 14: the header records the model shape (intermediate, activation_group, shape_hash) and every region is laid out from it (layout_for); 13: several pre-queued small-lane sizes (Header::small_class_*), ten lanes; 12: Request carries the R3_MOE_WORKER_TRACE stamps (192 -> 256 bytes); 11: helper_fault; completion is an exact generation */
 constexpr uint32_t kPage = 4096;
 /* R3_MOE_WORKER_COMBINE: first element of a combined fp16 row the combiner could not hold in fp16 range (a NaN payload
  * no arithmetic produces; a real NaN converts to 0x7E00); the engine then reads that row from the two helper planes. */
@@ -119,26 +119,27 @@ struct alignas(64) LaneSignal {
 };
 static_assert(sizeof(LaneSignal) == 64);
 
-/* R3_MOE_WORKER_COMBINE (two helpers behind a one-rank engine, large lane only): helper 0 adds the two helpers' bf16
- * rows on the CPU into result plane [0][1], so the engine reads one row a token over its link instead of two. Nothing
- * polls on the CPU side. The engine GPU allocates both helpers' sequences, writes lane/seq/rows here and the generation
- * into helper 0's Request::combine_generation, then releases the requests. Helper 0 combines on its own large-lane
- * thread after its stream sync, futex-waiting on helper1_done, which helper 1 stores and wakes after its own stream
- * sync. Helper 0 release-stores `done` = generation; the engine's wait kernel waits for it. Not bit-identical to adding
- * the two rows on the engine (one more bf16 rounding). `enabled` is set by helper 0 at start; the engine asks only then. */
-constexpr uint32_t kCombineHelpers = 2;   /* the combine adds exactly two helpers' rows; a segment with more helpers runs with it off */
+/* R3_MOE_WORKER_COMBINE (two to kMaxHelpers helpers behind a one-rank engine, large lane only): helper 0 adds every helper's
+ * bf16 rows on the CPU into result plane [0][1], so the engine reads one row a token over its link instead of one a helper.
+ * Nothing polls on the CPU side. The engine GPU allocates the helpers' sequences, writes lane/seq/rows here (seq 0: that
+ * helper has no request this step) and the generation into helper 0's Request::combine_generation, then releases the
+ * requests. Helper 0 combines on its own large-lane thread after its stream sync, futex-waiting on helper_done[k], which
+ * helper k stores and wakes after its own stream sync. Helper 0 release-stores `done` = generation; the engine's wait kernel
+ * waits for it. Not bit-identical to adding the rows on the engine (one more rounding). `enabled` is set by helper 0 at
+ * start; the engine asks only then. */
+constexpr uint32_t kCombineHelpers = kMaxHelpers;   /* the combine adds the rows of up to this many helpers */
 struct alignas(64) CombineSignal {
     uint32_t enabled;
-    uint32_t min_rows;      /* steps with fewer rows keep the two-row merge */
+    uint32_t min_rows;      /* steps with fewer rows keep the per-helper merge */
     uint32_t request;       /* last generation the engine issued (engine-only counter) */
     uint32_t done;
     uint32_t lane[kCombineHelpers];
-    uint32_t seq[kCombineHelpers];
+    uint32_t seq[kCombineHelpers];   /* 0: no request from that helper this step */
     uint32_t rows;
-    uint32_t helper1_done;  /* helper 1's newest completed large-lane sequence, CPU-written, futex word */
-    uint32_t reserved[6];
+    uint32_t helper_done[kCombineHelpers];  /* helper k's newest completed large-lane sequence (k >= 1), CPU-written futex words */
+    uint32_t reserved[15];
 };
-static_assert(sizeof(CombineSignal) == 64);
+static_assert(sizeof(CombineSignal) == 128);
 
 struct alignas(kPage) Header {
     uint64_t magic;                 /* segment identity. */

@@ -199,8 +199,8 @@ __global__ void mailbox_publish_kernel(
         __syncthreads();
     }
 
-    /* Both helpers' sequences, and R3_MOE_WORKER_COMBINE's decision, before either request is released: helper 0 finds
-     * the generation in its own Request and helper 1's lane/seq in combine, so neither side polls for them. */
+    /* Every helper's sequence, and R3_MOE_WORKER_COMBINE's decision, before any request is released: helper 0 finds the
+     * generation in its own Request and the other helpers' lane/seq in combine, so no side polls for them. */
     if (threadIdx.x == 0) {
         gen = 0;
         for (uint32_t k = 0; k < helpers; ++k) {
@@ -210,11 +210,17 @@ __global__ void mailbox_publish_kernel(
             if (s == 0) __builtin_trap();
             step_seq[k] = s;
         }
-        if (combine && helpers == 2 && cls == kSmallClasses && step_nr[0] && step_nr[1] &&
+        /* helper 0 combines, so it needs a request of its own, and at least one other helper must have one */
+        bool others = false;
+        for (uint32_t k = 1; k < helpers; ++k) others |= step_nr[k] != 0u;
+        if (combine && helpers >= 2 && helpers <= kCombineHelpers && cls == kSmallClasses && step_nr[0] && others &&
             load_sys_acq(&h->combine.enabled) && rows >= h->combine.min_rows) {
             uint32_t g = h->combine.request + 1u;
             if (g == 0) g = 1;
-            for (uint32_t k = 0; k < kCombineHelpers; ++k) { h->combine.lane[k] = lane_of(k, cls); h->combine.seq[k] = step_seq[k]; }
+            for (uint32_t k = 0; k < kCombineHelpers; ++k) {
+                h->combine.lane[k] = k < helpers ? lane_of(k, cls) : 0u;
+                h->combine.seq[k] = k < helpers ? step_seq[k] : 0u;
+            }
             h->combine.rows = rows;
             h->combine.request = g;
             gen = g;
@@ -303,7 +309,7 @@ __global__ void mailbox_add_wait_kernel(
     if (blockIdx.x || threadIdx.x) return;
     Header* h = reinterpret_cast<Header*>(base);
     const uint64_t entered = wall_clock64();   /* R3_MOE_WORKER_TRACE: engine clock */
-    /* R3_MOE_WORKER_COMBINE: the combiner publishes done only after both helpers' done words, so the loop below then
+    /* R3_MOE_WORKER_COMBINE: the combiner publishes done only after every combined helper's done word, so the loop below then
      * finds them already there. */
     if (const uint32_t g = published[kMaxSlots]) {
         unsigned long long spins = 0;
@@ -426,8 +432,10 @@ __global__ void mailbox_add_rows_kernel(
             if (mask_only && m && local_index[slot] >= 0) __builtin_trap();
         }
         /* R3_MOE_WORKER_COMBINE: the combined row is fp16; a row the combiner could not hold in fp16 range carries
-         * kCombineFallback in its first element and is read from the two helper planes instead (worker_combine.h). */
-        use_combined = combined && (from[0] || from[1]) &&
+         * kCombineFallback in its first element and is read from the helpers' own planes instead (worker_combine.h). */
+        bool any = false;
+        for (uint32_t k = 0; k < helpers && k < kMaxHelpers; ++k) any |= from[k] != 0u;
+        use_combined = combined && any &&
                        __builtin_nontemporal_load(combined_row) != kCombineFallback;
     }
     __syncthreads();

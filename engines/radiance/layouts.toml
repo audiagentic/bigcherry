@@ -53,7 +53,7 @@ placement = "head"
 share = 1
 
 [layout.flashnext-2xtx-combine]
-description = "flashnext-2xtx with the helper-row combine (RAD18): the two XTX helpers' result rows are added on the CPU so the R9700 reads one plane; the 3,600 tok/s prefill of the model page against ~3,200 without. Two helpers only: a third would run with the combine silently off"
+description = "flashnext-2xtx with the helper-row combine (RAD18): the two XTX helpers' result rows are added on the CPU so the R9700 reads one plane; the 3,600 tok/s prefill of the model page against ~3,200 without"
 engine = { arch = "gfx1201" }
 [[layout.flashnext-2xtx-combine.helper]]
 arch = "gfx1100"
@@ -61,4 +61,20 @@ count = "all"
 budget-mib = 22528
 placement = "head"
 [layout.flashnext-2xtx-combine.env]
+R3_MOE_WORKER_COMBINE = "1"
+
+[layout.flashnext-2xtx-rdna2-tail-combine]
+description = "flashnext-2xtx-rdna2-tail with the helper-row combine over all three helpers (RAD23): helper 0 adds the XTX and RX 6900 XT rows on the CPU so the R9700 reads one plane"
+engine = { arch = "gfx1201" }
+[[layout.flashnext-2xtx-rdna2-tail-combine.helper]]
+arch = "gfx1100"
+count = "all"
+budget-mib = 22528
+placement = "head"
+[[layout.flashnext-2xtx-rdna2-tail-combine.helper]]
+arch = "gfx1030"
+count = 1
+budget-mib = 2048
+placement = "tail"
+[layout.flashnext-2xtx-rdna2-tail-combine.env]
 R3_MOE_WORKER_COMBINE = "1"

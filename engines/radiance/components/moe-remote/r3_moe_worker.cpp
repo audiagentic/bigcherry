@@ -462,11 +462,12 @@ int main(int argc, char** argv) {
             if (++seq == 0) break;
         }
     } else {
-        /* R3_MOE_WORKER_COMBINE=1 (default off), two helpers: helper 0 adds both helpers' rows for the engine's large
-         * lane on its large-lane thread after its stream sync (worker_combine.h); helper 1 wakes it after its own sync.
+        /* R3_MOE_WORKER_COMBINE=1 (default off), two to kCombineHelpers helpers: helper 0 adds every helper's rows for the
+         * engine's large lane on its large-lane thread after its stream sync (worker_combine.h); each other helper wakes it
+         * after its own sync.
          * The engine asks only once combine.enabled is set. */
         Combine combine;
-        if (cfg.combine && helper_count == 2) {
+        if (cfg.combine && helper_count >= 2 && helper_count <= kCombineHelpers) {
             if (!combine_cpu_supported()) {
                 std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_COMBINE needs a CPU with AVX2 and F16C\n");
                 return 1;
