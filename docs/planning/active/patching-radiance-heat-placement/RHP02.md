@@ -1,6 +1,6 @@
 ---
 id: RHP02
-order: 2
+order: 9
 plan: patching-radiance-heat-placement
 state: pending
 created-at: '2026-10-15T01:35:00+00:00'
@@ -28,6 +28,10 @@ Expose a **read-only, one-to-many** observation from Radiance's existing histogr
 ## Detailed Solution & Technical Design
 
 `HeatEngine` is a policy over *movable local units*, not a universal GPU-owner model. Do not force it to treat remotely owned experts as locally resident or invent movable mapped units. The shared **input histogram** is the invariant; `libr3moe` may maintain a bounded CPU score/window for remote ownership and reuse upstream's decay/hysteresis algorithm rather than a duplicate device telemetry stack. Ensure `rad0002` map/owner hooks still refer to exact runtime slot IDs; protected experts are never remapped merely from container IDs.
+
+## Code Samples & Guidance
+
+
 
 ## Files
 
@@ -57,6 +61,8 @@ High: long-prefill host run-ahead and remote-only mapped units can hide holes in
 ## Notes
 
 Depends on RHP01 and merged/verified RAD09. Does not implement ownership migration; that is RHP05/06.
+
+STATUS 2026-11-01: recording is cheap and on by default (histogram in pinned host memory, #500; launcher --record-heat, #502), but the item's goal - one versioned observer feed shared by the engine HeatEngine and the helper ownership policy, retiring R3_MOE_WORKER_HISTOGRAM / _HEAT after parity - is not done. It is a stage 1 dependency of the live-placement roadmap: RHP04's stage 1 policy loop consumes coherent interval snapshots from this feed (the pinned-memory histogram is the interim source until parity).
 
 ## Implementation-grade notes (2026-10-15)
 
@@ -128,7 +134,7 @@ own stream, the runtime's default stream for the zeroing hipMemset), i.e. extra 
 (RAD20 found the same on the XTX helpers). Test: count the engine process's KFD queues (/sys/class/kfd/kfd/proc/<pid>/queues)
 with and without --record-heat; if they differ, zero and copy the histogram on the engine's own stream instead.
 
-## Histogram in pinned host memory (2026-11-01, `runs/rhp02-host`)
+## Histogram in pinned host memory (2026-11-01, )
 
 The route histogram moved from engine VRAM to pinned, mapped host memory, counted per step in LDS and added once an expert
 (no PCIe atomics: one block, steps in order); a snapshot is a CPU copy, with no HIP stream of its own. Same requests, same
@@ -137,3 +143,6 @@ counts (21,532,920 routes, 0 cells differing). 42K probe on the chunked-combine 
 histogram. On this build the old recording's time cost was itself small; the earlier 5-24% was measured before #497. Either
 way recording is now cheap enough to leave on, which stage A (heat-drift.py on live counts) needs.
 
+## Change Log
+
+- 2026-11-01T22:52:30.560823+00:00 (updated-by): Updated: order=9, section:notes
