@@ -59,3 +59,12 @@ No P2P: only CPU stores into a BAR and host-memory chunks. Depends on RAD40.
 ## Change Log
 
 - 2026-11-01T11:26:21.039480+00:00 (created-by): Created by agent
+
+## Harness and review (2026-11-01)
+
+Chunked hand-off measured 1.27x at 256-row chunks on a 10 MiB plane (RAD40). Review: design A first -- the CPU combine
+publishes complete combined chunks (all contributing helpers' rows summed), the engine consumes them; a helper without
+rows in a chunk is marked complete explicitly; 64-bit generations; no long-lived GPU polling (RDNA idle power, RAD20).
+Go: >=0.3 ms off the p50 layer critical path and >=2% end to end. BAR push of the combined plane (design b) is slower
+standalone (5.6 against 6.7 GB/s pull) and only pays through overlap; remeasure after the R9700 moves to x8. New lever from
+the harness: CPU-pushing XTX 0's activations removes the read contention (heads' activation makespan 853 -> 683 us).
