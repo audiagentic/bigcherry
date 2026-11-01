@@ -16,23 +16,28 @@ hot-first file is written, to restart with --heat NEW). A restart is the activat
 owner change).
 """
 import argparse
+import array
 import sys
-import numpy as np
 
 LAYERS, EXPERTS = 128, 512
 
 
-def load(path: str) -> np.ndarray:
-    a = np.fromfile(path, dtype=np.uint32)
-    if a.size != LAYERS * EXPERTS:
-        raise SystemExit(f"heat-drift: {path} holds {a.size} values, want {LAYERS * EXPERTS}")
-    return a.astype(np.float64)
+def load(path: str) -> array.array:
+    a = array.array("I")
+    try:
+        with open(path, "rb") as f:
+            a.frombytes(f.read())
+    except OSError as exc:
+        raise SystemExit(f"heat-drift: {exc}")
+    if len(a) != LAYERS * EXPERTS:
+        raise SystemExit(f"heat-drift: {path} holds {len(a)} values, want {LAYERS * EXPERTS}")
+    return a
 
 
-def shares(counts_rank: np.ndarray, live: np.ndarray, idx: np.ndarray, tail: int, heads: int) -> tuple[float, float]:
-    order = idx[np.argsort(counts_rank[idx], kind="stable")]   # coldest first
-    total = live[idx].sum()
-    return live[order[:tail]].sum() / total, live[order[-heads:]].sum() / total
+def shares(rank, live, idx: list, tail: int, heads: int) -> tuple:
+    order = sorted(idx, key=lambda i: rank[i])   # coldest first; stable, so ties keep index order
+    total = sum(live[i] for i in idx)
+    return sum(live[i] for i in order[:tail]) / total, sum(live[i] for i in order[-heads:]) / total
 
 
 def main() -> int:
@@ -45,15 +50,16 @@ def main() -> int:
     ap.add_argument("--write", help="write the re-ranked hot-first file here when a re-rank is advised")
     a = ap.parse_args()
     hot_first, live = load(a.active), load(a.live)
-    rank = hot_first.max() - hot_first                      # back to counts: higher = hotter
-    layer_routes = live.reshape(LAYERS, EXPERTS).sum(1)
-    if not layer_routes.any():
+    top = max(hot_first)
+    rank = [top - v for v in hot_first]                     # back to counts: higher = hotter
+    layers = [l for l in range(LAYERS) if any(live[l * EXPERTS:(l + 1) * EXPERTS])]
+    if not layers:
         print("heat-drift: the live histogram is empty (no routes recorded yet)", file=sys.stderr)
         return 1
-    idx = np.concatenate([np.arange(l * EXPERTS, (l + 1) * EXPERTS) for l in np.nonzero(layer_routes)[0]])
+    idx = [l * EXPERTS + e for l in layers for e in range(EXPERTS)]
     t_now, h_now = shares(rank, live, idx, a.tail, a.heads)
     t_best, h_best = shares(live, live, idx, a.tail, a.heads)
-    print(f"live routes {int(live[idx].sum())} over {len(idx) // EXPERTS} layers")
+    print(f"live routes {sum(live[i] for i in idx)} over {len(layers)} layers")
     print(f"active file:  tail {100 * t_now:5.2f}%  heads {100 * h_now:5.2f}% of live routes")
     print(f"re-ranked:    tail {100 * t_best:5.2f}%  heads {100 * h_best:5.2f}%")
     if 100 * t_now <= a.min_share or t_now <= a.ratio * max(t_best, 1e-9):
@@ -61,7 +67,9 @@ def main() -> int:
         return 0
     print(f"re-rank advised: the tail takes {t_now / max(t_best, 1e-9):.1f}x the routes it would with live heat")
     if a.write:
-        (live.max() - live).astype(np.uint32).tofile(a.write)
+        hi = max(live)
+        with open(a.write, "wb") as f:
+            f.write(array.array("I", (hi - v for v in live)).tobytes())
         print(f"wrote {a.write}; restart the launcher with --heat {a.write}")
     return 3
 

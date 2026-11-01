@@ -6,25 +6,30 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import numpy as np
+import array
 
 TOOL = Path(__file__).resolve().parents[3] / "tools/lab/radiance/heat-placement/heat-drift.py"
 L, E = 128, 512
 
 
-def hist(hot_experts: range, layers=range(4)) -> np.ndarray:
+def hist(hot_experts: range, layers=range(4)) -> list:
     """Counts with experts in `hot_experts` hot (1000 routes) and the rest cold (1), on `layers` only."""
-    h = np.zeros((L, E), np.uint32)
+    h = [0] * (L * E)
     for l in layers:
-        h[l, :] = 1
-        h[l, list(hot_experts)] = 1000
-    return h.reshape(-1)
+        for e in range(E):
+            h[l * E + e] = 1000 if e in hot_experts else 1
+    return h
 
 
-def run(active_counts: np.ndarray, live: np.ndarray, *extra: str) -> tuple[int, str, Path]:
+def write(path: Path, values) -> None:
+    path.write_bytes(array.array("I", values).tobytes())
+
+
+def run(active_counts: list, live: list, *extra: str) -> tuple:
     td = Path(tempfile.mkdtemp())
-    (active_counts.max() - active_counts).astype(np.uint32).tofile(td / "active.hot-first")
-    live.astype(np.uint32).tofile(td / "live.rank0")
+    top = max(active_counts)
+    write(td / "active.hot-first", [top - v for v in active_counts])
+    write(td / "live.rank0", live)
     r = subprocess.run([sys.executable, str(TOOL), str(td / "active.hot-first"), str(td / "live.rank0"),
                         "--tail", "400", "--heads", "1600", *extra], capture_output=True, text=True)
     return r.returncode, r.stdout + r.stderr, td
@@ -43,8 +48,9 @@ class HeatDrift(unittest.TestCase):
         rc, out, _ = run(active, live, "--write", str(new))
         self.assertEqual(rc, 3, out)
         self.assertIn("re-rank advised", out)
-        written = np.fromfile(new, dtype=np.uint32)
-        np.testing.assert_array_equal(written, live.max() - live)   # hot-first: max - count of the live counts
+        written = array.array("I"); written.frombytes(new.read_bytes())
+        hi = max(live)
+        self.assertEqual(list(written), [hi - v for v in live])   # hot-first: max - count of the live counts
         rc2, out2, _ = run(live, live)
         self.assertEqual(rc2, 0, out2)   # the live heat itself is a good file
 
@@ -57,7 +63,7 @@ class HeatDrift(unittest.TestCase):
         self.assertEqual(rc, 3, out)
 
     def test_empty_live_histogram_is_refused(self):
-        rc, out, _ = run(hist(range(0, 400)), np.zeros(L * E, np.uint32))
+        rc, out, _ = run(hist(range(0, 400)), [0] * (L * E))
         self.assertEqual(rc, 1)
         self.assertIn("empty", out)
 
