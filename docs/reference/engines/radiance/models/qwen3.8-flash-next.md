@@ -236,6 +236,40 @@ On this host GPU reads of host memory also contend: while XTX 0 pulls, the other
 rate (writes and CPU pushes into a card's VRAM through its resizable BAR do not), so helper 1 is about 0.2 ms slower a
 request than helper 0.
 
+### Multi-stream decode: the W4 decode GEMV on the 32-row path (2026-11-01)
+
+At 6 streams a decode step is 24 rows (6 x (1 + 3 MTP drafts)), above the helpers' pre-queued 8-row small lane, so it took the
+large lane and the grouped GEMM built for 2,000-row prefill. Per-op timing put ~46% of the run in `moe_mailbox_add` (the
+helper wait) and the helper trace gave ~0.59 ms of exposed wait a layer, ~28 ms of the 56 ms step; the XTX expert step was
+~470-520 us of it (activation read and result write ~30 us each, so streaming the results would not help). The launcher now
+sets `R3_MOE_WORKER_GEMV_W4H2=1` (packed-f16 W4 GEMV, sixteen-byte loads) and `R3_MOE_WORKER_GEMV_LARGE_ROWS=32` (large-lane
+steps up to 32 rows take it). flashnext-4gpu, 512-token prompts, 512 out, decode step time:
+
+| streams | before | W4H2 + 32 rows | engine decode after |
+|---|---|---|---|
+| 1 | 26.8 ms | 24.5-24.9 ms | 144-146 tok/s (acceptance differs) |
+| 2 | 31.6-32.1 | 28.5-28.9 | 176-201 |
+| 4 | 47.2-48.7 | 40.7-42.2 | 249-255 |
+| 6 | 55.1-56.3 | 45.9-48.5 | 330-342 (October: 302-342) |
+
+The XTX expert step went 470 -> 262 us a layer; the RX 6900 XT tail (its own kernel, 255 us, plus ~45 us each way on its x4
+link) is now last on 52% of steps, so balancing by measured cost (RHP09, RHP04) is the next lever. The old W4 GEMV on the
+32-row path alone gains nothing (it re-reads the expert's weights per route); a pre-queued 24-row lane is -10% at 4-6 streams
+and +7% at 1 (padding), the RAD12 result. Replaying 12 real 6-stream decode requests on one XTX (`replay-kernel-time.sh`, gate/up + down a
+request): old W4 GEMV 310 + 206 = 516 us, W4H2 185 + 155 = 340 us, the grouped GEMM ~343 us, and a multi-row W4H2 variant
+(one block an expert, four rows a pass; #506, closed) 267 + 162 = 429 us - a head helper's rows average ~1.5 an expert, so
+batching them loses more to restaging than it saves in weight reads. The worker harness's W4 CPU reference reports rel_l2
+~1.0 even for the default kernel (RAD15), so W4 GEMV correctness is judged by KLD. KLD (flashnext-4gpu with the combine, 64-token steps - the chunk minimum - with W4H2 on every step up to 64 rows,
+against the same at default kernels, rad18 reference): mean 0.0598 against 0.0660, median 0.0157 / 0.0161, p99 0.607 / 0.709,
+top-1 88.77% / 88.93%, perplexity ratio 1.000 / 0.995 - inside the run-to-run band (0.055-0.070), gate passed. Judge these A/Bs on step time: at temperature 0 the engine is not batch-invariant
+(multi-stream text differs run to run) and a kernel change alters the 1-stream text, so tok/s moves with draft acceptance.
+
+Also measured the same day: the decode attention split count (`RADIANCE_TUNE=attn_paged_gate_quant:splits=8..64`) changes the
+decode step by under 1% at 74K-315K, and the step grows only ~9% from 74K to 315K context (27.4 -> 29.8 ms at 1 stream), so
+long-context decode is not attention-bound at these lengths (an earlier per-call figure was inflated by `--profile-ops`). On
+the four-card layout six short prompts take 2.2 s to first token against 1.4 s on the two XTX alone: the tail straggles on
+small prefill batches.
+
 ### Live heat and the drift watch (RHP02, RHP05 stage A, 2026-11-01)
 
 The launcher records the route histogram by default (`--record-heat`, now in pinned host memory: 8 sessions 2,473 against
