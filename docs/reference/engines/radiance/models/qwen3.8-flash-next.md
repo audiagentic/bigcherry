@@ -236,6 +236,16 @@ On this host GPU reads of host memory also contend: while XTX 0 pulls, the other
 rate (writes and CPU pushes into a card's VRAM through its resizable BAR do not), so helper 1 is about 0.2 ms slower a
 request than helper 0.
 
+### Live heat and the drift watch (RHP02, RHP05 stage A, 2026-11-01)
+
+The launcher records the route histogram by default (`--record-heat`, now in pinned host memory: 8 sessions 2,473 against
+2,513 tok/s without it, inside the run-to-run spread) to `$BC_WORK_ROOT/flashnext/heat.live.rank0`, and prints the
+`heat-watch.py` command that checks whether the active `--heat` file still fits the traffic. The watch judges the last
+half hour, recommends a re-ranked file only when the RX 6900 XT tail takes more than 2.5% of the routes and 1.5x what a
+re-ranked file would give it, and never restarts the server (a restart drains every session). Matched heat measured -11% on
+the 42K probe where the tail had drifted to 6.85% of routes; heat recorded on one text did not help another (held-out:
++5%), so re-rank on the served workload's own heat.
+
 ### The chunked combine (RAD42, 2026-11-01)
 
 The per-helper stage trace (RAD40) showed that after the helpers' GEMMs the rows went write -> combine -> engine read
