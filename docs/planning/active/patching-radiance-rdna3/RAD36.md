@@ -67,3 +67,8 @@ changes the sum order). Full text: /work/development/tmp/bigcherry/rad32-gemv/gp
 ## Change Log
 
 - 2026-10-29T05:25:15.204887+00:00 (created-by): Created by agent
+
+## Ledger-events
+
+- chg_20261029_080817_radiance-updated-to-1130-th_5672
+- 2026-11-01T22:15:52.872320+00:00 (updated-by): Updated: section:ledger-events

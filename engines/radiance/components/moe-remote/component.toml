@@ -127,7 +127,7 @@ activation = "r3_moe_worker: R3_MOE_WORKER_GEMV_H2 on"
 [setting.R3_MOE_WORKER_GEMV_W4H2]
 default = "0"
 status = "evaluated"
-summary = "RAD14: the W4 (w4nl64) decode GEMV rebuilt like the FP8 one (sixteen-byte loads, byte-permute level lookup, v_dot2_f32_f16). Kernel time on real 4-row Flash-Next decode requests on one XTX 101 -> 77 us, output within rounding of the default kernel; but the Flash-Next stream A/B (R9700 engine + two XTX workers, MTP 3, two pairs) showed no end-to-end decode change at 2/4/6 streams and +5% at 1 stream confounded by different draft acceptance (0.68 vs 0.64). Kept off; the worker GEMV is not on Flash-Next's decode critical path."
+summary = "RAD14: the W4 (w4nl64) decode GEMV rebuilt like the FP8 one (sixteen-byte loads, byte-permute level lookup, v_dot2_f32_f16). In October it was measured only on the <=8-row small lane, where it is off the Flash-Next critical path (4-row kernel 101 -> 77 us, no end-to-end change). Paired with R3_MOE_WORKER_GEMV_LARGE_ROWS=32, so 9-32-row multi-stream decode steps (6 streams x MTP 3 = 24 rows) leave the grouped GEMM for it: XTX expert step 470 -> 262 us a layer, flashnext-4gpu decode step 1 stream 26.8 -> 24.5 ms, 4 streams 47.8 -> 41.3, 6 streams 55.9 -> 46.6 ms (engine decode ~282 -> 330-342 tok/s; 2026-11-01). The Flash-Next launcher sets both; KLD passed (mean 0.0598 vs 0.0660 control). Promotion to validated needs a single-variable ab-benchmark capture (GEMV_LARGE_ROWS=32 in both arms)."
 activation = "r3_moe_worker: R3_MOE_WORKER_GEMV_W4H2 on"
 
 [setting.R3_MOE_WORKER_GEMV_MR]
