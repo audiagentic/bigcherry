@@ -3,6 +3,7 @@
 #include "moe_lane_common.h"
 #include "moe_lane_front.h"
 #include "moe_lane_gemm.h"
+#include "moe_lane_quant.h"
 #include "moe_lane_reduce.h"
 #include "moe_lane_host.h"
 
@@ -712,7 +713,28 @@ public:
                 pi("M", routes), pi("n", mid_w()), pi("group", kGroup),
                 ps("dtype", "bf16"), ps("act", "silu")
             };
-            if (launch_on(gated_quant_,
+            /* the plugin's gated quantiser in a lane kernel that stops at the request's route count (moe_lane_quant.h): the
+             * plugin's form quantises every row of the lane's capacity. Read each call so a replay can compare. */
+            const char* lq_env = std::getenv("R3_MOE_WORKER_LANE_QUANT");
+            const bool lane_quant = (!lq_env || std::strcmp(lq_env, "0") != 0) &&
+                                    (gated_quant_ == gated_had_ || gated_quant_ == gated_plain_) && mid_w() % 4u == 0;
+            if (lane_quant) {
+                const uint32_t nkb = (uint32_t)((mid_w() + kGroup - 1) / kGroup);
+                const dim3 qb(std::min<uint32_t>(nkb, 32u) * 32u);
+                if (gated_quant_ == gated_had_)
+                    hipLaunchKernelGGL((lane_gated_quant<true>), dim3(routes), qb, 0, w.stream,
+                                       q, rank, sequence, rows, model_.layers, lane_shape_,
+                                       static_cast<const uint16_t*>(w.d_gu.p), static_cast<uint8_t*>(w.d_mid.p),
+                                       static_cast<float*>(w.d_mid_s.p), (uint32_t)mid_w(), nkb,
+                                       (uint32_t)(2 * mid_w()), (uint32_t)mid_w(), nkb);
+                else
+                    hipLaunchKernelGGL((lane_gated_quant<false>), dim3(routes), qb, 0, w.stream,
+                                       q, rank, sequence, rows, model_.layers, lane_shape_,
+                                       static_cast<const uint16_t*>(w.d_gu.p), static_cast<uint8_t*>(w.d_mid.p),
+                                       static_cast<float*>(w.d_mid_s.p), (uint32_t)mid_w(), nkb,
+                                       (uint32_t)(2 * mid_w()), (uint32_t)mid_w(), nkb);
+                if (!hip_ok(hipGetLastError(), "lane gated quant")) return -EIO;
+            } else if (launch_on(gated_quant_,
                           { tensor(w.d_gu.p, RAD_BF16, {routes, 2 * mid_w()}),
                             tensor(w.d_mid.p, RAD_F8E4M3, {routes, mid_w()}),
                             tensor(w.d_mid_s.p, RAD_F32, {routes, mid_w() / kGroup}),
@@ -912,6 +934,7 @@ private:
     const RadKernelInfo* moe_ = nullptr;
     const RadKernelInfo* had_quant_ = nullptr;
     const RadKernelInfo* gated_quant_ = nullptr;
+    const RadKernelInfo* gated_had_ = nullptr;   // the rotated form, so the lane kernel knows which it replaces
     const RadKernelInfo* gather_ = nullptr;
     /* The plain-E4M3 weight rows (RAD13): radiance's own fp8a8 grouped GEMM and the quantisers without the Hadamard rotation
      * (the rotated twins exist for four-bit weights only). Chosen by set_weight_format. */
@@ -1041,6 +1064,7 @@ private:
         moe_ = find("moe_gemm_q", "moe_gemm_w4a8");
         had_quant_ = find("had_quant_act_fp8", "had_quant_act_fp8");
         gated_quant_ = find("gated_had_quant_fp8", "gated_had_quant_fp8");
+        gated_had_ = gated_quant_;
         gather_ = find("moe_gather", "moe_gather_bf16");
         if (const RadKernelInfo* r = find("moe_gemm_q", "moe_gemm_fp8a8"); r && r->name && std::strcmp(r->name, "moe_gemm_fp8a8") == 0)
             moe_fp8_ = r;

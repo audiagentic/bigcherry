@@ -94,6 +94,8 @@ int main(int argc, char** argv) {
             std::fprintf(stderr, "r3_moe_worker: R3_MOE_AHALF on - activation tile widened to half at staging\n");
         if (is_on("R3_MOE_WORKER_VECIO", true))
             std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_VECIO on - 16-byte lane I/O\n");
+        if (is_on("R3_MOE_WORKER_LANE_QUANT", true))
+            std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_LANE_QUANT on - gated quantise bounded by the route count\n");
         if (is_on("R3_MOE_WORKER_SPARSE_ACT", true))
             std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_SPARSE_ACT on - sparse large-lane activation copy\n");
         if (is_on("R3_MOE_WORKER_FUSEROUTE", true))
