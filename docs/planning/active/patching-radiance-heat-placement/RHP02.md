@@ -128,3 +128,12 @@ own stream, the runtime's default stream for the zeroing hipMemset), i.e. extra 
 (RAD20 found the same on the XTX helpers). Test: count the engine process's KFD queues (/sys/class/kfd/kfd/proc/<pid>/queues)
 with and without --record-heat; if they differ, zero and copy the histogram on the engine's own stream instead.
 
+## Histogram in pinned host memory (2026-11-01, `runs/rhp02-host`)
+
+The route histogram moved from engine VRAM to pinned, mapped host memory, counted per step in LDS and added once an expert
+(no PCIe atomics: one block, steps in order); a snapshot is a CPU copy, with no HIP stream of its own. Same requests, same
+counts (21,532,920 routes, 0 cells differing). 42K probe on the chunked-combine build: recording 13.06 s, not recording
+13.69 s, old recording 13.79 s; the engine card settles 166.7 MiB free recording (168.8 not), against 139.2 with the old
+histogram. On this build the old recording's time cost was itself small; the earlier 5-24% was measured before #497. Either
+way recording is now cheap enough to leave on, which stage A (heat-drift.py on live counts) needs.
+
