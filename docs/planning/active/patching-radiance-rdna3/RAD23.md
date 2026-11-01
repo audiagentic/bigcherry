@@ -536,9 +536,11 @@ Remaining per large-lane request on the 14 GiB captures: gate/up ~710, down ~777
 
 ## Ledger-events
 
+
 - chg_20261101_090829_flash-next-prefill-with-the-rx_2169
 - 2026-11-01T09:08:33.034449+00:00 (updated-by): Updated: section:ledger-events
 
+- chg_20261101_221755_an-experimental-multi-row-4-bi_1994
 ## Status at the end of 2026-11-01
 
 flashnext-4gpu is the launcher default: the R9700 engine, both XTX heads at 22,528 MiB, the RX 6900 XT as a 14 GiB tail,
@@ -557,4 +559,4 @@ taken: f32 partials (-14% at 8 sessions), fp16 row-exponent partials (neutral), 
 in an x8 slot (its Gen4 x4 link carries every result row), the XTX grouped GEMM at ~1/3 of its matrix-core rate (the heads
 finish last on 62% of prefill layers), XTX 0's priority over other cards' host reads (needs root to read the config space),
 the R9700's 16-20 W idle (ASPM, root). Stage A of hot placement is in place recommend-only (#489, #500-#502).
-
+- 2026-11-01T22:17:59.750710+00:00 (updated-by): Updated: section:ledger-events
