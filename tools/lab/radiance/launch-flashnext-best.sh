@@ -16,7 +16,7 @@
 #
 # Which cards play which part is a layout (engines/radiance/layouts.toml, `bigcherry layout list|show NAME`), resolved against this host's device
 # inventory; card types (plugin, weight formats, few-rows kernel) are engines/radiance/archs.toml. --layout NAME (or FLASHNEXT_LAYOUT) picks one,
-# default flashnext-2xtx; --budget ARCH=MIB overrides the VRAM budget of the group using that architecture (e.g. --layout flashnext-2xtx-rdna2-tail
+# default flashnext-4gpu (all four cards; flashnext-2xtx leaves the RX 6900 XT out); --budget ARCH=MIB overrides the VRAM budget of the group using that architecture (e.g. --layout flashnext-2xtx-rdna2-tail
 # --budget gfx1030=4096). A layout that needs a card the host does not have, or a plugin the build lacks, stops here with the reason.
 #
 # Needs a radiance build of production source with the helper hand-off:
@@ -26,7 +26,8 @@
 #   bash tools/lab/radiance/launch-flashnext-best.sh [start] [--build DIR] [--port N] [--heat FILE] [--host-pool-mib N] [--chunk TOKENS] [--ngram-placement ram|disk|vram] [--kv-dtype fp8|fp8_v4|k6_v4] [--engine-arg ARG ...] [--ngram-device INDEX] [--max-model-len TOKENS] [--record-heat PREFIX [--record-period S]] [--gpu-power] [--layout NAME] [--budget ARCH=MIB]
 #   bash tools/lab/radiance/launch-flashnext-best.sh stop
 # Without --build, the newest build under $BC_WORK_ROOT/builds that has the helper binary is used.
-# --heat FILE: the route-heat file that ranks the experts, hottest first (uint32[128][512] = max - count of a recorded histogram; heat-placement/heat-invert.py
+# --heat FILE: the route-heat file that ranks the experts, hottest first (default $WORK/heat/flashnext-mixed.hot-first, C++/HIP source and
+# documentation recorded in RAD23 at equal weight; the RX 6900 XT tail only pays when it matches the workload, so record your own with --record-heat) (uint32[128][512] = max - count of a recorded histogram; heat-placement/heat-invert.py
 # makes one). --record-heat PREFIX: the engine counts every routed expert in VRAM and rewrites PREFIX.rank0 every --record-period seconds (default 30)
 # while serving: a recording run (the counting costs speed; do not serve production with it). Invert the file, restart with --heat and a larger
 # --budget (RHP10: workload-recorded heat plus gfx1100=23500 gave +34% prefill at 675K used context on a corpus it had not seen).
@@ -57,10 +58,10 @@ RUN=$WORK/flashnext
 PIDS=$RUN/pids
 SHM=/r3-moe-helper
 PORT=36080
-HEAT=$WORK/runs/perf51/heat.rank0.hot-first
+HEAT=$WORK/heat/flashnext-mixed.hot-first
 BUILD=""
 GPU_POWER=${GPU_POWER:-0}
-LAYOUT=${FLASHNEXT_LAYOUT:-flashnext-2xtx}
+LAYOUT=${FLASHNEXT_LAYOUT:-flashnext-4gpu}
 BUDGETS=()
 RECORD=""
 HOST_POOL_MIB=22528

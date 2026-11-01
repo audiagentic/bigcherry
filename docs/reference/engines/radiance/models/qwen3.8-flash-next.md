@@ -211,6 +211,31 @@ Decode holds its 92-122 range to about 290K of used context and then falls: 74 a
 tok/s at 32K to 1,850 at 288K. The spread inside the first rows is the text (how often the drafter is right), not the context.
 Random-word prompts decode slower (39 tok/s at 347K) because the drafter has nothing to predict.
 
+### All four cards, the launcher default: flashnext-4gpu (RAD23, 2026-11-01)
+
+`launch-flashnext-best.sh` now starts `flashnext-4gpu` unless `--layout` says otherwise: the R9700 engine, both XTX heads at
+22,528 MiB, the RX 6900 XT as a 14 GiB tail of the coldest experts, and the helper-row combine over all three helpers
+(`R3_MOE_WORKER_COMBINE=1`), with the mixed code+documentation heat file `$BC_WORK_ROOT/heat/flashnext-mixed.hot-first`. It needs
+the gfx1030 dot2 few-rows kernel (#486). Same build, mixed heat:
+
+| Layout | 8 sessions, 1.04M prompt tokens | 42K prefill + 64 decode, one request |
+|---|---|---|
+| flashnext-2xtx (the old default) | 1,353 tok/s | - |
+| 4 cards, 14 GiB tail, no combine (before #486) | 2,064 tok/s | 16.7 s |
+| 4 cards, 14 GiB tail, no combine | - | 15.6-16.0 s |
+| 4 cards, 10 GiB tail, combine | 2,003 tok/s | 13.7 s |
+| **flashnext-4gpu: 14 GiB tail, combine** | **2,369 tok/s** | 14.3 s |
+| 4 cards, 14 GiB tail, XTX 23,040 MiB, no combine | - | 15.6 s |
+
+The 42K figures come from `tools/lab/radiance/flashnext-probe.sh` (one request, about +-2% between runs). The 10 GiB tail
+wins a single request because the tail then finishes before the heads, but the 14 GiB tail wins with eight sessions: it
+saves expert swaps on the heads. Where a prefill still goes (engine `--profile-ops`, combine off): `moe_mailbox_add`
+55.6% (about 5 ms of waiting on the helpers and about 4 ms reading their rows over the R9700's Gen4 x4 link a 2048-row
+layer), dense GEMMs 10.5%, the engine's own MoE GEMMs 7.9%, publish 5.3%, attention and the delta-net layers about 7%.
+On this host GPU reads of host memory also contend: while XTX 0 pulls, the other CPU-attached cards get half their read
+rate (writes and CPU pushes into a card's VRAM through its resizable BAR do not), so helper 1 is about 0.2 ms slower a
+request than helper 0.
+
 ### A third helper on the RX 6900 XT (RAD23, 2026-10-31)
 
 The layout `flashnext-2xtx-rdna2-tail` (`launch-flashnext-best.sh --layout flashnext-2xtx-rdna2-tail`, size with `--budget gfx1030=N`) adds the
