@@ -23,14 +23,15 @@
 #   bigcherry build --lane radiance:stock:linux-radiance --experiment moe-remote-handoff
 #
 # Usage:
-#   bash tools/lab/radiance/launch-flashnext-best.sh [start] [--build DIR] [--port N] [--heat FILE] [--host-pool-mib N] [--chunk TOKENS] [--ngram-placement ram|disk|vram] [--kv-dtype fp8|fp8_v4|k6_v4] [--engine-arg ARG ...] [--ngram-device INDEX] [--max-model-len TOKENS] [--record-heat PREFIX [--record-period S]] [--gpu-power] [--layout NAME] [--budget ARCH=MIB]
+#   bash tools/lab/radiance/launch-flashnext-best.sh [start] [--build DIR] [--port N] [--heat FILE] [--host-pool-mib N] [--chunk TOKENS] [--ngram-placement ram|disk|vram] [--kv-dtype fp8|fp8_v4|k6_v4] [--engine-arg ARG ...] [--ngram-device INDEX] [--max-model-len TOKENS] [--record-heat PREFIX|off [--record-period S]] [--gpu-power] [--layout NAME] [--budget ARCH=MIB]
 #   bash tools/lab/radiance/launch-flashnext-best.sh stop
 # Without --build, the newest build under $BC_WORK_ROOT/builds that has the helper binary is used.
 # --heat FILE: the route-heat file that ranks the experts, hottest first (default $WORK/heat/flashnext-mixed.hot-first, C++/HIP source and
 # documentation recorded in RAD23 at equal weight; the RX 6900 XT tail only pays when it matches the workload, so record your own with --record-heat) (uint32[128][512] = max - count of a recorded histogram; heat-placement/heat-invert.py
-# makes one). --record-heat PREFIX: the engine counts every routed expert in VRAM and rewrites PREFIX.rank0 every --record-period seconds (default 30)
-# while serving. The counts sit in pinned host memory and cost no measurable speed (RHP02), so a server can record all the time
-# and tools/lab/radiance/heat-placement/heat-drift.py can check the active --heat file against them. Invert the file, restart with --heat and a larger
+# makes one). --record-heat PREFIX (default $WORK/flashnext/heat.live; off to disable): the engine counts every routed expert and rewrites
+# PREFIX.rank0 every --record-period seconds (default 60) while serving. The counts sit in pinned host memory and cost no measurable
+# speed (RHP02: 8 sessions 2,473 against 2,513 tok/s, inside the run-to-run spread), so it is on by default, and
+# tools/lab/radiance/heat-placement/heat-watch.py (the start message prints the command) says when the active --heat file stops fitting. Invert the file, restart with --heat and a larger
 # --budget (RHP10: workload-recorded heat plus gfx1100=23500 gave +34% prefill at 675K used context on a corpus it had not seen).
 # --host-pool-mib N: pinned host memory the expert and KV tiers share (default 22528; more gives the cache more of a long context: the engine log
 # reports how much of the worst case it backs).
@@ -64,7 +65,7 @@ BUILD=""
 GPU_POWER=${GPU_POWER:-0}
 LAYOUT=${FLASHNEXT_LAYOUT:-flashnext-4gpu}
 BUDGETS=()
-RECORD=""
+RECORD=$RUN/heat.live   # RHP02: on by default; --record-heat off disables
 HOST_POOL_MIB=22528
 CHUNK=2048
 NGRAM=ram
@@ -75,7 +76,7 @@ MAX_LEN=262144
 ROPE=none
 SEQS=8
 PREFIX_RESUME=nearest
-RECORD_PERIOD=30
+RECORD_PERIOD=60
 CMD=start
 [ $# -gt 0 ] && case "$1" in start|stop) CMD=$1; shift ;; esac
 while [ $# -gt 0 ]; do
@@ -184,9 +185,11 @@ COMMON=(
   R3_MOE_WORKER_SKIP_OWNED=1
   "${LAYOUT_COMMON[@]}"
 )
+[ "$RECORD" = off ] && RECORD=""
 if [ -n "$RECORD" ]; then
   COMMON+=(R3_MOE_WORKER_HISTOGRAM="$RECORD" R3_MOE_WORKER_HISTOGRAM_PERIOD_S="$RECORD_PERIOD")
-  echo "recording the route histogram to $RECORD.rank0 every ${RECORD_PERIOD}s (invert it with tools/lab/radiance/heat-placement/heat-invert.py for --heat)" >&2
+  echo "recording the route histogram to $RECORD.rank0 every ${RECORD_PERIOD}s; whether --heat still fits the traffic:" >&2
+  echo "  python3 tools/lab/radiance/heat-placement/heat-watch.py --heat $HEAT --live $RECORD.rank0 --out $RUN/heat.reranked.hot-first" >&2
 fi
 
 mkdir -p "$PIDS"
