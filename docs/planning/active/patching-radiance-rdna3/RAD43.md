@@ -59,3 +59,15 @@ Measurement first; only changes with a harness-measured gain go on.
 ## Change Log
 
 - 2026-11-01T11:26:24.954166+00:00 (created-by): Created by agent
+
+## XTX head, replay against live (2026-11-01, `runs/rad43-capx`)
+
+60 captures of helper 0's large-lane requests in the 42K probe (flashnext-4gpu), 20 replayed under rocprof on the XTX: the
+grouped GEMMs (gate/up and down, the unnamed kernel) 2 x 1,203 us = 2.41 ms a request, the reduce/write 722 us, the
+activation copy 383 us; live stage times 1,495 + 867 = 2.36 ms, 669, 429. So the head is kernel-bound, no contention gap
+(unlike the tail's). A request: ~9,300 routes over ~157 experts (rows an expert: 1-row 11, 2 8, 3-4 11, 5-8 15, 9-16 19,
+17-32 24, 33-64 28, 65+ 41) = ~46 GFMA in 2.4 ms, ~19 TFMA/s, about a third of the XTX's matrix-core rate; weights
+(~0.4 GB) would take ~0.4 ms. Levers: experts of <=16 rows (64 of 157) fill 16-row WMMA tiles mostly with padding, ~10%
+of the tile work (send them to the few-rows kernel within the same request: ~0.25 ms); the grouped GEMM's own efficiency
+(the larger prize, radiance's gfx1100 MoE GEMM). Heads are the last helper on 62% of prefill layers.
+
