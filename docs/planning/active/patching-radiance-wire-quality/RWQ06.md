@@ -36,7 +36,7 @@ New settings must have default, status, summary, activation in component.toml wh
 
 ## Files
 
-engines/radiance/components/libr3/component.toml; engines/radiance/recipes.toml; engines/radiance/patches/...; tools/tests/patch/test_radiance_patch_packages.py; relevant tools/tests/experiment tests; docs/reference/engines/radiance/RUNBOOK.md; engines/radiance/README.md; docs/evidence/RWQ05, RWQ06.
+engines/radiance/components/libr3/component.toml; engines/radiance/recipes.toml; engines/radiance/patches/...; tools/tests/patch/test_radiance_patch_packages.py; relevant tools/tests/experiment tests; docs/reference/engines/radiance/RUNBOOK.md; docs/archive/radiance/LAB_HISTORY.md; docs/evidence/RWQ05, RWQ06.
 
 ## Validation
 
