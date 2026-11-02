@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <cstddef>
 
 struct R3MoeShadowLayerStats {
     uint64_t rows = 0;
@@ -27,9 +28,21 @@ struct R3MoeShadowFirst {
     float helper[4]{};
 };
 
+/* Rank-local, GPU-resident cell. The queue-ordered setter overwrites it only
+ * after the previous pass's lane-1-to-lane-0 join. Mailbox requests capture
+ * epoch/slot before they are released to the helpers. */
+struct StepTicket {
+    uint32_t placement_epoch = 0;
+    uint8_t generation_slot = 0;
+    uint8_t reserved[3]{};
+    uint64_t ticket_id = 0;
+};
+static_assert(sizeof(StepTicket) == 16 && offsetof(StepTicket, ticket_id) == 8);
+
 struct R3MoeMailboxDevice {
     void* mailbox = nullptr;
     const uint8_t* owner = nullptr;
+    StepTicket* ticket = nullptr;  /* fixed device address, independent per engine rank */
     uint32_t* sequence = nullptr;   /* [kMaxSlots slots][2 lane classes] request counters */
     uint32_t* published = nullptr;  /* [kMaxSlots slots]: 0, or 1 + the lane class of this step's request; then [kMaxSlots]:
                                        the step's R3_MOE_WORKER_COMBINE generation, 0 when the step merges two rows; then
@@ -53,6 +66,10 @@ struct R3MoeMailboxDevice {
     uint32_t cpu_ref = 0;
     uint32_t combine = 0;   /* R3_MOE_WORKER_COMBINE=1: ask helper 0 for one combined fp16 row a token on the large lane */
 };
+
+/* Called by the engine hook before every run_pass. An ordinary (non-chained,
+ * barrier-bit) dispatch is used so queued tape plays cannot overtake it. */
+int r3_moe_ticket_launch(StepTicket* dst, StepTicket value, void* stream);
 
 extern "C" int r3_moe_mailbox_enabled(void);
 extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevice** out);

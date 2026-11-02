@@ -31,6 +31,9 @@ typedef struct BcMoeRemotePlugin {
      * step). Called from the engine's host scheduler loop, so it fires whether a pass is recorded or replayed;
      * a helper arms its GPU waits only inside a burst, and its queues drain to empty between bursts. */
     void (*burst)(int active);
+    /* Per-pass stream-ordered ticket setter; returns a negative RAD_E_* on
+     * failure. The engine calls this on lane 0 before capture/replay. */
+    int (*before_pass)(int rank, uint64_t parent_ticket_id, void* stream);
 } BcMoeRemotePlugin;
 /* Register the plugin (NULL unregisters). Layer maps published before registration are replayed to it.
  * Returns 0, or -1 when struct_size does not match. */
@@ -48,6 +51,10 @@ int bc_moe_remote_diag_build(void);
  * transitions between the two are forwarded to the plugin's burst callback, once each. */
 void bc_moe_remote_engine_step(void);
 void bc_moe_remote_engine_idle(void);
+/* Binding only: RadBatch::step + 1 is the parent ticket_id, including draft
+ * children and issue-ahead. No admission ledger/epoch retention exists yet:
+ * step 2 must bind an admitted epoch to every child before live commits. */
+int bc_moe_remote_before_pass(int rank, uint64_t parent_ticket_id, int64_t rows, void* stream);
 /* Block declare publishes a layer's map here; it is forwarded to the plugin and kept for replay. */
 void bc_moe_remote_layer_map(int layer, int n_expert, const int32_t* slot_of_expert);
 /* Placement (R3_MOE_WORKER_SKIP_OWNED): whether the engine may leave a routed expert unplaced because the
@@ -180,6 +187,21 @@ extern "C" void bc_moe_remote_engine_step(void) {
 
 extern "C" void bc_moe_remote_engine_idle(void) {
     if (g_burst_active.exchange(false, std::memory_order_acq_rel)) forward_burst(0);
+}
+
+/* This is called on the rank thread's lane-0 stream, never while tape
+ * capture is open. An intervening live dispatch makes AQL PlayRun::moved
+ * force a barrier bit on the next played packet. A pass joins lane 1 back
+ * into lane 0 before the next call can overwrite the cell. */
+extern "C" int bc_moe_remote_before_pass(int rank, uint64_t parent_ticket_id,
+                                         int64_t rows, void* stream) {
+    int (*setter)(int, uint64_t, void*) = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(g_mu);
+        setter = g_plugin.before_pass;
+    }
+    if (!setter) return bc_moe_remote_wanted(rows) ? -1 : 0;
+    return setter(rank, parent_ticket_id, stream);
 }
 
 extern "C" void bc_moe_remote_layer_map(int layer, int n_expert, const int32_t* slot_of_expert) {
@@ -594,6 +616,41 @@ PATCHES = (
                 guard=r"if \(bc_moe_remote_publish_placeholder\(cfg_\.max_tok, w, e, \*file_, r->mover, \(rad_weight\)i\)\) continue;",
                 expect_matches=1,
                 rationale="The single tier / stored-form check in the weight publish loop; a helper-owned placeholder is published before it, since nothing reads its bytes and its relayouted form would fail the check.",
+            ),
+        ),
+    ),
+    FilePatch(
+        path="core/runtime/ctx.cpp",
+        description="Bind every trunk/draft/issued-ahead pass to its parent ticket before tape capture or replay.",
+        edits=(
+            Edit(
+                id="include-bc-moe-remote-ctx",
+                anchor=r'^#include "ctx\.h"$',
+                text='\n#include "bc_moe_remote.h"',
+                guard=r'^#include "bc_moe_remote\.h"$',
+                expect_matches=1,
+                rationale="The context's own unique include is the stable place for the ticket hook ABI.",
+            ),
+            Edit(
+                id="bc-remote-ticket-before-pass",
+                anchor=r"^        const int rc = run_pass\(b\);\n        if \(rc < 0 && step_status_ >= 0\) step_status_ = rc;$",
+                mode="replace",
+                text="""        /* A parent step's numeric ID is shared by its trunk and MTP/draft
+         * passes (Scheduler::serial_batch/block_context/block_query). The
+         * scheduler increments it once per parent, including issued-ahead
+         * steps. This is binding, NOT admission: quiescence is step 2. */
+        const uint64_t ticket_id = b->step >= 0 ? (uint64_t)b->step + 1u : 0u;
+        const int bind = bc_moe_remote_before_pass(rank_, ticket_id, b->n_tok, stream_);
+        if (bind < 0) {
+            step_fail_ = "remote MoE step-ticket dispatch failed";
+            step_status_ = bind;
+        } else {
+            const int rc = run_pass(b);
+            if (rc < 0 && step_status_ >= 0) step_status_ = rc;
+        }""",
+                guard=r"const int bind = bc_moe_remote_before_pass\(rank_, ticket_id, b->n_tok, stream_\);",
+                expect_matches=1,
+                rationale="Only this call enters capture/replay; the setter goes on lane 0 before every pass, even the first live recording.",
             ),
         ),
     ),
