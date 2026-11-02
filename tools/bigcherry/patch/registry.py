@@ -1,7 +1,7 @@
 """Patch registry: one normalized, content-identified descriptor for every
 patch package in an engine-owned ``engines/<engine>/patches/`` (flat files are compatibility fixtures only).
 
-patch-system PA02 / RS01 (docs/planning/active/patch-system/
+patch-system PA02 / RS01 (docs/planning/active/patching-patch-system/
 PATCH_REFACTOR_RUNBOOK.md, sections 3-14). Before this module there were two
 implicit discovery notions (``patchset.discover_modules()``'s recursive
 ``*.py`` glob) and one physical representation; after it, the single rule

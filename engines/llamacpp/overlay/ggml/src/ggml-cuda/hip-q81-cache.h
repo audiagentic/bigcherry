@@ -38,7 +38,7 @@
 // caller exists, this code is entirely inert: its mere presence in the
 // build cannot change model output, by construction.
 //
-// docs/planning/active/rdna-boost-experiments/RD09.md has the full staged
+// docs/planning/active/patching-rdna-boost-experiments/RD09.md has the full staged
 // plan and the correctness matrix this cache must satisfy before any
 // performance claim is made.
 

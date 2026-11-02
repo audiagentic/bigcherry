@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import tempfile
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
 from bigcherry.hardware.linux_amd import AmdDiscoveryError, inventory_from_amdsmi_json
-
 
 LIST = {
     "gpu": {
@@ -66,6 +65,39 @@ class AmdSmiDiscoveryTests(unittest.TestCase):
         self.assertEqual(first.render_node, "/dev/dri/renderD128")
         self.assertEqual(first.launch_ordinal, 0)
         self.assertEqual(first.numa_node, 0)
+
+    def test_amdsmi_26_gpu_data_static_shape(self):
+        """amd-smi 26.x wraps static output as {"gpu_data": [...]}; the list output stays a bare list."""
+        listed = [
+            {"gpu": 0, "bdf": "0000:03:00.0", "uuid": "GPU-AAA", "hip_id": 0, "render": "renderD128"},
+            {"gpu": 1, "bdf": "0000:09:00.0", "uuid": "GPU-CCC", "hip_id": 1, "render": "renderD129"},
+        ]
+        static = {"gpu_data": [
+            {"gpu": 0, "asic": {"market_name": "AMD Radeon RX 7900 XTX", "target_graphics_version": "gfx1100"},
+             "bus": {"bdf": "0000:03:00.0"}, "vram": {"size": {"value": 24560, "unit": "MB"}}},
+            {"gpu": 1, "asic": {"market_name": "AMD Radeon AI PRO R9700", "target_graphics_version": "gfx1201"},
+             "bus": {"bdf": "0000:09:00.0"}, "vram": {"size": {"value": 32624, "unit": "MB"}}},
+        ]}
+        with tempfile.TemporaryDirectory() as temp:
+            inv = inventory_from_amdsmi_json(
+                listed, static, host_id="dev", platform_environment_hash="env", sysfs_root=Path(temp),
+            )
+        self.assertEqual([d.architecture for d in inv.devices], ["gfx1100", "gfx1201"])
+        self.assertEqual([d.model for d in inv.devices], ["AMD Radeon RX 7900 XTX", "AMD Radeon AI PRO R9700"])
+        self.assertEqual([d.launch_ordinal for d in inv.devices], [0, 1])
+        self.assertEqual([d.vram_bytes for d in inv.devices], [24560 * 1024**2, 32624 * 1024**2])
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "fake sysfs PCI names contain ':'")
+    def test_sysfs_vram_total_is_authoritative(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            for bdf, total in (("0000:03:00.0", 25753026560), ("0000:04:00.0", 25753026560)):
+                path = root / "bus" / "pci" / "devices" / bdf
+                path.mkdir(parents=True)
+                (path / "mem_info_vram_total").write_text(f"{total}\n", encoding="ascii")
+            inv = inventory_from_amdsmi_json(LIST, STATIC, host_id="dev", platform_environment_hash="env",
+                                             sysfs_root=root)
+        self.assertEqual([d.vram_bytes for d in inv.devices], [25753026560, 25753026560])
 
     def test_missing_stable_id_requires_explicit_weak_epoch(self):
         listed = {

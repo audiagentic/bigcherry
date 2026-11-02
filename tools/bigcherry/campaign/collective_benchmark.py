@@ -2,7 +2,7 @@
 arms, gated on GP07's qualification evidence.
 
 This is the OPTIMIZE side of the VALIDATE/OPTIMIZE split (GP08,
-docs/planning/active/gpu-collectives/GP08.md) -- GP07's rccl_qualify.py/
+docs/planning/active/run-gpu-collectives/GP08.md) -- GP07's rccl_qualify.py/
 rccl_qualify_campaign.py answer "is this (RCCL revision, topology) safe to
 run at all"; this module answers "given a topology already proven safe,
 which provider is actually fastest" using real end-to-end inference

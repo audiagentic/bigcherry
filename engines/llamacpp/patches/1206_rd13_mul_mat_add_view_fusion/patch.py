@@ -15,7 +15,7 @@ external-sources.toml by tools/tests/test_external_sources.py):
                      "CUDA: fuse mul_mat + add through a view node"
   reviewed snapshot: v2 -- head 9e46e1fdc7a880f9ae9a2f9a693ae3e14c142a22
                      on base 4df29be4f4c3673f428170fda944a5b19f743bb8
-  plan item:         RD13 (docs/planning/active/rdna-boost-experiments/RD13.md)
+  plan item:         RD13 (docs/planning/active/patching-rdna-boost-experiments/RD13.md)
   mainline status:   NOT merged into ggml-org/llama.cpp master as of tip
                      6d0549831 (git cherry patch-id check, 2026-08-18)
 
