@@ -39,9 +39,14 @@ struct StepTicket {
 };
 static_assert(sizeof(StepTicket) == 16 && offsetof(StepTicket, ticket_id) == 8);
 
-/* One completion slot per outstanding parent per rank. Its allocation is
- * current parent + run-ahead depth, matching AdmissionLedger::capacity().
- * The GPU writes fields before publishing ticket_id with a system fence. */
+/* One completion slot per outstanding parent per rank, indexed by
+ * ticket_id % capacity (capacity = AdmissionLedger::capacity(): current
+ * parent + run-ahead depth). Two rings of this layout per rank:
+ *  - device memory: the ticket setter arms the slot on a parent's first pass;
+ *    publish and finish count with device-scope atomics, no host traffic;
+ *  - host-mapped: once per parent step the seal kernel copies the device slot
+ *    there (fields, then ticket_id with a system-scope release) ahead of the
+ *    parent's terminal event; only the host ledger reads it. */
 struct ConsumptionStamp {
     uint64_t ticket_id = 0;
     uint32_t placement_epoch = 0;
@@ -50,11 +55,14 @@ struct ConsumptionStamp {
     uint32_t consumed_count = 0;
 };
 static_assert(sizeof(ConsumptionStamp) == 24);
+namespace r3 { namespace moe_shm { struct ConsumedRecords; } }
 struct R3MoeMailboxDevice {
     void* mailbox = nullptr;
     const uint8_t* owner = nullptr;
     StepTicket* ticket = nullptr;  /* fixed device address, independent per engine rank */
-    ConsumptionStamp* consumed = nullptr;  /* mapped coherent rank-local completion ring */
+    ConsumptionStamp* consumed = nullptr;  /* mapped coherent rank-local completion ring (seal kernel writes) */
+    ConsumptionStamp* stamps = nullptr;    /* device-memory counting ring, same index */
+    r3::moe_shm::ConsumedRecords* consumed_rec = nullptr;  /* device memory: last consumed request a lane, last combine */
     uint32_t consumed_capacity = 0;
     uint32_t* sequence = nullptr;   /* [kMaxSlots slots][2 lane classes] request counters */
     uint32_t* published = nullptr;  /* [kMaxSlots slots]: 0, or 1 + the lane class of this step's request; then [kMaxSlots]:
@@ -82,7 +90,13 @@ struct R3MoeMailboxDevice {
 
 /* Called by the engine hook before every run_pass. An ordinary (non-chained,
  * barrier-bit) dispatch is used so queued tape plays cannot overtake it. */
-int r3_moe_ticket_launch(StepTicket* dst, StepTicket value, void* stream);
+int r3_moe_ticket_launch(const R3MoeMailboxDevice* d, StepTicket value, void* stream);
+/* After the parent's last GPU effect on this rank, before its terminal event:
+ * one single-thread kernel copies the parent's device stamp and the rank's
+ * consumed lane/combine records to host-mapped memory (posted stores, one
+ * system-scope release). The terminal event's system-scope release then makes
+ * them visible to the host before the event reads complete. */
+int r3_moe_seal_launch(const R3MoeMailboxDevice* d, StepTicket value, void* stream);
 
 /* Controller-facing quiescence API. Absolute CLOCK_MONOTONIC nanosecond
  * deadline; only these APIs wait. No GPU device synchronization is used. */

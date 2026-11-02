@@ -261,6 +261,24 @@ struct alignas(64) CombineSignal {
 };
 static_assert(sizeof(CombineSignal) == 128);
 
+/* Engine-GPU consumption records, rank-local device memory (never mapped).
+ * mailbox_add_finish_kernel updates them every layer without host traffic;
+ * the per-parent seal kernel copies changed records into LaneSignal::consumed_*
+ * and CombineSignal::result_consumed_* (what the quiescence check reads).
+ * `flushed` is the sequence/generation the seal last copied. */
+struct ConsumedRecord {
+    uint32_t sequence;
+    uint32_t slot;
+    uint64_t epoch;
+    uint32_t flushed;
+    uint32_t reserved;
+};
+static_assert(sizeof(ConsumedRecord) == 24);
+struct ConsumedRecords {
+    ConsumedRecord lane[kLanes];
+    ConsumedRecord combine;
+};
+
 /* R3_MOE_WORKER_COMBINE, chunked (RAD42): a large-lane step's rows in chunks of kCombineChunkRows. Helper k's reduce kernel
  * stores its request sequence in seq[k][c] once every row of chunk c is written (system-scope release from its GPU);
  * helper 0's combine waits for seq[k][c] of every helper with a request, sums the chunk and stores the step's

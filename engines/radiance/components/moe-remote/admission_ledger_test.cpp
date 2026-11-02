@@ -1,5 +1,6 @@
 #include "admission_ledger.h"
 #include "admission_completion.h"
+#include "consumption_ring.h"
 #include <atomic>
 #include <cassert>
 #include <chrono>
@@ -28,59 +29,103 @@ StubEvents::Event StubEvents::last = nullptr;
 int StubEvents::created = 0, StubEvents::destroyed = 0, StubEvents::records = 0, StubEvents::queries = 0;
 using Completion = r3::admission::RankCompletion<StubEvents>;
 
-/* Ledger::poll with per-rank pooled events and consumption stamps. */
+/* One rank's GPU, in stream order, with the kernels' counting steps:
+ * set_ticket arms the device slot (consumption::arm), each publish counts into
+ * the pass's own slot and each finish consumes one, and the seal copies the
+ * device slot to the host-mapped ring (fields, then ticket_id). */
+struct RankGpu {
+    static constexpr uint32_t cap = 3;
+    ConsumptionStamp dev[cap]{};
+    ConsumptionStamp host[cap]{};
+    StepTicket cell{};
+    unsigned unconsumed = 0;                   /* published requests awaiting their finish */
+    void set_ticket(const StepTicket& t) { cell = t; r3::consumption::arm(dev, cap, t); }
+    void publish() {
+        ConsumptionStamp& s = dev[cell.ticket_id % cap];
+        check(r3::consumption::owns(s, cell.ticket_id, cell.placement_epoch, cell.generation_slot),
+              "publish counts only into its own parent's slot");
+        ++s.published_count; ++unconsumed;
+    }
+    void finish() {
+        ConsumptionStamp& s = dev[cell.ticket_id % cap];
+        check(unconsumed && r3::consumption::owns(s, cell.ticket_id, cell.placement_epoch, cell.generation_slot),
+              "finish consumes only its own parent's request");
+        ++s.consumed_count; --unconsumed;
+    }
+    /* A pass: one request a layer, each consumed by that layer's add. */
+    void pass(const StepTicket& t, unsigned layers) {
+        set_ticket(t);
+        for (unsigned l = 0; l < layers; ++l) { publish(); finish(); }
+    }
+    void seal(uint64_t id) {
+        const ConsumptionStamp s = dev[id % cap];
+        check(s.consumed_count <= s.published_count, "seal: consumed never exceeds published");
+        ConsumptionStamp& o = host[id % cap];
+        o.placement_epoch = s.placement_epoch; o.generation_slot = s.generation_slot;
+        o.published_count = s.published_count; o.consumed_count = s.consumed_count;
+        o.ticket_id = s.ticket_id;
+    }
+};
+
+/* Ledger::poll with per-rank pooled events and sealed consumption stamps:
+ * two ranks, MTP passes sharing their parent's slot, a run-ahead parent in
+ * flight beside an unretired one, and slot reuse across the ring. */
 static void completion_ring() {
     using S = StubEvents;
-    constexpr size_t cap = 3;
-    ConsumptionStamp stamps[2][cap]{};
+    constexpr uint32_t cap = RankGpu::cap;
+    constexpr unsigned layers = 4, mtp = 3;     /* trunk + 3 draft passes a parent */
+    RankGpu gpu[2];
     Completion rank[2];
     Ledger q(cap);
     check(q.initialize(5,1), "completion fixture");
-    check(rank[0].prepare(cap, stamps[0]) && rank[1].prepare(cap, stamps[1]) && S::created == 2*(int)cap,
+    check(rank[0].prepare(cap, gpu[0].host) && rank[1].prepare(cap, gpu[1].host) && S::created == 2*(int)cap,
           "one event per ring slot per rank, made once");
-    check(!rank[0].prepare(cap, stamps[0]), "pool is prepared once");
-    void* stream = &stamps;
+    check(!rank[0].prepare(cap, gpu[0].host), "pool is prepared once");
+    void* stream = &gpu;
     std::map<uint64_t, int*> ev[2];
     auto prove = [&](const StepTicket& t, uint32_t r) { return rank[r].prove(t); };
-    /* Simulate one rank's parent: armed per pass, one request published and consumed. */
-    auto run = [&](const StepTicket& t, uint32_t r, unsigned passes) {
-        for (unsigned p = 0; p < passes; ++p) check(rank[r].arm(t), "arm every pass");
-        ConsumptionStamp& s = stamps[r][t.ticket_id % cap];
-        ++s.published_count;
+    /* The engine's per-parent sequence on one rank: before_pass + pass per pass. */
+    auto passes = [&](const StepTicket& t, uint32_t r, unsigned n) {
+        for (unsigned p = 0; p < n; ++p) { check(rank[r].arm(t), "arm every pass"); gpu[r].pass(t, layers); }
+    };
+    /* seal(): the seal kernel then the terminal event on the same stream. */
+    auto seal = [&](const StepTicket& t, uint32_t r) {
+        gpu[r].seal(t.ticket_id);
         check(rank[r].record(t.ticket_id, stream), "terminal record");
         ev[r][t.ticket_id] = S::last;
         check(!rank[r].record(t.ticket_id, stream), "one terminal record per parent and rank");
     };
-    auto finish = [&](const StepTicket& t, uint32_t r) {  /* the GPU reaches the event */
-        ++stamps[r][t.ticket_id % cap].consumed_count;
-        *ev[r][t.ticket_id] = 1;
-    };
+    auto reach = [&](const StepTicket& t, uint32_t r) { *ev[r][t.ticket_id] = 1; };   /* the GPU passes the event */
     StepTicket a{}, b{};
     check(q.admit(2,&a)==R::Ok && q.bind(a.ticket_id,1), "parent a");
-    run(a,0,3); run(a,1,3);
-    check(stamps[0][a.ticket_id%cap].published_count==1, "later passes of a parent keep its stamp");
+    for (uint32_t r = 0; r < 2; ++r) { passes(a, r, 1 + mtp); seal(a, r); }
+    for (uint32_t r = 0; r < 2; ++r)
+        check(gpu[r].host[a.ticket_id%cap].published_count == (1 + mtp) * layers &&
+              gpu[r].host[a.ticket_id%cap].consumed_count == (1 + mtp) * layers,
+              "MTP passes count into their parent's one slot, exactly");
+    /* Run-ahead: b's first pass is issued behind a's seal, before a retires. */
     check(q.try_admit(2,&b)==R::Ok && q.bind(b.ticket_id,2), "ahead parent b");
-    run(b,0,2); run(b,1,2);
+    for (uint32_t r = 0; r < 2; ++r) passes(b, r, 1);
+    check(gpu[0].host[a.ticket_id%cap].published_count == (1 + mtp) * layers, "b never touches a's sealed stamp");
     const int before = S::queries;
     check(q.poll(prove) && S::queries==before, "nothing is queried before host completion");
-    check(q.host_complete(a.ticket_id) && q.host_complete(b.ticket_id), "host complete");
-    check(q.poll(prove) && S::queries==before+2 && q.outstanding()==2,
-          "a pending rank is not queried for younger parents");
-    finish(b,0); finish(b,1);
+    check(q.host_complete(a.ticket_id), "host complete a");
+    check(q.poll(prove) && S::queries==before+2 && q.outstanding()==2, "pending events keep a");
+    for (uint32_t r = 0; r < 2; ++r) { passes(b, r, mtp); seal(b, r); }
+    check(q.host_complete(b.ticket_id), "host complete b");
+    reach(b,0); reach(b,1);
     check(q.poll(prove) && q.outstanding()==2, "younger parent cannot retire first");
-    *ev[0][a.ticket_id] = 1;          /* event done, request not yet consumed */
-    *ev[1][a.ticket_id] = 1;
-    ++stamps[1][a.ticket_id%cap].consumed_count;
-    check(q.poll(prove) && q.outstanding()==2, "complete event without consumed proof stays pending");
-    ++stamps[0][a.ticket_id%cap].consumed_count;
+    reach(a,1);
+    check(q.poll(prove) && q.outstanding()==2, "every rank's event is needed");
+    reach(a,0);
     check(q.poll(prove) && q.outstanding()==0, "in-order retirement on all three predicates");
-    /* Steady state: many parents through the same slots, no new events. */
+    /* Steady state: parents cycle through every slot, re-armed each time. */
     for (int i = 0; i < 50; ++i) {
         StepTicket t{};
         check(q.admit(2,&t)==R::Ok && q.bind(t.ticket_id,10+i), "steady admit");
-        run(t,0,1); run(t,1,1);
+        for (uint32_t r = 0; r < 2; ++r) { passes(t, r, 1 + (unsigned)(i % 3)); seal(t, r); }
         check(q.host_complete(t.ticket_id), "steady host");
-        finish(t,0); finish(t,1);
+        reach(t,0); reach(t,1);
         check(q.poll(prove) && q.outstanding()==0, "steady retire");
     }
     check(S::created == 2*(int)cap, "no event created in the steady state");
@@ -90,6 +135,44 @@ static void completion_ring() {
     *S::last = 1;
     check(rank[1].record(c.ticket_id, stream), "recorded");
     check(q.host_complete(c.ticket_id) && !q.poll(prove) && q.stopped(), "complete event for an unarmed rank faults closed");
+
+    /* A request still unconsumed at the seal: the sealed counts differ and the
+     * parent never retires, even after its event completes. */
+    Ledger u(cap);
+    RankGpu g1;
+    Completion r1;
+    check(u.initialize(7,0) && r1.prepare(cap, g1.host) && u.admit(1,&c)==R::Ok && u.bind(c.ticket_id,1), "unconsumed fixture");
+    check(r1.arm(c), "arm");
+    g1.set_ticket(c); g1.publish(); g1.publish(); g1.finish();
+    g1.seal(c.ticket_id);
+    check(r1.record(c.ticket_id, stream), "record");
+    *S::last = 1;
+    auto prove1 = [&](const StepTicket& t, uint32_t) { return r1.prove(t); };
+    check(u.host_complete(c.ticket_id) && u.poll(prove1) && u.outstanding()==1,
+          "a published request without its finish keeps the parent");
+    /* A stamp sealed for an older parent of the same slot does not prove this one. */
+    Ledger o(cap);
+    RankGpu g2;
+    Completion r2;
+    StepTicket d{};
+    check(o.initialize(8,0) && r2.prepare(cap, g2.host), "stale fixture");
+    for (int i = 0; i < 4; ++i) {   /* id 4 reuses id 1's slot */
+        check(o.admit(1,&d)==R::Ok && o.bind(d.ticket_id,i), "stale admit");
+        check(r2.arm(d), "stale arm");
+        g2.pass(d, layers);
+        if (i < 3) {
+            g2.seal(d.ticket_id);
+            check(r2.record(d.ticket_id, stream), "stale record");
+            *S::last = 1;
+            check(o.host_complete(d.ticket_id) && o.poll([&](const StepTicket& t, uint32_t) { return r2.prove(t); }) &&
+                  o.outstanding()==0, "stale retire");
+        }
+    }
+    check(r2.record(d.ticket_id, stream), "record without seal");   /* seal skipped: host slot still holds id 1 */
+    *S::last = 1;
+    check(o.host_complete(d.ticket_id) && o.poll([&](const StepTicket& t, uint32_t) { return r2.prove(t); }) &&
+          o.outstanding()==1, "an older parent's sealed stamp never proves a newer one");
+
     Ledger e(cap);
     check(e.initialize(6,0) && e.admit(1,&c)==R::Ok && e.bind(c.ticket_id,1), "error fixture");
     Completion r0;
@@ -100,9 +183,10 @@ static void completion_ring() {
           !e.poll([&](const StepTicket& t, uint32_t) { return r0.prove(t); }) && e.stopped(),
           "event query error faults closed");
     for (Completion& r : rank) r.release();
-    r0.release();
+    r0.release(); r1.release(); r2.release();
     check(S::destroyed == S::created, "every pooled event destroyed once");
 }
+
 int main() {
     completion_ring();
     Ledger q(0);

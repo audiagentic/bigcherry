@@ -1,6 +1,7 @@
 /* One engine rank's per-parent completion evidence: a terminal event and an
- * arming record per admission-ring slot, beside that rank's mapped
- * ConsumptionStamp ring. Card-free; the event API is a policy so the hook
+ * arming record per admission-ring slot, beside that rank's host-mapped
+ * ConsumptionStamp ring. The GPU counts in a device-memory ring and the
+ * per-parent seal kernel copies the parent's slot here, ahead of the event. Card-free; the event API is a policy so the hook
  * binds radiance's rad_event_* and tests bind a stub.
  *
  * Everything is sized once from the ledger's derived capacity, before the
@@ -10,10 +11,9 @@
  * completed. The steady state creates, destroys and allocates nothing.
  *
  * Threads: arm() runs on the rank thread before each pass, record() on the
- * scheduler thread after the parent's last GPU effect, prove() under the
- * ledger lock from whichever thread polls. The arming/recording words are
- * release-stored after the stamp write / event record and acquire-loaded by
- * prove(). See ADMISSION.md.
+ * scheduler thread after the parent's seal kernel, prove() under the ledger
+ * lock from whichever thread polls. The arming/recording words are
+ * release-stored and acquire-loaded by prove(). See ADMISSION.md.
  */
 #pragma once
 #include "admission_ledger.h"
@@ -60,14 +60,13 @@ public:
     }
     bool ready() const { return ready_.load(std::memory_order_acquire); }
 
-    /* The first pass of a parent on this rank resets its stamp slot; later
-     * passes of the same parent (history, draft, issue-ahead) keep it. */
+    /* Notes that this rank ran a pass of the parent; the ticket setter arms
+     * the device counting slot in the same stream order. */
     bool arm(const StepTicket& t) {
         if (!ready()) return false;
         const size_t i = t.ticket_id % capacity_;
-        if (armed_[i].load(std::memory_order_relaxed) == t.ticket_id) return true;
-        stamps_[i] = ConsumptionStamp{t.ticket_id, t.placement_epoch, t.generation_slot, 0, 0};
-        armed_[i].store(t.ticket_id, std::memory_order_release);
+        if (armed_[i].load(std::memory_order_relaxed) != t.ticket_id)
+            armed_[i].store(t.ticket_id, std::memory_order_release);
         return true;
     }
     /* Exactly one terminal record per parent and rank. */
@@ -80,8 +79,9 @@ public:
         return true;
     }
     /* Proven needs: this parent's own terminal event complete, the rank armed
-     * for it, and its stamp matching ticket/epoch/slot with published equal to
-     * consumed. A complete event without the matching stamp stays pending. */
+     * for it, and its sealed stamp matching ticket/epoch/slot with published
+     * equal to consumed. A complete event without the matching stamp stays
+     * pending. */
     Ledger::Proof prove(const StepTicket& t) const {
         using P = Ledger::Proof;
         if (!ready()) return P::Pending;

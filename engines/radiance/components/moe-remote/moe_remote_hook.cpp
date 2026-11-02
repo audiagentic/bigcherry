@@ -38,6 +38,8 @@ struct RankState {
     uint8_t* owner = nullptr;
     StepTicket* ticket = nullptr;
     ConsumptionStamp* consumed_host = nullptr;
+    ConsumptionStamp* stamps = nullptr;          /* device-memory counting ring */
+    ConsumedRecords* consumed_rec = nullptr;     /* device-memory consumed lane/combine records */
     uint32_t* sequence = nullptr;
     uint32_t* published = nullptr;
     uint16_t* mask_ref = nullptr;
@@ -230,15 +232,15 @@ int host_done_ticket(StepTicket ticket) {
 int before_pass(int rank, StepTicket value, int64_t /*remote_expected*/, void* stream) {
     if (rank < 0 || rank >= (int)kMaxEngineRanks || !stream ||
         !g.ledger.valid(value, (uint32_t)rank)) return RAD_E_STATE;
-    StepTicket* dst = nullptr;
+    const R3MoeMailboxDevice* dev = nullptr;
     {
         std::lock_guard<std::mutex> lock(g.mu);
         if (!g.hdr || !g.pinned || !g.rank[rank].ready || !g.rank[rank].ticket ||
             load(&g.hdr->helper_fault)) return RAD_E_STATE;
-        dst = g.rank[rank].ticket;
+        dev = &g.rank[rank].dev;
         if (!g.completion[rank].arm(value)) return RAD_E_STATE;
     }
-    return r3_moe_ticket_launch(dst, value, stream);
+    return r3_moe_ticket_launch(dev, value, stream);   /* also arms the device counting slot */
 }
 
 /* Distinct events per admitted parent AND per rank, recorded by the
@@ -249,6 +251,13 @@ int rank_done_ticket(int rank, StepTicket ticket, void* stream) {
     if (!stream || rank < 0 || rank >= (int)kMaxEngineRanks ||
         !g.ledger.valid(ticket, (uint32_t)rank)) return RAD_E_STATE;
     std::lock_guard<std::mutex> lock(g.mu);
+    /* The seal copies the parent's device counts to the host-mapped stamp; the event recorded behind it is the proof
+     * that they (and every earlier effect of the parent) reached host-visible memory. */
+    if (!g.rank[rank].ready || r3_moe_seal_launch(&g.rank[rank].dev, ticket, stream) != RAD_OK) {
+        std::fprintf(stderr, "libr3moe: parent rank seal kernel launch failed\n");
+        g.ledger.fault();
+        return RAD_E_DEVICE;
+    }
     if (!g.completion[rank].record(ticket.ticket_id, stream)) {
         std::fprintf(stderr, "libr3moe: record parent rank completion: rad_event_record failed or repeated\n");
         g.ledger.fault();
@@ -678,6 +687,8 @@ void close_mailbox() {
         if (s.owner) (void)hipFree(s.owner);
         if (s.ticket) (void)hipFree(s.ticket);
         if (s.consumed_host) (void)hipHostFree(s.consumed_host);
+        if (s.stamps) (void)hipFree(s.stamps);
+        if (s.consumed_rec) (void)hipFree(s.consumed_rec);
         s = RankState{};
     }
     if (g.engine_register) (void)g.engine_register(nullptr);
@@ -913,8 +924,15 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
                 "rank parent consumption ring") ||
         !hip_ok(hipHostGetDevicePointer(reinterpret_cast<void**>(&s.dev.consumed),
                                        s.consumed_host, 0), "map consumption ring") ||
+        !hip_ok(hipMalloc(reinterpret_cast<void**>(&s.stamps), consume_bytes), "device counting ring") ||
+        !hip_ok(hipMemset(s.stamps, 0, consume_bytes), "zero device counting ring") ||
+        !hip_ok(hipMalloc(reinterpret_cast<void**>(&s.consumed_rec), sizeof(ConsumedRecords)),
+                "device consumed records") ||
+        !hip_ok(hipMemset(s.consumed_rec, 0, sizeof(ConsumedRecords)), "zero device consumed records") ||
         !rank_completion_ok(g.completion[rank].prepare(g.ledger.capacity(), s.consumed_host))) {
         if (s.consumed_host) (void)hipHostFree(s.consumed_host);
+        if (s.stamps) (void)hipFree(s.stamps);
+        if (s.consumed_rec) (void)hipFree(s.consumed_rec);
         if (shadow_first) (void)hipFree(shadow_first);
         if (shadow_stats) (void)hipFree(shadow_stats);
         if (s.mask_ref) (void)hipFree(s.mask_ref);
@@ -928,6 +946,8 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
     }
     std::memset(s.consumed_host, 0, consume_bytes);
     s.dev.consumed_capacity = (uint32_t)g.ledger.capacity();
+    s.dev.stamps = s.stamps;
+    s.dev.consumed_rec = s.consumed_rec;
     s.device = device;
     s.dev.mailbox = dev_map;
     s.dev.owner = s.owner;

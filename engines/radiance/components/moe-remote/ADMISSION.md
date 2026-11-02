@@ -31,11 +31,57 @@ A parent retires in admission order only after all three predicates hold:
 * Every rank's matching ticket/epoch/slot consumption proof, with equal
   published-request and consumed-request counts. Zero requests need no ACK.
 
-mailbox_add_finish_kernel publishes each used lane's consumed epoch/slot and
-then its sequence, and the combine generation after its epoch/slot. It
-updates the per-parent consumption stamp before clearing published. The
-terminal event fences those writes. A later layer cannot substitute for an
-unconsumed earlier request.
+### Where the consumption proof is counted (consumption_ring.h)
+
+Per layer the mailbox kernels add no host-mapped traffic beyond main's; the
+proof is counted in rank-local device memory and copied to the host once per
+parent step.
+
+* Each rank owns a device-memory ConsumptionStamp ring, ticket_id % capacity
+  like the host-mapped one. The ticket setter that before_pass launches on
+  every pass arms the slot on the parent's first pass on that rank
+  (consumption::arm); later passes of the same parent keep its counts.
+* mailbox_publish_kernel checks the slot belongs to its pass's ticket and adds
+  one to published_count per released helper request (device-scope atomic,
+  no returned value). mailbox_add_finish_kernel checks the same slot from the
+  pass's ticket copy, adds one to consumed_count per lane the pass published,
+  and records the lane's (and a combined step's) consumed sequence with the
+  pass's epoch/slot in ConsumedRecords, also device memory.
+* mailbox_wait_helpers keeps main's acquire of done_sequence and reads the
+  helper's completion epoch/slot/sequence with relaxed loads issued alongside
+  main's status read, compared against the pass's ticket copy: no extra
+  serialized round trip.
+* At seal, before the parent's terminal event on each rank,
+  mailbox_seal_kernel copies the changed lane/combine records into
+  LaneSignal::consumed_* and CombineSignal::result_consumed_* (the quiescence
+  check's words) and the parent's slot into the host-mapped stamp, ticket_id
+  last with a system-scope release. The terminal event (system-scope release)
+  follows on the same stream, so a complete event implies the sealed stamp is
+  visible.
+
+The counts are exact per (parent, rank):
+
+* Stream order on a rank is: parent P's passes (trunk, history, MTP/draft),
+  P's seal and event, then the run-ahead parent P+1's setter and passes. Every
+  publish and finish of P runs between P's setter and P's seal, and counts
+  into P's slot: each kernel checks the slot holds its own pass's ticket.
+* P+1 runs ahead of P's retirement in its own slot: the ledger never admits
+  P + capacity while P is live, so two outstanding parents never share a slot,
+  and the setter's reset of a slot happens after its previous owner was
+  sealed and retired.
+* Each released request adds exactly one to published_count before the
+  helper is signalled, and its finish adds exactly one to consumed_count after
+  the helper's done word and the add. The seal therefore sees
+  published == consumed iff every request P published on that rank was
+  consumed; it traps if consumed ever exceeds published. A wrap would need
+  2^32 publications by one parent on one rank, far beyond passes x layers x
+  helpers.
+* Ranks count independently in their own rings, and each rank's lanes are its
+  own (a two-rank engine uses its rank slot; several helpers serve only a
+  one-rank engine), so the lane records never race across ranks.
+* A stale host stamp (an older parent of the same slot, or a rank that never
+  sealed) has a different ticket_id and never proves a newer parent; a
+  sealed stamp with an unconsumed request keeps its parent pending.
 
 ## Capacity derivation at the pinned engine (4a61d72)
 
