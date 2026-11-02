@@ -110,5 +110,8 @@ Validation: Exact static-tail reproduction (static_tail is plan_tail), determini
 
 ## Ledger-events
 
+
 - chg_20261101_225732_planning-a-staged-roadmap-for_4092
 - 2026-11-01T22:57:35.857193+00:00 (updated-by): Updated: section:ledger-events
+- chg_20261102_022722_groundwork-for-live-expert-pla_5619
+- 2026-11-02T02:27:34.555558+00:00 (updated-by): Updated: section:ledger-events
