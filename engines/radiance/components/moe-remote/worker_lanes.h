@@ -154,13 +154,15 @@ private:
     void run_large(uint32_t lane) {
         using namespace r3::moe_shm;
         for (uint32_t next = 1; !stopping();) {
-            if (const uint64_t closure = drain_requested(lane)) {
-                /* This thread owns combine_step too; reaching here proves its
-                 * CPU jobs have returned as well as its GPU stream. */
-                acknowledge_drain(lane, closure);
-                continue;
-            }
             if (seq_after(next, load(&h_->lane[lane].request_sequence))) {
+                /* Idle only: a drain is requested after admission closed and every admitted parent retired, so no
+                 * request is outstanding when one arrives, and the serving spin reads nothing it did not on main. */
+                if (const uint64_t closure = drain_requested(lane)) {
+                    /* This thread owns combine_step too; reaching here proves its
+                     * CPU jobs have returned as well as its GPU stream. */
+                    acknowledge_drain(lane, closure);
+                    continue;
+                }
                 if (!(load(&h_->burst) & 1u)) wait_lane_notice(lane);
                 else std::this_thread::yield();
                 continue;
@@ -236,9 +238,10 @@ private:
             }
             /* Serve the burst: collect each completion, keep kQueueDepth requests queued. */
             while (!stopping()) {
-                if (drain_requested(lane)) break;
                 const uint32_t done = load(&h_->lane[lane].done_sequence);
                 if (!seq_after(done, done_seen)) {
+                    /* Idle only, as on the large lane: no completion is due once a drain is requested. */
+                    if (drain_requested(lane)) break;
                     if (!(load(&h_->burst) & 1u)) break;   /* the burst ended */
                     std::this_thread::yield();
                     continue;
