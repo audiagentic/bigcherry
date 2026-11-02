@@ -21,9 +21,14 @@ nlohmann::json base() {
       "host_pool_mib": 9216})json");
 }
 
-void expect(bool want, const nlohmann::json& live, const std::string& needle) {
+// The examples' calibration: kv_backing_floor.fraction_ppm = 600000, so kv_required = max(500, ceil(7000 * 0.6)) = 4200
+// and the required split is 3000 + 0 + 200 + 4200 = 7400 (the measured split, with kv 5000, is 8200).
+constexpr int64_t kFloorPpm = 600000;
+
+void expect(bool want, const nlohmann::json& live, const std::string& needle, int64_t ppm = kFloorPpm,
+            const nlohmann::json& expected = base()) {
     std::string why;
-    const bool got = bc_plan_memory_check(base(), live, &why);
+    const bool got = bc_plan_memory_check(expected, live, ppm, &why);
     if (got != want || (!want && why.find(needle) == std::string::npos)) {
         std::printf("FAIL: want %d got %d for '%s': %s\n", want, got, needle.c_str(), why.c_str());
         ++failures;
@@ -53,10 +58,35 @@ int main() {
     expect(false, live, "VRAM statics: live 3001");
     live = base(); live["vram"]["stage"] = 201;
     expect(false, live, "VRAM stage: live 201");
-    live = base(); live["vram"]["claimable"] = 9000 - 100;    // a live reading that moved a little: the split still fits
+    live = base(); live["vram"]["claimable"] = 9000 - 100;    // a live reading that moved a little: the plan still fits
     expect(true, live, "");
-    live = base(); live["vram"]["claimable"] = 8199;           // the planned split is 3000 + 5000 + 0 + 200 = 8200
-    expect(false, live, "claimable VRAM (for the planned split: statics + kv + experts + stage): live 8199 bytes fall short of the planned 8200 bytes");
+    // Admission (spec §5.2, amendment 5): what the plan requires, not the measured share, must fit.
+    live = base(); live["vram"]["claimable"] = 8199;           // below the old measured split (8200): admitted
+    expect(true, live, "");
+    live = base(); live["vram"]["claimable"] = 7400;           // exactly the required split: admitted
+    expect(true, live, "");
+    live = base(); live["vram"]["claimable"] = 7399;           // one byte short of the required split: refused
+    expect(false, live, "claimable VRAM (for the required split: statics + experts + stage + kv_required, kv_required 4200 bytes): live 7399 bytes fall short of the planned 7400 bytes");
+    live = base(); live["vram"]["claimable"] = 7400; live["vram"]["kv"] = 0;   // the live kv share is not an input
+    expect(true, live, "");
+    live = base(); live["vram"]["claimable"] = 3700;           // no floor selected: kv_required is one session (500)
+    expect(true, live, "", 0);
+    live = base(); live["vram"]["claimable"] = 3699;
+    expect(false, live, "kv_required 500 bytes): live 3699 bytes fall short of the planned 3700 bytes", 0);
+    {
+        nlohmann::json big = base();                           // one session larger than the floor: it is the requirement
+        big["kv_one_session"]["bytes"] = 4500;
+        live = big; live["vram"]["claimable"] = 7699;
+        expect(false, live, "kv_required 4500 bytes): live 7699 bytes fall short of the planned 7700 bytes", kFloorPpm, big);
+        nlohmann::json odd = base();                           // the floor rounds up: ceil(7001 * 0.6) = ceil(4200.6) = 4201
+        odd["vram"]["kv_ceiling"] = 7001;
+        live = odd; live["vram"]["claimable"] = 7400;
+        expect(false, live, "kv_required 4201 bytes): live 7400 bytes fall short of the planned 7401 bytes", kFloorPpm, odd);
+        live["vram"]["claimable"] = 7401;
+        expect(true, live, "", kFloorPpm, odd);
+    }
+    expect(false, base(), "kv_backing_floor_ppm must be in [0, 1000000)", -1);
+    expect(false, base(), "kv_backing_floor_ppm must be in [0, 1000000)", 1000000);
     live = base(); live["vram"]["cards"][0]["capacity"] = 9999;
     expect(false, live, "card 0 capacity: live 9999 bytes fall short of the planned 10000");
     live = base(); live["vram"]["cards"].push_back(live["vram"]["cards"][0]);

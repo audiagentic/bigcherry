@@ -174,6 +174,7 @@ _BC_PLAN_MEMORY_CHECK_H = r"""/* bc_plan_memory_check.h -- BigCherry managed pat
  * against the plan the serving manifest was derived from. A pure function of two plan documents (rad0011's JSON,
  * plan_version 1), so the manifest only has to supply the expected one. */
 #pragma once
+#include <cstdint>
 #include <string>
 
 #include <nlohmann/json.hpp>
@@ -182,13 +183,19 @@ _BC_PLAN_MEMORY_CHECK_H = r"""/* bc_plan_memory_check.h -- BigCherry managed pat
  * the first consumer that grew, the two byte counts, where the live number came from and what to do. Checked: every
  * host consumer (one the expected plan does not have counts as grown from 0), the checkpoint slot and floor, one
  * full-length session's KV, the static weights, the prefill staging, and the card's capacity (which must not shrink).
- * Claimable VRAM, a live reading, must hold the planned split: statics + kv + experts + stage. */
-bool bc_plan_memory_check(const nlohmann::json& expected, const nlohmann::json& live, std::string* why);
+ * Claimable VRAM, a live reading, must hold what the plan requires (serving manifest v1 spec §5.2, amendment 5):
+ * statics + experts + stage + kv_required, where kv_required = max(one full-length session's KV,
+ * ceil(kv_ceiling * kv_backing_floor_ppm / 1000000)). The measured kv share is never an input: the engine's KV takes the
+ * remainder of the elastic plane, so the measured split equals claimable with no margin. `kv_backing_floor_ppm` is the
+ * selected calibration entry kv_backing_floor.fraction_ppm, or 0 when none is selected. */
+bool bc_plan_memory_check(const nlohmann::json& expected, const nlohmann::json& live, int64_t kv_backing_floor_ppm,
+                          std::string* why);
 """
 
 _BC_PLAN_MEMORY_CHECK_CPP = r"""/* bc_plan_memory_check.cpp -- see bc_plan_memory_check.h (BigCherry managed patch rad0011, RSC03). */
 #include "bc_plan_memory_check.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <string>
 
@@ -209,7 +216,8 @@ bool fail(std::string* why, const std::string& what, int64_t live, int64_t plann
 }
 }  // namespace
 
-bool bc_plan_memory_check(const nlohmann::json& expected, const nlohmann::json& live, std::string* why) {
+bool bc_plan_memory_check(const nlohmann::json& expected, const nlohmann::json& live, int64_t kv_backing_floor_ppm,
+                          std::string* why) {
     for (const auto* doc : {&expected, &live})
         if (!doc->is_object() || num(*doc, "plan_version") != 1) {
             if (why) *why = "plan check: both plans must be plan_version 1 documents";
@@ -240,13 +248,21 @@ bool bc_plan_memory_check(const nlohmann::json& expected, const nlohmann::json& 
     for (const char* k : {"statics", "stage"})
         if (num(lv, k) > num(ev, k))
             return fail(why, std::string("VRAM ") + k, num(lv, k), num(ev, k), lv.at("from").get<std::string>(), "", "exceed");
-    /* Claimable VRAM is a live reading (the driver's resident bytes move by a few KiB between starts), so it is checked
-     * for what it is for: the planned split (statics, KV, experts, staging) must fit in what is claimable now. */
-    const int64_t split = num(ev, "statics") + num(ev, "kv") + num(ev, "experts") + num(ev, "stage");
-    if (num(lv, "claimable") < split)
-        return fail(why, "claimable VRAM (for the planned split: statics + kv + experts + stage)", num(lv, "claimable"),
-                    split, lv.at("from").get<std::string>(),
-                    "free the engine card or measure the plan again (bc-serve --plan-memory)", "fall short of");
+    /* Claimable VRAM is a live reading (it moved in 8 KiB steps over 16 KiB between starts), so it is checked for what
+     * it is for: what the plan requires must fit in what is claimable now. The KV requirement is one full-length session
+     * or the calibrated backing floor of the KV ceiling, whichever is larger; the measured kv share is not an input. */
+    if (kv_backing_floor_ppm < 0 || kv_backing_floor_ppm >= 1000000) {
+        if (why) *why = "plan check: kv_backing_floor_ppm must be in [0, 1000000)";
+        return false;
+    }
+    const int64_t floor = (num(ev, "kv_ceiling") * kv_backing_floor_ppm + 999999) / 1000000;
+    const int64_t kv_required = std::max<int64_t>(num(expected.at("kv_one_session"), "bytes"), floor);
+    const int64_t required = num(ev, "statics") + num(ev, "experts") + num(ev, "stage") + kv_required;
+    if (num(lv, "claimable") < required)
+        return fail(why, "claimable VRAM (for the required split: statics + experts + stage + kv_required, kv_required " +
+                             std::to_string(kv_required) + " bytes)",
+                    num(lv, "claimable"), required, lv.at("from").get<std::string>(),
+                    "free the engine card, or choose a smaller service intent, and resolve a new manifest", "fall short of");
     const auto& lcards = lv.at("cards");
     const auto& ecards = ev.at("cards");
     if (lcards.size() != ecards.size()) {
@@ -299,7 +315,7 @@ PATCHES = (
             id="create-bc-plan-memory-check-h",
             anchor=r"\A",
             text=_BC_PLAN_MEMORY_CHECK_H,
-            guard=r"^bool bc_plan_memory_check\(const nlohmann::json& expected, const nlohmann::json& live, std::string\* why\);$",
+            guard=r"^bool bc_plan_memory_check\(const nlohmann::json& expected, const nlohmann::json& live, int64_t kv_backing_floor_ppm,$",
             max_span_lines=1,
             expect_matches=1,
             rationale="Created files are anchored at the empty upstream file; create=True rejects any upstream collision.",
@@ -313,7 +329,7 @@ PATCHES = (
             id="create-bc-plan-memory-check-cpp",
             anchor=r"\A",
             text=_BC_PLAN_MEMORY_CHECK_CPP,
-            guard=r"^bool bc_plan_memory_check\(const nlohmann::json& expected, const nlohmann::json& live, std::string\* why\) \{$",
+            guard=r"^bool bc_plan_memory_check\(const nlohmann::json& expected, const nlohmann::json& live, int64_t kv_backing_floor_ppm,$",
             max_span_lines=1,
             expect_matches=1,
             rationale="Created files are anchored at the empty upstream file; create=True rejects any upstream collision.",
