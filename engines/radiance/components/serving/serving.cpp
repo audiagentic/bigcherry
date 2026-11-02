@@ -1,5 +1,5 @@
 #include "serving.h"
-#include "vendor/toml.hpp"
+#include "third_party/toml.hpp"
 
 #include <algorithm>
 #include <array>

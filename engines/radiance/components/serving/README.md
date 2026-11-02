@@ -65,5 +65,5 @@ RSC06/RSC07 will wire the manifest into each process, replacing
 environment variables and individual engine flags. RSC02 will add
 supervision. This slice does **not** start processes.
 
-Vendor: toml++ v3.4.0 root single header and MIT license (`vendor/`);
+Vendor: toml++ v3.4.0 root single header and MIT license (`third_party/`; the repository ignores every `vendor/` directory);
 reuse radiance's existing nlohmann/json v3.12.0.

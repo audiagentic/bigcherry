@@ -11,7 +11,7 @@ endif()
 add_library(bc_serving STATIC serving.cpp)
 target_compile_features(bc_serving PUBLIC cxx_std_20)
 target_include_directories(bc_serving PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}" "${RADIANCE_SRC}/vendor")
-target_include_directories(bc_serving PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/vendor")
+target_include_directories(bc_serving PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/third_party")
 
 add_executable(bc-serve main.cpp)
 target_link_libraries(bc-serve PRIVATE bc_serving)
