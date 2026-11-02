@@ -23,7 +23,7 @@
 #   bigcherry build --lane radiance:stock:linux-radiance --experiment moe-remote-handoff
 #
 # Usage:
-#   bash tools/lab/radiance/launch-flashnext-best.sh [start] [--build DIR] [--port N] [--heat FILE] [--host-pool-mib N] [--chunk TOKENS] [--ngram-placement ram|disk|vram] [--kv-dtype fp8|fp8_v4|k6_v4] [--engine-arg ARG ...] [--ngram-device INDEX] [--max-model-len TOKENS] [--record-heat PREFIX|off [--record-period S]] [--gpu-power] [--layout NAME] [--budget ARCH=MIB]
+#   bash tools/lab/radiance/launch-flashnext-best.sh [start] [--build DIR] [--port N] [--heat FILE] [--host-pool-mib N] [--host-kv-mib N] [--chunk TOKENS] [--ngram-placement ram|disk|vram] [--kv-dtype fp8|fp8_v4|k6_v4] [--engine-arg ARG ...] [--ngram-device INDEX] [--max-model-len TOKENS] [--record-heat PREFIX|off [--record-period S]] [--gpu-power] [--layout NAME] [--budget ARCH=MIB]
 #   bash tools/lab/radiance/launch-flashnext-best.sh stop
 # Without --build, the newest build under $BC_WORK_ROOT/builds that has the helper binary is used.
 # --heat FILE: the route-heat file that ranks the experts, hottest first (default $WORK/heat/flashnext-mixed.hot-first, C++/HIP source and
@@ -33,7 +33,12 @@
 # speed (RHP02: 8 sessions 2,473 against 2,513 tok/s, inside the run-to-run spread), so it is on by default, and
 # tools/lab/radiance/heat-placement/heat-watch.py (the start message prints the command) says when the active --heat file stops fitting. Invert the file, restart with --heat and a larger
 # --budget (RHP10: workload-recorded heat plus gfx1100=23500 gave +34% prefill at 675K used context on a corpus it had not seen).
-# --host-pool-mib N: pinned host memory the expert and KV tiers share (default 22528; more gives the cache more of a long context: the engine log
+# --host-pool-mib N: pinned host memory for the engine's expert tier (default 9216). With the helpers owning almost every
+#   expert the engine uses ~7.1 GiB of it; the old 22528 pinned ~16 GiB unused (RSC03 will derive this from ownership).
+# --host-kv-mib N: host KV tier (--prefix-cache-mib) for finished sessions (default 12288, 0 = off). Without it finished
+#   sessions keep their KV in VRAM, the KV cache stops lending VRAM to the engine's experts and a long-running server
+#   loses ~half its prefill speed (49K prefill after an ~1M-token session fill: 1,901 -> 3,165 tok/s with the tier).
+#   With the 47.7 GiB n-gram table in RAM, 9 GiB pool + 12 GiB tier is about the most that fits; a 24 GiB tier is refused.
 # reports how much of the worst case it backs).
 # --chunk TOKENS: the largest step (default 2048): the activation arena and the prefill staging are sized from it, so a smaller chunk leaves the KV cache more VRAM.
 # --ngram-placement ram|disk|vram: where the 47.7 GiB n-gram table lives (default ram: pinned host memory the cards read). disk reads its rows from the
@@ -66,7 +71,8 @@ GPU_POWER=${GPU_POWER:-0}
 LAYOUT=${FLASHNEXT_LAYOUT:-flashnext-4gpu}
 BUDGETS=()
 RECORD=$RUN/heat.live   # RHP02: on by default; --record-heat off disables
-HOST_POOL_MIB=22528
+HOST_POOL_MIB=9216        # interim, measured (RSC03 derives it): the engine uses ~7.1 GiB of it with the helpers owning ~all experts
+HOST_KV_MIB=12288         # interim, measured (RSC03 derives it): host KV tier for finished sessions, funded by the smaller pool
 CHUNK=2048
 NGRAM=ram
 KV_DTYPE=fp8
@@ -88,6 +94,7 @@ while [ $# -gt 0 ]; do
     --layout) LAYOUT=$2; shift 2 ;;
     --budget) BUDGETS+=("$2"); shift 2 ;;
     --host-pool-mib) HOST_POOL_MIB=$2; shift 2 ;;
+    --host-kv-mib) HOST_KV_MIB=$2; shift 2 ;;
     --chunk) CHUNK=$2; shift 2 ;;
     --kv-dtype) KV_DTYPE=$2; shift 2 ;;
     --engine-arg) ENGINE_ARGS+=("$2"); shift 2 ;;
@@ -235,6 +242,7 @@ env "${COMMON[@]}" "${NGRAM_ENV[@]}" R3_MOE_WORKER=1 ROCR_VISIBLE_DEVICES="$ENGI
     --placement expert_tiered \
     --ngram-placement "$NGRAM" \
     --host-pool-mib "$HOST_POOL_MIB" \
+    --prefix-cache-mib "$HOST_KV_MIB" \
     --tp 1 \
     --max-num-seqs "$SEQS" \
     --max-num-batched-tokens "$CHUNK" \
