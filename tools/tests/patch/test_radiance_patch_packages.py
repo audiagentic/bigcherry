@@ -559,7 +559,9 @@ class TestPlanMemoryPatch(unittest.TestCase):
     def test_upstream_edits_are_thin_calls_into_the_extension_point(self):
         patches = _load(RAD0011)
         self.assertEqual({p.path for p in patches if not p.create}, {"core/main.cpp", "core/engine_bringup.cpp"})
-        self.assertEqual({p.path for p in patches if p.create}, {"core/bc_plan_memory.h", "core/bc_plan_memory.cpp"})
+        self.assertEqual({p.path for p in patches if p.create},
+                         {"core/bc_plan_memory.h", "core/bc_plan_memory.cpp", "core/bc_plan_memory_check.h",
+                          "core/bc_plan_memory_check.cpp"})
         temp, root = self._applied()
         try:
             self.assertEqual(self._added_code(root, "core/main.cpp"), [
@@ -611,3 +613,30 @@ class TestPlanMemoryPatch(unittest.TestCase):
             self.assertEqual((root / "core/main.cpp").read_text(encoding="utf-8"),
                              (FIXTURE / "core/main.cpp").read_text(encoding="utf-8"))
             self.assertFalse((root / "core/bc_plan_memory.cpp").exists())
+
+    def test_plan_check_compiled_and_run(self):
+        """Compile the patch's own bc_plan_memory_check.cpp (a pure function of two plan documents) and run its
+        card-free test: every consumer that grows fails closed, naming both numbers and the remedy."""
+        compiler = shutil.which("g++") or shutil.which("c++")
+        candidates = [os.environ.get("BC_NLOHMANN_INCLUDE", ""), str(REPO / "vendor" / "llama.cpp" / "vendor")]
+        include = next((c for c in candidates if c and (Path(c) / "nlohmann" / "json.hpp").is_file()), None)
+        if compiler is None or include is None:
+            message = "needs a C++ compiler and nlohmann/json.hpp (set BC_NLOHMANN_INCLUDE to its parent dir)"
+            if os.environ.get("CI"):
+                self.fail(message)   # in CI the test must run, never skip
+            self.skipTest(message)
+        temp, root = self._applied()
+        try:
+            exe = Path(temp.name) / "plan_check_test"
+            test = REPO / "engines" / "radiance" / "tests" / "plan_memory" / "plan_check_test.cpp"
+            build = subprocess.run(
+                [compiler, "-std=c++20", "-Wall", "-Werror", f"-I{root / 'core'}", f"-I{include}",
+                 str(root / "core" / "bc_plan_memory_check.cpp"), str(test), "-o", str(exe)],
+                capture_output=True, text=True,
+            )
+            self.assertEqual(build.returncode, 0, build.stderr)
+            run = subprocess.run([str(exe)], capture_output=True, text=True)
+            self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+            self.assertIn("ok", run.stdout)
+        finally:
+            temp.cleanup()

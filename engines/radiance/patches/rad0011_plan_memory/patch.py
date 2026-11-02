@@ -158,6 +158,94 @@ int bc_plan_memory_done() {
 }
 """
 
+_BC_PLAN_MEMORY_CHECK_H = r"""/* bc_plan_memory_check.h -- BigCherry managed patch rad0011 (RSC03): the start-up check of a live memory plan
+ * against the plan the serving manifest was derived from. A pure function of two plan documents (rad0011's JSON,
+ * plan_version 1), so the manifest only has to supply the expected one. */
+#pragma once
+#include <string>
+
+#include <nlohmann/json.hpp>
+
+/* True when nothing the live plan needs exceeds what the expected plan provided for. Otherwise false, with `why` naming
+ * the first consumer that grew, the two byte counts, where the live number came from and what to do. Checked: every
+ * host consumer (one the expected plan does not have counts as grown from 0), the checkpoint slot and floor, one
+ * full-length session's KV, the static weights, the prefill staging, and the card's claimable VRAM and capacity
+ * (which must not shrink). */
+bool bc_plan_memory_check(const nlohmann::json& expected, const nlohmann::json& live, std::string* why);
+"""
+
+_BC_PLAN_MEMORY_CHECK_CPP = r"""/* bc_plan_memory_check.cpp -- see bc_plan_memory_check.h (BigCherry managed patch rad0011, RSC03). */
+#include "bc_plan_memory_check.h"
+
+#include <cstdint>
+#include <string>
+
+namespace {
+constexpr const char* kMeasure = "measure the plan again (bc-serve --plan-memory) and resolve a new manifest";
+
+int64_t num(const nlohmann::json& j, const char* key) {
+    const auto it = j.find(key);
+    return it != j.end() && it->is_number_integer() ? it->get<int64_t>() : -1;
+}
+
+bool fail(std::string* why, const std::string& what, int64_t live, int64_t planned, const std::string& from,
+          const std::string& remedy, const char* verb) {
+    if (why)
+        *why = what + ": live " + std::to_string(live) + " bytes " + verb + " the planned " + std::to_string(planned) +
+               " bytes (" + from + "); " + (remedy.empty() ? std::string(kMeasure) : remedy);
+    return false;
+}
+}  // namespace
+
+bool bc_plan_memory_check(const nlohmann::json& expected, const nlohmann::json& live, std::string* why) {
+    for (const auto* doc : {&expected, &live})
+        if (!doc->is_object() || num(*doc, "plan_version") != 1) {
+            if (why) *why = "plan check: both plans must be plan_version 1 documents";
+            return false;
+        }
+    for (const auto& c : live.at("host")) {
+        const std::string name = c.at("name").get<std::string>();
+        int64_t planned = 0;
+        for (const auto& e : expected.at("host"))
+            if (e.at("name") == name) planned = num(e, "bytes");
+        if (num(c, "bytes") > planned)
+            return fail(why, "host consumer " + name, num(c, "bytes"), planned, c.at("from").get<std::string>(),
+                        c.at("remedy").get<std::string>(), "exceed");
+    }
+    const auto& lc = live.at("checkpoints");
+    const auto& ec = expected.at("checkpoints");
+    if (num(lc, "slot_bytes") > num(ec, "slot_bytes"))
+        return fail(why, "checkpoint slot", num(lc, "slot_bytes"), num(ec, "slot_bytes"), lc.at("from").get<std::string>(), "", "exceed");
+    if (num(lc, "floor_slots") * num(lc, "slot_bytes") > num(ec, "floor_slots") * num(ec, "slot_bytes"))
+        return fail(why, "checkpoint floor", num(lc, "floor_slots") * num(lc, "slot_bytes"),
+                    num(ec, "floor_slots") * num(ec, "slot_bytes"), lc.at("from").get<std::string>(), "", "exceed");
+    const auto& lk = live.at("kv_one_session");
+    if (num(lk, "bytes") > num(expected.at("kv_one_session"), "bytes"))
+        return fail(why, "one full-length session's KV", num(lk, "bytes"), num(expected.at("kv_one_session"), "bytes"),
+                    lk.at("from").get<std::string>(), "", "exceed");
+    const auto& lv = live.at("vram");
+    const auto& ev = expected.at("vram");
+    for (const char* k : {"statics", "stage"})
+        if (num(lv, k) > num(ev, k))
+            return fail(why, std::string("VRAM ") + k, num(lv, k), num(ev, k), lv.at("from").get<std::string>(), "", "exceed");
+    if (num(lv, "claimable") < num(ev, "claimable"))
+        return fail(why, "claimable VRAM", num(lv, "claimable"), num(ev, "claimable"), lv.at("from").get<std::string>(),
+                    "free the engine card or measure the plan again (bc-serve --plan-memory)", "fall short of");
+    const auto& lcards = lv.at("cards");
+    const auto& ecards = ev.at("cards");
+    if (lcards.size() != ecards.size()) {
+        if (why) *why = "plan check: the live plan has " + std::to_string(lcards.size()) + " card(s), the manifest's " +
+                        std::to_string(ecards.size()) + "; " + kMeasure;
+        return false;
+    }
+    for (size_t i = 0; i < lcards.size(); ++i)
+        if (num(lcards[i], "capacity") < num(ecards[i], "capacity"))
+            return fail(why, "card " + std::to_string(i) + " capacity", num(lcards[i], "capacity"),
+                        num(ecards[i], "capacity"), lv.at("from").get<std::string>(), "", "fall short of");
+    return true;
+}
+"""
+
 PATCHES = (
     FilePatch(
         path="core/bc_plan_memory.h",
@@ -182,6 +270,34 @@ PATCHES = (
             anchor=r"\A",
             text=_BC_PLAN_MEMORY_CPP,
             guard=r"^int bc_plan_memory_done\(\) \{$",
+            max_span_lines=1,
+            expect_matches=1,
+            rationale="Created files are anchored at the empty upstream file; create=True rejects any upstream collision.",
+        ),),
+    ),
+    FilePatch(
+        path="core/bc_plan_memory_check.h",
+        create=True,
+        description="Create the start-up check of a live memory plan against the manifest's expected plan.",
+        edits=(Edit(
+            id="create-bc-plan-memory-check-h",
+            anchor=r"\A",
+            text=_BC_PLAN_MEMORY_CHECK_H,
+            guard=r"^bool bc_plan_memory_check\(const nlohmann::json& expected, const nlohmann::json& live, std::string\* why\);$",
+            max_span_lines=1,
+            expect_matches=1,
+            rationale="Created files are anchored at the empty upstream file; create=True rejects any upstream collision.",
+        ),),
+    ),
+    FilePatch(
+        path="core/bc_plan_memory_check.cpp",
+        create=True,
+        description="Create the plan check: a pure function of two plan documents.",
+        edits=(Edit(
+            id="create-bc-plan-memory-check-cpp",
+            anchor=r"\A",
+            text=_BC_PLAN_MEMORY_CHECK_CPP,
+            guard=r"^bool bc_plan_memory_check\(const nlohmann::json& expected, const nlohmann::json& live, std::string\* why\) \{$",
             max_span_lines=1,
             expect_matches=1,
             rationale="Created files are anchored at the empty upstream file; create=True rejects any upstream collision.",
