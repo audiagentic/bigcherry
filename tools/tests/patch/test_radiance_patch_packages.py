@@ -65,15 +65,16 @@ PREREQUISITES = {RAD0004: (RAD0002,)}
 # prerequisites, after they are applied), `after` the file with the package applied.
 PIN_BLOBS = {
     RAD0002: {
-        "abi/bc_moe_remote.h": (None, "c11d4f2"),
+        "abi/bc_moe_remote.h": (None, "2040fb8"),
         "arch/common/bc_moe_remote_block.h": (None, "271a9a6"),
         "arch/common/rad_block_hc.h": ("3a602e5", "d1124d5"),
         "arch/common/rad_block_moe_fp8.h": ("614db0e", "4606519"),
-        "core/place/bc_moe_remote.cpp": (None, "edb79b7"),
+        "core/place/bc_moe_remote.cpp": (None, "5242c9e"),
         "core/place/bc_moe_remote_place.h": (None, "e89a83b"),
         "core/place/planner.cpp": ("2ea4220", "aecd5af"),
         "core/engine_bringup.cpp": ("3ecdba8", "fe411f0"),
         "core/engine.cpp": ("7544310", "7f75e0b"),
+        "core/runtime/ctx.cpp": ("ff0f746", "c96e914"),
     },
     RAD0003: {
         "arch/common/rad_block_mtp_fp8.h": ("c571d45", "235cebb"),
@@ -96,6 +97,7 @@ RAD0002_CORE_FILES = (
     "core/engine.cpp",
     "core/engine_bringup.cpp",
     "core/place/planner.cpp",
+    "core/runtime/ctx.cpp",
 )
 
 
@@ -222,7 +224,7 @@ class TestRadiancePatchPackages(unittest.TestCase):
             patches = _load(RAD0002)
             core_edits = {p.path: len(p.edits) for p in patches if not p.create}
             self.assertEqual(set(core_edits), set(RAD0002_CORE_FILES))
-            self.assertEqual(sum(core_edits.values()), 17)
+            self.assertEqual(sum(core_edits.values()), 19)
             self.assertEqual(sum(1 for p in patches if p.create), 4)
             self.assertTrue(all(result.ok for result in apply_all(list(patches), root)))
             for relative in RAD0002_CORE_FILES:
@@ -397,7 +399,7 @@ class TestRadiancePatchPackages(unittest.TestCase):
         self.assertIn('if (mask_only && m && local_index[slot] >= 0) __builtin_trap();', ops)
         self.assertIn('hipMemsetAsync(d->mask_ref, 0', ops)
         self.assertIn('dlsym(RTLD_DEFAULT, "bc_moe_remote_register")', hook)
-        self.assertIn("static const EnginePlugin plugin{sizeof(EnginePlugin), publish_layer_map, owner_query, burst_transition};", hook)
+        self.assertIn("static const EnginePlugin plugin{sizeof(EnginePlugin), publish_layer_map, owner_query, burst_transition, before_pass};", hook)
         self.assertIn('g.engine_register(&plugin)', hook)
         self.assertNotIn('rad_moe_remote', hook)
         self.assertIn('layer_map_consumed', hook)

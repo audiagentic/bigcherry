@@ -32,6 +32,7 @@ struct RankState {
     R3MoeMailboxDevice dev{};
     int device = -1;
     uint8_t* owner = nullptr;
+    StepTicket* ticket = nullptr;
     uint32_t* sequence = nullptr;
     uint32_t* published = nullptr;
     uint16_t* mask_ref = nullptr;
@@ -47,6 +48,7 @@ struct EnginePlugin {
     void (*layer_map)(int layer, int n_expert, const int32_t* slot_of_expert);
     int (*owns_expert)(int layer, int expert);
     void (*burst)(int active);
+    int (*before_pass)(int rank, uint64_t parent_ticket_id, void* stream);
 };
 using RegisterFn = int (*)(const EnginePlugin*);
 
@@ -123,6 +125,36 @@ bool layer_enabled(int layer) {
         return std::make_pair(lo, hi);
     }();
     return layer >= range.first && layer <= range.second;
+}
+
+/* Bootstrap binding, not admission: the scheduler's RadBatch::step is common
+ * to the trunk and its draft children, so step+1 identifies their parent.
+ * Step 2 must retain one admitted epoch/slot across that whole parent. */
+int before_pass(int rank, uint64_t parent_ticket_id, void* stream) {
+    if (rank < 0 || rank >= (int)kMaxEngineRanks || !stream || !parent_ticket_id)
+        return RAD_E_STATE;
+    StepTicket* device_ticket = nullptr;
+    StepTicket value{};
+    {
+        std::lock_guard<std::mutex> lock(g.mu);
+        if (!g.hdr || !g.pinned || !g.rank[rank].ready || !g.rank[rank].ticket)
+            return RAD_E_STATE;
+        const PlacementControl* c = placement_control(g.map);
+        /* Fail closed if anything changes before the admission protocol
+         * exists; never truncate a 64-bit epoch into the wire ticket. */
+        const uint32_t seq0 = load(&c->seq);
+        const uint64_t epoch = __atomic_load_n(&c->active_epoch, __ATOMIC_ACQUIRE);
+        const uint32_t slot = load(&c->active_slot);
+        if ((seq0 & 1u) || seq0 != load(&c->seq) ||
+            load(&c->state) != (uint32_t)PlacementState::ACTIVE ||
+            epoch == 0 || epoch > UINT32_MAX || slot > 1)
+            return RAD_E_STATE;
+        value.placement_epoch = (uint32_t)epoch;
+        value.generation_slot = (uint8_t)slot;
+        value.ticket_id = parent_ticket_id;
+        device_ticket = g.rank[rank].ticket;
+    }
+    return r3_moe_ticket_launch(device_ticket, value, stream);
 }
 
 void publish_layer_map(int layer, int n_expert, const int32_t* slot_of_expert) {
@@ -303,7 +335,7 @@ void register_mailbox() {
             raise_fault(g.hdr);
         }
     }
-    static const EnginePlugin plugin{sizeof(EnginePlugin), publish_layer_map, owner_query, burst_transition};
+    static const EnginePlugin plugin{sizeof(EnginePlugin), publish_layer_map, owner_query, burst_transition, before_pass};
     if (g.engine_register(&plugin) != 0) {
         std::fprintf(stderr, "libr3: R3_MOE_WORKER engine rejected the plugin registration (struct size)\n");
         g.watch.stop();
@@ -430,6 +462,7 @@ void close_mailbox() {
         if (s.published) (void)hipFree(s.published);
         if (s.sequence) (void)hipFree(s.sequence);
         if (s.owner) (void)hipFree(s.owner);
+        if (s.ticket) (void)hipFree(s.ticket);
         s = RankState{};
     }
     if (g.engine_register) (void)g.engine_register(nullptr);
@@ -500,7 +533,12 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
                 "hipMalloc published flags") ||
         !hip_ok(hipMemset(s.published, 0, (kMaxSlots + 1 + kCombineChunks) * sizeof(uint32_t)), "zero published flags") ||
         !hip_ok(hipMalloc(&s.maps, (size_t)max_rows() * g.hdr->top_k * (sizeof(int32_t) + sizeof(uint32_t))),
-                "hipMalloc merge slot maps")) {
+                "hipMalloc merge slot maps") ||
+        !hip_ok(hipMalloc(reinterpret_cast<void**>(&s.ticket), sizeof(StepTicket)),
+                "hipMalloc step ticket cell") ||
+        !hip_ok(hipMemset(s.ticket, 0, sizeof(StepTicket)), "zero step ticket cell")) {
+        if (s.ticket) (void)hipFree(s.ticket);
+        s.ticket = nullptr;
         if (s.maps) (void)hipFree(s.maps);
         if (s.published) (void)hipFree(s.published);
         if (s.sequence) (void)hipFree(s.sequence);
@@ -519,6 +557,8 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
         const size_t bytes = (size_t)row_cap * g.hdr->top_k * g.hdr->hidden * sizeof(uint16_t);
         if (!hip_ok(hipMalloc(reinterpret_cast<void**>(&s.mask_ref), bytes),
                     "hipMalloc mask-only engine rows")) {
+            (void)hipFree(s.ticket);
+            s.ticket = nullptr;
             (void)hipFree(s.maps);
             (void)hipFree(s.published);
             (void)hipFree(s.sequence);
@@ -549,6 +589,8 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
         s.mask_ref = nullptr;
         (void)hipFree(s.maps);
         s.maps = nullptr;
+        (void)hipFree(s.ticket);
+        s.ticket = nullptr;
         (void)hipFree(s.published);
         (void)hipFree(s.sequence);
         (void)hipFree(s.owner);
@@ -561,6 +603,7 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
     s.device = device;
     s.dev.mailbox = dev_map;
     s.dev.owner = s.owner;
+    s.dev.ticket = s.ticket;
     s.dev.sequence = s.sequence;
     s.dev.published = s.published;
     s.dev.mask_ref = s.mask_ref;
