@@ -66,6 +66,19 @@ struct Fixture {
               "MemAvailable:    94371840 kB\n"
               "SwapTotal:       8388608 kB\n");
         fs::create_directories(root / "dev/shm");
+        // A v2 cgroup with a limit at the leaf and none above; memlock limited, no CAP_IPC_LOCK;
+        // amdgpu loaded with its system memory limit in force.
+        write(root / "proc/self/cgroup", "0::/agents/serve\n");
+        write(root / "sys/fs/cgroup/agents/serve/memory.max", std::to_string(uint64_t(64) << 30) + "\n");
+        write(root / "sys/fs/cgroup/agents/serve/memory.current", std::to_string(uint64_t(10) << 30) + "\n");
+        write(root / "sys/fs/cgroup/agents/serve/memory.stat", "anon 1\nfile " + std::to_string(uint64_t(4) << 30) + "\n");
+        write(root / "sys/fs/cgroup/agents/memory.max", "max\n");
+        write(root / "sys/fs/cgroup/memory.max", "max\n");
+        write(root / "proc/self/limits",
+              "Limit                     Soft Limit           Hard Limit           Units\n"
+              "Max locked memory         8388608              8388608              bytes\n");
+        write(root / "proc/self/status", "Name:\tbc-serve\nCapEff:\t00000000a80425fb\n");
+        write(root / "sys/module/amdgpu/parameters/no_system_mem_limit", "N\n");
         facts = bc::serving::detect(root);
         // detect() counts this machine's CPUs; the fixture fixes the count so the result does not depend on the runner.
         facts["host"]["cpu_count"] = 32;
@@ -123,6 +136,46 @@ void detection(const Fixture& t) {
     assert(g[0].at("simd_count") == 192);
     assert(t.facts.at("host").at("mem_total_mib") == 131072);
     assert(t.facts.at("host").at("mem_available_mib") == 92160);
+    // cgroup: 64 GiB limit less (10 GiB current - 4 GiB file pages) = 58 GiB; "max" levels skipped.
+    const Json cg = t.facts.at("host").at("memory_cgroups");
+    assert(cg.size() == 1);
+    assert(cg[0].at("dir") == "/sys/fs/cgroup/agents/serve" && cg[0].at("version") == 2);
+    assert(cg[0].at("room_mib") == 58 * 1024);
+    // memlock 8 MiB soft limit; CapEff bit 14 (CAP_IPC_LOCK) clear in a80425fb.
+    assert(t.facts.at("host").at("memlock").at("limit_mib") == 8);
+    assert(t.facts.at("host").at("memlock").at("cap_ipc_lock") == false);
+    // amdgpu pin cap on 128 GiB: 128 GiB - 2 GiB (1/64) - 1.5 GiB.
+    const Json pin = t.facts.at("host").at("amdgpu_pin");
+    assert(pin.at("loaded") == true && pin.at("lifted") == false);
+    assert(pin.at("cap_mib") == 131072 - 2048 - 1536);
+}
+
+void detection_limits(const Fixture& t) {
+    // Unlimited memlock, CAP_IPC_LOCK held, the pin cap lifted, a v1 memory controller.
+    const fs::path root = fs::current_path() / "bc-serving-limits";
+    fs::remove_all(root);
+    fs::copy(t.root, root, fs::copy_options::recursive);
+    write(root / "proc/self/cgroup", "4:cpu,memory:/job\n1:name=systemd:/\n");
+    write(root / "sys/fs/cgroup/memory/job/memory.limit_in_bytes", std::to_string(uint64_t(32) << 30));
+    write(root / "sys/fs/cgroup/memory/job/memory.usage_in_bytes", std::to_string(uint64_t(3) << 30));
+    write(root / "sys/fs/cgroup/memory/job/memory.stat", "cache 1073741824\ntotal_cache 2147483648\n");
+    write(root / "sys/fs/cgroup/memory/memory.limit_in_bytes", "9223372036854771712");
+    write(root / "proc/self/limits", "Max locked memory         unlimited            unlimited            bytes\n");
+    write(root / "proc/self/status", "CapEff:\t0000000000004000\n");
+    write(root / "sys/module/amdgpu/parameters/no_system_mem_limit", "Y\n");
+    const Json h = bc::serving::detect(root).at("host");
+    assert(h.at("memory_cgroups").size() == 1);
+    assert(h.at("memory_cgroups")[0].at("version") == 1);
+    assert(h.at("memory_cgroups")[0].at("room_mib") == 31 * 1024);   // 32 GiB - (3 - 2 total_cache)
+    assert(h.at("memlock").at("limit_mib").is_null() && h.at("memlock").at("cap_ipc_lock") == true);
+    assert(h.at("amdgpu_pin").at("lifted") == true && h.at("amdgpu_pin").at("cap_mib").is_null());
+    fs::remove(root / "proc/self/limits");
+    bool refused = false;
+    try { (void)bc::serving::detect(root); } catch (const std::exception& e) {
+        refused = std::string(e.what()).find("proc/self/limits") != std::string::npos;
+    }
+    assert(refused);
+    fs::remove_all(root);
 }
 
 void unknown_keys(Fixture& t) {
@@ -310,6 +363,7 @@ int main() {
         sha256_vectors();
         Fixture t;
         detection(t);
+        detection_limits(t);
         unknown_keys(t);
         type_range_required(t);
         precedence_and_caps(t);

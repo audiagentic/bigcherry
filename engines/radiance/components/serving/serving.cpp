@@ -446,12 +446,133 @@ Json parse_meminfo(const fs::path& file) {
             if (!(row >> unit) || unit != "kB")
                 throw std::runtime_error(file.string() + ": unexpected unit for " + key);
             data[key] = val / 1024;
+            if (key == "MemTotal") data["MemTotal_kB"] = val;
         }
     }
     for (const char* name : {"MemTotal", "MemAvailable", "SwapTotal"})
         if (!data.contains(name)) throw std::runtime_error(file.string() +
                                                             ": missing " + name);
     return data;
+}
+
+/* A memory cgroup level's limit less the usage reclaim cannot give back (current less file pages
+ * on v2, usage less cache on v1): radiance's rad::cgroup_room (core/engine_hostmem.cpp), read
+ * under `root` so detection is testable. Null when the level has no limit. */
+Json cgroup_room_mib(const fs::path& dir, bool v2) {
+    auto read_ll = [](const fs::path& f, long long* v) {
+        std::ifstream in(f);
+        std::string t;
+        if (!(in >> t)) return false;
+        const auto r = std::from_chars(t.data(), t.data() + t.size(), *v);
+        return r.ec == std::errc() && r.ptr == t.data() + t.size();
+    };
+    auto stat_ll = [](const fs::path& f, const char* key, long long* v) {
+        std::ifstream in(f);
+        std::string k;
+        long long x = 0;
+        while (in >> k >> x) if (k == key) { *v = x; return true; }
+        return false;
+    };
+    long long lim = 0, used = 0, file = 0;
+    if (v2) {
+        if (!read_ll(dir / "memory.max", &lim)) return nullptr;   /* "max": no limit */
+        if (!read_ll(dir / "memory.current", &used))
+            throw std::runtime_error(dir.string() + ": memory.max without memory.current");
+        (void)stat_ll(dir / "memory.stat", "file", &file);
+    } else {
+        if (!read_ll(dir / "memory.limit_in_bytes", &lim) || lim >= (1LL << 62)) return nullptr;
+        if (!read_ll(dir / "memory.usage_in_bytes", &used))
+            throw std::runtime_error(dir.string() + ": limit without memory.usage_in_bytes");
+        if (!stat_ll(dir / "memory.stat", "total_cache", &file))
+            (void)stat_ll(dir / "memory.stat", "cache", &file);
+    }
+    const long long hard = used > file ? used - file : 0;
+    return uint64_t(lim > hard ? lim - hard : 0) / 1048576;
+}
+
+/* Every limited level of every memory cgroup this process is in, leaf first, as radiance's
+ * memory_cgroups/cgroup_levels walk them; each level is a limit of its own. */
+Json memory_cgroups(const fs::path& root) {
+    Json levels = Json::array();
+    std::istringstream input(read_text(root / "proc/self/cgroup"));
+    std::string line;
+    while (std::getline(input, line)) {
+        const size_t a = line.find(':'), b = a == std::string::npos ? a : line.find(':', a + 1);
+        if (b == std::string::npos) continue;
+        const std::string ctrl = line.substr(a + 1, b - a - 1);
+        std::string path = line.substr(b + 1);
+        const bool v2 = ctrl.empty();
+        bool memory = v2;
+        for (size_t i = 0; !memory && i < ctrl.size();) {
+            const size_t j = std::min(ctrl.find(',', i), ctrl.size());
+            memory = ctrl.compare(i, j - i, "memory") == 0;
+            i = j + 1;
+        }
+        if (!memory) continue;
+        const fs::path base = root / (v2 ? "sys/fs/cgroup" : "sys/fs/cgroup/memory");
+        for (;;) {
+            const fs::path dir = path == "/" ? base : base / path.substr(1);
+            if (Json room = cgroup_room_mib(dir, v2); !room.is_null())
+                levels.push_back({{"dir", "/" + fs::relative(dir, root).generic_string()},
+                                  {"version", v2 ? 2 : 1}, {"room_mib", room}});
+            if (path.empty() || path == "/") break;
+            const size_t up = path.find_last_of('/');
+            path = up == 0 || up == std::string::npos ? "/" : path.substr(0, up);
+        }
+    }
+    return levels;
+}
+
+/* RLIMIT_MEMLOCK's soft limit (null: unlimited) and CAP_IPC_LOCK, which lifts it. It bounds only
+ * mlock()ed copies: pinned memory a card reads is a driver userptr mapping it does not count. */
+Json memlock(const fs::path& root) {
+    Json out = {{"limit_mib", nullptr}, {"cap_ipc_lock", false}};
+    bool limit_seen = false, caps_seen = false;
+    {
+        std::istringstream input(read_text(root / "proc/self/limits"));
+        std::string line;
+        while (std::getline(input, line)) {
+            if (line.rfind("Max locked memory", 0) != 0) continue;
+            std::istringstream row(line.substr(std::string("Max locked memory").size()));
+            std::string soft;
+            if (!(row >> soft)) throw std::runtime_error("proc/self/limits: unreadable Max locked memory");
+            if (soft != "unlimited") out["limit_mib"] = parse_uint_text(soft, "Max locked memory") / 1048576;
+            limit_seen = true;
+        }
+    }
+    {
+        std::istringstream input(read_text(root / "proc/self/status"));
+        std::string line;
+        while (std::getline(input, line)) {
+            if (line.rfind("CapEff:", 0) != 0) continue;
+            const std::string hex = line.substr(7 + line.substr(7).find_first_not_of(" \t"));
+            uint64_t caps = 0;
+            const auto r = std::from_chars(hex.data(), hex.data() + hex.size(), caps, 16);
+            if (r.ec != std::errc()) throw std::runtime_error("proc/self/status: unreadable CapEff");
+            out["cap_ipc_lock"] = ((caps >> 14) & 1) != 0;
+            caps_seen = true;
+        }
+    }
+    if (!limit_seen) throw std::runtime_error("proc/self/limits: missing Max locked memory");
+    if (!caps_seen) throw std::runtime_error("proc/self/status: missing CapEff");
+    return out;
+}
+
+/* The amdgpu driver's cap on what every process together pins (radiance's amdgpu_pin_cap): RAM
+ * less 1/64 and 1.5 GiB, half of RAM less 1/64 below 3 GiB, unless amdgpu.no_system_mem_limit
+ * lifts it. Null cap when lifted, or when the amdgpu module is not loaded. */
+Json amdgpu_pin_cap(const fs::path& root, uint64_t mem_total_kb) {
+    const fs::path module = root / "sys/module/amdgpu";
+    if (!fs::is_directory(module)) return {{"loaded", false}, {"lifted", false}, {"cap_mib", nullptr}};
+    std::string v;
+    { std::ifstream f(module / "parameters/no_system_mem_limit"); f >> v; }
+    const bool lifted = v == "Y" || v == "1";
+    Json out = {{"loaded", true}, {"lifted", lifted}, {"cap_mib", nullptr}};
+    if (lifted) return out;
+    const uint64_t total = mem_total_kb * 1024, reserve = uint64_t(3) << 29;
+    const uint64_t cap = total - (total >> 6);
+    out["cap_mib"] = (cap < 2 * reserve ? cap >> 1 : cap - reserve) / 1048576;
+    return out;
 }
 
 void check_caps(Json& values, const Json& baseline, const Json& caps, const Json& facts,
@@ -565,7 +686,7 @@ Json detect(const fs::path& root) {
     if (::statvfs(shm.c_str(), &st))
         throw std::runtime_error("cannot statvfs " + shm.string());
     return {
-        {"source", "kfd+sysfs+proc+statvfs"},
+        {"source", "kfd+sysfs+proc+statvfs+cgroup"},
         {"gpus", gpus},
         {"host", {
             {"mem_total_mib", mem.at("MemTotal")},
@@ -573,7 +694,10 @@ Json detect(const fs::path& root) {
             {"swap_total_mib", mem.at("SwapTotal")},
             {"shm_total_mib", (uint64_t(st.f_blocks) * st.f_frsize) / 1048576},
             {"shm_available_mib", (uint64_t(st.f_bavail) * st.f_frsize) / 1048576},
-            {"cpu_count", std::max(1u, std::thread::hardware_concurrency())}
+            {"cpu_count", std::max(1u, std::thread::hardware_concurrency())},
+            {"memory_cgroups", memory_cgroups(root)},
+            {"memlock", memlock(root)},
+            {"amdgpu_pin", amdgpu_pin_cap(root, mem.at("MemTotal_kB").get<uint64_t>())}
         }}
     };
 }
