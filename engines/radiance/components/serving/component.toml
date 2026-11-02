@@ -1,0 +1,14 @@
+# CPU-only serving configuration (RSC01).
+schema = 1
+name = "serving"
+engine = "radiance"
+# Existing engine targets; this component itself has no GPU code.
+targets = ["gfx1100", "gfx1201"]
+built-against = "v1.14.0"
+outputs = ["bin/bc-serve"]
+
+[build]
+configure = { RADIANCE_SRC = "{engine_source}" }
+
+[test]
+targets = ["bc_serving_test"]
