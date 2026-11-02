@@ -39,7 +39,7 @@ bool bc_serving_mark_given(std::map<std::string, std::string>* given);
 #endif /* BC_SERVING_MANIFEST_H */
 """
 
-_BC_SERVING_MANIFEST_CPP = r"""/* bc_serving_manifest.cpp -- policy behind bc_serving_manifest.h: manifest "engine.*" values to radiance's own
+_BC_SERVING_MANIFEST_CPP = r"""/* bc_serving_manifest.cpp -- policy behind bc_serving_manifest.h: manifest values.engine settings to radiance's own
  * flags, the checks that make the manifest the only source of configuration, and the report source label. */
 #include "bc_serving_manifest.h"
 
@@ -74,10 +74,10 @@ bool fail(const std::string& why) {
     return false;
 }
 
-bool string_nonempty(const nlohmann::json& values, const char* key, const char* env, std::string* why) {
-    const auto it = values.find(key);
-    if (it == values.end() || !it->is_string() || it->get_ref<const std::string&>().empty()) {
-        *why = std::string("\"") + key + "\" must be a non-empty string: it is required so that " + env +
+bool string_nonempty(const nlohmann::json& engine, const char* key, const char* env, std::string* why) {
+    const auto it = engine.find(key);
+    if (it == engine.end() || !it->is_string() || it->get_ref<const std::string&>().empty()) {
+        *why = std::string("\"engine.") + key + "\" must be a non-empty string: it is required so that " + env +
                " cannot silently supply it";
         return false;
     }
@@ -127,11 +127,14 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
     const auto sha = doc.find("content_sha256");
     if (sha == doc.end() || !sha->is_string() || sha->get_ref<const std::string&>().size() < 12)
         return fail("content_sha256 is missing");
-    const nlohmann::json& values = *vals;
+    /* bc-serve nests each section: values["engine"] holds the engine's settings, keyed by option name. */
+    const auto eng = vals->find("engine");
+    if (eng == vals->end() || !eng->is_object()) return fail("no \"values.engine\" object");
+    const nlohmann::json& engine = *eng;
 
     std::string why;
-    if (!string_nonempty(values, "engine.radiance_home", "RADIANCE_HOME", &why) ||
-        !string_nonempty(values, "engine.kernels", "RADIANCE_KERNELS", &why))
+    if (!string_nonempty(engine, "radiance_home", "RADIANCE_HOME", &why) ||
+        !string_nonempty(engine, "kernels", "RADIANCE_KERNELS", &why))
         return fail(why);
 
     std::set<std::string> known;
@@ -142,10 +145,9 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
      * argument) is left for radiance's own config_parse to reject, which makes main exit 2. */
     std::map<std::string, std::string> keys;   /* sorted: option -> argument */
     std::set<std::string> flags;               /* sorted bare flags */
-    for (auto it = values.begin(); it != values.end(); ++it) {
-        const std::string& key = it.key();
-        if (key.rfind("engine.", 0) != 0) continue;
-        std::string opt = "--" + key.substr(7);
+    for (auto it = engine.begin(); it != engine.end(); ++it) {
+        const std::string key = "engine." + it.key();
+        std::string opt = "--" + it.key();
         for (char& c : opt)
             if (c == '_') c = '-';
         if (opt == "--" || !known.count(opt))
