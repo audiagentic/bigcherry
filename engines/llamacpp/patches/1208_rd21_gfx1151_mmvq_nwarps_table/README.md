@@ -1,5 +1,15 @@
 # 1208 RD21 gfx1151 MMVQ table
 
+## Summary
+
+Adds a dedicated mmvq nwarps table entry for gfx1151 (previously grouped with RDNA2), giving nwarps=2 for Q8_0 decode matmuls; the batch-range condition is baked in at the fork's branch-tip fixed state so speculative-verify batches match decode consistently.
+
+## Outcome
+
+Recorded state: `untested` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 This package owns the RD21 implementation and its activation-gate evidence.
 The evidence records that the patch is blocked on RDNA3.5/gfx1151 hardware;
 it is not a performance validation result.

@@ -1,5 +1,15 @@
 # 1007_meta_subgraph_realloc_fix
 
+## Summary
+
+Promotion record (QFP18 lightweight evidence-reuse tier, pin 0504396). Mechanism and root cause are in SUMMARY.md; this file records why the patch is promoted into `[patch-set.upstream-fixes]`.
+
+## Outcome
+
+Recorded state: `validated` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 Promotion record (QFP18 lightweight evidence-reuse tier, pin 0504396). Mechanism and root cause are in SUMMARY.md;
 this file records why the patch is promoted into `[patch-set.upstream-fixes]`.
 

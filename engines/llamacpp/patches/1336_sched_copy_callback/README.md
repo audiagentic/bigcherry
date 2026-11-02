@@ -1,5 +1,15 @@
 # 1336_sched_copy_callback
 
+## Summary
+
+Promotion record (QFP18 lightweight evidence-reuse tier, pin b11402 / d89651a7). Mechanism is in SUMMARY.md.
+
+## Outcome
+
+Recorded state: `superseded` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 Promotion record (QFP18 lightweight evidence-reuse tier, pin b11402 / d89651a7). Mechanism is in SUMMARY.md. The
 patch is a neutral enabler: it moves upstream's selective expert copy behind a public scheduler callback (the seam
 MET01 needs for residency policy in user code) without changing what is computed. It is promoted because it is

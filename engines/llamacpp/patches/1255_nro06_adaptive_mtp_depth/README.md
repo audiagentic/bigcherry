@@ -1,5 +1,15 @@
 # 1255_nro06_adaptive_mtp_depth
 
+## Summary
+
+Adds a pure adaptive MTP depth controller beside the existing MTP implementation. It is inert unless runtime wiring 1268 is composed and enabled.
+
+## Outcome
+
+Recorded state: `rejected` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 Plan `NRO06`; state `untested`; pure controller, runtime wiring lives in 1268.
 
 The controller is deterministic and uses accepted/drafted counts only. Each request resets to depth `clamp(3, floor, cap)`; every 32 drafted tokens it drops one level at <=60% acceptance, climbs one level at >=72%, and otherwise holds. The 60-72% dead band prevents oscillation. No clock, allocation address, process-global mutable state, or previous-request state participates.

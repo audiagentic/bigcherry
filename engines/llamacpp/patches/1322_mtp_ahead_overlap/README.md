@@ -1,5 +1,15 @@
 # 1322_mtp_ahead_overlap
 
+## Summary
+
+With `BIGCHERRY_MTP_AHEAD=1` (greedy slots, draft context with partial seq_rm):
+
+## Outcome
+
+Recorded state: `validated` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 ## Promotion record
 
 Promotion record (FMTP03 lightweight promotion tier, pin b11474, dev 2026-10-08). 1321/1322 are promoted together because the overlap patch requires the primitives patch. The runtime profile enables `BIGCHERRY_MTP_AHEAD=1`; the build remains opt-in outside the Flash-Next profile because evidence covers one model/topology.

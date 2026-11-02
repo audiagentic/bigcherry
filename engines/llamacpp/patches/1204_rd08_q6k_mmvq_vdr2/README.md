@@ -1,5 +1,15 @@
 # 1204_rd08_q6k_mmvq_vdr2: Q6_K mmvq VDR=2 decode kernel (RD08)
 
+## Summary
+
+Adds a vdr2 Q6_K vec_dot entry point that processes both 8-element chunks of a Q6_K dot product in one call, amortizing ql/qh/scales/d8 loads over 4 dp4a ops instead of 2, and switches get_vec_dot_q_cuda's Q6_K case to it. Also makes GGML_CUDA_OP_TIMING disable CUDA graph capture instead of aborting, plus adds decode-shaped perf test cases.
+
+## Outcome
+
+Recorded state: `rejected` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 Patch id: `1204_rd08_q6k_mmvq_vdr2`. Plan item: `RD08`. Bound Experiment
 Contract: `RD08-Q6K-MMVQ-VDR2` (`config/experiment-contracts.toml`).
 

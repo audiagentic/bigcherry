@@ -1,5 +1,15 @@
 # 1205_rd12_paired_mmvq_dual_output: fuse paired mmvq matmuls over a shared activation (RD12)
 
+## Summary
+
+When two adjacent MUL_MAT nodes (e.g. attention K/V projections) share the same activation and output shape and are mmvq-eligible, computes both in one launch: the first matmul also computes the second weight's result as a fusion 'gate' and writes it to a separate dst_gate destination.
+
+## Outcome
+
+Recorded state: `untested` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 Patch id: `1205_rd12_paired_mmvq_dual_output`. Original plan item `RD12` is
 superseded by `PRBE11` (docs/planning/active/patching-rdna-boost-experiments/PRBE11.md,
 capability-rebaseline-v3-2026-09) -- PRBE11 is the authoritative tracking

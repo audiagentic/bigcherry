@@ -1,5 +1,15 @@
 # 1328_aux_rocm_expert_backend
 
+## Summary
+
+Adds an opt-in `BIGCHERRY_EXPERT_AUX_DEVICE=<device>` path for Qwen4Exp tensor-split target contexts. The named GPU is registered as an ordinary scheduler backend without being added to the Meta tensor group. Routed-expert tensors placed there with `-ot` execute there, with Meta/aux activations copied through a scheduler-owned pinned host buffer.
+
+## Outcome
+
+Recorded state: `rejected` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 Rejected 2026-10-09 on a measured result at pin b11474 with its activation marker firing. Mechanism is in SUMMARY.md:
 the routed experts of selected layers run on the RX 6900 XT through a plain ROCm backend.
 

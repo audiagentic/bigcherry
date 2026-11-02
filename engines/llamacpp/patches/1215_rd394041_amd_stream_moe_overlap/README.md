@@ -1,5 +1,15 @@
 # 1215 (RD39/RD40/RD41/RD42): honor active HIP stream, per-(device,stream) cuBLAS handles, dedicated concurrent scratch, and MoE shared-expert overlap
 
+## Summary
+
+Fixes ggml_cuda_op_mul_mat to honor the assigned stream instead of hardcoding stream 0 and gives every (device,stream) pair its own cuBLAS handle (RD39/RD40); replaces in-place branch-node interleaving with a dedicated, reused scratch buffer for concurrent graph regions (RD41); and uses that infrastructure to detect the MoE shared-expert join and run the shared expert on an auxiliary stream during small-batch decode (RD42).
+
+## Outcome
+
+Recorded state: `rejected` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 ## Current disposition (2026-10-09; PRBE112/BCOP88)
 
 The historical positive measurements below do **not** supersede the later eight-session b11126 rejection (MoE and dense regressions on gfx1100/gfx1201). Current patch.py no longer edits per-stream cuBLAS handles or ggml_cuda_op_mul_mat: upstream #26574 absorbed that work. Its remaining generic RD41 QKV interleaving-to-scratch rewrite is active even when RD42's MoE name/shape predicate cannot fire, making it the smallest **unverified** dense-regression candidate. PRBE112 owns only a bounded MoE-only/native-QKV discriminator; do not re-enable or benchmark rejected 1215 as a promotion candidate. PRBE35/1216's standalone join guard is independent. See the authoritative PRBE112 plan and BCOP88; no new hardware result is claimed.

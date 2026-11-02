@@ -1,5 +1,15 @@
 # 1230 (HI15/HI16): hip-autotune-inspect offline cache and registry inspector
 
+## Summary
+
+Wires a host executable (source in the overlay) into the ggml-hip backend build that links the same registry functions and replay loader a production process uses, so its answers can be checked against a Python reimplementation of the same logic.
+
+## Outcome
+
+Recorded state: `untested` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 ## Scope
 
 Wires a host executable (source in the overlay,

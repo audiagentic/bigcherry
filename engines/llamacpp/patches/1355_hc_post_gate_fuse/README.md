@@ -1,5 +1,15 @@
 # 1355_hc_post_gate_fuse
 
+## Summary
+
+QFP35 residual fusion against llama.cpp b11474, composed after production patches 1313 and 1344.
+
+## Outcome
+
+Recorded state: `validated` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 QFP35 residual fusion against llama.cpp b11474, composed after production patches 1313 and 1344.
 
 Default: **on**. Control: `BIGCHERRY_HC_POST_GATE_FUSE=0`.

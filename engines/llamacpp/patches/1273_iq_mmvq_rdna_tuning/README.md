@@ -1,5 +1,15 @@
 # 1273: IQ4_XS / IQ3_XXS single-token MMVQ launch tuning (RDNA)
 
+## Summary
+
+`ncols_dst == 1` MMVQ for IQ4_XS and IQ3_XXS on gfx1100 and gfx1201 only. Two independent, default-off env gates: `BIGCHERRY_IQ_MMVQ_VDR=1` (lower-VDR vec-dot split) and `BIGCHERRY_IQ_MMVQ_NWARPS=1` (per-architecture block width).
+
+## Outcome
+
+Recorded state: `evaluated` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 ## Scope
 
 `ncols_dst == 1` MMVQ for IQ4_XS and IQ3_XXS on gfx1100 and gfx1201 only. Two independent, default-off

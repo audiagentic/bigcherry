@@ -1,5 +1,15 @@
 # 1005 prompt-cache checkpoint selection
 
+## Summary
+
+Squashes a 4-commit upstream stack into final-state edits: adds ctx_tgt_state_exact() and gates hybrid/recurrent checkpoint creation/selection/invalidation on it (since that memory is only valid at its exact final position, unlike range-valid SWA memory), and fixes prompt-cache entry selection to stop rejecting salvageable entries below a 25% keep-ratio floor and to compare candidates against the best available entry rather than the current slot.
+
+## Outcome
+
+Recorded state: `untested` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 This package owns the implementation, metadata, and validation fixture for
 the hybrid/recurrent checkpoint-selection backport. The C++ fixture and its
 recorded unit-test result are under `validation/fixtures/` (6/6 pass --

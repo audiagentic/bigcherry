@@ -1,5 +1,15 @@
 # 0300 framework validation
 
+## Summary
+
+Splits upstream's mul_mat_q_switch_J into a scan (mul_mat_q_compute_J_best, lifted unchanged) and a launcher (mul_mat_q_launch_forced_J) that takes J as an explicit parameter, so a forced value can override the scan's answer while the native path stays identical.
+
+## Outcome
+
+Recorded state: `validated` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 This local framework adapter has no Experiment Contract: it checks the emitted
 forced-J source transform, not a claimed kernel speedup. The historical
 `validated` state is not current qualification.

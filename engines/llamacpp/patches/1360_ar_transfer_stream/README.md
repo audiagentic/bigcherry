@@ -1,5 +1,15 @@
 # 1360_ar_transfer_stream
 
+## Summary
+
+`BIGCHERRY_AR_TRANSFER_STREAM=1` splits the existing NCCL/RCCL AllReduce into a begin half and an end half. Pre-work remains on each device's compute stream. Begin records an input event after that work, makes a dedicated per-device transfer stream wait on it, enqueues the grouped AllReduce on the transfer streams, and records an output event.
+
+## Outcome
+
+Recorded state: `evaluated` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 QFP49 piece 1: put the RCCL exchange on one dedicated transfer stream per participating device, fenced from the
 existing compute stream with events.
 

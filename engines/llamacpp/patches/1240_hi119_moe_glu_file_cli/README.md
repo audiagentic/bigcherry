@@ -1,5 +1,15 @@
 # 1240_hi119_moe_glu_file_cli
 
+## Summary
+
+Adds a --moe-glu-file argument (a new moe_glu_file_path parameter on test_backend(), independent of --test-file) that lets a Python evidence producer instantiate patch 1239's test_bigcherry_moe_glu_fusion class with runtime-derived parameters via a one-line `type glu_op k n m n_mats n_used broadcast` format, without recompiling test-backend-ops.
+
+## Outcome
+
+Recorded state: `untested` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 Plan item HI119 (superseded by THA02, `tuning-hip-autotune`). See
 `SUMMARY.md` for the mechanism.
 

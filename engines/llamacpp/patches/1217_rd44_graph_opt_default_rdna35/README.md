@@ -1,5 +1,15 @@
 # 1217_rd44_graph_opt_default_rdna35: default GGML_CUDA_GRAPH_OPT to enabled on RDNA3.5 (RD44)
 
+## Summary
+
+Defaults the CUDA/HIP graph-optimization pass to enabled on gfx1151 (GGML_CUDA_CC_IS_RDNA3_5) while every other architecture keeps the previous env-var-gated-off default; GGML_CUDA_GRAPH_OPT stays an explicit override in both directions.
+
+## Outcome
+
+Recorded state: `untested` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 Patch id: `1217_rd44_graph_opt_default_rdna35`. Plan item: `RD44`. The existing `RD44-GRAPH-OPT-DEFAULT-RDNA35` Experiment Contract is now bound in `patch.toml`, with the static required-capability adapter in `validation.toml`. This closes the lint definition gap, not the hardware evidence gap.
 Last patch in the AMD-STREAM chain -- `requires = ["1215_rd394041_amd_stream_moe_overlap",
 "1216_rd43_concurrent_join_fusion_guard"]` (both prerequisites are already

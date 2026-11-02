@@ -1,5 +1,15 @@
 # 1275: small mapped-host AllReduce latency controls
 
+## Summary
+
+Default-off controls over the pinned mapped-host AllReduce: `BIGCHERRY_AR_SLOT_SYNC=host|none` (`none` skips the pool-wrap host event waits for single-chunk mapped-host reductions only) and `BIGCHERRY_AR_SMALL_BLOCKS` / `BIGCHERRY_AR_SMALL_THREADS` geometry.
+
+## Outcome
+
+Recorded state: `evaluated` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 ## Scope
 
 Default-off controls over the pinned mapped-host AllReduce: `BIGCHERRY_AR_SLOT_SYNC=host|none` (`none`

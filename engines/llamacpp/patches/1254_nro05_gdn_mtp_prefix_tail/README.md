@@ -1,5 +1,15 @@
 # 1254_nro05_gdn_mtp_prefix_tail
 
+## Summary
+
+For MTP (K > 1) prefill of one long sequence, runs 1253's BF16 chunked GDN on the first n_tokens - K tokens and the sequential kernel on the last K, so the K snapshot slots stay exact.
+
+## Outcome
+
+Recorded state: `untested` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 Plan `NRO05`; state `untested`; requires `1253_nro04_gfx1100_bf16_chunked_gdn`.
 
 For MTP (`K > 1`) prefill of one long sequence, this patch runs 1253's gfx1100 BF16 chunked GDN on the first `n_tokens-K` tokens, then the stock sequential kernel on the last K tokens so snapshot slots retain stock recurrence semantics. The runtime route is implemented; set `GGML_CUDA_GDN_CHUNKED=0` to opt out.

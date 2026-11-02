@@ -1,5 +1,15 @@
 # 1343_mtp_nextn_rereserve
 
+## Summary
+
+`llama_context::set_embeddings_nextn` marks the scheduler for a reserve when the NextN (MTP) output mode really changes. The next `process()` then reserves the worst-case graph of the shape that will run, once. On by default; `BIGCHERRY_MTP_RERESERVE=0` disables.
+
+## Outcome
+
+Recorded state: `superseded` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 Promotion record (QFP18 lightweight evidence-reuse tier, pin b11402 / d89651a7, 2026-10-07). Mechanism is in
 SUMMARY.md: a change of the NextN (MTP) output mode asks for one scheduler reserve,
 so the graphs that run bind into a worst-case plan of their own shape instead of being re-planned as the context

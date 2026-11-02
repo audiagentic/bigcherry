@@ -1,5 +1,15 @@
 # 1000: RDNA4 MMQ codegen fixes for Q2_K and Q6_K
 
+## Summary
+
+Cherry-picks two narrowly-scoped fixes from unmerged upstream PR #25940 into the MFMA/WMMA MMQ vec_dot for Q2_K (forces a plain loop via #pragma unroll 1 to avoid a ROCm over-unroll/spill) and Q6_K (adds an explicit float cast before a scale multiply to change ROCm's codegen).
+
+## Outcome
+
+Recorded state: `rejected` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 ## Scope
 
 Cherry-picks two narrowly-scoped fixes from unmerged upstream PR #25940

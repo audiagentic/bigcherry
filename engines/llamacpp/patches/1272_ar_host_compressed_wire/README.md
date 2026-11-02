@@ -1,5 +1,15 @@
 # 1272 — host AllReduce compressed wire
 
+## Summary
+
+PGC07 tests explicit wire formats for llama.cpp b11233's existing two-GPU internal pinned-host AllReduce without changing provider selection or routing decode traffic to the copy engine.
+
+## Outcome
+
+Recorded state: `untested` ([patch.toml](patch.toml)); qualification and limitations: [SUMMARY.md](SUMMARY.md).
+
+## Detail
+
 PGC07 tests explicit wire formats for llama.cpp b11233's existing two-GPU internal pinned-host AllReduce without changing provider selection or routing decode traffic to the copy engine.
 
 ## Behaviour
