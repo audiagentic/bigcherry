@@ -1,9 +1,12 @@
 # Sourced by radiance lab scripts. rad_build <log>: prints the build directory of the moe-remote-handoff experiment for
 # this checkout. A build is reused when its recorded source trees (git tree ids of engines/radiance -- components,
-# patches, recipes -- and config) equal this checkout's, so a lab-script-only change does not rebuild (~5 min); any source change
-# builds. The tree id is written to <build>/.lab-source-tree after a build.
+# patches, recipes -- and config) and its ROCm SDK (root and version) equal this checkout's, so a lab-script-only change
+# does not rebuild (~5 min); any source or SDK change builds. The key is written to <build>/.lab-source-tree after a build.
 rad_tree() {
+    local sdk
     git rev-parse HEAD:engines/radiance HEAD:config 2>/dev/null
+    sdk=$(readlink -f "${BC_ROCM_ROOT:?no ROCm SDK selected (rocm-root in the environment file)}") \
+        && echo "$sdk $(cat "$sdk/.info/version")"
 }
 rad_build() {   # $1 build log path
     local tree b plan

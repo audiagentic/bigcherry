@@ -65,6 +65,18 @@ Recipe stacks name a version, never a path: `sdk = "7.2"` in
 `config/recipes.toml`. Adding or removing an SDK is an edit to the `rocm-sdks`
 table; no recipe changes.
 
+An engine whose own CMake searches for ROCm (radiance: `hipcc`, the HIP
+compiler, `amdhip64`, `hsa-runtime64`, with `HINTS /opt/rocm` ahead of
+`$ROCM_PATH`) declares those lookups in its `engine.toml` as
+`[build] rocm-paths`, each a path under an SDK root. A build passes every one
+explicitly from the selected SDK, which today is `rocm-root` (or
+`BC_ROCM_ROOT`) with symlinks resolved, since no lane selects a stack yet. The
+build fails before configure when that root is missing or lacks a declared
+path; it never falls back to `/opt/rocm`. The root and its `.info/version`
+are part of the build's `build_plan_id`, so builds against two SDKs, or
+against one SDK before and after an in-place upgrade, never share a build
+directory.
+
 The real clang driver lives under `<root>/llvm/bin`. `/opt/rocm` ships
 `amdclang` and `amdclang++` there, and the compile check looks for `llvm/bin`
 first. No shim is needed.
