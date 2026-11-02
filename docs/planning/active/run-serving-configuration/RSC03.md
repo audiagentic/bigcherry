@@ -59,5 +59,8 @@ Depends on RSC01/RSC02; feeds RHP13 (runtime) and RCS10 (derived settings). Runt
 
 ## Ledger-events
 
+
 - chg_20261102_005338_planning-one-serve-command_5259
 - 2026-11-02T00:53:52.338745+00:00 (updated-by): Updated: section:ledger-events
+- chg_20261102_012258_long-running-flash-next-server_6339
+- 2026-11-02T01:23:02.605425+00:00 (updated-by): Updated: section:ledger-events
