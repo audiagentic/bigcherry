@@ -474,7 +474,7 @@ class ExecuteCampaignLaneTests(unittest.TestCase):
             self.assertEqual(platform.targets, ("gfx1100",))
             args = campaign_build.cmake_configure_args(
                 captured["build"], platform, root / "source", root / "build",
-            targets_option="AMDGPU_TARGETS", rocm_paths=())
+            targets_option="AMDGPU_TARGETS", rocm_paths=(), engine_options={})
             self.assertIn("-DAMDGPU_TARGETS=gfx1100", args)
 
     def test_hip_and_vulkan_produce_different_build_plan_id(self):
@@ -1008,7 +1008,7 @@ class SelectedRocmSdkTests(unittest.TestCase):
                 ).build_plan
                 argv = campaign_build.cmake_configure_args(
                     captured["build"], captured["platform"], root / "source", root / "build",
-                    targets_option="AMDGPU_TARGETS", rocm_paths=self.PINNED)
+                    targets_option="AMDGPU_TARGETS", rocm_paths=self.PINNED, engine_options={})
             return plan, argv
 
     def test_the_selected_sdk_reaches_the_build_plan_and_the_configure_argv(self):

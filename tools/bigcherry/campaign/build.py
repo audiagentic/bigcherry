@@ -305,6 +305,7 @@ def cmake_configure_args(
     backend: str = "hip",
     targets_option: str,
     rocm_paths: tuple[tuple[str, str], ...],
+    engine_options: dict[str, str],
 ) -> list[str]:
     """The cmake configure argv for one v2 ``config.Build``/``config.Platform``.
 
@@ -326,6 +327,7 @@ def cmake_configure_args(
         "CMAKE_BUILD_TYPE": "Release",
         **dict(platform.options),
         **dict(build.options),
+        **engine_options,
         **_backend_configure_options(backend, platform, targets_option, rocm_paths),
     }
     if build.variant_set:
@@ -785,6 +787,7 @@ def execute_build_stage(
         cxx_compiler=cxx_compiler,
         targets_option=layout.targets_option,
         rocm_paths=layout.rocm_paths,
+        engine_options=layout.repo_path_options(paths.REPO_ROOT),
     )
     runner(configure_args, source_root)
     runner(cmake_build_args(build_dir, targets=cmake_targets), source_root)
