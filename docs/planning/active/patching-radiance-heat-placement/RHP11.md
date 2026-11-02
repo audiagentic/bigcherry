@@ -72,6 +72,8 @@ PROGRESS 2026-11-02: spec merged (#508, docs/design/moe-remote-placement-epochs-
 - 2026-11-01T23:39:09.725180+00:00 (updated-by): Updated: section:ledger-events
 - chg_20261102_002949_groundwork-for-moving-experts_1337
 - 2026-11-02T00:29:56.603122+00:00 (updated-by): Updated: section:ledger-events
+- chg_20261102_022722_groundwork-for-live-expert-pla_5619
+- 2026-11-02T02:27:26.869346+00:00 (updated-by): Updated: section:ledger-events
 - 2026-11-02T02:40:47.403962+00:00 (updated-by): Updated: section:notes
 - chg_20261102_024204_planning-records-updated-with_6210
 - 2026-11-02T02:42:16.533832+00:00 (updated-by): Updated: section:ledger-events
