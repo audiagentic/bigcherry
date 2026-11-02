@@ -107,7 +107,7 @@ jobs:
             plan=$(grep -oE "ok build_plan_id=[0-9a-f]+" work/lane-build.log | tail -1 | cut -d= -f2)
             test -n "$plan"
             # The card-free component tests, exactly as the pin-bump gate runs them (runtime_bundle.run_component_tests):
-            # each component's declared [test] targets, one ctest log per component, named on failure.
+            # each declared [test] target of every component, one ctest log per component, named on failure.
             builds=(work/builds/*/"$plan")
             if [ "${#builds[@]}" -ne 1 ] || [ ! -d "${builds[0]}" ]; then
               echo "component-tests: want exactly one build directory for plan $plan, found: ${builds[*]}" >&2
