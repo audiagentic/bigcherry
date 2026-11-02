@@ -57,7 +57,10 @@ public:
      * switches to radiance's fp8a8 grouped GEMM and the plain quantisers, reads the container's planes as they are (that kernel's
      * layout is the checkpoint's own row-major bytes) and takes the grouped GEMM for decode too (no FP8 GEMV yet). */
     bool set_weight_format(uint32_t fmt) {
-        if (fmt == MOE_FMT_W4NL64) return true;
+        if (fmt == MOE_FMT_W4NL64) {
+            if (gemv_w4h2_) std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_GEMV_W4H2 on - packed f16 W4 decode GEMV\n");
+            return true;
+        }
         if (fmt != MOE_FMT_FP8_E4M3_BLOCK) {
             std::fprintf(stderr, "r3_moe_worker: no kernels for weight format %u\n", fmt);
             return false;
@@ -123,11 +126,10 @@ public:
             const int v = std::atoi(hv);
             gemv_h2_env_ = v == 4 ? 4 : v == 2 ? 2 : v == 1 ? 1 : 0;
         }
-        /* R3_MOE_WORKER_GEMV_W4H2 (RAD14): the W4 decode GEMV on packed f16 dot products with sixteen-byte loads. */
-        if (const char* wv = std::getenv("R3_MOE_WORKER_GEMV_W4H2"); wv && *wv && std::strcmp(wv, "0") != 0) {
-            gemv_w4h2_ = true;
-            std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_GEMV_W4H2 on - packed f16 W4 decode GEMV\n");
-        }
+        /* R3_MOE_WORKER_GEMV_W4H2 (RAD14, default on): the W4 decode GEMV on packed f16 dot products with sixteen-byte loads; "0"
+         * selects the original W4 GEMV. Reported once the weight format is known (set_weight_format). */
+        if (const char* wv = std::getenv("R3_MOE_WORKER_GEMV_W4H2"); wv && *wv)
+            gemv_w4h2_ = std::strcmp(wv, "0") != 0;
         /* R3_MOE_WORKER_GEMV_MR (RAD14): the wide FP8 GEMV with the expert's rows batched four at a time (weights decoded once a pass). */
         if (const char* mv = std::getenv("R3_MOE_WORKER_GEMV_MR"); mv && *mv && std::strcmp(mv, "0") != 0) {
             gemv_mr_ = true;
@@ -991,7 +993,7 @@ private:
     uint32_t gemv_large_rows_ = 0; /* R3_MOE_WORKER_GEMV_LARGE_ROWS: GEMV for large-lane requests this small */
     int gemv_h2_env_ = -1;      /* R3_MOE_WORKER_GEMV_H2 as set: -1 unset, else 0 (wide kernel), 1, 2 or 4 rows a block */
     int gemv_h2_ = 0;           /* R3_MOE_WORKER_GEMV_H2: 1 packed f16 dot products in the FP8 decode GEMV, 2 the same with two rows a block (RAD14) */
-    bool gemv_w4h2_ = false;    /* R3_MOE_WORKER_GEMV_W4H2: packed f16 W4 decode GEMV (RAD14) */
+    bool gemv_w4h2_ = true;     /* R3_MOE_WORKER_GEMV_W4H2: packed f16 W4 decode GEMV (RAD14), default on */
     bool gemv_mr_ = false;      /* R3_MOE_WORKER_GEMV_MR: the wide FP8 GEMV batching an expert's rows (RAD14) */
     int gemv_wide_env_ = -1;    /* R3_MOE_WORKER_GEMV_WIDE as set: -1 unset, 0 off, 1 on */
     bool gemv_wide_ = false;    /* R3_MOE_WORKER_GEMV_WIDE: sixteen-byte FP8 loads in the decode GEMV (RAD14) */

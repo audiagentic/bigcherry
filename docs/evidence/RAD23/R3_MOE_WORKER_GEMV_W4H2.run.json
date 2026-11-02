@@ -1,0 +1,998 @@
+{
+  "schema_version": 1,
+  "capture_kind": "server-bench-balanced-v1",
+  "evidence_role": "diagnostic",
+  "performance_admitted": false,
+  "admission_blockers": [
+    "full source provenance and work equivalence require verification",
+    "replay activation, if applicable, requires separate admission"
+  ],
+  "configuration": {
+    "_comment": "RAD23 (2026-11-01): R3_MOE_WORKER_GEMV_W4H2 off vs on, flashnext-4gpu with the combine and R3_MOE_WORKER_GEMV_LARGE_ROWS=32 in both arms; 1/2/4/6 streams (512-token prompts, 128 tokens), engine /metrics per round. Promotion evidence for the setting.",
+    "schema_version": 1,
+    "engine": "radiance",
+    "evidence_role": "diagnostic",
+    "execution_evidence": "observe",
+    "model": "${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad",
+    "server_args": [
+      "--kernels",
+      "libr4d,libr3moe,libref",
+      "--placement",
+      "expert_tiered",
+      "--ngram-placement",
+      "ram",
+      "--max-num-seqs",
+      "6",
+      "--max-num-batched-tokens",
+      "4096",
+      "--checkpoint-interval",
+      "4096",
+      "--kv-cache-dtype",
+      "fp8",
+      "--num-speculative-tokens",
+      "3",
+      "--tp",
+      "1",
+      "--host-pool-mib",
+      "22528",
+      "--max-model-len",
+      "32768"
+    ],
+    "environment": {
+      "HIP_VISIBLE_DEVICES": "0",
+      "ROCR_VISIBLE_DEVICES": "2",
+      "RADIANCE_HOME": "${RAD_HOME}"
+    },
+    "expected_execution": {
+      "backend": "ROCm",
+      "architectures": [
+        "gfx1201"
+      ],
+      "locators": [
+        "${R9700_BDF}"
+      ]
+    },
+    "bench_configs": "mtp-dual",
+    "required_metrics": [
+      "s1_agg_tps",
+      "s1_stream_tps",
+      "s2_agg_tps",
+      "s2_stream_tps",
+      "s4_agg_tps",
+      "s4_stream_tps",
+      "s6_agg_tps",
+      "s6_stream_tps"
+    ],
+    "repetitions": 2,
+    "health_timeout_s": 900,
+    "arms": [
+      {
+        "name": "w4-default",
+        "mode": "stock",
+        "shutdown_method": "sigint",
+        "binary": "${RAD_BIN}",
+        "environment": {
+          "R3_MOE_WORKER_SKIP_OWNED": "1",
+          "RADIANCE_HOME": "${RAD_HOME}"
+        },
+        "settings": {
+          "R3_MOE_WORKER": "1",
+          "R3_MOE_WORKER_DEVICES": "0 1 3",
+          "R3_MOE_WORKER_MOE_DOWN_TILE": "1",
+          "R3_MOE_WORKER_ENGINE_RANKS": "1",
+          "R3_MOE_WORKER_MAX_ROWS": "4096",
+          "R3_MOE_WORKER_SMALL_ROWS": "8",
+          "R3_MOE_WORKER_MIB": "22528",
+          "R3_MOE_WORKER_HEAT": "${BC_WORK_ROOT}/heat/flashnext-mixed.hot-first",
+          "R3_MOE_WORKER_MIBS": "22528,22528,14336",
+          "R3_MOE_WORKER_PLACEMENT": "tail",
+          "R3_MOE_WORKER_COMBINE": "1",
+          "R3_MOE_WORKER_GEMV_LARGE_ROWS": "32",
+          "R3_MOE_WORKER_GEMV_W4H2": "0"
+        }
+      },
+      {
+        "name": "w4h2",
+        "mode": "stock",
+        "shutdown_method": "sigint",
+        "binary": "${RAD_BIN}",
+        "environment": {
+          "R3_MOE_WORKER_SKIP_OWNED": "1",
+          "RADIANCE_HOME": "${RAD_HOME}"
+        },
+        "settings": {
+          "R3_MOE_WORKER": "1",
+          "R3_MOE_WORKER_DEVICES": "0 1 3",
+          "R3_MOE_WORKER_MOE_DOWN_TILE": "1",
+          "R3_MOE_WORKER_ENGINE_RANKS": "1",
+          "R3_MOE_WORKER_MAX_ROWS": "4096",
+          "R3_MOE_WORKER_SMALL_ROWS": "8",
+          "R3_MOE_WORKER_MIB": "22528",
+          "R3_MOE_WORKER_HEAT": "${BC_WORK_ROOT}/heat/flashnext-mixed.hot-first",
+          "R3_MOE_WORKER_MIBS": "22528,22528,14336",
+          "R3_MOE_WORKER_PLACEMENT": "tail",
+          "R3_MOE_WORKER_COMBINE": "1",
+          "R3_MOE_WORKER_GEMV_LARGE_ROWS": "32",
+          "R3_MOE_WORKER_GEMV_W4H2": "1"
+        }
+      }
+    ],
+    "stream_bench": {
+      "streams": [
+        1,
+        2,
+        4,
+        6
+      ],
+      "prompt_tokens": 512,
+      "max_tokens": 128,
+      "reps": 2,
+      "seed": 1
+    }
+  },
+  "model_sha256": "0af5e96244e80c21ac8edca1719dae49b8a201b94a2f3994c3e24026ceaa4d20",
+  "arm_model_sha256": {},
+  "arm_provenance": {
+    "w4-default": {
+      "campaign_metadata": {
+        "binary_hash": "8bb58c9eaa517b6161858ff82d4aa9e270f3ed8784a45354884e4f1a94c0959e",
+        "build_id": "0c5823b8709ae4e66b462ade954e6d2c",
+        "build_plan_id": "762ce878d98f02c217a27b336735be07",
+        "effective_configure": {
+          "CMAKE_BUILD_TYPE": "Release",
+          "CMAKE_CXX_COMPILER": "/usr/bin/g++-14",
+          "CMAKE_CXX_COMPILER-ADVANCED": "1",
+          "CMAKE_CXX_COMPILER_AR": "/usr/bin/gcc-ar-14",
+          "CMAKE_CXX_COMPILER_AR-ADVANCED": "1",
+          "CMAKE_CXX_COMPILER_LAUNCHER": "ccache",
+          "CMAKE_CXX_COMPILER_RANLIB": "/usr/bin/gcc-ranlib-14",
+          "CMAKE_CXX_COMPILER_RANLIB-ADVANCED": "1",
+          "CMAKE_C_COMPILER": "/usr/bin/gcc-14",
+          "CMAKE_C_COMPILER-ADVANCED": "1",
+          "CMAKE_C_COMPILER_AR": "/usr/bin/gcc-ar-14",
+          "CMAKE_C_COMPILER_AR-ADVANCED": "1",
+          "CMAKE_C_COMPILER_LAUNCHER": "ccache",
+          "CMAKE_C_COMPILER_RANLIB": "/usr/bin/gcc-ranlib-14",
+          "CMAKE_C_COMPILER_RANLIB-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS": "",
+          "CMAKE_EXE_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_EXE_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_EXE_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_EXE_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS": "",
+          "CMAKE_MODULE_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_MODULE_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_MODULE_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_MODULE_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS": "",
+          "CMAKE_SHARED_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_SHARED_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_SHARED_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_SHARED_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1"
+        },
+        "generated_compile_inputs_hash": null,
+        "generated_inputs_verification": null,
+        "runtime_artifacts": {
+          "radiance": "8bb58c9eaa517b6161858ff82d4aa9e270f3ed8784a45354884e4f1a94c0959e"
+        },
+        "runtime_bundle_hash": "92fd84a0baa9fb9fdde30c96cce22b49",
+        "source_slice_id": "3a4f76bf9f7cf4039f9e52607bb02d59",
+        "toolchain": [
+          [
+            "CMAKE_CXX_COMPILER",
+            "/usr/bin/g++-14"
+          ],
+          [
+            "CMAKE_C_COMPILER",
+            "/usr/bin/gcc-14"
+          ],
+          [
+            "CMAKE_GENERATOR",
+            "Ninja"
+          ],
+          [
+            "c_compiler_realpath",
+            "/usr/bin/x86_64-linux-gnu-gcc-14"
+          ],
+          [
+            "c_compiler_version",
+            "x86_64-linux-gnu-gcc-14 (Debian 14.2.0-19) 14.2.0"
+          ],
+          [
+            "cmake_version",
+            "cmake version 4.4.4"
+          ],
+          [
+            "cxx_compiler_realpath",
+            "/usr/bin/x86_64-linux-gnu-g++-14"
+          ],
+          [
+            "cxx_compiler_version",
+            "x86_64-linux-gnu-g++-14 (Debian 14.2.0-19) 14.2.0"
+          ],
+          [
+            "ninja_version",
+            "1.13.2.git.kitware.jobserver-pipe-1"
+          ]
+        ]
+      },
+      "observed_runtime_artifacts": {
+        "radiance": "8bb58c9eaa517b6161858ff82d4aa9e270f3ed8784a45354884e4f1a94c0959e"
+      },
+      "compiler_observation": null,
+      "source_attestation": {
+        "upstream_revision": "4a61d7296bc5b4fec5932949dac4a2fadf9b61ca",
+        "tree_oid": "33e1abed53c80baa7b3d4af5d6d1d67335b708db",
+        "object_format": "sha1",
+        "source_slice_id": "3a4f76bf9f7cf4039f9e52607bb02d59",
+        "allowed_untracked": [
+          "abi/bc_moe_remote.h",
+          "arch/common/bc_moe_remote_block.h",
+          "core/place/bc_moe_remote.cpp",
+          "core/place/bc_moe_remote_place.h"
+        ]
+      }
+    },
+    "w4h2": {
+      "campaign_metadata": {
+        "binary_hash": "8bb58c9eaa517b6161858ff82d4aa9e270f3ed8784a45354884e4f1a94c0959e",
+        "build_id": "0c5823b8709ae4e66b462ade954e6d2c",
+        "build_plan_id": "762ce878d98f02c217a27b336735be07",
+        "effective_configure": {
+          "CMAKE_BUILD_TYPE": "Release",
+          "CMAKE_CXX_COMPILER": "/usr/bin/g++-14",
+          "CMAKE_CXX_COMPILER-ADVANCED": "1",
+          "CMAKE_CXX_COMPILER_AR": "/usr/bin/gcc-ar-14",
+          "CMAKE_CXX_COMPILER_AR-ADVANCED": "1",
+          "CMAKE_CXX_COMPILER_LAUNCHER": "ccache",
+          "CMAKE_CXX_COMPILER_RANLIB": "/usr/bin/gcc-ranlib-14",
+          "CMAKE_CXX_COMPILER_RANLIB-ADVANCED": "1",
+          "CMAKE_C_COMPILER": "/usr/bin/gcc-14",
+          "CMAKE_C_COMPILER-ADVANCED": "1",
+          "CMAKE_C_COMPILER_AR": "/usr/bin/gcc-ar-14",
+          "CMAKE_C_COMPILER_AR-ADVANCED": "1",
+          "CMAKE_C_COMPILER_LAUNCHER": "ccache",
+          "CMAKE_C_COMPILER_RANLIB": "/usr/bin/gcc-ranlib-14",
+          "CMAKE_C_COMPILER_RANLIB-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS": "",
+          "CMAKE_EXE_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_EXE_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_EXE_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_EXE_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS": "",
+          "CMAKE_MODULE_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_MODULE_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_MODULE_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_MODULE_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS": "",
+          "CMAKE_SHARED_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_SHARED_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_SHARED_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_SHARED_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1"
+        },
+        "generated_compile_inputs_hash": null,
+        "generated_inputs_verification": null,
+        "runtime_artifacts": {
+          "radiance": "8bb58c9eaa517b6161858ff82d4aa9e270f3ed8784a45354884e4f1a94c0959e"
+        },
+        "runtime_bundle_hash": "92fd84a0baa9fb9fdde30c96cce22b49",
+        "source_slice_id": "3a4f76bf9f7cf4039f9e52607bb02d59",
+        "toolchain": [
+          [
+            "CMAKE_CXX_COMPILER",
+            "/usr/bin/g++-14"
+          ],
+          [
+            "CMAKE_C_COMPILER",
+            "/usr/bin/gcc-14"
+          ],
+          [
+            "CMAKE_GENERATOR",
+            "Ninja"
+          ],
+          [
+            "c_compiler_realpath",
+            "/usr/bin/x86_64-linux-gnu-gcc-14"
+          ],
+          [
+            "c_compiler_version",
+            "x86_64-linux-gnu-gcc-14 (Debian 14.2.0-19) 14.2.0"
+          ],
+          [
+            "cmake_version",
+            "cmake version 4.4.4"
+          ],
+          [
+            "cxx_compiler_realpath",
+            "/usr/bin/x86_64-linux-gnu-g++-14"
+          ],
+          [
+            "cxx_compiler_version",
+            "x86_64-linux-gnu-g++-14 (Debian 14.2.0-19) 14.2.0"
+          ],
+          [
+            "ninja_version",
+            "1.13.2.git.kitware.jobserver-pipe-1"
+          ]
+        ]
+      },
+      "observed_runtime_artifacts": {
+        "radiance": "8bb58c9eaa517b6161858ff82d4aa9e270f3ed8784a45354884e4f1a94c0959e"
+      },
+      "compiler_observation": null,
+      "source_attestation": {
+        "upstream_revision": "4a61d7296bc5b4fec5932949dac4a2fadf9b61ca",
+        "tree_oid": "33e1abed53c80baa7b3d4af5d6d1d67335b708db",
+        "object_format": "sha1",
+        "source_slice_id": "3a4f76bf9f7cf4039f9e52607bb02d59",
+        "allowed_untracked": [
+          "abi/bc_moe_remote.h",
+          "arch/common/bc_moe_remote_block.h",
+          "core/place/bc_moe_remote.cpp",
+          "core/place/bc_moe_remote_place.h"
+        ]
+      }
+    }
+  },
+  "arm_variables": {
+    "w4-default": {
+      "environment": {
+        "R3_MOE_WORKER_SKIP_OWNED": "1",
+        "RADIANCE_HOME": "${RAD_HOME}"
+      },
+      "settings": {
+        "R3_MOE_WORKER": "1",
+        "R3_MOE_WORKER_DEVICES": "0 1 3",
+        "R3_MOE_WORKER_MOE_DOWN_TILE": "1",
+        "R3_MOE_WORKER_ENGINE_RANKS": "1",
+        "R3_MOE_WORKER_MAX_ROWS": "4096",
+        "R3_MOE_WORKER_SMALL_ROWS": "8",
+        "R3_MOE_WORKER_MIB": "22528",
+        "R3_MOE_WORKER_HEAT": "${BC_WORK_ROOT}/heat/flashnext-mixed.hot-first",
+        "R3_MOE_WORKER_MIBS": "22528,22528,14336",
+        "R3_MOE_WORKER_PLACEMENT": "tail",
+        "R3_MOE_WORKER_COMBINE": "1",
+        "R3_MOE_WORKER_GEMV_LARGE_ROWS": "32",
+        "R3_MOE_WORKER_GEMV_W4H2": "0"
+      }
+    },
+    "w4h2": {
+      "environment": {
+        "R3_MOE_WORKER_SKIP_OWNED": "1",
+        "RADIANCE_HOME": "${RAD_HOME}"
+      },
+      "settings": {
+        "R3_MOE_WORKER": "1",
+        "R3_MOE_WORKER_DEVICES": "0 1 3",
+        "R3_MOE_WORKER_MOE_DOWN_TILE": "1",
+        "R3_MOE_WORKER_ENGINE_RANKS": "1",
+        "R3_MOE_WORKER_MAX_ROWS": "4096",
+        "R3_MOE_WORKER_SMALL_ROWS": "8",
+        "R3_MOE_WORKER_MIB": "22528",
+        "R3_MOE_WORKER_HEAT": "${BC_WORK_ROOT}/heat/flashnext-mixed.hot-first",
+        "R3_MOE_WORKER_MIBS": "22528,22528,14336",
+        "R3_MOE_WORKER_PLACEMENT": "tail",
+        "R3_MOE_WORKER_COMBINE": "1",
+        "R3_MOE_WORKER_GEMV_LARGE_ROWS": "32",
+        "R3_MOE_WORKER_GEMV_W4H2": "1"
+      }
+    }
+  },
+  "schedule": [
+    [
+      "w4-default",
+      "w4h2"
+    ],
+    [
+      "w4h2",
+      "w4-default"
+    ]
+  ],
+  "schedule_seed": 0,
+  "settle_seconds": 20.0,
+  "runs": [
+    {
+      "pair": 1,
+      "mode": "w4-default",
+      "position": 0,
+      "returncode": 0,
+      "performance_admitted": false,
+      "server_log": "${BC_WORK_ROOT}/runs/w4h2-evidence/out/pair-001-w4-default/server.log",
+      "settings": {
+        "R3_MOE_WORKER": "1",
+        "R3_MOE_WORKER_DEVICES": "0 1 3",
+        "R3_MOE_WORKER_MOE_DOWN_TILE": "1",
+        "R3_MOE_WORKER_ENGINE_RANKS": "1",
+        "R3_MOE_WORKER_MAX_ROWS": "4096",
+        "R3_MOE_WORKER_SMALL_ROWS": "8",
+        "R3_MOE_WORKER_MIB": "22528",
+        "R3_MOE_WORKER_HEAT": "${BC_WORK_ROOT}/heat/flashnext-mixed.hot-first",
+        "R3_MOE_WORKER_MIBS": "22528,22528,14336",
+        "R3_MOE_WORKER_PLACEMENT": "tail",
+        "R3_MOE_WORKER_COMBINE": "1",
+        "R3_MOE_WORKER_GEMV_LARGE_ROWS": "32",
+        "R3_MOE_WORKER_GEMV_W4H2": "0"
+      },
+      "execution_attestation": null,
+      "execution_evidence_status": "missing",
+      "admission_blockers": [
+        "physical-device execution evidence missing"
+      ],
+      "metrics": {
+        "s1_agg_tps": 83.031,
+        "s1_ttft_max_ms": 421.55,
+        "s1_gap_p95_ms": 31.7935,
+        "s1_stream_tps": 113.083,
+        "s1_decode_ms_per_step": 27.441850000000002,
+        "s1_decode_tokens_per_step": 3.13565,
+        "s1_decode_tps_engine": 114.4495,
+        "s1_draft_acceptance": 0.7118500000000001,
+        "s1_requests_running_mean": 0.6695,
+        "s2_agg_tps": 116.3945,
+        "s2_ttft_max_ms": 781.15,
+        "s2_gap_p95_ms": 39.141000000000005,
+        "s2_stream_tps": 80.844,
+        "s2_decode_ms_per_step": 32.37405,
+        "s2_decode_tokens_per_step": 5.875,
+        "s2_decode_tps_engine": 181.477,
+        "s2_draft_acceptance": 0.6571,
+        "s2_requests_running_mean": 1.3,
+        "s4_agg_tps": 141.28199999999998,
+        "s4_ttft_max_ms": 1407.74,
+        "s4_gap_p95_ms": 52.833,
+        "s4_stream_tps": 51.7425,
+        "s4_decode_ms_per_step": 48.10665,
+        "s4_decode_tokens_per_step": 11.12555,
+        "s4_decode_tps_engine": 231.24,
+        "s4_draft_acceptance": 0.63275,
+        "s4_requests_running_mean": 2.5934999999999997,
+        "s6_agg_tps": 160.039,
+        "s6_ttft_max_ms": 2125.09,
+        "s6_gap_p95_ms": 62.9035,
+        "s6_stream_tps": 43.6445,
+        "s6_decode_ms_per_step": 55.56755,
+        "s6_decode_tokens_per_step": 16.07295,
+        "s6_decode_tps_engine": 289.25,
+        "s6_draft_acceptance": 0.652,
+        "s6_requests_running_mean": 3.476
+      },
+      "draft": {
+        "drafted": 3390,
+        "accepted": 2207
+      },
+      "elapsed_s": 108.13469816406723,
+      "shutdown": {
+        "method": "sigint",
+        "requested": true,
+        "forced": false,
+        "returncode": 0,
+        "error": null
+      },
+      "sidecars": [
+        {
+          "name": "helper0",
+          "argv": [
+            "${RAD_HOME}/helpers/r3_moe_worker",
+            "${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
+          ],
+          "log": "${BC_WORK_ROOT}/runs/w4h2-evidence/out/pair-001-w4-default/helper0.log",
+          "ready_s": 0.4008827970828861,
+          "returncode": 0,
+          "exited_before_stop": false,
+          "killed": false
+        },
+        {
+          "name": "helper1",
+          "argv": [
+            "${RAD_HOME}/helpers/r3_moe_worker",
+            "${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
+          ],
+          "log": "${BC_WORK_ROOT}/runs/w4h2-evidence/out/pair-001-w4-default/helper1.log",
+          "ready_s": 0.20055110205430537,
+          "returncode": 0,
+          "exited_before_stop": false,
+          "killed": false
+        },
+        {
+          "name": "helper2",
+          "argv": [
+            "${RAD_HOME}/helpers/r3_moe_worker",
+            "${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
+          ],
+          "log": "${BC_WORK_ROOT}/runs/w4h2-evidence/out/pair-001-w4-default/helper2.log",
+          "ready_s": 0.20058106898795813,
+          "returncode": 0,
+          "exited_before_stop": false,
+          "killed": false
+        }
+      ]
+    },
+    {
+      "pair": 1,
+      "mode": "w4h2",
+      "position": 1,
+      "returncode": 0,
+      "performance_admitted": false,
+      "server_log": "${BC_WORK_ROOT}/runs/w4h2-evidence/out/pair-001-w4h2/server.log",
+      "settings": {
+        "R3_MOE_WORKER": "1",
+        "R3_MOE_WORKER_DEVICES": "0 1 3",
+        "R3_MOE_WORKER_MOE_DOWN_TILE": "1",
+        "R3_MOE_WORKER_ENGINE_RANKS": "1",
+        "R3_MOE_WORKER_MAX_ROWS": "4096",
+        "R3_MOE_WORKER_SMALL_ROWS": "8",
+        "R3_MOE_WORKER_MIB": "22528",
+        "R3_MOE_WORKER_HEAT": "${BC_WORK_ROOT}/heat/flashnext-mixed.hot-first",
+        "R3_MOE_WORKER_MIBS": "22528,22528,14336",
+        "R3_MOE_WORKER_PLACEMENT": "tail",
+        "R3_MOE_WORKER_COMBINE": "1",
+        "R3_MOE_WORKER_GEMV_LARGE_ROWS": "32",
+        "R3_MOE_WORKER_GEMV_W4H2": "1"
+      },
+      "execution_attestation": null,
+      "execution_evidence_status": "missing",
+      "admission_blockers": [
+        "physical-device execution evidence missing"
+      ],
+      "metrics": {
+        "s1_agg_tps": 93.8605,
+        "s1_ttft_max_ms": 416.67,
+        "s1_gap_p95_ms": 31.648,
+        "s1_stream_tps": 133.7175,
+        "s1_decode_ms_per_step": 25.7442,
+        "s1_decode_tokens_per_step": 3.4383999999999997,
+        "s1_decode_tps_engine": 133.8635,
+        "s1_draft_acceptance": 0.8128,
+        "s1_requests_running_mean": 0.6425,
+        "s2_agg_tps": 124.10050000000001,
+        "s2_ttft_max_ms": 732.1949999999999,
+        "s2_gap_p95_ms": 42.284000000000006,
+        "s2_stream_tps": 91.876,
+        "s2_decode_ms_per_step": 30.20545,
+        "s2_decode_tokens_per_step": 5.8161000000000005,
+        "s2_decode_tps_engine": 192.566,
+        "s2_draft_acceptance": 0.653,
+        "s2_requests_running_mean": 1.2000000000000002,
+        "s4_agg_tps": 153.964,
+        "s4_ttft_max_ms": 1453.155,
+        "s4_gap_p95_ms": 46.233000000000004,
+        "s4_stream_tps": 63.567,
+        "s4_decode_ms_per_step": 40.5728,
+        "s4_decode_tokens_per_step": 11.168099999999999,
+        "s4_decode_tps_engine": 275.241,
+        "s4_draft_acceptance": 0.6566000000000001,
+        "s4_requests_running_mean": 2.2665,
+        "s6_agg_tps": 176.659,
+        "s6_ttft_max_ms": 2181.73,
+        "s6_gap_p95_ms": 51.317,
+        "s6_stream_tps": 53.089,
+        "s6_decode_ms_per_step": 48.025999999999996,
+        "s6_decode_tokens_per_step": 17.04445,
+        "s6_decode_tps_engine": 354.90250000000003,
+        "s6_draft_acceptance": 0.63505,
+        "s6_requests_running_mean": 3.421
+      },
+      "draft": {
+        "drafted": 3357,
+        "accepted": 2202
+      },
+      "elapsed_s": 131.96593687299173,
+      "shutdown": {
+        "method": "sigint",
+        "requested": true,
+        "forced": false,
+        "returncode": 0,
+        "error": null
+      },
+      "sidecars": [
+        {
+          "name": "helper0",
+          "argv": [
+            "${RAD_HOME}/helpers/r3_moe_worker",
+            "${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
+          ],
+          "log": "${BC_WORK_ROOT}/runs/w4h2-evidence/out/pair-001-w4h2/helper0.log",
+          "ready_s": 0.3005961310118437,
+          "returncode": 0,
+          "exited_before_stop": false,
+          "killed": false
+        },
+        {
+          "name": "helper1",
+          "argv": [
+            "${RAD_HOME}/helpers/r3_moe_worker",
+            "${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
+          ],
+          "log": "${BC_WORK_ROOT}/runs/w4h2-evidence/out/pair-001-w4h2/helper1.log",
+          "ready_s": 0.2004502429626882,
+          "returncode": 0,
+          "exited_before_stop": false,
+          "killed": false
+        },
+        {
+          "name": "helper2",
+          "argv": [
+            "${RAD_HOME}/helpers/r3_moe_worker",
+            "${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
+          ],
+          "log": "${BC_WORK_ROOT}/runs/w4h2-evidence/out/pair-001-w4h2/helper2.log",
+          "ready_s": 0.2005404100054875,
+          "returncode": 0,
+          "exited_before_stop": false,
+          "killed": false
+        }
+      ]
+    },
+    {
+      "pair": 2,
+      "mode": "w4h2",
+      "position": 0,
+      "returncode": 0,
+      "performance_admitted": false,
+      "server_log": "${BC_WORK_ROOT}/runs/w4h2-evidence/out/pair-002-w4h2/server.log",
+      "settings": {
+        "R3_MOE_WORKER": "1",
+        "R3_MOE_WORKER_DEVICES": "0 1 3",
+        "R3_MOE_WORKER_MOE_DOWN_TILE": "1",
+        "R3_MOE_WORKER_ENGINE_RANKS": "1",
+        "R3_MOE_WORKER_MAX_ROWS": "4096",
+        "R3_MOE_WORKER_SMALL_ROWS": "8",
+        "R3_MOE_WORKER_MIB": "22528",
+        "R3_MOE_WORKER_HEAT": "${BC_WORK_ROOT}/heat/flashnext-mixed.hot-first",
+        "R3_MOE_WORKER_MIBS": "22528,22528,14336",
+        "R3_MOE_WORKER_PLACEMENT": "tail",
+        "R3_MOE_WORKER_COMBINE": "1",
+        "R3_MOE_WORKER_GEMV_LARGE_ROWS": "32",
+        "R3_MOE_WORKER_GEMV_W4H2": "1"
+      },
+      "execution_attestation": null,
+      "execution_evidence_status": "missing",
+      "admission_blockers": [
+        "physical-device execution evidence missing"
+      ],
+      "metrics": {
+        "s1_agg_tps": 92.6505,
+        "s1_ttft_max_ms": 431.90999999999997,
+        "s1_gap_p95_ms": 31.792,
+        "s1_stream_tps": 133.057,
+        "s1_decode_ms_per_step": 25.8904,
+        "s1_decode_tokens_per_step": 3.4383999999999997,
+        "s1_decode_tps_engine": 133.18,
+        "s1_draft_acceptance": 0.8128,
+        "s1_requests_running_mean": 0.6425,
+        "s2_agg_tps": 122.7285,
+        "s2_ttft_max_ms": 770.8,
+        "s2_gap_p95_ms": 36.132999999999996,
+        "s2_stream_tps": 87.363,
+        "s2_decode_ms_per_step": 29.8121,
+        "s2_decode_tokens_per_step": 5.7841000000000005,
+        "s2_decode_tps_engine": 194.167,
+        "s2_draft_acceptance": 0.6531,
+        "s2_requests_running_mean": 1.25,
+        "s4_agg_tps": 151.61599999999999,
+        "s4_ttft_max_ms": 1453.47,
+        "s4_gap_p95_ms": 48.724500000000006,
+        "s4_stream_tps": 62.077999999999996,
+        "s4_decode_ms_per_step": 40.7857,
+        "s4_decode_tokens_per_step": 10.8936,
+        "s4_decode_tps_engine": 267.1005,
+        "s4_draft_acceptance": 0.6315,
+        "s4_requests_running_mean": 2.333,
+        "s6_agg_tps": 176.2465,
+        "s6_ttft_max_ms": 2155.9449999999997,
+        "s6_gap_p95_ms": 50.052,
+        "s6_stream_tps": 51.447,
+        "s6_decode_ms_per_step": 47.70105,
+        "s6_decode_tokens_per_step": 16.6413,
+        "s6_decode_tps_engine": 348.8615,
+        "s6_draft_acceptance": 0.6225499999999999,
+        "s6_requests_running_mean": 3.474
+      },
+      "draft": {
+        "drafted": 3399,
+        "accepted": 2182
+      },
+      "elapsed_s": 124.20831053704023,
+      "shutdown": {
+        "method": "sigint",
+        "requested": true,
+        "forced": false,
+        "returncode": 0,
+        "error": null
+      },
+      "sidecars": [
+        {
+          "name": "helper0",
+          "argv": [
+            "${RAD_HOME}/helpers/r3_moe_worker",
+            "${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
+          ],
+          "log": "${BC_WORK_ROOT}/runs/w4h2-evidence/out/pair-002-w4h2/helper0.log",
+          "ready_s": 0.30059436010196805,
+          "returncode": 0,
+          "exited_before_stop": false,
+          "killed": false
+        },
+        {
+          "name": "helper1",
+          "argv": [
+            "${RAD_HOME}/helpers/r3_moe_worker",
+            "${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
+          ],
+          "log": "${BC_WORK_ROOT}/runs/w4h2-evidence/out/pair-002-w4h2/helper1.log",
+          "ready_s": 0.20052282302640378,
+          "returncode": 0,
+          "exited_before_stop": false,
+          "killed": false
+        },
+        {
+          "name": "helper2",
+          "argv": [
+            "${RAD_HOME}/helpers/r3_moe_worker",
+            "${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
+          ],
+          "log": "${BC_WORK_ROOT}/runs/w4h2-evidence/out/pair-002-w4h2/helper2.log",
+          "ready_s": 0.20058698998764157,
+          "returncode": 0,
+          "exited_before_stop": false,
+          "killed": false
+        }
+      ]
+    },
+    {
+      "pair": 2,
+      "mode": "w4-default",
+      "position": 1,
+      "returncode": 0,
+      "performance_admitted": false,
+      "server_log": "${BC_WORK_ROOT}/runs/w4h2-evidence/out/pair-002-w4-default/server.log",
+      "settings": {
+        "R3_MOE_WORKER": "1",
+        "R3_MOE_WORKER_DEVICES": "0 1 3",
+        "R3_MOE_WORKER_MOE_DOWN_TILE": "1",
+        "R3_MOE_WORKER_ENGINE_RANKS": "1",
+        "R3_MOE_WORKER_MAX_ROWS": "4096",
+        "R3_MOE_WORKER_SMALL_ROWS": "8",
+        "R3_MOE_WORKER_MIB": "22528",
+        "R3_MOE_WORKER_HEAT": "${BC_WORK_ROOT}/heat/flashnext-mixed.hot-first",
+        "R3_MOE_WORKER_MIBS": "22528,22528,14336",
+        "R3_MOE_WORKER_PLACEMENT": "tail",
+        "R3_MOE_WORKER_COMBINE": "1",
+        "R3_MOE_WORKER_GEMV_LARGE_ROWS": "32",
+        "R3_MOE_WORKER_GEMV_W4H2": "0"
+      },
+      "execution_attestation": null,
+      "execution_evidence_status": "missing",
+      "admission_blockers": [
+        "physical-device execution evidence missing"
+      ],
+      "metrics": {
+        "s1_agg_tps": 81.96600000000001,
+        "s1_ttft_max_ms": 437.75,
+        "s1_gap_p95_ms": 31.902,
+        "s1_stream_tps": 112.503,
+        "s1_decode_ms_per_step": 27.59245,
+        "s1_decode_tokens_per_step": 3.13565,
+        "s1_decode_tps_engine": 113.873,
+        "s1_draft_acceptance": 0.7118500000000001,
+        "s1_requests_running_mean": 0.6695,
+        "s2_agg_tps": 116.061,
+        "s2_ttft_max_ms": 699.235,
+        "s2_gap_p95_ms": 33.661,
+        "s2_stream_tps": 90.471,
+        "s2_decode_ms_per_step": 31.992849999999997,
+        "s2_decode_tokens_per_step": 5.5055499999999995,
+        "s2_decode_tps_engine": 172.096,
+        "s2_draft_acceptance": 0.6532,
+        "s2_requests_running_mean": 1.25,
+        "s4_agg_tps": 141.41899999999998,
+        "s4_ttft_max_ms": 1431.21,
+        "s4_gap_p95_ms": 54.0435,
+        "s4_stream_tps": 52.971000000000004,
+        "s4_decode_ms_per_step": 48.48395,
+        "s4_decode_tokens_per_step": 11.3778,
+        "s4_decode_tps_engine": 234.671,
+        "s4_draft_acceptance": 0.6364000000000001,
+        "s4_requests_running_mean": 2.5934999999999997,
+        "s6_agg_tps": 160.3985,
+        "s6_ttft_max_ms": 2148.3450000000003,
+        "s6_gap_p95_ms": 63.167,
+        "s6_stream_tps": 43.3225,
+        "s6_decode_ms_per_step": 56.4243,
+        "s6_decode_tokens_per_step": 16.5764,
+        "s6_decode_tps_engine": 293.706,
+        "s6_draft_acceptance": 0.6596,
+        "s6_requests_running_mean": 3.4524999999999997
+      },
+      "draft": {
+        "drafted": 3372,
+        "accepted": 2210
+      },
+      "elapsed_s": 128.11435187305324,
+      "shutdown": {
+        "method": "sigint",
+        "requested": true,
+        "forced": false,
+        "returncode": 0,
+        "error": null
+      },
+      "sidecars": [
+        {
+          "name": "helper0",
+          "argv": [
+            "${RAD_HOME}/helpers/r3_moe_worker",
+            "${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
+          ],
+          "log": "${BC_WORK_ROOT}/runs/w4h2-evidence/out/pair-002-w4-default/helper0.log",
+          "ready_s": 0.3006695539224893,
+          "returncode": 0,
+          "exited_before_stop": false,
+          "killed": false
+        },
+        {
+          "name": "helper1",
+          "argv": [
+            "${RAD_HOME}/helpers/r3_moe_worker",
+            "${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
+          ],
+          "log": "${BC_WORK_ROOT}/runs/w4h2-evidence/out/pair-002-w4-default/helper1.log",
+          "ready_s": 0.20049784798175097,
+          "returncode": 0,
+          "exited_before_stop": false,
+          "killed": false
+        },
+        {
+          "name": "helper2",
+          "argv": [
+            "${RAD_HOME}/helpers/r3_moe_worker",
+            "${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
+          ],
+          "log": "${BC_WORK_ROOT}/runs/w4h2-evidence/out/pair-002-w4-default/helper2.log",
+          "ready_s": 0.2006075669778511,
+          "returncode": 0,
+          "exited_before_stop": false,
+          "killed": false
+        }
+      ]
+    }
+  ],
+  "exploratory_comparisons": {
+    "w4h2_vs_w4-default": {
+      "s1_agg_tps": {
+        "paired_rounds": 2,
+        "geometric_effect_pct": 13.03900089218548,
+        "ci95_low_pct": 13.03528292218723,
+        "ci95_high_pct": 13.042718984475666,
+        "resamples": 10000,
+        "seed": 0,
+        "pair_ratios": [
+          1.1304271898447567,
+          1.1303528292218723
+        ]
+      },
+      "s1_stream_tps": {
+        "paired_rounds": 2,
+        "geometric_effect_pct": 18.258475301749776,
+        "ci95_low_pct": 18.24721664618023,
+        "ci95_high_pct": 18.269735029288103,
+        "resamples": 10000,
+        "seed": 0,
+        "pair_ratios": [
+          1.1824721664618023,
+          1.182697350292881
+        ]
+      },
+      "s2_agg_tps": {
+        "paired_rounds": 2,
+        "geometric_effect_pct": 6.181802908190859,
+        "ci95_low_pct": 5.744823842634461,
+        "ci95_high_pct": 6.62058774254799,
+        "resamples": 10000,
+        "seed": 0,
+        "pair_ratios": [
+          1.06620587742548,
+          1.0574482384263446
+        ]
+      },
+      "s2_stream_tps": {
+        "paired_rounds": 2,
+        "geometric_effect_pct": 4.757763264834969,
+        "ci95_low_pct": -3.435354975627558,
+        "ci95_high_pct": 13.6460343377369,
+        "resamples": 10000,
+        "seed": 0,
+        "pair_ratios": [
+          1.136460343377369,
+          0.9656464502437244
+        ]
+      },
+      "s4_agg_tps": {
+        "paired_rounds": 2,
+        "geometric_effect_pct": 8.089824594514017,
+        "ci95_low_pct": 7.210487982520042,
+        "ci95_high_pct": 8.976373494146461,
+        "resamples": 10000,
+        "seed": 0,
+        "pair_ratios": [
+          1.0897637349414646,
+          1.0721048798252004
+        ]
+      },
+      "s4_stream_tps": {
+        "paired_rounds": 2,
+        "geometric_effect_pct": 19.989135988282424,
+        "ci95_low_pct": 17.1924260444394,
+        "ci95_high_pct": 22.85258733149731,
+        "resamples": 10000,
+        "seed": 0,
+        "pair_ratios": [
+          1.228525873314973,
+          1.171924260444394
+        ]
+      },
+      "s6_agg_tps": {
+        "paired_rounds": 2,
+        "geometric_effect_pct": 10.132391189018941,
+        "ci95_low_pct": 9.880391649547837,
+        "ci95_high_pct": 10.384968663888184,
+        "resamples": 10000,
+        "seed": 0,
+        "pair_ratios": [
+          1.1038496866388818,
+          1.0988039164954784
+        ]
+      },
+      "s6_stream_tps": {
+        "paired_rounds": 2,
+        "geometric_effect_pct": 20.187910123209285,
+        "ci95_low_pct": 18.753534537480544,
+        "ci95_high_pct": 21.639610947542074,
+        "resamples": 10000,
+        "seed": 0,
+        "pair_ratios": [
+          1.2163961094754208,
+          1.1875353453748054
+        ]
+      }
+    }
+  },
+  "setting_activation": {
+    "w4h2": {
+      "R3_MOE_WORKER_GEMV_W4H2": {
+        "status": "executed",
+        "mechanism": "moe-remote:R3_MOE_WORKER_GEMV_W4H2",
+        "detail": "marker 'r3_moe_worker: R3_MOE_WORKER_GEMV_W4H2 on': control False, subject True"
+      }
+    }
+  }
+}

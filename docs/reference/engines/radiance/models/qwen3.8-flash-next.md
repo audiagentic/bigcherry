@@ -242,7 +242,8 @@ At 6 streams a decode step is 24 rows (6 x (1 + 3 MTP drafts)), above the helper
 large lane and the grouped GEMM built for 2,000-row prefill. Per-op timing put ~46% of the run in `moe_mailbox_add` (the
 helper wait) and the helper trace gave ~0.59 ms of exposed wait a layer, ~28 ms of the 56 ms step; the XTX expert step was
 ~470-520 us of it (activation read and result write ~30 us each, so streaming the results would not help). The launcher now
-sets `R3_MOE_WORKER_GEMV_W4H2=1` (packed-f16 W4 GEMV, sixteen-byte loads) and `R3_MOE_WORKER_GEMV_LARGE_ROWS=32` (large-lane
+runs `R3_MOE_WORKER_GEMV_W4H2` (packed-f16 W4 GEMV, sixteen-byte loads; the helper default since its single-variable
+capture, `0` turns it off) and sets `R3_MOE_WORKER_GEMV_LARGE_ROWS=32` (large-lane
 steps up to 32 rows take it). flashnext-4gpu, 512-token prompts, 512 out, decode step time:
 
 | streams | before | W4H2 + 32 rows | engine decode after |
