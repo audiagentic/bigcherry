@@ -97,7 +97,7 @@ int main(int argc, char** argv) {
     live = base(); live["vram"]["claimable"] = 7399; live["vram"]["kv_resolved"] = 4200;
     expect(false, live, "statics 3000 + experts 0 + stage 200 + kv_required 4200");   // the refusal itemises the sum
     live = base(); live["vram"]["kv_resolved"] = 4199;
-    expect(false, live, "kv_required 4200, the cache the engine allocates");
+    expect(false, live, "kv_required 4200, the common KV budget");
     live = base(); live["vram"]["cards"][0]["capacity"] = 9999;
     expect(false, live, "card 0 capacity: live 9999 bytes fall short of the planned 10000");
     live = base(); live["vram"]["cards"].push_back(live["vram"]["cards"][0]);

@@ -188,8 +188,9 @@ _BC_PLAN_MEMORY_CHECK_H = r"""/* bc_plan_memory_check.h -- BigCherry managed pat
  * ceiling, KV ceiling, each card's expert-plane geometry; a card's capacity must not shrink). Claimable, expert
  * residency, the staging region and the KV are live terms: the engine derives them from what is claimable now, so they
  * are never compared with the measured plan. Admission then requires, in order: live expert residency >= the expert
- * floor; live claimable >= statics + live experts + live stage + kv_required; and the resolved KV the engine allocates
- * (kv_resolved: vram_kv_mib after the staging split and MiB rounding) >= kv_required, where kv_required =
+ * floor; live claimable >= statics + live experts + live stage + kv_required; and the common KV budget the engine
+ * resolves for every rank (kv_resolved: vram_kv_mib after the staging split and MiB rounding) >= kv_required, where
+ * kv_required =
  * max(one full-length session's KV, ceil(kv_ceiling * kv_backing_floor_ppm / 1000000)) and `kv_backing_floor_ppm` is the
  * selected calibration entry kv_backing_floor.fraction_ppm (0 when none is selected; [0, 1000000) or refused). Every
  * VRAM term read must be a byte count in [0, 2^53 - 1]. docs/design/serving-manifest-v1/admission-vectors.json holds the
@@ -316,7 +317,7 @@ bool bc_plan_memory_check(const nlohmann::json& expected, const nlohmann::json& 
     if (num(lv, "kv_resolved") < kv_required)
         return fail(why, "admission: resolved KV", num(lv, "kv_resolved"), kv_required,
                     from + "; kv_required " + std::to_string(kv_required) +
-                        ", the cache the engine allocates after the staging split and MiB rounding",
+                        ", the common KV budget after the staging split and MiB rounding",
                     kRemedy, "fall short of the required");
     return true;
 }
