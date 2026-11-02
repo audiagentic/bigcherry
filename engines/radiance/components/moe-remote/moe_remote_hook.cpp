@@ -4,6 +4,7 @@
 #include "moe_helper_watch.h"
 #include "moe_remote_shm.h"
 #include "rad_abi.h"
+#include "rad_device.h"   /* engine streams take only radiance events (rad_event_*), never raw HIP events */
 
 #include <hip/hip_runtime.h>
 
@@ -69,7 +70,7 @@ using RegisterFn = int (*)(const EnginePlugin*);
  * as evidence of several queued parents. An event is recorded after every
  * parent GPU effect, before issue-ahead, and queried only after host_done. */
 struct ParentEvents {
-    std::array<hipEvent_t, kMaxEngineRanks> event{};
+    std::array<RadEvent, kMaxEngineRanks> event{};
     std::array<bool, kMaxEngineRanks> recorded{};
     std::array<bool, kMaxEngineRanks> initialized{};
 };
@@ -251,14 +252,14 @@ int rank_done_ticket(int rank, StepTicket ticket, void* stream) {
     ParentEvents& p = g.parents[ticket.ticket_id];
     if (p.recorded[(size_t)rank]) return RAD_E_STATE;
     if (!p.event[(size_t)rank]) {
-        if (!hip_ok(hipEventCreateWithFlags(&p.event[(size_t)rank], hipEventDisableTiming),
-                    "parent rank completion event")) {
+        if (rad_event_create(&p.event[(size_t)rank]) != RAD_OK || !p.event[(size_t)rank]) {
+            std::fprintf(stderr, "libr3moe: parent rank completion event: rad_event_create failed\n");
             g.ledger.fault();
             return RAD_E_DEVICE;
         }
     }
-    if (!hip_ok(hipEventRecord(p.event[(size_t)rank], (hipStream_t)stream),
-                "record parent rank completion")) {
+    if (rad_event_record(p.event[(size_t)rank], (RadStream)stream) != RAD_OK) {
+        std::fprintf(stderr, "libr3moe: record parent rank completion: rad_event_record failed\n");
         g.ledger.fault();
         return RAD_E_DEVICE;
     }
@@ -282,10 +283,10 @@ void poll_tickets() {
             int previous_device = -1;
             if (hipGetDevice(&previous_device) != hipSuccess ||
                 hipSetDevice(g.rank[rank].device) != hipSuccess) { g.ledger.fault(); return; }
-            const hipError_t status = hipEventQuery(p.event[rank]);
+            const int status = rad_event_query(p.event[rank]);   /* 1 complete, 0 pending, <0 error */
             if (hipSetDevice(previous_device) != hipSuccess) { g.ledger.fault(); return; }
-            if (status == hipErrorNotReady) continue;
-            if (status != hipSuccess) { g.ledger.fault(); return; }
+            if (status == 0) continue;
+            if (status < 0) { g.ledger.fault(); return; }
             const RankState& rs = g.rank[rank];
             if (!p.initialized[rank]) { g.ledger.fault(); return; }
             {
@@ -311,8 +312,8 @@ void poll_tickets() {
         if (hipGetDevice(&previous_device) != hipSuccess) { g.ledger.fault(); return; }
         for (uint32_t rank = 0; rank < kMaxEngineRanks; ++rank) {
             if (!it->second.event[rank]) continue;
-            if (hipSetDevice(g.rank[rank].device) != hipSuccess ||
-                hipEventDestroy(it->second.event[rank]) != hipSuccess) g.ledger.fault();
+            if (hipSetDevice(g.rank[rank].device) != hipSuccess) { g.ledger.fault(); continue; }
+            rad_event_destroy(it->second.event[rank]);
         }
         if (hipSetDevice(previous_device) != hipSuccess) g.ledger.fault();
         it = g.parents.erase(it);
@@ -711,7 +712,7 @@ void close_mailbox() {
         for (uint32_t rank = 0; rank < kMaxEngineRanks; ++rank)
             if (p.event[rank]) {
                 (void)hipSetDevice(g.rank[rank].device);
-                (void)hipEventDestroy(p.event[rank]);
+                rad_event_destroy(p.event[rank]);
             }
     g.parents.clear();
     for (uint32_t r = 0; r < kMaxEngineRanks; ++r) {
