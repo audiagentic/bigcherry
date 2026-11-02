@@ -22,6 +22,9 @@ inline constexpr std::string_view kFingerprint = "sha256:3f1f0027d5ffe9fc83808df
 // sha256 of the schema plus the frozen semantics it does not express (classes, lifecycle, Radiance bindings,
 // reader error codes); README.md.
 inline constexpr std::string_view kSemanticFingerprint = "sha256:dd2f27e4e21f4ad6d222ae3bc5118cb49ff13d3918443521c22f96ff07bb69b0";
+// spec §11 amendment 8: the deepest container nesting a valid document can have (the root object is 1),
+// derived from the closed schema by the generator. The strict reader refuses anything deeper.
+inline constexpr size_t kMaxDepth = 9;
 
 // Calibrated parameters (contract [[calibration_key]]), in wire order.
 enum class CalibrationKey : uint8_t {

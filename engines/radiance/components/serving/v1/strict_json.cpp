@@ -122,9 +122,10 @@ private:
         return true;
     }
     bool open(Json container) {
-        if (stack_.size() >= kMaxNestingDepth)
-            return fail(ConfigErrorCode::invalid_format, paths_.back(),
-                        "nested deeper than " + std::to_string(kMaxNestingDepth) + " levels");
+        if (stack_.size() >= kMaxDepth)
+            return fail(ConfigErrorCode::invalid_format, stack_.empty() ? std::string() : paths_.back(),
+                        "nested deeper than " + std::to_string(kMaxDepth) +
+                            " levels, the deepest a v1 document can be (spec §11 amendment 8)");
         const std::string path = child_path();
         stack_.push_back(put(std::move(container)));
         keys_.emplace_back();

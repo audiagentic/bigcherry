@@ -65,6 +65,7 @@ struct Registry {
     std::vector<Def> defs;                       // in file order
     std::vector<CalibrationKey> calibration;
     std::map<std::string, size_t> by_path;
+    int64_t max_depth = 0;   // the deepest legal nesting of JSON containers (the root object is 1)
 };
 
 /* Parse and check a registry. False with `why` naming the first fault (and its path) on: any non-integer number, an

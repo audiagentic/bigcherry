@@ -528,6 +528,31 @@ struct Loader {
             if (types.count(reserved) || enums.count(reserved)) fault("registry", std::string(reserved) + " is reserved");
     }
 
+    /* spec §11 amendment 8: the closed schema bounds how deep a valid document nests; a container is one level, a ref
+     * to an object def continues into it, and a ref that reaches itself makes the bound undefined, so it is refused. */
+    int64_t depth(size_t i, std::set<std::string>* visiting, std::map<size_t, int64_t>* memo) {
+        if (const auto it = memo->find(i); it != memo->end()) return it->second;
+        const Node& n = r.nodes[i];
+        int64_t d = 0;
+        if (n.kind == "ref") {
+            const auto def = std::find_if(r.defs.begin(), r.defs.end(), [&](const Def& x) { return x.name == n.ref; });
+            if (def != r.defs.end() && (def->kind == "object" || def->kind == "patch")) {
+                if (!visiting->insert(def->name).second)
+                    fault(n.path.empty() ? "\"\"" : n.path, "ref '" + n.ref + "' reaches itself: the nesting depth would be unbounded");
+                d = depth(def->node, visiting, memo);
+                visiting->erase(def->name);
+            }
+        } else if (n.kind == "object" || n.kind == "map" || n.kind == "array") {
+            int64_t inner = 0;
+            for (size_t c : n.children) inner = std::max(inner, depth(c, visiting, memo));
+            d = 1 + inner;
+        } else if (n.kind == "tuple") {
+            d = 1;
+        }
+        (*memo)[i] = d;
+        return d;
+    }
+
     void classes(const toml::array* defaults) {
         std::vector<std::pair<std::string, std::string>> rules;
         if (defaults)
@@ -1440,6 +1465,18 @@ bool load_registry(const std::string& toml_text, const std::string& source_name,
         each("def", [&](const toml::table& t, const std::string& at) { l.def(t, at); });
         each("field", [&](const toml::table& t, const std::string& at) { l.field(t, at); });
         l.finish();
+        {
+            std::set<std::string> visiting;
+            std::map<size_t, int64_t> memo;
+            for (const Def& d : l.r.defs)
+                if (d.kind == "object" || d.kind == "patch") {
+                    visiting.insert(d.name);
+                    l.depth(d.node, &visiting, &memo);
+                    visiting.erase(d.name);
+                }
+            memo.clear();
+            l.r.max_depth = l.depth(l.r.root, &visiting, &memo);
+        }
         l.classes(doc["class_default"].as_array());
         *out = std::move(l.r);
         return true;
@@ -1509,7 +1546,10 @@ std::string emit_types(const Registry& r) {
     o << "inline constexpr std::string_view kFingerprint = " << literal(fingerprint(r)) << ";\n";
     o << "// sha256 of the schema plus the frozen semantics it does not express (classes, lifecycle, Radiance bindings,\n"
          "// reader error codes); README.md.\n";
-    o << "inline constexpr std::string_view kSemanticFingerprint = " << literal(semantic_fingerprint(r)) << ";\n\n";
+    o << "inline constexpr std::string_view kSemanticFingerprint = " << literal(semantic_fingerprint(r)) << ";\n";
+    o << "// spec §11 amendment 8: the deepest container nesting a valid document can have (the root object is 1),\n"
+         "// derived from the closed schema by the generator. The strict reader refuses anything deeper.\n";
+    o << "inline constexpr size_t kMaxDepth = " << r.max_depth << ";\n\n";
     t.enums(o);
     o << "// A calibration value: an integer, a string or a boolean; each key fixes which (contract [[calibration_key]]).\n";
     o << "using CalibrationValue = std::variant<int64_t, std::string, bool>;\n\n";

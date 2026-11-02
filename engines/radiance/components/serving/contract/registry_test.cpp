@@ -310,6 +310,10 @@ int main() {
                      "[[class_default]]\npath = \"/spec\"\nclass = \"policy\"\n\n[[class_default]]\npath = \"/spec\"\nclass = \"fact\""),
             "two class defaults", "a repeated class default");
 
+    check(r.max_depth == 4, "the fixture's depth: root, spec, calibration array, entry = 4, is " + std::to_string(r.max_depth));
+    refused(kBase + "\n[[field]]\npath = \"$defs/group/self\"\nkind = \"ref\"\nref = \"group\"\noptional = true\ndoc = \"x\"\n",
+            "reaches itself", "a recursive $ref (amendment 8)");
+
     // the real registry loads and generates
     std::ifstream in(std::string(BC_CONTRACT_SOURCE_DIR) + "/contract/serving-v1.toml", std::ios::binary);
     std::ostringstream text;
