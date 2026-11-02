@@ -336,7 +336,7 @@ int main(int argc, char** argv) {
 
     r3::moe_shm::LayoutShape shape{};
     Layout lay{};
-    if (!segment_shape(model, slots_for(helper_count), &shape, &lay)) return 1;
+    if (!segment_shape(model, helper_count, &shape, &lay)) return 1;
     /* The mailbox segment: helper 0 creates it, the others attach (up to 30 minutes while the first loads). Owned by
      * `seg` from here on; every return below releases it, and only helper 0 unlinks the name. */
     /* Before the first wait (segment attach, the engine's maps): a stop signal must end every one of them. No
@@ -352,7 +352,7 @@ int main(int argc, char** argv) {
     Header* const h = seg.header();
     const char* const name = seg.name();
     if (helper_index == 0) {
-        if (!init(map, model.layers, shape, slots_for(helper_count))) return 1;
+        if (!init(map, model.layers, shape, helper_count)) return 1;
         h->small_class_count = lane_classes.count;
         for (uint32_t c = 0; c < lane_classes.count; ++c) h->small_class_rows[c] = lane_classes.rows[c];
         /* Every helper reads the same step activations: stage them once, in slot 0. */
@@ -378,10 +378,14 @@ int main(int argc, char** argv) {
     }
     /* The engine watches this process from here on (Header::helper_pid): if it dies before it can set helper_fault,
      * the engine sets it. */
+    if (!publish_owned(map, owned, helper_index)) {
+        raise_fault(h);
+        return 1;
+    }
+    /* The pid publication is the engine registration barrier: publish ownership first. */
     h->helper_start[helper_index] = process_start_ticks((int)::getpid());
     __atomic_store_n(&h->helper_pid[helper_index], (int32_t)::getpid(), __ATOMIC_RELEASE);
-    notify(h);   /* the engine's registration barrier waits for every helper's identity */
-    publish_owned(map, owned, helper_index);
+    notify(h);
     if (!cpu && !seg.register_gpu()) return 1;
     void* const dev_map = seg.device();
 
@@ -402,14 +406,14 @@ int main(int argc, char** argv) {
             std::fprintf(stderr, "r3_moe_worker: layer %u has no runtime map (not declared by the engine); not owned\n",
                          layer);
             for (auto [l, e] : owned.expert)
-                if (l == layer) (void)clear_owned(map, l, e, helper_index);
+                if (l == layer) (void)drop_bootstrap_owner(map, l, e, helper_index);
             continue;
         }
         any_map = true;
         const int32_t* slots = layer_slots(map, layer);
         if (!slots) return 1;
         for (auto [l, e] : owned.expert)
-            if (l == layer && slots[e] < 0) (void)clear_owned(map, l, e, helper_index);
+            if (l == layer && slots[e] < 0) (void)drop_bootstrap_owner(map, l, e, helper_index);
         if (gpu && !gpu->load_layer(layer, owned.expert, slots)) {
             std::fprintf(stderr, "r3_moe_worker: layer %u runtime table build failed\n", layer);
             raise_fault(h);   /* not consumed: the engine's map wait fails instead of using a map this helper lacks */
@@ -426,7 +430,6 @@ int main(int argc, char** argv) {
         if (eb > 0) runtime_owned.bytes += (uint64_t)eb;
     }
     owned = std::move(runtime_owned);
-    h->owned_bytes = owned.bytes;
     const auto lanes_served = served_lanes(helper_count, helper_index, lane_classes.count);
     std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_POWER_SAVE %s\n", cfg.power_save ? "on" : "off");
     if (gpu && !gpu->prepare_lanes(lane_classes.rows, lane_classes.count, lane_large_rows,
