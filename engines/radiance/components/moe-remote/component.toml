@@ -236,7 +236,7 @@ activation = "TRACE,lane"
 default = ""
 status = "diagnostic"
 summary = "RAD20: the engine-side plugin (libr3moe) logs each inference-burst transition the engine reports through rad0002's burst callback (begin when the engine loop gets a step after being idle, end when it finds none) with a monotonic timestamp; read by tools/lab/radiance/burst-trace.sh, which checks begin/end pairing across single, concurrent, back-to-back and prefill requests"
-activation = "burst,begin"
+activation = "libr3moe: burst begin"
 
 [setting.R3_MOE_WORKER_POWER_SAVE]
 default = "1"
