@@ -3,6 +3,7 @@
 #endif
 #include "serving.h"
 #include "calibration.h"
+#include "ledger.h"
 #include "sha256.h"
 
 #undef NDEBUG   /* the checks below are assert()s: keep them live in Release component builds */
@@ -457,6 +458,93 @@ void host_reserve(Fixture& t) {
                "calibrated (cache: 2026-12-01)") != std::string::npos);
 }
 
+void host_ledger_plan() {
+    using bc::serving::HostConsumer;
+    using bc::serving::LedgerInputs;
+    using bc::serving::Residence;
+    constexpr uint64_t MiB = 1048576;
+    // The measured host (flashnext-4gpu, 2026-11-02): 94082 MiB RAM, 83020 MiB available, pin cap 91076 MiB.
+    Json host = {{"mem_total_mib", 94082}, {"mem_available_mib", 83020}, {"memory_cgroups", Json::array()},
+                 {"memlock", {{"limit_mib", nullptr}, {"cap_ipc_lock", false}}},
+                 {"amdgpu_pin", {{"loaded", true}, {"lifted", false}, {"cap_mib", 91076}}}};
+    const std::vector<HostConsumer> measured = {
+        {"ngram_table", 48824 * MiB, Residence::pinned, "engine plan (weight_footprint)",
+         "set engine.ngram_placement = \"disk\""},
+        {"checkpoint_floor", 1800 * MiB, Residence::pinned, "engine plan (size_checkpoint_store)", ""},
+        {"host_pool", 7300 * MiB, Residence::pinned, "owner map + weight_footprint", ""},
+        {"helpers", 3072 * MiB, Residence::pageable, "helper plan", ""}};
+    LedgerInputs in{host, 4705, measured, true, 4 * 1024 * MiB};
+    auto l = bc::serving::host_ledger(in);
+    // 83020 - (48824 + 1800 + 7300 + 3072) - 4705 = 17319 MiB.
+    assert(l.host_kv_mib == 17319);
+    assert(l.explain.at("host_kv_why").get<std::string>().find("MemAvailable") != std::string::npos);
+    assert(l.explain.at("limits").size() == 2);
+    // The pin cap binds when the pinned consumers leave less under it than MemAvailable does.
+    in.host_facts["amdgpu_pin"]["cap_mib"] = 75000;
+    l = bc::serving::host_ledger(in);
+    assert(l.host_kv_mib == 75000 - (48824 + 1800 + 7300));   // 17076 MiB, under the 17319 MemAvailable leaves
+    assert(l.explain.at("host_kv_why").get<std::string>().find("amdgpu pin cap") != std::string::npos);
+    in.host_facts = host;
+    // A memory cgroup is a limit of its own.
+    in.host_facts["memory_cgroups"] = Json::array({{{"dir", "/sys/fs/cgroup/job"}, {"version", 2}, {"room_mib", 70000}}});
+    l = bc::serving::host_ledger(in);
+    assert(l.host_kv_mib == 70000 - (48824 + 1800 + 7300 + 3072) - 4705);
+    // Too little room: refused, naming the largest consumer and what to change.
+    in.host_facts = host;
+    in.host_facts["mem_available_mib"] = 60000;
+    bool refused = false;
+    try { (void)bc::serving::host_ledger(in); } catch (const std::exception& e) {
+        const std::string w = e.what();
+        refused = w.find("under MemAvailable") != std::string::npos && w.find("4705 MiB reserve") != std::string::npos &&
+                  w.find("largest consumer is ngram_table (48824 MiB") != std::string::npos &&
+                  w.find("engine.ngram_placement = \"disk\"") != std::string::npos;
+    }
+    assert(refused);
+    // RLIMIT_MEMLOCK counts only mlocked copies, and CAP_IPC_LOCK lifts it.
+    in.host_facts = host;
+    in.host_facts["memlock"] = {{"limit_mib", 64}, {"cap_ipc_lock", false}};
+    in.consumers.push_back({"locked_copy", 128 * MiB, Residence::mlocked, "engine plan (copy_table)", ""});
+    refused = false;
+    try { (void)bc::serving::host_ledger(in); } catch (const std::exception& e) {
+        refused = std::string(e.what()).find("RLIMIT_MEMLOCK") != std::string::npos;
+    }
+    assert(refused);
+    in.host_facts["memlock"]["cap_ipc_lock"] = true;
+    assert(bc::serving::host_ledger(in).host_kv_mib == 17319 - 128);
+    in.consumers.pop_back();
+    in.host_facts = host;
+    // The tier is 0 when sessions are evicted, or when the room holds no full-length session.
+    in.retention_keep = false;
+    assert(bc::serving::host_ledger(in).host_kv_mib == 0);
+    in.retention_keep = true;
+    in.min_tier_bytes = 20000 * MiB;
+    l = bc::serving::host_ledger(in);
+    assert(l.host_kv_mib == 0);
+    assert(l.explain.at("host_kv_why").get<std::string>().find("no whole session") != std::string::npos);
+
+    // The engine plan is strict.
+    const Json plan = {{"plan_version", 1}, {"producer", "radiance --plan-memory (rad0011)"},
+                       {"inputs_sha256", "ab12"},
+                       {"host", Json::array({{{"name", "ngram_table"}, {"bytes", 1024}, {"residence", "pinned"},
+                                              {"from", "weight_footprint"}, {"remedy", ""}}})},
+                       {"kv_bytes_per_token", {{"bytes", 4096}, {"from", "kv plan_groups"}}}};
+    const auto parsed = bc::serving::parse_engine_plan(plan);
+    assert(parsed.host.size() == 1 && parsed.host[0].residence == Residence::pinned && parsed.kv_bytes_per_token == 4096);
+    auto rejects = [](Json j, const std::string& needle) {
+        try { (void)bc::serving::parse_engine_plan(j); } catch (const std::exception& e) {
+            if (std::string(e.what()).find(needle) != std::string::npos) return;
+            throw std::runtime_error("wrong engine plan diagnostic for " + needle + ": " + e.what());
+        }
+        throw std::runtime_error("expected engine plan refusal containing " + needle);
+    };
+    Json bad = plan; bad["extra"] = 1; rejects(bad, "unknown key extra");
+    bad = plan; bad["plan_version"] = 2; rejects(bad, "plan_version must be 1");
+    bad = plan; bad["host"][0]["residence"] = "swap"; rejects(bad, "pinned, mlocked or pageable");
+    bad = plan; bad["host"][0]["bytes"] = -1; rejects(bad, "byte count");
+    bad = plan; bad["host"].push_back(plan["host"][0]); rejects(bad, "duplicate consumer ngram_table");
+    bad = plan; bad["host"][0].erase("from"); rejects(bad, "missing from");
+}
+
 int main() {
     try {
         sha256_vectors();
@@ -469,9 +557,10 @@ int main() {
         provenance_hash_and_parity(t);
         calibration_store(t);
         host_reserve(t);
+        host_ledger_plan();
         std::cout << "PASS: fake KFD/PCI/proc detection; strict keys; types/ranges; required; "
                      "precedence/caps; provenance/hash; launcher engine/WorkerConfig parity; "
-                     "calibration store; calibrated host reserve\n";
+                     "calibration store; calibrated host reserve; host ledger\n";
         return 0;
     } catch (const std::exception& e) {
         std::cerr << "FAIL: " << e.what() << '\n';

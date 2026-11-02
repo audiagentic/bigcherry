@@ -36,7 +36,7 @@ file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/generated/calibration_seed.inc"
      "R\"bccal(${bc_calibration_seed})bccal\"\n")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/calibration.toml")
 
-add_library(bc_serving STATIC serving.cpp calibration.cpp)
+add_library(bc_serving STATIC serving.cpp calibration.cpp ledger.cpp)
 target_link_libraries(bc_serving PUBLIC bc_jcs)
 target_compile_features(bc_serving PUBLIC cxx_std_20)
 target_include_directories(bc_serving PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}" "${RADIANCE_SRC}/vendor")
