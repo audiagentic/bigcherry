@@ -25,6 +25,18 @@ void usage() {
                  "  --plan-memory --plan-cache DIR --engine-binary PATH [--site FILE] [--profile FILE] [--set key=value]\n"
                  "      measures the engine's memory plan on the engine card (radiance --plan-memory) unless DIR already\n"
                  "      holds it for this configuration; run it under the gpu lease (agent-lease acquire gpu -- ...)\n"
+                 "  --plan-key --plan-cache DIR --engine-binary PATH [--site FILE] [--profile FILE] [--set key=value]\n"
+                 "      prints this configuration's plan key (what --plan-store must be told to expect)\n"
+                 "  --plan-check-args --plan-cache DIR --engine-binary PATH [--site FILE] [--profile FILE] [--set key=value]\n"
+                 "      looks the plan up and prints the engine's start-up check flags, one argument per line:\n"
+                 "      --plan-check FILE --plan-check-floor-ppm N, N being the selected calibration\n"
+                 "      kv_backing_floor.fraction_ppm (0 when the objective selects none). Starts no process and measures\n"
+                 "      nothing: a miss exits 10 with the remedy.\n"
+                 "  --plan-store --expect-key KEY --plan-file FILE --plan-cache DIR --engine-binary PATH [site/profile/set]\n"
+                 "      records a plan the engine measured (radiance --plan-memory FILE, with its helpers up) under this\n"
+                 "      configuration's key, after the strict v1 decode. Refused unless the key still equals KEY (the engine\n"
+                 "      build, model and configuration are those the measurement was asked for) and the plan agrees with the\n"
+                 "      configuration (host pool, host consumer list).\n"
                  "No process is started by these commands, except --plan-memory on a cache miss.\n";
 }
 
@@ -53,7 +65,9 @@ int main(int argc, char** argv) {
     try {
         Options opts;
         bool detection = false, schema = false, validation = false;
-        bool explanation = false, dry = false, json = false, plan_memory = false;
+        bool explanation = false, dry = false, json = false, plan_memory = false, plan_check_args = false, plan_store = false, plan_key_only = false;
+        fs::path plan_file;
+        std::string expect_key;
         fs::path plan_cache, engine_binary;
         fs::path out;
         std::vector<fs::path> positional;
@@ -76,6 +90,11 @@ int main(int argc, char** argv) {
             else if (arg == "--profile") opts.profile = need_arg("--profile");
             else if (arg == "--calibration") opts.calibration_cache = need_arg("--calibration");
             else if (arg == "--plan-memory") plan_memory = true;
+            else if (arg == "--plan-check-args") plan_check_args = true;
+            else if (arg == "--plan-store") plan_store = true;
+            else if (arg == "--plan-key") plan_key_only = true;
+            else if (arg == "--expect-key") expect_key = need_arg("--expect-key");
+            else if (arg == "--plan-file") plan_file = need_arg("--plan-file");
             else if (arg == "--plan-cache") plan_cache = need_arg("--plan-cache");
             else if (arg == "--engine-binary") engine_binary = need_arg("--engine-binary");
             else if (arg == "--set") opts.sets.push_back(need_arg("--set"));
@@ -85,9 +104,11 @@ int main(int argc, char** argv) {
             else positional.push_back(arg);
         }
         const int modes = int(detection) + int(schema) + int(validation) +
-                          int(explanation) + int(dry) + int(plan_memory);
-        if (!plan_memory && (!plan_cache.empty() || !engine_binary.empty()))
-            throw std::runtime_error("--plan-cache and --engine-binary go with --plan-memory");
+                          int(explanation) + int(dry) + int(plan_memory) + int(plan_check_args) + int(plan_store) + int(plan_key_only);
+        if (!plan_memory && !plan_check_args && !plan_store && !plan_key_only && (!plan_cache.empty() || !engine_binary.empty()))
+            throw std::runtime_error("--plan-cache and --engine-binary go with --plan-memory, --plan-check-args or --plan-store");
+        if (!plan_store && (!plan_file.empty() || !expect_key.empty()))
+            throw std::runtime_error("--plan-file and --expect-key go with --plan-store");
         if (modes != 1) throw std::runtime_error("choose one mode (see --help)");
         if (schema) {
             if (!positional.empty()) throw std::runtime_error("--schema takes no files");
@@ -126,11 +147,15 @@ int main(int argc, char** argv) {
         } else if (!positional.empty()) {
             throw std::runtime_error("unexpected file; use --site or --profile");
         }
-        if (plan_memory) {
+        if (plan_memory || plan_check_args || plan_store || plan_key_only) {
+            const char* mode = plan_memory ? "--plan-memory" : plan_check_args ? "--plan-check-args"
+                               : plan_store ? "--plan-store" : "--plan-key";
+            if (plan_store && (plan_file.empty() || expect_key.empty()))
+                throw std::runtime_error("--plan-store needs --plan-file FILE and --expect-key KEY");
             if (!positional.empty() || !out.empty())
-                throw std::runtime_error("--plan-memory takes --site, --profile, --set and --calibration only");
+                throw std::runtime_error(std::string(mode) + " takes --site, --profile, --set and --calibration only");
             if (plan_cache.empty() || engine_binary.empty())
-                throw std::runtime_error("--plan-memory needs --plan-cache DIR and --engine-binary PATH");
+                throw std::runtime_error(std::string(mode) + " needs --plan-cache DIR and --engine-binary PATH");
             const auto facts = bc::serving::detect(opts.sys_root);
             const auto r = bc::serving::resolve(opts, facts);
             const auto& v = r.values;
@@ -138,8 +163,45 @@ int main(int argc, char** argv) {
             const auto key_inputs = bc::serving::plan_key_inputs(
                 v, facts, bc::serving::container_identity(v.at("engine").at("model").get<std::string>()),
                 bc::serving::engine_identity(engine_binary, home));
+            if (plan_key_only) {
+                std::cout << bc::serving::plan_key(key_inputs) << '\n';
+                return 0;
+            }
+            if (plan_store) {
+                if (bc::serving::plan_key(key_inputs) != expect_key)
+                    throw std::runtime_error("the plan was measured for key " + expect_key + " but this configuration, model or "
+                                             "engine build is now key " + bc::serving::plan_key(key_inputs) +
+                                             "; it is not stored under the wrong key");
+                std::ifstream in(plan_file, std::ios::binary);
+                if (!in) throw std::runtime_error("cannot read " + plan_file.string());
+                const Json measured = Json::parse(in, nullptr, false);
+                if (measured.is_discarded()) throw std::runtime_error(plan_file.string() + ": not JSON");
+                bc::serving::check_plan_for_configuration(
+                    v, bc::serving::decode_engine_plan(measured, plan_file.string()));
+                const auto stored = bc::serving::plan_cache_store(plan_cache, key_inputs, measured);
+                std::cout << "plan: stored " << stored.key << '\n';
+                return 0;
+            }
+            if (plan_check_args) {
+                // Lookup only: a plan comes from a measuring start with the helpers up (bc-serve alone cannot measure
+                // it: without helper-owned experts the engine's plan is a different one). A miss is exit 10, never a
+                // silent skip of the check.
+                const auto hit = bc::serving::plan_cache_lookup(plan_cache, key_inputs);
+                if (!hit) {
+                    std::cerr << "bc-serve: no measured plan for this configuration (key "
+                              << bc::serving::plan_key(key_inputs).substr(0, 16)
+                              << "); measure it: launch-flashnext-best.sh start --measure-plan\n";
+                    return 10;
+                }
+                std::cerr << "plan: cached " << hit->key << " (measured " << hit->measured_at << ")\n";
+                for (const std::string& a : bc::serving::plan_check_args(
+                         plan_cache, *hit, bc::serving::kv_backing_floor_ppm(v, opts.calibration_cache)))
+                    std::cout << a << '\n';
+                return 0;
+            }
+            std::ostream& report = std::cout;
             if (const auto hit = bc::serving::plan_cache_lookup(plan_cache, key_inputs)) {
-                std::cout << "plan: cached " << hit->key << " (measured " << hit->measured_at << ")\n";
+                report << "plan: cached " << hit->key << " (measured " << hit->measured_at << ")\n";
                 return 0;
             }
             const std::string card = v.at("layout").at("engine_card").get<std::string>();
@@ -160,8 +222,8 @@ int main(int argc, char** argv) {
             const auto stored = bc::serving::plan_cache_store(plan_cache, key_inputs, plan);
             fs::remove(manifest);
             fs::remove(measured);
-            std::cout << "plan: measured " << stored.key << " on " << card << " in " << std::fixed
-                      << std::setprecision(1) << wall << " s\n";
+            report << "plan: measured " << stored.key << " on " << card << " in " << std::fixed << std::setprecision(1)
+                   << wall << " s\n";
             return 0;
         }
         if (dry && out.empty()) throw std::runtime_error("--dry-run requires --out");

@@ -1,5 +1,7 @@
 #pragma once
+#include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <vector>
 #include <nlohmann/json.hpp>
@@ -31,8 +33,13 @@ public:
     static Calibration load(const std::string& seed_toml, const std::filesystem::path& cache = {});
     // The compiled-in seeds plus `cache`.
     static Calibration standard(const std::filesystem::path& cache = {});
+    // The selected entry, or nothing when none matches (a parameter an objective does not use, e.g. no KV backing floor
+    // for throughput). Ambiguous entries are an error.
+    std::optional<Calibrated> find(const std::string& key, const CalibrationMatch& at) const;
+    // As find(), but a missing entry is an error: there is no built-in default.
     Calibrated get(const std::string& key, const CalibrationMatch& at) const;
-    double number(const std::string& key, const CalibrationMatch& at) const;
+    // The selected entry's value, which must be an integer (the v1 contract has no fractional numbers).
+    int64_t integer(const std::string& key, const CalibrationMatch& at) const;
 
 private:
     struct Entry {

@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <vector>
 #include <nlohmann/json.hpp>
 
 namespace bc::serving {
@@ -38,6 +39,11 @@ struct CachedPlan {
     std::string key, measured_at;
 };
 
+/* What a plan must agree with in the configuration it is stored for (values, as resolve() returns them): the host pool it
+ * echoes, and the expected host consumer list (the n-gram table exactly when it is placed in RAM; embedding and host
+ * arenas allowed; nothing else). Throws naming the disagreement. */
+void check_plan_for_configuration(const nlohmann::json& values, const v1::EnginePlan& plan);
+
 /* The entry for `key_inputs` under `dir`, or nothing on a miss. An entry whose recorded key or key inputs differ, whose
  * version is unknown or whose plan fails the shared v1 decode (serving_codec) is refused (an error), never treated as a miss. */
 std::optional<CachedPlan> plan_cache_lookup(const std::filesystem::path& dir, const nlohmann::json& key_inputs);
@@ -46,6 +52,16 @@ std::optional<CachedPlan> plan_cache_lookup(const std::filesystem::path& dir, co
  * file and renamed into place. */
 CachedPlan plan_cache_store(const std::filesystem::path& dir, const nlohmann::json& key_inputs,
                             const nlohmann::json& plan_json);
+
+/* The calibrated KV backing floor (calibration.kv_backing_floor.fraction_ppm) for a resolved configuration (`values`, as
+ * resolve() returns them), from the compiled-in seeds and the optional refit cache; 0 when the objective selects none
+ * (spec section 5.2). The one source of the engine's --plan-check-floor-ppm: never a launcher literal. */
+int64_t kv_backing_floor_ppm(const nlohmann::json& values, const std::filesystem::path& calibration_cache);
+
+/* The engine's start-up check flags for a cached plan, as separate arguments: writes the plan (v1 JSON, from the cache
+ * entry) next to the cache as <key>.expected-plan.json and returns {"--plan-check", FILE, "--plan-check-floor-ppm", N}.
+ * Both flags go to the engine, never one (radiance refuses that). */
+std::vector<std::string> plan_check_args(const std::filesystem::path& dir, const CachedPlan& entry, int64_t floor_ppm);
 
 /* Measures the plan: runs `binary --manifest MANIFEST --role engine --plan-memory OUT` with only the engine card
  * visible (ROCR_VISIBLE_DEVICES = its HIP ordinal, HIP_VISIBLE_DEVICES = 0, as a launch does), waits for it and returns

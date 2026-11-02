@@ -1,3 +1,5 @@
+#include "admission.h"
+#include "calibration.h"
 #include "plan_cache.h"
 #include "serving_codec.h"
 #include "sha256.h"
@@ -55,8 +57,12 @@ std::string read_file(const fs::path& p) {
     return s.str();
 }
 
-// The memory outputs the plan itself feeds: never part of what decides whether a measurement applies.
-const std::set<std::string> kDerivedEngineKeys = {"host_pool_mib", "prefix_cache_mib", "host_headroom_mib"};
+// What is not part of what decides whether a measurement applies (spec section 5.1): the host KV tier and headroom (memory
+// outputs the plan feeds, absent from the plan), and where the engine listens and lives (the port, the runtime-home and
+// model paths: the engine build and model identities already cover their contents). The host pool stays in the key: the
+// plan echoes it (EnginePlan.host_pool_mib) and the check demands it equal, so a plan measured under one pool must never be
+// found under another.
+const std::set<std::string> kNonPlanEngineKeys = {"prefix_cache_mib", "host_headroom_mib", "port", "radiance_home", "model"};
 }  // namespace
 
 std::string container_identity(const fs::path& model) {
@@ -102,13 +108,59 @@ Json plan_key_inputs(const Json& values, const Json& facts, const std::string& m
     if (!gpu) throw std::runtime_error("plan key: the engine card " + card + " is not among the detected GPUs");
     Json engine = Json::object();
     for (auto it = values.at("engine").begin(); it != values.at("engine").end(); ++it)
-        if (!kDerivedEngineKeys.count(it.key())) engine[it.key()] = it.value();
+        if (!kNonPlanEngineKeys.count(it.key())) engine[it.key()] = it.value();
     return {{"cache_version", 1},
             {"model", model_id},
             {"engine_build", engine_id},
             {"card", {{"arch", gpu->at("arch")}, {"vram_total_mib", gpu->at("vram_total_mib")}}},
             {"layout", values.at("layout").at("name")},
             {"engine", engine}};
+}
+
+int64_t kv_backing_floor_ppm(const Json& values, const fs::path& calibration_cache) {
+    const auto floor = Calibration::standard(calibration_cache)
+                           .find("calibration.kv_backing_floor.fraction_ppm",
+                                 {"", values.at("layout").at("name").get<std::string>(),
+                                  values.at("service").at("objective").get<std::string>()});
+    if (!floor) return 0;
+    if (!floor->value.is_number_integer())
+        throw std::runtime_error("calibration.kv_backing_floor.fraction_ppm must be an integer");
+    const int64_t ppm = floor->value.get<int64_t>();
+    if (const auto bad = v1::check_kv_backing_floor_ppm(ppm)) throw std::runtime_error(bad->message);
+    return ppm;
+}
+
+std::vector<std::string> plan_check_args(const fs::path& dir, const CachedPlan& entry, int64_t floor_ppm) {
+    if (const auto bad = v1::check_kv_backing_floor_ppm(floor_ppm)) throw std::runtime_error(bad->message);
+    const fs::path file = dir / (entry.key + ".expected-plan.json");
+    const fs::path tmp = dir / (entry.key + ".expected-plan.json.tmp");
+    {
+        std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
+        out << entry.plan_json.dump(2) << '\n';
+        if (!out) throw std::runtime_error("cannot write " + tmp.string());
+    }
+    fs::rename(tmp, file);
+    return {"--plan-check", file.string(), "--plan-check-floor-ppm", std::to_string(floor_ppm)};
+}
+
+void check_plan_for_configuration(const Json& values, const v1::EnginePlan& plan) {
+    const Json& engine = values.at("engine");
+    if (plan.host_pool_mib != engine.at("host_pool_mib").get<int64_t>())
+        throw std::runtime_error("the plan was measured with a " + std::to_string(plan.host_pool_mib) +
+                                 " MiB host pool, this configuration's is " +
+                                 std::to_string(engine.at("host_pool_mib").get<int64_t>()));
+    // The expected host consumer list: the n-gram table is a pinned consumer exactly when the table lives in RAM.
+    const bool has_table = std::any_of(plan.host.begin(), plan.host.end(),
+                                       [](const v1::PlanHostConsumer& c) { return c.name == "ngram_table"; });
+    const std::string placement = engine.at("ngram_placement").get<std::string>();
+    if (placement == "ram" && !has_table)
+        throw std::runtime_error("this configuration keeps the n-gram table in RAM but the plan has no ngram_table consumer");
+    if (placement != "ram" && has_table)
+        throw std::runtime_error("this configuration places the n-gram table on " + placement +
+                                 " but the plan holds an ngram_table consumer");
+    for (const v1::PlanHostConsumer& c : plan.host)
+        if (c.name != "ngram_table" && c.name != "embedding" && c.name != "host_arenas")
+            throw std::runtime_error("the plan holds an unknown host consumer " + c.name);
 }
 
 std::string plan_key(const Json& key_inputs) { return sha256_hex(key_inputs.dump()); }

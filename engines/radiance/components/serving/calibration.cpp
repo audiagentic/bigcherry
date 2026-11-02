@@ -17,9 +17,10 @@ constexpr const char kSeed[] =
 Json value_of(const toml::node& node, const std::string& where) {
     if (auto s = node.as_string()) return s->get();
     if (auto n = node.as_integer()) return n->get();
-    if (auto d = node.as_floating_point()) return d->get();
+    if (node.as_floating_point())
+        throw std::runtime_error(where + ": non-integer number (a calibration value is an integer, string or boolean; a fraction is parts per million)");
     if (auto b = node.as_boolean()) return b->get();
-    throw std::runtime_error(where + ": a calibration value is a number, string or boolean");
+    throw std::runtime_error(where + ": a calibration value is an integer, string or boolean");
 }
 
 std::string text_of(const toml::table& t, const char* key, const std::string& where) {
@@ -114,7 +115,7 @@ Calibration Calibration::load(const std::string& seed_toml, const std::filesyste
 
 Calibration Calibration::standard(const std::filesystem::path& cache) { return load(kSeed, cache); }
 
-Calibrated Calibration::get(const std::string& key, const CalibrationMatch& at) const {
+std::optional<Calibrated> Calibration::find(const std::string& key, const CalibrationMatch& at) const {
     const Entry* best = nullptr;
     for (const Entry& e : entries_) {
         if (e.key != key || !matches(e.match, at)) continue;
@@ -125,17 +126,21 @@ Calibrated Calibration::get(const std::string& key, const CalibrationMatch& at) 
             throw std::runtime_error("calibration: ambiguous entries for " + key + ": " + e.match.dump() +
                                      " and " + best->match.dump());
     }
-    if (!best)
-        throw std::runtime_error("calibration: no entry for " + key + " (model " + at.model + ", layout " +
-                                 at.layout + ", objective " + at.objective +
-                                 "); calibrate this configuration or add a seed with its evidence");
-    return {best->value, best->source, best->seeded, best->evidence, best->match};
+    if (!best) return std::nullopt;
+    return Calibrated{best->value, best->source, best->seeded, best->evidence, best->match};
 }
 
-double Calibration::number(const std::string& key, const CalibrationMatch& at) const {
+Calibrated Calibration::get(const std::string& key, const CalibrationMatch& at) const {
+    if (auto c = find(key, at)) return *c;
+    throw std::runtime_error("calibration: no entry for " + key + " (model " + at.model + ", layout " + at.layout +
+                             ", objective " + at.objective +
+                             "); calibrate this configuration or add a seed with its evidence");
+}
+
+int64_t Calibration::integer(const std::string& key, const CalibrationMatch& at) const {
     const Calibrated c = get(key, at);
-    if (!c.value.is_number()) throw std::runtime_error("calibration: " + key + " must be a number");
-    return c.value.get<double>();
+    if (!c.value.is_number_integer()) throw std::runtime_error("calibration: " + key + " must be an integer");
+    return c.value.get<int64_t>();
 }
 
 }  // namespace bc::serving

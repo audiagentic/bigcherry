@@ -375,9 +375,9 @@ void calibration_store(Fixture& t) {
         "[[entry]]\nkey = \"calibration.x.v\"\nmatch = { layout = \"L\", objective = \"latency\" }\nvalue = 3\n"
         "seeded = \"2026-01-03\"\nevidence = \"L latency\"\n";
     const Calibration c = Calibration::load(seed);
-    assert(c.number("calibration.x.v", {"m", "other", "latency"}) == 1);
-    assert(c.number("calibration.x.v", {"m", "L", "throughput"}) == 2);
-    assert(c.number("calibration.x.v", {"m", "L", "latency"}) == 3);
+    assert(c.integer("calibration.x.v", {"m", "other", "latency"}) == 1);
+    assert(c.integer("calibration.x.v", {"m", "L", "throughput"}) == 2);
+    assert(c.integer("calibration.x.v", {"m", "L", "latency"}) == 3);
     const auto got = c.get("calibration.x.v", {"m", "L", "latency"});
     assert(got.source == "seed" && got.seeded == "2026-01-03");
     assert(got.describe("calibration.x.v") == "calibrated (seed: 2026-01-03) calibration.x.v: L latency");
@@ -387,9 +387,9 @@ void calibration_store(Fixture& t) {
         "[[entry]]\nkey = \"calibration.x.v\"\nmatch = { layout = \"L\" }\nvalue = 20\nseeded = \"2026-02-01\"\n"
         "evidence = \"RHP12 refit\"\n");
     const Calibration r = Calibration::load(seed, cache);
-    assert(r.number("calibration.x.v", {"m", "L", "throughput"}) == 20);
+    assert(r.integer("calibration.x.v", {"m", "L", "throughput"}) == 20);
     assert(r.get("calibration.x.v", {"m", "L", "throughput"}).source == "cache");
-    assert(r.number("calibration.x.v", {"m", "L", "latency"}) == 3);
+    assert(r.integer("calibration.x.v", {"m", "L", "latency"}) == 3);
     auto refused = [](const std::function<void()>& f, const std::string& needle) {
         try { f(); } catch (const std::exception& e) {
             if (std::string(e.what()).find(needle) != std::string::npos) return;
@@ -410,10 +410,17 @@ void calibration_store(Fixture& t) {
     // The compiled-in seeds parse and carry evidence for every rule parameter the plan reads.
     const Calibration standard = Calibration::standard();
     for (const char* objective : {"latency", "balanced"})
-        assert(!standard.get("calibration.kv_backing_floor.fraction",
+        assert(!standard.get("calibration.kv_backing_floor.fraction_ppm",
                              {"m", "flashnext-4gpu", objective}).evidence.empty());
-    refused([&] { (void)standard.get("calibration.kv_backing_floor.fraction", {"m", "flashnext-4gpu", "throughput"}); },
+    refused([&] { (void)standard.get("calibration.kv_backing_floor.fraction_ppm", {"m", "flashnext-4gpu", "throughput"}); },
             "no entry");
+    // No floor is selected for throughput: find() says so (the plan check then takes 0), where get() is an error.
+    assert(!standard.find("calibration.kv_backing_floor.fraction_ppm", {"m", "flashnext-4gpu", "throughput"}));
+    assert(standard.integer("calibration.kv_backing_floor.fraction_ppm", {"m", "flashnext-4gpu", "balanced"}) == 600000);
+    assert(standard.integer("calibration.kv_backing_floor.fraction_ppm", {"m", "flashnext-4gpu", "latency"}) == 500000);
+    // v1: a calibration value is an integer, a string or a boolean; a fraction is parts per million.
+    refused([&] { (void)Calibration::load(seed + "[[entry]]\nkey = \"calibration.y.v\"\nvalue = 0.5\n"
+                                          "seeded = \"d\"\nevidence = \"e\"\n"); }, "non-integer number");
 }
 
 void host_reserve(Fixture& t) {
@@ -453,8 +460,8 @@ void host_reserve(Fixture& t) {
     // A refit in the calibration cache moves the reserve, and explain names the cache.
     opts = t.standard();
     opts.calibration_cache = t.file("reserve-refit.toml",
-        "schema_version = 1\n[[entry]]\nkey = \"calibration.host_reserve.total_fraction\"\n"
-        "match = { layout = \"flashnext-4gpu\" }\nvalue = 0.1\nseeded = \"2026-12-01\"\nevidence = \"refit\"\n");
+        "schema_version = 1\n[[entry]]\nkey = \"calibration.host_reserve.total_fraction_ppm\"\n"
+        "match = { layout = \"flashnext-4gpu\" }\nvalue = 100000\nseeded = \"2026-12-01\"\nevidence = \"refit\"\n");
     r = bc::serving::resolve(opts, t.facts);
     assert(r.values.at("memory").at("host_reserve_mib") == 13108);
     assert(r.provenance.at("memory.host_reserve_mib").at("source").get<std::string>().find(
@@ -569,7 +576,7 @@ void host_ledger_plan() {
     // The compiled-in share reproduces today's launch: tier first, 12 GiB.
     const auto standard = bc::serving::Calibration::standard();
     assert(standard.get("calibration.checkpoint_share", {"m", "flashnext-4gpu", "latency"}).value == "tier_first");
-    assert(standard.number("calibration.host_kv_tier.target_mib", {"m", "flashnext-4gpu", "latency"}) == 12288);
+    assert(standard.integer("calibration.host_kv_tier.target_mib", {"m", "flashnext-4gpu", "latency"}) == 12288);
 
     // The engine plan (rad0011's JSON) is strict.
     const Json plan = Json::parse(R"json({
@@ -625,16 +632,24 @@ void measured_plan_cache(Fixture& t) {
     const std::string eid = sv::engine_identity(bin, t.root / "engine/runtime-home");
     (void)t.file("engine/runtime-home/kernels/libr4d.so", "kernels-v2");
     assert(sv::engine_identity(bin, t.root / "engine/runtime-home") != eid);
-    // The key covers the planning inputs and the card, not the memory outputs the plan feeds.
+    // The key covers the planning inputs, the card and the host pool the plan echoes; not the memory outputs the plan
+    // feeds (host KV tier, headroom) nor where the engine listens or lives (port, runtime home, model path).
     const auto r = sv::resolve(t.standard(), t.facts);
     const Json k = sv::plan_key_inputs(r.values, t.facts, id, eid);
     assert(k.at("card").at("arch") == "gfx1201" && k.at("card").at("vram_total_mib") == 32624);
     assert(k.at("layout") == "flashnext-4gpu");
-    for (const char* derived : {"host_pool_mib", "prefix_cache_mib", "host_headroom_mib"})
-        assert(!k.at("engine").contains(derived));
+    for (const char* absent : {"prefix_cache_mib", "host_headroom_mib", "port", "radiance_home", "model"})
+        assert(!k.at("engine").contains(absent));
+    assert(k.at("engine").contains("host_pool_mib") && k.at("engine").contains("max_num_seqs"));
     Json v = r.values;
-    v["engine"]["host_pool_mib"] = 1;
-    assert(sv::plan_key(sv::plan_key_inputs(v, t.facts, id, eid)) == sv::plan_key(k));
+    for (const char* moved : {"prefix_cache_mib", "host_headroom_mib", "port"}) {
+        v = r.values;
+        v["engine"][moved] = 1;
+        assert(sv::plan_key(sv::plan_key_inputs(v, t.facts, id, eid)) == sv::plan_key(k));
+    }
+    v = r.values;
+    v["engine"]["host_pool_mib"] = 1;   // the plan echoes the pool: a plan measured under another pool is another plan
+    assert(sv::plan_key(sv::plan_key_inputs(v, t.facts, id, eid)) != sv::plan_key(k));
     v = r.values;
     v["engine"]["checkpoint_interval"] = 2048;
     assert(sv::plan_key(sv::plan_key_inputs(v, t.facts, id, eid)) != sv::plan_key(k));
@@ -652,6 +667,29 @@ void measured_plan_cache(Fixture& t) {
     const auto stored = sv::plan_cache_store(dir, k, plan);
     const auto found = sv::plan_cache_lookup(dir, k);
     assert(found && found->key == stored.key && found->plan.checkpoints.want_slots == 72 && !found->measured_at.empty());
+    // The engine's check flags: the cached plan as a v1 file, and the floor the calibration selects (never a literal).
+    {
+        const auto args = sv::plan_check_args(dir, *found, 600000);
+        assert(args.size() == 4 && args[0] == "--plan-check" && args[2] == "--plan-check-floor-ppm" && args[3] == "600000");
+        assert(args[1] == (dir / (stored.key + ".expected-plan.json")).string());
+        std::ifstream written(args[1]);
+        const auto round = sv::decode_engine_plan(Json::parse(written), args[1]);
+        assert(round.vram.kv_resolved == 9 && round.host_pool_mib == 9216);
+        auto bad_ppm = [&](int64_t n) {
+            try { (void)sv::plan_check_args(dir, *found, n); } catch (const std::exception& e) {
+                return std::string(e.what()).find("must be in [0, 1000000)") != std::string::npos;
+            }
+            return false;
+        };
+        assert(bad_ppm(-1) && bad_ppm(1000000));
+        // the floor is the selected calibration: balanced 600000, latency 500000, throughput none (0)
+        auto floor_for = [&](const char* objective) {
+            auto opts = t.standard();
+            opts.sets = {std::string("service.objective=") + objective};
+            return sv::kv_backing_floor_ppm(sv::resolve(opts, t.facts).values, {});
+        };
+        assert(floor_for("balanced") == 600000 && floor_for("latency") == 500000 && floor_for("throughput") == 0);
+    }
     {
         const auto file = dir / (stored.key + ".json");
         Json e = Json::parse(std::ifstream(file));

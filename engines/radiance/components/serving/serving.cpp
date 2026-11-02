@@ -74,8 +74,8 @@ const std::vector<Field>& schema_fields() {
             "launcher HOST_KV_MIB=12288 measured interim; derive RSC03", "derived",
             "startup-only", 0, UINT32_MAX);
         add("memory.host_reserve_mib", "integer", nullptr,
-            "calibrated: max(calibration.host_reserve.floor_mib, calibration.host_reserve.total_fraction x "
-            "MemTotal); a site hard_floors entry may only raise it", "derived", "startup-only",
+            "calibrated: max(calibration.host_reserve.floor_mib, ceil(calibration.host_reserve.total_fraction_ppm x "
+            "MemTotal / 10^6)); a site hard_floors entry may only raise it", "derived", "startup-only",
             0, UINT32_MAX, {}, true);
         add("memory.tail_budget_mib", "integer", nullptr,
             "layouts.toml tail budget; derive RSC03", "derived", "step-boundary",
@@ -870,22 +870,22 @@ Resolved resolve(const Options& options, const Json& facts) {
         const Calibration calibration = Calibration::standard(options.calibration_cache);
         const CalibrationMatch at{"", name, value_at(values, "service.objective").get<std::string>()};
         const Calibrated floor = calibration.get("calibration.host_reserve.floor_mib", at);
-        const Calibrated fraction = calibration.get("calibration.host_reserve.total_fraction", at);
-        if (!floor.value.is_number_integer() || floor.value.get<int64_t>() < 0 || !fraction.value.is_number() ||
-            fraction.value.get<double>() < 0 ||
-            fraction.value.get<double>() >= 1)
+        const Calibrated fraction = calibration.get("calibration.host_reserve.total_fraction_ppm", at);
+        if (!floor.value.is_number_integer() || floor.value.get<int64_t>() < 0 || !fraction.value.is_number_integer() ||
+            fraction.value.get<int64_t>() < 0 || fraction.value.get<int64_t>() >= 1000000)
             throw std::runtime_error("calibration.host_reserve: floor_mib must be a whole MiB count and "
-                                     "total_fraction in [0, 1)");
+                                     "total_fraction_ppm an integer in [0, 1000000)");
         const uint64_t total = facts.at("host").at("mem_total_mib").get<uint64_t>();
-        const uint64_t scaled = uint64_t(std::ceil(fraction.value.get<double>() * double(total)));
+        const uint64_t ppm = fraction.value.get<uint64_t>();
+        const uint64_t scaled = total / 1000000 * ppm + (total % 1000000 * ppm + 999999) / 1000000;   // ceil, no overflow
         const uint64_t reserve = std::max(floor.value.get<uint64_t>(), scaled);
         const Field& field = *field_for("memory.host_reserve_mib");
         put(values, provenance, field, reserve, "calibrated",
-            "max(" + std::to_string(floor.value.get<uint64_t>()) + " MiB, " + fraction.value.dump() + " x " +
+            "max(" + std::to_string(floor.value.get<uint64_t>()) + " MiB, " + std::to_string(ppm) + " ppm x " +
             std::to_string(total) + " MiB MemTotal); " + floor.describe("calibration.host_reserve.floor_mib") +
-            "; " + fraction.describe("calibration.host_reserve.total_fraction"),
+            "; " + fraction.describe("calibration.host_reserve.total_fraction_ppm"),
             Json::array({"facts.host.mem_total_mib", "calibration.host_reserve.floor_mib",
-                         "calibration.host_reserve.total_fraction"}));
+                         "calibration.host_reserve.total_fraction_ppm"}));
         if (site.contains("hard_floors")) {
             const Json& floors = site.at("hard_floors");
             std::vector<std::pair<std::string, Json>> entries;
@@ -903,7 +903,7 @@ Resolved resolve(const Options& options, const Json& facts) {
                         options.site.string() + ": hard floor raises the calibrated reserve of " +
                         std::to_string(reserve) + " MiB",
                         Json::array({options.site.string() + ":" + key, "calibration.host_reserve.floor_mib",
-                                     "calibration.host_reserve.total_fraction"}));
+                                     "calibration.host_reserve.total_fraction_ppm"}));
             }
         }
     }
