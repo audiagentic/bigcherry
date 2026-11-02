@@ -16,6 +16,7 @@ struct Case {
     std::vector<std::pair<const char*, std::string>> env;   // R3_MOE_WORKER_<key>; HEAT's value "@heat" means the fixture's heat file
     uint32_t helpers;
     std::vector<uint64_t> budget_experts;                  // each helper's budget, in whole experts
+    bool embedded_profile = false;                         // the container carries a calibration profile (HEAT unset ranks by it)
 };
 
 inline const std::vector<Case>& cases() {
@@ -45,6 +46,13 @@ inline const std::vector<Case>& cases() {
         {"heat-fp8-only-formats", {{"HEAT", "@heat"}, {"FORMATS", "fp8_e4m3_block"}}, 2, {10, 10}},
         {"heat-no-budget", {{"HEAT", "@heat"}}, 2, {0, 10}},
         {"heat-tiny-budget", {{"HEAT", "@heat"}}, 2, {1, 1}},
+        // the container-embedded profile path: coldest share first, ties by layer then expert
+        {"profile-rr-1-one-expert", {}, 1, {1}, true},
+        {"profile-rr-2-one-each", {}, 2, {1, 1}, true},
+        {"profile-rr-2", {}, 2, {10, 10}, true},
+        {"profile-rr-2-shares-31", {{"SHARES", "3,1"}}, 2, {20, 20}, true},
+        {"profile-tail-3", {{"PLACEMENT", "tail"}}, 3, {20, 20, 10}, true},
+        {"profile-heat-file-wins", {{"HEAT", "@heat"}}, 2, {10, 10}, true},
     };
     return c;
 }
