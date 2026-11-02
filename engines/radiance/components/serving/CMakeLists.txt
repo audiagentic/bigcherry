@@ -1,0 +1,26 @@
+cmake_minimum_required(VERSION 3.21)
+project(bc_serving_component LANGUAGES CXX)
+find_package(radiance REQUIRED)
+rad_plugin_defaults()
+
+set(RADIANCE_SRC "" CACHE PATH "Radiance source tree, for the engine's vendored nlohmann/json")
+if(NOT EXISTS "${RADIANCE_SRC}/vendor/nlohmann/json.hpp")
+  message(FATAL_ERROR "serving: -DRADIANCE_SRC must contain vendor/nlohmann/json.hpp")
+endif()
+
+add_library(bc_serving STATIC serving.cpp)
+target_compile_features(bc_serving PUBLIC cxx_std_20)
+target_include_directories(bc_serving PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}" "${RADIANCE_SRC}/vendor")
+target_include_directories(bc_serving PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/vendor")
+
+add_executable(bc-serve main.cpp)
+target_link_libraries(bc-serve PRIVATE bc_serving)
+set_target_properties(bc-serve PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin")
+install(TARGETS bc-serve RUNTIME DESTINATION radiance_home/bin)
+
+include(CTest)
+if(BUILD_TESTING)
+  add_executable(bc_serving_test EXCLUDE_FROM_ALL serving_test.cpp)
+  target_link_libraries(bc_serving_test PRIVATE bc_serving)
+  add_test(NAME bc_serving_test COMMAND bc_serving_test)
+endif()
