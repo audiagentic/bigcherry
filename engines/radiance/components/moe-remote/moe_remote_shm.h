@@ -256,6 +256,19 @@ struct alignas(64) CombineChunks {
 };
 static_assert(sizeof(CombineChunks) == 320);
 
+/* The engine add kernel's role in a combined step's chunk wait (RAD42). A chunk's first block is the ONLY block that
+ * polls done[c] and mirrors it into device memory for the chunk's other blocks, so it must poll whenever the step is
+ * combined, whether or not its own token routes to a helper: helper 0 combines every chunk of a combined step, so
+ * done[c] always arrives. Gating the poller on its own token's routing deadlocked the engine whenever a chunk's first
+ * token was entirely engine-local while a later token of the chunk had a remote expert (the no-tail 8-session hang).
+ * constexpr: called from the HIP kernel as well as the host test. */
+enum class CombineChunkWait : uint8_t { None, Poll, Mirror };
+constexpr CombineChunkWait combine_chunk_wait(bool combined, uint32_t token, bool routed) {
+    if (!combined) return CombineChunkWait::None;
+    if (token % kCombineChunkRows == 0u) return CombineChunkWait::Poll;
+    return routed ? CombineChunkWait::Mirror : CombineChunkWait::None;
+}
+
 struct alignas(kPage) Header {
     uint64_t magic;                 /* segment identity. */
     uint32_t version;               /* protocol compatibility gate. */
