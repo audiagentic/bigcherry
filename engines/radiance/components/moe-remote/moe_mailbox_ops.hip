@@ -388,19 +388,11 @@ __device__ void mailbox_wait_helpers(uint8_t* base, const uint32_t* sequence, co
          * second helper's wait. Both are written once the last wait is over. */
         seen_at[k] = wall_clock64();
         traced[k] = reinterpret_cast<Request*>(base + h->ring_offset) + lane * kLaneSlots + ((seq - 1u) % kLaneSlots);
-        /* The acquire of done_sequence above orders everything the helper wrote before it, so these are relaxed and
-         * independent. The helper stores done_epoch/done_slot from this request's own epoch/slot and then releases
-         * done_sequence == seq (lane_publish_done), so the three lane words, in the cache line just acquired, prove
-         * which request completed under which placement: the Request's status is the only other read, as on main.
-         * The expected epoch/slot come from this pass's ticket copy (device memory), not from the Request. */
-        const uint64_t done_epoch = __hip_atomic_load(&h->lane[lane].done_epoch, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_SYSTEM);
-        const uint32_t done_slot = __hip_atomic_load(&h->lane[lane].done_slot, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_SYSTEM);
-        const uint32_t status = traced[k]->status;
-        const uint32_t epoch = published[kPublishedTicketOffset + 2], gslot = published[kPublishedTicketOffset + 3];
-        /* A failed helper request fails now (the route check skips it on a chunked step), as does a completion under
-         * any other epoch/slot. Bitwise, so no branch waits on one load before the others issue. */
-        if ((status != 0) | (done_epoch != epoch) | (done_slot != gslot))
-            __builtin_trap();
+        /* One read after the acquire, as on main. done_sequence == seq names exactly this request, whose epoch/slot
+         * this pass wrote from its own ticket; the helper's lane epoch/slot are copies of those Request words, so
+         * reading them back here would prove nothing and cost link reads on every layer. Placement safety is the
+         * ledger's (a parent never spans an epoch flip) and the quiescence check's, which compares them at drain. */
+        if (traced[k]->status != 0) __builtin_trap();   /* a failed helper request: fail now (the route check skips it on a chunked step) */
     }
     for (uint32_t k = 0; k < helpers && k < kMaxHelpers; ++k) {
         if (!traced[k]) continue;

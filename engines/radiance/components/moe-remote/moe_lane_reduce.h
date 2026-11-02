@@ -160,9 +160,9 @@ __global__ void lane_publish_done(r3::moe_shm::Request* q, uint32_t* done_sequen
                                   const uint32_t* publish_limit) {
     if (blockIdx.x || threadIdx.x || sequence > __atomic_load_n(publish_limit, __ATOMIC_RELAXED)) return;
     q->trace[4] = wall_clock64();   /* R3_MOE_WORKER_TRACE: this device's clock */
-    q->completion_sequence = sequence;
-    q->completion_epoch = q->placement_epoch;
-    q->completion_slot = q->generation_slot;
+    /* No Request completion words: the GPU engine proves completion by the lane's done_sequence alone, and each mapped
+     * store here would sit between the helper's work and the release the engine waits on. The lane's epoch/slot are for
+     * the quiescence check (r3_moe_wait_drained), not for the per-layer wait. */
     /* One system-scope release, as on main: the release of done_sequence publishes the completion words and the lane's
      * epoch/slot written before it, so those are relaxed (each release is a fence the engine's wait would sit behind). */
     __hip_atomic_store(done_epoch, q->placement_epoch, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_SYSTEM);

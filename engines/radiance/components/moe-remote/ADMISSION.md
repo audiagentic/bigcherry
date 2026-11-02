@@ -48,13 +48,19 @@ parent step.
   adds the number of lanes the pass published to consumed_count in one atomic
   (a block count), and records the lane's (and a combined step's) consumed sequence with the
   pass's epoch/slot in ConsumedRecords, also device memory.
-* mailbox_wait_helpers keeps main's acquire of done_sequence == seq, then reads
-  the lane's done_epoch/done_slot (the same cache line) with relaxed loads
-  issued alongside main's status read, compared against the pass's ticket
-  copy. The helper stores done_epoch/done_slot from the request's own
-  epoch/slot before releasing done_sequence (lane_publish_done), so these
-  prove which request completed under which placement; the Request's own
-  completion words are not read on the engine's hot path.
+* mailbox_wait_helpers is main's wait: the acquire of done_sequence == seq and
+  the Request's status, nothing else. done_sequence names exactly the request
+  this pass published with its own ticket's epoch/slot; the helper's lane
+  done_epoch/done_slot are copies of those words, so reading them back per
+  layer would prove nothing. lane_publish_done writes no Request completion
+  words (the GPU engine never reads them); its only extra stores are the
+  lane's relaxed done_epoch/done_slot, published by main's single
+  system-scope release of done_sequence, for the quiescence check. Placement
+  safety is the ledger's (a parent never spans an epoch flip) and the
+  quiescence check's (r3_moe_wait_drained compares done and consumed
+  epoch/slot per lane at drain). Hardware traces showed each extra mapped
+  store or load here cost about 2 us per helper request on the engine's
+  critical path.
 * Once a parent's terminal event on a rank is complete, a sealed stamp that
   does not match its ticket/epoch/slot, or whose published and consumed counts
   differ, faults the ledger at once, naming the parent: the event follows the
