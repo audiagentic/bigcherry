@@ -110,7 +110,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-stop_all() {
+stop_procs() {
   # engine first (SIGINT is its clean shutdown), then the helpers; each gets 60 s before SIGKILL
   for name in engine $(cd "$PIDS" 2>/dev/null && ls -r helper* 2>/dev/null); do
     [ -f "$PIDS/$name" ] || continue
@@ -122,6 +122,10 @@ stop_all() {
     fi
     rm -f "$PIDS/$name"
   done
+}
+
+stop_all() {
+  stop_procs
   # power settings this launcher applied go back to what the cards ran before, once the processes are gone
   if [ -f "$RUN/gpu-power" ]; then
     PYTHONPATH=tools python3 -m bigcherry gpu-power restore >&2 && rm -f "$RUN/gpu-power"
@@ -202,28 +206,27 @@ fi
 
 mkdir -p "$PIDS"
 STAMP=$(date +%m%d-%H%M%S)
-rm -f "/dev/shm${SHM}"
-trap 'echo "start failed; stopping what was started" >&2; stop_all; exit 1' ERR
 
 # helpers in order: helper 0 creates the segment, helper 1 attaches; each must report ready before the next starts
-for i in "${!HELPERS[@]}"; do
-  log=$RUN/helper$i-$STAMP.log
-  declare -n hv="LAYOUT_HELPER_$i"
-  env "${COMMON[@]}" "${hv[@]}" \
-    setsid ${HELPER_WRAP:-} "$HELPER" "$MODEL" > "$log" 2>&1 &
-  echo $! > "$PIDS/helper$i"
-  unset -n hv
-  echo "helper$i (pid $!, log $log): waiting for ready..." >&2
-  ready=0
-  for _ in $(seq 900); do
-    grep -qE '^r3_moe_worker: (ready |waiting for engine runtime expert maps)' "$log" && { ready=1; break; }
-    kill -0 "$(cat "$PIDS/helper$i")" 2>/dev/null || break
-    sleep 1
+start_helpers() {
+  for i in "${!HELPERS[@]}"; do
+    log=$RUN/helper$i-$STAMP.log
+    declare -n hv="LAYOUT_HELPER_$i"
+    env "${COMMON[@]}" "${hv[@]}" \
+      setsid ${HELPER_WRAP:-} "$HELPER" "$MODEL" > "$log" 2>&1 &
+    echo $! > "$PIDS/helper$i"
+    unset -n hv
+    echo "helper$i (pid $!, log $log): waiting for ready..." >&2
+    ready=0
+    for _ in $(seq 900); do
+      grep -qE '^r3_moe_worker: (ready |waiting for engine runtime expert maps)' "$log" && { ready=1; break; }
+      kill -0 "$(cat "$PIDS/helper$i")" 2>/dev/null || break
+      sleep 1
+    done
+    [ $ready = 1 ] || { echo "FLASHNEXT_EXIT=1 helper$i not ready; see $log"; tail -n 20 "$log"; false; }
   done
-  [ $ready = 1 ] || { echo "FLASHNEXT_EXIT=1 helper$i not ready; see $log"; tail -n 20 "$log"; false; }
-done
+}
 
-LOG=$RUN/engine-$STAMP.log
 RESUME_ARGS=(); [ "$PREFIX_RESUME" = off ] || RESUME_ARGS=(--prefix-resume "$PREFIX_RESUME")
 ENGINE_KERNELS="$LAYOUT_ENGINE_PLUGIN,libr3moe,libref"
 ENGINE_VISIBLE="$R9700"
@@ -236,24 +239,54 @@ if [ -n "$NGRAM_DEV" ]; then
   ENGINE_HIP="0,1"
   NGRAM_ENV=(R3_NGRAM_DEV=1 R3_NGRAM_HELPER_SO="$RAD_HOME/helpers/libr3_ngram_helper.so" R3_NGRAM_AVX="$RAD_HOME/kernels/libavx.so")
 fi
-env "${COMMON[@]}" "${NGRAM_ENV[@]}" R3_MOE_WORKER=1 ROCR_VISIBLE_DEVICES="$ENGINE_VISIBLE" HIP_VISIBLE_DEVICES="$ENGINE_HIP" \
-  setsid ${ENGINE_WRAP:-} "$RAD_BIN" --model "$MODEL" --radiance-home "$RAD_HOME" --port "$PORT" \
-    --kernels "$ENGINE_KERNELS" \
-    --placement expert_tiered \
-    --ngram-placement "$NGRAM" \
-    --host-pool-mib "$HOST_POOL_MIB" \
-    --prefix-cache-mib "$HOST_KV_MIB" \
-    --tp 1 \
-    --max-num-seqs "$SEQS" \
-    --max-num-batched-tokens "$CHUNK" \
-    --checkpoint-interval 4096 \
-    --kv-cache-dtype "$KV_DTYPE" \
-    --num-speculative-tokens 3 \
-    --max-model-len "$MAX_LEN" \
-    --rope-scaling "$ROPE" \
-    "${RESUME_ARGS[@]}" \
-    "${ENGINE_ARGS[@]}" \
-  > "$LOG" 2>&1 &
+# start_engine LOG [ARG ...]: the engine, with the launcher's own configuration (the one plan_check_describe tells bc-serve
+# about) and ARG... after it.
+start_engine() {
+  local log=$1; shift
+  env "${COMMON[@]}" "${NGRAM_ENV[@]}" R3_MOE_WORKER=1 ROCR_VISIBLE_DEVICES="$ENGINE_VISIBLE" HIP_VISIBLE_DEVICES="$ENGINE_HIP" \
+    setsid ${ENGINE_WRAP:-} "$RAD_BIN" --model "$MODEL" --radiance-home "$RAD_HOME" --port "$PORT" \
+      --kernels "$ENGINE_KERNELS" \
+      --placement expert_tiered \
+      --ngram-placement "$NGRAM" \
+      --host-pool-mib "$HOST_POOL_MIB" \
+      --prefix-cache-mib "$HOST_KV_MIB" \
+      --tp 1 \
+      --max-num-seqs "$SEQS" \
+      --max-num-batched-tokens "$CHUNK" \
+      --checkpoint-interval 4096 \
+      --kv-cache-dtype "$KV_DTYPE" \
+      --num-speculative-tokens 3 \
+      --max-model-len "$MAX_LEN" \
+      --rope-scaling "$ROPE" \
+      "${RESUME_ARGS[@]}" \
+      "${ENGINE_ARGS[@]}" \
+      "$@" \
+    > "$log" 2>&1 &
+}
+
+# The measuring start of the plan check (plan-check.sh): helpers up, the engine runs to the end of its memory plan and
+# exits by itself (--plan-memory), then the helpers stop. It never serves and never runs a request.
+plan_check_start_engine_measure() {
+  rm -f "/dev/shm${SHM}"
+  start_helpers || { stop_procs; return 1; }
+  start_engine "$RUN/engine-measure.log" --plan-memory "$PLAN_MEASURE_FILE"
+  local pid=$! rc=0
+  echo $pid > "$PIDS/engine"
+  wait $pid || rc=$?
+  stop_procs   # processes only: the power settings the real start still needs stay applied
+  [ $rc = 0 ] && [ -s "$PLAN_MEASURE_FILE" ]
+}
+
+source "$(dirname "${BASH_SOURCE[0]}")/lib/plan-check.sh"
+# The check is armed before anything is started for real; if it cannot be (no bc-serve, a measuring start that failed, a
+# plan that does not decode) the engine does not start. There is no way to skip it.
+plan_check_flags || { echo "FLASHNEXT_EXIT=97 the engine plan check could not be armed (above); nothing was started for serving"; exit 97; }
+
+trap 'echo "start failed; stopping what was started" >&2; stop_all; exit 1' ERR
+rm -f "/dev/shm${SHM}"
+start_helpers
+LOG=$RUN/engine-$STAMP.log
+start_engine "$LOG" "${PLAN_CHECK_ARGS[@]}"
 echo $! > "$PIDS/engine"
 echo "engine on R9700 (pid $!, log $LOG): waiting for /health..." >&2
 up=0

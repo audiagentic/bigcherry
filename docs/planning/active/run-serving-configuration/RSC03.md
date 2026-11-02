@@ -158,6 +158,7 @@ v1 contract decisions affecting RSC03 (lead, 2026-11-02; v1 slice 1 design appro
 ## Ledger-events
 
 
+
 - chg_20261102_005338_planning-one-serve-command_5259
 - 2026-11-02T00:53:52.338745+00:00 (updated-by): Updated: section:ledger-events
 - chg_20261102_012258_long-running-flash-next-server_6339
@@ -175,3 +176,5 @@ v1 contract decisions affecting RSC03 (lead, 2026-11-02; v1 slice 1 design appro
 - 2026-11-02T09:58:14.772754+00:00 (updated-by): Updated: section:notes
 - chg_20261102_155533_the-start-up-memory-check-no-l_8617
 - 2026-11-02T15:55:37.776302+00:00 (updated-by): Updated: section:ledger-events
+- chg_20261102_193311_the-engine-now-checks-at-ever_1908
+- 2026-11-02T19:33:16.115864+00:00 (updated-by): Updated: section:ledger-events
