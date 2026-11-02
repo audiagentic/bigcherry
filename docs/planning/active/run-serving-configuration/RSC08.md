@@ -116,7 +116,6 @@ Slice 2 (shared strict reader) requirement, from the lead's #530 review (2026-11
 
 ## Ledger-events
 
-
 - chg_20261102_121239_the-serving-manifest-v1-format_6543
 - chg_20261102_121824_the-serving-component-can-prod_8129
 - 2026-11-02T12:18:29.161474+00:00 (updated-by): Updated: section:ledger-events
