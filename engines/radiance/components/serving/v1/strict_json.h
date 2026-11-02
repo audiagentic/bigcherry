@@ -13,6 +13,9 @@
 namespace bc::serving::v1 {
 
 inline constexpr size_t kMaxDocumentBytes = 16u * 1024u * 1024u;
+/* spec §11 amendment 7: the v1 examples nest at most 9 deep; 64 bounds the parser's paths and every recursive walk
+ * (JCS, the decoder) far from the stack. */
+inline constexpr size_t kMaxNestingDepth = 64;
 
 /* The parsed document, or BC_CFG_INVALID_FORMAT (size, encoding, syntax, number) or BC_CFG_DUPLICATE_FIELD, with
  * `source` as the error's source file and, for syntax errors, its line and column. */

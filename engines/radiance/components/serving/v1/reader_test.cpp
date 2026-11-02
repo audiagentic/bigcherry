@@ -350,6 +350,14 @@ int main() {
         check(s72 && s72->message.find("longer than 71") != std::string::npos, "a 72-character digest is refused");
     }
 
+    {   // amendment 7: nesting is bounded (1,000,000 levels used to take quadratic time and memory)
+        const std::string deep = "{\"x\":" + std::string(1000000, '[') + std::string(1000000, ']') + "}";
+        expect(from_text(deep), C::invalid_format, "nested deeper than 64", "a million nested arrays, refused at once");
+        std::string ok64 = std::string(63, '[') + std::string(63, ']');
+        check(parse_strict_json("{\"x\":" + ok64 + "}", "t").ok(), "64 levels parse");
+        check(!parse_strict_json("{\"x\":[" + ok64 + "]}", "t").ok(), "65 levels are refused");
+    }
+
     // ---- renderers (errors.md §3, §4) ----
     {
         ConfigError e = make_error(C::experiment_forbidden, "spec.experiment",
