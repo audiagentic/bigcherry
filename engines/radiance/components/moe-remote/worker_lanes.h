@@ -150,7 +150,18 @@ private:
      * request at reopen (it notifies after clearing). Outside every serving spin. */
     void acknowledge_drain(uint32_t lane, uint64_t closure) {
         using namespace r3::moe_shm;
-        if (!acknowledge_lane_drain(h_->lane[lane], closure, [&] { return gpu_.sync_lane(lane); })) {
+        /* After the lane's stream is drained, publish the identity of its last completed request (epoch/slot) for the
+         * engine's quiescence check, once per drain rather than on every completion. */
+        auto drain = [&] {
+            if (!gpu_.sync_lane(lane)) return false;
+            LaneSignal& l = h_->lane[lane];
+            if (const Request* q = lane_request(map_, lane, load(&l.done_sequence))) {
+                __atomic_store_n(&l.done_epoch, __atomic_load_n(&q->placement_epoch, __ATOMIC_ACQUIRE), __ATOMIC_RELAXED);
+                __atomic_store_n(&l.done_slot, load(&q->generation_slot), __ATOMIC_RELAXED);
+            }
+            return true;   /* acknowledge_lane_drain's release of drain_ack publishes them */
+        };
+        if (!acknowledge_lane_drain(h_->lane[lane], closure, drain)) {
             request_stop();
             return;
         }

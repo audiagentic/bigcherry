@@ -476,10 +476,6 @@ public:
             static_cast<uint32_t*>(dev_at(&hhost->lane[lane].request_sequence));
         auto* done_seq =
             static_cast<uint32_t*>(dev_at(&hhost->lane[lane].done_sequence));
-        auto* done_epoch =
-            static_cast<uint64_t*>(dev_at(&hhost->lane[lane].done_epoch));
-        auto* done_slot =
-            static_cast<uint32_t*>(dev_at(&hhost->lane[lane].done_slot));
         auto* route = static_cast<const Route*>(
             dev_at(ptr<Route>(host_map, hhost->route_offset[rank])));
         auto* act_q = static_cast<const uint8_t*>(
@@ -831,8 +827,7 @@ public:
             !hip_ok(hipEventRecord(w.sample_stop, w.stream), "lane timing stop"))
             return -EIO;
         hipLaunchKernelGGL(lane_publish_done, dim3(1), dim3(1), 0, w.stream,
-                           q, done_seq, done_epoch, done_slot, sequence,
-                           static_cast<const uint32_t*>(w.d_publish_limit.p));
+                           q, done_seq, sequence, static_cast<const uint32_t*>(w.d_publish_limit.p));
         if (!hip_ok(hipGetLastError(), "lane publish done")) return -EIO;
         return 0;
     }

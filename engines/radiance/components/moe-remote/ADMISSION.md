@@ -52,10 +52,13 @@ parent step.
   the Request's status, nothing else. done_sequence names exactly the request
   this pass published with its own ticket's epoch/slot; the helper's lane
   done_epoch/done_slot are copies of those words, so reading them back per
-  layer would prove nothing. lane_publish_done writes no Request completion
-  words (the GPU engine never reads them); its only extra stores are the
-  lane's relaxed done_epoch/done_slot, published by main's single
-  system-scope release of done_sequence, for the quiescence check. Placement
+  layer would prove nothing. lane_publish_done is main's kernel: one
+  system-scope release of done_sequence and no other store over the link.
+  The lane's done_epoch/done_slot, which the quiescence check compares, are
+  written by the helper CPU once per drain, from its last completed Request,
+  after the lane's stream is drained and before its closure ACK (release).
+  A hardware bisect showed the two per-request GPU stores of those words cost
+  most of slice C's decode overhead (+0.8% to +0.3% when removed). Placement
   safety is the ledger's (a parent never spans an epoch flip) and the
   quiescence check's (r3_moe_wait_drained compares done and consumed
   epoch/slot per lane at drain). Hardware traces showed each extra mapped
