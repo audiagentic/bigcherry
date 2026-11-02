@@ -7,11 +7,13 @@
 #include "rad_encoding.h"
 #include "rad_format.h"
 
+#include <algorithm>
 #include <array>
 #include <cerrno>
 #include <cstdint>
 #include <cstring>
 #include <fcntl.h>
+#include <functional>
 #include <string>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -140,9 +142,9 @@ struct Container {
  * helper sections. */
 struct OwnerPolicy {
     std::string heat, placement, formats;
-    std::vector<uint64_t> shares;
+    std::string shares;                    // R3_MOE_WORKER_SHARES text ("w0,w1,.."; "" = equal), parsed where the worker parsed it
     bool balance = false;
-    std::vector<double> balance_speeds;
+    std::vector<double> balance_speeds;    // two positive speeds; checked when balance is on
 };
 
 struct Owned {
@@ -159,8 +161,11 @@ bool backend_accepts(const Container& f, const char* arch, const char* formats, 
  * description of the expert (moe_backend.h); without, the container's stored size. */
 int64_t laid_out_bytes(const Container& f, bool device_layout, uint32_t l, uint32_t e);
 /* helper `helper` of `helpers`' owned experts, in allocation order; `arch` is its card's ("host" without one). */
+/* layout_check (may be empty) runs after the budget and backend checks and before anything else, as the worker's device-layout
+ * agreement did; false fails the selection. */
 bool select_owned(const Container& f, const OwnerPolicy& p, const std::string& arch, bool device_layout,
-                  const uint64_t* budgets, uint32_t helper, uint32_t helpers, Owned* out);
+                  const std::function<bool()>& layout_check, const uint64_t* budgets, uint32_t helper, uint32_t helpers,
+                  Owned* out);
 
 /* Every helper's owned experts at once, as each helper selects them (select_owned with its own index), and the experts no
  * helper owns, which stay with the engine (its card or its host pool). Fails with the failing helper named. */

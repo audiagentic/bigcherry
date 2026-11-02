@@ -126,14 +126,24 @@ int64_t laid_out_bytes(const Container& f, bool device_layout, uint32_t l, uint3
     return r3::moe_backend::expert_bytes(d);
 }
 
+static_assert(r3::moe_shm::kMaxHelpers <= r3::worker_share::kMaxHelperShares,
+              "the planner's helper bound is the runtime protocol's, which the share arithmetic must cover");
+
 bool select_owned(const Container& f, const OwnerPolicy& p, const std::string& arch, bool device_layout,
-                  const uint64_t* budgets, uint32_t helper, uint32_t helpers, Owned* out) {
+                  const std::function<bool()>& layout_check, const uint64_t* budgets, uint32_t helper, uint32_t helpers,
+                  Owned* out) {
     const uint64_t budget = budgets && helper < helpers ? budgets[helper] : 0;   /* this helper's; the others' matter to the tail placement */
     if (!out || !budget) {
         std::fprintf(stderr, "r3_moe_worker: no helper budget\n");
         return false;
     }
     if (!backend_accepts(f, arch.c_str(), p.formats.c_str(), false)) return false;
+    if (layout_check && !layout_check()) return false;
+    if (helpers == 0 || helpers > r3::moe_shm::kMaxHelpers || helper >= helpers) {
+        std::fprintf(stderr, "r3_moe_worker: helper %u of %u is outside the protocol's 1..%u helpers\n", helper, helpers,
+                     (unsigned)r3::moe_shm::kMaxHelpers);
+        return false;
+    }
     std::vector<const RadFileProfile*> order;
     /* A container converted without calibration has no profile: take experts expert-major (unsorted)
      * so the budget spreads over all layers. */
@@ -208,6 +218,10 @@ bool select_owned(const Container& f, const OwnerPolicy& p, const std::string& a
             const double lam = tokens * (double)kTopK * share, lam_d = decode * (double)kTopK * share;
             return (1.0 - std::exp(-lam)) * c0 + c1 * lam + (1.0 - std::exp(-lam_d)) * d0;
         };
+        if (p.balance_speeds.size() != 2 || !(p.balance_speeds[0] > 0.0) || !(p.balance_speeds[1] > 0.0)) {
+            std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_BALANCE needs two positive balance speeds\n");
+            return false;
+        }
         double speed[2] = {p.balance_speeds[0], p.balance_speeds[1]};
         /* The jointly owned set: exactly the alternation's picks (both helpers' budgets filled in turn). */
         std::vector<Pick> joint;
@@ -272,8 +286,10 @@ bool select_owned(const Container& f, const OwnerPolicy& p, const std::string& a
     /* R3_MOE_WORKER_SHARES="w0,w1,..": the helpers' parts of the ranking (default equal). A slower card takes a smaller part; a part of 0
      * is a helper that owns nothing. Every helper reads the same list and takes the same decision (worker_share.h). */
     uint32_t shares[r3::worker_share::kMaxHelperShares] = {};
-    for (uint32_t i = 0; i < helpers; ++i)
-        shares[i] = (uint32_t)p.shares.at(i);
+    if (!r3::worker_share::parse_shares(p.shares.c_str(), helpers, shares)) {
+        std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_SHARES must list one non-negative weight for each of the %u helpers, not all 0\n", helpers);
+        return false;
+    }
     /* R3_MOE_WORKER_PLACEMENT: "roundrobin" (default) deals the ranking out by the shares; "tail" deals it to the head helpers 0..H-2 by their
      * shares, each up to its own budget, and gives the LAST helper what no head helper had room for (RAD23: the cold tail on a small card). */
     bool tail = false;
@@ -347,18 +363,18 @@ bool select_owned(const Container& f, const OwnerPolicy& p, const std::string& a
 bool plan_owners(const Container& f, const std::vector<OwnerPolicy>& policies, const std::vector<std::string>& archs,
                  const std::vector<uint64_t>& budgets, OwnerMap* out, std::string* why) {
     const size_t n = policies.size();
-    if (!out || n == 0 || archs.size() != n || budgets.size() != n || n > r3::worker_share::kMaxHelperShares) {
+    if (!out || n == 0 || archs.size() != n || budgets.size() != n || n > r3::moe_shm::kMaxHelpers) {
         if (why) *why = "plan_owners: one policy, card and budget per helper, at most " +
-                        std::to_string(r3::worker_share::kMaxHelperShares);
+                        std::to_string(r3::moe_shm::kMaxHelpers);
         return false;
     }
     *out = OwnerMap{};
-    uint64_t b[r3::worker_share::kMaxHelperShares] = {};
+    uint64_t b[r3::moe_shm::kMaxHelpers] = {};
     for (size_t i = 0; i < n; ++i) b[i] = budgets[i];
     std::vector<uint8_t> owned((size_t)f.layers * f.experts, 0);
     for (uint32_t h = 0; h < n; ++h) {
         Owned o;
-        if (!select_owned(f, policies[h], archs[h], true, b, h, (uint32_t)n, &o)) {
+        if (!select_owned(f, policies[h], archs[h], true, {}, b, h, (uint32_t)n, &o)) {
             if (why) *why = "helper " + std::to_string(h) + " (" + archs[h] + "): owned-expert selection refused";
             return false;
         }
