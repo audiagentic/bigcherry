@@ -22,6 +22,14 @@ target_include_directories(bc_contract PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/contr
 add_executable(bc_contract_gen contract/generate.cpp)
 target_link_libraries(bc_contract_gen PRIVATE bc_contract)
 
+# The shared strict v1 reader (RSC08 slice 2): structured errors, strict JSON, the generated codec, semantics, typed
+# views and the admission check. Linked by bc-serve, radiance and r3_moe_worker; GPU-free.
+add_library(bc_serving_v1 STATIC v1/error.cpp v1/strict_json.cpp v1/manifest.cpp v1/admission.cpp
+            generated/serving_codec.cpp)
+target_link_libraries(bc_serving_v1 PUBLIC bc_jcs radiance::abi)
+target_include_directories(bc_serving_v1 PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/v1" "${CMAKE_CURRENT_SOURCE_DIR}/generated"
+                           "${CMAKE_CURRENT_SOURCE_DIR}")
+
 add_library(bc_serving STATIC serving.cpp)
 target_link_libraries(bc_serving PUBLIC bc_jcs)
 target_compile_features(bc_serving PUBLIC cxx_std_20)
@@ -52,4 +60,9 @@ if(BUILD_TESTING)
   target_compile_definitions(bc_contract_check PRIVATE BC_CONTRACT_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
     BC_CONTRACT_DOCS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v1")
   add_test(NAME bc_contract_check COMMAND bc_contract_check)
+  add_executable(bc_v1_test EXCLUDE_FROM_ALL v1/reader_test.cpp)
+  target_link_libraries(bc_v1_test PRIVATE bc_serving_v1)
+  target_compile_definitions(bc_v1_test PRIVATE
+    BC_CONTRACT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v1")
+  add_test(NAME bc_v1_test COMMAND bc_v1_test)
 endif()

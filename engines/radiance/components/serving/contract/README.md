@@ -9,6 +9,7 @@
 | `serving-v1.schema.json` | JSON Schema 2020-12. Also committed as `docs/design/serving-manifest-v1/serving-manifest.v1.schema.json` (identical bytes). |
 | `serving_types.h` | The typed model (`bc::serving::v1`): one struct per object, enum classes with wire-name tables, `kFields` (every field's path, kind, class, requiredness, Radiance binding and doc), `kFingerprint`. |
 | `serving-fields.md` | The field reference. |
+| `serving_codec.h`, `serving_codec.cpp` | One strict decoder per struct (`v1/error.h` codes, human paths) and `apply()` for each patch def. |
 | `contract.fingerprint` | Two lines: `schema sha256:...` and `semantics sha256:...` (below). |
 
 Two fingerprints, both pinned in `serving_types.h` (`kFingerprint`, `kSemanticFingerprint`):
@@ -20,7 +21,8 @@ Two fingerprints, both pinned in `serving_types.h` (`kFingerprint`, `kSemanticFi
 - **semantics**: the same schema plus the declared contract data the schema does not express: the contract identity
   (`api_version`, `kind`, `contract_version`, which the loader also requires to equal the `/apiVersion`, `/kind` and
   `/metadata/contract_version` consts), every field's provenance class, the lifecycle, the Radiance bindings
-  (`radiance_option`, `radiance_config`) and the calibration key order. It identifies the declared v1 contract. C++ names and docs are excluded (renaming generated code is not a wire
+  (`radiance_option`, `radiance_config`), the reader's error codes (`error_class`, `mismatch`) and the calibration key
+  order. It identifies the declared v1 contract. C++ names and docs are excluded (renaming generated code is not a wire
   change, and a consumer would not compile).
 
 v1 is closed (spec §8): a change to either fingerprint is a `bigcherry/v2` change. Correcting documentation changes
@@ -72,12 +74,15 @@ refused. Every table's keys are closed: an unknown key is refused, naming it.
     `required_keys`, `min_properties`; its value is the `[[field]]` `<path>/*`), `array` (`item_kind`: `object`, whose
     item is the `[[field]]` `<path>/[]`, `tuple` with `tuple` = element defs, or a scalar kind with `item_ref`,
     `item_min_length`, `item_minimum`, `item_values`, `item_pattern`; `min_items`, `max_items`, `unique_items`),
-    `integer` (`minimum`, `maximum`, `exclusive_maximum`, `const`), `string` (`min_length`, `pattern`, `format`,
-    `const`), `boolean`, `enum` (string `values`, `cpp_type`), `int_enum` (integer `values`), `ref` (`ref` = a def),
+    `integer` (`minimum`, `maximum`, `exclusive_maximum`, `const`), `string` (`min_length`, `max_length`, `pattern`,
+    `format`, `const`; a `pattern` requires a `max_length`, spec §11 amendment 7), `boolean`, `enum` (string `values`, `cpp_type`), `int_enum` (integer `values`), `ref` (`ref` = a def),
     `calibration_key` and `calibration_value` (the two members of `/spec/calibration/[]`).
   - `doc` (required, nonempty); `optional` (not in the parent's `required`); `nullable` (also accepts `null`; not for
     containers); `cpp_member` (when the JSON name is not a C++ identifier, e.g. `class`); `radiance_option` and
     `radiance_config` (the engine flag and native `Config` destination the field binds to, spec §3).
+  - `error_class`: the decoder's code for every fault in this subtree (`provenance_invalid`, `calibration_invalid`,
+    `ownership_mismatch`, `plan_mismatch`, `invalid_value`, `unsupported_version`); `mismatch`: a const field's code when
+    the value differs (default `invalid_value`).
   - `constraints`: an object's extra rules the typed model does not express (cross-field `if`/`then`), as a JSON array
     in a TOML literal string, emitted verbatim as the object's `allOf`.
 

@@ -160,24 +160,28 @@ doc = "Positive integer within I-JSON's safe range."
 name = "hex64"
 kind = "string"
 pattern = "^[0-9a-f]{64}$"
+max_length = 64
 doc = "64 lowercase hexadecimal digits."
 
 [[def]]
 name = "digest"
 kind = "string"
 pattern = "^sha256:[0-9a-f]{64}$"
+max_length = 71
 doc = "`sha256:` followed by 64 lowercase hexadecimal digits."
 
 [[def]]
 name = "bdf"
 kind = "string"
 pattern = "^[0-9a-f]{4}:[0-9a-f]{2}:[0-1][0-9a-f]\\.[0-7]$"
+max_length = 12
 doc = "PCI address, `dddd:bb:dd.f`, lowercase."
 
 [[def]]
 name = "jsonPointer"
 kind = "string"
 pattern = "^(|/(?:[^~/]|~[01])*(?:/(?:[^~/]|~[01])*)*)$"
+max_length = 1024
 doc = "RFC 6901 JSON Pointer; \"\" is the root."
 
 [[def]]
@@ -388,6 +392,7 @@ doc = "rad0011's measured memory plan, plan_version 1 (spec §5)."
 
 [[field]]
 path = "$defs/enginePlan/plan_version"
+mismatch = "unsupported_version"
 kind = "integer"
 const = 1
 doc = "Plan format; exactly 1."
@@ -614,6 +619,7 @@ doc = "A serving manifest v1 document."
 
 [[field]]
 path = "/apiVersion"
+mismatch = "unsupported_version"
 cpp_member = "api_version"
 kind = "string"
 const = "bigcherry/v1"
@@ -621,6 +627,7 @@ doc = "Contract identity; exactly `bigcherry/v1`."
 
 [[field]]
 path = "/kind"
+mismatch = "unsupported_version"
 kind = "string"
 const = "ServingManifest"
 doc = "Document kind; exactly `ServingManifest`."
@@ -635,6 +642,7 @@ doc = "Identity of this resolved serving instance and its producer."
 path = "/metadata/instance_id"
 kind = "string"
 pattern = "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+max_length = 36
 doc = "Canonical lowercase UUIDv4, created once per resolved serving instance; every process of one launch reads the same ID."
 
 [[field]]
@@ -657,6 +665,7 @@ doc = "SHA-256 of the installed bc-serve executable (64 lowercase hex)."
 
 [[field]]
 path = "/metadata/contract_version"
+mismatch = "unsupported_version"
 kind = "integer"
 const = 1
 doc = "Contract version; exactly 1, matching the apiVersion suffix."
@@ -871,6 +880,7 @@ doc = "PCI address."
 path = "/spec/facts/gpus/[]/arch"
 kind = "string"
 pattern = "^gfx[0-9a-f]+$"
+max_length = 32
 doc = "GPU architecture (gfx target)."
 
 [[field]]
@@ -899,6 +909,7 @@ doc = "Unused VRAM at resolution, MiB."
 
 [[field]]
 path = "/spec/calibration"
+error_class = "calibration_invalid"
 kind = "array"
 item_kind = "object"
 min_items = 1
@@ -1000,6 +1011,7 @@ doc = "Shared-memory transport between the engine and helpers."
 path = "/spec/handoff/transport/shm"
 kind = "string"
 pattern = "^/[A-Za-z0-9][A-Za-z0-9._-]*$"
+max_length = 255
 doc = "POSIX shared-memory name of the handoff segment."
 
 [[field]]
@@ -1252,6 +1264,7 @@ doc = "One helper process."
 path = "/spec/processes/helpers/[]/role"
 kind = "string"
 pattern = "^helper(?:0|[1-9][0-9]*)$"
+max_length = 32
 doc = "Role name, `helper<index>`."
 
 [[field]]
@@ -1315,6 +1328,7 @@ doc = "Measured and planned state the engine and helpers verify at start-up."
 
 [[field]]
 path = "/spec/plan/owner_map"
+error_class = "ownership_mismatch"
 kind = "object"
 cpp = "OwnerMap"
 doc = "Initial expert ownership; the live mailbox epochs own later placement (spec §4)."
@@ -1373,6 +1387,7 @@ doc = "The engine's measured memory plan and its cache identity (spec §5)."
 
 [[field]]
 path = "/spec/plan/engine_memory/cache_version"
+mismatch = "unsupported_version"
 kind = "integer"
 const = 1
 doc = "Plan cache format; exactly 1."
@@ -1469,6 +1484,7 @@ doc = "One role's lab override."
 path = "/spec/experiment/shape/helpers/[]/role"
 kind = "string"
 pattern = "^helper(?:0|[1-9][0-9]*)$"
+max_length = 32
 doc = "Role the override applies to."
 
 [[field]]
@@ -1583,6 +1599,7 @@ doc = "Shorten kernel sweeps."
 
 [[field]]
 path = "/provenance"
+error_class = "provenance_invalid"
 kind = "map"
 key_ref = "jsonPointer"
 required_keys = [""]
