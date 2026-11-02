@@ -54,6 +54,14 @@
 # --gpu-power (or GPU_POWER=1): apply the cards' configured power settings ([host.*.devices.power]) for this run and
 # put back what the cards ran before at stop. Without write access it lists the setup steps still missing and runs
 # with the cards as they are.
+# Engine plan check (RSC03 / RSC08 A3, mandatory, no way to skip it): every start asks bc-serve for the engine's
+#   --plan-check FILE --plan-check-floor-ppm N for the exact configuration it launches, so the engine checks its live memory
+#   plan against the measured one before it allocates anything. The first start of a configuration that has no measured plan
+#   (a cache miss, logged once with its reason) first MEASURES it: the helpers come up on their cards and the engine stops
+#   after its memory plan, about 1-2 minutes, then the real start goes ahead. That measuring start uses the GPUs exactly as a
+#   launch does, so the first launch of a new configuration needs the gpu lease like any launch (agent-lease acquire gpu).
+#   Any setting above (layout, sessions, context, pool, KV tier, chunk, n-gram placement, KV dtype, rope, resume) changes the
+#   configuration. Plans live in $RUN/plan-cache; this is interim until the v1 manifest replaces the flags (RSC08).
 # HELPER_WRAP=<command>: run each helper under it (e.g. a profiler wrapper; R3_MOE_WORKER_INDEX tells it which helper).
 # ENGINE_WRAP=<command>: run the engine under it (a debugger, numactl, strace; the stop command signals the engine through the
 #   wrapper, so it must forward SIGINT/SIGTERM). Not rocprofv3: radiance drives the card through its own AQL backend and fails

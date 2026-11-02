@@ -14,6 +14,7 @@
 #include <filesystem>
 #include <functional>
 #include <fstream>
+#include <sstream>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -724,6 +725,26 @@ void measured_plan_cache(Fixture& t) {
         unknown["host"].push_back(unknown["host"][0]);
         unknown["host"][1]["name"] = "mystery";
         refused_for(in_ram, unknown, "unknown host consumer mystery");
+    }
+    // The hardware gate's one-byte drift edits the cache entry's own plan: the next lookup hands that plan to the engine as the
+    // expected one (bc-serve rewrites <key>.expected-plan.json from the entry at every launch, so editing that file is moot).
+    {
+        const auto file = dir / (stored.key + ".json");
+        const std::string original = [&] { std::ifstream in(file); std::ostringstream t; t << in.rdbuf(); return t.str(); }();
+        Json e = Json::parse(original);
+        e["plan"]["host"] = Json::array({{{"name", "host_arenas"}, {"bytes", 100}, {"residence", "pinned"},
+                                          {"from", "engine plan (test)"}, {"remedy", ""}}});
+        std::ofstream(file, std::ios::trunc) << e.dump();
+        const auto before = sv::plan_cache_lookup(dir, k);
+        assert(before && before->plan.host.at(0).bytes == 100);
+        e["plan"]["host"][0]["bytes"] = 101;
+        std::ofstream(file, std::ios::trunc) << e.dump();
+        const auto drifted = sv::plan_cache_lookup(dir, k);
+        assert(drifted && drifted->plan.host.at(0).bytes == 101);              // the entry validates; the CHECK is what refuses it
+        const auto args2 = sv::plan_check_args(dir, *drifted, 600000);
+        std::ifstream handed(args2[1]);
+        assert(sv::decode_engine_plan(Json::parse(handed), "test").host.at(0).bytes == 101);   // the engine is handed the drifted plan
+        std::ofstream(file, std::ios::trunc) << original;                      // restore for the tests below
     }
     // The engine's check flags: the cached plan as a v1 file, and the floor the calibration selects (never a literal).
     {
