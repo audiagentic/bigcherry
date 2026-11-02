@@ -359,6 +359,43 @@ int main() {
         check(kMaxDepth >= 9 && kMaxDepth < 20, "kMaxDepth fits the examples (9 deep): " + std::to_string(kMaxDepth));
     }
 
+    // ---- re-review of #536: round trips, reused destinations, cheap uniqueness, character counts, inventories ----
+    {
+        check(encode(p.value()) == prod, "the writer reproduces the production example exactly");
+        check(encode(l.value()) == lab, "the writer reproduces the lab example exactly");
+        LaneDiagnostics ld;
+        decode(Json{{"capture_file", "trace.bin"}}, "lanes", &ld);
+        decode(Json{{"trace_level", 1}}, "lanes", &ld);
+        check(!ld.capture_file && ld.trace_level == 1, "a reused destination keeps nothing stale");
+        Json j = prod;
+        Json many = Json::array();
+        for (int i = 0; i < 50000; ++i) many.push_back("invalid_" + std::to_string(i));
+        j["spec"]["processes"]["helpers"][0]["formats"] = many;
+        expect(from(rehashed(j)), C::invalid_value, "is not one of", "50,000 invalid formats fail on the first item");
+        Json dup = prod;
+        dup["spec"]["processes"]["helpers"][0]["formats"] = Json::array({"w4nl64", "w4nl64"});
+        expect(from(rehashed(dup)), C::duplicate_field, "repeats item 0", "a repeated format");
+        std::string ptr = "/";
+        for (int i = 0; i < 3000; ++i) ptr += "\xc3\xa9";   // 3,001 characters, 6,001 bytes
+        ProvenanceRecord rec;
+        Json r1 = prod["provenance"][""];
+        r1["inputs"] = Json::array({ptr});
+        check(!decode(r1, "provenance[\"\"]", &rec), "maxLength counts characters, not bytes");
+        const EnginePlan& plan = p.value().spec.plan.engine_memory.expected;
+        EnginePlan e2 = plan;
+        e2.host.push_back(e2.host[0]);
+        const Status st = check_engine_plan(e2, plan, 600000);
+        check(st && st->code == C::plan_mismatch && st->message.find("repeated in the planned inventory") != std::string::npos,
+              "a repeated name in the expected inventory");
+        EnginePlan extra = plan;
+        PlanHostConsumer other = extra.host[0];
+        other.name = "surprise";
+        extra.host.push_back(other);
+        const Status sx = check_engine_plan(plan, extra, 600000);
+        check(sx && sx->code == C::plan_mismatch && sx->message.find("not in the planned inventory") != std::string::npos,
+              "an extra live consumer");
+    }
+
     // ---- renderers (errors.md §3, §4) ----
     {
         ConfigError e = make_error(C::experiment_forbidden, "spec.experiment",
