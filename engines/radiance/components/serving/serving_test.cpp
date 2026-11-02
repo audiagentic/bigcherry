@@ -459,6 +459,7 @@ void host_reserve(Fixture& t) {
 }
 
 void host_ledger_plan() {
+    using bc::serving::CheckpointStore;
     using bc::serving::HostConsumer;
     using bc::serving::LedgerInputs;
     using bc::serving::Residence;
@@ -470,32 +471,53 @@ void host_ledger_plan() {
     const std::vector<HostConsumer> measured = {
         {"ngram_table", 48824 * MiB, Residence::pinned, "engine plan (weight_footprint)",
          "set engine.ngram_placement = \"disk\""},
-        {"checkpoint_floor", 1800 * MiB, Residence::pinned, "engine plan (size_checkpoint_store)", ""},
         {"host_pool", 7300 * MiB, Residence::pinned, "owner map + weight_footprint", ""},
         {"helpers", 3072 * MiB, Residence::pageable, "helper plan", ""}};
-    LedgerInputs in{host, 4705, measured, true, 4 * 1024 * MiB};
+    // 72 snapshots wanted (8064 MiB), a floor of 16 (1792 MiB).
+    const CheckpointStore store{112 * MiB, 16, 72, "engine plan (size_checkpoint_store)", "want", "seed"};
+    LedgerInputs in{host, 4705, measured, store, true, 4 * 1024 * MiB};
     auto l = bc::serving::host_ledger(in);
-    // 83020 - (48824 + 1800 + 7300 + 3072) - 4705 = 17319 MiB.
-    assert(l.host_kv_mib == 17319);
+    // 83020 - (48824 + 7300 + 3072) - 8064 - 4705 = 11055 MiB, with the store at its want.
+    assert(l.checkpoint_slots == 72);
+    assert(l.host_kv_mib == 11055);
     assert(l.explain.at("host_kv_why").get<std::string>().find("MemAvailable") != std::string::npos);
+    assert(l.explain.at("checkpoints").at("why").get<std::string>().find("calibrated share (want)") != std::string::npos);
     assert(l.explain.at("limits").size() == 2);
-    // The pin cap binds when the pinned consumers leave less under it than MemAvailable does.
+    // The floor share plans only the floor and the tier takes the difference.
+    in.checkpoints.share = "floor";
+    l = bc::serving::host_ledger(in);
+    assert(l.checkpoint_slots == 16 && l.host_kv_mib == 11055 + 8064 - 1792);
+    in.checkpoints.share = "want";
+    // Want plus the minimum tier does not fit: the store gives the tier its minimum, down toward the floor.
+    in.min_tier_bytes = 12000 * MiB;   // 945 MiB short: 9 slots of 112 MiB
+    l = bc::serving::host_ledger(in);
+    assert(l.checkpoint_slots == 63 && l.host_kv_mib == 11055 + 9 * 112);
+    assert(l.explain.at("checkpoints").at("why").get<std::string>().find("shrunk from 72 (want) to 63") != std::string::npos);
+    // Even the floor leaves too little: the store stops at its floor and the tier is 0, saying so.
+    in.min_tier_bytes = 30000 * MiB;
+    l = bc::serving::host_ledger(in);
+    assert(l.checkpoint_slots == 16 && l.host_kv_mib == 0);
+    assert(l.explain.at("checkpoints").at("why").get<std::string>().find("reaching the floor") != std::string::npos);
+    assert(l.explain.at("host_kv_why").get<std::string>().find("no whole session") != std::string::npos);
+    in.min_tier_bytes = 4 * 1024 * MiB;
+    // The pin cap binds when the pinned consumers and the store leave less under it than MemAvailable does.
     in.host_facts["amdgpu_pin"]["cap_mib"] = 75000;
     l = bc::serving::host_ledger(in);
-    assert(l.host_kv_mib == 75000 - (48824 + 1800 + 7300));   // 17076 MiB, under the 17319 MemAvailable leaves
+    assert(l.host_kv_mib == 75000 - (48824 + 7300 + 8064));   // 10812, under the 11055 MemAvailable leaves
     assert(l.explain.at("host_kv_why").get<std::string>().find("amdgpu pin cap") != std::string::npos);
     in.host_facts = host;
     // A memory cgroup is a limit of its own.
-    in.host_facts["memory_cgroups"] = Json::array({{{"dir", "/sys/fs/cgroup/job"}, {"version", 2}, {"room_mib", 70000}}});
+    in.host_facts["memory_cgroups"] = Json::array({{{"dir", "/sys/fs/cgroup/job"}, {"version", 2}, {"room_mib", 80000}}});
     l = bc::serving::host_ledger(in);
-    assert(l.host_kv_mib == 70000 - (48824 + 1800 + 7300 + 3072) - 4705);
-    // Too little room: refused, naming the largest consumer and what to change.
+    assert(l.host_kv_mib == 80000 - (48824 + 7300 + 3072 + 8064) - 4705);
+    // Too little room even for the floor: refused, naming the floor, the largest consumer and what to change.
     in.host_facts = host;
     in.host_facts["mem_available_mib"] = 60000;
     bool refused = false;
     try { (void)bc::serving::host_ledger(in); } catch (const std::exception& e) {
         const std::string w = e.what();
         refused = w.find("under MemAvailable") != std::string::npos && w.find("4705 MiB reserve") != std::string::npos &&
+                  w.find("checkpoint floor of 16 slot(s), 1792 MiB") != std::string::npos &&
                   w.find("largest consumer is ngram_table (48824 MiB") != std::string::npos &&
                   w.find("engine.ngram_placement = \"disk\"") != std::string::npos;
     }
@@ -510,17 +532,23 @@ void host_ledger_plan() {
     }
     assert(refused);
     in.host_facts["memlock"]["cap_ipc_lock"] = true;
-    assert(bc::serving::host_ledger(in).host_kv_mib == 17319 - 128);
+    assert(bc::serving::host_ledger(in).host_kv_mib == 11055 - 128);
     in.consumers.pop_back();
     in.host_facts = host;
-    // The tier is 0 when sessions are evicted, or when the room holds no full-length session.
+    // The tier is 0 when sessions are evicted; the store keeps its want.
     in.retention_keep = false;
-    assert(bc::serving::host_ledger(in).host_kv_mib == 0);
-    in.retention_keep = true;
-    in.min_tier_bytes = 20000 * MiB;
     l = bc::serving::host_ledger(in);
-    assert(l.host_kv_mib == 0);
-    assert(l.explain.at("host_kv_why").get<std::string>().find("no whole session") != std::string::npos);
+    assert(l.host_kv_mib == 0 && l.checkpoint_slots == 72);
+    in.retention_keep = true;
+    in.checkpoints.share = "most";
+    refused = false;
+    try { (void)bc::serving::host_ledger(in); } catch (const std::exception& e) {
+        refused = std::string(e.what()).find("want or floor") != std::string::npos;
+    }
+    assert(refused);
+    // The compiled-in share is the evidence-carrying "want".
+    assert(bc::serving::Calibration::standard().get("calibration.checkpoint_share", {"m", "flashnext-4gpu", "latency"})
+               .value == "want");
 
     // The engine plan is strict.
     const Json plan = {{"plan_version", 1}, {"producer", "radiance --plan-memory (rad0011)"},

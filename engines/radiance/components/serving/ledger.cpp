@@ -94,55 +94,89 @@ Ledger host_ledger(const LedgerInputs& in) {
         limits.push_back({"RLIMIT_MEMLOCK", lock.at("limit_mib").get<uint64_t>() * kMiB, false, Residence::mlocked});
 
     const uint64_t reserve = in.reserve_mib * kMiB;
+    const CheckpointStore& ck = in.checkpoints;
+    if (ck.share != "want" && ck.share != "floor")
+        throw std::runtime_error("calibration.checkpoint_share must be want or floor, not " + ck.share);
+    if (ck.floor_slots > ck.want_slots)
+        throw std::runtime_error("checkpoint store: floor_slots exceeds want_slots");
     Json consumers = Json::array();
     for (const auto& c : in.consumers)
         consumers.push_back({{"name", c.name}, {"mib", mib_up(c.bytes)}, {"residence", residence_name(c.residence)},
                              {"from", c.from}});
 
-    // The tier is pinned host memory (the engine's prefix cache tier); it counts where pinned memory counts.
-    uint64_t tier_room = std::numeric_limits<uint64_t>::max();
-    std::string tier_limit;
-    Json limit_rows = Json::array();
-    for (const Limit& l : limits) {
-        uint64_t used = l.all ? reserve : 0;
-        const HostConsumer* largest = nullptr;
-        for (const auto& c : in.consumers) {
-            if (!l.all && c.residence != l.only) continue;
-            used += c.bytes;
-            if (!largest || c.bytes > largest->bytes) largest = &c;
-        }
-        limit_rows.push_back({{"limit", l.name}, {"room_mib", l.room / kMiB}, {"planned_mib", mib_up(used)},
-                              {"counts", l.all ? "every consumer and the reserve" :
+    // The room each limit leaves for the tier with the store at `slots`; refuses when even that does not fit.
+    // The store and the tier are pinned host memory; they count where pinned memory counts.
+    struct Room { uint64_t bytes = 0; std::string limit; Json rows; };
+    auto room_with = [&](uint64_t slots) {
+        Room r{std::numeric_limits<uint64_t>::max(), "", Json::array()};
+        const uint64_t store = slots * ck.slot_bytes;
+        for (const Limit& l : limits) {
+            const bool pinned_counts = l.all || l.only == Residence::pinned;
+            uint64_t used = (l.all ? reserve : 0) + (pinned_counts ? store : 0);
+            const HostConsumer* largest = nullptr;
+            for (const auto& c : in.consumers) {
+                if (!l.all && c.residence != l.only) continue;
+                used += c.bytes;
+                if (!largest || c.bytes > largest->bytes) largest = &c;
+            }
+            r.rows.push_back({{"limit", l.name}, {"room_mib", l.room / kMiB}, {"planned_mib", mib_up(used)},
+                              {"counts", l.all ? "every consumer, the checkpoint store and the reserve" :
+                                         l.only == Residence::pinned ? "pinned consumers and the checkpoint store" :
                                          std::string(residence_name(l.only)) + " consumers"}});
-        if (used > l.room) {
-            std::string why = "host memory plan refused: " + std::to_string(mib_up(used)) + " MiB planned under " +
-                              l.name + " (" + std::to_string(l.room / kMiB) + " MiB)";
-            if (l.all) why += ", including the " + std::to_string(in.reserve_mib) + " MiB reserve";
-            if (largest)
-                why += "; the largest consumer is " + largest->name + " (" + std::to_string(mib_up(largest->bytes)) +
-                       " MiB, " + largest->from + ")" + (largest->remedy.empty() ? "" : ": " + largest->remedy);
-            throw std::runtime_error(why);
+            if (used > l.room) {
+                std::string why = "host memory plan refused: " + std::to_string(mib_up(used)) + " MiB planned under " +
+                                  l.name + " (" + std::to_string(l.room / kMiB) + " MiB)";
+                if (l.all) why += ", including the " + std::to_string(in.reserve_mib) + " MiB reserve";
+                if (pinned_counts && store)
+                    why += " and the checkpoint floor of " + std::to_string(slots) + " slot(s), " +
+                           std::to_string(mib_up(store)) + " MiB";
+                if (largest)
+                    why += "; the largest consumer is " + largest->name + " (" +
+                           std::to_string(mib_up(largest->bytes)) + " MiB, " + largest->from + ")" +
+                           (largest->remedy.empty() ? "" : ": " + largest->remedy);
+                throw std::runtime_error(why);
+            }
+            if (pinned_counts && l.room - used < r.bytes) { r.bytes = l.room - used; r.limit = l.name; }
         }
-        const bool tier_counts = l.all || l.only == Residence::pinned;
-        if (tier_counts && l.room - used < tier_room) {
-            tier_room = l.room - used;
-            tier_limit = l.name;
-        }
+        return r;
+    };
+
+    const uint64_t planned = ck.share == "want" ? ck.want_slots : ck.floor_slots;
+    uint64_t slots = planned;
+    std::string ck_why = "the calibrated share (" + ck.share + "): " + ck.share_from;
+    // The floor must fit whatever happens: checking it first makes a refusal name the floor, not the want.
+    (void)room_with(ck.floor_slots);
+    Room room = room_with(slots);
+    const bool keep = in.retention_keep;
+    if (keep && room.bytes < in.min_tier_bytes && slots > ck.floor_slots && ck.slot_bytes) {
+        // Step 1: give the tier its minimum out of the store, never below the floor.
+        const uint64_t short_by = in.min_tier_bytes - room.bytes;
+        const uint64_t give = std::min<uint64_t>(slots - ck.floor_slots, (short_by + ck.slot_bytes - 1) / ck.slot_bytes);
+        slots -= give;
+        room = room_with(slots);
+        ck_why = "shrunk from " + std::to_string(planned) + " (" + ck.share + ") to " + std::to_string(slots) +
+                 " slot(s) so the host KV tier keeps one full-length session" +
+                 (slots == ck.floor_slots ? ", reaching the floor" : "");
     }
 
     Ledger out;
+    out.checkpoint_slots = slots;
     std::string tier_why;
-    if (!in.retention_keep) {
+    if (!keep) {
         tier_why = "service.retention = evict: finished sessions are not kept";
-    } else if (tier_room < in.min_tier_bytes) {
-        tier_why = "the room left (" + std::to_string(tier_room / kMiB) + " MiB under " + tier_limit +
-                   ") is less than one full-length session's KV (" + std::to_string(mib_up(in.min_tier_bytes)) +
+    } else if (room.bytes < in.min_tier_bytes) {
+        tier_why = "the room left (" + std::to_string(room.bytes / kMiB) + " MiB under " + room.limit +
+                   ", with the checkpoint store at its floor of " + std::to_string(slots) +
+                   " slot(s)) is less than one full-length session's KV (" + std::to_string(mib_up(in.min_tier_bytes)) +
                    " MiB), so the tier would hold no whole session";
     } else {
-        out.host_kv_mib = tier_room / kMiB;
-        tier_why = "the room left under " + tier_limit + " after every consumer and the reserve";
+        out.host_kv_mib = room.bytes / kMiB;
+        tier_why = "the room left under " + room.limit + " after every consumer, the checkpoint store and the reserve";
     }
-    out.explain = {{"limits", limit_rows}, {"consumers", consumers}, {"reserve_mib", in.reserve_mib},
+    out.explain = {{"limits", room.rows}, {"consumers", consumers}, {"reserve_mib", in.reserve_mib},
+                   {"checkpoints", {{"slots", slots}, {"floor_slots", ck.floor_slots}, {"want_slots", ck.want_slots},
+                                    {"slot_mib", mib_up(ck.slot_bytes)}, {"mib", mib_up(slots * ck.slot_bytes)},
+                                    {"from", ck.from}, {"why", ck_why}}},
                    {"host_kv_mib", out.host_kv_mib}, {"host_kv_why", tier_why},
                    {"min_tier_mib", mib_up(in.min_tier_bytes)}};
     return out;

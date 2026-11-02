@@ -31,21 +31,35 @@ struct EnginePlan {
 };
 EnginePlan parse_engine_plan(const nlohmann::json& plan);
 
+/* The engine's checkpoint store: pinned linear-state snapshots it sizes itself at start-up from the room the plan
+ * leaves (size_checkpoint_store). The ledger plans its size before the host KV tier takes the rest. */
+struct CheckpointStore {
+    uint64_t slot_bytes = 0, floor_slots = 0, want_slots = 0;
+    std::string from;
+    // calibration.checkpoint_share: "want" plans want_slots; "floor" plans floor_slots.
+    std::string share = "want";
+    std::string share_from;
+};
+
 struct LedgerInputs {
     nlohmann::json host_facts;               // detect()'s "host" object
     uint64_t reserve_mib = 0;                // memory.host_reserve_mib
-    std::vector<HostConsumer> consumers;     // every planned host consumer except the host KV tier
+    std::vector<HostConsumer> consumers;     // every planned host consumer except checkpoints and the host KV tier
+    CheckpointStore checkpoints;
     bool retention_keep = true;              // service.retention: keep finished sessions in the host KV tier
     uint64_t min_tier_bytes = 0;             // below this the tier holds no full session: it is 0
 };
 
 struct Ledger {
     uint64_t host_kv_mib = 0;
-    nlohmann::json explain;                  // limits, consumers, reserve, tier and why
+    uint64_t checkpoint_slots = 0;
+    nlohmann::json explain;                  // limits, consumers, checkpoints, reserve, tier and why
 };
 
-/* The host RAM plan: every consumer and the reserve against each limit it counts under; the host KV tier takes the
- * room left. Refuses (with the largest consumer named) when the consumers and reserve do not fit. */
+/* The host RAM plan: every consumer, the checkpoint store and the reserve against each limit it counts under; the
+ * host KV tier takes the room left. The store is planned at its calibrated share (want by default); when that would
+ * leave the tier less than one full-length session it shrinks toward its floor first, and only then does the tier
+ * fall to 0. Refuses (with the largest consumer named) when the consumers, the floor and the reserve do not fit. */
 Ledger host_ledger(const LedgerInputs& in);
 
 }  // namespace bc::serving

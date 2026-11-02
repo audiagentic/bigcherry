@@ -41,3 +41,13 @@ match = { layout = "flashnext-4gpu", objective = "balanced" }
 value = 0.60
 seeded = "2026-11-02"
 evidence = "run tail-size on flashnext-4gpu: the 8 GiB tail point (64% backing) keeps decode within 1% of the smallest tail (361 vs 364 tok/s) and TTFT at 1.67 s, with 8-session prefill +4% (2,520 vs 2,422 tok/s); balanced takes about 60%"
+
+# Checkpoint store share: how many linear-state snapshots the plan gives the engine's checkpoint store before the host
+# KV tier takes the rest of host RAM. "want" plans the checkpoint policy's own want (radiance checkpoint_slots_want for
+# max_sessions, max_context and checkpoint_interval); "floor" plans only its floor. With "want" the ledger still shrinks
+# the store toward the floor when the tier would otherwise hold no full-length session.
+[[entry]]
+key = "calibration.checkpoint_share"
+value = "want"
+seeded = "2026-11-02"
+evidence = "no regression against today's engine, which sizes 72 snapshots (the want for 8 x 262144 at a 4096 interval, 7.91 GiB) with the 12 GiB host KV tier and served; planning only the floor would coarsen prefix resume for long retained sessions, the RHP12 retained-session cohort the plan is judged by; whether the tier should win RAM from checkpoints is for that cohort to refit"
