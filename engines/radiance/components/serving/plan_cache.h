@@ -1,5 +1,6 @@
 #pragma once
 #include "ledger.h"
+#include "serving_types.h"   // bc::serving::v1::EnginePlan, the generated v1 type
 
 #include <filesystem>
 #include <optional>
@@ -27,24 +28,28 @@ nlohmann::json plan_key_inputs(const nlohmann::json& values, const nlohmann::jso
                                const std::string& engine_id);
 std::string plan_key(const nlohmann::json& key_inputs);
 
+/* rad0011's plan (radiance --plan-memory) through the shared v1 decoder, plus what a single plan must satisfy by itself:
+ * each host consumer once, and the checkpoint floor within the want. Throws naming `where` and the decoder's path. */
+v1::EnginePlan decode_engine_plan(const nlohmann::json& plan, const std::string& where);
+
 struct CachedPlan {
-    EnginePlan plan;
+    v1::EnginePlan plan;           // decoded by the shared v1 codec
     nlohmann::json plan_json;   // as rad0011 wrote it
     std::string key, measured_at;
 };
 
 /* The entry for `key_inputs` under `dir`, or nothing on a miss. An entry whose recorded key or key inputs differ, whose
- * version is unknown or whose plan fails the strict v1 parse is refused (an error), never treated as a miss. */
+ * version is unknown or whose plan fails the shared v1 decode (serving_codec) is refused (an error), never treated as a miss. */
 std::optional<CachedPlan> plan_cache_lookup(const std::filesystem::path& dir, const nlohmann::json& key_inputs);
 
-/* Records a measured plan (rad0011's JSON, checked by the strict parse first) under its key. Written to a temporary
+/* Records a measured plan (rad0011's JSON, decoded by the shared v1 codec first) under its key. Written to a temporary
  * file and renamed into place. */
 CachedPlan plan_cache_store(const std::filesystem::path& dir, const nlohmann::json& key_inputs,
                             const nlohmann::json& plan_json);
 
 /* Measures the plan: runs `binary --manifest MANIFEST --role engine --plan-memory OUT` with only the engine card
  * visible (ROCR_VISIBLE_DEVICES = its HIP ordinal, HIP_VISIBLE_DEVICES = 0, as a launch does), waits for it and returns
- * the JSON it wrote, checked by the strict parse. The engine runs its real bring-up up to its memory plan on that card,
+ * the JSON it wrote, decoded by the shared v1 codec. The engine runs its real bring-up up to its memory plan on that card,
  * so the caller holds the gpu lease; this never takes one. `wall_seconds` is set to the engine's run time. */
 nlohmann::json measure_engine_plan(const std::filesystem::path& binary, const std::filesystem::path& manifest,
                                    uint32_t engine_card_ordinal, const std::filesystem::path& out,

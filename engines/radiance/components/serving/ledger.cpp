@@ -52,58 +52,6 @@ struct Limit {
 };
 }  // namespace
 
-EnginePlan parse_engine_plan(const Json& plan) {
-    exact(plan, {"plan_version", "producer", "host", "checkpoints", "kv_one_session", "vram", "host_pool_mib"},
-          "engine plan");
-    if (!plan.at("plan_version").is_number_integer() || plan.at("plan_version").get<int64_t>() != 1)
-        throw std::runtime_error("engine plan: plan_version must be 1");
-    EnginePlan p;
-    p.producer = text(plan, "producer", "engine plan");
-    if (!plan.at("host").is_array()) throw std::runtime_error("engine plan.host must be an array");
-    std::set<std::string> names;
-    for (size_t i = 0; i < plan.at("host").size(); ++i) {
-        const Json& c = plan.at("host").at(i);
-        const std::string where = "engine plan.host[" + std::to_string(i) + "]";
-        exact(c, {"name", "bytes", "residence", "from", "remedy"}, where);
-        HostConsumer h{text(c, "name", where), count(c, "bytes", where),
-                       residence_of(text(c, "residence", where), where), text(c, "from", where), {}};
-        if (!c.at("remedy").is_string()) throw std::runtime_error(where + ".remedy must be a string");
-        h.remedy = c.at("remedy").get<std::string>();
-        if (!names.insert(h.name).second) throw std::runtime_error(where + ": duplicate consumer " + h.name);
-        p.host.push_back(std::move(h));
-    }
-    const Json& ck = plan.at("checkpoints");
-    exact(ck, {"slot_bytes", "floor_slots", "want_slots", "from"}, "engine plan.checkpoints");
-    p.checkpoint_slot_bytes = count(ck, "slot_bytes", "engine plan.checkpoints");
-    p.checkpoint_floor_slots = count(ck, "floor_slots", "engine plan.checkpoints");
-    p.checkpoint_want_slots = count(ck, "want_slots", "engine plan.checkpoints");
-    p.checkpoints_from = text(ck, "from", "engine plan.checkpoints");
-    if (p.checkpoint_floor_slots > p.checkpoint_want_slots)
-        throw std::runtime_error("engine plan.checkpoints: floor_slots exceeds want_slots");
-    const Json& kv = plan.at("kv_one_session");
-    exact(kv, {"bytes", "from"}, "engine plan.kv_one_session");
-    p.kv_one_session_bytes = count(kv, "bytes", "engine plan.kv_one_session");
-    p.kv_one_session_from = text(kv, "from", "engine plan.kv_one_session");
-    const Json& v = plan.at("vram");
-    exact(v, {"claimable", "statics", "elastic", "experts", "kv", "stage", "kv_resolved", "expert_floor",
-              "kv_ceiling", "expert_ceiling", "from", "cards"}, "engine plan.vram");
-    for (const char* k : {"claimable", "statics", "elastic", "experts", "kv", "stage", "kv_resolved", "expert_floor",
-                          "kv_ceiling", "expert_ceiling"})
-        (void)count(v, k, "engine plan.vram");
-    (void)text(v, "from", "engine plan.vram");
-    if (!v.at("cards").is_array() || v.at("cards").empty())
-        throw std::runtime_error("engine plan.vram.cards must be a non-empty array");
-    for (size_t i = 0; i < v.at("cards").size(); ++i) {
-        const std::string where = "engine plan.vram.cards[" + std::to_string(i) + "]";
-        const Json& c = v.at("cards").at(i);
-        exact(c, {"capacity", "free", "engine_expert_plane", "expert_unit_max"}, where);
-        for (const char* k : {"capacity", "free", "engine_expert_plane", "expert_unit_max"}) (void)count(c, k, where);
-    }
-    p.vram = v;
-    p.host_pool_mib = count(plan, "host_pool_mib", "engine plan");
-    return p;
-}
-
 Ledger host_ledger(const LedgerInputs& in) {
     const Json& h = in.host_facts;
     std::vector<Limit> limits;

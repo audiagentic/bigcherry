@@ -586,28 +586,28 @@ void host_ledger_plan() {
                "cards": [{"capacity": 34208743424, "free": 33900000000, "engine_expert_plane": 9000000000,
                           "expert_unit_max": 2537472}]},
       "host_pool_mib": 9216})json");
-    const auto parsed = bc::serving::parse_engine_plan(plan);
-    assert(parsed.host.size() == 1 && parsed.host[0].residence == Residence::pinned);
-    assert(parsed.checkpoint_want_slots == 72 && parsed.checkpoint_floor_slots == 8);
-    assert(parsed.kv_one_session_bytes == 4000000000ull && parsed.host_pool_mib == 9216);
-    assert(parsed.vram.at("cards").size() == 1);
+    const auto parsed = bc::serving::decode_engine_plan(plan, "test");
+    assert(parsed.host.size() == 1 && parsed.host[0].residence == bc::serving::v1::Residence::kPinned);
+    assert(parsed.checkpoints.want_slots == 72 && parsed.checkpoints.floor_slots == 8);
+    assert(parsed.kv_one_session.bytes == 4000000000ll && parsed.host_pool_mib == 9216);
+    assert(parsed.vram.cards.size() == 1 && parsed.vram.kv_resolved == 22799187968ll);
     auto rejects = [](Json j, const std::string& needle) {
-        try { (void)bc::serving::parse_engine_plan(j); } catch (const std::exception& e) {
+        try { (void)bc::serving::decode_engine_plan(j, "test"); } catch (const std::exception& e) {
             if (std::string(e.what()).find(needle) != std::string::npos) return;
             throw std::runtime_error("wrong engine plan diagnostic for " + needle + ": " + e.what());
         }
         throw std::runtime_error("expected engine plan refusal containing " + needle);
     };
-    Json bad = plan; bad["extra"] = 1; rejects(bad, "unknown key extra");
-    bad = plan; bad["plan_version"] = 2; rejects(bad, "plan_version must be 1");
-    bad = plan; bad["host"][0]["residence"] = "swap"; rejects(bad, "pinned, mlocked or pageable");
-    bad = plan; bad["host"][0]["bytes"] = -1; rejects(bad, "byte count");
+    Json bad = plan; bad["extra"] = 1; rejects(bad, "extra: unknown member");
+    bad = plan; bad["plan_version"] = 2; rejects(bad, "must be 1");
+    bad = plan; bad["host"][0]["residence"] = "swap"; rejects(bad, "is not one of pinned, mlocked, pageable");
+    bad = plan; bad["host"][0]["bytes"] = -1; rejects(bad, "below the minimum 0");
     bad = plan; bad["host"].push_back(plan["host"][0]); rejects(bad, "duplicate consumer ngram_table");
-    bad = plan; bad["host"][0].erase("from"); rejects(bad, "missing from");
+    bad = plan; bad["host"][0].erase("from"); rejects(bad, "from: missing required member");
     bad = plan; bad["checkpoints"]["floor_slots"] = 99; rejects(bad, "floor_slots exceeds want_slots");
-    bad = plan; bad["vram"].erase("kv"); rejects(bad, "missing kv");
-    bad = plan; bad["vram"]["cards"] = Json::array(); rejects(bad, "non-empty array");
-    bad = plan; bad["vram"]["cards"][0]["arch"] = "gfx1201"; rejects(bad, "unknown key arch");
+    bad = plan; bad["vram"].erase("kv"); rejects(bad, "kv: missing required member");
+    bad = plan; bad["vram"]["cards"] = Json::array(); rejects(bad, "needs at least 1 item");
+    bad = plan; bad["vram"]["cards"][0]["arch"] = "gfx1201"; rejects(bad, "arch: unknown member");
 }
 
 void measured_plan_cache(Fixture& t) {
@@ -651,7 +651,7 @@ void measured_plan_cache(Fixture& t) {
       "host_pool_mib": 9216})json");
     const auto stored = sv::plan_cache_store(dir, k, plan);
     const auto found = sv::plan_cache_lookup(dir, k);
-    assert(found && found->key == stored.key && found->plan.checkpoint_want_slots == 72 && !found->measured_at.empty());
+    assert(found && found->key == stored.key && found->plan.checkpoints.want_slots == 72 && !found->measured_at.empty());
     {
         const auto file = dir / (stored.key + ".json");
         Json e = Json::parse(std::ifstream(file));
@@ -666,7 +666,7 @@ void measured_plan_cache(Fixture& t) {
     Json bad = plan; bad.erase("vram");
     refused = false;
     try { (void)sv::plan_cache_store(dir, k, bad); } catch (const std::exception& e) {
-        refused = std::string(e.what()).find("missing vram") != std::string::npos;
+        refused = std::string(e.what()).find("vram: missing required member") != std::string::npos;
     }
     assert(refused);
 }
@@ -715,7 +715,7 @@ void measuring_step(Fixture& t) {
     const Json key = {{"cache_version", 1}, {"model", "m"}, {"engine_build", "e"}, {"card", {{"arch", "gfx1201"}}},
                       {"layout", "flashnext-4gpu"}, {"engine", Json::object()}};
     sv::plan_cache_store(t.root / "fake-engine/cache", key, got);
-    assert(sv::plan_cache_lookup(t.root / "fake-engine/cache", key)->plan.checkpoint_want_slots == 72);
+    assert(sv::plan_cache_lookup(t.root / "fake-engine/cache", key)->plan.checkpoints.want_slots == 72);
 }
 
 int main() {

@@ -1,4 +1,5 @@
 #include "plan_cache.h"
+#include "serving_codec.h"
 #include "sha256.h"
 #include "serving.h"
 
@@ -21,6 +22,19 @@
 extern "C" char** environ;
 
 namespace bc::serving {
+v1::EnginePlan decode_engine_plan(const nlohmann::json& plan, const std::string& where) {
+    v1::EnginePlan p;
+    if (const v1::Status e = v1::decode(plan, "", &p))
+        throw std::runtime_error(where + ": engine plan" + (e->path.empty() ? std::string() : " " + e->path) + ": " +
+                                 e->message);
+    std::set<std::string> names;
+    for (const v1::PlanHostConsumer& c : p.host)
+        if (!names.insert(c.name).second) throw std::runtime_error(where + ": engine plan: duplicate consumer " + c.name);
+    if (p.checkpoints.floor_slots > p.checkpoints.want_slots)
+        throw std::runtime_error(where + ": engine plan.checkpoints: floor_slots exceeds want_slots");
+    return p;
+}
+
 namespace {
 namespace fs = std::filesystem;
 using Json = nlohmann::json;
@@ -112,12 +126,12 @@ std::optional<CachedPlan> plan_cache_lookup(const fs::path& dir, const Json& key
     if (e.at("cache_version") != 1) throw std::runtime_error(where + ": cache_version must be 1");
     if (e.at("key") != key || e.at("key_inputs") != key_inputs)
         throw std::runtime_error(where + ": recorded key or key inputs differ from what it is filed under");
-    CachedPlan c{parse_engine_plan(e.at("plan")), e.at("plan"), key, e.at("measured_at").get<std::string>()};
+    CachedPlan c{decode_engine_plan(e.at("plan"), where), e.at("plan"), key, e.at("measured_at").get<std::string>()};
     return c;
 }
 
 CachedPlan plan_cache_store(const fs::path& dir, const Json& key_inputs, const Json& plan_json) {
-    CachedPlan c{parse_engine_plan(plan_json), plan_json, plan_key(key_inputs), {}};
+    CachedPlan c{decode_engine_plan(plan_json, "measured plan"), plan_json, plan_key(key_inputs), {}};
     const std::time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
     char at[32];
     std::strftime(at, sizeof at, "%Y-%m-%dT%H:%M:%SZ", std::gmtime(&now));
@@ -174,7 +188,7 @@ Json measure_engine_plan(const fs::path& binary, const fs::path& manifest, uint3
                                  "; its log says why");
     const Json plan = Json::parse(read_file(out), nullptr, false);
     if (plan.is_discarded()) throw std::runtime_error(out.string() + ": the engine's plan is not JSON");
-    (void)parse_engine_plan(plan);
+    (void)decode_engine_plan(plan, out.string());
     return plan;
 }
 

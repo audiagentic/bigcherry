@@ -21,21 +21,6 @@ struct HostConsumer {
     std::string remedy; // what an operator can change to shrink it, named in a refusal; "" for none
 };
 
-/* The engine's planning query output (radiance --plan-memory FILE, managed patch rad0011), version 1: what
- * Engine::plan() sized. Strict: unknown keys, missing keys and wrong types are refused. Every part names the engine
- * function its bytes came from. */
-struct EnginePlan {
-    std::string producer;
-    std::vector<HostConsumer> host;          // host-resident consumers the engine pins at start-up
-    uint64_t checkpoint_slot_bytes = 0, checkpoint_floor_slots = 0, checkpoint_want_slots = 0;
-    std::string checkpoints_from;
-    uint64_t kv_one_session_bytes = 0;       // all fixed state plus pages for one full-length context
-    std::string kv_one_session_from;
-    nlohmann::json vram;                     // the VRAM split (vram_budget_resolve) and per-card facts, validated
-    uint64_t host_pool_mib = 0;              // the host pool the engine was configured with
-};
-EnginePlan parse_engine_plan(const nlohmann::json& plan);
-
 /* The engine's checkpoint store: pinned linear-state snapshots it sizes itself at start-up from the room the plan
  * leaves (size_checkpoint_store). The ledger plans its size before the host KV tier takes the rest. */
 struct CheckpointStore {
