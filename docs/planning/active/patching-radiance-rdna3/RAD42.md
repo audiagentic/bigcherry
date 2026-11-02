@@ -85,8 +85,11 @@ Design b (pushing the combined plane into engine VRAM through the BAR) is not do
 ## Ledger-events
 
 
+
 - chg_20261101_141636_flash-next-on-four-gpus-serves_8287
 - 2026-11-01T14:16:40.613683+00:00 (updated-by): Updated: section:ledger-events
 - 2026-11-02T02:41:48.629382+00:00 (updated-by): Updated: section:notes
 - chg_20261102_024204_planning-records-updated-with_6210
 - 2026-11-02T02:42:29.034602+00:00 (updated-by): Updated: section:ledger-events
+- chg_20261102_042612_fixed-a-hang-with-many-concurr_2245
+- 2026-11-02T04:26:16.739750+00:00 (updated-by): Updated: section:ledger-events
