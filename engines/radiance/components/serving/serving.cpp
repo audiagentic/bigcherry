@@ -149,6 +149,9 @@ const std::vector<Field>& schema_fields() {
         add("engine.prefix_cache_mib", "integer", nullptr,
             "derived from memory.host_kv_mib (launcher --prefix-cache-mib)", "derived",
             "startup-only", 0, UINT32_MAX, {}, true);
+        add("engine.host_headroom_mib", "integer", nullptr,
+            "derived from memory.host_reserve_mib: the engine keeps the plan's one reserve free when it "
+            "sizes its checkpoint store and pins tables", "derived", "startup-only", 0, UINT32_MAX, {}, true);
         add("engine.tp", "integer", 1, "launcher --tp 1 (one engine card)",
             "derived", "startup-only", 1, 64);
         add("engine.max_num_seqs", "integer", nullptr,
@@ -928,6 +931,8 @@ Resolved resolve(const Options& options, const Json& facts) {
           "RSC01 memory/pool projection", "memory.host_pool_mib");
     alias("engine.prefix_cache_mib", value_at(values, "memory.host_kv_mib"),
           "RSC01 memory/host KV projection", "memory.host_kv_mib");
+    alias("engine.host_headroom_mib", value_at(values, "memory.host_reserve_mib"),
+          "RSC03 memory/reserve projection: one reserve for the plan and the engine", "memory.host_reserve_mib");
     // All current supported layouts use the engine architecture's plugin
     // declared as libr4d.so in archs.toml, followed by the mailbox and ref.
     alias("engine.kernels", "libr4d,libr3moe,libref",
@@ -1020,7 +1025,8 @@ Resolved resolve(const Options& options, const Json& facts) {
                 e.at("rope_scaling"), e.at("prefix_resume"), e.at("port"),
                 e.at("tp"), e.at("max_num_seqs"), e.at("max_num_batched_tokens"),
                 e.at("checkpoint_interval"), e.at("num_speculative_tokens"),
-                e.at("max_model_len"), e.at("host_pool_mib"), e.at("prefix_cache_mib")};
+                e.at("max_model_len"), e.at("host_pool_mib"), e.at("prefix_cache_mib"),
+                e.at("host_headroom_mib")};
     Json process_helpers = Json::array();
     for (size_t i = 0; i < cards.size(); ++i) {
         Json worker = h;

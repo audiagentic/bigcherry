@@ -416,6 +416,8 @@ void host_reserve(Fixture& t) {
     // 128 GiB fixture: 5% of 131072 MiB is 6554 MiB, above the 4096 MiB floor.
     auto r = bc::serving::resolve(t.standard(), t.facts);
     assert(r.values.at("memory").at("host_reserve_mib") == 6554);
+    assert(r.values.at("engine").at("host_headroom_mib") == 6554);
+    assert(r.provenance.at("engine.host_headroom_mib").at("inputs") == Json::array({"memory.host_reserve_mib"}));
     const Json& p = r.provenance.at("memory.host_reserve_mib");
     assert(p.at("origin") == "calibrated");
     assert(p.at("source").get<std::string>().find("calibrated (seed: 2026-11-02) calibration.host_reserve.floor_mib") !=
