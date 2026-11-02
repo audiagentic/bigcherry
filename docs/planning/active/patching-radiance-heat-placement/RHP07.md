@@ -87,5 +87,8 @@ Validation: Shifting-workload traces, cold-tail misprediction, gfx1030 prefill p
 
 ## Ledger-events
 
+
 - chg_20261101_225732_planning-a-staged-roadmap-for_4092
 - 2026-11-01T22:57:43.412382+00:00 (updated-by): Updated: section:ledger-events
+- chg_20261102_022722_groundwork-for-live-expert-pla_5619
+- 2026-11-02T02:27:38.401701+00:00 (updated-by): Updated: section:ledger-events
