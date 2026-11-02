@@ -178,3 +178,5 @@ v1 contract decisions affecting RSC03 (lead, 2026-11-02; v1 slice 1 design appro
 - 2026-11-02T15:55:37.776302+00:00 (updated-by): Updated: section:ledger-events
 - chg_20261102_193311_the-engine-now-checks-at-ever_1908
 - 2026-11-02T19:33:16.115864+00:00 (updated-by): Updated: section:ledger-events
+- chg_20261102_185212_bc-serve-and-the-moe-helpers-n_5105
+- 2026-11-02T18:52:16.705767+00:00 (updated-by): Updated: section:ledger-events
