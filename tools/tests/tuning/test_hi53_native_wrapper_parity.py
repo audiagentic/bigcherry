@@ -24,7 +24,7 @@ UPSTREAM_MMVQ_HEADER = UPSTREAM_MMVQ.with_suffix(".cuh")
 DISPATCH = ROOT / "engines" / "llamacpp" / "overlay" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-dispatch.cu"
 # HI53 is closed; keep the acceptance contract attached to its completed
 # evidence rather than a path that disappears when the item transitions.
-PLAN = ROOT / "docs" / "planning" / "completed" / "hip-autotune" / "HI53.md"
+PLAN = ROOT / "docs" / "planning" / "completed" / "tuning-hip-autotune" / "HI53.md"
 
 
 def _function(source: str, signature: str, end_marker: str) -> str:

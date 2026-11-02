@@ -173,8 +173,8 @@ autotune-campaign work) and use it. If genuinely none exists yet for a new
 topic, create the correctly-prefixed one directly -- never a bare,
 unprefixed group name.
 
-**Migrating the remaining legacy groups** (renaming existing items from an
-old unprefixed group into its prefixed counterpart, and retiring groups
-with no active items) is real, mechanical, multi-item work that has not
-been done yet as of 2026-09-12 -- treat it as its own tracked effort, not
-something to do incidentally while touching one item.
+**Legacy groups migrated (2026-11-02)**: all fifteen un-prefixed groups above
+were moved, group by group, into their prefixed homes with `git mv` (history
+follows), `plan:` front matter rewritten, and planning links updated. The
+un-prefixed folders no longer exist; do not recreate them. The release ledger
+(append-only) and docs/evidence keep the old paths as historical records.
