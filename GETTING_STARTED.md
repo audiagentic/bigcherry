@@ -1,163 +1,82 @@
-# Getting started
+# Build and use BigCherry
 
-Build, test and validate BigCherry changes across its two supported engines.
-The [root README](README.md) introduces the project; the
-[engine guides](docs/reference/README.md#engines) explain the individual
-patches and extensions. Plans and live project decisions are under
-`docs/planning/`.
+Radiance is BigCherry's primary target for mixed-generation AMD GPUs.
+llama.cpp remains an active secondary engine. See the
+[Radiance overview](docs/reference/engines/radiance/README.md) and
+[llama.cpp overview](docs/reference/engines/llamacpp/README.md).
 
-For exploratory qualification before formal planning, follow
-[`docs/reference/experiments/EXPERIMENTAL_WORKFLOW.md`](docs/reference/experiments/EXPERIMENTAL_WORKFLOW.md).
-It defines the local brief, isolated run-bundle layout, evidence and stop
-gates, and criteria for promoting a result into a plan item.
+The examples use the `bigcherry` CLI from the repository root
+(`PYTHONPATH=tools`). Build lanes and patch selections are declared in
+`engines/<engine>/recipes.toml`.
 
-## Repo vs. real hardware
-
-- This checkout builds and runs on CPU-only dev machines too, but the AMD
-  ROCm/HIP GPUs this project targets live on a remote host. Real
-  measurement, tuning, and correctness work happens there over SSH — a local
-  `pytest` pass proves the Python tooling is correct, not that a kernel is
-  fast or correct on real silicon.
-- Never report a benchmark/tuning number you didn't personally observe from a
-  real run. If you can't reach the GPU host, say so — don't estimate.
-- `rocm-smi --showmeminfo vram --showpids` before touching any GPU process —
-  don't assume the hardware is free, and don't kill a live process without
-  explicit authorization.
-
-## Build/test loop (Python tooling, no GPU needed)
+## Radiance
 
 ```bash
-cd tools && python -m pytest ../tools/tests -q      # or: pytest (uses pytest.ini)
-PYTHONPATH=tools python -m bigcherry doctor          # environment sanity check
-PYTHONPATH=tools python -m bigcherry check --default # deterministic local CI gates (--quick/--full also exist)
+PYTHONPATH=tools python -m bigcherry build \
+  --lane radiance-lab:stock:linux-radiance
 ```
 
-## Taking a new upstream llama.cpp release (or standing up a fresh checkout)
+Radiance builds its engine and kernel libraries; BigCherry installs its
+additional components into the runtime bundle. The
+[Radiance runbook](docs/reference/engines/radiance/RUNBOOK.md) covers build
+lanes and A/B measurement. The [component catalogue](docs/reference/engines/radiance/ENHANCEMENTS.md)
+links to implementation and evidence for each extension.
+
+The strict C++ serving loader and engine manifest entry point are present.
+Helper manifest consumption and process supervision are still being
+implemented. The [serving component](engines/radiance/components/serving/README.md)
+describes the implemented interface.
+
+## llama.cpp
 
 ```bash
-PYTHONPATH=tools python -m bigcherry --engine llamacpp pull   --ref <upstream-rev>
-PYTHONPATH=tools python -m bigcherry --engine llamacpp audit                # strict invariant audit on the unpatched tree -- must pass before apply
-PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-rebase-check --source bigcherry --json releases/patch-rebase.json
-PYTHONPATH=tools python -m bigcherry apply --rebase-report releases/patch-rebase.json --known-good  # or: apply --source bigcherry (all-or-nothing)
-PYTHONPATH=tools python -m bigcherry generate --arch all   # candidate catalog -> artifacts
+PYTHONPATH=tools python -m bigcherry --engine llamacpp patches
+PYTHONPATH=tools python -m bigcherry --engine llamacpp pull --ref <upstream-revision>
+PYTHONPATH=tools python -m bigcherry --engine llamacpp audit
+PYTHONPATH=tools python -m bigcherry apply --source bigcherry
+PYTHONPATH=tools python -m bigcherry generate --arch all
 ```
 
-Each stage refuses to run on a tree that hasn't passed the stage before it --
-`apply` (with or without `--rebase-report`) still requires `audit` to have
-already passed on the unpatched tree; there is no way to skip that ordering.
-`patch-rebase-check` is the one exception: it is observational (an isolated
-detached-worktree probe of whether the selected patches' anchors still find
-their targets in the revision `pull` just moved to) and never advances
-release stage on its own, so it can run any time after `pull`. It reports
-each patch as `CLEAN`/`CLEAN_NOOP`/`NOT_APPLICABLE_BY_DESIGN` (fine) or
-`FAILED_NEEDS_RECONCILIATION`/`BLOCKED_BY_DEPENDENCY`/`QUARANTINED` (needs a
-human) — see `docs/reference/build/PIN_BUMP.md` for the full bump runbook,
-including how to apply just the known-good subset while the rest gets
-fixed. A *full* known-good apply (every selected patch reproved clean)
-advances the release record exactly like a plain `apply` would; a *partial*
-known-good apply is only accepted on a tree at stage `audited` or `broken`
-and never advances the stage past `audited` -- it is reconciliation
-progress, not a finished, fully-patched tree. A plain `apply` (no
-`--rebase-report`) is unchanged: still all-or-nothing, still fails closed on
-the first anchor that doesn't find its target.
+`pull` selects an upstream revision; `audit` checks the unpatched tree
+before the overlay and anchored patches are applied. `generate` produces
+measured-dispatch candidate artefacts. See the
+[pin and rebase reference](docs/reference/build/PIN_BUMP.md).
 
-## Building a binary
+Builds select a source, build profile and platform:
 
 ```bash
 PYTHONPATH=tools python -m bigcherry build \
   --lane <source>:<build>:<platform> \
-  --binary-relative-path bin/llama-server \
-  [--inventory PATH] [--winners PATH] [--experiment NAME] [--run-id ID]
+  --binary-relative-path bin/llama-server
 ```
 
-Real `source` names: `bigcherry` (release: serving-core + upstream-fixes +
-validated-enhancements, PA29 cutover), `bigcherry-serving-base` (serving-core
-+ upstream-fixes only, no validated-enhancement patches — the fair "before"
-baseline for an A/B), `bigcherry-tuning` (serving-core + campaign-support +
-upstream-fixes, for record/tune/control builds that need the tuner's own
-plumbing), `bigcherry-qualification` (serving-core + qualification-support +
-upstream-fixes), `bigcherry-qualification-tuning` (serving-core +
-campaign-support + qualification-support + upstream-fixes, the full
-semantic composition used for framework-configuration evidence),
-`llama-native` (genuinely stock upstream, same pin, zero patches). The old
-aggregate `bigcherry-native` source (and the `framework` patch-set it
-composed) was deleted by PA31 -- no alias or shim was kept. Real `build` names: `stock`, `control`, `record`, `tune`, `replay`,
-`audit`. Real `platform`: `linux-multi`, `windows-gfx1100`, `vulkan-linux`.
-`--inventory`/`--winners` are required by builds whose recipe declares
-`needs = [...]` for them (`record`/`tune` need inventory; `replay` needs
-both). Full lane/recipe list: `config/recipes.toml`.
+Record and tune builds use a candidate inventory. Replay builds also need
+a winners cache. The selected recipe specifies those requirements.
+See the [build reference](docs/reference/build/BUILD.md) and
+[patch catalogue](docs/reference/engines/llamacpp/PATCHES.md).
 
-## Patches — inspecting and validating one
+### HIP dispatch
+
+| Build mode | Input | Behaviour |
+| --- | --- | --- |
+| Native | — | Upstream kernel selection |
+| Record | `GGML_HIP_DISPATCH_DB` | Records operation signatures |
+| Tune | `GGML_HIP_DISPATCH_DB` | Measures eligible kernels |
+| Replay | `GGML_HIP_DISPATCH_CACHE` | Uses promoted winners; falls back to native on a miss |
+
+Record, tune and replay are separate compile-time modes, not runtime switches.
+Tune mode needs additional GPU memory for measurements. Record and tune data
+is flushed on clean process exit.
+
+## Validation
 
 ```bash
-PYTHONPATH=tools python -m bigcherry --engine llamacpp patches                 # list with group/state/upstream status
-PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-explain <name>     # source, requires/conflicts, which recipes select it
-PYTHONPATH=tools python -m bigcherry patch-lint                # metadata lint, no mutation
-PYTHONPATH=tools python -m bigcherry patch-validate <name>    # run its validation.toml checks
+PYTHONPATH=tools python -m bigcherry doctor
+PYTHONPATH=tools python -m bigcherry check --default
+python -m pytest tools/tests -q
 ```
 
-A patch is an anchored, regex-located edit to an upstream-owned file (see
-`engines/llamacpp/patches/<name>/`) — it fails loudly, naming the missing anchor, rather than
-silently mis-applying when upstream shifts underneath it. Whole new files go
-in `src/` instead and never conflict. New patch scaffold: `engines/llamacpp/patches/_template/`.
-
-## Runtime dispatch modes (what a built binary actually does)
-
-| `GGML_HIP_DISPATCH_MODE` | Needs | Behavior |
-| --- | --- | --- |
-| (unset / native) | — | normal upstream dispatch |
-| `record` | `GGML_HIP_DISPATCH_DB=<path>` | logs real dispatch signatures seen |
-| `tune` | `GGML_HIP_DISPATCH_DB=<path>` | benchmarks candidates live against real traffic |
-| `replay` | `GGML_HIP_DISPATCH_CACHE=<path>` | dispatches promoted winners, falls back to native on a miss |
-
-`record`/`tune`/`replay` are **mutually exclusive compile-time CMake
-options** — one binary is always exactly one mode; there's no runtime switch
-between them.
-
-## Gotchas (learned the hard way — real hardware findings)
-
-- **Build artifact collisions (HI110, open):** `build_plan_id` is
-  content-addressed from source+patches+config only — it does **not**
-  account for the requested binary target. Building a second binary (e.g.
-  `test-backend-ops`) into a directory that already published a first one
-  (e.g. `llama-server`) under the identical lane/experiment/inventory can
-  fail with `ArtifactError: immutable artifact already exists with
-  different bytes`, even though the actual compile succeeds. Workaround:
-  the binary is usually still sitting compiled at
-  `<build_dir>/bin/<target>` even though publish failed — use it directly.
-  A distinct `--experiment` also forces a fresh `build_plan_id` if you need
-  a clean publish.
-- **Correctness-evidence binary scoping (HI106):** when generating
-  correctness evidence (`bigcherry.hi80_generate_correctness_evidence`),
-  the `test-backend-ops` binary passed via `--binary` **must** be built from
-  the exact same `--inventory` as the tune run being evidenced. A binary
-  built from a different/narrower inventory aborts with
-  `GGML_HIP_FORCE_CANDIDATE=... not found in registry` — a tooling-scope
-  error, not a real correctness bug (the error message says so explicitly).
-- **Tune mode needs extra VRAM headroom.** Live candidate benchmarking
-  allocates scratch workspace on top of whatever the model/KV-cache already
-  use — production KV-cache settings that fit fine in `native`/`replay` can
-  OOM under `GGML_HIP_DISPATCH_MODE=tune`. Reduce `--parallel`/`-c` for the
-  tuning run if you hit a ROCm OOM right after model load.
-- **A long-running `llama-server` only flushes `GGML_HIP_DISPATCH_DB` data
-  on clean exit.** It never exits on its own. Use the opt-in
-  `POST /shutdown` endpoint (`LLAMA_SERVER_ENABLE_SHUTDOWN=1`) instead of
-  killing the process, or record/tune data is silently lost.
-- **Quantized types (Q8_0/Q4_K/Q6_K/...) are supported in correctness
-  evidence as of HI111** — pass `nb=0` sentinel strides to test-backend-ops
-  rather than hand-computing byte strides; don't reintroduce a
-  float-only type whitelist.
-
-## Source control
-
-Use the MCP git tools, not raw `git`/`gh`, per `AGENTS.md`. This is a shared
-multi-agent working tree: never `git stash`/`reset --hard`/force-push, and
-never commit a file you didn't actually change (check `git status`/`git
-diff` before staging — other sessions leave in-progress work uncommitted
-here routinely).
-
-## Process doctrine (ledger + planning)
-
-See `AGENTS.md` / `CLAUDE.md` — record a ledger change event after
-substantive implementation work, manage multi-step work as plan items under
-`docs/planning/` via the `ag-planning` MCP tools.
+These checks cover repository and tooling behaviour; kernel performance
+and numerical quality require evidence from the model, workload and device
+under test. See [patch validation](docs/reference/testing/PATCH_VALIDATION.md)
+and the [experiment contract](docs/reference/experiments/EXPERIMENT_CONTRACT.md).
