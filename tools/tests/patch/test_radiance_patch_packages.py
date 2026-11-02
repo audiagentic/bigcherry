@@ -635,7 +635,8 @@ class TestPlanMemoryPatch(unittest.TestCase):
                 capture_output=True, text=True,
             )
             self.assertEqual(build.returncode, 0, build.stderr)
-            run = subprocess.run([str(exe)], capture_output=True, text=True)
+            vectors = REPO / "docs" / "design" / "serving-manifest-v1" / "admission-vectors.json"
+            run = subprocess.run([str(exe), str(vectors)], capture_output=True, text=True)
             self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
             self.assertIn("ok", run.stdout)
         finally:

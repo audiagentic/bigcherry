@@ -581,7 +581,7 @@ void host_ledger_plan() {
                       "from": "engine plan (rad0011: KVManager::checkpoint_bytes, checkpoint_slots_want)"},
       "kv_one_session": {"bytes": 4000000000, "from": "engine plan (rad0011: VramFacts::kv_one)"},
       "vram": {"claimable": 31224000000, "statics": 5800000000, "elastic": 25400000000, "experts": 0,
-               "kv": 22800000000, "stage": 2600000000, "expert_floor": 0, "kv_ceiling": 40000000000,
+               "kv": 22800000000, "stage": 2600000000, "kv_resolved": 22799187968, "expert_floor": 0, "kv_ceiling": 40000000000,
                "expert_ceiling": 9000000000, "from": "engine plan (rad0011: vram_budget_resolve)",
                "cards": [{"capacity": 34208743424, "free": 33900000000, "engine_expert_plane": 9000000000,
                           "expert_unit_max": 2537472}]},
@@ -645,7 +645,7 @@ void measured_plan_cache(Fixture& t) {
       "plan_version": 1, "producer": "radiance --plan-memory (rad0011)", "host": [],
       "checkpoints": {"slot_bytes": 1048576, "floor_slots": 8, "want_slots": 72, "from": "engine plan (test)"},
       "kv_one_session": {"bytes": 4096, "from": "engine plan (test)"},
-      "vram": {"claimable": 10, "statics": 1, "elastic": 9, "experts": 0, "kv": 9, "stage": 0, "expert_floor": 0,
+      "vram": {"claimable": 10, "statics": 1, "elastic": 9, "experts": 0, "kv": 9, "stage": 0, "kv_resolved": 9, "expert_floor": 0,
                "kv_ceiling": 9, "expert_ceiling": 0, "from": "engine plan (test)",
                "cards": [{"capacity": 10, "free": 10, "engine_expert_plane": 0, "expert_unit_max": 1}]},
       "host_pool_mib": 9216})json");
@@ -677,7 +677,7 @@ void measuring_step(Fixture& t) {
       "plan_version": 1, "producer": "radiance --plan-memory (rad0011)", "host": [],
       "checkpoints": {"slot_bytes": 1048576, "floor_slots": 8, "want_slots": 72, "from": "engine plan (test)"},
       "kv_one_session": {"bytes": 4096, "from": "engine plan (test)"},
-      "vram": {"claimable": 10, "statics": 1, "elastic": 9, "experts": 0, "kv": 9, "stage": 0, "expert_floor": 0,
+      "vram": {"claimable": 10, "statics": 1, "elastic": 9, "experts": 0, "kv": 9, "stage": 0, "kv_resolved": 9, "expert_floor": 0,
                "kv_ceiling": 9, "expert_ceiling": 0, "from": "engine plan (test)",
                "cards": [{"capacity": 10, "free": 10, "engine_expert_plane": 0, "expert_unit_max": 1}]},
       "host_pool_mib": 9216})json");

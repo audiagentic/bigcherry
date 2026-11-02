@@ -85,10 +85,10 @@ EnginePlan parse_engine_plan(const Json& plan) {
     p.kv_one_session_bytes = count(kv, "bytes", "engine plan.kv_one_session");
     p.kv_one_session_from = text(kv, "from", "engine plan.kv_one_session");
     const Json& v = plan.at("vram");
-    exact(v, {"claimable", "statics", "elastic", "experts", "kv", "stage", "expert_floor", "kv_ceiling",
-              "expert_ceiling", "from", "cards"}, "engine plan.vram");
-    for (const char* k : {"claimable", "statics", "elastic", "experts", "kv", "stage", "expert_floor", "kv_ceiling",
-                          "expert_ceiling"})
+    exact(v, {"claimable", "statics", "elastic", "experts", "kv", "stage", "kv_resolved", "expert_floor",
+              "kv_ceiling", "expert_ceiling", "from", "cards"}, "engine plan.vram");
+    for (const char* k : {"claimable", "statics", "elastic", "experts", "kv", "stage", "kv_resolved", "expert_floor",
+                          "kv_ceiling", "expert_ceiling"})
         (void)count(v, k, "engine plan.vram");
     (void)text(v, "from", "engine plan.vram");
     if (!v.at("cards").is_array() || v.at("cards").empty())

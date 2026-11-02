@@ -131,7 +131,8 @@ void bc_plan_memory_note(const rad::Config& cfg, const std::vector<rad::VramFact
                          {"from", "engine plan (rad0011: KVManager::checkpoint_bytes, chunk_geometry_resolve, checkpoint_slots_want)"}}},
         {"kv_one_session", {{"bytes", kv_one}, {"from", "engine plan (rad0011: VramFacts::kv_one)"}}},
         {"vram", {{"claimable", vb.claimable}, {"statics", vb.statics}, {"elastic", vb.elastic},
-                  {"experts", vb.experts}, {"kv", vb.kv}, {"stage", vb.stage}, {"expert_floor", vb.expert_floor},
+                  {"experts", vb.experts}, {"kv", vb.kv}, {"stage", vb.stage},
+                  {"kv_resolved", cfg.vram_kv_mib * int64_t(1024 * 1024)}, {"expert_floor", vb.expert_floor},
                   {"kv_ceiling", vb.kv_ceiling}, {"expert_ceiling", vb.expert_ceiling},
                   {"from", "engine plan (rad0011: vram_budget_resolve)"}, {"cards", cards}}},
         {"host_pool_mib", cfg.host_pool_mib},
@@ -183,11 +184,16 @@ _BC_PLAN_MEMORY_CHECK_H = r"""/* bc_plan_memory_check.h -- BigCherry managed pat
  * the first consumer that grew, the two byte counts, where the live number came from and what to do. Checked: every
  * host consumer (one the expected plan does not have counts as grown from 0), the checkpoint slot and floor, one
  * full-length session's KV, the static weights, the prefill staging, and the card's capacity (which must not shrink).
- * Claimable VRAM, a live reading, must hold what the plan requires (serving manifest v1 spec §5.2, amendment 5):
- * statics + experts + stage + kv_required, where kv_required = max(one full-length session's KV,
- * ceil(kv_ceiling * kv_backing_floor_ppm / 1000000)). The measured kv share is never an input: the engine's KV takes the
- * remainder of the elastic plane, so the measured split equals claimable with no margin. `kv_backing_floor_ppm` is the
- * selected calibration entry kv_backing_floor.fraction_ppm, or 0 when none is selected. */
+ * VRAM (serving manifest v1 spec §5.2, amendment 5): the stable facts must equal the plan's (statics, expert floor and
+ * ceiling, KV ceiling, each card's expert-plane geometry; a card's capacity must not shrink). Claimable, expert
+ * residency, the staging region and the KV are live terms: the engine derives them from what is claimable now, so they
+ * are never compared with the measured plan. Admission then requires, in order: live expert residency >= the expert
+ * floor; live claimable >= statics + live experts + live stage + kv_required; and the resolved KV the engine allocates
+ * (kv_resolved: vram_kv_mib after the staging split and MiB rounding) >= kv_required, where kv_required =
+ * max(one full-length session's KV, ceil(kv_ceiling * kv_backing_floor_ppm / 1000000)) and `kv_backing_floor_ppm` is the
+ * selected calibration entry kv_backing_floor.fraction_ppm (0 when none is selected; [0, 1000000) or refused). Every
+ * VRAM term read must be a byte count in [0, 2^53 - 1]. docs/design/serving-manifest-v1/admission-vectors.json holds the
+ * cases this function must reproduce. */
 bool bc_plan_memory_check(const nlohmann::json& expected, const nlohmann::json& live, int64_t kv_backing_floor_ppm,
                           std::string* why);
 """
@@ -246,34 +252,30 @@ bool bc_plan_memory_check(const nlohmann::json& expected, const nlohmann::json& 
                     lk.at("from").get<std::string>(), "", "exceed the planned");
     const auto& lv = live.at("vram");
     const auto& ev = expected.at("vram");
-    for (const char* k : {"statics", "stage"})
-        if (num(lv, k) > num(ev, k))
-            return fail(why, std::string("VRAM ") + k, num(lv, k), num(ev, k), lv.at("from").get<std::string>(), "", "exceed the planned");
-    /* Claimable VRAM is a live reading (it moved in 8 KiB steps over 16 KiB between starts), so it is checked for what
-     * it is for: what the plan requires must fit in what is claimable now. The KV requirement is one full-length session
-     * or the calibrated backing floor of the KV ceiling, whichever is larger; the measured kv share is not an input. */
     if (kv_backing_floor_ppm < 0 || kv_backing_floor_ppm >= 1000000) {
         if (why) *why = "plan check: kv_backing_floor_ppm must be in [0, 1000000)";
         return false;
     }
-    /* Every term is a v1 byte count in [0, 2^53 - 1]; the ceiling is taken by quotient and remainder so no intermediate
-     * leaves int64 (q * ppm < 2^53, r * ppm < 10^12), and the sum of four such terms stays below 2^55. */
+    /* Every term is a v1 byte count in [0, 2^53 - 1] (a missing one reads -1): the ceiling below is taken by quotient
+     * and remainder so no intermediate leaves int64 (q * ppm < 2^53, r * ppm < 10^12), and a sum of four terms stays
+     * below 2^55. */
     constexpr int64_t kMaxBytes = (int64_t(1) << 53) - 1;
-    const int64_t kv_ceiling = num(ev, "kv_ceiling"), kv_one = num(expected.at("kv_one_session"), "bytes");
-    for (const int64_t v : {kv_ceiling, kv_one, num(ev, "statics"), num(ev, "experts"), num(ev, "stage")})
-        if (v < 0 || v > kMaxBytes) {
-            if (why) *why = "plan check: the expected VRAM terms must be byte counts in [0, 2^53 - 1]";
-            return false;
-        }
-    const int64_t floor = kv_ceiling / 1000000 * kv_backing_floor_ppm +
-                          (kv_ceiling % 1000000 * kv_backing_floor_ppm + 999999) / 1000000;
-    const int64_t kv_required = std::max<int64_t>(kv_one, floor);
-    const int64_t required = num(ev, "statics") + num(ev, "experts") + num(ev, "stage") + kv_required;
-    if (num(lv, "claimable") < required)
-        return fail(why, "claimable VRAM (for the required split: statics + experts + stage + kv_required, kv_required " +
-                             std::to_string(kv_required) + " bytes)",
-                    num(lv, "claimable"), required, lv.at("from").get<std::string>(),
-                    "free the engine card, or choose a smaller service intent, and resolve a new manifest", "fall short of the required");
+    const int64_t kv_one = num(expected.at("kv_one_session"), "bytes");
+    bool in_range = kv_one >= 0 && kv_one <= kMaxBytes;
+    for (const char* k : {"statics", "experts", "stage", "kv_ceiling", "expert_floor", "expert_ceiling"})
+        in_range = in_range && num(ev, k) >= 0 && num(ev, k) <= kMaxBytes;
+    for (const char* k : {"claimable", "statics", "experts", "stage", "kv_resolved", "kv_ceiling", "expert_floor",
+                          "expert_ceiling"})
+        in_range = in_range && num(lv, k) >= 0 && num(lv, k) <= kMaxBytes;
+    if (!in_range) {
+        if (why) *why = "plan check: the VRAM terms must be byte counts in [0, 2^53 - 1]";
+        return false;
+    }
+    /* Stable facts: what the weights and the model's geometry fix, independent of what is claimable. */
+    for (const char* k : {"statics", "expert_floor", "expert_ceiling", "kv_ceiling"})
+        if (num(lv, k) != num(ev, k))
+            return fail(why, std::string("VRAM ") + k, num(lv, k), num(ev, k), lv.at("from").get<std::string>(), "",
+                        "differ from the planned");
     const auto& lcards = lv.at("cards");
     const auto& ecards = ev.at("cards");
     if (lcards.size() != ecards.size()) {
@@ -281,10 +283,41 @@ bool bc_plan_memory_check(const nlohmann::json& expected, const nlohmann::json& 
                         std::to_string(ecards.size()) + "; " + kMeasure;
         return false;
     }
-    for (size_t i = 0; i < lcards.size(); ++i)
+    for (size_t i = 0; i < lcards.size(); ++i) {
+        const std::string card = "card " + std::to_string(i) + " ";
         if (num(lcards[i], "capacity") < num(ecards[i], "capacity"))
-            return fail(why, "card " + std::to_string(i) + " capacity", num(lcards[i], "capacity"),
-                        num(ecards[i], "capacity"), lv.at("from").get<std::string>(), "", "fall short of the planned");
+            return fail(why, card + "capacity", num(lcards[i], "capacity"), num(ecards[i], "capacity"),
+                        lv.at("from").get<std::string>(), "", "fall short of the planned");
+        for (const char* k : {"engine_expert_plane", "expert_unit_max"})
+            if (num(lcards[i], k) != num(ecards[i], k))
+                return fail(why, card + k, num(lcards[i], k), num(ecards[i], k), lv.at("from").get<std::string>(), "",
+                            "differ from the planned");
+    }
+    /* Admission, on the live split: expert residency, claimable and the resolved KV (amendment 5). The measured kv share
+     * is never an input: it is the remainder of the elastic plane, so the measured split equals claimable with no
+     * margin, and a reading 8 KiB lower would refuse the start. */
+    const int64_t kv_ceiling = num(ev, "kv_ceiling");
+    const int64_t floor = kv_ceiling / 1000000 * kv_backing_floor_ppm +
+                          (kv_ceiling % 1000000 * kv_backing_floor_ppm + 999999) / 1000000;
+    const int64_t kv_required = std::max<int64_t>(kv_one, floor);
+    const std::string from = lv.at("from").get<std::string>();
+    const std::string kRemedy = "free the engine card, or choose a smaller service intent, and resolve a new manifest";
+    if (num(lv, "experts") < num(ev, "expert_floor"))
+        return fail(why, "admission: expert residency", num(lv, "experts"), num(ev, "expert_floor"),
+                    from + "; the experts the pinned host pool cannot hold", kRemedy + " (or raise the host pool)",
+                    "fall short of the required");
+    const int64_t total = num(ev, "statics") + num(lv, "experts") + num(lv, "stage") + kv_required;
+    if (num(lv, "claimable") < total)
+        return fail(why, "admission: claimable VRAM", num(lv, "claimable"), total,
+                    from + "; statics " + std::to_string(num(ev, "statics")) + " + experts " +
+                        std::to_string(num(lv, "experts")) + " + stage " + std::to_string(num(lv, "stage")) +
+                        " + kv_required " + std::to_string(kv_required),
+                    kRemedy, "fall short of the required");
+    if (num(lv, "kv_resolved") < kv_required)
+        return fail(why, "admission: resolved KV", num(lv, "kv_resolved"), kv_required,
+                    from + "; kv_required " + std::to_string(kv_required) +
+                        ", the cache the engine allocates after the staging split and MiB rounding",
+                    kRemedy, "fall short of the required");
     return true;
 }
 """
