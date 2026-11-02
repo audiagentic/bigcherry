@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import os
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -27,6 +29,7 @@ FIXTURE = REPO / "engines" / "radiance" / "tests" / "fixtures" / "4a61d72"
 RAD0002 = "rad0002_moe_remote_handoff"
 RAD0003 = "rad0003_mtp_full_head_switch"
 RAD0004 = "rad0004_moe_remote_diagnostics"
+RAD0009 = "rad0009_serving_manifest"
 
 #: package -> (file, a line that must be unique in it as applied, its replacement that breaks the anchor)
 CASES = {
@@ -44,6 +47,11 @@ CASES = {
         "arch/common/rad_block_moe_fp8.h",
         "if (shared) sh_down.step(c_, w.sff, w.sout, T, r0, rows);",
         "if (shared) sh_down.step(c_, w.sff, w.sout, T, r0, rows + 0);",
+    ),
+    RAD0009: (
+        "core/main.cpp",
+        "int main(int argc, char** argv) {",
+        "int main(int argc, char** argv, char** envp) {",
     ),
 }
 
@@ -74,6 +82,11 @@ PIN_BLOBS = {
     RAD0004: {
         "arch/common/bc_moe_remote_diag.h": (None, "3998d25"),
         "arch/common/rad_block_moe_fp8.h": ("4606519", "fb0956d"),
+    },
+    RAD0009: {
+        "core/bc_serving_manifest.h": (None, "4ad1a40"),
+        "core/bc_serving_manifest.cpp": (None, "2297489"),
+        "core/main.cpp": ("4cb6d43", "7feb7b6"),
     },
 }
 
@@ -436,3 +449,80 @@ class TestRadiancePatchPackages(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestServingManifestPatch(unittest.TestCase):
+    """rad0009: the engine starts from a serving manifest; thin hooks into core/bc_serving_manifest.*."""
+
+    def _applied(self):
+        temp = tempfile.TemporaryDirectory()
+        root = Path(temp.name)
+        shutil.copytree(FIXTURE, root, dirs_exist_ok=True)
+        self.assertTrue(all(result.ok for result in apply_all(list(_load(RAD0009)), root)))
+        return temp, root
+
+    def test_main_edits_are_thin_calls_into_the_extension_point(self):
+        patches = _load(RAD0009)
+        # config.cpp (the option table) is deliberately not touched: --manifest is handled before config_parse
+        self.assertEqual({p.path for p in patches if not p.create}, {"core/main.cpp"})
+        self.assertEqual(sum(1 for p in patches if p.create), 2)
+        temp, root = self._applied()
+        try:
+            added = TestRadiancePatchPackages._added_lines(
+                (FIXTURE / "core/main.cpp").read_text(encoding="utf-8"),
+                (root / "core/main.cpp").read_text(encoding="utf-8"),
+            )
+            code = [line.strip() for line in added if line.strip() and not line.strip().startswith(("/*", "*"))]
+            self.assertEqual(
+                code,
+                [
+                    '#include "bc_serving_manifest.h"',
+                    "if (!bc_serving_engine_argv(&argc, &argv)) return 2;",
+                    "if (!bc_serving_mark_given(&cfg.given)) return 2;",
+                ],
+            )
+        finally:
+            temp.cleanup()
+
+    def test_manifest_is_loaded_before_config_parse_and_marked_after_it(self):
+        temp, root = self._applied()
+        try:
+            main = (root / "core/main.cpp").read_text(encoding="utf-8")
+            argv = main.index("bc_serving_engine_argv(&argc, &argv)")
+            parse = main.index("rad::config_parse(argc, argv, &cfg)")
+            usage_exit = main.index("if (s < 0)  { rad::config_usage(argv[0]); return 2; }")
+            mark = main.index("if (!bc_serving_mark_given(&cfg.given)) return 2;")
+            self.assertLess(argv, parse)
+            self.assertLess(usage_exit, mark)
+            self.assertNotIn("--manifest", (root / "core/main.cpp").read_text(encoding="utf-8").split("int main")[1])
+        finally:
+            temp.cleanup()
+
+    def test_manifest_to_argv_logic_compiled_and_run(self):
+        """Compile the patch's own bc_serving_manifest.cpp against a stub of config_option_names
+         and run the card-free test."""
+        compiler = shutil.which("g++") or shutil.which("c++")
+        candidates = [os.environ.get("BC_NLOHMANN_INCLUDE", ""), str(REPO / "vendor" / "llama.cpp" / "vendor")]
+        include = next((c for c in candidates if c and (Path(c) / "nlohmann" / "json.hpp").is_file()), None)
+        if compiler is None or include is None:
+            message = "needs a C++ compiler and nlohmann/json.hpp (set BC_NLOHMANN_INCLUDE to its parent dir)"
+            if os.environ.get("CI"):
+                self.fail(message)   # in CI the test must run, never skip
+            self.skipTest(message)
+        temp, root = self._applied()
+        try:
+            exe = Path(temp.name) / "manifest_argv_test"
+            scratch = Path(temp.name) / "scratch"
+            scratch.mkdir()
+            test = REPO / "engines" / "radiance" / "tests" / "serving_manifest" / "manifest_argv_test.cpp"
+            build = subprocess.run(
+                [compiler, "-std=c++20", "-Wall", "-Werror", f"-I{root / 'core'}", f"-I{include}",
+                 str(root / "core" / "bc_serving_manifest.cpp"), str(test), "-o", str(exe)],
+                capture_output=True, text=True,
+            )
+            self.assertEqual(build.returncode, 0, build.stderr)
+            run = subprocess.run([str(exe), str(scratch)], capture_output=True, text=True)
+            self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+            self.assertIn("ok", run.stdout)
+        finally:
+            temp.cleanup()
