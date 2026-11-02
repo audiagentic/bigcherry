@@ -14,6 +14,7 @@ source is built separately and installed into the engine's runtime bundle.
 | [libr2](../../../../engines/radiance/components/libr2/README.md) | RDNA2-compatible kernel subset, used by remote experts |
 | [bc-gfx12](../../../../engines/radiance/components/bc-gfx12/README.md) | Focused RDNA4 kernel overrides where measured |
 | [moe-remote](../../../../engines/radiance/components/moe-remote/README.md) | Remote MoE execution, mailbox and helper worker |
+| [serving](../../../../engines/radiance/components/serving/README.md) | Strict serving schema, configuration inspection and manifest generation (RSC01) |
 | [ngram-helper](../../../../engines/radiance/components/ngram-helper/README.md) | Optional n-gram gather experiment, currently shelved |
 
 Engine modifications are separate from these components. See the
@@ -39,9 +40,11 @@ The [runbook](RUNBOOK.md) covers the build and measurement workflow.
 split; the [lab history](../../../../engines/radiance/README.md) retains
 dated experiments.
 
-**Serving configuration is in transition.** The active
-[serving-configuration plan](../../../planning/active/run-serving-configuration/README.md)
-replaces launcher-specific command-line and environment setup with a strict
-loader and a canonical manifest consumed by each process. Until that work
-lands, do not treat older launch instructions in the runbook, model pages or
-lab scripts as the final public configuration interface.
+**Serving configuration is being migrated to a manifest.** The strict C++
+schema, loader and `bc-serve` inspection commands (RSC01), and the engine
+manifest entry point (RSC07), have landed. Helper manifest consumption (RSC06)
+and managed process start-up (RSC02) are still in progress. See the
+[serving component](../../../../engines/radiance/components/serving/README.md)
+and the [serving-configuration plan](../../../planning/active/run-serving-configuration/README.md).
+The older launch instructions in the runbook and lab scripts are not the final
+serving interface.

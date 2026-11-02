@@ -96,6 +96,31 @@ jobs:
           PYTHONPATH: tools
         run: python -m unittest tools.tests.cli.test_slice_lab -v
 
+      # The manifest-to-argv test compiles against radiance's vendored nlohmann/json, taken from the bare upstream
+      # clone radiance-build.yml caches (same path and key family; restore only, this job never saves it) at the
+      # pinned commit. When no clone is cached, the pinned release is fetched.
+      - name: Restore the upstream radiance clone
+        uses: actions/cache/restore@v4
+        with:
+          path: work/upstream
+          key: radiance-upstream-${{ github.run_id }}
+          restore-keys: |
+            radiance-upstream-
+
+      - name: Extract radiance's vendored nlohmann/json
+        shell: bash
+        run: |
+          set -euo pipefail
+          pin=4a61d72
+          repo=work/upstream/radiance.git
+          if ! git -C "$repo" cat-file -e "$pin^{commit}" 2>/dev/null; then
+            git init --bare "$repo"
+            git -C "$repo" fetch --depth 1 https://codeberg.org/StillDeadcode/radiance.git v1.14.0
+          fi
+          mkdir -p "$RUNNER_TEMP/radiance"
+          git -C "$repo" archive "$pin" vendor/nlohmann | tar -x -C "$RUNNER_TEMP/radiance"
+          echo "BC_NLOHMANN_INCLUDE=$RUNNER_TEMP/radiance/vendor" >> "$GITHUB_ENV"
+
       - name: Run Radiance patch package mechanics tests
         env:
           PYTHONPATH: tools
