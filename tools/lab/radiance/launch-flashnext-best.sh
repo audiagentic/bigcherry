@@ -144,6 +144,13 @@ stop_all() {
 
 if [ "$CMD" = stop ]; then stop_all; echo "stopped"; exit 0; fi
 
+# One launch at a time: the already-running check, the measuring start and the plan store share the run folder (the PID files,
+# the helper segment, the measured-plan file), so two concurrent launches could store one's plan under the other's key.
+# The lock is released at the hand-off; the engine and helpers never inherit it.
+mkdir -p "$RUN"
+exec 9> "$RUN/launch.lock"
+flock -n 9 || { echo "FLASHNEXT_EXIT=98 another launch is in progress ($RUN/launch.lock); wait for it, or run '$0 stop'"; exit 98; }
+
 for name in engine $(cd "$PIDS" 2>/dev/null && ls helper* 2>/dev/null); do
   if [ -f "$PIDS/$name" ] && kill -0 "$(cat "$PIDS/$name")" 2>/dev/null; then
     echo "FLASHNEXT_EXIT=98 already running ($name pid $(cat "$PIDS/$name")); run '$0 stop' first"; exit 98
@@ -182,10 +189,12 @@ trap 'exit 129' HUP
 # ahead with the cards as they are.
 if [ "$GPU_POWER" = 1 ]; then
   mkdir -p "$RUN"
-  if PYTHONPATH=tools python3 -m bigcherry gpu-power apply >&2; then
-    touch "$RUN/gpu-power"
-  else
-    echo "gpu-power: running with the cards as they are" >&2
+  # The marker comes first: apply records what ran before and then writes setting by setting, so an apply that fails part way
+  # may have changed a card. Restoring with nothing recorded is a no-op.
+  touch "$RUN/gpu-power"
+  if ! PYTHONPATH=tools python3 -m bigcherry gpu-power apply >&2; then
+    echo "gpu-power: the settings were not (fully) applied; putting back what ran before, then running with the cards as they are" >&2
+    PYTHONPATH=tools python3 -m bigcherry gpu-power restore >&2 && rm -f "$RUN/gpu-power"
   fi
 fi
 
@@ -237,7 +246,7 @@ start_helpers() {
     log=$RUN/helper$i-$STAMP.log
     declare -n hv="LAYOUT_HELPER_$i"
     env "${COMMON[@]}" "${hv[@]}" \
-      setsid ${HELPER_WRAP:-} "$HELPER" "$MODEL" > "$log" 2>&1 &
+      setsid ${HELPER_WRAP:-} "$HELPER" "$MODEL" > "$log" 2>&1 9>&- &
     echo $! > "$PIDS/helper$i"
     unset -n hv
     echo "helper$i (pid $!, log $log): waiting for ready..." >&2
@@ -285,7 +294,7 @@ start_engine() {
       "${RESUME_ARGS[@]}" \
       "${ENGINE_ARGS[@]}" \
       "$@" \
-    > "$log" 2>&1 &
+    > "$log" 2>&1 9>&- &
 }
 
 # The measuring start of the plan check (plan-check.sh): helpers up, the engine runs to the end of its memory plan and
@@ -323,6 +332,7 @@ done
 trap - ERR
 LAUNCH_HANDED_OFF=1
 trap - EXIT INT TERM HUP
+exec 9>&-
 
 cat <<INFO
 FLASHNEXT_EXIT=0

@@ -23,7 +23,7 @@ from test_plan_check_launcher import FAKE_SERVE  # noqa: E402
 FAKE_PYTHON = r"""#!/bin/bash
 case "$*" in
   *"-m bigcherry host-check"*) exit 0 ;;
-  *"-m bigcherry gpu-power apply"*) echo apply >> "$FAKE_LOG"; exit 0 ;;
+  *"-m bigcherry gpu-power apply"*) echo apply >> "$FAKE_LOG"; [ -n "${FAKE_POWER_APPLY_FAIL:-}" ] && exit 1; exit 0 ;;
   *"-m bigcherry gpu-power restore"*) echo restore >> "$FAKE_LOG"; exit 0 ;;
   *"-m bigcherry layout env"*) cat "$FAKE_LAYOUT_ENV"; exit 0 ;;
 esac
@@ -50,7 +50,9 @@ if [ -n "$plan" ]; then
   echo '{"plan_version": 1}' > "$plan"; exit 0
 fi
 exec "$REAL_PYTHON" -c '
-import http.server, sys
+import http.server, os, signal, sys
+signal.signal(signal.SIGINT, lambda *a: os._exit(0))
+signal.signal(signal.SIGTERM, lambda *a: os._exit(0))
 class H(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200); self.end_headers(); self.wfile.write(b"ok")
@@ -168,6 +170,36 @@ class LaunchCleanupTests(unittest.TestCase):
                 proc.kill()
         self.assertEqual(proc.returncode, 130, out + err)
         self.assertEqual(self._events(), ["apply", "restore"])
+        self.assertEqual(self._alive_pids(), [])
+
+    def test_a_partly_applied_power_setting_is_put_back(self) -> None:
+        # apply fails after changing a card: it is restored at once, and again by the cleanup if the start then fails
+        done = subprocess.run(self._args(), env={**self.env, "FAKE_POWER_APPLY_FAIL": "1", "FAKE_MEASURE_FAIL": "1"}, cwd=REPO,
+                              capture_output=True, text=True, timeout=120)
+        self.assertEqual(done.returncode, 97, done.stdout + done.stderr)
+        self.assertEqual(self._events()[0], "apply")
+        self.assertIn("restore", self._events()[1:])
+        self.assertEqual(self._alive_pids(), [])
+
+    def test_a_second_launch_while_one_is_measuring_is_refused_and_disturbs_nothing(self) -> None:
+        first = subprocess.Popen(self._args(), env={**self.env, "FAKE_MEASURE_HANG": "1"}, cwd=REPO,
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        try:
+            deadline = time.time() + 90
+            while not self.measuring.exists() and time.time() < deadline and first.poll() is None:
+                time.sleep(0.2)
+            self.assertTrue(self.measuring.exists(), "the first launch never reached its measuring start")
+            alive = self._alive_pids()
+            second = subprocess.run([*self._args()[:-3], "--chunk", "1024", "--record-heat", "off"], env=self.env, cwd=REPO,
+                                    capture_output=True, text=True, timeout=60)
+            self.assertEqual(second.returncode, 98, second.stdout + second.stderr)
+            self.assertIn("another launch is in progress", second.stdout)
+            self.assertEqual(self._alive_pids(), alive, "the refused launch must not stop or start anything")
+            first.send_signal(signal.SIGINT)
+            first.communicate(timeout=60)
+        finally:
+            if first.poll() is None:
+                first.kill()
         self.assertEqual(self._alive_pids(), [])
 
     def test_a_successful_start_keeps_the_processes_and_the_power_settings_until_stop(self) -> None:

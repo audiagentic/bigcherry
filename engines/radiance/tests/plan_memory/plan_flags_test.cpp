@@ -162,7 +162,10 @@ int main(int argc, char** argv) {
     // Every normative admission vector through the engine's own entry points: --plan-check/--plan-check-floor-ppm parsing,
     // then bc_plan::check. The exit code and the message must be what the vector says (admit 0, admission 4, plan or input 2).
     {
-        int ran = 0;
+        // Where each vector meets production code: 42 reach bc_plan::check; the rest are refused earlier, at the engine's flag and
+        // expected-plan validation (3), or are a live plan the contract cannot even decode (1: the engine builds its live plan in
+        // process, as a typed struct, so a missing field there is a decode failure of the vector, not a runtime input).
+        int ran = 0, through_check = 0, refused_at_flags = 0, live_undecodable = 0;
         for (const Json& v : vectors.at("vectors")) {
             const std::string name = v.at("name").get<std::string>(), cls = v.at("verdict").value("class", std::string("admit"));
             const bool admit = v.at("verdict").at("admit").get<bool>();
@@ -175,15 +178,28 @@ int main(int argc, char** argv) {
             v1::EnginePlan expected, live_plan;
             const bool expected_ok = !v1::decode(v.at("expected"), "", &expected);
             const bool live_ok = !v1::decode(v.at("live"), "", &live_plan);
-            if (!expected_ok || v.at("ppm").get<int64_t>() < 0 || v.at("ppm").get<int64_t>() >= 1000000) {
+            const int64_t vppm = v.at("ppm").get<int64_t>();
+            if (!expected_ok || vppm < 0 || vppm >= 1000000) {
+                ++refused_at_flags;
                 check(!admit && cls == "input" && rc == 2, "vector " + name + ": refused at the flags with exit 2, got " + std::to_string(rc) + " " + err);
+                if (vppm < 0 || vppm >= 1000000)
+                    check(err.find("kv_backing_floor_ppm must be in [0, 1000000)") != std::string::npos && err.find("BC_CFG_INVALID_VALUE") != std::string::npos,
+                          "vector " + name + ": the floor refusal names the range: " + err);
+                else
+                    check(err.find("BC_CFG_") != std::string::npos && err.find("vec-expected.json") != std::string::npos,
+                          "vector " + name + ": the expected-plan refusal names the file and a config error: " + err);
                 continue;
             }
             check(rc == 0, "vector " + name + ": the flags are accepted: " + err);
             if (!live_ok) {
-                check(!admit && cls == "input", "vector " + name + ": an undecodable live plan is invalid input");
+                ++live_undecodable;
+                const auto e = v1::decode(v.at("live"), "live", &live_plan);
+                check(!admit && cls == "input" && e && e->code == (name == "kv-resolved-missing" ? v1::ConfigErrorCode::missing_field
+                                                                                                   : v1::ConfigErrorCode::invalid_value),
+                      "vector " + name + ": the live plan fails decoding with the vector's code");
                 continue;
             }
+            ++through_check;
             err = captured(scratch, [&] { rc = bc_plan::check(live_plan); });
             check(rc == want_exit, "vector " + name + ": exit " + std::to_string(want_exit) + ", got " + std::to_string(rc) + " " + err);
             if (!admit)
@@ -191,7 +207,10 @@ int main(int argc, char** argv) {
             else
                 check(err.find("plan check: admitted") != std::string::npos, "vector " + name + ": admitted line: " + err);
         }
-        check(ran >= 46, "all admission vectors ran through bc_plan::check");
+        check(ran >= 46 && through_check + refused_at_flags + live_undecodable == ran, "every vector met production code");
+        check(through_check == 42 && refused_at_flags == 3 && live_undecodable == 1,
+              "42 through bc_plan::check, 3 refused at the flags, 1 undecodable live plan (got " + std::to_string(through_check) + "/" +
+                  std::to_string(refused_at_flags) + "/" + std::to_string(live_undecodable) + ")");
     }
 
     std::fclose(stderr);
