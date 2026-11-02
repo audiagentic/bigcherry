@@ -1,7 +1,8 @@
 # Radiance
 
-BigCherry adds AMD kernel implementations, multi-GPU expert execution and
-narrow engine integration patches to
+Radiance is BigCherry's primary engine target. It adds RDNA2 and RDNA3
+kernel support alongside RDNA4, multi-GPU expert execution and narrow
+engine integration patches to
 [Radiance](https://codeberg.org/StillDeadcode/radiance). The pinned engine
 version is declared in `engines/radiance/recipes.toml`; BigCherry's kernel
 source is built separately and installed into the engine's runtime bundle.

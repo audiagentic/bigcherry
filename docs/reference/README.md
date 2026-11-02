@@ -5,10 +5,10 @@ at the top level.
 
 ## Engines
 
-- [llama.cpp](engines/llamacpp/README.md) — HIP measured dispatch, patch
-  packages and the [complete patch catalog](engines/llamacpp/PATCHES.md).
-- [Radiance](engines/radiance/README.md) — device kernel components, remote
-  MoE work, and the [patch and component catalog](engines/radiance/ENHANCEMENTS.md).
+- [Radiance](engines/radiance/README.md) — primary target: heterogeneous
+  AMD kernel components, remote MoE and the [patch and component catalogue](engines/radiance/ENHANCEMENTS.md).
+- [llama.cpp](engines/llamacpp/README.md) — active secondary engine: HIP
+  measured dispatch and the [patch catalogue](engines/llamacpp/PATCHES.md).
 - [Per-change documentation format](DOC_STRUCTURE.md) — owning Summary,
   Outcome and Detail pages, with generated indexes.
 
@@ -82,7 +82,7 @@ do not add compatibility redirect files under `docs/reference/`.
 
 | Document | What it is | When to read it |
 | --- | --- | --- |
-| [START_HERE.md](START_HERE.md) | Stable project orientation and safe first-work checklist for new agents | Starting a fresh agent context or handing work to another agent |
+| [START_HERE.md](START_HERE.md) | Technical map of the two engines, extension points and evidence | Finding the relevant architecture or component reference |
 | [CANDIDATES.md](CANDIDATES.md) | Auto-generated candidate inventory | Looking up a specific candidate's config |
 | [FINDINGS.md](FINDINGS.md) | Bugs and results notable outside bigcherry — kernel/llama.cpp/ROCm bugs, exceptional tunes | You just found something a stranger to this project would want to know about |
 | [TUNING-DETAIL.md](TUNING-DETAIL.md) | Pointer to archived generated report | Consult the tuning DB or `artifacts/reports/` for current numbers |

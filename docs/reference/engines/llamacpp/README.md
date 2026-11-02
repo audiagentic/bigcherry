@@ -1,7 +1,8 @@
 # llama.cpp
 
 BigCherry keeps [llama.cpp](https://github.com/ggml-org/llama.cpp) close to
-upstream while developing HIP performance work and targeted fixes.
+upstream while developing HIP performance work and targeted fixes. It remains
+active as the secondary engine while heterogeneous Radiance is the main focus.
 
 ## What changes
 
