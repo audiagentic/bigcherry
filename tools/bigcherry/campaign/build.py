@@ -80,6 +80,7 @@ def resolve_build_environment() -> tuple[tuple[str, str], ...]:
 
 def toolchain_request_for_platform(
     platform: campaign_config.Platform,
+    rocm_paths: tuple[tuple[str, str], ...],
 ) -> tuple[tuple[str, str], ...]:
     """The requested toolchain identity for ``BuildPlan.toolchain_request``.
 
@@ -114,6 +115,7 @@ def toolchain_request_for_platform(
     values.update(
         resolve_toolchain_versions(platform.c_compiler, platform.cxx_compiler)
     )
+    values.update(rocm_identity(rocm_paths))
     return tuple(sorted(values.items()))
 
 
@@ -222,6 +224,44 @@ def _find_rocm_prefix(compiler_realpath: Path) -> Path | None:
     return None
 
 
+def selected_rocm_root() -> Path:
+    """The ROCm SDK a build compiles and links against: the host's rocm-root (``BC_ROCM_ROOT`` overrides it), with
+    symlinks resolved so the identity names the real install. Fails closed: there is no fallback to /opt/rocm."""
+    raw = campaign_config.require_resolved(campaign_config.expand_host_value("${BC_ROCM_ROOT}"), "BC_ROCM_ROOT")
+    if not raw:
+        raise CampaignBuildError("no ROCm SDK selected: set rocm-root for this host in the environment file")
+    root = Path(raw).resolve()
+    if not root.is_dir():
+        raise CampaignBuildError(f"the selected ROCm SDK root {raw} is not a directory")
+    return root
+
+
+def rocm_configure_options(rocm_paths: tuple[tuple[str, str], ...]) -> dict[str, str]:
+    """CMake cache values pinning each of an engine's ROCm lookups (engine.toml ``build.rocm-paths``) to the selected
+    SDK, so the engine's own CMake never searches /opt/rocm or $ROCM_PATH. Empty for an engine that declares none."""
+    if not rocm_paths:
+        return {}
+    root = selected_rocm_root()
+    missing = [relative for _, relative in rocm_paths if not (root / relative).exists()]
+    if missing:
+        raise CampaignBuildError(f"the selected ROCm SDK {root} lacks {', '.join(missing)}")
+    return {variable: (root / relative).as_posix() for variable, relative in rocm_paths}
+
+
+def rocm_identity(rocm_paths: tuple[tuple[str, str], ...]) -> dict[str, str]:
+    """The selected SDK's root and its own .info/version, for a build whose engine pins ROCm paths: the root alone
+    would let an in-place upgrade at the same path keep the old build_plan_id."""
+    if not rocm_paths:
+        return {}
+    root = selected_rocm_root()
+    version_file = root / ".info" / "version"
+    try:
+        version = version_file.read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        raise CampaignBuildError(f"the selected ROCm SDK {root} has no readable {version_file.name}: {exc}") from exc
+    return {"rocm_root": root.as_posix(), "rocm_version": version}
+
+
 def _default_runner(args: list[str], cwd: Path) -> None:
     subprocess.run(args, cwd=cwd, check=True)
 
@@ -230,6 +270,7 @@ def _backend_configure_options(
     backend: str,
     platform: campaign_config.Platform,
     targets_option: str,
+    rocm_paths: tuple[tuple[str, str], ...],
 ) -> dict[str, str]:
     """Backend-specific cmake options that don't belong in a shared dict
     literal (RE30 phase 1: the split this project's Vulkan evaluation
@@ -241,7 +282,7 @@ def _backend_configure_options(
     *stock* build configure) are known. Any other value is a caller bug.
     """
     if backend == "hip":
-        return {targets_option: ";".join(platform.targets)}
+        return {targets_option: ";".join(platform.targets), **rocm_configure_options(rocm_paths)}
     if backend == "vulkan":
         # Stock lane only (RE30 phase 1): GGML_VULKAN=ON if the caller
         # hasn't already set it via build/platform options. No SDK/glslc
@@ -263,6 +304,7 @@ def cmake_configure_args(
     cxx_compiler: str | None = None,
     backend: str = "hip",
     targets_option: str,
+    rocm_paths: tuple[tuple[str, str], ...],
 ) -> list[str]:
     """The cmake configure argv for one v2 ``config.Build``/``config.Platform``.
 
@@ -284,7 +326,7 @@ def cmake_configure_args(
         "CMAKE_BUILD_TYPE": "Release",
         **dict(platform.options),
         **dict(build.options),
-        **_backend_configure_options(backend, platform, targets_option),
+        **_backend_configure_options(backend, platform, targets_option, rocm_paths),
     }
     if build.variant_set:
         options["GGML_HIP_AUTOTUNE_VARIANT_SET"] = build.variant_set
@@ -731,6 +773,7 @@ def execute_build_stage(
     build_dir = builds.build_directory(context, source_slice_id, build_plan)
     build_dir.mkdir(parents=True, exist_ok=True)
 
+    layout = engines.load(paths.REPO_ROOT, context.engine)
     configure_args = cmake_configure_args(
         build,
         platform,
@@ -740,7 +783,8 @@ def execute_build_stage(
         inventory=inventory,
         c_compiler=c_compiler,
         cxx_compiler=cxx_compiler,
-        targets_option=engines.load(paths.REPO_ROOT, context.engine).targets_option,
+        targets_option=layout.targets_option,
+        rocm_paths=layout.rocm_paths,
     )
     runner(configure_args, source_root)
     runner(cmake_build_args(build_dir, targets=cmake_targets), source_root)

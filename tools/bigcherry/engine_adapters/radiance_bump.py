@@ -136,10 +136,11 @@ class ComponentGate:
         targets = sorted({*platform.targets, *(t for component in self.declared.values() for t in component.targets)})
         # The configure argv is the one `bigcherry build` makes for this platform (its compilers, options and targets);
         # the components' own targets are added so every declared component can build.
-        argv = campaign_build.cmake_configure_args(
-            _GATE_BUILD, replace(platform, targets=tuple(targets)), self.source_dir, self.build_dir,
-            c_compiler=platform.c_compiler, cxx_compiler=platform.cxx_compiler, targets_option=self.layout.targets_option)
         try:
+            argv = campaign_build.cmake_configure_args(
+                _GATE_BUILD, replace(platform, targets=tuple(targets)), self.source_dir, self.build_dir,
+                c_compiler=platform.c_compiler, cxx_compiler=platform.cxx_compiler, targets_option=self.layout.targets_option,
+                rocm_paths=self.layout.rocm_paths)
             self.runner(argv, self.source_dir)
             self.runner(["cmake", "--build", str(self.build_dir), "-j"], self.source_dir)
             # RAD18: forward the platform's compiler-launcher options (e.g. ccache) into each component's own
@@ -151,7 +152,7 @@ class ComponentGate:
                                          launcher_options=launcher_options, runner=self.runner)
         except subprocess.CalledProcessError as exc:
             return [f"`{' '.join(map(str, exc.cmd))}` exited {exc.returncode} (build tree {self.build_dir})"]
-        except (runtime_bundle.RuntimeBundleError, OSError) as exc:
+        except (campaign_build.CampaignBuildError, runtime_bundle.RuntimeBundleError, OSError) as exc:
             return [str(exc)]
         self.built = True
         return []

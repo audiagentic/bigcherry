@@ -85,6 +85,14 @@ class ComponentGateTests(unittest.TestCase):
         self.context = ProjectContext.resolve(engine="radiance")
         self.report = self.tmp / "rebase-recipe.json"
         self.report.write_text(json.dumps({"selector": {"patch_ids": []}}), encoding="utf-8")
+        # The selected ROCm SDK: a fake root carrying every path the engine pins (engine.toml build.rocm-paths).
+        self.rocm = self.tmp / "rocm-sdk"
+        for _, relative in engines.load(paths.REPO_ROOT, "radiance").rocm_paths:
+            (self.rocm / relative).parent.mkdir(parents=True, exist_ok=True)
+            (self.rocm / relative).write_bytes(b"")
+        rocm_env = patch.dict(os.environ, {"BC_ROCM_ROOT": str(self.rocm)})
+        rocm_env.start()
+        self.addCleanup(rocm_env.stop)
 
     def runner(self, argv: list[str], cwd: Path) -> None:
         """A fake cmake/ctest: records the call and lays down what a build would produce."""
@@ -116,6 +124,13 @@ class ComponentGateTests(unittest.TestCase):
             return pin_bump.run_phase_compile(engine="radiance", vendor_root=self.source, workdir=self.work,
                                               recipe_report_path=self.report, target_ref="v1.4.0", platform_name=PLATFORM)
 
+    def test_a_selected_sdk_without_a_pinned_path_fails_before_configure(self):
+        (self.rocm / "lib" / "libhsa-runtime64.so").unlink()
+        problems = self.checks()["components-build"].run()
+        self.assertEqual(len(problems), 1)
+        self.assertIn("lib/libhsa-runtime64.so", problems[0])
+        self.assertEqual(self.calls, [])
+
     def test_build_then_abi_then_tests_pass(self):
         checks = self.checks()
         self.assertEqual(checks["components-build"].run(), [])
@@ -141,6 +156,14 @@ class ComponentGateTests(unittest.TestCase):
         component_configures = [c for c in self.calls[1:] if c[:2] == ["cmake", "-S"]]
         self.assertTrue(component_configures)
         self.assertTrue(all("-DCMAKE_CXX_COMPILER=/fake/g++-14" in c for c in component_configures))
+        # the engine and every component find ROCm only in the selected SDK, never through /opt/rocm or $ROCM_PATH
+        root = self.rocm.resolve().as_posix()
+        for argv in (configure, *component_configures):
+            for pinned in ("RAD_HIPCC", "CMAKE_HIP_COMPILER", "RAD_HIP_RUNTIME", "RAD_HSA_RUNTIME"):
+                values = [a.split("=", 1)[1] for a in argv if a.startswith(f"-D{pinned}=")]
+                self.assertEqual(len(values), 1, (pinned, argv))
+                self.assertTrue(values[0].startswith(root + "/"), (pinned, values[0]))
+        self.assertIn(f"-DRAD_HIP_RUNTIME={root}/lib/libamdhip64.so", configure)
         # RAD18: each component's own separate cmake configure must also get the platform's compiler-launcher
         # options (e.g. ccache) -- without this, a declared component never got ccache at all and recompiled
         # from scratch on every single build regardless of whether its source actually changed.
