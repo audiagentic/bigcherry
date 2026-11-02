@@ -15,13 +15,13 @@ work: M
 
 ## Description
 
-engines/radiance/README.md is a 1,144-line dated lab log mixing models, kernels and hardware; there is no per-model statement of current state. Create a clean, maintained doc set: docs/reference/engines/radiance/README.md (overview, links to parity assessment, runbook, platform design) and docs/reference/engines/radiance/models/<model>.md for qwen3.8-flash-next and qwen3.8-27b.
+docs/archive/radiance/LAB_HISTORY.md is a 1,144-line dated lab log mixing models, kernels and hardware; there is no per-model statement of current state. Create a clean, maintained doc set: docs/reference/engines/radiance/README.md (overview, links to parity assessment, runbook, platform design) and docs/reference/engines/radiance/models/<model>.md for qwen3.8-flash-next and qwen3.8-27b.
 
 ## Steps
 
 1. Move RADIANCE_PLATFORM_DESIGN/PARITY/RUNBOOK under docs/reference/engines/radiance/ (update every link).
 2. Per-model page sections: container and quantisation; reference quality vs the full model (Flash-Next owner table: mean KL 0.0789 all / 0.0239 text+assistant, median 0.0037/0.0029, P99 1.65/0.32, P99.9 5.33/1.03, top-1 92.85%/94.57%); layouts tried with best prefill/decode and run IDs; patches and settings on, and why; tried and shelved, with reason; open levers linked to plan items.
-3. Keep engines/radiance/README.md as the dated lab log; each entry links to its model page.
+3. Keep docs/archive/radiance/LAB_HISTORY.md as the dated lab log; each entry links to its model page.
 4. Doc rule: every measurement or decision updates the model page in the same change.
 
 ## Detailed Solution & Technical Design

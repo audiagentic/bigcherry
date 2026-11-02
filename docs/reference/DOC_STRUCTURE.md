@@ -53,6 +53,25 @@ For a legacy package, preserve the original analysis under `## Detail`.
 If its state or measurements are historical, mark the limitation instead
 of silently rewriting the recorded result.
 
+## Current engine and model pages
+
+An engine overview states its current upstream pin, package inventory and
+strongest measured workloads. Put the figures first, with units, model,
+quantisation, hardware, stream count and cache conditions. Model pages
+expand the results and explain the constraints, not the chronology of each
+experiment. Report client output and internal engine decode separately.
+
+Only use results from the current pinned engine in the maintained model
+pages. If prefill, multi-stream throughput or a stock baseline has not been
+measured on that pin, say so. Do not call a BigCherry configuration change
+"stock versus patched" or combine unmatched workloads into a speedup.
+
+Keep earlier version investigations and raw measurement narratives in
+`docs/archive/` or the owning evidence and planning records. Link to
+those sources once; do not paste their tables into current reference pages.
+Do not add instructions for remote access, agent workflows or project
+management to project-facing documentation.
+
 ## Generated catalogs
 
 `tools/docs/generate_engine_enhancement_summaries.py` reads the package
