@@ -412,6 +412,7 @@ class EpochCycle {
     std::chrono::nanoseconds period_;
     uint64_t next_ns_ = 0;
     uint64_t awaiting_reopen_ = 0;
+    uint64_t completed_ = 0;   // full close-drain-recommit-reopen cycles, for the run's evidence
     SharedTransport transport_;
     std::unique_ptr<Controller> controller_;
     bool failed_ = false;
@@ -429,6 +430,7 @@ public:
         failed_ = !map || helper >= static_cast<Header*>(map)->helper_count || period.count() < 0;
     }
     bool enabled() const { return period_.count() != 0; }
+    uint64_t completed() const { return completed_; }
     bool tick() {
         if (failed_) return false;
         if (period_.count() == 0) return true; // typed setting disables the experiment
@@ -481,6 +483,7 @@ public:
                 for (const auto& lane : h->lane)
                     if (__atomic_load_n(&lane.drain_request, __ATOMIC_ACQUIRE)) return true;
                 awaiting_reopen_ = 0;
+                ++completed_;
                 if (!schedule()) return false;
             }
             if (!(load(&h->burst) & 1u) || clock_.now_ns() < next_ns_) return true;

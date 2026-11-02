@@ -502,10 +502,8 @@ int main(int argc, char** argv) {
                 return uint64_t(now.tv_sec) * 1'000'000'000ULL + uint64_t(now.tv_nsec);
             }
         } epoch_clock;
-        // RSC06 INTEGRATION POINT: pass the validated typed
-        // experiment.helper.epoch_cycle_s here as a chrono duration on every
-        // helper. Zero disables cycles until that manifest schema merges.
-        r3::epoch::EpochCycle epoch_cycle(map, helper_index, epoch_clock, std::chrono::seconds{0});
+        // R3_MOE_WORKER_EPOCH_CYCLE_S on every helper (moves to experiment.helper.epoch_cycle_s with manifest v1).
+        r3::epoch::EpochCycle epoch_cycle(map, helper_index, epoch_clock, std::chrono::seconds{cfg.epoch_cycle_s});
         for (uint32_t v; (v = g_stop_word.load(std::memory_order_acquire)) == 0;) {
             if (!epoch_cycle.tick()) { raise_fault(h); request_stop(); break; }
             const timespec quantum{0, 2'000'000};
@@ -513,6 +511,9 @@ int main(int argc, char** argv) {
                             epoch_cycle.enabled() ? &quantum : nullptr, nullptr, 0);
         }
         lanes.stop_and_join();
+        if (epoch_cycle.enabled() && helper_index == 0)
+            std::fprintf(stderr, "r3_moe_worker: placement epoch cycles completed %llu (every %u s of burst)\n",
+                         (unsigned long long)epoch_cycle.completed(), cfg.epoch_cycle_s);
         warm.stop();
         if (combine.pool) {
             store(&h->combine.enabled, 0u);
