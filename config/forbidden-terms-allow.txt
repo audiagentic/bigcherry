@@ -9,3 +9,6 @@ C:\Program Files\AMD\ROCm
 stew675@gmail.com
 # Commit attribution trailers (Co-Authored-By) carry this public no-reply address
 noreply@anthropic.com
+# Third-party copyright holders in vendored toml++ (engines/radiance/components/serving/third_party)
+mark.gillard@outlook.com.au
+bjoern@hoehrmann.de

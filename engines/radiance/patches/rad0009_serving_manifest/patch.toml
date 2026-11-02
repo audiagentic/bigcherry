@@ -1,0 +1,11 @@
+schema = 1
+id = "rad0009_serving_manifest"
+order = 9
+state = "untested"
+kind = "enhancement"
+origin = "local"
+backend = "agnostic"
+plan-item = "RSC07"
+plan-ids = ["RSC07"]
+requires = []
+conflicts = []
