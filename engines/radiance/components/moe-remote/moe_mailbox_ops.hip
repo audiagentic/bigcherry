@@ -477,14 +477,15 @@ __global__ void mailbox_add_rows_kernel(
          * kCombineFallback in its first element and is read from the helpers' own planes instead (worker_combine.h). */
         bool any = false;
         for (uint32_t k = 0; k < helpers && k < kMaxHelpers; ++k) any |= from[k] != 0u;
-        if (combined && any) {   /* RAD42: this token's chunk is combined (so every helper's rows of it are written too) */
-            /* Only a chunk's first block polls the host word (over the engine's link, gently); it mirrors it into device
-             * memory, where the chunk's other blocks wait. A chunk's first block has the lowest index of the chunk, so it
-             * is dispatched before any of them. */
+        const CombineChunkWait wait = combine_chunk_wait(combined != 0u, token, any);
+        if (wait != CombineChunkWait::None) {   /* RAD42: this token's chunk is combined (so every helper's rows of it are written too) */
+            /* Only a chunk's first block polls the host word (over the engine's link, gently), whatever its own token's
+             * routing, and mirrors it into device memory, where the chunk's routed blocks wait (combine_chunk_wait). A
+             * chunk's first block has the lowest index of the chunk, so it is dispatched before any of them. */
             const uint32_t c = token / kCombineChunkRows;
             uint32_t* mirror = const_cast<uint32_t*>(published) + kMaxSlots + 1u + c;
             unsigned long long spins = 0;
-            if (token % kCombineChunkRows == 0u) {
+            if (wait == CombineChunkWait::Poll) {
                 while (load_sys_acq(&h->chunks.done[c]) != combined) {
                     if (load_sys_acq(&h->helper_fault)) __builtin_trap();
                     __builtin_amdgcn_s_sleep(8);
