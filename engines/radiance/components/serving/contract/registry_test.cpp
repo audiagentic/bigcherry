@@ -315,6 +315,14 @@ int main() {
     check(r.max_depth == 4, "the fixture's depth: root, spec, calibration array, entry = 4, is " + std::to_string(r.max_depth));
     refused(kBase + "\n[[field]]\npath = \"$defs/group/self\"\nkind = \"ref\"\nref = \"group\"\noptional = true\ndoc = \"x\"\n",
             "reaches itself", "a recursive $ref (amendment 8)");
+    refused(replaced("[[def]]\nname = \"groupPatch\"",
+                     "[[def]]\nname = \"other\"\nkind = \"object\"\ncpp = \"Other\"\ndoc = \"x\"\n\n"
+                     "[[field]]\npath = \"$defs/other/back\"\nkind = \"ref\"\nref = \"group\"\noptional = true\ndoc = \"x\"\n\n"
+                     "[[field]]\npath = \"$defs/group/next\"\nkind = \"ref\"\nref = \"other\"\noptional = true\ndoc = \"x\"\n\n"
+                     "[[def]]\nname = \"groupPatch\""),
+            "reaches itself", "a ref cycle through two defs");
+    refused(kBase + "\n[[field]]\npath = \"$defs/group/patch\"\nkind = \"ref\"\nref = \"groupPatch\"\noptional = true\ndoc = \"x\"\n",
+            "reaches itself", "a def that refers to its own patch");
 
     // the real registry loads and generates
     std::ifstream in(std::string(BC_CONTRACT_SOURCE_DIR) + "/contract/serving-v1.toml", std::ios::binary);

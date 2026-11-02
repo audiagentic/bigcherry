@@ -361,8 +361,10 @@ int main() {
         expect(from_text(deep), C::invalid_format, "nested deeper than", "a million nested arrays, refused at once");
         const std::string inner = std::string(kMaxDepth - 1, '[') + std::string(kMaxDepth - 1, ']');
         check(parse_strict_json("{\"x\":" + inner + "}", "t").ok(), "kMaxDepth levels parse");
-        check(!parse_strict_json("{\"x\":[" + inner + "]}", "t").ok(), "kMaxDepth + 1 levels are refused");
-        check(kMaxDepth >= 9 && kMaxDepth < 20, "kMaxDepth fits the examples (9 deep): " + std::to_string(kMaxDepth));
+        expect(parse_strict_json("{\"x\":[" + inner + "]}", "t"), C::invalid_format, "nested deeper than",
+               "kMaxDepth + 1 levels are refused");
+        check(kMaxDepth == 9, "kMaxDepth is the v1 schema's 9 (the lab example's deepest path is 9): " +
+                                  std::to_string(kMaxDepth));
     }
 
     // ---- re-review of #536: round trips, reused destinations, cheap uniqueness, character counts, inventories ----
