@@ -94,6 +94,8 @@ GPT addendum on the N-helper protocol (req_bigcherry_3bb6b763ab97) FAILED to run
 
 2026-10-27, DeepEP/MORI-EP brief: GPU combine variants to measure against the CPU F16C method (0.31-0.33 ms a large step, +5-8% prefill): F1 GPU reads both mapped helper rows; F2 helper 0 keeps its reduced row in VRAM and adds helper 1's mapped row (avoids round-tripping its own result; most promising); F3 F2 + staged DMA output (see the result-output item). Helper 0 launches only after the existing futex handoff from helper 1: no pending GPU wait. Same FP32 accumulation order and FP16 overflow fallback; KLD gate. CPU stays selectable; auto from measured topology.
 
+STATUS 2026-11-02 ~02:40. Merged since the 2026-11-01 status: W4H2 + 32-row GEMV path (#505, promoted to the helper default with single-variable evidence #509): XTX expert step 470 -> 262 us/layer, decode step -6/-7/-16/-14% at 1/2/4/6 streams, 6-stream engine decode ~282 -> 330-342 tok/s, KLD in band. Host pool 9 GiB + 12 GiB host KV tier (#512): long-running-server prefill +66%. 8 sessions cold on the new defaults: 3,043 tok/s (was 2,481-2,513). Prefill curve on a fresh server is flat ~3.6-4.1k tok/s from 1K to ~150K (peak at one 2,048-token chunk). Decode attention split count does not matter (<1% at 74K-315K). R9700 idle: 15 W board floor, +4 W while the engine holds it (MES 0x81; PWR06). Tail finding: on these defaults the 14 GiB RX 6900 XT tail costs speed (6 short prompts 2.13 s vs 1.32 s without it; 6-stream decode 47.2 vs 44.4 ms) but provides context capacity (KV pool 1.48M vs 0.86M tokens, because without it ~5,900 experts take R9700 VRAM); A/B of 8 sessions, ~200K prefill, and a no-tail layout with the n-gram table on the 6900 XT plus a 20 GiB host pool is running (runs tail-budget2/3). Placement trade-offs like this are what RHP stage 3 must make from calibration.
+
 ## Execution gate review (2026-10-23)
 
 **Split RAD23 into sequential implementation PRs; do not ship a monolithic topology change.** Before editing the ABI, retrieve and reconcile the recorded N-helper design addendum `req_bigcherry_3bb6b763ab97`; this planning note does **not** assert that private review was retrieved here.
@@ -343,7 +345,7 @@ Correctness evidence, and what is not shown:
 
 Next: the KLD gate for the three-helper layout, then the launcher change.
 
-## KLD gate for three helpers, 2026-10-31 (`rad23-kld-h3-10310518`, `rad23-kld-h3emu-10310527`)
+## KLD gate for three helpers, 2026-10-31 (, )
 
 Flash-Next, the existing quality harness (`ab-benchmark`, quality-only, 8,240 positions) against the 2026-10-23 exact reference, a
 control arm of two helpers (`h2`) beside the arm under test; settings as in `kld-h3.json` (`R3_MOE_WORKER_DEVICES="0 1 3"`,
@@ -414,8 +416,7 @@ Measured on the lane build of #472 (all four GPUs through `--layout`), natural t
 
 **Next lever.** An integer path on gfx1030: int8 activations, weights dequantised once to int8, `v_dot4_i32_i8` (22 T MAC/s measured, 5x the tile roof). That is a new expert kernel for libr2, to be confirmed first by a counter profile that shows the dequantisation dominating.
 
-
-## Where the 3,600 tok/s prefill went, and what the third helper does to it, 2026-10-31 (`rad23-shortpp`, `rad23-combine`)
+## Where the 3,600 tok/s prefill went, and what the third helper does to it, 2026-10-31 (, )
 
 The model page's 3,610-3,640 tok/s prefill is the helper-row combine (`R3_MOE_WORKER_COMBINE=1`, RAD18) on two XTX helpers; its control is 3,404. The launcher does not enable the combine, so launcher runs are the control. Natural documentation text through the launcher (one request per row, `ctxsweep.py`, fresh server per column, heat the static profile, tail 4 GiB where present), prefill tok/s:
 
@@ -430,7 +431,7 @@ With two helpers the combine gives +7.6 / +6.3 / +1.5 / -0.5% (the model page's 
 
 Standing consequences: (1) for prefill-heavy serving the launcher should offer the combine (a layout setting, RAD23's selectable `off|cpu|gpu|auto`), and the tail layout is not the one to pair with it; (2) a combine over three helpers (the 6900 XT's rows added into the same plane) is the way to get both, and is bounded by the 6900 XT's rows arriving no later than the XTXs'.
 
-## Why a tail of the "coldest" experts slowed prefill, and what fixes it, 2026-10-31 (`rad23-trace3`, `rad23-trace3live`)
+## Why a tail of the "coldest" experts slowed prefill, and what fixes it, 2026-10-31 (, )
 
 Three helpers (two XTX and the 6900 XT with a 4 GiB tail), `R3_MOE_WORKER_TRACE=1`, one 22K-token documentation prompt and 400 new tokens, 461 to 473 large-lane layer-steps (rows 256 and up), each with all three helpers' stamps. The engine's wait for the third helper includes the first two (the wait kernel reads them in order), so the number that matters is how much longer the 6900 XT's own GPU time (`helper_gpu_us`) is than the slower XTX's.
 
@@ -443,7 +444,7 @@ With the static ranking the 6900 XT's time is flat near 2.1 ms with 0 to 20 rout
 
 So the planner has the right shape and the cap was the missing piece: the placement must be chosen from live heat, and any one layer's load on the 6900 XT should be capped (`Device::layer_cap`, about 110 routes per layer per 2048-token chunk at its measured 2 ms + 0.0135 ms a route), since a few hot layers cost the whole step.
 
-## The prefill "regression" and the decode "regression" of the 1.14.0 bump: neither is one, 2026-10-31 (`rad23-bisect`, `rad23-pwr`, `rad23-accept`, `rad23-oldbuild`)
+## The prefill "regression" and the decode "regression" of the 1.14.0 bump: neither is one, 2026-10-31 (, , , )
 
 **Method.** The model page's own benchmark (`helper-combine-ab.json`, bench set `mtp-dual`, combine off and on, 2 rotated pairs) on a v1.13.0 build from 2026-10-25 and on the current v1.14.0 build, same machine and same layout.
 
@@ -462,7 +463,7 @@ So the planner has the right shape and the cap was the missing piece: the placem
 
 **Where speed does remain to gain:** the combine for three helpers; long-context decode (attention over the KV cache, 127 at 34K to 70 at 663K whatever the placement); the n-gram table in RAM against a disk/6900 XT variant (prefill 3,294 with the 6900 XT holding 29% of the rows, decode 77-84, against 110-140 with the table fully in RAM).
 
-## Where long-context decode goes: the decode attention kernel, 2026-10-31 (`rad23-profops`)
+## Where long-context decode goes: the decode attention kernel, 2026-10-31 ()
 
 `--profile-ops` on the current build (two XTX helpers, fp8 KV, 2048 chunks, n-gram in RAM), one prefill to 36,895 and one to 329,545 tokens, then decode; per-op device event pairs, `q_len=1` rows of `attn_paged_gate_quant` (the 13 full-attention layers; the profile adds synchronisation, so only the per-call times are used):
 
@@ -479,7 +480,7 @@ Not placement, not the 6900 XT, not the host pool. The lever is the split-K deco
 
 **Measured peak (`tools/lab/radiance/gpu-read-bw.hip`, R9700, plain 16-byte read kernel):** 1312 GB/s at 64 MB (cache-resident), 616 GB/s at 300 MB and 639 GB/s at 1.2 GB. One layer's K and V at 330K tokens is 2 heads x 256 x 2 bytes x 330K = about 338 MB, a floor of about 530 us a call against the measured 1165 us: the decode attention runs at about 45% of what the card reads. A real kernel will not reach the floor (dequantisation, the softmax merge, the gate), so the recoverable part is somewhere between nothing and about half of the 15 ms; a kernel microbenchmark at gqa 12, fp8 KV, 330K context with its own achieved GB/s is the next step before any patch. KV bytes set the floor, which is also why bf16 KV roughly doubles the long-context step and K8/V8 is the dtype that holds decode.
 
-## The 6900 XT's fixed floor was the activation read; the sparse copy, and the tail still not paying, 2026-10-31 (`rad23-trace4`, `rad23-trace5`, `rad23-bigtail`, `rad23-kld-sparse-10312237`)
+## The 6900 XT's fixed floor was the activation read; the sparse copy, and the tail still not paying, 2026-10-31 (, , , )
 
 **Cause of the ~2 ms floor.** The large lane copies every row of the chunk's activation (fp8 codes plus scales; hidden 2560, so ~5.5 MB at 2048 rows) from the engine's mapped host memory. The 6900 XT reads host memory at 3.57 GB/s (kernel reading pinned memory, 64 KiB to 17 MiB, `pcie.hip`), so the copy is ~1.5 ms; the replay's kernel trace shows `lane_prepare_activation_v` at 1.54 ms. The helper behind it owns few routes (mean 66 a step with the tail), so almost all of those rows are never read.
 
@@ -508,7 +509,7 @@ Not placement, not the 6900 XT, not the host pool. The lever is the split-K deco
 
 So the cheaper floor makes the 6900 XT cheap at low route counts, but no tail size beats having no tail: neutral at 4 GiB, worse as it grows. What remains is the per-route GEMM cost (0.0135 ms a route, the 110-300 bucket still 4.4 ms against an XTX's ~4.2 ms critical path) and the few steps above 300 routes. The fixed cost is no longer the limit; the grouped GEMM is, as GPT's review also ranked.
 
-## The few-rows kernel on gfx1030: 2x on the 6900 XT's real requests, and the tail now level with no tail, 2026-11-01 (`rad23-ktrace*`, `rad23-cap6900`, `rad23-bigtail3`, `rad23-t8192rerun`)
+## The few-rows kernel on gfx1030: 2x on the 6900 XT's real requests, and the tail now level with no tail, 2026-11-01 (, , , )
 
 **Diagnosis.** rocprofv3 on the 6900 XT helper in a live prefill: `lane_moe_rows` gate/up 1177 us and down 580 us a request, with 272 B a thread of scratch (the 4 x 16 accumulators spilled). Not the cause: the clocks (2655 MHz core, 1000 MHz memory during prefill), the launch of the 512 x 40 grid (38 us measured for an empty one), the grouped-GEMM alternative (slower, 2151 us), the register-decoded W4NL table GPT's review ranked first (no change, 732 against 738 us). A standalone microbenchmark that includes the kernel header (8 active experts, K 2560, N 1280, random codes) reproduces the live time and scales with rows a expert, so the cost was per row: each output re-read the row's activations from LDS, the staging loop issued one global load at a time, and 8 rows a pass forced a second full K traversal for a ninth row.
 
@@ -526,7 +527,7 @@ So the cheaper floor makes the 6900 XT cheap at low route counts, but no tail si
 
 The 4 GiB 8.8K row is the first request on a fresh server (2.7 to 3.4 s; the other arms' first requests are 2.7 s), so not read. One 8 GiB run gave decode 36 tok/s with the 6900 XT at 10 ms a request; the re-run is normal and the cause is not known. The tail is now level with no tail at 8 GiB; it is not yet a gain. What it saves is the engine card's swap traffic, which these context lengths do not need.
 
-## The few-rows kernel kept its accumulators in scratch; fixed, 2026-11-01 (`rad23-nospill`, `rad23-cap14`)
+## The few-rows kernel kept its accumulators in scratch; fixed, 2026-11-01 (, )
 
 rocprofv3 counters on the kernel (microbenchmark, 9 rows, 8 experts): VALU at about 12% of the card's issue rate, waves waiting 83% of their cycles (SQ_WAIT_ANY / SQ_WAVE_CYCLES), 163,840 waves a call of which ~98% belong to empty experts. The resource report showed 208 B a lane of scratch in every variant of the 32 x 4 x 12 kernel: the unrolled row loops exited with `if (r >= nr) break;`, a runtime exit that made the compiler keep the 4 x 12 accumulators in private memory. `continue` keeps them in registers (151 VGPRs, no scratch). With it: activation staging takes 16 codes a thread in one 16-byte load (one scale load each) instead of a byte load and a scale load per code, and the next chunk's weight dwords are loaded before the current chunk is staged (each lane holds one dword an output a chunk). The tile sweep was repeated on the no-spill base: 32 x 4 x 12 stays best; 64-output tiles spill again.
 
@@ -542,6 +543,8 @@ Remaining per large-lane request on the 14 GiB captures: gate/up ~710, down ~777
 
 - chg_20261102_002938_the-faster-packed-f16-4-bit-ex_7680
 - chg_20261101_221642_multi-stream-decode-on-flash-n_4385
+
+- chg_20261102_024204_planning-records-updated-with_6210
 ## Status at the end of 2026-11-01
 
 flashnext-4gpu is the launcher default: the R9700 engine, both XTX heads at 22,528 MiB, the RX 6900 XT as a 14 GiB tail,
@@ -562,3 +565,5 @@ finish last on 62% of prefill layers), XTX 0's priority over other cards' host r
 the R9700's 16-20 W idle (ASPM, root). Stage A of hot placement is in place recommend-only (#489, #500-#502).
 - 2026-11-02T00:29:43.481608+00:00 (updated-by): Updated: section:ledger-events
 - 2026-11-01T22:16:46.525388+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-02T02:40:51.819910+00:00 (updated-by): Updated: section:notes
+- 2026-11-02T02:42:21.800564+00:00 (updated-by): Updated: section:ledger-events
