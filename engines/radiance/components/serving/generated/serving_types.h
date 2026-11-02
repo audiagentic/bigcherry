@@ -21,7 +21,7 @@ inline constexpr int64_t kContractVersion = 1;
 inline constexpr std::string_view kFingerprint = "sha256:9ca159d90125c696ea1afcfc737bab68824e39552a12d2f178947bd20a79b027";
 // sha256 of the schema plus the frozen semantics it does not express (classes, lifecycle, Radiance bindings,
 // reader error codes); README.md.
-inline constexpr std::string_view kSemanticFingerprint = "sha256:dc4763ea0f00df27217a1e4ff2dd86117e38bc0b927063fc1438ec0788fb4f96";
+inline constexpr std::string_view kSemanticFingerprint = "sha256:512591d711d0c2af60dc6f6035f6a5f0f12483c946957a52a94bd3b6e38499eb";
 
 // Calibrated parameters (contract [[calibration_key]]), in wire order.
 enum class CalibrationKey : uint8_t {

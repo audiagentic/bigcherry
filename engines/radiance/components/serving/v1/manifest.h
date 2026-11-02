@@ -14,6 +14,8 @@
 #include <string>
 #include <string_view>
 
+#include <nlohmann/json.hpp>
+
 namespace bc::serving::v1 {
 
 Result<Manifest> read_manifest(std::string_view bytes, const std::string& source);
@@ -45,6 +47,17 @@ struct HelperView {
 };
 /* BC_CFG_UNRESOLVED_REFERENCE when no helper has `role`. */
 Result<HelperView> helper_view(const Manifest& m, std::string_view role);
+
+/* spec §7 and §11 amendment 6: the document-identity leaves exempt from a provenance record of their own (the root ""
+ * record covers them), by name. */
+inline constexpr std::array<std::string_view, 7> kIdentityExempt = {
+    "/apiVersion", "/kind", "/metadata/instance_id", "/metadata/contract_version", "/metadata/producer/name",
+    "/metadata/producer/build_sha256", "/metadata/content_digest"};
+
+/* Identity-envelope coverage (amendment 6): every leaf of the document's /apiVersion, /kind and /metadata that is not
+ * exempt has a provenance record at the leaf or at a proper ancestor other than "". Fails closed: a /metadata leaf a
+ * future version adds needs a record. Run by read_manifest on the raw document. */
+Status check_identity_coverage(const nlohmann::json& doc);
 
 /* spec §4: the owner-map digest segment of helper i. */
 std::string owner_segment(size_t helper, const std::vector<std::array<int64_t, 2>>& experts);

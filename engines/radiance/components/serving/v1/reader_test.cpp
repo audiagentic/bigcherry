@@ -211,6 +211,24 @@ int main() {
         check(!r && r.error().code == C::invalid_format && r.error().line == 2u, "malformed JSON reports its line");
     }
 
+    // ---- spec §11 amendment 6: identity leaves need no record of their own, any other /metadata leaf does ----
+    {
+        Json j = prod;
+        for (const char* p : {"/apiVersion", "/kind", "/metadata", "/metadata/producer", "/metadata/instance_id",
+                              "/metadata/producer/build_sha256"})
+            j["provenance"].erase(p);
+        check(prod["provenance"].contains("") && !check_identity_coverage(j),
+              "exempt identity paths pass with only the root record");
+        check(from(rehashed(j)).ok(), "the manifest with no identity records loads");
+        Json k = j;
+        k["metadata"]["build_host"] = "x";   // a /metadata leaf that is not exempt (a future field; v1 would refuse it)
+        Status s = check_identity_coverage(k);
+        check(s && s->code == C::provenance_invalid && s->message.find("/metadata/build_host") != std::string::npos,
+              "a non-exempt /metadata leaf without a record is refused: " + (s ? s->message : std::string("passed")));
+        k["provenance"]["/metadata/build_host"] = prod["provenance"][""];
+        check(!check_identity_coverage(k), "the same leaf with its own record passes");
+    }
+
     // ---- renderers (errors.md §3, §4) ----
     {
         ConfigError e = make_error(C::experiment_forbidden, "spec.experiment",

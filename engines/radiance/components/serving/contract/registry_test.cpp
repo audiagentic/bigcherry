@@ -66,11 +66,48 @@ of = "group"
 cpp = "GroupPatch"
 doc = "A partial group."
 
+[[class_default]]
+path = "/apiVersion"
+class = "envelope"
+
+[[class_default]]
+path = "/kind"
+class = "envelope"
+
+[[class_default]]
+path = "/metadata"
+class = "envelope"
+
 [[field]]
 path = ""
 kind = "object"
 cpp = "Doc"
 doc = "The document."
+
+[[field]]
+path = "/apiVersion"
+kind = "string"
+const = "bigcherry/v1"
+cpp_member = "api_version"
+doc = "Identity."
+
+[[field]]
+path = "/kind"
+kind = "string"
+const = "ServingManifest"
+doc = "Kind."
+
+[[field]]
+path = "/metadata"
+kind = "object"
+cpp = "Meta"
+doc = "Metadata."
+
+[[field]]
+path = "/metadata/contract_version"
+kind = "integer"
+const = 1
+doc = "Version."
 
 [[field]]
 path = "/spec"
@@ -214,6 +251,43 @@ int main() {
                   bc::contract::semantic_fingerprint(classed) != bc::contract::semantic_fingerprint(r),
               "a class change keeps the schema fingerprint and changes the semantic one");
     }
+    refused(replaced("kind = \"ServingManifest\"\ncontract_version", "kind = \"ChangedManifest\"\ncontract_version"),
+            "[contract] identity", "a [contract] kind that is not the document's /kind");
+    {
+        bc::contract::Registry ca, cb;
+        check(bc::contract::load_registry(replaced("cpp = \"Spec\"\ndoc = \"Spec.\"",
+                                                   "cpp = \"Spec\"\nconstraints = '[{\"contentSchema\": {\"description\": \"A\"}}]'\ndoc = \"Spec.\""),
+                                          "t", &ca, &why) &&
+                  bc::contract::load_registry(replaced("cpp = \"Spec\"\ndoc = \"Spec.\"",
+                                                       "cpp = \"Spec\"\nconstraints = '[{\"contentSchema\": {\"description\": \"B\"}}]'\ndoc = \"Spec.\""),
+                                              "t", &cb, &why),
+              "contentSchema fixtures load: " + why);
+        check(bc::contract::fingerprint(ca) == bc::contract::fingerprint(cb), "an annotation inside contentSchema is stripped");
+    }
+    refused(replaced("value_ref = \"uint\"", "value_ref = \"group\""), "integer or string def",
+            "a calibration value referring to an object def");
+    refused(kBase + "\n[[field]]\npath = \"/spec/t\"\nkind = \"array\"\nitem_kind = \"tuple\"\ntuple = [\"group\", \"uint\"]\n"
+                    "doc = \"x\"\n",
+            "tuple elements must be integer defs", "a tuple element that is not an integer def");
+    refused(kBase + "\n[[field]]\npath = \"/spec/s\"\nkind = \"string\"\nmin_length = -1\ndoc = \"x\"\n",
+            "min_length is not negative", "a negative string length");
+    refused(kBase + "\n[[field]]\npath = \"/spec/e\"\nkind = \"enum\"\nvalues = [\"a.b\", \"a_b\"]\ncpp_type = \"E\"\ndoc = \"x\"\n",
+            "same C++ enumerator", "two enum values with one C++ enumerator");
+    {
+        std::string many = "[";
+        for (int i = 0; i < 257; ++i) many += (i ? ", \"v" : "\"v") + std::to_string(i) + "\"";
+        many += "]";
+        refused(kBase + "\n[[field]]\npath = \"/spec/e\"\nkind = \"enum\"\nvalues = " + many + "\ncpp_type = \"E\"\ndoc = \"x\"\n",
+                "at most 256 values", "an enum past 256 values");
+        std::string keys;
+        for (int i = 0; i < 257; ++i)
+            keys += "\n[[calibration_key]]\nkey = \"k" + std::to_string(i) + "\"\nvalue_kind = \"ref\"\nvalue_ref = \"uint\"\ndoc = \"x\"\n";
+        refused(replaced("[[def]]\nname = \"uint\"", keys + "\n[[def]]\nname = \"uint\""), "at most 256 calibration keys",
+                "calibration keys past 256");
+    }
+    refused(kBase + "\n[[field]]\npath = \"/spec/a\"\nkind = \"array\"\nitem_kind = \"boolean\"\nmin_items = 3\nmax_items = 2\n"
+                    "doc = \"x\"\n",
+            "min_items exceeds max_items", "min_items above max_items");
     refused(kBase + "\n[[field]]\npath = \"/spec/t\"\nkind = \"array\"\nitem_kind = \"tuple\"\ntuple = [\"uint\", \"uint\"]\n"
                     "item_minimum = 1\ndoc = \"x\"\n",
             "takes only 'tuple'", "a scalar attribute on a tuple item");

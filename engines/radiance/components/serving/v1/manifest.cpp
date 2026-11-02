@@ -100,6 +100,18 @@ Status provenance(const Json& doc) {
     return std::nullopt;
 }
 
+void identity_leaves(const Json& v, const std::string& pointer, std::vector<std::string>* out) {
+    if (v.is_object() && !v.empty()) {
+        for (const auto& [k, sub] : v.items()) {
+            std::string token;
+            for (char ch : k) token += ch == '~' ? std::string("~0") : ch == '/' ? std::string("~1") : std::string(1, ch);
+            identity_leaves(sub, pointer + "/" + token, out);
+        }
+    } else {
+        out->push_back(pointer);
+    }
+}
+
 Status sorted_lanes(const std::vector<int64_t>& lanes, const std::string& at) {
     for (size_t i = 1; i < lanes.size(); ++i)
         if (lanes[i] <= lanes[i - 1])
@@ -122,6 +134,23 @@ HelperCommon effective(const Manifest& m, size_t i) {
 }
 
 }  // namespace
+
+Status check_identity_coverage(const nlohmann::json& doc) {
+    std::vector<std::string> leaves;
+    for (const char* top : {"apiVersion", "kind", "metadata"})
+        if (doc.contains(top)) identity_leaves(doc.at(top), std::string("/") + top, &leaves);
+    const Json empty = Json::object();
+    const Json& prov = doc.contains("provenance") && doc.at("provenance").is_object() ? doc.at("provenance") : empty;
+    for (const std::string& leaf : leaves) {
+        if (std::find(kIdentityExempt.begin(), kIdentityExempt.end(), leaf) != kIdentityExempt.end()) continue;
+        bool covered = false;
+        for (std::string p = leaf; !p.empty() && !covered; p = p.substr(0, p.rfind('/'))) covered = prov.contains(p);
+        if (!covered)
+            return err(C::provenance_invalid, "provenance",
+                       "identity field " + leaf + " is not exempt (spec §11 amendment 6) and has no provenance record");
+    }
+    return std::nullopt;
+}
 
 std::string owner_segment(size_t helper, const std::vector<std::array<int64_t, 2>>& experts) {
     std::string s = "h" + std::to_string(helper) + "\n";
@@ -263,6 +292,7 @@ Result<Manifest> read_manifest(std::string_view bytes, const std::string& source
     Manifest m;
     if (auto e = decode(doc, "", &m)) return sourced(*e);
     if (auto e = provenance(doc)) return sourced(*e);
+    if (auto e = check_identity_coverage(doc)) return sourced(*e);
     if (auto e = validate_semantics(m)) return sourced(*e);
     return m;
 }

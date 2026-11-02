@@ -18,13 +18,17 @@ Two fingerprints, both pinned in `serving_types.h` (`kFingerprint`, `kSemanticFi
   `$comment`, `examples`, `default`, `deprecated`, `readOnly`, `writeOnly`) removed from *schema positions only*: the
   walk enters subschemas (`properties`, `items`, `allOf`, `if`, ...) and never literal instance data, so a change to an
   object-valued `const` or `enum` changes it. It identifies what validates.
-- **semantics**: the same schema plus what the contract freezes that the schema does not express: every field's
-  provenance class, the lifecycle, the Radiance bindings (`radiance_option`, `radiance_config`), the reader's error
-  codes (`error_class`, `mismatch`) and the calibration key order. It identifies the closed v1 contract. C++ names and docs are excluded (renaming generated code is not a wire
+- **semantics**: the same schema plus the declared contract data the schema does not express: the contract identity
+  (`api_version`, `kind`, `contract_version`, which the loader also requires to equal the `/apiVersion`, `/kind` and
+  `/metadata/contract_version` consts), every field's provenance class, the lifecycle, the Radiance bindings
+  (`radiance_option`, `radiance_config`), the reader's error codes (`error_class`, `mismatch`) and the calibration key
+  order. It identifies the declared v1 contract. C++ names and docs are excluded (renaming generated code is not a wire
   change, and a consumer would not compile).
 
 v1 is closed (spec §8): a change to either fingerprint is a `bigcherry/v2` change. Correcting documentation changes
-neither and is allowed.
+neither and is allowed. The fingerprints identify declared contract data, not behaviour: the frozen procedures (JCS
+digest, provenance coverage and inheritance, semantic checks, native binding behaviour; spec §3, §7, §8) are held by
+the reader's conformance tests and reviewed implementation, not by these hashes.
 
 ## Regenerate
 
@@ -51,9 +55,11 @@ refused. Every table's keys are closed: an unknown key is refused, naming it.
   `schema_id`, `title`, `namespace` (of the typed model), `lifecycle` (every value's provenance lifecycle).
 - `[[class_default]]`: `path`, `class` (`envelope`, `policy`, `fact`, `derived`, `tuned`, `diagnostic`). The longest
   matching path prefix gives a field its provenance class; a path has one rule. Every value in the document must be
-  covered. `envelope` is not a provenance class: it marks the integrity fields (`apiVersion`, `kind`, `metadata`,
-  `provenance`), which identify the document rather than configure it, carry no provenance record of their own and are
-  covered only by the root `""` record (spec §7). The other classes are exactly the provenance record's `class` values.
+  covered. `envelope` is a registry classification, not a provenance record class: it marks the integrity fields
+  (`apiVersion`, `kind`, `metadata`, `provenance`), which identify the document rather than configure it. It decides
+  nothing about provenance coverage, which follows spec §7 (only `metadata.content_digest` and the provenance records
+  themselves are exempt); how a record for an identity field such as `metadata.producer.build_sha256` is classed is
+  settled with the coverage check (RSC08 slice 2 follow-up). The other classes are exactly the record's `class` values.
 - `[[calibration_key]]`: `key`, `doc`, and the value's type as `value_kind` (`ref`, `integer`, `string`, `enum`,
   `boolean`) with `value_ref`, `value_minimum`, `value_maximum`, `value_exclusive_maximum`, `value_min_length`,
   `value_pattern`, `value_values`. The schema's calibration `key` enum and its per-key value rules come from this table.
