@@ -57,13 +57,13 @@ v23 is the only protocol; every transition passes the card-free suite; with RHP0
 
 Plan source: GPT staged plan 2026-11-01 (gateway session ses_335f497feb31449a, request req_main_8f893e8abe79), reviewed against the code. Delivered together with RHP06 as one stage 1 milestone; neither is complete alone. Deterministic mode (--deterministic) keeps placement fixed.
 
+PROGRESS 2026-11-02: spec merged (#508, docs/design/moe-remote-placement-epochs-v23.md, offsets compile-checked). Slice A merged (#513): v23 layout - canonical owner generations, PlacementControl, journal, ACKs, per-request epoch/slot, consumed stamps; old ownership-bitmap API removed; hardware identity vs main passed (24,571 owned experts, byte-identical single-stream text, step time within noise). Slice B (#515): CPU epoch controller (worker_epoch.h), helper slot ledger (worker_residency.h), peak-load heat policy with bounded swaps (worker_heat.h), card-free tests incl. exhaustive policy oracle. Next: slice C (engine step admission in the managed rad0002 patch) - research on step boundaries, MTP lifetime, graph replay and the last consumer of the result plane in progress (gateway request req_main_e70e447f5747).
+
 ## Change Log
 
 - 2026-11-01T22:51:14.829553+00:00 (updated-by): Updated: section:title, order=10, work='L', priority='P0', section:description, section:steps, section:detailed_solution, section:validation, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
-
 
 
 - chg_20261101_225732_planning-a-staged-roadmap-for_4092
@@ -74,3 +74,6 @@ Plan source: GPT staged plan 2026-11-01 (gateway session ses_335f497feb31449a, r
 - 2026-11-02T00:29:56.603122+00:00 (updated-by): Updated: section:ledger-events
 - chg_20261102_022722_groundwork-for-live-expert-pla_5619
 - 2026-11-02T02:27:26.869346+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-02T02:40:47.403962+00:00 (updated-by): Updated: section:notes
+- chg_20261102_024204_planning-records-updated-with_6210
+- 2026-11-02T02:42:16.533832+00:00 (updated-by): Updated: section:ledger-events

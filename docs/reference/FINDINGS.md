@@ -53,6 +53,30 @@ Update **Status** in place as it moves — don't duplicate the entry.
 
 ## Kernel / upstream bugs
 
+### Radeon AI PRO R9700 (gfx1201) draws +4 W with 3% phantom GPU activity for as long as any HIP process holds it (MES 0x81) — 2026-11-02
+
+**Status:** internal-only (known upstream: ROCm issues #5706 / #6298, reported fixed in MES firmware 0x8b)
+
+**Summary:** With no GPU process the R9700 idles at 15.0 W (graphics rail power-gated, VDDGFX ~29 mV, memory clock at its
+96 MHz floor); as soon as a HIP inference engine has the card open it settles at 19.0 W with a constant 3%
+`gpu_busy_percent`, whether serving or idle, and returns to 15.0 W the moment the process exits. The idle power of
+the other AMD cards in the same host is unaffected by their own long-lived HIP processes (4-7 W). Forcing the lowest
+fabric clock (313 MHz) saves only ~1 W; PCIe L1.1/L1.2 are already enabled on the card's upstream link, so the 15 W
+unloaded floor is the board itself (an independent review measured 15.7 W idle for this card).
+
+**Environment:** Radeon AI PRO R9700 (Navi 48, gfx1201, 32 GB) in a CPU x4 slot behind its on-board PCIe switch;
+Linux 7.0.13 (in-tree amdgpu); ROCm 7.2.4 userspace; Ubuntu linux-firmware 20240318 ubuntu2.27 (gc_12_0_1 files
+dated 2026-04-16): MES 0x81, SMC 00.104.74.00.
+
+**Evidence:** hwmon `power1_average` and `gpu_busy_percent` sampled 1 Hz: no process 15.0 W / 0%; engine loaded idle
+19.0 W / 3%; 5 s and 65 s after a request 19.0 W / 3%; engine stopped 15.0 W / 0%. `amdgpu_pm_info` at idle: SCLK
+0 MHz, MCLK 96 MHz, VDDGFX 29 mV, 15.00 W average SoC. `power_dpm_force_performance_level=low`: FCLK 582 -> 313 MHz,
+15.0 -> 14.0 W. `pp_power_profile_mode` POWER_SAVING: no change.
+
+**Internal context:** run /work/bigcherry/runs/r9700-idle (result.txt); plan item PWR06 (firmware trial); GPT R9700
+idle-power deep dive 2026-11-02. Distinct from the gfx1100 wait-packet poll below (RAD20), whose MES 0x88 trial did not
+help.
+
 ### A pending AQL barrier keeps gfx1100 at ~95 W / 100% GFX: the MEC busy-polls the dependency signal — 2026-10-26
 
 **Status:** reported-upstream (https://github.com/ROCm/TheRock/issues/9484)
