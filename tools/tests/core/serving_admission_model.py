@@ -238,6 +238,38 @@ def resolver_vectors() -> list[dict]:
     # No lender: experts first, the cache keeps the rest.
     nolend = {**LAB, "lends": False}
     add("lab-no-lender-minus-8k", "no lender, 8 KiB less claimable: admitted", nolend, LAB_CARD, base, base - STEP, 600000)
+
+    # No lender with experts paying the staging region: the cache keeps exactly one session (elastic - ceiling is below
+    # kv_one). Where the weights land on a whole MiB the cache keeps it; one 4 KiB step away the weights' MiB round-up
+    # takes up to a MiB back from the cache and leaves it short of one session.
+    small = LAB["statics"] + LAB["kv_one"] + 3000 * MIB
+    def nolend_split(c):
+        v = resolve(claimable=c, **nolend)
+        return v["stage"] > 0 and v["experts"] < LAB["expert_ceiling"] and v["kv"] == LAB["kv_one"]
+    aligned = next(c for c in range(small, small + 64 * MIB, ALIGN)
+                   if nolend_split(c) and resolve(claimable=c, **nolend)["kv_resolved"] == LAB["kv_one"])
+    unaligned = next(c for c in range(aligned + ALIGN, aligned + 64 * MIB, ALIGN)
+                     if nolend_split(c) and resolve(claimable=c, **nolend)["kv_resolved"] < LAB["kv_one"])
+    add("lab-no-lender-stage-from-experts", "no lender, the experts pay the staging region and the cache keeps one "
+        "session on whole MiB: admitted", nolend, LAB_CARD, aligned, aligned, 0)
+    add("lab-no-lender-stage-weights-roundup", "the same 4 KiB steps later: the weights' MiB round-up leaves the cache "
+        "short of one session: refused on the resolved KV", nolend, LAB_CARD, aligned, unaligned, 0)
+
+    # The ceiling round-up: a cache given its whole ceiling is rounded up to cover it, so a floor just under the
+    # ceiling is met only because of it (truncated, the pool would be a MiB short).
+    full = resolve(claimable=base, **LAB)
+    assert full["kv"] == LAB["kv_ceiling"] and full["kv_resolved"] == LAB["kv_ceiling"]
+    add("lab-kv-ceiling-roundup", "the cache at its full ceiling is rounded up to cover it: a 999999 ppm floor admitted",
+        LAB, LAB_CARD, base, base - STEP, 999999)
+
+    # The staging payer switch and the MiB rounding together: a floor between the switched KV share and the pool the
+    # engine rounds it to passes the capacity sum and is refused only by the resolved-KV check.
+    live = resolve(claimable=switch - STEP, **LAB)
+    ppm = next(q for q in range(900000, 1000000)
+               if kv_required(LAB["kv_ceiling"], LAB["kv_one"], q) > live["kv_resolved"])
+    assert kv_required(LAB["kv_ceiling"], LAB["kv_one"], ppm) <= live["kv"]
+    add(f"lab-stage-payer-switch-rounding-{ppm}", "the payer switch with a floor between the KV share and its "
+        "MiB-rounded pool: capacity holds, refused on the resolved KV", LAB, LAB_CARD, switch, switch - STEP, ppm)
     return out
 
 

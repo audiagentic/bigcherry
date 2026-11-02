@@ -79,6 +79,14 @@ Admission wiring (slice 5 / RSC03 A2; deferred from the #534 review, S3):
 - A production caller runs it at engine start-up, before weights: it takes the expected plan from the validated manifest's spec.plan.engine_memory.expected, and kv_backing_floor_ppm only from the selected spec.calibration entry kv_backing_floor.fraction_ppm (0 when none is selected). The live plan comes from the same plan() call that sizes the engine.
 - The engine's check and the contract agree on docs/design/serving-manifest-v1/admission-vectors.json: every vector gives the same verdict and code class through the production entry point, not only through the card-free check test.
 
+
+
+Admission, from the #534 re-review (GPT, 2026-11-02; lead decisions):
+- Multi-rank (S1, hard criterion): kv_resolved is the common KV budget the admission checks guarantee. After vram_budget_rank_split, every rank's split KV must cover the same paged-token capacity, and the check refuses, naming the rank, when any rank's split falls short of kv_required's token count.
+- Placement and boundary (S4): the check runs after the final live budget is resolved and before Pools::configure() (Engine::plan() already configures the pools, so "after plan()" is too late). All input validation (ppm, byte-count ranges, calibration selection) precedes the stable-plan and admission comparisons.
+- Stable facts (S3): the host and checkpoint comparisons become the exact equalities §5.2 specifies, each with a negative test: a live host consumer with fewer bytes, a missing expected consumer, a changed residence, a changed checkpoints.want_slots and a changed host_pool_mib are each PLAN_MISMATCH. An automatic placement (ngram_placement = auto, embedding fallback) that resolves differently from the measured plan is PLAN_MISMATCH (S2).
+- Vectors still to add to docs/design/serving-manifest-v1/admission-vectors.json once the model covers them (S5): a multi-rank uneven split, the kv_streams round-up of kv_one, and all_vram / layer_offload placement (no staging region).
+
 ## Notes
 
 Feeds: RSC01, RSC02, RSC03, RSC06, RSC07.
@@ -94,7 +102,6 @@ Slice 2 (shared strict reader) requirement, from the lead's #530 review (2026-11
 
 ## Ledger-events
 
-
 - chg_20261102_121239_the-serving-manifest-v1-format_6543
 - chg_20261102_121824_the-serving-component-can-prod_8129
 - 2026-11-02T12:18:29.161474+00:00 (updated-by): Updated: section:ledger-events
@@ -104,3 +111,4 @@ Slice 2 (shared strict reader) requirement, from the lead's #530 review (2026-11
 - 2026-11-02T16:24:11.913385+00:00 (updated-by): Updated: section:acceptance_criteria
 - chg_20261102_162418_engine-start-up-admission-no-l_6822
 - 2026-11-02T16:24:22.385758+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-02T16:40:58.669519+00:00 (updated-by): Updated: section:acceptance_criteria

@@ -106,6 +106,9 @@ class ServingManifestV1ContractTests(unittest.TestCase):
                      "kv_required`",
                      "`live.vram.kv_resolved >= kv_required`",
                      "a fraction of the **total** `kv_ceiling`",
+                     "the **common KV budget**",
+                     "The expected plan freezes the **resolved** placement",
+                     "Each card's physical capacity is the one minimum-bound exception",
                      "5. **Admission uses what the plan requires, read from the live split**"):
             self.assertIn(text, spec)
         self.assertNotIn("stage bytes, expert footprint", spec, "stage and residency are live terms (amendment 5)")
@@ -144,7 +147,8 @@ class ServingManifestV1ContractTests(unittest.TestCase):
         for name in ("prod-a3-reading-1", "prod-a3-reading-3", "prod-minus-24k", "prod-kv-truncation-edge",
                      "lab-stage-payer-switch-600000", "lab-experts-minus-32k", "lab-no-lender-minus-8k",
                      "capacity-equal", "below-old-measured-split", "kv-resolved-equal", "ceiling-at-schema-max",
-                     "live-stage-grew", "experts-at-floor", "ppm-max"):
+                     "live-stage-grew", "experts-at-floor", "ppm-max", "lab-no-lender-stage-from-experts",
+                     "lab-kv-ceiling-roundup"):
             self.assertTrue(by[name]["admit"], name)
         refused = {"prod-kv-truncation-below": "admission: resolved KV: live 18906873856 bytes fall short of the "
                                                "required 18907078656 bytes",
@@ -160,7 +164,11 @@ class ServingManifestV1ContractTests(unittest.TestCase):
                    "kv-resolved-missing": "byte counts in [0, 2^53 - 1]",
                    "statics-differ": "VRAM statics: live 3001 bytes differ from the planned 3000 bytes",
                    "experts-below-floor": "admission: expert residency: live 99 bytes fall short of the required 100",
-                   "card-plane-differs": "card 0 engine_expert_plane"}
+                   "card-plane-differs": "card 0 engine_expert_plane",
+                   "lab-no-lender-stage-weights-roundup": "admission: resolved KV: live 535822336 bytes fall short of "
+                                                          "the required 536870912 bytes",
+                   "lab-stage-payer-switch-rounding-924805": "admission: resolved KV: live 7944011776 bytes fall short "
+                                                             "of the required 7944014461 bytes"}
         for name, needle in refused.items():
             self.assertFalse(by[name]["admit"], name)
             self.assertIn(needle, by[name]["needle"], name)

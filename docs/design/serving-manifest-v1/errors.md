@@ -110,7 +110,7 @@ For a memory admission failure:
 ```text
 radiance: config: BC_CFG_ADMISSION_REFUSED (RAD_E_NOMEM, -6)
   spec.plan.engine_memory.expected.vram:
-  live resolved KV 18,906,873,856 bytes is less than kv_required
+  live resolved KV budget 18,906,873,856 bytes is less than kv_required
   18,907,078,656 bytes (the larger of one full-length session's KV and
   the calibrated backing floor, 60% of the total KV ceiling)
   hint: free the selected engine GPU, or choose a smaller service intent, and resolve a new manifest
@@ -140,7 +140,7 @@ Exit 4 is used for a real resource-admission refusal even if the operator could 
 - `profile=production` plus any `experiment` key, even `{ }` or all defaults ⇒ `BC_CFG_EXPERIMENT_FORBIDDEN` / -9 / exit 2.
 - Bad hash ⇒ `BC_CFG_DIGEST_MISMATCH` / -14 / exit 2.
 - Correctly rehashed invalid owner map ⇒ `BC_CFG_OWNERSHIP_MISMATCH` / -9 / exit 2.
-- Correctly rehashed stable memory-plan drift (statics, expert floor or ceiling, KV ceiling, card capacity or expert-plane geometry) ⇒ `BC_CFG_PLAN_MISMATCH` / -9 / exit 2. A live staging region or expert residency that differs from the measured one is not drift.
+- Correctly rehashed stable memory-plan drift (statics, expert floor or ceiling, KV ceiling or expert-plane geometry; a card capacity below the measured one; an automatic placement that resolves differently from the measured plan) ⇒ `BC_CFG_PLAN_MISMATCH` / -9 / exit 2. A live staging region or expert residency that differs from the measured one is not drift, and neither is a card capacity above the measured one.
 - Each admission check 1 byte short (expert residency below its floor; claimable below statics + live experts + live stage + kv_required; resolved KV below kv_required) ⇒ `BC_CFG_ADMISSION_REFUSED` / -6 / exit 4; equality passes; a reading below the old measured split but at or above the required split passes. The shared vectors in `admission-vectors.json` are the cases every implementation must reproduce.
 - Missing `helper2` or a nonexistent GPU BDF ⇒ `BC_CFG_UNRESOLVED_REFERENCE` / -17 / exit 2.
 - Invalid `bc_r4d_configure_helper` struct version ⇒ `BC_CFG_ABI_MISMATCH` / -10 / exit 2.

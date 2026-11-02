@@ -1726,6 +1726,410 @@
     ],
     "host_pool_mib": 9216,
     "kv_one_session": {
+     "bytes": 536870912,
+     "from": "engine plan (vectors)"
+    },
+    "plan_version": 1,
+    "producer": "radiance --plan-memory (rad0011)",
+    "vram": {
+     "cards": [
+      {
+       "capacity": 17179869184,
+       "engine_expert_plane": 4294967296,
+       "expert_unit_max": 4194304,
+       "free": 17112760320
+      }
+     ],
+     "claimable": 5830082560,
+     "elastic": 3682598912,
+     "expert_ceiling": 4294967296,
+     "expert_floor": 1073741824,
+     "experts": 2858418176,
+     "from": "engine plan (vectors)",
+     "kv": 536870912,
+     "kv_ceiling": 8589934592,
+     "kv_resolved": 536870912,
+     "stage": 287309824,
+     "statics": 2147483648
+    }
+   },
+   "kind": "resolver",
+   "live": {
+    "checkpoints": {
+     "floor_slots": 8,
+     "from": "engine plan (vectors)",
+     "slot_bytes": 117938964,
+     "want_slots": 72
+    },
+    "host": [
+     {
+      "bytes": 11665408,
+      "from": "engine plan (rad0011: arena_host_bytes)",
+      "name": "host_arenas",
+      "remedy": "",
+      "residence": "pinned"
+     }
+    ],
+    "host_pool_mib": 9216,
+    "kv_one_session": {
+     "bytes": 536870912,
+     "from": "engine plan (vectors)"
+    },
+    "plan_version": 1,
+    "producer": "radiance --plan-memory (rad0011)",
+    "vram": {
+     "cards": [
+      {
+       "capacity": 17179869184,
+       "engine_expert_plane": 4294967296,
+       "expert_unit_max": 4194304,
+       "free": 17112760320
+      }
+     ],
+     "claimable": 5830082560,
+     "elastic": 3682598912,
+     "expert_ceiling": 4294967296,
+     "expert_floor": 1073741824,
+     "experts": 2858418176,
+     "from": "engine plan (vectors)",
+     "kv": 536870912,
+     "kv_ceiling": 8589934592,
+     "kv_resolved": 536870912,
+     "stage": 287309824,
+     "statics": 2147483648
+    }
+   },
+   "name": "lab-no-lender-stage-from-experts",
+   "ppm": 0,
+   "verdict": {
+    "admit": true,
+    "kv_required": 536870912
+   },
+   "why": "no lender, the experts pay the staging region and the cache keeps one session on whole MiB: admitted"
+  },
+  {
+   "expected": {
+    "checkpoints": {
+     "floor_slots": 8,
+     "from": "engine plan (vectors)",
+     "slot_bytes": 117938964,
+     "want_slots": 72
+    },
+    "host": [
+     {
+      "bytes": 11665408,
+      "from": "engine plan (rad0011: arena_host_bytes)",
+      "name": "host_arenas",
+      "remedy": "",
+      "residence": "pinned"
+     }
+    ],
+    "host_pool_mib": 9216,
+    "kv_one_session": {
+     "bytes": 536870912,
+     "from": "engine plan (vectors)"
+    },
+    "plan_version": 1,
+    "producer": "radiance --plan-memory (rad0011)",
+    "vram": {
+     "cards": [
+      {
+       "capacity": 17179869184,
+       "engine_expert_plane": 4294967296,
+       "expert_unit_max": 4194304,
+       "free": 17112760320
+      }
+     ],
+     "claimable": 5830082560,
+     "elastic": 3682598912,
+     "expert_ceiling": 4294967296,
+     "expert_floor": 1073741824,
+     "experts": 2858418176,
+     "from": "engine plan (vectors)",
+     "kv": 536870912,
+     "kv_ceiling": 8589934592,
+     "kv_resolved": 536870912,
+     "stage": 287309824,
+     "statics": 2147483648
+    }
+   },
+   "kind": "resolver",
+   "live": {
+    "checkpoints": {
+     "floor_slots": 8,
+     "from": "engine plan (vectors)",
+     "slot_bytes": 117938964,
+     "want_slots": 72
+    },
+    "host": [
+     {
+      "bytes": 11665408,
+      "from": "engine plan (rad0011: arena_host_bytes)",
+      "name": "host_arenas",
+      "remedy": "",
+      "residence": "pinned"
+     }
+    ],
+    "host_pool_mib": 9216,
+    "kv_one_session": {
+     "bytes": 536870912,
+     "from": "engine plan (vectors)"
+    },
+    "plan_version": 1,
+    "producer": "radiance --plan-memory (rad0011)",
+    "vram": {
+     "cards": [
+      {
+       "capacity": 17179869184,
+       "engine_expert_plane": 4294967296,
+       "expert_unit_max": 4194304,
+       "free": 17112760320
+      }
+     ],
+     "claimable": 5830086656,
+     "elastic": 3682603008,
+     "expert_ceiling": 4294967296,
+     "expert_floor": 1073741824,
+     "experts": 2858422272,
+     "from": "engine plan (vectors)",
+     "kv": 536870912,
+     "kv_ceiling": 8589934592,
+     "kv_resolved": 535822336,
+     "stage": 287309824,
+     "statics": 2147483648
+    }
+   },
+   "name": "lab-no-lender-stage-weights-roundup",
+   "ppm": 0,
+   "verdict": {
+    "admit": false,
+    "class": "admission",
+    "kv_required": 536870912,
+    "needle": "admission: resolved KV: live 535822336 bytes fall short of the required 536870912 bytes"
+   },
+   "why": "the same 4 KiB steps later: the weights' MiB round-up leaves the cache short of one session: refused on the resolved KV"
+  },
+  {
+   "expected": {
+    "checkpoints": {
+     "floor_slots": 8,
+     "from": "engine plan (vectors)",
+     "slot_bytes": 117938964,
+     "want_slots": 72
+    },
+    "host": [
+     {
+      "bytes": 11665408,
+      "from": "engine plan (rad0011: arena_host_bytes)",
+      "name": "host_arenas",
+      "remedy": "",
+      "residence": "pinned"
+     }
+    ],
+    "host_pool_mib": 9216,
+    "kv_one_session": {
+     "bytes": 536870912,
+     "from": "engine plan (vectors)"
+    },
+    "plan_version": 1,
+    "producer": "radiance --plan-memory (rad0011)",
+    "vram": {
+     "cards": [
+      {
+       "capacity": 17179869184,
+       "engine_expert_plane": 4294967296,
+       "expert_unit_max": 4194304,
+       "free": 17112760320
+      }
+     ],
+     "claimable": 12522520576,
+     "elastic": 10375036928,
+     "expert_ceiling": 4294967296,
+     "expert_floor": 1073741824,
+     "experts": 1157636096,
+     "from": "engine plan (vectors)",
+     "kv": 8589934592,
+     "kv_ceiling": 8589934592,
+     "kv_resolved": 8589934592,
+     "stage": 627466240,
+     "statics": 2147483648
+    }
+   },
+   "kind": "resolver",
+   "live": {
+    "checkpoints": {
+     "floor_slots": 8,
+     "from": "engine plan (vectors)",
+     "slot_bytes": 117938964,
+     "want_slots": 72
+    },
+    "host": [
+     {
+      "bytes": 11665408,
+      "from": "engine plan (rad0011: arena_host_bytes)",
+      "name": "host_arenas",
+      "remedy": "",
+      "residence": "pinned"
+     }
+    ],
+    "host_pool_mib": 9216,
+    "kv_one_session": {
+     "bytes": 536870912,
+     "from": "engine plan (vectors)"
+    },
+    "plan_version": 1,
+    "producer": "radiance --plan-memory (rad0011)",
+    "vram": {
+     "cards": [
+      {
+       "capacity": 17179869184,
+       "engine_expert_plane": 4294967296,
+       "expert_unit_max": 4194304,
+       "free": 17112760320
+      }
+     ],
+     "claimable": 12522512384,
+     "elastic": 10375028736,
+     "expert_ceiling": 4294967296,
+     "expert_floor": 1073741824,
+     "experts": 1157619712,
+     "from": "engine plan (vectors)",
+     "kv": 8589934592,
+     "kv_ceiling": 8589934592,
+     "kv_resolved": 8589934592,
+     "stage": 627474432,
+     "statics": 2147483648
+    }
+   },
+   "name": "lab-kv-ceiling-roundup",
+   "ppm": 999999,
+   "verdict": {
+    "admit": true,
+    "kv_required": 8589926003
+   },
+   "why": "the cache at its full ceiling is rounded up to cover it: a 999999 ppm floor admitted"
+  },
+  {
+   "expected": {
+    "checkpoints": {
+     "floor_slots": 8,
+     "from": "engine plan (vectors)",
+     "slot_bytes": 117938964,
+     "want_slots": 72
+    },
+    "host": [
+     {
+      "bytes": 11665408,
+      "from": "engine plan (rad0011: arena_host_bytes)",
+      "name": "host_arenas",
+      "remedy": "",
+      "residence": "pinned"
+     }
+    ],
+    "host_pool_mib": 9216,
+    "kv_one_session": {
+     "bytes": 536870912,
+     "from": "engine plan (vectors)"
+    },
+    "plan_version": 1,
+    "producer": "radiance --plan-memory (rad0011)",
+    "vram": {
+     "cards": [
+      {
+       "capacity": 17179869184,
+       "engine_expert_plane": 4294967296,
+       "expert_unit_max": 4194304,
+       "free": 17112760320
+      }
+     ],
+     "claimable": 12455411712,
+     "elastic": 10307928064,
+     "expert_ceiling": 4294967296,
+     "expert_floor": 1073741824,
+     "experts": 1073750016,
+     "from": "engine plan (vectors)",
+     "kv": 8589934592,
+     "kv_ceiling": 8589934592,
+     "kv_resolved": 8589934592,
+     "stage": 644243456,
+     "statics": 2147483648
+    }
+   },
+   "kind": "resolver",
+   "live": {
+    "checkpoints": {
+     "floor_slots": 8,
+     "from": "engine plan (vectors)",
+     "slot_bytes": 117938964,
+     "want_slots": 72
+    },
+    "host": [
+     {
+      "bytes": 11665408,
+      "from": "engine plan (rad0011: arena_host_bytes)",
+      "name": "host_arenas",
+      "remedy": "",
+      "residence": "pinned"
+     }
+    ],
+    "host_pool_mib": 9216,
+    "kv_one_session": {
+     "bytes": 536870912,
+     "from": "engine plan (vectors)"
+    },
+    "plan_version": 1,
+    "producer": "radiance --plan-memory (rad0011)",
+    "vram": {
+     "cards": [
+      {
+       "capacity": 17179869184,
+       "engine_expert_plane": 4294967296,
+       "expert_unit_max": 4194304,
+       "free": 17112760320
+      }
+     ],
+     "claimable": 12455403520,
+     "elastic": 10307919872,
+     "expert_ceiling": 4294967296,
+     "expert_floor": 1073741824,
+     "experts": 1717985280,
+     "from": "engine plan (vectors)",
+     "kv": 7945682944,
+     "kv_ceiling": 8589934592,
+     "kv_resolved": 7944011776,
+     "stage": 644251648,
+     "statics": 2147483648
+    }
+   },
+   "name": "lab-stage-payer-switch-rounding-924805",
+   "ppm": 924805,
+   "verdict": {
+    "admit": false,
+    "class": "admission",
+    "kv_required": 7944014461,
+    "needle": "admission: resolved KV: live 7944011776 bytes fall short of the required 7944014461 bytes"
+   },
+   "why": "the payer switch with a floor between the KV share and its MiB-rounded pool: capacity holds, refused on the resolved KV"
+  },
+  {
+   "expected": {
+    "checkpoints": {
+     "floor_slots": 8,
+     "from": "engine plan (vectors)",
+     "slot_bytes": 117938964,
+     "want_slots": 72
+    },
+    "host": [
+     {
+      "bytes": 11665408,
+      "from": "engine plan (rad0011: arena_host_bytes)",
+      "name": "host_arenas",
+      "remedy": "",
+      "residence": "pinned"
+     }
+    ],
+    "host_pool_mib": 9216,
+    "kv_one_session": {
      "bytes": 500,
      "from": "engine plan (vectors)"
     },
