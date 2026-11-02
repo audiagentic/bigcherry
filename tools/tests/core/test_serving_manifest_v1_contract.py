@@ -46,6 +46,16 @@ def _jcs_ascii(document: dict) -> bytes:
     return text.encode("utf-8")
 
 
+def _admission_model():
+    """tools/tests/core/serving_admission_model.py, loaded by path (the test runs from any working directory)."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("serving_admission_model",
+                                                  Path(__file__).with_name("serving_admission_model.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 class ServingManifestV1ContractTests(unittest.TestCase):
     def test_schema_has_no_non_integer_number_type(self) -> None:
         offenders = [path for path, node in _walk(json.loads(SCHEMA.read_text(encoding="utf-8")))
@@ -85,26 +95,80 @@ class ServingManifestV1ContractTests(unittest.TestCase):
         self.assertNotIn('"balance_speeds"', schema)
         self.assertIn("## 11. Amendments against the review draft", (CONTRACT / "spec.md").read_text(encoding="utf-8"))
 
-    def test_admission_uses_the_required_kv(self) -> None:
-        """§5.2 as amended (§11, amendment 5): live claimable >= statics + experts + stage + kv_required, where
-        kv_required is the larger of one full-length session and the calibrated backing floor of kv_ceiling."""
+    def test_admission_rule_is_specified(self) -> None:
+        """§5.2 as amended (§11, amendment 5): stable facts by equality, live terms never compared, three admission
+        checks on the live split, with kv_required from the selected backing floor of the total KV ceiling."""
         spec = (CONTRACT / "spec.md").read_text(encoding="utf-8")
-        self.assertIn("`live.vram.claimable >= expected.vram.statics + expected.vram.experts + expected.vram.stage + "
-                      "kv_required`", spec)
-        self.assertIn("5. **Admission uses the required KV, not the measured share**", spec)
+        for text in ("The plan's measured `kv` is never an admission input. The live resolved KV must be at least "
+                     "`kv_required`.",
+                     "`live.vram.experts >= expected.vram.expert_floor`",
+                     "`live.vram.claimable >= expected.vram.statics + live.vram.experts + live.vram.stage + "
+                     "kv_required`",
+                     "`live.vram.kv_resolved >= kv_required`",
+                     "a fraction of the **total** `kv_ceiling`",
+                     "5. **Admission uses what the plan requires, read from the live split**"):
+            self.assertIn(text, spec)
+        self.assertNotIn("stage bytes, expert footprint", spec, "stage and residency are live terms (amendment 5)")
+
+    def test_admission_model_reproduces_the_examples(self) -> None:
+        """The model of the engine's split (serving_admission_model.resolve) gives each example's measured VRAM plan
+        byte for byte, kv_resolved included, and each example is admissible against its own plan."""
+        model = _admission_model()
         for name in EXAMPLES:
             with self.subTest(name=name):
                 manifest = _load(name)
                 expected = manifest["spec"]["plan"]["engine_memory"]["expected"]
-                vram = expected["vram"]
+                vram = {k: v for k, v in expected["vram"].items() if k not in ("from", "cards")}
+                self.assertEqual(model.resolve(claimable=vram["claimable"], **model.PROD), vram)
                 ppm = next((c["value"] for c in manifest["spec"]["calibration"]
                             if c["key"] == "kv_backing_floor.fraction_ppm"), 0)
-                kv_required = max(expected["kv_one_session"]["bytes"], -(-vram["kv_ceiling"] * ppm // 1_000_000))
-                required = vram["statics"] + vram["experts"] + vram["stage"] + kv_required
-                # each example is admissible against its own measured plan under the requirement rule
-                self.assertLessEqual(required, vram["claimable"])
-                # the measured split leaves no margin, which is why it is not the admission input
+                verdict = model.admit(expected, expected, ppm)
+                self.assertTrue(verdict["admit"], verdict)
+                self.assertEqual(verdict["kv_required"], 18907078656)
+                # the measured split leaves no margin, which is why the measured kv is not an input
                 self.assertEqual(vram["statics"] + vram["kv"] + vram["experts"] + vram["stage"], vram["claimable"])
+
+    def test_admission_vectors_are_generated_and_hold(self) -> None:
+        """admission-vectors.json is exactly what the model generates (so it cannot drift from the rule), every
+        verdict is the rule's, and the cases the amendment names are all present. rad0011's check test runs the same
+        file against the C++ check."""
+        model = _admission_model()
+        text = (CONTRACT / "admission-vectors.json").read_text(encoding="utf-8")
+        self.assertEqual(text, model.render(), "regenerate: python3 tools/tests/core/serving_admission_model.py")
+        vectors = json.loads(text)["vectors"]
+        for v in vectors:
+            with self.subTest(vector=v["name"]):
+                self.assertEqual(model.admit(v["expected"], v["live"], v["ppm"]), v["verdict"])
+        by = {v["name"]: v["verdict"] for v in vectors}
+        self.assertEqual(len(by), len(vectors), "vector names are unique")
+        for name in ("prod-a3-reading-1", "prod-a3-reading-3", "prod-minus-24k", "prod-kv-truncation-edge",
+                     "lab-stage-payer-switch-600000", "lab-experts-minus-32k", "lab-no-lender-minus-8k",
+                     "capacity-equal", "below-old-measured-split", "kv-resolved-equal", "ceiling-at-schema-max",
+                     "live-stage-grew", "experts-at-floor", "ppm-max"):
+            self.assertTrue(by[name]["admit"], name)
+        refused = {"prod-kv-truncation-below": "admission: resolved KV: live 18906873856 bytes fall short of the "
+                                               "required 18907078656 bytes",
+                   "lab-stage-payer-switch-950000": "admission: claimable VRAM:",
+                   "lab-experts-below-floor": "admission: expert residency:",
+                   "capacity-one-short": "admission: claimable VRAM: live 7399 bytes fall short of the required 7400",
+                   "kv-resolved-one-short": "admission: resolved KV: live 4199 bytes fall short of the required 4200",
+                   "floor-rounds-up": "the required 4201 bytes",
+                   "ceiling-at-schema-max-short": "the required 9007190247541737 bytes",
+                   "ppm-negative": "kv_backing_floor_ppm must be in [0, 1000000)",
+                   "ppm-million": "kv_backing_floor_ppm must be in [0, 1000000)",
+                   "ceiling-past-schema-max": "byte counts in [0, 2^53 - 1]",
+                   "kv-resolved-missing": "byte counts in [0, 2^53 - 1]",
+                   "statics-differ": "VRAM statics: live 3001 bytes differ from the planned 3000 bytes",
+                   "experts-below-floor": "admission: expert residency: live 99 bytes fall short of the required 100",
+                   "card-plane-differs": "card 0 engine_expert_plane"}
+        for name, needle in refused.items():
+            self.assertFalse(by[name]["admit"], name)
+            self.assertIn(needle, by[name]["needle"], name)
+        # resolver-shaped cases show what the review found: residency and staging move with 8 KiB of claimable
+        moved = [v for v in vectors if v["name"].startswith("lab-experts-minus-")]
+        self.assertTrue(any(v["live"]["vram"]["stage"] > v["expected"]["vram"]["stage"] for v in moved))
+        switch = next(v for v in vectors if v["name"] == "lab-stage-payer-switch-600000")
+        self.assertLess(switch["live"]["vram"]["kv"], switch["expected"]["vram"]["kv"])
 
     def test_schema_and_examples_validate(self) -> None:
         try:
