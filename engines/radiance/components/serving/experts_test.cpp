@@ -38,7 +38,11 @@ int main(int argc, char** argv) {
     fs::create_directories(root);
     // 4 layers x 16 routed W4NL64 experts, hidden 128, width 128: 25344 bytes an expert on the device.
     const auto model = root / "owners.rad";
-    bc::test::write_rad(model, 4, 16, 128, 128);
+    bc::test::write_rad(model, 4, 16, 128, 128, {});
+    const auto model_prof = root / "owners-profile.rad";
+    bc::test::write_rad(model_prof, 4, 16, 128, 128, bc::test::embedded_profile(4, 16));
+    bc::experts::Container fp;
+    assert(fp.open(model_prof.c_str()) && fp.profile && fp.h->prof_count == 64);
     bc::experts::Container f;
     assert(f.open(model.c_str()) && f.layers == 4 && f.experts == 16 && f.hidden == 128 && f.intermediate == 128);
     assert(bc::experts::laid_out_bytes(f, true, 0, 0) == 25344);
@@ -116,7 +120,7 @@ int main(int argc, char** argv) {
             for (uint64_t n : c.budget_experts) budgets.push_back(n * golden::kExpertBytes);
             for (uint32_t i = 0; i < c.helpers; ++i) {
                 bc::experts::Owned o;
-                const bool ok = bc::experts::select_owned(f, p, "host", false, {}, budgets.data(), i, c.helpers, &o);
+                const bool ok = bc::experts::select_owned(c.embedded_profile ? fp : f, p, "host", false, {}, budgets.data(), i, c.helpers, &o);
                 got += std::string(c.name) + " " + std::to_string(i) + (ok ? " ok " : " refused ") + std::to_string(ok ? o.bytes : 0);
                 if (ok) for (auto [l, e] : o.expert) got += " " + std::to_string(l) + ":" + std::to_string(e);
                 got += "\n";

@@ -13,8 +13,18 @@
 
 namespace bc::test {
 
+/* A calibration profile in the container (RadFileProfile[]): distinct shares, expert (0,0) the coldest, every expert once. */
+inline std::vector<RadFileProfile> embedded_profile(uint32_t layers, uint32_t experts) {
+    std::vector<RadFileProfile> out;
+    const uint32_t n = layers * experts;
+    for (uint32_t i = 0; i < n; ++i)
+        out.push_back(RadFileProfile{int32_t(i / experts), int32_t(i % experts), float((i * 37u) % n + 1u) / 100.0f, 0.0f});
+    return out;
+}
+
+/* profile may be empty (a container converted without calibration). */
 inline void write_rad(const std::filesystem::path& path, uint32_t layers, uint32_t experts, uint32_t hidden,
-                      uint32_t intermediate) {
+                      uint32_t intermediate, const std::vector<RadFileProfile>& profile) {
     RadEncoding enc;
     rad_enc_clear(&enc);
     rad_enc_copy_str(enc.scheme, "w4nl");
@@ -29,7 +39,8 @@ inline void write_rad(const std::filesystem::path& path, uint32_t layers, uint32
     const uint64_t n_entries = uint64_t(layers) * experts * 2;
     const uint64_t dir_off = header, plane_off = dir_off + n_entries * sizeof(RadFileEntry);
     const uint64_t enc_off = plane_off + n_entries * 3 * sizeof(RadFilePlane);
-    uint64_t data = (enc_off + sizeof(RadEncoding) + RAD_ALIGN_UNIT - 1) / RAD_ALIGN_UNIT * RAD_ALIGN_UNIT;
+    const uint64_t prof_off = enc_off + sizeof(RadEncoding);
+    uint64_t data = (prof_off + profile.size() * sizeof(RadFileProfile) + RAD_ALIGN_UNIT - 1) / RAD_ALIGN_UNIT * RAD_ALIGN_UNIT;
     const uint64_t data_off = data;
     for (uint32_t l = 0; l < layers; ++l)
         for (uint32_t e = 0; e < experts; ++e)
@@ -67,6 +78,8 @@ inline void write_rad(const std::filesystem::path& path, uint32_t layers, uint32
     h.plane_count = planes.size();
     h.enc_off = enc_off;
     h.enc_count = 1;
+    h.prof_off = profile.empty() ? 0 : prof_off;
+    h.prof_count = profile.size();
     h.data_off = data_off;
     h.data_bytes = data - data_off;
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
@@ -78,6 +91,7 @@ inline void write_rad(const std::filesystem::path& path, uint32_t layers, uint32
     put(dir_off, dir.data(), dir.size() * sizeof(RadFileEntry));
     put(plane_off, planes.data(), planes.size() * sizeof(RadFilePlane));
     put(enc_off, &enc, sizeof enc);
+    if (!profile.empty()) put(prof_off, profile.data(), profile.size() * sizeof(RadFileProfile));
     const char zero = 0;
     put(data - 1, &zero, 1);
     if (!out) throw std::runtime_error("test .rad: cannot write " + path.string());
