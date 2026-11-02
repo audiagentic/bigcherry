@@ -1,7 +1,7 @@
 # BigCherry Experiment Contracts (EC01/EC02). One [contract.<id>] table per
 # contract, loaded by tools/bigcherry/experiment_contract.py:load_contracts().
 # Schema and current field semantics: docs/reference/experiments/EXPERIMENT_CONTRACT.md
-# and docs/planning/active/ec-contracts/EC01.md.
+# and docs/planning/active/build-ec-contracts/EC01.md.
 #
 # EC02 backfill (2026-08-20): of the 15 materialized 1200-1221 RD-prefixed
 # transforms, only the 5 below have a hypothesis.family that fits the CLOSED

@@ -26,7 +26,7 @@ from Qwen3.6-35B-A3B:
   this patch or its correctness evidence.
 
 Full detail, including the broader campaign, is recorded in HI105's plan
-item (`docs/planning/completed/hip-autotune/HI105.md`).
+item (`docs/planning/completed/tuning-hip-autotune/HI105.md`).
 
 ## Schema-2 hardware re-confirmation (2026-09-12, THA02)
 

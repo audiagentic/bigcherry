@@ -115,7 +115,7 @@ class TestPatchProvenanceCrossCheck(unittest.TestCase):
     # Patches out of the first-sweep isolation contract. RD19 (1200_rd19) was
     # promoted here on 2026-08-24 but that promotion post-dated the HI83
     # evidence contract (5cd10ff, 2026-08-22) with no qualifying evidence
-    # produced -- see docs/planning/active/patch-system/PA05.md. Owner
+    # produced -- see docs/planning/active/patching-patch-system/PA05.md. Owner
     # disposition (2026-08-25): deliberately demoted back to untested pending
     # real HI83 evidence, and not listed below.
     #
@@ -129,7 +129,7 @@ class TestPatchProvenanceCrossCheck(unittest.TestCase):
     # holds. Collapsing the two would force every validated patch to ship
     # the moment it qualified. RD73 (the only patch that was ever in this
     # set before) was DEMOTED 2026-09-09 -- see RETIRED_RDNA_PATCHES below
-    # and HI162 (docs/planning/completed/hip-autotune/HI162.md). RD19
+    # and HI162 (docs/planning/completed/tuning-hip-autotune/HI162.md). RD19
     # (2026-09-11): patch.toml's state field had never been synced to
     # config/external-sources.toml's own real, already-recorded
     # "ported-validated" promotion (gpt-dev-agent PROMOTE verdict, session
@@ -166,7 +166,7 @@ class TestPatchProvenanceCrossCheck(unittest.TestCase):
     # methodology correction that withdrew two OTHER, unrelated conclusions
     # from the same investigation. Removed from validated-enhancements;
     # STATE validated -> rejected. Original promotion evidence preserved in
-    # SUMMARY.md, not erased -- see docs/planning/completed/hip-autotune/
+    # SUMMARY.md, not erased -- see docs/planning/completed/tuning-hip-autotune/
     # HI162.md and engines/llamacpp/patches/1233_rd73_stable_graph_cache_key/SUMMARY.md.
     RETIRED_RDNA_PATCHES = frozenset({
         "1201_rd20_attn_gate_tp_split",

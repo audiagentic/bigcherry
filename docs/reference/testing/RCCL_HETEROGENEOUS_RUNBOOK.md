@@ -69,7 +69,7 @@ The following rules apply throughout this runbook:
 1. RCCL admission remains fail-closed by a shared, reusable predicate
    consulted by EVERY ncclCommInitAll() entry point in the tree --
    not just patch 1225's original call site. Patch 1225, as described in the
-   [HI138 closure](../../planning/completed/hip-collectives/HI138.md), is a
+   [HI138 closure](../../planning/completed/patching-hip-collectives/HI138.md), is a
    temporary, over-conservative implementation of
    this invariant: its real predicate is raw GPU-architecture
    inequality, which would incorrectly reject the {0,2}/{1,2}
@@ -1018,10 +1018,10 @@ carry into a new qualification:
 
 | Record | Scoped conclusion |
 | --- | --- |
-| [HI138](../../planning/completed/hip-collectives/HI138.md) | The build-server device-3/PCH PCIe path fails RCCL hostcall dispatch; XTX+R9700 CPU-direct paths passed under the tested RCCL build. This does not prohibit heterogeneous RCCL generally. |
-| [GP03](../../planning/completed/gpu-collectives/GP03.md) | Production dispatch reproduced the device-3 boundary; communicator-init success alone is not runtime admissibility. |
-| [GP06](../../planning/completed/gpu-collectives/GP06.md) | RCCL 2.30.4 regressed previously passing `{0,2}`/`{1,2}` cases; every result must bind to the exact RCCL source/build revision. |
-| [GP07](../../planning/completed/gpu-collectives/GP07.md) | The checked-in qualification wrapper now records compatibility identity and distinct attempts; its output is durable only when the run also preserves the required build, topology, correctness, and fault evidence below. |
+| [HI138](../../planning/completed/patching-hip-collectives/HI138.md) | The build-server device-3/PCH PCIe path fails RCCL hostcall dispatch; XTX+R9700 CPU-direct paths passed under the tested RCCL build. This does not prohibit heterogeneous RCCL generally. |
+| [GP03](../../planning/completed/run-gpu-collectives/GP03.md) | Production dispatch reproduced the device-3 boundary; communicator-init success alone is not runtime admissibility. |
+| [GP06](../../planning/completed/run-gpu-collectives/GP06.md) | RCCL 2.30.4 regressed previously passing `{0,2}`/`{1,2}` cases; every result must bind to the exact RCCL source/build revision. |
+| [GP07](../../planning/completed/run-gpu-collectives/GP07.md) | The checked-in qualification wrapper now records compatibility identity and distinct attempts; its output is durable only when the run also preserves the required build, topology, correctness, and fault evidence below. |
 
 These records are historical evidence, not a universal current verdict. A
 new run must re-check the actual patch composition, shared admission guard,

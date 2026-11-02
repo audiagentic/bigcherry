@@ -117,7 +117,7 @@ depth", cited to llama.cpp PR #27210) -- confirmed via
 that commit's author is Stew Forster <stew675@gmail.com>, the SAME author
 as PR #27210. This is stew675's own commit cherry-picked into the nasone
 fork, not independently nasone-authored. NRO06 closed as superseded by
-RD62 (docs/planning/completed/nasone-rdna-optimizations/NRO06.md); RD62
+RD62 (docs/planning/completed/patching-nasone-rdna-optimizations/NRO06.md); RD62
 is the single owner going forward and now carries NRO06's more detailed
 design content."""
 
