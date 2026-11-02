@@ -653,6 +653,34 @@ void measured_plan_cache(Fixture& t) {
     v = r.values;
     v["engine"]["checkpoint_interval"] = 2048;
     assert(sv::plan_key(sv::plan_key_inputs(v, t.facts, id, eid)) != sv::plan_key(k));
+    // Every launcher setting that reaches the engine changes the key (a plan is never found for another configuration);
+    // only the port, the runtime-home and model paths and the memory outputs the plan feeds do not.
+    {
+        const std::string base_key = sv::plan_key(k);
+        const std::pair<const char*, const char*> changes[] = {
+            {"service.objective", "latency"}, {"service.max_sessions", "4"}, {"service.max_context", "131072"},
+            {"engine.max_num_batched_tokens", "1024"}, {"engine.checkpoint_interval", "2048"},
+            {"engine.kv_cache_dtype", "fp8_v4"}, {"engine.num_speculative_tokens", "2"}, {"engine.rope_scaling", "yarn:4"},
+            {"engine.ngram_placement", "disk"}, {"engine.prefix_resume", "off"}, {"engine.tp", "2"}};
+        for (const auto& [key, value] : changes) {
+            auto opts = t.standard();
+            opts.sets = {std::string(key) + "=" + value};
+            try {
+                const auto changed = sv::resolve(opts, t.facts);
+                if (sv::plan_key(sv::plan_key_inputs(changed.values, t.facts, id, eid)) == base_key)
+                    throw std::runtime_error(std::string("the plan key ignores ") + key);
+            } catch (const std::exception& e) {
+                // a value the schema refuses is no configuration at all; every other change must move the key
+                if (std::string(e.what()).find(key) == std::string::npos) throw;
+            }
+        }
+        const std::pair<const char*, const char*> same[] = {{"engine.port", "36081"}, {"memory.host_kv_mib", "6144"}};
+        for (const auto& [key, value] : same) {
+            auto opts = t.standard();
+            opts.sets = {std::string(key) + "=" + value};
+            assert(sv::plan_key(sv::plan_key_inputs(sv::resolve(opts, t.facts).values, t.facts, id, eid)) == base_key);
+        }
+    }
     // Store, then lookup; a miss is nothing; a tampered entry is an error.
     const auto dir = t.root / "plan-cache";
     assert(!sv::plan_cache_lookup(dir, k).has_value());
@@ -667,6 +695,36 @@ void measured_plan_cache(Fixture& t) {
     const auto stored = sv::plan_cache_store(dir, k, plan);
     const auto found = sv::plan_cache_lookup(dir, k);
     assert(found && found->key == stored.key && found->plan.checkpoints.want_slots == 72 && !found->measured_at.empty());
+    // A plan is stored only for the configuration it belongs to: the host pool it echoes and the expected host consumer
+    // list (the n-gram table exactly when it lives in RAM; nothing unknown).
+    {
+        auto decoded = [&](Json j) { return sv::decode_engine_plan(j, "test"); };
+        auto refused_for = [&](const Json& values, const Json& plan_json, const std::string& needle) {
+            try { sv::check_plan_for_configuration(values, decoded(plan_json)); } catch (const std::exception& e) {
+                if (std::string(e.what()).find(needle) != std::string::npos) return;
+                throw std::runtime_error("wrong store diagnostic for " + needle + ": " + e.what());
+            }
+            throw std::runtime_error("expected store refusal containing " + needle);
+        };
+        Json values = r.values;
+        values["engine"]["ngram_placement"] = "disk";
+        sv::check_plan_for_configuration(values, decoded(plan));                 // host [] with the table on disk: fine
+        Json with_table = plan;
+        with_table["host"] = Json::array({{{"name", "ngram_table"}, {"bytes", 1}, {"residence", "pinned"},
+                                           {"from", "engine plan (test)"}, {"remedy", ""}}});
+        refused_for(values, with_table, "places the n-gram table on disk");
+        Json in_ram = r.values;
+        in_ram["engine"]["ngram_placement"] = "ram";
+        refused_for(in_ram, plan, "no ngram_table consumer");
+        sv::check_plan_for_configuration(in_ram, decoded(with_table));
+        Json other_pool = values;
+        other_pool["engine"]["host_pool_mib"] = 1024;
+        refused_for(other_pool, plan, "measured with a 9216 MiB host pool");
+        Json unknown = with_table;
+        unknown["host"].push_back(unknown["host"][0]);
+        unknown["host"][1]["name"] = "mystery";
+        refused_for(in_ram, unknown, "unknown host consumer mystery");
+    }
     // The engine's check flags: the cached plan as a v1 file, and the floor the calibration selects (never a literal).
     {
         const auto args = sv::plan_check_args(dir, *found, 600000);
