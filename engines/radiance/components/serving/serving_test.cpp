@@ -636,7 +636,7 @@ void measured_plan_cache(Fixture& t) {
     // The key covers the planning inputs, the card and the host pool the plan echoes; not the memory outputs the plan
     // feeds (host KV tier, headroom) nor where the engine listens or lives (port, runtime home, model path).
     const auto r = sv::resolve(t.standard(), t.facts);
-    const Json k = sv::plan_key_inputs(r.values, t.facts, id, eid);
+    const Json k = sv::plan_key_inputs(r.values, t.facts, id, eid, "");
     assert(k.at("card").at("arch") == "gfx1201" && k.at("card").at("vram_total_mib") == 32624);
     assert(k.at("layout") == "flashnext-4gpu");
     for (const char* absent : {"prefix_cache_mib", "host_headroom_mib", "port", "radiance_home", "model"})
@@ -646,14 +646,18 @@ void measured_plan_cache(Fixture& t) {
     for (const char* moved : {"prefix_cache_mib", "host_headroom_mib", "port"}) {
         v = r.values;
         v["engine"][moved] = 1;
-        assert(sv::plan_key(sv::plan_key_inputs(v, t.facts, id, eid)) == sv::plan_key(k));
+        assert(sv::plan_key(sv::plan_key_inputs(v, t.facts, id, eid, "")) == sv::plan_key(k));
     }
     v = r.values;
     v["engine"]["host_pool_mib"] = 1;   // the plan echoes the pool: a plan measured under another pool is another plan
-    assert(sv::plan_key(sv::plan_key_inputs(v, t.facts, id, eid)) != sv::plan_key(k));
+    assert(sv::plan_key(sv::plan_key_inputs(v, t.facts, id, eid, "")) != sv::plan_key(k));
     v = r.values;
     v["engine"]["checkpoint_interval"] = 2048;
-    assert(sv::plan_key(sv::plan_key_inputs(v, t.facts, id, eid)) != sv::plan_key(k));
+    assert(sv::plan_key(sv::plan_key_inputs(v, t.facts, id, eid, "")) != sv::plan_key(k));
+    // Engine arguments passed through verbatim can change the plan, so they are part of the key.
+    assert(sv::plan_key(sv::plan_key_inputs(r.values, t.facts, id, eid, "--kv-resident 65536")) != sv::plan_key(k));
+    assert(sv::plan_key(sv::plan_key_inputs(r.values, t.facts, id, eid, "--kv-resident 65536")) ==
+           sv::plan_key(sv::plan_key_inputs(r.values, t.facts, id, eid, "--kv-resident 65536")));
     // Every launcher setting that reaches the engine changes the key (a plan is never found for another configuration);
     // only the port, the runtime-home and model paths and the memory outputs the plan feeds do not.
     {
@@ -668,7 +672,7 @@ void measured_plan_cache(Fixture& t) {
             opts.sets = {std::string(key) + "=" + value};
             try {
                 const auto changed = sv::resolve(opts, t.facts);
-                if (sv::plan_key(sv::plan_key_inputs(changed.values, t.facts, id, eid)) == base_key)
+                if (sv::plan_key(sv::plan_key_inputs(changed.values, t.facts, id, eid, "")) == base_key)
                     throw std::runtime_error(std::string("the plan key ignores ") + key);
             } catch (const std::exception& e) {
                 // a value the schema refuses is no configuration at all; every other change must move the key
@@ -679,7 +683,7 @@ void measured_plan_cache(Fixture& t) {
         for (const auto& [key, value] : same) {
             auto opts = t.standard();
             opts.sets = {std::string(key) + "=" + value};
-            assert(sv::plan_key(sv::plan_key_inputs(sv::resolve(opts, t.facts).values, t.facts, id, eid)) == base_key);
+            assert(sv::plan_key(sv::plan_key_inputs(sv::resolve(opts, t.facts).values, t.facts, id, eid, "")) == base_key);
         }
     }
     // Store, then lookup; a miss is nothing; a tampered entry is an error.

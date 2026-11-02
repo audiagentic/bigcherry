@@ -100,7 +100,8 @@ std::string engine_identity(const fs::path& binary, const fs::path& radiance_hom
     return sha256_hex(text);
 }
 
-Json plan_key_inputs(const Json& values, const Json& facts, const std::string& model_id, const std::string& engine_id) {
+Json plan_key_inputs(const Json& values, const Json& facts, const std::string& model_id, const std::string& engine_id,
+                     const std::string& engine_args) {
     const std::string card = values.at("layout").at("engine_card").get<std::string>();
     const Json* gpu = nullptr;
     for (const Json& g : facts.at("gpus"))
@@ -114,6 +115,7 @@ Json plan_key_inputs(const Json& values, const Json& facts, const std::string& m
             {"engine_build", engine_id},
             {"card", {{"arch", gpu->at("arch")}, {"vram_total_mib", gpu->at("vram_total_mib")}}},
             {"layout", values.at("layout").at("name")},
+            {"engine_args", engine_args},
             {"engine", engine}};
 }
 

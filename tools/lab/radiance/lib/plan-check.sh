@@ -23,9 +23,13 @@ plan_check_describe() {
     --set "engine.kv_cache_dtype=\"$KV_DTYPE\""
     --set "engine.rope_scaling=\"$ROPE\""
     --set "engine.port=$PORT"
+    --set "engine.checkpoint_interval=$CKPT_INTERVAL"
+    --set "engine.num_speculative_tokens=$NUM_SPEC"
   )
+  # --engine-arg is free-form and can change the plan (--kv-resident, --prefix-cache-mib, ...): it is part of the
+  # configuration the plan is measured for, passed to every bc-serve call as --plan-extra and hashed into the key.
   [ "$PREFIX_RESUME" = off ] || PLAN_SET+=(--set "engine.prefix_resume=\"$PREFIX_RESUME\"")
-  PLAN_SITE=(--site "$1")
+  PLAN_SITE=(--site "$1" --plan-extra "${ENGINE_ARGS[*]:-}")
 }
 
 # plan_check_site FILE: the site file bc-serve resolves against (the model, runtime home and heat paths this launcher uses).

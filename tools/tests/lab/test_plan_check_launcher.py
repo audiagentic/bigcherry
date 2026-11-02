@@ -34,6 +34,7 @@ while [ $# -gt 0 ]; do
     --plan-file) planfile=$2; shift 2 ;;
     --expect-key) expect=$2; shift 2 ;;
     --engine-binary|--site) shift 2 ;;
+    --plan-extra) sets+=("plan-extra=$2"); shift 2 ;;
     --set) sets+=("$2"); shift 2 ;;
     *) echo "fake bc-serve: unknown $1" >&2; exit 2 ;;
   esac
@@ -76,12 +77,14 @@ class PlanCheckLauncherTests(unittest.TestCase):
         """Source the library with the launcher's variables and a fake measuring start, then arm the check."""
         values = dict(LAYOUT="flashnext-4gpu", SEQS="8", MAX_LEN="262144", HOST_POOL_MIB="9216", HOST_KV_MIB="12288",
                       CHUNK="2048", NGRAM="ram", KV_DTYPE="fp8", ROPE="none", PORT="36080", PREFIX_RESUME="nearest",
-                      MODEL="/model.rad", HEAT="/heat.hot-first", RECORD="/heat.live")
+                      MODEL="/model.rad", HEAT="/heat.hot-first", RECORD="/heat.live", CKPT_INTERVAL="4096", NUM_SPEC="3")
+        engine_args = overrides.pop("ENGINE_ARGS", "")
         values.update(overrides)
         assigns = "\n".join(f"{k}={shlex.quote(v)}" for k, v in values.items())
         script = f"""
 set -u
 RUN={shlex.quote(str(self.run_dir))}; RAD_HOME={shlex.quote(str(self.home))}; RAD_BIN=/engine
+ENGINE_ARGS=({engine_args})
 {assigns}
 source {shlex.quote(str(LIB))}
 # the measuring start: the engine is asked for a plan and writes one; recorded so the tests see what ran
@@ -124,13 +127,23 @@ plan_check_flags && printf 'ARGS:%s\\n' "${{PLAN_CHECK_ARGS[*]}}"
         self._launch()
         changes = {"LAYOUT": "flashnext-2xtx", "SEQS": "4", "MAX_LEN": "131072", "HOST_POOL_MIB": "8192",
                    "HOST_KV_MIB": "6144", "CHUNK": "1024", "NGRAM": "disk", "KV_DTYPE": "fp8_v4", "ROPE": "yarn:4",
-                   "PORT": "36081", "PREFIX_RESUME": "off"}
+                   "PORT": "36081", "PREFIX_RESUME": "off", "CKPT_INTERVAL": "2048", "NUM_SPEC": "2"}
         for name, value in changes.items():
             with self.subTest(setting=name):
                 self.engine_calls.unlink(missing_ok=True)
                 changed = self._launch(**{name: value})
                 self.assertEqual(changed.returncode, 0, changed.stderr)
                 self.assertTrue(self.engine_calls.exists(), f"{name}={value} must be a different configuration")
+
+    def test_engine_arguments_passed_through_are_part_of_the_configuration(self) -> None:
+        self._launch()
+        self.engine_calls.unlink()
+        again = self._launch()
+        self.assertFalse(self.engine_calls.exists(), "the same arguments are a hit")
+        with_arg = self._launch(ENGINE_ARGS="--kv-resident 65536")
+        self.assertEqual(with_arg.returncode, 0, with_arg.stderr)
+        self.assertTrue(self.engine_calls.exists(), "an extra engine argument is a different configuration")
+        self.assertIn("plan-extra=--kv-resident 65536", (self.run_dir / "plan-cache" / "describe.log").read_text())
 
     def test_the_measuring_start_and_the_real_start_describe_one_configuration(self) -> None:
         self._launch()

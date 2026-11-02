@@ -82,6 +82,8 @@ RECORD=$RUN/heat.live   # RHP02: on by default; --record-heat off disables
 HOST_POOL_MIB=9216        # interim, measured (RSC03 derives it): the engine uses ~7.1 GiB of it with the helpers owning ~all experts
 HOST_KV_MIB=12288         # interim, measured (RSC03 derives it): host KV tier for finished sessions, funded by the smaller pool
 CHUNK=2048
+CKPT_INTERVAL=4096   # the engine's --checkpoint-interval; the plan check's configuration (plan-check.sh) names it too
+NUM_SPEC=3                # the engine's --num-speculative-tokens (MTP depth); likewise
 NGRAM=ram
 KV_DTYPE=fp8
 ENGINE_ARGS=()
@@ -261,9 +263,9 @@ start_engine() {
       --tp 1 \
       --max-num-seqs "$SEQS" \
       --max-num-batched-tokens "$CHUNK" \
-      --checkpoint-interval 4096 \
+      --checkpoint-interval "$CKPT_INTERVAL" \
       --kv-cache-dtype "$KV_DTYPE" \
-      --num-speculative-tokens 3 \
+      --num-speculative-tokens "$NUM_SPEC" \
       --max-model-len "$MAX_LEN" \
       --rope-scaling "$ROPE" \
       "${RESUME_ARGS[@]}" \

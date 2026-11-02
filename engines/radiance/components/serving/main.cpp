@@ -25,6 +25,7 @@ void usage() {
                  "  --plan-memory --plan-cache DIR --engine-binary PATH [--site FILE] [--profile FILE] [--set key=value]\n"
                  "      measures the engine's memory plan on the engine card (radiance --plan-memory) unless DIR already\n"
                  "      holds it for this configuration; run it under the gpu lease (agent-lease acquire gpu -- ...)\n"
+                 "  --plan-extra TEXT   (with the --plan-* modes) engine arguments the launcher passes through verbatim; part of the key\n"
                  "  --plan-key --plan-cache DIR --engine-binary PATH [--site FILE] [--profile FILE] [--set key=value]\n"
                  "      prints this configuration's plan key (what --plan-store must be told to expect)\n"
                  "  --plan-check-args --plan-cache DIR --engine-binary PATH [--site FILE] [--profile FILE] [--set key=value]\n"
@@ -67,7 +68,7 @@ int main(int argc, char** argv) {
         bool detection = false, schema = false, validation = false;
         bool explanation = false, dry = false, json = false, plan_memory = false, plan_check_args = false, plan_store = false, plan_key_only = false;
         fs::path plan_file;
-        std::string expect_key;
+        std::string expect_key, plan_extra;
         fs::path plan_cache, engine_binary;
         fs::path out;
         std::vector<fs::path> positional;
@@ -94,6 +95,7 @@ int main(int argc, char** argv) {
             else if (arg == "--plan-store") plan_store = true;
             else if (arg == "--plan-key") plan_key_only = true;
             else if (arg == "--expect-key") expect_key = need_arg("--expect-key");
+            else if (arg == "--plan-extra") plan_extra = need_arg("--plan-extra");
             else if (arg == "--plan-file") plan_file = need_arg("--plan-file");
             else if (arg == "--plan-cache") plan_cache = need_arg("--plan-cache");
             else if (arg == "--engine-binary") engine_binary = need_arg("--engine-binary");
@@ -107,6 +109,8 @@ int main(int argc, char** argv) {
                           int(explanation) + int(dry) + int(plan_memory) + int(plan_check_args) + int(plan_store) + int(plan_key_only);
         if (!plan_memory && !plan_check_args && !plan_store && !plan_key_only && (!plan_cache.empty() || !engine_binary.empty()))
             throw std::runtime_error("--plan-cache and --engine-binary go with --plan-memory, --plan-check-args or --plan-store");
+        if (!plan_memory && !plan_check_args && !plan_store && !plan_key_only && !plan_extra.empty())
+            throw std::runtime_error("--plan-extra goes with --plan-memory, --plan-check-args, --plan-store or --plan-key");
         if (!plan_store && (!plan_file.empty() || !expect_key.empty()))
             throw std::runtime_error("--plan-file and --expect-key go with --plan-store");
         if (modes != 1) throw std::runtime_error("choose one mode (see --help)");
@@ -162,7 +166,7 @@ int main(int argc, char** argv) {
             const fs::path home = v.at("engine").at("radiance_home").get<std::string>();
             const auto key_inputs = bc::serving::plan_key_inputs(
                 v, facts, bc::serving::container_identity(v.at("engine").at("model").get<std::string>()),
-                bc::serving::engine_identity(engine_binary, home));
+                bc::serving::engine_identity(engine_binary, home), plan_extra);
             if (plan_key_only) {
                 std::cout << bc::serving::plan_key(key_inputs) << '\n';
                 return 0;
