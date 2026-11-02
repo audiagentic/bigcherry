@@ -9,6 +9,7 @@
 #include <cstring>
 #include <ctime>
 #include <initializer_list>
+#include <type_traits>
 #include <linux/futex.h>
 #include <sys/syscall.h>
 #include <unistd.h>
@@ -16,7 +17,7 @@
 namespace r3::moe_shm {
 
 constexpr uint64_t kMagic = 0x31454f4d33485253ull; /* "SRH3MOE1": reject unrelated/stale shm. */
-constexpr uint32_t kVersion = 22;  /* 22: the combine is chunked (RAD42): Header::chunks (each helper publishes its large-lane rows in kCombineChunkRows chunks, helper 0 combines and publishes each chunk, the engine adds each as it lands); CombineSignal::helper_done is gone; 21: Request::stage_trace (the reserved words: the helper's activation-ready and GEMMs-done stamps, helper 0's per-step combine wait and time, RAD40); 20: CombineSignal for up to kMaxHelpers helpers (128 bytes, helper_done[] per helper); 19: Header::slot_count (the request slots, route / activation staging and result planes, are sized from it; kMaxHelpers and kMaxSlots are 4; RAD23). 18: Header::helper_pid/helper_start (the engine watches each helper process and raises helper_fault when one exits), Header::notify (CPU waits sleep on one generation word); 17: Header::burst, LaneSignal::park (RAD20: small-lane waits armed only inside an inference burst); 16: the combined row is fp16 with a per-row fallback marker (kCombineFallback); 15: Header::combine (R3_MOE_WORKER_COMBINE); 14: the header records the model shape (intermediate, activation_group, shape_hash) and every region is laid out from it (layout_for); 13: several pre-queued small-lane sizes (Header::small_class_*), ten lanes; 12: Request carries the R3_MOE_WORKER_TRACE stamps (192 -> 256 bytes); 11: helper_fault; completion is an exact generation */
+constexpr uint32_t kVersion = 23;  /* placement generations; no v22 compatibility */
 constexpr uint32_t kPage = 4096;
 /* R3_MOE_WORKER_COMBINE: first element of a combined fp16 row the combiner could not hold in fp16 range (a NaN payload
  * no arithmetic produces; a real NaN converts to 0x7E00); the engine then reads that row from the two helper planes. */
@@ -26,7 +27,7 @@ constexpr uint16_t kCombineFallback = 0x7E01;
  * the engine ranks stay 2 (Flash-Next: TP=2, or one rank and two helpers); helpers and slots are bounds, and a segment is laid out for the
  * number it was made with (Header::slot_count): a segment for two slots is the layout it was before, plus the larger lane ring. */
 constexpr uint32_t kMaxEngineRanks = 2;  /* engine TP ranks: Request::rank_count, RankState, the stored weight slices */
-constexpr uint32_t kMaxHelpers = 4;      /* helper processes: owner bitsets, helper_pid / helper_start, helper_count */
+constexpr uint32_t kMaxHelpers = 4;      /* helper processes, helper_pid / helper_start, helper_count */
 constexpr uint32_t kMaxSlots = 4;        /* request slots: route / activation staging, lanes, published flags; max(engine ranks, helpers) */
 static_assert(kMaxSlots >= kMaxEngineRanks && kMaxSlots >= kMaxHelpers, "a slot is needed for every engine rank and every helper");
 constexpr uint32_t kResultPlanes = kMaxSlots * kMaxEngineRanks;  /* result planes at the bound: [producing slot][output rank] */
@@ -40,7 +41,7 @@ constexpr uint32_t result_index(uint32_t slot, uint32_t out_rank) { return slot 
 /* The engine rank whose output a request of this slot is for: its own slot when the engine has several ranks (each rank is its own slot), rank 0
  * when one engine rank is served by several helpers (the slots are then the helpers and every one writes rank 0's output, in its own plane). */
 constexpr uint32_t out_rank_of(uint32_t slot, uint32_t world) { return world > 1 ? slot : 0; }
-constexpr uint32_t kMaxLayers = 128;     /* ownership bitmap bound; Flash-Next is below this. */
+constexpr uint32_t kMaxLayers = 128;     /* protocol layer bound */
 /* Lanes a producer rank (RAD12): up to kSmallClasses small lanes, each pre-queued by the helper at its own fixed row
  * count (Header::small_class_rows, ascending; a step goes to the first class that fits its rows), and one large lane
  * for the larger (prefill) steps, which the helper launches sized to the request when it arrives. A rank publishes one
@@ -75,10 +76,94 @@ struct Route {
 };
 static_assert(sizeof(Route) == 12);
 
+constexpr uint8_t kOwnerLocal = 0xff;
+
+enum class PlacementState : uint32_t {
+    ACTIVE=0, PROPOSED=1, RESERVING=2, COPYING=3,
+    PREPARED=4, QUIESCING=5, COMMIT=6, RETIRING=7
+};
+enum class AckPhase : uint32_t { NONE=0, RESERVED=1, READY=2, QUIESCED=3, COMMITTED=4, RETIRED=5 };
+enum class GenerationState : uint32_t { EMPTY=0, STAGING=1, READY=2, ACTIVE=3, RETIRED=4 };
+
+struct alignas(64) PlacementControl {
+    uint32_t seq;
+    uint32_t state;
+    uint32_t active_slot;
+    uint32_t pending_slot;
+    uint64_t active_epoch;
+    uint64_t pending_epoch;
+    uint64_t active_digest;
+    uint64_t pending_digest;
+    uint64_t transaction_id;
+    uint64_t deadline_ns;
+    uint32_t ready_helpers;
+    uint32_t ready_ranks;
+    uint32_t quiesced_helpers;
+    uint32_t quiesced_ranks;
+    uint32_t commit_helpers;
+    uint32_t commit_ranks;
+    uint32_t retired_helpers;
+    uint32_t retired_ranks;
+    uint32_t fault_code;
+    uint32_t fault_actor;
+    uint32_t notify;
+    uint32_t expected_helpers;
+    uint32_t expected_ranks;
+    uint32_t journal_index;
+    uint32_t reserved[34];
+};
+struct alignas(64) GenerationHeader {
+    uint64_t epoch;
+    uint64_t digest;
+    uint32_t map_bytes;
+    uint32_t layer_count;
+    uint32_t expert_count;
+    uint32_t slot;
+    uint32_t ready_helpers;
+    uint32_t ready_ranks;
+    uint32_t state;
+    uint32_t reserved[5];
+};
+struct alignas(64) PlacementAck {
+    uint64_t transaction_id;
+    uint64_t epoch;
+    uint64_t digest;
+    uint64_t drained_step;
+    uint32_t phase;
+    uint32_t generation_slot;
+    uint32_t fault_code;
+    uint32_t reserved32;
+    uint64_t reserved[2];
+};
+struct alignas(64) JournalRecord {
+    uint64_t transaction_id;
+    uint64_t before_epoch;
+    uint64_t after_epoch;
+    uint64_t before_digest;
+    uint64_t candidate_digest;
+    uint64_t start_ns;
+    uint64_t commit_ns;
+    uint64_t finish_ns;
+    uint32_t state;
+    uint32_t fault;
+    uint32_t old_slot;
+    uint32_t new_slot;
+    uint32_t ready_helpers;
+    uint32_t ready_ranks;
+    uint32_t commit_helpers;
+    uint32_t commit_ranks;
+    uint32_t retire_helpers;
+    uint32_t retire_ranks;
+    uint32_t reserved[6];
+};
+struct alignas(64) PlacementJournal {
+    JournalRecord entry[2];
+};
+
 /* One fixed request slot. Offsets are from the shm base so neither process exchanges pointers. */
 struct alignas(64) Request {
     uint32_t sequence;             /* producer publication counter; 0 means never published. */
-    uint32_t completion_sequence;  /* helper stores sequence here, then FUTEX_WAKEs waiters. */
+    uint32_t completion_sequence;  /* helper GPU completion stamp; engine waits for exact sequence. */
     int32_t status;                /* 0 on success, negative errno-style protocol/helper error. */
     uint32_t layer;                /* chooses the expert group in the .rad container. */
     uint32_t rank;                 /* rank whose TP slice this helper must compute. */
@@ -104,12 +189,15 @@ struct alignas(64) Request {
     /* R3_MOE_WORKER_COMBINE: nonzero on helper 0's request of a step whose rows helper 0 combines (the generation it then
      * stores in Header::combine.done); written before the request is released, so helper 0 never polls for it. */
     uint32_t combine_generation;
-    uint32_t reserved32;
+    uint32_t generation_slot;     /* immutable ownership generation of this request, +204. */
     /* R3_MOE_WORKER_TRACE, per request (RAD40): 0 helper lane's activations and routes ready, 1 its gate/up, quant and
      * down done (both wall_clock64 on the helper's clock, with trace[3]/[4] around them); 2 helper 0 only, on the step it
      * combines: microseconds waiting for the other helpers' done words (low 32 bits) and combining (high 32 bits). */
     uint64_t stage_trace[3];
-    uint64_t reserved;
+    uint64_t placement_epoch;      /* request epoch, +232. */
+    uint64_t completion_epoch;     /* helper completion epoch, +240. */
+    uint32_t completion_slot;      /* helper completion generation slot, +248. */
+    uint32_t reserved_tail;        /* +252, zero on publication. */
 };
 static_assert(sizeof(Request) % 64 == 0);
 /* The ring ends on the same page boundary for 192- and 256-byte requests, so the header's size checks cannot tell two
@@ -120,7 +208,12 @@ struct alignas(64) LaneSignal {
     uint32_t request_sequence; /* engine GPU writes after route/activation data is visible. */
     uint32_t done_sequence;    /* helper GPU writes after the result is visible. */
     uint32_t park;             /* helper CPU: kParkDraining while it releases this lane's waits (RAD20, Header::burst). */
-    uint32_t reserved[13];
+    uint32_t consumed_sequence;   /* engine GPU completion of last result-plane read */
+    uint32_t done_slot;
+    uint32_t consumed_slot;
+    uint64_t done_epoch;
+    uint64_t consumed_epoch;
+    uint32_t reserved[6];
 };
 static_assert(sizeof(LaneSignal) == 64);
 
@@ -141,7 +234,11 @@ struct alignas(64) CombineSignal {
     uint32_t lane[kCombineHelpers];
     uint32_t seq[kCombineHelpers];   /* 0: no request from that helper this step */
     uint32_t rows;
-    uint32_t reserved[19];
+    uint32_t result_consumed_generation;
+    uint32_t result_consumed_slot;
+    uint32_t reserved_align;
+    uint64_t result_consumed_epoch;
+    uint32_t reserved[14];
 };
 static_assert(sizeof(CombineSignal) == 128);
 
@@ -173,10 +270,10 @@ struct alignas(kPage) Header {
     uint32_t route_slot_bytes[kMaxSlots];      /* per-rank routing-list capacity. */
     uint32_t activation_slot_bytes[kMaxSlots]; /* per-rank BF16 reference + exact E4M3 q/F32 scale staging. */
     uint32_t result_slot_bytes[kResultPlanes]; /* [producer rank][output rank]. */
-    uint32_t owned_count;            /* number of set (layer, expert) ownership bits, all helpers. */
-    uint32_t owner_slot_bytes;       /* fixed bitmap bytes at owner_offset. */
-    uint64_t owned_bytes;            /* resident expert bytes charged against helper budget. */
-    uint64_t owner_offset;           /* [kMaxHelpers helpers][kMaxLayers][kExperts] bitsets. */
+    uint32_t owned_count;            /* v23 tombstone, must remain zero. */
+    uint32_t owner_slot_bytes;       /* v23 tombstone, must remain zero. */
+    uint64_t owned_bytes;            /* v23 tombstone, must remain zero. */
+    uint64_t owner_offset;           /* v23 tombstone, must remain zero. */
     uint32_t layer_map_slot_bytes;   /* int32_t[kMaxLayers][kExperts], -1 means protected/not regular. */
     uint32_t layer_map_ready[kMaxLayers];    /* engine release-stores after publishing one layer map. */
     uint32_t layer_map_consumed[kMaxLayers]; /* helper release-stores after rebuilding that layer. */
@@ -225,49 +322,64 @@ struct alignas(kPage) Header {
     uint32_t reserved32[24 - 3 * kMaxHelpers - 1];
     CombineSignal combine;
     CombineChunks chunks;
+    uint64_t placement_offset;         /* +3264 */
+    uint64_t journal_offset;           /* +3272 */
+    uint64_t ack_offset;               /* +3280 */
+    uint64_t generation_offset[2];     /* +3288, +3296 */
+    uint32_t owner_map_bytes;          /* +3304, layer_count * expert_count */
+    uint32_t generation_slot_bytes;    /* +3308, page aligned */
+    uint32_t placement_control_bytes;  /* +3312 */
+    uint32_t placement_ack_count;      /* +3316 */
 };
-static_assert(sizeof(Header) <= kPage);
+static_assert(kVersion == 23 && kRingSlots == kLanes * kLaneSlots);
+static_assert(sizeof(Header) == 4096 && alignof(Header) == 4096);
+static_assert(sizeof(Request) == 256 && alignof(Request) == 64);
+static_assert(offsetof(Request, generation_slot) == 204);
+static_assert(offsetof(Request, placement_epoch) == 232);
+static_assert(offsetof(Request, completion_epoch) == 240);
+static_assert(offsetof(Request, completion_slot) == 248);
+static_assert(sizeof(LaneSignal) == 64 && offsetof(LaneSignal, done_epoch) == 24);
+static_assert(offsetof(LaneSignal, consumed_epoch) == 32);
+static_assert(sizeof(CombineSignal) == 128);
+static_assert(offsetof(CombineSignal, result_consumed_generation) == 52);
+static_assert(offsetof(CombineSignal, result_consumed_epoch) == 64);
+static_assert(sizeof(PlacementControl) == 256 && alignof(PlacementControl) == 64);
+static_assert(offsetof(PlacementControl, active_epoch) == 16);
+static_assert(offsetof(PlacementControl, ready_helpers) == 64);
+static_assert(offsetof(PlacementControl, notify) == 104);
+static_assert(sizeof(GenerationHeader) == 64 && alignof(GenerationHeader) == 64);
+static_assert(sizeof(PlacementAck) == 64 && alignof(PlacementAck) == 64);
+static_assert(sizeof(JournalRecord) == 128 && sizeof(PlacementJournal) == 256);
+static_assert(offsetof(Header, placement_offset) == 3264);
+static_assert(offsetof(Header, owner_map_bytes) == 3304);
+static_assert(sizeof(PlacementControl) + sizeof(PlacementJournal) +
+              (kMaxHelpers + kMaxEngineRanks) * sizeof(PlacementAck) <= kPage);
+static_assert(std::is_standard_layout_v<PlacementControl> && std::is_trivially_copyable_v<PlacementControl>);
+static_assert(std::is_standard_layout_v<GenerationHeader> && std::is_trivially_copyable_v<GenerationHeader>);
+static_assert(std::is_standard_layout_v<PlacementAck> && std::is_trivially_copyable_v<PlacementAck>);
+static_assert(std::is_standard_layout_v<PlacementJournal> && std::is_trivially_copyable_v<PlacementJournal>);
 
 constexpr uint64_t align_page(uint64_t n) { return (n + kPage - 1) & ~(uint64_t(kPage) - 1); }
 constexpr uint32_t route_slot_bytes() { return kMaxRoutes * sizeof(Route); }
 constexpr uint32_t activation_slot_bytes() { return kActivationBf16Bytes + kActivationQBytes + kActivationScaleBytes; }
 constexpr uint32_t result_slot_bytes() { return kMaxRows * kHidden * sizeof(uint16_t); }
-constexpr uint32_t owner_slot_bytes() { return kMaxLayers * ((kExperts + 7u) / 8u); }
+/* Only a derived device bitmap uses this v22-compatible stride; shared ownership is canonical bytes. */
+constexpr uint32_t device_owner_slot_bytes(uint32_t experts) {
+    return kMaxLayers * ((experts + 7u) / 8u);
+}
 constexpr uint32_t layer_map_slot_bytes() { return kMaxLayers * kExperts * sizeof(int32_t); }
 
 struct Layout {
     uint64_t ring;
-    uint64_t owner;
+    uint64_t placement, journal, ack, generation[2];
     uint64_t layer_map;
     uint64_t route[kMaxSlots];
     uint64_t activation[kMaxSlots];
     uint64_t result[kResultPlanes];
     uint64_t bytes;
-    uint32_t route_bytes, activation_bytes, result_bytes, owner_bytes, layer_map_bytes;   /* per-slot sizes the header records */
+    uint32_t route_bytes, activation_bytes, result_bytes, layer_map_bytes;
+    uint32_t owner_map_bytes, generation_slot_bytes;
 };
-
-constexpr Layout layout(uint32_t slots) {
-    Layout x{};
-    uint64_t at = kPage;
-    x.ring = at;
-    at = align_page(at + sizeof(Request) * kRingSlots);
-    x.owner = at;
-    at = align_page(at + (uint64_t)slots * owner_slot_bytes());
-    x.layer_map = at;
-    at = align_page(at + layer_map_slot_bytes());
-    for (uint32_t r = 0; r < slots; ++r) {
-        x.route[r] = at; at = align_page(at + route_slot_bytes());
-        x.activation[r] = at; at = align_page(at + activation_slot_bytes());
-        for (uint32_t o = 0; o < kMaxEngineRanks; ++o) {
-            x.result[result_index(r, o)] = at;
-            at = align_page(at + result_slot_bytes());
-        }
-    }
-    x.bytes = align_page(at);
-    x.route_bytes = route_slot_bytes(); x.activation_bytes = activation_slot_bytes(); x.result_bytes = result_slot_bytes();
-    x.owner_bytes = owner_slot_bytes(); x.layer_map_bytes = layer_map_slot_bytes();
-    return x;
-}
 
 /* The same layout from a runtime shape (RCS09-02): every region is sized from the model's hidden width, top-k, expert count, row
  * capacity and activation quantisation group, with checked 64-bit arithmetic, instead of the Flash-Next constants above. The
@@ -293,7 +405,8 @@ constexpr uint64_t shape_hash(const LayoutShape& s) {
     return h;
 }
 
-inline bool layout_for(const LayoutShape& s, uint32_t slots, Layout* out) {
+/* Checked runtime layout; all generation map storage uses actual layer and expert counts. */
+inline bool layout_for(const LayoutShape& s, uint32_t layer_count, uint32_t slots, Layout* out) {
     auto mul = [](uint64_t a, uint64_t b, uint64_t* r) {
         if (a && b > UINT64_MAX / a) return false;
         *r = a * b;
@@ -310,29 +423,41 @@ inline bool layout_for(const LayoutShape& s, uint32_t slots, Layout* out) {
         *r = t & ~(uint64_t(kPage) - 1);
         return true;
     };
-    if (!out || !slots || slots > kMaxSlots || !s.hidden || !s.top_k || !s.experts || !s.max_rows || !s.act_group || !s.intermediate || s.top_k > s.experts) return false;
-    uint64_t routes = 0, rows_hidden = 0, groups = 0, scale_cols = 0, owner_row = 0;
-    uint64_t route_b = 0, bf16_b = 0, q_b = 0, scale_b = 0, act_b = 0, result_b = 0, owner_b = 0, map_b = 0, tmp = 0;
+    if (!out || layer_count == 0 || layer_count > kMaxLayers ||
+        slots < kMaxEngineRanks || slots > kMaxSlots ||
+        !s.hidden || !s.top_k || !s.experts || !s.max_rows || !s.act_group ||
+        !s.intermediate || s.top_k > s.experts) return false;
+    uint64_t routes = 0, rows_hidden = 0, groups = 0;
+    uint64_t route_b = 0, bf16_b = 0, q_b = 0, scale_b = 0, act_b = 0;
+    uint64_t result_b = 0, map_b = 0, owner_map_b = 0, generation_b = 0, tmp = 0;
     if (!mul(s.max_rows, s.top_k, &routes) || !mul(routes, sizeof(Route), &route_b)) return false;
     if (!mul(s.max_rows, s.hidden, &rows_hidden) || !mul(rows_hidden, sizeof(uint16_t), &bf16_b)) return false;
     q_b = rows_hidden;
-    groups = (uint64_t)s.hidden / s.act_group;   /* the quantiser works in whole groups: a tail is not defined, so refuse it */
+    groups = (uint64_t)s.hidden / s.act_group;
     if (!groups || groups * s.act_group != s.hidden) return false;
-    scale_cols = groups;
-    if (!mul(s.max_rows, scale_cols, &tmp) || !mul(tmp, sizeof(float), &scale_b)) return false;
+    if (!mul(s.max_rows, groups, &tmp) || !mul(tmp, sizeof(float), &scale_b)) return false;
     if (!add(bf16_b, q_b, &tmp) || !add(tmp, scale_b, &act_b)) return false;
     result_b = bf16_b;
-    owner_row = ((uint64_t)s.experts + 7u) / 8u;
-    if (!mul(kMaxLayers, owner_row, &owner_b)) return false;
-    if (!mul((uint64_t)kMaxLayers * s.experts, sizeof(int32_t), &map_b)) return false;
-    for (uint64_t v : {route_b, act_b, result_b, owner_b, map_b})
-        if (v > UINT32_MAX) return false;   /* the header records each slot size in 32 bits */
+    if (!mul(layer_count, s.experts, &owner_map_b) ||
+        !mul((uint64_t)kMaxLayers * s.experts, sizeof(int32_t), &map_b) ||
+        !add(sizeof(GenerationHeader), owner_map_b, &tmp) || !page(tmp, &generation_b)) return false;
+    for (uint64_t v : {route_b, act_b, result_b, map_b, owner_map_b, generation_b})
+        if (v > UINT32_MAX) return false;
     Layout x{};
     uint64_t at = kPage;
     x.ring = at;
     if (!add(at, (uint64_t)sizeof(Request) * kRingSlots, &tmp) || !page(tmp, &at)) return false;
-    x.owner = at;
-    if (!mul(slots, owner_b, &tmp) || !add(at, tmp, &tmp) || !page(tmp, &at)) return false;
+    x.placement = at;
+    if (!add(at, sizeof(PlacementControl), &at)) return false;
+    x.journal = at;
+    if (!add(at, sizeof(PlacementJournal), &at)) return false;
+    x.ack = at;
+    if (!add(at, (kMaxHelpers + kMaxEngineRanks) * sizeof(PlacementAck), &tmp) ||
+        !page(tmp, &at)) return false;
+    x.generation[0] = at;
+    if (!add(at, generation_b, &at)) return false;
+    x.generation[1] = at;
+    if (!add(at, generation_b, &at)) return false;
     x.layer_map = at;
     if (!add(at, map_b, &tmp) || !page(tmp, &at)) return false;
     for (uint32_t r = 0; r < slots; ++r) {
@@ -345,31 +470,70 @@ inline bool layout_for(const LayoutShape& s, uint32_t slots, Layout* out) {
             if (!add(at, result_b, &tmp) || !page(tmp, &at)) return false;
         }
     }
-    if (!page(at, &x.bytes)) return false;
-    x.route_bytes = (uint32_t)route_b; x.activation_bytes = (uint32_t)act_b; x.result_bytes = (uint32_t)result_b;
-    x.owner_bytes = (uint32_t)owner_b; x.layer_map_bytes = (uint32_t)map_b;
+    if (!page(at, &x.bytes) || x.bytes > SIZE_MAX) return false;
+    x.route_bytes = (uint32_t)route_b; x.activation_bytes = (uint32_t)act_b;
+    x.result_bytes = (uint32_t)result_b; x.layer_map_bytes = (uint32_t)map_b;
+    x.owner_map_bytes = (uint32_t)owner_map_b;
+    x.generation_slot_bytes = (uint32_t)generation_b;
     *out = x;
     return true;
 }
 
+/* FNV-1a 64 over explicitly little-endian fields followed by exactly the canonical map. */
+inline uint64_t placement_digest(uint64_t model_shape_hash, uint32_t layers,
+                                 uint32_t experts, uint32_t helpers, const uint8_t* owners) {
+    uint64_t hash = 14695981039346656037ull;
+    auto u8 = [&](uint8_t byte) { hash = (hash ^ byte) * 1099511628211ull; };
+    auto u32 = [&](uint32_t value) {
+        for (uint32_t i = 0; i != 4; ++i) u8((uint8_t)(value >> (i * 8)));
+    };
+    for (uint32_t i = 0; i != 8; ++i) u8((uint8_t)(model_shape_hash >> (i * 8)));
+    u32(layers); u32(experts); u32(helpers);
+    if (owners)
+        for (uint64_t i = 0, n = (uint64_t)layers * experts; i < n; ++i) u8(owners[i]);
+    return hash;
+}
+
 /* Lay out and stamp a segment for this shape. The caller has mapped at least layout_for(shape).bytes. False (and nothing written)
  * when the shape does not lay out. */
-inline bool init(void* base, uint32_t layers, const LayoutShape& shape, uint32_t slots) {
+inline bool init(void* base, uint32_t layers, const LayoutShape& shape, uint32_t helper_count) {
     Layout l{};
-    if (!base || !layers || layers > kMaxLayers || !layout_for(shape, slots, &l)) return false;
+    if (!base || helper_count == 0 || helper_count > kMaxHelpers ||
+        !layout_for(shape, layers, slots_for(helper_count), &l)) return false;
     std::memset(base, 0, static_cast<size_t>(l.bytes));
     auto* h = static_cast<Header*>(base);
     h->magic = kMagic; h->version = kVersion; h->header_bytes = sizeof(Header);
-    h->layer_count = layers; h->rank_count = kMaxEngineRanks; h->slot_count = slots; h->ring_slots = kRingSlots;
+    h->layer_count = layers; h->rank_count = kMaxEngineRanks; h->slot_count = slots_for(helper_count);
+    h->ring_slots = kRingSlots;
     h->max_rows = shape.max_rows; h->hidden = shape.hidden; h->top_k = shape.top_k; h->expert_count = shape.experts;
     h->intermediate = shape.intermediate; h->activation_group = shape.act_group; h->shape_hash = shape_hash(shape);
-    h->owned_count = 0; h->owner_slot_bytes = l.owner_bytes; h->owned_bytes = 0;
-    h->owner_offset = l.owner;
+    /* helper_count remains unpublished until helper 0 finishes its bootstrap metadata. */
     h->layer_map_slot_bytes = l.layer_map_bytes; h->layer_map_offset = l.layer_map;
     std::memset(static_cast<uint8_t*>(base) + l.layer_map, 0xff, l.layer_map_bytes);
     h->next_sequence = 1; h->ring_offset = l.ring; h->segment_bytes = l.bytes;
-    h->small_class_count = 1; h->small_class_rows[0] = 8;   /* the helper overwrites these before it publishes helper_count */
-    for (uint32_t r = 0; r < slots; ++r) {
+    h->small_class_count = 1; h->small_class_rows[0] = 8;
+    h->placement_offset = l.placement; h->journal_offset = l.journal; h->ack_offset = l.ack;
+    h->generation_offset[0] = l.generation[0]; h->generation_offset[1] = l.generation[1];
+    h->owner_map_bytes = l.owner_map_bytes; h->generation_slot_bytes = l.generation_slot_bytes;
+    h->placement_control_bytes = sizeof(PlacementControl);
+    h->placement_ack_count = kMaxHelpers + kMaxEngineRanks;
+    for (uint32_t slot = 0; slot < 2; ++slot) {
+        auto* g = reinterpret_cast<GenerationHeader*>(static_cast<uint8_t*>(base) + l.generation[slot]);
+        g->map_bytes = l.owner_map_bytes; g->layer_count = layers;
+        g->expert_count = shape.experts; g->slot = slot;
+        g->state = (uint32_t)(slot == 0 ? GenerationState::ACTIVE : GenerationState::EMPTY);
+        std::memset(reinterpret_cast<uint8_t*>(g) + sizeof(GenerationHeader), kOwnerLocal, l.owner_map_bytes);
+    }
+    auto* g0 = reinterpret_cast<GenerationHeader*>(static_cast<uint8_t*>(base) + l.generation[0]);
+    g0->epoch = 1;
+    g0->digest = placement_digest(h->shape_hash, layers, shape.experts, helper_count,
+                                  reinterpret_cast<uint8_t*>(g0) + sizeof(GenerationHeader));
+    auto* control = reinterpret_cast<PlacementControl*>(static_cast<uint8_t*>(base) + l.placement);
+    control->state = (uint32_t)PlacementState::ACTIVE;
+    control->active_slot = 0; control->pending_slot = UINT32_MAX;
+    control->active_epoch = 1; control->active_digest = g0->digest;
+    control->expected_helpers = (1u << helper_count) - 1u;
+    for (uint32_t r = 0; r < h->slot_count; ++r) {
         h->route_slot_bytes[r] = l.route_bytes;
         h->activation_slot_bytes[r] = l.activation_bytes;
         h->route_offset[r] = l.route[r]; h->activation_offset[r] = l.activation[r];
@@ -388,26 +552,68 @@ inline bool init(void* base, uint32_t layers, const LayoutShape& shape, uint32_t
  * before any request is published or any expert buffer is touched. */
 inline bool valid(const Header* h, size_t mapped, const LayoutShape& expect) {
     if (!h || h->magic != kMagic || h->version != kVersion || h->header_bytes != sizeof(Header) ||
-        h->rank_count != kMaxEngineRanks || h->slot_count == 0 || h->slot_count > kMaxSlots || h->ring_slots != kRingSlots ||
+        h->rank_count != kMaxEngineRanks || h->helper_count == 0 || h->helper_count > kMaxHelpers ||
+        h->slot_count != slots_for(h->helper_count) || h->ring_slots != kRingSlots ||
         h->layer_count == 0 || h->layer_count > kMaxLayers ||
-        h->small_class_count == 0 || h->small_class_count > kSmallClasses) return false;
-    const LayoutShape got{h->hidden, h->top_k, h->expert_count, h->max_rows, h->activation_group, h->intermediate};
+        h->small_class_count == 0 || h->small_class_count > kSmallClasses ||
+        h->owned_count || h->owner_slot_bytes || h->owned_bytes || h->owner_offset) return false;
+    const LayoutShape got{h->hidden, h->top_k, h->expert_count, h->max_rows,
+                          h->activation_group, h->intermediate};
     if (got != expect || h->shape_hash != shape_hash(got)) return false;
     Layout l{};
-    if (!layout_for(got, h->slot_count, &l)) return false;
+    if (!layout_for(got, h->layer_count, h->slot_count, &l) ||
+        h->ring_offset != l.ring || h->layer_map_offset != l.layer_map ||
+        h->layer_map_slot_bytes != l.layer_map_bytes ||
+        h->placement_offset != l.placement || h->journal_offset != l.journal ||
+        h->ack_offset != l.ack || h->generation_offset[0] != l.generation[0] ||
+        h->generation_offset[1] != l.generation[1] ||
+        h->owner_map_bytes != l.owner_map_bytes ||
+        h->generation_slot_bytes != l.generation_slot_bytes ||
+        h->placement_control_bytes != sizeof(PlacementControl) ||
+        h->placement_ack_count != kMaxHelpers + kMaxEngineRanks ||
+        h->segment_bytes != l.bytes || mapped < l.bytes) return false;
+    for (uint32_t v : h->reserved32) if (v) return false;
     for (uint32_t c = 0; c < h->small_class_count; ++c)
         if (h->small_class_rows[c] == 0 || h->small_class_rows[c] > h->max_rows ||
             (c && h->small_class_rows[c] <= h->small_class_rows[c - 1])) return false;
-    if (h->ring_offset != l.ring || h->owner_offset != l.owner ||
-        h->owner_slot_bytes != l.owner_bytes ||
-        h->layer_map_offset != l.layer_map || h->layer_map_slot_bytes != l.layer_map_bytes ||
-        h->segment_bytes != l.bytes || mapped < l.bytes) return false;
-    /* Every slot past slot_count is unused and must be all zero: a header cannot hand out an offset the layout did not make. */
+    const auto* base = reinterpret_cast<const uint8_t*>(h);
+    const auto* control = reinterpret_cast<const PlacementControl*>(base + l.placement);
+    if (control->active_slot > 1 || (control->pending_slot > 1 && control->pending_slot != UINT32_MAX) ||
+        !control->active_epoch || control->state > (uint32_t)PlacementState::RETIRING ||
+        control->expected_helpers != (1u << h->helper_count) - 1u ||
+        (control->state == (uint32_t)PlacementState::ACTIVE &&
+         (control->pending_epoch || control->pending_digest || control->pending_slot != UINT32_MAX)))
+        return false;
+    for (uint32_t v : control->reserved) if (v) return false;
+    for (uint32_t slot = 0; slot < 2; ++slot) {
+        const auto* g = reinterpret_cast<const GenerationHeader*>(base + l.generation[slot]);
+        if (g->map_bytes != l.owner_map_bytes || g->layer_count != h->layer_count ||
+            g->expert_count != h->expert_count || g->slot != slot ||
+            g->state > (uint32_t)GenerationState::RETIRED) return false;
+        for (uint32_t v : g->reserved) if (v) return false;
+        if (g->state == (uint32_t)GenerationState::EMPTY && (g->epoch || g->digest))
+            return false;
+        if (slot == control->active_slot) {
+            const uint8_t* map = reinterpret_cast<const uint8_t*>(g) + sizeof(GenerationHeader);
+            for (uint32_t i = 0; i < g->map_bytes; ++i) {
+                const uint8_t owner = __atomic_load_n(map + i, __ATOMIC_ACQUIRE);
+                if (owner != kOwnerLocal && owner >= h->helper_count) return false;
+            }
+            if (g->epoch != control->active_epoch || g->digest != control->active_digest ||
+                g->state != (uint32_t)GenerationState::ACTIVE) return false;
+            /* The initial map is mutable during bootstrap; READY helper mask seals it. */
+            if (g->ready_helpers == control->expected_helpers &&
+                placement_digest(h->shape_hash, h->layer_count, h->expert_count, h->helper_count,
+                                 reinterpret_cast<const uint8_t*>(g) + sizeof(GenerationHeader)) != g->digest)
+                return false;
+        }
+    }
     for (uint32_t r = 0; r < kMaxSlots; ++r) {
         const bool used = r < h->slot_count;
-        /* Several helpers share slot 0's activation staging (helper 0 aliases the others to it). */
+        /* Several helpers share slot 0's activation staging. */
         if (h->route_offset[r] != (used ? l.route[r] : 0) ||
-            (h->activation_offset[r] != (used ? l.activation[r] : 0) && !(used && h->activation_offset[r] == l.activation[0])) ||
+            (h->activation_offset[r] != (used ? l.activation[r] : 0) &&
+             !(used && h->activation_offset[r] == l.activation[0])) ||
             h->route_slot_bytes[r] != (used ? l.route_bytes : 0) ||
             h->activation_slot_bytes[r] != (used ? l.activation_bytes : 0)) return false;
         for (uint32_t o = 0; o < kMaxEngineRanks; ++o) {
@@ -419,12 +625,11 @@ inline bool valid(const Header* h, size_t mapped, const LayoutShape& expect) {
     return true;
 }
 
-/* The attaching engine does not know the helper's model: it accepts any segment whose layout is internally consistent (every
- * offset and size rebuilt from the header's own shape) and then checks each launch's tensors against that shape (hidden, top-k,
- * expert count), so a segment of another model is still refused before a request is published. */
+/* Validate every descriptor and version before any GPU registration. */
 inline bool valid_self(const Header* h, size_t mapped) {
-    if (!h) return false;
-    return valid(h, mapped, LayoutShape{h->hidden, h->top_k, h->expert_count, h->max_rows, h->activation_group, h->intermediate});
+    if (!h || h->version != kVersion) return false;
+    return valid(h, mapped, LayoutShape{h->hidden, h->top_k, h->expert_count,
+                                       h->max_rows, h->activation_group, h->intermediate});
 }
 
 template <class T> inline T* ptr(void* base, uint64_t off) {
@@ -460,14 +665,73 @@ inline const Request* lane_request(const void* base, uint32_t lane, uint32_t seq
     return ptr<Request>(base, h->ring_offset) + lane * kLaneSlots + ((seq - 1) % kLaneSlots);
 }
 
-inline uint8_t* owner_bits(void* base, uint32_t helper) {
+inline PlacementControl* placement_control(void* base) {
     auto* h = static_cast<Header*>(base);
-    return ptr<uint8_t>(base, h->owner_offset) + (size_t)helper * h->owner_slot_bytes;
+    return ptr<PlacementControl>(base, h->placement_offset);
 }
-inline const uint8_t* owner_bits(const void* base, uint32_t helper) {
+inline const PlacementControl* placement_control(const void* base) {
     auto* h = static_cast<const Header*>(base);
-    return ptr<uint8_t>(base, h->owner_offset) + (size_t)helper * h->owner_slot_bytes;
+    return ptr<PlacementControl>(base, h->placement_offset);
 }
+/* Bounded seqlock snapshot: a writer publishes odd seq, data, even seq with release.
+ * No coordinator writes these words after initialization in slice A. */
+inline bool placement_snapshot(const void* base, PlacementControl* out) {
+    if (!base || !out) return false;
+    const PlacementControl* c = placement_control(base);
+    for (uint32_t tries = 0; tries < 64; ++tries) {
+        const uint32_t before = __atomic_load_n(&c->seq, __ATOMIC_ACQUIRE);
+        if (before & 1u) continue;
+        std::memcpy(out, c, sizeof(*out));
+        __atomic_thread_fence(__ATOMIC_ACQUIRE);
+        if (before == __atomic_load_n(&c->seq, __ATOMIC_ACQUIRE)) return true;
+    }
+    return false;
+}
+inline PlacementJournal* placement_journal(void* base) {
+    auto* h = static_cast<Header*>(base);
+    return ptr<PlacementJournal>(base, h->journal_offset);
+}
+inline const PlacementJournal* placement_journal(const void* base) {
+    auto* h = static_cast<const Header*>(base);
+    return ptr<PlacementJournal>(base, h->journal_offset);
+}
+inline PlacementAck* placement_ack(void* base, uint32_t actor) {
+    auto* h = static_cast<Header*>(base);
+    return actor < h->placement_ack_count ? ptr<PlacementAck>(base, h->ack_offset) + actor : nullptr;
+}
+inline const PlacementAck* placement_ack(const void* base, uint32_t actor) {
+    auto* h = static_cast<const Header*>(base);
+    return actor < h->placement_ack_count ? ptr<PlacementAck>(base, h->ack_offset) + actor : nullptr;
+}
+inline GenerationHeader* generation_header(void* base, uint32_t slot) {
+    auto* h = static_cast<Header*>(base);
+    return slot < 2 ? ptr<GenerationHeader>(base, h->generation_offset[slot]) : nullptr;
+}
+inline const GenerationHeader* generation_header(const void* base, uint32_t slot) {
+    auto* h = static_cast<const Header*>(base);
+    return slot < 2 ? ptr<GenerationHeader>(base, h->generation_offset[slot]) : nullptr;
+}
+inline uint8_t* generation_map(void* base, uint32_t slot) {
+    auto* g = generation_header(base, slot);
+    return g ? reinterpret_cast<uint8_t*>(g) + sizeof(GenerationHeader) : nullptr;
+}
+inline const uint8_t* generation_map(const void* base, uint32_t slot) {
+    auto* g = generation_header(base, slot);
+    return g ? reinterpret_cast<const uint8_t*>(g) + sizeof(GenerationHeader) : nullptr;
+}
+inline uint8_t owner_at(const void* base, uint32_t slot, uint32_t layer, uint32_t expert) {
+    const auto* h = static_cast<const Header*>(base);
+    const uint8_t* map = h ? generation_map(base, slot) : nullptr;
+    if (!map || layer >= h->layer_count || expert >= h->expert_count) return kOwnerLocal;
+    return __atomic_load_n(map + (size_t)layer * h->expert_count + expert, __ATOMIC_ACQUIRE);
+}
+inline uint64_t generation_digest(const void* base, uint32_t slot) {
+    const auto* h = static_cast<const Header*>(base);
+    const uint8_t* map = h ? generation_map(base, slot) : nullptr;
+    return map ? placement_digest(h->shape_hash, h->layer_count, h->expert_count,
+                                  h->helper_count, map) : 0;
+}
+
 inline int32_t* layer_slots(void* base, uint32_t layer) {
     auto* h = static_cast<Header*>(base);
     if (!h || layer >= h->layer_count) return nullptr;
@@ -482,39 +746,6 @@ inline int32_t layer_slot(const void* base, uint32_t layer, uint32_t expert) {
     const int32_t* p = layer_slots(base, layer);
     return p && expert < static_cast<const Header*>(base)->expert_count ? p[expert] : -1;
 }
-/* Bit index of (layer, expert) in an ownership bitmap: the stride is the segment's expert count (Header::expert_count). */
-inline uint64_t owner_bit(uint32_t layer, uint32_t expert, uint32_t experts) {
-    return (uint64_t)layer * experts + expert;
-}
-inline bool owns(const void* base, uint32_t layer, uint32_t expert, uint32_t helper) {
-    const auto* h = static_cast<const Header*>(base);
-    if (!h || layer >= h->layer_count || expert >= h->expert_count || helper >= h->slot_count) return false;
-    const uint64_t bit = owner_bit(layer, expert, h->expert_count);
-    return (owner_bits(base, helper)[bit >> 3] & (uint8_t)(1u << (bit & 7u))) != 0;
-}
-inline bool set_owned(void* base, uint32_t layer, uint32_t expert, uint32_t helper) {
-    auto* h = static_cast<Header*>(base);
-    if (!h || layer >= h->layer_count || expert >= h->expert_count || helper >= h->slot_count) return false;
-    const uint64_t bit = owner_bit(layer, expert, h->expert_count);
-    uint8_t* b = owner_bits(base, helper) + (bit >> 3);
-    const uint8_t mask = (uint8_t)(1u << (bit & 7u));
-    if (*b & mask) return false;
-    *b |= mask;
-    __atomic_fetch_add(&h->owned_count, 1u, __ATOMIC_ACQ_REL);
-    return true;
-}
-inline bool clear_owned(void* base, uint32_t layer, uint32_t expert, uint32_t helper) {
-    auto* h = static_cast<Header*>(base);
-    if (!h || layer >= h->layer_count || expert >= h->expert_count || helper >= h->slot_count) return false;
-    const uint64_t bit = owner_bit(layer, expert, h->expert_count);
-    uint8_t* b = owner_bits(base, helper) + (bit >> 3);
-    const uint8_t mask = (uint8_t)(1u << (bit & 7u));
-    if (!(*b & mask)) return false;
-    *b &= (uint8_t)~mask;
-    __atomic_fetch_sub(&h->owned_count, 1u, __ATOMIC_ACQ_REL);
-    return true;
-}
-
 /* Sequence order modulo 2^32: a is after b when it is less than half the space ahead (defined unsigned arithmetic, no
  * signed cast). Holds while fewer than 2^31 sequences are in flight between the two, which the protocol keeps. */
 constexpr bool seq_after(uint32_t a, uint32_t b) { return a != b && (uint32_t)(a - b) < 0x80000000u; }

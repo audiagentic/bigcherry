@@ -45,6 +45,11 @@ public:
 
     /* The GPU path: pin and map the segment for this device. */
     bool register_gpu() {
+        /* Validate the complete v23 layout before pinning the host mapping. */
+        if (!map_ || !r3::moe_shm::valid_self(header(), bytes_)) {
+            std::fprintf(stderr, "r3_moe_worker: invalid v23 mailbox before GPU registration\n");
+            return false;
+        }
         if (!r3_moe_gpu::hip_ok(hipHostRegister(map_, bytes_, hipHostRegisterPortable | hipHostRegisterMapped),
                                 "hipHostRegister mailbox"))
             return false;

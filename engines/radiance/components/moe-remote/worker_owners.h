@@ -240,13 +240,34 @@ bool select_owned(const Container& f, r3_moe_gpu::Runner* gpu, const uint64_t* b
     return true;
 }
 
-void publish_owned(void* map, const Owned& owned, uint32_t helper) {
+/* Bootstrap only: helpers publish their deterministic, disjoint selections into slot 0.
+ * The initial map is mutable until engine bootstrap sealing; there is no live owner update. */
+bool publish_owned(void* map, const Owned& owned, uint32_t helper) {
     Header* h = static_cast<Header*>(map);
-    __atomic_fetch_add(&h->owned_bytes, owned.bytes, __ATOMIC_ACQ_REL);
+    uint8_t* owners = generation_map(map, 0);
+    if (!owners || helper >= kMaxHelpers) return false;
     for (auto [l, e] : owned.expert) {
-        if (!set_owned(map, l, e, helper))
-            std::fprintf(stderr, "r3_moe_worker: duplicate/invalid ownership (%u,%u)\n", l, e);
+        if (l >= h->layer_count || e >= h->expert_count) return false;
+        uint8_t* entry = owners + (size_t)l * h->expert_count + e;
+        uint8_t expected = kOwnerLocal;
+        if (!__atomic_compare_exchange_n(entry, &expected, (uint8_t)helper, false,
+                                         __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+            std::fprintf(stderr, "r3_moe_worker: duplicate/conflicting ownership (%u,%u): existing=%u, helper=%u\n",
+                         l, e, (unsigned)expected, helper);
+            return false;
+        }
     }
+    return true;
+}
+
+/* Only initialization-time runtime-map filtering can remove a candidate owner. */
+bool drop_bootstrap_owner(void* map, uint32_t l, uint32_t e, uint32_t helper) {
+    Header* h = static_cast<Header*>(map);
+    if (l >= h->layer_count || e >= h->expert_count || helper >= kMaxHelpers) return false;
+    uint8_t* entry = generation_map(map, 0) + (size_t)l * h->expert_count + e;
+    uint8_t expected = (uint8_t)helper;
+    return __atomic_compare_exchange_n(entry, &expected, kOwnerLocal, false,
+                                       __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE);
 }
 
 bool parse_u32(const char* s, uint32_t lo, uint32_t hi, uint32_t* out) {

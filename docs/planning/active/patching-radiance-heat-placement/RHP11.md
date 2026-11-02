@@ -64,7 +64,10 @@ Plan source: GPT staged plan 2026-11-01 (gateway session ses_335f497feb31449a, r
 ## Ledger-events
 
 
+
 - chg_20261101_225732_planning-a-staged-roadmap-for_4092
 - 2026-11-01T22:57:50.943098+00:00 (updated-by): Updated: section:ledger-events
 - chg_20261101_233905_design-spec-for-moving-experts_5737
 - 2026-11-01T23:39:09.725180+00:00 (updated-by): Updated: section:ledger-events
+- chg_20261102_002949_groundwork-for-moving-experts_1337
+- 2026-11-02T00:29:56.603122+00:00 (updated-by): Updated: section:ledger-events
