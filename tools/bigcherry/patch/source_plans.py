@@ -1,7 +1,7 @@
 """Explicit focal-patch comparison construction: BASELINE / CONTROL /
 SUBJECT / STOCK source compositions (patch-system PA02 / RS06).
 
-Runbook sections 35-37 (docs/planning/active/patch-system/
+Runbook sections 35-37 (docs/planning/active/patching-patch-system/
 PATCH_REFACTOR_RUNBOOK.md). The implicit "baseline = every patch whose
 STATE == validated" definition is retired as the scientific attribution
 baseline: the caller passes an explicitly resolved baseline composition

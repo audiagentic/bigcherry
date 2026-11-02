@@ -93,7 +93,7 @@ class CampaignResolutionTests(unittest.TestCase):
         # (RD19 was briefly in validated-enhancements on 2026-08-24; that
         # promotion post-dated the HI83 evidence contract with no qualifying
         # evidence, and was deliberately reverted -- see
-        # docs/planning/active/patch-system/PA05.md.)
+        # docs/planning/active/patching-patch-system/PA05.md.)
         self.assertEqual(lane.promoted_enhancements, ())
         # ...and belt-and-braces on the thing that actually gets built.
         non_empty = self.cfg.patch_sets["validated-enhancements"].patches

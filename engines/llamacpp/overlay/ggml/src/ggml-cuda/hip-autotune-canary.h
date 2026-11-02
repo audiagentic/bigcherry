@@ -6,7 +6,7 @@
 // test compile it directly and pin the transition table without a device, a
 // driver, or a full build.
 //
-// The state machine (docs/planning/active/hip-autotune/HI68.md):
+// The state machine (docs/planning/active/tuning-hip-autotune/HI68.md):
 //
 //   initial block --pass--> RANK (rank the original complete block)
 //   initial block --fail--> probe: pair-only stability check. Its samples

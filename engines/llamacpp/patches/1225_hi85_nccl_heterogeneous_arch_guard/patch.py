@@ -70,7 +70,7 @@ semantics differ, and a log-only warning is too easy to miss. This guard
 fails closed with a hard, clearly-diagnosed abort (GGML_ABORT) instead of
 the uncatchable, undiagnosed HIP SIGABRT the original investigation
 found. See docs/reference/testing/RCCL_HETEROGENEOUS_RUNBOOK.md and
-docs/planning/active/gpu-collectives/GP02.md for the full investigation
+docs/planning/active/run-gpu-collectives/GP02.md for the full investigation
 and real hardware evidence.
 """
 
@@ -147,8 +147,8 @@ _GUARD = '''
     // reduction path (internal/META) would change semantics behind the
     // user's back. Fail closed with a clear, named abort instead of both
     // the original uncatchable HIP SIGABRT and a silent fallback. See
-    // docs/planning/active/hip-autotune/HI85.md, HI138.md, and
-    // docs/planning/active/gpu-collectives/GP02.md for the full
+    // docs/planning/active/tuning-hip-autotune/HI85.md, HI138.md, and
+    // docs/planning/active/run-gpu-collectives/GP02.md for the full
     // investigation and real hardware evidence.
     if (!ggml_backend_cuda_comm_rccl_admission_ok(ret->dev_ids.data(), ret->dev_ids.size())) {
         GGML_LOG_ERROR("NCCL/RCCL admission check failed -- at least one participating "
