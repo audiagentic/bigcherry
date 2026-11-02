@@ -159,6 +159,41 @@ int main(int argc, char** argv) {
     err = captured(scratch, [&] { rc = bc_plan::check(host_drift); });
     check(rc == 2 && err.find("BC_CFG_PLAN_MISMATCH") != std::string::npos, "one byte of host drift is refused: " + err);
 
+    // Every normative admission vector through the engine's own entry points: --plan-check/--plan-check-floor-ppm parsing,
+    // then bc_plan::check. The exit code and the message must be what the vector says (admit 0, admission 4, plan or input 2).
+    {
+        int ran = 0;
+        for (const Json& v : vectors.at("vectors")) {
+            const std::string name = v.at("name").get<std::string>(), cls = v.at("verdict").value("class", std::string("admit"));
+            const bool admit = v.at("verdict").at("admit").get<bool>();
+            const int want_exit = admit ? 0 : cls == "admission" ? 4 : 2;
+            const std::string needle = admit ? std::string() : v.at("verdict").at("needle").get<std::string>();
+            write(scratch + "/vec-expected.json", v.at("expected").dump());
+            ++ran;
+            int rc = take(scratch, {"--plan-check", scratch + "/vec-expected.json", "--plan-check-floor-ppm",
+                                    std::to_string(v.at("ppm").get<int64_t>())}, &err);
+            v1::EnginePlan expected, live_plan;
+            const bool expected_ok = !v1::decode(v.at("expected"), "", &expected);
+            const bool live_ok = !v1::decode(v.at("live"), "", &live_plan);
+            if (!expected_ok || v.at("ppm").get<int64_t>() < 0 || v.at("ppm").get<int64_t>() >= 1000000) {
+                check(!admit && cls == "input" && rc == 2, "vector " + name + ": refused at the flags with exit 2, got " + std::to_string(rc) + " " + err);
+                continue;
+            }
+            check(rc == 0, "vector " + name + ": the flags are accepted: " + err);
+            if (!live_ok) {
+                check(!admit && cls == "input", "vector " + name + ": an undecodable live plan is invalid input");
+                continue;
+            }
+            err = captured(scratch, [&] { rc = bc_plan::check(live_plan); });
+            check(rc == want_exit, "vector " + name + ": exit " + std::to_string(want_exit) + ", got " + std::to_string(rc) + " " + err);
+            if (!admit)
+                check(err.find(needle) != std::string::npos, "vector " + name + ": message names '" + needle + "': " + err);
+            else
+                check(err.find("plan check: admitted") != std::string::npos, "vector " + name + ": admitted line: " + err);
+        }
+        check(ran >= 46, "all admission vectors ran through bc_plan::check");
+    }
+
     std::fclose(stderr);
     if (failures) return 1;
     std::printf("ok\n");

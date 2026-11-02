@@ -784,6 +784,27 @@ void measured_plan_cache(Fixture& t) {
         refused = std::string(e.what()).find("key inputs differ") != std::string::npos;
     }
     assert(refused);
+    // Plans and cache entries are read as the engine reads them: a repeated member is refused before any decoding.
+    {
+        const std::string text = plan.dump();
+        auto dup_refused = [&](const std::string& doc, const char* what) {
+            try { (void)sv::parse_plan_json(doc, "dup.json"); } catch (const std::exception& e) {
+                return std::string(e.what()).find("dup.json") != std::string::npos;
+            }
+            std::fprintf(stderr, "duplicate member accepted: %s\n", what);
+            return false;
+        };
+        assert(sv::parse_plan_json(text, "ok.json") == plan);
+        assert(dup_refused("{\"host_pool_mib\":1,\"host_pool_mib\":2}", "top level"));
+        assert(dup_refused("{\"vram\":{\"statics\":1,\"statics\":2}}", "nested vram"));
+        assert(dup_refused("{\"host\":[{\"name\":\"a\",\"name\":\"b\"}]}", "inside a host consumer"));
+        assert(dup_refused("{\"plan_version\":1", "truncated"));
+        const auto dup_file = dir / "dup-plan.json";
+        std::ofstream(dup_file) << "{\"a\":1,\"a\":1}";
+        std::ostringstream read_back;
+        read_back << std::ifstream(dup_file).rdbuf();
+        assert(dup_refused(read_back.str(), "from a file"));
+    }
     Json bad = plan; bad.erase("vram");
     refused = false;
     try { (void)sv::plan_cache_store(dir, k, bad); } catch (const std::exception& e) {

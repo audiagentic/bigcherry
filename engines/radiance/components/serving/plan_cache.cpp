@@ -3,6 +3,7 @@
 #include "plan_cache.h"
 #include "serving_codec.h"
 #include "sha256.h"
+#include "strict_json.h"
 #include "serving.h"
 
 #include "rad_format.h"
@@ -24,6 +25,15 @@
 extern "C" char** environ;
 
 namespace bc::serving {
+nlohmann::json parse_plan_json(const std::string& text, const std::string& source) {
+    v1::Result<nlohmann::json> parsed = v1::parse_strict_json(text, source);
+    if (!parsed.ok()) {
+        const v1::ConfigError& e = parsed.error();
+        throw std::runtime_error(source + ": " + (e.path.empty() ? std::string() : e.path + ": ") + e.message);
+    }
+    return std::move(parsed.value());
+}
+
 v1::EnginePlan decode_engine_plan(const nlohmann::json& plan, const std::string& where) {
     v1::EnginePlan p;
     if (const v1::Status e = v1::decode(plan, "", &p))
@@ -171,9 +181,9 @@ std::optional<CachedPlan> plan_cache_lookup(const fs::path& dir, const Json& key
     const std::string key = plan_key(key_inputs);
     const fs::path file = dir / (key + ".json");
     if (!fs::exists(file)) return std::nullopt;
-    const Json e = Json::parse(read_file(file), nullptr, false);
     const std::string where = "plan cache entry " + file.string();
-    if (e.is_discarded() || !e.is_object()) throw std::runtime_error(where + ": not a JSON object");
+    const Json e = parse_plan_json(read_file(file), where);
+    if (!e.is_object()) throw std::runtime_error(where + ": not a JSON object");
     for (const char* k : {"cache_version", "key", "key_inputs", "measured_at", "plan"})
         if (!e.contains(k)) throw std::runtime_error(where + ": missing " + std::string(k));
     if (e.size() != 5) throw std::runtime_error(where + ": unknown keys");
@@ -240,8 +250,7 @@ Json measure_engine_plan(const fs::path& binary, const fs::path& manifest, uint3
                                  (WIFEXITED(status) ? "exited " + std::to_string(WEXITSTATUS(status))
                                                     : "was killed by signal " + std::to_string(WTERMSIG(status))) +
                                  "; its log says why");
-    const Json plan = Json::parse(read_file(out), nullptr, false);
-    if (plan.is_discarded()) throw std::runtime_error(out.string() + ": the engine's plan is not JSON");
+    const Json plan = parse_plan_json(read_file(out), out.string());
     (void)decode_engine_plan(plan, out.string());
     return plan;
 }

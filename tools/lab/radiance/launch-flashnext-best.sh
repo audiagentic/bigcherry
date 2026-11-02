@@ -164,6 +164,20 @@ HELPER=$RAD_HOME/helpers/r3_moe_worker
 # CPU energy counters unreadable (`bigcherry host-check`, PWR04).
 PYTHONPATH=tools python3 -m bigcherry host-check 2>/dev/null | grep '^WARN' >&2 || true
 
+# From here until the engine is up, anything that ends this launcher (a failure, ^C, SIGTERM, SIGHUP, an early exit) stops
+# what it started and puts the power settings back. Only the hand-off at the end (LAUNCH_HANDED_OFF=1) keeps them.
+LAUNCH_HANDED_OFF=0
+launch_cleanup() {
+  [ "$LAUNCH_HANDED_OFF" = 1 ] && return 0
+  trap - EXIT
+  echo "launch did not complete; stopping what was started" >&2
+  stop_all
+}
+trap launch_cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
+
 # Optional per-run power settings (PWR04); when they cannot be written, gpu-power lists the missing setup steps and the run goes
 # ahead with the cards as they are.
 if [ "$GPU_POWER" = 1 ]; then
@@ -233,7 +247,7 @@ start_helpers() {
       kill -0 "$(cat "$PIDS/helper$i")" 2>/dev/null || break
       sleep 1
     done
-    [ $ready = 1 ] || { echo "FLASHNEXT_EXIT=1 helper$i not ready; see $log"; tail -n 20 "$log"; false; }
+    [ $ready = 1 ] || { echo "FLASHNEXT_EXIT=1 helper$i not ready; see $log"; tail -n 20 "$log"; return 1; }
   done
 }
 
@@ -292,7 +306,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib/plan-check.sh"
 # plan that does not decode) the engine does not start. There is no way to skip it.
 plan_check_flags || { echo "FLASHNEXT_EXIT=97 the engine plan check could not be armed (above); nothing was started for serving"; exit 97; }
 
-trap 'echo "start failed; stopping what was started" >&2; stop_all; exit 1' ERR
+trap 'exit 1' ERR
 rm -f "/dev/shm${SHM}"
 start_helpers
 LOG=$RUN/engine-$STAMP.log
@@ -307,6 +321,8 @@ for _ in $(seq 180); do
 done
 [ $up = 1 ] || { echo "FLASHNEXT_EXIT=1 engine did not come up; see $LOG"; tail -n 30 "$LOG"; false; }
 trap - ERR
+LAUNCH_HANDED_OFF=1
+trap - EXIT INT TERM HUP
 
 cat <<INFO
 FLASHNEXT_EXIT=0

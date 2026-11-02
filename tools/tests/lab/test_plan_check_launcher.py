@@ -40,7 +40,8 @@ while [ $# -gt 0 ]; do
   esac
 done
 printf '%s\n' "${sets[@]}" >> "$cache/describe.log"
-key=$(printf '%s\n' "${sets[@]}" | sha256sum | cut -c1-64)
+# the real key leaves out where the engine listens and the host KV tier (plan_cache.cpp kNonPlanEngineKeys): hits, not misses
+key=$(printf '%s\n' "${sets[@]}" | grep -v -e '^engine.port=' -e '^memory.host_kv_mib=' | sha256sum | cut -c1-64)
 case "$mode" in
   --plan-key) echo "$key" ;;
   --plan-store)
@@ -72,19 +73,23 @@ class PlanCheckLauncherTests(unittest.TestCase):
         self.serve.write_text(FAKE_SERVE)
         self.serve.chmod(self.serve.stat().st_mode | stat.S_IXUSR)
         self.engine_calls = self.root / "engine-calls.log"
+        self.heat = self.root / "heat.hot-first"
+        self.heat.write_bytes(b"heat-v1")
 
     def _launch(self, **overrides: str) -> subprocess.CompletedProcess[str]:
         """Source the library with the launcher's variables and a fake measuring start, then arm the check."""
         values = dict(LAYOUT="flashnext-4gpu", SEQS="8", MAX_LEN="262144", HOST_POOL_MIB="9216", HOST_KV_MIB="12288",
                       CHUNK="2048", NGRAM="ram", KV_DTYPE="fp8", ROPE="none", PORT="36080", PREFIX_RESUME="nearest",
-                      MODEL="/model.rad", HEAT="/heat.hot-first", RECORD="/heat.live", CKPT_INTERVAL="4096", NUM_SPEC="3")
+                      MODEL="/model.rad", HEAT=str(self.heat), RECORD="/heat.live", CKPT_INTERVAL="4096", NUM_SPEC="3")
         engine_args = overrides.pop("ENGINE_ARGS", "")
+        budgets = overrides.pop("BUDGETS", "")
         values.update(overrides)
         assigns = "\n".join(f"{k}={shlex.quote(v)}" for k, v in values.items())
         script = f"""
 set -u
 RUN={shlex.quote(str(self.run_dir))}; RAD_HOME={shlex.quote(str(self.home))}; RAD_BIN=/engine
 ENGINE_ARGS=({engine_args})
+BUDGETS=({budgets})
 {assigns}
 source {shlex.quote(str(LIB))}
 # the measuring start: the engine is asked for a plan and writes one; recorded so the tests see what ran
@@ -126,14 +131,33 @@ plan_check_flags && printf 'ARGS:%s\\n' "${{PLAN_CHECK_ARGS[*]}}"
     def test_any_one_changed_launcher_setting_is_a_miss(self) -> None:
         self._launch()
         changes = {"LAYOUT": "flashnext-2xtx", "SEQS": "4", "MAX_LEN": "131072", "HOST_POOL_MIB": "8192",
-                   "HOST_KV_MIB": "6144", "CHUNK": "1024", "NGRAM": "disk", "KV_DTYPE": "fp8_v4", "ROPE": "yarn:4",
-                   "PORT": "36081", "PREFIX_RESUME": "off", "CKPT_INTERVAL": "2048", "NUM_SPEC": "2"}
+                   "CHUNK": "1024", "NGRAM": "disk", "KV_DTYPE": "fp8_v4", "ROPE": "yarn:4",
+                   "PREFIX_RESUME": "off", "CKPT_INTERVAL": "2048", "NUM_SPEC": "2",
+                   "NGRAM_DEV": "0000:03:00.0", "BUDGETS": "--budget 20000"}
         for name, value in changes.items():
             with self.subTest(setting=name):
                 self.engine_calls.unlink(missing_ok=True)
                 changed = self._launch(**{name: value})
                 self.assertEqual(changed.returncode, 0, changed.stderr)
                 self.assertTrue(self.engine_calls.exists(), f"{name}={value} must be a different configuration")
+
+    def test_the_route_heat_files_contents_are_part_of_the_configuration(self) -> None:
+        self._launch()
+        self.engine_calls.unlink()
+        self.heat.write_bytes(b"heat-v2")
+        changed = self._launch()
+        self.assertEqual(changed.returncode, 0, changed.stderr)
+        self.assertTrue(self.engine_calls.exists(), "a different heat file decides different helper ownership")
+
+    def test_what_the_key_deliberately_leaves_out_is_a_hit(self) -> None:
+        # the port and the host KV tier are not part of what decides whether a measurement applies (plan_cache.cpp)
+        self._launch()
+        for name, value in {"PORT": "36081", "HOST_KV_MIB": "6144"}.items():
+            with self.subTest(setting=name):
+                self.engine_calls.unlink(missing_ok=True)
+                again = self._launch(**{name: value})
+                self.assertEqual(again.returncode, 0, again.stderr)
+                self.assertFalse(self.engine_calls.exists(), f"{name} is not part of the key; the measurement still applies")
 
     def test_engine_arguments_passed_through_are_part_of_the_configuration(self) -> None:
         self._launch()
@@ -143,7 +167,7 @@ plan_check_flags && printf 'ARGS:%s\\n' "${{PLAN_CHECK_ARGS[*]}}"
         with_arg = self._launch(ENGINE_ARGS="--kv-resident 65536")
         self.assertEqual(with_arg.returncode, 0, with_arg.stderr)
         self.assertTrue(self.engine_calls.exists(), "an extra engine argument is a different configuration")
-        self.assertIn("plan-extra=--kv-resident 65536", (self.run_dir / "plan-cache" / "describe.log").read_text())
+        self.assertIn("engine-args: --kv-resident 65536", (self.run_dir / "plan-cache" / "describe.log").read_text())
 
     def test_the_measuring_start_and_the_real_start_describe_one_configuration(self) -> None:
         self._launch()

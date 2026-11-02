@@ -33,6 +33,10 @@ std::string plan_key(const nlohmann::json& key_inputs);
  * each host consumer once, and the checkpoint floor within the want. Throws naming `where` and the decoder's path. */
 v1::EnginePlan decode_engine_plan(const nlohmann::json& plan, const std::string& where);
 
+/* A plan or cache entry through the shared strict parser (size limit, UTF-8, duplicate members refused, depth bound) before
+ * any decoding, as the engine reads it. Throws naming `source`. */
+nlohmann::json parse_plan_json(const std::string& text, const std::string& source);
+
 struct CachedPlan {
     v1::EnginePlan plan;           // decoded by the shared v1 codec
     nlohmann::json plan_json;   // as rad0011 wrote it

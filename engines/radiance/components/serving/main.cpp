@@ -5,6 +5,7 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -178,8 +179,9 @@ int main(int argc, char** argv) {
                                              "; it is not stored under the wrong key");
                 std::ifstream in(plan_file, std::ios::binary);
                 if (!in) throw std::runtime_error("cannot read " + plan_file.string());
-                const Json measured = Json::parse(in, nullptr, false);
-                if (measured.is_discarded()) throw std::runtime_error(plan_file.string() + ": not JSON");
+                std::ostringstream plan_text;
+                plan_text << in.rdbuf();
+                const Json measured = bc::serving::parse_plan_json(plan_text.str(), plan_file.string());
                 bc::serving::check_plan_for_configuration(
                     v, bc::serving::decode_engine_plan(measured, plan_file.string()));
                 const auto stored = bc::serving::plan_cache_store(plan_cache, key_inputs, measured);
@@ -194,7 +196,7 @@ int main(int argc, char** argv) {
                 if (!hit) {
                     std::cerr << "bc-serve: no measured plan for this configuration (key "
                               << bc::serving::plan_key(key_inputs).substr(0, 16)
-                              << "); measure it: launch-flashnext-best.sh start --measure-plan\n";
+                              << "); the launcher measures it on a start with the helpers up\n";
                     return 10;
                 }
                 std::cerr << "plan: cached " << hit->key << " (measured " << hit->measured_at << ")\n";
