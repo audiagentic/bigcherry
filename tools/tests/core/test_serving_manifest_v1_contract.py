@@ -190,7 +190,7 @@ class ServingManifestV1ContractTests(unittest.TestCase):
         floats = [path for path, value in _walk(registry) if isinstance(value, float)]
         self.assertEqual(floats, [], "the registry is integer-only (spec §11, amendment 3)")
         fingerprint = (ROOT / "engines/radiance/components/serving/generated/contract.fingerprint").read_text()
-        self.assertRegex(fingerprint, r"^sha256:[0-9a-f]{64}\n$")
+        self.assertRegex(fingerprint, r"^schema sha256:[0-9a-f]{64}\nsemantics sha256:[0-9a-f]{64}\n$")
 
     def test_schema_and_examples_validate(self) -> None:
         try:

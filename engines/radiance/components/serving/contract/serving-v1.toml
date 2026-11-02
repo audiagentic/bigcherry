@@ -1,7 +1,8 @@
 # Serving manifest v1 field registry: the one authoritative description of the v1 contract
 # (docs/design/serving-manifest-v1/spec.md). contract/generate.cpp turns it into the JSON Schema, the typed model,
 # the field reference and the contract fingerprint (engines/radiance/components/serving/generated/); CI regenerates
-# them and byte-diffs the committed copies. v1 is closed: any change here is a bigcherry/v2 change (spec §8).
+# them and byte-diffs the committed copies. v1 is closed (spec §8): a change that moves either fingerprint (what
+# validates, or a field's class or Radiance binding) is a bigcherry/v2 change; correcting a doc is not (README.md).
 #
 # Format (see contract/README.md): [contract] identity; [[def]] shared types ($defs); [[class_default]] provenance
 # class defaults by path prefix; [[calibration_key]] the calibrated keys and each value's type; [[field]] one entry per
@@ -18,7 +19,8 @@ title = "BigCherry ServingManifest v1 (wire)"
 namespace = "bc::serving::v1"
 lifecycle = "startup_only"
 
-# Provenance class of each subtree (the longest matching prefix wins); envelope fields are integrity fields.
+# Provenance class of each subtree (the longest matching prefix wins). `envelope` marks the integrity fields: they
+# identify the document, have no provenance record of their own and are covered by the root "" record (README.md).
 
 [[class_default]]
 path = "/apiVersion"

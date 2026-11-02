@@ -70,9 +70,14 @@ bool load_registry(const std::string& toml_text, const std::string& source_name,
 
 /* The JSON Schema 2020-12 document, canonical key order, two-space indent, trailing newline. */
 std::string emit_schema(const Registry& r);
-/* "sha256:" + SHA-256 of the RFC 8785 JCS bytes of the schema with every "description" removed: documentation edits do
- * not change it; any change to what validates does. */
+/* "sha256:" + SHA-256 of the RFC 8785 JCS bytes of the schema with every annotation (title, description, $comment,
+ * examples, default, deprecated, readOnly, writeOnly) removed from schema positions only: documentation edits do not
+ * change it; any change to what validates does, including literal const/enum data. */
 std::string fingerprint(const Registry& r);
+/* "sha256:" + SHA-256 of the JCS of the annotation-free schema plus the semantics the schema does not express: every
+ * field's provenance class, the lifecycle, the Radiance bindings and the calibration keys.
+ * The closed-v1 identity: either fingerprint changing is a bigcherry/v2 change. */
+std::string semantic_fingerprint(const Registry& r);
 /* serving_types.h: the typed model (namespace from [contract]), its enums with their wire names, the field table. */
 std::string emit_types(const Registry& r);
 /* serving-fields.md: the field reference. */

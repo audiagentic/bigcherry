@@ -155,6 +155,8 @@ void check_scalar(const Node& n, const std::string& at) {
         if (bad) fault(at, std::string("kind '") + n.kind + "' cannot have " + what);
     };
     if (n.kind == "number") fault(at, "kind 'number': the v1 contract has integers only");
+    if (n.min_length && *n.min_length < 0) fault(at, "min_length is not negative");
+    if (n.values.size() > 256) fault(at, "an enum has at most 256 values (uint8_t)");
     if (!kKinds.count(n.kind) && n.kind != "tuple") fault(at, "unknown kind '" + n.kind + "'");
     refuse(n.kind != "integer" && num, "a numeric bound");
     refuse(n.kind != "string" && text, "a string constraint");
@@ -179,9 +181,12 @@ void check_scalar(const Node& n, const std::string& at) {
         if (n.kind == "enum" && !type_name(n.cpp_type)) fault(at, "an enum needs cpp_type, a C++ type name");
         if (n.kind == "enum") {
             std::set<std::string> names;
-            for (const Json& v : n.values)
-                if (!names.insert(enumerator(v.get<std::string>())).second)
+            for (const Json& v : n.values) {
+                const std::string e = enumerator(v.get<std::string>());
+                if (!identifier(e)) fault(at, "enum value " + v.dump() + " gives the invalid C++ enumerator " + e);
+                if (!names.insert(e).second)
                     fault(at, "enum values " + v.dump() + " and another map to the same C++ enumerator");
+            }
         }
     }
 }
@@ -250,6 +255,9 @@ struct Loader {
         n.min_properties = integer(t, "min_properties", where);
         n.min_items = integer(t, "min_items", where);
         n.max_items = integer(t, "max_items", where);
+        for (const auto* v : {&n.min_properties, &n.min_items, &n.max_items})
+            if (*v && **v < 0) fault(where, "item and member counts are not negative");
+        if (n.min_items && n.max_items && *n.min_items > *n.max_items) fault(where, "min_items exceeds max_items");
         n.unique_items = boolean(t, "unique_items", where);
         if (const auto* c = t.get("constraints")) {
             if (!c->is_string()) fault(where, "constraints is a JSON array, as a string");
@@ -314,6 +322,9 @@ struct Loader {
         item.path = r.nodes[array].path + "/[]";
         item.kind = item_kind;
         if (item_kind == "tuple") {
+            for (const char* k : {"item_ref", "item_min_length", "item_minimum", "item_values", "item_pattern"})
+                if (t.get(k)) fault(at, std::string("a tuple item takes only 'tuple'; '") + k + "' does not apply");
+            if (!cpp_type.empty()) fault(at, "a tuple item has no cpp_type");
             item.tuple = strings(t, "tuple", at);
             if (item.tuple.empty()) fault(at, "a tuple item needs its element defs");
         } else {
@@ -437,6 +448,35 @@ struct Loader {
             }
         }
         if (r.calibration.empty()) fault("registry", "no [[calibration_key]]");
+        if (r.calibration.size() > 256) fault("registry", "at most 256 calibration keys (uint8_t)");
+        std::set<std::string> enumerators;
+        for (const CalibrationKey& c : r.calibration) {
+            const std::string e = enumerator(c.key);
+            if (!identifier(e)) fault("calibration_key " + c.key, "gives the invalid C++ enumerator " + e);
+            if (!enumerators.insert(e).second) fault("calibration_key " + c.key, "maps to the C++ enumerator " + e + " twice");
+        }
+        auto def_kind = [&](const std::string& name) {
+            for (const Def& d : r.defs)
+                if (d.name == name) return d.kind;
+            return std::string();
+        };
+        for (const Node& n : r.nodes) {
+            const std::string at = n.path.empty() ? "\"\"" : n.path;
+            if (n.kind == "map" && def_kind(n.key_ref) != "string") fault(at, "key_ref must name a string def");
+            for (const std::string& t : n.tuple)
+                if (def_kind(t) != "integer") fault(at, "tuple elements must be integer defs");
+            if (n.path.rfind("calibration:", 0) == 0 && n.kind == "ref" && def_kind(n.ref) != "integer" &&
+                def_kind(n.ref) != "string")
+                fault(at, "a calibration value refers to an integer or string def");
+            if (n.kind == "object") {
+                std::set<std::string> members;
+                for (size_t c : n.children) {
+                    const Node& m = r.nodes[c];
+                    const std::string name = m.cpp_member.empty() ? m.key : m.cpp_member;
+                    if (!members.insert(name).second) fault(m.path, "C++ member " + name + " is repeated in " + n.cpp);
+                }
+            }
+        }
         for (const char* p : {"/spec/calibration/[]/key", "/spec/calibration/[]/value"})
             if (!r.by_path.count(p)) fault("registry", std::string("missing ") + p);
         // object members in a patch def or a ref to an object def are fine; C++ type names must not collide
@@ -470,6 +510,8 @@ struct Loader {
                 const std::string path = str(*t, "path", at), cls = str(*t, "class", at);
                 if (!kClasses.count(cls)) fault(at, "unknown class '" + cls + "'");
                 if (!r.by_path.count(path)) fault(at, "path '" + path + "' is not a field");
+                for (const auto& [p, c] : rules)
+                    if (p == path) fault(at, "path '" + path + "' has two class defaults");
                 rules.emplace_back(path, cls);
             }
         for (Node& n : r.nodes) {
@@ -598,18 +640,22 @@ struct SchemaWriter {
     }
 };
 
-void strip_descriptions(Json* n) {
-    if (!n->is_object() && !n->is_array()) return;
-    if (n->is_array()) {
-        for (Json& v : *n) strip_descriptions(&v);
-        return;
-    }
-    n->erase("description");
-    for (auto& [k, v] : n->items()) {
-        if (k == "properties" || k == "$defs") {
-            for (auto& [name, sub] : v.items()) strip_descriptions(&sub);
-        } else {
-            strip_descriptions(&v);
+/* Remove annotations from a schema, visiting only subschema positions (JSON Schema 2020-12 applicators): literal
+ * instance data under const, enum, required and the like is never entered, so changing it changes the fingerprint. */
+const std::set<std::string> kAnnotations = {"title", "description", "$comment", "examples", "default", "deprecated",
+                                            "readOnly", "writeOnly"};
+void strip_annotations(Json* schema) {
+    if (!schema->is_object()) return;   // a boolean schema
+    for (const std::string& k : kAnnotations) schema->erase(k);
+    for (auto& [k, v] : schema->items()) {
+        if (k == "properties" || k == "$defs" || k == "patternProperties" || k == "dependentSchemas") {
+            for (auto& [name, sub] : v.items()) strip_annotations(&sub);
+        } else if (k == "allOf" || k == "anyOf" || k == "oneOf" || k == "prefixItems") {
+            for (Json& sub : v) strip_annotations(&sub);
+        } else if (k == "items" || k == "additionalProperties" || k == "propertyNames" || k == "not" || k == "if" ||
+                   k == "then" || k == "else" || k == "contains" || k == "unevaluatedItems" ||
+                   k == "unevaluatedProperties") {
+            strip_annotations(&v);
         }
     }
 }
@@ -884,6 +930,18 @@ bool load_registry(const std::string& toml_text, const std::string& source_name,
         l.r.schema_id = str(*c, "schema_id", "[contract]");
         l.r.title = str(*c, "title", "[contract]");
         l.r.ns = str(*c, "namespace", "[contract]");
+        {
+            std::string part;
+            size_t parts = 0;
+            for (size_t at = 0, next; (next = l.r.ns.find("::", at)) != std::string::npos || at <= l.r.ns.size();) {
+                part = l.r.ns.substr(at, next == std::string::npos ? std::string::npos : next - at);
+                if (!identifier(part)) fault("[contract]", "namespace must be identifiers joined by ::, is " + l.r.ns);
+                ++parts;
+                if (next == std::string::npos) break;
+                at = next + 2;
+            }
+            if (!parts) fault("[contract]", "empty namespace");
+        }
         l.r.lifecycle = str(*c, "lifecycle", "[contract]");
         const auto version = integer(*c, "contract_version", "[contract]");
         if (!version || *version < 1) fault("[contract]", "contract_version is a positive integer");
@@ -917,12 +975,37 @@ std::string emit_schema(const Registry& r) {
     return SchemaWriter{r}.document().dump(2) + "\n";
 }
 
-std::string fingerprint(const Registry& r) {
+namespace {
+Json validation_schema(const Registry& r) {
     Json schema = Json::parse(SchemaWriter{r}.document().dump());
-    strip_descriptions(&schema);
+    strip_annotations(&schema);
+    return schema;
+}
+
+std::string jcs_sha256(const Json& j, const char* what) {
     std::string bytes, why;
-    if (!bc::serving::jcs_canonicalize(schema, &bytes, &why)) throw std::runtime_error("schema JCS: " + why);
+    if (!bc::serving::jcs_canonicalize(j, &bytes, &why)) throw std::runtime_error(std::string(what) + " JCS: " + why);
     return "sha256:" + bc::serving::sha256_hex(bytes);
+}
+}  // namespace
+
+std::string fingerprint(const Registry& r) { return jcs_sha256(validation_schema(r), "schema"); }
+
+std::string semantic_fingerprint(const Registry& r) {
+    // The validation schema plus everything else the contract freezes that the schema does not express: each field's
+    // provenance class and lifecycle, its Radiance binding, the calibration key order. C++
+    // names and docs are excluded: renaming generated code is not a wire change, and a consumer would not compile.
+    Json fields = Json::array();
+    for (const Node& n : r.nodes) {
+        if (n.path.rfind("calibration:", 0) == 0) continue;
+        fields.push_back(Json{{"path", n.path}, {"class", n.cls}, {"radiance_option", n.radiance_option},
+                              {"radiance_config", n.radiance_config}});
+    }
+    Json keys = Json::array();
+    for (const CalibrationKey& c : r.calibration) keys.push_back(c.key);
+    return jcs_sha256(Json{{"schema", validation_schema(r)}, {"lifecycle", r.lifecycle}, {"fields", fields},
+                           {"calibration_keys", keys}},
+                      "semantics");
 }
 
 std::string emit_types(const Registry& r) {
@@ -941,8 +1024,11 @@ std::string emit_types(const Registry& r) {
     o << "inline constexpr std::string_view kApiVersion = " << literal(r.api_version) << ";\n";
     o << "inline constexpr std::string_view kKind = " << literal(r.kind) << ";\n";
     o << "inline constexpr int64_t kContractVersion = " << r.contract_version << ";\n";
-    o << "// sha256 of the JCS schema without descriptions (contract/README.md); the build pins it.\n";
-    o << "inline constexpr std::string_view kFingerprint = " << literal(fingerprint(r)) << ";\n\n";
+    o << "// sha256 of the JCS validation schema without annotations (contract/README.md); the build pins it.\n";
+    o << "inline constexpr std::string_view kFingerprint = " << literal(fingerprint(r)) << ";\n";
+    o << "// sha256 of the schema plus the frozen semantics it does not express (classes, lifecycle, Radiance bindings);\n"
+         "// README.md.\n";
+    o << "inline constexpr std::string_view kSemanticFingerprint = " << literal(semantic_fingerprint(r)) << ";\n\n";
     t.enums(o);
     o << "// A calibration value: an integer, a string or a boolean; each key fixes which (contract [[calibration_key]]).\n";
     o << "using CalibrationValue = std::variant<int64_t, std::string, bool>;\n\n";
@@ -960,7 +1046,7 @@ std::map<std::string, std::string> generate_all(const Registry& r) {
     return {{"serving-v1.schema.json", emit_schema(r)},
             {"serving_types.h", emit_types(r)},
             {"serving-fields.md", emit_fields_md(r)},
-            {"contract.fingerprint", fingerprint(r) + "\n"}};
+            {"contract.fingerprint", "schema " + fingerprint(r) + "\nsemantics " + semantic_fingerprint(r) + "\n"}};
 }
 
 }  // namespace bc::contract
