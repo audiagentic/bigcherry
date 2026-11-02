@@ -56,11 +56,20 @@ Baselines exist for every declared layout available on the host; the gate comman
 
 Gate (initial proposals, judged against paired variability, ABBA with >=4 clean pairs): median model-step time <=1-2% worse, p95 <=3%, prefill chunk completion <=2%, unchanged kernels <=2%, migration-period p95 <=5% sustained (spikes reported separately), cache-hit start-up <0.5 s, VRAM never above the hard budget, quality within the KLD/top-1 band, zero missing/duplicate/stale-epoch expert work. Step, layer-wait and kernel time are primary; tok/s is not (the engine is not batch-invariant at temperature 0). The 8-session prefill, 6-stream decode and 42K probes are required for any change to placement or its execution path. Plan source: GPT staged plan 2026-11-01.
 
+REVISION 2026-11-02 (GPT configuration assessment, reviewed): (1) Scope of 'return to a known layout': within the same helper set and engine card, a previous expert distribution is restored live through a new placement epoch (RHP11 v23). Returning to a layout with a different helper count, device assignment or engine role is a reconfiguration (restart) until a larger protocol exists; the guarantee there is performance reproducibility of the cached effective configuration against its baseline, not a restart-free change. (2) Baselines need two identity dimensions: the topology/model/build key (which calibration is reusable) and the workload cohort (which baseline is comparable). (3) A retained-session cohort is mandatory alongside fresh-server baselines: run the ~1M-token 8-session fill first, then the prefill probe on new text (not a prefix-cache hit) and 6-stream decode; record retained tokens, host KV usage, n-gram placement, engine KV loan size, engine expert residency, host-streamed expert units, mover host-to-device bytes, free host RAM and per-step latency. Found 2026-11-01/02: on flashnext-4gpu with the defaults, retained sessions halve prefill (3,837 -> 1,948 tok/s) and slow 6-stream decode 46.9 -> 53.0 ms because the KV cache's expert loan collapses; fresh-only baselines missed it. (4) Each probe gets a defined server state (fresh server, or explicit order) - probe order changed results by up to 2x. (5) Resource gate: a configuration must keep the OS/cgroup/pin safety reserve; a run that leaves 0 GiB free RAM fails regardless of speed. Effective configuration manifests (RSC01) are recorded with every baseline.
+
 ## Change Log
 
 - 2026-11-01T22:51:55.015234+00:00 (created-by): Created by agent
 
 ## Ledger-events
 
+
+
 - chg_20261101_225732_planning-a-staged-roadmap-for_4092
 - 2026-11-01T22:57:54.713409+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-02T00:53:25.263305+00:00 (updated-by): Updated: section:notes
+- chg_20261102_005338_planning-one-serve-command_5259
+- 2026-11-02T00:54:00.299817+00:00 (updated-by): Updated: section:ledger-events
+- chg_20261102_012258_long-running-flash-next-server_6339
+- 2026-11-02T01:23:06.428488+00:00 (updated-by): Updated: section:ledger-events
