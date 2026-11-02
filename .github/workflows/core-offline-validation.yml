@@ -17,6 +17,7 @@ on:
       - 'engines/**'
       - 'config/**'
       - 'docs/reference/**'
+      - 'docs/design/serving-manifest-v1/**'
       - '.github/workflows/core-offline-validation.yml'
   workflow_dispatch:
 
@@ -42,7 +43,9 @@ jobs:
         with:
           python-version: '3.12'
       - name: Test dependencies
-        run: python -m pip install --quiet pytest
+        # jsonschema validates the serving manifest v1 contract's schema and examples (tools/tests/core/
+        # test_serving_manifest_v1_contract.py); pinned so CI never picks up a new release unseen.
+        run: python -m pip install --quiet pytest jsonschema==4.26.0
       - name: Core, radiance and bench unit suites
         env:
           PYTHONPATH: tools
