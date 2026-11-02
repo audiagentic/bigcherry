@@ -12,8 +12,9 @@ import platform
 import re
 import socket
 import subprocess
+from collections.abc import Iterable, Mapping
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from typing import Any
 
 from bigcherry.jobs.model import digest
 
@@ -74,7 +75,7 @@ def _container_rows(value: object) -> tuple[dict[str, Any], ...]:
 def _gpu_rows(payload: object) -> tuple[dict[str, Any], ...]:
     if isinstance(payload, Mapping):
         for key, value in payload.items():
-            if _key(key) in {"gpu", "gpus", "devices"}:
+            if _key(key) in {"gpu", "gpus", "gpu_data", "devices"}:
                 rows = _container_rows(value)
                 if rows:
                     return rows
@@ -124,12 +125,20 @@ def _ordinal(raw: object | None) -> int | None:
 def _bytes(raw: object | None) -> int | None:
     if raw is None or isinstance(raw, bool):
         return None
+    if isinstance(raw, Mapping):
+        # amd-smi 26.x: {"value": 24560, "unit": "MB"}. Its "MB" is binary (24560 for a 24 GiB card, equal to
+        # sysfs mem_info_vram_total / 2**20), so the unit is read as MiB.
+        value, unit = raw.get("value"), str(raw.get("unit", "")).strip().lower()
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            return None
+        factor = {"b": 1, "kb": 1024, "mb": 1024**2, "gb": 1024**3}.get(unit)
+        return int(value * factor) if factor and value > 0 else None
     if isinstance(raw, (int, float)):
         value = int(raw)
         return value if value > 0 else None
     text = str(raw).strip().replace(",", "")
     match = re.search(
-        r"([0-9]+(?:\.[0-9]+)?)\s*([kmgt]?i?b|bytes?)?", text, re.I
+        r"([0-9]+(?:\.[0-9]+)?)\s*([kmgt]?i?b|bytes?)?", text, re.IGNORECASE
     )
     if not match:
         return None
@@ -165,6 +174,17 @@ def _vram(row: Mapping[str, Any]) -> int | None:
             if parsed is not None:
                 return parsed
     return _bytes(_find(row, ("vram_size", "vram_total", "total_vram")))
+
+
+def _sysfs_vram(sysfs_root: Path, bdf: str | None) -> int | None:
+    """Exact VRAM bytes from amdgpu's sysfs node; authoritative over amd-smi's rounded, unit-ambiguous size."""
+    if bdf is None:
+        return None
+    try:
+        value = int((sysfs_root / "bus" / "pci" / "devices" / bdf / "mem_info_vram_total").read_text(encoding="ascii"))
+    except (OSError, ValueError):
+        return None
+    return value if value > 0 else None
 
 
 def _numa_node(sysfs_root: Path, bdf: str | None) -> int | None:
@@ -238,7 +258,7 @@ def inventory_from_amdsmi_json(
             ),
         )
         model = _find(static, ("market_name", "product_name", "board_name"))
-        vram = _vram(static)
+        vram = _sysfs_vram(sysfs_root, bdf) or _vram(static)
         if architecture is None or not re.fullmatch(
             r"gfx[0-9a-f]+", str(architecture).strip().lower()
         ):
