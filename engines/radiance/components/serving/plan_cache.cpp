@@ -1,4 +1,5 @@
 #include "plan_cache.h"
+#include "sha256.h"
 #include "serving.h"
 
 #include "rad_format.h"

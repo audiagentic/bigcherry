@@ -735,8 +735,7 @@ int main() {
         measuring_step(t);
         std::cout << "PASS: fake KFD/PCI/proc detection; strict keys; types/ranges; required; "
                      "precedence/caps; provenance/hash; launcher engine/WorkerConfig parity; "
-                     "calibration store; calibrated host reserve; host ledger; measured plan cache; measuring step
-";
+                     "calibration store; calibrated host reserve; host ledger; measured plan cache; measuring step\n";
         return 0;
     } catch (const std::exception& e) {
         std::cerr << "FAIL: " << e.what() << '\n';
