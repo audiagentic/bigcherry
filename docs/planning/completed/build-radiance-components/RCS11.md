@@ -2,7 +2,7 @@
 id: RCS11
 order: 0
 plan: build-radiance-components
-state: in_progress
+state: completed
 created-at: '2026-10-29T04:30:07.331128+00:00'
 breadth: ''
 skill: basic
@@ -84,3 +84,4 @@ Quick fix in use since 2026-10-29 (RAD32 libr3 GEMV K-slab work): export CMAKE_P
 
 - chg_20261102_072607_radiance-builds-now-compile-an_5297
 - 2026-11-02T07:26:11.706389+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-02T07:28:10.842496+00:00 (state-transition): State: in_progress → completed
