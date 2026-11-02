@@ -81,3 +81,4 @@ Decisions: v1 numbers are integers only (fractions as *_ppm / *_milli); one site
 - chg_20261102_121239_the-serving-manifest-v1-format_6543
 - chg_20261102_121824_the-serving-component-can-prod_8129
 - 2026-11-02T12:18:29.161474+00:00 (updated-by): Updated: section:ledger-events
+- chg_20261102_124002_every-components-card-free-te_9438
