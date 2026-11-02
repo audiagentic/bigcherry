@@ -19,8 +19,8 @@ title = "BigCherry ServingManifest v1 (wire)"
 namespace = "bc::serving::v1"
 lifecycle = "startup_only"
 
-# Provenance class of each subtree (the longest matching prefix wins). `envelope` marks the integrity fields: they
-# identify the document, have no provenance record of their own and are covered by the root "" record (README.md).
+# Provenance class of each subtree (the longest matching prefix wins). `envelope` marks the integrity fields that
+# identify the document; it is not a provenance record class and decides nothing about coverage (spec §7; README.md).
 
 [[class_default]]
 path = "/apiVersion"

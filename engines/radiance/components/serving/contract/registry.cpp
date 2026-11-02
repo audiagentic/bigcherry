@@ -447,6 +447,14 @@ struct Loader {
                     fault(at, "calibration kinds belong to /spec/calibration/[]");
             }
         }
+        const std::pair<const char*, Json> identity[] = {{"/apiVersion", r.api_version},
+                                                          {"/kind", r.kind},
+                                                          {"/metadata/contract_version", r.contract_version}};
+        for (const auto& [path, want] : identity) {
+            const auto it = r.by_path.find(path);
+            if (it == r.by_path.end() || !r.nodes[it->second].constant || *r.nodes[it->second].constant != want)
+                fault(path, "must be a const equal to the [contract] identity " + want.dump());
+        }
         if (r.calibration.empty()) fault("registry", "no [[calibration_key]]");
         if (r.calibration.size() > 256) fault("registry", "at most 256 calibration keys (uint8_t)");
         std::set<std::string> enumerators;
@@ -643,7 +651,7 @@ struct SchemaWriter {
 /* Remove annotations from a schema, visiting only subschema positions (JSON Schema 2020-12 applicators): literal
  * instance data under const, enum, required and the like is never entered, so changing it changes the fingerprint. */
 const std::set<std::string> kAnnotations = {"title", "description", "$comment", "examples", "default", "deprecated",
-                                            "readOnly", "writeOnly"};
+                                            "readOnly", "writeOnly", "contentEncoding", "contentMediaType"};
 void strip_annotations(Json* schema) {
     if (!schema->is_object()) return;   // a boolean schema
     for (const std::string& k : kAnnotations) schema->erase(k);
@@ -654,7 +662,7 @@ void strip_annotations(Json* schema) {
             for (Json& sub : v) strip_annotations(&sub);
         } else if (k == "items" || k == "additionalProperties" || k == "propertyNames" || k == "not" || k == "if" ||
                    k == "then" || k == "else" || k == "contains" || k == "unevaluatedItems" ||
-                   k == "unevaluatedProperties") {
+                   k == "unevaluatedProperties" || k == "contentSchema") {
             strip_annotations(&v);
         }
     }
@@ -1003,7 +1011,9 @@ std::string semantic_fingerprint(const Registry& r) {
     }
     Json keys = Json::array();
     for (const CalibrationKey& c : r.calibration) keys.push_back(c.key);
-    return jcs_sha256(Json{{"schema", validation_schema(r)}, {"lifecycle", r.lifecycle}, {"fields", fields},
+    return jcs_sha256(Json{{"identity", Json{{"api_version", r.api_version}, {"kind", r.kind},
+                                             {"contract_version", r.contract_version}}},
+                           {"schema", validation_schema(r)}, {"lifecycle", r.lifecycle}, {"fields", fields},
                            {"calibration_keys", keys}},
                       "semantics");
 }
