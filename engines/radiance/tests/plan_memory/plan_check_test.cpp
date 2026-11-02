@@ -66,24 +66,34 @@ int main() {
     live = base(); live["vram"]["claimable"] = 7400;           // exactly the required split: admitted
     expect(true, live, "");
     live = base(); live["vram"]["claimable"] = 7399;           // one byte short of the required split: refused
-    expect(false, live, "claimable VRAM (for the required split: statics + experts + stage + kv_required, kv_required 4200 bytes): live 7399 bytes fall short of the planned 7400 bytes");
+    expect(false, live, "claimable VRAM (for the required split: statics + experts + stage + kv_required, kv_required 4200 bytes): live 7399 bytes fall short of the required 7400 bytes");
     live = base(); live["vram"]["claimable"] = 7400; live["vram"]["kv"] = 0;   // the live kv share is not an input
     expect(true, live, "");
     live = base(); live["vram"]["claimable"] = 3700;           // no floor selected: kv_required is one session (500)
     expect(true, live, "", 0);
     live = base(); live["vram"]["claimable"] = 3699;
-    expect(false, live, "kv_required 500 bytes): live 3699 bytes fall short of the planned 3700 bytes", 0);
+    expect(false, live, "kv_required 500 bytes): live 3699 bytes fall short of the required 3700 bytes", 0);
     {
         nlohmann::json big = base();                           // one session larger than the floor: it is the requirement
         big["kv_one_session"]["bytes"] = 4500;
         live = big; live["vram"]["claimable"] = 7699;
-        expect(false, live, "kv_required 4500 bytes): live 7699 bytes fall short of the planned 7700 bytes", kFloorPpm, big);
+        expect(false, live, "kv_required 4500 bytes): live 7699 bytes fall short of the required 7700 bytes", kFloorPpm, big);
         nlohmann::json odd = base();                           // the floor rounds up: ceil(7001 * 0.6) = ceil(4200.6) = 4201
         odd["vram"]["kv_ceiling"] = 7001;
         live = odd; live["vram"]["claimable"] = 7400;
-        expect(false, live, "kv_required 4201 bytes): live 7400 bytes fall short of the planned 7401 bytes", kFloorPpm, odd);
+        expect(false, live, "kv_required 4201 bytes): live 7400 bytes fall short of the required 7401 bytes", kFloorPpm, odd);
         live["vram"]["claimable"] = 7401;
         expect(true, live, "", kFloorPpm, odd);
+    }
+    {   // the schema's largest byte count: ceil((2^53 - 1) * 999999 / 10^6) = 9007190247541737, with no int64 overflow
+        nlohmann::json huge = base();
+        huge["vram"]["kv_ceiling"] = 9007199254740991LL;
+        huge["vram"]["claimable"] = 9007190247541737LL + 3200;
+        expect(true, huge, "", 999999, huge);
+        huge["vram"]["claimable"] = 9007190247541737LL + 3199;
+        expect(false, huge, "kv_required 9007190247541737 bytes)", 999999, huge);
+        huge["vram"]["kv_ceiling"] = 9007199254740992LL;            // one past the schema's maximum
+        expect(false, huge, "byte counts in [0, 2^53 - 1]", 999999, huge);
     }
     expect(false, base(), "kv_backing_floor_ppm must be in [0, 1000000)", -1);
     expect(false, base(), "kv_backing_floor_ppm must be in [0, 1000000)", 1000000);

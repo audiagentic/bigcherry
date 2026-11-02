@@ -207,10 +207,11 @@ int64_t num(const nlohmann::json& j, const char* key) {
     return it != j.end() && it->is_number_integer() ? it->get<int64_t>() : -1;
 }
 
-bool fail(std::string* why, const std::string& what, int64_t live, int64_t planned, const std::string& from,
+/* `verb` names the comparison and its basis, e.g. "exceed the planned" or "fall short of the required". */
+bool fail(std::string* why, const std::string& what, int64_t live, int64_t bound, const std::string& from,
           const std::string& remedy, const char* verb) {
     if (why)
-        *why = what + ": live " + std::to_string(live) + " bytes " + verb + " the planned " + std::to_string(planned) +
+        *why = what + ": live " + std::to_string(live) + " bytes " + verb + " " + std::to_string(bound) +
                " bytes (" + from + "); " + (remedy.empty() ? std::string(kMeasure) : remedy);
     return false;
 }
@@ -230,24 +231,24 @@ bool bc_plan_memory_check(const nlohmann::json& expected, const nlohmann::json& 
             if (e.at("name") == name) planned = num(e, "bytes");
         if (num(c, "bytes") > planned)
             return fail(why, "host consumer " + name, num(c, "bytes"), planned, c.at("from").get<std::string>(),
-                        c.at("remedy").get<std::string>(), "exceed");
+                        c.at("remedy").get<std::string>(), "exceed the planned");
     }
     const auto& lc = live.at("checkpoints");
     const auto& ec = expected.at("checkpoints");
     if (num(lc, "slot_bytes") > num(ec, "slot_bytes"))
-        return fail(why, "checkpoint slot", num(lc, "slot_bytes"), num(ec, "slot_bytes"), lc.at("from").get<std::string>(), "", "exceed");
+        return fail(why, "checkpoint slot", num(lc, "slot_bytes"), num(ec, "slot_bytes"), lc.at("from").get<std::string>(), "", "exceed the planned");
     if (num(lc, "floor_slots") * num(lc, "slot_bytes") > num(ec, "floor_slots") * num(ec, "slot_bytes"))
         return fail(why, "checkpoint floor", num(lc, "floor_slots") * num(lc, "slot_bytes"),
-                    num(ec, "floor_slots") * num(ec, "slot_bytes"), lc.at("from").get<std::string>(), "", "exceed");
+                    num(ec, "floor_slots") * num(ec, "slot_bytes"), lc.at("from").get<std::string>(), "", "exceed the planned");
     const auto& lk = live.at("kv_one_session");
     if (num(lk, "bytes") > num(expected.at("kv_one_session"), "bytes"))
         return fail(why, "one full-length session's KV", num(lk, "bytes"), num(expected.at("kv_one_session"), "bytes"),
-                    lk.at("from").get<std::string>(), "", "exceed");
+                    lk.at("from").get<std::string>(), "", "exceed the planned");
     const auto& lv = live.at("vram");
     const auto& ev = expected.at("vram");
     for (const char* k : {"statics", "stage"})
         if (num(lv, k) > num(ev, k))
-            return fail(why, std::string("VRAM ") + k, num(lv, k), num(ev, k), lv.at("from").get<std::string>(), "", "exceed");
+            return fail(why, std::string("VRAM ") + k, num(lv, k), num(ev, k), lv.at("from").get<std::string>(), "", "exceed the planned");
     /* Claimable VRAM is a live reading (it moved in 8 KiB steps over 16 KiB between starts), so it is checked for what
      * it is for: what the plan requires must fit in what is claimable now. The KV requirement is one full-length session
      * or the calibrated backing floor of the KV ceiling, whichever is larger; the measured kv share is not an input. */
@@ -255,14 +256,24 @@ bool bc_plan_memory_check(const nlohmann::json& expected, const nlohmann::json& 
         if (why) *why = "plan check: kv_backing_floor_ppm must be in [0, 1000000)";
         return false;
     }
-    const int64_t floor = (num(ev, "kv_ceiling") * kv_backing_floor_ppm + 999999) / 1000000;
-    const int64_t kv_required = std::max<int64_t>(num(expected.at("kv_one_session"), "bytes"), floor);
+    /* Every term is a v1 byte count in [0, 2^53 - 1]; the ceiling is taken by quotient and remainder so no intermediate
+     * leaves int64 (q * ppm < 2^53, r * ppm < 10^12), and the sum of four such terms stays below 2^55. */
+    constexpr int64_t kMaxBytes = (int64_t(1) << 53) - 1;
+    const int64_t kv_ceiling = num(ev, "kv_ceiling"), kv_one = num(expected.at("kv_one_session"), "bytes");
+    for (const int64_t v : {kv_ceiling, kv_one, num(ev, "statics"), num(ev, "experts"), num(ev, "stage")})
+        if (v < 0 || v > kMaxBytes) {
+            if (why) *why = "plan check: the expected VRAM terms must be byte counts in [0, 2^53 - 1]";
+            return false;
+        }
+    const int64_t floor = kv_ceiling / 1000000 * kv_backing_floor_ppm +
+                          (kv_ceiling % 1000000 * kv_backing_floor_ppm + 999999) / 1000000;
+    const int64_t kv_required = std::max<int64_t>(kv_one, floor);
     const int64_t required = num(ev, "statics") + num(ev, "experts") + num(ev, "stage") + kv_required;
     if (num(lv, "claimable") < required)
         return fail(why, "claimable VRAM (for the required split: statics + experts + stage + kv_required, kv_required " +
                              std::to_string(kv_required) + " bytes)",
                     num(lv, "claimable"), required, lv.at("from").get<std::string>(),
-                    "free the engine card, or choose a smaller service intent, and resolve a new manifest", "fall short of");
+                    "free the engine card, or choose a smaller service intent, and resolve a new manifest", "fall short of the required");
     const auto& lcards = lv.at("cards");
     const auto& ecards = ev.at("cards");
     if (lcards.size() != ecards.size()) {
@@ -273,7 +284,7 @@ bool bc_plan_memory_check(const nlohmann::json& expected, const nlohmann::json& 
     for (size_t i = 0; i < lcards.size(); ++i)
         if (num(lcards[i], "capacity") < num(ecards[i], "capacity"))
             return fail(why, "card " + std::to_string(i) + " capacity", num(lcards[i], "capacity"),
-                        num(ecards[i], "capacity"), lv.at("from").get<std::string>(), "", "fall short of");
+                        num(ecards[i], "capacity"), lv.at("from").get<std::string>(), "", "fall short of the planned");
     return true;
 }
 """
