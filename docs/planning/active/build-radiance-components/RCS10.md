@@ -64,3 +64,11 @@ So one 24-row lane wins at 3+ streams (+7-22%), one 8-row lane at 1-2, and four 
 First step: inventory the stream-sensitive settings (lane rows and slots, ring slots, hardware queues, MTP depth, GEMV/grouped crossover, placement hot-set size, prefill chunk and ubatch, per-sequence KV and compute reservation) and verify each with stream-bench or replay before deriving it.
 
 Live-placement roadmap stage 2 with RHP09: one calibration schema and implementation. RHP09 owns cost-model validity; RCS10 owns default-on start-up integration with opt-out, topology-keyed tune cache, and derived lane/kernel settings. RAD12 lane sizing folds in here: publish request actual_rows before its sequence; pre-queued decode kernels bound work by actual_rows, capacity only controls allocation and launch geometry; no extra polling loop or armed queue (RAD20 power findings). Acceptance: a 4-row request in a 24-row lane executes within ~3% of the 4-row lane helper execution time.
+
+## Ledger-events
+
+- chg_20261102_002943_planning-every-resource-budge_5643
+
+## Change Log
+
+- 2026-11-02T00:29:49.283929+00:00 (updated-by): Updated: section:ledger-events
