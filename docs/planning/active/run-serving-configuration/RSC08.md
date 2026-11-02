@@ -71,14 +71,17 @@ Feeds: RSC01, RSC02, RSC03, RSC06, RSC07.
 Slice 1's contract documents: PR #528 (docs/design/serving-manifest-v1 and tools/tests/core/test_serving_manifest_v1_contract.py); its ledger event was recorded against RSC01 before this item existed and is relinked here.
 Decisions: v1 numbers are integers only (fractions as *_ppm / *_milli); one site-only, tighten-only `constraints` namespace in ServingInputV1; the engine binary resolves relative to bc-serve's installed location and the plan cache from the work root, neither a CLI flag; generated files are committed and CI regenerates and byte-diffs them.
 
+
+Slice 2 (shared strict reader) requirement, from the lead's #530 review (2026-11-02): duplicate JSON member names must be rejected while parsing. nlohmann::json::parse silently keeps the last of duplicate members, but I-JSON/JCS input must have none, and a duplicate must never reach hashing. The v1 reader therefore parses with a parser callback or SAX handler that tracks the member names of each open object and fails on the first repeat with BC_CFG_DUPLICATE_FIELD (RAD_E_DUPLICATE, -11) and the JSON Pointer of the object holding it. Before any digest check, a duplicate fails at parse time (errors.md: duplicate-member tests fail at parsing, before hashing). Tests: a duplicate at the top level, inside a nested object, and inside an array element, each naming its pointer; the same member name in sibling objects is not a duplicate; a document whose only fault is a duplicate fails with BC_CFG_DUPLICATE_FIELD, not BC_CFG_DIGEST_MISMATCH.
+
 ## Change Log
 
 - 2026-11-02T12:14:33.492000+00:00 (created-by): Created by agent
 
 ## Ledger-events
 
-
 - chg_20261102_121239_the-serving-manifest-v1-format_6543
 - chg_20261102_121824_the-serving-component-can-prod_8129
 - 2026-11-02T12:18:29.161474+00:00 (updated-by): Updated: section:ledger-events
 - chg_20261102_124002_every-components-card-free-te_9438
+- 2026-11-02T12:44:46.508959+00:00 (updated-by): Updated: section:notes
