@@ -24,9 +24,15 @@ Test whether expert residency changes explain the 290K-1M decode slowdown (decod
 
 ## Detailed Solution & Technical Design
 
+
+
 ## Code Samples & Guidance
 
+
+
 ## Files
+
+
 
 ## Validation
 
@@ -36,7 +42,19 @@ At 1M context with tails of 0 / 3 / 6 / 14 GiB, with the context filled to ~290K
 
 Depends on: none (needs the gpu lease and all four cards). Added by the 2026-10-31 GPT review of this plan.
 
-## First long-context runs, 2026-10-31 (`rad23-longctx`, `rad23-longctx2`)
+## Standards
+
+
+
+## Acceptance Criteria
+
+
+
+## Notes
+
+ROOT CAUSE FOUND 2026-11-01/02 (retained-session thrash). On flashnext-4gpu with the old defaults, after an 8-session ~1M-token fill (finished sessions retained in VRAM because no host KV tier existed), a 49-50K prefill on new text fell 3,837 -> ~1,900 tok/s and 6-stream decode 46.9 -> 53.0 ms/step; the engine's mover then copied ~1.2 TB host-to-card in one run (healthy ~9 GiB) with 86% of promotions readmitting just-demoted experts. Mechanism (radiance core/engine.cpp loan_tick, core/mem/kv.cpp spare_tokens/grow_for): finished sessions hold KV blocks high in the cache, spare_tokens collapses, the KV cache's loan of spare VRAM to the expert slab is recalled, ~2,500 expert units fall back to the pinned host pool and are streamed on every prefill step, and the loan regrows as sessions come and go. Partial fix merged (#512): host pool 22,528 -> 9,216 MiB and a 12 GiB host KV tier for finished sessions: post-fill 50K prefill 1,901 -> 3,165 tok/s, 6-stream slowest first token 3.6 -> 2.2 s, mover 1,160 -> 600 GiB, fresh-server speed unchanged. Remaining gap to fresh (~17% prefill) is the loan policy: RSC03 (one derived memory budget) and RHP13 (allocator weighing retained KV against expert residency). The retained-session state is now a mandatory RHP12 cohort.
+
+## First long-context runs, 2026-10-31 (, )
 
 Flash-Next, `flashnext-2xtx-rdna2-tail` (4 GiB tail), `ctxsweep.py` over the documentation text; used context 330K and 688K (the 295K and 590K targets tokenise longer). Static heat is `perf51/heat.rank0.hot-first`; live heat is the snapshot of RHP08 inverted the same way. The 688K row of `rad23-longctx` follows a 330K request that stays cached; `rad23-longctx2` is the 688K request alone on a fresh server, three arms back to back.
 
@@ -52,7 +70,7 @@ Flash-Next, `flashnext-2xtx-rdna2-tail` (4 GiB tail), `ctxsweep.py` over the doc
 
 Caveat that blocks a conclusion: the live heat was recorded on the same documentation text the sweep reads, so it is fitted to the test. The held-out test is heat from one corpus against a sweep over another.
 
-## Held-out corpus, 2026-10-31 (`rad23-holdout`)
+## Held-out corpus, 2026-10-31 ()
 
 The same server and tail as above, a sweep over C++/HIP source (the radiance source tree, 29 M characters, one request of 675,534 tokens, fresh server per arm). Heat from the documentation text of the arms above is held out; heat from this corpus is fitted to it. The first baseline run recorded the route histogram (the engine counts every route in VRAM), which slows it, so the control is the plain `base2` run; its traffic figures are identical to the histogram run's.
 
@@ -68,7 +86,7 @@ Prefill is +34% with heat the sweep never saw and +35% with fitted heat, against
 
 Method to adopt: record with `R3_MOE_WORKER_HISTOGRAM` and `R3_MOE_WORKER_HISTOGRAM_PERIOD_S` on the real workload (the counting has a cost, so record, do not serve with it), invert (`max - count`), restart with `--heat` and `--budget gfx1100=23500`.
 
-## Quality of the recorded-heat restart, and which part pays, 2026-10-31 (`rad23-kld-heat-10311458`, `rad23-kld-heat2-*`, `rad23-holdout`)
+## Quality of the recorded-heat restart, and which part pays, 2026-10-31 (, , )
 
 The quality harness of RAD23 (8,240 positions against the 2026-10-23 exact reference), a two-helper control beside the arms, every arm with the 6900 XT as a 4 GiB tail. Heat is the static profile or the snapshot recorded on the documentation text (the quality positions are documentation text too, so the live-heat arms are fitted to them).
 
@@ -86,7 +104,7 @@ Speed on the held-out code corpus (675,534 tokens used, fresh server per arm): X
 
 Open: why the helper's path costs KLD per expert moved (the loss scales with the experts held by helpers, which says the helper arithmetic differs from the engine's in a way that matters), and whether a heat file recorded on a different workload from the one served keeps its gain (held-out prefill says yes, once).
 
-## Two concurrent streams, 2026-10-31 (`rad23-streams2`)
+## Two concurrent streams, 2026-10-31 ()
 
 The launcher's two sequences, both busy: two requests at once, each a different slice of the corpus (about 65,000 or 8,000 prompt tokens, 400 new tokens each, `ignore_eos`), three repetitions per cell on one server, the overall tokens a second counting prompt plus new tokens. XTX 22,528 MiB and the 4 GiB tail in both arms; heat the static profile or the snapshot recorded on the documentation text. The rate falls with the repetition because the cache fills (rep 0 / 1 / 2 below).
 
@@ -99,7 +117,7 @@ The launcher's two sequences, both busy: two requests at once, each a different 
 
 Recorded heat is level on the corpus it was recorded on and at 8K, and +5 to 9% on the other corpus at 65K a stream (about 130K tokens used in all). So the +30% of the single 675K request belongs to the regime where the cache thrashes; at two streams of 65K the heat file is worth a few percent at most. Aggregate rate with two streams of 65K prompts is 1.9K to 2.6K tok/s on documentation text.
 
-## The four-way cell on the held-out corpus, and the repeat spread, 2026-10-31 (`rad23-holdout`)
+## The four-way cell on the held-out corpus, and the repeat spread, 2026-10-31 ()
 
 One request (675,534 tokens used), one fresh server per arm, XTX 22,528 MiB:
 
@@ -116,7 +134,7 @@ Two caveats that keep this from a recommendation. It is one request on one corpu
 
 Next: the same four cells on a second request and corpus, and a per-layer trace of the helper waits in the two cells that differ most (tail + static, no tail + static) to see which helper the engine waits for.
 
-## The 6900 XT tail at 675K with the faster kernel: prefill +15%, decode unchanged per step, 2026-11-01 (`rad23-long3`, `rad23-decacc`)
+## The 6900 XT tail at 675K with the faster kernel: prefill +15%, decode unchanged per step, 2026-11-01 (, )
 
 Build with the sparse activation copy (#478) and the 2x few-rows kernel (#479); recorded heat (documentation text); one request on the C++/HIP corpus, 675,534 tokens used; fresh server per arm; XTX 22,528 MiB.
 
@@ -143,3 +161,12 @@ Moving experts between cards changes their arithmetic slightly (the helper path 
 Helper traces agree (4 GiB tail, 22K context): the 6900 XT takes part in 5-7% of decode layer-steps, at 122-128 us of GPU time against an XTX's ~155 us, and the engine's wait is no longer when it does.
 
 Next: quality (KLD) of the 14 GiB tail on this build, and the per-step decode time at 675K to confirm the long-context case.
+
+## Change Log
+
+- 2026-11-02T02:40:43.213149+00:00 (updated-by): Updated: section:notes
+
+## Ledger-events
+
+- chg_20261102_024204_planning-records-updated-with_6210
+- 2026-11-02T02:42:12.731682+00:00 (updated-by): Updated: section:ledger-events
