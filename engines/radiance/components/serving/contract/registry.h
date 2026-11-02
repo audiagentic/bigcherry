@@ -41,6 +41,9 @@ struct Node {
     std::string cls;                             // provenance class (resolved from [[class_default]])
     std::vector<size_t> children;                // object members in order; arrays: their one item; maps: the value
     bool patch = false;                          // inside a patch def: every member optional, objects nonempty
+    size_t patch_of = SIZE_MAX;                  // patch nodes: the node they copy
+    std::string error_class;                     // the decoder's code for this subtree's faults ("" = by fault)
+    std::string mismatch;                        // const nodes: the code when the value differs ("" = invalid_value)
 };
 
 struct Def {
@@ -77,6 +80,10 @@ std::string fingerprint(const Registry& r);
 std::string emit_types(const Registry& r);
 /* serving-fields.md: the field reference. */
 std::string emit_fields_md(const Registry& r);
+/* serving_codec.h / serving_codec.cpp: one strict decoder per struct (v1/error.h codes: unknown, missing, type,
+ * value, by subtree error_class), and apply() for each patch def (spec §2.2: present leaves replace, objects recurse). */
+std::string emit_codec_h(const Registry& r);
+std::string emit_codec_cpp(const Registry& r);
 
 /* Every generated file, by its name in generated/. */
 std::map<std::string, std::string> generate_all(const Registry& r);

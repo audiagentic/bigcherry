@@ -129,6 +129,9 @@ std::string enumerator(const std::string& wire) {
 
 const std::set<std::string> kKinds = {"object", "map", "array", "integer", "string", "boolean", "enum", "int_enum",
                                       "ref", "calibration_key", "calibration_value"};
+/* v1/error.h codes a registry may assign to a subtree or a const mismatch. */
+const std::set<std::string> kErrorClasses = {"unsupported_version", "invalid_value", "provenance_invalid",
+                                             "calibration_invalid", "ownership_mismatch", "plan_mismatch"};
 const std::set<std::string> kClasses = {"envelope", "policy", "fact", "derived", "tuned", "diagnostic"};
 const std::set<std::string> kScalarAttrs = {"minimum", "maximum", "exclusive_maximum", "min_length", "pattern",
                                             "format", "const", "values", "ref", "cpp_type"};
@@ -229,7 +232,7 @@ struct Loader {
                       "values", "minimum", "maximum", "exclusive_maximum", "min_length", "pattern", "format",
                       "item_kind", "item_ref", "item_min_length", "item_minimum", "item_values", "item_pattern",
                       "min_items", "max_items", "unique_items", "tuple", "key_ref", "required_keys", "min_properties",
-                      "constraints", "radiance_option", "radiance_config"},
+                      "constraints", "radiance_option", "radiance_config", "error_class", "mismatch"},
                   at);
         Node n;
         n.path = str(t, "path", at);
@@ -247,6 +250,11 @@ struct Loader {
         if (n.radiance_option.empty() != n.radiance_config.empty())
             fault(where, "radiance_option and radiance_config go together");
         if (!n.cpp_member.empty() && !identifier(n.cpp_member)) fault(where, "cpp_member is not a C++ identifier");
+        n.error_class = str(t, "error_class", where, false);
+        n.mismatch = str(t, "mismatch", where, false);
+        if (!n.error_class.empty() && !kErrorClasses.count(n.error_class))
+            fault(where, "unknown error_class '" + n.error_class + "'");
+        if (!n.mismatch.empty() && !kErrorClasses.count(n.mismatch)) fault(where, "unknown mismatch '" + n.mismatch + "'");
         n.min_properties = integer(t, "min_properties", where);
         n.min_items = integer(t, "min_items", where);
         n.max_items = integer(t, "max_items", where);
@@ -285,6 +293,7 @@ struct Loader {
         if (n.kind == "array" && !n.cpp_type.empty() && str(t, "item_kind", where) != "enum")
             fault(where, "cpp_type on an array names its enum items");
         if (n.kind != "map" && (t.get("key_ref") || t.get("required_keys"))) fault(where, "only maps have keys");
+        if (!n.mismatch.empty() && !n.constant) fault(where, "mismatch is for const fields");
         if (n.kind == "map") {
             n.key_ref = str(t, "key_ref", where);
             n.required_keys = strings(t, "required_keys", where);
@@ -401,6 +410,7 @@ struct Loader {
             n.path = r.nodes[to].path + "/" + n.key;
             n.children.clear();
             n.patch = true;
+            n.patch_of = c;
             if (n.key != "[]" && n.key != "*") n.optional = true;
             if (n.kind == "object") {
                 n.cpp += "Patch";
@@ -421,6 +431,7 @@ struct Loader {
             const auto it = std::find_if(r.defs.begin(), r.defs.end(), [&](const Def& o) { return o.name == d.of; });
             if (it == r.defs.end() || it->kind != "object") fault("def " + d.name, "'of' must name an object def");
             if (!r.nodes[d.node].children.empty()) fault("def " + d.name, "a patch def has no fields of its own");
+            r.nodes[d.node].patch_of = it->node;
             clone_patch(it->node, d.node, "def " + d.name);
         }
         for (const Node& n : r.nodes) {
@@ -859,6 +870,407 @@ struct FieldsWriter {
     }
 };
 
+// ---- the codec -------------------------------------------------------------------------------------------------------
+
+struct CodecWriter {
+    const Registry& r;
+    TypesWriter types{r};
+    std::map<size_t, std::string> cls;   // node -> effective error_class
+
+    void classes_from(size_t i, const std::string& inherited) {
+        const std::string c = r.nodes[i].error_class.empty() ? inherited : r.nodes[i].error_class;
+        cls[i] = c;
+        for (size_t k : r.nodes[i].children) classes_from(k, c);
+    }
+    CodecWriter(const Registry& reg) : r(reg) {
+        classes_from(r.root, "");
+        for (const Def& d : r.defs) classes_from(d.node, "");
+        const std::string cal = cls.at(r.by_path.at("/spec/calibration/[]/value"));
+        for (const CalibrationKey& k : r.calibration) cls[k.value] = cal;
+    }
+
+    std::string code(size_t i, const char* fallback) const {
+        const std::string& c = cls.at(i);
+        return "C::" + (c.empty() ? std::string(fallback) : c);
+    }
+    std::string mismatch(size_t i) const {
+        const Node& n = r.nodes[i];
+        if (!n.mismatch.empty()) return "C::" + n.mismatch;
+        return code(i, "invalid_value");
+    }
+
+    const Def& def(const std::string& name) const { return types.def(name); }
+    bool object_ref(const Node& n) const {
+        if (n.kind != "ref") return false;
+        const Def& d = def(n.ref);
+        return d.kind == "object" || d.kind == "patch";
+    }
+    /* The C++ type a node's decoder writes (its member type without optional wrapping). */
+    std::string value_type(size_t i) const {
+        const Node& n = r.nodes[i];
+        if (n.path.rfind("calibration:", 0) == 0) {
+            if (n.kind == "enum" || n.kind == "string") return "std::string";
+            if (n.kind == "boolean") return "bool";
+            if (n.kind == "ref") return types.base(r.nodes[def(n.ref).node]);
+            return "int64_t";
+        }
+        return types.base(n);
+    }
+    /* The call that decodes node i from `j` into `out`. */
+    std::string call(size_t i, const std::string& j, const std::string& at, const std::string& out) const {
+        const Node& n = r.nodes[i];
+        if (n.kind == "object" || object_ref(n)) return "decode(" + j + ", " + at + ", " + out + ")";
+        return "d" + std::to_string(i) + "(" + j + ", " + at + ", " + out + ")";
+    }
+    static std::string raw(const std::string& s) { return "R\"re(" + s + ")re\""; }
+
+    /* Scalar checks for node i, using the constraints of `spec` (i itself, or the scalar def it refers to). */
+    void scalar_body(std::ostringstream& o, size_t i, const Node& spec) const {
+        const std::string tc = code(i, "invalid_type"), vc = code(i, "invalid_value");
+        if (spec.kind == "integer") {
+            if (spec.constant) {
+                o << "    if (!j.is_number_integer()) return type_fault(" << tc << ", at, \"an integer\", j);\n"
+                  << "    if (j.get<int64_t>() != " << spec.constant->get<int64_t>() << ") return fault(" << mismatch(i)
+                  << ", at, \"must be " << spec.constant->get<int64_t>() << ", is \" + j.dump());\n"
+                  << "    *out = j.get<int64_t>();\n    return std::nullopt;\n";
+                return;
+            }
+            auto opt = [](const std::optional<int64_t>& v) { return v ? std::to_string(*v) : std::string("std::nullopt"); };
+            o << "    return int_in(j, at, " << tc << ", " << vc << ", " << opt(spec.minimum) << ", " << opt(spec.maximum)
+              << ", " << opt(spec.exclusive_maximum) << ", out);\n";
+        } else if (spec.kind == "string") {
+            if (spec.constant) {
+                o << "    if (!j.is_string()) return type_fault(" << tc << ", at, \"a string\", j);\n"
+                  << "    if (j.get_ref<const std::string&>() != " << literal(spec.constant->get<std::string>())
+                  << ") return fault(" << mismatch(i) << ", at, \"must be \\\"" << spec.constant->get<std::string>()
+                  << "\\\", is \" + j.dump());\n"
+                  << "    *out = j.get<std::string>();\n    return std::nullopt;\n";
+                return;
+            }
+            if (!spec.pattern.empty())
+                o << "    static const std::regex re(" << raw(spec.pattern) << ", std::regex::ECMAScript);\n";
+            o << "    return str_in(j, at, " << tc << ", " << vc << ", "
+              << (spec.min_length ? std::to_string(*spec.min_length) : std::string("-1")) << ", "
+              << (spec.pattern.empty() ? std::string("nullptr") : std::string("&re")) << ", "
+              << (spec.pattern.empty() ? std::string("\"\"") : literal(spec.pattern)) << ", "
+              << (spec.format == "date" ? "true" : "false") << ", out);\n";
+        } else if (spec.kind == "boolean") {
+            o << "    if (!j.is_boolean()) return type_fault(" << tc << ", at, \"a boolean\", j);\n"
+              << "    *out = j.get<bool>();\n    return std::nullopt;\n";
+        } else if (spec.kind == "enum" && r.nodes[i].path.rfind("calibration:", 0) == 0) {
+            o << "    return choice_in(j, at, " << tc << ", " << vc << ", {";
+            for (size_t k = 0; k < spec.values.size(); ++k) o << (k ? ", " : "") << literal(spec.values[k].get<std::string>());
+            o << "}, out);\n";
+        } else if (spec.kind == "enum") {
+            o << "    return enum_in(j, at, " << tc << ", " << vc << ", k" << spec.cpp_type << "Names, out);\n";
+        } else if (spec.kind == "int_enum") {
+            o << "    return int_enum_in(j, at, " << tc << ", " << vc << ", {";
+            for (size_t k = 0; k < spec.values.size(); ++k) o << (k ? ", " : "") << spec.values[k].get<int64_t>();
+            o << "}, out);\n";
+        } else if (spec.kind == "calibration_key") {
+            o << "    return enum_in(j, at, " << tc << ", " << vc << ", kCalibrationKeyNames, out);\n";
+        } else {
+            throw std::logic_error("scalar kind " + spec.kind);
+        }
+    }
+
+    void node_fn(std::ostringstream& o, size_t i) const {
+        const Node& n = r.nodes[i];
+        const std::string tc = code(i, "invalid_type"), vc = code(i, "invalid_value");
+        o << "Status d" << i << "(const Json& j, const std::string& at, " << value_type(i) << "* out) {  // "
+          << (n.path.empty() ? "\"\"" : n.path) << "\n";
+        if (n.kind == "array") {
+            const size_t item = n.children.at(0);
+            o << "    if (!j.is_array()) return type_fault(" << tc << ", at, \"an array\", j);\n";
+            if (n.min_items && *n.min_items > 0)
+                o << "    if (j.size() < " << *n.min_items << ") return fault(" << vc << ", at, \"needs at least "
+                  << *n.min_items << " item(s), has \" + std::to_string(j.size()));\n";
+            if (n.max_items)
+                o << "    if (j.size() > " << *n.max_items << ") return fault(" << vc << ", at, \"allows at most "
+                  << *n.max_items << " item(s), has \" + std::to_string(j.size()));\n";
+            if (n.unique_items)
+                o << "    for (size_t a = 0; a < j.size(); ++a)\n"
+                     "        for (size_t b = a + 1; b < j.size(); ++b)\n"
+                     "            if (j[a] == j[b]) return fault("
+                  << code(i, "duplicate_field") << ", index(at, b), \"repeats item \" + std::to_string(a));\n";
+            o << "    out->clear();\n    out->reserve(j.size());\n"
+              << "    for (size_t k = 0; k < j.size(); ++k) {\n        " << value_type(item) << " v{};\n"
+              << "        if (auto e = " << call(item, "j[k]", "index(at, k)", "&v") << ") return e;\n"
+              << "        out->push_back(std::move(v));\n    }\n    return std::nullopt;\n";
+        } else if (n.kind == "tuple") {
+            o << "    if (!j.is_array()) return type_fault(" << tc << ", at, \"an array\", j);\n"
+              << "    if (j.size() != " << n.tuple.size() << ") return fault(" << vc << ", at, \"must have exactly "
+              << n.tuple.size() << " items, has \" + std::to_string(j.size()));\n";
+            for (size_t k = 0; k < n.tuple.size(); ++k)
+                o << "    if (auto e = d" << def(n.tuple[k]).node << "(j[" << k << "], index(at, " << k << "), &(*out)["
+                  << k << "])) return e;\n";
+            o << "    return std::nullopt;\n";
+        } else if (n.kind == "map") {
+            const size_t value = n.children.at(0);
+            const Node& key = r.nodes[def(n.key_ref).node];
+            o << "    if (!j.is_object()) return type_fault(" << tc << ", at, \"an object\", j);\n";
+            for (const std::string& k : n.required_keys)
+                o << "    if (!j.contains(" << literal(k) << ")) return fault(" << code(i, "missing_field")
+                  << ", keyed(at, " << literal(k) << "), \"missing required entry\");\n";
+            if (n.min_properties)
+                o << "    if (j.size() < " << *n.min_properties << ") return fault(" << vc << ", at, \"needs at least "
+                  << *n.min_properties << " entr(ies)\");\n";
+            if (!key.pattern.empty()) o << "    static const std::regex re(" << raw(key.pattern) << ", std::regex::ECMAScript);\n";
+            o << "    out->clear();\n    for (const auto& [k, v] : j.items()) {\n";
+            if (!key.pattern.empty())
+                o << "        if (!std::regex_search(k, re)) return fault(" << vc
+                  << ", keyed(at, k), \"key is not a valid " << n.key_ref << "\");\n";
+            o << "        " << value_type(value) << " x{};\n"
+              << "        if (auto e = " << call(value, "v", "keyed(at, k)", "&x") << ") return e;\n"
+              << "        (*out)[k] = std::move(x);\n    }\n    return std::nullopt;\n";
+        } else if (n.kind == "ref") {
+            scalar_body(o, i, r.nodes[def(n.ref).node]);
+        } else {
+            scalar_body(o, i, n);
+        }
+        o << "}\n\n";
+    }
+
+    void struct_fn(std::ostringstream& o, size_t i) const {
+        const Node& n = r.nodes[i];
+        const std::string tc = code(i, "invalid_type"), vc = code(i, "invalid_value"), uc = code(i, "unknown_field"),
+                          mc = code(i, "missing_field");
+        o << "Status decode(const Json& j, const std::string& at, " << n.cpp << "* out) {  // "
+          << (n.path.empty() ? "\"\"" : n.path) << "\n";
+        o << "    if (auto e = closed(j, at, " << tc << ", " << uc << ", {";
+        for (size_t k = 0; k < n.children.size(); ++k) o << (k ? ", " : "") << literal(r.nodes[n.children[k]].key);
+        o << "})) return e;\n";
+        if (n.min_properties)
+            o << "    if (j.size() < " << *n.min_properties << ") return fault(" << vc << ", at, "
+              << (n.patch ? "\"an override group must not be empty\"" : "\"must not be empty\"") << ");\n";
+        bool key_seen = false;
+        for (size_t c : n.children) {
+            const Node& m = r.nodes[c];
+            const std::string name = m.cpp_member.empty() ? m.key : m.cpp_member;
+            const std::string at = "member(at, " + literal(m.key) + ")";
+            o << "    if (const auto it = j.find(" << literal(m.key) << "); it == j.end()) {\n";
+            if (!m.optional) o << "        return fault(" << mc << ", " << at << ", \"missing required member\");\n";
+            o << "    } else";
+            if (m.nullable)
+                o << " if (it->is_null()) {\n        out->" << name
+                  << (m.optional ? ".emplace(std::nullopt);\n" : " = std::nullopt;\n") << "    } else";
+            o << " {\n";
+            if (m.kind == "calibration_key") key_seen = true;
+            if (m.kind == "calibration_value") {
+                if (!key_seen) throw std::runtime_error(m.path + ": the calibration value must follow its key");
+                o << "        switch (out->key) {\n";
+                for (size_t k = 0; k < r.calibration.size(); ++k) {
+                    const size_t v = r.calibration[k].value;
+                    o << "        case CalibrationKey::" << enumerator(r.calibration[k].key) << ": {\n"
+                      << "            " << value_type(v) << " v{};\n"
+                      << "            if (auto e = d" << v << "(*it, " << at << ", &v)) return e;\n"
+                      << "            out->" << name << " = std::move(v);\n            break;\n        }\n";
+                }
+                o << "        }\n    }\n";
+                continue;
+            }
+            o << "        " << value_type(c) << " v{};\n"
+              << "        if (auto e = " << call(c, "*it", at, "&v") << ") return e;\n"
+              << "        out->" << name << (m.optional && m.nullable ? ".emplace(std::move(v));\n" : " = std::move(v);\n")
+              << "    }\n";
+        }
+        o << "    return std::nullopt;\n}\n\n";
+    }
+
+    std::vector<size_t> structs() const {
+        std::vector<size_t> out;
+        std::set<std::string> seen;
+        std::function<void(size_t)> walk = [&](size_t i) {
+            for (size_t c : r.nodes[i].children) walk(c);
+            if (r.nodes[i].kind == "object" && seen.insert(r.nodes[i].cpp).second) out.push_back(i);
+        };
+        for (const Def& d : r.defs)
+            if (d.kind == "object" || d.kind == "patch") walk(d.node);
+        walk(r.root);
+        return out;
+    }
+    std::vector<size_t> scalars() const {
+        std::vector<size_t> out;
+        std::set<size_t> seen;
+        std::function<void(size_t)> walk = [&](size_t i) {
+            for (size_t c : r.nodes[i].children) walk(c);
+            const Node& n = r.nodes[i];
+            if (n.kind != "object" && !object_ref(n) && n.kind != "calibration_value" && seen.insert(i).second)
+                out.push_back(i);
+        };
+        for (const Def& d : r.defs) walk(d.node);
+        walk(r.root);
+        for (const CalibrationKey& k : r.calibration) out.push_back(k.value);
+        return out;
+    }
+
+    std::string header() const {
+        std::ostringstream o;
+        o << "// Generated by contract/generate.cpp from contract/serving-v1.toml. Do not edit.\n"
+             "// Strict decoders for the typed model (serving_types.h): a closed object refuses an unknown member, a\n"
+             "// required one must be present, every value has its schema type and constraints. Faults use v1/error.h\n"
+             "// codes (a subtree's registry error_class replaces the per-fault code) and the human dotted path.\n"
+             "// Cross-field rules (contract `constraints`) and semantics are v1/manifest.cpp's.\n"
+             "#pragma once\n#include \"serving_types.h\"\n#include \"v1/error.h\"\n\n#include <string>\n\n"
+             "#include <nlohmann/json.hpp>\n\n";
+        o << "namespace " << r.ns << " {\n\n";
+        for (size_t i : structs()) {
+            o << "Status decode(const nlohmann::json& j, const std::string& path, " << r.nodes[i].cpp << "* out);\n";
+        }
+        o << "\n// Patches (spec §2.2): every present leaf replaces the base's; present groups recurse.\n";
+        for (size_t i : structs())
+            if (r.nodes[i].patch)
+                o << "void apply(" << r.nodes[r.nodes[i].patch_of].cpp << "& base, const " << r.nodes[i].cpp
+                  << "& patch);\n";
+        o << "\n}  // namespace " << r.ns << "\n";
+        return o.str();
+    }
+
+    std::string source() const {
+        std::ostringstream o;
+        o << "// Generated by contract/generate.cpp from contract/serving-v1.toml. Do not edit.\n"
+             "#include \"serving_codec.h\"\n\n#include <optional>\n#include <regex>\n\n";
+        o << "namespace " << r.ns << " {\nnamespace {\n\n"
+          << R"cpp(using Json = nlohmann::json;
+using C = ConfigErrorCode;
+const char* const kHint = "regenerate the manifest with bc-serve; a v1 manifest is never edited by hand";
+
+std::string member(const std::string& at, const std::string& key) { return at.empty() ? key : at + "." + key; }
+std::string index(const std::string& at, size_t i) { return at + "[" + std::to_string(i) + "]"; }
+std::string keyed(const std::string& at, const std::string& key) { return at + "[" + Json(key).dump() + "]"; }
+
+const char* kind_of(const Json& j) {
+    switch (j.type()) {
+        case Json::value_t::null: return "null";
+        case Json::value_t::boolean: return "a boolean";
+        case Json::value_t::number_integer:
+        case Json::value_t::number_unsigned: return "an integer";
+        case Json::value_t::number_float: return "a non-integer number";
+        case Json::value_t::string: return "a string";
+        case Json::value_t::array: return "an array";
+        case Json::value_t::object: return "an object";
+        default: return "an unsupported value";
+    }
+}
+
+ConfigError fault(C c, const std::string& at, std::string message) { return make_error(c, at, std::move(message), kHint); }
+Status type_fault(C c, const std::string& at, const char* want, const Json& j) {
+    return fault(c, at, std::string("expected ") + want + ", found " + kind_of(j));
+}
+
+Status closed(const Json& j, const std::string& at, C tc, C uc, std::initializer_list<std::string_view> known) {
+    if (!j.is_object()) return type_fault(tc, at, "an object", j);
+    for (const auto& [k, v] : j.items()) {
+        bool ok = false;
+        for (std::string_view name : known) ok = ok || name == k;
+        if (!ok) return fault(uc, member(at, k), "unknown member");
+    }
+    return std::nullopt;
+}
+
+Status int_in(const Json& j, const std::string& at, C tc, C vc, std::optional<int64_t> min, std::optional<int64_t> max,
+              std::optional<int64_t> below, int64_t* out) {
+    if (!j.is_number_integer()) return type_fault(tc, at, "an integer", j);
+    const int64_t v = j.get<int64_t>();
+    if (min && v < *min) return fault(vc, at, std::to_string(v) + " is below the minimum " + std::to_string(*min));
+    if (max && v > *max) return fault(vc, at, std::to_string(v) + " is above the maximum " + std::to_string(*max));
+    if (below && v >= *below) return fault(vc, at, std::to_string(v) + " must be below " + std::to_string(*below));
+    *out = v;
+    return std::nullopt;
+}
+
+bool calendar_date(const std::string& s) {
+    if (s.size() != 10 || s[4] != '-' || s[7] != '-') return false;
+    for (size_t i : {0u, 1u, 2u, 3u, 5u, 6u, 8u, 9u})
+        if (s[i] < '0' || s[i] > '9') return false;
+    const int y = std::stoi(s.substr(0, 4)), m = std::stoi(s.substr(5, 2)), d = std::stoi(s.substr(8, 2));
+    static const int kDays[12] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+    if (m < 1 || m > 12 || d < 1) return false;
+    const bool leap = (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
+    return d <= kDays[m - 1] + (m == 2 && leap ? 1 : 0);
+}
+
+Status str_in(const Json& j, const std::string& at, C tc, C vc, int64_t min_length, const std::regex* re,
+              const char* pattern, bool date, std::string* out) {
+    if (!j.is_string()) return type_fault(tc, at, "a string", j);
+    const std::string& v = j.get_ref<const std::string&>();
+    if (min_length >= 0 && static_cast<int64_t>(v.size()) < min_length)
+        return fault(vc, at, min_length == 1 ? "must not be empty" : "is shorter than " + std::to_string(min_length));
+    if (re && !std::regex_search(v, *re)) return fault(vc, at, Json(v).dump() + " does not match " + pattern);
+    if (date && !calendar_date(v)) return fault(vc, at, Json(v).dump() + " is not a YYYY-MM-DD date");
+    *out = v;
+    return std::nullopt;
+}
+
+template <class E, size_t N>
+Status enum_in(const Json& j, const std::string& at, C tc, C vc, const std::array<std::string_view, N>& names, E* out) {
+    if (!j.is_string()) return type_fault(tc, at, "a string", j);
+    const std::string& v = j.get_ref<const std::string&>();
+    for (size_t i = 0; i < N; ++i)
+        if (names[i] == v) {
+            *out = static_cast<E>(i);
+            return std::nullopt;
+        }
+    std::string allowed;
+    for (size_t i = 0; i < N; ++i) allowed += (i ? ", " : "") + std::string(names[i]);
+    return fault(vc, at, Json(v).dump() + " is not one of " + allowed);
+}
+
+Status choice_in(const Json& j, const std::string& at, C tc, C vc, std::initializer_list<std::string_view> names,
+                 std::string* out) {
+    if (!j.is_string()) return type_fault(tc, at, "a string", j);
+    const std::string& v = j.get_ref<const std::string&>();
+    std::string allowed;
+    for (std::string_view n : names) {
+        if (n == v) {
+            *out = v;
+            return std::nullopt;
+        }
+        allowed += (allowed.empty() ? "" : ", ") + std::string(n);
+    }
+    return fault(vc, at, Json(v).dump() + " is not one of " + allowed);
+}
+
+Status int_enum_in(const Json& j, const std::string& at, C tc, C vc, std::initializer_list<int64_t> values, int64_t* out) {
+    if (!j.is_number_integer()) return type_fault(tc, at, "an integer", j);
+    const int64_t v = j.get<int64_t>();
+    std::string allowed;
+    for (int64_t a : values) {
+        if (a == v) {
+            *out = v;
+            return std::nullopt;
+        }
+        allowed += (allowed.empty() ? "" : ", ") + std::to_string(a);
+    }
+    return fault(vc, at, std::to_string(v) + " is not one of " + allowed);
+}
+
+)cpp";
+        const std::vector<size_t> sc = scalars();
+        for (size_t i : sc) o << "[[maybe_unused]] Status d" << i << "(const Json& j, const std::string& at, " << value_type(i) << "* out);\n";
+        o << "\n";
+        for (size_t i : sc) node_fn(o, i);
+        o << "}  // namespace\n\n";
+        for (size_t i : structs()) struct_fn(o, i);
+        for (size_t i : structs()) {
+            const Node& n = r.nodes[i];
+            if (!n.patch) continue;
+            o << "void apply(" << r.nodes[n.patch_of].cpp << "& base, const " << n.cpp << "& patch) {\n";
+            for (size_t c : n.children) {
+                const Node& m = r.nodes[c];
+                const std::string name = m.cpp_member.empty() ? m.key : m.cpp_member;
+                if (m.kind == "object")
+                    o << "    if (patch." << name << ") apply(base." << name << ", *patch." << name << ");\n";
+                else
+                    o << "    if (patch." << name << ") base." << name << " = *patch." << name << ";\n";
+            }
+            o << "}\n\n";
+        }
+        o << "}  // namespace " << r.ns << "\n";
+        return o.str();
+    }
+};
+
 }  // namespace
 
 bool load_registry(const std::string& toml_text, const std::string& source_name, Registry* out, std::string* why) {
@@ -956,8 +1368,13 @@ std::string emit_fields_md(const Registry& r) {
     return FieldsWriter{r}.write();
 }
 
+std::string emit_codec_h(const Registry& r) { return CodecWriter(r).header(); }
+std::string emit_codec_cpp(const Registry& r) { return CodecWriter(r).source(); }
+
 std::map<std::string, std::string> generate_all(const Registry& r) {
     return {{"serving-v1.schema.json", emit_schema(r)},
+            {"serving_codec.h", emit_codec_h(r)},
+            {"serving_codec.cpp", emit_codec_cpp(r)},
             {"serving_types.h", emit_types(r)},
             {"serving-fields.md", emit_fields_md(r)},
             {"contract.fingerprint", fingerprint(r) + "\n"}};

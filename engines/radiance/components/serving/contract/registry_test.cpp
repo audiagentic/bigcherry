@@ -200,7 +200,7 @@ int main() {
     bc::contract::Registry real;
     check(bc::contract::load_registry(text.str(), "serving-v1.toml", &real, &why), "the v1 registry loads: " + why);
     if (failures) return 1;
-    check(bc::contract::generate_all(real).size() == 4, "four generated files");
+    check(bc::contract::generate_all(real).size() == 6, "six generated files");
     std::printf("ok\n");
     return 0;
 }

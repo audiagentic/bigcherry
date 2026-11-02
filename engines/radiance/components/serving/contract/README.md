@@ -9,6 +9,7 @@
 | `serving-v1.schema.json` | JSON Schema 2020-12. Also committed as `docs/design/serving-manifest-v1/serving-manifest.v1.schema.json` (identical bytes). |
 | `serving_types.h` | The typed model (`bc::serving::v1`): one struct per object, enum classes with wire-name tables, `kFields` (every field's path, kind, class, requiredness, Radiance binding and doc), `kFingerprint`. |
 | `serving-fields.md` | The field reference. |
+| `serving_codec.h`, `serving_codec.cpp` | One strict decoder per struct (`v1/error.h` codes, human paths) and `apply()` for each patch def. |
 | `contract.fingerprint` | `sha256:` of the RFC 8785 JCS bytes of the schema with every `description` removed. |
 
 The fingerprint follows what validates, not the documentation: editing a `doc` changes the schema's descriptions and the
@@ -60,6 +61,9 @@ refused. Every table's keys are closed: an unknown key is refused, naming it.
   - `doc` (required, nonempty); `optional` (not in the parent's `required`); `nullable` (also accepts `null`; not for
     containers); `cpp_member` (when the JSON name is not a C++ identifier, e.g. `class`); `radiance_option` and
     `radiance_config` (the engine flag and native `Config` destination the field binds to, spec §3).
+  - `error_class`: the decoder's code for every fault in this subtree (`provenance_invalid`, `calibration_invalid`,
+    `ownership_mismatch`, `plan_mismatch`, `invalid_value`, `unsupported_version`); `mismatch`: a const field's code when
+    the value differs (default `invalid_value`).
   - `constraints`: an object's extra rules the typed model does not express (cross-field `if`/`then`), as a JSON array
     in a TOML literal string, emitted verbatim as the object's `allOf`.
 
