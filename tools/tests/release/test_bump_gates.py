@@ -88,6 +88,7 @@ class ComponentGateTests(unittest.TestCase):
         self.work = self.tmp / "work"
         self.calls: list[list[str]] = []
         self.failing: str | None = None
+        self.unregistered: set[str] = set()   # declared test targets the fake ctest has no test for
         self.context = ProjectContext.resolve(engine="radiance")
         self.report = self.tmp / "rebase-recipe.json"
         self.report.write_text(json.dumps({"selector": {"patch_ids": []}}), encoding="utf-8")
@@ -116,10 +117,17 @@ class ComponentGateTests(unittest.TestCase):
                 (tree / "radiance_home" / "kernels").mkdir(parents=True, exist_ok=True)
                 (tree / "radiance_home" / "kernels" / "libr4d.so").write_bytes(b"x")
 
+    def lister(self, tree: Path, pattern: str, cwd: Path) -> list[str]:
+        """A fake `ctest --show-only=json-v1 -R pattern`: every name in the pattern is registered unless withheld."""
+        self.calls.append(["ctest-list", str(tree), pattern])
+        names = pattern[2:-2].split("|")
+        return [n for n in names if n not in self.unregistered]
+
     def checks(self, abi: int = 7):
         with patch.dict(os.environ, FAKE_HOST):
             return {c.id: c for c in radiance_bump.compile_checks(
-                self.context, self.source, self.work, platform_name=PLATFORM, runner=self.runner, abi_reader=lambda so: abi)}
+                self.context, self.source, self.work, platform_name=PLATFORM, runner=self.runner,
+                abi_reader=lambda so: abi, lister=self.lister)}
 
     def run_phase(self, checks):
         with (
@@ -235,6 +243,20 @@ class ComponentGateTests(unittest.TestCase):
         moe = ctests["moe-remote"][ctests["moe-remote"].index("-R") + 1]
         self.assertNotIn("r3_route_compact_test", moe)
         self.assertNotIn("r3_ticket_replay_test", moe)
+
+    def test_a_declared_target_without_a_ctest_test_fails_naming_it(self):
+        # One declared target builds but registers no CTest test of its name: the others still match the pattern, so
+        # --no-tests=error alone would pass. It must fail, naming the target, and its component's ctest must not run.
+        checks = self.checks()
+        self.assertEqual(checks["components-build"].run(), [])
+        self.unregistered = {"r3_worker_heat_test"}
+        failures = checks["component-tests"].run()
+        self.assertEqual(len(failures), 1)
+        self.assertIn("moe-remote: declared test target(s) r3_worker_heat_test have no CTest test of that name", failures[0])
+        moe_tree = str(runtime_bundle.component_build_dir(self.work / "radiance-build", "moe-remote"))
+        self.assertFalse([c for c in self.calls if c[:2] == ["ctest", "--test-dir"] and c[2] == moe_tree])
+        # the components whose tests are all registered still run theirs
+        self.assertTrue([c for c in self.calls if c[:2] == ["ctest", "--test-dir"] and c[2] != moe_tree])
 
     def test_a_failing_component_test_names_its_log(self):
         checks = self.checks()

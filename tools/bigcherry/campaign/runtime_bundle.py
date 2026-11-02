@@ -9,6 +9,7 @@ or components (llama.cpp) gets nothing here.
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 from pathlib import Path
@@ -18,6 +19,8 @@ from ..core import components, engines, paths
 from .build import rocm_configure_options
 
 Runner = Callable[[list[str], Path], None]
+#: (component build tree, ctest -R pattern, cwd) -> the names of the CTest tests registered there that match
+TestLister = Callable[[Path, str, Path], list[str]]
 
 
 def _run(argv: list[str], cwd: Path) -> None:
@@ -99,14 +102,22 @@ def component_test_log(build_dir: Path, name: str) -> Path:
     return component_build_dir(build_dir, name) / "ctest-component-tests.log"
 
 
-def run_component_tests(engine: str, *, source_root: Path, build_dir: Path, runner: Runner = _run) -> list[str]:
+def ctest_test_names(tree: Path, pattern: str, cwd: Path) -> list[str]:
+    """The CTest tests registered in ``tree`` whose names match ``pattern`` (ctest --show-only=json-v1)."""
+    done = subprocess.run(["ctest", "--test-dir", str(tree), "--show-only=json-v1", "-R", pattern],
+                          cwd=cwd, check=True, capture_output=True, text=True)
+    return [test["name"] for test in json.loads(done.stdout).get("tests", [])]
+
+
+def run_component_tests(engine: str, *, source_root: Path, build_dir: Path, runner: Runner = _run,
+                        lister: TestLister = ctest_test_names) -> list[str]:
     """Build every component's declared test targets (component.toml ``[test] targets``) in its build tree and run
     exactly those tests with ctest, one log per component. Returns one failure line per component that did not pass,
     naming the command and its log. The pin-bump gate and PR CI both run this; nothing else runs component tests.
 
-    Only the declared tests run (``-R`` on their names, ``--no-tests=error``): a tree may register tests that need a
-    GPU and are deliberately not declared, and a declared target without a test of the same name is a failure, not an
-    empty pass."""
+    Only the declared tests run (``-R`` on their exact names): a tree may register tests that need a GPU and are
+    deliberately not declared. Every declared target must have a registered CTest test of the same name; one without is
+    a failure naming it, checked before anything runs (``--no-tests=error`` alone only catches a pattern matching none)."""
     failures = []
     for name, component in sorted(components.load_all(paths.REPO_ROOT, engine).items()):
         if not component.test_targets:
@@ -116,9 +127,14 @@ def run_component_tests(engine: str, *, source_root: Path, build_dir: Path, runn
         pattern = "^(" + "|".join(component.test_targets) + ")$"
         try:
             runner(["cmake", "--build", str(tree), "-j", "--target", *component.test_targets], source_root)
+            registered = set(lister(tree, pattern, source_root))
+            missing = [target for target in component.test_targets if target not in registered]
+            if missing:
+                failures.append(f"{name}: declared test target(s) {', '.join(missing)} have no CTest test of that name "
+                                f"in {tree} (add_test NAME must equal the target)")
+                continue
             runner(["ctest", "--test-dir", str(tree), "--output-on-failure", "--no-tests=error", "-R", pattern,
                     "--output-log", str(log)], source_root)
         except subprocess.CalledProcessError as exc:
             failures.append(f"{name}: `{' '.join(map(str, exc.cmd))}` exited {exc.returncode}; log: {log}")
     return failures
-
