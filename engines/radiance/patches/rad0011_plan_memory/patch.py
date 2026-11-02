@@ -15,6 +15,7 @@ struct Config;
 struct VramFacts;
 struct VramBudget;
 struct WeightFootprint;
+class Program;
 }
 
 /* Takes `--plan-memory FILE` off the command line (before rad0009's manifest reader sees it). False, with a message, on
@@ -25,7 +26,7 @@ bool bc_plan_memory_take_flag(int* argc, char*** argv);
 void bc_plan_memory_note(const rad::Config& cfg, const std::vector<rad::VramFacts>& facts, const rad::VramBudget& vb,
                          const std::vector<int64_t>& emb_bytes, const std::vector<rad::WeightFootprint>& wfs,
                          int64_t ngram_bytes, int64_t ck_slot, int64_t host_arenas, int64_t kv_one, int64_t ctx,
-                         int64_t checkpoint_interval);
+                         const rad::Program& prog);
 
 /* After plan(): with --plan-memory, writes the plan and exits (status 0, or 2 when nothing was recorded or FILE cannot be
  * written). Otherwise returns 0 and start-up goes on. */
@@ -39,6 +40,7 @@ _BC_PLAN_MEMORY_CPP = r"""/* bc_plan_memory.cpp -- see bc_plan_memory.h (BigCher
 #include "mem/vram_budget.h"
 #include "place/planner.h"
 #include "rad_core.h"
+#include "sched/geometry.h"
 
 #include <nlohmann/json.hpp>
 
@@ -52,6 +54,7 @@ _BC_PLAN_MEMORY_CPP = r"""/* bc_plan_memory.cpp -- see bc_plan_memory.h (BigCher
 
 namespace {
 std::string g_out;
+std::string g_error;
 nlohmann::json g_plan;
 bool g_noted = false;
 
@@ -85,8 +88,16 @@ bool bc_plan_memory_take_flag(int* argc, char*** argv) {
 void bc_plan_memory_note(const rad::Config& cfg, const std::vector<rad::VramFacts>& facts, const rad::VramBudget& vb,
                          const std::vector<int64_t>& emb_bytes, const std::vector<rad::WeightFootprint>& wfs,
                          int64_t ngram_bytes, int64_t ck_slot, int64_t host_arenas, int64_t kv_one, int64_t ctx,
-                         int64_t checkpoint_interval) {
+                         const rad::Program& prog) {
     if (g_out.empty()) return;
+    /* The checkpoint interval the store is sized with is the resolved chunk geometry's (configure_kv resolves it after
+     * plan(); the same function is called here), not the raw flag: it rounds up to the step quantum. */
+    rad::ChunkGeometry geo;
+    if (rad::chunk_geometry_resolve(prog, cfg, &geo) < 0) {
+        g_error = "the chunk geometry could not be resolved (chunk_geometry_resolve)";
+        return;
+    }
+    const int64_t checkpoint_interval = geo.checkpoint_interval;
     using rad::TablePlacement;
     nlohmann::json host = nlohmann::json::array();
     if (cfg.ngram_resolved == TablePlacement::Ram && ngram_bytes > 0)
@@ -117,7 +128,7 @@ void bc_plan_memory_note(const rad::Config& cfg, const std::vector<rad::VramFact
         {"producer", "radiance --plan-memory (rad0011)"},
         {"host", host},
         {"checkpoints", {{"slot_bytes", ck_slot}, {"floor_slots", floor}, {"want_slots", want},
-                         {"from", "engine plan (rad0011: KVManager::checkpoint_bytes, checkpoint_slots_want)"}}},
+                         {"from", "engine plan (rad0011: KVManager::checkpoint_bytes, chunk_geometry_resolve, checkpoint_slots_want)"}}},
         {"kv_one_session", {{"bytes", kv_one}, {"from", "engine plan (rad0011: VramFacts::kv_one)"}}},
         {"vram", {{"claimable", vb.claimable}, {"statics", vb.statics}, {"elastic", vb.elastic},
                   {"experts", vb.experts}, {"kv", vb.kv}, {"stage", vb.stage}, {"expert_floor", vb.expert_floor},
@@ -131,7 +142,8 @@ void bc_plan_memory_note(const rad::Config& cfg, const std::vector<rad::VramFact
 int bc_plan_memory_done() {
     if (g_out.empty()) return 0;
     if (!g_noted) {
-        std::fprintf(stderr, "radiance: --plan-memory: the memory plan recorded nothing\n");
+        std::fprintf(stderr, "radiance: --plan-memory: the memory plan recorded nothing%s%s\n",
+                     g_error.empty() ? "" : ": ", g_error.c_str());
         std::fflush(nullptr);
         std::_Exit(2);
     }
@@ -344,7 +356,7 @@ PATCHES = (
             Edit(
                 id="bc-plan-memory-note",
                 anchor=r"^        RAD_TRY\(vram_budget_resolve\(cfg_, facts, &vb\)\);$",
-                text="\n        bc_plan_memory_note(cfg_, facts, vb, emb_bytes, wfs, ngram_bytes, ck_slot, host_arenas, kv_floor, ctx, geo_.checkpoint_interval);",
+                text="\n        bc_plan_memory_note(cfg_, facts, vb, emb_bytes, wfs, ngram_bytes, ck_slot, host_arenas, kv_floor, ctx, ranks_[0]->program);",
                 guard=r"bc_plan_memory_note\(cfg_, facts, vb,",
                 max_span_lines=1,
                 expect_matches=1,

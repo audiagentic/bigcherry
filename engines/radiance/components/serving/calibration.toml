@@ -50,4 +50,4 @@ evidence = "run tail-size on flashnext-4gpu: the 8 GiB tail point (64% backing) 
 key = "calibration.checkpoint_share"
 value = "want"
 seeded = "2026-11-02"
-evidence = "no regression against today's engine, which sizes 72 snapshots (the want for 8 x 262144 at a 4096 interval, 7.91 GiB) with the 12 GiB host KV tier and served; planning only the floor would coarsen prefix resume for long retained sessions, the RHP12 retained-session cohort the plan is judged by; whether the tier should win RAM from checkpoints is for that cohort to refit"
+evidence = "the checkpoint policy wants 72 snapshots for 8 x 262144 at a 4096 interval (9 a sequence, 112.48 MiB each, 7.91 GiB): the engine sized all 72 with the host KV tier off (run host-pool, 2026-11-02), and only 43 (4.72 GiB) with today's launcher's 9 GiB pool and 12 GiB tier (run rsc03-plan step 2), the tier having taken the rest; planning the want keeps prefix resume at the policy's granularity for long retained sessions, the RHP12 retained-session cohort the plan is judged by; whether the tier should win RAM from checkpoints is for that cohort to refit"

@@ -574,7 +574,7 @@ class TestPlanMemoryPatch(unittest.TestCase):
             self.assertEqual(self._added_code(root, "core/engine_bringup.cpp"), [
                 '#include "bc_plan_memory.h"',
                 "bc_plan_memory_note(cfg_, facts, vb, emb_bytes, wfs, ngram_bytes, ck_slot, host_arenas, kv_floor, ctx, "
-                "geo_.checkpoint_interval);",
+                "ranks_[0]->program);",
                 "RAD_TRY(bc_plan_memory_done());",
             ])
         finally:
