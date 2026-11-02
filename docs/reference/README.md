@@ -86,6 +86,7 @@ do not add compatibility redirect files under `docs/reference/`.
 | [CANDIDATES.md](CANDIDATES.md) | Auto-generated candidate inventory | Looking up a specific candidate's config |
 | [FINDINGS.md](FINDINGS.md) | Bugs and results notable outside bigcherry — kernel/llama.cpp/ROCm bugs, exceptional tunes | You just found something a stranger to this project would want to know about |
 | [TUNING-DETAIL.md](TUNING-DETAIL.md) | Pointer to archived generated report | Consult the tuning DB or `artifacts/reports/` for current numbers |
+| [git-history-rewrite.md](git-history-rewrite.md) | Old-to-new commit hash map for the 2026-11-02 message rewrite | A document or comment cites a commit hash that does not resolve |
 
 **Tuning results and model-specific data live in the database**, not in
 these documents. Consult the tuning DB for per-signature winners, rankings,
