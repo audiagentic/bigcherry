@@ -602,10 +602,10 @@ void measured_plan_cache(Fixture& t) {
     assert(sv::container_identity(model) != id);
     // Engine identity: the binary and every runtime-home file.
     const auto bin = t.file("engine/bin/radiance", "engine-binary-v1");
-    (void)t.file("engine/home/kernels/libr4d.so", "kernels-v1");
-    const std::string eid = sv::engine_identity(bin, t.root / "engine/home");
-    (void)t.file("engine/home/kernels/libr4d.so", "kernels-v2");
-    assert(sv::engine_identity(bin, t.root / "engine/home") != eid);
+    (void)t.file("engine/runtime-home/kernels/libr4d.so", "kernels-v1");
+    const std::string eid = sv::engine_identity(bin, t.root / "engine/runtime-home");
+    (void)t.file("engine/runtime-home/kernels/libr4d.so", "kernels-v2");
+    assert(sv::engine_identity(bin, t.root / "engine/runtime-home") != eid);
     // The key covers the planning inputs and the card, not the memory outputs the plan feeds.
     const auto r = sv::resolve(t.standard(), t.facts);
     const Json k = sv::plan_key_inputs(r.values, t.facts, id, eid);
